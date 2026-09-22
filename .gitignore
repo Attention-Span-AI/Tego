@@ -1,0 +1,30 @@
+bin/
+*.o
+# The bpf2go output is committed (internal/bpf/gen.go), so a build with -tags tegobpf needs no clang, and
+# CI regenerates it and fails on any difference (.github/workflows/ci.yml, job bpf-gen). Its objects are the
+# one kind of .o this tree keeps.
+!internal/bpf/*_bpfel.o
+!internal/bpf/*_bpfeb.o
+.tego/runs/
+dist/
+__pycache__/
+
+# A stray `go build -o tego` at the repo root; the Makefile builds into bin/.
+/tego
+
+# macOS Finder metadata.
+.DS_Store
+
+# Claude Code's settings and sessions during Maze runs
+.maze/state/
+
+# Local builds of the maze CLI and TypeScript build caches.
+/maze
+*.tsbuildinfo
+
+# The demo kit's stage: fake secrets, the sink log, a copy of the project (examples/demo/demo.sh reset removes it).
+examples/demo/stage/
+
+# The lint configs scripts/lint-untagged.sh and scripts/check-fd_test.sh write in the root while they run.
+/.golangci-untagged.yml
+/.golangci-fdtest.yml

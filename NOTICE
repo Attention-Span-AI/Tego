@@ -1,0 +1,35 @@
+Tego
+Copyright 2026 The Tego Authors
+
+Tego is licensed under Apache-2.0; the text is in LICENSE. Individual source
+files carry SPDX identifiers, and these are the exceptions.
+
+The kernel programs under bpf/, and the headers written for them, are offered
+under GPL-2.0-only OR BSD-2-Clause; the texts are in LICENSES/. The objects
+compiled from them and the Go files bpf2go generates from them (internal/bpf/*.o
+and internal/bpf/*_bpfe[lb].go) carry the same terms. An object is a separate
+program: a Go binary carries it as data and loads it into the kernel, and no GPL
+code is linked into a Go binary. The source of every object is in bpf/.
+
+The vendored libbpf headers under bpf/include/libbpf/ keep their upstream
+LGPL-2.1 OR BSD-2-Clause choice.
+
+bpf/include/vmlinux.h is generated, not written: bpftool's dump of the BTF type
+information of the Linux 6.17.0-41-generic kernel (Ubuntu), as bpf/README.md
+records. Its declarations are the Linux kernel's, which is GPL-2.0-only (text in
+LICENSES/GPL-2.0-only.txt), so the terms of bpf/ do not cover it. It carries no
+header of its own and is exempt from the SPDX check (ADR 0012). The kernel programs
+include it at build time, and the compiled objects keep the type information of
+the kernel types they use: names and layouts, which a program needs in order to
+run against the kernel it is loaded into (ADR 0012).
+
+The dashboard's icons are Lucide icons, under ISC, and MIT for those derived from
+Feather (LICENSES/Lucide.txt).
+
+THIRD_PARTY_NOTICES.txt preserves the license texts and attribution notices for
+the Go runtime, linked Go modules, vendored libbpf headers and the Lucide icons.
+
+Raw binary releases are accompanied by tego_<version>_licenses.tar.gz, and the
+maze archives hold the same notices. The release checksums and provenance cover
+those archives too. Distribute the licenses archive with the executable when
+passing a binary on to another recipient.
