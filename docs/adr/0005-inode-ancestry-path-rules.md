@@ -1,0 +1,9 @@
+# ADR 0005: filesystem rules are inode ancestry, not string prefixes
+
+Status: accepted 2026-09-21.
+Superseded in part by ADR 0010 (identity is the kernel inode object pinned by an `O_PATH` fd, not a `(device, inode)` pair); the ancestry walk stands.
+Decision: `fs` entries resolve at compile time to (device, inode) of existing directories and files; the kernel program walks the target dentry's parents and the nearest entry decides. Landlock compiles the same entries directly (it is inode-based already).
+Why: verified in `kernel/trace/bpf_trace.c`: `bpf_d_path` is allowed only in `security_file_permission`, `security_inode_getattr`, `security_file_open`, `security_path_truncate` and five VFS functions. The `path_unlink` and `path_rename` hooks cannot build a path string at all. Ancestry also survives renames, hard links, bind mounts and containers, and costs a few pointer reads per level instead of a `d_path` walk plus string compares.
+Consequence: declared paths must exist at compile time (write dirs are created by `run`); `deny_read` in the Landlock tier is compiled by sibling enumeration; `spec/policy/SEMANTICS.md` section 2 is normative.
+
+Amended 2026-09-21: the earlier Why cited `btf_allowlist_d_path`, which governs fentry programs, not LSM programs. Corrected: for a BPF LSM program `bpf_d_path` is permitted only when the hook is in `sleepable_lsm_hooks`; the `path_*` hooks joined that set in 6.8 and the `bpf_path_d_path` kfunc arrived in 6.12, so string rules would not run on 6.1–6.7, and the sleepable `inode_*` hooks carry no `struct path`. The ancestry decision stands. The walk is on `(mount, dentry)` and crosses mount boundaries exactly as `d_path` and Landlock do; overlayfs layers are separate inode spaces (rules on upper/lower do not apply inside); hard links and renames get the Landlock-style refer check. Superseded in part by ADR 0010: identity is the kernel inode object pinned by an `O_PATH` fd, never a `(device, inode)` pair.
