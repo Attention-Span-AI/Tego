@@ -1,0 +1,191 @@
+# goreleaser config for tego (docs/VERSIONING.md §5).
+#
+# `make release` runs this as a snapshot build (no tag needed, nothing published, no SBOM); release.yml runs
+# `goreleaser release --clean` on `v*` tags, with a GITHUB_TOKEN and this repo pushed to its `release.github`
+# remote; the snapshot path is what `make release` runs. goreleaser creates the
+# release as a draft: release.yml then scans the binaries with govulncheck, signs the checksums file with
+# cosign (keyless, as that workflow at that tag), attests the binaries' build provenance, uploads the
+# signature bundle, and only then publishes the release, so nothing is public without its signature. The
+# signing is in the workflow rather than in a `signs:` section here because goreleaser has no way to skip
+# one for a snapshot, and a snapshot build would then ask for a browser sign-in.
+#
+# The tier-2 (BPF) objects are embedded: `-tags tegobpf` below, as `make build` passes it. The bpf2go output,
+# objects included, is committed and CI's bpf-gen job fails on any difference from a regeneration with the
+# pinned clang (bpf/README.md), so a release build needs no clang and no `make gen`. Without the tag the
+# published binary could only ever run tier 1, reporting tier cgroup as not built with the fix line. The
+# uprobe object is compiled for both architectures below (internal/bpf/gen.go), the other three once per byte
+# order, and amd64 and arm64 are both little-endian.
+version: 2
+
+project_name: tego
+
+builds:
+  - id: tego
+    main: ./cmd/tego
+    binary: tego
+    env:
+      # Static, a release choice for portability (docs/VERSIONING.md §5): the binary runs on any distribution's
+      # loader or none. Tier 2 no longer needs it: its marks are placed after the child stage's execve (ADR 0021
+      # (2), (4)), and enforce.Buildable has no linking check; the guest run of a PIE build is that ADR's open
+      # condition.
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -tags=tegobpf
+      # Not PIE, for the same portability: -buildmode=pie links even a cgo-free binary against the loader, and a
+      # GOFLAGS in the release environment could ask for it; a command-line -buildmode overrides GOFLAGS.
+      - -buildmode=exe
+    ldflags:
+      # Field names must match the package-level vars internal/buildinfo reads (its own comment gives this exact
+      # form); both binaries take the same three. -s -w matches `make build`; debug.ReadBuildInfo's module/vcs blob
+      # survives stripping, so `go version -m` and the vcs.* fallback in buildInfo still work unstripped.
+      - -s -w
+      - -X github.com/attention-span-ai/tego/internal/buildinfo.version={{ .Tag }}
+      - -X github.com/attention-span-ai/tego/internal/buildinfo.commit={{ .FullCommit }}
+      # The commit's own timestamp, not the wall-clock build time: two builds of the same commit (different
+      # machine, different day) then embed the same date, which is what makes them reproducible below.
+      - -X github.com/attention-span-ai/tego/internal/buildinfo.date={{ .CommitDate }}
+      # tego-control's SHA-256 for this target (ADR 0100 (1b)): the pre hook below builds it as the tego-control
+      # build does and writes the hash, and tego hands off to that file and no other.
+      - -X github.com/attention-span-ai/tego/internal/handoff.controlSHA256={{ mustReadFile (printf "dist/control-pin/%s_%s/tego-control.sha256" .Os .Arch) }}
+    hooks:
+      pre:
+        - cmd: ./scripts/control-pin.sh dist/control-pin/{{ .Os }}_{{ .Arch }} {{ .Os }} {{ .Arch }} {{ .Tag }} {{ .FullCommit }} {{ .CommitDate }}
+    # Fixes the embedded module timestamp to the commit's own time instead of wall-clock build time, so two
+    # builds of the same commit on different machines/days produce byte-identical output (with -trimpath and
+    # CGO_ENABLED=0 removing the other two usual sources of non-reproducibility: absolute paths and cgo).
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    goos: [linux]
+    goarch: [amd64, arm64]
+
+  # tego-control, the dashboard binary that `tego serve` hands off to (ADR 0100 (1a)). It links no BPF, so no tag;
+  # otherwise tego's flags and ldflags, so both print one version. scripts/control-pin.sh builds the same bytes for
+  # tego's pin: keep the two in step. release.yml and CI's reproducible job check that this build is the pinned one.
+  - id: tego-control
+    main: ./cmd/tego-control
+    binary: tego-control
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -buildmode=exe
+    ldflags:
+      - -s -w
+      - -X github.com/attention-span-ai/tego/internal/buildinfo.version={{ .Tag }}
+      - -X github.com/attention-span-ai/tego/internal/buildinfo.commit={{ .FullCommit }}
+      - -X github.com/attention-span-ai/tego/internal/buildinfo.date={{ .CommitDate }}
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    goos: [linux]
+    goarch: [amd64, arm64]
+
+  # The maze CLI, the user-facing layer over tego. Unlike tego it ships for macOS too: it scans, proposes and
+  # reports, and on a Mac it reaches the engine through the lightweight Linux layer rather than the local kernel.
+  # No BPF tag and no -buildmode constraint: it loads nothing into the kernel and never runs a child stage.
+  - id: maze
+    main: ./cmd/maze
+    binary: maze
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/attention-span-ai/tego/internal/maze/cli.version={{ .Version }}
+      - -X github.com/attention-span-ai/tego/internal/maze/cli.commit={{ .FullCommit }}
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+
+archives:
+  - id: tego
+    ids: [tego, tego-control]
+    formats: [binary]
+    # install.sh derives this same name from the version and `uname`, so any change here must be mirrored
+    # there. No file extension: the binary format archive ships the raw executable, per VERSIONING.md §5.
+    name_template: '{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+  # Raw executables cannot contain adjacent documentation. Ship the complete
+  # licensing material as its own checksummed, attested release artifact.
+  - id: licenses
+    meta: true
+    formats: [tar.gz]
+    name_template: '{{ .ProjectName }}_{{ .Version }}_licenses'
+    files:
+      - src: LICENSE
+        info: {mtime: '{{ .CommitDate }}', mode: 0644}
+      - src: NOTICE
+        info: {mtime: '{{ .CommitDate }}', mode: 0644}
+      - src: THIRD_PARTY_NOTICES.txt
+        info: {mtime: '{{ .CommitDate }}', mode: 0644}
+      - src: LICENSES/*
+        info: {mtime: '{{ .CommitDate }}', mode: 0644}
+  # maze ships as a .tar.gz, the shape the Homebrew cask and the Linux installer unpack.
+  - id: maze
+    ids: [maze]
+    formats: [tar.gz]
+    name_template: 'maze_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    # maze's own README, not the engine's (the default would pick up the repo's top-level README.md).
+    files:
+      - src: cmd/maze/README.md
+        dst: README.md
+      - LICENSE*
+      - NOTICE
+      - THIRD_PARTY_NOTICES.txt
+
+# The Homebrew cask Mac users will install with `brew install --cask <tap>/maze` (goreleaser's replacement for
+# formulae since v2.10). Until the binary is notarized, the post-install hook clears the quarantine flag
+# macOS puts on downloads, which would otherwise stop an unsigned maze from opening. The tap is not created yet: the cask is only written under dist/, never uploaded, by a snapshot or a release (release.yml's token can
+# write this repository alone, so an upload would fail the release). Creating the tap sets its owner, the
+# homepage and skip_upload together. Linux installs with scripts/install-maze.sh.
+homebrew_casks:
+  - name: maze
+    ids: [maze]
+    repository:
+      owner: attention-span-ai
+      name: homebrew-tap
+    directory: Casks
+    homepage: https://github.com/attention-span-ai/tego
+    description: "Rules your AI assistant can't ignore"
+    skip_upload: 'true'
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/maze"]
+          end
+
+# One SPDX document per binary, listing the modules and the toolchain it was built from, generated by syft
+# (release.yml installs a pinned one). They are release assets like the binaries, so the checksums file, and
+# the signature over it, cover them too. A snapshot builds none: it needs no syft on a developer's machine.
+sboms:
+  - artifacts: binary
+    disable: '{{ .IsSnapshot }}'
+
+checksum:
+  name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
+  algorithm: sha256
+  # The installers are release assets too (release.extra_files below), and release.extra_files adds nothing here. Listed,
+  # they are covered by the signature over this file and by the provenance attestations, for whoever downloads,
+  # verifies and then runs them (docs/INSTALL.md). That does nothing for `curl … | sh`, where nothing reads a checksum
+  # before the script runs (docs/GAPS.md B11).
+  extra_files:
+    - glob: ./scripts/install.sh
+    - glob: ./scripts/install-maze.sh
+
+# docs/CHANGELOG.md is the hand-maintained record (VERSIONING.md §5); no second, commit-log-derived one.
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: attention-span-ai
+    name: tego
+  prerelease: auto
+  # Published by release.yml once the checksums are signed and the provenance attested (see the top). A re-run
+  # of a failed release replaces its leftover draft rather than adding a second one beside it.
+  draft: true
+  replace_existing_draft: true
+  # The installers are release assets, so `curl …/releases/latest/download/install.sh | sh` (tego, scripts/install.sh) and
+  # `…/install-maze.sh | sh` (maze) work.
+  extra_files:
+    - glob: ./scripts/install.sh
+    - glob: ./scripts/install-maze.sh

@@ -1,0 +1,908 @@
+# golangci-lint v2 configuration. The depguard rules are the layering of docs/REPO-LAYOUT.md:
+# they are what keeps the read side and the engine from importing each other, and pkg/spec pure.
+version: "2"
+run:
+  timeout: 5m
+  # Lint the integration-tagged files too: without the tag the unused check cannot see a helper that only
+  # an integration test calls, and would report it as dead code. And the tegobpf-tagged files: they are
+  # the tier-2 half of the shipped binary (the objects' loaders) and its privileged tests, and the bpf2go
+  # output they need is committed (CI's bpf-gen job checks it), so they typecheck on a clean tree. And the
+  # tegotesthooks files (ADR 0023 A3): they compile into the binaries the KVM suites run, so the descriptor
+  # and process-start rules hold in them too.
+  # A file that builds only without a tag drops out of this run: internal/bpf's *_stub.go (!tegobpf),
+  # internal/runtime/enforce/landlock/filter_product_test.go (!tegotesthooks), and the unit builds' files (!integration): the leak-gate TestMains in sys, landlock and
+  # launch, and landlock's filter_test_bridge_test.go. CI lints them in a
+  # second run, from this file with this line made empty and unused off (ci.yml, build-test), since without
+  # the integration tag unused reports every helper only an integration test calls. That step rewrites this
+  # exact line, so change the step with it.
+  build-tags: [integration, tegobpf, tegotesthooks]
+linters:
+  enable:
+    - depguard
+    - errcheck
+    - exhaustive
+    - forbidigo
+    - gocritic
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unused
+  settings:
+    depguard:
+      rules:
+        # pkg/spec/agent's deprecated evaluation methods delegate to the decision core, which registers itself
+        # (ADR 0028, agent.RegisterDecider); its tests link the core from one external test file, the only
+        # exception.
+        spec-is-pure:
+          files: ["**/pkg/spec/**", "!**/pkg/spec/agent/decide_link_test.go"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal
+              desc: pkg/spec must not import internal
+        # ADR 0028: the decision core is pure — no I/O, no goroutines, no clock — and imports the contract's
+        # types and the standard library's pure packages only.
+        decide-is-pure:
+          files: ["**/internal/policy/decide/**", "!$test"]
+          deny:
+            - pkg: os
+              desc: the decision core makes no I/O (ADR 0028)
+            - pkg: syscall
+              desc: the decision core makes no I/O (ADR 0028)
+            - pkg: golang.org/x/sys
+              desc: the decision core makes no I/O (ADR 0028)
+            - pkg: time
+              desc: the decision core reads no clock (ADR 0028)
+            - pkg: sync
+              desc: the decision core runs no goroutines and holds no lock (ADR 0028)
+            - pkg: github.com/attention-span-ai/tego/internal
+              desc: the decision core depends on the contract's types alone (ADR 0028)
+        # ADR 0048 (2): the exec command matcher and its rows are the standard library only and make no I/O; compile,
+        # the decision core, the gate and the supervisor hand them copied facts. Its tests probe the installed tools.
+        execmatch-is-pure:
+          files: ["**/pkg/policy/execmatch/**", "!$test"]
+          deny:
+            - pkg: os
+              desc: the exec matcher makes no I/O (ADR 0048 (2))
+            - pkg: syscall
+              desc: the exec matcher makes no I/O (ADR 0048 (2))
+            - pkg: golang.org/x/sys
+              desc: the exec matcher makes no I/O (ADR 0048 (2))
+            - pkg: time
+              desc: the exec matcher reads no clock (ADR 0048 (2))
+            - pkg: github.com/attention-span-ai/tego/internal
+              desc: the exec matcher is the standard library only (ADR 0048 (2))
+            - pkg: github.com/attention-span-ai/tego/pkg/spec
+              desc: the exec matcher is the standard library only; the contract imports it, not the reverse (ADR 0048 (2))
+        # ADR 0018 (1)'s socket allowlist is one Go function that the decision core and internal/bpf both import: the
+        # standard library only, no I/O, so neither side's import rule has to bend for it.
+        socketpolicy-is-pure:
+          files: ["**/pkg/policy/socketpolicy/**", "!$test"]
+          deny:
+            - pkg: os
+              desc: the socket allowlist makes no I/O (ADR 0018)
+            - pkg: syscall
+              desc: the socket allowlist makes no I/O (ADR 0018)
+            - pkg: golang.org/x/sys
+              desc: the socket allowlist makes no I/O (ADR 0018)
+            - pkg: github.com/attention-span-ai/tego/internal
+              desc: the socket allowlist is the standard library only (ADR 0018)
+            - pkg: github.com/attention-span-ai/tego/pkg/spec
+              desc: the socket allowlist is the standard library only; internal/bpf may not import pkg/spec (ADR 0018)
+        # What spells this host is one pure reading the gate, the contract and the live blocks share: the standard
+        # library only, no I/O, so none of the three bends its import rule for it.
+        thishost-is-pure:
+          files: ["**/pkg/policy/thishost/**", "!$test"]
+          deny:
+            - pkg: os
+              desc: the reading of this host's addresses makes no I/O; the running host's comes in through Addrs
+            - pkg: syscall
+              desc: the reading of this host's addresses makes no I/O; the running host's comes in through Addrs
+            - pkg: golang.org/x/sys
+              desc: the reading of this host's addresses makes no I/O; the running host's comes in through Addrs
+            - pkg: github.com/attention-span-ai/tego/internal
+              desc: thishost is the standard library only
+            - pkg: github.com/attention-span-ai/tego/pkg/spec
+              desc: thishost is the standard library only; the contract imports it, not the reverse
+        check-never-imports-runtime:
+          files: ["**/internal/check/**", "**/internal/serve/**"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime
+              desc: the read side never imports the engine
+        runtime-never-imports-check:
+          files: ["**/internal/runtime/**"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/check
+              desc: the engine never imports the read side
+            - pkg: github.com/attention-span-ai/tego/internal/serve
+              desc: the engine never imports the page
+        # identity-config.md I1: identity, config and backend are leaves of pkg/spec; agent, the compiler,
+        # is the one package that imports them.
+        spec-leaves-import-no-spec:
+          files: ["**/pkg/spec/identity/**", "**/pkg/spec/config/**", "**/pkg/spec/backend/**", "!$test"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/pkg/spec
+              desc: identity, config and backend import no other pkg/spec package (identity-config.md I1)
+        # supervisor.md §1 "Must not import" (I10): the supervisor consumes a compiled RuleTable, never a
+        # backend, a producer, the ledger or BPF maps. Its tests may import a backend to run beside it.
+        supervisor-imports:
+          files: ["**/internal/runtime/supervisor/**", "!$test"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/ledger
+              desc: the supervisor writes no ledger (supervisor.md §1)
+            - pkg: github.com/attention-span-ai/tego/internal/check
+              desc: the engine never imports the read side (supervisor.md §1)
+            - pkg: github.com/attention-span-ai/tego/internal/serve
+              desc: the engine never imports the page (supervisor.md §1)
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/observe
+              desc: supervisor.md §1
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/capture
+              desc: supervisor.md §1
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/derive
+              desc: supervisor.md §1
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/enforce
+              desc: it is handed a compiled RuleTable, never the backend (supervisor.md §1)
+            - pkg: github.com/cilium/ebpf
+              desc: no BPF maps live in the supervisor (supervisor.md §1)
+        # ADR 0031 (a): launch starts the agent's first process and sees the prepared handle only through
+        # internal/runtime/enforce/api. It links no backend, not the selection package, no BPF and no YAML or policy
+        # type; TestLaunchLinksNoBackend holds the whole link closure to an allowlist.
+        launch-links-no-backend:
+          files: ["**/internal/runtime/launch/**", "!$test"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/enforce$
+              desc: launch sees a handle through internal/runtime/enforce/api only (ADR 0031 (a))
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/enforce/landlock
+              desc: launch links no backend (ADR 0031 (a))
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/enforce/cgroup
+              desc: launch links no backend (ADR 0031 (a))
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/enforce/bpflsm
+              desc: launch links no backend (ADR 0031 (a))
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/enforce/observe
+              desc: launch links no backend (ADR 0031 (a))
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/cgroup
+              desc: the run cgroup is the facade's; launch gets its fd and a Killer (ADR 0031 (a))
+            - pkg: github.com/attention-span-ai/tego/internal/bpf
+              desc: launch links no BPF (ADR 0031 (a))
+            - pkg: github.com/cilium/ebpf
+              desc: launch links no BPF (ADR 0031 (a))
+            - pkg: github.com/attention-span-ai/tego/pkg/spec/agent
+              desc: launch links no policy type and so no YAML (ADR 0031 (a))
+            - pkg: github.com/attention-span-ai/tego/pkg/spec/config
+              desc: launch links no policy type and so no YAML (ADR 0031 (a))
+            - pkg: gopkg.in/yaml.v3
+              desc: no YAML parser in the TCB (ADR 0031)
+        # ADR 0031 (b) step 1: the run's Source contract is a leaf, and the capture sources reach the run through it
+        # alone, so none links the engine. The list matches engineSubs in internal/runtime/capture/links_test.go
+        # (TestCaptureLinksNoEngine), which also catches a link through an intermediate package.
+        source-is-a-leaf:
+          files: ["**/internal/runtime/source/**"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal
+              desc: the Source contract names pkg/spec types only (ADR 0031 (b) step 1)
+        capture-links-no-engine:
+          files: ["**/internal/runtime/capture/**", "!$test"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime$
+              desc: a capture source reaches the run through internal/runtime/source (ADR 0031 (b) step 1)
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/launch
+              desc: a capture source links no engine (ADR 0031 (b) step 1)
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/supervisor
+              desc: a capture source links no engine (ADR 0031 (b) step 1)
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/enforce
+              desc: a capture source links no engine (ADR 0031 (b) step 1)
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/dnsbroker
+              desc: a capture source links no engine (ADR 0031 (b) step 1)
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/observe
+              desc: a capture source links no engine (ADR 0031 (b) step 1)
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/limits
+              desc: a capture source links no engine (ADR 0031 (b) step 1)
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/deputy
+              desc: a capture source links no engine (ADR 0031 (b) step 1)
+        # The forwarder holds a model request for a human approval through the approval broker's Request API
+        # (forwarder/ask_hold.go); no other capture package links the broker.
+        capture-asks-through-forwarder:
+          files: ["**/internal/runtime/capture/**", "!**/internal/runtime/capture/forwarder/**", "!$test"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/ask
+              desc: only the forwarder links the approval broker (ADR 0031 (b) step 1)
+        # enforce-cgroup-observe.md I12: tier 2 and the recorder never import the other tiers' backends or the
+        # read side.
+        cgroup-observe-imports:
+          files: ["**/internal/runtime/enforce/cgroup/**", "**/internal/runtime/observe/**", "!$test"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/enforce/landlock
+              desc: enforce-cgroup-observe.md I12
+            - pkg: github.com/attention-span-ai/tego/internal/runtime/enforce/bpflsm
+              desc: enforce-cgroup-observe.md I12
+            - pkg: github.com/attention-span-ai/tego/internal/check
+              desc: enforce-cgroup-observe.md I12
+            - pkg: github.com/attention-span-ai/tego/internal/serve
+              desc: enforce-cgroup-observe.md I12
+        # ADR 0021 (3): every process start of non-test code goes through internal/platform/proc.Start, which
+        # refuses while this process's fanotify marks exist. A package builds its command with proc.Command and
+        # names it proc.Cmd; forbidigo below refuses the rest (exec.Cmd's own starts, os.StartProcess,
+        # syscall.ForkExec, the fork and clone syscalls). Test code and the test tools are not the engine.
+        process-starts-through-proc:
+          files: ["$all", "!$test", "!**/internal/platform/proc/**", "!**/internal/testutil/**", "!**/tools/**", "!**/test/**"]
+          deny:
+            - pkg: os/exec
+              desc: start processes through internal/platform/proc (ADR 0021 (3))
+        # ADR 0023 A7: the code exempt from the descriptor rules (and from ADR 0021's) never reaches a product
+        # binary. Test files and the exempt trees themselves may import each other; tools/fdcheck (F11) also
+        # checks the binaries' dependency lists under every tag set.
+        testutil-never-in-binary:
+          files: ["$all", "!$test", "!**/internal/testutil/**", "!**/tools/**", "!**/test/**"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/testutil
+              desc: test support never reaches a product binary (ADR 0023 A7)
+            - pkg: github.com/attention-span-ai/tego/tools
+              desc: developer tools never reach a product binary (ADR 0023 A7)
+            - pkg: github.com/attention-span-ai/tego/test/
+              desc: test harnesses never reach a product binary (ADR 0023 A7)
+        # The maze setup tool builds on macOS and reaches the engine only through the tego command, so it imports
+        # none of the engine's packages (the "Must not import" line of each internal/maze doc.go; os/exec is
+        # process-starts-through-proc's). Its tests may compile a contract with pkg/spec/agent to check one.
+        maze-stays-outside-the-engine:
+          files: ["**/internal/maze/**", "**/cmd/maze/**", "!$test"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime
+              desc: maze reaches the engine only through the tego command
+            - pkg: github.com/attention-span-ai/tego/internal/ledger
+              desc: maze reaches the engine only through the tego command
+            - pkg: github.com/attention-span-ai/tego/internal/cli
+              desc: maze reaches the engine only through the tego command
+            - pkg: github.com/attention-span-ai/tego/pkg/spec/agent
+              desc: maze reaches the engine only through the tego command (pkg/spec/agent does not build on macOS)
+            - pkg: github.com/attention-span-ai/tego/pkg/spec/config
+              desc: maze reaches the engine only through the tego command
+        ledger-is-shared-infrastructure:
+          files: ["**/internal/ledger/**"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime
+              desc: the ledger is owned by neither side
+            - pkg: github.com/attention-span-ai/tego/internal/check
+              desc: the ledger is owned by neither side
+        # The layer rules of the check, setup, selftest and spec packages, all in this one place and each inert
+        # until its directory exists. tools/rulecheck TestEveryLayeredDirHasARule fails when a directory under internal/adapters/*,
+        # internal/check/*, internal/setup, internal/selftest, pkg/spec/* or the three document-check tools matches no rule here,
+        # so every later package is covered the day it appears. A strict list-mode rule is an allow list: it names
+        # the only imports its files may have ($gostd is the standard library).
+        #
+        # Layer 0 (standards and schemas): the reason, harness and receipt specs are leaves like identity, config
+        # and backend. spec-is-pure above already keeps internal/ out of all of pkg/spec.
+        reason-spec-is-leaf:
+          files: ["**/pkg/spec/reason/**", "!$test"]
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/attention-span-ai/tego/pkg/spec/record
+        harness-spec-is-leaf:
+          files: ["**/pkg/spec/harness/**", "!$test"]
+          list-mode: strict
+          allow:
+            - $gostd
+        # The built-in presets (ADR 0068): Layer 0 data, the YAML files embedded and a source serving them in the shape of
+        # agent.ProfileSource, never importing it, so the presets stay data any layer can read.
+        presets-are-data:
+          files: ["**/pkg/spec/presets/**", "!$test"]
+          list-mode: strict
+          allow:
+            - $gostd
+        receipt-spec-is-a-leaf:
+          files: ["**/pkg/spec/receipt/**", "!$test"]
+          list-mode: strict
+          allow:
+            - $gostd
+        # The one run-membership rule (ADR 0100 (7)): GovernedBy, LooksGoverned and the
+        # strict cgroup file reader, a Layer 1 leaf that every socket of the engine and of the dashboard can link
+        # (internal/runscope TestImportsOnlyTheLeafSet says the same).
+        runscope-is-a-leaf:
+          files: ["**/internal/runscope/**", "!$test"]
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/attention-span-ai/tego/pkg/spec/identity
+        # The one peer check: SO_PEERCRED, SO_PEERPIDFD liveness, the cgroup and its namespace from
+        # /proc, judged by runscope. It reaches no run, ledger, dashboard or BPF code.
+        platform-peer-imports:
+          files: ["**/internal/platform/peer/**", "!$test"]
+          list-mode: strict
+          allow:
+            - $gostd
+            - golang.org/x/sys/unix
+            - github.com/attention-span-ai/tego/internal/runscope
+            - github.com/attention-span-ai/tego/internal/platform/sys
+            - github.com/attention-span-ai/tego/internal/platform/proc
+            - github.com/attention-span-ai/tego/pkg/spec/identity
+        # Layer 3 (ecosystem): an adapter for a particular agent is a client of the contract. It reads and writes
+        # that agent's own files and settings and shares the pkg/spec types, and it never reaches the engine, the
+        # ledger, the read side, the CLI or BPF (pkg/spec/**, golang.org/x/sys/unix, the standard library and embed
+        # are what it may import).
+        adapters-never-import-engine:
+          files: ["**/internal/adapters/**"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime
+              desc: an adapter (Layer 3) never imports the engine (Layer 1)
+            - pkg: github.com/attention-span-ai/tego/internal/ledger
+              desc: an adapter (Layer 3) never imports the ledger
+            - pkg: github.com/attention-span-ai/tego/internal/check
+              desc: an adapter (Layer 3) never imports the read side (Layer 2)
+            - pkg: github.com/attention-span-ai/tego/internal/serve
+              desc: an adapter (Layer 3) never imports the page (Layer 2)
+            - pkg: github.com/attention-span-ai/tego/internal/cli
+              desc: an adapter (Layer 3) never imports the command line
+            - pkg: github.com/attention-span-ai/tego/internal/bpf
+              desc: an adapter (Layer 3) never imports BPF
+            - pkg: github.com/attention-span-ai/tego/internal/policy/decide
+              desc: an adapter (Layer 3) never imports the decision core (Layer 1)
+            - pkg: github.com/cilium/ebpf
+              desc: an adapter (Layer 3) never imports the BPF library
+        # No tego process makes a system call from an init function that a run may refuse: cilium/ebpf/rlimit's
+        # init probes with bpf(2) in every process that links it, the Claude Code hook inside a run and the child
+        # stage included, and tiers 2 and 3 refuse that call (ADR 0063 (7)). The doctor lifts the limit itself
+        # where a probe loads (raiseMemlock); tests may still use the package.
+        no-init-syscalls:
+          files: ["$all", "!$test"]
+          deny:
+            - pkg: github.com/cilium/ebpf/rlimit
+              desc: its init makes a bpf(2) call in every tego process; lift RLIMIT_MEMLOCK where a program loads (ADR 0063 (7))
+        # The Claude Code adapter is narrower still: the standard library, golang.org/x/sys/unix and the two
+        # contract packages it speaks (the reason file and the harness description).
+        claudecode-imports:
+          files: ["**/internal/adapters/claudecode/**", "!$test"]
+          list-mode: strict
+          allow:
+            - $gostd
+            - golang.org/x/sys/unix
+            - github.com/attention-span-ai/tego/pkg/spec/reason
+            - github.com/attention-span-ai/tego/pkg/spec/harness
+        # "Rules in force" is a pure view of a compiled table or a contract's text, which the
+        # dashboard and `tego rules` both print. It makes no I/O (its tests compile fixtures) and imports no service.
+        inforce-is-pure:
+          files: ["**/internal/check/inforce/**", "!$test"]
+          deny:
+            - pkg: os
+              desc: Rules in force makes no I/O; the caller hands it the table, the text or the rule keys
+            - pkg: syscall
+              desc: Rules in force makes no I/O
+            - pkg: golang.org/x/sys
+              desc: Rules in force makes no I/O
+            - pkg: time
+              desc: Rules in force reads no clock
+            - pkg: github.com/attention-span-ai/tego/internal/control
+              desc: Rules in force is below the dashboard's services, never above them
+            - pkg: github.com/attention-span-ai/tego/internal/liveblock
+              desc: Rules in force names live blocks by kind and value; it never links the overlay's writer
+        # The secret-name classifier (secretpath.Is) is a leaf both the receipt and the dashboard's ledgerview use: a
+        # pure function over a path's name, so it imports the standard library's string packages and nothing else.
+        secretpath-is-pure:
+          files: ["**/internal/check/secretpath/**", "!$test"]
+          list-mode: strict
+          allow:
+            - path
+            - strings
+        # The system-lookup classifier (syslookup.Routine) is a leaf both the receipt and the dashboard's verdict use, so
+        # they fold the same nscd/userdb/D-Bus sockets and DNS lookups: a pure function over a destination and its rule.
+        syslookup-is-pure:
+          files: ["**/internal/check/syslookup/**", "!$test"]
+          list-mode: strict
+          allow:
+            - strings
+        # Layer 2 (product): a receipt is built from the ledger and nothing else. It does not reach the engine,
+        # the command line, the page, the doctor, the registry, the adapters, BPF or the platform layer, parses no
+        # YAML, and does not import the agent contract (it reads what the run recorded, not what the contract says).
+        receipt-reads-the-ledger-only:
+          files: ["**/internal/check/receipt/**"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime
+              desc: the receipt (Layer 2) reads the ledger and never imports the engine
+            - pkg: github.com/attention-span-ai/tego/internal/cli
+              desc: the receipt (Layer 2) never imports the command line
+            - pkg: github.com/attention-span-ai/tego/internal/serve
+              desc: the receipt (Layer 2) never imports the page
+            - pkg: github.com/attention-span-ai/tego/internal/doctor
+              desc: the receipt (Layer 2) never imports the doctor
+            - pkg: github.com/attention-span-ai/tego/internal/registry
+              desc: the receipt (Layer 2) never imports the registry
+            - pkg: github.com/attention-span-ai/tego/internal/adapters
+              desc: the receipt (Layer 2) never imports an adapter (Layer 3)
+            - pkg: github.com/attention-span-ai/tego/internal/bpf
+              desc: the receipt (Layer 2) never imports BPF
+            - pkg: github.com/attention-span-ai/tego/internal/platform
+              desc: the receipt (Layer 2) never imports the platform layer
+            - pkg: github.com/cilium/ebpf
+              desc: the receipt (Layer 2) never imports the BPF library
+            - pkg: gopkg.in/yaml.v3
+              desc: the receipt (Layer 2) reads the ledger's JSON and parses no YAML
+            - pkg: github.com/attention-span-ai/tego/pkg/spec/agent
+              desc: the receipt (Layer 2) reads what the run recorded, not the agent contract
+        # Layer 2 (product): setup and selftest write and probe a machine's configuration; they are clients of the
+        # tego command and the ledger's files, never the engine's packages.
+        setup-never-imports-engine:
+          files: ["**/internal/setup/**"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime
+              desc: setup (Layer 2) never imports the engine (Layer 1)
+            - pkg: github.com/attention-span-ai/tego/internal/policy/decide
+              desc: setup (Layer 2) never imports the decision core (Layer 1)
+            - pkg: github.com/attention-span-ai/tego/internal/bpf
+              desc: setup (Layer 2) never imports BPF
+            - pkg: github.com/attention-span-ai/tego/internal/ledger
+              desc: setup (Layer 2) never imports the ledger
+            - pkg: github.com/attention-span-ai/tego/internal/check
+              desc: setup (Layer 2) never imports the read side
+            - pkg: github.com/attention-span-ai/tego/internal/cli
+              desc: setup (Layer 2) never imports the command line
+            - pkg: github.com/cilium/ebpf
+              desc: setup (Layer 2) never imports the BPF library
+        selftest-never-imports-runtime:
+          files: ["**/internal/selftest/**"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime
+              desc: the selftest (Layer 2) runs the tego command and never imports the engine (Layer 1) or anything below it
+            - pkg: github.com/attention-span-ai/tego/internal/policy/decide
+              desc: the selftest (Layer 2) never imports the decision core (Layer 1)
+            - pkg: github.com/attention-span-ai/tego/internal/bpf
+              desc: the selftest (Layer 2) never imports BPF
+            - pkg: github.com/attention-span-ai/tego/internal/cli
+              desc: the selftest (Layer 2) never imports the command line
+            - pkg: github.com/cilium/ebpf
+              desc: the selftest (Layer 2) never imports the BPF library
+        # Layer 3 (tooling): the document-check tools import no package of this module but the shared Markdown link
+        # reader, so a tool never links the product it checks.
+        tools-are-stdlib:
+          files: ["**/tools/launchfacts/**", "**/tools/publiccheck/**", "**/tools/readmecheck/**"]
+          list-mode: lax
+          allow:
+            - github.com/attention-span-ai/tego/tools/internal/mdlinks
+          deny:
+            - pkg: github.com/attention-span-ai/tego
+              desc: a document-check tool (Layer 3) imports no package of this module except tools/internal/mdlinks
+        # The dashboard's layer rules (ADR 0100 (1a)): one rule per row of the packages table in docs/REPO-LAYOUT.md,
+        # declared here before a package exists where it has not been built yet, each inert until its directory
+        # does. A row whose rule says
+        # "only" is a strict allow list; a row that says what its package never reaches is a deny list of those
+        # layers. The two link gates (internal/control/linkgate_test.go) hold each binary's whole link closure; these
+        # rules catch the import that would break them where it is written. A package whose imports need to differ
+        # from its row changes the row, this rule and its ADR in the same change.
+        #
+        # The dashboard (tego-control and what only it links) never imports the engine: the binary links none of
+        # it (TestControlLinksNoEngine), and the tests of these packages reach the engine through its binary too.
+        control-links-no-engine:
+          files: ["**/cmd/tego-control/**", "**/internal/control/**"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime
+              desc: the dashboard (Layer 2) never imports the engine (Layer 1, ADR 0100 (1a))
+            - pkg: github.com/attention-span-ai/tego/internal/policy
+              desc: the dashboard (Layer 2) never imports the decision core (Layer 1, ADR 0100 (1a))
+            - pkg: github.com/attention-span-ai/tego/internal/bpf
+              desc: the dashboard (Layer 2) never imports BPF (Layer 1, ADR 0100 (1a))
+            - pkg: github.com/attention-span-ai/tego/internal/cli
+              desc: the dashboard (Layer 2) never imports the engine's command line (ADR 0100 (1a))
+            - pkg: github.com/attention-span-ai/tego/internal/doctor
+              desc: the dashboard (Layer 2) never imports the engine's doctor (ADR 0100 (1a))
+            - pkg: github.com/cilium/ebpf
+              desc: the dashboard (Layer 2) never links the BPF library (ADR 0100 (1a))
+            - pkg: github.com/landlock-lsm/go-landlock
+              desc: the dashboard (Layer 2) never links the engine's Landlock library; a child's sandbox is x/sys (ADR 0100 (1a))
+        # The engine, the shared leaves and the specs never import the dashboard: tego links no listener,
+        # authentication, TLS server, QR or control code (TestEngineLinksNoControl). The leaf packages that write
+        # governance lines for the engine's own commands are not control code, so they are not denied.
+        # The one exception is the test that compares the two binaries' noun tables (TestNoNounInBothBinaries).
+        engine-never-imports-control:
+          files: ["$all", "!**/cmd/tego-control/**", "!**/internal/control/**", "!**/tools/**", "!**/test/**", "!**/internal/cli/serve_test.go", "!**/internal/cli/ruleparity_test.go"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/control
+              desc: the engine (Layer 1) and the shared leaves never import the dashboard (Layer 2, ADR 0100 (1a))
+        # The shared leaves both binaries link: the handoff and the build facts.
+        handoff-imports:
+          files: ["**/internal/handoff/**", "!$test"]
+          list-mode: strict
+          allow:
+            - $gostd
+            - golang.org/x/sys
+            - github.com/attention-span-ai/tego/internal/platform/sys
+            - github.com/attention-span-ai/tego/internal/platform/proc
+            - github.com/attention-span-ai/tego/pkg/spec/identity
+        buildinfo-is-stdlib:
+          files: ["**/internal/buildinfo/**", "!$test"]
+          list-mode: strict
+          allow:
+            - $gostd
+        # Layer 0: the wire and record specs are leaves.
+        askproto-is-stdlib:
+          files: ["**/pkg/spec/askproto/**", "!$test"]
+          list-mode: strict
+          allow:
+            - $gostd
+        # Layer 1: the engine's clients of a run (its lock, its ask socket, its membership rule and the
+        # peer helper) never import the run's engine, since tego-control links them too.
+        run-clients-never-import-runtime:
+          files: ["**/internal/runlock/**", "**/internal/askclient/**", "!$test"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime
+              desc: a run's client (Layer 1) never imports the engine's run code (ADR 0100 (7)); tego-control links it
+            - pkg: github.com/attention-span-ai/tego/internal/policy
+              desc: a run's client (Layer 1) never imports the decision core; tego-control links it (ADR 0100 (1a))
+            - pkg: github.com/attention-span-ai/tego/internal/bpf
+              desc: a run's client (Layer 1) never imports BPF; tego-control links it (ADR 0100 (1a))
+            - pkg: github.com/cilium/ebpf
+              desc: a run's client (Layer 1) never links the BPF library; tego-control links it (ADR 0100 (1a))
+        # Layer 2 packages both binaries link: the dashboard's read-side folds.
+        linked-into-control-never-imports-engine:
+          files: ["**/internal/check/inforce/**", "**/internal/profilesrc/**", "**/internal/nextrun/**"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime
+              desc: a package tego-control links (Layer 2) never imports the engine (Layer 1, ADR 0100 (1a))
+            - pkg: github.com/attention-span-ai/tego/internal/policy
+              desc: a package tego-control links (Layer 2) never imports the decision core (Layer 1, ADR 0100 (1a))
+            - pkg: github.com/attention-span-ai/tego/internal/bpf
+              desc: a package tego-control links (Layer 2) never imports BPF (Layer 1, ADR 0100 (1a))
+            - pkg: github.com/attention-span-ai/tego/internal/cli
+              desc: a package tego-control links (Layer 2) never imports the engine's command line (ADR 0100 (1a))
+            - pkg: github.com/cilium/ebpf
+              desc: a package tego-control links (Layer 2) never links the BPF library (ADR 0100 (1a))
+            - pkg: github.com/landlock-lsm/go-landlock
+              desc: a package tego-control links (Layer 2) never links the engine's Landlock library (ADR 0100 (1a))
+        # The edge (the web pages, the edge child and its two helpers) holds no authority (ADR 0100 (1d)): it reaches
+        # the control process only over the link, so it imports none of the packages that decide, write, sign or connect.
+        edge-holds-no-authority:
+          files: ["**/internal/control/web/**", "**/internal/control/peerresolve/**", "**/internal/control/edge_sandbox/**", "!$test", "!**/internal/control/web/e2e/**"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/ledger
+              desc: the edge (Layer 2) reads no ledger; it renders API responses (ADR 0100 (1d))
+            - pkg: github.com/attention-span-ai/tego/internal/check
+              desc: the edge (Layer 2) reads no ledger; it renders API responses (ADR 0100 (1d))
+            - pkg: net/rpc
+              desc: the edge (Layer 2) opens no socket, and net/rpc dials (ADR 0100 (1d))
+            - pkg: net/smtp
+              desc: the edge (Layer 2) opens no socket, and net/smtp dials (ADR 0100 (1d))
+            - pkg: log/syslog
+              desc: the edge (Layer 2) opens no socket, and log/syslog dials the system logger (ADR 0100 (1d))
+            - pkg: net/http/httptest
+              desc: the edge (Layer 2) opens no socket, and httptest's servers listen (ADR 0100 (1d))
+            - pkg: golang.org/x/net/context/ctxhttp
+              desc: the edge (Layer 2) opens no socket, and ctxhttp dials through http.DefaultClient (ADR 0100 (1d))
+            - pkg: golang.org/x/net/dict
+              desc: the edge (Layer 2) opens no socket, and x/net/dict dials (ADR 0100 (1d))
+            - pkg: golang.org/x/net/icmp
+              desc: the edge (Layer 2) opens no socket, and x/net/icmp listens (ADR 0100 (1d))
+            - pkg: golang.org/x/net/nettest
+              desc: the edge (Layer 2) opens no socket, and x/net/nettest listens (ADR 0100 (1d))
+            - pkg: golang.org/x/net/proxy
+              desc: the edge (Layer 2) opens no socket, and x/net/proxy dials (ADR 0100 (1d))
+            - pkg: golang.org/x/net/websocket
+              desc: the edge (Layer 2) opens no socket, and x/net/websocket dials; the dashboard has no WebSockets (ADR 0100 (1d))
+    exhaustive:
+      # identity-config.md I8: a switch over EndReason, ExecFailure, Tier, Capability or Layer names every
+      # value, whatever its default does (a default does not count). The enums listed here are exempt: they
+      # predate the rule and their switches handle the rest in a default on purpose (Errno and Signal are the
+      # standard library's, far too many values to list). An enum not listed here,
+      # a new one included, is checked like the five.
+      default-signifies-exhaustive: false
+      ignore-types: "\\.(Kind|relayOutcome|FSKind|ActionKind|Verdict|MemfdArm|fieldKind|unixOutcome|auditState|hookKind|CheckID|Errno|waitState|Lane|Reason|RunState|MessageKind|ChildStep|entryKind|startKind|chunkState|bodyFraming|Object|pathKind|mtState|RecordMode|EndpointKind|CaptureMode|Signal)$"
+    errcheck:
+      # A failed write to stdout or stderr cannot be reported anywhere useful: the only channel for the
+      # report is the stream that just failed. Writes to a file or the ledger are checked as normal.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        # The diagnostic builders return *Diagnostic for chaining. Diagnostic has an Error method, so
+        # errcheck sees an unchecked error where the caller has in fact already recorded the finding.
+        - (*github.com/attention-span-ai/tego/pkg/spec/agent.Diagnostic).fix
+        - (*github.com/attention-span-ai/tego/pkg/spec/agent.diags).errorf
+        - (*github.com/attention-span-ai/tego/pkg/spec/agent.diags).warnf
+    forbidigo:
+      # ADR 0021 (3): internal/platform/proc.Start is the one process start of non-test code (the exclusion below
+      # names where these are allowed). With types analysed, a method is matched as package.Type.Method.
+      analyze-types: true
+      forbid:
+        - pattern: ^exec\.Cmd\.(Start|Run|Output|CombinedOutput)$
+          pkg: ^os/exec$
+          msg: start processes with internal/platform/proc.Start (ADR 0021 (3))
+        - pattern: ^os\.StartProcess$
+          msg: start processes with internal/platform/proc.Start (ADR 0021 (3))
+        - pattern: ^syscall\.(ForkExec|StartProcess)$
+          msg: start processes with internal/platform/proc.Start (ADR 0021 (3))
+        - pattern: ^(syscall|unix)\.SYS_(CLONE|CLONE3|FORK|VFORK)$
+          msg: no fork or clone outside internal/platform/proc (ADR 0021 (3))
+        # ADR 0021 (6): a process start is a reviewed site. proc.Start, and cgroup.StartHelper and StartHelperExec
+        # (internal/runtime/cgroup, through which tego's detached helpers start), are called only from the files the start-site exclusions below name, each saying
+        # when its start runs against proc.Arm. internal/platform/proc/sites_test.go holds the same list by function,
+        # reads every build tag, and checks this file against it. It also follows an unexported function that makes
+        # one of these starts (startHelperIn, startHelperProcess, startOnKeptThread), which no pattern here can
+        # name: each call of it is a row there and needs no exclusion. The exclusions match the message's marker, so
+        # a file under one stays under every other forbidigo rule.
+        - pattern: ^proc\.Start$
+          pkg: ^github\.com/attention-span-ai/tego/internal/platform/proc$
+          msg: "only a reviewed process-start site may start a process (ADR 0021 (6)): give this file an exclusion in .golangci.yml and a row in internal/platform/proc/sites_test.go, each saying when the start runs against proc.Arm; E70's privileged commands start from a helper forked before the marks, never from the launcher"
+        - pattern: ^handoff\.Spawn$
+          pkg: ^github\.com/attention-span-ai/tego/internal/handoff$
+          msg: "only a reviewed process-start site may start a process (ADR 0021 (6)): give this file an exclusion in .golangci.yml and a row in internal/platform/proc/sites_test.go, each saying when the start runs against proc.Arm; E70's privileged commands start from a helper forked before the marks, never from the launcher"
+        - pattern: ^cgroup\.StartHelper(Exec)?$
+          pkg: ^github\.com/attention-span-ai/tego/internal/runtime/cgroup$
+          msg: "only a reviewed process-start site may start a process (ADR 0021 (6)): give this file an exclusion in .golangci.yml and a row in internal/platform/proc/sites_test.go, each saying when the start runs against proc.Arm; E70's privileged commands start from a helper forked before the marks, never from the launcher"
+        # ADR 0023 A4: every primitive that closes, aliases or wraps a descriptor number outside the sys.FD owner.
+        # Exempt: the owner's files, tests, internal/testutil, tools, test and internal/bpf/fdborrow.go (A7), and,
+        # until each migrates, the packages tools/fdcheck/baseline.txt lists (one exclusion each, below).
+        # tools/fdcheck counts the same sites by their types and reads no //nolint (A9, A10), so a site hidden
+        # here is still counted there. `n, err := x.ReleaseNumber()` then one link.NewFromFD(n) (or ebpf's
+        # New*FromFD) is the one sanctioned form of a taker (F3); fdcheck admits it, and the taker's line carries
+        # `//nolint:forbidigo // ADR 0023 F3`.
+        - pattern: ^(unix|syscall)\.(Close|CloseRange)$
+          msg: "close through the owner, (*sys.FD).Close or CloseNow, never a bare number (ADR 0023)"
+        - pattern: ^(unix|syscall)\.(Dup|Dup2|Dup3)$
+          msg: "duplicate through the owner, (*sys.FD).Dup or sys.DupFile; a dup onto a number closes it (ADR 0023)"
+        - pattern: ^os\.NewFile$
+          msg: "hand an owner to an *os.File with (*sys.FD).Release; a File over a number it does not own closes it from its finalizer (ADR 0023)"
+        - pattern: ^os\.File\.Fd$
+          pkg: ^os$
+          msg: "use the File's number under its own lease, sys.FileDo, sys.Flock or sys.FstatFile; Fd() outlives nothing (ADR 0023)"
+        - pattern: ^(unix|syscall)\.SYS_(CLOSE|CLOSE_RANGE|DUP|DUP2|DUP3)$
+          msg: "no raw close or dup syscall: close and duplicate through sys.FD (ADR 0023)"
+        - pattern: ^(unix|syscall)\.SYS_IO_URING_(SETUP|ENTER|REGISTER)$
+          msg: "io_uring closes and installs descriptors outside every owner; it is out of the TCB until its own ADR (ADR 0023)"
+        - pattern: ^unix\.IoUringSetup$
+          msg: "io_uring closes and installs descriptors outside every owner; it is out of the TCB until its own ADR (ADR 0023)"
+        - pattern: ^(unix|syscall)\.F_DUPFD(_CLOEXEC)?$
+          msg: "duplicate through the owner, (*sys.FD).Dup or DupMin, never fcntl F_DUPFD (ADR 0023)"
+        - pattern: ^(unix|syscall)\.ParseUnixRights$
+          msg: "receive descriptors with sys.ReceiveRights, which owns every number even when parsing fails (ADR 0023)"
+        - pattern: ^(unix|syscall)\.(ParseSocketControlMessage|ParseOneSocketControlMessage|SCM_RIGHTS)$
+          msg: "receive descriptors with sys.ReceiveRights; a control message decoded by hand leaves the numbers it carries unowned (ADR 0023)"
+        - pattern: ^link\.NewFromFD$
+          pkg: ^github\.com/cilium/ebpf/link$
+          msg: "a taker owns the number it is given: link.NewFromFD(x.ReleaseNumber()) is the one form (ADR 0023 F3)"
+        - pattern: ^ebpf\.New(Map|Program)FromFD$
+          pkg: ^github\.com/cilium/ebpf$
+          msg: "a taker owns the number it is given: its argument is x.ReleaseNumber(), the one form (ADR 0023 F3)"
+        - pattern: ^ebpf\.(Program|Map)\.FD$
+          pkg: ^github\.com/cilium/ebpf$
+          msg: "borrow a cilium object's number with internal/bpf ProgramFD or MapFD, which keep the object reachable (ADR 0023)"
+        # The dashboard (docs/REPO-LAYOUT.md): no product file converts a string to a trusted
+        # html/template type, so html/template escapes every agent-supplied string. Tests may build expected markup
+        # (the exclusion below).
+        - pattern: ^template\.(HTML|HTMLAttr|JS|JSStr|URL|CSS|Srcset)$
+          pkg: ^html/template$
+          msg: "no trusted template type in a product file: pass agent-supplied text as a plain string, which html/template escapes (docs/REPO-LAYOUT.md)"
+        # The edge holds no authority (ADR 0100 (1d)): no new sockets. It serves the listeners the control process hands it and
+        # reaches the control process over the link (an x/net/http2 ClientConn on the socketpair it is handed); the relay is the
+        # only tego-control process that connects. Named here: every dial, listen and raw socket call, by function,
+        # method and syscall number; every name lookup, which opens a DNS socket; every interface listing, which
+        # opens a netlink socket (io_uring, whose socket and connect operations need none of the socket syscalls, is
+        # refused here as everywhere by ADR 0023's rule above); every HTTP client call and Transport that dials, a Client with no Transport of its own included (it dials
+        # through DefaultTransport without naming it); and the types whose only use is to dial, listen or resolve
+        # (net's and tls's Dialer, ListenConfig, Resolver, http's Client and Transport), so a value of one is not
+        # made, embedded or held behind an interface. The dial, listen and lookup names and RoundTripOpt match in
+        # every package and on every receiver, so a method promoted from an embedded http.Server or http2.Transport
+        # and a call through a named interface type are reported too. forbidigo reads a selector's named type, so a
+        # call through an unnamed interface type, and an embedded http2.Transport's RoundTrip, are not.
+        # scripts/check-edgelint_test.sh holds the reports to a fixture of each. The exclusion
+        # below confines these to internal/control/{web,peerresolve,edge_sandbox} (the journeys and tests excepted).
+        # Each name matches one rule, so a use is reported once.
+        - pattern: \.Dial[A-Za-z0-9]*$
+          msg: "the edge opens no socket: nothing named Dial*, in any package or on any receiver (ADR 0100 (1d))"
+        - pattern: \.(Listen|ListenAndServe|ListenAndServeTLS|ListenConfig|ListenIP|ListenMulticastUDP|ListenPacket|ListenTCP|ListenUDP|ListenUnix|ListenUnixgram)$
+          msg: "the edge opens no socket: serve the listeners the control process hands it (ADR 0100 (1d))"
+        - pattern: \.Lookup(Addr|CNAME|Host|IP|IPAddr|MX|NS|NetIP|Port|SRV|TXT)$
+          msg: "the edge opens no socket: a name lookup opens a DNS socket (ADR 0100 (1d))"
+        - pattern: ^net\.(Resolve(TCP|UDP|IP)Addr|DefaultResolver|Resolver)$
+          pkg: ^net$
+          msg: "the edge opens no socket: a name lookup opens a DNS socket (ADR 0100 (1d))"
+        - pattern: ^net\.(Interfaces|InterfaceAddrs|InterfaceByIndex|InterfaceByName|Interface\.(Addrs|MulticastAddrs))$
+          pkg: ^net$
+          msg: "the edge opens no socket: an interface listing opens a netlink socket (ADR 0100 (1d))"
+        - pattern: ^http\.(Get|Head|Post|PostForm|DefaultClient|DefaultTransport|Client|Transport)$
+          pkg: ^net/http$
+          msg: "the edge opens no socket: reach the control process over the link (ADR 0100 (1d))"
+        - pattern: ^http\.(Client\.(Do|Get|Head|Post|PostForm)|Transport\.RoundTrip)$
+          pkg: ^net/http$
+          msg: "the edge opens no socket: reach the control process over the link (ADR 0100 (1d))"
+        - pattern: ^http2\.Transport\.RoundTrip$
+          pkg: ^golang\.org/x/net/http2$
+          msg: "the edge opens no socket: reach the control process through the link's ClientConn (ADR 0100 (1d))"
+        - pattern: ^[^.]+\.[^.]+\.RoundTripOpt$
+          msg: "the edge opens no socket: reach the control process through the link's ClientConn (ADR 0100 (1d))"
+        - pattern: ^(unix|syscall)\.(Socket|Socketpair|Connect|Bind|NetlinkRIB)$
+          msg: "the edge opens no socket (ADR 0100 (1d))"
+        - pattern: ^(unix|syscall)\.SYS_(SOCKET|SOCKETPAIR|CONNECT|BIND|LISTEN|SOCKETCALL)$
+          msg: "the edge opens no socket: no raw socket syscall (ADR 0100 (1d))"
+    staticcheck:
+      # QF1001 rewrites `if !(c >= '0' && c <= '9' || ...)` into a De Morgan form. On a character-class
+      # guard the negated form is the readable one ("not a hex digit"); the rewrite is not an improvement.
+      checks: ["all", "-QF1001"]
+    revive:
+      rules:
+        # A parameter named for what it is documents an interface implementation even when this one
+        # implementation ignores it; renaming them all to _ would lose that. Every other revive rule stays.
+        - name: unused-parameter
+          disabled: true
+    misspell:
+      ignore-rules:
+        - exportfs   # the NFS server-side export tool, not a misspelling of "exports"
+  exclusions:
+    # Generated files are linted too: golangci-lint's default (lax) skips any file whose header says it is
+    # generated, and a hand-written header would hide ADR 0023's descriptor rules (tools/fdcheck requires this).
+    generated: disable
+    rules:
+      # Table-driven tests and fixtures carry long literals and unchecked cleanup by design.
+      - path: _test\.go
+        linters: [errcheck, gocritic]
+      # ADR 0021 (3)'s process starts: allowed where proc.Start is, and in test code and the test tools. Scoped to
+      # ADR 0021's messages, so internal/platform/proc stays under ADR 0023's rules (ADR 0023 A7).
+      - path: (_test\.go$|internal/platform/proc/|internal/testutil/|^tools/|^test/)
+        linters: [forbidigo]
+        text: ADR 0021
+      # ADR 0023 A7's permanent exemptions from the descriptor rules: the sys.FD owner's own files (inert.go
+      # added by its C2 note), test code, the test tools and harnesses, and internal/bpf's leased cilium borrow.
+      - path: ^internal/platform/sys/(fd|fd_lease|fd_errors|fd_inherited|fd_testhooks|pidfd|cloexec|filedo|rights|pipe|dupover_testhook|inert)\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: (_test\.go$|internal/testutil/|^tools/|^test/|^internal/bpf/fdborrow\.go$)
+        linters: [forbidigo]
+        text: ADR 0023
+      # ADR 0023 A9's shrinking list: one rule per package not yet migrated to sys.FD, each the package's own
+      # files only, for the descriptor rules alone. tools/fdcheck/baseline.txt counts each one's raw sites and
+      # fails when this list and that file disagree; a migration deletes its package's rule and line together.
+      # internal/askclient's two sites (OpenSocketDir) moved from internal/runtime/ask with the code.
+      - path: ^internal/askclient/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/bpf/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/doctor/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/platform/sys/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/runtime/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/runtime/ask/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/runtime/capture/forwarder/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/runtime/capture/uprobe/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/runtime/deputy/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/runtime/dnsbroker/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/runtime/enforce/api/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/runtime/enforce/cgroup/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/runtime/enforce/landlock/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/runtime/launch/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/runtime/observe/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/runtime/supervisor/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/watch/adopt/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^internal/watch/procconn/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^pkg/spec/agent/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      - path: ^pkg/spec/config/[^/]+\.go$
+        linters: [forbidigo]
+        text: ADR 0023
+      # ADR 0021 (6)'s reviewed process-start sites, one exclusion per file, each for the start-site rule's message
+      # alone (the file stays under every other forbidigo rule). A start needs its own here, a row in
+      # internal/platform/proc/sites_test.go, which names the functions and checks this list against its own, and a
+      # sentence in each saying when it runs against proc.Arm. A file whose starts are all calls of a function that
+      # starts a process, such as enforce/cgroup's rings.go, has a row and no exclusion here.
+      # The run's child stage: runtime.startChild starts it after Prepare and the reaper, before Arm places the
+      # group's first mark.
+      - path: ^internal/runtime/launch/launcher\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      # The run's open deputy (ADR 0041 D2): the child stage, a process of its own that holds no mark, starts it after
+      # landlock_restrict_self and before it reports on its control pipe, so before runner.arm places the first mark.
+      - path: ^internal/runtime/launch/deputy\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      # The run's reaper (ADR 0020 (2)): a DNS broker's run starts it before Prepare, every other run after it, and
+      # both before the stage.
+      - path: ^internal/runtime/reap\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      # An adoption's reaper (ADR 0055): started before the agent is moved and before any Arm; an adopter
+      # places no fanotify mark (a record-only table has no listener rule, a boundary needs a plane mode).
+      - path: ^internal/runtime/adopt_reap\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      # Doctor's plane probe and its known answers: before Prepare in a run (doctor.ForRun), where nothing is marked
+      # yet, and in `tego doctor` and the probe's own children, which mark nothing ever.
+      - path: ^internal/doctor/planeknown\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      - path: ^internal/doctor/planeexecpin\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      - path: ^internal/doctor/planeprobe\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      # StartHelper's own start, into helpers.scope or, failing that, this cgroup: its callers choose the moment, which
+      # their own exclusions name, and proc.Start refuses it with ErrArmed while this process holds marks.
+      - path: ^internal/runtime/cgroup/helper\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      # The helpers that start once the marks are gone: the build's linger timer and ring trimmer, which Detach and
+      # Close start after the group's close (a reaper, which holds no group, starts the timer too), and a library's
+      # probe removal, which `tego run` starts with uprobe.StartDetaches once its enforcement is released.
+      - path: ^internal/runtime/enforce/cgroup/linger\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      - path: ^internal/runtime/capture/uprobe/shared\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      # tego run's desktop notice of a held ask (ADR 0122): started during a tier-landlock run of a non-root
+      # launcher only, which places no fanotify mark (only enforce/cgroup's listener arms).
+      - path: ^internal/cli/asknotice\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      # The MCP relay shim's start of the declared server (ADR 0126 §4): `tego mcp relay` is a process of its own
+      # inside a run, which places no fanotify mark (only enforce/cgroup's listener arms).
+      - path: ^internal/cli/mcp_relay\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      # The dashboard's browser opener (serve --open): tego-control's own process holds no fanotify group, since
+      # nothing it links calls proc.Arm.
+      - path: ^internal/control/cli/open\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      # The handoff's Spawn of the sealed tego-control (ADR 0100 (1b)): a shared start, refused with ErrArmed while
+      # this process holds marks; neither tego-control nor the CLI verbs that will spawn it place any.
+      - path: ^internal/handoff/exec\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      # Maze's check of a saved contract (`tego compile --test --offline`): the maze CLI's own process holds no
+      # fanotify group, since nothing it links calls proc.Arm.
+      - path: ^internal/maze/cli/save\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      # tego test (ADR 0074): its starts of the tego binary, in its own process, which holds no fanotify group, and the
+      # hidden __check verb's start of its decoy program, in a process that links no Arm.
+      - path: ^internal/selftest/driver\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      - path: ^internal/selftest/checks\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      # The dashboard's forbidigo rules: tests may build expected markup (a trusted template value); the edge's socket ban holds only in the edge's packages,
+      # outside their tests and the journeys.
+      - path: _test\.go$
+        linters: [forbidigo]
+        text: no trusted template type
+      - path-except: ^internal/control/(web|peerresolve|edge_sandbox)/
+        linters: [forbidigo]
+        text: the edge opens no socket
+      - path: (^internal/control/web/e2e/|_test\.go$)
+        linters: [forbidigo]
+        text: the edge opens no socket
+# gofmt as a formatter: golangci-lint reports a file gofmt would change as an issue, so the lint runs (CI's
+# two and `make precommit`'s) catch an unformatted file as well as the fmt step.
+formatters:
+  enable:
+    - gofmt
