@@ -1,0 +1,1 @@
+Userspace tests of map logic (prefix match, host match, cgroup lookup). `BPF_PROG_TEST_RUN` cannot run LSM programs, so the logic lives in small inline functions that are tested here and in VMs under `test/`.
