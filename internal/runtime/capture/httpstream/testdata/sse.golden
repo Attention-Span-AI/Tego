@@ -1,0 +1,13 @@
+message 0 request index=0 request_index=-1
+  start POST /v1/messages HTTP/1.1
+  header Content-Length: 85
+  header Content-Type: application/json
+  header Host: api.anthropic.com
+  content_encoding "" sse false truncated false
+  body 85 "{\"model\":\"claude-opus-4\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+message 1 response index=0 request_index=0
+  start HTTP/1.1 200 OK
+  header Content-Type: text/event-stream
+  header Transfer-Encoding: chunked
+  content_encoding "" sse true truncated false
+  body 459 "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_01\",\"usage\":{\"input_tokens\":9}}}\n\n: heartbeat\n\nretry: 3000\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"text\":\"he\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"text\":\"llo\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":3}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"

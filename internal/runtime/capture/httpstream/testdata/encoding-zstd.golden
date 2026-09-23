@@ -1,0 +1,14 @@
+message 0 request index=0 request_index=-1
+  start POST /v1/messages HTTP/1.1
+  header Content-Length: 85
+  header Content-Type: application/json
+  header Host: api.anthropic.com
+  content_encoding "" sse false truncated false
+  body 85 "{\"model\":\"claude-opus-4\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+message 1 response index=0 request_index=0
+  start HTTP/1.1 200 OK
+  header Content-Encoding: zstd
+  header Content-Length: 129
+  header Content-Type: application/json
+  content_encoding "zstd" sse false truncated false
+  body 152 "{\"id\":\"msg_01\",\"model\":\"claude-opus-4\",\"stop_reason\":\"end_turn\",\"content\":[{\"type\":\"text\",\"text\":\"hello\"}],\"usage\":{\"input_tokens\":9,\"output_tokens\":3}}"
