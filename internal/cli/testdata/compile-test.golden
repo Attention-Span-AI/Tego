@@ -1,0 +1,23 @@
+tiers landlock, cgroup (tier auto: every tier this tego builds)
+PASS the agent writes its report
+PASS a write outside every entry is refused
+PASS an unmatched read is allowed
+PASS deleting inside the write entry is allowed
+PASS deleting a watched file is refused
+PASS a rename may not escape the write entry
+PASS the secrets directory is unreadable
+PASS a deny_read inside a write directory holds in the root tiers
+PASS the Landlock ruleset cannot enforce the same entry, so the run holds its reads and refuses it (ADR 0069)
+PASS nearest-wins refuses a write under that deny_read
+PASS tier 2's open decision cannot see the access mode, so it refuses the write-open there too
+PASS tier 2's supervisor refuses mutations beneath the deny_read even without an open
+PASS Landlock's union grants it from the write entry above
+PASS the declared shell runs
+PASS an undeclared binary does not
+PASS an unlisted script is refused at tier 3 too, under its Landlock floor
+PASS Landlock cannot match by name, so the same script is refused
+PASS the declared loopback port
+PASS another port on the same host is refused
+PASS an address inside the declared cidr
+PASS the public resolver is not declared
+21 rows: 21 passed, 0 failed
