@@ -1,0 +1,37 @@
+version: 0
+name: kt4-pip
+extends: base/python-dev
+command:
+  - bash
+  - /src/test/workloads/build/python/run.sh
+  - /tmp/tego-kt-Pb88gY/w-7IwtTX/wheelhouse
+  - /tmp/tego-kt-Pb88gY/w-7IwtTX/pip-bootstrap
+  - /tmp/tego-kt-Pb88gY/w-7IwtTX/write/target
+  - /tmp/tego-kt-Pb88gY/w-7IwtTX/write/tmp
+fs:
+  write:
+    - /dev/null
+    - /tmp/tego-kt-Pb88gY/w-7IwtTX/write/
+exec:
+  allow:
+    - python3
+    - bash
+    - dirname
+    - mkdir
+env:
+  pass:
+    - PATH
+    - HOME
+    - LANG
+    - LC_ALL
+    - TERM
+    - TZ
+  set:
+    HOME: /tmp/tego-kt-Pb88gY/w-7IwtTX/write/home
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    PYTHONDONTWRITEBYTECODE: "1"
+    TMPDIR: /tmp/tego-kt-Pb88gY/w-7IwtTX/write/tmp
+limits:
+  pids: 1024
+  wall: 5m
+record: summary

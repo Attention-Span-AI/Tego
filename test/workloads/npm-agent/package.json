@@ -1,0 +1,7 @@
+{
+  "name": "tego-npm-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SPDX-License-Identifier: Apache-2.0 -- a zero-dependency local package test/e2e/kt4-ordinary.sh installs by file: path, so kill test 4's \"npm install\" run needs no network and no third-party registry package.",
+  "main": "index.js"
+}

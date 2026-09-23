@@ -1,0 +1,24 @@
+version: 0
+name: kt1-a
+command:
+  - bash
+  - task.sh
+  - /tmp/tego-kt-KNAOkL/w-TAbYuZ/out/identity.txt
+  - /tmp/tego-kt-KNAOkL/w-TAbYuZ/out/started
+  - /tmp/tego-kt-KNAOkL/w-OyMHip/out/started
+fs:
+  write:
+    - /tmp/tego-kt-KNAOkL/w-TAbYuZ/out/
+exec:
+  allow:
+    - bash
+    - sleep
+    - seq
+env:
+  pass:
+    - PATH
+    - HOME
+limits:
+  pids: 32
+  wall: 1m
+record: summary

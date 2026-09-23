@@ -1,0 +1,43 @@
+version: 0
+name: claude-code
+command:
+  - claude
+  - -p
+  - --permission-mode
+  - acceptEdits
+  - Read the files in ./in and write a one-paragraph summary to ./out/summary.md
+fs:
+  write:
+    - ./out/
+    - ./.claude-state/
+    - /dev/null
+net: {}
+exec:
+  allow:
+    - bash
+    - git
+env:
+  pass:
+    - PATH
+    - HOME
+    - LANG
+    - TERM
+    - ANTHROPIC_API_KEY
+  set:
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    CLAUDE_CODE_TMPDIR: .claude-state/tmp
+    CLAUDE_CONFIG_DIR: .claude-state
+    TMPDIR: .claude-state/tmp
+models:
+  - provider: anthropic
+    host: 127.0.0.1
+    port: 34423
+limits:
+  memory: 4GiB
+  pids: 512
+  cost_usd: 5
+  wall: 30m
+  repeats: 5
+record: summary
+tier: auto
+capture: forwarder

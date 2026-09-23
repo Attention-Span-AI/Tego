@@ -1,0 +1,25 @@
+version: 0
+name: kt2-forwarder
+command:
+  - python3
+  - /src/test/workloads/python-steps/agent.py
+fs:
+  write:
+    - /tmp/tego-kt-5t583e/w-qx3zxG/forwarder/out/
+exec:
+  allow:
+    - python3
+env:
+  pass:
+    - PATH
+    - HOME
+    - DIRECT
+models:
+  - provider: anthropic
+    host: 127.0.0.1
+    port: 34363
+limits:
+  pids: 64
+  wall: 2m
+record: summary
+capture: forwarder
