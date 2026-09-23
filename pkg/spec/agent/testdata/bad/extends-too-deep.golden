@@ -1,0 +1,2 @@
+error: testdata/profiles/deep-8.yaml:1:10: extends chain deeper than 8: deep-1 -> deep-2 -> deep-3 -> deep-4 -> deep-5 -> deep-6 -> deep-7 -> deep-8 -> deep-9 [extends-too-deep]
+  fix: flatten the profiles; each contract may extend at most 8 levels

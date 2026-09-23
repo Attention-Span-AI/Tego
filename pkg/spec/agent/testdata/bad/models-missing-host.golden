@@ -1,0 +1,2 @@
+error: testdata/bad/models-missing-host.yaml:5:5: models.0: host is required [schema]
+error: testdata/bad/models-missing-host.yaml:7:5: mcp.0: name is required [schema]

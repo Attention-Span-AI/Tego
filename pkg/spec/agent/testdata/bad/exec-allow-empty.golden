@@ -1,0 +1,1 @@
+error: testdata/bad/exec-allow-empty.yaml:5:21: exec.allow.1: path is empty [schema]

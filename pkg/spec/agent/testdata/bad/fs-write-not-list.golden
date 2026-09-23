@@ -1,0 +1,2 @@
+error: testdata/bad/fs-write-not-list.yaml:5:10: fs.write must be a list, got string "/work/out" [schema]
+  fix: write write: [...]

@@ -1,0 +1,2 @@
+error: testdata/bad/env-bad-name.yaml:5:18: env.pass.1: environment variable name "1BAD" must match ^[A-Za-z_][A-Za-z0-9_]*$ [schema]
+error: testdata/bad/env-bad-name.yaml:5:26: env.pass.2: environment variable name "NO-DASH" must match ^[A-Za-z_][A-Za-z0-9_]*$ [schema]

@@ -1,0 +1,3 @@
+extends: deep-10
+fs:
+  write: ["/d9"]

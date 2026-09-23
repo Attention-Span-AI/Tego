@@ -1,0 +1,2 @@
+error: testdata/bad/mcp-duplicate-name.yaml:7:11: mcp name "postgres" already used by entry 1 [schema]
+  fix: give every mcp server a distinct name

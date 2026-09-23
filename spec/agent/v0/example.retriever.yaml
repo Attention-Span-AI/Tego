@@ -1,0 +1,67 @@
+# Full-schema example: every field the contract can carry, including P1 and P2 fields (prompt, skills, ask lists,
+# net.http, docker, env.mask, gate, visibility, containers). In P0 those are schema-only and `compile` rejects them
+# as not-yet-supported; use example.p0.retriever.yaml for a contract that compiles today.
+version: 0
+name: retriever
+extends: base/python-dev      # optional profile merged underneath; deny_read never removed
+command: ["python3", "agent.py"]
+prompt: |                     # injected via the harness's own mechanism when one exists (I6b)
+  ...
+skills: [go-testing]          # names under ~/.tego/skills/<name>/ (I6c)
+mcp:
+  - name: postgres
+    command: ["mcp-postgres"] # started by the run; its binary gets exec rights implicitly
+models:
+  - { provider: anthropic, host: api.anthropic.com, port: 443 }
+fs:
+  write: ["/work/out/"]       # everything else is read-only; reads are logged (summary: aggregated)
+  ask:   ["/work/config/"]    # ask entries carry no rights; the supervisor completes approved opens
+  deny_read: ["~/.ssh/", "~/.aws/", "~/.netrc"]   # built-in list applies when absent
+  ask_read: ["/work/secrets/api.key"]   # tier landlock only: a read is held for a person (approve, deny, alternate)
+  watch: ["/work/config/"]    # reads here are always individual events, never aggregated
+net:
+  allow: ["api.anthropic.com:443", "mcp.internal:8080"]
+  ask:   ["tcp://queue.internal:5672"]
+  http:                       # forwarder traffic: prefix match on the path, query removed
+    - host: api.anthropic.com
+      allow: ["/v1/messages", "/api/hello"]
+docker:                       # starts the per-run API proxy; DOCKER_HOST is set to it; real socket becomes ask
+  allow: []                   # subset of: privileged cap_add devices device_cgroup_rules security_opt system_paths
+                              #   host_net host_pid host_ipc host_userns host_cgroupns foreign_containers volumes_from
+                              #   volume_driver_opts swarm plugins build_host_net build_security_opt list_all
+  ask: [foreign_containers]   # held as an HTTP request (ask.hold: request)
+  binds:
+    rw: []                    # extra host paths mountable read-write; default = fs.write
+    ro: []                    # extra read-only; default = readable by the invoking uid and not deny_read
+ask:
+  hold: connect               # connect | first_write | request (forwarder; 4m default timeout)
+  timeout: 5m                 # then refused with reason ask-timeout
+exec:
+  allow: ["python3", "make", "go", "env"]   # Landlock tier: EXECUTE on the binaries and their loader; scripts need a dir entry
+  privileged: []              # E70: argv patterns run by the supervisor outside the run under ask
+env:
+  pass: ["PATH", "HOME"]
+  mask: ["ANTHROPIC_API_KEY"] # sentinel in the run; the forwarder substitutes it only in auth headers on allowed hosts
+  set: { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" }   # harness switches; runtime variables win
+limits:
+  cpu: "2.0"                  # cores (cpu.max)
+  memory: 8GiB                # hard cap (memory.max, whole-run OOM)
+  memory_high: 6GiB           # throttle point (memory.high)
+  pids: 512                   # pids.max
+  tokens: 2000000             # agent-level resources from captured usage
+  cost_usd: 25
+  wall: 2h
+  stall_after: 10m
+  repeats: 5                  # same tool name + input hash this many times in a row stops the run
+record: summary               # full | summary | off  (what the ledger keeps; enforcement is unaffected)
+tier: auto                    # auto | landlock | cgroup | bpflsm (auto = highest the machine allows, at or below the machine ceiling)
+capture: auto                 # auto | uprobe | forwarder | off
+containers: none              # none | rootless  (rootless = root tiers only; drops Landlock fs rights)
+io_uring: false               # refused (ENOSYS) unless true in a root tier
+gate:
+  rules:
+    - fs.write outside worktree: 90
+    - exec matches "rm -rf":     95
+    - net to undeclared host:    80
+  thresholds: { allow: 50, ask: 80 }   # the gate only escalates; lists decide in the kernel
+visibility: [builder]         # view filter until the fleet collector; not access control

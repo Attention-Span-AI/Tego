@@ -1,0 +1,1 @@
+error: testdata/bad/bad-capture-enum.yaml:4:10: capture: capture must be one of auto|uprobe|forwarder|off, got "sniff" [schema]

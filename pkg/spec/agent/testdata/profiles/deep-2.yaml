@@ -1,0 +1,3 @@
+extends: deep-3
+fs:
+  write: ["/d2"]

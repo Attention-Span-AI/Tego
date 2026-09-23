@@ -1,0 +1,2 @@
+error: testdata/bad/duplicate-key.yaml:4:1: key "name" already defined at line 2 [schema]
+  fix: keep one name:

@@ -1,0 +1,2 @@
+error: testdata/bad/bad-cpu.yaml:5:8: limits.cpu: cpu "two": want a decimal cores count such as "2" or "0.5" [schema]
+  fix: write a cores count such as "2.0"

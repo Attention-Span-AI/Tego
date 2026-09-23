@@ -1,0 +1,2 @@
+error: testdata/bad/extends-not-found.yaml:3:10: profile "base/nope" not found [extends-not-found]
+  fix: add a profile named base/nope where profiles: in the machine config points, or remove extends:

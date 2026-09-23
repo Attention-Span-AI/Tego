@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("version: 0\nname: 0000\ncommand: [00000000000000000000]\nmcp:\n  - name: 00000000\n    command: [00000000000000]\nmodels:\n  - { provider: 000000000, host: 00000000000000000, port}")

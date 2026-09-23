@@ -1,0 +1,1 @@
+error: testdata/bad/not-a-mapping.yaml:1:1: document must be a mapping, got a list [schema]

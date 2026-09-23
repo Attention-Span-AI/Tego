@@ -1,0 +1,6 @@
+version: 0
+name: alias
+command: ["true"]
+fs:
+  write: &w ["/work/out"]
+  watch: *w

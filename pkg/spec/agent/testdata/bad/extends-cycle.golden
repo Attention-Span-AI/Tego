@@ -1,0 +1,2 @@
+error: testdata/profiles/cycle-b.yaml:1:10: extends cycle: cycle-a -> cycle-b -> cycle-a [extends-cycle]
+  fix: remove the extends: that closes the cycle

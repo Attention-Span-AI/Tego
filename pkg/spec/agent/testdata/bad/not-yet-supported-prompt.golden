@@ -1,0 +1,2 @@
+error: testdata/bad/not-yet-supported-prompt.yaml:4:9: prompt is not yet supported by this binary (arrives in P1) [not-yet-supported]
+  fix: remove prompt: or leave it empty; it is accepted by the schema but has no effect in P0

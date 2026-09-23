@@ -1,0 +1,2 @@
+error: testdata/bad/memory-high-above-memory.yaml:6:16: memory_high 6GiB is above memory 4GiB [contradiction]
+  fix: memory_high is the throttle point and must not exceed the memory cap

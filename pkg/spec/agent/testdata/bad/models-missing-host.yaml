@@ -1,0 +1,7 @@
+version: 0
+name: a
+command: ["true"]
+models:
+  - { provider: anthropic, port: 443 }
+mcp:
+  - command: ["mcp-x"]

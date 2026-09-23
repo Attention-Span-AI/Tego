@@ -1,0 +1,4 @@
+version: 0
+name: a
+command: ["true"]
+io_uring: yes

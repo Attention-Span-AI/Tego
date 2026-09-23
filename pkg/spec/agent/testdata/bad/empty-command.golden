@@ -1,0 +1,2 @@
+error: testdata/bad/empty-command.yaml:3:10: command must name the program to run [schema]
+  fix: write command: ["python", "agent.py"]

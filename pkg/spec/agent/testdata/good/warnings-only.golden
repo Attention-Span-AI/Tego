@@ -1,0 +1,11 @@
+warning: testdata/good/warnings-only.yaml:10:24: fs.write entry "/work/out/" repeats entry 1 [redundant-rule]
+  fix: remove the duplicate
+warning: testdata/good/warnings-only.yaml:11:14: deny_read: [] disables the built-in list (~/.ssh, ~/.aws, ~/.netrc, ~/.gnupg, npm/git/gh/docker/kube/gcloud credentials, browser profiles, .env files) [deny-read-disabled]
+  fix: remove deny_read: to keep the built-in list
+warning: testdata/good/warnings-only.yaml:13:11: net.allow "api.anthropic.com:443" cannot grant direct access to the anthropic model when capture uses the forwarder [model-direct-bypass]
+  fix: remove it from net.allow; the forwarder reaches the model host on the run's behalf
+warning: testdata/good/warnings-only.yaml:15:11: exec.allow "mcp-postgres" is already granted implicitly as the command of mcp "postgres" [redundant-rule]
+  fix: remove it from exec.allow
+warning: testdata/good/warnings-only.yaml:17:18: env.pass LANG is removed again by env.deny [redundant-rule]
+  fix: drop it from one of the two lists
+warning: testdata/good/warnings-only.yaml:21:16: stall_after 2h is longer than wall 1h and can never fire [redundant-rule]

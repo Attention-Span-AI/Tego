@@ -1,0 +1,2 @@
+error: testdata/bad/extends-escape.yaml:3:10: extends: extends "../../etc/passwd" is not a profile name (letters, digits, '.', '_', '-' and '/' segments; never an empty, '.' or '..' segment, never absolute; a revision pin @<n> on a tego/ name only) [schema]
+  fix: name a profile under the profiles directory, such as base/python-dev

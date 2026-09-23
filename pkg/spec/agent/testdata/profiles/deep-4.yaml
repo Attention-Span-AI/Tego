@@ -1,0 +1,3 @@
+extends: deep-5
+fs:
+  write: ["/d4"]

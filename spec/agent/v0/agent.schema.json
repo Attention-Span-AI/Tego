@@ -1,0 +1,221 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tego.invalid/spec/agent/v0/agent.schema.json",
+  "title": "Tego agent contract v0",
+  "description": "agent.yaml. Fields marked p0=false are schema-only in P0: accepted by the parser, rejected as not-yet-supported when non-empty. pkg/spec/agent mirrors this file; TestSchemaJSONMatchesGo keeps their shape equal at every depth, and TestSchemaJSONValuesMatchGo their value patterns.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "name", "command"],
+  "properties": {
+    "version": {"type": "integer", "const": 0},
+    "name": {"type": "string", "pattern": "^[a-z0-9-]{1,40}$"},
+    "revision": {"description": "the author's name for this version of the contract (agent-contract.md R28); the top-level contract's own, refused in a profile", "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"},
+    "extends": {"description": "one profile name, or a list of 1 to 8 merged left to right (ADR 0066); names under tego/ are built-in profiles", "oneOf": [{"$ref": "#/$defs/profileName"}, {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/profileName"}}]},
+    "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "fs": {"$ref": "#/$defs/fs"},
+    "net": {"$ref": "#/$defs/net"},
+    "exec": {"$ref": "#/$defs/exec"},
+    "env": {"$ref": "#/$defs/env"},
+    "mcp": {"type": "array", "items": {"$ref": "#/$defs/mcp"}},
+    "models": {"type": "array", "items": {"$ref": "#/$defs/model"}},
+    "credentials": {"type": "array", "description": "refused at Compile (agent-contract.md R30)", "items": {
+      "type": "object", "additionalProperties": false, "required": ["name", "env", "allow"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z0-9-]{1,40}$"},
+        "env": {"$ref": "#/$defs/envName"},
+        "allow": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "host or host:port (443 when omitted); each equals a models[] host and port, or one of their routes (ADR 0127)"},
+        "base_url_env": {"$ref": "#/$defs/envName"}
+      }
+    }},
+    "limits": {"$ref": "#/$defs/limits"},
+    "record": {"enum": ["full", "summary", "off"]},
+    "tier": {"enum": ["auto", "landlock", "cgroup", "bpflsm"]},
+    "capture": {"enum": ["auto", "uprobe", "forwarder", "off"]},
+    "io_uring": {"type": "boolean"},
+    "keyring": {"type": "boolean"},
+    "ipc": {"type": "boolean"},
+    "setuid": {"type": "boolean"},
+    "harness": {"enum": ["auto", "claude-code", "codex", "generic", "none"]},
+    "reason": {"type": "object", "additionalProperties": false, "properties": {
+      "reads": {"enum": ["auto", "on", "off"], "description": "on: at tier landlock every read open is told to the supervisor, so a read the Landlock ruleset refuses under deny_read is one refused line under every record mode; auto, the default, is off as ADR 0077 measured (each read open about 17 us more); off never does"}
+    }},
+    "host_sockets": {"type": "boolean"},
+    "keep_descendants": {"type": "boolean"},
+    "live": {"type": "object", "additionalProperties": false, "description": "ADR 0125: how this agent's rules change while it runs; the top-level contract's alone (live-in-profile)", "properties": {
+      "mode": {"enum": ["locked", "adjustable"], "description": "locked (the default): file, program and network rules are fixed when the run starts; tighten while it runs, loosen from the next run. adjustable: the kernel enforces the contract plus the fence, and Tego's live layer refuses each fence entry until it is lifted or granted; tier cgroup or bpflsm only"},
+      "fence": {"type": "object", "additionalProperties": false, "description": "what Tego may grant while the run runs, at most 64 entries; every entry is refused at start", "properties": {
+        "read": {"type": "array", "items": {"type": "string"}, "description": "a path naming one fs.deny_read entry exactly"},
+        "net": {"type": "array", "items": {"type": "string"}, "description": "host:port or IP:port; never a unix socket"},
+        "exec": {"type": "array", "items": {"type": "string"}, "description": "an absolute program path (best effort: decided on names)"}
+      }}
+    }},
+    "gate": {"type": "object", "p0": true, "additionalProperties": false, "properties": {
+      "rules": {"type": "array", "maxItems": 256, "items": {
+        "type": "object", "minProperties": 1, "maxProperties": 1, "additionalProperties": false,
+        "patternProperties": {"^(fs\\.write outside worktree|fs\\.read matches .+|exec matches .+|net to undeclared host|net to .+)$": {"type": "integer", "minimum": 0, "maximum": 100}}
+      }},
+      "thresholds": {"type": "object", "additionalProperties": false, "description": "PRD 5.3's bands: below allow allows, allow to ask (both inclusive) asks, above ask is refused; 1 <= allow < ask <= 100, defaults 50 and 80", "properties": {
+        "allow": {"type": "integer", "minimum": 1, "maximum": 99}, "ask": {"type": "integer", "minimum": 2, "maximum": 100}
+      }},
+      "completion": {"enum": ["copied", "held"], "description": "default copied; held completes every open of an escalating fs kind in the run, through the open deputy (ADR 0041 Stage B)"}
+    }},
+    "prompt": {"type": "string", "p0": false},
+    "skills": {"type": "array", "items": {"type": "string"}, "p0": false},
+    "visibility": {"type": "array", "items": {"type": "string"}, "p0": false},
+    "docker": {"type": "object", "p0": false},
+    "containers": {"enum": ["none", "rootless"], "p0": false},
+    "ask": {"type": "object", "additionalProperties": false, "properties": {
+      "hold": {"enum": ["connect", "first_write", "request"]},
+      "timeout": {"type": "string", "description": "positive duration, at most 1h; default 5m or 4m for request"},
+      "max_pending": {"type": "integer", "minimum": 1, "maximum": 64},
+      "on_timeout": {"enum": ["refuse", "refuse_always"], "description": "default refuse; refuse_always leaves a standing refusal for a timed-out ask's operation, rule and target"}
+    }}
+  },
+  "$defs": {
+    "profileName": {"type": "string", "pattern": "^(?:[a-z0-9](?:[a-z0-9_-]|\\.[a-z0-9_-])*\\.?(?:/(?:[a-z0-9_-]|\\.[a-z0-9_-])+\\.?)*|tego(?:/(?:[a-z0-9_-]|\\.[a-z0-9_-])+\\.?)+@[1-9][0-9]{0,8})$"},
+    "path": {"type": "string", "minLength": 1},
+    "execEntry": {"type": "string", "minLength": 1, "description": "a path or a name (one word), or a command pattern: a command word and the words after it (ADR 0048)"},
+    "endpoint": {"type": "string", "description": "host:port | cidr:port | unix:<path> | unix:@<abstract>"},
+    "envName": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+    "fs": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "write": {"type": "array", "items": {"$ref": "#/$defs/path"}},
+        "ask": {"type": "array", "maxItems": 256, "items": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[^*?\\[]*$", "description": "literal file or directory scope, no glob characters"}},
+        "deny_read": {"type": "array", "items": {"$ref": "#/$defs/path"}},
+        "ask_read": {"type": "array", "maxItems": 256, "items": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[^*?\\[]*$", "description": "literal file or directory whose reads are held for a person, tier landlock only (POC 2026-10-06)"}},
+        "watch": {"type": "array", "items": {"$ref": "#/$defs/path"}},
+        "deny_write": {"type": "array", "items": {"type": "string", "minLength": 1, "pattern": "^[^*?\\[]*$", "description": "literal file or directory beneath a write entry whose every modification is refused; best effort at tier landlock (ADR 0071)"}},
+        "assurance": {"type": "string", "enum": ["best-effort", "kernel"]},
+        "reads": {"type": "string", "enum": ["auto", "held", "direct"], "description": "auto holds read opens at tier landlock while a deny_read target lies inside a write entry; held at every tier; direct never (ADR 0069)"}
+      }
+    },
+    "net": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "assurance": {"type": "string", "enum": ["best-effort", "kernel"]},
+        "allow": {"type": "array", "items": {"$ref": "#/$defs/endpoint"}},
+        "ask": {"type": "array", "maxItems": 256, "items": {"type": "string", "minLength": 1, "pattern": "^(unix:.+|((tcp|udp)://)?(\\[[0-9A-Fa-f:./]+\\]|[^\\s:/\\[\\]]+(/[0-9]{1,3})?):(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3}))$", "description": "tcp://host:port, udp://host:port, a bare host:port (TCP and UDP), unix:<path> or unix:@<abstract>; a port in 1..65535"}},
+        "http": {"type": "array", "maxItems": 256, "items": {
+          "type": "object", "additionalProperties": false, "required": ["host"],
+          "properties": {
+            "host": {"type": "string", "minLength": 1, "maxLength": 254},
+            "allow": {"type": "array", "maxItems": 4096, "items": {"type": "string", "minLength": 1, "maxLength": 4096}},
+            "methods": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 64}}
+          }
+        }},
+        "listen": {"type": "array", "maxItems": 256, "items": {"type": "string", "minLength": 1}},
+        "ingress": {"type": "array", "maxItems": 256, "items": {
+          "type": "object", "additionalProperties": false, "required": ["from", "to"],
+          "properties": {"from": {"type": "string", "minLength": 1}, "to": {"type": "string", "minLength": 1}}
+        }},
+        "limits": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "connections": {"type": "integer", "minimum": 0, "maximum": 4611686018427387904},
+            "pending_connects": {"type": "integer", "minimum": 0, "maximum": 4611686018427387904},
+            "bytes": {"type": "string", "pattern": "^[0-9]+\\s*(B|KiB|MiB|GiB|TiB)?$"},
+            "datagrams_per_second": {"type": "integer", "minimum": 0, "maximum": 4611686018427387904}
+          }
+        },
+        "dns": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "mode": {"enum": ["system", "broker", "off"]},
+            "allow": {"type": "array", "maxItems": 256, "items": {"type": "string", "minLength": 1, "maxLength": 255}},
+            "types": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 9}},
+            "max_stale": {"type": "string", "pattern": "^[0-9]+(ms|s|m|h|d)$", "description": "at most 24h; compile refuses a longer one"},
+            "max_parallel": {"type": "integer", "minimum": 1, "maximum": 16},
+            "cache": {"type": "integer", "minimum": 0, "maximum": 512}
+          }
+        },
+        "proxy": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "http2": {"type": "boolean"},
+            "websocket": {"type": "array", "maxItems": 256, "items": {
+              "type": "object", "additionalProperties": false, "required": ["host"],
+              "properties": {
+                "host": {"type": "string", "minLength": 1, "maxLength": 254},
+                "allow": {"type": "array", "maxItems": 4096, "items": {"type": "string", "minLength": 1, "maxLength": 4096}},
+                "methods": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 64}}
+              }
+            }},
+            "connect": {"type": "array", "maxItems": 256, "items": {"type": "string", "minLength": 1}},
+            "max_streams": {"type": "integer", "minimum": 1, "maximum": 128},
+            "max_tunnel_bytes": {"type": "string", "pattern": "^0*[1-9][0-9]*\\s*(B|KiB|MiB|GiB|TiB)?$"},
+            "max_frame_bytes": {"type": "string", "pattern": "^0*[1-9][0-9]*\\s*(B|KiB|MiB|GiB|TiB)?$"},
+            "tunnel_idle": {"type": "string", "pattern": "^0*[1-9][0-9]*(ms|s|m|h|d)$"},
+            "tunnel_wall": {"type": "string", "pattern": "^0*[1-9][0-9]*(ms|s|m|h|d)$"}
+          }
+        }
+      }
+    },
+    "exec": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "allow": {"type": "array", "items": {"$ref": "#/$defs/execEntry"}},
+        "deny": {"type": "array", "items": {"$ref": "#/$defs/execEntry"}},
+        "ask": {"type": "array", "items": {"$ref": "#/$defs/execEntry"}},
+        "privileged": {"type": "array", "items": {"type": "string"}, "p0": false},
+        "anonymous": {"type": "boolean"},
+        "assurance": {"enum": ["best-effort", "kernel"]}
+      }
+    },
+    "env": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "pass": {"type": "array", "items": {"$ref": "#/$defs/envName"}},
+        "deny": {"type": "array", "items": {"$ref": "#/$defs/envName"}},
+        "mask": {"type": "array", "items": {"$ref": "#/$defs/envName"}, "p0": false},
+        "set": {"type": "object", "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}, "additionalProperties": {"type": "string", "pattern": "^[^\\x00\\n]*$"}}
+      }
+    },
+    "mcp": {
+      "type": "object", "additionalProperties": false, "required": ["name"],
+      "oneOf": [{"required": ["command"]}, {"required": ["url"]}],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z0-9-]{1,40}$"},
+        "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "a stdio server the agent launches; command[0] is granted exec"},
+        "url": {"type": "string", "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^/@?#]+(/[^?#]*)?$", "description": "an HTTP server the agent connects to; under a net: section its host and port are granted as the rule mcp[<name>] (agent-contract.md R16a)"},
+        "tools": {"type": "object", "additionalProperties": false, "description": "per-tool rules enforced by Tego's MCP relay (agent-contract.md R16b, ADR 0126); present, even {}, puts the server behind the relay; allow present denies every tool it does not list", "properties": {
+          "allow": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9_.:/-]{1,128}$"}},
+          "deny": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9_.:/-]{1,128}$"}},
+          "ask": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9_.:/-]{1,128}$"}}
+        }}
+      }
+    },
+    "model": {
+      "type": "object", "additionalProperties": false, "required": ["provider", "host", "port"],
+      "properties": {
+        "provider": {"type": "string", "minLength": 1},
+        "host": {"type": "string", "minLength": 1},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "routes": {"type": "array", "description": "other backends a person may send this endpoint's requests to while a run lives (tego route, the dashboard's Model routes page); the run starts on the endpoint itself, the route named direct (agent-contract.md R32, ADR 0127)", "items": {
+          "type": "object", "additionalProperties": false, "required": ["name", "host", "port"],
+          "properties": {
+            "name": {"type": "string", "pattern": "^[a-z0-9-]{1,40}$", "not": {"const": "direct"}},
+            "host": {"type": "string", "minLength": 1},
+            "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+            "tls": {"type": "boolean", "description": "false for a plaintext model server on this machine's loopback only; default true"}
+          }
+        }}
+      }
+    },
+    "limits": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "cpu": {"anyOf": [{"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)?$"}, {"type": "number", "minimum": 0.01, "maximum": 175921860}], "description": "cores, cgroup cpu.max numerator; 0.01 to 175921860, the quota range cpu.max takes (amended 2026-09-24); a YAML number is accepted as well as a string, as the loader does (cpu: 4; amended 2026-10-24). The string pattern and the number range are a superset of what Load accepts: JSON Schema cannot say that the loader reads the YAML scalar text and takes decimal digits only, so a spelling the loader refuses (an exponent, 0x10, 0o17, 1_000, a leading + or .) is not refused here, and the string \"0\" or \"0.001\" passes the pattern and fails the range"},
+        "cpu_weight": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "memory": {"type": "string", "pattern": "^0*[1-9][0-9]*\\s*(B|KiB|MiB|GiB|TiB)?$", "description": "IEC units only, greater than zero"},
+        "memory_high": {"type": "string", "pattern": "^0*[1-9][0-9]*\\s*(B|KiB|MiB|GiB|TiB)?$"},
+        "pids": {"type": "integer", "minimum": 1},
+        "tokens": {"type": "integer", "minimum": 1},
+        "cost_usd": {"type": "number", "minimum": 0},
+        "wall": {"type": "string", "pattern": "^0*[1-9][0-9]*(ms|s|m|h|d)$"},
+        "stall_after": {"type": "string", "pattern": "^0*[1-9][0-9]*(ms|s|m|h|d)$"},
+        "repeats": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

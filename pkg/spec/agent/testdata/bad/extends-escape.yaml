@@ -1,0 +1,4 @@
+version: 0
+name: a
+extends: ../../etc/passwd
+command: ["true"]

@@ -1,0 +1,2 @@
+error: testdata/bad/mcp-empty-command.yaml:5:5: mcp "postgres" has no command and no url [schema]
+  fix: write command: ["mcp-postgres"] for a stdio server, or url: "https://host/mcp" for an HTTP one

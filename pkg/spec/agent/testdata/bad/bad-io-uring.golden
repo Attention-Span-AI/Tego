@@ -1,0 +1,1 @@
+error: testdata/bad/bad-io-uring.yaml:4:11: io_uring: io_uring must be one of true|false, got "yes" [schema]

@@ -1,0 +1,1 @@
+error: testdata/bad/cpu-weight-range.yaml:5:15: limits.cpu_weight: cpu_weight must be between 1 and 10000, got 20000 [schema]
