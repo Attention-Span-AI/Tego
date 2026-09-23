@@ -1,0 +1,48 @@
+version: 0
+name: claude-agent-sdk
+extends: base/python-dev
+command:
+  - python3
+  - agent.py
+fs:
+  write:
+    - /dev/null
+    - ./out/
+    - ./.claude-state/
+net: {}
+exec:
+  allow:
+    - python3
+    - ./.deps/
+    - bash
+    - git
+env:
+  pass:
+    - PATH
+    - HOME
+    - LANG
+    - LC_ALL
+    - TERM
+    - TZ
+    - ANTHROPIC_API_KEY
+    - PYTHONPATH
+  set:
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    CLAUDE_CODE_TMPDIR: .claude-state/tmp
+    CLAUDE_CONFIG_DIR: .claude-state
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    PYTHONDONTWRITEBYTECODE: "1"
+    TMPDIR: .claude-state/tmp
+models:
+  - provider: anthropic
+    host: 127.0.0.1
+    port: 46041
+limits:
+  memory: 4GiB
+  pids: 512
+  cost_usd: 5
+  wall: 30m
+  repeats: 5
+record: summary
+tier: auto
+capture: forwarder

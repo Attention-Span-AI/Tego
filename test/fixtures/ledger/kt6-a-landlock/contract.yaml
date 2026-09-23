@@ -1,0 +1,19 @@
+version: 0
+name: kt6-a
+command:
+  - python3
+  - /tmp/tego-kt-2AYziS/w-rS82eO/agent.py
+fs:
+  write:
+    - /tmp/tego-kt-2AYziS/w-rS82eO/out/
+exec:
+  allow:
+    - python3
+env:
+  pass:
+    - PATH
+    - HOME
+limits:
+  pids: 32
+  wall: 30s
+record: summary
