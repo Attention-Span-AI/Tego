@@ -1,0 +1,4 @@
+error: testdata/bad/bad-cidr.yaml:5:11: net.allow.0: invalid endpoint: bad cidr "10.0.0.0/33": want address/prefix-length such as 10.0.0.0/8 [schema]
+  fix: write host:port, tcp://host:port, udp://host:port, cidr:port, unix:/path or unix:@name
+error: testdata/bad/bad-cidr.yaml:5:30: net.allow.1: invalid endpoint: bad cidr "10.0.0.256/24": want address/prefix-length such as 10.0.0.0/8 [schema]
+  fix: write host:port, tcp://host:port, udp://host:port, cidr:port, unix:/path or unix:@name

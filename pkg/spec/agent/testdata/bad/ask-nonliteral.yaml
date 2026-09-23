@@ -1,0 +1,6 @@
+version: 0
+name: a
+command: ["true"]
+fs:
+  write: ["/work/out"]
+  ask: ["/work/config/*"]

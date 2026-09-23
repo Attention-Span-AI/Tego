@@ -1,0 +1,5 @@
+version: 0
+name: a
+command: ["true"]
+prompt: |
+  You are a retriever.

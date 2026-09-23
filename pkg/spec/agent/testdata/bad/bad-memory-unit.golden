@@ -1,0 +1,2 @@
+error: testdata/bad/bad-memory-unit.yaml:5:11: limits.memory: decimal unit "8GB": write 8GiB [schema]
+  fix: only IEC units are accepted: KiB, MiB, GiB, TiB

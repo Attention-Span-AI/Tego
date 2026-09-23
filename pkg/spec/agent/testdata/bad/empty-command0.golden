@@ -1,0 +1,1 @@
+error: testdata/bad/empty-command0.yaml:3:11: command.0: command entry is empty [schema]

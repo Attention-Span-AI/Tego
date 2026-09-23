@@ -1,0 +1,20 @@
+version: 0
+name: a
+command: ["true"]
+skills: [go-testing]
+visibility: [builder]
+containers: rootless
+net:
+  ask: ["tcp://queue.internal:5672"]
+  http:
+    - host: api.anthropic.com
+      allow: ["/v1/messages"]
+exec:
+  privileged: ["docker *"]
+env:
+  mask: ["ANTHROPIC_API_KEY"]
+docker:
+  allow: []
+  ask: [foreign_containers]
+ask:
+  hold: connect

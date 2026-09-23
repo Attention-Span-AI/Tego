@@ -1,0 +1,3 @@
+version: 1
+name: a
+command: ["true"]

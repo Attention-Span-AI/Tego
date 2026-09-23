@@ -1,0 +1,1 @@
+error: testdata/bad/bad-duration.yaml:5:9: limits.wall: duration "2 hours": want <n>(ms|s|m|h|d), such as 2h or 10m [schema]

@@ -1,0 +1,2 @@
+error: testdata/bad/bad-endpoint-shape.yaml:5:11: net.allow.0: invalid endpoint: "api.example.com": want host:port, cidr:port or unix:<path> [schema]
+  fix: write host:port, tcp://host:port, udp://host:port, cidr:port, unix:/path or unix:@name

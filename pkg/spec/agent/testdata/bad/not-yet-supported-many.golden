@@ -1,0 +1,13 @@
+error: testdata/bad/not-yet-supported-many.yaml:4:9: skills is not yet supported by this binary (arrives in P1) [not-yet-supported]
+  fix: remove skills: or leave it empty; it is accepted by the schema but has no effect in P0
+error: testdata/bad/not-yet-supported-many.yaml:5:13: visibility is not yet supported by this binary (arrives in P1) [not-yet-supported]
+  fix: remove visibility: or leave it empty; it is accepted by the schema but has no effect in P0
+error: testdata/bad/not-yet-supported-many.yaml:6:13: containers is not yet supported by this binary (arrives in P1) [not-yet-supported]
+  fix: remove containers: or leave it empty; it is accepted by the schema but has no effect in P0
+error: testdata/bad/not-yet-supported-many.yaml:10:5: net.http requires explicit capture: forwarder [schema]
+error: testdata/bad/not-yet-supported-many.yaml:13:15: exec.privileged is not yet supported by this binary (arrives in P2) [not-yet-supported]
+  fix: remove exec.privileged: or leave it empty; it is accepted by the schema but has no effect in P0
+error: testdata/bad/not-yet-supported-many.yaml:15:9: env.mask is not yet supported by this binary (arrives in P2) [not-yet-supported]
+  fix: remove env.mask: or leave it empty; it is accepted by the schema but has no effect in P0
+error: testdata/bad/not-yet-supported-many.yaml:17:3: docker is not yet supported by this binary (arrives in P1) [not-yet-supported]
+  fix: remove docker: or leave it empty; it is accepted by the schema but has no effect in P0

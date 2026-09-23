@@ -1,0 +1,4 @@
+fs:
+  wrte: ["/x"]
+docker:
+  allow: [privileged]

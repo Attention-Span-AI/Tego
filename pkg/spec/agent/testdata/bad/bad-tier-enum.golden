@@ -1,0 +1,1 @@
+error: testdata/bad/bad-tier-enum.yaml:4:7: tier: tier must be one of auto|landlock|cgroup|bpflsm, got "root" [schema]

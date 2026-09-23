@@ -1,0 +1,5 @@
+version: 0
+name: a
+command: ["true"]
+limits:
+  cpu_weight: 20000

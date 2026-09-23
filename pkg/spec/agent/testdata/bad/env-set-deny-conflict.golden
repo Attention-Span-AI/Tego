@@ -1,0 +1,2 @@
+error: testdata/bad/env-set-deny-conflict.yaml:6:16: env.set HOME is also in env.deny [contradiction]
+  fix: remove HOME from env.deny or from env.set

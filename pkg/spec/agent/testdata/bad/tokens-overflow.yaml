@@ -1,0 +1,5 @@
+version: 0
+name: a
+command: ["true"]
+limits:
+  tokens: 99999999999999999999

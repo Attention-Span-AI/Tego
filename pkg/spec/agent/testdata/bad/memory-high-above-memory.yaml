@@ -1,0 +1,6 @@
+version: 0
+name: a
+command: ["true"]
+limits:
+  memory: 4GiB
+  memory_high: 6GiB

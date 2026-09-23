@@ -1,0 +1,2 @@
+error: testdata/bad/command-not-list.yaml:3:10: command must be a list, got string "python agent.py" [schema]
+  fix: write command: [...]

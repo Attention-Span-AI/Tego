@@ -1,0 +1,1 @@
+error: testdata/bad/bad-record-enum.yaml:4:9: record: record must be one of full|summary|off, got "verbose" [schema]

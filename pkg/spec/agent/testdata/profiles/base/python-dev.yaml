@@ -1,0 +1,15 @@
+# A profile: a partial contract merged beneath the one that extends it.
+fs:
+  write: ["/tmp/"]
+  deny_read: ["~/.gnupg/"]
+net:
+  allow: ["pypi.org:443", "files.pythonhosted.org:443"]
+exec:
+  allow: ["pip"]
+env:
+  pass: ["LANG"]
+  set: { PYTHONDONTWRITEBYTECODE: "1", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "0" }
+limits:
+  pids: 256
+  wall: 8h
+record: full

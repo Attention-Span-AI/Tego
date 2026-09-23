@@ -1,0 +1,2 @@
+error: testdata/profiles/bad-profile.yaml:2:3: unknown field "wrte" in fs [schema]
+  fix: did you mean "write"?

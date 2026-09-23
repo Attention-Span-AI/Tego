@@ -1,0 +1,1 @@
+error: testdata/bad/env-set-newline.yaml:5:20: env.set.GREETING: environment value contains NUL or newline [schema]

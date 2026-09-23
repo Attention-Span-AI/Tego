@@ -1,0 +1,3 @@
+extends: deep-9
+fs:
+  write: ["/d8"]

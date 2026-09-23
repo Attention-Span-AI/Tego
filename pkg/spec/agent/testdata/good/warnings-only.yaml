@@ -1,0 +1,25 @@
+version: 0
+name: warn
+command: ["python", "agent.py"]
+mcp:
+  - name: postgres
+    command: ["mcp-postgres"]
+models:
+  - { provider: anthropic, host: api.anthropic.com, port: 443 }
+fs:
+  write: ["/work/out", "/work/out/"]
+  deny_read: []
+net:
+  allow: ["api.anthropic.com:443", "10.0.0.0/8:443", "unix:/run/pg.sock", "unix:@bus"]
+exec:
+  allow: ["mcp-postgres", "python"]
+env:
+  pass: ["PATH", "LANG"]
+  deny: ["LANG"]
+limits:
+  wall: 1h
+  stall_after: 2h
+docker: {}
+skills: []
+gate: {}
+containers: none

@@ -1,0 +1,1 @@
+error: testdata/bad/bad-name.yaml:2:7: name: name must match ^[a-z0-9-]{1,40}$, got "Retriever_1" [schema]

@@ -1,0 +1,1 @@
+error: testdata/bad/tokens-overflow.yaml:5:11: limits.tokens: tokens 99999999999999999999 overflows int64 [schema]

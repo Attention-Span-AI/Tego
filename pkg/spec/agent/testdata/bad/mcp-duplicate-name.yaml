@@ -1,0 +1,8 @@
+version: 0
+name: a
+command: ["true"]
+mcp:
+  - name: postgres
+    command: ["mcp-postgres"]
+  - name: postgres
+    command: ["mcp-postgres2"]

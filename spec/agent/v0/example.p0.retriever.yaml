@@ -1,0 +1,30 @@
+# P0 example: only the fields the P0 compiler consumes. Compiles clean on a stock Ubuntu box from the project root.
+version: 0
+name: retriever
+command: ["python3", "agent.py"]
+models:
+  - { provider: anthropic, host: api.anthropic.com, port: 443 }
+fs:
+  write: ["./out/"]           # relative to the project; created by run
+  watch: ["./config/"]        # reads here are always individual events (directory must exist)
+net:
+  allow: ["mcp.internal:8080"]   # the model host is reached through the forwarder, so it is not listed here
+exec:
+  allow: ["python3", "make", "env"]
+env:
+  pass: ["PATH", "HOME"]
+  set: { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" }
+limits:
+  cpu: "2.0"
+  memory: 8GiB
+  memory_high: 6GiB
+  pids: 512
+  tokens: 2000000
+  cost_usd: 25
+  wall: 2h
+  stall_after: 10m
+  repeats: 5
+record: summary
+tier: auto
+capture: auto
+io_uring: false

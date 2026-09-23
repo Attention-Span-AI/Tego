@@ -1,0 +1,2 @@
+error: testdata/bad/bad-endpoint-port.yaml:5:11: net.allow.0: invalid endpoint: bad port "99999": want 0..65535 [schema]
+  fix: write host:port, tcp://host:port, udp://host:port, cidr:port, unix:/path or unix:@name
