@@ -1,0 +1,10 @@
+/: etc,home,var
+/etc: private
+/etc/private: nested
+/etc/private/nested: deep
+/etc/private/nested/deep: file.env
+/home: user
+/home/user: .aws,.ssh,project
+/home/user/project: secrets
+/home/user/project/secrets: key.pem
+/var: secrets
