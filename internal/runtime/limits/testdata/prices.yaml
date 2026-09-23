@@ -1,0 +1,18 @@
+# The price table tego reads for cost estimates: USD per million tokens, per model.
+# spec/config/v0 `prices`; the path is the machine config's to override.
+version: 1
+updated: 2026-09-22
+models:
+  claude-sonnet-4-5-20250929:
+    input_per_mtok: 3.00
+    output_per_mtok: 15.00
+    cache_read_per_mtok: 0.30
+    cache_write_per_mtok: 3.75
+    cache_write_1h_per_mtok: 6.00
+  claude-haiku-4-5-20251001:
+    input_per_mtok: 1.00
+    output_per_mtok: 5.00
+    cache_read_per_mtok: 0.10
+    cache_write_per_mtok: 1.25
+server_tool_per_request:
+  web_search_requests: 0.01

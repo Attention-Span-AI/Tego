@@ -1,0 +1,4 @@
+version: 99
+models:
+  claude-sonnet-4-5-20250929:
+    input_per_mtok: 3.00
