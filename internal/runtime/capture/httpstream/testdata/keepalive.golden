@@ -1,0 +1,39 @@
+message 0 request index=0 request_index=-1
+  start POST /v1/messages HTTP/1.1
+  header Content-Length: 7
+  header Content-Type: application/json
+  header Host: api.anthropic.com
+  content_encoding "" sse false truncated false
+  body 7 "{\"n\":0}"
+message 1 response index=0 request_index=0
+  start HTTP/1.1 200 OK
+  header Content-Length: 11
+  header Content-Type: application/json
+  content_encoding "" sse false truncated false
+  body 11 "{\"reply\":0}"
+message 2 request index=1 request_index=-1
+  start POST /v1/messages HTTP/1.1
+  header Content-Length: 7
+  header Content-Type: application/json
+  header Host: api.anthropic.com
+  content_encoding "" sse false truncated false
+  body 7 "{\"n\":1}"
+message 3 response index=1 request_index=1
+  start HTTP/1.1 200 OK
+  header Content-Length: 11
+  header Content-Type: application/json
+  content_encoding "" sse false truncated false
+  body 11 "{\"reply\":1}"
+message 4 request index=2 request_index=-1
+  start POST /v1/messages HTTP/1.1
+  header Content-Length: 7
+  header Content-Type: application/json
+  header Host: api.anthropic.com
+  content_encoding "" sse false truncated false
+  body 7 "{\"n\":2}"
+message 5 response index=2 request_index=2
+  start HTTP/1.1 200 OK
+  header Content-Length: 11
+  header Content-Type: application/json
+  content_encoding "" sse false truncated false
+  body 11 "{\"reply\":2}"

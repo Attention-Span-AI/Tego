@@ -1,0 +1,29 @@
+{
+  "model": "claude-opus-5",
+  "response_id": "msg_01Xq0001Z",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input": 1000,
+    "output": 102,
+    "cache_read": 0,
+    "cache_write": 512
+  },
+  "parser_version": "anthropic-2026-10-5",
+  "stream": false,
+  "decisions": [
+    {
+      "tool_use_id": "toolu_010001A",
+      "tool": "bash",
+      "input_hash": "6d51c4b41279d69b238f62b14e087ea1b7f0baf72be4619053c8c3dc4fdafaa2",
+      "text": false,
+      "unparsed": false
+    },
+    {
+      "tool_use_id": "toolu_010001B",
+      "tool": "read_file",
+      "input_hash": "7d6441497d2a000b8143602a7817c90abe7db88e139f89c062a1c36cfe0ad9d6",
+      "text": false,
+      "unparsed": false
+    }
+  ]
+}

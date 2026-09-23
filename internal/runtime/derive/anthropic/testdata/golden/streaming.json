@@ -1,0 +1,22 @@
+{
+  "model": "claude-opus-5",
+  "response_id": "msg_01Xq0002Z",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input": 1200,
+    "output": 104,
+    "cache_read": 512,
+    "cache_write": 0
+  },
+  "parser_version": "anthropic-2026-10-5",
+  "stream": true,
+  "decisions": [
+    {
+      "tool_use_id": "toolu_010002A",
+      "tool": "read_file",
+      "input_hash": "7d6441497d2a000b8143602a7817c90abe7db88e139f89c062a1c36cfe0ad9d6",
+      "text": false,
+      "unparsed": false
+    }
+  ]
+}
