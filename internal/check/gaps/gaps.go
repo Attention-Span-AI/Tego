@@ -1,0 +1,345 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// Package gaps summarises a run's gap events into the one line `tego status` and `tego drift`
+// print beside their verdicts (docs/FEATURES.md C8; docs/p0/limits-check-doctor-cli.md
+// R34). A view that reports "running" or "no drift" over a run whose producers dropped events, or
+// never saw a binary's model traffic, is stating less than it appears to, and the gap line is where
+// it says so. A person's live changes to a run (a block, a lift, a pause) are recorded on gap lines too; Split sets
+// them apart, so the views print them as "live changes:", not as gaps. Classify says what any gap means for the record
+// (the receipt uses it too), and Words says that in a person's words, for tego status.
+//
+// Imports: pkg/spec/record only. Must not import internal/runtime (docs/REPO-LAYOUT.md: the read
+// side never imports the engine).
+package gaps
+
+import (
+	"cmp"
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/attention-span-ai/tego/pkg/spec/record"
+)
+
+// Unknown is the what and why a gap line carries when its payload does not decode: the event is
+// still a gap, and dropping it from the summary would hide exactly the run it was written about.
+const Unknown = "unknown"
+
+// maxBinaries bounds how many binaries one entry of the rendered line names; --json carries them
+// all. A run with a gap per binary (no-openssl on every helper a build spawns) would otherwise
+// print a line as long as its process list.
+const maxBinaries = 3
+
+// Count is every gap event of one (what, why): how many were written, how many events their
+// producers said they dropped, and which binaries they named.
+type Count struct {
+	// What and Why are the gap's own fields (spec/record/v1: what capture|record|enforce).
+	What, Why string
+	// Events is the number of gap events with this what and why.
+	Events int
+	// Lost is the sum of their count fields: events a producer dropped rather than recorded.
+	// Zero when no event of this kind carried a count. A gap that names a binary counts that binary's
+	// processes the source could not cover, not dropped events, and adds to Processes instead.
+	Lost int
+	// Processes is the sum of the count fields of gaps that name a binary.
+	Processes int
+	// Binaries are the distinct binary fields, sorted; empty when none named one.
+	Binaries []string
+}
+
+// Tally accumulates gap events in one pass over a ledger. Its memory is one entry per distinct
+// (what, why, binary), never one per event, so a view that streams stays O(1) per event
+// (limits-check-doctor-cli.md §6 case 10).
+type Tally struct {
+	counts map[[2]string]*Count
+	seen   map[[3]string]bool
+}
+
+// Add counts e when it is a gap event and ignores every other kind, so a caller can hand it each
+// event of its own pass.
+func (t *Tally) Add(e *record.Event) {
+	if e == nil || e.Kind != record.KindGap {
+		return
+	}
+	var p record.GapPayload
+	if err := e.DecodePayload(&p); err != nil {
+		p = record.GapPayload{}
+	}
+	if p.What == "" {
+		p.What = Unknown
+	}
+	if p.Why == "" {
+		p.Why = Unknown
+	}
+	lost, procs := 0, 0
+	var bins []string
+	switch {
+	case p.Count > 0 && p.Binary != "":
+		procs = p.Count
+	case p.Count > 0:
+		lost = p.Count
+	}
+	if p.Binary != "" {
+		bins = []string{p.Binary}
+	}
+	t.add(p.What, p.Why, 1, lost, procs, bins)
+}
+
+// add folds events gap events of one (what, why) into the tally.
+func (t *Tally) add(what, why string, events, lost, procs int, binaries []string) {
+	if t.counts == nil {
+		t.counts, t.seen = map[[2]string]*Count{}, map[[3]string]bool{}
+	}
+	c := t.counts[[2]string{what, why}]
+	if c == nil {
+		c = &Count{What: what, Why: why}
+		t.counts[[2]string{what, why}] = c
+	}
+	c.Events = addCount(c.Events, events)
+	c.Lost = addCount(c.Lost, lost)
+	c.Processes = addCount(c.Processes, procs)
+	for _, b := range binaries {
+		if !t.seen[[3]string{what, why, b}] {
+			t.seen[[3]string{what, why, b}] = true
+			c.Binaries = append(c.Binaries, b)
+		}
+	}
+}
+
+// addCount saturates a nonnegative diagnostic counter instead of wrapping and hiding recorded gaps.
+func addCount(total, count int) int {
+	if count <= 0 {
+		return total
+	}
+	const maximum = int(^uint(0) >> 1)
+	if total > maximum-count {
+		return maximum
+	}
+	return total + count
+}
+
+// Counts returns the tally sorted by what, then why, with each entry's binaries sorted; nil when
+// the run recorded no gap.
+func (t *Tally) Counts() []Count {
+	if len(t.counts) == 0 {
+		return nil
+	}
+	out := make([]Count, 0, len(t.counts))
+	for _, c := range t.counts {
+		cc := *c
+		cc.Binaries = slices.Clone(c.Binaries)
+		slices.Sort(cc.Binaries)
+		out = append(out, cc)
+	}
+	sortCounts(out)
+	return out
+}
+
+// Merge sums the tallies of several runs by (what, why), for drift's aggregate report: events and
+// lost add up and the binaries are the union.
+func Merge(runs ...[]Count) []Count {
+	var t Tally
+	for _, cs := range runs {
+		for _, c := range cs {
+			t.add(c.What, c.Why, c.Events, c.Lost, c.Processes, c.Binaries)
+		}
+	}
+	return t.Counts()
+}
+
+// Line renders the tally as the gap line, without its "gaps: " label: "none" when the run recorded
+// no gap — said out loud, so a reader can tell a run with no gaps from a view that does not show
+// them — else one "what/why xN" entry per kind, joined by "; ", each followed by the dropped-event
+// total and up to three of the binaries it named, e.g.
+// "capture/no-openssl x2 (in /usr/bin/curl, /usr/bin/gh); record/channel-full x1 (12 events lost)".
+func Line(cs []Count) string {
+	if len(cs) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(cs))
+	for _, c := range cs {
+		var b strings.Builder
+		fmt.Fprintf(&b, "%s/%s x%d", record.Printable(c.What), record.Printable(c.Why), c.Events)
+		var detail []string
+		if c.Lost > 0 {
+			detail = append(detail, strconv.Itoa(c.Lost)+" events lost")
+		}
+		if c.Processes > 0 {
+			detail = append(detail, strconv.Itoa(c.Processes)+" processes")
+		}
+		if n := len(c.Binaries); n > 0 {
+			shown := make([]string, 0, min(n, maxBinaries))
+			for _, bin := range c.Binaries[:min(n, maxBinaries)] {
+				shown = append(shown, record.Printable(bin)) // a binary's path is the agent's to choose
+			}
+			s := "in " + strings.Join(shown, ", ")
+			if n > maxBinaries {
+				s += fmt.Sprintf(", +%d more", n-maxBinaries)
+			}
+			detail = append(detail, s)
+		}
+		if len(detail) > 0 {
+			b.WriteString(" (" + strings.Join(detail, ", ") + ")")
+		}
+		parts = append(parts, b.String())
+	}
+	return strings.Join(parts, "; ")
+}
+
+// liveChanges are the whys of a gap what=enforce that record a person's live change to a running run, or what became
+// of one: a live block added, removed or ended, an Adjustable run's fence entry lifted, restored, ended or refused, a
+// pause or a resume (one the launcher could not put in force included), a live MCP tool switch and a model route
+// change. The record keeps them on gap lines (spec/record/v1), but they are operator actions, not coverage the run
+// lacked, so the views print them on their own "live changes:" line. live-block-unreadable (an overlay the launcher
+// could not read) and live-block-lost (changes whose lines are missing) are not here: they are gaps.
+var liveChanges = map[string]bool{
+	record.GapLiveBlockAdded: true, record.GapLiveBlockRemoved: true, record.GapLiveBlockExpired: true,
+	record.GapLiveUnblockExpired: true, record.GapLiveRuleLifted: true, record.GapLiveRuleRestored: true,
+	record.GapLiveLiftExpired: true, record.GapLiveLiftRefused: true, record.GapRunPaused: true,
+	record.GapRunResumed: true, record.GapPauseFailed: true, record.GapResumeFailed: true,
+	record.GapMCPToolChanged: true, record.GapModelRouteChanged: true,
+}
+
+// LiveChange reports whether a gap of what and why records a live change (liveChanges) rather than a gap in what the
+// run could see or enforce.
+func LiveChange(what, why string) bool { return what == record.GapEnforce && liveChanges[why] }
+
+// Split parts cs into the gaps proper and the live changes (LiveChange), each in cs's order; either is nil when it
+// holds none. Line renders either half.
+func Split(cs []Count) (gaps, live []Count) {
+	for _, c := range cs {
+		if LiveChange(c.What, c.Why) {
+			live = append(live, c)
+		} else {
+			gaps = append(gaps, c)
+		}
+	}
+	return gaps, live
+}
+
+// Class is what a gap means for the run's record: the one reading of a gap the receipt, the dashboard's receipt and
+// tego status all use (QA PW-2).
+type Class int
+
+const (
+	// Missed is a gap that may have lost actions, so the record's counts are a minimum. Anything not named below is
+	// one, a gap this binary does not know included: the conservative reading.
+	Missed Class = iota
+	// Live is a person's live change (LiveChange): no action went unrecorded.
+	Live
+	// Capture is model traffic tego could not read: only the token counts are short.
+	Capture
+	// Price is a missing price: only the cost estimate is short.
+	Price
+)
+
+// priceWhys are the whys of a gap what=record that leave only the cost unestimated.
+var priceWhys = map[string]bool{"no-price-table": true, "price-table-version-mismatch": true, "unpriced-model": true}
+
+// Classify says what a gap of what and why means for the record.
+func Classify(what, why string) Class {
+	switch {
+	case LiveChange(what, why):
+		return Live
+	case what == record.GapCapture:
+		return Capture
+	case what == record.GapRecord && priceWhys[why]:
+		return Price
+	}
+	return Missed
+}
+
+// liveWords says what each live change did, in the words the dashboard's glossary gives it (linewords.GapWhy; a test
+// there holds the two equal).
+var liveWords = map[string]string{
+	record.GapLiveBlockAdded:     "a live block was added",
+	record.GapLiveBlockRemoved:   "a live block was removed",
+	record.GapLiveBlockExpired:   "a live block's time ran out; it no longer refuses",
+	record.GapLiveUnblockExpired: "a live block's time off ran out; it refuses again",
+	record.GapLiveRuleLifted:     "a rule in the fence was allowed for now",
+	record.GapLiveRuleRestored:   "a rule in the fence refuses again",
+	record.GapLiveLiftExpired:    "an allowed rule's time ran out; it refuses again",
+	record.GapLiveLiftRefused:    "a request to allow a rule was refused; nothing was loosened",
+	record.GapRunPaused:          "the run was paused",
+	record.GapRunResumed:         "the run was resumed",
+	record.GapPauseFailed:        "a pause could not be put in force; the run kept running",
+	record.GapResumeFailed:       "a resume could not be put in force; the run stays paused",
+	record.GapMCPToolChanged:     "an MCP tool's rule was changed live",
+	record.GapModelRouteChanged:  "a model endpoint's requests were sent to another approved backend",
+}
+
+// LiveWords is what a live change's why did, in words; false for a why that is not one.
+func LiveWords(why string) (string, bool) {
+	w, ok := liveWords[why]
+	return w, ok
+}
+
+// Words says what a run's gaps mean, in the words its receipt and the dashboard use: whether actions may be missing,
+// what is short if not, and what a person changed. "" when the run recorded no gap and ended: the gap line's "none"
+// says that. cutOff says the run stopped with no run_end (status.Lost): its record may stop short of what it did, so
+// no count of gap lines can say that nothing is missing.
+func Words(cs []Count, cutOff bool) string {
+	if len(cs) == 0 && !cutOff {
+		return ""
+	}
+	var missed, lost, capture, price int
+	var live []string
+	for _, c := range cs {
+		switch Classify(c.What, c.Why) {
+		case Missed:
+			missed = addCount(missed, c.Events)
+			lost = addCount(lost, c.Lost)
+		case Capture:
+			capture = addCount(capture, c.Events)
+		case Price:
+			price = addCount(price, c.Events)
+		case Live:
+			w, ok := liveWords[c.Why]
+			if !ok {
+				w = record.Printable(c.Why)
+			}
+			if c.Events > 1 {
+				w += fmt.Sprintf(" (%d times)", c.Events)
+			}
+			live = append(live, w)
+		}
+	}
+	var parts []string
+	switch {
+	case missed > 0 && lost > 0:
+		parts = append(parts, fmt.Sprintf("%s in the record (counts are a minimum, %d events lost)", plural(missed, "gap"), lost))
+	case missed > 0:
+		parts = append(parts, plural(missed, "gap")+" in the record (counts are a minimum)")
+	case !cutOff:
+		parts = append(parts, "no action known to be missing")
+	}
+	if cutOff {
+		parts = append(parts, "the record has no end, so it may stop short of what the run did")
+	}
+	if capture > 0 {
+		parts = append(parts, fmt.Sprintf("token counts may be low (%s)", plural(capture, "capture gap")))
+	}
+	if price > 0 {
+		parts = append(parts, "the cost is not estimated (no price for a model)")
+	}
+	return strings.Join(append(parts, live...), "; ")
+}
+
+// plural is n and noun, with an s past one.
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return strconv.Itoa(n) + " " + noun + "s"
+}
+
+// sortCounts orders entries by what, then why: one order in the table, the JSON and the tests.
+func sortCounts(cs []Count) {
+	slices.SortFunc(cs, func(a, b Count) int {
+		if c := cmp.Compare(a.What, b.What); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Why, b.Why)
+	})
+}

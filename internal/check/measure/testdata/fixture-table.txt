@@ -1,0 +1,18 @@
+run            r-3f9c2a1b-0dllq06ts7400-k7m2pq
+agent          retriever
+steps          20
+refused        1
+tokens in      58000
+tokens out     2420
+cache read     97280
+cache write    10240
+cost           $0.28 est.
+wall           25.642s
+idle max       1.7s
+repeats        1
+alternates     0
+memory peak    unknown
+pids peak      unknown
+cpu            unknown (user unknown, system unknown)
+cpu throttled  unknown
+memory events  unknown
