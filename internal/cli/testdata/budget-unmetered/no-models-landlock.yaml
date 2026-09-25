@@ -1,0 +1,7 @@
+version: 0
+name: no-models-landlock
+command: ["true"]
+net: {}
+tier: landlock
+limits:
+  tokens: 100000

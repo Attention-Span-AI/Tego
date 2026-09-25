@@ -1,0 +1,1 @@
+{"run":"<run>","agent":"tester","state":"done","since_ts":"<ts>","since_mono_ns":<mono>,"idle_s":<idle>,"idle_clock":"wall","idle_from":"ledger","stall_after_s":3600,"stall_after_source":"machine-default","step":0,"events":2,"lock_held":false,"exit_reason":"exit","exit_code":0,"gaps":[],"tier":"landlock","tego_version":"test","ledger_bytes":<bytes>}

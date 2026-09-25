@@ -1,0 +1,8 @@
+version: 0
+name: capture-off
+command: ["true"]
+net: {}
+limits:
+  tokens: 100000
+  repeats: 5
+capture: off
