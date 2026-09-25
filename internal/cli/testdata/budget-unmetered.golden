@@ -1,0 +1,12 @@
+warning: capture-off.yaml:6:11: limits.tokens, limits.repeats budgets never trip: the contract sets capture: off, so no model traffic is metered, and every run of this contract is refused [budget-unmetered]
+  fix: set capture: auto, or remove the budgets
+warning: no-models.yaml:6:11: limits.tokens budget never trips where the run lands at tier landlock: no models: endpoint is declared, and there capture is the forwarder alone, which does not run without one, so a run that lands there is refused [budget-unmetered]
+  fix: declare the model endpoint under models: (provider, host, port), or remove the budget
+warning: no-models-landlock.yaml:7:11: limits.tokens budget never trips: no models: endpoint is declared, so the forwarder capture does not run and no model traffic is metered, and every run of this contract is refused [budget-unmetered]
+  fix: declare the model endpoint under models: (provider, host, port), or remove the budget
+warning: record-off-cgroup.yaml:8:11: limits.tokens budget never trips: no models: endpoint is declared, so the forwarder capture does not run and no model traffic is metered, and every run of this contract is refused [budget-unmetered]
+  fix: declare the model endpoint under models: (provider, host, port), or remove the budget
+warning: record-off-auto.yaml:7:11: limits.tokens budget never trips: no models: endpoint is declared, so the forwarder capture does not run and no model traffic is metered, and every run of this contract is refused [budget-unmetered]
+  fix: declare the model endpoint under models: (provider, host, port), or remove the budget
+warning: record-off-uprobe.yaml:6:9: record: off with capture: uprobe records no model traffic, so the tokens budget sees none of it and never trips, and a run that captures with uprobes is refused [budget-unmetered]
+  fix: set record: summary, or capture: forwarder, which records the exchanges it relays under record: off

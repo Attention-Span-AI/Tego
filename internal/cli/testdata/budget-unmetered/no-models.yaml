@@ -1,0 +1,6 @@
+version: 0
+name: no-models
+command: ["true"]
+net: {}
+limits:
+  tokens: 100000
