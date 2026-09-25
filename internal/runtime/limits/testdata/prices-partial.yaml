@@ -1,0 +1,10 @@
+# One model with no output price, one with no input price, one complete: only the last is priced.
+version: 1
+models:
+  no-output:
+    input_per_mtok: 3.00
+  no-input:
+    output_per_mtok: 15.00
+  complete:
+    input_per_mtok: 1.00
+    output_per_mtok: 5.00
