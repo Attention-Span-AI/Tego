@@ -1,0 +1,10 @@
+error: testdata/bad/null-sections.yaml:6:4: fs: has no value and reads as if absent (no writable path), not as an empty section [schema]
+  fix: write `fs: {}` for no writable path, or remove the key
+error: testdata/bad/null-sections.yaml:8:5: net: has no value and reads as if absent (the network is unrestricted), not as an empty section [schema]
+  fix: write `net: {}` to refuse all, or remove the key
+error: testdata/bad/null-sections.yaml:10:6: exec: has no value and reads as if absent (exec is unrestricted), not as an empty section [schema]
+  fix: write `exec: {}` to refuse all, or remove the key
+error: testdata/bad/null-sections.yaml:13:8: env.pass: has no value and reads as if absent (the whole environment is passed), not as an empty list [schema]
+  fix: write `pass: []` to pass nothing, or remove the key
+error: testdata/bad/null-sections.yaml:14:9: env.deny: has no value and reads as if absent (nothing is denied), not as an empty list [schema]
+  fix: write `deny: []` to deny nothing, or remove the key

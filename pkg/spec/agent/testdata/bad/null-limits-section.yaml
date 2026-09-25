@@ -1,0 +1,8 @@
+version: 0
+name: null-limits-section
+command: ["python", "agent.py"]
+# Every key under limits: is commented out, so the section is null: it parsed as absent, which leaves every
+# limit unbounded, while it reads like a section of limits.
+limits:
+#  memory: 2G
+#  wall: 30m

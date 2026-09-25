@@ -1,0 +1,22 @@
+error: testdata/bad/null-limits.yaml:7:14: fs.deny_read: has no value and reads as if absent (the built-in credential deny list only), not as an empty list [schema]
+  fix: write `deny_read: []` to turn the built-in list off, list the paths to deny, or remove the key
+error: testdata/bad/null-limits.yaml:9:7: limits.cpu: has no value and reads as if absent (unbounded), not as a value [schema]
+  fix: give the limit a value, or remove the key
+error: testdata/bad/null-limits.yaml:10:14: limits.cpu_weight: has no value and reads as if absent (unbounded), not as a value [schema]
+  fix: give the limit a value, or remove the key
+error: testdata/bad/null-limits.yaml:11:10: limits.memory: has no value and reads as if absent (unbounded), not as a value [schema]
+  fix: give the limit a value, or remove the key
+error: testdata/bad/null-limits.yaml:12:15: limits.memory_high: has no value and reads as if absent (unbounded), not as a value [schema]
+  fix: give the limit a value, or remove the key
+error: testdata/bad/null-limits.yaml:13:8: limits.pids: has no value and reads as if absent (unbounded), not as a value [schema]
+  fix: give the limit a value, or remove the key
+error: testdata/bad/null-limits.yaml:14:10: limits.tokens: has no value and reads as if absent (unbounded), not as a value [schema]
+  fix: give the limit a value, or remove the key
+error: testdata/bad/null-limits.yaml:15:12: limits.cost_usd: has no value and reads as if absent (unbounded), not as a value [schema]
+  fix: give the limit a value, or remove the key
+error: testdata/bad/null-limits.yaml:16:8: limits.wall: has no value and reads as if absent (unbounded), not as a value [schema]
+  fix: give the limit a value, or remove the key
+error: testdata/bad/null-limits.yaml:17:15: limits.stall_after: has no value and reads as if absent (unbounded), not as a value [schema]
+  fix: give the limit a value, or remove the key
+error: testdata/bad/null-limits.yaml:18:12: limits.repeats: has no value and reads as if absent (unbounded), not as a value [schema]
+  fix: give the limit a value, or remove the key
