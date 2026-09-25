@@ -1,0 +1,14 @@
+version: 0
+name: null-sections
+command: ["python", "agent.py"]
+# Every section below is present with nothing under it: each parsed as absent, and for net: and exec:
+# absent is unrestricted, the opposite of what a section with its entries commented out looks like.
+fs:
+  # write: ["out/"]
+net:
+  # allow: ["api.example.com:443"]
+exec:
+  # allow: ["python"]
+env:
+  pass:
+  deny: ~

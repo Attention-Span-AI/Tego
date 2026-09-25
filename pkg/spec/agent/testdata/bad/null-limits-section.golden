@@ -1,0 +1,2 @@
+error: testdata/bad/null-limits-section.yaml:6:8: limits: has no value and reads as if absent (every limit is unbounded), not as an empty section [schema]
+  fix: write `limits: {}` for no limit, give the limits values, or remove the key

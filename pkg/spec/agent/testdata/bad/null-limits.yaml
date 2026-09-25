@@ -1,0 +1,18 @@
+version: 0
+name: null-limits
+command: ["python", "agent.py"]
+# Each key below is present with no value: each parsed as absent, which for a limit is unbounded and
+# for deny_read is the built-in list only, while it reads like a value left out.
+fs:
+  deny_read: ~
+limits:
+  cpu:
+  cpu_weight:
+  memory:
+  memory_high:
+  pids:
+  tokens:
+  cost_usd:
+  wall:
+  stall_after:
+  repeats: ~
