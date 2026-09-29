@@ -1,0 +1,15 @@
+tiers landlock, cgroup, bpflsm (--tier)
+bpflsm: fs, exec and exec.map answered from the plane's rows and the Landlock floor under them (decision_plane lsm: tier bpflsm needs LSM mode); exec.anonymous and network answer from the policy model; deny_read's name entries answered from the plane's name rows and the climb to their scopes, a file created after compile at a covered name included
+PASS a read of the nested deny_read holds at bpflsm
+FAIL nearest wins, so the root tiers refuse mkdir where Landlock allows it (verdicts.yaml:9): at cgroup got refused via fs.deny_read[out/keys/]; at bpflsm got refused via fs.deny_read[out/keys/], want allow
+FAIL a delete beneath it is refused the same way (verdicts.yaml:13): at cgroup got refused via fs.deny_read[out/keys/]; at bpflsm got refused via fs.deny_read[out/keys/], want allow
+FAIL moving the deny_read directory itself is refused (verdicts.yaml:17): at cgroup got refused via fs.deny_read[out/keys/]; at bpflsm got refused via fs.deny_read[out/keys/], want allow
+PASS a rename inside the write entry passes
+PASS a rename out of the write entry is refused
+PASS an unlisted script is refused, the plane under the Landlock floor
+PASS an undeclared binary does not
+FAIL a native module dropped under the write entry maps executable where no plane decides (verdicts.yaml:49): at bpflsm got refused via exec-map, want allow
+PASS the plane refuses that map, since no exec.allow entry covers it
+PASS a hard link out of the nested deny_read is refused by REFER
+PASS a chmod beneath it is allowed, since the plane's attribute hooks protect deny_write targets alone
+12 rows: 8 passed, 4 failed

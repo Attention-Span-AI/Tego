@@ -1,0 +1,71 @@
+version: 0
+tests:
+  - name: a read of the nested deny_read holds at bpflsm
+    action: fs.read
+    path: out/keys/token
+    tier: bpflsm
+    expect: refused
+    rule: fs.deny_read[out/keys/]
+  - name: nearest wins, so the root tiers refuse mkdir where Landlock allows it
+    action: fs.mkdir
+    path: out/keys/sub
+    expect: allow
+  - name: a delete beneath it is refused the same way
+    action: fs.delete
+    path: out/keys/old.txt
+    expect: allow
+  - name: moving the deny_read directory itself is refused
+    action: fs.rename
+    path: out/keys
+    dest: out/keys.old
+    expect: allow
+  - name: a rename inside the write entry passes
+    action: fs.rename
+    path: out/a.txt
+    dest: out/b.txt
+    tier: bpflsm
+    expect: allow
+    rule: fs.write[out/]
+  - name: a rename out of the write entry is refused
+    action: fs.rename
+    path: out/a.txt
+    dest: escaped.txt
+    tier: bpflsm
+    expect: refused
+    rule: unmatched
+  - name: an unlisted script is refused, the plane under the Landlock floor
+    action: exec
+    path: ./run.sh
+    script: sh
+    tier: bpflsm
+    expect: refused
+    rule: unmatched
+  - name: an undeclared binary does not
+    action: exec
+    path: /nonexistent/tool
+    tier: bpflsm
+    expect: refused
+    rule: unmatched
+  - name: a native module dropped under the write entry maps executable where no plane decides
+    action: exec.map
+    path: out/ext.so
+    expect: allow
+  - name: the plane refuses that map, since no exec.allow entry covers it
+    action: exec.map
+    path: out/ext.so
+    tier: bpflsm
+    expect: refused
+    rule: exec-map
+  - name: a hard link out of the nested deny_read is refused by REFER
+    action: fs.link
+    path: out/keys/token
+    dest: out/token
+    tier: bpflsm
+    expect: refused
+    rule: fs.deny_read[out/keys/]
+  - name: a chmod beneath it is allowed, since the plane's attribute hooks protect deny_write targets alone
+    action: fs.attr
+    path: out/keys/token
+    tier: bpflsm
+    expect: allow
+    rule: fs.write[out/]
