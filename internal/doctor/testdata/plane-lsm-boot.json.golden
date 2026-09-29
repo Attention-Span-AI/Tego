@@ -1,0 +1,1068 @@
+{
+  "plane": {
+    "env": {
+      "bpf_loop": true,
+      "rdonly_cast": true,
+      "lockdown": "none",
+      "lto": "none",
+      "lto_source": "/boot/config-6.17.0-test"
+    },
+    "build": "decide_rd",
+    "build_why": "bpf_rdonly_cast is in BTF",
+    "build_hash": "0123abcd4567ef890123abcd4567ef89",
+    "modes": [
+      {
+        "mode": "lsm",
+        "ok": true,
+        "tested": true,
+        "detail": "28 of 28 hooks load, attach and run, each refused in the scratch cgroup and passed outside it; 16 known answers matched",
+        "scope": "the probe row was met 1 times in the scratch cgroup and 0 times outside it",
+        "known": [
+          {
+            "cell": "deny-read-across-mount",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "stale-row",
+            "want": "passed",
+            "got": "passed",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "identity-mismatch",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {
+              "mismatch": 1
+            },
+            "got_counts": {
+              "mismatch": 1
+            }
+          },
+          {
+            "cell": "depth-64",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "depth-65",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {
+              "bound": 1
+            },
+            "got_counts": {
+              "bound": 1
+            }
+          },
+          {
+            "cell": "exec-dir-row",
+            "want": "passed",
+            "got": "passed",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "exec-file-row",
+            "want": "passed",
+            "got": "passed",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "exec-hard-link",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "rmdir",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "name-created-later",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "name-folded",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "name-exception",
+            "want": "passed",
+            "got": "passed",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "name-outside-scope",
+            "want": "passed",
+            "got": "passed",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "name-dependency-dir",
+            "want": "passed",
+            "got": "passed",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "name-dir-renamed-within",
+            "want": "passed",
+            "got": "passed",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "name-dir-moved-out",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {},
+            "got_counts": {}
+          }
+        ]
+      },
+      {
+        "mode": "fmod_ret",
+        "ok": true,
+        "tested": true,
+        "detail": "28 of 28 hooks load, attach and run, each refused in the scratch cgroup and passed outside it; 16 known answers matched",
+        "scope": "the probe row was met 1 times in the scratch cgroup and 0 times outside it",
+        "known": [
+          {
+            "cell": "deny-read-across-mount",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "stale-row",
+            "want": "passed",
+            "got": "passed",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "identity-mismatch",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {
+              "mismatch": 1
+            },
+            "got_counts": {
+              "mismatch": 1
+            }
+          },
+          {
+            "cell": "depth-64",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "depth-65",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {
+              "bound": 1
+            },
+            "got_counts": {
+              "bound": 1
+            }
+          },
+          {
+            "cell": "exec-dir-row",
+            "want": "passed",
+            "got": "passed",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "exec-file-row",
+            "want": "passed",
+            "got": "passed",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "exec-hard-link",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "rmdir",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "name-created-later",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "name-folded",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "name-exception",
+            "want": "passed",
+            "got": "passed",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "name-outside-scope",
+            "want": "passed",
+            "got": "passed",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "name-dependency-dir",
+            "want": "passed",
+            "got": "passed",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "name-dir-renamed-within",
+            "want": "passed",
+            "got": "passed",
+            "want_counts": {},
+            "got_counts": {}
+          },
+          {
+            "cell": "name-dir-moved-out",
+            "want": "refused",
+            "got": "refused",
+            "want_counts": {},
+            "got_counts": {}
+          }
+        ]
+      }
+    ],
+    "pin": "auto",
+    "selected": "lsm",
+    "source": "probed"
+  },
+  "plane_rows": [
+    {
+      "hook": "lsm/file_open",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_file_open",
+      "arity": 1,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/bprm_check_security",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_bprm_check_security",
+      "arity": 1,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/path_rename",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_path_rename",
+      "arity": 5,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/path_link",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_path_link",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/path_unlink",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_path_unlink",
+      "arity": 2,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/path_rmdir",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_path_rmdir",
+      "arity": 2,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/socket_connect",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_socket_connect",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/socket_sendmsg",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_socket_sendmsg",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/path_mknod",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_path_mknod",
+      "arity": 4,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/path_mkdir",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_path_mkdir",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/path_symlink",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_path_symlink",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/path_truncate",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_path_truncate",
+      "arity": 1,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/file_truncate",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_file_truncate",
+      "arity": 1,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/path_chmod",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_path_chmod",
+      "arity": 2,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/path_chown",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_path_chown",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/inode_setxattr",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_inode_setxattr",
+      "arity": 6,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/inode_removexattr",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_inode_removexattr",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/inode_set_acl",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_inode_set_acl",
+      "arity": 4,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/inode_remove_acl",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_inode_remove_acl",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/socket_create",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_socket_create",
+      "arity": 4,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/mmap_file",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_mmap_file",
+      "arity": 4,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/file_mprotect",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_file_mprotect",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/socket_bind",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_socket_bind",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/ptrace_access_check",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_ptrace_access_check",
+      "arity": 2,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/ptrace_traceme",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_ptrace_traceme",
+      "arity": 1,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/bpf",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_bpf",
+      "arity": 4,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/key_permission",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_key_permission",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "lsm/socket_listen",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "lsm",
+      "function": "bpf_lsm_socket_listen",
+      "arity": 2,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_file_open",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_file_open",
+      "arity": 1,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_bprm_check",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_bprm_check",
+      "arity": 1,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_path_rename",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_path_rename",
+      "arity": 5,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_path_link",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_path_link",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_path_unlink",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_path_unlink",
+      "arity": 2,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_path_rmdir",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_path_rmdir",
+      "arity": 2,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_socket_connect",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_socket_connect",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_socket_sendmsg",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_socket_sendmsg",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_path_mknod",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_path_mknod",
+      "arity": 4,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_path_mkdir",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_path_mkdir",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_path_symlink",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_path_symlink",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_path_truncate",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_path_truncate",
+      "arity": 1,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_file_truncate",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_file_truncate",
+      "arity": 1,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_path_chmod",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_path_chmod",
+      "arity": 2,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_path_chown",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_path_chown",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_inode_setxattr",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_inode_setxattr",
+      "arity": 6,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_inode_removexattr",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_inode_removexattr",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_inode_set_acl",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_inode_set_acl",
+      "arity": 4,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_inode_remove_acl",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_inode_remove_acl",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_socket_create",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_socket_create",
+      "arity": 4,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_mmap_file",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_mmap_file",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_file_mprotect",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_file_mprotect",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_socket_bind",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_socket_bind",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_ptrace_access_check",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_ptrace_access_check",
+      "arity": 2,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_ptrace_traceme",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_ptrace_traceme",
+      "arity": 1,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_bpf",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_bpf",
+      "arity": 4,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_key_permission",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_key_permission",
+      "arity": 3,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_socket_listen",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_socket_listen",
+      "arity": 2,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    }
+  ],
+  "tiers": {
+    "bpflsm": true,
+    "cgroup": true,
+    "landlock": true
+  }
+}
