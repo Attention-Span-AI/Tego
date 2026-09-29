@@ -1,0 +1,134 @@
+[
+  {
+    "cell": "mounts-bind/write-bind-alias-of-write-entry",
+    "runner": "kernel",
+    "tier": "cgroup",
+    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). On tier cgroup's listener the supervisor refuses the write by the alias's name (fallbackMutation), fail closed, where every other axis allows it by inode."
+  },
+  {
+    "cell": "execrules/allow-other-subcommand",
+    "runner": "ledger",
+    "tier": "bpflsm",
+    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Kernel 5.15 and later only: the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat, as BPF perf links, upstream 5.15) attach; on RHEL 9's 5.14 doctor reports them unavailable, the supervisor keeps every exec's line, and both cells pass (2026-10-16)",
+    "where": {
+      "kernel_min": "5.15"
+    }
+  },
+  {
+    "cell": "execrules/allow-other-subcommand",
+    "runner": "ledger",
+    "tier": "cgroup@fmod_ret",
+    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Kernel 5.15 and later only: the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat, as BPF perf links, upstream 5.15) attach; on RHEL 9's 5.14 doctor reports them unavailable, the supervisor keeps every exec's line, and both cells pass (2026-10-16)",
+    "where": {
+      "kernel_min": "5.15"
+    }
+  },
+  {
+    "cell": "execrules/allow-other-subcommand",
+    "runner": "ledger",
+    "tier": "cgroup@lsm",
+    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Kernel 5.15 and later only: the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat, as BPF perf links, upstream 5.15) attach; on RHEL 9's 5.14 doctor reports them unavailable, the supervisor keeps every exec's line, and both cells pass (2026-10-16)",
+    "where": {
+      "kernel_min": "5.15"
+    }
+  },
+  {
+    "cell": "execrules/allow-rm-without-r",
+    "runner": "ledger",
+    "tier": "bpflsm",
+    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Kernel 5.15 and later only: the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat, as BPF perf links, upstream 5.15) attach; on RHEL 9's 5.14 doctor reports them unavailable, the supervisor keeps every exec's line, and both cells pass (2026-10-16)",
+    "where": {
+      "kernel_min": "5.15"
+    }
+  },
+  {
+    "cell": "execrules/allow-rm-without-r",
+    "runner": "ledger",
+    "tier": "cgroup@fmod_ret",
+    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Kernel 5.15 and later only: the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat, as BPF perf links, upstream 5.15) attach; on RHEL 9's 5.14 doctor reports them unavailable, the supervisor keeps every exec's line, and both cells pass (2026-10-16)",
+    "where": {
+      "kernel_min": "5.15"
+    }
+  },
+  {
+    "cell": "execrules/allow-rm-without-r",
+    "runner": "ledger",
+    "tier": "cgroup@lsm",
+    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Kernel 5.15 and later only: the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat, as BPF perf links, upstream 5.15) attach; on RHEL 9's 5.14 doctor reports them unavailable, the supervisor keeps every exec's line, and both cells pass (2026-10-16)",
+    "where": {
+      "kernel_min": "5.15"
+    }
+  },
+  {
+    "cell": "mounts-bind/read-bind-alias-sibling",
+    "runner": "ledger",
+    "tier": "bpflsm",
+    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). Landlock refuses the read through the sibling alias before the plane is asked (the node's inode, E32 (b)), and the kernel recorder explains a Landlock refusal by the name, which is no entry's, so the line says observed unmatched where it is refused fs.deny_read[./secret/]."
+  },
+  {
+    "cell": "mounts-bind/read-bind-alias-sibling",
+    "runner": "ledger",
+    "tier": "cgroup",
+    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). Landlock refuses the read through the sibling alias before the plane is asked (the node's inode, E32 (b)), and the kernel recorder explains a Landlock refusal by the name, which is no entry's, so the line says observed unmatched where it is refused fs.deny_read[./secret/]."
+  },
+  {
+    "cell": "mounts-bind/read-bind-alias-sibling",
+    "runner": "ledger",
+    "tier": "cgroup@lsm",
+    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). Landlock refuses the read through the sibling alias before the plane is asked (the node's inode, E32 (b)), and the kernel recorder explains a Landlock refusal by the name, which is no entry's, so the line says observed unmatched where it is refused fs.deny_read[./secret/]."
+  },
+  {
+    "cell": "mounts-bind/read-bind-alias-sibling",
+    "runner": "ledger",
+    "tier": "landlock",
+    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). Landlock refuses the read through the sibling alias (the deny_read node's inode, enforce-landlock E32 (b)) while the supervisor's advisory line says allow unmatched."
+  },
+  {
+    "cell": "mounts-bind/write-bind-alias-of-write-entry",
+    "runner": "ledger",
+    "tier": "bpflsm",
+    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). The plane allows the write by inode and its kernel line names no entry (allow unmatched) where the entry is fs.write[./w/]."
+  },
+  {
+    "cell": "mounts-bind/write-bind-alias-of-write-entry",
+    "runner": "ledger",
+    "tier": "cgroup",
+    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). On tier cgroup's listener the supervisor refuses the write by the alias's name (fallbackMutation, fail closed) and its line says refused unmatched; the cell wants the inode's allow."
+  },
+  {
+    "cell": "mounts-bind/write-bind-alias-of-write-entry",
+    "runner": "ledger",
+    "tier": "cgroup@fmod_ret",
+    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). The plane allows the write by inode and its kernel line names no entry (allow unmatched) where the entry is fs.write[./w/]."
+  },
+  {
+    "cell": "mounts-bind/write-bind-alias-of-write-entry",
+    "runner": "ledger",
+    "tier": "cgroup@lsm",
+    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). The plane allows the write by inode and its kernel line names no entry (allow unmatched) where the entry is fs.write[./w/]."
+  },
+  {
+    "cell": "mounts-bind/write-bind-alias-of-write-entry",
+    "runner": "ledger",
+    "tier": "landlock",
+    "reason": "A line names the bind alias the agent spelled, not the identity it reaches (ADR 0025). Not a fail-open: the kernel's answer is the cell's, or a refusal (the listener's write). At tier landlock Landlock allows the write through the alias of a write entry (rights keyed by inode) while the supervisor's advisory line says refused unmatched, a line that says other than what happened (ADR 0016)."
+  },
+  {
+    "cell": "mounts/mprotect-exec-overlay-library",
+    "runner": "ledger",
+    "tier": "bpflsm",
+    "reason": "The plane refuses an mprotect to PROT_EXEC of a library on an overlay in a write entry (the kernel's answer is the cell's), and its refused line names the target anonymous: overlayfs maps the backing file, whose path the plane does not resolve. Not a fail-open; the runner logs the run's refused map lines (MAPLINE). Found 2026-10-19 on 6.17."
+  },
+  {
+    "cell": "mounts/mprotect-exec-overlay-library",
+    "runner": "ledger",
+    "tier": "cgroup@fmod_ret",
+    "reason": "The plane refuses an mprotect to PROT_EXEC of a library on an overlay in a write entry (the kernel's answer is the cell's), and its refused line names the target anonymous: overlayfs maps the backing file, whose path the plane does not resolve. Not a fail-open; the runner logs the run's refused map lines (MAPLINE). Found 2026-10-19 on 6.17."
+  },
+  {
+    "cell": "mounts/mprotect-exec-overlay-library",
+    "runner": "ledger",
+    "tier": "cgroup@lsm",
+    "reason": "The plane refuses an mprotect to PROT_EXEC of a library on an overlay in a write entry (the kernel's answer is the cell's), and its refused line names the target anonymous: overlayfs maps the backing file, whose path the plane does not resolve. Not a fail-open; the runner logs the run's refused map lines (MAPLINE). Found 2026-10-19 on 6.17."
+  }
+]

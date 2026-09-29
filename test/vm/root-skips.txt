@@ -1,0 +1,340 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The skips a root run of the privileged suites allows (test/vm/root-suites.sh, through scripts/skipgate.sh): CI's
+# root-suites job (sudo on a hosted runner) and `make vm-root-test` (a KVM guest). Any other skip fails the run:
+# a skip exits 0 like a pass, so a test that stopped running as root went unnoticed there (review round 5, P1).
+# Built from a guest run's skips (summary.json) and from the root-suites job's log on the runner, which has skips a
+# guest does not. Add an entry only with the reason the test cannot run as root.
+#
+# An entry whose reason starts "untagged:" is allowed only in the plain build of a package whose tests load the
+# BPF objects, which root-suites.sh runs beside its -tags tegobpf build: those tests need the objects, and the
+# tagged build runs them. Every other entry is allowed in every suite.
+#
+# <package> <test> # <why it skips as root>
+
+# Helper processes: a test that is its parent's re-executed child and skips when run as a test.
+internal/platform/sys TestExecveGainHelper # helper process for TestExecveAfterClearCapabilities
+internal/platform/sys TestKernelWithoutPidfdThreadHelper # helper process for TestKernelWithoutPidfdThread
+internal/platform/sys TestPidfdSignalBlockedThreadHelper # helper process for TestPidfdSendSignalTargetsTheThreadGroup
+internal/platform/sys TestInheritedHelper # helper process for TestInheritedKinds, TestInheritedSealed and TestInheritedRefusesStdio
+internal/platform/sys TestCloseInheritedFromHelper # helper process for TestCloseInheritedFrom
+internal/cli TestStopLockHolderHelper # helper process that holds a run's lock as the stand-in launcher for the stop tests
+internal/runtime TestLockHolderHelper # helper process that holds a run's lock for the sweep reclaim test
+internal/runtime TestHeldFileHolderHelper # helper process that holds a file for the adoption held-file count's root test
+internal/runtime TestOutlivesLauncherHelper # helper process for TestIntegrationEnforcementOutlivesItsLauncher
+internal/watch/adopt TestNoPathChrootHelper # helper process for TestIntegrationNoPathChrootedHolder
+internal/runtime TestOtherCgroupNamespaceRefusedHelper # helper process for TestOtherCgroupNamespaceRefused (an answer from a cgroup namespace of its own)
+internal/watch/watcher TestThreadKilledAloneHelper # helper process for TestIntegrationAThreadKilledAloneGivesNoSignal
+internal/runtime/enforce/cgroup TestBPFEdgesHelper # helper process only
+internal/runtime/enforce/cgroup TestBuildLockHelper # helper process for the build-lock tests
+internal/runtime/enforce/cgroup TestFreezeHelper # helper process only
+internal/runtime/enforce/cgroup TestFreezeSleeper # helper process only
+internal/runtime/enforce/cgroup TestFreezeStageChild # helper process only
+internal/runtime/enforce/cgroup TestMovedHelper # helper process only
+internal/runtime/enforce/cgroup TestNetHelper # helper process only
+internal/runtime/enforce/landlock TestStrictClientFilterHelper # helper process for TestStrictClientFilterOnRealKernel
+internal/runtime/enforce/cgroup TestNetLinksHelper # helper process only
+internal/runtime/enforce/cgroup TestSlotHelper # helper process for the slot-table tests
+internal/runtime/enforce/cgroup TestUnixHelper # helper process only
+internal/runscope TestInRunInACgroupNamespaceHelper # helper process for TestInRunInACgroupNamespace (InRun inside a cgroup namespace of its own)
+
+# Tests of the unprivileged answer: root gets another one, which the root tests beside them check.
+internal/runtime/supervisor TestLookupInOneIsTheComponentWalks # root holds the DAC capabilities, so an image walk checks the task's search permission itself and never asks lookupInOne (ADR 0048 C8); the unprivileged unit and integration steps run it
+internal/doctor TestIntegrationReportAsUser # describes the unprivileged answer; TestIntegrationAsRoot is root's
+internal/doctor TestProbeFanotifyWithoutRoot # describes the unprivileged answer
+internal/doctor TestProbeProgramsWithoutRoot # describes the unprivileged answer
+internal/doctor TestRunOnThisMachine # describes the unprivileged answer
+internal/doctor TestProbeCgroupReportsARealRefusalsRemedy # the uid-0 branch roots at the mount and asks no delegation question
+internal/doctor TestRunCacheKeyHoldsMemfdNoexec # a kernel without vm.memfd_noexec (mainline below 6.3, such as AL2023's 6.1; RHEL 9's 5.14 backports it and runs this) has no value for the key to hold
+internal/platform/sys TestClearCapabilities # clearing capabilities as root would strip the test thread; the child-stage integration test covers it
+internal/platform/sys TestClearProcessCapabilitiesReachesEveryThread # clearing every thread's capabilities as root would strip the test process; the privpath root tests (internal/runtime) cover it
+internal/platform/sys TestRunAsRefusesWhatItCannotTake # root can take any ids; the refusal is the unprivileged path
+internal/ledger TestHandOverRunUnprivileged # the unprivileged half; the integration suite's root tests cover the privileged one
+internal/platform/peer TestPeerInsideRealRunIsGoverned # as root, tego run launches a privileged run whose agent runs as the invoking user; the unprivileged integration step runs this shape
+internal/runtime TestCodexIsRoutedThroughItsOwnCodexHome # a root launcher writes no CODEX_HOME: its runtime directory is not the agent's
+internal/runtime TestCodexConfigUnderDenyReadIsNotCopied # a root launcher writes no CODEX_HOME, so there is no copy to withhold; needs an unprivileged uid
+internal/runtime TestTheCodexHomeGrantReachesPrepare # a root launcher writes no CODEX_HOME: its runtime directory is not the agent's
+internal/runtime TestWatchedAgentCannotAnswer # a watch from a root launcher picks a root tier, which this test's binary carries no objects for; TestAdoptedAgentCannotAnswer is root's agent outside a contract
+internal/runtime TestTheCodexHomeGrantNeedsTheDirectoryTheRunMade # a root launcher writes no CODEX_HOME: its runtime directory is not the agent's
+internal/runtime TestTheCodexHomeGrantRefusesAnExecDirectoryOverIt # a root launcher writes no CODEX_HOME: its runtime directory is not the agent's
+internal/runtime TestTheRunGrantsItsOwnCodexHome # a root launcher writes no CODEX_HOME: its runtime directory is not the agent's
+internal/runtime TestARunRefusesARuntimeDirectoryAnotherUserCouldSwap # a root launcher makes no runtime directory, so there is none to check
+internal/runtime TestIntegrationADenyListRunRunsNothingFromItsCodexHome # a root launcher writes no CODEX_HOME: its runtime directory is not the agent's; TestIntegrationARunRoutesCodexOrSaysItCannot covers the root run
+internal/runtime TestAKilledLaunchersRuntimeDirIsRemovedByTheNextLaunch # a root launcher makes no runtime directory, so a killed one leaves none to sweep; TestRootRunMakesNoRuntimeDir covers the root run
+internal/runtime TestHarnessNoneIsTheRunWithoutTheKey # a root launcher makes no runtime directory, so it provisions no harness; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestHarnessAutoResolvesFromTheResolvedCommand # a root launcher makes no runtime directory, so it provisions no harness; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestHarnessProvisionIsMadeByTheLauncher # a root launcher makes no runtime directory, so it provisions no harness; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestHarnessCodexHomeFiles # a root launcher makes no runtime directory, so it provisions no harness; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestHarnessProvisionRefusals # a root launcher makes no runtime directory, so it provisions no harness; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestHarnessHookAdmission # a root launcher makes no runtime directory, so it provisions no harness; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestHookStateUnderAnExecDirectoryIsRefused # a root launcher makes no runtime directory, so it provisions no harness; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestHarnessHookWritableIsNotGranted # a root launcher makes no runtime directory, so it provisions no harness and grants no hook; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestIntegrationHarnessHookGrantIsTheExactArgv # a root launcher makes no runtime directory, so it provisions no harness and grants no hook; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestIntegrationHarnessHookWritableRunsUnprovisioned # a root launcher makes no runtime directory, so it provisions no harness and grants no hook; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestIntegrationKernelExecAssuranceRefusesAlikeWithAHook # a root launcher makes no runtime directory, so no provisioner is asked and both cases are one; TestExecAssuranceNeedsTheHandlesClaim covers the refusal
+internal/runtime TestIntegrationTegoInsideADenyListRun # the agent, dropped to the invoking user, cannot run the tego binary root built in its own temporary directory; a root launcher grants no hook
+internal/runtime TestHarnessAutoFollowsTheCommandTheRunExecutes # a root launcher makes no runtime directory, so it provisions no harness; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestHarnessNestedRunReplacesTheParentsVariables # a root launcher makes no runtime directory, so it provisions no harness; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestHarnessReservedNames # a root launcher makes no runtime directory, so it provisions no harness; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestHarnessHookUnderTheGate # a root launcher makes no runtime directory, so it provisions no harness; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestIntegrationHarnessFilesAreReadOnlyAndHookStateWritable # a root launcher makes no runtime directory, so it provisions no harness; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestOrphanRootsSearchesTheMountRootOnlyForARootLaunchedRun # sweeps as if root while owning the run directory: needs a uid other than root
+internal/runtime TestPurgeOrphanNeedsRootsRecord # sweeps as if root while owning the run directory itself (rootMarksIn): needs a uid other than root; the unit run covers it
+internal/runtime TestOrphanRootsOfARootSweeperNeedARecordForItsOwnRunDirectory # sweeps as if root while owning the run directory: needs a uid other than root
+internal/runtime/cgroup TestIntegrationMountAgrees # the delegated candidate is built only for an unprivileged launcher
+internal/runtime/cgroup TestIntegrationDetectRefusesTheHostTree # the delegated subtree is chosen only for an unprivileged launcher
+internal/cli TestIntegrationPresetsAtTierLandlock # the presets end to end at tier landlock, the unprivileged launch: as root (sudo) the agent runs as the invoking user, who cannot reach the test's private directories; the unprivileged integration step runs it
+internal/cli TestIntegrationInitPresetRunsAtTierLandlock # tego init --preset then tego run, at tier landlock, the unprivileged launch: as root (sudo) the agent runs as the invoking user, who cannot reach the test's private directories; the unprivileged integration step runs it
+
+# Root reads what mode bits refuse, so a case that needs a refusal cannot be staged.
+internal/runtime/enforce/cgroup TestPinsRemoveKeepsTheBuildUnderAPlaneItCannotRemove # root bypasses directory write mode bits, so the stuck-plane removal refusal cannot be staged; the unprivileged unit and integration suites exercise it
+internal/runtime/enforce/cgroup TestUnpinKeepsTheBuildUnderAPlaneItCannotRemove # root bypasses directory write mode bits, so the stuck-plane unpin refusal cannot be staged; the unprivileged unit and integration suites exercise it
+internal/cli TestInitReadOnlyParent # root bypasses directory write permission, which this test relies on
+internal/cli TestStatusEACCESIsNotAnEmptyReport # root reads every directory; EACCES cannot be provoked
+internal/cli TestUnstatableRunIsIONotUsage # root searches a 0000 ledger root, so stat never fails; the unit run covers it
+internal/ledger TestGCExpiresARunWhoseStateCannotBeRead # root reads a 0000 file; this case needs an unprivileged uid
+internal/ledger TestGCReportsBothTheStateAndTheRemovalError # root reads a 0000 file; this case needs an unprivileged uid (the unit run covers it)
+internal/ledger TestGCKeepsAnUnreadableRunWhoseLockIsHeld # root reads a 0000 file; this case needs an unprivileged uid
+internal/ledger TestGCDoesNotSweepARunWhoseStateCannotBeRead # root reads a 0000 file; this case needs an unprivileged uid
+internal/ledger TestSweepLiveLeavesUnlistedRunsAlone # root reads a mode-0 file
+internal/runtime TestFenceRefusesFromStartWhenTheOverlayIsUnreadable/mode_000 # root reads a file of mode 000, so the overlay cannot be made unreadable; this case needs an unprivileged uid (the unprivileged unit run covers it)
+internal/runtime/enforce/landlock TestEnumerateSearchOnlyAncestor # root reads a mode-0111 directory, so the ancestor is listable; needs an unprivileged uid
+
+# The placement decides: a suite started from a service's cgroup (the runner's sudo, and a guest's) is outside
+# any user@0.service, whose delegated subtree these tests need.
+internal/runtime/launch TestExecveIsFirstNotification # no delegated user@0.service in the suite's cgroup
+internal/runtime/launch TestSignalTermForwarded # no delegated user@0.service in the suite's cgroup
+internal/runtime/launch TestStopGraceEscalatesThroughCgroupKill # no delegated user@0.service in the suite's cgroup
+
+# The host decides.
+internal/handoff TestHandoffMemfdNoexecOnTheKernel # a kernel without vm.memfd_noexec (mainline below 6.3, such as AL2023's 6.1; RHEL 9's 5.14 backports it and runs this), or one already at 2, has no executable memfd to refuse
+internal/runtime/enforce/cgroup TestDistinctMountsSeparatesThisHostsMountsOfOneDevice # needs two reachable mounts of one device, which a host may not have
+internal/runtime/observe TestIntegrationKernelRecordCapturesOpenSSL30 # needs TEGO_OPENSSL30_LIB, a directory holding an OpenSSL 3.0 libssl.so.3, which neither the runner nor the guest has
+internal/runtime/observe TestIntegrationKernelRecordCapturesTheAnthropicSDK # needs TEGO_ANTHROPIC_SITE, an Anthropic SDK site directory (test/e2e/pydeps.sh), which neither the runner nor the guest has
+internal/bpf TestPlaneLoadsAndAttaches/decide_pr/lsm # LSM mode needs bpf in the active LSM list, which a hosted runner and TEGO_VM_LSM=kernel lack; the default guest boot runs it
+internal/bpf TestPlaneLoadsAndAttaches/decide_rd/lsm # the same, for the bpf_rdonly_cast build
+internal/bpf TestPlaneLoadsAndAttaches/decide_rd # a kernel without bpf_rdonly_cast in BTF (AL2023 6.1) cannot load the rd build; the pr build runs there
+internal/bpf TestPlaneStepAHooksDecide/decide_pr/lsm # LSM mode needs bpf in the active LSM list, which a hosted runner and TEGO_VM_LSM=kernel lack; the default guest boot runs it
+internal/bpf TestPlaneStepAHooksDecide/decide_rd/lsm # the same, for the bpf_rdonly_cast build
+internal/bpf TestPlaneStepAHooksDecide/decide_rd # a kernel without bpf_rdonly_cast in BTF (AL2023 6.1) cannot load the rd build; the pr build runs there
+internal/bpf TestPlaneStepAHooksDecide/decide_pr/lsm/overlay # a kernel with no overlayfs (the guest loads it by default, VM_MODULES=overlay; a hosted runner may lack the module)
+internal/bpf TestPlaneStepAHooksDecide/decide_pr/fmod_ret/overlay # a kernel with no overlayfs (the guest loads it by default, VM_MODULES=overlay; a hosted runner may lack the module)
+internal/bpf TestPlaneStepAHooksDecide/decide_rd/lsm/overlay # a kernel with no overlayfs (the guest loads it by default, VM_MODULES=overlay; a hosted runner may lack the module)
+internal/bpf TestPlaneStepAHooksDecide/decide_rd/fmod_ret/overlay # a kernel with no overlayfs (the guest loads it by default, VM_MODULES=overlay; a hosted runner may lack the module)
+internal/bpf TestPlaneStepAHooksDecide/decide_pr/lsm/disconnected # a kernel or runner with no overlayfs exported for file handles (nfs_export=on over tmpfs layers), or whose open_by_handle_at is refused; the guest with VM_MODULES=overlay runs it
+internal/bpf TestPlaneStepAHooksDecide/decide_pr/fmod_ret/disconnected # a kernel or runner with no overlayfs exported for file handles (nfs_export=on over tmpfs layers), or whose open_by_handle_at is refused; the guest with VM_MODULES=overlay runs it
+internal/bpf TestPlaneStepAHooksDecide/decide_rd/lsm/disconnected # a kernel or runner with no overlayfs exported for file handles (nfs_export=on over tmpfs layers), or whose open_by_handle_at is refused; the guest with VM_MODULES=overlay runs it
+internal/bpf TestPlaneStepAHooksDecide/decide_rd/fmod_ret/disconnected # a kernel or runner with no overlayfs exported for file handles (nfs_export=on over tmpfs layers), or whose open_by_handle_at is refused; the guest with VM_MODULES=overlay runs it
+internal/bpf TestPlaneUnixHooksDecide/decide_pr/lsm # LSM mode needs bpf in the active LSM list, which a hosted runner and TEGO_VM_LSM=kernel lack; the default guest boot runs it
+internal/bpf TestPlaneUnixHooksDecide/decide_rd/lsm # the same, for the bpf_rdonly_cast build
+internal/bpf TestPlaneUnixHooksDecide/decide_rd # a kernel without bpf_rdonly_cast in BTF (AL2023 6.1) cannot load the rd build; the pr build runs there
+internal/bpf TestPlaneStepBHooksDecide/decide_pr/lsm # LSM mode needs bpf in the active LSM list, which a hosted runner and TEGO_VM_LSM=kernel lack; the default guest boot runs it
+internal/bpf TestPlaneStepBHooksDecide/decide_rd/lsm # the same, for the bpf_rdonly_cast build
+internal/bpf TestPlaneStepBHooksDecide/decide_rd # a kernel without bpf_rdonly_cast in BTF (AL2023 6.1) cannot load the rd build; the pr build runs there
+internal/bpf TestPlaneStepCHooksDecide/decide_pr/lsm # LSM mode needs bpf in the active LSM list, which a hosted runner and TEGO_VM_LSM=kernel lack; the default guest boot runs it
+internal/bpf TestPlaneStepCHooksDecide/decide_rd/lsm # the same, for the bpf_rdonly_cast build
+internal/bpf TestPlaneStepCHooksDecide/decide_rd # a kernel without bpf_rdonly_cast in BTF (AL2023 6.1) cannot load the rd build; the pr build runs there
+internal/bpf TestExecPinKernelFacts/rd/lsm # LSM mode needs bpf in the active LSM list, which a hosted runner and TEGO_VM_LSM=kernel lack; the lsm-bpf guest boot runs it
+internal/bpf TestExecPinKernelFacts/pr/lsm # the same, for the probe-read build
+internal/bpf TestExecPinKernelFacts/pr # lockdown=confidentiality refuses bpf_probe_read_kernel; the rd build runs there
+internal/bpf TestPlaneLoadsAndAttaches/decide_pr # lockdown=confidentiality (TEGO_VM_LOCKDOWN) refuses bpf_probe_read_kernel; the rd build runs there
+internal/bpf TestReaderBuildsLoadOnThisKernel/probe # lockdown=confidentiality (TEGO_VM_LOCKDOWN) refuses bpf_probe_read_kernel; the rdonly build runs there
+internal/bpf TestObjectsLoadOnThisKernel/cgroup_net/tego_cg_connect_unix # a kernel below 6.7 (RHEL 9 5.14, AL2023 6.1, Ubuntu 24.04 6.8) has no BPF_CGROUP_UNIX_CONNECT attach type, and the backend does not load the program there
+internal/bpf TestObjectsLoadOnThisKernel/cgroup_net/tego_cg_sendmsg_unix # a kernel below 6.7 has no BPF_CGROUP_UNIX_SENDMSG attach type, and the backend does not load the program there
+internal/bpf TestObjectsLoadOnThisKernel/trace_proc/tego_file_truncate # a kernel below 6.2 (AL2023 6.1) has no security_file_truncate, and the backend does not load the program there
+internal/bpf TestAttachTargetsResolve/tego_file_truncate # a kernel below 6.2 (AL2023 6.1) has no security_file_truncate to resolve
+internal/bpf TestPlaneAttachTargetsResolve/bpf_lsm_file_truncate # a kernel below 6.2 (AL2023 6.1) has no file_truncate hook; the plane loads without this optional hook there
+internal/bpf TestPlaneAttachTargetsResolve/security_file_truncate # a kernel below 6.2 (AL2023 6.1) has no file_truncate hook; the plane loads without this optional hook there
+internal/bpf TestPlaneAttachTargetsResolve/bpf_lsm_inode_set_acl # a kernel below 6.2 (AL2023 6.1) has no ACL hooks; the plane loads without these optional hooks there, and inode_setxattr decides a setfacl
+internal/bpf TestPlaneAttachTargetsResolve/security_inode_set_acl # a kernel below 6.2 (AL2023 6.1) has no ACL hooks; the plane loads without these optional hooks there, and inode_setxattr decides a setfacl
+internal/bpf TestPlaneAttachTargetsResolve/bpf_lsm_inode_remove_acl # a kernel below 6.2 (AL2023 6.1) has no ACL hooks; the plane loads without these optional hooks there, and inode_setxattr decides a setfacl
+internal/bpf TestPlaneAttachTargetsResolve/security_inode_remove_acl # a kernel below 6.2 (AL2023 6.1) has no ACL hooks; the plane loads without these optional hooks there, and inode_setxattr decides a setfacl
+internal/runtime/enforce/cgroup TestUnixVerdictOnRealKernel # a kernel below 6.7 (RHEL 9 5.14, AL2023 6.1, Ubuntu 24.04 6.8) has no unix sockaddr hooks; the programs are not loaded, and a run of tier cgroup without a plane mode leaves unix names to tier 1 (a plane-mode run decides them there: TestPlaneUnixVerdictOnRealKernel); a build without the objects (untagged) cannot run it on any kernel
+internal/bpf TestReaderBuildsLoadOnThisKernel/rdonly # a kernel without bpf_rdonly_cast or bpf_loop in BTF (AL2023 6.1) cannot load trace_proc's rdonly build; the probe build runs there
+
+# The tagged build embeds the objects, so the cases about a build without them skip there.
+internal/cli TestSelectCaptureGapsWhatThisBinaryCannotBuild/uprobe_is_not_in_this_build # an untagged build's case; the tagged build carries uprobe
+internal/runtime/enforce/cgroup TestBuildHashNamesTheOneRemedy # the refusal is an untagged build's; this binary embeds the objects
+internal/runtime/enforce/cgroup TestBuildHashWithoutObjects # the no-objects path is an untagged build's; this binary embeds the objects
+
+# The plain build of a package whose tests load the objects: its -tags tegobpf build runs these.
+internal/doctor TestHookTableMatchesTheObjects # untagged: no BPF objects without -tags tegobpf
+internal/doctor TestCaptureHookTableMatchesTheObject # untagged: no uprobe_ssl object without -tags tegobpf
+internal/doctor TestIntegrationForRunAsRoot # untagged: no bpf_hash in a build without the objects, so no run-probe cache to test
+internal/doctor TestIntegrationCancelledDuringProgramsAndFanotifyLeavesNothing # untagged: D7 loads the compiled objects
+internal/doctor TestD7NamesALegacyExclusiveAttachAbove # untagged: D7 loads the compiled objects
+internal/runtime/enforce/cgroup TestDoctorDuringALiveTier2RunChangesNoVerdict # untagged: the run needs the compiled objects
+internal/doctor TestIntegrationRestrictedRootRunAfterFullRoot # untagged: the run needs the objects; it belongs to the tegobpf suite
+internal/doctor TestIntegrationPlaneProbeOnThisKernel # untagged: the plane probe loads decide.bpf.c's builds
+internal/doctor TestIntegrationPlaneProbeCleansUpWhenTheChildFails # untagged: the plane probe loads decide.bpf.c's builds
+internal/doctor TestIntegrationPlaneProbeCopiesTheBinaryOnce # untagged: the plane probe loads decide.bpf.c's builds
+internal/doctor TestIntegrationPlaneProbeRejectsAFlippedKnownAnswer # untagged: the plane probe loads decide.bpf.c's builds
+internal/doctor TestIntegrationPlaneProbeAnswersTheNameCells # untagged: the plane probe loads decide.bpf.c's builds
+internal/doctor TestIntegrationPlaneProbeRejectsAFlippedNameAnswer # untagged: the plane probe loads decide.bpf.c's builds
+internal/doctor TestIntegrationDoctorCancelledDuringThePlaneLeavesNothing # untagged: the plane probe loads decide.bpf.c's builds
+internal/doctor TestIntegrationPlanePinRoundTrip # untagged: the plane probe loads decide.bpf.c's builds
+internal/doctor TestPinnedMachineTierIsReportedAsARunWouldGetIt # tagged, on the lsm=...,bpf boot: the guest really reaches tier bpflsm (T7), and the case needs a machine that cannot
+internal/runtime/capture/uprobe TestAttachToSystemLibssl # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationCapturesAPythonExchange # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationLongConversationAndReusedConnections # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationPreattachCapturesTheFirstRequest # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationSharedProbesAreAdoptedAndCaptureOnce # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationTLSMultiDispatchAndFallback # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationTLSMultiDispatchAndFallback/multi # only an actual unavailable uprobe_multi feature probe; individual fallback remains mandatory
+internal/runtime/capture/uprobe TestIntegrationProbesWhoseDetacherDiedGoAtTheNextStart # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationRecordDropsAreNotCaptures # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationARunWithoutACaptureRingDoesNotCapture # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationACaptureOffRunBesideACaptureRunLeavesNoChunk # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationSlowFirstByteKeepsPairing # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationEvictedReadIsAGap # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationStaleReadIsAGap # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationStopReadsTheLostCounterLast # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestLoadCaptureObject # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestConcurrentFirstLoadsOfTheCaptureObjectAllSucceed # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestALingeringBuildIsAdoptedAndSweptOnlyWhenIdle # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestIntegrationABuildWhoseTimerDiedIsRemovedAtTheNextPrepare # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestIntegrationStopRearmsABuildWhoseTimerDied # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestIntegrationABuildWhoseRunSetCannotBeReadIsKeptAndShown # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestIntegrationBuildMemlockIsBpftoolsSum # needs the compiled objects, and bpftool, its reference, which a hosted runner lacks (the KVM guest image carries it)
+internal/runtime/enforce/cgroup TestIntegrationPlaneBuildMemlockIsBpftoolsSum # needs bpftool, its reference, which a hosted runner lacks (the KVM guest image carries it); tagged tegobpf only
+internal/runtime/enforce/cgroup TestIntegrationALingeringBuildALiveRunNeedsIsListedKept # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestE2ERecorderLinesSayWhatTheAgentSaw # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestExecOnlyMarkAsksForNoOpenEvent # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestNameMaxRecordIsWhole # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestNetRefreshOnRealKernel # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestNetUnrestrictedOnRealKernel # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestNetVerdictOnRealKernel # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestNetLinksOutliveTheLauncher # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestEveryNestedCgroupIsInTheRunSetBeforeATaskCanJoinIt # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestRmdirOfANestedCgroupDeletesItsRunSetRow # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestTwoBuildsCoexistWithoutInterference # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestPrepareOnRealKernel # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestSecondLauncherAdoptsTheBuildsPinnedObjects # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestShortConnectRecordReadsNoStack # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestSockCreateIsAttachedAndRefusesOutsideTheAllowlist # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestSockCreateRunsAreANDedWhenNested # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestAttachNamesALegacyExclusiveProgramAbove # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestTier2DenyReadSecondNameRefused # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestTier2RunEndToEnd # untagged: the end-to-end run belongs to the tegobpf suite
+internal/runtime/enforce/cgroup TestTier2ConcurrentRunsOfOneBuild # untagged: the end-to-end run belongs to the tegobpf suite
+internal/runtime/enforce/cgroup TestACancelledTestRunLeavesNoRowOfItsBuild # untagged: the run needs the compiled objects
+internal/runtime/enforce/cgroup TestTier2UnixEndToEnd # untagged: the end-to-end run belongs to the tegobpf suite
+internal/runtime/enforce/cgroup TestTier2DatagramLineIsTheKernels # untagged: the end-to-end run belongs to the tegobpf suite, whose skip gate and no-failure rule hold it
+internal/runtime/enforce/cgroup TestUnixRowsPurgedOnRealMaps # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestUnspecifiedDestinationIsRefused # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestV1HierarchyDoesNotTouchTheRun # untagged: needs the compiled objects
+internal/runtime/observe TestIntegrationChainReturnIsTheVerdict # untagged: needs the compiled objects
+internal/runtime/observe TestIntegrationHeldRecordsAreTheirOwnActions # untagged: needs the compiled objects
+internal/runtime/observe TestIntegrationChainReturnIsTheVerdict/probe # lockdown=confidentiality (TEGO_VM_LOCKDOWN) refuses trace_proc's probe build; the rdonly subtest runs there
+internal/runtime/observe TestIntegrationChainReturnIsTheVerdict/rdonly # a kernel without bpf_rdonly_cast or bpf_loop in BTF (AL2023 6.1) cannot load trace_proc's rdonly build; the probe subtest runs there
+internal/runtime/observe TestIntegrationHeldRecordsAreTheirOwnActions/probe # lockdown=confidentiality (TEGO_VM_LOCKDOWN) refuses trace_proc's probe build; the rdonly subtest runs there
+internal/runtime/observe TestIntegrationHeldRecordsAreTheirOwnActions/rdonly # a kernel without bpf_rdonly_cast or bpf_loop in BTF (AL2023 6.1) cannot load trace_proc's rdonly build; the probe subtest runs there
+internal/runtime/observe TestIntegrationOverlayCopyUpIsOneLine # untagged: needs the compiled objects
+internal/runtime/observe TestIntegrationOverlayCopyUpIsOneLine/probe # lockdown=confidentiality (TEGO_VM_LOCKDOWN) refuses trace_proc's probe build, or no overlay module (VM_MODULES="")
+internal/runtime/observe TestIntegrationOverlayCopyUpIsOneLine/rdonly # a kernel without bpf_rdonly_cast or bpf_loop in BTF (AL2023 6.1) cannot load trace_proc's rdonly build, or no overlay module (VM_MODULES="")
+internal/runtime/observe TestIntegrationPlaneRefusalIsOneLine/probe # lockdown=confidentiality (TEGO_VM_LOCKDOWN) refuses trace_proc's probe build; the rdonly subtest runs there
+internal/runtime/observe TestIntegrationPlaneRefusalIsOneLine/rdonly # a kernel without bpf_rdonly_cast or bpf_loop in BTF (AL2023 6.1) cannot load trace_proc's rdonly build; the probe subtest runs there
+internal/runtime/observe TestIntegrationPlaneRefusalIsOneLine # untagged: needs the compiled objects and the plane builds
+internal/runtime/observe TestIntegrationPlaneFallbackIsOneLine/probe # lockdown=confidentiality (TEGO_VM_LOCKDOWN) refuses trace_proc's probe build; the rdonly subtest runs there
+internal/runtime/observe TestIntegrationPlaneFallbackIsOneLine/rdonly # a kernel without bpf_rdonly_cast or bpf_loop in BTF (AL2023 6.1) cannot load trace_proc's rdonly build; the probe subtest runs there
+internal/runtime/observe TestIntegrationPlaneFallbackIsOneLine # untagged: needs the compiled objects and the plane builds
+internal/runtime/observe TestIntegrationEveryRecordNamesItsProcessStart # untagged: needs the compiled objects
+internal/runtime/observe TestIntegrationExitIsTheThreadGroups # untagged: needs the compiled objects
+internal/runtime/observe TestIntegrationFSOpsResolveThroughTheDirectoryIndex # untagged: needs the compiled objects
+internal/runtime/observe TestIntegrationSymlinkTargetOf255BytesIsWhole # untagged: needs the compiled objects
+internal/runtime/observe TestIntegrationKernelRecordDrivesCapture # untagged: needs the compiled objects
+internal/runtime/observe TestIntegrationRelativeExecIsResolved # untagged: needs the compiled objects
+internal/runtime/observe TestIntegrationConcurrentRunsOfOneBuild # untagged: needs the compiled objects
+internal/runtime/observe TestIntegrationAReusedRingHidesThePreviousRun # untagged: needs the compiled objects
+internal/runtime/observe TestIntegrationUnixConnectIsLeftToTheSupervisor # untagged: needs the compiled objects
+internal/runtime/observe TestIntegrationShortConnectIsNotRecorded # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestPlaneRunEndToEnd # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneUserDenyWrite # untagged: the plane's runs belong to the tegobpf suite (ADR 0071)
+internal/runtime/enforce/cgroup TestPlaneRunDropsAndNamesByPath # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneRunNamesTrueUnderRenamesAndMountMoves # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestTierBPFLSMRunEndToEnd # untagged: tier bpflsm's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestTierRunEndsWithItsMainProcess # untagged: its runs at tiers cgroup and bpflsm belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneCapBoundaryNeverEMFILE # untagged: the capacity runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneConcurrentRunsOfOneBuildAreIsolated # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneSecondRunAdoptsThePlane # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneLauncherKillLeavesTheRunDecidedAndTheReaperPurges # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneRunAdmitsIOUring # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestIOUringSocketsMeetTheKernelBackstops # untagged: the run needs the objects; it belongs to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneRunFillMismatchFailsPrepare # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneRunMulticallLinks # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneExecMapRunEndToEnd # untagged: the plane's runs belong to the tegobpf suite
+test/conformance TestDynamicReasonSeesAnyInterpreter # the guest's go is go-shim.sh, which serves the prebuilt static actor and cannot build the PIE one the check needs
+internal/runtime/enforce/cgroup TestPlaneRunAdmitsIOUring/lsm # a kernel with kernel.io_uring_disabled set (RHEL 9) refuses io_uring_setup to the agent, so the plane has no io_uring to admit
+internal/runtime/enforce/cgroup TestPlaneRunAdmitsIOUring/fmod_ret # a kernel with kernel.io_uring_disabled set (RHEL 9) refuses io_uring_setup to the agent, so the plane has no io_uring to admit
+internal/bpf TestSockCreateRefusesThroughIOURing # a kernel with kernel.io_uring_disabled set or without IORING_OP_SOCKET (RHEL 9 5.14) has no io_uring socket path to refuse
+internal/bpf TestSetsockoptRefusesTCPULPThroughIOURing # a kernel with kernel.io_uring_disabled set (RHEL 9) or without io_uring's SOCKET_URING_OP_SETSOCKOPT (before 6.7: AL2023 6.1) has no io_uring setsockopt path to refuse
+internal/runtime/enforce/cgroup TestIOUringSocketsMeetTheKernelBackstops/fanotify # a kernel with kernel.io_uring_disabled set (RHEL 9) refuses io_uring_setup to the agent, so neither the plane nor the test seam has an io_uring to admit
+internal/runtime/enforce/cgroup TestIOUringSocketsMeetTheKernelBackstops/lsm # a kernel with kernel.io_uring_disabled set (RHEL 9) refuses io_uring_setup to the agent, so neither the plane nor the test seam has an io_uring to admit
+internal/runtime/enforce/cgroup TestIOUringSocketsMeetTheKernelBackstops/fmod_ret # a kernel with kernel.io_uring_disabled set (RHEL 9) refuses io_uring_setup to the agent, so neither the plane nor the test seam has an io_uring to admit
+internal/runtime/enforce/cgroup TestIOUringSocketsMeetTheKernelBackstops/bpflsm # a kernel with kernel.io_uring_disabled set (RHEL 9) refuses io_uring_setup to the agent, so neither the plane nor the test seam has an io_uring to admit
+internal/watch/adopt TestRingOnTheRealKernel # a kernel with kernel.io_uring_disabled set (RHEL 9) refuses io_uring_setup, so there is no ring to read; the count's rule for rings is TestAdoptCountsARingItCannotReadUnread
+internal/watch/adopt TestARingOnTheSharedAnonInodeHasNoIdentity # a kernel with kernel.io_uring_disabled set (RHEL 9) refuses io_uring_setup, so there is no ring to read
+internal/watch/adopt TestRingIdentityOnTheRealKernel # a kernel with kernel.io_uring_disabled set (RHEL 9) refuses io_uring_setup, so there is no ring to read
+internal/watch/adopt TestIntegrationNoPathDetachedBind/btrfs # a kernel-matrix row's guest loads no module (VM_MODULES=""), and AL2023 and RHEL 9 ship no btrfs: the host row's guest loads it and runs the subtest
+internal/runtime/enforce/cgroup TestPlaneCountersBecomeGapsAtRunEnd # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneRunExecEntryPrecedence # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneRunExecOutcomes # untagged: the plane's runs belong to the tegobpf suite
+internal/cli TestIntegrationAdoptRecordsAScriptFromTheKernel # untagged: an adoption records from tier 2's trace programs, which only the tegobpf build carries
+internal/cli TestIntegrationAdoptKilledAdopterLeavesNothingAttached # untagged: an adoption records from tier 2's trace programs, which only the tegobpf build carries
+internal/cli TestIntegrationAdoptBusyAgentRecordsTheGap # untagged: an adoption records from tier 2's trace programs, which only the tegobpf build carries
+internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlane # untagged: a boundary adoption is held by the decision plane, which only the tegobpf build carries
+internal/cli TestIntegrationAdoptReleaseCommand # untagged: an adoption records from tier 2's trace programs, which only the tegobpf build carries
+internal/cli TestIntegrationGuardAdoptsAnAgentAsItStarts # untagged: the guard's adoptions record from tier 2's trace programs, which only the tegobpf build carries
+internal/runtime/enforce/cgroup TestPlaneRunBtrfsSubvolumeInodeIdentity # untagged: the plane's runs belong to the tegobpf suite, whose run needs only the btrfs module root-suites.sh loads (VM_MODULES)
+internal/runtime/enforce/cgroup TestPlaneExecCommandRulesEndToEnd # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneExecMissWritesNoLine # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneExecMissObserveRace # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneExecSearchOracle # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneExecMagicLinkOracle # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneExecProcDirOracle # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestPlaneExecAutomountIsNoMiss # untagged: the plane's runs belong to the tegobpf suite
+internal/runtime/enforce/cgroup TestNetworkImportedListenHelper # helper process only; exercised by TestNetworkImportedListenOnRealKernel
+internal/runtime/enforce/cgroup TestPlaneImportedUnixBindHelper # helper process only; exercised by TestPlaneImportedUnixBindOnRealKernel
+
+internal/runtime TestDNSBrokerCLIOnRealKernel/bpflsm # tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and VM_BOOTS' default-lsm boot lack; the default guest boot runs it
+
+internal/runtime/enforce/cgroup TestTierRunEndsWithItsMainProcess/bpflsm # the same, for a run that ends with its main process at tier bpflsm
+
+internal/runtime TestDNSBrokerOrphanCleanupOnRealKernel/bpflsm # the same, for the orphan cleanup
+
+internal/runtime TestIntegrationHeldCompletionAtRootTier/bpflsm # the same, for ADR 0041's held completion at tier bpflsm
+
+internal/runtime TestIntegrationHeldReadsAtRootTier/bpflsm # the same, for ADR 0069's held reads at tier bpflsm
+
+internal/runtime/supervisor TestHeldOpenDifferentialAcrossMounts/overlay # a kernel that mounts no overlayfs: a matrix row's guest loads no module (VM_MODULES=""; AL2023 6.1's overlay is one); the host row's guest loads overlay and runs it
+
+# ADR 0026 (8): optional TLS multi attach types selected by a real kernel probe.
+internal/bpf TestObjectsLoadOnThisKernel/uprobe_ssl/tego_ssl_multi_enter # actual uprobe_multi feature probe unsupported; required individual TLS programs still load
+internal/bpf TestObjectsLoadOnThisKernel/uprobe_ssl/tego_ssl_multi_return # actual uprobe_multi feature probe unsupported; required individual TLS programs still load
+internal/bpf TestPlaneNameEntriesDecide/decide_pr/lsm # LSM mode needs bpf in the active LSM list, which a hosted runner and TEGO_VM_LSM=kernel lack; the default guest boot runs it
+internal/bpf TestPlaneNameEntriesDecide/decide_rd/lsm # the same, for the bpf_rdonly_cast build
+internal/bpf TestPlaneNameEntriesDecide/decide_rd # a kernel without bpf_rdonly_cast in BTF (AL2023 6.1) cannot load the rd build; the pr build runs there
+internal/bpf TestPlaneNameEntriesDecide/decide_pr # lockdown=confidentiality (TEGO_VM_LOCKDOWN) refuses bpf_probe_read_kernel; the rd build runs there
+
+# Limits R4, the kernel activity stamp (ACTIVITY-BPF).
+internal/bpf TestActivityStampPerSlot/rdonly # a kernel without bpf_rdonly_cast or bpf_loop in BTF (AL2023 6.1) cannot load trace_proc's rdonly build; the probe build runs there
+internal/bpf TestActivityStampPerSlot/probe # lockdown=confidentiality refuses bpf_probe_read_kernel, so trace_proc's probe build cannot load; the rdonly build runs there
+internal/runtime/capture/uprobe TestIntegrationRecordOffStampsWithoutCapture # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationRecordOffActivityIsIsolated # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationRecordOffTLSCallCost # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationRecordOffActivityStartCost # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestUnixApprovalOnRealKernel # a kernel below 6.7 has no cgroup/connect_unix to hold to the one-connect grant; TestPlaneUnixApprovalOnRealKernel holds the plane's socket_connect to the same cells there
+internal/runtime TestRootAskUnix/bpflsm # the same, for the unix ask at tier bpflsm: a boot without BPF LSM (doctor --require bpflsm says so)
+internal/runtime TestRootAskUDP/bpflsm # the UDP ask at tier bpflsm: a boot without BPF LSM (doctor --require bpflsm says so)
+internal/runtime TestRootRetrieverRunTiesActionsToReplies/bpflsm # tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and VM_BOOTS' default-lsm boot lack; the lsm-bpf boot runs it
+internal/runtime/enforce/cgroup TestApprovalReapHelper # helper process only
+# ADR 0048 P2 K6: real runs at a plane cell with command rules, pinned (and the unpinned control).
+internal/runtime/enforce/cgroup TestPlaneRunExecPinGateMiscP # binfmt_misc: a guest that loads no binfmt_misc module has none to register an entry in (every matrix row, and the host kernel unless VM_MODULES names binfmt_misc)
+internal/runtime/enforce/cgroup TestPlaneRunWalksTheMountTreeAsItStands/overlay # a kernel with no overlayfs (the guest loads it by default, VM_MODULES=overlay; a matrix row's guest or a hosted runner may lack the module)
+internal/runtime TestRootMCPRelayGate/bpflsm # the gate at tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and VM_BOOTS' default-lsm boot lack
+internal/runtime TestRootMCPRelayGate/cgroup # a kernel with no plane mode at tier cgroup: the run is the fanotify fallback, which hands no exec to a plane, so the gate has no plane path to prove
+internal/runtime TestRootAskMutation/bpflsm # the fs.ask mutation at tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and VM_BOOTS' default-lsm boot lack (doctor --require bpflsm says so); the lsm-bpf boot runs it
+internal/runtime TestRootRouteChangesRefused/bpflsm # a root agent at tier bpflsm needs bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and a default-lsm boot leave out; tier cgroup runs either way (ADR 0128)
+internal/runtime TestIntegrationNodeInterfaces # a guest has no node (kvm-run.sh HOST_PKGS); the tier-1 step runs it on the runner, and TestIntegrationRouteQueries runs the same calls from python3 here (ADR 0128)
+internal/runtime/enforce/cgroup TestCompactedTableStaysAtBPFLSM/bpflsm # tier bpflsm needs the plane's lsm mode: bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and the default-lsm boot lack (the lsm-bpf boot runs it)
+internal/runtime TestIntegrationDeclaredServers/node # no node in the guest image; the python server's cell runs

@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The skips CI's unit step allows (scripts/skipgate.sh): `go test ./...` with no tags, as the runner user, in
+# its systemd user manager. Any other skip fails the step, so a test that quietly stops running is noticed
+# (review round 1, P9). Built from a run on the development box (Ubuntu 25.10, 6.17) and from reading every
+# skip site for what differs on an ubuntu-24.04 runner; the last group is skips seen nowhere yet that the
+# runner may take. Add an entry only with the reason the test cannot run in this step.
+#
+# <package> <test> # <why it skips here>
+
+# Helper processes: a test that is its parent's re-executed child and skips in a plain run.
+internal/platform/sys TestExecveGainHelper # helper process for TestExecveAfterClearCapabilities
+internal/platform/sys TestKernelWithoutPidfdThreadHelper # helper process for TestKernelWithoutPidfdThread
+internal/platform/sys TestPidfdSignalBlockedThreadHelper # helper process for TestPidfdSendSignalTargetsTheThreadGroup
+internal/platform/sys TestInheritedHelper # helper process for TestInheritedKinds, TestInheritedSealed and TestInheritedRefusesStdio (Inherited's seal needs a process that made no owner)
+internal/platform/sys TestCloseInheritedFromHelper # helper process for TestCloseInheritedFrom
+internal/runscope TestInRunInACgroupNamespaceHelper # helper process for TestInRunInACgroupNamespace (InRun inside a cgroup namespace of its own)
+internal/testutil TestNoFDLeakChild # TestNoFDLeakFailsOnALeak's child
+internal/testutil TestLeakChild # TestLeakCheckMainFailsOnALeak's child
+internal/testutil TestOneCPUChild # TestOwnTimeLeavesOutRunQueueWaits's and TestAHandOffShowsInTheOwnTime's child
+internal/testutil TestStdioChild # TestGuardedStdioLeakCheckMainFailsOnAClosedStdin's child
+internal/runtime/enforce/cgroup TestBuildLockHelper # helper process for the build-lock tests
+internal/runtime/enforce/cgroup TestSlotHelper # helper process for the slot-table tests
+internal/cli TestStopLockHolderHelper # helper process that holds a run's lock as the stand-in launcher for the stop tests
+internal/runtime TestLockHolderHelper # helper process that holds a run's lock for the sweep reclaim test
+internal/control/web TestHelperLockHolder # helper process that holds a run's lock as the stand-in launcher for the dashboard Stop tests
+internal/runtime TestOtherCgroupNamespaceRefusedHelper # helper process for TestOtherCgroupNamespaceRefused (an answer from a cgroup namespace of its own)
+
+# Root only; CI's root-suites job runs them as root.
+internal/cli TestOwnLogHandsItsFilesToTheInvokingUser # needs root to chown to another uid
+internal/cli TestOwnLogRefusesADirectorySwappedInAfterItsMkdir # needs root: the swapped-in directory is a third uid's
+internal/doctor TestTestHookWithoutAProbeCgroup # reaching the attach step needs a program the kernel loaded, so root
+internal/runtime/enforce/landlock TestRootMissingWriteDirIsTheDroppedUsers # needs root to create a directory as another uid
+internal/runtime/supervisor TestDeputyWalkRefusesItsOwnProcOnEveryMount # needs root: mounts a procfs instance and two bind mounts
+
+# An untagged build carries no BPF objects; the -tags tegobpf builds (bpf-gen, root-suites) run these.
+internal/doctor TestHookTableMatchesTheObjects # no BPF objects without -tags tegobpf
+internal/doctor TestCaptureHookTableMatchesTheObject # no uprobe_ssl object without -tags tegobpf
+
+# The host decides, and a runner may differ from the development box.
+internal/runtime/enforce/cgroup TestDistinctMountsSeparatesThisHostsMountsOfOneDevice # needs two reachable mounts of one device, which a host may not have (the runner-like KVM guest had none)
+internal/runtime/enforce/cgroup TestFanotifyQuotaFailuresNameTheirSetting # the listener's thread budget reads the live pids limits first; a tight user slice refuses it
+internal/runtime/enforce/cgroup TestLoopRemovesItsMarksWithoutNamingAPath/* # the same thread budget, per case
+internal/runtime/enforce/cgroup TestNewListenerSettlesOnTheLoop # the same thread budget
+internal/runtime/hoststate TestOpenHostAsRoot # needs root: the trusted directory is root's (runs in root-suites, which requires it to pass)
+
+# Opt-in measurements: a budget check that reads a big ledger copy named in its environment, and skips without one.
+internal/control/ledgerview TestQueryBudget # opt-in: measures only a ledger directory named in TEGO_LOGS_BENCH_LEDGER (a 350,000-line copy no runner holds)
+internal/control/ledgerview TestProcessTreeBudget # opt-in: measures only a ledger directory named in TEGO_LOGS_BENCH_LEDGER (a 350,000-line copy no runner holds)
+internal/control/web TestLogsWarmBudget # opt-in: measures only a demo-shaped ledger directory named in TEGO_LOGS_BENCH_DEMO, which no runner holds
