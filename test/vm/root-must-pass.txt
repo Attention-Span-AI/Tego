@@ -1,0 +1,335 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The root-only tests CI's root-suites job must see pass (scripts/skipgate.sh --must-pass): each skips
+# wherever it is not root, so a skip in that job means the job stopped testing what it exists for. Every one
+# passed as root in a KVM guest set up as a hosted runner is (test/vm/README.md: VM_CGROUP=service,
+# TEGO_VM_LSM=kernel, TEGO_VM_LOCKDOWN=none), and none needs BPF LSM or a delegated cgroup. They are the
+# root-only tests of the four packages review round 1 (P2) found no root run reached; the other privileged
+# suites' root tests are held by the job's no-failure rule, and bpf-load names its own.
+#
+# <package> <test> # <why it must pass as root>
+
+internal/runtime/supervisor TestIntegrationUnixRelayAsTask # the relay connects as a target of another uid
+internal/runtime/supervisor TestIntegrationUnixRelayOtherMountTree # the target has its own mount namespace and bind mount
+internal/runtime/supervisor TestUnixBoundOnBtrfs # R11a on btrfs: the superblock device from mountinfo, subvolumes told apart (mount loads btrfs, sock_diag loads unix_diag)
+internal/runtime/supervisor TestIntegrationUnixRelayOnBtrfs # R11a end to end on btrfs subvolumes
+
+internal/platform/sys TestIntegrationRunAsTakesTheTaskCredentials # RunAs takes another user's ids, which needs CAP_SETUID
+
+internal/ledger TestIntegrationRootRunIsTheUsers # a root launcher hands the run directory to the invoking user
+internal/ledger TestIntegrationRootOwnedLedgerRootStaysRoots # a root-owned ledger root is not handed over
+internal/ledger TestIntegrationPlantedLinksAreNotFollowed # the hand-over follows no link the user planted
+internal/ledger TestIntegrationRootRefusesASymlinkedStateDir # a symlinked state directory is refused
+internal/ledger TestIntegrationRootFollowsARootLink # a link root made is followed
+internal/ledger TestIntegrationAChainLogRootDidNotCreateKeepsItsOwner # chain.log keeps an owner root did not choose
+internal/ledger TestIntegrationASweepHandsOverOnlyWhatItCreates # a sweep hands over only what it created
+internal/ledger TestIntegrationALiveRootRunIgnoresASwappedLedgerRoot # a swapped ledger root is not followed mid-run
+internal/ledger TestIntegrationFreshRunDirRefusesTheUsersDirectory # a run directory the user made first is refused
+internal/ledger TestIntegrationRootLiveIndexIsTheUsers # a root launcher's live index is handed to the invoking user
+internal/ledger TestIntegrationRootRefusesALinkedLiveIndex # a live index the user swapped for a link is refused
+internal/ledger TestIntegrationRootSweepStaysInTheLedgerRoot # a root sweep never leaves the ledger root
+
+internal/cli TestOwnLogHandsItsFilesToTheInvokingUser # a root tego chowns ~/.tego and tego.log to the invoking user
+internal/cli TestOwnLogRefusesADirectorySwappedInAfterItsMkdir # a directory swapped in after the mkdir belongs to a third uid
+internal/runtime/hoststate TestOpenHostAsRoot # the trusted host state directory is root's; only root creates and verifies it
+internal/runtime/enforce/landlock TestRootMissingWriteDirIsTheDroppedUsers # a write directory a root launch creates is the dropped user's, and the launcher's thread keeps euid 0
+
+internal/watch/watcher TestIntegrationWatcherSeesAFakeAgentItsChildAndTheirExit # the agent watcher sees a fake agent, its child and their exits through the real proc connector (CAP_NET_ADMIN)
+internal/watch/watcher TestIntegrationOverrunResynchronisesWithTheRealKernel # a real ENOBUFS (the kernel's buffer overflows) is followed by a scan that leaves each agent reported once
+internal/cli TestIntegrationAgentsFollowSeesAFakeAgentOnTheRealKernel # tego agents --follow end to end on the real proc connector and /proc, as root
+
+internal/runtime TestIntegrationRootSweepEndsAUsersKilledLauncher # a root sweep ends a user launcher's orphan in the user's delegated subtree (the test delegates one when none is there)
+internal/runtime TestIntegrationRootSweepEndsARootLauncherTheUserCannot # a root launcher's orphan: the user's sweep leaves it, root's ends it and hands it over
+internal/runtime TestIntegrationRootSweepLeavesAnotherUsersRootRunAlone # a root sweep of a planted run never kills another user's root-launched run
+internal/runtime TestIntegrationRootSweepLeavesAnotherUsersRootRunForAPlantedEndedRun # a root sweep of a planted ended run never kills another user's root-launched run
+internal/runtime TestIntegrationRootSweepLeavesAnotherUsersRootRunForARenamedRootOwnedRun # a root sweep of a root-owned run directory renamed to another run's id never kills that run
+internal/runtime TestIntegrationRootSweepAnchorsTheOwnersRun # a root sweep of another account's run anchors it beside the ledger root, not in root's own chain.log
+internal/runtime TestIntegrationRootStopMarkerFollowsNoLink # a root stop places its marker through the ledger's walk, refusing a planted link
+
+# The root-only tests test/integration-skips.txt lets the unprivileged step skip, which only the no-failure rule
+# held here until review round 5 (P1): scripts/check-skiplists.sh now requires each such skip to be named in this
+# list or in test/vm/root-skips.txt. Each passed as root in both of its package's builds in a KVM guest, the
+# default one and the runner-like one above.
+internal/doctor TestIntegrationAsRoot # D6's functional probe, D7's program loads and D8's fanotify round trip, as root
+internal/doctor TestTestHookWithoutAProbeCgroup # reaching the attach step needs a program the kernel loaded
+internal/runtime/enforce/cgroup TestPlaceRingOnARealOuter # a ring outer and its rings need CAP_BPF
+internal/runtime/enforce/cgroup TestRunMembersMatchesProc # a cgroup of the root hierarchy
+internal/runtime/enforce/cgroup TestTier2ConnectHasOneLine # a tier-2 run with no net: section records each connect once
+# TestTier2DatagramLineIsTheKernels (DGRAM-VERDICT's root cell: sendmsg_unix on 6.7+, the plane's step D below it,
+# sendmsg4 everywhere) is not here: like TestTier2UnixEndToEnd it needs the objects, so its plain build skips it
+# (test/vm/root-skips.txt, untagged:) and the tegobpf build, which CI's VM_BPF=yes always runs, may not skip it.
+internal/runtime/enforce/cgroup TestTier2ReaperEndsAnOrphanOnlyOnceItsTreeIsGone # ADR 0020: a killed launcher's pinned links hold while its tree lives; its reaper then ends and purges the run
+internal/runtime/enforce/cgroup TestIntegrationLingerZeroKillRemovesTheBuild # ADR 0022 step 1: at bpf.linger 0 a killed launcher's reaper removes the build, and no link of its programs remains
+internal/runtime/enforce/cgroup TestIntegrationABuildOutlivesItsLastLauncherWhileAKilledOnesRunLives # ADR 0022 step 2: the last launcher out keeps a build a killed launcher's live run needs; the reaper or the timer removes it after
+internal/runtime/enforce/cgroup TestIntegrationAKilledTimerLeavesTheBuildUntilStop # ADR 0022 step 3: a killed timer leaves the build until a root tego stop starts it again
+internal/runtime/enforce/cgroup TestIntegrationABuildWhoseRunSetCannotBeReadIsKeptAndShown # ADR 0022 (5): an unreadable run set keeps the build through gc --builds, and doctor says why
+internal/runtime/enforce/cgroup TestTier2ConcurrentReapersEndAnOrphanOnce # ADR 0020 (3): two reapers and a gc racing end an orphan once
+internal/runtime/enforce/cgroup TestTier2AReapersDeathLeavesTheRunToTheSweep # ADR 0020 (7): launcher and reaper killed, the next gc ends and purges the run
+internal/runtime/enforce/cgroup TestTier2RunRefusesWithoutItsReaper # ADR 0020 (4): the fanotify fallback refuses a run whose reaper cannot start
+internal/runtime/enforce/cgroup TestTier2ANormalRunLeavesNoReaper # ADR 0020: a run its launcher ends leaves no reaper and no pinned links
+internal/runtime/enforce/cgroup TestTier2ArmsAfterTheStageExec # ADR 0021: the stage exec is neither decided nor recorded, the agent first exec is
+internal/runtime/observe TestIntegrationLostCounterCountsItsOwnSlot # BPF maps pinned in bpffs
+internal/runtime/observe TestIntegrationARunWithNoRingReadsNothing # BPF maps pinned in bpffs
+internal/runtime/observe TestIntegrationPinnedMaps # BPF maps pinned in bpffs
+internal/runtime/observe TestIntegrationPinnedRingWithoutLostCounterIsRefused # BPF maps pinned in bpffs
+internal/runtime/observe TestIntegrationPinnedRingWithoutRunSetIsRefused # BPF maps pinned in bpffs
+internal/runtime/observe TestIntegrationPinnedRunSet # BPF maps pinned in bpffs
+internal/runtime/observe TestIntegrationStopReadsTheLostCounterLast # BPF maps pinned in bpffs
+internal/runtime/observe TestIntegrationRecorderStopDuringStartupClosesOwnedMaps # startup/stop closes recorder-owned BPF descriptors and keeps fixture descriptors usable
+
+# ADR 0026 (per-run rings): the ring outer takes a run's own ring of any size at its slot. The concurrency tests
+# (TestIntegrationConcurrentRunsOfOneBuild, TestTier2ConcurrentRunsOfOneBuild) need the objects, so their plain
+# builds skip them and they are held by test/vm/root-skips.txt and the no-failure rule instead.
+internal/bpf TestRingsOfAnySizeGoInTheOuter # ring outers and rings need CAP_BPF
+# Tier 3's decision plane (TIER3-PLAN T2): both builds of decide.bpf.c load and attach in each mode the kernel offers,
+# LSM mode where bpf is an active LSM (the default guest boot) and fmod_ret everywhere; a mode the kernel lacks skips
+# as a subtest, so the test passes on TEGO_VM_LSM=kernel and a hosted runner with fmod_ret alone.
+internal/bpf TestPlaneLoadsAndAttaches # loading and attaching lsm and fmod_ret programs needs CAP_BPF and CAP_PERFMON
+internal/bpf TestObjectSpecCacheLoadsFreshCopyOnThisKernel # warm cached specs remain isolated after mutation and load through the actual verifier
+# TIER3-PLAN T3: every Step A hook refuses in a run's child cgroup by rows a test-only iter fills, and allows outside.
+internal/bpf TestPlaneStepAHooksDecide # attaching the plane, filling rows through an iter and cgroup mkdir need root
+# TIER3-PLAN T15: step D's unix hooks decide a run's names in a child cgroup, and the relay from this cgroup.
+internal/bpf TestPlaneUnixHooksDecide # attaching the plane's unix hooks and cgroup mkdir need root
+internal/bpf TestPlaneStepCHooksDecide # attaching the plane's mapping hooks, filling rows through an iter and cgroup mkdir need root
+internal/runtime/enforce/cgroup TestPlaneUnixVerdictOnRealKernel # a plane-mode run's unix names through Prepare, Attach and Arm need root
+internal/runtime/enforce/cgroup TestTransportSelectorsOnRealKernel # F2 TCP/UDP scalar selectors must agree with actual kernel admission and pure policy attribution
+internal/runtime/enforce/landlock TestStrictClientFilterOnRealKernel # F2 client-only import/listener guards must return ENOSYS in actual native syscalls
+# TIER3-PLAN T13: every Step B hook (creates, truncates, attribute changes on a deny_write target and a tmpfs below it,
+# socket_create by socket(2) and io_uring) and the TOCTOU cells, on the same rows.
+internal/bpf TestPlaneStepBHooksDecide # attaching the plane, filling rows through an iter, cgroup mkdir and a tmpfs mount need root
+# ADR 0018 PR 2: cgroup/sock_create decides every socket of a child cgroup against ADR 0018 (1)'s table, records each
+# refusal on the run's ring, and counts a lost record at the run's slot.
+internal/bpf TestSockCreateRefusesInetSocketsOutsideTheAllowlist # attaching a cgroup program, cgroup mkdir and ping_group_range need root
+internal/bpf TestSockCreateCountsALostRecord # attaching a cgroup program and cgroup mkdir need root
+# ADR 0026 (6) as amended (a slot's rings are reused by its next run) and the round-7 review's L1 and L4.
+internal/runtime/enforce/cgroup TestRingUseWhileRingsComeAndGo # rings pinned in bpffs, replaced while the walk runs
+internal/runtime/enforce/cgroup TestReclaimTakesOnlyRingsNoRunHolds # rings pinned in bpffs, reclaimed by slot owner
+internal/runtime/enforce/cgroup TestPlaneFillWritesTheContractsRows # enforce-plane R16: the fill writes a slot's rows in the kernel, which needs CAP_BPF and CAP_PERFMON
+internal/runtime/enforce/cgroup TestPlaneFillFailsOnAReusedDescriptor # enforce-plane R16: a reused descriptor number fails the fill
+internal/runtime/enforce/cgroup TestPlaneFillKeysEachHardLinkOfOneInode # enforce-plane §6 E15: each listed hard link of one inode gets its own exec row
+internal/runtime/enforce/cgroup TestPlaneFillRefusesOneLinkTwice # enforce-plane R16: two exec entries on one link fail the fill
+internal/runtime/enforce/cgroup TestPlaneFillSlotReuseLeavesStaleRowsAbsent # enforce-plane R6: a reused slot keeps stale rows under their gen and the kernel clear removes them
+internal/runtime/enforce/cgroup TestPlaneFillTiming # enforce-plane §2.6: the fill timed at 100, 1000 and 4096 rows
+internal/runtime/enforce/cgroup TestPlaneFillUnscopedOnABusyHost # enforce-plane §2.6: the unscoped fill timed against 200k foreign descriptors
+internal/runtime/enforce/cgroup TestPlaneStaleLinkOverARecreatedBuildIsNotAdopted # enforce-plane R20: a plane link pinned over the build's old maps is replaced, not adopted, so the run is enforced
+
+# The traceability audit of 2026-09-24: spec rules whose only proof is a run as root in the guest. Each passed as
+# root in a KVM guest; the first three run unprivileged too, where CI's integration step holds them.
+internal/runtime TestIntegrationEnforcementOutlivesItsLauncher # runtime-launch I7: Landlock and pids.max hold after the launcher is SIGKILLed
+internal/runtime TestIntegrationANestedRunFailsAtStartAndLeavesTheOuterRunAlone # supervisor R20/E16: a nested run exits 125 and the outer run's supervisor goes on
+internal/runtime TestIntegrationConcurrentSweepersEndAnOrphanOnce # runtime-launch case 10: one of N racing sweepers kills and ends an orphan
+internal/runtime TestIntegrationStopAfterPidReuseSignalsNothing # runtime-launch R22, cases 29/32: stop after pid reuse signals nothing
+internal/platform/proc TestStartIdentityOutlivesPidReuse # proc.Start identity tells a reissued pid from the process it named
+internal/runtime TestMainProcessOOMIsReasonOOM # runtime-launch R10: an agent over its memory cap is OOM-killed, with swap or without (ADR 0038)
+
+internal/runtime/cgroup TestIntegrationAHelperOutlivesItsLaunchersCgroup # a helper is placed beside the agents' slices, which needs root
+
+test/conformance TestConformanceKernel # ADR 0017's cells performed in real runs on every axis the machine offers (landlock, cgroup on the listener and per plane mode, bpflsm); a skip would leave the kernel unchecked against compile --test
+
+# Review regressions: distinct thread audit identities and tracking failures with record: off.
+internal/runtime/enforce/cgroup TestFanotifyDistinguishesSiblingReads # real fanotify permission events must retain each opening thread
+internal/bpf TestTrackingFailureEmittedWithRecordOff # failed descendant map insertion must report an error even with recording disabled
+
+# Explicit network policies require actual kernel operation proof.
+internal/runtime/enforce/cgroup TestNetworkControlsOnRealKernel # listener ingress, accepted reservation, release and source refusal
+internal/runtime/enforce/cgroup TestNetworkListenAutobindOnRealKernel # empty and exact ephemeral listener admission
+internal/runtime/enforce/cgroup TestNetworkImportedListenOnRealKernel # outside-created socket cannot bypass the governed listener policy
+internal/runtime/enforce/cgroup TestNetworkExpiryOnRealKernel # expiry boundary and an independent grant without a userspace refresh
+internal/runtime/enforce/cgroup TestConnectApprovalOnRealKernel # exact destination and cookie one-shot credit, consumption and revocation
+internal/runtime/enforce/cgroup TestNetworkDatagramAndByteLimitsOnRealKernel # actual packet limits and monotonic counters for both address families
+internal/runtime/enforce/cgroup TestPlaneImportedUnixBindOnRealKernel # outside-created unbound socket still applies the governed Unix bind policy
+internal/runtime/enforce/cgroup TestPlaneRunUnixListenerOutcomes # actual CLI Unix binds/listens and terminal recording in full and off modes
+internal/runtime/enforce/cgroup TestPlaneRunControlPtraceIsRunScoped # actual ptrace attach and traceme in governed runs: one plane control line per refusal, none for the run's own child and parent
+internal/runtime/enforce/cgroup TestPlaneRunControlKeyringIsTheContractsOptIn # actual keyctl/add_key/request_key: the supervisor's refusal, the opt-in and its gap lines, and the plane's key_permission refusal
+internal/runtime/enforce/cgroup TestPlaneRunControlBPFIsRefused # actual bpf(2) on a map descriptor passed in over SCM_RIGHTS: the filter's EPERM, and the plane's EACCES and line where the filter's arm is left out
+internal/runtime/enforce/cgroup TestPlaneRunControlScratchCgroupGoesWithItsLiveTask # the ptrace cell's scratch cgroup is removed when the cell ends with its task alive, so a failed cell does not fail the next one
+
+internal/runtime/enforce/cgroup TestPlaneRunApprovedFSAskKeepsDescriptorOnlyGrant # actual outside administrator approval, pinned inode/OFD grant, new-open denial and terminal ledger in summary/off
+
+internal/runtime/enforce/cgroup TestOldRunMembershipMapIsNotAdopted # an incompatible legacy membership ABI must be refused instead of silently replaced
+
+internal/runtime TestDNSBrokerCLIOnRealKernel # actual governed DNS CLI, exact endpoint authentication, anchored ledger and DNS-only/root-plane cleanup
+
+internal/runtime TestDNSBrokerOrphanCleanupOnRealKernel # actual governed DNS CLI, exact endpoint authentication, anchored ledger and DNS-only/root-plane cleanup
+
+internal/runtime/enforce/cgroup TestPlaneProbeRowsOwnListenerMapThroughFillAndClose # private doctor listener outer is shared by fill and decision, with owned descriptor cleanup
+
+# ADR 0026 (8): optional two-link TLS dispatch with the required individual fallback.
+internal/runtime/capture/uprobe TestIntegrationTLSMultiDispatchAndFallback/individual # actual concurrent TLS delivery, no-ring isolation, shared adoption and cleanup
+
+# The third-party fanotify listener (test/vm/cmd/permlistener, the helper of ADR 0021's pairs runs and ADR 0017's
+# space 6). Each test starts it as a process, as root, on a tmpfs of its own; a skip would leave the tool unchecked
+# against the kernel's fanotify, and the runs that rely on it would be relying on a guess.
+test/vm/cmd/permlistener TestIntegrationDenyRefusesOneFileAndNoOther # deny mode: the file, its hard link and its exec get EPERM, any other open passes, and the stop takes the marks with it
+test/vm/cmd/permlistener TestIntegrationAllowTouchDecidesOnTheMarkedMountWithoutDeadlock # allow-touch: decisions that open files on the marked mount finish with no event late, because the reader answers the listener's own opens
+test/vm/cmd/permlistener TestIntegrationADecisionThatStallsIsLetThroughAtTheDeadline # the helper's own deadline: a stalled decision lets the opener through, counted late, and the stop does not wait for it
+test/vm/cmd/permlistener TestIntegrationStopReleasesAnOpenerMidDecision # SIGTERM removes the marks and answers what a decision still holds, so the stop is never the stall
+
+# ADR 0023 A4 and T3.3: a cilium Map or Program borrowed through internal/bpf/fdborrow.go stays reachable for the
+# borrow, so its runtime cleanup cannot close the number under fn while the collector runs inside it.
+internal/bpf TestBorrowsKeepTheObjectReachable # creating a map and loading a socket filter need CAP_BPF
+
+# ADR 0021 (2), (3): the order that closes E39 (the stage execs before any mark, marks are placed at Arm, no process
+# starts while they exist) against the kernel's fanotify. The first four skip wherever fanotify_init is refused, which
+# is wherever this is not root; the last two start a real stage of the tego binary the test builds, and skip when it
+# cannot be built or Landlock is off. A skip of any of them in the job would leave the order unchecked there, and the
+# job would go on passing. Each passed as root in a KVM guest set up as a hosted runner is (test/vm/README.md), in
+# both builds of its package.
+internal/runtime/enforce/cgroup TestStageExecUnderGCNeverWaitsOnItsOwnGroup # ADR 0021 (3): 60 stage starts under a busy collector, no mark while the stage execs, marked once it reports, a start refused while marked
+internal/runtime/enforce/cgroup TestKilledListenerReleasesTheMount # E15: a SIGKILLed listener takes its marks with it, its child in the vfork window and a surviving child notwithstanding
+internal/runtime/enforce/cgroup TestUnmarkAllFlushesOnlyTheMountMarks # E35, ADR 0021 (3): one FAN_MARK_FLUSH removes every mount mark and releases the process's arm, and an open then goes through
+internal/runtime/enforce/cgroup TestStoppedListenerHoldsItsMountUntilContinued # E40: a SIGSTOPped listener's mount holds an open, and SIGCONT answers it with the deny_read refusal
+internal/runtime TestIntegrationArmFollowsTheStageExecAndPrecedesTheAck # ADR 0021 (2): at Arm the one child runs the tego binary, exec'd and not yet acked
+internal/runtime TestIntegrationFailedArmFailsTheRunBeforeTheAgent # ADR 0021 (2): a failed Arm ends the run before run_start with exit 125, and the stage it was about to ack is killed
+
+# ARM64-CI (enforce-plane §2.15's ordering, on a kernel that is run): the recorder's directory walk while a chain of
+# directories above it is renamed outside the run, and what the contract denies under the same renames. It runs in
+# fmod_ret mode wherever the probe admits the plane, a hosted runner included.
+internal/runtime/enforce/cgroup TestPlaneSeqcountStress # no ledger line names a path the renamed chain never had, a walk that finds the chain moved is marked, and nothing the contract denies is allowed
+
+# ADR 0042: the privileged path is a root launcher of the initial user namespace, over a root 0700 /run/tego.
+internal/runtime TestUnshareRootIsNotRoot # (5)(d): uid 0 of a child user namespace gets no root reach and no SUDO_UID drop target
+internal/runtime TestRootLauncherRefusesGroupHostState # (3)(b): a 1770 root:tego /run/tego is refused with the fix, root 0700 runs
+internal/runtime TestFileCapabilityCopyIsRefused # (3)(a): a file-capability copy is refused for every command but version
+internal/runtime TestAmbientIncidentalCapabilityRunsLandlock # (3)(a): an incidental ambient set is cleared on every thread; cap_sys_admin is refused
+internal/runtime/enforce/cgroup TestPlaneRunWriteAlternateIsPutToTheGate # an alternate the write gate refuses is refused by an outside tego alternate at cgroup and bpflsm; the delivered line carries the alternate's own gate decision
+internal/runtime/enforce/cgroup TestPlaneRunPureReaderUnderRecordOffIsWarnedAndStalls # a pure reader and a pure writer under record: off run to their end unwarned at cgroup and bpflsm, through the kernel's activity stamp, as under record: full (warned and ended limit-stall before ACTIVITY-BPF; the name is kept)
+internal/runtime/enforce/cgroup TestPlaneRunReadGateScoresAReadWriteOpen # a read gate refuses an O_RDWR open of a matching file at cgroup and bpflsm, as it does the O_RDONLY one, with its score on both lines
+internal/runtime/enforce/cgroup TestPlaneRunStallFollowsWhatTheSupervisorAnswers # under record: off a pure connector, and a pure reader or writer under a read gate or an fs.ask scope, run to their end unwarned at cgroup and bpflsm (the fs.ask reader through the kernel's activity stamp, ended limit-stall before ACTIVITY-BPF)
+internal/runtime/supervisor TestExecImageAutomountPointFailureIsNoMiss # R16b (0): a walk that fails under an S_AUTOMOUNT stub (a debugfs's tracing) is no miss, and the walk mounts nothing
+# ADR 0018 (7): cgroup/setsockopt refuses every TCP_ULP of a child cgroup, records each refusal on the run's ring,
+# and counts a lost record at the run's slot. Its io_uring cell skips where a kernel has no io_uring setsockopt
+# (root-skips.txt); the run cells in enforce/cgroup and doctor are held by the tagged builds' skip gate instead.
+internal/bpf TestSetsockoptRefusesEveryTCPULP # attaching a cgroup program and cgroup mkdir need root
+internal/bpf TestSetsockoptCountsALostRecord # attaching a cgroup program and cgroup mkdir need root
+# ADR 0043 (NAME-BPF): the name entries decide in the kernel, in a scratch slot.
+internal/bpf TestPlaneNameEntriesDecide # attaching the plane, filling rows through an iter, mounts and cgroup mkdir need root
+internal/runtime/enforce/cgroup TestPlaneNameEntriesRunEndToEnd # a governed run's name entries (test build) at cgroup in each plane mode and at bpflsm: a .env created later unreadable, a create, rename-into and link-into refused, a directory move-out refused
+internal/runtime TestIntegrationHeldCompletionAtRootTier # ADR 0041 Stage B: a root launcher's held open through the deputy, dropped to the user, at tier cgroup and tier bpflsm: a gate ask approved, status and stop of the run, one line per action
+internal/runtime/supervisor TestHeldOpenDifferentialAcrossMounts # ADR 0041 Step 8: held opens across a bind mount, an overlay, a hard link, a nosymfollow mount and fs.protected_symlinks answer as the kernel does
+internal/runtime/supervisor TestDeputyWalkRefusesItsOwnProcOnEveryMount # ADR 0041 D4: the open deputy's own /proc tree is refused on a second procfs instance, a bind mount of /proc and a bind mount of its own directory
+internal/runtime/supervisor TestIntegrationUnixRelayDotDotOnBtrfs # R11a: a bind by a name climbing through a symlink into another subvolume decides nothing: the harness's colliding socket, older than the bind, is refused unix-foreign and accepts nothing; the target's own, sharing a live socket's binding, unix-origin-unread (review RLEFTOVERS-NETs2-1)
+internal/runtime/supervisor TestIntegrationUnixRelayRebindOnBtrfs # R11a: a second bind after a failed one decides nothing by name: the harness's colliding socket, older than both binds, is refused unix-foreign and accepts nothing; the target's own, sharing a live socket's binding, unix-origin-unread (review RL4c3-1)
+internal/runtime/supervisor TestIntegrationUnixRelayMagicBindOnBtrfs # R11a: a bind through a magic link decides nothing by name: the harness's colliding socket, older than the bind, is refused unix-foreign and accepts nothing; the target's own, sharing a live socket's binding, unix-origin-unread (review RLEFTOVERS-NETc3-1)
+internal/runtime/supervisor TestIntegrationUnixRelayStaleCollisionOnBtrfs # R11a: a run socket colliding with a stale foreign file on btrfs is admitted by identity, the stale file refused by its birth time (NET-UNIX-IDENTITY fix round 2)
+
+# Review RL6cs3-1: a model budget cannot be gone around by a direct connection when no probe runs.
+internal/runtime TestRootRecordOffAutoRefusesADirectModelConnection # at tier cgroup an auto contract under record: off captures with the forwarder and refuses a direct model connection
+
+# Limits R4, the activity stamp (ACTIVITY-BPF): trace_proc stamps a stall-bounded record: off run's allowed actions.
+internal/bpf TestActivityStampPerSlot # attaching the record's fexit and fentry programs and cgroup mkdir need root
+# Limits R4 end to end at tier cgroup (ACTIVITY-BPF): what a stall-bounded run does between two lines is activity.
+internal/runtime/enforce/cgroup TestAReadingAgentUnderRecordOffIsNotAStall # a pure reader and a pure writer (renames, mkdir, rmdir) under record: off and stall_after: 2s run to their end at cgroup in each plane mode and on the listener, and at bpflsm where LSM mode passes, through the kernel's activity stamp
+internal/runtime/enforce/cgroup TestAnIdleAgentUnderRecordOffStallsAtTier2 # an idle agent under record: off is still ended limit-stall at cgroup, once
+internal/runtime/enforce/cgroup TestAStreamingModelResponseIsNotAStall # a model response streaming past stall_after through the system libssl, capture: uprobe, runs to its end under off and summary
+internal/runtime/enforce/cgroup TestASilentModelStalls # a model that answers its head and then nothing is ended limit-stall under off and summary
+internal/runtime/enforce/cgroup TestRecordOffWithoutStallBudgetPlacesNoProbe # record: off places no TLS probe without a stall budget, and places them with one
+internal/runtime/observe TestIntegrationARunWithNoRingReadsItsActivityStamp # a run with no ring at its slot still reads its slot of the pinned tego_activity (review F2)
+
+# CONF-YAML (ADR 0017 plan C6): the judge catches a contract that grants more than its model on a plane axis, not only at tier landlock.
+test/conformance TestJudgeCatchesAMutatedContract # a mutated contract (write and exec.allow widened beyond the model) is held as a fail-open on the landlock axis and on one plane axis (cgroup@lsm, else fmod_ret)
+# CONF-SPACES (ADR 0017 space 2, ADR 0032): the AT_EXECVE_CHECK detector and the never-set regression, at tier landlock and tier cgroup.
+test/conformance TestExecveCheckDetector # ADR 0032's revisit condition is detected on the row: each interpreter's honouring of SECBIT_EXEC_RESTRICT_FILE, n/a below 6.14, at each tier the root run offers
+test/conformance TestChildNeverSetsExecRestrictBits # the agent's securebits 8-11 are clear at tier landlock and tier cgroup
+# CONF-SPACES (ADR 0017 space 5, v73 gates-1): the btrfs subvolume cell runs in every root run of the tegobpf suite; its untagged: skip in root-skips.txt is the plain build's only.
+internal/runtime/enforce/cgroup TestPlaneRunBtrfsSubvolumeInodeIdentity # two btrfs subvolumes' equal inode numbers keep distinct plane rows, agreeing with compile, model, kernel and ledger; mounts an embedded image, needs only the btrfs module root-suites.sh loads (VM_MODULES)
+
+# enforce-plane §10.1 cold attribution (perf-cold C1): each program's BPF_LOG_STATS parses and matches verified_insns (5.16+).
+internal/bpf TestLoadStatsMatchKernel # loading trace_proc with the verifier's statistics needs CAP_BPF
+
+# perf-cold C3 (TEARDOWN-SYNC): a build's removal returns once the kernel has released its links.
+internal/runtime/enforce/cgroup TestBuildRemovalReleasesLinksBeforeReturn # the sweep's removal, a reaper's ReapBuild and the last launcher out leave none of the build's links or programs enumerable by ID when they return
+# Review TS-R1-1: the plane's half of that removal, and the other plane tests that take hostPlane's mode (fmod_ret on a
+# runner without BPF LSM; bpf_loop is in 6.8's BTF). The root skip gate already fails a skip of any of them; this list
+# fails a run that no longer reaches them at all.
+internal/runtime/enforce/cgroup TestPlaneRemovalReleasesLinksBeforeReturn # the plane's links, taken first (R20), and the build's leave none of their links or programs enumerable by ID when the removal returns
+internal/runtime/enforce/cgroup TestPlaneRunAdoptsThePinnedPlane # enforce-plane R20: a run of a lingering build runs the plane's pinned programs and loads none of its own
+internal/runtime/enforce/cgroup TestPlaneStaleRowsOfTheSlotsLastRunAreAbsent # enforce-plane R6: a reused slot's previous run's rows are walked past by their gen
+# ASK-UNIX (supervisor R11c): an approved abstract name's one-connect grant in the kernel, and its purge.
+internal/runtime/enforce/cgroup TestPlaneUnixApprovalOnRealKernel # the plane's socket_connect admits one connect of the granted socket to the approved name, for this gen, and Detach purges the slot's grants
+internal/runtime/enforce/cgroup TestUnixApprovalRowsPurgedOnRealMaps # purgeSlot removes a grant a dead launcher left at the slot
+internal/runtime TestRootAskUnix # ASK-UNIX at tier cgroup from a root launcher: an approved pathname and abstract name relayed and admitted by the run's kernel, a denial and a timeout connect nothing
+internal/runtime/enforce/cgroup TestApprovalGrantsReapedWithTheirDeadLauncher # the reaper purges a dead launcher's unix and TCP one-connect grants with its slot (PurgeRun over the pinned maps)
+internal/runtime TestIntegrationAskUnixScopeSpellings/bind-mount_alias # R11c at tier landlock: a scope declared through a bind mount of the write entry is asked by the bind mount's name, and the run's socket there reached by the write entry's name is its own
+# CONF-SPACES review round 1: the memfd cells' control fails a fixture where the machine's vm.memfd_noexec would give their EACCES.
+test/conformance TestMemfdControlSeesTheSysctl # vm.memfd_noexec 1 and 2, set in a child's own pid namespace, fail the memfd control and 0 passes it; n/a (logged, a pass) before 6.3
+# CONF-SPACES review round 2: the ptrace cells' control fails a fixture where the machine refuses the agent's attach outside every run.
+test/conformance TestHostControlSeesARefusingMachine # the host control passes on the host stage below ptrace_scope 2, and fails on a plain process of the agent's uid (from scope 1) and on a kernel thread
+internal/runtime/enforce/cgroup TestPlaneRunBindLookupFailureIsTheKernels # a decision-plane run's Unix bind beneath a regular file gets the kernel's ENOTDIR and one kernel-recorder line, observed, unmatched, never path-unreliable (review round 5 of CONF-COMPILE-2)
+# ADR 0048 P2's K0: the kernel facts exec pins rest on (the pin MAC over the kernel's argument area, SIGKILL from
+# sched_process_exec before the first instruction over 10,000 kills, binfmt stages, pid namespace ids, ptrace, start time).
+internal/bpf TestExecPinKernelFacts # tp_btf, lsm, fmod_ret and syscall programs, CLONE_NEWPID, CLONE_NEWTIME and a cgroup mkdir need root
+# ADR 0048 P2 K2/K3: a pinned run holds each exec to the pin the supervisor's half wrote (bprm_check, sched_process_exec).
+internal/runtime/enforce/cgroup TestPlaneExecPinsOnRealKernel # a plane-mode run, cgroup moves and BPF maps need root
+# ADR 0048 (7): doctor's exec pin cell, plane.exec_pin, holds every answer in each mode the boot passes.
+internal/doctor TestIntegrationPlaneExecPinCell # the plane probe's load, attach and scratch cgroup need root
+# ADR 0048 P2 K6 (review REXEC-PINSc1-4): the pinned run tests, each of which passed (its fmod_ret cell) in a KVM guest
+# placed as a hosted runner is (VM_CGROUP=service, TEGO_VM_LSM=kernel, TEGO_VM_LOCKDOWN=none) on 2026-10-19.
+internal/runtime/enforce/cgroup TestPlaneRunExecPinned # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestPlaneRunExecPinOff # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestPlaneRunExecPinRace # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestPlaneRunExecPinLargeArgv # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestPlaneRunExecPinPrefix # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestPlaneRunExecPinNonLeader # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestPlaneRunExecPinScriptRewrite # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestPlaneRunExecPinSymlinkSwap # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestPlaneRunExecPinInterpreterSwap # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestPlaneRunExecPinTraced # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestPlaneRunExecPinGuardedPtrace # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestPlaneRunExecPinInterpreted # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestPlaneRunExecPinUnpinned # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestPlaneRunExecPinKillFailed # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestPlaneRunExecPinGateInsert # a plane-mode run, cgroup moves and BPF maps need root
+internal/runtime/enforce/cgroup TestDatagramApprovalOnRealKernel # ASK-UDP: an approved UDP datagram or connect admitted once by the run's sendmsg4/6 or connect4/6, on that socket and destination only, expiring, stale gens absent, Detach removing the slot's grants
+internal/runtime TestRootAskUDP # ASK-UDP at tier cgroup from a root launcher: an approved datagram, a socket's later datagrams and a UDP connect admitted by the run's kernel grants, a denial and a timeout send nothing
+internal/runtime/enforce/cgroup TestIntegrationALingeringBuildALiveRunNeedsIsListedKept # ADR 0022 (1): doctor lists a build inside its linger that an orphan's live run needs as kept, reading its run set read-only
+internal/handoff TestHandoffRefusesRootAsRoot # ADR 0100 (1b): the handoff refuses a real euid 0 before it opens tego-control
+internal/control/cli TestControlRefusesRootAsRoot # ADR 0100 (1b): tego-control refuses every command at a real euid 0, its guard reading root's own capability sets
+internal/handoff TestHandoffRefusesNoexecMountAsRoot # ADR 0100 (1b), review round 1: a tego-control on a noexec mount is refused, and the same file with exec allowed is opened
+internal/runtime TestRootRunStartNamesTheSudoAccount # ADR 0073 root arm: sudo tego run --tier cgroup records launcher_uid 0 and the invoking account as sudo_uid/sudo_user; tier landlock as that account its own uid; host is uname -n
+internal/runtime TestRootAgentHasItsOwnAccountsHome # identity-config.md R3a: sudo's HOME, USER and LOGNAME name root, and the agent, which runs as the invoking user, gets that user's
+internal/runtime TestIntegrationHeldReadsAtRootTier # ADR 0069: fs.reads: held from a root launcher at tier cgroup and tier bpflsm, the agent and the deputy dropped to the user: a .env.local made during the run is refused by the name rule on the object the deputy reached
+internal/runtime TestIntegrationReasonReadsAtTierCgroup # ADR 0077: at tier cgroup from a root launcher reason reads never apply (reads_notified kernel); a read Landlock refuses first and one only tier 2 refuses each have exactly one refused line, on the fanotify fallback and in the selected plane mode
+
+# LO EXEC-PERF (ADR 0048 C8, from work/EXEC-PERF): the image walk's one-call lookup is the component walk's where it answers.
+internal/runtime/supervisor TestLookupInOneNeverMountsAnAutomountPoint # the one-call lookup's RCU guard: an automount stub on the task root's own mount stays unmounted, which the reference walk alone mounts
+internal/runtime/supervisor TestLookupInOneResolvesFromTheTasksRoot # a chrooted task: absolute pathnames and absolute symlinks resolve inside it (RESOLVE_IN_ROOT); a spelled ".." is left to the walk
+internal/runtime/supervisor TestLookupInOneLeavesAProcfsRootToTheComponentWalk # a task rooted at /proc: the one-call lookup declines, so "self" is the task's
+
+# LO ADOPT-EXIT (ADR 0055, from work/LEFTOVERS-ADOPT-2): leader exit, process-event ends, held-file no-path reads, the plane's keyed files.
+internal/watch/adopt TestIntegrationNoPathChrootedHolder # a file a chrooted process holds is on a path, though its mountinfo shows none of its filesystem
+internal/watch/adopt TestIntegrationNoPathLazilyUnmounted # a file held on a lazily unmounted tmpfs is on a path the plane decides
+internal/watch/adopt TestIntegrationNoPathDetachedBind # files held through a detached clone of tmpfs and of btrfs (subvolume devices) are on paths
+internal/runtime TestIntegrationAdoptCountsAFileHeldThroughAnotherMount # a key held through a detached clone or lazily unmounted bind counts its process unread; through a mounted bind it counts by its other path
+internal/cli TestIntegrationBoundaryAdoptionMakesTheOwnersRecords # a boundary adoption makes the owner's ~/.tego as the owner's, and follows no link there
+internal/runtime/enforce/cgroup TestPlaneRunKeyedFilesAreTheInodesItDecides # the files a filled plane reports keyed are its rows at a stat's identity, and the plane refuses a hard link of a deny_read file and a deny_read directory renamed after the fill
+internal/runtime/enforce/cgroup TestPlaneRunWalksTheMountTreeAsItStands # the mount-topology residual an adoption discloses: a bind made after the fill moves files no row keys, never the keyed ones
+internal/watch/adopt TestIntegrationAdoptMovesAProcessWhoseLeaderExited # a process whose leader exited while its thread runs is moved with its child and released
+internal/watch/adopt TestIntegrationReleaseAfterTheLeaderExitedInTheScope # a process whose leader exited in the scope after the move is released whole, and the scope is removed
+internal/watch/watcher TestIntegrationWatcherFollowsAnAgentWhoseMainThreadExits # an agent whose main thread exits while its thread runs stays followed, its thread's child too, and ends with its last thread
+internal/watch/watcher TestIntegrationWatcherEndsAnAgentFoundWithItsMainThreadGone # an agent the scan found with its main thread gone is reported ended at its last thread's exit, and no session is left
+internal/watch/watcher TestIntegrationAGroupReadsGoneAtItsLastTasksExitEvent # /proc shows a process gone once its last task's exit event is read, and not at its leader's while a thread runs
+internal/cli TestIntegrationExitWatchReadsTheWholeProcessEnd # an adoption's exit status is the whole process's end, unknown when the main thread exited first with another code
+internal/watch/watcher TestIntegrationAProcessEndsAtItsEventsWithAStatusWaitAgrees # a process ends at its events for every shape of end (a thread's exec, a failed exec, a thread's exit_group), with no status other than wait(2)'s
+internal/watch/watcher TestIntegrationAThreadKilledAloneGivesNoSignal # a task killed alone by SIGSYS gives no signal status for a process wait(2) says exited 0
+internal/watch/watcher TestIntegrationWatcherReportsTheStatusOfAProgramAThreadRan # the watcher reports the exit of a program a thread ran, and ends an agent whose thread's exec failed
+internal/cli TestIntegrationExitWatchGivesTheStatusOfAProgramAThreadRan # an adoption's exit status is the exit of the program its root's thread ran
+
+# Approval for file changes (ADR 0047): a mutation in an fs.ask scope is asked, then made by the supervisor on pinned names.
+internal/runtime TestRootMCPRelayGate # ADR 0126 §4 where a plane decides a run's execs: a relayed server started around its shim is refused and never runs, and a start through the shim has one exec and one mcp line, the recorder's; a subtest skips where its mode is missing
+internal/runtime TestRootAskMutation # ADR 0047 at tier cgroup from a root launcher: an approved rename in an fs.ask scope made by the supervisor as the agent, one human line; a denial moves nothing; a rename across entries EXDEV unasked
+internal/runtime TestRootRouteChangesRefused # ADR 0128 at tier cgroup from a root launcher: a setuid-root program under setuid: true and a net: section changes nothing on any path, its bounding set has no CAP_NET_ADMIN, and with no net: section the same probe's unaddressed change lands
+
+# Attribution (capture-derive R42): actions tied to the reply that asked for them.
+internal/runtime TestRootRetrieverRunTiesActionsToReplies # PRD R9 at tiers cgroup and bpflsm: the retriever run's warehouse and queue connects and its summary and refused .netrc writes name the reply that asked for them (capture-derive R42)
+
+# Name entries in the backends (ADR 0043): name entries enforced in every build.
+internal/runtime/enforce/cgroup TestPlaneNameRowsFillAndClear # ADR 0043 D9: Prepare writes the slot's name map with the run's gen; Detach and the reaper's clear empty it
+internal/runtime/enforce/cgroup TestPlaneNameMapAdoption # ADR 0043 D9: a pinned plane without its name map pin is not adopted; the next run's rows land in its own programs' map
+internal/doctor TestIntegrationPlaneProbeAnswersTheNameCells # ADR 0043 C9: each plane mode answers the name cells exactly in a build that enforces name entries, or is not selected
+internal/doctor TestIntegrationPlaneProbeRejectsAFlippedNameAnswer # ADR 0043 C9: a flipped name cell fails every mode that reached the known answers and doctor names it
+internal/runtime/enforce/cgroup TestCompactedTableStaysAtBPFLSM # ADR 0043 D6: 4,500 .env files compile to a compacted table; an auto run gets bpflsm and refuses each, named by its own entry; a second link refused
+
+# Ask hardening (ADR 0008, ADR 0100 (7)): the ask broker answers only the person.
+internal/runtime TestRootAgentInOtherRunCannotAnswer # ask hardening at tier cgroup from a root launcher: run B's agent, with run A's ask.sock reachable, is refused by its broker as unauthorized, the ask still pending, and the person answers
+internal/runtime TestAdoptedAgentCannotAnswer # ask hardening: a process tego adopt moved into its adoption's scope answers as root and is refused as unauthorized, the ask still pending, and the person answers

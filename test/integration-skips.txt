@@ -1,0 +1,376 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The skips CI's unprivileged integration step allows (scripts/skipgate.sh): `CGO_ENABLED=0 go test -tags integration
+# ./...` as the runner user in its systemd user manager. The step runs every unit test too, so this list holds
+# test/unit-skips.txt's entries as well. Any other skip fails the step: an enforcement test that quietly stopped
+# running stayed green before (round-2 security review, Low 3). Root-only and BPF-object tests run in root-suites,
+# whose must-pass list holds the privileged half to account. Add an entry only with the reason it cannot run here.
+#
+# <package> <test> # <why it skips here>
+
+# Helper processes: a test that is its parent's re-executed child and skips in a plain run.: a test that is its parent's re-executed child and skips in a plain run.
+internal/platform/sys TestExecveGainHelper # helper process for TestExecveAfterClearCapabilities
+internal/platform/sys TestKernelWithoutPidfdThreadHelper # helper process for TestKernelWithoutPidfdThread
+internal/platform/sys TestPidfdSignalBlockedThreadHelper # helper process for TestPidfdSendSignalTargetsTheThreadGroup
+internal/platform/sys TestInheritedHelper # helper process for TestInheritedKinds, TestInheritedSealed and TestInheritedRefusesStdio (Inherited's seal needs a process that made no owner)
+internal/watch/watcher TestThreadKilledAloneHelper # helper process for TestIntegrationAThreadKilledAloneGivesNoSignal
+internal/platform/sys TestCloseInheritedFromHelper # helper process for TestCloseInheritedFrom
+internal/runscope TestInRunInACgroupNamespaceHelper # helper process for TestInRunInACgroupNamespace (InRun inside a cgroup namespace of its own)
+internal/testutil TestNoFDLeakChild # TestNoFDLeakFailsOnALeak's child
+internal/testutil TestLeakChild # TestLeakCheckMainFailsOnALeak's child
+internal/testutil TestOneCPUChild # TestOwnTimeLeavesOutRunQueueWaits's and TestAHandOffShowsInTheOwnTime's child
+internal/testutil TestStdioChild # TestGuardedStdioLeakCheckMainFailsOnAClosedStdin's child
+internal/runtime/enforce/cgroup TestBuildLockHelper # helper process for the build-lock tests
+internal/runtime/enforce/cgroup TestSlotHelper # helper process for the slot-table tests
+internal/cli TestStopLockHolderHelper # helper process that holds a run's lock as the stand-in launcher for the stop tests
+internal/control/web TestHelperLockHolder # helper process that holds a run's lock as the stand-in launcher for the dashboard Stop tests
+internal/runtime TestLockHolderHelper # helper process that holds a run's lock for the sweep reclaim test
+internal/runtime TestHeldFileHolderHelper # helper process that holds a file for the adoption held-file count's root test
+internal/runtime TestOutlivesLauncherHelper # helper process for TestIntegrationEnforcementOutlivesItsLauncher
+internal/watch/adopt TestNoPathChrootHelper # helper process for TestIntegrationNoPathChrootedHolder
+internal/runtime TestOtherCgroupNamespaceRefusedHelper # helper process for TestOtherCgroupNamespaceRefused (an answer from a cgroup namespace of its own)
+
+# Root only; CI's root-suites job runs them as root.
+internal/cli TestOwnLogHandsItsFilesToTheInvokingUser # needs root to chown to another uid
+internal/cli TestOwnLogRefusesADirectorySwappedInAfterItsMkdir # needs root: the swapped-in directory is a third uid's
+internal/doctor TestTestHookWithoutAProbeCgroup # reaching the attach step needs a program the kernel loaded, so root
+internal/runtime/enforce/landlock TestRootMissingWriteDirIsTheDroppedUsers # needs root to create a directory as another uid
+internal/runtime/supervisor TestDeputyWalkRefusesItsOwnProcOnEveryMount # needs root: mounts a procfs instance and two bind mounts
+internal/watch/watcher TestIntegrationWatcherSeesAFakeAgentItsChildAndTheirExit # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
+internal/watch/watcher TestIntegrationOverrunResynchronisesWithTheRealKernel # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
+internal/watch/watcher TestIntegrationWatcherFollowsAnAgentWhoseMainThreadExits # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
+internal/watch/watcher TestIntegrationWatcherEndsAnAgentFoundWithItsMainThreadGone # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
+internal/watch/watcher TestIntegrationAGroupReadsGoneAtItsLastTasksExitEvent # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
+internal/watch/watcher TestIntegrationAProcessEndsAtItsEventsWithAStatusWaitAgrees # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
+internal/watch/watcher TestIntegrationAThreadKilledAloneGivesNoSignal # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
+internal/watch/watcher TestIntegrationWatcherReportsTheStatusOfAProgramAThreadRan # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
+internal/watch/adopt TestIntegrationNoPathChrootedHolder # needs root: the holder mounts proc and chroots
+internal/watch/adopt TestIntegrationNoPathLazilyUnmounted # needs root: mounts a tmpfs and lazily unmounts it
+internal/watch/adopt TestIntegrationNoPathDetachedBind # needs root: mounts tmpfs and the btrfs fixture and clones them with open_tree
+internal/watch/adopt TestIntegrationAdoptMovesAProcessWhoseLeaderExited # needs root: moves another process between cgroups
+internal/watch/adopt TestIntegrationReleaseAfterTheLeaderExitedInTheScope # needs root: moves another process between cgroups
+internal/runtime TestIntegrationAdoptCountsAFileHeldThroughAnotherMount # needs root: mounts a tmpfs, bind mounts, lazily unmounts and clones it with open_tree
+internal/cli TestIntegrationBoundaryAdoptionMakesTheOwnersRecords # needs root: makes a directory for another uid and chowns it
+internal/cli TestIntegrationAgentsFollowSeesAFakeAgentOnTheRealKernel # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
+internal/cli TestIntegrationExitWatchReadsTheWholeProcessEnd # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
+internal/cli TestIntegrationExitWatchGivesTheStatusOfAProgramAThreadRan # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
+internal/cli TestIntegrationAdoptRecordsAScriptFromTheKernel # needs root: an adoption moves another process between cgroups and loads tier 2's programs
+internal/cli TestIntegrationAdoptKilledAdopterLeavesNothingAttached # needs root: an adoption moves another process between cgroups and loads tier 2's programs
+internal/cli TestIntegrationAdoptBusyAgentRecordsTheGap # needs root: an adoption moves another process between cgroups and loads tier 2's programs
+internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlane # needs root: an adoption moves another process between cgroups and loads tier 2's programs
+internal/cli TestIntegrationGuardAdoptsAnAgentAsItStarts # needs root: the guard listens to the proc connector (CAP_NET_ADMIN) and adopts
+internal/cli TestIntegrationAdoptReleaseCommand # needs root: an adoption moves another process between cgroups and loads tier 2's programs
+test/vm/cmd/permlistener TestIntegrationDenyRefusesOneFileAndNoOther # needs root: a fanotify permission group needs CAP_SYS_ADMIN, and the test mounts a tmpfs
+test/vm/cmd/permlistener TestIntegrationAllowTouchDecidesOnTheMarkedMountWithoutDeadlock # needs root: a fanotify permission group needs CAP_SYS_ADMIN, and the test mounts a tmpfs
+test/vm/cmd/permlistener TestIntegrationADecisionThatStallsIsLetThroughAtTheDeadline # needs root: a fanotify permission group needs CAP_SYS_ADMIN, and the test mounts a tmpfs
+test/vm/cmd/permlistener TestIntegrationStopReleasesAnOpenerMidDecision # needs root: a fanotify permission group needs CAP_SYS_ADMIN, and the test mounts a tmpfs
+internal/handoff TestHandoffRefusesRootAsRoot # needs root: the refusal at a real euid 0 (ADR 0100 (1b))
+internal/handoff TestHandoffMemfdNoexecOnTheKernel # needs root: it sets vm.memfd_noexec in a new pid namespace (CAP_SYS_ADMIN)
+internal/handoff TestHandoffRefusesNoexecMountAsRoot # needs root: it mounts a noexec tmpfs (CAP_SYS_ADMIN)
+internal/control/cli TestControlRefusesRootAsRoot # needs root: tego-control's guard reading a real euid 0 and root's capability sets
+
+# An untagged build carries no BPF objects; the -tags tegobpf builds (bpf-gen, root-suites) run these.
+internal/doctor TestHookTableMatchesTheObjects # no BPF objects without -tags tegobpf
+internal/doctor TestCaptureHookTableMatchesTheObject # no uprobe_ssl object without -tags tegobpf
+
+# The host decides, and a runner may differ from the development box.
+internal/runtime/enforce/cgroup TestDistinctMountsSeparatesThisHostsMountsOfOneDevice # needs two reachable mounts of one device, which a host may not have (the runner-like KVM guest had none)
+internal/runtime/enforce/cgroup TestFanotifyQuotaFailuresNameTheirSetting # the listener's thread budget reads the live pids limits first; a tight user slice refuses it
+internal/runtime/enforce/cgroup TestLoopRemovesItsMarksWithoutNamingAPath/* # the same thread budget, per case
+internal/runtime/enforce/cgroup TestNewListenerSettlesOnTheLoop # the same thread budget
+internal/runtime/hoststate TestOpenHostAsRoot # needs root: the trusted directory is root's (runs in root-suites, which requires it to pass)
+
+# Integration-only helper processes.
+internal/runtime/enforce/cgroup TestBPFEdgesHelper # helper only
+internal/runtime/enforce/cgroup TestFreezeHelper # helper process only
+internal/runtime/enforce/cgroup TestFreezeSleeper # helper process only
+internal/runtime/enforce/cgroup TestFreezeStageChild # helper process only
+internal/runtime/enforce/cgroup TestMovedHelper # helper process only
+internal/runtime/enforce/cgroup TestNetHelper # helper process only
+internal/runtime/enforce/landlock TestStrictClientFilterHelper # helper process for TestStrictClientFilterOnRealKernel
+internal/runtime/enforce/cgroup TestNetLinksHelper # helper process only
+internal/runtime/enforce/cgroup TestUnixHelper # helper process only
+
+# Root only, or needs CAP_BPF/CAP_SYS_ADMIN, a writable bpffs or the root cgroup: root-suites runs them.
+internal/doctor TestIntegrationAsRoot # D6's functional probe, D7's program loads and D8's fanotify round trip need root (CAP_BPF, CAP_SYS_ADMIN)
+internal/doctor TestD7NamesALegacyExclusiveAttachAbove # D7's cgroup attach and a legacy BPF_PROG_ATTACH need root (CAP_BPF, CAP_NET_ADMIN)
+internal/doctor TestIntegrationForRunAsRoot # a run's probe differs from doctor's only as root, where D6, D7 and D8 load programs (CAP_BPF, CAP_SYS_ADMIN)
+internal/doctor TestIntegrationCancelledDuringProgramsAndFanotifyLeavesNothing # D7 and D8 make kernel state only as root (CAP_BPF, CAP_SYS_ADMIN)
+internal/doctor TestIntegrationPlaneProbeOnThisKernel # the plane probe loads and attaches programs as root (CAP_BPF, CAP_SYS_ADMIN)
+internal/doctor TestIntegrationPlaneProbeCleansUpWhenTheChildFails # the plane probe loads and attaches programs as root (CAP_BPF, CAP_SYS_ADMIN)
+internal/doctor TestIntegrationPlaneProbeCopiesTheBinaryOnce # the plane probe loads and attaches programs as root (CAP_BPF, CAP_SYS_ADMIN)
+internal/doctor TestIntegrationPlaneProbeRejectsAFlippedKnownAnswer # the plane probe loads and attaches programs, and its known answers mount a tmpfs, as root (CAP_BPF, CAP_SYS_ADMIN)
+internal/doctor TestIntegrationPlaneProbeAnswersTheNameCells # the plane probe loads and attaches programs, and its known answers mount a tmpfs, as root (CAP_BPF, CAP_SYS_ADMIN)
+internal/doctor TestIntegrationPlaneProbeRejectsAFlippedNameAnswer # the plane probe loads and attaches programs, and its known answers mount a tmpfs, as root (CAP_BPF, CAP_SYS_ADMIN)
+internal/doctor TestIntegrationDoctorCancelledDuringThePlaneLeavesNothing # the plane probe loads and attaches programs as root (CAP_BPF, CAP_SYS_ADMIN)
+internal/doctor TestIntegrationPlanePinRoundTrip # pinning on bpffs needs root
+internal/runtime/enforce/cgroup TestDoctorDuringALiveTier2RunChangesNoVerdict # tier 2 and doctor's D7 need root
+test/conformance TestMemfdControlSeesTheSysctl # its child is pid 1 of a pid namespace of its own and raises that namespace's vm.memfd_noexec, which needs root
+internal/runtime/cgroup TestIntegrationAHelperOutlivesItsLaunchersCgroup # needs root: a helper is placed in tego.slice at the cgroup2 root
+internal/ledger TestIntegrationAChainLogRootDidNotCreateKeepsItsOwner # needs root: the hand-over rule is what a root launcher does
+internal/ledger TestIntegrationALiveRootRunIgnoresASwappedLedgerRoot # needs root: the hand-over rule is what a root launcher does
+internal/ledger TestIntegrationASweepHandsOverOnlyWhatItCreates # needs root: the hand-over rule is what a root launcher does
+internal/ledger TestIntegrationFreshRunDirRefusesTheUsersDirectory # needs root: the hand-over rule is what a root launcher does
+internal/ledger TestIntegrationPlantedLinksAreNotFollowed # needs root: the hand-over rule is what a root launcher does
+internal/ledger TestIntegrationRootFollowsARootLink # needs root: the hand-over rule is what a root launcher does
+internal/ledger TestIntegrationRootLiveIndexIsTheUsers # needs root: the hand-over rule is what a root launcher does
+internal/ledger TestIntegrationRootOwnedLedgerRootStaysRoots # needs root: the hand-over rule is what a root launcher does
+internal/ledger TestIntegrationRootRefusesALinkedLiveIndex # needs root: the hand-over rule is what a root launcher does
+internal/ledger TestIntegrationRootRefusesASymlinkedStateDir # needs root: the hand-over rule is what a root launcher does
+internal/ledger TestIntegrationRootRunIsTheUsers # needs root: the hand-over rule is what a root launcher does
+internal/ledger TestIntegrationRootSweepStaysInTheLedgerRoot # needs root: the hand-over rule is what a root launcher does
+internal/platform/sys TestIntegrationRunAsTakesTheTaskCredentials # needs root: taking another user's ids needs CAP_SETUID and CAP_SETGID (make vm-root-test, kvm-run.sh)
+internal/runtime TestIntegrationRootSweepAnchorsTheOwnersRun # needs root: only root can end another account's run
+internal/runtime TestIntegrationRootSweepEndsAUsersKilledLauncher # needs root: a sweep of another account's run, and a launcher of another uid
+internal/runtime TestIntegrationHeldCompletionAtRootTier # needs root: a root launcher at tier cgroup, the agent and the deputy dropped to the invoking user
+internal/runtime TestIntegrationHeldReadsAtRootTier # needs root: fs.reads: held from a root launcher at tier cgroup, the agent and the deputy dropped to the invoking user
+internal/runtime TestIntegrationReasonReadsAtTierCgroup # needs root: tier cgroup from a root launcher, the agent dropped to the invoking user (ADR 0077)
+internal/runtime TestIntegrationRootSweepEndsARootLauncherTheUserCannot # needs root: a root launcher the user's sweep cannot end
+internal/runtime TestIntegrationRootSweepLeavesAnotherUsersRootRunAlone # needs root: a root-launched run and a user-planted ledger naming it
+internal/runtime TestIntegrationRootSweepLeavesAnotherUsersRootRunForAPlantedEndedRun # needs root: a root-launched run and a user-planted ended run naming it
+internal/runtime TestIntegrationRootSweepLeavesAnotherUsersRootRunForARenamedRootOwnedRun # needs root: a root-launched run and a root-owned run directory renamed to its id
+internal/runtime TestIntegrationRootStopMarkerFollowsNoLink # needs root: only root's walk refuses a link the directory's owner planted
+internal/runtime TestIntegrationStopAfterPidReuseSignalsNothing # needs root: reissuing a chosen pid through ns_last_pid needs CAP_SYS_ADMIN
+internal/runtime TestRootRecordOffAutoRefusesADirectModelConnection # needs root: tier cgroup, where an auto contract under record: off is the case (review RL6cs3-1)
+internal/runtime TestUnshareRootIsNotRoot # needs root: root's own unshare -r is the case (ADR 0042 (5)(d))
+internal/runtime TestRootLauncherRefusesGroupHostState # needs root: /run/tego and /etc/group are root's (ADR 0042 (3)(b))
+internal/runtime TestFileCapabilityCopyIsRefused # needs root: setting security.capability and mounting a tmpfs (ADR 0042 (3)(a))
+internal/runtime TestAmbientIncidentalCapabilityRunsLandlock # needs root: handing a user an ambient capability (ADR 0042 (3)(a))
+internal/runtime TestRootRunStartNamesTheSudoAccount # needs root: the case is sudo tego run at tier cgroup (ADR 0073 root arm)
+internal/runtime TestRootAgentHasItsOwnAccountsHome # needs root: the case is sudo tego run (identity-config.md R3a)
+internal/platform/proc TestStartIdentityOutlivesPidReuse # needs root: reissuing a chosen pid through ns_last_pid needs CAP_SYS_ADMIN
+internal/runtime/enforce/cgroup TestPlaceRingOnARealOuter # creating a ring outer needs CAP_BPF
+internal/runtime/enforce/cgroup TestRingUseWhileRingsComeAndGo # needs root to pin maps
+internal/runtime/enforce/cgroup TestReclaimTakesOnlyRingsNoRunHolds # needs root to pin maps
+internal/runtime/enforce/cgroup TestDirectoryMovedIntoADeniedTreeIsStillAsked # cannot create a cgroup for the run: mkdir /sys/fs/cgroup/tego-it-moved-3761146: permission denied
+internal/runtime/enforce/cgroup TestFanotifyAllowedOpensKeepTheListener # fanotify needs CAP_SYS_ADMIN: cgroup: fanotify unavailable: fanotify_init: operation not permitted (tier 2 needs CAP_SYS_ADMIN)
+internal/runtime/enforce/cgroup TestFanotifyGroupOpens # fanotify needs CAP_SYS_ADMIN: cgroup: fanotify unavailable: fanotify_init: operation not permitted (tier 2 needs CAP_SYS_ADMIN)
+internal/runtime/enforce/cgroup TestFanotifyKernelRefusesAnErrnoFromThisGroup # fanotify needs CAP_SYS_ADMIN: cgroup: fanotify unavailable: fanotify_init: operation not permitted (tier 2 needs CAP_SYS_ADMIN)
+internal/runtime/enforce/cgroup TestFanotifyListenerDeathFailsOpen # fanotify needs CAP_SYS_ADMIN: cgroup: fanotify unavailable: fanotify_init: operation not permitted (tier 2 needs CAP_SYS_ADMIN)
+internal/runtime/enforce/cgroup TestFanotifyMarkAndUnmark # fanotify needs CAP_SYS_ADMIN: cgroup: fanotify unavailable: fanotify_init: operation not permitted (tier 2 needs CAP_SYS_ADMIN)
+internal/runtime/enforce/cgroup TestResponseForAnOpenerThatIsGoneIsSwallowed # fanotify needs CAP_SYS_ADMIN: cgroup: fanotify unavailable: fanotify_init: operation not permitted (tier 2 needs CAP_SYS_ADMIN)
+internal/runtime/enforce/cgroup TestFanotifyMarksEveryBindMount # fanotify needs CAP_SYS_ADMIN: cgroup: fanotify unavailable: fanotify_init: operation not permitted (tier 2 needs CAP_SYS_ADMIN)
+internal/runtime/enforce/cgroup TestFanotifyMarksMountsBeneathADeniedTree # operation not permitted
+internal/runtime/enforce/cgroup TestFanotifyDistinguishesSiblingReads # needs root or CAP_SYS_ADMIN for the real fanotify permission group
+internal/runtime/enforce/cgroup TestFanotifyRefusesDeniedRead # fanotify needs CAP_SYS_ADMIN: cgroup: fanotify unavailable: fanotify_init: operation not permitted (tier 2 needs CAP_SYS_ADMIN)
+internal/runtime/enforce/cgroup TestHeldCloseEndsTheListenerBeforeTheDescriptorLimit # cannot create a cgroup for the run: mkdir /sys/fs/cgroup/tego-it-closer-3761146: permission denied
+internal/runtime/enforce/cgroup TestInsertRunRefusesAnotherRunsRow # creating a BPF map needs CAP_BPF (kernel.unprivileged_bpf_disabled): creating map: map create: operation not permitted (MEMLOCK may be too l
+internal/runtime/enforce/cgroup TestKilledListenerReleasesTheMount # fanotify needs CAP_SYS_ADMIN: cgroup: fanotify unavailable: fanotify_init: operation not permitted (tier 2 needs CAP_SYS_ADMIN)
+internal/runtime/enforce/cgroup TestPurgeSlotOverRealMaps # creating a BPF map needs CAP_BPF (kernel.unprivileged_bpf_disabled): creating map: map create: operation not permitted (MEMLOCK may be too l
+internal/runtime/enforce/cgroup TestRunMembersMatchesProc # make cgroup /ey-res11-3761146 needs root: mkdir /sys/fs/cgroup/ey-res11-3761146: permission denied
+internal/runtime/enforce/cgroup TestStageExecUnderGCNeverWaitsOnItsOwnGroup # fanotify needs CAP_SYS_ADMIN: cgroup: fanotify unavailable: fanotify_init: operation not permitted (tier 2 needs CAP_SYS_ADMIN)
+internal/runtime/enforce/cgroup TestStoppedListenerHoldsItsMountUntilContinued # fanotify needs CAP_SYS_ADMIN: cgroup: fanotify unavailable: fanotify_init: operation not permitted (tier 2 needs CAP_SYS_ADMIN)
+internal/runtime/enforce/cgroup TestTier2DenyReadSecondNameRefused # root
+internal/runtime/enforce/cgroup TestUnmarkAllFlushesOnlyTheMountMarks # fanotify needs CAP_SYS_ADMIN: cgroup: fanotify unavailable: fanotify_init: operation not permitted (tier 2 needs CAP_SYS_ADMIN)
+internal/runtime/enforce/cgroup TestV1HierarchyDoesNotTouchTheRun # loading the tier-2 objects needs cap_bpf,cap_perfmon,cap_net_admin (or cap_sys_admin); run as root
+internal/runtime/observe TestIntegrationLostCounterCountsItsOwnSlot # creating BPF maps and writing to bpffs needs root (CAP_BPF and a writable /sys/fs/bpf)
+internal/runtime/observe TestIntegrationARunWithNoRingReadsNothing # creating BPF maps and writing to bpffs needs root (CAP_BPF and a writable /sys/fs/bpf)
+internal/runtime/observe TestIntegrationARunWithNoRingReadsItsActivityStamp # creating BPF maps and writing to bpffs needs root (CAP_BPF and a writable /sys/fs/bpf)
+internal/runtime/observe TestIntegrationPinnedMaps # creating BPF maps and writing to bpffs needs root (CAP_BPF and a writable /sys/fs/bpf)
+internal/runtime/observe TestIntegrationPinnedRingWithoutLostCounterIsRefused # creating BPF maps and writing to bpffs needs root (CAP_BPF and a writable /sys/fs/bpf)
+internal/runtime/observe TestIntegrationPinnedRingWithoutRunSetIsRefused # creating BPF maps and writing to bpffs needs root (CAP_BPF and a writable /sys/fs/bpf)
+internal/runtime/observe TestIntegrationPinnedRunSet # creating BPF maps and writing to bpffs needs root (CAP_BPF and a writable /sys/fs/bpf)
+internal/runtime/observe TestIntegrationStopReadsTheLostCounterLast # creating BPF maps and writing to bpffs needs root (CAP_BPF and a writable /sys/fs/bpf)
+internal/runtime/supervisor TestIntegrationUnixRelayAsTask # needs root: the target must run as another uid than this process (kvm-run.sh)
+internal/runtime/supervisor TestIntegrationUnixRelayOtherMountTree # needs root: the target makes a mount namespace and a bind mount of its own (kvm-run.sh)
+internal/runtime/supervisor TestUnixBoundOnBtrfs # needs root: mounts the btrfs fixture (kvm-run.sh)
+internal/runtime/supervisor TestIntegrationUnixRelayOnBtrfs # needs root: mounts the btrfs fixture under the harness directory (kvm-run.sh)
+internal/runtime/supervisor TestExecImageAutomountPointFailureIsNoMiss # needs root: mounts a debugfs, whose tracing directory is an automount stub (kvm-run.sh)
+internal/runtime/supervisor TestLookupInOneNeverMountsAnAutomountPoint # needs root: mounts a debugfs and roots a thread at it (chroot, kvm-run.sh)
+internal/runtime/supervisor TestLookupInOneResolvesFromTheTasksRoot # needs root: roots a thread at a directory (chroot, kvm-run.sh)
+internal/runtime/supervisor TestLookupInOneLeavesAProcfsRootToTheComponentWalk # needs root: roots a thread at /proc (chroot, kvm-run.sh)
+internal/runtime/supervisor TestHeldOpenDifferentialAcrossMounts # needs root: bind, overlay and nosymfollow mounts and a symlink of another owner under the harness directory (kvm-run.sh)
+internal/runtime/supervisor TestIntegrationUnixRelayDotDotOnBtrfs # needs root: mounts the btrfs fixture under the harness directory (kvm-run.sh)
+internal/runtime/supervisor TestIntegrationUnixRelayRebindOnBtrfs # needs root: mounts the btrfs fixture under the harness directory (kvm-run.sh)
+internal/runtime/supervisor TestIntegrationUnixRelayMagicBindOnBtrfs # needs root: mounts the btrfs fixture under the harness directory (kvm-run.sh)
+internal/runtime/supervisor TestIntegrationUnixRelayStaleCollisionOnBtrfs # needs root: mounts the btrfs fixture under the harness directory (kvm-run.sh)
+
+# An untagged, cgo-free build carries no BPF objects; root-suites runs the -tags tegobpf builds.
+internal/doctor TestIntegrationRestrictedRootRunAfterFullRoot # the restricted and full-root runs are both root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/capture/uprobe TestAttachToSystemLibssl # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationCapturesAPythonExchange # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationLongConversationAndReusedConnections # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationPreattachCapturesTheFirstRequest # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationSharedProbesAreAdoptedAndCaptureOnce # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationTLSMultiDispatchAndFallback # needs root and the compiled objects; the privileged suite tests actual OpenSSL multi and individual capture
+internal/runtime/capture/uprobe TestIntegrationProbesWhoseDetacherDiedGoAtTheNextStart # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationRecordDropsAreNotCaptures # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationARunWithoutACaptureRingDoesNotCapture # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationACaptureOffRunBesideACaptureRunLeavesNoChunk # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationSlowFirstByteKeepsPairing # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationStaleReadIsAGap # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationEvictedReadIsAGap # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationStopReadsTheLostCounterLast # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestLoadCaptureObject # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestConcurrentFirstLoadsOfTheCaptureObjectAllSucceed # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/enforce/cgroup TestALingeringBuildIsAdoptedAndSweptOnlyWhenIdle # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestIntegrationABuildWhoseTimerDiedIsRemovedAtTheNextPrepare # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestIntegrationStopRearmsABuildWhoseTimerDied # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestIntegrationABuildWhoseRunSetCannotBeReadIsKeptAndShown # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestIntegrationBuildMemlockIsBpftoolsSum # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestIntegrationALingeringBuildALiveRunNeedsIsListedKept # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestExecOnlyMarkAsksForNoOpenEvent # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestNameMaxRecordIsWhole # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestNetRefreshOnRealKernel # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestNetUnrestrictedOnRealKernel # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestNetLinksOutliveTheLauncher # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestNetVerdictOnRealKernel # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestTransportSelectorsOnRealKernel # needs root and compiled objects: actual TCP/UDP selector admission and kernel/model attribution
+internal/runtime/enforce/cgroup TestEveryNestedCgroupIsInTheRunSetBeforeATaskCanJoinIt # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestRmdirOfANestedCgroupDeletesItsRunSetRow # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestTwoBuildsCoexistWithoutInterference # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestPrepareOnRealKernel # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestSecondLauncherAdoptsTheBuildsPinnedObjects # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestShortConnectRecordReadsNoStack # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestSockCreateIsAttachedAndRefusesOutsideTheAllowlist # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestSockCreateRunsAreANDedWhenNested # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestAttachNamesALegacyExclusiveProgramAbove # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestTier2RunEndToEnd # tier 2 needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestTier2ConcurrentRunsOfOneBuild # tier 2 needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestACancelledTestRunLeavesNoRowOfItsBuild # tier 2 needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestE2ERecorderLinesSayWhatTheAgentSaw # tier 2 needs root: it loads BPF programs and a fanotify group
+internal/runtime/enforce/cgroup TestTier2UnixEndToEnd # tier 2 needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestTier2DatagramLineIsTheKernels # tier 2 needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestTier2ReaperEndsAnOrphanOnlyOnceItsTreeIsGone # tier 2 needs root: run as `sudo go test -tags integration` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestTier2ConcurrentReapersEndAnOrphanOnce # tier 2 needs root: run as `sudo go test -tags integration` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestTier2AReapersDeathLeavesTheRunToTheSweep # tier 2 needs root: run as `sudo go test -tags integration` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestTier2RunRefusesWithoutItsReaper # tier 2 needs root: run as `sudo go test -tags integration` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestTier2ANormalRunLeavesNoReaper # tier 2 needs root: run as `sudo go test -tags integration` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestIntegrationLingerZeroKillRemovesTheBuild # tier 2 needs root: run as `sudo go test -tags integration` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestIntegrationABuildOutlivesItsLastLauncherWhileAKilledOnesRunLives # tier 2 needs root: run as `sudo go test -tags integration` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestIntegrationAKilledTimerLeavesTheBuildUntilStop # tier 2 needs root: run as `sudo go test -tags integration` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestTier2ConnectHasOneLine # tier 2 needs root: run as `sudo go test -tags integration` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestTier2ArmsAfterTheStageExec # tier 2 needs root: run as `sudo go test -tags integration` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestUnixRowsPurgedOnRealMaps # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestUnixVerdictOnRealKernel # built without the compiled objects; add -tags tegobpf
+internal/runtime/enforce/cgroup TestUnspecifiedDestinationIsRefused # built without the compiled objects; add -tags tegobpf
+internal/runtime/observe TestIntegrationEveryRecordNamesItsProcessStart # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationExitIsTheThreadGroups # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationFSOpsResolveThroughTheDirectoryIndex # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationSymlinkTargetOf255BytesIsWhole # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationKernelRecordCapturesOpenSSL30 # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationKernelRecordCapturesTheAnthropicSDK # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationKernelRecordDrivesCapture # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationRelativeExecIsResolved # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationConcurrentRunsOfOneBuild # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationAReusedRingHidesThePreviousRun # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationUnixConnectIsLeftToTheSupervisor # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationShortConnectIsNotRecorded # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationChainReturnIsTheVerdict # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationHeldRecordsAreTheirOwnActions # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationOverlayCopyUpIsOneLine # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationPlaneRefusalIsOneLine # needs the compiled objects and the plane builds: bpf: object bindings are not generated
+internal/runtime/observe TestIntegrationPlaneFallbackIsOneLine # needs the compiled objects and the plane builds: bpf: object bindings are not generated
+
+# The kernel or host decides; the ubuntu-24.04 runner (6.8, Landlock ABI 4) may differ from the development box.
+internal/runtime TestTheAgentCannotSignalOutsideTheRun/* # a subtest for an ABI the kernel lacks skips (no signal scope below ABI 6)
+internal/platform/sys TestSeccompNotifSetFlagsSyncWakeUp # a kernel before SECCOMP_USER_NOTIF_FD_SYNC_WAKE_UP (6.6)
+internal/platform/sys TestSeccompListenerIsWaitKillable # a kernel before SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV (5.19)
+internal/runtime TestReadKernelAudit # an auditd on the host sets its own state
+internal/runtime/cgroup TestIntegrationPidsCap # the pids controller may not be delegated to the user's subtree
+internal/runtime/cgroup TestIntegrationOOM # the memory controller may not be delegated to the user's subtree
+internal/runtime TestMainProcessOOMIsReasonOOM # the memory controller may not be delegated to the user's subtree
+internal/runtime/cgroup TestIntegrationZeroLimitsStayAtKernelDefault # controllers may not be delegated to the user's subtree
+internal/runtime/cgroup TestIntegrationExplicitZeroCapIsWritten # controllers may not be delegated to the user's subtree
+internal/runtime/cgroup TestIntegrationDetectRefusesTheHostTree # no canonical delegated subtree on the host
+internal/runtime/enforce/cgroup TestPlaneRunEndToEnd # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestPlaneUserDenyWrite # the decision plane needs root: covered by the privileged tegobpf guest suite (ADR 0071)
+internal/runtime/enforce/cgroup TestPlaneRunDropsAndNamesByPath # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestPlaneRunExecEntryPrecedence # the decision plane needs root: covered by the privileged tegobpf guest suite
+internal/runtime/enforce/cgroup TestPlaneRunExecOutcomes # kernel exec outcomes need root and pinned result hooks: covered by the privileged tegobpf guest suite
+internal/runtime/enforce/cgroup TestPlaneExecCommandRulesEndToEnd # the decision plane needs root: covered by the privileged tegobpf guest suite
+internal/runtime/enforce/cgroup TestPlaneExecMissWritesNoLine # the decision plane needs root: covered by the privileged tegobpf guest suite
+internal/runtime/enforce/cgroup TestPlaneExecMissObserveRace # the decision plane needs root: covered by the privileged tegobpf guest suite
+internal/runtime/enforce/cgroup TestPlaneExecSearchOracle # the decision plane needs root: covered by the privileged tegobpf guest suite
+internal/runtime/enforce/cgroup TestPlaneExecMagicLinkOracle # the decision plane needs root: covered by the privileged tegobpf guest suite
+internal/runtime/enforce/cgroup TestPlaneExecProcDirOracle # the decision plane needs root: covered by the privileged tegobpf guest suite
+internal/runtime/enforce/cgroup TestPlaneExecAutomountIsNoMiss # the decision plane and a debugfs mount need root: covered by the privileged tegobpf guest suite
+internal/runtime/enforce/cgroup TestPlaneRunBtrfsSubvolumeInodeIdentity # the decision plane and a loop mount need root: covered by the privileged tegobpf guest suite, which loads btrfs (VM_MODULES)
+internal/runtime/enforce/cgroup TestPlaneRunKeyedFilesAreTheInodesItDecides # the decision plane needs root: covered by the privileged tegobpf guest suite
+internal/runtime/enforce/cgroup TestPlaneRunWalksTheMountTreeAsItStands # the decision plane and bind mounts need root: covered by the privileged tegobpf guest suite
+internal/runtime/enforce/cgroup TestPlaneRunNamesTrueUnderRenamesAndMountMoves # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestPlaneSeqcountStress # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestTierBPFLSMRunEndToEnd # tier bpflsm needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestTierRunEndsWithItsMainProcess # tiers cgroup and bpflsm need root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestPlaneCapBoundaryNeverEMFILE # a run at a root tier needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestPlaneConcurrentRunsOfOneBuildAreIsolated # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestPlaneSecondRunAdoptsThePlane # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestPlaneLauncherKillLeavesTheRunDecidedAndTheReaperPurges # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestPlaneRunAdmitsIOUring # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestIOUringSocketsMeetTheKernelBackstops # tier cgroup needs root: a root `tego run` of a test build
+internal/runtime/enforce/cgroup TestPlaneRunFillMismatchFailsPrepare # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestPlaneRunMulticallLinks # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestPlaneExecMapRunEndToEnd # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestPlaneCountersBecomeGapsAtRunEnd # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/observe TestIntegrationRecorderStopDuringStartupClosesOwnedMaps # needs root/CAP_BPF: production pinned-map startup/stop cleanup (make vm-root-test)
+
+internal/runtime/enforce/cgroup TestNetworkControlsOnRealKernel # needs root/CAP_BPF: actual network listener/ingress/resource mechanisms
+internal/runtime/enforce/cgroup TestNetworkListenAutobindOnRealKernel # needs root/CAP_BPF: actual ephemeral listener policy
+internal/runtime/enforce/cgroup TestNetworkImportedListenOnRealKernel # needs root/CAP_BPF: actual imported listener policy
+internal/runtime/enforce/cgroup TestNetworkExpiryOnRealKernel # needs root/CAP_BPF: actual kernel expiry boundary
+internal/runtime/enforce/cgroup TestConnectApprovalOnRealKernel # needs root/CAP_BPF: actual one-shot connect credits
+internal/runtime/enforce/cgroup TestDatagramApprovalOnRealKernel # needs root/CAP_BPF: actual one-shot UDP datagram and connect credits
+internal/runtime/enforce/cgroup TestNetworkDatagramAndByteLimitsOnRealKernel # needs root/CAP_BPF: actual network packet/resource limits
+internal/runtime/enforce/cgroup TestPlaneImportedUnixBindOnRealKernel # needs root/CAP_BPF: actual imported Unix bind admission
+internal/runtime/enforce/cgroup TestPlaneRunUnixListenerOutcomes # needs root: actual decision-plane CLI Unix listener outcomes
+internal/runtime/enforce/cgroup TestPlaneRunBindLookupFailureIsTheKernels # needs root: actual decision-plane line of a Unix bind whose lookup fails
+internal/runtime/enforce/cgroup TestPlaneRunControlPtraceIsRunScoped # needs root: actual decision-plane ptrace attach and traceme outcomes in governed runs
+internal/runtime/enforce/cgroup TestPlaneRunControlKeyringIsTheContractsOptIn # needs root: actual decision-plane key_permission outcomes in governed runs
+internal/runtime/enforce/cgroup TestPlaneRunControlBPFIsRefused # needs root: actual decision-plane bpf(2) outcomes in governed runs
+internal/runtime/enforce/cgroup TestPlaneRunControlScratchCgroupGoesWithItsLiveTask # needs root: a task is moved into a cgroup of the test's own and the cell ends with it alive
+
+internal/runtime/enforce/cgroup TestPlaneRunApprovedFSAskKeepsDescriptorOnlyGrant # needs root: actual decision-plane CLI and outside administrator FS approval
+internal/runtime/enforce/cgroup TestPlaneRunWriteAlternateIsPutToTheGate # needs root: actual decision-plane run, a held fs.ask write answered by an outside tego alternate under a write gate
+internal/runtime/enforce/cgroup TestPlaneRunPureReaderUnderRecordOffIsWarnedAndStalls # needs root: actual decision-plane runs of a pure reader and a pure writer under record: off and full with stall_after
+internal/runtime/enforce/cgroup TestPlaneRunStallFollowsWhatTheSupervisorAnswers # needs root: actual decision-plane runs of a pure connector, reader and writer under a read gate or an fs.ask scope, with stall_after
+internal/runtime/enforce/cgroup TestPlaneRunReadGateScoresAReadWriteOpen # needs root: actual decision-plane runs of an O_RDONLY and an O_RDWR open of a file a read gate refuses
+
+internal/runtime/enforce/cgroup TestOldRunMembershipMapIsNotAdopted # needs root/CAP_BPF: incompatible pinned membership map adoption
+
+internal/runtime TestDNSBrokerCLIOnRealKernel # needs root/SUDO credentials: actual governed DNS CLI and detached reaper fixture
+
+internal/runtime TestDNSBrokerOrphanCleanupOnRealKernel # needs root/SUDO credentials: actual governed DNS CLI and detached reaper fixture
+
+internal/runtime/enforce/cgroup TestPlaneProbeRowsOwnListenerMapThroughFillAndClose # needs root/CAP_BPF: actual private probe fill and listener map lifecycle
+internal/bpf TestObjectSpecCacheLoadsFreshCopyOnThisKernel # needs compiled objects and CAP_BPF: load a fresh copy after mutating a warm cached spec
+
+# ADR 0026 (8): optional TLS multi attach types selected by a real kernel probe.
+internal/bpf TestObjectsLoadOnThisKernel/uprobe_ssl/tego_ssl_multi_enter # actual uprobe_multi feature probe unsupported; required individual TLS programs still load
+internal/bpf TestObjectsLoadOnThisKernel/uprobe_ssl/tego_ssl_multi_return # actual uprobe_multi feature probe unsupported; required individual TLS programs still load
+
+# ADR 0043 (NAME-BPF): name entries in a governed run.
+internal/runtime/enforce/cgroup TestPlaneNameEntriesRunEndToEnd # needs root: actual decision-plane runs with name entries, at cgroup and bpflsm
+# Limits R4, the kernel activity stamp (ACTIVITY-BPF): runs at a root tier under record: off.
+internal/runtime/enforce/cgroup TestAReadingAgentUnderRecordOffIsNotAStall # tier 2 needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestAnIdleAgentUnderRecordOffStallsAtTier2 # tier 2 needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestAStreamingModelResponseIsNotAStall # tier 2 needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestASilentModelStalls # tier 2 needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestRecordOffWithoutStallBudgetPlacesNoProbe # tier 2 needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/capture/uprobe TestIntegrationRecordOffStampsWithoutCapture # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationRecordOffActivityIsIsolated # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationRecordOffTLSCallCost # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationRecordOffActivityStartCost # needs the compiled objects: bpf: object bindings are not generated
+# enforce-plane §10.1 cold attribution (perf-cold C1): the verifier statistics the attribution parses are the kernel's own.
+internal/bpf TestLoadStatsMatchKernel # loads trace_proc with the verifier's statistics: needs compiled objects and CAP_BPF
+internal/runtime TestRootAskUnix # needs root: a root launcher at tiers cgroup and bpflsm, the agent dropped to the invoking user
+internal/runtime TestRootAskUDP # needs root: a root launcher at tiers cgroup and bpflsm, the agent dropped to the invoking user
+internal/runtime TestRootMCPRelayGate # needs root: a root launcher at tiers cgroup and bpflsm, where a plane decides the run's execs (ADR 0126 §4 "The gate")
+internal/runtime TestRootAskMutation # needs root: a root launcher at tiers cgroup and bpflsm, the agent dropped to the invoking user (ADR 0047)
+internal/runtime TestRootRouteChangesRefused # needs root: a setuid-root program in a root-tier run, the agent dropped to the invoking user (ADR 0128); covered by the root-suites job
+internal/runtime TestRootAgentInOtherRunCannotAnswer # needs root: two runs at tier cgroup from a root launcher, the agents dropped to the invoking user
+internal/runtime TestAdoptedAgentCannotAnswer # needs root: an adoption moves another process between cgroups and loads tier 2's programs
+internal/runtime TestIntegrationAskUnixScopeSpellings/bind-mount_alias # needs root: a net.ask unix: scope declared through a bind mount of the write entry (mount(2))
+# ADR 0048 P2 K6: real runs at a plane cell with command rules, pinned (and the unpinned control).
+# The demo kit's real-agent contracts: each names its harness binary, which compile resolves on PATH.
+examples/demo TestContractsCompile/claude-code.yaml # claude is not on the runner's PATH (CI and the gate install no harness), so its contract cannot compile
+examples/demo TestContractsCompile/codex.yaml # codex is not on the runner's PATH (CI and the gate install no harness), so its contract cannot compile
+
+# Opt-in measurements: a budget check that reads a big ledger copy named in its environment, and skips without one.
+internal/control/ledgerview TestQueryBudget # opt-in: measures only a ledger directory named in TEGO_LOGS_BENCH_LEDGER (a 350,000-line copy no runner holds)
+internal/control/ledgerview TestProcessTreeBudget # opt-in: measures only a ledger directory named in TEGO_LOGS_BENCH_LEDGER (a 350,000-line copy no runner holds)
+internal/control/web TestLogsWarmBudget # opt-in: measures only a demo-shaped ledger directory named in TEGO_LOGS_BENCH_DEMO, which no runner holds
+# D-ATTRIB: PRD R9's retriever run at the root tiers (capture-derive R42).
+internal/runtime TestRootRetrieverRunTiesActionsToReplies # needs root: a root launcher at tiers cgroup and bpflsm, the agent dropped to the invoking user
+internal/runtime/enforce/cgroup TestPlaneNameRowsFillAndClear # needs root: a decision-plane slot's name map filled by Prepare and cleared by Detach and the reaper (CAP_BPF)
+internal/runtime/enforce/cgroup TestPlaneNameMapAdoption # needs root: a pinned plane whose name map pin is removed is not adopted (CAP_BPF)
+internal/runtime/enforce/cgroup TestCompactedTableStaysAtBPFLSM # needs root: an auto run at tier bpflsm of a table the plane holds only by compaction (CAP_BPF, a cgroup)
