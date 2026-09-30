@@ -1,0 +1,40 @@
+{
+  "plane": {
+    "env": {
+      "bpf_loop": true,
+      "rdonly_cast": true,
+      "lockdown": "none",
+      "lto": "clang",
+      "lto_source": "/boot/config-6.17.0-test"
+    },
+    "build": "decide_rd",
+    "build_why": "bpf_rdonly_cast is in BTF",
+    "build_hash": "0123abcd4567ef890123abcd4567ef89",
+    "modes": [
+      {
+        "mode": "lsm",
+        "ok": false,
+        "tested": false,
+        "detail": "bpf is not in the active LSM list (lockdown,capability,landlock,yama,apparmor)",
+        "fix": "add lsm=lockdown,capability,landlock,yama,apparmor,bpf to the kernel command line (GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub, then update-grub) and reboot"
+      },
+      {
+        "mode": "fmod_ret",
+        "ok": false,
+        "tested": false,
+        "detail": "this kernel is built with Clang LTO (/boot/config-6.17.0-test), which can inline a security_ function at a call site the program then never sees",
+        "fix": "boot a kernel built without CONFIG_LTO_CLANG"
+      }
+    ],
+    "pin": "auto",
+    "selected": "fanotify",
+    "selected_why": "no plane mode passed the probe",
+    "source": "probed"
+  },
+  "plane_rows": null,
+  "tiers": {
+    "bpflsm": false,
+    "cgroup": true,
+    "landlock": true
+  }
+}

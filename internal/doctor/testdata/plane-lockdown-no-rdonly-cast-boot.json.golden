@@ -1,0 +1,39 @@
+{
+  "plane": {
+    "env": {
+      "bpf_loop": true,
+      "rdonly_cast": false,
+      "lockdown": "confidentiality",
+      "lto": "none",
+      "lto_source": "/boot/config-6.1.0-test"
+    },
+    "build": "",
+    "build_why": "lockdown=confidentiality refuses the probe-read build and this kernel's BTF has no bpf_rdonly_cast for the rd build",
+    "modes": [
+      {
+        "mode": "lsm",
+        "ok": false,
+        "tested": false,
+        "detail": "no build of decide.bpf.c loads here: lockdown=confidentiality refuses the probe-read build and this kernel's BTF has no bpf_rdonly_cast for the rd build",
+        "fix": "boot without lockdown=confidentiality, or a kernel whose BTF has bpf_rdonly_cast (6.2+ or a backport)"
+      },
+      {
+        "mode": "fmod_ret",
+        "ok": false,
+        "tested": false,
+        "detail": "no build of decide.bpf.c loads here: lockdown=confidentiality refuses the probe-read build and this kernel's BTF has no bpf_rdonly_cast for the rd build",
+        "fix": "boot without lockdown=confidentiality, or a kernel whose BTF has bpf_rdonly_cast (6.2+ or a backport)"
+      }
+    ],
+    "pin": "auto",
+    "selected": "fanotify",
+    "selected_why": "no plane mode passed the probe",
+    "source": "probed"
+  },
+  "plane_rows": null,
+  "tiers": {
+    "bpflsm": false,
+    "cgroup": true,
+    "landlock": true
+  }
+}

@@ -1,0 +1,14 @@
+ok   kernel: ok
+ok   btf: ok
+ok   cgroupv2: ok
+ok   landlock: ok
+ok   seccomp: ok
+ok   lsm: ok
+ok   programs: ok; decision plane: fanotify (no plane mode passed the probe; tier 2 decides opens by fanotify); build none loads (lockdown=confidentiality refuses the probe-read build and this kernel's BTF has no bpf_rdonly_cast for the rd build), lsm mode no: no build of decide.bpf.c loads here: lockdown=confidentiality refuses the probe-read build and this kernel's BTF has no bpf_rdonly_cast for the rd build, fmod_ret mode no: no build of decide.bpf.c loads here: lockdown=confidentiality refuses the probe-read build and this kernel's BTF has no bpf_rdonly_cast for the rd build; the fanotify fallback does not scale past a few concurrent runs: every open on a marked mount waits on a listener
+ok   fanotify: ok
+
+[capability matrix]
+
+tier: cgroup
+missing for bpflsm: plane: LSM mode: no build of decide.bpf.c loads here: lockdown=confidentiality refuses the probe-read build and this kernel's BTF has no bpf_rdonly_cast for the rd build
+fix: boot without lockdown=confidentiality, or a kernel whose BTF has bpf_rdonly_cast (6.2+ or a backport)
