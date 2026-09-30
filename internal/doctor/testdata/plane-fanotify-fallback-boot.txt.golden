@@ -1,0 +1,14 @@
+ok   kernel: ok
+ok   btf: ok
+ok   cgroupv2: ok
+ok   landlock: ok
+ok   seccomp: ok
+off  lsm: lockdown,capability,landlock,yama,apparmor via lsm_list_modules(2); bpf is not active: tier 3 (bpflsm) is unavailable, tiers 1 and 2 are not affected; fix: add lsm=lockdown,capability,landlock,yama,apparmor,bpf to the kernel command line (GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub, then update-grub) and reboot
+ok   programs: ok; decision plane: fanotify (no plane mode passed the probe; tier 2 decides opens by fanotify); build 0123abcd, lsm mode no: bpf is not in the active LSM list (lockdown,capability,landlock,yama,apparmor), fmod_ret mode no: this kernel is built with Clang LTO (/boot/config-6.17.0-test), which can inline a security_ function at a call site the program then never sees; the fanotify fallback does not scale past a few concurrent runs: every open on a marked mount waits on a listener
+ok   fanotify: ok
+
+[capability matrix]
+
+tier: cgroup
+missing for bpflsm: lsm: bpf is not in the active LSM list (lockdown,capability,landlock,yama,apparmor)
+fix: add lsm=lockdown,capability,landlock,yama,apparmor,bpf to the kernel command line (GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub, then update-grub) and reboot

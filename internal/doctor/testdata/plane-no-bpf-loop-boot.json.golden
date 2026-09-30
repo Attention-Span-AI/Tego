@@ -1,0 +1,39 @@
+{
+  "plane": {
+    "env": {
+      "bpf_loop": false,
+      "rdonly_cast": false,
+      "lockdown": "none",
+      "lto": "none",
+      "lto_source": "/boot/config-5.14.0-test"
+    },
+    "build": "",
+    "build_why": "this kernel's BTF has no bpf_loop (5.17+ or a backport), which the plane's walk needs",
+    "modes": [
+      {
+        "mode": "lsm",
+        "ok": false,
+        "tested": false,
+        "detail": "no build of decide.bpf.c loads here: this kernel's BTF has no bpf_loop (5.17+ or a backport), which the plane's walk needs",
+        "fix": "boot a kernel \u003e= 5.17, or one that backports bpf_loop"
+      },
+      {
+        "mode": "fmod_ret",
+        "ok": false,
+        "tested": false,
+        "detail": "no build of decide.bpf.c loads here: this kernel's BTF has no bpf_loop (5.17+ or a backport), which the plane's walk needs",
+        "fix": "boot a kernel \u003e= 5.17, or one that backports bpf_loop"
+      }
+    ],
+    "pin": "auto",
+    "selected": "fanotify",
+    "selected_why": "no plane mode passed the probe",
+    "source": "probed"
+  },
+  "plane_rows": null,
+  "tiers": {
+    "bpflsm": false,
+    "cgroup": true,
+    "landlock": true
+  }
+}

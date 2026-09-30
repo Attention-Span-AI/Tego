@@ -1,0 +1,1 @@
+add lsm=lockdown,capability,landlock,yama,apparmor,bpf to the kernel command line (grubby --update-kernel=ALL --args="lsm=lockdown,capability,landlock,yama,apparmor,bpf") and reboot
