@@ -1,0 +1,14 @@
+version: 0
+tests:
+  - name: the agent cannot read .env
+    action: fs.read
+    path: .env
+    expect: refused
+  - name: the agent can write its output
+    action: fs.write
+    path: out/summary.md
+    expect: allow
+  - name: the agent cannot write .claude settings
+    action: fs.write
+    path: .claude/settings.json
+    expect: refused
