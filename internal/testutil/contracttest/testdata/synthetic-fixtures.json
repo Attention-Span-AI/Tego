@@ -1,0 +1,678 @@
+{
+  "internal/runtime/observe/chain_integration_test.go": {
+    "heldRecordsAreTheirOwnActions": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "runLandlockChild": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/observe/chain_test.go": {
+    "TestRecorderListenerReadKeepsTheModel": {
+      "count": 1,
+      "why": "Synthetic kernel record/rule-index oracle: explicit attribution, missing metadata and chain outcomes, not an executable contract."
+    }
+  },
+  "internal/runtime/observe/continuednet_test.go": {
+    "TestRecorderNamesAContinuedConnectAsTheSupervisor": {
+      "count": 1,
+      "why": "Synthetic kernel record/rule-index oracle: explicit attribution, missing metadata and chain outcomes, not an executable contract."
+    }
+  },
+  "internal/runtime/observe/exitgroup_integration_test.go": {
+    "TestIntegrationExitIsTheThreadGroups": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/observe/fsop_integration_test.go": {
+    "TestIntegrationFSOpsResolveThroughTheDirectoryIndex": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestIntegrationSymlinkTargetOf255BytesIsWhole": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/observe/kernel_integration_test.go": {
+    "TestIntegrationKernelRecordDrivesCapture": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestIntegrationKernelRecordCapturesTheAnthropicSDK": {
+      "count": 2,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestIntegrationKernelRecordCapturesOpenSSL30": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "concurrentRuns": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/observe/mounts_test.go": {
+    "TestMarkedDevicesWithAnEscapedAndAnOddMountPoint": {
+      "count": 1,
+      "why": "Synthetic kernel record/rule-index oracle: explicit attribution, missing metadata and chain outcomes, not an executable contract."
+    }
+  },
+  "internal/runtime/observe/overlay_integration_test.go": {
+    "overlayCopyUpIsOneLine": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/observe/plane_integration_test.go": {
+    "planeFixture": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/observe/plane_test.go": {
+    "planeTable": {
+      "count": 1,
+      "why": "Synthetic kernel record/rule-index oracle: explicit attribution, missing metadata and chain outcomes, not an executable contract."
+    }
+  },
+  "internal/runtime/observe/recorder_test.go": {
+    "BenchmarkDrain": {
+      "count": 1,
+      "why": "Synthetic kernel record/rule-index oracle: explicit attribution, missing metadata and chain outcomes, not an executable contract."
+    },
+    "TestRecorderUnlinkOfWriteEntryItself": {
+      "count": 1,
+      "why": "Synthetic kernel record/rule-index oracle: explicit attribution, missing metadata and chain outcomes, not an executable contract."
+    }
+  },
+  "internal/runtime/observe/relexec_integration_test.go": {
+    "TestIntegrationRelativeExecIsResolved": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/observe/reuse_integration_test.go": {
+    "TestIntegrationAReusedRingHidesThePreviousRun": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/observe/rules_decider_test.go": {
+    "TestInferFSReadUnderDenyReadIgnoresNearerNonGrant": {
+      "count": 1,
+      "why": "Synthetic kernel record/rule-index oracle: explicit attribution, missing metadata and chain outcomes, not an executable contract."
+    },
+    "TestInferFSWriteUnderNestedWatchIsAllowed": {
+      "count": 1,
+      "why": "Synthetic kernel record/rule-index oracle: explicit attribution, missing metadata and chain outcomes, not an executable contract."
+    }
+  },
+  "internal/runtime/observe/rules_scale_test.go": {
+    "TestMatchFSCostDoesNotGrowWithEntries": {
+      "count": 1,
+      "why": "Pure query/map benchmark fixture: deliberate logical paths and entry counts, with compilation/setup outside the measured operation."
+    },
+    "TestMatchExecCostDoesNotGrowWithEntries": {
+      "count": 1,
+      "why": "Pure query/map benchmark fixture: deliberate logical paths and entry counts, with compilation/setup outside the measured operation."
+    }
+  },
+  "internal/runtime/observe/rules_test.go": {
+    "ruleTable": {
+      "count": 1,
+      "why": "Synthetic kernel record/rule-index oracle: explicit attribution, missing metadata and chain outcomes, not an executable contract."
+    },
+    "TestRuleNames": {
+      "count": 1,
+      "why": "Synthetic kernel record/rule-index oracle: explicit attribution, missing metadata and chain outcomes, not an executable contract."
+    }
+  },
+  "internal/runtime/observe/unixconnect_integration_test.go": {
+    "TestIntegrationUnixConnectIsLeftToTheSupervisor": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestIntegrationShortConnectIsNotRecorded": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/approval_reap_integration_test.go": {
+    "TestApprovalReapHelper": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/backend_realkernel_test.go": {
+    "TestPrepareUsesRealKernelByDefault": {
+      "count": 1,
+      "why": "Explicit fault/counterfactual input: malformed, changed or unavailable compiler/kernel state must fail closed; no ordinary contract is claimed."
+    }
+  },
+  "internal/runtime/enforce/cgroup/backend_test.go": {
+    "TestBuildHashWithoutObjects": {
+      "count": 1,
+      "why": "Explicit fault/counterfactual input: malformed, changed or unavailable compiler/kernel state must fail closed; no ordinary contract is claimed."
+    },
+    "TestCapabilitiesNameEntriesWhereThePlaneChecksNames": {
+      "count": 2,
+      "why": "Synthetic capability input (ADR 0043 D7): an empty table and one whose name entry the caps left out, for the handle's fs.deny_read.created_later over chosen plane modes and rows; compile's own NameLeftOut is held by pkg/spec/agent's tests."
+    }
+  },
+  "internal/runtime/enforce/cgroup/bench_test.go": {
+    "benchPolicy": {
+      "count": 1,
+      "why": "Pure query/map benchmark fixture: deliberate logical paths and entry counts, with compilation/setup outside the measured operation."
+    },
+    "BenchmarkBuildRuleMaps": {
+      "count": 1,
+      "why": "Pure query/map benchmark fixture: deliberate logical paths and entry counts, with compilation/setup outside the measured operation."
+    }
+  },
+  "internal/runtime/enforce/cgroup/bpf_edges_integration_test.go": {
+    "TestUnspecifiedDestinationIsRefused": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestShortConnectRecordReadsNoStack": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestNameMaxRecordIsWhole": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestV1HierarchyDoesNotTouchTheRun": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/denyread_submount_integration_test.go": {
+    "TestFanotifyMarksMountsBeneathADeniedTree": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/execpins_integration_test.go": {
+    "TestPlaneExecPinsOnRealKernel": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/fanotify_bench_integration_test.go": {
+    "BenchmarkFanotifyRoundTrip": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/fanotify_closer_integration_test.go": {
+    "TestHeldCloseEndsTheListenerBeforeTheDescriptorLimit": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestFanotifyAllowedOpensKeepTheListener": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestUnmarkAllFlushesOnlyTheMountMarks": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/fanotify_thread_integration_test.go": {
+    "TestFanotifyDistinguishesSiblingReads": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/freeze_integration_test.go": {
+    "TestFreezeHelper": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/integration_test.go": {
+    "requireFanotify": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestFanotifyRefusesDeniedRead": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestFanotifyListenerDeathFailsOpen": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestPrepareOnRealKernel": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/linger_integration_test.go": {
+    "TestALingeringBuildIsAdoptedAndSweptOnlyWhenIdle": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestIntegrationABuildWhoseTimerDiedIsRemovedAtTheNextPrepare": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/mapped_rules_test.go": {
+    "TestMappedDestinationsFollowTheIPv4Rows": {
+      "count": 1,
+      "why": "Kernel policy/map ABI oracle: partial rows, slot/generation or callback states intentionally isolated from compile/launch; real backend fixture uses contracttest.BuildAt."
+    }
+  },
+  "internal/runtime/enforce/cgroup/mounts_integration_test.go": {
+    "TestFanotifyMarksEveryBindMount": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/negativewrite_test.go": {
+    "protectedWriteTable": {
+      "count": 1,
+      "why": "Kernel policy/map ABI oracle: partial rows, slot/generation or callback states intentionally isolated from compile/launch; real backend fixture uses contracttest.BuildAt."
+    }
+  },
+  "internal/runtime/enforce/cgroup/nestedrunset_integration_test.go": {
+    "TestEveryNestedCgroupIsInTheRunSetBeforeATaskCanJoinIt": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/net_integration_test.go": {
+    "TestNetVerdictOnRealKernel": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestNetUnrestrictedOnRealKernel": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestNetRefreshOnRealKernel": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/net_links_integration_test.go": {
+    "TestNetLinksHelper": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/network_control_integration_test.go": {
+    "TestNetworkControlsOnRealKernel": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestNetworkListenAutobindOnRealKernel": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestNetworkImportedListenOnRealKernel": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestNetworkExpiryOnRealKernel": {
+      "count": 2,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestConnectApprovalOnRealKernel": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestDatagramApprovalOnRealKernel": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestNetworkDatagramAndByteLimitsOnRealKernel": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "checkUDPReplyWindow": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestNetworkReservationRowsAreBoundedOnRealKernel": {
+      "count": 2,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/network_control_test.go": {
+    "TestNetworkControlNilZeroAndFirstBindAttribution": {
+      "count": 2,
+      "why": "Kernel policy/map ABI oracle: partial rows, slot/generation or callback states intentionally isolated from compile/launch; real backend fixture uses contracttest.BuildAt."
+    },
+    "TestListenerGuaranteeRequiresCleanupAndActualPlaneHooks": {
+      "count": 1,
+      "why": "Kernel policy/map ABI oracle: partial rows, slot/generation or callback states intentionally isolated from compile/launch; real backend fixture uses contracttest.BuildAt."
+    }
+  },
+  "internal/runtime/enforce/cgroup/network_test.go": {
+    "TestSocketFamiliesNeedTheFilterAndAKernelBackstop": {
+      "count": 2,
+      "why": "Kernel policy/map ABI oracle: partial rows, slot/generation or callback states intentionally isolated from compile/launch; real backend fixture uses contracttest.BuildAt."
+    }
+  },
+  "internal/runtime/enforce/cgroup/plane_adopt_integration_test.go": {
+    "TestPlaneRunAdoptsThePinnedPlane": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/plane_keyed_integration_test.go": {
+    "TestPlaneRunKeyedFilesAreTheInodesItDecides": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/plane_listener_import_integration_test.go": {
+    "TestPlaneImportedUnixBindOnRealKernel": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/plane_mounttopology_integration_test.go": {
+    "TestPlaneRunWalksTheMountTreeAsItStands": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/plane_stale_integration_test.go": {
+    "TestPlaneStaleRowsOfTheSlotsLastRunAreAbsent": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/plane_stalelink_integration_test.go": {
+    "TestPlaneStaleLinkOverARecreatedBuildIsNotAdopted": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/plane_test.go": {
+    "TestPlaneHoldsADenyWriteTargetDeclaredThroughALink": {
+      "count": 1,
+      "why": "Kernel policy/map ABI oracle: partial rows, slot/generation or callback states intentionally isolated from compile/launch; real backend fixture uses contracttest.BuildAt."
+    },
+    "TestPlaneSharedInodeFallsBackOrRefuses": {
+      "count": 2,
+      "why": "Kernel policy/map ABI oracle: partial rows, slot/generation or callback states intentionally isolated from compile/launch; real backend fixture uses contracttest.BuildAt."
+    },
+    "TestExecPolicyOf": {
+      "count": 1,
+      "why": "Kernel policy/map ABI oracle: partial rows, slot/generation or callback states intentionally isolated from compile/launch; real backend fixture uses contracttest.BuildAt."
+    }
+  },
+  "internal/runtime/enforce/cgroup/planemounts_test.go": {
+    "TestNetPolicyRow": {
+      "count": 6,
+      "why": "Kernel policy/map ABI oracle: partial rows, slot/generation or callback states intentionally isolated from compile/launch; real backend fixture uses contracttest.BuildAt."
+    },
+    "TestChoosePlaneTakesTheCallersError": {
+      "count": 1,
+      "why": "Explicit fault/counterfactual input: malformed, changed or unavailable compiler/kernel state must fail closed; no ordinary contract is claimed."
+    },
+    "TestTier3PlaneTakesTheCallersError": {
+      "count": 1,
+      "why": "Explicit fault/counterfactual input: malformed, changed or unavailable compiler/kernel state must fail closed; no ordinary contract is claimed."
+    },
+    "TestChoosePlaneRefusesHandedRowsThatNoLongerHold": {
+      "count": 2,
+      "why": "Explicit fault/counterfactual input: malformed, changed or unavailable compiler/kernel state must fail closed; no ordinary contract is claimed."
+    }
+  },
+  "internal/runtime/enforce/cgroup/policy_test.go": {
+    "policyTable": {
+      "count": 1,
+      "why": "Kernel policy/map ABI oracle: partial rows, slot/generation or callback states intentionally isolated from compile/launch; real backend fixture uses contracttest.BuildAt."
+    }
+  },
+  "internal/runtime/enforce/cgroup/rmdir_integration_test.go": {
+    "TestRmdirOfANestedCgroupDeletesItsRunSetRow": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/rules_test.go": {
+    "table": {
+      "count": 1,
+      "why": "Kernel policy/map ABI oracle: partial rows, slot/generation or callback states intentionally isolated from compile/launch; real backend fixture uses contracttest.BuildAt."
+    }
+  },
+  "internal/runtime/enforce/cgroup/run_flags_test.go": {
+    "TestRunRowActivityFlagFollowsTheStallBudget": {
+      "count": 6,
+      "why": "Kernel policy/map ABI oracle: partial rows, slot/generation or callback states intentionally isolated from compile/launch; real backend fixture uses contracttest.BuildAt."
+    },
+    "TestRunRowListenerResultsRequireExplicitPreparedPlane": {
+      "count": 5,
+      "why": "Kernel policy/map ABI oracle: partial rows, slot/generation or callback states intentionally isolated from compile/launch; real backend fixture uses contracttest.BuildAt."
+    }
+  },
+  "internal/runtime/enforce/cgroup/sockcreate_integration_test.go": {
+    "TestAttachNamesALegacyExclusiveProgramAbove": {
+      "count": 1,
+      "why": "Explicit fault/counterfactual input: malformed, changed or unavailable compiler/kernel state must fail closed; no ordinary contract is claimed."
+    },
+    "TestSockCreateIsAttachedAndRefusesOutsideTheAllowlist": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestSockCreateRunsAreANDedWhenNested": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/startcost_integration_test.go": {
+    "TestSecondLauncherAdoptsTheBuildsPinnedObjects": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestExecOnlyMarkAsksForNoOpenEvent": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestDirectoryMovedIntoADeniedTreeIsStillAsked": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/doctorbuilds_integration_test.go": {
+    "TestIntegrationALingeringBuildALiveRunNeedsIsListedKept": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: an empty cgroup-tier table prepares a real build whose run set doctor's listing reads; no contract acceptance is asserted."
+    },
+    "checkBuildMemlock": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: a lingering build whose pinned objects' memlock is compared with bpftool's; no contract acceptance is asserted."
+    }
+  },
+  "internal/runtime/enforce/cgroup/stoprearm_e2e_integration_test.go": {
+    "TestIntegrationStopRearmsABuildWhoseTimerDied": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/teardown_integration_test.go": {
+    "TestBuildRemovalReleasesLinksBeforeReturn": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/teardown_plane_integration_test.go": {
+    "TestPlaneRemovalReleasesLinksBeforeReturn": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/tiers_crosscheck_test.go": {
+    "r4Table": {
+      "count": 1,
+      "why": "Kernel policy/map ABI oracle: partial rows, slot/generation or callback states intentionally isolated from compile/launch; real backend fixture uses contracttest.BuildAt."
+    }
+  },
+  "internal/runtime/enforce/cgroup/unix_approval_integration_test.go": {
+    "TestUnixApprovalRowsPurgedOnRealMaps": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/unix_integration_test.go": {
+    "table": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    },
+    "TestUnixRowsPurgedOnRealMaps": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/enforce/cgroup/upgrade_integration_test.go": {
+    "TestTwoBuildsCoexistWithoutInterference": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/supervisor/ask_open_test.go": {
+    "TestAskScopeRejectsReplacementAndPinsMissingParent": {
+      "count": 2,
+      "why": "Explicit fault/counterfactual input: malformed, changed or unavailable compiler/kernel state must fail closed; no ordinary contract is claimed."
+    }
+  },
+  "internal/runtime/supervisor/ask_read_test.go": {
+    "TestAlternateRefusalForAWriteNamesDenyWriteTargets": {
+      "count": 1,
+      "why": "Pure query fixture: alternateRefusal over a table holding only a built-in deny_write row and then fs: {}'s implicit write guard; it decides where an alternate may write, and no executable contract is claimed."
+    },
+    "TestAlternateRefusedByADenyReadPatternCreatedLater": {
+      "count": 1,
+      "why": "Pure query fixture: alternateRefusal over a table holding one write entry and two deny_read patterns, for a file a pattern names that did not exist when the table was built (ADR 0057); no executable contract is claimed."
+    },
+    "TestTheReadableOwnStateIsHeldForReadsAndKeptFromWrites": {
+      "count": 1,
+      "why": "Pure query fixture: alternateRefusal reads only FS and OwnReadable, here one write entry over the user registry's agents/ (agent-contract.md R26), for whether a write or read alternate may lie in it; the compiler's OwnReadable rows are covered by its own tests, and no executable contract is claimed."
+    },
+    "TestWriteAlternateLiesWhereTheContractLetsTheAgentWrite": {
+      "count": 1,
+      "why": "Pure query fixture: alternateRefusal over a table holding a write entry, the contract file's implicit row and two fs.ask scopes, for where a write alternate may lie (ADR 0057); the compiler's own rows are covered by its conformance fixtures, and no executable contract is claimed."
+    }
+  },
+  "internal/runtime/supervisor/denywrite_integration_test.go": {
+    "denyWriteRuleTable": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/supervisor/exec_absent_test.go": {
+    "TestUnrestrictedExecBeneathAnAbsentRowIsRefused": {
+      "count": 1,
+      "why": "Explicit compiler-output input: one AbsentDenyRead row with the At name compile would predict, so the loop's exec verdict beneath it is checked alone; compile's own prediction of At is covered by pkg/spec/agent's absent-row tests."
+    }
+  },
+  "internal/runtime/supervisor/exec_integration_test.go": {
+    "execRuleTable": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/supervisor/exec_mode_test.go": {
+    "TestCompileReadsTheExecMode": {
+      "count": 1,
+      "why": "Explicit mode-bit input: each case is an exec section alone (absent, deny without allow, allow present, anonymous), so the supervisor's own reading of key presence is checked against ADR 0048 (1); compiled contracts in every mode are covered by pkg/spec/agent's exec mode tests."
+    }
+  },
+  "internal/runtime/supervisor/exec_test.go": {
+    "TestPathSearchSetBounds": {
+      "count": 7,
+      "why": "Explicit fault/counterfactual input: malformed, changed or unavailable compiler/kernel state must fail closed; no ordinary contract is claimed."
+    }
+  },
+  "internal/runtime/supervisor/fake_test.go": {
+    "testPolicy": {
+      "count": 1,
+      "why": "Pure supervisor decision fixture: fixed simulated notification memory and resolver/kernel state; real-tree mutation decisions use contracttest.Build."
+    }
+  },
+  "internal/runtime/supervisor/gatechmod_integration_test.go": {
+    "gateChmodRuleTable": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: the supervisor integration harness's partial table (one write entry on the harness directory, a worktree and the record level) under which only the gate's scoring can refuse a mode change; compiled gate contracts are covered by pkg/spec/agent's gate evaluation tests and the conformance suite (ADR 0041 Step 2)."
+    }
+  },
+  "internal/runtime/supervisor/gaterdwr_integration_test.go": {
+    "gateReadWriteRuleTable": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: the supervisor integration harness's partial table (one write entry on the harness directory and a worktree) under which only the read gate can refuse an O_RDWR open; compiled gate contracts are covered by pkg/spec/agent's gate evaluation tests and the conformance suite (gate.md R1)."
+    }
+  },
+  "internal/runtime/supervisor/integration_test.go": {
+    "startHarnessWith": {
+      "count": 5,
+      "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
+    }
+  },
+  "internal/runtime/supervisor/transport_resolved_test.go": {
+    "TestResolvedRefusalCannotBorrowOtherTransport": {
+      "count": 1,
+      "why": "Pure supervisor decision fixture: fixed simulated notification memory and resolver/kernel state; real-tree mutation decisions use contracttest.Build."
+    }
+  },
+  "internal/runtime/enforce/cgroup/kernel_stalelink_integration_test.go": {
+    "TestStaleSharedLinkOverARecreatedBuildIsNotAdopted": {
+      "count": 1,
+      "why": "Explicit fault/counterfactual input: malformed, changed or unavailable compiler/kernel state must fail closed; no ordinary contract is claimed."
+    }
+  },
+  "internal/runtime/observe/chain_held_test.go": {
+    "TestRecorderExplainsReferByTheHeldInode": {
+      "count": 1,
+      "why": "Synthetic kernel record/rule-index oracle: explicit attribution, missing metadata and chain outcomes, not an executable contract."
+    }
+  },
+  "internal/runtime/supervisor/land_test.go": {
+    "TestCompileLandsWhereTheRunLands": {
+      "count": 1,
+      "why": "Pure landing-walk property fixture: a hand-built table (one write entry, a deny_read, one unix: entry placed as the run places it) over generated real trees, comparing compile --test's landing and verdict with the run's walk and decision code; the compiled contract path is covered by the compile --test goldens and conformance tables."
+    },
+    "unixOracleTable": {
+      "count": 1,
+      "why": "Pure landing-walk property fixture: a hand-built table (one write entry, a deny_read, one unix: entry placed as the run places it) over generated real trees, comparing compile --test's landing and verdict with the run's walk and decision code; the compiled contract path is covered by the compile --test goldens and conformance tables."
+    },
+    "TestLandUnixStepwise": {
+      "count": 1,
+      "why": "Pure landing-walk fixture: one write entry at / over a real tree holding a link fs.protected_symlinks refuses, asked of LandUnix and the run's own unix walk and decision; no executable contract is claimed."
+    }
+  },
+  "internal/runtime/enforce/cgroup/names_test.go": {
+    "nameTable": {
+      "count": 1,
+      "why": "Synthetic name-entry table (ADR 0043): the built-in .env pair over one scope as compile makes it, for the listener's and Prepare's name decisions over chosen paths; compiled-contract parity is held by the decision core's tests and the guest's governed-run cell."
+    }
+  },
+  "internal/runtime/enforce/cgroup/plane_namemap_integration_test.go": {
+    "TestPlaneNameRowsFillAndClear": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: name rows written into a real slot's name map and cleared at Detach; a partial table whose only job is the map's fill and teardown, not an executable contract."
+    }
+  },
+  "internal/runtime/observe/plane_names_test.go": {
+    "namesTable": {
+      "count": 1,
+      "why": "Synthetic kernel record/rule-index oracle: a write entry, an expansion entry and the built-in .env pair over the fixture's out/, to name plane and listener refusals of records the test writes."
+    }
+  },
+  "internal/runtime/enforce/cgroup/unix_rules_test.go": {
+    "compactedEnvTable": {
+      "count": 1,
+      "why": "Synthetic compaction table (ADR 0043 D6): 4,500 built-in .env rows with the facts compaction keys on and the built-in pair over one scope, for the unix trie's row count; compile's compaction is held by decide's planerows tests and the guest's TestCompactedTableStaysAtBPFLSM."
+    }
+  }
+}
