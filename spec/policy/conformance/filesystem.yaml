@@ -1,0 +1,135 @@
+# SPDX-License-Identifier: Apache-2.0
+# fsplan: the filesystem plan's nearest-wins cells (ADR 0028 S6), the decide core's first shared table.
+version: 2
+name: fsplan
+contract: |
+  version: 0
+  name: filesystem-plan-conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./out/", "./out/secret/open/"]
+    deny_read: ["./secret/", "./out/secret/"]
+    watch: ["./config/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  record: full
+  env:
+    pass: ["PATH"]
+dirs: [out/secret/open, secret, config]
+files:
+  config/read.txt: x
+  notes-read.txt: x
+  notes-write.txt: x
+  out/rename-src.txt: x
+  out/secret/open/read.txt: x
+  out/secret/open/remove.txt: x
+  out/secret/read.key: secret
+  out/secret/remove.txt: x
+  out/secret/truncate.txt: x
+  out/write.txt: x
+  secret/read.key: secret
+model:
+  write: [out, out/secret/open]
+  deny_read: [secret, out/secret]
+  exec_allow: [bin/actor]
+  net_declared: true
+cells:
+  - name: outside-write
+    op: write-open
+    path: notes-write.txt
+    want:
+      all: refused unmatched
+    source: 'SEMANTICS §1: undeclared mutations refused'
+  - name: outside-read
+    op: read
+    path: notes-read.txt
+    want:
+      all: allow unmatched
+    source: 'SEMANTICS §1: undeclared reads allowed'
+  - name: granted-write
+    op: write-open
+    path: out/write.txt
+    want:
+      all: allow fs.write[./out/]
+    source: 'SEMANTICS §2: write entry grants modifications'
+  - name: denied-read
+    op: read
+    path: secret/read.key
+    want:
+      all: refused fs.deny_read[./secret/]
+    source: 'SEMANTICS §2: deny_read subtree'
+  - name: nested-denied-read
+    op: read
+    path: out/secret/read.key
+    want:
+      all: refused fs.deny_read[./out/secret/]
+    source: 'SEMANTICS §2: Landlock union, under which tier landlock holds the run''s reads (ADR 0069); root nearest entry'
+  - name: regranted-read
+    op: read
+    path: out/secret/open/read.txt
+    want:
+      landlock: allow
+      root: allow fs.write[./out/secret/open/]
+    source: 'SEMANTICS §2: specific write reopens a denied subtree'
+  - name: nested-denied-remove
+    op: unlink
+    path: out/secret/remove.txt
+    want:
+      landlock: allow fs.write[./out/]
+      root: refused fs.deny_read[./out/secret/]
+    source: 'ADR0021(5), ADR0028 S3: fallback mutation convergence'
+  - name: regranted-remove
+    op: unlink
+    path: out/secret/open/remove.txt
+    want:
+      all: allow fs.write[./out/secret/open/]
+    source: 'SEMANTICS §2: specific write regrant and parent remove rights'
+  - name: nested-denied-mkdir
+    op: mkdir
+    path: out/secret/newdir
+    want:
+      landlock: allow fs.write[./out/]
+      root: refused fs.deny_read[./out/secret/]
+    source: 'ADR0021(5), ADR0028 S3: fallback mutation convergence'
+  - name: regranted-mkdir
+    op: mkdir
+    path: out/secret/open/newdir
+    want:
+      all: allow fs.write[./out/secret/open/]
+    source: 'SEMANTICS §2: specific write regrant'
+  - name: nested-denied-create
+    op: create
+    path: out/secret/create.txt
+    want:
+      landlock: allow fs.write[./out/]
+      root: {verdict: refused, rule: 'fs.deny_read[./out/secret/]', errno: EACCES}
+    source: 'ADR0021(5), ADR0028 S3: fallback mutation convergence'
+  - name: regranted-create
+    op: create
+    path: out/secret/open/create.txt
+    want:
+      all: allow fs.write[./out/secret/open/]
+    source: 'SEMANTICS §2: specific write regrant'
+  - name: nested-denied-truncate
+    op: truncate
+    path: out/secret/truncate.txt
+    want:
+      landlock: allow fs.write[./out/]
+      root: refused fs.deny_read[./out/secret/]
+    source: 'ADR0021(5), ADR0028 S3: fallback mutation convergence'
+  - name: rename-into-denied
+    op: rename
+    path: out/rename-src.txt
+    dest: out/secret/rename-dst.txt
+    want:
+      landlock: allow
+      root: refused fs.deny_read[./out/secret/]
+    source: 'SEMANTICS §2: both rename ends; ADR0028 S3'
+  - name: watch-names-read
+    op: read
+    path: config/read.txt
+    want:
+      all: allow fs.watch[./config/]
+    source: 'SEMANTICS §7: watch names reads without granting rights'
