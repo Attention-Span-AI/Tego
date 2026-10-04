@@ -1,0 +1,2 @@
+error: testdata/bad/ask-nonliteral.yaml:6:9: fs.ask.0: fs.ask requires literal paths of at most 4096 bytes [schema]
+  fix: list a literal file or directory
