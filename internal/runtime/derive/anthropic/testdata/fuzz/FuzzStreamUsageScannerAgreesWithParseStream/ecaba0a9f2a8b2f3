@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"type\":\"message_start\",\"message\":{\"model\":\"0\"}}\n{\"type\":\"message_delta\",\"usage\":{\"output_tokens\":0}}")
