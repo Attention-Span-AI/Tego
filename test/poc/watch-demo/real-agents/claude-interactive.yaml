@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# A boundary for the REAL interactive Claude Code (2.1.290), at tier landlock with no root. Verified on
+# 2026-10-06 ONLY as far as its first-run screen, with no credentials (README.md): the full-screen interface starts
+# and stays up with these grants, and what it still refuses is a UDP/443 (QUIC) attempt it falls back from and a
+# netlink socket it tolerates. A logged-in or API-key session, tool use, MCP servers and the IDE link are untested.
+#
+# Why the model host is allowed directly and not through the forwarder: at startup Claude Code connects straight to
+# api.anthropic.com:443 whatever ANTHROPIC_BASE_URL says, and under 'capture: forwarder' that connection is refused
+# by design (a declared model endpoint is only reachable through the forwarder), after which Claude exits 1 with
+# 'Unable to connect to Anthropic services' (claude-interactive-forwarder.yaml). Allowing the host costs the
+# recording of the model traffic (capture: off) and makes that host an exfiltration channel like any allowed host.
+#
+# Why the contract file is not in the workspace and tego's own directory is not either: tego refuses a boundary
+# that lets the agent write the file that defines it or the ledger.
+version: 0
+name: claude-interactive
+command: ["claude"]
+record: full
+capture: off
+fs:
+  write: ["./", "/dev/null", "/dev/tty", "/run/user/1000/cc-socks/"]
+exec:
+  allow: ["bash", "git"]
+net:
+  allow: ["unix:/var/run/nscd/socket", "tcp://api.anthropic.com:443"]
+env:
+  pass: ["PATH", "HOME", "LANG", "TERM", "COLORTERM", "XDG_RUNTIME_DIR"]
+  set:
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    DISABLE_AUTOUPDATER: "1"
+    CLAUDE_CONFIG_DIR: ".claude-state"
+    CLAUDE_CODE_TMPDIR: ".claude-state/tmp"
+    TMPDIR: ".claude-state/tmp"
+limits:
+  pids: 512
+  memory: 4GiB
+  wall: 30m

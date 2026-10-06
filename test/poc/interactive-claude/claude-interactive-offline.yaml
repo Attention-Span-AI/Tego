@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The boundary the interactive Claude Code session is held to (README.md). run.sh fills in the @...@ names and writes
+# the result to <root>/contract/agent.yaml; the original is a template. Every entry is a decision about ANY agent;
+# the comments say what each one is for, and what Claude Code does without it (measured 2026-10-06, Claude Code
+# 2.1.290, Linux 6.17, tier landlock, no root).
+version: 0
+name: claude-interactive-offline
+# `tego watch --boundary` takes the command from its own line; the schema wants one here.
+command: ["claude"]
+# Every model request goes to ONE place, the local stand-in, and is recorded as ssl_request source=forwarder.
+# Claude Code ships its TLS library statically linked, so no uprobe can read its traffic; the forwarder is the way
+# it is recorded. tego starts a plaintext listener on 127.0.0.1 for this entry and sets ANTHROPIC_BASE_URL to it in
+# the agent's environment; the listener speaks TLS to the stand-in, which it trusts through SSL_CERT_FILE in TEGO'S
+# OWN environment (the agent is not given that file). No entry anywhere names an Anthropic address.
+models:
+  - { provider: anthropic, host: "127.0.0.1", port: @STUB_PORT@ }
+capture: forwarder
+record: full
+fs:
+  write:
+    # The task's own output.
+    - "./work/"
+    # Claude Code's own state (CLAUDE_CONFIG_DIR and its scratch directory, set below) and the private runtime
+    # directory it makes a socket in (cc-socks/); /dev/null and /dev/tty are the shell's and the TUI's plumbing.
+    - "./.claude-state/"
+    - "@ROOT@/xdg/"
+    - "/dev/null"
+    - "/dev/tty"
+  # A write under held/ pauses Claude Code until a person answers (tego ask / approve / deny).
+  ask: ["./held/"]
+  # Claude Code also reads the PASSWD-DATABASE home's agent config (skills, settings) whatever HOME is. Under
+  # enforcement that is refused, so the session cannot see, or be changed by, the real account's configuration. The
+  # run script lists only the entries that exist here (deny_read refuses a missing path).
+@DENY_READ@
+exec:
+  # The only program the agent may start by name: the shell its Bash tool runs commands through. `git` (a harmless
+  # stand-in on PATH) is NOT listed: `git push` is refused with exec-not-allowed, and so is every other program.
+  allow: ["bash"]
+net:
+  # Nothing is reached directly. The forwarder's listener is the one route to the model and is admitted by the run
+  # itself. glibc's name-service-cache socket is allowed so lookups stay quiet.
+  allow: ["unix:/var/run/nscd/socket"]
+  dns:
+    # No name lookup leaves the box either. The default (system) lets the agent reach the machine's resolver, which
+    # forwards a query for any name, api.anthropic.com included, to the network; Claude Code reaches the model by
+    # the forwarder's address and needs no name. `off` removes that grant: a lookup is refused and recorded.
+    mode: "off"
+env:
+  # The agent sees these and nothing else. ANTHROPIC_API_KEY is a dummy ("sk-ant-...-NOT-A-REAL-KEY-000..."): with a
+  # key in the environment Claude Code skips its login screen. SSL_CERT_FILE is deliberately absent.
+  pass: ["PATH", "HOME", "LANG", "TERM", "COLORTERM", "ANTHROPIC_API_KEY"]
+  set:
+    # Everything that is not the model call: the auto-updater, telemetry, error reporting, the version check.
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    DISABLE_AUTOUPDATER: "1"
+    # State and scratch under the workspace, so the contract grants that directory and not the home or /tmp.
+    CLAUDE_CONFIG_DIR: ".claude-state"
+    CLAUDE_CODE_TMPDIR: ".claude-state/tmp"
+    TMPDIR: ".claude-state/tmp"
+    XDG_RUNTIME_DIR: "@ROOT@/xdg"
+limits:
+  pids: 512
+  memory: 4GiB
+  wall: 20m
+ask:
+  # Nobody answering is never a yes: after this long the held write is refused and recorded ask-timeout.
+  timeout: 5m
