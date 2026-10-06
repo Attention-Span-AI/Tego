@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The boundary the 'tego watch' demo holds agent.sh to (README.md). run.sh fills in @TIMEOUT@. Every line is a
+# decision about ANY agent, never about what this one is.
+version: 0
+name: demo-cage
+command: ["bash", "agent.sh"]
+record: full
+fs:
+  # The agent may write here and nowhere else. /dev/null and /dev/tty are the shell's own plumbing.
+  write: ["./work/", "/dev/null", "/dev/tty"]
+  # A write under held/ pauses the agent until a person answers (tego ask / approve / deny).
+  ask: ["./held/"]
+  # A credential the agent must never read.
+  deny_read: ["./fake-home/.ssh"]
+exec:
+  # The only programs it may start. Anything else (here: git) is refused.
+  allow: ["bash", "cat"]
+net:
+  # Nothing is reached. glibc's name-service cache socket is allowed so the shell's own lookups stay quiet.
+  allow: ["unix:/var/run/nscd/socket"]
+env:
+  pass: ["PATH", "HOME", "LANG", "TERM"]
+limits:
+  pids: 64
+  memory: 512MiB
+  wall: 5m
+ask:
+  # Nobody answering is never a yes: after this long the held write is refused and recorded ask-timeout.
+  timeout: @TIMEOUT@

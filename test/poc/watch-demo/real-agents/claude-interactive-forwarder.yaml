@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The same boundary with the model reached through the forwarder (capture: forwarder). The real interactive Claude
+# Code starts, shows its welcome screen, then exits 1: its startup connectivity check goes directly to
+# api.anthropic.com:443, which this contract refuses (models[api.anthropic.com:443]). Kept as the evidence for the
+# gap FEATURES I2 names (residual direct connects) and as the contract to retest when it is closed. See
+# claude-interactive.yaml for the working variant.
+version: 0
+name: claude-interactive
+command: ["claude"]
+record: full
+models:
+  - { provider: anthropic, host: api.anthropic.com, port: 443 }
+capture: forwarder
+fs:
+  write: ["./", "/dev/null", "/dev/tty"]
+exec:
+  allow: ["bash", "git"]
+net:
+  allow: ["unix:/var/run/nscd/socket"]
+env:
+  pass: ["PATH", "HOME", "LANG", "TERM", "COLORTERM"]
+  set:
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    DISABLE_AUTOUPDATER: "1"
+    CLAUDE_CONFIG_DIR: ".claude-state"
+    CLAUDE_CODE_TMPDIR: ".claude-state/tmp"
+    TMPDIR: ".claude-state/tmp"
+limits:
+  pids: 512
+  memory: 4GiB
+  wall: 30m
