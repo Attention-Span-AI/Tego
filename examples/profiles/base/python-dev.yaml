@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# base/python-dev — a profile for ordinary development work in a Python project: installing packages and
+# running the tests; a contract adds any other build tool it calls (npm, go, make). A contract takes it with
+# `extends: base/python-dev` once the machine config's `profiles:` names this directory, or once the file
+# is copied to ~/.tego/profiles/base/, the default profiles directory. Kill test 4 is written against it
+# (docs/FEATURES.md R18: "`pip install` + `pytest`, `npm install`, `go build` unbroken under
+# examples/profiles/base/python-dev with `record: summary`").
+#
+# A profile is merged underneath the contract (docs/p0/agent-contract.md R5): its lists come first and the
+# contract's are added to them, its scalars hold only where the contract sets none, and its deny_read
+# entries are never dropped. So it declares only what every such project needs on any machine, and
+# nothing that names a place: the project's own write directory, its tool caches and its model endpoint
+# belong to the contract, because a path or host this file named would be wrong on the next machine, and
+# an exec entry for a tool the machine lacks fails compile (exec-not-on-path).
+fs:
+  # The one path every such project writes outside its own tree: pytest's capture and pip's subprocesses
+  # open /dev/null for writing, and a refused open there fails the test session (kill test 4 found it).
+  # A write to it stores nothing, so granting it grants nothing to keep.
+  write: ["/dev/null"]
+exec:
+  # pip and pytest run as modules of the interpreter (python3 -m pip, python3 -m pytest), so the
+  # interpreter is the one binary the Python half of the work needs. A contract that installs packages with
+  # native extensions under one of its write entries (a .venv, a pip --target directory) also names that
+  # directory here: at tiers cgroup and bpflsm the decision plane maps native code under a write entry only where
+  # exec.allow covers it (ADR 0027), and `tego compile` warns exec-map with the line to add.
+  allow: ["python3"]
+env:
+  pass: ["PATH", "HOME", "LANG", "LC_ALL", "TERM", "TZ"]
+  # No .pyc next to the sources: the source tree is read-only under a contract that declares only its
+  # output directory, and a bytecode write there would be a refusal of work nobody asked for.
+  set: { PYTHONDONTWRITEBYTECODE: "1", PIP_DISABLE_PIP_VERSION_CHECK: "1" }
+limits:
+  pids: 1024
+  wall: 1h
+record: summary

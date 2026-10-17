@@ -1,0 +1,22 @@
+# A small self-contained contract for `tego compile --test`. Its fs entries
+# are relative, so compile it from this directory:
+#
+#   cd examples/tests && tego compile agent.yaml --test verdicts.yaml
+#
+# `out/keys/` is a deny_read inside a write directory on purpose: the root
+# tiers enforce it and Landlock cannot (spec/policy/SEMANTICS.md §2), which is
+# what the per-tier rows of verdicts.yaml pin down.
+version: 0
+name: tested
+command: ["sh", "agent.sh"]
+fs:
+  write: ["out/"]
+  deny_read: ["secrets/", "out/keys/"]
+  watch: ["config/"]
+net:
+  allow: ["127.0.0.1:8080", "10.0.0.0/8:443"]   # literals: compile resolves no DNS for this example
+exec:
+  allow: ["sh"]
+env:
+  pass: ["PATH", "HOME"]
+record: summary

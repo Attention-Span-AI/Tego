@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Any agent you wrote yourself (or any command that calls a model), left to run unattended overnight: held to what it may
+# touch, run and reach, to what it may spend, and recorded for the morning. It is the contract test/poc/custom-agent/
+# runs in compressed time (seconds standing for hours) and for two hours in its soak, with the values of a real night:
+# change `command`, the writable directory and the model entry; keep the shape. `tego learn` proposes the first draft
+# of fs.write, exec.allow and the destinations from one watched run; it never proposes models, limits, ask or
+# fs.deny_read, which are the decisions in this file. test/poc/custom-agent/README.md has the checklist.
+#
+# Run it:  tego watch --boundary custom-agent.yaml -- python3 agent.py      (the command line wins over `command`)
+# Read it: tego status|events|drift|measure <run>, in the morning or while it runs.
+version: 0
+name: custom-agent
+command: ["python3", "agent.py"]
+# The model is reached through tego's forwarder, which is how tego can count what the run spends and see what the
+# model asks for: it sets the provider's base-URL variable (ANTHROPIC_BASE_URL, OPENAI_BASE_URL, ...) to the forwarder's
+# loopback address in the agent's environment, and the agent must honour it. tokens, cost_usd and repeats below count
+# NOTHING without this entry: `tego compile` then reports them [budget-unmetered], and every run is refused, exit 125.
+models:
+  - { provider: anthropic, host: api.anthropic.com, port: 443 }
+capture: forwarder
+# full records every file open, reads included, at a cost for each (about 60 us); for this agent's chatter, 55 events and
+# 40 KB a second, 143 MB an hour. summary records execs, writes, connections, refusals and model calls, a fifth of that, and
+# a read of an allowed file leaves no line: a quiet reader looks stalled to stall_after (see limits).
+record: full
+fs:
+  write:
+    - "./work/"       # the only directory it may change
+    - "/dev/null"
+    - "/dev/tty"      # bash opens the terminal at start-up, whether or not there is one
+  # A write under held/ pauses the agent until a person runs `tego approve|deny <run> <id>`. Unattended, nobody does:
+  # the write is refused when ask.timeout ends, and the next try is held again for as long. Keep ask for the few
+  # decisions a person should take, answer them with --always, and put the rest in the contract.
+  ask: ["./held/"]
+  # Credentials this agent must never read, besides the built-in list (~/.ssh, ~/.gnupg and the browsers' profiles).
+  deny_read: ["~/.aws", "~/.netrc"]
+exec:
+  # The only programs it may start. Anything else (git push, curl, ssh) is refused and recorded.
+  allow: ["python3", "bash"]
+net:
+  # The forwarder is the only route to the model and is admitted by the run itself; nothing else is reachable. Do not
+  # also allow the model host here: a direct connection is not counted, and compile warns model-direct-bypass.
+  allow: ["unix:/var/run/nscd/socket"]
+  dns:
+    mode: "off"
+env:
+  pass: ["PATH", "HOME", "LANG"]
+limits:
+  # Every limit is a ceiling for a run that has gone wrong, not a target; set each above the worst healthy night.
+  wall: 20h          # the night. At the second after, tego stops the whole run (exit 124).
+  stall_after: 30m   # no event for this long: hung. Under record: summary, a long quiet read counts as no event.
+  repeats: 12        # the same tool call from the model this many times in a row: a runaway loop.
+  tokens: 20000000   # input plus output tokens of every model call; cache tokens are not counted.
+  cost_usd: 150      # estimated from the price table (machine config `prices:`; without one the run is refused).
+  memory: 4GiB       # the cgroup's memory.max; at the limit the kernel kills, the run ends `oom` (137).
+  pids: 256          # tasks in the run; a refused fork ends the run `pids` (137).
+  cpu: 4             # cores; the kernel throttles, nothing is killed.
+ask:
+  # Nobody answering is never a yes: after this long a held write is refused and recorded ask-timeout (at most 1h).
+  timeout: 2m

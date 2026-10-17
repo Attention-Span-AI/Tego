@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# A Python agent on the Claude Agent SDK under tego: the contract kill test 7 (a) runs (docs/FEATURES.md
+# I3 and "Kill test 7": "a Claude Agent SDK (Python) agent with `capture: forwarder` and `env.set:
+# {CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"}`"). test/workloads/claude-sdk/agent.py is such an agent,
+# and test/e2e/kt7-two-agents.sh runs it under this file with only the model endpoint moved to a local
+# stand-in. claude-code.yaml is the same agent driven from the shell with `claude -p`.
+#
+# Why capture is `forwarder`: the SDK does not call the model itself. It starts the Claude Code binary it
+# bundles, a Bun executable with BoringSSL linked in statically and no SSL_* symbols, so no uprobe can read
+# its traffic. The forwarder's listener is named in ANTHROPIC_BASE_URL, which the SDK hands on to Claude
+# Code, and every request is recorded as `ssl_request source=forwarder` (docs/p0/capture-derive.md R19).
+# `net.allow` is present and empty, so a direct connect to the model host around the forwarder is refused
+# (R38); a contract with no `net:` at all would restrict nothing (spec/policy/SEMANTICS.md §1).
+#
+# Where the SDK lives: installed into the project with `pip install --target .deps claude-agent-sdk` and
+# run with PYTHONPATH=.deps, which is how the kill test installs it. The bundled Claude Code is then
+# .deps/claude_agent_sdk/_bundled/claude, and exec.allow grants the directory: its path changes with every
+# SDK release. A virtual environment works the same way with the entry naming it (for example "./.venv/").
+#
+# The state directories are claude-code.yaml's: CLAUDE_CONFIG_DIR and CLAUDE_CODE_TMPDIR under
+# ./.claude-state/, relative to the project, where the SDK starts Claude Code. It extends base/python-dev
+# (examples/profiles), which grants /dev/null and the interpreter; the machine config's `profiles:` must name
+# that directory.
+version: 0
+name: claude-agent-sdk
+extends: base/python-dev
+command: ["python3", "agent.py"]
+models:
+  - { provider: anthropic, host: api.anthropic.com, port: 443 }
+capture: forwarder
+fs:
+  write: ["./out/", "./.claude-state/"]
+exec:
+  # The SDK and its bundled Claude Code; bash and git are what Claude Code starts on its own (its shell and
+  # its repository questions). Add the tools the task itself needs: anything else is refused and recorded.
+  allow: ["./.deps/", "bash", "git"]
+net:
+  # Nothing is reached directly: the forwarder's listener, which the run admits on its own, is the route.
+  allow: []
+env:
+  pass: ["ANTHROPIC_API_KEY", "PYTHONPATH"]
+  set:
+    # Claude Code's switch for everything that is not the model call itself: the auto-updater, error
+    # reporting, telemetry and the bug command. Each of those would be a connection the contract refuses.
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    CLAUDE_CONFIG_DIR: ".claude-state"
+    CLAUDE_CODE_TMPDIR: ".claude-state/tmp"
+    TMPDIR: ".claude-state/tmp"
+limits:
+  pids: 512
+  memory: 4GiB
+  wall: 30m
+  cost_usd: 5                 # needs the machine's price table (prices:); without one the run is refused
+  repeats: 5
+record: summary
+tier: auto

@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# base/read-only-git — git for reading a repository and nothing else (ADR 0048, docs/OPERATIONS.md "Exec command
+# rules"). A contract takes it with `extends: base/read-only-git`; the contract adds its own command and tools. The
+# allow entries constrain git: git runs only as one of these subcommands, wherever its global options put the word
+# (`git -C sub status` is `git status`), and every other subcommand is refused as unlisted (exec.args[git]). The
+# deny entries close the writing forms of the subcommands that also read: a deny always wins over an allow, at any
+# specificity.
+#
+# The list is the subcommands an agent asks a repository's state with: Claude Code's own git use (status, diff,
+# log, show, rev-parse, branch, remote -v, config reads, ls-files), and the plumbing a reading tool calls. None of
+# them runs git as a helper (measured with strace -f, ADR 0048's table), so no helper closure is needed.
+#
+# What it does not cover: `git config <key> <value>` sets a value and `git branch <name>` creates a branch by operand
+# count, which no pattern can name; the built-in deny_write set already refuses writes to .git/config and .git/hooks
+# beneath a write entry (agent-contract R20), and outside one the contract's fs rules refuse every write into .git,
+# as they do `git diff --output=<file>`. A pager or `git grep -O<cmd>` runs a command of its own, which the exec rules
+# decide as any other exec. An alias is a subcommand of its own: list it to use it.
+fs:
+  # git opens /dev/null read-write at every start (sanitize_stdfds); a write to it stores nothing.
+  write: ["/dev/null"]
+exec:
+  allow:
+    - git status
+    - git diff
+    - git log
+    - git show
+    - git rev-parse
+    - git ls-files
+    - git ls-tree
+    - git cat-file
+    - git blame
+    - git grep
+    - git describe
+    - git shortlog
+    - git merge-base
+    - git name-rev
+    - git for-each-ref
+    - git rev-list
+    - git show-ref
+    - git branch
+    - git remote
+    - git config
+    - git version
+    - git help
+  deny:
+    # branch reads with no option or with --list and --show-current; these write.
+    - git branch --delete
+    - git branch -D
+    - git branch --move
+    - git branch -M
+    - git branch --copy
+    - git branch -C
+    - git branch --force
+    - git branch --set-upstream-to
+    - git branch --unset-upstream
+    - git branch --edit-description
+    # remote reads with no subcommand (-v), show and get-url; these write.
+    - git remote add
+    - git remote rename
+    - git remote remove
+    - git remote set-head
+    - git remote set-branches
+    - git remote set-url
+    - git remote prune
+    - git remote update
+    # config reads with get, list, --get, --list; these write.
+    - git config set
+    - git config unset
+    - git config rename-section
+    - git config remove-section
+    - git config edit
+    - git config --add
+    - git config --unset
+    - git config --unset-all
+    - git config --replace-all
+    - git config --edit
