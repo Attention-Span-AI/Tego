@@ -1,0 +1,4 @@
+version: 1
+models: {}
+server_tool_per_request:
+  web_search_requests: 0.01
