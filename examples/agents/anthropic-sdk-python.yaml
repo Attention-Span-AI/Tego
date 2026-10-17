@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# A Python agent on the system interpreter and the Anthropic Python SDK, with its model traffic read by
+# uprobes on the system OpenSSL: the contract kill test 7 (b) runs, unchanged except for the model
+# endpoint (docs/FEATURES.md "Kill test 7": "one open-source Python agent on system Python + the
+# Anthropic SDK with `capture: uprobe`"). test/workloads/python-anthropic/agent.py is such an agent.
+#
+# Why capture is `uprobe`: the SDK's HTTP client runs on CPython's ssl module, which links the system
+# libssl, so tego reads each request and response where OpenSSL encrypts and decrypts it
+# (docs/p0/capture-derive.md R1-R4) and nothing is proxied. The agent therefore connects to the model host
+# itself, and `net.allow` has to name it; compile warns `model-direct-bypass` about exactly that entry,
+# which is the point of this capture mode rather than a mistake. Uprobes need tier cgroup or above:
+# `sudo tego run`. Where the tier is landlock, choose `capture: forwarder` and drop the net.allow entry.
+#
+# It extends base/python-dev (examples/profiles), which the machine config's `profiles:` must name.
+version: 0
+name: anthropic-sdk-python
+extends: base/python-dev
+command: ["python3", "agent.py"]
+models:
+  - { provider: anthropic, host: api.anthropic.com, port: 443 }
+capture: uprobe
+fs:
+  write: ["./out/"]
+net:
+  allow: ["api.anthropic.com:443"]
+env:
+  # ANTHROPIC_BASE_URL and SSL_CERT_FILE pass through for a gateway or a private CA; the SDK reads both.
+  pass: ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "SSL_CERT_FILE", "PYTHONPATH"]
+limits:
+  pids: 128
+  wall: 30m
+  cost_usd: 5                 # needs the machine's price table (prices:); without one the run is refused
+  repeats: 5
+record: summary

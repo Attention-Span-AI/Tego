@@ -1,0 +1,138 @@
+# `tego compile agent.yaml --test verdicts.yaml` — one row per hypothetical
+# action and the verdict the compiled rule table must give it. Rows without a
+# tier: run in every tier a run of the contract can get and must hold in each
+# (ADR 0019); a row that names a tier
+# shows what that backend decides, which is how the two filesystem models are
+# pinned side by side (spec/policy/SEMANTICS.md §2, docs/p0/agent-contract.md
+# §5 R15).
+version: 0
+tests:
+  # --- filesystem: the write entry ---
+  - name: the agent writes its report
+    action: fs.write
+    path: out/report.md
+    expect: allow
+    rule: fs.write[out/]
+  - name: a write outside every entry is refused
+    action: fs.write
+    path: notes.md
+    expect: refused
+    rule: unmatched
+  - name: an unmatched read is allowed
+    action: fs.read
+    path: notes.md
+    expect: allow
+    rule: unmatched
+  - name: deleting inside the write entry is allowed
+    action: fs.delete
+    path: out/old-report.md
+    expect: allow
+    rule: fs.write[out/]
+  - name: deleting a watched file is refused
+    action: fs.delete
+    path: config/app.toml
+    expect: refused
+    rule: fs.watch[config/]
+  - name: a rename may not escape the write entry
+    action: fs.rename
+    path: out/report.md
+    dest: ../report.md
+    expect: refused
+    rule: unmatched
+
+  # --- filesystem: deny_read, and where the two tiers differ ---
+  - name: the secrets directory is unreadable
+    action: fs.read
+    path: secrets/api-key
+    expect: refused
+    rule: fs.deny_read[secrets/]
+  - name: a deny_read inside a write directory holds in the root tiers
+    action: fs.read
+    path: out/keys/token
+    tier: bpflsm
+    expect: refused
+    rule: fs.deny_read[out/keys/]
+  - name: the Landlock ruleset cannot enforce the same entry, so the run holds its reads and refuses it (ADR 0069)
+    action: fs.read
+    path: out/keys/token
+    tier: landlock
+    expect: refused
+    rule: fs.deny_read[out/keys/]
+  - name: nearest-wins refuses a write under that deny_read
+    action: fs.write
+    path: out/keys/token
+    tier: bpflsm
+    expect: refused
+    rule: fs.deny_read[out/keys/]
+  - name: tier 2's open decision cannot see the access mode, so it refuses the write-open there too
+    action: fs.write
+    path: out/keys/token
+    tier: cgroup
+    expect: refused
+    rule: fs.deny_read[out/keys/]
+  - name: tier 2's supervisor refuses mutations beneath the deny_read even without an open
+    action: fs.mkdir
+    path: out/keys/sub
+    tier: cgroup
+    expect: refused
+    rule: fs.deny_read[out/keys/]
+  - name: Landlock's union grants it from the write entry above
+    action: fs.write
+    path: out/keys/token
+    tier: landlock
+    expect: allow
+    rule: fs.write[out/]
+
+  # --- exec ---
+  - name: the declared shell runs
+    action: exec
+    argv: [sh, -c, "echo hi"]
+    expect: allow
+    rule: exec[sh]
+  - name: an undeclared binary does not
+    action: exec
+    path: /usr/bin/curl
+    expect: refused
+    rule: unmatched
+  # Tier 3's exec hook passes the #! stage and decides on the interpreter, but
+  # tier 3 installs tier 1's Landlock ruleset as well, as tier 2 does, so its
+  # EXECUTE rule refuses the unlisted script exactly as Landlock does below
+  # (SEMANTICS §4's 2026-09-29 note). The name is also in
+  # internal/cli/testdata/compile-test.golden, so the two change together.
+  - name: an unlisted script is refused at tier 3 too, under its Landlock floor
+    action: exec
+    path: ./run.sh
+    script: sh
+    tier: bpflsm
+    expect: refused
+    rule: unmatched
+  - name: Landlock cannot match by name, so the same script is refused
+    action: exec
+    path: ./run.sh
+    script: sh
+    tier: landlock
+    expect: refused
+    rule: unmatched
+
+  # --- network ---
+  - name: the declared loopback port
+    action: net.connect
+    host_port: 127.0.0.1:8080
+    expect: allow
+    rule: net[127.0.0.1:8080]
+  - name: another port on the same host is refused
+    action: net.connect
+    host_port: 127.0.0.1:9090
+    expect: refused
+    rule: unmatched
+  - name: an address inside the declared cidr
+    action: net.connect
+    host_port: 10.1.2.3:443
+    expect: allow
+    rule: net[10.0.0.0/8:443]
+  - name: the public resolver is not declared
+    action: net.connect
+    host_port: 8.8.8.8:53
+    proto: udp
+    expect: refused
+    rule: unmatched

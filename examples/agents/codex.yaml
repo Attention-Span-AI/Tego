@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# OpenAI Codex (the full-screen interface, `codex --no-daemon`) with an OpenAI API key, its model calls going through tego's
+# forwarder so that every request and response is recorded and counted. Copy it OUTSIDE the project, change every path marked
+# CHANGE, compile it (`tego compile codex.yaml`) and read test/poc/interactive-codex/README.md ("With a real key") before the
+# first run. It is modelled on test/poc/interactive-codex/codex-real-forwarder.yaml (`models` names api.openai.com), the
+# POC's contract for a real key, which is wider than the one that POC ran offline against a stand-in model (80 checks, tier
+# landlock, no root): this file narrows the write grant back to ./work/ and restores the `fs.ask` for held/ so that it can
+# fire, drops the nscd socket, and puts a TMPDIR under work/.
+# This file was compiled and its rule table checked (`go test ./examples/agents`). Its pseudo-terminal devices, helper
+# program and stall_after are the ones examples/demo/contracts/codex.yaml ran on a laptop (the demo kit fills them in from
+# the same lines: TestInteractiveExamplesMatchTheDemoKit fails when they drift apart).
+#
+#   XDG_RUNTIME_DIR=/run/user/$(id -u) tego watch --boundary codex.yaml -- codex --no-daemon
+#
+# Why it looks like this (docs/OPERATIONS.md, "Interactive Codex under a boundary"):
+#   - Codex's own sandbox must be off (`sandbox_mode = "danger-full-access"` and `approval_policy = "never"` in the config.toml
+#     that CODEX_HOME names): it cannot start inside the Landlock domain, and tego is the cage. The contract's `ask` is the approval.
+#   - `--no-daemon`: Codex's shared background server would run the commands outside the boundary.
+#   - The forwarder dials api.openai.com:443 itself and resolves the name itself, so the agent needs no connection and no name
+#     lookup of its own: `net.allow` does not name the model host (a direct connection is not counted), and `net.dns.mode: off`.
+#   - Codex ignores OPENAI_BASE_URL. With a `models` entry and `capture: forwarder` the launcher writes a CODEX_HOME of the run's
+#     own, under $XDG_RUNTIME_DIR/tego/<run id>/codex, with the base URL for the listener, copies the config.toml from the
+#     directory CODEX_HOME names below, and grants Codex write on that directory alone (no fs.write entry names it). For an
+#     unprivileged launcher without an XDG_RUNTIME_DIR the run is refused, exit 125, naming the fix; under sudo the run goes
+#     on with Codex unrouted and records gap what=capture why=codex-unrouted (the models guard refuses Codex's model calls).
+#   - Codex's interactive interface reads no API key from the environment. Its login screen is the way in: choose "Provide your
+#     own API key" and type the key; Codex stores it as auth.json in the run's CODEX_HOME, which tego removes with the run
+#     (when the launcher was killed first, the next run you launch removes it; rm -r $XDG_RUNTIME_DIR/tego/<run id> by hand).
+#     (`codex exec` takes CODEX_API_KEY from the environment: add it to env.pass for non-interactive runs.) A ChatGPT login
+#     does not work under this contract: its sign-in listener needs a listening port for the browser's redirect, and
+#     auth.openai.com and chatgpt.com. To use a ChatGPT plan, sign in outside tego and run codex-chatgpt.yaml instead.
+#   - That CODEX_HOME is closed to other users and to the writes of other enforcing runs, not to their reads: while this run
+#     lasts (and after a killed launcher, until the next run removes it), an agent of any other tego run of yours can read it, auth.json and Codex's sessions/ included (docs/p0/agent-contract.md
+#     R10a, an open condition), and a `tego run --observe` agent or any process of yours outside tego can also write it. While a
+#     real key is typed, run no other agent of yours (observe runs and agents outside tego included), or give the other
+#     enforcing contracts an fs.deny_read entry for /run/user/<uid>/tego/ (docs/OPERATIONS.md, step 4).
+#   - `/proc/self/exe` is not in exec.allow: Codex starts itself that way, `exec.allow: [bash]` covers it, and an entry for it
+#     would let the agent run tego.
+version: 0
+name: codex
+command: ["codex", "--no-daemon"]
+models:
+  - { provider: openai, host: api.openai.com, port: 443 }
+capture: forwarder
+record: full
+fs:
+  write:
+    # CHANGE: the directories the task may write. Codex edits in place (apply_patch) and through the shell. Name a directory
+    # that does NOT contain held/ below: an ordinary write grant decides before an `ask` does (SEMANTICS.md §6), so with "./"
+    # here a write under ./held/ would be allowed and nobody would be asked. The TMPDIR below is made in it too.
+    - "./work/"
+    # No entry for the run's private CODEX_HOME ($XDG_RUNTIME_DIR/tego/<run id>/codex): the run grants Codex write on
+    # that one directory itself when it starts (rule fs.codex_home[<path>], listed in run_start.runtime_grants), and
+    # compile and the launcher refuse any entry over or inside $XDG_RUNTIME_DIR/tego, which would reach your other runs'
+    # private directories (docs/p0/agent-contract.md R10a).
+    - "/dev/null"
+    - "/dev/tty"
+    # Codex runs every command in a pseudo-terminal: without these two every command fails with "out of pty devices".
+    - "/dev/ptmx"
+    - "/dev/pts/"
+  # A write under held/ pauses Codex until a person answers (`tego ask`, `tego approve|deny [--always]`). Codex's apply_patch
+  # tool writes in place, so, unlike Claude Code's Write tool, an approved open is enough for it. Nobody answering is a refusal.
+  # held/ has to lie outside every fs.write entry above, or the write is allowed and this never fires.
+  ask: ["./held/"]
+  # CHANGE: the files of your real ~/.codex that exist (a deny_read of a missing path is refused). ~/.codex also holds Codex's
+  # own installation (~/.codex/packages), so the directory as a whole must not be denied. Add ~/.ssh, ~/.aws and the like:
+  # the built-in list already holds ~/.ssh, ~/.gnupg and the browser profiles.
+  deny_read: ["~/.codex/auth.json", "~/.codex/config.toml", "~/.codex/history.jsonl", "~/.codex/sessions"]
+exec:
+  # CHANGE: what the task needs. `bash` runs every command Codex starts. Codex starts itself (as /proc/self/exe, for
+  # apply_patch and before each command) and needs no entry for that. Its shell snapshot uses tr and wc, and it runs its
+  # tools through a helper, codex-code-mode-host, that sits next to the real codex binary: CHANGE the directory in the
+  # last entry to `dirname "$(readlink -f "$(command -v codex)")"`.
+  allow: ["bash", "git", "cat", "ls", "mkdir", "touch", "grep", "sed", "head", "tail", "find", "wc", "tr", "sort", "/CHANGE/codex-code-mode-host"]
+net:
+  # Nothing is reached directly: no entry. The forwarder's listener is admitted by the run itself. (No nscd socket either: on a
+  # host running nscd it would be a lookup path past `net.dns.mode: off`. Without it the programs Codex starts resolve no
+  # names, which a task that works offline does not need.)
+  allow: []
+  dns:
+    mode: "off"
+env:
+  pass: ["PATH", "HOME", "LANG", "TERM", "COLORTERM"]
+  set:
+    # CHANGE: a directory of your own holding the config.toml to start from (test/poc/interactive-codex/codex-config.toml
+    # with `model` a real model name and the two model_catalog_json lines removed), NOT ~/.codex. The launcher copies that
+    # one file into the run's CODEX_HOME after the `openai_base_url` it writes itself; the file must not set openai_base_url.
+    # `tego compile` warns [env-runtime-reserved] for this entry, by design: the run replaces the value with its own.
+    CODEX_HOME: "/home/USER/.config/tego/codex"
+    HISTFILE: "/dev/null"
+    # Codex's tools write scratch files here, and /tmp is not writable under this contract. It is under the work directory,
+    # relative like Claude Code's in claude-code.yaml: run from the project, after `mkdir -p work/tmp`.
+    TMPDIR: "./work/tmp"
+limits:
+  pids: 512
+  memory: 4GiB
+  # stall_after, not wall: a person typing at the terminal counts as activity, so a working session is not ended, while
+  # a wall is a hard cap that ends it at the minute it expires. Set a wall only for an unattended run.
+  stall_after: 1h
+  # No cost_usd: it needs the machine's price table (`prices:` in the machine config), and the run is refused without one.
+ask:
+  timeout: 5m

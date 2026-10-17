@@ -1,0 +1,38 @@
+# A subset of spec/agent/v0/example.retriever.yaml: every field here is
+# consumed by this binary. The schema-only fields (prompt, skills, docker,
+# visibility, env.mask, exec.privileged, containers) are accepted by
+# `tego compile` only when empty; see the spec example for
+# their documented meaning.
+version: 0
+name: retriever
+extends: base/python-dev      # optional profile merged underneath; deny_read never removed
+command: ["python3", "agent.py"]
+mcp:
+  - name: postgres
+    command: ["mcp-postgres"] # started by the run; its binary gets exec rights implicitly
+models:
+  - { provider: anthropic, host: api.anthropic.com, port: 443 }
+fs:
+  write: ["/work/out/"]       # everything else is read-only
+  deny_read: ["~/.ssh/", "~/.aws/", "~/.netrc"]   # built-in list applies when absent
+  watch: ["/work/config/"]    # reads here are always individual events, never aggregated
+net:
+  allow: ["mcp.internal:8080"]  # api.anthropic.com is reached through the capture forwarder, never directly
+exec:
+  allow: ["make", "go", "env"]   # added to the profile's python3; Landlock tier: EXECUTE on the binaries and their loader
+env:
+  set: { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" }   # harness switches; runtime variables win
+limits:
+  cpu: "2.0"                  # cores (cpu.max)
+  memory: 8GiB                # hard cap (memory.max, whole-run OOM)
+  memory_high: 6GiB           # throttle point (memory.high)
+  pids: 512                   # pids.max
+  tokens: 2000000             # agent-level resources from captured usage
+  cost_usd: 25                # needs the machine's price table (prices:); without one the run is refused
+  wall: 2h
+  stall_after: 10m
+  repeats: 5                  # same tool name + input hash this many times in a row stops the run
+record: summary               # full | summary | off
+tier: auto                    # auto | landlock | cgroup | bpflsm
+capture: auto                 # auto | uprobe | forwarder | off
+io_uring: false               # refused (ENOSYS) unless true in a root tier

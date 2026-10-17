@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Claude Code in print mode (`claude -p`) under tego (docs/FEATURES.md I3; P0-DESIGN §12.3's `claude -p`
+# agent). For a person at a terminal (the full-screen interface, a login, no wall or cost limit) copy
+# claude-code-interactive.yaml instead: this one is one metered task, and its cost_usd needs a price table.
+# Copy it next to the project and change the prompt and paths. test/e2e/kt7-two-agents.sh runs it
+# unchanged except for the model endpoint, against a local stand-in, and requires the task to complete.
+#
+# Why capture is `forwarder`: Claude Code ships as one Bun executable with BoringSSL linked in
+# statically and no SSL_* symbols, so no uprobe can read its traffic. `capture: forwarder` gives each
+# models[] entry a plaintext listener on 127.0.0.1 and points Claude Code at it through
+# ANTHROPIC_BASE_URL, which tego sets in the agent's environment; the listener speaks TLS to the real
+# host, and every request is recorded as `ssl_request source=forwarder` (docs/p0/capture-derive.md R19).
+# The listener's port is the one route to api.anthropic.com: `net.allow` is present and empty, so a direct
+# connect around the forwarder is refused (R38). Keep the section: a contract with no `net:` at all
+# restricts nothing (spec/policy/SEMANTICS.md §1).
+#
+# Why the permission mode: in print mode nobody is there to approve a tool call, so Claude Code refuses
+# every edit the prompt asks for unless the command says otherwise. `acceptEdits` lets the file tools edit
+# inside the working directory; tego then decides which of those paths the agent may write.
+#
+# Why the state directories: Claude Code keeps its settings, session history and shell snapshots in
+# ~/.claude and ~/.claude.json, and writes the latter by creating a temporary file beside it in $HOME, and
+# its scratch files (task output, the shell's working directory) under /tmp/claude-<uid>/. CLAUDE_CONFIG_DIR
+# and CLAUDE_CODE_TMPDIR move both under one project directory, so the contract grants that directory
+# instead of the home and all of /tmp, and TMPDIR sends the tools the agent runs there too. Both are
+# relative, which Claude Code resolves against the directory it starts in: run it from the project. It starts
+# empty, so authentication comes from ANTHROPIC_API_KEY, passed below.
+#
+# The reason hook (spec/reason/REASON-CHANNEL.md §3, ADR 0063 (8)): for a command named claude, tego writes a
+# settings file for this run only, <runtime dir>/claude-settings.json, that lists `tego hook claude-code`, and runs
+# claude --settings <that file> followed by the arguments below; ~/.claude, CLAUDE_CONFIG_DIR and .claude/ are not
+# written. Your own --settings, inline or as an absolute path, is merged into it. A wrapper script in place of
+# claude gets TEGO_CLAUDE_SETTINGS instead: have it pass --settings "$TEGO_CLAUDE_SETTINGS". This contract's
+# exec.allow list does not grant the hook yet, so a run says harness-hook-refused (hook-not-granted) and Claude
+# reads refusals through $TEGO_REASON only; a contract with no allow list gets the hook.
+version: 0
+name: claude-code
+command: ["claude", "-p", "--permission-mode", "acceptEdits",
+          "Read the files in ./in and write a one-paragraph summary to ./out/summary.md"]
+models:
+  - { provider: anthropic, host: api.anthropic.com, port: 443 }
+capture: forwarder
+fs:
+  # ./out/ is the task's output; ./.claude-state/ holds CLAUDE_CONFIG_DIR and CLAUDE_CODE_TMPDIR. The Bash
+  # tool wraps each command in redirections to /dev/null, and a write to it stores nothing.
+  write: ["./out/", "./.claude-state/", "/dev/null"]
+exec:
+  # The Bash tool runs each command through the shell; git answers Claude Code's repository questions.
+  # Add the tools the task itself needs (python3, make, npm, ...): anything else is refused and recorded.
+  allow: ["bash", "git"]
+  # Upgrade path (ADR 0048): the bare "git" entry admits every git invocation. To keep the agent to reading the
+  # repository, drop it and take the read-only git profile, `extends: base/read-only-git`, which allows git
+  # only as status, diff, log, show, rev-parse, branch, remote, config reads and the like; or keep it and
+  # deny what must never run, wherever git's options put the word:
+  # deny: ["git push", "git reset --hard", "git clean", "rm -r"]
+net:
+  # Nothing is reached directly. The model endpoint is reached through the forwarder's listener, which
+  # the run admits on its own.
+  allow: []
+env:
+  pass: ["PATH", "HOME", "LANG", "TERM", "ANTHROPIC_API_KEY"]
+  set:
+    # Claude Code's switch for everything that is not the model call itself: the auto-updater, error
+    # reporting, telemetry and the bug command. Each of those would be a connection the contract refuses.
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    CLAUDE_CONFIG_DIR: ".claude-state"
+    CLAUDE_CODE_TMPDIR: ".claude-state/tmp"
+    TMPDIR: ".claude-state/tmp"
+limits:
+  pids: 512
+  memory: 4GiB
+  wall: 30m
+  cost_usd: 5                 # needs the machine's price table (prices:); without one the run is refused
+  repeats: 5
+record: summary
+tier: auto
