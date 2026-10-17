@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: Apache-2.0
+# ADR 0029 (4): every function deadcode finds unreachable from ./cmd/tego in any analyzed profile
+# (linux amd64/arm64 x plain, integration, tegobpf, integration+tegobpf) is classified here by exact
+# function, one per line: <import path>.<function>\t<class>\t<reason>. Classes (tools/deadcodereport):
+#   public-api   exported from pkg/ for other consumers; the binary does not call it (pkg/ paths only)
+#   placeholder  an ADR 0015 deferred surface
+#   pending      built ahead of an accepted ADR's migration; the reason names the ADR and work package
+#   tag-only     reached only under a build tag the binary is not built with (tegotesthooks), or an
+#                integration-tag bridge for another package's integration tests
+#   test-api     exported for another package's tests, which its own _test.go files cannot serve
+#   tool-only    called by a repository tool (tools/...) sharing the package so both share one format
+#   control-only called by cmd/tego-control from a package the two binaries share; the reason names the caller
+#   reflection   reached through a call the analysis does not follow (encoding/json decoder methods)
+# A function only its own package's tests call is not classified: it moves into those tests. A
+# classification no profile finds is stale and fails the ratchet, so this list only shrinks with the code.
+
+# internal/bpf
+github.com/attention-span-ai/tego/internal/bpf.GoString	test-api	internal/runtime/enforce/cgroup integration tests print kernel names with it
+github.com/attention-span-ai/tego/internal/bpf.LookupLPMKey	test-api	internal/runtime/enforce/cgroup tests build the LPM key the C side builds
+github.com/attention-span-ai/tego/internal/bpf.LookupUnixKey	test-api	internal/runtime/enforce/cgroup tests build the key connect_unix and sendmsg_unix build
+github.com/attention-span-ai/tego/internal/bpf.ParseVerifierStats	tag-only	internal/bpf/loadstats_tegotesthooks.go (TEGO_TEST_LOAD_STATS) parses the verifier's statistics with it
+github.com/attention-span-ai/tego/internal/bpf.attributeLoads	tag-only	internal/bpf/loadstats_tegotesthooks.go attributes the load time per object with it
+github.com/attention-span-ai/tego/internal/bpf.kernelFrames	tag-only	internal/bpf/loadstats_tegotesthooks.go reads the kernel stacks of slow loads with it
+github.com/attention-span-ai/tego/internal/bpf.slowStacks	tag-only	internal/bpf/loadstats_tegotesthooks.go reports the slow loads' stacks with it
+github.com/attention-span-ai/tego/internal/bpf/adoptionmeta.Project	tool-only	tools/adoptiongen (go generate) projects each BPF object into the adoption metadata the binary loads; generator and loader share this package so they share the format
+github.com/attention-span-ai/tego/internal/bpf/adoptionmeta.globalData	tool-only	tools/adoptiongen, through Project
+github.com/attention-span-ai/tego/internal/bpf/adoptionmeta.projectMap	tool-only	tools/adoptiongen, through Project
+
+# internal/check
+github.com/attention-span-ai/tego/internal/check/measure.Report.Tokens	test-api	internal/cli's measure_watcher_agree_test compares measure with the live watcher by it
+github.com/attention-span-ai/tego/internal/check/status.WithMonoNow	test-api	internal/check/viewtest scripts the monotonic clock with it
+github.com/attention-span-ai/tego/internal/check/gaps.LiveWords	test-api	internal/control/linewords's words_test holds each live-change word to it
+github.com/attention-span-ai/tego/internal/check/livestatus.FromStart	control-only	internal/control/rulesview reads a run_start's facts with it
+github.com/attention-span-ai/tego/internal/check/livestatus.State.Refuses	control-only	internal/check/inforce asks it, and only internal/control/rulesview calls inforce
+github.com/attention-span-ai/tego/internal/check/rule.ApplyEdits	control-only	internal/control/rules applies a form's edits with it
+github.com/attention-span-ai/tego/internal/check/rule.CommandEntry	control-only	internal/control/rules names the command a rule from an event may name with it
+github.com/attention-span-ai/tego/internal/check/rule.Direction.join	control-only	ApplyEdits, reached as it is
+github.com/attention-span-ai/tego/internal/check/rule.EditKeys	control-only	internal/control/rules lists the lists a form may change with it
+github.com/attention-span-ai/tego/internal/check/rule.Entries	control-only	internal/control/rules reads a contract's list entries with it
+github.com/attention-span-ai/tego/internal/check/rule.EntryLevel	control-only	internal/control/rules finds which folder an ask entry decided with it
+github.com/attention-span-ai/tego/internal/check/rule.HostOf	control-only	internal/control/rules offers the whole-host scope with it
+github.com/attention-span-ai/tego/internal/check/rule.Target.Verb	control-only	internal/control/rules words the event's action with it
+github.com/attention-span-ai/tego/internal/check/rule.checkEntry	control-only	ApplyEdits, reached as it is
+github.com/attention-span-ai/tego/internal/check/rule.editComment	control-only	ApplyEdits, reached as it is
+github.com/attention-span-ai/tego/internal/check/rule.editPlanner.add	control-only	ApplyEdits, reached as it is
+github.com/attention-span-ai/tego/internal/check/rule.editPlanner.dropUnder	control-only	ApplyEdits, reached as it is
+github.com/attention-span-ai/tego/internal/check/rule.editPlanner.never	control-only	ApplyEdits, reached as it is
+github.com/attention-span-ai/tego/internal/check/rule.editPlanner.order	control-only	ApplyEdits, reached as it is
+github.com/attention-span-ai/tego/internal/check/rule.editPlanner.plan	control-only	ApplyEdits, reached as it is
+github.com/attention-span-ai/tego/internal/check/rule.editPlanner.push	control-only	ApplyEdits, reached as it is
+github.com/attention-span-ai/tego/internal/check/rule.editPlanner.remove	control-only	ApplyEdits, reached as it is
+github.com/attention-span-ai/tego/internal/check/rule.hasString	control-only	ApplyEdits and Entries, reached as it is
+github.com/attention-span-ai/tego/internal/check/rule.relaxesMore	control-only	ApplyEdits, reached as it is
+
+# internal/handoff, internal/ledger, internal/liveblock
+github.com/attention-span-ai/tego/internal/handoff.IsNoun	test-api	internal/cli's serve_test holds the command table to the noun list with it
+github.com/attention-span-ai/tego/internal/handoff.Spawn	pending	ADR 0100 (1e): the sealed child start, built ahead of its first caller
+github.com/attention-span-ai/tego/internal/handoff.readOnly	pending	Spawn, reached as it is
+github.com/attention-span-ai/tego/internal/ledger.LiveWatch.Changes	pending	docs/p0/record-ledger.md LEDGER-FOLLOW: the live index watch, built ahead of its first consumer
+github.com/attention-span-ai/tego/internal/ledger.LiveWatch.Close	pending	WatchLive's watch, reached as it is
+github.com/attention-span-ai/tego/internal/ledger.LiveWatch.Wake	pending	WatchLive's watch, reached as it is
+github.com/attention-span-ai/tego/internal/ledger.LiveWatch.names	pending	LiveWatch.Changes, reached as it is
+github.com/attention-span-ai/tego/internal/ledger.LiveWatch.scan	pending	LiveWatch.Changes, reached as it is
+github.com/attention-span-ai/tego/internal/ledger.WatchLive	pending	docs/p0/record-ledger.md LEDGER-FOLLOW: the live index watch, built ahead of its first consumer
+github.com/attention-span-ai/tego/internal/liveblock.Compile	test-api	internal/cli, internal/control/runact and internal/runtime/supervisor tests build a Set with it
+
+# Packages both binaries link, where only tego-control reaches these
+github.com/attention-span-ai/tego/internal/mcptools.SHA256Base	control-only	internal/control/mcpact binds a preview to the file with it
+github.com/attention-span-ai/tego/internal/modelroutes.SHA256Base	control-only	internal/control/routeact binds a preview to the file with it
+github.com/attention-span-ai/tego/internal/rulefile.AppendLive	control-only	internal/control/rules records what "also apply now" did with it
+github.com/attention-span-ai/tego/internal/rulefile.Blob	control-only	internal/control/rules reads a journaled text with it
+github.com/attention-span-ai/tego/internal/rulefile.Create	control-only	internal/control/rules writes a new contract with it
+github.com/attention-span-ai/tego/internal/rulefile.FindAtIn	control-only	internal/control/rules reads a hinted line with it
+github.com/attention-span-ai/tego/internal/rulefile.Fold	control-only	internal/control/rules builds the journal's feed with it
+github.com/attention-span-ai/tego/internal/rulefile.History	control-only	internal/control/rules and internal/control/rulesview read a contract's history with it
+github.com/attention-span-ai/tego/internal/rulefile.ReadJournal	control-only	internal/control/rules reads the journal with it
+github.com/attention-span-ai/tego/internal/rulefile.Revert	control-only	internal/control/rules reverts a change with it
+github.com/attention-span-ai/tego/internal/rulefile.foundAt	control-only	FindAtIn, reached as it is
+github.com/attention-span-ai/tego/internal/rulefile.hexSum	control-only	Blob, reached as it is
+github.com/attention-span-ai/tego/internal/rulefile.lineAt	control-only	FindAtIn, reached as it is
+github.com/attention-span-ai/tego/internal/rulefile.noReplace	control-only	Create, reached as it is
+github.com/attention-span-ai/tego/internal/rulefile.openJournalRead	control-only	Blob and ReadJournal, reached as it is
+github.com/attention-span-ai/tego/internal/rulefile.pinned.create	control-only	Create, reached as it is
+github.com/attention-span-ai/tego/internal/rulefile.pinned.taken	control-only	Create, reached as it is
+github.com/attention-span-ai/tego/internal/rulefile.revert	control-only	Revert, reached as it is
+github.com/attention-span-ai/tego/internal/rulefile.Undo	test-api	internal/control/rulesview and internal/control/web tests undo a change with it
+
+# internal/platform
+github.com/attention-span-ai/tego/internal/platform/proc.Armed	test-api	internal/runtime/enforce/cgroup tests assert the process-start gate is released
+github.com/attention-span-ai/tego/internal/platform/startphase.Attributing	tag-only	internal/bpf/loadstats_tegotesthooks.go asks whether TEGO_TEST_LOAD_STATS is on
+github.com/attention-span-ai/tego/internal/platform/startphase.Stack	tag-only	internal/bpf/loadstats_tegotesthooks.go records the phase stack with it
+github.com/attention-span-ai/tego/internal/platform/startphase.Stat	tag-only	internal/bpf/loadstats_tegotesthooks.go records a phase's time with it
+github.com/attention-span-ai/tego/internal/platform/sys.Accept4	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-MID/FD-LATE (C5-C19), which move its callers onto it
+github.com/attention-span-ai/tego/internal/platform/sys.InertForTest	test-api	test fakes in other packages hand out a *FD that closes nothing; ADR 0023 C3's lint (F4) keeps every caller in a _test.go file
+github.com/attention-span-ai/tego/internal/platform/sys.LandlockCreateRulesetFD	pending	ADR 0023 C1/C2 owning wrapper over sys.LandlockCreateRuleset, built ahead of FD-LATE (landlock, C5), which calls it
+github.com/attention-span-ai/tego/internal/platform/sys.OwnSyscall	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-MID/FD-LATE (C5-C19), which move its callers onto it
+github.com/attention-span-ai/tego/internal/platform/sys.PidfdOpenThreadFD	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-MID/FD-LATE (C5-C19), which move its callers onto it
+github.com/attention-span-ai/tego/internal/platform/sys.Pipe2	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-MID/FD-LATE (C5-C19), which move its callers onto it
+github.com/attention-span-ai/tego/internal/platform/sys.ReceiveRights	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-LATE (ask and dnsbroker, C14), which calls it
+github.com/attention-span-ai/tego/internal/platform/sys.SeccompNewListenerFD	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-LATE (supervisor, C8), which takes the listener as a *sys.FD
+github.com/attention-span-ai/tego/internal/platform/sys.Stdio	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-MID/FD-LATE (C5-C19), which move its callers onto it
+
+# internal/policy, internal/runtime
+github.com/attention-span-ai/tego/internal/policy/decide.LandlockLinkRefusal	test-api	internal/runtime/observe's chain_link_test names the Landlock floor's link refusal by scan, the oracle for the recorder's indexed answer
+github.com/attention-span-ai/tego/internal/policy/decide.LandlockRenameRefusal	test-api	internal/runtime/observe's chain_link_test names the Landlock floor's rename refusal by scan, the oracle for the recorder's indexed answer
+github.com/attention-span-ai/tego/internal/policy/decide.PlaneNameTag	test-api	internal/bpf tests check the kernel rule_idx of a name refusal
+github.com/attention-span-ai/tego/internal/runtime.NewHookQueue	test-api	internal/runtime/observe stop-drain tests drive a real recorder through it
+github.com/attention-span-ai/tego/internal/runtime/derive.ServerToolUse.UnmarshalJSON	reflection	encoding/json calls it decoding the server_tool_use field inside anthropic.Usage.UnmarshalJSON (derive/anthropic/types.go), a call the analysis does not follow
+github.com/attention-span-ai/tego/internal/runtime/derive.plainName	reflection	ServerToolUse.UnmarshalJSON's name check, reached as it is
+github.com/attention-span-ai/tego/internal/runtime/derive.serverToolMembers	reflection	ServerToolUse.UnmarshalJSON's member reader, reached as it is
+github.com/attention-span-ai/tego/internal/runtime/derive/anthropic.ParseStream	test-api	internal/runtime/capture/forwarder tests compare the wire usage scanner with the full parse
+github.com/attention-span-ai/tego/internal/runtime/derive/mcp.Result.add	test-api	Stdio.Write and Stdio.Close, reached as they are
+github.com/attention-span-ai/tego/internal/runtime/derive/mcp.Stdio.Close	test-api	internal/runtime/derive tests read a recorded stdio session with it; the stdio transport's reader (capture-derive R41), which reads a run's stdio once provisioning (FEATURES I6d) relays it
+github.com/attention-span-ai/tego/internal/runtime/derive/mcp.Stdio.Write	test-api	internal/runtime/derive tests read a recorded stdio session with it; the stdio transport's reader (capture-derive R41), which reads a run's stdio once provisioning (FEATURES I6d) relays it
+github.com/attention-span-ai/tego/internal/runtime/derive/mcp.Stdio.readLine	test-api	Stdio.Write and Stdio.Close, reached as they are
+github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterGate	tag-only	integration-tag bridge (filter_integration_bridge.go) for internal/runtime/supervisor's integration tests
+github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterMemfd	tag-only	integration-tag bridge (filter_integration_bridge.go) for internal/runtime/supervisor's integration tests
+github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterReadGate	tag-only	integration-tag bridge (filter_integration_bridge.go) for internal/runtime/supervisor's integration tests
+github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterWriteGate	tag-only	integration-tag bridge (filter_integration_bridge.go) for internal/runtime/supervisor's integration tests
+github.com/attention-span-ai/tego/internal/runtime/limits.Load	test-api	internal/runtime and internal/cli tests read a price table as it is, without FromMachine's trust rule
+github.com/attention-span-ai/tego/internal/runtime/supervisor.Dispatches	test-api	internal/runtime/enforce/landlock's dispatch_complete_test checks every notification has a handler
+github.com/attention-span-ai/tego/internal/runtime/supervisor.ProtoOfSocket	test-api	internal/runtime/observe's continuednet_test reads a socket's protocol as the supervisor does
+
+# internal/watch
+github.com/attention-span-ai/tego/internal/watch/tree.Tree.PIDs	test-api	internal/watch/watcher tests count the watched processes with it (Watcher.Processes)
+
+# pkg/ (public API, docs/REPO-LAYOUT.md)
+github.com/attention-span-ai/tego/pkg/policy/fsplan.Contains	public-api	compares clean absolute paths at component boundaries, for consumers of pkg/policy
+github.com/attention-span-ai/tego/pkg/policy/fsplan.FirstCover	public-api	the first listed grant covering a target, for consumers of pkg/policy
+github.com/attention-span-ai/tego/pkg/policy/fsplan.Plan.Enumerate	public-api	lists a plan's targets for consumers of pkg/policy
+github.com/attention-span-ai/tego/pkg/spec/agent.Endpoint.Static	public-api	says whether an entry never needs DNS (literal IP, CIDR or unix socket), for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/agent.TestTable.Run	public-api	contract test tables (tego's examples and other consumers) run their rows with it
+github.com/attention-span-ai/tego/pkg/spec/agent.TestTable.RunBy	public-api	contract test tables run their rows with a caller's decider (pkg/policy/evaluate)
+github.com/attention-span-ai/tego/pkg/spec/agent.WithDNSTTL	public-api	the compile option setting the TTL handed to the launcher, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/agent.WithMountInfo	public-api	the compile option naming the mountinfo file the compile print reads, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/config.Load	public-api	reads the machine config layers under the trust rule, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/config.LoadMode	public-api	Load with an explicit trust mode, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/config.UserNamespace.String	public-api	names a user-namespace setting for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/identity.DockerParentCgroupfs	public-api	the cgroupfs-driver docker parent path of the identity spec, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/identity.DockerParentSlice	public-api	the systemd-driver docker parent slice of the identity spec, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/identity.ExecID.String	public-api	the exec id as text, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/identity.SignalExitCode	public-api	the shell's 128+signal exit code of the identity spec, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/identity.SystemCgroupPath	public-api	the system-service cgroup path of the identity spec, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/identity.UserCgroupPath	public-api	the user-service cgroup path of the identity spec, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/agent.CredentialNameOK	public-api	says whether a name is a valid credential name, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/agent.MCPToolNameOK	public-api	says whether a name is a tool name a rule can name, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/harness.Names	public-api	every value the harness key takes, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/harness.Parse	public-api	reads a harness: value, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/record.FieldCode	public-api	the code of the FieldError in an error chain, for consumers of pkg/spec

@@ -1,0 +1,591 @@
+# SPIKE T0 raw output of tools/spike/walk, KVM guest 2 vCPU / 2G. Column 1 is the row: host = 6.17.0-41-generic
+# (lsm= plus bpf, lockdown=integrity) on a quiet host; rhel-9 = 5.14.0-687.49.1.el9_8; al2023 = 6.1.186; *-conf =
+# the row booted lockdown=confidentiality (load only); host-loaded = the 6.17 row with the host at load 44-49 on 16 CPUs.
+host	ENV	release	6.17.0-41-generic
+host	ENV	lsm	lockdown,capability,landlock,yama,apparmor,bpf,ima,evm
+host	ENV	lockdown	none [integrity] confidentiality
+host	ENV	config	no /proc/config.gz
+host	ENV	kallsyms_llvm_suffixed	0
+host	ENV	btf_func	security_file_open	true
+host	ENV	btf_func	security_path_rename	true
+host	ENV	btf_func	bpf_lsm_file_open	true
+host	ENV	btf_func	bpf_lsm_path_rename	true
+host	ENV	btf_func	bpf_rdonly_cast	true
+host	ENV	btf_func	bpf_loop	true
+host	LOAD	form	prog	result	verified_insns	verif_ms_min	verif_ms_median	load_ms_min	load_ms_median	detail
+host	LOAD	a-rd	lsm_file_open	accept	217385	292.73	317.43	352.70	366.36	
+host	LOAD	a-rd	fmr_file_open	accept	217385	294.00	321.16	337.02	367.08	
+host	LOAD	a-rd	lsm_path_rename	accept	217409	304.98	327.49	347.84	366.66	
+host	LOAD	a-rd	fmr_path_rename	accept	217409	284.92	358.80	326.12	396.51	
+host	LOAD	a-rd	fill_row	accept	55	0.13	0.15	34.38	38.31	
+host	LOAD	a-rd	clear_rows	accept	52	0.11	0.12	0.34	0.66	
+host	LOAD	a-pr	lsm_file_open	accept	16338	16.09	17.67	54.55	55.82	
+host	LOAD	a-pr	fmr_file_open	accept	16338	13.58	20.75	63.87	67.10	
+host	LOAD	a-pr	lsm_path_rename	accept	16362	15.30	15.96	50.70	56.73	
+host	LOAD	a-pr	fmr_path_rename	accept	16362	10.64	13.38	48.32	50.43	
+host	LOAD	a-pr	fill_row	accept	55	0.14	0.16	38.66	42.61	
+host	LOAD	a-pr	clear_rows	accept	52	0.14	0.15	0.34	0.37	
+host	LOAD	b-rd	lsm_file_open	accept	249747	335.30	401.90	374.16	456.33	
+host	LOAD	b-rd	fmr_file_open	accept	249747	316.67	334.47	353.35	372.15	
+host	LOAD	b-rd	lsm_path_rename	accept	573502	802.72	810.19	839.41	847.75	
+host	LOAD	b-rd	fmr_path_rename	accept	573502	774.68	789.35	815.62	829.61	
+host	LOAD	b-rd	fill_row	accept	55	0.12	0.15	33.04	33.39	
+host	LOAD	b-rd	clear_rows	accept	52	0.11	0.13	0.26	0.39	
+host	LOAD	b-pr	lsm_file_open	accept	65901	52.86	63.05	94.04	100.38	
+host	LOAD	b-pr	fmr_file_open	accept	65901	53.45	54.17	88.84	90.60	
+host	LOAD	b-pr	lsm_path_rename	accept	126925	107.44	124.89	144.71	167.23	
+host	LOAD	b-pr	fmr_path_rename	accept	126925	108.03	108.34	142.26	151.25	
+host	LOAD	b-pr	fill_row	accept	55	0.16	0.17	35.64	37.39	
+host	LOAD	b-pr	clear_rows	accept	52	0.13	0.15	0.29	0.34	
+host	LOAD	c-rd	lsm_file_open	accept	808	5.98	7.29	49.93	51.78	
+host	LOAD	c-rd	fmr_file_open	accept	808	1.60	2.40	45.36	49.63	
+host	LOAD	c-rd	lsm_path_rename	accept	1603	9.02	10.92	55.85	58.90	
+host	LOAD	c-rd	fmr_path_rename	accept	1603	2.41	2.68	42.46	44.89	
+host	LOAD	c-rd	fill_row	accept	55	0.17	0.22	46.32	61.87	
+host	LOAD	c-rd	clear_rows	accept	52	0.14	0.18	0.37	0.59	
+host	LOAD	c-pr	lsm_file_open	accept	1562	7.60	10.17	60.15	72.99	
+host	LOAD	c-pr	fmr_file_open	accept	1562	2.28	3.28	46.00	59.92	
+host	LOAD	c-pr	lsm_path_rename	accept	3171	11.90	12.24	55.69	56.84	
+host	LOAD	c-pr	fmr_path_rename	accept	3171	3.77	4.26	41.15	45.41	
+host	LOAD	c-pr	fill_row	accept	55	0.12	0.12	32.47	38.75	
+host	LOAD	c-pr	clear_rows	accept	52	0.11	0.15	0.25	0.73	
+host	LOAD	d-rd	lsm_file_open	accept	822	4.56	5.01	37.56	41.15	
+host	LOAD	d-rd	fmr_file_open	accept	822	1.12	1.30	34.90	39.66	
+host	LOAD	d-rd	lsm_path_rename	accept	846	5.19	6.46	48.08	49.93	
+host	LOAD	d-rd	fmr_path_rename	accept	846	1.22	1.42	40.47	46.68	
+host	LOAD	d-rd	fill_row	accept	55	0.12	0.13	33.68	38.14	
+host	LOAD	d-rd	clear_rows	accept	52	0.12	0.14	0.33	0.47	
+host	LOAD	d-pr	lsm_file_open	accept	631	5.07	5.18	43.94	45.09	
+host	LOAD	d-pr	fmr_file_open	accept	631	1.04	1.09	37.52	41.07	
+host	LOAD	d-pr	lsm_path_rename	accept	655	5.59	5.92	42.31	44.56	
+host	LOAD	d-pr	fmr_path_rename	accept	655	0.99	1.13	38.45	39.14	
+host	LOAD	d-pr	fill_row	accept	55	0.13	0.17	36.62	39.79	
+host	LOAD	d-pr	clear_rows	accept	52	0.14	0.17	0.32	0.69	
+host	BENCH	form	prog	op	prog_ns_in	prog_ns_out	wall_bare_min	wall_in_min	wall_out_min	in_minus_bare	out_minus_bare	avg_steps	functional
+host	BENCH	a-rd	lsm_file_open	open	418	85	3089	3472	3217	383	128	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	a-rd	fmr_file_open	open	468	83	2784	3702	3486	917	701	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	a-rd	lsm_path_rename	rename	1006	153	5282	7545	8471	2262	3189	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	a-rd	fmr_path_rename	rename	1234	141	7935	9074	7572	1139	-363	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	a-pr	lsm_file_open	open	1803	142	3591	6881	6020	3290	2429	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	a-pr	fmr_file_open	open	1635	108	4641	6186	4371	1546	-270	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	a-pr	lsm_path_rename	rename	1634	89	5419	7157	5743	1739	324	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	a-pr	fmr_path_rename	rename	2386	104	5167	7160	5660	1992	493	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	b-rd	lsm_file_open	open	622	103	3503	5009	4634	1506	1131	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	b-rd	fmr_file_open	open	698	108	3678	5692	3764	2015	86	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	b-rd	lsm_path_rename	rename	1048	100	5546	8000	6854	2454	1308	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	b-rd	fmr_path_rename	rename	1303	119	5845	6347	5375	502	-470	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	b-pr	lsm_file_open	open	1487	118	4723	7063	5296	2340	573	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	b-pr	fmr_file_open	open	1004	107	3537	4631	3894	1094	356	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	b-pr	lsm_path_rename	rename	1884	95	6369	8498	6106	2129	-263	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	b-pr	fmr_path_rename	rename	1611	82	5011	6590	5190	1580	179	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	c-rd	lsm_file_open	open	464	76	2614	3451	2977	837	363	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	c-rd	fmr_file_open	open	476	76	2583	3532	2736	949	153	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	c-rd	lsm_path_rename	rename	802	71	5060	5802	5012	742	-48	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	c-rd	fmr_path_rename	rename	851	80	4759	5899	5010	1141	252	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	c-pr	lsm_file_open	open	855	74	2716	3961	3136	1245	420	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	c-pr	fmr_file_open	open	917	75	2760	4183	3125	1423	364	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	c-pr	lsm_path_rename	rename	1467	70	4809	5332	4135	523	-674	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	c-pr	fmr_path_rename	rename	1494	82	4519	6593	4766	2073	246	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	d-rd	lsm_file_open	open	461	74	2539	3378	2936	839	397	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	d-rd	fmr_file_open	open	461	73	2544	3324	2816	780	272	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	d-rd	lsm_path_rename	rename	804	67	4432	5689	4714	1257	282	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	d-rd	fmr_path_rename	rename	820	72	4563	5212	4612	649	48	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	d-pr	lsm_file_open	open	763	76	2287	3582	2689	1294	402	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	d-pr	fmr_file_open	open	801	65	2441	3433	2585	992	144	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	d-pr	lsm_path_rename	rename	6643	278	4487	6138	4703	1651	216	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	BENCH	d-pr	fmr_path_rename	rename	10128	382	25632	38080	24874	12448	-757	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host	ROWMAP	scheme	step	median_ms	min_ms	max_ms	reps
+host	ROWMAP	per-run-inner	create	0.14	0.12	0.45	20
+host	ROWMAP	per-run-inner	outer-insert	9.62	4.73	28.83	20
+host	ROWMAP	per-run-inner	fill-64-rows	0.24	0.22	0.27	20
+host	ROWMAP	per-run-inner	outer-delete+close	6.90	3.70	20.81	20
+host	ROWMAP	per-run-inner	total-excl-fill	19.66	9.73	34.82	20
+host	ROWMAP	reuse	run_set-gen-update	0.00	0.00	0.03	20
+host	ROWMAP	reuse	fill-64-rows	0.21	0.19	5.12	20
+host	ROWMAP	reuse	clear-in-kernel(off-path)	0.06	0.05	0.19	20
+rhel-9	ENV	release	5.14.0-687.49.1.el9_8.x86_64
+rhel-9	ENV	lsm	lockdown,capability,landlock,yama,selinux,bpf
+rhel-9	ENV	lockdown	[none] integrity confidentiality
+rhel-9	ENV	config	no /proc/config.gz
+rhel-9	ENV	kallsyms_llvm_suffixed	0
+rhel-9	ENV	btf_func	security_file_open	true
+rhel-9	ENV	btf_func	security_path_rename	true
+rhel-9	ENV	btf_func	bpf_lsm_file_open	true
+rhel-9	ENV	btf_func	bpf_lsm_path_rename	true
+rhel-9	ENV	btf_func	bpf_rdonly_cast	true
+rhel-9	ENV	btf_func	bpf_loop	true
+rhel-9	LOAD	form	prog	result	verified_insns	verif_ms_min	verif_ms_median	load_ms_min	load_ms_median	detail
+rhel-9	LOAD	a-rd	lsm_file_open	accept	35855	23.93	29.54	45.79	55.71	
+rhel-9	LOAD	a-rd	fmr_file_open	accept	35855	20.79	23.11	41.56	47.65	
+rhel-9	LOAD	a-rd	lsm_path_rename	accept	35879	23.13	24.60	44.49	45.34	
+rhel-9	LOAD	a-rd	fmr_path_rename	accept	35879	20.58	21.60	39.84	40.30	
+rhel-9	LOAD	a-rd	fill_row	accept	56	0.07	0.07	18.37	18.99	
+rhel-9	LOAD	a-rd	clear_rows	accept	52	0.04	0.05	0.13	0.16	
+rhel-9	LOAD	a-pr	lsm_file_open	accept	19074	8.69	14.10	27.00	34.53	
+rhel-9	LOAD	a-pr	fmr_file_open	accept	19074	6.56	8.50	26.29	29.36	
+rhel-9	LOAD	a-pr	lsm_path_rename	accept	19098	8.75	9.11	29.91	31.32	
+rhel-9	LOAD	a-pr	fmr_path_rename	accept	19098	6.49	6.81	25.94	29.75	
+rhel-9	LOAD	a-pr	fill_row	accept	56	0.07	0.08	18.73	21.26	
+rhel-9	LOAD	a-pr	clear_rows	accept	52	0.06	0.06	0.13	0.20	
+rhel-9	LOAD	b-rd	lsm_file_open	accept	36544	20.99	21.73	40.60	41.94	
+rhel-9	LOAD	b-rd	fmr_file_open	accept	36544	19.41	25.51	42.45	44.95	
+rhel-9	LOAD	b-rd	lsm_path_rename	accept	81586	58.78	66.05	81.44	98.02	
+rhel-9	LOAD	b-rd	fmr_path_rename	accept	81586	72.71	95.43	106.15	139.56	
+rhel-9	LOAD	b-rd	fill_row	accept	56	0.10	0.15	22.92	40.60	
+rhel-9	LOAD	b-rd	clear_rows	accept	52	0.08	0.09	0.30	0.31	
+rhel-9	LOAD	b-pr	lsm_file_open	accept	57022	34.53	51.26	63.11	91.95	
+rhel-9	LOAD	b-pr	fmr_file_open	accept	57022	29.25	50.11	58.48	101.33	
+rhel-9	LOAD	b-pr	lsm_path_rename	accept	113811	110.14	203.06	151.33	252.40	
+rhel-9	LOAD	b-pr	fmr_path_rename	accept	113811	117.31	127.06	151.44	179.19	
+rhel-9	LOAD	b-pr	fill_row	accept	56	0.11	0.14	31.14	35.05	
+rhel-9	LOAD	b-pr	clear_rows	accept	52	0.07	0.07	0.20	0.26	
+rhel-9	LOAD	c-rd	lsm_file_open	accept	741	3.11	6.23	35.53	53.94	
+rhel-9	LOAD	c-rd	fmr_file_open	accept	741	1.11	1.17	46.44	47.95	
+rhel-9	LOAD	c-rd	lsm_path_rename	accept	1469	6.01	7.37	38.24	38.85	
+rhel-9	LOAD	c-rd	fmr_path_rename	accept	1469	1.33	1.86	29.24	34.73	
+rhel-9	LOAD	c-rd	fill_row	accept	56	0.09	0.10	25.14	26.95	
+rhel-9	LOAD	c-rd	clear_rows	accept	52	0.07	0.08	0.19	0.31	
+rhel-9	LOAD	c-pr	lsm_file_open	accept	2404	7.16	7.39	53.31	57.31	
+rhel-9	LOAD	c-pr	fmr_file_open	accept	2404	2.10	3.12	39.27	43.36	
+rhel-9	LOAD	c-pr	lsm_path_rename	accept	4857	8.77	14.49	51.07	64.32	
+rhel-9	LOAD	c-pr	fmr_path_rename	accept	4857	6.15	9.22	49.23	68.09	
+rhel-9	LOAD	c-pr	fill_row	accept	56	0.13	0.14	48.01	50.06	
+rhel-9	LOAD	c-pr	clear_rows	accept	52	0.12	0.15	0.44	0.62	
+rhel-9	LOAD	d-rd	lsm_file_open	accept	757	4.58	5.56	46.79	56.79	
+rhel-9	LOAD	d-rd	fmr_file_open	accept	757	1.31	1.34	55.90	59.44	
+rhel-9	LOAD	d-rd	lsm_path_rename	accept	781	6.00	7.57	54.57	59.43	
+rhel-9	LOAD	d-rd	fmr_path_rename	accept	781	1.31	1.42	50.74	56.84	
+rhel-9	LOAD	d-rd	fill_row	accept	56	0.14	0.17	52.51	59.74	
+rhel-9	LOAD	d-rd	clear_rows	accept	52	0.12	0.12	0.36	0.42	
+rhel-9	LOAD	d-pr	lsm_file_open	accept	872	5.60	6.25	51.45	65.26	
+rhel-9	LOAD	d-pr	fmr_file_open	accept	872	1.28	1.30	49.92	69.70	
+rhel-9	LOAD	d-pr	lsm_path_rename	accept	896	4.08	6.39	34.63	38.54	
+rhel-9	LOAD	d-pr	fmr_path_rename	accept	896	0.73	0.76	23.59	26.07	
+rhel-9	LOAD	d-pr	fill_row	accept	56	0.08	0.10	20.29	21.36	
+rhel-9	LOAD	d-pr	clear_rows	accept	52	0.06	0.06	0.17	0.21	
+rhel-9	BENCH	form	prog	op	prog_ns_in	prog_ns_out	wall_bare_min	wall_in_min	wall_out_min	in_minus_bare	out_minus_bare	avg_steps	functional
+rhel-9	BENCH	a-rd	lsm_file_open	open	295	45	1846	2306	2061	461	215	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	a-rd	fmr_file_open	open	708	140	1561	2082	3336	521	1775	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	a-rd	lsm_path_rename	rename	830	84	5677	4715	6582	-962	905	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	a-rd	fmr_path_rename	rename	856	107	3994	5443	5772	1448	1778	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	a-pr	lsm_file_open	open	928	94	2109	3193	3022	1084	914	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	a-pr	fmr_file_open	open	1039	61	2377	4099	2167	1722	-210	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	a-pr	lsm_path_rename	rename	766	40	2707	3427	2781	720	74	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	a-pr	fmr_path_rename	rename	765	70	2410	3221	2566	810	156	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	b-rd	lsm_file_open	open	708	103	3907	5217	4412	1310	505	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	b-rd	fmr_file_open	open	335	58	2250	2779	2287	529	37	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	b-rd	lsm_path_rename	rename	520	58	2998	3563	3250	565	252	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	b-rd	fmr_path_rename	rename	406	46	2714	3105	2754	391	39	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	b-pr	lsm_file_open	open	451	47	1609	2267	1965	658	355	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	b-pr	fmr_file_open	open	449	43	1640	2205	1799	566	160	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	b-pr	lsm_path_rename	rename	2043	95	3818	6310	4170	2492	351	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	b-pr	fmr_path_rename	rename	2395	132	4070	7027	4525	2957	455	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	c-rd	lsm_file_open	open	1130	114	5669	7092	6656	1423	987	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	c-rd	fmr_file_open	open	691	94	3224	4762	3292	1538	69	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	c-rd	lsm_path_rename	rename	1404	106	6696	9020	8433	2324	1737	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	c-rd	fmr_path_rename	rename	1540	111	6172	9390	8520	3218	2347	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	c-pr	lsm_file_open	open	1942	163	4056	5953	5481	1897	1425	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	c-pr	fmr_file_open	open	2504	138	4828	6073	3831	1246	-996	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	c-pr	lsm_path_rename	rename	4230	129	12614	9909	6345	-2705	-6270	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	c-pr	fmr_path_rename	rename	2631	115	7336	8282	6392	946	-944	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	d-rd	lsm_file_open	open	781	119	3086	4278	4830	1192	1744	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	d-rd	fmr_file_open	open	1288	177	6876	9298	6665	2423	-210	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	d-rd	lsm_path_rename	rename	2338	189	6957	8064	6582	1107	-375	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	d-rd	fmr_path_rename	rename	1648	118	7808	10428	7721	2620	-87	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	d-pr	lsm_file_open	open	2776	302	4618	12297	11438	7679	6820	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	d-pr	fmr_file_open	open	2607	142	6931	8829	7325	1899	394	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	d-pr	lsm_path_rename	rename	5780	175	12319	14754	12003	2435	-316	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	BENCH	d-pr	fmr_path_rename	rename	2619	108	7031	10177	8164	3146	1134	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+rhel-9	ROWMAP	scheme	step	median_ms	min_ms	max_ms	reps
+rhel-9	ROWMAP	per-run-inner	create	0.15	0.12	0.20	20
+rhel-9	ROWMAP	per-run-inner	outer-insert	5.87	3.81	7.87	20
+rhel-9	ROWMAP	per-run-inner	fill-64-rows	0.22	0.13	0.27	20
+rhel-9	ROWMAP	per-run-inner	outer-delete+close	5.75	2.77	10.38	20
+rhel-9	ROWMAP	per-run-inner	total-excl-fill	11.82	8.76	17.78	20
+rhel-9	ROWMAP	reuse	run_set-gen-update	0.00	0.00	0.04	20
+rhel-9	ROWMAP	reuse	fill-64-rows	0.16	0.11	0.27	20
+rhel-9	ROWMAP	reuse	clear-in-kernel(off-path)	0.05	0.03	0.18	20
+al2023	ENV	release	6.1.186-228.376.amzn2023.x86_64
+al2023	ENV	lsm	lockdown,capability,landlock,yama,safesetid,selinux,bpf
+al2023	ENV	lockdown	[none] integrity confidentiality
+al2023	ENV	config	no /proc/config.gz
+al2023	ENV	kallsyms_llvm_suffixed	0
+al2023	ENV	btf_func	security_file_open	true
+al2023	ENV	btf_func	security_path_rename	true
+al2023	ENV	btf_func	bpf_lsm_file_open	true
+al2023	ENV	btf_func	bpf_lsm_path_rename	true
+al2023	ENV	btf_func	bpf_rdonly_cast	false
+al2023	ENV	btf_func	bpf_loop	true
+al2023	LOAD	form	prog	result	verified_insns	verif_ms_min	verif_ms_median	load_ms_min	load_ms_median	detail
+al2023	LOAD	a-rd	lsm_file_open	reject						invalid func unknown#233685214
+al2023	LOAD	a-rd	fmr_file_open	reject						invalid func unknown#233685214
+al2023	LOAD	a-rd	lsm_path_rename	reject						invalid func unknown#233685214
+al2023	LOAD	a-rd	fmr_path_rename	reject						invalid func unknown#233685214
+al2023	LOAD	a-rd	fill_row	accept	56	0.13	0.14	53.54	88.11	
+al2023	LOAD	a-rd	clear_rows	accept	40	0.10	0.11	0.38	0.38	
+al2023	LOAD	a-pr	lsm_file_open	accept	18899	18.84	21.15	81.82	100.81	
+al2023	LOAD	a-pr	fmr_file_open	accept	18899	14.68	19.68	88.79	96.53	
+al2023	LOAD	a-pr	lsm_path_rename	accept	18923	13.69	15.95	69.34	92.02	
+al2023	LOAD	a-pr	fmr_path_rename	accept	18923	9.36	9.60	49.62	53.36	
+al2023	LOAD	a-pr	fill_row	accept	56	0.12	0.13	37.92	45.60	
+al2023	LOAD	a-pr	clear_rows	accept	40	0.06	0.09	0.26	0.35	
+al2023	LOAD	b-rd	lsm_file_open	reject						func 'bpf_lsm_file_open' arg0 has btf_id 369 type STRUCT 'file' | invalid func unknown#233685214
+al2023	LOAD	b-rd	fmr_file_open	reject						func 'security_file_open' arg0 has btf_id 369 type STRUCT 'file' | invalid func unknown#233685214
+al2023	LOAD	b-rd	lsm_path_rename	reject						func 'bpf_lsm_path_rename' arg0 has btf_id 713 type STRUCT 'path' | invalid func unknown#233685214
+al2023	LOAD	b-rd	fmr_path_rename	reject						func 'security_path_rename' arg0 has btf_id 713 type STRUCT 'path' | invalid func unknown#233685214
+al2023	LOAD	b-rd	fill_row	accept	56	0.13	0.13	43.72	49.13	
+al2023	LOAD	b-rd	clear_rows	accept	40	0.07	0.12	0.21	0.35	
+al2023	LOAD	b-pr	lsm_file_open	accept	57280	40.69	43.34	77.06	86.64	
+al2023	LOAD	b-pr	fmr_file_open	accept	57280	30.61	42.59	63.14	86.43	
+al2023	LOAD	b-pr	lsm_path_rename	accept	114307	87.86	95.54	146.62	159.28	
+al2023	LOAD	b-pr	fmr_path_rename	accept	114307	91.51	104.53	147.74	174.14	
+al2023	LOAD	b-pr	fill_row	accept	56	0.12	0.13	55.79	64.70	
+al2023	LOAD	b-pr	clear_rows	accept	40	0.09	0.11	0.32	0.72	
+al2023	LOAD	c-rd	lsm_file_open	reject						func 'bpf_lsm_file_open' arg0 has btf_id 369 type STRUCT 'file' | invalid func unknown#233685214
+al2023	LOAD	c-rd	fmr_file_open	reject						func 'security_file_open' arg0 has btf_id 369 type STRUCT 'file' | invalid func unknown#233685214
+al2023	LOAD	c-rd	lsm_path_rename	reject						func 'bpf_lsm_path_rename' arg0 has btf_id 713 type STRUCT 'path' | invalid func unknown#233685214
+al2023	LOAD	c-rd	fmr_path_rename	reject						func 'security_path_rename' arg0 has btf_id 713 type STRUCT 'path' | invalid func unknown#233685214
+al2023	LOAD	c-rd	fill_row	accept	56	0.10	0.13	50.82	68.73	
+al2023	LOAD	c-rd	clear_rows	accept	40	0.10	0.10	0.28	0.81	
+al2023	LOAD	c-pr	lsm_file_open	accept	370	0.60	0.65	51.04	58.70	
+al2023	LOAD	c-pr	fmr_file_open	accept	370	0.58	0.65	47.73	56.90	
+al2023	LOAD	c-pr	lsm_path_rename	accept	725	0.99	1.12	54.70	75.04	
+al2023	LOAD	c-pr	fmr_path_rename	accept	725	1.00	1.01	50.44	55.47	
+al2023	LOAD	c-pr	fill_row	accept	56	0.13	0.14	49.03	54.09	
+al2023	LOAD	c-pr	clear_rows	accept	40	0.10	0.12	0.39	0.56	
+al2023	LOAD	d-rd	lsm_file_open	reject						invalid func unknown#233685214
+al2023	LOAD	d-rd	fmr_file_open	reject						invalid func unknown#233685214
+al2023	LOAD	d-rd	lsm_path_rename	reject						invalid func unknown#233685214
+al2023	LOAD	d-rd	fmr_path_rename	reject						invalid func unknown#233685214
+al2023	LOAD	d-rd	fill_row	accept	56	0.13	0.13	40.35	56.65	
+al2023	LOAD	d-rd	clear_rows	accept	40	0.10	0.14	0.47	0.63	
+al2023	LOAD	d-pr	lsm_file_open	accept	391	0.62	0.67	52.55	64.09	
+al2023	LOAD	d-pr	fmr_file_open	accept	391	0.67	0.68	48.36	52.57	
+al2023	LOAD	d-pr	lsm_path_rename	accept	415	0.61	0.70	49.67	63.90	
+al2023	LOAD	d-pr	fmr_path_rename	accept	415	0.68	0.71	41.55	59.62	
+al2023	LOAD	d-pr	fill_row	accept	56	0.12	0.13	37.07	44.02	
+al2023	LOAD	d-pr	clear_rows	accept	40	0.08	0.09	0.23	0.32	
+al2023	BENCH	form	prog	op	prog_ns_in	prog_ns_out	wall_bare_min	wall_in_min	wall_out_min	in_minus_bare	out_minus_bare	avg_steps	functional
+al2023	BENCH	a-rd	lsm_file_open	open	reject
+al2023	BENCH	a-rd	fmr_file_open	open	reject
+al2023	BENCH	a-rd	lsm_path_rename	rename	reject
+al2023	BENCH	a-rd	fmr_path_rename	rename	reject
+al2023	BENCH	a-pr	lsm_file_open	open	1531	151	5387	6095	4646	708	-741	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	a-pr	fmr_file_open	open	1145	85	3244	5493	3860	2249	616	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	a-pr	lsm_path_rename	rename	1664	84	4687	6720	4831	2033	144	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	a-pr	fmr_path_rename	rename	2850	133	4838	8695	7300	3856	2462	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	b-rd	lsm_file_open	open	reject
+al2023	BENCH	b-rd	fmr_file_open	open	reject
+al2023	BENCH	b-rd	lsm_path_rename	rename	reject
+al2023	BENCH	b-rd	fmr_path_rename	rename	reject
+al2023	BENCH	b-pr	lsm_file_open	open	1498	119	5845	7396	5780	1551	-65	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	b-pr	fmr_file_open	open	1472	113	4917	7476	5740	2559	823	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	b-pr	lsm_path_rename	rename	2263	126	5056	9266	7154	4210	2098	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	b-pr	fmr_path_rename	rename	2205	140	6827	8938	7796	2111	970	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	c-rd	lsm_file_open	open	reject
+al2023	BENCH	c-rd	fmr_file_open	open	reject
+al2023	BENCH	c-rd	lsm_path_rename	rename	reject
+al2023	BENCH	c-rd	fmr_path_rename	rename	reject
+al2023	BENCH	c-pr	lsm_file_open	open	1719	133	5410	8123	6475	2714	1065	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	c-pr	fmr_file_open	open	1455	111	4796	6605	5276	1809	480	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	c-pr	lsm_path_rename	rename	2547	133	7520	10098	7472	2577	-48	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	c-pr	fmr_path_rename	rename	2490	127	7271	9897	7767	2626	496	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	d-rd	lsm_file_open	open	reject
+al2023	BENCH	d-rd	fmr_file_open	open	reject
+al2023	BENCH	d-rd	lsm_path_rename	rename	reject
+al2023	BENCH	d-rd	fmr_path_rename	rename	reject
+al2023	BENCH	d-pr	lsm_file_open	open	1403	95	4436	6269	4163	1833	-273	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	d-pr	fmr_file_open	open	1082	84	3123	4715	3937	1593	815	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	d-pr	lsm_path_rename	rename	2617	135	3924	7827	4925	3903	1001	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	BENCH	d-pr	fmr_path_rename	rename	2210	100	5588	8380	5908	2791	319	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+al2023	ROWMAP	scheme	step	median_ms	min_ms	max_ms	reps
+al2023	ROWMAP	per-run-inner	create	0.19	0.12	0.21	20
+al2023	ROWMAP	per-run-inner	outer-insert	39.81	29.79	49.83	20
+al2023	ROWMAP	per-run-inner	fill-64-rows	0.28	0.22	0.35	20
+al2023	ROWMAP	per-run-inner	outer-delete+close	39.77	39.68	49.76	20
+al2023	ROWMAP	per-run-inner	total-excl-fill	79.78	69.82	99.70	20
+al2023	ROWMAP	reuse	run_set-gen-update	0.00	0.00	0.03	20
+al2023	ROWMAP	reuse	fill-64-rows	0.17	0.17	0.19	20
+al2023	ROWMAP	reuse	clear-in-kernel(off-path)	0.05	0.05	0.13	20
+host-conf	ENV	release	6.17.0-41-generic
+host-conf	ENV	lsm	lockdown,capability,landlock,yama,apparmor,bpf,ima,evm
+host-conf	ENV	lockdown	none integrity [confidentiality]
+host-conf	ENV	config	no /proc/config.gz
+host-conf	ENV	kallsyms_llvm_suffixed	0
+host-conf	ENV	btf_func	security_file_open	true
+host-conf	ENV	btf_func	security_path_rename	true
+host-conf	ENV	btf_func	bpf_lsm_file_open	true
+host-conf	ENV	btf_func	bpf_lsm_path_rename	true
+host-conf	ENV	btf_func	bpf_rdonly_cast	true
+host-conf	ENV	btf_func	bpf_loop	true
+host-conf	LOAD	form	prog	result	verified_insns	verif_ms_min	verif_ms_median	load_ms_min	load_ms_median	detail
+host-conf	LOAD	a-rd	lsm_file_open	accept	217385	648.24	669.33	784.77	853.76	
+host-conf	LOAD	a-rd	fmr_file_open	accept	217385	607.75	660.63	683.21	793.83	
+host-conf	LOAD	a-rd	lsm_path_rename	accept	217409	699.54	1248.69	843.17	1385.40	
+host-conf	LOAD	a-rd	fmr_path_rename	accept	217409	660.83	1165.45	749.38	1370.21	
+host-conf	LOAD	a-rd	fill_row	accept	55	0.22	0.26	97.70	126.53	
+host-conf	LOAD	a-rd	clear_rows	accept	52	0.26	7.49	0.59	7.81	
+host-conf	LOAD	a-pr	lsm_file_open	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	a-pr	fmr_file_open	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	a-pr	lsm_path_rename	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	a-pr	fmr_path_rename	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	a-pr	fill_row	accept	55	0.21	0.26	81.06	82.80	
+host-conf	LOAD	a-pr	clear_rows	accept	52	0.21	0.25	0.43	0.64	
+host-conf	LOAD	b-rd	lsm_file_open	accept	249747	741.53	803.83	837.41	893.58	
+host-conf	LOAD	b-rd	fmr_file_open	accept	249747	632.14	640.50	721.98	745.60	
+host-conf	LOAD	b-rd	lsm_path_rename	accept	573502	2156.45	2412.08	2251.64	2501.93	
+host-conf	LOAD	b-rd	fmr_path_rename	accept	573502	1624.45	2632.89	1703.76	2759.84	
+host-conf	LOAD	b-rd	fill_row	accept	55	0.22	0.24	86.89	99.72	
+host-conf	LOAD	b-rd	clear_rows	accept	52	0.27	0.30	0.78	3.85	
+host-conf	LOAD	b-pr	lsm_file_open	reject						func 'bpf_lsm_file_open' arg0 has btf_id 763 type STRUCT 'file' | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	b-pr	fmr_file_open	reject						func 'security_file_open' arg0 has btf_id 763 type STRUCT 'file' | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	b-pr	lsm_path_rename	reject						func 'bpf_lsm_path_rename' arg0 has btf_id 966 type STRUCT 'path' | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	b-pr	fmr_path_rename	reject						func 'security_path_rename' arg0 has btf_id 966 type STRUCT 'path' | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	b-pr	fill_row	accept	55	0.23	0.24	118.72	144.51	
+host-conf	LOAD	b-pr	clear_rows	accept	52	0.23	0.26	0.53	2.57	
+host-conf	LOAD	c-rd	lsm_file_open	accept	808	25.82	32.13	134.53	263.79	
+host-conf	LOAD	c-rd	fmr_file_open	accept	808	2.37	6.45	127.36	229.33	
+host-conf	LOAD	c-rd	lsm_path_rename	accept	1603	22.34	76.58	143.11	280.66	
+host-conf	LOAD	c-rd	fmr_path_rename	accept	1603	4.67	12.29	184.87	311.68	
+host-conf	LOAD	c-rd	fill_row	accept	55	0.22	0.26	201.89	218.76	
+host-conf	LOAD	c-rd	clear_rows	accept	52	0.24	3.58	1.16	6.05	
+host-conf	LOAD	c-pr	lsm_file_open	reject						func 'bpf_lsm_file_open' arg0 has btf_id 763 type STRUCT 'file' | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	c-pr	fmr_file_open	reject						func 'security_file_open' arg0 has btf_id 763 type STRUCT 'file' | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	c-pr	lsm_path_rename	reject						func 'bpf_lsm_path_rename' arg0 has btf_id 966 type STRUCT 'path' | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	c-pr	fmr_path_rename	reject						func 'security_path_rename' arg0 has btf_id 966 type STRUCT 'path' | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	c-pr	fill_row	accept	55	0.22	0.22	149.23	184.38	
+host-conf	LOAD	c-pr	clear_rows	accept	52	0.24	0.28	0.60	0.93	
+host-conf	LOAD	d-rd	lsm_file_open	accept	822	35.78	66.73	275.36	403.91	
+host-conf	LOAD	d-rd	fmr_file_open	accept	822	2.50	2.62	301.58	410.53	
+host-conf	LOAD	d-rd	lsm_path_rename	accept	846	37.53	67.77	469.23	484.48	
+host-conf	LOAD	d-rd	fmr_path_rename	accept	846	11.74	13.42	295.74	303.97	
+host-conf	LOAD	d-rd	fill_row	accept	55	0.21	0.27	214.89	279.24	
+host-conf	LOAD	d-rd	clear_rows	accept	52	0.24	0.26	0.66	13.51	
+host-conf	LOAD	d-pr	lsm_file_open	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	d-pr	fmr_file_open	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	d-pr	lsm_path_rename	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	d-pr	fmr_path_rename	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+host-conf	LOAD	d-pr	fill_row	accept	55	0.22	0.26	102.56	133.26	
+host-conf	LOAD	d-pr	clear_rows	accept	52	0.26	0.31	1.56	3.05	
+rhel-9-conf	ENV	release	5.14.0-687.49.1.el9_8.x86_64
+rhel-9-conf	ENV	lsm	lockdown,capability,landlock,yama,selinux,bpf
+rhel-9-conf	ENV	lockdown	none integrity [confidentiality]
+rhel-9-conf	ENV	config	no /proc/config.gz
+rhel-9-conf	ENV	kallsyms_llvm_suffixed	0
+rhel-9-conf	ENV	btf_func	security_file_open	true
+rhel-9-conf	ENV	btf_func	security_path_rename	true
+rhel-9-conf	ENV	btf_func	bpf_lsm_file_open	true
+rhel-9-conf	ENV	btf_func	bpf_lsm_path_rename	true
+rhel-9-conf	ENV	btf_func	bpf_rdonly_cast	true
+rhel-9-conf	ENV	btf_func	bpf_loop	true
+rhel-9-conf	LOAD	form	prog	result	verified_insns	verif_ms_min	verif_ms_median	load_ms_min	load_ms_median	detail
+rhel-9-conf	LOAD	a-rd	lsm_file_open	accept	35855	181.94	188.95	451.55	545.77	
+rhel-9-conf	LOAD	a-rd	fmr_file_open	accept	35855	125.20	159.66	254.40	330.41	
+rhel-9-conf	LOAD	a-rd	lsm_path_rename	accept	35879	160.77	171.00	247.45	294.43	
+rhel-9-conf	LOAD	a-rd	fmr_path_rename	accept	35879	75.79	159.97	228.75	305.12	
+rhel-9-conf	LOAD	a-rd	fill_row	accept	56	0.16	0.17	67.65	159.72	
+rhel-9-conf	LOAD	a-rd	clear_rows	accept	52	0.22	10.23	0.59	10.57	
+rhel-9-conf	LOAD	a-pr	lsm_file_open	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	a-pr	fmr_file_open	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	a-pr	lsm_path_rename	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	a-pr	fmr_path_rename	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	a-pr	fill_row	accept	56	0.16	0.20	150.21	166.78	
+rhel-9-conf	LOAD	a-pr	clear_rows	accept	52	0.15	0.20	0.44	0.51	
+rhel-9-conf	LOAD	b-rd	lsm_file_open	accept	36544	152.40	165.77	318.34	332.23	
+rhel-9-conf	LOAD	b-rd	fmr_file_open	accept	36544	111.91	141.82	239.47	282.05	
+rhel-9-conf	LOAD	b-rd	lsm_path_rename	accept	81586	368.24	398.08	481.76	555.33	
+rhel-9-conf	LOAD	b-rd	fmr_path_rename	accept	81586	712.24	752.72	920.58	1025.77	
+rhel-9-conf	LOAD	b-rd	fill_row	accept	56	0.17	0.18	252.54	294.57	
+rhel-9-conf	LOAD	b-rd	clear_rows	accept	52	0.18	0.18	0.68	21.83	
+rhel-9-conf	LOAD	b-pr	lsm_file_open	reject						func 'bpf_lsm_file_open' arg0 has btf_id 343 type STRUCT 'file' | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	b-pr	fmr_file_open	reject						func 'security_file_open' arg0 has btf_id 343 type STRUCT 'file' | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	b-pr	lsm_path_rename	reject						func 'bpf_lsm_path_rename' arg0 has btf_id 706 type STRUCT 'path' | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	b-pr	fmr_path_rename	reject						func 'security_path_rename' arg0 has btf_id 706 type STRUCT 'path' | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	b-pr	fill_row	accept	56	0.17	6.23	272.01	291.94	
+rhel-9-conf	LOAD	b-pr	clear_rows	accept	52	0.16	0.17	0.62	8.77	
+rhel-9-conf	LOAD	c-rd	lsm_file_open	accept	741	28.80	35.37	327.54	393.03	
+rhel-9-conf	LOAD	c-rd	fmr_file_open	accept	741	1.65	1.67	234.12	298.17	
+rhel-9-conf	LOAD	c-rd	lsm_path_rename	accept	1469	41.71	42.32	291.89	298.11	
+rhel-9-conf	LOAD	c-rd	fmr_path_rename	accept	1469	6.81	15.96	292.17	309.95	
+rhel-9-conf	LOAD	c-rd	fill_row	accept	56	0.16	0.17	237.28	251.35	
+rhel-9-conf	LOAD	c-rd	clear_rows	accept	52	0.14	0.16	0.42	0.47	
+rhel-9-conf	LOAD	c-pr	lsm_file_open	reject						func 'bpf_lsm_file_open' arg0 has btf_id 343 type STRUCT 'file' | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	c-pr	fmr_file_open	reject						func 'security_file_open' arg0 has btf_id 343 type STRUCT 'file' | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	c-pr	lsm_path_rename	reject						func 'bpf_lsm_path_rename' arg0 has btf_id 706 type STRUCT 'path' | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	c-pr	fmr_path_rename	reject						func 'security_path_rename' arg0 has btf_id 706 type STRUCT 'path' | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	c-pr	fill_row	accept	56	0.16	0.16	293.99	339.53	
+rhel-9-conf	LOAD	c-pr	clear_rows	accept	52	0.15	0.18	0.33	0.41	
+rhel-9-conf	LOAD	d-rd	lsm_file_open	accept	757	24.66	24.78	276.65	359.47	
+rhel-9-conf	LOAD	d-rd	fmr_file_open	accept	757	1.63	3.74	242.73	266.62	
+rhel-9-conf	LOAD	d-rd	lsm_path_rename	accept	781	34.99	37.67	321.79	336.24	
+rhel-9-conf	LOAD	d-rd	fmr_path_rename	accept	781	1.70	15.51	241.20	270.33	
+rhel-9-conf	LOAD	d-rd	fill_row	accept	56	0.16	0.18	290.34	339.27	
+rhel-9-conf	LOAD	d-rd	clear_rows	accept	52	0.15	0.17	0.43	0.55	
+rhel-9-conf	LOAD	d-pr	lsm_file_open	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	d-pr	fmr_file_open	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	d-pr	lsm_path_rename	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	d-pr	fmr_path_rename	reject						Validating walk() func#1... | program of this type cannot use helper bpf_probe_read#4
+rhel-9-conf	LOAD	d-pr	fill_row	accept	56	0.19	21.73	248.90	260.66	
+rhel-9-conf	LOAD	d-pr	clear_rows	accept	52	0.24	0.27	4.47	4.68	
+al2023-conf	ENV	release	6.1.186-228.376.amzn2023.x86_64
+al2023-conf	ENV	lsm	lockdown,capability,landlock,yama,safesetid,selinux,bpf
+al2023-conf	ENV	lockdown	none integrity [confidentiality]
+al2023-conf	ENV	config	no /proc/config.gz
+al2023-conf	ENV	kallsyms_llvm_suffixed	0
+al2023-conf	ENV	btf_func	security_file_open	true
+al2023-conf	ENV	btf_func	security_path_rename	true
+al2023-conf	ENV	btf_func	bpf_lsm_file_open	true
+al2023-conf	ENV	btf_func	bpf_lsm_path_rename	true
+al2023-conf	ENV	btf_func	bpf_rdonly_cast	false
+al2023-conf	ENV	btf_func	bpf_loop	true
+al2023-conf	LOAD	form	prog	result	verified_insns	verif_ms_min	verif_ms_median	load_ms_min	load_ms_median	detail
+al2023-conf	LOAD	a-rd	lsm_file_open	reject						invalid func unknown#233685214
+al2023-conf	LOAD	a-rd	fmr_file_open	reject						invalid func unknown#233685214
+al2023-conf	LOAD	a-rd	lsm_path_rename	reject						invalid func unknown#233685214
+al2023-conf	LOAD	a-rd	fmr_path_rename	reject						invalid func unknown#233685214
+al2023-conf	LOAD	a-rd	fill_row	accept	56	0.14	0.28	146.09	187.19	
+al2023-conf	LOAD	a-rd	clear_rows	accept	40	0.12	0.17	0.42	0.66	
+al2023-conf	LOAD	a-pr	lsm_file_open	reject						unknown func bpf_probe_read#4
+al2023-conf	LOAD	a-pr	fmr_file_open	reject						unknown func bpf_probe_read#4
+al2023-conf	LOAD	a-pr	lsm_path_rename	reject						unknown func bpf_probe_read#4
+al2023-conf	LOAD	a-pr	fmr_path_rename	reject						unknown func bpf_probe_read#4
+al2023-conf	LOAD	a-pr	fill_row	accept	56	0.14	0.15	213.44	228.90	
+al2023-conf	LOAD	a-pr	clear_rows	accept	40	0.10	0.15	0.38	0.62	
+al2023-conf	LOAD	b-rd	lsm_file_open	reject						func 'bpf_lsm_file_open' arg0 has btf_id 369 type STRUCT 'file' | invalid func unknown#233685214
+al2023-conf	LOAD	b-rd	fmr_file_open	reject						func 'security_file_open' arg0 has btf_id 369 type STRUCT 'file' | invalid func unknown#233685214
+al2023-conf	LOAD	b-rd	lsm_path_rename	reject						func 'bpf_lsm_path_rename' arg0 has btf_id 713 type STRUCT 'path' | invalid func unknown#233685214
+al2023-conf	LOAD	b-rd	fmr_path_rename	reject						func 'security_path_rename' arg0 has btf_id 713 type STRUCT 'path' | invalid func unknown#233685214
+al2023-conf	LOAD	b-rd	fill_row	accept	56	0.16	4.18	111.31	151.26	
+al2023-conf	LOAD	b-rd	clear_rows	accept	40	0.13	0.17	0.47	2.91	
+al2023-conf	LOAD	b-pr	lsm_file_open	reject						func 'bpf_lsm_file_open' arg0 has btf_id 369 type STRUCT 'file' | unknown func bpf_probe_read#4
+al2023-conf	LOAD	b-pr	fmr_file_open	reject						func 'security_file_open' arg0 has btf_id 369 type STRUCT 'file' | unknown func bpf_probe_read#4
+al2023-conf	LOAD	b-pr	lsm_path_rename	reject						func 'bpf_lsm_path_rename' arg0 has btf_id 713 type STRUCT 'path' | unknown func bpf_probe_read#4
+al2023-conf	LOAD	b-pr	fmr_path_rename	reject						func 'security_path_rename' arg0 has btf_id 713 type STRUCT 'path' | unknown func bpf_probe_read#4
+al2023-conf	LOAD	b-pr	fill_row	accept	56	0.16	0.24	113.18	133.58	
+al2023-conf	LOAD	b-pr	clear_rows	accept	40	0.11	0.12	1.10	11.47	
+al2023-conf	LOAD	c-rd	lsm_file_open	reject						func 'bpf_lsm_file_open' arg0 has btf_id 369 type STRUCT 'file' | invalid func unknown#233685214
+al2023-conf	LOAD	c-rd	fmr_file_open	reject						func 'security_file_open' arg0 has btf_id 369 type STRUCT 'file' | invalid func unknown#233685214
+al2023-conf	LOAD	c-rd	lsm_path_rename	reject						func 'bpf_lsm_path_rename' arg0 has btf_id 713 type STRUCT 'path' | invalid func unknown#233685214
+al2023-conf	LOAD	c-rd	fmr_path_rename	reject						func 'security_path_rename' arg0 has btf_id 713 type STRUCT 'path' | invalid func unknown#233685214
+al2023-conf	LOAD	c-rd	fill_row	accept	56	0.14	0.15	114.24	172.95	
+al2023-conf	LOAD	c-rd	clear_rows	accept	40	0.11	0.13	0.43	9.19	
+al2023-conf	LOAD	c-pr	lsm_file_open	reject						func 'bpf_lsm_file_open' arg0 has btf_id 369 type STRUCT 'file' | unknown func bpf_probe_read#4
+al2023-conf	LOAD	c-pr	fmr_file_open	reject						func 'security_file_open' arg0 has btf_id 369 type STRUCT 'file' | unknown func bpf_probe_read#4
+al2023-conf	LOAD	c-pr	lsm_path_rename	reject						func 'bpf_lsm_path_rename' arg0 has btf_id 713 type STRUCT 'path' | unknown func bpf_probe_read#4
+al2023-conf	LOAD	c-pr	fmr_path_rename	reject						func 'security_path_rename' arg0 has btf_id 713 type STRUCT 'path' | unknown func bpf_probe_read#4
+al2023-conf	LOAD	c-pr	fill_row	accept	56	0.13	0.14	89.87	124.13	
+al2023-conf	LOAD	c-pr	clear_rows	accept	40	0.11	0.11	0.41	7.19	
+al2023-conf	LOAD	d-rd	lsm_file_open	reject						invalid func unknown#233685214
+al2023-conf	LOAD	d-rd	fmr_file_open	reject						invalid func unknown#233685214
+al2023-conf	LOAD	d-rd	lsm_path_rename	reject						invalid func unknown#233685214
+al2023-conf	LOAD	d-rd	fmr_path_rename	reject						invalid func unknown#233685214
+al2023-conf	LOAD	d-rd	fill_row	accept	56	0.14	0.15	198.86	242.10	
+al2023-conf	LOAD	d-rd	clear_rows	accept	40	0.11	0.12	0.30	0.33	
+al2023-conf	LOAD	d-pr	lsm_file_open	reject						unknown func bpf_probe_read#4
+al2023-conf	LOAD	d-pr	fmr_file_open	reject						unknown func bpf_probe_read#4
+al2023-conf	LOAD	d-pr	lsm_path_rename	reject						unknown func bpf_probe_read#4
+al2023-conf	LOAD	d-pr	fmr_path_rename	reject						unknown func bpf_probe_read#4
+al2023-conf	LOAD	d-pr	fill_row	accept	56	0.14	0.14	137.55	151.98	
+al2023-conf	LOAD	d-pr	clear_rows	accept	40	0.11	0.12	0.37	0.44	
+host-loaded	ENV	release	6.17.0-41-generic
+host-loaded	ENV	lsm	lockdown,capability,landlock,yama,apparmor,bpf,ima,evm
+host-loaded	ENV	lockdown	none [integrity] confidentiality
+host-loaded	ENV	config	no /proc/config.gz
+host-loaded	ENV	kallsyms_llvm_suffixed	0
+host-loaded	ENV	btf_func	security_file_open	true
+host-loaded	ENV	btf_func	security_path_rename	true
+host-loaded	ENV	btf_func	bpf_lsm_file_open	true
+host-loaded	ENV	btf_func	bpf_lsm_path_rename	true
+host-loaded	ENV	btf_func	bpf_rdonly_cast	true
+host-loaded	ENV	btf_func	bpf_loop	true
+host-loaded	LOAD	form	prog	result	verified_insns	verif_ms_min	verif_ms_median	load_ms_min	load_ms_median	detail
+host-loaded	LOAD	a-rd	lsm_file_open	accept	217385	422.16	449.32	497.85	515.87	
+host-loaded	LOAD	a-rd	fmr_file_open	accept	217385	340.60	382.80	393.92	436.55	
+host-loaded	LOAD	a-rd	lsm_path_rename	accept	217409	349.58	376.52	397.24	451.03	
+host-loaded	LOAD	a-rd	fmr_path_rename	accept	217409	441.23	497.87	500.97	605.56	
+host-loaded	LOAD	a-rd	fill_row	accept	55	0.15	0.18	45.10	74.95	
+host-loaded	LOAD	a-rd	clear_rows	accept	52	0.14	0.17	0.35	0.44	
+host-loaded	LOAD	a-pr	lsm_file_open	accept	16338	18.24	20.04	69.10	77.32	
+host-loaded	LOAD	a-pr	fmr_file_open	accept	16338	14.56	15.12	55.43	65.72	
+host-loaded	LOAD	a-pr	lsm_path_rename	accept	16362	19.55	22.82	76.61	80.15	
+host-loaded	LOAD	a-pr	fmr_path_rename	accept	16362	14.40	19.08	66.34	72.91	
+host-loaded	LOAD	a-pr	fill_row	accept	55	0.14	0.15	43.07	46.33	
+host-loaded	LOAD	a-pr	clear_rows	accept	52	0.13	0.14	0.33	0.35	
+host-loaded	LOAD	b-rd	lsm_file_open	accept	249747	397.42	409.05	455.74	468.36	
+host-loaded	LOAD	b-rd	fmr_file_open	accept	249747	374.78	398.63	439.19	450.50	
+host-loaded	LOAD	b-rd	lsm_path_rename	accept	573502	975.75	1042.55	1022.93	1128.57	
+host-loaded	LOAD	b-rd	fmr_path_rename	accept	573502	1217.63	1972.40	1282.50	2036.43	
+host-loaded	LOAD	b-rd	fill_row	accept	55	0.16	0.24	62.63	82.13	
+host-loaded	LOAD	b-rd	clear_rows	accept	52	0.14	0.14	0.28	0.60	
+host-loaded	LOAD	b-pr	lsm_file_open	accept	65901	83.11	101.25	149.63	160.55	
+host-loaded	LOAD	b-pr	fmr_file_open	accept	65901	76.00	82.51	134.34	139.63	
+host-loaded	LOAD	b-pr	lsm_path_rename	accept	126925	171.71	179.19	228.98	246.61	
+host-loaded	LOAD	b-pr	fmr_path_rename	accept	126925	160.63	258.92	234.27	344.08	
+host-loaded	LOAD	b-pr	fill_row	accept	55	0.14	0.16	59.28	76.65	
+host-loaded	LOAD	b-pr	clear_rows	accept	52	0.15	0.15	0.37	0.58	
+host-loaded	LOAD	c-rd	lsm_file_open	accept	808	6.69	7.04	63.23	75.05	
+host-loaded	LOAD	c-rd	fmr_file_open	accept	808	1.63	1.93	61.58	67.54	
+host-loaded	LOAD	c-rd	lsm_path_rename	accept	1603	14.32	18.58	75.88	87.59	
+host-loaded	LOAD	c-rd	fmr_path_rename	accept	1603	3.45	3.88	65.43	66.71	
+host-loaded	LOAD	c-rd	fill_row	accept	55	0.15	0.17	66.00	79.06	
+host-loaded	LOAD	c-rd	clear_rows	accept	52	0.12	0.13	0.31	0.62	
+host-loaded	LOAD	c-pr	lsm_file_open	accept	1562	6.84	7.28	53.06	62.03	
+host-loaded	LOAD	c-pr	fmr_file_open	accept	1562	2.20	2.45	47.83	56.59	
+host-loaded	LOAD	c-pr	lsm_path_rename	accept	3171	14.56	20.67	66.89	74.26	
+host-loaded	LOAD	c-pr	fmr_path_rename	accept	3171	4.50	4.72	49.25	58.52	
+host-loaded	LOAD	c-pr	fill_row	accept	55	0.15	0.17	49.96	52.81	
+host-loaded	LOAD	c-pr	clear_rows	accept	52	0.15	0.15	0.34	1.12	
+host-loaded	LOAD	d-rd	lsm_file_open	accept	822	5.57	6.32	61.65	62.90	
+host-loaded	LOAD	d-rd	fmr_file_open	accept	822	1.62	1.72	46.56	47.33	
+host-loaded	LOAD	d-rd	lsm_path_rename	accept	846	7.79	8.47	54.13	63.46	
+host-loaded	LOAD	d-rd	fmr_path_rename	accept	846	1.49	1.68	50.44	68.14	
+host-loaded	LOAD	d-rd	fill_row	accept	55	0.14	0.15	48.94	56.52	
+host-loaded	LOAD	d-rd	clear_rows	accept	52	0.13	0.16	0.25	0.33	
+host-loaded	LOAD	d-pr	lsm_file_open	accept	631	5.68	6.31	48.99	62.20	
+host-loaded	LOAD	d-pr	fmr_file_open	accept	631	1.13	1.18	46.03	55.91	
+host-loaded	LOAD	d-pr	lsm_path_rename	accept	655	6.76	6.93	55.83	58.62	
+host-loaded	LOAD	d-pr	fmr_path_rename	accept	655	1.22	1.32	55.18	60.97	
+host-loaded	LOAD	d-pr	fill_row	accept	55	0.15	0.15	41.05	58.35	
+host-loaded	LOAD	d-pr	clear_rows	accept	52	0.14	0.18	0.43	0.95	
+host-loaded	BENCH	form	prog	op	prog_ns_in	prog_ns_out	wall_bare_min	wall_in_min	wall_out_min	in_minus_bare	out_minus_bare	avg_steps	functional
+host-loaded	BENCH	a-rd	lsm_file_open	open	826	118	4702	5837	4952	1135	249	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	a-rd	fmr_file_open	open	771	173	5081	6361	5647	1280	566	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	a-rd	lsm_path_rename	rename	1957	196	3971	12518	6529	8546	2557	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	a-rd	fmr_path_rename	rename	2101	208	13526	15960	14946	2434	1419	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	a-pr	lsm_file_open	open	2217	151	6296	8854	7293	2559	997	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	a-pr	fmr_file_open	open	2356	214	6982	10616	7646	3634	664	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	a-pr	lsm_path_rename	rename	4428	259	14685	19275	14542	4591	-142	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	a-pr	fmr_path_rename	rename	4276	210	13041	19914	14557	6873	1516	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	b-rd	lsm_file_open	open	1082	152	6521	8093	7035	1572	514	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	b-rd	fmr_file_open	open	1100	224	7601	8811	7872	1209	271	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	b-rd	lsm_path_rename	rename	2081	175	11573	15020	13196	3447	1623	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	b-rd	fmr_path_rename	rename	2004	208	10829	11990	13820	1161	2991	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	b-pr	lsm_file_open	open	1733	145	5041	7346	5572	2305	531	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	b-pr	fmr_file_open	open	2226	166	6204	7627	6050	1424	-153	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	b-pr	lsm_path_rename	rename	4597	214	9969	18576	10598	8606	629	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	b-pr	fmr_path_rename	rename	3865	227	12902	15307	11355	2405	-1546	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	c-rd	lsm_file_open	open	924	122	5060	7062	5949	2001	889	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	c-rd	fmr_file_open	open	920	120	5197	6739	5720	1542	523	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	c-rd	lsm_path_rename	rename	1571	163	8965	11305	9650	2340	685	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	c-rd	fmr_path_rename	rename	3767	321	14091	12172	14070	-1919	-21	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	c-pr	lsm_file_open	open	2080	155	5316	8008	6666	2692	1350	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	c-pr	fmr_file_open	open	1728	98	6168	5035	3538	-1132	-2630	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	c-pr	lsm_path_rename	rename	5269	287	11478	21489	17352	10011	5874	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	c-pr	fmr_path_rename	rename	8023	396	14687	28098	17917	13411	3230	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	d-rd	lsm_file_open	open	1983	190	7436	9282	7392	1845	-45	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	d-rd	fmr_file_open	open	1643	210	8003	10305	7605	2302	-398	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	d-rd	lsm_path_rename	rename	2696	235	14472	18472	13759	4000	-714	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	d-rd	fmr_path_rename	rename	3782	417	18174	15688	21000	-2486	2826	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	d-pr	lsm_file_open	open	3289	224	7731	15428	9455	7697	1724	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	d-pr	fmr_file_open	open	3187	237	7779	12788	9742	5009	1963	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	d-pr	lsm_path_rename	rename	7997	317	15923	22246	16816	6324	893	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	BENCH	d-pr	fmr_path_rename	rename	5116	234	14006	21078	15047	7072	1041	13.0	rows=1 deny_in=permission_denied out=ok stale_in=ok cleared=1(ret 0)
+host-loaded	ROWMAP	scheme	step	median_ms	min_ms	max_ms	reps
+host-loaded	ROWMAP	per-run-inner	create	0.18	0.15	2.46	20
+host-loaded	ROWMAP	per-run-inner	outer-insert	7.88	3.37	19.35	20
+host-loaded	ROWMAP	per-run-inner	fill-64-rows	0.27	0.22	1.06	20
+host-loaded	ROWMAP	per-run-inner	outer-delete+close	7.75	3.77	18.05	20
+host-loaded	ROWMAP	per-run-inner	total-excl-fill	17.98	8.35	27.86	20
+host-loaded	ROWMAP	reuse	run_set-gen-update	0.01	0.00	0.20	20
+host-loaded	ROWMAP	reuse	fill-64-rows	0.67	0.31	5.23	20
+host-loaded	ROWMAP	reuse	clear-in-kernel(off-path)	0.27	0.06	1.27	20
