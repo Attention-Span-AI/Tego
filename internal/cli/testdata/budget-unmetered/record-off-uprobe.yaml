@@ -1,0 +1,10 @@
+version: 0
+name: record-off-uprobe
+command: ["true"]
+net: {}
+capture: uprobe
+record: off
+models:
+  - {provider: anthropic, host: api.anthropic.com, port: 443}
+limits:
+  tokens: 100000
