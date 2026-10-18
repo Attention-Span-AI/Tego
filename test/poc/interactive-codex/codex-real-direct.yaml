@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Codex with a REAL OpenAI API key, connecting to api.openai.com itself. NOT RUN. This is the variant for when the forwarder
+# cannot be used (no XDG_RUNTIME_DIR: an ssh session without a login manager, a container, cron: the launcher refuses a
+# run that routes Codex there, exit 125; under `sudo` it makes no CODEX_HOME and records gap codex-unrouted). It gives up what the forwarder gives: the
+# model requests and responses are NOT recorded (the ledger holds the connect to api.openai.com:443 and nothing of what
+# crossed it: Codex is one static, stripped musl binary with its TLS built in, so a uprobe has no shared library to attach to;
+# `capture: uprobe` was not tried), and a name lookup has to be allowed.
+# Read README.md ("With a real key") first; copy it OUTSIDE the project, change every path marked CHANGE, compile it:
+#
+#   tego watch --boundary codex.yaml -- codex --no-daemon
+#
+# The key is typed once into Codex's login screen ("Provide your own API key") and Codex stores it in CODEX_HOME/auth.json,
+# here a directory inside the project, so that it stays for the next run; the agent can read it. A ChatGPT login does not work
+# under this contract (it needs a listening socket on a local port, auth.openai.com and chatgpt.com).
+version: 0
+name: codex-real-direct
+command: ["codex", "--no-daemon"]
+capture: "off"
+record: full
+fs:
+  write:
+    # CHANGE: the directories the task may write, and Codex's own state, which here lives in the project.
+    - "./"
+    - "/dev/null"
+    - "/dev/tty"
+  deny_read: ["~/.codex/auth.json", "~/.codex/config.toml", "~/.codex/history.jsonl", "~/.codex/sessions"]
+exec:
+  allow: ["bash", "git", "cat", "ls", "mkdir"]
+net:
+  allow:
+    # Only the model's endpoint, and only TCP. Codex also tries a UDP port-65535 "route probe" to each address it resolved,
+    # and it is refused without harm.
+    - "tcp://api.openai.com:443"
+    - "unix:/var/run/nscd/socket"
+  dns:
+    # The agent resolves the name itself. At tier landlock this lets every lookup through (see README.md on `off`).
+    mode: "system"
+env:
+  pass: ["PATH", "HOME", "LANG", "TERM", "COLORTERM"]
+  set:
+    # CHANGE: inside the project; put codex-config.toml's settings (model a real name, no model_catalog_json) in
+    # .codex-state/config.toml before the first run. Add openai_base_url only if you want another endpoint.
+    CODEX_HOME: "./.codex-state"
+    HISTFILE: "/dev/null"
+limits:
+  pids: 512
+  memory: 4GiB
+  wall: 2h
+ask:
+  timeout: 5m

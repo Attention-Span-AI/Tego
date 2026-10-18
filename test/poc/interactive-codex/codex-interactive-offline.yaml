@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The boundary the interactive Codex session is held to (README.md). run.sh fills in the @...@ names and writes the
+# result to <root>/contract/agent.yaml; the original is a template. Every entry is a decision about ANY agent; the
+# comments say what each one is for, and what Codex does without it (measured 2026-10-06, codex-cli 0.159.2, Linux
+# 6.17, tier landlock, no root). The Codex-side settings that go with it are in codex-config.toml.
+version: 0
+name: codex-interactive-offline
+# `tego watch --boundary` takes the command from its own line; the schema wants one here.
+command: ["codex"]
+# Every model request goes to ONE place, the local stand-in, and is recorded as ssl_request source=forwarder. Codex
+# takes no base-URL variable (it ignores OPENAI_BASE_URL): for an `openai` entry the launcher writes a CODEX_HOME of
+# its own, in $XDG_RUNTIME_DIR/tego/<run>/codex, whose config.toml holds `openai_base_url` for the run's loopback
+# listener, then the config.toml named by CODEX_HOME below (capture-derive.md R19b). The listener speaks TLS to the
+# stand-in, which it trusts through SSL_CERT_FILE in TEGO'S OWN environment (the agent is not given that file).
+models:
+  - { provider: openai, host: "127.0.0.1", port: @STUB_PORT@ }
+capture: forwarder
+record: full
+fs:
+  write:
+    # The task's own output.
+    - "./work/"
+    # Codex's own state is in the run's private CODEX_HOME: its sqlite databases, its sessions, the symlinks it makes
+    # to itself (apply_patch, codex-linux-sandbox) in tmp/arg0, auth.json. The directory is made by tego at the start
+    # of the run under a name nobody can write in advance (it holds the run id), and the run grants the agent write on
+    # it alone (fs.codex_home[<path>], run_start.runtime_grants; agent-contract.md R10a), so no entry names it. The
+    # session recorded on 2026-10-06 ran before that grant existed, with an entry for the parent,
+    # @ROOT@/xdg-tego/tego/, which reached every run's private directory there and is now refused.
+    # The scratch directory TMPDIR names (set below); /dev/null and /dev/tty are the shell's and the TUI's plumbing.
+    - "@ROOT@/tmp/"
+    - "/dev/null"
+    - "/dev/tty"
+  # A write under held/ pauses Codex until a person answers (tego ask / approve / deny). Codex's apply_patch tool
+  # writes in place, so, unlike Claude Code's Write tool, an approved open is enough for it.
+  ask: ["./held/"]
+  # The decoy "secret" the session's model is told to read, and the real account's agent configuration: Codex keeps its
+  # login (auth.json), history and sessions in ~/.codex, next to its own installation (~/.codex/packages), so the whole
+  # directory cannot be denied: each file that exists here is. The run script lists only the entries that exist (a
+  # deny_read of a missing path is refused).
+@DENY_READ@
+exec:
+  # The only programs the agent may start by name: the shell its exec_command tool runs commands through (`bash -lc`) and
+  # cat. `git` (a harmless stand-in on PATH) is NOT listed: `git push` is refused with exec-not-allowed, and so is every
+  # other program. Codex's own helpers are the codex binary itself (it starts itself as `--codex-run-as-process-setup`
+  # before each command, and apply_patch is a symlink to it) and are covered by the command entry.
+  allow: ["bash", "cat"]
+net:
+  # Nothing is reached directly. The forwarder's listener is the one route to the model and is admitted by the run
+  # itself. glibc's name-service-cache socket is allowed so lookups by the programs Codex starts stay quiet.
+  allow: ["unix:/var/run/nscd/socket"]
+  dns:
+    # No name lookup is meant to leave the box. NOTE: at tier landlock `off` refuses a lookup sent from a connected
+    # datagram socket (glibc's resolver; Codex's start-up lookups: 24 refused outright, none answered) and only RECORDS one
+    # sent with sendto on an unconnected socket (musl's resolver; Codex's WebSocket client): the line says refused and
+    # `best_effort: true`, and the datagram is sent and answered (SEMANTICS.md "UDP": "the supervisor reading the address and
+    # then CONTINUE"). Codex reaches the model by the forwarder's address and needs no name.
+    mode: "off"
+env:
+  # The agent sees these and nothing else: no SSL_CERT_FILE. Codex's interface reads no API key from the environment, so
+  # the dummy key is typed into its login screen, which stores it in the run's private CODEX_HOME. (Route b, run.sh's
+  # ROUTE=b, appends STAND_IN_API_KEY here: a custom provider reads its key from the environment and Codex asks for no login.)
+  pass: ["PATH", "HOME", "LANG", "TERM", "COLORTERM"@PASS_EXTRA@]
+  set:
+    # Names the config.toml the launcher copies into the run's CODEX_HOME (the agent itself is given the run's own).
+    CODEX_HOME: "@ROOT@/codex-user"
+    TMPDIR: "@ROOT@/tmp"
+    HISTFILE: "/dev/null"
+limits:
+  pids: 512
+  memory: 4GiB
+  wall: 20m
+ask:
+  # Nobody answering is never a yes: after this long the held write is refused and recorded ask-timeout.
+  timeout: 5m

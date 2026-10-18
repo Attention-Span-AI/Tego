@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The contract an unattended custom agent runs under (README.md). run.sh and soak.sh fill in the @...@ names (the
+# stand-in model's port, the record level, the limits, the ask timeout) and write the result outside the workspace;
+# this file is a template, and every entry is a decision about ANY agent, never about this one. Where an entry says
+# "demo", its value is chosen so that seconds stand for hours; examples/agents/custom-agent.yaml has the same
+# contract with the values a real overnight run would use.
+version: 0
+name: custom-agent
+# `tego watch --boundary` takes the command from its own line; the schema wants one here.
+command: ["python3", "agent.py"]
+# Every model request goes to ONE place, the local stand-in, through tego's forwarder: it is recorded (ssl_request,
+# ssl_response, and a `decision` per tool call the model asks for) and COUNTED, which is what limits.tokens, cost_usd
+# and repeats read. The agent finds the forwarder's address in $ANTHROPIC_BASE_URL; no other address is allowed.
+models:
+  - { provider: anthropic, host: "127.0.0.1", port: @STUB_PORT@ }
+capture: forwarder
+record: @RECORD@
+fs:
+  write:
+    # The task's own output: the repo it edits, its notes and its own log. Nothing else is writable.
+    - "./work/"
+    # The shell's and the test script's plumbing (bash opens the terminal at start-up, whether or not there is one).
+    - "/dev/null"
+    - "/dev/tty"
+  # A write under held/ pauses the agent until a person answers (tego ask / approve / deny) or ask.timeout ends.
+  ask: ["./held/"]
+  # A credential the agent must never read. (The built-in list, ~/.ssh and the like, applies as well.)
+  deny_read: ["./fake-home/.ssh"]
+exec:
+  # The only programs it may start by name. Anything else (here: git) is refused.
+  allow: ["python3", "bash"]
+net:
+  # Nothing is reached directly: the forwarder is the one route out and is admitted by the run itself.
+  # glibc's name-service cache socket is allowed so the programs' own lookups stay quiet.
+  allow: ["unix:/var/run/nscd/socket"]
+  dns:
+    mode: "off"
+env:
+  # No credential reaches the agent: it has no key and needs none (the stand-in does not look at one).
+  pass: ["PATH", "HOME", "LANG"]
+  set:
+    PYTHONDONTWRITEBYTECODE: "1"
+limits:
+@LIMITS@
+ask:
+  # Nobody answering is never a yes: after this long the held write is refused and recorded ask-timeout (at most 1h).
+  timeout: @ASK_TIMEOUT@

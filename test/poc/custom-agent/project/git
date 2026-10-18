@@ -1,0 +1,6 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+#
+# git -- a harmless stand-in for git (README.md). It never touches a repository or the network: it says what it would
+# have done. Under a contract that does not list git in exec.allow it is not even started.
+echo "pretend: git $* (nothing was pushed: there is no repository and no network)"
