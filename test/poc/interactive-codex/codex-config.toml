@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The config.toml of the "user" the session starts from (codex-cli 0.159.2). run.sh fills in the @...@ names and writes
+# the result to <root>/codex-user/config.toml; the contract's CODEX_HOME names that directory, and tego's launcher
+# copies this file into the run's own CODEX_HOME after the one key it writes itself (`openai_base_url`, which this file
+# must not set: a duplicate key makes the file invalid and Codex refuses to start). Every entry is a switch Codex honours
+# in 0.159.2, measured under the contract.
+
+# The model is a name in a catalog of this run's own, derived from Codex's bundled `gpt-5.5` entry (run.sh makes it with
+# `codex debug models`). A name Codex does not know makes it warn at every start ("Model metadata for `x` not found") and
+# offer fewer tools (no apply_patch); a bundled name such as `gpt-5.5` brings a "Meet GPT-6 Sol" upgrade dialog at the
+# first prompt, and the newest ones (`gpt-6-*`) are given a different tool, a JavaScript `exec`, which the stand-in does
+# not script.
+model = "gpt-stub"
+model_catalog_json = "@ROOT@/codex-user/models.json"
+@ROUTE_TOP@
+
+# Codex's own sandbox (bubblewrap) cannot start inside tego's Landlock domain: left on, every command the model asks for
+# fails with "error building bubblewrap command: Permission denied (os error 13)", exit 1, and never reaches the shell.
+# Tego is the cage, so Codex's is off, and nothing asks a person on Codex's side: the contract's `ask` is the approval.
+# The command-line equivalents, measured: `--dangerously-bypass-approvals-and-sandbox`, or `-s danger-full-access -a never`
+# (`codex exec` takes `-s danger-full-access` alone: its approval policy is never already, and it refuses `-a`).
+sandbox_mode = "danger-full-access"
+approval_policy = "never"
+
+# The update check: a connection to a GitHub address (P6 counts them).
+check_for_update_on_startup = false
+
+# More connections to chatgpt.com: with `plugins` left on, either switch alone cuts the attempts of a `codex exec`, and the two
+# together with `plugins` off leave none (P6).
+[analytics]
+enabled = false
+
+[feedback]
+enabled = false
+
+[features]
+# Without this Codex runs `git ls-remote https://github.com/openai/plugins.git HEAD` at start (a clone into CODEX_HOME/.tmp
+# follows when that answers) and its main process connects to chatgpt.com and to a GitHub address: all of it goes straight
+# out, whatever the base URL is (P6 counts them).
+plugins = false
+remote_plugin = false
+apps = false
+# Without this it runs a login shell at start to snapshot the environment (23 more programs).
+shell_snapshot = false
+# The interactive interface starts a shared background server (`codex app-server --managed-daemon`) and is its client; the
+# commands it runs are then the server's. The server's start needs `sh` and /tmp/codex-daemon-<uid>, which the contract
+# refuses, and the interface then exits 1 ("rerun the same command with --no-daemon"). Run `codex --no-daemon` as well: this
+# setting alone only stops Codex from STARTING a server. It still connects to the control socket of one that is already
+# running (CODEX_HOME/app-server-control/app-server-control.sock: one connect, seen in the ledger), and `--no-daemon` is
+# documented as "even if it is already running". A server already running is not under tego.
+daemon_auto_start = false
+# Not needed with an API key; the stand-in reads plain JSON only.
+enable_request_compression = false
+
+# A tip in the interface. Measured to stop nothing on the network: the interface's announcement fetch from
+# raw.githubusercontent.com (a file of tips) goes on with every switch here, top-level or under [tui] (P6), and only the
+# contract's refusal of its name lookup (net.dns.mode: off) kept it from an address.
+[tui]
+show_tooltips = false
+
+# The folder is trusted: Codex asks about it otherwise ("Trust this folder?").
+[projects."@WS@"]
+trust_level = "trusted"
+@ROUTE_TABLE@

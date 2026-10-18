@@ -1,0 +1,13 @@
+[
+ [{"type": "function_call", "name": "exec_command", "arguments": {"cmd": "echo 'written by Codex inside the workspace' > work/note.txt; cat work/note.txt; echo \"note exit=$?\"", "yield_time_ms": 30000}}],
+ [{"type": "function_call", "name": "exec_command", "arguments": {"cmd": "cat @SECRET@; echo \"cat secret exit=$?\"", "yield_time_ms": 30000}}],
+ [{"type": "function_call", "name": "exec_command", "arguments": {"cmd": "git push origin main; echo \"git exit=$?\"", "yield_time_ms": 30000}}],
+ [{"type": "function_call", "name": "exec_command", "arguments": {"cmd": "( exec 3<>/dev/tcp/127.0.0.1/9 ) 2>&1; echo \"connect exit=$?\"", "yield_time_ms": 30000}}],
+ [{"type": "text", "text": "STEP-1-DONE: the note was written; the secret read, the push and the connection were attempted."}],
+ [{"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch\n*** Add File: held/report.txt\n+first report\n*** End Patch\n"}],
+ [{"type": "function_call", "name": "exec_command", "arguments": {"cmd": "echo first >> held/journal.txt; echo \"journal exit=$?\"", "yield_time_ms": 30000}}],
+ [{"type": "function_call", "name": "exec_command", "arguments": {"cmd": "echo second >> held/journal.txt; echo \"journal again exit=$?\"", "yield_time_ms": 30000}}],
+ [{"type": "function_call", "name": "exec_command", "arguments": {"cmd": "echo nope > held/other.txt; echo \"other exit=$?\"", "yield_time_ms": 30000}}],
+ [{"type": "function_call", "name": "exec_command", "arguments": {"cmd": "echo again > held/other.txt; echo \"other again exit=$?\"", "yield_time_ms": 30000}}],
+ [{"type": "text", "text": "STEP-2-DONE: the held directory was written, or refused."}]
+]

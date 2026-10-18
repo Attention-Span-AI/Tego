@@ -1,0 +1,7 @@
+#!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
+#
+# git — a harmless stand-in for git, for the interactive-codex session (README.md). It never touches a repository or
+# the network: it says what it would have done. Under the session's contract it is not even started: exec.allow does
+# not list it, so the kernel refuses the exec and this script never runs.
+echo "pretend git $*: nothing was pushed, there is no repository and no network"

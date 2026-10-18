@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The contract's own test, before any run: `tego compile <contract> --test verdicts.yaml`, from the agent's workspace
+# (the contract's entries are relative and resolve against the working directory). One row per hypothetical action and
+# the verdict the compiled rules must give it; nothing runs. run.sh fills in @PORT@, the port of the throwaway listener
+# the agent tries to reach, and runs this against the contract it is about to use (and against `tego learn`'s
+# proposal, where three rows fail: the proposal allows what the record-only run did).
+version: 0
+tests:
+  - name: the agent edits its repo
+    action: fs.write
+    path: work/repo/src/mod_01.py
+    expect: allow
+  - name: the agent appends to its notes
+    action: fs.write
+    path: work/notes.md
+    expect: allow
+  - name: the credential is unreadable
+    action: fs.read
+    path: fake-home/.ssh/id_ed25519
+    expect: refused
+    rule: fs.deny_read[./fake-home/.ssh]
+  - name: a write outside the workspace is refused
+    action: fs.write
+    path: ../outside-@NAME@/leak.txt
+    expect: refused
+    rule: unmatched
+  - name: a write under held/ waits for a person, which a table cannot supply, so it is refused here
+    action: fs.write
+    path: held/report.md
+    expect: refused
+  - name: bash may run the tests
+    action: exec
+    argv: [bash, tests/run_tests.sh]
+    expect: allow
+  - name: git may not run
+    action: exec
+    argv: [git, push, origin, main]
+    expect: refused
+  - name: a connection to a port nobody allowed is refused
+    action: net.connect
+    host_port: "127.0.0.1:@PORT@"
+    expect: refused

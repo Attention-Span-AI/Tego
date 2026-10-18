@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Codex with a REAL OpenAI API key, its model calls going through tego's forwarder. NOT RUN. It has the shape of the
+# offline contract (codex-interactive-offline.yaml), with `models` naming api.openai.com instead of the local stand-in and
+# the paths of a real account, but it differs from it by MORE than that. It has no fs.ask: nothing waits for a person,
+# held/ included (the offline run's approval gate is gone). Its write grant is the whole project, "./", not ./work/ and
+# a scratch directory, and it sets no TMPDIR. exec.allow adds git, ls and mkdir; the command adds --no-daemon; wall is
+# 2h, not 20m. For the held/ gate, start from examples/agents/codex.yaml instead: the same forwarder route, with the
+# write grant narrowed to ./work/ and the fs.ask for held/ kept.
+# Read README.md ("With a real key") first; copy it OUTSIDE the project, change every path marked CHANGE, and compile it
+# (`tego compile codex.yaml`) before the first run:
+#
+#   XDG_RUNTIME_DIR=/run/user/$(id -u) tego watch --boundary codex.yaml -- codex --no-daemon
+#
+# What is different from a run with the stand-in:
+#   - The forwarder dials api.openai.com:443 over TLS itself (the machine's own certificate store; no SSL_CERT_FILE), and
+#     resolves the name itself: the agent needs no name lookup and no connection of its own.
+#   - Codex's interactive interface reads no API key from the environment. Its login screen is the way in: choose
+#     "Provide your own API key" and type the key; Codex stores it as auth.json in the run's CODEX_HOME, which tego
+#     removes with the run, so the key is typed once per run and left on disk only while it lasts. While it lasts, an agent
+#     of any other tego run of yours can read that directory, auth.json and sessions/ included (docs/p0/agent-contract.md
+#     R10a, an open condition), and a `tego run --observe` agent or a process of yours outside tego can write it too:
+#     run no other agent meanwhile, or give the other enforcing contracts an fs.deny_read entry for
+#     /run/user/<uid>/tego/ (docs/OPERATIONS.md, step 4). (`codex exec` takes CODEX_API_KEY from the
+#     environment: add it to env.pass for non-interactive runs.) A ChatGPT login does not work under this contract: it needs
+#     a listening socket on a local port for the browser's redirect, and auth.openai.com and chatgpt.com.
+#   - Codex first offers a WebSocket upgrade (GET /v1/responses) before every POST. The forwarder strips the Upgrade header
+#     and passes the plain GET on; what the real API answers to it decides whether Codex falls back at once or after a few
+#     retries (the stand-in answers 426, which is at once). This was not measured against the real API.
+version: 0
+name: codex-real-forwarder
+command: ["codex", "--no-daemon"]
+models:
+  - { provider: openai, host: api.openai.com, port: 443 }
+capture: forwarder
+record: full
+fs:
+  write:
+    # CHANGE: the directories the task may write. Codex edits in place (apply_patch) and through the shell.
+    - "./"
+    # No entry for the run's private CODEX_HOME ($XDG_RUNTIME_DIR/tego/<run id>/codex): the run grants Codex write on
+    # that one directory itself when it starts (fs.codex_home[<path>], run_start.runtime_grants), and an entry over or
+    # inside $XDG_RUNTIME_DIR/tego is refused (docs/p0/agent-contract.md R10a). Until 2026-10-16 this contract granted
+    # the parent, /run/user/1000/tego/, which reached the private directories of the user's other runs.
+    - "/dev/null"
+    - "/dev/tty"
+  # CHANGE: the files of your real ~/.codex that exist (a deny_read of a missing path is refused). ~/.codex also holds Codex's
+  # own installation (~/.codex/packages), so the directory as a whole must not be denied. Add ~/.ssh, ~/.aws and the like:
+  # the built-in list already holds ~/.ssh, ~/.gnupg and the browser profiles.
+  deny_read: ["~/.codex/auth.json", "~/.codex/config.toml", "~/.codex/history.jsonl", "~/.codex/sessions"]
+exec:
+  # CHANGE: what the task needs. `bash` runs every command Codex starts. Codex starts itself (as /proc/self/exe, for
+  # apply_patch and before each command) and needs no entry for that.
+  allow: ["bash", "git", "cat", "ls", "mkdir"]
+net:
+  # Nothing is reached directly: no entry. The forwarder's listener is admitted by the run itself.
+  allow: ["unix:/var/run/nscd/socket"]
+  dns:
+    mode: "off"
+env:
+  pass: ["PATH", "HOME", "LANG", "TERM", "COLORTERM"]
+  set:
+    # CHANGE: a directory of your own holding the config.toml to start from (codex-config.toml with `model` a real model
+    # name and the two model_catalog_json lines removed), NOT ~/.codex. The launcher copies that one file into the run's
+    # CODEX_HOME after the `openai_base_url` it writes itself; the file must not set openai_base_url.
+    CODEX_HOME: "/home/USER/.config/tego/codex"
+    HISTFILE: "/dev/null"
+limits:
+  pids: 512
+  memory: 4GiB
+  wall: 2h
+  # cost_usd needs a price table (~/.tego/prices.yaml); without one the limit cannot be enforced.
+ask:
+  timeout: 5m
