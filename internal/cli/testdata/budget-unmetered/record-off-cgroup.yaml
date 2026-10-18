@@ -1,0 +1,8 @@
+version: 0
+name: record-off-cgroup
+command: ["true"]
+net: {}
+tier: cgroup
+record: off
+limits:
+  tokens: 100000

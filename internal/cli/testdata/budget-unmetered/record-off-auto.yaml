@@ -1,0 +1,7 @@
+version: 0
+name: record-off-auto
+command: ["true"]
+net: {}
+record: off
+limits:
+  tokens: 100000
