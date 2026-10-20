@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: Apache-2.0
+# mounts: ADR 0017 space 5, overlayfs (ADR 0025: identity is the inode the domain pins, not a name). The root runner
+# makes the mount in a mount namespace of the run's own before it starts (Fixture.Mounts), so the launcher compiles
+# and prepares the contract against it: a merged tree with a deny_read, a write entry, a listed binary and a library
+# in the write entry. A kernel without overlayfs fails the mount (ENODEV), and the fixture is not run unless
+# FS_REQUIRE names overlay; the bind cells, which need no module, are mounts-bind.yaml's.
+version: 2
+name: mounts
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./ovl/merged/ow/"]
+    deny_read: ["./ovl/merged/osecret/"]
+  exec:
+    allow: ["{{P}}/bin/actor", "{{P}}/ovl/merged/bin/tool"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [ovl/lower/ow, ovl/lower/osecret, ovl/upper, ovl/work, ovl/merged]
+files:
+  ovl/lower/ow/f: x
+  ovl/lower/ow/lib.so: x
+  ovl/lower/osecret/key: the secret
+actors: [ovl/lower/bin/tool]
+mounts:
+  - {kind: overlay, at: ovl/merged, lower: ovl/lower, upper: ovl/upper, work: ovl/work}
+model:
+  write: [ovl/merged/ow]
+  deny_read: [ovl/merged/osecret]
+  exec_allow: [bin/actor, ovl/merged/bin/tool]
+  net_declared: true
+cells:
+  - name: read-overlay-deny-read
+    op: read
+    path: ovl/merged/osecret/key
+    want:
+      all: refused fs.deny_read[./ovl/merged/osecret/]
+    source: 'SEMANTICS §2 (deny_read); enforce-plane.md R8 (an overlay open is decided on the user''s open)'
+  - name: write-overlay-copy-up
+    op: write-open
+    path: ovl/merged/ow/f
+    want:
+      all: allow fs.write[./ovl/merged/ow/]
+    source: 'ADR 0016 (one line for the user''s open: the copy-up''s backing open is no decision of its own)'
+  - name: exec-overlay-listed
+    op: exec
+    path: ovl/merged/bin/tool
+    want:
+      all: allow
+    source: 'SEMANTICS §4 (an exec.allow binary runs); enforce-plane.md R8 (an overlay file is decided on the user''s inode)'
+  - name: mprotect-exec-overlay-library
+    op: mprotect-exec
+    path: ovl/merged/ow/lib.so
+    want:
+      landlock: {verdict: allow, no_line: true}
+      cgroup/fanotify: {verdict: allow, no_line: true}
+      plane: refused exec-map
+    source: 'ADR 0027 (an mprotect to PROT_EXEC of code the agent could write is refused where the plane decides mappings); overlayfs maps the backing file'

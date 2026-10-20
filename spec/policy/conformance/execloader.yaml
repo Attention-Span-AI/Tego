@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# execloader: the direct loader where exec.allow lists it (ADR 0017 space 2, SEMANTICS §4). {{LOADER}} is the loader the
+# machine's /usr/bin/true names (PT_INTERP); exec/exec-loader-unlisted is the same exec where no entry lists it.
+version: 2
+name: execloader
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  exec:
+    allow: ["{{P}}/bin/actor", "{{LOADER}}"]
+  env:
+    pass: ["PATH"]
+  record: full
+model:
+  exec_allow: [bin/actor, '{{LOADER}}']
+cells:
+  - name: exec-loader-listed
+    op: exec-loader
+    path: '{{LOADER}}'
+    dest: /usr/bin/true
+    want:
+      all: allow
+    source: 'SEMANTICS §4 (a listed loader runs; the program it loads is mapped, not exec''d, and is not under a write entry, ADR 0027)'

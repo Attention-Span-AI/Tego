@@ -1,0 +1,318 @@
+# SPDX-License-Identifier: Apache-2.0
+# fs: a write entry with a deny_read nested in it, a deny_read beside it, a watch entry (verdicts.yaml, the
+# cross-check's write/deny_read/watch kinds). Seeds of the handwritten tables: internal/runtime/enforce/cgroup/
+# tiers_crosscheck_test.go (the entry kinds and the symlinked spelling), examples/tests/verdicts.yaml (the rows it
+# pins per tier), and the rules SEMANTICS §2 and §4 and supervisor.md R7, R14, R15c and R15d call out. The plane
+# column differs from tier cgroup's where nearest wins decides a mutation beneath a deny_read nested in a write
+# entry (ADR 0016, SEMANTICS §2).
+version: 2
+name: fs
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./out/"]
+    deny_read: ["./secrets/", "./out/keys/"]
+    watch: ["./config/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [out/rd1, out/rdl, out/keys, out/keys/krd, secrets, config, out/n1/n2/n3/n4/n5/n6/n7]
+files:
+  out/n1/n2/n3/n4/n5/n6/n7/.env.local: x
+  config/app.toml: x
+  config/app2.toml: x
+  config/app3.toml: x
+  mv-in.txt: x
+  notes-r.txt: x
+  notes-w.txt: x
+  out/c1.txt: x
+  out/keys/kc.txt: s3cret
+  out/keys/kl.txt: s3cret
+  out/keys/kr.txt: s3cret
+  out/keys/ku.txt: s3cret
+  out/keys/token: s3cret
+  out/keys/token-w: s3cret
+  out/keys/xb.txt: s3cret
+  out/li.txt: x
+  out/r1.txt: x
+  out/r2.txt: x
+  out/t1.txt: x
+  out/u1.txt: x
+  out/w1.txt: x
+  out/xa.txt: x
+  secrets/api-key: s3cret
+  secrets/api-key-l: s3cret
+  secrets/api-key-u: s3cret
+links:
+  out/sl-secret: ../secrets/api-key-l
+  rl: out/rdl
+model:
+  write: [out]
+  deny_read: [secrets, out/keys]
+  net_declared: true
+  names:
+    - {exact: .env, scopes: ["."]}
+    - {prefix: .env., except: [.env.example, .env.sample, .env.template, .env.dist], scopes: ["."]}
+variants: [held]
+cells:
+  - name: write-open-in-write-entry
+    op: write-open
+    path: out/w1.txt
+    want:
+      all: allow fs.write[./out/]
+    source: verdicts.yaml
+  - name: create-in-write-entry
+    op: create
+    path: out/new1.txt
+    want:
+      all: allow fs.write[./out/]
+    source: verdicts.yaml
+  - name: truncate-in-write-entry
+    op: truncate
+    path: out/t1.txt
+    want:
+      all: allow fs.write[./out/]
+    source: 'SEMANTICS §2 (a write entry grants modifications beneath it); supervisor R17 (truncate recorded)'
+  - name: unlink-in-write-entry
+    op: unlink
+    path: out/u1.txt
+    want:
+      all: allow fs.write[./out/]
+    source: verdicts.yaml
+  - name: mkdir-in-write-entry
+    op: mkdir
+    path: out/d1
+    want:
+      all: allow fs.write[./out/]
+    source: 'SEMANTICS §2 (a write entry grants modifications beneath it)'
+  - name: rmdir-in-write-entry
+    op: rmdir
+    path: out/rd1
+    want:
+      all: allow fs.write[./out/]
+    source: 'SEMANTICS §2 (a write entry grants modifications beneath it)'
+  # rl -> out/rdl, in a directory no entry grants: an rmdir of "rl/" removes the name rl, which filename_parentat
+  # looks up in its directory with the slash stripped, never followed, so Landlock's rmdir hook refuses it there
+  # (EACCES) before the kernel's own ENOTDIR. The run and compile --test walked it whole, followed it into out/,
+  # and said allow (review round 5 of CONF-COMPILE-3, RCONF-COMPILE-3c5-1).
+  - name: rmdir-symlink-spelled-with-slash-into-write-entry
+    op: rmdir
+    path: rl/
+    canon: rl
+    want:
+      all: refused unmatched
+    source: 'Landlock hook_path_rmdir (asked at the name filename_parentat looks up, unfollowed)'
+  - name: chmod-in-write-entry
+    op: chmod
+    path: out/c1.txt
+    want:
+      all: allow
+    source: 'agent-contract E35 (no tier below the plane decides a chmod); supervisor R17 (chmod naming)'
+  - name: rename-within-write-entry
+    op: rename
+    path: out/r1.txt
+    dest: out/r1b.txt
+    want:
+      all: allow fs.write[./out/]
+    source: 'SEMANTICS §2 (both rename ends lie in the write entry)'
+  - name: rename-out-of-write-entry
+    op: rename
+    path: out/r2.txt
+    dest: r2-escaped.txt
+    want:
+      all: refused unmatched
+    source: verdicts.yaml
+  - name: rename-into-write-entry
+    op: rename
+    path: mv-in.txt
+    dest: out/mv-in.txt
+    want:
+      all: refused unmatched
+    source: 'SEMANTICS §2 (a rename modifies both ends: its source lies outside every write entry)'
+  - name: write-open-outside-every-entry
+    op: write-open
+    path: notes-w.txt
+    want:
+      all: refused unmatched
+    source: verdicts.yaml
+  - name: create-outside-every-entry
+    op: create
+    path: root-new.txt
+    want:
+      all: refused unmatched
+    source: 'SEMANTICS §1 (undeclared mutations refused)'
+  - name: read-unmatched
+    op: read
+    path: notes-r.txt
+    want:
+      all: allow unmatched
+    source: verdicts.yaml
+  - name: read-deny-read
+    op: read
+    path: secrets/api-key
+    want:
+      all: refused fs.deny_read[./secrets/]
+    source: verdicts.yaml
+  - name: unlink-in-deny-read-beside-write
+    op: unlink
+    path: secrets/api-key-u
+    want:
+      all: refused fs.deny_read[./secrets/]
+    source: 'SEMANTICS §2 (a deny_read outside every write entry refuses its modifications)'
+  # deny_read nested in write: the Landlock ruleset cannot enforce it (SEMANTICS §2), so tier landlock holds the
+  # run's reads and the open deputy's floor refuses it (ADR 0069); tier 2's listener refuses it in the kernel.
+  - name: read-deny-read-nested-in-write
+    op: read
+    path: out/keys/token
+    want:
+      all: refused fs.deny_read[./out/keys/]
+    source: 'verdicts.yaml; ADR 0069 D3 (a)'
+  # A .env no table row names, beneath the write entry: one made during the run, which this one stands for by lying
+  # deeper than the compile-time scan looks (envScanMaxDepth), so compile finds nothing there either. Tier landlock's
+  # held read refuses it by the built-in name rule (ADR 0069 D3 (c)); the root tiers by the built-in name entry
+  # (ADR 0043 D1, D7, enforced since NAME-BACKEND). The integration test makes one during the run from outside it.
+  - name: read-env-created-later
+    op: read
+    path: out/n1/n2/n3/n4/n5/n6/n7/.env.local
+    want:
+      all: 'refused fs.deny_read[{{P}}/**/.env.*]'
+    source: 'ADR 0069 D3 (c); ADR 0043 D1, D7'
+  - name: write-open-deny-read-nested-in-write
+    op: write-open
+    path: out/keys/token-w
+    want:
+      landlock: allow fs.write[./out/]
+      root: refused fs.deny_read[./out/keys/]
+    source: verdicts.yaml
+  - name: mkdir-in-deny-read-nested-in-write
+    op: mkdir
+    path: out/keys/sub
+    want:
+      landlock: allow fs.write[./out/]
+      root: refused fs.deny_read[./out/keys/]
+    source: ADR0021(5), ADR0028 S3
+  - name: unlink-in-deny-read-nested-in-write
+    op: unlink
+    path: out/keys/ku.txt
+    want:
+      landlock: allow fs.write[./out/]
+      root: refused fs.deny_read[./out/keys/]
+    source: ADR0021(5), ADR0028 S3
+  # The rest of ADR 0021 (5)'s "a write, create, delete, rename or mkdir" beneath the nested deny_read: each syscall
+  # that makes one, and a link or exchange whose destination lands there. Tier 1's union grants them (SEMANTICS §2);
+  # on tier cgroup's listener the supervisor refuses them before the kernel acts (fallbackMutation, and R15d for an
+  # exchange's other end), so a refused creat leaves no residue; a plane refuses them by inode. The creat cell wants
+  # EACCES, the supervisor's and a plane hook's, where the listener's own FAN_DENY after the create would answer
+  # EPERM, and the effect judge takes no empty file a refused create left as a residue on any axis (judgeEffect).
+  - name: creat-in-deny-read-nested-in-write
+    op: creat
+    path: out/keys/kcr.txt
+    want:
+      landlock: allow fs.write[./out/]
+      root: {verdict: refused, rule: 'fs.deny_read[./out/keys/]', errno: EACCES}
+    source: ADR0021(5), ADR0028 S3
+  - name: rmdir-in-deny-read-nested-in-write
+    op: rmdir
+    path: out/keys/krd
+    want:
+      landlock: allow fs.write[./out/]
+      root: refused fs.deny_read[./out/keys/]
+    source: ADR0021(5), ADR0028 S3
+  - name: symlink-in-deny-read-nested-in-write
+    op: symlink
+    path: out/keys/ksl
+    dest: token
+    want:
+      landlock: allow fs.write[./out/]
+      root: refused fs.deny_read[./out/keys/]
+    source: ADR0021(5), ADR0028 S3
+  - name: link-into-deny-read-nested-in-write
+    op: link
+    path: out/li.txt
+    dest: out/keys/li.txt
+    want:
+      landlock: allow fs.write[./out/]
+      root: refused fs.deny_read[./out/keys/]
+    source: ADR0021(5), ADR0028 S3
+  - name: exchange-into-deny-read-nested-in-write
+    op: exchange
+    path: out/xa.txt
+    dest: out/keys/xb.txt
+    want:
+      landlock: allow fs.write[./out/]
+      root: refused fs.deny_read[./out/keys/]
+    source: ADR0021(5), ADR0028 S3
+    no_compile: compile --test has no exchange action
+  # Not a mutation (5) covers: no tier below the plane decides a chmod, and the plane's chmod hook protects the
+  # deny_write targets only (agent-contract E35, enforce-plane R12), so every tier allows it.
+  - name: chmod-in-deny-read-nested-in-write
+    op: chmod
+    path: out/keys/kc.txt
+    want:
+      all: allow fs.write[./out/]
+    source: ADR0021(5), ADR0028 S3 (its exception)
+  - name: rename-out-of-nested-deny-read
+    op: rename
+    path: out/keys/kr.txt
+    dest: out/moved-kr.txt
+    want:
+      landlock: allow
+      root: refused fs.deny_read[./out/keys/]
+    source: 'supervisor.md R15d (a link or rename out of a nested deny_read); SEMANTICS §2'
+  - name: link-out-of-nested-deny-read
+    op: link
+    path: out/keys/kl.txt
+    dest: out/linked-kl.txt
+    want:
+      landlock: allow fs.write[./out/]
+      root: refused fs.deny_read[./out/keys/]
+    source: 'supervisor.md R15d (a link or rename out of a nested deny_read); SEMANTICS §2'
+  - name: create-symlink-to-deny-read
+    op: symlink
+    path: out/newlink
+    dest: ../secrets/api-key
+    want:
+      all: allow fs.write[./out/]
+    source: 'SEMANTICS §2 (deny_read holds by inode: a symlink''s text grants nothing)'
+  # A symlink undeclared in the contract: the kernel follows it, and compile --test resolves the row's path through
+  # the filesystem the same way before it evaluates (ADR 0019, RunResolved).
+  - name: read-through-undeclared-symlink-to-deny-read
+    op: read
+    path: out/sl-secret
+    canon: secrets/api-key-l
+    want:
+      all: refused fs.deny_read[./secrets/]
+    source: SEMANTICS §2 (deny_read holds by inode, not spelling)
+  - name: read-watch
+    op: read
+    path: config/app.toml
+    want:
+      all: allow fs.watch[./config/]
+    source: 'agent-contract R15 (watch records and grants nothing)'
+  - name: write-open-watch
+    op: write-open
+    path: config/app2.toml
+    want:
+      all: refused fs.watch[./config/]
+    source: 'agent-contract R15 (watch records and grants nothing)'
+  - name: unlink-watch
+    op: unlink
+    path: config/app3.toml
+    want:
+      all: refused fs.watch[./config/]
+    source: verdicts.yaml
+  # Last: moving the deny_read directory itself (rename at the parent).
+  - name: rename-nested-deny-read-dir-itself
+    op: rename
+    path: out/keys
+    dest: out/keys.old
+    want:
+      landlock: allow
+      root: refused fs.deny_read[./out/keys/]
+    source: 'supervisor.md R15d; SEMANTICS §2 (a deny_read holds by inode)'

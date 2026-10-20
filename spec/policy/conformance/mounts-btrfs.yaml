@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: Apache-2.0
+# mounts-btrfs: ADR 0017 space 5, btrfs subvolumes (ADR 0025). The root runner loop-mounts an empty btrfs at tree
+# and makes two subvolumes, allowed and denied, each holding one file: the two files have the same inode number on
+# one superblock, and only their subvolumes' anonymous devices tell them apart. A deny_read on one subvolume refuses
+# its file and leaves the other's readable on every axis.
+version: 2
+name: mounts-btrfs
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./out/"]
+    deny_read: ["./tree/denied/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [out, tree]
+mounts:
+  - kind: btrfs
+    at: tree
+    subvolumes: [allowed, denied]
+    files:
+      allowed/payload: allowed
+      denied/payload: denied
+model:
+  write: [out]
+  deny_read: [tree/denied]
+  net_declared: true
+cells:
+  - name: read-allowed-subvolume
+    op: read
+    path: tree/allowed/payload
+    want:
+      all: allow
+    source: 'ADR 0025 (the same inode number on another subvolume is another inode)'
+  - name: read-denied-subvolume
+    op: read
+    path: tree/denied/payload
+    want:
+      all: refused fs.deny_read[./tree/denied/]
+    source: 'SEMANTICS §2 (deny_read); ADR 0025 (subvolumes told apart by their devices)'

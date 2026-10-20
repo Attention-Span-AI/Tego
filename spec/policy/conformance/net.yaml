@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: Apache-2.0
+# net: connect to a declared and an undeclared loopback listener, the resolver exception (supervisor.md R14) and a
+# UDP connect to an undeclared destination. The resolver is a grant the runtime makes on its own authority
+# (supervisor.md R14, ResolverRule): a contract cannot declare it, and compile --test answers it from the machine
+# config's resolver list. The capture listener is the same kind of grant (evaluate.go CaptureGrant): capture.yaml.
+version: 2
+name: net
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./out/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: ["127.0.0.1:{{PORT}}"]
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [out]
+listeners: true
+model:
+  write: [out]
+  net_declared: true
+  net_allow: ['127.0.0.1:{{PORT}}']
+  net_runtime: ['127.0.0.2:53']
+cells:
+  - name: connect-declared-loopback
+    op: connect-tcp
+    addr: 127.0.0.1:{{PORT}}
+    want:
+      all: allow net[127.0.0.1:{{PORT}}]
+    source: verdicts.yaml (the declared loopback port)
+  - name: connect-other-port-same-host
+    op: connect-tcp
+    addr: 127.0.0.1:{{PORT2}}
+    want:
+      all: refused unmatched
+    source: verdicts.yaml (another port on the same host)
+  - name: connect-udp-undeclared
+    op: connect-udp
+    addr: 192.0.2.9:9
+    want:
+      all: refused unmatched
+    source: verdicts.yaml (a UDP connect to a destination that is not declared; the public resolver is not one)
+  - name: connect-udp-resolver
+    op: connect-udp
+    addr: 127.0.0.2:53
+    want:
+      all: allow net.resolver
+    source: supervisor.md R14 (resolver DNS connect)
+  - name: send-udp-undeclared
+    op: send-udp
+    addr: 192.0.2.10:9
+    want:
+      all: refused unmatched
+    source: 'verdicts.yaml (a datagram to a destination that is not declared); supervisor.md (sendto and sendmsg are decided by their destination, as a connect is)'

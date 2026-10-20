@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: Apache-2.0
+# toctou: ADR 0017 space 4, the TOCTOU harness. One thread of the actor swaps a symlink it made inside a write entry
+# between a benign file and a protected one with rename(2), another opens the link, 2,000 times or 2 s. A decision
+# by name made before the open lands is the race's window. The read race runs on every axis: Landlock and the plane
+# decide by inode, and the listener decides on the opened file, so no byte of the deny_read file reaches the actor.
+# The write race runs on the plane axes: a deny_write target beneath a write entry is the supervisor's below the
+# plane, best effort against exactly this race (supervisor R15c, ADR 0041 D1 (a)), and the plane's race-free.
+# The ledger check: no line names the target with an allow, and where the kernel's recorder answers (the listener, the
+# plane) a refused race has at least one refused line of it. Tier landlock's lines are the supervisor's advisory ones
+# (ADR 0016 (2)): they name the link, with the model's prediction for what it led to when the supervisor resolved it,
+# which the swap can change before the kernel's open, so they go unjudged there.
+version: 2
+name: toctou
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./work/", "./repo/"]
+    deny_read: ["./secret/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [work, secret, repo/.git/hooks]
+files:
+  secret/key: the secret
+  repo/.git/config: |
+    [core]
+model:
+  write: [work, repo]
+  deny_read: [secret]
+  net_declared: true
+  deny_write: [repo/.git/config, repo/.git/hooks]
+cells:
+  - name: read-through-swapped-link
+    op: race-symlink-read
+    no_compile: 'a race: thousands of opens through a link the actor swaps, against no fixed tree'
+    path: work/link
+    dest: secret/key
+    canon: secret/key
+    want:
+      all: refused
+    source: 'SEMANTICS §2 (a deny_read refuses the object an open reaches, whatever name reached it); ADR 0017 space (4)'
+  - name: write-through-swapped-link
+    op: race-symlink-write
+    no_compile: 'a race: thousands of opens through a link the actor swaps, against no fixed tree'
+    path: repo/link
+    dest: repo/.git/config
+    canon: repo/.git/config
+    want:
+      plane: refused
+    unasked:
+      landlock: the supervisor refuses a deny_write target by the name it reads, best effort against this very race, which compile discloses per target (supervisor R15c, ADR 0041 D1 (a))
+      cgroup/fanotify: the supervisor refuses a deny_write target by the name it reads, best effort against this very race, which compile discloses per target (supervisor R15c, ADR 0041 D1 (a))
+    source: 'enforce-plane.md R12 (the plane decides the opened inode against the deny_write rows); ADR 0017 space (4)'

@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: Apache-2.0
+# capture: the capture forwarder's loopback listener (ADR 0017 space (3), the cell exec.yaml deferred). A contract
+# with a models: entry and capture: forwarder runs the forwarder, which binds a loopback listener when the run starts
+# and hands the agent its base URL (ANTHROPIC_BASE_URL). The runtime grants a connect to that listener on its own
+# authority (evaluate.go CaptureGrant, internal/runtime run_capture.go admitLoopback), so the agent reaches it though
+# net.allow is empty, and the line names the grant net.capture[<addr>]. The address is the run's own: the actor reads
+# it from its environment ($ANTHROPIC_BASE_URL) and reports it, and the cell's rule names it as {{PEER}}. Only the
+# connect is made; no request is sent, so no model is called.
+version: 2
+name: capture
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  models:
+    - { provider: anthropic, host: api.anthropic.com, port: 443 }
+  capture: forwarder
+  fs:
+    write: ["./out/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [out]
+model:
+  write: [out]
+  net_declared: true
+  net_runtime: ['$ANTHROPIC_BASE_URL']
+cells:
+  - name: capture-listener-connect
+    op: connect-tcp
+    addr: $ANTHROPIC_BASE_URL
+    no_compile: the capture listener is bound when the run starts; compile --test has no listener and no address to ask about
+    want:
+      all: 'allow net.capture[{{PEER}}]'
+    source: 'SEMANTICS §5 and capture-derive (the capture listener is a grant the runtime makes on its own authority, evaluate.go CaptureGrant: net.capture[<addr>])'

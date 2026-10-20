@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: Apache-2.0
+# link: entries declared through symlinks (the cross-check's /l -> /w/a spelling): both spellings of a declared
+# entry resolve to it; a symlink the contract does not declare does not.
+version: 2
+name: link
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./wl/"]
+    deny_read: ["./dl/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [real, hidden, elsewhere]
+files:
+  elsewhere/e1.txt: x
+  hidden/s1: s3cret
+  hidden/s2: s3cret
+  hidden/s3: s3cret
+  real/r1.txt: x
+  real/u1.txt: x
+  real/w1.txt: x
+links:
+  dl: hidden
+  real/inner: ../hidden/s3
+  real/out-link: ../elsewhere/e1.txt
+  wl: real
+model:
+  write: [real]
+  deny_read: [hidden]
+  net_declared: true
+variants: [held]
+cells:
+  - name: write-open-through-declared-link
+    op: write-open
+    path: wl/w1.txt
+    canon: real/w1.txt
+    want:
+      all: allow fs.write[./wl/]
+    source: tiers_crosscheck_test.go
+  - name: create-by-target-spelling
+    op: create
+    path: real/n1.txt
+    want:
+      all: allow fs.write[./wl/]
+    source: tiers_crosscheck_test.go
+  - name: unlink-through-declared-link
+    op: unlink
+    path: wl/u1.txt
+    canon: real/u1.txt
+    want:
+      all: allow fs.write[./wl/]
+    source: 'tiers_crosscheck_test.go (an entry declared through a symlink)'
+  - name: rename-through-declared-link
+    op: rename
+    path: wl/r1.txt
+    dest: real/r1b.txt
+    canon: real/r1.txt
+    want:
+      all: allow fs.write[./wl/]
+    source: 'tiers_crosscheck_test.go (an entry declared through a symlink)'
+  - name: read-deny-read-through-declared-link
+    op: read
+    path: dl/s1
+    canon: hidden/s1
+    want:
+      all: refused fs.deny_read[./dl/]
+    source: tiers_crosscheck_test.go
+  - name: read-deny-read-by-target-spelling
+    op: read
+    path: hidden/s2
+    want:
+      all: refused fs.deny_read[./dl/]
+    source: tiers_crosscheck_test.go
+  - name: read-through-undeclared-symlink-to-deny-read
+    op: read
+    path: wl/inner
+    canon: hidden/s3
+    want:
+      all: refused fs.deny_read[./dl/]
+    source: SEMANTICS §2
+  - name: write-open-outside-through-undeclared-symlink
+    op: write-open
+    path: wl/out-link
+    canon: elsewhere/e1.txt
+    want:
+      all: refused unmatched
+    source: 'invariant: no write outside write entries'

@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: Apache-2.0
+# mounts-bind: ADR 0017 space 5, bind mounts (ADR 0025: identity is the inode the domain pins, not a name). The root
+# runner makes the mounts in a mount namespace of the run's own before it starts (Fixture.Mounts), so the launcher
+# compiles and prepares the contract against them. A deny_read directory bind-mounted as a sibling of itself (alias)
+# and beneath a sibling (pub/alias), and a write entry bind-mounted outside every entry (walias); each cell's canon is
+# the name the contract gives the file, which the invariants read. compile --test answers names and sees no mount, so
+# the cells have no compile row (no_compile). A bind mount needs no module, so this fixture runs on every root row;
+# the overlay cells are mounts.yaml's, which a kernel without overlayfs does not run (FS_REQUIRE).
+version: 2
+name: mounts-bind
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./w/"]
+    deny_read: ["./secret/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [secret, alias, pub/alias, w, walias]
+files:
+  secret/key: the secret
+  w/f: x
+mounts:
+  - {kind: bind, at: alias, from: secret}
+  - {kind: bind, at: pub/alias, from: secret}
+  - {kind: bind, at: walias, from: w}
+model:
+  write: [w]
+  deny_read: [secret]
+  exec_allow: [bin/actor]
+  net_declared: true
+cells:
+  # A bind alias of the deny_read directory at a level the launcher enumerates is its inode: Landlock keeps the node's
+  # rights on it (enforce-landlock E32 (b)), the plane refuses by inode. The lines name the alias (baselined).
+  - name: read-bind-alias-sibling
+    op: read
+    path: alias/key
+    canon: secret/key
+    want:
+      all: refused fs.deny_read[./secret/]
+    no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
+    source: 'ADR 0025 (identity is the inode); enforce-landlock E32 (b); enforce-plane R8'
+  # Beneath a granted sibling the alias is readable at tier landlock through that name alone (E32 (ii), a recorded
+  # limitation); the plane refuses it by inode; tier cgroup's listener allows it, a fail-open, reported as this cell's finding.
+  - name: read-bind-alias-nested
+    op: read
+    path: pub/alias/key
+    canon: secret/key
+    want:
+      landlock: allow
+      root: refused fs.deny_read[./secret/]
+    no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
+    exception: 'enforce-landlock E32 (ii): a deny_read target''s content reached through a bind mount beneath a granted sibling is readable through that name at tier landlock (recorded limitation; compile warns on mount points)'
+    exception_at: landlock
+    finding: 'tier cgroup''s fanotify listener allows the read (kernel allow, line allow unmatched) where the oracle holds it to every deny_read; fix in the listener (decide the open by the file''s identity, ADR 0010, ADR 0025), not baselined'
+    finding_at: cgroup
+    source: 'ADR 0025 (identity is the inode); enforce-landlock E32 (ii); enforce-cgroup-observe R8; enforce-plane R8'
+  # A bind alias of a write entry is the entry's inode: Landlock keys the entry's rights by inode, and so does the
+  # plane. Tier cgroup's listener refuses it by the name (fail closed) and the supervisor's line at tier landlock says
+  # refused (baselined).
+  - name: write-bind-alias-of-write-entry
+    op: write-open
+    path: walias/f
+    canon: w/f
+    want:
+      all: allow fs.write[./w/]
+    no_compile: compile --test answers names and sees no mount; the alias is the write entry's inode only in the run's namespace
+    source: 'ADR 0025 (identity is the inode); enforce-landlock R4 (rights keyed by inode); enforce-plane R8'
