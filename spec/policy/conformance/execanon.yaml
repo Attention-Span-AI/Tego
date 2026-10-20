@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+# execanon: exec: {anonymous: true} (ADR 0017 space 2; SEMANTICS §4): the contract opts out of the memfd arm, so
+# an anonymous image is created, runs and maps executable at every tier, its exec recorded fileless, and compile warns
+# that exec.allow no longer bounds what runs.
+version: 2
+name: execanon
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+    anonymous: true
+  env:
+    pass: ["PATH"]
+  record: full
+model:
+  exec_allow: [bin/actor]
+  exec_anonymous: true
+cells:
+  - name: memfd-create-executable
+    op: memfd-create
+    no_compile: a memfd has no path a compile --test row can name
+    want:
+      all: {verdict: allow, no_line: true}
+    source: 'agent-contract exec: {anonymous: true} (no memfd arm)'
+  - name: memfd-exec
+    op: memfd-exec
+    no_compile: a memfd has no path a compile --test row can name
+    want:
+      all: allow
+    source: 'SEMANTICS §4 (exec.anonymous: an anonymous image runs, recorded fileless); enforce-landlock R11a'
+  - name: memfd-map-exec
+    op: memfd-map-exec
+    no_compile: a memfd has no path a compile --test row can name
+    want:
+      all: {verdict: allow, no_line: true}
+    source: 'SEMANTICS §4 (exec.anonymous: the plane''s exec row allows anonymous images for such a run)'

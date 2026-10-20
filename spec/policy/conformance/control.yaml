@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: Apache-2.0
+# control: the agent's own process and control calls (FEATURES E54, enforce-plane §2.20; work plan X16), as a product
+# run has them. A ptrace attach is kept inside the run: Landlock's ptrace scope (ARCHITECTURE §11) refuses one out
+# of its domain with EPERM on every tier and writes no line, and the plane's ptrace_access_check refuses it with
+# EACCES and a process-scope line wherever the plane answers first (fmod_ret, or bpf ahead of landlock in the LSM
+# order: plane_first; the lsm=...,bpf boot puts it after, so Landlock answers there). The host process
+# ({{HOSTPID}}, the actor's host stage) lets its uid trace it (PR_SET_PTRACER_ANY), so Yama's ptrace_scope 1, which
+# would refuse the attach with the same EPERM and no line, does not answer, and the runner's control attaches to it
+# as the agent's uid outside every run first: the fixture fails if the machine refuses that. A TRACEME asked of a parent
+# outside the run is admitted by Landlock (an unconfined parent may trace a confined child) and refused by the
+# plane's ptrace_traceme in both modes; the actor's orphaned grandchild asks it of the subreaper outside the run,
+# so a TRACEME that is granted leaves no tracer waiting on the actor itself. The kernel keyring is refused by the
+# supervisor's keyring arm on every tier, EPERM with its own refused line, unless the contract says keyring: true
+# (control-keyring; SEMANTICS §1). bpf(2) is refused by the filter's root-tier arm at tiers 2 and 3, EPERM and no line
+# (ADR 0033). kernel.unprivileged_bpf_disabled gives the same EPERM ahead of every hook, so the root runner lowers its
+# 2 to 0 for this fixture's run (and restores it), and its control creates the map as the agent's uid outside every
+# run first: the fixture fails if that is refused. What a product run cannot reach stays in internal/runtime/enforce/cgroup's
+# plane_control_integration_test.go: the plane's keyring and bpf hooks behind the filter (its test seam), an attach
+# to another run, a task root moved out of the run, and record: off.
+version: 2
+name: control
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./out/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [out]
+model:
+  write: [out]
+  exec_allow: [bin/actor]
+cells:
+  - name: ptrace-own-child
+    op: ptrace-attach
+    no_compile: 'compile --test has no process-control action'
+    target: child
+    want:
+      all: {verdict: allow, no_line: true}
+    source: 'enforce-plane §2.20 (ptrace_access_check admits a tracee in the run); ARCHITECTURE §11 (Landlock''s ptrace scope admits a task of its own domain)'
+  - name: ptrace-host
+    op: ptrace-attach
+    no_compile: 'compile --test has no process-control action'
+    target: '{{HOSTPID}}'
+    want:
+      all: {verdict: refused, errno: EPERM, no_line: true}
+    want_where:
+      - plane_first: true
+        want:
+          plane: {verdict: refused, rule: process-scope, errno: EACCES}
+    source: 'enforce-plane §2.20 (an attach out of the run is refused, process-scope); ARCHITECTURE §11 (Landlock''s ptrace scope refuses a task outside its domain, EPERM, first where landlock precedes bpf)'
+  - name: traceme-own-parent
+    op: ptrace-traceme
+    no_compile: 'compile --test has no process-control action'
+    target: parent
+    want:
+      all: {verdict: allow, no_line: true}
+    source: 'enforce-plane §2.20 (ptrace_traceme admits a tracer in the run)'
+  - name: keyctl
+    op: keyctl
+    no_compile: 'compile --test has no keyring action'
+    want:
+      all: {verdict: refused, rule: keyring, errno: EPERM}
+    source: 'SEMANTICS §1 (the kernel keyring is refused unless the contract says keyring: true; the supervisor''s keyring arm, EPERM)'
+  - name: add-key
+    op: add-key
+    no_compile: 'compile --test has no keyring action'
+    want:
+      all: {verdict: refused, rule: keyring, errno: EPERM}
+    source: 'SEMANTICS §1 (add_key is refused without keyring: true)'
+  - name: request-key
+    op: request-key
+    no_compile: 'compile --test has no keyring action'
+    want:
+      all: {verdict: refused, rule: keyring, errno: EPERM}
+    source: 'SEMANTICS §1 (request_key is refused without keyring: true)'
+  - name: bpf-map-create
+    op: bpf
+    no_compile: 'compile --test has no bpf(2) action'
+    want:
+      root: {verdict: refused, errno: EPERM, no_line: true}
+    unasked:
+      landlock: tier 1 has no bpf(2) arm (ADR 0033); the kernel's unprivileged_bpf_disabled answers, which the root runner lowers for this fixture
+    source: 'ADR 0033 (the filter refuses bpf(2) at tiers 2 and 3, EPERM, before the plane''s hook)'
+  - name: traceme-outside
+    op: ptrace-traceme
+    no_compile: 'compile --test has no process-control action'
+    target: orphan
+    want:
+      landlock: {verdict: allow, no_line: true}
+      cgroup/fanotify: {verdict: allow, no_line: true}
+      plane: {verdict: refused, rule: process-scope, errno: EACCES}
+    source: 'enforce-plane §2.20 (ptrace_traceme refuses a tracer outside the run, process-scope); ARCHITECTURE §11 (Landlock admits a TRACEME of an unconfined parent)'

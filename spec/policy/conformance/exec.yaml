@@ -1,0 +1,258 @@
+# SPDX-License-Identifier: Apache-2.0
+# exec: exec.allow by path; other spellings of a granted binary, a copy, a script, an exec entry that is a
+# directory inside a deny_read (SEMANTICS §4). exec/exec-unlisted-script's plane answer is tier cgroup's: the exec
+# hook passes a #! stage, but tier 3 installs the Landlock floor as well, whose EXECUTE rule refuses the unlisted
+# script (SEMANTICS §4's 2026-09-29 note, decide.ScriptFloor).
+version: 2
+name: exec
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./out/"]
+    deny_read: ["./secrets/"]
+  exec:
+    allow: ["{{P}}/bin/actor", "{{P}}/bin/tool", "{{P}}/bin/tool2", "{{P}}/secrets/bin/", "{{P}}/bin/mc-a", "{{P}}/bin/mc-b", "{{P}}/bin/tool4", "{{P}}/bin/tool5"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [out, secrets/bin]
+files:
+  out/lib.so: "\x7FELF not really a library\n"
+  out/lib2.so: "\x7FELF not really a library\n"
+  out/lib3.so: "\x7FELF not really a library\n"
+  out/lib4.so: "\x7FELF not really a library\n"
+  secrets/bin/xdata: s3cret
+scripts:
+  out/run.sh: |
+    #!{{P}}/bin/tool
+actors: [bin/tool, bin/tool2, bin/tool3, bin/other, out/copy, secrets/bin/xtool, bin/mc, bin/tool4, bin/tool5, bin/tool6, bin/tool7, bin/other2, bin/other3]
+links:
+  out/lnk-tool: ../bin/tool2
+hard_links:
+  bin/mc-a: bin/mc
+  bin/mc-b: bin/mc
+  bin/mc-c: bin/mc
+  out/hl-tool: bin/tool
+model:
+  write: [out]
+  deny_read: [secrets]
+  exec_allow: [bin/actor, bin/tool, bin/tool2, secrets/bin, bin/mc-a, bin/mc-b, bin/tool4, bin/tool5]
+  net_declared: true
+cells:
+  - name: exec-allowed-by-path
+    op: exec
+    path: bin/tool
+    want:
+      all: allow
+    source: verdicts.yaml (the declared shell runs)
+  - name: exec-unlisted-binary
+    op: exec
+    path: bin/other
+    want:
+      all: refused unmatched
+    source: verdicts.yaml (an undeclared binary does not)
+  - name: exec-unlisted-copy-in-write-entry
+    op: exec
+    path: out/copy
+    want:
+      all: refused unmatched
+    source: 'SEMANTICS §4 (exec.allow names images by path: a copy of a granted binary is another image)'
+  - name: exec-symlink-to-granted
+    op: exec
+    path: out/lnk-tool
+    canon: bin/tool2
+    want:
+      all: allow
+    source: 'SEMANTICS §4 (a granted binary reached by another spelling: Landlock decides on the inode)'
+  - name: exec-hard-link-to-granted
+    op: exec
+    path: out/hl-tool
+    want:
+      all: refused unmatched
+    source: 'SEMANTICS §4 (a granted binary reached by another spelling: Landlock decides on the inode); TIER3-PLAN §9 (a hard link under another name is refused)'
+  # A multi-call binary (uutils, busybox): one inode, hard-linked under several names, two of them listed
+  # (enforce-plane §6 E15, ADR 0025's 2026-09-30 note). Each listed link runs under its own entry; a third name is
+  # refused, as the same inode under another name always is.
+  - name: exec-multicall-listed-link
+    op: exec
+    path: bin/mc-a
+    want:
+      all: allow exec[{{P}}/bin/mc-a]
+    source: enforce-plane §6 E15 (each listed link of one inode runs)
+  - name: exec-multicall-second-listed-link
+    op: exec
+    path: bin/mc-b
+    want:
+      all: allow exec[{{P}}/bin/mc-b]
+    source: enforce-plane §6 E15 (each listed link of one inode runs)
+  - name: exec-multicall-unlisted-link
+    op: exec
+    path: bin/mc-c
+    want:
+      all: refused unmatched
+    source: enforce-plane §6 E15; TIER3-PLAN §9 (a hard link under another name is refused)
+  - name: exec-unlisted-script
+    op: exec
+    path: out/run.sh
+    script: '{{P}}/bin/tool'
+    want:
+      all: refused unmatched
+    source: verdicts.yaml (Landlock cannot match by name, so the script is refused)
+  - name: exec-entry-directory-inside-deny-read
+    op: exec
+    path: secrets/bin/xtool
+    want:
+      landlock: allow
+      root: refused fs.deny_read[./secrets/]
+    source: SEMANTICS §4 (an exec.allow entry may name a directory)
+  - name: read-file-inside-exec-entry-directory-inside-deny-read
+    op: read
+    path: secrets/bin/xdata
+    want:
+      landlock: allow exec[{{P}}/secrets/bin/]
+      root: refused fs.deny_read[./secrets/]
+    source: 'SEMANTICS §2 (the Landlock tier''s stated exception: an exec grant carries read)'
+    exception: at tier landlock an exec.allow entry inside a deny_read carries READ_FILE (the exec open has FMODE_READ), so the read is allowed; compile warns [unenforced] (SEMANTICS §2, enforce-landlock R5 / I11 (1), agent-contract R15); tier cgroup's listener refuses the read
+    exception_at: landlock
+  # A mapping writes no line where it is allowed (no hook records a map), so only the plane's refusal has one:
+  # ADR 0027, enforce-plane R26: the plane refuses a PROT_EXEC map of a file under a write entry that no exec.allow
+  # entry covers; tier landlock and tier cgroup's listener decide no mapping (SEMANTICS §4).
+  - name: map-exec-dropped-in-write-entry
+    op: map-exec
+    path: out/lib.so
+    want:
+      landlock: {verdict: allow, no_line: true}
+      cgroup/fanotify: {verdict: allow, no_line: true}
+      plane: refused exec-map
+    source: 'ADR 0027 (a map of code the agent wrote: tiers 1 and 2 decide no mapping, SEMANTICS §4)'
+  - name: map-exec-granted-binary
+    op: map-exec
+    path: bin/tool3
+    want:
+      all: {verdict: allow, no_line: true}
+    source: ADR 0027 (a readable file outside every write entry maps at every tier)
+  # ADR 0017 space 2: the other spellings of an exec and of executable code (added 2026-10-19).
+  # The direct loader: `ld.so /usr/bin/true`, the loader as the machine's own /usr/bin/true names it (PT_INTERP).
+  - name: exec-loader-unlisted
+    op: exec-loader
+    path: '{{LOADER}}'
+    dest: /usr/bin/true
+    want:
+      all: refused unmatched
+    source: 'SEMANTICS §4 (the direct loader: a loader no exec.allow entry lists is refused like any other unlisted binary)'
+  # An exec by descriptor names no path: the inode decides (Landlock, the plane's bprm_check) and the supervisor
+  # resolves the descriptor.
+  - name: execveat-fd-granted
+    op: execveat-fd
+    path: bin/tool4
+    want:
+      all: allow
+    source: 'SEMANTICS §4 (a granted binary reached by another spelling: Landlock decides on the inode)'
+  - name: execveat-fd-unlisted
+    op: execveat-fd
+    path: bin/other2
+    want:
+      all: refused unmatched
+    source: 'SEMANTICS §4 (an undeclared binary does not run, by whatever spelling)'
+  - name: exec-proc-fd-granted
+    op: exec-proc-fd
+    path: bin/tool5
+    want:
+      all: allow
+    source: 'SEMANTICS §4 (a granted binary reached by another spelling: Landlock decides on the inode)'
+  - name: exec-proc-fd-unlisted
+    op: exec-proc-fd
+    path: bin/other3
+    want:
+      all: refused unmatched
+    source: 'SEMANTICS §4 (an undeclared binary does not run, by whatever spelling)'
+  # Anonymous images (SEMANTICS §4). Where the kernel honours MFD_NOEXEC_SEAL, every tier's filter refuses the creation of a
+  # memfd the kernel would exec, EACCES, no line (enforce-landlock R11a's sealing arm, kept under a plane). Where it
+  # does not, tiers 1 and 2's listener refuse every memfd_create with ENOSYS, and a run a plane decides gets no
+  # refusing arm: the memfd is created, and the plane's bprm_check and mmap_file refuse its exec and its map
+  # (enforce-plane R27, §2.14).
+  - name: memfd-create-executable
+    op: memfd-create
+    no_compile: a memfd has no path a compile --test row can name
+    want:
+      all: {verdict: refused, errno: EACCES, no_line: true}
+    want_where:
+      - memfd_noexec_seal: false
+        want:
+          landlock: {verdict: refused, errno: ENOSYS, no_line: true}
+          cgroup/fanotify: {verdict: refused, errno: ENOSYS, no_line: true}
+          plane: {verdict: allow, no_line: true}
+    source: 'enforce-landlock R11a (the memfd_create arm: the creation of a memfd the kernel would exec is refused)'
+  - name: memfd-exec
+    op: memfd-exec
+    no_compile: a memfd has no path a compile --test row can name
+    want:
+      all: {verdict: refused, errno: EACCES, no_line: true}
+    want_where:
+      - memfd_noexec_seal: false
+        want:
+          landlock: {verdict: refused, errno: ENOSYS, no_line: true}
+          cgroup/fanotify: {verdict: refused, errno: ENOSYS, no_line: true}
+          plane: refused
+    source: 'SEMANTICS §4 (an anonymous image runs no exec.allow names: refused unless exec.anonymous); enforce-landlock R11a; enforce-plane R27'
+  - name: memfd-map-exec
+    op: memfd-map-exec
+    no_compile: a memfd has no path a compile --test row can name
+    want:
+      all: {verdict: refused, errno: EACCES, no_line: true}
+    want_where:
+      - memfd_noexec_seal: false
+        want:
+          landlock: {verdict: refused, errno: ENOSYS, no_line: true}
+          cgroup/fanotify: {verdict: refused, errno: ENOSYS, no_line: true}
+          plane: refused
+    source: 'ADR 0027 (a) (a PROT_EXEC map of an anonymous image); enforce-landlock R11a; enforce-plane R27'
+  # ADR 0027's other spellings of a PROT_EXEC map. The plane decides on the effective prot, so
+  # READ_IMPLIES_EXEC's PROT_EXEC counts, and on mprotect as on mmap; tiers 1 and 2's listener decide no mapping
+  # (SEMANTICS §4).
+  - name: map-exec-rie-dropped-in-write-entry
+    op: map-exec-rie
+    path: out/lib3.so
+    want:
+      landlock: {verdict: allow, no_line: true}
+      cgroup/fanotify: {verdict: allow, no_line: true}
+      plane: refused exec-map
+    source: 'ADR 0027 (personality(READ_IMPLIES_EXEC) plus a PROT_READ map of a dropped file is refused)'
+  - name: mprotect-exec-dropped-in-write-entry
+    op: mprotect-exec
+    path: out/lib2.so
+    want:
+      landlock: {verdict: allow, no_line: true}
+      cgroup/fanotify: {verdict: allow, no_line: true}
+      plane: refused exec-map
+    source: 'ADR 0027 (the mprotect spelling is refused)'
+  - name: mprotect-rie-dropped-in-write-entry
+    op: mprotect-rie
+    path: out/lib4.so
+    want:
+      landlock: {verdict: allow, no_line: true}
+      cgroup/fanotify: {verdict: allow, no_line: true}
+      plane: refused exec-map
+    source: 'ADR 0027 (READ_IMPLIES_EXEC with a PROT_NONE map mprotected to PROT_READ is refused)'
+  - name: execmod-readable-file
+    op: execmod
+    path: bin/tool6
+    no_compile: execmod is decided on the mapping's copied pages (vma->anon_vma), which no compile --test row names
+    want:
+      landlock: {verdict: allow, no_line: true}
+      cgroup/fanotify: {verdict: allow, no_line: true}
+      plane: refused exec-map
+    source: 'ADR 0027 (c) (a private map of a readable file, written and mprotected to PROT_EXEC, is refused: execmod)'
+  - name: execmem-readable-file
+    op: execmem
+    path: bin/tool7
+    no_compile: execmem is decided on the mapping's prot and privacy, which no compile --test row names
+    want:
+      landlock: {verdict: allow, no_line: true}
+      cgroup/fanotify: {verdict: allow, no_line: true}
+      plane: refused exec-map
+    source: 'ADR 0027 (c) (a PROT_WRITE|PROT_EXEC private file map is refused: execmem)'

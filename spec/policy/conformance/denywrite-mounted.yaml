@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+# denywrite-mounted: ADR 0017 spaces 4 and 5. A tmpfs the root runner mounts at repo/.git/hooks/sub before the run,
+# beneath a built-in deny_write target: a create on it is refused on every axis (supervisor R15c, by name), and an
+# attribute change of a file on it where a plane decides, through the plane's mounted-root row (enforce-plane R12:
+# the attribute hooks walk inside the superblock, which ends at the tmpfs' root, so Prepare keys a row there).
+version: 2
+name: denywrite-mounted
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./repo/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [repo/.git/hooks/sub]
+files:
+  repo/.git/HEAD: |
+    ref: refs/heads/main
+  repo/.git/config: |
+    [core]
+mounts:
+  - kind: tmpfs
+    at: repo/.git/hooks/sub
+    files:
+      f: x
+model:
+  write: [repo]
+  net_declared: true
+  deny_write: [repo/.git/config, repo/.git/hooks]
+cells:
+  - name: create-on-mounted-tmpfs
+    op: create
+    path: repo/.git/hooks/sub/new
+    want:
+      all: refused fs.deny_write[{{P}}/repo/.git/hooks]
+    source: supervisor.md R15c (a create inside a target, whatever is mounted there)
+  - name: chmod-on-mounted-tmpfs
+    op: chmod
+    path: repo/.git/hooks/sub/f
+    want:
+      plane: refused fs.deny_write[{{P}}/repo/.git/hooks]
+      landlock: allow
+      cgroup/fanotify: allow
+    source: enforce-plane.md R12 (the mounted-root row below a deny_write target); supervisor.md R17 (recorded, not refused, below the plane)

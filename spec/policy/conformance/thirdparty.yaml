@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: Apache-2.0
+# thirdparty: ADR 0017 space 6. A third party's fanotify permission listener (test/vm/cmd/permlistener -mode deny,
+# started by the root runner for the run's length) refuses every open of shared/data, a file the contract lets the
+# agent read. The kernel's answer is that listener's EPERM on every axis (a FAN_CLASS_CONTENT group's FAN_DENY;
+# no kernel takes another errno from it, doctor's fanotify row). The ledger line is Tego's own answer, never the
+# listener's (ADR 0016): the supervisor and Tego's listener allowed the open, so their line reads allow; the plane
+# allowed it too, and where the kernel's recorder writes the line (tier cgroup and the plane) it follows the traced
+# open's return (ADR 0016 step 2): from 6.13 fsnotify's permission event runs after the traced security_file_open
+# returned 0, so the line reads allow; up to 6.12 the event runs inside it, the -EPERM is no Tego refusal, and the
+# line reads observed with by: other. The supervisor's line at tier landlock is its own allow on every kernel.
+version: 2
+name: thirdparty
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./out/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [out, shared]
+files:
+  shared/data: someone else's
+third_party_deny: [shared/data]
+model:
+  write: [out]
+  exec_allow: [bin/actor]
+cells:
+  - name: read-refused-by-other
+    op: read
+    path: shared/data
+    no_compile: the refusal is a third party's; compile --test answers the contract, which allows the read
+    want:
+      all: {verdict: refused, errno: EPERM, ledger: allow}
+    want_where:
+      - kernel_max: "6.12"
+        want:
+          root: {verdict: refused, errno: EPERM, ledger: observed}
+    source: 'ADR 0016 (a verdict is the mechanism''s answer: a third party''s refusal is outside Tego''s chain); ADR 0017 space (6)'

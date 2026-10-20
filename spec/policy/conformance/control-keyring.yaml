@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: Apache-2.0
+# control-keyring: control's keyring cells under the contract's opt-in, keyring: true (SEMANTICS §1): the
+# supervisor continues add_key, request_key and keyctl and records each as a gap (keyring-<syscall>), and the
+# plane's key_permission admits every permission check of the run (enforce-plane §2.20), so each is allowed with no
+# verdict line on every tier. The key request-key asks for is the one add-key made, in the process keyring.
+version: 2
+name: control-keyring
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./out/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  env:
+    pass: ["PATH"]
+  keyring: true
+  record: full
+dirs: [out]
+model:
+  write: [out]
+  exec_allow: [bin/actor]
+  keyring: true
+cells:
+  - name: keyctl
+    op: keyctl
+    no_compile: 'compile --test has no keyring action'
+    want:
+      all: {verdict: allow, no_line: true}
+    source: 'SEMANTICS §1 (keyring: true: the keyring syscalls are allowed and recorded as gaps); enforce-plane §2.20 (key_permission admits a run with the flag)'
+  - name: add-key
+    op: add-key
+    no_compile: 'compile --test has no keyring action'
+    want:
+      all: {verdict: allow, no_line: true}
+    source: 'SEMANTICS §1 (keyring: true allows add_key)'
+  - name: request-key
+    op: request-key
+    no_compile: 'compile --test has no keyring action'
+    want:
+      all: {verdict: allow, no_line: true}
+    source: 'SEMANTICS §1 (keyring: true allows request_key)'

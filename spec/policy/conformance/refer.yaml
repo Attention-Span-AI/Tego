@@ -1,0 +1,469 @@
+# SPDX-License-Identifier: Apache-2.0
+# refer: a hard link and a rename as the Landlock ruleset every tier keeps decides them (hook_path_link,
+# current_check_refer_path): MAKE_REG and REFER on the ends' directories, never on the file, and REFER's rule that the
+# file gains no right where it lands (security/landlock/fs.c no_more_access). A file-level write entry grants no
+# directory right, so a second name for it elsewhere is refused (EXDEV), and an exec.allow directory inside the write
+# entry grants EXECUTE, which a file moved or linked into it would gain. The kernel refused both while tier 1's line
+# said allow (review round 1, security F1, F3 and F4); the line, compile --test's every column and the kernel now agree.
+# A rename onto an exec.allow file entry inside the write entry (an atomic replace of a declared binary) gains
+# nothing: within one directory REFER compares nothing, and across directories the new name's directory is compared,
+# never the rule on the name it replaces. The kernel allowed both while the line and compile --test said refused
+# (fix round 1, F1).
+#
+# Fix round 2: a file-level write entry's own rename and unlink are refused by the floor tier 3 keeps under its
+# plane, whose hooks decide on the object (S2); a rename's or a link's end that is a symlink write entry's own name is
+# the symlink, in its own directory (F1, F2); and an exec.allow directory renamed inside the write entry takes its
+# grant with its inode, so the line follows the inode (S1). The S1 cells act on the state the cells before them left
+# (out/p/xbin moved to out/xbin-old, then out/r, holding a fresh xbin, renamed onto the emptied out/p), which compile
+# --test, asked of the contract's starting tree, cannot see (NoCompile); the kernel and every tier's line are asked.
+#
+# Fix round 3: an exec.allow file entry's grant is on its inode as a directory entry's is, so an exec of the entry's
+# name once it holds another runnable inode (out/h/i/tool, after its directory moved away and out/k was renamed onto
+# the emptied out/h) is refused, unmatched, at every tier, where the plane axes' line read observed under
+# exec[.../out/h/i/tool] (R3-S1). The cells own distinct paths, so the replace moves the entry's directory rather
+# than renaming onto the name itself. A rename's and a link's new name beneath a symlink no entry declares,
+# out/xl -> bin, lies in the exec.allow directory out/bin: the kernel refuses both (EXDEV), and compile --test, which
+# took a new name that did not exist as written, said allow (C1).
+#
+# Fix round 5: the same move and link into a subdirectory the agent makes through out/xl, or through the exec.allow
+# entry's own declared link out/el/bl -> ../rb, lands beneath out/bin or out/rb and is refused (EXDEV); compile
+# --test, which kept a directory that did not exist yet as written, beneath the link, said allow (S1).
+#
+# Review round 6: out/dl -> bin/later dangles until the agent makes out/bin/later; a move and a link through it then
+# land in the exec.allow directory (EXDEV). compile --test, asked of the starting tree, took the dangling link itself
+# and said allow (R6-C1); it now follows it as the kernel will. A new name with ".." after the symlink out/lk -> bin/v1
+# lands in out/bin, physically, whatever it cleans to: compile cleaned it first and said allow (R6-C2), and the run's
+# line, for a new name that cleans to the source's own (out/lk/../k3.txt), took the source's landing for the
+# destination's and said allow (R6-S1).
+version: 2
+name: refer
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./out/", "./a.txt", "./b.txt", "./c.txt", "./out/cur1", "./out/cur2", "./out/cur3", "./out/cur4", "./cur", "./cur5", "./out/wp/wl/"]
+  exec:
+    allow: ["{{P}}/bin/actor", "{{P}}/out/bin/", "{{P}}/out/tool", "{{P}}/out/tool2", "{{P}}/out/p/xbin/", "{{P}}/out/h/i/tool", "{{P}}/out/el/bl/", "{{P}}/out/xd/"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [out/bin/v1, out/sub, out/v2, out/p/xbin, out/r/xbin, out/rb, out/el, out/eln/bl, out/xd, out/wp, out/wpn/wl]
+files:
+  a.txt: x
+  b.txt: x
+  c.txt: x
+  out/bin/t1: x
+  out/cur1.new: x
+  out/d1.txt: x
+  out/d2.txt: x
+  out/e1.txt: x
+  out/el1.txt: x
+  out/el2.txt: x
+  out/h/i/tool: x
+  out/k1.txt: x
+  out/k2.txt: x
+  out/k3.txt: x
+  out/k4.txt: x
+  out/l1.txt: x
+  out/m1.txt: x
+  out/m2.txt: x
+  out/m3.txt: x
+  out/p/xbin/t: x
+  out/r1.txt: x
+  out/s1.txt: x
+  out/s2.txt: x
+  out/s3.txt: x
+  out/s4.txt: x
+  out/s5.txt: x
+  out/s6.txt: x
+  out/sub/t2: x
+  out/sub/t3: x
+  out/tool: x
+  out/tool.new: x
+  out/tool2: x
+  out/wl1.txt: x
+  out/wl2.txt: x
+actors: [out/r/xbin/u, out/k/i/tool]
+links:
+  cur: out/v2
+  cur5: out/v2
+  out/cur1: bin/v1
+  out/cur2: bin/v1
+  out/cur3: bin/v1
+  out/cur4: bin/v1
+  out/dl: bin/later
+  out/el/bl: ../rb
+  out/lk: bin/v1
+  out/wp/wl: ../xd
+  out/xl: bin
+model:
+  write: [out, a.txt, b.txt, c.txt, out/cur1, out/cur2, out/cur3, out/cur4, cur, cur5, out/wp/wl]
+  exec_allow: [bin/actor, out/bin, out/tool, out/tool2, out/p/xbin, out/h/i/tool, out/el/bl, out/xd]
+  net_declared: true
+cells:
+  - name: link-file-entry-across-directories
+    op: link
+    path: a.txt
+    dest: out/a-linked.txt
+    want:
+      all: refused unmatched
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: link-into-exec-directory
+    op: link
+    path: out/l1.txt
+    dest: out/bin/l1-linked
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: link-out-of-exec-directory
+    op: link
+    path: out/bin/t1
+    dest: out/t1-linked
+    want:
+      all: allow fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: rename-into-exec-directory
+    op: rename
+    path: out/r1.txt
+    dest: out/bin/r1-moved
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  # C1 (fix round 3): out/xl is a symlink no entry declares, to the exec.allow directory out/bin; rename(2) and
+  # linkat(2) follow every component of the new name but the last, so both land in out/bin and gain EXECUTE.
+  - name: rename-through-symlink-into-exec-directory
+    op: rename
+    path: out/s1.txt
+    dest: out/xl/s1-moved
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: link-through-symlink-into-exec-directory
+    op: link
+    path: out/s2.txt
+    dest: out/xl/s2-linked
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  # S1 (fix round 5), in order: a subdirectory made through out/xl, and through the exec.allow entry's own
+  # declared link out/el/bl -> ../rb, then a move and a link into each. compile --test is asked of the starting
+  # tree, where neither subdirectory exists: it kept such a directory as written, beneath the link, and said allow.
+  - name: mkdir-through-symlink-in-exec-directory
+    op: mkdir
+    path: out/xl/nsub
+    canon: out/bin/nsub
+    want:
+      all: allow fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: rename-through-symlink-into-new-subdirectory
+    op: rename
+    path: out/s3.txt
+    dest: out/xl/nsub/s3-moved
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: link-through-symlink-into-new-subdirectory
+    op: link
+    path: out/s4.txt
+    dest: out/xl/nsub/s4-linked
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: mkdir-through-exec-link-in-exec-directory
+    op: mkdir
+    path: out/el/bl/nsub
+    canon: out/rb/nsub
+    want:
+      all: allow fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: rename-through-exec-link-into-new-subdirectory
+    op: rename
+    path: out/s5.txt
+    dest: out/el/bl/nsub/s5-moved
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: link-through-exec-link-into-new-subdirectory
+    op: link
+    path: out/s6.txt
+    dest: out/el/bl/nsub/s6-linked
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  # Review round 6, in order: the dangling link's target made, then a move and a link through the link; then
+  # new names with ".." after a symlink.
+  - name: mkdir-dangling-link-target
+    op: mkdir
+    path: out/bin/later
+    want:
+      all: allow fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: rename-through-dangling-link
+    op: rename
+    path: out/d1.txt
+    dest: out/dl/d1-moved
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: link-through-dangling-link
+    op: link
+    path: out/d2.txt
+    dest: out/dl/d2-linked
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: rename-dotdot-after-symlink
+    op: rename
+    path: out/k1.txt
+    dest: out/lk/../k1-moved
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: link-dotdot-after-symlink
+    op: link
+    path: out/k2.txt
+    dest: out/lk/../k2-linked
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: rename-dotdot-onto-its-own-spelling
+    op: rename
+    path: out/k3.txt
+    dest: out/lk/../k3.txt
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: link-dotdot-onto-its-own-spelling
+    op: link
+    path: out/k4.txt
+    dest: out/lk/../k4.txt
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: rename-onto-exec-file-entry
+    op: rename
+    path: out/tool.new
+    dest: out/tool
+    want:
+      all: allow fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: rename-onto-exec-file-entry-across-directories
+    op: rename
+    path: out/sub/t2
+    dest: out/tool2
+    want:
+      all: allow fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  # S2: the file-level entry's own directory grants no REFER and no REMOVE_FILE (EACCES at every tier).
+  - name: rename-file-entry-across-directories
+    op: rename
+    path: b.txt
+    dest: out/b-moved.txt
+    want:
+      all: refused unmatched
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: unlink-file-entry
+    op: unlink
+    path: c.txt
+    want:
+      all: refused unmatched
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  # F1: rename(2) and linkat(2) act on a symlink write entry itself, out/curN -> bin/v1, in out.
+  - name: rename-onto-symlink-write-entry
+    op: rename
+    path: out/cur1.new
+    dest: out/cur1
+    want:
+      all: allow fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: link-symlink-write-entry-into-exec-directory
+    op: link
+    path: out/cur2
+    dest: out/bin/cur2-linked
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: rename-symlink-write-entry-into-exec-directory
+    op: rename
+    path: out/cur3
+    dest: out/bin/cur3-moved
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: rename-onto-symlink-write-entry-across-directories
+    op: rename
+    path: out/sub/t3
+    dest: out/cur4
+    want:
+      all: allow fs.write[./out/]
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  # F2: cur and cur5 -> out/v2 are symlink write entries outside every write directory: their own directory
+  # grants nothing.
+  - name: rename-onto-symlink-entry-outside-write-directories
+    op: rename
+    path: out/e1.txt
+    dest: cur
+    want:
+      all: refused unmatched
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  - name: rename-symlink-entry-outside-write-directories
+    op: rename
+    path: cur5
+    dest: out/cur5-moved
+    want:
+      all: refused unmatched
+    source: 'Landlock hook_path_link / current_check_refer_path (REFER on the directories, no right gained)'
+  # S1, in order: the exec.allow directory out/p/xbin moved out of out/p, renames and links into it, then out/r
+  # (holding a fresh xbin) renamed onto the emptied out/p, and a move, a link and an exec in the fresh one.
+  - name: rename-exec-directory-within-write-entry
+    op: rename
+    path: out/p/xbin
+    dest: out/xbin-old
+    want:
+      all: allow fs.write[./out/]
+    source: 'Landlock binds an exec grant to the inode the builder held (enforce-landlock R5); the rule moves with it'
+  - name: rename-into-moved-exec-directory
+    op: rename
+    path: out/m1.txt
+    dest: out/xbin-old/m1
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock binds an exec grant to the inode the builder held (enforce-landlock R5); the rule moves with it'
+    no_compile: 'acts on the tree the earlier cells left; compile --test answers the contract''s starting tree'
+  - name: link-into-moved-exec-directory
+    op: link
+    path: out/m2.txt
+    dest: out/xbin-old/m2
+    want:
+      all: refused fs.write[./out/]
+    source: 'Landlock binds an exec grant to the inode the builder held (enforce-landlock R5); the rule moves with it'
+    no_compile: 'acts on the tree the earlier cells left; compile --test answers the contract''s starting tree'
+  - name: directory-onto-vacated-exec-parent
+    op: rename
+    path: out/r
+    dest: out/p
+    want:
+      all: allow fs.write[./out/]
+    source: 'Landlock binds an exec grant to the inode the builder held (enforce-landlock R5); the rule moves with it'
+    no_compile: 'acts on the tree the earlier cells left; compile --test answers the contract''s starting tree'
+  - name: rename-out-of-moved-into-recreated-exec-name
+    op: rename
+    path: out/xbin-old/t
+    dest: out/p/xbin/t
+    want:
+      all: allow fs.write[./out/]
+    source: 'Landlock binds an exec grant to the inode the builder held (enforce-landlock R5); the rule moves with it'
+    no_compile: 'acts on the tree the earlier cells left; compile --test answers the contract''s starting tree'
+  - name: link-into-recreated-exec-name
+    op: link
+    path: out/m3.txt
+    dest: out/p/xbin/m3
+    want:
+      all: allow fs.write[./out/]
+    source: 'Landlock binds an exec grant to the inode the builder held (enforce-landlock R5); the rule moves with it'
+    no_compile: 'acts on the tree the earlier cells left; compile --test answers the contract''s starting tree'
+  - name: exec-in-recreated-exec-name
+    op: exec
+    path: out/p/xbin/u
+    want:
+      landlock: refused unmatched
+      cgroup/fanotify: refused unmatched
+      plane: refused
+    source: 'Landlock binds an exec grant to the inode the builder held (enforce-landlock R5); the rule moves with it'
+    no_compile: 'acts on the tree the earlier cells left; compile --test answers the contract''s starting tree'
+  # R3-S1, in order: the directory holding the exec.allow file entry out/h/i/tool moved out of out/h, then out/k
+  # (holding a runnable i/tool) renamed onto the emptied out/h, and an exec of the entry's name, which now holds an
+  # inode no grant names (the entry's EXECUTE moved with out/i-old/tool).
+  - name: rename-exec-file-entry-directory
+    op: rename
+    path: out/h/i
+    dest: out/i-old
+    want:
+      all: allow fs.write[./out/]
+    source: 'Landlock binds an exec grant to the inode the builder held (enforce-landlock R5); the rule moves with it'
+  - name: directory-onto-vacated-exec-file-parent
+    op: rename
+    path: out/k
+    dest: out/h
+    want:
+      all: allow fs.write[./out/]
+    source: 'Landlock binds an exec grant to the inode the builder held (enforce-landlock R5); the rule moves with it'
+    no_compile: 'acts on the tree the earlier cells left; compile --test answers the contract''s starting tree'
+  - name: exec-replaced-exec-file-entry
+    op: exec
+    path: out/h/i/tool
+    want:
+      landlock: refused unmatched
+      cgroup/fanotify: refused unmatched
+      plane: refused
+    source: 'Landlock binds an exec grant to the inode the builder held (enforce-landlock R5); the rule moves with it'
+    no_compile: 'acts on the tree the earlier cells left; compile --test answers the contract''s starting tree'
+  # S4-1 and R4-C1 (review round 4), in order: the exec.allow directory's declared link out/el/bl -> ../rb moved
+  # out of out/el, then out/eln (holding a real bl) renamed onto the emptied out/el, and a move and a link into
+  # the real out/el/bl, which holds no grant. The same for a write entry's declared link into an exec.allow
+  # directory, out/wp/wl -> ../xd. The ends were rewritten to the links' targets, and the line said refused.
+  - name: rename-exec-link-out-of-its-directory
+    op: rename
+    path: out/el/bl
+    dest: out/bl-old
+    want:
+      all: allow fs.write[./out/]
+    source: 'the run asks a rename''s and a link''s ends where the kernel''s walk landed them (ADR 0019''s 2026-10-17 design note)'
+  - name: directory-onto-vacated-exec-link-parent
+    op: rename
+    path: out/eln
+    dest: out/el
+    want:
+      all: allow fs.write[./out/]
+    source: 'the run asks a rename''s and a link''s ends where the kernel''s walk landed them (ADR 0019''s 2026-10-17 design note)'
+    no_compile: 'acts on the tree the earlier cells left; compile --test answers the contract''s starting tree'
+  - name: rename-into-replaced-exec-link
+    op: rename
+    path: out/el1.txt
+    dest: out/el/bl/el1
+    want:
+      all: allow fs.write[./out/]
+    source: 'the run asks a rename''s and a link''s ends where the kernel''s walk landed them (ADR 0019''s 2026-10-17 design note)'
+    no_compile: 'acts on the tree the earlier cells left; compile --test answers the contract''s starting tree'
+  - name: link-into-replaced-exec-link
+    op: link
+    path: out/el2.txt
+    dest: out/el/bl/el2
+    want:
+      all: allow fs.write[./out/]
+    source: 'the run asks a rename''s and a link''s ends where the kernel''s walk landed them (ADR 0019''s 2026-10-17 design note)'
+    no_compile: 'acts on the tree the earlier cells left; compile --test answers the contract''s starting tree'
+  - name: rename-write-link-out-of-its-directory
+    op: rename
+    path: out/wp/wl
+    dest: out/wl-old
+    want:
+      all: allow fs.write[./out/]
+    source: 'the run asks a rename''s and a link''s ends where the kernel''s walk landed them (ADR 0019''s 2026-10-17 design note)'
+  - name: directory-onto-vacated-write-link-parent
+    op: rename
+    path: out/wpn
+    dest: out/wp
+    want:
+      all: allow fs.write[./out/]
+    source: 'the run asks a rename''s and a link''s ends where the kernel''s walk landed them (ADR 0019''s 2026-10-17 design note)'
+    no_compile: 'acts on the tree the earlier cells left; compile --test answers the contract''s starting tree'
+  - name: rename-into-replaced-write-link
+    op: rename
+    path: out/wl1.txt
+    dest: out/wp/wl/wl1
+    want:
+      all: allow fs.write[./out/]
+    source: 'the run asks a rename''s and a link''s ends where the kernel''s walk landed them (ADR 0019''s 2026-10-17 design note)'
+    no_compile: 'acts on the tree the earlier cells left; compile --test answers the contract''s starting tree'
+  - name: link-into-replaced-write-link
+    op: link
+    path: out/wl2.txt
+    dest: out/wp/wl/wl2
+    want:
+      all: allow fs.write[./out/]
+    source: 'the run asks a rename''s and a link''s ends where the kernel''s walk landed them (ADR 0019''s 2026-10-17 design note)'
+    no_compile: 'acts on the tree the earlier cells left; compile --test answers the contract''s starting tree'

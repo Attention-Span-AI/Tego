@@ -1,0 +1,127 @@
+# SPDX-License-Identifier: Apache-2.0
+# denywrite-ancestors: ADR 0017 space 4. Every other way to change a built-in deny_write target (agent-contract R20)
+# than writing it: through its ancestors (rename of .git, rmdir and rename of .git/hooks), new names inside it (mkdir,
+# symlink, a hard link, a FIFO) and its attributes (chmod, chown, a user xattr, an ACL). The names are refused on every
+# axis, by the supervisor (R15c) and where a plane decides by it too. The attributes are refused only where a plane
+# decides (enforce-plane R12, supervisor R17 under Options.PlaneAttrs): Landlock and fanotify have no attribute
+# right, so tier landlock and the listener let them through. Two repositories, so that each cell owns its path (the
+# runner finds a cell's line by it). No rmdir of .git: a directory above a target is removed only when empty, so
+# with no target beneath it, and its refusal is the filesystem's ENOTEMPTY (R15c holds a rename's ends, which move
+# what lies beneath, as directories above a target, and a removal only where it reaches one). Its assurance-kernel variant runs the cells on the plane axes only: the others
+# refuse the run at startup (ADR 0041 D1 (a)).
+version: 2
+name: denywrite-ancestors
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./repo/", "./repo2/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [repo/.git/hooks, repo2/.git/hooks]
+files:
+  repo/.git/HEAD: |
+    ref: refs/heads/main
+  repo/.git/config: |
+    [core]
+  repo/.bashrc: x
+  repo/.profile: x
+  repo/.zshrc: x
+  repo/ok.txt: x
+  repo2/.git/HEAD: |
+    ref: refs/heads/main
+  repo2/.git/config: |
+    [core]
+model:
+  write: [repo, repo2]
+  net_declared: true
+  deny_write: [repo/.git/config, repo/.git/hooks, repo/.bashrc, repo/.profile, repo/.zshrc, repo2/.git/config, repo2/.git/hooks]
+variants: [assurance-kernel]
+cells:
+  - name: mkdir-in-git-hooks
+    op: mkdir
+    path: repo/.git/hooks/sub
+    want:
+      all: refused fs.deny_write[{{P}}/repo/.git/hooks]
+    source: supervisor.md R15c (mkdir* inside a target)
+  - name: symlink-in-git-hooks
+    op: symlink
+    path: repo/.git/hooks/pre-commit
+    dest: ../../ok.txt
+    want:
+      all: refused fs.deny_write[{{P}}/repo/.git/hooks]
+    source: supervisor.md R15c (symlink*, the created link)
+  - name: link-into-git-hooks
+    op: link
+    path: repo/ok.txt
+    dest: repo/.git/hooks/post-merge
+    want:
+      all: refused
+    source: supervisor.md R15c (link*, the new name)
+  - name: mknod-in-git-hooks
+    op: mknod
+    path: repo/.git/hooks/fifo
+    want:
+      all: refused fs.deny_write[{{P}}/repo/.git/hooks]
+    source: supervisor.md R15c (mknod*, a FIFO)
+  # After the cells inside it: the hooks directory is empty, so only the refusal stops the rmdir.
+  - name: rmdir-git-hooks
+    op: rmdir
+    path: repo/.git/hooks
+    want:
+      all: refused fs.deny_write[{{P}}/repo/.git/hooks]
+    source: supervisor.md R15c (a removal that reaches a target)
+  - name: rename-git-hooks
+    op: rename
+    path: repo2/.git/hooks
+    dest: repo2/hooks.old
+    want:
+      all: refused fs.deny_write[{{P}}/repo2/.git/hooks]
+    source: supervisor.md R15c (a rename's end, as a directory above a target)
+  - name: chmod-git-config
+    op: chmod
+    path: repo/.git/config
+    want:
+      plane: refused fs.deny_write[{{P}}/repo/.git/config]
+      landlock: allow
+      cgroup/fanotify: allow
+    source: enforce-plane.md R12 (path_chmod beneath a deny_write target); supervisor.md R17 (recorded, not refused, below the plane)
+  - name: chown-bashrc
+    op: chown
+    path: repo/.bashrc
+    want:
+      plane: refused fs.deny_write[{{P}}/repo/.bashrc]
+      landlock: {verdict: allow, no_line: true}
+      cgroup/fanotify: {verdict: allow, no_line: true}
+    source: enforce-plane.md R12 (path_chown beneath a deny_write target); supervisor.md R17 (the chown family is notified under a write gate only)
+  - name: setxattr-profile
+    op: setxattr
+    path: repo/.profile
+    want:
+      plane: refused fs.deny_write[{{P}}/repo/.profile]
+    unasked:
+      landlock: no tier below the plane decides an xattr, and the guest's tmpfs has no user xattrs below 6.6 (ENOTSUP)
+      cgroup/fanotify: no tier below the plane decides an xattr, and the guest's tmpfs has no user xattrs below 6.6 (ENOTSUP)
+    source: enforce-plane.md R12 (inode_setxattr beneath a deny_write target)
+  - name: setfacl-zshrc
+    op: setfacl
+    path: repo/.zshrc
+    want:
+      plane: refused fs.deny_write[{{P}}/repo/.zshrc]
+      landlock: {verdict: allow, no_line: true}
+      cgroup/fanotify: {verdict: allow, no_line: true}
+    source: enforce-plane.md R12 (inode_set_acl from 6.2, inode_setxattr before, beneath a deny_write target)
+  # Last: a rename of the directory above every target of its repository.
+  - name: rename-git
+    op: rename
+    path: repo/.git
+    dest: repo/git.old
+    want:
+      all: refused
+    source: supervisor.md R15c (a rename moves whatever lies beneath it)

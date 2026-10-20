@@ -1,0 +1,141 @@
+# SPDX-License-Identifier: Apache-2.0
+# denywrite: the built-in deny_write set inside a write entry (SEMANTICS §2, agent-contract R20): refused by the
+# supervisor at tier landlock and on tier cgroup's listener, best effort (fs.assurance's default, ADR 0041 D1
+# (a)), and by the plane race-free where one decides. Its assurance-kernel variant is the same under
+# fs.assurance: kernel. The contract's own fs.deny_write entries (ADR 0071) share the set: repo/deploy/, reopened at
+# repo/deploy/tmp/ by a nested write entry, and the file repo/conf.yml (its hard-link alias is denywrite-alias.yaml);
+# blocked for ordinary commands; not race-free at the no-root tier.
+version: 2
+name: denywrite
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./repo/", "./repo/deploy/tmp/"]
+    deny_write: ["./repo/deploy/", "./repo/conf.yml"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [repo/.git/hooks, repo/deploy/tmp]
+files:
+  repo/.git/HEAD: |
+    ref: refs/heads/main
+  repo/.git/config: |
+    [core]
+  repo/.git/config-t: |
+    [core]
+  repo/.git/hooks/pre-commit: |
+    #!/bin/sh
+  repo/.git/hooks/pre-push: |
+    #!/bin/sh
+  repo/ok.txt: x
+  repo/ok2.txt: x
+  repo/deploy/a: x
+  repo/deploy/c: x
+  repo/conf.yml: x
+model:
+  write: [repo, repo/deploy/tmp]
+  net_declared: true
+  deny_write: [repo/.git/config, repo/.git/hooks, repo/deploy, repo/conf.yml]
+  deny_write_declared: [repo/deploy, repo/conf.yml]
+variants: [assurance-kernel, held]
+cells:
+  - name: write-open-git-config
+    op: write-open
+    path: repo/.git/config
+    want:
+      all: refused fs.deny_write[{{P}}/repo/.git/config]
+    source: supervisor.md R15c
+  - name: create-in-git-hooks
+    op: create
+    path: repo/.git/hooks/post-commit
+    want:
+      all: refused fs.deny_write[{{P}}/repo/.git/hooks]
+    source: supervisor.md R15c
+  - name: unlink-git-hook
+    op: unlink
+    path: repo/.git/hooks/pre-commit
+    want:
+      all: refused fs.deny_write[{{P}}/repo/.git/hooks]
+    source: supervisor.md R15c
+  - name: link-git-hook-out
+    op: link
+    path: repo/.git/hooks/pre-push
+    dest: repo/push-link
+    want:
+      all: refused
+    source: supervisor.md R15c (a hard link giving a file inside one a second name)
+  - name: write-open-in-write-entry
+    op: write-open
+    path: repo/ok.txt
+    want:
+      all: allow fs.write[./repo/]
+    source: 'SEMANTICS §2 (a write entry grants modifications beneath it)'
+  # truncate(2) is notified from Landlock ABI 3 and recorded (supervisor R17); config-t is no target of the built-in
+  # set, so every tier allows it. Below ABI 3 the filter refuses it, as every truncate (Cell.WantOn, E31).
+  - name: truncate-git-config
+    op: truncate
+    path: repo/.git/config-t
+    want:
+      all: allow fs.write[./repo/]
+    source: supervisor.md R17 (truncate recorded)
+  # The contract's own fs.deny_write entries (ADR 0071): refused as a built-in target is, named as declared; a
+  # nested write entry reopens its subtree.
+  - name: write-open-user-entry
+    op: write-open
+    path: repo/deploy/a
+    want:
+      all: refused fs.deny_write[./repo/deploy/]
+    source: ADR 0071 (2); supervisor.md R15c
+  - name: create-in-user-entry
+    op: create
+    path: repo/deploy/new
+    want:
+      all: refused fs.deny_write[./repo/deploy/]
+    source: ADR 0071 (2)
+  - name: rename-into-user-entry
+    op: rename
+    path: repo/ok2.txt
+    dest: repo/deploy/b
+    want:
+      all: refused
+    source: ADR 0071 (2) (a rename at either end)
+  - name: link-out-of-user-entry
+    op: link
+    path: repo/deploy/c
+    dest: repo/c-link
+    want:
+      all: refused
+    source: ADR 0071 (2) (a hard link giving a file inside the entry a second name)
+  - name: write-open-file-entry
+    op: write-open
+    path: repo/conf.yml
+    want:
+      all: refused fs.deny_write[./repo/conf.yml]
+    source: ADR 0071 (1) (a file entry)
+  - name: create-in-reopened-subtree
+    op: create
+    path: repo/deploy/tmp/x
+    want:
+      all: allow fs.write[./repo/deploy/tmp/]
+    source: ADR 0071 (3) (nearest wins)
+  - name: rename-reopened-name-away
+    op: rename
+    path: repo/deploy/tmp
+    dest: repo/tmp2
+    want:
+      all: refused fs.deny_write[./repo/deploy/]
+    source: ADR 0071 (3) (the reopening write entry's own name is the entry's, review RDW-4)
+  # Last: a rename of the directory above a target.
+  - name: rename-dir-above-target
+    op: rename
+    path: repo/.git
+    dest: repo/.git.old
+    want:
+      all: refused
+    source: supervisor.md R15c
