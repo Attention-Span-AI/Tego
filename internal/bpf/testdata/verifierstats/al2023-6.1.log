@@ -1,0 +1,3 @@
+verification time 7464 usec
+stack depth 96
+processed 26140 insns (limit 1000000) max_states_per_insn 4 total_states 927 peak_states 193 mark_read 27
