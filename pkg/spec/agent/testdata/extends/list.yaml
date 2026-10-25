@@ -1,0 +1,10 @@
+# A contract over a list of profiles: TestCanonicalOfMergedList pins its canonical form (list.golden), the merged
+# entries of both parents in list order with the list itself kept, and reloads it sealed (ADR 0066).
+version: 0
+name: listed
+extends: [base/py, team]
+command: [python3, agent.py]
+fs:
+  write: [./out]
+env:
+  set: {TEAM: listed}

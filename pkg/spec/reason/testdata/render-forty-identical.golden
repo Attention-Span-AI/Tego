@@ -1,0 +1,2 @@
+Tego, this run's access control, refused 40 actions:
+- x40 Tego refused open "/home/u/proj/.env": files under that path are not readable in this run (rule fs.deny_read[**/.env]).

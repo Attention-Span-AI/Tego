@@ -1,0 +1,12 @@
+# A contract that extends one profile by a single name: its canonical form and contract_hash are pinned by
+# TestSingleNameExtendsHashUnchanged (ADR 0066), so the list form of extends changes nothing for it.
+version: 0
+name: single
+extends: base/py
+command: [python3, agent.py]
+fs:
+  write: [./out]
+net:
+  allow: [api.example.com:443]
+limits:
+  wall: 30m

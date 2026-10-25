@@ -1,0 +1,5 @@
+version: 0
+exec:
+  allow: [python3]
+limits:
+  pids: 64

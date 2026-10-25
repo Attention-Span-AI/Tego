@@ -1,0 +1,35 @@
+write-outside-contract	Tego refused open "/etc/hosts": this run may not write to that path (rule fs.write).
+delete-outside-contract	Tego refused unlink "/home/u/proj/.git/config": this run may not delete files at that path (rule fs.deny_write[.git]).
+rename-outside-contract	Tego refused rename "/home/u/proj/src/main.go": this run may not rename files at that path (rule fs.write).
+mkdir-outside-contract	Tego refused mkdir "/home/u/.config/new": this run may not create directories at that path (rule fs.write).
+read-denied	Tego refused open "/home/u/.ssh/id_ed25519": files under that path are not readable in this run (rule fs.deny_read[~/.ssh]).
+path-unresolved	Tego refused open "/home/u/.ssh/id_ed25519": the path could not be resolved to a file the run's rules can judge, so it is refused (rule fs.deny_read[~/.ssh]).
+exec-not-allowed	Tego refused execve "/usr/bin/curl": that program is not allowed to run in this run (rule exec.deny[curl]).
+fs-gate	Tego refused open "/home/u/.ssh/id_ed25519": this run's action gate refused that file operation (rule fs.deny_read[~/.ssh]).
+exec-gate	Tego refused execve "/usr/bin/curl": this run's action gate refused running that program (rule exec.deny[curl]).
+net-not-allowed	Tego refused connect "93.184.216.34:443": that destination is not allowed in this run (rule unmatched).
+net-gate	Tego refused connect "93.184.216.34:443": this run's action gate refused that connection (rule unmatched).
+net-http	Tego refused request "POST api.example.com/v1/upload": that HTTP request is not allowed in this run (rule net.http[api.example.com]).
+ask-denied	Tego refused open "/home/u/proj/secrets.txt": it needed a person's approval, and the person declined (rule fs.ask[secrets.txt]).
+ask-timeout	Tego refused open "/home/u/proj/secrets.txt": it needed a person's approval, and no answer came in time (rule fs.ask[secrets.txt]).
+ask-unavailable	Tego refused open "/home/u/proj/secrets.txt": it needed a person's approval, and no one could be asked (rule fs.ask[secrets.txt]).
+ask-unreadable	Tego refused open "/home/u/proj/secrets.txt": it needed a person's approval, and the request could not be read reliably enough to ask (rule fs.ask[secrets.txt]).
+landlock-topology	Tego refused ptrace "4242": it reaches a process outside this run's sandbox (rule process-scope).
+limit-tokens	Tego refused an action: the run reached its token limit (rule limits).
+limit-cost	Tego refused an action: the run reached its cost limit (rule limits).
+limit-wall	Tego refused an action: the run reached its time limit (rule limits).
+limit-stall	Tego refused an action: the run made no progress for longer than its stall limit (rule limits).
+limit-repeats	Tego refused an action: the run repeated one action more times than its limit (rule limits).
+oom	Tego refused an action: the run reached its memory limit (rule limits).
+pids	Tego refused an action: the run reached its process limit (rule limits).
+credential-not-allowed	Tego refused request "POST attacker.example:443/v1/messages": that credential may not be sent there; Tego puts a key only into requests to the endpoints it is allowed for (rule credential[openai]).
+credential-revoked	Tego refused request "POST attacker.example:443/v1/messages": that credential was revoked in Tego's vault (rule credential[openai]).
+credential-unavailable	Tego refused request "POST attacker.example:443/v1/messages": Tego's vault does not hold that credential, or could not read it (rule credential[openai]).
+mcp-tool-denied	Tego refused tools/call "files delete_file": that MCP tool is not allowed in this run (rule mcp[files].tools.deny[delete_file]).
+model-route-changed	Tego refused request "POST llm-proxy.corp.example:8443/v1/messages": a person moved this model endpoint to another route while the request waited for approval; send it again (rule models[api.anthropic.com:443].routes).
+(no op)	Tego refused "/etc/shadow": files under that path are not readable in this run (rule fs.deny_read[/etc/shadow]).
+(no target)	Tego refused execve: that program is not allowed to run in this run (rule exec.allow).
+(nothing)	Tego refused an action: files under that path are not readable in this run.
+(unknown code)	Tego refused open "/x": the reason code is because (rule r).
+(rule with a space)	Tego refused execve "/bin/x": that program is not allowed to run in this run (rule "exec.args[git push]").
+(rule host-sockets)	Tego refused connect "/run/docker.sock": that destination is not allowed in this run (rule host-sockets).

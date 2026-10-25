@@ -1,0 +1,2 @@
+Tego, this run's access control, refused 1 action:
+- Tego refused open "/home/u/.ssh/id_ed25519": files under that path are not readable in this run (rule fs.deny_read[~/.ssh]).

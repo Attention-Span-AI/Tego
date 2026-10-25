@@ -1,0 +1,10 @@
+version: 0
+extends: root
+fs:
+  write: [/tmp]
+  deny_read: [~/.pypirc]
+env:
+  pass: [LANG]
+  set: {PYTHONDONTWRITEBYTECODE: "1"}
+limits:
+  memory: 1GiB
