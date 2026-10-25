@@ -1,0 +1,5 @@
+[
+ [{"type": "tool_use", "name": "Write", "input": {"file_path": "@W@/note.txt", "content": "written by the stand-in\n"}}],
+ [{"type": "tool_use", "name": "Bash", "input": {"command": "echo step-two; exit 3", "description": "A step that fails"}}],
+ [{"type": "text", "text": "SCENARIO-DONE: two steps taken in a bare session."}]
+]

@@ -1,0 +1,8 @@
+{
+  "cwd": "/work",
+  "hook_event_name": "SessionStart",
+  "permission_mode": "default",
+  "session_id": "abc123",
+  "source": "startup",
+  "transcript_path": "/home/user/.claude/projects/-work/abc123.jsonl"
+}

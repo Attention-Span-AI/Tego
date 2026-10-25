@@ -1,0 +1,12 @@
+{
+  "background_tasks": [],
+  "cwd": "/work",
+  "hook_event_name": "Stop",
+  "last_assistant_message": "Done again.",
+  "permission_mode": "default",
+  "prompt_id": "550e8400-e29b-41d4-a716-446655440000",
+  "session_crons": [],
+  "session_id": "abc123",
+  "stop_hook_active": true,
+  "transcript_path": "/home/user/.claude/projects/-work/abc123.jsonl"
+}

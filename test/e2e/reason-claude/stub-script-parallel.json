@@ -1,0 +1,7 @@
+[
+ [{"type": "tool_use", "name": "Write", "input": {"file_path": "@W@/a.txt", "content": "a\n"}},
+  {"type": "tool_use", "name": "Write", "input": {"file_path": "@W@/b.txt", "content": "b\n"}},
+  {"type": "tool_use", "name": "Bash", "input": {"command": "echo c", "description": "Print c"}}],
+ [{"type": "tool_use", "name": "Read", "input": {"file_path": "@W@/a.txt"}}],
+ [{"type": "text", "text": "SCENARIO-DONE: a parallel batch and a read."}]
+]

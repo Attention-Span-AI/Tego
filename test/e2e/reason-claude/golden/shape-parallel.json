@@ -1,0 +1,26 @@
+[
+  {
+    "turn": 0,
+    "tool_results": [],
+    "hook_reminders": 0,
+    "hook_feedback": 0
+  },
+  {
+    "turn": 1,
+    "tool_results": [
+      false,
+      false,
+      false
+    ],
+    "hook_reminders": 4,
+    "hook_feedback": 0
+  },
+  {
+    "turn": 2,
+    "tool_results": [
+      false
+    ],
+    "hook_reminders": 2,
+    "hook_feedback": 0
+  }
+]
