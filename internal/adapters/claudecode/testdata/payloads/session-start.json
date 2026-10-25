@@ -1,0 +1,9 @@
+{
+  "cwd": "/work",
+  "hook_event_name": "SessionStart",
+  "model": "claude-stub-1",
+  "permission_mode": "default",
+  "session_id": "abc123",
+  "source": "startup",
+  "transcript_path": "/home/user/.claude/projects/-work/abc123.jsonl"
+}

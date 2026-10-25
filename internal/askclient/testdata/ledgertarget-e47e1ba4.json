@@ -1,0 +1,87 @@
+[
+ {
+  "Op": "open",
+  "Target": "/home/u/.ssh/id_ed25519?token=abc",
+  "Out": "/home/u/.ssh/id_ed25519?token=abc"
+ },
+ {
+  "Op": "read",
+  "Target": "/srv/data/report.csv",
+  "Out": "/srv/data/report.csv"
+ },
+ {
+  "Op": "connect",
+  "Target": "10.0.0.1:443",
+  "Out": "10.0.0.1:443"
+ },
+ {
+  "Op": "first_write",
+  "Target": "api.example.com:443",
+  "Out": "api.example.com:443"
+ },
+ {
+  "Op": "http_request",
+  "Target": "api.example.com POST /v1/messages",
+  "Out": "api.example.com POST /v1/messages"
+ },
+ {
+  "Op": "http_request",
+  "Target": "api.example.com POST /v1/messages?key=sk-ant-0123456789abcdef\u0026x=1",
+  "Out": "api.example.com POST /v1/messages?redacted"
+ },
+ {
+  "Op": "http_request",
+  "Target": "api.example.com GET /v1/models/claude-3/versions/12345678901234567890",
+  "Out": "api.example.com GET /redacted"
+ },
+ {
+  "Op": "http_request",
+  "Target": "api.example.com GET /users/alice@example.com/token/ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+  "Out": "api.example.com GET /redacted"
+ },
+ {
+  "Op": "http_request",
+  "Target": "api.example.com POST",
+  "Out": "/redacted"
+ },
+ {
+  "Op": "http_request",
+  "Target": "api.example.com",
+  "Out": "/redacted"
+ },
+ {
+  "Op": "http_request",
+  "Target": " POST /x",
+  "Out": "/redacted"
+ },
+ {
+  "Op": "http_request",
+  "Target": "a  /x",
+  "Out": "/redacted"
+ },
+ {
+  "Op": "http_request",
+  "Target": "a b c d e",
+  "Out": "a b /redacted"
+ },
+ {
+  "Op": "http_request",
+  "Target": "api.example.com POST /v1/messages#frag",
+  "Out": "api.example.com POST /v1/messages"
+ },
+ {
+  "Op": "http_request",
+  "Target": "api.example.com POST https://evil.example/x?y=z",
+  "Out": "api.example.com POST /redacted?redacted"
+ },
+ {
+  "Op": "http_request",
+  "Target": "",
+  "Out": "/redacted"
+ },
+ {
+  "Op": "HTTP_REQUEST",
+  "Target": "api.example.com POST /v1/messages?key=1",
+  "Out": "api.example.com POST /v1/messages?key=1"
+ }
+]

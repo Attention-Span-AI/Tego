@@ -1,0 +1,19 @@
+{
+  "cwd": "/work",
+  "duration_ms": 12,
+  "hook_event_name": "PostToolUse",
+  "permission_mode": "default",
+  "prompt_id": "550e8400-e29b-41d4-a716-446655440000",
+  "session_id": "abc123",
+  "tool_input": {
+    "content": "file content",
+    "file_path": "/work/note.txt"
+  },
+  "tool_name": "Write",
+  "tool_response": {
+    "filePath": "/work/note.txt",
+    "type": "create"
+  },
+  "tool_use_id": "toolu_01ABC123",
+  "transcript_path": "/home/user/.claude/projects/-work/abc123.jsonl"
+}

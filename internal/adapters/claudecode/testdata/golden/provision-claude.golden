@@ -1,0 +1,136 @@
+{
+  "Argv": [
+    "/usr/local/bin/claude",
+    "--settings",
+    "/run/user/1000/tego/r-3f9c2a1b-0dllq06ts7400-k7m2pq/claude-settings.json",
+    "-p",
+    "--permission-mode",
+    "acceptEdits",
+    "do the task"
+  ],
+  "Env": [
+    "TEGO_CLAUDE_SETTINGS=/run/user/1000/tego/r-3f9c2a1b-0dllq06ts7400-k7m2pq/claude-settings.json"
+  ],
+  "Hook": [
+    "/opt/tego/bin/tego",
+    "hook",
+    "claude-code",
+    "--reason",
+    "/run/user/1000/tego/r-3f9c2a1b-0dllq06ts7400-k7m2pq/last-refusal.json",
+    "--mode",
+    "json"
+  ],
+  "Summary": "claude-settings.json with the hook on SessionStart, PostToolUse, PostToolUseFailure, PostToolBatch, Stop (--mode json); claude is given --settings /run/user/1000/tego/r-3f9c2a1b-0dllq06ts7400-k7m2pq/claude-settings.json",
+  "Files": [
+    {
+      "Dir": "runtime",
+      "Name": "claude-settings.json",
+      "Content": {
+        "disableAllHooks": false,
+        "env": {
+          "CLAUDE_CODE_SAFE_MODE": "0",
+          "CLAUDE_CODE_SIMPLE": "0"
+        },
+        "hooks": {
+          "PostToolBatch": [
+            {
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": "/opt/tego/bin/tego",
+                  "args": [
+                    "hook",
+                    "claude-code",
+                    "--reason",
+                    "/run/user/1000/tego/r-3f9c2a1b-0dllq06ts7400-k7m2pq/last-refusal.json",
+                    "--mode",
+                    "json"
+                  ],
+                  "timeout": 10
+                }
+              ]
+            }
+          ],
+          "PostToolUse": [
+            {
+              "matcher": "*",
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": "/opt/tego/bin/tego",
+                  "args": [
+                    "hook",
+                    "claude-code",
+                    "--reason",
+                    "/run/user/1000/tego/r-3f9c2a1b-0dllq06ts7400-k7m2pq/last-refusal.json",
+                    "--mode",
+                    "json"
+                  ],
+                  "timeout": 10
+                }
+              ]
+            }
+          ],
+          "PostToolUseFailure": [
+            {
+              "matcher": "*",
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": "/opt/tego/bin/tego",
+                  "args": [
+                    "hook",
+                    "claude-code",
+                    "--reason",
+                    "/run/user/1000/tego/r-3f9c2a1b-0dllq06ts7400-k7m2pq/last-refusal.json",
+                    "--mode",
+                    "json"
+                  ],
+                  "timeout": 10
+                }
+              ]
+            }
+          ],
+          "SessionStart": [
+            {
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": "/opt/tego/bin/tego",
+                  "args": [
+                    "hook",
+                    "claude-code",
+                    "--reason",
+                    "/run/user/1000/tego/r-3f9c2a1b-0dllq06ts7400-k7m2pq/last-refusal.json",
+                    "--mode",
+                    "json"
+                  ],
+                  "timeout": 10
+                }
+              ]
+            }
+          ],
+          "Stop": [
+            {
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": "/opt/tego/bin/tego",
+                  "args": [
+                    "hook",
+                    "claude-code",
+                    "--reason",
+                    "/run/user/1000/tego/r-3f9c2a1b-0dllq06ts7400-k7m2pq/last-refusal.json",
+                    "--mode",
+                    "json"
+                  ],
+                  "timeout": 10
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
