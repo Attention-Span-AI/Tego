@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tego.invalid/spec/reason/v1/reason-file.schema.json",
+  "title": "Tego reason file v1 (last-refusal.json)",
+  "description": "The reason file a run's ledger writer rewrites after refusals (spec/reason/REASON-CHANNEL.md section 2, ADR 0061). The top level is the latest refusal; recent is the newest refusals, oldest first, the latest last. At most 65536 bytes. pkg/spec/reason mirrors this file; TestReasonFileSchemaMatchesGo keeps their keys and required keys equal. Keys a later v1 adds are ignored by older readers.",
+  "type": "object",
+  "required": ["v", "run", "seq", "ts", "pid", "op", "target", "reason", "rule", "text", "refusals", "recent"],
+  "properties": {
+    "v": {"type": "integer", "const": 1, "description": "The reason file's own version; not a record minor."},
+    "run": {"type": "string", "description": "The run id."},
+    "seq": {"type": "integer", "minimum": 1, "description": "The latest refused line's ledger seq; it only grows across rewrites."},
+    "ts": {"type": "string", "format": "date-time", "description": "The latest refused line's ts, RFC 3339 with nanoseconds, UTC."},
+    "pid": {"type": "integer", "description": "The latest refused line's pid."},
+    "op": {"type": "string", "maxLength": 4096},
+    "target": {"type": "string", "maxLength": 4096, "description": "A string the agent chose; one longer than 4096 bytes is cut and ends with its length in bytes."},
+    "reason": {"type": "string", "description": "A code of the closed set (REASON-CHANNEL.md)."},
+    "rule": {"type": "string", "maxLength": 4096},
+    "mechanism": {"type": "string"},
+    "decision_plane": {"type": "string"},
+    "command_rule": {"type": "string"},
+    "command_match": {"type": "string"},
+    "text": {"type": "string", "description": "One plain sentence for the latest refusal (pkg/spec/reason Text)."},
+    "refusals": {"type": "integer", "minimum": 1, "description": "How many refused lines the run's ledger had written; a reader keeps it as its cursor."},
+    "recent": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {"$ref": "#/$defs/entry"}
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "required": ["seq", "ts", "pid", "op", "target", "reason", "rule", "text"],
+      "properties": {
+        "seq": {"type": "integer", "minimum": 1},
+        "ts": {"type": "string", "format": "date-time"},
+        "pid": {"type": "integer"},
+        "op": {"type": "string", "maxLength": 4096},
+        "target": {"type": "string", "maxLength": 4096},
+        "reason": {"type": "string"},
+        "rule": {"type": "string", "maxLength": 4096},
+        "text": {"type": "string"},
+        "mechanism": {"type": "string"},
+        "command_rule": {"type": "string"},
+        "command_match": {"type": "string"}
+      }
+    }
+  }
+}

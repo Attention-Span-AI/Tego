@@ -1,0 +1,29 @@
+version: 0
+name: listed
+extends:
+  - base/py
+  - team
+command:
+  - python3
+  - agent.py
+fs:
+  write:
+    - /tmp
+    - /srv/team
+    - ./out
+  deny_read:
+    - ~/.pypirc
+    - ~/.team-token
+exec:
+  allow:
+    - python3
+env:
+  pass:
+    - LANG
+  set:
+    PYTHONDONTWRITEBYTECODE: "1"
+    TEAM: listed
+limits:
+  memory: 1GiB
+  pids: 64
+  wall: 2h

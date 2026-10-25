@@ -1,0 +1,27 @@
+version: 0
+name: single
+extends: base/py
+command:
+  - python3
+  - agent.py
+fs:
+  write:
+    - /tmp
+    - ./out
+  deny_read:
+    - ~/.pypirc
+net:
+  allow:
+    - api.example.com:443
+exec:
+  allow:
+    - python3
+env:
+  pass:
+    - LANG
+  set:
+    PYTHONDONTWRITEBYTECODE: "1"
+limits:
+  memory: 1GiB
+  pids: 64
+  wall: 30m

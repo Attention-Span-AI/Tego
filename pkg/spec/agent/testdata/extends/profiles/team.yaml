@@ -1,0 +1,9 @@
+version: 0
+extends: root
+fs:
+  write: [/srv/team]
+  deny_read: [~/.team-token]
+env:
+  set: {TEAM: team}
+limits:
+  wall: 2h
