@@ -1,0 +1,9 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{define "content"}}{{with .Data}}
+<section class="panel"><div class="empty" role="alert">
+  <div class="glyph glyph-danger">{{template "i" "i-triangle-alert"}}</div>
+  <h3>{{.Heading}}</h3>
+  <p>{{.Text}}</p>
+  <a class="btn" href="/">Back to the overview</a>
+</div></section>
+{{end}}{{end}}

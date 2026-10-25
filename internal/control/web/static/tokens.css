@@ -1,0 +1,153 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* tokens.css: the dashboard's design tokens; every colour in the other stylesheets is one of these.
+   One meaning per colour, on every page (the security dashboard's colour story):
+   - red means High, or a sensitive action got through, or the record is broken or lost: --c-danger, the only red;
+   - amber means it needs you, or Medium: --c-warn (asked, waiting);
+   - grey means Low or routine: --c-text2/--c-sunken (allowed, observed, timed out, a folded background row);
+   - green means kept safe, and nothing else: --c-stopped ("Protected", a refusal that kept a secret or a send in);
+   - states that are only states (running, live, chain verified, a block in force) are neutral: --c-success is a grey;
+   - links are --c-link (blue), a colour no state uses; orange --c-accent is the brand (logo, active tab, focus).
+   Every text token clears WCAG AA (4.5:1) on its surface in both themes. Dark values are written twice: under
+   prefers-color-scheme (unless the person chose light) and under data-theme="dark" (the header switch, theme.js). */
+:root {
+  /* type: system stacks only, no web fonts */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Ubuntu Sans", "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Ubuntu Sans Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-md: 0.875rem;
+  --text-lg: 1rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.75rem;
+  --leading-tight: 1.25;
+  --leading: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  /* space: 4 px base */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px;
+  /* radius */
+  --radius-sm: 4px; --radius: 6px; --radius-lg: 10px; --radius-full: 999px;
+  /* size */
+  --target: 44px; --control-h: 32px; --row-dense: 30px; --topbar-h: 52px; --nav-w: 216px; --content-max: 1240px;
+  --c-bg: #FAFAF9;
+  --c-surface: #FFFFFF;
+  --c-sunken: #F4F3F0;
+  --c-border: #E7E5E0;
+  --c-control: #878C99;
+  --c-text: #2D3142;
+  --c-text2: #4F5767;
+  --c-text3: #5F6676;
+  --c-accent: #F26327;
+  --c-accent-text: #A04800;
+  --c-link: #1D5BC4;
+  --c-accent-soft: #FDF0E9;
+  --c-primary: #2D3142;
+  --c-on-primary: #FFFFFF;
+  --c-chrome: #2D3142;
+  --c-on-chrome: #FFFFFF;
+  /* The "Tego asks you" band: the page's opposite, so a waiting request stands out in either theme. */
+  --c-ask-bar: #2D3142;
+  --c-on-ask-bar: #FFFFFF;
+  --c-danger: #BE123C;
+  --c-danger-soft: #FEF0F3;
+  --c-danger-edge: #E11D48;
+  --c-success: #4F5767;
+  --c-success-soft: #F4F3F0;
+  --c-stopped: #0F6E3D;
+  --c-stopped-soft: #EDF7F1;
+  --c-stopped-edge: #22A35A;
+  --c-warn: #865700;
+  --c-warn-soft: #FBF4E4;
+  --c-warn-edge: #B7791F;
+  --c-info: #1A5FD7;
+  --c-info-soft: #EEF3FD;
+  --c-focus: #A04800;
+  --shadow-1: 0 1px 2px rgb(16 24 40 / 0.05);
+  --shadow-2: 0 8px 24px rgb(16 24 40 / 0.12), 0 2px 6px rgb(16 24 40 / 0.06);
+  color-scheme: light;
+  /* charts (charts.go): their own steps of the colour story, checked as one palette (adjacent kinds, and stopped
+     against got-through, apart for red-green colour blindness as well as full colour) on this theme's surface */
+  --ch-stop: #22A35A; --ch-leak: #BE123C;
+  --ch-track: #ECE9E4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-bg: #0E131C;
+    --c-surface: #151B26;
+    --c-sunken: #1B2230;
+    --c-border: #283143;
+    --c-control: #6B7489;
+    --c-text: #E9EBEF;
+    --c-text2: #B3BAC6;
+    --c-text3: #959DAB;
+    --c-accent: #F26327;
+    --c-accent-text: #FFA25E;
+    --c-link: #8AB4F8;
+    --c-accent-soft: #2B1C17;
+    --c-primary: #E9EBEF;
+    --c-on-primary: #151B26;
+    --c-chrome: #2A3345;
+    --c-on-chrome: #F3F4F6;
+    --c-ask-bar: #E9EBEF;
+    --c-on-ask-bar: #151B26;
+    --c-danger: #FF7B93;
+    --c-danger-soft: #2E1A21;
+    --c-danger-edge: #F43F5E;
+    --c-success: #B3BAC6;
+    --c-success-soft: #1B2230;
+    --c-stopped: #5CCB8E;
+    --c-stopped-soft: #14261F;
+    --c-stopped-edge: #3FB878;
+    --c-warn: #E5B54E;
+    --c-warn-soft: #29231A;
+    --c-warn-edge: #C99A2E;
+    --c-info: #86AEF7;
+    --c-info-soft: #172238;
+    --c-focus: #F26327;
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-2: 0 12px 32px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.35);
+    color-scheme: dark;
+    --ch-stop: #34A86B; --ch-leak: #C8243F;
+    --ch-track: #242D3D;
+  }
+}
+:root[data-theme="dark"] {
+  --c-bg: #0E131C;
+  --c-surface: #151B26;
+  --c-sunken: #1B2230;
+  --c-border: #283143;
+  --c-control: #6B7489;
+  --c-text: #E9EBEF;
+  --c-text2: #B3BAC6;
+  --c-text3: #959DAB;
+  --c-accent: #F26327;
+  --c-accent-text: #FFA25E;
+  --c-link: #8AB4F8;
+  --c-accent-soft: #2B1C17;
+  --c-primary: #E9EBEF;
+  --c-on-primary: #151B26;
+  --c-chrome: #2A3345;
+  --c-on-chrome: #F3F4F6;
+  --c-ask-bar: #E9EBEF;
+  --c-on-ask-bar: #151B26;
+  --c-danger: #FF7B93;
+  --c-danger-soft: #2E1A21;
+  --c-danger-edge: #F43F5E;
+  --c-success: #B3BAC6;
+  --c-success-soft: #1B2230;
+  --c-stopped: #5CCB8E;
+  --c-stopped-soft: #14261F;
+  --c-stopped-edge: #3FB878;
+  --c-warn: #E5B54E;
+  --c-warn-soft: #29231A;
+  --c-warn-edge: #C99A2E;
+  --c-info: #86AEF7;
+  --c-info-soft: #172238;
+  --c-focus: #F26327;
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 12px 32px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.35);
+  color-scheme: dark;
+  --ch-stop: #34A86B; --ch-leak: #C8243F;
+  --ch-track: #242D3D;
+}

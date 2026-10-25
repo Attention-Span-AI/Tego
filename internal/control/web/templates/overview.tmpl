@@ -1,0 +1,55 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* The Overview is six live regions (regions.go), so a live run's new line resends the parts it changed (the Running
+     now table, a count), not the page: the headline, the tiles (or, with no run yet, the empty state), Running now,
+     Waiting on you, Recent runs (the newest runs that are not running: a running run is under Running now) and Recent
+     refusals. A panel renders nothing while the ledger has no run, and a grid with no panel in it is hidden (mvp.css, .ov-grid). */}}
+{{define "content"}}{{template "lr" (index $.L "r-ov-head")}}{{template "r-ov-head" $}}</div>
+{{template "lr" (index $.L "r-ov-tiles")}}{{template "r-ov-tiles" $}}</div>
+<div class="grid ov-grid ov-now">{{template "lr" (index $.L "r-ov-live")}}{{template "r-ov-live" $}}</div>{{template "lr" (index $.L "r-ov-asks")}}{{template "r-ov-asks" $}}</div></div>
+<div class="grid ov-grid">{{template "lr" (index $.L "r-ov-recent")}}{{template "r-ov-recent" $}}</div>{{template "lr" (index $.L "r-ov-refusals")}}{{template "r-ov-refusals" $}}</div></div>
+{{end}}
+{{define "r-ov-head"}}{{with .Data}}<div class="head"><div>
+{{if .Pending}}<h1>{{len .Pending}} {{plural (len .Pending) "needs" "need"}} you</h1>{{else if .Leaked}}<h1 class="verdict verdict-leak ov-verdict">{{template "i" "i-triangle-alert"}}<span>{{.Leaked}} {{plural .Leaked "run" "runs"}} leaked secrets</span></h1>{{else if .Grid.High}}<h1 class="ov-h"><a class="sev sev-High sev-lg" href="/detections?sev=high">{{.Grid.High}} High</a> blocked</h1>{{else if .Grid.Medium}}<h1 class="ov-h"><a class="sev sev-Medium sev-lg" href="/detections?sev=medium">{{.Grid.Medium}} Medium</a> blocked</h1>{{else if .Watched}}<h1>{{.Watched}} {{plural .Watched "run" "runs"}} read secrets</h1>{{else if .Live}}<h1>All quiet: {{len .Live}} running</h1>{{else if .Total}}<h1>All quiet</h1>{{else}}<h1>Overview</h1>{{end}}
+<p class="lede">{{len .Live}} running · {{.Total}} {{plural .Total "run" "runs"}} · {{.Refused}} blocked</p></div></div>{{end}}{{end}}
+{{define "r-ov-tiles"}}{{with .Data}}{{if not .Total}}
+<section class="panel"><div class="empty">
+  <div class="glyph">{{template "i" "i-activity"}}</div>
+  <h3>No runs yet</h3>
+  <details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>tego run agent.yaml -- claude</code></div><div class="cli"><code>tego watch -- codex</code></div></details>
+</div></section>
+{{else}}
+<section aria-labelledby="h-glance"><h2 id="h-glance" class="sr">At a glance</h2>
+<div class="tiles">
+  <div class="tile{{if .Pending}} attn{{end}}"><span class="label">{{template "i" "i-hand"}}Needs you</span><span class="value"><a href="/approvals" aria-label="{{len .Pending}} waiting for you, open Approvals">{{len .Pending}}</a></span><span class="meta">{{if .Pending}}Waiting{{else}}None waiting{{end}}</span></div>
+  <div class="tile"><span class="label">{{template "i" "i-activity"}}Running now</span><span class="value"><a href="/runs?state=running" aria-label="{{len .Live}} running now, list them">{{len .Live}}</a></span><span class="meta">of {{.Total}} {{plural .Total "run" "runs"}}</span></div>
+  <div class="tile"><span class="label">{{template "i" "i-ban"}}Blocked</span><span class="value"><a href="/logs?verdict=refused" aria-label="{{.Refused}} blocked, open Logs">{{.Refused}}</a></span><span class="meta" title="Routine: system lookups and probes">{{.BgTotal}} routine</span><span class="tile-spark" title="Blocked per run, last {{.Charts.SparkRuns}} runs">{{template "spark" .Charts.RefSpark}}{{$runs := .Charts.SparkRuns}}{{with .Charts.RefSpark}}{{if .Line}}<span class="ch-spcap" aria-hidden="true">Each of the last {{$runs}} runs</span>{{end}}{{end}}</span></div>
+  {{with .Chain}}{{if .Broken}}<div class="tile chain-bad" role="alert"><span class="label">{{template "i" "i-triangle-alert"}}Record</span><span class="value chain-v"><a href="/runs/{{pathEsc .Broken.Run}}">Broken · <span class="mono">{{rid .Broken.Run}}</span></a></span><span class="meta" title="{{.Broken.Reason}}">{{if .Broken.AtLine}}Broken at #{{.Broken.Line}}{{else}}Broken after #{{.Broken.Line}}{{end}}</span></div>
+  {{else if .Verifying}}<div class="tile" aria-busy="true"><span class="label">{{template "i" "i-link"}}Record</span><span class="value chain-v"><a href="/runs?state=ended">Verifying…</a></span><span class="meta" title="Newest {{$.Data.MaxChain}} ended runs">{{.Verifying}} checking{{if .Checked}} · {{.Checked}} verified{{end}}</span></div>
+  {{else if .Checked}}<div class="tile"><span class="label">{{template "i" "i-link"}}Record</span><span class="value chain-v"><a href="/runs?state=ended">Verified · {{.Checked}} {{plural .Checked "run" "runs"}}</a></span><span class="meta" title="Each ended run's hash chain and its chain.log anchor, for the newest {{$.Data.MaxChain}} ended runs at most{{if .Skipped}}; {{.Skipped}} not checked (running, lost or older){{end}}">{{with len $.Data.Live}}{{.}} running, checked at end{{else}}Hash chain checked{{end}}</span></div>
+  {{else}}<div class="tile"><span class="label">{{template "i" "i-link"}}Record</span><span class="value chain-v"><a href="/runs">Not checked</a></span><span class="meta" title="{{.Reason}}">{{if .Reason}}{{.Reason}}{{else}}No ended run{{end}}</span></div>{{end}}{{end}}
+</div></section>
+{{with .Charts}}<section class="ch-row" aria-label="Blocked and secrets">
+<figure class="panel ch-fig"><figcaption class="ch-cap"><span class="ch-h">Detections</span><a class="link" href="/detections">All</a></figcaption>
+<table class="t sev-grid"><caption class="sr">Blocked actions by severity and channel</caption><thead><tr><th scope="col"><span class="sr">Severity</span></th>{{range $.Data.Grid.Channels}}<th scope="col" class="num">{{.}}</th>{{end}}<th scope="col" class="num">All</th></tr></thead>
+<tbody>{{range $.Data.Grid.Rows}}{{$sev := .Sev}}<tr><th scope="row"><span class="sev sev-{{.Sev}}">{{.Sev}}</span></th>{{range $i, $n := .Cells}}<td class="num" data-label="{{index $.Data.Grid.Channels $i}}">{{if $n}}<a href="/detections?sev={{lower $sev}}&amp;ch={{lower (index $.Data.Grid.Channels $i)}}" aria-label="{{$n}} {{$sev}}, {{index $.Data.Grid.Channels $i}}">{{$n}}</a>{{else}}<span class="sev-0">0</span>{{end}}</td>{{end}}<td class="num" data-label="All">{{if .Sum}}<a href="/detections?sev={{lower .Sev}}" aria-label="{{.Sum}} {{.Sev}}, all channels"><b>{{.Sum}}</b></a>{{else}}<span class="sev-0">0</span>{{end}}</td></tr>{{end}}</tbody></table></figure>
+<figure class="panel ch-fig"><figcaption class="ch-cap"><span class="ch-h">Secrets</span>{{$runs := .SparkRuns}}{{with .SecretSpark}}{{if .Line}}<span class="ch-n ch-sp" title="Protected per run, last {{$runs}} runs"><span aria-hidden="true">Protected, last {{$runs}} runs</span>{{template "spark" .}}</span>{{end}}{{end}}</figcaption>{{template "chart" .SecretsBar}}
+<ul class="ch-legend"><li><span class="sw ch-refused"></span>Protected <b>{{.Protected}}</b></li><li><span class="sw ch-leak"></span>Exposed <b>{{.Exposed}}</b></li></ul></figure>
+</section>{{end}}
+{{end}}{{end}}{{end}}
+{{define "r-ov-live"}}{{with .Data}}{{if .Total}}<section class="panel s8" aria-labelledby="h-running"><div class="panel-head"><h2 id="h-running">Running now</h2><a class="link" href="/runs">All runs</a></div>
+{{if .Live}}{{template "runtable" (runtab .Live .Now .V)}}{{else}}<div class="panel-body"><p class="soft">Nothing running</p></div>{{end}}
+</section>{{end}}{{end}}{{end}}
+{{define "r-ov-asks"}}{{with .Data}}{{if .Total}}<section class="panel s4" aria-labelledby="h-asks"><div class="panel-head"><h2 id="h-asks">Waiting on you</h2><a class="link" href="/approvals">All approvals</a></div>
+{{if .Pending}}<ul class="list">{{range .Pending}}<li class="wait-row" data-k="{{.Run}}-{{.AskID}}"><div class="grow"><span class="title ellip">{{.Agent}} wants to {{askVerb .Op .Rule .Hold}}</span><span class="meta ellip">{{rid .Run}} · {{clock .TS}}</span></div><div class="tgt">{{template "sptv" (spt .Target (index $.AskMeta .Run).Home 44)}}</div><a class="btn btn-primary" href="/approvals#{{.AskID}}" aria-label="Review: {{.Agent}} wants to {{askVerb .Op .Rule .Hold}}">Review</a></li>{{end}}</ul>
+{{else}}<div class="panel-body"><p class="soft">None waiting</p></div>{{end}}
+</section>{{end}}{{end}}{{end}}
+{{define "r-ov-recent"}}{{with .Data}}{{if .Total}}<section class="panel s8" aria-labelledby="h-recent"><div class="panel-head"><h2 id="h-recent">Recent runs</h2><span class="row">{{if .CmpURL}}<a class="link" href="{{.CmpURL}}">Compare</a>{{end}}<a class="link" href="/runs">All runs</a></span></div>
+{{if .Recent}}{{template "runtable" (runtab .Recent .Now .V)}}{{else}}<div class="panel-body"><p class="soft">None ended</p></div>{{end}}
+</section>{{end}}{{end}}{{end}}
+{{define "r-ov-refusals"}}{{with .Data}}{{if .Total}}<section class="panel s4" aria-labelledby="h-ref"><div class="panel-head"><h2 id="h-ref">Newest High and Medium</h2><a class="link" href="/detections">Detections</a></div>
+{{if .Top}}<ul class="list iv-linked">{{range .Top}}<li><span class="sev sev-{{.Severity}}">{{.Severity}}</span><a class="dt-what" href="/runs/{{pathEsc .Run}}/investigate/{{.FirstSeq}}"><span class="dt-verb">{{.Verb}}</span> {{template "sptv" (spt (mask (tilde .Subject)) .Home 60)}}</a>{{template "porttag" .}}<time class="soft" datetime="{{iso .Last}}" title="{{stamp .Last}}">{{when .Last $.Data.Now}}</time></li>{{end}}</ul>
+{{else}}<div class="panel-body"><p class="soft">Nothing High or Medium</p></div>{{end}}
+</section>{{end}}{{end}}{{end}}
+{{/* refrow is one refusal row (refRow): the row's run home, for the path shortener, the row, and its program fold:
+one program refused under several paths reads as its name, the paths in the title. */}}
+{{define "refrow"}}{{$home := .Run}}{{$f := .Fold}}{{with .V}}<li class="{{if .SystemLookup}}sys{{end}}" data-k="{{.Run}}-{{.Seq}}">{{template "i" "i-ban"}}<div class="grow"><span class="title rf-t"><span class="op">{{.Op}}</span>{{if $f.Name}}<span class="ut rf-prog" title="{{join $f.Paths ", "}}">{{$f.Name}}</span>{{else}}{{template "sptv" (spt (shown .Event) $home 44)}}{{end}}{{if gt .Count 1}}<span class="xn" title="{{.Count}} times">×{{.Count}}</span>{{end}}</span><span class="meta"><span class="clamp"><span>{{.Agent}} · <span title="{{.Rule}}">{{if .Label}}{{.Label}}{{else}}{{ruleName .Rule}}{{end}}</span>{{if .SystemLookup}} · <span class="tag-sys">system lookup</span>{{end}}</span></span></span></div><a class="link nowrap" href="/runs/{{pathEsc .Run}}/refusals" aria-label="Open the refusals of run {{rid .Run}}">Run</a></li>{{end}}{{end}}
