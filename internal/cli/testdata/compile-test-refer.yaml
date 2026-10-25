@@ -1,0 +1,74 @@
+version: 0
+tests:
+  - name: a hard link of a file-level write entry into the write directory
+    action: fs.link
+    path: a.txt
+    dest: out/a2.txt
+    expect: refused
+    rule: unmatched
+  - name: a hard link beside it
+    action: fs.link
+    path: a.txt
+    dest: b.txt
+    expect: refused
+    rule: unmatched
+  - name: a hard link into the exec.allow directory, where the file gains EXECUTE
+    action: fs.link
+    path: out/x.txt
+    dest: out/bin/x2
+    expect: refused
+    rule: fs.write[./out/]
+  - name: a rename into it
+    action: fs.rename
+    path: out/x.txt
+    dest: out/bin/x3
+    expect: refused
+    rule: fs.write[./out/]
+  - name: a hard link out of it, which loses EXECUTE
+    action: fs.link
+    path: out/bin/tool
+    dest: out/tool2
+    expect: allow
+    rule: fs.write[./out/]
+  - name: a hard link inside the write directory
+    action: fs.link
+    path: out/x.txt
+    dest: out/y.txt
+    expect: allow
+    rule: fs.write[./out/]
+  - name: an atomic replace of the exec.allow file entry, a rename within one directory that REFER does not compare
+    action: fs.rename
+    path: out/tool.new
+    dest: out/tool
+    expect: allow
+    rule: fs.write[./out/]
+  - name: a move onto it from another directory, compared at its directory and never at the name it replaces
+    action: fs.rename
+    path: out/sub/t2
+    dest: out/tool
+    expect: allow
+    rule: fs.write[./out/]
+  - name: a directory moved into the exec.allow directory
+    action: fs.rename
+    path: out/sub
+    dest: out/bin/sub
+    dir: true
+    expect: refused
+    rule: fs.write[./out/]
+  - name: the file-level write entry renamed into the write directory, which its own directory grants no REFER for
+    action: fs.rename
+    path: a.txt
+    dest: out/a3.txt
+    expect: refused
+    rule: unmatched
+  - name: a file moved onto the file-level write entry
+    action: fs.rename
+    path: out/x.txt
+    dest: a.txt
+    expect: refused
+    rule: unmatched
+  - name: the file-level write entry deleted, which its directory grants no REMOVE_FILE for
+    action: fs.delete
+    path: a.txt
+    expect: refused
+    rule: unmatched

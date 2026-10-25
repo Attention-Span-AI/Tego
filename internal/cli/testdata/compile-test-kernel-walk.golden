@@ -1,0 +1,24 @@
+tiers landlock, cgroup, bpflsm (--tier)
+bpflsm: fs, exec and exec.map answered from the plane's rows and the Landlock floor under them (decision_plane lsm: tier bpflsm needs LSM mode); exec.anonymous and network answer from the policy model; deny_read's name entries answered from the plane's name rows and the climb to their scopes, a file created after compile at a covered name included
+PASS 01 a rename through a dangling link into the directory it names, made later [dest resolved to <dir>/out/realbin/later/x]
+PASS 02 a link through it [dest resolved to <dir>/out/realbin/later/y]
+PASS 03 control, through the live link out/u into a subdirectory made later [dest resolved to <dir>/out/realbin/later2/x]
+PASS 04 a write through a dangling final link to a name outside every write entry [path resolved to <dir>/outside/new]
+PASS 05 control, the same name written directly
+PASS 06 a write through a dangling final link into the write entry [path resolved to <dir>/out/created]
+PASS 07 a rename to a new name that cleans to its own, .. after a symlink [dest resolved to <dir>/out/realbin/x]
+PASS 08 a link to such a name [dest resolved to <dir>/out/realbin/y]
+PASS 09 a rename to another name through the link's parent [dest resolved to <dir>/out/realbin/x2]
+PASS 10 a link to another name through it [dest resolved to <dir>/out/realbin/y2]
+PASS 11 a link into the link's target [dest resolved to <dir>/out/realbin/sub/z]
+PASS 12 a link through the real directory's own parent
+PASS 13 a rename whose .. after a symlink climbs into the exec.allow directory's parent [dest resolved to <dir>/out/realbin/x]
+PASS 14 control, a rename within the write entry
+PASS 15 a link whose source ends in /. after a symlink out of the write entry [path resolved to <dir>/outside/sub]
+PASS 16 a link whose source ends in /.. after it [path resolved to <dir>/outside]
+PASS 17 control, a link of the symlink itself, which the source does not follow
+PASS 18 a mkdir of the dangling link spelled with a slash makes nothing where it leads (EEXIST)
+PASS 19 a delete of a link out of the write entry spelled with a slash is asked at the link (ENOTDIR)
+PASS 20 a rename onto it spelled with a slash
+PASS 21 a link onto the dangling link spelled with a slash
+21 rows: 21 passed, 0 failed

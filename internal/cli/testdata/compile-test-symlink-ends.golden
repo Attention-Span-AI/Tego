@@ -1,0 +1,11 @@
+tiers landlock, cgroup, bpflsm (--tier)
+bpflsm: fs, exec and exec.map answered from the plane's rows and the Landlock floor under them (decision_plane lsm: tier bpflsm needs LSM mode); exec.anonymous and network answer from the policy model; deny_read's name entries answered from the plane's name rows and the climb to their scopes, a file created after compile at a covered name included
+PASS A, the atomic swap of the symlink write entry out/cur, a rename within one directory
+PASS B, a move onto the symlink entry from another directory, compared at out and never at the name it replaces
+PASS C, a hard link of the symlink itself into the exec.allow directory, where it gains EXECUTE
+PASS D, a move of the symlink itself into the exec.allow directory
+PASS E, a move onto the symlink entry cur, whose directory no write entry covers
+PASS F, a move of the symlink entry cur into the write directory
+PASS the symlink entry cur deleted
+PASS the symlink write entry out/cur deleted, inside the write directory
+8 rows: 8 passed, 0 failed

@@ -1,0 +1,98 @@
+version: 0
+tests:
+  - name: a hard link inside the write entry
+    action: fs.link
+    path: out/a.txt
+    dest: out/b.txt
+    expect: allow
+    rule: fs.write[out/]
+  - name: a hard link out of the nested deny_read, which only tier 1 leaves unenforced
+    action: fs.link
+    path: out/keys/token
+    dest: out/token
+    expect: allow
+  - name: a hard link of a file outside every write entry
+    action: fs.link
+    path: notes.md
+    dest: out/notes.md
+    expect: refused
+    rule: unmatched
+  - name: a chmod in the write entry
+    action: fs.attr
+    path: out/report.md
+    expect: allow
+    rule: fs.write[out/]
+  - name: a chmod outside every entry, which no tier refuses
+    action: fs.attr
+    path: notes.md
+    expect: allow
+    rule: unmatched
+  - name: a TCP socket under the net section
+    action: net.socket
+    family: AF_INET
+    type: SOCK_STREAM
+    expect: allow
+  - name: an SCTP socket, outside the allowlist
+    action: net.socket
+    family: AF_INET
+    type: SOCK_STREAM
+    protocol: IPPROTO_SCTP
+    expect: refused
+    rule: unmatched
+  - name: a packet socket
+    action: net.socket
+    family: AF_PACKET
+    type: SOCK_RAW
+    expect: refused
+  - name: a ping socket with no ICMP entry
+    action: net.socket
+    family: AF_INET
+    type: SOCK_DGRAM
+    protocol: IPPROTO_ICMP
+    expect: refused
+  - name: a unix socketpair
+    action: net.socket
+    family: AF_UNIX
+    type: SOCK_STREAM
+    socketpair: true
+    expect: allow
+  - name: a datagram to the declared destination
+    action: net.send
+    host_port: 127.0.0.1:8080
+    expect: allow
+    rule: net[127.0.0.1:8080]
+  - name: a datagram to an undeclared one
+    action: net.send
+    host_port: 127.0.0.1:9
+    expect: refused
+    rule: unmatched
+  - name: a datagram to an undeclared abstract socket
+    action: net.send
+    path: unix:@log
+    expect: refused
+  - name: an anonymous image, which exec.allow cannot name
+    action: exec.anonymous
+    expect: refused
+    rule: exec-anon
+  - name: an anonymous image is allowed
+    action: exec.anonymous
+    expect: allow
+  - name: a chmod of a deny_write target, which only a decision plane refuses
+    action: fs.attr
+    path: out/.git/config
+    expect: refused
+  - name: a second name for a deny_write target
+    action: fs.link
+    path: out/.git/config
+    dest: out/config.copy
+    expect: refused
+  - name: a connect to an undeclared abstract unix socket
+    action: net.connect
+    path: unix:@dbus-session
+    expect: refused
+    rule: unmatched
+  - name: a connect to an undeclared pathname unix socket
+    action: net.connect
+    path: unix:/run/docker.sock
+    expect: refused
+    rule: unmatched

@@ -1,0 +1,12 @@
+
+tier-2 builds (bpf.linger 5m; 2 run rings charge 4MiB of bpf.ring_budget 256MiB; their programs and maps charge 7.8MiB with 4 objects unreported):
+  aaaa  in use by a run; 17 programs, 9 links, 2 run rings (4MiB), 7 capture probes on 1 library, memlock 1.2MiB (/sys/fs/bpf/tego/aaaa)
+  bbbb  idle 1m30s, removed in about 3m30s by its timer (pid 4242); tego gc --builds removes it now; 17 programs, 9 links, memlock 1.1MiB (/sys/fs/bpf/tego/bbbb)
+  cccc  idle 1m30s, past bpf.linger in about 3m30s; no timer runs for it: the next run, tego stop or tego gc removes it after that; tego gc --builds removes it now; 17 programs, 9 links, memlock 1.1MiB (/sys/fs/bpf/tego/cccc)
+  dddd  idle 1h0m0s, past bpf.linger: the next sweep removes it; tego gc --builds removes it now; 0 programs, 0 links, memlock 4.0KiB (/sys/fs/bpf/tego/dddd)
+  eeee  idle 1h0m0s, kept: a run it enforces is alive; tego gc --builds does not remove it while that holds; its timer runs (pid 77); 17 programs, 9 links, cgroup links of 1 run(s) r-orphan, memlock 1.1MiB (/sys/fs/bpf/tego/eeee)
+  ffff  idle 1h0m0s, kept: its run set cannot be read (ADR 0022 (5)): map key size 4, want 8; tego gc --builds does not remove it while that holds; no timer runs for it; 17 programs, 9 links, memlock 878.9KiB (/sys/fs/bpf/tego/ffff)
+  gggg  idle 30s, removed in about 4m30s by its timer (pid 9); tego gc --builds removes it now; 3 programs, 0 links, memlock n/a with 3 objects unreported (/sys/fs/bpf/tego/gggg)
+  hhhh  idle 30s, removed in about 4m30s by its timer (pid 10); tego gc --builds removes it now; 3 programs, 0 links, memlock 8.0KiB with 1 object unreported (/sys/fs/bpf/tego/hhhh)
+  iiii  idle 1m30s, kept: a run it enforces is alive; tego gc --builds does not remove it while that holds; its timer runs (pid 55); 17 programs, 9 links, cgroup links of 1 run(s) r-orphan2, memlock 1.1MiB (/sys/fs/bpf/tego/iiii)
+  jjjj  idle 1h0m0s, kept: the sweep could not look at it: lock the build: permission denied; no timer runs for it; 17 programs, 9 links, memlock 1.1MiB (/sys/fs/bpf/tego/jjjj)

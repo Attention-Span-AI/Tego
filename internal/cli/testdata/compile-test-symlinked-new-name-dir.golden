@@ -1,0 +1,14 @@
+tiers landlock, cgroup, bpflsm (--tier)
+bpflsm: fs, exec and exec.map answered from the plane's rows and the Landlock floor under them (decision_plane lsm: tier bpflsm needs LSM mode); exec.anonymous and network answer from the policy model; deny_read's name entries answered from the plane's name rows and the climb to their scopes, a file created after compile at a covered name included
+PASS 01, a rename into the exec.allow directory through the undeclared symlink out/u, the new name absent [dest resolved to <dir>/out/realbin/x]
+PASS 02, a link into it through out/u, the new name absent [dest resolved to <dir>/out/realbin/y]
+PASS 03, a rename onto a name that exists through out/u [dest resolved to <dir>/out/realbin/exists]
+PASS 04, a rename into the exec.allow directory declared through the symlink out/bl [dest resolved to <dir>/out/realbin2/x]
+PASS 05, a link into it through out/bl [dest resolved to <dir>/out/realbin2/y]
+PASS 06, the symlink out/bl itself moved, which holds no grant
+PASS 07, a link of the exec.allow file entry's symlink out/tool into the exec.allow directory
+PASS 08, a rename into a subdirectory of out/bl the agent makes later, absent when compile runs [dest resolved to <dir>/out/realbin2/sub/x]
+PASS 09, a link into that subdirectory of out/bl [dest resolved to <dir>/out/realbin2/sub/y]
+PASS 10, a rename into a subdirectory of the undeclared symlink out/u, absent when compile runs [dest resolved to <dir>/out/realbin/sub/x]
+PASS 11, a link into two missing levels beneath out/u [dest resolved to <dir>/out/realbin/a/b/y]
+11 rows: 11 passed, 0 failed

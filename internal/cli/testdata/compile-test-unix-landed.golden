@@ -1,0 +1,13 @@
+tiers landlock, cgroup, bpflsm (--tier)
+bpflsm: fs, exec and exec.map answered from the plane's rows and the Landlock floor under them (decision_plane lsm: tier bpflsm needs LSM mode); exec.anonymous and network answer from the policy model; deny_read's name entries answered from the plane's name rows and the climb to their scopes, a file created after compile at a covered name included
+PASS 01 a datagram through a symlink in the write entry to a socket outside every entry [path resolved to <dir>/elsewhere/s.sock]
+PASS 02 a connect through it [path resolved to <dir>/elsewhere/s.sock]
+PASS 03 a datagram through a symlink outside every entry into the write entry [path resolved to <dir>/out/s.sock]
+PASS 04 a connect through a symlink in the write entry to the declared socket [path resolved to <dir>/run/d.sock]
+PASS 05 a datagram to a relative name in the write entry
+PASS 06 a relative connect through the symlink [path resolved to <dir>/elsewhere/s.sock]
+PASS 07 a datagram whose .. after a symlink climbs out of the write entry [path resolved to <dir>/s2.sock]
+PASS 08 control, a datagram to a socket in the write entry
+PASS 09 control, a connect to the socket outside every entry
+PASS 10 control, a connect to the declared socket
+10 rows: 10 passed, 0 failed

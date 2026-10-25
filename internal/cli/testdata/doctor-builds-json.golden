@@ -1,0 +1,161 @@
+{
+  "builds": [
+    {
+      "hash": "aaaa",
+      "in_use": true,
+      "idle_s": 0,
+      "programs": 17,
+      "links": 9,
+      "capture_libraries": [
+        "2-1497-x"
+      ],
+      "capture_probes": 7,
+      "rings": 2,
+      "ring_bytes": 4194304,
+      "path": "/sys/fs/bpf/tego/aaaa",
+      "timer": false,
+      "memlock_bytes": 1310720
+    },
+    {
+      "hash": "bbbb",
+      "in_use": false,
+      "idle_s": 90,
+      "programs": 17,
+      "links": 9,
+      "capture_probes": 0,
+      "rings": 0,
+      "ring_bytes": 0,
+      "path": "/sys/fs/bpf/tego/bbbb",
+      "timer": true,
+      "timer_pid": 4242,
+      "memlock_bytes": 1200128
+    },
+    {
+      "hash": "cccc",
+      "in_use": false,
+      "idle_s": 90,
+      "programs": 17,
+      "links": 9,
+      "capture_probes": 0,
+      "rings": 0,
+      "ring_bytes": 0,
+      "path": "/sys/fs/bpf/tego/cccc",
+      "timer": false,
+      "memlock_bytes": 1200128
+    },
+    {
+      "hash": "dddd",
+      "in_use": false,
+      "idle_s": 3600,
+      "programs": 0,
+      "links": 0,
+      "capture_probes": 0,
+      "rings": 0,
+      "ring_bytes": 0,
+      "path": "/sys/fs/bpf/tego/dddd",
+      "timer": false,
+      "memlock_bytes": 4096
+    },
+    {
+      "hash": "eeee",
+      "in_use": false,
+      "idle_s": 3600,
+      "programs": 17,
+      "links": 9,
+      "runs": [
+        "r-orphan"
+      ],
+      "capture_probes": 0,
+      "rings": 0,
+      "ring_bytes": 0,
+      "path": "/sys/fs/bpf/tego/eeee",
+      "kept": "a run it enforces is alive",
+      "timer": true,
+      "timer_pid": 77,
+      "memlock_bytes": 1200128
+    },
+    {
+      "hash": "ffff",
+      "in_use": false,
+      "idle_s": 3600,
+      "programs": 17,
+      "links": 9,
+      "capture_probes": 0,
+      "rings": 0,
+      "ring_bytes": 0,
+      "path": "/sys/fs/bpf/tego/ffff",
+      "kept": "its run set cannot be read",
+      "kept_cause": "map key size 4, want 8",
+      "timer": false,
+      "memlock_bytes": 900000
+    },
+    {
+      "hash": "gggg",
+      "in_use": false,
+      "idle_s": 30,
+      "programs": 3,
+      "links": 0,
+      "capture_probes": 0,
+      "rings": 0,
+      "ring_bytes": 0,
+      "path": "/sys/fs/bpf/tego/gggg",
+      "timer": true,
+      "timer_pid": 9,
+      "memlock_bytes": 0,
+      "memlock_unreported": 3
+    },
+    {
+      "hash": "hhhh",
+      "in_use": false,
+      "idle_s": 30,
+      "programs": 3,
+      "links": 0,
+      "capture_probes": 0,
+      "rings": 0,
+      "ring_bytes": 0,
+      "path": "/sys/fs/bpf/tego/hhhh",
+      "timer": true,
+      "timer_pid": 10,
+      "memlock_bytes": 8192,
+      "memlock_unreported": 1
+    },
+    {
+      "hash": "iiii",
+      "in_use": false,
+      "idle_s": 90,
+      "programs": 17,
+      "links": 9,
+      "runs": [
+        "r-orphan2"
+      ],
+      "capture_probes": 0,
+      "rings": 0,
+      "ring_bytes": 0,
+      "path": "/sys/fs/bpf/tego/iiii",
+      "kept": "a run it enforces is alive",
+      "timer": true,
+      "timer_pid": 55,
+      "memlock_bytes": 1200128
+    },
+    {
+      "hash": "jjjj",
+      "in_use": false,
+      "idle_s": 3600,
+      "programs": 17,
+      "links": 9,
+      "capture_probes": 0,
+      "rings": 0,
+      "ring_bytes": 0,
+      "path": "/sys/fs/bpf/tego/jjjj",
+      "kept": "the sweep could not look at it",
+      "kept_cause": "lock the build: permission denied",
+      "timer": false,
+      "memlock_bytes": 1200128
+    }
+  ],
+  "rings": {
+    "budget": 268435456,
+    "used": 4194304,
+    "rings": 2
+  }
+}

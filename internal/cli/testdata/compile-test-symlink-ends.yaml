@@ -1,0 +1,48 @@
+version: 0
+tests:
+  - name: A, the atomic swap of the symlink write entry out/cur, a rename within one directory
+    action: fs.rename
+    path: out/cur.new
+    dest: out/cur
+    expect: allow
+    rule: fs.write[./out/]
+  - name: B, a move onto the symlink entry from another directory, compared at out and never at the name it replaces
+    action: fs.rename
+    path: out/sub/t
+    dest: out/cur
+    expect: allow
+    rule: fs.write[./out/]
+  - name: C, a hard link of the symlink itself into the exec.allow directory, where it gains EXECUTE
+    action: fs.link
+    path: out/cur
+    dest: out/bin/x2
+    expect: refused
+    rule: fs.write[./out/]
+  - name: D, a move of the symlink itself into the exec.allow directory
+    action: fs.rename
+    path: out/cur
+    dest: out/bin/cur2
+    expect: refused
+    rule: fs.write[./out/]
+  - name: E, a move onto the symlink entry cur, whose directory no write entry covers
+    action: fs.rename
+    path: w/x
+    dest: cur
+    expect: refused
+    rule: unmatched
+  - name: F, a move of the symlink entry cur into the write directory
+    action: fs.rename
+    path: cur
+    dest: w/cur2
+    expect: refused
+    rule: unmatched
+  - name: the symlink entry cur deleted
+    action: fs.delete
+    path: cur
+    expect: refused
+    rule: unmatched
+  - name: the symlink write entry out/cur deleted, inside the write directory
+    action: fs.delete
+    path: out/cur
+    expect: allow
+    rule: fs.write[./out/]
