@@ -1,0 +1,68 @@
+version: 0
+tests:
+  - name: 01, a rename into the exec.allow directory through the undeclared symlink out/u, the new name absent
+    action: fs.rename
+    path: out/x
+    dest: out/u/x
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 02, a link into it through out/u, the new name absent
+    action: fs.link
+    path: out/y
+    dest: out/u/y
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 03, a rename onto a name that exists through out/u
+    action: fs.rename
+    path: out/x
+    dest: out/u/exists
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 04, a rename into the exec.allow directory declared through the symlink out/bl
+    action: fs.rename
+    path: out/x
+    dest: out/bl/x
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 05, a link into it through out/bl
+    action: fs.link
+    path: out/y
+    dest: out/bl/y
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 06, the symlink out/bl itself moved, which holds no grant
+    action: fs.rename
+    path: out/bl
+    dest: out/sub/bl
+    expect: allow
+    rule: fs.write[./out/]
+  - name: 07, a link of the exec.allow file entry's symlink out/tool into the exec.allow directory
+    action: fs.link
+    path: out/tool
+    dest: out/realbin/tool2
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 08, a rename into a subdirectory of out/bl the agent makes later, absent when compile runs
+    action: fs.rename
+    path: out/x
+    dest: out/bl/sub/x
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 09, a link into that subdirectory of out/bl
+    action: fs.link
+    path: out/y
+    dest: out/bl/sub/y
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 10, a rename into a subdirectory of the undeclared symlink out/u, absent when compile runs
+    action: fs.rename
+    path: out/x
+    dest: out/u/sub/x
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 11, a link into two missing levels beneath out/u
+    action: fs.link
+    path: out/y
+    dest: out/u/a/b/y
+    expect: refused
+    rule: fs.write[./out/]

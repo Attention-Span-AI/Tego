@@ -1,0 +1,128 @@
+version: 0
+# Rows whose paths the kernel's walk lands elsewhere than their spelling (TestCompileTestLandsAsTheKernelGolden):
+# out/dx -> realbin/later and out/dsym -> ../outside/new and ro/dl -> ../out/created dangle; out/lk -> realbin/sub;
+# out/el/bl -> ../rb; out/el/ob -> ../../outside/sub. out/realbin/ is an exec.allow directory inside the write entry out/, so a file moved or linked
+# into it gains EXECUTE and Landlock refuses it (EXDEV). An end a syscall makes or removes spelled with a trailing
+# slash is the name in its directory, never followed (rows 18 to 21).
+tests:
+  - name: 01 a rename through a dangling link into the directory it names, made later
+    action: fs.rename
+    path: out/x
+    dest: out/dx/x
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 02 a link through it
+    action: fs.link
+    path: out/y
+    dest: out/dx/y
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 03 control, through the live link out/u into a subdirectory made later
+    action: fs.rename
+    path: out/x
+    dest: out/u/later2/x
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 04 a write through a dangling final link to a name outside every write entry
+    action: fs.write
+    path: out/dsym
+    expect: refused
+    rule: unmatched
+  - name: 05 control, the same name written directly
+    action: fs.write
+    path: outside/new
+    expect: refused
+    rule: unmatched
+  - name: 06 a write through a dangling final link into the write entry
+    action: fs.write
+    path: ro/dl
+    expect: allow
+    rule: fs.write[./out/]
+  - name: 07 a rename to a new name that cleans to its own, .. after a symlink
+    action: fs.rename
+    path: out/x
+    dest: out/lk/../x
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 08 a link to such a name
+    action: fs.link
+    path: out/y
+    dest: out/lk/../y
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 09 a rename to another name through the link's parent
+    action: fs.rename
+    path: out/x
+    dest: out/lk/../x2
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 10 a link to another name through it
+    action: fs.link
+    path: out/y
+    dest: out/lk/../y2
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 11 a link into the link's target
+    action: fs.link
+    path: out/z
+    dest: out/lk/z
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 12 a link through the real directory's own parent
+    action: fs.link
+    path: out/w
+    dest: out/realbin/sub/../w
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 13 a rename whose .. after a symlink climbs into the exec.allow directory's parent
+    action: fs.rename
+    path: out/x
+    dest: out/el/bl/../realbin/x
+    expect: refused
+    rule: fs.write[./out/]
+  - name: 14 control, a rename within the write entry
+    action: fs.rename
+    path: out/x
+    dest: out/./el/x
+    expect: allow
+    rule: fs.write[./out/]
+  - name: 15 a link whose source ends in /. after a symlink out of the write entry
+    action: fs.link
+    path: out/el/ob/.
+    dest: out/n1
+    expect: refused
+    rule: unmatched
+  - name: 16 a link whose source ends in /.. after it
+    action: fs.link
+    path: out/el/ob/..
+    dest: out/n2
+    expect: refused
+    rule: unmatched
+  - name: 17 control, a link of the symlink itself, which the source does not follow
+    action: fs.link
+    path: out/el/ob
+    dest: out/n3
+    expect: allow
+    rule: fs.write[./out/]
+  - name: 18 a mkdir of the dangling link spelled with a slash makes nothing where it leads (EEXIST)
+    action: fs.mkdir
+    path: out/dsym/
+    expect: allow
+    rule: fs.write[./out/]
+  - name: 19 a delete of a link out of the write entry spelled with a slash is asked at the link (ENOTDIR)
+    action: fs.delete
+    path: out/el/ob/
+    expect: allow
+    rule: fs.write[./out/]
+  - name: 20 a rename onto it spelled with a slash
+    action: fs.rename
+    path: out/x
+    dest: out/el/ob/
+    expect: allow
+    rule: fs.write[./out/]
+  - name: 21 a link onto the dangling link spelled with a slash
+    action: fs.link
+    path: out/w
+    dest: out/dsym/
+    expect: allow
+    rule: fs.write[./out/]

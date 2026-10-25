@@ -1,0 +1,41 @@
+tiers landlock, cgroup, bpflsm (--tier)
+bpflsm: fs, exec and exec.map answered from the plane's rows and the Landlock floor under them (decision_plane lsm: tier bpflsm needs LSM mode); exec.anonymous and network answer from the policy model; deny_read's name entries answered from the plane's name rows and the climb to their scopes, a file created after compile at a covered name included
+PASS 01 a datagram through a link to /proc/self/cwd
+PASS 02 a connect through it
+PASS 03 a datagram through a link to /proc/self/root
+PASS 04 a connect through a symlink loop
+PASS 05 a datagram through it
+PASS 06 a datagram beneath a file
+PASS 07 a connect beneath it keeps the name's verdict
+PASS 08 a connect to a dangling link, taken to its target [path resolved to <dir>/elsewhere/nothing.sock]
+PASS 09 a datagram to a missing socket beneath a link [path resolved to <dir>/elsewhere/missing.sock]
+PASS 10 a datagram to a name not spelled canonically, tier landlock
+PASS 11 the same at tier cgroup
+PASS 12 the same at tier bpflsm
+PASS 13 control, a datagram through a symlink in the write entry to the declared socket [path resolved to <dir>/run/d.sock]
+PASS 14 a bind beneath a file with no listener policy is the creation floor's, the kernel answering it
+PASS 15 a datagram to a name through /proc/self/fd that the agent opens later
+PASS 16 a connect to it
+PASS 17 a datagram to a missing name ending in a slash, a directory once made
+PASS 18 a connect to it
+PASS 19 a datagram to a missing name in a missing directory, ending in /.
+PASS 20 a datagram through a dangling link whose target ends in a slash [path resolved to <dir>/out/nothing.sock]
+PASS 21 a datagram to a missing directory the name walks into and back out of
+PASS 22 a connect to it
+PASS 23 a datagram to a directory already there, named with a slash
+PASS 24 a connect to it
+PASS 25 a datagram to that directory by its plain name
+PASS 26 a datagram climbing out of a missing part back to it
+PASS 27 a datagram to a regular file already there
+PASS 28 a directory the declared socket's name makes is the declared entry's [path resolved to <dir>/run/d.sock]
+PASS 28c a connect to it, in every column [path resolved to <dir>/run/d.sock]
+PASS 29 control, a missing plain name in a missing directory is the socket the agent binds
+30 rows: 30 passed, 0 failed
+== listen.yaml
+tiers landlock, cgroup, bpflsm (--tier)
+bpflsm: fs, exec and exec.map answered from the plane's rows and the Landlock floor under them (decision_plane lsm: tier bpflsm needs LSM mode); exec.anonymous and network answer from the policy model; deny_read's name entries answered from the plane's name rows and the climb to their scopes, a file created after compile at a covered name included
+PASS L1 a bind beneath a file under a listener policy is refused path-unreliable, as bindUnix refuses it
+PASS L1c the same at tier cgroup
+PASS L1p in the bpflsm column the plane never decides it: its spelling, which no listen entry names
+PASS L2 control, a declared bind in the write entry
+4 rows: 4 passed, 0 failed
