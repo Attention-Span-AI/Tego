@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: Apache-2.0
+# denywrite-alias: a contract's own fs.deny_write file entry (ADR 0071) reached through a hard link made before the run,
+# and a file beneath its directory entry reached the same way (review RDW-2: compile records such a file,
+# RuleTable.DenyWriteLinked, and the plane keys its inode). The plane keys both inodes, so it refuses the write under
+# any name, and it keys each once (review RDW2-1): a second name beneath the entry (repo/deploy/linked2), and a name
+# there of the file entry's own file (repo/deploy/conf-in), add no row, where two rows of one inode made the table one
+# no plane holds, so every plane cell here also holds that. The supervisor refuses on the copied pathname, which spells
+# no entry for an alias: best effort by design at tier landlock and on the listener (supervisor R15c). Blocked for
+# ordinary commands; not race-free at the no-root tier. The held variant: under gate.completion: held the deputy's
+# open of an alias meets the plane's EACCES, which the open's line explains by the object's identity, the path the
+# plane keys the file at (review RDW2-2, GAPS C38: it kept the floor's allow with syscall_ret -13).
+version: 2
+name: denywrite-alias
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./repo/"]
+    deny_write: ["./repo/conf.yml", "./repo/deploy/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [repo, repo/deploy]
+files:
+  repo/conf.yml: x
+  repo/other.txt: x
+  repo/deploy/linked: x
+hard_links:
+  repo/conf-alias: repo/conf.yml
+  repo/linked-alias: repo/deploy/linked
+  repo/deploy/linked2: repo/deploy/linked
+  repo/deploy/conf-in: repo/conf.yml
+model:
+  write: [repo]
+  net_declared: true
+  deny_write: [repo/conf.yml, repo/deploy]
+  deny_write_declared: [repo/conf.yml, repo/deploy]
+variants: [assurance-kernel, held]
+cells:
+  - name: write-open-file-entry
+    op: write-open
+    path: repo/conf.yml
+    want:
+      all: refused fs.deny_write[./repo/conf.yml]
+    source: ADR 0071 (1) (a file entry)
+  - name: write-hard-link-alias
+    op: write-open
+    path: repo/conf-alias
+    want:
+      plane: refused fs.deny_write[./repo/conf.yml]
+    unasked:
+      landlock: 'best effort by design: the supervisor refuses on the copied pathname, and a hard link made before the run is a name no entry spells (supervisor R15c, ADR 0071 (6))'
+      cgroup/fanotify: 'best effort by design: the supervisor refuses on the copied pathname, and a hard link made before the run is a name no entry spells (supervisor R15c, ADR 0071 (6))'
+    no_compile: 'compile --test decides on paths, and a hard link made before the run reaches the file entry''s inode under a path no entry spells: only a kernel run sees the identity'
+    source: ADR 0071 (6) (the plane keys the file entry's inode)
+  - name: write-linked-in-dir-entry
+    op: write-open
+    path: repo/linked-alias
+    want:
+      plane: refused fs.deny_write[./repo/deploy/]
+    unasked:
+      landlock: 'best effort by design: the supervisor refuses on the copied pathname, and a hard link made before the run is a name no entry spells (supervisor R15c, ADR 0071 (6))'
+      cgroup/fanotify: 'best effort by design: the supervisor refuses on the copied pathname, and a hard link made before the run is a name no entry spells (supervisor R15c, ADR 0071 (6))'
+    no_compile: 'compile --test decides on paths, and a hard link made before the run reaches the linked file''s inode under a path no entry spells: only a kernel run sees the identity'
+    source: ADR 0071 (6) (the plane keys the inode of a file beneath a directory entry with another hard link, review RDW-2)
+  - name: write-linked-pair
+    op: write-open
+    path: repo/deploy/linked2
+    want:
+      all: refused fs.deny_write[./repo/deploy/]
+    source: 'ADR 0071 (6) (review RDW2-1: a second name of the linked file beneath the entry; the plane keys the file once, so the table stays one it holds)'
+  - name: write-beside
+    op: write-open
+    path: repo/other.txt
+    want:
+      all: allow fs.write[./repo/]
+    source: 'SEMANTICS §2 (a write entry grants modifications beneath it)'

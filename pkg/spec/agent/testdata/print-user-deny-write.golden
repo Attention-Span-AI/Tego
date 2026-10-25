@@ -1,0 +1,11 @@
+fs        3 entries
+  KIND        PATH           ACCESS     MOUNT  FS  DEV  NOTES
+  write       /w             write-set  -      -   -    -
+  deny_write  /w/.git/hooks  -          -      -   -    best-effort(supervisor; landlock: parent writable),built-in
+  deny_write  /w/deploy      -          -      -   -    best effort at tier landlock
+fs        assurance kernel (a deny_write target needs a decision plane, verified before launch)
+fs        3 entries
+  KIND        PATH           ACCESS     MOUNT  FS  DEV  NOTES
+  write       /w             write-set  -      -   -    -
+  deny_write  /w/.git/hooks  -          -      -   -    kernel-plane-required(landlock: parent writable),built-in
+  deny_write  /w/deploy      -          -      -   -    kernel-plane-required(landlock: parent writable)

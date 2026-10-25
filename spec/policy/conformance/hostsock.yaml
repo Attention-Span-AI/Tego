@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: Apache-2.0
+# hostsock: a contract with no net: section reaches only its own unix sockets (SEMANTICS §1's no net: row, ADR 0070).
+# The runner binds a pathname socket beside the project, outside every write entry, and an abstract one, outside every
+# run, as a host daemon's sockets ({{HOSTSOCK}}, {{HOSTABSTRACT}}): a connect to either is refused host-sockets, while
+# an IP destination stays allowed. The cells have a file of their own because a file has one contract and net.yaml's
+# has a net: section, under which nothing here changes. At tier landlock the supervisor performs every connect on its
+# own copy of the socket, so the refusal is race-free. At the root tiers no kernel program of the run decides it: the
+# refusal is the same relay's, best effort until those tiers carry a kernel program for it (ADR 0070 (5), run_start best_effort
+# host_sockets/root-tier), and the root columns are the supervisor's refusal (the KVM 6.17 row's fanotify, fmod_ret,
+# lsm and bpflsm axes).
+version: 2
+name: hostsock
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./out/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [out]
+listeners: true
+model:
+  write: [out]
+cells:
+  - name: unix-host-socket-no-net
+    op: connect-unix
+    addr: '{{HOSTSOCK}}'
+    want:
+      landlock: refused host-sockets
+      root: refused host-sockets
+    source: 'SEMANTICS §1 (no net: section: a unix connect to a socket the run did not bind is refused host-sockets) and §5; ADR 0070'
+  - name: abstract-host-socket-no-net
+    op: connect-unix
+    addr: '{{HOSTABSTRACT}}'
+    want:
+      landlock: refused host-sockets
+      root: refused host-sockets
+    want_where:
+      # Without sock_diag for AF_UNIX the supervisor cannot read which socket holds an abstract name, and says so.
+      - unix_diag: false
+        want:
+          landlock: refused unix-origin-unread
+          root: refused unix-origin-unread
+    source: 'SEMANTICS §1 (no net: section: an abstract name no socket of the run holds is refused host-sockets) and §5; ADR 0070'
+  - name: connect-ip-no-net
+    op: connect-tcp
+    addr: 127.0.0.1:{{PORT}}
+    want:
+      landlock: allow unmatched
+      root: allow
+    source: 'SEMANTICS §1 (no net: section: every IP destination is allowed, the line unmatched)'
