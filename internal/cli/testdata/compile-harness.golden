@@ -1,0 +1,8 @@
+harness   claude-code
+harness   claude-code provisions: a settings file holding the reason hook
+harness   file runtime/claude-settings.json (12 bytes, 0444)
+harness   argv ["sh" "--settings" "$XDG_RUNTIME_DIR/tego/<run id>/claude-settings.json" "-c" "true"]
+harness   env TEGO_CLAUDE_SETTINGS
+harness   hook ["<tego>" "hook" "claude-code" "--reason" "$XDG_RUNTIME_DIR/tego/<run id>/last-refusal.json"]
+harness   hook-state $XDG_RUNTIME_DIR/tego/<run id>/hook-state (the one place in the runtime directory the agent may write)
+harness   from env.set alone: a variable the run inherits can change what a run provisions
