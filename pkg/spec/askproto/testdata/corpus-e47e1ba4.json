@@ -1,0 +1,443 @@
+{
+ "commands": [
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "value": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+  },
+  {
+   "in": " {\"action\" : \"list\" , \"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"} ",
+   "value": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n",
+   "value": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+  },
+  {
+   "in": "{\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"action\":\"list\"}",
+   "value": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+  },
+  {
+   "in": "{\"action\":\"detail\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+   "value": "{\"action\":\"detail\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":true}",
+   "value": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":true}"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":false}",
+   "value": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":false}"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":true,\"remember\":true}",
+   "value": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":true,\"remember\":true}"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":true,\"remember\":false}",
+   "value": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":true,\"remember\":false}"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":false,\"alternate\":\"/tmp/x\"}",
+   "value": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":false,\"alternate\":\"/tmp/x\"}"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":false,\"alternate\":\"/tmp/x\",\"remember\":true}",
+   "value": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":false,\"remember\":true,\"alternate\":\"/tmp/x\"}"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":true,\"alternate\":\"/tmp/x\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":false,\"alternate\":\"tmp/x\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":false,\"alternate\":\"/\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":false,\"alternate\":\"/a/../b\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":false,\"alternate\":\"/a\\u0007b\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":false,\"alternate\":\"/a\\u0085b\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-1\",\"approve\":true}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"Q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":true}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-gggggggggggggggggggggggggggggggg\",\"approve\":true}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":\"true\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"answer\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":1}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"approve\":true}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"remember\":true}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"alternate\":\"/tmp/x\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"detail\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approve\":true}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"detail\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"remember\":true}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"detail\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"alternate\":\"/tmp/x\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"detail\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"extra\":1}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":null}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":null,\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":null}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}{}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"} x",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"stop\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"LIST\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":[\"list\"],\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":{\"x\":1},\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"Action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "[{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "\"list\"",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "null",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"li\\u0073t\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "value": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+  },
+  {
+   "in": "{\"action\":\"list\",\"non\\u0063e\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "value": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+  },
+  {
+   "in": "{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\u0000",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "﻿{\"action\":\"list\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "err": "ask: invalid protocol"
+  },
+  {
+   "in": "{\"action\":\"detail\",\"nonce\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}",
+   "err": "ask: invalid protocol"
+  }
+ ],
+ "responses": [
+  {
+   "in": "{\"ready\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "value": "{\"ready\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+  },
+  {
+   "in": "{\"pending\":[{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"op\":\"connect\",\"target\":\"t\",\"rule\":\"r\",\"hold\":\"connect\",\"pid\":1,\"tid\":2}]}",
+   "value": "{\"pending\":[{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"op\":\"connect\",\"target\":\"t\",\"rule\":\"r\",\"hold\":\"connect\",\"pid\":1,\"tid\":2}]}"
+  },
+  {
+   "in": "{\"pending\":[{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"op\":\"connect\",\"target\":\"t\",\"rule\":\"r\",\"hold\":\"connect\",\"pid\":1,\"tid\":2,\"target_truncated\":true,\"score\":3,\"gate_rule\":\"g\"}]}",
+   "value": "{\"pending\":[{\"score\":3,\"gate_rule\":\"g\",\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"op\":\"connect\",\"target\":\"t\",\"rule\":\"r\",\"hold\":\"connect\",\"pid\":1,\"tid\":2,\"target_truncated\":true}]}"
+  },
+  {
+   "in": "{}",
+   "value": "{}"
+  },
+  {
+   "in": "{\"pending\":[]}",
+   "value": "{}"
+  },
+  {
+   "in": "{\"pending\":null}",
+   "value": "{}"
+  },
+  {
+   "in": "{\"request\":{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"op\":\"open\",\"target\":\"/x\",\"rule\":\"r\",\"hold\":\"open\",\"pid\":1,\"tid\":2}}",
+   "value": "{\"request\":{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"op\":\"open\",\"target\":\"/x\",\"rule\":\"r\",\"hold\":\"open\",\"pid\":1,\"tid\":2}}"
+  },
+  {
+   "in": "{\"request\":{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"op\":\"open\",\"target\":\"/x\",\"rule\":\"r\",\"hold\":\"open\",\"pid\":1,\"tid\":2,\"target_truncated\":true}}",
+   "err": "ask: invalid protocol",
+   "value": "{}"
+  },
+  {
+   "in": "{\"decision\":{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approved\":true,\"by\":\"uid:1 pid:2\",\"after_s\":0.5}}",
+   "value": "{\"decision\":{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approved\":true,\"by\":\"uid:1 pid:2\",\"after_s\":0.5}}"
+  },
+  {
+   "in": "{\"decision\":{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approved\":false,\"by\":\"uid:1 pid:2 always\",\"reason\":\"ask-denied\",\"after_s\":1,\"always\":true}}",
+   "value": "{\"decision\":{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approved\":false,\"by\":\"uid:1 pid:2 always\",\"reason\":\"ask-denied\",\"after_s\":1,\"always\":true}}"
+  },
+  {
+   "in": "{\"decision\":{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approved\":false,\"by\":\"b\",\"after_s\":1,\"alternate\":\"/x\",\"alternate_dev\":7,\"alternate_ino\":9}}",
+   "value": "{\"decision\":{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approved\":false,\"by\":\"b\",\"after_s\":1,\"alternate\":\"/x\",\"alternate_dev\":7,\"alternate_ino\":9}}"
+  },
+  {
+   "in": "{\"decision\":{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"file\":1}}",
+   "err": "ask: invalid protocol",
+   "value": "{}"
+  },
+  {
+   "in": "{\"decision\":{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"Alternates\":1}}",
+   "err": "ask: invalid protocol",
+   "value": "{}"
+  },
+  {
+   "in": "{\"error\":\"ask: request is no longer pending\",\"code\":\"not-pending\"}",
+   "err": "ask: request is no longer pending",
+   "value": "{\"error\":\"ask: request is no longer pending\",\"code\":\"not-pending\"}"
+  },
+  {
+   "in": "{\"error\":\"ask: this request cannot be remembered\",\"code\":\"not-rememberable\"}",
+   "err": "ask: this request cannot be remembered",
+   "value": "{\"error\":\"ask: this request cannot be remembered\",\"code\":\"not-rememberable\"}"
+  },
+  {
+   "in": "{\"error\":\"ask: too many standing decisions in this run\",\"code\":\"standing-full\"}",
+   "err": "ask: too many standing decisions in this run",
+   "value": "{\"error\":\"ask: too many standing decisions in this run\",\"code\":\"standing-full\"}"
+  },
+  {
+   "in": "{\"error\":\"ask: another always answer for the same operation, rule and target is being recorded\",\"code\":\"standing-busy\"}",
+   "err": "ask: another always answer for the same operation, rule and target is being recorded",
+   "value": "{\"error\":\"ask: another always answer for the same operation, rule and target is being recorded\",\"code\":\"standing-busy\"}"
+  },
+  {
+   "in": "{\"error\":\"ask: this request cannot be answered with an alternate file\",\"code\":\"no-alternate\"}",
+   "err": "ask: this request cannot be answered with an alternate file",
+   "value": "{\"error\":\"ask: this request cannot be answered with an alternate file\",\"code\":\"no-alternate\"}"
+  },
+  {
+   "in": "{\"error\":\"ask: the alternate cannot be used: it is a fifo\",\"code\":\"bad-alternate\"}",
+   "err": "ask: the alternate cannot be used: it is a fifo",
+   "value": "{\"error\":\"ask: the alternate cannot be used: it is a fifo\",\"code\":\"bad-alternate\"}"
+  },
+  {
+   "in": "{\"error\":\"something else: entirely\",\"code\":\"bad-alternate\"}",
+   "err": "ask: the alternate cannot be usedsomething else: entirely",
+   "value": "{\"error\":\"something else: entirely\",\"code\":\"bad-alternate\"}"
+  },
+  {
+   "in": "{\"error\":\"ask: unauthorized peer\",\"code\":\"unauthorized\"}",
+   "err": "ask: unauthorized peer",
+   "value": "{\"error\":\"ask: unauthorized peer\",\"code\":\"unauthorized\"}"
+  },
+  {
+   "in": "{\"error\":\"ask: invalid protocol\",\"code\":\"protocol\"}",
+   "err": "ask: invalid protocol",
+   "value": "{\"error\":\"ask: invalid protocol\",\"code\":\"protocol\"}"
+  },
+  {
+   "in": "{\"error\":\"ask: response too large\",\"code\":\"unavailable\"}",
+   "err": "ask: unavailable: ask: response too large",
+   "value": "{\"error\":\"ask: response too large\",\"code\":\"unavailable\"}"
+  },
+  {
+   "in": "{\"error\":\"context deadline exceeded\",\"code\":\"unavailable\"}",
+   "err": "ask: unavailable: context deadline exceeded",
+   "value": "{\"error\":\"context deadline exceeded\",\"code\":\"unavailable\"}"
+  },
+  {
+   "in": "{\"error\":\"x\",\"code\":\"mystery\"}",
+   "err": "ask: unavailable: x",
+   "value": "{\"error\":\"x\",\"code\":\"mystery\"}"
+  },
+  {
+   "in": "{\"error\":\"x\"}",
+   "err": "ask: unavailable: x",
+   "value": "{\"error\":\"x\"}"
+  },
+  {
+   "in": "{\"error\":\"\",\"code\":\"not-pending\"}",
+   "value": "{\"code\":\"not-pending\"}"
+  },
+  {
+   "in": "{\"code\":\"not-pending\"}",
+   "value": "{\"code\":\"not-pending\"}"
+  },
+  {
+   "in": "{\"error\":\"x\",\"code\":\"not-pending\",\"decision\":{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}}",
+   "err": "ask: request is no longer pending",
+   "value": "{\"decision\":{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approved\":false,\"by\":\"\",\"after_s\":0},\"error\":\"x\",\"code\":\"not-pending\"}"
+  },
+  {
+   "in": "{\"ready\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"extra\":1}",
+   "err": "ask: invalid protocol",
+   "value": "{}"
+  },
+  {
+   "in": "{\"ready\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}{}",
+   "err": "ask: invalid protocol",
+   "value": "{}"
+  },
+  {
+   "in": "{\"ready\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"} ",
+   "value": "{\"ready\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+  },
+  {
+   "in": "{\"ready\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+   "err": "ask: invalid protocol",
+   "value": "{}"
+  },
+  {
+   "in": "{\"ready\":1}",
+   "err": "ask: invalid protocol",
+   "value": "{}"
+  },
+  {
+   "in": "{\"ready\":\"a\",\"ready\":\"b\"}",
+   "value": "{\"ready\":\"b\"}"
+  },
+  {
+   "in": "{\"Ready\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+   "value": "{\"ready\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+  },
+  {
+   "in": "null",
+   "value": "{}"
+  },
+  {
+   "in": "[]",
+   "err": "ask: invalid protocol",
+   "value": "{}"
+  },
+  {
+   "in": "",
+   "err": "EOF",
+   "value": "{}"
+  },
+  {
+   "in": "{\"pending\":[{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"unknown\":1}]}",
+   "err": "ask: invalid protocol",
+   "value": "{}"
+  },
+  {
+   "in": "{\"decision\":null}",
+   "value": "{}"
+  },
+  {
+   "in": "{\"request\":null}",
+   "value": "{}"
+  },
+  {
+   "in": "{\"decision\":{\"ask_id\":\"q-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approved\":\"yes\"}}",
+   "err": "ask: invalid protocol",
+   "value": "{}"
+  }
+ ]
+}
