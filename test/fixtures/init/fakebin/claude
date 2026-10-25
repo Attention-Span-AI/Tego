@@ -1,0 +1,4 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+# Stand-in so `compile` finds claude on PATH; it is never run.
+echo stub

@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# M-2: the three .env attacks from the launch demo, run without a model. cat, python3 and grep are allowed
+# on purpose, so a refusal can only come from the .env read rule, and that rule is not written here: no
+# `deny_read:` means the built-in list applies, which covers .env under the project root (SEMANTICS §1).
+# record: full so the unprivileged tier records each refused read (SEMANTICS §7).
+version: 0
+name: env-attacks
+command: ["bash", "-c", "true"]
+fs:
+  write: ["./out/"]
+exec:
+  allow: ["bash", "cat", "python3", "grep"]
+net:
+  allow: []
+env:
+  pass: ["PATH", "HOME", "LANG"]
+record: full
+tier: auto

@@ -1,0 +1,22 @@
+{
+  "cwd": "/work",
+  "duration_ms": 31,
+  "hook_event_name": "PostToolUse",
+  "permission_mode": "default",
+  "prompt_id": "550e8400-e29b-41d4-a716-446655440000",
+  "session_id": "abc123",
+  "tool_input": {
+    "command": "npm test",
+    "description": "Run test suite",
+    "run_in_background": false
+  },
+  "tool_name": "Bash",
+  "tool_response": {
+    "interrupted": false,
+    "isImage": false,
+    "stderr": "",
+    "stdout": "ok\n"
+  },
+  "tool_use_id": "toolu_01ABC124",
+  "transcript_path": "/home/user/.claude/projects/-work/abc123.jsonl"
+}

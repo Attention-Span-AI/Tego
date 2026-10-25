@@ -1,0 +1,11 @@
+{
+  "prompt": "Carry out the scripted steps.",
+  "turns": [
+    {"parallel": true, "calls": [
+      {"write": "a.txt", "content": "a\n"},
+      {"write": "b.txt", "content": "b\n"},
+      {"bash": "echo c", "description": "Print c"}
+    ]},
+    {"calls": [{"read": "a.txt"}]}
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "prompt": "Carry out the scripted steps.",
+  "turns": [
+    {"calls": [{"write": "note.txt", "content": "written by the stand-in\n"}]},
+    {"calls": [{"bash": "echo step-two; exit 3", "description": "A step that fails"}]}
+  ]
+}
