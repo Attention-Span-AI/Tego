@@ -1,0 +1,19 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{define "content"}}{{with .Data}}{{$r := .Run}}
+<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a href="/runs/{{pathEsc $r.ID}}">{{if $r.Agent}}{{$r.Agent}}{{else}}Run{{end}}</a></nav><h1>Stop {{if $r.Agent}}{{$r.Agent}}{{else}}this run{{end}}?</h1><div class="sub-h1">{{template "state" $r}}<span class="mono" title="{{$r.ID}}">{{rid $r.ID}}</span></div></div></div>
+<section class="panel" aria-labelledby="h-stop"><div class="panel-head"><h2 id="h-stop">Confirm the stop</h2></div>
+<div class="panel-body stack-lg">
+{{if .Stopping}}
+<p>Stopping…</p>
+<div class="row"><a class="btn" href="/runs/{{pathEsc $r.ID}}">Back to the run</a></div>
+{{else if eq $r.State "running"}}
+<p><strong>Ends the agent and all it started</strong> <span class="soft" title="It cannot be resumed; start a new run to go on. What the run did stays in its record.">No resume · record kept</span></p>
+<form class="row" method="post" action="/runs/{{pathEsc $r.ID}}/stop"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="confirm" value="yes">
+  <button class="btn btn-danger" type="submit">{{template "i" "i-square"}}Stop run</button><a class="btn" href="/runs/{{pathEsc $r.ID}}">Cancel</a></form>
+{{else}}
+<p>Not running</p>
+<div class="row"><a class="btn" href="/runs/{{pathEsc $r.ID}}">Back to the run</a></div>
+{{end}}
+<div class="cli-pair"><span class="lbl">Same in a terminal</span><div class="cli cli-wrap"><code>tego stop {{$r.ID}}</code></div></div>
+</div></section>
+{{end}}{{end}}

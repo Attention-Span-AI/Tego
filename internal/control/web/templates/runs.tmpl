@@ -1,0 +1,25 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* Runs: the counts, then one table whose rows are two live <tbody> regions (regions.go): the running runs, whose rows move with each line they write, and a page of the other runs, newest first, which stay put; then the paging links. */}}
+{{define "content"}}{{template "lr" (index $.L "r-runs-head")}}{{template "r-runs-head" $}}</div>
+{{with .Data}}{{if gt (index .Count "all") 1}}<section class="panel cmp-pick" aria-label="Compare two runs"><div class="panel-body row"><strong>Compare two runs</strong><span class="soft">what each touched, side by side</span>{{template "cmpform" (cmpForm .All "" "")}}</div></section>{{end}}{{end}}
+<section class="panel runs-panel" aria-label="Runs" id="runs-table">
+<div class="tw"><table class="t t-rows" role="table"><caption class="sr">Runs: the running ones first, then the others, newest first</caption>{{template "runthead"}}
+{{template "lrb" (index $.L "r-runs-live")}}{{template "r-runs-live" $}}</tbody>
+{{template "lrb" (index $.L "r-runs-table")}}{{template "r-runs-table" $}}</tbody>
+</table></div>
+{{template "lr" (index $.L "r-runs-foot")}}{{template "r-runs-foot" $}}</div>
+</section>
+{{end}}
+{{define "r-runs-head"}}{{with .Data}}<div class="head"><div><h1>{{countWord (index .Count "all")}} {{plural (index .Count "all") "run" "runs"}}</h1><p class="lede">{{index .Count "running"}} running</p></div><div class="head-actions"><a class="btn" href="/logs">{{template "i" "i-scroll-text"}}Search logs</a></div></div>
+<nav class="chips" aria-label="Status"><a class="chip" href="/runs"{{if eq .State ""}} aria-current="true"{{end}}>All {{countWord (index .Count "all")}}</a><a class="chip" href="/runs?state=running"{{if eq .State "running"}} aria-current="true"{{end}}>Running {{countWord (index .Count "running")}}</a><a class="chip" href="/runs?state=ended"{{if eq .State "ended"}} aria-current="true"{{end}}>Ended {{countWord (index .Count "ended")}}</a>{{if or (index .Count "lost") (eq .State "lost")}}<a class="chip" href="/runs?state=lost"{{if eq .State "lost"}} aria-current="true"{{end}}>Lost {{countWord (index .Count "lost")}}</a>{{end}}</nav>{{end}}{{end}}
+{{define "r-runs-live"}}{{with .Data}}{{template "runrows" (runtab .Live .Now .V)}}{{end}}{{end}}
+{{define "r-runs-table"}}{{with .Data}}{{template "runrows" (runtab .Runs .Now .V)}}{{end}}{{end}}
+{{/* r-runs-foot: where this page sits among the runs that are not running, and the links to the next and the newest page; or, with no row at all, the empty state. */}}
+{{define "r-runs-foot"}}{{with .Data}}{{if or .Live .Runs}}{{if or .Older .Before}}<nav class="panel-foot runs-pager" aria-label="Pages of runs"><span class="soft">{{if .Live}}{{len .Live}} running, then {{end}}{{if .Runs}}runs {{countWord .From}}–{{countWord .To}} of the {{countWord .Rest}} {{if eq .State "ended"}}ended{{else if eq .State "lost"}}lost{{else}}not running{{end}}, newest first{{else}}no other runs{{end}}</span><span class="row">{{if .Before}}<a class="link" href="{{runsQuery .State ""}}">Newest runs</a>{{end}}{{if .Older}}<a class="btn" href="{{runsQuery .State .Older}}">Older runs</a>{{end}}</span></nav>{{end}}
+{{else}}<div class="empty">
+  <div class="glyph">{{template "i" "i-activity"}}</div>
+  <h3>No runs here</h3>
+  <p>Runs show up here</p>
+  <div class="cli"><code>tego run agent.yaml -- claude</code></div>
+  <div class="cli"><code>tego watch -- codex</code></div>
+</div>{{end}}{{end}}{{end}}

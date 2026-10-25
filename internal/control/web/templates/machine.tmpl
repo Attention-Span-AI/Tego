@@ -1,0 +1,26 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* machine: This machine (insights.go machine): the protection levels the runs here used, then what the newest run recorded; the raw capability ids folded for auditors. Labels, not sentences. */}}
+{{define "content"}}{{with .Data}}{{$now := .Now}}
+<div class="head"><div><h1>This machine</h1>{{if .Run}}<p class="lede">{{with .Best}}Up to <strong>{{tier .Name}}</strong> <span class="soft">({{.Word}})</span>{{else}}Watched only so far{{end}}</p>{{end}}</div></div>
+{{if not .Run}}<section class="panel"><div class="empty"><div class="glyph">{{template "i" "i-terminal"}}</div><h3>No runs yet</h3><details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>tego doctor</code></div></details></div></section>
+{{else}}
+{{if .Err}}<div class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow" title="{{.Err}}">Newest run unreadable</div></div>{{end}}
+<section class="panel" aria-labelledby="h-tiers"><div class="panel-head"><h2 id="h-tiers">Protection levels</h2></div>
+<div class="panel-body"><ul class="tiers">{{range .Tiers}}<li class="{{if .Has}}has{{end}}"><div class="row"><strong>{{tier .Name}}</strong> <span class="soft">tier {{.N}} · {{.Word}}</span> {{if .Has}}<span class="b b-allowed">{{template "i" "i-check"}}Available</span>{{else}}<span class="b b-neutral">Not used yet</span>{{end}}</div>
+<p class="soft">{{.Needs}}</p>{{if not .Has}}<p class="mc-next">{{template "i" "i-play"}}{{.Missing}}</p>{{end}}{{with .Used}}<p class="mc-used">Last: <a class="link" href="/runs/{{pathEsc .ID}}">{{if .Agent}}{{.Agent}}{{else}}{{rid .ID}}{{end}}</a> · <time datetime="{{iso .Start}}" title="{{stamp .Start}}">{{when .Start $now}}</time></p>{{end}}</li>{{end}}</ul></div></section>
+<section class="panel" aria-labelledby="h-facts"><div class="panel-head"><h2 id="h-facts">Newest run</h2><span class="soft"><a class="mono link" href="/runs/{{pathEsc .Run.ID}}">{{rid .Run.ID}}</a> · {{tier .Tier}}</span></div>
+<div class="panel-body stack-sm"><dl class="kv">
+<dt>Kernel</dt><dd>{{if .Kernel}}Linux {{.Kernel}}{{else}}<span class="muted">Not recorded</span>{{end}}</dd>
+<dt>Kernel decides</dt><dd>{{if .Plane}}{{.Plane}}{{else}}<span class="muted" title="Basic and watched runs decide no file or program in a kernel plane">Nothing</span>{{end}}</dd>
+<dt>Network</dt><dd>{{if eq .NetAssurance "best-effort"}}<span title="tego checks each connection; the kernel does not prove every kind">Best effort</span>{{else if .NetAssurance}}{{.NetAssurance}}{{else}}<span class="muted">Not recorded</span>{{end}}</dd>
+<dt>Capabilities</dt><dd>{{len .Caps}} on · {{len .NoCaps}} unavailable{{if .BestEffort}} · {{len .BestEffort}} best effort{{end}}</dd>
+</dl>
+<details class="mc-tech"><summary>Capability flags</summary><dl class="kv mc-ids">
+<dt>Network assurance</dt><dd>{{if .NetAssurance}}<span class="mono">{{.NetAssurance}}</span>{{else}}<span class="muted">Not recorded</span>{{end}}{{if .NetGuards}} · proven: {{range $i, $g := .NetGuards}}{{if $i}}, {{end}}<span class="mono">{{$g}}</span>{{end}}{{end}}{{if .NetMissing}} · not proven: {{range $i, $g := .NetMissing}}{{if $i}}, {{end}}<span class="mono">{{$g}}</span>{{end}}{{end}}</dd>
+<dt>On</dt><dd>{{if .Caps}}{{range $i, $c := .Caps}}{{if $i}}, {{end}}<span class="mono">{{$c}}</span>{{end}}{{else}}<span class="muted">None recorded</span>{{end}}</dd>
+<dt>Unavailable</dt><dd>{{if .NoCaps}}{{range $i, $c := .NoCaps}}{{if $i}}, {{end}}<span class="mono">{{$c}}</span>{{end}}{{else}}<span class="muted">None</span>{{end}}</dd>
+<dt>Best effort</dt><dd>{{if .BestEffort}}{{range $i, $c := .BestEffort}}{{if $i}}, {{end}}<span class="mono">{{$c}}</span>{{end}}{{else}}<span class="muted">None</span>{{end}}</dd>
+</dl></details>
+<details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>tego doctor</code></div></details></div></section>
+{{end}}
+{{end}}{{end}}

@@ -1,0 +1,10 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* rule: the 410 page of POST /rule, the retired Confirm form of the old Rule page (rule.go). It writes nothing. */}}
+{{define "content"}}{{with .Data}}
+<section class="panel"><div class="empty" role="alert">
+  <div class="glyph">{{template "i" "i-scroll-text"}}</div>
+  <h3>This form is retired</h3>
+  <p>Nothing written · use the line's Act on this</p>
+  {{if .Line}}<a class="btn btn-primary" href="{{.Line}}">Open the line's page</a>{{else}}<a class="btn" href="/runs">Open Runs</a>{{end}}
+</div></section>
+{{end}}{{end}}

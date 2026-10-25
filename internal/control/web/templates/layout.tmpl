@@ -1,0 +1,131 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{define "i"}}<svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#{{.}}"/></svg>{{end}}
+{{define "state"}}{{if eq .State "running"}}{{if paused .}}<span class="b b-waiting b-paused" title="Frozen where it stood until someone resumes it">{{template "i" "i-pause"}}Paused</span>{{else}}<span class="b b-running"><span class="dot" aria-hidden="true"></span>Running</span>{{end}}{{else if eq .State "lost"}}<span class="b b-lost" title="The ledger has no end line for this run and Tego does not list it as running: it stopped without closing its record.">{{template "i" "i-triangle-alert"}}Lost</span>{{else if and (eq .EndReason "exit") (eq .ExitCode 0)}}<span class="b b-done" title="{{endWhy .}}">{{template "i" "i-check"}}Exit 0</span>{{else if eq .EndReason "exit"}}<span class="b b-halted" title="{{endWhy .}}">{{template "i" "i-square"}}Exit {{.ExitCode}}</span>{{else}}<span class="b b-stopped" title="{{endWhy .}}">{{template "i" "i-square"}}{{endWord .}}</span>{{end}}{{end}}
+{{define "origin"}}<span class="b b-origin b-origin-{{.Origin}}" title="{{if eq .Origin "interactive"}}Started in a terminal a person types to (run_start recorded stdin as a terminal).{{else if eq .Origin "deployed"}}A supervised instance of {{.Deployment}}.{{else if eq .Origin "background"}}Started with no terminal on its input (run_start recorded stdin as {{.Stdin}}).{{else}}The record does not say how this run was started (an older ledger, or its input could not be examined).{{end}}">{{.OriginWord}}</span>{{end}}
+{{define "chainpill"}}{{if and .Verified .Anchored}}<span class="b b-verified" title="Hash chain checked line by line, anchored in chain.log">{{template "i" "i-link"}}Verified · {{.Lines}} {{if eq .Lines 1}}line{{else}}lines{{end}}</span>{{else if .Verified}}<span class="b b-waiting" title="Hash chain checked line by line, but with no anchor: the run did not end, so lines cut from its end would not show">{{template "i" "i-link"}}Not anchored · {{.Lines}} {{if eq .Lines 1}}line{{else}}lines{{end}}</span>{{else if .Broken}}<span class="b b-broken">{{template "i" "i-triangle-alert"}}{{if .AtLine}}Broken at #{{.Line}}{{else}}Broken after #{{.Line}}{{end}}</span>{{else if .Live}}<span class="b b-neutral" title="Checked when the run ends">{{template "i" "i-link"}}Verify at end</span>{{else}}<span class="b b-neutral" title="{{.Reason}}">{{template "i" "i-link"}}Not verified</span>{{end}}{{end}}
+{{/* runtable is a table of runs (runTable); runthead is its head and runrows its rows, which the Runs page splits into two live <tbody> regions. */}}
+{{define "runtable"}}<div class="tw"><table class="t t-rows" role="table"><caption class="sr">Runs, newest first</caption>{{template "runthead"}}<tbody role="rowgroup">{{template "runrows" .}}</tbody></table></div>{{end}}
+{{define "runthead"}}<thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Agent</th><th scope="col" role="columnheader">Status</th><th scope="col" role="columnheader">Secrets</th><th scope="col" role="columnheader" class="c-run">Run</th><th scope="col" role="columnheader">Started ({{tz}})</th><th scope="col" role="columnheader">Duration</th><th scope="col" role="columnheader" class="num c-lines">Lines</th><th scope="col" role="columnheader" class="num">Blocked</th><th scope="col" role="columnheader" class="num c-asks">Asks</th><th scope="col" role="columnheader">Protection</th></tr></thead>{{end}}
+{{/* ck is a duration (ckOf): a running run has its time so far, which live.js ticks from data-since every second; data-ck keeps its text out of the region's hash (regions.go). An ended or lost run's is plain text. */}}
+{{define "ck"}}{{if .Ticks}}<span class="ck" data-since="{{iso .Start}}" data-ck>{{dur .D}}</span>{{else}}{{dur .D}}{{end}}{{end}}
+{{define "runrows"}}{{$now := .Now}}{{range .Runs}}<tr role="row" data-k="{{.ID}}"><td role="cell" class="lead"><a class="primary" href="/runs/{{pathEsc .ID}}">{{if .Agent}}{{.Agent}}{{else}}(no agent){{end}}</a><span class="sub ellip" title="{{.Command}}">{{if .Cwd}}{{baseName .Cwd}}{{else}}{{cut .Command 40}}{{end}}</span></td><td role="cell" data-label="Status" class="state"><span class="st-wrap"{{if eq .Origin "background"}} title="Started without a terminal"{{end}}>{{template "state" .}}{{if or (eq .Origin "interactive") (eq .Origin "deployed")}}{{template "origin" .}}{{end}}</span></td><td role="cell" data-label="Secrets">{{template "secchip" (chip (index $.V .ID))}}</td><td role="cell" data-label="Run" class="desk-only c-run"><a class="mono link" href="/runs/{{pathEsc .ID}}" title="{{.ID}}">{{rid .ID}}</a></td><td role="cell" data-label="Started" class="desk-only"><time datetime="{{iso .Start}}" title="{{stamp .Start}}">{{when .Start $now}}</time></td><td role="cell" data-label="Duration" class="desk-only">{{template "ck" (ckOf . $now)}}</td><td role="cell" data-label="Lines" class="num desk-only c-lines">{{.Lines}}</td><td role="cell" data-label="Refused" class="num desk-only">{{if .Refusals}}<a class="n-link" href="/runs/{{pathEsc .ID}}/refusals" aria-label="{{.Refusals}} refused in run {{rid .ID}}">{{.Refusals}}</a>{{else}}<span class="zero">0</span>{{end}}</td><td role="cell" data-label="Asks" class="num desk-only c-asks">{{if .Asks}}{{.Asks}}{{else}}<span class="zero">0</span>{{end}}</td><td role="cell" data-label="Protection" class="desk-only" title="{{.Tier}}">{{tier .Tier}}</td><td role="cell" class="mobile-sum">{{rid .ID}} · {{template "ck" (ckOf . $now)}} · {{.Refusals}} refused · {{tier .Tier}}</td></tr>{{end}}{{end}}
+{{/* spv is a shortened path (sp, story.go): the folder muted, the file name in bold, the full path in the title; sptv is a row's target (spt): a path, or text cut in the middle. Both wrap only between names (pwp). */}}
+{{define "spv"}}{{range $i, $p := .}}{{if $i}} → {{end}}<span class="ut sp" title="{{$p.Full}}"><span class="sp-d">{{template "pwp" (pieces $p.Dir)}}</span>{{if $p.Dir}}<wbr>{{end}}<b class="sp-b">{{template "pwp" (pieces $p.Base)}}</b></span>{{end}}{{end}}
+{{define "sptv"}}{{if .Parts}}{{template "spv" .Parts}}{{else}}<span class="ut" title="{{.Full}}">{{template "pwp" (pieces .Text)}}</span>{{end}}{{end}}
+{{/* pwp is text in pieces (breakPieces, shown.go): a <wbr> after each / and :, each short hyphenated word in a no-wrap span, so a browser breaks it between names, never inside one. */}}
+{{define "pwp"}}{{range .}}{{if .Br}}<wbr>{{end}}{{if .Keep}}<span class="nb">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}{{end}}
+{{/* secchip is a run's Secrets cell (chip, story.go): exposed in red, protected in green, read on a watched run. */}}
+{{define "secchip"}}{{if .Text}}<span class="b {{.Class}}" title="{{.Title}}">{{template "i" .Icon}}{{.Text}}</span>{{else}}<span class="zero" title="No secret read or protected was recorded">—</span>{{end}}{{end}}
+{{/* askform is a waiting request's answers. Allow once and Deny are the same button, equal in weight: Tego
+does not pick the answer for the person, and the card's question says what each does. */}}
+{{define "askform"}}<div class="ask-d"><form class="stack-sm" method="post" action="/approvals/answer"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="run" value="{{.Run}}"><input type="hidden" name="ask" value="{{.AskID}}">
+      <button class="btn btn-block ask-btn" type="submit" name="decision" value="approve">{{template "i" "i-check"}}Allow once</button>
+      <button class="btn btn-block ask-btn" type="submit" name="decision" value="deny">{{template "i" "i-ban"}}Deny</button></form>
+      <details class="ask-more"><summary>More choices</summary><div class="stack-lg ask-more-in">
+      <form class="stack-sm" method="post" action="/approvals/answer"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="run" value="{{.Run}}"><input type="hidden" name="ask" value="{{.AskID}}"><input type="hidden" name="always" value="yes">
+      <button class="btn btn-block" type="submit" name="decision" value="approve">{{template "i" "i-check"}}Allow for this run</button>
+      <button class="btn btn-block" type="submit" name="decision" value="deny">{{template "i" "i-ban"}}Deny for this run</button>
+      <p class="soft ask-note">For this run: the same answer also goes to every later request to {{.Verb}} the same target, until this run ends. It does not change the contract.</p></form>
+      {{if .Alternate}}<form class="stack-sm" method="post" action="/approvals/answer"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="run" value="{{.Run}}"><input type="hidden" name="ask" value="{{.AskID}}">
+      <label class="lbl" for="alt-{{.AskID}}">Give a stand-in file instead (an absolute path on this computer)</label><input class="input" id="alt-{{.AskID}}" type="text" name="file" required placeholder="/home/you/stand-in.txt" autocomplete="off" spellcheck="false">
+      <label class="check-inline"><input type="checkbox" name="always" value="yes"> also for later requests for the same file in this run</label>
+      <button class="btn btn-block" type="submit" name="decision" value="alternate">{{template "i" "i-eye"}}Give this file instead</button></form>{{end}}
+      <div class="cli-pair"><span class="lbl">Same in a terminal</span>
+      <span class="cli-k">Allow once</span><div class="cli cli-wrap"><code>tego approve {{.Run}} {{.AskID}}</code></div>
+      <span class="cli-k">Deny</span><div class="cli cli-wrap"><code>tego deny {{.Run}} {{.AskID}}</code></div>
+      <span class="cli-k">Allow for this run</span><div class="cli cli-wrap"><code>tego approve {{.Run}} {{.AskID}} --always</code></div>
+      <span class="cli-k">Deny for this run</span><div class="cli cli-wrap"><code>tego deny {{.Run}} {{.AskID}} --always</code></div>{{if .Alternate}}
+      <span class="cli-k">Stand-in file</span><div class="cli cli-wrap"><code>tego alternate {{.Run}} {{.AskID}} --file &lt;path&gt;</code></div>{{end}}</div>
+      </div></details></div>{{end}}
+{{define "askbanner"}}<section class="banner banner-ask" id="ask-banner" role="alert" aria-live="assertive" aria-atomic="true" aria-labelledby="ask-banner-h">{{template "i" "i-hand"}}<div class="grow ab">
+{{$one := eq .Pending 1}}<h2 class="ab-h" id="ask-banner-h">{{if $one}}{{with index .Asks 0}}{{if .Agent}}{{.Agent}}{{else}}An agent{{end}}{{end}} is waiting for you{{else}}{{.Pending}} requests are waiting for you{{end}}</h2>
+{{range .Asks}}{{$m := index $.AskMeta .Run}}<div class="ab-row" data-k="{{.Run}}-{{.AskID}}"><p class="ab-what">{{if not $one}}<b>{{if .Agent}}{{.Agent}}{{else}}An agent{{end}}</b> wants to {{else}}Wants to {{end}}<span class="op">{{askVerb .Op .Rule .Hold}}</span> {{if .Target}}<span class="ab-tgt">{{template "sptv" (sptIn .Target $m.Home $m.Cwd 60)}}</span>{{else}}<span class="ut">(no target named)</span>{{end}} <span class="soft">· <time class="ask-ago" datetime="{{iso .TS}}" data-ago="{{iso .TS}}" title="{{stamp .TS}}">asked at {{clock .TS}}</time> · {{template "waitnote" (wait $m .TS $.Now)}}</span></p>
+<form class="ab-act" method="post" action="/approvals/answer"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="run" value="{{.Run}}"><input type="hidden" name="ask" value="{{.AskID}}"><button class="btn ask-btn" type="submit" name="decision" value="approve">{{template "i" "i-check"}}Allow once</button><button class="btn ask-btn" type="submit" name="decision" value="deny">{{template "i" "i-ban"}}Deny</button><a class="btn btn-ghost" href="/approvals#{{.AskID}}">More choices</a></form></div>{{end}}
+<p class="soft ab-note">Allow once lets this one request through; Deny refuses it.{{if gt .Pending (len .Asks)}} <a class="link" href="/approvals">See all {{.Pending}} on Approvals</a>.{{end}}</p></div></section>{{end}}
+{{/* waitnote is how long a waiting request is held (askWait): giveUp's words until the agent has likely stopped waiting, then live.js puts data-late in their place at data-late-at (the page renders those words itself once that time has passed). */}}
+{{define "waitnote"}}<span class="ask-wait"{{if .Late}} data-late-at="{{iso .LateAt}}" data-late="{{.Late}}"{{end}}>{{.Text}}</span>{{end}}
+{{/* askcard is one waiting request in full (Approvals and its run's page): the question, how long ago it came and how long the agent waits (live.js ticks it), the agent's exact text, the answers. With Show set it names the run. */}}
+{{define "askcard"}}{{$a := .V}}<section class="ask" id="{{$a.AskID}}" aria-labelledby="q-{{$a.AskID}}">
+  <div class="ask-bar"><span class="who">{{template "i" "i-shield"}}Tego asks you</span><span><time class="ask-ago" datetime="{{iso $a.TS}}" data-ago="{{iso $a.TS}}" title="Asked at {{stamp $a.TS}}" data-ck>asked {{ago $a.TS .Now}} ago</time> · {{template "waitnote" .Wait}}</span></div>
+  <div class="ask-grid">
+    <h2 class="ask-q" id="q-{{$a.AskID}}">Let {{if $a.Agent}}{{$a.Agent}}{{else}}the agent{{end}} {{askVerb $a.Op $a.Rule $a.Hold}} {{askObject $a.Op $a.Rule $a.Hold}}?</h2>
+    <div class="ask-t">{{if $a.Target}}<p class="ask-path">{{template "sptv" (sptIn $a.Target .Home .Cwd 72)}}</p>{{end}}<div><div class="ut-label">{{template "i" "i-eye"}}What the agent asked for · agent's text, shown exactly</div><span class="ut ut-box">{{if $a.Target}}{{$a.Target}}{{else}}(the ask line names no target; held {{$a.Hold}}){{end}}</span></div></div>
+    {{template "askform" (askForm $a .CSRF)}}
+    <div class="ask-f"><dl class="kv">
+      {{if .Show}}<dt>Run</dt><dd><a class="link" href="/runs/{{pathEsc $a.Run}}">{{$a.Agent}}</a> <span class="mono muted" title="{{$a.Run}}">{{rid $a.Run}}</span></dd>{{end}}
+      <dt>Why it asked</dt><dd><span title="{{$a.Rule}}">{{askWhy $a.Rule}}</span></dd>
+      <dt>Request</dt><dd><span title="Request {{$a.AskID}}">line #{{$a.Seq}}</span></dd></dl></div>
+  </div>
+</section>{{end}}
+{{/* lr opens a live region's wrapper (regions.go), named and hashed so static/live.js can swap the region in place:
+     {{template "lr" (index $.L "<region>")}}{{template "<region>" $}}</div> */}}
+{{define "lr"}}<div class="lr" data-live="{{.Name}}" data-h="{{.Hash}}"{{if .Top}} data-top{{end}}>{{end}}
+{{/* lrb is lr for a table's rows: the region is a <tbody> of table rows. {{template "lrb" (index $.L "<region>")}}{{template "<region>" $}}</tbody> */}}
+{{define "lrb"}}<tbody role="rowgroup" data-live="{{.Name}}" data-h="{{.Hash}}"{{if .Top}} data-top{{end}}>{{end}}
+{{define "r-top"}}{{if .Live}}<span class="live"><span class="dot" aria-hidden="true"></span>Live</span>{{else}}<span class="live paused"><span class="dot" aria-hidden="true"></span>Nothing running</span>{{end}}{{end}}
+{{define "r-nav"}}<ul class="nav">
+      <li><a href="/"{{if eq .Nav "overview"}} aria-current="page"{{end}}>{{template "i" "i-layout-dashboard"}}<span class="lbl">Overview</span></a></li>
+      <li><a href="/detections"{{if eq .Nav "detections"}} aria-current="page"{{end}}>{{template "i" "i-triangle-alert"}}<span class="lbl">Detections</span></a></li>
+      <li><a href="/runs"{{if eq .Nav "runs"}} aria-current="page"{{end}}>{{template "i" "i-activity"}}<span class="lbl">Runs</span></a></li>
+      <li><a href="/approvals"{{if eq .Nav "approvals"}} aria-current="page"{{end}}>{{template "i" "i-inbox"}}<span class="lbl">Approvals</span>{{if .Pending}}<span class="count" aria-live="polite">{{.Pending}}<span class="sr"> waiting</span></span>{{end}}</a></li>
+      <li><a href="/logs"{{if eq .Nav "logs"}} aria-current="page"{{end}}>{{template "i" "i-scroll-text"}}<span class="lbl">Logs</span></a></li>
+      <li class="nav-rules"><a href="/rules"{{if eq .Nav "rules"}} aria-current="page"{{end}}>{{template "i" "i-shield"}}<span class="lbl">Policies</span></a></li>
+      <li class="sep" role="separator"></li>
+      <li class="more-item"><a href="/machine"{{if eq .Nav "machine"}} aria-current="page"{{end}}>{{template "i" "i-terminal"}}<span class="lbl">This machine</span></a></li>
+      {{if .Preview}}
+      {{range layerNav}}{{if .Soon}}<li class="more-item"><span class="nav-soon" title="{{.Title}}">{{template "i" .Icon}}<span class="lbl">{{.Label}}</span><span class="soon-tag">Soon</span></span></li>{{else}}<li class="more-item"><a href="{{.Href}}"{{if eq $.Nav .Key}} aria-current="page"{{end}}>{{template "i" .Icon}}<span class="lbl">{{.Label}}</span></a></li>{{end}}
+      {{end}}{{end}}
+      <li class="nav-more"><button type="button" popovertarget="more-menu"><span class="dots" aria-hidden="true">···</span><span>More</span></button><ul class="more-menu" id="more-menu" popover><li><a href="/rules">{{template "i" "i-shield"}}Policies</a></li><li><a href="/machine">{{template "i" "i-terminal"}}This machine</a></li>{{if .Preview}}{{range layerNav}}{{if .Soon}}<li class="soon-li"><span class="nav-soon">{{template "i" .Icon}}{{.Label}}<span class="soon-tag">Coming soon</span></span></li>{{else}}<li><a href="{{.Href}}">{{template "i" .Icon}}{{.Label}}</a></li>{{end}}{{end}}{{end}}</ul></li>
+    </ul>{{end}}
+{{define "r-banner"}}{{with .Flash}}<section class="banner flash {{if .OK}}banner-ok{{else}}banner-danger{{end}}" id="flash" role="status" aria-live="polite">{{if .OK}}{{template "i" "i-check"}}{{else}}{{template "i" "i-triangle-alert"}}{{end}}<div class="grow"><strong>{{.Text}}</strong>{{with .Link}} <span class="soft" aria-hidden="true">·</span> <a class="link" href="{{.}}">{{$.Flash.LinkText}}</a>{{end}}</div></section>{{end}}
+{{if and .Asks (ne .Nav "approvals")}}{{template "askbanner" .}}{{end}}
+{{range .Notes}}<section class="banner banner-warn" role="status">{{template "i" "i-triangle-alert"}}<div class="grow">{{.}}</div></section>{{end}}{{end}}
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+{{if .Refresh}}<noscript><meta http-equiv="refresh" content="{{.Refresh}}"></noscript>{{end}}
+<title>{{if .Pending}}({{.Pending}}) {{end}}{{.Title}} · Tego</title>
+<script src="/static/theme.js"></script>
+<script src="/static/live.js" defer></script>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/tokens.css">
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/mvp.css">
+<link rel="stylesheet" href="/static/signal.css">
+</head>
+<body{{if .Sig}} data-sig="{{.Sig}}" data-rev="{{.Rev}}" data-title="{{.Title}} · Tego"{{end}}>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="/" aria-label="Tego overview"><svg class="logo" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#logo"/></svg><span class="word">tego</span></a>
+  {{if .Host}}<span class="host" title="This computer: {{.Host}}">{{cut .Host 20}}</span>{{end}}
+  <form class="gsearch" role="search" action="/logs" method="get">
+    <label class="sr" for="gq">Search</label>{{template "i" "i-search"}}
+    <input class="input" id="gq" type="search" name="q" value="{{.Query}}" placeholder="Path, host, command or rule">
+  </form>
+  <div class="top-right">
+    {{template "lr" (index .L "r-top")}}{{template "r-top" $}}</div>
+    <span class="theme" id="theme-w" hidden><label class="sr" for="theme">Colour theme</label><select class="select" id="theme" title="Colour theme"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></span>
+    <span class="b b-outline" title="This dashboard reads the ledger on this computer; it changes a run or a rules file only when you press a button that says so (Allow once, Deny, Block now, Stop run, Save)">{{template "i" "i-eye"}}On this computer</span>
+    <a class="b b-outline gl-link" href="/glossary" title="What the dashboard's words mean" aria-label="Glossary">?</a>
+    <a class="iconlink phone-only" href="/logs" aria-label="Search the logs">{{template "i" "i-search"}}</a>
+  </div>
+</header>
+<div class="app">
+  <nav class="side" aria-label="Main">
+    {{template "lr" (index .L "r-nav")}}{{template "r-nav" $}}</div>
+  </nav>
+  <main id="main" tabindex="-1">
+    <div class="page">
+{{template "lr" (index .L "r-banner")}}{{template "r-banner" $}}</div>
+{{with index .L "content"}}{{template "lr" .}}{{template "content" $}}</div>{{else}}{{template "content" $}}{{end}}
+    </div>
+    <footer class="foot">
+      <span title="Every run's record, hash-chained and verified">Record <span class="mono">{{.Ledger}}</span></span>
+    </footer>
+  </main>
+</div>
+</body>
+</html>{{end}}

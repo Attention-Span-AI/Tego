@@ -1,0 +1,8 @@
+# The modules ./cmd/tego links (-tags tegobpf), one path@version per line, sorted. TestEngineModuleSetUnchanged
+# holds the build to it; rewrite with go test ./internal/control -run TestEngineModuleSetUnchanged -update-modules.
+github.com/andybalholm/brotli@v1.2.7
+github.com/cilium/ebpf@v0.22.0
+github.com/klauspost/compress@v1.20.3
+golang.org/x/net@v0.62.0
+golang.org/x/sys@v0.49.0
+gopkg.in/yaml.v3@v3.0.1

@@ -1,0 +1,97 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{define "effect"}}{{if eq . "allow"}}<span class="b b-neutral b-allow">{{template "i" "i-check"}}Allowed</span>{{else if eq . "ask"}}<span class="b b-asked">{{template "i" "i-hand"}}Asks you</span>{{else if eq . "deny"}}<span class="b b-refused">{{template "i" "i-ban"}}Refused</span>{{else if eq . "limit"}}<span class="b b-neutral">{{template "i" "i-square"}}Limit</span>{{else}}<span class="b b-neutral">{{template "i" "i-eye"}}Note</span>{{end}}{{end}}
+{{define "enforced"}}{{if not .Enforced}}<span class="zero">—</span>{{else if eq .State "best_effort"}}<span class="enf-be">{{template "i" "i-triangle-alert"}}{{.Enforced}}</span>{{else if eq .State "not_enforced"}}<span class="enf-no">{{template "i" "i-triangle-alert"}}{{.Enforced}}</span>{{else}}{{.Enforced}}{{end}}{{end}}
+{{define "hits"}}{{if not .Hits}}<span class="zero">No hits</span>{{else if .HitsURL}}<a class="n-link" href="{{.HitsURL}}" aria-label="{{.Hits}} {{plural .Hits "line" "lines"}} of this run under: {{.Sentence}}">{{.Hits}} {{plural .Hits "hit" "hits"}}</a>{{else}}{{.Hits}} {{plural .Hits "hit" "hits"}}{{end}}{{end}}
+{{define "rulespick"}}{{$d := .}}<form class="frow rules-pick" action="/rules" method="get" aria-label="Choose the rules to show">
+  {{if .Contracts}}<label class="field rp-file">Policy file<select class="select" name="c">{{range .Contracts}}<option value="{{.Ref}}"{{if eq .Ref $d.Ref}} selected{{end}}>{{if .Agent}}{{.Agent}} · {{end}}{{tail .Path 48}}{{if .Live}} · running{{else if not .Runs}} · not run yet{{end}}</option>{{end}}{{if not .Ref}}<option value="" selected>a run with no policy file</option>{{end}}</select></label>{{end}}
+  {{if .Runs}}<label class="field rp-run">Run<select class="select" name="run">{{range .Runs}}<option value="{{.ID}}"{{if and $d.Run (eq .ID $d.Run.ID)}} selected{{end}}>{{rid .ID}} · {{day .Start}} {{clock .Start}}{{if eq .State "running"}} · running{{end}}</option>{{end}}</select></label>{{end}}
+  <button class="btn" type="submit">Show</button>
+</form>{{end}}
+{{define "content"}}<link rel="stylesheet" href="/static/rules.css">{{$csrf := $.CSRF}}{{with .Data}}{{$d := .}}
+{{if .NotRun}}{{$n := .NotRun}}{{$p := $n.Plan}}
+<div class="head"><div><h1>Policy · {{.Agent}}</h1><p class="lede rules-ctx"><span class="code-i" title="{{$p.File}}">{{tail $p.File 60}}</span> · not run yet</p></div>
+<div class="head-actions">{{if .CanChange}}<a class="btn" href="/rules/change?c={{queryEsc .Ref}}">{{template "i" "i-scroll-text"}}Edit policy</a>{{end}}<a class="btn" href="/rules/new">{{template "i" "i-shield"}}New policy</a></div></div>
+{{template "rulespick" .}}
+<section class="panel"><div class="panel-body stack"><h2 class="rp-h">Start it</h2><div class="cli"><code>{{$n.Start}}</code></div><p class="soft">Add <span class="mono">-- &lt;command&gt;</span> to run another program than the file's <span class="mono">command:</span> · then each run's policy shows here</p></div></section>
+{{if $p.Problems}}<section class="banner banner-warn" role="status">{{template "i" "i-triangle-alert"}}<div class="grow">{{range $p.Problems}}<p>{{.}}</p>{{end}}</div></section>{{end}}
+{{if $p.Diagnostics}}<section class="panel"><div class="panel-head"><h2>What compile says</h2></div><div class="panel-body"><pre class="term">{{range $p.Diagnostics}}{{.}}
+{{end}}</pre></div></section>{{end}}
+{{with $p.ViewNote}}<p class="note">{{template "i" "i-shield"}}<span>{{.}}</span></p>{{end}}
+{{range $n.Groups}}<section class="panel rules-g" aria-labelledby="g-{{.ID}}"><div class="panel-head"><h2 id="g-{{.ID}}">{{template "i" .Icon}}{{.Title}} <span class="soft">{{.Lede}}</span></h2></div>
+{{if .Rows}}<ul class="nw-rules">{{range .Rows}}<li>{{template "effect" .Effect}}<span>{{.Sentence}}</span></li>{{end}}</ul>{{end}}
+{{if .More}}<details class="nw-more"><summary>and {{len .More}} more</summary><ul class="nw-rules">{{range .More}}<li>{{template "effect" .Effect}}<span>{{.Sentence}}</span></li>{{end}}</ul></details>{{end}}
+{{with .Default}}<div class="panel-foot rules-default"><span>{{.}}</span></div>{{end}}</section>{{end}}
+<details class="panel rules-raw"><summary class="panel-head"><h2>The rules file as written</h2><span class="soft">YAML</span></summary><div class="panel-body"><pre class="term">{{$n.Text}}</pre><p class="soft">Values hidden</p></div></details>
+{{else if not .Run}}
+<div class="head"><div><h1>Policies</h1></div>{{if .CanSetUp}}<div class="head-actions"><a class="btn btn-primary" href="/rules/new">{{template "i" "i-shield"}}New policy</a></div>{{end}}</div>
+{{if .Contracts}}{{template "rulespick" .}}{{end}}
+<section class="panel"><div class="empty">
+  <div class="glyph">{{template "i" "i-shield"}}</div>
+  <h3>No policies yet</h3>
+  {{if .CanSetUp}}<a class="btn btn-primary" href="/rules/new">{{template "i" "i-shield"}}New policy</a>{{end}}
+  <details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>tego init &amp;&amp; tego run -- &lt;agent&gt;</code></div></details>
+</div></section>
+{{else}}{{$r := .Run}}{{$v := .V}}
+<div class="head"><div><h1>Policy{{if .Agent}} · {{.Agent}}{{end}}</h1>
+<p class="lede rules-ctx">{{if .Watch}}Watched only{{else}}{{.Tier}}{{end}} · run <a class="mono link" href="/runs/{{pathEsc $r.ID}}" title="{{$r.ID}}">{{rid $r.ID}}</a>{{if .Running}} · running{{else}} · ended{{end}}{{if .Source}} · <span class="code-i" title="{{if $v.Source}}{{$v.Source}}{{else}}{{$v.CopyPath}} (the run's own copy){{end}}">{{template "pwp" (pieces .Source)}}</span>{{end}}</p></div>
+<div class="head-actions">{{if .CanSetUp}}<a class="btn" href="/rules/new">{{template "i" "i-shield"}}New policy</a>{{end}}{{if .Ref}}{{if .CanChange}}<a class="btn btn-primary" href="/rules/change?c={{queryEsc .Ref}}">{{template "i" "i-scroll-text"}}Edit policy</a>{{else}}<button class="btn btn-primary" type="button" disabled aria-describedby="rules-soon">{{template "i" "i-scroll-text"}}Change rules</button><p class="rules-soon" id="rules-soon">A rule changes from a log line (Act on this) or with <span class="mono">tego rule</span>.</p>{{end}}{{end}}</div></div>
+
+{{template "rulespick" .}}{{template "livemodes" .Mode}}{{with .Fence}}<section class="panel rules-fence" id="live-fence" aria-labelledby="h-fence"><div class="panel-head"><h2 id="h-fence">{{template "i" "i-shield"}}Live policy inside the fence <span class="soft">(Tego's live layer)</span></h2></div>
+<div class="panel-body stack-sm"><p class="lf-lede"><span title="The kernel lets this run reach these; Tego's live layer blocks each until you lift it">Fence (kernel)</span></p>
+{{if .Rows}}<ul class="list lf-list">{{range .Rows}}<li class="lf-row" data-k="{{.Kind}}:{{.Value}}" data-state="{{.State}}"><div class="grow stack-sm"><span class="lf-what" title="{{.Rule}}">{{.What}} <span class="soft">· {{if eq .Verb "Grant"}}new access{{else}}one of the contract's refusals{{end}}{{if eq .Kind "exec"}} · best effort: a copy of the program under another name is not covered{{end}}</span></span>
+<span class="lf-st"><span class="b {{.ChipClass}} lf-chip">{{.Chip}}</span>{{with .Note}} <span class="soft">{{.}}</span>{{end}}{{if and (not .At.IsZero) .By}} <span class="soft">· {{if eq .State "lifted"}}{{if eq .Verb "Grant"}}granted{{else}}lifted{{end}}{{else}}last changed{{end}} by {{who .By}} at <time datetime="{{iso .At}}" title="{{stamp .At}}">{{clock .At}}</time></span>{{end}}</span></div>
+{{if $d.Fence.Running}}{{if eq .State "lifted"}}<form class="lf-form" method="post" action="/runs/{{pathEsc $r.ID}}/restore"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="kind" value="{{.Kind}}"><input type="hidden" name="value" value="{{.Value}}"><button class="btn" type="submit" aria-label="Restore: refuse again: {{.What}}">{{template "i" "i-ban"}}Restore</button></form>{{else}}<form class="lf-form" method="get" action="/runs/{{pathEsc $r.ID}}/lift" aria-label="{{.Verb}}: {{.What}}"><input type="hidden" name="kind" value="{{.Kind}}"><input type="hidden" name="value" value="{{.Value}}">{{template "forselect" "1h"}}<button class="btn" type="submit">{{.Verb}}…</button></form>{{end}}{{end}}</li>{{end}}</ul>
+{{else}}<p class="soft">This run's fence is empty, so nothing can be lifted while it runs. Entries added under <span class="mono">live.fence</span> in its policy apply from the next run</p>{{end}}
+<p class="soft">{{if .Running}}Lift and Grant preview first · {{end}}<span title="A time limit stops new access only: anything already read or copied, files still open and live connections stay">Time limits stop new access only</span></p>
+<details class="cli-more"><summary>In a terminal</summary><div class="cli cli-wrap"><code>tego lift|grant|restore {{$r.ID}} &lt;read|net|exec&gt; &lt;value&gt;</code></div></details></div></section>{{end}}
+
+{{if $v.Err}}<section class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow"><strong>Policy unreadable</strong> {{$v.Err}}</div></section>{{end}}
+{{with .Pending}}{{if .Live}}<section class="panel rules-pending rp-live" aria-labelledby="h-pending"><div class="panel-head"><h2 id="h-pending">{{template "i" "i-scroll-text"}}Changed since this run started</h2></div><div class="panel-body stack-sm">
+  <p class="soft">The next run of <span class="code-i">{{$d.Source}}</span> gets every change below · this run keeps its own, except changes live on it</p>
+  {{if .Changes}}<ul class="rp-list rp-now">{{range .Changes}}{{$c := .}}<li class="rp-row"><div class="rp-what">{{if .Sentences}}{{range $i, $s := .Sentences}}{{if $i}}; {{end}}{{$s}}{{end}}{{else if .Summary}}{{.Summary}}{{else}}a change{{end}} <span class="soft">· {{if .Via}}from the {{.Via}}, {{end}}<time datetime="{{iso .At}}" title="{{stamp .At}}">{{clock .At}} {{tz}}</time></span></div>
+  {{with .Now}}<div class="rp-state" data-state="{{.State}}"><span class="b {{.Class}}">{{.Label}}</span>{{with .Note}} <span class="soft">{{.}}</span>{{end}}{{if .Blocks}} <span class="rp-blocks">{{range $i, $b := .Blocks}}{{if $i}}; {{end}}<span title="{{$b.Key}}">{{$b.Words}}</span>{{end}}</span>{{end}}</div>
+  {{if .CanApply}}<form class="rp-apply" method="post" action="/rules/change"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="do" value="applynow"><input type="hidden" name="id" value="{{$c.ID}}"><input type="hidden" name="run" value="{{$r.ID}}"><button class="btn" type="submit">{{if .Observe}}{{template "i" "i-eye"}}Mark now (recorded only){{else}}{{template "i" "i-ban"}}Apply now{{end}}</button></form>{{end}}{{end}}</li>{{end}}</ul>{{end}}
+  {{if not .Edited.IsZero}}<p>The file was also edited outside Tego at <time datetime="{{iso .Edited}}" title="{{stamp .Edited}}">{{clock .Edited}} {{tz}}</time> · not live on this run</p>{{end}}{{if .Unchecked}}<p class="soft"><span title="The file could not be loaded to compare with what this run ran; this rests on the change record and the file's time">Not compared</span></p>{{end}}
+  <p class="soft">To apply all: stop it (<a class="link" href="/runs/{{pathEsc $r.ID}}/stop">Stop this run</a>); its next run gets these rules{{if .Restart}}:{{else}}.{{end}}</p>
+  {{with .Restart}}<div class="cli"><code>{{.}}</code></div><p class="soft"><span title="Same policy file and command; add options the run was started with, such as --tier or --record">Restart with</span></p>{{end}}
+</div></section>{{else}}<section class="banner banner-warn rules-pending" role="status" aria-labelledby="h-pending">{{template "i" "i-triangle-alert"}}<div class="grow stack-sm">
+  <h2 class="rp-h" id="h-pending">Saved · from the next run</h2>
+  <p>This run {{if $d.Running}}keeps{{else}}kept{{end}} the rules it started with. The next run of <span class="code-i">{{$d.Source}}</span> gets the rules below changed:</p>
+  {{if .Changes}}<ul class="rp-list">{{range .Changes}}<li>{{if .Sentences}}{{range $i, $s := .Sentences}}{{if $i}}; {{end}}{{$s}}{{end}}{{else if .Summary}}{{.Summary}}{{else}}a change{{end}} <span class="soft">· {{if .Via}}from the {{.Via}}, {{end}}<time datetime="{{iso .At}}" title="{{stamp .At}}">{{clock .At}} {{tz}}</time></span></li>{{end}}</ul>{{end}}
+  {{if not .Edited.IsZero}}<p>The file was also edited outside Tego at <time datetime="{{iso .Edited}}" title="{{stamp .Edited}}">{{clock .Edited}} {{tz}}</time> · tables show what this run enforces</p>{{end}}
+  {{if .Unchecked}}<p class="soft"><span title="The file could not be loaded to compare with what this run ran; this rests on the change record and the file's time">Not compared</span></p>{{end}}
+</div></section>{{end}}{{end}}
+{{if .Watch}}<p class="note" title="Below: what an enforced run of this policy would block">{{template "i" "i-eye"}}<span>Watched only · nothing blocked</span></p>{{end}}
+{{with .CopyNote}}<p class="note">{{template "i" "i-scroll-text"}}<span>{{.}}</span></p>{{end}}
+{{range $v.View.Notes}}<p class="note">{{template "i" "i-shield"}}<span>{{.}}</span></p>{{end}}
+{{with $v.LiveErr}}<p class="note">{{template "i" "i-triangle-alert"}}<span>The run's live blocks could not be read: {{.}}</span></p>{{end}}
+
+{{with .Live}}<section class="panel rules-live{{if .Calm}} is-calm{{end}}" aria-labelledby="g-live"><div class="panel-head"><h2 id="g-live">{{template "i" .Icon}}{{.Title}} <span class="soft">{{.Lede}}</span></h2></div><div class="tw"><table class="t t-rules" role="table"><caption class="sr">{{.Title}}: {{.Lede}}</caption><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Rule</th><th scope="col" role="columnheader" class="c-enf">Enforced by</th><th scope="col" role="columnheader" class="c-hits num">In this run</th><th scope="col" role="columnheader" class="c-src">Added</th><th scope="col" role="columnheader" class="c-act"><span class="sr">Remove</span></th></tr></thead><tbody role="rowgroup">{{range .Rows}}
+<tr role="row"><td role="cell" class="lead">{{.Sentence}}{{with .Ends}} <span class="soft lf-ends">{{.}}</span>{{end}}</td><td role="cell" data-label="Enforced by" class="c-enf">{{template "enforced" .}}</td><td role="cell" data-label="In this run" class="c-hits num">{{template "hits" .}}</td><td role="cell" data-label="Added" class="c-src"><span title="{{.SourceTitle}}">{{.Source}}</span></td><td role="cell" class="act">{{if not .Ended}}<form method="post" action="/runs/{{pathEsc $r.ID}}/unblock"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="kind" value="{{.Kind}}"><input type="hidden" name="value" value="{{.Value}}"><button class="btn" type="submit" aria-label="Remove the live block: {{.Sentence}}">{{template "i" "i-rotate-cw"}}Remove</button></form>{{end}}</td></tr>{{end}}
+</tbody></table></div>{{with .Default}}<div class="panel-foot"><span>{{.}}</span></div>{{end}}</section>{{end}}
+
+{{range .Groups}}<section class="panel rules-g" aria-labelledby="g-{{.ID}}"><div class="panel-head"><h2 id="g-{{.ID}}">{{template "i" .Icon}}{{.Title}} <span class="soft">{{.Lede}}</span></h2></div>
+{{if .Rows}}<div class="tw"><table class="t t-rules" role="table"><caption class="sr">{{.Title}}: {{.Lede}}</caption><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Rule</th><th scope="col" role="columnheader" class="c-effect">Effect</th><th scope="col" role="columnheader" class="c-enf" title="A blank cell: the operating system enforces the rule in full. Only the exceptions are named.">Enforced by <span class="th-sub">kernel unless noted</span></th><th scope="col" role="columnheader" class="c-hits num">In this run</th><th scope="col" role="columnheader" class="c-src">Source</th></tr></thead><tbody role="rowgroup">{{range .Rows}}
+<tr role="row"{{if .Devices}} class="r-fold-row"{{end}}><td role="cell" class="lead">{{if .Devices}}<details class="r-fold"><summary>{{.Sentence}} <span class="soft">{{range $i, $x := .Devices}}{{if $i}}, {{end}}{{$x.Target}}{{end}}</span></summary><ul class="r-devs">{{range .Devices}}<li><span>{{.Sentence}}</span><span class="soft"><span class="mono" title="{{.SourceTitle}}">{{.Source}}</span> · {{template "hits" .}}</span></li>{{end}}</ul></details>{{else}}{{.Sentence}}{{end}}</td><td role="cell" data-label="Effect" class="c-effect">{{template "effect" .Effect}}</td><td role="cell" data-label="Enforced by" class="c-enf{{if .ByOS}} is-os{{end}}">{{if not .ByOS}}{{template "enforced" .}}{{end}}</td><td role="cell" data-label="In this run" class="c-hits num">{{template "hits" .}}</td><td role="cell" data-label="Source" class="c-src"><span class="mono" title="{{.SourceTitle}}">{{.Source}}</span></td></tr>{{end}}
+</tbody></table></div>{{end}}
+{{if .Default}}<div class="panel-foot rules-default{{if .Open}} is-open{{end}}">{{if .Open}}<span class="b b-asked" title="Wide open: a contract usually narrows this">{{template "i" "i-triangle-alert"}}Open</span>{{end}}<span>{{.Default}}</span>{{if .Narrow}}<a class="link r-narrow" href="{{.Narrow}}">Narrow this</a>{{end}}</div>{{end}}</section>{{end}}
+{{if $v.View.Unmatched}}<p class="note">{{template "i" "i-eye"}}<span><a class="n-link" href="{{logsURL $r.ID "unmatched"}}">{{$v.View.Unmatched}} {{plural $v.View.Unmatched "line" "lines"}}</a> decided by defaults</span></p>{{end}}
+
+<details class="cli-more"><summary>In a terminal</summary>{{if .Hint}}<div class="cli"><code>{{.Hint}}</code></div>{{end}}<div class="cli"><code>tego block --list {{$r.ID}}</code></div>{{if not .Hint}}<span class="soft" title="The run named no policy file, so there is no file to compile; its copy is below">No policy file</span>{{end}}</details>
+
+<details class="panel rules-raw"><summary class="panel-head"><h2>Policy file and compiled form</h2><span class="soft">YAML</span></summary>
+<div class="panel-body stack-lg">
+<dl class="kv">
+  <dt>Run copy</dt><dd>{{if $v.Contract.Missing}}<span class="muted">No copy recorded</span>{{else}}<span class="mono">{{$v.CopyPath}}</span>{{end}}</dd>
+  {{if not $v.Contract.Missing}}<dt>Hash</dt><dd>{{if $v.Contract.HashMatches}}<span class="b b-verified">{{template "i" "i-check"}}Same contract the run recorded</span>{{else if $v.Contract.Hash}}<span class="b b-broken">{{template "i" "i-triangle-alert"}}Not the contract_hash the run recorded</span>{{else}}<span class="muted">No hash recorded</span>{{end}}</dd>{{end}}
+  {{if $v.Source}}<dt>Policy file</dt><dd class="mono">{{$v.Source}}</dd>{{end}}
+  {{with $v.Contract.Cwd}}<dt>Directory</dt><dd class="mono">{{.}}</dd>{{end}}
+  {{with .Hint}}<dt>In a terminal</dt><dd class="mono">{{.}}</dd>{{end}}
+</dl>
+{{if .Text}}<div><h3>The run's copy</h3><pre class="term">{{.Text}}</pre></div>{{end}}
+{{if .Table}}<div><h3>What it compiles to</h3><pre class="term">{{.Table}}</pre></div>{{end}}
+{{with $v.Contract.Err}}<section class="banner banner-warn" role="status">{{template "i" "i-triangle-alert"}}<div class="grow">{{.}}</div></section>{{end}}
+{{with $v.Contract.Diagnostics}}<div><h3>Diagnostics</h3><pre class="term">{{.}}</pre></div>{{end}}
+<p class="soft">Values hidden</p>
+</div></details>
+{{end}}{{end}}{{end}}
