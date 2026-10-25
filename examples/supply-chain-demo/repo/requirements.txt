@@ -1,0 +1,4 @@
+# The project's dependencies. telemetry-helper is the poisoned one, pinned to the vendored local copy
+# so nothing is fetched from a public index for it.
+pytest
+./vendor/telemetry-helper

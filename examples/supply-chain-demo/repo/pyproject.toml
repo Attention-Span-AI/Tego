@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "notes-app"
+version = "0.1.0"
+description = "A tiny notes library (demo project)"
+# The poisoned dependency is pinned to the local vendored copy (see requirements.txt), not PyPI.
+
+[tool.setuptools]
+packages = ["notes_app"]
+
+[tool.setuptools.package-dir]
+"" = "src"
