@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# OpenAI Codex (the full-screen interface, `codex --no-daemon`) signed in with ChatGPT (your Plus, Pro or Business plan),
+# interactive, under tego. codex.yaml is the same agent with an API key and every model call recorded through the
+# forwarder; this is the one for a ChatGPT plan. It is the contract proven on a laptop by
+# examples/demo/contracts/codex-chatgpt.yaml (TestInteractiveExamplesMatchTheDemoKit, examples/demo, fails when the two
+# drift apart).
+#
+# Logging in. The ChatGPT sign-in starts a listener on a local port for the browser's redirect, which cannot run inside
+# tego, so sign in ONCE outside it, into a Codex home of its own (never your ~/.codex, which this contract keeps unreadable),
+# and let the contract's CODEX_HOME name that directory:
+#   mkdir -p ~/.local/share/tego/codex-chatgpt
+#   codex login                                          # outside tego, in your browser; it signs in ~/.codex
+#   cp ~/.codex/auth.json ~/.local/share/tego/codex-chatgpt/auth.json
+#   chmod 600 ~/.local/share/tego/codex-chatgpt/auth.json
+#   printf 'sandbox_mode = "danger-full-access"\napproval_policy = "never"\ncheck_for_update_on_startup = false\n' \
+#     > ~/.local/share/tego/codex-chatgpt/config.toml
+# (`CODEX_HOME=~/.local/share/tego/codex-chatgpt codex login` signs in that directory directly, with no copy.) The
+# config.toml turns Codex's own sandbox off, because tego is the cage; `codex --no-daemon` keeps its commands inside it.
+#
+# CHANGE: every /home/USER/ below to your home directory, and the codex-code-mode-host entry's directory to
+#   dirname "$(readlink -f "$(command -v codex)")"
+# Then run it from a project that has work/ and held/, with the contract kept outside the project:
+#   mkdir -p work/tmp held && tego compile ~/contracts/codex-chatgpt.yaml && tego run ~/contracts/codex-chatgpt.yaml
+#
+# Why it looks like this (docs/OPERATIONS.md, "Interactive Codex under a boundary"):
+#   - capture: off and a net.allow of chatgpt.com and auth.openai.com: with a ChatGPT sign-in Codex talks to chatgpt.com, not
+#     api.openai.com, so tego's forwarder does not carry its model calls: the connections are allowed by host and recorded,
+#     the request bodies are not. (codex.yaml records every model call.)
+#   - The Codex home is writable because Codex refreshes its sign-in there; ~/.codex stays unreadable.
+#   - Only ./work/ is writable (plus /dev/ptmx and /dev/pts/: Codex runs every command in a pseudo-terminal, and without
+#     them every command fails with "out of pty devices"); a write under ./held/ pauses Codex until you run
+#     `tego approve` in a second terminal.
+#   - stall_after, not wall: typing at the terminal counts as activity, so a working session is not ended, while a wall is a
+#     hard cap that ends it at the minute it expires. It is record: full, so reads count as activity
+#     too (under record: summary, `tego compile` warns [stall-reads-unseen]). No cost_usd: it needs the machine's price
+#     table, and counted model calls.
+version: 0
+name: codex-chatgpt
+command: ["codex", "--no-daemon"]
+capture: off
+record: full
+fs:
+  write: ["./work/", "/dev/null", "/dev/tty", "/dev/ptmx", "/dev/pts/", "/home/USER/.local/share/tego/codex-chatgpt/"]
+  ask: ["./held/"]
+  # CHANGE: the files of your real ~/.codex that exist (a deny_read of a missing path is refused); its installation is in
+  # the directory, so the directory as a whole is not denied.
+  deny_read: ["~/.codex/auth.json", "~/.codex/history.jsonl", "~/.codex/sessions/", "~/.codex/config.toml"]
+exec:
+  # Codex runs its tools through its own helper, codex-code-mode-host, next to the real codex binary; its shell snapshot
+  # uses tr and wc.
+  allow: ["bash", "git", "cat", "ls", "mkdir", "touch", "grep", "sed", "head", "tail", "find", "wc", "tr", "sort", "/CHANGE/codex-code-mode-host"]
+net:
+  allow: ["unix:/var/run/nscd/socket", "tcp://chatgpt.com:443", "tcp://auth.openai.com:443"]
+env:
+  pass: ["PATH", "HOME", "LANG", "TERM", "COLORTERM"]
+  set:
+    CODEX_HOME: "/home/USER/.local/share/tego/codex-chatgpt"
+    HISTFILE: "/dev/null"
+    TMPDIR: "./work/tmp"
+limits:
+  pids: 512
+  memory: 4GiB
+  stall_after: 1h
+ask:
+  timeout: 5m

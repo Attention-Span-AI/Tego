@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: Apache-2.0
+# Codex (the full-screen interface), interactive, under Tego. demo.sh codex fills the @@ words in and writes it
+# next to the project. Derived from examples/agents/codex.yaml and test/poc/interactive-codex/; the long reasons
+# are in docs/OPERATIONS.md, "Interactive Codex under a boundary".
+#
+#  - Codex's own sandbox is off in the config.toml demo.sh writes (sandbox_mode = danger-full-access): Tego is the cage.
+#  - `codex --no-daemon`: Codex's shared background server would run commands outside the boundary.
+#  - capture: forwarder with a models entry: the model calls go through Tego's local listener, which is recorded and
+#    counted; net.allow names no model host. Codex's login screen appears each run: choose "Provide your own API
+#    key" (the key is stored in the run's private CODEX_HOME and removed when the run ends).
+#  - Only ./work/ is writable (plus /dev/ptmx and /dev/pts/: Codex runs every command in a pseudo-terminal, and without
+#    them every command fails with "out of pty devices"); a write under ./held/ pauses Codex until you run `tego approve` from a second terminal.
+#  - stall_after, not wall: typing counts as activity, so a working session is not ended (a wall is a hard cap).
+#  - examples/agents/codex.yaml is the same contract for your own project; a test keeps the two equal.
+#  - `tego compile` warns [env-runtime-reserved] for CODEX_HOME, by design: the run replaces the value with its own.
+version: 0
+name: codex
+command: ["codex", "--no-daemon"]
+models:
+  - { provider: openai, host: api.openai.com, port: 443 }
+capture: forwarder
+record: full
+fs:
+  write: ["./work/", "/dev/null", "/dev/tty", "/dev/ptmx", "/dev/pts/"]
+  ask: ["./held/"]
+  # @@DENY_READ@@
+exec:
+  # Codex runs its tools through its own helper, codex-code-mode-host, next to the real codex binary (demo.sh fills
+  # @@CODEXHOST@@ with: dirname of readlink -f $(command -v codex)); its shell snapshot uses tr and wc.
+  allow: ["bash", "git", "cat", "ls", "mkdir", "touch", "grep", "sed", "head", "tail", "find", "wc", "tr", "sort", "@@CODEXHOST@@/codex-code-mode-host"]
+net:
+  allow: []
+  dns:
+    mode: "off"
+env:
+  pass: ["PATH", "HOME", "LANG", "TERM", "COLORTERM"]
+  set:
+    CODEX_HOME: "@@STAGE@@/codex-home"
+    HISTFILE: "/dev/null"
+    TMPDIR: "./work/tmp"
+limits:
+  pids: 512
+  memory: 4GiB
+  stall_after: 1h
+ask:
+  timeout: 5m

@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: Apache-2.0
+# Codex signed in with ChatGPT (your Plus/Pro/Business plan), interactive, under Tego.
+# Sign in ONCE outside Tego, into a Codex home of its own (never ~/.codex):
+#   mkdir -p ~/.local/share/tego/codex-chatgpt
+#   CODEX_HOME=~/.local/share/tego/codex-chatgpt codex login        # option 1, in your browser
+# Then fill in @@CODEXHOME@@ and @@CODEXHOST@@ (sed, see examples/demo/README.md) and run it from a project with work/ and held/.
+#
+#  - record: summary: writes, programs, connections and every refusal are recorded; plain reads (certificates,
+#    the terminal) are not, so the dashboard shows what matters during a short demo. wall: 2h ends the demo
+#    session at two hours. examples/agents/codex-chatgpt.yaml is the same contract for your own project, with
+#    record: full and stall_after for long working sessions; a test keeps the rest of the two equal.
+#  - capture: off. With a ChatGPT sign-in Codex talks to chatgpt.com, not api.openai.com, so Tego's proxy does not
+#    carry its model calls: the connections are allowed by host and recorded, the request bodies are not.
+#    (The API-key contract, codex.yaml, records every model call through the proxy.)
+#  - The Codex home is writable because Codex refreshes its sign-in there; ~/.codex stays unreadable.
+#  - Codex's own sandbox is off in that home's config.toml: Tego is the cage. `codex --no-daemon` keeps commands
+#    inside the boundary.
+#  - Only ./work/ is writable (plus /dev/ptmx and /dev/pts/: Codex runs every command in a pseudo-terminal, and
+#    without them every command fails with "out of pty devices"); a write under ./held/ pauses Codex until you
+#    run `tego approve` in a second terminal.
+version: 0
+name: codex-chatgpt
+command: ["codex", "--no-daemon"]
+capture: off
+record: summary
+fs:
+  write: ["./work/", "/dev/null", "/dev/tty", "/dev/ptmx", "/dev/pts/", "@@CODEXHOME@@/"]
+  ask: ["./held/"]
+  reads: held                  # a refused read (e.g. ~/.codex/auth.json) is still recorded under record: summary
+  deny_read: ["~/.codex/auth.json", "~/.codex/history.jsonl", "~/.codex/sessions/", "~/.codex/config.toml"]   # your own Codex sign-in and history
+exec:
+  # Codex runs its tools through its own helper, codex-code-mode-host, next to the real codex binary (fill @@CODEXHOST@@
+  # with: dirname of readlink -f $(command -v codex)); its shell snapshot uses tr and wc.
+  allow: ["bash", "git", "cat", "ls", "mkdir", "touch", "grep", "sed", "head", "tail", "find", "wc", "tr", "sort", "@@CODEXHOST@@/codex-code-mode-host"]
+net:
+  allow: ["unix:/var/run/nscd/socket", "tcp://chatgpt.com:443", "tcp://auth.openai.com:443"]
+env:
+  pass: ["PATH", "HOME", "LANG", "TERM", "COLORTERM"]
+  set:
+    CODEX_HOME: "@@CODEXHOME@@"
+    HISTFILE: "/dev/null"
+    TMPDIR: "./work/tmp"
+limits:
+  pids: 512
+  memory: 4GiB
+  wall: 2h
+ask:
+  timeout: 5m

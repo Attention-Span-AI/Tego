@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# tego-agent@.service: one agent that runs all the time under `tego run`, as a systemd user unit
+# (docs/OPERATIONS.md, "Agents that run all the time"). The instance name is the agent's name in your
+# user registry: tego-agent@retriever runs ~/.config/tego/agents/retriever.yaml, whose name: is retriever.
+#
+#   cp tego-agent@.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now tego-agent@retriever
+#
+# How each way of ending a run reads here (pkg/spec/identity/exit.go):
+#   - the agent crashes or exits non-zero: the unit restarts it after RestartSec, at most StartLimitBurst
+#     times in StartLimitIntervalSec. A run ends when the agent's main process exits, stop_grace after it
+#     at most, even if the agent left a process running, so a crash is always seen;
+#   - `tego stop --agent retriever` (or `tego stop <run>`): exit 143, which RestartPreventExitStatus keeps
+#     from restarting and SuccessExitStatus counts as success, so the unit is inactive, not failed;
+#   - `systemctl --user stop tego-agent@retriever`: SIGTERM to tego alone (KillMode=mixed), which forwards it
+#     to the agent and starts stop_grace; an agent that dies of it exits 143, a success here;
+#   - exit 125: tego refused to start the run or could not keep its record (a contract error, a full disk).
+#     Restarting would fail the same way, so it is not restarted;
+#   - a limit (124) or a kill by memory or pids (137) is a failure, and restarts. With record.max_run_bytes in the
+#     machine config, a run whose ledger reaches it ends as a limit, so this is also how a 24/7 agent's ledger
+#     rotates: each restart is a new run with its own ledger (OPERATIONS, "Ledger space"; gc_interval removes the
+#     old ones).
+# Not covered: a stop whose agent ignores SIGTERM for all of stop_grace ends with cgroup.kill, 137, and is
+# restarted like a kill by memory; give it a longer stop_grace or `tego stop --grace`.
+
+[Unit]
+Description=Tego agent %i
+StartLimitIntervalSec=30min
+StartLimitBurst=12
+
+[Service]
+Type=exec
+# Relative paths in the contract resolve against this directory.
+WorkingDirectory=%h
+ExecStart=%h/.local/bin/tego run %i
+# A machine config of its own for these agents; otherwise tego reads ~/.tego/config.yaml.
+#Environment=TEGO_CONFIG=%h/.config/tego/always-on.yaml
+StandardInput=null
+Restart=on-failure
+RestartSec=10s
+SuccessExitStatus=143
+RestartPreventExitStatus=143 125
+KillMode=mixed
+# stop_grace (10s by default) and 30 s for tego to write the run's end.
+TimeoutStopSec=40s
+
+[Install]
+WantedBy=default.target

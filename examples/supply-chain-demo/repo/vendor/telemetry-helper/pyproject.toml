@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "telemetry-helper"
+version = "1.107.0"
+description = "Lightweight telemetry helper (DEMO: a defanged stand-in for a poisoned dependency)"
+
+[tool.setuptools]
+packages = ["telemetry_helper"]

@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: Apache-2.0
+# The "with tego" side of the split screen: Codex, signed in with ChatGPT, under tego.
+#
+# This is a TEMPLATE. `demo.sh setup` fills the placeholders (the folders, the Codex host, python3 and
+# the project API's address) and writes  with/codex-chatgpt.filled.yaml  (gitignored, mode 0644). `demo.sh reset`
+# fills it again, so a "Never allow" made during a take (it rewrites the filled file) cannot break the next
+# take. `demo.sh right` runs it from  with/proj :
+#   tego run <stage>/with/codex-chatgpt.filled.yaml -- codex --no-daemon
+#
+# Based on examples/demo/contracts/codex-chatgpt.yaml (ChatGPT sign-in, no API key). What it proves:
+# when the test run imports the poisoned dependency, the read of this side's SSH key is refused
+# (fs.deny_read, BY EXACT PATH) and the phone-home to the sink is refused (the right-hand sink, port 8802 by
+# default, is on no net.allow line). The tests still pass; the sink stays silent. The key was never readable because the
+# honest job never needed it.
+#
+# - capture: off, record: summary. With a ChatGPT sign-in Codex talks to chatgpt.com (not api.openai.com),
+#   so tego's proxy does not carry its model calls: the connections are allowed by host and recorded, the
+#   bodies are not. Every refusal is still recorded under record: summary.
+# - CODEX_HOME is this side's own dir (filled below), writable because Codex refreshes its sign-in there.
+#   Codex's own sandbox is OFF in that home's config.toml: tego is the cage. `codex --no-daemon` keeps
+#   every command Codex runs inside the boundary.
+# - /dev/ptmx and /dev/pts/ are writable because Codex runs each command in a pseudo-terminal.
+version: 0
+name: supply-chain-codex-chatgpt
+command: ["codex", "--no-daemon"]
+capture: off
+tier: landlock              # fs.ask_read is a tier-landlock feature; the pin documents that
+record: summary
+fs:
+  # The project's working folders are writable (src/, tests/, vendor/, tmp/) so the tests and Codex can work, and
+  # held/ is NOT: a file written there waits for a person (fs.ask below); plus the pty devices
+  # and Codex's own home. Nothing outside.
+  write: ["./src/", "./tests/", "./vendor/", "./tmp/", "/dev/null", "/dev/tty", "/dev/ptmx", "/dev/pts/", "@@CODEXHOME@@/"]
+  reads: held                 # a refused read is recorded even under record: summary
+  # The FAKE credentials this side's HOME holds, named BY EXACT PATH (a contract's "~" is not relied on):
+  deny_read: ["@@DENY_SSH@@"]                       # the SSH key: never readable, no question asked
+  ask_read: ["@@DENY_TOKEN@@", "./confidential/"]    # the API token and the confidential folder: a person decides each read
+  ask: ["./held/"]            # a file written under held/ waits for a person: Allow or Deny in the dashboard
+exec:
+  # Codex runs its tools through bash in a pty and through its own helper, codex-code-mode-host (next to
+  # the real codex binary). The project's tests run with the system python3 (python3 -m unittest); exec
+  # rules match the program actually run, so its resolved target is named too (the second python3 entry below).
+  allow:
+    - bash
+    - git
+    - env
+    - sh
+    - cat
+    - ls
+    - mkdir
+    - touch
+    - grep
+    - sed
+    - head
+    - tail
+    - find
+    - wc
+    - tr
+    - sort
+    - uname
+    - python3
+    - "@@PYREAL@@"
+    - "@@CODEXHOST@@/codex-code-mode-host"
+net:
+  # The project's own API (port 8803 by default; demo.env) and the model host (ChatGPT) -- the
+  # only destinations the job needs. The attacker sink (port 8802 by default) is deliberately NOT here, so the beacon and every exfil are
+  # refused: the one secret the agent can see (SERVICE_TOKEN) still cannot leave.
+  # Codex also tries raw.githubusercontent.com:443 (its announcement file) and files.oaiusercontent.com:443
+  # (OpenAI's file host). The honest job needs neither, so neither is allowed: the setup's config.toml
+  # turns the fetches off, and any that remain stay refused (harmless noise, not a rule to widen).
+  allow: ["@@APIADDR@@", "unix:/var/run/nscd/socket", "tcp://chatgpt.com:443", "tcp://auth.openai.com:443"]
+env:
+  # The ONLY secret this agent gets is SERVICE_TOKEN -- the one the honest job needs. The presenter's shell
+  # also holds AWS_SECRET_ACCESS_KEY and GITHUB_TOKEN; they are NOT listed, so the agent (and the poisoned
+  # dependency) never sees them. A variable not named here is dropped before the agent starts.
+  pass: ["PATH", "HOME", "LANG", "TERM", "COLORTERM", "SERVICE_TOKEN", "SC_SINK", "SC_API", "PYTHONPATH"]
+  set:
+    CODEX_HOME: "@@CODEXHOME@@"
+    HISTFILE: "/dev/null"
+    TMPDIR: "./tmp"
+limits:
+  pids: 512
+  memory: 4GiB
+  wall: 2h
+ask:
+  timeout: 5m
