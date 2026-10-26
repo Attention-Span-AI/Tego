@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# Generated demo state: the two sides and everything the one-time setup builds. Never committed.
+/without/
+/with/
+/api.log
+/sink.log
+/sink-*.log
+/sink-*.pid
+*.pyc
+__pycache__/

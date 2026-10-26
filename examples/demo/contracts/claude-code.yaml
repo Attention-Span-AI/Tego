@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: Apache-2.0
+# Claude Code, interactive, under Tego. demo.sh claude fills the @@ words in and writes it next to the
+# project (never inside it: a contract the agent could rewrite is refused).
+#
+# What makes it work interactively (test/poc/watch-demo/real-agents/README.md, docs/OPERATIONS.md):
+#  - capture: off and net.allow naming api.anthropic.com:443. With capture: forwarder Claude Code exits 1
+#    on its first connectivity check, which goes straight to api.anthropic.com whatever the base URL says.
+#  - fs.write has /dev/tty (the full-screen interface draws there) and the cc-socks socket directory.
+#  - CLAUDE_CONFIG_DIR / CLAUDE_CODE_TMPDIR keep Claude Code's state inside the project, so ~/.claude is never
+#    written. Your login reaches Claude Code through the environment, never through ~/.claude: either
+#    CLAUDE_CODE_OAUTH_TOKEN (your Pro/Max subscription: run `claude setup-token` once, outside Tego) or
+#    ANTHROPIC_API_KEY (an API key). Both are passed through from your shell; nothing is stored in this file.
+#  - exec.allow: bash and git are what its Bash tool needs; anything else it tries is refused and recorded.
+#  - stall_after, not wall: typing counts as activity, so a working session is not ended (a wall is a hard cap).
+#  examples/agents/claude-code-interactive.yaml is the same contract for your own project; a test keeps the two equal.
+# Logging in from inside the session (/login) is not used: it needs claude.ai and the console, which net.allow
+# leaves out, and it would store the login in .claude-state. The token from `claude setup-token` does the same job.
+version: 0
+name: claude-code
+command: ["claude"]
+record: full
+capture: off
+fs:
+  write: ["./", "/dev/null", "/dev/tty", "@@XDG@@/cc-socks/"]
+exec:
+  allow: ["bash", "git"]
+net:
+  allow: ["unix:/var/run/nscd/socket", "tcp://api.anthropic.com:443"]
+env:
+  pass: ["PATH", "HOME", "LANG", "TERM", "COLORTERM", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"]
+  set:
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    DISABLE_AUTOUPDATER: "1"
+    CLAUDE_CONFIG_DIR: ".claude-state"
+    CLAUDE_CODE_TMPDIR: ".claude-state/tmp"
+    TMPDIR: ".claude-state/tmp"
+limits:
+  pids: 512
+  memory: 4GiB
+  stall_after: 1h
+ask:
+  timeout: 5m

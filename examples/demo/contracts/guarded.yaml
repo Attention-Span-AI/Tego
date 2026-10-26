@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# The rogue stand-in agent (agents/rogue.sh) under rules the kernel enforces. Written by hand; demo.sh
+# copies it into stage/project, where "./" is the project and "../secrets/" holds the planted fake secrets.
+version: 0
+name: demo-guarded
+command: ["sh", "rogue.sh"]
+fs:
+  write: ["./out/", "./src/", "/dev/null"]   # the only places the agent may write
+  reads: held                                 # records the refused read in the ledger and the reason file
+  deny_read: ["../secrets/"]                 # the planted fake secrets
+exec:
+  allow: ["sh", "cat", "curl", "rm", "wc", "sleep", "grep", "tr", "tail"]    # whoami is NOT on the list
+net:
+  allow: ["unix:/var/run/nscd/socket"]        # only the name-lookup socket curl asks first; no host:port, so the sink is refused
+env:
+  pass: ["PATH", "HOME", "SECRETS", "SINK", "HOMEISH", "PROJECT"]
+limits:
+  pids: 64
+  memory: 512MiB
+  wall: 2m
+record: summary
+tier: landlock
+capture: off

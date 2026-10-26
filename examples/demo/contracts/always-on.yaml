@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# An agent that runs all the time (agents/watcher.sh): it may write its heartbeat in ./out/ and nothing else.
+# demo.sh always-on puts it under a systemd --user service, so each restart is a new run on the same ledger.
+version: 0
+name: demo-always-on
+command: ["sh", "watcher.sh"]
+fs:
+  write: ["./out/", "/dev/null"]
+  reads: held
+  deny_read: ["../secrets/"]
+exec:
+  allow: ["sh", "cat", "date", "sleep"]
+net:
+  allow: []
+env:
+  pass: ["PATH", "HOME", "SECRETS", "PROJECT"]
+limits:
+  pids: 32
+  memory: 256MiB
+  wall: 1h              # one run is an hour; the service starts the next
+record: summary
+tier: landlock
+capture: off
