@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Host groups (ADR 0068): named sets of host:port entries for a package ecosystem, which tego init is to expand into
+# concrete net.allow entries with a comment naming the group. A group is never contract syntax: a
+# contract lists hosts, and this file is only where they are read from. The shape is fixed, a group name and then
+# its entries, one per line, and presets.go reads it with the standard library alone (TestHostsFileIsYAML holds it
+# to what a YAML parser reads).
+github:
+  - github.com:443
+  - api.github.com:443
+  - codeload.github.com:443
+  - objects.githubusercontent.com:443
+  - raw.githubusercontent.com:443
+npm:
+  - registry.npmjs.org:443
+pypi:
+  - pypi.org:443
+  - files.pythonhosted.org:443
+crates:
+  - crates.io:443
+  - index.crates.io:443
+  - static.crates.io:443
+go-proxy:
+  - proxy.golang.org:443
+  - sum.golang.org:443
+rubygems:
+  - rubygems.org:443
+  - index.rubygems.org:443
+maven-central:
+  - repo.maven.apache.org:443
+  - repo1.maven.org:443

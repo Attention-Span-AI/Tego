@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# tego/no-prod, revision 1 (ADR 0068; pkg/spec/presets/README.md is the normative list).
+# Promise: the agent reaches no network host except the ones your contract names.
+#
+# A present net: section with no allow entry refuses every connect (SEMANTICS §1, "net: {} or net.allow: []"). The
+# hosts the contract's own net.allow names are added to it (the lists concatenate, agent-contract R5). The model is
+# reached through the forwarder (capture: forwarder) only when the contract declares it under models:; with no
+# models: entry no forwarder starts, and this preset refuses the agent's connection to its model like any other
+# host. No production host is listed here or in any preset. The machine's DNS resolver stays reachable (net.dns.mode defaults to system).
+#
+# Frozen once released: a change is a new revision (v2/no-prod.yaml), never an edit of this file.
+net:
+  allow: []

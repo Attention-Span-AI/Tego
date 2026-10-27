@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# tego/repo-only-writes, revision 1 (ADR 0068; pkg/spec/presets/README.md is the normative list).
+# Promise: the agent writes only in the folders your contract names.
+#
+# A present fs.write turns every write outside its entries into a refusal (SEMANTICS §1 and §2). The one entry here
+# is /dev/null, which many tools open for writing and which stores nothing; the folders come from the contract's own
+# fs.write (for example ./src/ and ./tests/), added to this list (the lists concatenate, agent-contract R5). With no
+# folder in the contract every write but /dev/null is refused.
+#
+# Frozen once released: a change is a new revision (v2/repo-only-writes.yaml), never an edit of this file.
+fs:
+  write: ["/dev/null"]
