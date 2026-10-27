@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Bug report
+description: Something Tego did, or failed to do, that it should not have
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting. If this is a security problem, do not file it here: use
+        [private vulnerability reporting](https://github.com/Attention-Span-AI/Tego/security/advisories/new).
+        Remove secrets from everything you paste.
+  - type: textarea
+    id: version
+    attributes:
+      label: tego version
+      description: The output of `tego version`.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: tego doctor
+      description: The output of `tego doctor`. Run it as root too (`sudo tego doctor`) if the problem is at tier 2 or 3.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: kernel
+    attributes:
+      label: Kernel and distribution
+      description: For example `6.8.0-45-generic, Ubuntu 24.04`.
+    validations:
+      required: true
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Tier
+      options:
+        - landlock (tier 1)
+        - cgroup (tier 2)
+        - bpflsm (tier 3)
+        - not sure
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Contract
+      description: The `agent.yaml` involved, with secrets and private paths removed.
+      render: yaml
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Include the exit code and any `tego receipt` or `tego events` output that shows it.
+    validations:
+      required: true

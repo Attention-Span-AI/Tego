@@ -1,0 +1,33 @@
+# Ownership follows the layers
+/spec/                 @Mahd1exo
+/pkg/spec/             @Mahd1exo
+/bpf/                  @Mahd1exo
+/internal/runtime/     @Mahd1exo
+/internal/ledger/      @Mahd1exo
+/internal/check/       @Mahd1exo
+/test/workloads/       @Mahd1exo
+/docs/                 @Mahd1exo
+# The release pipeline, the installer the root binary is verified by, the committed objects it loads, and the
+# dependency and entry-point files: scripts/precommit_test.sh holds these lines. Require code-owner review on
+# main in branch protection, or none of this file has effect.
+/.github/              @Mahd1exo
+/.goreleaser.yaml      @Mahd1exo
+/scripts/install.sh    @Mahd1exo
+/scripts/release.sh    @Mahd1exo
+/go.mod                @Mahd1exo
+/go.sum                @Mahd1exo
+/internal/bpf/         @Mahd1exo
+/cmd/                  @Mahd1exo
+/Makefile              @Mahd1exo
+/scripts/               @Mahd1exo
+/test/unit-skips.txt   @Mahd1exo
+/test/integration-skips.txt @Mahd1exo
+/test/vm/root-skips.txt @Mahd1exo
+/test/vm/root-must-pass.txt @Mahd1exo
+# The linter configuration, the gates Go tools, the VM and kill-test harness that run the root suites and
+# apply the skip lists, and the hook: weakening any of them weakens a gate.
+/.golangci.yml         @Mahd1exo
+/tools/                @Mahd1exo
+/test/vm/              @Mahd1exo
+/test/e2e/             @Mahd1exo
+/.githooks/            @Mahd1exo

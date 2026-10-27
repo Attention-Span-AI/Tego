@@ -1,0 +1,147 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The fuzz targets exist across the tree, but `go test ./...` runs each one only
+# against its committed seed corpus, which finds nothing new. This job is what actually fuzzes them.
+#
+# Go's fuzzer takes one target per `go test -fuzz` invocation, so the targets run as a matrix rather than
+# in one pass: a matrix row names the target that failed, which is the point of running them unattended.
+# A crash leaves a reproducer under the package's testdata/fuzz/, uploaded as an artifact so it can be
+# replayed locally and committed as a seed.
+name: fuzz
+on:
+  schedule:
+    # 03:00 UTC daily. Nightly rather than per-push: a ten-minute budget across this many targets is far
+    # longer than a pull request should wait.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: per-target fuzzing budget
+        default: 10m
+
+permissions:
+  contents: read
+
+env:
+  # The exact toolchain (ci.yml says why); a patch bump edits every workflow's GO_VERSION together.
+  GO_VERSION: '1.27.3'
+
+jobs:
+  enumerate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      targets: ${{ steps.list.outputs.targets }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: list
+        # Every Fuzz function in the tree as a {pkg, name} pair. Discovering them rather than keeping a
+        # list means a target added in a new package is fuzzed the night it lands. The leading "./" is
+        # optional in the pattern because not every grep emits it.
+        run: |
+          set -euo pipefail
+          targets=$(grep -rn --include='*_test.go' -E '^func Fuzz[A-Za-z0-9_]*\(' . \
+            | sed -E 's#^(\./)?(.*)/[^/]*_test\.go:[0-9]+:func (Fuzz[A-Za-z0-9_]*)\(.*#{"pkg":"./\2","name":"\3"}#' \
+            | sort -u | paste -sd, - | sed 's/^/[/;s/$/]/')
+          if [ "$targets" = "[]" ]; then
+            echo "no fuzz targets found; the discovery pattern has drifted from the code" >&2
+            exit 1
+          fi
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+
+  fuzz:
+    needs: enumerate
+    runs-on: ubuntu-24.04
+    # The nightly budget is ten minutes a target; a dispatch that asks for more than about 45 needs this raised
+    # with it, or the job ends before its fuzzing does (every job has a timeout).
+    timeout-minutes: 60
+    strategy:
+      # One failing target must not cancel the others: a night that finds two crashes should report both.
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.enumerate.outputs.targets) }}
+    name: ${{ matrix.target.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      # The corpus the fuzzer grows lives under $(go env GOCACHE)/fuzz, and setup-go's own cache, keyed by
+      # go.sum, is written once per key and never again, so each night began from the committed seeds and
+      # threw away what the night before had found. This cache is keyed by the run, which makes every night
+      # save a new entry, and restored by prefix, which starts each night from the newest one for this
+      # target. The package is in the key because two packages may each have a FuzzDecode.
+      #
+      # The target's package and name come from the tree's own source, but they reach every script through env,
+      # never as ${{ }} in run:, as every value an expression supplies does here.
+      - name: locate ${{ matrix.target.name }}'s generated corpus
+        id: corpus
+        env:
+          PKG: ${{ matrix.target.pkg }}
+          TARGET: ${{ matrix.target.name }}
+        run: echo "dir=$(go env GOCACHE)/fuzz/$(go list "$PKG")/$TARGET" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.corpus.outputs.dir }}
+          key: fuzz-${{ matrix.target.pkg }}-${{ matrix.target.name }}-${{ github.run_id }}
+          restore-keys: fuzz-${{ matrix.target.pkg }}-${{ matrix.target.name }}-
+      # The count is of the directory's entries, as ls gave it; find names them without ls's quoting.
+      - name: corpus carried in
+        env:
+          CORPUS: ${{ steps.corpus.outputs.dir }}
+        run: |
+          mkdir -p "$CORPUS"
+          find "$CORPUS" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l
+      - name: fuzz ${{ matrix.target.name }}
+        # -run '^$' keeps the package's ordinary tests from running first; the anchored -fuzz pattern
+        # keeps a target from also matching a longer name that starts with it. The budget is whatever text
+        # the dispatcher typed, so it reaches the script through env: an expression in run is pasted into
+        # the script as code before the shell sees it.
+        #
+        # -fuzzminimizetime: Go spends up to 60 s (its default) shrinking each new input that widens coverage,
+        # and a worker doing so fuzzes nothing. For a target whose inputs are slow to run, FuzzReadBinary
+        # (a file written and parsed per input) among them, that can be the whole budget: runs of it stopped
+        # fuzzing after their first seconds, every worker minimizing, and ended PASS having tried 38 inputs
+        # in 60 s, or 1,456 in 12 s, where with 5 s a 60 s run on four workers tried 118,000.
+        # A crasher is minimized for at most 5 s too, which shrinks what byte deletion can shrink and leaves a
+        # structured input such as an ELF at about its found size: the FuzzReadBinary crasher now committed under
+        # its testdata was a 35,338-byte corpus file before those 5 s and after them. Either way it is written and
+        # fails the run, one found as the budget runs out included, whether or not its minimizing finished.
+        env:
+          FUZZTIME: ${{ github.event.inputs.fuzztime || '10m' }}
+          PKG: ${{ matrix.target.pkg }}
+          TARGET: ${{ matrix.target.name }}
+        run: >
+          go test -run '^$'
+          -fuzz "^$TARGET\$"
+          -fuzztime "$FUZZTIME"
+          -fuzzminimizetime 5s
+          "$PKG"
+      - name: corpus carried out
+        if: always()
+        env:
+          CORPUS: ${{ steps.corpus.outputs.dir }}
+        run: |
+          mkdir -p "$CORPUS"
+          find "$CORPUS" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l
+      # Saved whether or not the target failed: a night that found a crash still grew the corpus, and the
+      # crash itself is the reproducer uploaded below, not part of this cache.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: ${{ steps.corpus.outputs.dir }}
+          key: fuzz-${{ matrix.target.pkg }}-${{ matrix.target.name }}-${{ github.run_id }}
+      # The row's index is in the name: two packages may each have a FuzzDecode, and a second upload under one
+      # name fails.
+      - name: upload the reproducer
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-${{ strategy.job-index }}-${{ matrix.target.name }}
+          path: ${{ matrix.target.pkg }}/testdata/fuzz/
+          if-no-files-found: ignore
+          retention-days: 30

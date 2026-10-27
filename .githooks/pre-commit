@@ -1,0 +1,9 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+#
+# CI's build-test job before each commit (scripts/precommit.sh). Enable with:
+#   git config core.hooksPath .githooks
+# and skip once, for a work-in-progress commit, with git commit --no-verify.
+# The full gate: a TEGO_PRECOMMIT_SINCE left in the shell would make it the scoped check.
+unset TEGO_PRECOMMIT_SINCE
+exec "$(git rev-parse --show-toplevel)/scripts/precommit.sh"
