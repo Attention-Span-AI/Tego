@@ -1,0 +1,4 @@
+{"prompt": "Carry out the scripted steps.", "turns": [
+ {"calls": [{"write": "@W@/work/warmup.txt", "content": "warm-up\n"}]},
+ {"calls": [{"write": "@W@/work/note.txt", "content": "an allowed write\n"}]}
+]}

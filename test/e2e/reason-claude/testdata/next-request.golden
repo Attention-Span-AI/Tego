@@ -1,0 +1,61 @@
+{
+ "a": {
+  "notes": [
+   "system"
+  ],
+  "refusals": [
+   "Tego refused open \"/proc/self/fd/@FD@/leak.txt.tmp.@TMP@\": this run may not write to that path (rule unmatched).",
+   "Tego refused unlink \"/proc/self/fd/@FD@/leak.txt.tmp.@TMP@\": this run may not delete files at that path (rule unmatched)."
+  ],
+  "tool_results": [
+   {
+    "content": "EACCES: permission denied, open '@OUT@/leak.txt.tmp.@TMP@'",
+    "is_error": true
+   }
+  ]
+ },
+ "c": {
+  "notes": [
+   "system"
+  ],
+  "refusals": [
+   "Tego refused exec \"@W@/bin/git\": that program is not allowed to run in this run (rule \"exec.deny[git push]\")."
+  ],
+  "tool_results": [
+   {
+    "content": "/bin/bash: @W@/bin/git: /bin/bash: bad interpreter: Permission denied\ngit exit=126",
+    "is_error": false
+   }
+  ]
+ },
+ "d": {
+  "notes": [
+   "system"
+  ],
+  "refusals": [
+   "Tego refused exec \"@W@/bin/git\": that program is not allowed to run in this run (rule \"exec.deny[git push]\").",
+   "Tego refused open \"/proc/self/fd/@FD@/leak.txt.tmp.@TMP@\": this run may not write to that path (rule unmatched).",
+   "Tego refused unlink \"/proc/self/fd/@FD@/leak.txt.tmp.@TMP@\": this run may not delete files at that path (rule unmatched)."
+  ],
+  "tool_results": [
+   {
+    "content": "EACCES: permission denied, open '@OUT@/leak.txt.tmp.@TMP@'",
+    "is_error": true
+   },
+   {
+    "content": "/bin/bash: @W@/bin/git: /bin/bash: bad interpreter: Permission denied\ngit exit=126",
+    "is_error": false
+   }
+  ]
+ },
+ "e": {
+  "notes": [],
+  "refusals": [],
+  "tool_results": [
+   {
+    "content": "File created successfully at: @W@/work/note.txt (file state is current in your context — no need to Read it back)",
+    "is_error": false
+   }
+  ]
+ }
+}

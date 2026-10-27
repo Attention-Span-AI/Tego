@@ -1,0 +1,5 @@
+[
+ [{"type": "tool_use", "name": "Write", "input": {"file_path": "@W@/work/warmup.txt", "content": "warm-up\n"}}],
+ [{"type": "tool_use", "name": "Write", "input": {"file_path": "@OUT@/leak.txt", "content": "written outside the workspace\n"}}],
+ [{"type": "text", "text": "SCENARIO-DONE"}]
+]
