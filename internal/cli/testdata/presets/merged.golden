@@ -1,0 +1,42 @@
+version: 0
+name: presets
+extends:
+  - tego/no-secrets
+  - tego/no-prod
+  - tego/repo-only-writes@1
+command:
+  - "true"
+fs:
+  write:
+    - /dev/null
+    - ./src/
+net:
+  allow:
+    - 127.0.0.1:8080
+env:
+  pass:
+    - PATH
+    - HOME
+    - USER
+    - LOGNAME
+    - SHELL
+    - LANG
+    - LANGUAGE
+    - LC_ALL
+    - LC_CTYPE
+    - LC_MESSAGES
+    - TERM
+    - COLORTERM
+    - TZ
+    - NO_COLOR
+    - GOPATH
+    - GOROOT
+    - GOCACHE
+    - GOMODCACHE
+    - CARGO_HOME
+    - RUSTUP_HOME
+    - JAVA_HOME
+    - NVM_DIR
+    - PYENV_ROOT
+    - VIRTUAL_ENV
+    - CONDA_PREFIX
