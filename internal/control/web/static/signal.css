@@ -1,0 +1,170 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* signal.css: the run page's Highlights card and grouped refusals. Tokens only, no colour literals. */
+.hl-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.hl-sec { padding: var(--space-3) var(--space-4) var(--space-4); border-top: 1px solid var(--c-border); min-width: 0; }
+.hl-half { grid-column: span 3; }
+.hl-third { grid-column: span 2; }
+.hl-grid > .hl-sec:nth-child(-n+2) { border-top: 0; }
+.hl-half + .hl-half, .hl-third + .hl-third { border-left: 1px solid var(--c-border); }
+.hl-sec h3 { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); font-weight: var(--weight-semibold); margin-bottom: var(--space-2); }
+.hl-sec h3 svg { color: var(--c-text3); }
+.hl-sec h3 .n { color: var(--c-text3); font-weight: var(--weight-regular); }
+.hl-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.hl-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--space-2); padding: 5px 0; border-bottom: 1px solid var(--c-border); min-width: 0; font-size: var(--text-sm); }
+.hl-list li:last-child { border-bottom: 0; }
+.hl-what { min-width: 0; max-width: 100%; color: var(--c-text); text-decoration: underline; text-decoration-color: var(--c-border); text-underline-offset: 3px; }
+.hl-what:hover { text-decoration-color: var(--c-control); }
+.hl-what .ut { font-size: 0.78rem; }
+.hl-v { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.hl-why { color: var(--c-text3); font-size: var(--text-xs); overflow-wrap: anywhere; }
+.hl-tag { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border-radius: var(--radius-full); border: 1px solid var(--c-border); font-size: 0.6875rem; line-height: 18px; color: var(--c-text2); white-space: nowrap; }
+.hl-tag svg.i { width: 12px; height: 12px; }
+.hl-tag-near { border-color: var(--c-border); color: var(--c-text2); background: transparent; }
+.hl-none, .hl-sum, .hl-bg { font-size: var(--text-sm); color: var(--c-text2); }
+.hl-sum { margin-bottom: var(--space-1); }
+.hl-bg { margin-top: var(--space-2); }
+.hl-more > summary { font-size: var(--text-sm); color: var(--c-link); padding: 4px 0; }
+.rf-sum { border-bottom: 1px solid var(--c-border); font-size: var(--text-sm); }
+.rf-bg { border-top: 1px solid var(--c-border); }
+.rf-bg > summary { padding: var(--space-3) var(--space-4); font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--c-text2); }
+.rf-rule { padding: 0 var(--space-4) var(--space-3); font-size: var(--text-xs); color: var(--c-text3); max-width: 110ch; }
+.list.refusals li.bg-row { background: var(--c-bg); }
+.list.refusals li.bg-row .title { font-weight: var(--weight-regular); }
+@media (max-width: 1100px) { .hl-half, .hl-third { grid-column: span 6; border-left: 0 !important; } .hl-grid > .hl-sec:nth-child(2) { border-top: 1px solid var(--c-border); } }
+@media (max-width: 640px) { .hl-sec { padding: var(--space-3); } .panel-head .chips { flex-wrap: nowrap; } }
+.rg-ports { margin-left: var(--space-2); font-weight: var(--weight-regular); font-size: var(--text-xs); color: var(--c-text3); }
+.list.refusals .meta .mono { font-size: 0.6875rem; }
+.run-facts > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--space-3); padding: var(--space-3) var(--space-4); font-size: var(--text-sm); }
+.run-facts > summary .title { font-weight: var(--weight-semibold); }
+.run-facts[open] > summary { border-bottom: 1px solid var(--c-border); }
+
+/* The story layer (story.go): the run's verdict banner, the Secrets chip, and the tail-keeping path shortener. */
+.verdict { margin-bottom: var(--space-3); align-items: center; }
+.verdict > svg.i { width: 22px; height: 22px; margin-top: 0; flex: none; }
+.verdict .vt { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-semibold); line-height: 1.35; overflow-wrap: anywhere; }
+.verdict .vs { margin: 2px 0 0; color: var(--c-text2); overflow-wrap: anywhere; }
+.verdict-leak { background: var(--c-danger-soft); border-color: var(--c-danger-edge); box-shadow: inset 4px 0 0 var(--c-danger); }
+.verdict-leak > svg.i, .verdict-leak .vt { color: var(--c-danger); }
+.verdict-leak .vt .dt-what { color: inherit; }
+.verdict-ok { background: var(--c-stopped-soft); border-color: transparent; box-shadow: inset 4px 0 0 var(--c-stopped); }
+.verdict-ok > svg.i, .verdict-ok .vt { color: var(--c-stopped); }
+.verdict-neutral > svg.i { color: var(--c-text3); }
+.t-rows td[data-label="Secrets"] { white-space: nowrap; }
+.sp { display: inline-flex; align-items: baseline; max-width: 100%; min-width: 0; vertical-align: bottom; white-space: nowrap; }
+.sp .sp-d { flex: 0 1000 auto; min-width: 2ch; overflow: hidden; text-overflow: ellipsis; color: var(--c-text3); }
+.sp .sp-b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: var(--weight-semibold); color: var(--c-text); }
+.t-log td.c-what .sp, .tl .what .sp { white-space: nowrap; word-break: normal; }
+/* A timeline row's first line is a flex row, so a long path shrinks its folder instead of the whole path being cut. */
+.tl .what > span:first-child { display: flex; align-items: baseline; gap: 6px; }
+.tl .what > span:first-child > * { flex: none; }
+.tl .what > span:first-child > .ut { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* On a phone the Compare chooser's run pickers take the full width. */
+@media (max-width: 640px) {
+  .cmp-form .field { flex: 1 1 100%; min-width: 0; }
+  .cmp-form .select { min-width: 0; max-width: 100%; }
+}
+/* On a phone a row wraps instead: the path flows as plain text, broken anywhere, so nothing is cut or overflows. */
+@media (max-width: 640px) {
+  .tl .what > span:first-child { display: block; }
+  .tl .what .sp, .t-log td.c-what .sp { display: inline; white-space: normal; overflow-wrap: break-word; }
+  .tl .what .sp > *, .t-log td.c-what .sp > * { white-space: normal; overflow: visible; }
+}
+.t-log th.c-agent { width: 200px; }
+.t-log th.c-reason { width: 124px; }
+.list .title.rf-t { display: flex; align-items: baseline; gap: 6px; min-width: 0; white-space: nowrap; }
+/* Overview's half-width run tables also drop the Run column below 1600 px, so Agent and Secrets keep their width. */
+@media (max-width: 1600px) { .panel.s8 .t-rows .c-run { display: none; } }
+.rf-t .op, .rf-t .xn { flex: none; }
+.hl-what .sp { font-size: 0.78rem; }
+.blk-note { color: var(--c-text3); font-size: var(--text-xs); }
+.ask-ago { white-space: nowrap; }
+.t-cmp .cmp-where { display: block; margin-top: 2px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--c-text2); }
+.t-cmp tr.cmp-danger td:first-child { box-shadow: inset 3px 0 0 var(--c-danger); }
+.cmp-legend { color: var(--c-text3); font-size: var(--text-xs); }
+.lp-keep { margin: 0; padding-left: 1.2em; font-size: var(--text-sm); }
+.lp-keep .mono { font-size: 0.78rem; overflow-wrap: anywhere; }
+.lp-learn { margin-top: var(--space-4); }
+.lp-learn > summary { padding: var(--space-2) 0; font-size: var(--text-sm); color: var(--c-text2); }
+.lp-learn > .panel { margin-top: var(--space-2); }
+/* The Overview's headline when a run leaked: the run page's red verdict banner, so "1 run leaked secrets" reads as
+   the verdict it is, with the counts under it. */
+.ov-verdict { display: flex; align-items: center; gap: var(--space-3); margin: 0 0 var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--c-danger-edge); border-radius: var(--radius-lg); color: var(--c-danger); }
+.head > div:has(> .ov-verdict) { flex: 1 1 auto; min-width: 0; }
+/* Severity pills (ledgerview.Severity): one meaning per colour, red High, amber Medium, grey Low. */
+.sev { display: inline-flex; align-items: center; height: 20px; padding: 0 var(--space-2); border-radius: var(--radius-full); font-size: var(--text-xs); font-weight: var(--weight-semibold); white-space: nowrap; flex: none; }
+.sev-High { color: var(--c-danger); background: var(--c-danger-soft); }
+.sev-Medium { color: var(--c-warn); background: var(--c-warn-soft); }
+.sev-Low { color: var(--c-text2); background: var(--c-sunken); }
+.sev-counts { display: inline-flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+.rf-sum { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.rf-sev-h { margin: var(--space-4) var(--space-4) var(--space-2); font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.rf-sev > summary { cursor: pointer; margin: var(--space-4); color: var(--c-text2); }
+.refusals > li > .sev { margin-top: 2px; }
+/* The Detections page (detections.tmpl). */
+.dt-filter { margin-bottom: var(--space-4); }
+.dt-filter .chip { gap: var(--space-2); font-variant-numeric: tabular-nums; }
+.dt-table td { vertical-align: top; }
+.dt-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.dt-what { color: var(--c-text); text-decoration: none; font-weight: var(--weight-medium); }
+.dt-what:hover .mono, .dt-what:focus-visible .mono { color: var(--c-link); text-decoration: underline; }
+.dt-verb { color: var(--c-text2); font-weight: var(--weight-regular); }
+.dt-tag { display: inline-block; margin-left: var(--space-2); padding: 0 var(--space-2); border: 1px solid var(--c-border); border-radius: var(--radius-full); font-size: var(--text-xs); color: var(--c-text2); }
+.dt-table .meta { margin-top: var(--space-1); font-size: var(--text-xs); color: var(--c-text3); }
+.dt-low > summary { display: block; cursor: pointer; padding: var(--space-3) var(--space-4); color: var(--c-text2); border-top: 1px solid var(--c-border); }
+/* The Investigate page (investigate.tmpl): four parts, labels not sentences. */
+.iv-head h1 { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.iv-verb { color: var(--c-text2); font-weight: var(--weight-regular); }
+.iv-pos { font-variant-numeric: tabular-nums; }
+.iv-facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-2) var(--space-5); margin: 0; }
+.iv-facts dt { color: var(--c-text3); font-size: var(--text-sm); }
+.iv-facts dd { margin: 0; }
+.iv-chain { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
+.iv-chain li { display: inline-flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--text-sm); }
+.iv-chain li + li::before { content: "→"; color: var(--c-text3); font-family: var(--font-sans); }
+.iv-argv { margin: var(--space-3) 0 0; padding: var(--space-2) var(--space-3); background: var(--c-sunken); border-radius: var(--radius-sm); font-size: var(--text-xs); color: var(--c-text2); overflow-wrap: anywhere; }
+.iv-linked > li { display: flex; align-items: center; gap: var(--space-3); }
+.iv-linked time { margin-left: auto; font-variant-numeric: tabular-nums; }
+.iv-now { gap: var(--space-2); }
+/* The Overview's figure (overview.tmpl): detections by severity and channel. */
+.sev-grid { width: 100%; }
+.sev-grid th[scope="row"] { width: 1%; white-space: nowrap; }
+.sev-grid .num { text-align: right; font-variant-numeric: tabular-nums; }
+.sev-grid td a { font-weight: var(--weight-semibold); }
+.sev-0 { color: var(--c-text3); }
+.ov-h { display: flex; align-items: center; gap: var(--space-2); }
+.sev-lg { height: auto; padding: 2px var(--space-3); font-size: inherit; text-decoration: none; }
+.sev-grid th[scope="row"] { background: transparent; border-bottom-color: var(--c-border); }
+.sev-grid tbody tr:last-child th[scope="row"] { border-bottom: 0; }
+/* On a phone .t rows are stacks whose thead is hidden: a number keeps its column's name through data-label. */
+@media (max-width: 640px) {
+  .sev-grid tr { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .sev-grid th[scope="row"] { grid-column: 1 / -1; width: auto; }
+  .dt-table td.dt-act { grid-column: 1 / -1; }
+}
+.sev-Routine { color: var(--c-text3); background: transparent; box-shadow: inset 0 0 0 1px var(--c-border); }
+/* The run page (run.tmpl): a gap before the destructive action, and a quiet Block now line when no block is in force. */
+.head-actions .act-sep { width: 1px; align-self: stretch; margin: 0 var(--space-1); background: var(--c-border); }
+.live-fold:not([open]) { background: transparent; border-color: transparent; box-shadow: none; }
+.live-fold:not([open]) > summary { padding-top: var(--space-1); padding-bottom: var(--space-1); }
+.live-fold:not([open]) .live-fold-h { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--c-text2); }
+.mc-next { display: flex; align-items: center; gap: var(--space-1); color: var(--c-link); font-size: var(--text-sm); margin: var(--space-1) 0 0; }
+.ap-tabs { margin-bottom: var(--space-4); }
+.dt-ch { scrollbar-width: none; } /* a tab's -1px margin overflows the strip by a pixel: no bar for that */
+/* Detections rows read as one clickable thing: hover, and a chevron at the end. */
+.dt-row:hover { background: var(--c-sunken); }
+.dt-go { width: 1%; text-align: right; white-space: nowrap; }
+.dt-go a { color: var(--c-text3); text-decoration: none; font-size: var(--text-lg); padding: 0 var(--space-2); }
+.dt-row:hover .dt-go a { color: var(--c-link); }
+.b-leak { color: var(--c-danger); background: var(--c-danger-soft); }
+.rc-kind { margin-left: var(--space-2); font-size: var(--text-sm); }
+/* Reviewed detections (review.js): quieter, with a check where the chevron was. */
+.dt-row.is-reviewed td { color: var(--c-text3); }
+.dt-row.is-reviewed .dt-go a::before { content: "✓ "; color: var(--c-text2); }
+/* The Glossary (glossary.tmpl) and its "?" in the top bar. */
+.gl-link { text-decoration: none; font-weight: var(--weight-semibold); min-width: 24px; justify-content: center; }
+.gl-list { margin: 0; }
+.gl-row { display: grid; grid-template-columns: 12rem 1fr; gap: var(--space-4); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--c-border); }
+.gl-row:first-child { border-top: 0; }
+.gl-row dt { font-weight: var(--weight-semibold); }
+.gl-row dd { margin: 0; color: var(--c-text2); max-width: 70ch; }
+@media (max-width: 640px) { .gl-row { grid-template-columns: 1fr; gap: var(--space-1); } }

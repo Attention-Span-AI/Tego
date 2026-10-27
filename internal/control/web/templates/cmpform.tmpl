@@ -1,0 +1,7 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* cmpform: pick two runs to compare. Data is cmpForm: Runs, A, B. A plain GET form, no script. */}}
+{{define "cmpform"}}<form class="cmp-form" method="get" action="/compare" aria-label="Compare two runs">
+<label class="field">Run A<select class="select" name="a">{{$f := .}}{{range .Runs}}<option value="{{.ID}}"{{if eq .ID $f.A}} selected{{end}}>{{if .Agent}}{{.Agent}}{{else}}(no agent){{end}} · {{rid .ID}} · {{clock .Start}} · {{if eq .Tier "observe"}}observed{{else}}enforced{{end}}</option>{{end}}</select></label>
+<label class="field">Run B<select class="select" name="b">{{range .Runs}}<option value="{{.ID}}"{{if eq .ID $f.B}} selected{{end}}>{{if .Agent}}{{.Agent}}{{else}}(no agent){{end}} · {{rid .ID}} · {{clock .Start}} · {{if eq .Tier "observe"}}observed{{else}}enforced{{end}}</option>{{end}}</select></label>
+<button class="btn btn-primary" type="submit">{{template "i" "i-activity"}}Compare</button>
+</form>{{end}}
