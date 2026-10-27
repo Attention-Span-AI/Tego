@@ -1,0 +1,189 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* The event details page (templates/event.tmpl): tokens only, no colour literal. */
+.ev-grid { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: var(--space-5); align-items: start; }
+.ev-grid > section { grid-column: 1; }
+/* The Act card stays in view beside the long facts column (r9 QU-20): sticky under the sticky topbar, and scrolling
+   on its own when a preview is taller than the window, so its Confirm button is never out of reach. */
+.ev-side { grid-column: 2; grid-row: 1 / span 12; align-self: start; position: sticky; top: calc(var(--topbar-h, 52px) + var(--space-4)); max-height: calc(100vh - var(--topbar-h, 52px) - 2 * var(--space-4)); overflow-y: auto; overscroll-behavior: contain; }
+.ev-noact { grid-template-columns: minmax(0, 1fr); }
+.ev-nav { display: flex; gap: var(--space-2); }
+.ev-what { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: var(--space-2); max-width: 100%; }
+.ev-what .ut-label { margin: 0; }
+.ev-what .ut-box { overflow-wrap: anywhere; font-size: var(--text-sm); }
+.ev-raw { max-height: 320px; overflow: auto; margin: 0; }
+.ev-ctx { list-style: none; margin: 0; padding: 0; }
+.ev-ctx-row { display: grid; grid-template-columns: 56px 96px fit-content(18rem) minmax(0, 1fr) max-content; gap: var(--space-3); align-items: center; padding: 0 var(--space-4); min-height: 30px; border-top: 1px solid var(--c-border); font-size: var(--text-sm); border-left: 3px solid transparent; }
+.ev-ctx-row.v-refused { border-left-color: var(--c-control); }
+.ev-ctx-row.v-asked { border-left-color: var(--c-warn-edge); }
+.ev-ctx-row .op { min-width: 0; overflow-wrap: anywhere; }
+.ev-self { background: var(--c-sunken); font-weight: var(--weight-medium); }
+.ev-cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ev-t { font-size: var(--text-xs); }
+.ev-search { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.ev-search .input { flex: 1 1 220px; min-width: 0; }
+.ev-only { display: inline-flex; gap: 6px; align-items: center; font-size: var(--text-sm); color: var(--c-text2); }
+.ev-step { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); font-weight: var(--weight-semibold, 600); margin: 0; }
+.ev-n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: var(--radius-full); border: 1px solid var(--c-control); font-size: var(--text-xs); }
+.ev-scopes { display: flex; flex-wrap: wrap; gap: 6px; }
+.ev-crumb .chip { font-size: var(--text-xs); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-scope-says { font-size: var(--text-xs); overflow-wrap: anywhere; margin: 0; }
+.ev-acts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.ev-acts li { display: flex; flex-direction: column; gap: 2px; }
+.ev-acts .btn { justify-content: flex-start; }
+.ev-picked, .ev-acts .btn[aria-current="true"] { background: var(--c-sunken); border-color: var(--c-control); font-weight: var(--weight-medium); }
+.ev-acts li.ev-no { flex-direction: row; gap: 6px; align-items: baseline; padding: 2px 0; }
+.ev-off { color: var(--c-text3); font-size: var(--text-xs); font-weight: var(--weight-medium); white-space: nowrap; }
+.ev-off::after { content: ":"; }
+.ev-eff { font-size: var(--text-xs); overflow-wrap: anywhere; }
+.ev-note { font-size: var(--text-xs); margin: 0; }
+.ev-applies { font-size: var(--text-sm); margin: 0; }
+.ev-widen p { margin: 0; }
+.ev-ack { display: flex; gap: var(--space-2); align-items: baseline; font-size: var(--text-sm); overflow-wrap: anywhere; cursor: pointer; }
+.ev-undo { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.ev-confirm, .ev-live { border-top: 1px solid var(--c-border); }
+.ev-diff { margin: 0; max-height: 280px; overflow: auto; white-space: pre; }
+.ev-act .banner { margin: var(--space-3); }
+.ev-act .ev-confirm .banner, .ev-act .ev-saved .banner { margin: 0; }
+/* An action link lands on its step 3 (#act-check, r10 ST-2): the fragment scrolls the sticky aside too, so "Check
+   the change" and its Confirm come into view without a scroll inside the panel; the margin clears the sticky topbar
+   in one column, where the window scrolls instead. A long path in a banner wraps instead of scrolling the aside
+   sideways (ST-7). A no-JS Confirm that saved nothing lands on its "Not saved" line (#flash). */
+#act-check, #flash { scroll-margin-top: calc(var(--topbar-h, 52px) + var(--space-2)); }
+.ev-act .banner .grow { overflow-wrap: anywhere; min-width: 0; }
+.ev-dir { margin-left: auto; font-size: var(--text-xs); }
+.ev-says { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.ev-says li { display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.ev-was { color: var(--c-text2); font-size: var(--text-sm); }
+.ev-to { color: var(--c-text3); }
+.ev-says-one { margin: 0; overflow-wrap: anywhere; }
+.ev-why summary, .ev-file summary { cursor: pointer; font-size: var(--text-xs); color: var(--c-text2); }
+.ev-why .ev-acts { margin-top: var(--space-2); }
+.ev-now { border: 1px solid var(--c-border); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); margin: 0 0 var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+.ev-now legend { font-size: var(--text-sm); font-weight: var(--weight-medium); padding: 0 4px; }
+.ev-now-row { display: flex; gap: var(--space-2); align-items: baseline; font-size: var(--text-sm); overflow-wrap: anywhere; }
+.ev-now-row.ev-no { color: var(--c-text3); }
+.ev-go { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+.ev-live-out { display: flex; gap: var(--space-2); align-items: baseline; margin: 0; font-size: var(--text-sm); overflow-wrap: anywhere; }
+/* An "Also apply now" outcome by its state on the run now: in force reads as done, putting in force as calm and
+   pending (it turns within about a second, over the page's live updates), a watched run's mark as information. */
+.ev-live-out[data-state="in_force"] > .i, .ev-live-out[data-state="partial"] > .i { color: var(--c-success); }
+.ev-live-out[data-state="waiting"] { color: var(--c-text2); }
+.ev-live-out[data-state="waiting"] > .i { color: var(--c-info); }
+.ev-live-out[data-state="recorded_only"] > .i { color: var(--c-info); }
+.ev-live-out[data-state="ended"] { color: var(--c-text3); }
+.ev-live-blk { color: var(--c-text2); }
+/* In force, "Live now on this run" is a green chip like Narrows above it (the colour of a change that took), and the
+   line it came in force at follows it; the live update swaps the waiting line for it in place. */
+.ev-live-out:has(> .ev-live-chip) { flex-wrap: wrap; align-items: center; row-gap: 4px; }
+.ev-live-chip { flex: none; font-weight: var(--weight-medium); }
+.ev-live-chip .link { color: inherit; }
+.ev-saved .ev-step { color: var(--c-success); }
+/* The facts column (templates/evfacts.tmpl). */
+.ev-headline { min-width: 0; flex: 1 1 auto; }
+.ev-lede { display: flex; gap: var(--space-2); align-items: baseline; margin: var(--space-2) 0 0; max-width: 72rem; font-size: var(--text-base, 1rem); line-height: 1.5; }
+.ev-lede .b { flex: none; }
+.ev-sentence { overflow-wrap: anywhere; min-width: 0; }
+.ev-wrap { overflow-wrap: anywhere; }
+.ev-when { white-space: normal; }
+.ev-rule { font-weight: var(--weight-medium); }
+.ev-src { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.ev-head-link { font-size: var(--text-sm); }
+.ev-ask-s { margin: 0; overflow-wrap: anywhere; }
+.ev-prog { display: flex; flex-direction: column; gap: var(--space-2); }
+.ev-prog-name { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin: 0; overflow-wrap: anywhere; }
+.ev-prog-name .i { align-self: center; color: var(--c-text3); }
+.ev-chain-w { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--c-border); padding-top: var(--space-2); }
+.ev-chain-h { font-size: var(--text-xs); margin: 0; }
+.ev-chain { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 0; align-items: baseline; font-size: var(--text-sm); }
+.ev-chain li { display: inline-flex; align-items: baseline; overflow-wrap: anywhere; min-width: 0; }
+.ev-chain li + li::before { content: "\2192"; color: var(--c-text3); padding: 0 8px; }
+.ev-chain li[aria-current="true"] { font-weight: var(--weight-semibold, 600); }
+.ev-long { max-height: 220px; overflow: auto; margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-xs); }
+.ev-fields { table-layout: fixed; width: 100%; }
+.ev-fields th:first-child { width: 34%; }
+.ev-fk { font-weight: var(--weight-regular); color: var(--c-text2); vertical-align: top; text-align: left; overflow-wrap: anywhere; }
+.ev-fl { color: var(--c-text); }
+.ev-fkey { display: block; font-size: var(--text-xs); }
+.ev-fv { vertical-align: top; overflow-wrap: anywhere; min-width: 0; }
+.ev-show { display: inline-block; max-width: 100%; }
+.ev-show summary { cursor: pointer; font-size: var(--text-xs); color: var(--c-text2); }
+.ev-show code { display: block; margin-top: 4px; font-size: var(--text-xs); }
+.ev-dl { margin: 4px 0 0; display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: baseline; font-size: var(--text-sm); }
+.ev-ok { color: var(--c-success); display: inline-flex; gap: 4px; align-items: center; }
+.ev-bad { color: var(--c-danger); display: inline-flex; gap: 4px; align-items: center; }
+.ev-hash { overflow-wrap: anywhere; font-size: var(--text-xs); display: block; }
+.ev-rawbar { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; justify-content: space-between; margin: var(--space-2) 0; }
+.ev-rawline { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Copy buttons show only once copy.js runs: without JavaScript the text is plain and selectable. */
+.copy-btn { display: none; }
+.has-copy .copy-btn { display: inline-flex; }
+/* The Act card: a refusal a deny_read entry or the secret list already makes leads with that rule; the options that
+   widen it are folded under "Change this rule" (UX-F10). */
+.ev-guard-lead { display: flex; gap: var(--space-2); align-items: flex-start; margin: 0; overflow-wrap: anywhere; }
+.ev-guard-lead .i { color: var(--c-success); flex: none; margin-top: 2px; }
+.ev-change { border-top: 1px solid var(--c-border); }
+.ev-change > summary { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); cursor: pointer; font-size: var(--text-sm); color: var(--c-text2); list-style: none; }
+.ev-change > summary::-webkit-details-marker { display: none; }
+/* A disclosure chevron, as on the other folds: it points right when shut and down when open. */
+.ev-change > summary::before { content: ""; flex: none; width: 0.45em; height: 0.45em; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); margin-right: 2px; }
+.ev-change[open] > summary::before { transform: rotate(45deg); }
+.ev-change > summary:hover .ev-change-lbl { color: var(--c-text); text-decoration: underline; }
+.ev-change[open] > summary { border-bottom: 1px solid var(--c-border); }
+.ev-undo-btn { white-space: normal; text-align: left; height: auto; min-height: 32px; max-width: 100%; }
+.ev-undo-what { overflow-wrap: anywhere; }
+.ev-cli code { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 1000px) {
+  .ev-grid { grid-template-columns: minmax(0, 1fr); }
+  .ev-side { grid-column: 1; grid-row: auto; position: static; max-height: none; overflow: visible; }
+}
+@media (max-width: 640px) {
+  .ev-ctx-row { grid-template-columns: 48px minmax(0, 1fr) max-content; padding: 6px var(--space-3); }
+  .ev-ctx-row .ev-t, .ev-ctx-row .op { display: none; }
+  .ev-acts .btn, .ev-search .btn, .ev-go .btn, .ev-undo .btn { min-height: 44px; }
+  .ev-now-row, .ev-ack { min-height: 44px; align-items: center; }
+  .ev-scopes .chip { min-height: 44px; }
+  .ev-nav .btn { min-height: 44px; }
+  .ev-fields, .ev-fields tbody, .ev-fields tr, .ev-fields th, .ev-fields td { display: block; width: auto; }
+  .ev-fields thead { display: none; }
+  .ev-fields th:first-child { width: auto; }
+  .ev-fields tr { border-top: 1px solid var(--c-border); padding: var(--space-2) var(--space-3); }
+  .ev-fields th, .ev-fields td { border: 0; padding: 2px 0; }
+  .ev-lede { flex-direction: column; gap: 4px; }
+  .copy-btn { min-height: 44px; }
+}
+/* The headline beside the neighbour buttons; the fields table in compact rows whose labels wrap. */
+.ev-headline { flex: 1 1 32rem; }
+.ev-fields tbody th { white-space: normal; font-size: var(--text-sm); padding-top: 7px; padding-bottom: 7px; background: transparent; }
+.ev-fields tbody td { padding-top: 7px; padding-bottom: 7px; }
+.ev-asis > summary { cursor: pointer; }
+/* Every button of the Act card wraps inside it: a long path or command never runs past the card. */
+.ev-act .btn { white-space: normal; height: auto; min-height: 32px; max-width: 100%; text-align: left; overflow-wrap: anywhere; }
+/* A live Block/Mark button keeps its words whole: the label is one line box (not one flex item per word), only the path breaks anywhere, and "now" stays on the path's line. */
+.ev-act .ev-live .btn { overflow-wrap: normal; justify-content: flex-start; }
+.ev-btn-lbl { min-width: 0; }
+.ev-btn-path { overflow-wrap: anywhere; }
+.ev-nowrap { white-space: nowrap; }
+/* The Similar panel's subject is a whole path or command: it breaks anywhere rather than widen the page at 390 px. */
+.ev-subj { overflow-wrap: anywhere; }
+/* The headline names its object (r9 QU-1): a path, destination or program in the mono face, breaking anywhere so a
+   long path never widens the page. */
+.ev-h-target { font-family: var(--font-mono); font-size: 0.9em; font-weight: var(--weight-semibold, 600); overflow-wrap: anywhere; }
+.ev-headline h1 { overflow-wrap: anywhere; min-width: 0; }
+/* No sideways scroll at phone width (r9 QL-8, QG-6, QU-15): every mono value in the side card, a facts row or a panel
+   body breaks anywhere, and grid and flex children may shrink below their content. */
+.ev-side .mono, .kv dd .mono, .kv dd.mono, .panel-body .mono, .ev-grid .panel-body code { overflow-wrap: anywhere; min-width: 0; }
+.ev-grid > *, .ev-side, .ev-act, .kv dd { min-width: 0; }
+/* Step 3 says the change reaches this run too while its "Also apply now" box is ticked. */
+.ev-applies-now { display: none; }
+.ev-confirm:has(.ev-now-this:checked) .ev-applies-now { display: inline; }
+/* Step 1's breadcrumb folds the folders far above the picked one behind one "…/" chip (foldWider): open, they take
+   their own row above the rest, still widest first. */
+.ev-wider { flex: 0 0 auto; }
+.ev-wider[open] { flex: 1 1 100%; }
+.ev-wider > summary { cursor: pointer; list-style: none; }
+.ev-wider > summary::-webkit-details-marker { display: none; }
+.ev-wider-in { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+/* The Act card's paths break only between folders (pieces put a <wbr> after each "/"), never inside a name ("con
+   fig/"); a single name wider than the card still breaks rather than widen it. */
+.ev-act .ev-says li, .ev-act .ev-says-one, .ev-act .ev-scope-says, .ev-act .ev-eff, .ev-act .ev-ack, .ev-act .ev-now-row,
+.ev-act .ev-live-out, .ev-act .ev-btn-path, .ev-act .mono, .ev-act .banner .grow { overflow-wrap: break-word; }

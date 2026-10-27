@@ -1,0 +1,69 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* The run page's Receipt tab (templates/run.tmpl, define "receipt"): one screen of what the run did. Colours are
+   the tokens.css variables only, so both themes follow. */
+.rc-hero { display: flex; flex-direction: column; gap: var(--space-2); }
+.rc-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-lg); }
+.rc-out { font-weight: var(--weight-semibold); }
+.rc-cmd { color: var(--c-text2); font-size: var(--text-sm); overflow-wrap: anywhere; background: var(--c-sunken); border-radius: var(--radius); padding: var(--space-2) var(--space-3); }
+.rc-cmd::before { content: "$ "; color: var(--c-text3); }
+
+.rc-tiles { list-style: none; margin: 0; padding: 0 var(--space-4) var(--space-4); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
+.rc-tile { display: flex; flex-direction: column; gap: 2px; padding: var(--space-3) var(--space-4); border: 1px solid var(--c-border); border-radius: var(--radius-lg); background: var(--c-surface); min-width: 0; border-top: 3px solid var(--c-border); }
+.rc-tile.rc-bad { border-top-color: var(--c-control); }
+.rc-tile.rc-bad .rc-v { color: var(--c-text); }
+.rc-tile.rc-warn { border-top-color: var(--c-warn-edge); }
+.rc-k { font-size: var(--text-sm); color: var(--c-text2); }
+.rc-v { font-size: 1.75rem; line-height: 1.15; font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rc-v.rc-na { color: var(--c-text3); }
+.rc-s { font-size: var(--text-xs); color: var(--c-text2); }
+
+.rc-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); border-top: 1px solid var(--c-border); }
+.rc-grid > .rc-block + .rc-block { border-left: 1px solid var(--c-border); }
+.rc-block { border-top: 1px solid var(--c-border); display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.rc-grid > .rc-block { border-top: 0; }
+.rc-block h3 { font-size: var(--text-sm); font-weight: var(--weight-semibold); margin: 0; }
+.rc-block h3 + * { margin-top: 0; }
+
+.rc-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.rc-bar-h { display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--text-sm); }
+.rc-rule { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.rc-n { font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; color: var(--c-text); }
+.rc-bar { display: block; width: 100%; height: 6px; margin: 4px 0 2px; }
+.rc-track { fill: var(--c-sunken); }
+.rc-fill { fill: var(--c-control); }
+.rc-why { font-size: var(--text-xs); }
+
+.rc-spark { display: block; width: 100%; height: 72px; background: var(--c-sunken); border-radius: var(--radius); }
+.rc-spark rect.on { fill: var(--c-control); }
+.rc-spark rect.off { fill: var(--c-control); opacity: 0.5; }
+.rc-axis { display: flex; justify-content: space-between; font-size: var(--text-xs); }
+
+.rc-ok { display: flex; align-items: center; gap: var(--space-2); color: var(--c-success); margin: 0; }
+.rc-list > li { padding: var(--space-2) 0; gap: var(--space-2); flex-wrap: wrap; }
+.rc-t { font-size: var(--text-xs); }
+.rc-rr { margin-left: auto; font-size: var(--text-xs); }
+.rc-verb { display: inline-block; min-width: 64px; font-size: var(--text-xs); font-weight: var(--weight-medium); text-align: center; padding: 1px 6px; border-radius: var(--radius-full); background: var(--c-sunken); color: var(--c-text2); }
+/* a file the run changed is routine work, so its verb stays grey (red is for a sensitive action that got through,
+   green for what Tego stopped); a deletion carries an outline so it is still told apart */
+.rc-verb.rc-deleted { background: transparent; box-shadow: inset 0 0 0 1px var(--c-border); }
+.rc-verb.rc-renamed { background: var(--c-info-soft); color: var(--c-info); }
+.rc-gaps { margin: 0; padding-left: var(--space-5); font-size: var(--text-sm); display: flex; flex-direction: column; gap: 4px; }
+.rc-gaps .mono { color: var(--c-warn); margin-right: 4px; }
+.rc-cov { background: var(--c-sunken); }
+.rc-cli { display: flex; flex-wrap: wrap; gap: var(--space-2); border-top: 1px solid var(--c-border); }
+.rc-cli .cli { flex: 1 1 260px; }
+
+/* What the run did (UX-FINISH): sensitive files read, connections and programs, each row a name and its outcomes. */
+.rc-act > li { display: flex; align-items: center; gap: var(--space-2); }
+.rc-act > li > .i { flex: none; color: var(--c-text3); }
+.rc-path { flex: 1 1 200px; min-width: 0; font-family: var(--font-mono); font-size: var(--text-sm); }
+.rc-chips { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); margin-left: auto; }
+.rc-cnt { margin-left: auto; font-variant-numeric: tabular-nums; }
+.rc-act-grid { border-top: 1px solid var(--c-border); }
+
+@media (max-width: 1100px) { .rc-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .rc-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rc-grid { grid-template-columns: minmax(0, 1fr); }
+  .rc-grid > .rc-block + .rc-block { border-left: 0; border-top: 1px solid var(--c-border); }
+}
