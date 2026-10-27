@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# tego-guard.service: an EXAMPLE unit, installed by nothing (docs/OPERATIONS.md "Adopting an agent", ADR 0055).
+# It runs the guard, the foreground command `tego agents --follow --adopt`, under systemd: ADR 0042 builds no
+# daemon until a named trigger fires, and this is the operator's own unit around a foreground command, not one.
+#
+# What it does: every agent (by signature: claude, codex, opencode, gemini, and what --signature adds) that starts
+# outside a tego run, owned by uid 1000 here, has its own process tree moved into a run and recorded from the
+# kernel; any other is reported in the journal and left alone. Stopping the unit releases every adopted agent before
+# the guard exits; it never kills one. Adopted agents live in tego.slice, not in this unit's cgroup, so the unit's
+# KillMode never reaches them; their reapers live in tego.slice/helpers.scope.
+#
+# Install by hand, as root: copy to /etc/systemd/system/tego-guard.service, edit --uid (one per user whose agents
+# are governed; --uid 0 only if root's own agents should be), then `systemctl daemon-reload` and
+# `systemctl enable --now tego-guard`. Its lines: `journalctl -u tego-guard`. Remove: `systemctl disable --now
+# tego-guard` (releases every adopted agent) and delete the file.
+
+[Unit]
+Description=Tego guard: adopt and record AI agents started outside Tego (foreground tego agents --follow --adopt)
+Documentation=man:tego(1)
+After=local-fs.target sys-fs-cgroup.mount
+
+[Service]
+Type=simple
+# Root of the initial user namespace: the guard listens to the kernel's process events and moves processes between
+# cgroups. The machine config is /etc/tego/config.yaml (its ledger_root names where the runs are written).
+ExecStart=/usr/local/bin/tego agents --follow --adopt --uid 1000 --json
+# SIGTERM is the release: each adoption moves its agent back where it came from and ends its run (reason stopped).
+KillSignal=SIGTERM
+TimeoutStopSec=60
+# A guard that failed is not restarted in a loop: an agent it could not adopt is reported, never retried.
+Restart=on-failure
+RestartSec=30
+StartLimitIntervalSec=600
+StartLimitBurst=3
+# The guard needs /sys/fs/cgroup, /sys/fs/bpf and /run/tego writable and the BPF and netlink capabilities, so the
+# sandboxing directives that take any of those away (ProtectSystem=strict, ProtectKernelTunables, PrivateDevices,
+# RestrictAddressFamilies without AF_NETLINK, a CapabilityBoundingSet without CAP_BPF, CAP_PERFMON, CAP_NET_ADMIN and
+# CAP_SYS_ADMIN) break it; they are left out on purpose.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
