@@ -1,0 +1,372 @@
+[
+ {
+  "name": "list-empty",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"list\",\"nonce\":\"NONCE\"}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{}"
+   }
+  ],
+  "result": "null"
+ },
+ {
+  "name": "list-one",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"list\",\"nonce\":\"NONCE\"}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"pending\":[{\"ask_id\":\"q-00000000000000000000000000000001\",\"op\":\"connect\",\"target\":\"127.0.0.1:443\",\"rule\":\"net.ask[0]\",\"hold\":\"connect\",\"pid\":4242,\"tid\":4243}]}"
+   }
+  ],
+  "result": "[{\"ask_id\":\"q-00000000000000000000000000000001\",\"op\":\"connect\",\"target\":\"127.0.0.1:443\",\"rule\":\"net.ask[0]\",\"hold\":\"connect\",\"pid\":4242,\"tid\":4243}]"
+ },
+ {
+  "name": "detail",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"detail\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000001\"}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"request\":{\"ask_id\":\"q-00000000000000000000000000000001\",\"op\":\"connect\",\"target\":\"127.0.0.1:443\",\"rule\":\"net.ask[0]\",\"hold\":\"connect\",\"pid\":4242,\"tid\":4243}}"
+   }
+  ],
+  "result": "{\"ask_id\":\"q-00000000000000000000000000000001\",\"op\":\"connect\",\"target\":\"127.0.0.1:443\",\"rule\":\"net.ask[0]\",\"hold\":\"connect\",\"pid\":4242,\"tid\":4243}"
+ },
+ {
+  "name": "answer-approve",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"answer\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000001\",\"approve\":true}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"decision\":{\"ask_id\":\"q-00000000000000000000000000000001\",\"approved\":true,\"by\":\"uid:U pid:P\",\"after_s\":0}}"
+   }
+  ],
+  "result": "{\"ask_id\":\"q-00000000000000000000000000000001\",\"approved\":true,\"by\":\"uid:U pid:P\",\"after_s\":0}"
+ },
+ {
+  "name": "list-truncated",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"list\",\"nonce\":\"NONCE\"}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"pending\":[{\"score\":87,\"gate_rule\":\"gate.rules[2]\",\"ask_id\":\"q-00000000000000000000000000000002\",\"op\":\"http_request\",\"target\":\"api.example.com POST /v1/messages?key=kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\",\"rule\":\"net.ask[rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"hold\":\"request\",\"pid\":4242,\"tid\":4243,\"target_truncated\":true,\"rule_truncated\":true}]}"
+   }
+  ],
+  "result": "[{\"score\":87,\"gate_rule\":\"gate.rules[2]\",\"ask_id\":\"q-00000000000000000000000000000002\",\"op\":\"http_request\",\"target\":\"api.example.com POST /v1/messages?key=kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\",\"rule\":\"net.ask[rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"hold\":\"request\",\"pid\":4242,\"tid\":4243,\"target_truncated\":true,\"rule_truncated\":true}]"
+ },
+ {
+  "name": "detail-full",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"detail\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000002\"}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"request\":{\"score\":87,\"gate_rule\":\"gate.rules[2]\",\"ask_id\":\"q-00000000000000000000000000000002\",\"op\":\"http_request\",\"target\":\"api.example.com POST /v1/messages?key=kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\\u0026é=1\",\"rule\":\"net.ask[rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr]\",\"hold\":\"request\",\"pid\":4242,\"tid\":4243}}"
+   }
+  ],
+  "result": "{\"score\":87,\"gate_rule\":\"gate.rules[2]\",\"ask_id\":\"q-00000000000000000000000000000002\",\"op\":\"http_request\",\"target\":\"api.example.com POST /v1/messages?key=kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\\u0026é=1\",\"rule\":\"net.ask[rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr]\",\"hold\":\"request\",\"pid\":4242,\"tid\":4243}"
+ },
+ {
+  "name": "answer-always-not-rememberable",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"answer\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000002\",\"approve\":true,\"remember\":true}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"error\":\"ask: this request cannot be remembered\",\"code\":\"not-rememberable\"}"
+   }
+  ],
+  "err": "ask: this request cannot be remembered"
+ },
+ {
+  "name": "answer-deny",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"answer\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000002\",\"approve\":false}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"decision\":{\"ask_id\":\"q-00000000000000000000000000000002\",\"approved\":false,\"by\":\"uid:U pid:P\",\"reason\":\"ask-denied\",\"after_s\":0}}"
+   }
+  ],
+  "result": "{\"ask_id\":\"q-00000000000000000000000000000002\",\"approved\":false,\"by\":\"uid:U pid:P\",\"reason\":\"ask-denied\",\"after_s\":0}"
+ },
+ {
+  "name": "detail-not-pending",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"detail\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000003\"}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"error\":\"ask: request is no longer pending\",\"code\":\"not-pending\"}"
+   }
+  ],
+  "err": "ask: request is no longer pending"
+ },
+ {
+  "name": "answer-not-pending",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"answer\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000003\",\"approve\":true}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"error\":\"ask: request is no longer pending\",\"code\":\"not-pending\"}"
+   }
+  ],
+  "err": "ask: request is no longer pending"
+ },
+ {
+  "name": "answer-always",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"answer\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000004\",\"approve\":true,\"remember\":true}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"decision\":{\"ask_id\":\"q-00000000000000000000000000000004\",\"approved\":true,\"by\":\"uid:U pid:P always\",\"after_s\":0,\"always\":true}}"
+   }
+  ],
+  "result": "{\"ask_id\":\"q-00000000000000000000000000000004\",\"approved\":true,\"by\":\"uid:U pid:P always\",\"after_s\":0,\"always\":true}"
+ },
+ {
+  "name": "alternate-no-alternate",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"answer\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000005\",\"approve\":false,\"alternate\":\"/ALT/alternate.txt\"}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"error\":\"ask: this request cannot be answered with an alternate file\",\"code\":\"no-alternate\"}"
+   }
+  ],
+  "err": "ask: this request cannot be answered with an alternate file"
+ },
+ {
+  "name": "answer-deny-always",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"answer\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000005\",\"approve\":false,\"remember\":true}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"decision\":{\"ask_id\":\"q-00000000000000000000000000000005\",\"approved\":false,\"by\":\"uid:U pid:P always\",\"reason\":\"ask-denied\",\"after_s\":0,\"always\":true}}"
+   }
+  ],
+  "result": "{\"ask_id\":\"q-00000000000000000000000000000005\",\"approved\":false,\"by\":\"uid:U pid:P always\",\"reason\":\"ask-denied\",\"after_s\":0,\"always\":true}"
+ },
+ {
+  "name": "alternate",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"answer\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000006\",\"approve\":false,\"alternate\":\"/ALT/alternate.txt\"}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"decision\":{\"ask_id\":\"q-00000000000000000000000000000006\",\"approved\":false,\"by\":\"uid:U pid:P\",\"after_s\":0,\"alternate\":\"/ALT/alternate.txt\",\"alternate_dev\":1,\"alternate_ino\":1}}"
+   }
+  ],
+  "result": "{\"ask_id\":\"q-00000000000000000000000000000006\",\"approved\":false,\"by\":\"uid:U pid:P\",\"after_s\":0,\"alternate\":\"/ALT/alternate.txt\",\"alternate_dev\":1,\"alternate_ino\":1}"
+ },
+ {
+  "name": "alternate-bad",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"answer\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000007\",\"approve\":false,\"alternate\":\"/ALT/alternate.txt\"}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"error\":\"ask: the alternate cannot be used: it is tego's own state\",\"code\":\"bad-alternate\"}"
+   }
+  ],
+  "err": "ask: the alternate cannot be used: it is tego's own state"
+ },
+ {
+  "name": "alternate-always",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"answer\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000008\",\"approve\":false,\"remember\":true,\"alternate\":\"/ALT/alternate.txt\"}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"decision\":{\"ask_id\":\"q-00000000000000000000000000000008\",\"approved\":false,\"by\":\"uid:U pid:P always\",\"after_s\":0,\"always\":true,\"alternate\":\"/ALT/alternate.txt\",\"alternate_dev\":1,\"alternate_ino\":1}}"
+   }
+  ],
+  "result": "{\"ask_id\":\"q-00000000000000000000000000000008\",\"approved\":false,\"by\":\"uid:U pid:P always\",\"after_s\":0,\"always\":true,\"alternate\":\"/ALT/alternate.txt\",\"alternate_dev\":1,\"alternate_ino\":1}"
+ },
+ {
+  "name": "protocol",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"extra\":1,\"action\":\"list\",\"nonce\":\"NONCE\"}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"error\":\"ask: invalid protocol\",\"code\":\"protocol\"}"
+   }
+  ],
+  "err": "ask: invalid protocol"
+ },
+ {
+  "name": "answer-always-standing-full",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"answer\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000009\",\"approve\":true,\"remember\":true}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"error\":\"ask: too many standing decisions in this run\",\"code\":\"standing-full\"}"
+   }
+  ],
+  "err": "ask: too many standing decisions in this run"
+ },
+ {
+  "name": "answer-always-standing-busy",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"answer\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000010\",\"approve\":false,\"remember\":true}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"error\":\"ask: another always answer for the same operation, rule and target is being recorded\",\"code\":\"standing-busy\"}"
+   }
+  ],
+  "err": "ask: another always answer for the same operation, rule and target is being recorded"
+ },
+ {
+  "name": "answer-unavailable",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"answer\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000011\",\"approve\":true}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"error\":\"the ledger refused the line\",\"code\":\"unavailable\"}"
+   }
+  ],
+  "err": "ask: unavailable: the ledger refused the line"
+ },
+ {
+  "name": "list-unauthorized",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"error\":\"ask: unauthorized peer\",\"code\":\"unauthorized\"}"
+   }
+  ],
+  "err": "ask: unauthorized peer"
+ }
+]
