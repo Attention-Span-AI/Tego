@@ -1,0 +1,203 @@
+# SPDX-License-Identifier: Apache-2.0
+name: vm-matrix
+on:
+  # Run by hand: the matrix boots KVM guests for hours, so no schedule or tag starts it.
+  workflow_dispatch: {}
+
+# Read-only token (ci.yml says why); actions are pinned by commit SHA and the toolchain by patch release.
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.27.3'
+
+jobs:
+  matrix:
+    # The kernel name is in the job's own name (not just a step's), so a failing row is legible
+    # from the run list without opening logs, and so is the part of the row it ran.
+    name: vm-matrix (${{ matrix.kernel }}, ${{ matrix.part }})
+    runs-on: ubuntu-24.04
+    # The row's kernel and part reach every script through env, never as ${{ }} in run:.
+    env:
+      KERNEL: ${{ matrix.kernel }}
+      PART: ${{ matrix.part }}
+    # Each row runs as three jobs (part): `row`, the kernel-matrix row, Landlock alone, the BPF load test, the tier-2
+    # backend and the coverage, and one job per tier-3 boot, `lsm-bpf` and `default-lsm`. The tier-3 guests alone are
+    # bounded at 305 minutes per boot (VM_SUITE_TIMEOUT below: two builds of enforce/cgroup at 100 minutes, two of
+    # internal/bpf and of test/conformance at 25, and doctor's 5), 610 for both, and a hosted job ends at 360, so one job
+    # could not hold both boots: a slow row was cancelled by the job before root-suites.sh reported the suite with its
+    # log. A boot's job has 330 minutes: its guests' 305 plus the build and the kernel fetch. The row's job stays above the
+    # coverage step's own 180 minutes and the row's other guests.
+    timeout-minutes: ${{ matrix.part == 'row' && 240 || 330 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [row, lsm-bpf, default-lsm]
+        kernel:
+          - ubuntu-24.04
+          - debian-13
+          - rhel-9
+          - al2023
+          - al2023-6.12
+          - fedora-7.0
+          - ubuntu-25.10
+          - fedora-7.2
+          - ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      # Every guest step below boots through test/vm/kvm-run.sh, which runs as the runner user and exits 97
+      # unless that user can read and write /dev/kvm, and nothing here shows a hosted runner's image grants it,
+      # so this udev rule opens the device to every user, the usual remedy on hosted runners. It has not been
+      # seen to work on a runner from here, so the step checks the device itself: a runner without usable KVM
+      # fails the row at this step, by name, not at the first boot, and not silently in the report-only
+      # coverage step. kvm-run.sh builds its guest from `apt-get download`, which reads the package lists,
+      # and an image's lists can name versions the mirror no longer serves.
+      #
+      # --settle makes the trigger wait for the change event it queues to be processed (udevadm(8): "Apart
+      # from triggering events, also waits for those events to finish"; systemd 238 and later, and
+      # ubuntu-24.04 has 255). Without it the trigger returns once the event is queued and systemd-udevd applies
+      # MODE=0666 later, in a worker, so the check below could run first and fail the row, blaming a device that
+      # was about to be usable.
+      - name: enable KVM for the runner user
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm --settle
+          if ! { [ -r /dev/kvm ] && [ -w /dev/kvm ]; }; then
+            ls -l /dev/kvm || true
+            echo "::error::/dev/kvm is not readable and writable by $(id -un); no guest step can boot on this runner"
+            exit 1
+          fi
+          sudo apt-get update -qq
+      # What the row's guest runs, from fetch-kernel.py (its DOCTOR_ONLY set) and not from a row name written here:
+      # `full`, or `doctor-only` for a kernel below every tier's floor (Ubuntu 22.04's 5.15, Landlock ABI 1), where
+      # the one check is that doctor and `tego run` refuse the machine with their fix, and the steps that need a
+      # tier have nothing to run. The body is assigned before it is written out, so a failing fetch-kernel.py fails
+      # this step under bash -e (inside `echo "body=$(...)"` its exit status was lost, the output was empty, and every
+      # step gated on the body was skipped: a green row that ran no tier). Anything but the two bodies the script
+      # knows fails the step too, and the gated steps below run unless the body is doctor-only, so an empty or
+      # unknown value runs them rather than skipping them.
+      - name: the body of ${{ matrix.kernel }}
+        id: body
+        shell: bash
+        run: |
+          body=$(python3 test/vm/fetch-kernel.py --body "$KERNEL")
+          case "$body" in
+          full | doctor-only) ;;
+          *)
+            echo "::error::fetch-kernel.py --body $KERNEL printed '$body', which is neither full nor doctor-only"
+            exit 1
+            ;;
+          esac
+          echo "body=$body" >>"$GITHUB_OUTPUT"
+      # Where bpf is an active LSM (the row's own list, or the second boot with the lsm= line doctor printed), the row
+      # also runs doctor --require bpflsm and kill tests 1, 4, 5 and 7 (b) at tier bpflsm (TIER3-PLAN T11). A doctor-only
+      # row runs the refusal check (test/vm/doctor-refusal.sh) in this step and in no other.
+      - name: kernel-matrix row (doctor, kill tests 1, 2, 4, 5, 6, 7; 1, 4, 5, 7 at bpflsm; a doctor-only row, the refusal) on ${{ matrix.kernel }}
+        if: matrix.part == 'row'
+        run: test/vm/run-in-vm.sh "$KERNEL" -- test/vm/run-matrix-row.sh
+      # Tier 3 on the row's kernel, both boots (TIER3-PLAN §9, T11), one per job (part): the plane's own suites and ADR
+      # 0017's conformance runner, whose tier bpflsm axis and parity cells run on the lsm=...,bpf boot and whose fmod_ret
+      # axis runs on the boot without bpf. Every row that offers a tier, rhel-9 included: RHEL 9's 5.14 carries bpf LSM
+      # and the plane (enforce-plane R28). A row's name reaches the guests as TEGO_VM_ROW, and root-suites.sh fetches
+      # its kernel.
+      - name: tier 3 suites on the ${{ matrix.part }} boot of ${{ matrix.kernel }}, as root
+        if: matrix.part != 'row' && steps.body.outputs.body != 'doctor-only'
+        shell: bash
+        run: |
+          TEGO_VM_ROW="$KERNEL" TEGO_VM_LOCKDOWN=none TEGO_VM_MEM=1536M \
+            VM_BOOTS="$PART" VM_BPF=yes VM_SUITE_MEM=internal/runtime/enforce/cgroup=2560M VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=6000" VM_OUT="$RUNNER_TEMP/tier3" \
+            test/vm/root-suites.sh internal/runtime/enforce/cgroup internal/bpf test/conformance
+      # Landlock alone on a kernel that has ABI 9 and 10 (enforce-landlock R21, R22): the one row whose kernel does is
+      # fedora-7.2, so the unix connect and UDP port tests run there, with the row's name in their guest (TEGO_VM_ROW),
+      # which holds the row to its ABI. Every other row's kernel is below ABI 9, and the same tests run on the host kernel
+      # in `make vm-root-test`, where they assert that Landlock leaves both to the supervisor.
+      - name: Landlock alone refuses an undeclared unix connect and UDP port on ${{ matrix.kernel }}, as root
+        if: matrix.part == 'row' && matrix.kernel == 'fedora-7.2'
+        shell: bash
+        run: |
+          TEGO_VM_ROW="$KERNEL" TEGO_VM_LOCKDOWN=none TEGO_VM_MEM=1536M VM_RUN='TestIntegrationUnixConnect|TestIntegrationUDPPorts' VM_OUT="$RUNNER_TEMP/landlock" \
+            test/vm/root-suites.sh internal/runtime/enforce/landlock
+      - name: build the privileged BPF load test and the tier-2 backend suite
+        if: matrix.part == 'row' && steps.body.outputs.body != 'doctor-only' && matrix.kernel != 'rhel-9'
+        run: |
+          CGO_ENABLED=0 go test -c -tags 'integration tegobpf' -o "$RUNNER_TEMP/bpf.test" ./internal/bpf/
+          CGO_ENABLED=0 go test -c -tags 'integration tegobpf' -o "$RUNNER_TEMP/cgroup.test" ./internal/runtime/enforce/cgroup/
+      # The root load test on each row: every program of every committed object, loaded on its own, through
+      # the verifier of that row's kernel, with its CO-RE relocations resolved against that kernel's BTF. rhel-9's
+      # 5.14 is below tier 2's 6.1 tested floor and is not a target for these objects
+      # (docs/p0/enforce-cgroup-observe.md §10). The test skips without privilege, so a skip fails the step.
+      - name: every BPF program passes the verifier on ${{ matrix.kernel }}, as root
+        if: matrix.part == 'row' && steps.body.outputs.body != 'doctor-only' && matrix.kernel != 'rhel-9'
+        shell: bash
+        run: |
+          test/vm/run-in-vm.sh "$KERNEL" -- sudo "$RUNNER_TEMP/bpf.test" -test.v \
+            -test.run 'TestObjectsLoadOnThisKernel|TestCORERelocationsResolve|TestObjectSpecCacheLoadsFreshCopyOnThisKernel' | tee "$RUNNER_TEMP/bpf.log"
+          for t in TestObjectsLoadOnThisKernel TestCORERelocationsResolve TestObjectSpecCacheLoadsFreshCopyOnThisKernel; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/bpf.log" || { echo "::error::$t did not pass on $KERNEL"; exit 1; }
+          done
+      # The backend itself on each row, as root: Prepare, Attach and Detach against the committed objects, and real
+      # connects decided in the kernel. This is what guards the backend's own handling of a row's kernel, which the
+      # load test above cannot: bpf.test leaves connect_unix out below 6.7 by itself, so a Prepare that stopped doing
+      # so (dropUnixConnectWhereUnsupported, §5 R7) fails only here, on al2023's 6.1.
+      - name: the tier-2 backend on ${{ matrix.kernel }}, as root
+        if: matrix.part == 'row' && steps.body.outputs.body != 'doctor-only' && matrix.kernel != 'rhel-9'
+        shell: bash
+        run: |
+          test/vm/run-in-vm.sh "$KERNEL" -- sudo "$RUNNER_TEMP/cgroup.test" -test.v \
+            -test.run 'TestPrepareOnRealKernel|TestNet.*OnRealKernel|TestConnectApprovalOnRealKernel' | tee "$RUNNER_TEMP/cgroup.log"
+          for t in TestPrepareOnRealKernel TestNetVerdictOnRealKernel TestNetUnrestrictedOnRealKernel TestNetRefreshOnRealKernel \
+                   TestNetworkControlsOnRealKernel TestNetworkListenAutobindOnRealKernel TestNetworkImportedListenOnRealKernel \
+                   TestNetworkExpiryOnRealKernel TestConnectApprovalOnRealKernel TestNetworkDatagramAndByteLimitsOnRealKernel; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/cgroup.log" || { echo "::error::$t did not pass on $KERNEL"; exit 1; }
+          done
+      # The peer check every control socket adopts (internal/platform/peer) and the run-membership rule it refuses by
+      # (internal/runscope), as root on each row's kernel (ADR 0100). Below Linux 6.5 there is no
+      # SO_PEERPIDFD, so on rhel-9's 5.14 and al2023's 6.1 Identify takes the pidfd_open fallback against that kernel's
+      # own pidfd_open, fdinfo and poll, and the package's rowsWithoutPeerPidfd fails either row if its kernel answers
+      # SO_PEERPIDFD after all. CI's root-suites job runs both packages on the runner's kernel, which has it. Each suite
+      # is held to test/vm/root-skips.txt by root-suites.sh's skip gate, and the run ends with its `tego doctor` check,
+      # given the objects (VM_BPF=yes) as the tier 3 step's is: a guest of about a minute more.
+      - name: the peer check and the run-membership rule on ${{ matrix.kernel }}, as root
+        if: matrix.part == 'row' && steps.body.outputs.body != 'doctor-only'
+        shell: bash
+        run: |
+          TEGO_VM_ROW="$KERNEL" TEGO_VM_LOCKDOWN=none TEGO_VM_MEM=1536M VM_BPF=yes VM_OUT="$RUNNER_TEMP/peer" \
+            test/vm/root-suites.sh internal/platform/peer internal/runscope
+      # Coverage with the privileged suites' share, which only a root run can measure: scripts/coverage.sh
+      # --vm runs the unit and integration suites here, then each suite of test/vm/root-suites.sh as root in its
+      # own guest, and --kill-tests adds this row's kill tests run with a -cover tego (test/vm/matrix.sh with
+      # VM_COVER=1), and it merges the lot. It boots this row's kernel through kvm-run.sh, the harness every guest
+      # step above uses. One row is enough for the number: debian-13's 6.12 is above tier 2's floor and lists
+      # bpf in its own lsm=, so tier 3's probes see a BPF LSM kernel, as under `make vm-root-test`. Report-only,
+      # as ci.yml's coverage job is: the suites' and kill tests' verdicts come from the steps above and from
+      # `make vm-root-test`, and floors for the root-only packages come after a few runs of this number. The kill
+      # tests are one more boot of the row, about two minutes on a developer laptop, so the step has 30 minutes
+      # more than the suites alone had.
+      - name: coverage with the privileged suites and the kill tests, as root on ${{ matrix.kernel }} (report-only)
+        if: matrix.part == 'row' && matrix.kernel == 'debian-13'
+        continue-on-error: true
+        timeout-minutes: 180
+        shell: bash
+        run: |
+          python3 test/vm/fetch-kernel.py debian-13 >/dev/null
+          TEGO_VM_KERNEL="$(python3 test/vm/fetch-kernel.py --name debian-13)" TEGO_VM_LSM=kernel TEGO_VM_LOCKDOWN=none \
+            scripts/coverage.sh --vm --kill-tests debian-13 -o "$RUNNER_TEMP/coverage"
+          cat "$RUNNER_TEMP/coverage/percent.txt"
+      - name: upload the coverage
+        if: always() && matrix.part == 'row' && matrix.kernel == 'debian-13'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-with-vm-${{ matrix.kernel }}
+          retention-days: 30
+          path: |
+            ${{ runner.temp }}/coverage/percent.txt
+            ${{ runner.temp }}/coverage/coverage.out
+            ${{ runner.temp }}/coverage/vm/logs/
+            ${{ runner.temp }}/coverage/killtests/vm/matrix/debian-13/results.tsv
+          if-no-files-found: warn

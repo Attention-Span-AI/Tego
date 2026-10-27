@@ -1,0 +1,130 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The container image (examples/container, docs/user/container.md): built from the commit, then, inside it and with
+# compose.yaml's settings, `tego doctor --require landlock`, the image's smoke script (tego test and a short tego run
+# of the hello agent, its chain verified), the compose agent service as `up` runs it, and the dashboard service
+# answering this runner's curl on the host's loopback. Two report-only steps record what the image does on Docker's
+# defaults and as a privileged root container, the rows docs/user/container.md cannot yet fill from a run.
+name: container
+on:
+  push:
+    # As ci.yml: branches is what makes a branch push run this, and release.sh pushes a v* tag only after the
+    # commit's runs are green.
+    branches: ['**']
+    tags-ignore: ['v*']
+  pull_request:
+
+# Reads the repository and nothing else: nothing here publishes the image.
+permissions:
+  contents: read
+
+# As ci.yml: a newer push to a pull request cancels the older run; a push to a branch has a group of its own.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      COMPOSE_FILE: examples/container/compose.yaml
+      TEGO_IMAGE: tego:ci
+      TEGO_DASHBOARD_ADDR: 127.0.0.1:9370
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the runner's kernel, LSMs, Docker and cgroup setup
+        shell: bash
+        run: |
+          uname -r
+          cat /sys/kernel/security/lsm; echo
+          stat -fc 'cgroup mount: %T' /sys/fs/cgroup
+          docker version
+          docker info --format 'cgroup v{{.CgroupVersion}} driver {{.CgroupDriver}}; security {{json .SecurityOptions}}'
+          docker compose version
+      # Built with the runner's own uid, so the dashboard step's curl is a socket the dashboard's uid owns.
+      - name: build the image
+        shell: bash
+        run: |
+          {
+            echo "TEGO_UID=$(id -u)"
+            echo "TEGO_GID=$(id -g)"
+          } >>"$GITHUB_ENV"
+          docker build -f examples/container/Dockerfile \
+            --build-arg TEGO_UID="$(id -u)" --build-arg TEGO_GID="$(id -g)" \
+            --build-arg VERSION="ci-${GITHUB_SHA::12}" --build-arg COMMIT="$GITHUB_SHA" \
+            --build-arg DATE="$(git log -1 --format=%cI)" \
+            -t "$TEGO_IMAGE" .
+          docker build -f examples/container/Dockerfile --target binaries -t tego:ci-binaries .
+          docker image ls tego
+      - name: tego doctor in the container, with compose.yaml's settings; tier landlock must be usable
+        run: docker compose run --rm agent tego doctor --require landlock
+      - name: the image's smoke script (versions and pin, doctor, tego test, a hello run with its chain verified)
+        run: docker compose run --rm agent /usr/local/share/tego/smoke.sh
+      - name: the agent service as `docker compose up` runs it
+        run: docker compose up --abort-on-container-exit --exit-code-from agent agent
+      - name: the dashboard on the host's loopback answers this runner, and lists the hello runs
+        shell: bash
+        run: |
+          docker compose up -d control
+          url=""
+          for _ in $(seq 1 30); do
+            url=$(docker compose logs --no-log-prefix control 2>/dev/null | sed -n 's/^Tego dashboard: //p' | head -n 1)
+            [ -n "$url" ] && break
+            sleep 1
+          done
+          docker compose logs --no-log-prefix control | sed 's/?t=[0-9a-f]*/?t=<token>/'
+          if [ -z "$url" ]; then
+            echo "::error::tego-control serve printed no dashboard link in 30 s"
+            exit 1
+          fi
+          echo "::add-mask::${url#*?t=}"
+          jar="$RUNNER_TEMP/jar"
+          curl -fsS -L -c "$jar" -b "$jar" -o "$RUNNER_TEMP/overview.html" "$url"
+          curl -fsS -c "$jar" -b "$jar" -o "$RUNNER_TEMP/runs.html" "${url%%\?*}runs"
+          grep -q 'hello' "$RUNNER_TEMP/runs.html" || { echo "::error::the dashboard's runs page does not list the hello runs"; exit 1; }
+          # Another uid's socket is refused before the token is looked at (the dashboard's peer check): here a request
+          # from a container on the host's network, as root, carrying the valid link.
+          status=$(docker run --rm --network host --entrypoint bash -e "Q=${url#*127.0.0.1:9370}" "$TEGO_IMAGE" -c \
+            'exec 3<>/dev/tcp/127.0.0.1/9370 || exit 9; printf "GET %s HTTP/1.0\r\nHost: 127.0.0.1:9370\r\n\r\n" "$Q" >&3; head -n 1 <&3' || true)
+          echo "as root, from another container: $status"
+          case "$status" in
+          *" 403"*) ;;
+          *) echo "::error::a request from another uid got \"$status\", want 403"; exit 1 ;;
+          esac
+      # Report-only: `docker compose exec` into a running agent container, through the entrypoint, joins the subtree
+      # its first start built (tego-entrypoint.sh, the /init branch). Whether the runtime starts an exec'd process in
+      # PID 1's cgroup, where that branch looks, is what this step finds out.
+      - name: report-only, a tego run started by docker exec in a running agent container
+        continue-on-error: true
+        shell: bash
+        run: |
+          docker compose run -d --name tego-exec agent sleep 300
+          sleep 2
+          docker exec tego-exec cat /proc/1/cgroup
+          docker exec tego-exec tego-entrypoint tego run /usr/local/share/tego/hello.yaml
+      # Report-only: what the image says on Docker's defaults (no capability added, Docker's seccomp and AppArmor
+      # profiles, a read-only cgroup mount), and in a privileged container through the entrypoint's experimental root
+      # launcher (TEGO_LAUNCHER=root): the tier-2 and tier-3 probes need root and CAP_BPF, and whether a root tego in a
+      # container's cgroup namespace runs tier cgroup is not claimed anywhere yet.
+      - name: report-only, the image on Docker's defaults and in a privileged container with a root launcher
+        continue-on-error: true
+        shell: bash
+        run: |
+          echo "--- docker run, defaults"
+          docker run --rm "$TEGO_IMAGE" tego doctor || echo "exit $?"
+          docker run --rm "$TEGO_IMAGE" tego run /usr/local/share/tego/hello.yaml || echo "exit $?"
+          echo "--- docker run --privileged --cgroupns=private, TEGO_LAUNCHER=root"
+          root=(docker run --rm --privileged --cgroupns=private -e TEGO_LAUNCHER=root "$TEGO_IMAGE")
+          "${root[@]}" tego doctor --require cgroup || echo "exit $?"
+          "${root[@]}" tego run --tier cgroup /usr/local/share/tego/hello.yaml || echo "exit $?"
+          "${root[@]}" tego run --tier bpflsm /usr/local/share/tego/hello.yaml || echo "exit $?"
+      - name: logs and cleanup
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          docker compose logs --no-log-prefix 2>/dev/null | sed 's/?t=[0-9a-f]*/?t=<token>/' | tail -n 200 || true
+          docker rm -f tego-exec >/dev/null 2>&1 || true
+          docker compose down -v || true

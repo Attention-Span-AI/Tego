@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Dependabot proposes updates for the two kinds of dependency this repository pins: Go modules (go.mod), and
+# the GitHub Actions the workflows use, which are pinned by commit SHA (ci.yml says why) and would otherwise
+# never move. A proposal is a pull request that goes through ci.yml like any other change, govulncheck
+# included; nothing is merged automatically. The toolchain itself (GO_VERSION in each workflow) is not an
+# ecosystem Dependabot updates and is bumped by hand.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # A module bump in the privileged binary is reviewed on its own, one module per pull request.
+    commit-message:
+      prefix: deps
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # Action bumps change CI, never the binary, so one pull request carries them all.
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: ci
+  # The container image's two base images, pinned by digest in examples/container/Dockerfile. A golang bump must
+  # move go.mod's toolchain with it (examples/container's test fails otherwise); the Debian base takes its security
+  # updates this way.
+  - package-ecosystem: docker
+    directory: /examples/container
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: container

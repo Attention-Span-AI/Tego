@@ -1,0 +1,268 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The tag-triggered release (docs/VERSIONING.md §5, §7.2). `scripts/release.sh push vX.Y.Z` pushes the tag;
+# this workflow builds from it and publishes. Tego runs as root, so what a user installs has to be provably
+# what this repository built from that tag, not merely what the download server holds:
+#
+#   - gate refuses a tag whose name is not vX.Y.Z or vX.Y.Z-pre, or that is not annotated, not on master, or whose
+#     commit has no green ci run;
+#   - goreleaser builds the static binaries (.goreleaser.yaml), one SPDX SBOM per binary, and the sha256
+#     checksums file, and creates the GitHub release as a draft;
+#   - govulncheck scans the rebuilt (byte-identical) binaries in reproduce, a job with no write token, and a
+#     reachable vulnerability stops the release there, unpublished;
+#   - cosign signs the checksums file keylessly: the certificate names this workflow at this tag, issued
+#     against GitHub's OIDC token, and the bundle is logged in Sigstore's transparency log;
+#   - actions/attest-build-provenance attests every file the checksums file lists (SLSA provenance), the two
+#     installers among them;
+#   - the bundle is uploaded to the draft, and the checksums file handed to the next job as an artifact;
+#   - reproduce builds the same tag again on a fresh runner and compares with those checksums;
+#   - publish, which needs both, takes the draft public: nothing is public before it is signed and reproduced
+#     (the release used to be published before reproduce had run).
+#
+# scripts/install.sh checks the signature with cosign, or the attestation with gh, when either is present.
+# Attestations need the repository public or on GitHub Enterprise Cloud. No checkout keeps the token in
+# .git/config (persist-credentials: false): no step here pushes, and gh and goreleaser take it from env.
+name: release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  # Exact versions throughout: a release is built by nothing that can change under the same tag.
+  GO_VERSION: '1.27.3'
+  GORELEASER_VERSION: v2.18.2
+  COSIGN_VERSION: v3.1.3
+  SYFT_VERSION: v1.52.0
+
+jobs:
+  gate:
+    # A tag alone does not release: its name must have a release's shape, it must be annotated, its commit must
+    # be on master, and the ci workflow must have passed on that very commit (docs/VERSIONING.md §7.1). The shape
+    # comes first, so a name with shell syntax in it stops here, before any step passes it on. release.sh checks
+    # the same before it pushes, but a tag pushed by hand skips release.sh; this job does not depend on who
+    # pushed. It guards against a maintainer's mistake, not against a pusher who can edit this file in the
+    # tagged commit: a tag protection ruleset on v* is what limits who may tag. vm-matrix is run by hand and
+    # cannot be waited for here; whoever tags reads its result first (§7.1).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: the tag is a release's name, annotated, on master's history, and ci passed on its commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "::error::$TAG is not a release tag"; exit 1; }
+          kind=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.type)
+          [ "$kind" = tag ] || { echo "::error::$TAG is not an annotated tag"; exit 1; }
+          rel=$(gh api "repos/$GITHUB_REPOSITORY/compare/master...$SHA" --jq .status)
+          case "$rel" in
+            identical | behind) : ;;
+            *) echo "::error::$SHA is not on master's history ($rel)"; exit 1 ;;
+          esac
+          ok=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SHA&status=success" --jq .total_count)
+          [ "$ok" -gt 0 ] || { echo "::error::ci has no successful run on $SHA"; exit 1; }
+
+  release:
+    needs: gate
+    runs-on: ubuntu-24.04
+    # Each job ends at its timeout rather than at GitHub's six-hour default.
+    timeout-minutes: 30
+    permissions:
+      contents: write # create the draft release and upload its assets (publish takes it public)
+      id-token: write # the OIDC token the cosign certificate and the provenance attestation are bound to
+      attestations: write # store the provenance attestation
+    # A value a pusher chooses (the tag name, and the checksums path, which carries it) reaches a script only
+    # through env, never as ${{ }} in run: git allows ' $ ; and | in a ref name, and an expression is pasted
+    # into the script as code before the shell sees it, in a job that holds the two write permissions above.
+    # The Makefile holds to the same rule, and gate has already refused any name that is not a release's.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # goreleaser reads the tag and the commit it names
+          persist-credentials: false
+      - name: the installers name this repository
+        run: |
+          scripts/check-installer-repo.sh "$GITHUB_REPOSITORY"
+          INSTALLER=scripts/install-maze.sh scripts/check-installer-repo.sh "$GITHUB_REPOSITORY"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          # A release is built from nothing a previous run left in a shared cache.
+          cache: false
+      # A preset revision this tag carries is released, so it is frozen from this tag on (ADR 0068 D3,
+      # docs/VERSIONING.md §5). release.sh tag runs the same check, which a tag pushed by hand skips: the release
+      # stops here, before anything is built, until pkg/spec/presets' released table lists every revision.
+      - name: every preset revision the tag carries is frozen
+        env:
+          TAG: ${{ github.ref_name }}
+        run: VERSION="$TAG" make preset-freeze
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: ${{ env.SYFT_VERSION }}
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+      - name: build, and create the draft release
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          version: ${{ env.GORELEASER_VERSION }}
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The tego-control goreleaser built is the one each tego pins (ADR 0100 (1b)): the tego build's pre hook built
+      # its own copy for the hash, which must be these bytes, or `tego serve` would refuse the released pair.
+      - name: each tego pins the tego-control it ships with
+        shell: bash
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            scripts/check-control-pin.sh --static dist/tego_linux_"$arch"*/tego dist/tego-control_linux_"$arch"*/tego-control
+          done
+      - name: licensing material is present and checksummed
+        run: scripts/check-licenses.sh dist
+      - name: locate the checksums file
+        id: sums
+        shell: bash
+        run: |
+          set -euo pipefail
+          sums=(dist/*_checksums.txt)
+          [ "${#sums[@]}" -eq 1 ] && [ -f "${sums[0]}" ] || { echo "::error::expected one checksums file in dist"; exit 1; }
+          echo "path=${sums[0]}" >> "$GITHUB_OUTPUT"
+      # The checksums file lists maze's archives, which reproduce cannot rebuild byte for byte (`goreleaser build`
+      # makes no archive, and their README and LICENSE carry the checkout's mtimes), so the four binaries that went
+      # into them are handed to reproduce by their hashes. The file is written into dist/, beside the checksums
+      # file, so the artifact below has one root and downloads flat (upload-artifact roots several paths at their
+      # common ancestor); goreleaser has already uploaded the release assets, so it is not one of them.
+      - name: record the maze binaries for reproduce
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum maze_*/maze) > dist/maze-binaries.sha256
+          [ "$(wc -l < dist/maze-binaries.sha256)" -eq 4 ] || { echo "::error::expected four maze binaries in dist"; cat dist/maze-binaries.sha256; exit 1; }
+      - name: sign the checksums file (keyless)
+        env:
+          SUMS: ${{ steps.sums.outputs.path }}
+        run: cosign sign-blob --yes --bundle "$SUMS.sigstore.json" "$SUMS"
+      # The command scripts/install.sh runs, against the identity it expects: a signature this step cannot
+      # verify is one no user can, so the release stops here, still a draft.
+      - name: verify the signature as an installer will
+        env:
+          SUMS: ${{ steps.sums.outputs.path }}
+          SIGNER: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: >
+          cosign verify-blob
+          --bundle "$SUMS.sigstore.json"
+          --certificate-identity "$SIGNER"
+          --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          "$SUMS"
+      - name: attest build provenance for every checksummed file
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: ${{ steps.sums.outputs.path }}
+      - name: upload the signature bundle to the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          SUMS: ${{ steps.sums.outputs.path }}
+        run: gh release upload "$TAG" "$SUMS.sigstore.json"
+      # reproduce compares its rebuild with this file, not with a download from the release: the release is still
+      # a draft, which a read-only token cannot see.
+      - name: hand the checksums file to reproduce
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: checksums
+          path: |
+            ${{ steps.sums.outputs.path }}
+            dist/maze-binaries.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  reproduce:
+    # The tag built again, from scratch, on another runner, by the same configuration and toolchain: each
+    # binary must hash to what the signed checksums file says. A difference means the release cannot be
+    # reproduced from its source, and the draft stays a draft: publish needs this job.
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          version: ${{ env.GORELEASER_VERSION }}
+          install-only: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: checksums
+          path: ${{ runner.temp }}/published
+      - name: rebuild and compare with the release's checksums
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          goreleaser build --clean
+          sums=("$RUNNER_TEMP"/published/*_checksums.txt)
+          [ "${#sums[@]}" -eq 1 ] && [ -f "${sums[0]}" ] || { echo "::error::expected one checksums file from the release job"; exit 1; }
+          version="${TAG#v}"
+          status=0
+          for bin in tego tego-control; do
+            for arch in amd64 arm64; do
+              name="${bin}_${version}_linux_${arch}"
+              want=$(awk -v f="$name" '$2==f {print $1}' "${sums[0]}")
+              got=$(sha256sum dist/"${bin}"_linux_"${arch}"*/"${bin}" | awk '{print $1}')
+              if [ -z "$want" ] || [ "$want" != "$got" ]; then
+                echo "::error::$name: released ${want:-nothing}, rebuilt $got"
+                status=1
+              else
+                echo "$name: $got reproduced"
+              fi
+            done
+          done
+          # maze, darwin and linux: the binaries the release job archived, by the hashes it recorded.
+          mazes="$RUNNER_TEMP/published/maze-binaries.sha256"
+          [ -f "$mazes" ] && [ "$(wc -l < "$mazes")" -eq 4 ] || { echo "::error::expected the release job's four maze binary hashes"; exit 1; }
+          (cd dist && sha256sum -c "$mazes") || { echo "::error::a maze binary was not reproduced"; status=1; }
+          exit "$status"
+      # Here, not in release: govulncheck's module graph must not run beside the signing identity and the write
+      # token. The binaries just rebuilt are byte-identical to the released ones (the step above fails otherwise),
+      # and a vulnerable build stops before publish, so the draft stays a draft.
+      - name: govulncheck the binaries being released
+        shell: bash
+        run: |
+          set -euo pipefail
+          for bin in dist/tego_linux_*/tego dist/tego-control_linux_*/tego-control dist/maze_*/maze; do
+            echo "== $bin"
+            go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -mode=binary "$bin"
+          done
+
+  publish:
+    # The draft goes public only once it is signed, attested (release) and reproduced (reproduce).
+    needs: [release, reproduce]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write # publish the draft
+    steps:
+      - name: publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false

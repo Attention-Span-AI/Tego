@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/attention-span-ai/tego/security/advisories/new
+    about: Report it privately here. Never open a public issue for a vulnerability.

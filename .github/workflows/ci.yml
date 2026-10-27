@@ -1,0 +1,788 @@
+# SPDX-License-Identifier: Apache-2.0
+name: ci
+on:
+  push:
+    # branches is what makes a branch push run this at all: with a tags filter alone GitHub starts a push run for
+    # tags only, so master would get no run, root-suites none anywhere, and release.yml's gate no run to find.
+    branches: ['**']
+    # release.sh pushes a v* tag only after ci is green on its commit, and release.yml gates on that run.
+    tags-ignore: ['v*']
+  pull_request:
+
+# The GITHUB_TOKEN of every job here reads the repository and nothing else: no job publishes, comments or
+# pushes, so none needs more, and a compromised step or action gets no write access to the repository.
+# Every checkout sets persist-credentials: false, so not even that read token is left in .git/config for a
+# later step, a test or a tool it runs to find; no job here fetches or pushes after it.
+permissions:
+  contents: read
+
+# A newer push to a pull request cancels the run still going for the older one, whose result would describe a
+# commit nobody is looking at any more. A push to a branch is never cancelled: each push's
+# run is the record of that commit on the branch, master's included, and a cancelled one leaves a hole in it. A group
+# holds one running and one pending run, and GitHub cancels the older pending run
+# when a newer one queues whatever cancel-in-progress says, so a push run gets a group of its own, the commit's
+# SHA, and none is replaced. A pull request's group is its ref, which a push never shares.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The exact toolchain, never a floating '1.27': a patch release can change the compiler's output, so a
+  # floating version makes two builds of one commit differ (job reproducible, docs/VERSIONING.md §5), and
+  # it can change behaviour under a green check nobody re-ran. Dependabot does not update this line; a Go
+  # patch release is taken by editing it here, in fuzz.yml, vm-matrix.yml and release.yml together.
+  GO_VERSION: '1.27.3'
+  # The goreleaser the reproducible job builds with: release.yml's GORELEASER_VERSION, which precommit_test.sh holds equal.
+  GORELEASER_VERSION: v2.18.2
+
+# Every action is pinned by the full commit SHA of the release named beside it: a tag can be moved to other
+# code after review, a commit cannot. Dependabot's github-actions ecosystem (.github/dependabot.yml) proposes
+# the updates, SHA and comment together.
+#
+# Every job has a timeout-minutes set well above what the job takes, so a hung test ends its job there rather
+# than at GitHub's six-hour default.
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      # The files, not only the verdict; golangci-lint's gofmt formatter reports them too.
+      - name: fmt
+        shell: bash
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "::error::gofmt would reformat these files; run gofmt -w on them"
+            echo "$files"
+            exit 1
+          fi
+      - name: vet
+        run: go vet ./...
+      # The files behind the build tags are code too: the tegobpf files ship in the tier-2 binary and the
+      # integration files hold the privileged suites, and a plain `go vet ./...` compiles neither.
+      - name: vet (integration and tegobpf files)
+        run: go vet -tags 'integration tegobpf' ./...
+      # --config names the file tools/fdcheck checks: a .golangci.json, .toml or .yaml would otherwise be read
+      # first (fdcheck also refuses one at the root; ADR 0023).
+      - name: lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+          args: --config .golangci.yml
+      # The tags above leave out the files that build only without them (.golangci.yml names them), so they
+      # are linted again from the same config with no tags. unused is off in this run: without the
+      # integration tag it reports every helper only an integration test calls, which the run above checks.
+      # The copy sits in the checkout so paths resolve as they do for the committed file; it is untracked.
+      - name: untagged lint config
+        shell: bash
+        run: |
+          sed 's/^  build-tags: \[integration, tegobpf, tegotesthooks\]$/  build-tags: []/' .golangci.yml >.golangci-untagged.yml
+          grep -qx '  build-tags: \[\]' .golangci-untagged.yml ||
+            { echo "::error::.golangci.yml's build-tags line changed; update the untagged lint step with it"; exit 1; }
+      - name: lint (the files the tags leave out)
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+          args: --config .golangci-untagged.yml --disable unused
+      - name: spdx
+        run: ./scripts/check-spdx.sh
+      - name: license texts and linked dependency notices
+        run: ./scripts/check-licenses.sh
+      # The skip and must-pass lists name tests that exist, once each, and every root-only skip the integration
+      # step allows is held by the root run's lists.
+      - name: the skip lists name real tests
+        run: ./scripts/check-skiplists.sh
+      # limits-check-doctor-cli.md I6 and I9: os.Exit only in cmd/, no bare exit code in internal/cli.
+      - name: exit codes (os.Exit only in cmd/, no bare code in internal/cli)
+        run: ./scripts/check-exits.sh
+      # ADR 0023 A9 and A10: tools/fdcheck's descriptor rules and the per-package ratchet (no raw close, dup,
+      # os.NewFile, Fd() or unowned producer outside the packages baseline.txt counts, and no count rises), then
+      # the forbidigo rules against their one-hit-per-primitive fixture. The total against the base runs in
+      # bench-gate, the job whose clone holds the base.
+      - name: descriptor ownership (ADR 0023)
+        run: ./scripts/check-fd.sh && ./scripts/check-fd_test.sh
+      # ADR 0100 (1d): the edge's socket ban against its one-report-per-primitive fixture, inside the edge's packages.
+      - name: the edge opens no socket (ADR 0100 (1d))
+        run: ./scripts/check-edgelint_test.sh
+      # The maze setup tool ships for darwin too, and no other step compiles its _darwin.go files.
+      - name: maze vets for macOS
+        run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go vet ./cmd/maze ./internal/maze/...
+      # ADR 0030's first step: every spec's rule IDs are unique in it, and no reference in docs/ or spec/ names a
+      # rule, edge case or lettered part its document does not have. Untested rules are listed, not failed.
+      - name: rulecheck (rule IDs and references in the specs)
+        run: go run ./tools/rulecheck
+      # identity-config.md R27: a test harness that runs tego sets the chain anchor, the own-log home and the shell
+      # history the test build and the shell need to keep out of the invoking user's own ~/.tego and ~/.bash_history.
+      - name: isocheck (test harnesses keep out of ~/.tego)
+        run: go run ./tools/isocheck
+      # Fails on a vulnerability the code can reach (govulncheck's source mode exits non-zero only then) and
+      # lists the ones only a required module carries. Pinned by version; the module comes through the Go
+      # checksum database like any other. The release job scans the built binary as well (release.yml).
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -tags tegobpf ./...
+      - name: install.sh verification paths
+        run: ./scripts/install_test.sh
+      - name: install-maze.sh verification paths
+        run: ./scripts/install-maze_test.sh
+      - name: coverage.sh arguments and guest harvest
+        run: ./scripts/coverage_test.sh
+      - name: bench-gate.sh's decision and runs (stand-ins for go and benchstat)
+        run: ./scripts/bench-gate_test.sh
+      - name: timing-budgets.sh's runs and decision (a stand-in for go)
+        run: ./scripts/timing-budgets_test.sh
+      - name: check-spdx.sh's enumeration and header refusals, check-licenses.sh's empty listing, per-package notices and archive
+        run: ./scripts/check-spdx_test.sh && ./scripts/check-licenses_test.sh
+      - name: scrub-capture.sh removes the home, uid, user, host and e-mail it plants
+        run: ./scripts/scrub-capture_test.sh
+      # report.py judges the reason-channel twin (TestReasonEndToEndThroughTheStandIn) and run.sh alike.
+      - name: report.py's own tests (the reason channel's end-to-end judge)
+        working-directory: test/e2e/reason-claude
+        run: python3 -I -m unittest
+      - name: fuzz workflow corpus count handles an empty cache
+        run: ./scripts/fuzz-corpus_test.sh
+      # ADR 0023's churn harness: its negative control, a double close racing an open, fails under it within
+      # -count=50, and the same test closing once passes. The harness races its tests, which needs cgo.
+      - name: fd-churn.sh's negative control (ADR 0023)
+        run: ./scripts/fd-churn_test.sh
+      - name: skipgate.sh's allowlist and must-pass reading
+        run: ./scripts/skipgate_test.sh && ./scripts/check-skiplists_test.sh
+      - name: release.sh push and tag refusals, bpf-toolchain.sh directory guard
+        run: ./scripts/release_test.sh && ./scripts/check-control-pin_test.sh && ./scripts/bpf-toolchain_test.sh && ./scripts/tree-files_test.sh && ./scripts/precommit_test.sh && ./scripts/check-bpf-objects_test.sh
+      - name: vm-matrix's KVM step waits for udev
+        run: ./test/vm/kvm-step_test.sh && ./test/vm/python-pkgs_test.sh && ./test/vm/fetch-kernel_test.sh && ./test/vm/guarded-run_test.sh && ./test/vm/bounded-run_test.sh && ./test/vm/fwd-run_test.sh && ./test/vm/kvm-modules_test.sh && ./test/vm/kvm-files_test.sh && ./test/vm/kvm-cleanup_test.sh && ./test/vm/tier2-pairs_test.sh && ./test/vm/pairs_test.sh && ./test/vm/doctor-refusal_test.sh && ./test/vm/doctor-facts_test.sh && ./test/vm/perf_test.sh && ./test/vm/kvm-run_test.sh
+      # With kvm-step_test.sh above, this is make harness-test.
+      - name: the kill tests' (kill test 2's request pairing included), overhead harness's and kernel matrix's own tests (kt_run's bound, kill test 4's timing, kill test 5's budget and contracts, kill test 3's cache, run.sh's ledgers and rows, matrix.sh, root-suites.sh's copy)
+        run: >
+          ./test/e2e/lib_test.sh && ./test/e2e/pydeps_test.sh && ./test/e2e/kt4_test.sh && ./test/e2e/kt5_test.sh && ./test/e2e/kt2_pairs_test.sh && ./test/e2e/m0_demo_test.sh && ./test/e2e/overhead/kt3_test.sh && ./test/e2e/overhead/bench_test.sh &&
+          ./test/e2e/overhead/run_test.sh && ./test/vm/matrix_test.sh && ./test/vm/root-suites_test.sh
+      # The suites that put a process in a run cgroup run inside the runner user's systemd user manager, where an
+      # unprivileged tego run can place its agent. A step runs in the runner's own service, outside that subtree,
+      # and from there the kernel refuses every placement (docs/p0/runtime-launch.md case 41), so those tests would
+      # skip. Lingering starts the manager where the image has not already; the wait is for its socket.
+      - name: the runner user's systemd manager
+        shell: bash
+        run: |
+          sudo loginctl enable-linger "$(id -un)"
+          for _ in $(seq 1 30); do [ -S "/run/user/$(id -u)/systemd/private" ] && exit 0; sleep 1; done
+          echo "::error::no systemd user manager for $(id -un) after 30 s"; exit 1
+      # Every go test step here runs with -count=1: setup-go restores GOCACHE at the same checkout path, and go
+      # test replays a cached pass when only files a subprocess read changed (the link gates and the binary-closure
+      # tests build or list the tree), so a failing tree went green (precommit_test.sh 19).
+      # As JSON, so that skipgate.sh holds the run to test/unit-skips.txt: a skip exits 0 like a pass, and a
+      # test that stopped running went unnoticed. The gate prints each package's result,
+      # each failed test's output and every skip with its reason; go test's own status still fails the step.
+      # -count=1 here and in the two test steps below: setup-go restores GOCACHE, and go test's result cache replays a
+      # pass whose verdict came from a go build or go list the test ran (the link gate, the binary-building suites)
+      # while the test binary is unchanged (scripts/precommit.sh does the same).
+      - name: unit
+        shell: bash
+        run: |
+          status=0
+          ./scripts/in-user-manager.sh go test -count=1 -json ./... >"$RUNNER_TEMP/unit.json" || status=$?
+          ./scripts/skipgate.sh test/unit-skips.txt "$RUNNER_TEMP/unit.json" || status=1
+          exit "$status"
+      # The test hooks build's own tests (identity-config.md R27: it refuses a ledger root, anchor or own-log home in
+      # the invoking user's ~/.tego, and has no anchor or own log without its variables). They are compiled only with
+      # this tag, so no other step runs them.
+      - name: unit (-tags tegotesthooks)
+        run: go test -count=1 -tags tegotesthooks ./internal/bpf/ ./internal/cli/ ./internal/platform/sys/ ./internal/runtime/enforce/ ./internal/runtime/enforce/landlock/
+      - name: p0 example compiles clean
+        run: go build -o /tmp/tego-ci ./cmd/tego && dir=$(mktemp -d) && mkdir -p "$dir/config" "$dir/out" && cp spec/agent/v0/example.p0.retriever.yaml "$dir/agent.yaml" && (cd "$dir" && /tmp/tego-ci compile agent.yaml --offline)
+      # Every package's integration tests, unprivileged: this step named four trees by hand (pkg, enforce,
+      # launch, cgroup), so the runtime, the supervisor, the ledger, the forwarder, limits, observe, doctor,
+      # platform/sys and uprobe ran theirs only raced. The root-only ones skip here and
+      # run in root-suites. The whole output, not its last 50 lines: the list of packages is longer than that.
+      # As JSON through skipgate.sh with test/integration-skips.txt, as the unit step is: an enforcement test
+      # that quietly started skipping stayed green here (round-2 security review, Low 3). CGO_ENABLED=0, as the
+      # shipped binary is built: with cgo, the clone3-filter case cannot be staged and skips (9ffaa06).
+      - name: integration (unprivileged tier on the runner)
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          status=0
+          ./scripts/in-user-manager.sh go test -count=1 -tags integration -json ./... >"$RUNNER_TEMP/integration.json" || status=$?
+          ./scripts/skipgate.sh test/integration-skips.txt "$RUNNER_TEMP/integration.json" || status=1
+          exit "$status"
+  build-test-arm64:
+    # arm64 is a released architecture (.goreleaser.yaml), and this job builds and tests it. On GitHub's arm64
+    # runner: the static release build with the objects (uprobessl has an arm64 object of
+    # its own), vet of the arm64-only files, the unit tests through skipgate.sh as build-test runs them, the
+    # objects' unprivileged tests as bpf-gen runs them, and every program through the verifier as root, as
+    # bpf-load runs it on amd64. The privileged tests that need no new code run here as well: the
+    # decision plane's load, attach and step A hooks, the arming tests, and, as root through test/vm/root-suites.sh,
+    # the freeze, process-start, doctor, plane and seqcount-stress tests. They are the first runs of the plane on an
+    # arm64 kernel (ADR 0024 (15), enforce-plane R28), and the log of the first one is what fills that row: the
+    # whole suites stay amd64's (root-suites). The timeout bounds a hang and sits well above what the job takes, as
+    # the other jobs' do; the root step has a bound of its own, and each suite inside it another.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: build (static, with the objects)
+        run: make build
+      - name: vet
+        run: go vet ./... && go vet -tags 'integration tegobpf' ./...
+      - name: the runner user's systemd manager
+        shell: bash
+        run: |
+          sudo loginctl enable-linger "$(id -un)"
+          for _ in $(seq 1 30); do [ -S "/run/user/$(id -u)/systemd/private" ] && exit 0; sleep 1; done
+          echo "::error::no systemd user manager for $(id -un) after 30 s"; exit 1
+      - name: unit
+        shell: bash
+        run: |
+          status=0
+          ./scripts/in-user-manager.sh go test -count=1 -json ./... >"$RUNNER_TEMP/unit.json" || status=$?
+          ./scripts/skipgate.sh test/unit-skips.txt "$RUNNER_TEMP/unit.json" || status=1
+          exit "$status"
+      - name: the objects' tests (no privilege)
+        run: go test -count=1 -tags tegobpf ./internal/bpf/... ./bpf/...
+      # What the privileged steps below run on, ahead of them so that a log pasted from this job says which kernel it
+      # measured even when the first of them fails (ADR 0024 (15), enforce-plane R28): the kernel's own facts and what
+      # tego doctor, as root, makes of them. Nothing here can fail.
+      - name: the kernel the privileged steps run on, and doctor's answer for it
+        shell: bash
+        run: |
+          uname -srvm
+          echo "pagesize $(getconf PAGESIZE), $(nproc) CPUs"
+          echo "lsm: $(cat /sys/kernel/security/lsm 2>&1)"
+          echo "lockdown: $(cat /sys/kernel/security/lockdown 2>&1)"
+          echo "cgroup root: $(stat -fc %T /sys/fs/cgroup 2>&1)"
+          ls -l /sys/kernel/btf/vmlinux 2>&1 || true
+          grep -E '^CONFIG_(BPF_JIT|BPF_LSM|BPF_SYSCALL|DEBUG_INFO_BTF|FUNCTION_ERROR_INJECTION|DYNAMIC_FTRACE_WITH_[A-Z_]+|LTO_CLANG|SECURITY_LANDLOCK|FANOTIFY_ACCESS_PERMISSIONS|CGROUP_BPF|LOCKDOWN_LSM)=' \
+            "/boot/config-$(uname -r)" 2>&1 || true
+          sudo ./bin/tego doctor 2>&1 || true
+      # Every program through the verifier, and the decision plane (TIER3-PLAN T2, T3): each mode's hook set loads and
+      # attaches, and the step A hooks refuse inside a scratch cgroup and allow outside it. A mode this kernel lacks is
+      # a skipped subtest, and a test whose subtests all skip passes, so the second loop names a cell of fmod_ret mode,
+      # the plane's mode where bpf is no active LSM, which is what this runner's kernel is expected to be: a run in
+      # which no fmod_ret cell passed is the plane not running on this kernel, and the log then shows why.
+      - name: every program passes the verifier on its own, and the decision plane loads and decides, as root
+        shell: bash
+        working-directory: internal/bpf
+        run: |
+          CGO_ENABLED=0 go test -c -tags 'integration tegobpf' -o "$RUNNER_TEMP/bpf.test" .
+          sudo "$RUNNER_TEMP/bpf.test" -test.v \
+            -test.run 'TestObjectsLoadOnThisKernel|TestCORERelocationsResolve|TestPlaneLoadsAndAttaches|TestPlaneStepAHooksDecide' \
+            | tee "$RUNNER_TEMP/bpf.log"
+          for t in TestObjectsLoadOnThisKernel TestCORERelocationsResolve TestPlaneLoadsAndAttaches TestPlaneStepAHooksDecide; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/bpf.log" || { echo "::error::$t did not pass on arm64"; exit 1; }
+          done
+          for t in TestPlaneLoadsAndAttaches TestPlaneStepAHooksDecide; do
+            grep -Eq -- "--- PASS: $t/decide_(pr|rd)/fmod_ret " "$RUNNER_TEMP/bpf.log" ||
+              { echo "::error::$t passed no fmod_ret cell on arm64: the plane loaded in no mode on this kernel"; exit 1; }
+          done
+      # ADR 0021 (2)'s arming point against a real child stage: Arm is called once, after the stage's exec and before
+      # its ack, and a failed Arm fails the run before the agent. Unprivileged tests (tier landlock, which every tier
+      # arms through), run as build-test's integration step runs them, in the user manager and with cgo off.
+      - name: the arming tests with a real child stage, in the user manager
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          ./scripts/in-user-manager.sh go test -tags integration -count=1 -v \
+            -run 'TestIntegrationArmFollowsTheStageExecAndPrecedesTheAck|TestIntegrationFailedArmFailsTheRunBeforeTheAgent' \
+            ./internal/runtime | tee "$RUNNER_TEMP/arm.log"
+          for t in TestIntegrationArmFollowsTheStageExecAndPrecedesTheAck TestIntegrationFailedArmFailsTheRunBeforeTheAgent; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/arm.log" || { echo "::error::$t did not pass on arm64"; exit 1; }
+          done
+      # The freeze, arming, process-start, doctor, plane and seqcount-stress tests (ADR 0021 A-0021-8, enforce-plane R28
+      # and §2.15), as root on this architecture: test/vm/root-suites.sh as the root-suites job runs it (VM_HOST=sudo,
+      # so the helpers a test builds at run time are built here as the runner user and served to root by go-shim.sh,
+      # where a root `go build` would write into the runner's caches as root), narrowed by VM_RUN to the tests below in
+      # the three packages that hold them, each suite bound to 20 minutes so that a hang names its suite. The script
+      # ends with `tego doctor --require cgroup` as root, so doctor's own answer for this kernel is in the log too.
+      # The loops require each test to have passed, not skipped (a skipped test is not a pass), and each plane test to
+      # have passed in fmod_ret mode, since a mode this kernel lacks skips its subtest and the test around it passes.
+      # A freeze would fail this runner's job, not a host.
+      - name: the freeze, arming, process-start, doctor, plane and stress tests, as root through sudo
+        shell: bash
+        timeout-minutes: 60
+        run: |
+          VM_HOST=sudo VM_BPF=yes VM_SUITE_TIMEOUT=1200 VM_OUT="$RUNNER_TEMP/arm64-root" \
+            VM_RUN='TestStartIdentityOutlivesPidReuse|TestStageExecUnderGCNeverWaitsOnItsOwnGroup|TestKilledListenerReleasesTheMount|TestUnmarkAllFlushesOnlyTheMountMarks|TestStoppedListenerHoldsItsMountUntilContinued|TestTier2ArmsAfterTheStageExec|TestIntegrationAsRoot|TestPlaneRunEndToEnd|TestPlaneRunNamesTrueUnderRenamesAndMountMoves|TestPlaneSeqcountStress' \
+            test/vm/root-suites.sh internal/platform/proc internal/runtime/enforce/cgroup internal/doctor
+          logs="$RUNNER_TEMP/arm64-root/logs"
+          for t in TestStartIdentityOutlivesPidReuse TestStageExecUnderGCNeverWaitsOnItsOwnGroup TestKilledListenerReleasesTheMount \
+                   TestUnmarkAllFlushesOnlyTheMountMarks TestStoppedListenerHoldsItsMountUntilContinued TestTier2ArmsAfterTheStageExec \
+                   TestIntegrationAsRoot TestPlaneRunEndToEnd TestPlaneRunNamesTrueUnderRenamesAndMountMoves TestPlaneSeqcountStress; do
+            grep -q -- "--- PASS: $t " "$logs"/*.console || { echo "::error::$t did not pass on arm64"; exit 1; }
+          done
+          for t in TestPlaneRunEndToEnd TestPlaneRunNamesTrueUnderRenamesAndMountMoves TestPlaneSeqcountStress; do
+            grep -q -- "--- PASS: $t/fmod_ret " "$logs"/*.console ||
+              { echo "::error::$t passed no fmod_ret cell on arm64: the plane does not run here (doctor's report is above)"; exit 1; }
+          done
+          grep -h -- 'SEQCOUNT-STRESS' "$logs"/*.console
+      - name: upload the privileged suites' logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: root-suites-arm64
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/arm64-root/logs/
+            ${{ runner.temp }}/arm64-root/summary.json
+          if-no-files-found: warn
+  scripts-and-workflows:
+    # The shell scripts and these workflows had no linter. shellcheck reads every tracked
+    # *.sh at its default severity, SC1091 excepted (a sourced file that does not exist at lint time:
+    # guest-init.sh sources the guest's /.vm/env), and actionlint reads the workflows and hands their run:
+    # blocks to the same shellcheck. Both are the projects' static release builds, pinned by version and by
+    # the sha256 each release publishes, as bpf-load pins bpftool.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: fetch shellcheck and actionlint
+        shell: bash
+        env:
+          SHELLCHECK: v0.11.0
+          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+          ACTIONLINT: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          mkdir -p "$RUNNER_TEMP/lint"
+          curl -fsSL -o "$RUNNER_TEMP/shellcheck.tar.xz" \
+            "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK/shellcheck-$SHELLCHECK.linux.x86_64.tar.xz"
+          echo "$SHELLCHECK_SHA256  $RUNNER_TEMP/shellcheck.tar.xz" | sha256sum -c -
+          tar -C "$RUNNER_TEMP/lint" --strip-components=1 -xJf "$RUNNER_TEMP/shellcheck.tar.xz" "shellcheck-$SHELLCHECK/shellcheck"
+          curl -fsSL -o "$RUNNER_TEMP/actionlint.tar.gz" \
+            "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT/actionlint_${ACTIONLINT}_linux_amd64.tar.gz"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -C "$RUNNER_TEMP/lint" -xzf "$RUNNER_TEMP/actionlint.tar.gz" actionlint
+          "$RUNNER_TEMP/lint/shellcheck" --version
+          "$RUNNER_TEMP/lint/actionlint" -version
+      - name: shellcheck
+        run: git ls-files -z '*.sh' .githooks/pre-commit | xargs -0 "$RUNNER_TEMP/lint/shellcheck" -e SC1091
+      - name: actionlint
+        run: '"$RUNNER_TEMP/lint/actionlint" -shellcheck "$RUNNER_TEMP/lint/shellcheck"'
+
+  bpf-gen:
+    # The committed bpf2go output (internal/bpf/*_bpfe[lb].{go,o}) must be exactly what the pinned
+    # toolchain makes of bpf/, or the objects a build embeds are not the C anyone reviewed. The toolchain is
+    # LLVM 20.1.8's release build run on Ubuntu 24.04's glibc, each fetched by scripts/bpf-toolchain.sh and
+    # checked by sha256: the release clang's output depends on the glibc it runs on (bpf/README.md), so
+    # `make gen` on any machine and this job give the same bytes only with both pinned.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/tego/bpf-toolchain
+          key: bpf-toolchain-${{ hashFiles('scripts/bpf-toolchain.sh') }}
+      - name: the committed objects are what bpf/ compiles to
+        run: BPF_TOOLCHAIN="$HOME/.cache/tego/bpf-toolchain" ./scripts/check-bpf-objects.sh
+      - name: build and test with the objects (no privilege)
+        run: go build -tags tegobpf ./... && go test -count=1 -tags tegobpf ./internal/bpf/... ./bpf/...
+
+  bpf-load:
+    # Every program of every committed object passes the verifier on the runner's kernel,
+    # loaded one at a time so a rejection names its program, and through bpftool as well as cilium/ebpf; then
+    # the tier-2 backend attaches and decides for real, including a connect relayed on the agent's socket, a
+    # resolver query, a contract with no net: section and a TTL refresh (TestNet*OnRealKernel). GitHub's runners grant passwordless sudo. The suites skip without the
+    # capabilities, so each step also requires the tests it names to have passed rather than skipped.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: build the privileged suites
+        run: |
+          CGO_ENABLED=0 go test -c -tags 'integration tegobpf' -o "$RUNNER_TEMP/bpf.test" ./internal/bpf/
+          CGO_ENABLED=0 go test -c -tags 'integration tegobpf' -o "$RUNNER_TEMP/cgroup.test" ./internal/runtime/enforce/cgroup/
+      - name: every program passes the verifier on its own, as root
+        shell: bash
+        working-directory: internal/bpf
+        run: |
+          sudo "$RUNNER_TEMP/bpf.test" -test.v -test.run 'TestObjectsLoadOnThisKernel|TestCORERelocationsResolve|TestPlaneLoadsAndAttaches' \
+            | tee "$RUNNER_TEMP/bpf.log"
+          for t in TestObjectsLoadOnThisKernel TestCORERelocationsResolve TestPlaneLoadsAndAttaches; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/bpf.log" || { echo "::error::$t did not pass"; exit 1; }
+          done
+      # bpftool is libbpf/bpftool's static release build, pinned by version and sha256 as LLVM is in bpf-gen (the
+      # sha256 is the one the release publishes beside the archive). The runner's kernel packages cannot provide
+      # it: the runner boots linux-azure-6.17, whose linux-tools-$(uname -r) on Ubuntu 24.04 ships no bpftool,
+      # so the path this step used to run did not exist. v7.7.0 with libbpf v1.7 is the pair bpf/README.md names
+      # for vmlinux.h and the vendored libbpf headers.
+      - name: the same objects through bpftool, as root
+        shell: bash
+        env:
+          BPFTOOL: v7.7.0
+          BPFTOOL_SHA256: 09150596f09356b0ff632dd7f9856e0ea86bf96b269e9bc94278d9a9432a268c
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/bpftool.tar.gz" \
+            "https://github.com/libbpf/bpftool/releases/download/$BPFTOOL/bpftool-$BPFTOOL-amd64.tar.gz"
+          echo "$BPFTOOL_SHA256  $RUNNER_TEMP/bpftool.tar.gz" | sha256sum -c -
+          tar -C "$RUNNER_TEMP" -xzf "$RUNNER_TEMP/bpftool.tar.gz" bpftool
+          bpftool="$RUNNER_TEMP/bpftool"
+          chmod 0755 "$bpftool"
+          "$bpftool" version
+          # No pinmaps: every map is LIBBPF_PIN_BY_NAME, so libbpf pins it under /sys/fs/bpf/<name> itself and
+          # refuses a second pin path; those pins go after each object. The glob is expanded by a root shell:
+          # /sys/fs/bpf is mode 700, so the runner's own shell would pass `tego_*` to rm unexpanded and rm -f
+          # would ignore it without a word.
+          # Every committed little-endian object, so a new one is loaded without editing this list. Left out:
+          # uprobessl_arm64 (this runner is amd64) and planetestfill (the plane's test-only filler).
+          n=0
+          for obj in internal/bpf/*_bpfel.o; do
+            case "$obj" in *uprobessl_arm64_bpfel.o|*planetestfill_bpfel.o) continue ;; esac
+            n=$((n + 1))
+            d=/sys/fs/bpf/tego-ci-probe
+            sudo mkdir -p "$d"
+            sudo "$bpftool" prog loadall "$obj" "$d"
+            echo "$obj: $(sudo ls "$d" | tr '\n' ' ')"
+            sudo sh -c 'rm -rf /sys/fs/bpf/tego-ci-probe /sys/fs/bpf/tego_*'
+          done
+          [ "$n" -gt 0 ] || { echo "::error::no bpfel object was found; nothing went through bpftool"; exit 1; }
+      - name: the tier-2 backend on the runner's kernel, as root
+        shell: bash
+        working-directory: internal/runtime/enforce/cgroup
+        run: |
+          sudo "$RUNNER_TEMP/cgroup.test" -test.v -test.run 'TestPrepareOnRealKernel|TestNet.*OnRealKernel|TestConnectApprovalOnRealKernel|TestTransportSelectorsOnRealKernel|TestFanotify' \
+            | tee "$RUNNER_TEMP/cgroup.log"
+          for t in TestPrepareOnRealKernel TestNetVerdictOnRealKernel TestNetUnrestrictedOnRealKernel \
+                   TestNetRefreshOnRealKernel TestNetworkControlsOnRealKernel TestNetworkListenAutobindOnRealKernel \
+                   TestNetworkImportedListenOnRealKernel TestNetworkExpiryOnRealKernel TestConnectApprovalOnRealKernel \
+                   TestNetworkDatagramAndByteLimitsOnRealKernel TestTransportSelectorsOnRealKernel \
+                   TestFanotifyRefusesDeniedRead TestFanotifyAllowedOpensKeepTheListener; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/cgroup.log" || { echo "::error::$t did not pass"; exit 1; }
+          done
+      - name: fanotify round trip on the runner, as root (P0-DESIGN §9 budgets 30 µs; reported, not gated yet)
+        working-directory: internal/runtime/enforce/cgroup
+        run: sudo "$RUNNER_TEMP/cgroup.test" -test.run XXX -test.bench BenchmarkFanotifyRoundTrip -test.benchtime 20000x -test.count 3 -test.benchmem
+
+  bench-gate:
+    # ADR 0028 S1: the hot paths' benchmarks against the base's, on one runner in one job, so a change that slows
+    # a decision the kernel waits on or makes a zero-allocation path allocate fails here instead of only showing
+    # in a number nobody compares. The base is the pull request's base, or for a push the commit the branch was
+    # at before it (github.event.before), or HEAD^ when a force push left that commit out of the clone; a new
+    # branch (before is all zeros) has nothing to compare with and the job says so and passes. scripts/
+    # bench-gate.sh builds both trees' test binaries, runs them in ten rounds that alternate which side goes
+    # first, and fails on allocs/op leaving zero, B/op over +10% and sec/op over +25% at p<0.01, per benchmark;
+    # its header has the method and the report-only list. Nothing in the set needs a run cgroup, so no step here
+    # runs in the user manager: BenchmarkSeccompNotifyRoundTrip needs only no_new_privs and pidfd_getfd of its
+    # own child, which a plain step allows (it skips, naming why, where seccomp notification is unavailable).
+    # Wall time, measured on a developer laptop: about 10 s of builds with a warm cache and 150 s
+    # of rounds; on the runner, with both trees' builds cold, about 5 to 6 minutes.
+    # The job first asserts the tree's absolute timing budgets (scripts/timing-budgets.sh; docs/BENCHMARKS.md, "Timing
+    # budgets in the test suites"): ADR 0048 C8's exec costs, enforce-plane §10's plan fill, DGRAM-VERDICT's flood,
+    # ADR 0023 P1's Borrow ratio and the Rules page's 150 ms read of a 55k-line run (TestInForceLongRunIsFast), held
+    # to their Limits (and Targets) exactly as written. This runner runs nothing but this job, and the step runs before
+    # the gate's builds and rounds, so the figures are taken on a quiet machine; the unit gate (build-test, precommit)
+    # holds the same tests only to ten times their Limits, since a busy machine slows CPU work two to five times
+    # through the whole measurement. The budgets need no base: a new branch runs them too,
+    # and the job's last step fails it when one was missed. About 30 s of tests after the five test binaries build.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the base commit must be in the clone
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      # Its status is kept and decided by the job's last step, so a missed budget does not leave the gate below
+      # unrun; a status that was never written fails there too.
+      - name: the absolute timing budgets (ADR 0048 C8, the plane fill's plan, the datagram flood, the Borrow ratio, the 55k-line rules read)
+        id: budgets
+        shell: bash
+        run: |
+          rc=0
+          ./scripts/timing-budgets.sh -o "$RUNNER_TEMP/budgets" 2>&1 | tee "$RUNNER_TEMP/timing-budgets.log" || rc=$?
+          echo "rc=$rc" >>"$GITHUB_OUTPUT"
+      - name: the base commit
+        id: base
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          base=$BEFORE
+          [ "$EVENT" != pull_request ] || base=$PR_BASE
+          if [ -z "$base" ] || [ "$base" = 0000000000000000000000000000000000000000 ]; then
+            echo "::notice::no base commit to compare with (a new branch); the bench gate is skipped"
+            exit 0
+          fi
+          if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "::notice::$base is not in the clone (a force push?); comparing with HEAD^"
+            base=$(git rev-parse --verify -q 'HEAD^') || { echo "::notice::HEAD has no parent; the bench gate is skipped"; exit 0; }
+          fi
+          echo "base $base, head $(git rev-parse HEAD)"
+          echo "sha=$base" >>"$GITHUB_OUTPUT"
+      # ADR 0023 A9's total: no kind's raw-site total in tools/fdcheck/baseline.txt may exceed the base's, no
+      # package's count of a kind may rise but by sites moved from another package (same kind and form, in a
+      # declaration that left the one and arrived in the other), and the F4 lists grow only by what the raw total
+      # fell (a move of code moves its counts; a base
+      # before the file has no total, and the check says so).
+      - name: the descriptor ratchet's total against the base (ADR 0023)
+        if: steps.base.outputs.sha != ''
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: ./scripts/check-fd.sh --base "$BASE"
+      # benchstat is pinned by version like every other tool here; x/perf has no releases, so the version is a
+      # pseudo-version, and its CSV form is what the self-test's fixtures were taken from.
+      - name: benchstat
+        if: steps.base.outputs.sha != ''
+        run: go install golang.org/x/perf/cmd/benchstat@v0.0.0-20260908200009-22c9c6c9d4da
+      - name: bench-gate.sh against the pinned benchstat
+        if: steps.base.outputs.sha != ''
+        run: BENCHSTAT="$(go env GOPATH)/bin/benchstat" ./scripts/bench-gate_test.sh
+      - name: the base's tree
+        if: steps.base.outputs.sha != ''
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: git worktree add --detach "$RUNNER_TEMP/base" "$BASE"
+      - name: gate
+        if: steps.base.outputs.sha != ''
+        shell: bash
+        run: |
+          BENCHSTAT="$(go env GOPATH)/bin/benchstat" ./scripts/bench-gate.sh -o "$RUNNER_TEMP/bench" "$RUNNER_TEMP/base" \
+            2>&1 | tee "$RUNNER_TEMP/bench-gate.log"
+      - name: findings
+        if: always() && steps.base.outputs.sha != ''
+        shell: bash
+        run: |
+          { echo '```'; sed -n '/^== findings/,$p' "$RUNNER_TEMP/bench-gate.log" 2>/dev/null || true; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && steps.base.outputs.sha != ''
+        with:
+          name: bench-gate
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/bench-gate.log
+            ${{ runner.temp }}/bench/base/*.txt
+            ${{ runner.temp }}/bench/head/*.txt
+            ${{ runner.temp }}/bench/*/*.err
+      - name: the timing budgets' findings
+        if: always()
+        shell: bash
+        run: |
+          { echo '```'; sed -n '/^== findings/,$p' "$RUNNER_TEMP/timing-budgets.log" 2>/dev/null || true; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: timing-budgets
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/timing-budgets.log
+            ${{ runner.temp }}/budgets/*.log
+      - name: the timing budgets' verdict
+        if: always()
+        shell: bash
+        env:
+          RC: ${{ steps.budgets.outputs.rc }}
+        run: |
+          [ "$RC" = 0 ] || { echo "::error::a timing budget was missed or not asserted (status '${RC:-none}'; the timing budgets step has the findings)"; exit 1; }
+
+  root-suites:
+    # The privileged suites ran per push nowhere, only inside vm-matrix's report-only
+    # coverage step, and four packages' root-only tests ran nowhere at all. This is test/vm/root-suites.sh on
+    # the runner itself, through its passwordless sudo (VM_HOST=sudo), as bpf-load runs its two suites: each
+    # privileged package's static test binary (CGO_ENABLED=0, -tags integration, and the tegobpf variant
+    # beside it where the package's tests load the objects, which are committed, so nothing is generated
+    # here), run as root with -test.v from its own package directory, then `tego doctor --require cgroup` as
+    # root. The step fails on a failed test, a suite that did not build or ran nothing, and a doctor below
+    # tier cgroup; the next fails when a root-only test test/vm/root-must-pass.txt names did not pass. Under
+    # sudo a suite starts in the runner's service cgroup, where launch's three tests that need a delegated
+    # user@0.service skip; the list holds only tests that passed as root in a KVM guest set up that way. The
+    # script also holds every skip to test/vm/root-skips.txt, so a test that stops running
+    # as root fails the step, and checks the must-pass list itself, over the suites' go test -json logs.
+    # A push to master only, because this job can take 250 minutes of hosted time. That is a limit on cost, not a
+    # security boundary: a pull request still runs code as root in bpf-load and build-test-arm64, and it runs its own
+    # copy of this file. A fork's code is held by the runner, a fresh VM with no secrets and a read-only token, and by
+    # GitHub's approval of a first-time contributor's run. A change to a privileged path meets this job after it merges.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    # enforce/cgroup has 100 minutes (VM_SUITE_TIMEOUT below) in each of its two builds: its tegobpf suite took
+    # 2517-3765 s in KVM guests on a loaded host and timed out once at the 2700 s it had. The other suites
+    # take the rest: 50 minutes, as before, so a cgroup suite that runs to its own bound is reported by root-suites.sh
+    # with its log, never cut off by the job's.
+    timeout-minutes: 250
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: the privileged suites, as root through sudo; every skip allowed and the root-only tests passed
+        run: VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=6000" VM_HOST=sudo VM_BPF=yes VM_OUT="$RUNNER_TEMP/root-suites" test/vm/root-suites.sh
+      - name: upload the suites' logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: root-suites
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/root-suites/logs/
+            ${{ runner.temp }}/root-suites/summary.json
+          if-no-files-found: warn
+
+  race:
+    # The race detector over the unit and the unprivileged integration suites. Specs and tests say their
+    # concurrency is race-tested — capture-derive I8's attach refcount, limits-check I1's single limit trip,
+    # the DNS set's lock-free match, the supervisor's counters (I7) — and this is the job that makes that
+    # true. The detector needs cgo, which the shipped binary never has (CGO_ENABLED=0 in `make build` and
+    # .goreleaser.yaml), so this job alone turns it on. The privileged suites are not raced yet: the guests
+    # would need several times the memory the race runtime takes, and a race build is dynamically linked
+    # while the tier-2 suites run their own test binary as the child stage. Tier 2 no longer refuses a
+    # dynamically linked stage (ADR 0021 (4): its marks are placed after the stage's execve), but the guest
+    # run of a dynamically linked or PIE build is still that ADR's open condition.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CGO_ENABLED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      # The suites that put a process in a run cgroup run inside the runner user's systemd user manager, where an
+      # unprivileged tego run can place its agent. A step runs in the runner's own service, outside that subtree,
+      # and from there the kernel refuses every placement (docs/p0/runtime-launch.md case 41), so those tests would
+      # skip. Lingering starts the manager where the image has not already; the wait is for its socket.
+      - name: the runner user's systemd manager
+        shell: bash
+        run: |
+          sudo loginctl enable-linger "$(id -un)"
+          for _ in $(seq 1 30); do [ -S "/run/user/$(id -u)/systemd/private" ] && exit 0; sleep 1; done
+          echo "::error::no systemd user manager for $(id -un) after 30 s"; exit 1
+      # -shuffle=on runs each package's tests and benchmarks in a random order, so a test that passes only
+      # after another one has run fails here. A failing run prints its -test.shuffle
+      # seed, which reproduces the order.
+      - name: unit, raced
+        run: ./scripts/in-user-manager.sh go test -count=1 -race -shuffle=on -p 4 ./...
+      - name: integration, raced (unprivileged on the runner)
+        run: ./scripts/in-user-manager.sh go test -count=1 -race -shuffle=on -p 4 -tags integration ./...
+
+  reproducible:
+    # Two builds of this commit by the release's own goreleaser configuration must be byte-identical, or the
+    # published checksums cannot be checked by anyone rebuilding from source. The second build runs from a
+    # copy of the tree at another path with its own empty build cache, so an absolute path or a cached object
+    # that -trimpath and the pinned toolchain should have kept out shows up as a difference. This compares
+    # the runner's target, linux/amd64; release.yml repeats the check against the published checksums on every
+    # tag, for every target. Each binary is read from dist/: --output is no use here, because goreleaser ignores
+    # it, with exit 0 and no file, when a configuration has more than one build, and --id would drop the others.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # goreleaser reads the last tag and the commit's date
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          version: ${{ env.GORELEASER_VERSION }}
+          install-only: true
+      - name: build the release target twice and compare
+        shell: bash
+        run: |
+          set -euo pipefail
+          other="$RUNNER_TEMP/elsewhere/src"
+          mkdir -p "$other"
+          cp -a . "$other"
+          goreleaser build --snapshot --clean --single-target
+          (cd "$other" && GOCACHE="$RUNNER_TEMP/elsewhere/cache" \
+            goreleaser build --snapshot --clean --single-target)
+          for bin in tego tego-control maze; do
+            sha256sum dist/"$bin"_linux_amd64*/"$bin" "$other"/dist/"$bin"_linux_amd64*/"$bin"
+            if ! cmp dist/"$bin"_linux_amd64*/"$bin" "$other"/dist/"$bin"_linux_amd64*/"$bin"; then
+              echo "::error::two builds of $bin at $(git rev-parse --short HEAD) by .goreleaser.yaml differ"
+              exit 1
+            fi
+          done
+          # The tego-control goreleaser built is the one tego pins (ADR 0100 (1b)), so the release's check holds.
+          scripts/check-control-pin.sh dist/tego_linux_amd64*/tego dist/tego-control_linux_amd64*/tego-control
+
+  coverage:
+    # Report-only for now: per-package statement coverage of the unit and unprivileged integration suites
+    # together, merged from binary coverage data (GOCOVERDIR), uploaded as an artifact. The privileged
+    # suites' share, run as root in KVM guests (scripts/coverage.sh --vm), is collected by a run of
+    # vm-matrix.yml's debian-13 row and locally by `make coverage-vm`; floors for the root-only packages come
+    # after a few runs of that number.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      # The suites that put a process in a run cgroup run inside the runner user's systemd user manager, where an
+      # unprivileged tego run can place its agent. A step runs in the runner's own service, outside that subtree,
+      # and from there the kernel refuses every placement (docs/p0/runtime-launch.md case 41), so those tests would
+      # skip. Lingering starts the manager where the image has not already; the wait is for its socket.
+      - name: the runner user's systemd manager
+        shell: bash
+        run: |
+          sudo loginctl enable-linger "$(id -un)"
+          for _ in $(seq 1 30); do [ -S "/run/user/$(id -u)/systemd/private" ] && exit 0; sleep 1; done
+          echo "::error::no systemd user manager for $(id -un) after 30 s"; exit 1
+      - name: collect and merge
+        run: ./scripts/in-user-manager.sh scripts/coverage.sh -o "$RUNNER_TEMP/coverage"
+      - name: per-package coverage
+        run: cat "$RUNNER_TEMP/coverage/percent.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/coverage/percent.txt
+            ${{ runner.temp }}/coverage/coverage.out
+
+  deadcode-report:
+    # ADR 0029 (4): a classification ratchet, never a count gate. It fails on an
+    # unreachable function tools/deadcode-allow.txt does not classify, on a stale classification and on
+    # a profile the tool could not analyze (unavailable, retained in the artifact, never zero findings).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: report collector and formatter tests
+        run: ./scripts/deadcode-report_test.sh && go test -count=1 ./tools/deadcodereport
+      - name: collect all production build profiles
+        run: ./scripts/deadcode-report.sh -o "$RUNNER_TEMP/deadcode"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: deadcode-report
+          retention-days: 14
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/deadcode/

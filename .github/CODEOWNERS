@@ -1,0 +1,33 @@
+# Ownership follows the layers
+/spec/                 @attention-span-ai
+/pkg/spec/             @attention-span-ai
+/bpf/                  @attention-span-ai
+/internal/runtime/     @attention-span-ai
+/internal/ledger/      @attention-span-ai
+/internal/check/       @attention-span-ai
+/test/workloads/       @attention-span-ai
+/docs/                 @attention-span-ai
+# The release pipeline, the installer the root binary is verified by, the committed objects it loads, and the
+# dependency and entry-point files: scripts/precommit_test.sh holds these lines. Require code-owner review on
+# master in branch protection, or none of this file has effect.
+/.github/              @attention-span-ai
+/.goreleaser.yaml      @attention-span-ai
+/scripts/install.sh    @attention-span-ai
+/scripts/release.sh    @attention-span-ai
+/go.mod                @attention-span-ai
+/go.sum                @attention-span-ai
+/internal/bpf/         @attention-span-ai
+/cmd/                  @attention-span-ai
+/Makefile              @attention-span-ai
+/scripts/               @attention-span-ai
+/test/unit-skips.txt   @attention-span-ai
+/test/integration-skips.txt @attention-span-ai
+/test/vm/root-skips.txt @attention-span-ai
+/test/vm/root-must-pass.txt @attention-span-ai
+# The linter configuration, the gates Go tools, the VM and kill-test harness that run the root suites and
+# apply the skip lists, and the hook: weakening any of them weakens a gate.
+/.golangci.yml         @attention-span-ai
+/tools/                @attention-span-ai
+/test/vm/              @attention-span-ai
+/test/e2e/             @attention-span-ai
+/.githooks/            @attention-span-ai
