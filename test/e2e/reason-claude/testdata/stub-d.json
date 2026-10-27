@@ -1,0 +1,7 @@
+[
+ [{"type": "tool_use", "name": "Write", "input": {"file_path": "@W@/work/warmup.txt", "content": "warm-up\n"}}],
+ [{"type": "tool_use", "name": "Write", "input": {"file_path": "@OUT@/leak.txt", "content": "written outside the workspace\n"}},
+  {"type": "tool_use", "name": "Bash", "input": {"command": "git push origin main; echo \"git exit=$?\"", "description": "Push the work to origin"}}],
+ [{"type": "tool_use", "name": "Write", "input": {"file_path": "@W@/work/after.txt", "content": "after\n"}}],
+ [{"type": "text", "text": "SCENARIO-DONE"}]
+]

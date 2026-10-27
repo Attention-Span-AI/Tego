@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The boundary the reason-channel end-to-end runs are held to (README.md, "End to end"). run.sh (the real Claude Code)
+# and the CI twin (fakeclaude, e2e_integration_test.go) fill in the @...@ names and write the result beside the run;
+# this file is a template. One contract for every scenario, so the two halves differ in the harness and nothing else.
+version: 0
+name: reason-claude-e2e
+command: ["claude"]
+tier: landlock
+# The run's command is claude, so tego provisions its hook (ADR 0063 (8)): a settings file in the run's runtime
+# directory, passed with --settings. Named here so that a run which cannot provision it says so at run_start.
+harness: claude-code
+# Every model request goes to ONE place, the local model stub, through tego's forwarder: tego listens on 127.0.0.1,
+# puts that address in the agent's ANTHROPIC_BASE_URL and speaks TLS to the stub, trusting its self-made certificate
+# through SSL_CERT_FILE in tego's own environment (the agent is not given it). No entry names an Anthropic address.
+models:
+  - { provider: anthropic, host: "127.0.0.1", port: @STUB_PORT@ }
+capture: forwarder
+record: full
+fs:
+  write:
+    # The task's own output: the one place a scenario's write is allowed.
+    - "./work/"
+    # Claude Code's own state, scratch and runtime directory (CLAUDE_CONFIG_DIR, TMPDIR, XDG_RUNTIME_DIR below) and
+    # the run's HOME, so that its start-up writes are not refusals the hook would tell the model about; /dev/null and
+    # /dev/tty are the shell's and the interface's plumbing.
+    - "./.claude-state/"
+    - "@ROOT@/home/"
+    - "@ROOT@/xdg/"
+    - "/dev/null"
+    - "/dev/tty"
+  # Claude Code reads the passwd-database home's agent configuration (~/.claude/skills and the rest) whatever HOME
+  # says. Under this contract that is refused, so a run can neither see nor change the real account's configuration.
+  # run.sh lists only the entries that exist (deny_read refuses a missing path); the CI twin lists its own home's.
+@DENY_READ@
+exec:
+  # A deny list, so the hook is granted (an exec.allow list does not get it yet: docs/user/reason-channel.md §3).
+  # A command pattern: `git push` never runs; the git start-up queries Claude Code makes run the harmless stand-in
+  # git on PATH and are not refusals.
+  deny: ["git push"]
+net:
+  # Nothing is reached directly: the forwarder's listener is the one route to the model and is admitted by the run.
+  allow: ["unix:/var/run/nscd/socket"]
+  dns:
+    # No name lookup leaves the box: the agent reaches the model by the forwarder's address and needs no name.
+    mode: "off"
+env:
+  # ANTHROPIC_API_KEY is an obvious dummy; the stub does not look at it. SSL_CERT_FILE is deliberately absent.
+  pass: ["PATH", "HOME", "LANG", "TERM", "COLORTERM", "ANTHROPIC_API_KEY"]
+  set:
+    # Everything that is not the model call: the auto-updater, telemetry, error reporting, the version check.
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    DISABLE_AUTOUPDATER: "1"
+    CLAUDE_CONFIG_DIR: ".claude-state"
+    CLAUDE_CODE_TMPDIR: ".claude-state/tmp"
+    TMPDIR: ".claude-state/tmp"
+    XDG_RUNTIME_DIR: "@ROOT@/xdg"
+limits:
+  pids: 512
+  memory: 4GiB
+  wall: 10m
