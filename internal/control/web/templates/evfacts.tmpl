@@ -1,0 +1,58 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* evfacts is the line page's facts column (eventfacts.go): what happened and when, the decision with its contract line, the question, who did it, every field and the chain. Every value is masked; exact bytes live only in folds. */}}
+{{define "evwhat"}}{{$d := .}}{{$e := .Ev}}{{$r := .Run}}{{$f := .F}}
+<section class="panel" aria-labelledby="h-facts"><div class="panel-head"><h2 id="h-facts">What happened</h2><span class="b b-{{verdictClass $e}}">{{template "i" (verdictIcon $e)}}{{verdictWord $e}}</span></div>
+<dl class="kv panel-body">
+<dt>What</dt><dd>{{if $e.Op}}<span class="op">{{$e.Op}}</span> {{end}}{{if $d.FullCommand}}<span class="mono ev-wrap">{{cut (mask $d.FullCommand) 300}}</span> <span class="soft">({{len $d.FullCommand}} bytes)</span><details class="ev-full"><summary>Whole command</summary><pre class="raw ev-raw" tabindex="0" aria-label="The whole command">{{mask $d.FullCommand}}</pre></details>{{else if $e.Target}}<span class="mono ev-wrap">{{mask $e.Target}}</span>{{end}} <span class="soft">({{kindWords $e.Kind}}{{if $e.Source}}, seen by {{sourceWords $e.Source}}{{end}})</span></dd>
+<dt>When</dt><dd>{{if $f.Local}}<time datetime="{{iso $e.TS}}" title="{{$f.UTC}}">{{$f.Local}}</time>{{else}}<time datetime="{{iso $e.TS}}">{{stamp $e.TS}}</time>{{end}}{{if $f.Into}}<span class="soft ev-when"> · {{$f.Into}} into the run</span>{{end}}{{if and $f.SincePrev $d.Prev}}<span class="soft ev-when"> · {{$f.SincePrev}} after <a class="link" href="/runs/{{pathEsc $r.ID}}/lines/{{$d.Prev.Seq}}">line #{{$d.Prev.Seq}}</a></span>{{end}}</dd>
+<dt>Run</dt><dd><a class="link mono" href="/runs/{{pathEsc $r.ID}}" title="{{$r.ID}}">{{rid $r.ID}}</a>{{if $r.Agent}} · {{$r.Agent}}{{end}} {{template "state" $r}}</dd>
+{{if $r.Contract}}<dt>Policy</dt><dd class="mono ev-wrap">{{$r.Contract}}</dd>{{end}}
+</dl></section>{{end}}
+{{define "evfacts"}}{{$d := .}}{{$e := .Ev}}{{$r := .Run}}{{$f := .F}}{{$lv := $f.LV}}
+<section class="panel" aria-labelledby="h-dec"><div class="panel-head"><h2 id="h-dec">The decision</h2></div>
+<dl class="kv panel-body">
+<dt>Verdict</dt><dd>{{$f.Verdict}}</dd>
+{{with $f.By}}<dt>Decided by</dt><dd class="ev-wrap">{{.}}</dd>{{end}}
+<dt>Rule</dt><dd>{{if $f.RuleFound}}{{with $f.Rule}}<span class="ev-rule">{{.Sentence}}</span> <span class="ev-src">{{if .File}}<a class="link mono" href="/rules?run={{$r.ID}}{{with .Group}}#g-{{.}}{{end}}" title="{{.File}}{{if eq .Positions "copy"}} (the run's own copy: the rules file changed since){{end}}">{{$f.RuleFile}}:{{.Line}}</a>{{else}}<span class="soft">built into Tego</span>{{end}}{{with .StateWords}} <span class="b {{if eq . "enforced"}}b-verified{{else if eq . "best effort"}}b-besteffort{{else}}b-neutral{{end}}"{{with $f.Rule.EnforcedText}} title="{{.}}"{{end}}>{{.}}</span>{{end}}</span>{{end}}{{else if $d.Label}}{{$d.Label}}{{else}}<span class="soft">No rule named this line</span>{{end}}{{if $f.RuleKey}} <span class="mono muted ev-wrap"{{with $f.RuleKeyFull}} title="{{.}}"{{end}}>{{$f.RuleKey}}</span>{{end}}</dd>
+{{if $f.Reason}}<dt>{{if or (eq (verdictClass $e) "refused") (eq $e.Verdict "ask")}}Reason the agent got{{else}}Reason{{end}}</dt><dd>{{$f.Reason}} <span class="mono muted">{{$f.ReasonKey}}</span></dd>{{else if eq (verdictClass $e) "allowed"}}<dt>Reason</dt><dd><span class="soft">Not blocked</span></dd>{{end}}
+{{with $f.Errno}}<dt>What the agent got</dt><dd>{{.}}</dd>{{end}}
+{{with $f.Mechanism}}<dt>Blocked by</dt><dd>{{.}}</dd>{{end}}
+{{with $f.Tier}}<dt>Enforcement</dt><dd>{{.}}</dd>{{end}}
+</dl></section>
+
+{{with $f.Ask}}<section class="panel" aria-labelledby="h-ask"><div class="panel-head"><h2 id="h-ask">The question</h2>{{if .Pending}}<span class="b b-asked">{{template "i" "i-hand"}}Not answered</span>{{else if and .Approved (deref .Approved)}}<span class="b b-allowed">{{template "i" "i-check"}}Allowed</span>{{else}}<span class="b b-refused">{{template "i" "i-ban"}}Refused</span>{{end}}</div>
+<div class="panel-body stack-sm"><p class="ev-ask-s">{{capFirst .Sentence}}</p>
+<dl class="kv">
+{{if .HasAsk}}<dt>Asked</dt><dd>{{with .AskedAt}}{{.}} · {{end}}{{if eq .AskSeq $e.Seq}}this line{{else}}<a class="link" href="/runs/{{pathEsc $r.ID}}/lines/{{.AskSeq}}">line #{{.AskSeq}}</a>{{end}}{{if .Rule}} · <span class="soft">asked by</span> <span class="mono ev-wrap"{{with .RuleFull}} title="{{.}}"{{end}}>{{.Rule}}</span>{{end}}</dd>{{end}}
+<dt>Answer</dt><dd>{{.Outcome}}{{if and .Answered .ByWords}} <span class="soft">by</span> {{.ByWords}}{{end}}{{with .After}} <span class="soft">after {{.}}</span>{{end}}{{if .Answered}} · {{with .AnsweredAt}}{{.}} · {{end}}{{if eq .AnswerSeq $e.Seq}}this line{{else}}<a class="link" href="/runs/{{pathEsc $r.ID}}/lines/{{.AnswerSeq}}">line #{{.AnswerSeq}}</a>{{end}}{{end}}</dd>
+{{with .Alternate}}<dt>The file given instead</dt><dd class="mono ev-wrap">{{mask .}}</dd>{{end}}
+{{if .ConsequenceSeqs}}<dt>What followed</dt><dd>{{range $i, $s := .ConsequenceSeqs}}{{if $i}}, {{end}}{{if eq $s $e.Seq}}this line{{else}}<a class="link" href="/runs/{{pathEsc $r.ID}}/lines/{{$s}}">line #{{$s}}</a>{{end}}{{end}}</dd>{{end}}
+</dl></div></section>{{end}}
+
+<section class="panel" aria-labelledby="h-who"><div class="panel-head"><h2 id="h-who">Who did it</h2>{{with $f.Logs}}<a class="link ev-head-link" href="/logs?q={{.}}">Every line of this process</a>{{end}}</div>
+<div class="panel-body stack-sm">{{if $lv}}{{with $lv.Proc}}<div class="ev-prog"><p class="ev-prog-name">{{template "i" "i-terminal"}}<strong>{{if .Launcher}}Tego's launcher{{else if .Name}}{{.Name}}{{else}}pid {{.PID}}{{end}}</strong>{{/* the aside never repeats the bold name: only the pid, or what the record lacks */}}{{if .Refused}} <span class="soft">{{.Words}}</span>{{else if .Unrecorded}} <span class="soft">forked, no exec recorded</span>{{else if and (not .HasExec) (not .Launcher)}} <span class="soft">No program recorded</span>{{else if and .Name (gt .PID 0)}} <span class="soft">pid {{.PID}}</span>{{else if and .Launcher (gt .PID 0)}} <span class="soft">pid {{.PID}}</span>{{end}}</p>
+<dl class="kv">{{if .Path}}<dt>Program</dt><dd class="mono ev-wrap">{{mask .Path}}</dd>{{end}}
+{{if .ArgvMasked}}<dt>Command</dt><dd>{{if gt (len .ArgvMasked) 240}}<pre class="raw ev-long" tabindex="0" aria-label="The command">{{.ArgvMasked}}</pre>{{else}}<span class="mono ev-wrap">{{.ArgvMasked}}</span>{{end}}</dd>{{end}}
+<dt>Process</dt><dd class="mono">pid {{$lv.Envelope.PID}}{{if $lv.Envelope.TID}} · tid {{$lv.Envelope.TID}}{{end}}{{if $lv.Envelope.Cgroup}} · cgroup {{$lv.Envelope.Cgroup}}{{end}}</dd>
+{{if .HasExec}}<dt>Started on</dt><dd>{{if eq .ExecSeq $e.Seq}}this line{{else}}<a class="link" href="/runs/{{pathEsc $r.ID}}/lines/{{.ExecSeq}}">line #{{.ExecSeq}}</a>{{end}}</dd>{{end}}
+</dl></div>{{else}}<p class="soft">{{$lv.ProcNote}}.</p><p class="mono soft">pid {{$lv.Envelope.PID}}{{if $lv.Envelope.TID}} · tid {{$lv.Envelope.TID}}{{end}}{{if $lv.Envelope.Cgroup}} · cgroup {{$lv.Envelope.Cgroup}}{{end}}</p>{{end}}
+{{if gt (len $f.Steps) 1}}<div class="ev-chain-w"><p class="soft ev-chain-h">{{$f.ChainHead}}</p><ol class="ev-chain" aria-label="Process chain">{{with $f.MoreAbove}}<li class="ev-more"><a class="link" href="/runs/{{pathEsc $r.ID}}/processes" title="The whole process tree is on the run's Processes tab">… {{.}} more</a></li>{{end}}{{range $f.Steps}}<li{{if .Self}} aria-current="true"{{end}}>{{if .Unrecorded}}<span class="muted" title="It forked without starting a program, so the record does not say what it ran">pid {{.PID}}, forked, no exec recorded</span>{{else if and .HasExec (ne .ExecSeq $e.Seq)}}<a class="link" href="/runs/{{pathEsc $r.ID}}/lines/{{.ExecSeq}}" title="{{.Path}} (pid {{.PID}}), started on line #{{.ExecSeq}}">{{.Label}}</a>{{else}}<span title="pid {{.PID}}">{{.Label}}</span>{{end}}</li>{{end}}</ol></div>{{end}}
+{{with $lv.ChainNote}}<p class="soft ev-note">{{.}}</p>{{end}}
+{{else}}<p class="soft">{{$f.Err}}</p>{{end}}</div></section>
+
+{{if $lv}}<section class="panel" aria-labelledby="h-fields"><div class="panel-head"><h2 id="h-fields">Every field</h2><span class="soft">{{len $lv.Fields}} {{plural (len $lv.Fields) "field" "fields"}} after the envelope</span></div>
+<div class="tw"><table class="t ev-fields"><caption class="sr">Every field of line #{{$e.Seq}}, in words</caption><thead><tr><th scope="col">Field</th><th scope="col">Value</th></tr></thead><tbody>
+{{range $lv.Fields}}<tr><th scope="row" class="ev-fk"><span class="ev-fl">{{.Label}}</span>{{if .Unknown}} <span class="soft">(unknown field)</span>{{else}} <span class="mono muted ev-fkey">{{.Key}}</span>{{end}}</th><td class="ev-fv">{{if .Blob}}{{template "evblob" (blobArgs $r.ID $e.Seq .Blob)}}{{else if .Masked}}<span class="ev-wrap">{{.Value}}</span> <details class="ev-show"><summary>Show unmasked (secret)</summary><code class="mono ev-wrap">{{.Raw}}</code></details>{{else if gt (len .Value) 240}}<pre class="raw ev-long" tabindex="0" aria-label="{{.Label}}">{{.Value}}</pre>{{else}}<span class="ev-wrap"{{if ne .Raw (print "\"" .Value "\"")}} title="{{cut (mask .Raw) 300}}"{{end}}>{{.Value}}</span>{{end}}</td></tr>
+{{end}}</tbody></table></div></section>
+
+<section class="panel" aria-labelledby="h-int"><div class="panel-head"><h2 id="h-int">Integrity</h2>{{if eq $f.LineChainAt "before"}}<span class="b b-verified" title="The run's chain breaks at a later line">{{template "i" "i-check"}}Intact to this line</span>{{else}}<span class="b {{if eq $f.ChainState "verified"}}b-verified{{else if eq $f.ChainState "broken"}}b-broken{{else}}b-neutral{{end}}">{{if eq $f.ChainState "verified"}}{{template "i" "i-check"}}Chain intact{{else if eq $f.LineChainAt "here"}}{{template "i" "i-triangle-alert"}}Chain breaks here{{else if eq $f.ChainState "broken"}}{{template "i" "i-triangle-alert"}}Chain broken{{else}}Not checked here{{end}}</span>{{end}}</div>
+<dl class="kv panel-body">{{with $lv.Envelope}}
+<dt>Place</dt><dd>Line #{{.Seq}} of {{.Total}}</dd>
+<dt>This line's hash</dt><dd class="mono ev-hash">{{.ID}}</dd>
+<dt>The line before</dt><dd>{{if eq .Position 1}}<span class="soft">First line</span>{{else}}<a class="link" href="/runs/{{pathEsc $r.ID}}/lines/{{.PrevSeq}}">line #{{.PrevSeq}}</a> {{if .PrevOK}}<span class="ev-ok">{{template "i" "i-check"}}its hash matches</span>{{else}}<span class="ev-bad">{{template "i" "i-triangle-alert"}}its hash does not match what this line names</span>{{end}}<span class="mono soft ev-hash">{{.Prev}}</span>{{end}}</dd>
+{{end}}{{with $f.LineChain}}<dt>This line</dt><dd>{{.}}</dd>{{end}}<dt>The run's record</dt><dd>{{$f.Chain}}</dd>
+</dl></section>{{end}}
+{{end}}
+{{/* evblob is one blob field: its size and check, its content masked in a scroll box, and a download of the exact bytes. */}}
+{{define "evblob"}}{{$b := .Blob}}<span class="ev-wrap">stored apart{{if $b.Size}}, {{bytes $b.Size}}{{end}}, {{if $b.Verified}}<span class="ev-ok">{{template "i" "i-check"}}verified</span> against its hash{{else}}<span class="ev-bad">not verified</span>: {{$b.Why}}{{end}}</span>{{if $b.Binary}} <span class="soft">· not text, so not shown</span>{{end}}
+{{if $b.Inline}}<pre class="raw ev-long" tabindex="0" aria-label="The blob's content, masked">{{$b.Inline}}</pre>{{end}}{{if and $b.Size (hexSHA $b.SHA)}}<p class="ev-dl"><a class="link" href="/runs/{{pathEsc .Run}}/lines/{{.Seq}}?blob={{$b.SHA}}" download>{{template "i" "i-download"}}Download the exact bytes</a> <span class="mono soft" title="{{$b.SHA}}">{{cut $b.SHA 16}}</span></p>{{end}}{{end}}

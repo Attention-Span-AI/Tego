@@ -1,0 +1,38 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* The Model routes page and its preview (model-routes.tmpl, model-routes-preview.tmpl). Colours from tokens.css, which
+   carries the light and dark values, so this file needs no theme of its own. */
+.rt-pick { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-4); }
+.rt-pick select { min-height: var(--control-h); max-width: 100%; min-width: 0; flex: 1 1 16rem;
+  background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border); border-radius: var(--radius-sm);
+  padding: 0 var(--space-2); font: inherit; }
+.rt-note { margin: var(--space-2) 0 var(--space-4); }
+.rt-model { margin-bottom: var(--space-5); padding: var(--space-4); }
+.rt-preview { padding: var(--space-4); }
+.rt-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.rt-head h2 { margin: 0; font-size: var(--text-lg); overflow-wrap: anywhere; }
+.rt-now { margin: 0 0 var(--space-3); overflow-wrap: anywhere; }
+.rt-opts { list-style: none; margin: 0; padding: 0; display: grid; }
+.rt-opt { display: grid; grid-template-columns: minmax(9rem, 1.2fr) minmax(12rem, 1.6fr) minmax(11rem, 1fr) 6rem minmax(8rem, auto);
+  align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-2); border-top: 1px solid var(--c-border); }
+.rt-opt:first-child { border-top: 0; }
+.rt-current { background: var(--c-success-soft); border-radius: var(--radius-sm); }
+.rt-name, .rt-auth { overflow-wrap: anywhere; min-width: 0; }
+.rt-count { text-align: right; font-variant-numeric: tabular-nums; }
+.rt-act { display: flex; justify-content: flex-end; }
+.rt-act form { margin: 0; }
+.rt-act .btn { min-height: var(--target); }
+.rt-lbl { display: none; }
+.rt-hist { margin-top: var(--space-3); }
+.rt-hist summary { cursor: pointer; color: var(--c-text2); min-height: var(--target); display: flex; align-items: center; }
+.rt-hist ol { margin: var(--space-2) 0 0; padding-left: var(--space-5); }
+.rt-hist li { overflow-wrap: anywhere; margin-bottom: var(--space-1); }
+.rt-change { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-2) var(--space-4); margin: 0 0 var(--space-4); }
+.rt-change dt { color: var(--c-text3); }
+.rt-change dd { margin: 0; overflow-wrap: anywhere; }
+.rt-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+@media (max-width: 760px) {
+  .rt-opt { grid-template-columns: 1fr auto; gap: var(--space-2); padding: var(--space-3) var(--space-2); }
+  .rt-name, .rt-auth, .rt-tls { grid-column: 1 / -1; }
+  .rt-count { text-align: left; }
+  .rt-lbl { display: inline; color: var(--c-text3); }
+}

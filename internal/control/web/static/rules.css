@@ -1,0 +1,85 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* The Rules page (templates/rules.tmpl): tokens only, no colour literal. The tables are app.css's .t-rules. */
+.rules-ctx { max-width: 72ch; overflow-wrap: anywhere; }
+.rules-ctx .code-i { white-space: normal; overflow-wrap: anywhere; }
+.rules-pick { margin-bottom: var(--space-4); }
+.rules-pick .rp-file { flex: 2 1 320px; }
+.rules-pick .rp-run { flex: 1 1 240px; }
+.rules-pick .select { width: 100%; }
+.rules-pick-hint { flex-basis: 100%; margin: 0; font-size: var(--text-xs); color: var(--c-text3); }
+.rules-soon { flex-basis: 100%; margin: 0; max-width: 38ch; font-size: var(--text-xs); color: var(--c-text3); text-align: right; }
+.page > .rules-pending, .page > .note { margin-bottom: var(--space-3); }
+.rules-pending { border-color: var(--c-warn); }
+.rules-pending p { margin: 0; }
+.rp-h { margin: 0; font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.rp-list { margin: 0; padding-left: var(--space-4); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+/* "Changed since this run started" (rules_pending.go): a calm panel, one row per change with its state on the run. */
+.rules-pending.rp-live { border-color: var(--c-border); }
+.rp-now { list-style: none; padding: 0; gap: 0; }
+.rp-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) 0; border-top: 1px solid var(--c-border); }
+.rp-row:first-child { border-top: 0; }
+.rp-what { flex: 1 1 320px; min-width: 0; }
+.rp-state { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-sm); min-width: 0; }
+.rp-blocks { font-size: var(--text-xs); color: var(--c-text2); overflow-wrap: anywhere; }
+.rp-apply { margin: 0; }
+/* The live blocks refuse: the stopped colour (F2's tokens), danger where a theme has none (r9 QU-2). */
+.rules-live { border-color: var(--c-control); box-shadow: inset 3px 0 0 var(--c-control); }
+.rules-live.is-calm { border-color: var(--c-border); box-shadow: none; }
+.page > .panel.rules-g, .page > .panel.rules-live { margin-bottom: var(--space-4); }
+.t-rules td.lead { overflow-wrap: anywhere; }
+.t-rules td.c-src .mono { font-size: var(--text-xs); color: var(--c-text2); overflow-wrap: anywhere; }
+.t-rules td.c-enf { color: var(--c-text2); font-size: var(--text-xs); }
+.t-rules th.c-act { width: 1%; }
+.enf-no { color: var(--c-text3); display: inline-flex; gap: 4px; align-items: center; }
+.rules-default { color: var(--c-text3); }
+/* UX-FINISH: only the exceptions say how a rule holds; an open default is marked and offers its narrowing; the
+   terminal device rows fold into one with an expander that keeps each rule. */
+.t-rules th .th-sub { display: block; font-weight: var(--weight-regular); color: var(--c-text3); font-size: var(--text-xs); text-transform: none; letter-spacing: 0; }
+.rules-default { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.rules-default.is-open { color: var(--c-text2); background: var(--c-warn-soft); }
+.rules-default .r-narrow { margin-left: auto; font-size: var(--text-sm); }
+.r-fold > summary { cursor: pointer; display: list-item; }
+.r-fold > summary .soft { font-size: var(--text-xs); margin-left: var(--space-1); }
+.r-devs { list-style: none; margin: var(--space-2) 0 0; padding: 0 0 0 var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); border-left: 2px solid var(--c-border); }
+.r-devs li { display: flex; flex-wrap: wrap; gap: 2px var(--space-3); justify-content: space-between; font-size: var(--text-sm); }
+.r-devs .mono { font-size: var(--text-xs); }
+.page > .cli-pair { margin: var(--space-5) 0 var(--space-4); }
+.cli-pair .cli code { overflow-wrap: anywhere; white-space: pre-wrap; }
+.rules-raw > summary.panel-head { list-style: none; flex-wrap: wrap; }
+.rules-raw > summary.panel-head::-webkit-details-marker { display: none; }
+.rules-raw > summary h2::before { content: "▸"; color: var(--c-text3); margin-right: var(--space-2); font-size: var(--text-sm); }
+.rules-raw[open] > summary h2::before { content: "▾"; }
+.rules-g .panel-head h2, .rules-live .panel-head h2 { flex-wrap: wrap; row-gap: 2px; }
+/* Set up a new agent (templates/rules-new.tmpl) and a rules file not run yet. */
+.page > .nw-mode, .page > .nw-form, .page > .banner, .page > .nw-create { margin-bottom: var(--space-4); }
+.nw-form .frow .field { flex: 1 1 260px; }
+.nw-form .nw-dir { flex: 2 1 360px; }
+.nw-form .input, .nw-form .select { width: 100%; }
+.nw-legend { font-size: var(--text-xs); color: var(--c-text3); margin-bottom: var(--space-2); padding: 0; }
+.nw-presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-2); }
+.nw-preset { display: flex; gap: var(--space-2); align-items: flex-start; padding: var(--space-3); border: 1px solid var(--c-control); border-radius: var(--radius); background: var(--c-surface); cursor: pointer; font-size: var(--text-sm); }
+.nw-preset input { margin: 3px 0 0; accent-color: var(--c-primary); }
+.nw-preset > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.nw-preset .soft { font-size: var(--text-xs); }
+.nw-preset:has(input:checked) { background: var(--c-sunken); border-color: var(--c-primary); }
+.nw-hint { margin: 0; font-size: var(--text-xs); }
+.nw-phead { margin-top: var(--space-5); }
+.nw-phead h2 { margin: 0; }
+.nw-rules { list-style: none; margin: 0; padding: var(--space-2) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
+.nw-rules li { display: flex; gap: var(--space-3); align-items: baseline; font-size: var(--text-sm); overflow-wrap: anywhere; }
+.nw-rules li .b { flex: none; }
+.nw-more > summary { cursor: pointer; padding: 0 var(--space-4) var(--space-2); font-size: var(--text-sm); color: var(--c-link); }
+.nw-create .cli code, .page .panel .cli code { overflow-wrap: anywhere; white-space: pre-wrap; }
+@media (max-width: 640px) {
+  .rules-g .panel-head h2 .soft, .rules-live .panel-head h2 .soft { flex-basis: 100%; font-size: var(--text-xs); }
+  .rules-pick .field, .rules-pick .btn { flex: 1 1 100%; }
+  .rules-soon { max-width: none; text-align: left; }
+  .t-rules td.c-enf, .t-rules td.c-src .mono { font-size: var(--text-xs); }
+  .t-rules td.c-enf.is-os { display: none; }
+  .r-fold > summary .soft { display: block; margin: 2px 0 0; }
+  .rules-default .r-narrow { margin-left: 0; }
+  .rules-live .t td.act { grid-column: 1 / -1; }
+  .rules-live .t td.act .btn { width: 100%; }
+  .nw-form .panel-foot .btn, .nw-create .panel-foot .btn { width: 100%; justify-content: center; }
+}
+.nw-adv > summary { cursor: pointer; color: var(--c-text2); font-size: var(--text-sm); }

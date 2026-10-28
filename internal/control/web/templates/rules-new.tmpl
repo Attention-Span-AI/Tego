@@ -1,0 +1,82 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* rules-new: "New policy" (rules_new.go): the form, its preview, and the policy written. Labels, not sentences. */}}
+{{define "newhidden"}}<input type="hidden" name="mode" value="{{.Mode}}"><input type="hidden" name="dir" value="{{.Form.Dir}}"><input type="hidden" name="name" value="{{.Form.Name}}">{{if eq .Mode "run"}}<input type="hidden" name="from" value="{{.Form.FromRun}}">{{else}}{{range .Presets}}{{if .On}}<input type="hidden" name="preset" value="{{.Name}}">{{end}}{{end}}<input type="hidden" name="writes" value="{{.Writes}}"><input type="hidden" name="hosts" value="{{.Hosts}}"><input type="hidden" name="pass" value="{{.Pass}}"><input type="hidden" name="askread" value="{{.AskRead}}">{{end}}<input type="hidden" name="cmd" value="{{.Form.Command}}"><input type="hidden" name="live" value="{{.LiveMode}}">{{if eq .LiveMode "adjustable"}}<input type="hidden" name="fence_read" value="{{.FenceRead}}"><input type="hidden" name="fence_net" value="{{.FenceNet}}"><input type="hidden" name="fence_exec" value="{{.FenceExec}}">{{end}}{{end}}
+{{define "newrules"}}{{range .}}<section class="panel rules-g" aria-labelledby="ng-{{.ID}}"><div class="panel-head"><h3 id="ng-{{.ID}}">{{template "i" .Icon}}{{.Title}} <span class="soft">{{.Lede}}</span></h3></div>
+{{if .Rows}}<ul class="nw-rules">{{range .Rows}}<li>{{template "effect" .Effect}}<span>{{.Sentence}}</span></li>{{end}}</ul>{{end}}
+{{if .More}}<details class="nw-more"><summary>and {{len .More}} more</summary><ul class="nw-rules">{{range .More}}<li>{{template "effect" .Effect}}<span>{{.Sentence}}</span></li>{{end}}</ul></details>{{end}}
+{{with .Default}}<div class="panel-foot rules-default"><span>{{.}}</span></div>{{end}}</section>{{end}}{{end}}
+{{define "effect"}}{{if eq . "allow"}}<span class="b b-allowed">{{template "i" "i-check"}}Allowed</span>{{else if eq . "ask"}}<span class="b b-asked">{{template "i" "i-hand"}}Ask first</span>{{else if eq . "deny"}}<span class="b b-refused">{{template "i" "i-ban"}}Blocked</span>{{else if eq . "limit"}}<span class="b b-neutral">{{template "i" "i-square"}}Limit</span>{{else}}<span class="b b-neutral">{{template "i" "i-eye"}}Note</span>{{end}}{{end}}
+{{define "content"}}<link rel="stylesheet" href="/static/rules.css">{{$csrf := $.CSRF}}{{with .Data}}{{$d := .}}
+{{if .Created}}{{$c := .Created}}
+<div class="head"><div><h1>{{$c.Name}} · policy written</h1><p class="lede"><span class="code-i">{{$c.Path}}</span></p></div>
+<div class="head-actions">{{if .Ref}}<a class="btn btn-primary" href="/rules?c={{queryEsc .Ref}}">{{template "i" "i-shield"}}Policy</a>{{end}}</div></div>
+{{with .Err}}<section class="banner banner-warn" role="status">{{template "i" "i-triangle-alert"}}<div class="grow">{{.}}</div></section>{{end}}
+<section class="panel"><div class="panel-body stack">
+  <h2 class="rp-h">Next: start the agent</h2>
+  <div class="cli"><code>{{.Start}}</code></div>
+  <p class="soft" title="Its run shows on Runs, Overview and Detections">Then watch Detections</p>
+  {{if $c.Made}}<p>Folders made: {{range $i, $m := $c.Made}}{{if $i}}, {{end}}<span class="mono">{{$m}}/</span>{{end}}</p>{{end}}
+  {{if $c.Ignore}}<p>Add to <span class="mono">.gitignore</span>: {{range $i, $m := $c.Ignore}}{{if $i}}, {{end}}<span class="mono">{{$m}}</span>{{end}}</p>{{end}}
+</div></section>
+{{else}}
+<div class="head"><div><h1>New policy</h1><p class="lede" title="Writes agent.yaml in the project folder. Nothing is written until you click Create.">Preview first · nothing written yet</p></div>
+<div class="head-actions"><a class="btn" href="/rules">{{template "i" "i-shield"}}Policies</a></div></div>
+{{if .Off}}<section class="panel"><div class="empty"><h3>Not available here</h3><details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>tego init --preset no-secrets,no-prod</code></div></details></div></section>
+{{else}}
+<nav class="chips nw-mode" aria-label="Start from"><a class="chip" href="/rules/new"{{if eq .Mode "presets"}} aria-current="true"{{end}}>From presets</a><a class="chip" href="/rules/new?mode=run" title="Allow what a finished run did, and no more"{{if eq .Mode "run"}} aria-current="true"{{end}}>From a run</a></nav>
+<form class="panel nw-form" action="/rules/new" method="get" aria-label="The new policy">
+<input type="hidden" name="mode" value="{{.Mode}}"><input type="hidden" name="preview" value="1">
+<div class="panel-body stack">
+  <div class="frow">
+    <label class="field nw-dir">Project folder<input class="input mono" name="dir" value="{{.Form.Dir}}" placeholder="/home/you/project or ~/project" required autocomplete="off" spellcheck="false"></label>
+    <label class="field nw-name">Name<input class="input mono" name="name" value="{{.Form.Name}}" placeholder="from the folder's name" pattern="[a-z0-9-]{1,40}" autocomplete="off" spellcheck="false"></label>
+  </div>
+  {{if eq .Mode "run"}}
+  <label class="field">Finished run<select class="select" name="from">{{if not .Runs}}<option value="">No finished run</option>{{end}}{{range .Runs}}<option value="{{.ID}}"{{if eq .ID $d.Form.FromRun}} selected{{end}}>{{if .Agent}}{{.Agent}} · {{end}}{{rid .ID}} · {{day .Start}} {{clock .Start}}</option>{{end}}</select></label>
+  <p class="soft nw-hint" title="The folders it wrote, the programs it started, the hosts it reached (tego learn). An empty project folder means the run's own.">Allows what that run did, no more</p>
+  {{else}}
+  <fieldset class="nw-presets"><legend class="nw-legend">Presets <span class="soft">· Change anytime</span></legend>
+    {{range .Presets}}<label class="nw-preset" title="{{.Name}}: {{.Promise}}"><input type="checkbox" name="preset" value="{{.Name}}"{{if .On}} checked{{end}}><span><strong>{{presetLabel .Name}}</strong>{{with .Also}}<span class="soft ut" title="What the command's agent needs to run">Also {{.}}</span>{{end}}</span></label>{{end}}
+  </fieldset>
+  <div class="frow">
+    <label class="field nw-list">Folders it may write <span class="muted" title="Comma-separated, relative to the project">(comma-separated)</span><input class="input mono" name="writes" value="{{.Writes}}" placeholder="src/, tests/" autocomplete="off" spellcheck="false"></label>
+    <label class="field nw-list">Hosts it may reach <span class="muted" title="host:port or @group, comma-separated">(host:port)</span><input class="input mono" name="hosts" value="{{.Hosts}}" placeholder="api.anthropic.com:443" autocomplete="off" spellcheck="false"></label>
+    <label class="field nw-list">Variables it needs <span class="muted" title="Names from your shell, comma-separated; values are never stored">(names)</span><input class="input mono" name="pass" value="{{.Pass}}" placeholder="SERVICE_TOKEN" autocomplete="off" spellcheck="false"></label>
+    <label class="field nw-list">Ask before reading <span class="muted" title="Files or folders; each read waits for you in Approvals">(paths)</span><input class="input mono" name="askread" value="{{.AskRead}}" placeholder="~/.config/app/token" autocomplete="off" spellcheck="false"></label>
+  </div>
+  <p class="soft" title="A read waits for a person only at Basic. On a machine that could run Strong or Strongest, the whole policy still runs at Basic. With Adjustable these reads are blocked without asking.">Ask before reading runs the whole policy at Basic</p>
+  {{end}}
+  <details class="nw-adv"{{if eq .LiveMode "adjustable"}} open{{end}}><summary>Advanced</summary>
+  <fieldset class="nw-live"><legend class="nw-legend">While it runs</legend>
+    <label class="nw-preset" title="The default. File, program and network rules are fixed when the run starts. You can tighten it while it runs; loosening applies from its next run."><input type="radio" name="live" value="locked"{{if ne .LiveMode "adjustable"}} checked{{end}}><span><strong>Locked</strong><span class="soft">Default</span></span></label>
+    <label class="nw-preset" title="The kernel enforces a wider fence; inside it Tego's live layer blocks each entry until you lift or grant it. Weaker if Tego fails; needs Strong or Strongest protection (root)."><input type="radio" name="live" value="adjustable"{{if eq .LiveMode "adjustable"}} checked{{end}}><span><strong>Adjustable</strong><span class="soft">Loosen while it runs · needs root</span></span></label>
+    {{template "livemodes" ""}}
+    <div class="nw-fence stack-sm"><p class="soft" title="What you may allow while it runs. Every entry starts blocked. One per line.">Fence · Adjustable only</p>
+      <div class="frow">
+        <label class="field nw-list">Readable later<textarea class="input mono" name="fence_read" rows="3" placeholder="~/billing-exports" spellcheck="false">{{.FenceRead}}</textarea></label>
+        <label class="field nw-list">Hosts later<textarea class="input mono" name="fence_net" rows="3" placeholder="api.stripe.com:443" spellcheck="false">{{.FenceNet}}</textarea></label>
+        <label class="field nw-list">Programs later<textarea class="input mono" name="fence_exec" rows="3" placeholder="/usr/bin/psql" spellcheck="false">{{.FenceExec}}</textarea></label>
+      </div></div>
+  </fieldset>
+  </details>
+  <label class="field">Command <span class="muted" title="The agent's program and its arguments; empty writes a short demo command">(e.g. claude)</span><input class="input mono" name="cmd" value="{{.Form.Command}}" placeholder="claude" autocomplete="off" spellcheck="false"></label>
+</div>
+<div class="panel-foot"><span class="soft">Writes nothing</span><button class="btn btn-primary" type="submit">{{template "i" "i-eye"}}Preview</button></div>
+</form>
+{{with .Err}}<section class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow"><strong>Not created.</strong> {{.}}</div></section>{{end}}
+{{with .Plan}}{{$p := .}}
+{{if .Problems}}<section class="banner banner-danger" role="alert" aria-labelledby="h-problems">{{template "i" "i-triangle-alert"}}<div class="grow stack-sm"><h2 class="rp-h" id="h-problems">Fix {{if eq (len .Problems) 1}}this{{else}}these{{end}} first</h2><ul class="rp-list">{{range .Problems}}<li>{{.}}</li>{{end}}</ul>{{if .Exists}}<p><a class="n-link" href="/rules">Policies</a></p>{{end}}</div></section>{{end}}
+{{with $d.Form.Withhold}}<section class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow"><strong>Run <span class="mono">{{$p.FromRun}}</span> leaked to {{join . ", "}}</strong> · {{if $p.Withheld}}<span title="A policy made from that run never allows where its secrets went">Left out: <span class="mono">{{join $p.Withheld ", "}}</span></span> · Review the rest{{else}}Check before creating{{end}}</div></section>{{end}}
+{{if .Text}}
+<div class="head nw-phead"><div><h2>Preview{{if .Name}}: {{.Name}}{{end}}</h2><p class="lede" title="{{.ViewNote}}">Presets included</p></div></div>
+{{with .Protection}}<section class="banner banner-warn" role="status">{{template "i" "i-triangle-alert"}}<div class="grow">{{.}}</div></section>{{end}}
+{{template "newrules" $d.Groups}}
+{{if .Diagnostics}}<section class="panel"><div class="panel-head"><h3>Compile</h3></div><div class="panel-body"><pre class="term">{{range .Diagnostics}}{{.}}
+{{end}}</pre></div></section>{{end}}
+{{if or .MakeDirs .Notes}}<section class="panel"><div class="panel-body stack">{{if .MakeDirs}}<p>Folders to make: {{range $i, $m := .MakeDirs}}{{if $i}}, {{end}}<span class="mono">{{$m}}</span>{{end}}</p>{{end}}{{if .Notes}}<ul class="rp-list soft">{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}</div></section>{{end}}
+<details class="panel rules-raw"><summary class="panel-head"><h2>Policy file</h2><span class="soft">{{$p.File}}</span></summary><div class="panel-body"><pre class="term">{{$d.Text}}</pre><p class="soft" title="Each env.set value reads (value hidden)">Values hidden</p></div></details>
+{{if .OK}}<form class="panel nw-create" method="post" action="/rules/new"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="base" value="{{.Base}}">{{template "newhidden" $d}}
+<div class="panel-body stack"><p title="Never over an existing file; kept in the change record">Writes <span class="code-i">{{.File}}</span></p>{{with $d.Start}}<div class="cli-pair"><span class="lbl">{{template "i" "i-terminal"}}Then</span><div class="cli"><code>{{.}}</code></div></div>{{end}}</div>
+<div class="panel-foot"><span class="soft">From the first run</span><button class="btn btn-primary" type="submit">{{template "i" "i-check"}}Create agent.yaml</button></div></form>{{end}}
+{{end}}{{end}}
+{{end}}{{end}}{{end}}{{end}}

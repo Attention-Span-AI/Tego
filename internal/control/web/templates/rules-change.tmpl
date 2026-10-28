@@ -1,0 +1,53 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* rules-change: the Change rules form (rules_change.go). Every form names the contract by its ref and carries the base it was read at. */}}
+{{define "content"}}<link rel="stylesheet" href="/static/rules.css"><link rel="stylesheet" href="/static/rules-change.css">{{$csrf := $.CSRF}}{{with .Data}}{{$d := .}}
+{{if not .C}}
+<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a class="link" href="/rules">Rules</a><span aria-hidden="true">/</span><span>Change rules</span></nav><h1>Change rules</h1><p class="lede">Pick a policy file</p></div></div>
+{{if .Contracts}}<section class="panel"><ul class="list rc-files">{{range .Contracts}}<li><a class="link" href="/rules/change?c={{queryEsc .Ref}}"><b>{{.Agent}}</b> <span class="mono soft">{{tail .Path 60}}</span></a> <span class="soft">· {{.Runs}} {{plural .Runs "run" "runs"}}{{if .Live}} · running{{end}}{{if not .Writable}} · cannot be changed here{{end}}</span></li>{{end}}</ul></section>
+{{else}}<section class="panel"><div class="empty"><div class="glyph">{{template "i" "i-shield"}}</div><h3>No policy to edit yet</h3><p>Write one with <span class="mono">tego init</span> and start the agent under it with <span class="mono">tego run</span>; then its rules can be changed here.</p><div class="cli"><code>tego init &amp;&amp; tego run -- &lt;agent&gt;</code></div></div></section>{{end}}
+{{else}}{{$c := .C}}
+<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a class="link" href="/rules?c={{queryEsc $d.RulesRef}}">Rules</a><span aria-hidden="true">/</span><span>Change rules</span></nav>
+<h1>Change rules for {{$c.Agent}}</h1>
+<p class="lede rules-ctx">One change at a time · from the next run of <span class="code-i" title="{{$c.Path}}">{{tail $c.Path 60}}</span>{{if $c.Live}}; a narrowing can also apply now to the {{len $c.Live}} running {{plural (len $c.Live) "run" "runs"}}{{end}}.</p></div>
+<div class="head-actions"><a class="btn" href="/rules?c={{queryEsc $d.RulesRef}}">{{template "i" "i-eye"}}Rules in force</a></div></div>
+
+{{if gt (len .Contracts) 1}}<form class="frow rules-pick" action="/rules/change" method="get" aria-label="Choose the rules file"><label class="field rp-file">Rules file<select class="select" name="c">{{range .Contracts}}<option value="{{.Ref}}"{{if eq .Ref $c.Ref}} selected{{end}}>{{.Agent}} · {{tail .Path 48}}{{if .Live}} · running{{end}}</option>{{end}}</select></label><button class="btn" type="submit">Open</button></form>{{end}}
+
+{{if .NotWritable}}<section class="banner banner-warn" role="status">{{template "i" "i-triangle-alert"}}<div class="grow"><strong>Not editable here</strong> {{.NotWritable}}<br>In a terminal: <span class="mono">{{.Hint}}</span>.</div></section>
+{{else}}
+{{template "lr" (index $.L "r-change")}}{{template "r-change" $}}</div>
+
+<details class="panel rules-raw rc-raw" id="yaml"{{if and .Raw .Raw.Open}} open{{end}}><summary class="panel-head"><h2>Advanced: edit YAML</h2><span class="soft">edit the whole file</span></summary>
+<div class="panel-body stack-sm">{{if not .CanRaw}}<p class="soft">{{.RawWhy}}</p>{{else}}{{$raw := .Raw}}
+<p class="soft"><span title="A free edit is confirmed like a widening. Check compiles it as the next run would; removed entries can apply now to a running run.">Check, then save</span></p>
+{{if .EnvHidden}}<p class="soft rc-envnote">{{template "i" "i-key-round"}}Environment values (env.set) show as <span class="mono">(value hidden)</span>: saving puts each back · set values in a terminal</p>{{end}}
+{{with $raw}}{{with .Err}}<section class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow">{{.}}</div></section>{{end}}
+{{with .Plan}}{{if .Stale}}<section class="banner banner-warn" role="status">{{template "i" "i-triangle-alert"}}<div class="grow">Changed since you opened it · saving overwrites that change</div></section>{{end}}
+{{if .Err}}<section class="banner banner-danger rc-diag" role="alert" aria-labelledby="h-diag">{{template "i" "i-triangle-alert"}}<div class="grow stack-sm"><h3 class="rp-h" id="h-diag">{{if .Nothing}}Nothing to save{{else}}This text cannot be saved{{end}}</h3>
+<ul class="rc-diags">{{range $raw.Diags}}<li>{{if .Line}}<a class="link mono" href="#yl-{{.Line}}">line {{.Line}}</a> {{end}}<span class="mono">{{.Text}}</span></li>{{end}}</ul>
+{{if $raw.Lines}}<ol class="rc-lines" aria-label="The lines named above">{{range $raw.Lines}}{{if .Gap}}<li class="rc-gap" aria-hidden="true">…</li>{{else}}<li class="mono{{if .Bad}} rc-bad{{end}}" id="yl-{{.N}}"><span class="rc-n">{{.N}}</span><span class="rc-t">{{.Text}}</span></li>{{end}}{{end}}</ol>{{end}}</div></section>
+{{else}}<section class="banner banner-ok" role="status">{{template "i" "i-check"}}<div class="grow stack-sm"><strong>It compiles.</strong> Changes below · save to write<pre class="raw rc-diff" tabindex="0" aria-label="The file's change">{{.Diff}}</pre></div></section>{{end}}{{end}}{{end}}
+<form class="stack-sm" method="post" action="/rules/change?c={{queryEsc $c.Ref}}#yaml"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="mode" value="raw"><input type="hidden" name="c" value="{{$c.Ref}}"><input type="hidden" name="base" value="{{if and $raw $raw.Plan}}{{$raw.Plan.Base}}{{else}}{{$c.Base}}{{end}}">
+<label class="lbl" for="yaml-text">{{tail $c.Path 60}}</label>
+<textarea class="input mono rc-text" id="yaml-text" name="text" rows="22" spellcheck="false" autocomplete="off" wrap="off">
+{{if $raw}}{{$raw.Text}}{{else}}{{$d.Text}}{{end}}</textarea>
+{{$ok := and $raw $raw.Plan $raw.Plan.Ack (not $raw.Plan.Err)}}{{if $ok}}{{template "nowrows" $raw.Now}}<div class="rc-free"><label class="rc-ack"><input type="checkbox" name="ack" value="{{$raw.Plan.Ack}}" required> I checked this text · it applies from the next run</label></div>{{end}}
+<div class="frow"><button class="btn" type="submit" name="step" value="check" formnovalidate data-page>{{template "i" "i-check"}}Check</button>{{if $ok}}<button class="btn" type="submit" name="step" value="save">Save the free edit</button>{{else}}<span class="soft">Check first</span>{{end}}</div>
+</form>
+{{end}}</div></details>
+{{end}}
+<div class="cli-pair"><span class="lbl">{{template "i" "i-terminal"}}Check the file in a terminal</span><div class="cli"><code>{{.Hint}}</code></div></div>
+{{end}}{{end}}{{end}}
+{{/* r-change is the lists and the history, a live region (the YAML editor is outside it, so a live update never touches its text). */}}
+{{define "r-change"}}{{with .Data}}{{if and .C (not .NotWritable)}}{{$d := .}}{{$c := .C}}
+{{with .ListsErr}}<section class="banner banner-warn" role="status">{{template "i" "i-triangle-alert"}}<div class="grow">The rules file's lists could not be read ({{.}}); fix it {{if $d.CanRaw}}in the YAML editor below or {{end}}in a terminal.</div></section>{{end}}
+<div class="rc-grid">{{range .Groups}}{{$g := .}}<section class="panel rc-g" aria-labelledby="rc-{{.Key}}"><div class="panel-head"><h2 id="rc-{{.Key}}">{{template "i" .Icon}}{{.Title}} <span class="soft">{{.Lede}}</span></h2></div>
+<div class="panel-body stack-sm">{{if .Entries}}<ul class="rc-entries">{{range .Entries}}<li><span class="mono rc-entry" title="{{.}}">{{template "pwp" (pieces (tilde .))}}</span><span class="rc-acts">{{if $g.Ask}}<form method="get" action="/rules/change/preview"><input type="hidden" name="c" value="{{$c.Ref}}"><input type="hidden" name="base" value="{{$c.Base}}"><input type="hidden" name="op" value="never"><input type="hidden" name="key" value="{{$g.Key}}"><input type="hidden" name="v" value="{{.}}"><button class="btn" type="submit" aria-label="Never allow {{.}}">{{template "i" "i-ban"}}Never allow</button></form>{{end}}<form method="get" action="/rules/change/preview"><input type="hidden" name="c" value="{{$c.Ref}}"><input type="hidden" name="base" value="{{$c.Base}}"><input type="hidden" name="op" value="remove"><input type="hidden" name="key" value="{{$g.Key}}"><input type="hidden" name="v" value="{{.}}"><button class="btn" type="submit" aria-label="Remove {{.}} from {{$g.Title}}">Remove</button></form></span></li>{{end}}</ul>{{else}}<p class="soft">{{if .Absent}}Not in this rules file.{{else}}No entries.{{end}}</p>{{end}}
+<form class="rc-add" method="get" action="/rules/change/preview"><input type="hidden" name="c" value="{{$c.Ref}}"><input type="hidden" name="base" value="{{$c.Base}}"><input type="hidden" name="op" value="add"><input type="hidden" name="key" value="{{.Key}}">
+<label class="sr" for="add-{{.Key}}">Add to {{.Title}}</label><input class="input mono" id="add-{{.Key}}" name="v" required maxlength="4096" autocomplete="off" spellcheck="false" placeholder="e.g. {{.Example}}" aria-describedby="hint-{{.Key}}"><button class="btn" type="submit">Add</button>
+<p class="rc-hint" id="hint-{{.Key}}">{{.Hint}}</p></form></div>
+<div class="panel-foot"><span class="mono soft">{{.Key}}</span></div></section>{{end}}</div>
+
+<section class="panel rc-history" aria-labelledby="h-hist"><div class="panel-head"><h2 id="h-hist">{{template "i" "i-scroll-text"}}History <span class="soft">Newest first</span></h2></div><div class="panel-body">
+{{with .HistoryErr}}<p class="soft">{{.}}</p>{{else}}{{template "history" .Hist}}{{end}}</div></section>
+{{end}}{{end}}{{end}}

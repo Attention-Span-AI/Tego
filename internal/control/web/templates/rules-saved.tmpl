@@ -1,0 +1,30 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* rules-saved: a change written or undone (rules_change.go, GET /rules/change/saved), shown with what it changed, the live outcomes, the .bak and Undo; the whole page is its live region. */}}
+{{define "content"}}<link rel="stylesheet" href="/static/rules.css"><link rel="stylesheet" href="/static/rules-change.css">{{$csrf := $.CSRF}}{{with .Data}}{{$d := .}}
+<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a class="link" href="/rules">Rules</a><span aria-hidden="true">/</span>{{if .Ref}}<a class="link" href="/rules/change?c={{queryEsc .Ref}}">Change rules</a><span aria-hidden="true">/</span>{{end}}<span>{{if .Reverted}}Undone{{else}}Saved{{end}}</span></nav>
+<h1>{{if .Reverted}}Undone{{else}}Saved{{end}}{{if .Agent}} · {{.Agent}}{{end}}</h1>
+{{if .Contract}}<p class="lede rules-ctx">In <span class="code-i" title="{{.Contract}}">{{tail .Contract 60}}</span>.</p>{{end}}</div>
+<div class="head-actions">{{if .Ref}}<a class="btn" href="/rules/change?c={{queryEsc .Ref}}">{{template "i" "i-scroll-text"}}Change more</a>{{end}}</div></div>
+
+{{with .Warn}}<section class="banner banner-warn" role="status">{{template "i" "i-triangle-alert"}}<div class="grow">Written, but: {{.}}</div></section>{{end}}
+
+{{with .Applied}}{{$p := .Plan}}
+<section class="banner banner-ok rc-saved" role="status" aria-labelledby="h-saved">{{template "i" "i-check"}}<div class="grow stack-sm"><h2 class="rp-h" id="h-saved">{{$d.Headline}}</h2>
+{{if $p.Raw}}<p>Whole file replaced</p>{{else}}<ul class="rp-list">{{range $p.Sentences}}<li>{{if .Before}}{{.Before}}{{else}}(nothing){{end}} → <strong>{{.After}}</strong> {{template "dir" .Direction}}</li>{{end}}</ul>{{end}}
+{{with .Bak}}<p class="soft">The old file is kept as <span class="mono">{{.}}</span>.</p>{{end}}</div></section>
+{{if or $d.Live $d.Next}}<section class="panel" aria-labelledby="h-live"><div class="panel-head"><h2 id="h-live">{{template "i" "i-activity"}}Running now</h2></div><ul class="panel-body rc-blocks rc-outs">{{range $d.Live}}
+<li class="rc-out"{{with .State}} data-state="{{.}}"{{end}}{{with .Title}} title="{{.}}"{{end}}>{{if .OK}}<span class="b {{.Class}} rc-chip">{{.Chip}}</span> <span title="{{.Block}}">{{.Words}}</span> <span class="soft">·</span> <span class="rc-outrun">{{.Before}}<a class="link mono" href="/rules?run={{queryEsc .Run}}" title="{{.Run}}">{{rid .Run}}</a>{{.After}}</span>{{else}}{{template "i" "i-triangle-alert"}} Not placed on run <span class="mono" title="{{.Run}}">{{rid .Run}}</span>{{with .Words}} (<span class="mono">{{.}}</span>){{end}}{{with .Err}}: {{.}}{{end}}; it applies from the next run.{{end}}</li>{{end}}{{range $d.Next}}
+<li class="rc-out" data-state="next"><span class="b b-neutral rc-chip">Next run</span> <span class="mono" title="{{.Run}}">{{rid .Run}}</span>{{with .Change}} <span class="soft">·</span> <span class="mono">{{.}}</span>{{end}}: {{if .FenceLift}}<span class="soft"><span title="Inside the run's fence: a lift gives it now (Tego's live layer, not the kernel)">liftable now</span></span> <a class="link" href="/rules?run={{queryEsc .Run}}#live-fence">Lift it on the Rules page</a>{{else}}<span class="soft">{{.Why}}</span>{{end}}</li>{{end}}
+</ul></section>{{end}}
+<details class="panel rules-raw"{{if $p.Raw}} open{{end}}><summary class="panel-head"><h2>The change in the YAML</h2><span class="soft">{{$p.Summary}}</span></summary><div class="panel-body"><pre class="raw rc-diff" tabindex="0" aria-label="The file's change">{{$p.Diff}}</pre></div></details>
+{{end}}
+{{with .Reverted}}<section class="banner banner-ok rc-saved" role="status">{{template "i" "i-check"}}<div class="grow stack-sm"><h2 class="rp-h">Undone · previous text restored</h2><p>The next run gets the old rules again {{template "dir" .Direction}}.{{with $d.UndoLive}} {{.}}{{end}}</p>{{with .Bak}}<p class="soft">Kept as <span class="mono">{{.}}</span>.</p>{{end}}</div></section>{{end}}
+
+{{if and .UndoID .Base}}<form class="panel rc-confirm" method="post" action="/rules/revert" aria-labelledby="h-undo"><div class="panel-head"><h2 id="h-undo">{{template "i" "i-rotate-cw"}}Undo</h2></div><div class="panel-body stack-sm">
+<input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="c" value="{{.Ref}}"><input type="hidden" name="id" value="{{.UndoID}}"><input type="hidden" name="base" value="{{.Base}}">
+{{if .UndoAck}}<label class="rc-ack"><input type="checkbox" name="ack" value="{{.UndoAckValue}}" required> I understand: undoing this lets the next run do more{{with .UndoWords}} again ({{.}}){{end}}.</label>{{with .UndoLift}}<label class="rc-ack"><input type="checkbox" name="lift" value="1" checked> <span>Also lift {{if eq (len .) 1}}the live block{{else}}the {{len .}} live blocks{{end}} this change placed{{range $i, $l := .}}{{if $i}};{{else}}:{{end}} <span title="{{$l.Block}}">{{$l.Words}}</span> on run <span class="mono" title="{{$l.Run}}">{{rid $l.Run}}</span>{{end}}. The run may do that again at once.</span></label>{{end}}{{end}}
+<div class="frow"><button class="btn" type="submit" data-page>{{template "i" "i-rotate-cw"}}Undo {{if .Reverted}}the undo{{else}}this change{{end}}</button></div></div></form>{{end}}
+
+{{if .Hist.Rows}}<section class="panel rc-history" aria-labelledby="h-hist"><div class="panel-head"><h2 id="h-hist">{{template "i" "i-scroll-text"}}History <span class="soft">newest first</span></h2></div><div class="panel-body">{{template "history" .Hist}}</div></section>{{end}}
+{{if .CLI}}<div class="cli-pair"><span class="lbl">{{template "i" "i-terminal"}}The same in a terminal</span>{{range .CLI}}<div class="cli"><code>{{.}}</code></div>{{end}}</div>{{end}}
+{{end}}{{end}}

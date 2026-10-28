@@ -1,0 +1,39 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* mcp-tools: the MCP tools page (ADR 0126 §6, mcp_tools.go): a run's MCP servers and live per-tool switches. */}}
+{{define "content"}}<link rel="stylesheet" href="/static/mcp.css">{{with .Data}}{{$d := .}}
+<div class="head"><div><h1>MCP tools</h1><p class="lede">Which tools of each MCP server an agent may call, decided by Tego's relay on every call. A switch applies to the next call and lasts for this run; the contract is not changed.</p></div></div>
+{{if .Runs}}
+<form class="mcp-pick" method="get" action="/mcp"><label for="mcp-run">Run</label>
+<select id="mcp-run" name="run">{{range .Runs}}<option value="{{.ID}}"{{if .Selected}} selected{{end}}>{{.Label}}{{if .Live}} · running{{end}}</option>{{end}}</select>
+<button class="btn" type="submit">Show</button></form>
+{{else}}
+<section class="panel"><div class="empty"><div class="glyph">{{template "i" "i-shield"}}</div><h3>No run declares an MCP server</h3><p>Add an <span class="mono">mcp:</span> entry with <span class="mono">tools:</span> to an agent's contract to see its tools here.</p></div></section>
+{{end}}
+{{with .Err}}<section class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow"><strong>{{.}}</strong></div></section>{{end}}
+{{with .State}}{{$st := .}}
+{{if not .Running}}<p class="soft mcp-note">This run has ended: its switches are shown as they stood, and nothing can be changed.</p>{{end}}
+{{if not .Broker}}<p class="soft mcp-note" id="mcp-nobroker">Ask is off: this run's contract has no <span class="mono">ask:</span> section, so no one could answer a held call.</p>{{end}}
+{{range .Servers}}{{$sv := .}}
+<section class="panel mcp-server" aria-labelledby="mcp-{{.Name}}">
+<div class="mcp-server-head"><h2 id="mcp-{{.Name}}">{{.Name}}</h2><span class="b b-neutral">{{.Transport}}</span>
+{{if .Relayed}}<span class="b b-verified">{{template "i" "i-shield"}}Behind Tego's relay</span>{{else}}<span class="b b-waiting">Not relayed: add <span class="mono">tools:</span> to this server in the contract to get switches</span>{{end}}</div>
+{{if .Tools}}
+<div class="mcp-table" role="table" aria-label="Tools of {{.Name}}">
+<div class="mcp-row mcp-row-head" role="row"><span role="columnheader">Tool</span><span role="columnheader">Contract says</span><span role="columnheader">Now</span><span role="columnheader" class="num">Calls</span><span role="columnheader" class="num">Refused</span><span role="columnheader" class="num">Asked</span></div>
+{{range .Tools}}{{$t := .}}
+<div class="mcp-row" role="row">
+<span role="cell" class="mono mcp-tool" title="{{.Rule}}">{{.Name}}</span>
+<span role="cell" class="mcp-contract"><span class="mcp-lbl">Contract says </span><span class="mcp-d mcp-d-{{.Contract}}">{{.Contract}}</span></span>
+<span role="cell" class="mcp-now">{{if and $sv.Relayed $st.Running}}<form method="post" action="/mcp/set" class="mcp-switch" aria-label="{{.Name}} on {{$sv.Name}}"><input type="hidden" name="csrf" value="{{$d.CSRF}}"><input type="hidden" name="run" value="{{$st.Run}}"><input type="hidden" name="server" value="{{$sv.Name}}"><input type="hidden" name="tool" value="{{.Name}}">
+<button type="submit" name="decision" value="allow" class="seg seg-allow" aria-pressed="{{if eq .Decision "allow"}}true{{else}}false{{end}}">Allow</button><button type="submit" name="decision" value="ask" class="seg seg-ask" aria-pressed="{{if eq .Decision "ask"}}true{{else}}false{{end}}"{{if not $st.Broker}} disabled title="This run has no approvals (no ask: section)" aria-describedby="mcp-nobroker"{{end}}>Ask</button><button type="submit" name="decision" value="deny" class="seg seg-deny" aria-pressed="{{if eq .Decision "deny"}}true{{else}}false{{end}}">Deny</button></form>{{if .Live}}<form method="post" action="/mcp/reset" class="mcp-reset"><input type="hidden" name="csrf" value="{{$d.CSRF}}"><input type="hidden" name="run" value="{{$st.Run}}"><input type="hidden" name="server" value="{{$sv.Name}}"><input type="hidden" name="tool" value="{{.Name}}"><button type="submit" class="link">Back to the contract</button></form>{{end}}
+{{else}}<span class="mcp-d mcp-d-{{.Decision}}">{{.Decision}}</span>{{end}}{{if .Live}} <span class="b b-live">live switch</span>{{end}}</span>
+<span role="cell" class="num"><span class="mcp-lbl">Calls </span>{{.Calls}}</span>
+<span role="cell" class="num"><span class="mcp-lbl">Refused </span>{{.Refused}}</span>
+<span role="cell" class="num"><span class="mcp-lbl">Asked </span>{{.Asked}}</span>
+</div>{{end}}
+</div>
+{{else}}<p class="soft">No tool seen yet: the list fills once the agent's client asks the server for its tools.</p>{{end}}
+</section>{{end}}
+<p class="soft mcp-note">A switch lasts for this run. Loosening one (to Allow, or Deny to Ask) asks you to check it first; tightening applies at once. To keep a rule for the next run, change the contract's <span class="mono">mcp[].tools</span>.</p>
+{{end}}
+{{end}}{{end}}

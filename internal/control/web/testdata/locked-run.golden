@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<noscript><meta http-equiv="refresh" content="3"></noscript>
+<title>fixture · run · Tego</title>
+<script src="/static/theme.js"></script>
+<script src="/static/live.js" defer></script>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/tokens.css">
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/mvp.css">
+<link rel="stylesheet" href="/static/signal.css">
+</head>
+<body data-sig="e3b0c44298fc" data-rev="H" data-title="fixture · run · Tego">
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="/" aria-label="Tego overview"><svg class="logo" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#logo"/></svg><span class="word">tego</span></a>
+  <span class="host" title="This computer: box">box</span>
+  <form class="gsearch" role="search" action="/logs" method="get">
+    <label class="sr" for="gq">Search</label><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-search"/></svg>
+    <input class="input" id="gq" type="search" name="q" value="" placeholder="Path, host, command or rule">
+  </form>
+  <div class="top-right">
+    <div class="lr" data-live="r-top" data-h="H"><span class="live"><span class="dot" aria-hidden="true"></span>Live</span></div>
+    <span class="theme" id="theme-w" hidden><label class="sr" for="theme">Colour theme</label><select class="select" id="theme" title="Colour theme"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></span>
+    <span class="b b-outline" title="This dashboard reads the ledger on this computer; it changes a run or a rules file only when you press a button that says so (Allow once, Deny, Block now, Stop run, Save)"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-eye"/></svg>On this computer</span>
+    <a class="b b-outline gl-link" href="/glossary" title="What the dashboard's words mean" aria-label="Glossary">?</a>
+    <a class="iconlink phone-only" href="/logs" aria-label="Search the logs"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-search"/></svg></a>
+  </div>
+</header>
+<div class="app">
+  <nav class="side" aria-label="Main">
+    <div class="lr" data-live="r-nav" data-h="H"><ul class="nav">
+      <li><a href="/"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-layout-dashboard"/></svg><span class="lbl">Overview</span></a></li>
+      <li><a href="/detections"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-triangle-alert"/></svg><span class="lbl">Detections</span></a></li>
+      <li><a href="/runs" aria-current="page"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-activity"/></svg><span class="lbl">Runs</span></a></li>
+      <li><a href="/approvals"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-inbox"/></svg><span class="lbl">Approvals</span></a></li>
+      <li><a href="/logs"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-scroll-text"/></svg><span class="lbl">Logs</span></a></li>
+      <li class="nav-rules"><a href="/rules"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-shield"/></svg><span class="lbl">Policies</span></a></li>
+      <li class="sep" role="separator"></li>
+      <li class="more-item"><a href="/machine"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-terminal"/></svg><span class="lbl">This machine</span></a></li>
+      
+      <li class="nav-more"><button type="button" popovertarget="more-menu"><span class="dots" aria-hidden="true">···</span><span>More</span></button><ul class="more-menu" id="more-menu" popover><li><a href="/rules"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-shield"/></svg>Policies</a></li><li><a href="/machine"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-terminal"/></svg>This machine</a></li></ul></li>
+    </ul></div>
+  </nav>
+  <main id="main" tabindex="-1">
+    <div class="page">
+<div class="lr" data-live="r-banner" data-h="H">
+
+</div>
+<div class="lr" data-live="r-run-top" data-h="H">
+<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a href="/runs">Runs</a></nav><h1>fixture</h1><div class="sub-h1"><span class="b b-running"><span class="dot" aria-hidden="true"></span>Running</span><span class="b b-origin b-origin-unknown" title="The record does not say how this run was started (an older ledger, or its input could not be examined).">Unknown</span><span class="mono">r-aaaaaaaa-0000000000006-askedx</span><span class="b b-neutral" title="Checked when the run ends"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-link"/></svg>Verify at end</span></div>
+<p class="run-who"><b title="Started by">Unknown user</b> · <time datetime="2026-10-26T12:00:00Z" title="2026-10-26 12:00:00.000 UTC">12:00:00 UTC</time> · <a class="link" href="/rules?run=r-aaaaaaaa-0000000000006-askedx" title="…PATH">Policy <span class="mono">…PATH</span></a></p></div><div class="head-actions"><a class="btn" href="/compare?a=r-aaaaaaaa-0000000000006-askedx"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-activity"/></svg>Compare</a><a class="btn" href="#block"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-ban"/></svg>Block now</a><span class="act-sep" aria-hidden="true"></span><a class="btn btn-danger" href="/runs/r-aaaaaaaa-0000000000006-askedx/stop"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-square"/></svg>Stop run</a></div></div>
+<section class="banner verdict verdict-neutral" role="status" aria-label="What happened in this run"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-check"/></svg><div class="grow"><p class="vt">No attack seen yet</p></div></section>
+
+
+
+
+</div><div class="lr" data-live="r-run-live" data-h="H"><link rel="stylesheet" href="/static/live.css">
+<details class="panel live-panel live-fold" id="block-fold"><summary class="live-fold-s"><h2 class="live-fold-h" id="h-block"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-ban"/></svg>Block now<span class="live-fold-c" aria-hidden="true"></span></h2><span class="soft live-fold-n">No live blocks on this run</span></summary>
+<div class="live-fold-b" id="block"><p class="soft">Applies to the next action; the contract file is unchanged. Remove allows again only what the contract allows.</p><div class="panel-body stack-lg"><form class="row" method="post" action="/runs/r-aaaaaaaa-0000000000006-askedx/block"><input type="hidden" name="csrf" value="CSRF">
+<label class="field">Kind<select class="select" name="kind"><option value="exec">Program</option><option value="net">Destination</option><option value="path">File or folder</option></select></label>
+<label class="field grow">Program, destination, or file or folder<input class="input" type="text" name="value" required maxlength="4096" value="" placeholder="curl, example.com:443, 127.0.0.1:8080, /home/you/.aws/"></label>
+<button class="btn btn-danger" type="submit"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-ban"/></svg>Block now</button></form>
+
+
+<div class="cli-pair"><span class="lbl">Same in a terminal</span><div class="cli cli-wrap"><code>tego block r-aaaaaaaa-0000000000006-askedx &lt;exec|net|path&gt; &lt;value&gt;</code></div><div class="cli cli-wrap"><code>tego block --list r-aaaaaaaa-0000000000006-askedx</code></div></div></div></div></details></div><div class="lr" data-live="r-run-hl" data-h="H">
+
+
+<section class="panel hl" aria-labelledby="h-hl">
+<div class="panel-head"><h2 id="h-hl">Highlights</h2><span class="sev-counts"><span class="sev sev-High">0 High</span> <span class="sev sev-Medium">0 Medium</span> <span class="sev sev-Low">0 Low</span></span></div>
+<div class="hl-grid">
+<section class="hl-sec hl-half" aria-labelledby="h-hl-s"><h3 id="h-hl-s"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-key-round"/></svg>Secrets <span class="n">0</span></h3>
+<p class="hl-none" title="Allowed reads are recorded only under record: full">No secrets touched</p>
+</section>
+<section class="hl-sec hl-half" aria-labelledby="h-hl-o"><h3 id="h-hl-o"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-activity"/></svg>Outbound <span class="n">1</span></h3>
+
+<ul class="hl-list"><li><a class="hl-what" href="/logs?q=api.example.com&amp;run=r-aaaaaaaa-0000000000006-askedx" title="Every line for api.example.com:443"><span class="ut">api.example.com:443</span></a><span class="hl-v"><span class="b b-allowed"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-check"/></svg>Allowed 1</span></span><span class="hl-tag">In policy</span></li></ul>
+
+
+
+</section>
+<section class="hl-sec hl-third" aria-labelledby="h-hl-a"><h3 id="h-hl-a"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-hand"/></svg>Approvals <span class="n">1</span></h3>
+<p class="hl-sum">1 denied</p>
+<ul class="hl-list"><li><a class="hl-what" href="/logs?q=q-0123456789abcdef0123456789abcdef&amp;run=r-aaaaaaaa-0000000000006-askedx"><span class="op">ask</span> </a><span class="b b-refused"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-ban"/></svg>Denied</span><span class="hl-why">by someone after 2 s</span></li></ul>
+
+
+
+</section>
+<section class="hl-sec hl-third" aria-labelledby="h-hl-b"><h3 id="h-hl-b"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-ban"/></svg>Live blocks <span class="n">0</span></h3>
+<p class="hl-none">None</p>
+
+</section>
+<section class="hl-sec hl-third" aria-labelledby="h-hl-p"><h3 id="h-hl-p"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-terminal"/></svg>Programs blocked <span class="n">0</span></h3>
+<p class="hl-none">None</p>
+</section>
+</div>
+</section>
+<details class="panel run-facts"><summary><span class="title">Run details</span><span class="soft">Basic · <span class="mono">…PATH</span> · started <time datetime="2026-10-26T12:00:00Z">12:00:00 UTC</time> · <span class="ck" data-since="2026-10-26T12:00:00Z" data-ck>0 ms</span></span></summary>
+<dl class="kv-cols">
+  <div><dt>Policy</dt><dd><span class="mono">…PATH</span></dd></div>
+  <div><dt>Protection</dt><dd>Basic</dd></div>
+  <div><dt>Started as</dt><dd>Unknown <span class="muted">· the record does not say</span></dd></div>
+  <div><dt>Started by</dt><dd><span class="muted">not recorded</span></dd></div>
+  <div><dt>Machine</dt><dd><span class="muted">not recorded</span></dd></div>
+  <div><dt>Rules version</dt><dd><span class="mono" title="sha256 of the contract this run enforced: 0000000000000000000000000000000000000000000000000000000000000000">00000000…PATH</span> <a class="link" href="/rules?run=r-aaaaaaaa-0000000000006-askedx">see the rules</a></dd></div>
+  <div><dt>Agent and recording</dt><dd>any program <span class="muted">· model traffic capture off</span></dd></div>
+  <div><dt>Tego build</dt><dd class="mono">—</dd></div>
+  <div><dt>Command</dt><dd class="mono">sh</dd></div>
+  <div><dt>Started</dt><dd><time datetime="2026-10-26T12:00:00Z" title="2026-10-26 12:00:00.000 UTC">12:00:00 UTC</time> · <span class="ck" data-since="2026-10-26T12:00:00Z" data-ck>0 ms</span> so far</dd></div>
+  <div><dt>Ended</dt><dd>Still running</dd></div>
+  <div><dt>Blocked</dt><dd><a class="n-link" href="/runs/r-aaaaaaaa-0000000000006-askedx/refusals">1 action</a></dd></div>
+  <div><dt>Asks</dt><dd>1</dd></div>
+  <div><dt>In the terminal</dt><dd class="mono">tego events r-aaaaaaaa-0000000000006-askedx --verify</dd></div>
+</dl></details>
+<nav class="tabs" aria-label="Run sections"><a href="/runs/r-aaaaaaaa-0000000000006-askedx" aria-current="page">Timeline <span class="n">6</span></a><a href="/runs/r-aaaaaaaa-0000000000006-askedx/refusals">Blocked <span class="n">1</span></a><a href="/runs/r-aaaaaaaa-0000000000006-askedx/processes">Processes</a><a href="/runs/r-aaaaaaaa-0000000000006-askedx/receipt">Receipt</a><a href="/runs/r-aaaaaaaa-0000000000006-askedx/least-privilege" title="The smallest policy change this run suggests">Tighten</a><a href="/runs/r-aaaaaaaa-0000000000006-askedx/unused" title="Rules this run never used">Unused</a></nav>
+</div>
+
+<section class="panel" aria-labelledby="h-tl"><div class="lr" data-live="r-tl-head" data-h="H"><div class="panel-head"><h2 id="h-tl">Timeline</h2><div class="row"><span class="live"><span class="dot" aria-hidden="true"></span>Live</span></div></div>
+<div class="panel-body row chips-row"><nav class="chips" aria-label="Show"><a class="chip" href="/runs/r-aaaaaaaa-0000000000006-askedx" aria-current="true">All 6</a><a class="chip" href="/runs/r-aaaaaaaa-0000000000006-askedx?verdict=refused">Blocked only</a><a class="chip" href="/logs?run=r-aaaaaaaa-0000000000006-askedx">Open in logs</a></nav></div></div>
+<div id="tl-rows" data-rows="/runs/r-aaaaaaaa-0000000000006-askedx/rows?after=" data-after="5"><div class="tl v-allowed" id="l5"><span class="time">12:00:05<a class="seq link" href="/runs/r-aaaaaaaa-0000000000006-askedx/lines/5" title="Details of line 5">#5</a></span><span class="kind"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-activity"/></svg></span><span class="what"><span><span class="op">connect</span><span class="ut" title="api.example.com (1.2.3.4:443)">api.example.com (1.2.3.4:<wbr>443)</span></span><span class="rule"><span class="clamp" title="A net line, seen by seccomp"><span title="net[api.example.com:443]">Host: api.example.com:443</span></span></span></span><span class="tl-end"><span class="row-acts"><a class="link row-act act-block" href="/runs/r-aaaaaaaa-0000000000006-askedx?block=net&amp;value=api.example.com%3A443#block" title="Block this program or destination on the running agent from now on">Block this</a></span><span class="b b-allowed"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-check"/></svg>Allowed</span></span></div><div class="tl v-allowed" id="l4"><span class="time">12:00:04<a class="seq link" href="/runs/r-aaaaaaaa-0000000000006-askedx/lines/4" title="Details of line 4">#4</a></span><span class="kind"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-terminal"/></svg></span><span class="what"><span><span class="op">run</span><span class="ut" title="git status">git status</span></span><span class="rule"><span class="clamp" title="A exec line, seen by seccomp"><span title="exec[git]">Program: git</span></span></span></span><span class="tl-end"><span class="row-acts"><a class="link row-act act-block" href="/runs/r-aaaaaaaa-0000000000006-askedx?block=exec&amp;value=git#block" title="Block this program or destination on the running agent from now on">Block this</a></span><span class="b b-allowed"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-check"/></svg>Allowed</span></span></div><div class="tl v-refused" id="l3" data-k="H"><span class="time">12:00:03<a class="seq link" href="/runs/r-aaaaaaaa-0000000000006-askedx/lines/3" title="Details of line 3">#3</a></span><span class="kind"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-scroll-text"/></svg></span><span class="what"><span><span class="op">read</span><span class="ut sp" title="…PATH"><span class="sp-d">…PATH</span><wbr><b class="sp-b">token</b></span></span><span class="rule"><span class="clamp" title="A fs line, seen by seccomp; reason code ask-denied"><span title="fs.ask_read[./vault/]">Ask first: ./vault/</span> · Denied</span></span></span><span class="tl-end"><span class="row-acts"><a class="link row-act" href="/runs/r-aaaaaaaa-0000000000006-askedx/lines/3#act" title="Block, ask or allow this next time">Make a rule</a></span><span class="b b-refused"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-ban"/></svg>Blocked</span></span></div><div class="tl v-neutral" id="l2"><span class="time">12:00:02<a class="seq link" href="/runs/r-aaaaaaaa-0000000000006-askedx/lines/2" title="Details of line 2">#2</a></span><span class="kind"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-hand"/></svg></span><span class="what"><span><span class="op">Answered</span><span class="ut" title="q-0123456789abcdef0123456789abcdef by uid:1000"><span class="nb">q-0123456789abcdef0123456789abcdef</span> by uid:<wbr>1000</span></span></span><span class="tl-end"><span class="row-acts"></span><span class="b b-neutral"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-eye"/></svg>Recorded</span></span></div><div class="tl v-neutral" id="l1"><span class="time">12:00:01<a class="seq link" href="/runs/r-aaaaaaaa-0000000000006-askedx/lines/1" title="Details of line 1">#1</a></span><span class="kind"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-hand"/></svg></span><span class="what"><span><span class="op">Asked a person to let a held open go on</span><span class="ut" title=""></span></span><span class="rule"><span class="clamp" title="A ask line, seen by supervisor"><span title="fs.ask_read[./vault/]">Ask first: ./vault/</span></span></span></span><span class="tl-end"><span class="row-acts"></span><span class="b b-neutral"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-eye"/></svg>Recorded</span></span></div><div class="tl v-neutral" id="l0"><span class="time">12:00:00<a class="seq link" href="/runs/r-aaaaaaaa-0000000000006-askedx/lines/0" title="Details of line 0">#0</a></span><span class="kind"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-square"/></svg></span><span class="what"><span><span class="op">Run started:</span><span class="ut" title="sh">sh</span></span></span><span class="tl-end"><span class="row-acts"></span><span class="b b-neutral"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-eye"/></svg>Recorded</span></span></div></div>
+<div class="lr" data-live="r-tl-foot" data-h="H"><div class="panel-foot"><span>6 rows (identical refusals folded), newest first</span><a class="btn" id="tl-older" href="/runs/r-aaaaaaaa-0000000000006-askedx?before=0" hidden>Older rows</a></div></div>
+</section>
+
+    </div>
+    <footer class="foot">
+      <span title="Every run's record, hash-chained and verified">Record <span class="mono">…PATH</span></span>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

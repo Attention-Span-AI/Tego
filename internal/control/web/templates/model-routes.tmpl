@@ -1,0 +1,34 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* model-routes: the Model routes page (ADR 0127, model_routes.go): a run's model endpoints and where their requests go. */}}
+{{define "content"}}<link rel="stylesheet" href="/static/routes.css">{{with .Data}}{{$d := .}}
+<div class="head"><div><h1>Model routes</h1><p class="lede">Where each model endpoint's requests go. A change applies to the next request and lasts for this run; only the backends the agent's contract declares can be chosen, and the agent never chooses.</p></div></div>
+{{if .Runs}}
+<form class="rt-pick" method="get" action="/routes"><label for="rt-run">Run</label>
+<select id="rt-run" name="run">{{range .Runs}}<option value="{{.ID}}"{{if .Selected}} selected{{end}}>{{.Label}}{{if .Live}} · running{{end}}</option>{{end}}</select>
+<button class="btn" type="submit">Show</button></form>
+{{else}}
+<section class="panel"><div class="empty"><div class="glyph">{{template "i" "i-link"}}</div><h3>No run declares a model route</h3><p>Add <span class="mono">routes:</span> to a <span class="mono">models:</span> entry of an agent's contract to see it here.</p></div></section>
+{{end}}
+{{with .Err}}<section class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow"><strong>{{.}}</strong></div></section>{{end}}
+{{with .State}}{{$st := .}}
+{{if not .Running}}<p class="soft rt-note">This run has ended: its routes are shown as they stood, and nothing can be changed.</p>{{end}}
+{{range $i, $m := .Models}}
+<section class="panel rt-model" aria-labelledby="rt-m{{$i}}">
+<div class="rt-head"><h2 id="rt-m{{$i}}" class="mono">{{.Endpoint}}</h2><span class="b b-neutral">{{.Provider}}</span>{{if ne .Route "direct"}}<span class="b b-widens">Rerouted</span>{{end}}</div>
+<p class="rt-now">Next request goes to <strong class="mono">{{.SendsTo}}</strong> by route <strong>{{.Route}}</strong>{{if .By}}<span class="soft"> · set by {{who .By}}{{with .At}}, {{stamp .}}{{end}}</span>{{end}}</p>
+{{if .Routed}}
+<ul class="rt-opts" aria-label="Routes of {{.Endpoint}}">
+{{range .Options}}<li class="rt-opt{{if .Current}} rt-current{{end}}">
+<span class="rt-name"><span class="mono">{{.Name}}</span>{{if eq .Name "direct"}} <span class="soft">the contract's endpoint</span>{{end}}</span>
+<span class="rt-auth mono">{{.Authority}}</span>
+<span class="rt-tls"><span class="b {{if .TLS}}b-verified{{else}}b-waiting{{end}}">{{if .TLS}}TLS, certificate checked{{else}}Plaintext, this machine{{end}}</span></span>
+<span class="rt-count"><span class="rt-lbl">Requests </span>{{.Requests}}</span>
+<span class="rt-act">{{if .Current}}<span class="b b-running">In use</span>{{else if $st.Running}}<form method="post" action="/routes/set"><input type="hidden" name="csrf" value="{{$d.CSRF}}"><input type="hidden" name="run" value="{{$st.Run}}"><input type="hidden" name="endpoint" value="{{$m.Endpoint}}"><input type="hidden" name="route" value="{{.Name}}"><button class="btn{{if eq .Name "direct"}} btn-primary{{end}}" type="submit">{{if eq .Name "direct"}}Back to direct{{else}}Send here{{end}}</button></form>{{end}}</span>
+</li>{{end}}
+</ul>
+{{else}}<p class="soft">No routes declared: add <span class="mono">routes:</span> to this <span class="mono">models:</span> entry in the contract to reroute it in a later run.</p>{{end}}
+{{with .Changes}}<details class="rt-hist"><summary>Changes in this run ({{len .}})</summary><ol>{{range .}}<li><span class="mono">{{.Route}}</span> → <span class="mono">{{.Authority}}</span> <span class="soft">by {{who .By}}, {{stamp .At}}</span></li>{{end}}</ol></details>{{end}}
+</section>{{end}}
+<p class="soft rt-note">Sending an endpoint elsewhere asks you to check it first; going back to direct applies at once. A request goes with its headers, so a key the agent holds itself goes to the route's backend too.{{with layerRouteNote}} {{.}}{{end}} To keep a route for the next run, change the contract.</p>
+{{end}}
+{{end}}{{end}}

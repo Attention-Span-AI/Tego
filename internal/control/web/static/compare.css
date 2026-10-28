@@ -1,0 +1,18 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* compare.css: Compare's headline, two stat blocks above the sentence (compare.go cmpStat), and its empty state.
+   Colours are tokens.css only: red is what left the machine, green what Tego stopped. The green block uses the
+   success tokens (the stopped tone's values), so reverting the colour-story commit alone leaves it intact. */
+.cmp-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.cmp-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: var(--space-3) var(--space-4); border: 1px solid var(--c-border); border-radius: var(--radius-lg); background: var(--c-surface); }
+.cmp-stat-k { font-size: var(--text-sm); color: var(--c-text2); }
+.cmp-stat-h { font-size: var(--text-xl); font-weight: var(--weight-semibold); line-height: var(--leading-tight); overflow-wrap: anywhere; }
+.cmp-stat-d { font-size: var(--text-sm); color: var(--c-text2); overflow-wrap: anywhere; }
+.cmp-stat-leak .cmp-stat-d { font-family: var(--font-mono); }
+.cmp-stat-leak { background: var(--c-danger-soft); border-color: transparent; box-shadow: inset 4px 0 0 var(--c-danger); }
+.cmp-stat-leak .cmp-stat-h { color: var(--c-danger); }
+.cmp-stat-ok { background: var(--c-stopped-soft); border-color: transparent; box-shadow: inset 4px 0 0 var(--c-stopped); }
+.cmp-stat-ok .cmp-stat-h { color: var(--c-stopped); }
+/* the full sentence stays, muted, under the two blocks */
+.cmp-sum.cmp-sum-quiet { border: 0; background: transparent; padding: 0 var(--space-1); font-size: var(--text-sm); color: var(--c-text2); }
+.cmp-none .cli-pair { width: min(100%, 520px); margin: var(--space-3) auto 0; text-align: left; }
+@media (max-width: 640px) { .cmp-stats { grid-template-columns: minmax(0, 1fr); } }
