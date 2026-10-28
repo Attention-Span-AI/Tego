@@ -1,0 +1,18 @@
+exec /bin/ls -> 0
+RUN: blocked live.block[exec:/bin/ls]
+The run's launcher puts it in force within about a second; check with: tego block --list RUN
+--
+exec /bin/ls -> 0
+RUN: already blocked live.block[exec:/bin/ls]
+--
+net Example.com:443 -> 0
+RUN: blocked live.block[net:example.com:443]
+The run's launcher puts it in force within about a second; check with: tego block --list RUN
+--
+exec /bin/ls -> 0
+RUN: block removed live.block[exec:/bin/ls]
+The run's launcher lifts it within about a second; what the contract refuses stays refused (tego block --list RUN).
+--
+exec /bin/ls -> 0
+RUN: was not blocked live.block[exec:/bin/ls]
+--
