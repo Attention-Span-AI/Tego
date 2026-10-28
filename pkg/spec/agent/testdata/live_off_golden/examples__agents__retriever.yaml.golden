@@ -1,0 +1,9 @@
+load:
+compile:
+error: $REPO/examples/agents/retriever.yaml:16:11: fs.write "/work/out/": parent /work does not exist (run creates only the entry itself) [path-missing]
+  fix: mkdir -p /work
+error: $REPO/examples/agents/retriever.yaml:18:11: fs.watch "/work/config/": /work/config does not exist [path-missing]
+  fix: create it or remove the entry; run refuses to start for a missing watch entry
+warning: $REPO/examples/agents/retriever.yaml:33:16: limits.stall_after counts only what the run records, and at tier landlock under record: summary a read is not recorded: an agent that does nothing but read for 10m is ended as stalled [stall-reads-unseen]
+  fix: set record: full, under which every read is a line, or pin a root tier (cgroup or bpflsm) with a stall_after of at least 10s, whose recorder counts reads in aggregates it flushes every 5s; or raise stall_after past the longest stretch of reading
+error: invalid contract: $REPO/examples/agents/retriever.yaml:16:11: fs.write "/work/out/": parent /work does not exist (run creates only the entry itself) [path-missing]

@@ -1,0 +1,17 @@
+{
+  "kind": "gap",
+  "minor": 21,
+  "payload": {
+    "what": "enforce",
+    "why": "live-block-added",
+    "live_block": {
+      "op": "add",
+      "kind": "exec",
+      "value": "curl",
+      "rule": "live.block[exec:curl]",
+      "by": "uid:1000 pid:51234 dashboard",
+      "serial": 1,
+      "at": "2026-10-27T12:03:00Z"
+    }
+  }
+}

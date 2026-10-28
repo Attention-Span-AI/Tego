@@ -1,0 +1,5 @@
+load:
+compile:
+error: $REPO/examples/agents/claude-code-interactive.yaml:45:11: fs.write "./" contains the contract file $REPO/examples/agents/claude-code-interactive.yaml; Landlock cannot deny beneath an allow [contradiction]
+  fix: move the contract and ledger_root outside every write entry, or narrow the entry
+error: invalid contract: write entry contains the run directory or the contract file: $REPO/examples/agents/claude-code-interactive.yaml:45:11: fs.write "./" contains the contract file $REPO/examples/agents/claude-code-interactive.yaml; Landlock cannot deny beneath an allow [contradiction]

@@ -1,0 +1,1 @@
+{"kind": "net", "minor": 25, "source": "forwarder", "rule": "credential[gone]", "verdict": "refused", "authority": "rule", "reason": "credential-unavailable", "payload": {"op": "http_request", "proto": "http", "dst": "127.0.0.1:41000", "credential": {"name": "gone"}}}

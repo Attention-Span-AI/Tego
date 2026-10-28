@@ -1,0 +1,1 @@
+{"kind": "ssl_request", "minor": 27, "source": "forwarder", "payload": {"endpoint": "anthropic", "method": "POST", "path": "/v1/messages", "host": "api.anthropic.com", "request_id": "x-1", "size": 120, "Route": {"name": "corp", "authority": "x:1"}}}

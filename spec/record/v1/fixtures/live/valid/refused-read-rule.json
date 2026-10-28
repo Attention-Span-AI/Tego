@@ -1,0 +1,11 @@
+{
+  "kind": "refused",
+  "minor": 24,
+  "rule": "live.block[read:/home/u/proj/.env]",
+  "payload": {
+    "op": "open",
+    "target": "/home/u/proj/.env",
+    "reason": "read-denied",
+    "rule": "live.block[read:/home/u/proj/.env]"
+  }
+}

@@ -1,0 +1,1 @@
+{"kind": "mcp", "minor": 25, "source": "proxy", "rule": "mcp[files].tools.deny[delete_file]", "verdict": "refused", "authority": "rule", "reason": "mcp-tool-denied", "payload": {"name": "files", "transport": "stdio", "tool": "delete_file"}}

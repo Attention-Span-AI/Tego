@@ -1,0 +1,7 @@
+load:
+compile:
+error: $REPO/examples/demo/contracts/codex.yaml:30:116: exec.allow "@@CODEXHOST@@/codex-code-mode-host": $REPO/examples/demo/contracts/@@CODEXHOST@@/codex-code-mode-host does not exist [path-missing]
+  fix: fix the path or name the binary by basename to search PATH
+warning: $REPO/examples/demo/contracts/codex.yaml:38:17: env.set CODEX_HOME is replaced by the run's own when the capture forwarder (capture: forwarder) serves an openai model; the contract's value only names the Codex config.toml the run copies [env-runtime-reserved]
+  fix: keep CODEX_HOME only to name that config, or set capture: off
+error: invalid contract: $REPO/examples/demo/contracts/codex.yaml:30:116: exec.allow "@@CODEXHOST@@/codex-code-mode-host": $REPO/examples/demo/contracts/@@CODEXHOST@@/codex-code-mode-host does not exist [path-missing]

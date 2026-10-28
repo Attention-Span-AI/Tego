@@ -1,0 +1,1 @@
+{"kind": "gap", "minor": 25, "source": "proxy", "payload": {"what": "enforce", "why": "mcp-tool-changed", "MCP_Tool": {"server": "files", "tool": "write_file", "decision": "deny", "by": "uid:1000 pid:51234 dashboard", "serial": 1, "at": "2026-10-27T12:03:00Z"}}}

@@ -1,0 +1,648 @@
+load:
+warning: $STARTER/deny-list-exec/agent.yaml:5:34: deny_read: [] disables the built-in list (~/.ssh, ~/.aws, ~/.netrc, ~/.gnupg, npm/git/gh/docker/kube/gcloud credentials, browser profiles, .env files) [deny-read-disabled]
+  fix: remove deny_read: to keep the built-in list
+compile:
+warning: $STARTER/deny-list-exec/agent.yaml:6:7: command rules read every image's #! line: at tier landlock, run unprivileged, the supervisor reads as the agent's user, so every exec of an image that user cannot read (an execute-only file, such as RHEL's sudo, mode 4111) is refused image-unreadable with EACCES, even an image no rule names (ADR 0048 R13); a supervisor running as root (sudo tego run, tiers cgroup and bpflsm) reads every image on a local file system, but an NFS export with root_squash serves it as the anonymous user and a FUSE mount without allow_other or allow_root refuses it [exec-rule-coverage]
+  fix: make such images readable by the agent's user, or run at a root tier
+warning: $STARTER/deny-list-exec/agent.yaml:6:7: exec: is a deny-list beside fs.write: the agent can write files and run them; a copy of git under another name is not git to these rules, and neither is a copy run from a memfd or from a file it deleted [exec-rule-coverage]
+  fix: restrict images with exec.allow (and a plane tier for native code under write entries, ADR 0027)
+warning: $STARTER/deny-list-exec/agent.yaml:6:7: best effort (exec.rules/argv): argv is copied unless the decision plane pins the run's execs (where doctor's exec pin cell, plane.exec_pin, passed in the plane's mode); on the fanotify fallback an allow is a copied fact; a refusal is exact, an allow is recorded in run_start best_effort and never counted as enforced (ADR 0048 (6)) [unenforced]
+  fix: bound effects with fs and net rules: command rules are launch rules
+warning: $STARTER/deny-list-exec/agent.yaml:6:7: best effort (exec.rules/argv): argv is copied unless the plane pins the run's execs (where doctor's exec pin cell, plane.exec_pin, passed in the plane's mode); a refusal is exact, an allow is recorded in run_start best_effort and never counted as enforced (ADR 0048 (6)) [unenforced]
+  fix: bound effects with fs and net rules: command rules are launch rules
+warning: $STARTER/deny-list-exec/agent.yaml:6:7: best effort (exec.rules/argv): argv is copied: the supervisor decides on its copy, and the kernel copies argv again after an allow; a refusal is exact, an allow is recorded in run_start best_effort and never counted as enforced (ADR 0048 (6)) [unenforced]
+  fix: bound effects with fs and net rules: command rules are launch rules
+table:
+{
+ "ExecCommands": [
+  {
+   "Notes": [
+    "generic reading: it over-matches (a letter inside another option's cluster, an abbreviation)"
+   ],
+   "Pattern": {
+    "Argv0": "",
+    "Bare": true,
+    "Command": "psql",
+    "Entry": "psql",
+    "List": 2,
+    "Operands": null,
+    "Opts": null,
+    "Path": null,
+    "Rest": false,
+    "Row": null,
+    "Runtime": "",
+    "Tool": "psql",
+    "Warnings": null,
+    "Words": null
+   },
+   "Pos": {
+    "Col": 15,
+    "File": "$STARTER/deny-list-exec/agent.yaml",
+    "Line": 6
+   }
+  },
+  {
+   "Notes": null,
+   "Pattern": {
+    "Argv0": "",
+    "Bare": false,
+    "Command": "rm",
+    "Entry": "rm -r",
+    "List": 2,
+    "Operands": null,
+    "Opts": [
+     {
+      "Depth": 0,
+      "HasValue": false,
+      "Long": "",
+      "Neg": false,
+      "Opt": null,
+      "Raw": "-r",
+      "Short": 114,
+      "Value": ""
+     }
+    ],
+    "Path": null,
+    "Rest": false,
+    "Row": null,
+    "Runtime": "",
+    "Tool": "rm",
+    "Warnings": null,
+    "Words": null
+   },
+   "Pos": {
+    "Col": 21,
+    "File": "$STARTER/deny-list-exec/agent.yaml",
+    "Line": 6
+   }
+  }
+ ],
+ "Table": {
+  "AbsentDenyRead": null,
+  "AskConfig": null,
+  "AskDenyWrite": null,
+  "AskReadRelaxes": null,
+  "Capture": "uprobe",
+  "Contract": {
+   "Ask": {
+    "Alias": null,
+    "Anchor": "",
+    "Column": 0,
+    "Content": null,
+    "FootComment": "",
+    "HeadComment": "",
+    "Kind": 0,
+    "Line": 0,
+    "LineComment": "",
+    "Style": 0,
+    "Tag": "",
+    "Value": ""
+   },
+   "Capture": "",
+   "Command": [
+    "python3",
+    "agent.py"
+   ],
+   "Containers": "",
+   "Credentials": null,
+   "Docker": {
+    "Alias": null,
+    "Anchor": "",
+    "Column": 0,
+    "Content": null,
+    "FootComment": "",
+    "HeadComment": "",
+    "Kind": 0,
+    "Line": 0,
+    "LineComment": "",
+    "Style": 0,
+    "Tag": "",
+    "Value": ""
+   },
+   "Env": {
+    "Deny": null,
+    "Mask": null,
+    "Pass": [
+     "PATH",
+     "HOME"
+    ],
+    "Set": null
+   },
+   "Exec": {
+    "Allow": null,
+    "Anonymous": false,
+    "Ask": null,
+    "Assurance": "",
+    "Deny": [
+     "psql",
+     "rm -r"
+    ],
+    "Privileged": null
+   },
+   "Extends": null,
+   "FS": {
+    "Ask": null,
+    "AskRead": null,
+    "Assurance": "",
+    "DenyRead": [],
+    "DenyWrite": null,
+    "Reads": "",
+    "Watch": null,
+    "Write": [
+     "./out/"
+    ]
+   },
+   "Gate": {
+    "Alias": null,
+    "Anchor": "",
+    "Column": 0,
+    "Content": null,
+    "FootComment": "",
+    "HeadComment": "",
+    "Kind": 0,
+    "Line": 0,
+    "LineComment": "",
+    "Style": 0,
+    "Tag": "",
+    "Value": ""
+   },
+   "Harness": "",
+   "HostSockets": false,
+   "IOUring": false,
+   "IPC": false,
+   "KeepDescendants": false,
+   "Keyring": false,
+   "Limits": {
+    "CPU": null,
+    "CPUWeight": null,
+    "CostUSD": null,
+    "Memory": null,
+    "MemoryHigh": null,
+    "Pids": null,
+    "Repeats": null,
+    "StallAfter": null,
+    "Tokens": null,
+    "Wall": null
+   },
+   "MCP": null,
+   "Models": null,
+   "Name": "deny-list-exec",
+   "Net": {
+    "Allow": [],
+    "Ask": null,
+    "Assurance": "",
+    "DNS": null,
+    "HTTP": null,
+    "Ingress": null,
+    "Limits": null,
+    "Listen": null,
+    "Proxy": null
+   },
+   "Prompt": "",
+   "Reason": null,
+   "Record": "",
+   "Revision": "",
+   "Setuid": false,
+   "Skills": null,
+   "Tier": "",
+   "Version": 0,
+   "Visibility": null
+  },
+  "ContractPath": "$STARTER/deny-list-exec/agent.yaml",
+  "DNS": {
+   "Allow": null,
+   "Cache": null,
+   "MaxParallel": 0,
+   "MaxStale": null,
+   "Mode": "system",
+   "Types": null
+  },
+  "DNSQueries": null,
+  "DeniedResolved": null,
+  "Deny": null,
+  "DenyReadPatterns": [
+   {
+    "Pattern": "$HOME/.ssh",
+    "Rule": "fs.deny_read[$HOME/.ssh]"
+   },
+   {
+    "Pattern": "$HOME/.aws",
+    "Rule": "fs.deny_read[$HOME/.aws]"
+   },
+   {
+    "Pattern": "$HOME/.netrc",
+    "Rule": "fs.deny_read[$HOME/.netrc]"
+   },
+   {
+    "Pattern": "$HOME/.gnupg",
+    "Rule": "fs.deny_read[$HOME/.gnupg]"
+   },
+   {
+    "Pattern": "$HOME/.npmrc",
+    "Rule": "fs.deny_read[$HOME/.npmrc]"
+   },
+   {
+    "Pattern": "$HOME/.git-credentials",
+    "Rule": "fs.deny_read[$HOME/.git-credentials]"
+   },
+   {
+    "Pattern": "$HOME/.config/gh",
+    "Rule": "fs.deny_read[$HOME/.config/gh]"
+   },
+   {
+    "Pattern": "$HOME/.docker/config.json",
+    "Rule": "fs.deny_read[$HOME/.docker/config.json]"
+   },
+   {
+    "Pattern": "$HOME/.kube/config",
+    "Rule": "fs.deny_read[$HOME/.kube/config]"
+   },
+   {
+    "Pattern": "$HOME/.config/gcloud",
+    "Rule": "fs.deny_read[$HOME/.config/gcloud]"
+   },
+   {
+    "Pattern": "$HOME/.claude/.credentials.json",
+    "Rule": "fs.deny_read[$HOME/.claude/.credentials.json]"
+   },
+   {
+    "Pattern": "$HOME/.claude.json",
+    "Rule": "fs.deny_read[$HOME/.claude.json]"
+   },
+   {
+    "Pattern": "$HOME/.claude/backups",
+    "Rule": "fs.deny_read[$HOME/.claude/backups]"
+   },
+   {
+    "Pattern": "$HOME/.codex/auth.json",
+    "Rule": "fs.deny_read[$HOME/.codex/auth.json]"
+   },
+   {
+    "Pattern": "$HOME/.gemini/oauth_creds.json",
+    "Rule": "fs.deny_read[$HOME/.gemini/oauth_creds.json]"
+   },
+   {
+    "Pattern": "$HOME/.gemini/.env",
+    "Rule": "fs.deny_read[$HOME/.gemini/.env]"
+   },
+   {
+    "Pattern": "$HOME/.gemini/mcp-oauth-tokens.json",
+    "Rule": "fs.deny_read[$HOME/.gemini/mcp-oauth-tokens.json]"
+   },
+   {
+    "Pattern": "$HOME/.copilot/config.json",
+    "Rule": "fs.deny_read[$HOME/.copilot/config.json]"
+   },
+   {
+    "Pattern": "$HOME/.copilot/mcp-oauth-config",
+    "Rule": "fs.deny_read[$HOME/.copilot/mcp-oauth-config]"
+   },
+   {
+    "Pattern": "$HOME/.copilot/mcp-secrets",
+    "Rule": "fs.deny_read[$HOME/.copilot/mcp-secrets]"
+   },
+   {
+    "Pattern": "$HOME/.azure",
+    "Rule": "fs.deny_read[$HOME/.azure]"
+   },
+   {
+    "Pattern": "$HOME/.config/op",
+    "Rule": "fs.deny_read[$HOME/.config/op]"
+   },
+   {
+    "Pattern": "$HOME/.password-store",
+    "Rule": "fs.deny_read[$HOME/.password-store]"
+   },
+   {
+    "Pattern": "$HOME/.pypirc",
+    "Rule": "fs.deny_read[$HOME/.pypirc]"
+   },
+   {
+    "Pattern": "$HOME/.cargo/credentials",
+    "Rule": "fs.deny_read[$HOME/.cargo/credentials]"
+   },
+   {
+    "Pattern": "$HOME/.cargo/credentials.toml",
+    "Rule": "fs.deny_read[$HOME/.cargo/credentials.toml]"
+   },
+   {
+    "Pattern": "$HOME/.terraform.d/credentials.tfrc.json",
+    "Rule": "fs.deny_read[$HOME/.terraform.d/credentials.tfrc.json]"
+   },
+   {
+    "Pattern": "$HOME/.vault-token",
+    "Rule": "fs.deny_read[$HOME/.vault-token]"
+   },
+   {
+    "Pattern": "$HOME/.pgpass",
+    "Rule": "fs.deny_read[$HOME/.pgpass]"
+   },
+   {
+    "Pattern": "$HOME/.mozilla/firefox",
+    "Rule": "fs.deny_read[$HOME/.mozilla/firefox]"
+   },
+   {
+    "Pattern": "$HOME/.config/google-chrome",
+    "Rule": "fs.deny_read[$HOME/.config/google-chrome]"
+   },
+   {
+    "Pattern": "$HOME/.config/chromium",
+    "Rule": "fs.deny_read[$HOME/.config/chromium]"
+   },
+   {
+    "Pattern": "$HOME/.config/BraveSoftware",
+    "Rule": "fs.deny_read[$HOME/.config/BraveSoftware]"
+   },
+   {
+    "Pattern": "$HOME/.config/microsoft-edge",
+    "Rule": "fs.deny_read[$HOME/.config/microsoft-edge]"
+   },
+   {
+    "Pattern": "$HOME/.config/vivaldi",
+    "Rule": "fs.deny_read[$HOME/.config/vivaldi]"
+   },
+   {
+    "Pattern": "$HOME/.config/opera",
+    "Rule": "fs.deny_read[$HOME/.config/opera]"
+   },
+   {
+    "Pattern": "$HOME/.config/google-chrome-beta",
+    "Rule": "fs.deny_read[$HOME/.config/google-chrome-beta]"
+   },
+   {
+    "Pattern": "$HOME/.config/google-chrome-unstable",
+    "Rule": "fs.deny_read[$HOME/.config/google-chrome-unstable]"
+   },
+   {
+    "Pattern": "$HOME/.config/microsoft-edge-beta",
+    "Rule": "fs.deny_read[$HOME/.config/microsoft-edge-beta]"
+   },
+   {
+    "Pattern": "$HOME/.config/microsoft-edge-dev",
+    "Rule": "fs.deny_read[$HOME/.config/microsoft-edge-dev]"
+   },
+   {
+    "Pattern": "$HOME/snap/firefox/common/.mozilla",
+    "Rule": "fs.deny_read[$HOME/snap/firefox/common/.mozilla]"
+   },
+   {
+    "Pattern": "$HOME/snap/chromium/common/chromium",
+    "Rule": "fs.deny_read[$HOME/snap/chromium/common/chromium]"
+   },
+   {
+    "Pattern": "$HOME/.var/app/org.mozilla.firefox",
+    "Rule": "fs.deny_read[$HOME/.var/app/org.mozilla.firefox]"
+   },
+   {
+    "Pattern": "$HOME/.var/app/org.chromium.Chromium",
+    "Rule": "fs.deny_read[$HOME/.var/app/org.chromium.Chromium]"
+   },
+   {
+    "Pattern": "$HOME/.var/app/com.google.Chrome",
+    "Rule": "fs.deny_read[$HOME/.var/app/com.google.Chrome]"
+   },
+   {
+    "Pattern": "$HOME/.var/app/com.brave.Browser",
+    "Rule": "fs.deny_read[$HOME/.var/app/com.brave.Browser]"
+   },
+   {
+    "Pattern": "$HOME/.var/app/com.microsoft.Edge",
+    "Rule": "fs.deny_read[$HOME/.var/app/com.microsoft.Edge]"
+   },
+   {
+    "Pattern": "$HOME/.var/app/com.vivaldi.Vivaldi",
+    "Rule": "fs.deny_read[$HOME/.var/app/com.vivaldi.Vivaldi]"
+   }
+  ],
+  "DenyWrite": [],
+  "DenyWriteLinked": null,
+  "Env": [
+   "PATH",
+   "HOME"
+  ],
+  "Exec": [
+   {
+    "Basename": "python3",
+    "ByName": true,
+    "Interp": "",
+    "IsDir": false,
+    "Path": "$BIN/python3",
+    "Pos": {
+     "Col": 11,
+     "File": "$STARTER/deny-list-exec/agent.yaml",
+     "Line": 3
+    },
+    "Raw": "python3",
+    "Resolved": "$BIN/python3",
+    "Runtime": "",
+    "Source": "command",
+    "Verdict": "allow"
+   }
+  ],
+  "ExecAssurance": "best-effort",
+  "ExecCommands": null,
+  "FS": [
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": false,
+    "Kind": "implicit",
+    "Missing": true,
+    "Path": "$HOME/.tego/runs",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "$HOME/.tego/runs",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": false,
+    "Kind": "implicit",
+    "Missing": false,
+    "Path": "$STARTER/deny-list-exec/agent.yaml",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": true,
+    "Resolved": "$STARTER/deny-list-exec/agent.yaml",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": false,
+    "Kind": "implicit",
+    "Missing": false,
+    "Path": "/sys/fs/cgroup",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/sys/fs/cgroup",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": false,
+    "Kind": "implicit",
+    "Missing": false,
+    "Path": "/sys/fs/bpf",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/sys/fs/bpf",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 65522,
+    "AskRead": false,
+    "BuiltIn": false,
+    "Kind": "write",
+    "Missing": true,
+    "Path": "$STARTER/deny-list-exec/out",
+    "Pos": {
+     "Col": 14,
+     "File": "$STARTER/deny-list-exec/agent.yaml",
+     "Line": 5
+    },
+    "Raw": "./out/",
+    "Regular": false,
+    "Resolved": "$STARTER/deny-list-exec/out",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   }
+  ],
+  "FSAsk": null,
+  "FSAssurance": "best-effort",
+  "Gate": null,
+  "HTTP": null,
+  "Harness": "generic",
+  "HarnessHook": null,
+  "Hash": [
+   144,
+   193,
+   120,
+   58,
+   160,
+   87,
+   29,
+   100,
+   58,
+   125,
+   153,
+   161,
+   35,
+   190,
+   129,
+   17,
+   44,
+   49,
+   89,
+   125,
+   81,
+   211,
+   85,
+   77,
+   40,
+   29,
+   82,
+   227,
+   16,
+   144,
+   175,
+   87
+  ],
+  "Home": "$HOME",
+  "Ingress": null,
+  "Limits": {
+   "CPU": "",
+   "CPUWeight": 0,
+   "CostUSD": 0,
+   "MemoryB": 0,
+   "MemoryHigh": 0,
+   "Pids": 0,
+   "Repeats": 0,
+   "Set": 0,
+   "StallAfter": 0,
+   "Tokens": 0,
+   "Wall": 0
+  },
+  "Listen": null,
+  "NameDeny": null,
+  "NameExempt": null,
+  "NameLeftOut": null,
+  "Net": [],
+  "NetAsk": [],
+  "NetAssurance": "best-effort",
+  "NetLimits": {
+   "Bytes": null,
+   "Connections": null,
+   "DatagramsPerSecond": null,
+   "PendingConnects": null
+  },
+  "OwnReadable": [
+   "$HOME/.config/tego/agents",
+   "$HOME/.config/tego/skills"
+  ],
+  "OwnState": [
+   "$HOME/.tego",
+   "$HOME/.tego/chain.log",
+   "$HOME/.tego/runs",
+   "/run/tego",
+   "$HOME/.tego/prices.yaml",
+   "$HOME/.tego/profiles"
+  ],
+  "PATH": "$BIN",
+  "Profiles": null,
+  "Proxy": null,
+  "Reach": [
+   "landlock",
+   "cgroup",
+   "bpflsm"
+  ],
+  "Reads": {
+   "Exempt": null,
+   "Mode": "auto",
+   "Names": null,
+   "Nested": null,
+   "Patterns": null
+  },
+  "ReasonReads": "auto",
+  "Record": "summary",
+  "RunCommandGrant": "",
+  "Set": null,
+  "Tier": "bpflsm",
+  "Workdir": ""
+ }
+}

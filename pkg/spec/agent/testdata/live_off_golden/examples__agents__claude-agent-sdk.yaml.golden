@@ -1,0 +1,7 @@
+load:
+compile:
+error: $REPO/examples/agents/claude-agent-sdk.yaml:37:11: exec.allow "./.deps/": $REPO/examples/agents/.deps does not exist [path-missing]
+  fix: fix the path or name the binary by basename to search PATH
+warning: $REPO/examples/agents/claude-agent-sdk.yaml:53:9: limits.wall 30m is a hard cap on the run's whole time: it ends the run at that mark even while the agent is working or the person is typing [wall-hard-cap]
+  fix: for an interactive session set limits.stall_after (the person's typing counts as activity) and keep wall for a bound on the whole job
+error: invalid contract: $REPO/examples/agents/claude-agent-sdk.yaml:37:11: exec.allow "./.deps/": $REPO/examples/agents/.deps does not exist [path-missing]

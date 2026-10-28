@@ -1,0 +1,11 @@
+{
+  "kind": "refused",
+  "minor": 23,
+  "rule": "live.block[write:/home/u/proj/src/]",
+  "payload": {
+    "op": "open",
+    "target": "/home/u/proj/.env",
+    "reason": "write-outside-contract",
+    "rule": "live.block[write:/home/u/proj/src/]"
+  }
+}

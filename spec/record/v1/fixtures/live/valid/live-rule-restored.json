@@ -1,0 +1,17 @@
+{
+  "kind": "gap",
+  "minor": 26,
+  "payload": {
+    "what": "enforce",
+    "why": "live-rule-restored",
+    "live_block": {
+      "op": "restore",
+      "kind": "net",
+      "value": "api.stripe.com:443",
+      "rule": "live.fence[net:api.stripe.com:443]",
+      "by": "uid:1000 pid:51234 dashboard",
+      "serial": 3,
+      "at": "2026-10-27T12:03:00Z"
+    }
+  }
+}

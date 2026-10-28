@@ -1,0 +1,18 @@
+{
+  "kind": "gap",
+  "minor": 26,
+  "payload": {
+    "what": "enforce",
+    "why": "live-lift-refused",
+    "live_block": {
+      "op": "lift",
+      "kind": "read",
+      "value": "/etc",
+      "rule": "live.fence[read:/etc]",
+      "by": "uid:1000 pid:51234 dashboard",
+      "serial": 3,
+      "at": "2026-10-27T12:03:00Z",
+      "refused": "outside-fence"
+    }
+  }
+}

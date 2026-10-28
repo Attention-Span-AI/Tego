@@ -1,0 +1,32 @@
+{
+  "kind": "run_start",
+  "minor": 26,
+  "payload": {
+    "record_minor": 26,
+    "tier": "cgroup",
+    "live_mode": "adjustable",
+    "live_fence": {
+      "sha256": "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
+      "entries": [
+        {
+          "kind": "read",
+          "value": "/home/u/billing-exports",
+          "source": "new",
+          "rule": "live.fence[read:/home/u/billing-exports]"
+        },
+        {
+          "kind": "net",
+          "value": "api.stripe.com:443",
+          "source": "new",
+          "rule": "live.fence[net:api.stripe.com:443]"
+        },
+        {
+          "kind": "exec",
+          "value": "/usr/bin/psql",
+          "source": "deny",
+          "rule": "live.fence[exec:/usr/bin/psql]"
+        }
+      ]
+    }
+  }
+}

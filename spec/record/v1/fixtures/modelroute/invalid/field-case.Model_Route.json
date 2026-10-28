@@ -1,0 +1,1 @@
+{"kind": "gap", "minor": 27, "source": "forwarder", "payload": {"what": "enforce", "why": "model-route-changed", "Model_Route": {"model": "api.anthropic.com:443", "route": "corp", "authority": "llm-proxy.corp.example:8443", "by": "uid:1000 pid:51234 dashboard", "serial": 1, "at": "2026-10-27T18:03:00Z"}}}

@@ -1,0 +1,8 @@
+{
+  "kind": "gap",
+  "minor": 24,
+  "payload": {
+    "what": "enforce",
+    "why": "live-block-removed"
+  }
+}

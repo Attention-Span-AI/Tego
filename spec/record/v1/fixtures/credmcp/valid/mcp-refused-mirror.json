@@ -1,0 +1,1 @@
+{"kind": "refused", "minor": 25, "source": "proxy", "rule": "mcp[files].live[write_file]", "reason": "mcp-tool-denied", "payload": {"op": "tools/call", "target": "files write_file", "reason": "mcp-tool-denied", "rule": "mcp[files].live[write_file]"}}

@@ -1,0 +1,20 @@
+load:
+warning: $REPO/pkg/spec/agent/testdata/good/warnings-only.yaml:10:24: fs.write entry "/work/out/" repeats entry 1 [redundant-rule]
+  fix: remove the duplicate
+warning: $REPO/pkg/spec/agent/testdata/good/warnings-only.yaml:11:14: deny_read: [] disables the built-in list (~/.ssh, ~/.aws, ~/.netrc, ~/.gnupg, npm/git/gh/docker/kube/gcloud credentials, browser profiles, .env files) [deny-read-disabled]
+  fix: remove deny_read: to keep the built-in list
+warning: $REPO/pkg/spec/agent/testdata/good/warnings-only.yaml:13:11: net.allow "api.anthropic.com:443" cannot grant direct access to the anthropic model when capture uses the forwarder [model-direct-bypass]
+  fix: remove it from net.allow; the forwarder reaches the model host on the run's behalf
+warning: $REPO/pkg/spec/agent/testdata/good/warnings-only.yaml:15:11: exec.allow "mcp-postgres" is already granted implicitly as the command of mcp "postgres" [redundant-rule]
+  fix: remove it from exec.allow
+warning: $REPO/pkg/spec/agent/testdata/good/warnings-only.yaml:17:18: env.pass LANG is removed again by env.deny [redundant-rule]
+  fix: drop it from one of the two lists
+warning: $REPO/pkg/spec/agent/testdata/good/warnings-only.yaml:21:16: stall_after 2h is longer than wall 1h and can never fire [redundant-rule]
+compile:
+error: $REPO/pkg/spec/agent/testdata/good/warnings-only.yaml:10:11: fs.write "/work/out": parent /work does not exist (run creates only the entry itself) [path-missing]
+  fix: mkdir -p /work
+error: $REPO/pkg/spec/agent/testdata/good/warnings-only.yaml:10:24: fs.write "/work/out/": parent /work does not exist (run creates only the entry itself) [path-missing]
+  fix: mkdir -p /work
+warning: $REPO/pkg/spec/agent/testdata/good/warnings-only.yaml:21:16: limits.stall_after counts only what the run records, and at tier landlock under record: summary a read is not recorded: an agent that does nothing but read for 2h is ended as stalled [stall-reads-unseen]
+  fix: set record: full, under which every read is a line, or pin a root tier (cgroup or bpflsm) with a stall_after of at least 10s, whose recorder counts reads in aggregates it flushes every 5s; or raise stall_after past the longest stretch of reading
+error: invalid contract: $REPO/pkg/spec/agent/testdata/good/warnings-only.yaml:10:11: fs.write "/work/out": parent /work does not exist (run creates only the entry itself) [path-missing]

@@ -1,0 +1,9 @@
+load:
+compile:
+warning: $REPO/examples/demo/contracts/always-on.yaml:9:10: fs.reads: held: the open deputy completes every read open of the run at every tier, each read open about 0.1 ms more, and a file a deny_read name rule covers is refused whenever it was made [held-reads]
+  fix: remove fs.reads: held to hold reads only where a deny_read target lies inside a write entry
+error: $REPO/examples/demo/contracts/always-on.yaml:10:15: fs.deny_read "../secrets/": $REPO/examples/demo/secrets does not exist [path-missing]
+  fix: create it or remove the entry; run refuses to start for a missing deny_read entry
+warning: $REPO/examples/demo/contracts/always-on.yaml:20:9: limits.wall 1h is a hard cap on the run's whole time: it ends the run at that mark even while the agent is working or the person is typing [wall-hard-cap]
+  fix: for an interactive session set limits.stall_after (the person's typing counts as activity) and keep wall for a bound on the whole job
+error: invalid contract: $REPO/examples/demo/contracts/always-on.yaml:10:15: fs.deny_read "../secrets/": $REPO/examples/demo/secrets does not exist [path-missing]
