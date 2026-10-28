@@ -1,0 +1,50 @@
+Rules in force for ext-agent
+File: $T/proj/agent.yaml
+Tier: landlock
+Note: Includes the rules of base/mini; their entries are marked as from a profile.
+
+Can read: Files the agent can open and read.
+  Can read any other file on this computer, except the ones under Never reads and Always on.
+
+Can change: Files and folders the agent can create, edit or delete.
+  - Can change files in ./build/  [Enforced by the operating system; profile $T/profiles/base/mini.yaml line 3]
+  - Can change files in ./out/  [Enforced by the operating system; line 7; editable]
+  - Can change /dev/null  [Enforced by the operating system; line 7; editable]
+  Cannot change anything else.
+
+Never reads: Files the agent can never open, whatever it tries.
+  - Can never read files in ./private/  [Enforced by the operating system; profile $T/profiles/base/mini.yaml line 4]
+
+Programs: The programs the agent can start.
+  - Can run git  [Enforced by the operating system; profile $T/profiles/base/mini.yaml line 6]
+  - Can run bash  [Enforced by the operating system; line 11; editable]
+  - Can run cat  [Enforced by the operating system; line 11; editable]
+  Cannot run any other program.
+
+Network: Where the agent can connect.
+  - Can connect to 127.0.0.1 on port 1  [Enforced: tego checks each connection; line 9; editable]
+  Cannot connect anywhere else.
+
+Settings it gets: Environment variables the agent starts with, by name. Values are never shown here.
+  Gets every variable in your shell, secrets included.
+
+Limits: When the run is stopped or slowed down.
+  No limits of its own: this computer's defaults apply.
+
+Always on: Protections every run gets, written in no rules file.
+  - Can never read the usual secret files: SSH and cloud keys, browser profiles, .env files and similar  [Enforced by the operating system; built in]
+  - Can never read or change tego's records of its runs  [Enforced by the operating system; built in]
+  - Cannot change its own rules file  [Enforced by the operating system; built in]
+  - Cannot gain root through sudo or other setuid programs  [Enforced by the operating system; built in]
+  - Writes every refusal and question to a record that cannot be changed unnoticed, and a summary of the rest  [built in]
+
+Rule keys:
+  change fs.write fs.write[./build/] enforced
+  change fs.write fs.write[./out/] enforced
+  change fs.write fs.write[/dev/null] enforced
+  never-read fs.deny_read fs.deny_read[./private/] enforced
+  programs exec.allow exec[git] enforced
+  programs exec.allow exec[bash] enforced
+  programs exec.allow exec[cat] enforced
+  network net.allow net[127.0.0.1:1] enforced
+  always-on built-in.deny_read fs.deny_read[$T/home/.ssh] enforced (+1 more)

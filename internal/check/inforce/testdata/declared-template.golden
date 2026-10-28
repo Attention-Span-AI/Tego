@@ -1,0 +1,126 @@
+Rules in force for supply-chain-codex-chatgpt
+File: codex-chatgpt.yaml
+Note: Read from the file as written: it does not compile now, so nothing here says what a run enforces.
+
+Can read: Files the agent can open and read.
+  Can read any other file on this computer, except the ones under Never reads and Always on.
+
+Can change: Files and folders the agent can create, edit or delete.
+  - Can change files in ./src/  [line 33; editable]
+  - Can change files in ./tests/  [line 33; editable]
+  - Can change files in ./vendor/  [line 33; editable]
+  - Can change files in ./tmp/  [line 33; editable]
+  - Can change /dev/null  [line 33; editable]
+  - Can change /dev/tty  [line 33; editable]
+  - Can change /dev/ptmx  [line 33; editable]
+  - Can change files in /dev/pts/  [line 33; editable]
+  - Can change files in @@CODEXHOME@@/  [line 33; editable]
+  Cannot change anything else.
+
+Asks you first: The agent waits until you answer on the dashboard.
+  - Asks you before it reads @@DENY_TOKEN@@  [line 37; editable]
+  - Asks you before it reads files in ./confidential/  [line 37; editable]
+  - Asks you before it changes files in ./held/  [line 38; editable]
+  If you do not answer within 5 minutes, the answer is no.
+
+Never reads: Files the agent can never open, whatever it tries.
+  - Can never read @@DENY_SSH@@  [line 36; editable]
+
+Programs: The programs the agent can start.
+  - Can run codex, the command it starts with  [line 25]
+  - Can run bash  [line 44; editable]
+  - Can run git  [line 45; editable]
+  - Can run env  [line 46; editable]
+  - Can run sh  [line 47; editable]
+  - Can run cat  [line 48; editable]
+  - Can run ls  [line 49; editable]
+  - Can run mkdir  [line 50; editable]
+  - Can run touch  [line 51; editable]
+  - Can run grep  [line 52; editable]
+  - Can run sed  [line 53; editable]
+  - Can run head  [line 54; editable]
+  - Can run tail  [line 55; editable]
+  - Can run find  [line 56; editable]
+  - Can run wc  [line 57; editable]
+  - Can run tr  [line 58; editable]
+  - Can run sort  [line 59; editable]
+  - Can run uname  [line 60; editable]
+  - Can run python3  [line 61; editable]
+  - Can run @@PYREAL@@  [line 62; editable]
+  - Can run codex-code-mode-host  [line 63; editable]
+  Cannot run any other program.
+
+Network: Where the agent can connect.
+  - Can connect to @@APIADDR@@ on any port  [line 71; editable]
+  - Can use the local socket /var/run/nscd/socket  [line 71; editable]
+  - Can connect to chatgpt.com on port 443  [line 71; editable]
+  - Can connect to auth.openai.com on port 443  [line 71; editable]
+  Cannot connect anywhere else.
+
+Settings it gets: Environment variables the agent starts with, by name. Values are never shown here.
+  - Gets PATH from your shell  [line 76]
+  - Gets HOME from your shell  [line 76]
+  - Gets LANG from your shell  [line 76]
+  - Gets TERM from your shell  [line 76]
+  - Gets COLORTERM from your shell  [line 76]
+  - Gets SERVICE_TOKEN from your shell  [line 76]
+  - Gets SC_SINK from your shell  [line 76]
+  - Gets SC_API from your shell  [line 76]
+  - Gets PYTHONPATH from your shell  [line 76]
+  - Gets CODEX_HOME, set in its rules  [line 78]
+  - Gets HISTFILE, set in its rules  [line 79]
+  - Gets TMPDIR, set in its rules  [line 80]
+  Every other variable in your shell, secrets included, is removed before it starts.
+
+Limits: When the run is stopped or slowed down.
+  - Can run at most 512 processes at once  [line 82]
+  - Can use at most 4 GiB of memory  [line 83]
+  - Is stopped after 2 hours  [line 84]
+
+Always on: Protections every run gets, written in no rules file.
+  - Can never read the usual secret files: SSH and cloud keys, browser profiles, .env files and similar  [built in]
+  - Can never change files that would run code outside the agent: git hooks, shell startup files and agent settings  [built in]
+  - Can never read or change tego's records of its runs  [built in]
+  - Cannot change its own rules file  [built in]
+  - Cannot gain root through sudo or other setuid programs  [built in]
+  - Writes every refusal and question to a record that cannot be changed unnoticed, and a summary of the rest  [built in]
+
+Rule keys:
+  change fs.write fs.write[./src/] none
+  change fs.write fs.write[./tests/] none
+  change fs.write fs.write[./vendor/] none
+  change fs.write fs.write[./tmp/] none
+  change fs.write fs.write[/dev/null] none
+  change fs.write fs.write[/dev/tty] none
+  change fs.write fs.write[/dev/ptmx] none
+  change fs.write fs.write[/dev/pts/] none
+  change fs.write fs.write[@@CODEXHOME@@/] none
+  ask fs.ask_read fs.ask_read[@@DENY_TOKEN@@] none
+  ask fs.ask_read fs.ask_read[./confidential/] none
+  ask fs.ask fs.ask[./held/] none
+  never-read fs.deny_read fs.deny_read[@@DENY_SSH@@] none
+  programs command exec[codex] none
+  programs exec.allow exec[bash] none
+  programs exec.allow exec[git] none
+  programs exec.allow exec[env] none
+  programs exec.allow exec[sh] none
+  programs exec.allow exec[cat] none
+  programs exec.allow exec[ls] none
+  programs exec.allow exec[mkdir] none
+  programs exec.allow exec[touch] none
+  programs exec.allow exec[grep] none
+  programs exec.allow exec[sed] none
+  programs exec.allow exec[head] none
+  programs exec.allow exec[tail] none
+  programs exec.allow exec[find] none
+  programs exec.allow exec[wc] none
+  programs exec.allow exec[tr] none
+  programs exec.allow exec[sort] none
+  programs exec.allow exec[uname] none
+  programs exec.allow exec[python3] none
+  programs exec.allow exec[@@PYREAL@@] none
+  programs exec.allow exec[@@CODEXHOST@@/codex-code-mode-host] none
+  network net.allow net[@@APIADDR@@] none
+  network net.allow net[unix:/var/run/nscd/socket] none
+  network net.allow net[tcp://chatgpt.com:443] none
+  network net.allow net[tcp://auth.openai.com:443] none

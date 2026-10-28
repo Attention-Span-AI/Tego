@@ -1,0 +1,45 @@
+Rules in force for my-agent
+File: $T/proj/agent.yaml
+Tier: landlock
+
+Can read: Files the agent can open and read.
+  Can read any other file on this computer, except the ones under Never reads and Always on.
+
+Can change: Files and folders the agent can create, edit or delete.
+  - Can change files in ./out/  [Enforced by the operating system; line 9; editable]
+  - Can change /dev/null  [Enforced by the operating system; line 9; editable]
+  Cannot change anything else.
+
+Programs: The programs the agent can start.
+  - Can run python3  [Enforced by the operating system; line 19; editable]
+  Cannot run any other program.
+
+Network: Where the agent can connect.
+  - Can reach its model service at api.anthropic.com on port 443  [Enforced: tego checks each connection; line 7]
+  Cannot connect anywhere else.
+
+Settings it gets: Environment variables the agent starts with, by name. Values are never shown here.
+  - Gets PATH from your shell  [Enforced: other variables are removed before the agent starts; line 23]
+  - Gets HOME from your shell  [Enforced: other variables are removed before the agent starts; line 23]
+  Every other variable in your shell, secrets included, is removed before it starts.
+
+Limits: When the run is stopped or slowed down.
+  - Can use at most 4 GiB of memory  [line 25]
+  - Can run at most 256 processes at once  [line 26]
+  - Is stopped after 1000000 model tokens  [line 27]
+  - Is stopped after 1 hour  [line 29]
+  - Is stopped when nothing happens for 10 minutes  [line 30]
+  - Is stopped when it repeats the same step 5 times in a row  [line 33]
+
+Always on: Protections every run gets, written in no rules file.
+  - Can never read the usual secret files: SSH and cloud keys, browser profiles, .env files and similar  [Enforced by the operating system; built in]
+  - Can never read or change tego's records of its runs  [Enforced by the operating system; built in]
+  - Cannot change its own rules file  [Enforced by the operating system; built in]
+  - Cannot gain root through sudo or other setuid programs  [Enforced by the operating system; built in]
+  - Writes every action to a record that cannot be changed unnoticed  [built in]
+
+Rule keys:
+  change fs.write fs.write[./out/] enforced
+  change fs.write fs.write[/dev/null] enforced
+  programs exec.allow exec[python3] enforced
+  always-on built-in.deny_read fs.deny_read[$T/home/.ssh] enforced (+1 more)
