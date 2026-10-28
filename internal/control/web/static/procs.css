@@ -1,0 +1,44 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* The run page's Processes tab (templates/procs.tmpl): the process tree as nested lists, each branch a <details>.
+   Colours are the tokens.css variables only, so both themes follow. */
+.pt-sum { margin: 0; }
+.pt-wrap { padding-top: var(--space-2); min-width: 0; }
+.pt { list-style: none; margin: 0; padding: 0; min-width: 0; }
+.pt .pt { margin-left: 9px; padding-left: var(--space-3); border-left: 1px solid var(--c-border); }
+.pt .pt.pt-flat { margin-left: 0; padding-left: 0; border-left: 0; } /* past depth 12 a chain stops indenting, so the page never scrolls sideways */
+.pt-n { min-width: 0; }
+.pt-n > details > summary { list-style: none; cursor: pointer; display: flex; align-items: flex-start; border-radius: var(--radius); }
+.pt-n > details > summary::-webkit-details-marker { display: none; }
+.pt-n > details > summary::before {
+  content: ""; flex: none; width: 0; height: 0; margin: 13px 6px 0 2px;
+  border-left: 5px solid var(--c-text3); border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  transition: transform 0.12s ease;
+}
+.pt-n > details[open] > summary::before { transform: rotate(90deg); }
+.pt-n > details > summary:hover { background: var(--c-sunken); }
+.pt-leaf { padding-left: 15px; }
+.pt-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-2); padding: 5px var(--space-2) 5px 0; min-width: 0; flex: 1 1 auto; }
+.pt-name { display: inline-flex; align-items: baseline; gap: var(--space-2); flex: none; max-width: 100%; }
+.pt-name b { font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+.pt-name .b { align-self: center; }
+.pt-unrec { color: var(--c-text2); font-style: italic; }
+.pt-cmd { flex: 1 1 160px; min-width: 0; color: var(--c-text2); font-size: var(--text-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pt-meta { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--space-3); font-size: var(--text-xs); color: var(--c-text2); }
+.pt-meta .b { height: 18px; }
+.pt-hosts { overflow-wrap: anywhere; }
+.pt-red { color: var(--c-stopped, var(--c-danger)); font-weight: var(--weight-medium); }
+.pt-bad > .pt-leaf > .pt-row .pt-name b, .pt-bad > details > summary .pt-name b { color: var(--c-stopped, var(--c-danger)); }
+.pt-bad > .pt-leaf, .pt-bad > details > summary { box-shadow: inset 2px 0 0 var(--c-control); }
+.pt-execs { flex: 1 0 100%; list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--text-xs); color: var(--c-text2); min-width: 0; }
+.pt-execs li { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.pt-x-w { flex: none; width: 2.6em; color: var(--c-text3); }
+.pt-x-c { flex: 0 1 auto; min-width: 0; color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pt-execs li > :not(.pt-x-c) { flex: none; }
+.pt-x-bad .pt-x-c { color: var(--c-stopped, var(--c-danger)); }
+.pt-execs .b { height: 18px; }
+.pt-more, .pt-cut { padding: 4px 0 4px 15px; font-size: var(--text-xs); margin: 0; }
+.pt-g > details > summary .xn { margin-left: 0; }
+@media (max-width: 600px) {
+  .pt .pt { margin-left: 5px; padding-left: var(--space-2); }
+  .pt-cmd { flex-basis: 100%; }
+}

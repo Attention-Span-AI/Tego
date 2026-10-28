@@ -1,0 +1,50 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* live.css: the run page's Block now panel (r-run-live, livechip.go). Each live block shows its state now as a badge
+   (app.css .b-*) with a plain line beside it. Colours come from tokens.css only, so light and dark both hold. */
+.live-list .live-st { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.live-list .lchip { white-space: nowrap; }
+.live-list .live-note { font-size: var(--text-sm); min-width: 0; overflow-wrap: anywhere; }
+.live-list li > .grow > span[title] { overflow-wrap: anywhere; }
+/* Waiting: a calm pulse on the badge while the run has not confirmed the block (about a second). */
+.live-list .lchip[data-state="waiting"]::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; vertical-align: 1px;
+  border-radius: var(--radius-full); background: currentColor; animation: live-pulse 1.2s ease-in-out infinite;
+}
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .live-list .lchip[data-state="waiting"]::before { animation: none; } }
+/* The run's pause (pause.go): the Pause and Resume buttons sit in the head's actions as forms, and a paused run says
+   who paused it and when in a calm banner under the head. */
+.head-actions > .head-form { display: inline-flex; margin: 0; }
+/* A Pause that cannot take yet says why under it, not only in its title (QA QU-19). */
+.head-actions > .pause-off { flex-direction: column; align-items: center; gap: 2px; }
+.pause-off .pause-why { font-size: var(--text-xs); white-space: nowrap; }
+.banner-paused { background: var(--c-info-soft); border-color: transparent; }
+.banner-paused svg { color: var(--c-info); flex: none; }
+.banner-paused .grow { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .head-actions > .head-form { flex: 1 1 auto; }
+  .head-actions > .head-form > .btn { width: 100%; }
+}
+/* The Block now value takes the room the row has, so its example placeholder is not cut (QA QU-19). */
+.live-panel form.row .field.grow { flex: 1 1 28rem; min-width: 0; }
+.live-panel .field.grow .input { width: 100%; }
+/* With no live block the panel is one line, "Block now ▸" (r-run-live): a fold whose summary reads as the panel's
+   head, so the verdict banner above it and Highlights below stay on the first screen. A click on the line, or the
+   header's Block now link (the fragment #block is inside the fold, which the browser opens for it), unfolds the form. */
+.live-fold > summary { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1) var(--space-4); min-height: 46px; padding: var(--space-2) var(--space-4); cursor: pointer; list-style: none; border-radius: var(--radius-lg); }
+.live-fold > summary::-webkit-details-marker { display: none; }
+.live-fold-h { display: inline-flex; align-items: center; gap: var(--space-2); }
+.live-fold-h > .i { color: var(--c-text3); }
+/* A disclosure chevron after the name, as on the other folds: right when shut, down when open. */
+.live-fold-c { width: 0.45em; height: 0.45em; margin-left: 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); }
+.live-fold[open] .live-fold-c { transform: rotate(45deg); margin-top: -3px; }
+.live-fold > summary:hover .live-fold-h { text-decoration: underline; }
+.live-fold-n { font-size: var(--text-sm); }
+.live-fold[open] > summary { border-bottom: 1px solid var(--c-border); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+.live-fold-b > p.soft { margin: var(--space-3) var(--space-4) 0; font-size: var(--text-sm); }
+/* The fragment lands under the sticky topbar with the fold's line still in view above the form. */
+#block { scroll-margin-top: calc(var(--topbar-h, 52px) + 64px); }
+@media (max-width: 640px) {
+  .live-fold > summary { padding: var(--space-2) var(--space-3); min-height: var(--target); }
+  .live-fold-b > p.soft { margin: var(--space-3) var(--space-3) 0; }
+}

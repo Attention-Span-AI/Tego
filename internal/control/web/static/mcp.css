@@ -1,0 +1,49 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* The MCP tools page and its preview (mcp-tools.tmpl, mcp-preview.tmpl). Colours from tokens.css, which carries
+   the light and dark values, so this file needs no theme of its own. */
+.mcp-pick { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-4); }
+.mcp-pick select { min-height: var(--control-h); max-width: 100%; min-width: 0; flex: 1 1 16rem;
+  background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border); border-radius: var(--radius-sm);
+  padding: 0 var(--space-2); font: inherit; }
+.mcp-note { margin: var(--space-2) 0 var(--space-4); }
+.mcp-server { margin-bottom: var(--space-5); padding: var(--space-4); }
+.mcp-preview { padding: var(--space-4); }
+.mcp-now .b-live { font-size: var(--text-xs); color: var(--c-info); background: var(--c-info-soft); border-radius: var(--radius-full); padding: 0 var(--space-2); }
+.mcp-server-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
+.mcp-server-head h2 { margin: 0; font-size: var(--text-lg); }
+.mcp-table { display: grid; gap: 0; }
+.mcp-row { display: grid; grid-template-columns: minmax(8rem, 1.4fr) 7rem minmax(15rem, 2fr) 4rem 4.5rem 4rem;
+  align-items: center; gap: var(--space-3); padding: var(--space-2) 0; border-top: 1px solid var(--c-border); }
+.mcp-row-head { border-top: 0; color: var(--c-text3); font-size: var(--text-sm); font-weight: var(--weight-medium); }
+.mcp-row .num { text-align: right; font-variant-numeric: tabular-nums; }
+.mcp-tool { overflow-wrap: anywhere; }
+.mcp-lbl { display: none; }
+.mcp-d { display: inline-block; padding: 0 var(--space-2); border-radius: var(--radius-full); font-size: var(--text-sm);
+  font-weight: var(--weight-medium); border: 1px solid var(--c-border); }
+.mcp-d-allow { background: var(--c-success-soft); color: var(--c-success); }
+.mcp-d-ask { background: var(--c-warn-soft); color: var(--c-warn); border-color: var(--c-warn-edge); }
+.mcp-d-deny { background: var(--c-danger-soft); color: var(--c-danger); border-color: var(--c-danger-edge); }
+.mcp-now { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.mcp-switch { display: inline-flex; border: 1px solid var(--c-border); border-radius: var(--radius-sm); overflow: hidden; }
+.mcp-switch .seg { min-height: var(--target); min-width: 3.5rem; padding: 0 var(--space-3); border: 0;
+  border-left: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text2); font: inherit; cursor: pointer; }
+.mcp-switch .seg:first-of-type { border-left: 0; }
+.mcp-switch .seg:focus-visible { outline: 2px solid var(--c-focus); outline-offset: -2px; }
+.mcp-switch .seg[disabled] { color: var(--c-text3); cursor: not-allowed; }
+.mcp-switch .seg-allow[aria-pressed="true"] { background: var(--c-success-soft); color: var(--c-success); font-weight: var(--weight-medium); }
+.mcp-switch .seg-ask[aria-pressed="true"] { background: var(--c-warn-soft); color: var(--c-warn); font-weight: var(--weight-medium); }
+.mcp-switch .seg-deny[aria-pressed="true"] { background: var(--c-danger-soft); color: var(--c-danger); font-weight: var(--weight-medium); }
+.mcp-switch .seg[aria-pressed="true"] { box-shadow: inset 0 -3px 0 currentColor; }
+.mcp-reset { display: inline; }
+.mcp-reset .link { background: none; border: 0; padding: 0; color: var(--c-link); text-decoration: underline; cursor: pointer; font: inherit; font-size: var(--text-sm); }
+.mcp-change { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-2) var(--space-4); margin: 0 0 var(--space-4); }
+.mcp-change dt { color: var(--c-text3); }
+.mcp-change dd { margin: 0; overflow-wrap: anywhere; }
+.mcp-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+@media (max-width: 760px) {
+  .mcp-row-head { display: none; }
+  .mcp-row { grid-template-columns: 1fr 1fr 1fr; gap: var(--space-2); }
+  .mcp-tool, .mcp-now, .mcp-contract { grid-column: 1 / -1; }
+  .mcp-row .num { text-align: left; }
+  .mcp-lbl { display: inline; color: var(--c-text3); }
+}

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+
+<title>Policy · fixture · Tego</title>
+<script src="/static/theme.js"></script>
+<script src="/static/live.js" defer></script>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/tokens.css">
+<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/mvp.css">
+<link rel="stylesheet" href="/static/signal.css">
+</head>
+<body data-sig="e3b0c44298fc" data-rev="H" data-title="Policy · fixture · Tego">
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="/" aria-label="Tego overview"><svg class="logo" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#logo"/></svg><span class="word">tego</span></a>
+  <span class="host" title="This computer: box">box</span>
+  <form class="gsearch" role="search" action="/logs" method="get">
+    <label class="sr" for="gq">Search</label><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-search"/></svg>
+    <input class="input" id="gq" type="search" name="q" value="" placeholder="Path, host, command or rule">
+  </form>
+  <div class="top-right">
+    <div class="lr" data-live="r-top" data-h="H"><span class="live"><span class="dot" aria-hidden="true"></span>Live</span></div>
+    <span class="theme" id="theme-w" hidden><label class="sr" for="theme">Colour theme</label><select class="select" id="theme" title="Colour theme"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select></span>
+    <span class="b b-outline" title="This dashboard reads the ledger on this computer; it changes a run or a rules file only when you press a button that says so (Allow once, Deny, Block now, Stop run, Save)"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-eye"/></svg>On this computer</span>
+    <a class="b b-outline gl-link" href="/glossary" title="What the dashboard's words mean" aria-label="Glossary">?</a>
+    <a class="iconlink phone-only" href="/logs" aria-label="Search the logs"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-search"/></svg></a>
+  </div>
+</header>
+<div class="app">
+  <nav class="side" aria-label="Main">
+    <div class="lr" data-live="r-nav" data-h="H"><ul class="nav">
+      <li><a href="/"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-layout-dashboard"/></svg><span class="lbl">Overview</span></a></li>
+      <li><a href="/detections"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-triangle-alert"/></svg><span class="lbl">Detections</span></a></li>
+      <li><a href="/runs"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-activity"/></svg><span class="lbl">Runs</span></a></li>
+      <li><a href="/approvals"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-inbox"/></svg><span class="lbl">Approvals</span></a></li>
+      <li><a href="/logs"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-scroll-text"/></svg><span class="lbl">Logs</span></a></li>
+      <li class="nav-rules"><a href="/rules" aria-current="page"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-shield"/></svg><span class="lbl">Policies</span></a></li>
+      <li class="sep" role="separator"></li>
+      <li class="more-item"><a href="/machine"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-terminal"/></svg><span class="lbl">This machine</span></a></li>
+      
+      <li class="nav-more"><button type="button" popovertarget="more-menu"><span class="dots" aria-hidden="true">···</span><span>More</span></button><ul class="more-menu" id="more-menu" popover><li><a href="/rules"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-shield"/></svg>Policies</a></li><li><a href="/machine"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-terminal"/></svg>This machine</a></li></ul></li>
+    </ul></div>
+  </nav>
+  <main id="main" tabindex="-1">
+    <div class="page">
+<div class="lr" data-live="r-banner" data-h="H">
+
+</div>
+<div class="lr" data-live="content" data-h="H"><link rel="stylesheet" href="/static/rules.css">
+
+<div class="head"><div><h1>Policy · fixture</h1>
+<p class="lede rules-ctx">Basic (Landlock) · run <a class="mono link" href="/runs/r-aaaaaaaa-0000000000006-askedx" title="r-aaaaaaaa-0000000000006-askedx">r-…PATH</a> · running · <span class="code-i" title="…PATH">…PATH</span></p></div>
+<div class="head-actions"><a class="btn btn-primary" href="/rules/change?c=…PATH"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-scroll-text"/></svg>Edit policy</a></div></div>
+
+<form class="frow rules-pick" action="/rules" method="get" aria-label="Choose the rules to show">
+  <label class="field rp-file">Policy file<select class="select" name="c"><option value="…PATH" selected>fixture · …PATH</option></select></label>
+  <label class="field rp-run">Run<select class="select" name="run"><option value="r-aaaaaaaa-0000000000006-askedx" selected>r-…PATH</option></select></label>
+  <button class="btn" type="submit">Show</button>
+</form>
+
+
+
+
+<p class="note"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-scroll-text"/></svg><span>Line numbers are the run&#39;s own copy of its rules: the rules file changed since the run started.</span></p>
+<p class="note"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-shield"/></svg><span>The run left no copy of its rules.</span></p>
+
+
+
+
+<section class="panel rules-g" aria-labelledby="g-read"><div class="panel-head"><h2 id="g-read"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-eye"/></svg>Can read <span class="soft">Files the agent can open and read.</span></h2></div>
+
+<div class="panel-foot rules-default"><span>Can read any other file on this computer, except the ones under Never reads and Always on.</span></div></section><section class="panel rules-g" aria-labelledby="g-change"><div class="panel-head"><h2 id="g-change"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-scroll-text"/></svg>Can change <span class="soft">Files and folders the agent can create, edit or delete.</span></h2></div>
+
+<div class="panel-foot rules-default"><span>Cannot change any file.</span></div></section><section class="panel rules-g" aria-labelledby="g-programs"><div class="panel-head"><h2 id="g-programs"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-terminal"/></svg>Programs <span class="soft">The programs the agent can start.</span></h2></div>
+
+<div class="panel-foot rules-default is-open"><span class="b b-asked" title="Wide open: a contract usually narrows this"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-triangle-alert"/></svg>Open</span><span>Can run any program.</span><a class="link r-narrow" href="/rules/change?c=…PATH">Narrow this</a></div></section><section class="panel rules-g" aria-labelledby="g-network"><div class="panel-head"><h2 id="g-network"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-activity"/></svg>Network <span class="soft">Where the agent can connect.</span></h2></div>
+
+<div class="panel-foot rules-default is-open"><span class="b b-asked" title="Wide open: a contract usually narrows this"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-triangle-alert"/></svg>Open</span><span>Can connect to any address. Other programs&#39; local sockets stay closed (see Always on).</span><a class="link r-narrow" href="/rules/change?c=…PATH">Narrow this</a></div></section><section class="panel rules-g" aria-labelledby="g-env"><div class="panel-head"><h2 id="g-env"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-key-round"/></svg>Settings it gets <span class="soft">Environment variables the agent starts with, by name. Values are never shown here.</span></h2></div>
+
+<div class="panel-foot rules-default is-open"><span class="b b-asked" title="Wide open: a contract usually narrows this"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-triangle-alert"/></svg>Open</span><span>Gets every variable in your shell, secrets included.</span><a class="link r-narrow" href="/rules/change?c=…PATH">Narrow this</a></div></section><section class="panel rules-g" aria-labelledby="g-limits"><div class="panel-head"><h2 id="g-limits"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-square"/></svg>Limits <span class="soft">When the run is stopped or slowed down.</span></h2></div>
+
+<div class="panel-foot rules-default"><span>No limits of its own: this computer&#39;s defaults apply.</span></div></section><section class="panel rules-g" aria-labelledby="g-always-on"><div class="panel-head"><h2 id="g-always-on"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-shield"/></svg>Always on <span class="soft">Protections every run gets, written in no rules file.</span></h2></div>
+<div class="tw"><table class="t t-rules" role="table"><caption class="sr">Always on: Protections every run gets, written in no rules file.</caption><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Rule</th><th scope="col" role="columnheader" class="c-effect">Effect</th><th scope="col" role="columnheader" class="c-enf" title="A blank cell: the operating system enforces the rule in full. Only the exceptions are named.">Enforced by <span class="th-sub">kernel unless noted</span></th><th scope="col" role="columnheader" class="c-hits num">In this run</th><th scope="col" role="columnheader" class="c-src">Source</th></tr></thead><tbody role="rowgroup">
+<tr role="row"><td role="cell" class="lead">Can never read the usual secret files: SSH and cloud keys, browser profiles, .env files and similar</td><td role="cell" data-label="Effect" class="c-effect"><span class="b b-refused"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-ban"/></svg>Refused</span></td><td role="cell" data-label="Enforced by" class="c-enf"><span class="zero">—</span></td><td role="cell" data-label="In this run" class="c-hits num"><span class="zero">No hits</span></td><td role="cell" data-label="Source" class="c-src"><span class="mono" title="built in">built in</span></td></tr>
+<tr role="row"><td role="cell" class="lead">Can never read or change tego&#39;s records of its runs</td><td role="cell" data-label="Effect" class="c-effect"><span class="b b-refused"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-ban"/></svg>Refused</span></td><td role="cell" data-label="Enforced by" class="c-enf"><span class="zero">—</span></td><td role="cell" data-label="In this run" class="c-hits num"><span class="zero">No hits</span></td><td role="cell" data-label="Source" class="c-src"><span class="mono" title="built in">built in</span></td></tr>
+<tr role="row"><td role="cell" class="lead">Cannot change its own rules file</td><td role="cell" data-label="Effect" class="c-effect"><span class="b b-refused"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-ban"/></svg>Refused</span></td><td role="cell" data-label="Enforced by" class="c-enf"><span class="zero">—</span></td><td role="cell" data-label="In this run" class="c-hits num"><span class="zero">No hits</span></td><td role="cell" data-label="Source" class="c-src"><span class="mono" title="built in">built in</span></td></tr>
+<tr role="row"><td role="cell" class="lead">Cannot reach other programs on this computer through their local sockets (Docker, ssh-agent, the desktop bus)</td><td role="cell" data-label="Effect" class="c-effect"><span class="b b-refused"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-ban"/></svg>Refused</span></td><td role="cell" data-label="Enforced by" class="c-enf"><span class="zero">—</span></td><td role="cell" data-label="In this run" class="c-hits num"><span class="zero">No hits</span></td><td role="cell" data-label="Source" class="c-src"><span class="mono" title="built in">built in</span></td></tr>
+<tr role="row"><td role="cell" class="lead">Cannot gain root through sudo or other setuid programs</td><td role="cell" data-label="Effect" class="c-effect"><span class="b b-refused"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-ban"/></svg>Refused</span></td><td role="cell" data-label="Enforced by" class="c-enf"><span class="zero">—</span></td><td role="cell" data-label="In this run" class="c-hits num"><span class="zero">No hits</span></td><td role="cell" data-label="Source" class="c-src"><span class="mono" title="built in">built in</span></td></tr>
+<tr role="row"><td role="cell" class="lead">Writes every refusal and question to a record that cannot be changed unnoticed, and a summary of the rest</td><td role="cell" data-label="Effect" class="c-effect"><span class="b b-neutral"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-eye"/></svg>Note</span></td><td role="cell" data-label="Enforced by" class="c-enf"><span class="zero">—</span></td><td role="cell" data-label="In this run" class="c-hits num"><span class="zero">No hits</span></td><td role="cell" data-label="Source" class="c-src"><span class="mono" title="built in">built in</span></td></tr>
+</tbody></table></div>
+</section>
+
+
+<details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>cd …PATH</code></div><div class="cli"><code>tego block --list r-aaaaaaaa-0000000000006-askedx</code></div></details>
+
+<details class="panel rules-raw"><summary class="panel-head"><h2>Policy file and compiled form</h2><span class="soft">YAML</span></summary>
+<div class="panel-body stack-lg">
+<dl class="kv">
+  <dt>Run copy</dt><dd><span class="muted">No copy recorded</span></dd>
+  
+  <dt>Policy file</dt><dd class="mono">…PATH</dd>
+  <dt>Directory</dt><dd class="mono">…PATH</dd>
+  <dt>In a terminal</dt><dd class="mono">cd …PATH</dd>
+</dl>
+
+
+<section class="banner banner-warn" role="status"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-triangle-alert"/></svg><div class="grow">the run left no contract.yaml</div></section>
+
+<p class="soft">Values hidden</p>
+</div></details>
+</div>
+    </div>
+    <footer class="foot">
+      <span title="Every run's record, hash-chained and verified">Record <span class="mono">…PATH</span></span>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

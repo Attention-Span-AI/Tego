@@ -1,0 +1,77 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* The Change rules pages (templates/rules-change, rules-preview, rules-saved): tokens only, no colour literal. */
+/* The cards pack into columns, each at its own height (UX-FINISH): a grid row stretched a short card into a tall
+   empty box beside a long one, and a dense grid still left the row's gap. A card never splits across columns. */
+.rc-grid { columns: 3 320px; column-gap: var(--space-4); margin-bottom: var(--space-4); }
+.rc-g { display: flex; flex-direction: column; min-width: 0; break-inside: avoid; margin-bottom: var(--space-4); }
+.rc-g .panel-body { flex: 1; }
+.rc-g .panel-head h2 { flex-wrap: wrap; row-gap: 2px; }
+/* A card's subtitle always sits under its title (r9 QU-7): inline beside a short title and under a long one, the
+   heads read unevenly across the columns. */
+.rc-g .panel-head h2 .soft { flex-basis: 100%; font-size: var(--text-xs); font-weight: 400; }
+.rc-g .panel-foot .mono { font-size: var(--text-xs); }
+.rc-entries { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.rc-entries li { display: flex; align-items: center; gap: var(--space-2); justify-content: space-between; padding: 2px 0; border-bottom: 1px solid var(--c-border); }
+.rc-entries li:last-child { border-bottom: 0; }
+/* An entry breaks after a "/" (pieces, <wbr>), and inside a name only when one name is wider than the card: with
+   overflow-wrap: anywhere its narrowest width was one letter, so the flex row squeezed it to a few letters a line. */
+.rc-entry { font-size: var(--text-sm); overflow-wrap: break-word; min-width: 0; }
+.rc-acts { display: inline-flex; gap: var(--space-1); flex: none; }
+.rc-acts form { margin: 0; }
+.rc-add { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin-top: var(--space-2); }
+.rc-add .input { flex: 1 1 180px; }
+.rc-hint { flex-basis: 100%; margin: 0; font-size: var(--text-xs); color: var(--c-text3); }
+.rc-files li { padding: var(--space-2) var(--space-4); overflow-wrap: anywhere; }
+.page > .panel.rc-history, .page > .panel.rc-raw, .page > .panel.rc-preview, .page > .panel.rc-confirm, .page > .banner, .page > .panel { margin-bottom: var(--space-4); }
+.rc-hist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.rc-hrow { display: flex; gap: var(--space-3); align-items: center; justify-content: space-between; flex-wrap: wrap; padding: var(--space-2) 0; border-bottom: 1px solid var(--c-border); }
+.rc-hrow:last-child { border-bottom: 0; }
+.rc-hmain { display: flex; flex-wrap: wrap; gap: 4px var(--space-2); align-items: center; min-width: 0; flex: 1 1 320px; overflow-wrap: anywhere; }
+.rc-when, .rc-hlive { font-size: var(--text-xs); }
+.rc-hlive { flex-basis: 100%; }
+.rc-undo { display: inline-flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; margin: 0; }
+.rc-ack-sm { font-size: var(--text-xs); color: var(--c-text2); display: inline-flex; gap: 4px; align-items: center; }
+.rc-dir { flex: none; }
+.rc-sent td { overflow-wrap: anywhere; }
+.rc-sent th.c-effect { width: 120px; }
+.rc-next { display: flex; gap: var(--space-2); align-items: flex-start; margin: 0; }
+/* The next-run sentence follows the Also apply now boxes: "in force on r-… within about a second" while one is
+   ticked, "Runs going on now keep the rules they started with" once none is (r9 QU-8). Without :has() it keeps the
+   ticked wording, which is how the page opens. */
+.rc-next-off { display: none; }
+main:not(:has(.rc-now input[name="now"]:checked)) .rc-next-on { display: none; }
+main:not(:has(.rc-now input[name="now"]:checked)) .rc-next-off { display: inline; }
+.rc-why .mono { font-size: var(--text-xs); }
+.rc-envnote .i { margin-right: 6px; vertical-align: -2px; }
+.rc-out { display: block; }
+.rc-out .rc-chip { margin-right: 2px; }
+.rc-why { margin: 0; font-size: var(--text-xs); overflow-wrap: anywhere; }
+.rc-now { border: 1px solid var(--c-border); border-radius: var(--radius); padding: var(--space-2) var(--space-3); margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.rc-now legend { font-size: var(--text-sm); font-weight: var(--weight-semibold); padding: 0 var(--space-1); }
+.rc-nowl { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; font-size: var(--text-sm); }
+.rc-nowl input, .rc-ack input, .rc-ack-sm input { accent-color: var(--c-primary); margin: 0; }
+.rc-blocks { margin: 2px 0 0; padding-left: var(--space-5); font-size: var(--text-xs); color: var(--c-text2); overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 2px; }
+.panel-body.rc-blocks { padding-left: var(--space-6); font-size: var(--text-sm); }
+.rc-widen { border: 1px solid var(--c-warn-edge); }
+.rc-widen p { margin: 0; overflow-wrap: anywhere; }
+.rc-ack { display: flex; gap: var(--space-2); align-items: flex-start; font-size: var(--text-sm); overflow-wrap: anywhere; }
+.rc-ack input { margin-top: 3px; flex: none; }
+.rc-diff { max-height: 420px; overflow: auto; }
+.rc-text { width: 100%; height: auto; min-height: 320px; padding: var(--space-2) var(--space-3); line-height: 1.6; font-size: var(--text-xs); white-space: pre; overflow: auto; resize: vertical; tab-size: 2; }
+.rc-free { border-top: 1px solid var(--c-border); padding-top: var(--space-2); }
+.rc-diags { margin: 0; padding-left: var(--space-4); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; font-size: var(--text-xs); }
+.rc-lines { list-style: none; margin: 0; padding: var(--space-2) 0; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius); font-size: var(--text-xs); overflow-x: auto; }
+.rc-lines li { display: flex; gap: var(--space-3); padding: 0 var(--space-3); white-space: pre; }
+.rc-lines .rc-n { color: var(--c-text3); min-width: 3ch; text-align: right; flex: none; user-select: none; }
+/* A line a compile diagnostic names is an error, not a refusal: it stays in the danger colours. */
+.rc-lines .rc-bad { background: var(--c-danger-soft); box-shadow: inset 3px 0 0 var(--c-danger-edge); }
+.rc-lines .rc-bad .rc-n { color: var(--c-danger); font-weight: var(--weight-semibold); }
+.rc-lines .rc-gap { color: var(--c-text3); padding-left: var(--space-5); }
+.rc-saved { margin-bottom: var(--space-4); }
+@media (max-width: 640px) {
+  .rc-grid { columns: 1; }
+  .rc-entries li { flex-wrap: wrap; }
+  .rc-acts { margin-left: auto; } /* beside a short entry, under a long one */
+  .rc-hrow .rc-undo, .rc-hrow .rc-undo .btn { width: 100%; }
+  .rc-confirm .frow .btn { flex: 1 1 100%; }
+}

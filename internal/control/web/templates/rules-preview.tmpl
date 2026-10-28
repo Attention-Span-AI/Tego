@@ -1,0 +1,37 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* rules-preview: one change planned and not written (rules_change.go): sentences, direction, also-now (and "Live now" for a widening inside a running Adjustable run's fence, ADR 0125), diff, terminal twin. Save posts as a plain form (data-page, live.js): a refused Save answers with this page planned again on the file as it is now, so its form carries that plan's base and ack, where a background post would leave the old ones in place and every later Save would be refused too. */}}
+{{define "content"}}<link rel="stylesheet" href="/static/rules.css"><link rel="stylesheet" href="/static/rules-change.css">{{$csrf := $.CSRF}}{{with .Data}}{{$d := .}}{{$p := .P}}{{$e := .Edit}}
+<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a class="link" href="/rules">Rules</a><span aria-hidden="true">/</span><a class="link" href="/rules/change?c={{queryEsc $p.Ref}}">Change rules</a><span aria-hidden="true">/</span><span>Check</span></nav>
+<h1>Check the change</h1>
+<p class="lede rules-ctx">For {{$p.Agent}}, in <span class="code-i" title="{{$p.Contract}}">{{tail $p.Contract 60}}</span> · nothing written yet</p></div></div>
+
+{{if $p.Stale}}<section class="banner banner-warn" role="status">{{template "i" "i-triangle-alert"}}<div class="grow">Changed since you opened it · checked as it is now</div></section>{{end}}
+
+{{if $p.Err}}<section class="panel"><div class="panel-body stack-sm">
+{{if $p.Nothing}}<p>{{template "i" "i-check"}} The rules file already says so: nothing to change.</p>{{else}}<p><strong>This change cannot be made.</strong> {{$p.Err}}</p>{{end}}
+<p><a class="btn" href="/rules/change?c={{queryEsc $p.Ref}}">Back to Change rules</a></p></div></section>
+{{else}}
+<section class="panel rc-preview" aria-labelledby="h-what"><div class="panel-head"><h2 id="h-what">What changes</h2>{{template "dir" $p.Direction}}</div>
+<div class="panel-body stack-sm">{{$mixed := eq $p.Direction "mixed"}}
+<div class="tw"><table class="t rc-sent" role="table"><caption class="sr">Before and after</caption><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Before</th><th scope="col" role="columnheader">After</th>{{if $mixed}}<th scope="col" role="columnheader" class="c-effect"><span class="sr">Direction</span></th>{{end}}</tr></thead><tbody role="rowgroup">{{range $p.Sentences}}
+<tr role="row"><td role="cell" data-label="Before">{{if .Before}}{{.Before}}{{else}}<span class="soft">(nothing)</span>{{end}}</td><td role="cell" data-label="After" class="lead">{{.After}}</td>{{if $mixed}}<td role="cell" class="c-effect">{{template "dir" .Direction}}</td>{{end}}</tr>{{end}}
+</tbody></table></div>
+<p class="rc-next">{{template "i" "i-scroll-text"}}<span><strong>From the next run</strong>{{if $d.NowOn}}<span class="rc-next-on"> With Also apply now ticked, it is {{if $d.NowRecorded}}recorded (not enforced){{else}}in force{{end}} on <span class="nb">{{$d.NowOn}}</span> within about a second.</span><span class="rc-next-off"> · running runs keep theirs</span>{{else}} Runs going on now keep the rules they started with.{{end}}</span></p>
+{{$fence := false}}{{range $p.Now}}{{if .FenceLift}}{{$fence = true}}{{end}}{{end}}{{if $fence}}<p class="rc-next rc-fence">{{template "i" "i-scroll-text"}}<span><strong>Live now (fence)</strong><span title="A running run lists this in its fence: lift it there now, for a while or the rest of the run. Tego's live layer enforces it, not the kernel.">Liftable now</span></span></p>{{end}}
+</div></section>
+
+<form class="panel rc-confirm" method="post" action="/rules/change" aria-labelledby="h-save"><div class="panel-head"><h2 id="h-save">Save</h2></div><div class="panel-body stack-sm">
+<input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="c" value="{{$p.Ref}}"><input type="hidden" name="base" value="{{$p.Base}}"><input type="hidden" name="op" value="{{$e.Op}}"><input type="hidden" name="key" value="{{$e.Key}}"><input type="hidden" name="v" value="{{$e.Entry}}">
+{{template "nowrows" $d.Now}}
+{{if $p.NeedsAck}}<section class="banner banner-warn rc-widen" role="alert" aria-labelledby="h-widen">{{template "i" "i-triangle-alert"}}<div class="grow stack-sm"><h3 class="rp-h" id="h-widen">{{if eq $p.Direction "widens"}}This lets the agent do more{{else}}This change cannot be read as only narrowing{{end}}</h3>
+<p>Next run can: <strong>{{$d.After}}</strong>.</p>
+<label class="rc-ack"><input type="checkbox" name="ack" value="{{$p.Ack}}" required> I understand: from its next run it {{if eq $p.Direction "widens"}}can do this{{else}}gets these rules{{end}} ({{$d.After}}).</label></div></section>
+<div class="frow"><button class="btn" type="submit" data-page>Save the wider rules</button><a class="btn btn-ghost" href="/rules/change?c={{queryEsc $p.Ref}}">Cancel</a></div>
+{{else}}<div class="frow"><button class="btn btn-primary" type="submit" data-page>{{template "i" "i-check"}}Save</button><a class="btn btn-ghost" href="/rules/change?c={{queryEsc $p.Ref}}">Cancel</a></div>{{end}}
+<p class="soft"><span title="Compiled before it is written; the old file is kept as .bak">Undo from History</span></p>
+</div></form>
+
+<details class="panel rules-raw"><summary class="panel-head"><h2>The change in the YAML</h2><span class="soft">{{$p.Summary}}</span></summary><div class="panel-body stack-sm">{{with $p.Why}}<p class="soft rc-why">Why it {{if eq $p.Direction "narrows"}}narrows{{else if eq $p.Direction "widens"}}widens{{else}}is mixed{{end}}: <span class="mono">{{.}}</span></p>{{end}}<pre class="raw rc-diff" tabindex="0" aria-label="The file's change">{{$p.Diff}}</pre></div></details>
+<div class="cli-pair"><span class="lbl">{{template "i" "i-terminal"}}The same in a terminal</span>{{with .CLINote}}<span class="soft">{{.}}:</span>{{end}}{{range .CLI}}<div class="cli"><code>{{.}}</code></div>{{end}}</div>
+{{end}}
+{{end}}{{end}}
