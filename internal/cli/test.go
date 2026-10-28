@@ -1,0 +1,78 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package cli
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+
+	"github.com/attention-span-ai/tego/internal/selftest"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
+	"github.com/attention-span-ai/tego/pkg/spec/identity"
+)
+
+func init() { register(cmdTest) }
+
+// cmdTest is `tego test [--json] [--tier <t>]` (ADR 0074): the self-check of this machine's enforcement. It runs
+// four harmless actions on decoys in a temporary folder, directly and under tego run, and reports each refusal with
+// the rule its run recorded. Exit 0 when every action was refused, 1 when one got through or went unrecorded, 2 on
+// usage, 125 when a check could not be judged or tego test could not run.
+func cmdTest() Command {
+	var asJSON bool
+	var tier string
+	return Command{
+		Name:    "test",
+		Summary: "self-check: four harmless actions on decoys, refused under tego run",
+		Usage:   "[--json] [--tier auto|landlock|cgroup|bpflsm]",
+		Flags: func(fs *flag.FlagSet) {
+			fs.BoolVar(&asJSON, "json", false, "print the report as one JSON object (schema tego.selftest/v1)")
+			fs.StringVar(&tier, "tier", "", "pin the tier of each run, as tego run --tier does")
+		},
+		Run: func(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
+			if fs.NArg() > 0 {
+				message(stderr, "", 0, 0, "tego test: takes no arguments", codeUsage)
+				return identity.ExitUsage // R25: usage error
+			}
+			switch tier {
+			case "", "auto", "landlock", "cgroup", "bpflsm":
+			default:
+				message(stderr, "", 0, 0, "tego test: --tier: one of auto, landlock, cgroup, bpflsm", codeUsage)
+				return identity.ExitUsage // R25: usage error
+			}
+			exe, err := os.Executable()
+			if err != nil {
+				message(stderr, "", 0, 0, "tego test: find this tego binary: "+err.Error(), codeIO)
+				return identity.ExitError // R25: tego's own failure
+			}
+			rep, err := selftest.Run(ctx, selftest.Options{Tego: exe, Tier: tier})
+			var ce *selftest.ConfigError
+			if errors.As(err, &ce) {
+				// The caller's $TEGO_CONFIG layer is one tego run refuses: the same sentence and code as tego run's.
+				line := identity.FormatMessage("", 0, 0, "tego test: "+ce.Error(), identity.CodeConfigUntrusted)
+				var ue *config.UntrustedError
+				if errors.As(err, &ue) {
+					line += " " + ue.Fix()
+				}
+				fmt.Fprintln(stderr, line)
+				return identity.ExitConfig // = 125 [config-untrusted]
+			}
+			if err != nil {
+				message(stderr, "", 0, 0, "tego test: "+err.Error(), codeIO)
+				return identity.ExitError // R25: tego's own failure
+			}
+			if asJSON {
+				err = rep.WriteJSON(stdout)
+			} else {
+				err = rep.WriteText(stdout)
+			}
+			if err != nil {
+				return identity.ExitError // R25: the report could not be written
+			}
+			return rep.ExitCode()
+		},
+	}
+}

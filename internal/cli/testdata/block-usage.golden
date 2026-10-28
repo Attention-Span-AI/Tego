@@ -1,0 +1,16 @@
+usage: tego block <run> <exec|net|path|read|write> <value> [--for D | --until T] | --list <run> [--json]
+  -for string
+    	a time limit after which the block ends by itself (45m, 72h, 3d, 1d12h, 7w)
+  -json
+    	with --list: print the blocks as JSON
+  -list
+    	list the run's live blocks instead of adding one
+  -until string
+    	a time limit at which the block ends by itself ("17:00", "tomorrow 09:00", "Fri 17:00", "2026-11-14 17:00")
+usage: tego unblock <run> <exec|net|path|read|write> <value> [--for D | --until T]
+  -for string
+    	a time limit after which the block refuses again (45m, 72h, 3d, 1d12h, 7w)
+  -until string
+    	a time limit at which the block refuses again ("17:00", "tomorrow 09:00", "Fri 17:00", "2026-11-14 17:00")
+  block      refuse a program, a destination or a path in a running run, now
+  unblock    remove a live block from a running run, for good or for a while

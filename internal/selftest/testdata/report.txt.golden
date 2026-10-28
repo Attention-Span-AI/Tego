@@ -1,0 +1,10 @@
+Tego self-check: 4 actions, 4 refused at tier landlock
+
+  ACTION                                               WITHOUT TEGO  UNDER TEGO  REFUSAL
+  read a fake SSH key in a fake home                   succeeded     refused     read-denied: fs.deny_read[<tmp>/work/home/.ssh/]
+  write a file outside the project's writable folder   succeeded     refused     write-outside-contract: no entry of the contract allows it
+  run a program the contract does not list             succeeded     refused     exec-not-allowed: no entry of the contract allows it
+  connect to a local port the contract does not allow  succeeded     refused     net-not-allowed: no entry of the contract allows it
+
+Each action works on this machine without Tego, and Tego refused and recorded every one.
+The actions ran on decoys in a temporary folder, removed now, and the four runs' records went there too.

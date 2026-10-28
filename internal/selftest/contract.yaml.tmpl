@@ -1,0 +1,18 @@
+# The contract tego test runs each check under (internal/selftest, ADR 0074). tego test fills in the paths of its
+# temporary tree and the tego binary; nothing here names a path outside that tree but the binary itself.
+version: 0
+name: tego-selftest
+command: [{{.Tego}}, "__check"]
+fs:
+  write: [{{.Out}}]               # the project's one writable folder; outside.txt lies beside the project
+  deny_read: [{{.SSH}}, {{.Env}}]  # the fake key and .env
+net:
+  allow: []                       # every destination refused, the owned loopback listener included
+exec:
+  allow: []                       # only the command itself (tego __check); the copy of /bin/true is not listed
+env:
+  pass: []
+limits:
+  wall: 1m
+record: full                      # tier landlock records refused reads only under record: full
+capture: off

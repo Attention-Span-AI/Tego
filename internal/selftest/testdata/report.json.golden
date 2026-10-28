@@ -1,0 +1,78 @@
+{
+  "schema": "tego.selftest/v1",
+  "tier": "landlock",
+  "actions": 4,
+  "refused": 4,
+  "verdict": "pass",
+  "dir": "/tmp/tego-selftest-123",
+  "checks": [
+    {
+      "name": "read-secret",
+      "action": "read a fake SSH key in a fake home",
+      "baseline": {
+        "result": "succeeded",
+        "detail": "read 115 bytes"
+      },
+      "under_tego": {
+        "result": "refused",
+        "run": "r-1",
+        "rule": "fs.deny_read[/tmp/tego-selftest-123/work/home/.ssh/]",
+        "reason": "read-denied",
+        "target": "/tmp/tego-selftest-123/work/home/.ssh/id_ed25519",
+        "match": "target",
+        "detail": "open /tmp/tego-selftest-123/work/home/.ssh/id_ed25519: permission denied"
+      }
+    },
+    {
+      "name": "write-outside",
+      "action": "write a file outside the project's writable folder",
+      "baseline": {
+        "result": "succeeded",
+        "detail": "wrote outside.txt"
+      },
+      "under_tego": {
+        "result": "refused",
+        "run": "r-2",
+        "rule": "unmatched",
+        "reason": "write-outside-contract",
+        "target": "/tmp/tego-selftest-123/work/outside.txt",
+        "match": "target",
+        "detail": "open /tmp/tego-selftest-123/work/outside.txt: permission denied"
+      }
+    },
+    {
+      "name": "run-unlisted",
+      "action": "run a program the contract does not list",
+      "baseline": {
+        "result": "succeeded",
+        "detail": "ran true"
+      },
+      "under_tego": {
+        "result": "refused",
+        "run": "r-3",
+        "rule": "unmatched",
+        "reason": "exec-not-allowed",
+        "target": "/tmp/tego-selftest-123/work/bin/true",
+        "match": "target",
+        "detail": "fork/exec /tmp/tego-selftest-123/work/bin/true: permission denied"
+      }
+    },
+    {
+      "name": "connect-unlisted",
+      "action": "connect to a local port the contract does not allow",
+      "baseline": {
+        "result": "succeeded",
+        "detail": "connected to 127.0.0.1:40000"
+      },
+      "under_tego": {
+        "result": "refused",
+        "run": "r-4",
+        "rule": "unmatched",
+        "reason": "net-not-allowed",
+        "target": "127.0.0.1:40000",
+        "match": "target",
+        "detail": "dial tcp 127.0.0.1:40000: connect: permission denied"
+      }
+    }
+  ]
+}
