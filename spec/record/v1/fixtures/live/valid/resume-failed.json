@@ -1,0 +1,14 @@
+{
+  "kind": "gap",
+  "minor": 24,
+  "payload": {
+    "what": "enforce",
+    "why": "resume-failed",
+    "live_control": {
+      "op": "resume",
+      "by": "uid:1000 pid:51302 cli",
+      "serial": 6,
+      "at": "2026-10-27T12:03:00Z"
+    }
+  }
+}

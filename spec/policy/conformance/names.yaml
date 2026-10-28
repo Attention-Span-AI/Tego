@@ -1,0 +1,213 @@
+# SPDX-License-Identifier: Apache-2.0
+# names: ADR 0043's name entries (C9's conformance space). The contract's deny_read is not [], so it carries the
+# built-in .env pair scoped to the project (D10): exact .env and prefix .env. with its four exceptions. The files
+# under `later` are written by the runner, a process outside the run, after the run compiled and filled its rules
+# (the await handshake), so no compile-time expansion holds them and only a name entry decides them: tier landlock
+# allows them (expansion only), the listener and its supervisor refuse them at tier cgroup, and the plane refuses them
+# (D7). A write entry declared at a file's own place exempts it (D3); a dependency directory between the scope and the
+# file takes it out of coverage (D4); a name entry never decides a directory, but a directory leaving coverage is
+# refused where name entries are enforced (D5).
+version: 2
+name: names
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./w/", "./.env.test", "./.env.read"]
+    deny_read: ["./secrets/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [w, w/sub, w/sub2, w/node_modules/p, w/node_modules/q, secrets]
+files:
+  .env.read: x
+  .env.test: x
+  secrets/k: s3cret
+  w/a.txt: x
+  w/b.txt: x
+  w/c.txt: x
+  w/plain.txt: x
+later:
+  w/.env: s3cret
+  w/.env.local: s3cret
+  w/.ENV.Prod: s3cret
+  w/.env.development: s3cret
+  w/.env.w: s3cret
+  w/.env.u: s3cret
+  w/.env.t: s3cret
+  w/.env.src: s3cret
+  w/.env.example: x
+  w/node_modules/q/.env.local: x
+  w/later.txt: x
+model:
+  write: [w, .env.test, .env.read]
+  deny_read: [secrets]
+  net_declared: true
+  names:
+    - {exact: .env, scopes: ["."]}
+    - {prefix: .env., except: [.env.example, .env.sample, .env.template, .env.dist], scopes: ["."]}
+cells:
+  - name: read-later-env
+    op: read
+    path: w/.env
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env]
+    source: ADR 0043 D1, D7 (a read of a covered file made after compile; tier landlock has the expansion only)
+  - name: read-later-env-local
+    op: read
+    path: w/.env.local
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env.*]
+    source: ADR 0043 D1, D7 (the built-in prefix entry)
+  - name: read-later-folded
+    op: read
+    path: w/.ENV.Prod
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env.*]
+    source: ADR 0043 D2 (ASCII case folding)
+  - name: read-checkout-created
+    op: read
+    path: w/.env.development
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env.*]
+    source: ADR 0043 D1, D7 (a file a checkout made after compile)
+  - name: read-later-plain
+    op: read
+    path: w/later.txt
+    want:
+      all: allow fs.write[./w/]
+    source: ADR 0043 D2 (a name no entry matches is decided as before)
+  - name: read-later-exception
+    op: read
+    path: w/.env.example
+    want:
+      all: allow fs.write[./w/]
+    source: ADR 0043 Terms (the built-in prefix entry's exceptions)
+  - name: read-beneath-dependency-dir
+    op: read
+    path: w/node_modules/q/.env.local
+    want:
+      all: allow fs.write[./w/]
+    source: ADR 0043 D4 (a dependency directory between the scope and the file)
+  - name: write-open-later
+    op: write-open
+    path: w/.env.w
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env.*]
+    source: ADR 0043 D1, D7 (a write-open of a covered file)
+  - name: create-covered
+    op: create
+    path: w/.env.new
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env.*]
+    source: ADR 0043 D1 (the creation refusal)
+  - name: create-exact-covered
+    op: create
+    path: w/sub2/.env
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env]
+    source: ADR 0043 D1 (the creation refusal, the exact entry)
+  - name: mknod-covered
+    op: mknod
+    path: w/.env.fifo
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env.*]
+    source: ADR 0043 D1 (mknod of a fifo at a covered name)
+  - name: symlink-covered
+    op: symlink
+    path: w/.env.sym
+    dest: plain.txt
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env.*]
+    source: ADR 0043 D1 (a symlink at a covered name)
+  - name: link-onto-covered
+    op: link
+    path: w/b.txt
+    dest: w/.env.link
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env.*]
+    source: ADR 0043 D1 (a hard link's new name)
+  - name: rename-onto-covered
+    op: rename
+    path: w/a.txt
+    dest: w/.env.moved
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env.*]
+    source: ADR 0043 D1 (a rename's destination)
+  - name: rename-from-covered
+    op: rename
+    path: w/.env.src
+    dest: w/plain-src.txt
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env.*]
+    source: ADR 0043 D1 (a rename of a covered file, its source end)
+  - name: unlink-later
+    op: unlink
+    path: w/.env.u
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env.*]
+    source: ADR 0043 D1 (unlink of a covered file)
+  - name: truncate-later
+    op: truncate
+    path: w/.env.t
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env.*]
+    source: ADR 0043 D1 (truncation by path)
+  - name: create-beneath-dependency-dir
+    op: create
+    path: w/node_modules/p/.env
+    want:
+      all: allow fs.write[./w/]
+    source: ADR 0043 D4 (a dependency directory between the scope and the file)
+  - name: mkdir-covered-name
+    op: mkdir
+    path: w/.env.d
+    want:
+      all: allow fs.write[./w/]
+    source: ADR 0043 D1 (a name entry never decides a directory)
+  - name: rename-dir-within
+    op: rename
+    path: w/sub2
+    dest: w/sub3
+    want:
+      all: allow fs.write[./w/]
+    source: ADR 0043 D5 (a directory renamed within its scopes)
+  - name: rename-dir-out-of-coverage
+    op: rename
+    path: w/sub
+    dest: w/node_modules/sub
+    want:
+      landlock: allow fs.write[./w/]
+      root: refused fs.deny_read[{{P}}/**/.env]
+    source: ADR 0043 D5 (a directory that passes beneath a dependency directory leaves coverage)
+  - name: exempt-write
+    op: write-open
+    path: .env.test
+    want:
+      all: allow fs.write[./.env.test]
+    source: ADR 0043 D3 (a write entry at the file's own place exempts it)
+  - name: exempt-read
+    op: read
+    path: .env.read
+    want:
+      all: allow fs.write[./.env.read]
+    source: ADR 0043 D3 (a write entry at the file's own place exempts it)

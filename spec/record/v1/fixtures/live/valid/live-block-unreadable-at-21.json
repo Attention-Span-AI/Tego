@@ -1,0 +1,8 @@
+{
+  "kind": "gap",
+  "minor": 21,
+  "payload": {
+    "what": "enforce",
+    "why": "live-block-unreadable"
+  }
+}

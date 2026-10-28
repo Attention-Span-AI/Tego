@@ -1,0 +1,17 @@
+{
+  "kind": "gap",
+  "minor": 26,
+  "payload": {
+    "what": "enforce",
+    "why": "live-lift-expired",
+    "live_block": {
+      "op": "expire",
+      "kind": "exec",
+      "value": "/usr/bin/psql",
+      "rule": "live.fence[exec:/usr/bin/psql]",
+      "by": "uid:1000 pid:51234 dashboard",
+      "serial": 3,
+      "at": "2026-10-27T12:03:00Z"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "kind": "refused",
+  "minor": 26,
+  "rule": "live.fence[read:/home/u/billing-exports]",
+  "payload": {
+    "op": "open",
+    "target": "/home/u/billing-exports/q3.csv",
+    "reason": "read-denied",
+    "rule": "live.fence[read:/home/u/billing-exports]"
+  }
+}

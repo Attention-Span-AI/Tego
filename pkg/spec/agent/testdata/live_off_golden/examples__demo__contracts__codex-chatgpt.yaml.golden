@@ -1,0 +1,9 @@
+load:
+compile:
+warning: $REPO/examples/demo/contracts/codex-chatgpt.yaml:29:10: fs.reads: held: the open deputy completes every read open of the run at every tier, each read open about 0.1 ms more, and a file a deny_read name rule covers is refused whenever it was made [held-reads]
+  fix: remove fs.reads: held to hold reads only where a deny_read target lies inside a write entry
+error: $REPO/examples/demo/contracts/codex-chatgpt.yaml:34:116: exec.allow "@@CODEXHOST@@/codex-code-mode-host": $REPO/examples/demo/contracts/@@CODEXHOST@@/codex-code-mode-host does not exist [path-missing]
+  fix: fix the path or name the binary by basename to search PATH
+warning: $REPO/examples/demo/contracts/codex-chatgpt.yaml:46:9: limits.wall 2h is a hard cap on the run's whole time: it ends the run at that mark even while the agent is working or the person is typing [wall-hard-cap]
+  fix: for an interactive session set limits.stall_after (the person's typing counts as activity) and keep wall for a bound on the whole job
+error: invalid contract: $REPO/examples/demo/contracts/codex-chatgpt.yaml:34:116: exec.allow "@@CODEXHOST@@/codex-code-mode-host": $REPO/examples/demo/contracts/@@CODEXHOST@@/codex-code-mode-host does not exist [path-missing]

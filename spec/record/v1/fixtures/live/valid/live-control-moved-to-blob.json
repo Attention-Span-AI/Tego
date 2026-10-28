@@ -1,0 +1,9 @@
+{
+  "kind": "gap",
+  "minor": 24,
+  "payload": {
+    "what": "enforce",
+    "why": "run-paused",
+    "live_control_blob": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+  }
+}

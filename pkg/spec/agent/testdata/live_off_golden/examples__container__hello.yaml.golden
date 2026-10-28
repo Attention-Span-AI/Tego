@@ -1,0 +1,9 @@
+load:
+compile:
+error: $REPO/examples/container/hello.yaml:10:11: command "/usr/local/share/tego/hello-agent.sh": /usr/local/share/tego/hello-agent.sh does not exist [path-missing]
+  fix: fix the path or name the binary by basename to search PATH
+error: $REPO/examples/container/hello.yaml:13:11: fs.write "/work/out/": parent /work does not exist (run creates only the entry itself) [path-missing]
+  fix: mkdir -p /work
+error: $REPO/examples/container/hello.yaml:15:11: exec.allow "/usr/local/share/tego/hello-agent.sh": /usr/local/share/tego/hello-agent.sh does not exist [path-missing]
+  fix: fix the path or name the binary by basename to search PATH
+error: invalid contract: $REPO/examples/container/hello.yaml:10:11: command "/usr/local/share/tego/hello-agent.sh": /usr/local/share/tego/hello-agent.sh does not exist [path-missing]

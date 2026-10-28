@@ -1,0 +1,11 @@
+{
+  "kind": "refused",
+  "minor": 25,
+  "rule": "live.fence[read:/srv/x]",
+  "payload": {
+    "op": "open",
+    "target": "/srv/x/a",
+    "reason": "read-denied",
+    "rule": "live.fence[read:/srv/x]"
+  }
+}

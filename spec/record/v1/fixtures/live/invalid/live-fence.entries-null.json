@@ -1,0 +1,13 @@
+{
+  "kind": "run_start",
+  "minor": 26,
+  "payload": {
+    "record_minor": 26,
+    "tier": "cgroup",
+    "live_mode": "adjustable",
+    "live_fence": {
+      "sha256": "abababababababababababababababababababababababababababababababab",
+      "entries": null
+    }
+  }
+}

@@ -1,0 +1,7 @@
+load:
+compile:
+error: $REPO/examples/agents/codex-chatgpt.yaml:44:73: fs.write "/home/USER/.local/share/tego/codex-chatgpt/": parent /home/USER does not exist (run creates only the entry itself) [path-missing]
+  fix: mkdir -p /home/USER/.local/share/tego
+error: $REPO/examples/agents/codex-chatgpt.yaml:52:116: exec.allow "/CHANGE/codex-code-mode-host": /CHANGE/codex-code-mode-host does not exist [path-missing]
+  fix: fix the path or name the binary by basename to search PATH
+error: invalid contract: $REPO/examples/agents/codex-chatgpt.yaml:44:73: fs.write "/home/USER/.local/share/tego/codex-chatgpt/": parent /home/USER does not exist (run creates only the entry itself) [path-missing]

@@ -1,0 +1,17 @@
+{
+  "kind": "gap",
+  "minor": 24,
+  "payload": {
+    "what": "enforce",
+    "why": "live-block-removed",
+    "live_block": {
+      "op": "remove",
+      "kind": "write",
+      "value": "/home/u/proj/src/",
+      "rule": "live.block[write:/home/u/proj/src/]",
+      "by": "uid:1000 pid:51234 dashboard",
+      "serial": 2,
+      "at": "2026-10-27T12:03:00Z"
+    }
+  }
+}

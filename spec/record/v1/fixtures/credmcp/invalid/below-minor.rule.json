@@ -1,0 +1,1 @@
+{"kind": "mcp", "minor": 24, "source": "proxy", "rule": "mcp[files].tools.allow", "verdict": "allow", "authority": "rule", "payload": {"name": "files", "transport": "stdio", "tool": "read_file"}}

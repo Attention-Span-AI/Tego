@@ -1,0 +1,1275 @@
+load:
+compile:
+warning: $REPO/examples/agents/claude-code.yaml:73:9: limits.wall 30m is a hard cap on the run's whole time: it ends the run at that mark even while the agent is working or the person is typing [wall-hard-cap]
+  fix: for an interactive session set limits.stall_after (the person's typing counts as activity) and keep wall for a bound on the whole job
+table:
+{
+ "ExecCommands": null,
+ "Table": {
+  "AbsentDenyRead": [
+   {
+    "At": "$HOME/.gnupg",
+    "Path": "$HOME/.gnupg",
+    "Resolved": "$HOME/.gnupg"
+   },
+   {
+    "At": "$HOME/.npmrc",
+    "Path": "$HOME/.npmrc",
+    "Resolved": "$HOME/.npmrc"
+   },
+   {
+    "At": "$HOME/.git-credentials",
+    "Path": "$HOME/.git-credentials",
+    "Resolved": "$HOME/.git-credentials"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/gh",
+    "Resolved": "$HOME/.config/gh"
+   },
+   {
+    "At": "$HOME/.docker",
+    "Path": "$HOME/.docker/config.json",
+    "Resolved": "$HOME/.docker/config.json"
+   },
+   {
+    "At": "$HOME/.kube",
+    "Path": "$HOME/.kube/config",
+    "Resolved": "$HOME/.kube/config"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/gcloud",
+    "Resolved": "$HOME/.config/gcloud"
+   },
+   {
+    "At": "$HOME/.claude",
+    "Path": "$HOME/.claude/.credentials.json",
+    "Resolved": "$HOME/.claude/.credentials.json"
+   },
+   {
+    "At": "$HOME/.claude.json",
+    "Path": "$HOME/.claude.json",
+    "Resolved": "$HOME/.claude.json"
+   },
+   {
+    "At": "$HOME/.claude",
+    "Path": "$HOME/.claude/backups",
+    "Resolved": "$HOME/.claude/backups"
+   },
+   {
+    "At": "$HOME/.gemini",
+    "Path": "$HOME/.gemini/oauth_creds.json",
+    "Resolved": "$HOME/.gemini/oauth_creds.json"
+   },
+   {
+    "At": "$HOME/.gemini",
+    "Path": "$HOME/.gemini/.env",
+    "Resolved": "$HOME/.gemini/.env"
+   },
+   {
+    "At": "$HOME/.gemini",
+    "Path": "$HOME/.gemini/mcp-oauth-tokens.json",
+    "Resolved": "$HOME/.gemini/mcp-oauth-tokens.json"
+   },
+   {
+    "At": "$HOME/.copilot",
+    "Path": "$HOME/.copilot/config.json",
+    "Resolved": "$HOME/.copilot/config.json"
+   },
+   {
+    "At": "$HOME/.copilot",
+    "Path": "$HOME/.copilot/mcp-oauth-config",
+    "Resolved": "$HOME/.copilot/mcp-oauth-config"
+   },
+   {
+    "At": "$HOME/.copilot",
+    "Path": "$HOME/.copilot/mcp-secrets",
+    "Resolved": "$HOME/.copilot/mcp-secrets"
+   },
+   {
+    "At": "$HOME/.azure",
+    "Path": "$HOME/.azure",
+    "Resolved": "$HOME/.azure"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/op",
+    "Resolved": "$HOME/.config/op"
+   },
+   {
+    "At": "$HOME/.password-store",
+    "Path": "$HOME/.password-store",
+    "Resolved": "$HOME/.password-store"
+   },
+   {
+    "At": "$HOME/.cargo",
+    "Path": "$HOME/.cargo/credentials",
+    "Resolved": "$HOME/.cargo/credentials"
+   },
+   {
+    "At": "$HOME/.cargo",
+    "Path": "$HOME/.cargo/credentials.toml",
+    "Resolved": "$HOME/.cargo/credentials.toml"
+   },
+   {
+    "At": "$HOME/.terraform.d",
+    "Path": "$HOME/.terraform.d/credentials.tfrc.json",
+    "Resolved": "$HOME/.terraform.d/credentials.tfrc.json"
+   },
+   {
+    "At": "$HOME/.vault-token",
+    "Path": "$HOME/.vault-token",
+    "Resolved": "$HOME/.vault-token"
+   },
+   {
+    "At": "$HOME/.pgpass",
+    "Path": "$HOME/.pgpass",
+    "Resolved": "$HOME/.pgpass"
+   },
+   {
+    "At": "$HOME/.mozilla",
+    "Path": "$HOME/.mozilla/firefox",
+    "Resolved": "$HOME/.mozilla/firefox"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/google-chrome",
+    "Resolved": "$HOME/.config/google-chrome"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/chromium",
+    "Resolved": "$HOME/.config/chromium"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/BraveSoftware",
+    "Resolved": "$HOME/.config/BraveSoftware"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/microsoft-edge",
+    "Resolved": "$HOME/.config/microsoft-edge"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/vivaldi",
+    "Resolved": "$HOME/.config/vivaldi"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/opera",
+    "Resolved": "$HOME/.config/opera"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/google-chrome-beta",
+    "Resolved": "$HOME/.config/google-chrome-beta"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/google-chrome-unstable",
+    "Resolved": "$HOME/.config/google-chrome-unstable"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/microsoft-edge-beta",
+    "Resolved": "$HOME/.config/microsoft-edge-beta"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/microsoft-edge-dev",
+    "Resolved": "$HOME/.config/microsoft-edge-dev"
+   },
+   {
+    "At": "$HOME/snap",
+    "Path": "$HOME/snap/firefox/common/.mozilla",
+    "Resolved": "$HOME/snap/firefox/common/.mozilla"
+   },
+   {
+    "At": "$HOME/snap",
+    "Path": "$HOME/snap/chromium/common/chromium",
+    "Resolved": "$HOME/snap/chromium/common/chromium"
+   },
+   {
+    "At": "$HOME/.var",
+    "Path": "$HOME/.var/app/org.mozilla.firefox",
+    "Resolved": "$HOME/.var/app/org.mozilla.firefox"
+   },
+   {
+    "At": "$HOME/.var",
+    "Path": "$HOME/.var/app/org.chromium.Chromium",
+    "Resolved": "$HOME/.var/app/org.chromium.Chromium"
+   },
+   {
+    "At": "$HOME/.var",
+    "Path": "$HOME/.var/app/com.google.Chrome",
+    "Resolved": "$HOME/.var/app/com.google.Chrome"
+   },
+   {
+    "At": "$HOME/.var",
+    "Path": "$HOME/.var/app/com.brave.Browser",
+    "Resolved": "$HOME/.var/app/com.brave.Browser"
+   },
+   {
+    "At": "$HOME/.var",
+    "Path": "$HOME/.var/app/com.microsoft.Edge",
+    "Resolved": "$HOME/.var/app/com.microsoft.Edge"
+   },
+   {
+    "At": "$HOME/.var",
+    "Path": "$HOME/.var/app/com.vivaldi.Vivaldi",
+    "Resolved": "$HOME/.var/app/com.vivaldi.Vivaldi"
+   }
+  ],
+  "AskConfig": null,
+  "AskDenyWrite": null,
+  "AskReadRelaxes": null,
+  "Capture": "forwarder",
+  "Contract": {
+   "Ask": {
+    "Alias": null,
+    "Anchor": "",
+    "Column": 0,
+    "Content": null,
+    "FootComment": "",
+    "HeadComment": "",
+    "Kind": 0,
+    "Line": 0,
+    "LineComment": "",
+    "Style": 0,
+    "Tag": "",
+    "Value": ""
+   },
+   "Capture": "forwarder",
+   "Command": [
+    "claude",
+    "-p",
+    "--permission-mode",
+    "acceptEdits",
+    "Read the files in ./in and write a one-paragraph summary to ./out/summary.md"
+   ],
+   "Containers": "",
+   "Credentials": null,
+   "Docker": {
+    "Alias": null,
+    "Anchor": "",
+    "Column": 0,
+    "Content": null,
+    "FootComment": "",
+    "HeadComment": "",
+    "Kind": 0,
+    "Line": 0,
+    "LineComment": "",
+    "Style": 0,
+    "Tag": "",
+    "Value": ""
+   },
+   "Env": {
+    "Deny": null,
+    "Mask": null,
+    "Pass": [
+     "PATH",
+     "HOME",
+     "LANG",
+     "TERM",
+     "ANTHROPIC_API_KEY"
+    ],
+    "Set": {
+     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+     "CLAUDE_CODE_TMPDIR": ".claude-state/tmp",
+     "CLAUDE_CONFIG_DIR": ".claude-state",
+     "TMPDIR": ".claude-state/tmp"
+    }
+   },
+   "Exec": {
+    "Allow": [
+     "bash",
+     "git"
+    ],
+    "Anonymous": false,
+    "Ask": null,
+    "Assurance": "",
+    "Deny": null,
+    "Privileged": null
+   },
+   "Extends": null,
+   "FS": {
+    "Ask": null,
+    "AskRead": null,
+    "Assurance": "",
+    "DenyRead": null,
+    "DenyWrite": null,
+    "Reads": "",
+    "Watch": null,
+    "Write": [
+     "./out/",
+     "./.claude-state/",
+     "/dev/null"
+    ]
+   },
+   "Gate": {
+    "Alias": null,
+    "Anchor": "",
+    "Column": 0,
+    "Content": null,
+    "FootComment": "",
+    "HeadComment": "",
+    "Kind": 0,
+    "Line": 0,
+    "LineComment": "",
+    "Style": 0,
+    "Tag": "",
+    "Value": ""
+   },
+   "Harness": "",
+   "HostSockets": false,
+   "IOUring": false,
+   "IPC": false,
+   "KeepDescendants": false,
+   "Keyring": false,
+   "Limits": {
+    "CPU": null,
+    "CPUWeight": null,
+    "CostUSD": 5,
+    "Memory": 4294967296,
+    "MemoryHigh": null,
+    "Pids": 512,
+    "Repeats": 5,
+    "StallAfter": null,
+    "Tokens": null,
+    "Wall": 1800000000000
+   },
+   "MCP": null,
+   "Models": [
+    {
+     "Host": "api.anthropic.com",
+     "Port": 443,
+     "Provider": "anthropic",
+     "Routes": null
+    }
+   ],
+   "Name": "claude-code",
+   "Net": {
+    "Allow": [],
+    "Ask": null,
+    "Assurance": "",
+    "DNS": null,
+    "HTTP": null,
+    "Ingress": null,
+    "Limits": null,
+    "Listen": null,
+    "Proxy": null
+   },
+   "Prompt": "",
+   "Reason": null,
+   "Record": "summary",
+   "Revision": "",
+   "Setuid": false,
+   "Skills": null,
+   "Tier": "auto",
+   "Version": 0,
+   "Visibility": null
+  },
+  "ContractPath": "$REPO/examples/agents/claude-code.yaml",
+  "DNS": {
+   "Allow": null,
+   "Cache": null,
+   "MaxParallel": 0,
+   "MaxStale": null,
+   "Mode": "system",
+   "Types": null
+  },
+  "DNSQueries": null,
+  "DeniedResolved": null,
+  "Deny": null,
+  "DenyReadPatterns": [
+   {
+    "Pattern": "$HOME/.ssh",
+    "Rule": "fs.deny_read[$HOME/.ssh]"
+   },
+   {
+    "Pattern": "$HOME/.aws",
+    "Rule": "fs.deny_read[$HOME/.aws]"
+   },
+   {
+    "Pattern": "$HOME/.netrc",
+    "Rule": "fs.deny_read[$HOME/.netrc]"
+   },
+   {
+    "Pattern": "$HOME/.gnupg",
+    "Rule": "fs.deny_read[$HOME/.gnupg]"
+   },
+   {
+    "Pattern": "$HOME/.npmrc",
+    "Rule": "fs.deny_read[$HOME/.npmrc]"
+   },
+   {
+    "Pattern": "$HOME/.git-credentials",
+    "Rule": "fs.deny_read[$HOME/.git-credentials]"
+   },
+   {
+    "Pattern": "$HOME/.config/gh",
+    "Rule": "fs.deny_read[$HOME/.config/gh]"
+   },
+   {
+    "Pattern": "$HOME/.docker/config.json",
+    "Rule": "fs.deny_read[$HOME/.docker/config.json]"
+   },
+   {
+    "Pattern": "$HOME/.kube/config",
+    "Rule": "fs.deny_read[$HOME/.kube/config]"
+   },
+   {
+    "Pattern": "$HOME/.config/gcloud",
+    "Rule": "fs.deny_read[$HOME/.config/gcloud]"
+   },
+   {
+    "Pattern": "$HOME/.claude/.credentials.json",
+    "Rule": "fs.deny_read[$HOME/.claude/.credentials.json]"
+   },
+   {
+    "Pattern": "$HOME/.claude.json",
+    "Rule": "fs.deny_read[$HOME/.claude.json]"
+   },
+   {
+    "Pattern": "$HOME/.claude/backups",
+    "Rule": "fs.deny_read[$HOME/.claude/backups]"
+   },
+   {
+    "Pattern": "$HOME/.codex/auth.json",
+    "Rule": "fs.deny_read[$HOME/.codex/auth.json]"
+   },
+   {
+    "Pattern": "$HOME/.gemini/oauth_creds.json",
+    "Rule": "fs.deny_read[$HOME/.gemini/oauth_creds.json]"
+   },
+   {
+    "Pattern": "$HOME/.gemini/.env",
+    "Rule": "fs.deny_read[$HOME/.gemini/.env]"
+   },
+   {
+    "Pattern": "$HOME/.gemini/mcp-oauth-tokens.json",
+    "Rule": "fs.deny_read[$HOME/.gemini/mcp-oauth-tokens.json]"
+   },
+   {
+    "Pattern": "$HOME/.copilot/config.json",
+    "Rule": "fs.deny_read[$HOME/.copilot/config.json]"
+   },
+   {
+    "Pattern": "$HOME/.copilot/mcp-oauth-config",
+    "Rule": "fs.deny_read[$HOME/.copilot/mcp-oauth-config]"
+   },
+   {
+    "Pattern": "$HOME/.copilot/mcp-secrets",
+    "Rule": "fs.deny_read[$HOME/.copilot/mcp-secrets]"
+   },
+   {
+    "Pattern": "$HOME/.azure",
+    "Rule": "fs.deny_read[$HOME/.azure]"
+   },
+   {
+    "Pattern": "$HOME/.config/op",
+    "Rule": "fs.deny_read[$HOME/.config/op]"
+   },
+   {
+    "Pattern": "$HOME/.password-store",
+    "Rule": "fs.deny_read[$HOME/.password-store]"
+   },
+   {
+    "Pattern": "$HOME/.pypirc",
+    "Rule": "fs.deny_read[$HOME/.pypirc]"
+   },
+   {
+    "Pattern": "$HOME/.cargo/credentials",
+    "Rule": "fs.deny_read[$HOME/.cargo/credentials]"
+   },
+   {
+    "Pattern": "$HOME/.cargo/credentials.toml",
+    "Rule": "fs.deny_read[$HOME/.cargo/credentials.toml]"
+   },
+   {
+    "Pattern": "$HOME/.terraform.d/credentials.tfrc.json",
+    "Rule": "fs.deny_read[$HOME/.terraform.d/credentials.tfrc.json]"
+   },
+   {
+    "Pattern": "$HOME/.vault-token",
+    "Rule": "fs.deny_read[$HOME/.vault-token]"
+   },
+   {
+    "Pattern": "$HOME/.pgpass",
+    "Rule": "fs.deny_read[$HOME/.pgpass]"
+   },
+   {
+    "Pattern": "$HOME/.mozilla/firefox",
+    "Rule": "fs.deny_read[$HOME/.mozilla/firefox]"
+   },
+   {
+    "Pattern": "$HOME/.config/google-chrome",
+    "Rule": "fs.deny_read[$HOME/.config/google-chrome]"
+   },
+   {
+    "Pattern": "$HOME/.config/chromium",
+    "Rule": "fs.deny_read[$HOME/.config/chromium]"
+   },
+   {
+    "Pattern": "$HOME/.config/BraveSoftware",
+    "Rule": "fs.deny_read[$HOME/.config/BraveSoftware]"
+   },
+   {
+    "Pattern": "$HOME/.config/microsoft-edge",
+    "Rule": "fs.deny_read[$HOME/.config/microsoft-edge]"
+   },
+   {
+    "Pattern": "$HOME/.config/vivaldi",
+    "Rule": "fs.deny_read[$HOME/.config/vivaldi]"
+   },
+   {
+    "Pattern": "$HOME/.config/opera",
+    "Rule": "fs.deny_read[$HOME/.config/opera]"
+   },
+   {
+    "Pattern": "$HOME/.config/google-chrome-beta",
+    "Rule": "fs.deny_read[$HOME/.config/google-chrome-beta]"
+   },
+   {
+    "Pattern": "$HOME/.config/google-chrome-unstable",
+    "Rule": "fs.deny_read[$HOME/.config/google-chrome-unstable]"
+   },
+   {
+    "Pattern": "$HOME/.config/microsoft-edge-beta",
+    "Rule": "fs.deny_read[$HOME/.config/microsoft-edge-beta]"
+   },
+   {
+    "Pattern": "$HOME/.config/microsoft-edge-dev",
+    "Rule": "fs.deny_read[$HOME/.config/microsoft-edge-dev]"
+   },
+   {
+    "Pattern": "$HOME/snap/firefox/common/.mozilla",
+    "Rule": "fs.deny_read[$HOME/snap/firefox/common/.mozilla]"
+   },
+   {
+    "Pattern": "$HOME/snap/chromium/common/chromium",
+    "Rule": "fs.deny_read[$HOME/snap/chromium/common/chromium]"
+   },
+   {
+    "Pattern": "$HOME/.var/app/org.mozilla.firefox",
+    "Rule": "fs.deny_read[$HOME/.var/app/org.mozilla.firefox]"
+   },
+   {
+    "Pattern": "$HOME/.var/app/org.chromium.Chromium",
+    "Rule": "fs.deny_read[$HOME/.var/app/org.chromium.Chromium]"
+   },
+   {
+    "Pattern": "$HOME/.var/app/com.google.Chrome",
+    "Rule": "fs.deny_read[$HOME/.var/app/com.google.Chrome]"
+   },
+   {
+    "Pattern": "$HOME/.var/app/com.brave.Browser",
+    "Rule": "fs.deny_read[$HOME/.var/app/com.brave.Browser]"
+   },
+   {
+    "Pattern": "$HOME/.var/app/com.microsoft.Edge",
+    "Rule": "fs.deny_read[$HOME/.var/app/com.microsoft.Edge]"
+   },
+   {
+    "Pattern": "$HOME/.var/app/com.vivaldi.Vivaldi",
+    "Rule": "fs.deny_read[$HOME/.var/app/com.vivaldi.Vivaldi]"
+   }
+  ],
+  "DenyWrite": [],
+  "DenyWriteLinked": null,
+  "Env": [
+   "PATH",
+   "HOME",
+   "LANG",
+   "TERM",
+   "ANTHROPIC_API_KEY"
+  ],
+  "Exec": [
+   {
+    "Basename": "claude",
+    "ByName": true,
+    "Interp": "",
+    "IsDir": false,
+    "Path": "$BIN/claude",
+    "Pos": {
+     "Col": 11,
+     "File": "$REPO/examples/agents/claude-code.yaml",
+     "Line": 39
+    },
+    "Raw": "claude",
+    "Resolved": "$BIN/claude",
+    "Runtime": "",
+    "Source": "command",
+    "Verdict": "allow"
+   },
+   {
+    "Basename": "bash",
+    "ByName": true,
+    "Interp": "",
+    "IsDir": false,
+    "Path": "$BIN/bash",
+    "Pos": {
+     "Col": 11,
+     "File": "$REPO/examples/agents/claude-code.yaml",
+     "Line": 51
+    },
+    "Raw": "bash",
+    "Resolved": "$BIN/bash",
+    "Runtime": "",
+    "Source": "exec.allow",
+    "Verdict": "allow"
+   },
+   {
+    "Basename": "git",
+    "ByName": true,
+    "Interp": "",
+    "IsDir": false,
+    "Path": "$BIN/git",
+    "Pos": {
+     "Col": 19,
+     "File": "$REPO/examples/agents/claude-code.yaml",
+     "Line": 51
+    },
+    "Raw": "git",
+    "Resolved": "$BIN/git",
+    "Runtime": "",
+    "Source": "exec.allow",
+    "Verdict": "allow"
+   }
+  ],
+  "ExecAssurance": "best-effort",
+  "ExecCommands": null,
+  "FS": [
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": false,
+    "Kind": "implicit",
+    "Missing": true,
+    "Path": "$HOME/.tego/runs",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "$HOME/.tego/runs",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": false,
+    "Kind": "implicit",
+    "Missing": false,
+    "Path": "$REPO/examples/agents/claude-code.yaml",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": true,
+    "Resolved": "$REPO/examples/agents/claude-code.yaml",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": false,
+    "Kind": "implicit",
+    "Missing": false,
+    "Path": "/sys/fs/cgroup",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/sys/fs/cgroup",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": false,
+    "Kind": "implicit",
+    "Missing": false,
+    "Path": "/sys/fs/bpf",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/sys/fs/bpf",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 65522,
+    "AskRead": false,
+    "BuiltIn": false,
+    "Kind": "write",
+    "Missing": true,
+    "Path": "$REPO/examples/agents/out",
+    "Pos": {
+     "Col": 11,
+     "File": "$REPO/examples/agents/claude-code.yaml",
+     "Line": 47
+    },
+    "Raw": "./out/",
+    "Regular": false,
+    "Resolved": "$REPO/examples/agents/out",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 65522,
+    "AskRead": false,
+    "BuiltIn": false,
+    "Kind": "write",
+    "Missing": true,
+    "Path": "$REPO/examples/agents/.claude-state",
+    "Pos": {
+     "Col": 21,
+     "File": "$REPO/examples/agents/claude-code.yaml",
+     "Line": 47
+    },
+    "Raw": "./.claude-state/",
+    "Regular": false,
+    "Resolved": "$REPO/examples/agents/.claude-state",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 65522,
+    "AskRead": false,
+    "BuiltIn": false,
+    "Kind": "write",
+    "Missing": false,
+    "Path": "/dev/null",
+    "Pos": {
+     "Col": 41,
+     "File": "$REPO/examples/agents/claude-code.yaml",
+     "Line": 47
+    },
+    "Raw": "/dev/null",
+    "Regular": false,
+    "Resolved": "/dev/null",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "deny_read",
+    "Missing": false,
+    "Path": "$HOME/.ssh",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "$HOME/.ssh",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "deny_read",
+    "Missing": false,
+    "Path": "$HOME/.aws",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "$HOME/.aws",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "deny_read",
+    "Missing": false,
+    "Path": "$HOME/.netrc",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": true,
+    "Resolved": "$HOME/.netrc",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "deny_read",
+    "Missing": false,
+    "Path": "$HOME/.codex/auth.json",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": true,
+    "Resolved": "$HOME/.codex/auth.json",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "deny_read",
+    "Missing": false,
+    "Path": "$HOME/.pypirc",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": true,
+    "Resolved": "$HOME/.pypirc",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   }
+  ],
+  "FSAsk": null,
+  "FSAssurance": "best-effort",
+  "Gate": null,
+  "HTTP": null,
+  "Harness": "claude-code",
+  "HarnessHook": null,
+  "Hash": [
+   99,
+   35,
+   124,
+   230,
+   23,
+   168,
+   20,
+   38,
+   31,
+   30,
+   218,
+   155,
+   61,
+   246,
+   234,
+   23,
+   41,
+   84,
+   171,
+   76,
+   243,
+   93,
+   149,
+   37,
+   89,
+   184,
+   75,
+   213,
+   47,
+   55,
+   141,
+   9
+  ],
+  "Home": "$HOME",
+  "Ingress": null,
+  "Limits": {
+   "CPU": "",
+   "CPUWeight": 0,
+   "CostUSD": 5,
+   "MemoryB": 4294967296,
+   "MemoryHigh": 0,
+   "Pids": 512,
+   "Repeats": 5,
+   "Set": 724,
+   "StallAfter": 0,
+   "Tokens": 0,
+   "Wall": 1800000000000
+  },
+  "Listen": null,
+  "NameDeny": [
+   {
+    "BindExposed": false,
+    "BuiltIn": true,
+    "Except": null,
+    "Literal": ".env",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Prefix": false,
+    "Raw": "",
+    "Scopes": [
+     {
+      "Canonical": "$REPO/examples/agents",
+      "Spelling": "$REPO/examples/agents"
+     }
+    ]
+   },
+   {
+    "BindExposed": false,
+    "BuiltIn": true,
+    "Except": [
+     ".env.example",
+     ".env.sample",
+     ".env.template",
+     ".env.dist"
+    ],
+    "Literal": ".env.",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Prefix": true,
+    "Raw": "",
+    "Scopes": [
+     {
+      "Canonical": "$REPO/examples/agents",
+      "Spelling": "$REPO/examples/agents"
+     }
+    ]
+   }
+  ],
+  "NameExempt": null,
+  "NameLeftOut": null,
+  "Net": [],
+  "NetAsk": [],
+  "NetAssurance": "best-effort",
+  "NetLimits": {
+   "Bytes": null,
+   "Connections": null,
+   "DatagramsPerSecond": null,
+   "PendingConnects": null
+  },
+  "OwnReadable": [
+   "$HOME/.config/tego/agents",
+   "$HOME/.config/tego/skills"
+  ],
+  "OwnState": [
+   "$HOME/.tego",
+   "$HOME/.tego/chain.log",
+   "$HOME/.tego/runs",
+   "/run/tego",
+   "$HOME/.tego/prices.yaml",
+   "$HOME/.tego/profiles"
+  ],
+  "PATH": "$BIN",
+  "Profiles": null,
+  "Proxy": null,
+  "Reach": [
+   "landlock",
+   "cgroup",
+   "bpflsm"
+  ],
+  "Reads": {
+   "Exempt": null,
+   "Mode": "auto",
+   "Names": [
+    {
+     "BindExposed": false,
+     "BuiltIn": true,
+     "Except": null,
+     "Literal": ".env",
+     "Pos": {
+      "Col": 0,
+      "File": "",
+      "Line": 0
+     },
+     "Prefix": false,
+     "Raw": "",
+     "Scopes": [
+      {
+       "Canonical": "$REPO/examples/agents",
+       "Spelling": "$REPO/examples/agents"
+      }
+     ]
+    },
+    {
+     "BindExposed": false,
+     "BuiltIn": true,
+     "Except": [
+      ".env.example",
+      ".env.sample",
+      ".env.template",
+      ".env.dist"
+     ],
+     "Literal": ".env.",
+     "Pos": {
+      "Col": 0,
+      "File": "",
+      "Line": 0
+     },
+     "Prefix": true,
+     "Raw": "",
+     "Scopes": [
+      {
+       "Canonical": "$REPO/examples/agents",
+       "Spelling": "$REPO/examples/agents"
+      }
+     ]
+    }
+   ],
+   "Nested": null,
+   "Patterns": [
+    {
+     "Pattern": "$HOME/.ssh",
+     "Rule": "fs.deny_read[$HOME/.ssh]"
+    },
+    {
+     "Pattern": "$HOME/.aws",
+     "Rule": "fs.deny_read[$HOME/.aws]"
+    },
+    {
+     "Pattern": "$HOME/.netrc",
+     "Rule": "fs.deny_read[$HOME/.netrc]"
+    },
+    {
+     "Pattern": "$HOME/.gnupg",
+     "Rule": "fs.deny_read[$HOME/.gnupg]"
+    },
+    {
+     "Pattern": "$HOME/.npmrc",
+     "Rule": "fs.deny_read[$HOME/.npmrc]"
+    },
+    {
+     "Pattern": "$HOME/.git-credentials",
+     "Rule": "fs.deny_read[$HOME/.git-credentials]"
+    },
+    {
+     "Pattern": "$HOME/.config/gh",
+     "Rule": "fs.deny_read[$HOME/.config/gh]"
+    },
+    {
+     "Pattern": "$HOME/.docker/config.json",
+     "Rule": "fs.deny_read[$HOME/.docker/config.json]"
+    },
+    {
+     "Pattern": "$HOME/.kube/config",
+     "Rule": "fs.deny_read[$HOME/.kube/config]"
+    },
+    {
+     "Pattern": "$HOME/.config/gcloud",
+     "Rule": "fs.deny_read[$HOME/.config/gcloud]"
+    },
+    {
+     "Pattern": "$HOME/.claude/.credentials.json",
+     "Rule": "fs.deny_read[$HOME/.claude/.credentials.json]"
+    },
+    {
+     "Pattern": "$HOME/.claude.json",
+     "Rule": "fs.deny_read[$HOME/.claude.json]"
+    },
+    {
+     "Pattern": "$HOME/.claude/backups",
+     "Rule": "fs.deny_read[$HOME/.claude/backups]"
+    },
+    {
+     "Pattern": "$HOME/.codex/auth.json",
+     "Rule": "fs.deny_read[$HOME/.codex/auth.json]"
+    },
+    {
+     "Pattern": "$HOME/.gemini/oauth_creds.json",
+     "Rule": "fs.deny_read[$HOME/.gemini/oauth_creds.json]"
+    },
+    {
+     "Pattern": "$HOME/.gemini/.env",
+     "Rule": "fs.deny_read[$HOME/.gemini/.env]"
+    },
+    {
+     "Pattern": "$HOME/.gemini/mcp-oauth-tokens.json",
+     "Rule": "fs.deny_read[$HOME/.gemini/mcp-oauth-tokens.json]"
+    },
+    {
+     "Pattern": "$HOME/.copilot/config.json",
+     "Rule": "fs.deny_read[$HOME/.copilot/config.json]"
+    },
+    {
+     "Pattern": "$HOME/.copilot/mcp-oauth-config",
+     "Rule": "fs.deny_read[$HOME/.copilot/mcp-oauth-config]"
+    },
+    {
+     "Pattern": "$HOME/.copilot/mcp-secrets",
+     "Rule": "fs.deny_read[$HOME/.copilot/mcp-secrets]"
+    },
+    {
+     "Pattern": "$HOME/.azure",
+     "Rule": "fs.deny_read[$HOME/.azure]"
+    },
+    {
+     "Pattern": "$HOME/.config/op",
+     "Rule": "fs.deny_read[$HOME/.config/op]"
+    },
+    {
+     "Pattern": "$HOME/.password-store",
+     "Rule": "fs.deny_read[$HOME/.password-store]"
+    },
+    {
+     "Pattern": "$HOME/.pypirc",
+     "Rule": "fs.deny_read[$HOME/.pypirc]"
+    },
+    {
+     "Pattern": "$HOME/.cargo/credentials",
+     "Rule": "fs.deny_read[$HOME/.cargo/credentials]"
+    },
+    {
+     "Pattern": "$HOME/.cargo/credentials.toml",
+     "Rule": "fs.deny_read[$HOME/.cargo/credentials.toml]"
+    },
+    {
+     "Pattern": "$HOME/.terraform.d/credentials.tfrc.json",
+     "Rule": "fs.deny_read[$HOME/.terraform.d/credentials.tfrc.json]"
+    },
+    {
+     "Pattern": "$HOME/.vault-token",
+     "Rule": "fs.deny_read[$HOME/.vault-token]"
+    },
+    {
+     "Pattern": "$HOME/.pgpass",
+     "Rule": "fs.deny_read[$HOME/.pgpass]"
+    },
+    {
+     "Pattern": "$HOME/.mozilla/firefox",
+     "Rule": "fs.deny_read[$HOME/.mozilla/firefox]"
+    },
+    {
+     "Pattern": "$HOME/.config/google-chrome",
+     "Rule": "fs.deny_read[$HOME/.config/google-chrome]"
+    },
+    {
+     "Pattern": "$HOME/.config/chromium",
+     "Rule": "fs.deny_read[$HOME/.config/chromium]"
+    },
+    {
+     "Pattern": "$HOME/.config/BraveSoftware",
+     "Rule": "fs.deny_read[$HOME/.config/BraveSoftware]"
+    },
+    {
+     "Pattern": "$HOME/.config/microsoft-edge",
+     "Rule": "fs.deny_read[$HOME/.config/microsoft-edge]"
+    },
+    {
+     "Pattern": "$HOME/.config/vivaldi",
+     "Rule": "fs.deny_read[$HOME/.config/vivaldi]"
+    },
+    {
+     "Pattern": "$HOME/.config/opera",
+     "Rule": "fs.deny_read[$HOME/.config/opera]"
+    },
+    {
+     "Pattern": "$HOME/.config/google-chrome-beta",
+     "Rule": "fs.deny_read[$HOME/.config/google-chrome-beta]"
+    },
+    {
+     "Pattern": "$HOME/.config/google-chrome-unstable",
+     "Rule": "fs.deny_read[$HOME/.config/google-chrome-unstable]"
+    },
+    {
+     "Pattern": "$HOME/.config/microsoft-edge-beta",
+     "Rule": "fs.deny_read[$HOME/.config/microsoft-edge-beta]"
+    },
+    {
+     "Pattern": "$HOME/.config/microsoft-edge-dev",
+     "Rule": "fs.deny_read[$HOME/.config/microsoft-edge-dev]"
+    },
+    {
+     "Pattern": "$HOME/snap/firefox/common/.mozilla",
+     "Rule": "fs.deny_read[$HOME/snap/firefox/common/.mozilla]"
+    },
+    {
+     "Pattern": "$HOME/snap/chromium/common/chromium",
+     "Rule": "fs.deny_read[$HOME/snap/chromium/common/chromium]"
+    },
+    {
+     "Pattern": "$HOME/.var/app/org.mozilla.firefox",
+     "Rule": "fs.deny_read[$HOME/.var/app/org.mozilla.firefox]"
+    },
+    {
+     "Pattern": "$HOME/.var/app/org.chromium.Chromium",
+     "Rule": "fs.deny_read[$HOME/.var/app/org.chromium.Chromium]"
+    },
+    {
+     "Pattern": "$HOME/.var/app/com.google.Chrome",
+     "Rule": "fs.deny_read[$HOME/.var/app/com.google.Chrome]"
+    },
+    {
+     "Pattern": "$HOME/.var/app/com.brave.Browser",
+     "Rule": "fs.deny_read[$HOME/.var/app/com.brave.Browser]"
+    },
+    {
+     "Pattern": "$HOME/.var/app/com.microsoft.Edge",
+     "Rule": "fs.deny_read[$HOME/.var/app/com.microsoft.Edge]"
+    },
+    {
+     "Pattern": "$HOME/.var/app/com.vivaldi.Vivaldi",
+     "Rule": "fs.deny_read[$HOME/.var/app/com.vivaldi.Vivaldi]"
+    }
+   ]
+  },
+  "ReasonReads": "auto",
+  "Record": "summary",
+  "RunCommandGrant": "",
+  "Set": {
+   "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+   "CLAUDE_CODE_TMPDIR": ".claude-state/tmp",
+   "CLAUDE_CONFIG_DIR": ".claude-state",
+   "TMPDIR": ".claude-state/tmp"
+  },
+  "Tier": "bpflsm",
+  "Workdir": ""
+ }
+}

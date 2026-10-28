@@ -1,0 +1,7 @@
+load:
+compile:
+error: $REPO/examples/demo/contracts/claude-code.yaml:24:11: fs.write "./" contains the contract file $REPO/examples/demo/contracts/claude-code.yaml; Landlock cannot deny beneath an allow [contradiction]
+  fix: move the contract and ledger_root outside every write entry, or narrow the entry
+error: $REPO/examples/demo/contracts/claude-code.yaml:24:42: fs.write "@@XDG@@/cc-socks/": parent $REPO/examples/demo/contracts/@@XDG@@ does not exist (run creates only the entry itself) [path-missing]
+  fix: mkdir -p $REPO/examples/demo/contracts/@@XDG@@
+error: invalid contract: write entry contains the run directory or the contract file: $REPO/examples/demo/contracts/claude-code.yaml:24:11: fs.write "./" contains the contract file $REPO/examples/demo/contracts/claude-code.yaml; Landlock cannot deny beneath an allow [contradiction]

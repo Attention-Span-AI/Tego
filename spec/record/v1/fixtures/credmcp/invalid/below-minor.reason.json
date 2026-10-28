@@ -1,0 +1,1 @@
+{"kind": "net", "minor": 24, "source": "forwarder", "rule": "net.allow[x]", "verdict": "refused", "authority": "rule", "reason": "credential-revoked", "payload": {"op": "http_request", "proto": "http", "dst": "127.0.0.1:41000"}}
