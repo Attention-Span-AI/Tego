@@ -1,0 +1,5 @@
+# The image's machine config, /etc/tego/config.yaml (spec/config/v0): root's, mode 0644, as tego's trust check wants
+# of the system layer. The ledger lives on its own volume (compose.yaml), apart from the chain anchor, which tego
+# keeps in the run user's ~/.tego whatever ledger_root says. A file named by TEGO_CONFIG, or ~tego/.tego/config.yaml,
+# adds to this one.
+ledger_root: /var/lib/tego/runs

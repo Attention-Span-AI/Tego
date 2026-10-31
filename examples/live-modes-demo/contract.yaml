@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# The Adjustable-mode demo's contract (docs/user/live-modes.md, ADR 0125). demo.sh setup fills the @...@ program
+# paths for this machine and writes contract.filled.yaml beside it; run that one.
+#
+# Needs root: Adjustable runs only at tier cgroup or bpflsm, so the run is `sudo tego run`. Root lets Tego place the
+# run in its own cgroup and add the kernel checks of that tier; the agent itself still runs as you.
+version: 0
+name: live-modes-demo
+command: ["./agent.sh"]
+tier: cgroup
+fs:
+  deny_read: ["./vault-data/"]        # the contract refuses the fake customer data...
+exec:
+  allow: ["./agent.sh", "/bin/sh", "@SH@", "@CAT@", "@SLEEP@"]
+net: {}
+env:
+  pass: ["PATH", "HOME"]
+record: full
+live:
+  mode: adjustable                    # Adjustable (live both ways)
+  fence:
+    read: ["./vault-data/"]           # ...and you may lift that refusal while it runs, for a set time

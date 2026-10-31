@@ -1,0 +1,13 @@
+# What the image build does not need from the repository root (BuildKit reads <Dockerfile>.dockerignore beside the
+# Dockerfile). The build compiles ./cmd/tego and ./cmd/tego-control, which reach only cmd/, internal/ and pkg/ and the
+# files they embed, and copies examples/container/ and scripts/check-control-pin.sh.
+.git
+.github
+.claude
+bin
+dist
+archive
+docs
+web
+**/node_modules
+**/testdata

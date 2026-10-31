@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: Apache-2.0
+# The stand-in Claude Code (test/e2e/reason-claude/fakeclaude, built as a binary named claude) under Tego, for
+# demo.sh reason-hook. Because the command is claude, tego provisions its PostToolUse hook: after a refused tool
+# call the hook appends the reason to the tool result, so the model's next request says what was refused and by
+# which rule. The model is the local model stub behind tego's forwarder; no login, no key, no network.
+# demo.sh fills in @@CC@@ (the scene's folder) and "@@PORT@@", quotes and all, with the stub's port (quoted, the
+# template is YAML that examples/agents reads; filled in, the port is a number). Derived from
+# test/e2e/reason-claude/contract.yaml.
+version: 0
+name: demo-claude-standin
+command: ["claude"]
+tier: landlock
+harness: claude-code
+models:
+  - { provider: anthropic, host: "127.0.0.1", port: "@@PORT@@" }
+capture: forwarder
+record: full
+fs:
+  write:
+    - "./work/"
+    - "./.claude-state/"
+    - "@@CC@@/home/"
+    - "@@CC@@/xdg/"
+    - "/dev/null"
+    - "/dev/tty"
+  deny_read: ["@@CC@@/home/.claude"]
+exec:
+  deny: ["git push"]
+net:
+  allow: ["unix:/var/run/nscd/socket"]
+  dns:
+    mode: "off"
+env:
+  pass: ["PATH", "HOME", "LANG", "TERM", "ANTHROPIC_API_KEY"]
+  set:
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    DISABLE_AUTOUPDATER: "1"
+    CLAUDE_CONFIG_DIR: ".claude-state"
+    CLAUDE_CODE_TMPDIR: ".claude-state/tmp"
+    TMPDIR: ".claude-state/tmp"
+    XDG_RUNTIME_DIR: "@@CC@@/xdg"
+limits:
+  pids: 512
+  memory: 1GiB
+  wall: 5m

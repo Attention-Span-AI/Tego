@@ -1,0 +1,83 @@
+# SPDX-License-Identifier: Apache-2.0
+# The "with tego" side of the split screen with Claude Code (DEMO_AGENT=claude): codex-chatgpt.yaml's rules for the
+# project, with Claude Code's own needs in place of Codex's.
+#
+# This is a TEMPLATE. `DEMO_AGENT=claude demo.sh setup` fills the placeholders (the folders, python3, the project
+# API's address and your runtime folder) and writes  with/claude-code.filled.yaml  (gitignored, mode 0644).
+# `demo.sh right` runs it from  with/proj :
+#   tego run <stage>/with/claude-code.filled.yaml -- claude
+#
+# What it proves is the same as with Codex: the read of this side's SSH key is refused (fs.deny_read, BY EXACT
+# PATH), the token read waits for a person (fs.ask_read), and the phone-home to the sink is refused (the right-hand
+# sink is on no net.allow line). The tests still pass; the sink stays silent.
+#
+# - capture: off and net.allow naming api.anthropic.com:443, as in examples/agents/claude-code-interactive.yaml:
+#   with capture: forwarder Claude Code exits on its first connectivity check. The connections are allowed by host
+#   and recorded; the model calls' bodies are not.
+# - Your login reaches Claude Code through the environment (CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`, or
+#   ANTHROPIC_API_KEY); both are passed, nothing is stored in this file. Claude Code's /login is not used: it needs
+#   claude.ai, which net.allow leaves out.
+# - CLAUDE_CONFIG_DIR is this side's own folder, writable because Claude Code keeps its session there. Its own
+#   permission prompts are off in that folder's settings.json (setup writes it): tego is the cage.
+# - The cc-socks folder under your runtime folder is writable because Claude Code makes a socket there.
+version: 0
+name: supply-chain-claude-code
+command: ["claude"]
+capture: off
+tier: landlock              # fs.ask_read is a tier-landlock feature; the pin documents that
+record: summary
+fs:
+  # The project's working folders are writable (src/, tests/, vendor/, tmp/) so the tests and Claude Code can work,
+  # and held/ is NOT: a file written there waits for a person (fs.ask below); plus the terminal, Claude Code's own
+  # folder and its socket folder. Nothing outside.
+  write: ["./src/", "./tests/", "./vendor/", "./tmp/", "/dev/null", "/dev/tty", "@@AGENTHOME@@/", "@@RUNTIME@@/cc-socks/"]
+  reads: held                 # a refused read is recorded even under record: summary
+  # The FAKE credentials this side's HOME holds, named BY EXACT PATH (a contract's "~" is not relied on):
+  deny_read: ["@@DENY_SSH@@"]                       # the SSH key: never readable, no question asked
+  ask_read: ["@@DENY_TOKEN@@", "./confidential/"]    # the API token and the confidential folder: a person decides each read
+  ask: ["./held/"]            # a file written under held/ waits for a person: Allow or Deny in the dashboard
+exec:
+  # Claude Code runs its tools through bash. The project's tests run with the system python3 (python3 -m unittest);
+  # exec rules match the program actually run, so its resolved target is named too (the second python3 entry below).
+  allow:
+    - bash
+    - git
+    - env
+    - sh
+    - cat
+    - ls
+    - mkdir
+    - touch
+    - grep
+    - sed
+    - head
+    - tail
+    - find
+    - wc
+    - tr
+    - sort
+    - uname
+    - python3
+    - "@@PYREAL@@"
+net:
+  # The project's own API (port 8803 by default; demo.env) and the model host -- the only destinations the job
+  # needs. The attacker sink (port 8802 by default) is deliberately NOT here, so the beacon and every exfil are
+  # refused: the one secret the agent can see (SERVICE_TOKEN) still cannot leave.
+  allow: ["@@APIADDR@@", "unix:/var/run/nscd/socket", "tcp://api.anthropic.com:443"]
+env:
+  # The only secrets this agent gets are SERVICE_TOKEN, the one the honest job needs, and Claude Code's own login.
+  # AWS_SECRET_ACCESS_KEY and GITHUB_TOKEN are NOT listed, so the agent (and the poisoned dependency) never sees them.
+  pass: ["PATH", "HOME", "LANG", "TERM", "COLORTERM", "SERVICE_TOKEN", "SC_SINK", "SC_API", "PYTHONPATH", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"]
+  set:
+    CLAUDE_CONFIG_DIR: "@@AGENTHOME@@"
+    CLAUDE_CODE_TMPDIR: "./tmp"
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    DISABLE_AUTOUPDATER: "1"
+    HISTFILE: "/dev/null"
+    TMPDIR: "./tmp"
+limits:
+  pids: 512
+  memory: 4GiB
+  wall: 2h
+ask:
+  timeout: 5m
