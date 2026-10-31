@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# An agent under `tego run` in a container, and the dashboard (tego-control serve) on the host's loopback
+# (docs/user/container.md). From this directory:
+#
+#   TEGO_UID=$(id -u) TEGO_GID=$(id -g) docker compose build
+#   docker compose run --rm agent tego doctor        # what this host gives the container
+#   docker compose up agent                          # one run of the example agent (hello.yaml)
+#   docker compose up -d control && docker compose logs control   # the dashboard's link, signed in
+#
+# Linux hosts with cgroup v2 only. Docker is what CI runs this file with; Podman reads it too, untested.
+name: tego
+
+x-image: &image
+  image: ${TEGO_IMAGE:-tego:local}
+  build:
+    context: ../..
+    dockerfile: examples/container/Dockerfile
+    target: runtime
+    args:
+      # The dashboard answers only a browser whose socket the dashboard's own uid owns, so to open it from the host,
+      # build the image with your own uid (the line above). 10001 otherwise.
+      TEGO_UID: ${TEGO_UID:-10001}
+      TEGO_GID: ${TEGO_GID:-10001}
+      EXTRA_PACKAGES: ${EXTRA_PACKAGES:-}
+
+services:
+  agent:
+    <<: *image
+    # The contract to run; the image's hello agent by default. Mount your own contract and agent (a volume or a
+    # bind) and name it here.
+    command: ["tego", "run", "${TEGO_CONTRACT:-/usr/local/share/tego/hello.yaml}"]
+    # docker-init as PID 1 reaps what the agent leaves behind and passes SIGTERM on to tego, which stops the run
+    # within the machine's stop_grace (10 s) and writes its end; 30 s more for that, as the systemd unit allows.
+    init: true
+    stop_grace_period: 40s
+    # Every tier: tego makes a cgroup per run, so the container needs a cgroup tree of its own to hand the tego
+    # user. The entrypoint builds that subtree only in a private cgroup namespace and refuses the host's.
+    cgroup: private
+    # The entrypoint's, for setting up only. It drops every capability, bounding set included, and sets
+    # no_new_privs before tego starts: neither tego nor the agent holds any of them.
+    #   SYS_ADMIN  remount /sys/fs/cgroup read-write (Docker mounts it read-only in a container that is not
+    #              privileged). Docker's default seccomp profile also answers clone3 with ENOSYS unless the
+    #              container has it, and tego starts every agent with clone3(CLONE_INTO_CGROUP).
+    #   SYS_PTRACE Docker's default seccomp profile allows pidfd_getfd only to a container that has it, and tego's
+    #              supervisor takes the agent's seccomp listener with pidfd_getfd.
+    #   CHOWN      hand the cgroup subtree and the state directories to the tego user.
+    #   SETUID, SETGID  become that user. SETPCAP  clear the bounding set on the way.
+    cap_drop: [ALL]
+    cap_add: [SYS_ADMIN, SYS_PTRACE, CHOWN, SETUID, SETGID, SETPCAP]
+    security_opt:
+      # AppArmor's docker-default profile denies every mount, the remount above included. Hosts without AppArmor
+      # ignore this; with it, a profile of your own that allows `mount options=(rw,remount) -> /sys/fs/cgroup/` can
+      # replace it.
+      - apparmor=unconfined
+      - no-new-privileges:true
+    environment:
+      # auto: a container that could not get its cgroup subtree says why and starts anyway, so `tego doctor` can
+      # report the host; yes fails it at start instead.
+      TEGO_DELEGATE: ${TEGO_DELEGATE:-auto}
+    volumes:
+      # The chain anchor (~/.tego/chain.log) and tego's own log: the root of trust the ledger is checked
+      # against, on a volume of its own, never the container's writable layer (docs/user/container.md).
+      - tego-state:/home/tego/.tego
+      # The ledger: every run's record.
+      - tego-ledger:/var/lib/tego/runs
+      # What the agent works on. A bind of a host folder works too (./project:/work); the entrypoint hands the
+      # folder itself, not its contents, to the tego user.
+      - tego-work:/work
+
+  control:
+    <<: *image
+    # tego-control refuses to run as root; started as the tego user, the entrypoint sets nothing up.
+    user: "${TEGO_UID:-10001}:${TEGO_GID:-10001}"
+    command: ["tego-control", "serve", "--addr", "${TEGO_DASHBOARD_ADDR:-127.0.0.1:8484}"]
+    # The host's network, so 127.0.0.1 above is the host's loopback: the dashboard listens on loopback only and a
+    # published port cannot reach a container's own loopback. From another machine: ssh -L 8484:127.0.0.1:8484, as
+    # the account whose uid the image was built with.
+    network_mode: host
+    # The host's cgroup namespace: the dashboard refuses every change (Allow, Deny, Stop, Block, rule changes) when
+    # it cannot place the asking socket in the cgroup tree, and inside a private namespace it cannot (ADR 0123).
+    cgroup: host
+    # Stop, Pause and the answers to asks act on the run's launcher by pid. In its own pid namespace the dashboard
+    # cannot reach it and says the run is not running; to act on live runs, share the agent's namespace (the agent
+    # container must then be running before this one starts):
+    # pid: "service:agent"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      # The anchor, read-only: the dashboard checks chains against it and never writes it.
+      - tego-state:/home/tego/.tego:ro
+      # The ledger, read-write: a stop request, a live block or a rule change is a file in the run's directory.
+      - tego-ledger:/var/lib/tego/runs
+
+volumes:
+  tego-state:
+  tego-ledger:
+  tego-work:

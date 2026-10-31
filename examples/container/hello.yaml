@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# hello: the image's example agent (hello-agent.sh), which the CI smoke run and compose.yaml's agent service run. It
+# may write /work/out and nothing else, start only its own script, sh and date, and reach nothing on the network. The
+# agent writes a greeting, then tries one write the contract refuses, so a run shows an allowed write and a refusal.
+# Swap in your own agent: change `command`, then fs, exec and net to what it needs (examples/agents/ has contracts for
+# Claude Code, Codex and agents of your own; `tego learn` proposes a first draft from a watched run).
+version: 0
+name: hello
+command: ["/usr/local/share/tego/hello-agent.sh"]
+record: full
+fs:
+  write: ["/work/out/", "/dev/null"]
+exec:
+  allow: ["/usr/local/share/tego/hello-agent.sh", "sh", "date"]
+net:
+  allow: []
+  dns:
+    mode: "off"
+env:
+  pass: ["PATH", "HOME", "LANG"]
+limits:
+  stall_after: 1m
+  memory: 256MiB
+  pids: 64
