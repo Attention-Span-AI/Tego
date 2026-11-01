@@ -1,0 +1,5 @@
+# ADR 0023 A10 F4: the sites that may call sys.Adopt, for a number the kernel wrote into memory (a fanotify event's
+# fd, the pidfd clone3 stores through SysProcAttr.PidFD). One line per site: "file function count", the function
+# as fdcheck names it ("Type.Method" for a method, "<package>:name" in the package-level declaration of name).
+# fdcheck admits up to count calls there and fails on a line with fewer, so the list shrinks with the code. Empty
+# until a package migrates.

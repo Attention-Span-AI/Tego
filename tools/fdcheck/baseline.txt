@@ -1,0 +1,26 @@
+# ADR 0023 A9, the ratchet: each package not yet migrated to sys.FD, with its raw sites counted by kind
+# (tools/fdcheck; the kinds are in tools/fdcheck/rules.go). The counts are exact: a commit that removes a site
+# lowers its line, a package that reaches zero loses its line and its .golangci.yml exclusion, and no kind's
+# total ever rises: a move of code between packages moves its counts, and nothing else raises a line (precommit
+# and CI hold each kind's total, and the F4 lists', to the base). A package not listed here has no raw site.
+# The file is empty when ADR 0023 is done.
+internal/askclient newfile=1 producer=1
+internal/bpf opaque=1
+internal/doctor close=34 dup=4 fd=1 newfile=6 producer=28
+internal/platform/sys api=9 ioctl=1 producer=2
+internal/runtime close=21 newfile=7 producer=9
+internal/runtime/ask api=1 close=8 dup=2 fd=1 newfile=2 producer=2 rights=5
+internal/runtime/capture/forwarder close=1 producer=1
+internal/runtime/capture/uprobe close=6 fd=15 producer=2
+internal/runtime/deputy close=21 dup=1 producer=3 rights=3
+internal/runtime/dnsbroker close=5 newfile=1 producer=5 rights=3
+internal/runtime/enforce/api api=1
+internal/runtime/enforce/cgroup api=2 close=9 dup=2 fd=21 fromfd=1 producer=6
+internal/runtime/enforce/landlock close=11 dup=1 newfile=1 producer=4
+internal/runtime/launch close=1 dup=1 newfile=1 producer=1
+internal/runtime/observe close=1 producer=1
+internal/runtime/supervisor close=76 dup=3 producer=45
+internal/watch/adopt close=1 producer=1
+internal/watch/procconn close=4 producer=2
+pkg/spec/agent close=9 producer=5
+pkg/spec/config close=1 fd=2 producer=1

@@ -1,0 +1,3 @@
+# ADR 0023 A1 and A10 F4: the sites that may call sys.Stdio, the one way to own a standard descriptor 0–2. One line
+# per site: "file function count", the function as fdcheck names it. fdcheck admits up to count calls there and
+# fails on a line with fewer. Empty until a package that owns stdio migrates.
