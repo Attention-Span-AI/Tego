@@ -1,0 +1,5 @@
+# ADR 0023 A10 F4: the sites that may call sys.CloseInheritedFrom, which closes every number from its argument up
+# whoever holds it: ReapMain's start-up sweep, the process's first descriptor operation (sys refuses it once the
+# process has made an owner). One line per site: "file function count", the function as fdcheck names it.
+# fdcheck admits up to count calls there and fails on a line with fewer.
+internal/runtime/reap.go ReapMain 1
