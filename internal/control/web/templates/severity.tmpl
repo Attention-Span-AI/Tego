@@ -1,0 +1,26 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* severity: a person's own severity rules (severity.go), above the built-in ones; first match wins. Severity only
+     sorts and colours: the policy decides what is blocked. */}}
+{{define "content"}}{{with .Data}}{{$csrf := $.CSRF}}
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/rules">Policies</a></nav>
+<div class="head"><div><h1>Severity</h1><p class="lede" title="Severity sorts and colours; your policy decides what is blocked">Sorting only · never changes what is blocked</p></div></div>
+{{if .Off}}<section class="panel"><div class="empty"><h3>Not available here</h3></div></section>{{else}}
+<section class="panel" aria-labelledby="h-own"><div class="panel-head"><h2 id="h-own">Your rules</h2><span class="soft" title="{{.File}}">First match wins</span></div>
+{{if .Rules}}<div class="tw"><table class="t"><caption class="sr">Your severity rules, first match first</caption><thead><tr><th scope="col">Channel</th><th scope="col">Contains</th><th scope="col">Severity</th><th scope="col"><span class="sr">Remove</span></th></tr></thead>
+<tbody>{{range $r := .Rules}}<tr><td>{{if $r.Channel}}{{$r.Channel}}{{else}}Any{{end}}</td><td class="mono">{{$r.Match}}</td><td><span class="sev sev-{{$r.Severity}}">{{$r.Severity}}</span></td>
+<td class="num"><form method="post" action="/severity/remove"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="channel" value="{{$r.Channel}}"><input type="hidden" name="match" value="{{$r.Match}}"><input type="hidden" name="severity" value="{{$r.Severity}}"><button class="btn" type="submit" aria-label="Remove the rule for {{$r.Match}}">Remove</button></form></td></tr>{{end}}</tbody></table></div>
+{{else}}<p class="panel-body soft">None yet · the built-in rules apply</p>{{end}}
+<form class="panel-body row sv-add" method="post" action="/severity/add"><input type="hidden" name="csrf" value="{{$csrf}}">
+<label class="field">Channel<select class="select" name="channel"><option value="">Any</option>{{range .Channels}}<option{{if eq . $.Data.Channel}} selected{{end}}>{{.}}</option>{{end}}</select></label>
+<label class="field sv-match">Contains<input class="input mono" name="match" value="{{.Match}}" placeholder="/prod-config/" required autocomplete="off" spellcheck="false"></label>
+<label class="field">Severity<select class="select" name="severity">{{range .Severities}}<option>{{.}}</option>{{end}}</select></label>
+<button class="btn btn-primary" type="submit">Add</button></form>
+<p class="panel-body soft">Saved in <span class="mono">{{tilde .File}}</span> · not part of the record · secrets stay High</p></section>
+<section class="panel" aria-labelledby="h-built"><div class="panel-head"><h2 id="h-built">Built in</h2><a class="link" href="/glossary#severity">Glossary</a></div>
+<dl class="gl-list">
+<div class="gl-row"><dt><span class="sev sev-High">High</span></dt><dd>Secrets · connections not in the policy · ssh, curl and other reach-out programs · shell startup files and git hooks</dd></div>
+<div class="gl-row"><dt><span class="sev sev-Medium">Medium</span></dt><dd>Other programs · changes outside the project · changes to an agent's settings · another agent's files</dd></div>
+<div class="gl-row"><dt><span class="sev sev-Low">Low</span></dt><dd>The agent reading its own files or writing its own caches · system network information</dd></div>
+<div class="gl-row"><dt><span class="sev sev-Routine">Routine</span></dt><dd>System lookups and probes · terminal devices</dd></div>
+</dl></section>{{end}}
+{{end}}{{end}}
