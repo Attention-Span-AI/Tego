@@ -82,7 +82,9 @@ func TestTimeoutDoesNotStandForWhatCannotBeRemembered(t *testing.T) {
 		"a gate-raised ask":  func(r *Request) { r.GateRule = "gate.exec" },
 	} {
 		t.Run(name, func(t *testing.T) {
-			b, dir := testBroker(t, func(o *Options) { o.Timeout = 50 * time.Millisecond; o.TimeoutStands = true })
+			// 300 ms, not 50: the second request is visible to waitAsk only until it times out, and a raced poll on a
+			// busy runner missed a 50 ms window (GitHub's race job, 2026-11-02).
+			b, dir := testBroker(t, func(o *Options) { o.Timeout = 300 * time.Millisecond; o.TimeoutStands = true })
 			req := testRequest()
 			mutate(&req)
 			d, err := b.Request(context.Background(), req)
