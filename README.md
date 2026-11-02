@@ -244,18 +244,6 @@ The full list, with what to do about each, is in **[docs/GAPS.md](docs/GAPS.md)*
 Report a vulnerability through the private route in [SECURITY.md](SECURITY.md), not in a public issue. That page also
 lists what Tego trusts and what is out of scope.
 
-## Contributors
-
-<table>
-  <tr>
-    <td align="center"><a href="https://github.com/Mahd1exo"><img src="https://github.com/Mahd1exo.png?size=80" width="80" height="80" alt=""><br><sub>Mahd1exo</sub></a></td>
-    <td align="center"><a href="https://github.com/Panizghi"><img src="https://github.com/Panizghi.png?size=80" width="80" height="80" alt=""><br><sub>Panizghi</sub></a></td>
-    <td align="center"><a href="https://github.com/Mehdi-Attention-Span-AI"><img src="https://github.com/Mehdi-Attention-Span-AI.png?size=80" width="80" height="80" alt=""><br><sub>Mehdi-Attention-Span-AI</sub></a></td>
-    <td align="center"><a href="https://github.com/eyvalbnd-debug"><img src="https://github.com/eyvalbnd-debug.png?size=80" width="80" height="80" alt=""><br><sub>eyvalbnd-debug</sub></a></td>
-    <td align="center"><sub>Claude</sub></td>
-  </tr>
-</table>
-
 ## License
 
 [Apache-2.0](LICENSE). The kernel programs under `bpf/` are dual
