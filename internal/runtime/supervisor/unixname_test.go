@@ -255,7 +255,6 @@ func TestBoundFileIsBornInItsBind(t *testing.T) {
 	valA := atomic.LoadUint32(&words[w/4])
 	nb := []byte(nameA)
 	copy(nb[w-sunPathOff:], "bbbb")
-	nameB := string(nb)
 	var bwords [1]uint32
 	copy(unsafe.Slice((*byte)(unsafe.Pointer(&bwords[0])), 4), "bbbb")
 	valB := bwords[0]
@@ -328,7 +327,7 @@ func TestBoundFileIsBornInItsBind(t *testing.T) {
 		_ = os.Remove(made)
 		_ = unix.Close(fd)
 	}
-	if seen[nameA] == 0 || seen[nameB] == 0 {
+	if seen[nameA] == 0 || seen[string(nb)] == 0 {
 		t.Logf("the rewrite never landed on one side (%v): the files were checked, the race was not exercised both ways", seen)
 	}
 }
