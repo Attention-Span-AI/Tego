@@ -33,7 +33,8 @@ func init() { register(cmdDrift) }
 // (R25); exit 0 when the run did exactly what the contract describes, 2 on usage. A server no
 // producer could have observed is printed as unobservable and is not drift, and so is a deny_read
 // or watch entry of a run that recorded no reads (R14); the gap line (R34) says what else
-// the record could not see.
+// the record could not see. The execs the record flags fileless (an image with no file) or dropped (a
+// file written during the run) are listed by image with their verdicts, and are not drift on their own (R17a).
 func cmdDrift() Command {
 	var (
 		asJSON    bool
@@ -382,6 +383,13 @@ type driftJSON struct {
 	// GuardsNotExercised: exec.deny and exec.ask entries no line named (ADR 0048 (8)); reported, never drift;
 	// absent when there were none.
 	GuardsNotExercised []string `json:"guards_not_exercised,omitempty"`
+	// FilelessExecs and DroppedExecs: the images exec lines flagged fileless or dropped, each with its execs by
+	// verdict (R17a); reported, never drift on their own; [] when there were none. FilelessMore and DroppedMore count
+	// the flagged execs of images past the report's bound (32 per list); absent when there were none.
+	FilelessExecs []driftExecJSON `json:"fileless_execs"`
+	FilelessMore  int             `json:"fileless_more,omitempty"`
+	DroppedExecs  []driftExecJSON `json:"dropped_execs"`
+	DroppedMore   int             `json:"dropped_more,omitempty"`
 	// Skipped: the runs --aggregate could not read and left out of the sum (§6 case 8); the exit is then
 	// 125. Always [] without --aggregate.
 	Skipped []string `json:"skipped"`
@@ -404,6 +412,15 @@ type driftRuleJSON struct {
 	Observed int    `json:"observed"`
 	// Alternate is the rule's held opens a person answered with another file (ADR 0057 D1).
 	Alternate int `json:"alternate"`
+}
+
+// driftExecJSON is one image a fileless or dropped exec named, with its execs by verdict (R17a).
+type driftExecJSON struct {
+	Path     string `json:"path"`
+	Allow    int    `json:"allow"`
+	Ask      int    `json:"ask"`
+	Refused  int    `json:"refused"`
+	Observed int    `json:"observed"`
 }
 
 // writeDrift renders the report as one aligned table, or as JSON (R31).
@@ -449,6 +466,13 @@ func writeDrift(w io.Writer, rep *drift.Report, skipped []string, asJSON bool) e
 	if len(rep.UnusedMCP) > 0 {
 		fmt.Fprintf(w, "unused mcp servers: %s\n", printableJoin(rep.UnusedMCP))
 	}
+	// The images the record flags (R17a), whatever the verdict: each says by its counts whether it ran.
+	if len(rep.Fileless) > 0 || rep.FilelessMore > 0 {
+		fmt.Fprintf(w, "execs of an image with no file (fileless): %s\n", flaggedText(rep.Fileless, rep.FilelessMore))
+	}
+	if len(rep.Dropped) > 0 || rep.DroppedMore > 0 {
+		fmt.Fprintf(w, "execs that ran a file the run wrote (dropped; the program named, its #! interpreter or a loaded binary): %s\n", flaggedText(rep.Dropped, rep.DroppedMore))
+	}
 	if len(rep.UnobservableMCP) > 0 {
 		fmt.Fprintf(w, "mcp servers not observable (no MCP producer recorded): %s\n",
 			printableJoin(rep.UnobservableMCP))
@@ -488,6 +512,29 @@ func writeDrift(w io.Writer, rep *drift.Report, skipped []string, asJSON bool) e
 		return err
 	}
 	return nil
+}
+
+// flaggedText renders one of R17a's lists for its line of text: each image, escaped for the terminal (its name is the
+// agent's to choose), with its execs by verdict, as in "/memfd:x (refused x1)", then the execs of the images past the
+// report's bound.
+func flaggedText(images []drift.FlaggedExec, more int) string {
+	parts := make([]string, 0, len(images)+1)
+	for _, f := range images {
+		var counts []string
+		for _, c := range []struct {
+			verdict string
+			n       int
+		}{{"allow", f.Allow}, {"ask", f.Ask}, {"refused", f.Refused}, {"observed", f.Observed}} {
+			if c.n > 0 {
+				counts = append(counts, fmt.Sprintf("%s x%d", c.verdict, c.n))
+			}
+		}
+		parts = append(parts, record.Printable(f.Path)+" ("+strings.Join(counts, ", ")+")")
+	}
+	if more > 0 {
+		parts = append(parts, fmt.Sprintf("+%d execs of other images", more))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // printableJoin joins names for one line of text, each escaped for the terminal.
@@ -548,6 +595,8 @@ func driftObject(rep *drift.Report) driftJSON {
 		Actions: rep.Actions, Rules: []driftRuleJSON{},
 		Undone: []string{}, UnusedMCP: []string{}, UnobservableMCP: []string{}, UnobservableFS: []string{}, UnobservableRecord: []string{},
 		Skipped: []string{}, Gaps: gapObjects(rep.Gaps), GapWords: gaps.Words(rep.Gaps, rep.CutOff), Drift: rep.Drifted(),
+		FilelessExecs: flaggedObjects(rep.Fileless), FilelessMore: rep.FilelessMore,
+		DroppedExecs: flaggedObjects(rep.Dropped), DroppedMore: rep.DroppedMore,
 	}
 	for _, h := range rep.Hashes {
 		o.Hashes = append(o.Hashes, driftHashJSON{Hash: h.Hash, Runs: h.Runs})
@@ -568,4 +617,13 @@ func driftObject(rep *drift.Report) driftJSON {
 	o.BestEffort = rep.BestEffort
 	o.GuardsNotExercised = rep.GuardsNotExercised
 	return o
+}
+
+// flaggedObjects projects one of R17a's lists onto its JSON shape, [] when it is empty.
+func flaggedObjects(images []drift.FlaggedExec) []driftExecJSON {
+	out := make([]driftExecJSON, 0, len(images))
+	for _, f := range images {
+		out = append(out, driftExecJSON{Path: f.Path, Allow: f.Allow, Ask: f.Ask, Refused: f.Refused, Observed: f.Observed})
+	}
+	return out
 }

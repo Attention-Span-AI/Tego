@@ -86,6 +86,25 @@ type UsedEntry struct {
 	Rule    string
 }
 
+// FlaggedExec is one image the run's exec lines flagged fileless or dropped (R17a, record-ledger.md §2.2): its path
+// as those lines name it, and the lines counted by verdict as a RuleCount counts its rule's.
+type FlaggedExec struct {
+	// Path is the line's path: for a fileless image the kernel's raw spelling (/memfd:<name>), never cleaned. A path
+	// the ledger stored apart, as a blob, is named path_blob:<sha256>.
+	Path string
+	// Allow, Ask, Refused and Observed count the flagged execs of this image by verdict: an allowed one ran, a
+	// refused one is an attempt the run stopped.
+	Allow, Ask, Refused, Observed int
+}
+
+// Total is every flagged exec of this image.
+func (f FlaggedExec) Total() int { return f.Allow + f.Ask + f.Refused + f.Observed }
+
+// maxFlagged bounds the images one list of Report.Fileless or Report.Dropped keeps: the first seen. The paths are the
+// agent's to choose, and a report holds O(rules), never O(events) (§6 case 10); the execs of any other image are
+// counted in Report.FilelessMore or Report.DroppedMore.
+const maxFlagged = 32
+
 // Report is declared versus observed for one run, or for one agent's runs
 // after Aggregate (docs/p0/limits-check-doctor-cli.md §2).
 type Report struct {
@@ -145,6 +164,15 @@ type Report struct {
 	// so a run where the agent behaved leaves every one unfired. Reported like UnobservableFS, never drift; over an
 	// aggregate, the guards no run exercised.
 	GuardsNotExercised []string
+	// Fileless and Dropped list the images the run's exec lines flagged, whatever their verdict (R17a,
+	// record-ledger.md §2.2, GAPS C30): fileless, an anonymous image (a memfd, another anon_inode:, a file unlinked
+	// since it was opened); dropped, an image under a write entry whose inode changed during the run
+	// (drop-and-execute), or in a run with command rules a #! interpreter or a loader's program it loads. One entry per
+	// path, sorted by path; a line with both flags is in both lists. At most maxFlagged images each: FilelessMore and
+	// DroppedMore count the flagged execs of the images past them. Summed by path over an aggregate. Reported, never
+	// drift on their own (Drifted).
+	Fileless, Dropped         []FlaggedExec
+	FilelessMore, DroppedMore int
 	// Ended: the ledger holds a run_end. CutOff: the caller found no launcher behind a run with none (status.Lost), or
 	// one aggregated run is such a run, so the record may stop short of what the run did (gaps.Words).
 	Ended, CutOff bool
@@ -197,6 +225,13 @@ func (r *Report) Sections() []struct {
 // An UnobservableMCP server is not one either. No producer could have written
 // its mcp event, so calling it unused would be a finding about the recorder,
 // not about the agent — and one that fired on every run declaring mcp[]. It is printed as unobservable instead.
+//
+// Nor is a fileless or dropped exec on its own (Report.Fileless, Report.Dropped; R17a). Whether the exec kept to the
+// contract is its line's verdict and rule, which are counted above: a refused one drifts as any refusal does, and an
+// allowed fileless image is under no declared entry (none can name an anonymous image), so it drifts as an undeclared
+// rule. What is left is a dropped image a declared entry allowed — a binary the run built and then ran, the test
+// binary go test writes, a package's installed script — which is the contract at work, and a finding that fired on
+// every such run would say nothing. The lists are printed instead.
 func (r *Report) Drifted() bool {
 	if r.HashChanged || len(r.Undone) > 0 || len(r.UnusedMCP) > 0 {
 		return true
@@ -221,10 +256,12 @@ func (r *Report) Drifted() bool {
 const ctxEvery = 1024
 
 // ComputeCtx reads one run's ledger and reports declared versus observed per rule
-// (R13-R16). rt is the contract this run declared, recompiled from the run
+// (R13-R16), and the images its exec lines flagged fileless or dropped (R17a).
+// rt is the contract this run declared, recompiled from the run
 // directory's own contract.yaml copy by the caller; a nil or empty table is
 // legal and makes every observed rule undeclared with an empty CurrentHash
-// (§6 case 23). It streams: memory is O(rules), not O(events) (§6 case 10).
+// (§6 case 23). It streams: memory is O(rules), not O(events) (§6 case 10);
+// the flagged images are bounded (maxFlagged).
 //
 // It stops on ctx: it checks it every ctxEvery lines and returns its error as is,
 // so a ledger of millions of lines ends on the first signal (R29).
@@ -249,8 +286,10 @@ func ComputeCtx(ctx context.Context, r *ledger.Reader, rt *agent.RuleTable) (*Re
 		// allowedBlind: run_start's capability line has record.exec_open_connect false (record: off),
 		// so the run recorded refusals only and no allowed event.
 		allowedBlind bool
-		prev         mirror.Key
-		lines        int
+		// fileless and dropped are R17a's lists, filled from the exec lines' own flags.
+		fileless, dropped flagged
+		prev              mirror.Key
+		lines             int
 	)
 	for e, err := range r.Iter() {
 		if err != nil {
@@ -322,6 +361,31 @@ func ComputeCtx(ctx context.Context, r *ledger.Reader, rt *agent.RuleTable) (*Re
 				b.use(SectionExec, "exec.allow["+p.CommandRule+"]")
 			}
 		}
+		if e.Kind == record.KindExec {
+			// An exec line says itself whether its image was fileless or dropped (R17a), whatever its verdict and
+			// whichever source wrote it; the refused line that mirrors a refused exec carries neither, so no exec
+			// is listed twice.
+			var p struct {
+				Path     string `json:"path"`
+				PathBlob string `json:"path_blob"`
+				Fileless bool   `json:"fileless"`
+				Dropped  bool   `json:"dropped"`
+			}
+			if e.DecodePayload(&p) == nil && (p.Fileless || p.Dropped) {
+				name := p.Path
+				if name == "" && p.PathBlob != "" {
+					// The ledger stored a path over its blob threshold apart (record-ledger R10): named by its blob,
+					// as the line names it, rather than as an image with no name.
+					name = "path_blob:" + p.PathBlob
+				}
+				if p.Fileless {
+					fileless.add(flaggedOne(name, e.Verdict))
+				}
+				if p.Dropped {
+					dropped.add(flaggedOne(name, e.Verdict))
+				}
+			}
+		}
 		mirrored := prev.Mirrors(e)
 		prev = mirror.Of(e)
 		section, ok := sectionOf(e.Kind)
@@ -362,8 +426,65 @@ func ComputeCtx(ctx context.Context, r *ledger.Reader, rt *agent.RuleTable) (*Re
 	if allowedBlind {
 		rep.Undone, rep.UnobservableRecord = nil, rep.Undone
 	}
+	rep.Fileless, rep.FilelessMore = fileless.result()
+	rep.Dropped, rep.DroppedMore = dropped.result()
 	rep.Gaps = gapTally.Counts()
 	return rep, nil
+}
+
+// flagged accumulates one of R17a's lists: the first maxFlagged images it is given, each with its execs by verdict,
+// and the count of execs that named any other image.
+type flagged struct {
+	images map[string]*FlaggedExec
+	more   int
+}
+
+// flaggedOne is one exec of the image at path, under its line's verdict, counted as buckets.count counts one: a
+// verdict a later schema adds is observed, never lost.
+func flaggedOne(path string, v record.Verdict) FlaggedExec {
+	f := FlaggedExec{Path: path}
+	switch v {
+	case record.VerdictAllow:
+		f.Allow = 1
+	case record.VerdictAsk:
+		f.Ask = 1
+	case record.VerdictRefused:
+		f.Refused = 1
+	default:
+		f.Observed = 1
+	}
+	return f
+}
+
+// add counts in's execs under its image: an image already kept takes them whatever the bound, a new one past the
+// bound adds them to more.
+func (f *flagged) add(in FlaggedExec) {
+	c := f.images[in.Path]
+	if c == nil {
+		if len(f.images) >= maxFlagged {
+			f.more += in.Total()
+			return
+		}
+		if f.images == nil {
+			f.images = map[string]*FlaggedExec{}
+		}
+		c = &FlaggedExec{Path: in.Path}
+		f.images[in.Path] = c
+	}
+	c.Allow += in.Allow
+	c.Ask += in.Ask
+	c.Refused += in.Refused
+	c.Observed += in.Observed
+}
+
+// result is the list sorted by path, nil when it is empty, and the execs of the images past the bound.
+func (f *flagged) result() ([]FlaggedExec, int) {
+	var out []FlaggedExec
+	for _, c := range f.images {
+		out = append(out, *c)
+	}
+	slices.SortFunc(out, func(a, b FlaggedExec) int { return strings.Compare(a.Path, b.Path) })
+	return out, f.more
 }
 
 // The gap a run without read records writes once, right after run_start (SEMANTICS §7); spelled here
@@ -443,7 +564,7 @@ func splitObservedMCP(unused []string, rt *agent.RuleTable, seen map[string]bool
 // in every run because some run could not have observed it, is
 // UnobservableMCP for the agent: one blind run is enough to leave the question
 // open. A deny_read or watch entry is UnobservableFS for the agent on the same
-// terms. Gap tallies add up by what and why.
+// terms. Gap tallies add up by what and why, and the fileless and dropped images by path (R17a).
 func Aggregate(reports []*Report) (*Report, error) {
 	if len(reports) == 0 {
 		return nil, fmt.Errorf("drift: %w: no reports", ErrMixedAgent)
@@ -455,6 +576,7 @@ func Aggregate(reports []*Report) (*Report, error) {
 		unobservable, unobservableFS, unobservableRec []string
 		runGaps                                       [][]gaps.Count
 		usedMarks                                     []UsedEntry
+		fileless, dropped                             flagged
 	)
 	for i, rep := range reports {
 		if rep == nil {
@@ -497,6 +619,15 @@ func Aggregate(reports []*Report) (*Report, error) {
 			b.guards[g] = true
 		}
 		runGaps = append(runGaps, rep.Gaps)
+		// R17a's lists add up by image, under the same bound as a run's: a run's execs past its own bound stay counted.
+		for _, f := range rep.Fileless {
+			fileless.add(f)
+		}
+		for _, f := range rep.Dropped {
+			dropped.add(f)
+		}
+		fileless.more += rep.FilelessMore
+		dropped.more += rep.DroppedMore
 		for _, c := range rep.BestEffort {
 			if !slices.Contains(out.BestEffort, c) {
 				out.BestEffort = append(out.BestEffort, c)
@@ -533,6 +664,8 @@ func Aggregate(reports []*Report) (*Report, error) {
 	out.UnobservableMCP = unobservedByAll(unobservable, out.MCP, out.UnusedMCP)
 	out.UnobservableFS = unobservedByAll(unobservableFS, out.FS, out.Undone)
 	out.UnobservableRecord = unobservedByAll(unobservableRec, slices.Concat(out.FS, out.Net, out.Exec), out.Undone)
+	out.Fileless, out.FilelessMore = fileless.result()
+	out.Dropped, out.DroppedMore = dropped.result()
 	out.Gaps = gaps.Merge(runGaps...)
 	return out, nil
 }

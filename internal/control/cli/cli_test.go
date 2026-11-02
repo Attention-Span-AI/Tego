@@ -64,7 +64,7 @@ func TestHostPrivilegeOfThisProcess(t *testing.T) {
 }
 
 // TestHandoffNounsMatchControlCommands: tego-control's commands are exactly the nouns tego hands to it, with the
-// summaries tego's usage gives them, plus its own version.
+// summaries tego's usage gives them, plus its own version and licenses (docs/GAPS.md B12).
 func TestHandoffNounsMatchControlCommands(t *testing.T) {
 	var want []string
 	for _, n := range handoff.Nouns() {
@@ -78,10 +78,10 @@ func TestHandoffNounsMatchControlCommands(t *testing.T) {
 			t.Errorf("%s: tego-control's summary %q, tego's %q", n.Name, c.Summary, n.Summary)
 		}
 	}
-	want = append(want, "version")
+	want = append(want, "licenses", "version")
 	slices.Sort(want)
 	if got := Names(); !slices.Equal(got, want) {
-		t.Fatalf("tego-control's commands %v, want the handoff's nouns and version %v", got, want)
+		t.Fatalf("tego-control's commands %v, want the handoff's nouns, licenses and version %v", got, want)
 	}
 }
 

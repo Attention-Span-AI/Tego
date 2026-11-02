@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
 // MaxListenerRules bounds each listener/ingress list before kernel state exists.
@@ -183,4 +185,37 @@ func (k *compiler) listenerControl() {
 		return
 	}
 	k.rt.Listen, k.rt.Ingress, k.rt.NetLimits = listen, ingress, limits
+}
+
+// ioUringListenUndecided warns where a ring can listen with nothing deciding it (GAPS C44). Under a net: section with
+// no net.listen list a TCP listen is the supervisor's to refuse (enforce-landlock R6, R11c), since Landlock's BIND_TCP
+// never sees the autobind of a listen() on an unbound socket. A ring's IORING_OP_LISTEN (Linux 6.11+) passes no
+// seccomp notification, and the plane's socket_listen decides only a run whose net.listen is a list (enforce-plane
+// §2.20), so where a root tier's plane admits io_uring (tier cgroup in a plane mode, tier bpflsm) a ring's listen on an
+// unbound TCP socket takes an ephemeral port on every address and nothing refuses it. A list, net.listen: [] for none,
+// has the plane decide it. Tier landlock keeps io_uring ENOSYS (Compile's other io-uring warning says so), so the
+// finding holds at the root tiers alone; compile cannot tell whether tier cgroup gets a plane mode, so the message
+// states that condition. The contract's list is read, not RuleTable.Listen, which a refused list leaves nil too.
+func (k *compiler) ioUringListenUndecided() {
+	if !k.c.IOUring || k.c.Net == nil || k.c.Net.Listen != nil {
+		return
+	}
+	var roots []string
+	var tiers []backend.Tier
+	for _, t := range []backend.Tier{backend.TierCgroup, backend.TierBPFLSM} {
+		if k.mayLand(t) {
+			roots, tiers = append(roots, string(t)), append(tiers, t)
+		}
+	}
+	if len(tiers) == 0 {
+		return
+	}
+	k.ds.warnf(k.pos("io_uring"), CodeIOUring, "io_uring: true under a net: section with no net.listen leaves a ring's "+
+		"listen undecided at tier %s, where a decision plane admits io_uring: its IORING_OP_LISTEN (Linux 6.11+) never "+
+		"reaches the supervisor that refuses a TCP listen here, and the plane decides a listen only against a net.listen "+
+		"list, so a listen on an unbound TCP socket autobinds an ephemeral port on every address and nothing refuses it",
+		strings.Join(roots, " or ")).
+		fix("declare the run's listeners with net.listen, which the plane holds a ring's listen to as well (net.listen: [] " +
+			"declares none, unix ones included), or drop io_uring:").
+		only(tiers...)
 }

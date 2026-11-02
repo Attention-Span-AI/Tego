@@ -1,0 +1,13 @@
+RUN       r-3f9c2a1b-0dllq06ts7400-k7m2pq
+AGENT     retriever
+RUNS      1
+CONTRACT  7a7a7a7a7a7a (no contract.yaml copy to compare)
+ACTIONS   3
+
+SECTION  RULE        DECLARED  ALLOW  ASK  REFUSED  OBSERVED  ALTERNATE
+exec     exec-anon   no        0      0    1        0         0
+exec     exec[git]   no        1      0    0        0         0
+exec     exec[tool]  no        1      0    0        0         0
+execs of an image with no file (fileless): /memfd:payload (refused x1)
+execs that ran a file the run wrote (dropped; the program named, its #! interpreter or a loaded binary): /home/u/proj/out/tool (allow x1)
+gaps: none

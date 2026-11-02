@@ -222,11 +222,13 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   raw bytes, or one edited since) is loaded as a contract file with today's profiles, and R16 then reports
   whatever that changes. Post: every declared entry lands in exactly
   one bucket (a `RuleCount`, possibly zero, or `Undone`); every observed `rule`, `"unmatched"` included, appears
-  in `RuleCount`. Errors: a torn middle line is fatal like `status.Derive`.
+  in `RuleCount`; every `exec` line flagged `fileless` or `dropped` is counted under its image in `Fileless` or
+  `Dropped`, or in `FilelessMore`/`DroppedMore` past the first 32 images (R17a). Errors: a torn middle line is
+  fatal like `status.Derive`.
 - **`drift.Aggregate(reports)`** — Pre: all `reports[i].Agent` equal (else `ErrMixedAgent`, caught by `cli` as a
   usage error, exit 2). Post: `RuleCount`s summed by `Rule`; `Undone`/`UnusedMCP` are **intersections** across
   runs (R17); `UnobservableMCP` is what some run could not observe and no run used; `Gaps` summed by what and
-  why; `Runs = len(reports)`.
+  why; `Fileless`/`Dropped` summed by path under R17a's bound; `Runs = len(reports)`.
 - **`measure.ComputeAt(ctx, r, p, nowMonoNS)`** — same shape as `drift.ComputeCtx`; formulas R18-R23, recomputed from the ledger, never
   sharing state with a live `Watcher` (deliberate duplication, §9 C1).
 - **`ledger.Usage(e) (TokenUsage, bool)`** *(in `internal/ledger`, shared by `Observe` and `measure.ComputeAt`)* —
@@ -620,6 +622,28 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   observe it (R15) — is `UnobservableMCP` for the agent, since that run may have started it; `HashChanged` true if
   any two runs differ or any one run's R16 comparison is changed (its `CurrentHash`, the first such run's, is the
   one shown), listing distinct hashes with counts; gap tallies (R34) summed by what and why.
+- **R17a Fileless and dropped execs** (*added 2026-11-02*, GAPS C30's condition): drift reads the `exec` payload's
+  `fileless` and `dropped` keys (`record-ledger.md` §2.2) and lists each image they flag by the line's `path` —
+  `fileless`, an anonymous image (a memfd, another `anon_inode:`, a file unlinked since it was opened) named by the
+  kernel's raw spelling; `dropped`, an image under a write entry whose inode changed during the run, drop-and-execute
+  (in a run with command rules also a `#!` interpreter or a loader's program it loads) — with its lines counted by
+  verdict as R13 counts a rule's, **whatever the verdict**: an allowed one ran, a refused one is an attempt the run
+  stopped. Every source's `exec` line is read; a line with both flags is in both lists, and the `refused` line that
+  mirrors a refused exec carries neither, so nothing is listed twice. A path the ledger stored apart (`path_blob`, R10 of `record-ledger.md`) is named
+  `path_blob:<sha256>`. The table prints `execs of an image with no file (fileless): <path> (refused x1), …` and
+  `execs that ran a file the run wrote (dropped; the program named, its #! interpreter or a loaded binary): …`, each name escaped for the terminal. A `dropped` entry names the exec line's own `path`: under command
+  rules the file the run wrote may be that program's `#!` interpreter or the binary a loader ran, not the path named; `--json` carries
+  `fileless_execs` and `dropped_execs`, `[]` when empty, each entry `{path, allow, ask, refused, observed}`. A list
+  keeps the first 32 images it sees, since the names are the agent's to choose and a report holds O(rules) (§6
+  case 10); the execs of any other image are counted (`fileless_more`, `dropped_more`, absent at 0; `+N execs of
+  other images` in the table). R17 sums the lists by path under the same bound. **Reported, never drift on their
+  own:** whether such an exec kept to the contract is its line's verdict and rule, which R13 counts and R25 reads — a
+  refused one drifts as any refusal does, and an allowed fileless image is under no declared entry, since none can
+  name one — so what the lists add is a dropped image a declared entry allowed: a binary the run built and then ran,
+  the test binary `go test` writes, a package's installed script. That is the contract at work, and exit 1 on it
+  would fire on nearly every coding run and say nothing. `TestDriftListsFlaggedExecs`,
+  `TestFlaggedExecIsNoDriftOnItsOwn`, `TestFlaggedImagesAreBounded` (`internal/check/drift`),
+  `TestDriftFlaggedExecsGolden` (`internal/cli`).
 **Measure**
 - **R18** `Steps = max(attribution.step, decision.step)`, 0 if none carry a step. A decision's own step is the model's
   turn counter and a text-only turn has no action to attribute, so `status` (`STEP`, `step`) and `measure` both read
@@ -1421,7 +1445,8 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
 - **R29 CLI commands** (one file each under `internal/cli/`, each registering its command from that file, the usage
   generated from the registry and sorted by name (*amended 2026-10-24*, ADR 0100 (2)); the nouns of R35 are handed off; REPO-LAYOUT.md's exhaustive P0 listing: `init,
   doctor, compile, run, stop, status, ask, approve, deny, dns, drift, measure, learn, events, serve, gc, version,
-  __child`; since 2026-10-06 also `watch`, `agents`, `alternate` and `adopt`, below, and the hidden `__adopt-reap`).
+  __child`; since 2026-10-06 also `watch`, `agents`, `alternate` and `adopt`, below, and the hidden `__adopt-reap`; since
+  2026-11-02 `licenses`).
   SIGINT and SIGTERM cancel a command's context once, and the first one also releases the handler, before the
   context is cancelled, so a second takes its default action and ends a command that did not stop on the first
   (one blocked in a read no context reaches, such as a compile of a FIFO). A command that streams a ledger
@@ -1572,7 +1597,7 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     <rcode>` and one line per answer (its name escaped), or one JSON object with `--json`; 0 on NOERROR, 1 on any other
     rcode, 2 for a missing broker, name or type, 125 when the broker cannot be reached or authenticated or its
     reply is malformed.
-  - `drift <run> [--json] [--aggregate]` (R13-R17, 0/1/2).
+  - `drift <run> [--json] [--aggregate]` (R13-R17a, 0/1/2).
   - `measure <run> [--json]` (R18-R23, 0; the cost row is labelled `cost`, its value carrying the `est.` R2
     requires).
   - `events <run> [--json] [--kind K] [--source S] [--verdict V] [--rule R] [--step N] [--limit N] [--last | --follow]` (Filter, 0; values
@@ -1638,6 +1663,10 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     in `--json`'s `errors` (prefixed `builds: `, `capture probes: `, `rings: `) beside each run the pass could not
     finish; the exit stays 0. `--builds` without root, or with `--dry-run`, touches no build and says so on
     stderr.
+  - `licenses` (0; *added 2026-11-02*, docs/GAPS.md B12): the licence texts and third-party notices the binary
+    embeds, the licence files of the release's licenses archive, each whole under a `==> <name> <==` line: `LICENSE`,
+    `NOTICE`, `THIRD_PARTY_NOTICES.txt`, then `LICENSES/*.txt` by name. No argument (2). `tego-control licenses` prints
+    the same: like `version`, each binary has its own, and tego does not hand it off.
   - `version [--json]` (R30, 0).
   - The hidden `__child --run <id>` (no independent flags, exec'd by `run` only, undocumented).
 
@@ -1818,6 +1847,16 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   `status`, `events`, `drift` and `measure` give the same answers on the command line, each with `--json`.
 
 **Changes.** R1's changes are listed under R1.
+- 2026-11-02, R29 `licenses` (docs/GAPS.md B12): an installed tego or tego-control carried no third-party notice,
+  only the release's licenses archive did. Both binaries now embed the licence files (the module root's `notices.go`)
+  and print them (`TestLicensesPrintsWhatTheBinaryCarries`, `TestControlLicensesPrintsWhatTheBinaryCarries`); `licenses`
+  is the second command each binary has of its own, beside `version` (`TestNoNounInBothBinaries`,
+  `TestHandoffNounsMatchControlCommands`), and `scripts/check-licenses.sh` holds the embedded set to its list.
+- 2026-11-02, R17a (GAPS C30): drift lists the images exec lines flag `fileless` or `dropped`, by path with their
+  verdicts, in the table and in `--json` (`fileless_execs`, `dropped_execs`), and never counts them as drift on their
+  own. It did not read the keys, so its report of a run's memfd exec or drop-and-execute was a count under
+  `exec-anon` or an `exec[...]` entry with nothing naming the image (`TestDriftListsFlaggedExecs`,
+  `TestDriftFlaggedExecsGolden`).
 - 2026-10-25, R25 runtime grants (ADR 0064): `Report.Drifted()` skips a runtime
   grant's bucket only for what it allowed. A refusal under `exec.harness-hook[<tego>]`, the hook grant's rule for every
   other vector of the tego binary, made a run report no drift, where the same refused `tego run` under `unmatched`
@@ -2406,7 +2445,8 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
 **Unit.** `limits`: table tests per R1-R6 including boundary cases E13/E16/E17; a race-detector test for I1; a
 test for R32's warn-and-continue on an unrecognized `PriceTable.Version`. `status`: one table test per R7-R12
 transition and its boundary (E1, E4, E5), golden `Snapshot` JSON per case. `drift`: fixture tests for R13-R17,
-including E12 (a rule named `unmatched` keeps its own section-prefixed bucket beside the sentinel) and E23 (missing `contract.yaml`); an `Aggregate` test with a
+R17a's fileless and dropped lists (a table over flagged and plain execs, the bound, the aggregate, and the table and
+`--json` goldens `internal/cli/testdata/drift-flagged*.golden`), including E12 (a rule named `unmatched` keeps its own section-prefixed bucket beside the sentinel) and E23 (missing `contract.yaml`); an `Aggregate` test with a
 hash-drifted run; R15's three states (a producer named in `parsers`, an `mcp` event as proof of one, neither)
 and their aggregate; a canonical copy with `extends:` recompiled after the profile changed, from another
 directory (R16). `gaps`: grouping, the dropped-count sum, the three-binary cap, an undecodable gap, and the

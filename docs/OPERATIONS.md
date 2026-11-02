@@ -712,7 +712,10 @@ events, `gaps:` and `live changes:` as the record spells them, `in words:` for w
 receipt: whether actions may be missing, what is short if not, and what a person changed, and on a lost run that its
 record may stop short; the run's resources), `tego events
 <run> --last` (the last refusal, gap or limit), `tego events <run> --kind refused`, `tego drift <run>` (declared
-against observed, per rule, with the same `gaps:`, `live changes:` and `in words:` lines), `tego measure <run>` (steps, tokens, estimated cost, wall), `tego events <run>
+against observed, per rule, with the same `gaps:`, `live changes:` and `in words:` lines, and every exec of a program
+held in memory (`fileless`) or that ran a file the run itself wrote (`dropped`: the program, its `#!` interpreter or a
+binary a loader ran, listed by the exec's own path), each with whether it was allowed or refused),
+`tego measure <run>` (steps, tokens, estimated cost, wall), `tego events <run>
 --verify`. A refused `git push` is one refusal per directory of `PATH` that the agent's own search tried (133 for 7
 pushes here), and an exec by name is one event per directory tried: count actions from the agent's own log and the
 `decision` events, not from refusals.

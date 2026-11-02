@@ -591,7 +591,8 @@ targeting an unopened block index is `ErrSchema`, mapped to `why=schema`, never 
   sweep, and an exec that arrives after `Stop` attaches nothing, so no reference outlives its run (I9).
   In production the links a binary's refcount holds are the build's, shared per library across the build's runs
   (ADR 0026 (7)): the first run places them and pins them under `<bpf_hash>/uprobes/<dev>-<ino>-<build id>/`, a
-  run that finds them pinned adopts them and places nothing, and each run holds the library's lock in
+  run that finds them pinned, and running the build's programs over its pinned maps, adopts them and places nothing
+  (*amended 2026-11-02*, below), and each run holds the library's lock in
   `/run/tego` shared while its refcount stands. Refcount zero then closes only the launcher's descriptors and
   gives the hold back; the last hold out stamps the lock and, once the run is over and its fanotify marks are
   gone (ADR 0021 (3)), `tego run` starts `tego __uprobe-detach`, which removes the library's probes 2 s after
@@ -606,6 +607,19 @@ targeting an unopened block index is `ErrSchema`, mapped to `why=schema`, never 
   README, kill test 4). A kernel that cannot pin a uprobe link keeps the probes per run, as before
   (`TestIntegrationSharedProbesAreAdoptedAndCaptureOnce`, `TestTheLastHoldOutHandsTheProbesOnAndNoOtherDoes`,
   `TestDetachAfterKeepsHeldProbesAndRemovesIdleOnes`, `TestDetachAfterWaitsOutTheGraceFromTheLastStamp`).
+  *Amended 2026-11-02:* a complete set of a library's individual probes was adopted on its count alone. One pinned
+  before the build's maps were re-created (a build removal that failed part way at the probes, or one made by hand)
+  runs the old programs over a run set that names no run of the build, so the run that adopted it captured nothing
+  on that library and reported no gap. A set is now adopted only when each link is a perf-event link running its
+  probe's program, the run's own or the same code over the build's pinned maps (`sameProgram`, which a multi pair is
+  held to), and, where the kernel reports the probe (6.6 and later), on the probe's kind and offset. A set that is not
+  is never adopted, and never left in use beside a second set: when no other run holds the library (the run's
+  exclusive attempt on its lock succeeds), nothing captures through it, so it is unpinned and the run places its own;
+  while another run holds it, the library is refused, the Failure modes table's "Uprobe attach fails" row, with the
+  reason in the gap's detail, as a multi pair the run cannot prove is the build's is refused
+  (`TestPinnedProbesAreTheBuildsOnlyWhenTheyRunItsProgramsOverItsMaps`,
+  `TestProbesNotTheBuildsAreRefusedWhileAnotherRunHoldsTheLibrary`,
+  `TestProbesNotTheBuildsArePlacedAgainWhenNoOtherRunHoldsThem`, `TestIntegrationProbesOverRecreatedMapsArePlacedAgain`).
 - **R9.** Per-cgroup filtering happens in-kernel (`bpf_get_current_cgroup_id()` against the host-wide cgroup→run
   map, same pattern as `observe`): a process in no run's cgroup produces no chunk. That map is every run's of the
   build, and the probes are the build's runs' shared ones (ADR 0026 (7)), so after the run-set hit a probe looks up

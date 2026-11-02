@@ -81,14 +81,22 @@ func TestHandedOffNounsTakeArgumentsVerbatim(t *testing.T) {
 }
 
 // TestNoNounInBothBinaries: ADR 0100 (2). No command of tego's own has the name of a tego-control command, except
-// version, which each binary has for itself; every tego-control noun is in tego only as a handoff.
+// version and licenses (docs/GAPS.md B12), which each binary has for itself; every tego-control noun is in tego only
+// as a handoff.
 func TestNoNounInBothBinaries(t *testing.T) {
+	own := []string{"licenses", "version"}
 	control := controlcli.Names()
 	if len(control) < 2 {
 		t.Fatalf("tego-control registers %v", control)
 	}
+	for _, n := range own {
+		if c, ok := find(commands(), n); !ok || c.Run == nil || c.Raw != nil || !slices.Contains(control, n) {
+			t.Errorf("%s is each binary's own: tego has it of its own %v, tego-control has it %v", n,
+				ok && c.Run != nil && c.Raw == nil, slices.Contains(control, n))
+		}
+	}
 	for _, c := range commands() {
-		if !slices.Contains(control, c.Name) || c.Name == "version" {
+		if !slices.Contains(control, c.Name) || slices.Contains(own, c.Name) {
 			if c.Raw != nil {
 				t.Errorf("tego %s is a handoff, but tego-control has no %s", c.Name, c.Name)
 			}
@@ -104,7 +112,7 @@ func TestNoNounInBothBinaries(t *testing.T) {
 			handed = append(handed, c.Name)
 		}
 	}
-	if want := slices.DeleteFunc(slices.Clone(control), func(s string) bool { return s == "version" }); !slices.Equal(handed, want) {
+	if want := slices.DeleteFunc(slices.Clone(control), func(s string) bool { return slices.Contains(own, s) }); !slices.Equal(handed, want) {
 		t.Fatalf("tego hands off %v, tego-control has %v", handed, want)
 	}
 }

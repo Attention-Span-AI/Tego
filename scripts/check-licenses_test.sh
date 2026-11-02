@@ -7,8 +7,9 @@
 # THIRD_PARTY_NOTICES.txt, as the module root's is; a package outside its module's directory, or an empty module
 # directory, must end the script with a failure (a refusal inside a pipeline once went on to "verified"); and a
 # release directory's archive must hold every licence file and be covered by the checksums, and each maze archive
-# the notices; and a file a binary embeds must carry an SPDX header or a line in the notices, each icon of a sprite by
-# name.
+# the notices; a file a binary embeds must carry an SPDX header or a line in the notices, each icon of a sprite by
+# name; and the licence files the binaries embed must be exactly the licence files the script lists (docs/GAPS.md
+# B12), none left out and none it does not list.
 set -eu
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo=$(dirname -- "$here")
@@ -31,8 +32,9 @@ mkdir -p "$tmp/elsewhere/pkg"
 # LICTEST_STRAY=1 the first package lies outside its module's directory; with LICTEST_NOMODDIR=1 the module
 # directory is empty, as go list -mod=vendor reports it. Both lead with that line and follow with the sub-package,
 # whose licence the notices then lack: a refusal that only ends a pipeline stage would go on to "verified".
-# The embedded files are the tree's own, under the working directory check-licenses.sh runs from. LICTEST_NOEMBED=1
-# lists none.
+# The embedded files are the tree's own, under the working directory check-licenses.sh runs from: the files of its
+# embed/ and, as the module root's notices.go embeds them, LICENSE, NOTICE, THIRD_PARTY_NOTICES.txt and LICENSES/*.txt,
+# but for the one LICTEST_UNEMBED names. LICTEST_NOEMBED=1 lists none.
 cat >"$tmp/go" <<EOF
 #!/bin/sh
 [ "\$1" = list ] || { echo "stand-in go: refusing \$*" >&2; exit 42; }
@@ -41,6 +43,9 @@ case "\$*" in
 *EmbedFiles*)
 	[ "\${LICTEST_NOEMBED:-}" = 1 ] && exit 0
 	for f in \$PWD/embed/*; do echo "\$f"; done
+	for f in LICENSE NOTICE THIRD_PARTY_NOTICES.txt LICENSES/*.txt; do
+		[ "\$f" = "\${LICTEST_UNEMBED:-}" ] || echo "\$PWD/\$f"
+	done
 	;;
 *.Module.Dir*)
 	[ "\${LICTEST_STRAY:-}" = 1 ] && echo "$tmp/elsewhere/pkg|$mod"
@@ -152,6 +157,20 @@ tree newicon
 printf '<svg><symbol id="logo"/><symbol id="i-kite"/><symbol id="i-whale"/></svg>\n' >"$tmp/newicon/embed/sprite.svg"
 check "an icon the notices do not name fails, though they name its sprite" 1 "$tmp/newicon/scripts/check-licenses.sh"
 grep -q 'i-whale' "$tmp/out" || { echo "FAIL the refusal does not name the icon" >&2; fail=1; }
+
+# The binaries print the licence files they embed (tego licenses): one the build leaves out is a binary shipped
+# without it, and a text under LICENSES/ the script does not list is one no release check asks for.
+tree unembedded
+LICTEST_UNEMBED=NOTICE
+export LICTEST_UNEMBED
+check "a licence file the binaries do not embed fails" 1 "$tmp/unembedded/scripts/check-licenses.sh"
+grep -q 'do not embed NOTICE' "$tmp/out" || { echo "FAIL the refusal does not name the licence file left out" >&2; fail=1; }
+unset LICTEST_UNEMBED
+
+tree unlisted
+printf 'Permission is granted, other terms.\n' >"$tmp/unlisted/LICENSES/Other.txt"
+check "an embedded licence text the script does not list fails" 1 "$tmp/unlisted/scripts/check-licenses.sh"
+grep -q 'embed LICENSES/Other.txt' "$tmp/out" || { echo "FAIL the refusal does not name the unlisted text" >&2; fail=1; }
 
 # A release directory: the licence archive with every file, each maze archive, and checksums covering them.
 dist() { # dist NAME [FILE-TO-LEAVE-OUT]

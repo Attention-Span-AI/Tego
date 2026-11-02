@@ -78,6 +78,10 @@ contract alone does not link the core, and external modules cannot import `inter
   a linked package's directory chain, up to its module's root, in `THIRD_PARTY_NOTICES.txt`, whitespace aside, so
   a sub-package's own licence such as `klauspost/compress`'s `zstd/internal/xxhash` MIT notice is not missed; an
   empty module listing fails; `scripts/check-licenses_test.sh` holds it to both.)
+  (Amended 2026-11-02, GAPS B12: `tego` and `tego-control` embed the same files, `LICENSE`, `NOTICE`,
+  `THIRD_PARTY_NOTICES.txt` and `LICENSES/*.txt`, from the module root's `notices.go`, and `tego licenses` and
+  `tego-control licenses` print them; `scripts/check-licenses.sh` requires the embedded set to be exactly the licence
+  files it holds the archive to.)
 - `release.yml` has goreleaser create the release as a draft, fails it on a reachable vulnerability in the built
   binaries (`govulncheck -mode=binary`, in the read-only `reproduce` job, on the byte-identical rebuild), signs the checksums file with cosign keylessly (the certificate names
   `release.yml` at that tag; the bundle is published as `<checksums>.sigstore.json`), attests every checksummed
@@ -111,7 +115,7 @@ contract alone does not link the core, and external modules cannot import `inter
   whose release lists none is an incomplete release (exit 7). Condition (amended 2026-11-01): `install.sh` installs the
   executable only and prints where the release's `tego_<version>_licenses.tar.gz` is; `install-maze.sh` copies
   `LICENSE`, `NOTICE` and `THIRD_PARTY_NOTICES.txt` from the maze archive to `share/doc/maze` beside its prefix. The
-  binaries neither embed nor print the notices; embedding them behind a command is not built.
+  installed binaries carry the same files themselves and print them with `licenses` (amended 2026-11-02, above).
 - Dependencies: `.github/dependabot.yml` proposes Go module and GitHub Actions updates weekly; every action is
   pinned by commit SHA, and CI runs `govulncheck` on every push.
 - A release requires kill tests 1–6 green on the `test/vm` matrix, kill test 7 (docs/FEATURES.md) run by hand on one

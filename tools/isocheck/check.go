@@ -279,6 +279,8 @@ var tegoSubcommands = strings.Split(strings.TrimSuffix(strings.TrimPrefix(subcom
 var notRuns = map[string]string{
 	// scripts/install.sh runs the product build's version where it was downloaded, to see that it runs at all.
 	"version": "it prints the build's versions from the binary itself and opens no config, ledger, anchor or log",
+	// docs/GAPS.md B12: the licence texts are the binary's own embedded files.
+	"licenses": "it prints the licence texts embedded in the binary itself and opens no config, ledger, anchor or log",
 }
 
 // tegoCommand reports the subcommand of an exec.Command or exec.CommandContext call that runs the tego binary: the

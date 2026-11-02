@@ -16,7 +16,8 @@
 // works on ordinary files, /proc is injected, and the attacher is an interface. What needs root is only the
 // last step, attaching, and its tests are behind the integration tag.
 //
-// Imports: internal/bpf, internal/ledger, internal/platform/proc, internal/runtime/source (the run's Source
+// Imports: internal/bpf, internal/ledger, internal/platform/proc, internal/platform/sys (flock under the standard
+// library's lease), internal/runtime/source (the run's Source
 // contract, ADR 0031 (b) step 1), internal/runtime/capture/httpstream, internal/runtime/cgroup,
 // internal/runtime/derive, internal/runtime/derive/anthropic, internal/runtime/hoststate, pkg/spec/agent,
 // pkg/spec/identity, pkg/spec/record,

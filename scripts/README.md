@@ -3,7 +3,8 @@ Operator scripts: `install.sh`, `install-maze.sh`, `release.sh`. Plain POSIX sh,
 `tego doctor` says whether it is on.
 
 Developer scripts, not shipped: `check-spdx.sh` (CI's SPDX header check),
-`check-licenses.sh [dist-directory]` (license texts, linked dependency notices and optional checksummed release archive),
+`check-licenses.sh [dist-directory]` (license texts, linked dependency notices, the licence files the binaries embed for
+`licenses`, and optional checksummed release archive),
 `install_test.sh` (install.sh's
 verification paths, tego-control beside tego and its pin included, against a release laid out on local disk;
 `make install-test`), `coverage.sh` (coverage

@@ -295,25 +295,25 @@ func TestBoundFileIsBornInItsBind(t *testing.T) {
 			t.Fatalf("UnixBound: %+v, %v", b, err)
 		}
 		rs.b, rs.seen = b, time.Now().UnixNano()
-		made := ""
-		for _, p := range []string{nameA, nameB} {
-			f, err := k.UnixFile(p)
-			if err != nil {
-				continue
-			}
-			if made != "" {
-				t.Fatalf("both %s and %s exist after one bind", made, p)
-			}
-			made = p
-			if o, err := owns(k, b, rs, f); o != ownsFile || err != nil {
-				t.Fatalf("%s: the socket's binding %+v does not name the file the bind made, %+v: %d, %v", p, b, f, o, err)
-			}
-			if fit := rs.birth(f.born); fit != bornInBind {
-				t.Fatalf("%s: born %d, the bind answered at %d and seen bound at %d: %d, want bornInBind", p, f.born, rs.binds[0], rs.seen, fit)
-			}
+		// The kernel's copy of sun_path need not be word-atomic, so a bind under the rewrite can make a third, mixed
+		// name (GitHub's runner, 2026-11-02): the file the bind made is the one the directory holds, whatever its name.
+		ents, err := os.ReadDir(d)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if made == "" {
-			t.Fatal("the bind made neither name")
+		if len(ents) != 1 {
+			t.Fatalf("%d files in %s after one bind, want the one it made: %v", len(ents), d, ents)
+		}
+		made := filepath.Join(d, ents[0].Name())
+		f, err := k.UnixFile(made)
+		if err != nil {
+			t.Fatalf("%s: %v", made, err)
+		}
+		if o, err := owns(k, b, rs, f); o != ownsFile || err != nil {
+			t.Fatalf("%s: the socket's binding %+v does not name the file the bind made, %+v: %d, %v", made, b, f, o, err)
+		}
+		if fit := rs.birth(f.born); fit != bornInBind {
+			t.Fatalf("%s: born %d, the bind answered at %d and seen bound at %d: %d, want bornInBind", made, f.born, rs.binds[0], rs.seen, fit)
 		}
 		if i%50 == 0 {
 			entries, err := k.UnixDump(unixDumpMax, needConnect(unix.SOCK_STREAM))

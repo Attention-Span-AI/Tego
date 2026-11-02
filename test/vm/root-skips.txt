@@ -183,6 +183,7 @@ internal/runtime/capture/uprobe TestIntegrationSharedProbesAreAdoptedAndCaptureO
 internal/runtime/capture/uprobe TestIntegrationTLSMultiDispatchAndFallback # untagged: needs the compiled objects
 internal/runtime/capture/uprobe TestIntegrationTLSMultiDispatchAndFallback/multi # only an actual unavailable uprobe_multi feature probe; individual fallback remains mandatory
 internal/runtime/capture/uprobe TestIntegrationProbesWhoseDetacherDiedGoAtTheNextStart # untagged: needs the compiled objects
+internal/runtime/capture/uprobe TestIntegrationProbesOverRecreatedMapsArePlacedAgain # untagged: needs the compiled objects
 internal/runtime/capture/uprobe TestIntegrationRecordDropsAreNotCaptures # untagged: needs the compiled objects
 internal/runtime/capture/uprobe TestIntegrationARunWithoutACaptureRingDoesNotCapture # untagged: needs the compiled objects
 internal/runtime/capture/uprobe TestIntegrationACaptureOffRunBesideACaptureRunLeavesNoChunk # untagged: needs the compiled objects

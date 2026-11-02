@@ -218,3 +218,18 @@ after `ProbeGrace` as before (`TestIntegrationRecordOffStampsWithoutCapture` pla
 ring anywhere). The probes' per-call cost for every host process (9) is now paid for an `off` run that has a stall
 budget; one without a stall budget, or with `capture: off`, places none. `tego doctor` lists no holders (a library
 lock carries no holder's identity), so no listing had to learn a ring-less one.
+
+*Amended 2026-11-02 ((7); capture-derive R8):* (7)'s adoption of the individual probes another run pinned took a
+complete set on its count alone, where a multi pair was proved since 2026-10-04. A set pinned before the build's maps
+were re-created (a build removal that failed part way at the probes, or one made by hand) runs the old programs over a
+run set that names no run of the build, and adopted, it captured nothing for the run with no gap to say so. Each link
+must now be a perf-event link running its probe's program, the run's own or the same code over the build's pinned maps
+(capture-1's `sameProgram`), on the probe's kind and offset where the kernel reports them (6.6 and later; not its file,
+which the kernel reports as the placer's own `/proc/self/fd` link, while the directory's key names the file). A set
+that is not is never adopted, and never left in use beside a second set, which could capture a call twice ((7)):
+with no other run holding the library (the run's exclusive attempt on the library's lock succeeds, and its hold goes
+back to shared), the set is unpinned before its links are closed, so the probes are off the library before the run
+places its own; while another run holds it, the library is refused, an attach failure with the reason in its gap's
+detail. A multi pair the run cannot prove is still refused whoever holds it
+(`TestProbesNotTheBuildsAreRefusedWhileAnotherRunHoldsTheLibrary`,
+`TestProbesNotTheBuildsArePlacedAgainWhenNoOtherRunHoldsThem`, `TestIntegrationProbesOverRecreatedMapsArePlacedAgain`).

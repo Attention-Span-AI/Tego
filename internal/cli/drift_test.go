@@ -214,7 +214,8 @@ func TestDriftJSON(t *testing.T) {
 		}
 	}
 	if !strings.Contains(out, `"undone":[]`) || !strings.Contains(out, `"unused_mcp":[]`) ||
-		!strings.Contains(out, `"unobservable_fs":[]`) || !strings.Contains(out, `"unobservable_record":[]`) {
+		!strings.Contains(out, `"unobservable_fs":[]`) || !strings.Contains(out, `"unobservable_record":[]`) ||
+		!strings.Contains(out, `"fileless_execs":[]`) || !strings.Contains(out, `"dropped_execs":[]`) {
 		t.Errorf("empty lists must render as []:\n%s", out)
 	}
 	if strings.Count(strings.TrimSpace(out), "\n") != 0 {

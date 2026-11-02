@@ -825,7 +825,10 @@ Explicit listener declarations and their distinct per-tier address/port guarante
 `docs/p0/network-controls.md`. They supersede the original assumption that the schema declared no listen ports.
 An omitted listener list adds no new listener restriction, and a `net:` section alone admits no TCP listener: an
 explicit bind fails on the withheld `BIND_TCP` and, *amended 2026-11-01*, a `listen()` with no bind, which that right
-never sees, is refused by the supervisor and recorded. An explicit empty list refuses new binds/listens,
+never sees, is refused by the supervisor and recorded. *Amended 2026-11-02:* a ring's `IORING_OP_LISTEN` under
+`io_uring: true`, where a root tier's plane admits io_uring, reaches no supervisor, and the plane decides a listen only
+against an explicit list, so nothing refuses its autobind (GAPS C44): `compile` warns `io-uring` wherever such a run may
+land at tier `cgroup` or `bpflsm`, and an explicit list closes it. An explicit empty list refuses new binds/listens,
 and a nonempty list grants its declared endpoints subject to the tier's capabilities and requested assurance.
 DNS tunnelling through the allowed resolver is a stated limit shared with every host-based tool.
 

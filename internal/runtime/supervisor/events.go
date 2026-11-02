@@ -28,8 +28,8 @@ type execPayload struct {
 	// file unlinked since it was opened — rather than a binary on disk (Falco's proc.is_exe_from_memfd,
 	// SEMANTICS §4). Such an image has no path Landlock's exec check governs, so this loop refuses it
 	// (rule=exec-anon) unless the contract has no exec: section (R16b); the flag lets a reader tell a
-	// fileless exec apart from an ordinary one either way, and is what a drop-and-execute detection in
-	// derive or drift can key on (record v1 optional addition, VERSIONING §2).
+	// fileless exec apart from an ordinary one either way, and tego drift lists the images it and Dropped
+	// flag (limits-check-doctor-cli.md R17a). Record v1 optional addition (VERSIONING §2).
 	Fileless bool `json:"fileless,omitempty"`
 	// Dropped marks an exec whose image lies under a write entry and changed after the run started: a
 	// binary the run itself wrote and then executed (drop-and-execute, Falco's proc.is_exe_upper_layer

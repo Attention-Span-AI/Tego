@@ -17,6 +17,7 @@ import (
 	"github.com/cilium/ebpf/link"
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	rcgroup "github.com/attention-span-ai/tego/internal/runtime/cgroup"
 	"github.com/attention-span-ai/tego/internal/runtime/hoststate"
 	specid "github.com/attention-span-ai/tego/pkg/spec/identity"
@@ -34,7 +35,10 @@ import (
 // So a run places a library's probes once and pins each link under the build's pin directory,
 // <pins>/<hash>/uprobes/<dev>-<ino>-<build id>/<n>, and holds the library's lock in the state directory,
 // bpf-<hash>-lib-<dev>-<ino>-<build id>.lock, shared for as long as it wants them. A run that finds the pins
-// complete adopts them and places nothing. The run that leaves last (its exclusive attempt on the lock
+// complete, and running this build's programs over its pinned maps, adopts them and places nothing. A complete
+// set that is not (one pinned before the build's maps were re-created) is never adopted: individual probes are
+// placed again when no other run holds the library, and the library is refused while one does (adoptProbes); a
+// multi pair is refused (adoptMulti). The run that leaves last (its exclusive attempt on the lock
 // succeeds) stamps the lock's mtime and hands the removal to a process of its own (DetachCommand), which waits
 // out ProbeGrace from that stamp and then, if no run holds the library, moves the directory aside
 // (detaching-<...>, a rename, under the exclusive lock) and unpins it, which is what detaches. No removal is on
@@ -140,7 +144,12 @@ func (s *sharedAttacher) AttachBinary(path string, id identity, probes []Probe) 
 			return append(links, release), nil
 		}
 	}
-	if links, ok := adoptLinks(dir, len(probes)); ok {
+	links, adopted, err := s.adoptProbes(dir, probes, hold)
+	if err != nil {
+		_ = hold.Close()
+		return nil, err
+	}
+	if adopted {
 		s.logf("uprobe: adopted the %d pinned probes on %s (%s)", len(links), path, dir)
 		return append(links, release), nil
 	}
@@ -240,7 +249,8 @@ func (s *sharedAttacher) placeKind(path, dir string, probes []Probe, tryMulti bo
 }
 
 // adoptLinks opens a complete set of n pinned links, 0..n-1, and nothing else: anything else is a set a placer
-// that died left part way, which the caller replaces.
+// that died left part way, which the caller replaces. A complete set is not yet the build's: the caller proves
+// that (validMultiLinks, probeLinksDiffer) before it keeps one.
 func adoptLinks(dir string, n int) ([]io.Closer, bool) {
 	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) != n || n == 0 {
@@ -248,16 +258,161 @@ func adoptLinks(dir string, n int) ([]io.Closer, bool) {
 	}
 	out := make([]io.Closer, 0, n)
 	for i := 0; i < n; i++ {
-		l, err := link.LoadPinnedLink(filepath.Join(dir, strconv.Itoa(i)), nil)
+		l, err := loadPinnedProbe(filepath.Join(dir, strconv.Itoa(i)))
 		if err != nil {
-			for _, c := range out {
-				_ = c.Close()
-			}
+			closeProbes(out)
 			return nil, false
 		}
 		out = append(out, l)
 	}
 	return out, true
+}
+
+// loadPinnedProbe opens one pinned probe link. A variable, so that the unit tests can lay a library's pins out as
+// plain files; production never replaces it.
+var loadPinnedProbe = func(path string) (io.Closer, error) { return link.LoadPinnedLink(path, nil) }
+
+// adoptProbes adopts the complete set of individual probes pinned at dir (adoptLinks) when it is this build's
+// probes for the library (probeLinksDiffer), and reports adopted with its links. A complete set can be another's:
+// one pinned before the build's maps were re-created (a build removal that failed part way at the probes, or a
+// removal made by hand) runs programs over a run set that names no run of the build now, and adopted, as it was
+// on its count alone, it left the run's TLS captured by nothing, with no gap to say so. Such a set is never
+// adopted, and never left in use with a second set beside it (adoptMulti's rule): when no run but this one holds
+// the library (aloneOnLibrary), nothing captures through it, so it is unpinned for this run to place its own;
+// while another run holds it, the library is refused, a gap that says why, as a multi pair is refused that this
+// run cannot prove is the build's.
+func (s *sharedAttacher) adoptProbes(dir string, probes []Probe, hold *os.File) ([]io.Closer, bool, error) {
+	links, ok := adoptLinks(dir, len(probes))
+	if !ok {
+		return nil, false, nil
+	}
+	why := s.probeLinksDiffer(links, probes, s.pinnedMapIDs())
+	if why == "" {
+		return links, true, nil
+	}
+	alone, err := aloneOnLibrary(hold)
+	if err != nil || !alone {
+		closeProbes(links)
+		if err != nil {
+			return nil, false, fmt.Errorf("%w: the probes pinned at %s are not this build's (%s): library lock: %w",
+				ErrAttachFailed, dir, why, err)
+		}
+		return nil, false, fmt.Errorf(
+			"%w: the probes pinned at %s are not this build's (%s), and another run holds the library",
+			ErrAttachFailed, dir, why)
+	}
+	// Unpinned while this run still holds them, the probes go at its close rather than at the bpf filesystem's
+	// later release of the pins, so they are off the library before this run's own are placed (enforce/cgroup's
+	// teardown.unpinLink orders a removal the same way).
+	err = removePinTree(dir)
+	closeProbes(links)
+	if err != nil {
+		return nil, false, fmt.Errorf("%w: unpin the probes at %s, which are not this build's (%s): %w",
+			ErrAttachFailed, dir, why, err)
+	}
+	s.logf("uprobe: the %d probes pinned at %s were not this build's (%s); placing this run's own",
+		len(probes), dir, why)
+	return nil, false, nil
+}
+
+// probeLinksDiffer says why links, a complete set pinned for a library, are not this build's individual probes
+// for probes, or "" when they are. The placer pinned probes[i]'s link as <i> (placeKind), so link i must be a
+// perf-event link running probes[i]'s program: this run's own, or the same code over the build's pinned maps
+// (pinned), as a run that loaded its programs on its own places it (sameProgram, which validMultiLinks asks of a
+// multi pair). Where the kernel reports the probe itself (6.6 and later), it must be the probe's kind at the
+// probe's offset. The file is not compared, as validMultiLinks compares a pair's: for a single probe the kernel
+// reports the path the placer gave it, the placer's own /proc/self/fd link (R39), which names nothing here. The
+// directory's key, the file's (device, inode) and build id, is what names the file.
+func (a *EBPFAttacher) probeLinksDiffer(links []io.Closer, probes []Probe, pinned map[ebpf.MapID]bool) string {
+	if len(links) != len(probes) {
+		return fmt.Sprintf("%d links for %d probes", len(links), len(probes))
+	}
+	for i, p := range probes {
+		program := a.coll.Programs[p.Program]
+		if program == nil {
+			return fmt.Sprintf("this run has no program %s", p.Program)
+		}
+		f, err := pinnedLinkFacts(links[i])
+		switch {
+		case err != nil:
+			return fmt.Sprintf("link %d: %v", i, err)
+		case f.typ != link.PerfEventType:
+			return fmt.Sprintf("link %d is of link type %d, not a single probe's", i, f.typ)
+		case !sameProgram(program, f.program, pinned):
+			return fmt.Sprintf("link %d runs program %d, which is not %s over the build's maps", i, f.program, p.Program)
+		case f.event != eventUnreported && (f.event != eventOf(p) || f.offset != uint32(p.Offset)):
+			return fmt.Sprintf("link %d is not the %s", i, p)
+		}
+	}
+	return ""
+}
+
+// linkFacts is what probeLinksDiffer compares of one pinned link, as the kernel reports it.
+type linkFacts struct {
+	typ     link.Type
+	program ebpf.ProgramID
+	// event is the kind of probe the link is on and offset its file offset, which the kernel reports in 32 bits:
+	// both from 6.6, and eventUnreported before.
+	event  probeEvent
+	offset uint32
+}
+
+// probeEvent is the kind of perf event a link is on.
+type probeEvent uint8
+
+const (
+	eventUnreported probeEvent = iota
+	eventUprobe
+	eventUretprobe
+	eventOther
+)
+
+// eventOf is the kind of probe p is placed as.
+func eventOf(p Probe) probeEvent {
+	if p.Return {
+		return eventUretprobe
+	}
+	return eventUprobe
+}
+
+// pinnedLinkFacts reads a pinned link's facts from the kernel. A variable, so that the unit tests can give the
+// facts a kernel would; production never replaces it.
+var pinnedLinkFacts = func(c io.Closer) (linkFacts, error) {
+	l, ok := c.(link.Link)
+	if !ok {
+		return linkFacts{}, fmt.Errorf("%T is not a link", c)
+	}
+	info, err := l.Info()
+	if err != nil {
+		return linkFacts{}, err
+	}
+	f := linkFacts{typ: info.Type, program: info.Program}
+	if pe := info.PerfEvent(); pe != nil && pe.Type != link.PerfEventUnspecified {
+		f.event = eventOther
+		if u := pe.Uprobe(); u != nil {
+			f.event, f.offset = eventUprobe, u.Offset
+			if pe.Type == link.PerfEventUretprobe {
+				f.event = eventUretprobe
+			}
+		}
+	}
+	return f, nil
+}
+
+// aloneOnLibrary reports whether no run but this one holds the library: hold, this run's shared hold on the
+// library's lock, is converted to exclusive without waiting, and back to shared. Linux converts an flock by
+// dropping the shared hold before it tries the exclusive one (libHold.Close), so a conversion that fails has let
+// go of it, and it is taken back. The way back from exclusive is made under the kernel's own lock of the file's
+// locks, so no detacher's or sweep's exclusive attempt gets in between. An error is a hold this run may have lost.
+func aloneOnLibrary(hold *os.File) (bool, error) {
+	if err := sys.Flock(hold, unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		back := sys.Flock(hold, unix.LOCK_SH)
+		if errors.Is(err, unix.EWOULDBLOCK) {
+			return false, back
+		}
+		return false, errors.Join(err, back)
+	}
+	return true, sys.Flock(hold, unix.LOCK_SH)
 }
 
 // detachJob names one library's probes for their removal after the grace.

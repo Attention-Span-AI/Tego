@@ -42,7 +42,13 @@ An omitted `net.listen` adds no new listener restriction and preserves the
 existing backend's rights: under a `net:` section those are unix listeners and
 UDP binds, and no TCP listener (enforce-landlock R6). *Amended 2026-11-01:* that
 holds for a `listen()` with no bind too, which Landlock's `BIND_TCP` never sees;
-the supervisor refuses it and records the refusal. With no `net:` section nothing
+the supervisor refuses it and records the refusal. *Amended 2026-11-02:* except
+a ring's `IORING_OP_LISTEN` (Linux 6.11+) under `io_uring: true` where a root
+tier's plane admits io_uring: it passes no supervisor, and the plane's
+`socket_listen` decides a listen only against an explicit list (enforce-plane
+§2.20), so nothing refuses its autobind (GAPS C44). `compile` warns `io-uring`
+for such a contract wherever its run may land at tier `cgroup` or `bpflsm`; an
+explicit list, `listen: []` for none, closes it. With no `net:` section nothing
 is restricted. An explicit `listen: []` denies listener binds and
 listens, unix ones included. A nonempty list grants only its declared endpoints. Address wildcards
 cover narrower addresses in their own family; IPv6 wildcard declarations do not
@@ -330,7 +336,9 @@ which under a `net:` section hold no TCP listener, by bind or by autobind;
 an explicit empty list denies binds and listens. A declaration grants its exact
 transport/address/port, with the documented wildcard, mapped-address and
 socket-bound ephemeral allocation semantics. Unix pathname creation also needs
-filesystem mutation authority.
+filesystem mutation authority. *Amended 2026-11-02:* the autobind half does not
+hold for a ring's `IORING_OP_LISTEN` where a root tier's plane admits io_uring,
+and `compile` warns `io-uring` for such a contract (GAPS C44).
 
 **R3 — Ingress admission.** Explicit ingress references declared IP listeners
 and admits only matching source prefixes or established reply state. Required

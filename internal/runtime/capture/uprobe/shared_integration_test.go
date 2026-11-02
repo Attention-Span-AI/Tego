@@ -11,14 +11,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 
+	"github.com/attention-span-ai/tego/internal/bpf"
 	"github.com/attention-span-ai/tego/internal/runtime/source"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -187,6 +190,180 @@ func TestIntegrationSharedProbesAreAdoptedAndCaptureOnce(t *testing.T) {
 	}
 	left, _ := os.ReadDir(filepath.Join(build, UprobePinDir))
 	if len(left) != 0 {
+		t.Fatalf("left under %s: %v", filepath.Join(build, UprobePinDir), left)
+	}
+}
+
+// TestIntegrationProbesOverRecreatedMapsArePlacedAgain is shared probe adoption after the build's maps are
+// re-created, on a real kernel, as root. A run places the host libssl's individual probes, pins them under the
+// build and leaves; the build's maps and programs are then removed and made again with the probes' pins left (a
+// build removal that failed part way at them, or one made by hand), so those probes run the old programs over the
+// old run set. The build's next run finds their pins complete. Adopted on their count, as they were, they wrote its
+// client's exchange to the old maps' ring, which no run reads, and the run recorded neither the exchange nor a gap.
+// The run places its own instead, the old probes leave the kernel, and the exchange is captured once.
+func TestIntegrationProbesOverRecreatedMapsArePlacedAgain(t *testing.T) {
+	requireObjects(t)
+	requireRoot(t)
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skipf("no python3: %v", err)
+	}
+	if len(systemLibraries("/", nil)) == 0 {
+		t.Skip("this host has no libssl for pre-attach to find")
+	}
+	const hash = "integration"
+	root, maps := bpffsPinRoot(t, hash)
+	build := filepath.Join(root, hash)
+	progs := filepath.Join(build, progDir)
+	if err := os.Mkdir(progs, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state := t.TempDir()
+	cg := selfCgroupID(t)
+	seedRunSet(t, maps, map[uint64]uint32{cg: 1})
+	// Each run's collection is without the multi dispatchers, as a kernel without uprobe_multi loads it, so the
+	// probes are individual ones whatever this kernel offers.
+	individual := func() *ebpf.Collection {
+		t.Helper()
+		coll, err := LoadCollection(root, hash)
+		if err != nil {
+			t.Fatalf("LoadCollection: %v", err)
+		}
+		for _, n := range []string{bpf.ProgSSLMultiEnter, bpf.ProgSSLMultiReturn} {
+			if p := coll.Programs[n]; p != nil {
+				_ = p.Close()
+				delete(coll.Programs, n)
+			}
+		}
+		return coll
+	}
+	// The detacher does nothing: a run that leaves keeps its probes pinned, for the next run to find.
+	detach := func(detachJob) {}
+	start := func(id string, coll *ebpf.Collection, sink *fakeSink) *Uprobe {
+		t.Helper()
+		att := &sharedAttacher{EBPFAttacher: NewAttacher(coll), root: build, state: state, hash: hash, detach: detach,
+			logf: t.Logf}
+		// Every library is pre-attached, however long the replaced probes take to go: one left to its open would
+		// leave the comparison below nothing to compare.
+		u, err := New(Options{Kernel: true, PinRoot: root, StateDir: state, Attacher: att, Detach: detach,
+			PreattachBudget: time.Minute, Logger: testLogger(t)})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		u.FollowKernel(hash)
+		if err := u.Start(context.Background(), source.RunRef{ID: id, Agent: "a", CgroupID: cg}, sink); err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		t.Cleanup(func() { _ = u.Stop() })
+		if gaps := u.Gaps(); len(gaps) != 0 {
+			t.Fatalf("the source did not come up: %+v", gaps)
+		}
+		return u
+	}
+
+	first := individual()
+	one := start("r-int-recreated-1", first, &fakeSink{})
+	placed := pinnedLinkIDs(t, build)
+	if len(placed) == 0 {
+		t.Fatalf("the first run pinned no probe under %s", build)
+	}
+	for lib, ids := range placed {
+		for _, id := range ids {
+			l, err := link.NewFromID(id)
+			if err != nil {
+				t.Fatalf("library %s: link %d: %v", lib, id, err)
+			}
+			info, err := l.Info()
+			_ = l.Close()
+			if err != nil || info.Type != link.PerfEventType {
+				t.Fatalf("library %s: link %d is not a single probe's (%v)", lib, id, err)
+			}
+		}
+	}
+	if err := one.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	first.Close()
+	// The build's maps and programs go and are made again; the probes' pins stay.
+	for _, dir := range []string{maps, progs} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	seedRunSet(t, maps, map[uint64]uint32{cg: 1})
+	second := individual()
+	defer second.Close()
+
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{selfSigned(t)}})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	served := make(chan error, 1)
+	go func() { served <- serveOne(ln) }()
+	sink := &fakeSink{}
+	two := start("r-int-recreated-2", second, sink)
+	again := pinnedLinkIDs(t, build)
+	for lib, ids := range placed {
+		if len(again[lib]) != len(ids) {
+			t.Fatalf("library %s: pinned %v, then %v", lib, ids, again[lib])
+		}
+		for _, id := range ids {
+			if slices.Contains(again[lib], id) {
+				t.Fatalf("library %s: the second run adopted link %d, whose program reads the maps since re-created",
+					lib, id)
+			}
+		}
+	}
+	for lib, ids := range placed {
+		for _, id := range ids {
+			gone := false
+			for deadline := time.Now().Add(5 * time.Second); !gone && time.Now().Before(deadline); {
+				l, err := link.NewFromID(id)
+				if gone = err != nil; !gone {
+					_ = l.Close()
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
+			if !gone {
+				t.Errorf("library %s: the replaced link %d is still in the kernel beside the run's own", lib, id)
+			}
+		}
+	}
+	out, err := exec.Command(python, "-c", eagerClient, strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)).CombinedOutput()
+	if err != nil {
+		t.Fatalf("python3: %v: %s", err, out)
+	}
+	if err := <-served; err != nil {
+		t.Fatalf("server: %v", err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && len(sink.events()) < 2 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := two.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	var kinds []record.Kind
+	for _, ev := range sink.events() {
+		kinds = append(kinds, ev.Kind)
+	}
+	if len(kinds) != 2 || kinds[0] != record.KindSSLRequest || kinds[1] != record.KindSSLResponse {
+		t.Fatalf("events %v, want the client's request and its response once each through the run's own probes; gaps %+v",
+			kinds, two.Gaps())
+	}
+	for lib := range again {
+		if err := detachAfter(detachJob{root: build, state: state, hash: hash, key: lib}, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if left, _ := os.ReadDir(filepath.Join(build, UprobePinDir)); len(left) != 0 {
 		t.Fatalf("left under %s: %v", filepath.Join(build, UprobePinDir), left)
 	}
 }

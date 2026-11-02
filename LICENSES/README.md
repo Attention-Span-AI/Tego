@@ -19,4 +19,6 @@ authoritative for attribution.
 versions linked into the release binaries, and holds the notices of what they
 embed. Update it when a shipped dependency, an embedded asset or the toolchain
 changes. The release includes these files in a checksummed license archive
-alongside the raw binaries, and in each maze archive.
+alongside the raw binaries, and in each maze archive. The tego and tego-control
+binaries embed the texts and the notices too, and `tego licenses` and
+`tego-control licenses` print them.

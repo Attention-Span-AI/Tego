@@ -57,7 +57,7 @@ tego/
 │   ├── registry/              an agent's name to its contract file: project registry, then user registry (agent-contract.md R26)
 │   ├── adapters/              Layer 3, Go-side harness glue (claudecode, openaicodex)
 │   │   └── claudecode/        `tego hook claude-code`: new refusals to Claude Code hook output, once each (ADR 0063); stdlib, x/sys/unix, pkg/spec/reason and pkg/spec/harness only (depguard claudecode-imports)
-│   └── cli/               one file per subcommand (init, doctor, compile, run, stop, status, ask, approve, deny, dns, drift, measure, learn, events, watch, adopt, agents, alternate, gc, version, hidden __child; guard.go and verify.go back `agents --follow --adopt` and `events --verify`)
+│   └── cli/               one file per subcommand (init, doctor, compile, run, stop, status, ask, approve, deny, dns, drift, measure, learn, events, watch, adopt, agents, alternate, gc, licenses, version, hidden __child; guard.go and verify.go back `agents --follow --adopt` and `events --verify`)
 ├── test/                      fixtures, workloads, integration (root), e2e kill tests, VM matrix
 ├── examples/                  contracts per common agent, quickstart; demo/ is the live demo kit (README.md, demo.sh, a rogue stand-in agent and its contracts)
 ├── docs/                      start at docs/README.md: engine docs, p0/, adr/, user/ (the user guide; its README states what the root tiers and adopt need, and fixes the label for what is not built yet)
@@ -65,6 +65,7 @@ tego/
 ├── .github/                   CI, CODEOWNERS
 ├── go.mod  Makefile  .golangci.yml  .gitignore  README  CONTRIBUTING  SECURITY  LICENSE (Apache-2.0)
 ├── NOTICE  THIRD_PARTY_NOTICES.txt  LICENSES/   licensing notices, linked dependencies' notices, the GPL/BSD/LGPL texts
+├── notices.go                 package tego, the module root: embeds those files for `tego licenses` and `tego-control licenses`
 ```
 
 Packages added since 2026-09-22 and not drawn above: `internal/watch/` (watcher, adopt, tree, procconn, sig: watching and adopting any agent, ADRs 0054 and 0055), `internal/runtime/deputy/` (the run's open deputy, ADR 0041), `internal/runtime/dnsbroker/` (opt-in DNS transport for cooperating clients), `internal/runtime/hoststate/` (the root tiers' `/run/tego`, ADR 0034), `internal/realtego/` (the `~/.tego` directories a process could reach), `internal/selftest/` (`tego test`, Layer 2: starts the tego binary and reads its ledger, ADR 0074), `internal/check/gaps/` and `internal/check/resources/`, `internal/platform/hostaddr/` and `internal/platform/startphase/`, and `pkg/policy/gate/`, `pkg/policy/dnspolicy/`, `pkg/policy/fsplan/`.
@@ -113,6 +114,8 @@ internal/runtime/source ──► pkg/spec/{agent,record} and the standard libra
 cmd/maze ──► internal/maze/cli ──► internal/maze/{scan,scope,ui}, internal/platform/proc, pkg/spec/identity
                             (never internal/runtime, internal/ledger, internal/cli, pkg/spec/agent or pkg/spec/config:
                             depguard maze-stays-outside-the-engine; the engine is run as the tego command)
+the module root (notices.go, package tego) ──► embed and the standard library only: the licence files both binaries
+                            carry (docs/GAPS.md B12); internal/cli and internal/control/cli print them (`licenses`)
 ```
 
 - `pkg/spec` never imports `internal`; it provides the versioned public types and codecs corresponding to `spec/`. `pkg/policy/evaluate` is a separate experimental public facade over the pure decision core. External callers must pin its module version to the binary whose kernel policy they model. The decision core also registers the deprecated `pkg/spec/agent` evaluation shims (`agent.RegisterDecider`, ADR 0028); this compatibility registration is not the supported extension mechanism.

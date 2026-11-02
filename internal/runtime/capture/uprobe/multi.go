@@ -180,39 +180,78 @@ func (a *EBPFAttacher) validMultiLinks(links []io.Closer, path string, plan mult
 // collection does not have; requiring this run's own ID refused that pair and cost the run the library's
 // capture (capture-1). The kernel's tag hashes the instructions with every map reference zeroed, so it is equal
 // across loads of one object; the maps must then be the build's pinned ones, position for position, and only
-// a load's own global sections (.bss) may differ. Nothing else is accepted.
+// a load's own global sections (.bss) may differ. Nothing else is accepted: a program over maps since
+// re-created has the tag and other pinned maps, and it is refused.
 func sameProgram(want *ebpf.Program, id ebpf.ProgramID, pinned map[ebpf.MapID]bool) bool {
-	wi, err := want.Info()
+	if want == nil {
+		return false
+	}
+	w, err := loadedFacts(want)
 	if err != nil {
 		return false
 	}
-	if own, ok := wi.ID(); ok && own == id {
+	if w.idOK && w.id == id {
 		return true
 	}
-	p, err := ebpf.NewProgramFromID(id)
-	if err != nil {
+	g, err := programFacts(id)
+	if err != nil || g.typ != w.typ || w.tag == "" || g.tag != w.tag || !w.mapsOK || !g.mapsOK ||
+		len(g.maps) != len(w.maps) {
 		return false
 	}
-	defer func() { _ = p.Close() }()
-	gi, err := p.Info()
-	if err != nil || p.Type() != want.Type() || wi.Tag == "" || gi.Tag != wi.Tag {
-		return false
-	}
-	wm, ok := wi.MapIDs()
-	if !ok {
-		return false
-	}
-	gm, ok := gi.MapIDs()
-	if !ok || len(gm) != len(wm) {
-		return false
-	}
-	for i := range wm {
-		if gm[i] != wm[i] && (pinned[wm[i]] || pinned[gm[i]]) {
+	for i := range w.maps {
+		if g.maps[i] != w.maps[i] && (pinned[w.maps[i]] || pinned[g.maps[i]]) {
 			return false
 		}
 	}
 	return true
 }
+
+// progFacts is what sameProgram compares of one program, as the kernel reports it.
+type progFacts struct {
+	// id is the program's id; idOK is false when the kernel reports none.
+	id   ebpf.ProgramID
+	idOK bool
+	typ  ebpf.ProgramType
+	// tag is the kernel's hash of the instructions with every map reference zeroed.
+	tag string
+	// maps are the ids of the maps the program reads, in the order the kernel lists them; mapsOK is false when
+	// the kernel reports none.
+	maps   []ebpf.MapID
+	mapsOK bool
+}
+
+// factsOf collects a program's facts from its type and the kernel's info.
+func factsOf(typ ebpf.ProgramType, info *ebpf.ProgramInfo) progFacts {
+	f := progFacts{typ: typ, tag: info.Tag}
+	f.id, f.idOK = info.ID()
+	f.maps, f.mapsOK = info.MapIDs()
+	return f
+}
+
+// loadedFacts reads the facts of a program this run holds, and programFacts those of the program the kernel
+// holds under an id. They are variables so that the unit tests can stand in for the kernel; production never
+// replaces them.
+var (
+	loadedFacts = func(p *ebpf.Program) (progFacts, error) {
+		info, err := p.Info()
+		if err != nil {
+			return progFacts{}, err
+		}
+		return factsOf(p.Type(), info), nil
+	}
+	programFacts = func(id ebpf.ProgramID) (progFacts, error) {
+		p, err := ebpf.NewProgramFromID(id)
+		if err != nil {
+			return progFacts{}, err
+		}
+		defer func() { _ = p.Close() }()
+		info, err := p.Info()
+		if err != nil {
+			return progFacts{}, err
+		}
+		return factsOf(p.Type(), info), nil
+	}
+)
 
 // pinnedMapIDs are the IDs of the collection's maps that are not a load's own global sections: the build's
 // pinned maps, which every run of the build shares by name.
@@ -222,13 +261,21 @@ func (a *EBPFAttacher) pinnedMapIDs() map[ebpf.MapID]bool {
 		if strings.HasPrefix(name, ".") {
 			continue
 		}
-		if info, err := m.Info(); err == nil {
-			if id, ok := info.ID(); ok {
-				ids[id] = true
-			}
+		if id, ok := mapID(m); ok {
+			ids[id] = true
 		}
 	}
 	return ids
+}
+
+// mapID reads a map's id. A variable, so that the unit tests can stand in for the kernel; production never
+// replaces it.
+var mapID = func(m *ebpf.Map) (ebpf.MapID, bool) {
+	info, err := m.Info()
+	if err != nil {
+		return 0, false
+	}
+	return info.ID()
 }
 
 func closeProbes(links []io.Closer) {

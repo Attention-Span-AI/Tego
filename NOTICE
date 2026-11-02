@@ -31,5 +31,6 @@ the Go runtime, linked Go modules, vendored libbpf headers and the Lucide icons.
 
 Raw binary releases are accompanied by tego_<version>_licenses.tar.gz, and the
 maze archives hold the same notices. The release checksums and provenance cover
-those archives too. Distribute the licenses archive with the executable when
-passing a binary on to another recipient.
+those archives too. The tego and tego-control binaries carry the same files, and
+tego licenses and tego-control licenses print them. Distribute the licenses
+archive with the executable when passing a binary on to another recipient.

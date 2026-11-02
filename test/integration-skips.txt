@@ -195,6 +195,7 @@ internal/runtime/capture/uprobe TestIntegrationPreattachCapturesTheFirstRequest 
 internal/runtime/capture/uprobe TestIntegrationSharedProbesAreAdoptedAndCaptureOnce # needs the compiled objects: bpf: object bindings are not generated
 internal/runtime/capture/uprobe TestIntegrationTLSMultiDispatchAndFallback # needs root and the compiled objects; the privileged suite tests actual OpenSSL multi and individual capture
 internal/runtime/capture/uprobe TestIntegrationProbesWhoseDetacherDiedGoAtTheNextStart # needs the compiled objects: bpf: object bindings are not generated
+internal/runtime/capture/uprobe TestIntegrationProbesOverRecreatedMapsArePlacedAgain # needs the compiled objects: bpf: object bindings are not generated
 internal/runtime/capture/uprobe TestIntegrationRecordDropsAreNotCaptures # needs the compiled objects: bpf: object bindings are not generated
 internal/runtime/capture/uprobe TestIntegrationARunWithoutACaptureRingDoesNotCapture # needs the compiled objects: bpf: object bindings are not generated
 internal/runtime/capture/uprobe TestIntegrationACaptureOffRunBesideACaptureRunLeavesNoChunk # needs the compiled objects: bpf: object bindings are not generated

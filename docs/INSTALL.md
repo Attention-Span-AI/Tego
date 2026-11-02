@@ -165,7 +165,8 @@ you run:
 
 When you pass a release binary on, keep `tego_<version>_licenses.tar.gz` with it: it holds the licence texts and the
 third-party notices that `NOTICE` refers to. `install.sh` prints where that archive is. Each maze archive holds the
-same notices.
+same notices. The `tego` and `tego-control` binaries carry the same texts, and `tego licenses` and
+`tego-control licenses` print them.
 
 ## Uninstall
 

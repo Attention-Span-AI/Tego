@@ -352,7 +352,10 @@ func TestFreezeHelper(t *testing.T) {
 		t.Fatalf("no cgroup v2 path: %v", err)
 	}
 	deadline := DefaultFanotifyDeadline
-	if mode == "hold" {
+	// stop: the open queued while the listener is stopped is decided after SIGCONT, and a slow runner's first decision
+	// after the resume can take longer than the 500 ms default, which allows it (E40's timeout) and is not what that
+	// test is about (GitHub's arm64 runner, 2026-11-02). With an hour, an allow there could only be a real bug.
+	if mode == "hold" || mode == "stop" {
 		deadline = time.Hour
 	}
 	// A deny_read entry marks the helper's tmpfs and nothing else. No exec: section, so no exec is refused

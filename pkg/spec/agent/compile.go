@@ -324,6 +324,7 @@ func Compile(c *Contract, m *config.Machine, opts ...CompileOption) (*RuleTable,
 	k.net()
 	k.dnsPolicy()
 	k.listenerControl()
+	k.ioUringListenUndecided()
 	k.networkControlTier()
 	if err := k.o.ctx.Err(); err != nil {
 		return nil, k.ds.list, err

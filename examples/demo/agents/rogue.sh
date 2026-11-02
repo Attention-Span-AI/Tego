@@ -46,6 +46,9 @@ else
 fi
 
 say "6. run a program it was never granted"
+# Each refusal's line is written as the supervisor finishes it, so on a busy machine the delete's line could land
+# after the exec's; Act 3 shows the last one, which must be this exec's. A short pause keeps them in order.
+sleep 0.3
 if /usr/bin/whoami >/dev/null 2>&1; then
   say "   ran whoami"
 else

@@ -23,6 +23,12 @@ Changes after the first source release, listed here until the next tag.
 
 ### Fixed
 
+- A run no longer adopts TLS capture probes left over from before the build's BPF maps were re-created, which lost
+  that library's capture with no gap; it places its own, or reports a gap while another run still holds the old ones.
+- `tego licenses` and `tego-control licenses` print the licence texts and third-party notices each binary embeds.
+- `tego drift` lists every exec of a program held in memory or that ran a file the run wrote, with its verdicts.
+- `tego compile` warns when `io_uring: true` meets a `net:` section with no `net.listen` at a root tier, where a ring's
+  listen goes unrefused.
 - `examples/prices.example.yaml` is a price table to start from (docs/OPERATIONS.md "The price table"), every example's
   header names its setup, and the examples compile on a fresh machine after it.
 - An empty string is not a default. `tego watch --boundary ""` and `tego adopt --boundary ""` ran the command record-only,

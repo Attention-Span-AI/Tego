@@ -665,12 +665,13 @@ func TestGO5AnTegoSubprocessGetsAnEnvironmentOfItsOwn(t *testing.T) {
 		"no subcommand":  {"\t_ = exec.Command(bin, \"--version\").Run()", false},
 		"passed on":      {"\tcode, out := c.exec(t, exec.Command(bin, \"run\", \"a.yaml\"))\n\t_, _ = code, out", false},
 		"python program": {"\t_ = exec.Command(bin, \"./agent.py\").Run()", false},
-		// Every command of the CLI but version is one GO-5 knows.
+		// Every command of the CLI but version and licenses is one GO-5 knows.
 		"agents adopt": {"\t_ = exec.Command(bin, \"agents\", \"--follow\", \"--adopt\", \"claude\").Run()", true},
 		"alternate":    {"\t_ = exec.Command(bin, \"alternate\", \"r\", \"a1\", \"--file\", \"x\").Run()", true},
 		"dns":          {"\t_ = exec.Command(bin, \"dns\", \"allowed.example\").Run()", true},
 		"init":         {"\t_ = exec.Command(bin, \"init\", \".\").Run()", true},
 		"version":      {"\t_ = exec.Command(bin, \"version\").Run()", false},
+		"licenses":     {"\t_ = exec.Command(bin, \"licenses\").Run()", false},
 		// the Env that counts is the one set on that command, after it is made and before it starts.
 		"reused name": {"\tcmd := exec.Command(bin, \"doctor\", \"--require\", \"cgroup\")\n\t_ = cmd.Run()\n\tcmd = exec.Command(bin, \"run\", \"a.yaml\")\n\tcmd.Env = testutil.TegoEnv(t, d, \"TEGO_CONFIG=\"+c)\n\t_ = cmd.Run()",
 			true},

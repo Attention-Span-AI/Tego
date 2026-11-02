@@ -77,8 +77,8 @@
 //	      then, do, else, if, while, until, !, or sudo, env, exec, timeout, nohup, time, setsid, script, xargs, command
 //	      or a shell and its options) and followed by run, watch, gc, stop, events, status, ask, approve, deny,
 //	      alternate, doctor, drift, learn, adopt, agents, measure, detect, compile, dns or init (every command
-//	      internal/cli registers but version, which reads no config, ledger, anchor or log: notRuns), on a line
-//	      joined at its trailing backslashes; or, in a Python
+//	      internal/cli registers but version and licenses, which read no config, ledger, anchor or log: notRuns),
+//	      on a line joined at its trailing backslashes; or, in a Python
 //	      file that names tego, an argument list that starts with a name, call or subscript (or a literal ending in
 //	      tego) and a subcommand in quotes.
 //	SH-6  a script that runs a tego binary and takes it from its caller (TEGO_BIN, --tego) refuses a binary that is

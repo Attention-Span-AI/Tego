@@ -61,14 +61,32 @@ esac
 # Every file a binary embeds must say what it is under: an SPDX header of ours, or a line in the notices. An asset
 # copied in from elsewhere otherwise ships with no credit, which the walk above cannot see: it reads Go modules only.
 # Exempt: BPF objects (NOTICE gives their terms), the project's own contracts and tables (a header would land in a
-# user's copy, or in a pinned hash), and the logo. A sprite's symbols are each named too, so an icon added to a sprite
-# already in the notices is not covered by the file's line.
+# user's copy, or in a pinned hash), the logo, and the licence files themselves. A sprite's symbols are each named
+# too, so an icon added to a sprite already in the notices is not covered by the file's line.
 # shellcheck disable=SC2016 # the braces and $d are go list's template, not the shell's
 embeds=$("${GO:-go}" list -deps -tags tegobpf -f '{{if .Module}}{{if .Module.Main}}{{$d := .Dir}}{{range .EmbedFiles}}{{$d}}/{{.}}{{"\n"}}{{end}}{{end}}{{end}}' $binaries)
 [ -n "$embeds" ] || { echo "check-licenses: go list named no embedded file" >&2; exit 1; }
+# The binaries carry the licence files themselves (docs/GAPS.md B12): the module root's package (notices.go) embeds
+# them, and `tego licenses` and `tego-control licenses` print them. The licence files embedded, the ones at the root
+# and under LICENSES/ (only the root's package reaches them), must be exactly the list the release archive is held to:
+# one left out ships a binary without it, and one the list lacks is a text no archive check asks for.
+embedded=$(for f in $embeds; do
+	f=${f#"$root"/}
+	case "$f" in LICENSES/*) echo "$f" ;; */*) ;; *) echo "$f" ;; esac
+done)
+for file in $license_files; do
+	printf '%s\n' "$embedded" | grep -qFx "$file" || { echo "check-licenses: the binaries do not embed $file; embed it in notices.go" >&2; exit 1; }
+done
+for f in $embedded; do
+	case " $license_files " in
+	*" $f "*) ;;
+	*) echo "check-licenses: the binaries embed $f, which license_files does not list; add it there" >&2; exit 1 ;;
+	esac
+done
 icons=$(sed -n 's/^Icons: //p' THIRD_PARTY_NOTICES.txt | tr -d ',')
 for f in $embeds; do
 	f=${f#"$root"/}
+	case " $license_files " in *" $f "*) continue ;; esac
 	case "$f" in
 	internal/bpf/*_bpf*.o | *.yaml | *.yaml.tmpl | internal/control/web/static/favicon.svg) continue ;;
 	esac
