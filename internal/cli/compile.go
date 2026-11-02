@@ -76,7 +76,7 @@ func cmdCompile() Command {
 			fs.StringVar(&execLine, "exec", "", "evaluate one command line against the exec rules in every tier, words split on spaces, quotes grouping (ADR 0048)")
 		},
 		Run: func(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
-			if fs.NArg() != 1 {
+			if fs.NArg() != 1 || fs.Arg(0) == "" {
 				message(stderr, "", 0, 0, "tego compile: exactly one contract file or agent name", codeUsage)
 				return identity.ExitUsage // R25: usage error
 			}
@@ -184,10 +184,7 @@ func runCompile(ctx context.Context, path string, req compileRequest, stdout, st
 	_ = agent.WriteDiagnostics(stderr, ds)
 	label := ref.label()
 	if err != nil {
-		if !agent.HasErrors(ds) {
-			message(stderr, label, 0, 0, err.Error(), loadCode(err))
-		}
-		return identity.ExitFinding // R25: compile found an error
+		return loadFailed(stderr, label, ds, err)
 	}
 	if ctx.Err() != nil {
 		message(stderr, "", 0, 0, "tego compile: interrupted", codeIO)
@@ -212,10 +209,7 @@ func runCompile(ctx context.Context, path string, req compileRequest, stdout, st
 	}
 	_ = agent.WriteDiagnostics(stderr, ds)
 	if err != nil {
-		if !agent.HasErrors(ds) {
-			message(stderr, label, 0, 0, err.Error(), agent.CodeSchema)
-		}
-		return identity.ExitFinding // R25: compile found an error
+		return loadFailed(stderr, label, ds, err)
 	}
 	warnCostUnpriced(stderr, label, rt, m)
 	// The decision plane's keyed-inode cap (TIER3-PLAN T5, enforce-plane §6 E13) and this launcher's descriptor cap
@@ -664,12 +658,29 @@ func loadContract(path string, profiles agent.ProfileSource) (*agent.Contract, [
 	return agent.LoadBytes(stdinLabel, data, profiles)
 }
 
-// loadCode picks the diagnostic code for a Load error that carried no diagnostic: a missing file
-// is path-missing, a file with a second name config-untrusted, anything else (unreadable, oversized) is schema.
+// loadFailed reports a compile's load or Compile error, err, that its diagnostics ds may already name, and is the exit:
+// a finding (R25), except a file the reader may not open, an I/O failure at 125 [io] as every other one is (E26).
+func loadFailed(stderr io.Writer, label string, ds []agent.Diagnostic, err error) int {
+	if agent.HasErrors(ds) {
+		return identity.ExitFinding // R25: compile found an error
+	}
+	code := loadCode(err)
+	message(stderr, label, 0, 0, err.Error(), code)
+	if code == codeIO {
+		return identity.ExitError // R25: an I/O failure, not a contract finding
+	}
+	return identity.ExitFinding // R25: compile found an error
+}
+
+// loadCode picks the diagnostic code for a Load error that carried no diagnostic: a missing file is path-missing, one
+// the reader may not open is io, a file with a second name is config-untrusted, anything else (oversized, malformed)
+// is schema.
 func loadCode(err error) string {
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		return agent.CodePathMissing
+	case errors.Is(err, os.ErrPermission):
+		return codeIO // the file is not the reader's to open: nothing about its schema is known
 	case errors.Is(err, config.ErrUntrusted):
 		return config.CodeUntrusted // a contract file with a second name (agent-contract.md R10, ADR 0059)
 	}

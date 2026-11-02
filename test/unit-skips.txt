@@ -43,6 +43,34 @@ internal/runtime/enforce/cgroup TestFanotifyQuotaFailuresNameTheirSetting # the 
 internal/runtime/enforce/cgroup TestLoopRemovesItsMarksWithoutNamingAPath/* # the same thread budget, per case
 internal/runtime/enforce/cgroup TestNewListenerSettlesOnTheLoop # the same thread budget
 internal/runtime/hoststate TestOpenHostAsRoot # needs root: the trusted directory is root's (runs in root-suites, which requires it to pass)
+tools/fdcheck TestTreeRatchetAndPlantedSites/linux-amd64-cgo # the amd64 cgo build needs a C compiler for linux/amd64, which the arm64 runner lacks; there the files only cgo builds are checked under arm64's cgo build, and the amd64 jobs check amd64's
+tools/fdcheck TestTreeRatchetAndPlantedSites/linux-amd64-cgo-integration,tegobpf,tegotesthooks # the same build with the lint's tags
+
+# arm64's syscall table has no creat, chmod, chown, lchown or mknod, only their *at forms, so a case that drives one of
+# those calls has nothing to drive there; amd64 runs every one of them. Seen on GitHub's ubuntu-24.04-arm runner (2026-11-02).
+internal/doctor TestPlanePinImagesRun # the cell's images are x86-64 code, which an arm64 host cannot run (amd64 runs it)
+internal/runtime/supervisor TestDenyWriteRefusedBySupervisor/summary/creat_a_hook # arm64 has no creat(2)
+internal/runtime/supervisor TestDenyWriteRefusedBySupervisor/off/creat_a_hook # arm64 has no creat(2)
+internal/runtime/supervisor TestUserDenyWriteRefusedBySupervisor/creat_in_it # arm64 has no creat(2)
+internal/runtime/supervisor TestLiveBlockAccessClasses/read:_creat # arm64 has no creat(2)
+internal/runtime/supervisor TestLiveBlockAccessClasses/write:_creat # arm64 has no creat(2)
+internal/runtime/supervisor TestChmodHandlerFailureRefuses/chmod_panics_plane=false # arm64 has no chmod(2) or chown(2)
+internal/runtime/supervisor TestChmodHandlerFailureRefuses/chmod_panics_plane=true # arm64 has no chmod(2) or chown(2)
+internal/runtime/supervisor TestChmodHandlerFailureRefuses/chmod_returns_without_answering_plane=false # arm64 has no chmod(2) or chown(2)
+internal/runtime/supervisor TestChmodHandlerFailureRefuses/chmod_returns_without_answering_plane=true # arm64 has no chmod(2) or chown(2)
+internal/runtime/supervisor TestChmodHandlerFailureRefuses/chown_panics_plane=false # arm64 has no chmod(2) or chown(2)
+internal/runtime/supervisor TestChmodHandlerFailureRefuses/chown_panics_plane=true # arm64 has no chmod(2) or chown(2)
+internal/runtime/supervisor TestChmodHandlerFailureRefuses/chown_returns_without_answering_plane=false # arm64 has no chmod(2) or chown(2)
+internal/runtime/supervisor TestChmodHandlerFailureRefuses/chown_returns_without_answering_plane=true # arm64 has no chmod(2) or chown(2)
+internal/runtime/supervisor TestWriteGateScoresAnAttributeChange/chown_outside # arm64 has no chown(2)
+internal/runtime/supervisor TestWriteGateScoresAnAttributeChange/lchown_outside # arm64 has no lchown(2)
+internal/runtime/supervisor TestFSRecording/legacy_mknod_outside # arm64 has no mknod(2)
+internal/runtime/supervisor TestTier2MknodUnderNestedDenyReadKeepsItsLine/mknod # arm64 has no mknod(2)
+internal/runtime/supervisor TestLegacyFSHandlers # every call it drives is a legacy path syscall arm64 does not have
+internal/runtime/supervisor TestAnUnfollowedFinalDotIsWherePathLookupLands/lchown/out/lk/../plane=false # arm64 has no lchown(2)
+internal/runtime/supervisor TestAnUnfollowedFinalDotIsWherePathLookupLands/lchown/out/lk/../plane=true # arm64 has no lchown(2)
+internal/runtime/supervisor TestAnUnfollowedFinalDotIsWherePathLookupLands/lchown/out/lk/./plane=false # arm64 has no lchown(2)
+internal/runtime/supervisor TestAnUnfollowedFinalDotIsWherePathLookupLands/lchown/out/lk/./plane=true # arm64 has no lchown(2)
 
 # Opt-in measurements: a budget check that reads a big ledger copy named in its environment, and skips without one.
 internal/control/ledgerview TestQueryBudget # opt-in: measures only a ledger directory named in TEGO_LOGS_BENCH_LEDGER (a 350,000-line copy no runner holds)

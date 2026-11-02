@@ -13,7 +13,7 @@ import (
 const nearSecretWords = "first reached next to a secret read, so secrets may have gone there"
 
 // Withhold is a least-privilege proposal (the text learn.Proposal.Contract writes) with every net.allow item that
-// names one of dests ("host:port", where a leaking run's secrets went: ledgerview.Verdict.Dests) turned into a
+// names one of dests ("host:port", where a leaking run's secrets went: ledgerview.Verdict.NeverAllow) turned into a
 // "# NOT allowed" comment, and the dests it withheld, in the order dests names them. A contract made from a run that
 // leaked must never allow where the secrets went (QA PW-1): learn proposes every address the run reached, the
 // attacker's among them.
@@ -27,7 +27,9 @@ func Withhold(text string, dests []string) (string, []string) {
 		return text, nil
 	}
 	lines := strings.Split(text, "\n")
-	var withheld []string
+	ix := indexDests(dests)
+	var withheld []int // places in dests, each once
+	held := map[int]bool{}
 	inNet := false
 	allowAt, kept, dropped := -1, 0, 0
 	closeAllow := func() {
@@ -60,11 +62,11 @@ func Withhold(text string, dests []string) (string, []string) {
 			continue
 		}
 		value, note, ok := netItem(trimmed)
-		d := ""
+		d := -1
 		if ok {
-			d = matchDest(value, dests)
+			d = ix.match(value)
 		}
-		if d == "" {
+		if d < 0 {
 			kept++
 			continue
 		}
@@ -74,7 +76,8 @@ func Withhold(text string, dests []string) (string, []string) {
 		}
 		lines[i] = l[:indent] + c + ": " + nearSecretWords
 		dropped++
-		if !slices.Contains(withheld, d) {
+		if !held[d] {
+			held[d] = true
 			withheld = append(withheld, d)
 		}
 	}
@@ -83,14 +86,18 @@ func Withhold(text string, dests []string) (string, []string) {
 		return text, nil
 	}
 	// Name them in dests' order (the closest to the secret first), as the run page's banner does.
-	slices.SortStableFunc(withheld, func(a, b string) int { return slices.Index(dests, a) - slices.Index(dests, b) })
+	slices.Sort(withheld)
+	names := make([]string, len(withheld))
+	for i, d := range withheld {
+		names[i] = dests[d]
+	}
 	that := "that address"
-	if len(withheld) > 1 {
+	if len(names) > 1 {
 		that = "those addresses"
 	}
-	warn := "# WARNING: secrets may have gone to " + strings.Join(withheld, ", ") + ": first reached next to a secret read. The proposal leaves " + that +
+	warn := "# WARNING: secrets may have gone to " + strings.Join(names, ", ") + ": first reached next to a secret read. The proposal leaves " + that +
 		" out. Review every entry before you use it."
-	return warn + "\n" + strings.Join(lines, "\n"), withheld
+	return warn + "\n" + strings.Join(lines, "\n"), names
 }
 
 // netItem reads a net.allow item line as Contract writes it, trimmed: `- "tcp://D"`, optionally followed by two
@@ -121,21 +128,45 @@ func netItem(trimmed string) (value, note string, ok bool) {
 	return value, note, true
 }
 
-// matchDest is the dest an item value ("tcp://D" or "udp://D") names, "" for none. An address and port compare as
-// parsed (so one address written two ways still matches); anything else compares as written.
-func matchDest(value string, dests []string) string {
-	addr := value[len("tcp://"):]
-	ap, apErr := netip.ParseAddrPort(addr)
-	for _, d := range dests {
-		if d == addr {
-			return d
+// plainAddr is ap's address as learn writes it: unmapped, with no zone.
+func plainAddr(ap netip.AddrPort) netip.Addr { return ap.Addr().Unmap().WithZone("") }
+
+// destIndex is dests read once: each as written, and each that parses as an address and port, by its first place.
+// A leak's host can stand for an address per DNS answer, and NeverAllow names each: parsing every dest for every item
+// took 16 s at 20,000.
+type destIndex struct {
+	written map[string]int
+	parsed  map[netip.AddrPort]int
+}
+
+func indexDests(dests []string) destIndex {
+	ix := destIndex{written: make(map[string]int, len(dests)), parsed: map[netip.AddrPort]int{}}
+	for i, d := range dests {
+		if _, seen := ix.written[d]; !seen {
+			ix.written[d] = i
 		}
-		if apErr != nil {
-			continue
-		}
-		if dp, err := netip.ParseAddrPort(d); err == nil && dp.Addr().Unmap() == ap.Addr().Unmap() && dp.Port() == ap.Port() {
-			return d
+		if dp, err := netip.ParseAddrPort(d); err == nil {
+			k := netip.AddrPortFrom(plainAddr(dp), dp.Port())
+			if _, seen := ix.parsed[k]; !seen {
+				ix.parsed[k] = i
+			}
 		}
 	}
-	return ""
+	return ix
+}
+
+// match is the place of the first dest an item value ("tcp://D" or "udp://D") names, -1 for none. An address and port
+// compare as parsed (so one address written two ways still matches); anything else compares as written.
+func (ix destIndex) match(value string) int {
+	addr := value[len("tcp://"):]
+	at := -1
+	if i, ok := ix.written[addr]; ok {
+		at = i
+	}
+	if ap, err := netip.ParseAddrPort(addr); err == nil {
+		if i, ok := ix.parsed[netip.AddrPortFrom(plainAddr(ap), ap.Port())]; ok && (at < 0 || i < at) {
+			at = i
+		}
+	}
+	return at
 }

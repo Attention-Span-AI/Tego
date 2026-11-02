@@ -5,6 +5,7 @@ package rule
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"path"
 	"strings"
 
@@ -140,8 +141,11 @@ func TargetOf(e *record.Event) (Target, error) {
 	if t.Kind != KindNet && (t.Path == "" || !path.IsAbs(t.Path)) {
 		return t, fmt.Errorf("%w: the event names no absolute path", ErrUnsupported)
 	}
-	if t.Kind == KindNet && t.Dest == "" {
-		return t, fmt.Errorf("%w: the event names no destination", ErrUnsupported)
+	if t.Kind == KindNet {
+		if t.Dest == "" {
+			return t, fmt.Errorf("%w: the event names no destination", ErrUnsupported)
+		}
+		t.Dest = unzoned(t.Dest)
 	}
 	return t, nil
 }
@@ -180,9 +184,10 @@ func article(w string) string {
 }
 
 // netDest is the destination as a net.allow entry spells it: the host name the run asked for when the record has
-// one, with the port, else the address it connected to.
+// one, with the port, else the address it connected to. A literal IPv6 entry's host is its address, and the port pasted
+// after that gives 2001:db8::1:443, another address and no port, so its dst, bracketed, is the spelling.
 func netDest(p record.NetPayload) string {
-	if strings.HasPrefix(p.Dst, "unix:") || p.Host == "" {
+	if strings.HasPrefix(p.Dst, "unix:") || p.Host == "" || strings.Contains(p.Host, ":") {
 		return p.Dst
 	}
 	i := strings.LastIndexByte(p.Dst, ':')
@@ -190,6 +195,16 @@ func netDest(p record.NetPayload) string {
 		return p.Dst
 	}
 	return p.Host + p.Dst[i:]
+}
+
+// unzoned is dest without the scope id a line keeps from its connect, which every connect to a link-local address has
+// to pass: a net entry cannot hold one, since no tier matches on it (agent.ParseEndpoint), and a live block never does.
+func unzoned(dest string) string {
+	ap, err := netip.ParseAddrPort(dest)
+	if err != nil || ap.Addr().Zone() == "" {
+		return dest
+	}
+	return netip.AddrPortFrom(ap.Addr().WithZone(""), ap.Port()).String()
 }
 
 // Actions are the actions the contract grammar has for k, in the order a page offers them. exec.ask is reserved and

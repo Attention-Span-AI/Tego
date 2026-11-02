@@ -49,7 +49,7 @@ func writeStatusResources(w io.Writer, snaps []*status.Snapshot, list bool) erro
 	return err
 }
 
-// writeStatusLedger prints one run's ledger line: the size of its events.jsonl and the record.max_run_bytes
+// writeStatusLedger prints one run's ledger line: the size of its events.jsonl and blobs and the record.max_run_bytes
 // ceiling it runs under, so a run that never stops shows how far it is from the limit that ends it. A listing does
 // not print it, as it prints no resources line.
 func writeStatusLedger(w io.Writer, snaps []*status.Snapshot, list bool) error {

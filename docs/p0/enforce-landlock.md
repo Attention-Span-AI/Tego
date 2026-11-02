@@ -386,8 +386,8 @@ run, with no line. The `listen` half of the sentence above is now the supervisor
 `listen` (R11c), and with no `net.listen` `handleListen` refuses a TCP `listen` whatever port the socket shows,
 `EACCES`, one refused line, rule `unmatched`. It is not keyed on port zero: a connect in flight gives a socket a port
 its failure takes back, between the supervisor's `getsockname` and its `listen`.
-`net.allow` empty ⇒ no net rule at all, so **every** TCP connect fails `EACCES` at the Landlock layer for any
-port. No `net:` section at all ⇒ no net right is handled (`handled_access_net` is 0), so Landlock refuses no
+`net.allow` empty ⇒ no net rule at all, so at ABI 4 and above **every** TCP connect fails `EACCES` at the Landlock
+layer for any port; below ABI 4 Landlock leaves it to the supervisor (E4). No `net:` section at all ⇒ no net right is handled (`handled_access_net` is 0), so Landlock refuses no
 connect and no bind: SEMANTICS §1's "no `net:` — deny nothing", which the supervisor (every connect answered
 `CONTINUE` and performed by the agent itself, supervisor R7) and `decide.Evaluate` (`allow`/`unmatched`) read off the
 same contract bit. The scope (R7) is not a net right and stays handled: with no `net:` the agent's own connect is
@@ -624,7 +624,7 @@ socket, with the address the gate scored (supervisor R9, R12, R13b), and reads t
 carrying an LSRR/SSRR option or a routing header is refused `relay-source-routed`, because its first hop is an
 address the gate never scored. That read is a snapshot of a socket every thread of the agent shares, so a sibling's
 `setsockopt` between the read and the relayed call put a route on a socket the read had found clean (an
-unprivileged task may set both). This arm refuses the `setsockopt` itself. Level and option are scalars in
+unprivileged task may set both, except that a kernel carrying "ipv4: restrict IPOPT_SSRR and IPOPT_LSRR options" (CVE-2026-53249; 7.0 on GitHub's runners) refuses an IPv4 LSRR or SSRR option without CAP_NET_RAW). This arm refuses the `setsockopt` itself. Level and option are scalars in
 `args[1]` and `args[2]`, so the decision is race-free, as the ioctl and MPTCP arms' are; both are `int`s, so the low
 32 bits are what the kernel reads. The refusal leaves no ledger line, like theirs. A gated run has no `io_uring`
 (a gate requires `io_uring` disabled), so the syscall is the only way to set an option. What the supervisor's read
@@ -634,7 +634,8 @@ still set a route on it at any time; that is a disclosed residual (gate.md R4), 
 `IPV6_2292RTHDR` only asks Linux to receive routing headers, but the arm refuses it with the others rather than
 rest on that reading. Tier 2 and 3 inherit the arm with the rest of the filter (R13).
 (`TestNetGateFilterRefusesSourceRouteOptions` on both architectures' register layouts;
-`TestFilterRefusesSourceRouteOptionsOnKernel` on the real kernel, where both options are accepted without the arm.)
+`TestFilterRefusesSourceRouteOptionsOnKernel` on the real kernel: its control expects the kernel to accept both options
+without the arm, or, on a kernel with the CVE-2026-53249 restriction, to refuse the IPv4 route itself.)
 
 **R11d — the pending-frame arms (supervisor R13).** *Added 2026-10-20 (ADR 0008's design note).* In a run that decides datagrams (`agent.RuleTable.DecidesDatagrams`: a `net:` section, a guarded
 `models[]` endpoint or a net gate; `filterOpts.frames`) the filter notifies every syscall that can leave a UDP frame
@@ -913,9 +914,12 @@ E1. Landlock disabled at boot (`landlock=0`): `ErrLandlockUnsupported`; `Select`
 E2. Kernel < 5.13: same handling as E1 (`ENOSYS`).
 E3. ABI 1 (unsupported floor, ARCHITECTURE §14): `doctor` should never offer tier 1 here; if reached, `REFER`
 drops silently (R2), making cross-directory link/rename over-restrictive, never under.
-E4. ABI 2 with `net.allow` non-empty (AL2023 default): no `netRule` is possible below ABI 4 — an *allowed*
-host is still refused by Landlock; `Capabilities()` reports `net: none` for ABI < 4 (R19), not
-"port allow-listed."
+E4. ABI 2 with `net.allow` non-empty (AL2023 default): no `netRule` is possible below ABI 4, and the ruleset handles
+no net right, so Landlock leaves every TCP connect alone. An *allowed* host is not refused by Landlock, and neither is
+an undeclared one: the supervisor decides each connect by itself, with no kernel backstop on the port.
+`Capabilities()` reports `net: none` for ABI < 4 (R19), not "port allow-listed." (*Corrected 2026-11-01:* this said an
+allowed host is still refused by Landlock. A helper in a real domain at ABI 2 reaches the network; the check is
+`TestIntegrationLandlock`'s `connect_denied` below ABI 4.)
 E5. `deny_read: ["/"]`: no parent to walk — `compile` rejects it (`schema`) before `Prepare` ever sees it, judged on the resolved path so a symlink to `/` is rejected too; `Prepare` fails closed on the same resolved path as a backstop (`ErrRulesetBuild`).
 E6. Enumeration crosses a directory with tens of thousands of entries (e.g. `/nix/store`): one fd per sibling,
 uncapped — real cost, no normative threshold set (§11).
@@ -945,7 +949,7 @@ itself, `EACCES`, recorded `refused`, `read-denied`, rule `deny-read-snapshot`, 
 answered refused, `read-denied`, by the row itself in the decision core (E9; `decide.AbsentRead`), so the line names
 the token store rather than `deny-read-snapshot`; the snapshot refusal covers the other names made mid-run.
 E11. Fd exhaustion (large `deny_read` enumeration or many `exec.allow` directory entries): the plan is held to the
-launcher's descriptor budget (`FDBudget`: the soft `RLIMIT_NOFILE`, raised to the hard limit where lower, less the
+launcher's descriptor budget (`FDBudget`: the soft `RLIMIT_NOFILE`, raised to one under the hard limit where lower, less the
 descriptors held when Prepare starts and a reserve of a sixteenth of the limit, 64 to 256), read before the first open;
 the open past it is not made (`FDCapError`, errors.Is `ErrFDExhausted`), so a large table meets the named cap, never
 `EMFILE`. An `EMFILE`/`ENFILE` another holder causes is still `ErrFDExhausted`. Either way `Prepare` closes everything

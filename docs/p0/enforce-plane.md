@@ -205,7 +205,7 @@ Conditions, stated rather than hidden:
    Landlock plan's own (a `deny_read` target among many siblings holds every sibling), so the launcher's
    `RLIMIT_NOFILE` binds before 4096 rows: measured as root in the KVM guest (soft = hard = 4096), tables of about
    3,800 to 4,000 keyed paths failed Prepare with `EMFILE`. *Settled 2026-09-30:* the Landlock plan is held to a budget
-   read before its first open (`landlock.FDBudget`: the soft limit, raised to the hard one where lower, less what the
+   read before its first open (`landlock.FDBudget`: the soft limit, raised to one under the hard one where lower, less what the
    process holds and a reserve of a sixteenth of it, 64 to 256), and a plan that needs more is refused naming the cap
    (`FDCapError`, E11), never an `EMFILE`; `PlaneRows.FitFDs` holds the keyed paths to the same budget in compile
    (`PlaneDiagnostic`), in selection and at Prepare (`decide.ErrPlaneCap` with `FDCap`). *Amended 2026-10-05:* a
@@ -1519,7 +1519,9 @@ ADR 0043 C11): a table with name entries now gets its scope and name rows, the h
   dropped file's refusal names its own entry. `ErrPlaneCap.Compacted` says how many were dropped when the table
   still does not fit.
 - **Parity** (R25): `TestPlaneRowsMatchEvaluate` and `TestPlaneEvaluatorMatchesEvaluate` run every generated table
-  of up to two entries with five name dimensions against `Evaluate`, files and directories, renames included;
+  of up to two entries with five name dimensions against `Evaluate`, files and directories, renames included (a
+  build with the race detector, which finds nothing in a sweep that starts no goroutine, checks every eleventh table:
+  `sweepStride`);
   `TestPlaneCompactionIsVerdictNeutral`, `TestPlaneCompactionKeepsAliases`, `TestPlaneCompactionIsDeterministic`,
   `TestRecorderCompilesTheSameRows`, `TestCompactedTableFits` (4,500 `.env` files fit and stay refused) and
   `TestPlaneNameQueriesAllocateNothing` hold the rest. Measured on the development machine (i7-10870H, GOMAXPROCS=4): a name

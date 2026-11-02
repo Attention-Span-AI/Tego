@@ -101,7 +101,7 @@ type statusJSON struct {
 	// the record lacks is absent here too, never a 0, and the whole object is absent for a run with no
 	// run_end yet or one whose run_end carries none.
 	Resources json.RawMessage `json:"resources,omitempty"`
-	// LedgerBytes is the size of the run's events.jsonl when status read it, and LedgerCeilingBytes the
+	// LedgerBytes is the size of the run's events.jsonl and blobs when status read them, and LedgerCeilingBytes the
 	// record.max_run_bytes run_start says the run runs under, absent for none (record.MinorLedgerCap).
 	LedgerBytes        int64 `json:"ledger_bytes,omitempty"`
 	LedgerCeilingBytes int64 `json:"ledger_ceiling_bytes,omitempty"`

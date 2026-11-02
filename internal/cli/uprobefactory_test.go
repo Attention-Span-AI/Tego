@@ -3,9 +3,14 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/attention-span-ai/tego/internal/bpf"
+	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/runtime/source"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
@@ -49,16 +54,42 @@ func TestUprobeFactory(t *testing.T) {
 	}
 }
 
-// TestUprobeBodiesCanBeSynced pins the store the factory hands the uprobe source to one its Stop can sync.
-// The source syncs whatever store has a Sync and cannot sync one without, so a store that lost the method
-// would leave every captured body outside record-ledger R6's barrier with nothing failing.
+// TestUprobeBodiesCanBeSynced pins the store the factory hands the uprobe source. The source syncs whatever store has
+// a Sync and cannot sync one without, so a store that lost the method would leave every captured body outside
+// record-ledger R6's barrier with nothing failing. A run always has a writer and so a counter, and the store it then
+// gets must also count what it adds, or the bodies stand outside record.max_run_bytes. The store for a ref with no
+// counter need only be syncable.
 func TestUprobeBodiesCanBeSynced(t *testing.T) {
-	store := uprobeBlobs(t.TempDir())
-	s, ok := store.(interface{ Sync() error })
-	if !ok {
-		t.Fatalf("%T has no Sync, so the uprobe source's bodies would never be made durable before run_end", store)
-	}
-	if err := s.Sync(); err != nil {
-		t.Fatalf("Sync of an empty store: %v", err)
+	for _, c := range []struct {
+		name  string
+		added *atomic.Int64
+	}{
+		{"a run with a writer", new(atomic.Int64)},
+		{"a ref with no counter", nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.Mkdir(filepath.Join(dir, ledger.BlobsDir), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			store := uprobeBlobs(source.RunRef{Dir: dir, BlobBytes: c.added})
+			s, ok := store.(interface{ Sync() error })
+			if !ok {
+				t.Fatalf("%T has no Sync, so the uprobe source's bodies would never be made durable before run_end", store)
+			}
+			if err := s.Sync(); err != nil {
+				t.Fatalf("Sync of an empty store: %v", err)
+			}
+			_, size, err := store.PutStream(strings.NewReader("a captured body"))
+			if err != nil {
+				t.Fatalf("PutStream: %v", err)
+			}
+			if c.added != nil && c.added.Load() != size {
+				t.Fatalf("the run's counter is %d after a body of %d bytes, so uprobe bodies stand outside record.max_run_bytes", c.added.Load(), size)
+			}
+			if err := s.Sync(); err != nil {
+				t.Fatalf("Sync after a body: %v", err)
+			}
+		})
 	}
 }

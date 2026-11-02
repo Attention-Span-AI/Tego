@@ -36,18 +36,19 @@ func fdReserveFor(limit int) int {
 	return min(max(limit/16, 64), 256)
 }
 
-// ReadFDBudget raises this process's soft RLIMIT_NOFILE to its hard limit where it is lower (Go's runtime does so
-// at start on Linux; a caller that lowered it since, or a runtime that did not, gets it back), then reads the limit
-// and counts the descriptors held now. The raise uses prlimit(2) directly, so the child a launcher execs keeps the
-// limit it inherited from the launcher's parent (Go restores that for its children, and a direct prlimit leaves the
-// record it restores from alone).
+// ReadFDBudget raises this process's soft RLIMIT_NOFILE to one under its hard limit where it is lower (Go's runtime does
+// so at start on Linux; a caller that lowered it since gets it back), then reads the limit and counts the descriptors
+// held now. One under, and no raise at all where it stands there, because that is the mark the runtime leaves: it puts
+// the limit a process was started with back in each child only while the soft limit reads hard-1, and unix.Prlimit
+// drops its record of that limit. A raise to the hard limit did both, so under `ulimit -Sn 1024` the agent ran with the
+// hard limit, which a program built on select(2), or one that closes every descriptor up to the limit, does not survive.
 func ReadFDBudget() (FDBudget, error) {
 	var lim unix.Rlimit
 	if err := unix.Prlimit(0, unix.RLIMIT_NOFILE, nil, &lim); err != nil {
 		return FDBudget{}, fmt.Errorf("read RLIMIT_NOFILE: %w", err)
 	}
-	if lim.Cur < lim.Max {
-		raised := unix.Rlimit{Cur: lim.Max, Max: lim.Max}
+	if lim.Cur < lim.Max-1 {
+		raised := unix.Rlimit{Cur: lim.Max - 1, Max: lim.Max}
 		_ = unix.Prlimit(0, unix.RLIMIT_NOFILE, &raised, nil) // a refusal leaves the lower limit, which is read next
 	}
 	return currentFDBudget()

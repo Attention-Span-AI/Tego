@@ -162,6 +162,23 @@ func TestLearnWorkspace(t *testing.T) {
 			t.Errorf("--workspace %q: exit %d, stderr %q; want a usage error", bad, code, errs)
 		}
 	}
+	// The lines name paths the kernel's way, every link resolved, so a workspace named through a link is the same
+	// directory: it was compared as spelled, and nothing the run wrote was under it.
+	workspace := filepath.Join(root, ".cache", "tego-workdir", "poc-run")
+	if err := os.MkdirAll(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(resolvedTemp(t), "project")
+	if err := os.Symlink(workspace, link); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs = run(t, "learn", dir, "--workspace", link)
+	if code != identity.ExitOK {
+		t.Fatalf("--workspace through a link: exit %d (stderr %q)", code, errs)
+	}
+	if want := `- "` + root + `/.cache/tego-workdir/poc-run/home-claude/.claude/"`; !strings.Contains(out, want) {
+		t.Errorf("--workspace through a link: the proposal lacks %q\n%s", want, out)
+	}
 }
 
 func TestLearnUsage(t *testing.T) {

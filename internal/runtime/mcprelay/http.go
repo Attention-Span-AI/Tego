@@ -234,6 +234,9 @@ func (h *httpRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		b, err := io.ReadAll(io.LimitReader(r.Body, maxHTTPBody+1))
 		if err != nil || len(b) > maxHTTPBody {
+			if len(b) > maxHTTPBody {
+				h.recordUnreadable(ctx)
+			}
 			http.Error(w, "Tego's MCP relay reads request bodies up to 4 MiB", http.StatusRequestEntityTooLarge)
 			return
 		}
@@ -248,7 +251,8 @@ func (h *httpRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			calls, batch, ok = readCalls(wire)
 		}
 		if !ok {
-			writeJSON(w, []byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Tego's MCP relay could not read this message, so it was not passed to the server"}}`))
+			h.recordUnreadable(ctx)
+			writeJSON(w, unreadableAnswer)
 			return
 		}
 		for _, cl := range calls {
@@ -263,6 +267,11 @@ func (h *httpRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		body = wire
 	}
 	h.forward(w, r, body, lists)
+}
+
+// recordUnreadable is the line of a POST body the relay refused unread: it may have held a call, and none of it passed.
+func (h *httpRelay) recordUnreadable(ctx context.Context) {
+	h.s.emitCall(h.holder(ctx), h.sv.Name, TransportHTTP, "", "mcp["+h.sv.Name+"].relay", record.VerdictRefused, record.AuthorityRule, mcptool.ReasonDenied)
 }
 
 // withConnEnds is the request's context carrying its connection's ends, for holder; a request whose ends cannot be

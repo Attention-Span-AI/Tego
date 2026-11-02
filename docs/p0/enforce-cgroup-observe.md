@@ -1959,7 +1959,9 @@ collapses them into one bucket. The rows those entries produce still merge by ke
     the round trip of an open refused after the membership read 58–64 µs and 24 allocations before, 47–50 µs and 16
     after (`BenchmarkFanotifyRoundTrip`); `TestRunMembersMatchesProc` checks that both paths agree for a process in
     the run, in a descendant, outside it, for the launcher and for pid 1, and passes as root on the 6.17 of this
-    box, Fedora's 7.0 and RHEL 9's 5.14; on the matrix's 6.12, 6.8 and 6.1 kernels it skips, naming the errno.
+    box, Fedora's 7.0 and RHEL 9's 5.14. On a kernel without the ioctl (the matrix's 6.12, 6.8 and 6.1 rows) it
+    takes no skip: it checks that the id path answers nothing and latches once, and that `/proc` tells the run, its
+    descendant and an outside process apart (that branch has not yet run, as it needs root on such a kernel).
     Latching on `ENOTTY` alone would read 6.11's and 6.12's `EINVAL` as a failure of that one event rather than of
     the kernel, and ask the id path again on every event there (a pidfd, a failed ioctl and a close before each
     `/proc` read); `TestPidfdInfoErrorsThatMeanNoIoctl` pins both errnos. The id path does not change the overdue ceiling, on
@@ -2950,10 +2952,11 @@ relocations against the runner's BTF).
   run, is refused to the run for both files and for a create of its own, with a line each, and a file the refused
   create leaves there is empty (R8, "No directory is ignored" and its note on a refused create); it fails, never skips, on
   any failure to mark but the missing privilege.
-- `members_integration_test.go` (root, a kernel with `PIDFD_GET_INFO`'s cgroup id; it skips elsewhere):
-  `TestRunMembersMatchesProc`, the id path and `/proc/<pid>/cgroup`
-  agreeing for processes in the run, in a descendant, outside it, the launcher and pid 1, and handing an exited
-  opener and a removed cgroup to `/proc`; `BenchmarkMembership` against `BenchmarkFanotifyRoundTrip` (E34).
+- `members_integration_test.go` (root; it skips only without it): `TestRunMembersMatchesProc`. On a kernel with
+  `PIDFD_GET_INFO`'s cgroup id, the id path and `/proc/<pid>/cgroup` agreeing for processes in the run, in a
+  descendant, outside it, the launcher and pid 1, and handing an exited opener and a removed cgroup to `/proc`; on
+  one without it (6.12, 6.8, 6.1), the id path answering nothing and latching once, and `/proc` telling the run, its
+  descendant and an outside process apart. `BenchmarkMembership` against `BenchmarkFanotifyRoundTrip` (E34).
 - `test/vm/tier2-pairs.sh` (the KVM guest, as if under sudo): pairs of `tego run --tier cgroup` started 0-20 ms
   apart, plain, under `timeout`, with one launcher `SIGKILL`ed each pair, or of two builds, under a watchdog that
   needs no open or exec on the marked root and prints every task's kernel stack and every process's fanotify marks

@@ -4,6 +4,9 @@ package landlock
 
 import (
 	"errors"
+	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -111,8 +114,46 @@ func TestLeftOutDenyReadTargetsHoldNoDescriptor(t *testing.T) {
 	}
 }
 
+// nofileChildEnv makes this test binary, re-run by TestReadFDBudgetLeavesTheChildsLimit under a low soft limit, stand in
+// for a launcher: it takes its budget and reports the soft limit a child it starts inherits.
+const nofileChildEnv = "TEGO_TEST_NOFILE_CHILD"
+
+// TestReadFDBudgetLeavesTheChildsLimit: the launcher's raise is its own. The agent keeps the soft RLIMIT_NOFILE the
+// launcher was started with: under `ulimit -Sn 1024` every agent ran with the hard limit, which a program built on
+// select(2), or one that closes every descriptor up to the limit, does not survive. tego's own comment said so; the
+// raise took the limit to the hard one, past the mark Go's runtime restores it from.
+func TestReadFDBudgetLeavesTheChildsLimit(t *testing.T) {
+	if os.Getenv(nofileChildEnv) != "" {
+		if _, err := ReadFDBudget(); err != nil {
+			t.Fatal(err)
+		}
+		out, err := exec.Command("/bin/sh", "-c", "ulimit -Sn").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Printf("child soft limit: %s", out)
+		return
+	}
+	var lim unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &lim); err != nil {
+		t.Fatal(err)
+	}
+	if lim.Max <= 256 {
+		t.Fatalf("hard RLIMIT_NOFILE %d leaves no room for the low soft limit this test sets", lim.Max)
+	}
+	cmd := exec.Command("/bin/sh", "-c", `ulimit -Sn 256 && exec "$0" -test.run='^TestReadFDBudgetLeavesTheChildsLimit$' -test.v`, os.Args[0])
+	cmd.Env = append(os.Environ(), nofileChildEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v:\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "child soft limit: 256\n") {
+		t.Errorf("a child under a launcher started at soft 256:\n%s", out)
+	}
+}
+
 // TestReadFDBudget: the budget is the soft limit less what is held and the reserve, with the soft limit raised to
-// the hard one where it was lower.
+// one under the hard one, the mark Go's runtime leaves, where it was lower.
 func TestReadFDBudget(t *testing.T) {
 	var lim unix.Rlimit
 	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &lim); err != nil {
@@ -129,8 +170,8 @@ func TestReadFDBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := int(min(lim.Max, uint64(1)<<30)); b.Limit != want {
-		t.Errorf("limit %d, want the hard limit %d", b.Limit, want)
+	if want := int(min(lim.Max-1, uint64(1)<<30)); b.Limit != want {
+		t.Errorf("limit %d, want one under the hard limit, %d", b.Limit, want)
 	}
 	if held := openFDs(t); b.InUse < 3 || b.InUse > held {
 		t.Errorf("in use %d, %d open now", b.InUse, held)

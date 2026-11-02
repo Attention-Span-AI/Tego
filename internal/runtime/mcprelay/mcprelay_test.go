@@ -647,6 +647,43 @@ func TestHTTPRelay(t *testing.T) {
 	}
 }
 
+// TestHTTPRelayRecordsAnUnreadableBody: a POST body the relay refuses unread is on the record too, as a stdio line is,
+// and neither it nor any part of it reaches the server.
+func TestHTTPRelayRecordsAnUnreadableBody(t *testing.T) {
+	for _, c := range []struct {
+		name, body string
+		status     int
+		answer     string
+	}{
+		{"not JSON", "tools/call delete_file", http.StatusOK, `"code":-32700`},
+		{"not UTF-8", `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"delete_file` + "\xff" + `"}}`, http.StatusOK, `"code":-32700`},
+		{"empty", "", http.StatusOK, `"code":-32700`},
+		{"past the bound", strings.Repeat(" ", maxHTTPBody+1), http.StatusRequestEntityTooLarge, "up to 4 MiB"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				t.Error("the body reached the server")
+			}))
+			defer upstream.Close()
+			s, sk, _ := start(t, nil, Server{Name: "web", URL: upstream.URL + "/mcp", Rules: mcptool.Rules{Deny: []string{"delete_file"}}})
+			s.https[0].admitConn = func(netip.AddrPort, netip.AddrPort, uint64) error { return nil }
+			resp, err := http.Post(s.httpURLs()["web"], "application/json", strings.NewReader(c.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.StatusCode != c.status || !strings.Contains(string(b), c.answer) {
+				t.Fatalf("%d: %s", resp.StatusCode, b)
+			}
+			relayRefusal(t, sk, "web", TransportHTTP)
+		})
+	}
+}
+
 // TestHTTPRelayRefusesAnUndecidedBody: a POST body is the only one the relay decides, so a request by any other method
 // that carries a body is refused and never reaches the server: every method, sized or chunked, is one more way to send
 // the tools/call a rule denies. A bodyless GET (the server's event stream) and DELETE (the end of a session) still pass.

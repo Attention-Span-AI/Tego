@@ -27,6 +27,7 @@ const (
 	CodeExecNotOnPath      = "exec-not-on-path"
 	CodeHostUnresolvable   = "host-unresolvable"
 	CodeLimitAboveMachine  = "limit-above-machine"
+	CodeLimitBelowStart    = "limit-below-start"
 	CodeContradiction      = "contradiction"
 	CodeEnvRuntimeReserved = "env-runtime-reserved"
 	CodeRedundantRule      = "redundant-rule"

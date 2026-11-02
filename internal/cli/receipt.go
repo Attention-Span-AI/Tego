@@ -41,6 +41,11 @@ func cmdReceipt() Command {
 				message(stderr, "", 0, 0, "tego receipt: at most one run id or run directory; none (or --last) means the newest run", codeUsage)
 				return identity.ExitUsage
 			}
+			if fs.NArg() == 1 && fs.Arg(0) == "" {
+				// An unset "$RUN" named no run, and the receipt of whichever run was newest answered for it.
+				message(stderr, "", 0, 0, "tego receipt: the run is an empty string; none (or --last) means the newest run", codeUsage)
+				return identity.ExitUsage
+			}
 			return runReceipt(ctx, fs.Arg(0), asJSON, verify, stdout, stderr)
 		},
 	}

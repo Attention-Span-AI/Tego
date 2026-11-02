@@ -145,6 +145,9 @@ type Report struct {
 	// so a run where the agent behaved leaves every one unfired. Reported like UnobservableFS, never drift; over an
 	// aggregate, the guards no run exercised.
 	GuardsNotExercised []string
+	// Ended: the ledger holds a run_end. CutOff: the caller found no launcher behind a run with none (status.Lost), or
+	// one aggregated run is such a run, so the record may stop short of what the run did (gaps.Words).
+	Ended, CutOff bool
 	// Gaps is every gap event the run recorded, grouped by what and why: the
 	// gap line (R34), summed over the runs of an aggregated report.
 	Gaps []gaps.Count
@@ -260,6 +263,7 @@ func ComputeCtx(ctx context.Context, r *ledger.Reader, rt *agent.RuleTable) (*Re
 			rep.Run, rep.Agent = e.Run, e.Agent
 		}
 		gapTally.Add(e)
+		rep.Ended = rep.Ended || e.Kind == record.KindRunEnd
 		if e.Kind == record.KindRunStart {
 			var p record.RunStartPayload
 			if err := e.DecodePayload(&p); err != nil {
@@ -464,6 +468,7 @@ func Aggregate(reports []*Report) (*Report, error) {
 		}
 		out.Runs += max(rep.Runs, 1)
 		out.DeclaredUnknown = out.DeclaredUnknown || rep.DeclaredUnknown
+		out.CutOff = out.CutOff || rep.CutOff
 		out.Actions += rep.Actions
 		if rep.ContractHash != "" {
 			hashes[rep.ContractHash] += max(rep.Runs, 1)

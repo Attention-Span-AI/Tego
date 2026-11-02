@@ -85,10 +85,20 @@ A tool with no row is read by the generic fallback:
   where it takes one) and fails when git answers `unknown option`: git 2.49 removed `--super-prefix`, which the row
   listed as taking a value, so the next word was eaten as that value (dropped 2026-10-16). An option a newer git adds
   and the row lacks is not a failure: an unknown option is read both ways.
-- **Two-level commands**: `TestGitRowFresh` reads the verbs `git <cmd> -h` lists for every command the row gives a
-  second level (stash, remote, bisect, ...) and fails when one is neither a subcommand nor an alias of the row's
-  level; a verb the row has and the installed git lacks (another supported version's) is not a failure. `git bisect
-  next` was missing (added 2026-10-16). `git maintenance -h` lists no verb, so its level is not checked this way.
+- **Two-level commands**: `TestGitRowFresh` reads the verbs the installed git lists for every command the row gives
+  a second level (stash, remote, bisect, ...), in `git <cmd> -h` and in parse-options' completion listing (`git
+  <cmd> --git-completion-helper-all`: the command's subcommand table, hidden entries such as `git remote rm`
+  included), and fails when one is neither a subcommand nor an alias of the row's level; a verb the row has and the
+  installed git lacks (another supported version's) is not a failure. A word a level lacks is read as an unknown
+  subcommand, matched as written, so a new alias of a verb escapes a rule on that verb until the row lists it (`git
+  remote rm`, fixed 2026-10-06). `git bisect next` was missing (added 2026-10-16), and so were three verbs of later
+  gits, which the first CI run, on git 2.56.0, named (added 2026-11-02): `git reflog write` (git 2.51.1; appends an
+  entry to a ref's reflog and leaves the ref where it is), `git hook list` (2.54; prints the hooks configured for an
+  event and changes nothing) and `git multi-pack-index compact` (2.54; writes a new multi-pack-index layer into the
+  object directory). `git maintenance -h` names no verb in any supported git, so maintenance's verbs come from the
+  completion listing alone, and a command whose usage hides its verbs and whose listing names none fails the test
+  rather than going unchecked. `TestGitVerbsRecorded` runs the same reading over recorded output of git 2.51.0 and
+  2.56.0.
 - **Autocorrect**: a first word that is not a built-in is also read as the built-in git would autocorrect it to under
   `help.autocorrect=immediate`. The port of help_unknown_cmd counts a prefix of a common command as score 0 and
   scores the rest `levenshtein(token, candidate; swap 0, substitution 2, insertion 1, deletion 3) + 1`, and corrects

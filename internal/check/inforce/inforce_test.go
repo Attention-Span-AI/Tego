@@ -237,6 +237,47 @@ exec:
 	})
 }
 
+// TestRouteReadsAreSaid: under every contract a run can read the host's interfaces, addresses, routes and neighbours
+// (ADR 0128), so the view says so wherever it is built from, as a thing the run gets, with no claim that anything
+// enforces it, and a run's relayed queries are counted on the row.
+func TestRouteReadsAreSaid(t *testing.T) {
+	const head = "version: 0\nname: r\ncommand: [\"bash\", \"agent.sh\"]\nexec:\n  allow: [bash]\n"
+	for _, c := range []struct{ name, section string }{
+		{"no net section", ""},
+		{"a net section", "net:\n  allow: []\n"},
+		{"host_sockets", "host_sockets: true\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFixture(t)
+			compiled := Of(f.compile(t, head+c.section, nil), backend.TierLandlock, "")
+			declared, err := Declared([]byte(head+c.section), "agent.yaml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for name, v := range map[string]*View{"compiled": &compiled, "declared": &declared} {
+				var got *Rule
+				g := v.Group(GroupAlwaysOn)
+				for i := range g.Rules {
+					if g.Rules[i].Key == "built-in.route-read" {
+						got = &g.Rules[i]
+					}
+				}
+				if got == nil {
+					t.Fatalf("%s: no row in %+v", name, g.Rules)
+				}
+				if got.Effect != EffectAllow || got.State != StateNone || got.Enforced || got.EnforcedText != "" ||
+					!strings.Contains(got.Sentence, "interface names and addresses") {
+					t.Errorf("%s: %+v", name, got)
+				}
+				v.Count(slices.Values([]string{"route-query", "route-query", "route-change"}))
+				if got.Hits != 2 {
+					t.Errorf("%s: %d hits, want the two queries", name, got.Hits)
+				}
+			}
+		})
+	}
+}
+
 // TestGroupOrder: every view lists every group, in the one order, whatever it was built from.
 func TestGroupOrder(t *testing.T) {
 	f := newFixture(t)

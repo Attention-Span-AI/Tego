@@ -37,22 +37,20 @@ func TestPathSettingsValidated(t *testing.T) {
 	}
 }
 
-// With no passwd home, prices, profiles and registry must not stay "~/..." (read against the cwd).
+// With no passwd home, prices, profiles and registry must not stay "~/..." (read against the cwd). The layer is the
+// test's own file, so it loads as the uid that wrote it (mustLoad's): R20 trusts a layer owned by root or the
+// invoking uid, and a fixed uid 1000 was the writer only where the tests run as uid 1000.
 func TestNoHomeDropsRelativePathSettings(t *testing.T) {
-	m, diags, err := LoadSources(Sources{}, "", 1000, TrustAbort)
-	if err != nil {
-		t.Fatal(err)
-	}
+	m, diags := mustLoad(t, Sources{}, "")
 	if m.Prices.Value != "" || m.Profiles.Value != "" || m.Registry.Value != "" {
 		t.Errorf("prices %q profiles %q registry %q kept a literal ~", m.Prices.Value, m.Profiles.Value, m.Registry.Value)
 	}
 	if len(diags) != 0 {
 		t.Errorf("the built-in default is not a choice to warn about: %v", diags)
 	}
-	src := layers(t, trustedDir(t), "prices: ~/p.yaml\n", "", "")
-	m, diags, err = LoadSources(src, "", 1000, TrustAbort)
-	if err != nil || m.Prices.Value != "" {
-		t.Fatalf("prices %q, %v", m.Prices.Value, err)
+	m, diags = mustLoad(t, layers(t, trustedDir(t), "prices: ~/p.yaml\n", "", ""), "")
+	if m.Prices.Value != "" {
+		t.Fatalf("prices %q kept a literal ~", m.Prices.Value)
 	}
 	if !slices.ContainsFunc(diags, func(d Diagnostic) bool { return d.Code == CodeIgnored && strings.Contains(d.Message, "~/p.yaml") }) {
 		t.Errorf("no diagnostic for a configured prices: %v", diags)

@@ -149,7 +149,12 @@ func uprobeFactory(rt *agent.RuleTable, m *config.Machine) capture.Factory {
 // beside the ledger writer's. The writer's Close syncs only the store it wrote through itself before it syncs
 // events.jsonl (record-ledger R6), so this one must be a store the source's Stop can sync, which runs before
 // run_end is written; ledger's blob store is (it has Sync), and uprobe.Stop syncs whatever store has one.
-func uprobeBlobs(runDir string) uprobe.BlobStore { return ledger.NewBlobRepository(runDir) }
+func uprobeBlobs(run source.RunRef) uprobe.BlobStore {
+	if run.BlobBytes == nil {
+		return ledger.NewBlobRepository(run.Dir)
+	}
+	return ledger.NewCountedBlobRepository(run.Dir, run.BlobBytes)
+}
 
 // forwarderFactory builds the run's loopback forwarder over the contract's declared models[], or nil when
 // the contract declared none — there is then nothing for a listener to be bound to. Select checks models[]

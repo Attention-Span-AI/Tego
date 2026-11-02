@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -154,12 +156,26 @@ func (r *runner) clearLive() {
 	}
 }
 
+// kernelCwd is this process's working directory as getcwd(2) reports it, every symlink resolved, or "" when it has no
+// name (deleted, or outside this mount namespace). The paths on a run's lines come from the kernel in that same form
+// (supervisor.md R6). os.Getwd answers $PWD whenever $PWD names that directory, which spells it through a symlink for
+// a project reached through one (a /home that links to /var/home), and run_start then named a directory no line was
+// under: tego learn proposed fs.write: [] with every write "outside the workspace", and tego receipt lost its relative
+// paths.
+func kernelCwd() string {
+	wd, err := unix.Getwd()
+	if err != nil {
+		return ""
+	}
+	return wd
+}
+
 // writeRunStart is §4.1 step 9: the first line of the ledger, carrying everything a reader needs to
 // interpret the rest without re-running the compiler (spec/record/v1 run_start).
 func (r *runner) writeRunStart() error {
 	cwd := r.deps.Cwd
 	if cwd == "" {
-		cwd, _ = os.Getwd()
+		cwd = kernelCwd()
 	}
 	// One reading of what started feeds both capture and the capability line's capture row, so the line
 	// can never say one thing and the field beside it another.

@@ -26,6 +26,21 @@ import (
 // 16k-573k for the loop forms it rejected; a body that pushes a program past this has left form d.
 const planeVerifiedBudget = 20000
 
+// planeListenVerifiedBudget is socket_listen's own budget. That hook walks no path, so form d's figures say
+// nothing about it: its body is decide_listen.h's bound-address and autobind checks, which the verifier walked
+// 16,945 to 18,295 times on 6.17 and 43,850 to 44,096 times on 7.0 (GitHub's runners, 7.0.0-1017-azure,
+// 2026-11-02), the program unchanged. A loop form would still show as a jump far past this; the kernel's own
+// limit is a million.
+const planeListenVerifiedBudget = 64000
+
+// planeBudget is the verified-instruction budget of the plane program that serves hook.
+func planeBudget(hook string) uint32 {
+	if hook == "socket_listen" {
+		return planeListenVerifiedBudget
+	}
+	return planeVerifiedBudget
+}
+
 // planeReaderUsable reports whether this kernel can load a plane build, and why not. The rd build calls the
 // bpf_rdonly_cast kfunc, which a kernel without it in BTF refuses outright; the pr build calls
 // bpf_probe_read_kernel, which lockdown=confidentiality refuses (ADR 0024's T0 note). The plane probe (T8) makes
@@ -127,8 +142,8 @@ func TestPlaneLoadsAndAttaches(t *testing.T) {
 						if info, err := p.Info(); err == nil {
 							if n, ok := info.VerifiedInstructions(); ok {
 								t.Logf("%s: %d instructions verified", name, n)
-								if n > planeVerifiedBudget {
-									t.Errorf("%s: %d instructions verified, over the budget of %d", name, n, planeVerifiedBudget)
+								if n > planeBudget(h.Name) {
+									t.Errorf("%s: %d instructions verified, over the budget of %d", name, n, planeBudget(h.Name))
 								}
 							}
 						}

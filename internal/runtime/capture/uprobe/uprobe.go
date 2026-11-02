@@ -185,7 +185,7 @@ type Options struct {
 	// OpenBlobs builds the body store for a run when Blobs is nil, from the run directory Start is
 	// given: the store is per run (record-ledger R11), and the run directory does not exist when the
 	// capture sources are built.
-	OpenBlobs func(runDir string) BlobStore
+	OpenBlobs func(run source.RunRef) BlobStore
 	// Proc reads /proc. Nil means the system's.
 	Proc *proc.FS
 	// Assembler reassembles the chunks. Nil means one private to this source, which is the only production
@@ -627,7 +627,7 @@ func (u *Uprobe) Start(ctx context.Context, run source.RunRef, sink source.Sink)
 	defer close(startDone)
 
 	if u.opts.Blobs == nil && u.opts.OpenBlobs != nil && run.Dir != "" {
-		u.opts.Blobs = u.opts.OpenBlobs(run.Dir)
+		u.opts.Blobs = u.opts.OpenBlobs(run)
 	}
 	u.pending = map[httpstream.ConnKey]map[int]*openRequest{}
 	u.connHosts = map[httpstream.ConnKey]string{}

@@ -37,4 +37,4 @@ PKGS=(
 	internal/platform/peer # the peer check as root on the guest's kernel: below 6.5 (rhel-9, al2023) its pidfd_open fallback for real
 )
 # Helpers the tests `go build` at run time; go-shim.sh serves them by last path element.
-HELPERS=(cmd/tego test/conformance/cmd/actor internal/runtime/cgroup/testdata/memhog test/workloads/model-agent test/workloads/retriever-agent test/workloads/signaller test/workloads/sigio test/workloads/procscope test/workloads/uringsock test/workloads/uringbind test/workloads/execracer test/vm/cmd/permlistener)
+HELPERS=(cmd/tego test/conformance/cmd/actor internal/runtime/cgroup/testdata/memhog test/workloads/model-agent test/workloads/retriever-agent test/workloads/signaller test/workloads/sigio test/workloads/procscope test/workloads/uringsock test/workloads/uringbind test/workloads/execracer test/workloads/ifaces test/vm/cmd/permlistener)

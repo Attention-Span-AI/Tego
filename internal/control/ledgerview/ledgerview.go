@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -480,8 +481,11 @@ func fromRecord(e *record.Event) Event {
 }
 
 // HostOf is the host a destination names, lower-cased: "chatgpt.com" for tcp://chatgpt.com:443 or chatgpt.com:443,
-// "93.184.216.34" for 93.184.216.34:443, "::1" for [::1]:443. A unix socket, a netlink family, a path and text
-// that is not a host (spaces, slashes, markup) name none: "".
+// "93.184.216.34" for 93.184.216.34:443, "::1" for [::1]:443. An address reads as a live block holds it and every
+// matcher compares it (liveblock.Normalize, decide.Unmapped), unmapped and with no zone: a line keeps the scope id its
+// connect passed, the agent's to choose and ignored by the kernel on all but a link-local address, and a block on
+// 2001:db8::1 refuses [2001:db8::1%1] as well. A line's Target still says what the agent wrote. A unix socket, a netlink
+// family, a path and text that is not a host (spaces, slashes, markup) name none: "".
 func HostOf(dst string) string {
 	if i := strings.Index(dst, "://"); i > 0 {
 		dst = dst[i+3:]
@@ -497,7 +501,11 @@ func HostOf(dst string) string {
 		host = h
 	} else if strings.HasPrefix(dst, "[") && strings.HasSuffix(dst, "]") {
 		host = dst[1 : len(dst)-1]
-	} else if strings.Contains(dst, ":") && net.ParseIP(dst) == nil {
+	}
+	if a, err := netip.ParseAddr(host); err == nil {
+		return a.Unmap().WithZone("").String()
+	}
+	if strings.Contains(host, ":") {
 		return "" // a word with a colon, or host:port with a bad port: not a destination
 	}
 	return strings.ToLower(host)

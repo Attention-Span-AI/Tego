@@ -57,6 +57,9 @@ type RunRef struct {
 	RuntimeDir string
 	CgroupID   uint64
 	Contract   *agent.RuleTable
+	// BlobBytes counts the bytes added to the run's blobs/ against record.max_run_bytes, for a source with a blob
+	// store of its own; nil when the run has no ledger writer.
+	BlobBytes *atomic.Int64
 }
 
 // Gap is one uncovered capability or capture path (spec/record/v1 gap payload).

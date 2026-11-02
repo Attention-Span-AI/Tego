@@ -4,10 +4,12 @@ package rows
 
 import (
 	"bytes"
+	"maps"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -146,18 +148,27 @@ func gitGlobalOptionsFresh(t *testing.T, git, dir string) {
 	}
 }
 
+// gitVerbWord reports a word spelled as git spells a verb: lower-case letters and dashes, a letter first.
+func gitVerbWord(w string) bool {
+	if w == "" || w[0] < 'a' || w[0] > 'z' {
+		return false
+	}
+	return strings.Trim(w, "abcdefghijklmnopqrstuvwxyz-") == ""
+}
+
 // gitUsageVerb reads one usage line of `git <cmd> -h` ("usage: git <cmd> ..." or "or: git <cmd> ...") into the
 // verbs it names, after any leading option group ("[--quiet]", "[<options>]"): a plain word, an alternation
 // "(good|bad)", "( pop | apply )" or "[clear | forget <pathspec>... | gc]" (the first word of each alternative), or an
-// optional default "[show]". A line that names no verb ("git maintenance <subcommand>") yields none.
-func gitUsageVerb(line, cmd string) []string {
+// optional default "[show]". A line that puts <subcommand> where the verb stands ("git maintenance <subcommand>
+// [<options>]") names none, and reports it: the command has verbs this usage does not name.
+func gitUsageVerb(line, cmd string) (verbs []string, unnamed bool) {
 	line = strings.TrimSpace(line)
 	for _, p := range []string{"usage:", "or:"} {
 		line = strings.TrimSpace(strings.TrimPrefix(line, p))
 	}
 	rest, ok := strings.CutPrefix(line, "git "+cmd+" ")
 	if !ok {
-		return nil
+		return nil, false
 	}
 	rest = strings.TrimSpace(rest)
 	// group is the content of the bracketed group rest starts with, up to its matching closer, and what follows it.
@@ -178,28 +189,23 @@ func gitUsageVerb(line, cmd string) []string {
 	for strings.HasPrefix(rest, "[-") || strings.HasPrefix(rest, "[<") {
 		var ok bool
 		if _, rest, ok = group(rest); !ok {
-			return nil
+			return nil, false
 		}
-	}
-	isWord := func(w string) bool {
-		if w == "" || w[0] < 'a' || w[0] > 'z' {
-			return false
-		}
-		return strings.Trim(w, "abcdefghijklmnopqrstuvwxyz-") == ""
 	}
 	if !strings.HasPrefix(rest, "(") && !strings.HasPrefix(rest, "[") {
-		if f := strings.Fields(rest); len(f) > 0 && isWord(f[0]) {
-			return []string{f[0]}
+		f := strings.Fields(rest)
+		if len(f) > 0 && gitVerbWord(f[0]) {
+			return []string{f[0]}, false
 		}
-		return nil
+		return nil, len(f) > 0 && f[0] == "<subcommand>"
 	}
 	inner, _, ok := group(rest)
 	if !ok {
-		return nil
+		return nil, false
 	}
 	var out []string
 	alt := func(a string) {
-		if f := strings.Fields(a); len(f) > 0 && isWord(f[0]) {
+		if f := strings.Fields(a); len(f) > 0 && gitVerbWord(f[0]) {
 			out = append(out, f[0])
 		}
 	}
@@ -218,43 +224,222 @@ func gitUsageVerb(line, cmd string) []string {
 		}
 	}
 	alt(inner[from:])
-	return out
+	return out, false
+}
+
+// gitCompletionVerbs reads a command's completion listing (`git <cmd> --git-completion-helper-all`, which
+// git-completion.bash reads) into the subcommands it names. parse-options prints the command's OPT_SUBCOMMAND table
+// there bare, its hidden entries too (git remote rm, git stash save), beside its options, which keep their dashes;
+// git 2.39 through 2.56 print it the same way (parse-options.c show_gitcomp). A command that is not parse-options'
+// (git submodule's script) answers with its usage and fails, and the caller passes no listing for it.
+func gitCompletionVerbs(listing string) []string {
+	var verbs []string
+	for _, w := range strings.Fields(listing) {
+		if gitVerbWord(w) {
+			verbs = append(verbs, w)
+		}
+	}
+	return verbs
+}
+
+// gitListedVerbs are the verbs git lists for one two-level command, each once: those its usage names (`git <cmd>
+// -h`) and those its completion listing names ("" when the command does not answer it). unnamed reports a usage that
+// puts <subcommand> where the verb stands: `git maintenance -h` names none of its verbs in any supported git, and
+// only the completion listing does.
+func gitListedVerbs(cmd, usage, listing string) (verbs []string, unnamed bool) {
+	seen := map[string]bool{}
+	add := func(vs []string) {
+		for _, v := range vs {
+			if !seen[v] {
+				seen[v] = true
+				verbs = append(verbs, v)
+			}
+		}
+	}
+	for _, line := range strings.Split(usage, "\n") {
+		vs, u := gitUsageVerb(line, cmd)
+		add(vs)
+		unnamed = unnamed || u
+	}
+	add(gitCompletionVerbs(listing))
+	return verbs, unnamed
+}
+
+// gitVerbGaps are the verbs git lists for a two-level command that the row's level has neither as a subcommand nor
+// as an alias, one failure line each.
+func gitVerbGaps(cmd string, lv *execmatch.Level, verbs []string) []string {
+	var gaps []string
+	for _, v := range verbs {
+		_, sub := lv.Subs[v]
+		_, alias := lv.Alias[v]
+		if !sub && !alias {
+			gaps = append(gaps, "git "+cmd+" "+v+": the installed git lists the verb, and the row's "+cmd+
+				" level has no such subcommand or alias")
+		}
+	}
+	return gaps
 }
 
 // gitVerbsFresh holds every two-level command of the row (a level with subcommands: stash, remote, bisect, ...) to
-// the verbs the installed git's `git <cmd> -h` lists: each must be a subcommand or an alias of the row's level. A verb
-// the row lacks is read as an operand of the level, so a rule naming it cannot be written and an allow list admits
-// it by its level alone (git bisect next was missing). A verb the row has and the installed git does not (another
-// version's) is not reported: the row covers every supported git.
+// the verbs the installed git lists for it in its usage and its completion listing (gitListedVerbs): each must be a
+// subcommand or an alias of the row's level. A word a level lacks is read as an unknown subcommand, matched only as
+// written. When git added it as an alias of a verb (git remote rm for remove), a rule on the verb misses it, which
+// fails open (R4); when it is a verb of its own (git bisect next, git reflog write), the row no longer says what
+// the command takes. Either way git's manual says which it is, and the row must follow. A verb the row has and the
+// installed git does not (another version's) is not reported: the row covers every supported git. A command whose
+// usage puts <subcommand> where its verbs stand and whose completion listing names none fails, rather than going
+// unchecked.
 func gitVerbsFresh(t *testing.T, git, dir string) {
 	t.Helper()
+	row := Git()
 	checked := 0
-	for name, lv := range Git().Root.Subs {
+	for _, name := range slices.Sorted(maps.Keys(row.Root.Subs)) {
+		lv := row.Root.Subs[name]
 		if len(lv.Subs) == 0 {
 			continue
 		}
-		out, _ := gitAt(git, dir, name, "-h")
-		var verbs []string
-		for _, line := range strings.Split(out, "\n") {
-			verbs = append(verbs, gitUsageVerb(line, name)...)
+		usage, _ := gitAt(git, dir, name, "-h")
+		listing, err := gitStdoutAt(git, dir, name, "--git-completion-helper-all")
+		if err != nil {
+			listing = "" // not parse-options' (a script): it printed its usage and failed
 		}
-		if len(verbs) == 0 {
-			t.Logf("git %s -h lists no verb (its verbs are not checked): %s", name, strings.TrimSpace(out))
+		verbs, unnamed := gitListedVerbs(name, usage, listing)
+		switch {
+		case len(verbs) == 0 && unnamed:
+			t.Errorf("git %s has verbs its usage does not name, and its completion listing names none, so none is checked: %s",
+				name, strings.TrimSpace(usage))
+			continue
+		case len(verbs) == 0:
+			t.Logf("git %s lists no verb (its verbs are not checked): %s", name, strings.TrimSpace(usage))
 			continue
 		}
 		checked++
-		for _, v := range verbs {
-			if _, ok := lv.Subs[v]; ok {
-				continue
-			}
-			if _, ok := lv.Alias[v]; ok {
-				continue
-			}
-			t.Errorf("git %s %s: the installed git lists the verb, and the row's %s level has no such subcommand or alias", name, v, name)
+		for _, gap := range gitVerbGaps(name, lv, verbs) {
+			t.Error(gap)
 		}
 	}
 	if checked == 0 {
 		t.Fatal("no two-level command's verbs read from the installed git: the probe proves nothing")
+	}
+}
+
+// gitRecorded is what two gits print for `git <cmd> -h` and `git <cmd> --git-completion-helper-all`, for the
+// two-level commands whose verbs changed after 2.51.0 and for git maintenance, whose usage names none. 2.51.0 is this
+// host's git (Ubuntu 25.10), captured. 2.56.0 is the git of the first CI run on GitHub's runners (2026-11-02,
+// ubuntu-24.04 and ubuntu-24.04-arm), rebuilt from v2.56.0's builtin/hook.c, reflog.c, multi-pack-index.c and gc.c
+// as parse-options.c's usage_with_options and show_gitcomp print them; that run's log quotes the maintenance usage
+// line as it stands here.
+var gitRecorded = []struct {
+	git, cmd, usage, listing string
+	verbs                    string // what the probe reads, sorted
+}{
+	{"2.51.0", "hook", `usage: git hook run [--ignore-missing] [--to-stdin=<path>] <hook-name> [-- <hook-args>]
+
+`, "run\n", "run"},
+	{"2.51.0", "reflog", `usage: git reflog [show] [<log-options>] [<ref>]
+   or: git reflog list
+   or: git reflog expire [--expire=<time>] [--expire-unreachable=<time>]
+                         [--rewrite] [--updateref] [--stale-fix]
+                         [--dry-run | -n] [--verbose] [--all [--single-worktree] | <refs>...]
+   or: git reflog delete [--rewrite] [--updateref]
+                         [--dry-run | -n] [--verbose] <ref>@{<specifier>}...
+   or: git reflog drop [--all [--single-worktree] | <refs>...]
+   or: git reflog exists <ref>
+
+`, "show list expire delete exists drop\n", "delete drop exists expire list show"},
+	{"2.51.0", "multi-pack-index", `usage: git multi-pack-index [<options>] write [--preferred-pack=<pack>][--refs-snapshot=<path>]
+   or: git multi-pack-index [<options>] verify
+   or: git multi-pack-index [<options>] expire
+   or: git multi-pack-index [<options>] repack [--batch-size=<size>]
+
+    --[no-]object-dir <directory>
+                          object directory containing set of packfile and pack-index pairs
+
+`, "repack write verify expire --object-dir= --no-object-dir\n", "expire repack verify write"},
+	{"2.51.0", "maintenance", `usage: git maintenance <subcommand> [<options>]
+
+`, "run start stop register unregister\n", "register run start stop unregister"},
+	{"2.56.0", "hook", `usage: git hook run [--allow-unknown-hook-name] [--ignore-missing] [--to-stdin=<path>] [(-j|--jobs) <n>]
+       <hook-name> [-- <hook-args>]
+   or: git hook list [--allow-unknown-hook-name] [-z] [--show-scope] <hook-name>
+
+`, "run list\n", "list run"},
+	{"2.56.0", "reflog", `usage: git reflog [show] [<log-options>] [<ref>]
+   or: git reflog list
+   or: git reflog exists <ref>
+   or: git reflog write <ref> <old-oid> <new-oid> <message>
+   or: git reflog delete [--rewrite] [--updateref]
+                         [--dry-run | -n] [--verbose] <ref>@{<specifier>}...
+   or: git reflog drop [--all [--single-worktree] | <refs>...]
+   or: git reflog expire [--expire=<time>] [--expire-unreachable=<time>]
+                         [--rewrite] [--updateref] [--stale-fix]
+                         [--dry-run | -n] [--verbose] [--all [--single-worktree] | <refs>...]
+
+`, "show list exists write delete drop expire\n", "delete drop exists expire list show write"},
+	{"2.56.0", "multi-pack-index", `usage: git multi-pack-index [<options>] write [--preferred-pack=<pack>]
+         [--[no-]bitmap] [--[no-]incremental] [--[no-]stdin-packs]
+         [--refs-snapshot=<path>] [--[no-]write-chain-file]
+         [--base=<checksum>]
+   or: git multi-pack-index [<options>] compact [--[no-]incremental]
+         [--[no-]bitmap] [--base=<checksum>] [--[no-]write-chain-file]
+         <from> <to>
+   or: git multi-pack-index [<options>] verify
+   or: git multi-pack-index [<options>] expire
+   or: git multi-pack-index [<options>] repack [--batch-size=<size>]
+
+    --[no-]object-dir <directory>
+                          object directory containing set of packfile and pack-index pairs
+    --[no-]progress       force progress reporting
+
+`, "repack write compact verify expire --object-dir= --progress --no-object-dir -- --no-progress\n",
+		"compact expire repack verify write"},
+	{"2.56.0", "maintenance", `usage: git maintenance <subcommand> [<options>]
+
+`, "run start stop register unregister is-needed\n", "is-needed register run start stop unregister"},
+}
+
+// TestGitVerbsRecorded runs TestGitRowFresh's verb probe over recorded output of this host's git and of a newer one:
+// it reads every verb each git lists, git maintenance's from the completion listing alone, and the row's levels hold
+// them all. Against git 2.56.0's output, the row without the verbs gits 2.51.1 and 2.54 added fails with the three
+// lines the first CI run on git 2.56.0 failed TestGitRowFresh with.
+func TestGitVerbsRecorded(t *testing.T) {
+	row := Git()
+	for _, rec := range gitRecorded {
+		verbs, unnamed := gitListedVerbs(rec.cmd, rec.usage, rec.listing)
+		if got := strings.Join(slices.Sorted(slices.Values(verbs)), " "); got != rec.verbs {
+			t.Errorf("git %s %s: the probe reads %q, want %q", rec.git, rec.cmd, got, rec.verbs)
+		}
+		if rec.cmd == "maintenance" {
+			// Its usage alone names no verb: without the listing the live probe fails, rather than skipping it.
+			if fromUsage, _ := gitListedVerbs(rec.cmd, rec.usage, ""); len(fromUsage) != 0 || !unnamed {
+				t.Errorf("git %s maintenance -h: read %v from the usage (unnamed %v), want none and its <subcommand> seen",
+					rec.git, fromUsage, unnamed)
+			}
+		}
+		for _, gap := range gitVerbGaps(rec.cmd, row.Root.Subs[rec.cmd], verbs) {
+			t.Errorf("git %s: %s", rec.git, gap)
+		}
+	}
+	before := Git()
+	delete(before.Root.Subs["hook"].Subs, "list")
+	delete(before.Root.Subs["reflog"].Subs, "write")
+	delete(before.Root.Subs["multi-pack-index"].Subs, "compact")
+	var gaps []string
+	for _, rec := range gitRecorded {
+		if rec.git == "2.56.0" {
+			verbs, _ := gitListedVerbs(rec.cmd, rec.usage, rec.listing)
+			gaps = append(gaps, gitVerbGaps(rec.cmd, before.Root.Subs[rec.cmd], verbs)...)
+		}
+	}
+	slices.Sort(gaps)
+	want := []string{
+		"git hook list: the installed git lists the verb, and the row's hook level has no such subcommand or alias",
+		"git multi-pack-index compact: the installed git lists the verb, and the row's multi-pack-index level has no such subcommand or alias",
+		"git reflog write: the installed git lists the verb, and the row's reflog level has no such subcommand or alias",
+	}
+	if !slices.Equal(gaps, want) {
+		t.Errorf("the row before 2026-11-02 against git 2.56.0:\n%s\nwant the first CI run's:\n%s",
+			strings.Join(gaps, "\n"), strings.Join(want, "\n"))
 	}
 }
 
@@ -263,6 +448,14 @@ func gitAt(git, dir string, args ...string) (string, error) {
 	cmd := exec.Command(git, args...)
 	cmd.Dir, cmd.Env = dir, gitEnv(dir)
 	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// gitStdoutAt runs git in dir with a hermetic environment and returns its standard output alone.
+func gitStdoutAt(git, dir string, args ...string) (string, error) {
+	cmd := exec.Command(git, args...)
+	cmd.Dir, cmd.Env = dir, gitEnv(dir)
+	out, err := cmd.Output()
 	return string(out), err
 }
 

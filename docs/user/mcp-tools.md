@@ -102,6 +102,8 @@ A switch lasts for the run. To keep a rule for the next run, change the contract
   `tool`; `verdict: allow` (authority `rule`, or `human` after an approved ask) or `refused` with reason
   `mcp-tool-denied`, `ask-denied`, `ask-timeout` or `ask-unavailable`; the rule says what decided it
   (`mcp[files].tools.deny[delete_file]`, `mcp[files].live[read_file]`, …);
+- every message the relay could not read, which may have been a call: one such line, refused, reason `mcp-tool-denied`,
+  rule `mcp[files].relay`, no `tool`;
 - every held call: the broker's own `ask` and `answer` lines, op `mcp_tool`, target `<server> <tool>`;
 - every live change: a `gap` line `what: enforce`, `why: mcp-tool-changed`.
 
@@ -129,8 +131,10 @@ A switch lasts for the run. To keep a rule for the next run, change the contract
   refused as unreadable, so the two cannot read different tool names from one message. Keys deeper down
   (`params.arguments`) are passed as sent.
 - A stdio server gets each client message as one line of compact JSON with the same content, not the agent's bytes, so
-  a server whose reader ends lines at a lone CR reads the message that was decided. A client line that is not one JSON
-  value in UTF-8 is answered with a parse error and not passed.
+  a server whose reader ends lines at a lone CR reads the message that was decided. A client line or POST body that is
+  not one JSON value in UTF-8, or a line past 8 MiB, is answered with a parse error, not passed, and recorded; a POST body
+  past 4 MiB gets HTTP 413, and is recorded too.
+- A server's line past 8 MiB is dropped with a warning, unread, so the client's call waits for its own timeout.
 - A batch holding a denied or asked call is refused whole (a batch is never held).
 - Over HTTP, a held call needs the relay to name the client process in the run; when it cannot, the call is refused
   `ask-unavailable`. Server-sent event streams opened with GET pass unfiltered (they carry no client call).

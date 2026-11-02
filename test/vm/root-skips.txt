@@ -33,6 +33,7 @@ internal/runtime/enforce/cgroup TestFreezeStageChild # helper process only
 internal/runtime/enforce/cgroup TestMovedHelper # helper process only
 internal/runtime/enforce/cgroup TestNetHelper # helper process only
 internal/runtime/enforce/landlock TestStrictClientFilterHelper # helper process for TestStrictClientFilterOnRealKernel
+internal/runtime/enforce/landlock TestStrictRouteHelper # helper process for TestStrictFilterInterfaceLists
 internal/runtime/enforce/cgroup TestNetLinksHelper # helper process only
 internal/runtime/enforce/cgroup TestSlotHelper # helper process for the slot-table tests
 internal/runtime/enforce/cgroup TestUnixHelper # helper process only
@@ -338,3 +339,19 @@ internal/runtime TestRootRouteChangesRefused/bpflsm # a root agent at tier bpfls
 internal/runtime TestIntegrationNodeInterfaces # a guest has no node (kvm-run.sh HOST_PKGS); the tier-1 step runs it on the runner, and TestIntegrationRouteQueries runs the same calls from python3 here (ADR 0128)
 internal/runtime/enforce/cgroup TestCompactedTableStaysAtBPFLSM/bpflsm # tier bpflsm needs the plane's lsm mode: bpf in the active LSM list, which a hosted runner, TEGO_VM_LSM=kernel and the default-lsm boot lack (the lsm-bpf boot runs it)
 internal/runtime TestIntegrationDeclaredServers/node # no node in the guest image; the python server's cell runs
+
+# What a matrix row's own kernel does not have, from each test's own condition, which keys on the ABI or the kernel it
+# names, so a newer kernel never takes the skip. TestIntegrationDeclaredPort was seen skipping in an al2023 guest (6.1,
+# ABI 2); the others were read from the test, not yet seen in a full root run on a row. TestRunMembersMatchesProc is on
+# root-must-pass.txt, so it holds the kernel without the ioctl itself rather than skip.
+internal/runtime/enforce/landlock TestIntegrationDeclaredPort # below Landlock ABI 4 (AL2023's 6.1 is ABI 2) there are no TCP port rules to pass; TestIntegrationLandlock asserts below ABI 4 that the domain leaves a connect alone
+internal/runtime/launch TestDeputyDescriptorCarriesTheDomainsFileRights # below Landlock ABI 5 (AL2023's 6.1, Ubuntu 24.04's 6.8) the domain has no IOCTL_DEV right to carry
+internal/platform/sys TestPeerPidfdFDNamesThePeer # a kernel below 6.5 (RHEL 9's 5.14, AL2023's 6.1) has no SO_PEERPIDFD; the peer check's pidfd_open fallback runs there, as root, in internal/platform/peer
+internal/platform/sys TestSeccompNotifSetFlagsSyncWakeUp # a kernel below 6.6 (RHEL 9's 5.14, AL2023's 6.1) has no SECCOMP_USER_NOTIF_FD_SYNC_WAKE_UP
+internal/platform/sys TestSeccompListenerIsWaitKillable # a kernel below 5.19 (RHEL 9's 5.14) has no SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV
+internal/platform/sys TestPidfdSendSignalTargetsTheThreadGroup # a kernel below 6.9 (Ubuntu 24.04's 6.8 and older) has no PIDFD_THREAD, so no thread-scoped pidfd to tell apart
+internal/platform/sys TestPidfdOpenScopes # a kernel below 6.9 (Ubuntu 24.04's 6.8 and older) has no PIDFD_THREAD, so no thread-scoped pidfd to tell apart
+internal/platform/sys TestPollAndWaitRejectThreadScopedPidfd # a kernel below 6.9 (Ubuntu 24.04's 6.8 and older) has no PIDFD_THREAD, so no thread-scoped pidfd to tell apart
+internal/runtime/enforce/cgroup TestCgroupIDOfPIDMatchesTheDirectory # a kernel without PIDFD_GET_INFO's cgroup id (upstream from 6.13; RHEL 9 backports it) has only the /proc path
+internal/runtime/enforce/cgroup TestPlaneRunIOUringListenerOutcomes # a kernel with kernel.io_uring_disabled set (RHEL 9) refuses io_uring_setup to the agent, whatever the plane admits
+internal/runtime/enforce/cgroup TestPlaneRunIOUringListenerOutcomes/* # a kernel below 6.11 has no IORING_OP_BIND, so the agent's ring has no bind or listen to record an outcome of

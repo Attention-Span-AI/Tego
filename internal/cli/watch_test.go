@@ -182,7 +182,10 @@ func TestWatchUsageErrors(t *testing.T) {
 	for name, argv := range map[string][]string{
 		"no command":                  {"tego", "watch"},
 		"flags but no command":        {"tego", "watch", "--record", "full", "--"},
+		"an empty command":            {"tego", "watch", "--", ""},
 		"a tier without a boundary":   {"tego", "watch", "--tier", "landlock", "--", "true"},
+		"an empty boundary":           {"tego", "watch", "--boundary", "", "--", "true"},
+		"an empty boundary with =":    {"tego", "watch", "--boundary=", "--", "true"},
 		"a record level no run takes": {"tego", "watch", "--record", "loud", "--", "true"},
 	} {
 		var errs bytes.Buffer
@@ -192,6 +195,18 @@ func TestWatchUsageErrors(t *testing.T) {
 		if len(*calls) != 0 {
 			t.Fatalf("%s: a usage error still started a run: %+v", name, *calls)
 		}
+	}
+}
+
+// TestWatchTypoNamesTheCommandLine: `tego watch -- typo` is the likeliest mistake with this command, and it was told
+// about a line of a temporary file, /tmp/tego-watch-123/watch.yaml:4:7, removed before the reader could look.
+func TestWatchTypoNamesTheCommandLine(t *testing.T) {
+	code, _, errs := run(t, "watch", "--", "tego-no-such-program")
+	if code != identity.ExitLauncher {
+		t.Fatalf("exit %d, want %d; stderr %q", code, identity.ExitLauncher, errs)
+	}
+	if strings.Contains(errs, "watch.yaml") || !strings.Contains(errs, agent.CommandLineFile+":") || !strings.Contains(errs, "tego-no-such-program") {
+		t.Errorf("stderr %q: want the finding on the command line, naming the program", errs)
 	}
 }
 

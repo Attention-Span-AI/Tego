@@ -45,6 +45,8 @@ type Verdict struct {
 	// Dests are the destinations: for a leak where the secrets went (the closest first), otherwise the destinations
 	// next to a secret whose sends were refused.
 	Dests []string
+	// Addrs is, for a leak, the addresses behind each of Dests keyed by a host name (Dest.Addrs): NeverAllow's second half.
+	Addrs map[string][]string
 	// SecretReads counts refused secret reads (lines) over SecretFiles paths; Sends counts refused sends next to a
 	// secret; Asked counts the asks a person answered.
 	SecretReads, SecretFiles, Sends, Asked int
@@ -101,6 +103,20 @@ func (v Verdict) Dest() string {
 	return v.Dests[0]
 }
 
+// NeverAllow is what a contract made from this run must not allow, closest to the secret first: each destination the
+// secrets went to, then the addresses behind it. learn writes addresses, and Dests holds a name where the line held one,
+// so a name alone would match no entry and the address would stay allowed. Nil unless the verdict is a leak.
+func (v Verdict) NeverAllow() []string {
+	if v.Kind != VerdictLeak {
+		return nil
+	}
+	var out []string
+	for _, d := range v.Dests {
+		out = append(append(out, d), v.Addrs[d]...)
+	}
+	return out
+}
+
 // RunVerdict reads one run's verdict from its signal (Signal(r, ...)).
 func RunVerdict(r *Run, s *RunSignal) Verdict {
 	v := Verdict{Kind: VerdictQuiet, Observe: r.Tier == "observe"}
@@ -124,9 +140,10 @@ func RunVerdict(r *Run, s *RunSignal) Verdict {
 		}
 	}
 	type dest struct {
-		key  string
-		dist uint64
-		n    int
+		key   string
+		dist  uint64
+		n     int
+		addrs []string
 	}
 	var leak, refused []dest
 	for i := range s.Outbound {
@@ -142,11 +159,11 @@ func RunVerdict(r *Run, s *RunSignal) Verdict {
 			continue
 		}
 		if d.Observed+d.Allowed > 0 && len(exposedAt) > 0 {
-			leak = append(leak, dest{d.Key, nearest(d.FirstSeq, exposedAt), d.Observed + d.Allowed})
+			leak = append(leak, dest{d.Key, nearest(d.FirstSeq, exposedAt), d.Observed + d.Allowed, d.Addrs})
 		}
 		if d.Refused > 0 {
 			v.Sends += d.Refused
-			refused = append(refused, dest{d.Key, 0, d.Refused})
+			refused = append(refused, dest{key: d.Key, n: d.Refused})
 		}
 	}
 	slices.SortStableFunc(leak, func(a, b dest) int {
@@ -161,6 +178,12 @@ func RunVerdict(r *Run, s *RunSignal) Verdict {
 		v.Kind = VerdictLeak
 		for _, d := range leak {
 			v.Dests = append(v.Dests, d.key)
+			if len(d.addrs) > 0 {
+				if v.Addrs == nil {
+					v.Addrs = map[string][]string{}
+				}
+				v.Addrs[d.key] = d.addrs
+			}
 		}
 	case v.Stopped() > 0:
 		v.Kind = VerdictProtected

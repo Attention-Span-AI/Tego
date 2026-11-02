@@ -48,10 +48,10 @@ ask:
                                   # [] for neither. webhook:<url> is accepted with a config-ignored warning (not built)
 record:
   # max_run_bytes: 1GiB           # ceiling (every layer may lower it, none raise it), unbounded when unset, at
-                                  # least 64KiB: a run whose events.jsonl reaches it is ended as a limit, exit 124,
+                                  # least 64KiB: a run whose events.jsonl and blobs reach it is ended as a limit, exit 124,
                                   # limit which=ledger_bytes, run_end reason limit, checked at each recorded line
                                   # and once a second (record minor 22; run_start.limits.ledger_bytes records it), so
-                                  # a run passes it by the lines in flight. Blobs are not counted. Under
+                                  # a run passes it by the lines in flight. Under
                                   # a unit with Restart=on-failure a 24/7 agent restarts on a new ledger; 1GiB is a
                                   # start for always-on agents (added 2026-10-26)
   ringbuf: 2MiB                   # honoured from /etc/tego/config.yaml only: each tier-2 run's own record ring,

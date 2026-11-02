@@ -11,12 +11,30 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/check/secretpath"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // The Signal as one pass computed it before it was made faster, copied unchanged but for the names (and
-// secretpath.Is for IsSecretPath, which is now memoized), so that the
+// secretpath.Is for IsSecretPath, which is now memoized) and for what was added to the Signal since (Dest.Addrs, a
+// live-blocked host), so that the
 // equivalence test (signal_fold_test.go) checks the incremental fold against the code that decided the demo's
 // verdicts, not against itself.
+
+// refBlocked is what the rule on a live-blocked host keeps out of "the run also reached this host", added with that rule.
+func refBlocked(liveHosts map[string]bool, outbound []Dest) map[string]bool {
+	out := map[string]bool{}
+	for h := range liveHosts {
+		out[h] = true
+	}
+	for i := range outbound {
+		if liveHosts[strings.ToLower(outbound[i].Name)] {
+			for _, a := range outbound[i].Addrs {
+				out[HostOf(a)] = true
+			}
+		}
+	}
+	return out
+}
 
 func refUnder(s Sensitive, p string) (string, bool) {
 	for _, e := range s.Entries {
@@ -120,6 +138,7 @@ func refSignal(r *Run, s Sensitive) *RunSignal {
 		return &out.Outbound[i]
 	}
 	reached, probes := map[string]bool{}, refProbeTargets(r)
+	liveHosts := map[string]bool{} // added with the rule: a net live block's hosts, and the addresses one refused
 	groups := map[string]int{}
 	// Only a live run's open asks wait on a person; a lost run's were never answered (Snapshot.Pending).
 	pending := map[string]bool{}
@@ -166,6 +185,9 @@ func refSignal(r *Run, s Sensitive) *RunSignal {
 				continue
 			}
 			d := dest(e, dst, name)
+			if d.Key != dst && !slices.Contains(d.Addrs, dst) {
+				d.Addrs = append(d.Addrs, dst)
+			}
 			switch e.Verdict {
 			case "allow":
 				d.Allowed++
@@ -268,6 +290,13 @@ func refSignal(r *Run, s Sensitive) *RunSignal {
 				}
 			}
 			if v, ok := strings.CutPrefix(e.Rule, "live.block["); ok {
+				if g.Class == "net" {
+					for _, dst := range []string{ruleDest(e.Rule), e.Target} {
+						if h := HostOf(dst); h != "" {
+							liveHosts[h] = true
+						}
+					}
+				}
 				bi, seen := blocks[e.Rule]
 				if !seen {
 					bi = len(out.Blocks)
@@ -275,6 +304,14 @@ func refSignal(r *Run, s Sensitive) *RunSignal {
 					out.Blocks = append(out.Blocks, BlockHit{Rule: e.Rule, Value: strings.TrimSuffix(v, "]")})
 				}
 				out.Blocks[bi].N++
+			}
+		case "gap":
+			var p record.GapPayload
+			if strings.HasSuffix(e.Target, record.GapLiveBlockAdded) && json.Unmarshal([]byte(e.Raw), &p) == nil &&
+				p.LiveBlock != nil && p.LiveBlock.Kind == record.LiveKindNet {
+				if h := HostOf(p.LiveBlock.Value); h != "" {
+					liveHosts[h] = true
+				}
 			}
 		}
 	}
@@ -287,12 +324,13 @@ func refSignal(r *Run, s Sensitive) *RunSignal {
 		}
 		return false
 	}
+	blocked := refBlocked(liveHosts, out.Outbound)
 	for i := range out.Groups {
 		g := &out.Groups[i]
 		// A system lookup (nscd, userdb, the D-Bus buses) or a DNS lookup is what the C library does around any
 		// connect: it carries none of the run's data, so it is never "next to a secret", however close it comes.
 		g.NearSecret = g.Class == "net" && !g.SystemLookup && !dnsGroup(g) && near(g.FirstSeq, g.First)
-		classify(g, reached, probes)
+		classify(g, reached, probes, blocked)
 		g.Severity = groupSeverity(g, out.agent, out.rules)
 		if out.sev == nil {
 			out.sev = map[string]Severity{}

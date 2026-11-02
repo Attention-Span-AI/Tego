@@ -750,7 +750,8 @@ func noPortBindTest(nr uint32) []bpf.Instruction {
 }
 
 // Socket options that give an IP socket a source route: IPv4's IP_OPTIONS (an LSRR or SSRR option, which an
-// unprivileged task may set), and IPv6's sticky routing header, set as IPV6_RTHDR or inside an
+// unprivileged task may set before Linux 7.1 and its stable backports, and a task with CAP_NET_RAW on any kernel),
+// and IPv6's sticky routing header, set as IPV6_RTHDR or inside an
 // IPV6_2292PKTOPTIONS block. IPV6_2292RTHDR is the RFC 2292 name of the same header; Linux reads it as a request
 // to receive one, but the arm refuses it with the others rather than rest on that reading.
 const (

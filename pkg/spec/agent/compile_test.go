@@ -687,6 +687,99 @@ func (s *slowResolver) LookupNetIP(ctx context.Context, network, host string) ([
 	return s.inner.LookupNetIP(ctx, network, host)
 }
 
+// TestWriteEntryThatIsALinkToNothing: a dangling link stats as missing, and a missing write entry is created by the run,
+// so it compiled, and the run stopped on "path vanished since compile" for a path that never existed.
+func TestWriteEntryThatIsALinkToNothing(t *testing.T) {
+	f := newFixture(t)
+	link := filepath.Join(f.root, "out")
+	if err := os.Symlink(filepath.Join(f.root, "absent"), link); err != nil {
+		t.Fatal(err)
+	}
+	_, ds, err := f.compileErr(f.load("version: 0\nname: a\ncommand: [python]\nfs:\n  write: [\"" + link + "/\"]\n"))
+	if err == nil || !hasCode(ds, CodePathMissing) || !strings.Contains(render(ds), "symbolic link to nothing") {
+		t.Errorf("compile: %v\n%s", err, render(ds))
+	}
+}
+
+// TestLimitsBelowARunsStart: the child stage is a Go process under the run's limits from its first instruction, so a
+// limit below what it takes never reaches the agent. pids 5 died with a Go stack dump on the user's terminal, memory
+// 4 MiB with "child died before the fd handoff", and memory_high 1 MiB never started at all.
+func TestLimitsBelowARunsStart(t *testing.T) {
+	f := newFixture(t)
+	for _, tc := range []struct {
+		name, limits string
+		refused      bool
+		warned       bool
+	}{
+		{"pids below", "limits:\n  pids: 5\n", true, false},
+		{"pids at", "limits:\n  pids: 6\n", false, false},
+		{"memory below", "limits:\n  memory: 4MiB\n", false, true},
+		{"memory at", "limits:\n  memory: 8MiB\n", false, false},
+		{"memory_high below", "limits:\n  memory_high: 1MiB\n", false, true},
+		{"unset", "", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, ds, err := f.compileErr(f.load("version: 0\nname: a\ncommand: [python]\n" + tc.limits))
+			if (err != nil) != tc.refused {
+				t.Errorf("compile: %v, want refused=%v\n%s", err, tc.refused, render(ds))
+			}
+			if got := hasCode(ds, CodeLimitBelowStart); got != (tc.refused || tc.warned) {
+				t.Errorf("limit-below-start reported: %v\n%s", got, render(ds))
+			}
+		})
+	}
+}
+
+// TestCeilingsBelowARunsStart: the floor holds the value a run gets, not only the contract's. A machine ceiling of pids
+// 3 compiled every contract clean, so every run died the way TestLimitsBelowARunsStart's contracts did, and the
+// limit-above-machine fix said "lower limits.pids to 3", a value the floor refuses. The ceiling stays enforced as
+// written (E12), so this is a warning naming the ceiling's line.
+func TestCeilingsBelowARunsStart(t *testing.T) {
+	f := newFixture(t)
+	etc := config.Provenance{File: "/etc/tego/config.yaml", Line: 4, Layer: config.LayerEtc}
+	for _, tc := range []struct {
+		name, limits string
+		pids         config.Ceiling[int]
+		memory       config.Ceiling[config.ByteSize]
+		refused      bool
+		want         string // a limit-below-start message
+	}{
+		{"pids ceiling, contract above it", "limits:\n  pids: 10\n", config.Ceiling[int]{Value: 3, Bounded: true, Source: etc}, config.Ceiling[config.ByteSize]{}, false,
+			"the machine's pids ceiling 3 from /etc/tego/config.yaml:4 is below what a run's start takes (6)"},
+		{"pids ceiling, no contract limit", "", config.Ceiling[int]{Value: 3, Bounded: true, Source: etc}, config.Ceiling[config.ByteSize]{}, false,
+			"the machine's pids ceiling 3 from /etc/tego/config.yaml:4"},
+		{"pids ceiling and a contract below the floor", "limits:\n  pids: 4\n", config.Ceiling[int]{Value: 3, Bounded: true, Source: etc}, config.Ceiling[config.ByteSize]{}, true,
+			"limits.pids 4 cannot start a run"},
+		{"memory ceiling", "", config.Ceiling[int]{}, config.Ceiling[config.ByteSize]{Value: 4 << 20, Bounded: true, Source: etc}, false,
+			"the machine's memory ceiling 4MiB from /etc/tego/config.yaml:4"},
+		{"pids ceiling at the floor", "", config.Ceiling[int]{Value: 6, Bounded: true, Source: etc}, config.Ceiling[config.ByteSize]{}, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := *f.machine
+			m.Limits.Pids, m.Limits.Memory, m.Limits.MemoryHigh = tc.pids, tc.memory, config.Ceiling[config.ByteSize]{}
+			_, ds, err := Compile(f.load("version: 0\nname: a\ncommand: [python]\n"+tc.limits), &m, f.opts()...)
+			if (err != nil) != tc.refused {
+				t.Fatalf("compile: %v, want refused=%v\n%s", err, tc.refused, render(ds))
+			}
+			below := 0
+			for _, d := range ds {
+				if d.Code == CodeLimitBelowStart {
+					below++
+					if tc.want == "" || !strings.Contains(d.Message, tc.want) {
+						t.Errorf("limit-below-start %q, want one containing %q", d.Message, tc.want)
+					}
+				}
+				if d.Code == CodeLimitAboveMachine && strings.Contains(d.Fix, "lower limits.pids to 3") {
+					t.Errorf("the fix suggests a value below the floor: %s", d.Fix)
+				}
+			}
+			if want := map[bool]int{true: 1, false: 0}[tc.want != ""]; below != want {
+				t.Errorf("%d limit-below-start diagnostics, want %d\n%s", below, want, render(ds))
+			}
+		})
+	}
+}
+
 // agent-contract.md R11 (ceiling precedence) and I2 (Limits never exceed the machine ceiling).
 func TestCompileLimitsCeilings(t *testing.T) {
 	f := newFixture(t)

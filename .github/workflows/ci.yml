@@ -655,7 +655,7 @@ jobs:
     # dynamically linked stage (ADR 0021 (4): its marks are placed after the stage's execve), but the guest
     # run of a dynamically linked or PIE build is still that ADR's open condition.
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
       CGO_ENABLED: '1'
     steps:
@@ -675,13 +675,15 @@ jobs:
           sudo loginctl enable-linger "$(id -un)"
           for _ in $(seq 1 30); do [ -S "/run/user/$(id -u)/systemd/private" ] && exit 0; sleep 1; done
           echo "::error::no systemd user manager for $(id -un) after 30 s"; exit 1
+      # -timeout 25m: the race runtime slows a package several times over, and internal/policy/decide passed go
+      # test's default of 10m on GitHub's first run (2026-11-02) with a test still going.
       # -shuffle=on runs each package's tests and benchmarks in a random order, so a test that passes only
       # after another one has run fails here. A failing run prints its -test.shuffle
       # seed, which reproduces the order.
       - name: unit, raced
-        run: ./scripts/in-user-manager.sh go test -count=1 -race -shuffle=on -p 4 ./...
+        run: ./scripts/in-user-manager.sh go test -count=1 -race -shuffle=on -p 4 -timeout 25m ./...
       - name: integration, raced (unprivileged on the runner)
-        run: ./scripts/in-user-manager.sh go test -count=1 -race -shuffle=on -p 4 -tags integration ./...
+        run: ./scripts/in-user-manager.sh go test -count=1 -race -shuffle=on -p 4 -timeout 25m -tags integration ./...
 
   reproducible:
     # Two builds of this commit by the release's own goreleaser configuration must be byte-identical, or the

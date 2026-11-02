@@ -523,13 +523,13 @@ func (r *runner) newBudget() {
 		opts = append(opts, limits.WithActivityPublisher(publish))
 	}
 	if r.writer != nil {
-		opts = append(opts, limits.WithLedgerCeiling(r.ledgerCeiling(), r.writer.Size))
+		opts = append(opts, limits.WithLedgerCeiling(r.ledgerCeiling(), r.writer.LedgerBytes))
 	}
 	r.budget = limits.NewWatcher(r.rt.Limits, r.deps.Prices, r.cgm, r.cg, r.deps.Clock, r.queue.BudgetSink(), opts...)
 }
 
 // ledgerCeiling is the machine's record.max_run_bytes, 0 for none: the run is ended as a limit, which=ledger_bytes,
-// once its events.jsonl holds that many bytes (limits.WithLedgerCeiling), and run_start.limits.ledger_bytes records
+// once its events.jsonl and blobs hold that many bytes (limits.WithLedgerCeiling), and run_start.limits.ledger_bytes records
 // it (record.MinorLedgerCap).
 func (r *runner) ledgerCeiling() int64 {
 	if m := r.deps.Config; m != nil && m.Record.MaxRunBytes.Bounded {

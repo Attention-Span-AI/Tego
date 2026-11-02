@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -176,6 +175,7 @@ func compileGolden(t *testing.T, c goldenContract, home, bin string, subst *stri
 	rt, ds, err := Compile(ct, machine, WithCwd(filepath.Dir(c.path)), WithHome(home), WithPATH(bin), WithMountInfo(""),
 		WithResolver(goldenResolver{}), WithTiers(backend.Tiers()...), WithChainAnchor(filepath.Join(home, ".tego", "chain.log")),
 		WithClock(func() time.Time { return time.Unix(1_700_000_000, 0).UTC() }))
+	ds = onGoldensHost(t, c.name, ct, ds)
 	var b strings.Builder
 	b.WriteString("load:\n" + render(loadDs) + "compile:\n" + render(ds))
 	if err != nil {
@@ -220,6 +220,48 @@ func compileGolden(t *testing.T, c goldenContract, home, bin string, subst *stri
 		b.WriteString("\n")
 	}
 	return subst.Replace(b.String())
+}
+
+// goldenHostDirs are directories outside the test's own trees that the goldens' host had, beneath which a contract
+// under test names a write entry: examples/agents/claude-code-interactive.yaml writes /run/user/1000/cc-socks/ (its
+// CHANGE line has the reader put in their own uid), under the runtime directory logind keeps for uid 1000, the user
+// the goldens were written as. A CI runner's user is uid 1001, and the runner has no /run/user/1000.
+var goldenHostDirs = []string{"/run/user/1000"}
+
+// onGoldensHost takes out of ds what compile reports only because this host lacks a directory of goldenHostDirs, or
+// cannot search it (another user's 0700 runtime directory): for each write entry beneath it, the one [path-missing]
+// error at the entry's position, since its parent does not exist or cannot be stat'ed. That error is compile's
+// answer on such a host, so an entry with none, or more than one, fails the test; everything else must still match
+// the golden byte for byte.
+func onGoldensHost(t *testing.T, name string, c *Contract, ds []Diagnostic) []Diagnostic {
+	t.Helper()
+	if c.FS == nil {
+		return ds
+	}
+	for _, dir := range goldenHostDirs {
+		// "/." makes the stat walk through dir, so it holds only where compile's stat of an entry beneath dir gets past it.
+		if _, err := os.Stat(dir + "/."); err == nil {
+			continue
+		}
+		for i, w := range c.FS.Write {
+			if !strings.HasPrefix(filepath.Clean(w), dir+"/") {
+				continue
+			}
+			pos, _ := c.Pos("fs.write." + strconv.Itoa(i))
+			n := 0
+			ds = slices.DeleteFunc(ds, func(d Diagnostic) bool {
+				hit := d.Code == CodePathMissing && d.IsError() && d.File == pos.File && d.Line == pos.Line && d.Col == pos.Col
+				if hit {
+					n++
+				}
+				return hit
+			})
+			if n != 1 {
+				t.Errorf("%s: fs.write %q: %d [path-missing] errors where %s cannot be searched, want 1", name, w, n, dir)
+			}
+		}
+	}
+	return ds
 }
 
 // dropCheckoutAbove drops the built-in deny_write rows fsAsk adds for a protected directory (.claude) at or above the
@@ -276,11 +318,10 @@ func goldenHome(t *testing.T, home string) {
 
 // TestLiveOffGolden is ADR 0125 R1: every contract with no live: key compiles to the table and diagnostics it
 // compiled to before the live: section existed, byte for byte. The golden was written at that commit
-// (-update-live-off); only an x86-64 host shares its loader paths.
+// (-update-live-off). It holds on any architecture: every program a contract runs is a goldenBin stub, neither ELF
+// nor a #! script, so no loader or interpreter enters a table, and the host's loader identities (ExecCommands) are
+// left out of the golden.
 func TestLiveOffGolden(t *testing.T) {
-	if runtime.GOARCH != "amd64" {
-		t.Skip("the golden names x86-64 loader paths")
-	}
 	tmp := t.TempDir()
 	home, bin, starter := filepath.Join(tmp, "home"), filepath.Join(tmp, "bin"), filepath.Join(tmp, "starter")
 	for _, d := range []string{home, bin, starter} {

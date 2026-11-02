@@ -91,6 +91,33 @@ func TestMotivatingExamples(t *testing.T) {
 			}
 		}
 	})
+	t.Run("verbs git added after 2.51.0", func(t *testing.T) {
+		// git reflog write (2.51.1) appends an entry to a ref's reflog, git hook list (2.54) prints the hooks of an
+		// event and git multi-pack-index compact (2.54) writes a new multi-pack-index layer. Each is a verb of its own:
+		// a rule names it, an allow list of its level's other verbs refuses it, and reflog's default verb, show, does
+		// not take it in, though git before 2.51.1 runs `git reflog write` as show (2026-11-02, the first CI run on
+		// git 2.56.0; TestGitRowFresh holds the levels to the installed git, TestGitVerbsRecorded to 2.56.0's verbs).
+		const oid = "0123456789abcdef0123456789abcdef01234567"
+		for _, c := range []struct{ verb, line, other string }{
+			{"git reflog write", "git reflog write refs/heads/main " + oid + " " + oid + " msg", "git reflog show"},
+			{"git hook list", "git hook list -z pre-commit", "git hook run"},
+			{"git multi-pack-index compact", "git multi-pack-index compact " + oid + " " + oid, "git multi-pack-index write"},
+		} {
+			if got, want := decided(run(rules(t, "deny: "+c.verb), words(c.line)...)), "refused exec.deny["+c.verb+"]"; got != want {
+				t.Errorf("%s under deny: %s: %s, want %s", c.line, c.verb, got, want)
+			}
+			if got, want := decided(run(rules(t, "allow: "+c.verb), words(c.line)...)), "allowed exec.allow["+c.verb+"]"; got != want {
+				t.Errorf("%s under allow: %s: %s, want %s", c.line, c.verb, got, want)
+			}
+			if got := decided(run(rules(t, "allow: "+c.other), words(c.line)...)); got != "refused exec.args[git]" {
+				t.Errorf("%s under allow: %s: %s, want refused exec.args[git]", c.line, c.other, got)
+			}
+		}
+		line := "git -C . multi-pack-index --object-dir .git/objects compact " + oid + " " + oid
+		if got := decided(run(rules(t, "deny: git multi-pack-index compact"), words(line)...)); got != "refused exec.deny[git multi-pack-index compact]" {
+			t.Errorf("%s under deny: git multi-pack-index compact: %s", line, got)
+		}
+	})
 	t.Run("allow only some subcommands", func(t *testing.T) {
 		ix := rules(t, "allow: git status", "allow: git diff", "allow: git log")
 		for _, line := range []string{"git status", "git status -s", "git -C /repo status", "git diff --cached", "git log --oneline -n 5", "git log --any-new-option"} {

@@ -37,11 +37,12 @@ var gitExternals = strings.Fields(`daemon difftool--helper filter-branch http-ba
 instaweb merge-octopus merge-one-file merge-resolve mergetool quiltimport remote-ftp remote-ftps remote-http
 remote-https request-pull sh-i18n--envsubst shell submodule subtree web--browse backfill diff-pairs refs replay`)
 
-// Git is the git row, probed against git 2.51.0 (Ubuntu 25.10). Global options stand only before the subcommand and
-// are exact (git.c handle_options: no prefixes, no clusters, `-C.` and `--` are unknown options); each subcommand
-// parses with parse-options. git autocorrects an unknown first word in process (the help_unknown_cmd port), runs
-// <cmd> when argv[0] is git-<cmd> whatever file it is, and re-executes itself for helpers (the closure, measured
-// with strace -f against a local bare repository).
+// Git is the git row, probed against git 2.51.0 (Ubuntu 25.10); its second levels also hold the verbs later gits add,
+// through 2.56.0 (the CI runners'). Global options stand only before the subcommand and are exact (git.c
+// handle_options: no prefixes, no clusters, `-C.` and `--` are unknown options); each subcommand parses with
+// parse-options. git autocorrects an unknown first word in process (the help_unknown_cmd port), runs <cmd> when
+// argv[0] is git-<cmd> whatever file it is, and re-executes itself for helpers (the closure, measured with strace -f
+// against a local bare repository).
 func Git() *execmatch.Row {
 	globalSyn := execmatch.Syntax{LongEquals: true, LongSep: true, DashDashUnknown: true}
 	sepOnly := func(o execmatch.Opt) execmatch.Opt { o.SepOnly = true; return o }
@@ -131,7 +132,7 @@ func gitCommonOpts() []execmatch.Opt {
 }
 
 // gitLevels are the subcommands whose options or second level the row lists: at least the options people write in
-// patterns, each with its value form, from git 2.51.0's documentation.
+// patterns, each with its value form, from git 2.51.0's documentation, and the verbs added since, from 2.56.0's.
 func gitLevels(ps execmatch.Syntax) map[string]*execmatch.Level {
 	c := gitCommonOpts
 	with := func(opts ...execmatch.Opt) *execmatch.Level { return leaf(ps, append(c(), opts...)...) }
@@ -245,13 +246,21 @@ func gitLevels(ps execmatch.Syntax) map[string]*execmatch.Level {
 			val("file", "f"), val("blob", ""), flag("list", "l"), flag("get", ""), flag("get-all", ""), flag("add", ""),
 			flag("unset", ""), flag("unset-all", ""), flag("replace-all", ""), flag("edit", "e")},
 			subs(ps, "list", "get", "set", "unset", "rename-section", "remove-section", "edit")),
+		// Verbs newer than 2.51.0, each a verb of its own and no alias of another: sparse-checkout clean (2.52) removes
+		// working-tree files outside the sparse-checkout definition; maintenance is-needed (2.53) only answers by its
+		// exit status; reflog write (2.51.1) appends an entry to a ref's reflog through a ref transaction and leaves
+		// the ref where it is; hook list (2.54) prints the hooks configured for an event and changes nothing;
+		// multi-pack-index compact (2.54) writes a new multi-pack-index layer over a range of the chain's layers into
+		// the object directory, and the chain file. Listed, each reads as its own verb whatever the level does with a
+		// word it does not know: git before 2.51.1 runs `git reflog write` as reflog's default, show, with write as
+		// its first operand.
 		"sparse-checkout":  sub("", nil, subs(ps, "list", "set", "add", "reapply", "disable", "init", "check-rules", "clean")),
 		"maintenance":      sub("", nil, subs(ps, "run", "start", "stop", "register", "unregister", "is-needed")),
 		"bundle":           sub("", nil, subs(ps, "create", "verify", "list-heads", "unbundle")),
-		"reflog":           sub("show", nil, subs(ps, "show", "list", "expire", "delete", "exists", "drop")),
-		"hook":             sub("", nil, subs(ps, "run")),
+		"reflog":           sub("show", nil, subs(ps, "show", "list", "expire", "delete", "exists", "drop", "write")),
+		"hook":             sub("", nil, subs(ps, "run", "list")),
 		"rerere":           sub("", nil, subs(ps, "clear", "forget", "diff", "remaining", "status", "gc")),
 		"commit-graph":     sub("", nil, subs(ps, "write", "verify")),
-		"multi-pack-index": sub("", nil, subs(ps, "write", "verify", "expire", "repack")),
+		"multi-pack-index": sub("", nil, subs(ps, "write", "verify", "expire", "repack", "compact")),
 	}
 }

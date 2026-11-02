@@ -131,6 +131,44 @@ func TestMarkIsARead(t *testing.T) {
 	}
 }
 
+// TestNeverAllowHoldsTheAddressBehindAName: a line that names its host keys the destination by the name, and learn
+// writes the address, so what a contract made from the run must not allow is both, for every address the name reached.
+func TestNeverAllowHoldsTheAddressBehindAName(t *testing.T) {
+	root := t.TempDir()
+	const id = "r-aaaa-0009-namedx"
+	t0 := time.Date(2026, 10, 27, 1, 0, 0, 0, time.UTC)
+	seq := 0
+	var ls []string
+	add := func(kind, extra string) {
+		ls = append(ls, line(id, "a", seq, t0.Add(time.Duration(seq)*time.Millisecond), kind, extra))
+		seq++
+	}
+	add("run_start", `"tier":"landlock","command":["agent"],"cwd":"/d/proj"`)
+	add("fs", `"rule":"unmatched","verdict":"allow","op":"open","flags":524288,"path":"/d/home/.ssh/id_rsa"`)
+	const named = `"rule":"net.ask[tcp://evil.example:443]","verdict":"allow","proto":"tcp","host":"evil.example"`
+	add("net", named+`,"dst":"203.0.113.9:443"`)
+	add("net", `"rule":"unmatched","verdict":"allow","proto":"tcp","dst":"198.51.100.7:8443"`)
+	add("net", named+`,"dst":"203.0.113.9:443"`)
+	add("net", named+`,"dst":"203.0.113.10:443"`)
+	add("run_end", `"reason":"exit","exit_code":0`)
+	writeRun(t, root, id, ls...)
+	r, err := LoadRun(root, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := RunVerdict(r, Signal(r, Sensitive{Cwd: r.Cwd}))
+	if v.Kind != VerdictLeak {
+		t.Fatalf("verdict %+v", v)
+	}
+	want := []string{"evil.example:443", "203.0.113.9:443", "203.0.113.10:443", "198.51.100.7:8443"}
+	if got := v.NeverAllow(); !slices.Equal(got, want) {
+		t.Fatalf("NeverAllow %v, want %v", got, want)
+	}
+	if got := (Verdict{Kind: VerdictProtected, Dests: []string{"evil.example:443"}}).NeverAllow(); got != nil {
+		t.Fatalf("a run that sent nothing has %v to withhold", got)
+	}
+}
+
 func TestVerdictProtected(t *testing.T) {
 	_, _, right, _ := demoRuns(t)
 	s := Signal(right, Sensitive{Entries: []string{"/d/with/home/.ssh/", "/d/with/home/.config/telemetry/"}, Cwd: right.Cwd})

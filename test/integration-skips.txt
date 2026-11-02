@@ -88,6 +88,7 @@ internal/runtime/enforce/cgroup TestFreezeStageChild # helper process only
 internal/runtime/enforce/cgroup TestMovedHelper # helper process only
 internal/runtime/enforce/cgroup TestNetHelper # helper process only
 internal/runtime/enforce/landlock TestStrictClientFilterHelper # helper process for TestStrictClientFilterOnRealKernel
+internal/runtime/enforce/landlock TestStrictRouteHelper # helper process for TestStrictFilterInterfaceLists
 internal/runtime/enforce/cgroup TestNetLinksHelper # helper process only
 internal/runtime/enforce/cgroup TestUnixHelper # helper process only
 

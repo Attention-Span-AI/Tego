@@ -58,7 +58,8 @@ const Version = 1
 //	   the rule live.block[<kind>:<value>] (ADR 0100 implementation notes, 2026-10-25)
 //	22 a run whose events.jsonl reached the machine's record.max_run_bytes ends with a limit line which=ledger_bytes
 //	   (value and ceiling in bytes, no reason: the closed reason set has no code for it) and run_end reason limit,
-//	   and run_start's limits carries ledger_bytes, the ceiling the run was started under (2026-10-26)
+//	   and run_start's limits carries ledger_bytes, the ceiling the run was started under (2026-10-26); from
+//	   2026-11-01 the run's blobs count with events.jsonl, at the same minor
 //	23 run_start's reads_notified says whether every read open reached the supervisor and why; a read the Landlock
 //	   ruleset refuses under deny_read at tier landlock is a refused line with mechanism landlock under every record
 //	   mode when it did (ADR 0077, 2026-10-26)
@@ -148,9 +149,10 @@ const MinorLiveControl = 24
 const MinorReasonReads = 23
 
 // MinorLedgerCap is the first revision whose launcher ends a run at the machine's record.max_run_bytes: a limit line
-// which=ledger_bytes (value, the bytes events.jsonl held at the check; ceiling, the setting), then run_end reason
-// limit, and run_start.limits.ledger_bytes is the ceiling the run was started under. Absent at it or later, the
-// run had no ceiling.
+// which=ledger_bytes (value, the bytes events.jsonl and the run's blobs held at the check, blobs counted from
+// 2026-11-01 and events.jsonl alone before; ceiling, the setting), then run_end reason limit, and
+// run_start.limits.ledger_bytes is the ceiling the run was started under. Absent at it or later, the run had no
+// ceiling.
 const MinorLedgerCap = 22
 
 // MinorLiveBlock is the first revision whose launcher reads a run's live blocks (internal/liveblock): every add and

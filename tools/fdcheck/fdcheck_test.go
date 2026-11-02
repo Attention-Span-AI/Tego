@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -985,7 +986,17 @@ func TestMeasuredBaselineMeetsRatchet(t *testing.T) {
 // (internal/platform/proc, never on it) each fail and name their line, as does its use of another package's
 // bare-number API (A6's edge); and in a listed package one more close fails as a rise, as do an Fd method value
 // and method expression. The planted sites go through Check itself, the gate's whole list of problems.
+//
+// A cgo build of another architecture than this host's, which this host has no C compiler for, cannot be made
+// here: it is a skipped cell of its own, and the host's own cgo build stands in for it (hostCgoBuilds).
 func TestTreeRatchetAndPlantedSites(t *testing.T) {
+	for _, x := range hostCgoBuilds(t) {
+		t.Run(strings.NewReplacer("/", "-", " ", "-").Replace(x.cfg.name), func(t *testing.T) {
+			t.Skipf("%s needs a C compiler for %s/%s, which this %s host lacks; the files only cgo builds were checked under "+
+				"%s/%s cgo instead. The go command: %s", x.cfg.name, x.cfg.goos, x.cfg.goarch, runtime.GOARCH, x.cfg.goos,
+				runtime.GOARCH, strings.TrimSpace(x.reason))
+		})
+	}
 	cfg, err := loadConfig(root)
 	if err != nil {
 		t.Fatal(err)
@@ -1031,6 +1042,63 @@ func TestTreeRatchetAndPlantedSites(t *testing.T) {
 			t.Errorf("want %q in\n%s", want, p)
 		}
 	}
+}
+
+// crossCgo is a cgo build of extraConfigs this host cannot make, and the go command's reason.
+type crossCgo struct {
+	cfg    buildConfig
+	reason string
+}
+
+// hostCgoBuilds puts, until t ends, the host's own architecture in place of each cgo build of extraConfigs that is
+// another architecture's and that this host cannot make, and returns those builds. A cgo build compiles C for its
+// architecture, runtime/cgo's first, and the export data typeCheck reads needs that: the arm64 runner's gcc refuses
+// amd64's -m64, so the go command makes no amd64 cgo build there. The host's own cgo build builds every file a cgo
+// build does, so the files only cgo builds (pkg/spec/config's passwd_libc.go) are still judged, and the measure
+// still covers every file; what goes unchecked is the other architecture's cgo build itself. A cgo build this host
+// cannot make for its own architecture is left in place, and the measure fails on it as before.
+func hostCgoBuilds(t *testing.T) []crossCgo {
+	t.Helper()
+	saved := extraConfigs
+	t.Cleanup(func() { extraConfigs = saved })
+	configs := append([]buildConfig(nil), extraConfigs...)
+	var out []crossCgo
+	for i, c := range configs {
+		if !c.cgo || c.goos != runtime.GOOS || c.goarch == runtime.GOARCH {
+			continue
+		}
+		reason := cgoUnmade(t, c)
+		if reason == "" {
+			continue
+		}
+		out = append(out, crossCgo{c, reason})
+		configs[i] = buildConfig{name: strings.Replace(c.name, c.goos+"/"+c.goarch, c.goos+"/"+runtime.GOARCH, 1),
+			goos: c.goos, goarch: runtime.GOARCH, tags: c.tags, cgo: true}
+	}
+	extraConfigs = configs
+	return out
+}
+
+// cgoUnmade is the go command's error making runtime/cgo's export data under c, its first three lines (a C
+// compiler's complaints run long), or "" when it makes it.
+func cgoUnmade(t *testing.T, c buildConfig) string {
+	t.Helper()
+	pkgs, err := goList(root, c, "", "-export", "runtime/cgo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range pkgs {
+		if p.Error != nil {
+			if lines := strings.SplitN(strings.TrimSpace(p.Error.Err), "\n", 4); len(lines) > 3 {
+				return strings.Join(lines[:3], "\n") + "\n..."
+			}
+			return p.Error.Err
+		}
+		if p.Export == "" {
+			return "no export data for runtime/cgo"
+		}
+	}
+	return ""
 }
 
 // TestBaselineFile parses the format, refuses a malformed line, and round-trips.

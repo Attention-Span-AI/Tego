@@ -263,11 +263,41 @@ func TestEachGivesExactLines(t *testing.T) {
 	})
 }
 
+// TestHostFilterHoldsAScopedLine: the Logs filter and its facet are on Event.Host, the view a person opens on a host they
+// just blocked, and a scope id on the agent's connects took each such line out of it.
+func TestHostFilterHoldsAScopedLine(t *testing.T) {
+	root := t.TempDir()
+	const allow = `"verdict":"allow","rule":"net[tcp://2001:db8::/32:443]","proto":"tcp","dst":`
+	writeRun(t, root, qRunA,
+		qline(qRunA, "alpha", 0, 0, 100, "run_start", "supervisor", `"tier":"landlock","command":["codex"],"cwd":"/w/x/proj"`),
+		qline(qRunA, "alpha", 1, 1, 101, "net", "supervisor", allow+`"[2001:db8::1]:443"`),
+		qline(qRunA, "alpha", 2, 2, 101, "net", "supervisor", allow+`"[2001:db8::1%1]:443"`),
+		qline(qRunA, "alpha", 3, 3, 101, "refused", "supervisor", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"[2001:db8::1%7]:8443"`))
+	s, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := func(f Filter) (n int) {
+		s.Each(f, OldestFirst, func(*Event, func() ([]byte, error)) bool { n++; return true })
+		return n
+	}
+	if got := count(Filter{Hosts: []string{"2001:db8::1"}}); got != 3 {
+		t.Errorf("host filter holds %d lines of the host, want 3", got)
+	}
+	if got := count(Filter{Not: Exclude{Hosts: []string{"2001:db8::1"}}}); got != 1 {
+		t.Errorf("left out the host and %d lines stayed, want the run_start alone", got)
+	}
+}
+
 func TestHostOf(t *testing.T) {
 	for in, want := range map[string]string{
 		"tcp://chatgpt.com:443": "chatgpt.com", "ChatGPT.com:443": "chatgpt.com", "93.184.216.34:443": "93.184.216.34",
 		"[::1]:443": "::1", "::1": "::1", "example.org": "example.org", "unix:/var/run/nscd/socket": "", "family(16)": "",
 		"/etc/passwd": "", "<script>alert(1)</script>": "", "a b": "", "word:thing": "", "": "",
+		// An address as a block holds it and every matcher compares it: unmapped, with no zone.
+		"[2001:db8::1%1]:443": "2001:db8::1", "[2001:db8::1%1]": "2001:db8::1", "2001:db8::1%1": "2001:db8::1",
+		"tcp://[fe80::1%2]:22": "fe80::1", "[::ffff:203.0.113.9]:443": "203.0.113.9", "[2001:DB8::1]:443": "2001:db8::1",
+		"a%b.example:443": "a%b.example",
 	} {
 		if got := HostOf(in); got != want {
 			t.Errorf("HostOf(%q) = %q, want %q", in, got, want)

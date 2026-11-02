@@ -175,6 +175,65 @@ net:
 tier: landlock
 `
 
+// TestRuleFromAnIPv6Line: Dest is the destination as an entry spells it, and two IPv6 lines did not read that way. A line
+// keeps the scope id its connect passed, which every connect to a link-local address has to pass, and a net entry cannot
+// hold one (ParseEndpoint: no tier matches on it), so a rule made from that line named an entry the compiler refuses. A
+// literal entry's line has the address as its host, and pasting the port on gave 2001:db8::1:443, another address.
+func TestRuleFromAnIPv6Line(t *testing.T) {
+	for _, c := range []struct {
+		p    record.NetPayload
+		want string
+	}{
+		{record.NetPayload{Dst: "[2001:db8::1%1]:443"}, "[2001:db8::1]:443"},
+		{record.NetPayload{Dst: "[fe80::1%2]:22"}, "[fe80::1]:22"},
+		{record.NetPayload{Dst: "[2001:db8::1]:443", Host: "2001:db8::1"}, "[2001:db8::1]:443"},
+		{record.NetPayload{Dst: "[2001:db8::1%1]:443", Host: "2001:db8::1"}, "[2001:db8::1]:443"},
+		{record.NetPayload{Dst: "[2606:4700::1%3]:443", Host: "api.example.com"}, "api.example.com:443"},
+		{record.NetPayload{Dst: "1.2.3.4:443"}, "1.2.3.4:443"},
+		{record.NetPayload{Dst: "unix:/run/a%1:b.sock"}, "unix:/run/a%1:b.sock"},
+	} {
+		tg, err := TargetOf(ev(t, record.KindNet, record.VerdictAllow, "unmatched", "", c.p))
+		if err != nil || tg.Dest != c.want {
+			t.Errorf("%+v: Dest %q (%v), want %q", c.p, tg.Dest, err, c.want)
+		}
+	}
+	const contract = `version: 0
+name: demo
+command: [sh]
+net:
+  allow:
+    - "[2001:db8::1]:443"
+    - other.example.com:443
+tier: landlock
+`
+	// Allowing a refused link-local connect adds an entry the compiler takes.
+	refused := ev(t, record.KindRefused, "", "unmatched", record.ReasonNetNotAllowed, record.RefusedPayload{Op: "connect", Target: "[fe80::1%2]:8080"})
+	res, err := scoped(t, contract, refused, Allow, func(*Request) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Target.Dest != "[fe80::1]:8080" || len(res.Changes) != 1 {
+		t.Fatalf("allow: %+v", res)
+	}
+	if _, err := agent.ParseEndpoint(res.Changes[0].Entry); err != nil {
+		t.Errorf("the rule names an entry the compiler refuses: %v", err)
+	}
+	// Blocking a line an exact literal entry allowed removes that entry, however the line's address reads.
+	for _, p := range []record.NetPayload{
+		{Dst: "[2001:db8::1]:443", Host: "2001:db8::1"},
+		{Dst: "[2001:db8::1%1]:443", Host: "2001:db8::1"},
+	} {
+		allowed := ev(t, record.KindNet, record.VerdictAllow, "net[[2001:db8::1]:443]", "", p)
+		res, err := scoped(t, contract, allowed, Block, func(*Request) {})
+		if err != nil {
+			t.Fatalf("block of %+v: %v", p, err)
+		}
+		if strings.Contains(string(res.Text), "2001:db8::1") {
+			t.Errorf("block of %+v left the entry:\n%s", p, res.Text)
+		}
+	}
+}
+
 // TestHostRule: block of the whole host removes every entry of this file for it and no other host's; allow and ask
 // have no any-port form.
 func TestHostRule(t *testing.T) {

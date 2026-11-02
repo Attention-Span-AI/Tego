@@ -24,17 +24,17 @@ func TestPlaneEvaluatorMatchesEvaluate(t *testing.T) {
 			t.Errorf(format, args...)
 		}
 	}
-	tables := genPlaneTables(func(desc string, rt *agent.RuleTable) {
+	tables := genPlaneTables(sampled(func(desc string, rt *agent.RuleTable) {
 		checkPlaneEvaluator(desc, rt, planeProbes, renameDests, false, fail)
-	})
+	}))
 	if tables < 1000 {
 		t.Fatalf("only %d tables", tables)
 	}
 	// ADR 0043's name dimensions: the column read out of the rows and the name rows answers as the root model,
 	// files and directories alike.
-	named := genNameTables(func(desc string, rt, _ *agent.RuleTable) {
+	named := genNameTables(sampledNames(func(desc string, rt, _ *agent.RuleTable) {
 		checkPlaneEvaluator(desc, rt, nameProbes, nameRenameDests, true, fail)
-	})
+	}))
 	if named < 1000 {
 		t.Fatalf("only %d tables with name entries", named)
 	}

@@ -104,7 +104,7 @@ func TestTheReaperLeavesARunItsLauncherEnded(t *testing.T) {
 
 // TestTheReaperMakesNothingInARunDirectoryBeingRemoved: the reaper wakes as its launcher exits, and an ended run's
 // directory can be going by then. Its Open made a lock, an empty events.jsonl and blobs/ again behind the RemoveAll,
-// which then failed with "directory not empty" (TestRootAskUnix's t.TempDir).
+// which then failed with "directory not empty" (TestRootAskUnix's t.TempDir, once).
 func TestTheReaperMakesNothingInARunDirectoryBeingRemoved(t *testing.T) {
 	root, mount := t.TempDir(), t.TempDir()
 	w := openRun(t, root, reapTestRun)

@@ -42,16 +42,13 @@ func (s *Server) downloadProposal(w http.ResponseWriter, r *http.Request, id str
 	_, _ = w.Write([]byte(text))
 }
 
-// leakDests are where run r's secrets went when its verdict is a leak (ledgerview.Verdict.Dests, closest first), and
-// nil for any other verdict or a nil run: the destinations a contract made from r must never allow (QA PW-1).
+// leakDests are the destinations a contract made from run r must never allow (ledgerview.Verdict.NeverAllow, QA PW-1):
+// where r's secrets went when its verdict is a leak, nil for any other verdict or a nil run.
 func (s *Server) leakDests(all []*ledgerview.Run, r *ledgerview.Run) []string {
 	if r == nil {
 		return nil
 	}
-	if v := ledgerview.RunVerdict(r, s.signalOf(all, r)); v.Kind == ledgerview.VerdictLeak {
-		return v.Dests
-	}
-	return nil
+	return ledgerview.RunVerdict(r, s.signalOf(all, r)).NeverAllow()
 }
 
 // tierFact is one enforcement tier as this machine's runs show it.

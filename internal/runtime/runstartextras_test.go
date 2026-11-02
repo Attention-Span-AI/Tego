@@ -225,3 +225,50 @@ func TestRunStartExtrasAreCopied(t *testing.T) {
 		t.Fatalf("the zero value's copy is %+v", z)
 	}
 }
+
+// TestRunStartCwdIsTheKernels: run_start names the working directory the way the run's lines name paths, every symlink
+// resolved. From a project reached through a link $PWD spells the link, and os.Getwd answers $PWD: tego learn then saw
+// every write outside the workspace and proposed fs.write: [].
+func TestRunStartCwdIsTheKernels(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	real, link := filepath.Join(base, "real"), filepath.Join(base, "link")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(link)
+	t.Setenv("PWD", link)
+	if wd, err := os.Getwd(); err != nil || wd != link {
+		t.Fatalf("the test's premise: os.Getwd = %q, %v; want the link's spelling %q", wd, err, link)
+	}
+
+	const id = "r-00000000-000000000000a-extra0"
+	dir := filepath.Join(t.TempDir(), id)
+	w, err := ledger.Open(dir, record.RunRef{ID: id, Agent: "retriever"}, ledger.WithAnchor(nopAnchor{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newTestRunner(Deps{Enforce: tierBackend{tier: backend.TierLandlock}})
+	r.writer = w
+	r.cmd = []string{"/bin/true"}
+	r.rt = &agent.RuleTable{ContractPath: "/elsewhere/contract.yaml", Contract: &agent.Contract{Name: "retriever"}}
+	if err := r.writeRunStart(); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(record.RunEndPayload{Reason: record.RunEndExit}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ledger.EventsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, _, _ := strings.Cut(string(b), "\n")
+	if !strings.Contains(line, `"cwd":"`+real+`"`) {
+		t.Errorf("run_start names another working directory than %q:\n%s", real, line)
+	}
+}

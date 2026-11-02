@@ -62,12 +62,15 @@ RUN set -eu; \
 	rm -rf /var/lib/apt/lists/*
 # The user every run is started as, with a home in the passwd database: tego finds its state directory (~/.tego: the
 # chain anchor, its own log) through passwd, never $HOME. The directories exist in the image, owned by the
-# user, so a named volume mounted on them starts with that owner.
+# user, so a named volume mounted on them starts with that owner. The home itself is 0755, not the 0700 Debian's
+# useradd gives it: the entrypoint runs as root with every capability dropped but a few (compose.yaml), so without
+# CAP_DAC_OVERRIDE it could not reach /home/tego/.tego in a 0700 home it does not own. ~/.tego itself stays 0700.
 RUN set -eu; \
 	groupadd --gid "$TEGO_GID" tego; \
 	useradd --uid "$TEGO_UID" --gid "$TEGO_GID" --home-dir /home/tego --create-home --shell /bin/bash tego; \
 	install -d -m 0700 -o tego -g tego /home/tego/.tego /var/lib/tego/runs; \
-	install -d -m 0755 -o tego -g tego /work /work/out
+	install -d -m 0755 -o tego -g tego /work /work/out; \
+	chmod 0755 /home/tego
 COPY --from=build /out/tego /out/tego-control /usr/local/bin/
 COPY examples/container/tego-entrypoint.sh /usr/local/bin/tego-entrypoint
 COPY examples/container/config.yaml /etc/tego/config.yaml

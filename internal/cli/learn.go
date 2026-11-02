@@ -54,6 +54,11 @@ func cmdLearn() Command {
 					message(stderr, "", 0, 0, "tego learn: --workspace: "+err.Error(), codeUsage)
 					return identity.ExitUsage // R25: usage error
 				}
+				// The ledger names paths the kernel's way, every link resolved, so the workspace is compared in that
+				// form. One that does not resolve here (a run read on another machine) is kept as given.
+				if real, err := filepath.EvalSymlinks(abs); err == nil {
+					abs = real
+				}
 				if ws = abs; ws == "/" {
 					message(stderr, "", 0, 0, "tego learn: --workspace / is every directory: name the directory the agent works in", codeUsage)
 					return identity.ExitUsage // R25: usage error

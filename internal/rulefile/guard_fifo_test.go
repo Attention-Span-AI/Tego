@@ -5,6 +5,8 @@ package rulefile
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,5 +46,19 @@ func TestReadRefusesFIFO(t *testing.T) {
 	}
 	if fi, err := os.Lstat(path); err != nil || fi.Mode()&os.ModeNamedPipe == 0 {
 		t.Errorf("the FIFO was replaced: %v %v", fi, err)
+	}
+}
+
+// TestReadNamesAMissingContract: a run's contract moved since the run. The open is relative to the pinned directory,
+// so its error carried no name, and tego rule printed "no such file or directory" alone.
+func TestReadNamesAMissingContract(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "agent.yaml")
+	_, err = Read(path, Guard{})
+	if !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), path) {
+		t.Errorf("Read of a contract that is gone: %v; want it named, and still os.ErrNotExist", err)
 	}
 }

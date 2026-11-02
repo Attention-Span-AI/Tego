@@ -117,11 +117,17 @@ func (s *Service) serveStdio(nc net.Conn) {
 			c.serverLine(f.S)
 		case f.Oversize != "":
 			s.opts.Logger.Warn("mcp relay: dropped a line over the size bound", "server", c.server, "from", f.Oversize)
+			if f.Oversize == "c" {
+				c.refuseUnreadable()
+			}
 		case f.Exit != nil:
 			return
 		}
 	}
 }
+
+// unreadableAnswer is the JSON-RPC parse error a client gets for a message the relay could not read.
+var unreadableAnswer = []byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Tego's MCP relay could not read this message, so it was not passed to the server"}}`)
 
 // envelope is the part of a JSON-RPC message the relay routes by.
 type envelope struct {
@@ -139,7 +145,9 @@ type call struct {
 	isCall bool   // a tools/call request
 }
 
-// readCalls reads a client line: one message or a batch. ok is false for a line that is not JSON-RPC at all.
+// readCalls reads a client line or POST body in its wire form (wireLine, wireForm): one message or a batch. ok is false
+// for one that is not JSON-RPC at all. Only the wire form is read, which is UTF-8: json.Valid takes a bad byte, and
+// "delete_file\xff" would pass a deny list as a name no one denied.
 func readCalls(line []byte) (calls []call, batch, ok bool) {
 	t := bytes.TrimSpace(line)
 	if len(t) == 0 || !json.Valid(t) {
@@ -187,8 +195,7 @@ func (c *stdioConn) clientLine(raw []byte) {
 		calls, batch, ok = readCalls(line)
 	}
 	if !ok {
-		// Not JSON-RPC: the server would answer a parse error; the relay answers it and passes nothing it cannot read.
-		_ = c.fw.Write(Frame{ToClient: []byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Tego's MCP relay could not read this message, so it was not passed to the server"}}`)})
+		c.refuseUnreadable()
 		return
 	}
 	for _, cl := range calls {
@@ -259,6 +266,13 @@ func (c *stdioConn) clientLine(raw []byte) {
 		b, _ := json.Marshal(out)
 		_ = c.fw.Write(Frame{ToClient: b})
 	}
+}
+
+// refuseUnreadable answers a client line the relay cannot read and records the refusal: it may have been a call, and the
+// relay passes nothing it cannot read. A server would answer a parse error, so the client gets one, with no id to name.
+func (c *stdioConn) refuseUnreadable() {
+	c.s.emitCall(c.pid, c.server, TransportStdio, "", "mcp["+c.server+"].relay", record.VerdictRefused, record.AuthorityRule, mcptool.ReasonDenied)
+	_ = c.fw.Write(Frame{ToClient: unreadableAnswer})
 }
 
 // decideCall decides one tools/call; an ask waits on its own goroutine, so only it waits. An approval answers the

@@ -76,10 +76,7 @@ both from a release (VERSIONING.md §5), and refuses a pair whose pin does not m
 - **Process names.** A handed-off tego-control runs from a sealed memfd: `/proc/<pid>/exe` reads
   `/memfd:tego-control (deleted)`, and the process names itself `tego-control`.
 - **Limits.** tego-control, and every process it starts, gets the soft open-file limit (`ulimit -Sn`) tego was
-  started with; the raise Go makes inside tego does not carry over. A governed run's agent is not held to this yet:
-  the launcher reads its descriptor budget before the Landlock plan, which every tier builds, and raises its own soft
-  limit to the hard one in a way that also hands the raise to the agent, so at every tier the agent starts with
-  `ulimit -Sn` equal to `ulimit -Hn` ([GAPS](GAPS.md) C37, open).
+  started with; the raise Go makes inside tego does not carry over. A governed run's agent gets it too, at every tier.
 
 ## Privileged path (ADR 0042, 2026-10-05)
 - **Tiers 2 and 3 need a root launcher.** That is `sudo tego run` on a host whose sudo users are its administrators,
@@ -675,16 +672,16 @@ in the machine config the agents run under (the template's `TEGO_CONFIG` line, o
 
 ```yaml
 record:
-  max_run_bytes: 1GiB   # a run whose events.jsonl reaches it ends: exit 124, limit which=ledger_bytes
+  max_run_bytes: 1GiB   # a run whose events.jsonl and blobs reach it ends: exit 124, limit which=ledger_bytes
 gc_interval: 24h        # at most once a day, a tego run start removes ended runs older than retention
 retention: 14d
 ```
 
 `record.max_run_bytes` is checked at each line the run records (and once a second), so a run passes it by the lines
 in flight: a fork loop under `record: full` at a 64 KiB ceiling ended at 65,714 bytes. Blobs, the bodies split out of
-large lines, are not counted. The run ends as any limit does, `run_end reason limit` and exit 124, which
+large lines and the bodies uprobe capture stores, count, each stored once however often it repeats. The run ends as any limit does, `run_end reason limit` and exit 124, which
 `Restart=on-failure` restarts as a new run with its own ledger, 10 s later; at the measured 145 MB an hour of `record:
-full`, 1 GiB is a restart about every 7 hours, and `tego status` and `tego events --verify` on a 1 GiB ledger take about
+full` (lines alone: a run's blobs bring the restart closer), 1 GiB is a restart about every 7 hours, and `tego status` and `tego events --verify` on a 1 GiB ledger take about
 14 and 19 s. `tego status <run>` ends with `ledger: <size> of <ceiling> (record.max_run_bytes)`, so a live run shows
 how far it is from the restart (`--json`: `ledger_bytes`, `ledger_ceiling_bytes`). With `gc_interval` set, the first
 `tego run` start after each interval runs `tego gc`'s pass (a unit's restart is such a start): it ends a lost run as
@@ -705,7 +702,7 @@ events, `gaps:` and `live changes:` as the record spells them, `in words:` for w
 receipt: whether actions may be missing, what is short if not, and what a person changed, and on a lost run that its
 record may stop short; the run's resources), `tego events
 <run> --last` (the last refusal, gap or limit), `tego events <run> --kind refused`, `tego drift <run>` (declared
-against observed, per rule), `tego measure <run>` (steps, tokens, estimated cost, wall), `tego events <run>
+against observed, per rule, with the same `gaps:`, `live changes:` and `in words:` lines), `tego measure <run>` (steps, tokens, estimated cost, wall), `tego events <run>
 --verify`. A refused `git push` is one refusal per directory of `PATH` that the agent's own search tried (133 for 7
 pushes here), and an exec by name is one event per directory tried: count actions from the agent's own log and the
 `decision` events, not from refusals.
@@ -926,7 +923,9 @@ abstract, is refused, `rule: host-sockets`, and the line names the socket and, f
   `route-change`. Any other netlink message (another process's port id, a multicast group, generic netlink such
   as nl80211 or ethtool) and an `AF_PACKET` socket are refused `host-sockets`. `host_sockets: true` restores them. A
   `net:` section does not: it refuses other netlink protocols at `socket(2)`, `EPROTONOSUPPORT`, so `ss` and `ethtool`
-  fail there. Under `net.assurance: kernel` interface lists still fail, since `recvmsg` is refused there.
+  fail there. Under `net.assurance: kernel` the C library's interface lists still fail, since `recvmsg` is refused there:
+  `if_nameindex` and `getifaddrs` return `ENOSYS`, and Node's `os.networkInterfaces()` throws. `getaddrinfo` goes on, and
+  Go's `net.Interfaces`, which reads with `recvfrom`, works.
 - **The opt-out** `host_sockets: true`, in the top-level contract only (a profile's is ignored,
   `profile-cannot-loosen`), restores the old reach: `compile` warns at the key, naming each well-known daemon socket
   it finds here and what it gives, and run_start records `host_sockets: true`. Prefer the `unix:` entry.

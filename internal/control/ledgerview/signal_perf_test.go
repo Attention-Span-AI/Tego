@@ -73,6 +73,10 @@ func agentLines(id string, from, n, vocab int, step time.Duration, rng *rand.Ran
 			add(seq, "answer", fmt.Sprintf(`"ask_id":"q-%d","approved":%v,"by":"uid:1000","after_s":%d.5`, a, rng.IntN(2) == 0, f%60))
 		case k < 90:
 			add(seq, "ask", fmt.Sprintf(`"ask_id":"q-%d","hold":"exec"`, from+rng.IntN(asks-from+1)))
+		case k == 90 && f%8 == 0:
+			add(seq, "gap", `"what":"enforce","why":"live-block-added","live_block":{"op":"add","kind":"net","value":"chatgpt.com:443","rule":"live.block[net:chatgpt.com:443]","by":"uid:1000","serial":1,"at":"2026-10-27T09:00:00Z"}`)
+		case k == 91:
+			add(seq, "refused", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"104.18.32.47:8443"`)
 		default:
 			add(seq, "fs", fmt.Sprintf(`"rule":"unmatched","verdict":"observed","op":"stat","path":"/usr/lib/x86_64-linux-gnu/l%d.so"`, f%300))
 		}

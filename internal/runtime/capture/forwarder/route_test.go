@@ -115,6 +115,11 @@ func routeOf(t *testing.T, ev *record.Event) *record.RouteTaken {
 	return payloadOf[record.SSLRequestPayload](t, ev).Route
 }
 
+// delivered returns once every line l has queued so far has reached its sink. A handler queues its lines and answers
+// the client without waiting for the ledger (capture-derive.md I1), so a client can hold its answer while the lines
+// its request wrote are still in the queue: a check of the sink after a response waits for the queue, not a clock.
+func delivered(l *Listener) { l.emitq.flush(5 * time.Second) }
+
 // routeChanges are the model-route-changed lines emitted so far.
 func routeChanges(t *testing.T, s *fakeSink) []record.ModelRouteChange {
 	t.Helper()
@@ -352,6 +357,7 @@ func TestRouteMovedWhileHeldIsNotSent(t *testing.T) {
 	if direct.Load()+alt.Load() != 0 {
 		t.Fatalf("sent anyway: direct %d alt %d", direct.Load(), alt.Load())
 	}
+	delivered(l) // the refusal line was queued before the 503 was written
 	var refused *record.Event
 	for _, ev := range sink.of(record.KindNet) {
 		if ev.Reason == record.ReasonModelRouteChanged {
@@ -453,6 +459,7 @@ func TestRouteLowerSerialOverlayIsRecorded(t *testing.T) {
 			t.Fatalf("%s: %d", r, code)
 		}
 	}
+	delivered(rh.listener)
 	if ch := routeChanges(t, rh.sink); len(ch) != 3 {
 		t.Fatalf("changes %+v", ch)
 	}
@@ -463,6 +470,7 @@ func TestRouteLowerSerialOverlayIsRecorded(t *testing.T) {
 	if code, _ := rh.send(t, nil); code != http.StatusOK || rh.altHits.Load() != 2 {
 		t.Fatalf("after the reset: %d alt %d", code, rh.altHits.Load())
 	}
+	delivered(rh.listener)
 	ch := routeChanges(t, rh.sink)
 	if len(ch) != 4 || ch[3].Route != "alt" || ch[3].Serial != 1 || ch[3].Authority != rh.altHost || ch[3].By != "uid:1000 pid:1 cli" {
 		t.Fatalf("after the reset: changes %+v", ch)
@@ -473,6 +481,7 @@ func TestRouteLowerSerialOverlayIsRecorded(t *testing.T) {
 	if code, _ := rh.send(t, nil); code != http.StatusOK || rh.direct.Load() != 2 {
 		t.Fatalf("after the removal: %d direct %d", code, rh.direct.Load())
 	}
+	delivered(rh.listener)
 	ch = routeChanges(t, rh.sink)
 	if len(ch) != 5 || ch[4].Route != "direct" || ch[4].Serial != 0 || ch[4].Authority != rh.listener.authority() ||
 		!strings.HasPrefix(ch[4].By, "forwarder:") {
@@ -516,6 +525,7 @@ func TestRouteTransientReadErrorIsRetried(t *testing.T) {
 	if code, _ := rh.send(t, nil); code != http.StatusOK || rh.altHits.Load() != 1 {
 		t.Fatalf("the retry: %d alt %d", code, rh.altHits.Load())
 	}
+	delivered(rh.listener)
 	if ch := routeChanges(t, rh.sink); len(ch) != 1 || ch[0].Route != "alt" {
 		t.Fatalf("changes %+v", ch)
 	}

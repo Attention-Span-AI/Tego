@@ -41,6 +41,7 @@ func cmdWatch() Command {
 	return Command{
 		Name:        "watch",
 		Passthrough: true,
+		Supervises:  true,
 		Summary:     "run any command as a black box and record everything it does",
 		Usage:       "[--boundary <agent.yaml | name>] [--tier <t>] [--record <full|summary|off>] [--offline] [--no-summary] [-v] -- <command> [args]",
 		Flags: func(fs *flag.FlagSet) {
@@ -54,8 +55,14 @@ func cmdWatch() Command {
 		},
 		Run: func(ctx context.Context, fs *flag.FlagSet, _, stderr io.Writer) int {
 			command := fs.Args()
-			if len(command) == 0 {
+			if len(command) == 0 || command[0] == "" {
 				message(stderr, "", 0, 0, "tego watch: a command after \"--\", for example: tego watch -- codex", codeUsage)
+				return identity.ExitUsage
+			}
+			if boundary == "" && flagGiven(fs, "boundary") {
+				// An unset "$CONTRACT" would otherwise run the command under the record-only contract, no rule refusing
+				// anything, with only the notice to say so.
+				message(stderr, "", 0, 0, "tego watch: --boundary is an empty string; name a contract, or leave --boundary out to only record", codeUsage)
 				return identity.ExitUsage
 			}
 			if boundary == "" && tier != "" {
@@ -90,6 +97,14 @@ func cmdWatch() Command {
 			}, ws)
 		},
 	}
+}
+
+// flagGiven says whether the command line set the flag name, an empty value included: a flag given as "" is not
+// the flag left out.
+func flagGiven(fs *flag.FlagSet, name string) bool {
+	given := false
+	fs.Visit(func(f *flag.Flag) { given = given || f.Name == name })
+	return given
 }
 
 // genericContract is the contract a watch with no --boundary runs under. It names the program and asks for the

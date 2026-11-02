@@ -614,8 +614,9 @@ func (l *Loop) resolveSocket(n *notif, c *compiled, sockfd int) (t target, why s
 
 // sourceRouted reports whether a relay a net gate admitted on an IP socket must be refused because the socket
 // carries a source route, or its options could not be read (ADR 0041 D6). IP_OPTIONS with LSRR or SSRR (which
-// an unprivileged task may set) and an IPV6_RTHDR send the first hop to an address in the route, not to the
-// destination the gate scored. Only an ipGated relay is asked: the gate's score is about the destination.
+// an unprivileged task may set before Linux 7.1 and its stable backports, and a task with CAP_NET_RAW on any
+// kernel) and an IPV6_RTHDR send the first hop to an address in the route, not to the destination the gate scored.
+// Only an ipGated relay is asked: the gate's score is about the destination.
 //
 // The read is a snapshot of a socket every thread of the agent shares, so on its own it is check-then-act: a
 // sibling's setsockopt between it and the relayed call would add a route. The filter closes that: under a net

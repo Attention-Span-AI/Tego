@@ -348,6 +348,34 @@ func TestLimitEdges(t *testing.T) {
 	}
 }
 
+// TestCeilingsBelowARunsStartWarn: a pids ceiling of 1 to 5, or a memory or memory_high ceiling under 8 MiB, loads (it
+// is enforced as written) with a warning at its line: below it tego's own stage cannot start any run. Only 0 warned.
+func TestCeilingsBelowARunsStartWarn(t *testing.T) {
+	for _, tc := range []struct {
+		yaml, msg string
+		warned    bool
+	}{
+		{"limits:\n  pids: 3\n", "limits.pids: 3 is below the 6 tasks", true},
+		{"limits:\n  pids: 6\n", "limits.pids", false},
+		{"limits:\n  memory: 4MiB\n", "limits.memory: 4MiB may not start a run", true},
+		{"limits:\n  memory: 8MiB\n", "limits.memory", false},
+		{"limits:\n  memory_high: 1MiB\n", "limits.memory_high: 1MiB may not start a run", true},
+	} {
+		src := layers(t, trustedDir(t), tc.yaml, "", "")
+		m, diags := mustLoad(t, src, "")
+		if HasErrors(diags) || (!m.Limits.Pids.Bounded && !m.Limits.Memory.Bounded && !m.Limits.MemoryHigh.Bounded) {
+			t.Fatalf("%q: not loaded as a ceiling: %v", tc.yaml, diags)
+		}
+		got := slices.ContainsFunc(diags, func(d Diagnostic) bool {
+			return d.Code == CodeAdvisory && d.Severity == SeverityWarning && d.File == src.Etc && d.Line == 2 &&
+				strings.HasPrefix(d.Message, tc.msg)
+		})
+		if got != tc.warned {
+			t.Errorf("%q: warned %v, want %v: %v", tc.yaml, got, tc.warned, diags)
+		}
+	}
+}
+
 // T-config-version-1 (E14, E15) and other parse-time rules.
 // identity-config.md E20: a negative limits value is rejected at parse (E20 negative pids case).
 func TestLoadInvalid(t *testing.T) {

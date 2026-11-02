@@ -96,9 +96,10 @@ func cmdAdopt() Command {
 		uids       []int
 	)
 	return Command{
-		Name:    "adopt",
-		Summary: "govern an agent that is already running: move its process tree into a run and record it from the kernel",
-		Usage:   "--pid <pid> [--uid <uid>]... [--boundary <agent.yaml | name>] [--record <full|summary|off>] | --release --pid <pid>",
+		Name:       "adopt",
+		Summary:    "govern an agent that is already running: move its process tree into a run and record it from the kernel",
+		Usage:      "--pid <pid> [--uid <uid>]... [--boundary <agent.yaml | name>] [--record <full|summary|off>] | --release --pid <pid>",
+		Supervises: true,
 		Flags: func(fs *flag.FlagSet) {
 			fs.IntVar(&pid, "pid", 0, "the agent's process id (its whole tree is adopted: the process and its descendants in its cgroup)")
 			fs.StringVar(&boundary, "boundary", "", "hold the agent to this contract's file rules and exec allow-list through the kernel decision plane; "+
@@ -123,6 +124,11 @@ func cmdAdopt() Command {
 			}
 			if pid <= 0 {
 				message(stderr, "", 0, 0, "tego adopt: --pid <pid> is required", codeUsage)
+				return identity.ExitUsage
+			}
+			if boundary == "" && flagGiven(fs, "boundary") {
+				// An unset "$CONTRACT" would otherwise adopt the agent record-only, no rule refusing anything.
+				message(stderr, "", 0, 0, "tego adopt: --boundary is an empty string; name a contract, or leave --boundary out to only record", codeUsage)
 				return identity.ExitUsage
 			}
 			if release && (boundary != "" || recordMode != "" || len(uids) > 0) {

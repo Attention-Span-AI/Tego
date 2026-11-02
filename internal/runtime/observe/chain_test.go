@@ -3,6 +3,8 @@
 package observe
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -148,22 +150,75 @@ func TestRecorderChainAllowsWhatTheModelWouldRefuse(t *testing.T) {
 }
 
 // TestRecorderListenerReadKeepsTheModel: a read under an unenforced deny_read entry is the fanotify listener's
-// to answer, and the listener's answer is in the chain's return only up to 6.12. Its line keeps the model's
+// to answer, and the listener's answer is in the chain's return only up to 6.12. Where the listener refused it
+// (a mount it marked, the chain's 0 from 6.13 or the listener's EPERM up to 6.12) its own line is the action's and
+// the recorder writes none (supervisor R7a); where the recorder writes the line (Landlock's EACCES came first, or a
+// mount made beneath the entry after Prepare, which the listener never marked, E24), the line keeps the model's
 // verdict on every kernel, and says the model produced it.
+//
+// The mount table is the test's own: which device the listener marked is the case under test, not the host's disk
+// layout. The device a sample names was once a constant, 2049 (8:1): a mount the listener never marked wherever the
+// temporary directory is not on /dev/sda1, and the one it marked on GitHub's runners, where it is.
 func TestRecorderListenerReadKeepsTheModel(t *testing.T) {
 	f := newFixture(t)
 	f.rules = &agent.RuleTable{Tier: backend.TierCgroup, FS: []agent.FSRule{
 		{Path: f.dir, Kind: agent.FSWrite, Raw: "."},
 		{Path: f.secrets, Kind: agent.FSDenyRead, Raw: "./secrets", Unenforced: true},
 	}}
-	key := filepath.Join(f.secrets, "key.pem")
-	lines := fsLines(t, f, fsSample(sample{Kind: KindOpen, PID: 50, TID: 50, MonoNS: 1, RetOK: true}, 0, 1, 2049, key, ""))
-	ev := lines[key]
-	if ev == nil {
-		t.Fatal("no line for the read")
+	di, ok := statDevIno(f.secrets)
+	if !ok {
+		t.Fatal("could not stat the deny_read entry")
 	}
-	if p := payload[record.FSPayload](t, ev); p.VerdictFrom != record.FSVerdictModel {
-		t.Errorf("the listener's read says its verdict came from %q", p.VerdictFrom)
+	mountinfo := filepath.Join(t.TempDir(), "mountinfo")
+	line := fmt.Sprintf("1 0 %d:%d / / rw - fs dev rw\n", unix.Major(di.Dev), unix.Minor(di.Dev))
+	if err := os.WriteFile(mountinfo, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	marked, later := di.Dev, unix.Mkdev(0, 4242)
+	read := func(mono uint64, ret int32) sample {
+		return sample{Kind: KindOpen, PID: 50, TID: 50, MonoNS: mono, Ret: ret, RetOK: true}
+	}
+	key := filepath.Join(f.secrets, "key.pem")
+	eperm := filepath.Join(f.secrets, "eperm.pem")
+	landlock := filepath.Join(f.secrets, "landlock.pem")
+	late := filepath.Join(f.secrets, "late", "key.pem")
+	_, sink := runRecorder(t, f, Options{FlushInterval: time.Hour, mountinfo: mountinfo},
+		fsSample(read(1, 0), 0, 1, marked, key, ""),
+		fsSample(read(2, -int32(unix.EPERM)), 0, 2, marked, eperm, ""),
+		fsSample(read(3, -int32(unix.EACCES)), 0, 3, marked, landlock, ""),
+		fsSample(read(4, 0), 0, 4, later, late, ""),
+	)
+	lines := map[string]*record.Event{}
+	for _, ev := range sink.byKind(record.KindFS) {
+		lines[payload[record.FSPayload](t, ev).Path] = ev
+	}
+	for _, tc := range []struct{ path, kernel string }{
+		{key, "from 6.13, the chain returned 0"},
+		{eperm, "up to 6.12, the chain returned the listener's EPERM"},
+	} {
+		if ev := lines[tc.path]; ev != nil {
+			t.Errorf("the listener's refusal (%s) has a recorder line too: %+v", tc.kernel, ev)
+		}
+	}
+	for _, tc := range []struct {
+		path    string
+		verdict record.Verdict
+		reason  record.Reason
+	}{
+		{landlock, record.VerdictRefused, record.ReasonReadDenied},
+		{late, record.VerdictObserved, ""},
+	} {
+		ev := lines[tc.path]
+		if ev == nil {
+			t.Errorf("%s: no line for the read", tc.path)
+			continue
+		}
+		if ev.Verdict != tc.verdict || ev.Reason != tc.reason {
+			t.Errorf("%s: %s %q, want %s %q", tc.path, ev.Verdict, ev.Reason, tc.verdict, tc.reason)
+		}
+		if p := payload[record.FSPayload](t, ev); p.VerdictFrom != record.FSVerdictModel {
+			t.Errorf("%s: the listener's read says its verdict came from %q", tc.path, p.VerdictFrom)
+		}
 	}
 }
 

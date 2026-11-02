@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -326,7 +327,7 @@ func (w *Writer) openFiles(create bool) error {
 	if err != nil {
 		return fmt.Errorf("ledger: open blobs dir: %w", openError(w.dirFD, BlobsDir, blobs, err))
 	}
-	w.blobs = &blobStore{dir: blobs, fd: bd}
+	w.blobs = &blobStore{dir: blobs, fd: bd, added: new(atomic.Int64)}
 	if n := w.blobs.sweepTemp(); n > 0 {
 		w.log.Info("ledger: discarded partial blobs from a dead writer", "run", w.ref.ID, "count", n)
 	}
@@ -489,13 +490,20 @@ func (w *Writer) Seq() uint64 {
 	return w.seq
 }
 
-// Size returns how many bytes of events.jsonl are whole lines: what the run's record.max_run_bytes ceiling is
-// compared against (limits.WithLedgerCeiling). Blobs are not counted.
+// Size returns how many bytes of events.jsonl are whole lines.
 func (w *Writer) Size() int64 {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.size
 }
+
+// LedgerBytes returns what the run's record.max_run_bytes ceiling is compared against
+// (limits.WithLedgerCeiling): events.jsonl's whole lines and the bytes this run added to blobs/, a store beside the
+// Writer's included (BlobBytes). A Writer that resumes a run counts only what it adds; no ceiling applies to one.
+func (w *Writer) LedgerBytes() int64 { return w.Size() + w.blobs.added.Load() }
+
+// BlobBytes is the counter LedgerBytes reads, for a store beside this Writer's (NewCountedBlobRepository).
+func (w *Writer) BlobBytes() *atomic.Int64 { return w.blobs.added }
 
 // Head returns the id of the last line written; after Close it is the run_end id anchored in chain.log.
 func (w *Writer) Head() string {

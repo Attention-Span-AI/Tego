@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
@@ -123,6 +125,61 @@ func TestRunStartRetentionStopsAtItsBudget(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(root, retentionStamp)); err != nil {
 		t.Fatalf("no stamp: %v", err)
+	}
+}
+
+// TestRetentionStampNotOursIsReplaced: a stamp this process cannot open, the shape a root pass leaves in a user's
+// ledger root when its hand-over fails or it dies before one, does not cost that user every later pass: a due
+// one is replaced and the pass runs; one inside the interval stays, and no pass is due. Mode 000 stands in for
+// another owner, since a test cannot make one without root. As root the stamp simply opens, and the outcomes are the
+// same, so this needs no skip.
+func TestRetentionStampNotOursIsReplaced(t *testing.T) {
+	root := retainRoot(t, "gc_interval: 1h\n")
+	stamp := filepath.Join(root, retentionStamp)
+	old := endedRun(t, root, time.Now().Add(-60*24*time.Hour))
+	if err := os.WriteFile(stamp, []byte("2026-10-01T00:00:00Z\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(stamp, 0); err != nil {
+		t.Fatal(err)
+	}
+	if out := retainNow(t); out != "" || !exists(t, root, old) {
+		t.Fatalf("a start inside gc_interval ran a pass: stderr %q, run kept %v", out, exists(t, root, old))
+	}
+	if st, err := os.Lstat(stamp); err != nil || st.Mode().Perm() != 0 {
+		t.Fatalf("a stamp inside gc_interval was touched: %v, %v", st, err)
+	}
+	past := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(stamp, past, past); err != nil {
+		t.Fatal(err)
+	}
+	retainNow(t)
+	if exists(t, root, old) {
+		t.Fatal("a stamp the user cannot open cost that user the pass")
+	}
+	if b, err := os.ReadFile(stamp); err != nil || len(b) == 0 {
+		t.Fatalf("the replaced stamp: %q, %v", b, err)
+	}
+}
+
+// TestRetentionStampOnlyReplacesAFile: what sits at the stamp's name and cannot be opened is removed only when it is a
+// regular file. A FIFO there stays, and is no claim.
+func TestRetentionStampOnlyReplacesAFile(t *testing.T) {
+	root := retainRoot(t, "gc_interval: 1h\n")
+	stamp := filepath.Join(root, retentionStamp)
+	if err := unix.Mkfifo(stamp, 0); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(stamp, past, past); err != nil {
+		t.Fatal(err)
+	}
+	if release, ok := claimRetention(root, time.Hour, time.Now()); ok {
+		release()
+		t.Fatal("a FIFO at the stamp's name was claimed")
+	}
+	if st, err := os.Lstat(stamp); err != nil || st.Mode()&os.ModeNamedPipe == 0 {
+		t.Fatalf("the FIFO at the stamp's name: %v, %v", st, err)
 	}
 }
 

@@ -579,9 +579,11 @@ linters:
       # value, whatever its default does (a default does not count). The enums listed here are exempt: they
       # predate the rule and their switches handle the rest in a default on purpose (Errno and Signal are the
       # standard library's, far too many values to list). An enum not listed here,
-      # a new one included, is checked like the five.
+      # a new one included, is checked like the five. ignore-types is a list of patterns (golangci-lint 2.15's
+      # config verify, which the CI action runs, refuses a single string).
       default-signifies-exhaustive: false
-      ignore-types: "\\.(Kind|relayOutcome|FSKind|ActionKind|Verdict|MemfdArm|fieldKind|unixOutcome|auditState|hookKind|CheckID|Errno|waitState|Lane|Reason|RunState|MessageKind|ChildStep|entryKind|startKind|chunkState|bodyFraming|Object|pathKind|mtState|RecordMode|EndpointKind|CaptureMode|Signal)$"
+      ignore-types:
+        - "\\.(Kind|relayOutcome|FSKind|ActionKind|Verdict|MemfdArm|fieldKind|unixOutcome|auditState|hookKind|CheckID|Errno|waitState|Lane|Reason|RunState|MessageKind|ChildStep|entryKind|startKind|chunkState|bodyFraming|Object|pathKind|mtState|RecordMode|EndpointKind|CaptureMode|Signal)$"
     errcheck:
       # A failed write to stdout or stderr cannot be reported anywhere useful: the only channel for the
       # report is the stream that just failed. Writes to a file or the ledger are checked as normal.

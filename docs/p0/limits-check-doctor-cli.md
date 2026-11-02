@@ -679,8 +679,8 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   (`TestResourcesFromRunEnd`, `TestResourcesJSONIsTheRecordedObject`,
   `TestRecordedKeepsKeysThisBinaryDoesNotKnow`).
 - **R-ledger Ledger size** (*added 2026-10-26*). `status <run>` ends with `ledger: <size> of <ceiling>
-  (record.max_run_bytes)`, or `ledger: <size>, no ceiling`: the size of the run's `events.jsonl` when status read
-  it (blobs not counted) and run_start's `limits.ledger_bytes`, the machine's `record.max_run_bytes` the run started
+  (record.max_run_bytes)`, or `ledger: <size>, no ceiling`: the size of the run's `events.jsonl` and blobs when
+  status read them (what the ceiling is compared against) and run_start's `limits.ledger_bytes`, the machine's `record.max_run_bytes` the run started
   under (record minor 22). A run that reaches it is ended as a limit, `which=ledger_bytes`, exit 124. `--json`
   carries `ledger_bytes` and `ledger_ceiling_bytes` (absent for none); `status --all` leaves the line out
   (`TestDeriveDirReadsTheLedgerSize`, `TestStatusTableColumns`).
@@ -1801,7 +1801,9 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   stay gaps. `--json`'s `gaps` still lists every gap line, live changes included, each with its what and why.
   `status` then says what the gaps mean: `in words: <sentence>` (`in words <run>: <sentence>` under `--all`, `gap_words`
   in `--json`, absent for a run with no gap), from `gaps.Classify`, the receipt's reading: whether actions may be
-  missing, what is short if not, and what a person changed (*amended 2026-11-01*).
+  missing, what is short if not, and what a person changed (*amended 2026-11-01*). `drift` prints the same three lines
+  under its table, and `gap_words` in `--json`; a run with no run_end and no launcher, or a sum holding one, says its
+  record may stop short, as a lost run's `status` does (*amended 2026-11-01*).
 
 - **R35 `serve`.** The local page (agents, run timelines, pending approvals, drift, measure over
   the ledger, on `127.0.0.1`) is the control binary's, the second binary `tego-control` (ADR 0100,

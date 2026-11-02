@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 
@@ -44,9 +45,37 @@ func NewBlobRepository(runDir string) BlobRepository {
 	return &blobStore{dir: filepath.Join(runDir, BlobsDir)}
 }
 
+// NewCountedBlobRepository is NewBlobRepository for a source that stores bodies beside the run's Writer: the bytes it
+// adds to blobs/ count in added, the Writer's BlobBytes, so they count against record.max_run_bytes too.
+func NewCountedBlobRepository(runDir string, added *atomic.Int64) BlobRepository {
+	return &blobStore{dir: filepath.Join(runDir, BlobsDir), added: added}
+}
+
+// BlobsSize is the bytes in a run's blobs/: what `tego status` adds to events.jsonl to say how far a run is from
+// record.max_run_bytes. A partial blob a store is writing is not counted, and a directory that cannot be read is 0.
+func BlobsSize(runDir string) int64 {
+	entries, err := os.ReadDir(filepath.Join(runDir, BlobsDir))
+	if err != nil {
+		return 0
+	}
+	var total int64
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), tmpPrefix) {
+			continue
+		}
+		if info, err := e.Info(); err == nil {
+			total += info.Size()
+		}
+	}
+	return total
+}
+
 // blobStore is the only BlobRepository in P0: one directory of files named by their sha256.
 type blobStore struct {
 	dir string
+	// added counts the bytes this store has added to blobs/, a duplicate not at all; nil for a read side's store.
+	// Shared with a counted store beside the Writer (NewCountedBlobRepository), so one figure covers both.
+	added *atomic.Int64
 
 	// fd is the blobs directory the store's Writer holds open from Open to Close, so every blob it
 	// writes lands in the directory Open checked, whatever is renamed above it meanwhile
@@ -227,6 +256,9 @@ func (s *blobStore) store(r io.Reader, expect string) (sha string, n int64, err 
 			}
 			return fmt.Errorf("ledger: blob rename: %w", &os.LinkError{Op: "rename", Old: filepath.Join(s.dir, name),
 				New: filepath.Join(s.dir, sha), Err: err})
+		}
+		if s.added != nil {
+			s.added.Add(n)
 		}
 		s.mu.Lock()
 		if len(s.pending) < maxPendingBlobs && !s.overflow {

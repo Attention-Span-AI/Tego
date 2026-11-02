@@ -70,8 +70,10 @@ The forwarder passes every header on as the agent sent it.
   `tools/list` the client asked). What `to_server` carries is the client line in one wire form, never the agent's
   bytes: compact JSON with U+0085, U+2028 and U+2029 as escapes, which is also what the relay reads to decide. A line
   that is not one JSON value in UTF-8 is answered -32700 and not passed (*amended 2026-11-01*: the raw line used to be
-  forwarded, so a server ending lines at a lone CR read a denied call out of a line the relay read as one `ping`). If
-  the control connection drops, the shim kills the server and exits non-zero.
+  forwarded, so a server ending lines at a lone CR read a denied call out of a line the relay read as one `ping`). Such a
+  line, and a client line past `MaxLine` that the shim dropped, is one `mcp` line, refused, rule `mcp[<name>].relay`, reason
+  `mcp-tool-denied`, no tool (*amended 2026-11-01*: it may have been a call, and the record had no trace of it; the line past
+  the bound got no answer either). If the control connection drops, the shim kills the server and exits non-zero.
 - **The gate** (`internal/runtime/supervisor`, new `Options.MCPRelayed`): an exec the supervisor already names as a
   declared server's start (`mcpServerOf`) for a server with `tools` is allowed only when the caller's parent is a
   shim the service admitted for that server and whose start is pending; otherwise it is refused, rule
@@ -85,7 +87,8 @@ The forwarder passes every header on as the agent sent it.
   With no `net:` section every destination is admitted, the URL included, so the agent can reach the server around
   the relay; compile warns (`unenforced`). The relay admits the peer as the forwarder does,
   decides each JSON-RPC message of a POST body the same way (a batch holding a refused or held `tools/call` is
-  answered with errors for every member), filters `tools/list` in a JSON or SSE response, and forwards the rest over
+  answered with errors for every member; *amended 2026-11-01*: a body refused unread, or one past 4 MiB, is recorded as
+  such a stdio line is, one `mcp` line under rule `mcp[<name>].relay`), filters `tools/list` in a JSON or SSE response, and forwards the rest over
   TLS (http for an `http://` URL) to the declared URL. A GET event stream from the server passes unfiltered (it
   carries no client call). Only a POST body is decided, so a request by any other method that carries a body is
   refused 405 with an `mcp` line under rule `mcp[<name>].relay`, and never reaches the server (*amended 2026-11-01*:

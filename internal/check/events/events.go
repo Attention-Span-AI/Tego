@@ -228,6 +228,7 @@ type table struct {
 	w         *bufio.Writer
 	head      [7]string
 	loc       *time.Location
+	zone      string // the zone the header names
 	width     [7]int
 	held      [][7]string
 	streaming bool
@@ -243,12 +244,36 @@ var tableClock = func() *time.Location { return time.Local }
 
 func newTable(w *bufio.Writer) *table {
 	t := &table{w: w, head: tableHead, loc: tableClock(), held: make([][7]string, 0, 64)}
-	zone, _ := time.Now().In(t.loc).Zone()
-	t.head[1] = "TIME (" + zone + ")"
 	for i, h := range t.head {
 		t.width[i] = utf8.RuneCountInString(h)
 	}
+	zone, _ := time.Now().In(t.loc).Zone()
+	t.nameZone(zone)
 	return t
+}
+
+// nameZone makes zone the one the header names.
+func (t *table) nameZone(zone string) {
+	t.zone = zone
+	t.head[1] = "TIME (" + zone + ")"
+	t.width[1] = utf8.RuneCountInString(t.head[1])
+}
+
+// clock is the time cell of an event stamped ts. A zone's name belongs to an instant, not to a place: a run from the
+// week before a daylight-saving change is printed in EDT whatever the clock on the wall says now, and the header
+// named today's EST over it, an hour off every row. So the first row names the column; a later row on the other side
+// of a change says its own zone, since a run can cross one and a table this long streams past its header.
+func (t *table) clock(ts time.Time) string {
+	local := ts.In(t.loc)
+	zone, _ := local.Zone()
+	if zone != t.zone && !t.streaming && len(t.held) == 0 {
+		t.nameZone(zone)
+	}
+	cell := local.Format("15:04:05.000")
+	if zone != t.zone {
+		cell += " " + zone
+	}
+	return cell
 }
 
 // settle writes the header and the held rows with the widths measured so far; after it the table streams. It is
@@ -313,7 +338,7 @@ func writeTable(ctx context.Context, t *table, dir string, entries iter.Seq2[led
 		// and a control byte in a path or an argv moved the cursor, erased the row above or forged a row.
 		row := [7]string{
 			strconv.FormatUint(e.Seq, 10),
-			e.TS.In(t.loc).Format("15:04:05.000"),
+			t.clock(e.TS),
 			record.Printable(string(e.Kind)),
 			record.Printable(string(e.Source)),
 			record.Printable(verdictCell(e)),

@@ -28,7 +28,8 @@ type Limits struct {
 	StallAfter string   `json:"stall_after,omitempty"` // duration
 	Repeats    *int     `json:"repeats,omitempty"`
 	// LedgerBytes is the machine's record.max_run_bytes the run was started under (MinorLedgerCap): its
-	// events.jsonl ends the run as a limit, which=ledger_bytes, once it holds that many bytes.
+	// events.jsonl and blobs together (blobs from 2026-11-01, at the same minor) end the run as a limit,
+	// which=ledger_bytes, once they hold that many bytes.
 	LedgerBytes *int64 `json:"ledger_bytes,omitempty"`
 }
 
@@ -1007,8 +1008,9 @@ const (
 	LimitWall       = "wall"
 	LimitStallAfter = "stall_after"
 	LimitRepeats    = "repeats"
-	// LimitLedgerBytes is the run's events.jsonl reaching the machine's record.max_run_bytes (MinorLedgerCap). Its
-	// limit line carries no reason: the closed reason set (spec/reason/REASON-CHANNEL.md) has no code for it.
+	// LimitLedgerBytes is the run's events.jsonl and blobs together (blobs from 2026-11-01, at the same minor)
+	// reaching the machine's record.max_run_bytes (MinorLedgerCap). Its limit line carries no reason: the closed
+	// reason set (spec/reason/REASON-CHANNEL.md) has no code for it.
 	LimitLedgerBytes = "ledger_bytes"
 )
 

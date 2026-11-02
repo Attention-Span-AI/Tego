@@ -58,12 +58,12 @@ func res11Tree(t testing.TB) (string, map[string]int) {
 // upstream from 6.13, and RHEL 9's 5.14 by backport): for a process in the run's own cgroup, one in a
 // descendant, one outside the run, the launcher itself and pid 1, the id path answers, and answers what
 // /proc/<pid>/cgroup does; an opener that has exited, and a cgroup removed before it was named, are left to
-// /proc rather than answered. A kernel without the ioctl skips, whichever errno it refuses it with
-// (pidfdInfoErr); one that refuses it otherwise fails here.
+// /proc rather than answered. A kernel without the ioctl, whichever errno it refuses it with (pidfdInfoErr), holds
+// the other half: the id path answers nothing, says so once, and /proc still tells the same processes apart. It takes
+// no skip, since root-must-pass.txt holds this test on every kernel a full root run meets. One that refuses the ioctl
+// otherwise fails here.
 func TestRunMembersMatchesProc(t *testing.T) {
-	if _, err := cgroupIDOfPID(os.Getpid()); errors.Is(err, errNoPidfdInfo) {
-		t.Skipf("this kernel has no PIDFD_GET_INFO cgroup id, and /proc answers alone: %v", err)
-	}
+	_, infoErr := cgroupIDOfPID(os.Getpid())
 	run, pids := res11Tree(t)
 	runID, err := cgroupIDOfPath(identity.SystemCgroupRoot, run)
 	if err != nil {
@@ -71,6 +71,27 @@ func TestRunMembersMatchesProc(t *testing.T) {
 	}
 	m := newRunMembers(Run{CgroupPath: run, CgroupID: runID})
 	defer m.close()
+	if errors.Is(infoErr, errNoPidfdInfo) {
+		for name, tc := range map[string]struct {
+			pid  int
+			want bool
+		}{"run": {pids["/run"], true}, "descendant": {pids["/run/child"], true}, "outside": {pids["/out"], false}} {
+			if _, ok := m.lookup(tc.pid); ok {
+				t.Fatalf("%s (%d): the id path answered on a kernel without PIDFD_GET_INFO", name, tc.pid)
+			}
+			path, err := cgroupPathOfPID(tc.pid)
+			if err != nil {
+				t.Fatalf("%s (%d): /proc: %v", name, tc.pid, err)
+			}
+			if got := inSubtree(run, path); got != tc.want {
+				t.Fatalf("%s (%d): /proc says %v (%s), want %v", name, tc.pid, got, path, tc.want)
+			}
+		}
+		if !m.unsupported.Load() {
+			t.Fatal("a kernel without PIDFD_GET_INFO was not latched, so every event would ask it again")
+		}
+		return
+	}
 	if m.mountFD < 0 {
 		t.Fatal("the cgroup2 mount could not be opened for handles")
 	}

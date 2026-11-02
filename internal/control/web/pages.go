@@ -952,7 +952,7 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 		// A contract made from a run that leaked never allows where its secrets went (QA PW-1). Learned is the
 		// shared cache's value, so the withheld text goes on a copy.
 		l := *d.Learn
-		l.Text, d.Withheld = rulesview.Withhold(l.Text, d.Story.Dests)
+		l.Text, d.Withheld = rulesview.Withhold(l.Text, d.Story.NeverAllow())
 		d.Learn = &l
 	}
 	blocks := blockLabels(run)

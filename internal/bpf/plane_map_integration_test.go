@@ -260,8 +260,8 @@ func planeMapCells(t *testing.T, o Object, mode PlaneMode) {
 		if info, err := p.Info(); err == nil {
 			if n, ok := info.VerifiedInstructions(); ok && (h.Name == "mmap_file" || h.Name == "file_mprotect") {
 				t.Logf("%s: %d instructions verified", h.Program(mode), n)
-				if n > planeVerifiedBudget {
-					t.Errorf("%s: %d instructions verified, over the budget of %d", h.Program(mode), n, planeVerifiedBudget)
+				if n > planeBudget(h.Name) {
+					t.Errorf("%s: %d instructions verified, over the budget of %d", h.Program(mode), n, planeBudget(h.Name))
 				}
 			}
 		}

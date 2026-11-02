@@ -1979,7 +1979,11 @@ bypass and no ledger lie. These are the follow-ups it and a trial with a custom 
 2. **Two-level verbs are held to the installed git.** The bisect level lacked `next`. `TestGitRowFresh` now reads the
    verbs `git <cmd> -h` lists for every command the row gives a second level and fails on one that is neither a
    subcommand nor an alias there; a verb the row has and the installed git lacks is another supported version's and
-   not a failure. `git maintenance -h` lists no verb, so that level is not checked this way (logged).
+   not a failure. `git maintenance -h` lists no verb, so that level is not checked this way (logged). *Amended
+   2026-11-02:* the probe also reads parse-options' completion listing (`git <cmd> --git-completion-helper-all`),
+   which names maintenance's verbs and the hidden aliases, so maintenance's level is checked too, and a command whose
+   usage puts `<subcommand>` where its verbs stand and whose listing names none fails; docs/spec/exec-command-rows.md
+   lists the verbs added since.
 3. **The interpretation count fails closed where it is held.** `builder.add` dropped every invocation past the
    32nd in silence, and the loader pass discarded a nested pass's `ViaOverflow` sentinel (it names no tool). The
    builder now overflows on a distinct invocation past the count, the loader pass carries a nested overflow, and the

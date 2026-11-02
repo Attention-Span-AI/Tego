@@ -357,12 +357,12 @@ force; changes the overlay no longer held when the launcher read it (it keeps th
 Fixture: `fixtures/live-block.jsonl`.
 
 At `record_minor` 22 (`MinorLedgerCap`; 2026-10-26), a machine config's `record.max_run_bytes` bounds one run's
-`events.jsonl`: `run_start.limits.ledger_bytes` is the ceiling the run was started under, and once the file holds that
-many bytes (checked at each line the run's pipeline records and once a second, so it passes the ceiling by the lines
-in flight) the run is ended as a limit: one
-`limit` line `which=ledger_bytes`, `value` the bytes the file held at the check and `ceiling` the setting, with no
+`events.jsonl` and blobs together: `run_start.limits.ledger_bytes` is the ceiling the run was started under, and once
+they hold that many bytes (checked at each line the run's pipeline records and once a second, so it passes the ceiling
+by the lines in flight) the run is ended as a limit: one
+`limit` line `which=ledger_bytes`, `value` the bytes they held at the check and `ceiling` the setting, with no
 `reason` (the closed reason set has no code for it, and a `limit` line's reason is optional), then
-`run_end reason limit`, exit 124. Blobs are not counted. The ledger is not rotated: the run ends and a unit that restarts it starts a
+`run_end reason limit`, exit 124. Blobs count from 2026-11-01; before that `value` was `events.jsonl` alone. The ledger is not rotated: the run ends and a unit that restarts it starts a
 new run with its own ledger and chain. Absent at revision 22 or later, `limits.ledger_bytes` means the run had no
 ceiling; below it no `limit` line is `which=ledger_bytes`.
 
@@ -431,7 +431,9 @@ D1), a run can use credentials it never holds and per-tool MCP rules.
 - **MCP tools.** An `mcp` line of source `proxy` (Tego's own MCP relay) records each `tools/call` decision: `allow` under
   `mcp[<s>].tools.allow[<tool>]`, `mcp[<s>].live[<tool>]` or `mcp[<s>]`, authority `human` after an approved ask, or
   `refused` with reason `mcp-tool-denied` under `mcp[<s>].tools.deny[<tool>]`, `mcp[<s>].tools.allow` (not on the
-  list) or `mcp[<s>].live[<tool>]`, or the broker's `ask-denied`, `ask-timeout`, `ask-unavailable`. A declared stdio
+  list) or `mcp[<s>].live[<tool>]`, or the broker's `ask-denied`, `ask-timeout`, `ask-unavailable`. A call whose tool the
+  relay could not name, and a client message it could not read at all, is `refused`, `mcp-tool-denied`, under
+  `mcp[<s>].relay` with no `tool`. A declared stdio
   server started by anything but a child of an admitted shim is refused under `mcp[<s>].relay`, `exec-not-allowed`. A person's live switch is a
   `gap` `what=enforce` `why=mcp-tool-changed` with `mcp_tool` `{server, tool, decision, by, serial, at}`, `decision`
   `allow`, `ask`, `deny` or `reset`.

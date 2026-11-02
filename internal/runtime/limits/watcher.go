@@ -179,7 +179,7 @@ func WithActivityPublisher(publish func(monoNS uint64)) Option {
 	return func(w *Watcher) { w.publish = publish }
 }
 
-// WithLedgerCeiling ends the run once size, the bytes of the run's events.jsonl, reaches ceiling: the machine's
+// WithLedgerCeiling ends the run once size, the bytes of the run's events.jsonl and blobs, reaches ceiling: the machine's
 // record.max_run_bytes (record.MinorLedgerCap), a limit which=ledger_bytes. size is called outside the watcher's lock,
 // at each Observe and each Tick, and must not block for long; a ceiling of 0 or less, or a nil size, is none. Observe
 // reads it before the event it observes is written, so a run passes the ceiling by the events its pipeline held

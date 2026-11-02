@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/attention-span-ai/tego/internal/check/events"
 	"github.com/attention-span-ai/tego/internal/ledger"
@@ -257,9 +258,9 @@ func resolveRunDir(ref string, mustExist bool, mc *machineOnce) (string, error) 
 		return runDirUnderRoot(ref, mustExist, mc)
 	}
 	info, err := os.Stat(ref)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENAMETOOLONG) {
 		// A path the caller cannot stat (EACCES on a parent, ELOOP, EIO) is not a typo: the errno is
-		// the answer, 125 [io], never "is not a run id" (E26).
+		// the answer, 125 [io], never "is not a run id" (E26). A name too long to be a file is one.
 		return "", err
 	}
 	if err == nil && info.IsDir() {

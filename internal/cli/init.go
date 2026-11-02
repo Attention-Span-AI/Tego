@@ -88,6 +88,11 @@ func cmdInit() Command {
 				return identity.ExitUsage // R25: usage error
 			}
 			dir := "."
+			if fs.NArg() == 1 && fs.Arg(0) == "" {
+				// An unset "$DIR" named no directory, and the current one got the scaffold.
+				message(stderr, "", 0, 0, "tego init: the directory is an empty string; give none for the current directory", codeUsage)
+				return identity.ExitUsage // R25: usage error
+			}
 			if fs.NArg() == 1 {
 				dir = fs.Arg(0)
 			}
@@ -162,7 +167,7 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 	step := func(what string, done bool, err error, file string) bool {
 		if err != nil {
 			code := codeIO
-			if errors.Is(err, errForeign) {
+			if errors.Is(err, errForeign) || errors.Is(err, errInitDirTaken) {
 				code = codeExists
 			}
 			message(stderr, filepath.Join(abs, file), 0, 0, "tego init: "+err.Error(), code)
@@ -188,7 +193,7 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 	}
 	done, err := ensureDir(filepath.Join(abs, initDir))
 	if !step("created "+initDir+"/", done, err, initDir) {
-		if errors.Is(err, errForeign) {
+		if errors.Is(err, errInitDirTaken) {
 			return identity.ExitFinding // R25: a finding: the path is something else
 		}
 		return identity.ExitError // R25: an I/O failure is Tego's own error, not a finding
@@ -354,6 +359,10 @@ func printPresetList(stdout, stderr io.Writer) int {
 // errForeign marks an existing file that tego init did not write.
 var errForeign = errors.New("exists and was not written by tego init; re-run with --force to replace it")
 
+// errInitDirTaken marks a .tego that is not a directory. --force replaces agent.yaml and nothing else, so the message
+// offers no flag: errForeign's sent the reader round in a circle.
+var errInitDirTaken = errors.New("exists and is not a directory; move it aside and run tego init again")
+
 // agentNameFor derives an agent id from a directory name: lower-case, every other rune to '-',
 // trimmed to 40, "agent" when nothing is left.
 func agentNameFor(abs string) string {
@@ -387,7 +396,7 @@ func ensureDir(path string) (bool, error) {
 	case err == nil && st.IsDir():
 		return false, nil
 	case err == nil:
-		return false, fmt.Errorf("%w", errForeign)
+		return false, errInitDirTaken
 	case !errors.Is(err, os.ErrNotExist):
 		return false, fmt.Errorf("stat: %w", err)
 	}

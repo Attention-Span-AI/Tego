@@ -252,6 +252,8 @@ func TestAdoptCommandUsageAndPrivilege(t *testing.T) {
 		{[]string{"--pid", "5", "--release", "--uid", "1000"}, "--release takes --pid alone"},
 		{[]string{"--pid", "5", "--uid", "x"}, `"x" is not a uid`},
 		{[]string{"--pid", "5", "--record", "loud"}, "not full, summary or off"},
+		{[]string{"--pid", "5", "--boundary", ""}, "--boundary is an empty string"},
+		{[]string{"--pid", "5", "--boundary="}, "--boundary is an empty string"},
 	} {
 		if code, _, errs := runAdoptCmd(t, t.Context(), tc.args...); code != identity.ExitUsage || !strings.Contains(errs, tc.want) {
 			t.Errorf("%v: code %d stderr %q, want usage containing %q", tc.args, code, errs, tc.want)
@@ -409,6 +411,7 @@ func TestAgentsAdoptUsage(t *testing.T) {
 		{[]string{"--follow", "--boundary", "c.yaml"}, "need --adopt"},
 		{[]string{"--follow", "--adopt", "--uid", "x"}, `"x" is not a uid`},
 		{[]string{"--follow", "--adopt", "--uid", "1000", "--record", "loud"}, "not full, summary or off"},
+		{[]string{"--follow", "--adopt", "--uid", "1000", "--boundary", ""}, "--boundary is an empty string"},
 	} {
 		code, out, errs := runAgentsCmd(t, tc.args...)
 		if code != identity.ExitUsage || out != "" || !strings.Contains(errs, tc.want) {

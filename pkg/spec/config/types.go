@@ -157,9 +157,10 @@ type RecordConfig struct {
 	// Ringbuf is the size of each run's record ring, and of its capture ring when it captures with uprobes; a
 	// power of two and a page multiple. Honoured only from /etc/tego/config.yaml (ADR 0026 (2)).
 	Ringbuf Setting[ByteSize]
-	// MaxRunBytes is a ceiling on one run's events.jsonl: a run whose ledger holds this many bytes is ended as a limit,
-	// which=ledger_bytes (record.MinorLedgerCap), so an agent under a restarting unit starts a new ledger instead of
-	// growing one without bound. Unbounded by default; every layer may lower it, none raise it (R15).
+	// MaxRunBytes is a ceiling on one run's ledger, its events.jsonl and its blobs together (blobs count from
+	// 2026-11-01, under the same record.MinorLedgerCap): a run whose ledger holds this many bytes is ended as a limit,
+	// which=ledger_bytes, so an agent under a restarting unit starts a new ledger instead of growing one without
+	// bound. Unbounded by default; every layer may lower it, none raise it (R15).
 	MaxRunBytes Ceiling[ByteSize]
 }
 

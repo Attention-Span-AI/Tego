@@ -7,7 +7,38 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ## Unreleased
 
-Nothing yet. Changes after the first source release are listed here until the next tag.
+Changes after the first source release, listed here until the next tag.
+
+### Fixed
+
+- An empty string is not a default. `tego watch --boundary ""` and `tego adopt --boundary ""` ran the command record-only,
+  with no rule, and now refuse to start; `tego receipt ""`, `tego init ""`, `tego compile ""` and `tego run ""` are usage
+  errors too, so an unset `"$VAR"` never gets a result for something else.
+- `tego run`, `tego watch` and `tego adopt` keep going when the reader of their output leaves: `tego run agent.yaml | head -1`
+  no longer replaces the agent's exit code with 141 or ends the supervisor under a live agent.
+- A run started from a directory reached through a symlink names its real directory in `run_start`, so `tego learn` and
+  `tego receipt` read its writes as inside the workspace.
+- `tego events` and `tego receipt` print each time in the zone it happened in, and `--until` in an hour a clock change
+  repeats is the next time the clock reads it, in every form. `tego learn` measures a run's length on the monotonic clock.
+- A limit below what a run's own start takes is caught at compile: `limits.pids` under 6 is refused, and `limits.memory`
+  or `memory_high` under 8 MiB, or a machine ceiling that sets one there, gets a warning.
+- The agent keeps the soft `RLIMIT_NOFILE` it was started with.
+- `record.max_run_bytes` counts a run's stored bodies as well as `events.jsonl`.
+- A message the MCP relay refuses unread, or a line past its size bound, is on the record as a refused `mcp` line.
+- Dashboard: a proposal made from a run that leaked never allows the address behind the leak's host name; a refused
+  connect to a live-blocked host, or one carrying an IPv6 scope id, is no longer folded away as Routine; and a rule made
+  from an IPv6 line is one a contract can hold.
+- `tego drift` says what its gaps mean, as `tego status` does, and `tego rules` says that every run can read the
+  machine's network setup (interfaces, addresses, routes and nearby machines).
+- The git exec row knows `git reflog write`, `git hook list` and `git multi-pack-index compact`, which git added after
+  2.51.0.
+- The container image works for any `TEGO_UID`: its home is 0755, so the entrypoint, which runs as root without
+  `CAP_DAC_OVERRIDE`, can reach `~/.tego`.
+
+### Tests
+
+- The suite holds on GitHub's hosted runners: kernel 7.0, which refuses an IPv4 source route to an unprivileged task
+  itself (CVE-2026-53249), arm64, git 2.56 and the race detector's pace.
 
 ## v0.1.0 - unreleased
 

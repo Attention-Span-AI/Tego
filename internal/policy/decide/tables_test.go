@@ -110,3 +110,34 @@ func genTables(tier backend.Tier, fn func(desc string, rt *agent.RuleTable)) int
 	}
 	return count
 }
+
+// sampled is fn over the tables a sweep checks: every table it is given, or under the race detector every
+// sweepStride-th, the first included (race_on_test.go). The generator still makes and counts every table, so a
+// sweep's floor on that count ("only %d tables") holds the generator to one size in either build.
+func sampled(fn func(desc string, rt *agent.RuleTable)) func(desc string, rt *agent.RuleTable) {
+	take := stride()
+	return func(desc string, rt *agent.RuleTable) {
+		if take() {
+			fn(desc, rt)
+		}
+	}
+}
+
+// sampledNames is sampled for a genNameTables sweep.
+func sampledNames(fn func(desc string, rt, bare *agent.RuleTable)) func(desc string, rt, bare *agent.RuleTable) {
+	take := stride()
+	return func(desc string, rt, bare *agent.RuleTable) {
+		if take() {
+			fn(desc, rt, bare)
+		}
+	}
+}
+
+// stride reports, asked once per table, whether a sampled sweep checks it.
+func stride() func() bool {
+	n := 0
+	return func() bool {
+		n++
+		return (n-1)%sweepStride == 0
+	}
+}

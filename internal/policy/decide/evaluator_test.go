@@ -12,7 +12,7 @@ import (
 
 func TestIndexedEvaluatorMatchesReference(t *testing.T) {
 	tiers := []backend.Tier{backend.TierLandlock, backend.TierCgroup, backend.TierBPFLSM, backend.TierObserve}
-	count := genPlaneTables(func(desc string, rt *agent.RuleTable) {
+	count := genPlaneTables(sampled(func(desc string, rt *agent.RuleTable) {
 		e := NewEvaluator(rt)
 		for _, tier := range tiers {
 			for _, path := range append(append([]string{}, planeProbes...), "/w/"+strings.Repeat("deep/", 70)+"f") {
@@ -30,7 +30,7 @@ func TestIndexedEvaluatorMatchesReference(t *testing.T) {
 				}
 			}
 		}
-	})
+	}))
 	if count < 1000 {
 		t.Fatalf("only %d generated tables", count)
 	}

@@ -94,6 +94,43 @@ func TestOpenWithExistingFilesMakesNothing(t *testing.T) {
 	}
 }
 
+// TestLedgerBytesCountsBlobs: what record.max_run_bytes is compared against is the run's lines and what it added to
+// blobs/, through the Writer's store or a counted one beside it, and a duplicate adds nothing.
+func TestLedgerBytesCountsBlobs(t *testing.T) {
+	w, dir, _ := openTestWriter(t)
+	defer func() { _ = w.Abandon() }()
+	if err := w.WriteRunStart(startPayload()); err != nil {
+		t.Fatal(err)
+	}
+	lines := w.Size()
+	if got := w.LedgerBytes(); got != lines {
+		t.Fatalf("LedgerBytes with no blob = %d, want the lines' %d", got, lines)
+	}
+	body := bytes.Repeat([]byte("b"), 8192)
+	if _, err := w.Blob(body); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Blob(body); err != nil { // the same content again
+		t.Fatal(err)
+	}
+	if got := w.LedgerBytes(); got != lines+8192 {
+		t.Fatalf("LedgerBytes after one blob stored twice = %d, want %d", got, lines+8192)
+	}
+	beside := NewCountedBlobRepository(dir, w.BlobBytes())
+	if _, _, err := beside.PutStream(bytes.NewReader(bytes.Repeat([]byte("c"), 1024))); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := beside.PutStream(bytes.NewReader(body)); err != nil { // already there through the Writer
+		t.Fatal(err)
+	}
+	if got := w.LedgerBytes(); got != lines+8192+1024 {
+		t.Fatalf("LedgerBytes with a store beside the Writer = %d, want %d", got, lines+8192+1024)
+	}
+	if got := BlobsSize(dir); got != 8192+1024 {
+		t.Fatalf("BlobsSize = %d, want %d", got, 8192+1024)
+	}
+}
+
 func TestOpenRejectsBadRef(t *testing.T) {
 	for _, ref := range []record.RunRef{{ID: "run-1", Agent: "a"}, {ID: testRef.ID, Agent: "Bad Agent"}} {
 		if _, err := Open(t.TempDir(), ref); !errors.Is(err, ErrBadRunRef) {

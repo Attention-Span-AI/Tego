@@ -187,6 +187,13 @@ func TestInitRefusesFileAtDotTego(t *testing.T) {
 	if code != identity.ExitFinding || !strings.Contains(errs, "[exists]") {
 		t.Fatalf("exit %d stderr %q", code, errs)
 	}
+	// --force replaces agent.yaml and nothing else, so the refusal must not send the reader round to it.
+	if strings.Contains(errs, "--force") {
+		t.Errorf("the refusal offers --force, which never replaces .tego: %q", errs)
+	}
+	if code, _, errs := run(t, "init", "--force", dir); code != identity.ExitFinding || !strings.Contains(errs, "[exists]") {
+		t.Errorf("--force: exit %d stderr %q, want the same refusal", code, errs)
+	}
 }
 
 // TestInitReadOnlyParent is the init I/O failure case: a project directory with no write

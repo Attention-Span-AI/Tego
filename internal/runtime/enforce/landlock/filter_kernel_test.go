@@ -198,10 +198,19 @@ func TestFilterRefusesMPTCPSocketOnKernel(t *testing.T) {
 // under the filter without the arm, where both routes are accepted: that is the window a sibling had between
 // the supervisor's options read and its relayed connect.
 //
+// A kernel with "ipv4: restrict IPOPT_SSRR and IPOPT_LSRR options" (Linux 7.1, and the stable kernels it went back
+// to, 7.0.13 among them) refuses the LSRR route itself, EPERM, to a task without CAP_NET_RAW over the socket's
+// network namespace, so there the control cannot accept it and the arm's EPERM for it shows nothing of the arm.
+// The arm refuses IP_OPTIONS whatever the block holds (a classic BPF filter reads the level and the option, not the
+// bytes), so a block of NOOPs, which every kernel takes from any task, shows the arm's IPv4 effect on every
+// kernel: taken without the arm, refused under it.
+//
 // Spec: docs/p0/enforce-landlock.md R11b; supervisor R9.
 func TestFilterRefusesSourceRouteOptionsOnKernel(t *testing.T) {
 	// IPOPT_NOOP, then IPOPT_LSRR of length 7 with pointer 4 and one hop, 127.0.0.2.
 	lsrr := []byte{1, 0x83, 7, 4, 127, 0, 0, 2}
+	// Three IPOPT_NOOPs and IPOPT_END: an options block that routes nothing.
+	noops := []byte{1, 1, 1, 0}
 	// A segment routing header (type 4), which needs no capability: next header, length 2 (one segment), type 4,
 	// segments left 0, last entry 0, flags, tag, then the segment ::1.
 	rthdr := make([]byte, 24)
@@ -209,7 +218,7 @@ func TestFilterRefusesSourceRouteOptionsOnKernel(t *testing.T) {
 	calls := func() []error {
 		fd4, _, e := unix.Syscall(unix.SYS_SOCKET, unix.AF_INET, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
 		if e != 0 {
-			return []error{e, e, e}
+			return []error{e, e, e, e}
 		}
 		defer unix.Syscall(unix.SYS_CLOSE, fd4, 0, 0)
 		_, _, e1 := unix.Syscall6(unix.SYS_SETSOCKOPT, fd4, unix.SOL_IP, unix.IP_OPTIONS,
@@ -223,7 +232,9 @@ func TestFilterRefusesSourceRouteOptionsOnKernel(t *testing.T) {
 				uintptr(unsafe.Pointer(&rthdr[0])), uintptr(len(rthdr)), 0)
 			unix.Syscall(unix.SYS_CLOSE, fd6, 0, 0)
 		}
-		return []error{errnoOrNil(e1), errnoOrNil(e2), errnoOrNil(e3)}
+		_, _, e4 := unix.Syscall6(unix.SYS_SETSOCKOPT, fd4, unix.SOL_IP, unix.IP_OPTIONS,
+			uintptr(unsafe.Pointer(&noops[0])), uintptr(len(noops)), 0)
+		return []error{errnoOrNil(e1), errnoOrNil(e2), errnoOrNil(e3), errnoOrNil(e4)}
 	}
 
 	without, err := assembleFilter(NativeArch(), filterOpts{abi: minTruncateABI})
@@ -234,9 +245,12 @@ func TestFilterRefusesSourceRouteOptionsOnKernel(t *testing.T) {
 	if !ok {
 		t.Skip("could not install a seccomp filter on this thread")
 	}
-	t.Logf("without the arm: IP_OPTIONS %v, IP_TTL %v, IPV6_RTHDR %v", errs[0], errs[1], errs[2])
-	if errs[0] != nil {
+	t.Logf("without the arm: IP_OPTIONS %v, IP_TTL %v, IPV6_RTHDR %v, IP_OPTIONS of NOOPs %v", errs[0], errs[1], errs[2], errs[3])
+	if errs[0] != nil && (!errors.Is(errs[0], unix.EPERM) || netRawCapable(t)) {
 		t.Fatalf("control: setsockopt(IP_OPTIONS, LSRR) without the arm returned %v; the test cannot show the arm's effect", errs[0])
+	}
+	if errs[3] != nil {
+		t.Fatalf("control: setsockopt(IP_OPTIONS, NOOPs) without the arm returned %v; the test cannot show the arm's effect", errs[3])
 	}
 	if errs[2] != nil && !errors.Is(errs[2], unix.EAFNOSUPPORT) {
 		t.Fatalf("control: setsockopt(IPV6_RTHDR, SRH) without the arm returned %v; the test cannot show the arm's effect", errs[2])
@@ -259,4 +273,23 @@ func TestFilterRefusesSourceRouteOptionsOnKernel(t *testing.T) {
 	if !errors.Is(errs[2], unix.EPERM) && !errors.Is(errs[2], unix.EAFNOSUPPORT) {
 		t.Errorf("setsockopt(IPV6_RTHDR) under a net gate returned %v, want EPERM", errs[2])
 	}
+	if !errors.Is(errs[3], unix.EPERM) {
+		t.Errorf("setsockopt(IP_OPTIONS, NOOPs) under a net gate returned %v, want EPERM", errs[3])
+	}
+}
+
+// netRawCapable reports whether this process holds CAP_NET_RAW over its network namespace as the kernel judges it:
+// a raw IPv4 socket's create makes the same ns_capable(net->user_ns, CAP_NET_RAW) test a restricted source route's
+// setsockopt does, and refuses EPERM without it.
+func netRawCapable(t *testing.T) bool {
+	t.Helper()
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_RAW|unix.SOCK_CLOEXEC, unix.IPPROTO_RAW)
+	if errors.Is(err, unix.EPERM) {
+		return false
+	}
+	if err != nil {
+		t.Fatalf("socket(AF_INET, SOCK_RAW): %v", err)
+	}
+	_ = unix.Close(fd)
+	return true
 }

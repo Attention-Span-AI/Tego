@@ -5,6 +5,7 @@ package ledgerview
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -268,6 +269,140 @@ func TestSignalRouteProbesFoldAndTheKeyNextToASendLeads(t *testing.T) {
 	for _, d := range s.Outbound {
 		if d.Key == "[2606:50c0:8000::154]:65535" && !d.Background || d.Key == "[2606:50c0:8000::154]:443" && d.Background {
 			t.Fatalf("destination %+v: the probe folds, the real connect to the same host does not", d)
+		}
+	}
+}
+
+// TestAlsoReachedHidesNoLiveBlockedHost: a person blocked a host, and the agent went on to another port of it. The block
+// leaves a refusal the contract already makes under the contract's rule, so that line says unmatched like any other,
+// and "the run also reached this host" folded it into Routine: the attempt the block was made for read as background.
+func TestAlsoReachedHidesNoLiveBlockedHost(t *testing.T) {
+	const addr, v6 = "104.18.32.47", "[2606:4700::6812:202f]"
+	block := func(value string) string {
+		return `gap:"what":"enforce","why":"live-block-added","live_block":{"op":"add","kind":"net","value":"` + value + `","rule":"live.block[net:` + value + `]","by":"uid:1000","serial":1,"at":"2026-10-27T09:00:00Z"}`
+	}
+	refusedUnder := func(rule, target string) string {
+		return `refused:"rule":"` + rule + `","reason":"net-not-allowed","op":"net","target":"` + target + `"`
+	}
+	// A connect's line keeps the scope id the agent passed, which the kernel ignores on a global address, and a block's
+	// value never holds one (liveblock.Normalize).
+	const zoned, linkLocal = "[2001:db8::1%1]:443", "[fe80::1%2]:443"
+	const cidr = `"rule":"net[tcp://2001:db8::/32:443]","verdict":"allow"` // a CIDR entry's line names no host
+	for _, c := range []struct {
+		name   string
+		dst    string // the address the run reached under its contract and then tried on another port
+		allow  string // the allow line's rule and host, when not the chatgpt.com entry's
+		extra  []string
+		hidden bool
+	}{
+		{name: "no block: the host the run talks to", dst: addr + ":443", hidden: true},
+		{name: "no block: a scope id on the connects", dst: zoned, allow: cidr, hidden: true},
+		{name: "a block on another address: a scope id on the connects", dst: zoned, allow: cidr,
+			extra: []string{block("[2001:db8::2]:443")}, hidden: true},
+		{name: "a scope id: by the address, under a CIDR entry", dst: zoned, allow: cidr, extra: []string{block("[2001:db8::1]:443")}},
+		{name: "a scope id: by the address, under a host entry", dst: zoned, extra: []string{block("[2001:db8::1]:443")}},
+		{name: "a scope id: by the address, every port", dst: zoned, allow: cidr, extra: []string{block("2001:db8::1")}},
+		{name: "a scope id: by the name", dst: zoned, extra: []string{block("chatgpt.com")}},
+		{name: "a link-local host: by the address", dst: linkLocal, allow: cidr, extra: []string{block("[fe80::1]:443")}},
+		{name: "a scope id: a refusal under the block, its gap line lost", dst: zoned, allow: cidr,
+			extra: []string{refusedUnder("live.block[net:[2001:db8::1]:443]", zoned)}},
+		{name: "a block on another host", dst: addr + ":443", extra: []string{block("evil.example:443")}, hidden: true},
+		{name: "a block on a unix socket", dst: addr + ":443", extra: []string{block("/run/docker.sock")}, hidden: true},
+		{name: "by the name, its port", dst: addr + ":443", extra: []string{block("chatgpt.com:443")}},
+		{name: "by the name, every port", dst: addr + ":443", extra: []string{block("chatgpt.com")}},
+		{name: "by the address", dst: addr + ":443", extra: []string{block(addr)}},
+		{name: "by the address, its port", dst: addr + ":443", extra: []string{block(addr + ":443")}},
+		{name: "an IPv6 address", dst: v6 + ":443", extra: []string{block(v6 + ":443")}},
+		{name: "a refusal under the block, its gap line lost", dst: addr + ":443",
+			extra: []string{refusedUnder("live.block[net:chatgpt.com:443]", addr+":443")}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			const id = "r-aaaa-0008-blockd"
+			t0 := time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC)
+			seq := 0
+			var ls []string
+			add := func(kind, extra string) {
+				ls = append(ls, line(id, "a", seq, t0.Add(time.Duration(seq)*time.Minute), kind, extra))
+				seq++
+			}
+			add("run_start", `"tier":"landlock","command":["agent"],"cwd":"/w/proj"`)
+			allow := c.allow
+			if allow == "" {
+				allow = `"rule":"net[tcp://chatgpt.com:443]","verdict":"allow","host":"chatgpt.com"`
+			}
+			add("net", allow+`,"proto":"tcp","dst":"`+c.dst+`"`)
+			for _, l := range c.extra {
+				kind, rest, _ := strings.Cut(l, ":")
+				add(kind, rest)
+			}
+			host, _ := hostPort(c.dst)
+			add("refused", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"`+host+`:8443"`)
+			writeRun(t, root, id, ls...)
+			r, err := LoadRun(root, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := Signal(r, Sensitive{Cwd: r.Cwd})
+			var g *Group
+			for i := range s.Groups {
+				if s.Groups[i].Rule == "unmatched" {
+					g = &s.Groups[i]
+				}
+			}
+			if g == nil {
+				t.Fatalf("no refusal group: %+v", s.Groups)
+			}
+			if g.Background != c.hidden {
+				t.Fatalf("background %v (%q), want %v: %+v", g.Background, g.Why, c.hidden, g)
+			}
+			if !c.hidden && g.Severity != SevHigh {
+				t.Errorf("the refused connect reads %v, want High", g.Severity)
+			}
+		})
+	}
+}
+
+// TestAScopeIDIsStillThisMachine: the kernel reads a sin6_scope_id on a link-local address and nowhere else, so a connect
+// to [::1%1] is a connect to ::1, and the line keeps what the agent passed. The string compare missed it, which handed
+// the agent the one fold loopback is kept out of: reaching one local service folded a refused try at any other as "the
+// run also reached this host", no block involved, and a route probe to it read as one. Each local port is a different
+// service whatever the agent writes after the address.
+func TestAScopeIDIsStillThisMachine(t *testing.T) {
+	root := t.TempDir()
+	const id = "r-aaaa-0009-scoped"
+	t0 := time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC)
+	seq := 0
+	var ls []string
+	add := func(kind, extra string) {
+		ls = append(ls, line(id, "a", seq, t0.Add(time.Duration(seq)*time.Minute), kind, extra))
+		seq++
+	}
+	add("run_start", `"tier":"landlock","command":["agent"],"cwd":"/w/proj"`)
+	add("net", `"rule":"net[tcp://[::1]:5432]","verdict":"allow","host":"::1","proto":"tcp","dst":"[::1%1]:5432"`)
+	for _, port := range []string{"6379", "2375"} {
+		add("refused", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"[::1%1]:`+port+`"`)
+	}
+	writeRun(t, root, id, ls...)
+	r, err := LoadRun(root, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := Signal(r, Sensitive{Cwd: r.Cwd})
+	if s.Background != 0 || s.Real == 0 {
+		t.Fatalf("%d routine groups and %d real rows: a refused local service folded away: %+v", s.Background, s.Real, s.Groups)
+	}
+	for i := range s.Groups {
+		if g := &s.Groups[i]; g.Background || g.Severity == SevRoutine {
+			t.Errorf("%s reads %v (%q)", g.Subject, g.Severity, g.Why)
+		}
+	}
+	if !loopback("[::1%1]") {
+		t.Error(`loopback("[::1%1]") = false`)
+	}
+	for dst, probe := range map[string]bool{"[::1%1]:65535": false, "[2606:50c0:8000::154%1]:65535": true} {
+		if got := RouteProbe(&Event{Kind: "net", Proto: "udp", Target: dst}); got != probe {
+			t.Errorf("RouteProbe(%s) = %v, want %v", dst, got, probe)
 		}
 	}
 }

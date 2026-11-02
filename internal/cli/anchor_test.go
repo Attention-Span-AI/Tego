@@ -39,6 +39,9 @@ func TestMain(m *testing.M) {
 	if os.Getenv(signalHelperEnv) != "" {
 		signalHelper()
 	}
+	if mode := os.Getenv(brokenPipeHelperEnv); mode != "" {
+		brokenPipeHelper(mode)
+	}
 	dir, err := os.MkdirTemp("", "tego-cli-home-")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "temp dir: %v\n", err)

@@ -53,6 +53,7 @@ func cmdRun() Command {
 		Name:         "run",
 		CommandAfter: 1,
 		Passthrough:  true,
+		Supervises:   true,
 		Summary:      "run a command under a contract",
 		Usage:        "<agent.yaml | name> [--tier <t>] [--record <full|summary|off>] [--no-summary] [--observe] [--offline] [-- <cmd> [args]]",
 		Flags: func(fs *flag.FlagSet) {
@@ -70,8 +71,13 @@ func cmdRun() Command {
 			// With no command after the contract the run execs the contract's own command:, which the
 			// schema requires; only a missing contract is a usage error (R29).
 			args := fs.Args()
-			if len(args) < 1 {
+			if len(args) < 1 || args[0] == "" {
 				message(stderr, "", 0, 0, "tego run: <agent.yaml | name> [-- <command> [args]]", codeUsage)
+				return identity.ExitUsage // R25: usage error
+			}
+			if len(args) > 1 && args[1] == "" {
+				// An empty $AGENT after --: it reached the runtime as "invalid dependencies: no command", exit 125.
+				message(stderr, "", 0, 0, "tego run: the command after the contract is an empty string; name a program, or give none to run the contract's command", codeUsage)
 				return identity.ExitUsage // R25: usage error
 			}
 			return runRun(ctx, runOptions{
@@ -599,10 +605,14 @@ func compileForRun(ctx context.Context, o runOptions, m *config.Machine, stderr 
 	if interruptedBeforeStart(ctx, stderr) {
 		return nil, nil, nil, identity.ExitLauncher
 	}
+	label := ref.label()
+	if o.generated {
+		label, ds = agent.CommandLineFile, onCommandLine(ds)
+	}
 	_ = agent.WriteDiagnostics(stderr, runNotices(agent.ForTier(ds, ""), o.verbose))
 	if err != nil {
 		if !agent.HasErrors(ds) {
-			message(stderr, ref.label(), 0, 0, err.Error(), agent.CodeSchema)
+			message(stderr, label, 0, 0, err.Error(), loadCode(err))
 		}
 		return nil, nil, nil, identity.ExitLauncher
 	}
@@ -620,6 +630,17 @@ func compileForRun(ctx context.Context, o runOptions, m *config.Machine, stderr 
 		src = ref.source(rt)
 	}
 	return rt, held, src, identity.ExitOK
+}
+
+// onCommandLine is ds for a contract tego generated from what the person typed (tego watch -- <command>): they wrote a
+// command line, and a finding at "/tmp/tego-watch-123/watch.yaml:4:7" names a file they never saw, gone by the time they
+// read the line.
+func onCommandLine(ds []agent.Diagnostic) []agent.Diagnostic {
+	out := slices.Clone(ds)
+	for i := range out {
+		out[i].File, out[i].Line, out[i].Col = agent.CommandLineFile, 0, 0
+	}
+	return out
 }
 
 // loadedContract is a run's contract resolved and loaded: the reference it came from (a path, or a name's registry

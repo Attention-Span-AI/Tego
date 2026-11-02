@@ -100,7 +100,11 @@ func Read(path string, g Guard) (*File, error) {
 		return nil, err
 	}
 	defer p.close()
-	return p.read()
+	f, err := p.read()
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("the contract %s is gone: %w", p.path, err) // the openat below knows only the errno
+	}
+	return f, err
 }
 
 // pinned is a contract's directory, opened once with no symlink followed and checked, and the file's name in it.

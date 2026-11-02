@@ -596,3 +596,22 @@ func TestAlternatesAreNotProposed(t *testing.T) {
 		t.Errorf("alternates %d refused %d\n%s", p.Alternates, p.Refused, c)
 	}
 }
+
+// TestRanIsOnTheMonotonicClock: the wall clock can step during a run, and how long the run lasted is not the wall
+// clock's to say: a step back of an hour made the proposal's header read "lasted -1h0m0s" and dropped its wall limit,
+// and a step forward of a day suggested a limit of three days.
+func TestRanIsOnTheMonotonicClock(t *testing.T) {
+	for _, step := range []time.Duration{-time.Hour, 24 * time.Hour} {
+		r := newRun(t, "/w")
+		r.events[0].MonoNS = 1_000_000_000
+		r.end(1<<20, 4, step)
+		r.events[len(r.events)-1].MonoNS = 6_000_000_000
+		p := r.propose(Options{})
+		if p.Ran != 5*time.Second {
+			t.Errorf("wall clock stepped %s: ran %s, want 5s on the monotonic clock", step, p.Ran)
+		}
+		if p.Limits == nil || p.Limits.Wall != "1m" {
+			t.Errorf("wall clock stepped %s: limits %+v, want a wall of 1m", step, p.Limits)
+		}
+	}
+}

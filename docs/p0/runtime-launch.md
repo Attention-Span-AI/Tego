@@ -1053,7 +1053,7 @@ describes its raw numbers.
     (`cleanupReapDNS`; `TestDNSBrokerOrphanCleanupOnRealKernel`, `TestDNSReaperPreservesForeignSocketAndDirectory`).
     No sweep removes that endpoint (network-controls R8), so a reaper killed with its launcher leaves it.
     At tiers `cgroup` and `bpflsm` the run's reaper (step 3, ADR 0020) wakes on the launcher's pidfd,
-    takes the run's lock through the run directory's descriptor (`ledger.OpenAt`), and ends the run at once:
+    takes the run's lock through the run directory's descriptor (`ledger.OpenAt`, which makes nothing there, `ledger.WithExistingFiles`, so a run already being removed stays so), and ends the run at once:
     `cgroup.kill` on the run's own scope (its path and cgroup id both the launcher's), repeated while it stays
     populated, `run_end reason=orphaned`, the scope's removal, and only then the purge of the run's pinned links
     and rows (enforce-cgroup-observe E38) and the build's last-out duties (ADR 0022). A ledger that already has

@@ -37,6 +37,15 @@ func TestDeriveDirReadsTheLedgerSize(t *testing.T) {
 	if s.LedgerBytes != st.Size() || s.LedgerBytes == 0 || s.LedgerCeiling != 1<<30 {
 		t.Fatalf("LedgerBytes %d (file %d), LedgerCeiling %d", s.LedgerBytes, st.Size(), s.LedgerCeiling)
 	}
+	if _, err := w.Blob(make([]byte, 5000)); err != nil {
+		t.Fatal(err)
+	}
+	if s, err = DeriveDir(t.Context(), dir, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if s.LedgerBytes != st.Size()+5000 {
+		t.Fatalf("LedgerBytes with a blob of 5000 = %d, want %d, what the ceiling is compared against", s.LedgerBytes, st.Size()+5000)
+	}
 	if got, want := LedgerLine(&Snapshot{LedgerBytes: 3 << 19, LedgerCeiling: 1 << 30}),
 		"1.5 MiB of 1.0 GiB (record.max_run_bytes)"; got != want {
 		t.Errorf("LedgerLine = %q, want %q", got, want)

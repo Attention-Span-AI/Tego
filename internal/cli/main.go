@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"syscall"
 	"text/tabwriter"
 
@@ -38,6 +39,9 @@ type Command struct {
 	// Passthrough is a command whose exit is the agent's (RUN-IDENTITY.md): what it writes is tego's
 	// advisory output, and a failed write of it never turns that exit into 125 (R25). Only run sets it.
 	Passthrough bool
+	// Supervises is a command whose process keeps a run going for as long as it lives (run, watch, adopt), so a
+	// write to a closed pipe must not end it (holdBrokenPipe).
+	Supervises bool
 	// Raw, set instead of Run and Flags, is a noun tego hands to tego-control (handoff.go): it gets every argument
 	// after the noun verbatim, flags included, and tego parses none of them.
 	Raw func(ctx context.Context, args []string, stdout, stderr io.Writer) int
@@ -71,6 +75,24 @@ func notifyContext() (context.Context, context.CancelFunc) {
 		cancel()
 	}()
 	return ctx, cancel
+}
+
+// brokenPipe is the subscription holdBrokenPipe makes. Nothing reads it: a full channel drops the signal, and a
+// subscription is all the runtime asks about.
+var (
+	brokenPipe     = make(chan os.Signal, 1)
+	brokenPipeOnce sync.Once
+)
+
+// holdBrokenPipe keeps this process alive through a write to a closed pipe on its stdout or stderr, for the commands
+// that supervise a run. The os package ends a process with SIGPIPE on EPIPE from fd 1 or 2 unless the signal is
+// subscribed to, so `tego run agent.yaml 2>&1 | head -1` lost the launcher on the first line tego wrote after head
+// left: the summary replaced the agent's exit code with 141, and a line during the run ended the supervisor under a
+// live agent. tego's own words never decide a run (RUN-IDENTITY.md, "Warnings never change the code"). A subscription,
+// not signal.Ignore: an ignored SIGPIPE survives execve and would reach the agent, which still dies of its own broken
+// pipe, while a caught one reverts to the default there. Process-wide and once, like launch.HoldJobControl.
+func holdBrokenPipe() {
+	brokenPipeOnce.Do(func() { signal.Notify(brokenPipe, syscall.SIGPIPE) })
 }
 
 // mainWith is Main over an explicit command table (tests inject a panicking command).
@@ -126,6 +148,9 @@ func dispatch(ctx context.Context, argv []string, stdout, stderr io.Writer, cmds
 			return identity.ExitOK, false // the usage text is -h's required output
 		}
 		return identity.ExitUsage, false // R25: usage error; the flag package printed the reason and usage
+	}
+	if cmd.Supervises {
+		holdBrokenPipe() // here, past the flags: `tego run -h | head -1` is help text, which ends quietly
 	}
 	return cmd.Run(ctx, fs, stdout, stderr), cmd.Passthrough
 }

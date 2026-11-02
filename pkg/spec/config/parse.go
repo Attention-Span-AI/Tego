@@ -263,13 +263,23 @@ func (p *parser) limits(l *limitsData, v *yaml.Node) {
 			// where it is written.
 			if l.memory.set && l.memory.value == 0 {
 				p.warnf(kv.value, CodeAdvisory, "limits.memory: 0 leaves no memory to any run: each is killed by the OOM killer as it starts")
+			} else if l.memory.set && int64(l.memory.value) < MinStartMemory {
+				p.warnf(kv.value, CodeAdvisory, "limits.memory: %s may not start a run: tego's own stage needs about %s in the run's cgroup before the agent exists",
+					l.memory.value, ByteSize(MinStartMemory))
 			}
 		case "memory_high":
 			l.memoryHigh = p.limitBytes(kv.value, "limits.memory_high")
+			if l.memoryHigh.set && int64(l.memoryHigh.value) < MinStartMemory {
+				p.warnf(kv.value, CodeAdvisory, "limits.memory_high: %s may not start a run: tego's own stage is throttled there before the agent exists",
+					l.memoryHigh.value)
+			}
 		case "pids":
 			l.pids = p.integerIn(kv.value, "limits.pids", 0, PidsMax)
 			if l.pids.set && l.pids.value == 0 {
 				p.warnf(kv.value, CodeAdvisory, "limits.pids: 0 lets no process into a run's cgroup: every run fails to start")
+			} else if l.pids.set && l.pids.value < MinStartPids {
+				p.warnf(kv.value, CodeAdvisory, "limits.pids: %d is below the %d tasks tego's own stage holds in a run's cgroup before the agent exists: every run fails to start",
+					l.pids.value, MinStartPids)
 			}
 		case "tokens":
 			l.tokens = p.integer64(kv.value, "limits.tokens")
@@ -313,6 +323,16 @@ func (p *parser) ask(d *layerData, v *yaml.Node) {
 // PidsMax is the largest pids.max the kernel accepts: PID_MAX_LIMIT on 64-bit. One more is EINVAL at every
 // run's startup, so the machine parser and the contract schema both refuse it where it is written.
 const PidsMax = 4194304
+
+// MinStartPids and MinStartMemory are the least a run's own start takes in the run's cgroup, before the agent exists:
+// the launcher's child stage is a Go process under the run's limits from its first instruction. Measured on
+// 2026-11-01 at tier landlock: pids 5 fails every time and 6 passes, memory 4 MiB fails and 6 MiB passes. The machine
+// parser warns of a ceiling below them where it is written, and the contract compile (agent-contract.md R11) of a
+// limit below them, the contract's or the ceiling's.
+const (
+	MinStartPids   = 6
+	MinStartMemory = 8 << 20
+)
 
 // RingbufMax is the largest record.ringbuf a run accepts: the ring map's max_entries is 32-bit. The parser and
 // the cgroup launcher's validateRingbuf both read it, so a value the launcher refuses never passes the parser.

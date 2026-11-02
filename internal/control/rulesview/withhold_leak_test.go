@@ -3,6 +3,7 @@
 package rulesview
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/attention-span-ai/tego/internal/check/learn"
+	"github.com/attention-span-ai/tego/internal/testutil"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -157,4 +159,51 @@ func TestWithholdLeakDest(t *testing.T) {
 			t.Fatalf("withheld %v:\n%s", got, out)
 		}
 	})
+	t.Run("one address written two ways is named as dests first writes it", func(t *testing.T) {
+		in := proposalText(t, "[::1]:8801")
+		out, got := Withhold(in, []string{"[0:0::1]:8801", "[::1]:8801"})
+		if !slices.Equal(got, []string{"[0:0::1]:8801"}) || strings.Contains(out, `- "tcp://[::1]:8801"`) {
+			t.Fatalf("withheld %v:\n%s", got, out)
+		}
+	})
+	t.Run("a zone is no part of the address learn writes", func(t *testing.T) {
+		const dst = "[fe80::1%eth0]:8801"
+		in := proposalText(t, dst)
+		if !strings.Contains(in, `- "tcp://[fe80::1]:8801"`) {
+			t.Fatalf("fixture lacks the item:\n%s", in)
+		}
+		out, got := Withhold(in, []string{dst})
+		if !slices.Equal(got, []string{dst}) || strings.Contains(out, `- "tcp://[fe80::1]:8801"`) {
+			t.Fatalf("withheld %v:\n%s", got, out)
+		}
+	})
+}
+
+// TestWithholdCostGrowsWithItsDests: a leak's host name can stand for an address per DNS answer, NeverAllow names each,
+// and learn proposes each. Parsing every dest for every item took 16 s at 20,000 addresses, on each request for the
+// leak run's least-privilege page, its download and each new agent made from it.
+func TestWithholdCostGrowsWithItsDests(t *testing.T) {
+	sample := func(n int) func() {
+		dests := []string{"evil.example:443"}
+		var b strings.Builder
+		b.WriteString("version: 0\nname: x\n\nnet:\n  allow:\n")
+		for i := range n {
+			a := fmt.Sprintf("10.%d.%d.%d:443", i>>16&255, i>>8&255, i&255)
+			dests = append(dests, a)
+			fmt.Fprintf(&b, "    - \"tcp://%s\"  # seen once\n", a)
+		}
+		in := b.String()
+		return func() {
+			out, got := Withhold(in, dests)
+			if len(got) != n || got[0] != dests[1] || got[n-1] != dests[n] || !strings.Contains(out, "\n  allow: []\n") {
+				t.Errorf("%d addresses: withheld %d", n, len(got))
+			}
+		}
+	}
+	const small, large = 1_000, 20_000
+	m := testutil.MinOf(testutil.ThreadCPU, 3, sample(small), sample(large))
+	t.Logf("%v at %d dests, %v at %d", m[0], small, m[1], large)
+	if m[1] > 100*m[0]+10*time.Millisecond {
+		t.Errorf("Withhold costs %v at %d dests against %v at %d: its cost grows faster than its dests", m[1], large, m[0], small)
+	}
 }

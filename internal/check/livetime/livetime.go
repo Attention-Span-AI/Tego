@@ -84,8 +84,13 @@ func parseUntil(s string, now time.Time, loc *time.Location) (time.Time, error) 
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t, nil
 	}
-	if t, err := time.ParseInLocation("2006-01-02 15:04", s, loc); err == nil {
-		return t, nil
+	if d, err := time.Parse("2006-01-02 15:04", s); err == nil {
+		// Read as a wall clock, then placed on loc's: a time a change skips or repeats is read as the other forms read it.
+		t := wall(d.Year(), d.Month(), d.Day(), d.Hour(), d.Minute(), loc)
+		if c, ok := firstAfter(t, now, loc); ok {
+			return c, nil
+		}
+		return t, nil // gone: CheckUntil refuses it
 	}
 	fields := strings.Fields(s)
 	local := now.In(loc)
@@ -95,11 +100,12 @@ func parseUntil(s string, now time.Time, loc *time.Location) (time.Time, error) 
 		if err != nil {
 			return time.Time{}, err
 		}
-		t := at(local, 0, h, m, loc)
-		if !t.After(now) {
-			t = at(local, 1, h, m, loc)
+		for days := 0; days < 2; days++ {
+			if t, ok := nextOn(local, days, h, m, now, loc); ok {
+				return t, nil
+			}
 		}
-		return t, nil
+		return at(local, 1, h, m, loc), nil
 	case 2:
 		h, m, err := clock(fields[1])
 		if err != nil {
@@ -107,6 +113,9 @@ func parseUntil(s string, now time.Time, loc *time.Location) (time.Time, error) 
 		}
 		word := strings.ToLower(fields[0])
 		if word == "tomorrow" {
+			if t, ok := nextOn(local, 1, h, m, now, loc); ok {
+				return t, nil
+			}
 			return at(local, 1, h, m, loc), nil
 		}
 		wd, ok := weekdays[word]
@@ -116,11 +125,12 @@ func parseUntil(s string, now time.Time, loc *time.Location) (time.Time, error) 
 		// The next instant on that weekday's clock strictly after now: today's when it is that weekday and still
 		// ahead, else the coming one.
 		ahead := (int(wd) - int(local.Weekday()) + 7) % 7
-		t := at(local, ahead, h, m, loc)
-		if !t.After(now) {
-			t = at(local, ahead+7, h, m, loc)
+		for _, days := range [...]int{ahead, ahead + 7} {
+			if t, ok := nextOn(local, days, h, m, now, loc); ok {
+				return t, nil
+			}
 		}
-		return t, nil
+		return at(local, ahead+7, h, m, loc), nil
 	}
 	return time.Time{}, errors.New("not a time this reads")
 }
@@ -139,11 +149,77 @@ func clock(s string) (h, m int, err error) {
 	return h, m, nil
 }
 
-// at is h:m on the day days after local's, on loc's clock (time.Date normalizes a time a daylight-saving change
-// skips).
+// at is h:m on the day days after local's, on loc's clock (wall).
 func at(local time.Time, days, h, m int, loc *time.Location) time.Time {
-	return time.Date(local.Year(), local.Month(), local.Day()+days, h, m, 0, 0, loc)
+	return wall(local.Year(), local.Month(), local.Day()+days, h, m, loc)
 }
+
+// wall is an instant loc's clock reads y-mo-d h:m at (time.Date's, which picks either one in an hour a change back to
+// standard time repeats: firstAfter chooses between them), or, for a time a change to summer time skips, the first
+// instant after the skip: the moment the clock passes h:m. time.Date moves a skipped time by the skip, forward east
+// of Greenwich and back west of it, so "--until 02:30" on New York's spring-forward day was 01:30, an hour before
+// the clock read anything past 02:00.
+func wall(y int, mo time.Month, d, h, m int, loc *time.Location) time.Time {
+	t := time.Date(y, mo, d, h, m, 0, 0, loc)
+	want := time.Date(y, mo, d, h, m, 0, 0, time.UTC)
+	lt := t.In(loc)
+	read := time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), lt.Minute(), 0, 0, time.UTC)
+	if read.Equal(want) {
+		return t
+	}
+	// The clock never reads h:m that day: t is on one side of the skip, and the change is t's zone's edge on the
+	// other side of it.
+	start, end := t.ZoneBounds()
+	edge := start
+	if read.Before(want) {
+		edge = end
+	}
+	if edge.IsZero() {
+		return t
+	}
+	return edge
+}
+
+// nextOn is the first instant after now that loc's clock reads h:m on the day days after local's, and whether there
+// is one. A change back to standard time reads the hour before it twice, and time.Date picks either of the two
+// instants: at 01:40 on the second pass through the hour, "--until 01:50" was the first 01:50, already gone, so the limit
+// landed a day later, and on the first pass in a zone east of Greenwich it landed on the second 01:50, an hour late.
+func nextOn(local time.Time, days, h, m int, now time.Time, loc *time.Location) (time.Time, bool) {
+	return firstAfter(at(local, days, h, m, loc), now, loc)
+}
+
+// firstAfter is the earlier of t and its clockTwin that is after now, and whether either is.
+func firstAfter(t, now time.Time, loc *time.Location) (time.Time, bool) {
+	first, ok := time.Time{}, false
+	for _, c := range [...]time.Time{t, clockTwin(t, loc)} {
+		if c.After(now) && (!ok || c.Before(first)) {
+			first, ok = c, true
+		}
+	}
+	return first, ok
+}
+
+// clockTwin is the other instant loc's clock reads the same hour and minute as t, or t itself when there is none: the
+// reading of a zone change's repeated hour on its other pass.
+func clockTwin(t time.Time, loc *time.Location) time.Time {
+	t = t.In(loc)
+	_, offset := t.Zone()
+	start, end := t.ZoneBounds()
+	for _, edge := range [...]time.Time{start.Add(-time.Nanosecond), end} {
+		if edge.Before(minClockTime) {
+			continue // the zone has no change on this side
+		}
+		_, other := edge.In(loc).Zone()
+		c := t.Add(time.Duration(offset-other) * time.Second).In(loc)
+		if c.Hour() == t.Hour() && c.Minute() == t.Minute() && c.Day() == t.Day() {
+			return c
+		}
+	}
+	return t
+}
+
+// minClockTime is before every time a limit is set at, so a ZoneBounds zero time (no change on that side) falls below it.
+var minClockTime = time.Unix(0, 0)
 
 // Describe says the instant t, seen at now in loc, as the limit of a change: "until Fri 31 Oct 17:00 (in 3 days)",
 // the year added when it is not now's, "(passed)" when it has come. An instant less than an hour away that is not

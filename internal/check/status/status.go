@@ -118,7 +118,8 @@ type Snapshot struct {
 	Ended             bool
 	Resources         *record.Resources
 	ResourcesRecorded json.RawMessage
-	// LedgerBytes is the size of the run's events.jsonl when DeriveDir read it, 0 when it did not (Derive alone).
+	// LedgerBytes is the size of the run's events.jsonl and blobs when DeriveDir read them, 0 when it did not
+	// (Derive alone).
 	// LedgerCeiling is run_start.limits.ledger_bytes, the machine's record.max_run_bytes the run started under, 0 for
 	// none (record.MinorLedgerCap). LedgerLine renders both.
 	LedgerBytes, LedgerCeiling int64
@@ -470,12 +471,12 @@ func DeriveDir(ctx context.Context, dir string, now time.Time) (*Snapshot, error
 	}
 	// After the read, so the size is at least what was read; a ledger still growing is larger by now.
 	if st, err := os.Stat(filepath.Join(dir, ledger.EventsFile)); err == nil {
-		s.LedgerBytes = st.Size()
+		s.LedgerBytes = st.Size() + ledger.BlobsSize(dir)
 	}
 	return s, nil
 }
 
-// LedgerLine is the ledger line under status's table: how large the run's events.jsonl is, and the
+// LedgerLine is the ledger line under status's table: how large the run's events.jsonl and blobs are, and the
 // record.max_run_bytes ceiling that ends the run as a limit when it reaches it, or "no ceiling".
 func LedgerLine(s *Snapshot) string {
 	if s.LedgerCeiling > 0 {

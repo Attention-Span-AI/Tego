@@ -99,6 +99,11 @@ func cmdAgents() Command {
 				message(stderr, "", 0, 0, "tego agents: --adopt needs --follow", codeUsage)
 				return identity.ExitUsage
 			}
+			if boundary == "" && flagGiven(fs, "boundary") {
+				// An unset "$CONTRACT" would otherwise adopt every agent record-only, no rule refusing anything.
+				message(stderr, "", 0, 0, "tego agents: --boundary is an empty string; name a contract, or leave --boundary out to only record", codeUsage)
+				return identity.ExitUsage
+			}
 			if !adoptAll && (len(uids) > 0 || boundary != "" || recordMode != "") {
 				message(stderr, "", 0, 0, "tego agents: --uid, --boundary and --record need --adopt", codeUsage)
 				return identity.ExitUsage

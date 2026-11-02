@@ -323,7 +323,7 @@ func TestStandardDevicesAreRoutine(t *testing.T) {
 		{"shared memory", Group{Class: "fs", Subject: "/dev/shm/x", Event: Event{Rule: "unmatched"}}, false},
 		{"a contract entry", Group{Class: "fs", Subject: "/dev/tty", Event: Event{Rule: "fs.deny_read[/dev/tty]"}}, false},
 	} {
-		classify(&c.g, nil, nil)
+		classify(&c.g, nil, nil, nil)
 		if c.g.Background != c.want {
 			t.Errorf("%s: background %v, want %v", c.name, c.g.Background, c.want)
 		}
@@ -663,6 +663,28 @@ func TestPortCostGrowsWithItsPorts(t *testing.T) {
 				if s.SeverityOf(&evs[i]) != SevHigh {
 					t.Fatalf("line %d reads %v", i, s.SeverityOf(&evs[i]))
 				}
+			}
+		}
+	})
+}
+
+// TestNameAddressCostGrowsWithItsAddresses: a host name whose DNS the agent controls can answer with a new address on
+// each lookup, and the destination keyed by that name lists each address once. Scanning the list for each line took
+// 2 s at 40,000 addresses, on every cold Signal of the run.
+func TestNameAddressCostGrowsWithItsAddresses(t *testing.T) {
+	linearCost(t, "listing the addresses behind one name", func(n int) func() {
+		evs := make([]Event, 0, n+1)
+		for i := range n {
+			evs = append(evs, Event{Kind: "net", Op: "connect", Verdict: "observed", Rule: "unmatched",
+				Target: fmt.Sprintf("evil.example (10.%d.%d.%d:443)", i>>16&255, i>>8&255, i&255)})
+		}
+		evs = append(evs, evs[0]) // an address seen again is listed once
+		return func() {
+			f := newSignalFold(Sensitive{})
+			f.add(evs)
+			if len(f.outbound) != 1 || f.outbound[0].Key != "evil.example:443" || len(f.outbound[0].Addrs) != n ||
+				f.outbound[0].Observed != n+1 {
+				t.Errorf("%d addresses read as %d destinations", n, len(f.outbound))
 			}
 		}
 	})

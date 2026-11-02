@@ -199,6 +199,10 @@ func driftReport(ctx context.Context, dir string, mc *machineOnce, stderr io.Wri
 	if rep.Run == "" {
 		rep.Run = filepath.Base(dir)
 	}
+	// status.Lost's test: a lock that cannot be read says nothing, so such a run is not called cut off.
+	if held, err := ledger.LockHeld(dir); err == nil {
+		rep.CutOff = !rep.Ended && !held
+	}
 	return rep, nil
 }
 
@@ -364,7 +368,9 @@ type driftJSON struct {
 	// UnobservableMCP and Gaps were added after the rest: --json gains keys and never renames one.
 	UnobservableMCP []string  `json:"unobservable_mcp"`
 	Gaps            []gapJSON `json:"gaps"`
-	Drift           bool      `json:"drift"`
+	// GapWords is what those gaps mean in a person's words (gaps.Words, the table's "in words:" line), as in status.
+	GapWords string `json:"gap_words,omitempty"`
+	Drift    bool   `json:"drift"`
 	// UnobservableFS: deny_read and watch entries a run without read records could not see used
 	// (R14).
 	UnobservableFS []string `json:"unobservable_fs"`
@@ -472,7 +478,13 @@ func writeDrift(w io.Writer, rep *drift.Report, skipped []string, asJSON bool) e
 		return err
 	}
 	if len(live) > 0 {
-		_, err := fmt.Fprintf(w, "live changes: %s\n", gaps.Line(live))
+		if _, err := fmt.Fprintf(w, "live changes: %s\n", gaps.Line(live)); err != nil {
+			return err
+		}
+	}
+	// Those two lines give the kinds as the record spells them; this one says what they mean, as status does.
+	if words := gaps.Words(rep.Gaps, rep.CutOff); words != "" {
+		_, err := fmt.Fprintf(w, "in words: %s\n", words)
 		return err
 	}
 	return nil
@@ -535,7 +547,7 @@ func driftObject(rep *drift.Report) driftJSON {
 		ContractHash: rep.ContractHash, CurrentHash: rep.CurrentHash, HashChanged: rep.HashChanged, DeclaredUnknown: rep.DeclaredUnknown,
 		Actions: rep.Actions, Rules: []driftRuleJSON{},
 		Undone: []string{}, UnusedMCP: []string{}, UnobservableMCP: []string{}, UnobservableFS: []string{}, UnobservableRecord: []string{},
-		Skipped: []string{}, Gaps: gapObjects(rep.Gaps), Drift: rep.Drifted(),
+		Skipped: []string{}, Gaps: gapObjects(rep.Gaps), GapWords: gaps.Words(rep.Gaps, rep.CutOff), Drift: rep.Drifted(),
 	}
 	for _, h := range rep.Hashes {
 		o.Hashes = append(o.Hashes, driftHashJSON{Hash: h.Hash, Runs: h.Runs})

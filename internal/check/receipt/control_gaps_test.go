@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	_ "time/tzdata" // a machine with no zone database still has America/New_York
 
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -145,6 +146,52 @@ func TestCaptureGapMakesTokensAFloor(t *testing.T) {
 	f = coverageFields(compute(t, pausedAndBlockedRun(gap), Options{}))
 	if _, ok := f["tokens.capture"]; ok || f["tokens"] == "" {
 		t.Errorf("capture off: coverage = %v", f)
+	}
+}
+
+// TestTextNamesTheZoneOfTheTimesItLists: a zone's name belongs to an instant, so a receipt read after a daylight-saving
+// change said EST over the EDT times of a run from before it, and one that crossed the change had one word for two
+// offsets. The dates are fixed, so one of the two cases fails on any day the heading reads the clock.
+func TestTextNamesTheZoneOfTheTimesItLists(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := receiptClock
+	t.Cleanup(func() { receiptClock = saved })
+	receiptClock = func() *time.Location { return ny }
+	text := func(stamps ...time.Time) string {
+		t.Helper()
+		rc := &Receipt{V: Version, Run: "r-x", Ended: true}
+		rc.Refusals.Total = len(stamps)
+		for _, ts := range stamps {
+			rc.Refusals.List = append(rc.Refusals.List, Refusal{TS: ts, Op: "connect", Target: "127.0.0.1:9722", Rule: "unmatched", Reason: "net-not-allowed"})
+			rc.Asks.List = append(rc.Asks.List, Ask{TS: ts, Op: "read", Target: "/p/token", Answer: "approved"})
+		}
+		rc.Asks.Asked, rc.Asks.Approved = len(stamps), len(stamps)
+		var b bytes.Buffer
+		if err := rc.Text(&b); err != nil {
+			t.Fatal(err)
+		}
+		return b.String()
+	}
+	for _, tc := range []struct {
+		at   time.Time
+		zone string
+	}{{time.Date(2026, 7, 1, 16, 0, 0, 0, time.UTC), "EDT"}, {time.Date(2026, 1, 15, 17, 0, 0, 0, time.UTC), "EST"}} {
+		out := text(tc.at)
+		for _, want := range []string{"\nRefused actions (times in " + tc.zone + ")\n", "\nTimes it asked you (times in " + tc.zone + ")\n", "    12:00:00  connect"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("a run at %s lacks %q:\n%s", tc.at, want, out)
+			}
+		}
+	}
+	// 01:59:59 EDT, then 01:00:01 EST two seconds later.
+	out := text(time.Date(2026, 11, 1, 5, 59, 59, 0, time.UTC), time.Date(2026, 11, 1, 6, 0, 1, 0, time.UTC))
+	for _, want := range []string{"\nRefused actions (times in EDT)\n", "    01:59:59  connect", "    01:00:01 EST  connect", "    01:00:01 EST  read"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("a run across the change lacks %q:\n%s", want, out)
+		}
 	}
 }
 

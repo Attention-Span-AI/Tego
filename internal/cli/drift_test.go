@@ -9,7 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/sys/unix"
+
+	"github.com/attention-span-ai/tego/internal/check/drift"
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
@@ -107,6 +111,8 @@ func TestDriftAgainstTheFixture(t *testing.T) {
 		"unused mcp servers: mcp[postgres]",
 		// What the record could not see, under the verdict it qualifies
 		"gaps: capture/no-openssl x1 (in /usr/bin/gh); record/channel-full x1 (12 events lost)",
+		// The same gaps in words, as status and the receipt say them.
+		"in words: 1 gap in the record (counts are a minimum, 12 events lost); token counts may be low (1 capture gap)",
 	} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("table lacks %q:\n%s", want, out)
@@ -117,6 +123,60 @@ func TestDriftAgainstTheFixture(t *testing.T) {
 	// and stay out of the report unless the run used them.
 	if strings.Contains(flat, "fs.deny_read[/") || strings.Contains(flat, "exec[sh]") {
 		t.Errorf("compiler-added entries leaked into the report:\n%s", out)
+	}
+}
+
+// TestDriftLostRunClaimsNothingMissing is TestStatusLostRunClaimsNothingMissing for drift: a run with no run_end and no
+// launcher may stop short of what it did, whatever its gap lines say, in the words and in --json, and in a sum holding
+// it. One still running has a launcher, so it is no such run.
+func TestDriftLostRunClaimsNothingMissing(t *testing.T) {
+	const words = "1 gap in the record (counts are a minimum, 12 events lost); " +
+		"the record has no end, so it may stop short of what the run did; token counts may be low (1 capture gap)"
+	dir := fixtureRun(t)
+	events := filepath.Join(dir, ledger.EventsFile)
+	data, err := os.ReadFile(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kept []string
+	for _, l := range strings.SplitAfter(string(data), "\n") {
+		if !strings.Contains(l, `"kind":"run_end"`) {
+			kept = append(kept, l)
+		}
+	}
+	if err := os.WriteFile(events, []byte(strings.Join(kept, "")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, out, errs := run(t, "drift", dir)
+	if !strings.Contains(out, "\nin words: "+words+"\n") {
+		t.Errorf("drift of a lost run:\n%s\n%s\nwant in words: %s", out, errs, words)
+	}
+	_, out, _ = run(t, "drift", dir, "--json")
+	var got driftJSON
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.GapWords != words {
+		t.Errorf("gap_words %q, want %q", got.GapWords, words)
+	}
+	rep, err := drift.Aggregate([]*drift.Report{{Agent: "a", CutOff: true}, {Agent: "a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.CutOff {
+		t.Error("a sum holding a lost run reads as whole")
+	}
+	lock, err := os.OpenFile(filepath.Join(dir, ledger.LockFile), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = lock.Close() }()
+	if err := sys.Flock(lock, unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ = run(t, "drift", dir)
+	if strings.Contains(out, "no end") {
+		t.Errorf("drift of a run whose launcher holds its lock:\n%s", out)
 	}
 }
 

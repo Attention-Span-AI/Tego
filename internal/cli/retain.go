@@ -72,10 +72,9 @@ func retainBeforeRun(ctx context.Context, m *config.Machine, stderr io.Writer) {
 // began every or longer ago (every 0: whenever), and then the stamp says now and release ends the claim. A root that
 // does not exist, a stamp that is a link or not a regular file, or one another pass holds is no claim.
 func claimRetention(root string, every time.Duration, now time.Time) (release func(), ok bool) {
-	f, err := os.OpenFile(filepath.Join(root, retentionStamp),
-		os.O_RDWR|os.O_CREATE|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0o600)
+	f, err := openRetentionStamp(root, every, now)
 	if err != nil {
-		if !errors.Is(err, fs.ErrNotExist) {
+		if !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, errStampFresh) {
 			logOwn("retention: " + err.Error())
 		}
 		return nil, false
@@ -93,7 +92,7 @@ func claimRetention(root string, every time.Duration, now time.Time) (release fu
 	if err != nil || !st.Mode().IsRegular() {
 		return nil, false
 	}
-	if age := now.Sub(st.ModTime()); every > 0 && st.Size() > 0 && age >= 0 && age < every {
+	if stampFresh(st, every, now) {
 		return nil, false
 	}
 	if err := f.Truncate(0); err != nil {
@@ -105,14 +104,54 @@ func claimRetention(root string, every time.Duration, now time.Time) (release fu
 		return nil, false
 	}
 	// A root launcher's stamp in the invoking user's ledger root is handed to the root's owner, as a run directory
-	// is, or that user's next start could not open it and would never run a pass again.
+	// is. A hand-over that fails costs that user nothing: openRetentionStamp replaces a stamp it cannot open.
 	if os.Geteuid() == 0 {
 		if rs, err := os.Stat(root); err == nil {
 			if o, ok := rs.Sys().(*syscall.Stat_t); ok && o.Uid != 0 {
-				_ = f.Chown(int(o.Uid), int(o.Gid))
+				if err := f.Chown(int(o.Uid), int(o.Gid)); err != nil {
+					logOwn("retention: stamp: " + err.Error())
+				}
 			}
 		}
 	}
 	keep = true
 	return func() { _ = f.Close() }, true
+}
+
+// errStampFresh is a stamp this process may not open, written inside the interval: a pass ran, so none is due.
+var errStampFresh = errors.New("retention stamp is inside gc_interval")
+
+// stampFresh says the stamp was written less than every ago. A stamp with nothing in it never counts: the pass that
+// made it died before writing it.
+func stampFresh(st fs.FileInfo, every time.Duration, now time.Time) bool {
+	age := now.Sub(st.ModTime())
+	return every > 0 && st.Size() > 0 && age >= 0 && age < every
+}
+
+// openRetentionStamp opens the ledger root's stamp, making it if it is not there. A stamp this process may not open
+// is another uid's: a root pass that died before its hand-over, or whose chown failed. The stamp only spaces the
+// passes, and the owner of the ledger root may unlink it, so a due one is replaced rather than leaving that user's
+// starts without a pass from then on. One inside the interval is left alone, which also leaves alone a root pass
+// that has just made it. A `tego gc` (every 0) replaces it whatever its age, and may then run beside that pass; each
+// run's own lock keeps two passes off the same run.
+func openRetentionStamp(root string, every time.Duration, now time.Time) (*os.File, error) {
+	path := filepath.Join(root, retentionStamp)
+	open := func() (*os.File, error) {
+		return os.OpenFile(path, os.O_RDWR|os.O_CREATE|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0o600)
+	}
+	f, err := open()
+	if !errors.Is(err, fs.ErrPermission) {
+		return f, err
+	}
+	st, serr := os.Lstat(path)
+	if serr != nil || !st.Mode().IsRegular() {
+		return nil, err // the root itself is closed to this user, or the name is no stamp
+	}
+	if stampFresh(st, every, now) {
+		return nil, errStampFresh
+	}
+	if rerr := os.Remove(path); rerr != nil {
+		return nil, errors.Join(err, rerr)
+	}
+	return open()
 }

@@ -7,7 +7,9 @@ package supervisor
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -301,15 +303,65 @@ func TestScanDirOnTheRealKernel(t *testing.T) {
 	}
 }
 
-// TestMutationMayRun reads /proc for a pending mutation's thread: this goroutine's thread, running, may; a thread
-// that does not exist may not.
+// TestMutationMayRun reads /proc for a pending mutation's thread: one asleep in the syscall it was notified for may
+// still run it, one asleep in another syscall has left it behind, and one that does not exist may not run it.
+//
+// The thread asked about is not the one asking. A thread that reads its own /proc/<tid>/syscall is answered with
+// that read(2) (task_current_syscall reports the current task's syscall as it runs), and read's number is the
+// architecture's: 0 on x86-64, which is why asking about this goroutine's own thread with nr 0 once passed there,
+// and 63 on arm64, where the same question read as a thread gone to another syscall. The supervisor only ever asks
+// about the run's threads, never its own.
 func TestMutationMayRun(t *testing.T) {
-	if !mutationMayRun(unix.Gettid(), 0) {
-		t.Error("a running thread was taken as done")
+	var p [2]int
+	if err := unix.Pipe2(p[:], unix.O_CLOEXEC); err != nil {
+		t.Fatal(err)
 	}
-	if mutationMayRun(1<<30, 0) {
+	tids := make(chan int, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runtime.LockOSThread() // left locked: the thread ends with the goroutine
+		tids <- unix.Gettid()
+		var b [1]byte
+		_, _ = unix.Read(p[0], b[:]) // asleep in read(2) on an empty pipe until its write end closes
+	}()
+	tid := <-tids
+	defer func() {
+		_ = unix.Close(p[1])
+		<-done
+		_ = unix.Close(p[0])
+	}()
+	// The thread is in other syscalls on its way (the channel send's futex): wait for it to sleep in the read.
+	for deadline := time.Now().Add(10 * time.Second); syscallOf(t, tid) != unix.SYS_READ; time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("thread %d did not sleep in read(2) within 10s", tid)
+		}
+	}
+	if !mutationMayRun(tid, unix.SYS_READ) {
+		t.Error("a thread asleep in the notified syscall was taken as done")
+	}
+	if mutationMayRun(tid, unix.SYS_UNLINKAT) {
+		t.Error("a thread asleep in another syscall may still run the notified one")
+	}
+	if mutationMayRun(1<<30, unix.SYS_UNLINKAT) {
 		t.Error("a thread that does not exist may still run")
 	}
+}
+
+// syscallOf is the syscall number /proc/<tid>/syscall names for a blocked thread, or -1 for one it names none for
+// (a running thread, one blocked outside a syscall).
+func syscallOf(t *testing.T, tid int) int {
+	t.Helper()
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(tid) + "/syscall")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, _, _ := strings.Cut(strings.TrimSpace(string(b)), " ")
+	n, err := strconv.Atoi(f)
+	if err != nil {
+		return -1
+	}
+	return n
 }
 
 // TestWalkCacheSeesASymlinkTheRunPlants runs the cache over the real kernel's scans and walks: a file read once

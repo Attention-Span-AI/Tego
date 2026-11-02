@@ -440,6 +440,13 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 					fix("mkdir -p %s", filepath.Dir(p))
 				continue
 			}
+			// A link to nothing stats as missing, but the run's mkdir finds the name taken: it passed here and the run
+			// stopped on "path vanished since compile", for a path that never existed.
+			if fi, lerr := os.Lstat(p); lerr == nil && fi.Mode()&fs.ModeSymlink != 0 {
+				k.ds.errorf(pos, CodePathMissing, "fs.write %q: %s is a symbolic link to nothing, and a run creates a directory, not a link's target", raw, p).
+					fix("create what the link names, or remove the link and let the run create the directory")
+				continue
+			}
 			r.Missing = true
 			if pfi, perr := os.Lstat(filepath.Dir(r.Resolved)); perr == nil {
 				b.meta(&r, pfi, r.Resolved, pos)

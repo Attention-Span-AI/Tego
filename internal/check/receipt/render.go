@@ -18,10 +18,23 @@ import (
 // RFC 3339 UTC.
 var receiptClock = func() *time.Location { return time.Local }
 
-// timesIn is the suffix a heading over a list of times carries: the zone those times are printed in.
-func timesIn(loc *time.Location) string {
-	zone, _ := time.Now().In(loc).Zone()
+// timesIn is the suffix a heading over a list of times carries: the zone those times are printed in, the one their
+// first time falls in, since a zone's name belongs to an instant (a receipt read after a daylight-saving change said
+// EST over the EDT times of a run from before it).
+func timesIn(first time.Time, loc *time.Location) string {
+	zone, _ := first.In(loc).Zone()
 	return " (times in " + zone + ")"
+}
+
+// timeIn is the listed time ts under a heading timesIn(first) made, naming its own zone when a run crossed a
+// daylight-saving change and ts is on the other side of it.
+func timeIn(ts, first time.Time, loc *time.Location) string {
+	local := ts.In(loc)
+	zone, _ := local.Zone()
+	if head, _ := first.In(loc).Zone(); zone != head {
+		return local.Format("15:04:05") + " " + zone
+	}
+	return local.Format("15:04:05")
 }
 
 // maxListed is how many paths, refusals and asks the terminal layout lists before "and N more".
@@ -92,7 +105,7 @@ func (rc *Receipt) Text(w io.Writer) error {
 	loc := receiptClock()
 	rf := rc.Refusals
 	if len(rf.List) > 0 {
-		b.WriteString("\nRefused actions" + timesIn(loc) + "\n")
+		b.WriteString("\nRefused actions" + timesIn(rf.List[0].TS, loc) + "\n")
 	} else {
 		b.WriteString("\nRefused actions\n")
 	}
@@ -108,7 +121,7 @@ func (rc *Receipt) Text(w io.Writer) error {
 				fmt.Fprintf(&b, "    and %d more; tego events %s --verdict refused lists them all\n", rf.Total-maxListed, p(rc.Run))
 				break
 			}
-			fmt.Fprintf(&b, "    %s  %s %s  %s (%s)\n", r.TS.In(loc).Format("15:04:05"), p(r.Op), p(cutMiddle(rc.shortTarget(r.Target), 70)),
+			fmt.Fprintf(&b, "    %s  %s %s  %s (%s)\n", timeIn(r.TS, rf.List[0].TS, loc), p(r.Op), p(cutMiddle(rc.shortTarget(r.Target), 70)),
 				p(rc.RuleWords(r.Rule)), p(r.Reason))
 		}
 	}
@@ -140,7 +153,7 @@ func (rc *Receipt) Text(w io.Writer) error {
 
 	a := rc.Asks
 	if len(a.List) > 0 {
-		b.WriteString("\nTimes it asked you" + timesIn(loc) + "\n")
+		b.WriteString("\nTimes it asked you" + timesIn(a.List[0].TS, loc) + "\n")
 	} else {
 		b.WriteString("\nTimes it asked you\n")
 	}
@@ -158,7 +171,7 @@ func (rc *Receipt) Text(w io.Writer) error {
 			if ans == "" {
 				ans = "not answered"
 			}
-			fmt.Fprintf(&b, "    %s  %s %s  %s", q.TS.In(loc).Format("15:04:05"), p(q.Op), p(cutMiddle(rc.shortTarget(q.Target), 60)), ans)
+			fmt.Fprintf(&b, "    %s  %s %s  %s", timeIn(q.TS, a.List[0].TS, loc), p(q.Op), p(cutMiddle(rc.shortTarget(q.Target), 60)), ans)
 			if q.By != "" {
 				fmt.Fprintf(&b, " by %s after %ss", p(q.By), strconv.FormatFloat(q.AfterS, 'f', 1, 64))
 			}

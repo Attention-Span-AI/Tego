@@ -41,7 +41,7 @@ var advisoryNameOps = []struct {
 // a name. Run on the table's index and on the scans.
 func TestAdvisoryFSNameMatchesEvaluateAtCgroup(t *testing.T) {
 	bad, decided := 0, 0
-	genNameTables(func(desc string, rt, bare *agent.RuleTable) {
+	genNameTables(sampledNames(func(desc string, rt, bare *agent.RuleTable) {
 		rt.Tier, bare.Tier = backend.TierCgroup, backend.TierCgroup
 		// The spelling against both spellings' list (the supervisor's first verdict), by index and by scan, and the end
 		// where it lands against the resolved list (decideFS's verdict again at the walk's landing).
@@ -95,7 +95,7 @@ func TestAdvisoryFSNameMatchesEvaluateAtCgroup(t *testing.T) {
 				}
 			}
 		}
-	})
+	}))
 	if decided == 0 {
 		t.Fatal("no name entry decided any end: the property asked nothing")
 	}

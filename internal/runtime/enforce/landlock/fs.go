@@ -54,8 +54,11 @@ func (bd *builder) writeEntry(r agent.FSRule) error {
 	if err == nil || !r.Missing || !errors.Is(err, ErrPathVanished) {
 		return err
 	}
-	if merr := bd.mkdirWrite(r.Path); merr != nil && !errors.Is(merr, os.ErrExist) {
-		return fmt.Errorf("%w: creating write entry %q: %w", ErrPathVanished, r.Path, merr)
+	if merr := bd.mkdirWrite(r.Path); errors.Is(merr, os.ErrNotExist) {
+		return fmt.Errorf("%w: creating write entry %q: %w", ErrPathVanished, r.Path, merr) // its parent went
+	} else if merr != nil && !errors.Is(merr, os.ErrExist) {
+		// A parent this user may not write into: nothing vanished, and saying so sent the reader to the wrong place.
+		return fmt.Errorf("landlock: creating write entry %q: %w", r.Path, merr)
 	}
 	_, err = bd.hold(r.Path, kindWrite, bd.writeMask(r))
 	return err

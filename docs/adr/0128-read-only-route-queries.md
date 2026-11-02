@@ -120,7 +120,11 @@ There is no contract key to turn the read off, because it would be a promise the
 - **A socket the run did not make** (inherited, or received over a unix socket from something outside) is not bound by
   decision 3: its unaddressed sends reach the kernel as that protocol. Decision 4 still applies to its sender.
 - **`net.assurance: kernel`** answers `recvmsg` `ENOSYS` (its connected-socket import rule), and glibc reads a netlink
-  reply with `recvmsg`, so interface lists keep failing in that mode. Not changed here, and not tested at that assurance.
+  reply with `recvmsg`, so its interface lists keep failing in that mode: `if_nameindex` and `getifaddrs` fail `ENOSYS`, and
+  Node's `os.networkInterfaces()` throws. `AI_ADDRCONFIG` takes the failure as "both families" and `getaddrinfo` goes on.
+  What reads with `recvfrom` works: `recv(2)`, and Go's `net.Interfaces`. Not changed here: the filter cannot read a
+  `msghdr`, so it cannot tell a route socket's reply from a unix socket's `SCM_RIGHTS`, and a supervisor's `CONTINUE`
+  leaves the descriptor number a sibling can `dup2` over. See the implementation note of 2026-11-01 below.
 - **`io_uring: true`** sends are not notified, so they are in the unaddressed row above. At a tier where it is admitted
   the plane's `socket_create` holds decision 3.
 - **A daemon can change the network for an agent** (NetworkManager over the system bus, `tailscaled`, Docker). That is
@@ -156,3 +160,9 @@ There is no contract key to turn the read off, because it would be a promise the
   decision 4 taken out the setuid-root probe under a `net:` section puts `10.77.0.1/32` on `lo` by `send(2)`, which is what
   a `net:` section allowed before this ADR. The root test ran in a KVM guest on 6.17 at tiers cgroup and bpflsm, on the
   `bpf` boot. The fmod_ret and fanotify planes ran only the socket cells (`planeStepBCells`), not this test.
+- 2026-11-01 (later): Go's own `net.Interfaces` and `net.InterfaceAddrs`, named above and until now run only as python3's
+  copy of their bytes, run under `net: {}`, a listener policy and no `net:` section at tier landlock
+  (`TestIntegrationGoInterfaces`, workload `test/workloads/ifaces`). `TestStrictFilterInterfaceLists` holds the
+  `net.assurance: kernel` residual on the real kernel, under the real filter, with no root: a listener continues the
+  filter's other arms, as the supervisor would. It is the filter alone: no root-tier run of that assurance was made. Every
+  contract's Always on rules now say a run reads this (`built-in.route-read`, rule `route-query`).

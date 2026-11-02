@@ -172,9 +172,11 @@ type Learner struct {
 	run   struct {
 		id, agent string
 		ts        time.Time
+		mono      uint64
 	}
-	end   *record.RunEndPayload
-	endTS time.Time
+	end     *record.RunEndPayload
+	endTS   time.Time
+	endMono uint64
 
 	execs      map[string]*execStat
 	pending    map[string]pendingExec
@@ -229,7 +231,7 @@ func (l *Learner) Add(e *record.Event) error {
 			return fmt.Errorf("learn: run_start: %w", err)
 		}
 		l.start = &p
-		l.run.id, l.run.agent, l.run.ts = e.Run, e.Agent, e.TS
+		l.run.id, l.run.agent, l.run.ts, l.run.mono = e.Run, e.Agent, e.TS, e.MonoNS
 	case record.KindRunEnd:
 		if l.end != nil {
 			return nil
@@ -238,7 +240,7 @@ func (l *Learner) Add(e *record.Event) error {
 		if err := e.DecodePayload(&p); err != nil {
 			return fmt.Errorf("learn: run_end: %w", err)
 		}
-		l.end, l.endTS = &p, e.TS
+		l.end, l.endTS, l.endMono = &p, e.TS, e.MonoNS
 	case record.KindRefused:
 		if !mirrored {
 			l.refused++
@@ -580,8 +582,8 @@ func (l *Learner) Proposal() (*Proposal, error) {
 	}
 	if l.end != nil {
 		p.Ended, p.EndReason, p.ExitCode = true, l.end.Reason, l.end.ExitCode
-		p.Ran = roundRan(l.endTS.Sub(l.run.ts))
-		p.Limits = suggestLimits(l.end, l.endTS.Sub(l.run.ts))
+		p.Ran = roundRan(l.ran())
+		p.Limits = suggestLimits(l.end, l.ran())
 	}
 	l.proposeWrites(p, ws)
 	l.proposeExecs(p, first)
@@ -589,6 +591,16 @@ func (l *Learner) Proposal() (*Proposal, error) {
 	sortLeft(p.Left)
 	p.Truncated = p.Truncated || l.leak.truncated
 	return p, nil
+}
+
+// ran is how long the run lasted: on the monotonic clock, as tego measure says, since the wall clock can step during a
+// run (NTP, a suspended laptop's correction) and the proposal then said "lasted -59m" or suggested a wall limit a day
+// long. A ledger with no monotonic reading (E20) falls back on the wall clock.
+func (l *Learner) ran() time.Duration {
+	if l.run.mono > 0 && l.endMono > l.run.mono {
+		return time.Duration(l.endMono - l.run.mono)
+	}
+	return l.endTS.Sub(l.run.ts)
 }
 
 // roundRan is how long the run lasted, for a person: to a tenth of a second, or to the hundredth under one second.

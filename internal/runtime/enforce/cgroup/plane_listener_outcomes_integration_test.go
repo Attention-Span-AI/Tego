@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 )
 
 const listenerOutcomesAgent = `import errno, os, socket
@@ -152,6 +154,10 @@ func TestPlaneRunIOUringListenerOutcomes(t *testing.T) {
 	if b, err := os.ReadFile("/proc/sys/kernel/io_uring_disabled"); err == nil && strings.TrimSpace(string(b)) != "0" {
 		t.Skipf("kernel.io_uring_disabled is %s here: io_uring_setup is EPERM to the agent whatever the plane admits", strings.TrimSpace(string(b)))
 	}
+	kernel, err := sys.Kernel()
+	if err != nil {
+		t.Fatal(err)
+	}
 	dir := t.TempDir()
 	uringbind := filepath.Join(dir, "uringbind")
 	build := exec.Command("go", "build", "-o", uringbind, "github.com/attention-span-ai/tego/test/workloads/uringbind")
@@ -196,8 +202,12 @@ record: %s
 						t.Fatalf("io_uring listener workload: %v\n%s\n%s", err, out.String(), ledgerDump(p.ledger))
 					}
 					res := agentResults(t, out.String())
-					if res["uring"] != "" {
-						t.Skipf("this kernel or run has no io_uring bind: %s", res["uring"])
+					skip, err := uringBindGap(res["uring"], kernel)
+					if err != nil {
+						t.Fatalf("%v\n%s\n%s", err, out.String(), ledgerDump(p.ledger))
+					}
+					if skip {
+						t.Skipf("kernel %s has no IORING_OP_BIND", kernel)
 					}
 					for step, want := range map[string][]string{
 						"uring-bind-undeclared-abstract": {"13", "1"}, "uring-bind-undeclared-path": {"13", "1"},

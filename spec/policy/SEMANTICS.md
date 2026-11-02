@@ -797,7 +797,8 @@ while the same lookup from a connected socket was refused at its connect. Each i
 refused line never carries `best_effort` (spec/record/v1/README.md). ICMP and raw datagram sockets match by
 host with port 0. *Disclosed 2026-10-16 (open as GAPS C34):* an admitted datagram, or a relayed connect
 on a socket no net gate covers, that carries a source route (an `IP_RETOPTS` control message, or `IP_OPTIONS` LSRR or
-SSRR or `IPV6_RTHDR` set on the socket, which an unprivileged task may set) is sent first to the route's first hop,
+SSRR or `IPV6_RTHDR` set on the socket, which an unprivileged task may set, LSRR and SSRR only where the kernel lacks
+the CVE-2026-53249 restriction) is sent first to the route's first hop,
 which the contract need not admit, in every tier: the decision and the root tiers' programs see only the destination. The resolver is read from `/etc/resolv.conf` at run start (127.0.0.53 under systemd-resolved) and
 allowed on UDP and TCP 53 in every tier (glibc falls back to TCP on truncation); DNS is recorded as `net proto=udp|tcp`.
 On Landlock ABI 10+ (Linux 7.2) the port rule is also applied in-kernel; the address check stays in the supervisor.

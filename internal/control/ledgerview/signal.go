@@ -72,6 +72,9 @@ type SecretTouch struct {
 type Dest struct {
 	Key, Name                         string
 	Allowed, Observed, Refused, Asked int
+	// Addrs are the addresses a destination keyed by its host name was reached at, first seen first; nil for one keyed
+	// by its address. A contract entry learn writes names the address.
+	Addrs []string
 	// InContract: a line for it carried a net[...] entry (or the always-allowed resolver), so the contract allows it.
 	InContract bool
 	// Resolver: a line for it carried net.resolver, the engine's word that it is a resolver the run has.
@@ -252,9 +255,10 @@ func hostPort(dst string) (string, string) {
 }
 
 // loopback reports whether a host is this machine, where each port is a different service: reaching one port says
-// nothing about another.
+// nothing about another. A scope id changes nothing: the kernel reads one on a link-local address only, so [::1%1] is
+// ::1, and the line keeps what the agent passed.
 func loopback(host string) bool {
-	h := strings.Trim(host, "[]")
+	h, _, _ := strings.Cut(strings.Trim(host, "[]"), "%")
 	return strings.HasPrefix(h, "127.") || h == "::1" || h == "localhost" || strings.HasPrefix(h, "unix:")
 }
 
@@ -355,9 +359,11 @@ func groupBackground(gs []Group, p *ProgramHit) bool {
 // no secret, its first refusal is not near a secret touch (NearSecretWindow, NearSecretLines), and one of these holds:
 //   - it is a system lookup socket (nscd, systemd's userdb or resolved, the D-Bus system and session buses);
 //   - it is a DNS lookup: a refused connect to port 53 on this machine (dnsGroup);
-//   - it is a connect to a remote host this run also reached (allowed or observed) on some port: the agent is
-//     already talking to that host, so the refused port sends nothing to anyone new (loopback is never folded
-//     this way: each local port is a different service);
+//   - it is a connect to a remote host this run also reached (allowed or observed) on some port and no live block of
+//     the run names (blocked): the agent is already talking to that host, so the refused port sends nothing to
+//     anyone new (loopback is never folded this way: each local port is a different service). A block keeps a
+//     refusal the contract already makes under the contract's rule (supervisor liveNet), so an agent that goes on to
+//     another port of a host a person just blocked has a line that says unmatched, and it is no background;
 //   - it is a route probe: every refused line to it is UDP to port 65535 of a remote host (RouteProbe), the UDP
 //     connect musl's getaddrinfo makes to sort a lookup's addresses, which sends nothing (Compare leaves these
 //     out the same way); a TCP connect to that port is not one;
@@ -365,7 +371,7 @@ func groupBackground(gs []Group, p *ProgramHit) bool {
 //
 // How often a group repeats is never one of them: severity is read from place and operation, and an attacker's tenth
 // try is no less an attempt than its first.
-func classify(g *Group, reached, probes map[string]bool) {
+func classify(g *Group, reached, probes, blocked map[string]bool) {
 	if !defaultRules[g.Rule] || g.Secret || g.NearSecret {
 		return
 	}
@@ -374,7 +380,7 @@ func classify(g *Group, reached, probes map[string]bool) {
 		g.Background, g.Why = true, "a system lookup socket"
 	case dnsGroup(g):
 		g.Background, g.Why = true, "a DNS lookup"
-	case g.Class == "net" && !loopback(g.Subject) && reached[g.Subject]:
+	case g.Class == "net" && !loopback(g.Subject) && reached[g.Subject] && !blocked[HostOf(g.Subject)]:
 		g.Background, g.Why = true, "the run also reached this host"
 	case g.Class == "net" && probes[g.Subject]:
 		g.Background, g.Why = true, "a route probe to port 65535"

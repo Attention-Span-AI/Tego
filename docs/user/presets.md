@@ -173,7 +173,8 @@ fs:
 
 Always on, in every contract init writes and every other: the
 host's local daemon sockets (docker, the D-Bus bus, ssh-agent) are refused unless the contract sets `host_sockets:
-true`, and the agent cannot gain privilege (`no_new_privs` is set on every run). Your agent's own needs are yours to
+true`, and the agent cannot gain privilege (`no_new_privs` is set on every run). It can always read the machine's network
+setup: interface names and addresses, routes, and the nearby machines it has talked to. Your agent's own needs are yours to
 add: `--allow-host` passes a model host straight through, not through the forwarder (use a `models:` entry, as in the
 example above, to have tokens counted), its API key goes in `env.pass`, and a home folder it writes (Claude Code's
 `~/.claude`) needs its own `--write`.

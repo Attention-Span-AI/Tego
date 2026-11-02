@@ -374,7 +374,7 @@ func (k *compiler) defaults() error {
 	if o.cwd == "" {
 		wd, err := os.Getwd()
 		if err != nil {
-			return fmt.Errorf("agent: Compile: %w", err)
+			return fmt.Errorf("agent: Compile: the current directory cannot be named (deleted? cd to one that exists): %w", err)
 		}
 		o.cwd = wd
 	}
@@ -535,9 +535,16 @@ func (k *compiler) limits() {
 		r.MemoryHigh = r.MemoryB
 	}
 
+	k.warnBelowStart(l)
+
 	pids, ok := clamp(k, "pids", l.Pids, ceilPtr[int, int](ceil.Pids))
 	r.Pids = pids
 	mark(BudgetPids, ok)
+	if l.Pids != nil && *l.Pids < minStartPids {
+		k.ds.errorf(k.pos("limits.pids"), CodeLimitBelowStart, "limits.pids %d cannot start a run: tego's own stage holds at least %d tasks in the run's cgroup before the agent exists, and below that it dies with a Go stack dump", *l.Pids, minStartPids).
+			fix("set limits.pids to %d or more, and count the agent's own processes and threads on top", minStartPids)
+	}
+	k.warnCeilingBelowStart(l)
 
 	tokens, ok := clamp(k, "tokens", l.Tokens, ceilPtr[int64, int64](ceil.Tokens))
 	r.Tokens = tokens
@@ -562,6 +569,66 @@ func (k *compiler) limits() {
 	repeats, ok := clamp(k, "repeats", l.Repeats, ceilPtr[int, int](ceil.Repeats))
 	r.Repeats = repeats
 	mark(BudgetRepeats, ok)
+}
+
+// The least a run's own start takes in the run's cgroup, before the agent exists: the child stage is a Go process and
+// is under the limits from its first instruction. Measured on 2026-11-01 at tier landlock: pids 5 fails every time and
+// 6 passes, memory 4 MiB fails and 6 MiB passes. A pids limit below it never starts, so it is an error. How much memory
+// is charged depends on what the page cache holds, so a memory limit below it is a warning; memory_high is the same
+// floor, where the stage is throttled and the start never ends. These hold what the contract writes: a machine ceiling
+// of 0 is enforced as written (R11).
+const (
+	minStartPids   = config.MinStartPids
+	minStartMemory = config.MinStartMemory
+)
+
+// warnCeilingBelowStart warns of a resolved limit below a run's start (minStartPids, minStartMemory) that the
+// machine ceiling set, where the contract's own value, if any, was not: a ceiling of pids 3 compiled every contract
+// clean and every run died. A warning, not an error: the ceiling is enforced as written (E12), and it is the
+// operator's to raise.
+func (k *compiler) warnCeilingBelowStart(l Limits) {
+	r := &k.rt.Limits
+	warn := func(key, value, floor string) {
+		k.ds.warnf(k.pos("limits."+key), CodeLimitBelowStart, "the machine's %s ceiling %s from %s is below what a run's start takes (%s): tego's own stage is under it before the agent exists, so no run may start",
+			key, value, k.limitSource(key), floor).
+			fix("raise the machine's %s ceiling to %s or more", key, floor)
+	}
+	if r.Bounded(BudgetPids) && r.Pids < minStartPids && (l.Pids == nil || *l.Pids >= minStartPids) {
+		warn("pids", strconv.Itoa(r.Pids), strconv.Itoa(minStartPids))
+	}
+	floor := ByteSize(minStartMemory).String()
+	if r.Bounded(BudgetMemory) && r.MemoryB < minStartMemory && (l.Memory == nil || int64(*l.Memory) >= minStartMemory) {
+		warn("memory", ByteSize(r.MemoryB).String(), floor)
+	}
+	if r.Bounded(BudgetMemoryHigh) && r.MemoryHigh < minStartMemory && (l.MemoryHigh == nil || int64(*l.MemoryHigh) >= minStartMemory) &&
+		!(r.Bounded(BudgetMemory) && r.MemoryHigh == r.MemoryB && r.MemoryB < minStartMemory) {
+		warn("memory_high", ByteSize(r.MemoryHigh).String(), floor)
+	}
+}
+
+// belowStart says whether v, a ceiling on limits.<key>, is below what a run's own start takes.
+func belowStart[R limitValue](key string, v R) bool {
+	switch x := any(v).(type) {
+	case int:
+		return key == "pids" && x < minStartPids
+	case ByteSize:
+		return (key == "memory" || key == "memory_high") && int64(x) < minStartMemory
+	}
+	return false
+}
+
+// warnBelowStart warns of a memory limit the contract wrote that a run's start may not get through (minStartMemory).
+func (k *compiler) warnBelowStart(l Limits) {
+	below := func(key string, b *ByteSize) {
+		if b == nil || int64(*b) >= minStartMemory {
+			return
+		}
+		k.ds.warnf(k.pos("limits."+key), CodeLimitBelowStart, "limits.%s %s may not start a run: tego's own stage needs about %s in the run's cgroup before the agent exists",
+			key, b.String(), ByteSize(minStartMemory).String()).
+			fix("set limits.%s to at least %s, with the agent's own memory on top", key, ByteSize(minStartMemory).String())
+	}
+	below("memory", l.Memory)
+	below("memory_high", l.MemoryHigh)
 }
 
 // ceilPtr converts a machine ceiling into the nil-means-unbounded form clamp consumes, preserving the
@@ -620,7 +687,7 @@ func clamp[T limitValue, R limitValue](k *compiler, key string, v *T, ceiling *R
 	}
 	got := R(*v)
 	if ceiling != nil && got > *ceiling {
-		k.aboveCeiling(key, limitString(*ceiling), limitString(got))
+		k.aboveCeiling(key, limitString(*ceiling), limitString(got), belowStart(key, *ceiling))
 		return *ceiling, true
 	}
 	return got, true
@@ -648,7 +715,7 @@ func clampCPU(k *compiler, v *CPUCores, ceiling *string) (string, bool) {
 		return *ceiling, true
 	}
 	if ceiling != nil && v.Quota() > CPUCores(*ceiling).Quota() {
-		k.aboveCeiling("cpu", *ceiling, string(*v))
+		k.aboveCeiling("cpu", *ceiling, string(*v), false)
 		return *ceiling, true
 	}
 	return string(*v), true
@@ -656,10 +723,15 @@ func clampCPU(k *compiler, v *CPUCores, ceiling *string) (string, bool) {
 
 // aboveCeiling is R11's warning, `ceiling <key>=<value> kept from <file>:<line>`: the layer that set the
 // machine ceiling, which the message named only as "machine config", so the operator could not tell
-// /etc/tego/config.yaml from their own ~/.tego/config.yaml or $TEGO_CONFIG.
-func (k *compiler) aboveCeiling(key, ceiling, got string) {
-	k.ds.warnf(k.pos("limits."+key), CodeLimitAboveMachine, "ceiling %s=%s kept from %s; the contract asked for %s", key, ceiling, k.limitSource(key), got).
-		fix("lower limits.%s to %s or raise the machine ceiling", key, ceiling)
+// /etc/tego/config.yaml from their own ~/.tego/config.yaml or $TEGO_CONFIG. A ceiling below what a run's start takes
+// (underStart) is not a value to lower the contract to, so the fix is the ceiling alone.
+func (k *compiler) aboveCeiling(key, ceiling, got string, underStart bool) {
+	d := k.ds.warnf(k.pos("limits."+key), CodeLimitAboveMachine, "ceiling %s=%s kept from %s; the contract asked for %s", key, ceiling, k.limitSource(key), got)
+	if underStart {
+		d.fix("raise the machine's %s ceiling: at %s no run may start", key, ceiling)
+		return
+	}
+	d.fix("lower limits.%s to %s or raise the machine ceiling", key, ceiling)
 }
 
 // limitSource is the file:line of the machine config layer that set the ceiling on limits.<key>.

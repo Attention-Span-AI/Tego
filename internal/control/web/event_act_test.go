@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -372,6 +373,26 @@ func TestAlsoApplyNowAndBlockNowScope(t *testing.T) {
 	// git is blocked live now: its line says so, with the way to remove it, instead of offering Block now again.
 	page = do(s, "GET", line+"?cmd=1", "127.0.0.1:8484", c).Body.String()
 	mustContain(t, "the command scope after the save", page, "Blocked live on this run", `title="exec:git"`)
+}
+
+// TestHeldLiveBlockOnAScopedLine: a connect's line keeps its scope id and a live block holds none, so the line of a connect
+// the block refuses read as not covered by it, and the panel offered Block now for a block already in place.
+func TestHeldLiveBlockOnAScopedLine(t *testing.T) {
+	s, c, _, _ := askServer(t)
+	root := s.cfg.Ledger
+	holdLock(t, filepath.Join(root, actRun))
+	const block = "[2001:db8::1]:8443"
+	n := strings.Count(readFile(t, filepath.Join(root, actRun, "events.jsonl")), "\n")
+	at := time.Now()
+	appendLine(t, root, actRun, line(actRun, "probe", n, at, "refused",
+		`"rule":"unmatched","reason":"net-not-allowed","op":"connect","target":"[2001:db8::1%1]:8443"`))
+	addOverlay(t, root, actRun, [2]string{"net", block})
+	appendLine(t, root, actRun, liveGapLine(actRun, n+1, at, "net", block, 1))
+	page := do(s, "GET", "/runs/"+actRun+"/lines/"+strconv.Itoa(n), "127.0.0.1:8484", c).Body.String()
+	mustContain(t, "the line under the block", page, "ev-held", "Blocked live on this run", `title="net:`+block+`"`)
+	if strings.Contains(page, `id="act-block"`) {
+		t.Error("the panel offers Block now for a block already in place")
+	}
 }
 
 // TestDenyOffersNeverAllow: the Deny answer's line links "Make it permanent: Never allow" to the ask, which the event

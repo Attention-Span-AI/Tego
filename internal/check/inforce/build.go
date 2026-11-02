@@ -461,6 +461,11 @@ func buildAlwaysOn(v *View, d decl, f *facts, add func(string, Rule), src func(a
 			})
 		}
 	}
+	// Every contract, and no key turns it off: a route socket's read reaches the kernel by calls no filter sees, so a key
+	// could not keep the promise (ADR 0128). It is the one thing here a run gets rather than is kept from.
+	add(GroupAlwaysOn, Rule{Key: "built-in.route-read", RuleKey: "route-query",
+		Sentence: "Can read this computer's network setup: interface names and addresses, routes, and the nearby machines it has talked to",
+		Effect:   EffectAllow})
 	if d.setuid {
 		add(GroupAlwaysOn, Rule{Key: "setuid", Sentence: "Can gain root through sudo or other setuid programs (setuid: true)", Effect: EffectAllow})
 	} else {

@@ -74,11 +74,102 @@ func TestParseAcrossDST(t *testing.T) {
 	if err != nil || got.Sub(now) != 24*time.Hour || got.In(loc).Hour() != 11 {
 		t.Fatalf("1d = %v, %v; want 24 h later, 11:00 on Sunday's clock", got.In(loc), err)
 	}
-	// 02:30 on the spring-forward day (29 March 2026) does not exist; time.Date moves it into summer time.
+	// 02:30 on the spring-forward day (29 March 2026) does not exist; it is the first instant after the skip, 03:00
+	// CEST, when the clock has passed 02:30 (TestParseInTheSkippedHour).
 	spring := time.Date(2026, 3, 28, 12, 0, 0, 0, loc)
 	got, err = Parse("", "2026-03-29 02:30", spring, loc)
-	if err != nil || got.In(loc).Hour() != 3 {
-		t.Fatalf("a skipped 02:30 = %v, %v; want 03:30 CEST", got.In(loc), err)
+	if err != nil || got.In(loc).Hour() != 3 || got.In(loc).Minute() != 0 {
+		t.Fatalf("a skipped 02:30 = %v, %v; want 03:00 CEST", got.In(loc), err)
+	}
+}
+
+// TestParseInTheRepeatedHour: a change back to standard time reads one hour twice, and an --until in it means the
+// next time the clock reads that. time.Date picks one of the two instants, so on the second pass a limit ten minutes
+// off landed a day later, and on the first pass in a zone east of Greenwich an hour late.
+func TestParseInTheRepeatedHour(t *testing.T) {
+	for _, tc := range []struct {
+		zone, now, until, want string
+	}{
+		// New York, 2026-11-01: 01:59:59 EDT (05:59:59Z) is followed by 01:00:00 EST (06:00:00Z).
+		{"America/New_York", "2026-11-01T05:40:00Z", "01:50", "2026-11-01T05:50:00Z"}, // first pass: the first 01:50
+		{"America/New_York", "2026-11-01T05:55:00Z", "01:50", "2026-11-01T06:50:00Z"}, // first pass, past it: the second
+		{"America/New_York", "2026-11-01T06:40:00Z", "01:50", "2026-11-01T06:50:00Z"}, // second pass: the second
+		{"America/New_York", "2026-11-01T06:55:00Z", "01:50", "2026-11-02T06:50:00Z"}, // both gone: tomorrow's
+		{"America/New_York", "2026-11-01T04:00:00Z", "Sun 01:50", "2026-11-01T05:50:00Z"},
+		{"America/New_York", "2026-11-01T06:40:00Z", "Sun 01:50", "2026-11-01T06:50:00Z"},
+		{"America/New_York", "2026-11-01T06:55:00Z", "Sun 01:50", "2026-11-08T06:50:00Z"},
+		// Berlin, 2026-10-25: 02:59:59 CEST (00:59:59Z) is followed by 02:00:00 CET (01:00:00Z).
+		{"Europe/Berlin", "2026-10-25T00:10:00Z", "02:30", "2026-10-25T00:30:00Z"}, // first pass: the first 02:30
+		{"Europe/Berlin", "2026-10-25T00:40:00Z", "02:30", "2026-10-25T01:30:00Z"},
+		{"Europe/Berlin", "2026-10-25T01:10:00Z", "02:30", "2026-10-25T01:30:00Z"},
+		// Every other form takes the first reading still ahead too: each landed on the second, an hour late.
+		{"Europe/Berlin", "2026-10-24T10:00:00Z", "tomorrow 02:30", "2026-10-25T00:30:00Z"},
+		{"Europe/Berlin", "2026-10-24T01:00:00Z", "02:30", "2026-10-25T00:30:00Z"},     // today's gone: tomorrow's first
+		{"Europe/Berlin", "2026-10-18T01:00:00Z", "Sun 02:30", "2026-10-25T00:30:00Z"}, // today's gone: next week's first
+		{"Europe/Berlin", "2026-10-24T10:00:00Z", "2026-10-25 02:30", "2026-10-25T00:30:00Z"},
+		{"Europe/Berlin", "2026-10-25T00:10:00Z", "2026-10-25 02:30", "2026-10-25T00:30:00Z"},
+		{"Europe/Berlin", "2026-10-25T00:40:00Z", "2026-10-25 02:30", "2026-10-25T01:30:00Z"},
+		{"America/New_York", "2026-11-01T06:40:00Z", "2026-11-01 01:50", "2026-11-01T06:50:00Z"}, // was refused as past
+		// Lord Howe moves half an hour: 2026-04-05 01:59:59 +11 is followed by 01:30:00 +1030 (15:00:00Z).
+		{"Australia/Lord_Howe", "2026-04-04T14:35:00Z", "01:45", "2026-04-04T14:45:00Z"},
+		{"Australia/Lord_Howe", "2026-04-04T15:05:00Z", "01:45", "2026-04-04T15:15:00Z"},
+		// An ordinary day and a zone with no changes at all.
+		{"America/New_York", "2026-07-01T16:00:00Z", "13:00", "2026-07-01T17:00:00Z"},
+		{"Asia/Kathmandu", "2026-11-01T01:00:00Z", "07:00", "2026-11-01T01:15:00Z"},
+	} {
+		loc, err := time.LoadLocation(tc.zone)
+		if err != nil {
+			t.Fatal(err)
+		}
+		now, err := time.Parse(time.RFC3339, tc.now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := Parse("", tc.until, now, loc)
+		if err != nil {
+			t.Errorf("%s at %s --until %q: %v", tc.zone, tc.now, tc.until, err)
+			continue
+		}
+		if s := got.UTC().Format(time.RFC3339); s != tc.want {
+			t.Errorf("%s at %s --until %q = %s, want %s", tc.zone, tc.now, tc.until, s, tc.want)
+		}
+	}
+}
+
+// TestParseInTheSkippedHour: a change to summer time skips an hour, and an --until in it is the first instant after
+// the skip, when the clock has passed that time, on both sides of Greenwich. time.Date moves it by the skip, so west
+// of Greenwich it landed an hour before: New York's 02:30 was 01:30 EST, lifting a block early.
+func TestParseInTheSkippedHour(t *testing.T) {
+	for _, tc := range []struct {
+		zone, now, until, want string
+	}{
+		// New York, 2026-03-08: 01:59:59 EST (06:59:59Z) is followed by 03:00:00 EDT (07:00:00Z).
+		{"America/New_York", "2026-03-08T05:00:00Z", "02:30", "2026-03-08T07:00:00Z"},
+		{"America/New_York", "2026-03-08T05:00:00Z", "Sun 02:30", "2026-03-08T07:00:00Z"},
+		{"America/New_York", "2026-03-08T05:00:00Z", "2026-03-08 02:30", "2026-03-08T07:00:00Z"},
+		{"America/New_York", "2026-03-07T12:00:00Z", "tomorrow 02:30", "2026-03-08T07:00:00Z"},
+		{"America/New_York", "2026-03-08T05:00:00Z", "03:00", "2026-03-08T07:00:00Z"},
+		// Berlin, 2026-03-29: 01:59:59 CET (00:59:59Z) is followed by 03:00:00 CEST (01:00:00Z).
+		{"Europe/Berlin", "2026-03-28T23:30:00Z", "02:30", "2026-03-29T01:00:00Z"},
+		{"Europe/Berlin", "2026-03-28T23:30:00Z", "Sun 02:00", "2026-03-29T01:00:00Z"},
+		{"Europe/Berlin", "2026-03-28T23:30:00Z", "01:59", "2026-03-29T00:59:00Z"},
+	} {
+		loc, err := time.LoadLocation(tc.zone)
+		if err != nil {
+			t.Fatal(err)
+		}
+		now, err := time.Parse(time.RFC3339, tc.now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := Parse("", tc.until, now, loc)
+		if err != nil {
+			t.Errorf("%s at %s --until %q: %v", tc.zone, tc.now, tc.until, err)
+			continue
+		}
+		if s := got.UTC().Format(time.RFC3339); s != tc.want {
+			t.Errorf("%s at %s --until %q = %s, want %s", tc.zone, tc.now, tc.until, s, tc.want)
+		}
 	}
 }
 

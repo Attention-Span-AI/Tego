@@ -164,8 +164,12 @@ func allSources(deps Deps) []source.Source {
 
 // ref is what sources and backends are told about the run.
 func (r *runner) ref() source.RunRef {
-	return source.RunRef{ID: string(r.id), Agent: string(r.agentID), Dir: r.dir, RuntimeDir: r.runtimeDir,
+	ref := source.RunRef{ID: string(r.id), Agent: string(r.agentID), Dir: r.dir, RuntimeDir: r.runtimeDir,
 		CgroupID: r.cg.ID, Contract: r.rt}
+	if r.writer != nil {
+		ref.BlobBytes = r.writer.BlobBytes()
+	}
+	return ref
 }
 
 // startKernelRecord builds the tier's own recorder now that its ring buffer has a name (§4.1 step 3).

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/attention-span-ai/tego/internal/runtime/ask"
+	"github.com/attention-span-ai/tego/pkg/policy/mcptool"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -91,6 +92,81 @@ func TestClientLineNotUTF8Refused(t *testing.T) {
 		sh.client(line)
 		if f := sh.read(); f.ToServer != nil || !strings.Contains(string(f.ToClient), `"code":-32700`) {
 			t.Fatalf("%q: frame %+v", line, f)
+		}
+	}
+}
+
+// relayRefusal fails unless the only mcp line is the relay's refusal of a message it could not read.
+func relayRefusal(t *testing.T, sk *sink, server, transport string) {
+	t.Helper()
+	l := sk.of(record.KindMCP)
+	if len(l) != 1 {
+		t.Fatalf("mcp lines %+v, want one", l)
+	}
+	var p record.MCPPayload
+	if err := l[0].DecodePayload(&p); err != nil {
+		t.Fatal(err)
+	}
+	if l[0].Rule != "mcp["+server+"].relay" || l[0].Verdict != record.VerdictRefused || l[0].Reason != mcptool.ReasonDenied ||
+		p.Name != server || p.Transport != transport || p.Tool != "" {
+		t.Fatalf("mcp line %+v, payload %+v", l[0], p)
+	}
+}
+
+// TestUnreadableClientLineIsRecorded: a line the relay refuses unread may have been a call, and no server saw it, so
+// the record has the refusal: the client's -32700 is not the only trace of it. A line past the bound is one more line
+// nothing read, and it gets the same answer rather than none.
+func TestUnreadableClientLineIsRecorded(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		send func(sh *shim)
+	}{
+		{"not JSON", func(sh *shim) { sh.client("tools/call delete_file") }},
+		{"a call that is not UTF-8", func(sh *shim) {
+			sh.client(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"delete_file` + "\xff" + `"}}`)
+		}},
+		{"two values on a line", func(sh *shim) { sh.client(toolCall(2, "read_file") + toolCall(3, "delete_file")) }},
+		{"a wire form past the bound", func(sh *shim) {
+			sh.client(`{"jsonrpc":"2.0","id":2,"method":"ping","x":"` + strings.Repeat("\u0085", MaxLine/3) + `"}`)
+		}},
+		{"a line the shim dropped as too long", func(sh *shim) {
+			if err := sh.fw.Write(Frame{Oversize: "c"}); err != nil {
+				sh.t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s, sk, _ := start(t, nil, filesServer())
+			sh, _ := dial(t, s, "files", filesCmd)
+			c.send(sh)
+			if f := sh.read(); f.ToServer != nil || !strings.Contains(string(f.ToClient), `"code":-32700`) {
+				t.Fatalf("frame %+v", f)
+			}
+			relayRefusal(t, sk, "files", TransportStdio)
+			// The connection stays: the next line is decided as ever.
+			sh.client(toolCall(3, "read_file"))
+			if f := sh.read(); string(f.ToServer) != toolCall(3, "read_file") {
+				t.Fatalf("the next line: %+v", f)
+			}
+		})
+	}
+}
+
+// TestOversizeServerLineIsNoRefusal: a server's line past the bound is no action of the run's. It is dropped with a
+// warning, and it answers no client and writes no refusal.
+func TestOversizeServerLineIsNoRefusal(t *testing.T) {
+	s, sk, _ := start(t, nil, filesServer())
+	sh, _ := dial(t, s, "files", filesCmd)
+	if err := sh.fw.Write(Frame{Oversize: "s"}); err != nil {
+		t.Fatal(err)
+	}
+	sh.client(toolCall(3, "read_file"))
+	if f := sh.read(); string(f.ToServer) != toolCall(3, "read_file") {
+		t.Fatalf("the first frame back: %+v", f)
+	}
+	for _, l := range sk.of(record.KindMCP) {
+		if l.Verdict == record.VerdictRefused {
+			t.Fatalf("a refusal for a server's line: %+v", l)
 		}
 	}
 }

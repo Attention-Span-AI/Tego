@@ -286,7 +286,7 @@ func TestLandlockColumnIgnoresNameEntries(t *testing.T) {
 // TestNameEntriesMonotonic: a name entry never turns a refusal into an allow, in any root tier, on any generated
 // table, for any action and probe (ADR 0043: a strengthening).
 func TestNameEntriesMonotonic(t *testing.T) {
-	n := genNameTables(func(desc string, rt, bare *agent.RuleTable) {
+	n := genNameTables(sampledNames(func(desc string, rt, bare *agent.RuleTable) {
 		for _, tier := range []backend.Tier{backend.TierCgroup, backend.TierBPFLSM} {
 			for _, p := range nameProbes {
 				for _, a := range nameActions(p) {
@@ -296,7 +296,7 @@ func TestNameEntriesMonotonic(t *testing.T) {
 				}
 			}
 		}
-	})
+	}))
 	if n < 1000 {
 		t.Fatalf("only %d tables", n)
 	}
@@ -306,7 +306,7 @@ func TestNameEntriesMonotonic(t *testing.T) {
 // entries: the indexed Evaluator and the reference Evaluate give one answer, with the object a file or a directory.
 func TestIndexedEvaluatorMatchesReferenceWithNames(t *testing.T) {
 	// Tiers landlock and observe ask no name entry; TestLandlockColumnIgnoresNameEntries holds them.
-	genNameTables(func(desc string, rt, _ *agent.RuleTable) {
+	genNameTables(sampledNames(func(desc string, rt, _ *agent.RuleTable) {
 		e := NewEvaluator(rt)
 		for _, tier := range []backend.Tier{backend.TierCgroup, backend.TierBPFLSM} {
 			for _, p := range nameProbes {
@@ -317,7 +317,7 @@ func TestIndexedEvaluatorMatchesReferenceWithNames(t *testing.T) {
 				}
 			}
 		}
-	})
+	}))
 }
 
 // TestIndexedEvaluatorAllocatesNothingWithNames is the query allocation gate with name entries: a covered file

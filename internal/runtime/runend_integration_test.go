@@ -81,16 +81,30 @@ func TestMainProcessOOMIsReasonOOM(t *testing.T) {
 
 // TestPidsCapThenPromptExitIsReasonPids: a tree that meets pids.max and then exits promptly is still
 // reason pids (R11), read at shutdown when the watcher's poll did not come round in time.
+//
+// The children hold until the shell ends, so a tree of 60 must meet a cap of 12. Sixty background /bin/true did not
+// have to: dash reaps an exited child between forks (wait4 with WNOHANG), so a shell kept off the CPU while its
+// children ran had only a few alive at once, no fork was refused, and exit was the right reason for a test that
+// said otherwise (one failure in a loaded gate; a busy loop between the forks gives it every time). The EXIT trap is
+// what lets go: a refused fork ends dash at once, and a file is the one signal that needs no fork of its own.
 func TestPidsCapThenPromptExitIsReasonPids(t *testing.T) {
 	f := newFixture(t, strings.Replace(
-		contractFor("ipids2", []string{"/bin/sh"}, []string{"/bin/sh", "/usr/bin/sh", "/bin/true", "/usr/bin/true"}),
+		contractFor("ipids2", []string{"/bin/sh"}, []string{"/bin/sh", "/usr/bin/sh"}),
 		"  pids: 128", "  pids: 12", 1))
-	if _, err := Run(context.Background(), f.rt, []string{"/bin/sh", "-c",
-		"i=0; while [ $i -lt 60 ]; do /bin/true & i=$((i+1)); done; wait; exit 0"}, f.deps(t, nil)); err != nil {
+	const script = `trap ': > out/go' EXIT
+i=0
+while [ $i -lt 60 ]; do
+	(while [ ! -e out/go ]; do :; done) &
+	i=$((i+1))
+done
+: > out/go
+wait
+exit 0`
+	if _, err := Run(context.Background(), f.rt, []string{"/bin/sh", "-c", script}, f.deps(t, nil)); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if end := runEndOf(t, runDirs(t, f.root)[0]); end.Reason != record.RunEndPids {
-		t.Fatalf("pids.max refused forks, but run_end reason=%s", end.Reason)
+		t.Fatalf("a tree of 60 under pids: 12, but run_end reason=%s exit=%d", end.Reason, end.ExitCode)
 	}
 }
 

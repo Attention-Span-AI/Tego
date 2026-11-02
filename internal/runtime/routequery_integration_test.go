@@ -259,6 +259,60 @@ func TestIntegrationNodeInterfaces(t *testing.T) {
 	}
 }
 
+// TestIntegrationGoInterfaces is Go's own net.Interfaces and net.InterfaceAddrs, which open a route socket themselves
+// rather than go through the C library (bind, sendto with the 17 bytes dump_go sends, getsockname, recvfrom). ADR 0128
+// names them among the callers it fixes, and until now only python3's copy of their bytes had run. The run's list is the
+// test's own, since a run shares the host's network namespace, and each section reads the same with no refused line.
+func TestIntegrationGoInterfaces(t *testing.T) {
+	// Built from its package path, the form test/vm/go-shim.sh serves prebuilt in the root guest.
+	bin := filepath.Join(t.TempDir(), "ifaces")
+	build := exec.Command("go", "build", "-o", bin, "github.com/attention-span-ai/tego/test/workloads/ifaces")
+	build.Env = append(os.Environ(), "CGO_ENABLED=0", "GOFLAGS=")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v: %s", err, out)
+	}
+	agentReaches(t, bin)
+	var want []string
+	ifs, err := net.Interfaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, i := range ifs {
+		want = append(want, i.Name)
+	}
+	for _, tc := range []struct{ name, net string }{
+		{"net: {}", "net: {}\n"},
+		{"a listener policy", "net:\n  listen: [\"tcp://127.0.0.1:0\"]\n"},
+		{"no net: section", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, contractFor("routego", []string{bin}, []string{bin})+tc.net)
+			out := filepath.Join(f.out, "result.json")
+			if _, err := Run(context.Background(), f.rt, []string{bin, out}, f.deps(t, nil)); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			raw, err := os.ReadFile(out)
+			if err != nil {
+				t.Fatalf("the workload wrote nothing: %v", err)
+			}
+			var got struct {
+				Names, Addrs []string
+				Err          string
+			}
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.Err != "" || fmt.Sprint(got.Names) != fmt.Sprint(want) || len(got.Addrs) == 0 {
+				t.Errorf("net.Interfaces in the run: %+v, want names %v and some addresses", got, want)
+			}
+			counts := familyLines(t, events(t, runDirs(t, f.root)[0]))
+			if counts["allow/route-query"] == 0 || len(counts) != 1 {
+				t.Errorf("netlink lines %v, want allow/route-query alone", counts)
+			}
+		})
+	}
+}
+
 // loAddrs is lo's addresses in the test's own view, which is the host's: the run shares its network namespace.
 func loAddrs(t *testing.T) string {
 	t.Helper()

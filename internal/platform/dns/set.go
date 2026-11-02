@@ -24,7 +24,7 @@ type Match struct {
 	// it: "net[api.anthropic.com:443]", the declared entry the event names
 	// (spec/record/v1/README.md, "the declared entry or unmatched").
 	Rule string
-	// Host is the declared host name, empty for a cidr entry or a literal address entry.
+	// Host is the entry's declared host, the address itself for a literal address entry; empty for a cidr entry.
 	Host string
 	// Raw is the entry as declared, e.g. "api.anthropic.com:443".
 	Raw string

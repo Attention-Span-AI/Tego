@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -258,6 +259,23 @@ func TestPrepareVanishedAndKinds(t *testing.T) {
 				t.Errorf("fd leak: %d -> %d", before, after)
 			}
 		})
+	}
+}
+
+// TestPrepareSaysAWriteEntryItCouldNotCreate: a directory the run may not create in is not a path that vanished since
+// compile, which is what a missing `out/` under a read-only project was told. It stays a refusal.
+func TestPrepareSaysAWriteEntryItCouldNotCreate(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory write permission, which this test relies on")
+	}
+	root := tempDir(t)
+	if err := os.Chmod(root, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
+	err := prepareErr(t, 7, &agent.RuleTable{FS: []agent.FSRule{{Path: filepath.Join(root, "out"), Kind: agent.FSWrite, Missing: true}}}, nil)
+	if errors.Is(err, ErrPathVanished) || !errors.Is(err, os.ErrPermission) || !strings.Contains(err.Error(), "creating write entry") {
+		t.Errorf("error %v: want the failed create, and no vanished path", err)
 	}
 }
 

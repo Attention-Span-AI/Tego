@@ -116,6 +116,8 @@ func TestPlaneFilterDropsOnlyWhatLoadedHooksDecide(t *testing.T) {
 		x86Link, x86Linkat, x86Mkdir, x86Mknod, x86Symlink        = 86, 265, 83, 133, 88
 		x86Execve, x86Connect, x86Mount                           = 59, 42, 165
 		armOpenAt, armUnlinkat, armMkdirat, armTruncate           = 56, 35, 34, 45
+		armRenameat, armRenameat2, armLinkat                      = 38, 276, 37
+		armSymlinkat, armMknodat                                  = 36, 33
 	)
 	wr := uint64(unix.O_WRONLY)
 	type call = planeCall
@@ -170,10 +172,27 @@ func TestPlaneFilterDropsOnlyWhatLoadedHooksDecide(t *testing.T) {
 			}
 		})
 	}
-	// arm64: its generic table's unlinkat, mkdirat, openat and truncate follow the same hooks.
+	// arm64: its generic table's *at forms, openat and truncate follow the same hooks. Step A takes unlinkat, renameat,
+	// renameat2 and linkat (arm64 has no rename, link, unlink or rmdir), and leaves the rest to step B.
+	stepA := planeSkips(hookSet(stepAHooks...), false, false)
 	all := planeSkips(hookSet(append(append([]string(nil), stepAHooks...), stepBHooks...)...), false, false)
-	for _, c := range []call{{"openat-write", armOpenAt, []uint64{0, 0, wr}}, {"unlinkat", armUnlinkat, nil},
-		{"mkdirat", armMkdirat, nil}, {"truncate", armTruncate, nil}} {
+	for _, c := range []struct {
+		call
+		stepA bool // step A's hooks alone decide every form of it
+	}{
+		{call{"openat-write", armOpenAt, []uint64{0, 0, wr}}, false}, {call{"unlinkat", armUnlinkat, nil}, true},
+		{call{"renameat", armRenameat, nil}, true}, {call{"renameat2", armRenameat2, nil}, true},
+		{call{"linkat", armLinkat, nil}, true}, {call{"mkdirat", armMkdirat, nil}, false},
+		{call{"symlinkat", armSymlinkat, nil}, false}, {call{"mknodat", armMknodat, nil}, false},
+		{call{"truncate", armTruncate, nil}, false},
+	} {
+		want := uint32(retNotify)
+		if c.stepA {
+			want = retAllow
+		}
+		if got := planeVerdict(t, ArchARM64, filterOpts{abi: minTruncateABI, plane: stepA}, c.nr, c.args...); got != want {
+			t.Errorf("arm64 %s under step A: got %#x, want %#x", c.name, got, want)
+		}
 		if got := planeVerdict(t, ArchARM64, filterOpts{abi: minTruncateABI, plane: all}, c.nr, c.args...); got != retAllow {
 			t.Errorf("arm64 %s under steps A and B: got %#x, want allow", c.name, got)
 		}
@@ -232,10 +251,15 @@ func TestHandlePlaneFilter(t *testing.T) {
 	if slices.Equal(prog, raw) {
 		t.Fatal("step A's hooks left the filter as it was")
 	}
-	for _, want := range []string{"rename", "renameat", "renameat2", "linkat", "unlinkat"} {
-		if !slices.Contains(dropped, want) {
-			t.Errorf("dropped %v, want %s among them", dropped, want)
-		}
+	// Step A's hooks take every form of unlink, rmdir, rename and link the native table notifies: x86-64's legacy
+	// calls and the *at ones, and on arm64, whose generic table has no rename(2), link(2), unlink(2) or rmdir(2) (a
+	// directory goes through unlinkat), the *at ones alone.
+	want := []string{"unlinkat", "renameat", "renameat2", "linkat"}
+	if NativeArch() == ArchX86_64 {
+		want = append(want, "unlink", "rmdir", "rename", "link")
+	}
+	if got := slices.Sorted(slices.Values(dropped)); !slices.Equal(got, slices.Sorted(slices.Values(want))) {
+		t.Errorf("%s: dropped %v, want %v", NativeArch(), dropped, want)
 	}
 	for _, not := range []string{"open-write", "truncate", "mkdirat", "execve"} {
 		if slices.Contains(dropped, not) {
