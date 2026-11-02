@@ -93,19 +93,6 @@ func TestAnchorPathHomeRules(t *testing.T) {
 	}
 }
 
-// TestIsDirKeepsAHomeItCannotRuleOut: only a home that definitely does not exist moves the anchor; one
-// that exists, or cannot be stat'ed for another reason, keeps it.
-func TestIsDirKeepsAHomeItCannotRuleOut(t *testing.T) {
-	dir := t.TempDir()
-	file := filepath.Join(dir, "f")
-	if err := os.WriteFile(file, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if !isDir(dir) || isDir(filepath.Join(dir, "missing")) || isDir(file) || isDir(filepath.Join(file, "under")) {
-		t.Fatal("isDir misreads a directory, a missing path, a file or a path under a file")
-	}
-}
-
 // TestRunnerAnchorPath: the launcher appends to Deps.AnchorPath when the CLI names one, and only
 // otherwise to the ledger's default beside the root.
 func TestRunnerAnchorPath(t *testing.T) {

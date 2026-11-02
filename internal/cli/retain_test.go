@@ -16,6 +16,8 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/platform/sys"
+	"github.com/attention-span-ai/tego/internal/rulefile"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -55,12 +57,12 @@ func heldRun(t *testing.T, root string, at time.Time) string {
 // retainNow runs the start's retention pass under the machine config the test wrote.
 func retainNow(t *testing.T) string {
 	t.Helper()
-	m, _, err := loadMachine(config.TrustWarn)
+	m, ds, err := loadMachine(config.TrustWarn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	retainBeforeRun(context.Background(), m, "tego run", &stderr)
+	retainBeforeRun(context.Background(), m, "tego run", ds, &stderr)
 	return stderr.String()
 }
 
@@ -180,6 +182,122 @@ func TestRetentionStampOnlyReplacesAFile(t *testing.T) {
 	}
 	if st, err := os.Lstat(stamp); err != nil || st.Mode()&os.ModeNamedPipe == 0 {
 		t.Fatalf("the FIFO at the stamp's name: %v, %v", st, err)
+	}
+}
+
+// TestRunStartPrunesTheRuleChangeJournal: a start's retention pass prunes the ledger root's rule-change journal with
+// the machine's retention, and says how many lines went.
+func TestRunStartPrunesTheRuleChangeJournal(t *testing.T) {
+	root := retainRoot(t, "retention: 0s\ngc_interval: 1h\n")
+	journaled(t, root)
+	if out := retainNow(t); !strings.Contains(out, "retention pruned 2 rule-change journal line(s) older than 0s") {
+		t.Errorf("stderr %q", out)
+	}
+	if n := journalLines(t, root); n != 0 {
+		t.Errorf("the journal holds %d lines after the pass", n)
+	}
+}
+
+// TestRunStartJournalNotPrunedWithoutTheUserLayer: the one layer a run start's load (TrustAbort) leaves out without
+// refusing the run is the per-user layer of a uid the passwd database does not name (E9). That layer may set the
+// retention, so the pass prunes nothing of the rule-change journal; the runs are swept as before.
+func TestRunStartJournalNotPrunedWithoutTheUserLayer(t *testing.T) {
+	root := retainRoot(t, "retention: 0s\ngc_interval: 1h\n")
+	journaled(t, root)
+	uid := 1 << 30
+	for ; ; uid++ {
+		if _, err := config.LookupPasswd(uid); err != nil {
+			break
+		}
+	}
+	_, _, ds := config.Resolve(uid, false)
+	if _, ok := skippedLayer(ds); !ok {
+		t.Fatalf("Resolve for uid %d, which has no passwd entry, says no layer was left out: %v", uid, ds)
+	}
+	m, _, err := loadMachine(config.TrustWarn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	retainBeforeRun(context.Background(), m, "tego run", ds, &stderr)
+	if n := journalLines(t, root); n != 2 || strings.Contains(stderr.String(), "rule-change") {
+		t.Errorf("the journal holds %d lines after the pass, want both; stderr %q", n, stderr.String())
+	}
+}
+
+// asRoot makes the rule-change journal's prune (journalOwner) read this process as root, invoked by uid through sudo
+// when viaSudo, with a runAs that records the credentials it was asked to take and runs the prune as this process:
+// the test's user, whose journal it is. It returns what runAs was asked.
+func asRoot(t *testing.T, uid int, viaSudo bool) *[]sys.TaskCreds {
+	t.Helper()
+	asked := &[]sys.TaskCreds{}
+	prevEUID, prevInvoking, prevAs := procEUID, invokingUID, runAs
+	procEUID = func() int { return 0 }
+	invokingUID = func() (int, bool) { return uid, viaSudo }
+	runAs = func(c sys.TaskCreds, fn func()) error {
+		*asked = append(*asked, c)
+		fn()
+		return nil
+	}
+	t.Cleanup(func() { procEUID, invokingUID, runAs = prevEUID, prevInvoking, prevAs })
+	return asked
+}
+
+// journalOwnerCreds are the credentials a root pass prunes root's journal with: its owner's uid and gid, no capability.
+func journalOwnerCreds(t *testing.T, root string) sys.TaskCreds {
+	t.Helper()
+	var st unix.Stat_t
+	if err := unix.Lstat(filepath.Join(root, rulefile.JournalDirName), &st); err != nil {
+		t.Fatal(err)
+	}
+	return sys.TaskCreds{EUID: st.Uid, EGID: st.Gid, FSUID: st.Uid, FSGID: st.Gid, Groups: []uint32{st.Gid}}
+}
+
+// TestRootRunStartPrunesTheJournalAsTheInvokingUser: `sudo tego run` (tiers 2 and 3 need root) works in the invoking
+// user's ledger root, whose rule-change journal root may not write (the user's own writes would refuse a file root
+// made). Its start's pass prunes that journal as the user, once, and says so as a user's start does; so does `sudo
+// tego gc`.
+func TestRootRunStartPrunesTheJournalAsTheInvokingUser(t *testing.T) {
+	root := retainRoot(t, "retention: 0s\ngc_interval: 1h\n")
+	journaled(t, root)
+	want := journalOwnerCreds(t, root)
+	asked := asRoot(t, int(want.EUID), true)
+	if out := retainNow(t); !strings.Contains(out, "retention pruned 2 rule-change journal line(s)") {
+		t.Errorf("stderr %q", out)
+	}
+	if n := journalLines(t, root); n != 0 || len(*asked) != 1 || !(*asked)[0].Equal(want) {
+		t.Errorf("%d lines left, pruned as %+v; want none left, pruned once as %+v", n, *asked, want)
+	}
+
+	journaled(t, root)
+	code, out, errs := gcOut(t, "--keep", "0s")
+	if code != identity.ExitOK || !strings.Contains(out, "rule-change journal: pruned 2 line(s)") ||
+		len(*asked) != 2 || !(*asked)[1].Equal(want) {
+		t.Errorf("sudo tego gc: exit %d, stdout %q, stderr %q, pruned as %+v", code, out, errs, *asked)
+	}
+}
+
+// TestRootPassLeavesAnotherUsersJournal: a root pass meeting the rule-change journal of a user who did not invoke it
+// (another uid through sudo, or no sudo at all) takes on no one's credentials and prunes nothing, and says why: gc on
+// stderr, its exit 0.
+func TestRootPassLeavesAnotherUsersJournal(t *testing.T) {
+	root := gcRoot(t)
+	journaled(t, root)
+	owner := int(journalOwnerCreds(t, root).EUID)
+	for _, who := range []struct {
+		uid  int
+		sudo bool
+	}{{owner + 1, true}, {owner, false}} {
+		asked := asRoot(t, who.uid, who.sudo)
+		code, out, errs := gcOut(t, "--keep", "0s")
+		if code != identity.ExitOK || strings.Contains(out, "rule-change journal") ||
+			!strings.Contains(errs, "rule-change journal: rulefile: the rule-change journal is another user's") {
+			t.Errorf("invoked by %d (sudo %v): exit %d, stdout %q, stderr %q", who.uid, who.sudo, code, out, errs)
+		}
+		if n := journalLines(t, root); n != 2 || len(*asked) != 0 {
+			t.Errorf("invoked by %d (sudo %v): %d lines left, pruned as %+v; want both, as no one", who.uid, who.sudo, n,
+				*asked)
+		}
 	}
 }
 

@@ -154,12 +154,7 @@ func TestProcessesTabCutsBigTrees(t *testing.T) {
 // an open page through a region update, with no reload.
 func TestProcessesTabFollowsALiveRun(t *testing.T) {
 	root := procFixture(t)
-	if err := os.MkdirAll(filepath.Join(root, ".live"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".live", procRun), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, root, procRun)
 	s := newServer(t, root)
 	c := login(t, s)
 	page := "/runs/" + procRun + "/processes"

@@ -52,7 +52,7 @@ const contextLines = 5
 var eventPage = sync.OnceValues(func() (*template.Template, error) {
 	t, err := template.New("layout.tmpl").Funcs(funcs).Funcs(template.FuncMap{"scopeKey": scopeKey, "scopeVal": scopeVal, "baseName": path.Base, "ctxRow": ctxRowOf}).
 		Funcs(factsFuncs).
-		ParseFS(assets, "templates/layout.tmpl", "templates/rulelink.tmpl", "templates/event.tmpl", "templates/evfacts.tmpl")
+		ParseFS(assets, "templates/layout.tmpl", "templates/rulelink.tmpl", "templates/event.tmpl", "templates/evfacts.tmpl", "templates/hostwarn.tmpl")
 	if err != nil {
 		return nil, err
 	}

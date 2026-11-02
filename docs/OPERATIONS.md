@@ -716,16 +716,25 @@ full` (lines alone: a run's blobs bring the restart closer), 1 GiB is a restart 
 how far it is from the restart (`--json`: `ledger_bytes`, `ledger_ceiling_bytes`). With `gc_interval` set, the first
 `tego run` start after each interval runs `tego gc`'s pass (a unit's restart is such a start): it ends a lost run as
 `orphaned`, and removes every ended or empty run older than `retention`, never one whose launcher still holds it,
-however old. It spends at most 2 s and stops between runs, and the next pass goes on from the oldest run left. `tego gc`
-with no flags is the same pass and counts as one. A removed run's line stays in `~/.tego/chain.log` (a line per run,
-never rewritten), so every run left still verifies, and `tego events <removed run> --verify` says its anchored ledger is
-missing rather than that it never ran. Without `gc_interval` nothing is removed unless you run `tego gc`, and with it
-nothing is removed while no run starts: an agent that runs for weeks without a restart makes no pass in that time.
+however old. The same pass prunes the rule-change journal (`<ledger_root>/.rule-changes/`) to `retention`, but keeps
+every line written since the oldest run still in the ledger root started, and every line that names such a run (a
+live block placed on it), so an agent that runs for weeks keeps the changes its page lists and the blocks an Undo must
+not lift; and each rules file keeps its newest 20 changes still standing while the file is there. A pass started as
+root (`sudo tego run`, as tiers 2 and 3 are) prunes the invoking user's journal as that user; a journal of any other
+user is left to them, which the pass logs. It spends at most 2 s and stops between runs, and the next pass goes on
+from the oldest run left. `tego gc` with no flags is the same pass and counts as one. A removed run's line stays in
+`~/.tego/chain.log` (a line per run, never rewritten), so every run left still verifies, and `tego events <removed
+run> --verify` says its anchored ledger is missing rather than that it never ran. Without `gc_interval` nothing is
+removed unless you run `tego gc`, and with it nothing is removed while no run starts: an agent that runs for weeks
+without a restart makes no pass in that time.
 `examples/systemd/tego-gc.timer` runs the pass once a day whatever starts (its `tego-gc.service` is `tego gc` with no
 flags, so it counts as the start's pass), and makes up a day missed while the user manager was not running
 (`Persistent=true`): give the service the agents' `TEGO_CONFIG` line, then `systemctl --user enable --now
 tego-gc.timer` (2026-11-02; checked on the user manager: the oneshot unit's pass removed an ended run older than
-`retention`, exit 0). Size the disk for `retention` days of restarts: for the agent above, 3.5 GB a day.
+`retention`, exit 0). A machine config the pass cannot read whole (a layer it cannot open, trust or parse) removes
+nothing: `tego gc` exits 125 `[config-untrusted]` naming the layer, and the unit fails, since the retention and the
+ledger root it removes by may be set in that layer; it gives a layer's mode back first when an agent took it
+("Modes an agent took", below). Size the disk for `retention` days of restarts: for the agent above, 3.5 GB a day.
 
 **While it runs.** `tego events <run> --follow` prints each line as the run appends it, checking the chain as it
 goes, and exits 0 at `run_end`; a launcher killed mid-run is exit 125 `[run-lost]` rather than a wait that never
@@ -1079,6 +1088,30 @@ you or root, not group- or other-writable, in a directory that is not either, an
   pinned under its name). `gc --builds` removes neither of those; the first goes once its run's cgroup is gone, the
   second needs root to look at the pins doctor names and remove the build by hand once no run of it lives.
 - The ledger is append-only and torn-line tolerant; nothing to repair.
+- **Modes an agent took** (2026-11-02). An agent runs as the user who owns `~/.tego` (the config layer, `chain.log`,
+  `tego.log` and the default ledger root in it), the ledger root, `$XDG_RUNTIME_DIR/tego` and its own run directory,
+  and no Landlock ABI has a chmod right, so it can `chmod 000` them. `tego run` gives the owner back their rights on
+  `~/.tego`, `config.yaml` and `tego.log` before it reads the config, and on `chain.log`, the ledger root, `.live` and
+  `$XDG_RUNTIME_DIR/tego` before it compiles, warning `[own-state-mode]` for each; every run gives all of these back
+  at its end too, and its own run and runtime directories. `tego gc` gives back `~/.tego`, `config.yaml` and
+  `tego.log` before it reads the config too, and deletes nothing by a config it still cannot read whole: it exits 125
+  `[config-untrusted]`, so the daily `tego-gc` unit fails and its journal says why. Only the owner's bits are added,
+  since someone else could have changed what a directory others can write holds: a `~/.tego` or `config.yaml` made
+  group- or other-writable still has every run refused by the config trust check, with its fix (`chmod g-w,o-w`), and
+  a `$XDG_RUNTIME_DIR/tego` made so has every run that routes Codex refused, with its own fix (remove it, or export
+  `XDG_RUNTIME_DIR` as an absolute directory only you can write), while the other runs go on without a runtime
+  directory, so with no `TEGO_REASON` (`tego.log` says why). Each restored mode is a `gap what=record
+  why=own-state-mode-restored` naming the path in the run's ledger, which the receipt and `tego status` count as no
+  lost action. A root launcher restores none (it reads and writes through any mode); its agent can take the modes of
+  your own state above, which your next unprivileged `tego run` restores, so if you launch only as root, restore them
+  by hand for your own `tego status`, `events` and dashboard. Restore by hand too a link at one of these names (left
+  alone), an earlier run's directory, the directory of a run whose launcher died, `$XDG_RUNTIME_DIR` itself (at mode
+  0 every later run is refused `[run]`: no runtime directory can be made in it), a directory inside a run's runtime
+  directory (its `CODEX_HOME`), which otherwise keeps that runtime directory, `auth.json` included, until you log out,
+  and the files you write that tego only reads (a `$TEGO_CONFIG` outside `~/.tego`, `prices.yaml`, the profiles and
+  the registry): `chmod 700` a directory, `chmod 600` a file. While a run lives, its agent can still take the modes of
+  its own run directory, which keeps `tego status`, `events` and `stop` out of it until the run ends: stop such a run
+  with Ctrl-C in its terminal or a signal to its launcher.
 - **Another manager's cgroup programs.** A program attached to a cgroup at or above the runs' without
   `BPF_F_ALLOW_MULTI` (`bpftool cgroup attach`'s default) refuses every run's program of that attach type: a root run
   stops before the agent starts (exit 125, `ErrCgroupAttachConflict`), and `sudo tego doctor` fails the same program's
@@ -1392,7 +1425,14 @@ its own cgroup namespace, where it cannot tell, as does a `tego rule` write that
 enforced). It is the terminal side of the dashboard's Block now: both write the same file in the run's directory
 under the ledger root, which the agent cannot write, and the launcher records each change as a `gap` line
 (`tego events <run> --kind gap`). An `exec` value is an absolute path, a directory ending in `/`, or a bare name
-(`curl`); a `net` value is `host[:port]`, an IP, a unix socket path or `@name`; a `path` value is an absolute path and
+(`curl`). An absolute path is matched by name and by the identity of the file it leads to, so it refuses that file
+under every name it has: a multi-call program (uutils' coreutils, busybox) is one file, and on a machine whose
+`/bin/ls` is one, a block on `/bin/ls` refuses `cat`, `sleep` and every other applet too. `tego block` says so when
+it places one ("Note: /bin/ls leads to …, one file with 115 names here …", from the file's link count, or a link
+named otherwise that leads to it) and gives the bare name, which is matched by name only and refuses that name
+alone; the dashboard's Block now says so too. `tego block` also notes a bare name no folder of its own PATH holds (a
+typo, or a program not installed here) and an absolute path that is no file here now; either block still refuses
+the program if it appears. A `net` value is `host[:port]`, an IP, a unix socket path or `@name`; a `path` value is an absolute path and
 everything beneath it (a relative one is read against the working directory and printed as the absolute path), for
 every file action; a value written through a link (`~/link/secret`, where `~/link` leads to `/data`) is resolved
 once, when the block is written, and the block refuses the real path too (`/data/secret`; `tego block` and the
@@ -1406,8 +1446,10 @@ a rename or hard link with either end at or under it, which would give the file 
 refused (exit 1, `[reads-unseen]`) on a run whose reads tego does not see, where it would refuse nothing. A `write`
 value is the same, for changes only: an open for writing, a create, an unlink, a rename or link at either end, a
 mkdir, a mknod, a symlink's own name, a truncate and an attribute change; plain reads go on. For every path kind a
-rename of a folder above the block is refused too, so a move cannot carry the blocked files out of its reach. A
-launcher older than the read and write kinds (a run whose `run_start` has `record_minor` below 24, such as one started
+rename of a folder above the block is refused too, so a move cannot carry the blocked files out of its reach. A `path`
+or `read` block also refuses a watch of what it covers (inotify, fanotify or dnotify, which would report which of its
+files are opened and changed; supervisor R36), on a run whose reads tego does not see as well; a `write` block refuses
+none. A launcher older than the read and write kinds (a run whose `run_start` has `record_minor` below 24, such as one started
 by an older binary) cannot read an overlay holding one: it keeps the blocks it last put in force, writes a
 `live-block-unreadable` gap and ignores every later change, `tego unblock` included, until that block is removed. So
 `tego block` refuses `read` and `write` on such a run (exit 1, `[launcher-too-old]`; block the `path` instead, which
@@ -1418,7 +1460,10 @@ that should get read and write blocks. At tier 3 (a run whose `run_start` names 
 the changes that still reach it; the Rules page offers no write block on such a run. A
 block only tightens: removing one removes only what it added, never something the contract
 refuses. A run that has ended is refused (exit 1, `[not-running]`): nothing would enforce the block; for its next run,
-make it a rule of the contract (`tego rule`); `tego unblock` on such a run says its blocks ended with it. A block
+make it a rule of the contract (`tego rule`); `tego unblock` on such a run says its blocks ended with it, and leaves
+its overlay as it ended. The dashboard's Block now and Remove make the same checks in the same words (one set,
+`liveblock.CheckBlock`, which `tego lift`, `tego grant` and `tego restore` have a twin of in `CheckFence`), so a
+Remove posted from a page left open across the run's end is refused too. A block
 also outranks a person's answer: a held file open it covers that is waiting for an answer when the block lands is taken
 back (its card leaves Approvals; `tego ask` no longer lists it) and refused under the block, and an approval that comes
 back after the block landed opens nothing (SEMANTICS §6). A `net` block does the same to a held connect
@@ -1438,8 +1483,30 @@ another local server on the same port, or a group send on it, and a block with n
 refuses every group and broadcast send of the run. A group or broadcast address names no host, so a block on
 `224.0.0.1:P` refuses that address alone. A block on another machine stays on that machine: it does not follow a
 broadcast or group datagram that machine also hears. While tego cannot read this host's addresses at all, a destination
-on a block's port is refused, since either may be this host. GAPS C46 lists what the reading of this host's addresses
-leaves out.
+on a block's port is refused, since either may be this host. This host's addresses are read from its interfaces and,
+*since 2026-11-02*, from the `local`, `broadcast` and `anycast` routes of the kernel's routing tables its default
+policy rules look up (`ip route show table local`, and those routes in tables main and default), so an address of an
+AnyIP range (`ip route add local 192.0.2.0/24 dev lo`, or the same with `table main`) is one of its own, a broadcast
+address set by hand (`ip addr ... brd`) is one of its broadcast addresses, and a datagram to an IPv6 anycast address
+it joined (a forwarding host joins its subnets' router anycast addresses) is refused as a group datagram is; a block
+on an anycast address refuses that address alone. Such a route in another table, which only a policy rule you add
+(`ip rule`) or a VRF sends lookups to, is not read. Until the tables are first read the interfaces' addresses answer;
+once read, the last reading stays in force while they cannot be read again. The `models[]` guard and a `net.allow`
+host name's resolved-address check read this host the same way. GAPS C46 lists what the reading of this host's
+addresses leaves out.
+
+A `net` block on a host name refuses a connect the contract admits under that name by the name, and every other by the
+addresses tego's own lookups of the name answered. Those are every address answered while the block stands (*since
+2026-11-02*; before, the last answer alone, and no lookup between changes to the run's blocks): the name is looked up
+when the launcher first reads the block, again at each later change to the run's live-block file, and again every
+minute on its own, and each answer is added to the ones before; a lookup that fails or answers nothing drops none and
+is tried again a minute later. A host is held with at most 64 addresses from those lookups (past that, the one
+answered longest ago is dropped), besides what the lookup at the last change answered, which is never dropped. Under a
+contract with no `net:` section nothing admits a connect by name, so those addresses are all a block matches: an
+address the name's DNS gives the agent before tego's lookups have answered it, such as a CDN's next rotation, is not
+refused until one does. A removed block takes its addresses with it, and the same block added later starts from a new
+lookup. A host an Adjustable run's fence also names (ADR 0125) is held for the whole run, and looked up every five
+minutes while no block names it.
 
 A block is matched against the address the supervisor copied from the agent, so what a thread of the agent does after
 that check matters (*since 2026-11-01*). While any `net` block exists, every connect and TCP Fast-Open send on an IP
@@ -1708,7 +1775,11 @@ stored. With `record: off`, `run_start`, `run_end` and every refusal (its path, 
 Never stored: `x-api-key`, `authorization`, `cookie` and other credential headers (header allow-list). `env.mask`
 is not built (P2): `compile` refuses a non-empty one, so nothing is masked, and a secret passed to the agent in its
 environment is recorded wherever the agent puts it (in a request body under `record: full`, in argv).
-How long: `retention` in the machine config, default 30 days, applied by `tego gc`.
+How long: `retention` in the machine config, default 30 days, applied by `tego gc` to the runs and to the rule-change
+journal (`<ledger_root>/.rule-changes/`: the rules texts `tego rule` and the dashboard replaced), which keeps beyond it
+what a run still in the ledger root reads (the lines since it started, those that name it) and each rules file's
+newest 20 changes still standing while the file is there. `tego rule` given a run directory outside the configured
+ledger root journals in that directory's parent, which no pass prunes: remove that journal with those runs.
 Who can read: any process running as the same uid. `visibility` is a view filter, not access control; on shared
 servers give each service its own uid and `ledger_root`, on an encrypted volume.
 Teams with data-protection obligations: keep `summary`, set `retention` by policy, and tell the people whose prompts

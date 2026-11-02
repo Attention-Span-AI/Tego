@@ -23,6 +23,26 @@ Changes after the first source release, listed here until the next tag.
 
 ### Fixed
 
+- Set up a new agent takes a long form and keeps a comment on the name line; removing an entry listed twice removes
+  both; `tego rule` changes read in words in the dashboard's history and undo the right way.
+- `tego gc` and the retention pass prune the rule-change journal, keeping everything a run in the ledger root still
+  reads and each rules file's newest 20 standing changes.
+- The Block now terminal line fills in what the form holds, quoted, and keeps a selection.
+- A run can no longer watch what it may not read: inotify, fanotify and dnotify watches of a `deny_read` target are
+  refused.
+- Live blocks, gate rules and the model guard read this host the same way, local routes included (AnyIP ranges,
+  hand-set broadcast and IPv6 anycast addresses).
+- `tego init --preset` makes a preset's folders with no link followed, and works inside a tego run.
+- An agent that runs `chmod 000` on tego's own files no longer makes its run fail or refuses the runs after it; tego
+  gives the owner back the rights it needs, and `tego gc` deletes nothing by a config layer it cannot read.
+- The dashboard reads a run whose launcher died as Lost within a few seconds, re-checks a cached chain verdict, and
+  keeps a live host block's addresses fresh.
+- tego block notes a program whose file has other names (a multi-call coreutils or busybox) and a bare name on no
+  PATH folder; the dashboard's Remove on an ended run is refused as tego unblock is.
+- The CLI's record views count a refusal once when its mirror line is not next to it, as the dashboard does.
+- tego rule and the dashboard's previews warn when a host a change adds does not resolve.
+- tego help marks the commands that need root; `tego-control serve --addr` takes [::1]; error pages keep the live
+  chrome; file rows offer Block; `compile --test` says which tiers auto leaves out and why.
 - tego run's end line names the tier, and every command that takes a run accepts a unique abbreviation of its id; a
   bare short name is no longer read as a local run directory (use ./name).
 - The Rules page lists the machine's limit ceilings, net.http, ingress and gate rules and the tier-1 datagram residual,

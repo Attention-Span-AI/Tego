@@ -10,12 +10,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/platform/sys"
+	"github.com/attention-span-ai/tego/internal/rulefile"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
@@ -35,9 +37,11 @@ var retentionBudget = 2 * time.Second
 // retentionBudget. It is gc's pass, so what may be removed is gc's rule: an ended or empty run older than retention;
 // never a run whose lock is held (a live run however old), and a lost run is ended orphaned first. chain.log is
 // never rewritten: a removed run's line stays, so the runs left verify as before and `events <removed> --verify`
-// reports the anchored ledger missing. It never fails the run that is starting. Its line names cmd, the command
-// starting the run.
-func retainBeforeRun(ctx context.Context, m *config.Machine, cmd string, stderr io.Writer) {
+// reports the anchored ledger missing. The rule-change journal is pruned with the same retention in what is left of
+// the budget (pruneRuleChanges, which ds, the machine config's diagnostics, may stop), by a root start (`sudo tego
+// run`, which tiers 2 and 3 need) as the invoking user whose journal it is. It never fails the run that is starting.
+// Its lines name cmd, the command starting the run.
+func retainBeforeRun(ctx context.Context, m *config.Machine, cmd string, ds []config.Diagnostic, stderr io.Writer) {
 	if m.GCInterval.Value <= 0 {
 		return
 	}
@@ -67,6 +71,95 @@ func retainBeforeRun(ctx context.Context, m *config.Machine, cmd string, stderr 
 		message(stderr, "", 0, 0, fmt.Sprintf("%s: retention removed %d ended run(s) older than %s, ended %d orphaned",
 			cmd, res.Deleted, config.FormatDuration(m.Retention.Value), res.Orphaned), codeSweep)
 	}
+	pruned, err := pruneRuleChanges(pass, root, m.Retention.Value, false, false, nil, ds)
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		logOwn("retention: rule-change journal: " + err.Error())
+	}
+	if pruned.Lines > 0 {
+		message(stderr, "", 0, 0, fmt.Sprintf("%s: retention pruned %d rule-change journal line(s) older than %s", cmd,
+			pruned.Lines, config.FormatDuration(m.Retention.Value)), codeSweep)
+	}
+}
+
+// errRetentionUnknown is a rule-change journal left unpruned because a machine config layer was skipped.
+var errRetentionUnknown = errors.New("not pruned")
+
+// pruneRuleChanges is a retention pass's prune of the ledger root's rule-change journal (rulefile.Prune) with the
+// pass's keep: a line older than keep goes once no reader of the journal needs it (a run still in the root, its
+// pending changes and an Undo's lift read the lines since it started and those that name it; each contract keeps its
+// newest rulefile.KeepChanges changes that stand while its file is there), then the blobs no line left names and the
+// lock files of contracts with no line left. gone are the runs the pass removes, or as a dry run would remove, which
+// count as gone already. When keep is the machine's own (explicit false) and the machine config load skipped a layer
+// (ds), nothing is pruned (errRetentionUnknown): the retention that layer may set is not known, and history removed on
+// a guess does not come back; a --keep given on the command line is known. A root pass (`sudo tego run`, `sudo tego
+// gc`) prunes the invoking user's journal as that user (journalOwner).
+func pruneRuleChanges(ctx context.Context, root string, keep time.Duration, explicit, dryRun bool, gone []string,
+	ds []config.Diagnostic) (rulefile.Pruned, error) {
+	if d, ok := skippedLayer(ds); ok && !explicit {
+		what := "a machine config layer"
+		if d.File != "" {
+			what = "the machine config layer " + d.File
+		}
+		return rulefile.Pruned{}, fmt.Errorf("%w: %s was skipped, so the retention it may set is not known",
+			errRetentionUnknown, what)
+	}
+	o := rulefile.PruneOptions{Before: time.Now().Add(-keep), Gone: gone, DryRun: dryRun}
+	as, ok, err := journalOwner(root)
+	switch {
+	case err != nil:
+		return rulefile.Pruned{}, err
+	case !ok:
+		return rulefile.Prune(ctx, root, o)
+	}
+	var p rulefile.Pruned
+	perr := errors.New("the prune did not run")
+	if err := runAs(as, func() { p, perr = rulefile.Prune(ctx, root, o) }); err != nil {
+		return rulefile.Pruned{}, fmt.Errorf("prune as uid %d, whose journal it is: %w", as.EUID, err)
+	}
+	return p, perr
+}
+
+// Test seams, the real calls in a product build: procEUID is this process's effective uid, invokingUID the SUDO_UID
+// rule (config.InvokingUID), and runAs sys.RunAs.
+var (
+	procEUID    = os.Geteuid
+	invokingUID = config.InvokingUID
+	runAs       = sys.RunAs
+)
+
+// journalOwner says as whom root's rule-change journal is pruned: as this process (ok false), or, when this process is
+// root and the journal is the invoking user's (`sudo tego run` and `sudo tego gc` work in that user's ledger root), as
+// that user (ok, with the user's ids and no capability; sys.RunAs). Root may not write there: a journal file root
+// made would be refused by the user's own writes, and acting as the user, the prune can do there only what the user
+// could. A root process that meets the journal of a user who did not invoke it leaves it to that user
+// (rulefile.ErrOtherOwner). The owner is read before the prune and checked again by it (rulefile.Prune opens only a
+// journal of the user it runs as), so a directory swapped meanwhile is refused, never written as another user.
+func journalOwner(root string) (sys.TaskCreds, bool, error) {
+	if procEUID() != 0 {
+		return sys.TaskCreds{}, false, nil
+	}
+	var st unix.Stat_t
+	if err := unix.Lstat(filepath.Join(root, rulefile.JournalDirName), &st); err != nil || st.Uid == 0 {
+		return sys.TaskCreds{}, false, nil // no journal, which Prune finds too, or root's own
+	}
+	if uid, viaSudo := invokingUID(); !viaSudo || st.Uid != uint32(uid) {
+		return sys.TaskCreds{}, false, fmt.Errorf("%w: uid %d's, which did not invoke this tego; it is left to its owner",
+			rulefile.ErrOtherOwner, st.Uid)
+	}
+	return sys.TaskCreds{EUID: st.Uid, EGID: st.Gid, FSUID: st.Uid, FSGID: st.Gid, Groups: []uint32{st.Gid}}, true, nil
+}
+
+// skippedLayer is the first of ds that says the load left a machine config layer out: one TrustWarn skipped as
+// untrusted, invalid or missing, whose fix ends "The layer was skipped." (pkg/spec/config skipOrAbort and demote, as
+// serve's envSkipped reads it), or the per-user layer of a uid the passwd database does not name (E9).
+func skippedLayer(ds []config.Diagnostic) (config.Diagnostic, bool) {
+	for _, d := range ds {
+		if strings.Contains(d.Fix, "The layer was skipped") ||
+			d.Code == config.CodeIgnored && strings.HasSuffix(d.Message, "config layer skipped") {
+			return d, true
+		}
+	}
+	return config.Diagnostic{}, false
 }
 
 // claimRetention takes the ledger root's retention stamp for one pass: ok when no other pass holds it and the last

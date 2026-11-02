@@ -162,6 +162,10 @@ func TerminalDevice(r inforce.Rule) bool {
 // (ADR 0100 (1d)), can shape a view's rows.
 type Rule = inforce.Rule
 
+// RuleWords is a ledger rule key in words (inforce.Words, the one vocabulary for rule keys), named here for the same
+// reason: the dashboard names every line's rule by it.
+func RuleWords(ruleKey string) string { return inforce.Words(ruleKey) }
+
 // Fold is one row of a rules table: a rule alone (Devices nil), or, at the first terminal device rule's place, the
 // group's terminal device rules folded under one row, each kept whole (its key, its line, its hits) for the
 // expander. Rule is then the first of them.

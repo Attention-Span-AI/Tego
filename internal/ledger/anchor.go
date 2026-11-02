@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,8 +29,8 @@ type ChainAnchor interface {
 // DefaultAnchorPath is the anchor a Writer uses when its caller names none: the chain.log next to the
 // ledger root (<ledger_root>/<run>/ → <ledger_root>/../chain.log). The product always names one — the
 // invoking user's ~/.tego/chain.log whatever ledger_root is, and this same file only for an account
-// with no home (internal/runtime AnchorPath, P0-DESIGN §3.3) — so this default is what tests and
-// fixtures get; for the default ledger_root the two coincide.
+// with no home (AnchorPath, P0-DESIGN §3.3) — so this default is what tests and fixtures get; for the
+// default ledger_root the two coincide.
 func DefaultAnchorPath(runDir string) string {
 	return filepath.Join(filepath.Dir(filepath.Clean(runDir)), "..", ChainLogFile)
 }
@@ -144,26 +145,84 @@ func (a *fileChainAnchor) Head(run string) (string, bool, error) {
 		return "", false, err
 	}
 	defer func() { _ = f.Close() }()
-	head, ok := "", false
+	h := anchorHeads(f, []string{run})[run]
+	return h.Head, h.OK, h.Err
+}
+
+// AnchorHead is what a chain anchor's Head returns for one run.
+type AnchorHead struct {
+	Head string
+	OK   bool
+	Err  error
+}
+
+// AnchorHeads is Head for many runs from one read of the chain anchor at path: for each of runs, what
+// NewFileChainAnchor(path).Head(run) returns, read from the same bytes and opened the same way. fi is the
+// file as fstat'ed before it was read: a caller that keeps the answers can stat path later and, finding the
+// same file at the same size, mtime and ctime, know they still stand without reading it again. It is nil
+// when there is no file or it could not be opened (each answer then says what Head says), and when the
+// fstat failed (the answers are read all the same, and the caller cannot keep them). The dashboard keeps its
+// chain verdicts that way (internal/control/ledgerview).
+func AnchorHeads(path string, runs []string) (heads map[string]AnchorHead, fi os.FileInfo) {
+	f, err := openAnchor(filepath.Dir(path), filepath.Base(path), unix.O_RDONLY)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			err = nil
+		}
+		heads = make(map[string]AnchorHead, len(runs))
+		for _, r := range runs {
+			heads[r] = AnchorHead{Err: err}
+		}
+		return heads, nil
+	}
+	defer func() { _ = f.Close() }()
+	if fi, err = f.Stat(); err != nil {
+		fi = nil
+	}
+	return anchorHeads(f, runs), fi
+}
+
+// anchorHeads reads the anchor lines of f once and answers, for each of runs, as Head does: the head
+// the run's line names, ok false when no line names it, and an error for two of its lines naming two
+// heads. A terminated line that is not "<run> <head>" fails every run, and so does a read error, each
+// answer keeping an error it already had: Head returns at the first error in the file's order. A
+// trailing line without "\n" ends the read, never an error (E28).
+func anchorHeads(f io.ReaderAt, runs []string) map[string]AnchorHead {
+	out := make(map[string]AnchorHead, len(runs))
+	for _, r := range runs {
+		out[r] = AnchorHead{}
+	}
+	failAll := func(err error) {
+		for r, h := range out {
+			if h.Err == nil {
+				out[r] = AnchorHead{Err: err}
+			}
+		}
+	}
 	for l, err := range scanLines(f) {
 		if err != nil {
-			return "", false, fmt.Errorf("ledger: read anchor: %w", err)
+			failAll(fmt.Errorf("ledger: read anchor: %w", err))
+			break
 		}
 		if !l.terminated {
 			break
 		}
 		r, h, found := bytes.Cut(l.data, []byte{' '})
 		if !found || !IsRunID(string(r)) || !record.IsID(string(h)) {
-			return "", false, fmt.Errorf("%w: anchor line %q", ErrCorruptLedger, strings.TrimSpace(string(l.data)))
+			failAll(fmt.Errorf("%w: anchor line %q", ErrCorruptLedger, strings.TrimSpace(string(l.data))))
+			break
 		}
-		if string(r) == run {
-			if ok && head != string(h) {
-				return "", false, fmt.Errorf("%w: chain.log holds two heads for %s, %s and %s", ErrCorruptLedger, run, head, h)
-			}
-			head, ok = string(h), true
+		cur, asked := out[string(r)]
+		switch {
+		case !asked || cur.Err != nil:
+		case cur.OK && cur.Head != string(h):
+			out[string(r)] = AnchorHead{Err: fmt.Errorf("%w: chain.log holds two heads for %s, %s and %s",
+				ErrCorruptLedger, r, cur.Head, h)}
+		default:
+			out[string(r)] = AnchorHead{Head: string(h), OK: true}
 		}
 	}
-	return head, ok, nil
+	return out
 }
 
 // openAnchor opens name in dir with flags, never following a symlink at name and never blocking on a FIFO

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/rulesview"
 	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/internal/rulefile"
@@ -122,12 +123,7 @@ func (f *rulesFix) run(t *testing.T, id, source, text string, t0 time.Time, live
 		t.Fatal(err)
 	}
 	if live {
-		if err := os.MkdirAll(filepath.Join(f.root, ".live"), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(f.root, ".live", id), nil, 0o600); err != nil {
-			t.Fatal(err)
-		}
+		markLive(t, f.root, id)
 	}
 }
 
@@ -135,6 +131,23 @@ func (f *rulesFix) get(t *testing.T, target string) (int, string) {
 	t.Helper()
 	w := do(f.s, "GET", target, "127.0.0.1:8484", f.c)
 	return w.Code, w.Body.String()
+}
+
+// svcRef is the ref the rule service lists for the rules file whose newest run recorded path: the ref Change rules
+// names the file by, and so the Rules page too.
+func (f *rulesFix) svcRef(t *testing.T, path string) string {
+	t.Helper()
+	cs, err := (&rules.Service{Ledger: f.root, Home: f.home}).Contracts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cs {
+		if c.Path == path {
+			return c.Ref
+		}
+	}
+	t.Fatalf("the rule service lists no %s: %+v", path, cs)
+	return ""
 }
 
 // TestRulesPageInForce: /rules?run= shows that run's Rules in force as sentences in group tables, each rule's hits in
@@ -164,11 +177,16 @@ func TestRulesPageInForce(t *testing.T) {
 	if strings.Contains(body, rulesCanary) {
 		t.Error("an env.set value is on the page")
 	}
-	// Change rules links to the form by the contract's ref once it exists; until then the button is disabled with
-	// a hint naming today's ways, never a link to a 404.
-	changeLink := `href="/rules/change?c=` + contractRef(f.source) + `"`
+	// Change rules links to the form by the contract's ref once it exists, the rule service's own, so the form needs
+	// no redirect (and Narrow this to its section); until then the button is disabled with a hint naming today's
+	// ways, never a link to a 404.
+	ref := f.svcRef(t, f.source)
+	changeLink := `href="/rules/change?c=` + ref + `"`
 	if got := strings.Contains(body, changeLink); got != changeBuilt {
 		t.Errorf("Change rules link shown=%v, form built=%v", got, changeBuilt)
+	}
+	if narrow := `href="/rules/change?c=` + ref + `#rc-net.allow"`; changeBuilt && !strings.Contains(body, narrow) {
+		t.Errorf("the open network lacks %s", narrow)
 	}
 	if !changeBuilt && (!strings.Contains(body, `disabled aria-describedby="rules-soon"`) || !strings.Contains(body, "tego rule</span>")) {
 		t.Error("the unbuilt Change rules button is not disabled with its hint")
@@ -185,16 +203,18 @@ func TestRulesPageInForce(t *testing.T) {
 	}
 }
 
-// TestRulesPageChooser: the default is the newest run; ?c= picks a rules file by its ref and shows its newest run,
-// also when the form kept a run of another file; the run list holds only that file's runs; an unknown ref, a path
-// in place of a ref and an unknown run are 404s.
+// TestRulesPageChooser: the default is the newest run; ?c= picks a rules file by its ref, the rule service's, and
+// shows its newest run, also when the form kept a run of another file; the run list holds only that file's runs; an
+// old link naming the file by the page's former ref (the sha256 of its recorded path) is sent to its ref with its run
+// kept; an unknown ref, a path in place of a ref and an unknown run are 404s.
 func TestRulesPageChooser(t *testing.T) {
 	f := newRulesFix(t)
 	_, body := f.get(t, "/rules")
 	if !strings.Contains(body, "Policy · other-agent") {
 		t.Error("/rules does not default to the newest run")
 	}
-	for _, want := range []string{`<option value="` + contractRef(f.source) + `"`, `<option value="` + contractRef(f.other) + `" selected`} {
+	src, oth := f.svcRef(t, f.source), f.svcRef(t, f.other)
+	for _, want := range []string{`<option value="` + src + `"`, `<option value="` + oth + `" selected`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/rules chooser lacks %s", want)
 		}
@@ -202,18 +222,79 @@ func TestRulesPageChooser(t *testing.T) {
 	if strings.Contains(body, `value="`+f.source+`"`) {
 		t.Error("the chooser carries a path as a value")
 	}
-	_, body = f.get(t, "/rules?c="+contractRef(f.source)+"&run="+rulesRunO)
+	_, body = f.get(t, "/rules?c="+src+"&run="+rulesRunO)
 	if !strings.Contains(body, "Policy · rules-demo") || !strings.Contains(body, `<option value="`+rulesRunB+`" selected`) {
 		t.Error("?c= with another file's run does not show the file's newest run")
 	}
 	if !strings.Contains(body, `<option value="`+rulesRunA+`"`) || strings.Contains(body, `<option value="`+rulesRunO+`"`) {
 		t.Error("the run list is not the chosen file's runs")
 	}
+	old := do(f.s, "GET", "/rules?c="+legacyRef(f.source)+"&run="+rulesRunA, "127.0.0.1:8484", f.c)
+	if loc := old.Header().Get("Location"); old.Code != http.StatusSeeOther || loc != "/rules?c="+src+"&run="+rulesRunA {
+		t.Errorf("an old link by the former ref: %d %q, want 303 to the file's ref", old.Code, loc)
+	}
 	for _, target := range []string{"/rules?c=feed", "/rules?c=" + url.QueryEscape("../../etc/passwd"), "/rules?c=" + url.QueryEscape(f.source),
+		"/rules?c=" + legacyRef(filepath.Join(f.proj, "never-ran.yaml")), "/rules?c=" + src[:15],
 		"/rules?run=r-aaaaaaaa-0000000000099-nonexx", "/rules?run=" + url.QueryEscape("../../etc")} {
 		if code, _ := f.get(t, target); code != http.StatusNotFound {
 			t.Errorf("%s: %d, want 404", target, code)
 		}
+	}
+}
+
+// TestRulesPageOneFileTwoSpellings: a run that recorded its rules file through a linked folder ran the same file: the
+// chooser lists it once, by the ref the rule service names it by, and its run list holds the runs of both spellings.
+func TestRulesPageOneFileTwoSpellings(t *testing.T) {
+	f := newRulesFix(t)
+	link := filepath.Join(filepath.Dir(f.proj), "proj-link")
+	if err := os.Symlink(f.proj, link); err != nil {
+		t.Fatal(err)
+	}
+	const viaLink = "r-aaaaaaaa-0000000000034-linked"
+	f.run(t, viaLink, filepath.Join(link, "agent.yaml"), rulesSource, time.Now().Add(-30*time.Minute).UTC().Truncate(time.Millisecond), false,
+		`"kind":"run_end","source":"supervisor","reason":"exit","exit_code":0`)
+	ref := f.svcRef(t, filepath.Join(link, "agent.yaml")) // listed under its newest run's spelling
+	code, body := f.get(t, "/rules?c="+ref)
+	if code != http.StatusOK {
+		t.Fatalf("GET by the file's ref: %d", code)
+	}
+	if n, m := strings.Count(body, `<option value="`+ref+`"`), strings.Count(body, ">rules-demo · "); n != 1 || m != 1 {
+		t.Errorf("the chooser lists the file %d times by its ref and %d by its name, want once", n, m)
+	}
+	for _, want := range []string{`<option value="` + viaLink + `" selected`, `<option value="` + rulesRunB + `"`, `<option value="` + rulesRunA + `"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the file's run list lacks %s", want)
+		}
+	}
+}
+
+// TestRulesPageRunListHoldsTheRunShown: the run list holds a rules file's newest maxChooserRuns runs and, when the run
+// shown is older than those (reached by ?run=), that run too, selected: the list never names another run than the one
+// the page shows.
+func TestRulesPageRunListHoldsTheRunShown(t *testing.T) {
+	f := newRulesFix(t)
+	t0 := time.Now().Add(-50 * time.Minute).UTC().Truncate(time.Millisecond)
+	var newest string
+	for i := range maxChooserRuns {
+		newest = fmt.Sprintf("r-aaaaaaaa-%013d-later", 100+i)
+		f.run(t, newest, f.source, rulesSource, t0.Add(time.Duration(i)*time.Second), false,
+			`"kind":"run_end","source":"supervisor","reason":"exit","exit_code":0`)
+	}
+	code, body := f.get(t, "/rules?run="+rulesRunA)
+	if code != http.StatusOK || !strings.Contains(body, "Policy · rules-demo") {
+		t.Fatalf("GET ?run= of an older run: %d", code)
+	}
+	_, list, _ := strings.Cut(body, `<select class="select" name="run">`)
+	list, _, _ = strings.Cut(list, "</select>")
+	if !strings.Contains(list, `<option value="`+rulesRunA+`" selected`) {
+		t.Error("the run shown, older than its file's newest runs, is not the run list's choice")
+	}
+	if n := strings.Count(list, "<option "); n != maxChooserRuns+1 || !strings.Contains(list, `<option value="`+newest+`"`) ||
+		strings.Contains(list, `<option value="`+rulesRunB+`"`) {
+		t.Errorf("the run list holds %d runs, want the file's newest %d and the run shown", n, maxChooserRuns)
+	}
+	if strings.Index(list, newest) > strings.Index(list, rulesRunA) {
+		t.Error("the run shown is not in its place by start, after the newer runs")
 	}
 }
 

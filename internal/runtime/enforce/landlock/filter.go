@@ -77,6 +77,9 @@ const (
 	// fSetown and fSetownEx are fcntl's F_SETOWN and F_SETOWN_EX (asm-generic, both arches): they name the
 	// process a descriptor's SIGIO (or F_SETSIG's signal) goes to, which is a signal like kill's.
 	fSetown, fSetownEx = 8, 15
+	// fNotify is fcntl's F_NOTIFY (F_LINUX_SPECIFIC_BASE + 2, both arches): dnotify, the third watch API beside
+	// inotify and fanotify, which places a watch on the directory a descriptor holds (R11e).
+	fNotify = 1026
 	// ioctlFIOSETOWN and ioctlSIOCSPGRP set a socket's signal owner through ioctl(2), the same owner record
 	// fcntl's F_SETOWN sets (sock_ioctl -> f_setown).
 	ioctlFIOSETOWN, ioctlSIOCSPGRP = 0x8901, 0x8902
@@ -219,8 +222,15 @@ type archTable struct {
 	// Frames is sendfile(2) and splice(2), which R11d notifies in a run that decides datagrams: either can leave a
 	// UDP frame pending on a socket it writes into.
 	Frames []sysNR
+	// Watch is inotify_add_watch(2) and fanotify_mark(2), which R11e notifies in every enforcing run, with fcntl(2)'s
+	// F_NOTIFY (dnotify, on Fcntl), so the supervisor refuses a watch whose object the run withholds a read of
+	// (supervisor R36): a watch opens nothing, so neither the Landlock ruleset, which has no hook for it, nor a decision
+	// plane, which hooks no security_path_notify, refuses one, and a watch on a deny_read directory reported which of
+	// its files were opened and changed (GAPS A10).
+	Watch []sysNR
 	// Signal is the kill(2) family the signal-scope arm notifies below Landlock ABI 6, PidfdSignal the
-	// pidfd_send_signal(2) it answers ENOSYS, and Fcntl the fcntl(2) whose F_SETOWN it notifies.
+	// pidfd_send_signal(2) it answers ENOSYS, and Fcntl the fcntl(2) whose F_SETOWN it notifies, and whose
+	// F_NOTIFY the watch arm notifies.
 	Signal      []sysNR
 	PidfdSignal uint32
 	Fcntl       uint32
@@ -316,6 +326,7 @@ var (
 		Pair:   53,
 		Bind:   49, Listen: 50, Setsockopt: 54,
 		Frames:     []sysNR{{"sendfile", 40}, {"splice", 275}},
+		Watch:      []sysNR{{"inotify_add_watch", 254}, {"fanotify_mark", 301}},
 		ClientDeny: []sysNR{{"recvmsg", 47}, {"recvmmsg", 299}, {"pidfd_getfd", 438}, {"listen", 50}, {"accept", 43}, {"accept4", 288}},
 		Memfd:      319,
 		Signal: []sysNR{{"kill", 62}, {"tkill", 200}, {"tgkill", 234}, {"rt_sigqueueinfo", 129},
@@ -357,6 +368,7 @@ var (
 		Pair:   199,
 		Bind:   200, Listen: 201, Setsockopt: 208,
 		Frames:     []sysNR{{"sendfile", 71}, {"splice", 76}},
+		Watch:      []sysNR{{"inotify_add_watch", 27}, {"fanotify_mark", 263}},
 		ClientDeny: []sysNR{{"recvmsg", 212}, {"recvmmsg", 243}, {"pidfd_getfd", 438}, {"listen", 201}, {"accept", 202}, {"accept4", 242}},
 		Memfd:      279,
 		Signal: []sysNR{{"kill", 129}, {"tkill", 130}, {"tgkill", 131}, {"rt_sigqueueinfo", 138},
@@ -410,6 +422,10 @@ type filterOpts struct {
 	// refuses, or holds only as a read, unless the record mode keeps reads.
 	askRead   bool
 	gateWrite bool // a write gate scores a mode or attribute change: the chmod and Attr families are notified under summary/off (R11)
+	// watches installs the watch arm (R11e): inotify_add_watch, fanotify_mark and fcntl's F_NOTIFY are notified, for
+	// the supervisor to refuse a watch whose object the run withholds a read of (supervisor R36). Every enforcing run
+	// sets it (Prepare); an observe run's filter (BuildFilter) does not, since its supervisor would continue every watch.
+	watches bool
 	// sourceRoute installs the source-route arm (sourceRouteTest, R11b): a run whose contract has a net: section or
 	// whose gate scores net actions (ADR 0041 D6, GAPS C34).
 	sourceRoute bool
@@ -562,6 +578,10 @@ func planeSkips(hooks map[string]bool, full, ask bool) planeSkip {
 // socketpair(2) are admitted by an allowlist decided on their scalar arguments, and every other triple is
 // notified to a supervisor handler that can only refuse.
 //
+// The watch arm (filterOpts.watches, R11e) notifies inotify_add_watch(2), fanotify_mark(2) and fcntl(2)'s F_NOTIFY
+// (dnotify) in every enforcing run: none is a hook of Landlock or of a decision plane, so the supervisor refuses a
+// watch whose object the run withholds a read of itself (supervisor R36; GAPS A10).
+//
 // A build with -tags tegotesthooks can leave named syscalls out of the notify arm and the root-tier arm
 // (filterTestOmit, TEGO_TEST_FILTER_OMIT), so that a root test reaches what those arms answer first in a product
 // run: the decision plane's bpf and key_permission hooks (enforce-plane §2.20). A product build omits nothing.
@@ -682,6 +702,15 @@ func buildFilter(arch Arch, o filterOpts) ([]bpf.Instruction, error) {
 		for _, s := range t.Attr {
 			prog = append(prog, bpf.JumpIf{Cond: bpf.JumpEqual, Val: s.NR, SkipFalse: 1}, bpf.RetConstant{Val: retNotify})
 		}
+	}
+	if o.watches {
+		// R11e: a watch names its object by a pathname in the agent's memory (or, for fanotify_mark and dnotify, by a
+		// descriptor), so the filter cannot decide it and notifies every call; the supervisor refuses one whose object
+		// the run withholds a read of and continues the rest (supervisor R36).
+		for _, s := range t.Watch {
+			prog = append(prog, bpf.JumpIf{Cond: bpf.JumpEqual, Val: s.NR, SkipFalse: 1}, bpf.RetConstant{Val: retNotify})
+		}
+		prog = append(prog, dnotifyTest(t.Fcntl)...)
 	}
 	prog = append(prog, sendToTest(t.SendTo, o.frames)...)
 	for _, o := range []struct {
@@ -1029,6 +1058,24 @@ func signalScopeTest(t archTable) []bpf.Instruction {
 		bpf.RetConstant{Val: retNotify},
 		bpf.LoadAbsolute{Off: offNR, Size: 4},
 	)
+}
+
+// dnotifyTest is the watch arm's third watch API (R11e): fcntl(fd, F_NOTIFY, mask), dnotify, watches the directory fd
+// holds, and from a descriptor of a deny_read directory (one a tier-1 ruleset lets the agent open to list, on the
+// READ_DIR it inherits) it reported every access, change, creation and rename inside the target, with its timing,
+// while each read there was refused. Only the command is tested, a scalar the kernel reads as an unsigned int (the
+// low half of args[1], as the signal arm's F_SETOWN test reads it), so every other fcntl(2) is left to the arms after
+// this one and the descriptor table's own calls (F_GETFL, F_SETFD, F_DUPFD...) cost no notification; the supervisor
+// decides the watch on the descriptor's own file (supervisor R36). The signal arm, below Landlock ABI 6, sees fcntl
+// first and notifies its F_SETOWN pair itself; any other command reaches this test with A reloaded to the number.
+func dnotifyTest(fcntl uint32) []bpf.Instruction {
+	return []bpf.Instruction{
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: fcntl, SkipFalse: 4},
+		bpf.LoadAbsolute{Off: offArg(1), Size: 4}, // unsigned int cmd
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: fNotify, SkipFalse: 1},
+		bpf.RetConstant{Val: retNotify},
+		bpf.LoadAbsolute{Off: offNR, Size: 4},
+	}
 }
 
 // Which values of setpriority(2) and ioprio_set(2) that name one task (PRIO_PROCESS, IOPRIO_WHO_PROCESS).

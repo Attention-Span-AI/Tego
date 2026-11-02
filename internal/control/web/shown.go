@@ -190,7 +190,9 @@ type rowPayload struct {
 	// Host and Endpoint name a model request's or answer's server (ssl_request, ssl_response).
 	Host     string `json:"host"`
 	Endpoint string `json:"endpoint"`
-	Block    *struct {
+	// Binary is the file a gap names: of a mode tego gave back to its owner, the file (own-state-mode-restored).
+	Binary string `json:"binary"`
+	Block  *struct {
 		Op      string `json:"op"`
 		Kind    string `json:"kind"`
 		Value   string `json:"value"`
@@ -221,7 +223,8 @@ func shown(e ledgerview.Event) string {
 		return shellTail(mask(e.Target))
 	case "gap":
 		var p rowPayload
-		if json.Unmarshal([]byte(e.Raw), &p) == nil && p.Block != nil {
+		decoded := json.Unmarshal([]byte(e.Raw), &p) == nil
+		if decoded && p.Block != nil {
 			what := blockWhat(p.Block.Kind, mask(p.Block.Value))
 			// ADR 0125's ops (record minor 26) are no block: a lift allows, a restore refuses again, an expiry is the
 			// time limit's (no person made it), and a refused lift loosened nothing.
@@ -238,6 +241,10 @@ func shown(e ledgerview.Event) string {
 				return what
 			}
 			return what + ", blocked live by " + who(p.Block.By)
+		}
+		// A mode tego gave back to its owner (gaps.Restored) names its file; shownOp says what tego did.
+		if decoded && p.What == record.GapRecord && p.Why == record.GapOwnStateModeRestored {
+			return mask(p.Binary)
 		}
 		return ""
 	case "ssl_request", "ssl_response":
@@ -379,6 +386,9 @@ func gapWords(what, why string) string {
 		return "Allowed rule ended: its time ran out"
 	case "live-lift-refused":
 		return "Request to allow a rule refused: nothing was loosened"
+	// No action was lost (gaps.Restored): the line names the file whose owner's rights tego gave back.
+	case record.GapOwnStateModeRestored:
+		return "Tego gave its owner back the rights on one of its own files, which something had taken"
 	}
 	if why == "" && what == "" {
 		return "A gap in the record"

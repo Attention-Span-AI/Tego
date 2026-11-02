@@ -294,16 +294,18 @@ func TestGateReadMatchesScoresAMovedAncestor(t *testing.T) {
 	}
 }
 
-// lanHost is a running host with one address on one subnet (thishost.Addrs).
+// lanHost is a running host with one address on one subnet and one IPv6 anycast address it joined (thishost.Addrs).
 type lanHost struct{}
 
 func (lanHost) Own(a netip.Addr) bool       { return a == netip.MustParseAddr("192.0.2.10") }
 func (lanHost) Broadcast(a netip.Addr) bool { return a == netip.MustParseAddr("192.0.2.255") }
+func (lanHost) Anycast(a netip.Addr) bool   { return a == netip.MustParseAddr("2001:db8:1::") }
 
 // TestNetToOnThisHostScoresEverySpelling: a rule that names this host is on the destination, not on a spelling of it. A
 // server bound to all interfaces answers on every loopback address and on the host's own, so each of them is scored on
-// the rule's port, and so is a datagram to a group or a broadcast address, which reaches the same server. A rule on
-// another machine, or on a group, names no spelling of this host. Each rule counts once, however many spellings it has.
+// the rule's port, and so is a datagram to a group, a broadcast address or an anycast address the host joined, which
+// reaches the same server. A rule on another machine, or on a group, names no spelling of this host. Each rule counts
+// once, however many spellings it has.
 func TestNetToOnThisHostScoresEverySpelling(t *testing.T) {
 	p, err := New([]Rule{{NetTo, "127.0.0.1:5000", 90}, {NetTo, "[::1]:5001", 90}, {NetTo, "localhost:5002", 90},
 		{NetTo, "192.0.2.10:5003", 90}, {NetTo, "0.0.0.0:5004", 90}, {NetTo, "203.0.113.7:5005", 90},
@@ -313,7 +315,7 @@ func TestNetToOnThisHostScoresEverySpelling(t *testing.T) {
 	}
 	spellings := []string{"127.0.0.1", "127.0.0.2", "127.255.255.254", "::ffff:127.0.0.1", "::ffff:127.0.0.2", "::1", "::1%1",
 		"0.0.0.0", "::", "192.0.2.10", "::ffff:192.0.2.10", "224.0.0.1", "::ffff:224.0.0.1", "ff02::1", "ff02::1%2",
-		"255.255.255.255", "192.0.2.255", "localhost", "db.localhost"}
+		"255.255.255.255", "192.0.2.255", "2001:db8:1::", "localhost", "db.localhost"}
 	verdict := func(host string, port uint16, h thishost.Addrs) Verdict {
 		return p.Evaluate(Allow, Action{Kind: Net, Complete: true, Host: host, Port: port, ThisHost: h}).Verdict
 	}
@@ -348,7 +350,7 @@ func TestNetToOnThisHostScoresEverySpelling(t *testing.T) {
 
 	// With no running host to ask, as `compile --test` has none, an address answers for itself and a host's own does not.
 	for host, want := range map[string]Verdict{"127.0.0.2": Refused, "::1": Refused, "224.0.0.1": Refused, "255.255.255.255": Refused,
-		"localhost": Refused, "192.0.2.10": Allow, "192.0.2.255": Allow} {
+		"localhost": Refused, "192.0.2.10": Allow, "192.0.2.255": Allow, "2001:db8:1::": Allow} {
 		if got := verdict(host, 5000, nil); got != want {
 			t.Errorf("no snapshot: %s = %d, want %d", host, got, want)
 		}

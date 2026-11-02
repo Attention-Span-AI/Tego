@@ -24,7 +24,9 @@ internal/runtime/enforce/cgroup TestSlotHelper # helper process for the slot-tab
 internal/cli TestStopLockHolderHelper # helper process that holds a run's lock as the stand-in launcher for the stop tests
 internal/runtime TestLockHolderHelper # helper process that holds a run's lock for the sweep reclaim test
 internal/control/web TestHelperLockHolder # helper process that holds a run's lock as the stand-in launcher for the dashboard Stop tests
+internal/control/ledgerview TestHelperLockHolder # helper process that holds a run's lock as the stand-in launcher for the live-state tests (a killed launcher's run reads lost)
 internal/runtime TestOtherCgroupNamespaceRefusedHelper # helper process for TestOtherCgroupNamespaceRefused (an answer from a cgroup namespace of its own)
+internal/setup TestWithoutOpenat2Helper # helper process for TestWithoutOpenat2 (the setup tests where a seccomp filter refuses openat2)
 
 # Root only; CI's root-suites job runs them as root.
 internal/cli TestOwnLogHandsItsFilesToTheInvokingUser # needs root to chown to another uid
@@ -76,3 +78,6 @@ internal/runtime/supervisor TestAnUnfollowedFinalDotIsWherePathLookupLands/lchow
 internal/control/ledgerview TestQueryBudget # opt-in: measures only a ledger directory named in TEGO_LOGS_BENCH_LEDGER (a 350,000-line copy no runner holds)
 internal/control/ledgerview TestProcessTreeBudget # opt-in: measures only a ledger directory named in TEGO_LOGS_BENCH_LEDGER (a 350,000-line copy no runner holds)
 internal/control/web TestLogsWarmBudget # opt-in: measures only a demo-shaped ledger directory named in TEGO_LOGS_BENCH_DEMO, which no runner holds
+internal/control/web TestTwinJSWritesOnlyChanges # runs static/twin.js under node; skips where node is not installed
+internal/control/web TestTwinJSQuotesAsGo # runs static/twin.js under node; skips where node is not installed
+internal/control/web TestTwinJSWritesWhatTheFormDoes # runs static/twin.js under node; skips where node is not installed

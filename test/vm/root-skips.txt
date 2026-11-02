@@ -89,12 +89,17 @@ internal/cli TestIntegrationPresetsAtTierLandlock # the presets end to end at ti
 internal/cli TestIntegrationInitPresetRunsAtTierLandlock # tego init --preset then tego run, at tier landlock, the unprivileged launch: as root (sudo) the agent runs as the invoking user, who cannot reach the test's private directories; the unprivileged integration step runs it
 internal/cli TestIntegrationLiftGrantRestoreOnALiveLauncher # tego lift, grant and restore against an Adjustable run at tier landlock, the unprivileged launch: as root (sudo) the agent runs as the invoking user, who cannot reach the test's private directories; the unprivileged integration step runs it, and internal/runtime's TestIntegrationAdjustableFenceLiftAndRestore runs a root launcher's fence
 internal/cli TestIntegrationReceiptOfAScriptedRunAtTierLandlock # tego run of a scripted agent, an approved ask, then tego receipt --json, at tier landlock, the unprivileged launch: as root (sudo) the agent runs as the invoking user, who cannot reach the test's private directories; the unprivileged integration step runs it
+internal/cli TestIntegrationInitPresetInsideARun # tego init --preset as the agent of a run at tier landlock, the unprivileged launch: as root (sudo) the agent runs as the invoking user, who cannot reach the test's private directories; the unprivileged integration step runs it
 
 # Root reads what mode bits refuse, so a case that needs a refusal cannot be staged.
 internal/runtime/enforce/cgroup TestPinsRemoveKeepsTheBuildUnderAPlaneItCannotRemove # root bypasses directory write mode bits, so the stuck-plane removal refusal cannot be staged; the unprivileged unit and integration suites exercise it
 internal/runtime/enforce/cgroup TestUnpinKeepsTheBuildUnderAPlaneItCannotRemove # root bypasses directory write mode bits, so the stuck-plane unpin refusal cannot be staged; the unprivileged unit and integration suites exercise it
 internal/cli TestInitReadOnlyParent # root bypasses directory write permission, which this test relies on
 internal/cli TestStatusEACCESIsNotAnEmptyReport # root reads every directory; EACCES cannot be provoked
+internal/cli TestRunRestoresTheConfigLayerBeforeReadingIt # a root launcher reads the config through any mode and restores none (TestRestoreOwnStateLeavesWhatIsNotTheLaunchers holds it to that); the unprivileged unit run covers it
+internal/cli TestRunLeavesALayerOthersCouldWriteToTheTrustCheck # a root launcher restores no mode, so there is no owner's bit to give back; the unprivileged unit run covers it
+internal/cli TestGCGivesTheLayerBackBeforeItReadsIt # root reads the config through any mode and gc as root restores none; the unprivileged unit run covers it
+internal/cli TestGCDryRunGivesNoModeBack # root reads a mode-0 layer, so there is no refusal to stage; the unprivileged unit run covers it
 internal/cli TestUnstatableRunIsIONotUsage # root searches a 0000 ledger root, so stat never fails; the unit run covers it
 internal/ledger TestGCExpiresARunWhoseStateCannotBeRead # root reads a 0000 file; this case needs an unprivileged uid
 internal/ledger TestGCReportsBothTheStateAndTheRemovalError # root reads a 0000 file; this case needs an unprivileged uid (the unit run covers it)
@@ -102,6 +107,9 @@ internal/ledger TestGCKeepsAnUnreadableRunWhoseLockIsHeld # root reads a 0000 fi
 internal/ledger TestGCDoesNotSweepARunWhoseStateCannotBeRead # root reads a 0000 file; this case needs an unprivileged uid
 internal/ledger TestSweepLiveLeavesUnlistedRunsAlone # root reads a mode-0 file
 internal/runtime TestFenceRefusesFromStartWhenTheOverlayIsUnreadable/mode_000 # root reads a file of mode 000, so the overlay cannot be made unreadable; this case needs an unprivileged uid (the unprivileged unit run covers it)
+internal/runtime TestIntegrationOwnStateModesAreRestored # a root launcher reads and writes through any mode and restores none (TestRestoreOwnStateLeavesWhatIsNotTheLaunchers holds it to that); the unprivileged integration step runs this
+internal/runtime TestIntegrationOwnStateRuntimeParentIsRestored # a root launcher makes no runtime directory (createRuntimeDir) and restores no mode; the unprivileged integration step runs this
+internal/runtime TestIntegrationOwnStateConfigLayerIsRestoredFirst # a root launcher reads the config through any mode and restores none (TestRestoreOwnStateLeavesWhatIsNotTheLaunchers holds it to that); the unprivileged integration step runs this
 internal/runtime/enforce/landlock TestEnumerateSearchOnlyAncestor # root reads a mode-0111 directory, so the ancestor is listable; needs an unprivileged uid
 
 # The placement decides: a suite started from a service's cgroup (the runner's sudo, and a guest's) is outside

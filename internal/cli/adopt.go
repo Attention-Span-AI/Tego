@@ -97,7 +97,7 @@ func cmdAdopt() Command {
 	)
 	return Command{
 		Name:       "adopt",
-		Summary:    "govern an agent that is already running: move its process tree into a run and record it from the kernel",
+		Summary:    "(root) govern an agent that is already running: move its process tree into a run and record it from the kernel",
 		Usage:      "--pid <pid> [--uid <uid>]... [--boundary <agent.yaml | name>] [--record <full|summary|off>] | --release --pid <pid>",
 		Supervises: true,
 		Flags: func(fs *flag.FlagSet) {

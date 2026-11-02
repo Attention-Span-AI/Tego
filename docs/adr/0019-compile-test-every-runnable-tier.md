@@ -429,3 +429,14 @@ around the scope (`TestEvaluateUnixLandedAtAnAskScope`). No other decision chang
 bpflsm column and the run ask; `decide.RenameGains`, which only decide's tests called, moved into decide's test
 files. `decide.LandlockLinkRefusal` stays production code, classified `test-api` for the recorder's tests. No
 column changed.
+
+*Amended 2026-11-02 (implementation note, (3)'s header):* since 2026-10-26 the set of an `auto` contract is
+`doctor.AutoTiers`, which reads besides the build whether this process is root and whether bpf is in the active LSM
+list (limits-check-doctor-cli.md R28, agent-contract.md R14), so the 2026-09-24 note's "computed from the build alone"
+no longer holds. The header kept saying `tier auto: every tier this tego builds`, and a normal user of a tegobpf build
+read `tiers landlock (tier auto: every tier this tego builds)`, a landlock-only build. It now names each tier the
+build constructs and the set leaves out, with the precondition it lacks: `tiers landlock (tier auto: every tier this
+tego builds but cgroup and bpflsm, which need root)` for that user, `... but bpflsm, which needs bpf in the LSM list`
+for root on a kernel without it; `--json`'s `from` and `compile --exec`'s tiers line carry the same text. No column
+changed. Pinned by `TestCompileTestHeaderNamesWhatAutoLeftOut`, `TestCompileTestHeaderNamesTheBuiltTiersAutoLeftOut`
+(under `-tags tegobpf` as a normal user it fails at the previous tip) and doctor's `TestAutoTiers`.

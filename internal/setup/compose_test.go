@@ -14,10 +14,14 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/presets"
 )
 
-// project makes a project directory holding files (a name ending in / is a folder) and returns it.
+// project makes a project directory holding files (a name ending in / is a folder) and returns it with its symlinks
+// resolved, as Options.Dir and Create take it (a TMPDIR may run through a link).
 func project(t *testing.T, files ...string) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, f := range files {
 		p := filepath.Join(dir, filepath.FromSlash(f))
 		if strings.HasSuffix(f, "/") {
@@ -196,6 +200,47 @@ func TestUsageErrorsListTheKnown(t *testing.T) {
 		if !IsUsage(err) || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%+v: err %v, want %q", tc.o, err, tc.want)
 		}
+	}
+}
+
+// TestAbsoluteWriteThroughALinkIsPlacedWhereItLeads: Dir is resolved, and an absolute --write is placed with the links
+// of its existing part resolved. One spelled through the link the project was reached by is inside the project and
+// written ./x/, as typed relative, a missing one made there; it was outside, and a missing one a usage error. One a
+// link in the project leads out of it is outside, and a missing one is a usage error saying where the link places
+// it, never a folder to make.
+func TestAbsoluteWriteThroughALinkIsPlacedWhereItLeads(t *testing.T) {
+	dir := project(t, "src/")
+	link := filepath.Join(t.TempDir(), "linked")
+	if err := os.Symlink(dir, link); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Compose(Options{Presets: []string{"repo-only-writes"}, Writes: []string{filepath.Join(link, "newdir"),
+		filepath.Join(link, "src"), link}, Dir: dir, Name: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"./newdir/"`, `"./src/"`, `"./"`} {
+		if !strings.Contains(string(r.Contract), want) {
+			t.Errorf("the contract lacks %s:\n%s", want, r.Contract)
+		}
+	}
+	if strings.Contains(string(r.Contract), link) {
+		t.Errorf("the contract names the link %s:\n%s", link, r.Contract)
+	}
+	if !slices.Contains(r.MakeDirs, filepath.Join(dir, "newdir")) {
+		t.Errorf("MakeDirs = %q, want %s", r.MakeDirs, filepath.Join(dir, "newdir"))
+	}
+
+	outside, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "out")); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Compose(Options{Presets: []string{"repo-only-writes"}, Writes: []string{filepath.Join(dir, "out", "x")}, Dir: dir, Name: "p"})
+	if !IsUsage(err) || !strings.Contains(err.Error(), "places it at "+filepath.Join(outside, "x")+", outside the project") {
+		t.Errorf("a missing folder a link leads out of the project: %v", err)
 	}
 }
 

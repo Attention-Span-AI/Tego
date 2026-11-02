@@ -117,8 +117,8 @@ func ComputeAt(ctx context.Context, r *ledger.Reader, p Prices, nowMonoNS uint64
 	var (
 		startMono, lastMono uint64
 		prevMono            uint64
-		// the line before, for telling a refused line that mirrors its action from one written on its own
-		prev                   mirror.Key
+		// the lines before, for telling a refused line that mirrors its action from one written on its own
+		pairs                  mirror.Pairs
 		prevWasGap             = true // no predecessor yet: the first event opens no idle window
 		streakTool, streakHash string
 		streak                 int
@@ -163,11 +163,11 @@ func ComputeAt(ctx context.Context, r *ledger.Reader, p Prices, nowMonoNS uint64
 			rep.Refused++ // R19
 		}
 		// A refused line written on its own (keyring, mount family) is a refusal no action line counted; a
-		// refused line directly after the refused action it mirrors is that action again (R19).
-		if e.Kind == record.KindRefused && !prev.Mirrors(e) {
+		// refused line that mirrors a refused action before it is that action again (R19). Every line goes
+		// through the pairing, whatever its kind.
+		if mirrored := pairs.Take(e); e.Kind == record.KindRefused && !mirrored {
 			rep.Refused++
 		}
-		prev = mirror.Of(e)
 
 		switch e.Kind {
 		case record.KindAnswer:

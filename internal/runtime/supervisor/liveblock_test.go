@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/internal/platform/hostaddr"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -141,7 +142,7 @@ func TestLiveBlockReachesEverySpellingOfThisHost(t *testing.T) {
 		{"the host unknown", sockaddrIn4("203.0.113.7", port), func() ([]net.Addr, error) { return nil, errors.New("no netlink") }, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			thisHost = newHostAddrs(c.list, time.Now)
+			thisHost = newHostAddrs(c.list, nil, time.Now)
 			f := newFake()
 			f.put(addr, c.sa)
 			f.sockType = unix.SOCK_STREAM
@@ -170,6 +171,63 @@ func hostList(addrs ...string) func() ([]net.Addr, error) {
 			out = append(out, &net.IPNet{IP: net.ParseIP(a), Mask: net.CIDRMask(24, 32)})
 		}
 		return out, nil
+	}
+}
+
+// hostTable is the local routing table of hostList("192.0.2.10")'s host as the kernel keeps it once an AnyIP range is
+// routed to loopback (`ip route add local 198.51.100.0/24 dev lo`), the address's broadcast is also set by hand to
+// 192.0.2.100 (`ip addr ... brd`), and IPv6 forwarding is on, so the host joined its subnet's router anycast address.
+func hostTable() (hostaddr.LocalTable, error) {
+	p := netip.MustParsePrefix
+	return hostaddr.LocalTable{
+		Local:     []netip.Prefix{p("127.0.0.0/8"), p("127.0.0.1/32"), p("192.0.2.10/32"), p("198.51.100.0/24")},
+		Broadcast: []netip.Prefix{p("127.255.255.255/32"), p("192.0.2.100/32"), p("192.0.2.255/32")},
+		Anycast:   []netip.Prefix{p("2001:db8:1::/128")},
+	}, nil
+}
+
+// TestLiveBlockReachesWhatTheLocalTableSendsHere: what the kernel's local routing table sends to this host is this host
+// to a block on it, under a contract with no net: section: an address of an AnyIP range, which a server on all
+// interfaces answers on, and a broadcast address set by hand or an IPv6 anycast address the host joined, which such a
+// server hears. Read from the interfaces' addresses alone, each went through a block on loopback. A block on an AnyIP
+// address names this host too, so it refuses loopback on its port; an anycast address names no host, as a group or a
+// broadcast address does not.
+func TestLiveBlockReachesWhatTheLocalTableSendsHere(t *testing.T) {
+	const addr, port = 0x40000, 39512
+	prev := thisHost
+	t.Cleanup(func() { thisHost = prev })
+	thisHost = newHostAddrs(hostList("192.0.2.10"), hostTable, time.Now)
+	for _, c := range []struct {
+		name, block string
+		sa          []byte
+		refused     bool
+	}{
+		{"an AnyIP range's address", "127.0.0.1:39512", sockaddrIn4("198.51.100.7", port), true},
+		{"an AnyIP range's address, mapped", "127.0.0.1:39512", sockaddrIn6("::ffff:198.51.100.7", port), true},
+		{"a broadcast address set by hand", "127.0.0.1:39512", sockaddrIn4("192.0.2.100", port), true},
+		{"an IPv6 anycast address the host joined", "[::1]:39512", sockaddrIn6("2001:db8:1::", port), true},
+		{"past the AnyIP range", "127.0.0.1:39512", sockaddrIn4("198.51.101.7", port), false},
+		{"a block on an AnyIP address, loopback", "198.51.100.7:39512", sockaddrIn4("127.0.0.1", port), true},
+		{"a block on an AnyIP address, the host's LAN address", "198.51.100.7:39512", sockaddrIn4("192.0.2.10", port), true},
+		{"a block on an anycast address, loopback", "[2001:db8:1::]:39512", sockaddrIn6("::1", port), false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			set := liveSet(t, "net", c.block)
+			f := newFake()
+			f.put(addr, c.sa)
+			f.sockType = unix.SOCK_STREAM
+			pol := contractPolicy(&agent.Contract{}, nil, nil)
+			pol.Rules.Record = agent.RecordFull
+			l, sink := newTestLoopOpts(t, f, pol, Options{LiveBlocks: func() *liveblock.Set { return set }})
+			l.handle(notifFor(connectNR(), 4242, 5, addr, uint64(len(c.sa))))
+			if connected := len(f.connects) > 0; connected == c.refused {
+				t.Errorf("connected = %v, want %v", connected, !c.refused)
+			}
+			ev := sink.one(t)
+			if refused := ev.Verdict == record.VerdictRefused && ev.Rule == "live.block[net:"+c.block+"]"; refused != c.refused {
+				t.Errorf("line %s %s, want refused under the block: %v", ev.Verdict, ev.Rule, c.refused)
+			}
+		})
 	}
 }
 

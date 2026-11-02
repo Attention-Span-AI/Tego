@@ -674,5 +674,11 @@
       "count": 1,
       "why": "Synthetic compaction table (ADR 0043 D6): 4,500 built-in .env rows with the facts compaction keys on and the built-in pair over one scope, for the unix trie's row count; compile's compaction is held by decide's planerows tests and the guest's TestCompactedTableStaysAtBPFLSM."
     }
+  },
+  "internal/runtime/supervisor/watch_integration_test.go": {
+    "watchRuleTable": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: one deny_read row at tier landlock, so the watch arm's refusals (supervisor R36) are measured against the kernel alone; contract acceptance is covered separately by the CLI's tier-landlock watch test through a compiled contract."
+    }
   }
 }

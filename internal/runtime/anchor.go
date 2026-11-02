@@ -24,32 +24,24 @@ import (
 var ErrAnchorHome = errors.New("runtime: the chain anchor needs a home the passwd database does not name")
 
 // StateDir is the per-user directory under the invoking user's home that holds chain.log: ~/.tego
-// (P0-DESIGN §3.3).
-const StateDir = ".tego"
+// (P0-DESIGN §3.3), ledger.StateDir.
+const StateDir = ledger.StateDir
 
 // AnchorPath is where this machine's runs append their heads (P0-DESIGN §3.3, spec/record/v1,
-// docs/p0/record-ledger.md §3): ~/.tego/chain.log of the invoking user, whatever ledger_root says,
-// and for an account with no home — no passwd entry, or a passwd home that does not exist, like the
-// /nonexistent of a service account — the chain.log beside the ledger root.
+// docs/p0/record-ledger.md §3): ledger.AnchorPath, the one rule tego and the dashboard share, over the
+// invoking user's passwd home and the machine's ledger root. That is ~/.tego/chain.log of the invoking
+// user, whatever ledger_root says, and for an account with no home — no passwd entry, or a passwd home
+// that does not exist, like the /nonexistent of a service account — the chain.log beside the ledger root.
 //
-// The home anchor is not derived from ledger_root. On the documented server setting (ledger_root:
-// /var/lib/tego/runs) that derivation put every user's anchor in one shared /var/lib/tego/chain.log,
-// which each of them would have to be able to write — and therefore rewrite, for anyone — or else
-// every run would end in ErrAnchorWrite. One user's anchors in that user's own 0700 directory are
-// the root of trust a run directory is checked against, and nobody else's run can move them.
-//
-// An account with no home has no such directory, and the ledger root's parent is the one place its
-// runs already write. Home creation is never attempted: a root launcher creating /nonexistent for a
-// service account would be a change to the machine nobody asked for. Whenever a file is named at all,
-// it depends only on the passwd entry, whether that home exists, and the ledger root, so the
-// file-capability launcher, the plain binary and `events --verify` name the same file for one account.
-// The one case AT_SECURE decides is whether there is a file: with no passwd home and a "~/" ledger_root,
-// the ledger root itself comes from $HOME for the plain binary, which then anchors beside it, while the
-// AT_SECURE copy, which never reads $HOME, gets ErrAnchorHome (runtime-launch.md case 37). The home is
-// the passwd entry of the invoking uid, never $HOME (identity-config.md R21); the ledger root is
-// resolved exactly as LedgerRoot resolves it.
+// Whenever a file is named at all, it depends only on the passwd entry, whether that home exists, and
+// the ledger root, so the file-capability launcher, the plain binary and `events --verify` name the
+// same file for one account. The one case AT_SECURE decides is whether there is a file: with no passwd
+// home and a "~/" ledger_root, the ledger root itself comes from $HOME for the plain binary, which then
+// anchors beside it, while the AT_SECURE copy, which never reads $HOME, gets ErrAnchorHome
+// (runtime-launch.md case 37). The home is the passwd entry of the invoking uid, never $HOME
+// (identity-config.md R21); the ledger root is resolved exactly as LedgerRoot resolves it.
 func AnchorPath(m *config.Machine) (string, error) {
-	return anchorPath(m, config.DetectSecureExec, os.UserHomeDir, isDir)
+	return anchorPath(m, config.DetectSecureExec, os.UserHomeDir, ledger.HomeExists)
 }
 
 // anchorPath is AnchorPath over explicit AT_SECURE, $HOME and directory probes, for tests.
@@ -58,33 +50,13 @@ func anchorPath(m *config.Machine, secureExec func() (bool, error), envHome func
 	if m == nil {
 		return "", fmt.Errorf("%w: no machine config", ErrDeps)
 	}
-	if home := m.Home; home != "" && filepath.IsAbs(home) && dirExists(home) {
-		return homeAnchor(home), nil
-	}
-	root, err := ledgerRoot(m, secureExec, envHome)
-	if err != nil {
-		return "", fmt.Errorf("%w: %w", ErrAnchorHome, err)
-	}
-	return besideRoot(root), nil
-}
-
-// homeAnchor is ~/.tego/chain.log under home.
-func homeAnchor(home string) string { return filepath.Join(home, StateDir, ledger.ChainLogFile) }
-
-// besideRoot is the chain.log next to the ledger root, the anchor of an account with no home.
-func besideRoot(root string) string {
-	return filepath.Join(filepath.Dir(filepath.Clean(root)), ledger.ChainLogFile)
-}
-
-// isDir reports whether path is an existing directory. Only a definite "no" counts: a home that
-// cannot be stat'ed for another reason is kept, and opening its anchor then fails where it can be
-// reported (ProbeAnchor), rather than moving the anchor because of a transient error.
-func isDir(path string) bool {
-	st, err := os.Stat(path)
-	if err != nil {
-		return !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR)
-	}
-	return st.IsDir()
+	return ledger.AnchorPathWith(m.Home, dirExists, func() (string, error) {
+		root, err := ledgerRoot(m, secureExec, envHome)
+		if err != nil {
+			return "", fmt.Errorf("%w: %w", ErrAnchorHome, err)
+		}
+		return root, nil
+	})
 }
 
 // WithSweepAnchor makes the runs a sweep ends append their heads to the chain anchor their launcher
@@ -115,7 +87,7 @@ type sweepAnchor struct {
 // newSweepAnchor is the anchor Sweep hands the writer that ends an orphan under root.
 func newSweepAnchor(root, own string) *sweepAnchor {
 	uid, _ := config.InvokingUID()
-	return &sweepAnchor{root: root, own: own, self: uid, homeOf: passwdHome, uidOf: ownerUIDAt, isDir: isDir}
+	return &sweepAnchor{root: root, own: own, self: uid, homeOf: passwdHome, uidOf: ownerUIDAt, isDir: ledger.HomeExists}
 }
 
 // boundTo returns this anchor with ownership reads made under root, the held root a pass lends
@@ -149,10 +121,10 @@ func (a *sweepAnchor) pathFor(run string) string {
 	if !ok || uid == 0 || uid == a.self {
 		return a.own
 	}
-	if home := a.homeOf(uid); home != "" && filepath.IsAbs(home) && a.isDir(home) {
-		return homeAnchor(home)
-	}
-	return besideRoot(a.root)
+	// That account's anchor under ledger.AnchorPath's rule, its home judged by a.isDir; the ledger root is the
+	// declared one, which needs no resolving, so the rule cannot fail here.
+	p, _ := ledger.AnchorPathWith(a.homeOf(uid), a.isDir, func() (string, error) { return a.root, nil })
+	return p
 }
 
 // ownerUID is the uid that owns path, not following a final symlink.

@@ -13,10 +13,14 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/presets"
 )
 
-// presetProject makes a project directory with a src/ folder and changes into it.
+// presetProject makes a project directory with a src/ folder, changes into it and returns it with its symlinks
+// resolved, as init composes for it (a TMPDIR may run through a link).
 func presetProject(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Chdir(dir)
 	if err := os.Mkdir("src", 0o755); err != nil {
 		t.Fatal(err)
@@ -168,6 +172,76 @@ func TestInitPresetForceAndList(t *testing.T) {
 		if code != identity.ExitOK || !strings.Contains(out, want) {
 			t.Errorf("--list lacks %q:\n%s", want, out)
 		}
+	}
+}
+
+// TestInitPresetInAProjectReachedThroughALink: a project directory named through a symbolic link (a cd through a
+// linked folder) is set up in the folder the link leads to: init resolves it before making the contract's folders,
+// which are made beneath it with no link followed.
+func TestInitPresetInAProjectReachedThroughALink(t *testing.T) {
+	t.Setenv("TEGO_CONFIG", "")
+	real := presetProject(t)
+	link := filepath.Join(t.TempDir(), "linked-project")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs := run(t, "init", "--preset", "repo-only-writes", "--write", "src/new", link)
+	if code != identity.ExitOK {
+		t.Fatalf("init: exit %d\n%s\n%s", code, out, errs)
+	}
+	for _, d := range []string{"src/new", ".tego/tmp"} {
+		if fi, err := os.Lstat(filepath.Join(real, filepath.FromSlash(d))); err != nil || !fi.IsDir() || !strings.Contains(out, "created "+d+"/") {
+			t.Errorf("%s/ not made in %s: %v\n%s", d, real, err, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(real, "agent.yaml")); err != nil {
+		t.Errorf("agent.yaml not written: %v", err)
+	}
+}
+
+// TestInitPresetWriteSpelledThroughTheProjectsLink: in a project reached through a link, a --write spelled through
+// that link (absolute, as a shell's $PWD spells it) is inside the project, as typed relative: a missing one is made
+// there and written ./newdir/. Composed for the resolved folder, init refused it as a missing folder outside the
+// project (exit 2).
+func TestInitPresetWriteSpelledThroughTheProjectsLink(t *testing.T) {
+	t.Setenv("TEGO_CONFIG", "")
+	real := presetProject(t)
+	link := filepath.Join(t.TempDir(), "linked-project")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs := run(t, "init", "--preset", "repo-only-writes", "--write", filepath.Join(link, "newdir"), link)
+	if code != identity.ExitOK || !strings.Contains(out, "created newdir/") {
+		t.Fatalf("init: exit %d\n%s\n%s", code, out, errs)
+	}
+	if fi, err := os.Lstat(filepath.Join(real, "newdir")); err != nil || !fi.IsDir() {
+		t.Errorf("newdir/ not made in %s: %v", real, err)
+	}
+	if b, err := os.ReadFile(filepath.Join(real, "agent.yaml")); err != nil || !strings.Contains(string(b), `- "./newdir/"`) {
+		t.Errorf("agent.yaml does not write ./newdir/ (%v):\n%s", err, b)
+	}
+}
+
+// TestInitPresetRefusesALinkWhereItMakesAFolder: a symbolic link in the project where init must make a folder (a
+// .tego linked out of the project, as an agent that may write the project could leave it) is refused with a message
+// naming it: no folder is made where it leads and no agent.yaml is written.
+func TestInitPresetRefusesALinkWhereItMakesAFolder(t *testing.T) {
+	t.Setenv("TEGO_CONFIG", "")
+	dir := presetProject(t)
+	outside := t.TempDir()
+	link := filepath.Join(dir, ".tego")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs := run(t, "init", "--preset", "repo-only-writes", "--write", "src", dir)
+	if code != identity.ExitError || !strings.Contains(errs, link+" is a symbolic link") || !strings.Contains(errs, "remove the link") {
+		t.Fatalf("init: exit %d\n%s\n%s", code, out, errs)
+	}
+	if es, _ := os.ReadDir(outside); len(es) > 0 {
+		t.Errorf("init made a folder where the link leads: %v", es)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "agent.yaml")); err == nil {
+		t.Error("agent.yaml was written")
 	}
 }
 

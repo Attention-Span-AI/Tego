@@ -36,13 +36,16 @@ var assets embed.FS
 // dashboards on one machine that shared a name would each replace the other's and sign each other out.
 const cookiePrefix = "tego_dash_"
 
-// Config is what a Server needs: the ledger root it reads and the loopback port it is reached on.
+// Config is what a Server needs: the ledger root it reads and the loopback address and port it is reached on.
 type Config struct {
 	Ledger string
 	// Anchor is the chain anchor (chain.log) runs are verified against, the one `tego events --verify` reads;
 	// empty leaves every chain unchecked.
 	Anchor string
-	Port   int
+	// Host is the loopback IP the listener is bound to (tego-control serve's --addr, loopback only), which the
+	// printed link and the opener's link name: 127.0.0.1 when empty, another 127.x.y.z, or ::1.
+	Host string
+	Port int
 	// Token is the URL token; empty makes a random one.
 	Token string
 	// Now is the clock; nil is time.Now.
@@ -75,6 +78,7 @@ type Server struct {
 	token   string
 	session string
 	csrf    string // the per-session form token every POST carries (actions.go, rule.go)
+	origin  string // "http://" and the address and port the listener is on: what URL and OpenURL link
 	hosts   map[string]bool
 	pages   map[string]*template.Template
 	static  http.Handler
@@ -131,7 +135,14 @@ func New(cfg Config) (*Server, error) {
 	}
 	p := strconv.Itoa(cfg.Port)
 	s.cookie = cookiePrefix + p
-	s.hosts = map[string]bool{"127.0.0.1:" + p: true, "localhost:" + p: true, "[::1]:" + p: true}
+	host := cfg.Host
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	own := net.JoinHostPort(host, p) // [::1]:8484 for ::1
+	s.origin = "http://" + own
+	// The Host check's names (DNS rebinding): the address the listener is on, and the loopback names a browser gives.
+	s.hosts = map[string]bool{own: true, "127.0.0.1:" + p: true, "localhost:" + p: true, "[::1]:" + p: true}
 	if h, err := os.Hostname(); err == nil {
 		s.host = h
 	}
@@ -190,7 +201,7 @@ func (s *Server) Token() string { return s.token }
 
 // URL is the address a person opens.
 func (s *Server) URL() string {
-	return fmt.Sprintf("http://127.0.0.1:%d/?t=%s", s.cfg.Port, s.token)
+	return s.origin + "/?t=" + s.token
 }
 
 func randomHex(n int) string {
@@ -351,7 +362,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // maxForm bounds a POST body: the forms carry a run id, an ask id, a word and the CSRF token (POST /rules/change
-// takes maxRawForm).
+// takes maxRawForm, POST /rules/new maxNewForm).
 const maxForm = 4 << 10
 
 // postAllowed is the check every state-changing request passes after the Host and cookie checks: the request comes
@@ -378,8 +389,11 @@ func (s *Server) postAllowed(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	limit := int64(maxForm)
-	if r.URL.Path == "/rules/change" {
+	switch r.URL.Path {
+	case "/rules/change":
 		limit = maxRawForm // the advanced editor posts a whole contract (rules_change.go)
+	case "/rules/new":
+		limit = maxNewForm // Create posts the new agent's whole form back (rules_new.go)
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	if err := r.ParseForm(); err != nil {

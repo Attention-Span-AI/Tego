@@ -13,11 +13,12 @@ import (
 
 // refusalErrno is the errno of the refusals this loop answers itself, save the EPERM of the mount and
 // namespace families (refuseTopology, refuseTopologyAs), the keyring and System V IPC families (answerKeyring,
-// answerSysVIPC), signal scope (answerSignal) and process scope (answerProcScope), each of which writes
-// unix.EPERM itself, and an exec whose lookup failed as the task's own would, which keeps
-// that lookup's errno (lookupErrno): a refused connect, unix connect, Fast-Open send or datagram (R10), every
-// other refused exec (exec.go), a deny_write modification (answerFS, R15c) and the answer to a handler that could
-// not finish, the mount family's included (failClosed, R5).
+// answerSysVIPC), signal scope (answerSignal), process scope (answerProcScope) and a whole-mount fanotify mark
+// (handleFanotifyMark, R36), each of which writes unix.EPERM itself, and an exec whose lookup failed as the task's
+// own would, which keeps that lookup's errno (lookupErrno): a refused connect, unix connect, Fast-Open send or
+// datagram (R10), every other refused exec (exec.go), a deny_write modification (answerFS, R15c), a watch at or
+// beneath a deny_read target (decideWatch, R36), which is the EACCES of the read it stands for, and the answer to a
+// handler that could not finish, the mount family's included (failClosed, R5).
 //
 // EACCES is the errno of a connect this loop refuses, in every tier (R10, spec/policy/SEMANTICS.md §5, "The
 // errno of a refusal"): it is what Landlock's own TCP backstop returns, so a refusal looks the same however it
@@ -108,6 +109,8 @@ const (
 	nrX86Fchown     = 93
 	nrX86Lchown     = 94
 	nrX86FchownAt   = 260
+	nrX86InotifyAdd = 254
+	nrX86FanMark    = 301
 	nrMoveMount     = 429 // the unified numbering both architectures share from 5.2
 	nrFchmodAt2     = 452 // likewise, from 6.6
 	nrSetxattrAt    = 463 // likewise, from 6.13
@@ -123,6 +126,8 @@ const (
 	nrARMFrmxattr   = 16
 	nrARMFchownAt   = 54
 	nrARMFchown     = 55
+	nrARMInotifyAdd = 27
+	nrARMFanMark    = 263
 	nrARMUmount2    = 39
 	nrARMMount      = 40
 	nrARMPivotRoot  = 41
@@ -262,6 +267,11 @@ func buildDispatchFor(arch uint32) dispatchTable {
 	removexattrAt := entry{name: "removexattrat", fn: handleXattrAt}
 	fchown := entry{name: "fchown", fn: handleFchown}
 	fchownAt := entry{name: "fchownat", fn: handleFchownAt}
+	// The watch calls reach this loop in every enforcing run (enforce-landlock R11e): a decision kind, refused where the
+	// run withholds a read of the watched object and continued elsewhere (watch.go, R36).
+	// The third, dnotify's fcntl(F_NOTIFY), is the fcntl entry's (handleFcntl).
+	inotifyAddWatch := entry{name: "inotify_add_watch", fn: handleInotifyAddWatch}
+	fanotifyMark := entry{name: "fanotify_mark", fn: handleFanotifyMark}
 	// The mount family is a decision kind: a handler that cannot finish refuses (with refusalErrno rather
 	// than refuseTopology's EPERM), as the Landlock domain behind it would, instead of continuing.
 	mount := entry{name: "mount", fn: handleMount}
@@ -296,7 +306,8 @@ func buildDispatchFor(arch uint32) dispatchTable {
 	splice := entry{name: "splice", fn: handleSplice}
 	// The kill family and fcntl's F_SETOWN reach this loop only below Landlock ABI 6, where the ruleset has no
 	// signal scope and this loop decides one in its place (signal.go): a decision kind, since a handler that
-	// cannot finish must not let a signal leave the run.
+	// cannot finish must not let a signal leave the run. fcntl's F_NOTIFY, a dnotify watch, reaches it with the
+	// other watch calls (enforce-landlock R11e), and handleFcntl hands it to handleDnotify (watch.go, R36).
 	kill := entry{name: "kill", fn: handleKill}
 	tkill := entry{name: "tkill", fn: handleTkill}
 	tgkill := entry{name: "tgkill", fn: handleTgkill}
@@ -348,6 +359,8 @@ func buildDispatchFor(arch uint32) dispatchTable {
 		add(nrRmxattrAt, removexattrAt)
 		add(nrARMFchown, fchown)
 		add(nrARMFchownAt, fchownAt)
+		add(nrARMInotifyAdd, inotifyAddWatch)
+		add(nrARMFanMark, fanotifyMark)
 		add(nrARMMount, mount)
 		add(nrARMUmount2, umount)
 		add(nrARMPivotRoot, pivotRoot)
@@ -412,6 +425,8 @@ func buildDispatchFor(arch uint32) dispatchTable {
 		add(nrRmxattrAt, removexattrAt)
 		add(nrX86Fchown, fchown)
 		add(nrX86FchownAt, fchownAt)
+		add(nrX86InotifyAdd, inotifyAddWatch)
+		add(nrX86FanMark, fanotifyMark)
 		add(nrX86Mount, mount)
 		add(nrX86Umount2, umount)
 		add(nrX86PivotRoot, pivotRoot)

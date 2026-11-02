@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/netip"
 	"path/filepath"
 	"strings"
 	"time"
@@ -67,10 +68,14 @@ func Compile(ctx context.Context, m *config.Machine, cc Context, text []byte) (*
 	if err != nil {
 		return nil, DiagError(ds, err)
 	}
-	// Offline: a host name is resolved at run start (E18), as `tego compile --offline` defers it. Neither write path
-	// does DNS on a check, so a box without a resolver can still change a contract that names hosts, and both give a
-	// mistyped host the same verdict: it fails the next run's start.
-	opts := []agent.CompileOption{agent.WithContext(ctx), agent.WithClock(time.Now), agent.Offline(), agent.WithOwnBinaries(cc.Exe)}
+	// Offline: a host name is resolved at run start (E18), as `tego compile --offline` defers it. Offline alone still
+	// looks every host up and only makes a failure a warning, so the check answers every lookup itself (noLookup).
+	// Neither write path does DNS on a check (a dashboard preview compiles three times), a box without a resolver can
+	// still change a contract that names hosts, and both give a mistyped host the same verdict: it fails the next run's
+	// start. No verdict reads an address: offline, only warnings do, and Compile returns none. The host names a change
+	// adds are looked up apart, once and within a budget, for a warning (UnresolvedHosts).
+	opts := []agent.CompileOption{agent.WithContext(ctx), agent.WithClock(time.Now), agent.Offline(),
+		agent.WithResolver(noLookup{}), agent.WithOwnBinaries(cc.Exe)}
 	if len(cc.RuntimeDirs) > 0 {
 		opts = append(opts, agent.WithRuntimeDir(cc.RuntimeDirs...))
 	}
@@ -107,6 +112,16 @@ func Compile(ctx context.Context, m *config.Machine, cc Context, text []byte) (*
 		return nil, DiagError(ds, err)
 	}
 	return rt, nil
+}
+
+// noLookup is the resolver a check compiles with: it answers every lookup at once with errNotLookedUp, so a check never
+// waits on DNS. The compile is offline, which makes that answer a warning, and Compile returns no warning.
+type noLookup struct{}
+
+var errNotLookedUp = errors.New("not looked up: a rule check resolves no host name (the next run does, at its start)")
+
+func (noLookup) LookupNetIP(context.Context, string, string) ([]netip.Addr, error) {
+	return nil, errNotLookedUp
 }
 
 // runTier is the run's tier when the text keeps the tier the run got: auto (no pin) or a pin of that same tier. A text

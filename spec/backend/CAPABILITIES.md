@@ -129,6 +129,14 @@ tier landlock. At the root tiers the kernel refuses a nested target itself, and 
 name entries where the plane's name check decides the run (amended 2026-10-27), and under
 `fs.reads: held` by held reads as well.
 
+The `deny read` rows are about opens. *Added 2026-11-02 (GAPS A10):* an inotify, fanotify or dnotify (`fcntl`
+`F_NOTIFY`) watch opens nothing, and no Landlock right, fanotify permission event or decision-plane hook governs one, so
+at every tier the seccomp supervisor decides it (supervisor R36, enforce-landlock R11e): in every enforcing run, a watch
+whose object a read of would be refused (or held for a person, `fs.ask_read`) is refused on the copied pathname or
+descriptor, best effort, and a fanotify mark of a whole mount, filesystem or mount namespace is refused wherever it is
+placed. No row records it, and the `deny read` cells are unchanged: a watch of the directory that holds a target still
+reports that target's own activity (SEMANTICS §1).
+
 The five rows from `gate fs open completion` to `protected write targets` (ADR 0041 D7, appended 2026-10-16) say
 whether a tier completes a decision the seccomp supervisor takes on copied syscall arguments race-free, on the object
 or address it scored (ADR 0041's outcome (A)), or decides it on the copy and continues it, so that a sibling thread can

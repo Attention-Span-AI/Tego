@@ -102,6 +102,31 @@ func TestBlockRefusesAnEndedRun(t *testing.T) {
 	}
 }
 
+// TestBlockRefusalsAreLiveblocks: the lines `tego block` and `tego unblock` refuse an ended run with are liveblock's
+// refusals (CheckBlock, RunWords), the ones runact gives the dashboard's Block now and Remove, with the terminal's
+// hint after them; neither writes the overlay.
+func TestBlockRefusalsAreLiveblocks(t *testing.T) {
+	root := gcRoot(t)
+	id := endedRun(t, root, time.Now())
+	for _, tc := range []struct {
+		args []string
+		add  bool
+		hint string
+	}{
+		{[]string{"block", id, "exec", "curl"}, true, "; for its next run, make it a rule of the contract (tego rule)"},
+		{[]string{"unblock", id, "exec", "curl"}, false, " (tego block --list " + id + " shows what it had)"},
+	} {
+		refused := liveblock.CheckBlock(liveblock.Target{Run: id}, liveblock.KindExec, tc.add, time.Time{})
+		want := "tego " + tc.args[0] + ": " + liveblock.RunWords(refused) + tc.hint + " [not-running]\n"
+		if code, out, errs := run(t, tc.args...); code != identity.ExitFinding || out != "" || errs != want {
+			t.Errorf("%v: exit %d stdout %q stderr %q, want 1 and %q", tc.args, code, out, errs, want)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(root, id, liveblock.FileName)); !os.IsNotExist(err) {
+		t.Errorf("an overlay was written for an ended run: %v", err)
+	}
+}
+
 // TestBlockUsageErrors: arguments that are not a run, a kind and a value are usage errors, exit 2, before any run is
 // touched.
 func TestBlockUsageErrors(t *testing.T) {

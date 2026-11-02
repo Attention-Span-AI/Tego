@@ -161,6 +161,7 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
 | Chain anchor (read) | `~/.tego/chain.log` of the invoking user, whatever `ledger_root` is; beside the ledger root for an account with no home (`record-ledger.md` §3) | `0600` | `<run> <head>` per line | the launcher appends at `Close`, a sweep for the orphans it ends | sequential scan by `events --verify` (R29); opened `O_NOFOLLOW`; never written here | none |
 | Activity sidecar (read) | `<ledger_root>/<run>/activity` | `0600` | 16 bytes: the CLOCK_MONOTONIC `mono_ns` as a little-endian `uint64`, then its bitwise complement | the launcher (`Writer.OpenActivity`, `O_CREAT\|O_EXCL\|O_NOFOLLOW` through the run directory's descriptor), rewritten in place by one `pwrite(2)` at most once a second from the budget watcher's loop (R9) | read by `status` only while the run's lock is held; opened `O_NOFOLLOW\|O_NONBLOCK`, regular files only; anything but one whole reading (short, long, zero, halves that disagree because it was read mid-write) is no reading (`ledger.ReadActivity`) | none; not part of the record, and left in place at run end, where nothing reads it |
 | Stop marker (write) | `<ledger_root>/<run>/stop.request` | `0600` | empty, or one Go duration and `\n` when `stop --grace` was given | `tego stop`, `O_EXCL` temp file + `link(2)`, never `rename` (`runtime-launch.md` R9) | read once by the launcher's first stop signal (`runtime-launch.md` R9); `O_NOFOLLOW`, at most 64 bytes | none |
+| Rule-change journal (pruned) | `<ledger_root>/.rule-changes/`: `journal.jsonl`, `blobs/<sha256>.yaml`, `locks/` | `0700` directories and `0600` files, the user's, writable by no one else (`internal/rulefile`) | JSON Lines (`internal/rulefile/doc.go`) | `tego rule` and the dashboard write it; `gc` and a run start's retention pass prune it (R29, *added 2026-11-02*) | the prune lists the ledger root's runs and looks at the contracts' files first, with no lock (a file that does not answer within a few seconds counts as there), then holds `locks/prune.lock` exclusively (a write holds it shared from its first blob to its line) and `locks/journal.lock` while it rewrites the journal; a contract's lock file is removed only under its own flock, and a writer that locked a removed file locks the name again | the journal is rewritten through a new file, fsync'ed and renamed over it, then its folder fsync'ed (a new file a crashed prune left goes on the next); blobs go only after |
 | Machine config layers | spec/config/v0 | trust rule (one name included); write-protected to the agent by every name (`config.Machine.Layers`, agent-contract.md R10, ADR 0059) | YAML | operator/root | resolved once at CLI start via one `config.Load` | none |
 | BTF | `/sys/kernel/btf/vmlinux` | kernel-exposed | raw BTF | kernel | single `open(2)`+`read`, never `stat`-then-`open` | n/a |
 | securityfs | `/sys/kernel/security/lsm` | kernel-exposed | CSV string | kernel | single read | n/a |
@@ -650,8 +651,17 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   the higher of the two and agree on one run.
 - **R19** `Refused` = count of action-kind events with `verdict=="refused"` — same non-duplication rule as R13 —
   plus every `refused` line that mirrors no action: the supervisor writes keyring and mount-family refusals as
-  `refused` lines alone, and `drift` counts those in a fifth section, `other`. A `refused` line is a mirror only
-  when it directly follows (seq − 1) an action refused under the same rule, which is where the pipeline writes one.
+  `refused` lines alone, and `drift` counts those in a fifth section, `other`. A `refused` line is a mirror when it
+  copies the envelope (`pid`, `mono_ns`), `rule` and `reason` of a refused action among the 4 lines before it that no
+  earlier mirror took, the nearest first; failing that (no `mono_ns`, or a writer that stamped the mirror's own), when
+  the line just before it is an action refused under the same `rule` and `reason`. The pipeline writes a mirror right
+  after its action, but other writers append to the same ledger on their own (the DNS broker, which writes its own
+  pairs, and the approval broker), so a line can land between the two, and two refusals can both land before either
+  mirror (`spec/record/v1/fixtures/mirror-split.jsonl`). One rule, `internal/check/internal/mirror`, serves R13, R19,
+  learn and the receipt; the dashboard's copy (`internal/control/ledgerview/pair.go`) is held to it by the record
+  fixtures. *Amended 2026-11-02:* a mirror was only the line directly after (seq − 1) an action refused under the same
+  rule, so such a ledger's split mirrors counted again here, in drift and in the receipt (five refusals for that
+  fixture's three) while the dashboard counted each once.
 
 **Views**
 - Every human-readable view escapes the ledger text it prints for the terminal (`record.Printable`: C0/C1 controls, DEL, every invisible format character (Unicode Cf: bidi overrides, isolates and marks, zero-width characters), line and paragraph separators, the tag block U+E0000-E007F, invalid UTF-8): `events`, `status`, `drift`, `measure`, the gap line and `compile`'s print, `compile --test`'s rows included (name, resolved paths, failure text). `--json` stays byte-exact.
@@ -1284,7 +1294,12 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   ceiling that this process can be given here (`doctor.AutoTiers`: tier cgroup and above as root only, tier bpflsm
   only with bpf in the LSM list). It passes only if its expectation holds in each; a row's own `tier:` narrows it to that tier, and
   `--tier <t>[,<t>]` (with `--test` alone; a usage error otherwise, and for `observe`, `auto` or a tier named
-  twice) replaces the set. Output: the first line is `tiers <t>, <t> (<where the set came from>)`, then one
+  twice) replaces the set. Output: the first line is `tiers <t>, <t> (<where the set came from>)`: `--tier`,
+  `pinned by the contract`, `pinned by the machine config at <source>`, or for `auto` `tier auto: every tier this
+  tego builds`, followed by the tiers the build constructs that the set leaves out and the precondition they lack:
+  ` but cgroup and bpflsm, which need root` for a process that is not root, ` but bpflsm, which needs bpf in the LSM
+  list` for root on a kernel without it (amended 2026-11-02: it said every tier this tego builds while a normal
+  user's set was landlock alone); then one
   `PASS`/`FAIL <row>: got <verdict> via <rule>, want <expect>` line per row, a row that fails in more than one
   column saying `at <tier> got <verdict> via <rule>` for each tier it failed in; exit 1 on any `FAIL` (R25).
   `--json` with `--test` is one object `{v: 1, table, tiers, from, rows: [{name, line, expect, rule, pass,
@@ -1472,7 +1487,8 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   `TestPlaneEvaluatorMatchesEvaluate` (links and attribute changes), `TestCompileTestConformanceActionsGolden`,
   `TestCompileTestBPFLSMColumnGolden`.
 - **R29 CLI commands** (one file each under `internal/cli/`, each registering its command from that file, the usage
-  generated from the registry and sorted by name (*amended 2026-10-24*, ADR 0100 (2)); the nouns of R35 are handed off; REPO-LAYOUT.md's exhaustive P0 listing: `init,
+  generated from the registry and sorted by name (*amended 2026-10-24*, ADR 0100 (2)), a command that refuses to run
+  without root (`agents`, `adopt`) marked `(root)` in it (*amended 2026-11-02*); the nouns of R35 are handed off; REPO-LAYOUT.md's exhaustive P0 listing: `init,
   doctor, compile, run, stop, status, ask, approve, deny, dns, drift, measure, learn, events, serve, gc, version,
   __child`; since 2026-10-06 also `watch`, `agents`, `alternate` and `adopt`, below, and the hidden `__adopt-reap`; since
   2026-11-02 `licenses`).
@@ -1502,7 +1518,15 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     never the file it leads to. Without `--force` the starter is published by `link(2)`, which refuses a
     destination created after init looked; on a filesystem with no hard links (vfat, exFAT; some FUSE and
     network mounts) it is `renameat2(RENAME_NOREPLACE)`, with the same refusal (*amended 2026-10-05:* that
-    filesystem failed init with 125 and no `agent.yaml`). The starter compiles with no warning: it grants `/dev/null` in `fs.write`, which
+    filesystem failed init with 125 and no `agent.yaml`). With `--preset` (*amended 2026-11-02*) the contract is
+    composed for the project directory with its symbolic links resolved, as the dashboard composes it, and an
+    absolute or `~/` `--write` is placed where the links on its way lead, so one spelled through the link the
+    project was reached by is inside it (`./x/`). The folders it names are made beneath the project directory opened
+    once with no symbolic link followed (internal/setup Create: `mkdirat` a component at a time, each opened with
+    `openat2 RESOLVE_BENEATH|RESOLVE_NO_SYMLINKS`, or with `openat` `O_NOFOLLOW` where openat2 is refused, as inside
+    a run, whose filter answers it `ENOSYS`): a link on the way to one, there before or swapped in, stops init with
+    125 `[io]` naming it, and no `agent.yaml` is written; what init made is removed again only while empty, never
+    through a link. A folder that already exists is used where it is, through any link. The starter compiles with no warning: it grants `/dev/null` in `fs.write`, which
     Python's `subprocess.DEVNULL` opens for writing; its `net:` section allows nothing, so the host's unix
     sockets, the D-Bus session bus and with it `systemd-run --user` among them, are refused (`agent-contract.md`
     R19), and the model is reached through the capture forwarder the run admits on its own (allowing the model's
@@ -1712,7 +1736,28 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     `builds_removed` and `rings_reclaimed`. A failed build, capture-probe or ring sweep is reported on stderr and
     in `--json`'s `errors` (prefixed `builds: `, `capture probes: `, `rings: `) beside each run the pass could not
     finish; the exit stays 0. `--builds` without root, or with `--dry-run`, touches no build and says so on
-    stderr.
+    stderr. gc removes what the machine config's `retention` and `ledger_root` select, so it reads the config whole,
+    as `run` does (identity-config.md R20, *amended 2026-11-02*, GAPS C52): a layer it cannot read, trust or parse
+    ends it with 125 `[config-untrusted]`, the layer's own error and `nothing was swept or deleted`, before it sweeps
+    or removes anything, whatever `--keep` says, since that layer may name the ledger root too. Before it reads the
+    config it gives `~/.tego`, the config layer and `tego.log` back to their owner when an agent took their modes, as
+    `run` does (record-ledger.md §3, "Modes taken from the owner"), warning `[own-state-mode]` for each; `--dry-run`
+    changes no mode, so it refuses such a layer and says that `gc` without it, or `run`, gives the mode back.
+    stderr. The same retention prunes the ledger root's rule-change journal (`.rule-changes/`, `internal/rulefile`
+    `Prune`; *amended 2026-11-02*) after the runs: its lines older than the retention that no reader of the journal
+    needs, so History, Undo and its lift of live blocks, a run's pending changes and Apply now answer as before for
+    every line left and every run still in the ledger root. A line stays while it was written after the oldest such
+    run started, names such a run (a live block placed there, the run a change was made from), or was undone by a
+    revert left, with every line of its rules file after it; and each rules file keeps its newest 20 changes still
+    standing while the file is there. Then the blobs no line left names go, and the lock files of contracts with no
+    line left. It prints `rule-change journal: pruned <n> line(s), <n> blob(s), <n> lock file(s)` (`would prune`
+    under `--dry-run`, which changes nothing and counts the runs it would remove as gone), and `--json` carries
+    `journal_lines_pruned`, `journal_blobs_pruned` and `journal_locks_removed`. A journal not pruned is on stderr
+    and in `errors` (prefixed `rule-change journal: `), the exit staying 0. A machine config layer gc cannot read whole
+    ends it with 125 before anything is pruned (above); where the load passes a layer over without failing (the
+    per-user layer of a uid with no passwd entry), the journal is left as it is (`[config-ignored]`) unless a `--keep`
+    gives the retention, since that layer may set it. As root, `gc` prunes the invoking user's journal as that user (their uid and gid, no
+    capability); another user's journal is left to its owner and reported.
   - `licenses` (0; *added 2026-11-02*, docs/GAPS.md B12): the licence texts and third-party notices the binary
     embeds, the licence files of the release's licenses archive, each whole under a `==> <name> <==` line: `LICENSE`,
     `NOTICE`, `THIRD_PARTY_NOTICES.txt`, then `LICENSES/*.txt` by name. No argument (2). `tego-control licenses` prints
@@ -1880,12 +1925,16 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   stay gaps. `--json`'s `gaps` still lists every gap line, live changes included, each with its what and why.
   `status` then says what the gaps mean: `in words: <sentence>` (`in words <run>: <sentence>` under `--all`, `gap_words`
   in `--json`, absent for a run with no gap), from `gaps.Classify`, the receipt's reading: whether actions may be
-  missing, what is short if not, and what a person changed (*amended 2026-11-01*). `drift` prints the same three lines
+  missing, what is short if not, and what a person changed (*amended 2026-11-01*). A `gap what=record
+  why=own-state-mode-restored`, a mode tego gave back to the owner of one of its own files (record-ledger.md §3), lost
+  no action: it reads "tego restored the modes of N of its own files", never as a gap in the record, and the receipt
+  says the same in a note rather than as a coverage gap (*amended 2026-11-02*). `drift` prints the same three lines
   under its table, and `gap_words` in `--json`; a run with no run_end and no launcher, or a sum holding one, says its
   record may stop short, as a lost run's `status` does (*amended 2026-11-01*).
 
 - **R35 `serve`.** The local page (agents, run timelines, pending approvals, drift, measure over
-  the ledger, on `127.0.0.1`) is the control binary's, the second binary `tego-control` (ADR 0100,
+  the ledger, on loopback: `127.0.0.1`, or another loopback address `--addr` names, `[::1]` included, *amended
+  2026-11-02*) is the control binary's, the second binary `tego-control` (ADR 0100,
   *amended 2026-10-24*). `tego serve`, like every command `tego help` marks `(tego-control)`,
   hands off: it opens the `tego-control` beside this `tego` (never one on `PATH` or in the working directory),
   copies it into a sealed memfd, checks the copy's SHA-256 against the hash this build pinned, and execs the copy
@@ -1910,6 +1959,39 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   (`TestARunAbbreviationNamesOneRun`). `status`, `stop`, `ask`, `approve`, `deny` and `alternate` answered a
   well-formed abbreviation with a bare "is not a run id"; they take it too (`TestRunIDOnlyCommandsTakeAnAbbreviation`,
   `TestAnAbbreviatedRunIsTheRunAnswered`).
+- 2026-11-02, R35 `serve --addr`: it takes any loopback address, `[::1]` included, and its link and the opener's
+  name the address it listens on. It refused `[::1]` though the peer check reads `/proc/net/tcp6` and the governed
+  check asks sock_diag in AF_INET6, and on `127.0.0.2` it printed a `127.0.0.1` link and refused its own `Host`
+  (`TestServeListensOnIPv6Loopback`, `TestLinksNameTheAddressListenedOn`).
+- 2026-11-02, R29 usage: `agents` and `adopt` refuse to run without root (125 `[privilege]`), and the
+  usage did not say so; their lines now begin `(root)` (`TestUsageMarksTheRootCommands`).
+- 2026-11-02, R28: the first line of `compile --test` (and `--json`'s `from`, and `compile --exec`'s tiers line) for an
+  `auto` contract names each tier the build constructs that `doctor.AutoTiers` leaves out, with the precondition it
+  lacks (`but cgroup and bpflsm, which need root`; `but bpflsm, which needs bpf in the LSM list`). It said `tier
+  auto: every tier this tego builds` whatever the set was, so a normal user of a tegobpf build read a landlock-only
+  build (`TestCompileTestHeaderNamesWhatAutoLeftOut`, `TestCompileTestHeaderNamesTheBuiltTiersAutoLeftOut`).
+- 2026-11-02, R29 `gc` (GAPS C52): gc reads the machine config whole and deletes nothing by one it cannot read. It
+  read the config warn-and-skip, so a layer it could not read, trust or parse was passed over with a warning and the
+  pass removed by the built-in 30 days and ledger root: one agent's `chmod 000 ~/.tego/config.yaml` (no Landlock ABI
+  has a chmod right) had the daily `tego gc` (examples/systemd/tego-gc.timer) delete a 60-day-old run the user's
+  `retention: 365d` kept. It now gives `~/.tego`, the layer and `tego.log` back to their owner first, as `run`
+  does, and refuses with 125 a layer it still cannot read (`TestGCGivesTheLayerBackBeforeItReadsIt`,
+  `TestGCDeletesNothingByAConfigItCannotRead`, `TestGCDryRunGivesNoModeBack`, each failing before).
+- 2026-11-02, R34 (GAPS C52): a mode tego gave back to the owner of one of its own files (`gap what=record
+  why=own-state-mode-restored`) is its own class, `gaps.Restored`, and lost no action. It fell into the default class,
+  so `status`, `drift`, the receipt and the dashboard's receipt read the run after an agent's `chmod` as one that
+  missed actions ("counts are a minimum"), even a run whose own agent did nothing (`TestClassify`,
+  `TestWordsSayWhatHappened`, `TestRestoredModesAreANoteNotALostAction`).
+- 2026-11-02, R29 `gc`: the rule-change journal (`<ledger_root>/.rule-changes/`), its blobs and its per-contract lock
+  files grew without bound, since no retention reached them. `gc` and a run start's pass (`gc_interval`) now prune
+  them with the runs' retention, keeping every line a run still in the ledger root reads and each contract's newest
+  20 changes still standing while its file is there (`TestGCPrunesTheRuleChangeJournal`,
+  `TestRunStartPrunesTheRuleChangeJournal`, `TestGCKeepsTheJournalLinesARunningRunReads`,
+  `TestGCDryRunCountsTheJournalAfterTheRunsItRemoves`; an Undo still lifts no block another change holds,
+  `TestUndoAfterPruneLiftsNoBlockAnotherChangeHolds`), prune as the invoking user under root
+  (`TestRootRunStartPrunesTheJournalAsTheInvokingUser`, `TestRootPassLeavesAnotherUsersJournal`), and prune nothing
+  of the machine's own retention when a machine config layer was skipped
+  (`TestGCJournalNotPrunedWhenALayerWasSkipped`, `TestRunStartJournalNotPrunedWithoutTheUserLayer`).
 - 2026-11-02, R29 `licenses` (docs/GAPS.md B12): an installed tego or tego-control carried no third-party notice,
   only the release's licenses archive did. Both binaries now embed the licence files (the module root's `notices.go`)
   and print them (`TestLicensesPrintsWhatTheBinaryCarries`, `TestControlLicensesPrintsWhatTheBinaryCarries`); `licenses`
@@ -1932,6 +2014,17 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   own. It did not read the keys, so its report of a run's memfd exec or drop-and-execute was a count under
   `exec-anon` or an `exec[...]` entry with nothing naming the image (`TestDriftListsFlaggedExecs`,
   `TestDriftFlaggedExecsGolden`).
+- 2026-11-02, R29 `init` (§5 setup-new MakeDirs race): `--preset` made its folders by path, after the check and
+  through any link on the way, so a `.tego` or `src` linked out of the project, or a component swapped for a link
+  after the check, put them where the link led. They are made beneath the project directory opened with no link
+  followed, and a link on the way stops init with 125 `[io]` naming it, no `agent.yaml` written
+  (`TestInitPresetRefusesALinkWhereItMakesAFolder`, `TestApplyRefusesALinkSwappedInAfterTheCheck` in
+  internal/setup), inside a run too, where openat2 answers `ENOSYS` (`TestIntegrationInitPresetInsideARun`,
+  `TestWithoutOpenat2`), and what init made is removed the same way after a failure
+  (`TestRemoveNeverThroughALinkNorAFile`). The contract is composed for the project directory with its links
+  resolved (`TestInitPresetInAProjectReachedThroughALink`), and an absolute `--write` spelled through the
+  project's link is inside it (`TestInitPresetWriteSpelledThroughTheProjectsLink`); a project reached through a
+  link sees its resolved path in the contract's `TMPDIR` and Go cache values and in the diagnostics.
 - 2026-10-25, R25 runtime grants (ADR 0064): `Report.Drifted()` skips a runtime
   grant's bucket only for what it allowed. A refusal under `exec.harness-hook[<tego>]`, the hook grant's rule for every
   other vector of the tego binary, made a run report no drift, where the same refused `tego run` under `unmatched`

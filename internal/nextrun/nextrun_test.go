@@ -4,8 +4,11 @@ package nextrun
 
 import (
 	"context"
+	"errors"
+	"net"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -50,5 +53,28 @@ func TestCompileOffline(t *testing.T) {
 	}
 	if _, err := Compile(context.Background(), nil, cc, []byte(head)); err == nil {
 		t.Error("compiled with no machine config")
+	}
+}
+
+// TestCompileDoesNoDNS: a check looks no host up. agent.Offline alone still resolves every host and only makes a
+// failure a warning, so each check (a dashboard preview compiles three times) waited on DNS for every host of the
+// contract, up to agent.DefaultDNSTimeout a round where DNS does not answer. The system resolver here counts every
+// query it would send.
+func TestCompileDoesNoDNS(t *testing.T) {
+	var queries atomic.Int32
+	system := net.DefaultResolver
+	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(context.Context, string, string) (net.Conn, error) {
+		queries.Add(1)
+		return nil, errors.New("no DNS in this test")
+	}}
+	t.Cleanup(func() { net.DefaultResolver = system })
+	cc := Context{Contract: filepath.Join(t.TempDir(), "agent.yaml"), Tier: "landlock", PATH: "/usr/bin:/bin"}
+	text := "version: 0\nname: n\ncommand: [\"sh\"]\nexec:\n  allow: [sh]\nnet:\n" +
+		"  allow: [\"api.nextrun-no-dns.test:443\"]\n  ask: [\"ask.nextrun-no-dns.test:443\"]\n"
+	if _, err := Compile(context.Background(), config.Builtin(), cc, []byte(text)); err != nil {
+		t.Fatalf("a contract naming hosts: %v", err)
+	}
+	if n := queries.Load(); n != 0 {
+		t.Errorf("the check sent %d DNS queries; it resolves no host (the next run does, at its start)", n)
 	}
 }

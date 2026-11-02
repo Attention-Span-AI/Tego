@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/attention-span-ai/tego/internal/rulefile"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -246,6 +248,83 @@ func TestNewRealCompile(t *testing.T) {
 	}
 }
 
+// TestNewRefusesALinkWhereAFolderIsMade: a symbolic link in the project folder where Create must make a folder (a .tego
+// linked out of the project, as an agent that may write the project could leave it) refuses Create, naming the link:
+// no folder is made where it leads, the folder made before it is removed, and no agent.yaml is written.
+func TestNewRefusesALinkWhereAFolderIsMade(t *testing.T) {
+	f := newFixture(t)
+	dir := f.newProject(t, "linked")
+	outside := f.newProject(t, "outside")
+	link := filepath.Join(dir, ".tego")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	req := NewReq{Dir: dir, Presets: []string{"repo-only-writes"}, Writes: []string{"src/"}, Command: "sh"}
+	p, err := f.s.PlanNew(context.Background(), req)
+	if err != nil || !p.OK || !slices.Equal(p.MakeDirs, []string{"src/", ".tego/tmp/"}) {
+		t.Fatalf("plan = %+v, %v", p, err)
+	}
+	if _, err := f.s.CreateNew(context.Background(), req, p.Base); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), link+" is a symbolic link") {
+		t.Fatalf("CreateNew through a link = %v", err)
+	}
+	if es, _ := os.ReadDir(outside); len(es) > 0 {
+		t.Errorf("a folder was made where the link leads: %v", es)
+	}
+	for _, name := range []string{"src", NewFile} {
+		if _, err := os.Lstat(filepath.Join(dir, name)); err == nil {
+			t.Errorf("%s is left in the project", name)
+		}
+	}
+}
+
+// swapThenFail is a Writer whose Create stands in for an agent.yaml write that fails after swap ran: a process of the
+// same uid swapping a folder of the project between the making of the plan's folders and that write.
+type swapThenFail struct {
+	Writer
+	swap func()
+}
+
+func (w swapThenFail) Create(context.Context, string, []byte, rulefile.Change) (*rulefile.Entry, error) {
+	w.swap()
+	return nil, errors.New("refused after the swap")
+}
+
+// TestNewRemovesNoFolderThroughALink: when agent.yaml's write fails after the plan's folders were made, CreateNew
+// removes them beneath the project folder (setup.Remove). A .tego swapped meanwhile for a link to a folder holding an
+// empty tmp/ leaves that tmp/ where it is, which a removal by path took, and src/, still a folder of the project,
+// goes.
+func TestNewRemovesNoFolderThroughALink(t *testing.T) {
+	f := newFixture(t)
+	dir := f.newProject(t, "swapped")
+	outside := f.newProject(t, "outside")
+	if err := os.Mkdir(filepath.Join(outside, "tmp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	req := NewReq{Dir: dir, Presets: []string{"repo-only-writes"}, Writes: []string{"src/"}, Command: "sh"}
+	p, err := f.s.PlanNew(context.Background(), req)
+	if err != nil || !p.OK || !slices.Equal(p.MakeDirs, []string{"src/", ".tego/tmp/"}) {
+		t.Fatalf("plan = %+v, %v", p, err)
+	}
+	tego := filepath.Join(p.Dir, ".tego")
+	f.s.Writer = swapThenFail{Writer: localWriter{f.s.guard()}, swap: func() {
+		if err := os.Rename(tego, tego+".moved"); err != nil {
+			t.Error(err)
+		}
+		if err := os.Symlink(outside, tego); err != nil {
+			t.Error(err)
+		}
+	}}
+	if _, err := f.s.CreateNew(context.Background(), req, p.Base); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "refused after the swap") {
+		t.Fatalf("CreateNew = %v", err)
+	}
+	if fi, err := os.Lstat(filepath.Join(outside, "tmp")); err != nil || !fi.IsDir() {
+		t.Errorf("the empty tmp/ where the swapped-in link leads was removed: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(p.Dir, "src")); err == nil {
+		t.Error("src/, made for the contract, is left in the project")
+	}
+}
+
 // TestNewFromRunUnderANameYAMLReadsAsAnother: an agent id may be all digits or a word YAML reads as a bool or a null,
 // and name is a string (R3), so the drafted contract writes it quoted, as tego init does: written plain it does not
 // load, and the dashboard refuses a name its own form accepts. (This fixture's compiler always answers OK, so the
@@ -268,6 +347,37 @@ func TestNewFromRunUnderANameYAMLReadsAsAnother(t *testing.T) {
 				t.Fatalf("the drafted contract does not load as %q: %v %v\n%s", name, err, ds, p.Text)
 			}
 		})
+	}
+}
+
+// TestRenamedSetsTheNameKey: "Start from a run" names the proposal through its YAML tree, not by the first line that
+// starts with name:. Only the top-level key's value changes, so a comment on its line stays, a name: line inside
+// another value is left alone, a key spelled another way is found, and every other byte is kept; a name over two
+// lines is set by writing the tree out, its comments kept. Text with no top-level name comes back as it was.
+func TestRenamedSetsTheNameKey(t *testing.T) {
+	for _, tc := range []struct{ why, in, want string }{
+		{"a comment on the name line",
+			"# name: the header's own words\nversion: 0\nname: learned-x  # name: from the run's agent\ncommand: [sh]\n",
+			"# name: the header's own words\nversion: 0\nname: \"fresh\"  # name: from the run's agent\ncommand: [sh]\n"},
+		{"a name: line inside the command, before the key",
+			"version: 0\ncommand: [\"sh\", \"-c\", \"echo a\nname: b\"]\nname: learned-x\n",
+			"version: 0\ncommand: [\"sh\", \"-c\", \"echo a\nname: b\"]\nname: \"fresh\"\n"},
+		{"a quoted key", "version: 0\n\"name\" : 'learned-x'\n", "version: 0\n\"name\" : \"fresh\"\n"},
+		{"carriage returns", "version: 0\r\nname: learned-x # c\r\n", "version: 0\r\nname: \"fresh\" # c\r\n"},
+		{"no name", "version: 0\ncommand: [sh]\n", "version: 0\ncommand: [sh]\n"},
+	} {
+		if got := string(renamed([]byte(tc.in), "fresh")); got != tc.want {
+			t.Errorf("%s: renamed =\n%q\nwant\n%q", tc.why, got, tc.want)
+		}
+	}
+	got := renamed([]byte("version: 0\n# the agent\nname: learned\n  x\ncommand: [sh]\n"), "fresh")
+	var c struct {
+		Name    string
+		Command []string
+	}
+	if err := yaml.Unmarshal(got, &c); err != nil || c.Name != "fresh" || !slices.Equal(c.Command, []string{"sh"}) ||
+		!strings.Contains(string(got), "# the agent") {
+		t.Errorf("a name over two lines: %v %+v\n%s", err, c, got)
 	}
 }
 
@@ -382,5 +492,43 @@ func TestNewAgentPolicyCompiles(t *testing.T) {
 		if !p.OK || !strings.Contains(string(p.Text), `"/dev/tty"`) {
 			t.Errorf("%s: OK %v, problems %v, diagnostics %v\n%s", command, p.OK, p.Problems, p.Diagnostics, p.Text)
 		}
+	}
+}
+
+// TestBuiltInSecretRulesFollowFamilies: the preview's Never reads rows group the built-in list by each row's family
+// (agent.BuiltInDenyReadFamily), not by its spelling: ~/.ssh is in the SSH keys row, every login row is in the logins
+// row and no other row is, and the browser profiles are one row that names the browsers, not their folders.
+func TestBuiltInSecretRulesFollowFamilies(t *testing.T) {
+	const sshRow, loginRow, browserRow = "Never reads your SSH keys", "Never reads cloud, registry and git logins", "Never reads browser profiles"
+	named := map[string][]string{} // a row's lead -> what its parentheses name
+	for _, r := range builtInSecretRules() {
+		if lead, rest, ok := strings.Cut(r.Sentence, " ("); ok {
+			inside, _, _ := strings.Cut(rest, ")")
+			named[lead] = strings.Split(inside, ", ")
+		}
+	}
+	if len(named) != 3 || len(named[sshRow]) == 0 || len(named[loginRow]) == 0 || len(named[browserRow]) == 0 {
+		t.Fatalf("the rows that name paths or browsers are %q, want the SSH keys, logins and browser profiles rows", named)
+	}
+	logins := 0
+	for _, rel := range agent.BuiltInDenyRead() {
+		want := "" // a browser profile is named by its browser, in no row by its folder
+		switch f := agent.BuiltInDenyReadFamily(rel); f {
+		case agent.SecretSSHKeys:
+			want = sshRow
+		case agent.SecretLogins:
+			want, logins = loginRow, logins+1
+		case agent.SecretBrowsers:
+		default:
+			t.Errorf("~/%s has family %q, which this page has no row for", rel, f)
+		}
+		for lead, items := range named {
+			if in := slices.Contains(items, "~/"+rel); in != (lead == want) {
+				t.Errorf("~/%s named in the %q row: %v", rel, lead, in)
+			}
+		}
+	}
+	if len(named[loginRow]) != logins {
+		t.Errorf("the logins row names %d paths, want the %d login rows once each", len(named[loginRow]), logins)
 	}
 }

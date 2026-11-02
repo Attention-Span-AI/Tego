@@ -88,12 +88,7 @@ func mutationAskFixture(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(root, mutRun, "events.jsonl"), []byte(strings.Join(ls, "")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, ".live"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".live", mutRun), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, root, mutRun)
 	return root
 }
 

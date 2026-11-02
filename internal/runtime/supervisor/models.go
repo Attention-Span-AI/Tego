@@ -24,8 +24,11 @@ import (
 // amended 2026-10-05), and such an answer is admitted unmatched, supervisor R7's Limit (a). Such entries are deliberate trust grants, not proof of remote service identity; known model
 // endpoints still refuse. The runtime's synthetic forwarder listener grant is handled before this guard.
 //
-// DNS answers accumulate during the run. Each locality decision uses a fresh interface enumeration, so a
-// newly assigned alias is protected immediately; failed enumeration refuses rather than trusts stale data.
+// DNS answers accumulate during the run. Each locality decision uses a fresh enumeration of this host's own
+// addresses (thisHost.Fresh): the interfaces' and every address of a `local` route in the kernel's local routing
+// table, an AnyIP range among them, which is how a live block and a net gate read this host (hostAddrs.Own), so a
+// spelling of this host closed to one is closed to the others. A newly assigned alias or route is protected
+// immediately; a failed enumeration of either refuses rather than trusts stale data.
 type modelGuard struct {
 	// eps is every guarded endpoint with the addresses it matches, swapped whole on each refresh so a match
 	// never sees a half-updated set (I9).

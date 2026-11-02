@@ -35,6 +35,12 @@ func BuildFilterSourceRoute(arch Arch) ([]bpf.Instruction, error) {
 	return buildFilter(arch, filterOpts{abi: minTruncateABI, unixBinds: true, sourceRoute: true})
 }
 
+// BuildFilterWatch is the plain filter of BuildFilterMemfd with no memfd arm, plus the watch arm (filterOpts.watches)
+// Prepare installs in every enforcing run (enforce-landlock R11e), exposed only to the integration harness.
+func BuildFilterWatch(arch Arch) ([]bpf.Instruction, error) {
+	return buildFilter(arch, filterOpts{abi: minTruncateABI, unixBinds: true, watches: true})
+}
+
 // BuildFilterGate is BuildFilterMemfd for a run whose gate scores fs actions (ADR 0041 Stage B): the read gate's arm
 // notifies every read-open, the write gate's the chmod family as well as write-opens, under record: summary.
 func BuildFilterGate(arch Arch, gateRead, gateWrite bool) ([]bpf.Instruction, error) {

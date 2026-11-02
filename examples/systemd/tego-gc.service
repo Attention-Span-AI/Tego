@@ -4,7 +4,8 @@
 # it once a day (docs/OPERATIONS.md, "Ledger space for an agent that never stops"). It is the pass a `tego run` start
 # makes once per gc_interval, for a machine where no run may start for days: a lost run is ended as orphaned, and
 # every ended or empty run older than the machine config's retention is removed, never one a live launcher holds.
-# With no flags it counts as that pass, so a start inside gc_interval after it makes none.
+# With no flags it counts as that pass, so a start inside gc_interval after it makes none. A machine config it cannot
+# read whole removes nothing: the pass exits 125 [config-untrusted] naming the layer, and the unit fails.
 #
 #   cp tego-gc.service tego-gc.timer ~/.config/systemd/user/
 #   systemctl --user daemon-reload

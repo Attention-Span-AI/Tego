@@ -171,12 +171,15 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	case !o.observe:
 		warnRecordOff(o, stderr)
 	}
+	// ~/.tego and the config layer in it first: with either taken from its owner the config cannot be read.
+	restored := restoreUserState("tego run", stderr)
 	m, cds, err := loadMachine(config.TrustAbort)
 	writeConfigDiagnostics(stderr, cds)
 	if err != nil {
 		configRefused(stderr, o.cmdName(), err)
 		return identity.ExitConfig // = 125 [config-untrusted]
 	}
+	restored = append(restored, restoreOwnState(m, stderr)...)
 	makeOwnDirs(m)
 	warnUsersIgnored(stderr, o.cmdName(), m)
 	rt, held, src, code := compileForRun(ctx, o, m, stderr)
@@ -201,7 +204,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	// tree killed before this run competes with it for the machine.
 	sweepBeforeRun(ctx, m, o.cmdName(), stderr)
 	// And, once per gc_interval, gc's retention pass, within its budget.
-	retainBeforeRun(ctx, m, o.cmdName(), stderr)
+	retainBeforeRun(ctx, m, o.cmdName(), cds, stderr)
 
 	// The run directory keeps the contract as compiled, not as written: its sha256 is contract_hash
 	// and it needs no profile to reload (contractCopy, agent-contract.md R13).
@@ -290,6 +293,12 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		ContractSource: src,
 		// The provisioner of the run's harness (agent-contract.md R27, ADR 0062), from Layer 3's registry.
 		Harness: harnessProvisioner,
+		// The modes restoreUserState and restoreOwnState restored before the config's load and the compile, which the
+		// run records after run_start.
+		OwnStateRestored: restored,
+		// ~/.tego, the config layer and tego.log, which the run gives back again at its end, so a mode its agent took
+		// is not left for the commands after it, which pass over a layer they cannot read.
+		UserState: userState(),
 		// A condition the run records (a gap, or run_start's best_effort) and the user should hear of before the
 		// agent runs, under its own code: a memory cap the swap can bypass (runtime-launch.md R10, swap-uncapped), a
 		// held completion whose deputy did not start (held-unavailable), a boundary not held (unenforced).
@@ -421,7 +430,7 @@ func warnRecordOff(o runOptions, stderr io.Writer) {
 	}
 }
 
-// configRefused prints why a command (cmd: tego run, watch, adopt or agents) refused the machine config, with the
+// configRefused prints why a command (cmd: tego run, watch, adopt, agents or gc) refused the machine config, with the
 // fix compile and doctor already give for an untrusted layer: run's line named the file and mode and never said what
 // to change, and it prefixed errors that name themselves ("machine config: machine config untrusted: ..."). An
 // invalid layer's own errors are on the lines above it.
@@ -538,6 +547,60 @@ func costBudgetUnseen(rt *agent.RuleTable) string {
 		return ""
 	}
 	return fmt.Sprintf(", so the cost_usd budget of %s never trips", strconv.FormatFloat(rt.Limits.CostUSD, 'f', -1, 64))
+}
+
+// codeOwnStateMode tags the warning that a run restored the mode of one of tego's own files or directories.
+const codeOwnStateMode = "own-state-mode"
+
+// restoreUserState gives the owner back the rights something took from ~/.tego, the per-user config layer in it and
+// tego.log (userState); cmd names the command in its warnings. `tego run` and `tego gc` call it before they read the
+// machine config: with ~/.tego or the layer taken, the read failed, so the run was refused [config-untrusted] before
+// restoreOwnState ran, and so was every run after it, whoever took them (a root launcher's agent, which no root
+// launcher restores; an agent whose launcher died; another run's), and gc, which skipped the layer, deleted by the
+// built-in retention. The trust check (identity-config.md R20) still judges what it restored: it adds only the owner's
+// bits, so a layer or a ~/.tego that group or others can write is still refused.
+func restoreUserState(cmd string, stderr io.Writer) []tegoruntime.ModeRestored {
+	return restoreState(cmd, userState(), stderr)
+}
+
+// userState is the user's own state of tego's that restoreUserState gives back, and a run gives back again at its end
+// (tegoruntime.Deps.UserState): ~/.tego, the per-user config layer and tego.log in it, under the home tego keeps its
+// own log under (ownLogHomeOf), the invoking user's passwd home, where config.Resolve reads the layer. None when there
+// is no such home.
+func userState() tegoruntime.OwnState {
+	uid, _ := config.InvokingUID()
+	home := ownLogHomeOf(uid)
+	if home == "" {
+		return tegoruntime.OwnState{}
+	}
+	return tegoruntime.OwnState{Home: home, Log: filepath.Join(home, ownLogDir, ownLogName)}
+}
+
+// restoreOwnState gives the owner back the rights something took from the rest of tego's own state: chain.log, the
+// directory that holds it, the ledger root and its live index, and the runtime parent, $XDG_RUNTIME_DIR/tego
+// (tegoruntime.RestoreOwnState). No Landlock ABI has a chmod right, so an earlier run's agent can chmod them, and with
+// no rights on them the compile cannot place the anchor (agent-contract.md R10), and the run cannot make its runtime
+// directory, create its run directory or append its anchor. It runs before makeOwnDirs and the compile.
+func restoreOwnState(m *config.Machine, stderr io.Writer) []tegoruntime.ModeRestored {
+	anchor, _ := anchorPath(m) // with none, the anchor probe below refuses the run and says why
+	root, _ := ledgerRootOf(m) // likewise, with no ledger root, the run's own refusal
+	return restoreState("tego run", tegoruntime.OwnState{Anchor: anchor, Root: root, RuntimeParent: tegoruntime.RuntimeParent()}, stderr)
+}
+
+// restoreState restores s's modes for cmd: each mode it restored is a warning, which a run also records after
+// run_start. What it could not restore goes to tego's own log, and the step that needs the object then says what is
+// wrong with it.
+func restoreState(cmd string, s tegoruntime.OwnState, stderr io.Writer) []tegoruntime.ModeRestored {
+	restored, err := tegoruntime.RestoreOwnState(s)
+	if err != nil {
+		logOwn("restore the modes of tego's own files: " + err.Error())
+	}
+	for _, r := range restored {
+		message(stderr, "", 0, 0, fmt.Sprintf("warning: %s: %s had mode %04o, which kept tego out of its own files; "+
+			"gave its owner back the rights tego needs: mode %04o (an agent can change the mode of the files its user owns)",
+			cmd, record.Printable(r.Path), r.From, r.To), codeOwnStateMode)
+	}
+	return restored
 }
 
 // makeOwnDirs makes the ledger root and the chain anchor's directory before the contract is compiled:

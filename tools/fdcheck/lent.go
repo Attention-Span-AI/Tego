@@ -114,6 +114,7 @@ var lentSinks = map[string]map[int]bool{
 	pathUnix + ".Access":           {0: true},
 	pathUnix + ".Faccessat":        {1: true},
 	pathUnix + ".Faccessat2":       {1: true},
+	pathUnix + ".Fchmodat":         {1: true}, // the mode of what an O_PATH descriptor holds, which fchmod refuses
 	pathSyscall + ".Exec":          {0: true}, // execve resolves the path at once: a failed exec returns, kept nothing
 	pathUnix + ".Exec":             {0: true},
 	"strconv.Itoa":                 nil, // encoders: their result holds the number

@@ -43,6 +43,9 @@ type SweepResult struct {
 	Orphaned int
 	// Deleted is the number of run directories removed by retention; always 0 for KeepForever.
 	Deleted int
+	// Removed are the ids of those run directories, or, with WithSweepDryRun, of the ones the pass would remove: a
+	// dry run of gc counts what the rule-change journal's prune would leave once they are gone.
+	Removed []string
 	// Errs holds one error per run the pass could not finish, plus any per-run cgroup failure. A
 	// non-empty Errs never means the pass stopped: one run's failure never blocks the others.
 	Errs []error
@@ -162,7 +165,7 @@ func sweepWith(ctx context.Context, root string, opts []SweepOption,
 	})
 	res.Scanned = countRuns(rep)
 	res.Orphaned = len(rep.Swept)
-	res.Deleted = len(rep.Deleted)
+	res.Deleted, res.Removed = len(rep.Deleted), rep.Deleted
 	for id, e := range rep.Errors {
 		res.Errs = append(res.Errs, fmt.Errorf("sweep: run %s: %w", id, e))
 	}

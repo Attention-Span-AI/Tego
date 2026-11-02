@@ -349,10 +349,11 @@ func reachesThisHost(host string, h thishost.Addrs) bool {
 // namesThisHost reports whether a `net to` rule's host names this host. A rule on this host is on the destination, not
 // on one spelling of it, as a live block is (liveblock.Set.MatchInet): a server bound to all interfaces answers on every
 // loopback address and each of the host's own, so a rule on 127.0.0.1:P scored nothing for 127.0.0.2:P, [::1]:P or the
-// host's LAN address on P, and a sibling rule on [::1]:Q nothing for 127.0.0.1:Q. A datagram to a group or a broadcast
-// address reaches such a server too, and a rule on one of those names no host. It costs at most another local server on
-// the rule's port, or a group send on it. Whether a rule's literal is one of the host's own only the running host can
-// tell, so `compile --test` answers that row by the literal alone (gate.md R3).
+// host's LAN address on P, and a sibling rule on [::1]:Q nothing for 127.0.0.1:Q. A datagram to a group, a broadcast
+// address or an IPv6 anycast address the host joined reaches such a server too, and a rule on one of those names no
+// host. It costs at most another local server on the rule's port, or a group send on it. Whether a rule's literal is
+// one of the host's own (an interface's, or in an AnyIP range its local routing table sends here) only the running host
+// can tell, so `compile --test` answers that row by the literal alone (gate.md R3).
 func (r *compiledRule) namesThisHost(h thishost.Addrs) bool {
 	return r.local || r.addr.IsValid() && thishost.Names(r.addr, h)
 }

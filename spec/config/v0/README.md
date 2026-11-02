@@ -21,7 +21,11 @@ tier: auto              # ceiling; ordered landlock < cgroup < bpflsm; auto = hi
                         # error at its line (R24, amended 2026-09-24)
 capture: auto           # ceiling; ordered off < forwarder < uprobe; `uprobe` means uprobes plus the forwarder (both run; they never see the same request) when it is this ceiling or `auto` resolved to it, and uprobes alone when the contract pins `capture: uprobe` (the agent's own TLS is read, nothing is proxied; amended 2026-09-23), `forwarder` means forwarder only; auto = the highest the tier allows
 ledger_root: ~/.tego/runs        # servers: /var/lib/tego/runs
-retention: 30d                    # tego gc default, and what a run start's pass removes (gc_interval)
+retention: 30d                    # tego gc default, and what a run start's pass removes (gc_interval); the same
+                                  # pass prunes the rule-change journal to it, keeping what a run still in the ledger
+                                  # root reads (the lines since it started, those that name it) and each rules
+                                  # file's newest 20 changes still standing while the file is there (amended
+                                  # 2026-11-02)
 gc_interval: 0s                   # how often a tego run start applies retention to the ledger root, as `tego gc`
                                   # with no flags does (which counts as a pass): at most once per interval, for at
                                   # most 2 s, stopping between runs (the next pass goes on); only ended or empty

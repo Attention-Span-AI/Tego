@@ -24,7 +24,8 @@ import (
 // ctime is there because the mtime alone is the writer's to set: a line rewritten in place at the same length, its
 // mtime put back with utimes (`touch -r`), kept the size and mtime, so the read model served the old lines and the
 // chain verdict cache (chainKey, keyed on this) kept "Chain verified" for its ten minutes while the line page showed
-// the edited bytes (r10 BR-2). Every change to the inode moves its ctime, and no system call sets it back.
+// the edited bytes (r10 BR-2). Every change to the inode moves its ctime, and no system call sets it back. The chain
+// anchor's view stamps chain.log by it too (anchorview.go).
 type fileID struct {
 	dev, ino uint64
 	size     int64

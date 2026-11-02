@@ -4,6 +4,7 @@ package web
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -22,6 +23,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/control/rulesview"
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 var pageNames = []string{"overview", "detections", "investigate", "glossary", "severity", "runs", "run", "logs", "approvals", "error", "stop", "rules", "rule", "machine", "compare", "rules-change", "rules-preview", "rules-saved", "rules-new", "livefence"}
@@ -38,7 +40,7 @@ type pageSet struct {
 var parsedPages = sync.OnceValues(func() (*pageSet, error) {
 	ps := &pageSet{pages: map[string]*template.Template{}, twins: map[*template.Template]*template.Template{}}
 	for _, n := range allPages() {
-		t, err := template.New("layout.tmpl").Funcs(funcs).ParseFS(assets, "templates/layout.tmpl", "templates/rulelink.tmpl", "templates/highlights.tmpl", "templates/cmpform.tmpl", "templates/rules-parts.tmpl", "templates/rcrows.tmpl", "templates/charts.tmpl", "templates/"+n+".tmpl")
+		t, err := template.New("layout.tmpl").Funcs(funcs).ParseFS(assets, "templates/layout.tmpl", "templates/rulelink.tmpl", "templates/highlights.tmpl", "templates/cmpform.tmpl", "templates/rules-parts.tmpl", "templates/hostwarn.tmpl", "templates/rcrows.tmpl", "templates/charts.tmpl", "templates/"+n+".tmpl")
 		if err != nil {
 			return nil, fmt.Errorf("template %s: %w", n, err)
 		}
@@ -599,8 +601,18 @@ func (s *Server) load(w http.ResponseWriter) (*ledgerview.Snapshot, bool) {
 
 type errorData struct{ Heading, Text string }
 
+// fail answers status with the error page. Its top bar, nav and banner say what every other page says, read from the
+// snapshot the live state reads (ledgerview.LoadNow, which never waits): Live while a run is live, the Approvals
+// count and the waiting-ask banner. They say it as of the answer: the page follows nothing (no signature, so live.js
+// leaves it alone, and a region request of its address would only answer status again), and carries none of chromeOf's
+// notes about runs or lines left out, since it lists none. A ledger that cannot be read leaves the bare chrome.
 func (s *Server) fail(w http.ResponseWriter, status int, heading, text string) {
-	s.render(w, status, "error", chrome{Title: heading}, errorData{heading, text})
+	c := chrome{Title: heading}
+	if snap, err := ledgerview.LoadNow(s.cfg.Ledger); err == nil {
+		c = s.chromeOf(snap, heading, "")
+		c.Sig, c.Rev, c.Notes = "", "", nil
+	}
+	s.render(w, status, "error", c, errorData{heading, text})
 }
 
 type overviewData struct {
@@ -1083,21 +1095,25 @@ type tlRows struct {
 }
 
 // rowActs is what a timeline or log row offers beside its verdict: Block, the link that opens the run page's Block
-// now panel with the program or destination filled in ("" when the row offers none), and the Rule link (the event)
-// when Rule is set.
+// now panel with the program, destination or path filled in ("" when the row offers none), what it blocks in the
+// link's title (BlockWhat: "program", "destination", or "file or folder" as the panel's kind reads), and the Rule
+// link (the event) when Rule is set.
 type rowActs struct {
-	E     ledgerview.Event
-	Block string
-	Rule  bool
+	E         ledgerview.Event
+	Block     string
+	BlockWhat string
+	Rule      bool
 }
 
 // hostDst matches a net row's target "host (ip:port)": the host, and the destination's ":port".
 var hostDst = regexp.MustCompile(`^(\S+) \([^ ()]*(:\d+)\)$`)
 
-// rowActsOf is a row's actions. Block is offered only on a live run, for an exec or net row that was not already
-// refused: blocking it again would change nothing. Rule is offered only where a rule can be made and is worth making:
-// the run names a contract file (a tego watch run has none, and every Rule link led to an error page), and the row
-// is a file, program or connection that was refused or asked about, not one of the many allowed writes.
+// rowActsOf is a row's actions. Block is offered only on a live run, for an exec, net or fs row that was not already
+// refused: blocking it again would change nothing. A file row's Block is of kind path (its reads and changes, and
+// everything beneath it) on the path the line names first (blockPathOf), as the line page's Block now is. Rule is
+// offered only where a rule can be made and is worth making: the run names a contract file (a tego watch run has
+// none, and every Rule link led to an error page), and the row is a file, program or connection that was refused or
+// asked about, not one of the many allowed writes.
 func rowActsOf(e ledgerview.Event, live, contract bool) rowActs {
 	a := rowActs{E: e}
 	switch e.Kind {
@@ -1107,67 +1123,53 @@ func rowActsOf(e ledgerview.Event, live, contract bool) rowActs {
 	if !live || e.Refused() || e.SystemLookup {
 		return a
 	}
-	value := e.Target
-	if e.Kind == "exec" {
+	var kind liveblock.Kind
+	var what, value string
+	switch e.Kind {
+	case "exec":
 		// An exec row's target is the command line; the program is its first word.
+		kind, what = liveblock.KindExec, "program"
 		value, _, _ = strings.Cut(strings.TrimSpace(e.Target), " ")
-	} else if m := hostDst.FindStringSubmatch(e.Target); m != nil {
-		// A named destination reads "host (ip:port)": block the host on that port.
-		value = m[1] + m[2]
+	case "net":
+		kind, what, value = liveblock.KindNet, "destination", e.Target
+		if m := hostDst.FindStringSubmatch(e.Target); m != nil {
+			// A named destination reads "host (ip:port)": block the host on that port.
+			value = m[1] + m[2]
+		}
+	case "fs":
+		kind, what, value = liveblock.KindPath, "file or folder", blockPathOf(e)
 	}
-	if (e.Kind == "exec" || e.Kind == "net") && value != "" {
-		a.Block = "/runs/" + url.PathEscape(e.Run) + "?block=" + e.Kind + "&value=" + url.QueryEscape(value) + "#block"
+	if value != "" {
+		a.Block = "/runs/" + url.PathEscape(e.Run) + "?block=" + string(kind) + "&value=" + url.QueryEscape(value) + "#block"
+		a.BlockWhat = what
 	}
 	return a
 }
 
-// ruleName turns a ledger rule key into words a person reads at a glance; the key itself stays in the page's title
-// attribute and in the ledger. "unmatched" means no entry of the contract names the action, so the contract's
-// default decided it: refused for writes, programs and connections, allowed for plain reads.
-func ruleName(rule string) string {
-	inner := func(prefix string) (string, bool) {
-		if strings.HasPrefix(rule, prefix+"[") && strings.HasSuffix(rule, "]") {
-			return rule[len(prefix)+1 : len(rule)-1], true
+// blockPathOf is the path a file row's Block names: the line's path as recorded. A rename's, a link's or a symlink's
+// target joins its second name after " → ", which a name may hold too, so the first is read from the line itself
+// then, never cut out of the target. "" when the path is not absolute: a live path block holds only an absolute path
+// (liveblock.Normalize).
+func blockPathOf(e ledgerview.Event) string {
+	p := e.Target
+	if strings.Contains(p, " → ") {
+		var f record.FSPayload
+		if json.Unmarshal([]byte(e.Raw), &f) != nil {
+			return ""
 		}
-		return "", false
+		p = f.Path
 	}
-	switch rule {
-	case "":
+	if !strings.HasPrefix(p, "/") {
 		return ""
-	case "unmatched":
-		return "Not in policy"
-	case "net.resolver":
-		return "DNS lookup"
-	case "held-unsupported":
-		return "Cannot hold"
-	case "host-sockets":
-		return "Host socket"
 	}
-	for _, m := range []struct{ key, label string }{
-		{"fs.write", "Write: "}, {"fs.deny_read", "Never read: "}, {"fs.deny_write", "No changes: "},
-		{"fs.ask", "Ask first: "}, {"fs.ask_read", "Ask first: "}, {"fs.read", "Read: "}, {"exec", "Program: "}, {"live.block", "Blocked live: "},
-	} {
-		if v, ok := inner(m.key); ok {
-			return m.label + v
-		}
-	}
-	if v, ok := inner("live.fence"); ok {
-		// An Adjustable run's fence entry, live.fence[<kind>:<value>]: the kind is the row's own, so the label names
-		// the value in the words the Rules page's fence panel uses.
-		if _, val, cut := strings.Cut(v, ":"); cut {
-			v = val
-		}
-		return "Fence: " + v
-	}
-	if v, ok := inner("net"); ok {
-		v = strings.TrimPrefix(strings.TrimPrefix(v, "tcp://"), "udp://")
-		if strings.HasPrefix(v, "unix:") {
-			return "Socket: " + strings.TrimPrefix(v, "unix:")
-		}
-		return "Host: " + v
-	}
-	return rule
+	return p
 }
+
+// ruleName turns a ledger rule key into words a person reads at a glance: rulesview.RuleWords, inforce.Words, the
+// one vocabulary for rule keys, so this page and every other say a rule alike. The key itself stays in the page's
+// title attribute and in the ledger. "unmatched" means no entry of the contract names the action, so the contract's
+// default decided it: refused for writes, programs and connections, allowed for plain reads.
+func ruleName(rule string) string { return rulesview.RuleWords(rule) }
 
 // overviewRefusals is the newest refusals with the ones that matter first: a line the run page's Highlights call
 // background (its run's ledgerview.Signal) is folded apart, so an agent's own probes do not open the list. It returns

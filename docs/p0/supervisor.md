@@ -311,7 +311,8 @@ not admit (ADR 0018), `add_key`/`request_key`/`keyctl` (R32), the eleven System 
 `clone`/`setns` when the run must refuse them (enforce-cgroup-observe E24), and below Landlock ABI 6 `kill`/`tkill`/
 `tgkill`/`rt_sigqueueinfo`/`rt_tgsigqueueinfo`, `fcntl` and `ioctl` (R33), and at every ABI `prlimit64`,
 `setpriority`, `sched_setparam`/`sched_setscheduler`/`sched_setaffinity`/`sched_setattr` and `ioprio_set` when they
-name another process (R35). The numbers below are the network and
+name another process (R35), and `inotify_add_watch`/`fanotify_mark` (x86-64 254/301, arm64 27/263) and `fcntl`'s
+`F_NOTIFY` in every enforcing run (R36, *added 2026-11-02*). The numbers below are the network and
 path sets'; the others are in the package's arch tables. x86-64 (`AUDIT_ARCH_X86_64`) has both legacy and
 `*at` numbers: `connect`=42, `sendto`=44, `sendmsg`=46, `execve`=59, `rename`=82, `mkdir`=83, `rmdir`=84, `creat`=85, `unlink`=87,
 `symlink`=88, `openat`=257, `mkdirat`=258, `unlinkat`=263, `renameat`=264, `symlinkat`=266, `sendmmsg`=307,
@@ -427,9 +428,11 @@ destination (or is 0, ICMP/raw) → `allow`, unless a refusing entry also covers
 whatever the order (SEMANTICS §5); no match → `refused, reason: net-not-allowed, rule: unmatched` —
 save that a host entry never admits an address its name resolved to that agent-contract R18 refuses: loopback and
 the unspecified addresses, link-local and the cloud metadata endpoints, multicast, the machine's
-`denied_resolved_addresses`, this host's own interface addresses (a snapshot `admitResolved` takes over netlink and
-retakes once a second old, every host entry refused while none was ever taken), and, for a name whose compile-time
-answer was public only (`NetRule.PublicAnswer`), the private ranges; a localhost name keeps loopback and this host's
+`denied_resolved_addresses`, this host's own addresses, its interfaces' and, *since 2026-11-02*, every address of a
+`local` route in its routing tables local, main and default, an AnyIP range's, as a live block and the `models[]` guard
+read this host (a snapshot `admitResolved` takes over netlink and retakes once a second old, every host entry refused
+while none was ever taken), and, for a name whose compile-time answer was public only (`NetRule.PublicAnswer`), the
+private ranges; a localhost name keeps loopback and this host's
 addresses. Such a match is refused `rule: net.denied_resolved[<entry>]`, `host` the entry's name, unless another
 entry admits the destination on its own: a literal or CIDR entry naming it, a localhost name on loopback or on this
 host's address, another host name whose own live answer holds it and whose own check allows it, or a grant the runtime
@@ -582,7 +585,16 @@ and destination, independent of the ordinary resolved-address cache's age. Enume
 fails closed even after an earlier successful snapshot. New LAN/bridge aliases therefore do not get the previous
 one-second admission window. Locality is retained once an endpoint has been seen local during initial resolution,
 refresh or a decision; removing its LAN address cannot reopen loopback or other host aliases. Pure evaluation cannot enumerate host interfaces and conservatively reports
-`unresolved` for an unallowed literal it cannot classify on a local/literal model port.
+`unresolved` for an unallowed literal it cannot classify on a local/literal model port. *Amended 2026-11-02 (GAPS
+C46):* the enumeration is of this host's own addresses as a live block and a `net to` gate rule read them
+(`pkg/policy/thishost`, OPERATIONS "Live blocks"): with the interfaces' addresses it reads the `local` routes of the
+kernel's routing tables its default policy rules look up, local, main and default (`ip route show table local`;
+unprivileged `RTM_GETROUTE` dumps), and every address of one is a host-assigned address, so an address of an AnyIP
+range (`ip route add local 198.51.100.0/24 dev lo`) is guarded by a local endpoint, and an endpoint declared on one is
+local. Read from the interfaces alone, `connect(198.51.100.7:8443)` reached a model server bound to all interfaces,
+admitted `unmatched` under `models[127.0.0.1:8443]`, while a block on `127.0.0.1:8443` refused it. Tables that cannot
+be read are unknown, as a failed enumeration is (`TestModelGuardReadsTheLocalTable`,
+`TestThisHostReadsTheSameToTheGuardAndABlock`).
 
 **Limits — explicitly trusted routes and syscall coverage.** A model is not identified beyond declared endpoints
 and their guarded ports. Any explicitly reachable proxy, tunnel or second listener that forwards to the model
@@ -2831,7 +2843,100 @@ refuses. The kernel re-resolves a continued pid, the same best-effort window as 
 Test: `TestProcessScope`, `TestProcessScopeFailsClosedWithNoCgroup`, and on the kernel
 `TestTheAgentCannotChangeAProcessOutsideTheRun`.
 
+**R36 — a watch of a `deny_read` target** (*added 2026-11-02*, GAPS A10; enforce-landlock R11e). A watch opens
+nothing: `inotify_add_watch(2)`, `fanotify_mark(2)` and dnotify's `fcntl(fd, F_NOTIFY, mask)` ask only DAC's
+`MAY_READ` of the object (dnotify, on a descriptor already open, not even that) and `security_path_notify`, which
+neither Landlock nor the decision plane implements, so a watch on a `deny_read` directory was made at every tier and
+reported which of its files were opened, read, written and closed, while every read of them was refused. Every
+enforcing run's filter notifies the three (enforce-landlock R11e; *amended 2026-11-02*: the first version installed
+the arm only where the table's fs rows withheld a read beneath a target, which left out a table whose only withholding
+was a name entry or rule or tego's own state, and every run a live block or fence entry later narrows), and this loop
+decides each (`watch.go`):
+
+- `inotify_add_watch(fd, pathname, mask)`: on the object `pathname` names from the task's cwd, its final symlink
+  followed unless `mask` carries `IN_DONT_FOLLOW`.
+- `fanotify_mark(fd, flags, mask, dirfd, pathname)`, by `flags`, a register read as the kernel reads it: an inode mark
+  added is decided on the object `dirfd` and `pathname` name, `dirfd`'s own file (its `/proc` link) when `pathname` is
+  NULL, a final symlink followed unless `FAN_MARK_DONT_FOLLOW`; a mount, filesystem or mount-namespace mark added
+  (privileged: `setuid: true` at a root tier) reports every file it covers, the targets that share its mount included,
+  so it is refused wherever it is placed, with `EPERM`, the kernel's own answer to a caller without `CAP_SYS_ADMIN`
+  (every other agent), rule `deny-read-watch`; a removal and a flush add no mark and are continued, and so is a call
+  the kernel fails for its own reason (no single command, `EINVAL`; a negative `dirfd` with no pathname, `EBADF`).
+- `fcntl(fd, F_NOTIFY, mask)` (*added 2026-11-02*: the first version decided only the two calls above, and a
+  descriptor of a `deny_read` directory, which a tier-1 ruleset lets the agent open to list on the `READ_DIR` it
+  inherits, placed a dnotify watch that reported every access, change, creation and rename inside the target): on
+  `fd`'s own file, its `/proc` link, as a fanotify mark of a descriptor is, under `op` `fcntl`. The filter tests the
+  command alone, so no other `fcntl` reaches this loop for it (enforce-landlock R11e), and `handleFcntl` hands the
+  signal arm's `F_SETOWN` pair on to R33 as before. The kernel reads `fd` and `mask` as unsigned ints: a mask with no
+  event bit (0, or `DN_MULTISHOT` alone) removes the descriptor's watches and adds none, and a descriptor number past
+  `INT_MAX` names none (`EBADF`, never read as the cwd); both are continued. A descriptor that is no directory is
+  decided all the same (the kernel would answer `ENOTDIR`): whether it is one is a stat this loop cannot trust.
+
+A watch of an object is refused, with R10's errno (the `EACCES` a read of the object meets), where a read-open of it
+is refused (`watchDenied`; *amended 2026-11-02* after review, which found the first version asked only the read
+verdict, and that only for `read-denied`, and the held-read floor's (a) and (c)):
+
+- the read verdict (`fsVerdict`): the nearest entry deciding a read is a `deny_read` the run's tier enforces, an absent
+  built-in row, or at tier cgroup a name entry, whose climb that cannot decide within `agent.MaxWalk` refuses
+  `path-unresolved` under `unmatched`, as the listener refuses the read, and the line carries that reason;
+- at tier bpflsm a name entry too (ADR 0043 D7), whose file's read the plane's name check refuses though the read
+  verdict leaves name entries to tier cgroup: asked where the declared links lead, as the verdict asks it there;
+- in a run that holds its reads, the floor `heldReadFloors` applies: a target nested in a write entry and a
+  `deny_read` name rule (ADR 0069 D3 (a) and (c), `decide.HeldReadIndex`), and tego's own state, the table's and the
+  launcher's runtime parent but the run's own runtime directory (D3 (d), `heldOwnState`), under
+  `fs.deny_read[<that path>]`;
+- a live read or path block, or an Adjustable run's read fence entry not lifted (the live Set, under
+  `live.block[...]` or `live.fence[...]`), which `liveFS` and `heldReadFloors` refuse a read under. It is asked of
+  every watch this loop is notified of, also in a run whose reads it does not see (where a read block cannot be
+  placed and a path block refuses only changes, OPERATIONS "Live blocks"): it only tightens.
+
+A directory is told by a stat of its final name, since a name entry or name rule covers files alone. A watch beneath an
+`fs.ask_read` entry, whose read would be held for a person, is refused under that entry: a watch has no answer to wait
+for. A read only the `deny_read` snapshot refuses (R15e) is not one: nothing there is a target. A read gate's score is
+not asked: a gate scores actions, and a watch is none it scores. The object is matched as R15c matches an end, by its
+line's name and then where the task's own lookup lands (`matchEnds`), so a symlink, a `..` or a `/proc/self/fd` link
+into a target is refused under the target's rule; and it fails closed as R15c does: a pathname that could not be read
+whole (`args-unreadable`, `path-truncated`), a descriptor whose link this loop may not read (`fd-unreadable`: a
+non-dumpable task at tier 1) and a walk that failed other than as the task's lookup fails (`path-unreliable`) are
+refused under that marker. Each refusal is a `refused` line, `op` the syscall, `target` the watched name,
+`reason: read-denied` (`path-unresolved` where a name entry's climb could not decide), `rule` the target's entry, the
+block or fence entry, or the marker, written under `record: off` too; a continued watch has no line, since record v1 has
+no watch kind. Under `Policy.Observe` the call is continued and no line written (R30); the observe filter carries no
+such arm. Best effort, as R15c is: the kernel reads the pathname and resolves it again after `CONTINUE`, so a sibling
+thread that rewrites it, or a process that repoints a link or swaps the descriptor, in between places the watch where
+this loop did not decide. A watch of the directory that holds a target is not refused: it reports a target file's own
+activity (an open, a change) and a target directory's own entry, as a listing of that directory shows their names
+(SEMANTICS §1). Each watch costs one notification in every enforcing run, whatever its contract (the first version's
+predicate saved no `tego run` the cost: every table it compiles withholds tego's own state, agent-contract R6a, so the
+arm was in every such run already), so a watcher that adds one per directory of a large tree pays one per directory:
+about 25 µs a watch against 2 µs unnotified (3000 inotify watches of allowed directories through the harness's filter,
+6.17, 2026-11-02), a quarter of a second for ten thousand. A dnotify watch costs the same, and no other `fcntl` is
+notified for it. Test: `TestWatchBeneathADenyReadTargetIsRefused`, `TestDnotifyOfADenyReadTargetIsRefused`,
+`TestWatchFollowsTheKernelsLookup`, `TestWatchDecidesAsTheRunWithholdsReads`, `TestWatchFollowsEveryReadRefusal`,
+`TestWatchOfAnAskReadEntryIsRefused`, `TestWatchOfAnUnreadableDescriptorIsRefused`,
+`TestWatchInAnObserveRunIsContinued`, on the kernel `TestIntegrationWatchBeneathADenyReadTarget`, and through a
+tier-landlock run's ledger `TestIntegrationAWatchOfADenyReadTargetIsRefused`.
+
 **Changes.**
+- 2026-11-02, R1, R36 (GAPS A10): the watch calls are notified in every enforcing run. The arm was installed only
+  where the table's fs rows withheld a read beneath a `deny_read` target, so a run whose only withholding was a name
+  entry, a name rule, tego's own state or a live block or fence entry (which arrives after the filter is built) kept
+  its watches undecided; and the cost note said the arm was in runs with a `deny_read` entry, when agent-contract
+  R6a's own rows put it in every `tego run` already.
+- 2026-11-02, R36 (GAPS A10): a watch was refused only where the read verdict refused its object's read for
+  `read-denied`, or a held read's floor (a) or (c) did, though R36 said a watch follows the run's reads. A file a name
+  entry covers at tier bpflsm (the plane refuses its read by name), a name entry's climb that cannot decide (its read
+  is refused `path-unresolved`), tego's own state in a run that holds its reads (floor (d)) and a live read or path
+  block or read fence entry kept their watches. `watchDenied` asks each, and the line carries the read's reason.
+- 2026-11-02, R1, R36 (GAPS A10): dnotify, the third watch API, was still open: `fcntl(fd, F_NOTIFY, mask)` on a
+  descriptor of a `deny_read` directory, opened to list, reported every access, change, creation and rename inside it
+  (reproduced at tier landlock: an outside read of a file in the target signalled the agent, and no line was written).
+  `fcntl`'s `F_NOTIFY` is dispatched with the other watch calls and decided on the descriptor's own file, `op`
+  `fcntl`; a removal and a negative descriptor are continued.
+- 2026-11-02, R1, R36 (GAPS A10): a watch of a `deny_read` target was made at every tier, since no Landlock or plane
+  hook sees one, and reported which of its files were opened and changed. `inotify_add_watch` and `fanotify_mark` are
+  dispatched in a run that withholds a read beneath a target, and a watch whose object a read of would be refused is
+  refused `EACCES` with a `refused` line under the target's rule; a whole-mount fanotify mark is refused there too.
 - 2026-11-02, R9, R13b, R29 (GAPS C34): under a `net:` section with no gate the relayed connect and Fast-Open send
   followed the socket's source route, and an admitted datagram, connected or not, the route its own control messages
   carried, to a first hop no entry admits. The options read before a relay is made under every `net:` section, and a

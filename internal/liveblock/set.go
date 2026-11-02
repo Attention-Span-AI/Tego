@@ -294,12 +294,13 @@ func (s *Set) MatchExec(names []string, id FileID, idOK bool) (Entry, bool) {
 // resolved to; a port of 0 in the block matches every port. ap's address is compared unmapped, with no scope id.
 //
 // A block is on a destination, not a spelling of it, so one that names this host (thishost.Names) refuses whatever
-// reaches this host (thishost.Reaches): every loopback address, the unspecified ones, each of the host's own, and a
-// datagram to a multicast group or a broadcast address, which a local server bound to all interfaces hears too. Matched
-// as written, a block on 127.0.0.1:P left 127.0.0.2:P, ::1, 0.0.0.0:P and 224.0.0.1:P open. Refusing them all costs at
-// most another local server on the block's port, or a group send on it, as agent.GuardAddrMatches says of the models
-// guard. A block on a group or a broadcast address names no host, so it refuses that address alone. h is what the
-// running host can tell of its addresses; nil knows what an address says by itself.
+// reaches this host (thishost.Reaches): every loopback address, the unspecified ones, each of the host's own (an AnyIP
+// range its local routing table sends here among them), and a datagram to a multicast group, a broadcast address or an
+// IPv6 anycast address the host joined, which a local server bound to all interfaces hears too. Matched as written, a
+// block on 127.0.0.1:P left 127.0.0.2:P, ::1, 0.0.0.0:P and 224.0.0.1:P open. Refusing them all costs at most another
+// local server on the block's port, or a group send on it, as agent.GuardAddrMatches says of the models guard. A block
+// on a group, a broadcast or an anycast address names no host, so it refuses that address alone. h is what the running
+// host can tell of its addresses; nil knows what an address says by itself.
 func (s *Set) MatchInet(ap netip.AddrPort, host string, h thishost.Addrs) (Entry, bool) {
 	if s == nil {
 		return Entry{}, false

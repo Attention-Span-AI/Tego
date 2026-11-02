@@ -7,14 +7,23 @@ import (
 	"testing"
 )
 
-// lan is a host on 192.0.2.10/24.
+// lan is a host on 192.0.2.10/24 whose broadcast address was also set by hand to 192.0.2.100, with the AnyIP range
+// 198.51.100.0/24 routed to it and the router anycast address of 2001:db8:1::/64 joined, as its local routing table says.
 type lan struct{}
 
-func (lan) Own(a netip.Addr) bool       { return a == netip.MustParseAddr("192.0.2.10") }
-func (lan) Broadcast(a netip.Addr) bool { return a == netip.MustParseAddr("192.0.2.255") }
+func (lan) Own(a netip.Addr) bool {
+	return a == netip.MustParseAddr("192.0.2.10") || netip.MustParsePrefix("198.51.100.0/24").Contains(a)
+}
 
-// TestNamesAndReaches: an address that spells this host names it and reaches it; a group or broadcast address reaches
-// it and names nothing, so a block or a rule on one is no block or rule on this host.
+func (lan) Broadcast(a netip.Addr) bool {
+	return a == netip.MustParseAddr("192.0.2.255") || a == netip.MustParseAddr("192.0.2.100")
+}
+
+func (lan) Anycast(a netip.Addr) bool { return a == netip.MustParseAddr("2001:db8:1::") }
+
+// TestNamesAndReaches: an address that spells this host names it and reaches it, an AnyIP range's included; a group,
+// broadcast or anycast address reaches it and names nothing, so a block or a rule on one is no block or rule on this
+// host.
 func TestNamesAndReaches(t *testing.T) {
 	for _, c := range []struct {
 		addr             string
@@ -42,6 +51,14 @@ func TestNamesAndReaches(t *testing.T) {
 		{"::ffff:255.255.255.255", lan{}, false, true, true},
 		{"192.0.2.255", lan{}, false, true, false},
 		{"::ffff:192.0.2.255", lan{}, false, true, false},
+		{"198.51.100.7", lan{}, true, true, false},
+		{"::ffff:198.51.100.7", lan{}, true, true, false},
+		{"198.51.101.7", lan{}, false, false, true},
+		{"192.0.2.100", lan{}, false, true, false},
+		{"::ffff:192.0.2.100", lan{}, false, true, false},
+		{"2001:db8:1::", lan{}, false, true, false},
+		{"2001:db8:1::%3", lan{}, false, true, false},
+		{"2001:db8:1::1", lan{}, false, false, true},
 		{"192.0.2.11", lan{}, false, false, true},
 		{"203.0.113.7", lan{}, false, false, true},
 		{"2001:db8::1", lan{}, false, false, true},

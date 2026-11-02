@@ -71,11 +71,21 @@ Open a **fresh** terminal (one where `HOME` was never changed), sign in to Codex
 
 ```sh
 cd <your checkout> && make build        # a stale bin/tego is the first thing check reports
+bin/tego test                           # about a second, Tego's self-check: must say 4 actions, 4 refused
 cd examples/supply-chain-demo
 ./demo.sh setup                         # copies your Codex login into both sides: do this just before you run the demo
 ./demo.sh check                         # must end with READY
 ./demo.sh backup                        # optional, 10 seconds: the dashboard then always has one enforced run to show
 ```
+
+**`bin/tego test`** is Tego's own self-check ([docs/user/self-check.md](../../docs/user/self-check.md)), separate
+from the demo: four harmless actions on decoys in a temporary folder (read a fake SSH key, write outside the project,
+run a program the contract does not list, connect to a local port it does not allow), each first without Tego, then
+under `tego run`. If all four are refused, its first line is `Tego self-check: 4 actions, 4 refused at tier landlock`
+and it exits 0. Its four runs are recorded in that folder, removed when it ends, so neither the demo's ledger nor the
+dashboard ever shows them. On exit 1 (an action got through, or was stopped without a record) or 125 (one could not
+be judged, or `tego test` could not run), its screen says why: fix that before a take. This line was added on
+2026-11-02, after the rehearsals above, and run then on an isolated stage, not in a take.
 
 `setup` stops and starts only its own three units (`tego-sc-sink-8801`, `tego-sc-sink-8802`, `tego-sc-api-8803`),
 so the terminal can be closed. Nothing needs pip, venv or pytest; the tests use `python3 -m unittest`.

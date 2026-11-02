@@ -17,30 +17,36 @@ import (
 // an address DHCP, a VPN or a container bridge adds as fresh as the supervisor does.
 const hostAddrsMaxAge = time.Second
 
-// hostAddrs is a snapshot of the addresses assigned to this host's interfaces, for refreshDenied, the check the
-// table a tier is prepared with (rowsTable) and the run's DNS set's refreshes are filtered by. It is taken
-// through list (net.InterfaceAddrs: an RTM_GETADDR dump over netlink, which needs no privilege and no cgo), and
-// taken again when it is older than maxAge, on the next check that needs it. The supervisor keeps a snapshot of
-// its own from the same dump for its connect and send decisions; this one is the run's, so the rows follow the
-// same addresses without reading the supervisor's. Both run in the host's network namespace, which the agent
-// shares in tiers 1 and 2, so these are the addresses a connect from the run reaches this host on.
+// hostAddrs is a snapshot of this host's own addresses, for refreshDenied, the check the table a tier is prepared
+// with (rowsTable) and the run's DNS set's refreshes are filtered by: those assigned to its interfaces, taken through
+// list (net.InterfaceAddrs: an RTM_GETADDR dump over netlink, which needs no privilege and no cgo), and every address
+// of a `local` route in the kernel's local routing table, an AnyIP range's, read through table
+// (hostaddr.ReadLocalTable: an RTM_GETROUTE dump, unprivileged as well). Both are taken again when the snapshot is
+// older than maxAge, on the next check that needs it. The supervisor keeps a snapshot of its own from the same dumps
+// for its connect and send decisions; this one is the run's, so the rows follow the same addresses without reading
+// the supervisor's, and refuse every one the supervisor's resolved-address check refuses (supervisor R13b). Both run
+// in the host's network namespace, which the agent shares in tiers 1 and 2, so these are the addresses a connect
+// from the run reaches this host on.
 type hostAddrs struct{ *hostaddr.Snapshot }
 
-func newHostAddrs(list func() ([]net.Addr, error), now func() time.Time, maxAge time.Duration) *hostAddrs {
-	return &hostAddrs{hostaddr.New(list, now, maxAge)}
+// newHostAddrs is a snapshot over list and table; a nil table reads the interfaces' addresses alone.
+func newHostAddrs(list func() ([]net.Addr, error), table func() (hostaddr.LocalTable, error), now func() time.Time, maxAge time.Duration) *hostAddrs {
+	return &hostAddrs{hostaddr.NewWithLocalTable(list, table, now, maxAge)}
 }
 
-// has reports whether a is one of this host's addresses. known is false while no snapshot was ever taken, and
-// refreshDenied then refuses the address, since one the check cannot place may be this host's (fail-closed). A
-// snapshot that fails to be taken again keeps the last one, the best knowledge there is of addresses that change
-// rarely; a failed first snapshot is tried again after maxAge.
+// has reports whether a is one of this host's own addresses: an interface's, or one in a `local` route of the local
+// table. known is false while no snapshot was ever taken, and refreshDenied then refuses the address, since one the
+// check cannot place may be this host's (fail-closed). A snapshot that fails to be taken again keeps the last one,
+// the table's as the addresses', the best knowledge there is of addresses that change rarely; a failed first
+// snapshot is tried again after maxAge.
 func (h *hostAddrs) has(a netip.Addr) (local, known bool) { return h.Has(a) }
 
 // refreshDenied is the resolved-address check a tier's kernel rows are filtered by, in the table it is prepared
 // with (rowsTable) and in every refresh the run's DNS set hands it (dns.Options.ResolvedDenied,
 // dns.Set.Refreshed): the run table's own ResolvedDenied, with the machine's ranges,
-// and this host's own interface addresses, which agent-contract R18 counts as loopback, since a name resolved or
-// rebound to one reaches every service bound to all interfaces as loopback would. Those are refused for every
+// and this host's own addresses (an interface's, or one of an AnyIP range its local routing table sends here), which
+// agent-contract R18 counts as loopback, since a name resolved or rebound to one reaches every service bound to all
+// interfaces as loopback would. Those are refused for every
 // host entry but a localhost name, which keeps the loopback class, and while no snapshot of them was ever taken
 // every address is refused: the supervisor's check does the same, and a row that admitted what the supervisor
 // refuses would decide a datagram whose address a sibling thread rewrote after the supervisor read it
@@ -64,7 +70,7 @@ func refreshDenied(rt *agent.RuleTable, host *hostAddrs) func(agent.NetRule, net
 // table Prepare is given and the set's refreshes are filtered against the same one.
 func (r *runner) hostSnapshot() *hostAddrs {
 	if r.hostAddrs == nil {
-		r.hostAddrs = newHostAddrs(net.InterfaceAddrs, time.Now, hostAddrsMaxAge)
+		r.hostAddrs = newHostAddrs(net.InterfaceAddrs, hostaddr.ReadLocalTable, time.Now, hostAddrsMaxAge)
 	}
 	return r.hostAddrs
 }

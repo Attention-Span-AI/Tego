@@ -43,7 +43,8 @@ func TestEveryNotifiedSyscallHasAHandler(t *testing.T) {
 				for _, m := range []MemfdArm{MemfdOpen, MemfdSealed, MemfdRefused} {
 					for _, o := range []filterOpts{{}, {socket: SocketArm{Restricted: true}},
 						{socket: SocketArm{Restricted: true, ICMP: true}, signals: true, procScope: true}, {signals: true}, {procScope: true},
-						{gateWrite: true}, {gateRead: true}, {frames: true}, {socket: SocketArm{Restricted: true}, frames: true}} {
+						{gateWrite: true}, {gateRead: true}, {frames: true}, {socket: SocketArm{Restricted: true}, frames: true},
+						{watches: true}} {
 						o.full, o.abi, o.memfd = full, abi, m
 						sa := o.socket
 						insts, err := buildFilter(arch, o)

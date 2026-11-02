@@ -4,7 +4,6 @@ package web
 
 import (
 	"crypto/subtle"
-	"fmt"
 	"time"
 )
 
@@ -38,7 +37,7 @@ func (s *Server) OpenURL() string {
 		s.openCodes = s.openCodes[1:]
 	}
 	s.openCodes = append(s.openCodes, openCode{code: c, until: s.cfg.Now().Add(openCodeTTL)})
-	return fmt.Sprintf("http://127.0.0.1:%d/?o=%s", s.cfg.Port, c)
+	return s.origin + "/?o=" + c
 }
 
 // openCodeShape reports whether code looks like one OpenURL mints (32 lowercase hex), so a used or expired one is

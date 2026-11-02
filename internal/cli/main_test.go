@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -163,6 +164,21 @@ func TestHiddenChildNotInUsage(t *testing.T) {
 		if !strings.Contains(out, "  "+name) {
 			t.Errorf("usage lacks %s", name)
 		}
+	}
+}
+
+// TestUsageMarksTheRootCommands (H18): the commands that refuse to run without root ([privilege]) are marked (root) in
+// the usage, so a reader learns it before running one, and no other command is.
+func TestUsageMarksTheRootCommands(t *testing.T) {
+	_, out, _ := run(t, "help")
+	var marked []string
+	for _, l := range strings.Split(out, "\n") {
+		if f := strings.Fields(l); strings.HasPrefix(l, "  ") && len(f) > 1 && f[1] == "(root)" {
+			marked = append(marked, f[0])
+		}
+	}
+	if want := []string{"adopt", "agents"}; !slices.Equal(marked, want) {
+		t.Fatalf("usage marks %v (root), want %v:\n%s", marked, want, out)
 	}
 }
 

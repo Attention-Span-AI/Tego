@@ -57,7 +57,8 @@ type Options struct {
 	// addresses every one it refuses for that entry and lists it in the entry's Denied instead, so a second
 	// enforcer that follows the refreshes admits no address in the classes that check refuses (agent-contract
 	// R18). The runtime hands it agent.RuleTable.ResolvedDenied, with the table's machine ranges, and this
-	// host's own interface addresses from a snapshot of its own (internal/runtime, refreshDenied). It is called
+	// host's own addresses, its interfaces' and its local routing table's `local` routes, from a snapshot of
+	// its own (internal/runtime, refreshDenied). It is called
 	// on every Refreshed, so a check whose answer changes without a lookup (a host address added) changes what
 	// the next Refreshed returns. nil filters nothing.
 	ResolvedDenied func(r agent.NetRule, a netip.Addr) (class string, denied bool)

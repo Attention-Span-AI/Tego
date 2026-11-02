@@ -58,7 +58,7 @@ func cmdAgents() Command {
 	)
 	return Command{
 		Name:    "agents",
-		Summary: "list the agent processes running here, and report new ones (observes only, unless --adopt)",
+		Summary: "(root) list the agent processes running here, and report new ones (observes only, unless --adopt)",
 		Usage: "[--signature <rule>]... [--follow [--adopt --uid <uid>... [--boundary <agent.yaml | name>] [--record <mode>]]] " +
 			"[--children] [--json] [--no-default-signatures]",
 		Flags: func(fs *flag.FlagSet) {

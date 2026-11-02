@@ -15,11 +15,15 @@ import (
 // tab, the line page's Similar) counts the pair once: the mirror is marked here, as the read model takes each line
 // (runState.take), and left out wherever the action line is shown. A refused line with no action next to it (a
 // first write the relay reset, an older ledger) is a refusal of its own and stays. This is the package's one
-// counting rule (Event.Refusal). It is measure's (R19, internal/check/internal/mirror), which pairs a mirror only
-// with the line just before it, widened to a mirror that another writer's line slipped in front of.
+// counting rule (Event.Refusal). `tego measure` (R19), drift, learn and the receipt pair by the same rule, written
+// again in internal/check/internal/mirror (Pairs), which this layer cannot import: the same window, envelope, rule
+// and reason, and the same fallback. TestReceiptAgreesWithDashboardAndMeasure holds the two to one count over every
+// record fixture, mirror-split.jsonl among them, whose mirrors do not each follow their action; a change to one is made
+// to both.
 
-// mirrorWindow is how many lines back a mirror's action may be. The writer appends the mirror right after its action,
-// so it is the line before; the window only absorbs a line another writer slipped in between.
+// mirrorWindow is how many lines back a mirror's action may be, as internal/check/internal/mirror's window. The writer
+// appends the mirror right after its action, so it is the line before; the window only absorbs a line another writer
+// slipped in between.
 const mirrorWindow = 4
 
 // markMirror sets ev.Mirror when ev is a kind=refused line that mirrors a refused action no earlier mirror took,

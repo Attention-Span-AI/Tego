@@ -447,31 +447,35 @@ func TestDefaultHits(t *testing.T) {
 	}
 }
 
-// TestWordsMatchesWebLabels holds Words to the labels the dashboard's ruleName gives today (web/pages.go), so the
-// dashboard can call Words in its place without one label changing.
+// TestWordsMatchesWebLabels holds Words to the labels the dashboard shows for a line's rule: its ruleName is Words
+// (through rulesview.RuleWords), so a label changes here or nowhere. fs.ask and fs.ask_read both read "Ask first", a
+// fence entry reads by its value, and a key with no label of its own reads as written.
 func TestWordsMatchesWebLabels(t *testing.T) {
 	for key, want := range map[string]string{
-		"":                                "",
-		"unmatched":                       "Not in the rules (default)",
-		"net.resolver":                    "DNS lookup (always allowed)",
-		"held-unsupported":                "Held reads cannot hold this file",
-		"host-sockets":                    "A socket of the host, refused by default (no net: section)",
-		"fs.write[./tmp/]":                "Writable: ./tmp/",
-		"fs.deny_read[~/.ssh]":            "Secret, never readable: ~/.ssh",
-		"fs.deny_write[.git/hooks/]":      "Protected from changes: .git/hooks/",
-		"fs.ask[./held/]":                 "Asks you first: ./held/",
-		"fs.ask_read[/h/.config/t/token]": "Asks you before a read: /h/.config/t/token",
-		"fs.read[/etc/]":                  "Readable: /etc/",
-		"exec[git]":                       "Allowed program: git",
-		"live.block[path:/h/x]":           "Blocked live: path:/h/x",
-		"net[tcp://chatgpt.com:443]":      "Allowed destination: chatgpt.com:443",
-		"net[udp://1.1.1.1:53]":           "Allowed destination: 1.1.1.1:53",
-		"net[127.0.0.1:8803]":             "Allowed destination: 127.0.0.1:8803",
-		"net[unix:/var/run/nscd/socket]":  "Allowed socket: /var/run/nscd/socket",
-		"fs.codex_home[/h/r/codex]":       "fs.codex_home[/h/r/codex]",
-		"something-new":                   "something-new",
-		"exec.deny[rm]":                   "Never-run program: rm",
-		"fs.watch[./notes/]":              "Watched: ./notes/",
+		"":                                   "",
+		"unmatched":                          "Not in policy",
+		"net.resolver":                       "DNS lookup",
+		"held-unsupported":                   "Cannot hold",
+		"host-sockets":                       "Host socket",
+		"fs.write[./tmp/]":                   "Write: ./tmp/",
+		"fs.deny_read[~/.ssh]":               "Never read: ~/.ssh",
+		"fs.deny_write[.git/hooks/]":         "No changes: .git/hooks/",
+		"fs.ask[./held/]":                    "Ask first: ./held/",
+		"fs.ask_read[/h/.config/t/token]":    "Ask first: /h/.config/t/token",
+		"fs.read[/etc/]":                     "Read: /etc/",
+		"exec[git]":                          "Program: git",
+		"live.block[path:/h/x]":              "Blocked live: path:/h/x",
+		"live.fence[read:/srv/exports]":      "Fence: /srv/exports",
+		"live.fence[net:api.stripe.com:443]": "Fence: api.stripe.com:443",
+		"live.fence[]":                       "Fence: ",
+		"net[tcp://chatgpt.com:443]":         "Host: chatgpt.com:443",
+		"net[udp://1.1.1.1:53]":              "Host: 1.1.1.1:53",
+		"net[127.0.0.1:8803]":                "Host: 127.0.0.1:8803",
+		"net[unix:/var/run/nscd/socket]":     "Socket: /var/run/nscd/socket",
+		"fs.codex_home[/h/r/codex]":          "fs.codex_home[/h/r/codex]",
+		"something-new":                      "something-new",
+		"exec.deny[rm]":                      "Never-run program: rm",
+		"fs.watch[./notes/]":                 "Watched: ./notes/",
 	} {
 		if got := Words(key); got != want {
 			t.Errorf("Words(%q) = %q, want %q", key, got, want)

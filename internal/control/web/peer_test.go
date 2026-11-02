@@ -4,13 +4,16 @@ package web
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -32,14 +35,31 @@ func tcpRow(local, remote string, uid int) string {
 		local, remote, uid)
 }
 
-// 127.0.0.1:40000 (the client) and 127.0.0.1:8484 (the dashboard), and the client as a v4-mapped v6 address.
-const (
-	clientCell   = "0100007F:9C40"
-	serverCell   = "0100007F:2124"
-	client6Cell  = "0000000000000000FFFF00000100007F:9C40"
-	server6Cell  = "0000000000000000FFFF00000100007F:2124"
-	clientRemote = "127.0.0.1:40000"
+// kernelCell is ap as the kernel prints it in a /proc/net/tcp row, or a tcp6 row for a v6 address (a v4-mapped one
+// included), on this host: each four of the address's bytes read as a u32 in the host's byte order and printed %08X,
+// as get_tcp4_sock and get_tcp6_sock print each __be32, then the port, %04X. Tables built from it hold on a host of
+// either byte order; TestKernelCellIsTheKernelsSpelling holds it to the kernel's own digits.
+func kernelCell(ap netip.AddrPort) string {
+	raw := ap.Addr().AsSlice()
+	var b strings.Builder
+	for i := 0; i < len(raw); i += 4 {
+		fmt.Fprintf(&b, "%08X", binary.NativeEndian.Uint32(raw[i:]))
+	}
+	fmt.Fprintf(&b, ":%04X", ap.Port())
+	return b.String()
+}
+
+// 127.0.0.1:40000 (the client) and 127.0.0.1:8484 (the dashboard) as tcp prints them, and as tcp6 prints them for a
+// v4-mapped socket.
+var (
+	clientCell  = kernelCell(netip.MustParseAddrPort("127.0.0.1:40000"))
+	serverCell  = kernelCell(netip.MustParseAddrPort("127.0.0.1:8484"))
+	client6Cell = kernelCell(netip.MustParseAddrPort("[::ffff:127.0.0.1]:40000"))
+	server6Cell = kernelCell(netip.MustParseAddrPort("[::ffff:127.0.0.1]:8484"))
 )
+
+// clientRemote is the client's end as the request names it.
+const clientRemote = "127.0.0.1:40000"
 
 // fakeTables serves tcp and tcp6 from memory; a missing name is os.ErrNotExist.
 func fakeTables(tables map[string]string) func(string) ([]byte, error) {
@@ -182,17 +202,60 @@ func TestPeerUIDFailsClosed(t *testing.T) {
 	}
 }
 
-// TestPeerUIDAcceptsOwn dials the dashboard over real loopback with the real check: the serving user's own client
-// gets in whether the browser names it 127.0.0.1 or localhost, and [::1] is refused at connect as before (the
-// dashboard listens on 127.0.0.1 only).
+// TestPeerUIDAcceptsOwn dials the dashboard over real loopback with the real checks: the serving user's own client
+// signs in to a dashboard on 127.0.0.1 whether the browser names it so or localhost, and to one on ::1 over [::1],
+// where its socket is in /proc/net/tcp6 and sock_diag finds it in AF_INET6. A dashboard answers only on the address
+// it listens on: the one on 127.0.0.1 is not reached at [::1].
 func TestPeerUIDAcceptsOwn(t *testing.T) {
+	noRedirect := &http.Client{Timeout: 10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	signIn := func(t *testing.T, hostPort string) {
+		t.Helper()
+		resp, err := noRedirect.Get("http://" + hostPort + "/?t=tok123")
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("own user via %s: %d %s", hostPort, resp.StatusCode, body)
+		}
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	s, err := New(Config{Ledger: t.TempDir(), Port: port, Token: "tok123"})
+	port := strconv.Itoa(serveOwn(t, ln))
+	for _, host := range []string{"127.0.0.1", "localhost"} {
+		t.Run(host, func(t *testing.T) { signIn(t, net.JoinHostPort(host, port)) })
+	}
+	t.Run("[::1] reaches no dashboard on 127.0.0.1", func(t *testing.T) {
+		c, err := net.DialTimeout("tcp", net.JoinHostPort("::1", port), 2*time.Second)
+		if err == nil {
+			_ = c.Close()
+			t.Fatal("the dashboard on 127.0.0.1 answered on [::1]")
+		}
+		var op *net.OpError
+		if !errors.As(err, &op) {
+			t.Fatalf("[::1]: %v", err)
+		}
+	})
+	t.Run("[::1]", func(t *testing.T) {
+		ln6, err := net.Listen("tcp", "[::1]:0")
+		if err != nil {
+			t.Skipf("no IPv6 loopback here: %v", err)
+		}
+		signIn(t, net.JoinHostPort("::1", strconv.Itoa(serveOwn(t, ln6))))
+	})
+}
+
+// serveOwn serves a dashboard with the real peer and governed checks on ln until the test ends, and returns its port.
+func serveOwn(t *testing.T, ln net.Listener) int {
+	t.Helper()
+	at := ln.Addr().(*net.TCPAddr)
+	s, err := New(Config{Ledger: t.TempDir(), Host: at.IP.String(), Port: at.Port, Token: "tok123"})
 	if err != nil {
+		_ = ln.Close()
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -204,30 +267,61 @@ func TestPeerUIDAcceptsOwn(t *testing.T) {
 			t.Errorf("serve: %v", err)
 		}
 	})
-	noRedirect := &http.Client{Timeout: 10 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	for _, host := range []string{"127.0.0.1", "localhost"} {
-		t.Run(host, func(t *testing.T) {
-			resp, err := noRedirect.Get(fmt.Sprintf("http://%s:%d/?t=tok123", host, port))
-			if err != nil {
-				t.Fatal(err)
-			}
-			body, _ := io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
-			if resp.StatusCode != http.StatusSeeOther {
-				t.Fatalf("own user via %s: %d %s", host, resp.StatusCode, body)
-			}
-		})
+	return at.Port
+}
+
+// TestParseTCPAddr: a cell the kernel printed on this host reads back as its socket's address and port, whichever
+// byte order the host has, a v4-mapped one unmapped as connEnds unmaps the request's ends; a cell that is not an
+// address and a port matches nothing. On a big-endian host it fails when the words are read little-endian there
+// (7F000001 as 1.0.0.127, which refused every request).
+func TestParseTCPAddr(t *testing.T) {
+	for _, tc := range []struct{ socket, want string }{
+		{"127.0.0.1:8484", "127.0.0.1:8484"},
+		{"127.0.0.53:53", "127.0.0.53:53"},
+		{"10.1.2.3:65535", "10.1.2.3:65535"},
+		{"0.0.0.0:0", "0.0.0.0:0"},
+		{"[::1]:631", "[::1]:631"},
+		{"[2001:db8::a0b:c0d]:443", "[2001:db8::a0b:c0d]:443"},
+		{"[::ffff:127.0.0.1]:40000", "127.0.0.1:40000"},
+	} {
+		cell := kernelCell(netip.MustParseAddrPort(tc.socket))
+		if got, ok := parseTCPAddr(cell); !ok || got != netip.MustParseAddrPort(tc.want) {
+			t.Errorf("parseTCPAddr(%q), the cell of %s: %v, %v; want %s", cell, tc.socket, got, ok, tc.want)
+		}
 	}
-	t.Run("[::1]", func(t *testing.T) {
-		c, err := net.DialTimeout("tcp", fmt.Sprintf("[::1]:%d", port), 2*time.Second)
-		if err == nil {
-			_ = c.Close()
-			t.Fatal("the dashboard answered on [::1]; it listens on 127.0.0.1 only")
+	for _, cell := range []string{"", "0100007F", "0100007F:", "0100007:2124", "0100007F0:2124", "0100007F0100007F:2124",
+		"0000000000000000FFFF00000100007:2124", "zzzzzzzz:2124", "0100007F:zzzz", "0100007F:12345"} {
+		if got, ok := parseTCPAddr(cell); ok {
+			t.Errorf("parseTCPAddr(%q) = %s, want no match", cell, got)
 		}
-		var op *net.OpError
-		if !errors.As(err, &op) {
-			t.Fatalf("[::1]: %v", err)
+	}
+}
+
+// TestKernelCellIsTheKernelsSpelling holds kernelCell, which builds every table in these tests, and the parse to the
+// digits the kernel prints for three sockets on each byte order (the little-endian ones copied from an amd64 host's
+// tcp and tcp6 tables): this host's digits read back as the socket, and the other order's as some other address, so
+// a row matches in the host's order only.
+func TestKernelCellIsTheKernelsSpelling(t *testing.T) {
+	littleHost := binary.NativeEndian.Uint16([]byte{1, 0}) == 1
+	for _, tc := range []struct{ socket, little, big string }{
+		{"127.0.0.1:8484", "0100007F:2124", "7F000001:2124"},
+		{"[::ffff:127.0.0.1]:40000", "0000000000000000FFFF00000100007F:9C40", "00000000000000000000FFFF7F000001:9C40"},
+		{"[::1]:631", "00000000000000000000000001000000:0277", "00000000000000000000000000000001:0277"},
+	} {
+		ap := netip.MustParseAddrPort(tc.socket)
+		own, other := tc.little, tc.big
+		if !littleHost {
+			own, other = tc.big, tc.little
 		}
-	})
+		if got := kernelCell(ap); got != own {
+			t.Errorf("kernelCell(%s) = %q, want the kernel's %q", ap, got, own)
+		}
+		want := netip.AddrPortFrom(ap.Addr().Unmap(), ap.Port())
+		if got, ok := parseTCPAddr(own); !ok || got != want {
+			t.Errorf("parseTCPAddr(%q) = %v, %v; want %s", own, got, ok, want)
+		}
+		if got, ok := parseTCPAddr(other); ok && got == want {
+			t.Errorf("parseTCPAddr(%q), the other byte order's digits, = %s as well", other, got)
+		}
+	}
 }

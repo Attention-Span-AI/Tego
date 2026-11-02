@@ -74,6 +74,40 @@ func TestEveryLiveChangeIsNoLostAction(t *testing.T) {
 	}
 }
 
+// TestRestoredModesAreANoteNotALostAction: the lines a run writes for the modes of tego's own files it gave back to
+// their owner (an agent can chmod what its user owns) lost no action, so the receipt says so in a note and keeps its
+// counts whole. Read as lost actions, every run after an agent's chmod said "tego knows it missed some actions".
+func TestRestoredModesAreANoteNotALostAction(t *testing.T) {
+	restored := func(at time.Duration, path string) line {
+		return line{kind: record.KindGap, at: at, payload: record.GapPayload{What: record.GapRecord,
+			Why: record.GapOwnStateModeRestored, Binary: path}}
+	}
+	lines := pausedAndBlockedRun(restored(8*time.Second, "/home/u/.tego"), restored(9*time.Second, "/home/u/.tego/chain.log"))
+	lines[0] = start("forwarder", true)
+	rc := compute(t, lines, Options{})
+	if !rc.Coverage.Complete {
+		t.Errorf("restored modes make the receipt partial: %+v", rc.Coverage)
+	}
+	const note = "tego restored the modes of 2 of its own files, which something had taken from their owner; no action went unrecorded"
+	if len(rc.Notes) != 1 || rc.Notes[0] != note {
+		t.Errorf("notes = %q, want [%q]", rc.Notes, note)
+	}
+	var text bytes.Buffer
+	if err := rc.Text(&text); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text.String(), "\nNote: tego restored the modes of 2 of its own files") ||
+		strings.Contains(text.String(), "missed some actions") {
+		t.Errorf("the text does not say what tego restored, or calls it a lost action:\n%s", text.String())
+	}
+	// Beside a gap that did lose actions, that gap alone makes the counts a floor.
+	lines = pausedAndBlockedRun(restored(8*time.Second, "/home/u/.tego"),
+		line{kind: record.KindGap, at: 9 * time.Second, payload: record.GapPayload{What: record.GapRecord, Why: "channel-full"}})
+	if got := coverageFields(compute(t, lines, Options{}))["record"]; !strings.HasPrefix(got, "1 gap line: tego knows it missed some actions") {
+		t.Errorf("record = %q, want the one lost-action line", got)
+	}
+}
+
 func TestLostActionsStillCount(t *testing.T) {
 	cases := []struct {
 		name string

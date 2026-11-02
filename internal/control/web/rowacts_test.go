@@ -8,10 +8,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 )
 
-// rowActsFixture is fixture plus an allowed exec and an allowed net line on the live run, and the same on the ended
-// run.
+// rowActsFixture is fixture plus, on the live run, an allowed exec and an allowed net line, an allowed write, a rename
+// whose first name holds the " → " its target joins the names with, a write to a relative path and a refused read.
 func rowActsFixture(t *testing.T) string {
 	t.Helper()
 	root := fixture(t)
@@ -28,29 +30,46 @@ func rowActsFixture(t *testing.T) string {
 	}
 	add(harmRun, "demo-harm", 7,
 		line(harmRun, "demo-harm", 7, t0.Add(time.Minute+7), "exec", `"verdict":"allow","rule":"exec[curl]","argv":["curl","-s","http://example.com/x"],"path":"/usr/bin/curl","exec_id":"e1"`),
-		line(harmRun, "demo-harm", 8, t0.Add(time.Minute+8), "net", `"verdict":"allow","rule":"net[example.com:443]","proto":"tcp","dst":"93.184.216.34:443","host":"example.com"`))
+		line(harmRun, "demo-harm", 8, t0.Add(time.Minute+8), "net", `"verdict":"allow","rule":"net[example.com:443]","proto":"tcp","dst":"93.184.216.34:443","host":"example.com"`),
+		line(harmRun, "demo-harm", 9, t0.Add(time.Minute+9), "fs", `"verdict":"allow","rule":"fs.write[./out/]","op":"open","path":"/p/out/report.txt","flags":577`),
+		line(harmRun, "demo-harm", 10, t0.Add(time.Minute+10), "fs", `"verdict":"allow","rule":"fs.write[./out/]","op":"rename","path":"/p/out/x → y.tmp","path2":"/p/out/y"`),
+		line(harmRun, "demo-harm", 11, t0.Add(time.Minute+11), "fs", `"verdict":"allow","rule":"fs.write[./out/]","op":"open","path":"out/relative.txt","flags":577`),
+		line(harmRun, "demo-harm", 12, t0.Add(time.Minute+12), "fs", `"verdict":"refused","rule":"fs.deny_read[/h/.ssh/]","reason":"read-denied","op":"open","path":"/h/.ssh/id_rsa"`))
 	return root
 }
 
-// A live run's exec and net rows that were allowed offer Block, linking to the run page's Block now panel with the
-// program or destination filled in; a refused row, a row of an ended run and an fs row do not; the row's Rule link is
-// compact (one row-acts group beside the verdict), never a line of its own.
+// A live run's exec, net and fs rows that were allowed offer Block, linking to the run page's Block now panel with the
+// program, destination or path filled in and saying in its title what it blocks; a file row names its path as the
+// line holds it (a rename's first name whole, though it holds the arrow its target joins the names with), and a
+// relative path, a refused row and a row of an ended run offer none; the row's Rule link is compact (one row-acts
+// group beside the verdict), never a line of its own.
 func TestRowActionsOfferBlockOnLiveRuns(t *testing.T) {
 	s := newServer(t, rowActsFixture(t))
 	c := login(t, s)
 	body := do(s, "GET", "/runs/"+harmRun, "127.0.0.1:8484", c).Body.String()
 	for _, want := range []string{
-		`href="/runs/` + harmRun + `?block=exec&amp;value=curl#block"`,
-		`href="/runs/` + harmRun + `?block=net&amp;value=example.com%3A443#block"`,
+		`href="/runs/` + harmRun + `?block=exec&amp;value=curl#block" title="Block this program on the running agent from now on"`,
+		`href="/runs/` + harmRun + `?block=net&amp;value=example.com%3A443#block" title="Block this destination on the running agent from now on"`,
+		`href="/runs/` + harmRun + `?block=path&amp;value=%2Fp%2Fout%2Freport.txt#block" title="Block this file or folder on the running agent from now on"`,
+		// "/p/out/x → y.tmp", query-escaped, its + signs as the page escapes them.
+		`href="/runs/` + harmRun + `?block=path&amp;value=%2Fp%2Fout%2Fx&#43;%E2%86%92&#43;y.tmp#block"`,
 		`<span class="row-acts">`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("live run page lacks %s", want)
 		}
 	}
+	for _, bad := range []string{"value=out%2Frelative.txt", "value=%2Fh%2F.ssh", "value=%2Fp%2Fout%2Fx#block", "value=%2Fp%2Fout%2Fy#block"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("live run page offers Block with %s", bad)
+		}
+	}
 	// The pending ask's net row (verdict ask) and the allowed net row name the same host; the refusals offer none.
-	if n := strings.Count(body, `class="link row-act act-block"`); n != 3 {
-		t.Errorf("%d Block links on the live run page, want 3 (the exec row, the ask and the allowed net row; not the refusals)", n)
+	if n := strings.Count(body, `class="link row-act act-block"`); n != 5 {
+		t.Errorf("%d Block links on the live run page, want 5 (the exec row, the ask, the allowed net row, the write and the rename; not the refusals or the relative path)", n)
+	}
+	if a := rowActsOf(ledgerview.Event{Run: harmRun, Kind: "fs", Verdict: "allow", Target: "/p/out/report.txt"}, false, true); a.Block != "" {
+		t.Errorf("a file row of an ended run offers Block: %q", a.Block)
 	}
 	// The run names no contract file (as a tego watch run), so no row can become a rule: no Rule link at all.
 	if strings.Contains(body, `class="link row-act" href="/runs/`+harmRun+`/lines/`) {
@@ -60,6 +79,9 @@ func TestRowActionsOfferBlockOnLiveRuns(t *testing.T) {
 	if !strings.Contains(logs, `?block=exec&amp;value=curl#block`) {
 		t.Error("a live run's exec row in the logs lacks Block")
 	}
+	if !strings.Contains(logs, `?block=path&amp;value=%2Fp%2Fout%2Freport.txt#block`) {
+		t.Error("a live run's file row in the logs lacks Block")
+	}
 	clean := do(s, "GET", "/runs/"+cleanRun, "127.0.0.1:8484", c).Body.String()
 	if strings.Contains(clean, "act-block") {
 		t.Error("an ended run offers Block")
@@ -67,15 +89,25 @@ func TestRowActionsOfferBlockOnLiveRuns(t *testing.T) {
 }
 
 // The Block now panel opens filled in from the Block link's query string, and ignores a kind it does not know. It
-// names its terminal twin, tego block, now that a block answers with one line instead of a done page.
+// names its terminal twin, tego block, now that a block answers with one line instead of a done page: with
+// placeholders, and the hooks static/twin.js fills them in by (the form it reads, the command's fixed words).
 func TestBlockPanelPrefill(t *testing.T) {
 	s := newServer(t, rowActsFixture(t))
 	c := login(t, s)
 	body := do(s, "GET", "/runs/"+harmRun+"?block=net&value=example.com%3A443", "127.0.0.1:8484", c).Body.String()
 	for _, want := range []string{`<option value="net" selected>`, `value="example.com:443"`,
-		"<code>tego block " + harmRun + " &lt;exec|net|path&gt; &lt;value&gt;</code>", "<code>tego block --list " + harmRun + "</code>"} {
+		`<form class="row" id="block-form" method="post" action="/runs/` + harmRun + `/block">`, `<script src="/static/twin.js" defer></script>`,
+		`<code data-twin="block-form" data-cmd="tego block ` + harmRun + `">tego block ` + harmRun + ` &lt;exec|net|path&gt; &lt;value&gt;</code>`,
+		"<code>tego block --list " + harmRun + "</code>"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("prefilled panel lacks %s", want)
+		}
+	}
+	// A file row's link picks File or folder with the path.
+	body = do(s, "GET", "/runs/"+harmRun+"?block=path&value=%2Fp%2Fout%2Freport.txt", "127.0.0.1:8484", c).Body.String()
+	for _, want := range []string{`<option value="path" selected>File or folder</option>`, `value="/p/out/report.txt"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("a file row's prefilled panel lacks %s", want)
 		}
 	}
 	body = do(s, "GET", "/runs/"+harmRun+"?block=bogus&value=x", "127.0.0.1:8484", c).Body.String()

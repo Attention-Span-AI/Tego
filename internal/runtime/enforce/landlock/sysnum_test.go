@@ -41,7 +41,7 @@ func TestFilterNumbersAreTheKernels(t *testing.T) {
 		for where, list := range map[string][]sysNR{
 			"ENOSYS": tab.ENOSYS, "Notify": tab.Notify, "Chmod": tab.Chmod, "Attr": tab.Attr, "Signal": tab.Signal,
 			"RootDeny": tab.RootDeny, "TaskArg0": tab.TaskArg0, "ClientDeny": tab.ClientDeny, "enosysSet": enosysSet,
-			"landlockSet": landlockSet, "Frames": tab.Frames,
+			"landlockSet": landlockSet, "Frames": tab.Frames, "Watch": tab.Watch,
 		} {
 			if len(list) == 0 {
 				t.Errorf("%s %s is empty", c.goarch, where)
@@ -61,8 +61,8 @@ func TestFilterNumbersAreTheKernels(t *testing.T) {
 			check("field", name, nr)
 		}
 		// A field this test does not name would go unchecked: the counts are pinned so a new one is added here.
-		if nrs, lists := countNRFields(); nrs != 19 || lists != 9 {
-			t.Errorf("archTable has %d uint32 and %d []sysNR fields, this test names 19 and 9: add the new one", nrs, lists)
+		if nrs, lists := countNRFields(); nrs != 19 || lists != 10 {
+			t.Errorf("archTable has %d uint32 and %d []sysNR fields, this test names 19 and 10: add the new one", nrs, lists)
 		}
 	}
 }

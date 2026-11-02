@@ -22,7 +22,8 @@ type Op string
 const (
 	// OpAdd adds Entry to the list at Key.
 	OpAdd Op = "add"
-	// OpRemove removes Entry, spelled exactly as the file spells it, from the list at Key.
+	// OpRemove removes Entry, spelled exactly as the file spells it, from the list at Key: every copy, where the file
+	// lists it more than once.
 	OpRemove Op = "remove"
 	// OpNever turns the ask entry Key[Entry] into a refusal: fs.ask_read moves to fs.deny_read with the same
 	// spelling, fs.ask goes (a write there is outside the contract again; under a write entry it becomes an
@@ -101,7 +102,8 @@ type EditResult struct {
 	Sentences []Sentence
 	// Direction is the whole request's: Narrows only when no change loosens anything.
 	Direction Direction
-	// Why says what decided Direction, one clause per change.
+	// Why says what decided Direction, one clause per change. A removal of an entry the file lists more than once
+	// says so: "fs.deny_read -= ./secrets/ widens (the file lists it twice: every copy goes)".
 	Why string
 }
 
@@ -217,10 +219,12 @@ type editPlanner struct {
 
 // plannedChange is a list change and whether it is half of a move from an ask list into a refusal (OpNever, a
 // deny_read that drops the ask_read entries beneath it): such a half narrows whatever the lexical model says of it
-// alone (an ask_read entry removed reads as "May read" until its deny_read lands).
+// alone (an ask_read entry removed reads as "May read" until its deny_read lands). copies is how many items a
+// removal takes: more than one where the file lists the entry twice.
 type plannedChange struct {
 	Change
-	moved bool
+	moved  bool
+	copies int
 }
 
 func (ep *editPlanner) push(c Change, moved bool) {
@@ -229,7 +233,15 @@ func (ep *editPlanner) push(c Change, moved bool) {
 			return
 		}
 	}
-	ep.changes = append(ep.changes, plannedChange{c, moved})
+	pc := plannedChange{Change: c, moved: moved}
+	if c.Remove {
+		for _, e := range list(ep.top, c.Key) {
+			if e == c.Entry {
+				pc.copies++
+			}
+		}
+	}
+	ep.changes = append(ep.changes, pc)
 }
 
 // order puts every removal first, so an entry leaves its list before one that would contradict it arrives, and the
@@ -367,6 +379,13 @@ func describe(pc plannedChange, before, now model) (Sentence, string) {
 	if c.Key == "fs.ask_read" && !c.Remove && !before.homeKnown && s.Direction == Narrows {
 		s.Direction = Mixed
 		why = c.String() + " mixed: no home was given, so whether it relaxes a built-in deny_read entry is unknown"
+	}
+	if pc.copies > 1 {
+		n := fmt.Sprintf("%d times", pc.copies)
+		if pc.copies == 2 {
+			n = "twice"
+		}
+		why += " (the file lists it " + n + ": every copy goes)"
 	}
 	return s, why
 }

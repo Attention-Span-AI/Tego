@@ -16,6 +16,7 @@ import (
 	bpfobj "github.com/attention-span-ai/tego/internal/bpf"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/runtime/cgroup"
+	"github.com/attention-span-ai/tego/internal/shellword"
 )
 
 // CheckID names one probe; the values are the fixed D1..D9 order of R27.
@@ -306,8 +307,8 @@ var executable = os.Executable
 // sudoDoctor is the command that re-runs this doctor as root, for a fix line. It names this binary by its
 // absolute path: sudo resets PATH to its secure_path, which on Ubuntu leaves out $HOME/.local/bin, where the
 // install script puts tego, so `sudo tego doctor` answered "command not found" on the default install.
-// A path the shell would split or expand is single-quoted; a binary whose path cannot be
-// read is named tego, as before.
+// A path the shell would split or expand is single-quoted (shellword.Quote, the dashboard's terminal twins' rule);
+// a binary whose path cannot be read is named tego, as before.
 func sudoDoctor() string {
 	path, err := executable()
 	if err != nil || path == "" {
@@ -316,21 +317,5 @@ func sudoDoctor() string {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		path = resolved
 	}
-	return "sudo " + shellQuote(path) + " doctor"
-}
-
-// shellQuote returns s as one shell word: unchanged when every byte is one no shell treats specially,
-// single-quoted otherwise.
-func shellQuote(s string) string {
-	safe := s != ""
-	for _, c := range []byte(s) {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.IndexByte("/._-+@%:,=", c) >= 0) {
-			safe = false
-			break
-		}
-	}
-	if safe {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	return "sudo " + shellword.Quote(path) + " doctor"
 }

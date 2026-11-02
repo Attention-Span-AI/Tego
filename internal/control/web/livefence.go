@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
+	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -363,15 +364,16 @@ func (s *Server) liftPreview(w http.ResponseWriter, r *http.Request, id string) 
 	// The terminal twin only for a change the page could confirm: a kind or value that did not parse came from the
 	// link, and a crafted link must not hand the person a command to paste.
 	if d.Err == "" {
-		d.CLI = "tego " + verb + " " + id + " " + shellWord(d.Kind) + " " + shellWord(d.Value)
+		var limit string
 		switch {
 		case q.Get("for") == forUntil && !until.IsZero():
-			d.CLI += " --until " + shellWord(until.Local().Format("2006-01-02 15:04"))
+			limit = " --until " + shellWord(until.Local().Format("2006-01-02 15:04"))
 		case forSpans[q.Get("for")] > 0:
-			d.CLI += " --for " + q.Get("for")
+			limit = " --for " + q.Get("for")
 		case q.Get("for") == forTyped && !until.IsZero():
-			d.CLI += " --for " + shellWord(strings.TrimSpace(q.Get("span")))
+			limit = " --for " + shellWord(strings.TrimSpace(q.Get("span")))
 		}
+		d.CLI = "tego " + verb + " " + id + " " + changeWords(d.Kind, d.Value, limit)
 	}
 	title := "Lift"
 	if d.Grant {
@@ -472,7 +474,7 @@ func (s *Server) liftPost(w http.ResponseWriter, r *http.Request, id string) {
 	what := liftWhat(string(k), v, rr)
 	if perm {
 		if rr != nil {
-			if ref := contractRef(rr.Contract); ref != "" {
+			if ref := rules.Ref(rr.Contract); ref != "" {
 				done := "Lifted"
 				if e, ok := ledgerview.LiveFactsOf(rr).InFence(string(k), v); ok && e.Source == record.LiveFenceSourceNew {
 					done = "Granted" // new access, as the fence row's chip says

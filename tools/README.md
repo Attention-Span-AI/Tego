@@ -2,7 +2,8 @@ Developer tooling only, never imported by the binary, and exempt from checkexits
 
 - `dashgen/`: writes a big isolated ledger root for measuring the dashboard (`go run ./tools/dashgen -root DIR -anchor
   FILE`: 300 ended runs of 500 lines, one of 200,000 lines, one live run), every run through the ledger's own Writer
-  with a valid chain; docs/DASHBOARD.md, "Read model, bounds and speed".
+  with a valid chain; docs/DASHBOARD.md, "Read model, bounds and speed". The live run reads as running only while a
+  process holds its lock (`flock <root>/<run>/lock sleep 1h`), as lost otherwise.
 - `rulecheck/`: reads the rule IDs of docs/p0/*.md and fails on a duplicate ID, a reference to a lettered part or rule the
   named document does not define, and reports which rules no test mentions (CI's build-test; `go run ./tools/rulecheck`).
 - `affected/`: the change-scoped selection behind `make precommit-affected BASE=<rev>` (`go run ./tools/affected

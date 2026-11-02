@@ -4,7 +4,6 @@ package runact
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -22,14 +21,16 @@ const (
 	WordRestoreAsked = "restore asked"
 )
 
-// ErrLocked is a lift or a restore asked of a Locked run, which has no fence.
-var ErrLocked = errors.New("this run is Locked: loosening applies from its next run (ADR 0125)")
-
-// ErrOutsideFence is a lift or a restore of an entry the run's fence does not list.
-var ErrOutsideFence = errors.New("is outside this run's fence: it applies from the next run")
-
-// ErrNoKey is a lift of a run whose lift key cannot be read (liveblock.ReadKey).
-var ErrNoKey = errors.New("this run's live key cannot be read, so no lift can be asked")
+// The refusals of a lift, a grant and a restore are liveblock's (liveblock.CheckFence, LiftKey), as `tego lift`,
+// `tego grant` and `tego restore` give them, beside ErrNotRunning and ErrNoTimeLimits.
+var (
+	// ErrLocked is a lift or a restore asked of a Locked run, which has no fence.
+	ErrLocked = liveblock.ErrLocked
+	// ErrOutsideFence is a lift or a restore of an entry the run's fence does not list.
+	ErrOutsideFence = liveblock.ErrOutsideFence
+	// ErrNoKey is a lift of a run whose lift key cannot be read (liveblock.ReadKey).
+	ErrNoKey = liveblock.ErrNoKey
+)
 
 // Lifted is what a lift, a grant or a restore asked.
 type Lifted struct {
@@ -51,14 +52,15 @@ type Lifted struct {
 // of the run), as `tego lift` and `tego grant` do (ADR 0125 decision 3): it writes a lift, MAC'ed under the run's key,
 // into the run's overlay, and the launcher decides what takes effect and records it. It loosens, so it is refused,
 // in this order: to a caller inside a run (SelfGoverned; an error from the check counts as inside); for a run, kind
-// or value that do not parse; for a run that is not running (ErrNotRunning); for a Locked run (ErrLocked); for an
-// entry its fence does not list (ErrOutsideFence); for a limit outside liveblock.CheckUntil's bounds; and when the
-// run's key cannot be read (ErrNoKey). via is "cli" or "dashboard" (liveblock.By).
+// or value that do not parse; by liveblock.CheckFence, as the CLI refuses it, for a run that is not running
+// (ErrNotRunning), a limit its launcher does not read (ErrNoTimeLimits), a Locked run (ErrLocked) and an entry its
+// fence does not list (ErrOutsideFence); for a limit outside liveblock.CheckUntil's bounds; and when the run's key
+// cannot be read (ErrNoKey). via is "cli" or "dashboard" (liveblock.By).
 func Lift(ctx context.Context, root, run, kind, value string, until time.Time, via string) (Lifted, error) {
 	if in, _ := SelfGoverned(); in { // fails closed: a cgroup it cannot judge refuses too
 		return Lifted{}, fmt.Errorf("%w (run %s)", ErrGoverned, run)
 	}
-	dir, k, v, f, err := fenceTarget(root, run, kind, value)
+	dir, k, v, f, err := fenceTarget(root, run, kind, value, until)
 	if err != nil {
 		return Lifted{}, err
 	}
@@ -72,9 +74,9 @@ func Lift(ctx context.Context, root, run, kind, value string, until time.Time, v
 			return Lifted{}, err
 		}
 	}
-	key, err := liveblock.ReadKey(dir)
+	key, err := liveblock.LiftKey(dir, run)
 	if err != nil {
-		return Lifted{}, fmt.Errorf("%w: %w", ErrNoKey, err)
+		return Lifted{}, err
 	}
 	o, err := liveblock.Update(ctx, dir, run, func(o *liveblock.Overlay) (bool, error) {
 		_, err := o.Lift(k, v, liveblock.By(via), time.Now(), until, key)
@@ -91,7 +93,7 @@ func Lift(ctx context.Context, root, run, kind, value string, until time.Time, v
 // does. It narrows, so it is allowed from inside a run; it is refused for a run that is not running, a Locked run and
 // an entry outside the fence, as Lift is.
 func Restore(ctx context.Context, root, run, kind, value, via string) (Lifted, error) {
-	dir, k, v, f, err := fenceTarget(root, run, kind, value)
+	dir, k, v, f, err := fenceTarget(root, run, kind, value, time.Time{})
 	if err != nil {
 		return Lifted{}, err
 	}
@@ -108,9 +110,10 @@ func Restore(ctx context.Context, root, run, kind, value, via string) (Lifted, e
 	return out, nil
 }
 
-// fenceTarget is the run directory, kind, normalized value and start facts of a lift or a restore of kind on value on
-// run, after the checks both make: they parse, the run is running, it is Adjustable, and its fence lists the entry.
-func fenceTarget(root, run, kind, value string) (dir string, k liveblock.Kind, v string, f livestatus.Facts, err error) {
+// fenceTarget is the run directory, kind, normalized value and start facts of a lift (until: its limit, zero for none)
+// or a restore (until zero) of kind on value on run, after the checks both make: they parse, and liveblock.CheckFence
+// passes (the run is running, its launcher reads the limit, it is Adjustable, and its fence lists the entry).
+func fenceTarget(root, run, kind, value string, until time.Time) (dir string, k liveblock.Kind, v string, f livestatus.Facts, err error) {
 	if dir, err = runDir(root, run); err != nil {
 		return
 	}
@@ -120,22 +123,13 @@ func fenceTarget(root, run, kind, value string) (dir string, k liveblock.Kind, v
 	if v, err = liveblock.Normalize(k, value); err != nil {
 		return
 	}
-	held, _, perr := runlock.ProbeLock(dir)
-	switch {
-	case perr != nil:
-		err = perr
-		return
-	case !held:
-		err = ErrNotRunning
+	held, _, err := runlock.ProbeLock(dir)
+	if err != nil {
 		return
 	}
 	f = StartFacts(dir)
-	if !f.Adjustable {
-		err = fmt.Errorf("%w (run %s)", ErrLocked, run)
-		return
-	}
-	if _, ok := f.InFence(string(k), v); !ok {
-		err = fmt.Errorf("%s:%s %w", k, v, ErrOutsideFence)
-	}
+	t := liveTarget(run, held, f)
+	_, t.Fenced = f.InFence(string(k), v)
+	err = liveblock.CheckFence(t, k, v, until)
 	return
 }

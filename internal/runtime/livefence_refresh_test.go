@@ -166,7 +166,7 @@ func TestFenceFailedLookupIsRetriedOnTheTick(t *testing.T) {
 	}
 }
 
-// TestFenceRefreshKeepsALiftedHost: a lifted net entry's host is refreshed too (fenceRes outlives every lift), so the
+// TestFenceRefreshKeepsALiftedHost: a lifted net entry's host is refreshed too (fenceHosts outlives every lift), so the
 // restore refuses it at once by the refreshed addresses, and the lift stays in force across the refresh.
 func TestFenceRefreshKeepsALiftedHost(t *testing.T) {
 	const fenceHost = "db.example.test"
@@ -231,7 +231,7 @@ func TestFenceHostAddressesAreCapped(t *testing.T) {
 		now.Boot += liveRefreshAge
 		r.pollLiveBlocks(ctx, b)
 	}
-	if got := len(b.fenceRes.Addrs[fenceHost]); got != maxHostAddrs {
+	if got := len(b.fenceHosts.addrs[fenceHost]); got != maxHostAddrs {
 		t.Fatalf("host refused by %d addresses after %d refreshes, want the cap %d", got, refreshes, maxHostAddrs)
 	}
 	if !refusedAt(b, addr(0).String()) {
@@ -343,7 +343,7 @@ func TestFenceRefreshDoesNotDelayARestoreOrAPause(t *testing.T) {
 		t.Fatalf("events %q: want the pause's freeze before any lookup", got)
 	}
 	for i, h := range hosts {
-		if d := b.fenceFailed[h] - before; d < liveLookupWait {
+		if d := b.fenceHosts.failed[h] - before; d < liveLookupWait {
 			t.Fatalf("host %s stamped failed %v into the poll: want the clock read after the lookups, %v or more", h, d, liveLookupWait)
 		}
 		if !refusedAt(b, "192.0.2."+strconv.Itoa(1+i)) {

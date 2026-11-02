@@ -291,8 +291,8 @@ Normative sequence (`P0-DESIGN.md` §4.1, ordering constraints from `ARCHITECTUR
    `Minor` does not reach, or a malformed one, is `ErrDeps`, before step 1) and written into `run_start` as given;
    with every block nil the line is byte for byte what it was before the field (`TestRunStartUnchangedWithoutExtras`).
    Then the post-`run_start` gaps are queued, in `postStartGaps` order
-   (`emitPostStartGaps`): capture, price, unmetered budgets, watched reads, codex unrouted, reason-unavailable,
-   Landlock audit, limits.
+   (`emitPostStartGaps`): own state restored (`Deps.OwnStateRestored`, case 43), capture, price, unmetered budgets,
+   watched reads, codex unrouted, reason-unavailable, Landlock audit, limits.
 9a. **The Started hook** (ADR 0073 D4): `Deps.Started(StartedRun{ID, Dir})`, when set, is called once, after step 9's
     `run_start` is durable and its gaps are queued, and before the group check and `child.Ack()`: the one point where
     the run id and its directory exist and the agent has not run. The agent waits for it. An error from it ends the
@@ -325,7 +325,9 @@ Normative sequence (`P0-DESIGN.md` §4.1, ordering constraints from `ARCHITECTUR
     (`cgroup.events` or its inotify watch could not be read), which kills the tree like a cancelled `ctx` and puts `cgroup.events unreadable, tree killed` in `run_end.detail`, or a killed tree
     was not seen empty within step 12's bound (a task in uninterruptible sleep). That tree is read as it stands and
     can still add to the files after the read, so the values are then a lower bound; the cgroup still exists; a
-    file the kernel lacks is an absent key, record-ledger.md §2.2) →
+    file the kernel lacks is an absent key, record-ledger.md §2.2) → restore the modes of tego's own files and
+    directories the run's agent took from their owner, one `gap what=record why=own-state-mode-restored` each (case
+    43) →
     `ledger.Close(reason)` (`run_end` + `head`, fsync, appends to `chain.log`, then releases the run lock:
     `flock(LOCK_UN)` and the fd's close, R1) →
     `Handle.Detach()/Close()` (frees `O_PATH` fds, drops map entries, runs the build-lock last-out probe, R16) →
@@ -1219,7 +1221,8 @@ describes its raw numbers.
     `spec/config/v0`'s Trust section and `identity-config.md` R21 ignore `$HOME` in exactly that case, and this
     resolver decides where the capability-bearing launcher creates the run directory, writes the hash-chained
     ledger, and where `gc` later deletes. The fix is an absolute `ledger_root`, which never reaches this path.
-    The chain anchor follows the same rule (`runtime.AnchorPath`, `record-ledger.md` §3): an account with no
+    The chain anchor follows the same rule (`runtime.AnchorPath` over `ledger.AnchorPath`, the rule the dashboard
+    names its anchor by too, `record-ledger.md` §3): an account with no
     home — no passwd entry, or a passwd home that does not exist — anchors in the `chain.log` beside its ledger
     root, so an absolute `ledger_root` is the fix for the anchor too, and `ErrAnchorHome` is reached only under
     exactly this case's condition: an absolute `ledger_root` needs no home, so the file-capability copy on an
@@ -1333,7 +1336,48 @@ describes its raw numbers.
     close-on-exec before anything else (invariant 4a); `TestAgentInheritsNothingTheLauncherInherited` plants
     such descriptors in the launcher and holds the agent to 0, 1 and 2.
 
+43. **The agent takes its owner's rights on tego's own state** (GAPS C52, measured at tier `landlock`): the agent runs
+    as the user who owns `~/.tego`, the config layer and `tego.log` in it, `chain.log`, the ledger root, `.live`, tego's
+    runtime parent (`$XDG_RUNTIME_DIR/tego`) and its own run and runtime directories, and no Landlock ABI has a chmod
+    right, so `chmod 000` on them succeeds with no write entry near them. The run's `Close` then failed its directory's
+    fsync and its anchor (`ErrAnchorWrite`, exit 125), and every later run exited 125, at the config's load
+    (`[config-untrusted]`), at compile, which could not place the anchor, or making its runtime directory (`[run]`),
+    until the modes were restored by hand. `tego run` now restores the owner's rights on `~/.tego`, the config layer and
+    `tego.log` before it reads the machine config, then on `chain.log`, the directory that holds it, the ledger root,
+    `.live` and the runtime parent before it compiles (`runtime.RestoreOwnState`), warning `[own-state-mode]` for each,
+    and the run records them after `run_start` (step 9); every run restores the same, the config layer and `tego.log`
+    included (`Deps.UserState`), and its run directory, each entry in it and each blob, and its runtime directory at its
+    end (step 13), before `Close`, once no process of the run is left to take them again. `tego gc` gives back
+    `~/.tego`, the config layer and `tego.log` before it reads the config too, and deletes nothing by a config it still
+    cannot read whole (limits-check-doctor-cli.md R29). Only a directory or a regular file the launcher's euid owns and
+    that lacks an owner right tego needs is restored, and only those owner bits are added (`chmod 000` becomes `0700` on
+    a directory, `0600` on a file tego writes and `0400` on the config layer, which it only reads): a group or other bit
+    is left for the config trust check (identity-config.md R20) and the runtime directory's check
+    (agent-contract.md R10a) to refuse, since someone else could have replaced what such a directory holds. A link at
+    one of the names is neither followed nor changed, and a root launcher, which reads and writes through any mode,
+    restores none; its agent cannot take the modes of the run's own directory, root's until `Close`, and the user's next
+    unprivileged run restores the rest at its start (record-ledger.md §3, "Modes taken from the owner", which lists what
+    is not restored). Each restored mode is a `gap what=record why=own-state-mode-restored` naming the path, which the
+    receipt, `status` and `drift` read as no lost action. Still open: while the run lives its agent can take the modes
+    of its own run directory, which keeps `tego status`, `events` and `stop` (and the dashboard's Stop) out of it until
+    the run ends, so such a run is stopped with Ctrl-C or a signal to its launcher; a run whose launcher died keeps the
+    modes its agent gave its own run directory, since the sweep that ends it restores none; a group or other write bit
+    an agent adds to `~/.tego` or the config layer still has every later run refused `[config-untrusted]`, by design,
+    with the trust check's fix (`chmod g-w,o-w`), and one it adds to the runtime parent has every later run that routes
+    Codex refused, with the runtime directory's fix (remove it, or export `XDG_RUNTIME_DIR` as an absolute directory
+    only you can write), while every other run goes on without a runtime directory, so with no `TEGO_REASON` (tego.log
+    says why); and an agent of another live run can take a mode again between a run's restore and its use.
+    `TestIntegrationOwnStateModesAreRestored` holds the agent's run, the next one, and one through a link planted at
+    `chain.log`; `TestIntegrationOwnStateConfigLayerIsRestoredFirst` the config layer and `~/.tego` taken by an agent and
+    given back at its run's end, then taken while no run was there and given back before the next run reads the config,
+    and a group-writable `~/.tego` still refused; `TestIntegrationOwnStateRuntimeParentIsRestored` the runtime parent
+    and the run's runtime directory.
+
 **Changes.**
+- 2026-11-02, case 43, steps 9 and 13: tego restores the modes an agent took from its own files, before the compile and
+  at the run's end, and records each (GAPS C52); `~/.tego`, its config layer and `tego.log` before the config is read
+  and at the run's end, the runtime parent and the run's runtime directory too, the owner's bits only; `tego gc` gives
+  back the first three before it reads the config, and deletes nothing by a config it cannot read whole.
 - 2026-10-05, cases 22, 36 (ADR 0042): `/run/tego` is root `0700` only; the file-capability copy is refused at start,
   not a second privileged path; uid 0 of a child user namespace has no `SUDO_UID` drop target.
 - 2026-09-22, case 37: an absolute `ledger_root` anchors with no home; the `AT_SECURE` difference is stated.

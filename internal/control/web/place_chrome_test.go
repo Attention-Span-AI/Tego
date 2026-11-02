@@ -29,6 +29,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/attention-span-ai/tego/internal/control/rules"
 )
 
 // placeChrome starts a headless Chrome on its own profile and returns its DevTools connection.
@@ -302,7 +304,7 @@ func TestKeepPlaceInChrome(t *testing.T) {
 	ru := c.open(t, "rules", "http://"+raddr+"/rules?t=tok123")
 	ru.c.call(t, ru.session, "Emulation.setDeviceMetricsOverride", map[string]any{"width": 1440, "height": 900, "deviceScaleFactor": 1, "mobile": false})
 	ru.until(t, "signed in", `document.readyState === "complete" && !!document.body.dataset.sig`)
-	ru.c.call(t, ru.session, "Page.navigate", map[string]any{"url": "http://" + raddr + "/rules?c=" + contractRef(rf.source) + "&run=" + rulesRunA})
+	ru.c.call(t, ru.session, "Page.navigate", map[string]any{"url": "http://" + raddr + "/rules?c=" + rules.Ref(rf.source) + "&run=" + rulesRunA})
 	ru.until(t, "loaded", `document.readyState === "complete" && location.search.indexOf("`+rulesRunA+`") >= 0 && !!document.querySelector("main .rules-pick")`)
 	ru.eval(t, `window.__tegoMark = "kept"`)
 	ru.eval(t, `(function () { var f = document.querySelector("main .rules-pick"); f.querySelector('select[name="run"]').value = "`+rulesRunB+`"; f.requestSubmit(); })()`)

@@ -33,8 +33,19 @@ func handleTkill(l *Loop, n *notif)            { l.answerSignal(n, "tkill") }
 func handleTgkill(l *Loop, n *notif)           { l.answerSignal(n, "tgkill") }
 func handleRtSigqueueinfo(l *Loop, n *notif)   { l.answerSignal(n, "rt_sigqueueinfo") }
 func handleRtTgsigqueueinfo(l *Loop, n *notif) { l.answerSignal(n, "rt_tgsigqueueinfo") }
-func handleFcntl(l *Loop, n *notif)            { l.answerSignal(n, "fcntl") }
 func handleIoctl(l *Loop, n *notif)            { l.answerSignal(n, "ioctl") }
+
+// handleFcntl answers the two fcntl(2) commands a filter notifies: F_NOTIFY, a dnotify watch, which the watch arm
+// notifies (enforce-landlock R11e) and handleDnotify decides (R36), and F_SETOWN or F_SETOWN_EX, which the signal-scope
+// arm notifies below Landlock ABI 6. The command is an unsigned int the kernel reads as it is here; any other
+// command is continued, as answerSignal continues it.
+func handleFcntl(l *Loop, n *notif) {
+	if uint32(n.args[1]) == unix.F_NOTIFY {
+		handleDnotify(l, n)
+		return
+	}
+	l.answerSignal(n, "fcntl")
+}
 
 // sigTarget is what one signalling call reaches: one task, a process group, or every process.
 type sigTarget struct {

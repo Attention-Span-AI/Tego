@@ -36,6 +36,11 @@ type SetupService interface {
 // maxFromRuns bounds the "Start from a run" list.
 const maxFromRuns = 30
 
+// maxNewForm bounds the body of POST /rules/new. Create posts the whole form back (the folders, hosts, variables, reads
+// and fence entries, one per comma or line, and the command), which a hundred hosts take past maxForm. The preview is
+// a GET, so the server's header limit (Serve) bounds the form first, well under this.
+const maxNewForm = 64 << 10
+
 // newData is the page's data.
 type newData struct {
 	// Form is what was typed, echoed into the inputs; Writes and Hosts as typed, one item per comma or line.

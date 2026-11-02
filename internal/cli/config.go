@@ -13,7 +13,8 @@ import (
 
 // loadMachine resolves the machine config once per invocation (R24): the invoking uid after the
 // SUDO_UID rule, AT_SECURE detection, the layer files (machineSources), then config.LoadSources with the
-// caller's trust mode (TrustWarn for compile and doctor, TrustAbort for run).
+// caller's trust mode (TrustAbort for run, and for gc, which deletes by the config's retention and ledger root;
+// TrustWarn for compile, doctor and the rest).
 func loadMachine(mode config.TrustMode) (*config.Machine, []config.Diagnostic, error) {
 	uid, _ := config.InvokingUID()
 	secure, err := config.DetectSecureExec()

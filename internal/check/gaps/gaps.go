@@ -232,6 +232,9 @@ const (
 	Capture
 	// Price is a missing price: only the cost estimate is short.
 	Price
+	// Restored is tego giving the owner back the rights something took from one of its own files
+	// (record.GapOwnStateModeRestored): nothing went unrecorded and nothing is short, so the counts stand.
+	Restored
 )
 
 // priceWhys are the whys of a gap what=record that leave only the cost unestimated.
@@ -246,8 +249,19 @@ func Classify(what, why string) Class {
 		return Capture
 	case what == record.GapRecord && priceWhys[why]:
 		return Price
+	case what == record.GapRecord && why == record.GapOwnStateModeRestored:
+		return Restored
 	}
 	return Missed
+}
+
+// RestoredWords says how many of tego's own files had their owner's rights given back (Restored), in the words the
+// receipt and tego status use.
+func RestoredWords(n int) string {
+	if n == 1 {
+		return "tego restored the mode of one of its own files"
+	}
+	return fmt.Sprintf("tego restored the modes of %d of its own files", n)
 }
 
 // liveWords says what each live change did, in the words the dashboard's glossary gives it (linewords.GapWhy; a test
@@ -276,14 +290,15 @@ func LiveWords(why string) (string, bool) {
 }
 
 // Words says what a run's gaps mean, in the words its receipt and the dashboard use: whether actions may be missing,
-// what is short if not, and what a person changed. "" when the run recorded no gap and ended: the gap line's "none"
+// what is short if not, which of its own files tego gave back their owner's rights (Restored), and what a person
+// changed. "" when the run recorded no gap and ended: the gap line's "none"
 // says that. cutOff says the run stopped with no run_end (status.Lost): its record may stop short of what it did, so
 // no count of gap lines can say that nothing is missing.
 func Words(cs []Count, cutOff bool) string {
 	if len(cs) == 0 && !cutOff {
 		return ""
 	}
-	var missed, lost, capture, price int
+	var missed, lost, capture, price, restored int
 	var live []string
 	for _, c := range cs {
 		switch Classify(c.What, c.Why) {
@@ -294,6 +309,8 @@ func Words(cs []Count, cutOff bool) string {
 			capture = addCount(capture, c.Events)
 		case Price:
 			price = addCount(price, c.Events)
+		case Restored:
+			restored = addCount(restored, c.Events)
 		case Live:
 			w, ok := liveWords[c.Why]
 			if !ok {
@@ -322,6 +339,9 @@ func Words(cs []Count, cutOff bool) string {
 	}
 	if price > 0 {
 		parts = append(parts, "the cost is not estimated (no price for a model)")
+	}
+	if restored > 0 {
+		parts = append(parts, RestoredWords(restored))
 	}
 	return strings.Join(append(parts, live...), "; ")
 }

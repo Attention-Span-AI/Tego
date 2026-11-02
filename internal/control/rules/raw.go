@@ -40,8 +40,19 @@ const freeWhy = "Free edit: cannot be classified; confirm it like a widening"
 // new one lacks, or the other way) are offered "also apply now" one by one where they narrow and map to a live block
 // (nowOptions), and every other one says why it waits for the next run. The text may hold rulesview.Hidden for each env.set
 // value, as Current.Editor shows it: each is put back from the file, and any other change to env.set but removing a
-// variable is refused (EnvRefused), so a value is never carried by a page.
+// variable is refused (EnvRefused), so a value is never carried by a page. A host name the text adds to net.allow or
+// net.ask that does not resolve here is the plan's Unresolved, a warning: the text can still be saved.
 func (s *Service) PlanRaw(ctx context.Context, req RawReq) (*ChangePlan, error) {
+	p, err := s.planRaw(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	p.Unresolved = s.unresolved(ctx, p.changes)
+	return p, nil
+}
+
+// planRaw is PlanRaw without the lookup of the host names the text adds, which a write does not wait for.
+func (s *Service) planRaw(ctx context.Context, req RawReq) (*ChangePlan, error) {
 	c, f, err := s.writable(req.Ref)
 	if err != nil {
 		return nil, err
@@ -90,12 +101,12 @@ func (s *Service) PlanRaw(ctx context.Context, req RawReq) (*ChangePlan, error) 
 	name := filepath.Base(cc.Contract)
 	p.text, p.Diff = []byte(text), shownDiff(name, f.Text, []byte(text), rule.Diff(name, f.Text, []byte(text)))
 	p.Ack = s.ack(contractAckRef(p.Ref), p.Base, rulefile.Sum(p.text))
-	if changes := rawChanges(f.Text, p.text); len(changes) > 0 {
+	if p.changes = rawChanges(f.Text, p.text); len(p.changes) > 0 {
 		cwd := cc.Cwd
 		if cwd == "" {
 			cwd = filepath.Dir(cc.Contract)
 		}
-		p.Now = s.nowOptions(ctx, c.Live, changes, cwd, entriesOf(p.text))
+		p.Now = s.nowOptions(ctx, c.Live, p.changes, cwd, entriesOf(p.text))
 	}
 	return p, nil
 }
@@ -146,7 +157,7 @@ func scrub(msg string, vals []string) string {
 // Ack of this text's check, a text that does not compile are refused, and the write is base-checked under the
 // contract's lock and journaled.
 func (s *Service) ApplyRaw(ctx context.Context, req RawReq) (*Applied, error) {
-	p, err := s.PlanRaw(ctx, req)
+	p, err := s.planRaw(ctx, req)
 	if err != nil {
 		return nil, err
 	}

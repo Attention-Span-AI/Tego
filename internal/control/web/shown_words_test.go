@@ -216,6 +216,10 @@ func TestRowWords(t *testing.T) {
 	if got := gapWords("capture", "ssl-unhooked"); got != "Not captured: ssl unhooked" {
 		t.Errorf("an unnamed capture gap %q", got)
 	}
+	// A mode tego gave back lost nothing: its row says what tego did, not "A gap in the record".
+	if got := gapWords("record", "own-state-mode-restored"); got != "Tego gave its owner back the rights on one of its own files, which something had taken" {
+		t.Errorf("a restored mode %q", got)
+	}
 	for why, want := range map[string]string{"run-paused": "Run paused: the agent is frozen", "run-resumed": "Run resumed",
 		"pause-failed": "Pause failed: the agent kept running", "resume-failed": "Resume failed: the run stays paused"} {
 		if got := gapWords("enforce", why); got != want {

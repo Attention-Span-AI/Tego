@@ -159,12 +159,10 @@ type changeData struct {
 	C *rules.ContractRef
 	// NotWritable says why the dashboard may not change it.
 	NotWritable string
-	// RulesRef is the Rules page's ref of the file (contractRef), for its links.
-	RulesRef   string
-	Groups     []changeGroup
-	ListsErr   string
-	Hist       histView
-	HistoryErr string
+	Groups      []changeGroup
+	ListsErr    string
+	Hist        histView
+	HistoryErr  string
 	// CanRaw: the advanced editor is offered; RawWhy says why not otherwise. Text is the contract's text for it, with
 	// every env.set value as rulesview.Hidden when EnvHidden (the service puts them back on save).
 	CanRaw    bool
@@ -323,9 +321,9 @@ func (s *Server) changePage(w http.ResponseWriter, r *http.Request, svc ChangeSe
 		s.fail(w, http.StatusInternalServerError, "Change rules", "The runs of this ledger could not be read: "+err.Error())
 		return
 	}
-	if len(ref) == 64 { // the Rules page's ref (contractRef): the same file, named by the service's ref from here on
+	if isLegacyRef(ref) { // an old link's ref (legacyRef): the same file, named by the service's ref from here on
 		for _, c := range refs {
-			if contractRef(c.Path) == ref {
+			if legacyRef(c.Path) == ref {
 				http.Redirect(w, r, "/rules/change?c="+url.QueryEscape(c.Ref), http.StatusSeeOther)
 				return
 			}
@@ -358,7 +356,7 @@ func (s *Server) changePage(w http.ResponseWriter, r *http.Request, svc ChangeSe
 
 // fillChange reads d.C's text, lists and history into d; false when it has answered.
 func (s *Server) fillChange(w http.ResponseWriter, svc ChangeService, d *changeData) bool {
-	d.Hint, d.RulesRef = "tego compile "+shellWord(d.C.Path), contractRef(d.C.Path)
+	d.Hint = "tego compile " + shellWord(d.C.Path)
 	if !d.C.Writable {
 		d.NotWritable = d.C.Why
 		return true
@@ -499,7 +497,7 @@ func changeCLI(path string, e rules.Edit, now []rules.NowOption) (string, []stri
 	out := []string{"tego compile " + shellWord(path)}
 	for _, o := range now {
 		if o.OK {
-			out = append(out, "tego block "+o.Run+" "+o.Kind+" "+shellWord(o.Value))
+			out = append(out, "tego block "+o.Run+" "+changeWords(o.Kind, o.Value, ""))
 		}
 	}
 	return "By hand: in " + path + ", " + what + ", then check it", out

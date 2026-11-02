@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -196,17 +197,20 @@ func TestResultsOlderComputationDoesNotOverwrite(t *testing.T) {
 	}
 }
 
-// holdLock takes run dir's lock as a writer holds it, until the test ends.
-func holdLock(t *testing.T, dir string) {
+// holdLock takes run dir's lock as a writer holds it, until the test ends or release lets it go.
+func holdLock(t testing.TB, dir string) (release func()) {
 	t.Helper()
 	f, err := os.OpenFile(filepath.Join(dir, "lock"), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = f.Close() })
+	var once sync.Once
+	release = func() { once.Do(func() { _ = f.Close() }) }
+	t.Cleanup(release)
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		t.Fatal(err)
 	}
+	return release
 }
 
 // fixtureRun writes the first n lines of spec/record/v1/fixtures/run-fixture.jsonl as its run under a new root and

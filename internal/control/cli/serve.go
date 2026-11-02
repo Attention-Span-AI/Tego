@@ -14,10 +14,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/attention-span-ai/tego/internal/control/web"
 	"github.com/attention-span-ai/tego/internal/handoff"
+	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/profilesrc"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
@@ -31,12 +31,12 @@ func init() { register(cmdServe) }
 func cmdServe() Command {
 	return Command{
 		Name:    "serve",
-		Summary: "start the control service and its dashboard", // handoff.Nouns; it starts the dashboard only
+		Summary: "start the local dashboard", // handoff.Nouns' line, held equal by TestHandoffNounsMatchControlCommands
 		Usage:   "[--addr 127.0.0.1:8484] [--ledger DIR] [--open] [--preview]",
 		Run: func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			fs := flag.NewFlagSet(handoff.Name+" serve", flag.ContinueOnError)
 			fs.SetOutput(stderr)
-			addr := fs.String("addr", "127.0.0.1:8484", "loopback address and port to listen on (port 0 picks one)")
+			addr := fs.String("addr", "127.0.0.1:8484", "loopback address and port to listen on, such as [::1]:8484 (port 0 picks one)")
 			ledger := fs.String("ledger", "", "ledger root to read (default: the ledger_root tego writes runs to)")
 			open := fs.Bool("open", false, "open the dashboard, signed in, in the browser ($BROWSER, else xdg-open) once it listens")
 			preview := fs.Bool("preview", false, "also list the preview pages in the nav")
@@ -94,7 +94,8 @@ func cmdServe() Command {
 				machine = mr.m
 			}
 			rs := ruleService(root, anchor, machine)
-			srv, err := web.New(web.Config{Ledger: root, Anchor: anchor, Port: ln.Addr().(*net.TCPAddr).Port, Machine: machine,
+			at := ln.Addr().(*net.TCPAddr) // the links name the address listened on: 127.0.0.1, another 127.x.y.z, or ::1
+			srv, err := web.New(web.Config{Ledger: root, Anchor: anchor, Host: at.IP.String(), Port: at.Port, Machine: machine,
 				Profiles: profilesrc.Chain(machine), Rules: rs, Setup: rs, Preview: *preview, SeverityFile: severityFile()})
 			if err != nil {
 				diag(stderr, handoff.Name+" serve: "+err.Error(), codeIO, "report this build")
@@ -125,7 +126,9 @@ func cmdServe() Command {
 	}
 }
 
-// loopbackAddr accepts only a loopback IP (or localhost, read as 127.0.0.1) and a port.
+// loopbackAddr accepts only a loopback IP and a port: 127.0.0.0/8 (localhost read as 127.0.0.1) or ::1. The peer
+// check reads an IPv6 client's socket in /proc/net/tcp6 and the governed check asks sock_diag in AF_INET6, so [::1]
+// is held as 127.0.0.1 is (web/peer.go, web/governed.go).
 func loopbackAddr(addr string) (string, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -137,9 +140,6 @@ func loopbackAddr(addr string) (string, error) {
 	ip := net.ParseIP(host)
 	if ip == nil || !ip.IsLoopback() {
 		return "", fmt.Errorf("--addr %q: the dashboard listens on a loopback address only", addr)
-	}
-	if ip.To4() == nil {
-		return "", fmt.Errorf("--addr %q: tego-control serve listens on 127.0.0.1 only", addr)
 	}
 	return net.JoinHostPort(ip.String(), port), nil
 }
@@ -158,26 +158,16 @@ func machineLedgerRoot() (string, error) {
 // the tegotesthooks tag (anchor_testhook.go) reads the anchor its tests name, as tego's own test build does.
 var anchorPath = machineAnchorPath
 
-// machineAnchorPath is the chain anchor `tego events <run> --verify` checks against, resolved as internal/runtime's
-// AnchorPath does (this package may not import it, TestControlLinksNoEngine): the invoking user's ~/.tego/chain.log
-// under the passwd home when that is an existing directory (a home that cannot be stat'ed for another reason is
-// kept, as there), else the chain.log beside the machine's ledger root.
+// machineAnchorPath is the chain anchor `tego events <run> --verify` checks against: ledger.AnchorPath, the rule
+// tego's own launcher anchors by (internal/runtime's AnchorPath, which this package may not import,
+// TestControlLinksNoEngine, calls it too), over the invoking user's passwd home: its ~/.tego/chain.log, or for an
+// account with no home the chain.log beside the machine's ledger root, resolved as serve resolves the root it shows.
 func machineAnchorPath() (string, error) {
 	m, secure, err := loadMachine()
 	if err != nil {
 		return "", err
 	}
-	if h := m.Home; h != "" && filepath.IsAbs(h) {
-		st, err := os.Stat(h)
-		if err == nil && st.IsDir() || err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
-			return filepath.Join(h, ".tego", "chain.log"), nil
-		}
-	}
-	root, err := ledgerRootOf(m, secure)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(filepath.Dir(filepath.Clean(root)), "chain.log"), nil
+	return ledger.AnchorPath(m.Home, func() (string, error) { return ledgerRootOf(m, secure) })
 }
 
 // loadMachine is the machine config as tego loads it (TEGO_CONFIG, the layer files), and whether this is AT_SECURE.
@@ -259,9 +249,10 @@ type serveFacts struct {
 }
 
 // writeServeFacts prints, on w, the ledger root with where it came from and how many runs it holds, the chain
-// anchor runs are checked against (or why there is none), the machine config's diagnostics, and a warning when
-// $TEGO_CONFIG was named but skipped, so the dashboard silently showing the default ledger is visible at start. It
-// never changes serve's exit code: the dashboard of the ledger it names is still useful.
+// anchor runs are checked against (or why there is none), and the machine config's diagnostics, so a dashboard
+// showing another ledger than the one meant is visible at start. A skipped $TEGO_CONFIG without --ledger never gets
+// here: serve refuses it before it listens (envSkip). It never changes serve's exit code: the dashboard of the ledger
+// it names is still useful.
 func writeServeFacts(w io.Writer, f serveFacts) {
 	_, _ = fmt.Fprintf(w, "  ledger: %s (from %s), %s\n", record.Printable(f.root), ledgerOrigin(f), runCount(f.root))
 	if f.anchorErr != nil {
@@ -271,10 +262,6 @@ func writeServeFacts(w io.Writer, f serveFacts) {
 	}
 	for _, d := range f.machine.diags {
 		_, _ = fmt.Fprintf(w, "  config: %s\n", record.Printable(d.String()))
-	}
-	if why := f.machine.envSkipped(); why != "" && !f.flagLedger {
-		_, _ = fmt.Fprintf(w, "warning: %s serve: %s %s was skipped (%s); serving %s\n", handoff.Name, config.EnvConfigVar,
-			record.Printable(f.machine.envFile), record.Printable(why), record.Printable(f.root))
 	}
 }
 

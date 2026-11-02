@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -163,7 +164,8 @@ func TestRevertChecks(t *testing.T) {
 func TestJournalLineFormat(t *testing.T) {
 	g, path := fixture(t)
 	f := &Found{Event: &record.Event{Seq: 49}, Run: "r-demo", Contract: path, Text: []byte(textA), Guard: g,
-		Via: "dashboard", Summary: "never read ./token"}
+		Via: "dashboard", Summary: "never read ./token", Direction: "narrows",
+		Sentences: []string{SentenceLine("May read ./token", "Can never read ./token"), SentenceLine("", "Cannot run curl")}}
 	bak, err := f.Write([]byte(textB))
 	if err != nil {
 		t.Fatal(err)
@@ -198,10 +200,15 @@ func TestJournalLineFormat(t *testing.T) {
 	c := lines[0]
 	for k, want := range map[string]any{"v": float64(1), "op": "change", "via": "dashboard", "contract": path,
 		"old_sha256": Sum([]byte(textA)), "new_sha256": Sum([]byte(textB)), "bak": path + ".bak", "run": "r-demo",
-		"line": float64(49), "summary": "never read ./token", "uid": float64(os.Geteuid())} {
+		"line": float64(49), "summary": "never read ./token", "uid": float64(os.Geteuid()), "direction": "narrows"} {
 		if c[k] != want {
 			t.Errorf("%s = %v, want %v", k, c[k], want)
 		}
+	}
+	// Each sentence "before → after", a rule the file did not have before said as (nothing).
+	got, _ := c["sentences"].([]any)
+	if want := []any{"May read ./token → Can never read ./token", "(nothing) → Cannot run curl"}; !slices.Equal(got, want) {
+		t.Errorf("sentences = %q, want %q", c["sentences"], want)
 	}
 	for _, k := range []string{"id", "at", "pid"} {
 		if _, ok := c[k]; !ok {

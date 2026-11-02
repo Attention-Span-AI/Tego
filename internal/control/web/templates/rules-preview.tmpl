@@ -1,5 +1,5 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
-{{/* rules-preview: one change planned and not written (rules_change.go): sentences, direction, also-now (and "Live now" for a widening inside a running Adjustable run's fence, ADR 0125), diff, terminal twin. Save posts as a plain form (data-page, live.js): a refused Save answers with this page planned again on the file as it is now, so its form carries that plan's base and ack, where a background post would leave the old ones in place and every later Save would be refused too. */}}
+{{/* rules-preview: one change planned and not written (rules_change.go): a host it adds that does not resolve here (hostwarn), sentences, direction, also-now (and "Live now" for a widening inside a running Adjustable run's fence, ADR 0125), diff, terminal twin. Save posts as a plain form (data-page, live.js): a refused Save answers with this page planned again on the file as it is now, so its form carries that plan's base and ack, where a background post would leave the old ones in place and every later Save would be refused too. */}}
 {{define "content"}}<link rel="stylesheet" href="/static/rules.css"><link rel="stylesheet" href="/static/rules-change.css">{{$csrf := $.CSRF}}{{with .Data}}{{$d := .}}{{$p := .P}}{{$e := .Edit}}
 <div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a class="link" href="/rules">Rules</a><span aria-hidden="true">/</span><a class="link" href="/rules/change?c={{queryEsc $p.Ref}}">Change rules</a><span aria-hidden="true">/</span><span>Check</span></nav>
 <h1>Check the change</h1>
@@ -11,6 +11,7 @@
 {{if $p.Nothing}}<p>{{template "i" "i-check"}} The rules file already says so: nothing to change.</p>{{else}}<p><strong>This change cannot be made.</strong> {{$p.Err}}</p>{{end}}
 <p><a class="btn" href="/rules/change?c={{queryEsc $p.Ref}}">Back to Change rules</a></p></div></section>
 {{else}}
+{{template "hostwarn" $p.Unresolved}}
 <section class="panel rc-preview" aria-labelledby="h-what"><div class="panel-head"><h2 id="h-what">What changes</h2>{{template "dir" $p.Direction}}</div>
 <div class="panel-body stack-sm">{{$mixed := eq $p.Direction "mixed"}}
 <div class="tw"><table class="t rc-sent" role="table"><caption class="sr">Before and after</caption><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Before</th><th scope="col" role="columnheader">After</th>{{if $mixed}}<th scope="col" role="columnheader" class="c-effect"><span class="sr">Direction</span></th>{{end}}</tr></thead><tbody role="rowgroup">{{range $p.Sentences}}

@@ -30,7 +30,8 @@ type Options struct {
 	Command string
 	// Name is the agent id, already checked by the caller.
 	Name string
-	// Dir is the project directory, absolute.
+	// Dir is the project directory, absolute, with its symlinks resolved (filepath.EvalSymlinks): Create opens it with
+	// no symlink followed, so a link in its path is refused.
 	Dir string
 	// Home expands a leading ~/ in a --write folder; empty leaves it as typed.
 	Home string
@@ -428,6 +429,9 @@ func exists(p string) bool {
 
 // writeEntry turns one --write folder into its fs.write entry: ./rel/ inside the project, an absolute path outside
 // it. A missing folder inside the project is returned in mk to be created; a missing one outside it is a usage error.
+// Dir is resolved (Options.Dir), so an absolute (or ~/) folder is placed with the links of its existing part resolved
+// (resolveExisting): one spelled through the link a person reached the project by is inside it, as it is when typed
+// relative, and one that a link leads out of the project is outside it. A relative one is placed as typed.
 func writeEntry(o Options, w string) (value, mk string, err error) {
 	w = strings.TrimSpace(w)
 	if w == "" {
@@ -440,17 +444,24 @@ func writeEntry(o Options, w string) (value, mk string, err error) {
 	if o.Home != "" && (p == "~" || strings.HasPrefix(p, "~/")) {
 		p = filepath.Join(o.Home, strings.TrimPrefix(p, "~"))
 	}
-	if !filepath.IsAbs(p) {
+	typedAbs := filepath.IsAbs(p)
+	if !typedAbs {
 		p = filepath.Join(o.Dir, p)
 	}
 	p = filepath.Clean(p)
-	rel, rerr := filepath.Rel(o.Dir, p)
+	at := p
+	if typedAbs {
+		at = resolveExisting(p)
+	}
+	rel, rerr := filepath.Rel(o.Dir, at)
 	inside := rerr == nil && rel != ".." && !strings.HasPrefix(rel, "../")
 	fi, serr := os.Stat(p)
 	switch {
 	case serr == nil:
 	case errors.Is(serr, os.ErrNotExist) && inside:
-		mk = p
+		mk = filepath.Join(o.Dir, rel)
+	case errors.Is(serr, os.ErrNotExist) && at != p:
+		return "", "", usagef("--write %s: %s does not exist, and a symbolic link on its way places it at %s, outside the project; init creates a missing folder only inside the project", w, p, at)
 	case errors.Is(serr, os.ErrNotExist):
 		return "", "", usagef("--write %s: %s does not exist; init creates a missing folder only inside the project", w, p)
 	default:
@@ -472,6 +483,23 @@ func writeEntry(o Options, w string) (value, mk string, err error) {
 		value += "/"
 	}
 	return value, mk, nil
+}
+
+// resolveExisting is the absolute path p with the symbolic links of its longest part that resolves followed
+// (filepath.EvalSymlinks) and the names past that part kept as written: where p is, or is made once its missing
+// folders are. A name kept as written may still be a link (one leading nowhere yet), which Create refuses by name
+// when it would make a folder through it.
+func resolveExisting(p string) string {
+	var rest []string
+	for q := p; ; q = filepath.Dir(q) {
+		if r, err := filepath.EvalSymlinks(q); err == nil {
+			return filepath.Join(append([]string{r}, rest...)...)
+		}
+		if filepath.Dir(q) == q {
+			return p
+		}
+		rest = append([]string{filepath.Base(q)}, rest...)
+	}
 }
 
 // secretFolderIn names the first built-in deny_read path under home that the fs.write value v is, holds or lies

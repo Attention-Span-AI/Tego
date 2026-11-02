@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -40,13 +41,23 @@ func machineProbe(t *testing.T, probe backend.Probe) *[]*config.Machine {
 	return &asked
 }
 
-// buildsTiers describes a build that constructs tiers, for the compile of a test: builtTiers is what
-// Compile resolves tier: auto to and what compile --test answers in (ADR 0019).
+// buildsTiers describes a build that constructs tiers, each of which this process can get, for the compile of a
+// test: builtTiers is what Compile resolves tier: auto to and what compile --test answers in (ADR 0019).
 func buildsTiers(t *testing.T, tiers ...backend.Tier) {
 	t.Helper()
-	prev := builtTiers
-	builtTiers = func() []backend.Tier { return append([]backend.Tier(nil), tiers...) }
-	t.Cleanup(func() { builtTiers = prev })
+	autoTiersAre(t, doctor.AutoSet{Tiers: tiers})
+}
+
+// autoTiersAre describes the build and machine by doctor.AutoTiers' answer: the tiers an auto run can get, and the
+// built tiers it leaves out, which compile --test's header names.
+func autoTiersAre(t *testing.T, s doctor.AutoSet) {
+	t.Helper()
+	prev := autoSet
+	autoSet = func() doctor.AutoSet {
+		return doctor.AutoSet{Tiers: slices.Clone(s.Tiers), NeedRoot: slices.Clone(s.NeedRoot),
+			NeedBPFLSM: slices.Clone(s.NeedBPFLSM)}
+	}
+	t.Cleanup(func() { autoSet = prev })
 }
 
 // builtProbe is what the derivation offers on a root machine whose every probe passes but bpf in lsm=:

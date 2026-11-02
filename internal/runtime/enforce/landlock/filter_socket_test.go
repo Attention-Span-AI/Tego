@@ -297,8 +297,9 @@ func TestPrepareInstallsTheSignalArmBelowABI6(t *testing.T) {
 			t.Fatal("no seccomp filter")
 		}
 		// No net: section: the unix-only state notifies bind(2), so the supervisor records the run's sockets (ADR 0070).
+		// Every enforcing filter carries R11e's watch arm.
 		want, err := assembleFilter(NativeArch(), filterOpts{abi: abi, memfd: memfdArmFor(rt.Contract, MemfdNoexecSealSupported, false),
-			signals: abi < minSignalScopeABI, procScope: true, unixBinds: true})
+			signals: abi < minSignalScopeABI, procScope: true, unixBinds: true, watches: true})
 		if err != nil {
 			t.Fatal(err)
 		}

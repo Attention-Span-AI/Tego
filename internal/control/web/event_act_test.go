@@ -143,9 +143,11 @@ func askServer(t *testing.T) (*Server, *http.Cookie, string, string) {
 }
 
 // holdLock makes this test binary hold run directory dir's lock as a launcher does (TestHelperLockHolder), so the
-// run reads as live to the rule service and to the live-block writer, until the test ends.
+// run reads as live to the rule service and to the live-block writer, until the test ends. A hold of markLive's on
+// the run is let go first, so the helper is the holder.
 func holdLock(t *testing.T, dir string) {
 	t.Helper()
+	letGo(dir)
 	holder := exec.Command(os.Args[0], "-test.run=^TestHelperLockHolder$")
 	holder.Env = append(os.Environ(), holderEnv+"="+dir)
 	if err := holder.Start(); err != nil {

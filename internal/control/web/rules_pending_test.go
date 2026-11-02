@@ -14,6 +14,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/runact"
+	"github.com/attention-span-ai/tego/internal/shellword"
 )
 
 // TestPendingLiveStates: a pending change's chip on the running run, from what the rule service says of it and the
@@ -106,9 +107,9 @@ func TestRulesPagePendingApplyNow(t *testing.T) {
 	mustContain(t, "a second Apply now", page, "Nothing was applied")
 }
 
-// TestLiveWordsAndShellArg: a live block key reads as what it covers, its path shortened; a restart line's words are
-// quoted exactly, a leading or trailing space kept.
-func TestLiveWordsAndShellArg(t *testing.T) {
+// TestLiveWordsAndRestartWords: a live block key reads as what it covers, its path shortened; a restart line's words
+// are quoted exactly (shellword.Quote, which startCommand calls), a leading or trailing space kept.
+func TestLiveWordsAndRestartWords(t *testing.T) {
 	sh := shortener{cwd: "/p", home: "/h"}
 	for key, want := range map[string]string{
 		"exec:uname":          "Running uname",
@@ -124,8 +125,8 @@ func TestLiveWordsAndShellArg(t *testing.T) {
 		}
 	}
 	for in, want := range map[string]string{"sh": "sh", " fix it ": "' fix it '", "it's": `'it'\''s'`, "": "''"} {
-		if got := shellArg(in); got != want {
-			t.Errorf("shellArg(%q) = %q, want %q", in, got, want)
+		if got := shellword.Quote(in); got != want {
+			t.Errorf("shellword.Quote(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

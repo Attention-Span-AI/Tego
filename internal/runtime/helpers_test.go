@@ -87,6 +87,7 @@ func lastKind(t *testing.T, dir string) record.Kind {
 func TestMain(m *testing.M) {
 	reapMainHelper()         // the binary started as a run's reaper: runs ReapMain and exits
 	opathExecHelper()        // the binary started as an integration test's agent: never returns
+	watchHelper()            // the binary started as a watching agent (watch_helper_test.go): never returns
 	runtimeDirHolderHelper() // the binary started as a launcher that holds a runtime directory: never returns
 	harnessHookHelper()      // the binary started as a run's granted harness hook: never returns
 	parent, err := os.MkdirTemp("", "tego-runtime-")

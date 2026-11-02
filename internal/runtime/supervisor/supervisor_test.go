@@ -50,6 +50,7 @@ func TestDispatchTables(t *testing.T) {
 				"kill": 62, "tkill": 200, "tgkill": 234, "rt_sigqueueinfo": 129, "rt_tgsigqueueinfo": 297, "fcntl": 72, "ioctl": 16,
 				"prlimit64": 302, "sched_setparam": 142, "sched_setscheduler": 144, "sched_setaffinity": 203,
 				"sched_setattr": 314, "setpriority": 141, "ioprio_set": 251,
+				"inotify_add_watch": 254, "fanotify_mark": 301,
 			},
 		},
 		{
@@ -70,6 +71,7 @@ func TestDispatchTables(t *testing.T) {
 				"kill": 129, "tkill": 130, "tgkill": 131, "rt_sigqueueinfo": 138, "rt_tgsigqueueinfo": 240, "fcntl": 25, "ioctl": 29,
 				"prlimit64": 261, "sched_setparam": 118, "sched_setscheduler": 119, "sched_setaffinity": 122,
 				"sched_setattr": 274, "setpriority": 140, "ioprio_set": 30,
+				"inotify_add_watch": 27, "fanotify_mark": 263,
 			},
 		},
 	}

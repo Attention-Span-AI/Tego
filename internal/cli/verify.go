@@ -65,33 +65,34 @@ func runVerify(ctx context.Context, ref string, asJSON bool, stdout, stderr io.W
 		return identity.ExitError
 	}
 	rep, verr := ledger.VerifyRunDir(ctx, dir, ledger.NewFileChainAnchor(anchor))
-	if verr != nil && !errors.Is(verr, ledger.ErrUnverified) && errors.Is(verr, fs.ErrNotExist) {
-		// Neither a ledger nor an anchor line: nothing says this run was ever recorded here. A run id
-		// whose directory does not exist either is the caller's typo, the usage error every other command
-		// gives it (R25); a directory the caller named that holds no record stays 125.
-		if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
-			message(stderr, "", 0, 0, fmt.Sprintf("tego events: %s: %v (no directory at %s and no anchor line); %s",
-				filepath.Base(dir), errRunNotFound, dir, listRunsHint), codeUsage)
-			return identity.ExitUsage
+	// One reading of the result, the one the dashboard's chain check makes too (ledger.VerdictOf).
+	verdict := ledger.VerdictOf(rep, verr)
+	if verdict == ledger.NoVerdict {
+		switch {
+		case errors.Is(verr, fs.ErrNotExist):
+			// Neither a ledger nor an anchor line: nothing says this run was ever recorded here. A run id
+			// whose directory does not exist either is the caller's typo, the usage error every other command
+			// gives it (R25); a directory the caller named that holds no record stays 125.
+			if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
+				message(stderr, "", 0, 0, fmt.Sprintf("tego events: %s: %v (no directory at %s and no anchor line); %s",
+					filepath.Base(dir), errRunNotFound, dir, listRunsHint), codeUsage)
+				return identity.ExitUsage
+			}
+			message(stderr, "", 0, 0, fmt.Sprintf("tego events: no run record at %s", dir), codeIO)
+		case verr != nil:
+			// A read failure says nothing about the ledger's integrity (E26): report it as ours.
+			message(stderr, "", 0, 0, "tego events: verify "+dir+": "+verr.Error(), codeIO)
+		default:
+			// A ledger with no run_start that no anchor line names (an empty events.jsonl, a torn line alone)
+			// verified as "0 lines": a check of nothing, where events, drift and measure answer no run record
+			// (R25). An anchored run whose lines are gone is still the finding Verify returns.
+			message(stderr, "", 0, 0, fmt.Sprintf("tego events: no run record at %s: %s holds no run_start", dir, ledger.EventsFile), codeIO)
 		}
-		message(stderr, "", 0, 0, fmt.Sprintf("tego events: no run record at %s", dir), codeIO)
-		return identity.ExitError
-	}
-	if verr != nil && !errors.Is(verr, ledger.ErrUnverified) {
-		// A read failure says nothing about the ledger's integrity (E26): report it as ours.
-		message(stderr, "", 0, 0, "tego events: verify "+dir+": "+verr.Error(), codeIO)
-		return identity.ExitError
-	}
-	if verr == nil && !rep.Started {
-		// A ledger with no run_start that no anchor line names (an empty events.jsonl, a torn line alone)
-		// verified as "0 lines": a check of nothing, where events, drift and measure answer no run record
-		// (R25). An anchored run whose lines are gone is still the finding Verify returns.
-		message(stderr, "", 0, 0, fmt.Sprintf("tego events: no run record at %s: %s holds no run_start", dir, ledger.EventsFile), codeIO)
 		return identity.ExitError
 	}
 	if asJSON {
 		out := verifyJSON{
-			Run: rep.Run, Verified: verr == nil, Lines: rep.Lines, Head: rep.Head, Started: rep.Started,
+			Run: rep.Run, Verified: verdict == ledger.Verified, Lines: rep.Lines, Head: rep.Head, Started: rep.Started,
 			Ended: rep.Ended, Anchored: rep.Anchored, Anchor: anchor, TornBytes: rep.TornBytes,
 		}
 		if verr != nil {
@@ -101,10 +102,10 @@ func runVerify(ctx context.Context, ref string, asJSON bool, stdout, stderr io.W
 			message(stderr, "", 0, 0, "tego events: "+err.Error(), codeIO)
 			return identity.ExitError
 		}
-	} else if verr == nil {
+	} else if verdict == ledger.Verified {
 		fmt.Fprintln(stdout, verifiedLine(rep, anchor))
 	}
-	if verr != nil {
+	if verdict == ledger.Unverified {
 		message(stderr, "", 0, 0, fmt.Sprintf("tego events: %s does not verify: %v", rep.Run, verr), codeUnverified)
 		return identity.ExitFinding // R25: the ledger is not what its writer wrote
 	}

@@ -54,6 +54,9 @@ const hostStateDir = "/run/tego"
 // passes instead. A row is here only where the tool's vendor names the location; docs/spec/builtin-deny-read.md
 // cites each, and names the rows left out, for want of a citation or, as Maven's settings.xml, because the file
 // configures every build of its tool.
+//
+// Each row also has a family (SSH keys, logins, browser profiles) in builtInDenyReadFamilies, which a page that groups
+// the list reads; a new row is added there too (TestBuiltInDenyReadFamilies).
 var builtInDenyRead = []string{
 	".ssh", ".aws", ".netrc", ".gnupg",
 	".npmrc", ".git-credentials", ".config/gh", ".docker/config.json", ".kube/config", ".config/gcloud",

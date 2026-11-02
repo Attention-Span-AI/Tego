@@ -3,6 +3,8 @@
 package web
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,8 +14,10 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/attention-span-ai/tego/internal/control/rules"
+	"github.com/attention-span-ai/tego/internal/liveblock"
 )
 
 // TestFlashShowsOnce: an action's 303 names a flash its page shows once; a reload of the same address shows the
@@ -79,6 +83,7 @@ func TestBlockReturnsWithALine(t *testing.T) {
 	s := newServer(t, fixture(t))
 	c := login(t, s)
 	tok := csrfOf(t, s, c, "/runs/"+harmRun)
+	letGo(filepath.Join(s.cfg.Ledger, harmRun)) // its launcher is gone now: nothing holds the run's lock
 	w := post(s, "/runs/"+harmRun+"/block", url.Values{"csrf": {tok}, "kind": {"exec"}, "value": {"ls"}}, own, own+"/runs/"+harmRun+"?block=exec&value=ls", c)
 	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, "/runs/"+harmRun+"?flash=") {
 		t.Errorf("block returned to %q", loc)
@@ -90,6 +95,37 @@ func TestBlockReturnsWithALine(t *testing.T) {
 	b = follow(t, s, c, post(s, "/runs/"+harmRun+"/block", url.Values{"csrf": {tok}, "kind": {"net"}, "value": {"garbage host"}}, own, "", c))
 	if !strings.Contains(b, "Not done: ") || strings.Contains(b, "liveblock:") {
 		t.Error("an invalid block shows a package name")
+	}
+}
+
+// TestRemoveOnAnEndedRun: a Remove posted from a page left open across the run's end is refused as `tego unblock`
+// refuses it, in liveblock's words, and the overlay the run ended with is left as it was. It used to be rewritten, and
+// the flash said the block was removed and the contract decides again.
+func TestRemoveOnAnEndedRun(t *testing.T) {
+	root := fixture(t)
+	s := newServer(t, root)
+	c := login(t, s)
+	dir := filepath.Join(root, harmRun)
+	if _, err := liveblock.Update(context.Background(), dir, harmRun, func(o *liveblock.Overlay) (bool, error) {
+		_, ok, err := o.Add(liveblock.KindExec, "/usr/bin/curl", liveblock.By("dashboard"), time.Now())
+		return ok, err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	overlay := filepath.Join(dir, liveblock.FileName)
+	before, err := os.ReadFile(overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok := csrfOf(t, s, c, "/runs/"+harmRun) // from the page as it was while the run ran, as a page left open is
+	letGo(dir)                               // then the run's launcher is gone: nothing holds its lock, so it has ended
+	b := follow(t, s, c, post(s, "/runs/"+harmRun+"/unblock", url.Values{"csrf": {tok}, "kind": {"exec"}, "value": {"/usr/bin/curl"}}, own, "", c))
+	mustContain(t, "the Remove's line", b, "Not done: the run is not running: its live blocks ended with it, so there is nothing to remove.")
+	if strings.Contains(b, "Removed the block") {
+		t.Error("a Remove on an ended run says it removed the block")
+	}
+	if after, err := os.ReadFile(overlay); err != nil || !bytes.Equal(after, before) {
+		t.Errorf("the ended run's overlay was rewritten: %s (%v), was %s", after, err, before)
 	}
 }
 

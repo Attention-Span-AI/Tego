@@ -161,12 +161,7 @@ func TestEventDetailsPage(t *testing.T) {
 	if strings.Contains(body, "/block\"") {
 		t.Error("an ended run offers Block now")
 	}
-	if err := os.MkdirAll(filepath.Join(s.cfg.Ledger, ".live"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(s.cfg.Ledger, ".live", detailRun), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, s.cfg.Ledger, detailRun)
 	body = do(s, "GET", "/runs/"+detailRun+"/lines/2", "127.0.0.1:8484", c).Body.String()
 	if !strings.Contains(body, `action="/runs/`+detailRun+`/block"`) || !strings.Contains(body, `name="kind" value="exec"`) ||
 		!strings.Contains(body, `name="value" value="/usr/bin/git"`) {

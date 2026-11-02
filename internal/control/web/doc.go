@@ -16,6 +16,8 @@
 // a row opens in place (GET /logs/line), and j/k move through them (logs_rows.go). static/place.js, which live.js
 // loads, keeps the reader's place: a chip, a facet, a tab, a pager or a GET form fetches its page and merges it in
 // place with live.js's merge, its address in history, and a plain form post comes back to where it was sent from.
+// The run page's Block now panel adds static/twin.js: its terminal twin says the command the form makes, as it is
+// typed, each word quoted by internal/shellword's rule, the rule of the twins the server writes.
 //
 // Security minimum: a request whose client socket another local uid owns gets 403 before the token or cookie is
 // looked at (peer.go, /proc/net/tcp{,6}, fails closed). One random token, printed in the URL, is exchanged for an

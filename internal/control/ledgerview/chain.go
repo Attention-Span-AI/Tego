@@ -39,8 +39,10 @@ type Chain struct {
 	State string // ChainVerified, ChainBroken or ChainUnchecked
 	// Lines is how many lines the chain held through: all of them when verified, those before the break when broken.
 	Lines uint64
-	// Line is the seq (the timeline's #N, the CLI's "line N") of the line the chain broke at, when Broken and
-	// the walk stopped on a line; AtLine says it did (an anchor mismatch breaks after the last line instead).
+	// Line is where a broken chain broke, as a seq (the timeline's #N, the CLI's "line N"). With AtLine it is the line
+	// the walk stopped on, whose own bytes, link or schema fail. Without it the chain held through every line and broke
+	// after the last (an anchor that disagrees or is missing, bytes after run_end), and Line is that last line, #Lines-1;
+	// with Lines 0 no line was read (the ledger gone, replaced or empty), and there is no line to name.
 	Line   uint64
 	AtLine bool
 	// Anchored is true when the head was checked against the chain anchor (chain.log).
@@ -65,13 +67,17 @@ func (c Chain) Unchecked() bool { return c.State == ChainUnchecked }
 func unchecked(run, why string) Chain { return Chain{Run: run, State: ChainUnchecked, Reason: why} }
 
 // VerifyRun checks run id's hash chain under root against the chain anchor at anchor, with the code `tego events
-// <run> --verify` runs: ledger.VerifyRunDir over ledger.NewFileChainAnchor. The verdict mirrors internal/cli's
-// runVerify (verify.go), which this package may not import (TestControlLinksNoEngine): ErrUnverified is a ledger
-// that does not verify (broken); any other error (the ledger or the anchor not readable, a run still closing) and a
-// ledger with no run_start is no verdict (unchecked), as the CLI exits 125 there; nil is verified. The dashboard is
-// stricter than the CLI only in refusing to judge: it skips a live run (still being written), a run over its line
-// bound, and an anchor path it was not given or that does not exist, each said as unchecked, never as verified.
-// anchor is the path the CLI would use (internal/control/cli resolves it as runtime.AnchorPath does); "" is unknown.
+// <run> --verify` runs: ledger.VerifyRunDir, over the anchor's answers as ledger.NewFileChainAnchor gives them, read
+// through the dashboard's view of chain.log (viewAnchor, anchorview.go: read again after any change to the file, and
+// at least once every chainTTL). Its result is read as internal/cli's runVerify reads it, through ledger.VerdictOf
+// (this package may not import internal/cli, TestControlLinksNoEngine):
+// ErrUnverified is a ledger that does not verify (broken); any other error (the ledger or the anchor not readable, a
+// run still closing) and a ledger with no run_start is no verdict (unchecked), as the CLI exits 125 there; nil is
+// verified. The dashboard is stricter than the CLI only in refusing to judge: it skips a live run (still being
+// written), a run over its line bound, and an anchor path it was not given or that does not exist, each said as
+// unchecked, never as verified.
+// anchor is the path the CLI would use (internal/control/cli resolves it by ledger.AnchorPath, as tego does); "" is
+// unknown.
 // When the same run is already being verified (PrewarmChain, another request), it waits for that verdict.
 func VerifyRun(ctx context.Context, root, id, anchor string, run *Run) Chain {
 	c, _ := verifyRun(ctx, root, id, anchor, run, true)
@@ -86,7 +92,8 @@ func verifyRun(ctx context.Context, root, id, anchor string, run *Run, wait bool
 		return *why, false
 	}
 	if k.dir == "" { // not cacheable: a run not ended, or an events file that could not be stat'ed
-		return verifyNow(ctx, filepath.Join(root, id), id, anchor), false
+		c, _ := verifyNow(ctx, filepath.Join(root, id), id, anchor)
+		return c, false
 	}
 	return chainFor(ctx, root, k, wait)
 }
@@ -114,8 +121,7 @@ func chainKeyOf(root, id, anchor string, run *Run) (chainKey, *Chain) {
 	if anchor == "" {
 		return no("the chain anchor (chain.log) is not known to this dashboard")
 	}
-	afi, aerr := os.Stat(anchor)
-	if aerr != nil {
+	if _, aerr := os.Stat(anchor); aerr != nil {
 		// The CLI reads a missing chain.log as "no anchor line" and fails an ended run for it (E29). Here it is
 		// more likely a dashboard pointed at another user's ledger root: say so instead of crying "broken".
 		return no("the chain anchor " + anchor + " is not readable here: " + errText(aerr))
@@ -123,60 +129,77 @@ func chainKeyOf(root, id, anchor string, run *Run) (chainKey, *Chain) {
 	if err != nil || run == nil || !run.Ended {
 		return chainKey{}, nil
 	}
-	k := chainKey{dir: dir, id: id, events: idOf(efi), lastID: Open(root).lastLineID(id), anchor: anchor, anchorSize: afi.Size()}
-	k.anchorDev, k.anchorIno = idOf(afi).dev, idOf(afi).ino
-	return k, nil
+	return chainKey{dir: dir, id: id, events: idOf(efi), lastID: Open(root).lastLineID(id), anchor: anchor}, nil
 }
 
-// verifyNow runs the check itself, bounded by verifyTimeout.
-func verifyNow(ctx context.Context, dir, id, anchor string) Chain {
+// verifyNow runs the check itself, bounded by verifyTimeout, and returns with its verdict the anchor's answer for the
+// run that verdict rests on (nil when the check never asked the anchor: a chain that broke at a line, a ledger that
+// could not be read). It reads the events file from disk and the anchor through its view (viewAnchor), as the kept
+// verdicts do, so a check reads chain.log only when the view must read it anyway.
+func verifyNow(ctx context.Context, dir, id, anchor string) (Chain, *ledger.AnchorHead) {
 	ctx, cancel := context.WithTimeout(ctx, verifyTimeout)
 	defer cancel()
-	rep, verr := ledger.VerifyRunDir(ctx, dir, ledger.NewFileChainAnchor(anchor))
+	a := &viewAnchor{path: anchor}
+	rep, verr := ledger.VerifyRunDir(ctx, dir, a)
 	c := Chain{Run: id, Lines: rep.Lines, Anchored: rep.Anchored, Ended: rep.Ended}
-	switch {
-	case verr != nil && errors.Is(verr, ledger.ErrUnverified):
+	// The CLI's reading of the same result (ledger.VerdictOf): `tego events <run> --verify` exits 0, 1 or 125 where
+	// this says verified, broken or not checked.
+	switch ledger.VerdictOf(rep, verr) {
+	case ledger.Unverified:
 		c.State, c.Reason = ChainBroken, brokenReason(verr)
-		// Lines is the count before the line that broke the walk, which is that line's seq; an anchor that
-		// disagrees with the whole chain (or is missing for an ended run) breaks after the last line.
-		c.Line = rep.Lines
-		c.AtLine = !errors.Is(verr, ledger.ErrAnchorMissing) && !errors.Is(verr, ledger.ErrLedgerMissing) &&
-			!strings.Contains(verr.Error(), "anchored head")
-	case verr != nil:
-		return unchecked(id, "the ledger could not be read: "+errText(verr))
-	case !rep.Started:
-		return unchecked(id, "no run record: "+ledger.EventsFile+" holds no run_start")
-	default:
+		switch {
+		case rep.AtLine:
+			// A line of its own broke the walk: the chain holds through the lines before it.
+			c.AtLine, c.Line, c.Lines = true, rep.BrokenLine, rep.BrokenLine
+		case rep.Lines > 0:
+			// It held through every line and broke after the last, which rep.Lines counts and #Lines-1 names (an
+			// anchor that disagrees or is missing, bytes after run_end).
+			c.Line = rep.Lines - 1
+		}
+		// Neither: there was no line to walk (the ledger gone, replaced or empty), and no line to name.
+	case ledger.Verified:
 		c.State = ChainVerified
+	default:
+		if verr != nil {
+			return unchecked(id, "the ledger could not be read: "+errText(verr)), a.last
+		}
+		return unchecked(id, "no run record: "+ledger.EventsFile+" holds no run_start"), a.last
 	}
-	return c
+	return c, a.last
 }
 
-// An ended run's chain verdict is kept, so the overview does not hash its newest 20 runs again on every load. The key
-// is the events file as it was verified (device, inode, size, mtime, ctime and its last line's id: fileID, whose ctime
-// no utimes can put back, so an in-place rewrite that keeps the size and mtime is a new key, r10 BR-2) and the anchor
-// file's identity; a verdict is dropped when the anchor got shorter than it was. The anchor's ctime is not in the key:
-// every run's end appends to chain.log, and each append would check every kept verdict again. After chainTTL the same
-// key is checked again, so an edit of chain.log in place is seen: in the background, while the verdict for that same
-// file and anchor
-// is still shown, and the store's revision moves if the new verdict differs, so open pages redraw with it. A changed
-// events file or anchor is a new key and is checked before the page answers. One check per key runs at a time
-// (chainFlights): a second asker waits for it, or, on the overview, counts the run as being verified.
+// An ended run's chain verdict is kept, so the overview does not hash its newest 20 runs again on every load. A
+// verdict is what VerifyRunDir makes of two things, the run's events file and the anchor's answer for the run (its
+// Head), so it is kept by both. The key is the events file as it was verified (device, inode, size, mtime, ctime and
+// its last line's id: fileID, whose ctime no utimes can put back, so an in-place rewrite that keeps the size and mtime
+// is a new key, r10 BR-2) and the anchor's path; the entry holds the anchor's answer the verdict rests on, and a look
+// asks the anchor again (anchorHeadsNow: one lstat of chain.log while it is unchanged, one read of it after any change,
+// shared by every run, and one at least every chainTTL). The verdict stands while the answer is the same, so another
+// run's end appending its line costs no check, while any edit the file's stamps show that changes what `tego events
+// <run> --verify` would read for this run (its line rewritten in place, a second head for it, a malformed line
+// anywhere, its line gone) is checked before the page answers, as is a changed events file. Some writes keep the
+// stamps (one within a tick of a coarse clock, one through a shared mapping whose page is already dirty). In chain.log
+// such an edit is seen within chainTTL: the first look once the view is chainTTL old reads the file again, for every
+// run and check at once, and a changed answer is checked before the page answers. In the events file it is seen once
+// the verdict is chainTTL old: the run is then checked again, its events file read from disk and chain.log through the
+// view, in the background, while the kept verdict is still shown. A check that finds another verdict than the one
+// kept, at a look or in the background, moves the store's revision, so open pages redraw with it. One check per key
+// runs at a time (chainFlights): a second asker waits for it, or, on the overview, counts the run as being verified.
 // `tego events <run> --verify` stays the authority.
 type chainKey struct {
-	dir                  string
-	id                   string
-	events               fileID
-	lastID               string
-	anchor               string
-	anchorDev, anchorIno uint64
-	anchorSize           int64 // as seen when asked; not compared by the cache, which keeps the size it verified
+	dir    string
+	id     string
+	events fileID
+	lastID string
+	anchor string
 }
 
 type chainEntry struct {
-	c          Chain
-	anchorSize int64
-	at         time.Time
+	c Chain
+	// head is the anchor's answer for the run the verdict rests on; nil when the check never asked the anchor (a chain
+	// that broke at a line), and the verdict then stands whatever the anchor says.
+	head *ledger.AnchorHead
+	at   time.Time
 }
 
 // chainFlight is one check of a key in progress; done is closed once c is set.
@@ -197,24 +220,30 @@ var (
 	chainVerifies atomic.Int64 // the number of VerifyRunDir calls the cache let through, for tests
 )
 
-// cacheKey is k without the anchor size it was asked with, as the maps hold it.
-func (k chainKey) cacheKey() chainKey { k.anchorSize = 0; return k }
-
-// chainFor is k's verdict: the kept one (checking it again in the background once chainTTL ran out), the one a check
-// already running gives (waited for when wait is set; verifying otherwise), or a check run now.
+// chainFor is k's verdict: the kept one while the anchor answers for the run as it did (checking it again in the
+// background once chainTTL ran out), the one a check already running gives (waited for when wait is set; verifying
+// otherwise), or a check run now. A check that finds another verdict than the one kept for k moves the store's
+// revision, so pages open on the kept one redraw: an edit of chain.log moves no revision of its own.
 func chainFor(ctx context.Context, root string, k chainKey, wait bool) (Chain, bool) {
-	ck := k.cacheKey()
+	// The anchor's answer for the run now, asked outside chainMu: one lstat of chain.log while it is unchanged and its
+	// view younger than chainTTL. A run the view does not answer for yet is read now, and the check below then finds
+	// it there.
+	now := anchorHeadsNow(k.anchor, k.id)[0]
 	chainMu.Lock()
-	if e, ok := chainVerdicts[ck]; ok && k.anchorSize >= e.anchorSize {
-		if time.Since(e.at) > chainTTL && chainFlights[ck] == nil {
-			// Only the time ran out: the events file and the anchor are the ones this verdict is for. Show it, and
-			// check again without making the page wait (an overview load used to hash 20 runs here every 10 min).
-			f := startFlight(ck)
+	e, kept := chainVerdicts[k]
+	if kept && (e.head == nil || sameHead(*e.head, now)) {
+		if time.Since(e.at) > chainTTL && chainFlights[k] == nil {
+			// Only the time ran out: the events file and the anchor's answer are the ones this verdict is for, as far
+			// as their stamps tell. Show it, and check again without making the page wait (an overview load used to
+			// hash 20 runs here every 10 min), for an edit of the events file its stamps did not show. The check asks
+			// chain.log through the view, as `now` did, not from disk: the view is never more than chainTTL old, and
+			// the overview's 20 verdicts run out together, so 20 checks each reading the file read it 20 times.
+			f := startFlight(k)
 			go func() {
 				// Bounded by verifyTimeout; not tied to the request, which ends first.
-				c := verifyNow(context.Background(), k.dir, k.id, k.anchor)
-				land(ck, k.anchorSize, f, c)
-				if (c.Broken() || c.Verified()) && (c.State != e.c.State || c.Line != e.c.Line || c.Lines != e.c.Lines) {
+				c, head := verifyNow(context.Background(), k.dir, k.id, k.anchor)
+				land(k, head, f, c)
+				if otherVerdict(e.c, c) {
 					Open(root).bump()
 				}
 			}()
@@ -222,7 +251,7 @@ func chainFor(ctx context.Context, root string, k chainKey, wait bool) (Chain, b
 		chainMu.Unlock()
 		return e.c, false
 	}
-	if f := chainFlights[ck]; f != nil {
+	if f := chainFlights[k]; f != nil {
 		chainMu.Unlock()
 		if !wait {
 			return unchecked(k.id, "being verified"), true
@@ -234,11 +263,22 @@ func chainFor(ctx context.Context, root string, k chainKey, wait bool) (Chain, b
 			return unchecked(k.id, "the check was cut short: "+ctx.Err().Error()), false
 		}
 	}
-	f := startFlight(ck)
+	f := startFlight(k)
 	chainMu.Unlock()
-	c := verifyNow(ctx, k.dir, k.id, k.anchor)
-	land(ck, k.anchorSize, f, c)
+	c, head := verifyNow(ctx, k.dir, k.id, k.anchor)
+	land(k, head, f, c)
+	if kept && otherVerdict(e.c, c) {
+		// The anchor's answer for the run changed since e was reached (chain.log changed under it) and so did the
+		// verdict.
+		Open(root).bump()
+	}
 	return c, false
+}
+
+// otherVerdict reports whether c is a verdict (verified or broken) that is not was: another state, or a break at
+// another line.
+func otherVerdict(was, c Chain) bool {
+	return (c.Broken() || c.Verified()) && (c.State != was.State || c.Line != was.Line || c.Lines != was.Lines)
 }
 
 // startFlight registers a check of ck. chainMu must be held and no check of ck running.
@@ -249,15 +289,15 @@ func startFlight(ck chainKey) *chainFlight {
 	return f
 }
 
-// land ends f with verdict c, keeping c when it is a verdict (verified or broken).
-func land(ck chainKey, anchorSize int64, f *chainFlight, c Chain) {
+// land ends f with verdict c, keeping c with the anchor's answer it rests on when it is a verdict (verified or broken).
+func land(ck chainKey, head *ledger.AnchorHead, f *chainFlight, c Chain) {
 	chainMu.Lock()
 	defer chainMu.Unlock()
 	if c.Verified() || c.Broken() {
 		if len(chainVerdicts) >= maxChainVerdicts {
 			clear(chainVerdicts)
 		}
-		chainVerdicts[ck] = chainEntry{c: c, anchorSize: anchorSize, at: time.Now()}
+		chainVerdicts[ck] = chainEntry{c: c, head: head, at: time.Now()}
 	}
 	delete(chainFlights, ck)
 	f.c = c
@@ -349,21 +389,22 @@ func PrewarmChain(ctx context.Context, s *Snapshot, anchor string) <-chan struct
 		k chainKey
 		f *chainFlight
 	}
-	var list []todo
-	n := 0
+	var (
+		list []todo
+		ids  []string
+	)
 	for _, r := range s.Runs {
-		if !r.Ended || r.Live || n >= MaxChainRuns {
+		if !r.Ended || r.Live || len(ids) >= MaxChainRuns {
 			continue
 		}
 		k, why := chainKeyOf(s.Root, r.ID, anchor, r)
 		if why != nil || k.dir == "" {
 			continue
 		}
-		n++
-		ck := k.cacheKey()
+		ids = append(ids, r.ID)
 		chainMu.Lock()
-		if _, kept := chainVerdicts[ck]; !kept && chainFlights[ck] == nil {
-			list = append(list, todo{k, startFlight(ck)})
+		if _, kept := chainVerdicts[k]; !kept && chainFlights[k] == nil {
+			list = append(list, todo{k, startFlight(k)})
 		}
 		chainMu.Unlock()
 	}
@@ -372,6 +413,9 @@ func PrewarmChain(ctx context.Context, s *Snapshot, anchor string) <-chan struct
 		close(done)
 		return done
 	}
+	// One read of chain.log answers for every run the overview checks, so the checks below each find their run's
+	// line in the view instead of reading the file again.
+	anchorHeadsNow(anchor, ids...)
 	// On readWorkers goroutines, as the cold read: one after another, the 20 checks of the r7 perf ledger took 2.4 s.
 	next := make(chan todo, len(list))
 	for _, t := range list {
@@ -384,7 +428,8 @@ func PrewarmChain(ctx context.Context, s *Snapshot, anchor string) <-chan struct
 		go func() {
 			defer wg.Done()
 			for t := range next {
-				land(t.k.cacheKey(), t.k.anchorSize, t.f, verifyNow(ctx, t.k.dir, t.k.id, t.k.anchor))
+				c, head := verifyNow(ctx, t.k.dir, t.k.id, t.k.anchor)
+				land(t.k, head, t.f, c)
 			}
 		}()
 	}

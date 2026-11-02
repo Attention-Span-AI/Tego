@@ -15,6 +15,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/runact"
+	"github.com/attention-span-ai/tego/internal/shellword"
 )
 
 // The Rules page's "Changed since this run started" panel: on a running run whose rules file changed
@@ -94,7 +95,7 @@ func (s *Server) fillPendingLive(ctx context.Context, d *rulesData) {
 	p.Live = true
 	facts := ledgerview.LiveFactsOf(run)
 	if !facts.Observe && run.Contract != "" {
-		p.Restart = "tego run " + shellArg(run.Contract) + startCommand(run)
+		p.Restart = "tego run " + shellword.Quote(run.Contract) + startCommand(run)
 	}
 	ids := make([]string, 0, len(p.Changes))
 	for _, c := range p.Changes {
@@ -211,18 +212,11 @@ func startCommand(r *ledgerview.Run) string {
 	}
 	words := make([]string, len(p.Command))
 	for i, w := range p.Command {
-		words[i] = shellArg(w)
+		// Untrimmed, unlike shellWord: a prompt argument with a leading or trailing space comes back as the run had
+		// it, and an empty word is a pair of quotes.
+		words[i] = shellword.Quote(w)
 	}
 	return " -- " + strings.Join(words, " ")
-}
-
-// shellArg is s as exactly one word of a POSIX shell line, spaces and all: unlike shellWord it trims nothing, so a
-// prompt argument with a leading or trailing space comes back as the run had it; an empty word is a pair of quotes.
-func shellArg(s string) string {
-	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/._-:@,+=") == "" {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // applyNowPost is POST /rules/change with do=applynow (postAllowed has passed it): the rule service places the live

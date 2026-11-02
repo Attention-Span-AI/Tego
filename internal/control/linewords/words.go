@@ -463,6 +463,7 @@ var gapWhys = map[string]string{
 	"live-lift-refused":       "a request to allow a rule was refused; nothing was loosened",
 	"model-route-changed":     "a model endpoint's requests were sent to another approved backend",
 	"launcher-lost":           "the run's supervisor was gone before the run ended, so the record's last lines may be missing",
+	"own-state-mode-restored": "the mode of one of tego's own files had been taken from its owner, and tego restored it",
 	"torn-tail":               "the supervisor died in the middle of a line, so that line is lost",
 }
 

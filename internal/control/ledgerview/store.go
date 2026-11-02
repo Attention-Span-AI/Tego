@@ -37,6 +37,10 @@ type Store struct {
 	// internMu guards intern alone: runs are decoded in parallel outside mu (read), and each line takes it once.
 	internMu sync.Mutex
 	intern   map[string]string
+
+	// liveMu guards probes alone: each run the live index lists, with the last probe of its lock (livelock.go).
+	liveMu sync.Mutex
+	probes map[string]lockProbe
 }
 
 var (
@@ -53,7 +57,8 @@ func Open(root string) *Store {
 	if s == nil {
 		// The revision starts at the clock in microseconds, so a restarted server never repeats one an open page
 		// still holds.
-		s = &Store{root: root, runs: map[string]*runState{}, rev: uint64(time.Now().UnixMicro()), intern: map[string]string{}}
+		s = &Store{root: root, runs: map[string]*runState{}, rev: uint64(time.Now().UnixMicro()), intern: map[string]string{},
+			probes: map[string]lockProbe{}}
 		stores[root] = s
 	}
 	return s
@@ -343,6 +348,8 @@ func (s *Store) Snapshot() (*Snapshot, error) { return s.snapshot(true) }
 
 func (s *Store) snapshot(wait bool) (*Snapshot, error) {
 	snap := &Snapshot{Root: s.root}
+	// Before any events file is looked at: a lock seen free then means the look finds run_end if the run ended.
+	live := s.liveRuns()
 	ents, err := os.ReadDir(s.root)
 	if errors.Is(err, os.ErrNotExist) {
 		s.mu.Lock()
@@ -376,7 +383,6 @@ func (s *Store) snapshot(wait bool) (*Snapshot, error) {
 		cands = cands[:MaxRuns]
 		snap.RunsCut = true
 	}
-	live := liveSet(s.root)
 	pubs := make([]*Run, 0, len(cands))
 	s.mu.Lock()
 	for id, st := range s.runs {
@@ -444,7 +450,8 @@ func (s *Store) background() {
 }
 
 // bump moves the revision with no run changed, so open pages ask for their regions again: a chain verdict the
-// overview showed as still being verified has arrived (chain.go).
+// overview showed as still being verified has arrived, or a check found another verdict than the one kept, which
+// open pages show (chain.go).
 func (s *Store) bump() {
 	s.mu.Lock()
 	s.rev++
@@ -468,11 +475,11 @@ func (s *Store) Run(id string) (*Run, error) {
 	if !validRunID(id) {
 		return nil, os.ErrNotExist
 	}
+	live := s.liveRuns()[id] // before the events file, as in snapshot
 	fi, err := os.Lstat(filepath.Join(s.root, id, "events.jsonl"))
 	if err != nil || !fi.Mode().IsRegular() {
 		return nil, os.ErrNotExist
 	}
-	live := liveSet(s.root)[id]
 	s.mu.Lock()
 	st := s.state(id)
 	s.bring([]want{{st: st, seen: fi, live: live}}, true)

@@ -138,6 +138,9 @@ func TestClassify(t *testing.T) {
 		{record.GapRecord, "price-table-version-mismatch", Price},
 		{record.GapRecord, "unpriced-model", Price},
 		{record.GapRecord, "channel-full", Missed},
+		// A mode tego gave back to the owner of its own file lost no action; the same why under another what is not it.
+		{record.GapRecord, record.GapOwnStateModeRestored, Restored},
+		{record.GapEnforce, record.GapOwnStateModeRestored, Missed},
 		{Unknown, Unknown, Missed},
 		{"a-what-from-a-newer-tego", "x", Missed},
 	}
@@ -174,6 +177,13 @@ func TestWordsSayWhatHappened(t *testing.T) {
 			{What: record.GapEnforce, Why: record.GapRunPaused, Events: 1},
 			{What: record.GapRecord, Why: "ringbuf-full", Events: 1, Lost: 3},
 		}, "1 gap in the record (counts are a minimum, 3 events lost); token counts may be low (1 capture gap); the run was paused"},
+		// The modes tego gave back are no missing action, so the next run of an agent that took them reads complete.
+		{"restored modes are no missing action", []Count{{What: record.GapRecord, Why: record.GapOwnStateModeRestored, Events: 4}},
+			"no action known to be missing; tego restored the modes of 4 of its own files"},
+		{"one restored mode beside a missed gap", []Count{
+			{What: record.GapRecord, Why: "channel-full", Events: 1},
+			{What: record.GapRecord, Why: record.GapOwnStateModeRestored, Events: 1},
+		}, "1 gap in the record (counts are a minimum); tego restored the mode of one of its own files"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

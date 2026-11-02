@@ -61,6 +61,11 @@ const codeOldLauncher = "launcher-too-old"
 // ends by itself then, and the run's launcher records live-block-expired. A block only narrows, so a limit never
 // shortens a block already held: the later end stays. A run started by a tego older than time limits refuses one
 // (exit 1, [launcher-too-old]); without a limit, nothing differs from before.
+//
+// These refusals are liveblock's (liveblock.CheckBlock), which the dashboard's Block now and Remove make too. An exec
+// block says what its value reaches here beyond its own name (liveblock.ReachOf): a note says that a file with other
+// names, as a multi-call program's applets are, is refused under each of them, since the launcher matches the file's
+// identity, and that a bare name on no folder of this PATH, or a path that is no file, names nothing here now.
 func cmdBlock() Command {
 	var list, asJSON bool
 	var lim liveLimit
@@ -116,7 +121,8 @@ func describeUntil(t time.Time) string { return livetime.Describe(t, time.Now(),
 
 // cmdUnblock is `tego unblock <run> <exec|net|path|read|write> <value>`: it removes a live block `tego block` or the dashboard
 // added. Removing a block removes only what it added; whatever the contract refuses stays refused. A run that has
-// ended is refused as `tego block` refuses it.
+// ended is refused as `tego block` refuses it (exit 1, [not-running]), and as the dashboard's Remove is: its blocks
+// ended with it, and its overlay is left as `tego block --list` shows it.
 //
 // With --for or --until it is an unblock for a while (ADR 0125 decision 4): the block stays in the overlay, refuses
 // nothing until the limit, and refuses again from then on; the run's launcher records live-unblock-expired. A limit at
@@ -213,34 +219,12 @@ func applyBlock(ctx context.Context, name string, add bool, ref string, kind liv
 		message(stderr, "", 0, 0, "tego "+name+": "+err.Error(), codeIO)
 		return identity.ExitError
 	}
-	if !held && !add {
-		message(stderr, "", 0, 0, fmt.Sprintf("tego unblock: %s is not running: its live blocks ended with it, so there is "+
-			"nothing to remove (tego block --list %s shows what it had)", run, run), codeNotRunning)
-		return identity.ExitFinding
-	}
-	if !held {
-		message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s is not running, so a live block would enforce nothing; "+
-			"for its next run, make it a rule of the contract (tego rule)", name, run), codeNotRunning)
-		return identity.ExitFinding
-	}
 	facts := startFacts(dir)
-	if !until.IsZero() && !facts.Timed {
-		message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s: %v", name, run, liveblock.ErrNoTimeLimits), codeOldLauncher)
-		return identity.ExitFinding
-	}
-	if add && (kind == liveblock.KindRead || kind == liveblock.KindWrite) && !facts.NarrowKinds() {
-		// An older launcher fails to read an overlay holding this kind: it would keep its last blocks and ignore every
-		// later change, tego unblock included, until this block is removed.
-		message(stderr, "", 0, 0, fmt.Sprintf("tego block: %s was started by an older tego that has no %s blocks, so it would "+
-			"not put this one in force; block the path instead (tego block %s path %s), or make it a rule for its next run (tego rule)",
-			run, kind, run, record.Printable(value)), codeOldLauncher)
-		return identity.ExitFinding
-	}
-	if add && kind == liveblock.KindRead && !facts.ReadsSeen {
-		message(stderr, "", 0, 0, fmt.Sprintf("tego block: %s does not see its reads (they are neither held nor recorded), so a "+
-			"read block would refuse nothing; block the path instead (tego block %s path %s), which refuses changes to it",
-			run, run, record.Printable(value)), codeReadsUnseen)
-		return identity.ExitFinding
+	// The run's refusals are liveblock's, which runact makes for the dashboard too: a run that has ended is refused a
+	// block and an unblock alike, and a launcher too old for the change, or blind to the reads a read block would
+	// refuse, is refused it.
+	if err := liveblock.CheckBlock(liveTarget(run, held, facts), kind, add, until); err != nil {
+		return blockRefused(name, run, add, value, err, stderr)
 	}
 	by := liveblock.By("cli")
 	var word string
@@ -251,11 +235,10 @@ func applyBlock(ctx context.Context, name string, add bool, ref string, kind liv
 		// With a zero until AddUntil is Add and RemoveUntil is Remove: an untimed change is what it always was.
 		if add {
 			_, ok, err = o.AddUntil(kind, value, by, time.Now(), until)
-			word = map[bool]string{true: "blocked", false: "already blocked"}[ok]
 		} else {
 			_, ok, err = o.RemoveUntil(kind, value, by, time.Now(), until)
-			word = map[bool]string{true: "block removed", false: "was not blocked"}[ok]
 		}
+		word = liveblock.BlockWord(add, ok)
 		after, _ = o.Find(kind, value)
 		return ok, err
 	})
@@ -286,7 +269,7 @@ func applyBlock(ctx context.Context, name string, add bool, ref string, kind liv
 	case add && facts.Observe:
 		// A watched run's supervisor continues every refusal (tego watch records only), so the block refuses nothing.
 		fmt.Fprintf(stdout, "recorded, not enforced: run %s is a tego watch run, so matching actions are recorded and go on.\n", run)
-	case word == "blocked":
+	case word == liveblock.WordBlocked:
 		fmt.Fprintf(stdout, "The run's launcher puts it in force within about a second; check with: tego block --list %s\n", run)
 		if kind == liveblock.KindPath && !facts.ReadsSeen {
 			fmt.Fprintln(stdout, "This run's reads are not seen, so the block refuses changes to it; reading it still works.")
@@ -294,18 +277,94 @@ func applyBlock(ctx context.Context, name string, add bool, ref string, kind liv
 		if kind == liveblock.KindWrite {
 			fmt.Fprintln(stdout, "It refuses changes (writes, creates, deletes, renames); reading it still works.")
 		}
-		if kind == liveblock.KindExec && filepath.IsAbs(value) && !strings.HasSuffix(value, "/") {
-			if _, err := os.Stat(value); err != nil {
-				fmt.Fprintf(stdout, "Note: %s is not a file here now; the block still refuses it if it appears.\n", record.Printable(value))
+		if kind == liveblock.KindExec {
+			if line := execWords(run, value, execReach(value, os.Getenv("PATH"))); line != "" {
+				fmt.Fprintln(stdout, line)
 			}
 		}
-	case word == "block removed":
+	case word == liveblock.WordRemoved:
 		fmt.Fprintf(stdout, "The run's launcher lifts it within about a second; what the contract refuses stays refused (tego block --list %s).\n", run)
 	}
 	if line := realWords(run, kind, value, link); line != "" {
 		fmt.Fprintln(stdout, line)
 	}
 	return identity.ExitOK
+}
+
+// blockRefused writes the refusal of a block or an unblock (liveblock.CheckBlock), in its words naming the run, with
+// what to type instead where the terminal has something to offer, and returns exit 1.
+func blockRefused(name, run string, add bool, value string, err error, stderr io.Writer) int {
+	hint := ""
+	switch {
+	case errors.Is(err, liveblock.ErrNotRunning) && add:
+		hint = "; for its next run, make it a rule of the contract (tego rule)"
+	case errors.Is(err, liveblock.ErrNotRunning):
+		hint = fmt.Sprintf(" (tego block --list %s shows what it had)", run)
+	case errors.Is(err, liveblock.ErrOldLauncher):
+		// An older launcher fails to read an overlay holding this kind: it would keep its last blocks and ignore every
+		// later change, tego unblock included, until this block is removed. It enforces a path block.
+		hint = fmt.Sprintf("; block the path instead (tego block %s path %s), or make it a rule for its next run (tego rule)", run, value)
+	case errors.Is(err, liveblock.ErrReadsUnseen):
+		hint = fmt.Sprintf("; block the path instead (tego block %s path %s), which refuses changes to it", run, value)
+	}
+	message(stderr, "", 0, 0, "tego "+name+": "+liveblock.RunWords(err)+hint, liveCode(err))
+	return identity.ExitFinding
+}
+
+// liveCode is the diagnostic code of a live change refused before it was written (liveblock's refusals); codeIO for
+// any other error.
+func liveCode(err error) string {
+	switch {
+	case errors.Is(err, liveblock.ErrNotRunning):
+		return codeNotRunning
+	case errors.Is(err, liveblock.ErrNoTimeLimits), errors.Is(err, liveblock.ErrOldLauncher):
+		return codeOldLauncher
+	case errors.Is(err, liveblock.ErrReadsUnseen):
+		return codeReadsUnseen
+	case errors.Is(err, liveblock.ErrLocked):
+		return codeLocked
+	case errors.Is(err, liveblock.ErrOutsideFence):
+		return codeOutsideFence
+	case errors.Is(err, liveblock.ErrNoKey):
+		return codeNoKey
+	}
+	return codeIO
+}
+
+// liveTarget is liveblock's Target of run, held or not by a launcher, from the facts its run_start gives: what
+// liveblock.CheckBlock and liveblock.CheckFence decide on, as runact's own does for the dashboard.
+func liveTarget(run string, held bool, f livestatus.Facts) liveblock.Target {
+	return liveblock.Target{Run: run, Running: held, Timed: f.Timed, NarrowKinds: f.NarrowKinds(), ReadsSeen: f.ReadsSeen,
+		Adjustable: f.Adjustable}
+}
+
+// execReach is liveblock.ReachOf, what an exec block's value reaches on this machine; tests replace it.
+var execReach = liveblock.ReachOf
+
+// execWords says what an exec block's value reaches here beyond its own name (liveblock.ReachOf: r): a file with other
+// names, which the block refuses under each of them, or a value that names nothing here now. "" when there is
+// nothing more to say. A bare name is matched by name alone, so it is what refuses one name of a multi-call program.
+func execWords(run, value string, r liveblock.ExecReach) string {
+	v, name := record.Printable(value), record.Printable(filepath.Base(value))
+	bare := fmt.Sprintf(" A bare name is matched by name only: tego block %s exec %s", run, name)
+	switch {
+	case r.Missing && filepath.IsAbs(value):
+		return fmt.Sprintf("Note: %s is not a file here now; the block still refuses it if it appears.", v)
+	case r.Missing:
+		return fmt.Sprintf("Note: no program named %s is on this PATH; the block still refuses any program by that name the "+
+			"run starts, from any folder.", v)
+	case r.Names > 1:
+		what := v + " is"
+		if r.File != value {
+			what = v + " leads to " + record.Printable(r.File) + ","
+		}
+		return fmt.Sprintf("Note: %s one file with %d names here (a multi-call program, as coreutils and busybox are); the "+
+			"block matches the file, so it refuses every one of those names, not %s alone.", what, r.Names, name) + bare
+	case r.Renamed:
+		return fmt.Sprintf("Note: %s leads to %s; the block matches that file, so it refuses it under every name that leads "+
+			"there, not %s alone.", v, record.Printable(r.File), name) + bare
+	}
+	return ""
 }
 
 // realWords says what a path, read or write block does about the path its value leads to through a link (link,

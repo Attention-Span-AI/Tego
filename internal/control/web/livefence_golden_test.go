@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/attention-span-ai/tego/internal/control/rules"
 )
 
 // updateLocked rewrites the Locked goldens: run once on the base (before ADR 0125's dashboard), so they hold the pages
@@ -140,7 +142,7 @@ func TestLockedPagesUnchanged(t *testing.T) {
 	if err := os.Chtimes(contract, before, before); err != nil {
 		t.Fatal(err)
 	}
-	paths := []string{s.cfg.Ledger, filepath.Dir(proj), proj, contract, contractRef(contract)}
+	paths := []string{s.cfg.Ledger, filepath.Dir(proj), proj, contract, rules.Ref(contract)}
 	run := do(s, "GET", "/runs/"+actRun, "127.0.0.1:8484", c)
 	if run.Code != 200 {
 		t.Fatalf("run page: %d", run.Code)

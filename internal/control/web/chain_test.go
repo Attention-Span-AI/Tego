@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -70,12 +71,7 @@ func chainFixture(t *testing.T, tamper bool) (string, string) {
 	if err != nil || !bytes.Contains(b, []byte("run_start")) {
 		t.Fatalf("live run: %v %q", err, b)
 	}
-	if err := os.MkdirAll(filepath.Join(root, ".live"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".live", liveRun), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, root, liveRun)
 	if tamper {
 		f := writeRun(t, root, anchor, tamperRun, true)
 		b, err := os.ReadFile(f)
@@ -179,6 +175,64 @@ func TestChainTamperedRun(t *testing.T) {
 			`<span class="mono">tego events ` + tamperRun + ` --verify</span>`},
 		[]string{"Verified ·"})
 	wantIn(t, "good run page", getPage(t, s, "/runs/"+goodRun), []string{"Verified · 5 lines"}, []string{"Broken at"})
+}
+
+// TestChainAnchorBreakNamesTheLastLine: a chain that holds through every line and breaks after the last (a second
+// head for the run in chain.log) names that last line on the overview's tile, the run's pill and its banner: #4 of the
+// five-line run, not #5, which it does not have. A broken chain with no line read (its ledger gone) names no line.
+func TestChainAnchorBreakNamesTheLastLine(t *testing.T) {
+	root, anchor := chainFixture(t, false)
+	f, err := os.OpenFile(anchor, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(goodRun + " " + strings.Repeat("9", 64) + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s := chainServer(t, root, anchor)
+	wantIn(t, "overview", getPage(t, s, "/"), []string{`Broken · <span class="mono">` + shortRun(goodRun), "Broken after #4"},
+		[]string{"after #5", "Verified ·"})
+	wantIn(t, "run page", getPage(t, s, "/runs/"+goodRun),
+		[]string{"b b-broken", "Broken after #4", "Record broken after #4", "two heads"}, []string{"after #5", "Verified ·"})
+	var b bytes.Buffer
+	if err := s.pages["run"].ExecuteTemplate(&b, "chainpill", ledgerview.Chain{State: ledgerview.ChainBroken}); err != nil {
+		t.Fatal(err)
+	}
+	if got := b.String(); !strings.Contains(got, "</svg>Broken</span>") {
+		t.Fatalf("the pill of a broken chain with no line read: %s, want Broken and no line", got)
+	}
+}
+
+// TestChainBrokenWithNoLineReadNamesNone: a broken chain with no line read names no line in any of the three places
+// that show it. Here an anchored run's ledger was emptied after it ended, so chain.log vouches for a head the empty
+// ledger does not have: its page's banner says "Record broken" and its pill "Broken", not "after #0", a line it does
+// not have. The overview checks ended runs only, and an emptied ledger no longer reads as one, so the overview's tile
+// is rendered with such a verdict (a ledger emptied or removed between the overview's read of the runs and its
+// check), and says "No lines read".
+func TestChainBrokenWithNoLineReadNamesNone(t *testing.T) {
+	root, anchor := chainFixture(t, false)
+	if err := os.Truncate(filepath.Join(root, goodRun, ledger.EventsFile), 0); err != nil {
+		t.Fatal(err)
+	}
+	s := chainServer(t, root, anchor)
+	wantIn(t, "run page", getPage(t, s, "/runs/"+goodRun),
+		[]string{"b b-broken", "</svg>Broken</span>", "<strong>Record broken</strong>", "anchored head"},
+		[]string{"Broken after #", "Broken at #", "Record broken after #", "Record broken at #", "Verified ·"})
+	c := ledgerview.VerifyRun(t.Context(), root, goodRun, anchor, nil)
+	if !c.Broken() || c.Lines != 0 || c.AtLine {
+		t.Fatalf("test setup: the emptied run's chain is %+v, want broken with no line read", c)
+	}
+	var b bytes.Buffer
+	d := overviewData{Total: 1, Chain: ledgerview.LedgerChain{Broken: &c}}
+	if err := s.pages["overview"].ExecuteTemplate(&b, "r-ov-tiles", page{Data: d}); err != nil {
+		t.Fatal(err)
+	}
+	wantIn(t, "overview tiles", b.String(),
+		[]string{`Broken · <span class="mono">` + shortRun(goodRun), ">No lines read</span>"},
+		[]string{"Broken after #", "Broken at #"})
 }
 
 // TestChainUnanchoredRun: a run that did not end has no anchor line, so lines cut from its end would not show. Its chain

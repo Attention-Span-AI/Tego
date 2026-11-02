@@ -3,6 +3,8 @@
 package web
 
 import (
+	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -10,9 +12,9 @@ import (
 	"golang.org/x/net/html"
 )
 
-// The keyboard and accessibility floor of the main journey (Overview, a run, a line's "Act on this", Approvals Allow
-// and Deny): every page is parsed and checked for the attributes a keyboard or screen-reader user depends on.
-// It is a floor, not an audit: a real screen reader and a human pass are still owed.
+// The keyboard and accessibility floor of the main journey (Overview, a run, a line's "Act on this" with what it shows
+// on a live run, Approvals Allow and Deny): every page is parsed and checked for the attributes a keyboard or
+// screen-reader user depends on. It is a floor, not an audit: a real screen reader and a human pass are still owed.
 
 func parseHTML(t *testing.T, name, body string) *html.Node {
 	t.Helper()
@@ -185,6 +187,18 @@ func checkPage(t *testing.T, label, body string) {
 			if ty, _ := attr(n, "type"); ty == "" {
 				t.Errorf("%s: button %q has no type", label, text(n))
 			}
+		case "fieldset":
+			// A group of boxes is named by its legend, the fieldset's first child (HTML-AAM): a screen reader says
+			// "Also apply now" before each of its boxes, which name only a run.
+			var first *html.Node
+			for c := n.FirstChild; c != nil && first == nil; c = c.NextSibling {
+				if c.Type == html.ElementNode {
+					first = c
+				}
+			}
+			if first == nil || first.Data != "legend" || text(first) == "" {
+				t.Errorf("%s: a <fieldset> does not start with a <legend> that names its group", label)
+			}
 		}
 		if v, ok := attr(n, "tabindex"); ok && v != "0" && v != "-1" {
 			t.Errorf("%s: tabindex=%q on <%s> changes the tab order", label, v, n.Data)
@@ -303,6 +317,36 @@ func TestJourneyPagesAreKeyboardAndReaderUsable(t *testing.T) {
 		}
 	}
 	before(t, "act", get(t, ds, dc, "/runs/"+detailRun+"/lines/2?a=block"), "Block next time", "Confirm")
+}
+
+// TestActPanelLiveControlsAreKeyboardAndReaderUsable walks what the Act panel adds on a live run, which the journey's
+// ended runs never show: a narrowing's "Also apply now" group, with a box that can be ticked and one that cannot (it
+// says why), then the Saved panel's Undo with its acknowledgement and "Also lift". Each page meets the floor above,
+// and each box comes before the button that sends it in the tab order.
+func TestActPanelLiveControlsAreKeyboardAndReaderUsable(t *testing.T) {
+	s, c, _, _ := askServer(t)
+	holdLock(t, filepath.Join(s.cfg.Ledger, actRun))
+	git, token := "/runs/"+actRun+"/lines/4", "/runs/"+actRun+"/lines/3"
+
+	preview := get(t, s, c, git+"?a=block&level=0")
+	mustContain(t, "the git preview", preview, `<fieldset class="ev-now"><legend>Also apply now</legend>`,
+		`name="now" value="`+actRun+`" checked`)
+	checkPage(t, "Also apply now", preview)
+	before(t, "Also apply now", preview, "This run: refused from its next action on", "Confirm: write the contract")
+
+	// The run's reads are not known to be held here, so the folder's box is shown disabled, with why.
+	folder := get(t, s, c, token+"?a=block")
+	mustContain(t, "the folder preview", folder, `<legend>Also apply now</legend>`, `name="now" value="`+actRun+`" disabled`,
+		"whether this run holds its reads")
+	checkPage(t, "Also apply now, a box that cannot be ticked", folder)
+
+	saved := follow(t, s, c, post(s, git, url.Values{"csrf": {s.csrf}, "a": {"block"}, "level": {"0"},
+		"base": {baseOf(t, preview)}, "now": {actRun}}, own, "", c))
+	mustContain(t, "the Saved panel", saved, `id="act-undo"`, `<input type="checkbox" name="ack" value="`,
+		`<input type="checkbox" name="lift" value="1" checked>`, "Undo this change")
+	checkPage(t, "the Saved panel's Undo", saved)
+	before(t, "Undo", saved, "Undo lets the next run do more again", "Undo this change")
+	before(t, "Undo", saved, "Also lift the live block it placed", "Undo this change")
 }
 
 // TestFocusRingIsVisibleInBothThemes: no rule removes the focus outline except main's own (a skip link target, not a

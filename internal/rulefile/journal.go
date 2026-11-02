@@ -31,11 +31,14 @@ const (
 	JournalFile = "journal.jsonl"
 	// BlobsDir holds each text a change replaced or wrote, as <sha256>.yaml.
 	BlobsDir = "blobs"
-	// LocksDir holds the per-contract lock files, <sha256 of the resolved path>.lock, and journal.lock.
+	// LocksDir holds the per-contract lock files, <sha256 of the resolved path>.lock, journal.lock and prune.lock.
 	LocksDir = "locks"
 	// JournalVersion is the "v" this package writes.
 	JournalVersion = 1
 )
+
+// maxLine is the longest journal line a reader takes.
+const maxLine = 4 << 20
 
 // The journal's ops.
 const (
@@ -74,6 +77,16 @@ type Change struct {
 	Direction string
 	// Live are the outcomes of "also apply now" done before the write; AppendLive records ones done after.
 	Live []Live
+}
+
+// SentenceLine is one of a change's sentences as Change.Sentences records it: "before → after", with "(nothing)" for a
+// rule the file did not have before. `tego rule` and the dashboard both journal their sentences in this form, and the
+// dashboard reads the after half back to say what an undo undid.
+func SentenceLine(before, after string) string {
+	if before == "" {
+		before = "(nothing)"
+	}
+	return before + " → " + after
 }
 
 // Live is one live block "also apply now" placed (or failed to place) on a running run, or, with Lift, one an Undo
@@ -162,6 +175,11 @@ func replace(ctx context.Context, g Guard, path, base string, text []byte, c Cha
 	if next == cur.SHA256 {
 		return nil, ErrSame
 	}
+	unshare, err := j.share(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer unshare()
 	// The blobs go first: a change that lands is always one that can be undone.
 	if err := j.putBlob(cur.Text, cur.SHA256); err != nil {
 		return nil, fmt.Errorf("journal the old text: %w", err)
@@ -213,7 +231,8 @@ func Revert(ctx context.Context, g Guard, id string, o RevertOptions) (*Entry, e
 }
 
 // Undo reverts the newest change of the contract at path that is not undone yet and wrote what the file holds now,
-// so repeated Undos walk back through every change, any number deep. ErrNoChange when there is none.
+// so repeated Undos walk back through every change the journal holds: all of them inside the retention, and at least
+// the newest KeepChanges that stand beyond it while the file is there (Prune). ErrNoChange when there is none.
 func Undo(ctx context.Context, g Guard, path string, o RevertOptions) (*Entry, error) {
 	cur, err := Read(path, g)
 	if err != nil {
@@ -289,7 +308,7 @@ func ReadJournal(root string) ([]Entry, error) {
 	defer func() { _ = f.Close() }() // read-only
 	var es []Entry
 	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
+	sc.Buffer(make([]byte, 0, 64<<10), maxLine)
 	for sc.Scan() {
 		var e Entry
 		if json.Unmarshal(sc.Bytes(), &e) != nil || e.V != JournalVersion || e.ID == "" {
@@ -360,9 +379,10 @@ func Blob(root, sum string) ([]byte, error) {
 }
 
 // journal is the open journal directory and its two subdirectories, each opened with no symlink followed and
-// checked: owned by this user and writable by no one else, since a revert writes back what a blob holds.
+// checked: owned by this user and writable by no one else, since a revert writes back what a blob holds. root is the
+// ledger root they are in, which a Prune lists the runs of.
 type journal struct {
-	dir, blobs, locks *sys.FD
+	root, dir, blobs, locks *sys.FD
 }
 
 // openJournal opens root's journal, making its directories (0700) when they are not there yet.
@@ -383,9 +403,9 @@ func openJournalMode(root string, create bool) (*journal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ledger root %s: %w", r, err)
 	}
-	defer func() { _ = top.Close() }() // only the journal's own directories are kept
-	j := &journal{}
+	j := &journal{root: top}
 	if j.dir, err = subdir(top, JournalDirName, create); err != nil {
+		j.close()
 		return nil, err
 	}
 	if j.blobs, err = subdir(j.dir, BlobsDir, create); err == nil {
@@ -399,7 +419,7 @@ func openJournalMode(root string, create bool) (*journal, error) {
 }
 
 func (j *journal) close() {
-	for _, d := range []*sys.FD{j.dir, j.blobs, j.locks} {
+	for _, d := range []*sys.FD{j.root, j.dir, j.blobs, j.locks} {
 		_ = d.Close() // directories opened read-only; a nil one answers ErrClosed
 	}
 }
@@ -466,22 +486,44 @@ func openChecked(dir *sys.FD, name string, flags int) (*os.File, error) {
 	return fd.Release(name)
 }
 
-// lock flocks locks/name, waiting at most lockWait, and returns its release.
+// lock flocks locks/name exclusively, waiting at most lockWait, and returns its release.
 func (j *journal) lock(ctx context.Context, name string) (func(), error) {
-	l, err := sys.Strict(j.locks.Openat(name, unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600))
-	if err != nil {
-		return nil, fmt.Errorf("lock: %w", err)
-	}
+	return j.flock(ctx, name, unix.LOCK_EX, "another change of this contract is being written; try again")
+}
+
+// share holds prune.lock shared for a write, from its first blob to its journal line: Prune holds it exclusively, so
+// it never takes a blob a line is about to name for one no line names.
+func (j *journal) share(ctx context.Context) (func(), error) {
+	return j.flock(ctx, pruneLock, unix.LOCK_SH, "the rule-change journal is being pruned; try again")
+}
+
+// flock takes locks/name (made when it is not there) with how, LOCK_EX or LOCK_SH, waiting at most lockWait, and
+// returns its release; busy is the error when another holder kept it all that time. Prune removes a contract's lock
+// file while it holds its flock, so a lock is held only once the file locked is still the one at the name: a writer
+// that opened the file before it went and locked it after would hold a lock no later writer sees, and it locks the
+// name again instead.
+func (j *journal) flock(ctx context.Context, name string, how int, busy string) (func(), error) {
 	deadline := time.Now().Add(lockWait)
 	for {
-		err := l.Flock(unix.LOCK_EX | unix.LOCK_NB)
-		if err == nil {
+		l, err := sys.Strict(j.locks.Openat(name, unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600))
+		if err != nil {
+			return nil, fmt.Errorf("lock: %w", err)
+		}
+		if err := step("lock"); err != nil {
+			_ = l.Close() // the step's error is the one to report
+			return nil, err
+		}
+		err = l.Flock(how | unix.LOCK_NB)
+		if err == nil && j.holds(l, name) {
 			return func() { _ = l.Close() }, nil // closing the file drops the flock
 		}
+		_ = l.Close() // not locked, or locked on a file Prune removed meanwhile: the next turn opens the name again
+		if err == nil {
+			err = unix.EWOULDBLOCK
+		}
 		if !errors.Is(err, unix.EWOULDBLOCK) || time.Now().After(deadline) || ctx.Err() != nil {
-			_ = l.Close() // the lock's error is the one to report
 			if errors.Is(err, unix.EWOULDBLOCK) {
-				err = errors.New("another change of this contract is being written; try again")
+				err = errors.New(busy)
 			}
 			return nil, fmt.Errorf("lock: %w", err)
 		}
@@ -490,6 +532,13 @@ func (j *journal) lock(ctx context.Context, name string) (func(), error) {
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
+}
+
+// holds is whether the lock file l is still locks/name.
+func (j *journal) holds(l *sys.FD, name string) bool {
+	var have, there unix.Stat_t
+	return l.Fstat(&have) == nil && j.locks.Fstatat(name, &there, unix.AT_SYMLINK_NOFOLLOW) == nil &&
+		have.Dev == there.Dev && have.Ino == there.Ino
 }
 
 // append writes e as one line at the end of the journal, under the journal's own lock, and syncs it.
@@ -531,18 +580,26 @@ func (j *journal) putBlob(b []byte, sum string) error {
 	if have, err := j.readBlob(sum); err == nil && bytes.Equal(have, b) {
 		return nil
 	}
+	return writeFile(j.blobs, "."+sum+".", sum+".yaml", b)
+}
+
+// writeFile puts b in dir as name through a new file, prefix and random hex (O_EXCL, O_NOFOLLOW, 0600, fsync'ed),
+// renamed over it, then fsyncs dir: a reader sees the old file or the new one, never part of one.
+func writeFile(dir *sys.FD, prefix, name string, b []byte) error {
 	var rnd [8]byte
 	if _, err := rand.Read(rnd[:]); err != nil {
 		return err
 	}
-	tmp := "." + sum + "." + hex.EncodeToString(rnd[:])
-	fd, err := j.blobs.Openat(tmp, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	tmp := prefix + hex.EncodeToString(rnd[:])
+	fd, err := dir.Openat(tmp, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
 	if err != nil {
 		return err
 	}
+	unlink := func() { _ = dir.Borrow(func(n int) error { return unix.Unlinkat(n, tmp, 0) }) }
 	f, err := fd.Release(tmp)
 	if err != nil {
 		_ = fd.Close() // Release failed, so the owner still holds the number; its error is the one to report
+		unlink()
 		return err
 	}
 	_, werr := f.Write(b)
@@ -553,13 +610,13 @@ func (j *journal) putBlob(b []byte, sum string) error {
 		werr = cerr
 	}
 	if werr == nil {
-		werr = j.blobs.Borrow(func(n int) error { return unix.Renameat(n, tmp, n, sum+".yaml") })
+		werr = dir.Borrow(func(n int) error { return unix.Renameat(n, tmp, n, name) })
 	}
 	if werr != nil {
-		_ = j.blobs.Borrow(func(n int) error { return unix.Unlinkat(n, tmp, 0) }) // werr is the one to report
+		unlink() // werr is the one to report
 		return werr
 	}
-	return j.blobs.Fsync()
+	return dir.Fsync()
 }
 
 // readBlob is blobs/<sum>.yaml, checked against sum.

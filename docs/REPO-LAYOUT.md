@@ -68,7 +68,7 @@ tego/
 ├── notices.go                 package tego, the module root: embeds those files for `tego licenses` and `tego-control licenses`
 ```
 
-Packages added since 2026-09-22 and not drawn above: `internal/watch/` (watcher, adopt, tree, procconn, sig: watching and adopting any agent, ADRs 0054 and 0055), `internal/runtime/deputy/` (the run's open deputy, ADR 0041), `internal/runtime/dnsbroker/` (opt-in DNS transport for cooperating clients), `internal/runtime/hoststate/` (the root tiers' `/run/tego`, ADR 0034), `internal/realtego/` (the `~/.tego` directories a process could reach), `internal/selftest/` (`tego test`, Layer 2: starts the tego binary and reads its ledger, ADR 0074), `internal/check/gaps/` and `internal/check/resources/`, `internal/platform/hostaddr/` and `internal/platform/startphase/`, and `pkg/policy/gate/`, `pkg/policy/dnspolicy/`, `pkg/policy/fsplan/`.
+Packages added since 2026-09-22 and not drawn above: `internal/watch/` (watcher, adopt, tree, procconn, sig: watching and adopting any agent, ADRs 0054 and 0055), `internal/runtime/deputy/` (the run's open deputy, ADR 0041), `internal/runtime/dnsbroker/` (opt-in DNS transport for cooperating clients), `internal/runtime/hoststate/` (the root tiers' `/run/tego`, ADR 0034), `internal/realtego/` (the `~/.tego` directories a process could reach), `internal/selftest/` (`tego test`, Layer 2: starts the tego binary and reads its ledger, ADR 0074), `internal/check/gaps/` and `internal/check/resources/`, `internal/platform/hostaddr/` and `internal/platform/startphase/`, `internal/shellword/` (one word of a shell command line, standard library only: the dashboard's terminal twins and tego doctor's fix line quote by it), and `pkg/policy/gate/`, `pkg/policy/dnspolicy/`, `pkg/policy/fsplan/`.
 
 The tree includes reserved packages for later phases (`internal/adapters/openaicodex` is one); a reserved package's presence does not mean its feature is implemented, and additional provider parsers are roadmap entries. `learn` is built (2026-10-06): `tego learn` proposes a contract from a run's ledger (docs/OPERATIONS.md). Current capability and Tier 3 status are in `spec/backend/CAPABILITIES.md` and `docs/p0/TIER3-PLAN.md`.
 
@@ -90,10 +90,13 @@ cmd/tego ──► internal/adapters/claudecode for the hidden `hook` verb, disp
 pkg/spec/harness ──► standard library only (depguard harness-spec-is-leaf): the harness: key, harness.Run, harness.Provision
 pkg/spec/presets ──► standard library only, embed among it (depguard presets-are-data): the presets' YAML and a Source shaped
                      as agent.ProfileSource, registered by one line in internal/cli profileSources (ADR 0068)
-internal/setup ──► pkg/spec/presets, pkg/spec/agent, pkg/spec/config and the standard library (never the engine: depguard
-                   setup-never-imports-engine): composes and compiles offline the agent.yaml `tego init --preset` writes
-                   (Draft, Create, Check: the API a dashboard page can call too); internal/cli init.go parses the flags,
-                   passes the machine to check against, prints and writes it
+internal/setup ──► pkg/spec/presets, pkg/spec/agent, pkg/spec/config, golang.org/x/sys/unix, internal/platform/sys and the
+                   standard library (never the engine: depguard setup-never-imports-engine): composes and compiles offline
+                   the agent.yaml `tego init --preset` writes (Draft, Create, Remove, Check: the API a dashboard page
+                   can call too; Create makes the folders with mkdirat beneath the project folder pinned once, no
+                   symlink followed, Claude Code's socket folder outside it beneath its nearest existing parent,
+                   resolved once, and Remove takes them away with unlinkat AT_REMOVEDIR the same way); internal/cli
+                   init.go parses the flags, passes the machine to check against, prints and writes it
 pkg/spec ──► standard library (and yaml.v3 in pkg/spec/agent and pkg/spec/config); pkg/spec/agent also uses pkg/policy/httppolicy, pkg/policy/gate, pkg/policy/execmatch and pkg/policy/thishost
 pkg/spec/reason ──► standard library and pkg/spec/record only (the reason file v1, ADR 0061; depguard reason-spec-is-leaf); written by internal/ledger, read by internal/adapters
 pkg/policy/httppolicy ──► standard library only
@@ -177,7 +180,7 @@ and a noun never spans both binaries (ADR 0100 (2)).
 | the shape of `agent.yaml` | `spec/agent/v0/` (schema) and `pkg/spec/agent` (types, validation, compile) |
 | the shape of an event | `spec/record/v1/` and `pkg/spec/record` |
 | the built-in presets (`tego/no-secrets`, `tego/no-prod`, `tego/repo-only-writes`), their revisions and the host groups | `pkg/spec/presets` (the YAML, `README.md` is normative), registered in `internal/cli/profiles.go`; the user's page `docs/user/presets.md` (ADR 0068) |
-| `tego init --preset`: a contract from presets, folders, markers and host groups | `internal/setup` (compose.go, ecosystem.go, check.go: Draft/Create/Check; goldens in testdata/compose/), flags and printing in `internal/cli/init.go`; `docs/user/presets.md` "Start from tego init" |
+| `tego init --preset`: a contract from presets, folders, markers and host groups | `internal/setup` (compose.go, ecosystem.go, check.go: Draft/Create/Remove/Check; goldens in testdata/compose/), flags and printing in `internal/cli/init.go`; `docs/user/presets.md` "Start from tego init" |
 | env vars a run sets | `pkg/spec/identity` |
 | what a run provisions for its agent harness (`harness:`, the per-run settings files, hook-state) | `internal/runtime/harness.go` (the point), `pkg/spec/harness` (its types), `internal/adapters` (the provisioners) |
 | what a backend can do | `pkg/spec/backend` and `internal/runtime/enforce` |

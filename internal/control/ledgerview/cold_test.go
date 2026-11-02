@@ -286,51 +286,121 @@ func waitNoFlight(t *testing.T, dir string) {
 }
 
 // TestChainStaleVerdictRecheckedInBackground: once a verdict's ten minutes ran out, the page gets it at once while
-// the run is checked again; an anchor edited in place (same file, same size) is caught by that check, which moves the
-// revision so open pages redraw, and the next look says broken.
+// the run is checked again in the background, and that check asks chain.log through the dashboard's one reading of
+// it, never from disk for itself (TestChainExpiredVerdictsShareOneRead: the overview's 20 verdicts run out together).
+// So an edit of chain.log its stamps do not show (a write within one tick of a coarse clock, or through a shared
+// mapping whose page is already dirty: chain_mmap_linux_test.go makes that one for real) is seen through the reading's
+// age, within ten minutes of the edit. Here the reading is younger than the verdict (another run's end had chain.log
+// read again) and the edit comes after it; the test stands in for the edit by leaving the reading what such a write
+// leaves, the answers read before it under the stamps the file has after it. The re-check reads chain.log no more;
+// once the reading is ten minutes old, the next look reads chain.log again, finds the run's answer changed, and checks
+// the run before the page answers: broken, with the revision moved so pages open on "verified" redraw. The view used
+// to stand for as long as the stamps did, which for such an edit is for good; then each re-check read chain.log from
+// disk for itself, which an overview paid 20 times over.
 func TestChainStaleVerdictRecheckedInBackground(t *testing.T) {
+	ctx := context.Background()
 	dir := t.TempDir()
 	root, anchor := filepath.Join(dir, "runs"), filepath.Join(dir, "chain.log")
 	id := "r-3f9c2a1b-0dllq06ts7401-c4chex"
 	chainRun(t, root, anchor, id)
-	r, err := LoadRun(root, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c := VerifyRun(context.Background(), root, id, anchor, r); !c.Verified() {
+	r := loadedRun(t, root, id)
+	if c := VerifyRun(ctx, root, id, anchor, r); !c.Verified() {
 		t.Fatalf("chain: %+v", c)
 	}
-	b, err := os.ReadFile(anchor)
+	chainRun(t, root, anchor, "r-3f9c2a1b-0dllq06ts7409-c4chex")
+	if c := VerifyRun(ctx, root, id, anchor, r); !c.Verified() {
+		t.Fatalf("after another run's end: %+v", c)
+	}
+	rewriteAnchorLine(t, anchor, id, flipLastHexDigit)
+	unstampedEdit(t, anchor)
+	expireChain(filepath.Join(root, id))
+	reads := anchorReads.Load()
+	if c := VerifyRun(ctx, root, id, anchor, r); !c.Verified() {
+		t.Fatalf("past its time, the kept verdict is shown while the run is checked again; got %+v", c)
+	}
+	waitNoFlight(t, filepath.Join(root, id))
+	if d := anchorReads.Load() - reads; d != 0 {
+		t.Fatalf("the look and its background check read chain.log %d times; the reading they share was current", d)
+	}
+	ageAnchorView(t, anchor)
+	n, rev := chainVerifies.Load(), Open(root).Rev()
+	if c := VerifyRun(ctx, root, id, anchor, r); !c.Broken() || c.AtLine || !strings.Contains(c.Reason, "anchored head") {
+		t.Fatalf("once the reading of chain.log is %v old: %+v, want broken after the last line on the anchored head",
+			chainTTL, c)
+	}
+	if d := chainVerifies.Load() - n; d != 1 {
+		t.Fatalf("%d checks, want the one made before the page answered", d)
+	}
+	if Open(root).Rev() == rev {
+		t.Fatal("the look found another verdict but the revision did not move, so open pages keep showing verified")
+	}
+	if d := anchorReads.Load() - reads; d != 1 {
+		t.Fatalf("chain.log was read %d times, want once, by the look that found the reading %v old", d, chainTTL)
+	}
+}
+
+// TestChainBackgroundCheckRedrawsOnANewVerdict: the background check of a kept verdict reads the events file from
+// disk, so it finds an edit of it the file's stamps did not show (a write through a shared mapping whose page is
+// already dirty), which the test stands in for by keeping the verdict under the key the edited file gives. The kept
+// "verified" is shown while the check runs; the check says broken, moves the store's revision so open pages redraw,
+// and the next look says broken.
+func TestChainBackgroundCheckRedrawsOnANewVerdict(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	root, anchor := filepath.Join(dir, "runs"), filepath.Join(dir, "chain.log")
+	id := "r-3f9c2a1b-0dllq06ts7408-c4chex"
+	chainRun(t, root, anchor, id)
+	r := loadedRun(t, root, id)
+	if c := VerifyRun(ctx, root, id, anchor, r); !c.Verified() {
+		t.Fatalf("chain: %+v", c)
+	}
+	events := filepath.Join(root, id, ledger.EventsFile)
+	b, err := os.ReadFile(events)
 	if err != nil {
 		t.Fatal(err)
 	}
-	i := strings.LastIndex(string(b), "\n") - 1 // the head's last hex digit
-	flip := byte('0')
-	if b[i] == '0' {
-		flip = '1'
+	i := strings.Index(string(b), `"cwd":"/p"`)
+	if i < 0 {
+		t.Fatalf("test setup: no cwd in run_start: %s", b)
 	}
-	b[i] = flip
-	if err := os.WriteFile(anchor, b, 0o600); err != nil { // in place: the same inode and size
+	f, err := os.OpenFile(events, os.O_WRONLY, 0)
+	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := f.WriteAt([]byte("q"), int64(i+len(`"cwd":"/`))); err != nil { // run_start's cwd /p -> /q, in place
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	k, why := chainKeyOf(root, id, anchor, r)
+	if why != nil || k.dir == "" {
+		t.Fatalf("test setup: not cacheable: %v", why)
+	}
+	moved := 0
 	chainMu.Lock()
-	for k, e := range chainVerdicts {
-		if k.dir == filepath.Join(root, id) {
-			e.at = time.Now().Add(-2 * chainTTL)
+	for old, e := range chainVerdicts {
+		if old.dir == k.dir && old != k {
+			delete(chainVerdicts, old)
 			chainVerdicts[k] = e
+			moved++
 		}
 	}
 	chainMu.Unlock()
+	if moved != 1 {
+		t.Fatalf("test setup: %d kept verdicts of the run moved to the edited file's key, want 1", moved)
+	}
+	expireChain(filepath.Join(root, id))
 	rev := Open(root).Rev()
-	if c := VerifyRun(context.Background(), root, id, anchor, r); !c.Verified() {
+	if c := VerifyRun(ctx, root, id, anchor, r); !c.Verified() {
 		t.Fatalf("past its time, the kept verdict is shown while the run is checked again; got %+v", c)
 	}
 	waitNoFlight(t, filepath.Join(root, id))
 	if Open(root).Rev() == rev {
 		t.Fatal("the check found another verdict but the revision did not move")
 	}
-	if c := VerifyRun(context.Background(), root, id, anchor, r); !c.Broken() {
-		t.Fatalf("after the background check: %+v, want broken", c)
+	if c := VerifyRun(ctx, root, id, anchor, r); !c.Broken() || !c.AtLine || c.Line != 0 {
+		t.Fatalf("after the background check: %+v, want broken at #0, the line edited", c)
 	}
 }
 
@@ -350,7 +420,7 @@ func TestChainVerifyingIsShared(t *testing.T) {
 		t.Fatalf("not cacheable: %v", why)
 	}
 	chainMu.Lock()
-	f := startFlight(k.cacheKey())
+	f := startFlight(k)
 	chainMu.Unlock()
 	if lc := VerifySnapshot(context.Background(), snap, anchor); lc.Verifying != 1 || lc.Checked != 0 || lc.Broken != nil {
 		t.Fatalf("overview during a check: %+v", lc)
@@ -363,7 +433,8 @@ func TestChainVerifyingIsShared(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 	n := chainVerifies.Load()
-	land(k.cacheKey(), k.anchorSize, f, verifyNow(context.Background(), k.dir, id, anchor))
+	c, head := verifyNow(context.Background(), k.dir, id, anchor)
+	land(k, head, f, c)
 	if c := <-got; !c.Verified() {
 		t.Fatalf("the waiting run page: %+v", c)
 	}

@@ -442,7 +442,10 @@ func checkRunDir(rt *agent.RuleTable, dir string) error {
 // LedgerRoot resolves the machine's ledger_root to an absolute path, expanding a leading ~ against
 // the invoking user's home (config.Load already did that when it knew the home; this covers the
 // built-in default). internal/cli uses it so `run`, `stop`, `status` and `gc` all agree on where a
-// run directory lives.
+// run directory lives. tego-control serve, which may not import this package, resolves the root it
+// shows by the same rule in its own ledgerRootOf (internal/control/cli/serve.go), and for an
+// account with no home reads the chain.log beside that root, the one AnchorPath names for the
+// account's runs (serve never writes it): a change to the rule here is a change there.
 func LedgerRoot(m *config.Machine) (string, error) {
 	return ledgerRoot(m, config.DetectSecureExec, os.UserHomeDir)
 }

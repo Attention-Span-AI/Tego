@@ -25,8 +25,10 @@
 // The filter guards the arch and the x32 bit first (ENOSYS), answers ENOSYS to io_uring_*, openat2, clone3
 // and open_by_handle_at (R10), and notifies the syscalls the supervisor records or decides (R9–R16); under a
 // net: section socket(2) and socketpair(2) pass an allowlist and every other triple is notified (ADR 0018),
-// and every filter notifies the namespace-creating unshare/clone and every setns (E24). The remaining arms
-// refuse outright, because each decision is scalar and race-free in the filter, and an errno return holds
+// and every filter notifies the namespace-creating unshare/clone and every setns (E24); every enforcing filter
+// notifies inotify_add_watch, fanotify_mark and fcntl's F_NOTIFY (dnotify), which no Landlock hook sees, for the
+// supervisor to refuse a watch of what the run withholds a read of (R11e). The remaining arms refuse outright,
+// because each decision is scalar and race-free in the filter, and an errno return holds
 // where a notification would not: under an observe run, whose supervisor continues every notification
 // (supervisor R30), and with no supervisor left to answer (a notification with no handler is answered
 // ENOSYS, ADR 0018 (3)). They are, in every filter, the terminal-injection ioctls (EPERM) and

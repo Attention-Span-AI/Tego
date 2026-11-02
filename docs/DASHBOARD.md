@@ -7,9 +7,13 @@ Its known gaps are in [GAPS.md](GAPS.md). The footer of every page
 names the ledger root; its tooltip says the record is hash-chained and verified.
 
 It checks the ledger's hash chain with the code `tego events <run> --verify` runs, against the same chain anchor
-(`~/.tego/chain.log`): a run page shows "Verified" with its line count, "Chain broken at line #N" with the reason
-(in red, with an alert), or "Not verified" with why (a live run still being written, a run too long for the
-dashboard, an anchor it cannot read). The overview's Ledger tile checks the newest 20 ended runs and says "Verified"
+(`~/.tego/chain.log`, named by the rule tego anchors by, `ledger.AnchorPath`), and reads the result as that command
+does (`ledger.VerdictOf`: where it exits 0, 1 or 125 the page says verified, broken or not checked): a run page shows
+"Verified" with its line count, "Record broken at #N" with the reason when line #N's own bytes, link or schema fail,
+"Record broken after #N" when the chain holds through its last line, #N, and the anchor disagrees with it or bytes
+follow run_end, "Record broken" with no line when there was none to read (the run's ledger gone while chain.log
+anchors it) (each in red, with an alert), or "Not verified"
+with why (a live run still being written, a run too long for the dashboard, an anchor it cannot read). The overview's Ledger tile checks the newest 20 ended runs and says "Verified"
 or names the first broken run; right after `tego-control serve` starts it may say "Verifying…" with how many runs are
 still being checked, and it updates by itself when they are done. For an audit, `tego events <run> --verify` stays the check of record.
 
@@ -24,8 +28,9 @@ tego-control serve [--addr 127.0.0.1:8484] [--ledger DIR] [--open] [--preview]
 
 - `--ledger` defaults to the `ledger_root` tego writes runs to: the machine config's (`TEGO_CONFIG`, else the layer
   files), else `~/.tego/runs`.
-- It prints one line on stdout, `Tego dashboard: http://127.0.0.1:<port>/?t=<token>`, and serves until Ctrl-C or
-  SIGTERM. Open that link. `--addr 127.0.0.1:0` picks a free port.
+- It prints one line on stdout, `Tego dashboard: http://127.0.0.1:<port>/?t=<token>` (the address `--addr` names:
+  `http://[::1]:<port>/...` under `--addr [::1]:<port>`), and serves until Ctrl-C or SIGTERM. Open that link.
+  `--addr 127.0.0.1:0` picks a free port.
 - On stderr it then says what it serves, so a dashboard showing another ledger is seen at start:
   `  ledger: <root> (from TEGO_CONFIG <file> | <layer file> | --ledger | default), N runs`, then
   `  chains: checked against <chain.log>` or `  chains: no anchor found (<why>); runs show as unverified`, then each
@@ -35,12 +40,13 @@ tego-control serve [--addr 127.0.0.1:8484] [--ledger DIR] [--open] [--preview]
   ledger is named outright and serve starts.
 - `--open` also opens the dashboard in your browser, signed in, once it listens: the first command of `$BROWSER` (a
   colon-separated list; `%s` stands for the URL, else the URL is appended), then `xdg-open`. The opener is a detached
-  child with no standard stream of ours. It is not given the printed link: it gets `http://127.0.0.1:<port>/?o=<code>`,
+  child with no standard stream of ours. It is not given the printed link: it gets the same address with `/?o=<code>`,
   a one-time code that signs in once, within 60 seconds, and is then gone, because a browser keeps its arguments in
   its command line for as long as it runs. The token stays on stdout only. If the browser takes longer than a minute
   to start, or the code was used, the page says to open the printed link. The URL is printed either way, and a
   machine with no opener gets one line on stderr saying so while the dashboard keeps serving.
-- It listens on a loopback address only and refuses any other `--addr`.
+- It listens on a loopback address only, `127.0.0.1` (the default; `localhost` reads as it), another `127.x.y.z`, or
+  `[::1]`, and refuses any other `--addr` (`0.0.0.0`, `[::]`, a LAN address, any other host name).
 
 The token in the link is swapped for a browser cookie (HttpOnly, SameSite=Strict) on the first visit; a request
 without it gets 401: a browser asking for a page gets the sign-in page ("Sign in · Tego": "Open the dashboard from
@@ -62,11 +68,13 @@ dashboard's own origin. Every response has a strict Content-Security-Policy (no 
 A request must also come from a socket the user who started the dashboard owns. A token can reach a command line
 (a link you paste into `google-chrome <link>`, say), which other local users can read, so before it looks at the
 token or the cookie the
-dashboard finds the client's socket in `/proc/net/tcp` (or `tcp6`, for a v4-mapped client) and compares its owner
-with its own effective uid. Another user's request gets 403 and one sentence saying to open the dashboard as that
-user or start their own; so does any request whose owner it cannot find (fails closed). Opening it as `localhost`
-or `127.0.0.1` makes no difference; `[::1]` is not listened on. A socket's owner never changes, so the check runs
-once per connection: the browser's later requests on the same keep-alive connection reuse the answer.
+dashboard finds the client's socket in `/proc/net/tcp` (or `tcp6`, for a v4-mapped client or one on `[::1]`) and
+compares its owner with its own effective uid. Another user's request gets 403 and one sentence saying to open the
+dashboard as that user or start their own; so does any request whose owner it cannot find (fails closed). Opening it
+as `localhost` instead of `127.0.0.1` or `[::1]` makes no difference to the check. It listens on the one address
+`--addr` names: `[::1]` reaches only a dashboard started with `--addr [::1]:<port>`. A socket's owner never changes,
+so the check runs once per connection: the browser's later requests on the same keep-alive connection reuse the
+answer.
 
 A change must also come from outside every tego run. Every agent tego runs or watches is your own user, so for each
 POST and for the `?t=` and `?o=` sign-ins the dashboard asks the kernel which cgroup the client's socket was made in (sock_diag)
@@ -108,13 +116,13 @@ that preview. `docs/adr/0123-dashboard-threat-model.md` has the reasoning.
 | `/runs/<id>` | A header line under the status (who started the run, at what time, and its rules version and contract file; a run with no contract file, as under `tego watch`, says "Watched only: nothing was enforced" and links Least privilege); the verdict sentence and the Highlights card (below); on a live run, Pause beside Stop run (it freezes the agent where it stands within a second; until the run's launcher answers, a banner says "Pause asked at 12:03; waiting for the run to confirm it" and the button reads Cancel pause; once the launcher writes its `run-paused` line the status reads Paused, a banner says "Paused by you, from the dashboard at 12:03" and the button becomes Resume; while a request of the run waits for an answer Pause is greyed out with "Answer the waiting request first" under it, since a waiting request cannot be frozen; a pause the launcher could not apply says "The pause did not take", that Tego keeps trying at most 30 s apart until it takes or the run is stopped, and offers Withdraw pause, since the agent is still running; Stop run ends a run within the stop grace (`stop_grace`, 10 s by default); a run whose launcher cannot read a pause (one an older Tego started, an adopted run, or one with no cgroup of its own) offers no Pause at all; Runs and Overview rows read Paused too), Block now above them (a head button jumps to it; kinds Program, Destination, File or folder; it applies to the next action and leaves the contract file unchanged), each block named in words, its path shortened like the rest of the page ("Reads of ~/.config/telemetry" under the run's home, the full path in the value's title), with its state now as a badge and a plain line beside it: "Waiting for the run…" until the run's launcher writes the line confirming it (about half a second), then "In force since line #N"; "Changes refused since line #N" for a path on a run whose reads tego does not see (reads still go through); on a `tego watch` run the panel and its head button read "Mark (recorded only)" and every block "Recorded, not enforced", since a watched run refuses nothing (the panel is its own live region, `r-run-live`, so the badge changes without a reload); the run's details folded under one summary line (agent, contract, tier, command, start, end and exit) and its timeline, newest first: one row per refusal (a refused action's mirror line is not shown again), identical refusals folded into one row with a count, paths with their file name kept (bold, `~/` for the run's home), people named instead of `uid:1000 pid:…`, credential-looking command-line values masked, here and on every other list of refusals and answers (a waiting ask's card keeps the text as written; the line page masks its headline, its What line and the rows around it, and keeps the line exactly as written in a closed fold), rows in words ("Run started: <command>", "Asked to read <path>", "Allowed once by alice after 27 s: <path>", "Model traffic not recorded (no model capture for this agent)", "Run paused: the agent is frozen", "Run resumed", "Run ended, exit 0"; a command run through a shell's `-c` reads from the shell on, "… /bin/bash -c <script>"), each under the chip Logs and the line page give that line (an ask **Asked**, an answer the person's **Denied** or **Allowed**, a neutral **Timed out** or **Withdrawn** when no person denied it, or **Answered** when it does not say which, a line nothing decided **Recorded**), and the "record no-price-table" gap left out (Logs keeps every line). The timeline shows 200 rows at a time; "Older rows" pages back by line number (`?before=<seq>`). A live run's timeline adds its new rows at the top (see Live updates). |
 | `/runs/<id>/refusals` | Grouped by default: one row per rule and destination host on any ports, program or path, with its count; the ones that matter first (secrets, contract entries and live blocks, sends next to a secret), the routine ones folded under "Routine (N refusals in M groups: system lookups, retries)". "Every line" (`?view=lines`) lists each refusal with identical ones folded. |
 | `/runs/<id>/processes` | The run's processes as a tree, rebuilt from each exec line's `exec_id` and `parent_exec_id` (`ledgerview.ProcessTree`): tego's launcher at the root, the agent under it, each process under the one that started it. Each shows its program and command (credentials masked, a shell launcher elided), pid, start time, lines, reads, writes and connects with the hosts it reached, its refusals in red, how many processes are under it, a link to its exec line and to Logs (`run=<id>&where=pid:<pid>`, which counts the same lines); a process that ran several programs, or tried one that was refused, lists each exec on one line ("ran …", "tried … refused ×2 at /usr/bin/x, /bin/x"). The launcher, the agent and its children are open, and so is every branch with a refusal in it; three or more like processes of one parent that started nothing (Codex's `git` calls, refused `lsb_release` calls) fold into one closed line with their count, opened when one of them ran and had something refused. A process that forked and never started a program writes no exec line, so the record does not say who started it: it hangs from the launcher, marked "forked, no exec recorded", and no parent is guessed. A page shows at most 600 processes, breadth first, and says how many it leaves out. The count above the tree reads "N processes · N actions · N refusal notes · N refused": the actions and the refusal notes (the kind=refused line beside each refused action) add up to the run's lines in its header. A live run's tab updates in place, laid out at most once every 5 seconds (`procsHold`), so a busy run's tree is not sent again each second; opened branches stay open. |
-| `/runs/<id>/receipt` | The run's receipt on one screen, the same one `tego receipt <run>` prints, from the same builder (`internal/check/receipt`): how it ended and the time it took; tiles for files written, refusals, times it asked, model tokens (and the estimated cost when a price covered them); refusals by rule as bars and refusals per minute as a sparkline; stall minutes; the refused actions (the first 12) and the files it created, wrote, deleted and renamed (the first 40; a write to `/dev/null`, `/dev/tty` or a pseudo-terminal is no file and is not listed); each ask with its answer; and "What this receipt can vouch for", the fields the ledger could not support in full (a tier that does not record allowed writes, capture off, gap lines that may have lost actions, capture gaps that make the token counts a floor, unpriced responses; a pause, a resume or a live block is a gap line too but loses nothing, so it is not listed). The dashboard loads no price table, so its cost shows only for responses a table priced in the ledger's own terms: none today. The builder also gives the run's connections, the programs it ran and the sensitive files it read (JSON keys `connections`, `connection_tries`, `system_lookups`, `programs`, `sensitive_reads`; a routine system lookup such as nscd is counted apart, never as a place), which `tego receipt` prints and this tab shows as Sensitive files read (amber "Read, not blocked" on a watched run), Connections and Programs run, each with what happened to its tries. |
+| `/runs/<id>/receipt` | The run's receipt on one screen, the same one `tego receipt <run>` prints, from the same builder (`internal/check/receipt`): how it ended and the time it took; tiles for files written, refusals, times it asked, model tokens (and the estimated cost when a price covered them); refusals by rule as bars and refusals per minute as a sparkline; stall minutes; the refused actions (the first 12) and the files it created, wrote, deleted and renamed (the first 40; a write to `/dev/null`, `/dev/tty` or a pseudo-terminal is no file and is not listed); each ask with its answer; and "What this receipt can vouch for", the fields the ledger could not support in full (a tier that does not record allowed writes, capture off, gap lines that may have lost actions, capture gaps that make the token counts a floor, unpriced responses; a pause, a resume, a live block or a mode tego gave back to the owner of one of its own files is a gap line too but loses nothing, so it is not listed), then the receipt's notes as `tego receipt` prints them ("Note: …": an anomaly the pass met, such as a second `run_end`, or how many of its own files' modes tego gave back, whose Logs rows name each file). The dashboard loads no price table, so its cost shows only for responses a table priced in the ledger's own terms: none today. The builder also gives the run's connections, the programs it ran and the sensitive files it read (JSON keys `connections`, `connection_tries`, `system_lookups`, `programs`, `sensitive_reads`; a routine system lookup such as nscd is counted apart, never as a place), which `tego receipt` prints and this tab shows as Sensitive files read (amber "Read, not blocked" on a watched run), Connections and Programs run, each with what happened to its tries. |
 | `/runs/<id>/lines/<seq>` | One ledger line, explained (`ledgerview.Explain`). The headline names the action and its object: "The agent tried to read ~/.config/telemetry/token", "The agent connected to 127.0.0.1:8802", "The agent ran ls" (a path masked, the run's home as `~/`, cut near 80 characters with the whole value in its title; "Line #N: <kind>" on a line no rule is made from). Under it, the line's chip, the one its timeline row and its Logs row show (an ask line **Asked**, an answer line the person's **Denied** or **Allowed**, or **Timed out** or **Withdrawn** when no person denied it), and the line in one sentence with its verdict ("curl (pid 357136, child of sh) tried to read ~/.curlrc; Tego refused it: a read the rules refuse, and the agent got ENOENT"). **What happened**, under the same chip: the action (an exec's whole command from its blob in a fold), the time to the millisecond (UTC in its title), how far into the run and how long after the line before, the run and its contract. **The decision**: the verdict and, on its own row, who decided (a read a person denied reads "Refused: a person said no", decided by that person and the rule that asked; a question nobody answered, "Refused: nobody answered in time"; none on a line recorded as observed under the authority rule, which record v1 names on every action: nothing decided it. A person or a gate such a line names stays: a held open a person allowed is recorded as observed when the object it reached had no name), the rule in words with the contract file and line it is written on, linked to the Rules page group, and its state (enforced, best effort, watched only; "built into Tego" for the secret list; "watched only" on every observed line of a watched run, whose rule is the contract entry it would have matched, and which reads "Watched only · <rule>", or "Watched only" for unmatched, where no contract line is found), the reason, the error the agent got, the refusing mechanism and the tier. **The question** (an ask, its answer, or the action it decided): when it was asked, who answered after how long, the outcome and any file given instead, with links to the ask, the answer and what followed. **Who did it**: the program (path, masked command, pid · tid · cgroup, the line that started it), the programs above it from the run's root ("tego launcher → sh → curl", each linked to its exec line; a process that forked without starting a program reads "forked, no exec recorded"; a deeper chain shows the nearest six and "… N more", linked to the Processes tab), and a Logs link for every line of the process (`run:<id> pid:<pid>`). **Every field**: each key after the envelope, labelled and in words, masked (the authority rule, which record v1 names on every action, reads "no one: recorded only" on a line recorded as observed, which nothing decided; its raw value is in the title; a person or a gate stays as named); a masked value has its own "show unmasked (contains a secret)" fold; a blob field says its size and whether it hashes to its name, shows its text (masked, at most 256 KiB) and offers **Download the exact bytes** (`?blob=<sha>`: only a sha a blob field of this line names, 64 lower-case hex digits, re-checked against its hash before it is sent and again as it streams, so a blob changed in between ends the download short and never arrives whole; streamed as an `application/octet-stream` attachment with `nosniff`; anything else is 400 or 404); a body stored as a splice reads "stored as a splice; not shown here". **Integrity**: "Line #N of M", the line's hash, the line before linked with whether its hash matches, and the run's chain verdict (the run page's cached check); on a run whose chain breaks at a line, a line before the break says it and every line before it hash correctly and where the chain breaks, and the break line says its bytes do not match its id. **The line as written**: one closed fold with the exact bytes and a Copy button (copy.js; without JavaScript the text is plain and selectable), and the terminal twin with its own Copy. Then the lines around it (masked, in the words Logs uses: "Asked to read <path>" under Asked, "Denied by somebody after 77 ms: <path>" under Denied) and the same file, program or destination across runs. The **Act on this** panel (see "Making a rule from a line") is not shown on run_start, run_end, gap, limit and answer lines. |
 | `/runs/<id>/least-privilege` | On an enforced run, the smallest change to its contract: the entries granted but never used (`tego drift`), to remove, and the deny and ask entries, always kept; `tego learn`'s from-scratch proposal (which keeps none of them) is folded below. On a watched run, the `tego learn` proposal. On a run whose verdict is a leak (secrets read next to a send that got through), a red notice tops the tab, and the proposal, on the page and in Download contract, never allows where the secrets went: each such `net.allow` address is a `# NOT allowed: "tcp://...": first reached next to a secret read, so secrets may have gone there` comment, a list left empty reads `allow: []`, and a `# WARNING` line opens the file. A line that names its host and holds its address is matched by the address, for every address the name reached. A destination recorded only by host name cannot be matched to an address entry; the notice then says the proposal may still allow it. |
 | `/logs` | Lines across every run, newest first. Filters (plain GET form): run (the newest 50 runs and the one selected; older runs through the Run facet), agent, kind, verdict, free text, and "hide system lookups". The free text (`q`, which the topbar search and the line page's "All in Logs" links send) is a literal substring, never parsed. A **query** (`where`, the Query box) narrows further in the query language: `verdict:refused kind:exec host:chatgpt.com path:~/.ssh rule:fs.deny_read* pid:4242 run:<id> agent:<name> source:kernel since:15m until:2026-10-27T01:00`, plain words and "quoted phrases" as text, `-` in front to leave a term out (kind, verdict, rule, host, run, agent and words), the same key twice for either value; `path:` is a file or folder and what is in it, by whole names (`path:/a/b` holds `/a/b/c`, not `/a/bc`; ending in `/`, only what is in it); a key it does not know stays a word, and a term it cannot read is left out and named above the chips. Each term is a chip with ×. Beside the rows, **facets** count the matched lines by verdict, kind, host, rule, run and program (top 10 each, "and N more"): a value adds its term (on the query already, it removes it) and its − leaves it out; each count is what the search plus that value matches, and the verdict and run counts each add up to the header's total (the Kind counts also count, under Refused lines, the refusal notes `kind:refused` lists, and the Program counts leave out lines whose program is unknown). `kind:refused` lists the refused lines, the refusal notes (the kind=refused line written beside each refused action) included, as the Kind select's "Refusals" does. The Verdict facet calls a line with no verdict (a run's start and end, a note) "Recorded", as its row's chip does, and the Rule facet calls a rule seen only on watched runs (tier observe) "Watched only" ("Watched only · <rule>" for a rule other than unmatched), as their rows do, not the contract's words ("default deny"); a rule seen on watched and enforced runs alike is one value in the rule's words, which By rule splits. Time presets (5 min, 1 hour, 24 hours, Latest run, Any time) replace the time range. **CSV** (`/logs.csv`) downloads the matching lines in the page's words (Rule in words is the rule as the row words it: "Watched only, not enforced" on a watched run's observed line, "Blocked live at … by …" on a live block's refusal; paths in it are written in full), masked as on the page, with a cell that a spreadsheet would read as a formula prefixed by '; **Record (JSONL)** (`/logs.jsonl`) downloads the matching ledger lines byte for byte, not masked (your own ledger, secrets included, as the button says). For one run and no other narrowing it is that run's events file itself, the refusal notes included, so its chain checks; any other search leaves the refusal notes out (unless it asks for kind refused), and the button's title says so and that the download is then not a chain anything can check. Both are oldest first (`order=newest` for the page's order), behind the same checks as the page, and stop at 1,000,000 lines with a last note row. Paged by a cursor ("Older lines"). The header is one sentence: how many lines ("matching lines" when filtered) from how many runs, how many rows they fold into after identical refusals fold, how many a page shows, then the refused and asked counts. An ask line counts as asked (it carries no verdict of its own; it is the line that says Tego asked a person), so Logs and Approvals agree. Rows: What takes most of the width and wraps only after `/` and `:` or at a space, never inside a name (the file name in bold, the full path in the title, the reason in words under it with its code in a title); the Rule column (a path in the rule's words under the run's home reads ~/…, "Never read: ~/.ssh/", the key in its title, as in the run timeline; a watched run's observed line reads "Watched only, not enforced"); and the Line column, "<agent> #N", which opens the line page. An exec line whose argv the ledger moved to a blob shows the command from the blob (see "Read model"). The text search also looks in an ask's or an answer's target and its ask id. Each refusal counts once: the refused action line is shown and counted, its kind=refused mirror is not (the Kind filter "Refusals" lists the mirrors themselves). The Overview's Blocked tile is the number this page shows for `?verdict=refused`. A **Process** column names the program the line's process was running and its pid (read from the run's exec lines, see "Read model"; "pid N" alone when no exec line names its program); the program narrows the search to `prog:<name>` and the pid to `pid:<n>`, and a **Program** facet counts them. **Lines / By process / By target / By rule** (`group=`) shows the matched lines gathered: a process is a pid and the program it ran in one run, a target or a rule gathers across runs; By rule keeps the lines that name a rule it did not decide (verdict observed, as every action of a watched run) apart from the lines it decided, as "Watched only · <rule>" ("Watched only" for unmatched) when they are all of watched runs and "Observed · <rule>" otherwise; each group has its lines, its refused lines, its first and last time and its newest line, most lines first (the 200 with the most), and its count opens its lines (a target opens a literal search for it, so it can match a longer target too; a rule opens `rule:<key>` in place of any rule the query asks for (one it leaves out stays), with `verdict:observed` for the lines it only names, and with `-verdict:observed` for the lines it decided when the rule's lines are in two groups). **Views**: Refused only, Refused connections, Secret files, Commands and Asks are links; "Save this view" keeps the page's address under a name in this browser only (localStorage), so a view is its link. With JavaScript (static/logs.js) the page also: follows new lines itself, putting them at the top while you are there, or, lower down, in an "N new rows" pill that brings them in and takes you to the top, where the next lines come in on their own (more than a page of them loads the newest page instead), with a refusal that folds into a shown row moving that row up with its whole count (`GET /logs/rows?<search>&after=<cursor>`); loads older lines in place under the rows, on its own as the Older lines link scrolls into view for up to 10 pages, then on a click (`&before=<cursor>`); opens a row in place (its chevron, a click on the row, or Enter) with the line in a sentence, when, the process and what started it, the verdict, rule (a watched run's observed line "Watched only · <rule>", or "Watched only" for unmatched) and reason, the question it belongs to, its place in the ledger and every other field in words as the line page words them, masked as rows are, with "Open line N" and "Copy the line (JSON)" (exactly as written, secrets included, as its title says; `GET /logs/line?run=<id>&seq=<n>`, built on the line page's `ledgerview.Explain`); and takes `j`/`k` to move through the rows, Enter to open one here, Escape to close it, `o` to open its line page and `/` to go to the query. Without JavaScript the page is the same GET form, links and Older lines page. |
 | `/compare?a=<run>&b=<run>` | Two runs side by side: two stat blocks read from each run's verdict (red "A · Watched, 2 secrets left the machine, id_rsa, token → 127.0.0.1:9821"; green "B · Enforced, 0 left, 4 attempts stopped") with the one-line summary muted under them, each run's header (agent, observed or enforced, started by, rules version, chain), then one table of secret files, destinations, programs and approvals merged by target with each run's verdict in its own column ("Got through" in red, "Stopped" in green; a refused connection that was no send next to a secret, which the run's verdict does not count, reads "Refused" in grey, so a destination's green cells are the sends in the summary's count), each column head naming its run and mode, the attack first (a secret read next to a send, an off-list destination next to a secret, in either run). When each run sent to its own attacker address, those rows merge into one "Where the secrets went" row, each cell naming its run's address. DNS, system sockets and port-65535 probes are counted, not listed; routine rows and each run's background destinations sit behind "Show all"; the summary says what each run read and sent, then its verdict with the run's own count ("2 secrets left (id_rsa, token sent to …)", "Tego refused 4 attempts (2 secret reads and 2 sends to …)"), the number its banner and Runs chip give; each run head gives its refusals and, of them, the ones "against secrets". The Runs page has a two-run chooser, the Overview a link to the last watched run and the enforced run of the same program that started closest to it (else the newest enforced run), and every run page a Compare button that sets the run against the run of the other kind and the same program that started closest to it (`ledgerview.PairOf`, the same run its reference and the Overview name), else the newest run of the other kind (the watched run goes on the left); with no watched run in the ledger the chooser opens on the newest run against the one before it, never one run twice. A watched run's column is read against the enforced run's contract (see Highlights), so its own API is not marked as the attack nor counted as an off-list connection. With fewer than two runs the page says "Compare needs two runs" with the `tego watch` and `tego run` commands instead of the chooser. |
 | `/rules/new` | **New policy** (below): a project folder, a name and presets (or a finished run to start from), a preview of the rules in sentences with compile's verdict, then Create writes `<dir>/agent.yaml`. |
-| `/rules` | One run's **Rules in force** in plain sentences (below). `?run=<id>` picks the run (the run page's "Rules version → see the rules" opens its own), `?c=<ref>` a rules file by an opaque ref and shows its newest run; with neither, the newest run. |
+| `/rules` | One run's **Rules in force** in plain sentences (below). `?run=<id>` picks the run (the run page's "Rules version → see the rules" opens its own), `?c=<ref>` a rules file by an opaque ref (the rule service's, the one Change rules takes; an older link's 64-digit ref is redirected to it) and shows its newest run; with neither, the newest run. |
 | `/machine` | This machine: the highest protection level any run here used ("Up to Basic (Landlock)") or "Watched only so far"; each level with its tier number and the newest run that used it ("Basic · tier 1 · Landlock", then "Last: codex · 07:03", from the snapshot, no ledger read) or what it needs and the command to get it; `tego doctor` to check now; what the newest run's run_start recorded in words, the raw capability ids under a closed "Capability flags (for auditors)". |
 | `/approvals` | Pending asks (an ask line with no answer, in a live run), each a card: "Let codex read this file?", the path read against the run's home (`~/.config/telemetry/token`), how long ago it came and how long the agent waits ("asked 8 s ago · Codex gives up at about 30 s"; past 30 s "Codex has likely given up; Tego refuses it at 5 m", the run's `ask.timeout`), the agent's exact text, the request's line ("line #10", its id in the title), the rule that asked in words ("Your rules ask before any read under …"), **Allow once** and **Deny**, and under **More choices** Allow for this run and Deny for this run (`--always`: later requests for the same operation and target, until the run ends; the contract is not changed), a stand-in file for a held file open, and each answer's terminal twin (`tego approve|deny <run> <ask_id> [--always]`, `tego alternate … --file`). A held open under `fs.ask` asks to write. A held change of a name in an `fs.ask` scope (ADR 0047) says what it changes, with the recorded operation in the words' title: "Let codex delete this?" (unlink: a file, or an empty folder, which the record names the same way), "create a folder at this path?" (mkdir), "rename this?", "make a symbolic link at this path?" (symlink) and "make a hard link of this file?" (link). A rename, a link or a symbolic link shows both its names, each shortened as a path cell is, never cut where one ends: `./src/a.tmp → ./src/a` (a hard link's file, then its new name; a symbolic link's own path, then where it points, as written), in the banner, Waiting on you, Highlights and Answered recently too. Below: **Answered recently** (the people's newest answers: who, what, when; a request nobody answered in time is a neutral "Timed out", not "Denied"; Tego's automatic repeats of a "for this run" answer are left out) and **Never answered** (the open asks of runs that were lost; nothing holds them, so they are not waiting). |
 
@@ -202,7 +210,10 @@ fixed under the top bar over the content column, it takes no space, so its comin
 and while it is up the page holds as much room above its content and scrolls by it, so what it lies over can be scrolled
 into view. A page opened with an ask waiting opens the same way, and room the reader is looking at when the ask goes stays
 until they have scrolled past it; it fades in and out (no motion under reduced motion). It is not rendered on Approvals, nor on a run page that shows its
-own ask card, so it never covers a card's Allow once or Deny; at phone width it sits in the page. Overview's Running
+own ask card, so it never covers a card's Allow once or Deny; at phone width it sits in the page. An error page (an
+address with no page, a run or line that is not in the ledger) shows the banner, the count and the top bar's Live
+word too, as they were when it was answered: it does not follow the live state (a reload shows it again), and a
+ledger it cannot read leaves it "Nothing running" with no banner. Overview's Running
 now and Waiting on you keep the height of one row each when empty, so a run starting and its ask arriving move nothing
 below them. Each ask says how long it is held: "asked 8 s ago · Codex gives up at about 30 s" on a Codex run
 (run_start's harness), "some agents give up after about 30 s" on any other; once 30 s have passed, "Codex has likely
@@ -221,7 +232,13 @@ under a random id for a few minutes: "Denied: read of ~/.config/telemetry/token"
 with a contract file adds "Make it permanent: Never allow", a link to the ask's line page, when the dashboard can change
 contracts (it has the rule service, as `tego-control serve` does; without it the line page says policy editing is off,
 so no link is offered). A change that was not made
-says why in plain words ("Not done: the run is not running, so nothing holds this request any more."). A reload
+says why in plain words ("Not done: the run is not running, so nothing holds this request any more."). Block now and
+Remove refuse what `tego block` and `tego unblock` refuse, in the same words (`liveblock.CheckBlock`): a Remove posted
+from a page left open across the run's end says "Not done: the run is not running: its live blocks ended with it, so
+there is nothing to remove." and leaves the overlay the run ended with as it was. A block on a program whose file has
+other names here, as a multi-call program's applets do (uutils' coreutils, busybox), adds that the block refuses each
+of them ("It matches the program's file, which has 115 names here …"), since the launcher matches the file's identity,
+as `tego block` notes too. A reload
 posts nothing, no ledger line is shown raw (the line page has it), and every form works without JavaScript. Stop waits
 2 s at most: a run still ending says "Stopping …", and its page shows Stopping until `run_end`. The line sits in the
 layout's waiting-ask banner region (`r-banner`, below), so the page that shows it is live like any other; a region
@@ -244,7 +261,7 @@ reopens the stream with backoff (2 s doubling to 30 s); when the dashboard canno
 `lost` event and ends. The topbar's Live word says "reconnecting" while neither answers. Both go through the same Host and session-cookie checks as every page; the
 stream lifts the server's read and write timeouts for its own connection only and ends at shutdown. `sig` changes
 when the set of waiting asks does; `rev` is the read model's revision (`Snapshot.Rev`, below), which moves when any
-run writes a line, a run starts, ends or leaves the ledger, or an ask comes or goes.
+run writes a line, a run starts, ends, is found lost (its launcher gone) or leaves the ledger, or an ask comes or goes.
 
 On a change the page fetches its own address again with the header `X-Tego-Regions: <region>:<hash>,…` and gets back
 only the live regions whose HTML changed (`web/regions.go`), rendered server-side by the page's own templates (the same
@@ -304,12 +321,23 @@ whole line read: an unchanged file is not opened, a grown one costs only its new
 was replaced is read again from the start. Each change makes a new read-only version of the run that every request
 shares; the timeline, the refusal groups, the Logs fold, the Logs text index and the "Similar" counts are built once
 per version. A kind=refused line that mirrors a refused action is marked as it is read (`ledgerview/pair.go`: by the
-envelope it copies, among the last 4 lines, else the line just before it), and every count and list takes the one
+envelope it copies, among the last 4 lines, else the line just before it; the rule `tego measure`, `tego drift` and
+the receipt pair by too, `internal/check/internal/mirror`), and every count and list takes the one
 rule `Event.Refusal` from that mark, so a run read as it grows counts what one read of the whole file counts. Logs folds each run where it lies and builds only the rows of the page shown. Chain verdicts of ended
-runs are kept (keyed by the events file and the anchor's identity), so the overview no longer re-hashes its newest 20
-runs on each load; after 10 minutes the kept verdict is still shown while the same run is checked again in the
-background, and a different verdict redraws open pages. A changed events file or anchor is checked before the page
-answers. The line details page reads its line from the offset the cache recorded,
+runs are kept by the events file and by the anchor's answer for the run (what `tego events --verify` reads for it in
+chain.log), so the overview no longer re-hashes its newest 20 runs on each load: a look costs one lstat of chain.log
+while it is unchanged, and one read of it after any change and at least every 10 minutes, shared by every run and
+every check (no check reads chain.log for itself). That read holds no lock: a look that needs it waits for the one in
+progress, and a look that does not need it waits for nothing.
+Another run's end, which appends its line, leaves the kept verdicts standing; a changed events file, or any change to
+chain.log that its stamps (device, inode, size, mtime, ctime) show and that changes the run's answer (its line
+rewritten in place, a second head for it, a malformed line anywhere, its line gone), is checked before the page
+answers. A write the stamps do not show (one within a tick of a coarse clock, on a kernel before 6.13, or one through a
+shared mapping's already dirty page) is seen within 10 minutes. In chain.log, the first look once the dashboard's
+reading of it is 10 minutes old reads it again and checks a changed answer before the page answers. In the events file,
+once a kept verdict is 10 minutes old it is still shown while the same run is checked again in the background, the
+events file read from disk. A check that finds another verdict than the one kept, at a look or in the background,
+redraws open pages, though an edit of chain.log writes no ledger line. The line details page reads its line from the offset the cache recorded,
 and so does its Act on this panel: the rule service reads run_start and that one line, after checking that the file is
 the one the cache read (device, inode, no shorter) and that the line there has the seq asked for, and falls back to
 reading the run from its start otherwise; a confirmed change still reads the line from the start. The run page's
@@ -454,8 +482,9 @@ tokens in `static/tokens.css`, so no page's words or markup changed.
 - **Light live pages.** `static/live.js` follows the live state and a live timeline fetches only its new rows (see
   Live updates); no page reloads whole: only the changed regions
   are swapped in place.
-- **Compact rows.** Timeline and Logs rows carry *Block this* (on a live run's allowed program or destination) and
-  *Make a rule* beside the verdict (the run page's Block now panel shows its terminal twin, `tego block <run> <kind> <value>`); Logs cells wrap; the Unused permissions tab says "unknown here" instead of a false "Not in the
+- **Compact rows.** Timeline and Logs rows carry *Block this* (on a live run's allowed program, destination or file:
+  a file row fills in kind File or folder with its absolute path, a rename's or a link's first name as the line holds
+  it) and *Make a rule* beside the verdict (the run page's Block now panel shows its terminal twin, `tego block <run> <kind> <value>`, which `static/twin.js` fills in with the form's kind, value and time limit as they are typed or picked, each word quoted as `internal/shellword` quotes one and a value that starts with `-` after `--`, and leaves as placeholders for a path that is not absolute or a value holding a control or an invisible character); Logs cells wrap; the Unused permissions tab says "unknown here" instead of a false "Not in the
   contract" when the contract cannot be recompiled; when the copy does not compile at all (its folder is gone) it
   counts the entries the copy's text declares and says so in one line.
 - **Compare.** `/compare?a=&b=` puts an observed run beside an enforced one.
@@ -479,13 +508,21 @@ tokens in `static/tokens.css`, so no page's words or markup changed.
 - **Stopped.** A run ended by `tego stop` or the dashboard's Stop says Stopped (from `run_end` reason `stopped`; the
   run page adds who asked when the line names a principal). Other ends say what happened, not the code: Exit N,
   Ended by SIGHUP, Out of memory, Too many processes, Hit a limit, Could not start, Orphaned, Tego error; Lost is a
-  run with no end line that Tego does not list as running (its badge explains).
+  run with no end line whose launcher is gone (its badge explains): the live index (`<ledger_root>/.live`) does not
+  list it, or it does and no process holds the run's lock any more, as when the launcher was killed or crashed before
+  writing run_end. A listed run is running only while its lock is held, as `tego status` reads it: the dashboard probes
+  the lock as the ledger's readers do (`ledger.LockHeld`, `ledgerview/livelock.go`), never waiting and taking nothing
+  a launcher holds, and keeps each answer 2 s, so an open page shows a launcher's death as Lost within about 3 s (the
+  live state is checked every second).
 - **Keyboard and screen readers.** The main journey (Overview, a run, a line's "Act on this", Approvals Allow and
-  Deny) is checked by `web/a11y_test.go`: the skip link is the first tab stop and leads to `#main`; every link,
-  button and field has a name (a bare count or "Run" link carries an `aria-label`); no positive `tabindex`, no
-  autofocus; the approvals banner is `role="alert"` with `aria-live="assertive"` and is the first thing in the page's
-  tab order; Allow comes before Deny; a visible focus ring (`--c-focus`, 3:1 or more on every surface, light and
-  dark) is never removed. `web/journey_chrome_test.go` walks it in headless Chrome with Tab and Enter alone, at 390,
+  Deny) is checked by `web/a11y_test.go`, with what "Act on this" adds on a live run: "Also apply now" (a box that
+  can be ticked and one that cannot) and the Saved panel's Undo with its acknowledgement and "Also lift". The skip
+  link is the first tab stop and leads to `#main`; every link, button and field has a name (a bare count or "Run"
+  link carries an `aria-label`); a group of boxes is a `<fieldset>` whose first child is the `<legend>` naming it; no
+  positive `tabindex`, no autofocus; the approvals banner is `role="alert"` with `aria-live="assertive"` and is the
+  first thing in the page's tab order; Allow comes before Deny, and each of those boxes before the button that sends
+  it; a visible focus ring (`--c-focus`, 3:1 or more on every surface, light and dark) is never removed.
+  `web/journey_chrome_test.go` walks it in headless Chrome with Tab and Enter alone, at 390,
   768 and 1440 px wide, light and dark: the Overview's skip link and the nav to Approvals, Allow once there, a run's
   Stop run and its confirm, Deny on the run's waiting request and its Receipt tab, a line's page and a Logs row
   opened in place. Every stop must come after the one before it, sit in the window with its focus ring and not lie
@@ -503,7 +540,9 @@ tokens in `static/tokens.css`, so no page's words or markup changed.
 
 `/rules` says what one run's agent may read, change, run and reach, at the run's tier, as `rulesview.InForce` builds
 it from the run's contract compiled as `tego` compiled it. A chooser picks a rules file a run of this ledger recorded
-(named by an opaque ref, never a path) and one of its runs. Each group (Can read, Can change, Asks you first, Never
+(named by the rule service's opaque ref, never a path, so a file recorded through a linked folder and through the
+folder itself is one entry) and one of its runs: its newest 40, and the run shown when that is older (one reached by
+`?run=`). Each group (Can read, Can change, Asks you first, Never
 reads, Never changes, Programs, Network, Settings it gets, Limits, Always on) is one table: the rule's sentence, its
 effect (an allowed rule's chip is neutral, not green), how it is enforced when that is an exception (best effort in
 amber, held by tego, not enforced; a rule the operating system enforces in full leaves the cell empty, as the column
@@ -570,9 +609,18 @@ laid in, no enforcement claim: the run's tier decides that), what `tego compile 
 folders Create makes and the YAML (`env.set` values hidden). The folder must exist, be yours, not be writable by every
 user unless sticky, and not be or sit inside the ledger root or `~/.tego`; one that already holds `agent.yaml` is
 refused, never overwritten. Create (a form POST with the session token, carrying the preview's sha256) composes again,
-refuses if the text changed, makes the folders, compiles again with them in place, and writes `<dir>/agent.yaml`
-(mode 0644) through `internal/rulefile.Create`: the folder pinned as a change pins it, the file moved into place with
-`renameat2 RENAME_NOREPLACE`, and one `op: create` journal line. The page then shows `cd <dir> && tego run agent.yaml`
+refuses if the text changed, makes the folders beneath the checked folder opened once with no symbolic link followed
+(`mkdirat`, `openat2 RESOLVE_BENEATH|RESOLVE_NO_SYMLINKS`: a link on the way, there before or swapped in since the
+check, refuses Create and is named, so no folder lands outside the project through a link; a real folder renamed into
+the checked path after the check is not noticed, since Create opens the path again rather than the check's own
+descriptor), compiles again with them in place, and writes `<dir>/agent.yaml` (mode 0644) through
+`internal/rulefile.Create`: the folder pinned as a change pins it, the file moved into place with `renameat2
+RENAME_NOREPLACE`, and one `op: create` journal line. One folder may be made outside the project: for a `claude`
+command whose writes are restricted, Claude Code's socket folder `/run/user/<uid>/cc-socks/` when it is missing,
+beneath its nearest existing parent, whose path is resolved once with its links followed. When anything after the
+folders fails, Create removes the ones it made, only while empty and the same way, never through a link
+(`setup.Remove`). The page then shows
+`cd <dir> && tego run agent.yaml`
 (the contract holds the command, so the line never hands the typed text to the shell) and links to the new file on the Rules page, whose chooser lists it as "not run yet" with its rules,
 compile verdict and start line until its first run. `.gitignore` is not touched: the page names the lines to add.
 
@@ -581,10 +629,12 @@ compile verdict and start line until its first run. `.gitignore` is not touched:
 `/rules/change?c=<ref>` changes one rules file a run of this ledger ran, one entry at a time. It has one panel per
 list a change may touch (Can change, Asks you before it changes, Asks you before it reads, Can never read, Can never
 change, Programs it may run, Can connect to, Asks you before it connects to), each listing the entries the file
-spells with Remove (and Never allow on an ask entry) and an Add field with a hint for that kind; limits, the command,
-`env:`, `extends:` and the tier stay terminal edits. Every button is a GET to the preview, which writes nothing: the
-change as Before and After sentences with one Narrows, Widens or Mixed chip in the panel head (a Mixed change marks
-each row too), "Applies from the next run of this rules file" followed, while an "Also apply now" box is ticked, by
+spells with Remove (and Never allow on an ask entry) and an Add field with a hint for that kind; an entry the file
+spells more than once is listed each time, and Remove or Never allow on it takes every copy, since a copy left would
+keep the rule (the preview's "Why" says so); limits, the command, `env:`, `extends:` and the tier stay terminal edits.
+Every button is a GET to the preview, which writes nothing: the change as Before and After sentences with one
+Narrows, Widens or Mixed chip in the panel head (a Mixed change marks each row too), "Applies from the next run of
+this rules file" followed, while an "Also apply now" box is ticked, by
 "in force on r-… within about a second" (once none is ticked, "Runs going on now keep the rules they started with"),
 for a narrowing a **Running now** box with "Also apply now to r-…" per running run of that file (ticked; each change
 on that run as **Applies now** with the live block it places, **Recorded only (watched run)** on a `tego watch` run,
@@ -634,17 +684,30 @@ failed and how to fix it. The folder is pinned once, so a folder swapped for a s
 write takes a per-contract lock, lands only when the file still holds the text the change was made from ("changed
 since it was read" otherwise), keeps `<file>.bak` and replaces the file in one rename. Each change is a line in
 `<ledger_root>/.rule-changes/journal.jsonl` (format in `internal/rulefile/doc.go`), with the old and new text kept
-under `blobs/`, so a change can be reverted while the file still holds it and undone any number of steps back. Moving
-the ledger root moves the journal with it. The Change rules page shows the history and offers Undo, and the
-event page offers Undo right after a change it saved (below); no command lists the history yet.
+under `blobs/`, so a change can be reverted while the file still holds it and undone step by step back through every
+change the journal holds. Retention prunes the journal with the runs (`tego gc`, and a `tego run` start once per
+`gc_interval`), and a line goes only when nothing on these pages can still need it: a line older than `retention`
+stays while a run still in the ledger root started before it (that run's "Changed since this run started" and Apply
+now list it) or names such a run (a live block it placed, which an Undo of another change must not lift while this
+one stands), while a revert left undid it, and, while the rules file is there, while it is among the newest 20
+changes still standing and everything after them. The old texts no line names go with it, so History and Undo reach
+back at least that far. Moving the ledger root moves the journal with it. The Change rules page shows the history and
+offers Undo, and the event page offers Undo right after a change it saved (below); no command lists the history yet. A `tego rule` change is journaled as the page journals the same change (`via: cli`, with its sentences and
+direction), so the history says it in words and undoing it goes the other way: undoing a block widens, and is
+acknowledged.
 
 Behind the pages, the rule service (`internal/control/rules`) compiles every change as tego compiles a run
 of that contract: the machine's profiles (`internal/profilesrc`, the engine's own source, so a contract that
 `extends:` a profile can be changed), the tier the run ran at (an `auto` contract is not judged at this machine's
 highest tier), the run's command grant, your home, chain anchor and runtime folders, and the folders of the programs
-the run started when the dashboard's own PATH lacks them (a dashboard started as a service). It compiles offline: a
-host name is resolved when the next run starts. `tego rule` compiles through the same code (`internal/nextrun`) in
-the same run context, so the two give one verdict on one change. A free edit that pins another tier than the run's is
+the run started when the dashboard's own PATH lacks them (a dashboard started as a service). It compiles offline,
+with no DNS: a host name is resolved when the next run starts. The host names a change adds to `net.allow` or
+`net.ask` (the first eight) are then looked up once, all at once and for at most 2 seconds, and the preview (Check
+the change, the YAML editor's Check, the event page's step 3) names each that does not resolve here with why ("no
+such host", or no answer in time): a warning, never a refusal, since the next run, unless started with `--offline`,
+does not start while a host of its contract fails to resolve. Saving does not look them up again. `tego rule`
+compiles through the same code (`internal/nextrun`) in the same run context, so the two give one verdict on one
+change, and prints the same host warning on stderr. A free edit that pins another tier than the run's is
 compiled at that tier, as tego would. A contract whose folder symlink now points elsewhere than the runs here ran is
 not written. The service can change only a contract a run under this ledger root
 ran, or one "New policy" created here (its journal line names it) that no run ran yet (`Contracts`, each named by an opaque ref, never a path from the browser), refuses a confirm whose base is not
@@ -685,8 +748,9 @@ live blocks ("Also apply now", or Apply now later) that still hold on runs of th
 every Undo form (the line page's Saved panel, the Saved page, each History row) carries a ticked box, **Also lift the
 live block it placed** with the block and its run. With the box the rule service lifts exactly those blocks
 (`runact.Block` with add false, as the run page's Remove does) and journals each on the undo with `"lift": true`; a
-block another change still standing also placed on that run, a block removed by hand, and a block on a run that ended
-are never lifted. Lifting lets the running run do more at once, so it wants the Undo's acknowledgement whatever the
+block another change still standing also placed on that run (however old that change: retention keeps every journal
+line that names a run still in the ledger root), a block removed by hand, and a block on a run that ended are never
+lifted. Lifting lets the running run do more at once, so it wants the Undo's acknowledgement whatever the
 Undo's direction. The answer says what happened ("The live block it placed is being lifted: within about a second its
 run may do that again", or which block stays and why). Measured twice on an isolated run (a stand-in agent running `cat`
 once a second): the launcher's "block on cat removed" line came 0.20 s and 0.46 s after the Undo's journal line, and

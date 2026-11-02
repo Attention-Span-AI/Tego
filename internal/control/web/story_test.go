@@ -71,12 +71,7 @@ func storyFixture(t *testing.T) string {
 	write(askRun, "",
 		line(askRun, "asker", 0, at(200), "run_start", `"tier":"landlock","command":["sh"],"cwd":"/d/ask"`),
 		line(askRun, "asker", 1, at(290), "ask", `"ask_id":"q-5","ask_rule":"fs.ask_read[/d/ask/confidential/]","hold":"open","op":"read","target":"/d/ask/confidential/plan.md"`))
-	if err := os.MkdirAll(filepath.Join(root, ".live"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".live", askRun), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, root, askRun)
 	return root
 }
 

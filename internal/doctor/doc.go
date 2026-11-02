@@ -51,7 +51,7 @@
 // internal/platform/proc (every plane-probe process start), internal/platform/startphase (the run-probe phase
 // timings), internal/platform/sys, internal/policy/decide (the known answers' plane rows),
 // internal/runtime/cgroup, internal/runtime/enforce (Buildable and Select), internal/runtime/enforce/cgroup
-// (UnixConnectSupported, and the known answers' ProbeRows),
-// pkg/spec/{agent,backend,config,identity}.
+// (UnixConnectSupported, and the known answers' ProbeRows), internal/shellword (the binary's path in the
+// `sudo <path> doctor` fix line), pkg/spec/{agent,backend,config,identity}.
 // Must not import: internal/check.
 package doctor

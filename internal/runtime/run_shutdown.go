@@ -250,9 +250,10 @@ func (r *runner) awaitEmpty(ctx context.Context, killed bool) {
 
 // shutdown is §4.1 step 13 in exactly that order, and every step runs however the previous one went
 // (R8, R18): cancel, stop the sources and join the workers while the queue is still read
-// (pumpWhileStopping), release any producer still waiting for room, drain the queue, close the ledger with
-// run_end, detach and close the backend, remove the cgroup, release the child's descriptors. A failure in
-// any step is logged, never returned: the alternative leaves a cgroup, a pin or a lock behind.
+// (pumpWhileStopping), release any producer still waiting for room, drain the queue, restore the modes of tego's own
+// files (restoreRunState), close the ledger with run_end, detach and close the backend, remove the cgroup, release the
+// child's descriptors. A failure in any step is logged, never returned: the alternative leaves a cgroup, a pin or a
+// lock behind.
 func (r *runner) shutdown(ctx context.Context) Result {
 	// The run's signal subscription is released last, not when the signal goroutine returns: the CLI
 	// lets a second SIGINT or SIGTERM take its default action (cli.notifyContext), and with no handler
@@ -316,6 +317,9 @@ func (r *runner) shutdown(ctx context.Context) Result {
 	reason, code, sig, escalated := r.ending()
 	var recordErr error
 	if r.writer != nil {
+		// The modes Close and the next run need, which the agent could take from tego's own files (ownstate.go); no
+		// process of the run is left to take them again.
+		r.restoreRunState()
 		network := r.runNetworkCounters()
 		r.termMu.Lock()
 		detail := r.detail

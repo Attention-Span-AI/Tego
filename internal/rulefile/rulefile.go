@@ -26,9 +26,12 @@ type Found struct {
 	Mode                  os.FileMode
 	// Guard is where the contract may not be and which ledger root journals a write (the one FindIn was given).
 	Guard Guard
-	// Via and Summary are what Write records in the journal: the writer ("cli", "dashboard"; "" is read from the
-	// program's name) and the change in words.
+	// Via, Summary, Sentences and Direction are what Write records in the journal: the writer ("cli", "dashboard"; ""
+	// is read from the program's name), the change in words, its rules' sentences (SentenceLine) and its direction
+	// (narrows, widens or mixed), as the dashboard journals the same change.
 	Via, Summary string
+	Sentences    []string
+	Direction    string
 }
 
 // ErrNoContract is FindIn's error for a run whose record names no contract file: a tego watch run, a contract tego
@@ -91,9 +94,11 @@ func (f *Found) Base() string { return Sum(f.Text) }
 
 // Write replaces f.Contract with text through Replace: the file must still hold f.Text (else nothing is written), the
 // old bytes go to <file>.bak, the new file (same mode) is renamed over the old one, so a reader sees one or the
-// other, and the change is journaled under f.Guard's ledger root with f.Via, f.Summary and the run's line.
+// other, and the change is journaled under f.Guard's ledger root with f.Via, f.Summary, f.Sentences, f.Direction and
+// the run's line.
 func (f *Found) Write(text []byte) (bak string, err error) {
-	e, err := f.WriteChange(context.Background(), text, Change{Via: f.Via, Summary: f.Summary})
+	e, err := f.WriteChange(context.Background(), text, Change{Via: f.Via, Summary: f.Summary, Sentences: f.Sentences,
+		Direction: f.Direction})
 	if e != nil {
 		bak = e.Bak
 	}

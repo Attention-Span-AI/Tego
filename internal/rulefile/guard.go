@@ -75,8 +75,8 @@ func Sum(b []byte) string {
 }
 
 // Test seams, nil or the real call in a product build. geteuid and getegid let a test play another user; hook runs
-// at each named step of a guarded open and write ("resolved", "read", "bak", "temp", "rename", "journal") and a
-// non-nil error from it fails that step, as a disk would.
+// at each named step of a guarded open and write ("resolved", "read", "bak", "temp", "rename", "journal", and "lock"
+// between a lock file's open and its flock) and a non-nil error from it fails that step, as a disk would.
 var (
 	geteuid = os.Geteuid
 	getegid = os.Getegid

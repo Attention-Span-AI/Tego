@@ -14,7 +14,7 @@
 // Load is read-only end to end: it opens exactly the layer files, closes them before returning,
 // reads no $HOME, never opens the file privileged_binary names, and returns a *Machine that is
 // immutable for the process's lifetime. The trust check has one implementation shared by the
-// abort (tego run) and warn-and-skip (compile, doctor) call sites through TrustMode.
+// abort (tego run, tego gc) and warn-and-skip (compile, doctor) call sites through TrustMode.
 //
 // Imports: standard library, gopkg.in/yaml.v3.
 // Must not import: any other pkg/spec/* package (tier and capture names are kept as strings and

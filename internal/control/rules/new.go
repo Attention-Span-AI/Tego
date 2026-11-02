@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -32,9 +33,11 @@ import (
 // (`tego learn`), compiles it as `tego compile --offline` would in the project folder, and writes <dir>/agent.yaml
 // with rulefile.Create: never over a file, through the same guards and journal a change goes through. The project
 // folder is the one value a request names as a path, so it is checked before anything reads under it: an existing
-// directory, this user's, not writable by others unless sticky, and not under the ledger root or tego's home. The new
-// contract joins the bounded set Contracts lists (its journal line names it), so the Rules page offers it and a later
-// change can edit it before any run of it.
+// directory, this user's, not writable by others unless sticky, and not under the ledger root or tego's home. The
+// folders the contract needs are made beneath the checked folder opened with no symlink followed (setup.Create), so a
+// link swapped into its path after the check is refused, never followed out of it. The new contract joins the
+// bounded set Contracts lists (its journal line names it), so the Rules page offers it and a later change can edit it
+// before any run of it.
 
 // NewFile is the file "Set up a new agent" writes in the project folder: what `tego init` writes and `tego run`
 // finds.
@@ -146,8 +149,10 @@ func (s *Service) PlanNew(ctx context.Context, req NewReq) (*NewPlan, error) {
 
 // CreateNew writes the contract PlanNew shows for req into its project folder, when the plan has no problem, compiles,
 // and still is the text base names (ErrStale otherwise: the folder's markers or a preset changed what is composed).
-// It makes the plan's folders, compiles again with them in place (setup.Apply), writes agent.yaml with
-// rulefile.Create (ErrRefused when a file is there) and removes the folders it made when anything after them fails.
+// It makes the plan's folders beneath the checked project folder, refusing a symbolic link on the way (setup.Create),
+// compiles again with them in place (setup.Apply), writes agent.yaml with rulefile.Create (ErrRefused when a file is
+// there) and removes the folders it made when anything after them fails (setup.Remove: only while empty, never
+// through a link).
 // A write that lands but is not journaled returns the Created and an error wrapping rulefile.ErrJournal.
 func (s *Service) CreateNew(ctx context.Context, req NewReq, base string) (*Created, error) {
 	p, res, env := s.planNew(ctx, req)
@@ -177,7 +182,7 @@ func (s *Service) CreateNew(ctx context.Context, req NewReq, base string) (*Crea
 		}
 	}
 	if err != nil {
-		removeMade(p.Dir, made)
+		setup.Remove(made, p.Dir)
 		return nil, fmt.Errorf("%w: %v", ErrRefused, err)
 	}
 	summary := "set up agent " + p.Name
@@ -189,7 +194,7 @@ func (s *Service) CreateNew(ctx context.Context, req NewReq, base string) (*Crea
 	}
 	e, err := cr.Create(ctx, p.File, p.Text, rulefile.Change{Via: Via, Run: p.FromRun, Summary: summary})
 	if err != nil && !errors.Is(err, rulefile.ErrJournal) {
-		removeMade(p.Dir, made)
+		setup.Remove(made, p.Dir)
 		return nil, fmt.Errorf("%w: %v", ErrRefused, err)
 	}
 	out := &Created{Path: p.File, Dir: p.Dir, Name: p.Name, Command: p.Command, Made: made, Ignore: p.Ignore}
@@ -531,21 +536,22 @@ func builtInSecretsOn(v inforce.View) bool {
 	return false
 }
 
-// builtInSecretRules are the built-in secret list (agent.BuiltInDenyRead and the .env scan) as Never reads rows. No
-// contract line writes them, so inforce lists them only as one Always on row at the foot of the page; no-secrets'
-// file half is exactly this list, and a draft that names it should show it where a reader looks for refusals.
+// builtInSecretRules are the built-in secret list (agent.BuiltInDenyRead and the .env scan) as Never reads rows, one
+// per family the list's own table gives each row (agent.BuiltInDenyReadFamily). No contract line writes them, so
+// inforce lists them only as one Always on row at the foot of the page; no-secrets' file half is exactly this list,
+// and a draft that names it should show it where a reader looks for refusals.
 func builtInSecretRules() []NewRule {
 	var ssh, logins, browsers []string
 	for _, p := range agent.BuiltInDenyRead() {
-		switch low := strings.ToLower(p); {
-		case p == ".ssh":
+		// Every row has one of these families (TestBuiltInDenyReadFamilies), and a new family is a case to add here
+		// (the exhaustive linter, TestBuiltInSecretRulesFollowFamilies).
+		switch agent.BuiltInDenyReadFamily(p) {
+		case agent.SecretSSHKeys:
 			ssh = append(ssh, "~/"+p)
-		case strings.Contains(low, "mozilla") || strings.Contains(low, "chrom") || strings.Contains(low, "brave") ||
-			strings.Contains(low, "edge") || strings.Contains(low, "vivaldi") || strings.Contains(low, "opera") ||
-			strings.Contains(low, "firefox"):
-			browsers = append(browsers, p)
-		default:
+		case agent.SecretLogins:
 			logins = append(logins, "~/"+p)
+		case agent.SecretBrowsers:
+			browsers = append(browsers, p)
 		}
 	}
 	var out []NewRule
@@ -563,7 +569,10 @@ func builtInSecretRules() []NewRule {
 
 // projectDir checks the typed project folder and returns it with its symlinks resolved: an absolute path (or ~/ for
 // the invoking user's home), an existing directory, this user's, not writable by others unless sticky, and not the
-// ledger root, tego's home or under either. Each refusal is a sentence with its fix.
+// ledger root, tego's home or under either. Each refusal is a sentence with its fix. setup.Create opens the path it
+// returns again with no symlink followed, so a link swapped into that path after this check is refused, never
+// followed out of the project; a real folder renamed into the path after the check is used, since neither these
+// checks nor the descriptor that made them are carried to Create.
 func (s *Service) projectDir(typed string) (dir, problem string) {
 	typed = strings.TrimSpace(typed)
 	switch {
@@ -664,28 +673,100 @@ func newName(typed, dir string) (name, problem string) {
 	return typed, ""
 }
 
-// renamed is text with its top-level name: line set to name, quoted: an agent id may be all digits or a word YAML
-// reads as a bool or a null, and name is a string (R3), as tego init writes it.
+// renamed is text with its top-level name set to name, double-quoted: an agent id may be all digits or a word YAML
+// reads as a bool or a null, and name is a string (R3), as tego init writes it. The key is found in the YAML tree, not
+// by a line's text, so a name: in a comment or inside another value is never the one set. Its old value alone is
+// replaced in the text where the result reads as text did with only the name changed, so the rest of its line (a
+// comment) and every other byte stay; otherwise (a name over several lines) the tree is written out with the name set,
+// comments and order kept. Text that is not one YAML mapping, or has no top-level name, comes back as it was: compile
+// says what is wrong with it.
 func renamed(text []byte, name string) []byte {
-	lines := bytes.SplitAfter(text, []byte("\n"))
-	for i, l := range lines {
-		if bytes.HasPrefix(l, []byte("name:")) {
-			lines[i] = []byte("name: " + strconv.Quote(name) + "\n")
-			return bytes.Join(lines, nil)
+	var doc yaml.Node
+	if yaml.Unmarshal(text, &doc) != nil || len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
+		return text
+	}
+	var v *yaml.Node
+	for top, i := doc.Content[0], 0; i+1 < len(top.Content); i += 2 {
+		if k := top.Content[i]; k.Kind == yaml.ScalarNode && k.Value == "name" {
+			v = top.Content[i+1]
+			break
 		}
 	}
-	return text
+	if v == nil {
+		return text
+	}
+	lines := strings.SplitAfter(string(text), "\n")
+	if from, to, ok := scalarSpan(lines, v); ok {
+		l := lines[v.Line-1]
+		lines[v.Line-1] = l[:from] + strconv.Quote(name) + l[to:]
+		if out := []byte(strings.Join(lines, "")); onlyRenamed(text, out, name) {
+			return out
+		}
+	}
+	*v = yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Style: yaml.DoubleQuotedStyle, Value: name, Anchor: v.Anchor,
+		HeadComment: v.HeadComment, LineComment: v.LineComment, FootComment: v.FootComment}
+	var b bytes.Buffer
+	enc := yaml.NewEncoder(&b)
+	enc.SetIndent(2) // as tego init writes it
+	if enc.Encode(&doc) != nil || enc.Close() != nil {
+		return text
+	}
+	return b.Bytes()
 }
 
-// removeMade removes the folders CreateNew made, the deepest first and only while empty.
-func removeMade(dir string, made []string) {
-	for i := len(made) - 1; i >= 0; i-- {
-		p := made[i]
-		if !filepath.IsAbs(p) {
-			p = filepath.Join(dir, filepath.FromSlash(p))
-		}
-		_ = os.Remove(p) // only while empty: os.Remove refuses a folder that holds anything, which stays
+// scalarSpan is where the one-line scalar n is written: the byte offsets, in its line, of its source, which reads
+// alone as n and is followed by nothing but blanks and n's own comment. ok is false for any other n: a block scalar,
+// one with an anchor, or one that goes on over the next lines.
+func scalarSpan(lines []string, n *yaml.Node) (from, to int, ok bool) {
+	if n.Kind != yaml.ScalarNode || n.Anchor != "" || n.Style&(yaml.LiteralStyle|yaml.FoldedStyle) != 0 || n.Line < 1 || n.Line > len(lines) {
+		return 0, 0, false
 	}
+	l := lines[n.Line-1]
+	if from = byteAt(l, n.Column-1); from < 0 {
+		return 0, 0, false
+	}
+	to = len(strings.TrimRight(l, " \t\r\n"))
+	if c := n.LineComment; c != "" {
+		if !strings.HasSuffix(l[:to], c) {
+			return 0, 0, false
+		}
+		to = len(strings.TrimRight(l[:to-len(c)], " \t"))
+	}
+	if to <= from || !readsAlone(l[from:to], n) {
+		return 0, 0, false
+	}
+	return from, to, true
+}
+
+// readsAlone says src, as a mapping value on its own, is the scalar n: its value, tag and style, and no comment.
+func readsAlone(src string, n *yaml.Node) bool {
+	var doc yaml.Node
+	if yaml.Unmarshal([]byte("k: "+src+"\n"), &doc) != nil || len(doc.Content) != 1 || len(doc.Content[0].Content) != 2 {
+		return false
+	}
+	m := doc.Content[0].Content[1]
+	return m.Kind == yaml.ScalarNode && m.Value == n.Value && m.Tag == n.Tag && m.Style == n.Style && m.Anchor == "" && m.LineComment == ""
+}
+
+// onlyRenamed says out reads as text does with its top-level name set to name, and differs from it in nothing else.
+func onlyRenamed(text, out []byte, name string) bool {
+	var was, now map[string]any
+	if yaml.Unmarshal(text, &was) != nil || yaml.Unmarshal(out, &now) != nil || was == nil {
+		return false
+	}
+	was["name"] = name
+	return reflect.DeepEqual(was, now)
+}
+
+// byteAt is the byte offset of rune col (0-based) of s, -1 past its end: yaml.v3 counts columns in runes.
+func byteAt(s string, col int) int {
+	for off := range s {
+		if col == 0 {
+			return off
+		}
+		col--
+	}
+	return -1
 }
 
 // diagLines is ds as one line each, "error: …" or "warning: …", the errors alone with errorsOnly.

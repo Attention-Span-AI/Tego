@@ -24,7 +24,7 @@ import (
 // named by a basename only the run's exec directories hold (F17), an entry the compiler refuses, and a widening
 // change. Both write paths now compile through internal/nextrun; this holds the context each one fills.
 //
-// This file is the one internal/cli test allowed to import the dashboard (.golangci.yml
+// This file is one of the internal/cli tests allowed to import the dashboard (.golangci.yml
 // engine-never-imports-control): the parity it checks spans both binaries.
 func TestParityCLIAndDashboard(t *testing.T) {
 	root := resolvedTemp(t)

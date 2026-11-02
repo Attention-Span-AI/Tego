@@ -489,9 +489,10 @@ linters:
         # The engine, the shared leaves and the specs never import the dashboard: tego links no listener,
         # authentication, TLS server, QR or control code (TestEngineLinksNoControl). The leaf packages that write
         # governance lines for the engine's own commands are not control code, so they are not denied.
-        # The one exception is the test that compares the two binaries' noun tables (TestNoNounInBothBinaries).
+        # The exceptions are the tests whose parity spans both binaries: the noun tables (TestNoNounInBothBinaries,
+        # serve_test.go), a rule change's verdict (ruleparity_test.go) and a run's chain verdict (chainparity_test.go).
         engine-never-imports-control:
-          files: ["$all", "!**/cmd/tego-control/**", "!**/internal/control/**", "!**/tools/**", "!**/test/**", "!**/internal/cli/serve_test.go", "!**/internal/cli/ruleparity_test.go"]
+          files: ["$all", "!**/cmd/tego-control/**", "!**/internal/control/**", "!**/tools/**", "!**/test/**", "!**/internal/cli/serve_test.go", "!**/internal/cli/ruleparity_test.go", "!**/internal/cli/chainparity_test.go"]
           deny:
             - pkg: github.com/attention-span-ai/tego/internal/control
               desc: the engine (Layer 1) and the shared leaves never import the dashboard (Layer 2, ADR 0100 (1a))

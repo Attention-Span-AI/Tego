@@ -135,12 +135,7 @@ func TestProcsHeldOnALiveRun(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, noteRun, "events.jsonl"), []byte(strings.Join(lines[:4], "")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, ".live"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".live", noteRun), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, root, noteRun)
 	r := load()
 	if r.State() != "running" {
 		t.Fatalf("the fixture run is %s, want running", r.State())

@@ -400,7 +400,10 @@ the schema of:
   machine config of every later run started with it (ADR 0059's residual).
   Failure → `*UntrustedError`; `run` exits 125 `[config-untrusted]` (the 2026-09-22 resolution), `compile`/`doctor`
   warn and skip that layer entirely (never
-  partially applied). Both call sites route through one shared internal helper (I11) — abort-vs-warn is an
+  partially applied). `gc` aborts as `run` does (*amended 2026-11-02*, GAPS C52): it removes what the `retention`
+  and `ledger_root` of the config select, and a layer it skipped may set either, so a layer it cannot read, trust or
+  parse ends it with 125 `[config-untrusted]` before it sweeps or removes anything, whatever its `--keep`. Both call
+  sites route through one shared internal helper (I11) — abort-vs-warn is an
   explicit parameter to it, never a second, drifted implementation.
 - **R21** `secure` ⇒ `$TEGO_CONFIG` skipped (R14) and the per-user layer always resolves via `getpwuid`, never
   `$HOME` — and `$HOME` is in fact never read by `Load` under any circumstance, secure or not. The lookup is
@@ -627,6 +630,10 @@ the schema of:
   integration test names a contract that does not exist and runs `gc --dry-run`, so that a lost refusal costs a read).
 
 **Changes.**
+- 2026-11-02, R20 (GAPS C52): `gc` reads the machine config with the abort mode, as `run` does. It read it warn-and-skip,
+  so a layer it could not read was passed over with a warning and the pass deleted by the built-in 30 days and ledger
+  root: an agent's `chmod 000 ~/.tego/config.yaml` had the daily `tego gc` delete the runs the user's `retention: 365d`
+  kept (`TestGCDeletesNothingByAConfigItCannotRead`, `TestGCGivesTheLayerBackBeforeItReadsIt`, failing before).
 - 2026-10-24, R27 clause b4: `tools/isocheck` SH-7 reports a launch handed the login
   session's directory by a literal path under `/run/user/` (`$(id -u)`, `$UID`, digits, a Python f-string) or the
   inherited value copied through other names, shell or Python, and counts a quoted Python mention as giving a

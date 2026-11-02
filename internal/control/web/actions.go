@@ -15,8 +15,10 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/askclient"
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
+	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/pkg/spec/askproto"
 )
 
@@ -327,7 +329,9 @@ func (s *Server) block(w http.ResponseWriter, r *http.Request, run string, add b
 		case errors.Is(err, runact.ErrBadRun):
 			why = "there is no such run in this ledger."
 		case errors.Is(err, runact.ErrNotRunning):
-			why = "the run is not running, so no block can be put in force."
+			// liveblock's words, which tego block and tego unblock print: a Remove left on a page across the run's end
+			// is refused as tego unblock is, since the run's blocks ended with it.
+			why = plainErr(err) + "."
 		case errors.Is(err, runact.ErrNoTimeLimits):
 			why = "this run was started by an older tego that has no time limits: block it with no end, or restart the run."
 		case errors.Is(err, liveblock.ErrInvalid):
@@ -373,9 +377,12 @@ func (s *Server) block(w http.ResponseWriter, r *http.Request, run string, add b
 		f.Text += " The block refuses again at " + b.Until.Local().Format("Mon 2 Jan 15:04") + " (" + inWords(b.Until.Sub(now)) + ")."
 	}
 	f.Text += realFlash(b)
+	if b.Word == "blocked" && !b.Observe { // a watched run refuses nothing, under any name
+		f.Text += execFlash(b)
+	}
 	if perm && add && (b.Word == "blocked" || b.Word == "already blocked") {
 		if rr, err := ledgerview.LoadRun(s.cfg.Ledger, run); err == nil {
-			if ref := contractRef(rr.Contract); ref != "" {
+			if ref := rules.Ref(rr.Contract); ref != "" {
 				text := "Blocked now · to keep it next run, add the block below and save"
 				if b.Observe { // a watched run records a mark and refuses nothing
 					text = "Marked now (watched run, recorded only) · to block it next run, add the block below and save"
@@ -404,6 +411,20 @@ func realFlash(b runact.Blocked) string {
 	return ""
 }
 
+// execFlash says what an exec block on an absolute path reaches beyond its own name (runact.Blocked's File, Names and
+// Renamed, liveblock.ReachOf): the launcher matches the file's identity, so a file with other names, as a multi-call
+// program's applets are, is refused under each of them, as `tego block` says too. "" for any other block.
+func execFlash(b runact.Blocked) string {
+	switch {
+	case b.Names > 1:
+		return " It matches the program's file, which has " + strconv.FormatUint(b.Names, 10) + " names here (a multi-call " +
+			"program, as coreutils and busybox are): every one of them is refused, not this name alone."
+	case b.Renamed:
+		return " It leads to " + visibleText(tilde(b.File)) + ", which is refused under every name that leads there, not this name alone."
+	}
+	return ""
+}
+
 // blockWhat names what a live block of kind on value refuses: "ls", "connections to 127.0.0.1:8080", "the path /x".
 func blockWhat(kind, value string) string {
 	switch kind {
@@ -423,12 +444,17 @@ func capFirst(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// shellWord is s as one word of a POSIX shell line: unchanged when it holds only characters a shell leaves alone,
-// otherwise in single quotes, so a terminal twin a page shows can be pasted as it stands.
-func shellWord(s string) string {
-	s = strings.TrimSpace(s)
-	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/._-:@,+=") == "" {
-		return s
+// shellWord is s, trimmed, as one word of a shell line (shellword.Quote, the rule tego doctor's fix line quotes by
+// too), so a terminal twin a page shows can be pasted as it stands.
+func shellWord(s string) string { return shellword.Quote(strings.TrimSpace(s)) }
+
+// changeWords is the end of a live change's terminal twin (tego block, tego lift, tego grant): the kind and the value,
+// each a shellWord, then flags (the time limit: " --for 45m", or ""). A value that starts with - goes after a --, the
+// flags before it: tego reads a flag anywhere before -- (internal/cli parseArgs), so `tego block <run> exec -x`
+// stopped at a usage error where the page blocks the program -x. static/twin.js writes the Block now twin the same way.
+func changeWords(kind, value, flags string) string {
+	if v := strings.TrimSpace(value); strings.HasPrefix(v, "-") {
+		return shellWord(kind) + flags + " -- " + shellWord(v)
 	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	return shellWord(kind) + " " + shellWord(value) + flags
 }

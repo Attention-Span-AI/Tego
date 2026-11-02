@@ -40,3 +40,20 @@ func TestEntries(t *testing.T) {
 		t.Error("a YAML list is not an error")
 	}
 }
+
+// TestNetAdded: the entries a change adds to net.allow or net.ask, in order; a removal and another list's entry are not.
+func TestNetAdded(t *testing.T) {
+	changes := []Change{
+		{Remove: true, Key: "net.allow", Entry: "old.example.com:443"},
+		{Key: "net.ask", Entry: "ask.example.com:443"},
+		{Key: "fs.write", Entry: "./out/"},
+		{Key: "net.allow", Entry: "api.example.com:443"},
+		{Remove: true, Key: "net.ask", Entry: "ask.example.com:443"},
+	}
+	if got, want := NetAdded(changes), []string{"ask.example.com:443", "api.example.com:443"}; !slices.Equal(got, want) {
+		t.Errorf("NetAdded = %q, want %q", got, want)
+	}
+	if got := NetAdded(nil); got != nil {
+		t.Errorf("NetAdded(nil) = %q", got)
+	}
+}

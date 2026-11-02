@@ -137,9 +137,7 @@ func busyRun(t *testing.T, root string, n int) string {
 	if err := os.WriteFile(filepath.Join(root, run, "events.jsonl"), []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".live", run), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, root, run)
 	return run
 }
 

@@ -15,7 +15,9 @@
 //
 // The edit is made on the YAML node tree, so the file's comments and key order are kept; where the change is one
 // list item added to or removed from a block list the text is spliced line by line and every other byte is kept.
-// An added line carries "# from run <id> line #N, <date>" (Apply) or "# added via <via>, <date>" (ApplyEdits).
+// A removal takes every copy of its entry the list holds (a file may list one twice: compile warns redundant-rule),
+// since a copy left would keep the rule. An added line carries "# from run <id> line #N, <date>" (Apply) or
+// "# added via <via>, <date>" (ApplyEdits).
 //
 // What it never does: widen past the one path, program or host the event names (a folder only when the caller asks
 // for it, and then the event's own directory), lift an entry the top-level file does not spell (a built-in

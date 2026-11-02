@@ -56,6 +56,8 @@ github.com/attention-span-ai/tego/internal/check/rule.relaxesMore	control-only	A
 github.com/attention-span-ai/tego/internal/handoff.IsNoun	test-api	internal/cli's serve_test holds the command table to the noun list with it
 github.com/attention-span-ai/tego/internal/handoff.Spawn	pending	ADR 0100 (1e): the sealed child start, built ahead of its first caller
 github.com/attention-span-ai/tego/internal/handoff.readOnly	pending	Spawn, reached as it is
+github.com/attention-span-ai/tego/internal/ledger.AnchorHeads	control-only	internal/control/ledgerview reads a run's anchored head through it (anchorview.go); tego reads them inside VerifyRunDir
+github.com/attention-span-ai/tego/internal/ledger.AnchorPath	control-only	internal/control/cli's serve names the chain anchor by it; tego's runtime takes AnchorPathWith, the same rule
 github.com/attention-span-ai/tego/internal/ledger.LiveWatch.Changes	pending	docs/p0/record-ledger.md LEDGER-FOLLOW: the live index watch, built ahead of its first consumer
 github.com/attention-span-ai/tego/internal/ledger.LiveWatch.Close	pending	WatchLive's watch, reached as it is
 github.com/attention-span-ai/tego/internal/ledger.LiveWatch.Wake	pending	WatchLive's watch, reached as it is
@@ -76,16 +78,14 @@ github.com/attention-span-ai/tego/internal/rulefile.History	control-only	interna
 github.com/attention-span-ai/tego/internal/rulefile.ReadJournal	control-only	internal/control/rules reads the journal with it
 github.com/attention-span-ai/tego/internal/rulefile.Revert	control-only	internal/control/rules reverts a change with it
 github.com/attention-span-ai/tego/internal/rulefile.foundAt	control-only	FindAtIn, reached as it is
-github.com/attention-span-ai/tego/internal/rulefile.hexSum	control-only	Blob, reached as it is
-github.com/attention-span-ai/tego/internal/rulefile.lineAt	control-only	FindAtIn, reached as it is
 github.com/attention-span-ai/tego/internal/rulefile.noReplace	control-only	Create, reached as it is
-github.com/attention-span-ai/tego/internal/rulefile.openJournalRead	control-only	Blob and ReadJournal, reached as it is
 github.com/attention-span-ai/tego/internal/rulefile.pinned.create	control-only	Create, reached as it is
 github.com/attention-span-ai/tego/internal/rulefile.pinned.taken	control-only	Create, reached as it is
 github.com/attention-span-ai/tego/internal/rulefile.revert	control-only	Revert, reached as it is
 github.com/attention-span-ai/tego/internal/rulefile.Undo	test-api	internal/control/rulesview and internal/control/web tests undo a change with it
 
 # internal/platform
+github.com/attention-span-ai/tego/internal/platform/hostaddr.New	test-api	internal/runtime/capture/forwarder's tests build a snapshot with no local table through it; the binary takes NewWithLocalTable
 github.com/attention-span-ai/tego/internal/platform/proc.Armed	test-api	internal/runtime/enforce/cgroup tests assert the process-start gate is released
 github.com/attention-span-ai/tego/internal/platform/startphase.Attributing	tag-only	internal/bpf/loadstats_tegotesthooks.go asks whether TEGO_TEST_LOAD_STATS is on
 github.com/attention-span-ai/tego/internal/platform/startphase.Stack	tag-only	internal/bpf/loadstats_tegotesthooks.go records the phase stack with it
@@ -117,10 +117,15 @@ github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterG
 github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterMemfd	tag-only	integration-tag bridge (filter_integration_bridge.go) for internal/runtime/supervisor's integration tests
 github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterReadGate	tag-only	integration-tag bridge (filter_integration_bridge.go) for internal/runtime/supervisor's integration tests
 github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterSourceRoute	tag-only	integration-tag bridge (filter_integration_bridge.go) for internal/runtime/supervisor's integration tests
+github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterWatch	tag-only	integration-tag bridge (filter_integration_bridge.go) for internal/runtime/supervisor's integration tests
 github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterWriteGate	tag-only	integration-tag bridge (filter_integration_bridge.go) for internal/runtime/supervisor's integration tests
 github.com/attention-span-ai/tego/internal/runtime/limits.Load	test-api	internal/runtime and internal/cli tests read a price table as it is, without FromMachine's trust rule
 github.com/attention-span-ai/tego/internal/runtime/supervisor.Dispatches	test-api	internal/runtime/enforce/landlock's dispatch_complete_test checks every notification has a handler
 github.com/attention-span-ai/tego/internal/runtime/supervisor.ProtoOfSocket	test-api	internal/runtime/observe's continuednet_test reads a socket's protocol as the supervisor does
+
+# internal/setup
+github.com/attention-span-ai/tego/internal/setup.Create	control-only	internal/control/rules' Set up a new agent makes the plan's folders with it; tego init --preset goes through Apply
+github.com/attention-span-ai/tego/internal/setup.Remove	control-only	internal/control/rules takes back the folders Create made when the write fails
 
 # internal/watch
 github.com/attention-span-ai/tego/internal/watch/tree.Tree.PIDs	test-api	internal/watch/watcher tests count the watched processes with it (Watcher.Processes)
@@ -129,8 +134,8 @@ github.com/attention-span-ai/tego/internal/watch/tree.Tree.PIDs	test-api	interna
 github.com/attention-span-ai/tego/pkg/policy/fsplan.Contains	public-api	compares clean absolute paths at component boundaries, for consumers of pkg/policy
 github.com/attention-span-ai/tego/pkg/policy/fsplan.FirstCover	public-api	the first listed grant covering a target, for consumers of pkg/policy
 github.com/attention-span-ai/tego/pkg/policy/fsplan.Plan.Enumerate	public-api	lists a plan's targets for consumers of pkg/policy
+github.com/attention-span-ai/tego/pkg/spec/agent.BuiltInDenyReadFamily	control-only	internal/control/rules groups the new policy preview's built-in refusals by it
 github.com/attention-span-ai/tego/pkg/spec/agent.BuiltInDenyWriteNames	test-api	internal/control/ledgerview's severity test holds laterFiles to the engine's built-in deny_write set with it
-github.com/attention-span-ai/tego/pkg/spec/agent.Endpoint.Static	public-api	says whether an entry never needs DNS (literal IP, CIDR or unix socket), for consumers of pkg/spec
 github.com/attention-span-ai/tego/pkg/spec/agent.TestTable.Run	public-api	contract test tables (tego's examples and other consumers) run their rows with it
 github.com/attention-span-ai/tego/pkg/spec/agent.TestTable.RunBy	public-api	contract test tables run their rows with a caller's decider (pkg/policy/evaluate)
 github.com/attention-span-ai/tego/pkg/spec/agent.WithDNSTTL	public-api	the compile option setting the TTL handed to the launcher, for consumers of pkg/spec

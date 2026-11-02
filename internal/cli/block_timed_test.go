@@ -81,6 +81,23 @@ func TestBlockForWritesUntil(t *testing.T) {
 	}
 }
 
+// TestBlockValueAfterDoubleDash: a value that starts with - is read as a flag unless it follows --, the time limit
+// before it. The dashboard's terminal twins write one that way (internal/control/web changeWords, static/twin.js), since
+// a bare program name may start with - and the Block now form blocks it.
+func TestBlockValueAfterDoubleDash(t *testing.T) {
+	dir, id := minorRun(t, record.MinorLiveModes)
+	if code, out, errs := run(t, "block", id, "exec", "-x"); code != identity.ExitUsage || out != "" || !strings.Contains(errs, "-x") {
+		t.Errorf("block exec -x: exit %d stdout %q stderr %q, want a usage error naming -x", code, out, errs)
+	}
+	code, out, errs := run(t, "block", id, "exec", "--for", "2h", "--", "-x")
+	if code != identity.ExitOK || !strings.HasPrefix(out, id+": blocked live.block[exec:-x]\nTime limit: until ") {
+		t.Fatalf("block exec --for 2h -- -x: exit %d stdout %q stderr %q", code, out, errs)
+	}
+	if e, ok := mustRead(t, dir, id).Find(liveblock.KindExec, "-x"); !ok || e.Until.IsZero() {
+		t.Errorf("block %+v (found %v): want exec -x with its time limit", e, ok)
+	}
+}
+
 func mustRead(t *testing.T, dir, id string) *liveblock.Overlay {
 	t.Helper()
 	o, err := liveblock.Read(dir, id)
@@ -166,8 +183,14 @@ func TestBlockLimitUsage(t *testing.T) {
 }
 
 // TestBlockUntimedGolden pins an untimed block's and unblock's whole output, byte for byte as before time limits
-// existed (testdata/block-untimed.golden was made from the base, 2ae8d3871, with the run id replaced by RUN).
+// existed (testdata/block-untimed.golden was made from the base, 2ae8d3871, with the run id replaced by RUN). The
+// golden is that output where /bin/ls is a program of its own: where it is one name of a multi-call program
+// (uutils' coreutils), the block adds a note saying so (TestBlockExecNotes), so this machine's /bin/ls is read as a
+// lone file.
 func TestBlockUntimedGolden(t *testing.T) {
+	old := execReach
+	execReach = func(value, _ string) liveblock.ExecReach { return liveblock.ExecReach{File: value, Names: 1} }
+	t.Cleanup(func() { execReach = old })
 	_, id := minorRun(t, record.MinorLiveModes)
 	var got strings.Builder
 	for _, args := range [][]string{

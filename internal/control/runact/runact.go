@@ -214,21 +214,32 @@ type Blocked struct {
 	// shortens a block, so it may be later than the one asked for); for a remove, when the unblocked block refuses
 	// again. Zero is no end.
 	Until time.Time
+	// File and Names are, for an exec block on an absolute path just placed, the file the path leads to and how many
+	// names that file has here (liveblock.ReachOf): with Names above 1, as with a multi-call program's applets, the
+	// block refuses it under each of them. Renamed is a path that leads to File through a link named otherwise (as
+	// busybox's applets are), so the block refuses File under every name that leads there. Zero for any other block.
+	File    string
+	Names   uint64
+	Renamed bool
 }
 
 // Block adds (add true) or removes a live block of kind on value on run under root (internal/liveblock), as
-// `tego block` would: the run's launcher reads it within about a second and records the change in the run's ledger.
-// A block is refused for a run that is not running, since nothing would enforce it, and a remove is refused to a
-// caller inside a run (SelfGoverned): a governed agent may tighten a run, never loosen one. It is BlockUntil with no
-// time limit, by the dashboard.
+// `tego block` and `tego unblock` would: the run's launcher reads it within about a second and records the change in
+// the run's ledger. Both are refused for a run that is not running (ErrNotRunning, liveblock.CheckBlock): nothing
+// would enforce a block, and the run's blocks ended with it, so its overlay is left as it was. A remove is refused to
+// a caller inside a run too (SelfGoverned): a governed agent may tighten a run, never loosen one. It is BlockUntil
+// with no time limit, by the dashboard.
 func Block(ctx context.Context, root, run, kind, value string, add bool) (Blocked, error) {
 	return BlockUntil(ctx, root, run, kind, value, add, time.Time{}, "dashboard")
 }
 
 // BlockUntil is Block with a time limit and the writer's via ("cli" or "dashboard", liveblock.By): a block added until
 // until ends by itself then, and a block removed until until refuses again then (ADR 0125 decision 4); a zero until is
-// no end. A limit is held to liveblock.CheckUntil (1 minute to 400 days) and is refused, with ErrNoTimeLimits, on a
-// run whose launcher does not read one: that launcher would refuse the whole overlay and ignore every later change.
+// no end. A limit is held to liveblock.CheckUntil (1 minute to 400 days). The run's own refusals are
+// liveblock.CheckBlock's, the checks and the words `tego block` and `tego unblock` give too: a run that is not running
+// (ErrNotRunning), a limit its launcher does not read (ErrNoTimeLimits: that launcher would refuse the whole overlay
+// and ignore every later change), a read or write block it does not know (ErrOldLauncher), and a read block on a run
+// whose reads are not seen (ErrReadsUnseen).
 func BlockUntil(ctx context.Context, root, run, kind, value string, add bool, until time.Time, via string) (Blocked, error) {
 	dir, err := runDir(root, run)
 	if err != nil {
@@ -245,32 +256,22 @@ func BlockUntil(ctx context.Context, root, run, kind, value string, add bool, un
 	if in, _ := SelfGoverned(); !add && in { // fails closed: a cgroup it cannot judge refuses too
 		return Blocked{}, fmt.Errorf("%w (run %s)", ErrGoverned, run)
 	}
-	if held, _, err := runlock.ProbeLock(dir); err != nil {
+	held, _, err := runlock.ProbeLock(dir)
+	if err != nil {
 		return Blocked{}, err
-	} else if !held && add {
-		return Blocked{}, ErrNotRunning
 	}
 	out := Blocked{Run: run, Rule: liveblock.Rule(k, v), Until: until}
 	f := StartFacts(dir)
 	out.Observe, out.ReadsSeen = f.Observe, f.ReadsSeen
+	if err := liveblock.CheckBlock(liveTarget(run, held, f), k, add, until); err != nil {
+		return out, err
+	}
 	if !until.IsZero() {
-		if !f.Timed {
-			return out, ErrNoTimeLimits
-		}
 		if err := liveblock.CheckUntil(time.Now(), until); err != nil {
 			return out, err
 		}
 	}
-	if add && (k == liveblock.KindRead || k == liveblock.KindWrite) && !f.NarrowKinds() {
-		// An older launcher fails to read an overlay holding a read or write block: it would keep its last blocks and
-		// ignore every later change until this one is removed.
-		return out, ErrOldLauncher
-	}
-	if add && k == liveblock.KindRead && !f.ReadsSeen {
-		// A read block refuses only reads, which this run's supervisor never sees: placed, it would refuse nothing.
-		return out, ErrReadsUnseen
-	}
-	var held liveblock.Entry
+	var placed liveblock.Entry
 	o, err := liveblock.Update(ctx, dir, run, func(o *liveblock.Overlay) (bool, error) {
 		var ok bool
 		var err error
@@ -278,14 +279,13 @@ func BlockUntil(ctx context.Context, root, run, kind, value string, add bool, un
 			// An add only narrows (AddUntil): the block it leaves ends at the later of its own end and until, and a
 			// block already held to no sooner is left as it is ("already blocked"). out.Until is that block's end.
 			_, ok, err = o.AddUntil(k, v, liveblock.By(via), time.Now(), until)
-			out.Word = map[bool]string{true: "blocked", false: "already blocked"}[ok]
 			if e, found := o.Find(k, v); found && err == nil {
-				out.Until, held = e.Until, e
+				out.Until, placed = e.Until, e
 			}
 		} else {
 			_, ok, err = o.RemoveUntil(k, v, liveblock.By(via), time.Now(), until)
-			out.Word = map[bool]string{true: "block removed", false: "was not blocked"}[ok]
 		}
+		out.Word = liveblock.BlockWord(add, ok)
 		return ok, err
 	})
 	if o != nil {
@@ -296,10 +296,23 @@ func BlockUntil(ctx context.Context, root, run, kind, value string, add bool, un
 		// by where its lookup lands. The block is in force with its value alone already; its real path is worked out
 		// now, with a budget, and added in a second write, which only narrows (liveblock.AddReal). That write failing
 		// leaves the block as it is, said as Unknown.
-		r, _ := liveblock.AddReal(ctx, dir, run, k, v, held)
+		r, _ := liveblock.AddReal(ctx, dir, run, k, v, placed)
 		out.Real, out.Uncovered, out.RealUnknown = r.Real, r.Uncovered, r.Unknown
+		if k == liveblock.KindExec {
+			// An absolute program is matched by its file's identity too, so the block refuses that file under every
+			// name it has; the page says so. No PATH is searched: the dashboard's is not the run's.
+			x := liveblock.ReachOf(v, "")
+			out.File, out.Names, out.Renamed = x.File, x.Names, x.Renamed
+		}
 	}
 	return out, err
+}
+
+// liveTarget is liveblock's Target of run, held or not by a launcher, from the facts its run_start gives: what
+// liveblock.CheckBlock and liveblock.CheckFence decide on.
+func liveTarget(run string, held bool, f livestatus.Facts) liveblock.Target {
+	return liveblock.Target{Run: run, Running: held, Timed: f.Timed, NarrowKinds: f.NarrowKinds(), ReadsSeen: f.ReadsSeen,
+		Adjustable: f.Adjustable}
 }
 
 // StartFacts is what the run in dir says of how it can enforce a live block, read from its run_start line
@@ -390,19 +403,19 @@ func Blocks(root, run string) ([]liveblock.Entry, error) {
 	return o.Blocks, nil
 }
 
-// ErrNotRunning is a block asked of a run no launcher holds.
-var ErrNotRunning = errors.New("the run is not running, so no live block can be enforced")
-
-// ErrOldLauncher is a read or write block asked of a run started by a tego that has no such blocks (run_start's
-// record_minor below record.MinorLiveControl, or not known).
-var ErrOldLauncher = errors.New("this run was started by an older tego that has no read or write blocks; " +
-	"block the path instead, or change the rules so its next run gets it")
-
-// ErrNoTimeLimits is a time limit asked of a run whose launcher does not read one (run_start's record_minor below
-// record.MinorLiveModes, or not known).
-// It is liveblock's, so `tego block` says the same words.
-var ErrNoTimeLimits = liveblock.ErrNoTimeLimits
-
-// ErrReadsUnseen is a read block asked of a run whose supervisor does not see its reads (neither held nor recorded):
-// it would refuse nothing there.
-var ErrReadsUnseen = errors.New("this run's reads are not seen, so a block of its reads would refuse nothing")
+// The refusals of a live change the run cannot take are liveblock's (liveblock.CheckBlock, CheckFence and LiftKey),
+// so `tego block`, `tego unblock`, `tego lift`, `tego grant` and `tego restore` refuse the same changes in the same
+// words; the names below are theirs.
+var (
+	// ErrNotRunning is a change asked of a run no launcher holds: a block, its removal, a lift or a restore.
+	ErrNotRunning = liveblock.ErrNotRunning
+	// ErrOldLauncher is a read or write block asked of a run started by a tego that has no such blocks (run_start's
+	// record_minor below record.MinorLiveControl, or not known).
+	ErrOldLauncher = liveblock.ErrOldLauncher
+	// ErrNoTimeLimits is a time limit asked of a run whose launcher does not read one (run_start's record_minor below
+	// record.MinorLiveModes, or not known).
+	ErrNoTimeLimits = liveblock.ErrNoTimeLimits
+	// ErrReadsUnseen is a read block asked of a run whose supervisor does not see its reads (neither held nor
+	// recorded): it would refuse nothing there.
+	ErrReadsUnseen = liveblock.ErrReadsUnseen
+)

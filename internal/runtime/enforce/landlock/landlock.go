@@ -268,6 +268,8 @@ func (bd *builder) build() (*Handle, error) {
 		// Held reads notify every open too (ADR 0069 D2), and so do reason reads (ADR 0077), never part of hasAsk.
 		askRead:   bd.rt.HasAskRead() || bd.rt.ReadsHeld() || bd.rt.ReasonReadsNotified(),
 		gateWrite: bd.rt.Gate.Has(gate.FSWrite),
+		// R11e: every enforcing filter, since a watch reads no file and only the supervisor refuses one (supervisor R36).
+		watches: true,
 		// R11b: no thread of a run whose net: section or net gate decides destinations may route around them.
 		sourceRoute: bd.netRestricted || bd.rt.Gate.Has(gate.Net),
 		frames:      bd.rt.DecidesDatagrams(), // R11d: the same predicate the supervisor's pending-frame refusal asks

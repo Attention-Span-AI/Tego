@@ -17,7 +17,8 @@
 // changed after the run started, from the rule-change journal (internal/rulefile's doc.go has its format) or a later
 // modification time, or, with neither, it loads to other rules than the run ran (Differs, undated). RuleSource is
 // the line page's lookup of the rule a line names in that view (its sentence, file, line and enforcement), the view
-// kept per run until its copy, live blocks or rules file change, so a page view compiles nothing. Learn (Least
+// kept per run until its copy, live blocks or rules file change, so a page view compiles nothing; RuleWords is a
+// rule key in inforce's words, the one label the dashboard gives a line's rule. Learn (Least
 // privilege) and Drift (Unused permissions) keep each run's result while the run, its
 // copy, the chain anchor, the machine config and PATH are the same (cache.go, on ledgerview.Results). ContractsFromRuns lists the rules files a ledger snapshot's runs named, the only files the
 // dashboard offers to change. Contract.Shown is the copy and its compile table with every env.set value hidden

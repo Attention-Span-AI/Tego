@@ -25,9 +25,9 @@ import (
 // (agent.DeniedResolvedRule), not unmatched, so the ledger says which allowed name pointed where.
 //
 // This host's own addresses count as loopback for the same reason loopback is refused (thisHost): a name
-// that resolves, or is rebound, to the host's LAN, bridge or global IPv6 address reaches every service bound
-// to all interfaces, as loopback would, and neither the private class nor the machine ranges cover a public
-// address the host holds.
+// that resolves, or is rebound, to the host's LAN, bridge or global IPv6 address, or to an address of an AnyIP
+// range the host's local routing table sends here, reaches every service bound to all interfaces, as loopback
+// would, and neither the private class nor the machine ranges cover a public address the host holds.
 //
 // Another entry that admits the same destination on its own still admits it: a literal address or CIDR entry,
 // which the author wrote, is the declared way to reach one of these classes on purpose; a localhost name
@@ -95,35 +95,54 @@ func resolvedDenied(rt *agent.RuleTable, r agent.NetRule, a netip.Addr) bool {
 // hostAddrs is a snapshot of the addresses assigned to this host's interfaces, taken through list
 // (net.InterfaceAddrs: an RTM_GETADDR dump over netlink, which needs no privilege and no cgo) and taken
 // again when it is older than maxAge, on the next check that needs it, so an address DHCP, a VPN or a
-// container bridge adds is known within maxAge. The supervisor runs in the host's network namespace, which
-// the agent shares in tiers 1 and 2, so these are the addresses a connect from the run reaches this host on.
+// container bridge adds is known within maxAge. With them it takes the kernel's local routing table through
+// table (hostaddr.ReadLocalTable: an RTM_GETROUTE dump, unprivileged as well), so every address of a `local`
+// route there, an AnyIP range's, is one of the host's own. That is the one reading of this host every check
+// here takes: the resolved-address check (has), a live block and a net gate (Own, Broadcast, Anycast), and
+// the models[] guard, which reads the addresses and the table afresh for each decision (Fresh). The supervisor
+// runs in the host's network namespace, which the agent shares in tiers 1 and 2, so these are the addresses a
+// connect from the run reaches this host on. The run's own snapshot, which tier 2's rows are filtered by
+// (internal/runtime, refreshDenied), reads the same, so the rows refuse what has refuses (R13b).
 type hostAddrs struct{ *hostaddr.Snapshot }
 
 // thisHost is the process's snapshot: every run this process supervises shares its network namespace. The
 // models[] guard also uses this snapshot for local endpoints. A test replaces it before any loop reads it.
-var thisHost = newHostAddrs(net.InterfaceAddrs, time.Now)
+var thisHost = newHostAddrs(net.InterfaceAddrs, hostaddr.ReadLocalTable, time.Now)
 
-func newHostAddrs(list func() ([]net.Addr, error), now func() time.Time) *hostAddrs {
-	return &hostAddrs{hostaddr.New(list, now, time.Second)}
+// newHostAddrs is a snapshot over list and table; a nil table reads the interfaces' addresses alone.
+func newHostAddrs(list func() ([]net.Addr, error), table func() (hostaddr.LocalTable, error), now func() time.Time) *hostAddrs {
+	return &hostAddrs{hostaddr.NewWithLocalTable(list, table, now, time.Second)}
 }
 
-// has reports whether a is one of this host's addresses. known is false while no snapshot was ever taken:
-// resolvedDenied then refuses, since an address the check cannot place may be this host's (fail-closed).
-// A snapshot that fails to refresh keeps the last one taken, which is the best knowledge there is of
-// addresses that change rarely; a failed first snapshot is tried again after maxAge.
+// has reports whether a is one of this host's own addresses: an interface's, or one in a `local` route of the
+// local table (an AnyIP range). known is false while no snapshot was ever taken: resolvedDenied then refuses,
+// since an address the check cannot place may be this host's (fail-closed). A snapshot that fails to refresh
+// keeps the last one taken, the table's as the addresses', which is the best knowledge there is of addresses
+// that change rarely; a failed first snapshot is tried again after maxAge.
 func (h *hostAddrs) has(a netip.Addr) (local, known bool) { return h.Has(a) }
 
-// Own is thishost.Addrs' reading of the snapshot, for a live block and a net gate. An address the snapshot cannot place
-// counts as this host's, as resolvedDenied counts it (fail-closed): both only refuse, and only on their own port.
+// Own is thishost.Addrs' reading of the snapshot, for a live block and a net gate: has's, an interface's address or
+// one in a range the local table sends here as the host's own (an AnyIP range), which a server bound to all interfaces
+// answers on as well. An address the snapshot cannot place counts as this host's, as resolvedDenied counts it
+// (fail-closed): both only refuse, and only on their own port. While the table was never read, the interfaces'
+// addresses answer; once it was, the last table read stays in force while it cannot be read again.
 func (h *hostAddrs) Own(a netip.Addr) bool {
-	local, known := h.has(a)
+	local, known := h.Has(a)
 	return local || !known
 }
 
-// Broadcast is thishost.Addrs' other half, fail-closed as Own is.
+// Broadcast is thishost.Addrs' second reading: a subnet's broadcast address, from its mask or from the local table's
+// `broadcast` route, which is how one set by hand is read; fail-closed as Own is.
 func (h *hostAddrs) Broadcast(a netip.Addr) bool {
 	bcast, known := h.HasBroadcast(a)
 	return bcast || !known
+}
+
+// Anycast is thishost.Addrs' third reading: an IPv6 anycast address this host joined, from the local table's `anycast`
+// route; fail-closed as Own is.
+func (h *hostAddrs) Anycast(a netip.Addr) bool {
+	anycast, known := h.HasAnycast(a)
+	return anycast || !known
 }
 
 // liveRules is the part of the run's resolver that gives each host entry's live addresses: dns.Set, which the

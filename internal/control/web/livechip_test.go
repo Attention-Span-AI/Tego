@@ -65,9 +65,7 @@ func TestRunLiveWatched(t *testing.T) {
 			liveGapLine(markRun, 1, t0.Add(time.Second), "path", "/p/data", 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".live", markRun), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, root, markRun)
 	addOverlay(t, root, markRun, [2]string{"path", "/p/data"})
 	s := newServer(t, root)
 	c := login(t, s)
@@ -180,9 +178,7 @@ func TestRunLiveBlockHome(t *testing.T) {
 			liveGapLine(run, 2, t0.Add(2*time.Second), "read", home+"/.config/telemetry", 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".live", run), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, root, run)
 	addOverlay(t, root, run, [2]string{"read", home + "/.config/telemetry"}, [2]string{"exec", "curl"})
 	s := newServer(t, root)
 	c := login(t, s)

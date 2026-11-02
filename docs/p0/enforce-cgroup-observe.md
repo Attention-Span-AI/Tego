@@ -414,10 +414,12 @@ each tick where the entries' addresses the set gives it (`dns.Set.Refreshed`) di
 starting from those `Prepare` was given, and again on the next tick when it failed. The table it hands over, and
 the one `Prepare` is given, hold no address the contract refuses for the name in any `agent-contract.md` R18 class
 (loopback, link-local and metadata, multicast, the machine's `denied_resolved_addresses`, a private address after a
-public first answer, and this host's own interface addresses): the runtime filters each out, into the entry's
-`Denied`, with the run table's `ResolvedDenied` and a snapshot of this host's addresses of its own, taken as often
-as the supervisor's, so a name rebound to `169.254.169.254` or to one of this host's addresses never becomes a
-row admitting it, and the worker follows the host's address changes as well as DNS changes. An
+public first answer, and this host's own addresses: its interfaces' and, *since 2026-11-02*, every address of a
+`local` route in the routing tables the kernel's default rules look up (local, main and default), an AnyIP range's, as
+the supervisor reads them): the runtime filters each
+out, into the entry's `Denied`, with the run table's `ResolvedDenied` and a snapshot of this host's addresses of its
+own, taken as often as the supervisor's, so a name rebound to `169.254.169.254` or to one of this host's addresses
+never becomes a row admitting it, and the worker follows the host's address changes as well as DNS changes. An
 address the host gains or drops moves the rows on the worker's next tick with no lookup; one that is an entry's only
 address when the host takes it stays a row, since an entry a refresh leaves empty keeps its rows (above), and
 agent-contract R18 gives the condition that closes it. While the two writes are in progress the rows

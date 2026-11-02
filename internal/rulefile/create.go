@@ -31,8 +31,9 @@ const createMode = 0o644
 // the name with renameat2 RENAME_NOREPLACE, which fails with EEXIST rather than replace a file that appeared
 // meanwhile (a link and unlink where the filesystem has no RENAME_NOREPLACE, which refuses the same way), and the
 // directory is fsync'ed. The write is recorded in g.LedgerRoot's journal as op "create" with the text as a blob, under
-// the same per-contract lock a Replace takes. A taken name is ErrExists; a journal append that fails after the file is
-// written is ErrJournal with the entry, as Replace reports it.
+// the same per-contract lock a Replace takes, and prune.lock shared from the blob to the line, as a Replace holds it. A
+// taken name is ErrExists; a journal append that fails after the file is written is ErrJournal with the entry, as
+// Replace reports it.
 func Create(ctx context.Context, g Guard, path string, text []byte, c Change) (*Entry, error) {
 	if g.LedgerRoot == "" {
 		return nil, errors.New("rulefile: no ledger root to journal the new contract in, so nothing is written")
@@ -58,6 +59,11 @@ func Create(ctx context.Context, g Guard, path string, text []byte, c Change) (*
 	if p.taken() {
 		return nil, fmt.Errorf("%w: %s exists; a new agent's rules are never written over a file", ErrExists, p.path)
 	}
+	unshare, err := j.share(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer unshare()
 	sum := Sum(text)
 	if err := j.putBlob(text, sum); err != nil {
 		return nil, fmt.Errorf("journal the new text: %w", err)

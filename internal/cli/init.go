@@ -146,7 +146,14 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 	var composed *setup.Result
 	var env setup.CheckEnv
 	if po != nil {
-		po.Name, po.Dir = string(agent), abs
+		// The contract is composed for the project directory with its symlinks resolved, as the dashboard's check
+		// resolves it: setup.Create opens that with no symlink followed, so a link swapped into its path after this
+		// is refused, never followed out of the project.
+		if po.Dir, err = filepath.EvalSymlinks(abs); err != nil {
+			message(stderr, abs, 0, 0, "tego init: "+err.Error(), codeIO)
+			return identity.ExitError // R25: Tego's own error
+		}
+		po.Name = string(agent)
 		po.Home, _ = os.UserHomeDir()
 		var code int
 		if env, code = initCheckEnv(stderr); code != identity.ExitOK {
@@ -206,7 +213,7 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 		}
 		// Apply creates the folders and compiles again with them in place (a check Draft could not make, R10); it
 		// removes them again when that compile refuses.
-		made, ds, ok, err := setup.Apply(composed, abs, env)
+		made, ds, ok, err := setup.Apply(composed, po.Dir, env)
 		if err != nil {
 			message(stderr, abs, 0, 0, "tego init: "+err.Error(), codeIO)
 			return identity.ExitError // R25: Tego's own error

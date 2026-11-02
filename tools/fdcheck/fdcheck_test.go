@@ -427,6 +427,9 @@ func TestLentNumber(t *testing.T) {
 		{"proc path in a goroutine", "func f(o *sys.FD) { _ = o.ProcPath(func(p string) error { go func() { _, _ = os.Open(p) }(); return nil }) }\n", []string{l(kLease, 0)}},
 		{"proc path read by os", "func f(o *sys.FD) (string, error) {\n\tvar t string\n\terr := o.ProcPath(func(p string) error {\n\t\tvar e error\n\t\tt, e = os.Readlink(p)\n\t\treturn e\n\t})\n\treturn t, err\n}\n", nil},
 		{"proc path read by unix", "func f(o *sys.FD, buf []byte) error { return o.ProcPath(func(p string) error { _, e := unix.Readlink(p, buf); return e }) }\n", nil},
+		// fchmodat resolves the path at once and keeps nothing, as fstatat does: the mode of what an O_PATH descriptor
+		// holds, which fchmod refuses (EBADF).
+		{"proc path chmodded by unix", "func f(o *sys.FD) error { return o.ProcPath(func(p string) error { return unix.Fchmodat(unix.AT_FDCWD, p, 0o600, 0) }) }\n", nil},
 		{"proc path as a value", "func f(o *sys.FD) { pp := o.ProcPath; _ = pp }\n", []string{l(kLease, 0)}},
 		// execve resolves the path at once and keeps nothing: a failed exec returns, a successful one is a new image.
 		{"proc path exec'd by syscall", "func f(o *sys.FD, argv, env []string) error {\n\treturn o.ProcPath(func(p string) error { return syscall.Exec(p, argv, env) })\n}\n", nil},

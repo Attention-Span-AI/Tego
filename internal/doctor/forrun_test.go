@@ -368,7 +368,8 @@ func TestPlaneKnownAnswersCacheIsForRunsOnly(t *testing.T) {
 
 // TestAutoTiers: tier auto resolves among the tiers this build constructs and this process could be given here, so a
 // tegobpf build run by a normal user, or by root on a kernel without bpf in lsm=, never compiles at a tier its run
-// cannot get (the demo's ask_read refusal at tier bpflsm).
+// cannot get (the demo's ask_read refusal at tier bpflsm). The built tiers it leaves out come back by the precondition
+// they lack, which compile --test's header names: it said every tier this tego builds while the set was landlock alone.
 func TestAutoTiers(t *testing.T) {
 	all := func(backend.Tier) error { return nil }
 	landlockOnly := func(tier backend.Tier) error {
@@ -383,16 +384,21 @@ func TestAutoTiers(t *testing.T) {
 		root   bool
 		bpfLSM bool
 		built  func(backend.Tier) error
-		want   []backend.Tier
+		want   AutoSet
 	}{
-		{"tegobpf build, normal user, bpf in lsm=", false, true, all, []backend.Tier{L}},
-		{"tegobpf build, normal user, no bpf in lsm=", false, false, all, []backend.Tier{L}},
-		{"tegobpf build, root, no bpf in lsm=", true, false, all, []backend.Tier{L, C}},
-		{"tegobpf build, root, bpf in lsm=", true, true, all, []backend.Tier{L, C, B}},
-		{"untagged build, root, bpf in lsm=", true, true, landlockOnly, []backend.Tier{L}},
+		{"tegobpf build, normal user, bpf in lsm=", false, true, all, AutoSet{Tiers: []backend.Tier{L}, NeedRoot: []backend.Tier{C, B}}},
+		{"tegobpf build, normal user, no bpf in lsm=", false, false, all, AutoSet{Tiers: []backend.Tier{L}, NeedRoot: []backend.Tier{C, B}}},
+		{"tegobpf build, root, no bpf in lsm=", true, false, all, AutoSet{Tiers: []backend.Tier{L, C}, NeedBPFLSM: []backend.Tier{B}}},
+		{"tegobpf build, root, bpf in lsm=", true, true, all, AutoSet{Tiers: []backend.Tier{L, C, B}}},
+		{"untagged build, root, bpf in lsm=", true, true, landlockOnly, AutoSet{Tiers: []backend.Tier{L}}},
+		{"untagged build, normal user, no bpf in lsm=", false, false, landlockOnly, AutoSet{Tiers: []backend.Tier{L}}},
 	} {
-		if got := autoTiers(c.root, func() bool { return c.bpfLSM }, c.built); !slices.Equal(got, c.want) {
-			t.Errorf("%s: autoTiers = %v, want %v", c.name, got, c.want)
+		got := autoTiers(c.root, func() bool { return c.bpfLSM }, c.built)
+		if !slices.Equal(got.Tiers, c.want.Tiers) || !slices.Equal(got.NeedRoot, c.want.NeedRoot) ||
+			!slices.Equal(got.NeedBPFLSM, c.want.NeedBPFLSM) {
+			t.Errorf("%s: autoTiers = %+v, want %+v", c.name, got, c.want)
 		}
 	}
+	// A normal user's set never reads the LSM list: no precondition it holds can give that user tier bpflsm.
+	autoTiers(false, func() bool { t.Error("the LSM list was read for a process that is not root"); return true }, all)
 }

@@ -144,10 +144,11 @@ func fenceArgs(name string, fs *flag.FlagSet, stderr io.Writer) (ref string, kin
 	return fs.Arg(0), kind, value, true
 }
 
-// fenceRun finds the run ref names and checks what a lift and a restore both need: it is running, it is Adjustable,
-// and its fence lists kind:value; timed says the change carries a time limit, which its launcher must read. It returns
-// the run's directory, its id and the fence entry, or the exit code of the refusal it wrote.
-func fenceRun(name, ref string, kind liveblock.Kind, value string, timed bool, stderr io.Writer) (dir, run string, e record.LiveFenceEntry, code int) {
+// fenceRun finds the run ref names and checks what a lift and a restore both need (liveblock.CheckFence, as runact
+// checks it for the dashboard): it is running, its launcher reads until (a lift's time limit; zero for none, and for
+// a restore), it is Adjustable, and its fence lists kind:value. It returns the run's directory, its id and the fence
+// entry, or the exit code of the refusal it wrote.
+func fenceRun(name, ref string, kind liveblock.Kind, value string, until time.Time, stderr io.Writer) (dir, run string, e record.LiveFenceEntry, code int) {
 	dir, run, code = blockRun(name, ref, stderr)
 	if code != identity.ExitOK {
 		return "", "", e, code
@@ -157,29 +158,27 @@ func fenceRun(name, ref string, kind liveblock.Kind, value string, timed bool, s
 		message(stderr, "", 0, 0, "tego "+name+": "+err.Error(), codeIO)
 		return "", "", e, identity.ExitError
 	}
-	if !held {
-		message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s is not running, so nothing would apply it; a run's fence starts "+
-			"refused again in its next run", name, run), codeNotRunning)
-		return "", "", e, identity.ExitFinding
-	}
 	facts := startFacts(dir)
-	if timed && !facts.Timed {
-		message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s: %v", name, run, liveblock.ErrNoTimeLimits), codeOldLauncher)
-		return "", "", e, identity.ExitFinding
-	}
-	if !facts.Adjustable {
-		message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s is Locked: the kernel holds it to its contract while it runs, so "+
-			"nothing loosens until its next run; to loosen live, choose Adjustable for the next run (live.mode: adjustable, "+
-			"ADR 0125)", name, run), codeLocked)
-		return "", "", e, identity.ExitFinding
-	}
-	e, in := facts.InFence(string(kind), value)
-	if !in {
-		message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s:%s is outside %s's fence, so it cannot change while the run runs; "+
-			"change the rules (tego rule) and it applies from the next run", name, kind, record.Printable(value), run), codeOutsideFence)
-		return "", "", e, identity.ExitFinding
+	t := liveTarget(run, held, facts)
+	e, t.Fenced = facts.InFence(string(kind), value)
+	if err := liveblock.CheckFence(t, kind, value, until); err != nil {
+		return "", "", e, fenceRefused(name, err, stderr)
 	}
 	return dir, run, e, identity.ExitOK
+}
+
+// fenceRefused writes the refusal of a lift, a grant or a restore (liveblock.CheckFence, LiftKey), in its words naming
+// the run, with what to do instead where the terminal has something to offer, and returns exit 1.
+func fenceRefused(name string, err error, stderr io.Writer) int {
+	hint := ""
+	switch {
+	case errors.Is(err, liveblock.ErrLocked):
+		hint = "; to loosen live, choose Adjustable for the next run (live.mode: adjustable, ADR 0125)"
+	case errors.Is(err, liveblock.ErrOutsideFence):
+		hint = "; change the rules (tego rule) and it applies from the next run"
+	}
+	message(stderr, "", 0, 0, "tego "+name+": "+liveblock.RunWords(err)+hint, liveCode(err))
+	return identity.ExitFinding
 }
 
 // runLift is the body of lift and grant.
@@ -201,14 +200,13 @@ func runLift(ctx context.Context, name string, lim liveLimit, yes bool, fs *flag
 	if refuseGoverned(name, stderr) { // a lift loosens: never from inside a run
 		return identity.ExitFinding
 	}
-	dir, run, entry, code := fenceRun(name, ref, kind, value, !until.IsZero(), stderr)
+	dir, run, entry, code := fenceRun(name, ref, kind, value, until, stderr)
 	if code != identity.ExitOK {
 		return code
 	}
-	key, err := liveblock.ReadKey(dir)
+	key, err := liveblock.LiftKey(dir, run)
 	if err != nil {
-		message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s's live key cannot be read, so no lift can be asked: %v", name, run, err), codeNoKey)
-		return identity.ExitFinding
+		return fenceRefused(name, err, stderr)
 	}
 	fmt.Fprint(stdout, liftSummary(name, run, kind, value, entry.Source, until))
 	if !yes {
@@ -300,7 +298,7 @@ func runRestore(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer)
 	if !ok {
 		return identity.ExitUsage // R25: usage error
 	}
-	dir, run, _, code := fenceRun(name, ref, kind, value, false, stderr)
+	dir, run, _, code := fenceRun(name, ref, kind, value, time.Time{}, stderr)
 	if code != identity.ExitOK {
 		return code
 	}

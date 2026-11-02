@@ -78,6 +78,9 @@ type ActPlan struct {
 	UndoAck string
 	// Now are the live blocks "Also apply now" can place for the picked change on running runs of the contract.
 	Now []NowOption
+	// Unresolved are the host names the picked change adds to net.allow or net.ask that did not resolve here
+	// (hosts.go): a warning, never a refusal. A preview looks them up; a confirm does not.
+	Unresolved []UnresolvedHost
 	// Saved is set when the change was written: ID is its journal entry, Bak the old file, Live what "also apply
 	// now" did.
 	Saved   bool
@@ -199,6 +202,7 @@ func (s *Service) ActOn(ctx context.Context, r ActReq) (*ActPlan, error) {
 		p.Now = s.nowOptions(ctx, s.liveRunsOf(found.Contract), res.Changes, cwd, entriesOf(res.Text))
 	}
 	if !r.Write {
+		p.Unresolved = s.unresolved(ctx, res.Changes)
 		return p, nil
 	}
 	if r.Base == "" || r.Base != p.Base {

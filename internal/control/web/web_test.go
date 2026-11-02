@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -55,13 +57,52 @@ func fixture(t *testing.T) string {
 		line(harmRun, "demo-harm", 4, t0.Add(time.Minute+4), "net", `"verdict":"ask","rule":"net.ask[example.com]","proto":"tcp","dst":"93.184.216.34:443","host":"example.com"`),
 		line(harmRun, "demo-harm", 5, t0.Add(time.Minute+5), "ask", `"ask_id":"ask-7","hold":"net"`),
 		line(harmRun, "demo-harm", 6, t0.Add(time.Minute+6), "refused", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"<script>alert(1)</script>"`))
-	if err := os.MkdirAll(filepath.Join(root, ".live"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".live", harmRun), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, root, harmRun)
 	return root
+}
+
+// heldLock is a run's lock markLive holds in this test process.
+type heldLock struct {
+	once sync.Once
+	f    *os.File
+}
+
+func (h *heldLock) release() { h.once.Do(func() { _ = h.f.Close() }) }
+
+// heldHere is the lock markLive holds for each run directory, until the test ends or letGo.
+var heldHere sync.Map
+
+// markLive lists run in root's live index and holds the run's lock in this process until the test ends, as the run's
+// launcher does from taking its lock to run_end: the dashboard reads a listed run as running only while a process
+// holds its lock. holdLock hands the lock to a process of its own instead, for the actions that prove and signal the
+// holder (Stop); letGo lets it go, as a launcher that died does.
+func markLive(t *testing.T, root, run string) {
+	t.Helper()
+	live := filepath.Join(root, ".live")
+	if err := os.MkdirAll(live, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(live, run), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, run)
+	f, err := os.OpenFile(filepath.Join(dir, "lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &heldLock{f: f}
+	t.Cleanup(func() { heldHere.Delete(dir); h.release() })
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	heldHere.Store(dir, h)
+}
+
+// letGo lets go of the lock markLive holds for run directory dir, if it holds one.
+func letGo(dir string) {
+	if h, ok := heldHere.LoadAndDelete(dir); ok {
+		h.(*heldLock).release()
+	}
 }
 
 func newServer(t *testing.T, root string) *Server {
@@ -191,6 +232,29 @@ func TestAccessChecks(t *testing.T) {
 	}
 	if !strings.HasPrefix(s.URL(), "http://127.0.0.1:8484/?t=tok123") {
 		t.Errorf("URL %q", s.URL())
+	}
+}
+
+// TestLinksNameTheAddressListenedOn: the printed link and the opener's link name the loopback address the listener is
+// on (an IPv6 one in brackets), and the Host check takes that address. Both named 127.0.0.1 whatever the address, so
+// a dashboard on [::1] or 127.0.0.2 printed a link that reached nothing, and 127.0.0.2's own Host got 421.
+func TestLinksNameTheAddressListenedOn(t *testing.T) {
+	for host, origin := range map[string]string{"": "http://127.0.0.1:8484", "127.0.0.1": "http://127.0.0.1:8484",
+		"127.0.0.2": "http://127.0.0.2:8484", "::1": "http://[::1]:8484"} {
+		s, err := New(Config{Ledger: t.TempDir(), Host: host, Port: 8484, Token: "tok123"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		trustPeer(s)
+		if got := s.URL(); got != origin+"/?t=tok123" {
+			t.Errorf("Host %q: URL %q, want %s/?t=tok123", host, got, origin)
+		}
+		if got := s.OpenURL(); !strings.HasPrefix(got, origin+"/?o=") {
+			t.Errorf("Host %q: OpenURL %q, want %s/?o=<code>", host, got, origin)
+		}
+		if w := do(s, "GET", "/?t=tok123", strings.TrimPrefix(origin, "http://"), nil); w.Code != http.StatusSeeOther {
+			t.Errorf("Host %q: the sign-in through its own address: %d", host, w.Code)
+		}
 	}
 }
 

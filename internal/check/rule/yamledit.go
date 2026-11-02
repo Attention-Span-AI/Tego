@@ -6,12 +6,15 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-// Change is one list edit: Entry added to, or removed from, the list at Key ("fs.deny_read", "exec.allow").
+// Change is one list edit: Entry added to, or removed from, the list at Key ("fs.deny_read", "exec.allow"). A removal
+// takes every item of the list that spells Entry: a file may list an entry twice (compile warns redundant-rule), and a
+// copy left would keep the rule.
 type Change struct {
 	Remove bool
 	Key    string
@@ -26,6 +29,18 @@ func (c Change) String() string {
 		return c.Key + " -= " + c.Entry
 	}
 	return c.Key + " += " + c.Entry
+}
+
+// NetAdded is the entries changes add to net.allow or net.ask, in order: the destinations a change allows or asks
+// about, which the next run resolves at its start where they name a host.
+func NetAdded(changes []Change) []string {
+	var out []string
+	for _, c := range changes {
+		if !c.Remove && (c.Key == "net.allow" || c.Key == "net.ask") {
+			out = append(out, c.Entry)
+		}
+	}
+	return out
 }
 
 // parse reads text as one YAML document whose top is a mapping.
@@ -84,6 +99,20 @@ func list(top *yaml.Node, key string) []string {
 	return out
 }
 
+// spells reports whether the list item n is the entry: a scalar whose value it is, as list reads it.
+func spells(n *yaml.Node, entry string) bool { return n.Kind == yaml.ScalarNode && n.Value == entry }
+
+// copies is how many items of the list s spell entry.
+func copies(s *yaml.Node, entry string) int {
+	n := 0
+	for _, it := range s.Content {
+		if spells(it, entry) {
+			n++
+		}
+	}
+	return n
+}
+
 // has reports whether the dotted key is present (a list, even empty, or a null).
 func has(top *yaml.Node, key string) bool {
 	sec, field, _ := strings.Cut(key, ".")
@@ -109,8 +138,9 @@ func dropEmptied(key string, m *yaml.Node) bool {
 	return false
 }
 
-// applyTree makes c on the tree. A new list key goes first in its section, a new section last in the file; a list
-// left empty is `[]`, except one dropEmptied drops (fs.deny_read: `deny_read: []` would switch the built-in list off).
+// applyTree makes c on the tree. A removal takes every item that spells the entry. A new list key goes first in its
+// section, a new section last in the file; a list left empty is `[]`, except one dropEmptied drops (fs.deny_read:
+// `deny_read: []` would switch the built-in list off).
 func applyTree(top *yaml.Node, c Change) error {
 	sec, field, _ := strings.Cut(c.Key, ".")
 	m, _ := lookup(top, sec)
@@ -119,20 +149,18 @@ func applyTree(top *yaml.Node, c Change) error {
 		if s == nil || s.Kind != yaml.SequenceNode {
 			return fmt.Errorf("the contract has no %s list", c.Key)
 		}
-		for i, n := range s.Content {
-			if n.Kind == yaml.ScalarNode && n.Value == c.Entry {
-				s.Content = append(s.Content[:i], s.Content[i+1:]...)
-				if len(s.Content) == 0 {
-					if dropEmptied(c.Key, m) {
-						m.Content = append(m.Content[:si], m.Content[si+2:]...)
-					} else {
-						s.Style = yaml.FlowStyle
-					}
-				}
-				return nil
-			}
+		n := len(s.Content)
+		s.Content = slices.DeleteFunc(s.Content, func(it *yaml.Node) bool { return spells(it, c.Entry) })
+		switch {
+		case len(s.Content) == n:
+			return fmt.Errorf("%s has no entry %q", c.Key, c.Entry)
+		case len(s.Content) > 0:
+		case dropEmptied(c.Key, m):
+			m.Content = append(m.Content[:si], m.Content[si+2:]...)
+		default:
+			s.Style = yaml.FlowStyle
 		}
-		return fmt.Errorf("%s has no entry %q", c.Key, c.Entry)
+		return nil
 	}
 	if m == nil || m.Kind == yaml.ScalarNode && m.Tag == "!!null" {
 		if m == nil {
@@ -224,8 +252,8 @@ func scalarText(entry string) (string, bool) {
 }
 
 // splice makes c in the text itself: an entry added after the last item of a block list, or a new list key put first
-// in a block section, or a new section at the end; an entry removed with its own line. ok is false where it cannot
-// say the edit is that simple; edit then checks what it made against the tree anyway.
+// in a block section, or a new section at the end; an entry removed with its own line, each copy's. ok is false where
+// it cannot say the edit is that simple; edit then checks what it made against the tree anyway.
 func splice(text []byte, c Change) ([]byte, bool) {
 	_, top, err := parse(text)
 	if err != nil {
@@ -237,7 +265,7 @@ func splice(text []byte, c Change) ([]byte, bool) {
 	if c.Remove {
 		s, si := lookup(m, field)
 		if s != nil && s.Kind == yaml.SequenceNode && s.Style&yaml.FlowStyle != 0 {
-			if k := m.Content[si]; len(s.Content) == 1 && s.Content[0].Value == c.Entry && dropEmptied(c.Key, m) &&
+			if k, n := m.Content[si], copies(s, c.Entry); n > 0 && n == len(s.Content) && dropEmptied(c.Key, m) &&
 				k.Line == s.Line && k.Line >= 1 && k.Line <= len(lines) {
 				// The key's whole line goes, as the tree drops the key (sameData checks it).
 				return []byte(strings.Join(append(lines[:k.Line-1:k.Line-1], lines[k.Line:]...), "")), true
@@ -247,31 +275,45 @@ func splice(text []byte, c Change) ([]byte, bool) {
 		if s == nil || s.Kind != yaml.SequenceNode {
 			return nil, false
 		}
+		var drop []int // each copy's line, 0-based, in file order
 		for i, n := range s.Content {
-			if n.Kind != yaml.ScalarNode || n.Value != c.Entry || n.Line < 1 || n.Line > len(lines) {
+			if !spells(n, c.Entry) {
 				continue
+			}
+			if n.Line < 1 || n.Line > len(lines) || i+1 < len(s.Content) && s.Content[i+1].Line == n.Line {
+				return nil, false
 			}
 			if _, ok := itemDash(lines[n.Line-1], n.Column); !ok {
 				return nil, false
 			}
-			if len(s.Content) > 1 {
-				if i+1 < len(s.Content) && s.Content[i+1].Line == n.Line {
-					return nil, false
+			drop = append(drop, n.Line-1)
+		}
+		switch {
+		case len(drop) == 0:
+			return nil, false
+		case len(drop) < len(s.Content):
+			out := make([]string, 0, len(lines)-len(drop))
+			for i, l := range lines {
+				if !slices.Contains(drop, i) {
+					out = append(out, l)
 				}
-				return []byte(strings.Join(append(lines[:n.Line-1:n.Line-1], lines[n.Line:]...), "")), true
 			}
-			k := m.Content[si]
-			if k.Line+1 != n.Line {
-				return nil, false
-			}
-			var repl []string
-			if !dropEmptied(c.Key, m) {
-				repl = []string{strings.Repeat(" ", k.Column-1) + field + ": []\n"}
-			}
-			out := append(append(append([]string{}, lines[:k.Line-1]...), repl...), lines[n.Line:]...)
 			return []byte(strings.Join(out, "")), true
 		}
-		return nil, false
+		// Every item goes: the key's line and the items' lines, which follow it one to a line, become `field: []`,
+		// or go with the key.
+		k := m.Content[si]
+		for j, l := range drop {
+			if k.Line < 1 || l != k.Line+j {
+				return nil, false
+			}
+		}
+		var repl []string
+		if !dropEmptied(c.Key, m) {
+			repl = []string{strings.Repeat(" ", k.Column-1) + field + ": []\n"}
+		}
+		out := append(append(append([]string{}, lines[:k.Line-1]...), repl...), lines[k.Line+len(drop):]...)
+		return []byte(strings.Join(out, "")), true
 	}
 	item, ok := scalarText(c.Entry)
 	if !ok {
@@ -320,9 +362,9 @@ func splice(text []byte, c Change) ([]byte, bool) {
 }
 
 // spliceFlow edits a one-line flow list (`allow: ["bash", "date"]  # note`, as tego init writes them) in place: remove
-// drops that item from the brackets; a non-empty add instead turns the list into a block list under its key, the
-// rest of the key's line (its comment) kept, as the tree edit does. ok is false for a list over several lines or an
-// item it cannot delimit; edit checks the result against the tree either way.
+// drops that item, each copy of it, from the brackets; a non-empty add instead turns the list into a block list under
+// its key, the rest of the key's line (its comment) kept, as the tree edit does. ok is false for a list over several
+// lines or an item it cannot delimit; edit checks the result against the tree either way.
 func spliceFlow(lines []string, k, s *yaml.Node, remove, add string) ([]byte, bool) {
 	if k.Line != s.Line || s.Line < 1 || s.Line > len(lines) || s.Column < 1 {
 		return nil, false

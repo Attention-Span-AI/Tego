@@ -944,3 +944,64 @@ func TestKitIsRelocatable(t *testing.T) {
 		t.Errorf("demo.sh does not parse: %v\n%s", err, out)
 	}
 }
+
+// TestSetupRunsTheSelfCheck: the setup never showed `tego test`, the command that shows, before a take and apart from
+// the demo, that Tego refuses on this laptop. The setup block's bin/tego test line runs as written (bin/tego is this
+// test's build) with a HOME, a TMPDIR and a $TEGO_CONFIG of its own, the config written as setup writes the demo's: it
+// exits 0, its first line is the one the RUNBOOK quotes, and it leaves nothing in TMPDIR or in the config's ledger.
+func TestSetupRunsTheSelfCheck(t *testing.T) {
+	_, setup, _ := strings.Cut(readFile(t, "RUNBOOK.md"), "\n## 1. Setup")
+	setup, _, _ = strings.Cut(setup, "\n## 2.")
+	_, block, _ := strings.Cut(setup, "```sh\n")
+	block, _, _ = strings.Cut(block, "```")
+	var args []string
+	for _, line := range strings.Split(block, "\n") {
+		cmd, _, _ := strings.Cut(line, "#")
+		if f := strings.Fields(cmd); len(f) > 1 && f[0] == "bin/tego" && f[1] == "test" {
+			args = f[1:]
+		}
+	}
+	if args == nil {
+		t.Fatalf("RUNBOOK.md's setup block runs no bin/tego test:\n%s", block)
+	}
+	quote := regexp.MustCompile("`(Tego self-check: [^`]+)`").FindStringSubmatch(setup)
+	if quote == nil {
+		t.Fatal("RUNBOOK.md's setup does not quote tego test's first line (`Tego self-check: ...`)")
+	}
+	bin, _ := binaries(t)
+	base := t.TempDir()
+	if err := os.Chmod(base, 0o755); err != nil { // the machine config's directory must not be group-writable
+		t.Fatal(err)
+	}
+	home, tmp, ledger := filepath.Join(base, "home"), filepath.Join(base, "tmp"), filepath.Join(base, "ledger")
+	for _, d := range []string{home, tmp, ledger} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := filepath.Join(base, "tego-demo.yaml")
+	if err := os.WriteFile(cfg, []byte("version: 0\nledger_root: "+ledger+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := testutil.TegoEnv(t, base, "HOME="+home, "TMPDIR="+tmp, "TEGO_CONFIG="+cfg)
+	doctor := exec.Command(bin, "doctor", "--require", "landlock")
+	doctor.Env = env
+	testutil.RequireTier(t, doctor, "landlock")
+
+	cmd := exec.Command(bin, args...)
+	cmd.Env = env
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("bin/tego %s: %v\n%s\n%s", strings.Join(args, " "), err, out, stderr.String())
+	}
+	if first, _, _ := strings.Cut(string(out), "\n"); first != quote[1] {
+		t.Errorf("tego test's first line is %q; RUNBOOK.md quotes %q", first, quote[1])
+	}
+	for _, d := range []string{tmp, ledger} {
+		if left := dirNames(t, d); len(left) > 0 {
+			t.Errorf("tego test left %v in %s", left, d)
+		}
+	}
+}

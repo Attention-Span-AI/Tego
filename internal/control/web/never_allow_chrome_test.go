@@ -8,13 +8,15 @@ package web
 // (chrome_test.go's cdp) opens the asked token line of a live run at 1440x900, clicks Never allow and measures that
 // "Check the change" and "Confirm: never allow" sit inside the window and inside the sticky aside with no scroll by
 // hand; the same after the Deny notice's "Make it permanent" link, and at 1440x520. It confirms, opens the preview
-// again and checks the calm "already never allowed" banner and that the aside does not scroll sideways. Run it by
-// hand, through the box's memory slice:
+// again and checks the calm "already never allowed" banner and that the aside does not scroll sideways. Last it
+// confirms a change with its "Also apply now" box ticked and opens the Saved panel once the run has put the block in
+// force: Live now, then Undo with its acknowledgement and "Also lift". Run it by hand, through the box's memory slice:
 //
 //	go test -tags chrome -run TestNeverAllowInChrome ./internal/control/web
 //
-// With TEGO_CHROME_SHOTS set it saves the preview, a no-JS Confirm that saved nothing, and the reopened preview at
-// 1440 and 390, light and dark.
+// With TEGO_CHROME_SHOTS set it saves the preview, a no-JS Confirm that saved nothing, the reopened preview, the
+// preview with its "Also apply now" box ticked and that Saved panel at 1440 and 390, light and dark, and fails if any
+// of them scrolls sideways.
 
 import (
 	"bytes"
@@ -23,10 +25,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/control/rules"
+	"github.com/attention-span-ai/tego/internal/liveblock"
 )
 
 // actMeasure is where the step-3 heading and the Confirm button sit, against the window and the aside.
@@ -271,7 +275,35 @@ text:b?b.textContent:"", scrollW:a.scrollWidth, clientW:a.clientWidth});})()`)
 		t.Errorf("the reopened preview's aside scrolls sideways: %d > %d", re.ScrollW, re.ClientW)
 	}
 	shots("g2-reopened", line+"?a=block&level=1#act-check")
-	fmt.Println("never allow in chrome: step 3 and Confirm in view after Never allow and Make it permanent; the reopened preview is calm")
+
+	// 5. A change whose "Also apply now" box can be ticked (git, on line #4), confirmed with the box ticked, and the
+	// Saved panel it leads to: the live block's line, then Undo with its acknowledgement and "Also lift". The run's
+	// confirming line is written as its launcher writes it, so the panel says Live now, as on stage.
+	git := base + "/runs/" + actRun + "/lines/4?a=block&level=0#act-check"
+	shots("g2-alsonow", git)
+	visit(git)
+	if v := tb.eval(t, `!!document.querySelector("#act-confirm .ev-now input[name=now]:checked")`); v != "true" {
+		t.Fatal("the git preview's Also apply now box is not ticked")
+	}
+	tb.eval(t, `document.querySelector("#act-confirm button[type=submit]").click()`)
+	tb.until(t, "the Saved panel's Also lift", `!!document.querySelector("#act .ev-saved #act-undo input[name=lift]:checked")`)
+	var here string
+	if err := json.Unmarshal([]byte(tb.eval(t, `location.pathname + location.search`)), &here); err != nil || !strings.Contains(here, "?saved=") {
+		t.Fatalf("the Saved panel's address is %q (%v)", here, err)
+	}
+	o, err := liveblock.Read(filepath.Join(root, actRun), actRun)
+	if err != nil || len(o.Blocks) != 1 {
+		t.Fatalf("the live blocks after Also apply now: %+v %v", o, err)
+	}
+	seq := strings.Count(readFile(t, filepath.Join(root, actRun, "events.jsonl")), "\n")
+	appendLine(t, root, actRun, liveGapLine(actRun, seq, time.Now(), string(o.Blocks[0].Kind), o.Blocks[0].Value, int(o.Serial)))
+	visit(base + here + "#act")
+	if v := tb.eval(t, `!!document.querySelector("#act .ev-saved .ev-live-chip") && !!document.querySelector("#act-undo input[name=ack]")`); v != "true" {
+		t.Error("the Saved panel does not say Live now beside Undo's acknowledgement")
+	}
+	shots("g2-saved", base+here+"#act")
+	fmt.Println("never allow in chrome: step 3 and Confirm in view after Never allow and Make it permanent; the reopened preview is calm;" +
+		" the Saved panel says Live now beside Undo")
 }
 
 // jsString quotes s as a JavaScript string literal.

@@ -253,6 +253,18 @@ func refOf(p string) string {
 	return hex.EncodeToString(h[:])[:16]
 }
 
+// Ref is the ref Contracts lists (ContractRef.Ref) for the runs that recorded path as their contract_source: path
+// cleaned, its folder's symlinks resolved as readStart resolves them, then refOf; "" when path is not absolute (a run
+// of a generated contract records none). The Rules page names a run's rules file by it without asking the service, so
+// its chooser and its links to Change rules name a file as the service does, two spellings of it through a linked
+// folder alike.
+func Ref(path string) string {
+	if !filepath.IsAbs(path) {
+		return ""
+	}
+	return refOf(resolvedPath(filepath.Clean(path)))
+}
+
 // contractInfo is a contract of the bounded set with the newest run's context.
 type contractInfo struct {
 	ContractRef

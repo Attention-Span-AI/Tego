@@ -89,8 +89,12 @@ type ChangePlan struct {
 	Nothing bool
 	// EnvRefused marks a free edit refused because its text changes env.set values (PlanRaw).
 	EnvRefused bool
+	// Unresolved are the host names the change adds to net.allow or net.ask that did not resolve here (hosts.go): a
+	// warning, never a refusal. PlanChange and PlanRaw look them up; a write does not.
+	Unresolved []UnresolvedHost
 
-	text []byte // the new text, for Apply
+	text    []byte        // the new text, for Apply
+	changes []rule.Change // the list changes, whose added hosts a preview looks up
 }
 
 // Applied is a change written.
@@ -105,13 +109,16 @@ type Applied struct {
 }
 
 // PlanChange plans req's edits on the contract req.Ref names and writes nothing: the preview of the Change rules
-// form. A ref outside the set is ErrNoContract; an edit the core or the compiler refuses is the plan's Err.
+// form. A ref outside the set is ErrNoContract; an edit the core or the compiler refuses is the plan's Err. A host
+// name the change adds that does not resolve here is the plan's Unresolved, a warning: the change can still be made.
 func (s *Service) PlanChange(ctx context.Context, req ChangeReq) (*ChangePlan, error) {
 	c, f, err := s.writable(req.Ref)
 	if err != nil {
 		return nil, err
 	}
-	return s.planEdits(ctx, c, f, req), nil
+	p := s.planEdits(ctx, c, f, req)
+	p.Unresolved = s.unresolved(ctx, p.changes)
+	return p, nil
 }
 
 // ApplyChange plans req again on the text the contract holds now and writes it: refused when req.Base is not that
@@ -174,7 +181,8 @@ func (s *Service) planEdits(ctx context.Context, c *contractInfo, f *rulefile.Fi
 		p.Err, p.Nothing = err.Error(), errors.Is(err, rule.ErrNothing)
 		return p
 	}
-	p.text, p.Diff, p.Direction, p.Why = res.Text, shownDiff(filepath.Base(cc.Contract), f.Text, res.Text, res.Diff), string(res.Direction), res.Why
+	p.text, p.changes = res.Text, res.Changes
+	p.Diff, p.Direction, p.Why = shownDiff(filepath.Base(cc.Contract), f.Text, res.Text, res.Diff), string(res.Direction), res.Why
 	p.NeedsAck = res.Direction != rule.Narrows
 	p.Ack = s.ack(contractAckRef(p.Ref), p.Base, rulefile.Sum(res.Text))
 	var parts []string
@@ -234,15 +242,12 @@ func (s *Service) apply(ctx context.Context, c *contractInfo, p *ChangePlan, bas
 	return a, nil
 }
 
-// sentenceLines is the journal's form of sentences: "before → after".
+// sentenceLines is the journal's form of sentences (rulefile.SentenceLine, which `tego rule` journals too): "before →
+// after".
 func sentenceLines(ss []Sentence) []string {
 	out := make([]string, 0, len(ss))
 	for _, s := range ss {
-		b := s.Before
-		if b == "" {
-			b = "(nothing)"
-		}
-		out = append(out, b+" → "+s.After)
+		out = append(out, rulefile.SentenceLine(s.Before, s.After))
 	}
 	return out
 }

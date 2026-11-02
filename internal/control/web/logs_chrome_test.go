@@ -44,12 +44,7 @@ func TestLogsInChrome(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, otherRun, "events.jsonl"), []byte(otherRunLine()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, ".live"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".live", progRun), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, root, progRun)
 	_, addr, _ := liveServer(t, root, 10*time.Second, 30*time.Second)
 
 	cmdR, cmdW, err := os.Pipe()

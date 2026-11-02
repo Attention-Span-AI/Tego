@@ -136,7 +136,17 @@ What each flag does:
 - `--preset <list>`: a comma list of `no-secrets`, `no-prod` and `repo-only-writes`, in any order; `extends:` lists
   them in that fixed order. An unknown name is a usage error listing the three.
 - `--write <dir>` (repeatable): a folder the agent may write. A missing folder inside the project is created; one
-  outside it must exist. `repo-only-writes` with no `--write` and no project marker is a usage error naming `--write`.
+  outside it must exist. An absolute (or `~/`) folder is placed where the links on its way lead: one spelled through
+  the link you reached the project by is inside it and written `./x/`, and one a link leads out of the project is
+  outside it. `repo-only-writes` with no `--write` and no project marker is a usage error naming `--write`.
+  A folder init creates, `./.tego/tmp/` among them, is never made through a symbolic link: a link on the way to one
+  (a `src` or `.tego` linked elsewhere) stops init, naming it, and no `agent.yaml` is written; remove the link, or
+  replace it with a folder, and run init again. (Making the folder by hand through the link would put it where the
+  link leads, and the contract init then writes would let the agent write there.) That holds for a folder init
+  must make: one that already exists, through a link or not, is used where it is, so a `.tego` linked to a folder
+  that holds a `tmp/` stops nothing, and `./.tego/tmp/` and `TMPDIR` then lead where the link does, as compile
+  resolves every entry: in a project an agent has written, check with `ls -la .tego` that it is a folder before
+  running init again.
 - `--allow-host <host[:port] | @group>` (repeatable): a host the agent may reach, port 443 when none is given (an
   IPv6 address with a port is written `[::1]:8080`). A
   group (`@github`, `@npm`, `@pypi`, `@crates`, `@go-proxy`, `@rubygems`, `@maven-central`) is written out as its
@@ -185,6 +195,7 @@ The dashboard (`tego-control serve`) writes the same file without a terminal: Ru
 "Set up a new agent". Type the project folder, tick the presets, add the folders it may write and the hosts it may
 reach (comma-separated, as `--write` and `--allow-host` take them) and its command, then Preview: the page shows
 what the agent may do in plain sentences, every preset laid in, and what `tego compile --offline` says. Create
-writes `agent.yaml` in that folder (never over an existing one) and shows the line to start it, for example
+makes the folders the file names in the project, never through a symbolic link (one on the way to a folder it makes
+is refused, by name; one that already exists is used where it is, as above), writes `agent.yaml` in that folder (never over an existing one) and shows the line to start it, for example
 `cd ~/project && tego run agent.yaml`: the command you typed is in the file. "From a run" drafts the file from a finished run instead: it allows
 what that run did and no more (`tego learn`), except where a run that leaked sent its secrets: that address is left out, and a red notice says so. The new file is on the Rules page as "not run yet" until its first run.

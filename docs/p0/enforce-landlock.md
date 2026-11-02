@@ -701,6 +701,33 @@ nothing measurable; tier 2 and 3 inherit it with the rest of the filter (R13). (
 `TestListenerAdmissionAndNoPortBindFilterBothArchitectures` on both architectures' register layouts;
 `TestUnixForeign` and `TestIntegrationListenerAdmission` at tier landlock on the real kernel.)
 
+**R11e — the watch arm (supervisor R36).** *Added 2026-11-02 (GAPS A10).* Every enforcing run's filter
+(`filterOpts.watches`, which Prepare sets) notifies `inotify_add_watch` (254 on x86-64, 27 on arm64) and
+`fanotify_mark` (301, 263) **unconditionally**, and `fcntl` (72, 25) when its command, the low half of `args[1]` as the
+kernel reads it, is `F_NOTIFY` (1026, both architectures): dnotify, the third watch API (*added 2026-11-02*, after
+review: a descriptor of a `deny_read` directory, which the ruleset lets the agent open to list on the `READ_DIR` it
+inherits, placed a dnotify watch that reported every access, change, creation and rename inside the target). Every
+other `fcntl` command (`F_GETFL`, `F_SETFD`, `F_DUPFD`, the locks) is left alone; below ABI 6 the signal arm sees
+`fcntl` first and notifies its `F_SETOWN` pair, and any other command comes on to this test. A watch names its object
+by a pathname in the agent's memory or by a descriptor, so the filter cannot decide it, and nothing else does: the
+kernel asks of a watch only DAC's `MAY_READ` and `security_path_notify`, which neither Landlock nor the decision plane
+implements, so a watch on a `deny_read` directory reported which of its files were opened and changed while every read
+of them was refused. The supervisor refuses a watch whose object the run withholds a read of and continues the rest
+(supervisor R36). The calls that make or end a group or a watch (`inotify_init1`, `inotify_rm_watch`,
+`fanotify_init`) are not notified. The arm is in every enforcing filter, whatever the table (*amended 2026-11-02*,
+after review): the first version installed it only where the table's fs rows withheld a read beneath a `deny_read`
+target (`withholdsReads`), which left a table whose only withholding was a name entry at a root tier, a held-read name
+rule or tego's own state with no arm, and what a run withholds is not known when its filter is built (a live read or
+path block, or a read fence entry, can arrive later); nor did the predicate spare a `tego run` the cost, since every
+table it compiles withholds tego's own state (agent-contract R6a). An observe run's filter (`BuildFilter`) has no arm:
+its supervisor would continue every watch. Tiers 2 and 3 inherit it with the rest of the filter (R13). The cost is a
+notification per watch in every enforcing run: a watcher that adds one per directory of a tree pays one per directory,
+about 25 µs each on 6.17 against 2 µs unnotified (supervisor R36).
+(`TestWatchArmNotifiesTheWatchCalls` and `TestWatchArmNotifiesDnotify` on both architectures' tables,
+`TestPrepareInstallsTheWatchArm`, `TestEveryNotifiedSyscallHasAHandler`; end to end
+`TestIntegrationWatchBeneathADenyReadTarget`, and through a tier-landlock run
+`TestIntegrationAWatchOfADenyReadTargetIsRefused`.)
+
 **R12 — write-flag test, exact offsets.** `seccomp_data`: `nr`@0(4B), `arch`@4(4B), `instruction_pointer`@8(8B),
 `args[0..5]`@16,24,32,40,48,56 (8B each; only the low 32 bits are loaded for an `int` argument on a
 little-endian kernel). `open(filename,flags,mode)`: `BPF_JSET` on `args[1]` (offset 24) against `0x243`
@@ -815,6 +842,15 @@ continues a `bind(2)` (R11c), so that refusal is Landlock's alone and unrecorded
 supervisor decides and records it.
 
 **Changes.**
+- 2026-11-02, R11e (GAPS A10): the arm is in every enforcing filter; `withholdsReads` installed it only where the
+  table's fs rows withheld a read beneath a target, and left out a run whose only withholding was a name entry or rule,
+  tego's own state, or a live block or fence entry that arrived later.
+- 2026-11-02, R11e (GAPS A10): the arm notifies `fcntl` with the command `F_NOTIFY` too, filtered on the command so
+  no other `fcntl` is notified; dnotify on a descriptor of a `deny_read` directory, opened to list, still reported
+  the activity inside it at tier landlock.
+- 2026-11-02, R11e (GAPS A10): `inotify_add_watch` and `fanotify_mark` are notified in a run that withholds a read
+  beneath a `deny_read` target, for the supervisor to refuse a watch of one (supervisor R36); no hook of any tier saw
+  a watch, and one on a `deny_read` directory reported which of its files were opened and changed.
 - 2026-11-02, R11b (GAPS C34): the source-route arm is installed under every `net:` section, not only under a net
   gate; with no gate the kernel sent an admitted datagram, and the supervisor's relayed connect, to the first hop of
   a route the agent set on the socket, an address no entry admits.

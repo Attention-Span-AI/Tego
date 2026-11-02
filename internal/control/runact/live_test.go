@@ -3,10 +3,12 @@
 package runact
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -97,9 +99,10 @@ func TestLiveSerials(t *testing.T) {
 }
 
 // TestUnblockRefusedInsideARun: a process inside a run may not remove a live block; adding one only tightens and is
-// not refused for that reason.
+// not refused for that reason. The run is running, so only where the caller sits decides.
 func TestUnblockRefusedInsideARun(t *testing.T) {
-	root, _ := liveDir(t, `"tier":"landlock","command":["sh"]`)
+	root, dir := liveDir(t, `"tier":"landlock","command":["sh"]`)
+	holdRunLock(t, dir)
 	defer func(f func() (bool, error)) { selfInRun = f }(selfInRun)
 	selfInRun = func() (bool, error) { return true, nil }
 	_, err := Block(context.Background(), root, liveRun, "exec", "curl", false)
@@ -120,6 +123,86 @@ func TestUnblockRefusedInsideARun(t *testing.T) {
 	selfInRun = func() (bool, error) { return false, nil }
 	if _, err := Block(context.Background(), root, liveRun, "exec", "curl", false); err != nil {
 		t.Fatalf("unblock outside a run: %v", err)
+	}
+}
+
+// TestUnblockRefusedOnAnEndedRun: a run no launcher holds is refused a block's removal, for good or for a while, as
+// it is refused a block, in liveblock's words (the ones `tego unblock` prints), and the overlay it ended with is left
+// as it was. The dashboard's Remove, posted from a page left open across the run's end, used to rewrite that overlay
+// and say "Removed the block", while `tego unblock` refused.
+func TestUnblockRefusedOnAnEndedRun(t *testing.T) {
+	outsideRun(t)
+	ctx := context.Background()
+	root, dir := liveDir(t, `"tier":"landlock","command":["sh"],"record_minor":26`)
+	if _, err := liveblock.Update(ctx, dir, liveRun, func(o *liveblock.Overlay) (bool, error) {
+		_, ok, err := o.Add(liveblock.KindExec, "/usr/bin/curl", liveblock.By("cli"), time.Now())
+		return ok, err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	overlay := filepath.Join(dir, liveblock.FileName)
+	before, err := os.ReadFile(overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name  string
+		add   bool
+		until time.Time
+		words string
+	}{
+		{"unblock", false, time.Time{}, "the run is not running: its live blocks ended with it, so there is nothing to remove"},
+		{"unblock for a while", false, time.Now().Add(time.Hour), "its live blocks ended with it"},
+		{"block", true, time.Time{}, "the run is not running, so a live block would enforce nothing"},
+	} {
+		_, err := BlockUntil(ctx, root, liveRun, "exec", "/usr/bin/curl", tc.add, tc.until, "dashboard")
+		same := liveblock.CheckBlock(liveblock.Target{Run: liveRun}, liveblock.KindExec, tc.add, tc.until)
+		if !errors.Is(err, ErrNotRunning) || err.Error() != same.Error() || liveblock.RunWords(err) != liveblock.RunWords(same) ||
+			!strings.Contains(err.Error(), tc.words) {
+			t.Errorf("%s on an ended run: %v, want ErrNotRunning in liveblock's words %q", tc.name, err, same)
+		}
+	}
+	if after, err := os.ReadFile(overlay); err != nil || !bytes.Equal(after, before) {
+		t.Errorf("the ended run's overlay was rewritten: %s (%v), was %s", after, err, before)
+	}
+}
+
+// TestBlockNamesTheFileItMatches: Block now on an absolute program says what the launcher's identity match reaches
+// (liveblock.ReachOf): a file with other names, as a multi-call program's applets are, and a link to a file named
+// otherwise. A bare name, matched by name alone, says neither.
+func TestBlockNamesTheFileItMatches(t *testing.T) {
+	outsideRun(t)
+	ctx := context.Background()
+	root, dir := liveDir(t, `"tier":"landlock","command":["sh"],"record_minor":26`)
+	holdRunLock(t, dir)
+	bin, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	box, one := filepath.Join(bin, "box"), filepath.Join(bin, "one")
+	for _, p := range []string{box, one} {
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Link(box, filepath.Join(bin, "ls")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(one, filepath.Join(bin, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	b, err := BlockUntil(ctx, root, liveRun, "exec", filepath.Join(bin, "ls"), true, time.Time{}, "dashboard")
+	if err != nil || b.Word != "blocked" || b.Names != 2 || b.File != filepath.Join(bin, "ls") || b.Renamed {
+		t.Fatalf("a hard-linked program: %+v, %v; want 2 names", b, err)
+	}
+	b, err = BlockUntil(ctx, root, liveRun, "exec", filepath.Join(bin, "alias"), true, time.Time{}, "dashboard")
+	if err != nil || b.Names != 1 || b.File != one || !b.Renamed {
+		t.Fatalf("a link to a program named otherwise: %+v, %v; want File %s, Renamed", b, err, one)
+	}
+	for _, v := range []string{one, "one", bin + "/"} {
+		if b, err := BlockUntil(ctx, root, liveRun, "exec", v, true, time.Time{}, "dashboard"); err != nil || b.Names > 1 || b.Renamed {
+			t.Errorf("exec %s: %+v, %v; want nothing beyond its name", v, b, err)
+		}
 	}
 }
 

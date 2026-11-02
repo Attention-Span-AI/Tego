@@ -6,8 +6,9 @@ import "testing"
 
 // TestRuleNameLabels holds ruleName, the words a rule key reads in on the dashboard (the Rule column of Logs and the
 // run timeline, the refusal bars, the line page), to its labels: every key form the engine writes reads as a label
-// and the entry as declared, and a key with no label of its own reads as written (the key stays in the title and the
-// ledger either way). The fence labels are TestLogsRefusalsNameTheList's.
+// and the entry as declared, the command rules' among them, and a key with no label of its own reads as written (the
+// key stays in the title and the ledger either way). The labels are inforce.Words's (TestWordsMatchesWebLabels):
+// the dashboard keeps no table of its own. The fence labels are TestLogsRefusalsNameTheList's.
 func TestRuleNameLabels(t *testing.T) {
 	for rule, want := range map[string]string{
 		"":                               "",
@@ -28,8 +29,10 @@ func TestRuleNameLabels(t *testing.T) {
 		"net[tcp://chatgpt.com:443]":     "Host: chatgpt.com:443",
 		"net[udp://1.1.1.1:53]":          "Host: 1.1.1.1:53",
 		"net[unix:/var/run/nscd/socket]": "Socket: /var/run/nscd/socket",
+		"exec.deny[curl]":                "Never-run program: curl",
+		"exec.allow[git status]":         "Allowed command: git status",
+		"fs.watch[./notes/]":             "Watched: ./notes/",
 		// No label of its own: a key ruleName does not name, or one that is not closed, reads as written.
-		"exec.deny[curl]":       "exec.deny[curl]",
 		"net.http[0]":           "net.http[0]",
 		"mcp[files]":            "mcp[files]",
 		"signal-scope":          "signal-scope",

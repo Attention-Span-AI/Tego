@@ -4,8 +4,12 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -76,7 +80,8 @@ func ruleRun(t *testing.T) (dir, contract, secret string) {
 }
 
 // TestRuleBlockWritesAndBacksUp: tego rule --block from a read line adds the file to fs.deny_read with its dated
-// comment, keeps the old file as .bak, and says what the next run does; --dry-run writes nothing.
+// comment, keeps the old file as .bak, says what the next run does and journals the change with its sentence and
+// direction; --dry-run writes nothing.
 func TestRuleBlockWritesAndBacksUp(t *testing.T) {
 	dir, contract, _ := ruleRun(t)
 	code, out, errs := run(t, "rule", dir, "1", "--block", "--dry-run")
@@ -111,6 +116,12 @@ func TestRuleBlockWritesAndBacksUp(t *testing.T) {
 	if err != nil || len(es) != 1 || es[0].Via != "cli" || es[0].Run != "r-fixture" || es[0].Line != 1 ||
 		es[0].OldSHA256 != rulefile.Sum([]byte(ruleContract)) || es[0].NewSHA256 != rulefile.Sum(b) {
 		t.Errorf("journal: %+v, %v", es, err)
+	}
+	// The line says the change as the dashboard's line for the same change does: in words and narrowing, so the
+	// dashboard's history shows the sentence and its Undo of the change widens (internal/control/rules revert.go).
+	if want := []string{"May read ./secret.txt → Can never read ./secret.txt"}; len(es) == 1 &&
+		(es[0].Direction != "narrows" || !slices.Equal(es[0].Sentences, want)) {
+		t.Errorf("journal line: direction %q, sentences %q; want narrows, %q", es[0].Direction, es[0].Sentences, want)
 	}
 	// The same rule again changes nothing and says so.
 	if code, _, errs = run(t, "rule", dir, "1", "--block"); code != identity.ExitFinding || !strings.Contains(errs, "already") {
@@ -150,5 +161,98 @@ func TestRuleScopes(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(contract); string(b) != ruleContract {
 		t.Errorf("a refused or dry rule wrote the contract:\n%s", b)
+	}
+}
+
+const netRuleContract = `version: 0
+name: rule-net-test
+command:
+  - sh
+exec:
+  allow:
+    - sh
+net:
+  allow:
+    - 192.0.2.1:443
+tier: landlock
+`
+
+// netRuleRun writes netRuleContract and a run of it whose line #1 is a connection to dest the contract refused; it
+// returns the run directory and the contract's path.
+func netRuleRun(t *testing.T, dest string) (dir, contract string) {
+	t.Helper()
+	root := resolvedTemp(t)
+	proj := filepath.Join(root, "proj")
+	if err := os.MkdirAll(proj, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	contract = filepath.Join(root, "agent.yaml")
+	if err := os.WriteFile(contract, []byte(netRuleContract), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	start := ledgertest.Event(t, record.KindRunStart, record.RunStartPayload{Tier: "landlock", Capture: "off",
+		ContractHash: strings.Repeat("0", 64), Command: []string{"sh"}, Cwd: proj, Kernel: "6", StopGrace: "1s",
+		ContractSource: &record.ContractSource{Path: contract}})
+	refused := ledgertest.Event(t, record.KindRefused, record.RefusedPayload{Op: "connect", Target: dest}, func(e *record.Event) {
+		e.Seq, e.Rule, e.Reason = 1, "unmatched", record.ReasonNetNotAllowed
+		e.Prev = strings.Repeat("a", 64)
+	})
+	var buf bytes.Buffer
+	for _, e := range []*record.Event{start, refused} {
+		line, err := e.MarshalLine()
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf.Write(append(line, '\n'))
+	}
+	dir = filepath.Join(resolvedTemp(t), "r-fixture")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ledger.EventsFile), buf.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir, contract
+}
+
+// failingHosts is a resolver that fails the names it holds (no such host) and resolves every other one.
+type failingHosts map[string]bool
+
+func (f failingHosts) LookupNetIP(_ context.Context, _, host string) ([]netip.Addr, error) {
+	if f[host] {
+		return nil, &net.DNSError{Err: "no such host", Name: host, Server: "127.0.0.53:53", IsNotFound: true}
+	}
+	return []netip.Addr{netip.MustParseAddr("192.0.2.10")}, nil
+}
+
+// TestRuleWarnsUnresolvedHost: tego rule --allow on a refused connection to a host that does not resolve here warns on
+// stderr and still writes, exit 0: the check compiles with no DNS and the next run resolves the host when it starts,
+// so the warning is where a typo shows before then. A host that resolves warns of nothing.
+func TestRuleWarnsUnresolvedHost(t *testing.T) {
+	outsideEveryRun(t)
+	old := ruleResolver
+	t.Cleanup(func() { ruleResolver = old })
+	ruleResolver = failingHosts{"api.exmple.com": true}
+	dir, contract := netRuleRun(t, "api.exmple.com:443")
+	const warning = "warning: tego rule: host api.exmple.com does not resolve here (no such host): the next run resolves it"
+	code, out, errs := run(t, "rule", dir, "1", "--allow", "--dry-run")
+	if code != identity.ExitOK || !strings.Contains(errs, warning) || !strings.Contains(errs, "[host-unresolvable]") ||
+		!strings.Contains(out, "+    - api.exmple.com:443") {
+		t.Fatalf("dry run: exit %d\nstdout:\n%s\nstderr:\n%s", code, out, errs)
+	}
+	if b, _ := os.ReadFile(contract); string(b) != netRuleContract {
+		t.Fatalf("--dry-run wrote the contract:\n%s", b)
+	}
+	code, out, errs = run(t, "rule", dir, "1", "--allow")
+	if code != identity.ExitOK || !strings.Contains(errs, warning) || !strings.Contains(out, "wrote ") {
+		t.Fatalf("write: exit %d\nstdout:\n%s\nstderr:\n%s", code, out, errs)
+	}
+	if b, _ := os.ReadFile(contract); !strings.Contains(string(b), "    - api.exmple.com:443 # from run r-fixture line #1") {
+		t.Errorf("a host that does not resolve kept the rule from being written:\n%s", b)
+	}
+	ruleResolver = failingHosts{}
+	dir, _ = netRuleRun(t, "api.example.com:443")
+	if code, _, errs = run(t, "rule", dir, "1", "--allow", "--dry-run"); code != identity.ExitOK || strings.Contains(errs, "warning:") {
+		t.Errorf("a host that resolves: exit %d: %s", code, errs)
 	}
 }

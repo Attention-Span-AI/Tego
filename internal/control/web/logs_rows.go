@@ -27,7 +27,7 @@ const logsPage = 100
 // actions need.
 type rowView struct {
 	ledgerview.Row
-	// Home is the run's home, for the path shortener; Live marks a running run (its exec and net rows offer Block)
+	// Home is the run's home, for the path shortener; Live marks a running run (its exec, net and fs rows offer Block)
 	// and Contract a run that names a contract file (only its rows can become a rule).
 	Home string
 	// Cwd is the run's working directory: a file of the project reads ./… (pathWordsIn).

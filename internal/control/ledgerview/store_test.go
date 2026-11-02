@@ -33,15 +33,32 @@ func appendLines(t testing.TB, root, run string, lines ...string) {
 	}
 }
 
+// liveLocks is the release of the lock markLive holds for each run directory it listed.
+var liveLocks sync.Map
+
+// markLive lists run in root's live index and holds its lock, as its launcher does from taking the lock to run_end,
+// until the test ends; markLive(false) takes the entry out and lets the lock go.
 func markLive(t testing.TB, root, run string, live bool) {
 	t.Helper()
-	p := filepath.Join(root, ".live", run)
+	dir := filepath.Join(root, run)
 	if !live {
-		if err := os.Remove(p); err != nil {
+		if release, ok := liveLocks.LoadAndDelete(dir); ok {
+			release.(func())()
+		}
+		if err := os.Remove(filepath.Join(root, ".live", run)); err != nil {
 			t.Fatal(err)
 		}
 		return
 	}
+	listLive(t, root, run)
+	liveLocks.Store(dir, holdLock(t, dir))
+	t.Cleanup(func() { liveLocks.Delete(dir) })
+}
+
+// listLive lists run in root's live index and nothing more: what a launcher that died before run_end leaves.
+func listLive(t testing.TB, root, run string) {
+	t.Helper()
+	p := filepath.Join(root, ".live", run)
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		t.Fatal(err)
 	}

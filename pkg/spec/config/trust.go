@@ -13,8 +13,9 @@ import (
 	"syscall"
 )
 
-// TrustMode says what a failed trust check does: abort the whole Load (tego run) or warn and skip
-// that layer entirely (compile, doctor). Both call sites share the one check below (I11).
+// TrustMode says what a failed trust check does: abort the whole Load (tego run, and tego gc, which
+// deletes by the config) or warn and skip that layer entirely (compile, doctor). Both call sites share the
+// one check below (I11).
 type TrustMode int
 
 // TrustMode values.

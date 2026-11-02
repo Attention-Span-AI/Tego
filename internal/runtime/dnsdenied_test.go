@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/platform/dns"
+	"github.com/attention-span-ai/tego/internal/platform/hostaddr"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
@@ -114,7 +115,7 @@ func TestTheRunsDNSWorkerKeepsThisHostsAddressesOutOfTheTiersRows(t *testing.T) 
 		h := &refreshingHandle{called: make(chan struct{}, 1)}
 		r := dnsRunner(h)
 		r.dnsTick = time.Millisecond
-		r.hostAddrs = newHostAddrs(host.list, time.Now, time.Millisecond)
+		r.hostAddrs = newHostAddrs(host.list, nil, time.Now, time.Millisecond)
 		r.dnsOptions = dns.Options{MinTTL: time.Millisecond, Lookup: &rotatingLookup{answers: answers}}
 		return h, r
 	}
@@ -178,6 +179,56 @@ func TestTheRunsDNSWorkerKeepsThisHostsAddressesOutOfTheTiersRows(t *testing.T) 
 	})
 }
 
+// TestTheTiersRowsReadTheLocalTable is R18's this-host class in tier 2's rows read as the supervisor's resolved-address
+// check reads it: an address of an AnyIP range the local routing table sends here (`ip route add local
+// 198.51.100.0/24 dev lo`) is this host's own, so a host entry's compile-time answer in the range is no row, and a
+// refresh that rebinds the name into it is not handed to the tier. Read from the interfaces alone, the row admitted
+// what the supervisor refuses, and decided a datagram a sibling thread rewrote after the supervisor read it
+// (supervisor R13b). A localhost name keeps it, and the run's own snapshot reads the real table: 127.0.0.2 is no
+// interface's address and is this host's by the `local 127.0.0.0/8` route the kernel keeps for loopback.
+func TestTheTiersRowsReadTheLocalTable(t *testing.T) {
+	a := netip.MustParseAddr
+	host := &fakeHost{addrs: []string{"127.0.0.1/8", "192.0.2.10/24"}}
+	table := func() (hostaddr.LocalTable, error) {
+		return hostaddr.LocalTable{Local: []netip.Prefix{netip.MustParsePrefix("192.0.2.10/32"), netip.MustParsePrefix("198.51.100.0/24")}}, nil
+	}
+	h := &refreshingHandle{called: make(chan struct{}, 1)}
+	b := &handoffBackend{tier: backend.TierCgroup, handle: h}
+	r := handoffRunner(b, Build{})
+	r.hostAddrs = newHostAddrs(host.list, table, time.Now, time.Millisecond)
+	r.rt.Net = []agent.NetRule{
+		{Raw: "api.example:443", Host: "api.example", Port: 443, Proto: agent.ProtoInet, Verdict: agent.VerdictAllow,
+			IPs: []netip.Addr{a("198.51.100.4"), a("203.0.113.9")}, TTL: time.Millisecond},
+		{Raw: "localhost:3000", Host: "localhost", Port: 3000, Proto: agent.ProtoInet, Verdict: agent.VerdictAllow,
+			IPs: []netip.Addr{a("198.51.100.5")}, TTL: time.Millisecond},
+	}
+	if err := r.prepareEnforcement(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := b.gotRT.Net
+	if want := []netip.Addr{a("203.0.113.9")}; !slices.Equal(got[0].IPs, want) || !slices.Contains(got[0].Denied, a("198.51.100.4")) {
+		t.Errorf("host entry prepared with IPs %v Denied %v, want IPs %v and the AnyIP address denied", got[0].IPs, got[0].Denied, want)
+	}
+	if !slices.Equal(got[1].IPs, []netip.Addr{a("198.51.100.5")}) {
+		t.Errorf("a localhost name lost its address: %v", got[1].IPs)
+	}
+
+	r.log = slog.New(slog.DiscardHandler)
+	r.dnsTick = time.Millisecond
+	r.dnsOptions = dns.Options{MinTTL: time.Millisecond, Lookup: &rotatingLookup{answers: [][]netip.Addr{{a("203.0.113.8"), a("198.51.100.77")}}}}
+	startedNotifyLoop(t, r)
+	handedUntil(t, h, "203.0.113.8")
+	for _, rt := range h.got() {
+		if slices.Contains(rt.Net[0].IPs, a("198.51.100.77")) {
+			t.Fatalf("the tier was handed an AnyIP address for the host entry: %v", rt.Net[0].IPs)
+		}
+	}
+
+	if local, known := (&runner{}).hostSnapshot().has(a("127.0.0.2")); !local || !known {
+		t.Errorf("the run's snapshot = %v, %v for 127.0.0.2: it does not read the local table", local, known)
+	}
+}
+
 // TestSameNetAddrs: the worker hands the tier a table only when an entry's addresses differ as the rows key them,
 // in any order and with an IPv4 address and its v4-mapped form as one.
 func TestSameNetAddrs(t *testing.T) {
@@ -218,7 +269,7 @@ func TestTheTierIsPreparedWithoutThisHostsAddresses(t *testing.T) {
 	b := &handoffBackend{tier: backend.TierCgroup, handle: h}
 	r := handoffRunner(b, Build{})
 	host := &fakeHost{addrs: []string{"127.0.0.1/8", "198.51.100.4/24", "192.0.2.1/24", "198.51.100.5/24"}}
-	r.hostAddrs = newHostAddrs(host.list, time.Now, time.Millisecond)
+	r.hostAddrs = newHostAddrs(host.list, nil, time.Now, time.Millisecond)
 	r.rt.Net = []agent.NetRule{
 		{Raw: "api.example:443", Host: "api.example", Port: 443, Proto: agent.ProtoInet, Verdict: agent.VerdictAllow,
 			IPs: []netip.Addr{a("198.51.100.4"), a("203.0.113.9")}, TTL: time.Millisecond},

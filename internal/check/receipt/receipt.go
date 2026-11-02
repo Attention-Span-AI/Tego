@@ -112,7 +112,9 @@ type Receipt struct {
 	Coverage Coverage `json:"coverage"`
 	// Lines is how many ledger lines the receipt read.
 	Lines int `json:"lines"`
-	// Notes are anomalies the pass met (a second run_end, lines of a newer version skipped).
+	// Notes are what the pass met that neither the counts nor the coverage say: anomalies (a second run_end, lines of a
+	// newer version skipped), and the modes tego gave back to the owner of its own files (restoredNote), which lost no
+	// action.
 	Notes []string `json:"notes,omitempty"`
 
 	// home is Options.Home, for the text layout only.
@@ -347,14 +349,15 @@ type builder struct {
 	openSSL    map[uint64]bool
 	windows    []time.Duration
 	stallAfter time.Duration
-	// the action line refused just before, for counting a mirroring refused line once
-	prev        mirror.Key
+	// the lines before, for counting a refused line that mirrors a refused action once
+	pairs       mirror.Pairs
 	lastAsk     *payload
 	lastAskRule string
 	runStart    record.RunStartPayload
 	prices      measure.Prices
 	gapLines    int  // gap lines that may have lost actions: the record's counts are a floor
 	captureGaps int  // gap what=capture lines: model traffic tego could not read
+	restored    int  // gap lines of a mode tego gave back to the owner of one of its own files: no action lost
 	noPrice     bool // a gap said the run had no usable price table
 	devWrite    bool // an allowed write reached a device, which Files does not list (device)
 	act         activity
@@ -472,15 +475,15 @@ func (b *builder) line(e *record.Event) {
 		}
 	}
 
-	// A refused action counts once: the action line, or a refused line written on its own; a refused line right
-	// after the refused action it mirrors is that action again (measure R19, internal/check/internal/mirror).
-	if (e.Kind.IsAction() && e.Verdict == record.VerdictRefused) || (e.Kind == record.KindRefused && !b.prev.Mirrors(e)) {
+	// A refused action counts once: the action line, or a refused line written on its own; a refused line that
+	// mirrors a refused action before it is that action again (measure R19, internal/check/internal/mirror).
+	mirrored := b.pairs.Take(e)
+	if (e.Kind.IsAction() && e.Verdict == record.VerdictRefused) || (e.Kind == record.KindRefused && !mirrored) {
 		b.refusal(e, &p)
 		if e.Kind == record.KindRefused {
-			b.refusedAlone(e, &p) // a refused line with no action line before it: its connection or read too
+			b.refusedAlone(e, &p) // a refused line that mirrors no action line: its connection or read too
 		}
 	}
-	b.prev = mirror.Of(e)
 	if e.Verdict == record.VerdictAsk {
 		cp := p
 		b.lastAsk, b.lastAskRule = &cp, e.Rule
@@ -811,6 +814,9 @@ func (b *builder) finish(opt Options) {
 			t.CostText += fmt.Sprintf(" (%d unpriced)", t.Unpriced)
 		}
 	}
+	if b.restored > 0 {
+		rc.Notes = append(rc.Notes, restoredNote(b.restored))
+	}
 	b.coverage()
 }
 
@@ -825,8 +831,9 @@ const (
 
 // gap sorts one gap line by what it means (gaps.Classify, tego status's reading too). Only a gap that may have lost
 // actions makes the record's counts a floor: a person's own pause, resume or live block (the timeline shows each)
-// loses nothing, a capture gap only makes the token counts a floor, and a price gap only leaves the cost unestimated. A line whose payload does not decode counts as a lost
-// action, the conservative reading.
+// loses nothing, a capture gap only makes the token counts a floor, a price gap only leaves the cost unestimated, and
+// a mode tego gave back to the owner of one of its own files is a note (restoredNote). A line whose payload does not
+// decode counts as a lost action, the conservative reading.
 func (b *builder) gap(e *record.Event) {
 	var g record.GapPayload
 	if e.DecodePayload(&g) != nil {
@@ -841,9 +848,17 @@ func (b *builder) gap(e *record.Event) {
 		b.noPrice = b.noPrice || g.Why != gapUnpricedModel
 	case gaps.Capture:
 		b.captureGaps++
+	case gaps.Restored:
+		b.restored++
 	case gaps.Missed:
 		b.gapLines++
 	}
+}
+
+// restoredNote is the receipt's note for n modes tego gave back to the owner of its own files: something, an agent
+// most likely, had taken the rights tego needs on them. Nothing the run did went unrecorded, so it is no coverage gap.
+func restoredNote(n int) string {
+	return gaps.RestoredWords(n) + ", which something had taken from their owner; no action went unrecorded"
 }
 
 // coverage gathers the fields the ledger could not support in full into one list, so a reader sees at a glance

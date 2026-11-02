@@ -2,7 +2,9 @@
 
 // Package ledgerview is the dashboard's read model: a cached, read-only view of a ledger root's run directories
 // (<root>/r-*/events.jsonl) as run summaries, events, refusal groups and pending asks, for internal/control/web to
-// render. It opens files read-only, takes no lock and writes nothing.
+// render. It opens files read-only, writes nothing and holds no lock: a run's lock is only probed, as the ledger's
+// readers probe it (ledger.LockHeld: it never waits, and takes nothing while a launcher holds the lock), to tell a
+// running run from a lost one (livelock.go) and for a result's stamp (results.go).
 //
 // # The cache (store.go, cache.go, memo.go)
 //
@@ -19,11 +21,19 @@
 // comes from the run's exec lines in one pass, continued as a live run grows (program.go), and Group gathers the
 // matched lines by process, target or rule, kept per run version like the facets (group.go). Lines are kept in memory up to MaxResidentBytes (an estimate); past it the lines of the
 // ended runs no page asked for longest are dropped, their summaries stay, and Run.AllEvents reads them again when a
-// view needs them. Chain verdicts of ended runs are kept by (run directory, events file identity, size, mtime, last
-// line's id, anchor identity); after ten minutes the kept verdict is still shown while the same run is checked again
-// in the background, and one check per key runs at a time (chain.go). A run's Signal is kept per run version, and while
-// the run is live so is the pass that built it, so the next version folds only the lines it gained (signalcache.go,
-// signalfold.go); a line's paths are classified as secret or not once, as the Store takes the line (secretpath.go).
+// view needs them. Chain verdicts of ended runs are kept by (run directory, events file identity, size, mtime, ctime,
+// last line's id, anchor path) and stand while the anchor answers for the run as it did when the verdict was reached:
+// one view per chain.log (anchorview.go) answers for every run and every check, costs an lstat while the file is
+// unchanged and one read after any change and at least every ten minutes, read without a lock and shared by the looks
+// that need it, so another run's end checks nothing again and an edit the file's stamps show that changes the run's
+// answer is checked before the page answers. One the stamps did not show (a write within a coarse clock's tick, or
+// through a shared mapping's dirty page) is seen once the view is ten minutes old, which reads the file again. After
+// ten minutes the kept verdict is still shown while the same run is checked again in the background, its events file
+// read from disk and chain.log through the view; a check that finds another verdict than the one kept moves the
+// revision, so open pages redraw, and one check per key runs at a time (chain.go). A run's Signal is
+// kept per run version, and while the run is live so is the pass that built it, so the next version folds only the
+// lines it gained (signalcache.go, signalfold.go); a line's paths are classified as secret or not once, as the Store
+// takes the line (secretpath.go).
 // The run page's heavy tabs keep their results per run in bounded caches (results.go: Results, StampRun): the Receipt
 // here and, in internal/control/rulesview, Least privilege and Unused, each reused while the run's events file
 // (device, inode, size, mtime, a digest of its last 4 KiB, live or not) and the rest of its key are the same, at most
@@ -84,7 +94,8 @@
 //   - Snapshot.Rev is the revision the snapshot reflects. Two snapshots with the same Rev hold the same runs with
 //     the same lines, live states and pending asks; a page whose Rev matches has nothing to redraw.
 //   - Run.Rev is the revision at which that run last changed: lines appended, its file replaced or truncated, its
-//     live state changed. Snapshot.Changed(since) lists the runs with Rev > since. A run that left the root (gc) is
+//     live state changed (listed in <root>/.live with its lock held; each lock's probe is kept two seconds,
+//     livelock.go). Snapshot.Changed(since) lists the runs with Rev > since. A run that left the root (gc) is
 //     not listed, but Snapshot.Rev moved, so compare the run ids when Rev moved and Changed is empty.
 //   - Run.LastSeq is the seq of the run's newest line read, the cursor for "rows after seq"; TimelineOf(run,
 //     refusedOnly).Below(seq+1) is the number of timeline rows newer than seq.
@@ -95,13 +106,14 @@
 // Timeline.Rows return fresh rows a caller may label.
 //
 // The chain check (chain.go) is the one place it reads through internal/ledger: VerifyRun runs ledger.VerifyRunDir,
-// the code `tego events <run> --verify` runs, against the same chain anchor, on one run per request (the run page)
-// or on the newest MaxChainRuns ended runs (the overview).
+// the code `tego events <run> --verify` runs, against the same chain anchor, and reads its result as that command
+// does (ledger.VerdictOf), on one run per request (the run page) or on the newest MaxChainRuns ended runs (the
+// overview).
 //
 // The web pages read the ledger in this process, through this package.
 //
 // Imports: the standard library, pkg/spec/record, internal/control/linewords (the glossary and the credential mask),
-// internal/ledger (VerifyRunDir; OpenReader for the receipt; LockHeld and OpenRegular for a result's stamp), and the read-side cores internal/check/receipt, measure, livestatus,
+// internal/ledger (VerifyRunDir, VerdictOf and AnchorHeads; OpenReader for the receipt; LockHeld for a run's live state and, with OpenRegular, a result's stamp), and the read-side cores internal/check/receipt, measure, livestatus,
 // secretpath and syslookup.
 // Must not import: the engine (internal/runtime, internal/policy, internal/bpf, internal/cli).
 package ledgerview

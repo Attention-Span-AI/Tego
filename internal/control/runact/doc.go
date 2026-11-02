@@ -21,6 +21,11 @@
 // them with the serial of each one's add, and Block returns the run's facts (StartFacts: watched or not, reads seen or
 // not) and the overlay's serial, so a view says each block's state with internal/check/livestatus. A remove asked by a
 // process inside a run is refused (SelfGoverned, governed.go): a governed agent may tighten a run, never loosen it.
+// The run's own refusals (not running, a launcher too old for the change, reads not seen; for a lift or a restore a
+// Locked run, an entry outside the fence, a key that cannot be read) are liveblock's checks and words
+// (liveblock.CheckBlock, CheckFence, LiftKey), the ones `tego block`, `tego unblock`, `tego lift`, `tego grant` and
+// `tego restore` make, so the dashboard and the terminal answer a change alike: a run that has ended is refused a
+// block and a removal both, and its overlay is left as it was.
 //
 // Pause writes a pause or a resume into the same overlay for the launcher to apply (pause.go); it is refused to a
 // caller inside a run, for a run that is not running, and for a run whose launcher did not mark that it reads one
@@ -28,7 +33,7 @@
 //
 // BlockUntil is Block with a time limit (ADR 0125 decision 4), refused on a run whose launcher does not read one
 // (livestatus.Facts.Timed). Lift and Restore (lift.go) ask the launcher of an Adjustable run to allow, or refuse
-// again, one of its fence entries: a lift carries a MAC under the run's key (liveblock.ReadKey) and is refused to a
+// again, one of its fence entries: a lift carries a MAC under the run's key (liveblock.LiftKey) and is refused to a
 // caller inside a run, to a Locked run and outside the fence; a restore narrows and is allowed from inside a run.
 // Each writes a request only: the launcher decides what takes effect and records it.
 //

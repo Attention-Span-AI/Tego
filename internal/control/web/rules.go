@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
+	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/rulesview"
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/internal/liveblock"
@@ -22,18 +24,41 @@ import (
 // when its rules file changed for the next run, and the raw contract and compile table behind a toggle. The chooser
 // picks a rules file a run of this ledger recorded (by an opaque ref, never a path) and one of its runs. The page
 // reads; Remove posts to /runs/<run>/unblock, and Change rules opens /rules/change (rules_change.go).
+//
+// The ref is the rule service's (rules.Ref, rules.ContractRef.Ref), worked out here from the path a run recorded, so
+// the page needs no service to name a file and Change rules is linked to with no hop. The runs and the run shown come
+// from the read model's snapshot (ledgerview.Load); a run past it is read on its own (ledgerview.LoadRun).
 
-// maxChooserRuns bounds the run chooser's list of one rules file's runs.
+// maxChooserRuns bounds the run chooser's list of one rules file's runs; the run shown is listed too when it is older.
 const maxChooserRuns = 40
 
-// contractRef is the opaque ref of a rules file a run recorded: the hex sha256 of its cleaned absolute path. The
-// browser names a contract by it and never by a path, so a request cannot smuggle a path in .
-func contractRef(path string) string {
+// legacyRef is the ref the Rules page named a rules file by before it named it by the rule service's: the hex sha256
+// of the recorded path, cleaned, 64 digits. Only an old link carries one now (a bookmark, a page still open from
+// before); /rules and /rules/change send it on to the file's ref.
+func legacyRef(path string) string {
 	if path == "" || !filepath.IsAbs(path) {
 		return ""
 	}
 	sum := sha256.Sum256([]byte(filepath.Clean(path)))
 	return hex.EncodeToString(sum[:])
+}
+
+// isLegacyRef says ref has legacyRef's shape: no ref of the rule service's (16 hex digits) has it.
+func isLegacyRef(ref string) bool {
+	return len(ref) == sha256.Size*2 && strings.Trim(ref, "0123456789abcdef") == ""
+}
+
+// refMemo is rules.Ref of each recorded path, worked out once a request: the page asks it of every run of the
+// snapshot, and it resolves the path's folder.
+type refMemo map[string]string
+
+func (m refMemo) of(path string) string {
+	ref, ok := m[path]
+	if !ok {
+		ref = rules.Ref(path)
+		m[path] = ref
+	}
+	return ref
 }
 
 // contractOpt is one rules file in the chooser.
@@ -160,13 +185,21 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	d := rulesData{CanChange: changeBuilt, CanSetUp: s.cfg.Setup != nil}
-	for _, c := range rulesview.ContractsFromRuns(snap) {
-		d.Contracts = append(d.Contracts, contractOpt{Ref: contractRef(c.Path), Path: c.Path, Agent: c.Agent, Runs: c.Runs, Live: c.Live})
+	refs := refMemo{}
+	ran := rulesview.ContractsFromRuns(snap)
+	if old := q.Get("c"); isLegacyRef(old) {
+		for _, c := range ran {
+			if legacyRef(c.Path) == old {
+				q.Set("c", refs.of(c.Path))
+				http.Redirect(w, r, "/rules?"+q.Encode(), http.StatusSeeOther)
+				return
+			}
+		}
 	}
-	d.Contracts = append(d.Contracts, s.notRunContracts()...)
+	d.Contracts = s.chooserContracts(ran, refs)
 	var run *ledgerview.Run
 	if want := q.Get("run"); want != "" {
-		run = findRun(snap, want)
+		run = snap.Find(want)
 		if run == nil {
 			if rr, err := ledgerview.LoadRun(s.cfg.Ledger, want); err == nil && rr.ID == want {
 				run = rr
@@ -198,10 +231,10 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
 		}
 		// The run chosen belongs to another rules file when the person changed the contract and kept the run: the
 		// contract wins, and its newest run is shown.
-		if run == nil || contractRef(run.Contract) != ref {
+		if run == nil || refs.of(run.Contract) != ref {
 			run = nil
 			for _, rr := range snap.Runs {
-				if contractRef(rr.Contract) == ref {
+				if refs.of(rr.Contract) == ref {
 					run = rr
 					break
 				}
@@ -216,15 +249,8 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
 		s.render(w, http.StatusOK, "rules", c, d)
 		return
 	}
-	d.Run, d.Ref = run, contractRef(run.Contract)
-	for _, rr := range snap.Runs {
-		if contractRef(rr.Contract) == d.Ref && (d.Ref != "" || rr.ID == run.ID) && len(d.Runs) < maxChooserRuns {
-			d.Runs = append(d.Runs, runOpt{ID: rr.ID, Start: rr.Start, State: rr.State()})
-		}
-	}
-	if len(d.Runs) == 0 { // a run loaded from disk beyond the snapshot
-		d.Runs = []runOpt{{ID: run.ID, Start: run.Start, State: run.State()}}
-	}
+	d.Run, d.Ref = run, refs.of(run.Contract)
+	d.Runs = chooserRuns(snap, run, d.Ref, refs)
 	d.Running = run.State() == "running"
 	d.V = rulesview.InForce(r.Context(), s.cfg.Ledger, run.ID, rulesview.Options{Machine: s.cfg.Machine, Anchor: s.cfg.Anchor, Profiles: s.cfg.Profiles, Run: run})
 	s.fillRules(&d)
@@ -276,14 +302,51 @@ func (s *Server) fillLiveMode(d *rulesData) {
 	}
 }
 
-// findRun is the snapshot's run id, nil when it holds none.
-func findRun(snap *ledgerview.Snapshot, id string) *ledgerview.Run {
-	for _, r := range snap.Runs {
-		if r.ID == id {
-			return r
+// chooserContracts is the chooser's rules files: those the runs named (ran, the newest run's file first), one per ref,
+// so a file two runs recorded through two spellings of its folder (one through a link) is one entry, under its newest
+// run's spelling, counting the runs of both; then those the rule service set up here that no run ran yet.
+func (s *Server) chooserContracts(ran []rulesview.ContractRun, refs refMemo) []contractOpt {
+	var out []contractOpt
+	at := map[string]int{}
+	for _, c := range ran {
+		ref := refs.of(c.Path)
+		if i, ok := at[ref]; ok {
+			out[i].Runs += c.Runs
+			out[i].Live += c.Live
+			continue
+		}
+		at[ref] = len(out)
+		out = append(out, contractOpt{Ref: ref, Path: c.Path, Agent: c.Agent, Runs: c.Runs, Live: c.Live})
+	}
+	for _, c := range s.notRunContracts() {
+		if _, ok := at[c.Ref]; !ok { // its first run is in the snapshot already
+			out = append(out, c)
 		}
 	}
-	return nil
+	return out
+}
+
+// chooserRuns is the chooser's run list: the newest maxChooserRuns runs of the rules file ref, and the run shown when
+// it is not among them (an older run reached by ?run=, or one read from disk past the snapshot) in its place by start,
+// so the list never names another run than the one the page shows. A run that named no rules file is listed alone.
+func chooserRuns(snap *ledgerview.Snapshot, run *ledgerview.Run, ref string, refs refMemo) []runOpt {
+	var out []runOpt
+	for _, rr := range snap.Runs { // newest start first
+		if len(out) == maxChooserRuns {
+			break
+		}
+		if refs.of(rr.Contract) == ref && (ref != "" || rr.ID == run.ID) {
+			out = append(out, runOpt{ID: rr.ID, Start: rr.Start, State: rr.State()})
+		}
+	}
+	if slices.ContainsFunc(out, func(o runOpt) bool { return o.ID == run.ID }) {
+		return out
+	}
+	i := len(out)
+	for i > 0 && out[i-1].Start.Before(run.Start) {
+		i--
+	}
+	return slices.Insert(out, i, runOpt{ID: run.ID, Start: run.Start, State: run.State()})
 }
 
 // fillRules turns d.V into the page's groups, banner and details.
@@ -332,15 +395,15 @@ func (s *Server) fillRules(d *rulesData) {
 			}
 			return row
 		}
-		rules := []rulesview.Fold{}
+		folds := []rulesview.Fold{}
 		if g.ID == "live" {
 			for _, rl := range g.Rules {
-				rules = append(rules, rulesview.Fold{Rule: rl})
+				folds = append(folds, rulesview.Fold{Rule: rl})
 			}
 		} else {
-			rules = rulesview.FoldDevices(g.Rules)
+			folds = rulesview.FoldDevices(g.Rules)
 		}
-		for _, f := range rules {
+		for _, f := range folds {
 			row := toRow(f.Rule)
 			if len(f.Devices) > 0 {
 				row = foldRow(f.Devices, toRow)

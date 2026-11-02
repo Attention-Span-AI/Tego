@@ -179,6 +179,7 @@ func TestHelperLockHolder(t *testing.T) {
 func TestStopThroughHandler(t *testing.T) {
 	root := fixture(t)
 	dir := filepath.Join(root, harmRun)
+	letGo(dir) // the helper is the run's launcher here
 	holder := exec.Command(os.Args[0], "-test.run=^TestHelperLockHolder$")
 	holder.Env = append(os.Environ(), holderEnv+"="+dir)
 	if err := holder.Start(); err != nil {

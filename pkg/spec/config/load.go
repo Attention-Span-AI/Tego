@@ -61,8 +61,9 @@ func Load(invokingUID int, secure bool) (*Machine, []Diagnostic, error) {
 	return LoadMode(invokingUID, secure, TrustAbort)
 }
 
-// LoadMode is Load with an explicit trust mode: TrustAbort for tego run, TrustWarn for compile
-// and doctor, which warn about an untrusted or invalid layer and skip it (I11).
+// LoadMode is Load with an explicit trust mode: TrustAbort for tego run and tego gc, which deletes by the
+// retention and ledger root a skipped layer may set, TrustWarn for compile and doctor, which warn about an untrusted
+// or invalid layer and skip it (I11).
 func LoadMode(invokingUID int, secure bool, mode TrustMode) (*Machine, []Diagnostic, error) {
 	src, home, diags := Resolve(invokingUID, secure)
 	m, more, err := LoadSources(src, home, invokingUID, mode)

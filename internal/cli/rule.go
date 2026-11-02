@@ -31,7 +31,10 @@ func init() { register(cmdRule) }
 // ("git push", an exec command rule) and --host the destination's whole host. It prints the
 // diff, writes the contract (the old one kept as <file>.bak) unless --dry-run, and says what the next run does
 // differently. The write goes through internal/rulefile, as the dashboard's does: the contract must pass its guards,
-// and the change is journaled under the run's ledger root (.rule-changes/), where history and undo read it. The new contract is compiled first, as tego compile would, and never written when it does not.
+// and the change is journaled under the run's ledger root (.rule-changes/), with its sentences and direction as the
+// dashboard journals the same change, where the dashboard's history and Undo read it. The new contract is compiled
+// first, as tego compile would, and never written when it does not. A host name the rule adds that does not resolve
+// here is a warning on stderr, never a refusal (warnUnresolved).
 func cmdRule() Command {
 	var block, ask, allow, folder, dry, command, host bool
 	var level int
@@ -132,12 +135,18 @@ func runRule(ctx context.Context, ref string, seq uint64, a rule.Action, sc rule
 	}
 	if dry {
 		fmt.Fprintf(stdout, "dry run: nothing written. Without --dry-run the next run of %s will %s.\n", found.Contract, res.Effect)
+		warnUnresolved(ctx, stderr, res.Changes)
 		return identity.ExitOK
 	}
 	if res.Direction != rule.Narrows && refuseGoverned("rule", stderr) {
 		return identity.ExitFinding
 	}
-	found.Via, found.Summary = "cli", res.Summary
+	// The journal line says the change as the dashboard's line for it would, sentences and direction included: the
+	// dashboard's history shows it in words, and undoing it there goes the other way (a block undone widens).
+	found.Via, found.Summary, found.Direction = "cli", res.Summary, string(res.Direction)
+	for _, s := range res.Sentences {
+		found.Sentences = append(found.Sentences, rulefile.SentenceLine(s.Before, s.After))
+	}
 	bak, err := found.Write(res.Text)
 	if err != nil {
 		message(stderr, found.Contract, 0, 0, "tego rule: "+err.Error(), codeIO)
@@ -145,7 +154,23 @@ func runRule(ctx context.Context, ref string, seq uint64, a rule.Action, sc rule
 	}
 	fmt.Fprintf(stdout, "wrote %s (the old file is %s)\n%s\nThe next run of %s will %s.\n", found.Contract, bak, res.Summary,
 		found.Contract, res.Effect)
+	warnUnresolved(ctx, stderr, res.Changes)
 	return identity.ExitOK
+}
+
+// ruleResolver is the DNS lookup tego rule warns with (warnUnresolved); nil is the system's. Tests replace it.
+var ruleResolver agent.Resolver
+
+// warnUnresolved warns, on stderr, of each host name the rule adds to net.allow or net.ask that does not resolve here:
+// the one lookup tego rule makes (nextrun.UnresolvedHosts, all at once within nextrun.HostBudget), since the check
+// compiles with no DNS. It is never a refusal and leaves the exit status alone: the next run resolves every host when
+// it starts, and a mistyped one stops it there. The dashboard's previews say the same (internal/control/rules hosts.go).
+func warnUnresolved(ctx context.Context, stderr io.Writer, changes []rule.Change) {
+	for _, u := range nextrun.UnresolvedHosts(ctx, ruleResolver, rule.NetAdded(changes), nextrun.HostBudget) {
+		message(stderr, "", 0, 0, "warning: tego rule: host "+u.Host+" does not resolve here ("+u.Why+"): the next run "+
+			"resolves it when it starts and does not start while it fails (tego run --offline starts anyway); check the name",
+			agent.CodeHostUnresolvable)
+	}
 }
 
 // ruleGuard is where tego rule refuses a contract and journals its change: the run directory's parent is the run's
@@ -164,7 +189,8 @@ func ruleGuard(dir string, m *config.Machine) rulefile.Guard {
 
 // compileRule compiles text as the contract the run in dir found ran, as tego compiles the next run of it
 // (internal/nextrun, the compile the dashboard's rule service calls too): the run's tier, run command grant and
-// working directory, offline, on this PATH and then the run's exec directories. The error carries the diagnostics.
+// working directory, offline with no DNS, on this PATH and then the run's exec directories. The error carries the
+// diagnostics.
 func compileRule(ctx context.Context, m *config.Machine, dir string, found *rulefile.Found, text []byte) error {
 	_, err := nextrun.Compile(ctx, m, ruleContext(m, dir, found), text)
 	return err

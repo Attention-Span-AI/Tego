@@ -177,6 +177,48 @@ func TestReceiptWords(t *testing.T) {
 	}
 }
 
+// TestReceiptTabShowsTheReceiptsNotes: the Receipt tab shows the notes `tego receipt` prints, which it left out, so a
+// run whose own files' modes tego gave back said nothing of it there. Those lines lost no action, so the coverage
+// lists no gap in the record for them, and the Logs row of each names the file tego gave back.
+func TestReceiptTabShowsTheReceiptsNotes(t *testing.T) {
+	const run = "r-aaaaaaaa-0000000000051-ownsta"
+	root := t.TempDir()
+	t0 := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	restored := func(seq int, path string) string {
+		return line(run, "demo", seq, t0.Add(time.Duration(seq)*time.Second), "gap",
+			`"what":"record","why":"own-state-mode-restored","binary":"`+path+`"`)
+	}
+	ls := []string{
+		line(run, "demo", 0, t0, "run_start", `"tier":"landlock","command":["true"]`),
+		restored(1, "/home/u/.tego"),
+		restored(2, "/home/u/.tego/config.yaml"),
+		line(run, "demo", 3, t0.Add(3*time.Second), "run_end", `"reason":"exit","exit_code":0`),
+	}
+	if err := os.MkdirAll(filepath.Join(root, run), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, run, "events.jsonl"), []byte(strings.Join(ls, "")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := newServer(t, root)
+	c := login(t, s)
+	page := get(t, s, c, "/runs/"+run+"/receipt")
+	const note = "Note: tego restored the modes of 2 of its own files, which something had taken from their owner; " +
+		"no action went unrecorded."
+	if !strings.Contains(page, note) {
+		t.Errorf("the Receipt tab lacks %q", note)
+	}
+	if strings.Contains(page, "in the record (counts are a minimum)") {
+		t.Error("the Receipt tab counts the restored modes as a gap that may have lost actions")
+	}
+	logs := get(t, s, c, "/logs?run="+run+"&kind=gap")
+	for _, want := range []string{"/home/u/.tego/config.yaml", "Tego gave its owner back the rights on one of its own files"} {
+		if !strings.Contains(logs, want) {
+			t.Errorf("the Logs rows of the restored modes lack %q", want)
+		}
+	}
+}
+
 // TestComparePairsByStart: the watched take is paired with the enforced run of its program that started
 // closest to it, not with a later rehearsal of the enforced side.
 func TestComparePairsByStart(t *testing.T) {

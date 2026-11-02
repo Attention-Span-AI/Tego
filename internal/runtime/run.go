@@ -106,6 +106,15 @@ type Deps struct {
 	// with AnchorPath and opens once with ledger.ProbeAnchor before calling Run. "" is the ledger's
 	// default beside the ledger root (ledger.DefaultAnchorPath), which only tests rely on.
 	AnchorPath string
+	// OwnStateRestored is what the caller's RestoreOwnState restored before the run (the CLI calls it before it reads
+	// the machine config and again before it compiles), which the run records right after run_start, one gap
+	// why=own-state-mode-restored each; nil for none.
+	OwnStateRestored []ModeRestored
+	// UserState is the user's own state of tego's the caller gave back before it read the machine config: OwnState's
+	// Home and Log, ~/.tego with the per-user config layer and tego.log in it. The run gives it back again at its end,
+	// beside its own (restoreRunState), so a mode its agent took is not left for the processes after it, which skip a
+	// layer they cannot read (`tego gc` refuses one). The zero value names none; its other fields are not read.
+	UserState OwnState
 	// ParentRun is the run this one says it is nested in (tego run: the enclosing run's TEGO_RUN_ID, else
 	// TEGO_PARENT_RUN), and the child's TEGO_PARENT_RUN; "" is itself a value the child receives. A value that is not
 	// a run id is ErrDeps; a valid one is recorded as run_start.parent_run, the launcher environment's claim (ADR 0073).
@@ -353,10 +362,10 @@ type runner struct {
 	// startNotifyLoop itself, which is where the worker that hands the tier its refreshes is started.
 	dnsOptions dns.Options
 	dnsTick    time.Duration
-	// hostAddrs is the snapshot of this host's interface addresses refreshDenied reads, for the table Prepare
-	// is given and for the set's refreshes (hostSnapshot); nil until the run first needs it, when production's,
-	// net.InterfaceAddrs taken again once hostAddrsMaxAge old, is made. A field so a test can give the host
-	// addresses of its own.
+	// hostAddrs is the snapshot of this host's own addresses refreshDenied reads, for the table Prepare is
+	// given and for the set's refreshes (hostSnapshot); nil until the run first needs it, when production's,
+	// net.InterfaceAddrs and the local routing table taken again once hostAddrsMaxAge old, is made. A field so
+	// a test can give the host addresses of its own.
 	hostAddrs *hostAddrs
 	// rowsNet is the net section the tier was prepared with (rowsTable), from which refreshDNS starts.
 	rowsNet []agent.NetRule
@@ -639,6 +648,7 @@ func (r *runner) releaseAgent(ctx context.Context, child agentGate) bool {
 // run already knows of before the agent does anything, so each precedes every line the agent causes. A gap a package
 // adds adds its row here; the Started hook runs after the last.
 var postStartGaps = []func(*runner){
+	(*runner).emitOwnStateGap,
 	(*runner).emitCaptureGaps,
 	(*runner).emitPriceGap,
 	(*runner).emitBudgetUnmeteredGaps,

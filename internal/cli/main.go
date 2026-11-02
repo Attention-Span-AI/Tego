@@ -25,7 +25,9 @@ import (
 // and the function that runs it. Run receives the parsed FlagSet (positional arguments in
 // fs.Args(), flags allowed before and after them) and returns the process exit code (R25).
 type Command struct {
-	Name    string
+	Name string
+	// Summary is the command's line in the usage. One that refuses to run without root ([privilege]) begins
+	// "(root) ", as a handed-off noun's begins "(tego-control) ", so the usage says so before anyone runs it.
 	Summary string
 	Usage   string
 	Hidden  bool

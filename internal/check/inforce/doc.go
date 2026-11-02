@@ -23,8 +23,8 @@
 // file share its hits (execNames; internal/control/rulesview's TestIntegrationRuleKeysAreARunsKeys holds the keys of
 // the Rules page's view to a real run's ledger). (*View).Count adds each rule's hits from a run's ledger lines, and
 // (*View).CountDefault each line no rule named to the default of the group that decided it (an exec line the programs',
-// a net line the network's: Group.DefaultKind); Words is the one plain label for a
-// ledger rule key, the vocabulary the dashboard's event pages use.
+// a net line the network's: Group.DefaultKind); Words is the one plain label for a ledger rule key, the vocabulary
+// the dashboard names every line's rule in (through rulesview.RuleWords: it keeps no table of its own).
 //
 // The groups come in one fixed order: read, change, ask, never-read, never-change, programs, network, env, limits,
 // live, always-on. The env group names variables and never shows a value: env.set values are often secrets, and a

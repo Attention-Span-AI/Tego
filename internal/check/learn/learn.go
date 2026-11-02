@@ -196,9 +196,9 @@ type Learner struct {
 	truncated  bool
 	leak       *leakRule
 
-	// prev is the line before the one being added: a refused line that mirrors a refused action line is that
+	// pairs holds the lines before the one being added: a refused line that mirrors a refused action line is that
 	// action again, and counts once, as drift and measure count it.
-	prev mirror.Key
+	pairs mirror.Pairs
 }
 
 // New is a Learner for one run.
@@ -219,8 +219,7 @@ func New(o Options) *Learner {
 // are ignored; one whose payload does not decode is an error, since a record this reader cannot read must not
 // become a proposal that looks complete.
 func (l *Learner) Add(e *record.Event) error {
-	mirrored := l.prev.Mirrors(e)
-	l.prev = mirror.Of(e)
+	mirrored := l.pairs.Take(e)
 	switch e.Kind {
 	case record.KindRunStart:
 		if l.start != nil {

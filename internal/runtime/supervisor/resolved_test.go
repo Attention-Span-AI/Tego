@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/platform/dns"
+	"github.com/attention-span-ai/tego/internal/platform/hostaddr"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -276,7 +277,7 @@ func TestConnectRefusesAPrivateRebindOfAPublicName(t *testing.T) {
 // depends on the addresses of the machine it runs on (a test name answered with 10.0.0.5 would be refused on
 // a machine that holds 10.0.0.5). A test of the snapshot itself installs its own (useHostAddrs).
 func init() {
-	thisHost = newHostAddrs(func() ([]net.Addr, error) { return nil, nil }, time.Now)
+	thisHost = newHostAddrs(func() ([]net.Addr, error) { return nil, nil }, nil, time.Now)
 }
 
 // fakeHostAddrs is a list of this host's addresses a test can change, or make fail, between two snapshots.
@@ -316,7 +317,7 @@ func (f *fakeHostAddrs) set(err error, addrs ...string) {
 func useHostAddrs(t *testing.T, f *fakeHostAddrs, now func() time.Time) {
 	t.Helper()
 	prev := thisHost
-	thisHost = newHostAddrs(f.list, now)
+	thisHost = newHostAddrs(f.list, nil, now)
 	t.Cleanup(func() { thisHost = prev })
 }
 
@@ -358,6 +359,46 @@ func TestConnectRefusesThisHostsAddress(t *testing.T) {
 			}
 			if !c.ok && (resp.Error != -int32(unix.EACCES) || ev.Reason != record.ReasonNetNotAllowed) {
 				t.Errorf("errno %d, reason %s; want EACCES, %s", resp.Error, ev.Reason, record.ReasonNetNotAllowed)
+			}
+		})
+	}
+}
+
+// TestConnectRefusesAnAddressTheLocalTableSendsHere is R18's this-host class read as a live block, a net gate and the
+// models[] guard read this host: an address of an AnyIP range the local routing table sends here
+// (`ip route add local 198.51.100.0/24 dev lo`) reaches every service bound to all interfaces as the host's LAN
+// address does, so a host entry rebound into the range does not admit it, plain or v4-mapped, and the refusal names
+// the entry. Read from the interfaces alone it was admitted. A localhost name, a declared literal and a declared CIDR
+// keep it, and an address past the range still connects.
+func TestConnectRefusesAnAddressTheLocalTableSendsHere(t *testing.T) {
+	prev := thisHost
+	t.Cleanup(func() { thisHost = prev })
+	thisHost = newHostAddrs(hostList("192.0.2.10"), hostTable, time.Now)
+	cidr := netip.MustParsePrefix("198.51.100.0/24")
+	rules := []agent.NetRule{
+		netRule("anyip.example:8080", "anyip.example", 8080, "198.51.100.7", "198.51.101.7"),
+		netRule("localhost:9000", "localhost", 9000, "198.51.100.7"),
+		netRule("198.51.100.7:7000", "198.51.100.7", 7000, "198.51.100.7"),
+		{Raw: "198.51.100.0/24:6000", Port: 6000, Proto: agent.ProtoInet, Verdict: agent.VerdictAllow, Static: true, CIDR: &cidr},
+	}
+	pol := testPolicy(rules, nil, nil)
+	for _, c := range []struct {
+		name string
+		sa   []byte
+		rule string
+		ok   bool
+	}{
+		{"a name rebound into the AnyIP range", sockaddrIn4("198.51.100.7", 8080), agent.DeniedResolvedRule("anyip.example:8080"), false},
+		{"the same, v4-mapped", sockaddrIn6("::ffff:198.51.100.7", 8080), agent.DeniedResolvedRule("anyip.example:8080"), false},
+		{"the same name past the range", sockaddrIn4("198.51.101.7", 8080), "net[anyip.example:8080]", true},
+		{"a localhost name", sockaddrIn4("198.51.100.7", 9000), "net[localhost:9000]", true},
+		{"a declared literal", sockaddrIn4("198.51.100.7", 7000), "net[198.51.100.7:7000]", true},
+		{"a declared CIDR", sockaddrIn4("198.51.100.7", 6000), "net[198.51.100.0/24:6000]", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			resp, ev, f := connectOnce(t, pol, c.sa)
+			if c.ok != (len(f.connects) == 1) || ev.Rule != c.rule {
+				t.Fatalf("connects %d, errno %d, rule %s; want allowed %v under %s", len(f.connects), resp.Error, ev.Rule, c.ok, c.rule)
 			}
 		})
 	}
@@ -416,11 +457,17 @@ func TestThisHostSnapshot(t *testing.T) {
 }
 
 // TestThisHostSnapshotReal takes the snapshot the supervisor takes, through netlink, as whoever runs the test:
-// it needs no privilege, so it must be known.
+// it needs no privilege, so it must be known. The resolved-address check reads the local routing table with the
+// addresses: 127.0.0.2 is no interface's address, and it is this host's own by the `local 127.0.0.0/8` route the
+// kernel keeps for loopback, as an AnyIP range's addresses are by theirs.
 func TestThisHostSnapshotReal(t *testing.T) {
-	local, known := newHostAddrs(net.InterfaceAddrs, time.Now).has(netip.MustParseAddr("127.0.0.1"))
+	h := newHostAddrs(net.InterfaceAddrs, hostaddr.ReadLocalTable, time.Now)
+	local, known := h.has(netip.MustParseAddr("127.0.0.1"))
 	if !known {
 		t.Fatal("net.InterfaceAddrs failed unprivileged; every host entry would be refused")
 	}
 	t.Logf("127.0.0.1 held by this host: %v", local)
+	if local, _ := h.has(netip.MustParseAddr("127.0.0.2")); !local {
+		t.Error("127.0.0.2, in the local table's 127.0.0.0/8, is not this host's own to the resolved-address check")
+	}
 }

@@ -186,8 +186,12 @@ func (p *planner) add(key, entry string) {
 	p.changes = append(p.changes, Change{Key: key, Entry: entry, Comment: p.comment})
 }
 
+// remove removes entry, every copy of it, from the list at key, once: a walk of a list that holds it twice (dropUnder,
+// planHost) asks twice, and the second would find no copy left.
 func (p *planner) remove(key, entry string) {
-	p.changes = append(p.changes, Change{Remove: true, Key: key, Entry: entry})
+	if c := (Change{Remove: true, Key: key, Entry: entry}); !slices.Contains(p.changes, c) {
+		p.changes = append(p.changes, c)
+	}
 }
 
 // resolve is where an fs entry points, cleaned: from the run's working directory, or the home for ~/.

@@ -4,6 +4,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"html"
 	"net/http"
 	"net/url"
@@ -129,6 +130,44 @@ func TestRulesNewPreviewAndCreate(t *testing.T) {
 	}
 }
 
+// TestRulesNewTakesALongForm: Create posts the whole form back, so a hundred hosts, past the 4 KiB every other form is
+// held to, are previewed and written; a post that long to any other form is still refused as unreadable.
+func TestRulesNewTakesALongForm(t *testing.T) {
+	f := newRulesFix(t)
+	f.withSetup(t)
+	dir := filepath.Join(filepath.Dir(f.proj), "many-hosts")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	hosts := make([]string, 100)
+	for i := range hosts {
+		hosts[i] = fmt.Sprintf("api-%03d.service.internal.example.com:443", i)
+	}
+	list := strings.Join(hosts, ", ")
+	q := url.Values{"dir": {dir}, "preset": {"no-secrets", "no-prod"}, "hosts": {list}, "cmd": {"sh"}, "preview": {"1"}}
+	code, body := f.get(t, "/rules/new?"+q.Encode())
+	m := newBase.FindStringSubmatch(body)
+	if code != http.StatusOK || m == nil {
+		t.Fatalf("the preview of a hundred hosts: %d, and no Create form", code)
+	}
+	form := url.Values{"csrf": {f.s.csrf}, "dir": {dir}, "preset": {"no-secrets", "no-prod"}, "hosts": {list}, "cmd": {"sh"},
+		"mode": {"presets"}, "base": {m[1]}}
+	if n := len(form.Encode()); n <= maxForm {
+		t.Fatalf("the form is %d bytes, within maxForm (%d): it tests nothing", n, maxForm)
+	}
+	w := post(f.s, "/rules/new", form, own, "", f.c)
+	if loc := w.Header().Get("Location"); w.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/rules/new?created=") {
+		t.Fatalf("Create of a hundred hosts answered %d %q: %s", w.Code, loc, w.Body.String())
+	}
+	written, err := os.ReadFile(filepath.Join(dir, "agent.yaml"))
+	if err != nil || !strings.Contains(string(written), hosts[0]) || !strings.Contains(string(written), hosts[99]) {
+		t.Fatalf("agent.yaml (%v) lacks a host:\n%s", err, written)
+	}
+	if w := post(f.s, "/rules/revert", form, own, "", f.c); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "unreadable form") {
+		t.Errorf("a %d-byte post to another form answered %d: %s", len(form.Encode()), w.Code, w.Body.String())
+	}
+}
+
 // TestRulesNewStartLineHoldsNoCommand: a command with shell syntax or quotes goes into the contract as sh -c, and the
 // start line names no command, so pasting it never runs part of the typed text outside tego or in place of the
 // contract's command.
@@ -217,7 +256,7 @@ func TestRulesNewNotRunHidesEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, body := f.get(t, "/rules")
-	ref := regexp.MustCompile(`<option value="([0-9a-f]{16})"`).FindStringSubmatch(body)
+	ref := regexp.MustCompile(`<option value="([0-9a-f]{16})"[^>]*>[^<]* · not run yet</option>`).FindStringSubmatch(body)
 	if ref == nil {
 		t.Fatal("the chooser does not offer the set-up file")
 	}

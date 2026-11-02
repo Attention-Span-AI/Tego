@@ -18,7 +18,7 @@ type Noun struct {
 // nouns as commands and names the others on one "planned" line, so help offers nothing that would only answer that it
 // is not there yet.
 var nouns = []Noun{
-	{"serve", "start the control service and its dashboard", true},
+	{"serve", "start the local dashboard", true},
 }
 
 // Nouns returns the nouns tego hands to tego-control, sorted by name.

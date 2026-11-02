@@ -81,3 +81,40 @@ func TestValidatedDialFailClosedHostIdentityAndMachineRange(t *testing.T) {
 		t.Fatal("model name admitted this host's interface")
 	}
 }
+
+// TestValidatedDialRefusesWhatTheLocalTableSendsHere is agent-contract R18's this-host class in the forwarder, read as
+// the supervisor's resolved-address check reads it: a model name answered with an address of an AnyIP range the local
+// routing table sends here (`ip route add local 198.51.100.0/24 dev lo`) reaches a server bound to all interfaces, as
+// one answered with the host's LAN address does, so it is not dialed; the name's other address is. Read from the
+// interfaces alone it was dialed. The dial newValidatedDial makes reads the real table: 127.0.0.2 is no interface's
+// address and is this host's by the `local 127.0.0.0/8` route the kernel keeps for loopback.
+func TestValidatedDialRefusesWhatTheLocalTableSendsHere(t *testing.T) {
+	lookup := &dialLookup{addresses: []netip.Addr{netip.MustParseAddr("198.51.100.7")}}
+	var targets []string
+	d := newValidatedDial(agent.ModelEndpoint{Host: "api.example.com", Port: 443}, nil, lookup, func(_ context.Context, network, target string) (net.Conn, error) {
+		targets = append(targets, target)
+		left, right := net.Pipe()
+		_ = right.Close()
+		return left, nil
+	}, nil)
+	if local, known := d.hosts.Has(netip.MustParseAddr("127.0.0.2")); !local || !known {
+		t.Errorf("the forwarder's snapshot = %v, %v for 127.0.0.2: it does not read the local table", local, known)
+	}
+	d.hosts = hostaddr.NewWithLocalTable(func() ([]net.Addr, error) {
+		return []net.Addr{&net.IPNet{IP: net.ParseIP("192.0.2.10"), Mask: net.CIDRMask(24, 32)}}, nil
+	}, func() (hostaddr.LocalTable, error) {
+		return hostaddr.LocalTable{Local: []netip.Prefix{netip.MustParsePrefix("198.51.100.0/24")}}, nil
+	}, time.Now, time.Second)
+	if _, err := d.DialContext(context.Background(), "tcp", "api.example.com:443"); err == nil || len(targets) != 0 {
+		t.Fatalf("a model name in an AnyIP range was dialed: %v, %v", targets, err)
+	}
+	lookup.addresses = []netip.Addr{netip.MustParseAddr("198.51.100.8"), netip.MustParseAddr("203.0.113.9")}
+	conn, err := d.DialContext(context.Background(), "tcp", "api.example.com:443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.Close()
+	if len(targets) != 1 || targets[0] != "203.0.113.9:443" {
+		t.Fatalf("dialed %v, want the name's address past the range alone", targets)
+	}
+}

@@ -9,9 +9,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"strings"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/rulefile"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/internal/runtime/capture/uprobe"
 	cgroupenforce "github.com/attention-span-ai/tego/internal/runtime/enforce/cgroup"
@@ -42,6 +44,14 @@ func init() { register(cmdGC) }
 // --keep 0s keeps nothing: every run that is not running is removed, which is the "gc --keep 0 sweep"
 // record-ledger.md names. It used to be read as "no --keep" and silently became the machine's 30-day
 // retention (R29).
+//
+// The same retention prunes the ledger root's rule-change journal (.rule-changes, pruneRuleChanges) once the runs
+// are swept: its lines older than it that no reader needs (rulefile.Prune: a run still in the root keeps the lines
+// since it started and those that name it, and each contract its newest rulefile.KeepChanges changes that stand while
+// its file is there), then the blobs no line left names and the lock files of contracts with no line left. --dry-run
+// counts what would go, the runs it would remove counted as gone. When gc applies the machine's retention (no --keep),
+// a machine config layer the load skipped leaves the journal as it is, since the retention that layer may set is not
+// known. As root, gc prunes the invoking user's journal as that user.
 func cmdGC() Command {
 	var (
 		keepText string
@@ -54,8 +64,8 @@ func cmdGC() Command {
 		Summary: "sweep orphans and expire old runs",
 		Usage:   "[--keep <d>] [--dry-run] [--builds] [--json]",
 		Flags: func(fs *flag.FlagSet) {
-			fs.StringVar(&keepText, "keep", "", "retention window, e.g. 30d or 12h; 0s keeps no run that is not running "+
-				"(default: the machine's retention)")
+			fs.StringVar(&keepText, "keep", "", "retention window of the runs and the rule-change journal, e.g. 30d or 12h; "+
+				"0s keeps no run that is not running (default: the machine's retention)")
 			fs.BoolVar(&dryRun, "dry-run", false, "report what the pass would do without writing or removing anything")
 			fs.BoolVar(&asJSON, "json", false, "one JSON object")
 			fs.BoolVar(&builds, "builds", false, "as root, remove every idle tier-2 build now, not only those idle "+
@@ -96,8 +106,9 @@ func explicitDuration(fs *flag.FlagSet, name, text string) (time.Duration, bool,
 	return d, true, nil
 }
 
-// gcJSON is the --json shape: the sweep's counts plus one string per run that could not be finished, and
-// one per failed bpf sweep, prefixed "builds: ", "capture probes: " or "rings: ".
+// gcJSON is the --json shape: the sweep's counts plus one string per run that could not be finished, one
+// per failed bpf sweep, prefixed "builds: ", "capture probes: " or "rings: ", and one for a rule-change
+// journal not pruned, prefixed "rule-change journal: ".
 type gcJSON struct {
 	Root     string  `json:"root"`
 	KeepS    float64 `json:"keep_s"`
@@ -108,16 +119,38 @@ type gcJSON struct {
 	// BuildsRemoved counts the idle tier-2 builds a root gc removed (ADR 0022).
 	BuildsRemoved int `json:"builds_removed,omitempty"`
 	// RingsReclaimed counts the run rings no run held that gc --builds removed (ADR 0026 (6) as amended).
-	RingsReclaimed int      `json:"rings_reclaimed,omitempty"`
-	Errors         []string `json:"errors,omitempty"`
+	RingsReclaimed int `json:"rings_reclaimed,omitempty"`
+	// JournalLines, JournalBlobs and JournalLocks count what the rule-change journal's prune removed, or with
+	// dry_run would remove: lines, blobs no line left names, and lock files (rulefile.Pruned).
+	JournalLines int      `json:"journal_lines_pruned,omitempty"`
+	JournalBlobs int      `json:"journal_blobs_pruned,omitempty"`
+	JournalLocks int      `json:"journal_locks_removed,omitempty"`
+	Errors       []string `json:"errors,omitempty"`
 }
 
 // runGC is the in-process body of gc. A negative keep is "no --keep": the machine's retention applies.
+//
+// gc removes what the machine config's retention and ledger_root select, so it reads the config whole or not at all,
+// as `tego run` does (config.TrustAbort): a layer it cannot read, trust or parse refuses the pass, and nothing is
+// swept or deleted, whatever --keep says, since that layer may name the ledger root too. gc read it warn-and-skip, so
+// such a layer was passed over with a warning and the pass went on with the built-in 30 days and ledger root: one
+// agent's chmod 000 of ~/.tego/config.yaml, which no Landlock rule stops, had the daily gc delete the runs the user's
+// retention kept (GAPS C52). Before it reads the config, gc gives ~/.tego, the layer and tego.log back to their owner,
+// as run does (restoreUserState); a dry run, which changes nothing, leaves them as they are.
 func runGC(ctx context.Context, keep time.Duration, dryRun, builds, asJSON bool, stdout, stderr io.Writer) int {
-	m, cds, err := loadMachine(config.TrustWarn)
+	if !dryRun {
+		restoreUserState("tego gc", stderr)
+	}
+	m, cds, err := loadMachine(config.TrustAbort)
 	writeConfigDiagnostics(stderr, cds)
 	if err != nil {
-		message(stderr, "", 0, 0, "tego gc: machine config: "+err.Error(), identity.CodeConfigUntrusted)
+		configRefused(stderr, "tego gc", err)
+		why := "tego gc: nothing was swept or deleted: gc deletes by the retention and the ledger root the machine " +
+			"config sets, so it reads every layer of it or does nothing"
+		if dryRun && errors.Is(err, fs.ErrPermission) {
+			why += "; --dry-run gives no mode back to its owner, which tego gc without it, or tego run, does"
+		}
+		message(stderr, "", 0, 0, why, identity.CodeConfigUntrusted)
 		return identity.ExitError
 	}
 	root, err := ledgerRootOf(m)
@@ -125,6 +158,7 @@ func runGC(ctx context.Context, keep time.Duration, dryRun, builds, asJSON bool,
 		message(stderr, "", 0, 0, "tego gc: "+err.Error(), codeIO)
 		return identity.ExitError
 	}
+	explicit := keep >= 0
 	if keep < 0 {
 		keep = m.Retention.Value
 		// The machine's own retention is the pass a run start makes once per gc_interval (retainBeforeRun): this
@@ -146,6 +180,17 @@ func runGC(ctx context.Context, keep time.Duration, dryRun, builds, asJSON bool,
 	// it again, and hiding it would make a recurring failure invisible.
 	for _, e := range res.Errs {
 		message(stderr, "", 0, 0, "tego gc: "+e.Error(), codeIO)
+	}
+	// The rule-change journal ages with the runs, after them: a run the pass removed (or, dry, would remove) no
+	// longer keeps the lines it reads. A journal not pruned is reported and the exit stays 0, as a run the pass could
+	// not finish is.
+	pruned, perr := pruneRuleChanges(ctx, root, keep, explicit, dryRun, res.Removed, cds)
+	if perr != nil {
+		code := codeIO
+		if errors.Is(perr, errRetentionUnknown) {
+			code = config.CodeIgnored
+		}
+		message(stderr, "", 0, 0, "tego gc: rule-change journal: "+perr.Error(), code)
 	}
 	removed, reclaimed := 0, 0
 	var bpfErrs []error
@@ -169,9 +214,13 @@ func runGC(ctx context.Context, keep time.Duration, dryRun, builds, asJSON bool,
 	if asJSON {
 		out := gcJSON{Root: root, KeepS: keep.Seconds(), DryRun: dryRun,
 			Scanned: res.Scanned, Orphaned: res.Orphaned, Deleted: res.Deleted, BuildsRemoved: removed,
-			RingsReclaimed: reclaimed}
+			RingsReclaimed: reclaimed, JournalLines: pruned.Lines, JournalBlobs: pruned.Blobs,
+			JournalLocks: pruned.Locks}
 		for _, e := range res.Errs {
 			out.Errors = append(out.Errors, e.Error())
+		}
+		if perr != nil {
+			out.Errors = append(out.Errors, "rule-change journal: "+perr.Error())
 		}
 		// The bpf sweeps' failures too, each prefixed with what failed so none reads as a run id: on
 		// stderr alone they left builds_removed 0 reading as "nothing to remove".
@@ -192,6 +241,14 @@ func runGC(ctx context.Context, keep time.Duration, dryRun, builds, asJSON bool,
 	}
 	fmt.Fprintf(stdout, "scanned %d, ended %d orphaned, %s %d older than %s\n",
 		res.Scanned, res.Orphaned, verb, res.Deleted, config.FormatDuration(keep))
+	if pruned != (rulefile.Pruned{}) {
+		verb = "pruned"
+		if dryRun {
+			verb = "would prune"
+		}
+		fmt.Fprintf(stdout, "rule-change journal: %s %d line(s), %d blob(s), %d lock file(s)\n", verb, pruned.Lines,
+			pruned.Blobs, pruned.Locks)
+	}
 	if removed > 0 {
 		fmt.Fprintf(stdout, "removed %d idle tier-2 build(s)\n", removed)
 	}

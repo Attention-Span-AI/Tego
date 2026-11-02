@@ -324,6 +324,16 @@ func (l *Loop) recordLink(n *notif, olddirfd int32, oldAddr uint64, newdirfd int
 // link ends in " (deleted)"; the marker is dropped and the path marked unreliable, as R6 treats a dirfd's
 // (E8), unless the file is live and that is its name. A link that cannot be read leaves the end unnamed, which matches no target.
 func (r *reader) heldFile(fd int32) string {
+	p, _ := r.heldFileErr(fd)
+	return p
+}
+
+// heldFileErr is heldFile with the error its link's read met: EBADF for a negative descriptor other than AT_FDCWD,
+// which names no link, the readlink's own error where it failed (ENOENT: the task holds no such descriptor; EACCES: a
+// non-dumpable task's links are ptrace-guarded at tier 1), and nil where the link was read, whatever it named, or the
+// notification went stale (n.gone says so). A watch of the descriptor's own file (watch.go) refuses one it could not
+// read, since it cannot tell whether that file is a target.
+func (r *reader) heldFileErr(fd int32) (string, error) {
 	var link string
 	switch {
 	case fd == atFDCWD:
@@ -332,10 +342,10 @@ func (r *reader) heldFile(fd int32) string {
 		link = "/proc/" + strconv.Itoa(r.n.pid) + "/fd/" + strconv.Itoa(int(fd))
 	default:
 		r.mark(rulePathUnreliable)
-		return ""
+		return "", unix.EBADF
 	}
 	if !r.l.valid(r.n) {
-		return ""
+		return "", nil
 	}
 	held, err := r.l.k.Readlink(link)
 	// A live file may be named "<x> (deleted)" too: only a link count of zero says the marker is the kernel's
@@ -347,17 +357,17 @@ func (r *reader) heldFile(fd int32) string {
 	}
 	// R2: the links are keyed by a pid, so only an ID_VALID after them says the pid was still this task (E3).
 	if !r.l.valid(r.n) {
-		return ""
+		return "", nil
 	}
 	if err != nil || !strings.HasPrefix(held, "/") {
 		r.mark(rulePathUnreliable) // gone, or not a file on a path: socket:[...], anon_inode:...
-		return ""
+		return "", err
 	}
 	if unlinked {
 		held = strings.TrimSuffix(held, deletedSuffix)
 		r.mark(rulePathUnreliable)
 	}
-	return cleanPath(held)
+	return cleanPath(held), nil
 }
 
 // recordOpen reads the path of an open-family syscall, answers it (CONTINUE, or R15c's refusal) and records

@@ -250,6 +250,9 @@ func ledgerOf(t *testing.T, events []event) *ledger.Reader {
 		case record.KindFS:
 			e.Rule, e.Authority = "fs.read[/tmp]", record.AuthorityRule
 			e.Attr = record.Unattributed()
+			if in.verdict == record.VerdictRefused {
+				e.Reason = record.ReasonReadDenied // a refused open's reason, which its refused mirror copies
+			}
 			if err := e.SetPayload(record.FSPayload{Op: record.FSOpen, Path: "/tmp/x"}); err != nil {
 				t.Fatal(err)
 			}
@@ -295,6 +298,27 @@ func TestComputeRules(t *testing.T) {
 			check: func(t *testing.T, rep *Report) {
 				if rep.Refused != 1 {
 					t.Errorf("refused = %d, want 1", rep.Refused)
+				}
+			},
+		},
+		{
+			// A mirror copies its action's envelope: it is that action's even with another line written between
+			// the two, or with a second refusal written before either mirror.
+			name: "R19: a mirror counts never, with a line between it and its action or a second refusal before it",
+			events: []event{
+				{kind: record.KindRunStart, mono: sec(1)},
+				{kind: record.KindFS, mono: sec(2), verdict: record.VerdictRefused},
+				{kind: record.KindFS, mono: sec(3), verdict: record.VerdictAllow},
+				{kind: record.KindRefused, mono: sec(2)},
+				{kind: record.KindFS, mono: sec(4), verdict: record.VerdictRefused},
+				{kind: record.KindFS, mono: sec(5), verdict: record.VerdictRefused},
+				{kind: record.KindRefused, mono: sec(4)},
+				{kind: record.KindRefused, mono: sec(5)},
+				{kind: record.KindRunEnd, mono: sec(6), reason: record.RunEndExit},
+			},
+			check: func(t *testing.T, rep *Report) {
+				if rep.Refused != 3 {
+					t.Errorf("refused = %d, want 3", rep.Refused)
 				}
 			},
 		},

@@ -113,13 +113,13 @@ func TestChangeGroupsCoverEditKeys(t *testing.T) {
 	}
 }
 
-// TestRulesChangeForm: the Rules page's ref redirects to the service's; the form has a panel per list with Remove on
-// each entry the file spells and Add with its hint, every form a GET to the preview carrying the ref and base; a file
-// that sets env values offers the YAML editor with every value hidden and never shows one; another file's editor
-// holds its text.
+// TestRulesChangeForm: an old link's ref (the sha256 of the recorded path, which the Rules page named a file by
+// before) redirects to the service's; the form has a panel per list with Remove on each entry the file spells and Add
+// with its hint, every form a GET to the preview carrying the ref and base; a file that sets env values offers the
+// YAML editor with every value hidden and never shows one; another file's editor holds its text.
 func TestRulesChangeForm(t *testing.T) {
 	f := newChangeFix(t)
-	w := do(f.s, "GET", "/rules/change?c="+contractRef(f.source), "127.0.0.1:8484", f.c)
+	w := do(f.s, "GET", "/rules/change?c="+legacyRef(f.source), "127.0.0.1:8484", f.c)
 	ref := f.ref(t, f.source)
 	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/rules/change?c="+ref.Ref {
 		t.Fatalf("the Rules page's ref: %d %q", w.Code, w.Header().Get("Location"))
@@ -165,6 +165,43 @@ func TestRulesChangeForm(t *testing.T) {
 	}
 	if code, body := f.get(t, "/rules/change"); code != http.StatusOK || !strings.Contains(body, "Pick a policy file") {
 		t.Errorf("the chooser: %d", code)
+	}
+}
+
+// TestChangePageLinksBackToItsRules: Change rules links back to the Rules page by the file's ref, the one the Rules
+// page names it by, both for a file runs ran and for one set up here that no run ran yet, whose Rules page that link
+// missed (404) while the two pages named a file by two refs.
+func TestChangePageLinksBackToItsRules(t *testing.T) {
+	f := newChangeFix(t)
+	f.withSetup(t)
+	dir := filepath.Join(filepath.Dir(f.proj), "fresh")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rulefile.Create(context.Background(), rulefile.DefaultGuard(f.root), filepath.Join(dir, "agent.yaml"),
+		[]byte(strings.Replace(rulesSource, "name: rules-demo", "name: fresh-agent", 1)), rulefile.Change{Via: "dashboard"}); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := f.svc.Contracts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh := slices.IndexFunc(cs, func(c rules.ContractRef) bool { return c.Runs == 0 })
+	if fresh < 0 {
+		t.Fatalf("the service lists no file set up here: %+v", cs)
+	}
+	for _, c := range []rules.ContractRef{f.ref(t, f.source), cs[fresh]} {
+		code, form := f.get(t, "/rules/change?c="+c.Ref)
+		if back := `href="/rules?c=` + c.Ref + `"`; code != http.StatusOK || !strings.Contains(form, back) {
+			t.Errorf("%s: Change rules (%d) does not link back to its Rules page by %s", c.Path, code, back)
+		}
+		want := "Policy · rules-demo"
+		if c.Runs == 0 {
+			want = "Policy · fresh-agent"
+		}
+		if code, page := f.get(t, "/rules?c="+c.Ref); code != http.StatusOK || !strings.Contains(page, want) {
+			t.Errorf("%s: its Rules page answered %d, want %q", c.Path, code, want)
+		}
 	}
 }
 

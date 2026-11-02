@@ -417,6 +417,13 @@ type VerifyReport struct {
 	// Newer is how many lines were of a newer record version: linked into the chain and counted in Lines, their
 	// content not validated.
 	Newer int
+	// AtLine is set when Verify failed on a line of its own, and BrokenLine is then that line's number (its seq;
+	// run_start is line 0): a line that does not hash to its id, does not chain to the line before, fails validation,
+	// belongs to another run, follows run_end or is longer than a line may be. Lines may count that line (one that
+	// chains but fails validation does); BrokenLine is the line itself. A failure found once every line was read (the
+	// anchor, bytes after run_end) or with no ledger to read (VerifyRunDir: gone or replaced) leaves both unset.
+	AtLine     bool
+	BrokenLine uint64
 }
 
 // Verify walks the run's chain (I3, I4, R2) and validates every event (record.Validate). With a non-nil
@@ -472,6 +479,7 @@ func (r *Reader) verify(ctx context.Context, anchor ChainAnchor, rescanned bool)
 			if errors.Is(err, ErrCorruptLedger) {
 				// A line past the bound is the ledger's content, not a read failure.
 				err = fmt.Errorf("%w: %w", ErrUnverified, err)
+				rep.AtLine, rep.BrokenLine = true, chain.Len()
 			}
 			return rep, err
 		}
@@ -485,12 +493,15 @@ func (r *Reader) verify(ctx context.Context, anchor ChainAnchor, rescanned bool)
 			}
 		}
 		if check.ended {
+			rep.AtLine, rep.BrokenLine = true, chain.Len()
 			return rep, fmt.Errorf("%w: line %d follows run_end at byte offset %d", ErrUnverified, chain.Len(), offset)
 		}
 		// The shared check (runCheck): the chain, the run id, run_start first and only first, and each line of
 		// this version validated; a line a newer binary wrote has its link checked and is counted in Newer.
+		line := chain.Len() // the number of the line in hand, which add may count before it refuses it
 		_, newer, err := check.add(l.data)
 		if err != nil {
+			rep.AtLine, rep.BrokenLine = true, line
 			return rep, fmt.Errorf("%w: %w", ErrUnverified, err)
 		}
 		if newer {

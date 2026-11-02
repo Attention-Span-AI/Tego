@@ -55,13 +55,8 @@ func f3Fixture(t *testing.T) string {
 		line(f3DoneRun, "codex-tego", 1, ago(59*time.Minute), "ask", `"ask_id":"q-old","ask_rule":"fs.ask_read[/d/with/home/.config/telemetry/]","hold":"open","op":"read","target":"/d/with/home/.config/telemetry/token"`),
 		line(f3DoneRun, "codex-tego", 2, ago(54*time.Minute), "answer", `"ask_id":"q-old","approved":false,"by":"timeout","after_s":300,"answer_reason":"ask-timeout","op":"read","target":"/d/with/home/.config/telemetry/token","ask_rule":"fs.ask_read[/d/with/home/.config/telemetry/]"`),
 		line(f3DoneRun, "codex-tego", 3, ago(53*time.Minute), "run_end", `"reason":"exit","exit_code":0`))
-	if err := os.MkdirAll(filepath.Join(root, ".live"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	for _, run := range []string{f3LateRun, f3FreshRun} {
-		if err := os.WriteFile(filepath.Join(root, ".live", run), nil, 0o600); err != nil {
-			t.Fatal(err)
-		}
+		markLive(t, root, run)
 	}
 	return root
 }

@@ -401,20 +401,23 @@ func TestMatchInetNamesThisHostInEverySpelling(t *testing.T) {
 	}
 }
 
-// testHost is a host with one address on one subnet.
-type testHost struct{ own, bcast netip.Addr }
+// testHost is a host with one address on one subnet and, when set, one IPv6 anycast address it joined.
+type testHost struct{ own, bcast, anycast netip.Addr }
 
 func (h testHost) Own(a netip.Addr) bool       { return a == h.own }
 func (h testHost) Broadcast(a netip.Addr) bool { return a == h.bcast }
+func (h testHost) Anycast(a netip.Addr) bool   { return h.anycast.IsValid() && a == h.anycast }
 
-// TestMatchInetABlockOnThisHostRefusesWhatReachesIt: a datagram to a multicast group or a broadcast address is delivered
-// to a local server bound to all interfaces, so a block naming this host refuses it on the block's port. The reading is
-// the destination's alone: such an address names no host, so a block on one refuses that address and nothing else, and
-// a block on another machine does not follow a datagram that machine may also hear.
+// TestMatchInetABlockOnThisHostRefusesWhatReachesIt: a datagram to a multicast group, a broadcast address or an IPv6
+// anycast address this host joined is delivered to a local server bound to all interfaces, so a block naming this host
+// refuses it on the block's port. The reading is the destination's alone: such an address names no host, so a block on
+// one refuses that address and nothing else, and a block on another machine does not follow a datagram that machine may
+// also hear.
 func TestMatchInetABlockOnThisHostRefusesWhatReachesIt(t *testing.T) {
-	h := testHost{own: netip.MustParseAddr("192.0.2.10"), bcast: netip.MustParseAddr("192.0.2.255")}
+	h := testHost{own: netip.MustParseAddr("192.0.2.10"), bcast: netip.MustParseAddr("192.0.2.255"),
+		anycast: netip.MustParseAddr("2001:db8:1::")}
 	reaching := []string{"224.0.0.1", "239.255.255.250", "ff02::1", "ff02::1%3", "ff01::1", "::ffff:224.0.0.1",
-		"255.255.255.255", "::ffff:255.255.255.255", "192.0.2.255", "::ffff:192.0.2.255"}
+		"255.255.255.255", "::ffff:255.255.255.255", "192.0.2.255", "::ffff:192.0.2.255", "2001:db8:1::", "2001:db8:1::%3"}
 	compile := func(t *testing.T, values ...string) *Set {
 		t.Helper()
 		o := New("r-1")
@@ -446,16 +449,15 @@ func TestMatchInetABlockOnThisHostRefusesWhatReachesIt(t *testing.T) {
 		}
 	}
 
-	// A block on a group or a broadcast address is on that address: this host, spelled any way, stays open.
-	for _, block := range []string{"224.0.0.1:5000", "255.255.255.255:5000", "192.0.2.255:5000"} {
+	// A block on a group, a broadcast or an anycast address is on that address: this host, spelled any way, stays open.
+	for _, block := range []string{"224.0.0.1:5000", "255.255.255.255:5000", "192.0.2.255:5000", "[2001:db8:1::]:5000"} {
 		s := compile(t, block)
 		for _, a := range []string{"127.0.0.1", "::1", "0.0.0.0", "192.0.2.10"} {
 			if e, ok := s.MatchInet(at(a, 5000), "", h); ok {
 				t.Errorf("block %s matched %s", e.Value, a)
 			}
 		}
-		addr, _, _ := strings.Cut(block, ":")
-		if _, ok := s.MatchInet(at(addr, 5000), "", h); !ok {
+		if _, ok := s.MatchInet(netip.MustParseAddrPort(block), "", h); !ok {
 			t.Errorf("block %s does not refuse its own address", block)
 		}
 	}

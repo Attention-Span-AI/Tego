@@ -60,13 +60,8 @@ func videoFixture(t *testing.T) string {
 		line(vidRight, "codex-tego", 7, at(20), "ask", `"ask_id":"q-2","ask_rule":"fs.ask_read[./confidential/]","hold":"open","op":"read","target":"/d/with/proj/confidential/plan.md"`),
 		line(vidRight, "codex-tego", 8, at(23), "answer", `"ask_id":"q-2","approved":true,"by":"uid:1000 pid:42","after_s":3.0,"ask_rule":"fs.ask_read[./confidential/]","op":"read","target":"/d/with/proj/confidential/plan.md"`),
 		line(vidRight, "codex-tego", 9, at(23), "fs", `"rule":"fs.ask_read[./confidential/]","verdict":"allow","op":"open","flags":524288,"path":"/d/with/proj/confidential/plan.md"`))
-	if err := os.MkdirAll(filepath.Join(root, ".live"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	for _, r := range []string{vidLeft, vidRight} {
-		if err := os.WriteFile(filepath.Join(root, ".live", r), nil, 0o600); err != nil {
-			t.Fatal(err)
-		}
+		markLive(t, root, r)
 	}
 	return root
 }
@@ -262,9 +257,7 @@ func TestProjectPathsReadDotSlash(t *testing.T) {
 			line(asker, "codex-tego", 1, t0.Add(time.Second), "ask", `"ask_id":"q-7","ask_rule":"fs.ask_read[/d/with/proj/confidential/]","hold":"open","op":"read","target":"/d/with/proj/confidential/plan.md"`)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".live", asker), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, root, asker)
 	s := newServer(t, root)
 	c := login(t, s)
 	const plan = `title="/d/with/proj/confidential/plan.md"><span class="sp-d">./<wbr>confidential/</span><wbr><b class="sp-b">plan.md</b>`

@@ -48,12 +48,7 @@ func TestLoadSummarizesAndFolds(t *testing.T) {
 		line(r2, "harm", 4, t0.Add(time.Minute+4), "ask", `"ask_id":"ask-1","hold":"exec"`),
 		line(r2, "harm", 5, t0.Add(time.Minute+5), "ask", `"ask_id":"ask-2","hold":"exec"`),
 		line(r2, "harm", 6, t0.Add(time.Minute+6), "answer", `"ask_id":"ask-1","by":"human","after_s":1`))
-	if err := os.MkdirAll(filepath.Join(root, ".live"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".live", r2), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, root, r2, true)
 	s, err := Load(root)
 	if err != nil {
 		t.Fatal(err)

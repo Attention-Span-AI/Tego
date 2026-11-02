@@ -310,6 +310,18 @@ ancestor of an enforced target after the run started) is `refused`, reason `read
 authority `rule`, whether this loop refused it (it answers the kernel's own `EACCES`) or a held read's deputy met that
 `EACCES` (then with `syscall_ret: -13`). Such a line was `allow` before; a reader that keys on `fs.deny_read[...]`
 rules for read refusals sees these as a refusal no declared entry names.
+*Added 2026-11-02 (GAPS A10, supervisor R36), no new minor:* a watch the supervisor refuses, an `inotify_add_watch`, a
+`fanotify_mark` adding a mark or a dnotify `fcntl(F_NOTIFY)` whose object the run withholds a read of, is a `refused`
+line, `op` `inotify_add_watch`, `fanotify_mark` or `fcntl` (the last also names a refused `F_SETOWN`, reason
+`landlock-topology`, R33), `target` the name watched (a descriptor's own file by its path), and the rule and reason a
+read of that object is refused with: reason `read-denied`, rule the `deny_read` entry (the `fs.ask_read` entry's own
+beneath one), a name entry's or name rule's label, `fs.deny_read[<tego's own state>]` in a run that holds its reads, or
+a live block's or fence entry's (`live.block[read:...]`, `live.block[path:...]`, `live.fence[read:...]`); reason
+`path-unresolved`, rule `unmatched`, where a name entry's climb could not decide; or reason `read-denied` with
+`args-unreadable`, `path-truncated`, `path-unreliable` or `fd-unreadable` where the name or the descriptor could not be
+read. A fanotify mark of a whole mount, filesystem or mount namespace is refused (`EPERM`) under the rule
+`deny-read-watch`. A watch that is continued has no line: v1 has no watch kind. Before, no watch was refused or
+recorded, so a ledger without such a line says nothing about watches.
 At `record_minor` 19 (`MinorUserDenyWrite`; 2026-10-25, [ADR 0071](../../../docs/adr/0071-user-deny-write.md)), a contract may declare
 its own `fs.deny_write` entries: a modification at or beneath one is refused with the rule `fs.deny_write[<entry as
 declared>]` (`fs.deny_write[./deploy/]`), the entry's text as the author wrote it, where a built-in target's rule holds
@@ -810,6 +822,16 @@ run whose harness is anything but `none` (the default `auto` included) and that 
 absolute `XDG_RUNTIME_DIR`, or a root launcher. The agent has no `TEGO_REASON`, nothing was provisioned for its
 harness (`run_start.harness.why` is `reason-unavailable`), and it learns why an action was refused only from the
 error the call returned ([agent-contract.md](../../../docs/p0/agent-contract.md) R27, ADR 0062).
+`what=record why=own-state-mode-restored binary=<path>` (additive within v1, 2026-11-02), no `count`, is one of tego's
+own files or directories whose owner's rights had been taken, which tego gave back: `~/.tego`, the config layer or
+`tego.log` in it, `chain.log` or the directory that holds it, the ledger root or its live index, tego's runtime parent
+(`$XDG_RUNTIME_DIR/tego`), or, at the run's end, the run's directory or an entry in it, or its runtime directory. No
+Landlock ABI has a chmod right, so an agent can chmod the files its user owns: their contents and the record are not
+changed by it, but tego could not have used them. Only the owner's bits are added; the mode's other bits are as they
+were. One line each, right after `run_start` for what the launcher restored before the run, and as the last lines
+before `run_end` for what the run restored at its end ([record-ledger.md](../../../docs/p0/record-ledger.md) §3,
+"Modes taken from the owner"). No action was lost: a reader does not count the line among the gaps that make the run's
+counts a minimum.
 `what=limits` (additive within v1, 2026-09-24) is a limit the run's cgroup cannot hold as asked: `why=memory-swap-uncapped`,
 a memory cap on a kernel that accounts no swap to cgroups while swap is on (`docs/p0/runtime-launch.md` §4 `SetLimits`).
 `limit` records a budget hit (`which`, `value`, `ceiling`).

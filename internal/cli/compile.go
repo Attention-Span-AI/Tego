@@ -156,15 +156,19 @@ func parseTierList(s string) ([]backend.Tier, error) {
 	return out, nil
 }
 
-// builtTiers is every enforcement tier a run of an auto contract by this process can get (doctor.AutoTiers): those
+// autoSet is every enforcement tier a run of an auto contract by this process can get (doctor.AutoTiers): those
 // this binary constructs (enforce.Buildable), tier cgroup and above only as root, tier bpflsm only with bpf in the
-// LSM list. Compile resolves auto to the highest of them, and compile --test answers in each (ADR 0019). Only the
-// preconditions no probe changes are read: compile loads no program and needs no privilege, so a tier whose
-// functional probes fail here is still answered for, which errs toward reporting a difference, never toward
-// certifying a refusal. Reading the build alone, a tegobpf build run by a normal user compiled an auto contract at
-// tier bpflsm and refused its fs.ask_read for a tier no run of that user gets. A variable so tests can describe
-// another build and machine.
-var builtTiers = doctor.AutoTiers
+// LSM list, with the built tiers it leaves out. Compile resolves auto to the highest of them, compile --test answers
+// in each, and its header names the built tiers left out (ADR 0019). Only the preconditions no probe changes are
+// read: compile loads no program and needs no privilege, so a tier whose functional probes fail here is still
+// answered for, which errs toward reporting a difference, never toward certifying a refusal. Reading the build alone,
+// a tegobpf build run by a normal user compiled an auto contract at tier bpflsm and refused its fs.ask_read for a
+// tier no run of that user gets. A variable so tests can describe another build and machine.
+var autoSet = doctor.AutoTiers
+
+// builtTiers is the tiers an auto run by this process can get (autoSet), the set every compile passes to
+// agent.WithTiers.
+func builtTiers() []backend.Tier { return autoSet().Tiers }
 
 // runCompile is the in-process body of compile.
 func runCompile(ctx context.Context, path string, req compileRequest, stdout, stderr io.Writer) int {
@@ -328,9 +332,10 @@ func warnCostUnpriced(stderr io.Writer, path string, rt *agent.RuleTable, m *con
 // naming the tiers the table answers in, one PASS or FAIL line per row, in file order, and a summary.
 // A malformed table is a usage error and no row runs (§7); a failing row is a finding, exit 1 (R25).
 //
-// A row answers in every tier a run of the contract can get (RuleTable.Reach: the pinned tier, or
-// every tier this binary builds up to the ceiling), or in --tier's, and passes only if it holds in each
-// (ADR 0019); a row's own tier: narrows it to that tier. Rows used to be answered in the tier auto compiled to,
+// A row answers in every tier a run of the contract can get (RuleTable.Reach: the pinned tier, or every tier
+// this binary builds that a run by this process can get here, autoSet), or in --tier's, and passes only if it holds
+// in each (ADR 0019); the first line names where the tiers came from (reachOrigin). A row's own tier: narrows it to
+// that tier. Rows used to be answered in the tier auto compiled to,
 // bpflsm, which no build then contained, and so certified refusals the run's own tier did not make. No machine
 // is probed (R33).
 func runCompileTest(rt *agent.RuleTable, m *config.Machine, path string, tiers []backend.Tier, asJSON bool, stdout, stderr io.Writer) int {
@@ -458,7 +463,7 @@ func bestEffortNote(cols []agent.TestColumn) string {
 }
 
 // reachOrigin says where a table's tiers came from, for the header of compile --test: the contract's pin,
-// the machine config's (a concrete tier there pins it, as enforce.Select reads it), or neither.
+// the machine config's (a concrete tier there pins it, as enforce.Select reads it), or neither (autoOrigin).
 func reachOrigin(rt *agent.RuleTable, m *config.Machine) string {
 	if rt.Contract != nil {
 		if t := backend.Tier(rt.Contract.Tier); t != "" && t != backend.TierAuto {
@@ -468,7 +473,30 @@ func reachOrigin(rt *agent.RuleTable, m *config.Machine) string {
 	if m != nil && m.Tier.Bounded && !m.Tier.Value.Auto && m.Tier.Value.Tier != "" {
 		return "pinned by the machine config at " + m.Tier.Source.String()
 	}
-	return "tier auto: every tier this tego builds"
+	return autoOrigin(autoSet())
+}
+
+// autoOrigin is where an auto table's tiers came from: every tier this tego builds, but those a run by this process
+// cannot get here, each named with the precondition it lacks ("but cgroup and bpflsm, which need root"). It said every
+// tier this tego builds whatever the set was, so a normal user of a tegobpf build read that it built tier landlock
+// alone.
+func autoOrigin(s doctor.AutoSet) string {
+	origin, sep := "tier auto: every tier this tego builds", " but "
+	for _, left := range []struct {
+		tiers []backend.Tier
+		need  string
+	}{{s.NeedRoot, "root"}, {s.NeedBPFLSM, "bpf in the LSM list"}} {
+		if len(left.tiers) == 0 {
+			continue
+		}
+		verb := "needs"
+		if len(left.tiers) > 1 {
+			verb = "need"
+		}
+		origin += sep + strings.Join(tierNames(left.tiers), " and ") + ", which " + verb + " " + left.need
+		sep = ", and "
+	}
+	return origin
 }
 
 // tierNames is tiers as strings, never nil.

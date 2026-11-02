@@ -36,12 +36,7 @@ func TestRunKindAndStoppedWords(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.MkdirAll(filepath.Join(root, ".live"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".live", runs[0].id), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, root, runs[0].id)
 	s := newServer(t, root)
 	c := login(t, s)
 	badge := regexp.MustCompile(`class="b b-origin b-origin-[a-z]+"[^>]*>([A-Za-z]+)</span>`)

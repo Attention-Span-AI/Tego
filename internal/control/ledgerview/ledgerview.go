@@ -132,7 +132,7 @@ type Run struct {
 	End       time.Time
 	Last      time.Time // the newest line's time
 	Ended     bool
-	Live      bool // listed in <root>/.live and no run_end read
+	Live      bool // listed in <root>/.live, its lock held (Store.liveRuns), and no run_end read
 	EndReason string
 	ExitCode  int
 	Signal    int
@@ -198,7 +198,8 @@ func (r *Run) OriginWord() string {
 	return strings.ToUpper(o[:1]) + o[1:]
 }
 
-// State is the run's status word: running, lost (no run_end and no live entry) or ended.
+// State is the run's status word: running, lost (no run_end, and no live entry or no process holding its lock) or
+// ended.
 func (r *Run) State() string {
 	switch {
 	case r.Ended:
@@ -277,6 +278,8 @@ func validRunID(id string) bool {
 	return true
 }
 
+// liveSet is the names the root's live index (<root>/.live) lists: the runs whose launcher took their lock and has
+// not seen them end, and those of launchers that died first, which only their lock tells apart (Store.liveRuns).
 func liveSet(root string) map[string]bool {
 	out := map[string]bool{}
 	ents, err := os.ReadDir(filepath.Join(root, ".live"))

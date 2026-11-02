@@ -13,6 +13,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/check/livestatus"
 	"github.com/attention-span-ai/tego/internal/rulefile"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
@@ -42,6 +43,8 @@ type Service struct {
 	Check func(contract, cwd string, text []byte) error
 	// Writer is the authority writes go through; nil is internal/rulefile in this process (localWriter).
 	Writer Writer
+	// Resolver looks up the host names a change adds, for the preview's warning (hosts.go); nil is the system's.
+	Resolver agent.Resolver
 	// AckKey is the key every plan's acknowledgement is an HMAC under (ack.go); nil makes 32 random bytes on first
 	// use, kept for the service's life.
 	AckKey  []byte
@@ -49,14 +52,16 @@ type Service struct {
 
 	// Test seams: a run directory's liveness, a running run's held reads, a live block's placement, and a run's live
 	// facts (runact.StartFacts); a live block's removal and a run's live block keys now (lift.go); the clock a
-	// listing of the ledger root is judged settled by (contracts.go, starts), nil for time.Now.
-	live      func(dir string) bool
-	readsHeld func(run string) (bool, string)
-	block     func(ctx context.Context, run, kind, value string) error
-	facts     func(run string) livestatus.Facts
-	unblock   func(ctx context.Context, run, kind, value string) error
-	overlay   func(run string) []string
-	clock     func() time.Time
+	// listing of the ledger root is judged settled by (contracts.go, starts), nil for time.Now; how long a preview
+	// waits for the host names a change adds to resolve (hosts.go), 0 for nextrun.HostBudget.
+	live       func(dir string) bool
+	readsHeld  func(run string) (bool, string)
+	block      func(ctx context.Context, run, kind, value string) error
+	facts      func(run string) livestatus.Facts
+	unblock    func(ctx context.Context, run, kind, value string) error
+	overlay    func(run string) []string
+	clock      func() time.Time
+	hostBudget time.Duration
 
 	mu      sync.Mutex
 	cache   map[string]start // run_start by run id (contracts.go)

@@ -76,8 +76,23 @@ func reach(m *config.Machine, rt *agent.RuleTable, only backend.Tier, root bool,
 // active LSM list (D6, read unprivileged; an unreadable list is no bpf). No program is loaded: these are the
 // preconditions no probe can change. A tegobpf build run by a normal user, on a kernel booted without bpf in lsm=,
 // used to compile an auto contract at tier bpflsm and refuse its fs.ask_read for a tier its run could never get.
-func AutoTiers() []backend.Tier {
+// The tiers this binary constructs that the set leaves out come with it, by the precondition they lack (AutoSet).
+func AutoTiers() AutoSet {
 	return autoTiers(config.InitNSRoot(), bpfLSMActive, enforce.Buildable)
+}
+
+// AutoSet is AutoTiers' answer: the tiers an auto run by this process can get here, and the tiers this binary
+// constructs that are left out, by the precondition each lacks, so a reader can name the facts the set came from
+// (compile --test's header, ADR 0019 (3)). Each list is lowest first.
+type AutoSet struct {
+	// Tiers is every tier tier: auto resolves among.
+	Tiers []backend.Tier
+	// NeedRoot is the tiers left out because this process is not root in the initial user namespace: tier cgroup and
+	// above. The LSM list is not read for them.
+	NeedRoot []backend.Tier
+	// NeedBPFLSM is the tiers a root process is left without because bpf is not in the active LSM list, or the list
+	// cannot be read: tier bpflsm.
+	NeedBPFLSM []backend.Tier
 }
 
 // bpfLSMActive reports bpf in the active LSM list, false when the list cannot be read.
@@ -87,21 +102,22 @@ func bpfLSMActive() bool {
 }
 
 // autoTiers is AutoTiers with root, the LSM list and the build supplied; bpfLSM is read only when it decides.
-func autoTiers(root bool, bpfLSM func() bool, built func(backend.Tier) error) []backend.Tier {
-	var out []backend.Tier
+func autoTiers(root bool, bpfLSM func() bool, built func(backend.Tier) error) AutoSet {
+	var s AutoSet
 	for _, t := range backend.Tiers() {
 		if !t.AtOrBelow(backend.TierBPFLSM) || built(t) != nil {
 			continue
 		}
-		if t != backend.TierLandlock && !root {
-			continue
+		switch {
+		case t != backend.TierLandlock && !root:
+			s.NeedRoot = append(s.NeedRoot, t)
+		case t == backend.TierBPFLSM && !bpfLSM():
+			s.NeedBPFLSM = append(s.NeedBPFLSM, t)
+		default:
+			s.Tiers = append(s.Tiers, t)
 		}
-		if t == backend.TierBPFLSM && !bpfLSM() {
-			continue
-		}
-		out = append(out, t)
 	}
-	return out
+	return s
 }
 
 // ForRun is the report `tego run` selects from: doctor.Run's derivation over the checks of tier reach and

@@ -160,6 +160,10 @@ func targetMain() int {
 		// The filter of a run with a net: section, with its source-route arm (enforce-landlock R11b).
 		build = func() ([]bpf.Instruction, error) { return landlock.BuildFilterSourceRoute(landlock.NativeArch()) }
 	}
+	if mode == modeWatch {
+		// An enforcing run's filter with its watch arm (enforce-landlock R11e).
+		build = func() ([]bpf.Instruction, error) { return landlock.BuildFilterWatch(landlock.NativeArch()) }
+	}
 	insts, err := build()
 	if g := os.Getenv(helperFilterGate); g != "" {
 		insts, err = landlock.BuildFilterGate(landlock.NativeArch(), strings.Contains(g, "r"), strings.Contains(g, "w"))
@@ -226,6 +230,9 @@ func targetMain() int {
 		return emitReport(rep)
 	case modeSourceRoute:
 		rep.Checks = sourceRouteChecks()
+		return emitReport(rep)
+	case modeWatch:
+		rep.Checks = watchChecks()
 		return emitReport(rep)
 	case modeBench:
 		rep.LoopOps, rep.LoopNS = targetLoop()
@@ -950,6 +957,9 @@ func startHarnessWith(t testing.TB, o harnessOpts) *harness {
 		set = dns.NewSet(nil, []netip.AddrPort{netip.MustParseAddrPort(resolverAddr)}, dns.Options{})
 	case modeGateReadWrite:
 		rt = gateReadWriteRuleTable(dir)
+		set = dns.NewSet(nil, []netip.AddrPort{netip.MustParseAddrPort(resolverAddr)}, dns.Options{})
+	case modeWatch:
+		rt = watchRuleTable(dir)
 		set = dns.NewSet(nil, []netip.AddrPort{netip.MustParseAddrPort(resolverAddr)}, dns.Options{})
 	case modeHeld:
 		rt.DenyWrite = heldDenyWrite(dir)

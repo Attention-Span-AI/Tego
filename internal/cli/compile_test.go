@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/attention-span-ai/tego/internal/doctor"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
@@ -632,6 +633,59 @@ func TestCompileTestAnswersInEveryTierARunCanGet(t *testing.T) {
 	if code != identity.ExitFinding || !strings.Contains(out, "tiers landlock (") ||
 		!strings.Contains(out, ": got allow via fs.deny_read[out/keys/] (unenforced: parent writable), want refused") {
 		t.Fatalf("tier-1 build: exit %d\n%s", code, out)
+	}
+}
+
+// TestCompileTestHeaderNamesWhatAutoLeftOut: the header of an auto contract's compile --test said "tier auto: every
+// tier this tego builds" whatever doctor.AutoTiers gave, so a normal user of a tegobpf build read
+// "tiers landlock (tier auto: every tier this tego builds)" though the build constructs tiers cgroup and bpflsm. It
+// names each built tier the set leaves out and the precondition it lacks, in the text, --json's from and --exec's
+// tiers line alike (ADR 0019 (3): the header names the facts the set came from).
+func TestCompileTestHeaderNamesWhatAutoLeftOut(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("the example contract names sh, not on PATH")
+	}
+	copyExampleTests(t, rootTierOnlyRow)
+	L, C, B := backend.TierLandlock, backend.TierCgroup, backend.TierBPFLSM
+	for _, c := range []struct {
+		name   string
+		set    doctor.AutoSet
+		header string
+	}{
+		{"tegobpf build, normal user", doctor.AutoSet{Tiers: []backend.Tier{L}, NeedRoot: []backend.Tier{C, B}},
+			"tiers landlock (tier auto: every tier this tego builds but cgroup and bpflsm, which need root)"},
+		{"tegobpf build, root, no bpf in lsm=", doctor.AutoSet{Tiers: []backend.Tier{L, C}, NeedBPFLSM: []backend.Tier{B}},
+			"tiers landlock, cgroup (tier auto: every tier this tego builds but bpflsm, which needs bpf in the LSM list)"},
+		{"tegobpf build, root, bpf in lsm=", doctor.AutoSet{Tiers: []backend.Tier{L, C, B}},
+			"tiers landlock, cgroup, bpflsm (tier auto: every tier this tego builds)"},
+		{"untagged build, normal user", doctor.AutoSet{Tiers: []backend.Tier{L}},
+			"tiers landlock (tier auto: every tier this tego builds)"},
+	} {
+		autoTiersAre(t, c.set)
+		code, out, errs := run(t, "compile", "agent.yaml", "--test", "verdicts.yaml")
+		if code != identity.ExitOK && code != identity.ExitFinding {
+			t.Fatalf("%s: exit %d\nstdout %s\nstderr %s", c.name, code, out, errs)
+		}
+		if header, _, _ := strings.Cut(out, "\n"); header != c.header {
+			t.Errorf("%s: header %q, want %q", c.name, header, c.header)
+		}
+		_, out, _ = run(t, "compile", "agent.yaml", "--test", "verdicts.yaml", "--json")
+		var rep TestReport
+		if err := json.Unmarshal([]byte(out), &rep); err != nil {
+			t.Fatalf("%s: --json is not one object: %v\n%s", c.name, err, out)
+		}
+		if want := "tiers " + strings.Join(rep.Tiers, ", ") + " (" + rep.From + ")"; want != c.header {
+			t.Errorf("%s: --json tiers %v from %q, want the header %q", c.name, rep.Tiers, rep.From, c.header)
+		}
+		if _, out, _ = run(t, "compile", "agent.yaml", "--exec", "sh -c true"); !strings.Contains(out, "\n"+c.header+"\n") {
+			t.Errorf("%s: --exec does not print %q:\n%s", c.name, c.header, out)
+		}
+	}
+	// Both preconditions at once, which no process meets today (a normal user's LSM list is not read), still read as
+	// one sentence.
+	got := autoOrigin(doctor.AutoSet{Tiers: []backend.Tier{L}, NeedRoot: []backend.Tier{C}, NeedBPFLSM: []backend.Tier{B}})
+	if want := "tier auto: every tier this tego builds but cgroup, which needs root, and bpflsm, which needs bpf in the LSM list"; got != want {
+		t.Errorf("autoOrigin = %q, want %q", got, want)
 	}
 }
 

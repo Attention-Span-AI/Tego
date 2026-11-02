@@ -288,8 +288,10 @@ func ComputeCtx(ctx context.Context, r *ledger.Reader, rt *agent.RuleTable) (*Re
 		allowedBlind bool
 		// fileless and dropped are R17a's lists, filled from the exec lines' own flags.
 		fileless, dropped flagged
-		prev              mirror.Key
-		lines             int
+		// pairs tells a refused line that mirrors a refused action from one written on its own. It takes every
+		// line, the ones the loop passes over below included: its window counts lines.
+		pairs mirror.Pairs
+		lines int
 	)
 	for e, err := range r.Iter() {
 		if err != nil {
@@ -301,6 +303,7 @@ func ComputeCtx(ctx context.Context, r *ledger.Reader, rt *agent.RuleTable) (*Re
 		if rep.Run == "" {
 			rep.Run, rep.Agent = e.Run, e.Agent
 		}
+		mirrored := pairs.Take(e)
 		gapTally.Add(e)
 		rep.Ended = rep.Ended || e.Kind == record.KindRunEnd
 		if e.Kind == record.KindRunStart {
@@ -386,11 +389,9 @@ func ComputeCtx(ctx context.Context, r *ledger.Reader, rt *agent.RuleTable) (*Re
 				}
 			}
 		}
-		mirrored := prev.Mirrors(e)
-		prev = mirror.Of(e)
 		section, ok := sectionOf(e.Kind)
 		if !ok {
-			// A refused line that mirrors the action line just before it was already counted from
+			// A refused line that mirrors a refused action line before it was already counted from
 			// the action's verdict; counting it again would count one occurrence twice. One written on its
 			// own (a keyring or mount-family refusal) is the only record of that refusal, and counts.
 			if e.Kind == record.KindRefused && !mirrored {

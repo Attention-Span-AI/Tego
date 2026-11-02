@@ -87,7 +87,7 @@ func TestGateNetToReachesEverySpellingOfThisHost(t *testing.T) {
 		{"the host unknown", "127.0.0.1:39513", sockaddrIn4("203.0.113.7", port), func() ([]net.Addr, error) { return nil, errors.New("no netlink") }, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			thisHost = newHostAddrs(c.list, time.Now)
+			thisHost = newHostAddrs(c.list, nil, time.Now)
 			f := newFake()
 			f.sockType = unix.SOCK_STREAM
 			f.sockProto = unix.IPPROTO_TCP
@@ -99,6 +99,49 @@ func TestGateNetToReachesEverySpellingOfThisHost(t *testing.T) {
 			l.handle(notifFor(connectNR(), 42, 5, addr, uint64(len(c.sa))))
 			if connected := len(f.connects) > 0; connected == c.refused {
 				t.Fatalf("connected = %v, want %v", connected, !c.refused)
+			}
+			ev := sink.one(t)
+			if refused := ev.Verdict == record.VerdictRefused && ev.Authority == record.AuthorityGate; refused != c.refused {
+				t.Errorf("line %s by %s, want refused by the gate: %v", ev.Verdict, ev.Authority, c.refused)
+			}
+		})
+	}
+}
+
+// TestGateNetToReachesWhatTheLocalTableSendsHere: a `net to` rule on this host scores what the kernel's local routing
+// table sends here, under a contract with no net: section: an address of an AnyIP range, a broadcast address set by
+// hand and an IPv6 anycast address the host joined. A rule on an AnyIP address names this host, so it scores loopback;
+// a rule on an anycast address matches that address alone.
+func TestGateNetToReachesWhatTheLocalTableSendsHere(t *testing.T) {
+	const addr, port = 0x40000, 39514
+	prev := thisHost
+	t.Cleanup(func() { thisHost = prev })
+	thisHost = newHostAddrs(hostList("192.0.2.10"), hostTable, time.Now)
+	for _, c := range []struct {
+		name, rule string
+		sa         []byte
+		refused    bool
+	}{
+		{"an AnyIP range's address", "127.0.0.1:39514", sockaddrIn4("198.51.100.7", port), true},
+		{"a broadcast address set by hand", "127.0.0.1:39514", sockaddrIn4("192.0.2.100", port), true},
+		{"an IPv6 anycast address the host joined", "127.0.0.1:39514", sockaddrIn6("2001:db8:1::", port), true},
+		{"past the AnyIP range", "127.0.0.1:39514", sockaddrIn4("198.51.101.7", port), false},
+		{"a rule on an AnyIP address, loopback", "198.51.100.7:39514", sockaddrIn4("127.0.0.1", port), true},
+		{"a rule on an anycast address, its own", "[2001:db8:1::]:39514", sockaddrIn6("2001:db8:1::", port), true},
+		{"a rule on an anycast address, loopback", "[2001:db8:1::]:39514", sockaddrIn4("127.0.0.1", port), false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFake()
+			f.sockType = unix.SOCK_STREAM
+			f.sockProto = unix.IPPROTO_TCP
+			f.put(addr, c.sa)
+			pol := contractPolicy(&agent.Contract{}, nil, nil)
+			pol.Rules.Record = agent.RecordFull
+			pol.Rules.Gate = testGate(t, gate.NetTo, c.rule, 90)
+			l, sink := newTestLoop(t, f, pol)
+			l.handle(notifFor(connectNR(), 42, 5, addr, uint64(len(c.sa))))
+			if connected := len(f.connects) > 0; connected == c.refused {
+				t.Errorf("connected = %v, want %v", connected, !c.refused)
 			}
 			ev := sink.one(t)
 			if refused := ev.Verdict == record.VerdictRefused && ev.Authority == record.AuthorityGate; refused != c.refused {

@@ -46,8 +46,11 @@ func newValidatedDial(model agent.ModelEndpoint, denied []netip.Prefix, lookup a
 	if sem == nil {
 		sem = make(chan struct{}, 8)
 	}
+	// hosts is this host's own addresses, which a model name never admits unless it is a localhost name (agent-contract
+	// R18, as the supervisor's resolved-address check): the interfaces' and every address of a `local` route of the
+	// local routing table, an AnyIP range's, since a name resolved into one reaches a server bound to all interfaces.
 	return &validatedDial{model: model, rules: agent.RuleTable{DeniedResolved: slices.Clone(denied)}, lookup: lookup, dial: dial, sem: sem,
-		hosts: hostaddr.New(net.InterfaceAddrs, time.Now, time.Second)}
+		hosts: hostaddr.NewWithLocalTable(net.InterfaceAddrs, hostaddr.ReadLocalTable, time.Now, time.Second)}
 }
 
 func (d *validatedDial) DialContext(ctx context.Context, network, address string) (net.Conn, error) {

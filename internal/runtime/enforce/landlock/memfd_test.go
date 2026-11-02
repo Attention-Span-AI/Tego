@@ -152,7 +152,8 @@ func TestMemfdArmDroppedWhereThePlaneMaps(t *testing.T) {
 		}
 		got, _ := h.SeccompFilter()
 		want, err := assembleFilter(NativeArch(), filterOpts{abi: 6, memfd: tc.want, signals: false, procScope: true,
-			unixBinds: rt.HostSocketsRefused() || rt.Contract.Net != nil, listenControl: rt.Contract.Net != nil})
+			unixBinds: rt.HostSocketsRefused() || rt.Contract.Net != nil, listenControl: rt.Contract.Net != nil,
+			watches: true}) // every enforcing filter carries R11e's watch arm
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -283,7 +284,8 @@ func TestPrepareMemfdArmAndCapabilityLine(t *testing.T) {
 			}
 			want, err := assembleFilter(NativeArch(), filterOpts{abi: 7, memfd: tc.arm, socket: SocketArmFor(rt), procScope: true,
 				unixBinds: rt.Contract == nil || rt.Contract.Net != nil, listenControl: rt.Contract == nil || rt.Contract.Net != nil,
-				sourceRoute: rt.Contract == nil || rt.Contract.Net != nil, frames: rt.DecidesDatagrams()})
+				sourceRoute: rt.Contract == nil || rt.Contract.Net != nil, frames: rt.DecidesDatagrams(),
+				watches: true}) // every enforcing filter carries R11e's watch arm
 			if err != nil {
 				t.Fatal(err)
 			}

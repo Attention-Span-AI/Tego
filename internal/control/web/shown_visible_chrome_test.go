@@ -52,17 +52,13 @@ func TestBidiAndToastInChrome(t *testing.T) {
 	ls := line(run, "supply-chain-codex-chatgpt", 0, now.Add(-time.Minute), "run_start", `"tier":"landlock","cwd":"/p/proj","contract_source":{"path":"/p/proj/contract.yaml"},"command":["codex"]`) +
 		line(run, "supply-chain-codex-chatgpt", 1, now.Add(-3*time.Second), "ask", `"ask_id":"`+cardAsk+`","ask_rule":"fs.ask_read[./confidential/]","hold":"open","op":"read","target":"/p/proj/confidential/a`+rtlo+`txt.exe"`) +
 		line(run, "supply-chain-codex-chatgpt", 2, now.Add(-2*time.Second), "ask", `"ask_id":"`+deepAsk+`","ask_rule":"fs.ask_read[./confidential/]","hold":"open","op":"read","target":"`+deep.String()+`"`)
-	for _, f := range []struct {
-		path string
-		body string
-	}{{filepath.Join(root, run, "events.jsonl"), ls}, {filepath.Join(root, ".live", run), ""}} {
-		if err := os.MkdirAll(filepath.Dir(f.path), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(f.path, []byte(f.body), 0o600); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.MkdirAll(filepath.Join(root, run), 0o700); err != nil {
+		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, run, "events.jsonl"), []byte(ls), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	markLive(t, root, run)
 	old := answerAsk
 	t.Cleanup(func() { answerAsk = old })
 	answerAsk = func(_ context.Context, _, run, id string, approve, always bool) (runact.Answered, error) {

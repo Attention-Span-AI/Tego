@@ -821,6 +821,12 @@ const (
 // line has no count.
 const GapLauncherLost = "launcher-lost"
 
+// GapOwnStateModeRestored is the why of the gap what=record a run writes for each of tego's own files and directories
+// whose owner's rights it found taken and gave back (record-ledger.md §3, "Modes taken from the owner"), binary naming
+// its path. No Landlock ABI has a chmod right, so an agent can change the mode of the files its user owns; their
+// contents and the record are unchanged by it, so the line loses no event and has no count.
+const GapOwnStateModeRestored = "own-state-mode-restored"
+
 // The why of a gap what=enforce the kernel decision plane's counters give at run end (enforce-plane §2.8, ADR 0025
 // (4)): one line per counter of the run's slot that is not zero, count the number of refusals the plane made for that
 // cause, decision_plane the mode. Every one is a refusal already made (fail closed); the line says the plane met a

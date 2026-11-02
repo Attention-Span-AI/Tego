@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
@@ -26,8 +27,8 @@ import (
 // request's RemoteAddr and whose remote address is the listener's address. Anything else (no such row, an
 // unreadable table, an address the server cannot name) refuses: the check fails closed.
 
-// peerTables are the tables a loopback connection can appear in: an AF_INET client in the first, an AF_INET6 one
-// (v4-mapped, since the dashboard listens on 127.0.0.1 only) in the second.
+// peerTables are the tables a loopback connection can appear in: an AF_INET client in the first, an AF_INET6 one in
+// the second (v4-mapped to a dashboard on 127.0.0.1, native to one on ::1).
 var peerTables = [...]string{"/proc/net/tcp", "/proc/net/tcp6"}
 
 // tcpUIDField is the index of the uid column in a /proc/net/tcp row, counting the leading "sl:" as column 0: sl,
@@ -175,10 +176,11 @@ func findUID(data []byte, client, server netip.AddrPort) (int, bool, error) {
 
 // parseTCPAddr reads one "address:port" cell of a /proc/net/tcp row, unmapping a v4-mapped v6 address.
 //
-// The kernel prints the address with %08X straight off the in-memory __be32 (four of them for v6), so on a
-// little-endian host each group of eight hex digits reads back as a little-endian u32 whose bytes are the address
-// in network order: 0100007F is 127.0.0.1. Tego releases amd64 and arm64, both little-endian; on a big-endian host
-// no row would match and every request would be refused, the safe direction. The port is printed big-endian.
+// The kernel prints the address with %08X straight off the in-memory __be32 (four of them for v6): each group of
+// eight hex digits is four of the address's bytes read as a u32 in the host's byte order, so writing the u32 back in
+// that order (binary.NativeEndian) gives them in network order. 0100007F is 127.0.0.1 on a little-endian host
+// (amd64 and arm64, which Tego releases), 7F000001 on a big-endian one. The port is printed after ntohs, so its
+// digits are the port number itself on either.
 // (internal/runtime/capture/forwarder parses the same cells; the dashboard may not import the runtime.)
 func parseTCPAddr(cell string) (netip.AddrPort, bool) {
 	host, portText, ok := strings.Cut(cell, ":")
@@ -195,7 +197,7 @@ func parseTCPAddr(cell string) (netip.AddrPort, bool) {
 		if err != nil {
 			return netip.AddrPort{}, false
 		}
-		raw = append(raw, byte(word), byte(word>>8), byte(word>>16), byte(word>>24))
+		raw = binary.NativeEndian.AppendUint32(raw, uint32(word))
 	}
 	addr, ok := netip.AddrFromSlice(raw)
 	if !ok {

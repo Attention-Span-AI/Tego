@@ -6,10 +6,10 @@
 {{if .Contracts}}<section class="panel"><ul class="list rc-files">{{range .Contracts}}<li><a class="link" href="/rules/change?c={{queryEsc .Ref}}"><b>{{.Agent}}</b> <span class="mono soft">{{tail .Path 60}}</span></a> <span class="soft">· {{.Runs}} {{plural .Runs "run" "runs"}}{{if .Live}} · running{{end}}{{if not .Writable}} · cannot be changed here{{end}}</span></li>{{end}}</ul></section>
 {{else}}<section class="panel"><div class="empty"><div class="glyph">{{template "i" "i-shield"}}</div><h3>No policy to edit yet</h3><p>Write one with <span class="mono">tego init</span> and start the agent under it with <span class="mono">tego run</span>; then its rules can be changed here.</p><div class="cli"><code>tego init &amp;&amp; tego run -- &lt;agent&gt;</code></div></div></section>{{end}}
 {{else}}{{$c := .C}}
-<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a class="link" href="/rules?c={{queryEsc $d.RulesRef}}">Rules</a><span aria-hidden="true">/</span><span>Change rules</span></nav>
+<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a class="link" href="/rules?c={{queryEsc $c.Ref}}">Rules</a><span aria-hidden="true">/</span><span>Change rules</span></nav>
 <h1>Change rules for {{$c.Agent}}</h1>
 <p class="lede rules-ctx">One change at a time · from the next run of <span class="code-i" title="{{$c.Path}}">{{tail $c.Path 60}}</span>{{if $c.Live}}; a narrowing can also apply now to the {{len $c.Live}} running {{plural (len $c.Live) "run" "runs"}}{{end}}.</p></div>
-<div class="head-actions"><a class="btn" href="/rules?c={{queryEsc $d.RulesRef}}">{{template "i" "i-eye"}}Rules in force</a></div></div>
+<div class="head-actions"><a class="btn" href="/rules?c={{queryEsc $c.Ref}}">{{template "i" "i-eye"}}Rules in force</a></div></div>
 
 {{if gt (len .Contracts) 1}}<form class="frow rules-pick" action="/rules/change" method="get" aria-label="Choose the rules file"><label class="field rp-file">Rules file<select class="select" name="c">{{range .Contracts}}<option value="{{.Ref}}"{{if eq .Ref $c.Ref}} selected{{end}}>{{.Agent}} · {{tail .Path 48}}{{if .Live}} · running{{end}}</option>{{end}}</select></label><button class="btn" type="submit">Open</button></form>{{end}}
 
@@ -26,7 +26,7 @@
 {{if .Err}}<section class="banner banner-danger rc-diag" role="alert" aria-labelledby="h-diag">{{template "i" "i-triangle-alert"}}<div class="grow stack-sm"><h3 class="rp-h" id="h-diag">{{if .Nothing}}Nothing to save{{else}}This text cannot be saved{{end}}</h3>
 <ul class="rc-diags">{{range $raw.Diags}}<li>{{if .Line}}<a class="link mono" href="#yl-{{.Line}}">line {{.Line}}</a> {{end}}<span class="mono">{{.Text}}</span></li>{{end}}</ul>
 {{if $raw.Lines}}<ol class="rc-lines" aria-label="The lines named above">{{range $raw.Lines}}{{if .Gap}}<li class="rc-gap" aria-hidden="true">…</li>{{else}}<li class="mono{{if .Bad}} rc-bad{{end}}" id="yl-{{.N}}"><span class="rc-n">{{.N}}</span><span class="rc-t">{{.Text}}</span></li>{{end}}{{end}}</ol>{{end}}</div></section>
-{{else}}<section class="banner banner-ok" role="status">{{template "i" "i-check"}}<div class="grow stack-sm"><strong>It compiles.</strong> Changes below · save to write<pre class="raw rc-diff" tabindex="0" aria-label="The file's change">{{.Diff}}</pre></div></section>{{end}}{{end}}{{end}}
+{{else}}<section class="banner banner-ok" role="status">{{template "i" "i-check"}}<div class="grow stack-sm"><strong>It compiles.</strong> Changes below · save to write<pre class="raw rc-diff" tabindex="0" aria-label="The file's change">{{.Diff}}</pre></div></section>{{template "hostwarn" .Unresolved}}{{end}}{{end}}{{end}}
 <form class="stack-sm" method="post" action="/rules/change?c={{queryEsc $c.Ref}}#yaml"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="mode" value="raw"><input type="hidden" name="c" value="{{$c.Ref}}"><input type="hidden" name="base" value="{{if and $raw $raw.Plan}}{{$raw.Plan.Base}}{{else}}{{$c.Base}}{{end}}">
 <label class="lbl" for="yaml-text">{{tail $c.Path 60}}</label>
 <textarea class="input mono rc-text" id="yaml-text" name="text" rows="22" spellcheck="false" autocomplete="off" wrap="off">

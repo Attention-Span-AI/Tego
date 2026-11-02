@@ -87,8 +87,9 @@ func (rt *RuleTable) GuardedModels() []ModelEndpoint {
 // all costs at most another local server on the model's own port.
 //
 // This host's other addresses (a LAN or bridge address) reach a model server bound to all interfaces as its
-// loopback does, and a pure predicate cannot tell which addresses are this host's: the run's guard is to
-// count them from a snapshot of the host's interface addresses (docs/p0/supervisor.md R7 Limit (b)), and
+// loopback does, and a pure predicate cannot tell which addresses are this host's: the run's guard counts
+// them from a fresh snapshot of the host's own addresses, its interfaces' and every one of a `local` route in
+// its local routing table, an AnyIP range among them (docs/p0/supervisor.md R7, "Local endpoints"), and
 // Evaluate answers such a destination refused, rule unresolved (evalGuard).
 func GuardAddrMatches(dst, ep netip.Addr) bool {
 	dst, ep = dst.Unmap().WithZone(""), ep.Unmap().WithZone("")

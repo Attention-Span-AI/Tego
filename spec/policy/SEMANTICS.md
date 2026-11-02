@@ -181,12 +181,33 @@ declares for an agent that starts a PostgreSQL server or an X client using MIT-S
 give the run a private IPC namespace in place of refusing, which would make `ipc: true` safe to grant; that is not
 built, so `ipc: true` reaches the host's IPC objects at every tier.
 
-**A `deny_read` directory's names and activity (amended 2026-09-24).** At tiers 1 and 2 a
-`deny_read` directory refuses reading its files' contents, not listing them: Landlock's `READ_DIR` is inherited from
-the nearest granting ancestor, so `ls` of a `deny_read` directory under a readable one lists its names, and an inotify
-or unprivileged fanotify watch on it reports which of its files are opened and changed, since neither is a hook
-Landlock or the supervisor sees. A contract that must hide a secret's name, not only its bytes, keeps it outside
-every readable tree (GAPS A10).
+**A `deny_read` directory's names and activity (amended 2026-09-24, 2026-11-02).** At tiers 1 and 2 a `deny_read`
+directory refuses reading its files' contents, not listing them: Landlock's `READ_DIR` is inherited from the nearest
+granting ancestor, so `ls` of a `deny_read` directory under a readable one lists its names. An inotify, fanotify or
+dnotify watch of it is refused at every tier (*amended 2026-11-02*; before, such a watch reported which of its files
+were opened and changed; not `fs.watch`, §7): a watch opens nothing, and neither Landlock nor a decision plane has a
+hook for one, so the seccomp filter of every enforcing run notifies `inotify_add_watch`, `fanotify_mark` and `fcntl`'s
+`F_NOTIFY` (dnotify, which watches the directory a descriptor holds, such as one the agent opened to list the target),
+and the supervisor refuses with `EACCES` a watch whose object a read of would be refused, or held for a person
+(`fs.ask_read`, §6: a watch has no answer to wait for) — the target, anything beneath it, a name that leads there (a
+symlink, a `..`, a `/proc/self/fd` link) and a fanotify mark or dnotify watch of a descriptor of it — and continues the
+rest. The refusal is a `refused` line: op the syscall (`fcntl` for dnotify), target the name watched (a descriptor's own
+file by its path), reason `read-denied`, rule the entry, block or fence entry that refused it. A watch follows the run's
+reads: it is refused wherever a read of its object is, by a `deny_read` target, by a file a name entry covers at tiers
+cgroup and bpflsm (§2; reason `path-unresolved`, rule `unmatched`, where the entry's climb cannot decide, as for the
+read), by a name rule or tego's own state where the run holds its reads (`fs.reads`), and by a live read or path block
+or an unlifted read fence entry (§6); and a `deny_read` nested in a write entry at tier landlock under
+`fs.reads: direct`, whose reads the ruleset leaves open, leaves its watch open too. It differs twice: a live block
+refuses a watch of what it covers also in a run whose reads tego does not see, where it refuses no read; and a read
+gate's score is not asked, since a gate scores no watch, so a watch of a file only a read gate would refuse is made. A
+fanotify mark of a whole mount, filesystem or mount namespace (privileged, so `setuid: true` at a root tier) reports
+every file it covers, the targets on that mount included, so it is refused wherever it is placed, with the `EPERM` an
+unprivileged caller meets anyway, rule `deny-read-watch`. The supervisor decides on the copied pathname or descriptor,
+best effort as for `deny_write` (§2): a sibling thread that rewrites the name or swaps the descriptor, or a process that
+repoints a symlink, between the check and the kernel's own lookup places the watch elsewhere. A watch of the directory
+that holds a target is not refused, so it still reports a target file's own activity (an `.env` in a watched project,
+`~/.netrc` in a watched home) and a target directory's own entry, as a listing shows their names. A contract that must
+hide a secret's name or its activity, not only its bytes, keeps it outside every readable tree (GAPS A10).
 
 ## 2. Filesystem rules
 
@@ -444,6 +465,10 @@ Kernel decision first, gate second, gate only escalates.
    `exec matches <argv pattern>`, `net to undeclared host`, `net to <host:port>`. No expressions.
    *Amended 2026-11-01:* `net to <host:port>` on this host is on the destination, not a spelling of it: it scores every
    loopback address, each of the host's own, and a group or broadcast datagram on its port (gate.md R3).
+   *Amended 2026-11-02:* what the kernel's routing tables send here (their `local`, `broadcast` and `anycast` routes in
+   tables local, main and default) is this host as well: an address of an AnyIP range counts as one of the host's own,
+   and a datagram to a broadcast address set by hand or to an IPv6 anycast address the host joined as a broadcast or
+   group datagram (gate.md R3).
    *Amended 2026-10-06 (ADR 0048 (1)):* exec command rules are lists and decide before the gate, after the image
    floor: any `exec.deny` match refuses, any `exec.ask` match refuses (reserved), and a constrained tool's unlisted
    invocation is refused; specificity never changes the order, and no exception syntax exists.
@@ -738,6 +763,9 @@ and warns, and the supervisor refuses one a refresh brings in, `rule: net.denied
 R18, added 2026-09-23, multicast added later). Nor does it admit one of this host's own interface
 addresses, which reach every service bound to all interfaces as loopback does: the supervisor refuses such a
 destination from a snapshot of the host's addresses, and `compile`, which does not know them, neither drops nor warns.
+*Amended 2026-11-02:* the host's own addresses take in every address of a `local` route in the routing tables its
+default rules look up, an AnyIP range's, as a live block, a `net to` rule and the `models[]` guard read this host
+(agent-contract R18).
 A name whose compile-time answer held only public addresses is also refused a private one (`10/8`,
 `172.16/12`, `192.168/16`, `100.64/10`, `fc00::/7`) that a refresh brings in — DNS rebinding towards the host's own
 network — while a name that first resolved to a private address (split-horizon DNS) keeps them. A literal address or

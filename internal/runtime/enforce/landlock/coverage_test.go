@@ -109,13 +109,14 @@ func TestCreateRulesetScopeByABI(t *testing.T) {
 // Spec: docs/p0/enforce-landlock.md R16.
 func TestPrepareRecordFull(t *testing.T) {
 	// A table with no contract is net-restricted (agent.RuleTable.NetUnrestricted), so both carry the socket
-	// arm (ADR 0018), R11d's pending-frame arms (it decides datagrams) and R11b's source-route arm.
+	// arm (ADR 0018), R11d's pending-frame arms (it decides datagrams) and R11b's source-route arm; and every
+	// enforcing filter carries R11e's watch arm.
 	restricted := SocketArmFor(&agent.RuleTable{})
-	wantFull, err := assembleFilter(NativeArch(), filterOpts{full: true, abi: minTruncateABI, socket: restricted, procScope: true, unixBinds: true, listenControl: true, frames: true, sourceRoute: true})
+	wantFull, err := assembleFilter(NativeArch(), filterOpts{full: true, abi: minTruncateABI, socket: restricted, procScope: true, unixBinds: true, listenControl: true, frames: true, sourceRoute: true, watches: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantSummary, err := assembleFilter(NativeArch(), filterOpts{full: false, abi: minTruncateABI, socket: restricted, procScope: true, unixBinds: true, listenControl: true, frames: true, sourceRoute: true})
+	wantSummary, err := assembleFilter(NativeArch(), filterOpts{full: false, abi: minTruncateABI, socket: restricted, procScope: true, unixBinds: true, listenControl: true, frames: true, sourceRoute: true, watches: true})
 	if err != nil {
 		t.Fatal(err)
 	}

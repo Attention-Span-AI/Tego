@@ -187,6 +187,36 @@ func TestContractsBoundedToRuns(t *testing.T) {
 	}
 }
 
+// TestRefOfARecordedPath: Ref of the path a run recorded is the ref Contracts lists for that file, also when the run
+// recorded it through a linked folder, which is one contract with the runs of both spellings; a path that is not
+// absolute has none.
+func TestRefOfARecordedPath(t *testing.T) {
+	f := newFixture(t)
+	link := filepath.Join(f.dir, "proj-link")
+	if err := os.Symlink(f.proj, link); err != nil {
+		t.Fatal(err)
+	}
+	viaLink := filepath.Join(link, "agent.yaml")
+	f.writeRun(t, "r-aaaa-0005-rules", viaLink, 5)
+	c := f.ref(t, viaLink) // listed under its newest run's spelling
+	if c.Runs != 3 {
+		t.Errorf("the file and its spelling through a linked folder are not one contract with all three runs: %+v", c)
+	}
+	for _, p := range []string{f.contract, viaLink, link + "/./agent.yaml"} {
+		if got := Ref(p); got != c.Ref {
+			t.Errorf("Ref(%s) = %q, Contracts lists %q", p, got, c.Ref)
+		}
+	}
+	if o := f.ref(t, f.other); Ref(f.other) != o.Ref || o.Ref == c.Ref {
+		t.Errorf("Ref(%s) = %q, Contracts lists %q", f.other, Ref(f.other), o.Ref)
+	}
+	for _, p := range []string{"", "agent.yaml", "./proj/agent.yaml"} {
+		if got := Ref(p); got != "" {
+			t.Errorf("Ref(%q) = %q, want none", p, got)
+		}
+	}
+}
+
 // TestRefIsNotAPath: a request names a contract by its ref alone; a path, a traversal, or the ref of a file no run
 // here ran names nothing, and nothing is read or written.
 func TestRefIsNotAPath(t *testing.T) {
