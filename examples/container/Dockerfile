@@ -24,7 +24,7 @@
 # 2026-10-27, and written out in the FROM lines, where Dependabot's docker ecosystem proposes the updates. The Go
 # image is go.mod's toolchain (compose_test.go holds the two equal).
 
-FROM golang:1.27.3-trixie@sha256:c124b9ad3452f46061b5054607d26ea51730dae5372c5e469920063ba2bc6dcc AS build
+FROM golang:1.27.3-trixie@sha256:c65ecfe613b539ac74c62a4c3b2c27e8f8a6076384c8f27e8a3c0f3be17cc385 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
