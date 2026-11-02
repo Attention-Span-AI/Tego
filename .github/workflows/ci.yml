@@ -189,9 +189,10 @@ jobs:
           exit "$status"
       # The test hooks build's own tests (identity-config.md R27: it refuses a ledger root, anchor or own-log home in
       # the invoking user's ~/.tego, and has no anchor or own log without its variables). They are compiled only with
-      # this tag, so no other step runs them.
+      # this tag, so no other step runs them. In the runner user's systemd manager, as the unit step: run tests
+      # need its delegated cgroup subtree, and a step's own shell leaves descriptors open past the standard three.
       - name: unit (-tags tegotesthooks)
-        run: go test -count=1 -tags tegotesthooks ./internal/bpf/ ./internal/cli/ ./internal/platform/sys/ ./internal/runtime/enforce/ ./internal/runtime/enforce/landlock/
+        run: ./scripts/in-user-manager.sh go test -count=1 -tags tegotesthooks ./internal/bpf/ ./internal/cli/ ./internal/platform/sys/ ./internal/runtime/enforce/ ./internal/runtime/enforce/landlock/
       - name: p0 example compiles clean
         run: go build -o /tmp/tego-ci ./cmd/tego && dir=$(mktemp -d) && mkdir -p "$dir/config" "$dir/out" && cp spec/agent/v0/example.p0.retriever.yaml "$dir/agent.yaml" && (cd "$dir" && /tmp/tego-ci compile agent.yaml --offline)
       # Every package's integration tests, unprivileged: this step named four trees by hand (pkg, enforce,

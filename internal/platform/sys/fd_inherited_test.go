@@ -71,8 +71,17 @@ func TestInheritedHelper(t *testing.T) {
 			}
 			fmt.Printf("inherited %d %s\n", n, name)
 		}
-		if _, err := Inherited(3+len(kinds), KindRegular, "unopened"); !errors.Is(err, ErrKind) {
-			t.Fatalf("Inherited of a number not open = %v, want ErrKind", err)
+		// The first number past the inherited ones that is really closed here: a parent shell may hand a process
+		// more than its three standard streams (GitHub's runner shell left 9 open), so 3+len(kinds) is not
+		// closed by construction.
+		unopened := 3 + len(kinds)
+		for ; ; unopened++ {
+			if _, err := unix.FcntlInt(uintptr(unopened), unix.F_GETFD, 0); errors.Is(err, unix.EBADF) {
+				break
+			}
+		}
+		if _, err := Inherited(unopened, KindRegular, "unopened"); !errors.Is(err, ErrKind) {
+			t.Fatalf("Inherited of a number not open (%d) = %v, want ErrKind", unopened, err)
 		}
 	case "sealed":
 		if _, err := Inherited(3, kindNames[kinds[0]], kinds[0]); err != nil {

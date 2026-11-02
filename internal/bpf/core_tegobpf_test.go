@@ -5,6 +5,7 @@
 package bpf
 
 import (
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -69,7 +70,11 @@ func TestCORERelocationsResolve(t *testing.T) {
 					}
 				}
 			}
-			if total == 0 {
+			// arm64's uprobe object reads a probed function's arguments through struct user_pt_regs, which
+			// bpf/include/common.h declares outside vmlinux.h's preserve_access_index region because its layout is
+			// uapi, and reads no other kernel struct, so it has no relocation to make. Every other object, and
+			// x86-64's uprobe object (struct pt_regs is a kernel type there), must have some.
+			if total == 0 && !(obj == ObjectUprobeSSL && runtime.GOARCH == "arm64") {
 				t.Fatalf("%s has no CO-RE relocations at all; every kernel field read must go through one", obj)
 			}
 			t.Logf("%s: %d relocations resolved", obj, total)
