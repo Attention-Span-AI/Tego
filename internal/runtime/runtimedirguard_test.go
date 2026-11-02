@@ -39,24 +39,33 @@ func fakeLogind(t *testing.T) string {
 	return dir
 }
 
-// TestRuntimeDirBases is R10a's list of the parents every launch protects: the invoking user's logind directory
-// whatever the environment says, and XDG_RUNTIME_DIR when it is absolute and names another.
-func TestRuntimeDirBases(t *testing.T) {
-	logind := fakeLogind(t)
+// TestTheLauncherChecksTheRuntimeDirBasesTheCompileNamed is R10a's list of the parents every launch protects: the
+// launcher checks config.RuntimeDirBases, the list every compile of the run's contract named (tego compile, run and
+// rule, and the dashboard's rule service, which may not link this package), not a copy of its own that could drift
+// from it, whatever the environment says; and a test's logind root (fakeLogind) stands for /run/user alone. The list
+// itself is config's TestRuntimeDirBases.
+func TestTheLauncherChecksTheRuntimeDirBasesTheCompileNamed(t *testing.T) {
+	uid, _ := config.InvokingUID()
+	logind := filepath.Join(config.LogindRuntimeRoot, strconv.Itoa(uid))
 	other := t.TempDir()
+	for _, xdg := range []string{"", "relative/dir", logind, logind + "/", other} {
+		t.Setenv("XDG_RUNTIME_DIR", xdg)
+		if got, want := runtimeDirBases(), config.RuntimeDirBases(); !slices.Equal(got, want) {
+			t.Errorf("XDG_RUNTIME_DIR=%q: the launcher checks %q, the compile named %q", xdg, got, want)
+		}
+	}
+	fake := fakeLogind(t)
 	for _, tc := range []struct {
 		xdg  string
 		want []string
 	}{
-		{"", []string{logind}},
-		{"relative/dir", []string{logind}},
-		{logind, []string{logind}},
-		{logind + "/", []string{logind}},
-		{other, []string{logind, other}},
+		{"", []string{fake}},
+		{fake + "/", []string{fake}},
+		{other, []string{fake, other}},
 	} {
 		t.Setenv("XDG_RUNTIME_DIR", tc.xdg)
-		if got := RuntimeDirBases(); !slices.Equal(got, tc.want) {
-			t.Errorf("XDG_RUNTIME_DIR=%q: RuntimeDirBases() = %q, want %q", tc.xdg, got, tc.want)
+		if got := runtimeDirBases(); !slices.Equal(got, tc.want) {
+			t.Errorf("under a test's logind root, XDG_RUNTIME_DIR=%q: the launcher checks %q, want %q", tc.xdg, got, tc.want)
 		}
 	}
 }

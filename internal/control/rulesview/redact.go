@@ -3,10 +3,15 @@
 package rulesview
 
 import (
+	"errors"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 // Hidden is what a page shows in place of an env.set value.
@@ -24,24 +29,26 @@ func (c Contract) Shown() (text, table string) {
 	return text, table
 }
 
-// Unreadable is the first line a page shows in place of a contract text that names "set" but does not parse as YAML:
-// the env.set values cannot be found in it, so none of it is shown (fail closed).
-const Unreadable = "# (text hidden: it could not be read as YAML, so its env.set values could not be found)"
+// Unreadable is the first line a page shows in place of a contract text whose env.set values cannot be found line by
+// line: one that could spell "set" but does not read as one YAML document (it does not parse, or holds a second
+// document, which the compiler refuses), or one with env.set whose lines YAML counts otherwise than the page
+// (lineForLine). None of it is shown (fail closed).
+const Unreadable = "# (text hidden: it may set environment values (env.set) that this page cannot find line by line; open it in a terminal)"
 
 // RedactEnvText is a contract's YAML text with each value of its env.set mapping replaced by Hidden, line for line:
 // a value that spans lines (a block scalar, a quoted scalar folded over lines, a flow mapping over lines) keeps its
 // lines, emptied. An alias in env.set also hides the anchored value it names wherever that is defined, and env or
-// set reached through an alias or a merge key (<<) is found there. Text that names "set" but does not parse comes
-// back as Unreadable followed by empty lines; text that is not a mapping, or holds no env.set, comes back unchanged.
+// set reached through an alias or a merge key (<<) is found there. Text that could spell "set" (its letters, or an
+// escape or zero byte that spells them otherwise: setSpelled) but is not one YAML document (parseOne), and text with
+// env.set whose lines YAML counts otherwise than its "\n" lines (lineForLine), come back as Unreadable followed by
+// empty lines; text that cannot spell "set", that is not a mapping, or that holds no env.set comes back unchanged.
 func RedactEnvText(text string) string {
-	if !strings.Contains(text, "set") {
+	if !strings.Contains(text, "set") && !setSpelled.MatchString(text) {
 		return text
 	}
-	var doc yaml.Node
-	if yaml.Unmarshal([]byte(text), &doc) != nil {
-		blank := make([]string, strings.Count(text, "\n")+1)
-		blank[0] = Unreadable
-		return strings.Join(blank, "\n")
+	doc, err := parseOne(text)
+	if err != nil {
+		return unreadable(text)
 	}
 	if len(doc.Content) == 0 {
 		return text
@@ -50,9 +57,29 @@ func RedactEnvText(text string) string {
 	if set == nil {
 		return text
 	}
+	if !lineForLine(text) {
+		return unreadable(text)
+	}
 	r := redactor{lines: strings.Split(text, "\n"), starts: keyLines(doc.Content[0]), seen: map[*yaml.Node]bool{}}
 	r.node(set, set.Column-1)
 	return strings.Join(r.lines, "\n")
+}
+
+// unreadable is Unreadable in place of text, followed by its other lines emptied, so the line count stays.
+func unreadable(text string) string {
+	blank := make([]string, strings.Count(text, "\n")+1)
+	blank[0] = Unreadable
+	return strings.Join(blank, "\n")
+}
+
+// oddBreak finds a line break YAML counts that a split at "\n" does not: a CR not before an LF, NEL, LS or PS.
+var oddBreak = regexp.MustCompile(`\r(?:[^\n]|$)|[\x{85}\x{2028}\x{2029}]`)
+
+// lineForLine says the line numbers YAML gives text's nodes name its lines split at "\n", the lines the redactor
+// empties: text is UTF-8 (YAML also reads UTF-16, whose lines are not its bytes' lines) and ends each line in LF or
+// CR LF (no oddBreak). Otherwise a node's line names another line, or none, and its value would stay.
+func lineForLine(text string) bool {
+	return utf8.ValidString(text) && !oddBreak.MatchString(text)
 }
 
 // redactor empties values in a contract's lines, keeping the line count.
@@ -137,6 +164,23 @@ func lastLine(n *yaml.Node) int {
 		l = max(l, lastLine(c))
 	}
 	return l
+}
+
+// errDocuments is a contract text of more than one YAML document.
+var errDocuments = errors.New("it holds more than one YAML document; a contract is one")
+
+// parseOne is text read as the one YAML document a contract is. yaml.Unmarshal reads the first document and drops the
+// rest, so a text with a second one (which the compiler refuses, agent.LoadBytes) is an error here too: a later
+// document's env.set would go unseen, and its values shown.
+func parseOne(text string) (*yaml.Node, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
+		return nil, err
+	}
+	if config.YAMLDocuments([]byte(text)) > 1 {
+		return nil, errDocuments
+	}
+	return &doc, nil
 }
 
 // mapValue is the value of key in the mapping m, nil when m is not a mapping or has no such key. An alias is

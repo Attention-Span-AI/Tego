@@ -132,7 +132,7 @@ var startXDG, startSudoUID = os.Getenv("XDG_RUNTIME_DIR"), os.Getenv("SUDO_UID")
 
 // RuntimeDirs are the runtime parents a test process could reach: LogindRoot/<uid>/tego for the effective uid and,
 // under sudo, SUDO_UID (where systemd-logind puts each user's XDG_RUNTIME_DIR, and the parent every run of that user
-// checks, internal/runtime RuntimeDirBases), and <XDG_RUNTIME_DIR>/tego when the variable the process started with is
+// checks, config.RuntimeDirBases), and <XDG_RUNTIME_DIR>/tego when the variable the process started with is
 // absolute, by its resolved path (Under's resolution: a link to /run/user/<uid> is that directory). A relative or
 // empty XDG_RUNTIME_DIR adds nothing: tego makes no directory under it.
 func RuntimeDirs() []string {

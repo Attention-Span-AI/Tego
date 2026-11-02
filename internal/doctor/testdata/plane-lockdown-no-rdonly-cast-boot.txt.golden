@@ -7,6 +7,8 @@ ok   lsm: ok
 ok   programs: ok; decision plane: fanotify (no plane mode passed the probe; tier 2 decides opens by fanotify); build none loads (lockdown=confidentiality refuses the probe-read build and this kernel's BTF has no bpf_rdonly_cast for the rd build), lsm mode no: no build of decide.bpf.c loads here: lockdown=confidentiality refuses the probe-read build and this kernel's BTF has no bpf_rdonly_cast for the rd build, fmod_ret mode no: no build of decide.bpf.c loads here: lockdown=confidentiality refuses the probe-read build and this kernel's BTF has no bpf_rdonly_cast for the rd build; the fanotify fallback does not scale past a few concurrent runs: every open on a marked mount waits on a listener
 ok   fanotify: ok
 
+summary: tier cgroup; bpflsm needs plane
+
 [capability matrix]
 
 tier: cgroup

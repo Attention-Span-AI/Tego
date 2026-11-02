@@ -15,7 +15,7 @@ import (
 const envReason = "TEGO_REASON"
 
 // envRuntimeDir is the variable under which an unprivileged run makes its runtime directory,
-// <XDG_RUNTIME_DIR>/tego/<run> (the launcher's RuntimeDirBases).
+// <XDG_RUNTIME_DIR>/tego/<run> (config.RuntimeDirBases, the bases the launcher checks).
 const envRuntimeDir = "XDG_RUNTIME_DIR"
 
 // runtimeDirName is the directory under a runtime base that holds the runs' directories (pkg/spec/agent

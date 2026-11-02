@@ -789,6 +789,7 @@ h1, .h1 { font-size: 1.5rem; letter-spacing: -0.015em; }
 .ch-agent { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ch-meter { display: block; width: 100%; height: 10px; border-radius: var(--radius-full); overflow: hidden; }
 @media (max-width: 900px) { .ch-cmp { grid-template-columns: minmax(0, 1fr); } }
-/* "In a terminal": a page's one fold of commands. */
+/* "In a terminal": a page's one fold of commands; a line of text after a command starts the next group of them. */
 .cli-more > summary { color: var(--c-text2); font-size: var(--text-sm); }
 .cli-more .cli { margin-top: var(--space-2); }
+.cli-more .cli + p { margin-top: var(--space-4); }

@@ -127,6 +127,9 @@ type pendingView struct {
 	Edited  time.Time
 	// Unchecked: the file could not be compared with what the run ran.
 	Unchecked bool
+	// Differs: the file loads to other rules than the run ran and nothing dates a change (rulesview.Pending.Differs),
+	// so the banner has no change and no time to show, only that the file differs.
+	Differs bool
 	// Live: each change has its state on the running run (fillPendingLive). Restart is the terminal line that starts
 	// the next run of the rules file with the command this run was started with ("" when the run names none).
 	Live    bool
@@ -362,7 +365,7 @@ func (s *Server) fillRules(d *rulesData) {
 		}
 	}
 	if p := v.Pending; p != nil {
-		pv := &pendingView{Edited: p.Edited, Unchecked: p.Unchecked}
+		pv := &pendingView{Edited: p.Edited, Unchecked: p.Unchecked, Differs: p.Differs}
 		for _, e := range p.Changes {
 			pv.Changes = append(pv.Changes, pendingChange{At: e.At, Summary: e.Summary, Sentences: e.Sentences, Via: e.Via, ID: e.ID})
 		}

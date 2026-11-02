@@ -18,10 +18,12 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
+	"github.com/attention-span-ai/tego/internal/control/linewords"
 	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/rulesview"
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // The event details page (/runs/<run>/lines/<seq>): one ledger line in plain words, the exact line as written, the
@@ -104,43 +106,66 @@ type ctxRow struct {
 	Op, Text, Title   string
 }
 
-// ctxRowOf is e as an "Around it" row: the operation and target as shownOp and shown say them, masked, and for an ask
-// or answer line (which has no verdict of its own) a chip that says what the line is; every other line keeps the chip
-// the template hands in (verdictClass, verdictIcon, verdictWord, as on every row of the dashboard).
-func ctxRowOf(e ledgerview.Event, class, icon, word string) ctxRow {
-	r := ctxRow{Op: shownOp(e), Title: shown(e), Class: class, Icon: icon, Word: word}
-	r.Text = cutMiddle(r.Title, 90)
+// lineVerdict is the verdict chip of line e, its class (b-<class>, v-<class>), icon and word, as every view of a line
+// shows it: the run timeline, the line page, "Around it" and Logs (the verdictClass, verdictIcon and verdictWord
+// funcs). A line's own verdict decides it. An ask or answer line has none, so its chip says what the line is: Asked on
+// the ask, the person's Allowed or Denied on the answer (Answered when the line does not say which; Timed out or
+// Withdrawn, as the Approvals page says, when no person denied it), never the grey Recorded of a line nothing decided
+// (a note, a run's start or end).
+func lineVerdict(e ledgerview.Event) (class, icon, word string) {
 	switch {
-	case e.Kind == "ask" && e.Verdict == "":
-		r.Class, r.Icon, r.Word = "asked", "i-hand", "Asked"
+	case e.Refused():
+		return "refused", "i-ban", "Blocked"
+	case e.Verdict == "allow":
+		return "allowed", "i-check", "Allowed"
+	case e.Verdict == "ask", e.Kind == "ask" && e.Verdict == "":
+		return "asked", "i-hand", "Asked"
+	case e.Verdict == "observed":
+		return "observed", "i-eye", "Observed"
 	case e.Kind == "answer" && e.Verdict == "":
 		var p rowPayload
-		ok := json.Unmarshal([]byte(e.Raw), &p) == nil
-		if ok {
+		switch {
+		case json.Unmarshal([]byte(e.Raw), &p) != nil || p.Approved == nil:
+			return "neutral", "i-hand", "Answered"
+		case *p.Approved:
+			return "allowed", "i-check", "Allowed"
+		case p.By == linewords.WithdrawnBy:
+			// No person denied it: the broker took it back when a live block landed (askwords' answered.Withdrawn).
+			return "neutral", "i-ban", "Withdrawn"
+		case p.Reason == string(record.ReasonAskTimeout):
+			// No person denied it: nobody answered in time, and Tego refused it (askwords' answered.TimedOut).
+			return "neutral", "i-hand", "Timed out"
+		}
+		return "refused", "i-ban", "Denied"
+	}
+	return "neutral", "i-eye", "Recorded"
+}
+
+// ctxRowOf is e as an "Around it" row under the chip the template hands in (verdictClass, verdictIcon, verdictWord:
+// lineVerdict): the operation and target as shownOp and shown say them, masked, and on an answer line what it
+// answered.
+func ctxRowOf(e ledgerview.Event, class, icon, word string) ctxRow {
+	r := ctxRow{Op: shownOp(e), Title: shown(e), Class: class, Icon: icon, Word: word}
+	if e.Kind == "answer" && e.Verdict == "" {
+		var p rowPayload
+		if json.Unmarshal([]byte(e.Raw), &p) == nil {
 			// What was answered, never the line's own summary ("q-… by uid:1000 pid:…, not approved").
 			r.Title = mask(p.Target)
-			r.Text = cutMiddle(r.Title, 90)
-		}
-		switch {
-		case !ok || p.Approved == nil:
-			r.Class, r.Icon, r.Word = "neutral", "i-hand", "Answered"
-		case *p.Approved:
-			r.Class, r.Icon, r.Word = "allowed", "i-check", "Allowed"
-		default:
-			r.Class, r.Icon, r.Word = "refused", "i-ban", "Denied"
 		}
 	}
+	r.Text = cutMiddle(r.Title, 90)
 	return r
 }
 
-// answerChip is the verdict chip of a Logs row for an answer line, which has no verdict of its own: Denied, Allowed or
-// Answered as "Around it" says it (ctxRowOf), never the grey "Recorded" of a line with no decision; the zero ctxRow
-// for every other line.
+// answerChip is the verdict chip of a Logs row for an answer line (lineVerdict: Denied, Allowed or Answered), which
+// the row titles as a person's answer; the zero ctxRow for every other line.
 func answerChip(e ledgerview.Event) ctxRow {
 	if e.Kind != "answer" || e.Verdict != "" {
 		return ctxRow{}
 	}
-	return ctxRowOf(e, "", "", "")
+	var r ctxRow
+	r.Class, r.Icon, r.Word = lineVerdict(e)
+	return r
 }
 
 // maxHeadTarget is about how many characters of its object the headline shows; the title keeps the rest.

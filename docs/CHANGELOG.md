@@ -23,6 +23,15 @@ Changes after the first source release, listed here until the next tag.
 
 ### Fixed
 
+- The dashboard's run timeline and line pages chip an ask Asked and an answer Denied, Allowed, Timed out or Withdrawn,
+  as Logs does, instead of "Recorded".
+- The Rules page says when a run's rules file loads to other rules than the run ran even when nothing dates the change,
+  and no longer calls the file of a run that recorded no contract hash changed.
+- Compare paints a green Stopped only for what the run's verdict counts; any other refused connection reads Refused.
+- `tego doctor` gives its answer first: a `summary:` line names the tier and what each higher tier needs.
+- `examples/systemd` ships a daily retention timer and an opt-in daily restart for always-on agents.
+- The dashboard's empty pages give commands that run interactive Claude Code and Codex.
+- The Rules pages never show an `env.set` value from a broken file or a file of more than one YAML document.
 - A run no longer adopts TLS capture probes left over from before the build's BPF maps were re-created, which lost
   that library's capture with no gap; it places its own, or reports a gap while another run still holds the old ones.
 - `tego licenses` and `tego-control licenses` print the licence texts and third-party notices each binary embeds.

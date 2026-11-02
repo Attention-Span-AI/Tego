@@ -962,7 +962,15 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   mode and `EACCES` where the plane probe selected one, fanotify's `EPERM` only on the fanotify fallback;
   `--json`'s `fanotify` is `null` when D8 did not run), the highest reachable
   tier, a `missing for <tier>: <capability>` line per absent row, one `fix: <command>` line (e.g. `fix: add ,bpf
-  to the kernel's lsm= line and reboot`). **The tiers are one derivation, and `tego run` selects from it**
+  to the kernel's lsm= line and reboot`). Between the probe lines and the table, one `summary:` line gives the answer
+  first (*amended 2026-11-02*: the tier line came only after the table's rows): `summary: tier <tier>`, or `tier
+  none` with the tier line's own reason; `, capped by the machine config (<file:line>)` where the machine config's
+  ceiling is the tier reached and a tier above it exists; then `; <tier> needs <names>` for each tier above it, which
+  names each reason of that tier's `missing for` line once, by the check, `root`, `build` or `plane` it begins with (a
+  D7 hook's row by D7's `programs`), and leaves out a check that did not run for want of root wherever root is named.
+  A user on a stock Ubuntu reads `summary: tier landlock; cgroup needs root; bpflsm needs root, lsm`. The summary says
+  nothing the lines after the table do not, never starts with `tier: `, which scripts read from the tier line, and is
+  not in `--json` (`TestSummaryComesBeforeTheMatrix`). **The tiers are one derivation, and `tego run` selects from it**
   (`internal/doctor/derive.go`; `run` selects through `doctor.ForRun`'s `Report.Select`, over `Report.Probe` under
   the same machine config, and keeps no gate of its own; `ForRun` is this derivation over the checks of the tiers
   the run can reach, "What a run probes" below). A run refused a tier it asked for — `--tier <t>`, a
@@ -1922,6 +1930,10 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   deny_read rows held by the name rows (ADR 0043 D6); <m> paths keyed` after the table (the table still lists every
   file, and tier landlock keeps them all); nothing for a table compacted nothing of (`TestCompilePrintsPlaneCompaction`;
   the guest's `TestCompactedTableStaysAtBPFLSM` reads it for 4,500 `.env` files).
+- 2026-11-02, R27 Output: `doctor` prints a `summary:` line between the probe lines and the capability table: the
+  tier, a machine config's cap, and what each tier above it needs, by name. The tier line was the first answer a
+  reader met, after the table's 31 rows. The tier line, the `missing for` lines and the fix line keep their place
+  after the table, and `--json` is unchanged (`TestSummaryComesBeforeTheMatrix`, the plane `.txt.golden` files).
 - 2026-10-27, R27 the matrix and the plane probe (ADR 0043 C11): every build enforces name entries, so
   the `fs.deny_read.created_later` row is no longer turned off with a "does not enforce name entries" note, and the
   plane probe's known answers always hold the seven name cells (16 in all): a mode that answers one wrongly is not

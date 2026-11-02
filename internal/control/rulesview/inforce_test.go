@@ -179,8 +179,8 @@ func TestInForceCopyPositionsAfterTheSourceChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := f.inForce(t)
-	if v.Positions != PositionsCopy || !strings.Contains(v.PositionsWhy, "changed") {
-		t.Fatalf("positions %q (%s), want the copy's because the file changed", v.Positions, v.PositionsWhy)
+	if v.Positions != PositionsCopy || !strings.Contains(v.PositionsWhy, "no longer loads to the rules this run ran") {
+		t.Fatalf("positions %q (%s), want the copy's because the file no longer loads to the run's rules", v.Positions, v.PositionsWhy)
 	}
 	tmp := rule(t, v, "fs.write", "./tmp/") // the run's rule, gone from the file
 	copyText := v.Contract.Text

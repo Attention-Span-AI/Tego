@@ -95,7 +95,7 @@ func bareMachine(t *testing.T) standIn {
 		t.Fatal(err)
 	}
 	// XDG_RUNTIME_DIR names the stand-in runtime directory, as a login session names /run/user/<uid>: compile protects
-	// tego's runtime parent under it (agent-contract.md R10a, agent.WithRuntimeDir through RuntimeDirBases), so an
+	// tego's runtime parent under it (agent-contract.md R10a, agent.WithRuntimeDir through config.RuntimeDirBases), so an
 	// example that grants <runtime>/tego, which place moves a /run/user/<uid>/ grant into, is refused here as it is
 	// on a real machine. Without it the check ran only on /run/user/<test uid>, which no rewritten example names, and
 	// an example the real compile refuses passed.

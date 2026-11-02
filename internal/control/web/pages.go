@@ -146,43 +146,11 @@ var funcs = template.FuncMap{
 	// endWord is a finished run's status word and endWhy the sentence under it (title and run page).
 	"endWord": endWord,
 	"endWhy":  endWhy,
-	"verdictClass": func(e ledgerview.Event) string {
-		switch {
-		case e.Refused():
-			return "refused"
-		case e.Verdict == "allow":
-			return "allowed"
-		case e.Verdict == "ask":
-			return "asked"
-		case e.Verdict == "observed":
-			return "observed"
-		}
-		return "neutral"
-	},
-	"verdictWord": func(e ledgerview.Event) string {
-		switch {
-		case e.Refused():
-			return "Blocked"
-		case e.Verdict == "allow":
-			return "Allowed"
-		case e.Verdict == "ask":
-			return "Asked"
-		case e.Verdict == "observed":
-			return "Observed"
-		}
-		return "Recorded"
-	},
-	"verdictIcon": func(e ledgerview.Event) string {
-		switch {
-		case e.Refused():
-			return "i-ban"
-		case e.Verdict == "allow":
-			return "i-check"
-		case e.Verdict == "ask":
-			return "i-hand"
-		}
-		return "i-eye"
-	},
+	// verdictClass, verdictIcon and verdictWord are a line's verdict chip (lineVerdict): Asked on an ask line and the
+	// person's Allowed or Denied on an answer line, which carry no verdict of their own.
+	"verdictClass": func(e ledgerview.Event) string { class, _, _ := lineVerdict(e); return class },
+	"verdictIcon":  func(e ledgerview.Event) string { _, icon, _ := lineVerdict(e); return icon },
+	"verdictWord":  func(e ledgerview.Event) string { _, _, word := lineVerdict(e); return word },
 	"kindIcon": func(k string) string {
 		switch k {
 		case "fs":

@@ -234,11 +234,16 @@ func (r *Report) ExitCode() int {
 	return identity.ExitOK
 }
 
-// WriteText writes the human report: one line per probe, then CAPABILITIES.md's table with this
-// machine's values, the tier, what each tier above it is missing, and the one-line fix (R27).
+// WriteText writes the human report: one line per probe, the summary line, then CAPABILITIES.md's table
+// with this machine's values, the tier, what each tier above it is missing, and the one-line fix (R27).
+// The summary comes before the table so that the answer is not below the table's rows; the tier line
+// stays after the table, where scripts read it.
 func (r *Report) WriteText(w io.Writer) error {
 	if err := writeResults(w, r.Results, r.optionalOff); err != nil {
 		return err
+	}
+	if _, err := fmt.Fprintf(w, "\n%s\n", r.summary()); err != nil {
+		return fmt.Errorf("doctor: write summary: %w", err)
 	}
 	tier := r.Tier
 	if tier == "" {
@@ -256,24 +261,8 @@ func (r *Report) WriteText(w io.Writer) error {
 	if err := backend.WriteReport(w, lines); err != nil {
 		return fmt.Errorf("doctor: write matrix: %w", err)
 	}
-	switch {
-	case r.pinUnavailable():
-		line := fmt.Sprintf("\ntier: none: the machine config pins tier %s at %s, which this machine cannot provide",
-			r.Ceiling, r.CeilingSource)
-		if avail := r.available(); len(avail) > 0 {
-			line += " (available here: " + strings.Join(avail, ", ") + ")"
-		}
-		if _, err := fmt.Fprintln(w, line); err != nil {
-			return fmt.Errorf("doctor: write tier: %w", err)
-		}
-	case r.Tier == "":
-		if _, err := fmt.Fprintln(w, "\ntier: none (this machine can only record)"); err != nil {
-			return fmt.Errorf("doctor: write tier: %w", err)
-		}
-	default:
-		if _, err := fmt.Fprintf(w, "\ntier: %s\n", r.Tier); err != nil {
-			return fmt.Errorf("doctor: write tier: %w", err)
-		}
+	if _, err := fmt.Fprintf(w, "\ntier: %s\n", r.tierText()); err != nil {
+		return fmt.Errorf("doctor: write tier: %w", err)
 	}
 	if r.Ceiling != "" && r.Tier == r.Ceiling {
 		if _, err := fmt.Fprintf(w, "ceiling: the machine config caps every run at %s (%s)\n", r.Ceiling, r.CeilingSource); err != nil {
@@ -300,6 +289,94 @@ func (r *Report) WriteText(w io.Writer) error {
 		}
 	}
 	return nil
+}
+
+// tierText is what the tier line says after "tier: ", and the summary after "tier ": the tier this machine gets,
+// or none and why.
+func (r *Report) tierText() string {
+	switch {
+	case r.pinUnavailable():
+		text := fmt.Sprintf("none: the machine config pins tier %s at %s, which this machine cannot provide",
+			r.Ceiling, r.CeilingSource)
+		if avail := r.available(); len(avail) > 0 {
+			text += " (available here: " + strings.Join(avail, ", ") + ")"
+		}
+		return text
+	case r.Tier == "":
+		return "none (this machine can only record)"
+	}
+	return string(r.Tier)
+}
+
+// summary is the line WriteText prints between the probes and the matrix: the tier, a machine config that caps
+// every run at it, and what each tier above it needs, by name. The tier line used to be the first answer a reader
+// met, after the matrix's rows (R27 Output, amended 2026-11-02). The summary says nothing the lines after the matrix
+// do not, and it never starts with "tier: ": test/vm's scripts read the tier line by that prefix.
+func (r *Report) summary() string {
+	line := "summary: tier " + r.tierText()
+	if r.Tier != "" && r.Tier == r.Ceiling && nextTier(r.Tier) != "" {
+		line += ", capped by the machine config (" + r.CeilingSource + ")"
+	}
+	for _, t := range backend.Tiers() {
+		if names := r.missingNames(t); len(names) > 0 {
+			line += "; " + string(t) + " needs " + strings.Join(names, ", ")
+		}
+	}
+	return line
+}
+
+// missingNames names what Missing lists for tier t, each name once, in Missing's order. A reason's name is the
+// check, "root", "build" or "plane" it begins with ("lsm: bpf is not in the active LSM list ..."); D7's own,
+// "programs", for a row of D7, which begins with its hook's name ("tp_btf/cgroup_mkdir: ..."); and the first word
+// of the one reason that begins with no name ("landlock ABI 1 is below the supported minimum 2 ..."). Where root
+// is named, a check that did not run for want of it (Result.Skipped, "requires root to test") is left out: root is
+// what is known to be missing, and the check may pass once it runs.
+func (r *Report) missingNames(t backend.Tier) []string {
+	var names []string
+	seen := map[string]bool{}
+	for _, reason := range r.Missing[t] {
+		name, _, ok := strings.Cut(reason, ": ")
+		if !ok {
+			name, _, _ = strings.Cut(reason, " ")
+		}
+		if r.hookRow(name) {
+			name = string(CheckPrograms)
+		}
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	if !seen["root"] {
+		return names
+	}
+	kept := names[:0]
+	for _, name := range names {
+		if !r.skipped(CheckID(name)) {
+			kept = append(kept, name)
+		}
+	}
+	return kept
+}
+
+// hookRow reports whether name is the hook of one of D7's rows.
+func (r *Report) hookRow(name string) bool {
+	for _, h := range r.Programs {
+		if h.Hook == name {
+			return true
+		}
+	}
+	return false
+}
+
+// skipped reports whether check id did not run (Result.Skipped).
+func (r *Report) skipped(id CheckID) bool {
+	for _, res := range r.Results {
+		if res.ID == id {
+			return res.Skipped
+		}
+	}
+	return false
 }
 
 // optionalTier is the lowest tier check id stands in the way of when only the tiers above tier 1 need it (missingFor):

@@ -64,9 +64,15 @@
 </form>
 
 
+<section class="panel rules-pending rp-live" aria-labelledby="h-pending"><div class="panel-head"><h2 id="h-pending"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-scroll-text"/></svg>Rules file differs from this run</h2></div><div class="panel-body stack-sm">
+  <p class="soft">The next run of <span class="code-i">…PATH</span> gets the file's rules as they are now · this run keeps its own</p>
+  
+  <p>The file's rules differ from what this run ran, and nothing dates the change: a profile it extends changed, or this run started from another version of the file · not live on this run</p>
+  <p class="soft">To apply all: stop it (<a class="link" href="/runs/r-aaaaaaaa-0000000000006-askedx/stop">Stop this run</a>); its next run gets these rules:</p>
+  <div class="cli"><code>tego run …PATH</code></div><p class="soft"><span title="Same policy file and command; add options the run was started with, such as --tier or --record">Restart with</span></p>
+</div></section>
 
-
-<p class="note"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-scroll-text"/></svg><span>Line numbers are the run&#39;s own copy of its rules: the rules file changed since the run started.</span></p>
+<p class="note"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-scroll-text"/></svg><span>Line numbers are the run&#39;s own copy of its rules: the rules file no longer loads to the rules this run ran.</span></p>
 <p class="note"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-shield"/></svg><span>The run left no copy of its rules.</span></p>
 
 

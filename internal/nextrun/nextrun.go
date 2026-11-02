@@ -48,7 +48,8 @@ type Context struct {
 	Home string
 	// Anchor is the chain anchor file the compile refuses the agent ("" for none known).
 	Anchor string
-	// RuntimeDirs are the bases under which the invoking user's runs keep their private directories (R10a).
+	// RuntimeDirs are the bases under which the invoking user's runs keep their private directories (R10a): both
+	// write paths pass config.RuntimeDirBases, the list the launcher checks.
 	RuntimeDirs []string
 	// Exe is the running tego binary, which R10 keeps out of every write entry with what PATH finds
 	// (agent.WithOwnBinaries); "" where it cannot be named, as in tego-control, which runs from a sealed copy.

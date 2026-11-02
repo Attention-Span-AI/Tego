@@ -22,6 +22,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/rulefile"
 	"github.com/attention-span-ai/tego/internal/setup"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/presets"
 )
@@ -453,7 +454,7 @@ func (s *Service) newEnv() *setup.CheckEnv {
 	if s.Machine == nil {
 		return nil
 	}
-	opts := []agent.CompileOption{agent.WithPATH(s.path()), agent.WithClock(time.Now), agent.WithRuntimeDir(runtimeDirs()...), agent.WithOwnBinaries("")}
+	opts := []agent.CompileOption{agent.WithPATH(s.path()), agent.WithClock(time.Now), agent.WithRuntimeDir(config.RuntimeDirBases()...), agent.WithOwnBinaries("")}
 	if s.Machine.Home != "" {
 		opts = append(opts, agent.WithHome(s.Machine.Home))
 	}

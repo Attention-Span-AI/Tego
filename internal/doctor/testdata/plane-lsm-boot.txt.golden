@@ -7,6 +7,8 @@ ok   lsm: ok
 ok   programs: ok; decision plane: lsm (tiers 2 and 3 decide opens in the kernel); build 0123abcd, lsm mode ok, fmod_ret mode ok
 ok   fanotify: ok
 
+summary: tier bpflsm
+
 [capability matrix]
 
 tier: bpflsm

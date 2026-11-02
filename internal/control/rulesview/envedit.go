@@ -11,17 +11,25 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// setKey finds a line that could name a "set" key in text that does not parse as YAML: "set:" at a line's start, after
-// "{" or "," (a flow mapping), or quoted. A word that merely contains "set" (assets/, settings.json, reset) is not one.
-var setKey = regexp.MustCompile(`(?m)(?:^|[\s{,])["']?set["']?\s*:`)
+// setWord finds the word set in text that is not one YAML document, where a key may wrap it in any of YAML's ways:
+// plain or quoted, at a line's start or after "{" or "," (a flow mapping), tagged (!!str set), explicit (? set),
+// anchored, before a comment. A word that merely holds the letters (assets/, settings.json, reset) is not one.
+var setWord = regexp.MustCompile(`\bset\b`)
 
-// SetsEnv says whether a contract text sets environment values (an env.set key). parsed says the text read as YAML;
-// when it did not, sets is true for any line that could name a "set" key, so an unreadable text is held back only
-// when it may hold a value, and a parse error in an ordinary text still reaches its line diagnostics.
+// setSpelled finds what could spell a "set" key without its three letters side by side: a double-quoted escape that
+// spells a letter ("s\x65t", "\u0073et", "\U00000073et") or joins two lines into one word ("se\" at a line's end,
+// before any line break YAML counts: LF, CR, NEL, LS or PS), or a zero byte (UTF-16, which YAML reads too, puts one
+// beside each of the letters).
+var setSpelled = regexp.MustCompile(`\\[xuU\n\r\x{85}\x{2028}\x{2029}]|\x00`)
+
+// SetsEnv says whether a contract text sets environment values (an env.set key). parsed says the text read as one
+// YAML document (parseOne: a second one, which the compiler refuses, is not read past); when it did not, sets is true
+// whenever the text could spell a "set" key (setWord, setSpelled), so an unreadable text is held back whenever it may
+// hold a value, and a parse error in an ordinary text still reaches its line diagnostics.
 func SetsEnv(text string) (sets, parsed bool) {
-	var doc yaml.Node
-	if yaml.Unmarshal([]byte(text), &doc) != nil {
-		return setKey.MatchString(text), false
+	doc, err := parseOne(text)
+	if err != nil {
+		return setWord.MatchString(text) || setSpelled.MatchString(text), false
 	}
 	if len(doc.Content) == 0 {
 		return false, true
@@ -38,9 +46,9 @@ var errEnvShape = errors.New("its env.set uses YAML anchors, aliases, merge keys
 
 // EditableEnv is the text the advanced YAML editor opens on, for a contract text that sets environment values: each
 // env.set value replaced by Hidden (RedactEnvText), so the page never carries one, and RestoreEnv puts them back on
-// save. It refuses (and the editor is not offered) when text does not parse or its env.set is not a plain block
-// mapping of variable names to plain or quoted values with no anchor, alias or merge key: such a value could not be
-// put back exactly, or could show through somewhere else in the text.
+// save. It refuses (and the editor is not offered) when text is not one YAML document or its env.set is not a plain
+// block mapping of variable names to plain or quoted values with no anchor, alias or merge key: such a value could not
+// be put back exactly, or could show through somewhere else in the text.
 func EditableEnv(text string) (string, error) {
 	cur, err := envEntries(text, true)
 	if err != nil {
@@ -69,10 +77,11 @@ type envEntry struct {
 
 // envEntries is text's env.set by variable name, reached directly: env and set are keys of the document's own
 // mappings (no alias, no merge key), set is a mapping (a block mapping when block is set) with no merge key and no
-// repeated name, and every value is a scalar with no anchor, tag or alias. A text without env.set gives an empty map.
+// repeated name, and every value is a scalar with no anchor, tag or alias. A text without env.set gives an empty map;
+// one that is not one YAML document (parseOne) an error.
 func envEntries(text string, block bool) (map[string]envEntry, error) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
+	doc, err := parseOne(text)
+	if err != nil {
 		return nil, err
 	}
 	out := map[string]envEntry{}
@@ -118,12 +127,11 @@ func directValue(m *yaml.Node, key string) *yaml.Node {
 // RestoreEnv is posted, a free edit opened on EditableEnv(current), with every Hidden placeholder of its env.set put
 // back to current's value: the value's own source text when it was one line, else the value double-quoted, so the
 // lines keep their numbers. restored lists the values put back, for a caller that must keep them off a page. A
-// posted text that does not parse comes back unchanged (its compile error names the line); one that adds a variable,
-// gives one a value other than Hidden, or puts env.set behind an anchor, alias or merge key is ErrEnvEdit. Removing
-// a variable, or env.set, is allowed: it carries no value.
+// posted text that is not one YAML document comes back unchanged (its compile error names the line, or the second
+// document); one that adds a variable, gives one a value other than Hidden, or puts env.set behind an anchor, alias
+// or merge key is ErrEnvEdit. Removing a variable, or env.set, is allowed: it carries no value.
 func RestoreEnv(posted, current string) (text string, restored []string, err error) {
-	var probe yaml.Node
-	if yaml.Unmarshal([]byte(posted), &probe) != nil {
+	if _, err := parseOne(posted); err != nil {
 		return posted, nil, nil
 	}
 	if sets, _ := SetsEnv(posted); !sets {

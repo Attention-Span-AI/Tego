@@ -41,10 +41,11 @@ type doctorReport struct {
 func init() { register(cmdDoctor) }
 
 // cmdDoctor is `tego doctor [--json] [--require <tier>]`: the version banner (VERSIONING.md §1)
-// and R27's nine probes, the capability matrix with this machine's values, the highest reachable
-// tier, what the next tier is missing and the one-line fix, then whether the dashboard can tell which
-// run a connection comes from (doctordashboard.go, never the exit). Exit 0 when a tier runs, 211 when
-// --require named a tier this machine cannot reach (R25).
+// and R27's nine probes, a summary line (the tier and what each tier above it needs), the capability
+// matrix with this machine's values, the highest reachable tier, what the next tier is missing and the
+// one-line fix, then whether the dashboard can tell which run a connection comes from
+// (doctordashboard.go, never the exit). Exit 0 when a tier runs, 211 when --require named a tier this
+// machine cannot reach (R25).
 func cmdDoctor() Command {
 	var asJSON bool
 	var require string

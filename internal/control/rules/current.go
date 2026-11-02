@@ -17,8 +17,8 @@ type Current struct {
 	Lists map[string][]string
 	// ListsErr says why the text gave no lists (it is not a YAML mapping); the raw editor still opens.
 	ListsErr string
-	// EnvSet says the text sets environment values (env.set), or could not be read as YAML and has a line that could
-	// name a "set" key (rulesview.SetsEnv).
+	// EnvSet says the text sets environment values (env.set), or could not be read as one YAML document and could
+	// spell a "set" key (rulesview.SetsEnv).
 	EnvSet bool
 	// Editor is the text the advanced YAML editor opens on: Text, or Text with every env.set value replaced by
 	// rulesview.Hidden, which PlanRaw and ApplyRaw put back (rulesview.EditableEnv). Nil when the editor is not
@@ -51,7 +51,7 @@ func editorOf(text []byte) (editor []byte, envSet bool, why string) {
 	case !envSet:
 		return text, false, ""
 	case !readable:
-		return nil, true, "This rules file could not be read as YAML and may set environment values (env.set), which a page never shows, so it is fixed in a terminal"
+		return nil, true, "This rules file could not be read as one YAML document and may set environment values (env.set), which a page never shows, so it is fixed in a terminal"
 	}
 	shown, err := rulesview.EditableEnv(string(text))
 	if err != nil {

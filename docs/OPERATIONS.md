@@ -676,6 +676,26 @@ ended by `cgroup.kill`, 137, and a unit restarts that like a kill by memory, so 
 in `SuccessExitStatus=`). The user manager runs only while you are logged in unless linger is on (`loginctl
 enable-linger $USER`).
 
+**A planned restart, once a day (2026-11-02).** `examples/systemd/tego-agent-restart@.timer` starts
+`tego-agent-restart@.service` at midnight, which runs `systemctl --user try-restart tego-agent@<name>`: the agent's unit
+is stopped as `systemctl --user stop` stops it (SIGTERM to tego, which forwards it and keeps `stop_grace`) and started
+again, so the agent goes on as a new run with a new ledger, and its budgets and standing answers start over. So do its
+live controls: the new run starts from its contract alone, so a `tego pause` is undone and every live block (`tego
+block`, the dashboard's Block now) is dropped, and what was refused live is allowed again wherever the contract allows
+it. A block that must outlast the restart belongs in the contract; with a person steering the run live, leave the timer
+off.
+`try-restart` leaves an agent that is not running as it is, so a `tego stop --agent` stays a stop and a failed unit
+stays failed; a restart missed while the user manager was not running is not made up when it starts. Enable it per
+agent, `systemctl --user enable --now tego-agent-restart@retriever.timer`; to move it, a drop-in empties `OnCalendar=`
+and sets another (a second `OnCalendar=` alone adds a restart). Checked on the user manager (systemd 257) with the
+template's keys and a stand-in for tego that ends 143 on SIGTERM: the restart ended the run and started a new one with
+no failure counted (`NRestarts=0`), and left a stopped or a failed unit alone. Two other ways to end a run on time are
+not this. `RuntimeMaxSec=` in the agent's unit stops it with SIGTERM at that limit, an agent that dies of it ends the
+run 143, which `RestartPreventExitStatus` keeps from restarting, and the unit is left `failed` (`Result=timeout`, no
+restart, in the same check), so the agent stays down. A `wall` in the contract's `limits` is restarted, as any limit
+(124), but it ends the run with `cgroup.kill`, no SIGTERM first, and records a `limit` each time
+(`examples/demo/contracts/always-on.yaml` uses `wall: 1h` so).
+
 **Ledger space for an agent that never stops (2026-10-26).** A run's ledger is one file and one hash chain,
 so tego does not rotate it while the run lives; instead the run ends at a size and the unit starts a new one. Set both
 in the machine config the agents run under (the template's `TEGO_CONFIG` line, or `~/.tego/config.yaml`):
@@ -699,8 +719,13 @@ how far it is from the restart (`--json`: `ledger_bytes`, `ledger_ceiling_bytes`
 however old. It spends at most 2 s and stops between runs, and the next pass goes on from the oldest run left. `tego gc`
 with no flags is the same pass and counts as one. A removed run's line stays in `~/.tego/chain.log` (a line per run,
 never rewritten), so every run left still verifies, and `tego events <removed run> --verify` says its anchored ledger is
-missing rather than that it never ran. Without `gc_interval` nothing is removed unless you run `tego gc`. Size the
-disk for `retention` days of restarts: for the agent above, 3.5 GB a day.
+missing rather than that it never ran. Without `gc_interval` nothing is removed unless you run `tego gc`, and with it
+nothing is removed while no run starts: an agent that runs for weeks without a restart makes no pass in that time.
+`examples/systemd/tego-gc.timer` runs the pass once a day whatever starts (its `tego-gc.service` is `tego gc` with no
+flags, so it counts as the start's pass), and makes up a day missed while the user manager was not running
+(`Persistent=true`): give the service the agents' `TEGO_CONFIG` line, then `systemctl --user enable --now
+tego-gc.timer` (2026-11-02; checked on the user manager: the oneshot unit's pass removed an ended run older than
+`retention`, exit 0). Size the disk for `retention` days of restarts: for the agent above, 3.5 GB a day.
 
 **While it runs.** `tego events <run> --follow` prints each line as the run appends it, checking the chain as it
 goes, and exits 0 at `run_end`; a launcher killed mid-run is exit 125 `[run-lost]` rather than a wait that never

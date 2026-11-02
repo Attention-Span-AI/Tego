@@ -80,8 +80,9 @@ tego doctor
 sudo "$(command -v tego)" doctor
 ```
 
-The first shows what you get without root. The second shows tiers 2 and 3. On a stock Ubuntu, tier 3 is reported as
-unavailable because `bpf` is not in the boot LSM list. That is a fact about the machine, not a fault in the install, and
+The first shows what you get without root. The second shows tiers 2 and 3. Each says the tier it found on its `summary:`
+line, after the checks and before the table. On a stock Ubuntu, tier 3 is reported as unavailable because `bpf` is not
+in the boot LSM list. That is a fact about the machine, not a fault in the install, and
 [TIERS.md](TIERS.md#tier-3-on-ubuntu) has the boot line. The last line is about the dashboard: the kernel loads the
 `inet_diag` and `tcp_diag` modules when Tego first asks, and the line warns only if they cannot load
 (`sudo modprobe tcp_diag`).
@@ -106,6 +107,8 @@ off  lsm: lockdown,capability,landlock,yama,apparmor via lsm_list_modules(2); bp
 ok   programs: 27 of 27 hooks load and attach; trace_proc is its rdonly build (the kernel's BTF has bpf_rdonly_cast and bpf_loop); capture (uprobe_ssl, no tier): 6 of 6 programs load and attach at /usr/lib/x86_64-linux-gnu/libssl.so.3; optional network controls: 8 of 10 hooks load and attach; decision plane: fmod_ret (tier 2 decides opens in the kernel; tier 3 needs bpf in lsm=); build ed474b77, lsm mode no: bpf is not in the active LSM list (lockdown,capability,landlock,yama,apparmor), fmod_ret mode ok
 ok   fanotify: permission marks work, FAN_DENY refuses the open, FAN_REPORT_FID=false, FAN_DENY_ERRNO=false (a refusal reaches the agent as EPERM: no kernel takes EACCES in a reply from the listener's FAN_CLASS_CONTENT group; the reason record is still exact)
 ok   swap: memory.swap.max present: a run's memory cap holds swap too
+
+summary: tier cgroup; bpflsm needs lsm
 
 capability matrix for tier cgroup on this machine:
 deny file write outside contract                   yes  yes (Landlock and fanotify; fanotify refuses with EPERM) [this machine: decided by the decision plane in fmod_ret mode, not fanotify: a refusal reaches the agent as EACCES, with the reason in the record]

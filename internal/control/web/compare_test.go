@@ -46,6 +46,71 @@ func compareFixture(t *testing.T) string {
 	return root
 }
 
+// A refused connect no secret was near reads Refused in grey, with a title that says why it is not Stopped; the send
+// next to the key keeps its green Stopped, and the run head's count is the verdict's.
+func TestCompareRefusedNoSecretNearIsMuted(t *testing.T) {
+	root := t.TempDir()
+	t0 := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	write := func(run string, ls ...string) {
+		if err := os.MkdirAll(filepath.Join(root, run), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, run, "events.jsonl"), []byte(strings.Join(ls, "")), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(watchRun,
+		line(watchRun, "watch", 0, t0, "run_start", `"tier":"observe","cwd":"/d/without/proj"`),
+		line(watchRun, "watch", 1, t0.Add(time.Second), "fs", `"verdict":"observed","rule":"unmatched","op":"open","path":"/d/without/home/.ssh/id_rsa"`),
+		line(watchRun, "watch", 2, t0.Add(2*time.Second), "net", `"verdict":"observed","rule":"unmatched","proto":"tcp","dst":"127.0.0.1:8801"`),
+		line(watchRun, "watch", 3, t0.Add(time.Minute), "net", `"verdict":"observed","rule":"unmatched","proto":"tcp","dst":"203.0.113.7:443"`),
+		line(watchRun, "watch", 4, t0.Add(time.Minute+time.Second), "run_end", `"reason":"exit","exit_code":0`))
+	g := t0.Add(2 * time.Minute)
+	write(guardRun,
+		line(guardRun, "guard", 0, g, "run_start", `"tier":"landlock","cwd":"/d/with/proj"`),
+		line(guardRun, "guard", 1, g.Add(time.Second), "fs", `"verdict":"refused","rule":"fs.deny_read[/d/with/home/.ssh/]","reason":"read-denied","op":"open","path":"/d/with/home/.ssh/id_rsa"`),
+		line(guardRun, "guard", 2, g.Add(time.Second), "refused", `"rule":"fs.deny_read[/d/with/home/.ssh/]","reason":"read-denied","op":"open","target":"/d/with/home/.ssh/id_rsa"`),
+		line(guardRun, "guard", 3, g.Add(2*time.Second), "net", `"verdict":"refused","rule":"unmatched","reason":"net-not-allowed","proto":"tcp","dst":"127.0.0.1:8801"`),
+		line(guardRun, "guard", 4, g.Add(2*time.Second), "refused", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"127.0.0.1:8801"`),
+		// A minute after the key: no secret is near this connect.
+		line(guardRun, "guard", 5, g.Add(time.Minute), "net", `"verdict":"refused","rule":"unmatched","reason":"net-not-allowed","proto":"tcp","dst":"203.0.113.7:443"`),
+		line(guardRun, "guard", 6, g.Add(time.Minute), "refused", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"203.0.113.7:443"`),
+		line(guardRun, "guard", 7, g.Add(time.Minute+time.Second), "run_end", `"reason":"exit","exit_code":0`))
+	s := newServer(t, root)
+	c := login(t, s)
+	body := get(t, s, c, "/compare?a="+watchRun+"&b="+guardRun)
+
+	row := func(target string) string {
+		t.Helper()
+		i := strings.Index(body, `title="`+target+`"`)
+		if i < 0 {
+			t.Fatalf("no row for %s", target)
+		}
+		end := strings.Index(body[i:], "</tr>")
+		return body[i : i+end]
+	}
+	_, far, _ := strings.Cut(row("203.0.113.7:443"), `data-label="Run B"`)
+	for _, want := range []string{`<span class="b b-neutral" title="Tego refused it. It was no send next to a secret, so the attempts stopped above do not count it.">`,
+		`#i-ban"/></svg>Refused</span>`} {
+		if !strings.Contains(far, want) {
+			t.Errorf("B's cell of the connect no secret was near lacks %q:\n%s", want, far)
+		}
+	}
+	if strings.Contains(far, "Stopped") || strings.Contains(far, "b-refused") {
+		t.Errorf("B's cell of the connect no secret was near is Stopped:\n%s", far)
+	}
+	if _, sink, _ := strings.Cut(row("127.0.0.1:8801"), `data-label="Run B"`); !strings.Contains(sink, `<span class="b b-refused" title="">`) ||
+		!strings.Contains(sink, "Stopped</span>") {
+		t.Errorf("B's cell of the send next to the key is not a green Stopped:\n%s", sink)
+	}
+	for _, want := range []string{"Tego refused 2 attempts (1 secret read and 1 send to 127.0.0.1:8801).", "2 against secrets",
+		"green stopped · grey refused"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("compare page lacks %q", want)
+		}
+	}
+}
+
 func TestComparePage(t *testing.T) {
 	s := newServer(t, compareFixture(t))
 	c := login(t, s)

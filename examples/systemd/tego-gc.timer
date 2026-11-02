@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# tego-gc.timer: starts tego-gc.service once a day. Persistent=true makes up a pass missed while the user manager was
+# not running (the machine off, or you logged out with linger off) when the timer next starts.
+
+[Unit]
+Description=Daily Tego retention pass
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

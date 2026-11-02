@@ -41,15 +41,16 @@ func runningBinary() string {
 //
 // It names the invoking user's runtime directories too, under which every run keeps its private directory
 // (agent.WithRuntimeDir, agent-contract.md R10a): an entry over tego's runtime parent, or inside another run's
-// directory, is refused. They are the launcher's (tegoruntime.RuntimeDirBases): the user's logind directory,
-// /run/user/<uid>, whatever the environment says, so plain sudo, cron or an ssh session without the variable still
-// protects where the same user's other runs keep theirs, and $XDG_RUNTIME_DIR when it names another. Each can only
-// add refusals, never remove one, so an environment that names another directory weakens nothing the run relies on.
+// directory, is refused. They are config.RuntimeDirBases, the list the launcher checks and the dashboard's rule
+// service compiles with: the user's logind directory, /run/user/<uid>, whatever the environment says, so plain sudo,
+// cron or an ssh session without the variable still protects where the same user's other runs keep theirs, and
+// $XDG_RUNTIME_DIR when it names another. Each can only add refusals, never remove one, so an environment that names
+// another directory weakens nothing the run relies on.
 //
 // It names the running binary as well, which R10 keeps out of every write entry with what the PATH finds
 // (agent.WithOwnBinaries). A binary that cannot name itself leaves the PATH, and `tego run` is then no less confined.
 func anchorCompileOptions(m *config.Machine) []agent.CompileOption {
-	opts := []agent.CompileOption{agent.WithRuntimeDir(tegoruntime.RuntimeDirBases()...), agent.WithOwnBinaries(runningBinary())}
+	opts := []agent.CompileOption{agent.WithRuntimeDir(config.RuntimeDirBases()...), agent.WithOwnBinaries(runningBinary())}
 	p, err := anchorPath(m)
 	if err != nil {
 		return opts

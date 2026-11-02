@@ -16,6 +16,18 @@
 {{define "pwp"}}{{range .}}{{if .Br}}<wbr>{{end}}{{if .Keep}}<span class="nb">{{.Text}}</span>{{else}}{{.Text}}{{end}}{{end}}{{end}}
 {{/* secchip is a run's Secrets cell (chip, story.go): exposed in red, protected in green, read on a watched run. */}}
 {{define "secchip"}}{{if .Text}}<span class="b {{.Class}}" title="{{.Title}}">{{template "i" .Icon}}{{.Text}}</span>{{else}}<span class="zero" title="No secret read or protected was recorded">—</span>{{end}}{{end}}
+{{/* firstrun is the empty Overview's and the empty Runs page's way to a first run; each command starts an interactive
+     Claude Code or Codex as it stands. tego run takes a copy of an examples/agents/ contract, kept outside the project,
+     as that contract's header runs it; tego init's starter agent.yaml would not do: it runs python3 agent.py and sends
+     the model through the forwarder, and Claude Code exits 1 on its start-up check under it. tego watch only records,
+     and --no-daemon keeps Codex's commands in the run (without it they go to a background server, which an earlier
+     session may have started outside Tego). overview_test.go holds each command to its example. */}}
+{{define "firstrun"}}<details class="cli-more"><summary>In a terminal</summary>
+<p>Copy claude-code-interactive.yaml or codex-chatgpt.yaml from Tego's examples/agents/ to ~/contracts/ and change the lines it marks CHANGE; its first lines say how to sign in. Then, from your project:</p>
+<div class="cli cli-wrap"><code>tego run ~/contracts/claude-code-interactive.yaml</code></div>
+<div class="cli cli-wrap"><code>tego run ~/contracts/codex-chatgpt.yaml</code></div>
+<p>Or record an agent and block nothing:</p>
+<div class="cli cli-wrap"><code>tego watch -- codex --no-daemon</code></div></details>{{end}}
 {{/* askform is a waiting request's answers. Allow once and Deny are the same button, equal in weight: Tego
 does not pick the answer for the person, and the card's question says what each does. */}}
 {{define "askform"}}<div class="ask-d"><form class="stack-sm" method="post" action="/approvals/answer"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="run" value="{{.Run}}"><input type="hidden" name="ask" value="{{.AskID}}">

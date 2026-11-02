@@ -441,9 +441,12 @@ unprivileged run keeps a private directory, `$XDG_RUNTIME_DIR/tego/<run id>` (`0
 (capture-derive.md R19b) and its last-refusal mirror (`TEGO_REASON`). (1) A declared `fs.write` or `fs.ask` entry
 that is tego's runtime parent, `$XDG_RUNTIME_DIR/tego`, holds it, or lies inside it (another run's directory, or
 any run's, since the run id is not known at compile) is a `contradiction`, compared resolved on both sides as R10's
-targets are. The parents protected are every one `internal/runtime` `RuntimeDirBases` names (*amended 2026-10-16*): the invoking user's logind directory, `/run/user/<uid>/tego` (uid `config.InvokingUID`, `SUDO_UID`
-under sudo), whatever the environment says, and `$XDG_RUNTIME_DIR/tego` when the variable is absolute and names
-another. `compile`, `run` and `drift` pass them to `agent.WithRuntimeDir`, each parent joins `RuleTable.OwnState`, and
+targets are. The parents protected are every one `config.RuntimeDirBases` names (*amended 2026-10-16*;
+*amended 2026-11-02*: the list moved from `internal/runtime` to `pkg/spec/config`, so the dashboard's rule service
+links the launcher's list instead of keeping a copy): the invoking user's logind directory, `/run/user/<uid>/tego`
+(uid `config.InvokingUID`, `SUDO_UID` under sudo), whatever the environment says, and `$XDG_RUNTIME_DIR/tego` when the
+variable is absolute and names another. `compile`, `run`, `drift`, `init` and `rule`, and the dashboard's rule service,
+pass them to `agent.WithRuntimeDir`, each parent joins `RuleTable.OwnState`, and
 the launcher checks the same parents at every euid before making anything (`ErrRuntimeDirWritable`, exit 125), since
 compile may have seen another environment. The first version protected only `$XDG_RUNTIME_DIR/tego`, and the
 launcher checked it after its returns for a root launcher and for an unset variable: under plain `sudo` (which resets

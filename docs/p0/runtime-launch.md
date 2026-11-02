@@ -236,8 +236,9 @@ Normative sequence (`P0-DESIGN.md` §4.1, ordering constraints from `ARCHITECTUR
    reach the kernel's rules. With an openai listener and no absolute `XDG_RUNTIME_DIR` the run is refused here, exit
    125, naming the fix (`ErrNoRuntimeDir`); a table whose write or ask entry covers `$XDG_RUNTIME_DIR/tego` or lies
    inside it is refused here too (`ErrRuntimeDirWritable`), before anything is made. That check runs first, at every
-   euid, on every parent `RuntimeDirBases` names: `/run/user/<uid>/tego` (uid `SUDO_UID` under sudo) whatever the
-   environment says, and `$XDG_RUNTIME_DIR/tego` when it names another (*amended 2026-10-16*: it ran
+   euid, on every parent `config.RuntimeDirBases` names (the list every compile names, the dashboard's included):
+   `/run/user/<uid>/tego` (uid `SUDO_UID` under sudo) whatever the environment says, and `$XDG_RUNTIME_DIR/tego`
+   when it names another (*amended 2026-10-16*: it ran
    after the root and no-variable returns). The grant is added only while the path is still the directory just made
    (same device and inode, no link), and a run with an `exec.allow` or `exec.ask` directory over it is refused
    (`ErrCodexHomeExecutable`, exit 125). The grant carries that device and inode, and Landlock's

@@ -17,13 +17,14 @@ import (
 const MergedLabel = "Where the secrets went"
 
 // storySets is what one run's Signal says about the comparison's rows: the secret rows next to a send, the
-// destinations next to a secret (off the contract), and the destinations folded as background.
+// destinations next to a secret (off the contract), the destinations folded as background, and the destinations
+// whose refusals the run's verdict counts as sends (stopped).
 type storySets struct {
-	secret, dest, bg map[string]bool
+	secret, dest, bg, stopped map[string]bool
 }
 
 func storyOf(sig *RunSignal, norm func(string) string) storySets {
-	st := storySets{secret: map[string]bool{}, dest: map[string]bool{}, bg: map[string]bool{}}
+	st := storySets{secret: map[string]bool{}, dest: map[string]bool{}, bg: map[string]bool{}, stopped: map[string]bool{}}
 	if sig == nil {
 		return st
 	}
@@ -32,16 +33,28 @@ func storyOf(sig *RunSignal, norm func(string) string) storySets {
 			st.secret[norm(s.Path)] = true
 		}
 	}
-	for _, d := range sig.Outbound {
+	for i := range sig.Outbound {
+		d := &sig.Outbound[i]
 		switch {
 		case d.Background:
 			st.bg[d.Key] = true
 		case d.NearSecret && !d.InContract:
 			st.dest[d.Key] = true
 		}
+		// RunVerdict's own test, so a Stopped cell is one of the sends its count holds (a refusal is keyed by the
+		// address it names, as a destination row is).
+		if d.Refused > 0 && sendNearSecret(d) {
+			st.stopped[d.Key] = true
+		}
 	}
 	return st
 }
+
+// muted reports whether a row's refusals in this run are ones its verdict does not count, so that its cell reads
+// Refused and not Stopped: a destination that is no send next to a secret (a connect no secret was near, a lookup, a
+// destination the contract names). A secret file's refusals are the verdict's secret reads, and a program's keep
+// Stopped: the verdict counts no program.
+func (s storySets) muted(k rowKey) bool { return k.class == ClassNet && !s.stopped[k.target] }
 
 // danger reports whether a row is part of the attack in either run.
 func danger(k rowKey, sets ...storySets) bool {
@@ -113,8 +126,8 @@ func mergeAttacker(rows []CmpRow, offList func(string) bool) []CmpRow {
 	return out
 }
 
-// joinCells is one cell for several rows of one run: the first (worst) word and tone, the counts added, every
-// address in Where.
+// joinCells is one cell for several rows of one run: the worst word and tone (Got through over the rest, Stopped over
+// Refused, else the first's), the counts added, every address in Where.
 func joinCells(cs []CmpCell) CmpCell {
 	if len(cs) == 0 {
 		return CmpCell{}
@@ -124,7 +137,7 @@ func joinCells(cs []CmpCell) CmpCell {
 	for i, c := range cs {
 		if i > 0 {
 			out.Count += c.Count
-			if c.Tone == ToneBad && out.Tone != ToneBad {
+			if c.Tone == ToneBad && out.Tone != ToneBad || c.Tone == ToneGood && out.Tone == ToneMuted {
 				out.Word, out.Tone = c.Word, c.Tone
 			}
 		}
@@ -149,9 +162,9 @@ func sideName(s CmpSide, label string) string {
 }
 
 // did is the side's sentence: what it read and sent, then the verdict in the words and with the count its run page's
-// banner and its Runs chip use: the secrets that left and where they went, or the attempts Tego refused. The per-row
-// counts (Got through, Stopped) are the table's; the refused count here is the verdict's, which leaves out the
-// routine lookups and the refusals no secret was near.
+// banner and its Runs chip use: the secrets that left and where they went, or the attempts Tego refused. The refused
+// count here is the verdict's, which leaves out the routine lookups and the refusals no secret was near; the table's
+// Stopped cells of secret files and destinations are that count, and the connections it leaves out read Refused.
 func (s CmpSide) did() string {
 	// A file a person allowed (the contract asked first, the person said yes) is said as that, never as a secret
 	// file read: the protected run read nothing it was not given.

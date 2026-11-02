@@ -155,7 +155,7 @@ func RunVerdict(r *Run, s *RunSignal) Verdict {
 		if !d.Background && !d.InContract && d.Observed+d.Allowed > 0 && !strings.HasPrefix(d.Key, "unix:") {
 			v.Reached++
 		}
-		if d.Background || d.InContract || !d.NearSecret {
+		if !sendNearSecret(d) {
 			continue
 		}
 		if d.Observed+d.Allowed > 0 && len(exposedAt) > 0 {
@@ -212,6 +212,13 @@ func RunVerdict(r *Run, s *RunSignal) Verdict {
 		v.Read, v.Reached = nil, 0
 	}
 	return v
+}
+
+// sendNearSecret reports whether a destination is one the verdict reads sends to: off the contract, first contacted
+// next to a secret, and neither a lookup (lookupDst) nor background. Its refusals are the verdict's Sends, and Compare's
+// Stopped cells for destinations are these and no others.
+func sendNearSecret(d *Dest) bool {
+	return !lookupDst(d) && !d.Background && !d.InContract && d.NearSecret
 }
 
 // nearest is the smallest line distance from seq to one of at.

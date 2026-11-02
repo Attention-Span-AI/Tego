@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -93,6 +94,11 @@ func main() {
 		log.Fatal("actor: ", err)
 	}
 	enc := json.NewEncoder(os.Stdout)
+	// Every action runs on this one thread. A process keyring the kernel makes on demand (add_key, or keyctl's create)
+	// is installed in the making thread's credentials only, so a request_key from another thread of the process does
+	// not see it and fails ENOKEY. With the actions spread over the runtime's threads, control-keyring's request-key
+	// cell read ENOKEY on a GitHub runner (kernel 7.0, under -race). An op that pins a thread of its own still does.
+	runtime.LockOSThread()
 	for _, a := range script {
 		if a.Op == awaitLater {
 			await(a.Path)

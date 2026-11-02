@@ -27,8 +27,8 @@ const (
 	// PositionsSource: file and line name the rules file the run named (and the profiles it extends), which still
 	// loads to the run's contract_hash, so each line is where a person would edit that rule.
 	PositionsSource = "source"
-	// PositionsCopy: file and line name the run's own copy (<run>/contract.yaml), because the rules file changed
-	// since the run started, is gone, or could not be checked; PositionsWhy says which. The page reads such a
+	// PositionsCopy: file and line name the run's own copy (<run>/contract.yaml), because the rules file no longer
+	// loads to the run's contract_hash, is gone, or could not be checked; PositionsWhy says which. The page reads such a
 	// position as "run copy line N".
 	PositionsCopy = "copy"
 )
@@ -59,8 +59,9 @@ type InForceView struct {
 	// refuse anything). LiveErr is why the overlay could not be read, "" when it was or there is none.
 	LiveBlocks int    `json:"live_blocks"`
 	LiveErr    string `json:"live_err,omitempty"`
-	// Pending says the rules file changed after the run started, so the next run gets other rules. Nil when it did
-	// not, or was changed and changed back.
+	// Pending says the rules file changed after the run started, so the next run gets other rules, or that it loads
+	// to other rules with nothing to date the change (Pending.Differs). Nil when it still loads to the run's rules
+	// (changed and changed back too), or could not be compared and nothing dates a change.
 	Pending *Pending `json:"pending,omitempty"`
 	// Err is why the run could not be read at all, "" when it was.
 	Err string `json:"err,omitempty"`
@@ -301,7 +302,8 @@ type source struct {
 	read  bool
 	text  []byte
 	mtime time.Time
-	// checked: the file loaded, so matches says whether it loads to the run's contract_hash; contract is it loaded.
+	// checked: the file loaded and the run recorded a contract_hash, so matches says whether the file loads to it;
+	// contract is it loaded.
 	checked, matches bool
 	contract         *agent.Contract
 	// why is why the run's copy gives the positions, "" when the file matches.
@@ -310,7 +312,8 @@ type source struct {
 
 // checkSource reads the rules file at path (no link followed at its last name, under the size cap) and loads it with
 // profiles resolving its extends, to see whether it still is the contract the run ran: its canonical form hashes to
-// hash. A file that extends a profile when no profiles source is given is read and not checked.
+// hash. A file that extends a profile when no profiles source is given is read and not checked, and so is any file
+// of a run that recorded no hash: there is nothing to compare it with.
 func checkSource(path, hash string, profiles agent.ProfileSource) source {
 	var s source
 	if path == "" || !filepath.IsAbs(path) {
@@ -339,11 +342,17 @@ func checkSource(path, hash string, profiles agent.ProfileSource) source {
 		s.why = "the rules file does not load here as the run loaded it"
 		return s
 	}
+	if hash == "" {
+		s.why = "the run recorded no contract hash to compare the rules file with"
+		return s
+	}
 	s.checked = true
-	if s.matches = hash != "" && hex.EncodeToString(sum[:]) == hash; s.matches {
+	if s.matches = hex.EncodeToString(sum[:]) == hash; s.matches {
 		s.contract = c
 	} else {
-		s.why = "the rules file changed since the run started"
+		// Not "changed since the run started": when a profile it extends changed, or the run started from other
+		// bytes, nothing changed the file after the start (Pending.Differs).
+		s.why = "the rules file no longer loads to the rules this run ran"
 	}
 	return s
 }

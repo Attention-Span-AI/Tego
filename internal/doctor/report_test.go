@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/runtime/cgroup"
+	"github.com/attention-span-ai/tego/internal/runtime/enforce"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
@@ -490,6 +491,124 @@ func TestUnavailablePinNamesItsLine(t *testing.T) {
 	// Unpinned, the same machine is tier landlock, and the fix line is the next tier's, not the pin's.
 	if rep := st.report(config.Builtin(), ""); rep.Tier != backend.TierLandlock || strings.Contains(rep.Fix, "set tier") {
 		t.Errorf("unpinned: tier %q fix %q", rep.Tier, rep.Fix)
+	}
+}
+
+// TestSummaryComesBeforeTheMatrix: doctor's answer, the tier line, came after the capability matrix's rows, so a
+// reader met the probes, then the matrix, and learned which tier the machine gets only at the end
+// (limits-check-doctor-cli.md R27 Output, amended 2026-11-02).
+// One summary line now follows the probes, before the matrix: the tier, or why there is none, a machine config that
+// caps it, and what each tier above it needs, by the names its missing line gives. The tier line after the matrix is
+// unchanged and is still the one line that starts with "tier: " (test/vm/run-matrix-row.sh reads the first,
+// doctor-refusal.sh the last, goldenReport splits there), and --json carries no summary.
+func TestSummaryComesBeforeTheMatrix(t *testing.T) {
+	user := func(st *probeState) {
+		st.root = false
+		for i := range st.results {
+			if st.results[i].ID == CheckFanotify {
+				st.results[i] = Result{ID: CheckFanotify, Detail: "requires root to test (fanotify_init needs CAP_SYS_ADMIN)",
+					Fix: "re-run as root: sudo tego doctor", Skipped: true}
+				st.byID[CheckFanotify] = st.results[i]
+			}
+		}
+	}
+	noLSM := func(st *probeState) {
+		st.lsm = LSMState{Modules: []string{"lockdown", "capability", "landlock", "yama", "apparmor"}, Source: LSMSourceSyscall}
+		fail(st, CheckLSM, "bpf is not active: tier 3 (bpflsm) is unavailable, tiers 1 and 2 are not affected",
+			st.lsm.GRUBFixFor(bootDebian))
+	}
+	stockUser := func(st *probeState) { user(st); noLSM(st) }
+	machine := func(tier backend.Tier, line int) *config.Machine {
+		m := config.Builtin()
+		m.Tier.Bounded = true
+		m.Tier.Value = config.TierSetting{Tier: string(tier)}
+		m.Tier.Source = config.Provenance{File: "/etc/tego/config.yaml", Line: line, Layer: config.LayerEtc}
+		return m
+	}
+	const pin = "none: the machine config pins tier cgroup at /etc/tego/config.yaml:2, which this machine cannot provide " +
+		"(available here: landlock)"
+	for _, tc := range []struct {
+		name          string
+		edit          func(*probeState)
+		m             *config.Machine
+		summary, tier string
+	}{
+		{"a user on a stock Ubuntu", stockUser, nil, "tier landlock; cgroup needs root; bpflsm needs root, lsm", "landlock"},
+		{"root on a stock Ubuntu", noLSM, nil, "tier cgroup; bpflsm needs lsm", "cgroup"},
+		{"every tier", nil, nil, "tier bpflsm", "bpflsm"},
+		{"a machine config's ceiling", nil, machine(backend.TierLandlock, 3),
+			"tier landlock, capped by the machine config (/etc/tego/config.yaml:3)", "landlock"},
+		{"a pin this machine cannot provide", stockUser, machine(backend.TierCgroup, 2),
+			"tier " + pin + "; cgroup needs root; bpflsm needs root, lsm", pin},
+		{"Landlock ABI 1", func(st *probeState) {
+			user(st)
+			st.landlockABI = 1
+			fail(st, CheckLandlock, "ABI 1 is below the supported minimum 2 (rename and link confined to one directory)",
+				"boot a kernel >= 5.19 (Landlock ABI 2, LANDLOCK_ACCESS_FS_REFER)")
+		}, nil, "tier none (this machine can only record); landlock needs landlock; cgroup needs landlock, root; " +
+			"bpflsm needs landlock, root", "none (this machine can only record)"},
+		// The one reason of the derivation that names no check of its own is named by its first word.
+		{"Landlock ABI 1 behind a passing D4", func(st *probeState) { st.landlockABI = 1 }, nil,
+			"tier none (this machine can only record); landlock needs landlock; cgroup needs landlock; bpflsm needs landlock",
+			"none (this machine can only record)"},
+		// A D7 row is named by its hook; the summary names D7 itself, whose line is just above it.
+		{"a tier-2 hook that will not attach", func(st *probeState) {
+			for i := range st.hooks {
+				if st.hooks[i].Hook == "tp_btf/cgroup_mkdir" {
+					st.hooks[i].Attached, st.hooks[i].Detail = false, "attach: no such BTF id"
+				}
+			}
+		}, nil, "tier landlock; cgroup needs programs; bpflsm needs programs", "landlock"},
+		{"a build without the BPF objects", func(st *probeState) {
+			st.built = func(tier backend.Tier) error {
+				if tier == backend.TierLandlock {
+					return nil
+				}
+				return &enforce.NotBuiltError{Tier: tier, Why: "test build", Fix: "make build"}
+			}
+		}, nil, "tier landlock; cgroup needs build; bpflsm needs build", "landlock"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := tc.m
+			if m == nil {
+				m = config.Builtin()
+			}
+			rep := state(tc.edit).report(m, "")
+			var buf bytes.Buffer
+			if err := rep.WriteText(&buf); err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(buf.String(), "\n")
+			probes := len(rep.Results)
+			if len(lines) < probes+4 || lines[probes] != "" || lines[probes+1] != "summary: "+tc.summary ||
+				lines[probes+2] != "" || !strings.HasPrefix(lines[probes+3], "capability matrix for tier ") {
+				t.Fatalf("want the probes, then \"summary: %s\", then the matrix:\n%s", tc.summary, buf.String())
+			}
+			var summaries, tiers []int
+			for i, l := range lines {
+				if strings.HasPrefix(l, "summary:") {
+					summaries = append(summaries, i)
+				}
+				if strings.HasPrefix(l, "tier: ") {
+					tiers = append(tiers, i)
+				}
+			}
+			if len(summaries) != 1 || len(tiers) != 1 || lines[tiers[0]] != "tier: "+tc.tier || tiers[0] < probes+3 {
+				t.Errorf("summary lines %v, tier lines %v; want one of each and \"tier: %s\" after the matrix:\n%s",
+					summaries, tiers, tc.tier, buf.String())
+			}
+			var js bytes.Buffer
+			if err := writeJSONForTest(&js, rep); err != nil {
+				t.Fatal(err)
+			}
+			var obj map[string]json.RawMessage
+			if err := json.Unmarshal(js.Bytes(), &obj); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := obj["summary"]; ok {
+				t.Errorf("--json carries the summary, a line of the text report only: %s", obj["summary"])
+			}
+		})
 	}
 }
 

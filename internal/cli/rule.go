@@ -17,7 +17,6 @@ import (
 	"github.com/attention-span-ai/tego/internal/check/rule"
 	"github.com/attention-span-ai/tego/internal/nextrun"
 	"github.com/attention-span-ai/tego/internal/rulefile"
-	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
@@ -176,7 +175,7 @@ func compileRule(ctx context.Context, m *config.Machine, dir string, found *rule
 func ruleContext(m *config.Machine, dir string, found *rulefile.Found) nextrun.Context {
 	cc := nextrun.Context{Contract: found.Contract, Cwd: found.Cwd, Tier: found.Tier, Tiers: builtTiers(),
 		RunCommandGrant: found.RunCommandGrant, PATH: os.Getenv("PATH"), RunDir: dir, Home: m.Home,
-		RuntimeDirs: tegoruntime.RuntimeDirBases(), Exe: runningBinary()}
+		RuntimeDirs: config.RuntimeDirBases(), Exe: runningBinary()}
 	if p, err := anchorPath(m); err == nil {
 		cc.Anchor = p
 	}

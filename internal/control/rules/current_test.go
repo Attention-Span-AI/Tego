@@ -40,7 +40,7 @@ func TestCurrent(t *testing.T) {
 	if strings.Contains(string(cur.Editor), "sekrit-canary") || !strings.Contains(string(cur.Editor), "TOKEN: "+rulesview.Hidden) {
 		t.Errorf("the editor's text of a contract with env.set: %q", cur.Editor)
 	}
-	// A broken text is offered to the editor unless a line could name "set"; "assets/" does not.
+	// A broken text is offered to the editor unless it could spell a "set" key; "assets/" does not.
 	writeFile(t, f.contract, baseText+"fs:\n  write: [./assets/\n")
 	if cur, err = f.s.Current(ref.Ref); err != nil || cur.EnvSet || cur.Editor == nil || cur.ListsErr == "" {
 		t.Errorf("a broken text naming assets/: EnvSet %v editor %v lists %q, %v", cur.EnvSet, cur.Editor != nil, cur.ListsErr, err)
@@ -48,6 +48,22 @@ func TestCurrent(t *testing.T) {
 	writeFile(t, f.contract, baseText+"env:\n  set:\n    TOKEN: [sekrit-canary\n")
 	if cur, err = f.s.Current(ref.Ref); err != nil || !cur.EnvSet || cur.Editor != nil || cur.EditorWhy == "" {
 		t.Errorf("a broken text with env.set: EnvSet %v editor %v, %v", cur.EnvSet, cur.Editor != nil, err)
+	}
+	// An explicit key with a comment after it spells set with no ":" beside the word.
+	writeFile(t, f.contract, baseText+"env:\n  ? set # the variables\n  : {TOKEN: sekrit-canary}\nbad: [\n")
+	if cur, err = f.s.Current(ref.Ref); err != nil {
+		t.Fatal(err)
+	}
+	if !cur.EnvSet || cur.Editor != nil || cur.EditorWhy == "" {
+		t.Errorf("a broken text with an explicit set key: EnvSet %v, editor %q", cur.EnvSet, cur.Editor)
+	}
+	// A second YAML document is not read past: its env.set would reach the editor unhidden.
+	writeFile(t, f.contract, baseText+"---\nenv:\n  set:\n    TOKEN: sekrit-canary\n")
+	if cur, err = f.s.Current(ref.Ref); err != nil {
+		t.Fatal(err)
+	}
+	if !cur.EnvSet || cur.Editor != nil || cur.EditorWhy == "" {
+		t.Errorf("a text of two documents: EnvSet %v, editor %q", cur.EnvSet, cur.Editor)
 	}
 }
 

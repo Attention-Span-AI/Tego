@@ -27,6 +27,8 @@ func init() {
 			return "refused" // Stopped: the stopped tone (tokens.css), green
 		case ledgerview.ToneAsk:
 			return "asked"
+		case ledgerview.ToneMuted:
+			return "neutral" // Refused: a refusal the verdict does not count wears no green (tokens.css); grey, as routine is
 		}
 		return "neutral"
 	}

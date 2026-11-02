@@ -15,14 +15,16 @@
 // inforce_cache.go), the run's live blocks (liveblock.Read, read-only), positions in the run's rules file when
 // that file still loads to the run's contract_hash and in the run's copy otherwise, and Pending: the rules file
 // changed after the run started, from the rule-change journal (internal/rulefile's doc.go has its format) or a later
-// modification time. RuleSource is the line page's lookup of the rule a line names in that view (its sentence, file,
-// line and enforcement), the view kept per run until its copy, live blocks or rules file change, so a page view
-// compiles nothing. Learn (Least privilege) and Drift (Unused permissions) keep each run's result while the run, its
+// modification time, or, with neither, it loads to other rules than the run ran (Differs, undated). RuleSource is
+// the line page's lookup of the rule a line names in that view (its sentence, file, line and enforcement), the view
+// kept per run until its copy, live blocks or rules file change, so a page view compiles nothing. Learn (Least
+// privilege) and Drift (Unused permissions) keep each run's result while the run, its
 // copy, the chain anchor, the machine config and PATH are the same (cache.go, on ledgerview.Results). ContractsFromRuns lists the rules files a ledger snapshot's runs named, the only files the
 // dashboard offers to change. Contract.Shown is the copy and its compile table with every env.set value hidden
 // (RedactEnvText, line for line), the only form a page shows them in. EditableEnv is that form of a rules file for
 // the dashboard's YAML editor, and RestoreEnv puts the hidden values back into a free edit of it, refusing any other
-// change to env.set (SetsEnv decides env.set on a parse, not on the word "set").
+// change to env.set (SetsEnv decides env.set on a parse, not on the word "set"). All four read a text as the compiler
+// does, as one YAML document: a text with a second document is held back whole, never read only to its first.
 //
 // Shortcut: a copy whose hash is not the run's is compiled with no profiles at all (an
 // extends then fails to load), where drift resolves today's profiles; the compile names the run's tier as the only

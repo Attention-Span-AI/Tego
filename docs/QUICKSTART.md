@@ -50,6 +50,8 @@ skip programs: requires root to test (bpf(BPF_PROG_LOAD) needs CAP_BPF; this ker
 skip fanotify: requires root to test (fanotify_init needs CAP_SYS_ADMIN); fix: re-run as root: sudo /home/dana/.local/bin/tego doctor
 ok   swap: memory.swap.max present: a run's memory cap holds swap too
 
+summary: tier landlock; cgroup needs root; bpflsm needs root, lsm
+
 capability matrix for tier landlock on this machine:
 deny file write outside contract                   yes  yes (EACCES)
 deny delete, rename, mkdir, mknod                  yes  yes (EACCES), per process tree
@@ -66,7 +68,8 @@ fix: re-run as root for the tier-2 and tier-3 probes: sudo /home/dana/.local/bin
 ok   dashboard: the dashboard can tell which run a connection comes from
 ```
 
-`doctor` tests the kernel features Tego uses and says which tier this machine gets. Tier 1 (`landlock`) needs no root.
+`doctor` tests the kernel features Tego uses. Its `summary:` line, after the checks, says which tier this machine gets
+and what each tier above it needs; the lines after the table say why, and the fix. Tier 1 (`landlock`) needs no root.
 Without root, `doctor` cannot check everything, and it says what it could not check. The capability table is cut after five
 rows above; yours prints in full. On a stock Ubuntu you will see that tier 3 is unavailable, because `bpf` is not in the boot
 LSM list ([TIERS.md](TIERS.md)). That is a fact about the machine, not a fault. The last line warns only if the kernel

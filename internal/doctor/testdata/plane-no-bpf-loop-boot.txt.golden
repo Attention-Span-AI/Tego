@@ -7,6 +7,8 @@ ok   lsm: ok
 ok   programs: ok; decision plane: fanotify (no plane mode passed the probe; tier 2 decides opens by fanotify); build none loads (this kernel's BTF has no bpf_loop (5.17+ or a backport), which the plane's walk needs), lsm mode no: no build of decide.bpf.c loads here: this kernel's BTF has no bpf_loop (5.17+ or a backport), which the plane's walk needs, fmod_ret mode no: no build of decide.bpf.c loads here: this kernel's BTF has no bpf_loop (5.17+ or a backport), which the plane's walk needs; the fanotify fallback does not scale past a few concurrent runs: every open on a marked mount waits on a listener
 ok   fanotify: ok
 
+summary: tier cgroup; bpflsm needs plane
+
 [capability matrix]
 
 tier: cgroup

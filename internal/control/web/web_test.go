@@ -238,7 +238,8 @@ func TestLogsRefusalsNameTheList(t *testing.T) {
 var navHref = regexp.MustCompile(`<nav class="side"[\s\S]*?</nav>`)
 
 // TestShellWording: no page calls the dashboard an MVP or unreviewed; every link of the main nav answers 200, and
-// the Preview pages are left out of it by default; the empty states give commands that tego run and tego watch accept.
+// the Preview pages are left out of it by default. The commands the empty states give are
+// TestEmptyStatesStartAnInteractiveAgent's.
 func TestShellWording(t *testing.T) {
 	s := newServer(t, fixture(t))
 	c := login(t, s)
@@ -274,13 +275,6 @@ func TestShellWording(t *testing.T) {
 	}
 	if !strings.Contains(nav, `href="/rules"`) || !strings.Contains(b, `<span title="Every run's record, hash-chained and verified">Record <span class="mono">`) {
 		t.Error("Rules is not in the nav, or the footer lost its record line")
-	}
-	empty := newServer(t, filepath.Join(t.TempDir(), "none"))
-	e := do(empty, "GET", "/", "127.0.0.1:8484", login(t, empty)).Body.String()
-	for _, cmd := range []string{"tego run agent.yaml -- claude", "tego watch -- codex"} {
-		if !strings.Contains(e, cmd) {
-			t.Errorf("the empty overview lacks %q", cmd)
-		}
 	}
 }
 

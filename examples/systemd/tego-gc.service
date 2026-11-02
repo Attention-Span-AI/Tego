@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# tego-gc.service: one retention pass over the ledger root, `tego gc`, as a systemd user unit; tego-gc.timer starts
+# it once a day (docs/OPERATIONS.md, "Ledger space for an agent that never stops"). It is the pass a `tego run` start
+# makes once per gc_interval, for a machine where no run may start for days: a lost run is ended as orphaned, and
+# every ended or empty run older than the machine config's retention is removed, never one a live launcher holds.
+# With no flags it counts as that pass, so a start inside gc_interval after it makes none.
+#
+#   cp tego-gc.service tego-gc.timer ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now tego-gc.timer
+
+[Unit]
+Description=Tego retention pass
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/tego gc
+# The machine config the agents run under (tego-agent@.service's line); otherwise the pass reads ~/.tego/config.yaml,
+# whose ledger root and retention may not be theirs.
+#Environment=TEGO_CONFIG=%h/.config/tego/always-on.yaml

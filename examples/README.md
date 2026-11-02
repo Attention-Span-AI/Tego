@@ -11,3 +11,7 @@ one, and its header says how to check and install it (`docs/OPERATIONS.md`, "The
 
 `container/` holds the container image (a Dockerfile, a compose file running an agent under `tego run` with the
 dashboard on the host's loopback, and the entrypoint that prepares the container): see `docs/user/container.md`.
+
+`systemd/` holds the user units for an agent that runs all the time: `tego-agent@.service` runs one agent of your
+registry and restarts it after a crash or a limit, `tego-agent-restart@.timer` restarts it once a day, and
+`tego-gc.timer` runs the retention pass once a day (docs/OPERATIONS.md, "Agents that run all the time").

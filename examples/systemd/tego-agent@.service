@@ -21,7 +21,10 @@
 #   - a limit (124) or a kill by memory or pids (137) is a failure, and restarts. With record.max_run_bytes in the
 #     machine config, a run whose ledger reaches it ends as a limit, so this is also how a 24/7 agent's ledger
 #     rotates: each restart is a new run with its own ledger (OPERATIONS, "Ledger space"; gc_interval removes the
-#     old ones).
+#     old ones, and tego-gc.timer does once a day on a machine where no run may start for days).
+# A planned restart, once a day, is tego-agent-restart@.timer's: the stop `systemctl --user stop` makes, then a new
+# run. Not RuntimeMaxSec= here: systemd stops the unit with SIGTERM at that limit, an agent that dies of it ends the
+# run 143, which RestartPreventExitStatus keeps from restarting, and the unit is left failed (Result=timeout).
 # Not covered: a stop whose agent ignores SIGTERM for all of stop_grace ends with cgroup.kill, 137, and is
 # restarted like a kill by memory; give it a longer stop_grace or `tego stop --grace`.
 

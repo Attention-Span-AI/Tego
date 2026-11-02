@@ -252,9 +252,9 @@ func splitCgroupPath(abs string) (mount, rel string) {
 //
 // A table that lets the agent write tego's runtime parent, or inside another run's directory there, is refused
 // before anything is made (checkRuntimeParent), as compile refuses it (R10a): compile may have been given another
-// environment. Every parent RuntimeDirBases names is checked, at every euid and whatever XDG_RUNTIME_DIR says: the
-// invoking user's logind directory /run/user/<uid>/tego always, where the same user's other runs keep theirs, and
-// $XDG_RUNTIME_DIR/tego when it names another. Once only $XDG_RUNTIME_DIR/tego was, and after the
+// environment. Every parent config.RuntimeDirBases names is checked, at every euid and whatever XDG_RUNTIME_DIR
+// says: the invoking user's logind directory /run/user/<uid>/tego always, where the same user's other runs keep
+// theirs, and $XDG_RUNTIME_DIR/tego when it names another. Once only $XDG_RUNTIME_DIR/tego was, and after the
 // root and no-variable returns below, so under plain sudo, cron or ssh without pam_systemd a write entry over
 // /run/user/<uid>/tego ran and rewrote another run's CODEX_HOME and refusal mirror.
 //
@@ -270,7 +270,7 @@ func splitCgroupPath(abs string) (mount, rel string) {
 // (writeCodexHome), and the ask socket is <ledger run dir>/ask.sock, mode 0600 and chowned to the
 // invoking UID under a root launcher (ADR 0008, amended 2026-10-05; this said /run/tego).
 func (r *runner) createRuntimeDir() error {
-	for _, b := range RuntimeDirBases() {
+	for _, b := range runtimeDirBases() {
 		if err := checkRuntimeParent(r.rt, filepath.Join(b, agent.RuntimeDirName)); err != nil {
 			return err
 		}
@@ -299,7 +299,7 @@ func (r *runner) createRuntimeDir() error {
 	if err := privateRuntimeDirs(base); err != nil {
 		return unsafe(err)
 	}
-	parent := filepath.Join(base, agent.RuntimeDirName) // checked against the table above (RuntimeDirBases)
+	parent := filepath.Join(base, agent.RuntimeDirName) // checked against the table above (runtimeDirBases)
 	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return fmt.Errorf("runtime: create run socket dir: %w", err)
 	}
@@ -384,25 +384,15 @@ func privateRuntimeDirs(base string, dirs ...string) error {
 	return nil
 }
 
-// logindRuntimeRoot is where systemd-logind makes each user's XDG_RUNTIME_DIR, /run/user/<uid>. A variable so this
-// package's tests can point it into their own directory; nothing in a product build reassigns it.
-var logindRuntimeRoot = "/run/user"
+// logindRuntimeRoot is config.LogindRuntimeRoot, where systemd-logind makes each user's XDG_RUNTIME_DIR,
+// /run/user/<uid>. A variable so this package's tests can point it into their own directory; nothing in a product
+// build reassigns it.
+var logindRuntimeRoot = config.LogindRuntimeRoot
 
-// RuntimeDirBases is every XDG_RUNTIME_DIR under which a run of the invoking user may keep its private directory, in
-// order: the user's logind directory, /run/user/<uid> (uid config.InvokingUID, SUDO_UID under sudo), whatever this
-// process's environment says, then $XDG_RUNTIME_DIR when it is absolute and names another. R10a keeps every write and
-// ask entry off <base>/tego for each (agent.WithRuntimeDir at compile, checkRuntimeParent at launch): a launcher
-// whose environment lacks the variable (plain sudo resets it, cron and ssh without pam_systemd never set it) still
-// protects the directory where the same user's runs from a login session keep theirs. Naming more bases only adds
-// refusals.
-func RuntimeDirBases() []string {
-	uid, _ := config.InvokingUID()
-	out := []string{filepath.Join(logindRuntimeRoot, strconv.Itoa(uid))}
-	if x := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(x) && filepath.Clean(x) != out[0] {
-		out = append(out, filepath.Clean(x))
-	}
-	return out
-}
+// runtimeDirBases is config.RuntimeDirBases under logindRuntimeRoot: the parents R10a protects, which every compile
+// of the run's contract named to agent.WithRuntimeDir (tego compile, run and rule, and the dashboard's rule service),
+// so the launcher checks the very list the compile did, not a copy of it.
+func runtimeDirBases() []string { return config.RuntimeDirBasesUnder(logindRuntimeRoot) }
 
 func unsetOr(v string) string {
 	if v == "" {

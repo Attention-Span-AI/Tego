@@ -262,6 +262,40 @@ func TestRulesPagePendingBanner(t *testing.T) {
 	}
 }
 
+// TestRulesPagePendingDiffers: the rules file was replaced by other text whose time is before both runs started (a
+// copy put back with its own time), so no journal line and no later time dates the change, yet the file loads to
+// other rules than the runs ran. The running run's panel and the ended run's banner each say the file differs, with
+// no change listed and no edit time.
+func TestRulesPagePendingDiffers(t *testing.T) {
+	f := newRulesFix(t)
+	if err := os.WriteFile(f.source, []byte(strings.Replace(rulesSource, "  allow: [sh, git]\n", "  allow: [sh]\n", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Hour) // the runs started about an hour ago
+	if err := os.Chtimes(f.source, old, old); err != nil {
+		t.Fatal(err)
+	}
+	const differs = "The file's rules differ from what this run ran, and nothing dates the change"
+	_, body := f.get(t, "/rules?run="+rulesRunB)
+	mustContain(t, "the running run's panel", body, "Rules file differs from this run", "the file's rules as they are now",
+		differs, "not live on this run", "Stop this run", "run copy line", "the rules file no longer loads to the rules this run ran")
+	// Nothing dates a change after the start, so no heading, lede or note may say one happened since.
+	for _, not := range []string{"Changed since this run started", "every change below", "changed since the run started"} {
+		if strings.Contains(body, not) {
+			t.Errorf("the running run's panel shows %q for a difference nothing dates", not)
+		}
+	}
+	_, body = f.get(t, "/rules?run="+rulesRunA)
+	mustContain(t, "the ended run's banner", body, "Rules file differs · from the next run", "the file's rules as they are now.",
+		differs, "tables show what this run enforces")
+	for _, not := range []string{"edited outside Tego", `class="rp-list`, "Not compared", "Saved · from the next run",
+		"the rules below changed", "changed since the run started"} {
+		if strings.Contains(body, not) {
+			t.Errorf("the ended run's banner shows %q for a difference nothing dates", not)
+		}
+	}
+}
+
 // TestRulesPageLiveBlocks: a running run's live block is listed first with a Remove form that posts the kind, value
 // and token to the run's unblock route. No launcher line confirms it yet, so the group is headed "Blocking live" and
 // its footer says it refuses nothing until then, never "Blocked live now".

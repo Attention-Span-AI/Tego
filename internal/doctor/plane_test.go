@@ -710,8 +710,8 @@ func TestACachedFmodRetPinAnswerDoesNotAnswerAuto(t *testing.T) {
 	}
 }
 
-// goldenReport renders a described report's D1-D9 lines and everything after the matrix (tier, missing, fix),
-// and its plane and plane rows as JSON: the parts T8 changed, without the capability matrix.
+// goldenReport renders a described report's D1-D9 lines, its summary line and everything after the matrix (tier,
+// missing, fix), and its plane and plane rows as JSON: the parts T8 changed, without the capability matrix.
 func goldenReport(t *testing.T, st probeState) (string, string) {
 	t.Helper()
 	rep := st.report(nil, "")

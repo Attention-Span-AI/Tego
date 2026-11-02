@@ -3,6 +3,7 @@
 package ledgerview
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -95,9 +96,11 @@ func TestCompareObservedAgainstEnforced(t *testing.T) {
 	if key.A.Word != "Got through" || key.A.Tone != ToneBad || key.B.Seen {
 		t.Errorf("ssh key row %+v", key)
 	}
-	// A destination on this computer, observed in A and refused in B.
+	// A destination on this computer, observed in A and refused in B. B's refused connects have no kind=refused line,
+	// so B's verdict does not count them (the summary below), and the table agrees: Refused, muted, not Stopped.
 	loop := by["net 127.0.0.1:8801"]
-	if loop.A.Word != "Got through" || loop.A.Tone != ToneBad || loop.A.Detail != "×3" || loop.B.Word != "Stopped" || loop.B.Detail != "×2" || !loop.Differs {
+	if loop.A.Word != "Got through" || loop.A.Tone != ToneBad || loop.A.Detail != "×3" || loop.B.Word != "Refused" ||
+		loop.B.Tone != ToneMuted || loop.B.Detail != "×2" || !loop.Differs {
 		t.Errorf("loopback row %+v", loop)
 	}
 	// The destination B's contract allows is not off-list in A; neither is a public cert bundle a secret.
@@ -107,8 +110,9 @@ func TestCompareObservedAgainstEnforced(t *testing.T) {
 	if _, ok := by["secret /etc/ssl/certs/Root.pem"]; ok {
 		t.Error("a certificate bundle is not a secret")
 	}
-	// Programs: curl refused in B is listed, git allowed in both is routine.
-	if r := by["exec curl"]; r.A.Word != "Observed" || r.B.Word != "Stopped" {
+	// Programs: curl refused in B is listed, and Stopped (the verdict counts no program); git allowed in both is
+	// routine.
+	if r := by["exec curl"]; r.A.Word != "Observed" || r.B.Word != "Stopped" || r.B.Tone != ToneGood {
 		t.Errorf("curl row %+v", r)
 	}
 	if _, ok := by["exec git"]; ok || c.Routine != 2 {
@@ -135,6 +139,106 @@ func TestCompareObservedAgainstEnforced(t *testing.T) {
 	}
 	if all := Compare(a, b, true); len(all.Rows) != len(c.Rows)+c.Routine || all.Routine != 0 {
 		t.Errorf("all rows %d, routine %d; want %d", len(all.Rows), all.Routine, len(c.Rows)+c.Routine)
+	}
+}
+
+// A destination's refusals read Stopped only when its run's verdict counts them (a send next to a secret): a refused
+// connect no secret was near reads Refused, muted, so the table's Stopped cells add up to the count the sentence, the
+// stat block and the Attempts stopped bar give. Both runs here are written as the supervisor writes them: each refused
+// action is followed by its kind=refused mirror.
+func TestCompareStoppedIsTheVerdictsCount(t *testing.T) {
+	root := t.TempDir()
+	t0 := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	const ra, rb = "r-aaaa-0001-watchx", "r-aaaa-0002-guardx"
+	writeRun(t, root, ra,
+		line(ra, "watch", 0, t0, "run_start", `"tier":"observe","cwd":"/e/without/proj","command":["agent"]`),
+		line(ra, "watch", 1, t0.Add(time.Second), "fs", `"verdict":"observed","rule":"unmatched","op":"open","path":"/e/without/home/.ssh/id_rsa"`),
+		line(ra, "watch", 2, t0.Add(time.Second), "net", `"verdict":"observed","rule":"unmatched","proto":"tcp","dst":"127.0.0.1:9001"`),
+		// A minute after the key: no secret is near this one.
+		line(ra, "watch", 3, t0.Add(time.Minute), "net", `"verdict":"observed","rule":"unmatched","proto":"tcp","dst":"203.0.113.7:443"`),
+		line(ra, "watch", 4, t0.Add(time.Minute+time.Second), "run_end", `"reason":"exit","exit_code":0`))
+	refuse := func(seq int, ts time.Time, kind, action, mirror string) []string {
+		return []string{line(rb, "guard", seq, ts, kind, action), line(rb, "guard", seq+1, ts, "refused", mirror)}
+	}
+	ls := []string{line(rb, "guard", 0, t0, "run_start", `"tier":"landlock","cwd":"/e/with/proj","command":["agent"]`)}
+	ls = append(ls, refuse(1, t0.Add(time.Second), "fs",
+		`"verdict":"refused","rule":"fs.deny_read[/e/with/home/.ssh/]","reason":"read-denied","op":"open","path":"/e/with/home/.ssh/id_rsa"`,
+		`"rule":"fs.deny_read[/e/with/home/.ssh/]","reason":"read-denied","op":"open","target":"/e/with/home/.ssh/id_rsa"`)...)
+	ls = append(ls, refuse(3, t0.Add(time.Second), "net",
+		`"verdict":"refused","rule":"unmatched","reason":"net-not-allowed","proto":"tcp","dst":"127.0.0.1:9001"`,
+		`"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"127.0.0.1:9001"`)...)
+	for i := range 2 {
+		ls = append(ls, refuse(5+2*i, t0.Add(time.Minute), "net",
+			`"verdict":"refused","rule":"unmatched","reason":"net-not-allowed","proto":"tcp","dst":"203.0.113.7:443"`,
+			`"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"203.0.113.7:443"`)...)
+	}
+	ls = append(ls, line(rb, "guard", 9, t0.Add(time.Minute+time.Second), "run_end", `"reason":"exit","exit_code":0`))
+	writeRun(t, root, rb, ls...)
+	s, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b := s.Find(ra), s.Find(rb)
+
+	c := Compare(a, b, false)
+	by := map[string]CmpRow{}
+	for _, r := range c.Rows {
+		by[r.Class+" "+r.Target] = r
+	}
+	// What the verdict counts keeps its words: the key B refused to read and the send next to it.
+	if r := by["secret …/home/.ssh/id_rsa"]; r.A.Word != "Got through" || r.B.Word != "Stopped" || r.B.Tone != ToneGood {
+		t.Errorf("key row %+v", r)
+	}
+	if r := by["net 127.0.0.1:9001"]; r.A.Word != "Got through" || r.B.Word != "Stopped" || r.B.Tone != ToneGood || !r.Danger {
+		t.Errorf("sink row %+v", r)
+	}
+	// The connect no secret was near: refused, and still listed, but not Stopped.
+	far, ok := by["net 203.0.113.7:443"]
+	if !ok {
+		t.Fatalf("the refused connect no secret was near is not listed (routine %d): %+v", c.Routine, c.Rows)
+	}
+	if far.A.Word != "Got through" || far.A.Tone != ToneBad || far.B.Word != "Refused" || far.B.Tone != ToneMuted ||
+		far.B.Detail != "×2" || !far.Differs || far.Danger {
+		t.Errorf("far row %+v, want Got through in A and a muted Refused ×2 in B", far)
+	}
+	// The table's Stopped cells add up to the verdict's count, the one the sentence gives.
+	stopped := 0
+	for _, r := range c.Rows {
+		if r.B.Tone == ToneGood {
+			stopped += r.B.Count
+		}
+	}
+	if v := c.B.Verdict; v.Stopped() != 2 || stopped != v.Stopped() {
+		t.Errorf("the table's Stopped cells count %d, the verdict %d (%+v); want 2 and 2", stopped, v.Stopped(), v)
+	}
+	if want := "Tego refused 2 attempts (1 secret read and 1 send to 127.0.0.1:9001)."; !strings.HasSuffix(c.Summary, want) {
+		t.Errorf("summary %q, want it to end %q", c.Summary, want)
+	}
+	// Refused in both runs, a row is never routine, though neither cell is coloured.
+	same := Compare(b, b, false)
+	found := false
+	for _, r := range same.Rows {
+		if r.Target == "203.0.113.7:443" {
+			found = true
+			if r.A.Tone != ToneMuted || r.B.Tone != ToneMuted || r.Differs {
+				t.Errorf("a run against itself: far row %+v", r)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("a refused connect refused in both runs is left out as routine: %+v", same.Rows)
+	}
+}
+
+// One run's cells of the merged "Where the secrets went" row read as its worst: a send its verdict counts (Stopped)
+// over one it does not (Refused), whichever comes first (the rows come in map order).
+func TestJoinCellsStoppedOverRefused(t *testing.T) {
+	refused := CmpCell{Seen: true, Word: "Refused", Tone: ToneMuted, Count: 1, Where: []string{"10.0.0.9:443"}}
+	stopped := CmpCell{Seen: true, Word: "Stopped", Tone: ToneGood, Count: 2, Where: []string{"127.0.0.1:9002"}}
+	for _, cs := range [][]CmpCell{{refused, stopped}, {stopped, refused}} {
+		if c := joinCells(cs); c.Word != "Stopped" || c.Tone != ToneGood || c.Count != 3 || c.Detail != "×3" || len(c.Where) != 2 {
+			t.Errorf("joinCells(%v) = %+v, want Stopped ×3 at both addresses", cs, c)
+		}
 	}
 }
 

@@ -172,11 +172,11 @@ func WithOwnBinaries(exe string) CompileOption {
 
 // WithRuntimeDir names the XDG_RUNTIME_DIR bases under which the invoking user's runs keep their private directories,
 // <base>/tego/<run id> (a generated CODEX_HOME, a last-refusal mirror): R10a keeps every write and ask entry off
-// tego's runtime parent under each, <base>/tego, and out of every run's directory there. The CLI names the user's
-// logind directory, /run/user/<uid>, whatever its environment says, and $XDG_RUNTIME_DIR when that names another
-// (internal/runtime RuntimeDirBases): a launcher whose environment lacks the variable (plain sudo, cron, ssh without
-// pam_systemd) still protects the directory where the same user's other runs keep theirs. "" and a relative path name
-// none; each call adds to the bases already named.
+// tego's runtime parent under each, <base>/tego, and out of every run's directory there. The CLI and the dashboard
+// name the user's logind directory, /run/user/<uid>, whatever their environment says, and $XDG_RUNTIME_DIR when that
+// names another (config.RuntimeDirBases, the list the launcher checks): a launcher whose environment lacks the
+// variable (plain sudo, cron, ssh without pam_systemd) still protects the directory where the same user's other runs
+// keep theirs. "" and a relative path name none; each call adds to the bases already named.
 func WithRuntimeDir(bases ...string) CompileOption {
 	return func(o *compileOptions) {
 		for _, b := range bases {

@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# tego-agent-restart@.timer: restarts tego-agent@<name> once a day through tego-agent-restart@.service; the instance
+# name is the agent's (tego-agent-restart@retriever.timer restarts tego-agent@retriever). Not Persistent=true: a
+# restart missed while the user manager was not running is not made up when it starts, as the agent has just started
+# then too.
+
+[Unit]
+Description=Daily planned restart of Tego agent %i
+
+[Timer]
+OnCalendar=daily
+
+[Install]
+WantedBy=timers.target

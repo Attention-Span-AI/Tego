@@ -23,19 +23,22 @@ const (
 
 // Tones of a comparison cell: bad is red (a secret or an off-list destination that got through: observed, so nothing
 // stopped it), good is green (refused: Tego stopped it), ask is amber, neutral is grey, and the empty tone is
-// "not seen".
+// "not seen". muted is a refusal its run's verdict does not count (a connection that is no send next to a secret):
+// grey like neutral, but a row with one is never routine.
 const (
 	ToneBad     = "bad"
 	ToneGood    = "good"
 	ToneAsk     = "ask"
 	ToneNeutral = "neutral"
+	ToneMuted   = "muted"
 )
 
 // CmpCell is what one run did with one row's target.
 type CmpCell struct {
 	Seen bool
 	// Word is the cell's verdict word: Got through (a secret or an off-list destination only observed), Stopped
-	// (refused), Observed, Asked or Allowed.
+	// (refused: a secret read or a send next to a secret, the attempts the run's verdict counts, or a program), Refused
+	// (a refused connection the verdict does not count, ToneMuted), Observed, Asked or Allowed.
 	Word string
 	Tone string
 	// Detail is the count (×3), the mix (2 refused · 1 allowed) or, for an approval, how it ended.
@@ -53,8 +56,8 @@ type CmpRow struct {
 	A, B CmpCell
 	// Hot marks a secret, an approval, or a destination on this computer or its network: the rows read first.
 	Hot bool
-	// Differs is set when the two runs' verdicts differ in a way that matters (a red, green or amber cell against
-	// anything else).
+	// Differs is set when the two runs' verdicts differ in a way that matters (a red, green, amber or muted refused cell
+	// against anything else).
 	Differs bool
 	// Danger marks the attack as either run's Signal reads it: a secret read next to a send, or a destination off the
 	// contract next to a secret. These rows come first.
@@ -197,7 +200,7 @@ func CompareSignals(a, b *Run, siga, sigb *RunSignal, all bool) *Comparison {
 		x, y := rowsA[k], rowsB[k]
 		flag := k.class == ClassSecret || k.class == ClassNet && offList(k.target)
 		row := CmpRow{Class: k.class, Label: classLabel(k.class), Target: k.target,
-			A: x.cell(k.class, flag), B: y.cell(k.class, flag)}
+			A: x.cell(k.class, flag, storyA.muted(k)), B: y.cell(k.class, flag, storyB.muted(k))}
 		row.Note = firstNonEmpty(x.noteOf(), y.noteOf())
 		row.Hot = k.class == ClassSecret || k.class == ClassAsk || k.class == ClassNet && !publicDst(k.target)
 		row.Differs = row.A.Tone != row.B.Tone && !(quiet(row.A.Tone) && quiet(row.B.Tone))
@@ -235,13 +238,13 @@ func CompareSignals(a, b *Run, siga, sigb *RunSignal, all bool) *Comparison {
 	return c
 }
 
-// rank orders rows: the attack (Danger), one run only observed what the other refused, other hot differences, other
-// differences, hot rows alike in both runs, the rest.
+// rank orders rows: the attack (Danger), one run only observed what the other refused (Stopped or Refused), other
+// hot differences, other differences, hot rows alike in both runs, the rest.
 func rank(r CmpRow) int {
 	switch {
 	case r.Danger:
 		return -1
-	case r.A.Tone == ToneBad && r.B.Tone == ToneGood || r.A.Tone == ToneGood && r.B.Tone == ToneBad:
+	case r.A.Tone == ToneBad && refusedTone(r.B.Tone) || refusedTone(r.A.Tone) && r.B.Tone == ToneBad:
 		return 0
 	case r.Hot && r.Differs:
 		return 1
@@ -270,6 +273,9 @@ func classRank(r CmpRow) int {
 }
 
 func quiet(tone string) bool { return tone == "" || tone == ToneNeutral }
+
+// refusedTone reports whether a cell's tone is a refusal's: Stopped (good) or Refused (muted).
+func refusedTone(tone string) bool { return tone == ToneGood || tone == ToneMuted }
 
 func classLabel(class string) string {
 	switch class {
@@ -439,7 +445,10 @@ func (a *acc) noteOf() string {
 	return firstNonEmpty(a.host, a.op)
 }
 
-func (a *acc) cell(class string, flag bool) CmpCell {
+// cell is one run's cell for a row. flag marks a secret or an off-list destination, whose observed lines got through;
+// muted says the row's refusals are not ones the run's verdict counts (storySets.muted), so they read Refused, not
+// Stopped.
+func (a *acc) cell(class string, flag, muted bool) CmpCell {
 	if a == nil {
 		return CmpCell{}
 	}
@@ -458,6 +467,9 @@ func (a *acc) cell(class string, flag bool) CmpCell {
 		}
 	case a.ref > 0:
 		c.Word, c.Tone = "Stopped", ToneGood
+		if muted {
+			c.Word, c.Tone = "Refused", ToneMuted
+		}
 	case a.ask > 0:
 		c.Word, c.Tone = "Asked", ToneAsk
 	default:

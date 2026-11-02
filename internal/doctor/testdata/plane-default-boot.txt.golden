@@ -7,6 +7,8 @@ off  lsm: lockdown,capability,landlock,yama,apparmor via lsm_list_modules(2); bp
 ok   programs: ok; decision plane: fmod_ret (tier 2 decides opens in the kernel; tier 3 needs bpf in lsm=); build 0123abcd, lsm mode no: bpf is not in the active LSM list (lockdown,capability,landlock,yama,apparmor), fmod_ret mode ok
 ok   fanotify: ok
 
+summary: tier cgroup; bpflsm needs lsm
+
 [capability matrix]
 
 tier: cgroup

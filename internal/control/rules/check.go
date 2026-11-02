@@ -5,9 +5,6 @@ package rules
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
-	"strconv"
 
 	"github.com/attention-span-ai/tego/internal/nextrun"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -81,20 +78,10 @@ func (s *Service) compile(ctx context.Context, cc CheckContext, text []byte) (*a
 
 // nextrunContext is cc as nextrun.Compile takes it, with what the dashboard knows of the machine filled in. Tiers stays
 // empty: tego-control links no backend, so an auto contract whose run tier is unknown resolves to the machine ceiling.
+// The runtime directories are config.RuntimeDirBases, the list `tego rule` compiles with and the launcher checks
+// (agent-contract.md R10a), not a copy of it: tego-control may not link internal/runtime.
 func (s *Service) nextrunContext(cc CheckContext) nextrun.Context {
 	return nextrun.Context{Contract: cc.Contract, Cwd: cc.Cwd, Tier: cc.Tier, RunCommandGrant: cc.RunCommandGrant,
 		PATH: s.path(), ExecDirs: cc.ExecDirs, RunDir: cc.runDir, Home: s.Machine.Home, Anchor: s.Anchor,
-		RuntimeDirs: runtimeDirs()}
-}
-
-// runtimeDirs is the bases under which the invoking user's runs keep their private directories (agent.WithRuntimeDir,
-// agent-contract.md R10a), as the launcher names them (internal/runtime's RuntimeDirBases, which tego-control may not
-// link): /run/user/<uid>, and $XDG_RUNTIME_DIR when it names another absolute directory. Each only adds refusals.
-func runtimeDirs() []string {
-	uid, _ := config.InvokingUID()
-	out := []string{filepath.Join("/run/user", strconv.Itoa(uid))}
-	if x := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(x) && filepath.Clean(x) != out[0] {
-		out = append(out, filepath.Clean(x))
-	}
-	return out
+		RuntimeDirs: config.RuntimeDirBases()}
 }
