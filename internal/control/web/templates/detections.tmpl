@@ -1,0 +1,38 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* Detections: the runs whose secrets left, in the run page's banner, whatever the filters say; then every blocked
+     action of every run that is not routine, High first (detections.go). The filters are links, so a filtered view is
+     a URL; Low is folded under the list unless asked for. */}}
+{{define "content"}}{{with .Data}}{{$d := .}}
+<script src="/static/review.js" defer></script>
+<div class="head"><div><h1>Detections</h1><p class="lede" id="dt-progress" hidden></p></div><div class="head-actions"><a class="link" href="/severity">Severity rules</a>{{if .Routine}} · <a class="link" href="/logs?verdict=refused" title="System lookups and probes, left out here">Routine {{.Routine}}</a>{{end}}</div></div>
+{{range .Leaks}}<section class="banner verdict verdict-leak" role="status" aria-label="Secrets left in a run" data-k="leak-{{.Run}}">{{template "i" "i-triangle-alert"}}<div class="grow"><p class="vt"><a class="dt-what" href="/runs/{{pathEsc .Run}}">{{.Title}}</a></p><p class="vs">{{.Sub}} · {{.Agent}} · {{.Project}} · <time datetime="{{iso .When}}" title="{{stamp .When}}">{{when .When $d.Now}}</time></p></div></section>{{end}}
+<nav class="chips dt-filter" aria-label="Severity">
+<a class="chip" href="/detections{{with $d.Ch}}?ch={{.}}{{end}}"{{if eq $d.Sev ""}} aria-current="true"{{end}}>All</a>
+{{range .Severities}}<a class="chip" href="/detections?sev={{lower .}}{{with $d.Ch}}&ch={{.}}{{end}}"{{if eq $d.Sev (lower .)}} aria-current="true"{{end}}><span class="sev sev-{{.}}">{{.}}</span> {{index $d.SevCount .}}</a>{{end}}
+</nav>
+<section class="panel" aria-labelledby="h-dt">
+<div class="panel-head"><h2 id="h-dt" class="sr" data-say>Blocked actions · {{len .Rows}} shown</h2><nav class="tabs dt-ch" aria-label="Channel">
+<a href="/detections{{with $d.Sev}}?sev={{.}}{{end}}"{{if eq $d.Ch ""}} aria-current="page"{{end}}>All channels <span class="n">{{$d.Total}}</span></a>
+{{range .Channels}}<a href="/detections?ch={{lower .}}{{with $d.Sev}}&sev={{.}}{{end}}"{{if eq $d.Ch (lower .)}} aria-current="page"{{end}}>{{.}} <span class="n">{{index $d.ChCount .}}</span></a>{{end}}
+</nav></div>
+{{if .Rows}}{{template "dtable" (dtab .Rows .Now)}}{{end}}
+{{if .Low}}<details class="dt-low"><summary title="The agent's own files and system information">Low · {{len .Low}}</summary>{{template "dtable" (dtab .Low .Now)}}</details>{{end}}
+{{if not (or .Rows .Low)}}{{if and .Leaks (not .Total)}}<p class="panel-body soft">{{if .Routine}}Only routine actions blocked{{else}}No blocked actions{{end}}</p>
+{{else}}<div class="empty">{{if not (or .Leaks .Watched)}}<div class="glyph">{{template "i" "i-check"}}</div>{{end}}
+{{if .Total}}<h3>No match</h3><a class="btn" href="/detections">Clear filters</a>
+{{else}}<h3>{{if .Routine}}Only routine actions blocked{{else}}Nothing blocked{{end}}</h3><a class="btn" href="/runs">Runs</a>{{end}}</div>{{end}}{{end}}
+</section>
+{{end}}{{end}}
+{{/* dtable is a table of detections: severity, what was done to what, by which agent in which project, how often, when. */}}
+{{define "dtable"}}<div class="tw"><table class="t dt-table"><caption class="sr">Blocked actions, High first</caption>
+<thead><tr><th scope="col">Severity</th><th scope="col">Action</th><th scope="col">Agent · Project</th><th scope="col" class="num">Times</th><th scope="col">Last</th><th scope="col"><span class="sr">Investigate</span></th></tr></thead>
+<tbody>{{$now := .Now}}{{range .Rows}}<tr class="dt-row" data-k="{{.Run}}-{{.FirstSeq}}" data-review-key="{{.Run}}-{{.Seq}}" data-sev="{{.Severity}}">
+<td><span class="sev sev-{{.Severity}}">{{.Severity}}</span></td>
+<td class="dt-act"><a class="dt-what" href="/runs/{{pathEsc .Run}}/investigate/{{.FirstSeq}}" aria-label="Investigate: {{.Verb}} {{mask (tilde .Subject)}}"><span class="dt-verb">{{.Verb}}</span> {{template "sptv" (spt (mask (tilde .Subject)) .Home 60)}}</a>
+{{if .Secret}}<span class="dt-tag">Secret</span>{{end}}{{if .NearSecret}}<span class="dt-tag" title="Within 5 seconds of a secret read">After a secret read</span>{{end}}{{if .Hosts}}<span class="dt-tag" title="{{mask (someOf .Targets 24)}}">{{.Hosts}} addresses</span>{{end}}{{template "porttag" .}}
+<div class="meta">{{.Channel}} · {{.Rule}}</div></td>
+<td data-label="Agent · Project">{{.Agent}} · <span title="{{.Project}}">{{.Project}}</span></td>
+<td class="num" data-label="Times">{{.Count}}</td>
+<td data-label="Last"><time datetime="{{iso .Last}}" title="{{stamp .Last}}">{{when .Last $now}}</time></td>
+<td class="dt-go"><a href="/runs/{{pathEsc .Run}}/investigate/{{.FirstSeq}}" tabindex="-1" aria-hidden="true">›</a></td>
+</tr>{{end}}</tbody></table></div>{{end}}

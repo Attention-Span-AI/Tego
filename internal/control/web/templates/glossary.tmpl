@@ -1,0 +1,8 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* glossary: the dashboard's words, one per idea, each in a line (glossaryTerms). The top bar's "?" opens it. */}}
+{{define "content"}}{{with .Data}}
+<div class="head"><div><h1>Glossary</h1></div></div>
+<section class="panel" aria-label="Terms"><dl class="gl-list">{{range .}}
+<div class="gl-row" id="{{.ID}}"><dt>{{.Term}}</dt><dd>{{.Means}}{{with .Where}} <a class="link" href="{{.}}">See it</a>{{end}}</dd></div>{{end}}
+</dl></section>
+{{end}}{{end}}

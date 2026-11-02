@@ -1,0 +1,37 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{/* Investigate: one detection in four parts, always in this order: What, How it got there, What else, What now
+     (investigate.go). Labels, not sentences; the next detection at the same severity is one click away. */}}
+{{define "content"}}{{with .Data}}{{$d := .D}}
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/detections">Detections</a> › <a href="/detections?sev={{lower $d.Severity.String}}">{{$d.Severity}}</a></nav>
+<div class="head iv-head"><div><h1><span class="sev sev-{{$d.Severity}}">{{$d.Severity}}</span> <span class="iv-verb">{{$d.Verb}}</span> {{template "sptv" (spt (mask (tilde $d.Subject)) $d.Home 80)}}</h1>{{with .Kind}}<p class="lede">{{.}}</p>{{end}}</div>
+<div class="head-actions"><span class="soft iv-pos">{{.Pos}} of {{.OfSev}} {{$d.Severity}}</span><a class="btn" href="/runs/{{pathEsc $d.Run}}/lines/{{$d.Seq}}?a=allow#act-check" title="Preview the policy change first">{{template "i" "i-check"}}Allow from now on</a><a class="btn btn-primary" data-review="{{$d.Run}}-{{$d.Seq}}" href="{{with .Next}}/runs/{{pathEsc .Run}}/investigate/{{.FirstSeq}}{{else}}/detections?sev={{lower $d.Severity.String}}{{end}}">{{template "i" "i-shield"}}Keep blocked{{if .Next}} · Next{{end}}</a></div></div>
+<script src="/static/review.js" defer></script>
+
+<section class="panel" aria-labelledby="h-what"><div class="panel-head"><h2 id="h-what">What</h2></div>
+<dl class="iv-facts panel-body">
+<dt>Result</dt><dd><strong>Blocked</strong>{{if gt $d.Count 1}} · {{$d.Count}} times{{end}}{{if $d.Hosts}} · <span title="{{mask (someOf $d.Targets 24)}}">{{$d.Hosts}} addresses</span>{{end}}{{if gt (len $d.Ports) 1}} · {{len $d.Ports}} ports{{end}}</dd>
+{{if gt (len $d.Ports) 1}}<dt>Ports</dt><dd><span class="mono">{{portSpans $d.Ports 200}}</span> · <a class="link" href="{{logsByTarget $d}}">Each in Logs</a></dd>{{end}}
+<dt>Rule</dt><dd>{{$d.Rule}}{{with .Policy}} · <a class="link" href="/rules?run={{pathEsc $d.Run}}">{{.}}</a>{{end}}</dd>
+<dt>Channel</dt><dd>{{$d.Channel}}</dd>
+<dt>Severity</dt><dd><span class="sev sev-{{$d.Severity}}">{{$d.Severity}}</span> · <a class="link" href="/severity?ch={{$d.Channel}}&amp;match={{$d.Match}}">Change</a></dd>
+<dt>Agent</dt><dd>{{$d.Agent}} · <span title="{{$d.Project}}">{{$d.Project}}</span></dd>
+<dt>When</dt><dd><time datetime="{{iso $d.First}}" title="{{stamp $d.First}}">{{stamp $d.First}}</time>{{if gt $d.Count 1}} to <time datetime="{{iso $d.Last}}" title="{{stamp $d.Last}}">{{clock $d.Last}}</time>{{end}}</dd>
+{{if or $d.Secret $d.NearSecret}}<dt>Flags</dt><dd>{{if $d.Secret}}<span class="dt-tag">Secret</span>{{end}}{{if $d.NearSecret}}<span class="dt-tag" title="Within 5 seconds of a secret read">After a secret read</span>{{end}}</dd>{{end}}
+</dl></section>
+
+<section class="panel" aria-labelledby="h-how"><div class="panel-head"><h2 id="h-how">How it got there</h2></div>
+<div class="panel-body">{{if .Chain}}<ol class="iv-chain">{{range .Chain}}<li title="{{if .ArgvMasked}}{{.ArgvMasked}}{{else}}{{.Words}}{{end}}">{{if .Launcher}}tego{{else if .Unrecorded}}pid {{.PID}}{{else}}{{.Name}}{{end}}</li>{{end}}<li class="iv-end"><span class="sev sev-{{$d.Severity}}">{{$d.Verb}}</span> {{template "sptv" (spt (mask (tilde $d.Subject)) $d.Home 80)}}</li></ol>
+{{with .Argv}}<p class="iv-argv mono" title="Command line">{{.}}</p>{{end}}
+{{else}}<p class="soft">Not recorded</p>{{end}}</div></section>
+
+<section class="panel" aria-labelledby="h-else"><div class="panel-head"><h2 id="h-else">What else</h2><span class="soft">same run · within 10 s</span></div>
+{{if .Linked}}<ul class="list iv-linked">{{range .Linked}}<li data-k="{{.Run}}-{{.FirstSeq}}"><span class="sev sev-{{.Severity}}">{{.Severity}}</span><a class="dt-what" href="/runs/{{pathEsc .Run}}/investigate/{{.FirstSeq}}"><span class="dt-verb">{{.Verb}}</span> {{template "sptv" (spt (mask (tilde .Subject)) .Home 60)}}</a><time class="soft" datetime="{{iso .First}}">{{clock .First}}</time></li>{{end}}</ul>
+{{else}}<p class="panel-body soft">Nothing else</p>{{end}}</section>
+
+<section class="panel" aria-labelledby="h-now"><div class="panel-head"><h2 id="h-now">What now</h2></div>
+<div class="panel-body row iv-now">
+<a class="btn" href="/runs/{{pathEsc $d.Run}}/lines/{{$d.Seq}}#act">{{template "i" "i-shield"}}All policy options</a>
+<a class="btn" href="{{logsFor $d}}">{{template "i" "i-scroll-text"}}Logs</a>
+<a class="btn" href="/runs/{{pathEsc $d.Run}}">{{template "i" "i-activity"}}Run</a>
+</div></section>
+{{end}}{{end}}
