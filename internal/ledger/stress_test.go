@@ -188,7 +188,9 @@ func TestWriterLeaksNoDescriptor(t *testing.T) {
 	for i := range 200 {
 		cycle(i)
 	}
-	if f1 := openFDs(t); f1 != f0 {
+	// Only a rise is a leak. A goroutine an earlier test left may close a descriptor of its own while the cycles
+	// run (GitHub's race run, shuffled: 113 -> 112), and that hides nothing a leak would show.
+	if f1 := openFDs(t); f1 > f0 {
 		t.Errorf("open descriptors %d -> %d over 200 cycles", f0, f1)
 	}
 }
