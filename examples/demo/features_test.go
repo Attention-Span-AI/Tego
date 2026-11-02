@@ -108,9 +108,11 @@ func TestReasonHookScene(t *testing.T) {
 			k.env = append(k.env, v+"="+strings.TrimSpace(string(b)))
 		}
 	}
+	// This process's go goes first: a host may have an older go on the kit's PATH (GitHub's runner image has
+	// 1.24 in /usr/bin), and go.mod asks for 1.27.
 	for i, kv := range k.env {
 		if p, ok := strings.CutPrefix(kv, "PATH="); ok {
-			k.env[i] = "PATH=" + p + ":" + filepath.Dir(gobin)
+			k.env[i] = "PATH=" + filepath.Dir(gobin) + ":" + p
 		}
 	}
 	k.mustDemo("setup")

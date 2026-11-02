@@ -182,6 +182,11 @@ func TestTier2ArmsAfterTheStageExec(t *testing.T) {
 			e["reason"] == "read-denied" && e["rule"] == "fs.deny_read[./out/tools/]" && e["path"] == bin
 	}) == nil {
 		t.Errorf("no source=%s read-denied refusal naming fs.deny_read[./out/tools/] for %s", wantSource, bin)
+		for _, e := range events {
+			if e["kind"] == "fs" && e["verdict"] == "refused" {
+				t.Logf("refused fs line the run did record: %v", e)
+			}
+		}
 	}
 	end := findEvent(events, func(e map[string]any) bool { return e["kind"] == "run_end" })
 	if end == nil || end["reason"] != "exit" {
