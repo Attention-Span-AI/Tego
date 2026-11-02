@@ -241,7 +241,7 @@ When you finish, `/quit` both Codex windows. The runs then show **Verified · N 
    The RULE column names the contract entry that decided; `unmatched` means no entry allowed it, so the default deny
    refused it. The TIME column is in your own time zone (its header names it, e.g. `TIME (EDT)`); `--json` keeps UTC.
    `tego status` shows a paused run as `paused`.
-   The dashboard's **Receipt** tab on the run shows the same receipt (files changed, refusals by rule, the asks and
+   The dashboard's **Receipt** tab on the run shows the same receipt (files written, refusals by rule, the asks and
    your answers, tokens, what the ledger could not cover).
 
 ## 5. Things to know before you run it

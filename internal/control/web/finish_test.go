@@ -204,6 +204,34 @@ func TestReceiptActivity(t *testing.T) {
 	}
 }
 
+// TestReceiptFilesTile: the Receipt's files tile counts the files written, the number tego run's end line gives
+// ("wrote N files"), and says under it what else the run made, deleted and renamed. A write to /dev/null is no file.
+func TestReceiptFilesTile(t *testing.T) {
+	root := t.TempDir()
+	run := "r-aaaaaaaa-0000000000013-rcfile"
+	t0 := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	fs := func(seq int, payload string) string {
+		return line(run, "a", seq, t0.Add(time.Duration(seq)*time.Second), "fs", `"verdict":"allow","rule":"fs.write[/w/]",`+payload)
+	}
+	finishRun(t, root, run,
+		line(run, "a", 0, t0, "run_start", `"tier":"landlock","command":["./agent.sh"]`),
+		fs(1, `"op":"open","path":"/w/new.txt","flags":65,"created":true`),
+		fs(2, `"op":"open","path":"/w/old.txt","flags":1`),
+		fs(3, `"op":"open","path":"/dev/null","flags":1`),
+		fs(4, `"op":"unlink","path":"/w/gone.txt"`),
+		fs(5, `"op":"rename","path":"/w/a","path2":"/w/b"`),
+		line(run, "a", 6, t0.Add(6*time.Second), "run_end", `"reason":"exit","exit_code":0`))
+	s := newServer(t, root)
+	w := do(s, "GET", "/runs/"+run+"/receipt", "127.0.0.1:8484", login(t, s))
+	if w.Code != 200 {
+		t.Fatalf("receipt: %d %s", w.Code, w.Body.String())
+	}
+	const tile = `<span class="rc-k">Files written</span><span class="rc-v">2</span><span class="rc-s">1 new · 1 deleted · 1 renamed</span>`
+	if body := w.Body.String(); !strings.Contains(body, tile) {
+		t.Errorf("the files tile is not %s:\n%s", tile, body)
+	}
+}
+
 // TestReceiptNoReadsRecorded: the Receipt tab shows the check mark and "None" for sensitive reads only on a run that
 // recorded its reads. The default tier 1 run keeps no allowed read, so its empty list says it does not know.
 func TestReceiptNoReadsRecorded(t *testing.T) {

@@ -94,7 +94,7 @@ func (st *runState) reset() {
 // eventBytes estimates what one decoded line keeps in memory: the struct, its payload text and the strings the
 // intern table does not share.
 func eventBytes(e *Event) int64 {
-	return 256 + int64(len(e.Raw)+len(e.Target)+len(e.AskID)+len(e.askOp)+len(e.askTarget))
+	return 256 + int64(len(e.Raw)+len(e.Target)+len(e.AskID)+len(e.askOp)+len(e.askTarget)+len(e.askName)+len(e.askName2))
 }
 
 // take adds one decoded line to the summary: whether it mirrors a refused action, whether its paths name secrets

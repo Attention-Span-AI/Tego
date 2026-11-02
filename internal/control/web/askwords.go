@@ -23,11 +23,24 @@ import (
 
 // askVerb is what an ask asks to do, as a verb phrase: "read", "write to", "connect to". A held file open is a write
 // under fs.ask (write-only, SEMANTICS §6) and a read under fs.ask_read; hold names a request whose ask line carries
-// no operation.
+// no operation. A held mutation (ADR 0047) reads as what it changes, never as its record op: unlink is "delete" (a
+// file, or an empty folder: record v1 has no rmdir op, so an rmdir asks as an unlink). The target of a rename, a link
+// or a symlink holds two names, and its phrase reads them in order: rename the first to the second, make a hard link
+// of the first (a file) at the second, make a symbolic link at the first that points to the second.
 func askVerb(op, rule, hold string) string {
 	switch op {
 	case "read":
 		return "read"
+	case "unlink":
+		return "delete"
+	case "mkdir":
+		return "create a folder at"
+	case "rename":
+		return "rename"
+	case "symlink":
+		return "make a symbolic link at"
+	case "link":
+		return "make a hard link of"
 	case "write", "create", "truncate", "append":
 		return "write to"
 	case "open":
@@ -77,6 +90,16 @@ func askNoun(op, rule, hold string) string {
 		return "running"
 	case "call the MCP tool":
 		return "call of the MCP tool"
+	case "delete":
+		return "deletion of"
+	case "create a folder at":
+		return "new folder at"
+	case "rename":
+		return "rename of"
+	case "make a symbolic link at":
+		return "symbolic link at"
+	case "make a hard link of":
+		return "hard link of"
 	default:
 		return v
 	}
@@ -161,8 +184,18 @@ func who(by string) string {
 	}
 }
 
-// askObject is what an ask is about, for the card's question "Let codex read this file?".
+// askObject is what an ask is about, for the card's question "Let codex read this file?". A held mutation's object fits
+// its askVerb: a deletion or a rename may be of a folder, which its ask line does not say ("Let codex delete this?"),
+// and a new folder or symbolic link is made at a path where nothing is yet.
 func askObject(op, rule, hold string) string {
+	switch op {
+	case "unlink", "rename":
+		return "this"
+	case "mkdir", "symlink":
+		return "this path"
+	case "link":
+		return "this file"
+	}
 	switch {
 	case strings.HasPrefix(rule, "fs.") || op == "read" || op == "write" || op == "open" || op == "create":
 		return "this file"
@@ -193,7 +226,7 @@ type answered struct {
 }
 
 // answersOf is the newest n answers people gave, newest first. An answer line repeats the ask's operation, target
-// and rule, so each row says what was asked without reading the ask.
+// (a held mutation's two names: Event.AskTarget) and rule, so each row says what was asked without reading the ask.
 func answersOf(snap *ledgerview.Snapshot, n int) []answered {
 	var out []answered
 	for _, r := range snap.Runs {
@@ -212,14 +245,13 @@ func answersOf(snap *ledgerview.Snapshot, n int) []answered {
 				After    float64 `json:"after_s"`
 				Reason   string  `json:"answer_reason"`
 				Op       string  `json:"op"`
-				Target   string  `json:"target"`
 				Rule     string  `json:"ask_rule"`
 			}
 			// A standing answer is Tego repeating a person's "for this run" answer: the person's own is listed.
 			if json.Unmarshal([]byte(e.Raw), &p) != nil || p.Approved == nil || strings.HasPrefix(p.By, "standing:") {
 				continue
 			}
-			out = append(out, answered{Run: r.ID, Agent: r.Agent, AskID: e.AskID, Op: p.Op, Rule: p.Rule, Target: p.Target,
+			out = append(out, answered{Run: r.ID, Agent: r.Agent, AskID: e.AskID, Op: p.Op, Rule: p.Rule, Target: e.AskTarget(),
 				Word: answerPhrase(*p.Approved, p.Reason, p.By, p.After), Approved: *p.Approved,
 				TimedOut:  !*p.Approved && p.Reason == string(record.ReasonAskTimeout),
 				Withdrawn: !*p.Approved && p.By == linewords.WithdrawnBy, TS: e.TS})

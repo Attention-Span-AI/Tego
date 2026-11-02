@@ -121,10 +121,13 @@ func startupFile(p string) bool {
 }
 
 // laterFiles are the rest of what a write can turn into code that runs later, outside the run: what the engine's
-// built-in deny_write set holds for that reason (pkg/spec/agent, compile_denywrite.go: harness and editor settings, a
-// shell's other startup files, git's config and hooks folders), and an agent's own hooks and commands. Each is whole
-// path segments, so settings.json elsewhere is not one, and an agent's name in a path does not make it one. An agent's
-// caches and state are not: it writes those itself on every run, and a plugin folder keeps its caches beside its hooks.
+// built-in deny_write set holds for that reason (agent.BuiltInDenyWriteNames: harness and editor settings, a shell's
+// other startup files, git's config; and the hooks folders a core.hooksPath most often names), and an agent's own
+// hooks and commands. Each is whole path segments, so settings.json elsewhere is not one, and an agent's name in a
+// path does not make it one. An agent's caches and state are not: it writes those itself on every run, and a plugin
+// folder keeps its caches beside its hooks, so of a folder the set holds whole (.claude, .vscode) only the files that
+// name what runs are here. A name the set gains that this list and startupFiles leave out fails
+// TestLaterFilesHoldTheEngineSet.
 var laterFiles = []string{
 	"/.claude/settings.json/", "/.claude/settings.local.json/", "/.claude.json/", "/.mcp.json/",
 	"/.config/claude/settings.json/", "/.config/claude/settings.local.json/",

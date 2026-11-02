@@ -76,7 +76,8 @@ func (rc *Receipt) Text(w io.Writer) error {
 	}
 	b.WriteString(".\n")
 
-	b.WriteString("\nFiles changed\n")
+	// "Files written", never "files changed": an allowed write-open is no proof that a byte changed.
+	b.WriteString("\nFiles written\n")
 	f := rc.Files
 	if !f.Recorded {
 		fmt.Fprintf(&b, "  %s.\n", capital(f.Note))

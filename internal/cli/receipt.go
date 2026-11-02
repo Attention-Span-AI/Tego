@@ -19,7 +19,7 @@ import (
 
 func init() { register(cmdReceipt) }
 
-// cmdReceipt is `tego receipt [run] [--json] [--verify]`: the run's V1 receipt (time taken, files changed, connections,
+// cmdReceipt is `tego receipt [run] [--json] [--verify]`: the run's V1 receipt (time taken, files written, connections,
 // programs run, sensitive files read, each refused action with its rule, refusals over time, stall minutes, tests
 // result, times it asked, tokens and their estimated cost, and what the ledger could not cover), built from the
 // ledger by internal/check/receipt, the builder tego run's end summary and the dashboard's Receipt tab use too. No run means the newest run under the ledger root. It is a

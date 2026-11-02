@@ -56,14 +56,54 @@ type start struct {
 	At       time.Time
 	Contract string // run_start.contract_source.path as recorded; "" for a generated contract
 	Resolved string // Contract with its directory's symlinks resolved (rulefile's File.Path spelling)
+	Ref      string // refOf(Resolved), worked out once with the start rather than on every listing
 	Cwd      string
 	Tier     string
 	Grant    string // run_command_grant
 }
 
-// starts is every run under the ledger root, newest first. A run whose first line cannot be read is left out.
+// listing is the ledger root as starts last listed it: the root's key then (rootKey), the runs whose first line
+// read, newest first, and the run directories whose first line did not read yet. A run writes run_start in its own
+// directory, which leaves the root's key as it was, so those are read again on every call.
+type listing struct {
+	key     string
+	sts     []start
+	pending []string
+}
+
+// listingSettle is how long before a listing the root must have last changed for starts to keep it. File times move
+// in ticks of the kernel's coarse clock, a second on some file systems: a run directory made after the listing but in
+// the same tick as the change the key holds could leave the key as it was, so a root changed more recently is listed
+// again on the next call.
+const listingSettle = 2 * time.Second
+
+// starts is every run under the ledger root whose first line reads, newest first; one that does not read yet is left
+// out. The Change rules page asks it three times a request (Contracts, Current, History) and a run page once (Feed),
+// on every live update, and listing a root of thousands of runs cost milliseconds each time (BenchmarkContracts), so
+// the listing is kept while the root's key stays the same: a run directory made, removed or renamed there moves it,
+// and a run's run_start never changes once read. The slice is shared: callers only read it.
 func (s *Service) starts() ([]start, error) {
-	ents, err := os.ReadDir(s.Ledger)
+	at := time.Now()
+	if s.clock != nil {
+		at = s.clock()
+	}
+	// The key is read through the opened root, not by a stat of its path: an NFS client fetches a directory's
+	// attributes again when it is opened (close-to-open), where a stat may answer from its cache for up to a minute.
+	// A listing then reads that same directory.
+	d, err := os.OpenFile(s.Ledger, os.O_RDONLY|syscall.O_DIRECTORY, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = d.Close() }() // read-only
+	key, changed, keyed := rootKey(d)
+	s.mu.Lock()
+	if l := s.listing; keyed && l != nil && l.key == key {
+		sts := s.readPending(l)
+		s.mu.Unlock()
+		return sts, nil
+	}
+	s.mu.Unlock()
+	ents, err := d.ReadDir(-1) // in the directory's order: sortStarts orders the runs
 	if err != nil {
 		return nil, err
 	}
@@ -73,37 +113,98 @@ func (s *Service) starts() ([]start, error) {
 		s.cache = map[string]start{}
 	}
 	seen := make(map[string]bool, len(ents))
-	var out []start
+	l := &listing{key: key, sts: make([]start, 0, len(ents))}
 	for _, e := range ents {
 		id := e.Name()
 		if !e.IsDir() || !runID(id) {
 			continue
 		}
 		seen[id] = true
-		st, ok := s.cache[id]
+		st, ok := s.startOf(id)
 		if !ok {
-			st, err = readStart(filepath.Join(s.Ledger, id))
-			if err != nil {
-				continue
-			}
-			if st.Run != "" { // a run that has not written its first line yet is read again next time
-				s.cache[id] = st
-			}
+			l.pending = append(l.pending, id)
+			continue
 		}
-		out = append(out, st)
+		l.sts = append(l.sts, st)
 	}
 	for id := range s.cache { // runs removed (gc, retention) leave the cache
 		if !seen[id] {
 			delete(s.cache, id)
 		}
 	}
-	slices.SortFunc(out, func(a, b start) int {
+	sortStarts(l.sts)
+	l.sts = slices.Clip(l.sts) // a caller's append copies instead of writing into the kept array
+	s.listing = nil
+	if keyed && at.Sub(changed) > listingSettle {
+		s.listing = l
+	}
+	return l.sts, nil
+}
+
+// readPending is l's runs with those of its pending run directories whose first line reads now, which then leave
+// pending. l's slice is never written: a caller may still hold it. Called with s.mu held.
+func (s *Service) readPending(l *listing) []start {
+	var more []start
+	var still []string
+	for _, id := range l.pending {
+		if st, ok := s.startOf(id); ok {
+			more = append(more, st)
+		} else {
+			still = append(still, id)
+		}
+	}
+	if len(more) == 0 {
+		return l.sts
+	}
+	sts := slices.Concat(l.sts, more)
+	sortStarts(sts)
+	s.listing = &listing{key: l.key, sts: slices.Clip(sts), pending: still}
+	return s.listing.sts
+}
+
+// startOf is run id's start, read once and then cached (run_start never changes); false while its first line does not
+// read. Called with s.mu held.
+func (s *Service) startOf(id string) (start, bool) {
+	if st, ok := s.cache[id]; ok {
+		return st, true
+	}
+	st, err := readStart(filepath.Join(s.Ledger, id))
+	if err != nil || st.Run == "" {
+		return start{}, false
+	}
+	s.cache[id] = st
+	return st, true
+}
+
+// sortStarts orders sts newest first: by start time, then by run id.
+func sortStarts(sts []start) {
+	slices.SortFunc(sts, func(a, b start) int {
 		if c := b.At.Compare(a.At); c != 0 {
 			return c
 		}
 		return strings.Compare(b.Run, a.Run)
 	})
-	return out, nil
+}
+
+// rootKey is what says the ledger root open at d still lists the run directories starts listed, and the later of the
+// root's modification and change times. It holds the root's device and inode, its link count and size, which a run
+// directory made or removed moves on most file systems whatever the clock, and those two times, which every entry
+// made, removed or renamed in it moves. It reports false when the root cannot be looked at, which is never kept.
+func rootKey(d *os.File) (string, time.Time, bool) {
+	fi, err := d.Stat()
+	if err != nil {
+		return "", time.Time{}, false
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return "", time.Time{}, false
+	}
+	mtime, ctime := time.Unix(st.Mtim.Unix()), time.Unix(st.Ctim.Unix())
+	key := fmt.Sprintf("%d:%d:%d:%d:%d:%d", st.Dev, st.Ino, st.Nlink, st.Size, mtime.UnixNano(), ctime.UnixNano())
+	if ctime.After(mtime) {
+		return key, ctime, true
+	}
+	return key, mtime, true
 }
 
 // readStart reads run_start from the run directory dir.
@@ -130,6 +231,7 @@ func readStart(dir string) (start, error) {
 		if p.ContractSource != nil && filepath.IsAbs(p.ContractSource.Path) {
 			st.Contract = filepath.Clean(p.ContractSource.Path)
 			st.Resolved = resolvedPath(st.Contract)
+			st.Ref = refOf(st.Resolved)
 		}
 		return st, nil
 	}
@@ -151,11 +253,10 @@ func refOf(p string) string {
 	return hex.EncodeToString(h[:])[:16]
 }
 
-// contractInfo is a contract of the bounded set with the newest run's context and the runs of it.
+// contractInfo is a contract of the bounded set with the newest run's context.
 type contractInfo struct {
 	ContractRef
 	newest start
-	runs   []start
 }
 
 // context is the context the contract is compiled in: its newest run's.
@@ -194,15 +295,13 @@ func (s *Service) contracts() ([]*contractInfo, error) {
 		if st.Contract == "" {
 			continue
 		}
-		ref := refOf(st.Resolved)
-		c, ok := byRef[ref]
+		c, ok := byRef[st.Ref]
 		if !ok {
-			c = &contractInfo{ContractRef: ContractRef{Ref: ref, Path: st.Contract, LastRun: st.Run, LastAt: st.At}, newest: st}
-			byRef[ref] = c
+			c = &contractInfo{ContractRef: ContractRef{Ref: st.Ref, Path: st.Contract, LastRun: st.Run, LastAt: st.At}, newest: st}
+			byRef[st.Ref] = c
 			out = append(out, c)
 		}
 		c.Runs++
-		c.runs = append(c.runs, st)
 		if (listed == nil || listed[st.Run]) && s.isLive(filepath.Join(s.Ledger, st.Run)) {
 			c.Live = append(c.Live, st.Run)
 		}
@@ -334,7 +433,7 @@ func (s *Service) createdHere(seen map[string]*contractInfo) []*contractInfo {
 		if _, err := os.Lstat(e.Contract); err != nil {
 			continue
 		}
-		st := start{At: e.At, Contract: e.Contract, Resolved: e.Contract, Cwd: filepath.Dir(e.Contract)}
+		st := start{At: e.At, Contract: e.Contract, Resolved: e.Contract, Ref: ref, Cwd: filepath.Dir(e.Contract)}
 		c := &contractInfo{ContractRef: ContractRef{Ref: ref, Path: e.Contract, LastAt: e.At}, newest: st}
 		seen[ref] = c
 		out = append(out, c)

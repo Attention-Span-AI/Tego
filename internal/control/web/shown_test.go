@@ -126,7 +126,7 @@ func TestLiveBlockRowsSayWhoBlocked(t *testing.T) {
 		t.Error("Logs does not say the refusal was a live block")
 	}
 	ap := do(s, "GET", "/approvals", "127.0.0.1:8484", c).Body.String()
-	if !strings.Contains(ap, "Answered recently") || !strings.Contains(ap, `asked to <span class="op">write to</span>`) {
+	if !strings.Contains(ap, "Answered recently") || !strings.Contains(ap, `asked to <span class="op" title="open">write to</span>`) {
 		t.Error("Approvals lacks the recent answer, or reads a held write as something else")
 	}
 }

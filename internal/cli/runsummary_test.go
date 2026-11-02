@@ -29,8 +29,9 @@ import (
 )
 
 // summaryLedger writes a finished run under root, anchored in anchor: one refused connection (with its mirroring
-// refused line), one held read a person denied (its ask, answer and refused line), an observed read of an SSH key
-// and three connections to one place. It returns the run id.
+// refused line), one held read a person denied (its ask, answer and refused line), an observed read of an SSH key,
+// three connections to one place, and a write to one file beside writes to /dev/null and the terminal. It returns the
+// run id.
 func summaryLedger(t *testing.T, root, anchor string) string {
 	t.Helper()
 	var host [32]byte
@@ -73,6 +74,10 @@ func summaryLedger(t *testing.T, root, anchor string) string {
 	add(record.KindFS, record.VerdictAllow, "fs.read[/]", "", record.FSPayload{Op: record.FSOpen, Path: "/home/u/.ssh/id_rsa"})
 	for range 3 {
 		add(record.KindNet, record.VerdictAllow, "net[127.0.0.1:9823]", "", record.NetPayload{Proto: "tcp", Dst: "127.0.0.1:9823"})
+	}
+	for _, p := range []record.FSPayload{{Op: record.FSOpen, Path: "/dev/null", Flags: 0o1101},
+		{Op: record.FSOpen, Path: "/dev/tty", Flags: 0o2}, {Op: record.FSOpen, Path: "/w/proj/out.txt", Flags: 0o1101, Created: true}} {
+		add(record.KindFS, record.VerdictAllow, "fs.write[/w/proj/]", "", p)
 	}
 	if err := w.Close(record.RunEndPayload{Reason: record.RunEndExit}); err != nil {
 		t.Fatal(err)
@@ -137,7 +142,8 @@ func TestRunEndSummary(t *testing.T) {
 		t.Fatalf("the summary does not follow the agent's output:\n%s", out)
 	}
 	summary := out[j:]
-	for _, want := range []string{"refused 2 (", "not allowed by any rule 1", "asked 1 (0 approved, 1 denied)", "wrote 0 files",
+	// "wrote 1 file": the writes to /dev/null and /dev/tty are no file written (PW-12).
+	for _, want := range []string{"refused 2 (", "not allowed by any rule 1", "asked 1 (0 approved, 1 denied)", "wrote 1 file · ",
 		"chain verified\n"} {
 		if !strings.Contains(summary, want) {
 			t.Errorf("summary lacks %q:\n%s", want, summary)

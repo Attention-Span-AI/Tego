@@ -299,7 +299,7 @@ cmd_reason_hook() {
 
 cmd_receipt() {
   need_tego
-  say "The receipt: time taken, files changed, each refusal with its rule, refusals over time, stall minutes, tests, asks"
+  say "The receipt: time taken, files written, each refusal with its rule, refusals over time, stall minutes, tests, asks"
   show "'$TEGO' receipt --last 2>&1 | grep -v 'no price table'"
   echo "In the dashboard: open the run (Overview, then the run's id) and its Receipt tab."
 }

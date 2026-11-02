@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/testutil"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
 // TestSeverity: where an action happened and what it was decide its severity; how often it happened does not.
@@ -179,6 +180,38 @@ func TestRefusedRenameOntoAFileThatRunsLater(t *testing.T) {
 		}
 		if s.SeverityOf(e) != want {
 			t.Errorf("line %d (%s %s) reads %v, want %v", e.Seq, e.Kind, e.Target, s.SeverityOf(e), want)
+		}
+	}
+}
+
+// TestLaterFilesHoldTheEngineSet: the engine's built-in deny_write set (agent.BuiltInDenyWriteNames) holds what a
+// change makes run code outside the run when something next reads it, so a refused write to any of it reads High
+// here, in a project and in the home directory: a file by its own name, and a folder the set holds whole by each
+// file in it that laterFiles names, since the folder also holds what an agent writes for itself on every run. A name
+// the set gains that laterFiles and startupFiles leave out fails here, instead of reading Medium on the dashboard.
+func TestLaterFilesHoldTheEngineSet(t *testing.T) {
+	write := func(p string) Severity { return groupSeverity(&Group{Class: "fs", Subject: p, Write: true}, "", nil) }
+	for _, name := range agent.BuiltInDenyWriteNames() {
+		for _, dir := range []string{"/w/proj/", "/home/u/"} {
+			p := dir + name
+			if write(p) == SevHigh {
+				continue
+			}
+			var files []string
+			for _, s := range laterFiles {
+				if rest, ok := strings.CutPrefix(s, "/"+name+"/"); ok {
+					files = append(files, p+"/"+strings.TrimSuffix(rest, "/"))
+				}
+			}
+			if len(files) == 0 {
+				t.Errorf("the engine's built-in deny_write set holds %s, and a refused write to %s reads %v: add it, or "+
+					"the files in it that run code later, to laterFiles", name, p, write(p))
+			}
+			for _, f := range files {
+				if sev := write(f); sev != SevHigh {
+					t.Errorf("%s, a file laterFiles names in the engine's %s, reads %v on a refused write", f, name, sev)
+				}
+			}
 		}
 	}
 }

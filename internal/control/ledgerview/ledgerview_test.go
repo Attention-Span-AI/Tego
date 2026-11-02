@@ -262,8 +262,8 @@ func TestPendingMutationAskShowsBothNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := s.Pending()
-	if len(p) != 1 || p[0].Op != "rename" || p[0].Target != "/p/held/a.tmp -> /p/held/a" || p[0].Hold != "mutation" {
-		t.Fatalf("pending %+v, want rename /p/held/a.tmp -> /p/held/a held as a mutation", p)
+	if len(p) != 1 || p[0].Op != "rename" || p[0].Target != "/p/held/a.tmp → /p/held/a" || p[0].Hold != "mutation" {
+		t.Fatalf("pending %+v, want rename /p/held/a.tmp → /p/held/a held as a mutation", p)
 	}
 }
 

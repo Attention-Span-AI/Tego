@@ -37,8 +37,8 @@
 # claude --settings <that file> followed by the arguments below; ~/.claude, CLAUDE_CONFIG_DIR and .claude/ are not
 # written. Your own --settings, inline or as an absolute path, is merged into it. A wrapper script in place of
 # claude gets TEGO_CLAUDE_SETTINGS instead: have it pass --settings "$TEGO_CLAUDE_SETTINGS". This contract's
-# exec.allow list does not grant the hook yet, so a run says harness-hook-refused (hook-not-granted) and Claude
-# reads refusals through $TEGO_REASON only; a contract with no allow list gets the hook.
+# exec.allow list does not name tego, so the launcher grants the hook's exact argv for this run only (ADR 0064;
+# run_start says harness.hook granted). In ADR 0064 D2's cases the hook is dropped and Claude reads $TEGO_REASON.
 version: 0
 name: claude-code
 command: ["claude", "-p", "--permission-mode", "acceptEdits",

@@ -204,7 +204,7 @@ Receipt for run r-40c94c9f-0dmkbl68johzb-hdcxpr (demo)
 Time taken
   5ms.
 
-Files changed
+Files written
   1 written, 0 created, 0 deleted, 0 renamed.
     Wrote out/tego-hello.txt
 
@@ -244,7 +244,7 @@ Coverage
   record: 1 gap line: tego knows it missed some actions, so the counts are a floor.
 ```
 
-The receipt is the answer to "what did it do?", as far as the record can tell. It lists the time taken, the files changed,
+The receipt is the answer to "what did it do?", as far as the record can tell. It lists the time taken, the files written,
 the connections made, the programs run, any sensitive files read, the refusals the record holds with the rule that refused
 each, how often the agent asked, and the tokens used with an estimated cost. Its Coverage section says what the record could
 not cover, which depends on the tier.

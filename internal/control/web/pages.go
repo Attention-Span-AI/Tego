@@ -370,7 +370,9 @@ func tierWord(t string) string {
 	return t
 }
 
-// reasonText is the short label for a reason code (spec/reason/REASON-CHANNEL.md's set).
+// reasonText is the short label for a reason code (spec/reason/REASON-CHANNEL.md's set). Every code of the closed
+// set (record.Reasons) has one (TestEveryReasonCodeHasDashboardWords); a code outside it, a newer ledger's, reads as
+// written.
 func reasonText(code string) string {
 	switch code {
 	case "write-outside-contract":
@@ -395,12 +397,26 @@ func reasonText(code string) string {
 		return "No answer"
 	case "ask-unavailable", "ask-unreadable":
 		return "The question could not be asked"
+	case "landlock-topology":
+		// A mount, a new namespace or a nested sandbox (SEMANTICS §10), or a signal, limit or priority change aimed at
+		// a process outside the run (rules signal-scope, process-scope).
+		return "Sandbox boundary"
 	case "limit-tokens", "limit-cost", "limit-wall", "limit-stall", "limit-repeats":
 		return "A run limit was reached"
 	case "oom":
 		return "Out of memory"
 	case "pids":
 		return "Too many processes"
+	case "credential-not-allowed":
+		return "Key not allowed there"
+	case "credential-revoked":
+		return "Revoked key"
+	case "credential-unavailable":
+		return "Key unavailable"
+	case "mcp-tool-denied":
+		return "MCP tool blocked"
+	case "model-route-changed":
+		return "Route changed while held"
 	case "":
 		return ""
 	}

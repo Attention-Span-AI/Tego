@@ -20,7 +20,8 @@ import (
 // A word is a literal substring, like the plain search (Filter.Text). A leading - leaves out what the token names
 // (kind, verdict, prog, rule, host, run, agent and words). The same key twice means either value (kind:exec
 // kind:net); pid, path, source, since, until and after take one value, the last given. prog is the program the line's
-// process was running (program.go). A key the language does not know stays a word,
+// process was running (program.go). path is a path and what is under it, whole names only: path:/a/b holds /a/b/c,
+// not /a/bc (Filter.PathPrefix). A key the language does not know stays a word,
 // so text such as unix:/run/x or http://host is searched as written. since and until take a duration back from now
 // (30s, 15m, 2h, 7d) or a local time (2026-10-27, 2026-10-27T01:00, 01:00 today, or RFC 3339).
 
@@ -345,13 +346,16 @@ func (f Filter) And(g Filter) Filter {
 		}
 		out.PID = g.PID
 	}
-	switch {
-	case f.PathPrefix == "" || strings.HasPrefix(g.PathPrefix, f.PathPrefix):
-		out.PathPrefix = g.PathPrefix
-		if g.PathPrefix == "" {
-			out.PathPrefix = f.PathPrefix
-		}
-	case !strings.HasPrefix(f.PathPrefix, g.PathPrefix):
+	// Of two path prefixes the one under the other stays, by the rule a line's names are read with (pathUnder); two
+	// apart match nothing, a rename that names a path under each included (one prefix cannot ask for both). A space
+	// counts as on a command line, so /a/b and "/a/b -x" keep "/a/b -x", a program with its arguments; a file whose
+	// name goes on past that space, "/a/b -x/f", is then kept though /a/b does not hold it.
+	switch a, b := f.PathPrefix, g.PathPrefix; {
+	case b == "" || (a != "" && pathUnder(a, b, true)):
+		// f's prefix stays (out is f).
+	case a == "" || pathUnder(b, a, true):
+		out.PathPrefix = b
+	default:
 		out.none = true
 	}
 	if g.Since.After(f.Since) {

@@ -149,7 +149,8 @@ func TestRenameOneLine(t *testing.T) {
 }
 
 // TestReceiptWords (QU-16): the Receipt says durations as every page does ("30 ms", not "30ms"), drops the stall block on a short
-// run, and words a gap in the record calmly.
+// run, words a gap in the record calmly, and names its files tile and list "Files written", as tego receipt does: an
+// allowed write-open is no proof that a file changed.
 func TestReceiptWords(t *testing.T) {
 	s := newServer(t, markFixture(t))
 	c := login(t, s)
@@ -159,6 +160,10 @@ func TestReceiptWords(t *testing.T) {
 	}
 	if strings.Contains(page, "Stall minutes") {
 		t.Error("a 30 ms run shows the stall block")
+	}
+	if !strings.Contains(page, `<span class="rc-k">Files written</span>`) || !strings.Contains(page, "<h3>Files written</h3>") ||
+		strings.Contains(page, "Files changed") {
+		t.Error(`the Receipt's files tile or list is not named "Files written"`)
 	}
 	v := &receiptView{}
 	if got := v.GapWords("record", "1 gap line: tego knows it missed some actions, so the counts are a floor"); got != "1 gap in the record (counts are a minimum)" {

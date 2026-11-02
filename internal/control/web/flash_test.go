@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/attention-span-ai/tego/internal/control/rules"
 )
 
 // TestFlashShowsOnce: an action's 303 names a flash its page shows once; a reload of the same address shows the
@@ -35,7 +37,8 @@ func TestFlashShowsOnce(t *testing.T) {
 }
 
 // TestDenyFlashLinksToTheRule: a denial on a run with a contract file offers to make it permanent, on the ask's
-// line page; a run without one (tego watch) offers nothing.
+// line page; a run without one (tego watch) offers nothing, and neither does a dashboard without the rule service
+// (Config.Rules), whose line page could only say that policy editing is off.
 func TestDenyFlashLinksToTheRule(t *testing.T) {
 	fakeBroker(t)
 	root := fixture(t)
@@ -48,18 +51,24 @@ func TestDenyFlashLinksToTheRule(t *testing.T) {
 	if err := os.WriteFile(p, []byte(withContract), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	deny := func(s *Server, back string) string {
+		t.Helper()
+		c := login(t, s)
+		tok := csrfOf(t, s, c, "/approvals")
+		return follow(t, s, c, post(s, "/approvals/answer", url.Values{"csrf": {tok}, "run": {harmRun}, "ask": {"ask-7"}, "decision": {"deny"}}, own, back, c))
+	}
 	s := newServer(t, root)
-	c := login(t, s)
-	tok := csrfOf(t, s, c, "/approvals")
-	page := follow(t, s, c, post(s, "/approvals/answer", url.Values{"csrf": {tok}, "run": {harmRun}, "ask": {"ask-7"}, "decision": {"deny"}}, own, own+"/runs/"+harmRun, c))
-	if !strings.Contains(page, `href="/runs/`+harmRun+`/lines/5?decided=1#act">Make it permanent: Never allow</a>`) {
+	s.cfg.Rules = &rules.Service{Ledger: root, Now: s.cfg.Now}
+	if page := deny(s, own+"/runs/"+harmRun); !strings.Contains(page, `href="/runs/`+harmRun+`/lines/5?decided=1#act">Make it permanent: Never allow</a>`) {
 		t.Errorf("the Deny line does not link to the ask's line page")
+	}
+	if page := deny(newServer(t, root), own+"/runs/"+harmRun); !strings.Contains(page, "Denied: ") || strings.Contains(page, "Make it permanent") {
+		t.Error("a dashboard without the rule service offers to make a denial permanent")
 	}
 
 	plain := newServer(t, fixture(t))
-	pc := login(t, plain)
-	ptok := csrfOf(t, plain, pc, "/approvals")
-	if b := follow(t, plain, pc, post(plain, "/approvals/answer", url.Values{"csrf": {ptok}, "run": {harmRun}, "ask": {"ask-7"}, "decision": {"deny"}}, own, "", pc)); strings.Contains(b, "Make it permanent") {
+	plain.cfg.Rules = &rules.Service{Ledger: plain.cfg.Ledger, Now: plain.cfg.Now}
+	if b := deny(plain, ""); strings.Contains(b, "Make it permanent") {
 		t.Error("a run with no contract file offers to make a denial permanent")
 	}
 }

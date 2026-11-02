@@ -315,6 +315,8 @@ func TestNoticeTarget(t *testing.T) {
 	for _, tc := range []struct{ in, prefix, suffix string }{
 		{"/p/proj/confidential/plan.md", "./confidential/plan.md", ""}, // short: whole
 		{"example.com:443", "example.com:443", ""},
+		{"/p/proj/src/a.tmp → /p/proj/src/a", "./src/a.tmp → ./src/a", ""},                                   // a held rename's two names, each shortened
+		{"/p/proj/src/current → ../releases/v2", "./src/current → ../releases/v2", ""},                       // a symlink's stored target as written
 		{"/p/proj/" + strings.Repeat("folder/", 40) + "plan.md", "./folder/folder/", "older/folder/plan.md"}, // the file name kept
 		{"/p/proj/" + strings.Repeat("n", 300), "./nnn", "nnn"},                                              // one huge name
 		{"curl " + strings.Repeat("a", 300), "curl aaa", "aaa"},                                              // a command line

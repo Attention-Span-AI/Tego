@@ -125,6 +125,57 @@ func TestBuiltInDenyWriteSet(t *testing.T) {
 	}
 }
 
+// TestBuiltInDenyWriteNames: the names are the set compile holds, each where the set looks for it. A repository that
+// is the write entry and holds every name (a git directory's beneath its .git), with the home directory's names
+// linking into it as a dotfiles repository's do, has each of them held and nothing else; and a caller that changes
+// the list it was given changes no one else's.
+func TestBuiltInDenyWriteNames(t *testing.T) {
+	f := newFixture(t)
+	work := filepath.Join(f.project, "work")
+	gitRepo(t, f, work)
+	for _, n := range BuiltInDenyWriteNames() {
+		p := filepath.Join(work, n)
+		if _, err := os.Lstat(p); err == nil {
+			continue // .git/hooks and .git/config, which gitRepo made
+		}
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		f.file(p, "", 0o644)
+	}
+	for _, n := range denyWriteInHome {
+		link := filepath.Join(f.home, n.name)
+		if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(work, n.name), link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	BuiltInDenyWriteNames()[0] = "changed by a caller"
+
+	rt, _ := f.compile(f.load("version: 0\nname: t\ncommand: [\"python\"]\nfs:\n  write: [\"work/\"]\n"))
+	held := map[string]bool{}
+	for _, r := range rt.DenyWrite {
+		rel, err := filepath.Rel(work, r.Path)
+		if err != nil || !filepath.IsLocal(rel) {
+			rel, _ = filepath.Rel(f.home, r.Path)
+		}
+		held[filepath.ToSlash(rel)] = true
+	}
+	names := BuiltInDenyWriteNames()
+	for _, n := range names {
+		if !held[n] {
+			t.Errorf("BuiltInDenyWriteNames has %s, which compile does not hold: %v", n, denyWritePaths(rt))
+		}
+	}
+	for n := range held {
+		if !slices.Contains(names, n) {
+			t.Errorf("compile holds %s, which BuiltInDenyWriteNames %v lacks", n, names)
+		}
+	}
+}
+
 // TestDenyWriteOptOut is R20's opt-out: naming a target in fs.write drops it from the set, and an entry
 // inside a target keeps the target in the set; neither is reported as a redundant entry, which would tell
 // the author to take the grant back.

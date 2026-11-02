@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/pkg/spec/askproto"
 )
@@ -68,7 +69,9 @@ func TestBidiAndToastInChrome(t *testing.T) {
 		d := askproto.Decision{AskID: id, Approved: approve, Always: always}
 		return runact.Answered{Run: run, Decision: d, Word: runact.AnswerWord(d, always)}, nil
 	}
-	_, addr, _ := liveServer(t, root, 10*time.Second, 30*time.Second)
+	s, addr, _ := liveServer(t, root, 10*time.Second, 30*time.Second)
+	// The Deny toast carries Make it permanent only on a dashboard with the rule service, as tego-control serve's.
+	s.cfg.Rules = &rules.Service{Ledger: root, Now: s.cfg.Now, Check: func(string, string, []byte) error { return nil }}
 
 	cmdR, cmdW, err := os.Pipe()
 	if err != nil {

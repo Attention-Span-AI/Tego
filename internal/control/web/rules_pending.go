@@ -64,8 +64,8 @@ func liveWords(key string, sh shortener) string {
 		return key
 	}
 	v := sh.text(value)
-	if strings.HasPrefix(v, "/") && sh.cwd != "" && value == strings.TrimSuffix(sh.cwd, "/") {
-		v = "." // the run's own folder
+	if sh.cwd != "" && value == strings.TrimSuffix(sh.cwd, "/") {
+		v = "." // the run's own folder, which text writes ./ as the contract does
 	}
 	switch kind {
 	case "exec":

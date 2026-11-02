@@ -498,6 +498,121 @@ func TestDecidedByTheAsksOwnRefusal(t *testing.T) {
 	}
 }
 
+// TestDecidedByANetAsksOwnRefusal: a connection's ask names its address (udp://… for UDP), its refusal's net line
+// reads "host (address)" and that line's kind=refused mirror the address alone. With asks pending under one net.ask
+// entry (TCP and UDP to the same address among them), the link from each opens its own refusal's net line: never
+// another ask's, never a mirror, never the refusal of a connect nobody was asked about; a first write's refusal names
+// its ask's target; an ask whose refusal is not written yet opens none.
+func TestDecidedByANetAsksOwnRefusal(t *testing.T) {
+	root := t.TempDir()
+	const rule = "net.ask[api.example.com:443]"
+	type askLine struct {
+		record.AskPayload
+		Op      string `json:"op"`
+		Target  string `json:"target"`
+		AskRule string `json:"ask_rule"`
+	}
+	ask := func(id, hold, target string) *record.Event {
+		return ledgertest.Event(t, record.KindAsk, askLine{record.AskPayload{AskID: id, Hold: hold}, "connect", target, rule})
+	}
+	// refusal is the net line a refused connect writes (supervisor refuseAskConnect) and the mirror the pipeline adds.
+	refusal := func(proto, dst string, reason record.Reason) []*record.Event {
+		return []*record.Event{
+			ledgertest.Event(t, record.KindNet, record.NetPayload{Proto: proto, Dst: dst, Host: "api.example.com"}, func(e *record.Event) {
+				e.Rule, e.Verdict, e.Reason, e.Authority = rule, record.VerdictRefused, reason, record.AuthorityHuman
+				e.Attr = &record.Attribution{Confidence: "unattributed", Method: "none"}
+			}),
+			ledgertest.Event(t, record.KindRefused, record.RefusedPayload{Op: "net", Target: dst}, func(e *record.Event) {
+				e.Rule, e.Reason = rule, reason
+			}),
+		}
+	}
+	evs := []*record.Event{
+		ledgertest.Event(t, record.KindRunStart, record.RunStartPayload{Tier: "landlock", Capture: "off",
+			ContractHash: strings.Repeat("0", 64), Command: []string{"sh"}, Cwd: "/p", Kernel: "6", StopGrace: "1s"}),
+		ask("n1", "connect", "192.0.2.1:443"),
+		ask("n2", "connect", "192.0.2.2:443"),
+		ask("n3", "connect", "udp://192.0.2.1:443"),
+		ask("n4", "first_write", "192.0.2.4:443"),
+	}
+	evs = append(evs, refusal("tcp", "192.0.2.2:443", record.ReasonAskDenied)...)      // #5, #6: n2's
+	evs = append(evs, refusal("tcp", "192.0.2.3:443", record.ReasonAskUnavailable)...) // #7, #8: nobody was asked
+	evs = append(evs, ledgertest.Event(t, record.KindRefused, record.RefusedPayload{Op: "first_write", Target: "192.0.2.4:443"},
+		func(e *record.Event) { e.Rule, e.Reason = rule, record.ReasonAskDenied })) // #9: n4's
+	open := func(phase string, want map[int]uint64) {
+		t.Helper()
+		writeLines(t, root, actRun, evs)
+		rr, err := ledgerview.LoadRun(root, actRun)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, seq := range want {
+			got := uint64(0) // none
+			if d := decidedBy(rr, &rr.Events[i]); d != nil {
+				got = d.Seq
+			}
+			if got != seq {
+				t.Errorf("%s: ask #%d opens #%d, want #%d (#0: none)", phase, i, got, seq)
+			}
+		}
+	}
+	open("one denied", map[int]uint64{1: 0, 2: 5, 3: 0, 4: 9})
+	evs = append(evs, refusal("udp", "192.0.2.1:443", record.ReasonAskDenied)...) // #10, #11: n3's
+	open("the UDP one denied", map[int]uint64{1: 0, 3: 10})
+	evs = append(evs, refusal("tcp", "192.0.2.1:443", record.ReasonAskTimeout)...) // #12, #13: n1's
+	open("all answered", map[int]uint64{1: 12, 2: 5, 3: 10, 4: 9})
+}
+
+// TestShortenerFoldsWholePaths: the Act panel writes a path under the run's working directory ./… and under its home
+// ~/…, and either folder itself ./ or ~/ as the contract spells a folder, wherever the path stands in the engine's
+// sentence (after a space, "[", ":", "(" or a quote; before "/", the end, a space, ",", ";", ")", "]", a quote or ": ").
+// Only a whole path is folded: a sibling that shares the folder's name as a prefix, another path that holds the
+// folder inside it, and a name that goes on past it stay as they are.
+func TestShortenerFoldsWholePaths(t *testing.T) {
+	sh := shortener{cwd: "/w/proj", home: "/h/u"}
+	for in, want := range map[string]string{
+		"/w/proj/vault/token":              "./vault/token",
+		"Can never read /w/proj/vault/":    "Can never read ./vault/",
+		"Every file under /w/proj/":        "Every file under ./",
+		"Can never write /w/proj":          "Can never write ./",
+		"/w/proj":                          "./",
+		"(/w/proj)":                        "(./)",
+		"fs.write[/w/proj]":                "fs.write[./]",
+		"read:/w/proj, write:/w/proj/out":  "read:./, write:./out",
+		`entry "/w/proj" and "/h/u/.ssh/"`: `entry "./" and "~/.ssh/"`,
+		"the folder of /h/u/x is /h/u: too wide; name the file": "the folder of ~/x is ~/: too wide; name the file",
+		"/h/u/.ssh/id_rsa":             "~/.ssh/id_rsa",
+		"Opening /h/u":                 "Opening ~/",
+		"Can never read /w/projects/x": "Can never read /w/projects/x",
+		"/w/proj2":                     "/w/proj2",
+		"/w/proj.bak":                  "/w/proj.bak",
+		"/w/proj:x":                    "/w/proj:x",
+		"/srv/w/proj/vault/":           "/srv/w/proj/vault/",
+		"/mnt/h/u/.ssh/":               "/mnt/h/u/.ssh/",
+		"/h/user/.ssh/":                "/h/user/.ssh/",
+		"Cannot read /etc/shadow":      "Cannot read /etc/shadow",
+		"":                             "",
+	} {
+		if got := sh.text(in); got != want {
+			t.Errorf("text(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// The deeper folder wins, whichever of the two it is; a tie goes to the working directory; "/" and "" fold nothing.
+	for _, c := range []struct {
+		sh       shortener
+		in, want string
+	}{
+		{shortener{cwd: "/h/u/proj", home: "/h/u"}, "/h/u/proj/a /h/u/proj /h/u/b /h/u", "./a ./ ~/b ~/"},
+		{shortener{cwd: "/h", home: "/h/u"}, "/h/u/a /h/v /h", "~/a ./v ./"},
+		{shortener{cwd: "/h/u", home: "/h/u"}, "/h/u/a /h/u", "./a ./"},
+		{shortener{cwd: "/", home: ""}, "/a /", "/a /"},
+	} {
+		if got := c.sh.text(c.in); got != c.want {
+			t.Errorf("%+v text(%q) = %q, want %q", c.sh, c.in, got, c.want)
+		}
+	}
+}
+
 // revertErr is an ActService whose Revert refuses with err.
 type revertErr struct{ err error }
 

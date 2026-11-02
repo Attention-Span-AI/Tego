@@ -175,12 +175,12 @@ func (v *receiptView) Spark() []sparkCol {
 // SparkBox is the sparkline's viewBox.
 func (v *receiptView) SparkBox() string { return "0 0 300 40" }
 
-// fileRow is one line of the files-changed list.
+// fileRow is one line of the files-written list.
 type fileRow struct {
 	Verb, Path, To string
 }
 
-// Files is the files-changed list, renames last, at most receiptFilesShown rows.
+// Files is the files-written list, renames last, at most receiptFilesShown rows.
 func (v *receiptView) Files() []fileRow {
 	f := v.R.Files
 	var out []fileRow

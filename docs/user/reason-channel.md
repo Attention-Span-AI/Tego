@@ -72,9 +72,12 @@ If your command is a wrapper script rather than `claude` itself, Tego leaves its
 `TEGO_CLAUDE_SETTINGS` to the file's path; have the wrapper pass --settings "$TEGO_CLAUDE_SETTINGS" to claude. The
 Agent SDK takes the same path as its settings.
 
-A contract with an `exec: allow` list does not get the hook yet: the run says so (`harness-hook-refused`,
-`hook-not-granted`) and the agent still has `$TEGO_REASON`. The hook is also left out when the contract's own rules
-would refuse the tego binary.
+A contract with an `exec: allow` list that does not name tego gets the hook all the same: the launcher grants the
+hook's exact command line for that run and no other tego command, and `run_start` says so (`harness.hook` granted,
+`exec.harness-hook[<tego binary>]` under `runtime_grants`; ADR 0064). Where that grant could be turned against the
+run, such as a write or `fs.ask` entry over the tego binary, the hook is left out with a `harness-hook-refused`
+warning and the agent still has `$TEGO_REASON`. The hook is also left out when the contract's own rules would refuse
+the tego binary.
 
 The hook also has a `--mode stderr`, for a hook you wire by hand: it prints the same text on stderr with exit 2,
 which Claude Code shows to Claude after a tool call and at the end of a turn. Tego's own settings file always uses

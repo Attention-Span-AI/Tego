@@ -35,8 +35,10 @@ type Filter struct {
 	Agents []string
 	PID    int      // the envelope's process; 0 is any
 	Rules  []string // a rule key exactly, or the keys a prefix ending in * starts
-	// PathPrefix is a prefix of a path the line names: an fs line's path or second path, a refused line's target, an
-	// exec line's program path or argv, an ask's target. A leading ~ is each run's home (RunHome).
+	// PathPrefix is a path the line names or a folder it is under, whole names only (pathUnder): /a/b matches /a/b and
+	// /a/b/c, not /a/bc, and a prefix that ends in / only what is under it. The names: an fs line's path or second
+	// path, a refused line's target, an exec line's program path or the program its argv starts with, the program a
+	// run's command starts with, an ask's or answer's target. A leading ~ is each run's home (RunHome).
 	PathPrefix string
 	Hosts      []string // Event.Host, case-insensitive
 	// Programs is the program the line's process was running (program.go), case-insensitive: curl, bash, codex.
@@ -221,20 +223,39 @@ func ruleMatches(rules []string, rule string) bool {
 	return false
 }
 
-// pathHas reports whether a path line e names starts with prefix (Filter.PathPrefix, ~ already expanded).
+// pathHas reports whether a path line e names is prefix or under it (Filter.PathPrefix, ~ already expanded). An exec
+// line's argv and a run's command are command lines, where a space ends the program's path.
 func pathHas(e *Event, prefix string) bool {
 	switch e.Kind {
 	case "fs":
 		p, p2, two := strings.Cut(e.Target, " → ")
-		return strings.HasPrefix(p, prefix) || (two && strings.HasPrefix(p2, prefix))
-	case "refused", "run_start":
-		return strings.HasPrefix(e.Target, prefix)
+		return pathUnder(p, prefix, false) || (two && pathUnder(p2, prefix, false))
+	case "refused":
+		return pathUnder(e.Target, prefix, false)
+	case "run_start":
+		return pathUnder(e.Target, prefix, true)
 	case "exec":
-		return strings.HasPrefix(e.path, prefix) || strings.HasPrefix(e.Target, prefix)
+		return pathUnder(e.path, prefix, false) || pathUnder(e.Target, prefix, true)
 	case "ask", "answer":
-		return strings.HasPrefix(e.askTarget, prefix)
+		// Each name as recorded: the target, and a held rename's or link's second name, as an fs line's two names.
+		return pathUnder(e.askName, prefix, false) || (e.askName2 != "" && pathUnder(e.askName2, prefix, false))
 	}
 	return false
+}
+
+// pathUnder reports whether name is prefix or a name under it: prefix then a / (/a/b/c is under /a/b, /a/bc is not),
+// or anything after a prefix that ends in / itself. On a command line (cmd) a space after prefix ends the program's
+// path too, so /usr/bin/curl holds "/usr/bin/curl -s x". A plain string prefix let path:/a/b list /a/bc and path:~
+// list a neighbour's home, /home/ux beside /home/u.
+func pathUnder(name, prefix string, cmd bool) bool {
+	rest, ok := strings.CutPrefix(name, prefix)
+	switch {
+	case !ok:
+		return false
+	case rest == "" || strings.HasSuffix(prefix, "/"):
+		return true
+	}
+	return rest[0] == '/' || (cmd && rest[0] == ' ')
 }
 
 // matcher is a Filter made ready for one Query or Each: its cursor read, its words lower-cased.

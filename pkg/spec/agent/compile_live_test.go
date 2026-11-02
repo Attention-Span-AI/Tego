@@ -80,15 +80,26 @@ var liveKey = regexp.MustCompile(`(?m)^live:`)
 
 // liveOffContracts lists every contract under pkg/spec/agent/testdata/good and examples/, and tego
 // init's starter (written to dir with its name filled in).
+// generatedExamples are the folders under examples/ that the demo kits write their runs into, each git-ignored
+// (.gitignore's examples/demo/stage/, examples/supply-chain-demo/.gitignore's /with/): a checkout that ran a demo
+// holds contracts there that were never committed and have no golden.
+var generatedExamples = []string{"demo/stage", "supply-chain-demo/with"}
+
 func liveOffContracts(t *testing.T, dir string) []goldenContract {
 	t.Helper()
 	var out []goldenContract
-	add := func(root, prefix string) {
+	add := func(root, prefix string, skip []string) {
 		err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			if d.IsDir() || (filepath.Ext(p) != ".yaml" && filepath.Ext(p) != ".yml") {
+			if d.IsDir() {
+				if rel, _ := filepath.Rel(root, p); slices.Contains(skip, filepath.ToSlash(rel)) {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			if filepath.Ext(p) != ".yaml" && filepath.Ext(p) != ".yml" {
 				return nil
 			}
 			if strings.Contains(filepath.ToSlash(p), "/profiles/") {
@@ -109,8 +120,8 @@ func liveOffContracts(t *testing.T, dir string) []goldenContract {
 			t.Fatal(err)
 		}
 	}
-	add(filepath.Join("testdata", "good"), "testdata__good__")
-	add(filepath.Join(repoRoot, "examples"), "examples__")
+	add(filepath.Join("testdata", "good"), "testdata__good__", nil)
+	add(filepath.Join(repoRoot, "examples"), "examples__", generatedExamples)
 	starter, err := os.ReadFile(filepath.Join(repoRoot, "internal", "cli", "agent.starter.yaml"))
 	if err != nil {
 		t.Fatal(err)

@@ -34,7 +34,7 @@ func TestReceiptAgreesWithMeasure(t *testing.T) {
 		Coverage struct {
 			Complete bool `json:"complete"`
 			Gaps     []struct {
-				Field, Why string
+				Field, Code, Why string
 			} `json:"gaps"`
 		} `json:"coverage"`
 	}
@@ -59,20 +59,29 @@ func TestReceiptAgreesWithMeasure(t *testing.T) {
 		rc.Tokens.Cost != m.Cost || rc.Tokens.CostText != m.CostLabel {
 		t.Errorf("receipt %+v\nmeasure %+v", rc, m)
 	}
-	// The fixture holds a capture gap and a record gap: the receipt says its counts are a floor.
-	if rc.Coverage.Complete || !strings.Contains(out, `"field": "record"`) {
+	// The fixture holds a capture gap and a record gap: the receipt says its counts are a floor, and names each gap by
+	// its code too.
+	if rc.Coverage.Complete || !strings.Contains(out, `"field": "record"`) || !strings.Contains(out, `"code": "missed-actions"`) {
 		t.Errorf("coverage = %+v", rc.Coverage)
+	}
+	for _, g := range rc.Coverage.Gaps {
+		if g.Code == "" {
+			t.Errorf("a coverage gap without its code: %+v", g)
+		}
 	}
 
 	code, text, errs := run(t, "receipt", dir)
 	if code != identity.ExitOK {
 		t.Fatalf("text: exit %d (stderr %q)", code, errs)
 	}
-	for _, want := range []string{"Receipt for run", "Time taken", "Files changed", "Refused actions", "Tokens and model calls",
+	for _, want := range []string{"Receipt for run", "Time taken", "\nFiles written\n", "Refused actions", "Tokens and model calls",
 		"Coverage", "Cost: "} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the text receipt has no %q:\n%s", want, text)
 		}
+	}
+	if strings.Contains(text, "Files changed") {
+		t.Errorf("the text receipt still says Files changed, not Files written:\n%s", text)
 	}
 }
 

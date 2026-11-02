@@ -48,17 +48,20 @@ type Service struct {
 	ackOnce sync.Once
 
 	// Test seams: a run directory's liveness, a running run's held reads, a live block's placement, and a run's live
-	// facts (runact.StartFacts); a live block's removal and a run's live block keys now (lift.go).
+	// facts (runact.StartFacts); a live block's removal and a run's live block keys now (lift.go); the clock a
+	// listing of the ledger root is judged settled by (contracts.go, starts), nil for time.Now.
 	live      func(dir string) bool
 	readsHeld func(run string) (bool, string)
 	block     func(ctx context.Context, run, kind, value string) error
 	facts     func(run string) livestatus.Facts
 	unblock   func(ctx context.Context, run, kind, value string) error
 	overlay   func(run string) []string
+	clock     func() time.Time
 
-	mu    sync.Mutex
-	cache map[string]start // run_start by run id (contracts.go)
-	feed  *feedCache       // the last rule-change feed read (feed.go)
+	mu      sync.Mutex
+	cache   map[string]start // run_start by run id (contracts.go)
+	listing *listing         // the ledger root's last listing, kept while the root's key stays the same (contracts.go)
+	feed    *feedCache       // the last rule-change feed read (feed.go)
 
 	readMu sync.Mutex
 	reads  map[string]readMemo // each contract's guarded-read view by path, while the file looks the same (contracts.go)

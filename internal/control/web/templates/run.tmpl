@@ -116,7 +116,7 @@
 {{with $v.Command}}<div class="rc-cmd mono" title="{{.}}">{{cut . 140}}</div>{{end}}</div>
 <ul class="rc-tiles" aria-label="The run in numbers">
 <li class="rc-tile"><span class="rc-k">Time taken</span><span class="rc-v">{{$v.Took}}</span><span class="rc-s">{{if .Time.SoFar}}so far{{else if .Stall.Windows}}{{.Stall.Minutes}} min quiet{{else}}no stall{{end}}</span></li>
-<li class="rc-tile"><span class="rc-k">Files changed</span>{{if .Files.Recorded}}<span class="rc-v">{{.Files.Changed}}</span><span class="rc-s">{{len .Files.Created}} new · {{len .Files.Written}} written · {{len .Files.Deleted}} deleted</span>{{else}}<span class="rc-v rc-na">–</span><span class="rc-s">not recorded at this protection level</span>{{end}}</li>
+<li class="rc-tile"><span class="rc-k">Files written</span>{{if .Files.Recorded}}<span class="rc-v">{{len .Files.Written}}</span><span class="rc-s">{{len .Files.Created}} new · {{len .Files.Deleted}} deleted{{with .Files.Renamed}} · {{len .}} renamed{{end}}</span>{{else}}<span class="rc-v rc-na">–</span><span class="rc-s">not recorded at this protection level</span>{{end}}</li>
 <li class="rc-tile{{if .Refusals.Total}} rc-bad{{end}}"><span class="rc-k">Blocked</span><span class="rc-v">{{.Refusals.Total}}</span><span class="rc-s">{{if .Refusals.Total}}by {{len .Refusals.ByRule}} {{plural (len .Refusals.ByRule) "rule" "rules"}}{{else}}nothing refused{{end}}</span></li>
 <li class="rc-tile{{if .Asks.Unanswered}} rc-warn{{end}}"><span class="rc-k">Asked you</span><span class="rc-v">{{.Asks.Asked}}</span><span class="rc-s">{{if .Asks.Asked}}{{.Asks.Approved}} approved · {{.Asks.Denied}} denied{{if .Asks.TimedOut}} · {{.Asks.TimedOut}} timed out{{end}}{{if .Asks.Unanswered}} · {{.Asks.Unanswered}} open{{end}}{{else}}never asked{{end}}</span></li>
 <li class="rc-tile"><span class="rc-k">Model tokens</span>{{if .Tokens.Recorded}}<span class="rc-v">{{$v.TokensText}}</span><span class="rc-s">{{.Tokens.ModelCalls}} {{plural .Tokens.ModelCalls "call" "calls"}}{{if lt .Tokens.Unpriced .Tokens.Metered}} · {{.Tokens.CostText}}{{end}}</span>{{else}}<span class="rc-v rc-na">–</span><span class="rc-s">model traffic not captured</span>{{end}}</li>
@@ -152,11 +152,11 @@
 </div>
 {{if .Refusals.List}}<div class="panel-body rc-block"><h3>Refused actions <span class="soft">· oldest first</span></h3><ul class="list rc-list">{{range $v.Refused}}<li>{{template "i" "i-ban"}}<span class="mono soft rc-t">{{clock .TS}}</span><span class="op">{{.Op}}</span> <span class="ut" title="{{.Target}}">{{cut .Target 90}}</span><span class="soft rc-rr" title="{{.Rule}}">{{ruleName .Rule}}</span></li>{{end}}</ul>
 {{if $v.MoreRefused}}<p class="soft">and {{$v.MoreRefused}} more on the <a class="link" href="/runs/{{pathEsc .Run}}/refusals">Refusals tab</a>.</p>{{end}}</div>{{end}}
-<div class="panel-body rc-block"><h3>Files changed</h3>
+<div class="panel-body rc-block"><h3>Files written</h3>
 {{if not .Files.Recorded}}<p class="soft">{{.Files.Note}}.</p>
 {{else if $v.Files}}<ul class="list rc-list">{{range $v.Files}}<li><span class="rc-verb rc-{{.Verb}}">{{.Verb}}</span><span class="ut" title="{{.Path}}">{{cut .Path 100}}</span>{{if .To}} <span class="soft">to</span> <span class="ut" title="{{.To}}">{{cut .To 100}}</span>{{end}}</li>{{end}}</ul>
 {{if $v.MoreFiles}}<p class="soft">and {{$v.MoreFiles}} more: <span class="mono">tego receipt {{.Run}}</span> lists them.</p>{{end}}
-{{else}}<p class="soft">It changed no file.</p>{{end}}</div>
+{{else}}<p class="soft">It wrote no file.</p>{{end}}</div>
 {{if .Asks.List}}<div class="panel-body rc-block"><h3>Times it asked you</h3><ul class="list rc-list">{{range .Asks.List}}<li><span class="b {{if eq .Answer "approved"}}b-allowed{{else if .Answer}}b-refused{{else}}b-waiting{{end}}">{{if .Answer}}{{.Answer}}{{else}}open{{end}}</span><span class="op">{{.Op}}</span> <span class="ut" title="{{.Target}}">{{cut .Target 90}}</span>{{if .By}}<span class="soft rc-rr" title="{{.By}}">by {{who .By}}{{if .AfterS}} after {{secs .AfterS}}{{end}}</span>{{end}}</li>{{end}}</ul></div>{{end}}
 <div class="panel-body rc-block rc-cov"><h3>What this receipt can vouch for</h3>
 {{if .Coverage.Complete}}<p class="rc-ok">{{template "i" "i-check"}}Complete: every field above was read off a ledger that records it.</p>

@@ -40,7 +40,7 @@ under "The feature scenes" below.
 | Reason, status file | `./demo.sh with` (step 7), `./demo.sh why` | the agent reads `$TEGO_REASON`: "Tego refused open ... (rule ...)" | run page, Refusals tab |
 | Reason, Claude Code hook | `./demo.sh reason-hook` | a stand-in Claude Code (no login) under Tego; its next model request carries "Tego refused open ..." | run page of `demo-claude-standin` |
 | Reason, real Claude Code | `./demo.sh claude` | ask it to read `~/.ssh/id_rsa`; it says why it was refused | the run, live |
-| Receipt | `./demo.sh receipt` | `tego receipt --last`: time, files changed, refusals with rules, asks | run page, Receipt tab |
+| Receipt | `./demo.sh receipt` | `tego receipt --last`: time, files written, refusals with rules, asks | run page, Receipt tab |
 | Presets | `./demo.sh presets` | `tego init --preset no-secrets,no-prod,repo-only-writes ...`, `tego compile`, the rogue agent under it | Rules (`/rules`) |
 | Escape self-test | `./demo.sh selftest` | `tego test`: four tricks, each succeeds without Tego and is refused under it, with its rule | none |
 | Approvals | `./demo.sh ask`, then `./demo.sh approve` (or `deny`) in a 2nd terminal | the agent pauses on a write to `held/` until you answer | Approvals (`/approvals`): Approve / Deny |

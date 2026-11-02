@@ -129,7 +129,8 @@ type TimeTaken struct {
 }
 
 // Files is what the run changed on disk, as its allowed fs lines record it. A failed or refused operation is not
-// a change; a read is not one either.
+// a change; a read is not one either, and neither is a write to a device that holds no file (device: /dev/null,
+// the terminal).
 type Files struct {
 	Recorded  bool     `json:"recorded"`
 	Note      string   `json:"note,omitempty"`
@@ -248,11 +249,43 @@ type Coverage struct {
 	Gaps     []CoverageGap `json:"gaps"`
 }
 
-// CoverageGap is one field the ledger could not support in full: its JSON key and why.
+// CoverageGap is one field the ledger could not support in full: its JSON key, why as a code a program can match (one
+// of the Code constants) and why in words. Why's words may change; a code never does, and a new reason gets a new
+// one.
 type CoverageGap struct {
 	Field string `json:"field"`
+	Code  string `json:"code"`
 	Why   string `json:"why"`
 }
+
+// The coverage codes, each with the field it is given on. The first six are the receipt design's why codes; the
+// others name the gaps this receipt reports beyond them.
+const (
+	// CodeNoCapabilities: the ledger has no capabilities line, so whether it records allowed writes is not known (files).
+	CodeNoCapabilities = "no-capabilities-line"
+	// CodeRecordOff: the run's tier records refused writes only (files).
+	CodeRecordOff = "record-off"
+	// CodeCaptureOff: model traffic capture was off (tokens).
+	CodeCaptureOff = "capture-off"
+	// CodeCaptureGap: capture gap lines say tego could not read some model traffic, so the token counts are a floor
+	// (tokens.capture).
+	CodeCaptureGap = "capture-gap"
+	// CodeUnmetered: some model responses carried no token counts (tokens).
+	CodeUnmetered = "unmetered-responses"
+	// CodeModelTimeUnseen: model traffic was not captured, so time spent waiting on the model counts as quiet (stall).
+	CodeModelTimeUnseen = "model-time-unseen"
+	// CodeTruncated: a list stops at its cap; the counts beside it are complete (files, refusals.list).
+	CodeTruncated = "truncated"
+	// CodeUnpriced: some metered responses had no price (tokens.est_cost_usd).
+	CodeUnpriced = "unpriced-responses"
+	// CodeNoPriceTable: the run had no usable price table and the reader gave none, so the cost is not estimated
+	// (tokens.est_cost_usd).
+	CodeNoPriceTable = "no-price-table"
+	// CodeMissedActions: gap lines say tego missed some actions, so the counts are a floor (record).
+	CodeMissedActions = "missed-actions"
+	// CodeNoRunEnd: the run has no run_end line yet (time_taken).
+	CodeNoRunEnd = "no-run-end"
+)
 
 // ErrNoRun is a ledger whose first line is not run_start.
 var ErrNoRun = errors.New("no run record")
@@ -318,6 +351,7 @@ type builder struct {
 	gapLines    int  // gap lines that may have lost actions: the record's counts are a floor
 	captureGaps int  // gap what=capture lines: model traffic tego could not read
 	noPrice     bool // a gap said the run had no usable price table
+	devWrite    bool // an allowed write reached a device, which Files does not list (device)
 	act         activity
 }
 
@@ -540,10 +574,10 @@ func (b *builder) file(e *record.Event, p *payload) {
 			b.act.fresh[p.Path] = true
 		}
 		if p.Flags&(oWronly|oRdwr|oTrunc|oAppend) != 0 {
-			b.add(&f.Written, "w", p.Path)
+			b.written(p)
 		}
 	case record.FSTruncate:
-		b.add(&f.Written, "w", p.Path)
+		b.written(p)
 	case record.FSMkdir, record.FSSymlink, record.FSLink:
 		b.add(&f.Created, "c", p.Path)
 	case record.FSUnlink, "rmdir":
@@ -556,6 +590,29 @@ func (b *builder) file(e *record.Event, p *payload) {
 		f.Renamed = append(f.Renamed, Rename{From: p.Path, To: p.Path2})
 	}
 }
+
+// written lists p's path among the files written, unless the write reached a device that holds no file (device). An
+// open that created its file made a regular file, whatever its name, so that one is listed.
+func (b *builder) written(p *payload) {
+	if !p.Created && device(p.Path) {
+		b.devWrite = true
+		return
+	}
+	b.add(&b.rc.Files.Written, "w", p.Path)
+}
+
+// devices are the device files a write reaches no file through: the byte sinks and sources, and the terminal. A run
+// writes to them all the time (a shell's 2>/dev/null, a full-screen agent's /dev/tty, Codex's pseudo-terminals), and
+// listing them had the demo's watched run say "wrote 3 files" (QA PW-12). internal/runtime's heldWriteExempt names the
+// same set, which this package may not import. A name that only stands for a descriptor (/dev/stdout, /dev/fd/N,
+// /proc/self/fd/N) is not one of them: a write through it can reach a regular file the ledger names nowhere else.
+var devices = map[string]bool{"/dev/null": true, "/dev/zero": true, "/dev/full": true, "/dev/random": true,
+	"/dev/urandom": true, "/dev/tty": true, "/dev/console": true, "/dev/ptmx": true}
+
+// device reports whether path, as the line names it, is one of devices or a pseudo-terminal (/dev/pts/N). The name
+// is compared as recorded, never cleaned: an older ledger's "/a/lk/../../dev/null" cleans to /dev/null lexically, yet
+// names a file elsewhere when lk is a symlink.
+func device(path string) bool { return devices[path] || strings.HasPrefix(path, "/dev/pts/") }
 
 func (b *builder) ask(e *record.Event, p *payload) {
 	a := &b.rc.Asks
@@ -706,10 +763,11 @@ func (b *builder) finish(opt Options) {
 		st.Note = "model traffic was not captured, so time spent waiting on the model counts as quiet"
 	}
 
-	// files: recorded only when the run's tier records allowed opens
+	// files: recorded only when the run's tier records allowed opens. A ledger with no capabilities line shows it by a
+	// line for an allowed write, one to a device included.
 	f := &rc.Files
 	if caps := b.runStart.Capabilities; caps == nil {
-		f.Recorded, f.Note = len(f.Written)+len(f.Created)+len(f.Deleted)+len(f.Renamed) > 0,
+		f.Recorded, f.Note = b.devWrite || len(f.Written)+len(f.Created)+len(f.Deleted)+len(f.Renamed) > 0,
 			"this run's ledger does not say whether allowed writes were recorded"
 		if !f.Recorded {
 			f.Note = "not recorded: this run's ledger has no line for an allowed write"
@@ -788,39 +846,48 @@ func (b *builder) gap(e *record.Event) {
 func (b *builder) coverage() {
 	rc := b.rc
 	g := []CoverageGap{}
-	add := func(field, why string) { g = append(g, CoverageGap{Field: field, Why: why}) }
+	add := func(field, code, why string) { g = append(g, CoverageGap{Field: field, Code: code, Why: why}) }
 	if !rc.Files.Recorded || rc.Files.Note != "" {
-		add("files", rc.Files.Note)
+		// finish notes files only for a ledger with no capabilities line or a tier that records refused writes only.
+		code := CodeRecordOff
+		if b.runStart.Capabilities == nil {
+			code = CodeNoCapabilities
+		}
+		add("files", code, rc.Files.Note)
 	}
 	if rc.Files.Truncated {
-		add("files", fmt.Sprintf("each list stops at %d paths", MaxPaths))
+		add("files", CodeTruncated, fmt.Sprintf("each list stops at %d paths", MaxPaths))
 	}
 	if rc.Refusals.ListTruncated {
-		add("refusals.list", fmt.Sprintf("the list stops at %d refusals; the counts are complete", MaxRefusals))
+		add("refusals.list", CodeTruncated, fmt.Sprintf("the list stops at %d refusals; the counts are complete", MaxRefusals))
 	}
-	if !rc.Tokens.Recorded || rc.Tokens.Metered < rc.Tokens.ModelCalls {
-		add("tokens", rc.Tokens.Note)
+	if !rc.Tokens.Recorded {
+		add("tokens", CodeCaptureOff, rc.Tokens.Note) // finish records tokens whenever capture was on
+	} else if rc.Tokens.Metered < rc.Tokens.ModelCalls {
+		add("tokens", CodeUnmetered, rc.Tokens.Note)
 	}
 	if rc.Tokens.Metered > 0 && rc.Tokens.Unpriced > 0 {
-		add("tokens.est_cost_usd", fmt.Sprintf("%d of %d metered responses had no price", rc.Tokens.Unpriced, rc.Tokens.Metered))
+		add("tokens.est_cost_usd", CodeUnpriced, fmt.Sprintf("%d of %d metered responses had no price", rc.Tokens.Unpriced,
+			rc.Tokens.Metered))
 	} else if b.noPrice && b.prices == nil && rc.Tokens.Recorded && rc.Tokens.ModelCalls > 0 {
 		// Only a run with model calls has a cost to estimate, and with prices of its own the receipt estimates it
 		// anyway, so the run's missing table is no gap then; a run whose traffic was not captured has the tokens note.
-		add("tokens.est_cost_usd", "no price table: the cost is not estimated")
+		add("tokens.est_cost_usd", CodeNoPriceTable, "no price table: the cost is not estimated")
 	}
 	if b.captureGaps > 0 && rc.Tokens.Recorded {
-		add("tokens.capture", fmt.Sprintf("%d capture gap %s: model traffic tego could not read, so the token counts are a floor",
+		add("tokens.capture", CodeCaptureGap, fmt.Sprintf(
+			"%d capture gap %s: model traffic tego could not read, so the token counts are a floor",
 			b.captureGaps, plural(b.captureGaps, "line", "lines")))
 	}
 	if rc.Stall.Note != "" {
-		add("stall", rc.Stall.Note)
+		add("stall", CodeModelTimeUnseen, rc.Stall.Note) // finish notes the stall only when capture was off
 	}
 	if b.gapLines > 0 {
-		add("record", fmt.Sprintf("%d gap %s: tego knows it missed some actions, so the counts are a floor",
+		add("record", CodeMissedActions, fmt.Sprintf("%d gap %s: tego knows it missed some actions, so the counts are a floor",
 			b.gapLines, plural(b.gapLines, "line", "lines")))
 	}
 	if !rc.Ended {
-		add("time_taken", "the run has no run_end line yet")
+		add("time_taken", CodeNoRunEnd, "the run has no run_end line yet")
 	}
 	rc.Coverage = Coverage{Complete: len(g) == 0, Gaps: g}
 }

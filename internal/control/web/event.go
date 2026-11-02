@@ -8,6 +8,7 @@ import (
 	"errors"
 	"html/template"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path"
@@ -830,12 +831,15 @@ func undoneLine(rv *rules.Reverted) string {
 }
 
 // decidedBy is the line the ask line a decided: a refusal after it that an ask ended in (a person said no, no answer
-// came in time) under the same ask rule, or nil while none is in the run's ledger. The one that names the ask's own
-// target wins; failing that, the first whose target is not another ask's of the run, so with two asks pending under
-// one entry the link from one never opens the other's refusal. A target spelled differently on the two lines (a
-// connection's "host (dst)") falls back to that first one.
+// came in time) under the same ask rule, or nil while none is in the run's ledger. A connection is told by its
+// address and protocol (askedConn), which its ask and its refusal both name: only the refusal of the same connection
+// is the ask's, so with two asks pending under one entry the link from one never opens the other's refusal, nor the
+// refusal of a connect nobody was asked about. For any other ask, the refusal that names the ask's own target wins;
+// failing that (a target spelled differently on the two lines), the first whose target is not another ask's of the
+// run. A kind=refused line that mirrors a refused action is never it: the action's line is.
 func decidedBy(rr *ledgerview.Run, a *ledgerview.Event) *ledgerview.Event {
 	want := a.AskTarget()
+	conn, isConn := askedConn(a)
 	evs := rr.AllEvents() // a run the cache evicted reads its lines again
 	others := map[string]bool{}
 	for i := range evs {
@@ -846,8 +850,14 @@ func decidedBy(rr *ledgerview.Run, a *ledgerview.Event) *ledgerview.Event {
 	var first *ledgerview.Event
 	for i := range evs {
 		e := &evs[i]
-		if e.Seq <= a.Seq || !e.Refused() || !strings.HasPrefix(e.Reason, "ask-") || a.Rule != "" && e.Rule != a.Rule {
+		if e.Seq <= a.Seq || !e.Refused() || e.Mirror || !strings.HasPrefix(e.Reason, "ask-") || a.Rule != "" && e.Rule != a.Rule {
 			continue
+		}
+		if c, ok := askedConn(e); isConn || ok {
+			if isConn && ok && c == conn {
+				return e
+			}
+			continue // a connection's ask and any other line's refusal, or the other way round, are never a pair
 		}
 		if want != "" && e.Target == want {
 			return e
@@ -857,6 +867,43 @@ func decidedBy(rr *ledgerview.Run, a *ledgerview.Event) *ledgerview.Event {
 		}
 	}
 	return first
+}
+
+// askConn is a connection by its address and protocol.
+type askConn struct {
+	ap  netip.AddrPort
+	udp bool
+}
+
+// askedConn is the connection e names by its address, as an ask for a connect or a datagram and the refusal it ends
+// in spell it: an ask's target (192.0.2.1:443, udp://192.0.2.1:443 for UDP; the supervisor's askInetTarget), a net
+// line's dst and proto (refuseAskConnect; the page shows that line's target as "host (dst)"), and a first write's
+// refused line's target (firstWriteRefusal). ok is false for every other line: a unix socket, a model request
+// (http_request), a file, a mirror's copy of a net line.
+func askedConn(e *ledgerview.Event) (askConn, bool) {
+	var dst string
+	udp := false
+	switch e.Kind {
+	case "ask":
+		dst, udp = strings.CutPrefix(e.AskTarget(), "udp://")
+	case "net":
+		var p struct {
+			Dst string `json:"dst"`
+		}
+		if e.Op == "http_request" || json.Unmarshal([]byte(e.Raw), &p) != nil {
+			return askConn{}, false
+		}
+		dst, udp = p.Dst, e.Proto == "udp"
+	case "refused":
+		if e.Op != "first_write" {
+			return askConn{}, false
+		}
+		dst = e.Target
+	default:
+		return askConn{}, false
+	}
+	ap, err := netip.ParseAddrPort(dst)
+	return askConn{ap: ap, udp: udp}, err == nil
 }
 
 // actModel builds the panel from the service's plan: the scope chips of the line's kind, the actions at the picked
@@ -1038,8 +1085,9 @@ func actModel(p *rules.ActPlan, sc rules.Scope, rr *ledgerview.Run, e *ledgervie
 	return v
 }
 
-// shortener writes absolute paths under the run's working directory as ./… and under the home as ~/…, so the
-// panel's options and sentences read in the words the contract uses instead of repeating /home/… (F12). The full
+// shortener writes absolute paths under the run's working directory as ./… and under the home as ~/…, and either
+// folder itself as ./ or ~/, so the panel's options and sentences read in the words the contract uses instead of
+// repeating /home/… (F12). It folds whole paths only, never a folder name inside another path (foldRoots). The full
 // text stays in the line's own facts and the diff.
 type shortener struct{ cwd, home string }
 
@@ -1170,16 +1218,53 @@ func (v *actView) foldWider(p *rules.ActPlan) {
 	}
 }
 
-func (sh shortener) text(s string) string {
-	roots := []struct{ dir, as string }{{sh.cwd, "."}, {sh.home, "~"}}
-	if len(sh.home) > len(sh.cwd) {
+// text is s with each whole path under the run's working directory written ./… and under the home ~/…, and either
+// folder itself ./ or ~/ (foldRoots).
+func (sh shortener) text(s string) string { return foldRoots(s, sh.cwd, sh.home) }
+
+// foldRoots is s with each path that starts with cwd or home written from it: cwd/a as ./a and cwd itself as ./, home/a
+// as ~/a and home itself as ~/ (a folder as the contract spells one), the deeper of the two first and cwd on a tie. A
+// root is folded only as the head of a whole path: where a path starts (the start of s, or after a space, "(", "[",
+// ":" or a quote) and where its name ends (at "/", the end of s, a space, ",", ";", ")", "]", a quote, or a ":" that
+// ends the word). So /a/b folds neither /a/bc nor /a/b.bak (other names) nor /x/a/b/c (another path that holds it); a
+// root of "" or "/" folds nothing.
+func foldRoots(s, cwd, home string) string {
+	roots := [2]struct{ dir, as string }{{cwd, "."}, {home, "~"}}
+	if len(home) > len(cwd) {
 		roots[0], roots[1] = roots[1], roots[0] // the longer, inner one first
 	}
+	if !strings.Contains(s, roots[0].dir) && !strings.Contains(s, roots[1].dir) {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if i == 0 || strings.IndexByte(" \t\n([:\"'", s[i-1]) >= 0 {
+			if as, n := rootAt(s[i:], roots[:]); n > 0 {
+				b.WriteString(as)
+				i += n
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
+// rootAt is the short form of the first of roots that t starts with as a whole folder name, and how many bytes of t
+// it stands for (the root and the "/" after it, if any); 0 when none does.
+func rootAt(t string, roots []struct{ dir, as string }) (string, int) {
 	for _, r := range roots {
-		if r.dir == "" || r.dir == "/" {
+		if r.dir == "" || r.dir == "/" || !strings.HasPrefix(t, r.dir) {
 			continue
 		}
-		s = strings.ReplaceAll(s, r.dir+"/", r.as+"/")
+		switch rest := t[len(r.dir):]; {
+		case strings.HasPrefix(rest, "/"):
+			return r.as + "/", len(r.dir) + 1
+		case rest == "" || strings.IndexByte(" \t\n,;)]\"'", rest[0]) >= 0,
+			rest[0] == ':' && (len(rest) == 1 || strings.IndexByte(" \t\n", rest[1]) >= 0):
+			return r.as + "/", len(r.dir)
+		}
 	}
-	return s
+	return "", 0
 }

@@ -660,7 +660,7 @@ func blockKV(v string) blockKind {
 }
 
 // homeIn writes each path in a rule's words that starts with the run's home as ~/…, the way the row's own path
-// reads ("Secret, never readable: ~/.ssh/id_rsa"). Only a path that starts the text or follows a space is
+// reads ("Never read: ~/.ssh/id_rsa"). Only a path that starts the text or follows a space is
 // shortened, so a folder that merely ends in the same names is left whole; the rule key stays in the title.
 func homeIn(s, home string) string {
 	if home == "" || home == "/" {

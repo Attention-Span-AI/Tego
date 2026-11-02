@@ -102,11 +102,15 @@ func runPath(p string, rr *ledgerview.Run) string {
 const noticeMax = 120
 
 // noticeTarget is p as the line after an answer names it (the toast, or the flash line without JavaScript): runPath's
-// form, and past noticeMax characters cut in the middle as the ask card cuts a long target, a path's file name kept
-// whole when it is short enough. A 4 KB path an agent made up otherwise made a toast taller than the window, its ×
-// off the top (QA BR-3); the card and the line page keep the target whole.
+// form, each of a held mutation's two names ("a → b") in it, and past noticeMax characters cut in the middle as the ask
+// card cuts a long target, a path's file name kept whole when it is short enough. A 4 KB path an agent made up
+// otherwise made a toast taller than the window, its × off the top (QA BR-3); the card and the line page keep the
+// target whole.
 func noticeTarget(p string, rr *ledgerview.Run) string {
 	s := runPath(p, rr)
+	if a, b, two := strings.Cut(p, " → "); two {
+		s = runPath(a, rr) + " → " + runPath(b, rr)
+	}
 	if utf8.RuneCountInString(s) <= noticeMax {
 		return s
 	}
@@ -182,9 +186,9 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request) {
 	}
 	// A denial can become a rule of the contract, so the next run is refused without asking: the link names the ask's
 	// line, and its page sends it on to the refusal the ask decided (which may be written a moment after the answer),
-	// with Never allow picked on its Act panel . A run with no contract file (tego watch) has
-	// nothing to change.
-	if f.OK && verb == "deny" && rr != nil && rr.Contract != "" {
+	// with Never allow picked on its Act panel. A run with no contract file (tego watch) has nothing to change, and a
+	// dashboard without the rule service's Act half (Config.Rules) changes none: its line page says policy editing is off.
+	if _, act := s.cfg.Rules.(ActService); act && f.OK && verb == "deny" && rr != nil && rr.Contract != "" {
 		if seq := askLine(rr, ask, id); seq > 0 {
 			f.Link, f.LinkText = "/runs/"+url.PathEscape(run)+"/lines/"+strconv.FormatUint(seq, 10)+"?decided=1#act", "Make it permanent: Never allow"
 		}

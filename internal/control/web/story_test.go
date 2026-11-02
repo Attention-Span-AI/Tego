@@ -191,7 +191,7 @@ func TestStoryOverviewRunsLogs(t *testing.T) {
 	// The waiting ask's card asks in words and carries its timestamp for live.js's countdown.
 	ap := get(t, s, c, "/approvals")
 	for _, want := range []string{
-		"Let asker read this file?", "Your rules ask before any read under /d/ask/confidential/",
+		`Let asker <span title="read">read</span> this file?`, "Your rules ask before any read under /d/ask/confidential/",
 		`data-ago="2026-10-25T12:04:50Z"`, "asked 10 s ago", "some agents give up after about 30 s", ">Allow once</button>",
 	} {
 		if !strings.Contains(ap, want) {

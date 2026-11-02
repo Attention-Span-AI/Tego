@@ -23,6 +23,17 @@ Changes after the first source release, listed here until the next tag.
 
 ### Fixed
 
+- Logs: the `path:` query key matches whole names, so `path:/a/b` no longer lists `/a/bc`.
+- The dashboard words six refusal reasons it showed as bare codes (MCP tool blocked, Sandbox boundary, and the
+  credential and model-route codes).
+- Never allow from a Deny on a connection opens that connection's own refusal; Make it permanent is offered only where
+  the dashboard can change contracts; the Act panel shortens the run's folder and home only as whole paths.
+- The dashboard's rule service keeps its listing of the ledger root while the root is unchanged (a Change rules request
+  on 5,000 runs: 1.0 ms instead of 21 ms).
+- The receipt, the Receipt tab, tego run's end line and tego watch's footer no longer count writes to /dev/null or the
+  terminal as files written, and the tile agrees with the end line; `tego receipt --json` codes each coverage gap.
+- Approval cards say what a held delete, mkdir, rename or link changes, in words, with both names whole.
+- An adoption's reaper and `tego adopt --release` / `tego stop` no longer recreate files in a removed run directory.
 - The dashboard's run timeline and line pages chip an ask Asked and an answer Denied, Allowed, Timed out or Withdrawn,
   as Logs does, instead of "Recorded".
 - The Rules page says when a run's rules file loads to other rules than the run ran even when nothing dates the change,

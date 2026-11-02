@@ -83,9 +83,10 @@ func WithFreshRunDir() Option { return func(o *options) { o.fresh = true } }
 func WithExistingRunDir() Option { return func(o *options) { o.existing = true } }
 
 // WithExistingFiles makes Open create nothing in the run directory: a missing lock, events.jsonl or blobs/ is
-// os.ErrNotExist. It is for a process that only ends a run a live Writer made, the reaper, which wakes as its
-// launcher exits and so may meet a run directory already being removed: a file made there leaves `tego gc`'s or a
-// test's RemoveAll with a directory that is not empty, and the empty ledger it makes reads as a run never started.
+// os.ErrNotExist. It is for a process that only ends a run a live Writer made: a reaper, a launched run's or an
+// adoption's, which wakes as its launcher or adopter exits and so may meet a run directory already being removed,
+// and a release of an adoption from its record. A file made there leaves `tego gc`'s or a test's RemoveAll with a
+// directory that is not empty, and the empty ledger it makes reads as a run never started.
 func WithExistingFiles() Option { return func(o *options) { o.noCreate = true } }
 
 // Writer is the single writer of one run directory for the run's lifetime (§3). It owns the events and lock

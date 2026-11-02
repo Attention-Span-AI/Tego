@@ -57,6 +57,11 @@ func TestStoryOfTheWatchedRun(t *testing.T) {
 			payload: record.FSPayload{Op: record.FSOpen, Path: pyc + ".126756766169344", Flags: 0o2000301}},
 		{kind: record.KindFS, at: time.Second, verdict: obs, rule: "unmatched",
 			payload: record.FSPayload{Op: record.FSRename, Path: pyc + ".126756766169344", Path2: pyc}},
+		// Codex's shell and screen: no file written (PW-12, the rehearsal's "wrote 3 files")
+		{kind: record.KindFS, at: time.Second, verdict: obs, rule: "unmatched",
+			payload: record.FSPayload{Op: record.FSOpen, Path: "/dev/null", Flags: 0o1101}},
+		{kind: record.KindFS, at: time.Second, verdict: obs, rule: "unmatched",
+			payload: record.FSPayload{Op: record.FSOpen, Path: "/dev/tty", Flags: 0o2}},
 		conn, conn,
 		{kind: record.KindFS, at: 2 * time.Second, verdict: obs, rule: "unmatched",
 			payload: record.FSPayload{Op: record.FSOpen, Path: "/stage/without/home/.ssh/id_rsa", Flags: 0o2000000}},

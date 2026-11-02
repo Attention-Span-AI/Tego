@@ -205,8 +205,8 @@ func shown(e ledgerview.Event) string {
 	case "answer":
 		var p rowPayload
 		if json.Unmarshal([]byte(e.Raw), &p) == nil && p.Approved != nil {
-			// shownOp says what the answer was; the row's text is what it answered.
-			return mask(p.Target)
+			// shownOp says what the answer was; the row's text is what it answered, both of a held mutation's names.
+			return mask(e.AskTarget())
 		}
 	case "ask":
 		// What it asks about. An ask line written without a target names only its id, which says nothing to a
@@ -424,7 +424,9 @@ func endWords(raw string) string {
 }
 
 // reasonWords is a refusal's reason as a short phrase for a Logs row, under its text ("not on the allowed hosts");
-// the code goes in its title. "" where reasonOf says nothing (a live block's refusal, a run_end).
+// the code goes in its title. "" where reasonOf says nothing (a live block's refusal, a run_end). A code with no
+// phrase here reads as its reasonText label with a lower-case first letter, so a label that opens with an acronym
+// needs a phrase (TestEveryReasonCodeHasDashboardWords).
 func reasonWords(e ledgerview.Event) string {
 	if reasonOf(e) == "" {
 		return ""
@@ -448,6 +450,8 @@ func reasonWords(e ledgerview.Event) string {
 		return "a person said no"
 	case "ask-timeout":
 		return "nobody answered in time"
+	case "mcp-tool-denied":
+		return "an MCP tool the rules do not allow"
 	}
 	t := reasonText(e.Reason)
 	r, n := utf8.DecodeRuneInString(t)

@@ -731,8 +731,9 @@ tego-gc.timer` (2026-11-02; checked on the user manager: the oneshot unit's pass
 goes, and exits 0 at `run_end`; a launcher killed mid-run is exit 125 `[run-lost]` rather than a wait that never
 ends.
 
-**In the morning.** `tego receipt <run>` (what it did on one screen: files changed, refusals by rule, asks, tokens and
-cost, and what the ledger could not cover; `--verify` checks the chain too), `tego status <run>` (state, how it ended,
+**In the morning.** `tego receipt <run>` (what it did on one screen: files written, refusals by rule, asks, tokens and
+cost, and what the ledger could not cover, which `--json` names by a code a script can match, such as `capture-off` or
+`missed-actions`; `--verify` checks the chain too), `tego status <run>` (state, how it ended,
 events, `gaps:` and `live changes:` as the record spells them, `in words:` for what they mean, the same reading as the
 receipt: whether actions may be missing, what is short if not, and what a person changed, and on a lost run that its
 record may stop short; the run's resources), `tego events

@@ -352,12 +352,11 @@ func TestAskBrokerRefusesTegoApproveFromTheRunsCgroup(t *testing.T) {
 	asked := make(chan string, 1)
 	dir := t.TempDir()
 	b, err := ask.New(dir, ask.Options{UID: uint32(os.Getuid()), Timeout: time.Minute, Authorize: r.askPeerAuthorize,
-		Emit: func(e ask.Event) error {
-			if e.Kind == "ask" {
-				asked <- e.Request.AskID
-			}
-			return nil
-		}})
+		Emit: func(ask.Event) error { return nil },
+		// Pending runs once the broker holds the request, so Waiting is true from then on. The ask line's Emit runs
+		// before that: a test that answered on it could read Waiting false before the broker marked the ask held (the
+		// race job read "no longer holds" so, on GitHub, 2026-11-02).
+		Pending: func(req ask.Request) { asked <- req.AskID }})
 	if err != nil {
 		t.Fatal(err)
 	}

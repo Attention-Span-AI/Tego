@@ -65,6 +65,9 @@ type Event struct {
 	Raw   string
 	// askOp and askTarget are what an ask or answer line is about (its payload's op and target), empty on other lines.
 	askOp, askTarget string
+	// askName and askName2 are the ask's target and a held mutation's second name (target2) as recorded, apart: the
+	// Logs query's path: reads each whole, never askTarget's joined words, which a name holding the joiner would split.
+	askName, askName2 string
 	// SystemLookup is a refusal of one of SystemLookupSockets.
 	SystemLookup bool
 	// off is the line's byte offset in its events file (Line reads it back from there).
@@ -367,7 +370,7 @@ type payload struct {
 	Method   string   `json:"method"`
 	Argv     []string `json:"argv"`
 	Target   string   `json:"target"`
-	Target2  string   `json:"target2"` // a held fs mutation's second name (ADR 0047): shown after " -> "
+	Target2  string   `json:"target2"` // a held fs mutation's second name (ADR 0047): shown after " → "
 	AskID    string   `json:"ask_id"`
 	AskRule  string   `json:"ask_rule"`
 	Hold     string   `json:"hold"`
@@ -445,13 +448,14 @@ func fromRecord(e *record.Event) Event {
 		if p.Target == "" {
 			ev.Target = "ask " + p.AskID
 		}
-		ev.askOp, ev.askTarget = p.Op, askNames(p.Target, p.Target2)
+		ev.askOp, ev.askTarget, ev.askName, ev.askName2 = p.Op, askNames(p.Target, p.Target2), p.Target, p.Target2
 		if ev.Rule == "" {
 			ev.Rule = p.AskRule
 		}
 	case record.KindAnswer:
 		ev.AskID, ev.Op = p.AskID, "answer"
 		ev.askOp, ev.askTarget = p.Op, askNames(p.Target, p.Target2) // what it answered, for the Logs search
+		ev.askName, ev.askName2 = p.Target, p.Target2
 		ev.Target = p.AskID + " by " + p.By
 		if p.Approved != nil {
 			ev.Target += map[bool]string{true: ", approved", false: ", not approved"}[*p.Approved]
@@ -523,11 +527,12 @@ func fsOp(p payload) string {
 }
 
 // askNames is what an ask or an answer is about as a person reads it: the target, and a held fs mutation's second name
-// (a rename's or a link's new name, a symlink's stored target; ADR 0047) after " -> ", so an approval of a rename is
-// never shown without where it goes.
+// (a rename's or a link's new name, a symlink's stored target; ADR 0047) after " → ", as an fs line names its second
+// path, so an approval of a rename is never shown without where it goes and the dashboard's path shortener shows each
+// name whole instead of cutting the pair in the middle.
 func askNames(target, target2 string) string {
 	if target2 == "" {
 		return target
 	}
-	return target + " -> " + target2
+	return target + " → " + target2
 }

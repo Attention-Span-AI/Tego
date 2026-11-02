@@ -179,26 +179,25 @@ func (s *Server) buildFacts(ctx context.Context, rr *ledgerview.Run, at *ledgerv
 	return f
 }
 
-// runText is s with the run's home written ~ and its working directory . wherever s names them, in full or from the
-// dashboard user's home: the line page's left column (Decided by, Rule, The question) then says ~/.config/telemetry/
-// as its headline, the Act panel and Logs do (ledgerview.RunHome), never ~/<checkout>/…/with/home/.config/telemetry/
-// beside it; one "~" on the page, never two. Display only: titles and the raw fold keep the ledger's text.
+// runText is s with the run's home written ~/ and its working directory ./ wherever s names a path under them (or
+// either folder itself), in full or from the dashboard user's home: the line page's left column (Decided by, Rule, The
+// question) then says ~/.config/telemetry/ as its headline, the Act panel and Logs do (ledgerview.RunHome), never
+// ~/<checkout>/…/with/home/.config/telemetry/ beside it; one "~" on the page, never two. Only whole paths are folded
+// (foldRoots). Display only: titles and the raw fold keep the ledger's text.
 func runText(s, home, cwd string) string {
 	if s == "" {
 		return s
 	}
 	s = shortener{cwd: cwd, home: home}.text(s)
-	// The dashboard user's ~/ form of each, the longer (inner) one first, as shortener.text orders them.
-	roots := []struct{ dir, as string }{{cwd, "."}, {home, "~"}}
-	if len(home) > len(cwd) {
-		roots[0], roots[1] = roots[1], roots[0]
+	// The dashboard user's ~/ form of each, folded as the absolute ones are; one not under that home has none.
+	tc, th := tilde(cwd), tilde(home)
+	if tc == cwd {
+		tc = ""
 	}
-	for _, r := range roots {
-		if t := tilde(r.dir); t != r.dir {
-			s = strings.ReplaceAll(s, t+"/", r.as+"/")
-		}
+	if th == home {
+		th = ""
 	}
-	return s
+	return foldRoots(s, tc, th)
 }
 
 // shownKey is a rule key as the line page shows it (runText) and the key in full for its title, "" when the two are

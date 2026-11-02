@@ -7,12 +7,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/check/measure"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -164,6 +167,61 @@ func TestFilesChanged(t *testing.T) {
 	}
 }
 
+// TestFilesWrittenLeavesOutDevices (PW-12): a write to /dev/null, the terminal or another device that holds no file
+// writes no file, so a run that wrote one file beside them says it wrote one. A name that stands for a descriptor
+// (/dev/stderr, /dev/fd/N, /proc/self/fd/N) stays listed, since a write through it can reach a regular file, and so
+// does a /dev/null the open created, which is a regular file.
+func TestFilesWrittenLeavesOutDevices(t *testing.T) {
+	fs := func(p record.FSPayload) line {
+		return line{kind: record.KindFS, at: 1, verdict: record.VerdictAllow, rule: "w", payload: p}
+	}
+	open := func(path string, flags int) line {
+		return fs(record.FSPayload{Op: record.FSOpen, Path: path, Flags: flags})
+	}
+	lines := []line{start("off", true)}
+	for _, dev := range []string{"/dev/null", "/dev/tty", "/dev/pts/3", "/dev/ptmx", "/dev/zero", "/dev/full",
+		"/dev/random", "/dev/urandom", "/dev/console"} {
+		lines = append(lines, open(dev, 0o1101), open(dev, 0o2), open(dev, 0o2001))
+	}
+	lines = append(lines, fs(record.FSPayload{Op: record.FSTruncate, Path: "/dev/null"}), open("/p/out/a", 0o1101),
+		end(time.Second, 0))
+	rc := compute(t, lines, Options{})
+	if f := rc.Files; !equalStrs(f.Written, []string{"/p/out/a"}) || len(f.Created) != 0 || f.Changed() != 1 {
+		t.Errorf("files = %+v, want only /p/out/a written", f)
+	}
+	var b bytes.Buffer
+	if err := rc.Text(&b); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	if strings.Contains(out, "/dev/") || !strings.Contains(out, "\nFiles written\n  1 written, 0 created, 0 deleted, 0 renamed.\n    Wrote out/a\n") {
+		t.Errorf("the text lists a device, or not the one file:\n%s", out)
+	}
+
+	// The descriptor names, a file in /dev/shm and a disk are all kept.
+	kept := []string{"/dev/stderr", "/dev/fd/63", "/proc/self/fd/3", "/dev/shm/x", "/dev/sda", "/dev/null"}
+	lines = []line{start("off", true)}
+	for _, p := range kept[:len(kept)-1] {
+		lines = append(lines, open(p, 0o1101))
+	}
+	made := fs(record.FSPayload{Op: record.FSOpen, Path: "/dev/null", Flags: 0o1101, Created: true})
+	rc = compute(t, append(lines, made, end(time.Second, 0)), Options{})
+	if f := rc.Files; !equalStrs(f.Written, kept) || !equalStrs(f.Created, []string{"/dev/null"}) {
+		t.Errorf("files = %+v, want every descriptor name and file kept, and the /dev/null the open created", f)
+	}
+
+	// A ledger with no capabilities line shows that it records allowed writes by such a line, one to a device too.
+	noCaps := line{kind: record.KindRunStart, payload: record.RunStartPayload{Tier: "landlock", Capture: "off", Cwd: "/p"}}
+	rc = compute(t, []line{noCaps, open("/dev/null", 0o1101), end(time.Second, 0)}, Options{})
+	if f := rc.Files; !f.Recorded || len(f.Written) != 0 || !strings.Contains(f.Note, "does not say whether") {
+		t.Errorf("no capabilities line, a /dev/null write: files = %+v", f)
+	}
+	rc = compute(t, []line{noCaps, end(time.Second, 0)}, Options{})
+	if f := rc.Files; f.Recorded || !strings.HasPrefix(f.Note, "not recorded") {
+		t.Errorf("no capabilities line, no write: files = %+v", f)
+	}
+}
+
 func TestAsksAndAnswers(t *testing.T) {
 	yes, no := true, false
 	rc := compute(t, []line{
@@ -289,6 +347,70 @@ func TestCostAndCoverage(t *testing.T) {
 	}
 	if !fields["files"] || !fields["tokens"] || !fields["record"] || !fields["stall"] || rc.Coverage.Complete {
 		t.Errorf("capture off: coverage = %+v", rc.Coverage)
+	}
+}
+
+// TestCoverageCodes: every coverage gap carries a code a program can match, one per reason, beside its words, and the
+// JSON writes it beside why.
+func TestCoverageCodes(t *testing.T) {
+	codes := func(rc *Receipt) []string {
+		var got []string
+		for _, g := range rc.Coverage.Gaps {
+			if g.Code == "" || g.Why == "" {
+				t.Errorf("a gap without its code or its words: %+v", g)
+			}
+			got = append(got, g.Field+"="+g.Code)
+		}
+		return got
+	}
+	gap := func(what, why string) line {
+		return line{kind: record.KindGap, at: time.Second, payload: record.GapPayload{What: what, Why: why}}
+	}
+	req := line{kind: record.KindSSLRequest, payload: record.SSLRequestPayload{Endpoint: "messages", Method: "POST", Host: "h"}}
+	resp := func(seq int, model string, metered bool) line {
+		p := map[string]any{"request_seq": seq, "status": 200, "parser_version": "1", "model": model, "latency_ms": 1}
+		if metered {
+			p["usage"] = map[string]int{"input": 500, "output": 10}
+		}
+		return line{kind: record.KindSSLResponse, at: time.Second, payload: p}
+	}
+	noCaps := line{kind: record.KindRunStart, payload: record.RunStartPayload{Tier: "landlock", Capture: "forwarder", Cwd: "/p"}}
+	many := []line{start("forwarder", true)}
+	for i := range MaxPaths + 1 {
+		many = append(many, line{kind: record.KindFS, at: time.Second, verdict: record.VerdictAllow, rule: "w",
+			payload: record.FSPayload{Op: record.FSOpen, Path: fmt.Sprintf("/p/out/%d", i), Flags: 0o1101}},
+			line{kind: record.KindNet, at: time.Second, verdict: record.VerdictRefused, rule: "unmatched",
+				reason: record.ReasonNetNotAllowed, payload: record.NetPayload{Proto: "tcp", Dst: "127.0.0.1:9"}})
+	}
+	for _, c := range []struct {
+		name   string
+		lines  []line
+		prices measure.Prices
+		want   []string
+	}{
+		{"capture off, refused writes only, a lost action, no end", []line{start("off", false), gap(record.GapRecord, "channel-full")}, nil,
+			[]string{"files=record-off", "tokens=capture-off", "stall=model-time-unseen", "record=missed-actions", "time_taken=no-run-end"}},
+		{"no capabilities line", []line{noCaps, end(time.Second, 0)}, nil, []string{"files=no-capabilities-line"}},
+		{"unmetered, unpriced and a capture gap", []line{start("forwarder", true), req, resp(1, "m", true), req,
+			resp(3, "unpriced", true), req, resp(5, "m", false), gap(record.GapCapture, "no-openssl"), end(2*time.Second, 0)},
+			flatPrices{}, []string{"tokens=unmetered-responses", "tokens.est_cost_usd=unpriced-responses", "tokens.capture=capture-gap"}},
+		{"no price table", []line{start("forwarder", true), gap(record.GapRecord, gapNoPriceTable), req, resp(2, "m", false),
+			end(2*time.Second, 0)}, nil, []string{"tokens=unmetered-responses", "tokens.est_cost_usd=no-price-table"}},
+		{"lists past their caps", append(many, end(2*time.Second, 0)), nil, []string{"files=truncated", "refusals.list=truncated"}},
+	} {
+		rc := compute(t, c.lines, Options{Prices: c.prices})
+		if got := codes(rc); !equalStrs(got, c.want) {
+			t.Errorf("%s: codes %v, want %v", c.name, got, c.want)
+		}
+	}
+
+	var b bytes.Buffer
+	if err := compute(t, []line{start("off", true), end(time.Second, 0)}, Options{}).JSON(&b); err != nil {
+		t.Fatal(err)
+	}
+	beside := regexp.MustCompile(`"field": "tokens",\s+"code": "capture-off",\s+"why": "not recorded: model traffic capture was off`)
+	if !beside.MatchString(b.String()) {
+		t.Errorf("the JSON does not carry the code beside why:\n%s", b.String())
 	}
 }
 

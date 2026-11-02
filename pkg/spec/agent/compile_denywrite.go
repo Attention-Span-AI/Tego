@@ -109,6 +109,37 @@ var denyWriteInHome = []struct{ name, what string }{
 	{".gitconfig", "git config"}, {".config/git/config", "git config"},
 }
 
+// denyWriteInGitDir are the names relative to a git directory (gitDirTargets): its hooks, and the configs whose
+// core.hooksPath, core.fsmonitor and core.sshCommand name programs git runs (config.worktree is read with config
+// when extensions.worktreeConfig is set).
+var denyWriteInGitDir = []struct{ name, what string }{
+	{"hooks", "git hooks"}, {"config", "git config"}, {"config.worktree", "git config"},
+}
+
+// BuiltInDenyWriteNames is the built-in deny_write set (R20) as names, a copy: each a slash-separated path relative
+// to where the set looks for it (a write entry's root, a repository's, the home directory), a git directory's names
+// beneath .git, where a repository keeps it. The directories core.hooksPath values name are not among them: a git
+// config names those. A reader that ranks a refused write by its path (the dashboard's severity, which reads a write
+// to one as code that runs later) holds its own names to these in its tests, so a name added to the set is not left
+// out there.
+func BuiltInDenyWriteNames() []string {
+	var out []string
+	add := func(name string) {
+		if !slices.Contains(out, name) {
+			out = append(out, name)
+		}
+	}
+	for _, table := range [][]struct{ name, what string }{denyWriteAtRoot, denyWriteAtRepo, denyWriteInHome} {
+		for _, n := range table {
+			add(n.name)
+		}
+	}
+	for _, n := range denyWriteInGitDir {
+		add(".git/" + n.name)
+	}
+	return out
+}
+
 // globalGitConfigs are git's per-user configuration files relative to the home directory. A core.hooksPath
 // set there applies to every repository the user commits in.
 var globalGitConfigs = []string{".gitconfig", ".config/git/config"}
@@ -590,7 +621,7 @@ type gitDirInfo struct {
 	// set: the next reach of the git directory reads them again, within the limits then current, which are
 	// another write entry's once this one's are spent.
 	readCut bool
-	// targeted says its hooks, config and config.worktree were probed, all three within the limits.
+	// targeted says its hooks, config and config.worktree (denyWriteInGitDir) were probed, all within the limits.
 	targeted bool
 	// walked says its submodules were taken up, and walkedIn by which write entry's search; cuts and
 	// subUnread are the limits that stopped that walk and the files and directories it could not read, which
@@ -1115,10 +1146,11 @@ func (s *denySearch) gitDirTargets(gd, worktree string) *gitDirInfo {
 		return nil
 	}
 	if !in.targeted {
-		// Each add runs whatever the one before it answered; the three count as probed only when all were.
-		ok := s.add(filepath.Join(gd, "hooks"), "git hooks")
-		ok = s.add(filepath.Join(gd, "config"), "git config") && ok
-		ok = s.add(filepath.Join(gd, "config.worktree"), "git config") && ok
+		// Each add runs whatever the one before it answered; the names count as probed only when all were.
+		ok := true
+		for _, n := range denyWriteInGitDir {
+			ok = s.add(filepath.Join(gd, n.name), n.what) && ok
+		}
 		in.targeted = ok
 	}
 	s.addHooks(in.hooks, worktree)

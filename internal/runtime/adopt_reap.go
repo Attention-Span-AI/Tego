@@ -165,14 +165,20 @@ var adoptReleaseEnv = func() adopt.Env {
 // releaseOrphan ends an adoption whose adopter is gone, from its record: the tree released, run_end (orphaned, why)
 // written through dirfd (by the record's path when dirfd is negative) when the run has started and not ended, the
 // scope removed once empty, the kernel state purged, the record and the process's lock file removed, the live index
-// entry cleared.
+// entry cleared. It makes nothing where the run's ledger is: a run directory, or a file of it, that is missing is a
+// run being removed, with no run_end to write.
 func releaseOrphan(store *adoptStore, rec adoptRecord, env adopt.Env, dirfd int, why string, log *slog.Logger) (OrphanRelease, error) {
 	var out OrphanRelease
 	env.Mount = rec.Mount
 	out.Released = adopt.Release(env, rec.Scope, adopt.ReleaseTargets(rec.Mount, rec.From))
 	var errs []error
 	ref := record.RunRef{ID: rec.Run, Agent: rec.Agent}
-	opts := []ledger.Option{ledger.WithLogger(log)}
+	// The adopter's Writer made every file before the record was written, so a release makes none. The reaper wakes as
+	// its adopter exits, and a run that ended with a process left in its scope keeps its record, which a release can
+	// meet long after retention removed the run: a file made there leaves `tego gc`'s or a test's RemoveAll with a
+	// directory that is not empty, and its empty ledger reads as a run never started. By path, the run directory and
+	// the ledger root are not made either.
+	opts := []ledger.Option{ledger.WithLogger(log), ledger.WithExistingFiles()}
 	if rec.Anchor != "" {
 		opts = append(opts, ledger.WithAnchor(ledger.NewFileChainAnchor(rec.Anchor)))
 	}
@@ -184,7 +190,7 @@ func releaseOrphan(store *adoptStore, rec adoptRecord, env adopt.Env, dirfd int,
 	case dirfd >= 0:
 		w, err = openLedgerAt(dirfd, rec.Dir, ref, opts...)
 	default:
-		w, err = ledger.Open(rec.Dir, ref, opts...)
+		w, err = ledger.Open(rec.Dir, ref, append(opts, ledger.WithExistingRunDir())...)
 	}
 	switch {
 	case err == nil && w.Seq() == 0:
@@ -196,7 +202,8 @@ func releaseOrphan(store *adoptStore, rec adoptRecord, env adopt.Env, dirfd int,
 		} else {
 			out.Ended = true
 		}
-	case errors.Is(err, ledger.ErrRunEnded):
+	case errors.Is(err, ledger.ErrRunEnded), errors.Is(err, os.ErrNotExist):
+		// Ended, or being removed: no run to end.
 	default:
 		errs = append(errs, fmt.Errorf("the run's ledger: %w", err))
 	}

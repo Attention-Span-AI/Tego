@@ -187,7 +187,9 @@ the plane neither decide nor record it: the supervisor's line is the action's on
   by the table's deny_write index before anyone is asked.
 - **The ask socket's wire type** (`pkg/spec/askproto`, which moved out of the broker after this decision) carries
   `target2`, so `tego ask` and every other client see a rename's destination; the dashboard's pending ask reads it from
-  the ask line and shows `old -> new`.
+  the ask line and shows `old → new`, as an fs line shows its second path, each name shortened against the run's
+  folder and home, and says what the mutation changes in words ("Let codex delete this?", "make a hard link of this
+  file?"), the record op in their title (2026-11-02).
 - **The gate's facts** for a rename or a link whose gate scores beneath a moved directory (`srcNotDir`, `dstNotDir`)
   are read from what each pinned name held, as `settleFS` reads them from its own walk.
 - **record_minor 28**, not 13: revision numbers are taken in order (`TestRecordMinorsHaveNoGap`).
