@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -254,13 +255,21 @@ func TestForeignEventsAreDecidedByAWorkerThenAllowed(t *testing.T) {
 	r.setComm(78, "sh")
 	a := r.send(unix.FAN_OPEN_PERM, 77)
 	b := r.send(unix.FAN_OPEN_EXEC_PERM, 78)
-	got := map[int32]uint32{}
+	// The listener may answer and close the first descriptor before the second is opened, so the two records
+	// can name one number (GitHub's runner: 12 and 12): the answers are compared as a multiset.
+	var answered []int32
 	for range 2 {
 		fd, word := r.response()
-		got[fd] = word
+		if word != unix.FAN_ALLOW {
+			t.Fatalf("the response for %d is %#x, want FAN_ALLOW", fd, word)
+		}
+		answered = append(answered, fd)
 	}
-	if len(got) != 2 || got[a] != unix.FAN_ALLOW || got[b] != unix.FAN_ALLOW {
-		t.Fatalf("responses = %v, want both of %d and %d allowed", got, a, b)
+	sent := []int32{a, b}
+	slices.Sort(answered)
+	slices.Sort(sent)
+	if !slices.Equal(answered, sent) {
+		t.Fatalf("responses for %v, want one each for %d and %d", answered, a, b)
 	}
 	st := r.stop()
 	if st.Events != 2 || st.Tego != 1 || st.Exec != 1 || st.Self != 0 || st.Late != 0 || st.Denied != 0 || st.Failed != 0 {

@@ -510,7 +510,10 @@ func TestARefusalsSearchDoesNotHoldBackAnAdmission(t *testing.T) {
 		if err != nil {
 			t.Errorf("the run's own connection was refused: %v", err)
 		}
-	case <-time.After(5 * time.Second):
+	// The refusal's search is held until release, so an admission waiting behind it never completes: a long
+	// bound loses nothing. The admission's own search reads every process in the test's cgroup, which on a busy
+	// CI runner under the race detector (other packages' test binaries share that cgroup) took over 5 s.
+	case <-time.After(time.Minute):
 		close(release)
 		t.Fatal("the run's own connection waited behind a refusal's descriptor search")
 	}
