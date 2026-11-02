@@ -60,7 +60,7 @@ func FuzzSendMMsg(f *testing.F) {
 		fk = setup()
 		l, _ = newTestLoop(t, fk, pol)
 		n := notifFor(sendMMsgNR(), 4242, 5, arrayAddr, uint64(vlen), 0)
-		head, tail := l.mmsgDests(l.newReader(n), n, func(dest) bool { return false })
+		head, tail, _ := l.mmsgDests(l.newReader(n), n, func(dest) bool { return false })
 		if len(head) > mmsgMessages {
 			t.Fatalf("%d destinations in the head, want at most %d", len(head), mmsgMessages)
 		}

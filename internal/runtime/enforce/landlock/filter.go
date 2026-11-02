@@ -410,7 +410,9 @@ type filterOpts struct {
 	// refuses, or holds only as a read, unless the record mode keeps reads.
 	askRead   bool
 	gateWrite bool // a write gate scores a mode or attribute change: the chmod and Attr families are notified under summary/off (R11)
-	gateNet   bool // a net gate's relays need the source-route arm (sourceRouteTest, ADR 0041 D6)
+	// sourceRoute installs the source-route arm (sourceRouteTest, R11b): a run whose contract has a net: section or
+	// whose gate scores net actions (ADR 0041 D6, GAPS C34).
+	sourceRoute bool
 	// frames installs R11d's pending-frame arms (frameTests): a run whose contract decides datagrams
 	// (agent.RuleTable.DecidesDatagrams), where a UDP frame left pending would carry a later datagram's bytes to
 	// another destination than its line names (supervisor R13).
@@ -611,7 +613,7 @@ func buildFilter(arch Arch, o filterOpts) ([]bpf.Instruction, error) {
 	if o.ingress {
 		prog = append(prog, noPortBindTest(t.Setsockopt)...)
 	}
-	if o.gateNet {
+	if o.sourceRoute {
 		prog = append(prog, sourceRouteTest(t.Setsockopt)...)
 	}
 	if o.frames {
@@ -763,16 +765,20 @@ const (
 	ipv62292PktOptions = 6  // IPV6_2292PKTOPTIONS
 )
 
-// sourceRouteTest refuses, with EPERM, a setsockopt(2) that would give a socket a source route, in a run whose gate
-// scores net actions (ADR 0041 D6; supervisor R9). The supervisor performs a connect, Fast-Open send or datagram the
-// gate admits on a duplicate of the agent's own socket, and the gate's score is about the destination; a source
-// route sends the first hop to an address in the route instead. The supervisor reads the socket's options before
-// relaying (sourceRouted, rule relay-source-routed), but that read is a snapshot: the socket is shared with every
-// thread of the agent, and a sibling's setsockopt between the read and the relayed call would route the scored
-// connect elsewhere. Refusing the setsockopt itself closes that window. The level and option are scalars in
-// args[1] and args[2], so the decision is race-free, as noPortBindTest's is; both are ints, so the low 32 bits are
-// what the kernel reads. The refusal leaves no ledger line, like the ioctl and MPTCP arms. A gated run has no
-// io_uring (gate_config: a gate requires io_uring disabled), so setsockopt has no path but this syscall.
+// sourceRouteTest refuses, with EPERM, a setsockopt(2) that would give a socket a source route, in a run whose
+// contract has a net: section or whose gate scores net actions (R11b; ADR 0041 D6; GAPS C34; supervisor R9, R13b). A
+// source route sends a connect's or a datagram's first hop to an address in the route, not to the destination the
+// contract admitted or the gate scored, and no decision sees it: the supervisor and the root tiers' connect4/6 and
+// sendmsg4/6 programs read the destination alone. The supervisor performs an admitted IP connect, Fast-Open send or
+// relayed datagram on a duplicate of the agent's own socket and reads the socket's options first (sourceRouted, rule
+// relay-source-routed), but that read is a snapshot: the socket is shared with every thread of the agent, and a
+// sibling's setsockopt between the read and the relayed call would route it elsewhere; and a datagram the supervisor
+// continues is sent by the kernel with whatever options the socket holds by then. Refusing the setsockopt itself
+// closes both. The level and option are scalars in args[1] and args[2], so the decision is race-free, as
+// noPortBindTest's is; both are ints, so the low 32 bits are what the kernel reads. The refusal leaves no ledger
+// line, like the ioctl and MPTCP arms. A gated run has no io_uring (gate_config: a gate requires io_uring disabled);
+// a run under io_uring: true can set an option through a ring (SOCKET_URING_OP_SETSOCKOPT), which no seccomp filter
+// sees (SEMANTICS §5).
 func sourceRouteTest(nr uint32) []bpf.Instruction {
 	return []bpf.Instruction{
 		bpf.JumpIf{Cond: bpf.JumpEqual, Val: nr, SkipFalse: 11},

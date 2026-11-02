@@ -1038,10 +1038,10 @@ func TestCompileExample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The example names /work paths and PATH binaries; rewrite them into the fixture. It takes PATH from
-	// examples/profiles/base/python-dev, which this fixture's profile of the same name does not pass.
-	y := strings.NewReplacer(`"/work/out/"`, `"out/"`, `"/work/config/"`, `"config/"`,
-		`"make"`, `"static-tool"`, `"go"`, `"tool.sh"`, "\nenv:\n", "\nenv:\n  pass: [\"PATH\"]\n").Replace(string(src))
+	// The example names PATH binaries; rewrite them into the fixture. Its paths are the project's (./out/, ./config/),
+	// which the fixture's project holds. It takes PATH from examples/profiles/base/python-dev, which this fixture's
+	// profile of the same name does not pass.
+	y := strings.NewReplacer(`"make"`, `"static-tool"`, `"go"`, `"tool.sh"`, "\nenv:\n", "\nenv:\n  pass: [\"PATH\"]\n").Replace(string(src))
 	f.file(filepath.Join(f.bin, "python3"), string(elf64("/lib64/ld-fake.so.2", 3)), 0o755)
 	for _, h := range []string{"pypi.org", "files.pythonhosted.org"} {
 		f.resolver.table[h] = []netip.Addr{netip.MustParseAddr("151.101.0.223")}

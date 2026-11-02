@@ -26,6 +26,11 @@ var builtInHome = []string{
 	".copilot/config.json", ".copilot/mcp-oauth-config", ".copilot/mcp-secrets",
 	".azure", ".config/op", ".password-store", ".pypirc", ".cargo/credentials", ".cargo/credentials.toml",
 	".terraform.d/credentials.tfrc.json", ".vault-token", ".pgpass",
+	".local/share/keyrings", ".local/share/kwalletd", ".my.cnf", ".mylogin.cnf",
+	".s3cfg", ".boto", ".config/rclone/rclone.conf", ".rclone.conf",
+	".gem/credentials", ".local/share/gem/credentials", ".config/composer/auth.json", ".composer/auth.json",
+	".m2/settings-security.xml", ".config/doctl/config.yaml", ".config/hub", ".config/glab-cli/config.yml",
+	".fly/config.yml", ".supabase/access-token", ".oci",
 	".mozilla/firefox", ".config/google-chrome", ".config/chromium",
 	".config/BraveSoftware", ".config/microsoft-edge", ".config/vivaldi", ".config/opera",
 	".config/google-chrome-beta", ".config/google-chrome-unstable", ".config/microsoft-edge-beta", ".config/microsoft-edge-dev",
@@ -36,7 +41,7 @@ var builtInHome = []string{
 
 // extraHome are credential files, relative to the home directory, that the engine's built-in list doesn't
 // cover: Maze suggests blocking them.
-var extraHome = []string{".config/hub", ".terraformrc"}
+var extraHome = []string{".terraformrc"}
 
 // Finding is one file or folder a scan reports, with the reason it was reported.
 type Finding struct {

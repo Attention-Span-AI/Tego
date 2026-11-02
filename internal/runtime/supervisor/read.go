@@ -43,6 +43,12 @@ const (
 	// decide before the batch may be continued, and one the policy does not admit needs the batch to leave a
 	// line (R13b). It is the kernel's figure, not a P0 default.
 	mmsgKernelMax = 1024
+	// msgControlMax bounds the read of one message's control buffer for R13b's source-route check (refusesRoute):
+	// one page, the reader's scan buffer it is read into. The kernel copies the whole of msg_controllen, up to
+	// net.core.optmem_max, and walks every message in it; a buffer longer than this is walked as far as it was read,
+	// and what lies past that is taken as a route (controlRoutes). Legitimate buffers are far shorter: an
+	// SCM_RIGHTS array of SCM_MAX_FD descriptors is 1,032 bytes.
+	msgControlMax = chunk
 	// chunk is the read granularity of a NUL-scan: reads stop at a page boundary so that a string at the
 	// end of a mapping is read in full instead of failing against the unmapped page after it.
 	chunk = 4096
@@ -112,11 +118,13 @@ const (
 	// ruleRelayLimit marks an allowed connect or Fast-Open send refused because relayCeiling relayed
 	// syscalls were already outstanding, each holding a duplicate of a target socket (R21, E28).
 	ruleRelayLimit = "relay-limit"
-	// ruleSourceRouted marks a connect, Fast-Open send or datagram a net gate admitted on an IP socket,
-	// refused because the socket carries a source route (IP_OPTIONS LSRR or SSRR, IPV6_RTHDR), or its
-	// options could not be read: its first hop is not the address the gate scored (ADR 0041 D6). Under a net
-	// gate the filter refuses the setsockopt that would add a route (enforce-landlock R11b), so the sockets that
-	// meet this rule carried their route before the filter applied.
+	// ruleSourceRouted marks a connect, Fast-Open send or datagram this loop would relay on an IP socket, one a
+	// net gate admitted or one admitted under a net: section, refused because the socket carries a source route
+	// (IP_OPTIONS LSRR or SSRR, IPV6_RTHDR), or its options could not be read: its first hop is not the address
+	// the gate scored or the contract admitted (ADR 0041 D6, GAPS C34). Under a net gate or a net: section the
+	// filter refuses the setsockopt that would add a route (enforce-landlock R11b), so the sockets that meet this
+	// rule carried their route before the filter applied. It also marks a sendmsg or sendmmsg refused under a
+	// net: section because a control message routes its datagram (refusesRoute, R13b).
 	ruleSourceRouted = "relay-source-routed"
 	// ruleRelayCredentials marks an admitted unix connect refused because this loop could not make it as
 	// the task that trapped: the task's credentials could not be read, or no thread could take them (R11).

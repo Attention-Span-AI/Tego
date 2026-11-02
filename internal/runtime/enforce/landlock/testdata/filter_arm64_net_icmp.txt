@@ -18,146 +18,159 @@
  17 bpf.RetConstant  ret #2143289344
  18 bpf.JumpIf       jneq #201,1
  19 bpf.RetConstant  ret #2143289344
- 20 bpf.JumpIf       jneq #203,1
- 21 bpf.RetConstant  ret #2143289344
- 22 bpf.JumpIf       jneq #211,1
- 23 bpf.RetConstant  ret #2143289344
- 24 bpf.JumpIf       jneq #269,1
- 25 bpf.RetConstant  ret #2143289344
- 26 bpf.JumpIf       jneq #221,1
- 27 bpf.RetConstant  ret #2143289344
- 28 bpf.JumpIf       jneq #281,1
- 29 bpf.RetConstant  ret #2143289344
- 30 bpf.JumpIf       jneq #35,1
- 31 bpf.RetConstant  ret #2143289344
- 32 bpf.JumpIf       jneq #38,1
- 33 bpf.RetConstant  ret #2143289344
- 34 bpf.JumpIf       jneq #276,1
- 35 bpf.RetConstant  ret #2143289344
- 36 bpf.JumpIf       jneq #34,1
- 37 bpf.RetConstant  ret #2143289344
- 38 bpf.JumpIf       jneq #36,1
- 39 bpf.RetConstant  ret #2143289344
- 40 bpf.JumpIf       jneq #37,1
- 41 bpf.RetConstant  ret #2143289344
- 42 bpf.JumpIf       jneq #33,1
- 43 bpf.RetConstant  ret #2143289344
- 44 bpf.JumpIf       jneq #40,1
- 45 bpf.RetConstant  ret #2143289344
- 46 bpf.JumpIf       jneq #39,1
- 47 bpf.RetConstant  ret #2143289344
- 48 bpf.JumpIf       jneq #41,1
- 49 bpf.RetConstant  ret #2143289344
- 50 bpf.JumpIf       jneq #429,1
- 51 bpf.RetConstant  ret #2143289344
- 52 bpf.JumpIf       jneq #217,1
- 53 bpf.RetConstant  ret #2143289344
- 54 bpf.JumpIf       jneq #218,1
- 55 bpf.RetConstant  ret #2143289344
- 56 bpf.JumpIf       jneq #219,1
- 57 bpf.RetConstant  ret #2143289344
- 58 bpf.JumpIf       jneq #186,1
- 59 bpf.RetConstant  ret #2143289344
- 60 bpf.JumpIf       jneq #187,1
- 61 bpf.RetConstant  ret #2143289344
- 62 bpf.JumpIf       jneq #188,1
- 63 bpf.RetConstant  ret #2143289344
- 64 bpf.JumpIf       jneq #189,1
- 65 bpf.RetConstant  ret #2143289344
- 66 bpf.JumpIf       jneq #190,1
- 67 bpf.RetConstant  ret #2143289344
- 68 bpf.JumpIf       jneq #191,1
- 69 bpf.RetConstant  ret #2143289344
- 70 bpf.JumpIf       jneq #192,1
- 71 bpf.RetConstant  ret #2143289344
- 72 bpf.JumpIf       jneq #193,1
- 73 bpf.RetConstant  ret #2143289344
- 74 bpf.JumpIf       jneq #194,1
- 75 bpf.RetConstant  ret #2143289344
- 76 bpf.JumpIf       jneq #195,1
- 77 bpf.RetConstant  ret #2143289344
- 78 bpf.JumpIf       jneq #196,1
- 79 bpf.RetConstant  ret #2143289344
- 80 bpf.JumpIf       jneq #29,5
- 81 bpf.LoadAbsolute ld [24]
- 82 bpf.JumpIf       jeq #21522,1
- 83 bpf.JumpIf       jneq #21532,1
- 84 bpf.RetConstant  ret #327681
- 85 bpf.LoadAbsolute ld [0]
- 86 bpf.JumpIf       jneq #198,4
- 87 bpf.LoadAbsolute ld [32]
- 88 bpf.JumpIf       jneq #262,1
- 89 bpf.RetConstant  ret #327773
- 90 bpf.LoadAbsolute ld [0]
- 91 bpf.JumpIf       jneq #198,32
- 92 bpf.LoadAbsolute ld [16]
- 93 bpf.JumpIf       jneq #1,1
- 94 bpf.RetConstant  ret #2147418112
- 95 bpf.JumpIf       jneq #16,4
- 96 bpf.LoadAbsolute ld [32]
- 97 bpf.JumpIf       jneq #0,1
- 98 bpf.RetConstant  ret #2147418112
- 99 bpf.RetConstant  ret #2143289344
-100 bpf.JumpIf       jeq #2,2
-101 bpf.JumpIf       jeq #10,1
-102 bpf.RetConstant  ret #2143289344
-103 bpf.LoadAbsolute ld [24]
-104 bpf.ALUOpConstant and #15
-105 bpf.JumpIf       jneq #1,6
-106 bpf.LoadAbsolute ld [32]
-107 bpf.JumpIf       jneq #0,1
-108 bpf.RetConstant  ret #2147418112
-109 bpf.JumpIf       jneq #6,1
-110 bpf.RetConstant  ret #2147418112
-111 bpf.RetConstant  ret #2143289344
-112 bpf.JumpIf       jneq #2,10
-113 bpf.LoadAbsolute ld [32]
-114 bpf.JumpIf       jneq #0,1
-115 bpf.RetConstant  ret #2147418112
-116 bpf.JumpIf       jneq #17,1
-117 bpf.RetConstant  ret #2147418112
-118 bpf.JumpIf       jneq #1,1
-119 bpf.RetConstant  ret #2147418112
-120 bpf.JumpIf       jneq #58,1
+ 20 bpf.JumpIf       jneq #208,11
+ 21 bpf.LoadAbsolute ld [24]
+ 22 bpf.JumpIf       jneq #0,3
+ 23 bpf.LoadAbsolute ld [32]
+ 24 bpf.JumpIf       jeq #4,6
+ 25 bpf.Jump         ja 6
+ 26 bpf.JumpIf       jneq #41,5
+ 27 bpf.LoadAbsolute ld [32]
+ 28 bpf.JumpIf       jeq #57,2
+ 29 bpf.JumpIf       jeq #5,1
+ 30 bpf.JumpIf       jneq #6,1
+ 31 bpf.RetConstant  ret #327681
+ 32 bpf.LoadAbsolute ld [0]
+ 33 bpf.JumpIf       jneq #203,1
+ 34 bpf.RetConstant  ret #2143289344
+ 35 bpf.JumpIf       jneq #211,1
+ 36 bpf.RetConstant  ret #2143289344
+ 37 bpf.JumpIf       jneq #269,1
+ 38 bpf.RetConstant  ret #2143289344
+ 39 bpf.JumpIf       jneq #221,1
+ 40 bpf.RetConstant  ret #2143289344
+ 41 bpf.JumpIf       jneq #281,1
+ 42 bpf.RetConstant  ret #2143289344
+ 43 bpf.JumpIf       jneq #35,1
+ 44 bpf.RetConstant  ret #2143289344
+ 45 bpf.JumpIf       jneq #38,1
+ 46 bpf.RetConstant  ret #2143289344
+ 47 bpf.JumpIf       jneq #276,1
+ 48 bpf.RetConstant  ret #2143289344
+ 49 bpf.JumpIf       jneq #34,1
+ 50 bpf.RetConstant  ret #2143289344
+ 51 bpf.JumpIf       jneq #36,1
+ 52 bpf.RetConstant  ret #2143289344
+ 53 bpf.JumpIf       jneq #37,1
+ 54 bpf.RetConstant  ret #2143289344
+ 55 bpf.JumpIf       jneq #33,1
+ 56 bpf.RetConstant  ret #2143289344
+ 57 bpf.JumpIf       jneq #40,1
+ 58 bpf.RetConstant  ret #2143289344
+ 59 bpf.JumpIf       jneq #39,1
+ 60 bpf.RetConstant  ret #2143289344
+ 61 bpf.JumpIf       jneq #41,1
+ 62 bpf.RetConstant  ret #2143289344
+ 63 bpf.JumpIf       jneq #429,1
+ 64 bpf.RetConstant  ret #2143289344
+ 65 bpf.JumpIf       jneq #217,1
+ 66 bpf.RetConstant  ret #2143289344
+ 67 bpf.JumpIf       jneq #218,1
+ 68 bpf.RetConstant  ret #2143289344
+ 69 bpf.JumpIf       jneq #219,1
+ 70 bpf.RetConstant  ret #2143289344
+ 71 bpf.JumpIf       jneq #186,1
+ 72 bpf.RetConstant  ret #2143289344
+ 73 bpf.JumpIf       jneq #187,1
+ 74 bpf.RetConstant  ret #2143289344
+ 75 bpf.JumpIf       jneq #188,1
+ 76 bpf.RetConstant  ret #2143289344
+ 77 bpf.JumpIf       jneq #189,1
+ 78 bpf.RetConstant  ret #2143289344
+ 79 bpf.JumpIf       jneq #190,1
+ 80 bpf.RetConstant  ret #2143289344
+ 81 bpf.JumpIf       jneq #191,1
+ 82 bpf.RetConstant  ret #2143289344
+ 83 bpf.JumpIf       jneq #192,1
+ 84 bpf.RetConstant  ret #2143289344
+ 85 bpf.JumpIf       jneq #193,1
+ 86 bpf.RetConstant  ret #2143289344
+ 87 bpf.JumpIf       jneq #194,1
+ 88 bpf.RetConstant  ret #2143289344
+ 89 bpf.JumpIf       jneq #195,1
+ 90 bpf.RetConstant  ret #2143289344
+ 91 bpf.JumpIf       jneq #196,1
+ 92 bpf.RetConstant  ret #2143289344
+ 93 bpf.JumpIf       jneq #29,5
+ 94 bpf.LoadAbsolute ld [24]
+ 95 bpf.JumpIf       jeq #21522,1
+ 96 bpf.JumpIf       jneq #21532,1
+ 97 bpf.RetConstant  ret #327681
+ 98 bpf.LoadAbsolute ld [0]
+ 99 bpf.JumpIf       jneq #198,4
+100 bpf.LoadAbsolute ld [32]
+101 bpf.JumpIf       jneq #262,1
+102 bpf.RetConstant  ret #327773
+103 bpf.LoadAbsolute ld [0]
+104 bpf.JumpIf       jneq #198,32
+105 bpf.LoadAbsolute ld [16]
+106 bpf.JumpIf       jneq #1,1
+107 bpf.RetConstant  ret #2147418112
+108 bpf.JumpIf       jneq #16,4
+109 bpf.LoadAbsolute ld [32]
+110 bpf.JumpIf       jneq #0,1
+111 bpf.RetConstant  ret #2147418112
+112 bpf.RetConstant  ret #2143289344
+113 bpf.JumpIf       jeq #2,2
+114 bpf.JumpIf       jeq #10,1
+115 bpf.RetConstant  ret #2143289344
+116 bpf.LoadAbsolute ld [24]
+117 bpf.ALUOpConstant and #15
+118 bpf.JumpIf       jneq #1,6
+119 bpf.LoadAbsolute ld [32]
+120 bpf.JumpIf       jneq #0,1
 121 bpf.RetConstant  ret #2147418112
-122 bpf.RetConstant  ret #2143289344
-123 bpf.RetConstant  ret #2143289344
-124 bpf.JumpIf       jneq #199,4
-125 bpf.LoadAbsolute ld [16]
-126 bpf.JumpIf       jneq #1,1
-127 bpf.RetConstant  ret #2147418112
-128 bpf.RetConstant  ret #2143289344
-129 bpf.JumpIf       jneq #208,6
-130 bpf.LoadAbsolute ld [24]
-131 bpf.JumpIf       jneq #6,3
-132 bpf.LoadAbsolute ld [32]
-133 bpf.JumpIf       jneq #31,1
-134 bpf.RetConstant  ret #2143289344
-135 bpf.LoadAbsolute ld [0]
-136 bpf.JumpIf       jneq #97,4
-137 bpf.LoadAbsolute ld [16]
-138 bpf.JumpIf       jset #268566528,0,1
-139 bpf.RetConstant  ret #2143289344
-140 bpf.LoadAbsolute ld [0]
-141 bpf.JumpIf       jneq #220,4
-142 bpf.LoadAbsolute ld [16]
-143 bpf.JumpIf       jset #268566528,0,1
-144 bpf.RetConstant  ret #2143289344
-145 bpf.LoadAbsolute ld [0]
-146 bpf.JumpIf       jneq #268,1
+122 bpf.JumpIf       jneq #6,1
+123 bpf.RetConstant  ret #2147418112
+124 bpf.RetConstant  ret #2143289344
+125 bpf.JumpIf       jneq #2,10
+126 bpf.LoadAbsolute ld [32]
+127 bpf.JumpIf       jneq #0,1
+128 bpf.RetConstant  ret #2147418112
+129 bpf.JumpIf       jneq #17,1
+130 bpf.RetConstant  ret #2147418112
+131 bpf.JumpIf       jneq #1,1
+132 bpf.RetConstant  ret #2147418112
+133 bpf.JumpIf       jneq #58,1
+134 bpf.RetConstant  ret #2147418112
+135 bpf.RetConstant  ret #2143289344
+136 bpf.RetConstant  ret #2143289344
+137 bpf.JumpIf       jneq #199,4
+138 bpf.LoadAbsolute ld [16]
+139 bpf.JumpIf       jneq #1,1
+140 bpf.RetConstant  ret #2147418112
+141 bpf.RetConstant  ret #2143289344
+142 bpf.JumpIf       jneq #208,6
+143 bpf.LoadAbsolute ld [24]
+144 bpf.JumpIf       jneq #6,3
+145 bpf.LoadAbsolute ld [32]
+146 bpf.JumpIf       jneq #31,1
 147 bpf.RetConstant  ret #2143289344
-148 bpf.JumpIf       jneq #45,1
-149 bpf.RetConstant  ret #2143289344
-150 bpf.JumpIf       jneq #206,6
-151 bpf.LoadAbsolute ld [48]
-152 bpf.JumpIf       jneq #0,2
-153 bpf.LoadAbsolute ld [52]
-154 bpf.JumpIf       jeq #0,1
-155 bpf.RetConstant  ret #2143289344
-156 bpf.LoadAbsolute ld [0]
-157 bpf.JumpIf       jneq #56,4
-158 bpf.LoadAbsolute ld [32]
-159 bpf.JumpIf       jset #579,0,1
+148 bpf.LoadAbsolute ld [0]
+149 bpf.JumpIf       jneq #97,4
+150 bpf.LoadAbsolute ld [16]
+151 bpf.JumpIf       jset #268566528,0,1
+152 bpf.RetConstant  ret #2143289344
+153 bpf.LoadAbsolute ld [0]
+154 bpf.JumpIf       jneq #220,4
+155 bpf.LoadAbsolute ld [16]
+156 bpf.JumpIf       jset #268566528,0,1
+157 bpf.RetConstant  ret #2143289344
+158 bpf.LoadAbsolute ld [0]
+159 bpf.JumpIf       jneq #268,1
 160 bpf.RetConstant  ret #2143289344
-161 bpf.LoadAbsolute ld [0]
-162 bpf.RetConstant  ret #2147418112
+161 bpf.JumpIf       jneq #45,1
+162 bpf.RetConstant  ret #2143289344
+163 bpf.JumpIf       jneq #206,6
+164 bpf.LoadAbsolute ld [48]
+165 bpf.JumpIf       jneq #0,2
+166 bpf.LoadAbsolute ld [52]
+167 bpf.JumpIf       jeq #0,1
+168 bpf.RetConstant  ret #2143289344
+169 bpf.LoadAbsolute ld [0]
+170 bpf.JumpIf       jneq #56,4
+171 bpf.LoadAbsolute ld [32]
+172 bpf.JumpIf       jset #579,0,1
+173 bpf.RetConstant  ret #2143289344
+174 bpf.LoadAbsolute ld [0]
+175 bpf.RetConstant  ret #2147418112

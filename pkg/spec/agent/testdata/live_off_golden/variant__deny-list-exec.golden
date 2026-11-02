@@ -338,6 +338,82 @@ table:
     "Rule": "fs.deny_read[$HOME/.pgpass]"
    },
    {
+    "Pattern": "$HOME/.local/share/keyrings",
+    "Rule": "fs.deny_read[$HOME/.local/share/keyrings]"
+   },
+   {
+    "Pattern": "$HOME/.local/share/kwalletd",
+    "Rule": "fs.deny_read[$HOME/.local/share/kwalletd]"
+   },
+   {
+    "Pattern": "$HOME/.my.cnf",
+    "Rule": "fs.deny_read[$HOME/.my.cnf]"
+   },
+   {
+    "Pattern": "$HOME/.mylogin.cnf",
+    "Rule": "fs.deny_read[$HOME/.mylogin.cnf]"
+   },
+   {
+    "Pattern": "$HOME/.s3cfg",
+    "Rule": "fs.deny_read[$HOME/.s3cfg]"
+   },
+   {
+    "Pattern": "$HOME/.boto",
+    "Rule": "fs.deny_read[$HOME/.boto]"
+   },
+   {
+    "Pattern": "$HOME/.config/rclone/rclone.conf",
+    "Rule": "fs.deny_read[$HOME/.config/rclone/rclone.conf]"
+   },
+   {
+    "Pattern": "$HOME/.rclone.conf",
+    "Rule": "fs.deny_read[$HOME/.rclone.conf]"
+   },
+   {
+    "Pattern": "$HOME/.gem/credentials",
+    "Rule": "fs.deny_read[$HOME/.gem/credentials]"
+   },
+   {
+    "Pattern": "$HOME/.local/share/gem/credentials",
+    "Rule": "fs.deny_read[$HOME/.local/share/gem/credentials]"
+   },
+   {
+    "Pattern": "$HOME/.config/composer/auth.json",
+    "Rule": "fs.deny_read[$HOME/.config/composer/auth.json]"
+   },
+   {
+    "Pattern": "$HOME/.composer/auth.json",
+    "Rule": "fs.deny_read[$HOME/.composer/auth.json]"
+   },
+   {
+    "Pattern": "$HOME/.m2/settings-security.xml",
+    "Rule": "fs.deny_read[$HOME/.m2/settings-security.xml]"
+   },
+   {
+    "Pattern": "$HOME/.config/doctl/config.yaml",
+    "Rule": "fs.deny_read[$HOME/.config/doctl/config.yaml]"
+   },
+   {
+    "Pattern": "$HOME/.config/hub",
+    "Rule": "fs.deny_read[$HOME/.config/hub]"
+   },
+   {
+    "Pattern": "$HOME/.config/glab-cli/config.yml",
+    "Rule": "fs.deny_read[$HOME/.config/glab-cli/config.yml]"
+   },
+   {
+    "Pattern": "$HOME/.fly/config.yml",
+    "Rule": "fs.deny_read[$HOME/.fly/config.yml]"
+   },
+   {
+    "Pattern": "$HOME/.supabase/access-token",
+    "Rule": "fs.deny_read[$HOME/.supabase/access-token]"
+   },
+   {
+    "Pattern": "$HOME/.oci",
+    "Rule": "fs.deny_read[$HOME/.oci]"
+   },
+   {
     "Pattern": "$HOME/.mozilla/firefox",
     "Rule": "fs.deny_read[$HOME/.mozilla/firefox]"
    },

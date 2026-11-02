@@ -52,7 +52,8 @@ const hostStateDir = "/run/tego"
 // The agents' own token stores and the stores of the tools an agent runs beside follow (ADR 0067): an agent under
 // tego reads no harness's login, its own harness's included, which gets its credential from a variable its profile
 // passes instead. A row is here only where the tool's vendor names the location; docs/spec/builtin-deny-read.md
-// cites each, and names the rows left out for want of one.
+// cites each, and names the rows left out, for want of a citation or, as Maven's settings.xml, because the file
+// configures every build of its tool.
 var builtInDenyRead = []string{
 	".ssh", ".aws", ".netrc", ".gnupg",
 	".npmrc", ".git-credentials", ".config/gh", ".docker/config.json", ".kube/config", ".config/gcloud",
@@ -61,6 +62,14 @@ var builtInDenyRead = []string{
 	".copilot/config.json", ".copilot/mcp-oauth-config", ".copilot/mcp-secrets",
 	".azure", ".config/op", ".password-store", ".pypirc", ".cargo/credentials", ".cargo/credentials.toml",
 	".terraform.d/credentials.tfrc.json", ".vault-token", ".pgpass",
+	// The long tail, under the same rule: the desktop keyrings (GNOME Keyring, KWallet), MySQL's option and login
+	// path files, the s3cmd, boto and rclone configurations, the RubyGems and Composer credentials, Maven's master
+	// password, and the doctl, hub, glab, flyctl, Supabase and OCI CLI logins.
+	".local/share/keyrings", ".local/share/kwalletd", ".my.cnf", ".mylogin.cnf",
+	".s3cfg", ".boto", ".config/rclone/rclone.conf", ".rclone.conf",
+	".gem/credentials", ".local/share/gem/credentials", ".config/composer/auth.json", ".composer/auth.json",
+	".m2/settings-security.xml", ".config/doctl/config.yaml", ".config/hub", ".config/glab-cli/config.yml",
+	".fly/config.yml", ".supabase/access-token", ".oci",
 	".mozilla/firefox", ".config/google-chrome", ".config/chromium",
 	".config/BraveSoftware", ".config/microsoft-edge", ".config/vivaldi", ".config/opera",
 	// Other channels and packagings of the same browsers: Chrome beta and unstable, Edge beta and dev,

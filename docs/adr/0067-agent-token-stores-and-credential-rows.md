@@ -200,3 +200,17 @@ already do.
   the drift states (refused).
 - The long tail (keyrings, kwallet, Maven, Gradle, gem, Composer, `.my.cnf`, `.s3cfg`, `.boto`, rclone, OCI, doctl,
   hub, glab, fly, Supabase) is a later data addition, a data addition under D2.
+- 2026-11-02: the long tail added under D2, nineteen rows: `.local/share/keyrings`, `.local/share/kwalletd`,
+  `.my.cnf`, `.mylogin.cnf`, `.s3cfg`, `.boto`, `.config/rclone/rclone.conf`, `.rclone.conf`, `.gem/credentials`,
+  `.local/share/gem/credentials`, `.config/composer/auth.json`, `.composer/auth.json`, `.m2/settings-security.xml`,
+  `.config/doctl/config.yaml`, `.config/hub`, `.config/glab-cli/config.yml`, `.fly/config.yml`,
+  `.supabase/access-token`, `.oci` (docs/spec/builtin-deny-read.md cites each; GNOME Keyring's row cites the daemon's
+  source, as `.gemini/oauth_creds.json` does). File rows wherever the tool keeps more than its secret in the same
+  directory (`~/.fly/bin`, the installed gems, Composer's global packages, `~/.m2/repository`). `.m2/settings.xml` and
+  `.gradle/gradle.properties` are not rows, for the reason Rejected gives for `config.toml`: each can hold a repository
+  password but configures every build of its tool, and Maven stops on a settings file it cannot read. `maze`'s
+  `extraHome` drops `.config/hub`, now built-in. A consequence: `~/.local` and `~/.local/share` join the directories
+  the Landlock ruleset enumerates on most machines, so a name made directly in either during a run is unreadable to it
+  until the next. Tests: `TestBuiltInDenyReadCoversTheLongTail`, `TestAbsentLongTailRowsAreRecordedForLandlock`, and
+  `TestLongTailStoresAreRefusedAtTierLandlock` (internal/runtime, tier landlock, unprivileged: stores made before the
+  run and during it, one in `~/.local/share`).

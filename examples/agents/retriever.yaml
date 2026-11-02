@@ -3,6 +3,19 @@
 # visibility, env.mask, exec.privileged, containers) are accepted by
 # `tego compile` only when empty; see the spec example for
 # their documented meaning.
+#
+# It is a reference more than a contract to run as it is: mcp-postgres and
+# mcp.internal:8080 stand for an MCP server of your own. Before the first
+# compile (examples/agents/README.md has the commands):
+#   1. tego reads base/python-dev, which it extends, from the machine
+#      config's profiles: directory: copy examples/profiles/base into it;
+#   2. its limits.cost_usd needs a price table, without which every run is
+#      refused [budget-unmetered]: examples/prices.example.yaml is one to
+#      start from;
+#   3. run it from a project that has a config/ directory, which fs.watch
+#      names: a watched directory must exist;
+#   4. put your MCP server on PATH and its host in net.allow (compile
+#      resolves the host; --offline leaves that to the run).
 version: 0
 name: retriever
 extends: base/python-dev      # optional profile merged underneath; deny_read never removed
@@ -13,9 +26,10 @@ mcp:
 models:
   - { provider: anthropic, host: api.anthropic.com, port: 443 }
 fs:
-  write: ["/work/out/"]       # everything else is read-only
-  deny_read: ["~/.ssh/", "~/.aws/", "~/.netrc"]   # built-in list applies when absent
-  watch: ["/work/config/"]    # reads here are always individual events, never aggregated
+  write: ["./out/"]           # relative to the project; everything else is read-only
+  # No deny_read: the built-in list (~/.ssh, ~/.aws, ~/.netrc and the rest) applies with or without one, present or
+  # not; an entry adds a secret it lacks, and must exist when the contract is compiled.
+  watch: ["./config/"]        # reads here are always individual events, never aggregated; the directory must exist
 net:
   allow: ["mcp.internal:8080"]  # api.anthropic.com is reached through the capture forwarder, never directly
 exec:

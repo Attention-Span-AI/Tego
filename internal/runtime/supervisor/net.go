@@ -92,7 +92,8 @@ type target struct {
 	// destination (compiled.liveRelays, resolveSocket): its admitted connect or Fast-Open send is performed on the
 	// duplicate with the copy the block was matched against, never continued, as ipGated's is.
 	ipLive bool
-	// domain is the socket's SO_DOMAIN where resolveSocket read it, 0 otherwise.
+	// domain is the socket's SO_DOMAIN where resolveSocket, or a later read on the duplicate (socketDomainIs,
+	// ipSocket), read it, 0 otherwise.
 	domain int
 }
 
@@ -219,7 +220,7 @@ func handleConnect(l *Loop, n *notif) {
 	if !l.valid(n) {
 		return // E31: the notification must still be live immediately before the duplicate is used
 	}
-	if l.sourceRouted(&t) {
+	if l.sourceRouted(c, &t) {
 		l.refuseNet(n, d, t.proto, refuse(ruleSourceRouted))
 		return
 	}
@@ -612,19 +613,24 @@ func (l *Loop) resolveSocket(n *notif, c *compiled, sockfd int) (t target, why s
 	return t, "", true
 }
 
-// sourceRouted reports whether a relay a net gate admitted on an IP socket must be refused because the socket
-// carries a source route, or its options could not be read (ADR 0041 D6). IP_OPTIONS with LSRR or SSRR (which
-// an unprivileged task may set before Linux 7.1 and its stable backports, and a task with CAP_NET_RAW on any
-// kernel) and an IPV6_RTHDR send the first hop to an address in the route, not to the destination the gate scored.
-// Only an ipGated relay is asked: the gate's score is about the destination.
+// sourceRouted reports whether a relay on an IP socket must be refused because the socket carries a source route,
+// or its options could not be read (ADR 0041 D6, GAPS C34). IP_OPTIONS with LSRR or SSRR (which an unprivileged
+// task may set before Linux 7.1 and its stable backports, and a task with CAP_NET_RAW on any kernel) and an
+// IPV6_RTHDR send the first hop to an address in the route, not to the destination this loop decided, and the
+// relay performs the call itself. Asked of a relay a net gate admitted (ipGated: the gate's score is about the
+// destination) and of every relay on an IP socket in a run whose contract has a net: section, whose entries are
+// about the destination too: an IP connect and a Fast-Open send there are always relayed (R9, R12), and so is an
+// approved datagram (R13d). A guarded relay with no net: section is not asked: that contract admits every
+// destination but the guarded endpoint, and the filter installs no source-route arm for it. A domain that cannot be
+// read is taken as IP, the side that refuses.
 //
 // The read is a snapshot of a socket every thread of the agent shares, so on its own it is check-then-act: a
 // sibling's setsockopt between it and the relayed call would add a route. The filter closes that: under a net
-// gate it refuses every setsockopt that sets one (enforce-landlock R11b, sourceRouteTest), on scalar arguments.
-// What the read still catches is a socket that carried a route before the filter applied, one the agent
-// inherited or received over a unix socket.
-func (l *Loop) sourceRouted(t *target) bool {
-	if !t.ipGated {
+// gate or a net: section it refuses every setsockopt that sets one (enforce-landlock R11b, sourceRouteTest), on
+// scalar arguments. What the read still catches is a socket that carried a route before the filter applied, one
+// the agent inherited or received over a unix socket, and one a ring set under io_uring: true.
+func (l *Loop) sourceRouted(c *compiled, t *target) bool {
+	if !t.ipGated && (c.netOpen || !l.ipSocket(t)) {
 		return false
 	}
 	routed, err := l.k.SourceRouted(t.dup, t.domain)
@@ -633,6 +639,20 @@ func (l *Loop) sourceRouted(t *target) bool {
 		return true
 	}
 	return routed
+}
+
+// ipSocket reports whether t's socket is AF_INET or AF_INET6, its SO_DOMAIN read on the duplicate where
+// resolveSocket did not read it (and kept in t.domain). A domain that cannot be read is taken as IP, the side that
+// decides, as resolveSocket takes it.
+func (l *Loop) ipSocket(t *target) bool {
+	if t.domain == 0 {
+		dom, err := l.k.SockDomain(t.dup)
+		if err != nil {
+			return true
+		}
+		t.domain = dom
+	}
+	return t.domain == unix.AF_INET || t.domain == unix.AF_INET6
 }
 
 // refuseNet answers refusalErrno and records the refusal. A refusal is recorded whatever record: says: it

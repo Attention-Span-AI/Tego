@@ -20,8 +20,15 @@
 #
 # The state directories are claude-code.yaml's: CLAUDE_CONFIG_DIR and CLAUDE_CODE_TMPDIR under
 # ./.claude-state/, relative to the project, where the SDK starts Claude Code. It extends base/python-dev
-# (examples/profiles), which grants /dev/null and the interpreter; the machine config's `profiles:` must name
-# that directory.
+# (examples/profiles), which grants /dev/null and the interpreter.
+#
+# Before the first compile (examples/agents/README.md has the commands):
+#   1. install the SDK into the project, `pip install --target .deps claude-agent-sdk`: exec.allow names ./.deps/,
+#      and an exec directory must exist;
+#   2. tego reads base/python-dev from the machine config's profiles: directory (~/.tego/profiles unless a layer
+#      names another): copy examples/profiles/base into it, or point profiles: at examples/profiles;
+#   3. its limits.cost_usd needs a price table, without which every run is refused [budget-unmetered]:
+#      examples/prices.example.yaml is one to start from.
 version: 0
 name: claude-agent-sdk
 extends: base/python-dev

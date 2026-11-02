@@ -12,7 +12,11 @@
 # which is the point of this capture mode rather than a mistake. Uprobes need tier cgroup or above:
 # `sudo tego run`. Where the tier is landlock, choose `capture: forwarder` and drop the net.allow entry.
 #
-# It extends base/python-dev (examples/profiles), which the machine config's `profiles:` must name.
+# Before the first compile (examples/agents/README.md has the commands):
+#   1. it extends base/python-dev, which tego reads from the machine config's profiles: directory (~/.tego/profiles
+#      unless a layer names another): copy examples/profiles/base into it, or point profiles: at examples/profiles;
+#   2. its limits.cost_usd needs a price table, without which every run is refused [budget-unmetered]:
+#      examples/prices.example.yaml is one to start from.
 version: 0
 name: anthropic-sdk-python
 extends: base/python-dev

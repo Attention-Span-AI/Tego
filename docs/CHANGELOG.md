@@ -9,8 +9,22 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 Changes after the first source release, listed here until the next tag.
 
+### Security
+
+- At tier landlock an agent could open a `deny_write` file such as `.git/config` for writing through a symlink whose
+  body goes through its own `/proc/self/task/<tid>` and climbs back out. The supervisor now resolves such a link the
+  way the agent's own lookup does, and the open is refused.
+- A run with a `net:` section can no longer source-route around its contract: `setsockopt` of `IP_OPTIONS`,
+  `IPV6_RTHDR`, `IPV6_2292RTHDR` and `IPV6_2292PKTOPTIONS` fails `EPERM`, and a datagram whose control message routes it
+  is refused with a `relay-source-routed` line (GAPS C34).
+- The built-in `deny_read` list also refuses the desktop keyrings, `~/.my.cnf`, `~/.mylogin.cnf`, `~/.s3cfg`, `~/.boto`,
+  rclone's config, the RubyGems and Composer credentials, `~/.m2/settings-security.xml`, and the doctl, hub, glab,
+  flyctl, Supabase and OCI CLI stores.
+
 ### Fixed
 
+- `examples/prices.example.yaml` is a price table to start from (docs/OPERATIONS.md "The price table"), every example's
+  header names its setup, and the examples compile on a fresh machine after it.
 - An empty string is not a default. `tego watch --boundary ""` and `tego adopt --boundary ""` ran the command record-only,
   with no rule, and now refuse to start; `tego receipt ""`, `tego init ""`, `tego compile ""` and `tego run ""` are usage
   errors too, so an unset `"$VAR"` never gets a result for something else.

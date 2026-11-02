@@ -116,6 +116,7 @@ github.com/attention-span-ai/tego/internal/runtime/derive/mcp.Stdio.readLine	tes
 github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterGate	tag-only	integration-tag bridge (filter_integration_bridge.go) for internal/runtime/supervisor's integration tests
 github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterMemfd	tag-only	integration-tag bridge (filter_integration_bridge.go) for internal/runtime/supervisor's integration tests
 github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterReadGate	tag-only	integration-tag bridge (filter_integration_bridge.go) for internal/runtime/supervisor's integration tests
+github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterSourceRoute	tag-only	integration-tag bridge (filter_integration_bridge.go) for internal/runtime/supervisor's integration tests
 github.com/attention-span-ai/tego/internal/runtime/enforce/landlock.BuildFilterWriteGate	tag-only	integration-tag bridge (filter_integration_bridge.go) for internal/runtime/supervisor's integration tests
 github.com/attention-span-ai/tego/internal/runtime/limits.Load	test-api	internal/runtime and internal/cli tests read a price table as it is, without FromMachine's trust rule
 github.com/attention-span-ai/tego/internal/runtime/supervisor.Dispatches	test-api	internal/runtime/enforce/landlock's dispatch_complete_test checks every notification has a handler

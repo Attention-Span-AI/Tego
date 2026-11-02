@@ -193,7 +193,9 @@ func TestSocketArmFor(t *testing.T) {
 	}
 }
 
-// TestFilterSocketGolden pins the restricted filter's instruction stream, as TestFilterGolden does the others.
+// TestFilterSocketGolden pins the restricted filter's instruction stream, as TestFilterGolden does the others: a run
+// with a net: section, whose filter carries the socket allowlist, the listen and bind notifications and the
+// source-route arm (R11b).
 func TestFilterSocketGolden(t *testing.T) {
 	for _, tc := range []struct {
 		file string
@@ -204,7 +206,7 @@ func TestFilterSocketGolden(t *testing.T) {
 		{"filter_arm64_net_icmp.txt", ArchARM64, SocketArm{Restricted: true, ICMP: true}},
 	} {
 		t.Run(tc.file, func(t *testing.T) {
-			insts, err := buildFilter(tc.arch, filterOpts{abi: minTruncateABI, socket: tc.sa, listenControl: true})
+			insts, err := buildFilter(tc.arch, filterOpts{abi: minTruncateABI, socket: tc.sa, listenControl: true, sourceRoute: true})
 			if err != nil {
 				t.Fatal(err)
 			}

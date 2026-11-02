@@ -156,6 +156,10 @@ func targetMain() int {
 		// The filter of a run whose gate scores fs.read only, under record: summary (gate.md R1).
 		build = func() ([]bpf.Instruction, error) { return landlock.BuildFilterReadGate(landlock.NativeArch(), false) }
 	}
+	if mode == modeSourceRoute {
+		// The filter of a run with a net: section, with its source-route arm (enforce-landlock R11b).
+		build = func() ([]bpf.Instruction, error) { return landlock.BuildFilterSourceRoute(landlock.NativeArch()) }
+	}
 	insts, err := build()
 	if g := os.Getenv(helperFilterGate); g != "" {
 		insts, err = landlock.BuildFilterGate(landlock.NativeArch(), strings.Contains(g, "r"), strings.Contains(g, "w"))
@@ -219,6 +223,9 @@ func targetMain() int {
 		return emitReport(rep)
 	case modeGateReadWrite:
 		rep.Checks = gateReadWriteChecks()
+		return emitReport(rep)
+	case modeSourceRoute:
+		rep.Checks = sourceRouteChecks()
 		return emitReport(rep)
 	case modeBench:
 		rep.LoopOps, rep.LoopNS = targetLoop()
@@ -946,6 +953,15 @@ func startHarnessWith(t testing.TB, o harnessOpts) *harness {
 		set = dns.NewSet(nil, []netip.AddrPort{netip.MustParseAddrPort(resolverAddr)}, dns.Options{})
 	case modeHeld:
 		rt.DenyWrite = heldDenyWrite(dir)
+	case modeSourceRoute:
+		// The declared-net contract with the declared port admitted on ::1 too, so that a datagram an IPv6 routing
+		// header routes is one the contract admits (GAPS C34).
+		v6 := append(slices.Clone(rules), agent.NetRule{
+			Raw: "[::1]:" + strconv.Itoa(allowedPort), Host: "::1", Port: allowedPort,
+			Proto: agent.ProtoInet, Verdict: agent.VerdictAllow, Static: true, IPs: []netip.Addr{netip.IPv6Loopback()},
+		})
+		rt.Net = append(slices.Clone(v6), declaredSock)
+		set = dns.NewSet(v6, []netip.AddrPort{netip.MustParseAddrPort(resolverAddr)}, dns.Options{})
 	case modeBenchOps:
 		// record: full, as the filter the target installs is, at the tier that filter serves.
 		rt = &agent.RuleTable{FS: fs, Record: agent.RecordFull, Tier: backend.TierLandlock, Contract: &agent.Contract{}}

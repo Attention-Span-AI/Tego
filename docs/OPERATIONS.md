@@ -241,8 +241,18 @@ state directly no longer works as it did: `fs.write: ["~/.claude.json"]` is now 
 `fs.write: ["~/.claude/"]` leaves the login file to the held reads at tier landlock (ADR 0069), with a warning, and a
 copy the agent moves elsewhere is readable. Move the state into the
 project with `CLAUDE_CONFIG_DIR` (Codex: the launcher's `CODEX_HOME`) instead. A file created during the run directly
-in `~`, `~/.claude`, `~/.config` or another directory a built-in row would appear in is unreadable to the agent until
-the next run.
+in `~`, `~/.claude`, `~/.config`, `~/.local/share` or another directory a built-in row would appear in is unreadable to
+the agent until the next run.
+
+*The long tail of credential stores is not readable either (2026-11-02).* The built-in list also holds the desktop
+keyrings (`~/.local/share/keyrings`, `~/.local/share/kwalletd`), MySQL's `~/.my.cnf` and `~/.mylogin.cnf`, the s3cmd,
+boto and rclone configuration files, the RubyGems and Composer credential files, the key to Maven's encrypted passwords
+(`~/.m2/settings-security.xml`), and the doctl, hub, glab, flyctl, Supabase and OCI CLI logins
+(docs/spec/builtin-deny-read.md cites each). A tool whose store is refused takes its credential from a variable the
+contract passes (`GEM_HOST_API_KEY`, `COMPOSER_AUTH`, `SUPABASE_ACCESS_TOKEN`). Composer, flyctl and doctl stop when their
+store exists and cannot be read, whatever their variable says, so for a run that uses one point it at the project:
+`COMPOSER_HOME`, `FLY_CONFIG_DIR` with `FLY_API_TOKEN`, or doctl's `--config` with `DIGITALOCEAN_ACCESS_TOKEN`. `~/.m2/settings.xml` and `~/.gradle/gradle.properties` stay readable, since every Maven and Gradle build reads
+them: keep repository passwords in variables, not in those files.
 
 *A unix socket under a write entry that the run did not bind is refused (2026-10-16, supervisor R11a).* The agent
 reaches the sockets it binds itself under an `fs.write` path with no `unix:` entry (`multiprocessing`, Ray, a local
@@ -577,7 +587,7 @@ count it is refused: `tego compile` reports it `[budget-unmetered]`, and `tego r
 before the agent starts, naming the cause and the fix (see "Model budgets need something to count them" below).
 `cost_usd` also needs the machine config's price table (`prices:`) with at least one model priced; without one a
 declared `cost_usd` budget is refused the same way, and a model the table does not name is charged at the dearest
-price it has. Only a budget a machine `limits:` ceiling alone imposes runs with nothing to count it, recording
+price it has ("The price table" below; `examples/prices.example.yaml` is one to start from). Only a budget a machine `limits:` ceiling alone imposes runs with nothing to count it, recording
 `gap what=record why=budget-unmetered` and drawing an `[unenforced]` compile warning: in a launch script, treat any
 `[unenforced]` or `[budget-unmetered]` line as a failure.
 
@@ -955,7 +965,7 @@ with a `[budget-unmetered]` warning that says the run is refused. Until 2026-10-
 `budget-unmetered` gap, so an unattended night ran with a limit that did nothing. A budget a machine `limits:` ceiling
 alone imposes is not refused: the run records `gap what=record why=budget-unmetered binary=<budget>`
 (limits-check-doctor-cli.md R32). For an unattended run, declare the model endpoint under `models:` and install a
-price table before relying on `cost_usd`.
+price table before relying on `cost_usd` (next section).
 
 Under `record: off` the uprobes place no probe, so an `auto` contract captures with the forwarder at every tier, and
 its run refuses a direct connection to a `models:` host (`rule: models[<host>:<port>]`), as a tier `landlock` run
@@ -964,6 +974,47 @@ that ignores that variable fails to reach its model rather than spend past its b
 `bpflsm` under `record: summary` or `full`, a run with a model budget whose probes could not start (a capture object
 the kernel refused, a spent `bpf.ring_budget`) is refused `[capture-unavailable]` even though the forwarder runs,
 since that table does not refuse a direct connection; `capture: forwarder` is the fix that needs no probe.
+
+## The price table
+`limits.cost_usd` is estimated from the YAML file at the machine config's `prices:` path, `~/.tego/prices.yaml` unless
+a layer names another, and a run whose contract declares `cost_usd` is refused without one (above). No table is
+installed for you. `examples/prices.example.yaml` is one to start from: the Claude API's list prices for every model
+Anthropic serves to all accounts, dated by its `updated:` line. Check them against the provider's pricing page and install
+it where tego reads it, readable and writable by you alone. Only Anthropic responses are priced in this build: a model of
+another provider (OpenAI's, for `codex.yaml`) is unmetered whatever the table says, and a run that calls one under a
+`tokens` or `cost_usd` budget is ended (docs/p0/capture-derive.md), so leave the budget out of such a contract:
+
+```sh
+mkdir -p -m 700 ~/.tego
+install -m 600 examples/prices.example.yaml ~/.tego/prices.yaml
+```
+
+The format (spec/config/v0's `prices`, read by `internal/runtime/limits`):
+
+```yaml
+version: 1                      # the only version this tego reads; any other is read as no table
+updated: 2026-11-02             # when the prices were last checked; tego keeps it and prices nothing by it
+models:
+  claude-opus-5-5:              # the model name exactly as the response reports it
+    input_per_mtok: 4           # USD per million tokens
+    output_per_mtok: 20
+    cache_read_per_mtok: 0.20
+    cache_write_per_mtok: 5     # 5-minute cache writes
+    cache_write_1h_per_mtok: 8  # 1-hour cache writes
+server_tool_per_request:
+  web_search_requests: 0.01     # USD per request, keyed as the response's usage.server_tool_use names it
+```
+
+A model's key is the `model` of its `ssl_response` lines (`tego events <run> --kind ssl_response --json`); for a
+Claude model before the 4.6 generation that is the dated snapshot, such as `claude-haiku-4-5-20251001`, whatever alias
+the request used. Nothing the table leaves out is charged at $0. A key the format does not name makes the whole table
+unreadable, which reads as no table at all, so a misspelt price cannot read as $0. A response the table cannot price (a model it does not name, an entry
+without the cache price the response needs, a server tool with no fee, a premium such as fast mode or US-only
+inference) is charged at the table's dearest rate for each counter, twice that for a premium, and the run records
+`gap why=unpriced-model` once per model (limits-check-doctor-cli.md R2). A table whose prices are below the provider's
+lets a run spend past its budget; one above ends it early. The table follows the machine config's trust rule: owned by
+you or root, not group- or other-writable, in a directory that is not either, and with one name (no hard link);
+`tego compile` warns about one it does not read, and a run of a contract that declares `cost_usd` is then refused.
 
 ## Crash and cleanup
 - The supervisor holds `runs/<id>/lock` with `flock(LOCK_EX)` for the run; the kernel releases it when the holder

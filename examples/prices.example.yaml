@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# A price table to start from. tego estimates a run's limits.cost_usd from the price table at the machine config's
+# prices: path (~/.tego/prices.yaml unless a layer names another), and refuses a run whose contract declares cost_usd
+# when no table loads there, exit 125 [budget-unmetered]. docs/OPERATIONS.md ("The price table") has the whole format.
+#
+# The prices are the Claude API's own list prices in USD per million tokens, as Anthropic's pricing page
+# (https://platform.claude.com/docs/en/about-claude/pricing) gave them on the date in `updated:` below, for every model
+# it serves to all accounts. They change: check that page before relying on a budget. Only Anthropic responses are
+# priced in this build; another provider's model (OpenAI's, for codex.yaml) is unmetered whatever this table says. A
+# price below the provider's lets a run spend past its budget; one above it ends the run early. Amazon Bedrock and
+# Vertex AI set their own prices.
+#
+# Install it where tego reads it, readable and writable by you alone (a table that others may write, or that has a
+# second name, is not read):
+#   mkdir -p -m 700 ~/.tego
+#   install -m 600 examples/prices.example.yaml ~/.tego/prices.yaml
+#
+# Each model is keyed by its name exactly as the response reports it (`tego events <run> --kind ssl_response --json`
+# prints it as "model"); for a model before the 4.6 generation that is the dated snapshot (claude-haiku-4-5-20251001),
+# whatever alias the request used. A response the table cannot price (a model it does not name, a cache price an entry
+# leaves out, a premium such as fast mode or US-only inference) is never charged $0: it is charged at the table's
+# dearest rates (twice those for a premium), and the run records gap why=unpriced-model.
+version: 1
+updated: 2026-11-02
+models:
+  # input, output, cache reads, 5-minute cache writes, 1-hour cache writes
+  claude-fable-5-1:           {input_per_mtok: 10,   output_per_mtok: 50,   cache_read_per_mtok: 0.25, cache_write_per_mtok: 12.50, cache_write_1h_per_mtok: 20}
+  claude-fable-5:             {input_per_mtok: 10,   output_per_mtok: 50,   cache_read_per_mtok: 1.00, cache_write_per_mtok: 12.50, cache_write_1h_per_mtok: 20}
+  claude-opus-5-5:            {input_per_mtok: 4,    output_per_mtok: 20,   cache_read_per_mtok: 0.20, cache_write_per_mtok: 5.00,  cache_write_1h_per_mtok: 8}
+  claude-opus-5:              {input_per_mtok: 5,    output_per_mtok: 25,   cache_read_per_mtok: 0.50, cache_write_per_mtok: 6.25,  cache_write_1h_per_mtok: 10}
+  claude-opus-4-8:            {input_per_mtok: 5,    output_per_mtok: 25,   cache_read_per_mtok: 0.50, cache_write_per_mtok: 6.25,  cache_write_1h_per_mtok: 10}
+  claude-opus-4-7:            {input_per_mtok: 5,    output_per_mtok: 25,   cache_read_per_mtok: 0.50, cache_write_per_mtok: 6.25,  cache_write_1h_per_mtok: 10}
+  claude-opus-4-6:            {input_per_mtok: 5,    output_per_mtok: 25,   cache_read_per_mtok: 0.50, cache_write_per_mtok: 6.25,  cache_write_1h_per_mtok: 10}
+  claude-opus-4-5-20251101:   {input_per_mtok: 5,    output_per_mtok: 25,   cache_read_per_mtok: 0.50, cache_write_per_mtok: 6.25,  cache_write_1h_per_mtok: 10}
+  claude-sonnet-5-5:          {input_per_mtok: 2,    output_per_mtok: 10,   cache_read_per_mtok: 0.10, cache_write_per_mtok: 2.50,  cache_write_1h_per_mtok: 4}
+  claude-sonnet-5:            {input_per_mtok: 2,    output_per_mtok: 10,   cache_read_per_mtok: 0.20, cache_write_per_mtok: 2.50,  cache_write_1h_per_mtok: 4}
+  claude-sonnet-4-6:          {input_per_mtok: 3,    output_per_mtok: 15,   cache_read_per_mtok: 0.30, cache_write_per_mtok: 3.75,  cache_write_1h_per_mtok: 6}
+  claude-sonnet-4-5-20250929: {input_per_mtok: 3,    output_per_mtok: 15,   cache_read_per_mtok: 0.30, cache_write_per_mtok: 3.75,  cache_write_1h_per_mtok: 6}
+  # Claude Haiku 5.5 costs five times as much for a prompt over 100,000 tokens ($0.10 and $0.50 below it), and a table
+  # has one price per counter, so this is the higher one: an estimate of its short prompts reads high, never low.
+  claude-haiku-5-5:           {input_per_mtok: 0.50, output_per_mtok: 2.50, cache_read_per_mtok: 0.05, cache_write_per_mtok: 0.625, cache_write_1h_per_mtok: 1}
+  claude-haiku-4-5-20251001:  {input_per_mtok: 1,    output_per_mtok: 5,    cache_read_per_mtok: 0.10, cache_write_per_mtok: 1.25,  cache_write_1h_per_mtok: 2}
+server_tool_per_request:
+  web_search_requests: 0.01   # $10 per 1,000 searches
+  web_fetch_requests: 0       # no fee beyond the tokens the fetched page adds

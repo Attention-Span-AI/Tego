@@ -268,9 +268,10 @@ func (bd *builder) build() (*Handle, error) {
 		// Held reads notify every open too (ADR 0069 D2), and so do reason reads (ADR 0077), never part of hasAsk.
 		askRead:   bd.rt.HasAskRead() || bd.rt.ReadsHeld() || bd.rt.ReasonReadsNotified(),
 		gateWrite: bd.rt.Gate.Has(gate.FSWrite),
-		gateNet:   bd.rt.Gate.Has(gate.Net),
-		frames:    bd.rt.DecidesDatagrams(), // R11d: the same predicate the supervisor's pending-frame refusal asks
-		abi:       bd.profile.Version, memfd: memfd, socket: SocketArmFor(bd.rt),
+		// R11b: no thread of a run whose net: section or net gate decides destinations may route around them.
+		sourceRoute: bd.netRestricted || bd.rt.Gate.Has(gate.Net),
+		frames:      bd.rt.DecidesDatagrams(), // R11d: the same predicate the supervisor's pending-frame refusal asks
+		abi:         bd.profile.Version, memfd: memfd, socket: SocketArmFor(bd.rt),
 		signals:       bd.profile.Version < minSignalScopeABI,
 		procScope:     true,                    // no Landlock ABI scopes prlimit or scheduling (procScopeTest)
 		heldOpens:     bd.rt.NeedsOpenDeputy(), // no domain of the run's own beneath the deputy's (ADR 0041 D2)

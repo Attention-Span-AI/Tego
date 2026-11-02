@@ -1557,8 +1557,9 @@ func finalDot(p string) bool {
 // /proc/<pid>/fd, cwd or root link — which only the walk follows for the task — fails it. ok is false, and the
 // walk decides, for everything else: a pathname with a ".." component or a trailing slash (R6's spelling is
 // cleaned lexically, the kernel resolves physically), a descriptor's own file (q.empty), a place on procfs
-// (its "self" is resolved here as this process), a dangling final symlink an O_CREAT open would follow, and
-// any error but a missing name.
+// (its "self" is resolved here as this process), a final symlink a followed lookup misses on (a dangling one, or
+// one whose body goes through procfs's "self", which this lookup resolves as this process), and any error but a
+// missing name.
 func fsTargetInRoot(q pathQuery) (at string, ok bool, err error) {
 	if !spellingShape(q) {
 		return "", false, nil
@@ -1600,14 +1601,6 @@ func fsTargetInRoot(q pathQuery) (at string, ok bool, err error) {
 		if !errors.Is(err, unix.ENOENT) {
 			return "", false, nil
 		}
-		if q.create || q.predict {
-			// A dangling final symlink is followed to the name it creates (q.create), or that compile --test's
-			// question takes as made later (walkExec); only the walk does that.
-			if fd, err := lookup(q.joined, unix.O_NOFOLLOW); err == nil {
-				_ = unix.Close(fd)
-				return "", false, nil
-			}
-		}
 	}
 	dir, base := splitFinal(q.joined)
 	if base == "" || base == "." || base == ".." {
@@ -1616,6 +1609,21 @@ func fsTargetInRoot(q pathQuery) (at string, ok bool, err error) {
 	fd, err := lookup(dir, unix.O_DIRECTORY)
 	if err != nil {
 		return "", false, nil
+	}
+	if !q.nofollow {
+		// The followed lookup missed and the directory is there. A final name that is there all the same is a symlink this
+		// lookup could not follow as the task's lookup does: one whose body goes through procfs's "self" or "thread-self",
+		// which name this process here (a link to /proc/self/task/<the task's tid>/../../../../d/f misses here and lands
+		// on d/f for the task), or a dangling one, which an O_CREAT open follows to the name it creates (q.create) and
+		// compile --test's question takes as made later (q.predict). Only the walk, which reads "self" as the task's,
+		// answers either. Answered here with the link's own name, the verdict and the line named the link while the
+		// kernel opened the file its body names: an open for writing went past a deny_write on that file. A name missing
+		// here reaches no file for the task either.
+		var st unix.Stat_t
+		if err := unix.Fstatat(fd, base, &st, unix.AT_SYMLINK_NOFOLLOW); !errors.Is(err, unix.ENOENT) {
+			_ = unix.Close(fd)
+			return "", false, nil
+		}
 	}
 	return landed(fd, base)
 }

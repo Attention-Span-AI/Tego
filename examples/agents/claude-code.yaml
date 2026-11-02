@@ -6,6 +6,11 @@
 # Copy it next to the project and change the prompt and paths. test/e2e/kt7-two-agents.sh runs it
 # unchanged except for the model endpoint, against a local stand-in, and requires the task to complete.
 #
+# Before the first run, install a price table: limits.cost_usd below is estimated from it, and without one every
+# run of this contract is refused, exit 125 [budget-unmetered]. examples/prices.example.yaml is one to start from:
+# check its prices, then install it as its header says. Or delete cost_usd and bound the run with limits.tokens,
+# which needs no table.
+#
 # Why capture is `forwarder`: Claude Code ships as one Bun executable with BoringSSL linked in
 # statically and no SSL_* symbols, so no uprobe can read its traffic. `capture: forwarder` gives each
 # models[] entry a plaintext listener on 127.0.0.1 and points Claude Code at it through

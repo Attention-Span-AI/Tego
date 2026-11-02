@@ -245,6 +245,148 @@ done
 	}
 }
 
+// TestLongTailStoresAreRefusedAtTierLandlock: the long tail of credential stores at tier landlock. A store that exists
+// when the contract compiles is refused (~/.s3cfg, ~/.my.cnf, a keyring in ~/.local/share/keyrings, an OCI key), and so
+// is one a login makes during the run, in ~/.local/share, a directory the list newly enumerates
+// (~/.local/share/kwalletd), or where nothing existed (~/.supabase/access-token). What the tools keep beside a file row
+// (the flyctl binary, Composer's global packages), Maven's and Gradle's build settings and a sibling of the keyrings
+// stay readable. Under record: full each refused read is recorded refused, read_denied, by its row.
+func TestLongTailStoresAreRefusedAtTierLandlock(t *testing.T) {
+	sh, _ := filepath.EvalSymlinks("/bin/sh")
+	sl, _ := filepath.EvalSymlinks("/usr/bin/sleep")
+	if sh == "" || sl == "" {
+		t.Skip("needs /bin/sh and /usr/bin/sleep")
+	}
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	present := []struct{ path, row string }{
+		{".s3cfg", ".s3cfg"}, {".my.cnf", ".my.cnf"}, {".boto", ".boto"},
+		{".config/composer/auth.json", ".config/composer/auth.json"}, {".fly/config.yml", ".fly/config.yml"},
+		{".local/share/keyrings/login.keyring", ".local/share/keyrings"}, {".oci/oci_api_key.pem", ".oci"},
+	}
+	keep := []string{".fly/bin/flyctl", ".config/composer/vendor/autoload.php", ".m2/settings.xml",
+		".gradle/gradle.properties", ".local/share/applications/editor.desktop"}
+	later := []struct{ path, row string }{
+		{".local/share/kwalletd/kdewallet.kwl", ".local/share/kwalletd"},
+		{".supabase/access-token", ".supabase/access-token"},
+	}
+	plant := func(rel, content string) string {
+		p := filepath.Join(home, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	var presentAbs, keepAbs, laterAbs []string
+	for _, r := range present {
+		presentAbs = append(presentAbs, plant(r.path, "SECRET"))
+	}
+	for _, k := range keep {
+		keepAbs = append(keepAbs, plant(k, "x"))
+	}
+	for _, r := range later {
+		laterAbs = append(laterAbs, filepath.Join(home, r.path))
+	}
+	contract := fmt.Sprintf(`version: 0
+name: longtail
+command: [%q]
+tier: landlock
+fs:
+  write: ["./out/"]
+exec:
+  allow: [%q, %q]
+env:
+  pass: ["PATH", "HOME"]
+limits:
+  pids: 128
+record: full
+`, sh, sh, sl)
+	f := newFixtureIn(t, home, contract, nil)
+	script := `
+for f in ` + strings.Join(append(append([]string{}, presentAbs...), keepAbs...), " ") + `; do
+  if (exec 3< "$f"); then echo "READ $f"; else echo "DENIED $f"; fi
+done
+echo ready > "$HOME/out/ready"
+i=0
+while [ ! -e "$HOME/out/go" ] && [ $i -lt 400 ]; do ` + sl + ` 0.05; i=$((i+1)); done
+for f in ` + strings.Join(laterAbs, " ") + `; do
+  if [ ! -e "$f" ]; then echo "MISSING $f"; elif (exec 3< "$f"); then echo "READ $f"; else echo "DENIED $f"; fi
+done
+`
+	scriptPath := filepath.Join(home, "out", "probe.sh")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	created := make(chan error, 1)
+	go func() {
+		ready := filepath.Join(home, "out", "ready")
+		deadline := time.Now().Add(20 * time.Second)
+		for {
+			if _, err := os.Stat(ready); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				created <- fmt.Errorf("the agent never wrote %s", ready)
+				return
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		for _, p := range laterAbs {
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				created <- err
+				return
+			}
+			if err := os.WriteFile(p, []byte("SECRET"), 0o644); err != nil {
+				created <- err
+				return
+			}
+		}
+		created <- os.WriteFile(filepath.Join(home, "out", "go"), nil, 0o644)
+	}()
+	out, code := runProbe(t, f, sh, scriptPath)
+	if err := <-created; err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 {
+		t.Fatalf("agent exit %d:\n%s", code, out)
+	}
+	for _, p := range append(append([]string{}, presentAbs...), laterAbs...) {
+		if !strings.Contains(out, "DENIED "+p+"\n") {
+			t.Errorf("%s, a long-tail credential store, was not refused:\n%s", p, out)
+		}
+	}
+	for _, p := range keepAbs {
+		if !strings.Contains(out, "READ "+p+"\n") {
+			t.Errorf("%s is no row, yet it is not readable:\n%s", p, out)
+		}
+	}
+	lines := openLines(t, f.root)
+	refused := append(append([]struct{ path, row string }{}, present...), later...)
+	for _, r := range refused {
+		p, rule := filepath.Join(home, r.path), "fs.deny_read["+filepath.Join(home, r.row)+"]"
+		if len(lines[p]) == 0 {
+			t.Errorf("no open line for %s", p)
+		}
+		for _, e := range lines[p] {
+			if e.Verdict != record.VerdictRefused || e.Reason != record.ReasonReadDenied || e.Rule != rule {
+				t.Errorf("%s: line verdict=%s reason=%s rule=%s, want refused read_denied %s", p, e.Verdict, e.Reason, e.Rule, rule)
+			}
+		}
+	}
+	for _, p := range keepAbs {
+		for _, e := range lines[p] {
+			if e.Verdict != record.VerdictAllow {
+				t.Errorf("%s, which the agent read, is recorded %s %s", p, e.Verdict, e.Rule)
+			}
+		}
+	}
+}
+
 // runProbe runs script under f's table with sh and returns what it printed and its exit code.
 func runProbe(t *testing.T, f *fixture, sh, script string) (string, int) {
 	t.Helper()

@@ -6,5 +6,8 @@ and no quickstart yet. The interactive contracts are the demo kit's
 (`demo/contracts/`, proven on a laptop) in copy-paste form, and a test keeps each pair equal; `codex.yaml` also has a
 rule table tested, and test/poc/interactive-codex ran a contract of the same shape offline against a stand-in model.
 
+`prices.example.yaml` is a price table to start from: a contract that declares `limits.cost_usd` is refused without
+one, and its header says how to check and install it (`docs/OPERATIONS.md`, "The price table").
+
 `container/` holds the container image (a Dockerfile, a compose file running an agent under `tego run` with the
 dashboard on the host's loopback, and the entrypoint that prepares the container): see `docs/user/container.md`.

@@ -114,7 +114,7 @@ func (l *Loop) askDatagram(n *notif, c *compiled, t *target, d dest, raw []byte,
 	case zeroCopy(args.flags):
 		l.refuseNet(n, d, t.proto, refuse(ruleZeroCopy))
 		return true
-	case l.sourceRouted(t):
+	case l.sourceRouted(c, t):
 		l.refuseNet(n, d, t.proto, refuse(ruleSourceRouted))
 		return true
 	case !l.frameFree(t, args.flags):

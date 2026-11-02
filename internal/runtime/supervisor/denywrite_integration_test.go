@@ -57,7 +57,8 @@ func denyWritePrepare(t *testing.T) func(dir string) {
 
 // denyWriteChecks are the target's ways into the deny_write set: an O_TMPFILE written in the worktree and
 // linked into the hooks directory by descriptor (linkat's AT_EMPTY_PATH form) and through its /proc link, a
-// second name for the git config by descriptor, a hook written directly, and a regular file and a FIFO made
+// second name for the git config by descriptor, a hook written directly, the git config opened for writing through a
+// symlink whose body passes through the target's own /proc/self/task/<pid>, and a regular file and a FIFO made
 // as hooks by mknod(2). Then two writes that reach no
 // target: an ordinary file, and an O_TMPFILE linked into the worktree by descriptor. Last, a hook and an
 // ordinary file written after the target made itself non-dumpable, which denies an unprivileged supervisor
@@ -101,6 +102,18 @@ func denyWriteChecks() []checkResult {
 		_ = unix.Close(fd)
 	}
 	add("hook_write", err)
+
+	// The git config opened for writing, with no O_CREAT, through a symlink whose body goes through procfs's "self" to
+	// this process's own task directory and climbs back out to it. The supervisor's one-call lookup reads "self" as the
+	// supervisor and misses (this pid is no thread of its own); it answered the link's own name, which no deny_write
+	// names, and the kernel opened the config for the target.
+	self := filepath.Join(dir, "cfg-self")
+	add("config_self_link", unix.Symlink("/proc/self/task/"+strconv.Itoa(os.Getpid())+"/../../../.."+filepath.Join(dir, ".git/config"), self))
+	fd, err = unix.Open(self, unix.O_WRONLY|unix.O_CLOEXEC, 0)
+	if err == nil {
+		_ = unix.Close(fd)
+	}
+	add("config_write_through_proc_self", err)
 
 	// mknod(2) makes a name without an open: an empty executable hook, and a FIFO a later git hook run would
 	// block on. Landlock grants MAKE_REG and MAKE_FIFO over the write entry, so only the loop can refuse them.
@@ -167,13 +180,17 @@ func TestIntegrationDenyWrite(t *testing.T) {
 			h := startHarnessWith(t, harnessOpts{mode: mode, prepare: denyWritePrepare(t)})
 			h.stop(t)
 			for _, name := range []string{"tmpfile_link_empty_path", "tmpfile_link_proc_fd", "config_link_empty_path", "hook_write",
-				"hook_mknod_reg", "hook_mknod_fifo"} {
+				"config_write_through_proc_self", "hook_mknod_reg", "hook_mknod_fifo"} {
 				if c := h.check(t, name); !isErrno(c.Err, refusalErrno) {
 					t.Errorf("%s = %+v, want R10's errno", name, c)
 				}
 			}
 			if c := h.check(t, "ordinary_write"); c.Err != "" {
 				t.Errorf("ordinary_write = %+v, want it to succeed", c)
+			}
+			// The link itself is made in the worktree: its body is no end, so only the open through it is refused.
+			if c := h.check(t, "config_self_link"); c.Err != "" {
+				t.Errorf("config_self_link = %+v, want the symlink made", c)
 			}
 			// Unprivileged, this process cannot read a non-dumpable target at all; as root it can.
 			readsUndumpable := os.Geteuid() == 0
@@ -202,6 +219,7 @@ func TestIntegrationDenyWrite(t *testing.T) {
 				filepath.Join(h.dir, ".git/hooks/pre-commit"):     hooks,
 				filepath.Join(h.dir, ".git/hooks/pre-push"):       hooks,
 				filepath.Join(h.dir, "cfg"):                       config,
+				filepath.Join(h.dir, "cfg-self"):                  config,
 				filepath.Join(h.dir, ".git/hooks/post-checkout"):  hooks,
 				filepath.Join(h.dir, ".git/hooks/pre-rebase"):     hooks,
 				filepath.Join(h.dir, ".git/hooks/pre-applypatch"): hooks,
@@ -229,8 +247,10 @@ func TestIntegrationDenyWrite(t *testing.T) {
 				if isCoverData(name) {
 					continue
 				}
+				// Every wanted line is a refused end; the making of cfg-self, which the open through it is wanted under,
+				// goes with the lines nothing wants.
 				rule, ok := want[name]
-				if !ok {
+				if !ok || p.Op == record.FSSymlink {
 					if ev.Verdict == record.VerdictRefused {
 						t.Errorf("unexpected refusal %s/%s %s %q", ev.Verdict, ev.Rule, p.Op, name)
 					}

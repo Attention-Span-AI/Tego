@@ -283,7 +283,7 @@ func TestPrepareMemfdArmAndCapabilityLine(t *testing.T) {
 			}
 			want, err := assembleFilter(NativeArch(), filterOpts{abi: 7, memfd: tc.arm, socket: SocketArmFor(rt), procScope: true,
 				unixBinds: rt.Contract == nil || rt.Contract.Net != nil, listenControl: rt.Contract == nil || rt.Contract.Net != nil,
-				frames: rt.DecidesDatagrams()})
+				sourceRoute: rt.Contract == nil || rt.Contract.Net != nil, frames: rt.DecidesDatagrams()})
 			if err != nil {
 				t.Fatal(err)
 			}

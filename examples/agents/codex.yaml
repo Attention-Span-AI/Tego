@@ -64,8 +64,8 @@ fs:
   # held/ has to lie outside every fs.write entry above, or the write is allowed and this never fires.
   ask: ["./held/"]
   # CHANGE: the files of your real ~/.codex that exist (a deny_read of a missing path is refused). ~/.codex also holds Codex's
-  # own installation (~/.codex/packages), so the directory as a whole must not be denied. Add ~/.ssh, ~/.aws and the like:
-  # the built-in list already holds ~/.ssh, ~/.gnupg and the browser profiles.
+  # own installation (~/.codex/packages), so the directory as a whole must not be denied. The built-in list already holds
+  # ~/.ssh, ~/.aws, ~/.netrc, ~/.gnupg and the browser profiles, present or not: add only a secret of yours it lacks.
   deny_read: ["~/.codex/auth.json", "~/.codex/config.toml", "~/.codex/history.jsonl", "~/.codex/sessions"]
 exec:
   # CHANGE: what the task needs. `bash` runs every command Codex starts. Codex starts itself (as /proc/self/exe, for

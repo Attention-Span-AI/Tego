@@ -24,6 +24,7 @@ const (
 	msgNameLenOff    = 8  // socklen_t msg_namelen (4 bytes, 4 padding)
 	msgIovOff        = 16 // struct iovec *msg_iov
 	msgIovLenOff     = 24 // size_t msg_iovlen
+	msgControlOff    = 32 // void *msg_control
 	msgControlLenOff = 40 // size_t msg_controllen
 	msgHdrSize       = 56 // sizeof(struct msghdr)
 	mmsgHdrSize      = 64 // sizeof(struct mmsghdr): msghdr + unsigned msg_len, padded
@@ -103,7 +104,9 @@ type sendArgs struct {
 
 // handleSendMsg decides a sendmsg. The filter notifies every sendmsg because classic BPF cannot
 // dereference msg_name (enforce-landlock R11), so the first thing this does is read the header: a
-// connected send with no address is continued with no event at all, save where sendUnaddressed says.
+// connected send with no address is continued with no event at all, save where sendUnaddressed says. Under a
+// net: section a send whose control messages give its datagram a source route is refused first, addressed or
+// not (refusesRoute, R13b).
 func handleSendMsg(l *Loop, n *notif) {
 	r := l.newReader(n)
 	var hdr [msgHdrSize]byte
@@ -130,7 +133,12 @@ func handleSendMsg(l *Loop, n *notif) {
 	}
 	name, namelen := leU64(hdr[msgNameOff:]), int64(leU32(hdr[msgNameLenOff:]))
 	iov, iovlen := leU64(hdr[msgIovOff:]), leU64(hdr[msgIovLenOff:])
-	control := leU64(hdr[msgControlLenOff:]) != 0
+	ctl := ctlOf(hdr[:])
+	control := ctl.len != 0
+	var ctls []msgCtl // refusesRoute reads the control messages, which can route the datagram (R13b)
+	if control {
+		ctls = []msgCtl{ctl}
+	}
 	addrErr := msgNameErr(name, namelen) // a short read of the name adds EFAULT below, once it is read
 	prepare := func() (sendArgs, bool) {
 		payload, whole, sendErr := l.gather(r, iov, iovlen)
@@ -143,6 +151,9 @@ func handleSendMsg(l *Loop, n *notif) {
 		if l.refusesFrame(n, l.table.Load(), int(int32(n.args[0])), n.args[2], dest{}) {
 			return
 		}
+		if l.refusesRoute(n, r, int(int32(n.args[0])), dest{}, ctls) {
+			return // a connected datagram is routed by its control messages too (udp_sendmsg's faddr)
+		}
 		l.sendUnaddressed(n, control, prepare)
 		return
 	}
@@ -153,6 +164,9 @@ func handleSendMsg(l *Loop, n *notif) {
 	addrErr = shortAddrErr(addrErr, raw, namelen)
 	d := parseSockaddr(raw)
 	if l.refusesFrame(n, l.table.Load(), int(int32(n.args[0])), n.args[2], d) {
+		return
+	}
+	if l.refusesRoute(n, r, int(int32(n.args[0])), d, ctls) {
 		return
 	}
 	l.sendDecisionCtl(n, r, int(int32(n.args[0])), d, raw, control, n.args[2], prepare)
@@ -352,13 +366,14 @@ func clampLen(arg uint64) int64 {
 // available, and an agent that reaches for the batch form of a connect-class operation gets R10's errno
 // instead of a CONTINUE that would have let the bytes out to any host on a declared port (I2). An
 // observe run is the exception (R30): respond answers that refusal CONTINUE, because nothing is enforced
-// there, and each recorded message's line says observed.
+// there, and each recorded message's line says observed. Under a net: section a batch in which any message the
+// kernel sends carries a control message that routes its datagram is refused whole (refusesRoute, R13b).
 func handleSendMMsg(l *Loop, n *notif) {
 	r := l.newReader(n)
 	c := l.table.Load()
 	// The read stops only at an address that refuses the batch on every socket, since the socket is not
 	// read yet; what a guarded IP socket refuses besides is asked of every entry once it is (below).
-	head, tail := l.mmsgDests(r, n, func(d dest) bool { return c.refusesUndecidable(d, false, false) })
+	head, tail, ctls := l.mmsgDests(r, n, func(d dest) bool { return c.refusesUndecidable(d, false, false) })
 	if n.gone {
 		return
 	}
@@ -393,6 +408,9 @@ func handleSendMMsg(l *Loop, n *notif) {
 		}
 		l.refuseNet(n, dest{}, protoTCP, refuse(noteOr(r, ruleArgsUnreadable)))
 		return
+	}
+	if l.refusesRoute(n, r, int(int32(n.args[0])), first, ctls) {
+		return // one message's control messages route its datagram, so the batch is refused whole (R13b)
 	}
 	if len(head) == 0 && len(tail) == 0 {
 		// The headers remain mutable until the kernel copies them. A guarded IP datagram batch cannot
@@ -619,22 +637,30 @@ func (l *Loop) mmsgTailLine(c *compiled, r *reader, n *notif, tail []dest, proto
 // A header the read did not reach is one the kernel is about to read: not "no destination" but not
 // knowing whether there was one, on a syscall that may be the Fast-Open shape, so R5 fails it closed the
 // way an unreadable sendmsg header already is.
-func (l *Loop) mmsgDests(r *reader, n *notif, stops func(dest) bool) (head, tail []dest) {
+//
+// ctls are the control buffers of every message the kernel sends that carries one, addressed or not, taken from the
+// header array before any address is read: one may route its datagram (refusesRoute).
+func (l *Loop) mmsgDests(r *reader, n *notif, stops func(dest) bool) (head, tail []dest, ctls []msgCtl) {
 	count := int(uint32(n.args[2])) // vlen is an unsigned int
 	if count > mmsgKernelMax {
 		count = mmsgKernelMax
 	}
 	if count == 0 || !l.valid(n) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	hdrs := make([]byte, count*mmsgHdrSize)
 	got := r.read(n.args[1], hdrs)
 	if !l.valid(n) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if got < len(hdrs) {
 		r.fail(ruleArgsUnreadable)
-		return nil, nil
+		return nil, nil, nil
+	}
+	for i := 0; i < count; i++ {
+		if ctl := ctlOf(hdrs[i*mmsgHdrSize:]); ctl.len != 0 {
+			ctls = append(ctls, ctl)
+		}
 	}
 	var prev []byte // the address bytes of the last tail message kept
 	for i := 0; i < count; i++ {
@@ -645,7 +671,7 @@ func (l *Loop) mmsgDests(r *reader, n *notif, stops func(dest) bool) (head, tail
 		}
 		raw := r.sockaddr(name, namelen)
 		if !r.ok() {
-			return nil, nil
+			return nil, nil, nil
 		}
 		d := parseSockaddr(raw)
 		if i < mmsgMessages {
@@ -662,10 +688,10 @@ func (l *Loop) mmsgDests(r *reader, n *notif, stops func(dest) bool) (head, tail
 			// cost a read each and change neither. handleSendMMsg and mmsgTailLine ask every entry, so
 			// neither depends on this being the last one. An address that does not refuse the batch — an
 			// unrecognised family under no net: — is read past, so a later one that does is still reached.
-			return head, tail
+			return head, tail, ctls
 		}
 	}
-	return head, tail
+	return head, tail, ctls
 }
 
 // zeroCopy reports whether a send's flags argument carries MSG_ZEROCOPY, which a relay refuses rather than
@@ -1136,7 +1162,7 @@ func (l *Loop) relaySend(n *notif, c *compiled, t *target, d dest, raw []byte, a
 		l.refuseNet(n, d, t.proto, refuse(ruleCorked))
 		return
 	}
-	if l.sourceRouted(t) {
+	if l.sourceRouted(c, t) {
 		l.refuseNet(n, d, t.proto, refuse(ruleSourceRouted))
 		return
 	}

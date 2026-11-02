@@ -126,6 +126,101 @@ table:
     "Resolved": "$HOME/.pgpass"
    },
    {
+    "At": "$HOME/.local",
+    "Path": "$HOME/.local/share/keyrings",
+    "Resolved": "$HOME/.local/share/keyrings"
+   },
+   {
+    "At": "$HOME/.local",
+    "Path": "$HOME/.local/share/kwalletd",
+    "Resolved": "$HOME/.local/share/kwalletd"
+   },
+   {
+    "At": "$HOME/.my.cnf",
+    "Path": "$HOME/.my.cnf",
+    "Resolved": "$HOME/.my.cnf"
+   },
+   {
+    "At": "$HOME/.mylogin.cnf",
+    "Path": "$HOME/.mylogin.cnf",
+    "Resolved": "$HOME/.mylogin.cnf"
+   },
+   {
+    "At": "$HOME/.s3cfg",
+    "Path": "$HOME/.s3cfg",
+    "Resolved": "$HOME/.s3cfg"
+   },
+   {
+    "At": "$HOME/.boto",
+    "Path": "$HOME/.boto",
+    "Resolved": "$HOME/.boto"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/rclone/rclone.conf",
+    "Resolved": "$HOME/.config/rclone/rclone.conf"
+   },
+   {
+    "At": "$HOME/.rclone.conf",
+    "Path": "$HOME/.rclone.conf",
+    "Resolved": "$HOME/.rclone.conf"
+   },
+   {
+    "At": "$HOME/.gem",
+    "Path": "$HOME/.gem/credentials",
+    "Resolved": "$HOME/.gem/credentials"
+   },
+   {
+    "At": "$HOME/.local",
+    "Path": "$HOME/.local/share/gem/credentials",
+    "Resolved": "$HOME/.local/share/gem/credentials"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/composer/auth.json",
+    "Resolved": "$HOME/.config/composer/auth.json"
+   },
+   {
+    "At": "$HOME/.composer",
+    "Path": "$HOME/.composer/auth.json",
+    "Resolved": "$HOME/.composer/auth.json"
+   },
+   {
+    "At": "$HOME/.m2",
+    "Path": "$HOME/.m2/settings-security.xml",
+    "Resolved": "$HOME/.m2/settings-security.xml"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/doctl/config.yaml",
+    "Resolved": "$HOME/.config/doctl/config.yaml"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/hub",
+    "Resolved": "$HOME/.config/hub"
+   },
+   {
+    "At": "$HOME/.config",
+    "Path": "$HOME/.config/glab-cli/config.yml",
+    "Resolved": "$HOME/.config/glab-cli/config.yml"
+   },
+   {
+    "At": "$HOME/.fly",
+    "Path": "$HOME/.fly/config.yml",
+    "Resolved": "$HOME/.fly/config.yml"
+   },
+   {
+    "At": "$HOME/.supabase",
+    "Path": "$HOME/.supabase/access-token",
+    "Resolved": "$HOME/.supabase/access-token"
+   },
+   {
+    "At": "$HOME/.oci",
+    "Path": "$HOME/.oci",
+    "Resolved": "$HOME/.oci"
+   },
+   {
     "At": "$HOME/.mozilla",
     "Path": "$HOME/.mozilla/firefox",
     "Resolved": "$HOME/.mozilla/firefox"
@@ -323,10 +418,7 @@ table:
     ],
     "AskRead": null,
     "Assurance": "",
-    "DenyRead": [
-     "~/.aws",
-     "~/.netrc"
-    ],
+    "DenyRead": null,
     "DenyWrite": null,
     "Reads": "",
     "Watch": null,
@@ -538,6 +630,82 @@ table:
     "Rule": "fs.deny_read[$HOME/.pgpass]"
    },
    {
+    "Pattern": "$HOME/.local/share/keyrings",
+    "Rule": "fs.deny_read[$HOME/.local/share/keyrings]"
+   },
+   {
+    "Pattern": "$HOME/.local/share/kwalletd",
+    "Rule": "fs.deny_read[$HOME/.local/share/kwalletd]"
+   },
+   {
+    "Pattern": "$HOME/.my.cnf",
+    "Rule": "fs.deny_read[$HOME/.my.cnf]"
+   },
+   {
+    "Pattern": "$HOME/.mylogin.cnf",
+    "Rule": "fs.deny_read[$HOME/.mylogin.cnf]"
+   },
+   {
+    "Pattern": "$HOME/.s3cfg",
+    "Rule": "fs.deny_read[$HOME/.s3cfg]"
+   },
+   {
+    "Pattern": "$HOME/.boto",
+    "Rule": "fs.deny_read[$HOME/.boto]"
+   },
+   {
+    "Pattern": "$HOME/.config/rclone/rclone.conf",
+    "Rule": "fs.deny_read[$HOME/.config/rclone/rclone.conf]"
+   },
+   {
+    "Pattern": "$HOME/.rclone.conf",
+    "Rule": "fs.deny_read[$HOME/.rclone.conf]"
+   },
+   {
+    "Pattern": "$HOME/.gem/credentials",
+    "Rule": "fs.deny_read[$HOME/.gem/credentials]"
+   },
+   {
+    "Pattern": "$HOME/.local/share/gem/credentials",
+    "Rule": "fs.deny_read[$HOME/.local/share/gem/credentials]"
+   },
+   {
+    "Pattern": "$HOME/.config/composer/auth.json",
+    "Rule": "fs.deny_read[$HOME/.config/composer/auth.json]"
+   },
+   {
+    "Pattern": "$HOME/.composer/auth.json",
+    "Rule": "fs.deny_read[$HOME/.composer/auth.json]"
+   },
+   {
+    "Pattern": "$HOME/.m2/settings-security.xml",
+    "Rule": "fs.deny_read[$HOME/.m2/settings-security.xml]"
+   },
+   {
+    "Pattern": "$HOME/.config/doctl/config.yaml",
+    "Rule": "fs.deny_read[$HOME/.config/doctl/config.yaml]"
+   },
+   {
+    "Pattern": "$HOME/.config/hub",
+    "Rule": "fs.deny_read[$HOME/.config/hub]"
+   },
+   {
+    "Pattern": "$HOME/.config/glab-cli/config.yml",
+    "Rule": "fs.deny_read[$HOME/.config/glab-cli/config.yml]"
+   },
+   {
+    "Pattern": "$HOME/.fly/config.yml",
+    "Rule": "fs.deny_read[$HOME/.fly/config.yml]"
+   },
+   {
+    "Pattern": "$HOME/.supabase/access-token",
+    "Rule": "fs.deny_read[$HOME/.supabase/access-token]"
+   },
+   {
+    "Pattern": "$HOME/.oci",
+    "Rule": "fs.deny_read[$HOME/.oci]"
+   },
+   {
     "Pattern": "$HOME/.mozilla/firefox",
     "Rule": "fs.deny_read[$HOME/.mozilla/firefox]"
    },
@@ -631,7 +799,7 @@ table:
     "Pos": {
      "Col": 11,
      "File": "$REPO/examples/agents/custom-agent.yaml",
-     "Line": 14
+     "Line": 18
     },
     "Raw": "python3",
     "Resolved": "$BIN/python3",
@@ -648,7 +816,7 @@ table:
     "Pos": {
      "Col": 22,
      "File": "$REPO/examples/agents/custom-agent.yaml",
-     "Line": 39
+     "Line": 45
     },
     "Raw": "bash",
     "Resolved": "$BIN/bash",
@@ -750,7 +918,7 @@ table:
     "Pos": {
      "Col": 7,
      "File": "$REPO/examples/agents/custom-agent.yaml",
-     "Line": 28
+     "Line": 32
     },
     "Raw": "./work/",
     "Regular": false,
@@ -770,7 +938,7 @@ table:
     "Pos": {
      "Col": 7,
      "File": "$REPO/examples/agents/custom-agent.yaml",
-     "Line": 29
+     "Line": 33
     },
     "Raw": "/dev/null",
     "Regular": false,
@@ -790,51 +958,11 @@ table:
     "Pos": {
      "Col": 7,
      "File": "$REPO/examples/agents/custom-agent.yaml",
-     "Line": 30
+     "Line": 34
     },
     "Raw": "/dev/tty",
     "Regular": false,
     "Resolved": "/dev/tty",
-    "Runtime": "",
-    "RuntimeDev": 0,
-    "RuntimeIno": 0,
-    "Unenforced": false
-   },
-   {
-    "Access": 0,
-    "AskRead": false,
-    "BuiltIn": false,
-    "Kind": "deny_read",
-    "Missing": false,
-    "Path": "$HOME/.aws",
-    "Pos": {
-     "Col": 15,
-     "File": "$REPO/examples/agents/custom-agent.yaml",
-     "Line": 36
-    },
-    "Raw": "~/.aws",
-    "Regular": false,
-    "Resolved": "$HOME/.aws",
-    "Runtime": "",
-    "RuntimeDev": 0,
-    "RuntimeIno": 0,
-    "Unenforced": false
-   },
-   {
-    "Access": 0,
-    "AskRead": false,
-    "BuiltIn": false,
-    "Kind": "deny_read",
-    "Missing": false,
-    "Path": "$HOME/.netrc",
-    "Pos": {
-     "Col": 25,
-     "File": "$REPO/examples/agents/custom-agent.yaml",
-     "Line": 36
-    },
-    "Raw": "~/.netrc",
-    "Regular": true,
-    "Resolved": "$HOME/.netrc",
     "Runtime": "",
     "RuntimeDev": 0,
     "RuntimeIno": 0,
@@ -855,6 +983,46 @@ table:
     "Raw": "",
     "Regular": false,
     "Resolved": "$HOME/.ssh",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "deny_read",
+    "Missing": false,
+    "Path": "$HOME/.aws",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "$HOME/.aws",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "Kind": "deny_read",
+    "Missing": false,
+    "Path": "$HOME/.netrc",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": true,
+    "Resolved": "$HOME/.netrc",
     "Runtime": "",
     "RuntimeDev": 0,
     "RuntimeIno": 0,
@@ -912,7 +1080,7 @@ table:
     "Pos": {
      "Col": 9,
      "File": "$REPO/examples/agents/custom-agent.yaml",
-     "Line": 34
+     "Line": 38
     },
     "Raw": "./held/",
     "Regular": false,
@@ -929,38 +1097,38 @@ table:
   "Harness": "generic",
   "HarnessHook": null,
   "Hash": [
-   212,
-   39,
+   238,
+   2,
+   64,
    195,
-   152,
-   156,
-   193,
-   110,
+   243,
+   75,
+   247,
+   185,
+   65,
+   121,
+   22,
+   158,
+   12,
+   146,
+   228,
+   103,
+   26,
+   234,
+   174,
+   231,
+   135,
+   230,
    125,
-   199,
-   194,
-   220,
-   7,
-   246,
+   140,
+   54,
+   38,
    203,
-   176,
-   58,
-   39,
-   129,
-   17,
-   132,
-   175,
-   60,
-   126,
-   74,
-   136,
-   245,
-   115,
-   110,
-   220,
-   33,
-   194,
-   2
+   163,
+   26,
+   15,
+   165,
+   199
   ],
   "Home": "$HOME",
   "Ingress": null,
@@ -1038,7 +1206,7 @@ table:
     "Pos": {
      "Col": 11,
      "File": "$REPO/examples/agents/custom-agent.yaml",
-     "Line": 43
+     "Line": 49
     },
     "Proto": "unix",
     "PublicAnswer": false,
@@ -1245,6 +1413,82 @@ table:
     {
      "Pattern": "$HOME/.pgpass",
      "Rule": "fs.deny_read[$HOME/.pgpass]"
+    },
+    {
+     "Pattern": "$HOME/.local/share/keyrings",
+     "Rule": "fs.deny_read[$HOME/.local/share/keyrings]"
+    },
+    {
+     "Pattern": "$HOME/.local/share/kwalletd",
+     "Rule": "fs.deny_read[$HOME/.local/share/kwalletd]"
+    },
+    {
+     "Pattern": "$HOME/.my.cnf",
+     "Rule": "fs.deny_read[$HOME/.my.cnf]"
+    },
+    {
+     "Pattern": "$HOME/.mylogin.cnf",
+     "Rule": "fs.deny_read[$HOME/.mylogin.cnf]"
+    },
+    {
+     "Pattern": "$HOME/.s3cfg",
+     "Rule": "fs.deny_read[$HOME/.s3cfg]"
+    },
+    {
+     "Pattern": "$HOME/.boto",
+     "Rule": "fs.deny_read[$HOME/.boto]"
+    },
+    {
+     "Pattern": "$HOME/.config/rclone/rclone.conf",
+     "Rule": "fs.deny_read[$HOME/.config/rclone/rclone.conf]"
+    },
+    {
+     "Pattern": "$HOME/.rclone.conf",
+     "Rule": "fs.deny_read[$HOME/.rclone.conf]"
+    },
+    {
+     "Pattern": "$HOME/.gem/credentials",
+     "Rule": "fs.deny_read[$HOME/.gem/credentials]"
+    },
+    {
+     "Pattern": "$HOME/.local/share/gem/credentials",
+     "Rule": "fs.deny_read[$HOME/.local/share/gem/credentials]"
+    },
+    {
+     "Pattern": "$HOME/.config/composer/auth.json",
+     "Rule": "fs.deny_read[$HOME/.config/composer/auth.json]"
+    },
+    {
+     "Pattern": "$HOME/.composer/auth.json",
+     "Rule": "fs.deny_read[$HOME/.composer/auth.json]"
+    },
+    {
+     "Pattern": "$HOME/.m2/settings-security.xml",
+     "Rule": "fs.deny_read[$HOME/.m2/settings-security.xml]"
+    },
+    {
+     "Pattern": "$HOME/.config/doctl/config.yaml",
+     "Rule": "fs.deny_read[$HOME/.config/doctl/config.yaml]"
+    },
+    {
+     "Pattern": "$HOME/.config/hub",
+     "Rule": "fs.deny_read[$HOME/.config/hub]"
+    },
+    {
+     "Pattern": "$HOME/.config/glab-cli/config.yml",
+     "Rule": "fs.deny_read[$HOME/.config/glab-cli/config.yml]"
+    },
+    {
+     "Pattern": "$HOME/.fly/config.yml",
+     "Rule": "fs.deny_read[$HOME/.fly/config.yml]"
+    },
+    {
+     "Pattern": "$HOME/.supabase/access-token",
+     "Rule": "fs.deny_read[$HOME/.supabase/access-token]"
+    },
+    {
+     "Pattern": "$HOME/.oci",
+     "Rule": "fs.deny_read[$HOME/.oci]"
     },
     {
      "Pattern": "$HOME/.mozilla/firefox",

@@ -19,13 +19,15 @@ import (
 var repoRoot = filepath.Join("..", "..", "..")
 
 // TestExampleLoadsWithWarningsOnly: examples/agents/retriever.yaml, the P0
-// subset of the spec example, loads with only warnings.
+// subset of the spec example, loads with only warnings. It names no deny_read
+// of its own (the built-in list holds the credential paths it once named), so
+// the merged list is the profile's one entry, which the merge never drops (R5).
 func TestExampleLoadsWithWarningsOnly(t *testing.T) {
 	c, ds, err := Load(filepath.Join(repoRoot, "examples", "agents", "retriever.yaml"), testProfiles())
 	if err != nil {
 		t.Fatalf("%v\n%s", err, render(ds))
 	}
-	if c.Name != "retriever" || c.FS == nil || len(c.FS.DenyRead) != 4 || len(c.Net.Allow) != 3 {
+	if c.Name != "retriever" || c.FS == nil || !slices.Equal(c.FS.DenyRead, []string{"~/.gnupg/"}) || len(c.Net.Allow) != 3 {
 		t.Errorf("merged contract: %+v", c)
 	}
 	for _, d := range ds {

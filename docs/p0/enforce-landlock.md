@@ -636,6 +636,21 @@ rest on that reading. Tier 2 and 3 inherit the arm with the rest of the filter (
 (`TestNetGateFilterRefusesSourceRouteOptions` on both architectures' register layouts;
 `TestFilterRefusesSourceRouteOptionsOnKernel` on the real kernel: its control expects the kernel to accept both options
 without the arm, or, on a kernel with the CVE-2026-53249 restriction, to refuse the IPv4 route itself.)
+*Amended 2026-11-02 (GAPS C34):* the arm is installed in every run whose contract has a `net:` section as well
+(`filterOpts.sourceRoute`: a `net:` section or a net gate). Under a `net:` section with no gate the supervisor relays
+every admitted IP connect and Fast-Open send on its duplicate (supervisor R9, R12) and continues an admitted
+datagram (supervisor R13b), and the kernel sent each with whatever route the socket held: `tcp_v4_connect` and `udp_sendmsg`
+take the first hop from an `IP_OPTIONS` LSRR or SSRR, and `fl6_update_dst` from an `IPV6_RTHDR`, so the first hop was an
+address in the route, which no entry admits and neither the supervisor nor the root tiers' `connect4/6` and
+`sendmsg4/6` programs see (they read the destination). With the arm no thread of such a run can set a route by
+`setsockopt(2)`; the supervisor's options read before a relay covers these runs too, for a socket that carried one
+before the filter applied (supervisor R9), and the route a datagram's own control messages carry is the supervisor's
+to refuse (supervisor R13b). The cost is the arm's under a gate: a tool that sets IP options, such as `ping -R`'s
+record route or a traceroute gateway, fails `EPERM`. A run under
+`io_uring: true` can still set an option through a ring (`SOCKET_URING_OP_SETSOCKOPT`, 6.7+), which no seccomp
+filter sees (SEMANTICS §5). A contract with neither a `net:` section nor a net gate decides no IP destination, and
+its filter has no arm. (`TestNetSectionFilterRefusesSourceRouteOptions`; `TestFilterSocketGolden`'s two programs
+carry the arm.)
 
 **R11d — the pending-frame arms (supervisor R13).** *Added 2026-10-20 (ADR 0008's design note).* In a run that decides datagrams (`agent.RuleTable.DecidesDatagrams`: a `net:` section, a guarded
 `models[]` endpoint or a net gate; `filterOpts.frames`) the filter notifies every syscall that can leave a UDP frame
@@ -800,6 +815,9 @@ continues a `bind(2)` (R11c), so that refusal is Landlock's alone and unrecorded
 supervisor decides and records it.
 
 **Changes.**
+- 2026-11-02, R11b (GAPS C34): the source-route arm is installed under every `net:` section, not only under a net
+  gate; with no gate the kernel sent an admitted datagram, and the supervisor's relayed connect, to the first hop of
+  a route the agent set on the socket, an address no entry admits.
 - 2026-11-01, R6, R11c, R22: `listen` is notified under every `net:` section and a TCP `listen` with no `net.listen` is
   the supervisor's to refuse. Autobind reached no `BIND_TCP` check, so R6's sentence on `listen()` held for no such run.
 - 2026-10-25, R5 (ADR 0064): the harness hook's grant is an exec rule the runtime adds to the table, granted as any exec

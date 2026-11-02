@@ -89,9 +89,9 @@ EOF
 chmod 600 "$work/config.yaml"
 
 # The demo contract follows examples/agents/retriever.yaml's P0 subset, with what no laptop can
-# provide left out: the profile it extends ships only as a compiler fixture
-# (pkg/spec/agent/testdata/profiles/base/python-dev.yaml), and its
-# /work/out, MCP server and model host need a machine this demo does not assume.
+# provide left out: the profile it extends (examples/profiles/base/python-dev) needs the machine
+# config's profiles: to name it, and its MCP server and model host need a machine this demo does
+# not assume.
 cat > "$work/agent/agent.yaml" <<EOF
 version: 0
 name: retriever-demo

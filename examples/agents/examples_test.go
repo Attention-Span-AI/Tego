@@ -5,7 +5,6 @@ package agents
 import (
 	"bytes"
 	"encoding/json"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -49,39 +48,30 @@ func (c compiled) writes() []string {
 	return out
 }
 
-// machine is a machine the examples can compile on: a home with the credential paths retriever.yaml denies,
-// a PATH of stand-in executables for every tool an example names (compile resolves each one, R8), the
-// profiles under examples/profiles, and a ledger root outside every write entry. It returns the directory
-// to run from and the environment to set.
-func machine(t *testing.T) (work string, env map[string]string) {
+// standIn is a stand-in machine: the project directory a contract runs from, the home and PATH directory of its user,
+// the profiles directory and price table its machine config names, and the environment compile runs with there.
+type standIn struct {
+	work, home, bin, profiles, prices string
+	env                               map[string]string
+}
+
+// bareMachine is a machine that has the agents' own tools and nothing else of a developer's: a PATH of stand-in
+// executables for every tool an example names (compile resolves each one, R8), an empty home and project directory, a
+// runtime directory, and a machine config that names a ledger root outside every write entry, and a profiles
+// directory and a price table that do not exist, as a fresh machine's ~/.tego/profiles and ~/.tego/prices.yaml do
+// not. Naming them also keeps the invoking user's own out of the test: tego finds ~/.tego through the passwd entry,
+// not $HOME.
+func bareMachine(t *testing.T) standIn {
 	t.Helper()
 	base := t.TempDir()
 	// config.Load skips a layer whose directory others may write; t.TempDir is 0775 under umask 002.
 	if err := os.Chmod(base, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	home := filepath.Join(base, "home")
-	bin := filepath.Join(base, "bin")
-	work = filepath.Join(base, "work")
-	// ./.deps is where claude-agent-sdk.yaml's exec entry expects the SDK, and an exec directory must exist.
-	for _, d := range []string{home, bin, work, runtimeDir(work), filepath.Join(home, ".ssh"), filepath.Join(home, ".aws"),
-		filepath.Join(work, "in"), filepath.Join(work, "config"), filepath.Join(work, ".deps"),
-		// The Codex home codex-chatgpt.yaml grants (its parent must exist).
-		filepath.Join(home, ".local", "share", "tego", "codex-chatgpt")} {
+	m := standIn{work: filepath.Join(base, "work"), home: filepath.Join(base, "home"), bin: filepath.Join(base, "bin"),
+		profiles: filepath.Join(base, "profiles"), prices: filepath.Join(base, "prices.yaml")}
+	for _, d := range []string{m.home, m.bin, m.work, runtimeDir(m.work)} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(home, ".netrc"), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// The files of a Codex account that codex.yaml denies by name (a deny_read of a missing path is refused); the
-	// directory as a whole is not denied, since Codex's own installation lives in it.
-	if err := os.MkdirAll(filepath.Join(home, ".codex", "sessions"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range []string{"auth.json", "config.toml", "history.jsonl"} {
-		if err := os.WriteFile(filepath.Join(home, ".codex", f), nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -95,30 +85,12 @@ func machine(t *testing.T) (work string, env map[string]string) {
 	// find on PATH is an exec-not-on-path error.
 	for _, name := range []string{"claude", "codex", "bash", "git", "python3", "make", "go", "env", "mcp-postgres", "cat", "ls", "mkdir",
 		"touch", "grep", "sed", "head", "tail", "find", "wc", "tr", "sort", "codex-code-mode-host"} {
-		if err := os.WriteFile(filepath.Join(bin, name), stand, 0o755); err != nil {
+		if err := os.WriteFile(filepath.Join(m.bin, name), stand, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	// A copy of examples/profiles: the profiles directory follows the machine config's trust rule, which a
-	// checkout under umask 002 (group-writable directories) fails.
-	profiles := filepath.Join(base, "profiles")
-	if err := os.CopyFS(profiles, os.DirFS(filepath.Join(filepath.Dir(pkgDir), "profiles"))); err != nil {
-		t.Fatal(err)
-	}
-	if err := filepath.WalkDir(profiles, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		mode := os.FileMode(0o644)
-		if d.IsDir() {
-			mode = 0o755
-		}
-		return os.Chmod(p, mode)
-	}); err != nil {
-		t.Fatal(err)
-	}
 	cfg := filepath.Join(base, "config.yaml")
-	body := "version: 0\nledger_root: " + filepath.Join(base, "runs") + "\nprofiles: " + profiles + "\n"
+	body := "version: 0\nledger_root: " + filepath.Join(base, "runs") + "\nprofiles: " + m.profiles + "\nprices: " + m.prices + "\n"
 	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -127,12 +99,30 @@ func machine(t *testing.T) (work string, env map[string]string) {
 	// example that grants <runtime>/tego, which place moves a /run/user/<uid>/ grant into, is refused here as it is
 	// on a real machine. Without it the check ran only on /run/user/<test uid>, which no rewritten example names, and
 	// an example the real compile refuses passed.
-	return work, map[string]string{"HOME": home, "PATH": bin, "TEGO_CONFIG": cfg, "XDG_RUNTIME_DIR": runtimeDir(work)}
+	m.env = map[string]string{"HOME": m.home, "PATH": m.bin, "TEGO_CONFIG": cfg, "XDG_RUNTIME_DIR": runtimeDir(m.work)}
+	return m
+}
+
+// machine is the machine most tests compile the examples on: bareMachine with the setup their comments name, short of
+// a price table (the profiles under examples/profiles, the SDK's ./.deps, retriever.yaml's ./config, the Codex
+// account's files and home; freshSetup), and the ./in directory claude-code.yaml's prompt reads. Its home has no
+// ~/.ssh, ~/.aws or ~/.netrc, which many machines lack: the built-in deny_read list covers those wherever they exist,
+// and an example that named one in deny_read anyway was refused [path-missing] on a machine without it.
+func machine(t *testing.T) standIn {
+	t.Helper()
+	m := bareMachine(t)
+	for _, s := range []setupStep{installProfiles, installSDK, makeConfigDir, codexFiles, codexChatGPTHome} {
+		s.do(t, m)
+	}
+	if err := os.MkdirAll(filepath.Join(m.work, "in"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return m
 }
 
 // runtimeDir is the directory a contract's /run/user/<uid>/ stands for on the stand-in machine: next to the work
-// directory, made by machine, since compile refuses a write entry whose parent does not exist and a test machine's user
-// need not be the uid an example names, or have a session at all.
+// directory, made by bareMachine, since compile refuses a write entry whose parent does not exist and a test
+// machine's user need not be the uid an example names, or have a session at all.
 func runtimeDir(work string) string { return filepath.Join(filepath.Dir(work), "xdg") }
 
 // runtimeUserDir matches the /run/user/<uid>/ prefix of a path an example grants.
@@ -143,30 +133,35 @@ var runtimeUserDir = regexp.MustCompile(`"/run/user/[0-9]+/`)
 var pkgDir, _ = os.Getwd()
 
 // place writes an example, with paths that name a real machine's layout rewritten into the test's, next to
-// the work directory, makes the work directory the current one, and returns the written file's path. name is relative to
-// this package's directory, so a contract elsewhere in the repository (test/poc) can be placed too; the copy keeps its
-// base name.
+// the work directory of a new machine, makes the work directory the current one, and returns the written file's path.
+// name is relative to this package's directory, so a contract elsewhere in the repository (test/poc) can be placed
+// too; the copy keeps its base name.
 func place(t *testing.T, name string, rewrite ...string) string {
+	t.Helper()
+	return placeOn(t, machine(t), name, rewrite...)
+}
+
+// placeOn is place on the stand-in machine m.
+func placeOn(t *testing.T, m standIn, name string, rewrite ...string) string {
 	t.Helper()
 	src, err := os.ReadFile(filepath.Join(pkgDir, name))
 	if err != nil {
 		t.Fatal(err)
 	}
-	work, env := machine(t)
-	for k, v := range env {
+	for k, v := range m.env {
 		t.Setenv(k, v)
 	}
-	t.Chdir(work)
-	y := strings.ReplaceAll(strings.NewReplacer(rewrite...).Replace(string(src)), "@WORK@", work)
+	t.Chdir(m.work)
+	y := strings.ReplaceAll(strings.NewReplacer(rewrite...).Replace(string(src)), "@WORK@", m.work)
 	// compile expands ~ against the invoking user's own home, not $HOME; the test's home stands in for it.
-	y = strings.ReplaceAll(y, `"~/`, `"`+env["HOME"]+`/`)
+	y = strings.ReplaceAll(y, `"~/`, `"`+m.home+`/`)
 	// The Codex examples name the user's home (/home/USER/) and the helper directory Codex's installation holds
 	// (/CHANGE/, which the example tells the reader to replace); the stand-in machine's home and PATH directory stand in.
-	y = strings.ReplaceAll(y, "/home/USER/", env["HOME"]+"/")
-	y = strings.ReplaceAll(y, "/CHANGE/codex-code-mode-host", filepath.Join(env["PATH"], "codex-code-mode-host"))
+	y = strings.ReplaceAll(y, "/home/USER/", m.home+"/")
+	y = strings.ReplaceAll(y, "/CHANGE/codex-code-mode-host", filepath.Join(m.bin, "codex-code-mode-host"))
 	// The same for the runtime directory: the stand-in machine's own, never the uid an example names.
-	y = runtimeUserDir.ReplaceAllLiteralString(y, `"`+runtimeDir(work)+`/`)
-	path := filepath.Join(filepath.Dir(work), filepath.Base(name))
+	y = runtimeUserDir.ReplaceAllLiteralString(y, `"`+runtimeDir(m.work)+`/`)
+	path := filepath.Join(filepath.Dir(m.work), filepath.Base(name))
 	if err := os.WriteFile(path, []byte(y), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -256,10 +251,7 @@ func TestEveryExampleCompiles(t *testing.T) {
 	for _, f := range files {
 		f = filepath.Base(f)
 		t.Run(f, func(t *testing.T) {
-			// /work is retriever's illustrative project root; it moves into the test's own directory, since a
-			// write entry over the test's ledger root or contract is a contradiction by design
-			// (agent-contract.md R10).
-			_, warns := compileWarnings(t, f, `"/work/out/"`, `"@WORK@/out/"`, `"/work/config/"`, `"@WORK@/config/"`)
+			_, warns := compileWarnings(t, f)
 			// A copy-paste starting point carries no rule its own profile already holds, and never two
 			// warnings about one entry whose fixes say opposite things.
 			if strings.Contains(warns, "[redundant-rule]") {

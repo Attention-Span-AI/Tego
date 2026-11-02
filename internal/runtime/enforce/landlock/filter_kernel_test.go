@@ -192,11 +192,12 @@ func TestFilterRefusesMPTCPSocketOnKernel(t *testing.T) {
 	}
 }
 
-// TestFilterRefusesSourceRouteOptionsOnKernel is ADR 0041 D6's source-route arm against the real kernel: under a
-// net gate an unprivileged setsockopt(IP_OPTIONS) carrying an LSRR route, and setsockopt(IPV6_RTHDR) with a segment
-// routing header, are refused EPERM, while IP_TTL on the same socket still works. The control is the same calls
-// under the filter without the arm, where both routes are accepted: that is the window a sibling had between
-// the supervisor's options read and its relayed connect.
+// TestFilterRefusesSourceRouteOptionsOnKernel is the source-route arm (ADR 0041 D6, GAPS C34) against the real
+// kernel: under a net: section or a net gate an unprivileged setsockopt(IP_OPTIONS) carrying an LSRR route, and
+// setsockopt(IPV6_RTHDR) with a segment routing header, are refused EPERM, while IP_TTL on the same socket still
+// works. The control is the same calls under the filter without the arm, where both routes are accepted: that is
+// the window a sibling had between the supervisor's options read and its relayed connect, and, under a net: section
+// with no gate, the route every admitted datagram the supervisor continues was sent with.
 //
 // A kernel with "ipv4: restrict IPOPT_SSRR and IPOPT_LSRR options" (Linux 7.1, and the stable kernels it went back
 // to, 7.0.13 among them) refuses the LSRR route itself, EPERM, to a task without CAP_NET_RAW over the socket's
@@ -256,7 +257,7 @@ func TestFilterRefusesSourceRouteOptionsOnKernel(t *testing.T) {
 		t.Fatalf("control: setsockopt(IPV6_RTHDR, SRH) without the arm returned %v; the test cannot show the arm's effect", errs[2])
 	}
 
-	with, err := assembleFilter(NativeArch(), filterOpts{abi: minTruncateABI, gateNet: true})
+	with, err := assembleFilter(NativeArch(), filterOpts{abi: minTruncateABI, sourceRoute: true})
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -265,16 +266,16 @@ func TestFilterRefusesSourceRouteOptionsOnKernel(t *testing.T) {
 		t.Skip("could not install a seccomp filter on this thread")
 	}
 	if !errors.Is(errs[0], unix.EPERM) {
-		t.Errorf("setsockopt(IP_OPTIONS, LSRR) under a net gate returned %v, want EPERM", errs[0])
+		t.Errorf("setsockopt(IP_OPTIONS, LSRR) under the arm returned %v, want EPERM", errs[0])
 	}
 	if errs[1] != nil {
-		t.Errorf("setsockopt(IP_TTL) under a net gate returned %v: the arm is too broad", errs[1])
+		t.Errorf("setsockopt(IP_TTL) under the arm returned %v: the arm is too broad", errs[1])
 	}
 	if !errors.Is(errs[2], unix.EPERM) && !errors.Is(errs[2], unix.EAFNOSUPPORT) {
-		t.Errorf("setsockopt(IPV6_RTHDR) under a net gate returned %v, want EPERM", errs[2])
+		t.Errorf("setsockopt(IPV6_RTHDR) under the arm returned %v, want EPERM", errs[2])
 	}
 	if !errors.Is(errs[3], unix.EPERM) {
-		t.Errorf("setsockopt(IP_OPTIONS, NOOPs) under a net gate returned %v, want EPERM", errs[3])
+		t.Errorf("setsockopt(IP_OPTIONS, NOOPs) under the arm returned %v, want EPERM", errs[3])
 	}
 }
 

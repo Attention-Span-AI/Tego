@@ -320,7 +320,11 @@ fake kernel: an inet copy was relayed, and a unix-spelled copy still got `CONTIN
   therefore refuses `setsockopt(SOL_IP, IP_OPTIONS)` and `setsockopt(SOL_IPV6, IPV6_RTHDR / IPV6_2292RTHDR /
   IPV6_2292PKTOPTIONS)` with `EPERM` on the scalar level and option (enforce-landlock R11b), so no thread of the run
   adds a route, and the read decides a socket that carried one before the filter applied. Residual, disclosed: a
-  process outside the run that shares the socket can still set a route at any time.
+  process outside the run that shares the socket can still set a route at any time. *Amended 2026-11-02 (GAPS
+  C34):* the arm and the read hold under every `net:` section too, where the relayed connect and every admitted
+  datagram the supervisor continued followed a route to a first hop no entry admits; and under a `net:` section the
+  supervisor refuses a datagram whose own control messages route it (`IP_RETOPTS`, `IPV6_RTHDR`), best effort
+  (enforce-landlock R11b, supervisor R9 and R13b, SEMANTICS §5).
 - **Prerequisite.** Supervisor-3 lands first: `RES_OPTIONS=single-request` for any net gate, not only for a
   guarded run. Otherwise any net gate breaks glibc `getaddrinfo` on the unaddressed batch on a connected UDP
   socket.

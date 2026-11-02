@@ -3,7 +3,8 @@
 Copy-paste contracts, one per common agent shape. Every file here is the P0
 subset of `spec/agent/v0` and must load with `tego compile` with only
 warnings: `examples_test.go` compiles each one on a stand-in machine (tools on
-`PATH`, the profiles under `examples/profiles`), and `pkg/spec/agent` tests
+`PATH`, the profiles under `examples/profiles`), and again on a fresh one once
+the setup its comments name is done (below), and `pkg/spec/agent` tests
 `retriever.yaml` against a profile fixture of its own. The stand-ins use the
 names a stock Ubuntu or Debian box uses (`python3`; there is no `python`), and
 an example draws no `redundant-rule` warning and at most one
@@ -11,7 +12,7 @@ an example draws no `redundant-rule` warning and at most one
 
 | File | Agent | Notes |
 |---|---|---|
-| `retriever.yaml` | a Python retriever with one MCP server | mirrors the annotated spec example minus its P1/P2 fields |
+| `retriever.yaml` | a Python retriever with one MCP server | mirrors the annotated spec example minus its P1/P2 fields, with the project's own directories (`./out/`, `./config/`) where the spec example has `/work`, and no `deny_read` of its own: the built-in list already holds `~/.ssh`, `~/.aws` and `~/.netrc`, present or not, while an entry there must exist |
 | `claude-code.yaml` | Claude Code in print mode (`claude -p`) | `capture: forwarder` (Claude Code bundles BoringSSL with no symbols a uprobe could use), `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, `--permission-mode acceptEdits` so print mode may edit, Claude Code's config and scratch directories in `./.claude-state/`, an empty `net.allow` so a direct connect to the model host is refused; kill test 7 part `a-cli` (§12.3) runs it |
 | `claude-agent-sdk.yaml` | a Python agent on the Claude Agent SDK, which drives the Claude Code it bundles | the same capture and switches, the SDK installed with `pip install --target .deps` and its directory granted in `exec.allow`; kill test 7 (a)'s contract, run with `test/workloads/claude-sdk` |
 | `anthropic-sdk-python.yaml` | a system-Python agent on the Anthropic Python SDK | `capture: uprobe` on the system OpenSSL, tier cgroup (`sudo`); kill test 7 (b) runs it with only the model endpoint moved to a local stand-in |
@@ -22,14 +23,37 @@ an example draws no `redundant-rule` warning and at most one
 
 The three interactive contracts (`claude-code-interactive.yaml`, `codex.yaml`, `codex-chatgpt.yaml`) say CHANGE where a path is yours. With `claude` or `codex` on `PATH`, `tego run <contract> -- claude --version` (or `codex --version`) starts the agent under the contract with no login and no prompt, which is the quickest check that a copy works on your machine.
 
-`retriever.yaml`, `anthropic-sdk-python.yaml` and `claude-agent-sdk.yaml` extend `base/python-dev`, which
-resolves under the machine config's `profiles:` directory; point it at
-`examples/profiles` or copy the profile into `~/.tego/profiles/base/`. Either way the directory follows the
-machine config's trust rule: owned by root or you, and neither it nor a file in it group- or other-writable
-(a checkout made under umask 002 is not: `chmod -R go-w examples/profiles`).
-
 `gate`, `ask`, `fs.ask`, `net.ask` and declared-forwarder `net.http` rules are implemented;
 their supported actions and tier requirements are described in `docs/p0/agent-contract.md`
 and `docs/p0/network-controls.md`. Schema-only fields (`prompt`, `skills`, `visibility`,
 `docker`, `exec.privileged`, `env.mask`) must still be empty, and `containers` must be empty
 or `none`. See `spec/agent/v0/example.retriever.yaml` for their documented meaning.
+
+## Before the first compile
+
+On a machine with the agent's own tools and nothing else set up (no profiles, no price table, none of a
+developer's credential files), each file compiles once the setup its comments name is done, and
+`TestEveryExampleCompilesOnAFreshMachine` checks exactly that, holding each step to the file's own words:
+
+| Setup | Files |
+|---|---|
+| `base/python-dev`, the profile they extend | `retriever.yaml`, `anthropic-sdk-python.yaml`, `claude-agent-sdk.yaml` |
+| a price table, for `limits.cost_usd`, without which every run is refused `[budget-unmetered]` | `claude-code.yaml`, `claude-agent-sdk.yaml`, `anthropic-sdk-python.yaml`, `custom-agent.yaml`, `retriever.yaml` |
+| the Claude Agent SDK in the project's `.deps` (`pip install --target .deps claude-agent-sdk`) | `claude-agent-sdk.yaml` |
+| a `config/` directory in the project, which it watches | `retriever.yaml` |
+| the sign-in its header gives, into a Codex home of its own (`mkdir -p ~/.local/share/tego/codex-chatgpt` first) | `codex-chatgpt.yaml` |
+| the lines marked CHANGE (your uid, your home, the files of your `~/.codex`, Codex's helper) | `claude-code-interactive.yaml`, `codex.yaml`, `codex-chatgpt.yaml` |
+
+The profile and the price table go in tego's own directory, where the machine config's defaults (`profiles:
+~/.tego/profiles`, `prices: ~/.tego/prices.yaml`) find them; check the price table's prices first
+(`examples/prices.example.yaml`, `docs/OPERATIONS.md` "The price table"):
+
+```sh
+mkdir -p -m 700 ~/.tego
+mkdir -p ~/.tego/profiles && cp -r examples/profiles/base ~/.tego/profiles/ && chmod -R go-w ~/.tego/profiles
+install -m 600 examples/prices.example.yaml ~/.tego/prices.yaml
+```
+
+Both follow the machine config's trust rule: owned by root or you, and neither a file nor a directory on the way
+group- or other-writable (a copy made under umask 002 is not, hence the `chmod`). A machine config can name
+`examples/profiles` itself as `profiles:` instead, once `chmod -R go-w examples/profiles` has made it trusted.

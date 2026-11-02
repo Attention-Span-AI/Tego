@@ -304,6 +304,120 @@ func TestTokenStoreRowsJoinTheAlternatePatterns(t *testing.T) {
 	}
 }
 
+// longTailRows are the long tail of credential stores (docs/spec/builtin-deny-read.md cites each), each with a file
+// planted where the tool keeps its secret, as in tokenStoreRows: the row itself for a file row, a file beneath it for a
+// directory row.
+var longTailRows = []struct{ row, secret string }{
+	{".local/share/keyrings", "login.keyring"},
+	{".local/share/kwalletd", "kdewallet.kwl"},
+	{".my.cnf", ""},
+	{".mylogin.cnf", ""},
+	{".s3cfg", ""},
+	{".boto", ""},
+	{".config/rclone/rclone.conf", ""},
+	{".rclone.conf", ""},
+	{".gem/credentials", ""},
+	{".local/share/gem/credentials", ""},
+	{".config/composer/auth.json", ""},
+	{".composer/auth.json", ""},
+	{".m2/settings-security.xml", ""},
+	{".config/doctl/config.yaml", ""},
+	{".config/hub", ""},
+	{".config/glab-cli/config.yml", ""},
+	{".fly/config.yml", ""},
+	{".supabase/access-token", ""},
+	{".oci", "oci_api_key.pem"},
+}
+
+// longTailKept are files beside the long tail's rows that stay readable: what the tools keep next to a file row (the
+// flyctl binary, RubyGems' and Composer's installed packages, Maven's local repository), Maven's and Gradle's build
+// settings, which the page lists as rows left out, and a sibling of the keyring directories.
+var longTailKept = []string{
+	".fly/bin/flyctl", ".gem/ruby/3.3.0/cache/rake-13.2.1.gem", ".local/share/gem/specs/index",
+	".config/composer/vendor/autoload.php", ".composer/vendor/autoload.php", ".config/glab-cli/aliases.yml",
+	".m2/settings.xml", ".m2/repository/org/example/x/1.0/x-1.0.pom", ".gradle/gradle.properties",
+	".local/share/applications/editor.desktop",
+}
+
+// TestBuiltInDenyReadCoversTheLongTail: each store of the long tail is a built-in row at the granularity its secret
+// lives at, and a read of the secret is refused in every enforcing tier; the files the tools keep beside a file row,
+// and Maven's and Gradle's build settings, stay readable.
+func TestBuiltInDenyReadCoversTheLongTail(t *testing.T) {
+	f := newFixture(t)
+	plant := func(rel string) {
+		p := filepath.Join(f.home, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		f.file(p, "tok", 0o600)
+	}
+	for _, r := range longTailRows {
+		plant(filepath.Join(r.row, r.secret))
+	}
+	for _, k := range longTailKept {
+		plant(k)
+	}
+	rt, ds := f.compile(f.load("version: 0\nname: a\ncommand: [python]\n"))
+	for _, r := range longTailRows {
+		row := filepath.Join(f.home, r.row)
+		rule := findFS(rt, FSDenyRead, row)
+		if rule == nil {
+			t.Errorf("no built-in deny_read entry for ~/%s:\n%s", r.row, render(ds))
+			continue
+		}
+		if !rule.BuiltIn {
+			t.Errorf("~/%s: BuiltIn = false", r.row)
+		}
+		secret := filepath.Join(row, r.secret)
+		for _, tier := range enforcingTiers() {
+			if got := rt.Evaluate(Action{Kind: ActionFSRead, Path: secret}, tier); got.Verdict != VerdictRefused {
+				t.Errorf("tier %s: read of %s is %q (rule %s), want refused", tier, secret, got.Verdict, got.Rule)
+			}
+		}
+	}
+	for _, k := range longTailKept {
+		p := filepath.Join(f.home, k)
+		for _, tier := range enforcingTiers() {
+			if got := rt.Evaluate(Action{Kind: ActionFSRead, Path: p}, tier); got.Verdict == VerdictRefused {
+				t.Errorf("tier %s: read of ~/%s is refused (rule %s); it is no row", tier, k, got.Rule)
+			}
+		}
+	}
+}
+
+// TestAbsentLongTailRowsAreRecordedForLandlock: on a machine without these tools each row of the long tail compiles no
+// rule and no diagnostic, but is recorded in RuleTable.AbsentDenyRead and RuleTable.DenyReadPatterns (ADR 0067 D3), so
+// a store a login creates during the run is refused in every enforcing tier, named by its row, and a person's alternate
+// naming it is refused by name.
+func TestAbsentLongTailRowsAreRecordedForLandlock(t *testing.T) {
+	f := newFixture(t)
+	rt, ds := f.compile(f.load("version: 0\nname: a\ncommand: [python]\n"))
+	for _, r := range longTailRows {
+		row := filepath.Join(f.home, r.row)
+		rule := "fs.deny_read[" + row + "]"
+		if findFS(rt, FSDenyRead, row) != nil {
+			t.Errorf("absent ~/%s compiled a rule", r.row)
+		}
+		for _, d := range ds {
+			if strings.Contains(d.Message, r.row) {
+				t.Errorf("absent ~/%s produced a diagnostic: %s", r.row, d.Message)
+			}
+		}
+		if !slices.ContainsFunc(rt.AbsentDenyRead, func(a AbsentRow) bool { return a.Path == row }) {
+			t.Errorf("absent ~/%s is not in AbsentDenyRead", r.row)
+		}
+		secret := filepath.Join(row, r.secret)
+		if d, ok := rt.DenyReadPatternOf(secret); !ok || d.Rule != rule {
+			t.Errorf("%s matches deny_read pattern %q, %v; want %s", secret, d.Rule, ok, rule)
+		}
+		for _, tier := range enforcingTiers() {
+			if got := rt.Evaluate(Action{Kind: ActionFSRead, Path: secret}, tier); got.Verdict != VerdictRefused || got.Rule != rule {
+				t.Errorf("tier %s: read of %s made during the run is %q (rule %s), want refused by %s", tier, secret, got.Verdict, got.Rule, rule)
+			}
+		}
+	}
+}
+
 // TestWriteEntryAtATokenStoreRow pins a consequence ADR 0067 states: the new
 // file rows follow R6's existing rules for a write entry. A write entry equal to one (fs.write ~/.claude.json, as Claude
 // Code was run without CLAUDE_CONFIG_DIR) is a contradiction and the contract does not compile; a write entry above one
