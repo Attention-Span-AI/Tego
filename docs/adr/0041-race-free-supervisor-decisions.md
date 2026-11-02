@@ -912,7 +912,16 @@ built; the 2026-10-05 note near the end says why.
   clone), kill and tgkill only to itself, read and write only of the runtime poller's eventfd (write to standard
   error), fcntl status and close-on-exec only, `prctl(PR_SET_VMA)` answered `EINVAL`, and `openat2`; anything else is
   `SIGSYS` (`TestDeputyFilterKillsForbiddenSyscalls`: execve, fork, socket, ptrace, ioctl, a signal to another process,
-  a write to a file, an fcntl lock). (3) The pin is one lookup where it can be: the deputy shares the task's root,
+  a write to a file, an fcntl lock). *Amended 2026-11-02:* a read of any other descriptor is answered `EPERM`, not
+  `SIGSYS`, so the deputy still reads no file and lives on. A cgo build's glibc reads one by itself: the first time one
+  of the deputy's threads needs a ninth malloc arena, `arena_get2` counts the CPUs from
+  `/sys/devices/system/cpu/online`, then `/proc/stat`, then `sched_getaffinity` (allowed), and concurrent requests
+  start threads. Killed there, the deputy died with requests in flight, and every held open after it was refused
+  `held-unavailable`: the race job (cgo) failed `TestDeputyPinsAndOpens`, `TestHeldReadsSixtyFourThreads` and
+  `TestGateFSOpenRaceIsHeldAndRaceFree` on Ubuntu 24.04's glibc 2.39, and so does a plain cgo build of the supervisor
+  suite there (17 of 20 runs of the 64-thread test on two CPUs; none after). Ubuntu's 2.35 and 2.43 kill it the same
+  way; the shipped `CGO_ENABLED=0` binary has no libc and was never affected (`TestDeputyFilterRefusesAFileReadAndLives`,
+  `TestFilterRefusesAReadItDoesNotKillFor`). (3) The pin is one lookup where it can be: the deputy shares the task's root,
   mounts and credentials, so `openat2` from the task's cwd or dirfd with `RESOLVE_NO_MAGICLINKS` is the task's own
   lookup save procfs's `self`, `thread-self` and magic links, which fall to the walk (`pinInRun`: 3 µs against 14.5 µs
   for the walk). The supervisor sends the task's tgid; the deputy reads no /proc file. (4) A read-only open of a regular

@@ -120,6 +120,31 @@ func TestInCgroupTree(t *testing.T) {
 	}
 }
 
+// TestUnifiedLineLeavesV1HierarchiesOut pins what the reaper compares: the unified hierarchy's line of
+// /proc/<pid>/cgroup, whatever cgroup v1 hierarchies the host lists beside it, so a zombie in a sub-cgroup of the
+// run is the run's on such a host too.
+func TestUnifiedLineLeavesV1HierarchiesOut(t *testing.T) {
+	for _, tc := range []struct{ text, want string }{
+		{"0::/tego.slice/run-1.scope\n", "0::/tego.slice/run-1.scope"},
+		{"1:name=tegoedge:/\n0::/system.slice/hosted-compute-agent.service\n", "0::/system.slice/hosted-compute-agent.service"},
+		{"12:pids:/user.slice\n1:name=systemd:/user.slice/a.scope\n0::/user.slice/a.scope\n", "0::/user.slice/a.scope"},
+		{"0::/\n", "0::/"},
+		{"1:name=systemd:/a.scope\n", ""},
+		{"", ""},
+	} {
+		if got := unifiedLine(tc.text); got != tc.want {
+			t.Errorf("unifiedLine(%q) = %q, want %q", tc.text, got, tc.want)
+		}
+	}
+	own := unifiedLine("1:name=systemd:/x\n0::/tego.slice/run-1.scope\n")
+	if !inCgroupTree(unifiedLine("1:name=systemd:/x\n0::/tego.slice/run-1.scope/sub\n"), own) {
+		t.Error("beside a named v1 hierarchy, a sub-cgroup of the run is not the run's")
+	}
+	if inCgroupTree(unifiedLine("1:name=systemd:/x\n0::/tego.slice/run-2.scope\n"), own) {
+		t.Error("beside a named v1 hierarchy, another run's cgroup is the run's")
+	}
+}
+
 func testReapOrphans(t *testing.T, runCgroup string) {
 	if err := sys.SetChildSubreaper(true); err != nil {
 		t.Skip("PR_SET_CHILD_SUBREAPER unavailable:", err)

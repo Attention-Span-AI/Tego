@@ -260,7 +260,7 @@ func TestV1HierarchyDoesNotTouchTheRun(t *testing.T) {
 	if err := unix.Mount("cgroup", mnt, "cgroup", 0, "none,name=tegoedge"); err != nil {
 		t.Skipf("mount a v1 named hierarchy: %v", err)
 	}
-	t.Cleanup(func() { _ = unix.Unmount(mnt, unix.MNT_DETACH) })
+	t.Cleanup(func() { endV1Hierarchy(t, mnt, "tegoedge") }) // after the cleanup below has removed its cgroups
 	ino := func(p string) uint64 {
 		var st unix.Stat_t
 		if err := unix.Stat(p, &st); err != nil {
@@ -358,6 +358,7 @@ func TestV1HierarchyDoesNotTouchTheRun(t *testing.T) {
 	if err := os.Mkdir(child, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	v1dirs = append(v1dirs, child) // removed first, before its parent, on every path out
 	cid := ino(child)
 	var cval ebpfbindings.Run
 	if err := runSet.Lookup(&cid, &cval); err == nil {
@@ -373,5 +374,42 @@ func TestV1HierarchyDoesNotTouchTheRun(t *testing.T) {
 	}
 	if err := runSet.Lookup(&id, &val); err != nil {
 		t.Errorf("removing the unrelated v1 directory %s deleted the run's own run-set row %d: %v", twin, id, err)
+	}
+}
+
+// endV1Hierarchy unmounts the named cgroup v1 hierarchy at mnt, whose cgroups the caller has removed, and sees it
+// gone from /proc/self/cgroup. An unmount ends a v1 hierarchy only when its root has no child left, a dying one
+// included, and cgroups removed a moment before are still dying: unmounted then, the hierarchy lives on, mounted
+// nowhere and listed in every process's /proc/<pid>/cgroup. On GitHub's runner "1:name=tegoedge:/" stayed there
+// for the rest of the root suites, and TestReapOrphansInASubCgroup, two packages later, skipped on it. So it is
+// mounted again, which finds the same hierarchy, and unmounted again until the line is gone.
+func endV1Hierarchy(t *testing.T, mnt, name string) {
+	t.Helper()
+	listed := func() bool {
+		b, err := os.ReadFile("/proc/self/cgroup")
+		return err != nil || strings.Contains(string(b), ":name="+name+":")
+	}
+	for deadline := time.Now().Add(30 * time.Second); ; {
+		if err := unix.Unmount(mnt, 0); err != nil {
+			t.Errorf("unmount the cgroup v1 hierarchy %s at %s: %v", name, mnt, err)
+			_ = unix.Unmount(mnt, unix.MNT_DETACH) // out of the way of the directory's removal, at least
+			return
+		}
+		// An ended hierarchy leaves the list once its root is freed, after a grace period.
+		for settle := time.Now().Add(time.Second); listed() && time.Now().Before(settle); {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if !listed() {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Errorf("the cgroup v1 hierarchy %s outlived its unmount for 30 s: every later test sees it in /proc/<pid>/cgroup", name)
+			return
+		}
+		t.Logf("the cgroup v1 hierarchy %s outlived its unmount, its cgroups still dying: mounted again to end it", name)
+		if err := unix.Mount("cgroup", mnt, "cgroup", 0, "none,name="+name); err != nil {
+			t.Errorf("mount the cgroup v1 hierarchy %s again to end it: %v", name, err)
+			return
+		}
 	}
 }

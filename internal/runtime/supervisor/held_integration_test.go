@@ -1229,6 +1229,62 @@ func TestGateFSOpenRaceIsHeldAndRaceFree(t *testing.T) {
 	t.Logf("pre-fix count (no deputy): %d bypasses over %d opens", pre, 4*heldRaceAttempts)
 }
 
+// modeHeldDeputyGone is a target whose open deputy dies before its first held open (heldDeputyGoneChecks).
+const modeHeldDeputyGone = "helddeputygone"
+
+// heldDeputyGoneChecks kills the target's open deputy, waits until it is reaped, and then read-opens f, which the run
+// holds: "open" is the open's errno (Err, "" for a descriptor) and how long it took in microseconds (N).
+func heldDeputyGoneChecks() []checkResult {
+	if err := unix.Kill(testDeputyPid, unix.SIGKILL); err != nil {
+		return []checkResult{{Name: "kill", Err: err.Error()}}
+	}
+	for deadline := time.Now().Add(10 * time.Second); unix.Kill(testDeputyPid, 0) != unix.ESRCH; {
+		if time.Now().After(deadline) {
+			return []checkResult{{Name: "kill", Err: "the deputy is still there 10 s after SIGKILL"}}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	start := time.Now()
+	fd, err := unix.Open(filepath.Join(os.Getenv(helperDir), "f"), unix.O_RDONLY|unix.O_CLOEXEC, 0)
+	took := int(time.Since(start).Microseconds())
+	if err != nil {
+		return []checkResult{{Name: "open", Err: errName(err), N: took}}
+	}
+	_ = unix.Close(fd)
+	return []checkResult{{Name: "open", N: took}}
+}
+
+// TestHeldOpenOfADeadDeputyIsRefusedNotHung: a run whose open deputy died (the agent can kill it, being its uid; a
+// filter's kill ends it) refuses its next held open held-unavailable, EACCES, at once (ADR 0041 D4). The deputy holds
+// the only copy of its end of the control socket, as the launcher closes its own after starting the stage, so the
+// request socket handed over to the dead deputy fails at once. The race job's held race hung its target 60 s there:
+// this harness kept that end open until the run was over, so the handover went into a queue no one would read and the
+// request waited on it for as long as the task did.
+func TestHeldOpenOfADeadDeputyIsRefusedNotHung(t *testing.T) {
+	as, _ := heldAgent(t)
+	h := startHarnessWith(t, harnessOpts{as: as, mode: modeHeldDeputyGone, filterGate: "r", deputy: true, timeout: 20 * time.Second,
+		prepare: func(dir string) { _ = os.WriteFile(filepath.Join(dir, "f"), []byte("x"), 0o644) },
+		rules: func(rt *agent.RuleTable, _ string) {
+			rt.Tier = backend.TierLandlock
+			rt.Reads = agent.HeldReads{Mode: agent.ReadsHeld}
+		},
+		outOfTime: func(t testing.TB, ran time.Duration) {
+			t.Fatalf("the held open after the deputy died was still waiting %v later: a dead deputy refuses held-unavailable, never hangs", ran.Round(time.Millisecond))
+		}})
+	h.stop(t)
+	open := h.check(t, "open")
+	if open.Err != "EACCES" {
+		t.Fatalf("the held open after the deputy died: %q after %d µs, want EACCES (held-unavailable)", open.Err, open.N)
+	}
+	var refused bool
+	for _, ev := range h.sink.all() {
+		refused = refused || ev.Rule == ruleHeldUnavailable && ev.Verdict == record.VerdictRefused
+	}
+	if !refused {
+		t.Fatalf("no refused %s line: %+v", ruleHeldUnavailable, h.sink.all())
+	}
+}
+
 // heldBenchLoop is the benchmark's target: n read-opens and closes of one file on this thread, each timed, then
 // heldParallel opens over four threads at once, timed as a whole.
 func heldBenchLoop() []checkResult {

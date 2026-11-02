@@ -19,13 +19,28 @@ import (
 // notifier, so the sweep also runs on a timer.
 const reapInterval = 250 * time.Millisecond
 
-// procCgroup is the cgroup line of /proc/<pid>/cgroup (cgroup v2: "0::/path"), "" when unreadable.
+// procCgroup is the cgroup v2 line of /proc/<pid>/cgroup ("0::/path"), "" when unreadable or when it has none.
 func procCgroup(pid int) string {
 	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/cgroup", pid))
 	if err != nil {
 		return ""
 	}
-	return string(bytes.TrimSpace(b))
+	return unifiedLine(string(b))
+}
+
+// unifiedLine is the "0::/path" line of a /proc/<pid>/cgroup text, "" when it has none: hierarchy 0 is the unified
+// one, which holds the run's cgroup. A host may list cgroup v1 hierarchies there too, a line each, such as a named
+// one a container host mounts for an older systemd ("1:name=systemd:/..."); taken whole, that text made every pid
+// in a sub-cgroup of the run a stranger to it (inCgroupTree reads a single line), so its zombie stayed charged to
+// limits.pids. The root suites met one on GitHub's runner ("1:name=tegoedge:/", a test's), and
+// TestReapOrphansInASubCgroup skipped on it.
+func unifiedLine(text string) string {
+	for line := range strings.SplitSeq(text, "\n") {
+		if strings.HasPrefix(line, "0::") {
+			return line
+		}
+	}
+	return ""
 }
 
 // procChildrenGlob names the per-thread children lists of this process. They exist only on a kernel built

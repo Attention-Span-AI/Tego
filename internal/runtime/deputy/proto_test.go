@@ -3,6 +3,7 @@
 package deputy
 
 import (
+	"encoding/binary"
 	"errors"
 	"strings"
 	"testing"
@@ -130,5 +131,66 @@ func TestFilterKillsByDefault(t *testing.T) {
 	}
 	if len(raw) > unix.BPF_MAXINSNS {
 		t.Fatalf("%d instructions", len(raw))
+	}
+}
+
+// seccompData is a seccomp_data record (nr, arch, then the arguments' words the filter loads) as the x/net/bpf VM
+// reads it: the VM loads a word big-endian, where the kernel loads it in the host's order, so each word is written
+// big-endian here.
+func seccompData(arch, nr, arg0, arg1 uint32) []byte {
+	b := make([]byte, 64)
+	binary.BigEndian.PutUint32(b[offNr:], nr)
+	binary.BigEndian.PutUint32(b[offArch:], arch)
+	binary.BigEndian.PutUint32(b[offArg0:], arg0)
+	binary.BigEndian.PutUint32(b[offArg1:], arg1)
+	return b
+}
+
+// TestFilterRefusesAReadItDoesNotKillFor: a read of the runtime poller's eventfd is allowed and a read of any other
+// descriptor refused EPERM, never fatal: a cgo build's glibc reads /sys/devices/system/cpu/online when one of the
+// deputy's threads first needs a ninth malloc arena, and the kill there ended the deputy as concurrent requests made
+// it start its tenth thread (the race job's TestDeputyPinsAndOpens on Ubuntu 24.04). A write anywhere but the eventfd
+// and standard error, and a syscall outside the list, still kill.
+func TestFilterRefusesAReadItDoesNotKillFor(t *testing.T) {
+	arch, err := nativeArch()
+	if err != nil {
+		t.Skip(err)
+	}
+	for _, efd := range []int{5, -1} {
+		raw, err := Filter(FilterSpec{TGID: 42, EventFD: efd})
+		if err != nil {
+			t.Fatal(err)
+		}
+		insts, ok := bpf.Disassemble(raw)
+		if !ok {
+			t.Fatal("the filter does not disassemble")
+		}
+		vm, err := bpf.NewVM(insts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pollerRead := uint32(retAllow)
+		if efd < 0 {
+			pollerRead = retEPERM // no poller eventfd: no descriptor may be read
+		}
+		for _, c := range []struct {
+			name           string
+			nr, arg0, want uint32
+		}{
+			{"read of the poller's eventfd", unix.SYS_READ, 5, pollerRead},
+			{"read of a file", unix.SYS_READ, 9, retEPERM},
+			{"read of standard input", unix.SYS_READ, 0, retEPERM},
+			{"write to standard error", unix.SYS_WRITE, 2, retAllow},
+			{"write to a file", unix.SYS_WRITE, 9, retKill},
+			{"socket", unix.SYS_SOCKET, unix.AF_INET, retKill},
+		} {
+			got, err := vm.Run(seccompData(arch, c.nr, c.arg0, 0))
+			if err != nil {
+				t.Fatalf("eventfd %d, %s: %v", efd, c.name, err)
+			}
+			if uint32(got) != c.want {
+				t.Errorf("eventfd %d, %s: the filter answers %#x, want %#x", efd, c.name, uint32(got), c.want)
+			}
+		}
 	}
 }

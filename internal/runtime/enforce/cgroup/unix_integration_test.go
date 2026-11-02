@@ -350,9 +350,7 @@ func runUnixHelper(t *testing.T, dir *os.File, cwd string, ops []string) []error
 	cmd := unixHelperCommand(dir, cwd, "ops")
 	cmd.Env = append(cmd.Env, "TEGO_UNIX_OPS="+strings.Join(ops, "\n"))
 	cmd.ExtraFiles = []*os.File{w}
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start helper: %v", err)
-	}
+	startHelper(t, cmd)
 	w.Close()
 	var out []error
 	sc := bufio.NewScanner(r)
@@ -391,17 +389,9 @@ func holdUnix(t *testing.T, dir *os.File) (int, int, func()) {
 	if err != nil {
 		t.Fatalf("stdin: %v", err)
 	}
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start helper: %v", err)
-	}
+	startHelper(t, cmd)
 	w.Close()
-	line, err := bufio.NewReader(r).ReadString('\n')
-	r.Close()
-	var fd int
-	if _, perr := fmt.Sscanf(line, "FD %d", &fd); err != nil || perr != nil {
-		_ = cmd.Process.Kill()
-		t.Fatalf("helper did not report its socket: %q, %v", line, err)
-	}
+	fd := helperFD(t, cmd, r)
 	return cmd.Process.Pid, fd, func() {
 		stdin.Close()
 		_ = cmd.Wait()

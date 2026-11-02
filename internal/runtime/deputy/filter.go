@@ -37,6 +37,13 @@ const (
 	// retEINVAL answers prctl(PR_SET_VMA): the Go runtime names its mappings with it (decoratemappings) and stops
 	// once the kernel answers EINVAL, so the deputy gains no prctl and the runtime never retries.
 	retEINVAL = unix.SECCOMP_RET_ERRNO | uint32(unix.EINVAL)
+	// retEPERM answers a read of any descriptor but the poller's eventfd: the read is refused, and the deputy, which
+	// reads no file, lives on. A cgo build's libc reads one on its own: glibc's malloc counts the CPUs the first time
+	// a thread needs a ninth arena (arena_get2's __get_nprocs), opening /sys/devices/system/cpu/online and then
+	// /proc/stat, and falls back to sched_getaffinity, which is allowed, when neither can be read. Killed there, the
+	// deputy died as its tenth thread started, under the load that makes it start one, and every held open after it
+	// was refused held-unavailable.
+	retEPERM = unix.SECCOMP_RET_ERRNO | uint32(unix.EPERM)
 	// x32Bit is the x32 personality bit in nr on x86_64, which no syscall of this process sets.
 	x32Bit = 0x40000000
 	// prSetVMA is PR_SET_VMA (include/uapi/linux/prctl.h).
@@ -57,7 +64,8 @@ var plainAllowed = []uint32{
 	unix.SYS_RESTART_SYSCALL, unix.SYS_EPOLL_PWAIT, unix.SYS_GETRANDOM, unix.SYS_SCHED_GETAFFINITY,
 	// A cgo build's threads are libc's (pthread_create): their stacks' guard pages, robust futex lists, restartable
 	// sequences and malloc's heap. Each acts on the deputy's own memory or thread state only. The shipped binary is
-	// CGO_ENABLED=0 and makes none of them at steady state.
+	// CGO_ENABLED=0 and makes none of them at steady state. (The CPU count glibc's malloc reads on a new thread is
+	// answered EPERM: retEPERM.)
 	unix.SYS_MPROTECT, unix.SYS_SET_ROBUST_LIST, unix.SYS_RSEQ, unix.SYS_BRK,
 }
 
@@ -79,8 +87,8 @@ func nativeArch() (uint32, error) {
 // Filter assembles the deputy's allowlist (ADR 0041 D2): any other architecture, the x32 personality, and every
 // syscall not allowed below kill the process. Argument-checked: clone only with CLONE_THREAD (the runtime's own
 // threads; no new process), kill and tgkill only for the deputy's own thread group, read only of the poller's
-// eventfd, write only to it and to standard error, fcntl only for the commands above, and prctl(PR_SET_VMA) answered
-// EINVAL.
+// eventfd (any other read answered EPERM, retEPERM), write only to it and to standard error, fcntl only for the
+// commands above, and prctl(PR_SET_VMA) answered EINVAL.
 func Filter(s FilterSpec) ([]bpf.RawInstruction, error) {
 	arch, err := nativeArch()
 	if err != nil {
@@ -133,7 +141,7 @@ func Filter(s FilterSpec) ([]bpf.RawInstruction, error) {
 	checked(unix.SYS_READ, []bpf.Instruction{
 		bpf.LoadAbsolute{Off: offArg0, Size: 4},
 		bpf.JumpIf{Cond: bpf.JumpEqual, Val: efd, SkipFalse: 1},
-		allow, kill,
+		allow, bpf.RetConstant{Val: retEPERM},
 	})
 	checked(unix.SYS_WRITE, []bpf.Instruction{
 		bpf.LoadAbsolute{Off: offArg0, Size: 4},

@@ -24,6 +24,17 @@ import (
 // (Handle.GrantUnix), and the grant admits exactly one connect of exactly that socket to exactly that name, within
 // its lifetime, for this run's gen; Detach removes every grant of the slot. Below 6.7 TestPlaneUnixApprovalOnRealKernel
 // holds the plane's socket_connect to the same cells.
+//
+// The run's sockets are made before Arm, as the launcher starts its stage before its arming point (ADR 0021 (2)).
+// The table's fs entries give this run a fanotify group, Arm marks their mount for it, and from then until Detach this
+// process may start no process (ADR 0021 (3)). The helpers were once started after Arm: each re-executes this binary,
+// and on a host whose one filesystem holds both the fixture and the binary (the GitHub runner's root filesystem,
+// /tmp and $RUNNER_TEMP alike) the helper's execve raised a permission event of the group, which no listener here
+// answers. os/exec's forking thread keeps its scheduler slot until that execve returns, so the next garbage
+// collection's stop-the-world waited on it for good and stopped every goroutine, the -test.timeout alarm included:
+// GitHub's root suite on kernel 7.0 printed nothing after "=== RUN" until its 6000 s bound killed the binary (§6 E39).
+// The KVM guests mount a tmpfs /tmp and run the binary from the initramfs, so their exec was never on the marked
+// mount, and their runs passed on every kernel.
 func TestUnixApprovalOnRealKernel(t *testing.T) {
 	u := newUnixFixture(t, "cgask")
 	h, dir, _ := realRun(t, "unixask", u.table())
@@ -31,22 +42,45 @@ func TestUnixApprovalOnRealKernel(t *testing.T) {
 		t.Skip("this kernel predates cgroup/connect_unix (6.7); TestPlaneUnixApprovalOnRealKernel holds the plane's " +
 			"socket_connect to these cells")
 	}
+	socks := newUnixApprovalSockets(t, dir)
 	if err := h.Arm(); err != nil {
 		t.Fatal(err)
 	}
-	unixApprovalCells(t, h, dir, u, unix.EPERM)
+	unixApprovalCells(t, h, u, socks, unix.EPERM)
 }
 
 // TestPlaneUnixApprovalOnRealKernel is TestUnixApprovalOnRealKernel's cells for a run whose unix names the plane's
-// socket_connect decides (below 6.7, or on 6.7+ with connect_unix withheld as planeUnixRun does), refused EACCES.
+// socket_connect decides (below 6.7, or on 6.7+ with connect_unix withheld as planeUnixRun does), refused EACCES. A
+// run in a plane mode has no fanotify group, so its sockets may be made after planeUnixRun has armed it.
 func TestPlaneUnixApprovalOnRealKernel(t *testing.T) {
 	h, dir, u := planeUnixRun(t, "planeask")
-	unixApprovalCells(t, h, dir, u, unix.EACCES)
+	unixApprovalCells(t, h, u, newUnixApprovalSockets(t, dir), unix.EACCES)
 }
 
-// unixApprovalCells are the one-connect grant's cells for the attached, armed run h whose cgroup dir names, over
-// u's unlisted abstract listener, with refused the errno the deciding program answers.
-func unixApprovalCells(t *testing.T, h *Handle, dir *os.File, u *unixFixture, refused syscall.Errno) {
+// unixApprovalSockets are the run's sockets the grant's cells connect: AF_UNIX stream sockets that helpers made inside
+// the run's cgroup, each held here through a pidfd_getfd duplicate, as the supervisor holds the agent's (controlSocket).
+type unixApprovalSockets struct {
+	granted int // the socket a grant names: refused before it, admitted once by it
+	sibling int // another socket of the run, which that grant does not cover
+	late    int // granted, and connected only past the grant's lifetime
+	stale   int // whose row names another gen of the slot
+	purged  int // granted, and left for Detach to purge
+}
+
+// newUnixApprovalSockets makes the cells' sockets in the run's cgroup dir names, one helper process each. A run with a
+// fanotify group makes them before Arm (TestUnixApprovalOnRealKernel).
+func newUnixApprovalSockets(t *testing.T, dir *os.File) unixApprovalSockets {
+	t.Helper()
+	var s unixApprovalSockets
+	for _, fd := range []*int{&s.granted, &s.sibling, &s.late, &s.stale, &s.purged} {
+		*fd = controlSocket(t, dir, "unix-stream")
+	}
+	return s
+}
+
+// unixApprovalCells are the one-connect grant's cells for the attached, armed run h, on its sockets s, over u's
+// unlisted abstract listener, with refused the errno the deciding program answers.
+func unixApprovalCells(t *testing.T, h *Handle, u *unixFixture, s unixApprovalSockets, refused syscall.Errno) {
 	t.Helper()
 	m := h.kern.(*bpfKernel).maps[ebpfbindings.MapUnixApprovals]
 	if m == nil {
@@ -56,7 +90,7 @@ func unixApprovalCells(t *testing.T, h *Handle, dir *os.File, u *unixFixture, re
 	target := &unix.SockaddrUnix{Name: u.absUnlisted}
 	other := &unix.SockaddrUnix{Name: "@tego-it-other-" + u.tag}
 
-	fd := controlSocket(t, dir, "unix-stream")
+	fd := s.granted
 	if err := unix.Connect(fd, target); !errors.Is(err, refused) {
 		t.Fatalf("an unlisted abstract name before any approval: %v, want %v", err, refused)
 	}
@@ -65,7 +99,7 @@ func unixApprovalCells(t *testing.T, h *Handle, dir *os.File, u *unixFixture, re
 		t.Fatal(err)
 	}
 	defer func() { _, _ = revoke() }()
-	if err := unix.Connect(controlSocket(t, dir, "unix-stream"), target); !errors.Is(err, refused) {
+	if err := unix.Connect(s.sibling, target); !errors.Is(err, refused) {
 		t.Fatalf("another socket of the run inherited the grant: %v", err)
 	}
 	if err := unix.Connect(fd, other); !errors.Is(err, refused) {
@@ -91,7 +125,7 @@ func unixApprovalCells(t *testing.T, h *Handle, dir *os.File, u *unixFixture, re
 	}
 
 	// Past its lifetime a grant admits nothing.
-	late := controlSocket(t, dir, "unix-stream")
+	late := s.late
 	revokeLate, err := grantUnixFD(t, h, late, name)
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +138,7 @@ func unixApprovalCells(t *testing.T, h *Handle, dir *os.File, u *unixFixture, re
 
 	// The slot-reuse stale row: a grant of another gen of this slot, as a run that died before its revoke and before
 	// the reaper leaves it, is absent to this run.
-	stale := controlSocket(t, dir, "unix-stream")
+	stale := s.stale
 	staleCookie, err := socketCookie(stale)
 	if err != nil {
 		t.Fatal(err)
@@ -125,7 +159,7 @@ func unixApprovalCells(t *testing.T, h *Handle, dir *os.File, u *unixFixture, re
 	}
 
 	// Detach removes every grant of the slot, of every gen.
-	if _, err := grantUnixFD(t, h, controlSocket(t, dir, "unix-stream"), name); err != nil {
+	if _, err := grantUnixFD(t, h, s.purged, name); err != nil {
 		t.Fatal(err)
 	}
 	slot := h.slot

@@ -9,7 +9,9 @@
 // own. The deputy sets PR_SET_DUMPABLE 0, so the agent cannot ptrace it or reach its descriptors through /proc, arms
 // PR_SET_PDEATHSIG against the launcher, sets no_new_privs and installs an allowlist seccomp filter (Filter) that
 // kills it on any syscall outside walking, opening, stating, reading links, setting the umask, the socket protocol,
-// exit and what the Go runtime needs to run threads. It then talks only over the socketpair the launcher made: a
+// exit and what the Go runtime needs to run threads. A read of any descriptor but the runtime poller's eventfd is
+// refused EPERM rather than fatal: the deputy reads no file, and a cgo build's libc probes one on a new thread (the
+// CPU count glibc's malloc reads). It then talks only over the socketpair the launcher made: a
 // hello carrying its pid, which the launcher reads with kernel-attested credentials (SCM_CREDENTIALS), then one
 // request socket per concurrent caller, each passed to it over the control socket (SCM_RIGHTS).
 //

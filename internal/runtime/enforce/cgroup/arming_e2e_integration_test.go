@@ -62,7 +62,8 @@ except OSError as e:
 //   - a deny_read over tego is decided like any other file: the agent's read of it is refused, by the group with
 //     EPERM and a source=fanotify line naming the entry where the run decides through fanotify, by the decision
 //     plane with EACCES and a source=kernel read-denied line naming it where doctor selected a plane mode
-//     (TIER3-PLAN T6; the plane's rows exist before the run-set row that arms them, as the marks did).
+//     (TIER3-PLAN T6; the plane's rows exist before the run-set row that arms them, as the marks did); either line
+//     names the file by the denied link the agent opened, not by the name tego runs from.
 //
 // It runs as root with SUDO_UID set. It needs the objects in the tego it builds, not in this test binary, so
 // both of the package's root builds run it (test/vm/root-must-pass.txt).
@@ -110,9 +111,12 @@ func TestTier2ArmsAfterTheStageExec(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The binary that runs, root's, with a second name in the denied directory: after the walk above, which would
-	// hand it to the agent's user.
+	// hand it to the agent's user. The agent opens that name, so its refusal names denied, not bin: an open's line
+	// names the path the open resolved (trace_proc's bpf_d_path of the file's f_path, or the fanotify event
+	// descriptor's /proc/self/fd link), and two hard links are two dentries.
 	bin := built
-	if err := os.Link(bin, filepath.Join(tools, "tego")); err != nil {
+	denied := filepath.Join(tools, "tego")
+	if err := os.Link(bin, denied); err != nil {
 		t.Fatal(err)
 	}
 	ledgerRoot := filepath.Join(base, "ledger")
@@ -179,9 +183,10 @@ func TestTier2ArmsAfterTheStageExec(t *testing.T) {
 	}
 	if findEvent(events, func(e map[string]any) bool {
 		return e["kind"] == "fs" && e["source"] == wantSource && e["verdict"] == "refused" &&
-			e["reason"] == "read-denied" && e["rule"] == "fs.deny_read[./out/tools/]" && e["path"] == bin
+			e["reason"] == "read-denied" && e["rule"] == "fs.deny_read[./out/tools/]" && e["path"] == denied
 	}) == nil {
-		t.Errorf("no source=%s read-denied refusal naming fs.deny_read[./out/tools/] for %s", wantSource, bin)
+		t.Errorf("no source=%s read-denied refusal naming fs.deny_read[./out/tools/] for %s, the name the agent read",
+			wantSource, denied)
 		for _, e := range events {
 			if e["kind"] == "fs" && e["verdict"] == "refused" {
 				t.Logf("refused fs line the run did record: %v", e)

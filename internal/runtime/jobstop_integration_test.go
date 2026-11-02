@@ -6,6 +6,7 @@ package runtime
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 
@@ -34,7 +36,7 @@ func jobShell(t *testing.T, p *pty, env []string, script string, args ...string)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = p.slave, p.slave, p.slave
 	cmd.Env = env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
-	if err := cmd.Start(); err != nil {
+	if err := startWithDefaultStops(cmd); err != nil {
 		t.Fatalf("start bash: %v", err)
 	}
 	t.Cleanup(func() {
@@ -42,6 +44,59 @@ func jobShell(t *testing.T, p *pty, env []string, script string, args ...string)
 		_ = cmd.Wait()
 	})
 	return cmd
+}
+
+// jobStops are the stops a shell's job control is about: a terminal's Ctrl-Z, and a background job's read or write.
+var jobStops = []syscall.Signal{syscall.SIGTSTP, syscall.SIGTTIN, syscall.SIGTTOU}
+
+// sigaction is the kernel's struct sigaction on amd64 and arm64: handler, flags, restorer, mask (launch's
+// resetSignals uses the same layout).
+type sigaction [4]uint64
+
+// startWithDefaultStops starts cmd with the job stops at their defaults, as a terminal starts a login shell, whatever
+// this test process holds. An ignored disposition survives fork and execve, and an in-process tier-2 run (the
+// stand-in listeners of tierevents_integration_test.go, runend_integration_test.go and tierhandoff_test.go) ignores
+// the three for this whole process, once (launch.HoldJobControl). A shell started after one would hand that on to
+// every job it runs, tego included, which is then a launcher started with SIGTSTP ignored and rightly never follows
+// its agent's stop (followStops): the terminal showed nothing and the test timed out, whenever -shuffle ran such a
+// test first. Each of the three that is ignored here is set to SIG_DFL with a raw rt_sigaction for the length of the
+// start only, then put back as it was: the Go runtime tracks no handler for an ignored signal, so nothing it holds
+// changes, and a fork in between gets the defaults the shell should have anyway.
+func startWithDefaultStops(cmd *exec.Cmd) error {
+	var ignored []syscall.Signal
+	var saved []sigaction
+	defer func() {
+		for i, sig := range ignored {
+			// Put back what HoldJobControl set. Failing, the stop stays at its default, which no test here relies
+			// on being otherwise.
+			_ = rtSigaction(sig, &saved[i], nil)
+		}
+	}()
+	for _, sig := range jobStops {
+		var old sigaction
+		if err := rtSigaction(sig, nil, &old); err != nil {
+			return err
+		}
+		if old[0] != 1 { // SIG_IGN; SIG_DFL and a Go handler both reach the child as SIG_DFL
+			continue
+		}
+		var dfl sigaction // zeroed: SIG_DFL, no flags, an empty mask
+		if err := rtSigaction(sig, &dfl, nil); err != nil {
+			return err
+		}
+		ignored, saved = append(ignored, sig), append(saved, old)
+	}
+	return cmd.Start()
+}
+
+// rtSigaction is rt_sigaction(2) with an 8-byte signal set: act, when not nil, replaces sig's action, and old, when
+// not nil, receives the action it had.
+func rtSigaction(sig syscall.Signal, act, old *sigaction) error {
+	if _, _, errno := unix.RawSyscall6(unix.SYS_RT_SIGACTION, uintptr(sig), uintptr(unsafe.Pointer(act)),
+		uintptr(unsafe.Pointer(old)), 8, 0, 0); errno != 0 {
+		return fmt.Errorf("rt_sigaction(%d): %w", sig, errno)
+	}
+	return nil
 }
 
 // waitOutput waits up to d for re to match what the terminal was sent and returns the first submatch.
@@ -99,7 +154,8 @@ func TestIntegrationAStoppedAgentStopsTegoAndResumes(t *testing.T) {
 			env := isolatedEnv(t, f)
 			p := openPTY(t)
 			cooked := p.termios(t)
-			agent := `echo $$ > out/pid
+			agent := `while read -r k v; do [ "$k" = SigIgn: ] && echo "$v" > out/sigign; done < /proc/self/status
+echo $$ > out/pid
 while [ ! -e out/go ]; do sleep 0.05; done
 kill -TSTP $$
 echo resumed > out/resumed
@@ -124,6 +180,15 @@ while [ ! -e out/cont ]; do sleep 0.05; done
 			pidFile := filepath.Join(f.out, "pid")
 			waitForFile(t, pidFile, 20*time.Second)
 			agentPID := atoiFile(t, pidFile)
+			// Under a login shell the agent can stop itself; one that inherited SIGTSTP ignored stops at nothing, and
+			// tego, which ignores it too, never follows (startWithDefaultStops).
+			mask, err := strconv.ParseUint(strings.TrimSpace(readFileString(filepath.Join(f.out, "sigign"))), 16, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mask&(1<<(uint(syscall.SIGTSTP)-1)) != 0 {
+				t.Fatalf("the agent started with SIGTSTP ignored (SigIgn %#x): the job shell handed its jobs an ignored disposition", mask)
+			}
 			// The agent turns the terminal raw, as a TUI does, and then stops itself.
 			raw := cooked
 			raw.Lflag &^= unix.ICANON | unix.ECHO

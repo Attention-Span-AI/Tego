@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	ebpfbindings "github.com/attention-span-ai/tego/internal/bpf"
+	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -529,9 +530,7 @@ func runNetHelper(t *testing.T, dir *os.File, mode string, targets []string) []e
 	cmd := helperCommand(dir, mode)
 	cmd.Env = append(cmd.Env, "TEGO_NET_TARGETS="+strings.Join(targets, ","))
 	cmd.ExtraFiles = []*os.File{w}
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start helper in the run's cgroup: %v", err)
-	}
+	startHelper(t, cmd)
 	w.Close()
 	var out []error
 	sc := bufio.NewScanner(r)
@@ -588,20 +587,47 @@ func holdSocket(t *testing.T, dir *os.File, family string) (int, int, func()) {
 	if err != nil {
 		t.Fatalf("stdin: %v", err)
 	}
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start helper: %v", err)
-	}
+	startHelper(t, cmd)
 	w.Close()
+	fd := helperFD(t, cmd, r)
+	return cmd.Process.Pid, fd, func() {
+		stdin.Close()
+		_ = cmd.Wait()
+	}
+}
+
+// helperReportWait bounds how long a holding helper may take to report its socket. It reports within milliseconds of
+// its execve; one that has not after a minute is stuck (its cgroup frozen, an open of its held by some permission
+// listener), and the test says so then rather than at -test.timeout, 95 minutes into the root suite's run of this
+// package.
+const helperReportWait = time.Minute
+
+// helperFD reads the "FD <n>" line a holding helper (holdSocket, holdUnix) reports on r, waiting at most
+// helperReportWait, and closes r. Without such a line it kills the helper and fails the test with what it read.
+func helperFD(t *testing.T, cmd *exec.Cmd, r *os.File) int {
+	t.Helper()
+	_ = r.SetReadDeadline(time.Now().Add(helperReportWait)) // a pipe from os.Pipe takes deadlines
 	line, err := bufio.NewReader(r).ReadString('\n')
 	r.Close()
 	var fd int
 	if _, perr := fmt.Sscanf(line, "FD %d", &fd); err != nil || perr != nil {
 		_ = cmd.Process.Kill()
-		t.Fatalf("helper did not report its socket: %q, %v", line, err)
+		t.Fatalf("helper did not report its socket (waited at most %v): %q, %v", helperReportWait, line, err)
 	}
-	return cmd.Process.Pid, fd, func() {
-		stdin.Close()
-		_ = cmd.Wait()
+	return fd
+}
+
+// startHelper starts cmd, this binary re-executed as a helper in a run's cgroup, through proc.Start, the launcher's
+// one process start (ADR 0021 (3)), which refuses with proc.ErrArmed while a fanotify group of this process holds
+// marks. A start then is §6 E39's: os/exec's forking thread keeps its scheduler slot until the child's execve returns,
+// and that execve opens this binary, which on a marked mount waits for an answer only this process can give, and none
+// when no listener runs. The next garbage collection then stops every goroutine of the binary, its -test.timeout alarm
+// included, and the suite ends at its outer bound with no word of why (TestUnixApprovalOnRealKernel on GitHub's
+// runner, whose root filesystem holds both /tmp and the binary). Refused, the test fails here and says so.
+func startHelper(t *testing.T, cmd *exec.Cmd) {
+	t.Helper()
+	if _, err := proc.Start(cmd); err != nil {
+		t.Fatalf("start helper %s in the run's cgroup: %v", strings.Join(cmd.Args, " "), err)
 	}
 }
 

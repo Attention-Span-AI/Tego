@@ -30,13 +30,15 @@ Four workloads, chosen to load enforcement differently rather than to flatter it
 - **`cpu`**: a fixed 1.8M-round SHA-256 chain, a static Go binary, no file writes, no execs, no
   connects. The other control: real duration, no syscalls of interest. If this row shows overhead
   beyond `noop`'s fixed cost, that cost is not coming from a path a tier actually intercepts.
-- **`python`**: `pip install -r requirements.txt` (Flask 3.0.3 + pytest 8.3.3 and their full
-  dependency sets, 11 wheels) into a fresh directory, then `pytest` against a small suite that
-  imports and exercises Flask. Open- and exec-heavy: every installed file is opened once by pip and
-  again by the interpreter's import machinery, one subprocess per tool.
-- **`npm`**: `npm ci` (Express 4.21.2 + four small packages, 79 packages total) into a fresh
-  project directory. Open-heavy, lighter on exec (npm and its lifecycle scripts run in-process;
-  none of the chosen packages have install/postinstall scripts).
+- **`python`**: `pip install -r requirements.txt` (Flask 3.1.3 + pytest 9.0.3 and their full
+  dependency sets, 12 wheels; the 2026-09-22 measurement below ran Flask 3.0.3 + pytest 8.3.3, 11
+  wheels) into a fresh directory, then `pytest` against a small suite that imports and exercises
+  Flask. Open- and exec-heavy: every installed file is opened once by pip and again by the
+  interpreter's import machinery, one subprocess per tool.
+- **`npm`**: `npm ci` (Express 4.22.3 + five small packages, 83 packages total; the 2026-09-22
+  measurement ran Express 4.21.2, 79 packages) into a fresh project directory. Open-heavy, lighter
+  on exec (npm and its lifecycle scripts run in-process; none of the chosen packages have
+  install/postinstall scripts).
 
 **Determinism.** A `pip install` or `npm ci` that hits the real registry measures the registry's
 latency that day, not tego's. Every timed run in the matrix is offline: `run.sh` bootstraps a
@@ -44,7 +46,8 @@ local pip (the test machine's system Python ships no `pip` module — `get-pip.p
 pinned wheelhouse once (`pip download`, cached under `~/.cache/tego-overhead-bench` by default,
 `--cache` to move it); the npm workload primes a local npm cache the same way and every timed
 invocation runs `npm ci --offline`. Priming is the only network use; it is skipped when the cache
-is already populated. Every dependency is pinned to an exact version in
+was already primed for the pinned files, whose digests it stamps (a changed pin primes again). Every
+dependency is pinned to an exact version in
 `test/workloads/build/{python/requirements.txt,npm/package.json,npm/package-lock.json}`.
 
 **Measurement.** `hyperfine` when it is on `PATH` (`--warmup`, `--runs`, `--export-json`, read back

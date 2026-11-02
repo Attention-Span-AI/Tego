@@ -373,6 +373,19 @@ func forbiddenMain(what string) int {
 		_, _ = unix.FcntlInt(0, unix.F_SETLK, 0)
 	case "allowed":
 		return 0
+	case "read-file":
+		// Refused, never fatal (retEPERM): the exit status says what the read got.
+		fd, err := unix.Open("/proc/self/status", unix.O_RDONLY|unix.O_CLOEXEC, 0)
+		if err != nil {
+			return 9
+		}
+		switch _, err := unix.Read(fd, make([]byte, 64)); err {
+		case unix.EPERM:
+			return 0
+		case nil:
+			return 7 // the read went through
+		}
+		return 8
 	}
 	return 6 // the call returned: the filter let it through
 }
@@ -401,6 +414,27 @@ func TestDeputyFilterKillsForbiddenSyscalls(t *testing.T) {
 				t.Fatalf("%s: %v (exit %d), want death by SIGSYS", what, err, ws.ExitStatus())
 			}
 		})
+	}
+}
+
+// TestDeputyFilterRefusesAFileReadAndLives: a read of a file under the filter is refused EPERM, and the process lives
+// on. A cgo build's glibc reads /sys/devices/system/cpu/online the first time one of the deputy's threads needs a
+// ninth malloc arena (arena_get2), which concurrent requests make it do as they make it start threads: killed there,
+// the deputy died with requests in flight (the race job's TestDeputyPinsAndOpens, "receive: connection reset by peer",
+// on Ubuntu 24.04's glibc 2.39), and every held open after it was refused held-unavailable.
+func TestDeputyFilterRefusesAFileReadAndLives(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	cmd.Env = append(os.Environ(), forbiddenEnv+"=read-file")
+	err := cmd.Run()
+	var ee *exec.ExitError
+	switch {
+	case err == nil:
+	case errors.As(err, &ee) && ee.Sys().(syscall.WaitStatus).Signaled():
+		t.Fatalf("a read of a file under the filter killed the process (%v), want EPERM", err)
+	case errors.As(err, &ee) && ee.ExitCode() == 7:
+		t.Fatal("a read of a file under the filter went through, want EPERM")
+	default:
+		t.Fatalf("a read of a file under the filter: %v (8: an errno other than EPERM; 9: the open failed)", err)
 	}
 }
 

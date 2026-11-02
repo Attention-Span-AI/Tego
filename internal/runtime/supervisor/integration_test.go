@@ -241,6 +241,9 @@ func targetMain() int {
 	case modeHeldReadRace:
 		rep.Checks = heldReadRaceChecks()
 		return emitReport(rep)
+	case modeHeldDeputyGone:
+		rep.Checks = heldDeputyGoneChecks()
+		return emitReport(rep)
 	case modeBenchHeld:
 		rep.Checks = heldBenchLoop()
 		return emitReport(rep)
@@ -814,6 +817,7 @@ func startHarnessWith(t testing.TB, o harnessOpts) *harness {
 	cmd.Env = append(cmd.Env, env...)
 	cmd.ExtraFiles = []*os.File{handoffW, ackR}
 	deputyLauncher := -1
+	var stageF *os.File
 	if o.deputy {
 		l, stage, err := deputy.Socketpair()
 		if err != nil {
@@ -821,8 +825,8 @@ func startHarnessWith(t testing.TB, o harnessOpts) *harness {
 			t.Fatal(err)
 		}
 		deputyLauncher = l
-		stageF := os.NewFile(uintptr(stage), "deputy-stage")
-		defer stageF.Close() //nolint:errcheck // the target keeps its own copy
+		stageF = os.NewFile(uintptr(stage), "deputy-stage")
+		defer stageF.Close() //nolint:errcheck // closed once the target started (below); this covers a failed start
 		cmd.ExtraFiles = append(cmd.ExtraFiles, stageF)
 		cmd.Env = append(cmd.Env, helperDeputyFD+"="+strconv.Itoa(2+len(cmd.ExtraFiles)))
 	}
@@ -852,6 +856,13 @@ func startHarnessWith(t testing.TB, o harnessOpts) *harness {
 	}
 	// The target holds its own copy: once it exits without publishing a fd, the read below sees EOF at once.
 	_ = handoffW.Close()
+	if stageF != nil {
+		// As the launcher closes its copy once the stage started (runtime's run_child): the target hands its own to
+		// the deputy and closes it, so the deputy holds the only one, and a deputy that dies fails every request in
+		// flight at once. Kept here, the end outlived the deputy, and a request socket handed over after its death
+		// waited in a queue no one read for as long as the task did (TestHeldOpenOfADeadDeputyIsRefusedNotHung).
+		_ = stageF.Close()
+	}
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()

@@ -281,3 +281,13 @@ on the binary's own path through the plane: it cannot be nested, so Landlock ref
 decides nothing. `TestPairsContractsCompile` compiles the harness's contracts as `tego run` does, since only a guest
 runs them, and holds the self-deny entry nested. The pie evidence in the notes above was taken before this change;
 the link has not been run in a guest as of this note.
+
+*Amended 2026-11-02 (the link's first runs):* `TestTier2ArmsAfterTheStageExec` with the link first ran as root on
+GitHub's runners (7.0, amd64 and arm64, the plane in fmod_ret mode). The stage's exec held its proof, and the agent's
+read of the link was refused by the plane with `EACCES` and a `source=kernel` read-denied line naming
+`fs.deny_read[./out/tools/]`, yet the test failed: the change above left it comparing that line's path with the
+file tego runs from, a name the agent never opens. The line names the link, `<project>/out/tools/tego`, the path the
+agent's open resolved (`tego_file_open` records `bpf_d_path` of the opened file; the fallback's listener reads its
+event descriptor's link), and the test now expects that name. In a 6.17 guest booted without `bpf` in `lsm=` (the
+plane in fmod_ret mode, as on the runners) the old test failed the same way, naming the link, and the changed one
+passed; it passed with `bpf` in `lsm=` too. The fallback's line was not run with the link.

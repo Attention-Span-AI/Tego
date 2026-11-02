@@ -108,11 +108,15 @@ func (b ringBuild) has(t *testing.T, slot uint32) bool {
 // inner ring by id, and a ring another process removes meanwhile (a trim, a reclaim, a build's removal: none
 // holds the rings lock the counting Prepare holds shared or not at all) is gone by the time it is opened. That is a
 // ring not counted, never an error that fails the Prepare. Four writers replace rings as fast as the kernel lets
-// them while the walk runs over and over.
+// them while the walk runs over and over. Slots 32 to 39 hold rings no writer touches, so every walk must count
+// at least those: a walk that loses rings the outer kept the whole time (a listing cut short while the map changes)
+// under-reads the rings in use, and placeRings' ring budget would then let more in than it allows. The churned
+// slots may all be caught mid-replacement, so a walk may count only the stable eight (GitHub's runner, 2026-11-02).
 func TestRingUseWhileRingsComeAndGo(t *testing.T) {
 	root := ringTree(t)
 	b := newRingBuild(t, root, "churn")
-	const rings = 32
+	const churned, stable = 32, 8
+	const rings = churned + stable
 	for s := uint32(0); s < rings; s++ {
 		b.put(t, s)
 	}
@@ -147,8 +151,8 @@ func TestRingUseWhileRingsComeAndGo(t *testing.T) {
 			t.Errorf("walk %d: %v", walks, err)
 			break
 		}
-		if n > rings || used == 0 {
-			t.Errorf("walk %d counted %d rings charging %d B, want at most %d", walks, n, used, rings)
+		if n > rings || n < stable || used == 0 {
+			t.Errorf("walk %d counted %d rings charging %d B, want %d to %d", walks, n, used, stable, rings)
 		}
 	}
 	close(stop)

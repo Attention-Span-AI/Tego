@@ -34,6 +34,13 @@ Changes after the first source release, listed here until the next tag.
   2.51.0.
 - The container image works for any `TEGO_UID`: its home is 0755, so the entrypoint, which runs as root without
   `CAP_DAC_OVERRIDE`, can reach `~/.tego`.
+- The open deputy that serves held reads no longer dies under concurrent requests in a tego built with cgo (a plain
+  `go build` with a C compiler): glibc's CPU-count read is refused instead of killing it. The release and `make build`
+  binaries are static and were never affected.
+- A held open in flight when the open deputy is gone is refused `held-unavailable`; it no longer gets the deputy's socket
+  error (`ECONNRESET`, `EPIPE`) as its own errno.
+- A run's reaper reads only the unified line of `/proc/<pid>/cgroup`, so on a host that also lists a cgroup v1 hierarchy
+  a zombie in a sub-cgroup is no longer charged to `limits.pids`, which could end a healthy run as `reason=pids`.
 
 ### Tests
 

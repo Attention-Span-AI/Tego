@@ -16,6 +16,14 @@ import (
 // fails closed (ADR 0041 D4, held-unavailable); it is never continued.
 var ErrUnavailable = errors.New("deputy: unavailable")
 
+// unavailable is ErrUnavailable for a request the client could not make or hear back from, at step, with the
+// socket's error named in the text and not wrapped: an errno a caller found in it would be taken for the walk's or the
+// kernel's answer to the task (a request socket the dead deputy reset was answered ECONNRESET to the task's open),
+// where D4 refuses it held-unavailable.
+func unavailable(step string, err error) error {
+	return fmt.Errorf("%w: %s: %v", ErrUnavailable, step, err)
+}
+
 // ErrNotStarted wraps the stage's report that the deputy did not start, with the errno it gave.
 var ErrNotStarted = errors.New("deputy: the child stage could not start the open deputy")
 
@@ -173,14 +181,14 @@ func (c *Client) get() (*conn, error) {
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
 		// This process's own EMFILE or ENOMEM: tego-side, refused as held-unavailable, never presented as the
-		// task's errno (D4).
-		return nil, fmt.Errorf("%w: socketpair: %w", ErrUnavailable, err)
+		// task's errno (D4), so the errno is named and not wrapped (unavailable).
+		return nil, unavailable("socketpair", err)
 	}
 	tv := unix.NsecToTimeval(c.tick.Nanoseconds())
 	if err := unix.SetsockoptTimeval(fds[0], unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv); err != nil {
 		_ = unix.Close(fds[0])
 		_ = unix.Close(fds[1])
-		return nil, fmt.Errorf("%w: SO_RCVTIMEO: %w", ErrUnavailable, err)
+		return nil, unavailable("SO_RCVTIMEO", err)
 	}
 	cn := &conn{sock: fds[0], req: make([]byte, maxRequest), rep: make([]byte, maxReply), oob: make([]byte, oobSize)}
 	hello := request{op: opConn}
@@ -250,7 +258,7 @@ func (c *Client) PinOpenStart(q PinQuery, flags int) (*Pending, error) {
 	if err := sendMsg(cn.sock, msg, cn.oob, -1); err != nil {
 		c.out.Add(-1)
 		c.broken(cn)
-		return nil, fmt.Errorf("%w: send: %w", ErrUnavailable, err)
+		return nil, unavailable("send", err)
 	}
 	return &Pending{c: c, cn: cn, seq: r.seq, op: r.op}, nil
 }
@@ -325,7 +333,7 @@ func (c *Client) exchange2(r request, fd int, wait func() bool) (reply, int, int
 	if err := sendMsg(cn.sock, msg, cn.oob, fd); err != nil {
 		c.out.Add(-1)
 		c.broken(cn)
-		return reply{}, -1, -1, fmt.Errorf("%w: send: %w", ErrUnavailable, err)
+		return reply{}, -1, -1, unavailable("send", err)
 	}
 	return c.receive(cn, r.seq, r.op, wait)
 }
@@ -349,7 +357,7 @@ func (c *Client) receive(cn *conn, seq uint64, op uint8, wait func() bool) (repl
 			if err == nil {
 				err = errors.New("end of stream")
 			}
-			return reply{}, -1, -1, fmt.Errorf("%w: receive: %w", ErrUnavailable, err)
+			return reply{}, -1, -1, unavailable("receive", err)
 		}
 		rep, err := decodeReply(cn.rep[:n])
 		if err != nil || rep.seq != r.seq || rep.op != r.op || len(ctl.extra) > 1 {

@@ -19,7 +19,8 @@
 #   npm    npm ci (offline, from a local npm cache primed once): open-heavy (every installed file),
 #          lighter on exec.
 # Priming those caches is the one place this script touches the network, and only when the cache
-# is not already populated (--cache, default ~/.cache/tego-overhead-bench, persists between runs).
+# was not already primed for the pinned files, requirements.txt and package-lock.json, whose digests
+# it stamps (--cache, default ~/.cache/tego-overhead-bench, persists between runs).
 # A pip/npm install that hits the real registry measures the registry's latency that day, not
 # tego's; every timed run in the matrix is `--no-index`/`--offline` against the local cache so the
 # number is comparable across machines and days.
@@ -484,20 +485,28 @@ EOF
 
 # --- workload: npm (npm ci) ---------------------------------------------------------------------
 prime_npm_cache() {
-  local npc="$cache/npm"
-  if [ -d "$npc/cache" ] && [ -n "$(ls -A "$npc/cache" 2>/dev/null)" ]; then
+  local npc="$cache/npm" lock="$workloads/npm/package-lock.json" stamp
+  # A cache is primed for one package-lock.json: the stamp is its digest, written last, once `npm ci` has found every
+  # tarball the lockfile names in the cache or fetched it there. A cache that was merely non-empty used to count as
+  # primed, so after a pin changed every timed `npm ci --offline` failed on the tarballs it lacked. --prefer-offline
+  # fetches only what the cache lacks (npm's cache is content-addressed, so the old tarballs stay), and needs no
+  # network for a cache already complete; a run killed part-way leaves no stamp.
+  stamp="$(sha256sum "$lock" | cut -c1-16)"
+  if [ "$(cat "$npc/.stamp" 2>/dev/null)" = "$stamp" ] && [ -n "$(ls -A "$npc/cache" 2>/dev/null)" ]; then
     note "npm cache already primed at $npc"
     return 0
   fi
-  note "npm cache: priming (network, once)"
+  note "npm cache: priming for package-lock.json $stamp (network for what the cache lacks)"
   mkdir -p "$npc"
+  rm -f "$npc/.stamp"
   local tmp_proj="$work/npm-prime"
   mkdir -p "$tmp_proj"
-  cp "$workloads/npm/package.json" "$workloads/npm/package-lock.json" "$tmp_proj/"
-  if ! ( cd "$tmp_proj" && npm ci --cache "$npc/cache" --no-audit --no-fund --loglevel=error ); then
+  cp "$workloads/npm/package.json" "$lock" "$tmp_proj/"
+  if ! ( cd "$tmp_proj" && npm ci --prefer-offline --cache "$npc/cache" --no-audit --no-fund --loglevel=error ); then
     note "npm cache: priming failed (no network or npm error); npm workload will be skipped"
     return 1
   fi
+  echo "$stamp" >"$npc/.stamp"
 }
 
 run_npm() {

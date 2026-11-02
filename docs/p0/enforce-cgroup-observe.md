@@ -907,7 +907,9 @@ its call is one lint names. The child stage and the run's reaper have started be
 starts (linger, ring trim, the uprobe detacher) start after `Detach` has closed the group.
 `TestTier2ArmsAfterTheStageExec` is the acceptance, as root in the guest: tego, a hard link of it under
 `deny_read: ["./out/tools/"]` and outside `exec.allow`, runs the run to the end, no exec line names the stage's exec,
-the first is the agent's, and the agent's read of the binary by that name is refused with a `source=fanotify` line.
+the first is the agent's, and the agent's read of the binary by that name is refused, with a line naming that link,
+the path the agent opened, not the one tego runs from: `source=fanotify` where the run decides through fanotify,
+`source=kernel` where doctor selected a plane mode.
 `TestStageExecUnderGCNeverWaitsOnItsOwnGroup` repeats the stage start under a busy collector with the order above.
 *One mark per mount, not per device.* `FAN_MARK_MOUNT` marks the one mount a path resides on, and every bind mount
 of a filesystem shares its source's device, so paths collapsed by `st_dev` would leave, say, a `deny_read` entry

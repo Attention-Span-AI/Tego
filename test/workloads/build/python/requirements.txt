@@ -1,23 +1,30 @@
 # The overhead benchmark's pip-install workload (docs/BENCHMARKS.md): Flask and pytest with their
 # full runtime dependency sets on Python 3.13, pinned to exact versions (frozen from a real
-# `pip download` on 2026-09-22) so every run installs the same eleven wheels from the local cache
+# `pip download` on 2026-09-22) so every run installs the same twelve wheels from the local cache
 # run.sh builds, not whatever PyPI happens to serve that day. Flask is a real mid-size web
 # framework, not a synthetic dependency list, so this measures what a `pip install -r
-# requirements.txt` on an actual small project costs.
+# requirements.txt` on an actual small project costs. On 2026-11-02 Flask 3.0.3, Werkzeug 3.1.8 and
+# pytest 8.3.3 moved to 3.1.3, 3.1.9 and 9.0.3, the releases that fix their advisories, and Pygments
+# joined the set: pytest requires it since 8.4, and a hash-checked download refuses a dependency the
+# list does not pin.
 #
-# Every wheel of each pinned release carries its sha256 (frozen from PyPI's JSON API on 2026-09-30), so
-# pip runs in hash-checking mode: a swapped or added file for a pinned version fails the install.
-# Regenerate the same way when a pin changes. pydeps.sh and overhead/run.sh download with --require-hashes.
-flask==3.0.3 \
-    --hash=sha256:34e815dfaa43340d1d15a5c3a02b8476004037eb4840b34910c6e21679d288f3
-pytest==8.3.3 \
-    --hash=sha256:a6853c7375b2663155079443d2e45de913a911a11d669df02a50814944db57b2
+# Every wheel of each pinned release carries its sha256 (frozen from PyPI's JSON API on 2026-09-30, and
+# on 2026-11-02 for the four releases above), so pip runs in hash-checking mode: a swapped or added
+# file for a pinned version fails the install. Regenerate the same way when a pin changes, and check
+# the set with a hash-checked `pip download` of this file. pydeps.sh and overhead/run.sh download with
+# --require-hashes.
+flask==3.1.3 \
+    --hash=sha256:f4bcbefc124291925f1a26446da31a5178f9483862233b23c0c96a20701f670c
+pytest==9.0.3 \
+    --hash=sha256:2c5efc453d45394fdd706ade797c0a81091eccd1d6e4bccfcd476e2b8e0ab5d9
 pluggy==1.6.0 \
     --hash=sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746
 iniconfig==2.3.0 \
     --hash=sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12
 packaging==26.3 \
     --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+pygments==2.21.0 \
+    --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9
 click==8.5.0 \
     --hash=sha256:255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360
 blinker==1.9.0 \
@@ -115,5 +122,5 @@ markupsafe==3.0.3 \
     --hash=sha256:f71a396b3bf33ecaa1626c255855702aca4d3d9fea5e051b41ac59a9c1c41edc \
     --hash=sha256:f9e130248f4462aaa8e2552d547f36ddadbeaa573879158d721bbd33dfe4743a \
     --hash=sha256:fed51ac40f757d41b7c48425901843666a6677e3e8eb0abcff09e4ba6e664f50
-werkzeug==3.1.8 \
-    --hash=sha256:63a77fb8892bf28ebc3178683445222aa500e48ebad5ec77b0ad80f8726b1f50
+werkzeug==3.1.9 \
+    --hash=sha256:6392e50c78460ba618e5b21f08a71f59c99ce99cdc6cf6e3dd7e6ccca8754fab

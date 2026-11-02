@@ -393,7 +393,7 @@ func (l *Loop) pinHeld(h *heldPlan) (ok, repin bool) {
 	}
 	if err != nil {
 		var errno unix.Errno
-		if errors.As(err, &errno) && errno != 0 {
+		if !errors.Is(err, deputy.ErrUnavailable) && errors.As(err, &errno) && errno != 0 {
 			l.heldAnswer(h, errno)
 			return false, false
 		}
@@ -715,7 +715,7 @@ func (l *Loop) openHeld(h *heldPlan) (repin bool) {
 			return false
 		}
 		var errno unix.Errno
-		if errors.As(err, &errno) && errno != 0 {
+		if !errors.Is(err, deputy.ErrUnavailable) && errors.As(err, &errno) && errno != 0 {
 			l.heldKernelErrno(h, errno)
 			return false
 		}

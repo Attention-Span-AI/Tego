@@ -281,6 +281,12 @@ type planeFillCfg struct {
 type planeTree struct {
 	w, o, e, d, trueBin, loader string
 	tmpls                       map[uint32]planeFillTmpl
+	// keeper, when set, is the test whose end closes the holds, in place of the test that took them: the one that
+	// armed the slot. A cell run as a subtest writes its rows at that test's gen, and they stay in the slot after the
+	// subtest ends; a hold closed then frees the inode a row of the live gen is keyed by, and the next inode the
+	// allocator puts at that address meets the row and is refused identity-mismatch (enforce-plane §6 E3), whatever
+	// the later cell asserts. A run's domain holds every keyed inode while its gen is live (R17), and so do the cells.
+	keeper *testing.T
 }
 
 // The rows' rule_idx: an fs row's is its position in the row compiler's rows, an exec row's its exec entry's.
@@ -310,15 +316,24 @@ func mustWrite(t *testing.T, path string, data []byte, mode os.FileMode) {
 	}
 }
 
-// hold opens path O_PATH for the fill and keeps it open for the test (the domain's hold, in a run).
+// hold opens path O_PATH for the fill and keeps it open for the test, or for p.keeper (the domain's hold, in a run).
 func (p *planeTree) hold(t *testing.T, path string, tmpl planeFillTmpl) {
 	t.Helper()
 	fd, err := unix.Open(path, unix.O_PATH|unix.O_CLOEXEC, 0)
 	if err != nil {
 		t.Fatalf("hold %s: %v", path, err)
 	}
-	t.Cleanup(func() { _ = unix.Close(fd) })
+	p.keep(t, fd)
 	p.tmpls[uint32(fd)] = tmpl
+}
+
+// keep closes a hold's descriptor when p.keeper ends, or t, the test that took it, when p has no keeper.
+func (p *planeTree) keep(t *testing.T, fd int) {
+	owner := t
+	if p.keeper != nil {
+		owner = p.keeper
+	}
+	owner.Cleanup(func() { _ = unix.Close(fd) })
 }
 
 func fsRow(gen uint32, rule uint16, kind uint8) planeFillTmpl {
@@ -810,8 +825,11 @@ func planeCells(t *testing.T, o Object, mode PlaneMode, stepB bool) {
 
 	planeDeepCells(t, coll, runIdx, gen, helper, scratch)
 	planeSymlinkCells(t, coll, runIdx, gen, helper, scratch)
-	t.Run("overlay", func(t *testing.T) { planeOverlayCell(t, coll, runIdx, gen, helper) })
-	t.Run("disconnected", func(t *testing.T) { planeDisconnectedCell(t, coll, runIdx, gen, helper, scratch) })
+	// Subtests, so that each can skip where its filesystem is missing. Their rows are written at this test's gen, so
+	// this test keeps their holds (planeTree.keeper).
+	keeper := t
+	t.Run("overlay", func(t *testing.T) { planeOverlayCell(t, keeper, coll, runIdx, gen, helper) })
+	t.Run("disconnected", func(t *testing.T) { planeDisconnectedCell(t, keeper, coll, runIdx, gen, helper, scratch) })
 	planeClearedHeaderCells(t, coll, runIdx, gen, helper, tree, setSlot, scratch)
 }
 
@@ -981,7 +999,7 @@ func (p *planeTree) holdLink(t *testing.T, path string, tmpl planeFillTmpl) {
 	if err != nil {
 		t.Fatalf("hold %s: %v", path, err)
 	}
-	t.Cleanup(func() { _ = unix.Close(fd) })
+	p.keep(t, fd)
 	p.tmpls[uint32(fd)] = tmpl
 }
 
@@ -1051,8 +1069,9 @@ func planeSymlinkCells(t *testing.T, coll *ebpf.Collection, runIdx, gen uint32, 
 // merged file (a write row), and the kernel's own opens are skipped: the backing open of an upper file
 // (FMODE_BACKING, 6.6+, R8), and the copy-up's plain open of the new upper file and of the lower one on overlayfs'
 // private clones of the layers' mounts (mnt_ns MNT_NS_INTERNAL; enforce-plane §2.7's condition 1, settled at T13),
-// which before T13 refused every write to a lower file under a write row as an unmatched modification.
-func planeOverlayCell(t *testing.T, coll *ebpf.Collection, runIdx, gen uint32, helper *planeHelper) {
+// which before T13 refused every write to a lower file under a write row as an unmatched modification. keeper, the
+// test whose gen the rows are written at, keeps the holds, so the merged root they key outlives this subtest.
+func planeOverlayCell(t, keeper *testing.T, coll *ebpf.Collection, runIdx, gen uint32, helper *planeHelper) {
 	t.Helper()
 	root := t.TempDir()
 	lower, upper, work, merged := filepath.Join(root, "l"), filepath.Join(root, "u"), filepath.Join(root, "wk"), filepath.Join(root, "m")
@@ -1068,7 +1087,7 @@ func planeOverlayCell(t *testing.T, coll *ebpf.Collection, runIdx, gen uint32, h
 		t.Skipf("no overlayfs here (%v): the backing-open cell cannot run; the guest loads it with VM_MODULES=overlay", err)
 	}
 	t.Cleanup(func() { _ = unix.Unmount(merged, unix.MNT_DETACH) })
-	p := &planeTree{tmpls: map[uint32]planeFillTmpl{}}
+	p := &planeTree{tmpls: map[uint32]planeFillTmpl{}, keeper: keeper}
 	p.hold(t, merged, fsRow(gen, ruleW, PlaneRowModifyAllow))
 	planeFill(t, coll, runIdx, p)
 	if got := helper.do(t, "open", strconv.Itoa(unix.O_WRONLY), filepath.Join(merged, "uf")); got != "0" {
@@ -1080,7 +1099,7 @@ func planeOverlayCell(t *testing.T, coll *ebpf.Collection, runIdx, gen uint32, h
 	if _, err := os.Stat(filepath.Join(upper, "lf")); err != nil {
 		t.Errorf("the lower file was not copied up: %v", err)
 	}
-	p = &planeTree{tmpls: map[uint32]planeFillTmpl{}}
+	p = &planeTree{tmpls: map[uint32]planeFillTmpl{}, keeper: keeper}
 	p.hold(t, merged, fsRow(gen, ruleW, 0))
 	planeFill(t, coll, runIdx, p)
 	mustWrite(t, filepath.Join(lower, "lf2"), []byte("lower\n"), 0o644)
@@ -1093,8 +1112,10 @@ func planeOverlayCell(t *testing.T, coll *ebpf.Collection, runIdx, gen uint32, h
 // (open_by_handle_at) after the dentry cache was dropped gets a dentry no path reaches (DCACHE_DISCONNECTED: it is its
 // own parent and not its mount's root), so the walk climbs no row and refuses path-unresolved and counts it, where a
 // walk that took "no row" for "allowed" would let the read through; the same file by its path is the row's. It needs
-// an overlayfs exported for handles (nfs_export=on, over tmpfs layers), whose dentries the cache drops.
-func planeDisconnectedCell(t *testing.T, coll *ebpf.Collection, runIdx, gen uint32, helper *planeHelper,
+// an overlayfs exported for handles (nfs_export=on, over tmpfs layers), whose dentries the cache drops. The handle's
+// file is a new overlayfs inode, which the slab may put where a freed one was: the overlay cell's merged root was
+// one, keyed by a row of this gen, which is why keeper holds that root, and this cell's root as well.
+func planeDisconnectedCell(t, keeper *testing.T, coll *ebpf.Collection, runIdx, gen uint32, helper *planeHelper,
 	scratch func(string, uint16, uint8, uint8, uint32)) {
 	t.Helper()
 	const ruleDisc = 20
@@ -1143,7 +1164,7 @@ func planeDisconnectedCell(t *testing.T, coll *ebpf.Collection, runIdx, gen uint
 	}
 	_ = unix.Close(fd)
 
-	p := &planeTree{tmpls: map[uint32]planeFillTmpl{}}
+	p := &planeTree{tmpls: map[uint32]planeFillTmpl{}, keeper: keeper}
 	p.hold(t, dirs["m"], fsRow(gen, ruleDisc, PlaneRowModifyAllow))
 	planeFill(t, coll, runIdx, p)
 	var before PlaneCounts

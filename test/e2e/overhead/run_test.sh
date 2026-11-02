@@ -111,15 +111,16 @@ run_harness STUB_CGROUP=false -- --keep --work "$tmp/kept"
 # left alone, and the harness runs there as anywhere else, removing each run's ledger before the next. The python
 # and npm workloads run here too, so their own prepares, which remove and recreate directories under --work, are
 # exercised: a primed cache of their own (a pip module that writes an empty pytest into --target, and a non-empty
-# npm cache) and an npm that exits 0. Nothing may be written into that sibling either: a --target split at the
-# space put pytest/ there with keep.txt still in place. And tego itself lives under the spaced path, as run.sh's
-# own default ($work/tego) puts it, so every cell's command runs it through the quoted path; split, it named the
-# sibling directory.
+# npm cache stamped with package-lock.json's digest, which is not primed again) and an npm that logs its arguments
+# and exits 0. Nothing may be written into that sibling either: a --target split at the space put pytest/ there
+# with keep.txt still in place. And tego itself lives under the spaced path, as run.sh's own default ($work/tego)
+# puts it, so every cell's command runs it through the quoted path; split, it named the sibling directory.
 mkdir -p "$tmp/victim" "$tmp/victim space" "$tmp/cache4/python/wheelhouse" "$tmp/cache4/python/pip-bootstrap/pip" \
 	"$tmp/cache4/npm/cache" "$tmp/npmbin"
 : >"$tmp/victim/keep.txt"
 cp "$tmp/tego" "$tmp/victim space/tego"
 : >"$tmp/cache4/npm/cache/primed"
+sha256sum "$here/../../workloads/build/npm/package-lock.json" | cut -c1-16 >"$tmp/cache4/npm/.stamp"
 sha256sum "$here/../../workloads/build/python/requirements.txt" | cut -c1-16 >"$tmp/cache4/python/.stamp"
 : >"$tmp/cache4/python/pip-bootstrap/pip/__init__.py"
 cat >"$tmp/cache4/python/pip-bootstrap/pip/__main__.py" <<'PY'
@@ -129,8 +130,9 @@ os.makedirs(pkg, exist_ok=True)
 for f in ("__init__.py", "__main__.py"):
     open(os.path.join(pkg, f), "w").close()
 PY
-printf '#!/bin/sh\nexit 0\n' >"$tmp/npmbin/npm"
+printf '#!/bin/sh\necho "npm $*" >>"%s"\nexit 0\n' "$tmp/npm.log" >"$tmp/npmbin/npm"
 chmod +x "$tmp/npmbin/npm"
+: >"$tmp/npm.log"
 harness STUB_CGROUP=true PATH="$tmp/path:$tmp/npmbin" -- --work "$tmp/victim space/w" --cache "$tmp/cache4" \
 	--tego "$tmp/victim space/tego"
 code=$?
@@ -145,6 +147,9 @@ for w in noop cpu python npm; do
 	row "$w" cgroup | grep -q '| full |' || fail "--work with a space: no $w/cgroup/full row"
 	! row "$w" cgroup | grep -q 'no bare row' || fail "--work with a space: $w's bare baseline did not run"
 done
+grep -q -- '^npm ci --offline ' "$tmp/npm.log" || fail "the npm cells never ran the stand-in npm: $(head -2 "$tmp/npm.log")"
+! grep -q -- '--prefer-offline' "$tmp/npm.log" ||
+	fail "an npm cache stamped for this package-lock.json was primed again: $(grep -- --prefer-offline "$tmp/npm.log")"
 
 # A python cache whose pip-bootstrap is there but whose priming never finished (no stamp: the run was killed
 # before the wheelhouse was complete) is not primed. It was taken for primed on the bootstrap directory alone.
@@ -152,6 +157,27 @@ mkdir -p "$tmp/cache5/python/pip-bootstrap/pip" "$tmp/cache5/python/wheelhouse"
 harness STUB_CGROUP=true -- --work "$tmp/w5" --cache "$tmp/cache5" || true
 ! grep -q 'python cache already primed' "$tmp/run.log" ||
 	fail "a python cache with a bootstrap directory and no stamp was taken for primed"
+
+# An npm cache primed for another package-lock.json (a stamp of another digest) is primed again, with
+# --prefer-offline so that only what it lacks is fetched, and stamped with this one's digest once npm succeeds; a
+# priming that fails leaves no stamp, and the npm workload is skipped. A non-empty cache was taken for primed, so
+# after a pin changed every timed `npm ci --offline` failed on the tarballs it lacked.
+lock_stamp="$(sha256sum "$here/../../workloads/build/npm/package-lock.json" | cut -c1-16)"
+mkdir -p "$tmp/cache6/npm/cache"
+: >"$tmp/cache6/npm/cache/primed"
+echo 0000000000000000 >"$tmp/cache6/npm/.stamp"
+: >"$tmp/npm.log"
+harness STUB_CGROUP=false PATH="$tmp/path:$tmp/npmbin" -- --work "$tmp/w6n" --cache "$tmp/cache6" || true
+grep -q -- "^npm ci --prefer-offline --cache $tmp/cache6/npm/cache " "$tmp/npm.log" ||
+	fail "an npm cache stamped for another package-lock.json was not primed again: $(head -2 "$tmp/npm.log")"
+[ "$(cat "$tmp/cache6/npm/.stamp")" = "$lock_stamp" ] ||
+	fail "a primed npm cache holds the stamp $(cat "$tmp/cache6/npm/.stamp"), not package-lock.json's $lock_stamp"
+printf '#!/bin/sh\necho "npm $*" >>"%s"\ncase "$*" in *--prefer-offline*) exit 1 ;; esac\nexit 0\n' "$tmp/npm.log" \
+	>"$tmp/npmbin/npm"
+echo 0000000000000000 >"$tmp/cache6/npm/.stamp"
+harness STUB_CGROUP=false PATH="$tmp/path:$tmp/npmbin" -- --work "$tmp/w6f" --cache "$tmp/cache6" || true
+[ ! -e "$tmp/cache6/npm/.stamp" ] || fail "a priming that failed left the stamp $(cat "$tmp/cache6/npm/.stamp")"
+row npm '\*' | grep -q skipped || fail "an npm cache that could not be primed did not skip the npm workload"
 
 # 6. Every timed run is anchored in the work directory, never the invoking user's own ~/.tego (identity-config.md
 # R27): the stand-in sees the isolation variables run.sh exports, and a binary handed in with --tego that is not a

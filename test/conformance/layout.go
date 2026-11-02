@@ -22,7 +22,7 @@ func Layout(project string, fx *Fixture, actor []byte, subst func(string) string
 		if err := mkParent(rel); err != nil {
 			return err
 		}
-		return os.WriteFile(path(rel), data, mode)
+		return writeFile(path(rel), data, mode)
 	}
 	if err := write("bin/actor", actor, 0o755); err != nil {
 		return err
@@ -135,8 +135,20 @@ func copyTree(src, dst string) error {
 			if err != nil {
 				return err
 			}
-			return os.WriteFile(to, data, info.Mode().Perm())
+			return writeFile(to, data, info.Mode().Perm())
 		}
 		return fmt.Errorf("%s: only directories and regular files are copied to a mount point", p)
 	})
+}
+
+// writeFile is os.WriteFile with no fork between its open and its close. A child forked meanwhile inherits the
+// descriptor open for writing and holds it until its own execve closes it, and an exec of the file until then fails
+// ETXTBSY: the kernel runner's landlock fixtures run side by side, one laying out its bin/actor while another forks
+// a run, and then start the actor ("fork/exec .../project/bin/actor: text file busy" on GitHub's runner, once). A
+// fork takes syscall.ForkLock's write side, so holding its read side keeps every fork of this process out until the
+// file is closed, and no exec of it can meet a writer of this process's making after that.
+func writeFile(name string, data []byte, perm os.FileMode) error {
+	syscall.ForkLock.RLock()
+	defer syscall.ForkLock.RUnlock()
+	return os.WriteFile(name, data, perm)
 }

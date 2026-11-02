@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -38,6 +39,8 @@ type inProcessDeputy struct {
 	pins   int   // how many pins were asked for
 	// openErr, when set, is what every open fails with, as the kernel answered the deputy's open in the run.
 	openErr error
+	// pinErr, when set, is what every pin fails with, before any walk.
+	pinErr error
 	// beforeOpen and afterOpen, when set, run around the deputy's open of the pin (and leaf): what a sibling of the
 	// task does between the pin and the open, or between the open and the loop's identity check.
 	beforeOpen, afterOpen func(pin int, leaf string)
@@ -56,6 +59,9 @@ func (d *inProcessDeputy) Pin(q deputy.PinQuery, wait func() bool) (deputy.Pinne
 	d.mu.Lock()
 	d.pins++
 	d.mu.Unlock()
+	if d.pinErr != nil {
+		return deputy.Pinned{FD: -1}, d.pinErr
+	}
 	if d.slowPin != nil {
 		d.slowPin()
 		if wait != nil && !wait() {
@@ -451,6 +457,39 @@ func TestHeldOpenKernelErrnoIsTheResultNotARefusal(t *testing.T) {
 			}
 			if err := json.Unmarshal(evs[0].Payload, &p); err != nil || p.SyscallRet == nil || *p.SyscallRet != -int64(tc.errno) || p.Path != path || p.GateFacts != gateFactsHeld {
 				t.Fatalf("line %s: want %s, held_object, syscall_ret -%d", evs[0].Payload, path, tc.errno)
+			}
+		})
+	}
+}
+
+// A deputy that cannot answer refuses the held open held-unavailable (ADR 0041 D4), whatever socket error its client
+// names: the race job's held race answered an agent's read-open ECONNRESET, the reset of a request socket its dead
+// deputy left, and wrote it as an allowed open with that syscall_ret. The client's error was ErrUnavailable wrapping
+// the errno, which this loop took for the walk's or the kernel's answer.
+func TestHeldOpenDeputyUnavailableIsRefusedNotItsErrno(t *testing.T) {
+	broke := fmt.Errorf("%w: receive: %w", deputy.ErrUnavailable, unix.ECONNRESET)
+	for _, at := range []string{"pin", "open"} {
+		t.Run(at, func(t *testing.T) {
+			x := newHeldAskFixture(t)
+			x.pol.Rules.FS = append(x.pol.Rules.FS, agent.FSRule{Path: x.dir, Resolved: x.dir, Kind: agent.FSWrite, Raw: x.dir, Access: agent.AccessWriteSet})
+			x.pol.Rules.Gate = testGate(t, gate.ReadMatches, "*.env", 90).WithHeldCompletion()
+			if at == "pin" {
+				x.dep.pinErr = broke
+			} else {
+				x.dep.openErr = broke
+			}
+			l, sink, _ := x.loop(t, func(ask.Request) ask.Decision { return ask.Decision{} })
+			x.open(t, l, x.standIn, unix.O_RDONLY)
+			if res, _ := x.f.lastResp(); res.Error != -int32(refusalErrno) {
+				t.Fatalf("answer %+v, want the held-unavailable refusal's %v, never the client's socket errno", res, refusalErrno)
+			}
+			evs := sink.all()
+			if len(evs) != 1 || evs[0].Verdict != record.VerdictRefused || evs[0].Rule != ruleHeldUnavailable {
+				t.Fatalf("lines %+v: want one refused %s", evs, ruleHeldUnavailable)
+			}
+			// At least: a notification over the soft ceiling counts one too (finish), as one under -race can be.
+			if n := l.metrics.anomalies.Load(); n < 1 {
+				t.Fatalf("anomalies %d, want the deputy's failure counted", n)
 			}
 		})
 	}

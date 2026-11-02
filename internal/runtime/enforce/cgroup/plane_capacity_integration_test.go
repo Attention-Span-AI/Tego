@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -27,6 +28,17 @@ import (
 // passes, else tier cgroup) and, where LSM mode passes, pinned to bpflsm.
 func TestPlaneCapBoundaryNeverEMFILE(t *testing.T) {
 	bin, uid, gid, _ := capPreconditions(t)
+	// A host whose descriptor limit is huge (GitHub's runner: 1048575) puts the cap out of this test's range; the
+	// test lowers its own soft limit to 4096 instead of skipping. syscall.Setrlimit, not x/sys's prlimit, so Go
+	// stops restoring the original limit in children and the root launcher this test starts inherits this one.
+	var lim syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &lim); err == nil && lim.Cur > 4096 {
+		old := lim
+		lim.Cur = 4096
+		if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &lim); err == nil {
+			t.Cleanup(func() { _ = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &old) })
+		}
+	}
 	b, err := landlock.ReadFDBudget()
 	if err != nil {
 		t.Fatal(err)
