@@ -4,7 +4,7 @@
   "private": true,
   "description": "Pinned dependency set for the EY-071 overhead benchmark's npm-install workload.",
   "dependencies": {
-    "express": "4.21.2",
+    "express": "4.22.3",
     "chalk": "4.1.2",
     "commander": "11.1.0",
     "lodash": "4.17.21",
