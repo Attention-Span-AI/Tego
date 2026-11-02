@@ -230,6 +230,10 @@ func (s *Server) logsLine(w http.ResponseWriter, r *http.Request) {
 	rows := []ledgerview.Row{{Event: at}}
 	s.labelRun(run, rows)
 	d.Label = rows[0].Label
+	if ledgerview.WatchedLine(run, &at) {
+		// The row says it was watched only (watchLabel); opened, it names the rule it would have matched beside that.
+		d.Label = watchedRule(at.Rule, d.Label)
+	}
 	if !run.Start.IsZero() && !at.TS.Before(run.Start) {
 		d.Into = human(at.TS.Sub(run.Start).Truncate(time.Millisecond))
 	}
@@ -245,6 +249,7 @@ func (s *Server) logsLine(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	d.Parents = strings.Join(parents, " ← ")
+	observedFields(lv.Fields, &at)
 	for _, f := range lv.Fields {
 		switch f.Key {
 		case "kind", "run", "agent":

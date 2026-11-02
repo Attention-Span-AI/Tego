@@ -81,6 +81,10 @@ const (
 	// CodeWallHardCap is the note on a contract that sets limits.wall and no stall_after: wall ends the run at that mark whatever the
 	// agent or the person is doing, which an interactive session usually wants stall_after for (G7). Informational.
 	CodeWallHardCap = "wall-hard-cap"
+	// CodeRecordOff is the note on a contract whose own record: off, or a profile's it extends, is the run's record
+	// mode: the ledger keeps the run's refusals and no exec or allowed action. What the author wrote, weakening no
+	// rule, so it is informational: compile prints it, a run only under -v, and the run's end says record off.
+	CodeRecordOff = "record-off"
 	// CodeSecretEnv warns that a contract with no env.pass hands the agent the launcher's whole environment and that
 	// it holds variables whose names look like credentials, naming them and never their values. A warning: no
 	// variable is removed (SEMANTICS §9, ADR 0067).

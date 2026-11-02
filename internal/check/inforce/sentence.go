@@ -32,15 +32,19 @@ var groupCopy = map[string][2]string{
 const (
 	textKernel       = "Enforced by the operating system"
 	textTegoConnect  = "Enforced: tego checks each connection"
+	textTegoRequest  = "Enforced: tego checks each request before it leaves"
+	textGate         = "Enforced: tego scores each action before it happens"
 	textTegoRead     = "Enforced: tego checks each read"
 	textHeld         = "Enforced: tego holds the action until you answer"
 	textBestEffort   = "Best effort: tego refuses it, but a program built to race tego could get past"
+	textHeldBest     = "Best effort: tego holds the action until you answer, but a program built to race tego could get past"
 	textShadowed     = "Not enforced for this run: it lies inside a folder the agent can change"
 	textObserve      = "Not enforced: this run only watches"
 	textAskReadTier  = "Refused without asking: this run cannot pause a read to ask you"
 	textEnvRemoved   = "Enforced: other variables are removed before the agent starts"
 	textLive         = "Refused by tego until the run ends"
 	textTegoCommands = "Best effort: tego checks the words of each command it starts"
+	textDatagram     = "Best effort: tego checks each datagram's address, but sends one it allows by the agent's own call, which a program built to race tego could redirect"
 
 	textExecAskReserved     = "Always refused: asking before a program runs is not supported yet"
 	textExecAskReservedBest = "Always refused, best effort: asking before a program runs is not supported yet, and tego checks the words of each command it starts"
@@ -113,17 +117,26 @@ func pathSentence(verb, entry, home string) (sentence, target string) {
 }
 
 // programSentence says an exec rule. A program given by its full path is said by its name ("Can run python3.12");
-// the full path stays in the target, which the page shows as the title.
+// the full path stays in the target, which the page shows as the title. The entry's words are read as compile reads
+// them (withWords): a quoted path with a space is one word ('/opt/My Tools/run' says "Can run run"), and a tab
+// separates words as a space does.
 func programSentence(verb, entry, home string) (sentence, target string) {
 	target = short(entry, home)
-	if isDir(entry) {
-		return verb + " programs in " + target, target
+	if !withWords(entry) {
+		w := programWord(entry)
+		switch {
+		case isDir(w):
+			return verb + " programs in " + short(w, home), target
+		case strings.Contains(w, "/") && !isGlob(w):
+			return verb + " " + path.Base(w), target
+		}
+		return verb + " " + short(w, home), target
 	}
 	name := target
-	if first, rest, words := strings.Cut(strings.TrimSpace(entry), " "); strings.Contains(first, "/") && !isGlob(first) {
-		name = path.Base(first)
-		if words {
-			name += " " + rest
+	trimmed := strings.TrimSpace(entry)
+	if i := strings.IndexAny(trimmed, " \t"); i > 0 {
+		if first := trimmed[:i]; strings.Contains(first, "/") && !isGlob(first) {
+			name = path.Base(first) + " " + strings.TrimLeft(trimmed[i:], " \t")
 		}
 	}
 	return verb + " " + name, target
@@ -203,6 +216,28 @@ func limitSentence(key, value string) string {
 		return "Is stopped when it repeats the same step " + value + " times in a row"
 	}
 	return key + ": " + value
+}
+
+// limitAmount says one limits key's value as an amount, for a sentence that names two of them: "2 hours", "4 GiB",
+// "$5", "5000 model tokens".
+func limitAmount(key, value string) string {
+	switch key {
+	case "wall", "stall_after", "memory", "memory_high":
+		return human(value)
+	case "tokens":
+		return value + " model tokens"
+	case "cost_usd":
+		return "$" + value
+	case "pids":
+		return value + " processes"
+	case "cpu":
+		return value + " CPU cores"
+	case "cpu_weight":
+		return "a CPU share of " + value
+	case "repeats":
+		return value + " repeats"
+	}
+	return value
 }
 
 // human says a duration or a size the way people do: 2h as "2 hours", 4GiB as "4 GiB". A value it does not know

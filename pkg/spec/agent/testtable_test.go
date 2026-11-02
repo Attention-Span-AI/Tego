@@ -14,7 +14,7 @@ import (
 )
 
 func TestBindTablePolicy(t *testing.T) {
-	f := newFixture(t)
+	f := newSocketFixture(t, "project/alias/allowed.sock")
 	homeSockets := filepath.Join(f.home, "sockets")
 	if err := os.Mkdir(homeSockets, 0o755); err != nil {
 		t.Fatal(err)

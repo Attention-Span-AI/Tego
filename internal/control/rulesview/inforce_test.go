@@ -170,6 +170,37 @@ func TestInForceGroupsHitsAndSourcePositions(t *testing.T) {
 	}
 }
 
+// TestInForceDefaultHits: each line no rule named counts on the default of the group that decided it (an exec line on
+// the programs', a net line on the network's), whether the ledger is read or the read model's run is handed in; a file
+// line counts in the run's total alone.
+func TestInForceDefaultHits(t *testing.T) {
+	f := newFixture(t, "r-aaaaaaaa-0000000000017-dhits1")
+	attr := `"attribution":{"confidence":"unattributed","method":"none"}`
+	f.add(`"kind":"exec","source":"seccomp","rule":"unmatched","verdict":"refused","authority":"rule",` + attr + `,"argv":["curl"],"exec_id":"x/10/3","path":"/usr/bin/curl"`)
+	for range 2 {
+		f.add(`"kind":"net","source":"supervisor","rule":"unmatched","verdict":"allow",` + attr + `,"dst":"203.0.113.9:443","proto":"tcp"`)
+	}
+	f.add(`"kind":"fs","source":"seccomp","rule":"unmatched","verdict":"observed",` + attr + `,"op":"open","path":"/etc/hosts"`)
+	f.add(`"kind":"exec","source":"seccomp","rule":"exec[git]","verdict":"allow","authority":"rule",` + attr + `,"argv":["git"],"exec_id":"x/10/4","path":"/usr/bin/git"`)
+	scanned := f.inForce(t)
+	r, err := ledgerview.Open(f.root).Run(f.run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cached := InForce(context.Background(), f.root, f.run, Options{Machine: f.m, Run: r})
+	for name, v := range map[string]*InForceView{"ledger": scanned, "read model": cached} {
+		want := map[string]int{inforce.GroupPrograms: 1, inforce.GroupNetwork: 2}
+		for _, g := range v.View.Groups {
+			if g.DefaultHits != want[g.ID] {
+				t.Errorf("%s: %s default hits %d, want %d", name, g.ID, g.DefaultHits, want[g.ID])
+			}
+		}
+		if v.View.Unmatched != 4 {
+			t.Errorf("%s: unmatched %d, want 4", name, v.View.Unmatched)
+		}
+	}
+}
+
 // TestInForceCopyPositionsAfterTheSourceChanged: the rules file was edited by hand after the run started, so its
 // lines no longer hold the run's rules: positions name the run's copy, the rules shown are the run's, and Pending
 // says the file was edited.

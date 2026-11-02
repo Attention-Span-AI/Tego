@@ -47,7 +47,9 @@
 // (blobargv.go): read-only, O_NOFOLLOW|O_NONBLOCK, a regular file of at most MaxBlobBytes whose content hashes to its
 // name, and keeps at most MaxTargetBytes of it as the line's Target, so rows and the Logs search see the command the
 // agent ran. A blob that fails any check leaves the program's path (Event.ArgvMissing); the line page reads the blob
-// whole (BlobCommand).
+// whole (BlobCommand). The line page's download opens a blob with the same checks under its own bound and streams it
+// (OpenBlob): the file is hashed once before OpenBlob returns and again as Blob.Read hands it out, which withholds the
+// last bytes of a blob that no longer hashes to its name, so a stream read to its end is always the checked content.
 //
 // # One line explained (explain.go, proc.go, blobs.go)
 //

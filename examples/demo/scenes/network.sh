@@ -3,6 +3,8 @@
 # The "network" scene, sourced by demo.sh (uses its say/show/plant/sink_up/last_run helpers).
 # One agent run under a contract that allows exactly one host:port (the loopback sink) and tries:
 #   the allowed sink, a port the contract does not name, and opening a listening port.
+# The listener is python3's, named by the file python3 runs as (demo.sh's agent_python, set by plant) in the agent and
+# the contract alike: a python3 shim on PATH could not be granted, and the run would not start.
 cmd_network() {
   need_tego
   plant; sink_up; : >"$STAGE/sink.log"
@@ -13,7 +15,7 @@ set -u
 try() { if "\$@" >/dev/null 2>&1; then echo "[agent] ALLOWED \$what"; else echo "[agent] REFUSED \$what"; fi; }
 what="connect 127.0.0.1:$PORT (the sink the contract names)"; try curl -q -s --max-time 3 -H 'X-Demo-Agent: net' "$SINK/ok"
 what="connect 127.0.0.1:$other (a port the contract does not name)"; try curl -q -s --max-time 3 "http://127.0.0.1:$other/x"
-what="listen on 127.0.0.1:4444 (a backdoor)"; try python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",4444));s.listen(1)'
+what="listen on 127.0.0.1:4444 (a backdoor)"; try '$PYTHON3' -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",4444));s.listen(1)'
 AGENT
   cat >"$PROJECT/network.yaml" <<YAML
 version: 0
@@ -22,7 +24,7 @@ command: ["sh", "net-agent.sh"]
 fs:
   write: ["/dev/null"]
 exec:
-  allow: ["sh", "curl", "python3"]
+  allow: ["sh", "curl", "$PYTHON3"]
 net:
   allow: ["127.0.0.1:$PORT", "unix:/var/run/nscd/socket"]   # the sink only
   listen: []                                                  # no listening port: a bind is refused and recorded

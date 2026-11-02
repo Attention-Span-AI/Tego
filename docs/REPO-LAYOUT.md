@@ -154,7 +154,7 @@ its own says otherwise.
 | `internal/askclient` | 1 | `pkg/spec/askproto`, `internal/runlock`, `internal/ledger` (`LedgerTarget`'s redaction), x/sys; never `internal/runtime` | `run-clients-never-import-runtime` |
 | `internal/runscope` | 1 | standard library and `pkg/spec/identity` only: the one run-membership rule (`GovernedBy`, `LooksGoverned`, `InRun`, the strict cgroup reader `Unified`) | `runscope-is-a-leaf` |
 | `internal/platform/peer` | 1 | `internal/runscope`, `internal/platform/sys` (the pidfd owners), `internal/platform/proc` (the stat parser), `pkg/spec/identity` and x/sys only: the one peer check every socket uses | `platform-peer-imports` |
-| `internal/check/inforce` | 2 | `internal/check/livestatus`, `pkg/spec/agent`, `pkg/spec/backend`, `pkg/spec/record`, yaml.v3; pure (no `os`, no clock), never `internal/control` or `internal/liveblock` | `inforce-is-pure`, `linked-into-control-never-imports-engine` |
+| `internal/check/inforce` | 2 | `internal/check/livestatus`, `pkg/policy/gate`, `pkg/spec/agent`, `pkg/spec/backend`, `pkg/spec/record`, yaml.v3; pure (no `os`, no clock), never `internal/control` or `internal/liveblock` | `inforce-is-pure`, `linked-into-control-never-imports-engine` |
 
 Two forbidigo rules go with the table: no product file names a trusted `html/template` type (`HTML`, `HTMLAttr`, `JS`,
 `JSStr`, `URL`, `CSS`, `Srcset`), and no file of `internal/control/web` dials, listens, looks a name up, lists the

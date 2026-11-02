@@ -70,7 +70,8 @@ func peerServer(t *testing.T, read func(string) ([]byte, error)) *Server {
 
 // TestPeerUIDRefusesOtherUser: a client socket owned by uid 4242 gets the 403 page and no session cookie, even
 // with the right token, and even though the dashboard's own end of the connection (the reversed row) is the
-// serving user's.
+// serving user's. TestPeerUIDRefusesAnotherRealUser (peer_root_integration_test.go, as root) is the same refusal on
+// the kernel's own table, of a client that runs as another uid.
 func TestPeerUIDRefusesOtherUser(t *testing.T) {
 	s := peerServer(t, fakeTables(map[string]string{
 		"/proc/net/tcp": tcpHeader + tcpRow(serverCell, clientCell, 1000) + tcpRow(clientCell, serverCell, 4242),

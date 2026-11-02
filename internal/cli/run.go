@@ -63,7 +63,7 @@ func cmdRun() Command {
 			fs.BoolVar(&offline, "offline", false, "an unresolvable host is a warning, not an error")
 			fs.BoolVar(&verbose, "v", false, "print every compile note at the start, not only those that need you or mean less is enforced")
 			fs.BoolVar(&verbose, "verbose", false, "same as -v")
-			fs.BoolVar(&noSummary, "no-summary", false, "print no summary when the agent exits (run id, refusals, asks, files written, chain)")
+			fs.BoolVar(&noSummary, "no-summary", false, "print no summary when the agent exits (run id, tier, refusals, asks, files written, chain)")
 		},
 		// The agent owns stdout and stderr: they are passed to the child untouched, and tego's
 		// own words go to the command's stderr writer.
@@ -90,6 +90,12 @@ func cmdRun() Command {
 
 // runOptions is what the flags and arguments resolved to.
 type runOptions struct {
+	// cmd is the command the run path's own lines name ("tego watch: ..."); "" is tego run. tego watch and tego adopt
+	// pass theirs, so a line names the command whose run path it is: the one the person typed, except under the guard
+	// (tego agents --follow --adopt), whose adoptions' lines say tego adopt, as every other line of an adoption does.
+	// It is passed down, not rewritten into the lines afterwards: watch's rewrite of every "tego run: " also changed
+	// a path or a program's name that held the words, and would have missed a line written in two pieces.
+	cmd string
 	// contract is the contract's path, or an agent's name the registries resolve (agent-contract.md R26).
 	contract string
 	// generated says tego wrote the contract itself (watch's or adopt's with no --boundary): it is a path, and the
@@ -128,6 +134,14 @@ type runOptions struct {
 	report func(tegoruntime.Result, *endSummary)
 }
 
+// cmdName is the command the run path's own lines name: o.cmd, or tego run.
+func (o runOptions) cmdName() string {
+	if o.cmd == "" {
+		return "tego run"
+	}
+	return o.cmd
+}
+
 // runRun is the in-process body of run. Every failure before runtime.Run is exit 125 with a
 // diagnostic code (the 2026-09-22 resolution folded the former 210/211/213 into 125).
 func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
@@ -148,7 +162,9 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	}()
 	// R29's warning is for an --observe or --record off passed by mistake. tego watch says what it records in its
 	// own notice, and its flags end at "--", so the line only repeated it. A bounded watch's notice names only
-	// the contract, so its --record off is still said here.
+	// the contract, so its --record off is still said here. A contract's own record: off is no start notice: it is
+	// what the contract wrote and weakens no rule (the quiet start, runNotices), and the run's end says it
+	// (endSummary.recordOff).
 	switch {
 	case !o.watched:
 		warnUnenforced(o, stderr)
@@ -158,11 +174,11 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	m, cds, err := loadMachine(config.TrustAbort)
 	writeConfigDiagnostics(stderr, cds)
 	if err != nil {
-		configRefused(stderr, err)
+		configRefused(stderr, o.cmdName(), err)
 		return identity.ExitConfig // = 125 [config-untrusted]
 	}
 	makeOwnDirs(m)
-	warnUsersIgnored(stderr, m)
+	warnUsersIgnored(stderr, o.cmdName(), m)
 	rt, held, src, code := compileForRun(ctx, o, m, stderr)
 	if rt == nil {
 		return code
@@ -183,15 +199,15 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	_ = agent.WriteDiagnostics(stderr, runNotices(agent.ForTier(held, b.Tier()), o.verbose))
 	// R20: `run` sweeps before it starts, so a crashed launcher's orphan is ended and its process
 	// tree killed before this run competes with it for the machine.
-	sweepBeforeRun(ctx, m, stderr)
+	sweepBeforeRun(ctx, m, o.cmdName(), stderr)
 	// And, once per gc_interval, gc's retention pass, within its budget.
-	retainBeforeRun(ctx, m, stderr)
+	retainBeforeRun(ctx, m, o.cmdName(), stderr)
 
 	// The run directory keeps the contract as compiled, not as written: its sha256 is contract_hash
 	// and it needs no profile to reload (contractCopy, agent-contract.md R13).
 	yaml, err := contractCopy(rt)
 	if err != nil {
-		message(stderr, o.contract, 0, 0, "tego run: contract copy: "+err.Error(), codeIO)
+		message(stderr, o.contract, 0, 0, o.cmdName()+": contract copy: "+err.Error(), codeIO)
 		return identity.ExitLauncher
 	}
 	// The chain anchor is resolved and opened for append — ~/.tego and an empty chain.log created if
@@ -204,10 +220,10 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		err = ledger.ProbeAnchor(anchor)
 	}
 	if err != nil {
-		message(stderr, "", 0, 0, "tego run: chain anchor: "+err.Error(), codeRun)
+		message(stderr, "", 0, 0, o.cmdName()+": chain anchor: "+err.Error(), codeRun)
 		return identity.ExitLauncher
 	}
-	prices, priceGap := runPrices(m, rt, stderr)
+	prices, priceGap := runPrices(m, rt, o.cmdName(), stderr)
 	// The capture sources are built before the run so the forwarder's sockets are already bound: the
 	// run admits their ports through the enforcement tier it prepares and names their base URLs in the
 	// environment the child execs into, both of which happen before the agent runs (capture-derive.md
@@ -217,7 +233,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	// know it would start (agent-contract.md R12).
 	warnForwarderEnv(stderr, rt, compiledCapture, b.Tier(), sources)
 	// The MCP relay (ADR 0126 §4), bound now for the same reason: only for a contract with a relayed server.
-	extra, code := mcpRelayFor(rt, ownLogger(m), stderr)
+	extra, code := mcpRelayFor(rt, ownLogger(m), o.cmdName(), stderr)
 	if code != identity.ExitOK {
 		for _, s := range sources {
 			_ = s.Stop()
@@ -225,8 +241,8 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		return code
 	}
 	stdio := tegoruntime.Stdio{In: os.Stdin, Out: os.Stdout, Err: os.Stderr}
-	warnStdio(stderr, rt, stdio)
-	started, askPending, stopNotice := askNoticesFor(rt, m, b.Tier(), stderr)
+	warnStdio(stderr, o.cmdName(), rt, stdio)
+	started, askPending, stopNotice := askNoticesFor(rt, m, b.Tier(), o.cmdName(), stderr)
 	defer stopNotice()
 	// A SIGINT or SIGTERM that landed after compileForRun's check (during the probe, the sweep, the capture
 	// sources' construction) cancelled a context nothing before this point reads again, and the runtime
@@ -238,7 +254,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	// the runtime's own subscription (mintRun's file I/O) would reach neither and the agent would start.
 	sigCh, unnotify := launch.Notify()
 	defer unnotify()
-	if interruptedBeforeStart(ctx, stderr) {
+	if interruptedBeforeStart(ctx, o, stderr) {
 		for _, s := range append(sources, extra...) {
 			_ = s.Stop()
 		}
@@ -284,19 +300,19 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 			if code == tegoruntime.WarnHeldLabel {
 				lead = "note: "
 			}
-			message(stderr, "", 0, 0, lead+"tego run: "+what, code)
+			message(stderr, "", 0, 0, lead+o.cmdName()+": "+what, code)
 		},
 	})
 	if errors.Is(err, tegoruntime.ErrCaptureUnavailable) {
 		// A budget capture was to meter and could not: the machine still does what the cached answer vouched
 		// for, so the answer is kept (limits-check-doctor-cli.md R32).
-		message(stderr, "", 0, 0, "tego run: "+err.Error(), identity.CodeCaptureUnavailable)
+		message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), identity.CodeCaptureUnavailable)
 		return identity.ExitLauncher
 	}
 	if errors.Is(err, tegoruntime.ErrBudgetUnmetered) {
 		// A declared budget nothing counts: the contract (or the machine's capture ceiling or price table) is the
 		// cause, not the machine's probe answer, which is kept (limits-check-doctor-cli.md R32).
-		message(stderr, "", 0, 0, "tego run: "+err.Error(), identity.CodeBudgetUnmetered)
+		message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), identity.CodeBudgetUnmetered)
 		return identity.ExitLauncher
 	}
 	if err != nil {
@@ -305,13 +321,14 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		// the answer is dropped so the next run probes afresh rather than failing the same way (R27 "What a run
 		// probes").
 		startFailed(rep)
-		message(stderr, "", 0, 0, "tego run: "+err.Error(), codeRun)
+		message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), codeRun)
 		return identity.ExitLauncher // R2: every pre-run_start failure is 125
 	}
-	// The end summary: after the agent's process tree is gone, from the run's own ledger.
+	// The end summary: after the agent's process tree is gone, from the run's own ledger and the record mode it ran
+	// under.
 	var sum *endSummary
 	if !o.noSummary {
-		sum = summarizeRun(ctx, m, anchor, res)
+		sum = summarizeRun(ctx, m, anchor, res, rt.Record)
 	}
 	switch {
 	case sum == nil:
@@ -322,7 +339,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	if o.report != nil {
 		o.report(res, sum)
 	}
-	return runExitCode(stderr, res)
+	return runExitCode(stderr, o.cmdName(), res)
 }
 
 // runNotices is the compile findings a run prints before its agent starts. A run prints a notice only when it needs
@@ -353,12 +370,12 @@ func commandFor(o runOptions, rt *agent.RuleTable) []string {
 func checkRunFlags(o runOptions, stderr io.Writer) int {
 	if o.record != "" {
 		if _, err := parseRecordMode(o.record); err != nil {
-			message(stderr, "", 0, 0, "tego run: "+err.Error(), codeUsage)
+			message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), codeUsage)
 			return identity.ExitUsage
 		}
 	}
 	if _, what := tierPin(o.tier); what != "" {
-		message(stderr, "", 0, 0, "tego run: "+what, codeUsage)
+		message(stderr, "", 0, 0, o.cmdName()+": "+what, codeUsage)
 		return identity.ExitUsage
 	}
 	return identity.ExitOK
@@ -391,7 +408,7 @@ const codeUnenforced = "unenforced"
 // its run unrecorded with no word said (R29).
 func warnUnenforced(o runOptions, stderr io.Writer) {
 	if o.observe {
-		message(stderr, "", 0, 0, "warning: tego run: --observe is in effect: this run enforces nothing, it only records", codeUnenforced)
+		message(stderr, "", 0, 0, "warning: "+o.cmdName()+": --observe is in effect: this run enforces nothing, it only records", codeUnenforced)
 	}
 	warnRecordOff(o, stderr)
 }
@@ -400,45 +417,45 @@ func warnUnenforced(o runOptions, stderr io.Writer) {
 // whose rules apply, not what the record keeps.
 func warnRecordOff(o runOptions, stderr io.Writer) {
 	if o.record == string(agent.RecordOff) {
-		message(stderr, "", 0, 0, "warning: tego run: --record off is in effect: the ledger keeps only this run's refusals, no exec or allowed events", codeUnenforced)
+		message(stderr, "", 0, 0, "warning: "+o.cmdName()+": --record off is in effect: the ledger keeps only this run's refusals, no exec or allowed events", codeUnenforced)
 	}
 }
 
-// configRefused prints why run refused the machine config, with the fix compile and doctor already give
-// for an untrusted layer: run's line named the file and mode and never said what to change, and it
-// prefixed errors that name themselves ("machine config: machine config untrusted: ..."). An invalid
-// layer's own errors are on the lines above it.
-func configRefused(stderr io.Writer, err error) {
+// configRefused prints why a command (cmd: tego run, watch, adopt or agents) refused the machine config, with the
+// fix compile and doctor already give for an untrusted layer: run's line named the file and mode and never said what
+// to change, and it prefixed errors that name themselves ("machine config: machine config untrusted: ..."). An
+// invalid layer's own errors are on the lines above it.
+func configRefused(stderr io.Writer, cmd string, err error) {
 	var ue *config.UntrustedError
 	switch {
 	case errors.As(err, &ue):
-		fmt.Fprintln(stderr, identity.FormatMessage("", 0, 0, "tego run: "+ue.Error(), identity.CodeConfigUntrusted)+" "+ue.Fix())
+		fmt.Fprintln(stderr, identity.FormatMessage("", 0, 0, cmd+": "+ue.Error(), identity.CodeConfigUntrusted)+" "+ue.Fix())
 	case errors.Is(err, config.ErrInvalid) && errors.Is(err, fs.ErrNotExist): // E13: a missing $TEGO_CONFIG printed nothing above
-		message(stderr, "", 0, 0, "tego run: "+err.Error(), identity.CodeConfigUntrusted)
+		message(stderr, "", 0, 0, cmd+": "+err.Error(), identity.CodeConfigUntrusted)
 	case errors.Is(err, config.ErrInvalid):
-		message(stderr, "", 0, 0, "tego run: "+err.Error()+" (its errors are above)", identity.CodeConfigUntrusted)
+		message(stderr, "", 0, 0, cmd+": "+err.Error()+" (its errors are above)", identity.CodeConfigUntrusted)
 	default:
-		message(stderr, "", 0, 0, "tego run: machine config: "+err.Error(), identity.CodeConfigUntrusted)
+		message(stderr, "", 0, 0, cmd+": machine config: "+err.Error(), identity.CodeConfigUntrusted)
 	}
 }
 
 // warnUsersIgnored is spec/config/v0's "tego run ignores it with a warning" for users:, the per-uid policy
 // only tegod reads: an operator who wrote one and saw no word of it could take `tego run` to enforce it.
-// Nothing is said when no layer sets it.
-func warnUsersIgnored(stderr io.Writer, m *config.Machine) {
+// Nothing is said when no layer sets it. cmd is the command that ignores it (tego run or tego watch).
+func warnUsersIgnored(stderr io.Writer, cmd string, m *config.Machine) {
 	if len(m.Users.Value) == 0 {
 		return
 	}
 	writeConfigDiagnostics(stderr, []config.Diagnostic{{File: m.Users.Source.File, Line: m.Users.Source.Line,
 		Code: config.CodeIgnored, Severity: config.SeverityWarning,
-		Message: "users: is read by tegod only; tego run ignores it, so its contracts and max_runs bind no run started here"}})
+		Message: "users: is read by tegod only; " + cmd + " ignores it, so its contracts and max_runs bind no run started here"}})
 }
 
-// runExitCode is the code `tego run` exits with. The agent's own code, unless the run's record could not be
-// completed: that failure is tego's, and 125 says so rather than letting a run whose ledger is incomplete, or
-// complete but unanchored, read as the agent's exit (record-ledger.md §7). The summary above it still says
-// what the agent did.
-func runExitCode(stderr io.Writer, res tegoruntime.Result) int {
+// runExitCode is the code a run exits with, its line naming cmd (tego run or tego watch). The agent's own code,
+// unless the run's record could not be completed: that failure is tego's, and 125 says so rather than letting a run
+// whose ledger is incomplete, or complete but unanchored, read as the agent's exit (record-ledger.md §7). The summary
+// above it still says what the agent did.
+func runExitCode(stderr io.Writer, cmd string, res tegoruntime.Result) int {
 	if res.RecordErr == nil {
 		return res.ExitCode
 	}
@@ -446,7 +463,7 @@ func runExitCode(stderr io.Writer, res tegoruntime.Result) int {
 	if errors.Is(res.RecordErr, ledger.ErrAnchorWrite) {
 		what = "the run is recorded, but its chain anchor was not written"
 	}
-	message(stderr, "", 0, 0, fmt.Sprintf("tego run: %s (%s): %v", what, res.RunID, res.RecordErr), codeLedger)
+	message(stderr, "", 0, 0, fmt.Sprintf("%s: %s (%s): %v", cmd, what, res.RunID, res.RecordErr), codeLedger)
 	return identity.ExitLauncher
 }
 
@@ -455,12 +472,17 @@ func runExitCode(stderr io.Writer, res tegoruntime.Result) int {
 var startFailed = func(rep *doctor.Report) { rep.DiscardCache() }
 
 // interruptedBeforeStart reports, once it has said so on stderr, whether a SIGINT or SIGTERM cancelled ctx
-// before the agent started. Such a run is refused, exit 125 [run], and nothing is launched (R29).
-func interruptedBeforeStart(ctx context.Context, stderr io.Writer) bool {
+// before the agent started. Such a run is refused, exit 125 [run], and nothing is launched (R29). An adoption's
+// agent was running before tego was, so its line says nothing was adopted.
+func interruptedBeforeStart(ctx context.Context, o runOptions, stderr io.Writer) bool {
 	if ctx.Err() == nil {
 		return false
 	}
-	message(stderr, "", 0, 0, "tego run: interrupted before the agent started; nothing was run", codeRun)
+	what := "interrupted before the agent started; nothing was run"
+	if o.adopted {
+		what = "interrupted before the adoption; nothing was adopted"
+	}
+	message(stderr, "", 0, 0, o.cmdName()+": "+what, codeRun)
 	return true
 }
 
@@ -496,8 +518,8 @@ var (
 // A table nobody installed (warn.Missing) is a fresh machine's normal state, and with no cost_usd budget in force
 // nothing depends on it: the run says nothing at the terminal (the gap is still recorded, and tego measure names
 // the missing table where a cost is asked for). A table that is there and refused, or any missing one under a
-// cost_usd budget, is always said.
-func runPrices(m *config.Machine, rt *agent.RuleTable, stderr io.Writer) (*limits.PriceTable, string) {
+// cost_usd budget, is always said, on a line naming cmd.
+func runPrices(m *config.Machine, rt *agent.RuleTable, cmd string, stderr io.Writer) (*limits.PriceTable, string) {
 	table, warn := limits.FromMachine(m)
 	if warn == nil {
 		return table, ""
@@ -505,7 +527,7 @@ func runPrices(m *config.Machine, rt *agent.RuleTable, stderr io.Writer) (*limit
 	if warn.Missing && (rt == nil || !rt.Limits.Bounded(agent.BudgetCostUSD)) {
 		return nil, warn.Why
 	}
-	message(stderr, "", 0, 0, "tego run: "+warn.Message+costBudgetUnseen(rt), codeNotFound)
+	message(stderr, "", 0, 0, cmd+": "+warn.Message+costBudgetUnseen(rt), codeNotFound)
 	return nil, warn.Why
 }
 
@@ -548,7 +570,7 @@ func compileForRun(ctx context.Context, o runOptions, m *config.Machine, stderr 
 		}
 	}
 	ref, c := l.ref, l.contract
-	if interruptedBeforeStart(ctx, stderr) {
+	if interruptedBeforeStart(ctx, o, stderr) {
 		return nil, nil, nil, identity.ExitLauncher
 	}
 	// The tiers this binary builds, as compile passes them: auto resolves to the highest, never to a tier the
@@ -585,7 +607,7 @@ func compileForRun(ctx context.Context, o runOptions, m *config.Machine, stderr 
 	if o.record != "" {
 		mode, err := parseRecordMode(o.record)
 		if err != nil {
-			message(stderr, "", 0, 0, "tego run: "+err.Error(), codeUsage)
+			message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), codeUsage)
 			return nil, nil, nil, identity.ExitUsage
 		}
 		opts = append(opts, agent.WithRecord(mode))
@@ -602,7 +624,7 @@ func compileForRun(ctx context.Context, o runOptions, m *config.Machine, stderr 
 	endCompile := startphase.Begin(nil, "compile")
 	rt, ds, err := agent.Compile(c, m, opts...)
 	endCompile()
-	if interruptedBeforeStart(ctx, stderr) {
+	if interruptedBeforeStart(ctx, o, stderr) {
 		return nil, nil, nil, identity.ExitLauncher
 	}
 	label := ref.label()
@@ -659,7 +681,7 @@ func loadRunContract(o runOptions, m *config.Machine, stderr io.Writer) (*loaded
 	}
 	ref, rerr := resolveContract(o.contract, o.generated, m)
 	if rerr != nil {
-		printRefusedName(stderr, "tego run", rerr)
+		printRefusedName(stderr, o.cmdName(), rerr)
 		return nil, identity.ExitLauncher
 	}
 	c, ds, err := ref.load(profileSources(m))
@@ -713,26 +735,26 @@ func selectBackend(ctx context.Context, o runOptions, m *config.Machine, rt *age
 	// here the same way.
 	only, what := tierPin(o.tier)
 	if what != "" {
-		message(stderr, "", 0, 0, "tego run: "+what, codeUsage)
+		message(stderr, "", 0, 0, o.cmdName()+": "+what, codeUsage)
 		return nil, nil, nil, identity.ExitUsage
 	}
 	endProbe := startphase.Begin(nil, "probe")
 	rep, err := probeMachine(ctx, m, doctor.Reach(m, rt, only))
 	endProbe()
-	if err != nil && interruptedBeforeStart(ctx, stderr) {
+	if err != nil && interruptedBeforeStart(ctx, o, stderr) {
 		// The probe stopped because the user interrupted the run, not because a tier is missing: it is
 		// reported as the interrupt it is, never as [tier-unavailable].
 		return nil, nil, nil, identity.ExitLauncher
 	}
 	if err != nil {
-		message(stderr, "", 0, 0, "tego run: "+err.Error(), backend.CodeTierUnavailable)
+		message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), backend.CodeTierUnavailable)
 		return nil, nil, nil, identity.ExitLauncher
 	}
 	if note := rep.CacheNote(); note != "" {
-		fmt.Fprintln(stderr, record.Printable("tego run: note: the run-probe cache is unusable, so this run probed in full: "+note))
+		fmt.Fprintln(stderr, record.Printable(o.cmdName()+": note: the run-probe cache is unusable, so this run probed in full: "+note))
 	}
 	if note := rep.CoordinationNote(); note != "" {
-		fmt.Fprintln(stderr, record.Printable("tego run: note: this run could not wait for a concurrent run's probe, so it probed on its own: "+note))
+		fmt.Fprintln(stderr, record.Printable(o.cmdName()+": note: this run could not wait for a concurrent run's probe, so it probed on its own: "+note))
 	}
 	endSelect := startphase.Begin(nil, "select")
 	b, ds := rep.Select(m, rt, only)
@@ -766,15 +788,15 @@ var probeMachine = doctor.ForRun
 // fails the run that is starting: a sweep error is a warning, because the new run is independent of
 // whatever the old one left. It sweeps the runs the ledger root's live index names, not every run the
 // root holds (tegoruntime.SweepLive): a pass over the whole root cost every start about 73 µs per
-// stored run, and that pass is `tego gc`'s.
-func sweepBeforeRun(ctx context.Context, m *config.Machine, stderr io.Writer) {
+// stored run, and that pass is `tego gc`'s. Its lines name cmd, the command starting the run.
+func sweepBeforeRun(ctx context.Context, m *config.Machine, cmd string, stderr io.Writer) {
 	root, err := ledgerRootOf(m)
 	if err != nil {
 		return
 	}
 	res, err := sweepLive(ctx, root, sweepOptions(m, tegoruntime.WithSweepLogger(ownLogger(m)))...)
 	if err != nil {
-		message(stderr, "", 0, 0, "tego run: sweep: "+err.Error(), codeIO)
+		message(stderr, "", 0, 0, cmd+": sweep: "+err.Error(), codeIO)
 		return
 	}
 	for _, e := range res.Errs {
@@ -782,7 +804,7 @@ func sweepBeforeRun(ctx context.Context, m *config.Machine, stderr io.Writer) {
 	}
 	if res.Orphaned > 0 {
 		message(stderr, "", 0, 0,
-			fmt.Sprintf("tego run: ended %d orphaned run(s) left by a previous launcher", res.Orphaned), codeSweep)
+			fmt.Sprintf("%s: ended %d orphaned run(s) left by a previous launcher", cmd, res.Orphaned), codeSweep)
 	}
 }
 
@@ -796,8 +818,8 @@ const codeStdio = "stdio"
 // keeps fds 0-2 whatever they are (runtime-launch invariant 4a), and Landlock checks
 // a file's access only at open, so a socket reaches it as a live channel whatever net: says, and a file the
 // caller opened beyond the stream's direction (stdin for writing, stdout or stderr for reading) outside every
-// write entry is the agent's to use. run_start records every stream's kind either way.
-func warnStdio(stderr io.Writer, rt *agent.RuleTable, s tegoruntime.Stdio) {
+// write entry is the agent's to use. run_start records every stream's kind either way. Each line names cmd.
+func warnStdio(stderr io.Writer, cmd string, rt *agent.RuleTable, s tegoruntime.Stdio) {
 	for _, st := range tegoruntime.StdioBeyondContract(rt, tegoruntime.DescribeStdio(s)) {
 		what := st.Name + " is a socket: the agent reads and writes whatever holds its other end, whatever net: allows"
 		if st.Kind == record.StdioFile {
@@ -810,7 +832,7 @@ func warnStdio(stderr io.Writer, rt *agent.RuleTable, s tegoruntime.Stdio) {
 			what = fmt.Sprintf("%s is %s, open for %s, outside every write entry: the agent keeps that access "+
 				"whatever fs: says", st.Name, record.Printable(st.Path), mode)
 		}
-		message(stderr, "", 0, 0, "warning: tego run: "+what, codeStdio)
+		message(stderr, "", 0, 0, "warning: "+cmd+": "+what, codeStdio)
 	}
 }
 
@@ -884,10 +906,13 @@ func endedHow(reason string) string {
 	return reason
 }
 
-// Argument errors the run-side commands share; both are usage errors (R25), never tego's own.
+// Argument errors the run-side commands share; all are usage errors (R25, runRefUsage), never tego's own.
 var (
-	// errRunNotFound is a run id that names no directory under the ledger root.
+	// errRunNotFound is a run id, or an abbreviation of one, that names no directory under the ledger root.
 	errRunNotFound = errors.New("no such run")
-	// errBadRunID is an argument that is not shaped like a run id at all.
+	// errBadRunID is an argument that is neither a run id nor long enough to abbreviate one by its start or its end
+	// (runIDArg, abbrevEnds), nor, for the commands that also take one (resolveRunDir), a run directory.
 	errBadRunID = errors.New("is not a run id")
+	// errAmbiguousRun is an abbreviation of a run id that more than one run under the ledger root has.
+	errAmbiguousRun = errors.New("names more than one run")
 )

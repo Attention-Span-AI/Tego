@@ -63,7 +63,7 @@ func resolveBlobRef(runDir, sha string) *BlobRef {
 			b.Why = "the blob is a symbolic link, which Tego never writes"
 		case b.Size > MaxBlobBytes:
 			b.Why = "the blob is larger than the dashboard reads"
-		case errors.Is(err, ErrBlob) && strings.Contains(err.Error(), "does not hash"):
+		case errors.Is(err, ErrBlobHash):
 			b.Why = "the blob's content does not match its hash: it was changed after it was written"
 		default:
 			b.Why = "the blob could not be read"

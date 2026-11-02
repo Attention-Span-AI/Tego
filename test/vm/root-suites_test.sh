@@ -196,20 +196,23 @@ grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" | grep -q
 run_stub VM_HOST=kvm
 if grep -qF -- "TEGO_VM_ROW" "$tmp/boots"; then fail "a guest was told a row the caller never named: $(cat "$tmp/boots")"; fi
 
-# Modules: kvm-run.sh can fetch a module package for this host's own kernel only, so the default overlay and btrfs would end
+# Modules: kvm-run.sh fetches a module package with apt for this host's own kernel only, so the default list would end
 # every guest of a row's distro kernel at exit 97. A row's guests load none unless VM_MODULES names some (even an empty
-# VM_MODULES is a choice), and a run without a row, or on the host row, keeps the default.
+# VM_MODULES is a choice; a row's own come from fetch-kernel.py --modules), and a run without a row, or on the host row,
+# keeps the default: test/vm/suites.sh's GUEST_MODULES, whole, which scripts/coverage.sh --vm's guests load too.
+default_modules=$(bash -c '. "$1"; for m in "${GUEST_MODULES[@]}"; do printf -- "--module %s " "$m"; done' _ "$here/suites.sh")
+case "$default_modules" in *"--module tcp_diag "*) ;; *) fail "suites.sh's GUEST_MODULES lacks tcp_diag: $default_modules" ;; esac
 run_stub VM_HOST=kvm TEGO_VM_ROW=fedora-7.2 TEGO_VM_KERNEL=matrix-fedora-7.2
 if grep -qF -- "--module" "$tmp/boots"; then fail "a row's guest was asked for modules nobody can fetch for its kernel: $(cat "$tmp/boots")"; fi
 run_stub VM_HOST=kvm TEGO_VM_ROW=fedora-7.2 TEGO_VM_KERNEL=matrix-fedora-7.2 VM_MODULES=overlay
 grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" | grep -qF -- "--module overlay " ||
 	fail "a row's guest was not given the module the caller named: $(cat "$tmp/boots")"
 run_stub VM_HOST=kvm
-grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" | grep -qF -- "--module overlay --module btrfs " ||
-	fail "a run with no row lost the default modules: $(cat "$tmp/boots")"
+grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" | grep -qF -- "$default_modules" ||
+	fail "a run with no row lost the default modules ($default_modules): $(cat "$tmp/boots")"
 run_stub VM_HOST=kvm TEGO_VM_ROW=host
-grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" | grep -qF -- "--module overlay --module btrfs " ||
-	fail "the host row lost the default modules: $(cat "$tmp/boots")"
+grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" | grep -qF -- "$default_modules" ||
+	fail "the host row lost the default modules ($default_modules): $(cat "$tmp/boots")"
 
 # VM_BOOTS names one boot, or both: a CI job whose bound holds one boot's suites (vm-matrix's tier-3 parts) runs that boot
 # alone, with its results under VM_OUT/<boot> as with both. lsm-bpf adds bpf to the host's list, default-lsm leaves it out.

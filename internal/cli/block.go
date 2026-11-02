@@ -349,10 +349,11 @@ func limitWords(add bool, word string, until time.Time, after liveblock.Entry) s
 		"says so (live-unblock-expired)."
 }
 
-// blockRun resolves ref to a run directory and the run id it is under. A malformed or unknown run is a usage error.
+// blockRun resolves ref to a run directory and the run id it is under (resolveRunDir: a whole run id, an
+// abbreviation of one, or a run directory). A malformed, unknown or ambiguous run is a usage error.
 func blockRun(name, ref string, stderr io.Writer) (dir, run string, code int) {
 	mc := &machineOnce{stderr: stderr}
-	dir, err := resolveRunDir(ref, true, mc)
+	dir, err := resolveRunDir(name, ref, true, mc)
 	if err != nil {
 		return "", "", runRefFailed(stderr, name, err)
 	}

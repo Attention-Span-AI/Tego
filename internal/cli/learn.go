@@ -72,7 +72,7 @@ func cmdLearn() Command {
 // runLearn resolves the run, reads its record without the lock and renders one proposal.
 func runLearn(ctx context.Context, ref, workspace, out string, stdout, stderr io.Writer) int {
 	mc := &machineOnce{stderr: stderr}
-	dir, err := resolveRunDir(ref, true, mc)
+	dir, err := resolveRunDir("learn", ref, true, mc)
 	if err != nil {
 		return runRefFailed(stderr, "learn", err)
 	}

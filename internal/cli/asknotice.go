@@ -31,13 +31,13 @@ import (
 // tego cannot know when that is safe. It says what it has to say before the agent's first screen (askAnswerLine),
 // and later only outside the terminal (the desktop notice below).
 
-// askAnswerLine is the one line `tego run` prints, once the run exists and before its agent starts, when the
-// contract can ask: the run id `tego ask` takes and the exact commands that answer. desktop says whether a desktop
-// notice will also say when an ask waits.
-func askAnswerLine(run identity.RunID, desktop bool) string {
+// askAnswerLine is the one line `tego run` (cmd, or tego watch --boundary) prints, once the run exists and before its
+// agent starts, when the contract can ask: the run id `tego ask` takes and the exact commands that answer. desktop
+// says whether a desktop notice will also say when an ask waits.
+func askAnswerLine(cmd string, run identity.RunID, desktop bool) string {
 	id := string(run)
-	line := fmt.Sprintf("tego run: %s can hold an operation for your approval; answer from another terminal: tego ask %s, "+
-		"then tego approve %s <ask_id> (or deny), or on the dashboard's Approvals page", id, id, id)
+	line := fmt.Sprintf("%s: %s can hold an operation for your approval; answer from another terminal: tego ask %s, "+
+		"then tego approve %s <ask_id> (or deny), or on the dashboard's Approvals page", cmd, id, id, id)
 	if desktop {
 		line += "; a desktop notice says when one waits"
 	}
@@ -58,8 +58,8 @@ func askNotices(rt *agent.RuleTable, notify []string, tier backend.Tier, euid in
 // askNoticesFor is the run's two notices as runtime.Deps hooks (askNotices says which): started prints the answer
 // line once the run exists, before its agent starts; askPending is the desktop notice's tell. stop ends the desktop
 // notice once the run is over. A run whose desktop notice finds no notifier says why in tego's own log only, never on
-// the terminal (the quiet start).
-func askNoticesFor(rt *agent.RuleTable, m *config.Machine, tier backend.Tier, stderr io.Writer) (started func(tegoruntime.StartedRun) error,
+// the terminal (the quiet start). The answer line names cmd, the command starting the run.
+func askNoticesFor(rt *agent.RuleTable, m *config.Machine, tier backend.Tier, cmd string, stderr io.Writer) (started func(tegoruntime.StartedRun) error,
 	askPending func(tegoruntime.AskPending), stop func()) {
 	stop = func() {}
 	line, desktop := askNotices(rt, m.Ask.Notify.Value, tier, os.Geteuid())
@@ -79,7 +79,7 @@ func askNoticesFor(rt *agent.RuleTable, m *config.Machine, tier backend.Tier, st
 	}
 	if line {
 		started = func(s tegoruntime.StartedRun) error {
-			_, _ = io.WriteString(stderr, askAnswerLine(s.ID, desktop)) // a line that cannot be written does not end the run
+			_, _ = io.WriteString(stderr, askAnswerLine(cmd, s.ID, desktop)) // a line that cannot be written does not end the run
 			return nil
 		}
 	}

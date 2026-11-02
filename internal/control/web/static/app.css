@@ -81,7 +81,10 @@ svg.i { width: 16px; height: 16px; flex: none; vertical-align: -3px; fill: none;
 .side-foot { margin-top: auto; padding: var(--space-3) var(--space-2) 0; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-xs); color: var(--c-text3); }
 .side-foot a { color: var(--c-text2); }
 
-main { padding: var(--space-6) var(--space-6) var(--space-7); min-width: 0; }
+/* The skip link (#main) scrolls <main> to just under the sticky top bar, where the page starts, not under the bar: the
+   first control in it (and the waiting-ask banner's room above 640 px) stays in view for the next Tab
+   (journey_chrome_test.go). */
+main { padding: var(--space-6) var(--space-6) var(--space-7); min-width: 0; scroll-margin-top: var(--topbar-h); }
 main:focus { outline: none; }
 .page { max-width: var(--content-max); margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-5); }
 .foot {
@@ -505,6 +508,9 @@ details > summary { cursor: pointer; }
   .top-right { gap: var(--space-1); }
   .app { display: block; min-height: 0; }
   .side { position: fixed; z-index: 40; top: auto; bottom: 0; left: 0; right: 0; height: auto; padding: 0 0 env(safe-area-inset-bottom); border-right: 0; border-top: 1px solid var(--c-border); background: var(--c-surface); }
+  /* A control the Tab key (or a scroll into view) brings up from below stops above the bar (58 px and its 1 px border),
+     not under it, where it would have the focus unseen (journey_chrome_test.go). */
+  html { scroll-padding-bottom: calc(59px + env(safe-area-inset-bottom)); }
   .nav { flex-direction: row; gap: 0; }
   .nav > li { flex: 1 1 0; min-width: 0; }
   .nav .sep, .nav .more-item { display: none; }
@@ -775,8 +781,10 @@ h1, .h1 { font-size: 1.5rem; letter-spacing: -0.015em; }
   .sw { forced-color-adjust: none; border: 1px solid CanvasText; }
   .ch-line, .ch-dot { stroke: CanvasText; }
 }
-/* The Secrets panel's caption: what the line counts, then the line with its two end values. */
-.ch-n.ch-sp { display: inline-flex; align-items: center; gap: var(--space-2); flex: 0 1 auto; justify-content: flex-end; }
+/* The Secrets panel's caption: what the line counts, then the line with its two end values. Where the panel is narrow
+   (the Overview's third column, 641 to about 1100 px wide) the words wrap and the line goes under them, so the
+   caption never runs past the panel and the page never scrolls sideways (journey_chrome_test.go, at 768). */
+.ch-n.ch-sp { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); flex: 0 1 auto; justify-content: flex-end; white-space: normal; }
 .ch-sp .ch-spk { flex: none; }
 .ch-sp .ch-spk .ch-spark { flex: none; width: 80px; }
 /* Compare's bar pairs: a row is the run's letter and agent on one line (cut with an ellipsis, the full name on hover),

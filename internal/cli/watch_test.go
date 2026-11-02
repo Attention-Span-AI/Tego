@@ -287,8 +287,12 @@ func TestWatchNoticeIsShortWithoutVerbose(t *testing.T) {
 	}
 }
 
-// A watch prints no "tego run:" line: R29's --observe warning is not printed (watch's own notice says so), and
-// the run path's own lines read "tego watch:"; the held-label disclosure is a note tagged [held-label].
+// A watch prints no "tego run:" line: R29's --observe warning is not printed (watch's own notice says so), and the
+// run path's own lines name tego watch (runOptions.cmd), a bounded watch's refusals of a --tier and of a name the
+// registries do not hold included; the held-label disclosure is a note tagged [held-label]. Each line is written
+// with that name, not rewritten on its way out by a writer around stderr, so how its writes are split cannot change
+// a name either: no split taken after the command's stderr could tell such a writer from the name in the text, and
+// TestWatchQuotesTheCommandLineAsTyped is the test a rewriting writer fails.
 func TestWatchSpeaksAsWatch(t *testing.T) {
 	sandboxedLaunch(t)
 	prev := startRun
@@ -304,19 +308,56 @@ func TestWatchSpeaksAsWatch(t *testing.T) {
 	if strings.Contains(out, "tego run:") || strings.Contains(out, "--observe is in effect") {
 		t.Errorf("tego watch printed a tego run line:\n%s", out)
 	}
-	if !strings.Contains(out, "note: tego watch: on AppArmor a file read that tego checks and opens for the agent is decided by the contract's rules [held-label]") {
-		t.Errorf("the held-label note is missing or mislabelled:\n%s", out)
+	note := strings.Index(out, "note: tego watch: on AppArmor a file read that tego checks and opens for the agent is decided by the contract's rules [held-label]")
+	if note < 0 {
+		t.Fatalf("the held-label note is missing or mislabelled:\n%s", out)
 	}
-	if n := strings.Count(out[:strings.Index(out, "note:")], "\n"); n > 4 {
+	if n := strings.Count(out[:note], "\n"); n > 4 {
 		t.Errorf("the notice before the run is %d lines:\n%s", n, out)
 	}
 
-	var b bytes.Buffer
-	if n, err := (watchWriter{w: &b}).Write([]byte("warning: tego run: stdin is a socket [stdio]\n")); err != nil || n != 45 {
-		t.Fatalf("watchWriter wrote %d, %v", n, err)
+	// The run path's refusals of a bounded watch: a --tier no run takes, and a name in no registry.
+	newRegistryWorld(t)
+	for _, c := range []struct {
+		flags []string
+		code  int
+		want  []string
+	}{
+		{[]string{"--boundary", "agent.yaml", "--tier", "bogus"}, identity.ExitUsage,
+			[]string{`tego watch: --tier "bogus" is not auto, landlock, cgroup or bpflsm [usage]`}},
+		{[]string{"--boundary", "no-such-name"}, identity.ExitLauncher, []string{"tego watch: ", "[agent-not-found]"}},
+	} {
+		errs.Reset()
+		argv := append(append([]string{"tego", "watch", "--offline"}, c.flags...), "--", "true")
+		code := mainWith(t.Context(), argv, io.Discard, &errs, []Command{cmdWatch()})
+		out := errs.String()
+		for _, want := range c.want {
+			if code != c.code || !strings.Contains(out, want) || strings.Contains(out, "tego run") {
+				t.Errorf("%q: exit %d, want %d naming tego watch (%q), never tego run:\n%s", argv[2:], code, c.code, want, out)
+			}
+		}
 	}
-	if b.String() != "warning: tego watch: stdin is a socket [stdio]\n" {
-		t.Errorf("watchWriter: %q", b.String())
+}
+
+// tego watch names itself on its own lines and leaves what a line quotes as it is: its lines went through a writer that
+// turned every "tego run: " into "tego watch: ", so the finding about a program whose path holds those words named a
+// program that does not exist either.
+func TestWatchQuotesTheCommandLineAsTyped(t *testing.T) {
+	calls := sandboxedLaunch(t)
+	program := filepath.Join(t.TempDir(), "tego run: agent")
+	var errs bytes.Buffer
+	code := mainWith(t.Context(), []string{"tego", "watch", "--offline", "--", program}, io.Discard, &errs, []Command{cmdWatch()})
+	if code != identity.ExitLauncher || len(*calls) != 0 {
+		t.Fatalf("a watch of a missing program: exit %d, %d launches, want 125 and none:\n%s", code, len(*calls), errs.String())
+	}
+	var finding string
+	for _, line := range strings.Split(errs.String(), "\n") {
+		if strings.Contains(line, agent.CommandLineFile+":") {
+			finding += line + "\n"
+		}
+	}
+	if !strings.Contains(finding, program) || strings.Contains(finding, "tego watch: agent") {
+		t.Errorf("the finding does not name the program as typed, %q:\n%s", program, errs.String())
 	}
 }
 

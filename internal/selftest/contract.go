@@ -31,15 +31,30 @@ func quoted(s string) string {
 	return string(b)
 }
 
-// writeContract fills the embedded contract with the tree's paths and the tego binary, and writes it beside the
-// workdir, outside every write entry.
+// testContract gives the template a binary built with -tags tegotesthooks fills in place of the embedded contract
+// when TEGO_TEST_SELFTEST_CONTRACT names one (contract_testhook.go); nil in a product build, whose tego test always
+// runs the embedded contract.
+var testContract func() (*template.Template, error)
+
+// writeContract fills the embedded contract (in a test build, the template testContract gives) with the tree's paths
+// and the tego binary, and writes it beside the workdir, outside every write entry.
 func (t tree) writeContract(tego string) error {
+	tmpl := contractTmpl
+	if testContract != nil {
+		var err error
+		if tmpl, err = testContract(); err != nil {
+			return err
+		}
+	}
 	var buf bytes.Buffer
-	err := contractTmpl.Execute(&buf, map[string]string{
+	err := tmpl.Execute(&buf, map[string]string{
 		"Tego": quoted(tego),
 		"Out":  quoted(t.out()),
 		"SSH":  quoted(filepath.Dir(t.key()) + "/"),
 		"Env":  quoted(t.env()),
+		// The embedded contract names neither of these two; a test build's contract may (contract_testhook.go).
+		"Program":  quoted(t.program()),
+		"PortFile": quoted(t.portFile()),
 	})
 	if err != nil {
 		return err

@@ -7,12 +7,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash"
 	"html"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -253,6 +256,126 @@ func TestLinePageBlobRoute(t *testing.T) {
 	}
 	if w := do(s, "GET", line+"?blob="+sha, "127.0.0.1:8484", c); w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), "changed") {
 		t.Errorf("a changed blob: %d", w.Code)
+	}
+}
+
+// bigBlobRun is an ended run whose exec line #1 names a blob of size bytes (argv_blob, past what the facts column
+// reads), under a new root. It returns the root, the line's address and the blob's sha and file.
+func bigBlobRun(t *testing.T, size int) (root, line, sha, path string) {
+	t.Helper()
+	root = t.TempDir()
+	content := make([]byte, size)
+	for i := range content {
+		content[i] = byte(i % 251)
+	}
+	sum := sha256.Sum256(content)
+	sha = hex.EncodeToString(sum[:])
+	factsLines(t, root, factsRun, time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC), [][3]string{
+		{"100", "run_start", `"tier":"landlock","command":["sh"],"cwd":"/p","launcher_pid":100,"launcher_start_ns":5`},
+		{"200", "exec", `"verdict":"allow","authority":"rule","rule":"exec[sh]","path":"/bin/sh","argv_blob":"` + sha + `"`},
+		{"100", "run_end", `"reason":"exit","exit_code":0`},
+	})
+	path = filepath.Join(root, factsRun, "blobs", sha)
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root, "/runs/" + factsRun + "/lines/1", sha, path
+}
+
+// blobSink is a ResponseWriter that hashes and counts the body instead of keeping it, so a test measures what the
+// handler holds rather than the recorder's copy; onWrite runs once, before the first byte of the body is taken.
+type blobSink struct {
+	h       http.Header
+	code    int
+	n       int64
+	sum     hash.Hash
+	onWrite func()
+}
+
+func (w *blobSink) Header() http.Header { return w.h }
+
+func (w *blobSink) WriteHeader(code int) {
+	if w.code == 0 {
+		w.code = code
+	}
+}
+
+func (w *blobSink) Write(p []byte) (int, error) {
+	w.WriteHeader(http.StatusOK)
+	if f := w.onWrite; f != nil {
+		w.onWrite = nil
+		f()
+	}
+	w.sum.Write(p)
+	w.n += int64(len(p))
+	return len(p), nil
+}
+
+// serveSink serves a GET of target with cookie c into a blobSink, and returns it with what the handler panicked
+// with: nil when it returned.
+func serveSink(s *Server, target string, c *http.Cookie, onWrite func()) (w *blobSink, aborted any) {
+	r := httptest.NewRequest(http.MethodGet, target, nil)
+	r.Host = "127.0.0.1:8484"
+	r.AddCookie(c)
+	w = &blobSink{h: http.Header{}, sum: sha256.New(), onWrite: onWrite}
+	defer func() { aborted = recover() }()
+	s.ServeHTTP(w, r)
+	return w, nil
+}
+
+// TestLinePageBlobStreams: a 10 MiB blob downloads whole and exact, its Content-Length its size, while the request
+// allocates a small part of it: the download streams the blob instead of holding it (it held up to 16 MiB a request).
+func TestLinePageBlobStreams(t *testing.T) {
+	const size = 10 << 20
+	root, line, sha, _ := bigBlobRun(t, size)
+	s := newServer(t, root)
+	c := login(t, s)
+	serveSink(s, line+"?blob="+sha, c, nil) // the run read and indexed once, as any page view before it would
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	w, aborted := serveSink(s, line+"?blob="+sha, c, nil)
+	runtime.ReadMemStats(&after)
+	if aborted != nil || w.code != http.StatusOK || w.n != size || hex.EncodeToString(w.sum.Sum(nil)) != sha {
+		t.Fatalf("download: %d, %d of %d bytes, aborted %v; want the blob whole", w.code, w.n, size, aborted)
+	}
+	if got := w.h.Get("Content-Length"); got != strconv.Itoa(size) {
+		t.Errorf("Content-Length %q, want %d", got, size)
+	}
+	a := after.TotalAlloc - before.TotalAlloc
+	t.Logf("one download of a %d MiB blob allocated %d KiB", size>>20, a>>10)
+	if a > 2<<20 {
+		t.Errorf("one download of a %d MiB blob allocated %d KiB: it holds the blob", size>>20, a>>10)
+	}
+}
+
+// TestLinePageBlobChangedAsItStreams: a blob that changes after the download checked it, while it streams, is never
+// sent whole. The response, a 200 with the checked Content-Length, stops short of it and is aborted
+// (http.ErrAbortHandler), so a browser or curl reports a failed download instead of keeping bytes the blob's name does
+// not vouch for.
+func TestLinePageBlobChangedAsItStreams(t *testing.T) {
+	const size = 4 << 20
+	root, line, sha, path := bigBlobRun(t, size)
+	s := newServer(t, root)
+	c := login(t, s)
+	change := func() { // the last byte, which the stream has not read yet
+		f, err := os.OpenFile(path, os.O_WRONLY, 0)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer func() { _ = f.Close() }()
+		if _, err := f.WriteAt([]byte{byte((size-1)%251) + 1}, size-1); err != nil {
+			t.Error(err)
+		}
+	}
+	w, aborted := serveSink(s, line+"?blob="+sha, c, change)
+	if aborted != http.ErrAbortHandler {
+		t.Fatalf("a blob changed as it streamed: the handler ended with %v, want it aborted", aborted)
+	}
+	if w.code != http.StatusOK || w.h.Get("Content-Length") != strconv.Itoa(size) || w.n >= size {
+		t.Errorf("status %d, Content-Length %q, %d bytes sent: want the checked length announced and not reached",
+			w.code, w.h.Get("Content-Length"), w.n)
 	}
 }
 

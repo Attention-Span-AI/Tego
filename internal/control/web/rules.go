@@ -64,7 +64,7 @@ type ruleRow struct {
 	// Kind and Value are a live block's, for Remove.
 	Kind, Value string
 	// ByOS: the kernel enforces it in full, the usual case, so its Enforced by cell stays empty and the exceptions
-	// stand out (rulesview.ByOperatingSystem).
+	// stand out (the rule's ByKernel, which inforce sets).
 	ByOS bool
 	// Devices are the terminal device rules folded under this one row (rulesview.FoldDevices), each kept whole for
 	// the expander; Hits is then their sum. Nil for a rule shown alone.
@@ -78,11 +78,15 @@ type ruleRow struct {
 // ruleGroup is one table of the page.
 type ruleGroup struct {
 	ID, Title, Lede, Default, Icon string
-	// Open: the default leaves the agent wide open (rulesview.OpenDefault); Narrow is the change that narrows it, ""
-	// when the page cannot offer one.
+	// Open: the default leaves the agent wide open (the group's Open, which inforce sets); Narrow is the change that
+	// narrows it, "" when the page cannot offer one.
 	Open   bool
 	Narrow string
-	Rows   []ruleRow
+	// DefaultHits is how many lines of the run the default decided (the group's DefaultHits); DefaultURL is the Logs
+	// search for them, "" when there are none.
+	DefaultHits int
+	DefaultURL  string
+	Rows        []ruleRow
 	// Calm is a live group none of whose blocks refuses anything now (marks on a watched run, blocks still waiting):
 	// its panel drops the red edge, which says a refusal.
 	Calm bool
@@ -310,13 +314,16 @@ func (s *Server) fillRules(d *rulesData) {
 	}
 	for _, g := range v.View.Groups {
 		rg := ruleGroup{ID: g.ID, Title: g.Title, Lede: g.Lede, Default: g.Default, Icon: groupIcon(g.ID)}
-		if rg.Open = rulesview.OpenDefault(g.ID, g.Default); rg.Open {
+		if rg.Open = g.Open; rg.Open {
 			rg.Narrow = narrowLink(g.ID, d.Ref, d.CanChange)
+		}
+		if g.DefaultHits > 0 && g.DefaultKind != "" {
+			rg.DefaultHits, rg.DefaultURL = g.DefaultHits, logsURL(run.ID, "rule:unmatched kind:"+g.DefaultKind)
 		}
 		toRow := func(rl rulesview.Rule) ruleRow {
 			row := ruleRow{Sentence: rl.Sentence, Target: rl.Target, Effect: string(rl.Effect), Enforced: rl.EnforcedText,
 				State: string(rl.State), Hits: rl.Hits, HitsURL: logs(rl.RuleKey)}
-			if g.ID != "live" && rulesview.ByOperatingSystem(rl) {
+			if g.ID != "live" && rl.ByKernel {
 				row.ByOS = true
 			}
 			row.Source, row.SourceTitle = sourceWords(rl.Source.File, rl.Source.Line, rl.Source.Origin, v)

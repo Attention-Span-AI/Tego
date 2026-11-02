@@ -105,6 +105,56 @@ func TestAskByIDAcrossRunningRuns(t *testing.T) {
 	}
 }
 
+// TestAnAbbreviatedRunIsTheRunAnswered (H08): ask, approve, deny and status given the end or the start of a running
+// run's id reach that run's broker and no other, as the whole id does; a start that two running runs share answers
+// nothing and names both.
+func TestAnAbbreviatedRunIsTheRunAnswered(t *testing.T) {
+	root := gcRoot(t)
+	const idA, idB = "r-3f9c2a1b-0dllq06ts7400-k7m2pa", "r-3f9c2a1b-0dllq06ts7401-k7m2pb"
+	noop := func(ask.Event) error { return nil }
+	dirA, brokerA := newCLIBrokerIn(t, root, idA, noop)
+	dirB, brokerB := newCLIBrokerIn(t, root, idB, noop)
+	hold := func(b *ask.Broker, target string) chan ask.Decision {
+		c := make(chan ask.Decision, 1)
+		go func() {
+			d, _ := b.Request(t.Context(), ask.Request{Op: "open", Target: target, Rule: "fs.ask", Hold: ask.HoldOpen, PID: os.Getpid(), TID: os.Getpid()})
+			c <- d
+		}()
+		return c
+	}
+	decisionA, decisionB := hold(brokerA, "/a/file"), hold(brokerB, "/b/file")
+	askA, askB := pendingAskID(t, idA, dirA), pendingAskID(t, idB, dirB)
+
+	if code, out, errs := run(t, "ask", "k7m2pa"); code != identity.ExitOK || !strings.HasPrefix(out, askA+" ") || strings.Contains(out, askB) {
+		t.Errorf("ask k7m2pa: exit %d, want run A's request alone\nstdout %s\nstderr %s", code, out, errs)
+	}
+	if code, out, errs := run(t, "status", "k7m2pb", "--json"); code != identity.ExitOK || !strings.Contains(out, `"run":"`+idB+`"`) {
+		t.Errorf("status k7m2pb --json: exit %d, want run B\nstdout %s\nstderr %s", code, out, errs)
+	}
+	// The first four after r-3f9c2a1b- are both runs': nothing is answered.
+	want := "tego approve: r-3f9c2a1b-0dll names more than one run under " + root + ": " + idB + ", " + idA + "; give more of its id [usage]"
+	if code, out, errs := run(t, "approve", "r-3f9c2a1b-0dll", askA); code != identity.ExitUsage || out != "" || !strings.Contains(errs, want) {
+		t.Errorf("approve r-3f9c2a1b-0dll: exit %d, want 2: %q\nstdout %s\nstderr %s", code, want, out, errs)
+	}
+	if code, out, errs := run(t, "approve", "k7m2pb", askB); code != identity.ExitOK || out != askB+": approved\n" {
+		t.Fatalf("approve k7m2pb: exit %d\nstdout %s\nstderr %s", code, out, errs)
+	}
+	if d := <-decisionB; !d.Approved || d.AskID != askB {
+		t.Fatalf("run B's decision %+v", d)
+	}
+	select {
+	case d := <-decisionA:
+		t.Fatalf("approving B's ask, or the ambiguous approve, answered A's: %+v", d)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if code, out, errs := run(t, "deny", "r-3f9c2a1b-0dllq06ts7400", askA); code != identity.ExitOK || out != askA+": denied\n" {
+		t.Fatalf("deny r-3f9c2a1b-0dllq06ts7400: exit %d\nstdout %s\nstderr %s", code, out, errs)
+	}
+	if d := <-decisionA; d.Approved || d.AskID != askA {
+		t.Fatalf("run A's decision %+v", d)
+	}
+}
+
 // TestAskByIDArguments: one argument to approve, deny or alternate must be an ask id; a bad one says the format and
 // where to list them. None of these read account state.
 func TestAskByIDArguments(t *testing.T) {

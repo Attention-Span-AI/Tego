@@ -79,7 +79,7 @@ Limits: When the run is stopped or slowed down.
 
 Always on: Protections every run gets, written in no rules file.
   - Can never read the usual secret files: SSH and cloud keys, browser profiles, .env files and similar  [built in]
-  - Can never change files that would run code outside the agent: git hooks, shell startup files and agent settings  [built in]
+  - Can never change files that would run code outside the agent: git hooks, shell startup files and agent settings, where a run finds any in the folders it can change  [built in]
   - Can never read or change tego's records of its runs  [built in]
   - Cannot change its own rules file  [built in]
   - Can read this computer's network setup: interface names and addresses, routes, and the nearby machines it has talked to  [built in]

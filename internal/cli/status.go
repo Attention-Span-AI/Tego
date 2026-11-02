@@ -170,12 +170,8 @@ func runStatus(ctx context.Context, runID string, all, asJSON bool, stdout, stde
 		if errors.Is(err, context.Canceled) {
 			return readFailed(stderr, "status", err)
 		}
-		if errors.Is(err, errBadRunID) || errors.Is(err, errRunNotFound) {
-			what := "tego status: " + err.Error()
-			if errors.Is(err, errRunNotFound) {
-				what += "; " + listRunsHint
-			}
-			message(stderr, "", 0, 0, what, codeUsage)
+		if runRefUsage(err) {
+			message(stderr, "", 0, 0, "tego status: "+err.Error(), codeUsage)
 			return identity.ExitUsage // R25: usage error
 		}
 		message(stderr, "", 0, 0, "tego status: "+err.Error(), readCode(err))
@@ -230,18 +226,20 @@ func runStatus(ctx context.Context, runID string, all, asJSON bool, stdout, stde
 // collectStatus resolves the argument: one named run, every run with --all, or the most recent run
 // when neither is given (a run id sorts by mint time within one host). It returns the snapshots it
 // derived and, separately, one error per run it could not read — §6 case 8 keeps one corrupt or
-// foreign-uid run from hiding the rest, and E26 forbids turning that run into no data at all.
-func collectStatus(ctx context.Context, root, runID string, all bool, now time.Time) ([]*status.Snapshot, []error, error) {
-	if runID != "" {
-		if !ledger.IsRunID(runID) {
-			return nil, nil, fmt.Errorf("%q: %w", runID, errBadRunID)
+// foreign-uid run from hiding the rest, and E26 forbids turning that run into no data at all. The
+// named run is a whole run id or an abbreviation of one (runIDUnder, H08).
+func collectStatus(ctx context.Context, root, ref string, all bool, now time.Time) ([]*status.Snapshot, []error, error) {
+	if ref != "" {
+		runID, err := runIDUnder(ref, root)
+		if err != nil {
+			return nil, nil, err
 		}
 		dir := filepath.Join(root, runID)
 		if _, err := os.Stat(dir); err != nil {
 			// Only a directory that is not there is the caller's typo (R25). EACCES, ELOOP or EIO on
 			// a run that may exist, and may be running, is reported as itself, 125 [io] (E26).
 			if errors.Is(err, fs.ErrNotExist) {
-				return nil, nil, fmt.Errorf("%s: %w under %s", runID, errRunNotFound, root)
+				return nil, nil, fmt.Errorf("%s: %w under %s; %s", runID, errRunNotFound, root, listRunsHint)
 			}
 			return nil, nil, err
 		}

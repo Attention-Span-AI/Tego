@@ -298,6 +298,20 @@ func homesOf(rows []ledgerview.Row, snap *ledgerview.Snapshot) map[string]string
 // recorded it, whatever the contract copy beside it says.
 const watchedLabel = "Watched only, not enforced"
 
+// watchedRule is the rule of watched lines (ledgerview.WatchedLine) where a page names it in words: no rule decided
+// them, so it reads "Watched only · " and label, the words of the rule they name (the contract entry they would have
+// matched; "" takes ruleName's), and "Watched only" alone for unmatched, whose words ("Not in policy") would read as
+// the default deny that refuses such a line on an enforced run.
+func watchedRule(rule, label string) string {
+	if rule == "" || rule == "unmatched" {
+		return "Watched only"
+	}
+	if label == "" {
+		label = ruleName(rule)
+	}
+	return "Watched only · " + label
+}
+
 // watchLabels relabels the rows of watched runs (tier observe) with watchedLabel.
 func watchLabels(rows []ledgerview.Row, snap *ledgerview.Snapshot) {
 	for i := range rows {
@@ -307,7 +321,7 @@ func watchLabels(rows []ledgerview.Row, snap *ledgerview.Snapshot) {
 
 // watchLabel relabels one row of run r when r is a watched run and the line was only observed.
 func watchLabel(row *ledgerview.Row, r *ledgerview.Run) {
-	if r != nil && r.Tier == "observe" && row.Verdict == "observed" {
+	if ledgerview.WatchedLine(r, &row.Event) {
 		row.Label = watchedLabel
 	}
 }

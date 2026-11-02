@@ -33,6 +33,9 @@ type cdp struct {
 	mu   sync.Mutex
 	id   int
 	wait map[int]chan json.RawMessage
+	// seen is, for each session watch was given, the page errors the reader has met since its tab's problems
+	// last took them.
+	seen map[string][]string
 }
 
 func (c *cdp) call(t *testing.T, session, method string, params any) json.RawMessage {
@@ -88,6 +91,7 @@ func transientCDP(err error) bool {
 		strings.Contains(m, "Cannot find context with specified id")
 }
 
+// read hands each answer to the call waiting for it and keeps each page error of a watched session (watch).
 func (c *cdp) read(r *os.File) {
 	br := bufio.NewReader(r)
 	for {
@@ -95,19 +99,174 @@ func (c *cdp) read(r *os.File) {
 		if err != nil {
 			return
 		}
+		b = bytes.TrimSuffix(b, []byte{0})
 		var m struct {
-			ID int `json:"id"`
+			ID      int             `json:"id"`
+			Method  string          `json:"method"`
+			Session string          `json:"sessionId"`
+			Params  json.RawMessage `json:"params"`
 		}
-		if json.Unmarshal(bytes.TrimSuffix(b, []byte{0}), &m) == nil && m.ID != 0 {
+		if json.Unmarshal(b, &m) != nil {
+			continue
+		}
+		if m.ID != 0 {
 			c.mu.Lock()
 			ch := c.wait[m.ID]
 			delete(c.wait, m.ID)
 			c.mu.Unlock()
 			if ch != nil {
-				ch <- json.RawMessage(bytes.TrimSuffix(b, []byte{0}))
+				ch <- json.RawMessage(b)
 			}
+			continue
+		}
+		if p := problemOf(m.Method, m.Params); p != "" {
+			c.mu.Lock()
+			if got, ok := c.seen[m.Session]; ok {
+				c.seen[m.Session] = append(got, p)
+			}
+			c.mu.Unlock()
 		}
 	}
+}
+
+// cspBinding is the function watch gives every page, which cspListener calls with each Content Security Policy
+// violation.
+const cspBinding = "tegoCSP"
+
+// cspListener runs before a page's own scripts and reports each securitypolicyviolation event (a style, script,
+// image or connection the page's policy refused, an inline style attribute included) through cspBinding.
+const cspListener = `document.addEventListener("securitypolicyviolation", function (e) {
+	if (typeof window.` + cspBinding + ` === "function") window.` + cspBinding + `(e.effectiveDirective + " refused " +
+		(e.blockedURI || "an inline") + " in " + e.sourceFile + ":" + e.lineNumber + (e.sample ? " (" + e.sample + ")" : ""));
+}, true);`
+
+// problemOf is the page error a DevTools event reports, or "" when it reports none: an uncaught exception, a
+// console.error or a failed console.assert, an error the browser itself logs (a Content Security Policy refusal, a
+// resource that failed to load), and a securitypolicyviolation event (cspListener).
+func problemOf(method string, params json.RawMessage) string {
+	switch method {
+	case "Runtime.exceptionThrown":
+		var p struct {
+			ExceptionDetails struct {
+				Text       string
+				URL        string
+				LineNumber int
+				Exception  *struct{ Description string }
+			}
+		}
+		_ = json.Unmarshal(params, &p)
+		d := p.ExceptionDetails
+		s := "uncaught exception: " + d.Text
+		if d.Exception != nil && d.Exception.Description != "" {
+			s += " " + d.Exception.Description
+		}
+		return fmt.Sprintf("%s (%s:%d)", s, d.URL, d.LineNumber)
+	case "Runtime.consoleAPICalled":
+		var p struct {
+			Type string
+			Args []struct {
+				Value       json.RawMessage
+				Description string
+			}
+		}
+		_ = json.Unmarshal(params, &p)
+		if p.Type != "error" && p.Type != "assert" {
+			return ""
+		}
+		var words []string
+		for _, a := range p.Args {
+			if a.Description != "" {
+				words = append(words, a.Description)
+			} else {
+				words = append(words, string(a.Value))
+			}
+		}
+		return "console." + p.Type + ": " + strings.Join(words, " ")
+	case "Log.entryAdded":
+		var p struct {
+			Entry struct{ Source, Level, Text, URL string }
+		}
+		_ = json.Unmarshal(params, &p)
+		if p.Entry.Level != "error" {
+			return ""
+		}
+		return "browser " + p.Entry.Source + " error: " + p.Entry.Text + " " + p.Entry.URL
+	case "Runtime.bindingCalled":
+		var p struct{ Name, Payload string }
+		_ = json.Unmarshal(params, &p)
+		if p.Name != cspBinding {
+			return ""
+		}
+		return "securitypolicyviolation: " + p.Payload
+	}
+	return ""
+}
+
+// watch keeps tb's page errors (problemOf) from now on, across its navigations, for problems and clean to take.
+// Give it a tab still on about:blank, so the listener is on the first page from its first byte.
+func (c *cdp) watch(t *testing.T, tb *tab) {
+	t.Helper()
+	c.mu.Lock()
+	if c.seen == nil {
+		c.seen = map[string][]string{}
+	}
+	c.seen[tb.session] = nil
+	c.mu.Unlock()
+	for _, m := range []string{"Runtime.enable", "Log.enable", "Page.enable"} {
+		c.call(t, tb.session, m, map[string]any{})
+	}
+	c.call(t, tb.session, "Runtime.addBinding", map[string]any{"name": cspBinding})
+	c.call(t, tb.session, "Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": cspListener})
+}
+
+// problems takes the page errors watch kept on tb since the last take. An answer to a later call on the same session
+// comes after the events before it, so an eval first is enough to see what a page did up to then.
+func (tb *tab) problems() []string {
+	tb.c.mu.Lock()
+	defer tb.c.mu.Unlock()
+	p := tb.c.seen[tb.session]
+	tb.c.seen[tb.session] = nil
+	return p
+}
+
+// clean fails t with each page error watch kept on tb since the last take, saying when it came.
+func (tb *tab) clean(t *testing.T, when string) {
+	t.Helper()
+	time.Sleep(150 * time.Millisecond) // a failed resource is logged a moment after the page has it
+	tb.eval(t, `0`)
+	for _, p := range tb.problems() {
+		t.Errorf("%s: %s: %s", tb.name, when, p)
+	}
+}
+
+// keys are the keys press knows, as the DevTools protocol takes them; Enter's text is the keypress a button's
+// activation needs (a link's comes on its key down).
+var keys = map[string]map[string]any{
+	"Tab":   {"key": "Tab", "code": "Tab", "windowsVirtualKeyCode": 9},
+	"Enter": {"key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13, "text": "\r", "unmodifiedText": "\r"},
+}
+
+// press presses key on tb's page and lets it go, as a keyboard does: the browser's own handling follows (Tab moves
+// the focus, Enter follows a link or presses a button).
+func (tb *tab) press(t *testing.T, key string) {
+	t.Helper()
+	k, ok := keys[key]
+	if !ok {
+		t.Fatalf("press: no key %q", key)
+	}
+	down := map[string]any{"type": "rawKeyDown"}
+	if _, text := k["text"]; text {
+		down["type"] = "keyDown"
+	}
+	up := map[string]any{"type": "keyUp"}
+	for n, v := range k {
+		down[n] = v
+		if n != "text" && n != "unmodifiedText" {
+			up[n] = v
+		}
+	}
+	tb.c.call(t, tb.session, "Input.dispatchKeyEvent", down)
+	tb.c.call(t, tb.session, "Input.dispatchKeyEvent", up)
 }
 
 // tab is one page target.

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"path/filepath"
@@ -26,7 +27,8 @@ import (
 // A blob is the agent's own bytes in a directory the dashboard does not own, read under the Store's mutex, so it is
 // opened read-only without following a symlink, without blocking on a FIFO, only as a regular file of at most
 // MaxBlobBytes, and only when its content hashes to its name: the ledger's blob store does not re-verify on read
-// (E16), and a row must never show text the chain does not vouch for.
+// (E16), and a row must never show text the chain does not vouch for. The line page's download opens a blob with the
+// same checks under its own, larger bound and streams it (OpenBlob); both read through Blob, the one copy of them.
 
 // MaxBlobBytes is the largest blob ReadBlob reads: a command line far past any kernel's ARG_MAX of text a row could
 // show, and small enough that a read under the Store's mutex stays short.
@@ -36,17 +38,66 @@ const MaxBlobBytes = 256 << 10
 // command, and the line page reads the blob whole (BlobCommand).
 const MaxTargetBytes = 8 << 10
 
-// ErrBlob is a blob ReadBlob refuses: a malformed name, a file that is not a regular one, one too big, or content
-// that does not hash to its name.
+// ErrBlob is a blob ReadBlob or OpenBlob refuses: a malformed name, a file that is not a regular one, one too big, or
+// content that does not hash to its name.
 var ErrBlob = errors.New("ledgerview: blob refused")
 
-// ReadBlob reads <runDir>/blobs/<sha>, checked: sha is 64 lower-case hex digits, the file is opened with
+// ErrBlobTooBig and ErrBlobHash are the refusals a page tells apart in words; both are ErrBlob. ErrBlobTooBig is a
+// file over the bound it is read under. ErrBlobHash is content that does not hash to the blob's name: the file
+// changed after it was written, or changed size as it was read.
+var (
+	ErrBlobTooBig = fmt.Errorf("%w: too big", ErrBlob)
+	ErrBlobHash   = fmt.Errorf("%w: content does not hash to its name", ErrBlob)
+)
+
+// ReadBlob reads <runDir>/blobs/<sha> whole, checked: sha is 64 lower-case hex digits, the file is opened with
 // O_NOFOLLOW|O_NONBLOCK, is a regular file of at most max bytes (MaxBlobBytes when max is 0 or larger), and its
 // sha256 is sha. Any failure is an error wrapping ErrBlob or the open's own error.
 func ReadBlob(runDir, sha string, max int64) ([]byte, error) {
 	if max <= 0 || max > MaxBlobBytes {
 		max = MaxBlobBytes
 	}
+	b, err := openBlob(runDir, sha, max)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = b.Close() }()
+	out, err := io.ReadAll(b)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// OpenBlob opens <runDir>/blobs/<sha> to stream it, with ReadBlob's checks under the caller's own bound (MaxBlobBytes
+// when max is 0 or less): the line page's download serves blobs far past what ReadBlob holds in memory. The hash is
+// checked before OpenBlob returns (it reads the file through the hash once), so a caller refuses a blob that does not
+// hash to its name before it sends a byte of it; Read checks it again as it streams (Blob), since the file can change
+// in between. Any failure is an error wrapping ErrBlob or the file system's own error.
+func OpenBlob(runDir, sha string, max int64) (*Blob, error) {
+	if max <= 0 {
+		max = MaxBlobBytes
+	}
+	b, err := openBlob(runDir, sha, max)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = io.Copy(io.Discard, b); err == nil {
+		_, err = b.f.Seek(0, io.SeekStart)
+	}
+	if err != nil {
+		_ = b.Close()
+		return nil, err
+	}
+	b.n, b.whole = 0, false
+	b.sum.Reset()
+	return b, nil
+}
+
+// openBlob opens <runDir>/blobs/<sha> with every check but the hash, which Read makes: sha is 64 lower-case hex
+// digits, the blobs folder is a real directory, the file is opened read-only with O_NOFOLLOW|O_NONBLOCK (no link
+// followed, no FIFO waited on) and is a regular file of at most max bytes.
+func openBlob(runDir, sha string, max int64) (*Blob, error) {
 	if !validSHA(sha) {
 		return nil, fmt.Errorf("%w: %q is not a sha256 name", ErrBlob, sha)
 	}
@@ -60,28 +111,96 @@ func ReadBlob(runDir, sha string, max int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = f.Close() }()
 	fi, err := f.Stat()
+	if err == nil {
+		switch {
+		case !fi.Mode().IsRegular():
+			err = fmt.Errorf("%w: blob %s is not a regular file", ErrBlob, sha[:12])
+		case fi.Size() > max:
+			err = fmt.Errorf("%w: blob %s is %d bytes, over %d", ErrBlobTooBig, sha[:12], fi.Size(), max)
+		}
+	}
 	if err != nil {
+		_ = f.Close()
 		return nil, err
 	}
-	if !fi.Mode().IsRegular() {
-		return nil, fmt.Errorf("%w: blob %s is not a regular file", ErrBlob, sha[:12])
+	return &Blob{f: f, sha: sha, size: fi.Size(), sum: sha256.New()}, nil
+}
+
+// Blob is a blob file opened with ReadBlob's checks (OpenBlob), read as a stream of its Size bytes. Read hashes the
+// bytes as it hands them out and hands out the ones that complete the blob only once the whole file hashes to its name
+// and holds no byte more; when it does not, Read returns an error wrapping ErrBlobHash instead of them, and the same
+// error on every later call. Whoever reads a Blob to io.EOF has read exactly the content its name vouches for, holding
+// no more of it at a time than their own buffer; a blob changed as it is read stops short of its Size.
+type Blob struct {
+	f     *os.File
+	sha   string
+	size  int64
+	n     int64     // bytes handed out
+	sum   hash.Hash // sha256 of those bytes
+	whole bool      // all Size bytes are out and hashed to sha: Read says io.EOF
+	err   error     // what ended the stream short, returned by every Read after it
+}
+
+// Size is the blob file's size when it was opened: the bytes Read hands out.
+func (b *Blob) Size() int64 { return b.size }
+
+// Close closes the blob file.
+func (b *Blob) Close() error { return b.f.Close() }
+
+// Read hands out the blob's next bytes; see Blob.
+func (b *Blob) Read(p []byte) (int, error) {
+	if b.err != nil {
+		return 0, b.err
 	}
-	if fi.Size() > max {
-		return nil, fmt.Errorf("%w: blob %s is %d bytes, over %d", ErrBlob, sha[:12], fi.Size(), max)
+	n := 0
+	if b.n < b.size {
+		if len(p) == 0 {
+			return 0, nil
+		}
+		if left := b.size - b.n; int64(len(p)) > left {
+			p = p[:left]
+		}
+		var err error
+		if n, err = b.f.Read(p); err != nil || n == 0 {
+			if err == nil || err == io.EOF {
+				err = fmt.Errorf("%w: blob %s shrank as it was read", ErrBlobHash, b.sha[:12])
+			}
+			b.err = err
+			return 0, err
+		}
+		b.sum.Write(p[:n])
+		b.n += int64(n)
+		if b.n < b.size {
+			return n, nil
+		}
+	} else if b.whole {
+		return 0, io.EOF
 	}
-	b, err := io.ReadAll(io.LimitReader(f, max+1))
-	if err != nil {
-		return nil, err
+	// p[:n] completes the blob (or it is empty): hand it out only once the whole file hashes to the name.
+	if err := b.check(); err != nil {
+		b.err = err
+		return 0, err
 	}
-	if int64(len(b)) > max {
-		return nil, fmt.Errorf("%w: blob %s grew past %d bytes", ErrBlob, sha[:12], max)
+	b.whole = true
+	if n == 0 {
+		return 0, io.EOF
 	}
-	if sum := sha256.Sum256(b); hex.EncodeToString(sum[:]) != sha {
-		return nil, fmt.Errorf("%w: blob %s does not hash to its name", ErrBlob, sha[:12])
+	return n, nil
+}
+
+// check is nil when the bytes read hash to the blob's name and the file holds no byte past them.
+func (b *Blob) check() error {
+	var one [1]byte
+	if n, err := b.f.Read(one[:]); n > 0 {
+		return fmt.Errorf("%w: blob %s grew as it was read", ErrBlobHash, b.sha[:12])
+	} else if err != nil && err != io.EOF {
+		return err
 	}
-	return b, nil
+	if hex.EncodeToString(b.sum.Sum(nil)) != b.sha {
+		return fmt.Errorf("%w: blob %s", ErrBlobHash, b.sha[:12])
+	}
+	return nil
 }
 
 func validSHA(s string) bool {

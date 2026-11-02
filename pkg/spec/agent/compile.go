@@ -845,7 +845,25 @@ func (k *compiler) tierAndCapture() {
 	if k.rt.Record == "" {
 		k.rt.Record = RecordSummary
 	}
+	k.recordOffNote()
 	k.recordOffCapture()
+}
+
+// recordOffNote notes, at the record: key that set it (a profile's line when the contract extends it), a contract
+// whose own record: off is the run's record mode: the ledger then keeps the run's refusals and no program it ran or
+// file, connection or other action the contract allowed, so what tego receipt, tego drift and the dashboard show of
+// the run is its refusals. It is what the author wrote and weakens no rule, so it is a note (Informational): `tego
+// compile` prints it, and a run only under -v, since a run's start speaks only when the person must act or the run
+// enforces less than the contract wrote; the run's end says "record off" (limits-check-doctor-cli.md R29, "A quiet
+// start"). A record mode the run gives (WithRecord, `tego run --record`) is the launching user's choice: --record off
+// has R29's own warning, and a --record that raises the record leaves the contract's off unused.
+func (k *compiler) recordOffNote() {
+	if k.o.record != "" || k.c.Record != RecordOff {
+		return
+	}
+	k.ds.warnf(k.pos("record"), CodeRecordOff, "record: off keeps only a run's refusals in its ledger: no program it runs, "+
+		"and no file it opens or connection it makes that the contract allows").
+		fix("set record: summary (the default) or full to record what the agent does; tego run --record summary records one run so").info()
 }
 
 // recordOffCapture lowers an auto contract's uprobe capture to the forwarder under record: off. The uprobe source

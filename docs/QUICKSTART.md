@@ -182,13 +182,13 @@ wrote ./out/tego-hello.txt: allowed
 /bin/sh: 2: cannot create ./tego-outside.txt: Permission denied
 write ./tego-outside.txt: refused by repo-only-writes
 no secret variable reached the agent: no-secrets
-tego run: r-40c94c9f-0dmkbl68johzb-hdcxpr ended (exited with code 0) · refused 1 (not allowed by any rule 1) · asked 0 · wrote 1 file · chain verified
+tego run: r-40c94c9f-0dmkbl68johzb-hdcxpr ended (exited with code 0) · tier landlock · refused 1 (not allowed by any rule 1) · asked 0 · wrote 1 file · chain verified
   more: tego receipt r-40c94c9f-0dmkbl68johzb-hdcxpr
 ```
 
 Tego starts the contract's `command:` under the best tier this machine has; as a normal user that is tier 1. The exit code is the
 command's own (124 means Tego stopped the run on a limit, 125 means Tego itself failed). The run ends with a summary: the run
-id, the refusals its record holds, the files written, and the chain check.
+id, the tier it ran at (`landlock` is tier 1), the refusals its record holds, the files written, and the chain check.
 
 ## 7. Read the receipt
 
@@ -255,8 +255,9 @@ say "Nothing was refused" after it. To see reads, set `record: full` in the cont
 tier 2 or 3. To see only the refused ones, set `reason.reads: on` ([user/reason-channel.md](user/reason-channel.md)).
 
 `tego receipt --last --verify` also checks the run's hash chain against its anchor in `~/.tego/chain.log`.
-`tego events <run>` prints the record as a table, one row per event; the run id is in the summary from step 6. The record's
-format is in [../spec/record/v1/README.md](../spec/record/v1/README.md).
+`tego events <run>` prints the record as a table, one row per event; the run id is in the summary from step 6. Its last
+characters are enough, four or more, when no other run's id ends with them: `tego events hdcxpr`. The record's format is in
+[../spec/record/v1/README.md](../spec/record/v1/README.md).
 
 ## 8. Open the dashboard
 

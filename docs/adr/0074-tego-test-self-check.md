@@ -66,3 +66,11 @@ git hooks).
   the backlog is never counted against the run under Tego.
 - The four checks are the ones every tier refuses; what a tier lets through is not shown yet.
 - A wider contract, a real-agent run or a check that touches a real path are out of scope by design.
+- *Amended 2026-11-02:* exit 1 is shown end to end, not only by unit tests over the report and the judge. A binary
+  built with `-tags tegotesthooks` fills the contract template `TEGO_TEST_SELFTEST_CONTRACT` names in place of the
+  embedded one (a product build has no such switch; a template it cannot read or fill fails `tego test` with exit
+  125), and `TestSelftestExitsOneOnAWeakenedContract` changes one line of the embedded contract there: listing the
+  unlisted program makes that row `allowed`; denying the port file stops the connect check before it connects, so the
+  run records a refused read of that file and nothing of the connection, and the row is `unrecorded`. Each time the
+  other three rows stay refused and the command exits 1. Only the contract is wider: the engine and `tego run` are the
+  product's, as in the conformance suite's self-test.

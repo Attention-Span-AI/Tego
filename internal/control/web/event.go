@@ -473,8 +473,12 @@ func (s *Server) eventDetail(w http.ResponseWriter, r *http.Request) {
 		d.Label = "Denied command: " + strings.TrimSuffix(v, "]")
 	}
 	// The Rule row shows this label when the rule is not found (a profile rule, a gone rules file); it folds the run's
-	// home and working directory as the row's other texts do (runText), not the owner's ~/…/with/home path.
+	// home and working directory as the row's other texts do (runText), not the owner's ~/…/with/home path. A watched
+	// line's rule decided nothing, and the label says so.
 	d.Label = runText(d.Label, ledgerview.RunHome(rr), rr.Cwd)
+	if ledgerview.WatchedLine(rr, &at) {
+		d.Label = watchedRule(at.Rule, d.Label)
+	}
 	switch at.Kind {
 	case "fs", "exec", "net", "refused", "ask", "mcp":
 		d.AgentText = true

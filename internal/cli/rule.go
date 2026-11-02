@@ -91,7 +91,7 @@ type ruleScope struct {
 
 func runRule(ctx context.Context, ref string, seq uint64, a rule.Action, sc ruleScope, dry bool, stdout, stderr io.Writer) int {
 	mc := &machineOnce{stderr: stderr}
-	dir, err := resolveRunDir(ref, true, mc)
+	dir, err := resolveRunDir("rule", ref, true, mc)
 	if err != nil {
 		return runRefFailed(stderr, "rule", err)
 	}

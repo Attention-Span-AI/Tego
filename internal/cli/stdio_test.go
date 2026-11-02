@@ -40,13 +40,13 @@ func TestRunWarnsOfAStreamBeyondTheContract(t *testing.T) {
 	rt := &agent.RuleTable{Tier: backend.TierLandlock, Contract: &agent.Contract{Name: "a"}}
 
 	var stderr bytes.Buffer
-	warnStdio(&stderr, rt, tegoruntime.Stdio{In: sock, Out: out})
+	warnStdio(&stderr, "tego run", rt, tegoruntime.Stdio{In: sock, Out: out})
 	if got := stderr.String(); !strings.Contains(got, "stdin is a socket") || !strings.Contains(got, "["+codeStdio+"]") ||
 		strings.Contains(got, "stdout") {
 		t.Errorf("socket stdin, stdout into a file:\n%s", got)
 	}
 	stderr.Reset()
-	warnStdio(&stderr, rt, tegoruntime.Stdio{In: rw})
+	warnStdio(&stderr, "tego run", rt, tegoruntime.Stdio{In: rw})
 	if got := stderr.String(); !strings.Contains(got, "stdin is "+path+", open for reading and writing, outside every write entry") {
 		t.Errorf("read-write stdin:\n%s", got)
 	}

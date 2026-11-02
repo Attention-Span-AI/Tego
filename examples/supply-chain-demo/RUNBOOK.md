@@ -151,8 +151,8 @@ Before Codex starts, `tego run` prints, in this order: on AppArmor one note,
 then one line, `tego run: <run> can hold an operation for your approval; answer from another terminal: tego ask
 <run>, then tego approve <run> <ask_id> (or deny), or on the dashboard's Approvals page`. Both are normal, and the
 second is the run id to answer with if you ever answer in a terminal instead of the dashboard. When Codex exits, the
-last lines are the run's summary, for example `tego run: r-… ended (exited with code 0) · refused 9 (not allowed by
-any rule 6, …) · asked 2 (1 approved, 1 denied) · wrote 4 files · chain verified`, then `more: tego receipt r-…`. Nothing else
+last lines are the run's summary, for example `tego run: r-… ended (exited with code 0) · tier landlock · refused 9 (not
+allowed by any rule 6, …) · asked 2 (1 approved, 1 denied) · wrote 4 files · chain verified`, then `more: tego receipt r-…`. Nothing else
 is printed: the compile notes stay with `tego compile` (`[mount]` for `/dev/pts/`, `[held-reads]`, and
 `[wall-hard-cap]`: `limits.wall 2h` ends an interactive session at the minute it expires, so a run is never that
 long). To see the notes, compile the filled contract: `cd with/proj && tego compile ../codex-chatgpt.filled.yaml`
@@ -310,7 +310,9 @@ Reload the dashboard page: it now shows the new, empty ledger (*0 runs in this l
 restart the dashboard (`./demo.sh dashboard`), open the new link it prints: an old tab says *Signed out: open the
 link from your terminal*, and a reload shows the *Sign in · Tego* page; nothing else breaks.
 Each side keeps its Codex login. The old ledger is moved to `~/tego-demo-ledger.old-<time>` (with its
-`.rule-changes` journal), and only the newest three are kept; older ones are deleted.
+`.rule-changes` journal), and only the newest three are kept; older ones are deleted. `reset` deletes only the
+folders it moved there, each marked by a `.moved-by-demo-sh` file that names it: a folder of that name you made or
+copied is never deleted, and neither is one an older `demo.sh` moved (it has no mark), so delete those by hand.
 
 **The end of the demo:**
 ```sh

@@ -359,7 +359,7 @@ func (b *execBuilder) helperImages() {
 			}
 		}
 		for _, h := range helpers {
-			b.add(h, "helper:"+w.row.Tool, w.pos, false)
+			b.add(h, ExecSourceHelper+":"+w.row.Tool, w.pos, false)
 			k.execHelpers = append(k.execHelpers, h)
 		}
 	}

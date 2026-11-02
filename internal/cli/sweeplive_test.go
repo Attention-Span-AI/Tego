@@ -48,7 +48,7 @@ func TestRunSweepsTheLiveIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	sweepBeforeRun(context.Background(), m, &stderr)
+	sweepBeforeRun(context.Background(), m, "tego run", &stderr)
 	if !strings.Contains(stderr.String(), "ended 1 orphaned run(s)") {
 		t.Errorf("stderr %q", stderr.String())
 	}

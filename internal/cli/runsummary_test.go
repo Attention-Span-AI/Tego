@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/check/receipt"
 	"github.com/attention-span-ai/tego/internal/doctor"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
@@ -142,6 +143,9 @@ func TestRunEndSummary(t *testing.T) {
 		t.Fatalf("the summary does not follow the agent's output:\n%s", out)
 	}
 	summary := out[j:]
+	if !strings.HasPrefix(summary, head+"tier landlock · refused 2 (") {
+		t.Errorf("the summary does not name the run's tier right after how it ended:\n%s", summary)
+	}
 	// "wrote 1 file": the writes to /dev/null and /dev/tty are no file written (PW-12).
 	for _, want := range []string{"refused 2 (", "not allowed by any rule 1", "asked 1 (0 approved, 1 denied)", "wrote 1 file · ",
 		"chain verified\n"} {
@@ -163,6 +167,23 @@ func TestRunEndSummary(t *testing.T) {
 	}
 	if out := stderr.String(); strings.Contains(out, " ended (") || strings.Contains(out, "more: tego receipt") {
 		t.Errorf("--no-summary printed a summary:\n%s", out)
+	}
+}
+
+// TestRunEndSummaryNamesTheTier is H08's "no tier": the summary's first line names the tier the run's run_start
+// recorded, escaped for the terminal like every ledger string, and no tier for a run_start that holds none.
+func TestRunEndSummaryNamesTheTier(t *testing.T) {
+	zero := 0
+	odd := "land\x1b[2Jlock"
+	for tier, want := range map[string]string{
+		"cgroup": "tego run: r1 ended (exited with code 0) · tier cgroup · refused 0 · asked 0 · chain verified\n",
+		"":       "tego run: r1 ended (exited with code 0) · refused 0 · asked 0 · chain verified\n",
+		odd:      "tego run: r1 ended (exited with code 0) · tier " + record.Printable(odd) + " · refused 0 · asked 0 · chain verified\n",
+	} {
+		s := &endSummary{run: "r1", rc: &receipt.Receipt{Tier: tier, Ended: true, ExitCode: &zero}, chain: "chain verified"}
+		if got := s.text(); !strings.HasPrefix(got, want) || strings.Contains(got, "\x1b") {
+			t.Errorf("tier %q: text = %q, want first line %q", tier, got, want)
+		}
 	}
 }
 
@@ -204,7 +225,7 @@ func TestWatchFooterCounts(t *testing.T) {
 	t.Cleanup(func() { ledgerRootOf = prevRoot })
 	ledgerRootOf = func(*config.Machine) (string, error) { return root, nil }
 	res := tegoruntime.Result{RunID: id, Reason: record.RunEndExit}
-	sum := summarizeRun(t.Context(), m, anchor, res)
+	sum := summarizeRun(t.Context(), m, anchor, res, agent.RecordFull)
 	got := watchFooter(res, sum)
 	for _, want := range []string{"tego watch: recorded as run " + id + ": ended (exited with code 0) · refused 2",
 		"\n  seen: 4 connections to 2 places (most: 127.0.0.1:9823) · 2 sensitive files read (first: ~/.config/telemetry/token)\n",
@@ -260,7 +281,7 @@ func TestWatchFooterNeverNamesASystemLookup(t *testing.T) {
 	t.Cleanup(func() { ledgerRootOf = prevRoot })
 	ledgerRootOf = func(*config.Machine) (string, error) { return root, nil }
 	res := tegoruntime.Result{RunID: id, Reason: record.RunEndExit}
-	sum := summarizeRun(t.Context(), &config.Machine{}, anchor, res)
+	sum := summarizeRun(t.Context(), &config.Machine{}, anchor, res, agent.RecordFull)
 	got := watchFooter(res, sum)
 	if want := "\n  seen: 7 connections to 2 places (most: 127.0.0.1:9821) · no sensitive file read\n"; !strings.Contains(got, want) {
 		t.Errorf("footer lacks %q:\n%s", want, got)
@@ -295,6 +316,79 @@ func TestSummaryWithoutReceiptSaysHowItEnded(t *testing.T) {
 	s.how = endedHow(res.Reason)
 	if got := watchFooter(res, s); !strings.HasPrefix(got, "tego watch: recorded as run r1: ended (stopped) · summary not available") {
 		t.Errorf("watch footer = %q", got)
+	}
+}
+
+// TestRecordOffRunSaysSoAtItsEnd: a run whose record was off kept its refusals and no exec or allowed action, and its
+// end said nothing of it: a contract's own record: off is no start notice (the quiet start), so the summary is where it
+// is said, before the chain clause, whether or not the receipt could be built. A watch's footer says it too, with no
+// "seen:" line: it read "no connections · no sensitive file read" off a ledger that records neither.
+func TestRecordOffRunSaysSoAtItsEnd(t *testing.T) {
+	root, anchor := summaryHarness(t)
+	var host [32]byte
+	rid, err := identity.NewRunID(host, time.Now(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := string(rid)
+	w, err := ledger.Open(filepath.Join(root, id), record.RunRef{ID: id, Agent: "quiet"}, ledger.WithAnchor(ledger.NewFileChainAnchor(anchor)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The capability line of a run under record: off: every record row false (runstart.go's recordRows).
+	if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"agent"}, Cwd: "/w/proj", Tier: "landlock", Capture: "off",
+		Capabilities: map[string]bool{string(backend.CapRecordExecOpenNet): false, string(backend.CapRecordReads): false,
+			string(backend.CapLogAllowed): false}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range []*record.Event{
+		{Kind: record.KindNet, Verdict: record.VerdictRefused, Rule: "unmatched", Reason: record.ReasonNetNotAllowed},
+		{Kind: record.KindRefused, Rule: "unmatched", Reason: record.ReasonNetNotAllowed},
+	} {
+		e.Source, e.PID, e.TID = record.SourceSupervisor, 1, 1
+		var payload any = record.RefusedPayload{Op: "net", Target: "127.0.0.1:9822", Reason: record.ReasonNetNotAllowed, Rule: "unmatched"}
+		if e.Kind == record.KindNet {
+			e.Attr, e.Authority = record.Unattributed(), record.AuthorityRule
+			payload = record.NetPayload{Proto: "tcp", Dst: "127.0.0.1:9822"}
+		}
+		if err := e.SetPayload(payload); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Append(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(record.RunEndPayload{Reason: record.RunEndExit}); err != nil {
+		t.Fatal(err)
+	}
+	prevRoot := ledgerRootOf
+	t.Cleanup(func() { ledgerRootOf = prevRoot })
+	ledgerRootOf = func(*config.Machine) (string, error) { return root, nil }
+	res := tegoruntime.Result{RunID: id, Reason: record.RunEndExit}
+
+	off := summarizeRun(t.Context(), &config.Machine{}, anchor, res, agent.RecordOff)
+	if off == nil || off.rc == nil {
+		t.Fatalf("no receipt for the run: %+v", off)
+	}
+	if got, want := off.text(), "tego run: "+id+" ended (exited with code 0) · tier landlock · refused 1 (not allowed by any rule 1) · asked 0 · "+
+		"record off: refusals only · chain verified\n  more: tego receipt "+id+"\n"; got != want {
+		t.Errorf("the summary of a record: off run:\n got %q\nwant %q", got, want)
+	}
+	footer := watchFooter(res, off)
+	if want := "tego watch: recorded as run " + id + ": ended (exited with code 0) · refused 1 (not allowed by any rule 1) · " +
+		"record off: refusals only · chain verified\n"; !strings.HasPrefix(footer, want) || strings.Contains(footer, "seen:") {
+		t.Errorf("the footer of a record: off watch has no record off clause, or a seen: line it did not record:\n%s", footer)
+	}
+	// Said with no receipt as well: the record mode is the run's table's, not the ledger's.
+	off.rc, off.err = nil, errors.New("no such file")
+	if got := off.text(); !strings.HasSuffix(strings.SplitN(got, "\n", 2)[0], " · summary not available (no such file) · record off: refusals only · chain verified") {
+		t.Errorf("a record: off run with no receipt: %q", got)
+	}
+
+	// The same ledger summarized as a run that recorded says nothing of it, and its footer counts what it saw.
+	plain := summarizeRun(t.Context(), &config.Machine{}, anchor, res, agent.RecordSummary)
+	if got := plain.text() + watchFooter(res, plain); strings.Contains(got, "record off") || !strings.Contains(got, "\n  seen: ") {
+		t.Errorf("a run that recorded is said to be record off, or its footer lost the seen: line:\n%s", got)
 	}
 }
 
@@ -350,7 +444,7 @@ func BenchmarkEndSummary(b *testing.B) {
 	ledgerRootOf = func(*config.Machine) (string, error) { return root, nil }
 	res := tegoruntime.Result{RunID: string(id), Reason: record.RunEndExit}
 	for b.Loop() {
-		if s := summarizeRun(b.Context(), &config.Machine{}, anchor, res); s == nil || s.rc == nil || s.chain != "chain verified" {
+		if s := summarizeRun(b.Context(), &config.Machine{}, anchor, res, agent.RecordSummary); s == nil || s.rc == nil || s.chain != "chain verified" {
 			b.Fatalf("summary %+v", s)
 		}
 	}

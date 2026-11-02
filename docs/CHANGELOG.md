@@ -23,6 +23,15 @@ Changes after the first source release, listed here until the next tag.
 
 ### Fixed
 
+- tego run's end line names the tier, and every command that takes a run accepts a unique abbreviation of its id; a
+  bare short name is no longer read as a local run directory (use ./name).
+- The Rules page lists the machine's limit ceilings, net.http, ingress and gate rules and the tier-1 datagram residual,
+  counts what the defaults decided, and counts every name of a program's file, git's helpers and a script's interpreter.
+- Logs and the line page say "Watched only" for a watched run's lines.
+- The line page streams a blob download instead of holding it in memory.
+- The demo kit runs under a pyenv or asdf python3 shim and says when a run did not start; the supply-chain demo's proof
+  reads `tego events --json`, and its reset never deletes a folder it did not move.
+- tego watch and tego adopt name themselves in the run path's messages.
 - Logs: the `path:` query key matches whole names, so `path:/a/b` no longer lists `/a/bc`.
 - The dashboard words six refusal reasons it showed as bare codes (MCP tool blocked, Sandbox boundary, and the
   credential and model-route codes).

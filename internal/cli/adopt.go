@@ -253,7 +253,7 @@ func runAdopt(ctx context.Context, o adoptOptions, stdout, stderr io.Writer) int
 	m, cds, err := loadMachine(config.TrustAbort)
 	writeConfigDiagnostics(stderr, cds)
 	if err != nil {
-		configRefused(stderr, err)
+		configRefused(stderr, "tego adopt", err)
 		return identity.ExitConfig
 	}
 	makeOwnDirs(m)
@@ -564,7 +564,8 @@ func prepareAdoption(ctx context.Context, m *config.Machine, o adoptOptions, t a
 	}
 	if a.boundary {
 		rt.Capture = agent.CaptureOff
-		b, srt, _, code := selectBackend(ctx, runOptions{tier: string(backend.TierCgroup)}, m, rt, stderr)
+		sel := runOptions{cmd: "tego adopt", tier: string(backend.TierCgroup), adopted: true}
+		b, srt, _, code := selectBackend(ctx, sel, m, rt, stderr)
 		if b == nil {
 			return nil, code
 		}
@@ -640,8 +641,9 @@ func compileAdoptionTable(ctx context.Context, m *config.Machine, o adoptOptions
 	//
 	// The boundary is loaded before that, as the compile would load it: a missing file, a name the registries refuse
 	// or a file that does not load is refused with nothing made for the owner, as "-" is above. As root the owner's
-	// ~/.tego was made first, as its first run would, and the refusal came after.
-	ro := runOptions{contract: path, generated: o.boundary == "", record: o.record, home: home, adopted: true}
+	// ~/.tego was made first, as its first run would, and the refusal came after. The run path's lines (a refused name,
+	// an interrupt, the tier's selection) say tego adopt, as this function's own do.
+	ro := runOptions{cmd: "tego adopt", contract: path, generated: o.boundary == "", record: o.record, home: home, adopted: true}
 	if a.boundary {
 		l, code := loadRunContract(ro, m, diags)
 		if l == nil {

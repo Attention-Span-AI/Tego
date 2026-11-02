@@ -333,3 +333,6 @@ internal/runtime/enforce/cgroup TestCompactedTableStaysAtBPFLSM # ADR 0043 D6: 4
 # Ask hardening (ADR 0008, ADR 0100 (7)): the ask broker answers only the person.
 internal/runtime TestRootAgentInOtherRunCannotAnswer # ask hardening at tier cgroup from a root launcher: run B's agent, with run A's ask.sock reachable, is refused by its broker as unauthorized, the ask still pending, and the person answers
 internal/runtime TestAdoptedAgentCannotAnswer # ask hardening: a process tego adopt moved into its adoption's scope answers as root and is refused as unauthorized, the ask still pending, and the person answers
+
+# The dashboard's peer-uid check (F21) on the kernel's own tcp table, against a process of a second real uid.
+internal/control/web TestPeerUIDRefusesAnotherRealUser # a client running as uid 65534 gets 403 and no cookie, with the token and with the session's cookie, each page naming its socket and that uid; the serving user's own client gets in

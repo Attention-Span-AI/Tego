@@ -22,7 +22,7 @@ const testRun = identity.RunID("20261026T101500Z-ab12cd34-0011aa22")
 // exact commands that answer, and mentions the desktop notice only when one will be sent.
 func TestAskAnswerLine(t *testing.T) {
 	for _, desktop := range []bool{false, true} {
-		line := askAnswerLine(testRun, desktop)
+		line := askAnswerLine("tego run", testRun, desktop)
 		for _, want := range []string{
 			"tego ask " + string(testRun),
 			"tego approve " + string(testRun) + " <ask_id>",

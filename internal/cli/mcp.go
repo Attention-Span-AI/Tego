@@ -99,15 +99,16 @@ func cmdMCP() Command {
 }
 
 // mcpRelayFor builds the run's MCP relay when the contract puts any server behind it (mcp[].tools), nil otherwise:
-// a contract without tools: runs exactly as before (ADR 0126 Consequences).
-func mcpRelayFor(rt *agent.RuleTable, log *slog.Logger, stderr io.Writer) ([]source.Source, int) {
+// a contract without tools: runs exactly as before (ADR 0126 Consequences). A relay that cannot start is said on a
+// line naming cmd.
+func mcpRelayFor(rt *agent.RuleTable, log *slog.Logger, cmd string, stderr io.Writer) ([]source.Source, int) {
 	servers := relayedServers(rt.Contract)
 	if len(servers) == 0 {
 		return nil, identity.ExitOK
 	}
 	s, err := mcprelay.New(mcprelay.Options{Servers: servers, Logger: log})
 	if err != nil {
-		message(stderr, "", 0, 0, "tego run: MCP relay: "+err.Error(), codeRun)
+		message(stderr, "", 0, 0, cmd+": MCP relay: "+err.Error(), codeRun)
 		return nil, identity.ExitLauncher
 	}
 	return []source.Source{s}, identity.ExitOK

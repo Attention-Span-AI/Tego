@@ -8,22 +8,27 @@ Two harnesses live here. Both boot a KVM guest with `kvm-run.sh` and return the 
 | `kvm-run.sh` + `root-suites.sh` (`make vm-root-test`) | the privileged Go suites, as root, on this box's own kernel with `bpf` in `lsm=` | `/dev/kvm` read-write, `apt-get download`, `dpkg-deb`, a static busybox. No root, no qemu, no clang |
 
 `VM_MODULES` (space-separated) has each `root-suites.sh` guest load those kernel modules before its suite, through
-`kvm-run.sh --module`: `VM_MODULES` defaults to `overlay btrfs`. The decision plane's overlayfs cell (`internal/bpf`
+`kvm-run.sh --module`: `VM_MODULES` defaults to `suites.sh`'s `GUEST_MODULES`, `overlay btrfs unix_diag tcp_diag`, which
+says what needs each, and `scripts/coverage.sh --vm`'s guests load the same (*2026-11-02*: they loaded none, and
+`internal/control/web`'s and `internal/control/cli`'s suites failed in them, since without `tcp_diag` the dashboard
+refuses every sign-in). The decision plane's overlayfs cell (`internal/bpf`
 `TestPlaneStepAHooksDecide`'s `overlay` subtest) needs overlay: without it the subtest skips, and `root-skips.txt` allows
 that only on a kernel with no overlayfs. `internal/runtime/enforce/cgroup`'s `TestPlaneRunBtrfsSubvolumeInodeIdentity`
 needs btrfs: it mounts a loop-file copy of an embedded empty btrfs (no btrfs-progs), and `root-skips.txt` allows its
-skip only in the plain build, so the tegobpf build fails without the module (*added 2026-10-05*). On a hosted runner
-(`VM_HOST=sudo`) the mount loads btrfs on demand. `VM_MODULES=""` loads none.
+skip only in the plain build, so the tegobpf build fails without the module (*added 2026-10-05*). `unix_diag` and
+`tcp_diag` answer the supervisor's and the dashboard's sock_diag lookups, which refuse what they cannot look up. On a
+hosted runner (`VM_HOST=sudo`) the kernel loads each on demand. `VM_MODULES=""` loads none.
 
 `TEGO_VM_ROW=<row>` (*added 2026-10-05*) runs `root-suites.sh` on a kernel-matrix row's own kernel (below) instead of this
 box's: the row is fetched (unless `TEGO_VM_KERNEL` already names it), every guest boots it, and each suite's guest gets the
 row's name in its environment, where `test/conformance` reads it as a baseline entry's `where.row` and `enforce/landlock`'s
 integration tests read it to hold `fedora-7.2` to Landlock ABI 10. `host` is this box's own kernel. A name that is not a row, a
 doctor-only row (no tier is offered there, so no suite has anything to run), `VM_HOST=sudo` and a `TEGO_VM_KERNEL` that
-names another row's kernel are usage errors (exit 2) before anything is built. `kvm-run.sh` fetches a module package for this
-box's own kernel only, so a row's guests load no module unless `VM_MODULES` names some (the default `overlay btrfs` ended every
+names another row's kernel are usage errors (exit 2) before anything is built. `kvm-run.sh` fetches a module package with apt
+for this box's own kernel only, so a row's guests load no module unless `VM_MODULES` names some (the default list ended every
 guest at exit 97), and the tests that want overlayfs or btrfs meet the row kernel's own, where `root-skips.txt` says which of
-them may skip. The nightly runs it as `TEGO_VM_ROW=$KERNEL test/vm/root-suites.sh ...`.
+them may skip. The modules `VM_MODULES` names on a row come from the row's own tree, which `fetch-kernel.py --modules <row>`
+extracts (below; debian-13 has one). The nightly runs it as `TEGO_VM_ROW=$KERNEL test/vm/root-suites.sh ...`.
 
 ## The tier-3 perf suite: `make vm-perf`
 
@@ -124,6 +129,22 @@ headers in front of a compressed cpio, so it streams the one file it needs, `vml
 `~/.cache/tego-vm/kernel/matrix-<row>/` with a `source.json` naming the package and version. It fetches
 once; `--refresh` fetches the newest build again. No module is loaded: the guest's root is an initramfs of
 this host's userland and the console is the 8250 UART every one of these kernels builds in.
+
+`fetch-kernel.py --modules <row>` (*2026-11-02*) extracts the row's own module tree, for a guest that wants one:
+`kvm-run.sh --module` reads `matrix-<row>/mods/lib/modules/matrix-<row>/` before it asks apt, and apt has no module
+package for a row's kernel. The tree is the `lib/modules/<release>/` of the package the same call has just
+authenticated, extracted once per package and stamped with its digest (`mods/.package-sha256`); a fetch that brings
+another package removes it with the old image. Only Debian's image package carries its modules (debian-13). Ubuntu
+ships them in a package of their own (`linux-modules-<release>`) and an RPM row's `kernel-core` carries only some, so
+those rows are refused (exit 97), and `kvm-run.sh` refuses a `--module` on a row with no tree, naming this command.
+`kvm-run.sh` loads a module after what modinfo's `depends:` names, not its `softdep:`s. On debian-13's 6.12 btrfs
+needs `libcrc32c`, whose init needs a crc32c algorithm that Debian builds as a module, so a guest that loads btrfs
+there names `crc32c_generic` before it. `TestPlaneRunBtrfsSubvolumeInodeIdentity` mounts its btrfs on a loop device,
+and Debian builds `loop` as a module too (Ubuntu builds both in), so a guest that runs it there names `loop` as well.
+The nightly's coverage step names both: its debian-13 guests load `overlay crc32c_generic loop btrfs unix_diag
+tcp_diag`, root-suites.sh's list with the two Debian needs (*2026-11-02*: the tests those modules un-skip there, the
+overlayfs cells, the btrfs test, the supervisor's unix_diag tests, the peer check's TCP lookup and the dashboard's
+sign-ins, passed on that kernel as root).
 
 Publisher authentication is mandatory. `gpg` and `gpgv` verify signatures against
 [shipped keys pinned by full fingerprint](keys/README.md): Ubuntu/Debian
@@ -488,10 +509,8 @@ test/vm/root-suites.sh uprobe doctor            # only the packages whose path c
 VM_RUN=TestIntegrationAsRoot test/vm/root-suites.sh doctor
 ```
 
-For each of `internal/runtime/enforce/cgroup`, `internal/bpf`, `internal/runtime/observe`,
-`internal/runtime/capture/uprobe`, `internal/runtime/cgroup`, `internal/runtime/launch`, `internal/runtime`,
-`internal/doctor`, `internal/runtime/supervisor`, `internal/platform/sys`, `internal/ledger` and `internal/cli`,
-it builds a static test binary with `go test -c -tags integration`. When the package's
+For each package `PKGS` in `test/vm/suites.sh` lists (the privileged suites, most with a note of what they run as
+root), it builds a static test binary with `go test -c -tags integration`. When the package's
 tests import `internal/bpf` and the BPF objects are generated, it builds a second binary with
 `-tags integration,tegobpf`. Each binary runs with `-test.v` in its own guest. A final guest runs
 `sudo tego doctor` from a binary built with the objects when they exist. That run's verdict is

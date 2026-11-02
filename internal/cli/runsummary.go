@@ -16,6 +16,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/check/receipt"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -23,14 +24,20 @@ import (
 // The end-of-run summary (H08): once the agent has exited (on its own, stopped, or by a limit), tego run says
 // in two lines what the run did and where to read the rest, so nobody scrapes a run id out of the agent's own output:
 //
-//	tego run: <run> ended (<outcome>) · refused N (top rules) · asked M (a approved, d denied) · wrote K files · chain verified
+//	tego run: <run> ended (<outcome>) · tier <tier> · refused N (top rules) · asked M (a approved, d denied) · wrote K files · chain verified
 //	  more: tego receipt <run>
 //
+// The tier is the one run_start recorded, the tier the run was started at; a run_start with none (a ledger older than
+// the field) leaves the clause out. It comes after "ended", so the line still starts "tego run: <run> ended", which
+// scripts read the run id from (examples/container/smoke.sh).
 // The numbers are receipt.Compute's over the run's ledger, the same builder `tego receipt` and the dashboard's
 // Receipt tab use, never a second counter, so the three cannot disagree. "chain verified" is said only after the
 // run's hash chain and its anchor were checked here (ledger.VerifyRunDir); when they could not be, the line says
-// "chain not checked (<why>)". --no-summary turns it off. It is printed after the agent's process tree is gone,
-// never while it runs.
+// "chain not checked (<why>)". A run whose record was off (its contract's record: off, a profile's, or --record off)
+// says "record off: refusals only" before the chain clause: its ledger keeps no exec or allowed action, so nothing it
+// wrote is counted. That is where a contract's own record: off is said: it is what the contract wrote and weakens no
+// rule, so the run's start does not say it (limits-check-doctor-cli.md R29, "A quiet start"). --no-summary turns the
+// summary off. It is printed after the agent's process tree is gone, never while it runs.
 
 // summaryBudget bounds the summary's read of the ledger and its chain check, so a huge ledger never holds tego's exit
 // long; past it the summary says what it could not do.
@@ -46,17 +53,24 @@ type endSummary struct {
 	chain string
 	// err is why the receipt could not be built; rc is nil then.
 	err error
+	// recordOff says the run ran under record: off: its ledger kept its refusals and no exec or allowed action, so
+	// the summary says so (recordOffClause) and a watch's footer has no "seen:" line, whose counts it did not record.
+	recordOff bool
 }
 
-// summarizeRun builds the summary of the run res names: its receipt over the run's ledger, and its chain verified
-// against anchor. nil when there is no run (the run never started).
-func summarizeRun(ctx context.Context, m *config.Machine, anchor string, res tegoruntime.Result) *endSummary {
+// recordOffClause is what the summary of a run whose record was off says, before its chain clause.
+const recordOffClause = "record off: refusals only"
+
+// summarizeRun builds the summary of the run res names, which ran under the record mode mode (its table's, after
+// --record): its receipt over the run's ledger, and its chain verified against anchor. nil when there is no run (the
+// run never started).
+func summarizeRun(ctx context.Context, m *config.Machine, anchor string, res tegoruntime.Result, mode agent.RecordMode) *endSummary {
 	if res.RunID == "" {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), summaryBudget)
 	defer cancel()
-	s := &endSummary{run: res.RunID, how: endedHow(res.Reason)}
+	s := &endSummary{run: res.RunID, how: endedHow(res.Reason), recordOff: mode == agent.RecordOff}
 	root, err := ledgerRootOf(m)
 	if err != nil {
 		s.err, s.chain = err, "chain not checked (no ledger root)"
@@ -111,17 +125,32 @@ func chainClause(ctx context.Context, dir, anchor string, res tegoruntime.Result
 	return "chain verified"
 }
 
-// text is the summary's two lines, prefixed "tego run: " (watch's writer turns it into "tego watch: ").
+// text is the summary's two lines, prefixed "tego run: ": only tego run prints it, a watch says the same in its footer
+// (watchFooter).
 func (s *endSummary) text() string {
 	var b strings.Builder
 	run := record.Printable(s.run)
 	if s.rc == nil {
-		fmt.Fprintf(&b, "tego run: %s ended%s · summary not available (%s) · %s\n", run, s.ended(), record.Printable(errText(s.err)), s.chain)
+		fmt.Fprintf(&b, "tego run: %s ended%s · summary not available (%s) · %s\n", run, s.ended(), record.Printable(errText(s.err)), s.tail())
 	} else {
-		fmt.Fprintf(&b, "tego run: %s ended (%s) · %s\n", run, s.rc.Outcome(), strings.Join(append(s.counts(false), s.chain), " · "))
+		var parts []string
+		if s.rc.Tier != "" {
+			parts = append(parts, "tier "+record.Printable(s.rc.Tier))
+		}
+		parts = append(append(parts, s.counts(false)...), s.tail())
+		fmt.Fprintf(&b, "tego run: %s ended (%s) · %s\n", run, s.rc.Outcome(), strings.Join(parts, " · "))
 	}
 	fmt.Fprintf(&b, "  more: tego receipt %s\n", run)
 	return b.String()
+}
+
+// tail is the summary line's last clauses: the chain's, after recordOffClause for a run whose record was off. Both
+// are said whether or not the receipt could be built: neither is read from it.
+func (s *endSummary) tail() string {
+	if s.recordOff {
+		return recordOffClause + " · " + s.chain
+	}
+	return s.chain
 }
 
 // ended is " (<how>)" for a run that did not simply exit, else "": what the receipt's outcome would have said.
@@ -207,9 +236,11 @@ func askedClause(a receipt.Asks) string {
 }
 
 // seen is the watch footer's counts line: the connections the run made and the secret-looking files it read, the two
-// things a recording shows that its refusals (none) do not. "" when the summary has no receipt.
+// things a recording shows that its refusals (none) do not. "" when the summary has no receipt, and for a run whose
+// record was off: its ledger holds no connection or read it allowed, so "no connections" would claim what it did not
+// record (the footer's recordOffClause says why there is no line).
 func (s *endSummary) seen() string {
-	if s == nil || s.rc == nil {
+	if s == nil || s.rc == nil || s.recordOff {
 		return ""
 	}
 	rc := s.rc

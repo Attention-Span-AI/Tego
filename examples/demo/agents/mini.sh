@@ -3,7 +3,8 @@
 # The stand-in agent of the short scenes (demo.sh rule ..., limits, deny-write, ask). Each subcommand is one
 # thing a confused or prompt-injected agent might do, said in plain words, and what came of it. The same
 # script runs without Tego (demo.sh ... --without) and under the scene's contract. Env it reads: SECRETS,
-# SINK, HOMEISH, PROJECT, PORT, DOCKER_HOST_SOCK (a stand-in docker.sock), SSH_AUTH_SOCK (a stand-in ssh-agent).
+# SINK, HOMEISH, PROJECT, PORT, DOCKER_HOST_SOCK (a stand-in docker.sock), SSH_AUTH_SOCK (a stand-in ssh-agent),
+# PYTHON3 (the python3 the contract allows, named by the file it runs as; python3 on PATH without it).
 set -u
 say() { echo "[agent] $*"; }
 ok() { say "   -> $*"; }
@@ -38,7 +39,7 @@ case "${1:-}" in
     say "start a new user namespace, the first step of most container escapes (unshare -U)"
     if unshare -U true 2>/dev/null; then ok "STARTED"; else ok "refused"; fi
     say "make a fileless program in memory (memfd_create), so no file rule can see what it runs"
-    if python3 -c 'import os; os.memfd_create("payload")' 2>/dev/null; then ok "MADE ONE"; else ok "refused"; fi
+    if "${PYTHON3:-python3}" -c 'import os; os.memfd_create("payload")' 2>/dev/null; then ok "MADE ONE"; else ok "refused"; fi
     ;;
   sockets)
     say "talk to the Docker daemon through its socket ($DOCKER_HOST_SOCK), which is root on the host"
@@ -54,7 +55,7 @@ case "${1:-}" in
     ;;
   fork)
     say "start 500 processes (a fork bomb, bounded so it is harmless anywhere)"
-    python3 -c '
+    "${PYTHON3:-python3}" -c '
 import os, signal, time
 kids = []
 for i in range(500):
@@ -74,7 +75,7 @@ for k in kids:
     ;;
   memory)
     say "grab memory, 32 MiB at a time, up to 2 GiB"
-    python3 -c '
+    "${PYTHON3:-python3}" -c '
 import sys
 chunks = []
 for i in range(64):

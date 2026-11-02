@@ -31,7 +31,7 @@ func TestRunExitCodeReportsAnIncompleteRecord(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var stderr bytes.Buffer
-			got := runExitCode(&stderr, tegoruntime.Result{RunID: "r-x", ExitCode: 0, Reason: "exit", RecordErr: tc.err})
+			got := runExitCode(&stderr, "tego run", tegoruntime.Result{RunID: "r-x", ExitCode: 0, Reason: "exit", RecordErr: tc.err})
 			if got != tc.code {
 				t.Fatalf("exit %d, want %d", got, tc.code)
 			}

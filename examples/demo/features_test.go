@@ -61,6 +61,53 @@ func TestFeatureScenes(t *testing.T) {
 	}
 }
 
+// TestScenesGrantThePython3TheyRun: the network scene's listener and the process and limits scenes' stand-in run
+// python3 under contracts that named it python3, so with a #! shim first on PATH (pyenv, asdf) tego refused to start
+// each of those runs ("script interpreter is not granted"). They now name the file python3 runs as, as Act 2 does: each
+// scene shows what it shows without a shim, python3 having run (the bind it was refused, its own count of processes),
+// and no run refused an exec of the interpreter.
+func TestScenesGrantThePython3TheyRun(t *testing.T) {
+	k := newKit(t)
+	k.shimPython3()
+	k.mustDemo("setup")
+	for _, tc := range []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"network"}, []string{"[agent] ALLOWED connect", "[agent] REFUSED connect", "[agent] REFUSED listen on 127.0.0.1:4444"}},
+		{[]string{"rule", "process"}, []string{"landlock-topology", "unshare CLONE_NEWUSER"}},
+		{[]string{"limits"}, []string{"of 500 started", "reason=pids", "reason=oom"}},
+	} {
+		name := strings.Join(tc.args, " ")
+		out := k.mustDemo(tc.args...)
+		if strings.Contains(out, "script interpreter is not granted") {
+			t.Errorf("%s: tego refused to start a run under a python3 shim:\n%s", name, out)
+		}
+		mustContain(t, name+", python3 a shim", out, tc.want...)
+	}
+	runs, err := os.ReadDir(k.ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var all strings.Builder
+	for _, r := range runs {
+		if !r.IsDir() || !strings.HasPrefix(r.Name(), "r-") {
+			continue // the ledger root's own files (.live)
+		}
+		b, err := os.ReadFile(filepath.Join(k.ledger, r.Name(), "events.jsonl"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		all.Write(b)
+	}
+	for _, ln := range strings.Split(all.String(), "\n") {
+		if strings.Contains(ln, `"reason":"exec-not-allowed"`) && strings.Contains(ln, "python") {
+			t.Errorf("a scene's run refused the interpreter: %s", ln)
+		}
+	}
+	mustContain(t, "the scenes' ledger", all.String(), `"op":"bind","target":"127.0.0.1:4444"`)
+}
+
 // TestAskScene answers the ask scene from a second "terminal", as the presenter does: the agent waits, demo.sh
 // approve finds the ask scene's pending ask and approves it, and the held write lands.
 func TestAskScene(t *testing.T) {

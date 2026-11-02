@@ -25,8 +25,8 @@ docker compose logs control                   # its link: http://127.0.0.1:8484/
 
 `docker compose up agent` runs `tego run /usr/local/share/tego/hello.yaml`: the hello agent writes
 `/work/out/hello.txt`, tries to write `/work/outside.txt`, is refused, and the run ends with
-`tego run: <run> ended (exited with code 0) · refused 1 ... · chain verified`. To run your own agent, mount its
-contract and its files and set `TEGO_CONTRACT` to the contract's path in the container; build with
+`tego run: <run> ended (exited with code 0) · tier landlock · refused 1 ... · chain verified`. To run your own
+agent, mount its contract and its files and set `TEGO_CONTRACT` to the contract's path in the container; build with
 `--build-arg EXTRA_PACKAGES="python3 nodejs npm ..."` (or the same `EXTRA_PACKAGES` variable for compose) for the
 programs it needs. A program being installed allows nothing: the contract's `exec.allow` still decides what may run.
 `examples/agents/` has contracts for Claude Code, Codex and agents of your own.

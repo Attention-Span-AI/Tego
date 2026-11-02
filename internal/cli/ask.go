@@ -11,9 +11,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/attention-span-ai/tego/internal/askclient"
-	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/runlock"
 	"github.com/attention-span-ai/tego/internal/runtime/ask"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -30,8 +30,8 @@ func init() {
 
 // cmdAsk is `tego ask [run] [ask_id] [--json]`. With no argument it lists the pending asks of every running run under
 // the ledger root, one line each led by its run id, so a person answering in a terminal never has to find the run
-// first. With one ask id (q-...) it shows that request from whichever running run holds it; with a run id,
-// that run's pending asks; with both, that request.
+// first. With one ask id (q-...) it shows that request from whichever running run holds it; with a run id, whole or
+// abbreviated (runIDUnder), that run's pending asks; with both, that request.
 func cmdAsk() Command {
 	var asJSON bool
 	return Command{Name: "ask", Summary: "list or inspect pending human approvals (no argument: every running run)", Usage: "[run] [ask_id] [--json]", Flags: func(f *flag.FlagSet) { f.BoolVar(&asJSON, "json", false, "one JSON object") }, Run: func(ctx context.Context, f *flag.FlagSet, out, errs io.Writer) int {
@@ -40,8 +40,9 @@ func cmdAsk() Command {
 			return runAskAll(ctx, asJSON, out, errs)
 		case f.NArg() == 1 && ask.ValidID(f.Arg(0)):
 			return runAskByID(ctx, "ask", f.Arg(0), false, false, asJSON, "", out, errs)
-		case f.NArg() == 1 && !ledger.IsRunID(f.Arg(0)):
-			// One argument is either kind (QG-11): calling it only "not a run id" hid that an ask id works alone.
+		case f.NArg() == 1 && (strings.HasPrefix(f.Arg(0), "q-") || runIDArg(f.Arg(0)) != nil):
+			// One argument is either kind (QG-11): calling it only "not a run id" hid that an ask id works alone. One
+			// that begins q- is an ask id mistyped, never taken for the end of a run id ("q-" and six more could be).
 			message(errs, "", 0, 0, fmt.Sprintf("tego ask: %q is neither a run id (r-…) nor an ask id (q-…); "+
 				"tego ask alone lists every running run's asks", f.Arg(0)), codeUsage)
 			return identity.ExitUsage
@@ -103,18 +104,25 @@ func cmdAlternate() Command {
 	}}
 }
 
-func runAskCommand(ctx context.Context, name, runID, id string, approve, always, asJSON bool, alternate string, out, errs io.Writer) int {
-	if !ledger.IsRunID(runID) {
-		message(errs, "", 0, 0, fmt.Sprintf("tego %s: %q %v", name, runID, errBadRunID), codeUsage)
+// runAskCommand is ask, approve, deny or alternate given a run, whole id or abbreviated (runIDUnder): its pending
+// asks, or the one ask id names. The arguments are checked before the machine config is read; the abbreviation is
+// expanded under the ledger root it names, and everything after it, the lines printed included, uses the whole id.
+func runAskCommand(ctx context.Context, name, ref, id string, approve, always, asJSON bool, alternate string, out, errs io.Writer) int {
+	if err := runIDArg(ref); err != nil {
+		message(errs, "", 0, 0, "tego "+name+": "+err.Error(), codeUsage)
 		return identity.ExitUsage
 	}
 	if (id == "" && name != "ask") || (id != "" && !ask.ValidID(id)) {
-		message(errs, "", 0, 0, fmt.Sprintf("tego %s: %q is not an ask id (q- and 32 hex digits); tego ask %s lists the run's pending asks", name, id, runID), codeUsage)
+		message(errs, "", 0, 0, fmt.Sprintf("tego %s: %q is not an ask id (q- and 32 hex digits); tego ask %s lists the run's pending asks", name, id, ref), codeUsage)
 		return identity.ExitUsage
 	}
 	root, code := askRoot(name, errs)
 	if code != identity.ExitOK {
 		return code
+	}
+	runID, err := runIDUnder(ref, root)
+	if err != nil {
+		return runRefFailed(errs, name, err) // R25: a usage error, or the root's errno, 125 [io]
 	}
 	dir := filepath.Join(root, runID)
 	if _, err := os.Stat(dir); err != nil {

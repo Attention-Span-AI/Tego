@@ -113,6 +113,13 @@ func (e *Event) Refused() bool {
 	return e.Kind == string(record.KindRefused) || e.Verdict == string(record.VerdictRefused)
 }
 
+// WatchedLine reports whether line e of run r was only watched: r is a tego watch run (tier observe), which enforces
+// nothing, and e was recorded as observed. No rule decided such a line, whatever rule it names: the contract entry it
+// would have matched, or unmatched.
+func WatchedLine(r *Run, e *Event) bool {
+	return r != nil && r.Tier == "observe" && e.Verdict == string(record.VerdictObserved)
+}
+
 // Run is one run's summary, and its lines when they were loaded.
 type Run struct {
 	ID        string

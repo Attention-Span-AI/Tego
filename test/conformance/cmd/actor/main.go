@@ -4,7 +4,8 @@
 // a cell names, one after another, and prints each one's own result as a JSON line. The kernel's answer is the
 // judge; the actor decides nothing. `actor run <script.json>` reads a list of actions, `actor noop` is what an
 // exec cell starts (it exits 0 at once). It is built CGO-off and static, so it needs no loader in any guest and
-// no fixture's contract has to grant one (TestActorIsStatic).
+// no fixture's contract has to grant one (TestActorIsStatic). internal/cli's receipt end-to-end test
+// (TestIntegrationReceiptOfAScriptedRunAtTierLandlock) runs it too, as a scripted agent whose ledger no host adds to.
 package main
 
 import (
@@ -26,7 +27,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Action mirrors test/conformance's Action (the runner writes the script, this reads it).
+// Action mirrors test/conformance's Action and internal/cli's receiptStep (the runner writes the script, this reads
+// it).
 type Action struct {
 	ID   string `json:"id"`
 	Op   string `json:"op"`

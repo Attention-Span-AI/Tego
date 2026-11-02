@@ -68,9 +68,10 @@ type InForceView struct {
 }
 
 // InForce is the Rules in force view of run under the ledger root root. It reads the run's ledger once (run_start,
-// each line's rule for the hits, run_end, the exec lines' programs), or takes all but run_start from the read model's
-// run (Options.Run), compiles the contract as Load does, reads the run's live blocks read-only, and reads the
-// rule-change journal and the rules file for Pending. It writes nothing.
+// each line's rule for the hits and an unmatched line's kind for the default that decided it, run_end, the exec lines'
+// programs), or takes all but run_start from the read model's run (Options.Run), compiles the contract as Load does,
+// reads the run's live blocks read-only, and reads the rule-change journal and the rules file for Pending. It writes
+// nothing.
 //
 // The contract compiled is the run's rules file when that file still loads to the run's contract_hash (the same
 // merged contract, so the same table), which makes every position a line of the real file; otherwise it is the
@@ -139,6 +140,9 @@ func InForce(ctx context.Context, root, run string, o Options) *InForceView {
 			}
 		}
 	})
+	for kind, n := range sc.unmatched {
+		v.View.CountDefault(kind, n)
+	}
 	v.Pending = pendingOf(root, v.Source, v.Started, src)
 	return v
 }
@@ -191,28 +195,6 @@ func FoldDevices(rules []inforce.Rule) []Fold {
 		out[i].Devices = append(out[i].Devices, r)
 	}
 	return out
-}
-
-// OpenDefault reports whether a group's default, the sentence for what no rule names, leaves the agent wide open
-// where a contract usually narrows it: any address on the network, any program, every variable of the shell
-// (secrets included). The Rules page marks such a default and links to the change that narrows it. Reads are open
-// by design (only secrets and the never-read entries are closed), so the read default is not marked.
-func OpenDefault(group, def string) bool {
-	switch group {
-	case inforce.GroupNetwork:
-		return strings.HasPrefix(def, "Can connect")
-	case inforce.GroupPrograms:
-		return strings.HasPrefix(def, "Can run any")
-	case inforce.GroupEnv:
-		return strings.HasPrefix(def, "Gets every variable")
-	}
-	return false
-}
-
-// ByOperatingSystem reports whether r is enforced in full by the kernel, the usual case a Rules table leaves
-// unsaid so the exceptions (best effort, held by tego, not enforced) stand out.
-func ByOperatingSystem(r inforce.Rule) bool {
-	return r.State == inforce.StateEnforced && r.EnforcedText == "Enforced by the operating system"
 }
 
 // emptyView is a view with every group empty and one note.

@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
@@ -65,8 +66,14 @@ func (p profiles) Resolve(name string) (string, []byte, error) {
 	return filepath.Join(p.dir, name+".yaml"), []byte(text), nil
 }
 
-// compile loads and compiles text as the project's agent.yaml.
+// compile loads and compiles text as the project's agent.yaml under the built-in machine config.
 func (f fixture) compile(t *testing.T, text string, ps agent.ProfileSource) *agent.RuleTable {
+	t.Helper()
+	return f.compileOn(t, text, ps, config.Builtin())
+}
+
+// compileOn is compile under the machine config m.
+func (f fixture) compileOn(t *testing.T, text string, ps agent.ProfileSource, m *config.Machine) *agent.RuleTable {
 	t.Helper()
 	cp := filepath.Join(f.proj, "agent.yaml")
 	if err := os.WriteFile(cp, []byte(text), 0o600); err != nil {
@@ -76,7 +83,7 @@ func (f fixture) compile(t *testing.T, text string, ps agent.ProfileSource) *age
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	rt, _, err := agent.Compile(c, config.Builtin(), agent.WithPATH(f.bin), agent.WithCwd(f.proj), agent.WithHome(f.home), agent.Offline())
+	rt, _, err := agent.Compile(c, m, agent.WithPATH(f.bin), agent.WithCwd(f.proj), agent.WithHome(f.home), agent.Offline())
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
@@ -397,6 +404,49 @@ func TestHitsByRuleKey(t *testing.T) {
 	}
 }
 
+// TestDefaultHits: a line no rule named counts in Unmatched, and on the default of the group that decided it: an exec
+// line on the programs', a net line on the network's. A file line, whose kind does not say whether it read or changed,
+// and a refusal line count in Unmatched alone.
+func TestDefaultHits(t *testing.T) {
+	f := newFixture(t)
+	v := Of(f.compile(t, commandRules, nil), backend.TierLandlock, "")
+	v.CountEvents([]record.Event{
+		{Kind: record.KindExec, Rule: "unmatched"}, {Kind: record.KindNet, Rule: "unmatched"},
+		{Kind: record.KindNet, Rule: "unmatched"}, {Kind: record.KindNet, Rule: "unmatched"},
+		{Kind: record.KindFS, Rule: "unmatched"}, {Kind: record.KindRefused, Rule: "unmatched"},
+		{Kind: record.KindExec, Rule: "exec[bash]"}, {Kind: record.KindNet, Rule: "net.resolver"},
+	})
+	want := map[string]int{GroupPrograms: 1, GroupNetwork: 3}
+	for _, g := range v.Groups {
+		if g.DefaultHits != want[g.ID] {
+			t.Errorf("%s default hits %d, want %d", g.ID, g.DefaultHits, want[g.ID])
+		}
+	}
+	if v.Unmatched != 6 {
+		t.Errorf("unmatched %d, want every kind's 6", v.Unmatched)
+	}
+	if r := findRule(t, &v, "exec.allow", "bash"); r.Hits != 1 {
+		t.Errorf("a named line counts on its rule, not a default: %d hits", r.Hits)
+	}
+	text := v.Text()
+	for _, want := range []string{"  Cannot run any other program.  [1 hits]\n", "  Cannot connect anywhere.  [3 hits]\n"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the text lacks %q:\n%s", want, text)
+		}
+	}
+	// A view adds what it is given: the kinds' counts, as the dashboard's scan hands them.
+	v.CountDefault("net", 2)
+	v.CountDefault("", 5)
+	if g := v.Group(GroupNetwork); g.DefaultHits != 5 {
+		t.Errorf("network default hits %d after two more, want 5", g.DefaultHits)
+	}
+	for _, g := range v.Groups {
+		if (g.DefaultKind != "") != (g.ID == GroupPrograms || g.ID == GroupNetwork) {
+			t.Errorf("%s has the default kind %q", g.ID, g.DefaultKind)
+		}
+	}
+}
+
 // TestWordsMatchesWebLabels holds Words to the labels the dashboard's ruleName gives today (web/pages.go), so the
 // dashboard can call Words in its place without one label changing.
 func TestWordsMatchesWebLabels(t *testing.T) {
@@ -510,14 +560,19 @@ func TestExecCommandRules(t *testing.T) {
 			t.Errorf("%s: exec.deny claims more than best effort: %+v", tier, deny)
 		}
 	}
-	// Hits: the engine names a command pattern's decision exec.allow[...], a bare program's exec[...].
+	// Hits, spelled as a run spells them (rulesview's TestIntegrationRuleKeysAreARunsKeys): an exec an entry with
+	// words admits carries its program's rule, exec[git], with the entry in command_rule; a refusal carries
+	// exec.deny[...] or exec.ask[...].
 	v := Of(rt, backend.TierLandlock, "")
-	v.Count(slices.Values([]string{"exec.allow[git status]", "exec[git status]", "exec.ask[git commit]", "exec.deny[git push]"}))
-	if r := findRule(t, &v, "exec.allow", "git status"); r.Hits != 2 {
-		t.Errorf("an exec.allow entry with words counts both spellings: hits %d", r.Hits)
+	v.Count(slices.Values([]string{"exec[git]", "exec[git]", "exec.ask[git commit]", "exec.deny[git push]"}))
+	if r := findRule(t, &v, "exec.allow", "git status"); r.RuleKey != "exec[git]" || r.Hits != 2 {
+		t.Errorf("an exec.allow entry with words counts its program's lines: key %s, hits %d", r.RuleKey, r.Hits)
 	}
 	if r := findRule(t, &v, "exec.ask", "git commit"); r.Hits != 1 {
 		t.Errorf("exec.ask hits %d", r.Hits)
+	}
+	if r := findRule(t, &v, "exec.deny", "git push"); r.Hits != 1 {
+		t.Errorf("exec.deny hits %d", r.Hits)
 	}
 }
 
@@ -531,6 +586,8 @@ func TestStates(t *testing.T) {
 		{true, textKernel, StateEnforced}, {false, textBestEffort, StateBestEffort}, {false, textTegoCommands, StateBestEffort},
 		{false, textShadowed, StateNotEnforced}, {false, textObserve, StateNotEnforced}, {false, "", StateNone},
 		{true, textExecAskReserved, StateEnforced}, {false, textExecAskReservedBest, StateBestEffort},
+		{false, textDatagram, StateBestEffort}, {true, textTegoRequest, StateEnforced}, {true, textGate, StateEnforced},
+		{false, textHeldBest, StateBestEffort}, {true, textHeld, StateEnforced},
 	} {
 		if got := stateOf(c.ok, c.text); got != c.want {
 			t.Errorf("stateOf(%v, %q) = %s, want %s", c.ok, c.text, got, c.want)
@@ -582,6 +639,49 @@ func TestBuiltInDenyWrite(t *testing.T) {
 	lsm := Of(rt, backend.TierBPFLSM, record.DecisionPlaneLSM)
 	if r := findRule(t, &lsm, "built-in.deny_write", ""); !r.Enforced || r.EnforcedText != textKernel {
 		t.Errorf("built-in deny_write under a plane: %+v", r)
+	}
+}
+
+// TestBuiltInDenyWriteAgrees: the compiled view lists the built-in deny_write rule only when compile found files of
+// its kinds beneath a write entry, and then says it plainly; read as text, where nothing can look, the rule is said
+// with that condition, so the two views never claim different protections for one file.
+func TestBuiltInDenyWriteAgrees(t *testing.T) {
+	const plain = "Can never change files that would run code outside the agent: git hooks, shell startup files and agent settings"
+	f := newFixture(t)
+	for _, c := range []struct {
+		dir   string
+		found bool
+	}{{"./work/", true}, {"./private/", false}} { // the fixture's ./work/ holds .git/hooks; ./private/ holds nothing
+		text := "version: 0\nname: dw\ncommand: [\"bash\"]\nfs:\n  write: [\"" + c.dir + "\"]\nnet:\n  allow: []\n"
+		of := Of(f.compile(t, text, nil), backend.TierLandlock, "")
+		var got *Rule
+		for _, r := range of.Rules() {
+			if r.Key == "built-in.deny_write" {
+				got = &r
+			}
+		}
+		switch {
+		case c.found && (got == nil || got.Sentence != plain):
+			t.Errorf("%s: compiled rule %+v, want the plain sentence", c.dir, got)
+		case !c.found && got != nil:
+			t.Errorf("%s: compiled view lists a rule with nothing beneath it: %+v", c.dir, got)
+		}
+		d, err := Declared([]byte(text), "agent.yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r := findRule(t, &d, "built-in.deny_write", ""); r.Sentence != plain+", where a run finds any in the folders it can change" {
+			t.Errorf("%s: read as text, the rule says %q", c.dir, r.Sentence)
+		}
+	}
+	d, err := Declared([]byte("version: 0\nname: ro\ncommand: [\"bash\"]\n"), "agent.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range d.Rules() {
+		if r.Key == "built-in.deny_write" {
+			t.Errorf("a contract with no write entry lists %+v", r)
+		}
 	}
 }
 
@@ -639,6 +739,9 @@ func TestSentences(t *testing.T) {
 		{first(programSentence("Can run", "/usr/bin/python3.12", "")), "Can run python3.12"},
 		{first(programSentence("Can never run", "/usr/bin/git push", "")), "Can never run git push"},
 		{first(programSentence("Can run", "/opt/*/bin/tool", "")), "Can run /opt/*/bin/tool"},
+		{first(programSentence("Can run", "'/opt/My Tools/run'", "")), "Can run run"},
+		{first(programSentence("Can run", "/usr/bin/git\tstatus", "")), "Can run git status"},
+		{first(programSentence("Can run", "git add src/", "")), "Can run git add src/"},
 		{netTarget("tcp://chatgpt.com:443"), "chatgpt.com on port 443"},
 		{netTarget("udp://1.1.1.1:53"), "1.1.1.1 on port 53 (UDP)"},
 		{netTarget("127.0.0.1:8803"), "127.0.0.1 on port 8803"},
@@ -673,9 +776,365 @@ func findRule(t *testing.T, v *View, key, entry string) Rule {
 	return Rule{}
 }
 
+// TestLimitsUnderMachineCeilings: compiled, the limits are the run's, each clamped to this computer's ceilings (R11):
+// a limit a ceiling lowers says the lower value and the one its rules ask for, one under its ceiling is as written,
+// and one only a ceiling sets is listed from the machine config. Read as text, the limits are as written.
+func TestLimitsUnderMachineCeilings(t *testing.T) {
+	const text = "version: 0\nname: l\ncommand: [\"bash\", \"agent.sh\"]\nexec:\n  allow: [bash]\nlimits:\n  wall: 2h\n  cost_usd: 10\n  memory: 512MiB\n  pids: 128\n"
+	m := config.Builtin()
+	m.Limits.Wall = config.Ceiling[time.Duration]{Value: time.Hour, Bounded: true}
+	m.Limits.CostUSD = config.Ceiling[float64]{Value: 2.5, Bounded: true}
+	m.Limits.Memory = config.Ceiling[config.ByteSize]{Value: 1 << 30, Bounded: true}
+	m.Limits.Pids = config.Ceiling[int]{Value: 256, Bounded: true}
+	m.Limits.CPUWeight = config.Ceiling[int]{Value: 50, Bounded: true}
+	m.Limits.StallAfter = config.Ceiling[time.Duration]{Value: 10 * time.Minute, Bounded: true}
+	f := newFixture(t)
+	v := Of(f.compileOn(t, text, nil, m), backend.TierLandlock, "")
+	type row struct{ key, entry, sentence, origin string }
+	want := []row{
+		{"limits.wall", "2h", "Is stopped after 1 hour, this computer's limit; its rules ask for 2 hours", OriginContract},
+		{"limits.cost_usd", "10", "Is stopped after $2.5 of model use, this computer's limit; its rules ask for $10", OriginContract},
+		{"limits.memory", "512MiB", "Can use at most 512 MiB of memory", OriginContract},
+		{"limits.pids", "128", "Can run at most 128 processes at once", OriginContract},
+		{"limits.cpu_weight", "50", "Gets a CPU share of 50 (100 is normal)", OriginMachine},
+		{"limits.stall_after", "10m", "Is stopped when nothing happens for 10 minutes", OriginMachine},
+	}
+	g := v.Group(GroupLimits)
+	var got []row
+	for _, r := range g.Rules {
+		got = append(got, row{r.Key, r.Entry, r.Sentence, r.Source.Origin})
+		if r.Effect != EffectLimit || r.State != StateNone || r.Enforced || r.Editable {
+			t.Errorf("%s makes a claim or is editable: %+v", r.Key, r)
+		}
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("limits:\n got %+v\nwant %+v", got, want)
+	}
+	if g.Default != "" {
+		t.Errorf("a contract with limits has the default %q", g.Default)
+	}
+	if !strings.Contains(v.Text(), "Gets a CPU share of 50 (100 is normal)  [machine config]") {
+		t.Errorf("the text does not name the machine config:\n%s", v.Text())
+	}
+	d, err := Declared([]byte(text), "agent.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rs := d.Group(GroupLimits).Rules; len(rs) != 4 || rs[0].Sentence != "Is stopped after 2 hours" {
+		t.Errorf("read as text, the limits are not as written: %+v", rs)
+	}
+}
+
+// TestHTTPAndIngressRows: net.http's entries are listed among the network rules with the rule key the model proxy's
+// lines carry (net.http[i]) and tego's claim, and net.ingress's with the kernel's claim and no rule key, since no ledger
+// line names one (a refused packet only adds to run_end's network counters), compiled or read as text; the network's
+// last line says what each refuses beyond its entries.
+func TestHTTPAndIngressRows(t *testing.T) {
+	const http = "version: 0\nname: h\ncommand: [\"bash\", \"agent.sh\"]\ncapture: forwarder\nexec:\n  allow: [bash]\n" +
+		"models:\n  - {provider: anthropic, host: api.anthropic.com, port: 443}\nnet:\n  allow: []\n  http:\n" +
+		"    - {host: api.anthropic.com, allow: [/v1/messages, /v1/models], methods: [POST, GET]}\n    - {host: api.anthropic.com, allow: [/]}\n"
+	const ingress = "version: 0\nname: i\ncommand: [\"bash\", \"agent.sh\"]\ntier: cgroup\nexec:\n  allow: [bash]\nnet:\n  allow: []\n" +
+		"  listen: [\"tcp://127.0.0.1:8080\"]\n  ingress:\n    - {from: 10.0.0.0/8, to: \"tcp://127.0.0.1:8080\"}\n    - {from: 192.0.2.7, to: \"tcp://127.0.0.1:8080\"}\n"
+	f := newFixture(t)
+	for _, c := range []struct {
+		name, text string
+		tier       backend.Tier
+		key        string
+		want       []Rule // Key, RuleKey, Sentence, EnforcedText
+		tail       string
+	}{
+		{"net.http", http, backend.TierLandlock, kNetHTTP, []Rule{
+			{RuleKey: "net.http[0]", Sentence: "Can send POST, GET requests to api.anthropic.com under /v1/messages, /v1/models", EnforcedText: textTegoRequest},
+			{RuleKey: "net.http[1]", Sentence: "Can send requests to api.anthropic.com at any path", EnforcedText: textTegoRequest},
+		}, " Every other request to its model services is refused."},
+		{"net.ingress", ingress, backend.TierCgroup, kNetIngress, []Rule{
+			{Sentence: "Can accept connections on 127.0.0.1 on port 8080 from addresses in 10.0.0.0/8", EnforcedText: textKernel},
+			{Sentence: "Can accept connections on 127.0.0.1 on port 8080 from 192.0.2.7", EnforcedText: textKernel},
+		}, " Nothing else can connect to its listeners."},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			compiled := Of(f.compile(t, c.text, nil), c.tier, "")
+			declared, err := Declared([]byte(c.text), "agent.yaml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for name, v := range map[string]View{"compiled": compiled, "declared": declared} {
+				var got []Rule
+				for _, r := range v.Group(GroupNetwork).Rules {
+					if r.Key == c.key {
+						got = append(got, r)
+					}
+				}
+				if len(got) != len(c.want) {
+					t.Fatalf("%s: %d %s rows, want %d:\n%s", name, len(got), c.key, len(c.want), v.Text())
+				}
+				for i, w := range c.want {
+					r := got[i]
+					if r.Sentence != w.Sentence || r.Effect != EffectAllow || r.Source.Origin != OriginContract || r.Source.Line == 0 {
+						t.Errorf("%s: row %d = %+v, want %q from a contract line", name, i, r, w.Sentence)
+					}
+					wantKey, wantText := w.RuleKey, w.EnforcedText
+					if name == "declared" {
+						wantText = "" // no claim read as text
+					}
+					if r.RuleKey != wantKey || len(r.Covers) != 0 || r.EnforcedText != wantText {
+						t.Errorf("%s: row %d key %q claim %q, want %q and %q", name, i, r.RuleKey, r.EnforcedText, wantKey, wantText)
+					}
+				}
+				if d := v.Group(GroupNetwork).Default; !strings.HasSuffix(d, c.tail) {
+					t.Errorf("%s: network default %q does not end %q", name, d, c.tail)
+				}
+			}
+			if c.key == kNetHTTP {
+				compiled.Count(slices.Values([]string{c.want[1].RuleKey, c.want[1].RuleKey}))
+				for _, r := range compiled.Rules() {
+					if r.RuleKey == c.want[1].RuleKey && r.Hits != 2 {
+						t.Errorf("%s hits %d, want 2", r.RuleKey, r.Hits)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestGateRows: the gate's scored rules are listed where each one's score alone puts an action it matches (scores only
+// add up): above the ask threshold among the refusals of its kind, from the allow threshold among the questions save a
+// command, which is refused, and below it as what it adds, among the questions save a command's, listed among the
+// programs since tego never asks before one runs. Each carries the rule key its lines carry and the claim its
+// best-effort cells allow, a question's that tego holds it until you answer and a refusal's that it is scored, compiled
+// or read as text, and a note says how the scores add up.
+func TestGateRows(t *testing.T) {
+	const text = "version: 0\nname: g\ncommand: [\"bash\", \"agent.sh\"]\ntier: landlock\nexec:\n  allow: [bash]\nnet:\n  allow: [\"127.0.0.1:1\"]\n" +
+		"gate:\n  rules:\n    - fs.write outside worktree: 60\n    - 'exec matches \"curl *\"': 60\n    - 'fs.read matches \"~/.aws/*\"': 90\n" +
+		"    - net to undeclared host: 20\n    - 'net to 93.184.216.34:443': 85\n    - 'exec matches \"rm *\"': 10\n" +
+		"    - 'net to 198.51.100.7:443': 60\n  thresholds: {allow: 50, ask: 80}\n"
+	type row struct {
+		group    string
+		effect   Effect
+		sentence string
+		claim    string
+	}
+	want := []row{
+		{GroupAsk, EffectAsk, "Asks you before it changes a file outside its worktree (risk score 60)", textHeldBest},
+		{GroupPrograms, EffectDeny, "Can never run a command matching curl * (risk score 60: asking first is not supported yet)", textBestEffort},
+		{GroupNeverRead, EffectDeny, "Can never read a file matching ~/.aws/* (risk score 90)", textBestEffort},
+		{GroupAsk, EffectNote, "Adds 20 to the risk score when it connects to a host its rules do not name", ""},
+		{GroupNetwork, EffectDeny, "Can never connect to 93.184.216.34 on port 443 (risk score 85)", textGate},
+		{GroupPrograms, EffectNote, "Adds 10 to the risk score when it runs a command matching rm *", ""},
+		{GroupAsk, EffectAsk, "Asks you before it connects to 198.51.100.7 on port 443 (risk score 60)", textHeld},
+	}
+	f := newFixture(t)
+	compiled := Of(f.compile(t, text, nil), backend.TierLandlock, "")
+	declared, err := Declared([]byte(text), "agent.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, v := range map[string]View{"compiled": compiled, "declared": declared} {
+		byKey := map[string]Rule{}
+		for _, r := range v.Rules() {
+			if r.Key == "gate.rules" {
+				byKey[r.RuleKey] = r
+			}
+		}
+		var got []row // in the gate's order, which the rule keys number; the view lists them by group
+		for i := range len(byKey) {
+			r, ok := byKey[fmt.Sprintf("gate.rules[%d]", i)]
+			if !ok || r.Source.Origin != OriginContract || r.Source.Line != 11+i || r.Editable {
+				t.Errorf("%s: gate row %d: %+v", name, i, r)
+			}
+			got = append(got, row{r.Group, r.Effect, r.Sentence, r.EnforcedText})
+		}
+		w := want
+		if name == "declared" { // no claim read as text
+			w = slices.Clone(want)
+			for i := range w {
+				w[i].claim = ""
+			}
+		}
+		if !slices.Equal(got, w) {
+			t.Errorf("%s gate rows:\n got %+v\nwant %+v", name, got, w)
+		}
+		if !strings.Contains(strings.Join(v.Notes, " "), "from 50 it asks you first, above 80 it is refused") {
+			t.Errorf("%s: no note on how the scores add up: %q", name, v.Notes)
+		}
+		if g := v.Group(GroupAsk); !strings.HasPrefix(g.Default, "If you do not answer within") {
+			t.Errorf("%s: the gate's questions have no time limit said: %q", name, g.Default)
+		}
+	}
+	compiled.Count(slices.Values([]string{"gate.rules[4]"}))
+	if r := findRule(t, &compiled, "gate.rules", `net to 93.184.216.34:443`); r.Hits != 1 {
+		t.Errorf("the net gate's refusal counts %d hits, want 1", r.Hits)
+	}
+	bad, err := Declared([]byte("version: 0\nname: b\ngate:\n  rules: [{shell expression x: 90}]\n"), "agent.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(bad.Notes, " "), "does not read as a gate") {
+		t.Errorf("a gate that does not read is not named: %q", bad.Notes)
+	}
+	// A command's score asks nothing: a gate whose one rule scores a command below the allow threshold makes no question.
+	const cmd = "version: 0\nname: c\ncommand: [\"bash\", \"agent.sh\"]\nexec:\n  allow: [bash]\ngate:\n  rules:\n    - 'exec matches \"rm *\"': 10\n"
+	cd, err := Declared([]byte(cmd), "agent.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, v := range map[string]View{"compiled": Of(f.compile(t, cmd, nil), backend.TierLandlock, ""), "declared": cd} {
+		if g := v.Group(GroupAsk); len(g.Rules) != 0 || g.Default != "" {
+			t.Errorf("%s: a command's score makes a question: %+v", name, g)
+		}
+		if r := findRule(t, &v, "gate.rules", `exec matches "rm *"`); r.Group != GroupPrograms || r.Effect != EffectNote {
+			t.Errorf("%s: the command's score is not a note among the programs: %+v", name, r)
+		}
+	}
+}
+
+// TestDatagramResidual: at tier landlock tego lets the agent's own call send a datagram it does not refuse
+// (supervisor R13b), so with a net: section the network names that residual as a best-effort refusal for every run,
+// whatever its entries admit: every such run may open a UDP or local datagram socket, and a send that names no address
+// is continued undecided for a racing thread to address. That includes the runs whose table admits no datagram: TCP
+// alone with the resolver off, where a socket the run binds beneath a write entry (R11a) or the DNS broker's socket,
+// granted at launch, is admitted all the same. Not at a root tier, not in an observe run, not without a net: section
+// (Always on's host-sockets row says it there) and not read as text.
+func TestDatagramResidual(t *testing.T) {
+	const head = "version: 0\nname: d\ncommand: [\"bash\", \"agent.sh\"]\nexec:\n  allow: [bash]\n"
+	f := newFixture(t)
+	for _, c := range []struct {
+		name, body string
+		tier       backend.Tier
+		want       bool
+		noDatagram bool // the table admits no datagram: TCP entries alone, and no resolver
+	}{
+		{"an address", "net:\n  allow: [\"127.0.0.1:1\"]\n", backend.TierLandlock, true, false},
+		{"none but the resolver", "net:\n  allow: []\n", backend.TierLandlock, true, false},
+		{"a local socket, resolver off", "net:\n  allow: [\"unix:/run/x.sock\"]\n  dns: {mode: off}\n", backend.TierLandlock, true, false},
+		{"TCP only, resolver off", "net:\n  allow: [\"tcp://127.0.0.1:1\"]\n  dns: {mode: off}\n", backend.TierLandlock, true, true},
+		{"TCP only, resolver off, a write entry", "fs:\n  write: [\"./out/\"]\nnet:\n  allow: [\"tcp://127.0.0.1:1\"]\n  dns: {mode: off}\n", backend.TierLandlock, true, true},
+		{"TCP only, the DNS broker", "net:\n  allow: [\"tcp://127.0.0.1:1\"]\n  dns: {mode: broker}\n", backend.TierLandlock, true, true},
+		{"nothing at all, resolver off", "net:\n  allow: []\n  dns: {mode: off}\n", backend.TierLandlock, true, true},
+		{"a root tier", "net:\n  allow: [\"127.0.0.1:1\"]\n", backend.TierCgroup, false, false},
+		{"watched", "net:\n  allow: [\"127.0.0.1:1\"]\n", backend.TierObserve, false, false},
+		{"no net section", "", backend.TierLandlock, false, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rt := f.compile(t, head+c.body, nil)
+			if c.noDatagram { // what the case stands for: no entry and no resolver admits a datagram, yet the run races one
+				for _, n := range rt.Net {
+					if n.Proto != agent.ProtoTCP {
+						t.Fatalf("the table admits a datagram: %+v", n)
+					}
+				}
+				if rt.DNS.SystemResolvers() {
+					t.Fatal("the table keeps the machine's resolver")
+				}
+			}
+			v := Of(rt, c.tier, "")
+			var got *Rule
+			for _, r := range v.Group(GroupNetwork).Rules {
+				if r.Key == "built-in.datagrams" {
+					got = &r
+				}
+			}
+			if (got != nil) != c.want {
+				t.Fatalf("datagram row %+v, want one: %v\n%s", got, c.want, v.Text())
+			}
+			if got != nil && (got.Effect != EffectDeny || got.State != StateBestEffort || got.Enforced || got.EnforcedText != textDatagram ||
+				got.Source.Origin != OriginBuiltIn || got.Sentence != "Cannot send datagrams anywhere it may not connect") {
+				t.Errorf("datagram row %+v", got)
+			}
+			if strings.HasPrefix(c.body, "net:\n  allow: []\n") && v.Group(GroupNetwork).Default != "Cannot connect anywhere." {
+				t.Errorf("the row changed the default: %q", v.Group(GroupNetwork).Default)
+			}
+			d, err := Declared([]byte(head+c.body), "agent.yaml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, r := range d.Rules() {
+				if r.Key == "built-in.datagrams" {
+					t.Errorf("read as text, the view names a tier's residual: %+v", r)
+				}
+			}
+		})
+	}
+}
+
+// TestOpenDefaults: a group's default is marked Open exactly where it leaves the agent wide open (any program, any
+// address, every variable of the shell), compiled or read as text, so a view marks it by the flag and never by the
+// sentence's words; the read default never is.
+func TestOpenDefaults(t *testing.T) {
+	const head = "version: 0\nname: o\ncommand: [\"bash\", \"agent.sh\"]\n"
+	for _, c := range []struct {
+		name, body string
+		open       []string
+	}{
+		{"nothing narrowed", "", []string{GroupPrograms, GroupNetwork, GroupEnv}},
+		{"host sockets", "host_sockets: true\nexec:\n  allow: [bash]\nenv:\n  pass: [PATH]\n", []string{GroupNetwork}},
+		{"exec deny list", "exec:\n  deny: [\"git push\"]\nnet:\n  allow: []\nenv:\n  pass: [PATH]\n", []string{GroupPrograms}},
+		{"all narrowed", "exec:\n  allow: [bash]\nnet:\n  allow: [\"127.0.0.1:1\"]\nenv:\n  pass: [PATH]\n", nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFixture(t)
+			compiled := Of(f.compile(t, head+c.body, nil), backend.TierLandlock, "")
+			declared, err := Declared([]byte(head+c.body), "agent.yaml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for name, v := range map[string]View{"compiled": compiled, "declared": declared} {
+				var open []string
+				for _, g := range v.Groups {
+					if g.Open {
+						open = append(open, g.ID)
+						if g.Default == "" {
+							t.Errorf("%s: group %s is open with no default", name, g.ID)
+						}
+					}
+				}
+				if !slices.Equal(open, c.open) {
+					t.Errorf("%s: open defaults %v, want %v", name, open, c.open)
+				}
+			}
+		})
+	}
+}
+
+// TestByKernel: ByKernel marks exactly the rules the operating system enforces in full at the run's tier, so a table
+// can leave their cells empty without reading the claim's words: not a best-effort rule, not one held by tego, not an
+// always-on rule the run gets rather than is kept from, nothing in an observe run or a view read as text.
+func TestByKernel(t *testing.T) {
+	f := newFixture(t)
+	rt := f.compile(t, commandRules, nil)
+	ll := Of(rt, backend.TierLandlock, "")
+	for _, r := range ll.Rules() {
+		if want := r.State == StateEnforced && r.EnforcedText == textKernel; r.ByKernel != want {
+			t.Errorf("%q (%s, %q): ByKernel %v, want %v", r.Sentence, r.State, r.EnforcedText, r.ByKernel, want)
+		}
+	}
+	if r := findRule(t, &ll, "fs.write", "./out/"); !r.ByKernel {
+		t.Errorf("a write entry at landlock is the kernel's: %+v", r)
+	}
+	if r := findRule(t, &ll, "exec.allow", "git status"); r.ByKernel {
+		t.Errorf("a command pattern is best effort, not the kernel's: %+v", r)
+	}
+	if r := findRule(t, &ll, "built-in.route-read", ""); r.ByKernel {
+		t.Errorf("an always-on grant makes no claim: %+v", r)
+	}
+	ob := Of(rt, backend.TierObserve, "")
+	d, err := Declared([]byte(commandRules), "agent.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, v := range map[string]View{"observe": ob, "declared": d} {
+		for _, r := range v.Rules() {
+			if r.ByKernel {
+				t.Errorf("%s: %q is marked the kernel's", name, r.Sentence)
+			}
+		}
+	}
+}
+
 // TestDeclaredBadShapes: text that is YAML but not a contract still gives a view, never a panic.
 func TestDeclaredBadShapes(t *testing.T) {
-	for _, text := range []string{"", "- a\n- b\n", "fs: 3\nexec: [x]\nnet: {allow: x}\nenv: {set: [a]}\nlimits: {wall: [1]}\n"} {
+	for _, text := range []string{"", "- a\n- b\n", "fs: 3\nexec: [x]\nnet: {allow: x}\nenv: {set: [a]}\nlimits: {wall: [1]}\n",
+		"net: {http: [3, {host: [1], allow: x}], ingress: [1, {from: [2]}]}\ngate: {rules: [[], {a: b}]}\n", "gate: 3\nnet: {http: x, ingress: y}\n"} {
 		v, err := Declared([]byte(text), "x.yaml")
 		if err != nil && !errors.Is(err, errNotMapping) {
 			t.Errorf("Declared(%q): %v", text, err)

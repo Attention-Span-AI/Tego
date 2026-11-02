@@ -113,6 +113,9 @@ type groupView struct {
 	// Home is the run's home when the group is of one run, for the path shortener; KindWords is a target group's
 	// newest line's kind in words.
 	Home, KindWords string
+	// RuleWords is a rule group's rule in words and RuleTitle why its lines are not that rule's decisions, "" for the
+	// lines the rule decided (ruleGroupWords).
+	RuleWords, RuleTitle string
 }
 
 // groupLimit is how many groups the page lists.
@@ -374,12 +377,11 @@ func facetRule(v string, watched bool) (label, title string) {
 	if !watched {
 		return label, title
 	}
-	title += " · no rule decided these lines: their runs were watched, not enforced"
-	if v == "unmatched" {
-		return "Watched only", title
-	}
-	return "Watched only · " + label, title
+	return watchedRule(v, label), title + " · " + watchedWhy
 }
+
+// watchedWhy says why a watched rule's lines are not the rule's decisions.
+const watchedWhy = "no rule decided these lines: their runs were watched, not enforced"
 
 // timePresets is the time range links: the last 5 minutes, hour and day, the newest run, and any time.
 func timePresets(lq *logsQuery, snap *ledgerview.Snapshot) []preset {
@@ -429,7 +431,7 @@ func groupTabs(lq *logsQuery, cur string) []preset {
 		{"", "Lines", "Every matching line, newest first"},
 		{ledgerview.GroupProcess, "By process", "The matching lines gathered by process: a pid and the program it ran"},
 		{ledgerview.GroupTarget, "By target", "The matching lines gathered by the path, address or command they name"},
-		{ledgerview.GroupRule, "By rule", "The matching lines gathered by the rule that decided them"},
+		{ledgerview.GroupRule, "By rule", "The matching lines gathered by the rule that decided them; the lines a rule only names, as a watched run's, apart"},
 		{ledgerview.GroupSeverity, "By severity", "High, Medium, Low and Routine blocks, then observed, asked, answered, allowed and recorded lines"},
 	} {
 		out = append(out, preset{Label: g.label, Title: g.title, Current: cur == g.by,
@@ -438,8 +440,9 @@ func groupTabs(lq *logsQuery, cur string) []preset {
 	return out
 }
 
-// groupViews gives each group the address of its lines: a process by its run, pid and program, a rule by its key,
-// a target by its text (a literal search, so it may also match lines that name a longer target).
+// groupViews gives each group the address of its lines: a process by its run, pid and program, a rule by its key (with
+// verdict:observed for the lines it only names, and -verdict:observed for the lines it decided when those are not the
+// rule's only group), a target by its text (a literal search, so it may also match lines that name a longer target).
 func groupViews(lq *logsQuery, rows []ledgerview.GroupRow, snap *ledgerview.Snapshot) []groupView {
 	out := make([]groupView, len(rows))
 	for i, g := range rows {
@@ -476,7 +479,15 @@ func groupViews(lq *logsQuery, rows []ledgerview.GroupRow, snap *ledgerview.Snap
 			out[i] = v
 			continue
 		case g.Rule != "":
-			toks, _ = lq.toggled(ledgerview.Token{Key: "rule", Value: g.Rule})
+			v.RuleWords, v.RuleTitle = ruleGroupWords(g)
+			toks = narrowedTo(lq.toks, ledgerview.Token{Key: "rule", Value: g.Rule})
+			switch {
+			case g.Observed:
+				// Always, split or not: the lines it opens then say they were recorded only, as the group does.
+				toks = narrowedTo(toks, ledgerview.Token{Key: "verdict", Value: "observed"})
+			case g.Split:
+				toks = append(toks, ledgerview.Token{Key: "verdict", Value: "observed", Neg: true})
+			}
 		case g.Target != "":
 			set["q"] = g.Target
 			if lq.form.Text != "" && lq.form.Text != g.Target {
@@ -492,6 +503,32 @@ func groupViews(lq *logsQuery, rows []ledgerview.GroupRow, snap *ledgerview.Snap
 		out[i] = v
 	}
 	return out
+}
+
+// narrowedTo is toks with t in place of any other value of t's key: a group's lines are a part of the search, and the
+// same key twice reads as either value, which would widen it to the other value's lines. A left-out value stays.
+func narrowedTo(toks []ledgerview.Token, t ledgerview.Token) []ledgerview.Token {
+	out := []ledgerview.Token{}
+	for _, x := range toks {
+		if x.Key != t.Key || x.Neg {
+			out = append(out, x)
+		}
+	}
+	return append(out, t)
+}
+
+// ruleGroupWords is a By rule group's rule in words, and why its lines are not that rule's decisions: the rule's own
+// words for the lines it decided; for the lines that only name it (Observed), "Watched only · <rule>" when they are all
+// of watched runs, as the Rule facet says, and "Observed · <rule>", their rows' verdict, when an enforced run's line
+// is among them.
+func ruleGroupWords(g ledgerview.GroupRow) (words, title string) {
+	switch {
+	case g.Watched:
+		return watchedRule(g.Rule, ""), capFirst(watchedWhy)
+	case g.Observed:
+		return "Observed · " + ruleName(g.Rule), "No rule decided these lines: they were recorded only"
+	}
+	return ruleName(g.Rule), ""
 }
 
 // logsPresets is the built-in views: each a search a person often wants, kept in its link.

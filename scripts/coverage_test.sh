@@ -77,17 +77,20 @@ chmod +x "$tmp/go-all"
 mkdir -p "$tmp/harness"
 cat >"$tmp/harness/kvm-run.sh" <<'EOF'
 #!/bin/sh
-log="" status="" cwd="" timeout=""
+log="" status="" cwd="" timeout="" modules=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--log) log=$2; shift 2 ;;
 	--status) status=$2; shift 2 ;;
 	--cwd) cwd=$2; shift 2 ;;
 	--timeout) timeout=$2; shift 2 ;;
+	--module) modules="$modules $2"; shift 2 ;;
 	--) shift; break ;;
 	*) shift ;;
 	esac
 done
+# With COVTEST_MODULES set (a file), each guest's --module names go in it, one line per guest: "<package>:<names>".
+[ -z "${COVTEST_MODULES:-}" ] || echo "${cwd#/src/}:$modules" >>"$COVTEST_MODULES"
 # With COVTEST_GUEST set (a directory), the guest's own /bin/sh -c script runs here, its /tmp moved under that
 # directory and its test binary a stand-in that records its arguments, so a case can read the -test.timeout the
 # suite would get against the guest's --timeout.
@@ -268,6 +271,46 @@ VM_SUITE_TIMEOUT="1500 internal/doctor=3000"
 run 2 "a VM_SUITE_TIMEOUT that is not plain seconds is refused before anything is made" --vm -o "$tmp/spec" doctor
 absent "a VM_SUITE_TIMEOUT that is not plain seconds" "$tmp/spec"
 unset COVTEST_GUEST VM_SUITE_TIMEOUT
+
+# The guests load root-suites.sh's kernel modules (test/vm/suites.sh's GUEST_MODULES). They once loaded none, and
+# without tcp_diag the dashboard refuses every sign-in, so internal/control/web's and internal/control/cli's suites
+# failed in every coverage guest. VM_MODULES names others (empty: none). A kernel-matrix row's kernel has no module
+# package for kvm-run.sh to fetch, so its guests load none unless VM_MODULES names the row's own, and the run says so.
+guest_modules=$(bash -c '. "$1"; echo "${GUEST_MODULES[*]}"' _ "$here/../test/vm/suites.sh")
+case " $guest_modules " in
+*" tcp_diag "*) echo "ok   suites.sh's GUEST_MODULES has tcp_diag" ;;
+*) echo "FAIL suites.sh's GUEST_MODULES lacks tcp_diag, which the dashboard's sign-ins need: $guest_modules" >&2; fail=1 ;;
+esac
+COVTEST_MODULES="$tmp/modules"
+export COVTEST_MODULES
+# modules_case NAME WANT [ENV=VALUE...]: a --vm run of the two dashboard packages, under the ENV given, boots each
+# guest with exactly WANT's modules.
+modules_case() {
+	mname=$1 mwant=$2
+	shift 2
+	: >"$COVTEST_MODULES"
+	for kv in "$@"; do export "${kv?}"; done
+	run 0 "$mname" --vm -o "$tmp/modules-out" control/web control/cli
+	for kv in "$@"; do unset "${kv%%=*}"; done
+	for p in internal/control/web internal/control/cli; do
+		mgot=$(sed -n "s#^$p: *##p" "$COVTEST_MODULES")
+		if [ "$mgot" != "$mwant" ]; then
+			echo "FAIL $mname: $p's guest loads \"$mgot\", want \"$mwant\"" >&2
+			fail=1
+		fi
+	done
+}
+modules_case "every guest loads root-suites.sh's modules" "$guest_modules"
+has "the default modules" "^== each guest loads: $guest_modules$" "$tmp/out"
+modules_case "VM_MODULES names the modules" "tcp_diag" VM_MODULES=tcp_diag
+modules_case "an empty VM_MODULES loads none" "" VM_MODULES=
+modules_case "a kernel that is not a row's loads the default" "$guest_modules" TEGO_VM_KERNEL=6.17.0-1022-azure
+modules_case "a row's kernel loads none by default" "" TEGO_VM_KERNEL=matrix-debian-13
+has "a row's kernel" "fetch-kernel.py --modules debian-13 extracts the row's own" "$tmp/out"
+modules_case "a row's kernel loads the modules VM_MODULES names" "overlay crc32c_generic btrfs unix_diag tcp_diag" \
+	TEGO_VM_KERNEL=matrix-debian-13 "VM_MODULES=overlay crc32c_generic btrfs unix_diag tcp_diag"
+lacks "a row's kernel with VM_MODULES" "fetch-kernel.py --modules" "$tmp/out"
+unset COVTEST_MODULES
 
 # The suites and helpers are root-suites.sh's own: a run over every package boots one guest for each package
 # root-suites.sh runs and builds each helper the guests' tests `go build` at run time (a missing one dies in

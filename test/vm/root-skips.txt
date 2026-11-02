@@ -19,6 +19,7 @@ internal/platform/sys TestPidfdSignalBlockedThreadHelper # helper process for Te
 internal/platform/sys TestInheritedHelper # helper process for TestInheritedKinds, TestInheritedSealed and TestInheritedRefusesStdio
 internal/platform/sys TestCloseInheritedFromHelper # helper process for TestCloseInheritedFrom
 internal/cli TestStopLockHolderHelper # helper process that holds a run's lock as the stand-in launcher for the stop tests
+internal/control/web TestHelperLockHolder # helper process that holds a run's lock as the stand-in launcher for the dashboard Stop tests
 internal/runtime TestLockHolderHelper # helper process that holds a run's lock for the sweep reclaim test
 internal/runtime TestHeldFileHolderHelper # helper process that holds a file for the adoption held-file count's root test
 internal/runtime TestOutlivesLauncherHelper # helper process for TestIntegrationEnforcementOutlivesItsLauncher
@@ -86,6 +87,8 @@ internal/runtime/cgroup TestIntegrationMountAgrees # the delegated candidate is 
 internal/runtime/cgroup TestIntegrationDetectRefusesTheHostTree # the delegated subtree is chosen only for an unprivileged launcher
 internal/cli TestIntegrationPresetsAtTierLandlock # the presets end to end at tier landlock, the unprivileged launch: as root (sudo) the agent runs as the invoking user, who cannot reach the test's private directories; the unprivileged integration step runs it
 internal/cli TestIntegrationInitPresetRunsAtTierLandlock # tego init --preset then tego run, at tier landlock, the unprivileged launch: as root (sudo) the agent runs as the invoking user, who cannot reach the test's private directories; the unprivileged integration step runs it
+internal/cli TestIntegrationLiftGrantRestoreOnALiveLauncher # tego lift, grant and restore against an Adjustable run at tier landlock, the unprivileged launch: as root (sudo) the agent runs as the invoking user, who cannot reach the test's private directories; the unprivileged integration step runs it, and internal/runtime's TestIntegrationAdjustableFenceLiftAndRestore runs a root launcher's fence
+internal/cli TestIntegrationReceiptOfAScriptedRunAtTierLandlock # tego run of a scripted agent, an approved ask, then tego receipt --json, at tier landlock, the unprivileged launch: as root (sudo) the agent runs as the invoking user, who cannot reach the test's private directories; the unprivileged integration step runs it
 
 # Root reads what mode bits refuse, so a case that needs a refusal cannot be staged.
 internal/runtime/enforce/cgroup TestPinsRemoveKeepsTheBuildUnderAPlaneItCannotRemove # root bypasses directory write mode bits, so the stuck-plane removal refusal cannot be staged; the unprivileged unit and integration suites exercise it
@@ -112,6 +115,7 @@ internal/handoff TestHandoffMemfdNoexecOnTheKernel # a kernel without vm.memfd_n
 internal/runtime/enforce/cgroup TestDistinctMountsSeparatesThisHostsMountsOfOneDevice # needs two reachable mounts of one device, which a host may not have
 internal/runtime/observe TestIntegrationKernelRecordCapturesOpenSSL30 # needs TEGO_OPENSSL30_LIB, a directory holding an OpenSSL 3.0 libssl.so.3, which neither the runner nor the guest has
 internal/runtime/observe TestIntegrationKernelRecordCapturesTheAnthropicSDK # needs TEGO_ANTHROPIC_SITE, an Anthropic SDK site directory (test/e2e/pydeps.sh), which neither the runner nor the guest has
+internal/control/web TestLogsWarmBudget # opt-in: measures only a demo-shaped ledger directory named in TEGO_LOGS_BENCH_DEMO, which neither the runner nor the guest has
 internal/bpf TestPlaneLoadsAndAttaches/decide_pr/lsm # LSM mode needs bpf in the active LSM list, which a hosted runner and TEGO_VM_LSM=kernel lack; the default guest boot runs it
 internal/bpf TestPlaneLoadsAndAttaches/decide_rd/lsm # the same, for the bpf_rdonly_cast build
 internal/bpf TestPlaneLoadsAndAttaches/decide_rd # a kernel without bpf_rdonly_cast in BTF (AL2023 6.1) cannot load the rd build; the pr build runs there

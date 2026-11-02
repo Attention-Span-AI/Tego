@@ -250,21 +250,28 @@ ensure_config() {
   fi
 }
 
-# rotate_ledger moves a ledger that holds runs to <ledger>.old-<time> (its .rule-changes journal goes with it),
-# starts an empty one (mode 0700) and deletes all but the newest DEMO_KEEP_LEDGERS old ones.
+# OLD_MARK is the file rotate_ledger leaves in each ledger it moves aside, naming the folder it moved it to, so the
+# prune knows its own: a <ledger>.old-* folder you made has no mark, and a copy or a rename of a moved one names
+# another folder, so neither is ever deleted.
+OLD_MARK=.moved-by-demo-sh
+
+# rotate_ledger moves a ledger that holds runs to <ledger>.old-<time> (its .rule-changes journal goes with it) and
+# marks it, starts an empty one (mode 0700) and deletes all but the newest DEMO_KEEP_LEDGERS of the old ones it marked.
 rotate_ledger() {
   case $DEMO_LEDGER in '' | / | "$HOME") die "refusing to rotate the ledger '$DEMO_LEDGER'" ;; esac
   if [ -d "$DEMO_LEDGER" ] && [ -n "$(ls -A "$DEMO_LEDGER" 2>/dev/null)" ]; then
     old=$DEMO_LEDGER.old-$(date +%y%m%d-%H%M%S)
     run mv "$DEMO_LEDGER" "$old"
+    printf '%s\n' "$old" >"$old/$OLD_MARK"
   fi
   mkdir -p "$DEMO_LEDGER"
   chmod 700 "$DEMO_LEDGER"
   note "ledger: $DEMO_LEDGER (empty, mode 0700)"
   n=0
-  # ls -t is the newest-first order; the names are this script's own <ledger>.old-<date>, with no newline in them.
+  # ls -t is the newest-first order. A marked name is this script's own <ledger>.old-<date>, with no newline in it.
   # shellcheck disable=SC2012
   ls -dt "$DEMO_LEDGER".old-* 2>/dev/null | while IFS= read -r d; do
+    [ ! -L "$d" ] && [ -f "$d/$OLD_MARK" ] && [ "$(head -n 1 "$d/$OLD_MARK" 2>/dev/null)" = "$d" ] || continue
     n=$((n + 1))
     if [ "$n" -gt "$DEMO_KEEP_LEDGERS" ]; then rm -rf "$d"; echo "deleted the old ledger $d (keeping the newest $DEMO_KEEP_LEDGERS)"; fi
   done
@@ -786,26 +793,156 @@ cmd_backup() {
 
 # ---- proof ----
 
-# PROOF_ROWS formats `tego events` tables read on stdin: argv is the stage, the mode (refused: the enforced run's
-# refusals; watched: the watched run's events), the attacker's port and the agent's name. It keeps only the attack's rows: a refusal by a
-# deny_read or ask_read entry or a live block, the key or token path, a send to the attacker's port. It prints seq,
-# verdict, rule and detail with the stage folder shortened to <stage>, never cut, then how many rows there were in
-# all. A row splits on the table's separator, two spaces: the rule is the text up to the first such gap after the
-# verdict and the detail all the rest, so a cell that held two spaces in a row would print split at them, but the key's
-# path, the token's and the port stay in the detail and the attack row is never dropped.
+# PROOF_ROWS formats the lines of `tego events --json` read on stdin: argv is the stage, the mode (refused: the
+# enforced run's refusals; watched: the watched run's events), the attacker's port and the agent's name. It keeps
+# only the attack's rows: a refusal by a deny_read or ask_read entry or a live block, the key or token path, a send to
+# the attacker's port. It prints seq, verdict, rule and detail, each cell as the table of `tego events` writes it,
+# with the stage folder shortened to <stage>, never cut, then how many rows there were in all. It reads the stored
+# lines, not that table: the table's cells are split by two spaces, so a rule or a path holding two spaces in a row
+# printed split, and a time cell that names its zone moved every column after it. The cells are the table's own
+# (internal/check/events: verdictCell, ruleCell, Summary, each through record.Printable, which escapes every control
+# and invisible character the agent may have put in a path); TestProofRowsReadLikeTheEventsTable holds them to it.
 # shellcheck disable=SC2016 # Python source, not shell
 PROOF_ROWS='
-import re, sys
+import decimal, json, math, re, sys, unicodedata
 stage, mode, port, agent = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 to_port = re.compile(":" + re.escape(port) + "([^0-9]|$)")
-row = re.compile(r"^(\d+)\s+\S+\s+\S+\s+\S+\s+(\S+)\s+(.+?)(?:\s{2,}(.*))?$")
+
+class Num(str):
+    pass  # a JSON number as the line spells it
+
+def text(e, k):
+    v = e.get(k)
+    return v if isinstance(v, str) and not isinstance(v, Num) else ""
+
+def first(e, *keys):
+    return next((text(e, k) for k in keys if text(e, k)), "")
+
+def num(v):  # events.numberText
+    if not isinstance(v, Num):
+        return ""
+    try:
+        return str(int(v))  # an integer as written, past int64 too
+    except ValueError:
+        pass
+    f = float(v)
+    if math.isinf(f):  # past float64, or an integer too long for int(): as written
+        return str(v)
+    if f != math.trunc(f) or f >= 2**63 or f < -2**63:
+        return format(decimal.Decimal(repr(f)), "f")
+    return str(int(f))
+
+SPACE = "\t\n\v\f\r \x85\xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
+
+def trim(s):  # strings.TrimSpace
+    return s.strip(SPACE)
+
+def usage(e):
+    u = e.get("usage")
+    if not isinstance(u, dict):
+        return ""
+    i, o = num(u.get("input")) or "0", num(u.get("output")) or "0"
+    return "" if i == "0" and o == "0" else "in=" + i + " out=" + o
+
+def summary(e):  # events.Summary
+    k, t = e.get("kind"), lambda key: text(e, key)
+    if k == "run_start":
+        d = "tier=" + t("tier") + " capture=" + t("capture") + " " + t("kernel")
+        if t("run_command_grant"):
+            d += " run_command_grant=" + t("run_command_grant")
+        cells = e.get("best_effort")
+        if isinstance(cells, list) and cells:
+            d += " best_effort=" + ",".join(c for c in cells if isinstance(c, str) and not isinstance(c, Num))
+        return d
+    if k == "run_end":
+        return "reason=" + t("reason") + (" exit=" + num(e.get("exit_code")) if num(e.get("exit_code")) else "")
+    if k == "exec":
+        d, argv = t("path"), e.get("argv")
+        if isinstance(argv, list) and argv:
+            d = " ".join(a if isinstance(a, str) and not isinstance(a, Num) else "" for a in argv)
+        if t("command_rule"):
+            d += " command=" + t("command_list") + ":" + t("command_rule")
+            if t("command_match") == "ambiguous":
+                d += " (ambiguous)"
+            if t("command_via") not in ("", "name"):
+                d += " via=" + t("command_via")
+        return d
+    if k == "fs":
+        d = t("op") + " " if t("op") else ""
+        d += t("path")
+        if num(e.get("count")) not in ("", "0"):
+            d += " x" + num(e.get("count"))
+        return d + (" (alternate for " + t("alternate_for") + ")" if t("alternate_for") else "")
+    if k == "net":
+        return t("proto") + " " + t("dst") + (" (" + t("host") + ")" if t("host") else "")
+    if k == "ssl_request":
+        return t("method") + " " + t("host") + t("path")
+    if k == "ssl_response":
+        st = num(e.get("status"))
+        return trim((st + " " if st else "") + t("model") + " " + usage(e))
+    if k == "decision":
+        return "tool " + t("tool") if t("tool") else t("why")
+    if k == "gap":
+        return t("what") + ": " + t("why")
+    if k == "limit":
+        return t("which") + "=" + num(e.get("value")) + " ceiling=" + num(e.get("ceiling"))
+    if k == "refused":
+        return trim(t("op") + " " + first(e, "target", "path", "dst"))
+    if k == "mcp":
+        return trim(first(e, "server", "name") + " " + t("transport")) + (" call " + t("tool") if t("tool") else "")
+    if k == "ask":
+        return trim(t("hold") + (" read" if t("op") == "read" else "") + " " + first(e, "target", "path", "dst"))
+    if k == "answer":
+        a = e.get("approved")
+        if t("alternate"):
+            d = "alternate " + t("alternate") + " (not the file asked for)"
+        elif a is True:
+            d = "approved"
+        elif t("answer_reason"):
+            d = "refused " + t("answer_reason")
+        else:
+            d = "not approved" if a is False else ""
+        d += " by " + t("by") if t("by") else ""
+        return trim(d + (" after " + num(e.get("after_s")) + "s" if num(e.get("after_s")) else ""))
+    if k == "boundary":
+        return trim(t("dst") + " " + t("propagated"))
+    return ""
+
+ESC = {7: "a", 8: "b", 9: "t", 10: "n", 11: "v", 12: "f", 13: "r"}
+
+def hidden(c):  # record.Printable escapes it: a control, or record.Invisible
+    if c < 0x80:
+        return c < 0x20 or c == 0x7f
+    if c <= 0x9f or 0x202a <= c <= 0x202e or 0x2066 <= c <= 0x2069 or c in (0x061c, 0x200e, 0x200f):
+        return True  # C1, and the bidi controls by code point, whatever Unicode tables this python3 has
+    return 0xe0000 <= c <= 0xe007f or unicodedata.category(chr(c)) in ("Cf", "Zl", "Zp")
+
+def printable(s):  # record.Printable; a lone surrogate is the U+FFFD Go decodes it to
+    out = []
+    for ch in s:
+        c = ord(ch)
+        if 0xd800 <= c <= 0xdfff:
+            out.append("\ufffd")
+        elif not hidden(c):
+            out.append(ch)
+        elif c in ESC:
+            out.append("\\" + ESC[c])
+        else:
+            out.append("\\x%02x" % c if c < 0x80 else "\\u%04x" % c if c < 0x10000 else "\\U%08x" % c)
+    return "".join(out)
+
 kept, total = [], 0
-for line in sys.stdin.read().splitlines():
-    m = row.match(line.rstrip())
-    if not m:
+for raw in sys.stdin.buffer:
+    try:
+        e = json.loads(raw.decode("utf-8", "replace"), parse_int=Num, parse_float=Num)
+    except Exception:
+        continue
+    if not isinstance(e, dict):
         continue
     total += 1
-    seq, verdict, rule, detail = m.group(1), m.group(2), m.group(3).strip(), (m.group(4) or "").strip()
+    seq, v, why = num(e.get("seq")), text(e, "verdict"), text(e, "reason")
+    verdict = printable(v + ":" + why if v and why else v or why or "-")  # events.verdictCell
+    rule, detail = printable(text(e, "rule") or "-"), printable(summary(e))  # ruleCell, Summary
     secret = "/home/.ssh/id_rsa" in detail or "/home/.config/telemetry/token" in detail
     if mode == "refused":
         keep = rule.startswith(("fs.deny_read[", "fs.ask_read[", "live.block[")) or secret or bool(to_port.search(detail))
@@ -892,14 +1029,14 @@ cmd_proof() {
     say "RIGHT ($right_head): what Tego refused of the attack"
     other_runs "enforced" "$right_runs" "$right_run"
     printf '$ %s events %s --kind refused   (the attack rows: the key, the token, port %s; <stage> is %s)\n' "$(shq "$TEGO_BIN")" "$right_run" "$DEMO_PORT_RIGHT" "$stage_show"
-    env "TEGO_CONFIG=$DEMO_CONFIG" "$TEGO_BIN" events "$right_run" --kind refused 2>/dev/null | python3 -c "$PROOF_ROWS" "$STAGE" refused "$DEMO_PORT_RIGHT" "$AGENT_NAME" || true
+    env "TEGO_CONFIG=$DEMO_CONFIG" "$TEGO_BIN" events "$right_run" --kind refused --json 2>/dev/null | python3 -I -c "$PROOF_ROWS" "$STAGE" refused "$DEMO_PORT_RIGHT" "$AGENT_NAME" || true
     runtego events "$right_run" --verify
   fi
   if [ -n "$left_run" ]; then
     say "LEFT ($left_head): $left_what"
     other_runs "watched" "$left_runs" "$left_run"
     printf '$ %s events %s   (the attack rows: the key, the token, port %s; <stage> is %s)\n' "$(shq "$TEGO_BIN")" "$left_run" "$DEMO_PORT_LEFT" "$stage_show"
-    env "TEGO_CONFIG=$DEMO_CONFIG" "$TEGO_BIN" events "$left_run" 2>/dev/null | python3 -c "$PROOF_ROWS" "$STAGE" watched "$DEMO_PORT_LEFT" "$AGENT_NAME" || true
+    env "TEGO_CONFIG=$DEMO_CONFIG" "$TEGO_BIN" events "$left_run" --json 2>/dev/null | python3 -I -c "$PROOF_ROWS" "$STAGE" watched "$DEMO_PORT_LEFT" "$AGENT_NAME" || true
     runtego events "$left_run" --verify
   fi
   [ -n "$right_run" ] || [ -n "$left_run" ] || note "no run yet: run ./demo.sh backup, or a take"

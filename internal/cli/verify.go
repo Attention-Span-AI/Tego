@@ -48,7 +48,7 @@ type verifyJSON struct {
 // attests nothing.
 func runVerify(ctx context.Context, ref string, asJSON bool, stdout, stderr io.Writer) int {
 	mc := &machineOnce{stderr: stderr}
-	dir, err := resolveRunDir(ref, false, mc)
+	dir, err := resolveRunDir("events", ref, false, mc)
 	if err != nil {
 		return runRefFailed(stderr, "events", err)
 	}

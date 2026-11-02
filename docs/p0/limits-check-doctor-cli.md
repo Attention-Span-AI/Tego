@@ -728,6 +728,27 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   does not verify, and a directory the caller named that holds some other unreadable record stays 125.
   A bare run id always names the run under the ledger root, never a directory of that name in the current
   directory (the agent knows its id and can write the project); `./<id>` names the local directory.
+  (*Amended 2026-11-02, H08:*) every command that resolves its `<run>` as `events` does (`events` with
+  `--verify` or `--follow` too, `drift`, `measure`, `learn`, `receipt`, `rule`, `block`, `unblock`, `lift`,
+  `grant`, `restore`, `pause`, `resume`, `mcp`, `route`) also takes an abbreviation: four or more characters from
+  the end of a run id (`28t5cy` for `r-00000000-0dmktimu5hrut-28t5cy`), or its start up to at least four
+  characters past `r-<host8>-` (`r-00000000-0dmk`), which names the one run under the ledger root whose id ends or
+  starts with them and is then read as that whole id. A start counts past `r-<host8>-` because every run minted on
+  one host begins with it: counted from the first character, `r-00` named whichever one run the root held. One that
+  two or more runs have is 2 `[usage]` "names more than one run", naming them newest first, five at most; one that
+  no run has is 2 `[usage]` "no such run"; and text that could start or end a run id but is too short for either
+  is 2 `[usage]` "is not a run id", saying how much is enough. Text that could do both (`r-abcdef`) is held to each
+  end's own count, so it names a run by its end. Matched or not, such an argument never names a directory in the
+  current directory, as a whole id never does (the agent knows every start and end of its id); when one is there,
+  the error says `./<name>` names the local directory, and an abbreviation that names a run prints a note on stderr
+  naming both (`tego events: note: 28t5cy names run <id> under <root>; ./28t5cy names the local directory`), since
+  the same bare name read that directory before. It is expanded from the names under the ledger root, so
+  `events --verify` of a run whose directory is gone needs the whole id, and a root that cannot be listed is 125
+  `[io]`. `status`, `stop`, `ask`, `approve`, `deny` and `alternate`, which take a run by its id alone, take the
+  same abbreviation with the same counts and errors, and name the run by its whole id wherever they name it; they
+  never read a directory, so a local one of the same name changes nothing and no note names it. In the
+  one-argument form of `ask`, an argument that begins `q-`, or is too short for a run, is "neither a run id nor an
+  ask id".
   An `events.jsonl` that holds no `run_start` (empty, a torn line alone, a first line of another kind) is no
   run: `events`, `drift`, `measure` and, when no anchor line names the run, `events --verify` exit 125 `[io]`
   "no run record", never an empty report of a complete run. Bytes after `run_end` that are not a record exit
@@ -1465,7 +1486,11 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   kernel state released. A signal before that point — after the contract compiled, during the probe, the sweep
   or the capture sources' construction — refuses the run instead: `tego run: interrupted before the agent
   started; nothing was run [run]`, exit 125, nothing launched, and a probe it cut short is reported so, never as
-  `[tier-unavailable]` (`TestRunInterruptedBeforeStartLaunchesNothing`). Durations on the command line (`gc --keep`, `stop --grace`) take the machine config's
+  `[tier-unavailable]` (`TestRunInterruptedBeforeStartLaunchesNothing`). A watch's line says `tego watch:`, and an
+  adoption with a boundary that is interrupted while the boundary loads or compiles, or while its tier is probed,
+  says `tego adopt: interrupted before the adoption; nothing was adopted [run]`, exit 125 (*added 2026-11-02*,
+  `TestInterruptedBeforeStartNamesTheCommand`); a signal after that reaches the adoption itself, which ends as its
+  release does, giving back what it took. Durations on the command line (`gc --keep`, `stop --grace`) take the machine config's
   duration grammar, `config.ParseDuration` — `30d`, `12h`, `90s`, never negative — so they take what the config
   file and gc's own output say; an explicit flag is told from an absent one by `fs.Visit`, not by its value, and
   a value the grammar refuses is a usage error, 2. The commands:
@@ -1519,7 +1544,17 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     pins nothing, as `tier: auto` does in a contract, and `landlock`, `cgroup` or `bpflsm`; `--tier observe` is a
     usage error, 2, naming `--observe`; a bad `--record` or `--tier` value is a usage error, 2, before the
     contract is compiled. Every run with `--observe` or `--record off` in effect prints an `[unenforced]` warning
-    saying so on stderr. A run of an auto contract below the tier `compile` resolved it to prints no
+    saying so on stderr. A contract's own `record: off`, or a profile's it extends, prints nothing before the agent
+    starts: it is what the contract wrote and weakens no rule (*A quiet start*, below). `tego compile` notes it,
+    `[record-off]` at the line that set it, a profile's when the contract extends one, and `run -v` and `watch -v`
+    print that note at the start; a `--record` given leaves it out (`--record off` has its own warning, and a raised
+    record keeps the run's actions). The run's end says it: the summary's line, and a watch's footer, say `record
+    off: refusals only` before the chain clause for every run whose record was off, by the contract, a profile or
+    `--record off`, and the footer then has no `seen:` line, whose counts such a ledger does not hold (*added
+    2026-11-02*: such a run said nothing of it, and a watch's footer read `seen: no connections` off a ledger that
+    records none, `TestRunSaysTheContractsRecordOffAtItsEnd`,
+    `TestRecordOffRunSaysSoAtItsEnd`, `TestRecordOffIsNotedWhereTheContractSetsIt`,
+    `TestTheContractsRecordOffIsACompileNote`). A run of an auto contract below the tier `compile` resolved it to prints no
     `[tier-unavailable]` warning, and an untrusted machine config's refusal carries its fix, as `compile`'s and
     `doctor`'s warning does.
 
@@ -1527,9 +1562,12 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     person's action (an error, with its fix) or when this run enforces less than the contract wrote (a warning
     about a rule: an unenforced or best-effort rule, a refused tier, a budget nothing counts). A note that only says
     how a rule applies and weakens nothing is left out of the start: a `[held-reads]` note, a `[redundant-rule]`
-    note, and a `[mount]` note that a path is a mount point (`/dev/pts/`). `tego compile` prints every one, as it
-    always did (`doctor` checks the machine and compiles no contract); `run -v` (`--verbose`) prints them at the
-    start too. A warning that weakens a rule is never hidden by the filter, and the AppArmor/SELinux disclosure of
+    note, a `[mount]` note that a path is a mount point (`/dev/pts/`), and a `[record-off]` note that the
+    contract's own `record: off` keeps only a run's refusals, which the run's end says instead (`record off: refusals
+    only`, *amended 2026-11-02*). `tego compile` prints every one, as it always did (`doctor` checks the machine and
+    compiles no contract); `run -v` (`--verbose`) prints them at the start too. The `--record off` and `--observe`
+    flags keep their warning (R29): the person typing them may not have meant to. A warning that weakens a rule is
+    never hidden by the filter, and the AppArmor/SELinux disclosure of
     held opens (ADR 0041 D2, `[unenforced]`) stays as one short line naming its fix. The run's record is unchanged:
     the filter is on the terminal only, and the contract the run recorded (its copy and `contract_hash`) compiles
     to the same notes. `status` omits the `record/no-price-table` gap from its gap line for a run whose
@@ -1581,12 +1619,16 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   - `watch [--boundary <contract>] [--tier <t>] [--record <full|summary|off>] [--offline] -- <command> [args]` (ADR 0054): run any command as a black box. With no `--boundary` it is a record-only (observe) run under a
     generated contract and says on stderr, before the run, what it still refuses and does not record; with one it is
     `run` with the command given on the line. Usage errors exit 2 (no command, `--tier` without `--boundary`, a record
-    level `run` does not take); the command's own exit code is the exit code, as for `run`.
+    level `run` does not take); the command's own exit code is the exit code, as for `run`. tego's own lines on its
+    run's path say `tego watch:` where a run's say `tego run:`, as an adoption's say `tego adopt:` (*added
+    2026-11-02*: the name is written into each line, so a path or a program's name a line quotes stays as typed).
   - `agents [--signature <rule>]... [--follow] [--children] [--json] [--no-default-signatures]` (root of the
     initial user namespace, else 125 `[privilege]`): list processes a signature recognises as an agent and say whether each
     runs inside a tego run; `--follow` reports starts and exits. It only observes, except as the guard: `--follow --adopt
     --uid <uid>... [--boundary <contract>] [--record <mode>]` adopts (as `adopt` below) each agent it reports outside every run
     whose real, effective and saved uid are one listed uid; `--adopt` without `--follow` or without `--uid` is a usage error (2).
+    Its adoptions' lines say `tego adopt:`, the boundary's refusals as the guard starts included (the name refused, its
+    rules, its tier), and its own say `tego agents:`, the machine config's refusal and the boundary it cannot hold.
   - `adopt --pid <pid> [--uid <uid>]... [--boundary <contract>] [--record <full|summary|off>]` and `adopt --release --pid <pid>`
     (ADR 0055; root of the initial user namespace, else 125 `[privilege]`): move an already-running agent's own
     process tree into `adopt-<run>.scope` and record it from the kernel until the tree ends (the agent's exit) or it is released
@@ -1855,11 +1897,36 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   `status`, `events`, `drift` and `measure` give the same answers on the command line, each with `--json`.
 
 **Changes.** R1's changes are listed under R1.
+- 2026-11-02, R25 run argument (H08): every command that resolves `<run>` as `events` does takes four or more
+  characters from the end of a run id, or its start up to four or more past `r-<host8>-`, for the one run under the
+  ledger root that has them, where it took only the whole id; two or more runs that have them are a usage error
+  naming them. Such an argument, matched or not, never names a directory in the current directory: a bare name the
+  old resolution did not take for a run id was read as a local directory, so `tego events 28t5cy` in the project
+  read a `./28t5cy/` the agent had planted (`TestARunAbbreviationNamesOneRun`, `TestAnAmbiguousRunAbbreviationIsUsage`,
+  `TestARunAbbreviationThatNamesNoRunNamesNoDirectory`). A start counted from the id's first character let `r-00`
+  name whichever one run the root held, for `pause` and `block` as for `receipt` (`TestAbbrevEnds`,
+  `TestARunIDStartCountsPastTheHost`). An abbreviation that named a run while `./<name>` was a local directory read
+  the run with no word on stderr, where the same command read the directory before; a note now names both
+  (`TestARunAbbreviationNamesOneRun`). `status`, `stop`, `ask`, `approve`, `deny` and `alternate` answered a
+  well-formed abbreviation with a bare "is not a run id"; they take it too (`TestRunIDOnlyCommandsTakeAnAbbreviation`,
+  `TestAnAbbreviatedRunIsTheRunAnswered`).
 - 2026-11-02, R29 `licenses` (docs/GAPS.md B12): an installed tego or tego-control carried no third-party notice,
   only the release's licenses archive did. Both binaries now embed the licence files (the module root's `notices.go`)
   and print them (`TestLicensesPrintsWhatTheBinaryCarries`, `TestControlLicensesPrintsWhatTheBinaryCarries`); `licenses`
   is the second command each binary has of its own, beside `version` (`TestNoNounInBothBinaries`,
   `TestHandoffNounsMatchControlCommands`), and `scripts/check-licenses.sh` holds the embedded set to its list.
+- 2026-11-02, R29 `watch` and `adopt`: the lines of the run's path name the command typed. watch's went through a
+  writer that rewrote every `tego run: ` to `tego watch: `, a program's path holding the words included, and adopt's
+  said `tego run:` for a boundary name the registries refuse, the boundary's tier refusal and an interrupt, as
+  `adopt` and `agents --adopt` did for a machine config they refuse (`TestWatchQuotesTheCommandLineAsTyped`,
+  `TestAdoptTierRefusalNamesTegoAdopt`, `TestAdoptConfigRefusalNamesTheCommand`).
+- 2026-11-02, R29 `run` and `watch`: a run whose record was off, by its contract's `record: off`, a profile's or
+  `--record off`, says `record off: refusals only` at its end, in the summary's line and a watch's footer, which no
+  longer reads `seen: no connections · no sensitive file read` off a ledger that records neither. A contract's own
+  `record: off` is no start notice (the quiet start: it is what the contract wrote) but a compile note,
+  `[record-off]` at the line that set it, which `run -v` prints too, where a run whose ledger the contract cut to
+  its refusals said nothing of it (`TestRunSaysTheContractsRecordOffAtItsEnd`, `TestRecordOffRunSaysSoAtItsEnd`,
+  `TestRecordOffIsNotedWhereTheContractSetsIt`, `TestTheContractsRecordOffIsACompileNote`).
 - 2026-11-02, R17a (GAPS C30): drift lists the images exec lines flag `fileless` or `dropped`, by path with their
   verdicts, in the table and in `--json` (`fileless_execs`, `dropped_execs`), and never counts them as drift on their
   own. It did not read the keys, so its report of a run's memfd exec or drop-and-execute was a count under

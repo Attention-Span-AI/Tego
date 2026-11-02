@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -87,14 +86,13 @@ func cmdWatch() Command {
 			defer cleanup()
 			sockets := stdioHasSocket(tegoruntime.Stdio{In: os.Stdin, Out: os.Stdout, Err: os.Stderr})
 			fmt.Fprint(stderr, watchNotice(command[0], boundary != "", agent.RecordMode(recordMode), verbose, sockets))
-			// tego's own lines name the command the person typed: the run path's "tego run: " is "tego watch: " here. The
-			// agent's stderr is os.Stderr itself, never this writer, so nothing of the agent's is changed.
-			ws := watchWriter{w: stderr}
+			// tego's own lines name the command the person typed: the run path writes "tego watch: " where a run writes
+			// "tego run: " (runOptions.cmd).
 			return runRun(ctx, runOptions{
-				contract: path, generated: boundary == "", command: command, tier: tier, record: recordMode,
+				cmd: "tego watch", contract: path, generated: boundary == "", command: command, tier: tier, record: recordMode,
 				observe: boundary == "", offline: offline, verbose: verbose, watched: true, noSummary: noSummary,
 				report: func(res tegoruntime.Result, sum *endSummary) { fmt.Fprint(stderr, watchFooter(res, sum)) },
-			}, ws)
+			}, stderr)
 		},
 	}
 }
@@ -235,22 +233,11 @@ func stdioHasSocket(s tegoruntime.Stdio) bool {
 	return false
 }
 
-// watchWriter is the writer watch hands the run path for tego's own lines: each "tego run: " in them reads
-// "tego watch: ", the command the person typed. The run path writes each message with one call, so a prefix
-// is never split across two writes.
-type watchWriter struct{ w io.Writer }
-
-func (ww watchWriter) Write(p []byte) (int, error) {
-	if _, err := ww.w.Write(bytes.ReplaceAll(p, []byte("tego run: "), []byte("tego watch: "))); err != nil {
-		return 0, err
-	}
-	return len(p), nil
-}
-
 // watchFooter is what tego watch says when the run is over: the run, how it ended and what it did (the end summary's
 // numbers, from the receipt), a counts line of the connections it made and the sensitive files it read, which a
-// recording shows and its refusals (none) do not, and where to read the rest. With no summary (--no-summary, or a
-// run that never started) it is watchReport.
+// recording shows and its refusals (none) do not, and where to read the rest. A run whose record was off (--record
+// off, or a boundary's record: off) says "record off: refusals only" and has no counts line, since its ledger holds
+// no connection or read it allowed. With no summary (--no-summary, or a run that never started) it is watchReport.
 func watchFooter(res tegoruntime.Result, sum *endSummary) string {
 	if sum == nil || res.RunID == "" {
 		return watchReport(res)
@@ -258,9 +245,9 @@ func watchFooter(res tegoruntime.Result, sum *endSummary) string {
 	var b strings.Builder
 	run := record.Printable(res.RunID)
 	if sum.rc == nil {
-		fmt.Fprintf(&b, "tego watch: recorded as run %s: ended%s · summary not available (%s) · %s\n", run, sum.ended(), record.Printable(errText(sum.err)), sum.chain)
+		fmt.Fprintf(&b, "tego watch: recorded as run %s: ended%s · summary not available (%s) · %s\n", run, sum.ended(), record.Printable(errText(sum.err)), sum.tail())
 	} else {
-		fmt.Fprintf(&b, "tego watch: recorded as run %s: ended (%s) · %s\n", run, sum.rc.Outcome(), strings.Join(append(sum.counts(true), sum.chain), " · "))
+		fmt.Fprintf(&b, "tego watch: recorded as run %s: ended (%s) · %s\n", run, sum.rc.Outcome(), strings.Join(append(sum.counts(true), sum.tail()), " · "))
 		b.WriteString(sum.seen())
 	}
 	fmt.Fprintf(&b, "  more: tego receipt %[1]s    tego events %[1]s\n", run)

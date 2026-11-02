@@ -51,4 +51,7 @@ skips the typed confirmation.
   `live.fence[read:...]`) was rehearsed as a user with a test build that lets Adjustable run at tier landlock, which
   the product refuses. As root at tier cgroup the same flow is `TestIntegrationAdjustableFenceLiftAndRestore`
   (internal/runtime/livefence_integration_test.go), which passed as root at tiers cgroup and bpflsm in a KVM guest.
+  That test writes its lifts to the run's overlay itself; the commands, `tego lift --for`, `tego grant` and
+  `tego restore` each answered from the launcher's own line, are `TestIntegrationLiftGrantRestoreOnALiveLauncher`
+  (internal/cli/lift_integration_test.go), which CI's unprivileged integration step runs with that test build.
 - The two-minute expiry itself was not run to its end in rehearsal; `live-lift-expired` is covered by the live-layer tests.

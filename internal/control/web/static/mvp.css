@@ -44,8 +44,9 @@ body[data-conn="lost"] .top-right .live::after { content: "· reconnecting"; col
 .toast { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--c-surface); border: 1px solid var(--c-border); border-left: 4px solid var(--c-success); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); font-size: var(--text-sm); overflow-wrap: anywhere; max-height: 40vh; overflow: auto; }
 .toast span { flex: 1 1 auto; min-width: 0; }
 .toast-err { border-left-color: var(--c-danger); }
-/* A toast taller than 40vh scrolls inside itself, its × held at the top in view (QA BR-3). */
-.toast-x { flex: none; border: 0; background: none; color: var(--c-text3); font-size: var(--text-md); line-height: 1; cursor: pointer; padding: 0 2px; position: sticky; top: 0; }
+/* A toast taller than 40vh scrolls inside itself, its × held at the top in view (QA BR-3). The × is a 24 px square, the
+   least target WCAG 2.5.8 allows a finger (it was 12 by 14), drawn into the toast's padding so the toast is no taller. */
+.toast-x { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; margin: -3px -6px -3px 0; border: 0; background: none; color: var(--c-text3); font-size: var(--text-md); line-height: 1; cursor: pointer; padding: 0; position: sticky; top: 0; }
 @media (max-width: 640px) { .toasts { right: 16px; bottom: calc(72px + env(safe-area-inset-bottom)); } }
 .panel-foot #tl-older { margin-left: auto; }
 /* The waiting-ask banner floats: above 640 px it is fixed under the top bar over the content column and takes no

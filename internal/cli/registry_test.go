@@ -16,9 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/doctor"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/internal/watch/adopt"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
+	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -397,8 +399,9 @@ func TestStandardInputIsNoContractForARun(t *testing.T) {
 
 // A boundary adoption makes the owner's ~/.tego before it compiles (makeOwnRecords), so the deny of the owner's own
 // records attaches; a boundary that cannot load is refused before that, with nothing made, as "-" is (the root suites
-// of 2026-10-27 found /root/.tego made before the refusal). The owner's home and the machine's ledger root are the
-// test's (newRegistryWorld's ledger_root, TestMain's isolated machine), never the invoking user's ~/.tego.
+// of 2026-10-27 found /root/.tego made before the refusal). The refusal of a name is tego adopt's: it said tego run,
+// the name run's loader gave it. The owner's home and the machine's ledger root are the test's (newRegistryWorld's
+// ledger_root, TestMain's isolated machine), never the invoking user's ~/.tego.
 func TestAdoptRefusesABoundaryThatCannotLoadBeforeMakingTheOwnersRecords(t *testing.T) {
 	w := newRegistryWorld(t)
 	good := w.contract(t, filepath.Join(w.project, "agent.yaml"), "alpha")
@@ -423,16 +426,19 @@ func TestAdoptRefusesABoundaryThatCannotLoadBeforeMakingTheOwnersRecords(t *test
 		a.cleanup()
 		return home, rt, code, errs.String()
 	}
-	for _, c := range []struct{ name, boundary, code string }{
-		{"a missing file", filepath.Join(w.project, "gone.yaml"), agent.CodePathMissing},
-		{"a name in no registry", "retriever", "agent-not-found"},
-		{"a registry entry of another name", "gamma", "registry-entry"},
-		{"a file that does not load", broken, agent.CodeSchema},
+	for _, c := range []struct{ name, boundary, code, says string }{
+		{"a missing file", filepath.Join(w.project, "gone.yaml"), agent.CodePathMissing, ""},
+		{"a name in no registry", "retriever", "agent-not-found", "tego adopt: "},
+		{"a registry entry of another name", "gamma", "registry-entry", "tego adopt: "},
+		{"a file that does not load", broken, agent.CodeSchema, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			home, rt, code, errs := adopt1(t, c.boundary)
 			if rt != nil || code != identity.ExitLauncher || !strings.Contains(errs, "["+c.code+"]") {
 				t.Fatalf("adopt --boundary %s: table %v, exit %d, want 125 [%s]\n%s", c.boundary, rt != nil, code, c.code, errs)
+			}
+			if !strings.Contains(errs, c.says) || strings.Contains(errs, "tego run") {
+				t.Errorf("adopt --boundary %s: the refusal does not name tego adopt (%q), or names tego run:\n%s", c.boundary, c.says, errs)
 			}
 			if _, err := os.Lstat(filepath.Join(home, ".tego")); !errors.Is(err, fs.ErrNotExist) {
 				t.Fatalf("adopt --boundary %s: the owner's ~/.tego was made before the refusal: %v", c.boundary, err)
@@ -446,6 +452,60 @@ func TestAdoptRefusesABoundaryThatCannotLoadBeforeMakingTheOwnersRecords(t *test
 	}
 	if fi, err := os.Lstat(filepath.Join(home, ".tego")); err != nil || !fi.IsDir() {
 		t.Fatalf("adopt --boundary %s: the owner's ~/.tego after the compile: %v %v, want a directory", good, fi, err)
+	}
+}
+
+// A boundary adoption's tier selection is run's (selectBackend), and its refusal names tego adopt: it said tego run.
+func TestAdoptTierRefusalNamesTegoAdopt(t *testing.T) {
+	w := newRegistryWorld(t)
+	good := w.contract(t, filepath.Join(w.project, "agent.yaml"), "alpha")
+	m, _, err := loadMachine(config.TrustAbort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	prevHome, prevProbe := adoptHomeOf, probeMachine
+	t.Cleanup(func() { adoptHomeOf, probeMachine = prevHome, prevProbe })
+	adoptHomeOf = func(int) (string, error) { return home, nil }
+	probeMachine = func(context.Context, *config.Machine, backend.Tier) (*doctor.Report, error) {
+		return nil, errors.New("doctor: tier cgroup needs root")
+	}
+	var errs bytes.Buffer
+	a, code := prepareAdoption(t.Context(), m, adoptOptions{boundary: good}, adopt.Process{}, os.Getuid(), &errs)
+	if out := errs.String(); a != nil || code != identity.ExitLauncher ||
+		!strings.Contains(out, "tego adopt: doctor: tier cgroup needs root ["+backend.CodeTierUnavailable+"]") || strings.Contains(out, "tego run") {
+		t.Fatalf("adopt --boundary %s with no tier: prepared %v, exit %d, want 125 [%s] naming tego adopt\n%s",
+			good, a != nil, code, backend.CodeTierUnavailable, out)
+	}
+}
+
+// The guard (tego agents --follow --adopt --boundary) prepares its boundary as an adoption does (adoptPrepare), so the
+// lines of that preparation are an adoption's and say tego adopt, as every line of its adoptions does: here a name the
+// registries refuse. The guard's own line, the boundary it cannot hold, says tego agents, and nothing says tego run.
+func TestGuardBoundaryRefusalNamesTegoAdopt(t *testing.T) {
+	newRegistryWorld(t)
+	sandboxAgents(t, t.TempDir(), true)
+	home := t.TempDir()
+	prev := adoptHomeOf
+	t.Cleanup(func() { adoptHomeOf = prev })
+	adoptHomeOf = func(int) (string, error) { return home, nil }
+	code, _, errs := runAgentsCmd(t, "--follow", "--adopt", "--uid", "1000", "--boundary", "retriever")
+	var refused, held string
+	for _, line := range strings.Split(errs, "\n") {
+		switch {
+		case strings.Contains(line, "[agent-not-found]"):
+			refused = line
+		case strings.Contains(line, "cannot be held on uid 1000's adopted processes"):
+			held = line
+		}
+	}
+	if code != identity.ExitLauncher || !strings.Contains(refused, "tego adopt: ") || !strings.HasPrefix(held, "tego agents: the boundary retriever ") ||
+		strings.Contains(errs, "tego run") {
+		t.Fatalf("the guard with a boundary no registry holds: exit %d, want %d, the name refused by tego adopt and the boundary "+
+			"by tego agents, never tego run:\n%s", code, identity.ExitLauncher, errs)
+	}
+	if _, err := os.Lstat(filepath.Join(home, ".tego")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the refusal made the owner's ~/.tego first: %v", err)
 	}
 }
 

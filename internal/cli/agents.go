@@ -169,7 +169,7 @@ func runAgents(ctx context.Context, rules sig.List, follow, children, asJSON boo
 		m, cds, err := loadMachine(config.TrustAbort)
 		writeConfigDiagnostics(stderr, cds)
 		if err != nil {
-			configRefused(stderr, err)
+			configRefused(stderr, "tego agents", err)
 			return identity.ExitConfig
 		}
 		makeOwnDirs(m)

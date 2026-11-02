@@ -60,7 +60,7 @@ func retainNow(t *testing.T) string {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	retainBeforeRun(context.Background(), m, &stderr)
+	retainBeforeRun(context.Background(), m, "tego run", &stderr)
 	return stderr.String()
 }
 

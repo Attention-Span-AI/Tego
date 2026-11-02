@@ -17,6 +17,7 @@ Programs: The programs the agent can start.
   Cannot run any other program.
 
 Network: Where the agent can connect.
+  - Cannot send datagrams anywhere it may not connect  [Best effort: tego checks each datagram's address, but sends one it allows by the agent's own call, which a program built to race tego could redirect; built in]
   Cannot connect anywhere.
 
 Settings it gets: Environment variables the agent starts with, by name. Values are never shown here.
@@ -35,8 +36,8 @@ Always on: Protections every run gets, written in no rules file.
 
 Rule keys:
   change fs.write fs.write[./out/] enforced
-  programs exec.allow exec[bash] enforced
-  programs exec.allow exec[git status] best_effort (+1 more)
+  programs exec.allow exec[bash] enforced (+1 more)
+  programs exec.allow exec[git] best_effort
   programs exec.deny exec.deny[git push] best_effort
   programs exec.ask exec.ask[git commit] best_effort
   always-on built-in.deny_read fs.deny_read[$T/home/.ssh] enforced (+1 more)

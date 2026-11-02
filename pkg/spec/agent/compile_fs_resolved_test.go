@@ -74,7 +74,7 @@ func TestEveryFSRuleCarriesResolved(t *testing.T) {
 // a landed connect or datagram is matched against as the supervisor's decideResolved matches it. An abstract name
 // has none.
 func TestUnixEntryCarriesResolved(t *testing.T) {
-	f := newFixture(t)
+	f := newSocketFixture(t, "project/lk/s.sock")
 	real := filepath.Join(f.root, "real")
 	if err := os.MkdirAll(real, 0o755); err != nil {
 		t.Fatal(err)

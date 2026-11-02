@@ -395,6 +395,126 @@ check("a wrong trusted package pin is refused before extraction",
       refused(lambda: m.fetch_rpm(dict(p, _trusted_pin={"package_sha256": "0" * 64}), work)) and not called)
 os.environ.pop("TEGO_VM_KERNEL_MANIFEST")
 
+# A row's own module tree (--modules). kvm-run.sh --module asks apt for linux-modules-<kernel>, which no row's kernel
+# has, so a row's guests can load a module only from the tree fetch-kernel.py extracts from the row's authenticated
+# package into the directory kvm-run.sh reads first. Debian's image package carries its modules beside the image. The
+# stand-in packages are laid out as dpkg-deb lays one out: an ar archive of debian-binary, control.tar.xz and
+# data.tar.xz, whose data holds the image, the release's lib/modules/ under usr/ (merged /usr), its build link, and
+# another release's module that is not the image's.
+import contextlib, io, lzma, tarfile
+
+def deb_bytes(members):
+    data = io.BytesIO()
+    with tarfile.open(fileobj=data, mode="w:xz") as tar:
+        for name, body in members:
+            ti = tarfile.TarInfo(name)
+            if isinstance(body, tuple):
+                ti.type, ti.linkname = tarfile.SYMTYPE, body[1]
+                tar.addfile(ti)
+            else:
+                ti.size, ti.mode = len(body), 0o644
+                tar.addfile(ti, io.BytesIO(body))
+    out = io.BytesIO(b"!<arch>\n")
+    out.seek(0, io.SEEK_END)
+    for name, body in ((b"debian-binary", b"2.0\n"), (b"control.tar.xz", lzma.compress(b"")), (b"data.tar.xz", data.getvalue())):
+        out.write(name.ljust(16) + b"0".ljust(12) + b"0".ljust(6) + b"0".ljust(6) + b"100644".ljust(8)
+                  + str(len(body)).encode().ljust(10) + b"`\n" + body + (b"\n" if len(body) % 2 else b""))
+    return out.getvalue()
+
+rel = "6.12.0-1-amd64"
+def debian_deb(tcp_diag=b"tcp_diag v1", extra=()):
+    return deb_bytes([(f"./boot/vmlinuz-{rel}", b"DEB-IMG"),
+                      (f"./usr/lib/modules/{rel}/kernel/net/ipv4/tcp_diag.ko.xz", tcp_diag),
+                      (f"./usr/lib/modules/{rel}/kernel/net/ipv4/inet_diag.ko.xz", b"inet_diag"),
+                      (f"./usr/lib/modules/{rel}/modules.builtin", b"kernel/fs/ext4/ext4.ko\n"),
+                      (f"./usr/lib/modules/{rel}/build", ("link", f"/usr/src/linux-headers-{rel}")),
+                      ("./usr/lib/modules/6.1.0-9-amd64/kernel/net/ipv4/tcp_diag.ko.xz", b"another release's"),
+                      *extra])
+deb_dir = tempfile.mkdtemp()
+deb_path = os.path.join(deb_dir, "package")
+open(deb_path, "wb").write(debian_deb())
+check("a .deb's image and release are read through its data.tar", m.deb_vmlinuz(deb_path) == (b"DEB-IMG", rel))
+dest = os.path.join(deb_dir, "out", "lib", "modules", "matrix-debian-13")
+kos = m.deb_modules(deb_path, rel, dest)
+written = sorted(os.path.relpath(os.path.join(r, f), dest) for r, _, fs in os.walk(dest) for f in fs)
+check("the release's modules and modules.builtin are written under the tree, and nothing else",
+      kos == 2 and written == ["kernel/net/ipv4/inet_diag.ko.xz", "kernel/net/ipv4/tcp_diag.ko.xz", "modules.builtin"]
+      and open(os.path.join(dest, "kernel/net/ipv4/tcp_diag.ko.xz"), "rb").read() == b"tcp_diag v1")
+# Written as named, the first would land in deb_dir itself, beside the tree's parent.
+for label, bad in (("a .. part", f"./usr/lib/modules/{rel}/kernel/../../../escape.ko.xz"),
+                   ("an empty part", f"./usr/lib/modules/{rel}//escape.ko.xz")):
+    open(deb_path, "wb").write(debian_deb(extra=[(bad, b"escape")]))
+    dest = tempfile.mkdtemp(dir=deb_dir)
+    was_refused = refused(lambda: m.deb_modules(deb_path, rel, os.path.join(dest, "t")))
+    escaped = [os.path.join(r, f) for r, _, fs in os.walk(deb_dir) for f in fs if f == "escape.ko.xz"]
+    check(f"a member whose path has {label} is refused, and nothing is written for it", was_refused and not escaped)
+
+cache2 = tempfile.mkdtemp()
+m.cache_root = lambda: cache2
+served = {"debian-13": debian_deb(), "ubuntu-24.04": deb_bytes([("./boot/vmlinuz-6.8.0-90-generic", b"UBU-IMG")])}
+def deb_fixture(params, w):
+    # w is the row's proof directory, or a work directory beside it: kernel/matrix-<row>/<w>.
+    path = os.path.join(w, "package")
+    if not params.get("_offline"):
+        open(path, "wb").write(served[os.path.basename(os.path.dirname(w)).removeprefix("matrix-")])
+    img, release = m.deb_vmlinuz(path)
+    return img, {"package": "linux-image-" + release, "version": "1", "release": release, "sha256": m.file_sha256(path)}
+m.FETCHERS["deb"] = deb_fixture
+extracted = []
+real_deb_modules = m.deb_modules
+def counted_deb_modules(*a):
+    extracted.append(a[0])
+    return real_deb_modules(*a)
+m.deb_modules = counted_deb_modules
+row_dir = os.path.join(cache2, "kernel", "matrix-debian-13")
+stamp = os.path.join(row_dir, "mods", ".package-sha256")
+tree = m.fetch("debian-13", modules=True)
+check("--modules puts a .deb row's own tree where kvm-run.sh --module reads it",
+      tree == os.path.join(row_dir, "mods", "lib", "modules", "matrix-debian-13")
+      and open(os.path.join(tree, "kernel/net/ipv4/tcp_diag.ko.xz"), "rb").read() == b"tcp_diag v1"
+      and os.path.isfile(os.path.join(tree, "modules.builtin")))
+check("the tree names the package it came from",
+      open(stamp).read().strip() == hashlib.sha256(served["debian-13"]).hexdigest())
+check("an unchanged package's tree is reused, not extracted again",
+      m.fetch("debian-13", modules=True) == tree and len(extracted) == 1)
+check("a plain fetch of an unchanged package keeps the tree", m.fetch("debian-13") and os.path.isdir(tree))
+served["debian-13"] = debian_deb(tcp_diag=b"tcp_diag v2")
+m.fetch("debian-13", refresh=True)
+check("a refresh that brings another package removes the old package's tree with its image",
+      not os.path.lexists(os.path.join(row_dir, "mods")))
+tree = m.fetch("debian-13", modules=True)
+check("--modules then extracts the new package's",
+      open(os.path.join(tree, "kernel/net/ipv4/tcp_diag.ko.xz"), "rb").read() == b"tcp_diag v2"
+      and open(stamp).read().strip() == hashlib.sha256(served["debian-13"]).hexdigest())
+open(stamp, "w").write("0" * 64 + "\n")
+os.unlink(os.path.join(tree, "kernel/net/ipv4/inet_diag.ko.xz"))
+tree = m.fetch("debian-13", modules=True)
+check("a tree stamped with another package is replaced whole",
+      len(extracted) == 3 and os.path.isfile(os.path.join(tree, "kernel/net/ipv4/inet_diag.ko.xz"))
+      and open(stamp).read().strip() == hashlib.sha256(served["debian-13"]).hexdigest()
+      and sorted(os.listdir(row_dir)) == [".lock", "mods", "proof", "source.json", "vmlinuz"])
+
+def refusal(fn):
+    try:
+        fn()
+    except m.EnvError as e:
+        return str(e)
+    return ""
+said = refusal(lambda: m.fetch("ubuntu-24.04", modules=True))
+check("a .deb row whose image package carries no module is refused, with no tree left behind",
+      "carries no kernel module" in said and "linux-modules-<release>" in said
+      and not os.path.lexists(os.path.join(cache2, "kernel", "matrix-ubuntu-24.04", "mods")))
+check("an RPM row is refused: its kernel-core carries only some modules",
+      "is a rpm row" in refusal(lambda: m.module_tree("rhel-9", tempfile.mkdtemp(), {"sha256": good_pkg})))
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    rc = m.main(["--modules", "debian-13"])
+check("--modules prints the tree's path", rc == 0 and out.getvalue().strip() == tree)
+with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+    rcs = (m.main(["--modules"]), m.main(["--modules", "no-such-row"]), m.main(["--modules", "ubuntu-24.04"]))
+check("--modules of no row or an unknown row is a usage error", rcs[:2] == (m.EXIT_USAGE, m.EXIT_USAGE))
+check("--modules of a row with no tree to serve is EXIT_ENV", rcs[2] == m.EXIT_ENV)
+
 # A reply the parsers do not expect, or a full disk, is this box unable to fetch the row (EXIT_ENV), not a fail.
 for exc in (ValueError("not xml"), KeyError("Filename"), OSError(28, "No space left on device")):
     def boom(row, refresh=False, exc=exc):

@@ -5,9 +5,7 @@ package web
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
-	"fmt"
 	"html/template"
 	"io"
 	"net/http"
@@ -17,7 +15,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
@@ -33,7 +30,8 @@ import (
 // decides and writes nothing: it reads the ledger through ledgerview and the contract through rulesview.
 
 // maxBlobDownload is the largest blob the line page serves as a download: far past any command line or body the
-// writer moves to a blob, and small enough that one request never holds much memory.
+// writer moves to a blob. The download streams it (ledgerview.OpenBlob), so the bound caps what one request reads (the
+// file twice: the check, then the stream), not what it holds.
 const maxBlobDownload = 16 << 20
 
 // factsView is the facts column's model; nil fields are sections the line has nothing for.
@@ -108,6 +106,7 @@ func (s *Server) buildFacts(ctx context.Context, rr *ledgerview.Run, at *ledgerv
 		return f
 	}
 	f.LV = lv
+	observedFields(lv.Fields, at)
 	env := &lv.Envelope
 	if lv.Proc != nil {
 		for i := len(lv.Chain) - 1; i >= 0; i-- {
@@ -149,6 +148,11 @@ func (s *Server) buildFacts(ctx context.Context, rr *ledgerview.Run, at *ledgerv
 			rulesview.Options{Machine: s.cfg.Machine, Anchor: s.cfg.Anchor, Profiles: s.cfg.Profiles, Run: rr})
 		f.RuleFile = path.Base(f.Rule.File)
 		f.Rule.Sentence = runText(f.Rule.Sentence, home, rr.Cwd)
+		if ledgerview.WatchedLine(rr, at) {
+			// The run enforced none of its rules, and its view says so, but a view that could make no claim says
+			// nothing: the line's rule reads watched only either way.
+			f.Rule.StateWords = "watched only"
+		}
 	}
 	f.By = runText(f.By, home, rr.Cwd)
 	if at.Reason != "" {
@@ -245,7 +249,8 @@ func stepOf(p ledgerview.ProcRef, self bool) procStep {
 	return st
 }
 
-// decisionWords is a line's verdict and who decided it, in words.
+// decisionWords is a line's verdict and who decided it, in words. A line no one decided (decidedByNone: recorded as
+// observed under the authority rule, as every line of a watched run is) has no by; a person or a gate it names stays.
 func decisionWords(e *ledgerview.Event) (verdict, by string) {
 	switch {
 	case e.Refused():
@@ -263,7 +268,7 @@ func decisionWords(e *ledgerview.Event) (verdict, by string) {
 	default:
 		verdict = "Recorded, nothing to decide"
 	}
-	if e.Authority != "" {
+	if e.Authority != "" && !decidedByNone(e) {
 		w, ok := linewords.Authority(e.Authority)
 		if !ok {
 			w = e.Authority
@@ -271,6 +276,27 @@ func decisionWords(e *ledgerview.Event) (verdict, by string) {
 		by = w
 	}
 	return verdict, by
+}
+
+// decidedByNone reports whether line e was recorded as observed (nothing decided it) under the authority record v1
+// names on every action, rule: "a rule" would claim a decision the verdict beside it denies. A person or a gate the
+// line names was put there on purpose and stays: the supervisor records a held open a person allowed as observed when
+// the object it reached had no name, under that person (emitHeldOutcome).
+func decidedByNone(e *ledgerview.Event) bool {
+	return e.Verdict == "observed" && e.Authority == "rule"
+}
+
+// observedFields has the authority field of a line no one decided (decidedByNone) read "no one: recorded only"; the
+// raw value stays in the field's title. fields are the line's own (Explain builds them per call).
+func observedFields(fields []ledgerview.Field, e *ledgerview.Event) {
+	if !decidedByNone(e) {
+		return
+	}
+	for i := range fields {
+		if fields[i].Key == "authority" {
+			fields[i].Value = "no one: recorded only"
+		}
+	}
 }
 
 // msWords is a short gap in milliseconds ("1.204 ms", "312 ms"), a long one in linewords' words.
@@ -345,9 +371,12 @@ func askActWords(f *factsView) string {
 
 // serveBlob answers GET /runs/<run>/lines/<seq>?blob=<sha>: the blob this line names, as a download. Only a sha one
 // of the line's blob fields names (ledgerview marks them Blob) is served: 400 for a value that is not a sha256 name,
-// 404 for one the line does not name. The blob is the agent's own bytes, so it is read as ReadBlob reads one (no link
-// followed, no FIFO, a regular file of at most maxBlobDownload bytes whose sha256 is its name) and served as an
-// attachment of type application/octet-stream with nosniff, never rendered.
+// 404 for one the line does not name. The blob is the agent's own bytes, so it is opened with ReadBlob's checks
+// (ledgerview.OpenBlob: no link followed, no FIFO, a regular file of at most maxBlobDownload bytes whose sha256 is its
+// name, all made before a header is sent; 404 for one that fails them) and streamed as an attachment of type
+// application/octet-stream with nosniff, never rendered. The stream is hashed again as it is sent: a blob that changed
+// since the check is cut short of its Content-Length and the response aborted, so a download that completes is always
+// the checked content.
 func (s *Server) serveBlob(w http.ResponseWriter, rr *ledgerview.Run, seq uint64, sha string) {
 	if !hexSHA(sha) {
 		s.fail(w, http.StatusBadRequest, "Not a blob name", "A blob is named by 64 lower-case hexadecimal digits.")
@@ -369,19 +398,40 @@ func (s *Server) serveBlob(w http.ResponseWriter, rr *ledgerview.Run, seq uint64
 		s.fail(w, http.StatusNotFound, "No such blob", "Line #"+strconv.FormatUint(seq, 10)+" names no blob "+sha[:12]+"….")
 		return
 	}
-	b, err := readBlobFile(filepath.Join(s.cfg.Ledger, rr.ID), sha, maxBlobDownload)
+	b, err := ledgerview.OpenBlob(filepath.Join(s.cfg.Ledger, rr.ID), sha, maxBlobDownload)
 	if err != nil {
-		s.fail(w, http.StatusNotFound, "The blob is not served", "The blob of "+key+" fails its checks: "+err.Error()+".")
+		s.fail(w, http.StatusNotFound, "The blob is not served", "The blob of "+key+" fails its checks: "+blobRefusal(err)+".")
 		return
 	}
+	defer func() { _ = b.Close() }()
 	h := w.Header()
 	h.Set("Content-Type", "application/octet-stream")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Disposition", `attachment; filename="`+rr.ID+"-line"+strconv.FormatUint(seq, 10)+"-"+safeName(key)+`.bin"`)
-	h.Set("Content-Length", strconv.Itoa(len(b)))
+	h.Set("Content-Length", strconv.FormatInt(b.Size(), 10))
 	h.Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(b) // a client that went away is not the page's error
+	if _, err := io.Copy(w, b); err != nil {
+		// The blob changed since OpenBlob checked it (Read then withholds the bytes that would complete it), or the
+		// client went away. Abort rather than return: the response must never end as if it were whole, whatever its
+		// framing, and http.ErrAbortHandler closes the connection without a log line.
+		panic(http.ErrAbortHandler)
+	}
+}
+
+// blobRefusal is why the download refuses a blob, in words: never the blob's path or any of its content.
+func blobRefusal(err error) string {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return "the blob file is missing"
+	case errors.Is(err, ledgerview.ErrBlobTooBig):
+		return "the blob is larger than " + strconv.Itoa(maxBlobDownload>>20) + " MiB"
+	case errors.Is(err, ledgerview.ErrBlobHash):
+		return "the blob's content does not match its hash"
+	case errors.Is(err, ledgerview.ErrBlob):
+		return "the blob is not a regular file in the run's blobs folder"
+	}
+	return "the blob file could not be read"
 }
 
 // hexSHA reports whether s is a sha256 name: 64 lower-case hexadecimal digits.
@@ -430,40 +480,4 @@ var factsFuncs = template.FuncMap{
 	"blobArgs": func(run string, seq uint64, b *ledgerview.BlobRef) map[string]any {
 		return map[string]any{"Run": run, "Seq": seq, "Blob": b}
 	},
-}
-
-// errBlobFile is a blob the download refuses.
-var errBlobFile = errors.New("refused")
-
-// readBlobFile reads <runDir>/blobs/<sha> as ledgerview.ReadBlob does, with the download's larger bound: the blobs
-// folder is a real directory, the file is opened read-only with O_NOFOLLOW|O_NONBLOCK, is a regular file of at most
-// max bytes, and its content hashes to sha. ReadBlob itself stops at the row's 256 KiB.
-func readBlobFile(runDir, sha string, max int64) ([]byte, error) {
-	dir := filepath.Join(runDir, "blobs")
-	if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() {
-		return nil, fmt.Errorf("%w: the run has no blobs folder", errBlobFile)
-	}
-	f, err := os.OpenFile(filepath.Join(dir, sha), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("%w: the blob file is missing", errBlobFile)
-		}
-		return nil, fmt.Errorf("%w: the blob file cannot be opened", errBlobFile)
-	}
-	defer func() { _ = f.Close() }()
-	fi, err := f.Stat()
-	if err != nil || !fi.Mode().IsRegular() {
-		return nil, fmt.Errorf("%w: the blob is not a regular file", errBlobFile)
-	}
-	if fi.Size() > max {
-		return nil, fmt.Errorf("%w: the blob is larger than %d MiB", errBlobFile, max>>20)
-	}
-	b, err := io.ReadAll(io.LimitReader(f, max+1))
-	if err != nil || int64(len(b)) > max {
-		return nil, fmt.Errorf("%w: the blob could not be read whole", errBlobFile)
-	}
-	if sum := sha256.Sum256(b); hex.EncodeToString(sum[:]) != sha {
-		return nil, fmt.Errorf("%w: the blob's content does not match its hash", errBlobFile)
-	}
-	return b, nil
 }

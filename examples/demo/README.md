@@ -61,6 +61,10 @@ cd examples/demo && ./demo.sh setup            # plants the fake world, starts t
 Say: "Everything you will see is a stand-in. Nothing real is read, nothing leaves this machine."
 Optional second terminal: `tail -f examples/demo/stage/sink.log` (the sink prints one line per request).
 Each subcommand prints the command it runs before it runs it. `DEMO_STAGE` and `DEMO_PORT` move the stage and the sink.
+A stage path holding `'`, `"`, `\`, `|`, `&` or a line break is refused: the kit puts it into the commands it shows
+and into contracts. The kit's own folder and tego's path go into the commands only, so just a `'` or a line break is
+refused there; a kit under a folder such as `R&D` runs with `DEMO_STAGE` set elsewhere (its default stage, inside that
+folder, is refused).
 
 ## Act 1: without Tego
 
@@ -77,6 +81,10 @@ Proves: the risk is concrete. Point at the `What is left on the machine` block: 
 ```
 Say: "Same script, now under a contract the kernel enforces. Every step is refused, and the rule is named."
 Proves: file, network and program rules (`contracts/guarded.yaml`). The sink got 0 requests, the machine is untouched, and the last table is the ledger's refusals, one row per refusal: `read-denied` (rule `fs.deny_read[...]`), `net-not-allowed`, `write-outside-contract` (twice), `delete-outside-contract` and `exec-not-allowed`. The RULE column names the contract entry that decided; `unmatched` means no entry allowed the action, so the default deny refused it (the contract grants a few things and nothing else).
+`python3` is on the allow list for step 7, which reads `$TEGO_REASON`, a JSON file, with it. The copy the act shows names it by the file it runs as (`/usr/bin/python3`, or the interpreter a pyenv or asdf shim starts: a `#!` shim could not be granted, its own `/usr/bin/env` being on no list), and the agent gets that path as `PYTHON3`.
+If tego refuses to start the run, the act stops at its message (`the run failed (tego run exited 125)`, tego's own
+exit, not the output filter's) and shows no damage report and no earlier run's refusals; `./demo.sh why` then says
+there is no run yet.
 
 ## Act 3: why, and the record
 
@@ -84,7 +92,7 @@ Proves: file, network and program rules (`contracts/guarded.yaml`). The sink got
 ./demo.sh why
 ```
 Say: "Tego does not only fail the call. In step 7 above the agent read why, in words, from `$TEGO_REASON`, so a model can re-plan instead of retrying. The record is a hash chain: change one word and it stops verifying."
-Proves: the reason channel; the tamper-evident ledger (`tego events --verify` passes, then fails on an edited copy: `does not verify ... id does not match line bytes`, exit 1).
+Proves: the reason channel; the tamper-evident ledger (`tego events --verify` passes, then fails on an edited copy: `does not verify ... id does not match line bytes`, exit 1). The copy is `tego events <run> --json`, the record's lines byte for byte, so the step works wherever the machine config puts the ledger.
 
 ## Act 4: the dashboard
 
@@ -151,6 +159,8 @@ Known problem: runs are detached from any terminal, so there is nobody to answer
 - Tier 3 `bpflsm`: root + `bpf` in the kernel's `lsm=` list: decisions in the kernel's LSM hooks.
 Why three: each needs more of the machine and enforces more; `tego doctor` says which this machine has.
 The scene: `tego doctor` (short), the guarded agent with `--tier landlock`, the same with `sudo ... --tier cgroup` (needs `make build`; the ledger goes to your own `~/.tego/runs`), then tier 3, or the one-time `lsm=...,bpf` steps (in `GRUB_CMDLINE_LINUX_DEFAULT`, the variable `tego doctor` names) when BPF LSM is off (printed, never run).
+A tier whose sudo or tego refuses the run says so (`(tier 2 did not run: exit 1, see the message above)`, the exit
+being the command's own, not the output filter's) and shows no damage report and no run of its own.
 
 ## Network
 
@@ -169,6 +179,8 @@ Tego's proxy, and a call the proxy rejects) only prints its plan in this build.
 Each is short: the stand-in agent (`agents/mini.sh`) without Tego where that is harmless, the scene's contract (written
 to `stage/c/<scene>.yaml`, outside the project, so the agent cannot rewrite it), the run under Tego, then what the
 ledger recorded. Say before them: "Five rule templates, each one line of a contract, each enforced by the kernel."
+Where a scene's contract allows `python3` (`rule process`, `limits`, and `network`'s listener), it names the file
+python3 runs as and the agent runs that, as in Act 2, so a pyenv or asdf shim on PATH does not stop the run.
 
 - `./demo.sh rules` (or one at a time: `./demo.sh rule read|write|command|net|process`). Say: "What it may read, write,
   run and reach, and what kind of process it may become." Process type is not a contract word: the scene shows the
@@ -215,7 +227,7 @@ A 15-minute order: `setup`, `without`, `with`, `why` (4 min); `rules` (3); `alwa
 | `setup` | plants `stage/{secrets,home,project}`, starts `sink.py` |
 | `without` | `sh rogue.sh` in the project, no Tego |
 | `with` | `tego run agent.yaml` (a copy of `contracts/guarded.yaml`), then `tego events <run> --kind refused` |
-| `why` | `tego events <run> --last`, `--verify`, then `--verify` on an edited copy |
+| `why` | `tego events <run> --last`, `--verify`, then `--json` into a copy, one word changed with sed, and `--verify` on it |
 | `dashboard [args]` | `tego-control serve --open` (extra arguments go to it: `--addr 127.0.0.1:8585` when 8484 is busy) |
 | `claude`, `codex` | `tego compile` then `tego run contracts/<agent>.yaml` (extra arguments replace the interactive start) |
 | `always-on` | `systemd-run --user ... tego run always-on.yaml`, in `stage/always-on/` (its own secrets and project, so the other acts never clear them) |

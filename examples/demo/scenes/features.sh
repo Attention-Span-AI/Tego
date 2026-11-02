@@ -8,7 +8,7 @@
 
 export PORT
 
-MINI_ENV='["PATH", "HOME", "SECRETS", "SINK", "HOMEISH", "PROJECT", "PORT", "DOCKER_HOST_SOCK", "SSH_AUTH_SOCK"]'
+MINI_ENV='["PATH", "HOME", "SECRETS", "SINK", "HOMEISH", "PROJECT", "PORT", "DOCKER_HOST_SOCK", "SSH_AUTH_SOCK", "PYTHON3"]'
 
 # mini_plant lays out the fake world (plant) and adds the stand-in agent and the held/ folder of the ask scene.
 mini_plant() {
@@ -18,10 +18,13 @@ mini_plant() {
 }
 
 # mini_contract NAME TRICK: writes stdin, the scene's own lines, between the shared head and tail of a contract at
-# $STAGE/c/NAME.yaml, outside the project, so the agent cannot rewrite its own rules.
+# $STAGE/c/NAME.yaml, outside the project, so the agent cannot rewrite its own rules. A "python3" its exec.allow lists
+# becomes the file python3 runs as (agent_python), which the stand-in runs as $PYTHON3: a python3 shim on PATH could
+# not be granted, and the run would not start.
 mini_contract() {
   mkdir -p "$STAGE/c"
-  body=$(cat)
+  agent_python
+  body=$(sed "/^  allow:/s|\"python3\"|\"$PYTHON3\"|")
   {
     printf 'version: 0\nname: demo-%s\ncommand: ["sh", "mini.sh", "%s"]\n%s\n' "$1" "$2" "$body"
     printf 'env:\n  pass: %s\nrecord: summary\ntier: landlock\ncapture: off\n' "$MINI_ENV"

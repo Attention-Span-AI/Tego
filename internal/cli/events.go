@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -109,7 +110,7 @@ func (r *repeatable) Set(v string) error { *r = append(*r, v); return nil }
 // runEvents resolves the run, opens it read-only (never taking the lock, so a live run can be watched)
 // and renders it.
 func runEvents(ctx context.Context, ref string, f events.Filter, last, asJSON bool, stdout, stderr io.Writer) int {
-	dir, err := resolveRunDir(ref, true, &machineOnce{stderr: stderr})
+	dir, err := resolveRunDir("events", ref, true, &machineOnce{stderr: stderr})
 	if err != nil {
 		return runRefFailed(stderr, "events", err)
 	}
@@ -171,7 +172,7 @@ func runEvents(ctx context.Context, ref string, f events.Filter, last, asJSON bo
 // Follow). It exits 0 at run_end once the launcher has released the lock; a break in the chain is 125
 // [ledger-corrupt] after the rows before it, and a run whose launcher is gone without run_end is 125 [run-lost].
 func runFollow(ctx context.Context, ref string, f events.Filter, asJSON bool, stdout, stderr io.Writer) int {
-	dir, err := resolveRunDir(ref, true, &machineOnce{stderr: stderr})
+	dir, err := resolveRunDir("events", ref, true, &machineOnce{stderr: stderr})
 	if err != nil {
 		return runRefFailed(stderr, "events", err)
 	}
@@ -232,9 +233,10 @@ func lastMatch(ctx context.Context, r *ledger.Reader, f events.Filter) (ledger.E
 	return ledger.Entry{}, false, nil
 }
 
-// resolveRunDir accepts a run directory or a run id under the machine's ledger root. A directory is
-// returned as ledger.RunDirPath names it: absolute and cleaned, ending in the run id the path gives it,
-// or, for a path that reaches no run id (a copy under another name), the directory's resolved path.
+// resolveRunDir accepts a run directory, or a run id, whole or abbreviated, under the machine's ledger
+// root. A directory is returned as ledger.RunDirPath names it: absolute and cleaned, ending in the run id
+// the path gives it, or, for a path that reaches no run id (a copy under another name), the directory's
+// resolved path.
 // Shell completion hands over "<root>/<run>/", and filepath.Dir of that is the run directory itself,
 // which made `drift --aggregate` aggregate the one run it was given and report it as the agent's total;
 // "." and a link such as ~/latest end in no run id, and `events --verify` binds the ledger to that id
@@ -253,9 +255,26 @@ func lastMatch(ctx context.Context, r *ledger.Reader, f events.Filter) (ledger.E
 // A bare run id is always the run under the ledger root, never a directory of that name in the current
 // directory: the agent knows its run id (TEGO_RUN_ID) and can write the project, so a planted ./<id>/ won
 // over the real record in every command run from the project. ./<id> names the local directory.
-func resolveRunDir(ref string, mustExist bool, mc *machineOnce) (string, error) {
+//
+// An argument shaped like the start or the end of a run id (runAbbrevShaped) abbreviates one (H08): "28t5cy" or
+// "t5cy" for r-00000000-0dmktimu5hrut-28t5cy, the id the end summary and the ask line print. It names the one run
+// under the ledger root whose id starts or ends with it and is then resolved as that whole id (expandRunAbbrev), so
+// no command needs the whole id typed. Too short to name a run by either end (abbrevEnds), no run, or two runs
+// (errAmbiguousRun, naming them) is a usage error. Matched or not, it never names a directory in the current
+// directory, for the reason a whole id does not: the agent knows every start and end of its id, and a ./28t5cy/ it
+// planted would answer for its run, or, once the run is collected, for a run that is gone. ./28t5cy names the local
+// directory, and when there is one, the error says so, and so does a note on stderr when the abbreviation names a
+// run: before abbreviations, a bare 28t5cy read that directory, and whoever keeps a copy of a run under such a name
+// is told which run they get instead. cmd is the command, which the note names.
+func resolveRunDir(cmd, ref string, mustExist bool, mc *machineOnce) (string, error) {
 	if ledger.IsRunID(ref) {
-		return runDirUnderRoot(ref, mustExist, mc)
+		return runDirUnderRoot(cmd, ref, mustExist, mc)
+	}
+	if runAbbrevShaped(ref) {
+		if start, end := abbrevEnds(ref); !start && !end {
+			return "", fmt.Errorf("%q %w or a run directory: %s%s", ref, errBadRunID, runAbbrevHint, localDirNote(ref))
+		}
+		return runDirUnderRoot(cmd, ref, mustExist, mc)
 	}
 	info, err := os.Stat(ref)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENAMETOOLONG) {
@@ -275,11 +294,14 @@ func resolveRunDir(ref string, mustExist bool, mc *machineOnce) (string, error) 
 	return "", fmt.Errorf("%q %w or a run directory", ref, errBadRunID)
 }
 
-// runDirUnderRoot is run id ref's directory under the machine's ledger root.
+// runDirUnderRoot is the directory under the machine's ledger root of run id ref, or of the run ref abbreviates.
+// For an abbreviation that is also the name of a directory in the current directory, it says what each names
+// (resolveRunDir): in the error when ref names no run or several, in a note on stderr for command cmd when it names
+// one.
 //
 // The config comes from the invocation's one load, whose diagnostics it has already printed: a layer
 // skipped for its trust is what explains a root that is not the one the operator set.
-func runDirUnderRoot(ref string, mustExist bool, mc *machineOnce) (string, error) {
+func runDirUnderRoot(cmd, ref string, mustExist bool, mc *machineOnce) (string, error) {
 	m, err := mc.load()
 	if err != nil {
 		return "", fmt.Errorf("machine config: %w", err)
@@ -289,15 +311,162 @@ func runDirUnderRoot(ref string, mustExist bool, mc *machineOnce) (string, error
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(root, ref)
+	id := ref
+	if !ledger.IsRunID(ref) {
+		id, err = expandRunAbbrev(ref, root)
+		note := localDirNote(ref)
+		switch {
+		case err != nil && note != "" && (errors.Is(err, errRunNotFound) || errors.Is(err, errAmbiguousRun)):
+			return "", fmt.Errorf("%w%s", err, note)
+		case err != nil:
+			return "", err
+		case note != "":
+			message(mc.stderr, "", 0, 0, fmt.Sprintf("tego %s: note: %s names run %s under %s%s", cmd, ref, id, root, note), "")
+		}
+	}
+	dir := filepath.Join(root, id)
 	if !mustExist {
 		return dir, nil
 	}
 	if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
 		// A run id that names no run gets the next step, the command that lists the runs.
-		return "", fmt.Errorf("%s: %w under %s; %s", ref, errRunNotFound, root, listRunsHint)
+		return "", fmt.Errorf("%s: %w under %s; %s", id, errRunNotFound, root, listRunsHint)
 	}
 	return dir, nil
+}
+
+// runIDArg is nil when ref may name a run by its id: a whole run id, or text long enough to abbreviate one by its
+// start or its end (abbrevEnds). Anything else is errBadRunID, which says how much of an id is enough when ref could
+// start or end one. It reads nothing, so a command can check its argument before it loads the machine config.
+func runIDArg(ref string) error {
+	switch {
+	case ledger.IsRunID(ref):
+		return nil
+	case !runAbbrevShaped(ref):
+		return fmt.Errorf("%q %w", ref, errBadRunID)
+	}
+	if start, end := abbrevEnds(ref); !start && !end {
+		return fmt.Errorf("%q %w: %s", ref, errBadRunID, runAbbrevHint)
+	}
+	return nil
+}
+
+// runIDUnder is the whole id of the run ref names under the ledger root root, for the commands that take a run by
+// its id alone (status, stop, ask, approve, deny and alternate): ref when it is one, else the one run whose id ends
+// or starts with it (expandRunAbbrev), held to the floors resolveRunDir holds an abbreviation to, with its errors.
+// These commands never took a directory, so nothing in the current directory is read for ref, and no note names one.
+func runIDUnder(ref, root string) (string, error) {
+	if err := runIDArg(ref); err != nil {
+		return "", err
+	}
+	if ledger.IsRunID(ref) {
+		return ref, nil
+	}
+	return expandRunAbbrev(ref, root)
+}
+
+// runRefUsage reports whether err is the caller's mistake in naming a run, a usage error (R25): an argument that is
+// not a run id nor long enough to abbreviate one, one that names no run, or one that two or more runs have.
+func runRefUsage(err error) bool {
+	return errors.Is(err, errBadRunID) || errors.Is(err, errRunNotFound) || errors.Is(err, errAmbiguousRun)
+}
+
+// minRunAbbrev is the fewest characters past what the runs of one host share that abbreviate a run id, git's floor
+// for an abbreviated object name. An end counts all of its characters: a run id's last six are rand6, 30 random
+// bits, so its last four are 20, which two runs share by chance about once in a million. A start counts only those
+// past r-<host8>- (runHostLen), which every run minted on the host begins with, or `r-00` would name whichever one
+// run the root holds. The time36 digits that follow are not random: the first four change every 150 years, 4 years,
+// 6 weeks and 28 hours, so a start's four name the runs minted in the same day or so. Neither floor is what keeps
+// block, stop and the other live controls off another run: an abbreviation names a run only when exactly one run
+// under the ledger root has it (expandRunAbbrev); two or more are a usage error that names them.
+const minRunAbbrev = 4
+
+// runHostLen is the length of r-<host8>-, the start every run id minted on one host shares (identity-config.md R2).
+const runHostLen = len("r-00000000-")
+
+// maxRunMatches is how many of the runs an ambiguous abbreviation matches its error names.
+const maxRunMatches = 5
+
+// runIDTemplate is a run id each of whose characters is one every run id may have at that place (identity-config.md
+// R2): the shape runIDEnds lays text over.
+const runIDTemplate = "r-00000000-0000000000000-000000"
+
+// runAbbrevHint is what a run argument too short to abbreviate a run id by either end (abbrevEnds) is told to give.
+var runAbbrevHint = fmt.Sprintf("give the run's id, or at least its last %d characters or its first %d (%d past r-<host8>-)",
+	minRunAbbrev, runHostLen+minRunAbbrev, minRunAbbrev)
+
+// runIDEnds reports whether s, shorter than a run id, could begin one and whether it could end one: every character
+// is one a run id has at that place, a dash only where a run id has one.
+func runIDEnds(s string) (begins, ends bool) {
+	n := len(s)
+	if n == 0 || n >= len(runIDTemplate) {
+		return false, false
+	}
+	return ledger.IsRunID(s + runIDTemplate[n:]), ledger.IsRunID(runIDTemplate[:len(runIDTemplate)-n] + s)
+}
+
+// runAbbrevShaped reports whether s, shorter than a run id, could be the start or the end of one, however short.
+// "28t5cy" and "r-00000000-0dm" are; "my_copy", "." and "runs/x" are not, and stay paths.
+func runAbbrevShaped(s string) bool {
+	begins, ends := runIDEnds(s)
+	return begins || ends
+}
+
+// abbrevEnds reports by which end s abbreviates a run id: start when it could begin one and runs minRunAbbrev
+// characters past r-<host8>-, end when it could end one and is minRunAbbrev characters long. Each end is held to
+// its own floor, so "r-abcdef", which could begin an id of host abcdef.. as well as end one, names a run only by
+// its end. Neither, for text too short for both, or that no run id begins or ends with.
+func abbrevEnds(s string) (start, end bool) {
+	begins, ends := runIDEnds(s)
+	return begins && len(s) >= runHostLen+minRunAbbrev, ends && len(s) >= minRunAbbrev
+}
+
+// expandRunAbbrev is the id of the one run under root whose id starts or ends with abbrev, by whichever ends
+// abbrevEnds allows it. It reads the root's names, never what they hold: every name shaped like a run id counts,
+// whatever the entry is (a run directory, or a link put in its place), as a whole id names it. A root that is not
+// there holds no run; one that cannot be read is its errno, 125 [io], since the run may be there.
+func expandRunAbbrev(abbrev, root string) (string, error) {
+	start, end := abbrevEnds(abbrev)
+	entries, err := os.ReadDir(root)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("read ledger root: %w", err)
+	}
+	var ids []string
+	for _, e := range entries {
+		if n := e.Name(); ledger.IsRunID(n) && (start && strings.HasPrefix(n, abbrev) || end && strings.HasSuffix(n, abbrev)) {
+			ids = append(ids, n)
+		}
+	}
+	switch len(ids) {
+	case 1:
+		return ids[0], nil
+	case 0:
+		how := "ends"
+		switch {
+		case start && end:
+			how = "starts or ends"
+		case start:
+			how = "starts"
+		}
+		return "", fmt.Errorf("%s: %w under %s: no run id there %s with it; %s", abbrev, errRunNotFound, root, how,
+			listRunsHint)
+	}
+	slices.SortFunc(ids, func(a, b string) int { return ledger.CompareRunIDs(b, a) }) // newest first
+	named, more := ids, ""
+	if len(named) > maxRunMatches {
+		named, more = named[:maxRunMatches], fmt.Sprintf(" and %d more", len(ids)-maxRunMatches)
+	}
+	return "", fmt.Errorf("%s %w under %s: %s%s; give more of its id", abbrev, errAmbiguousRun, root,
+		strings.Join(named, ", "), more)
+}
+
+// localDirNote is "; ./<ref> names the local directory" when the current directory holds a directory named ref, or a
+// link to one, else "": a bare run argument never reads it, and this says how to. It only looks at the name.
+func localDirNote(ref string) string {
+	if info, err := os.Stat(ref); err == nil && info.IsDir() {
+		return "; ./" + ref + " names the local directory"
+	}
+	return ""
 }
 
 // errNoRunRecord is a run directory whose events.jsonl holds no run_start: empty, only a torn line, or a
@@ -347,11 +516,12 @@ func readFailed(stderr io.Writer, cmd string, err error) int {
 	return identity.ExitError
 }
 
-// runRefFailed reports a resolveRunDir failure for command cmd and returns its exit code: a malformed
-// or unknown run id is a usage error (R25), anything else — an unreadable machine config, no ledger
-// root — is tego's own (125).
+// runRefFailed reports a resolveRunDir or runIDUnder failure for command cmd and returns its exit code: a
+// malformed or unknown run id, or an abbreviation that names no run or several, is a usage error (R25,
+// runRefUsage), anything else — an unreadable machine config, no ledger root, a root that cannot be listed — is
+// tego's own (125).
 func runRefFailed(stderr io.Writer, cmd string, err error) int {
-	if errors.Is(err, errBadRunID) || errors.Is(err, errRunNotFound) {
+	if runRefUsage(err) {
 		message(stderr, "", 0, 0, "tego "+cmd+": "+err.Error(), codeUsage)
 		return identity.ExitUsage
 	}

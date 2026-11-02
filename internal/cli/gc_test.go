@@ -57,6 +57,12 @@ func endedRunAs(t *testing.T, root string, host [32]byte, agentID string, at tim
 	if err != nil {
 		t.Fatal(err)
 	}
+	return endedRunNamed(t, root, id, agentID)
+}
+
+// endedRunNamed writes a complete run of agent agentID under root with the id given.
+func endedRunNamed(t *testing.T, root string, id identity.RunID, agentID string) string {
+	t.Helper()
 	dir := filepath.Join(root, string(id))
 	w, err := ledger.Open(dir, record.RunRef{ID: string(id), Agent: agentID})
 	if err != nil {

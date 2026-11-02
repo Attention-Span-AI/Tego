@@ -742,9 +742,14 @@ against observed, per rule, with the same `gaps:`, `live changes:` and `in words
 held in memory (`fileless`) or that ran a file the run itself wrote (`dropped`: the program, its `#!` interpreter or a
 binary a loader ran, listed by the exec's own path), each with whether it was allowed or refused),
 `tego measure <run>` (steps, tokens, estimated cost, wall), `tego events <run>
---verify`. A refused `git push` is one refusal per directory of `PATH` that the agent's own search tried (133 for 7
-pushes here), and an exec by name is one event per directory tried: count actions from the agent's own log and the
-`decision` events, not from refusals.
+--verify`. In these and every other command that takes a run (`stop`, `ask`, `approve`, `deny`, `block`, `pause` and
+the rest), `<run>` can be four or more characters from the end of the run id that no other run under the ledger root
+has (`tego receipt 28t5cy`), or its start up to four or more characters past `r-<host8>-`, which every run of this
+machine begins with (`tego receipt r-1a2b3c4d-0dmk`). Like a whole id, they are never read as a directory of that
+name in the current directory; `./28t5cy` names that directory, and when there is one, a command that also takes a
+run directory prints a note on stderr naming both. A refused `git push` is one refusal per directory of `PATH` that
+the agent's own search tried (133 for 7 pushes here), and an exec by name is one event per directory tried: count
+actions from the agent's own log and the `decision` events, not from refusals.
 
 ## Finding agents that were not started under Tego (2026-10-06)
 

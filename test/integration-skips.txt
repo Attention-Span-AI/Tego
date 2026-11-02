@@ -68,6 +68,7 @@ internal/handoff TestHandoffRefusesRootAsRoot # needs root: the refusal at a rea
 internal/handoff TestHandoffMemfdNoexecOnTheKernel # needs root: it sets vm.memfd_noexec in a new pid namespace (CAP_SYS_ADMIN)
 internal/handoff TestHandoffRefusesNoexecMountAsRoot # needs root: it mounts a noexec tmpfs (CAP_SYS_ADMIN)
 internal/control/cli TestControlRefusesRootAsRoot # needs root: tego-control's guard reading a real euid 0 and root's capability sets
+internal/control/web TestPeerUIDRefusesAnotherRealUser # needs root: the other user's client is started as uid 65534 (CAP_SETUID)
 
 # An untagged build carries no BPF objects; the -tags tegobpf builds (bpf-gen, root-suites) run these.
 internal/doctor TestHookTableMatchesTheObjects # no BPF objects without -tags tegobpf

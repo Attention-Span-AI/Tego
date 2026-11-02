@@ -39,25 +39,3 @@ func TestFoldDevices(t *testing.T) {
 		t.Errorf("a lone device folded: %+v", one)
 	}
 }
-
-// TestOpenDefault: only the wide-open defaults are marked.
-func TestOpenDefault(t *testing.T) {
-	for _, c := range []struct {
-		group, def string
-		open       bool
-	}{
-		{inforce.GroupNetwork, "Can connect to any address. Other programs' local sockets stay closed (see Always on).", true},
-		{inforce.GroupNetwork, "Can connect anywhere, other programs' local sockets included.", true},
-		{inforce.GroupNetwork, "Cannot connect anywhere else.", false},
-		{inforce.GroupPrograms, "Can run any program.", true},
-		{inforce.GroupPrograms, "Can run any other program.", true},
-		{inforce.GroupPrograms, "Cannot run any other program.", false},
-		{inforce.GroupEnv, "Gets every variable in your shell, secrets included.", true},
-		{inforce.GroupEnv, "Every other variable in your shell, secrets included, is removed before it starts.", false},
-		{inforce.GroupRead, "Can read any other file on this computer, except the ones under Never reads and Always on.", false},
-	} {
-		if got := OpenDefault(c.group, c.def); got != c.open {
-			t.Errorf("%s %q: open %v, want %v", c.group, c.def, got, c.open)
-		}
-	}
-}

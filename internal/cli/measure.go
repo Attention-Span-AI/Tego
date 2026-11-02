@@ -45,7 +45,7 @@ func cmdMeasure() Command {
 // measured — and renders one report.
 func runMeasure(ctx context.Context, ref string, asJSON bool, stdout, stderr io.Writer) int {
 	mc := &machineOnce{stderr: stderr}
-	dir, err := resolveRunDir(ref, true, mc)
+	dir, err := resolveRunDir("measure", ref, true, mc)
 	if err != nil {
 		return runRefFailed(stderr, "measure", err)
 	}

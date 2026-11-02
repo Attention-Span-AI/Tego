@@ -8,8 +8,8 @@ import (
 )
 
 // Text is the view as plain text, the form `tego rules` prints: each group's title and lede, one line per rule (its
-// sentence, then how it is enforced, where it came from and its hits), and the group's default. A group with no
-// rule and no default is left out.
+// sentence, then how it is enforced, where it came from and its hits), and the group's default with the hits it
+// decided. A group with no rule and no default is left out.
 func (v *View) Text() string {
 	var b strings.Builder
 	name := v.Agent
@@ -45,7 +45,10 @@ func (v *View) Text() string {
 			}
 			fmt.Fprintf(&b, "  - %s  [%s]\n", r.Sentence, strings.Join(meta, "; "))
 		}
-		if g.Default != "" {
+		switch {
+		case g.Default != "" && g.DefaultHits > 0:
+			fmt.Fprintf(&b, "  %s  [%d hits]\n", g.Default, g.DefaultHits)
+		case g.Default != "":
 			fmt.Fprintf(&b, "  %s\n", g.Default)
 		}
 	}

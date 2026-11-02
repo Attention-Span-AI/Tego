@@ -47,7 +47,7 @@ func TestCompileReportsACostBudgetUnderATableListingNoModels(t *testing.T) {
 		}
 		// run hands the runtime the price gap, on which it refuses the declared budget (runtime.refuseUncountedBudget).
 		var stderr bytes.Buffer
-		if table, why := runPrices(m, declared, &stderr); table != nil || why != "no-price-table" ||
+		if table, why := runPrices(m, declared, "tego run", &stderr); table != nil || why != "no-price-table" ||
 			!strings.Contains(stderr.String(), "lists no models") {
 			t.Errorf("%s: runPrices = %v, %q, want no table and the no-price-table gap:\n%s", name, table, why, stderr.String())
 		}

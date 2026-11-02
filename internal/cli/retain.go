@@ -35,8 +35,9 @@ var retentionBudget = 2 * time.Second
 // retentionBudget. It is gc's pass, so what may be removed is gc's rule: an ended or empty run older than retention;
 // never a run whose lock is held (a live run however old), and a lost run is ended orphaned first. chain.log is
 // never rewritten: a removed run's line stays, so the runs left verify as before and `events <removed> --verify`
-// reports the anchored ledger missing. It never fails the run that is starting.
-func retainBeforeRun(ctx context.Context, m *config.Machine, stderr io.Writer) {
+// reports the anchored ledger missing. It never fails the run that is starting. Its line names cmd, the command
+// starting the run.
+func retainBeforeRun(ctx context.Context, m *config.Machine, cmd string, stderr io.Writer) {
 	if m.GCInterval.Value <= 0 {
 		return
 	}
@@ -63,8 +64,8 @@ func retainBeforeRun(ctx context.Context, m *config.Machine, stderr io.Writer) {
 		logOwn("retention: " + err.Error())
 	}
 	if res.Deleted > 0 || res.Orphaned > 0 {
-		message(stderr, "", 0, 0, fmt.Sprintf("tego run: retention removed %d ended run(s) older than %s, ended %d orphaned",
-			res.Deleted, config.FormatDuration(m.Retention.Value), res.Orphaned), codeSweep)
+		message(stderr, "", 0, 0, fmt.Sprintf("%s: retention removed %d ended run(s) older than %s, ended %d orphaned",
+			cmd, res.Deleted, config.FormatDuration(m.Retention.Value), res.Orphaned), codeSweep)
 	}
 }
 

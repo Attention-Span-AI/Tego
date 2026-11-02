@@ -841,7 +841,8 @@ type ExecRule struct {
 	ByName  bool
 	Interp  string // PT_INTERP target; "" for static or non-ELF
 	Verdict Verdict
-	// Source says why the rule exists: "exec.allow", "command", "mcp:<name>".
+	// Source says why the rule exists: "exec.allow", "command", "mcp:<name>", "interpreter:<script>",
+	// "helper:<tool>"; comma-joined when entries of several sources resolved to one path.
 	Source string
 	// IsDir marks an exec.allow entry naming a directory (EXECUTE beneath it).
 	IsDir bool

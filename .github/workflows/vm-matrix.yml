@@ -179,14 +179,24 @@ jobs:
       # `make vm-root-test`, and floors for the root-only packages come after a few runs of this number. The kill
       # tests are one more boot of the row, about two minutes on a developer laptop, so the step has 30 minutes
       # more than the suites alone had.
+      #
+      # The suites' guests load the row's own copies of the kernel modules `make vm-root-test`'s guests load
+      # (test/vm/suites.sh's GUEST_MODULES): apt has no module package for a row's kernel, so fetch-kernel.py
+      # --modules extracts debian-13's from the package it authenticates, and VM_MODULES names them. Until
+      # 2026-11-02 they loaded none, and without tcp_diag the dashboard refused every sign-in, so internal/control/web's
+      # and internal/control/cli's suites were reported failed here. Two more come before btrfs, which Debian builds as
+      # modules and Ubuntu builds in: crc32c_generic, the crc32c algorithm Debian 6.12's libcrc32c, under btrfs, needs
+      # to load at all (a softdep:, which kvm-run.sh does not follow), and loop, for the loop device
+      # TestPlaneRunBtrfsSubvolumeInodeIdentity mounts its btrfs on (test/vm/README.md).
       - name: coverage with the privileged suites and the kill tests, as root on ${{ matrix.kernel }} (report-only)
         if: matrix.part == 'row' && matrix.kernel == 'debian-13'
         continue-on-error: true
         timeout-minutes: 180
         shell: bash
         run: |
-          python3 test/vm/fetch-kernel.py debian-13 >/dev/null
+          python3 test/vm/fetch-kernel.py --modules debian-13 >/dev/null
           TEGO_VM_KERNEL="$(python3 test/vm/fetch-kernel.py --name debian-13)" TEGO_VM_LSM=kernel TEGO_VM_LOCKDOWN=none \
+            VM_MODULES="overlay crc32c_generic loop btrfs unix_diag tcp_diag" \
             scripts/coverage.sh --vm --kill-tests debian-13 -o "$RUNNER_TEMP/coverage"
           cat "$RUNNER_TEMP/coverage/percent.txt"
       - name: upload the coverage

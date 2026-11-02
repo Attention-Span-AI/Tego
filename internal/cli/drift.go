@@ -61,7 +61,7 @@ func cmdDrift() Command {
 // runDrift is the in-process body of drift.
 func runDrift(ctx context.Context, ref string, aggregate, asJSON bool, stdout, stderr io.Writer) int {
 	mc := &machineOnce{stderr: stderr}
-	dir, err := resolveRunDir(ref, true, mc)
+	dir, err := resolveRunDir("drift", ref, true, mc)
 	if err != nil {
 		return runRefFailed(stderr, "drift", err)
 	}

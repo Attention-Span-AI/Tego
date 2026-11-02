@@ -20,12 +20,14 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
-// Exec rule sources.
+// Exec rule sources. MCP, interpreter and helper sources carry a name after a colon: mcp:<server>,
+// interpreter:<script>, helper:<tool> (a helper image helperImages grants for the tool's exec.allow entries).
 const (
 	ExecSourceCommand     = "command"
 	ExecSourceAllow       = "exec.allow"
 	ExecSourceMCP         = "mcp"
 	ExecSourceInterpreter = "interpreter"
+	ExecSourceHelper      = "helper"
 )
 
 // exec compiles the exec rules (R8, SEMANTICS §4): Command[0] and every

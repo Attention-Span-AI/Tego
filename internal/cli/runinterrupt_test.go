@@ -78,3 +78,28 @@ func TestRunInterruptedBeforeStartLaunchesNothing(t *testing.T) {
 		}
 	}
 }
+
+// TestInterruptedBeforeStartNamesTheCommand: the interrupt's line names the command interrupted, and an adoption's says
+// nothing was adopted: its agent was running before tego was, so run's "before the agent started; nothing was run",
+// under tego run's name, was not so.
+func TestInterruptedBeforeStartNamesTheCommand(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	var quiet bytes.Buffer
+	if interruptedBeforeStart(ctx, runOptions{}, &quiet) || quiet.Len() != 0 {
+		t.Fatalf("a context not cancelled read as an interrupt: %q", quiet.String())
+	}
+	cancel()
+	for _, c := range []struct {
+		o    runOptions
+		want string
+	}{
+		{runOptions{}, "tego run: interrupted before the agent started; nothing was run [run]\n"},
+		{runOptions{cmd: "tego watch", watched: true}, "tego watch: interrupted before the agent started; nothing was run [run]\n"},
+		{runOptions{cmd: "tego adopt", adopted: true}, "tego adopt: interrupted before the adoption; nothing was adopted [run]\n"},
+	} {
+		var b bytes.Buffer
+		if !interruptedBeforeStart(ctx, c.o, &b) || b.String() != c.want {
+			t.Errorf("%s: %q, want %q", c.o.cmdName(), b.String(), c.want)
+		}
+	}
+}

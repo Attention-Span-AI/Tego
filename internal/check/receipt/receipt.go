@@ -128,9 +128,14 @@ type TimeTaken struct {
 	Note  string `json:"note,omitempty"`
 }
 
-// Files is what the run changed on disk, as its allowed fs lines record it. A failed or refused operation is not
-// a change; a read is not one either, and neither is a write to a device that holds no file (device: /dev/null,
-// the terminal).
+// Files is what the run changed on disk, as its allowed fs lines record it. A refused operation is not a change, nor
+// is one whose line records that it failed (an errno, or a negative syscall_ret); a read is not one either, and neither
+// is a write to a device that holds no file (device: /dev/null, the terminal). Only the tier-2 kernel record, and the
+// opens and mutations the supervisor makes itself, record a result: at tier landlock the supervisor continues every
+// other allowed call, whose line carries none, so a call the kernel then failed is listed all the same (an unlink of a
+// name that is not there; GNU mv's renameat2 with RENAME_NOREPLACE, retried as renameat where the filesystem refuses
+// the flag, lists one rename twice). No line at that tier says that an open created its file, so a file an open made
+// is listed as written only; a mkdir, symlink or link is listed as created.
 type Files struct {
 	Recorded  bool     `json:"recorded"`
 	Note      string   `json:"note,omitempty"`

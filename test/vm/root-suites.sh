@@ -23,10 +23,9 @@
 #   the suite's own go test -timeout is that less 300), VM_HOST (kvm, the default, or sudo: see below), VM_BOOTS (empty, or both: every
 #   suite on the lsm=...,bpf boot and again on the host's list without bpf, below; lsm-bpf or default-lsm: that boot alone), VM_CGROUP (empty, or
 #   service: see below), VM_MODULES (kernel modules each guest loads before its suite, space-separated,
-#   passed to kvm-run.sh --module; default "overlay btrfs unix_diag tcp_diag", for the decision plane's overlayfs cell, which
-#   skips without it, and its btrfs subvolume test, which fails the tagged build's skip gate without it, and the
-#   sock_diag lookups below;
-#   VM_MODULES="" loads none), VM_SUITE_MEM (per-package guest memory, "pkg=size ...", over
+#   passed to kvm-run.sh --module; default test/vm/suites.sh's GUEST_MODULES, "overlay btrfs unix_diag tcp_diag",
+#   which scripts/coverage.sh --vm's guests load too and which says what needs each; VM_MODULES="" loads none),
+#   VM_SUITE_MEM (per-package guest memory, "pkg=size ...", over
 #   TEGO_VM_MEM; e.g. "internal/runtime/enforce/cgroup=2560M" for its 32 concurrent runs), plus kvm-run.sh's
 #   TEGO_VM_* knobs.
 #   VM_FIXTURE_ROOT optionally stages a directory's contents at the guest root,
@@ -149,7 +148,7 @@ both | lsm-bpf | default-lsm)
 esac
 module="$(cd "$repo" && "$GO" list -m)"
 
-# PKGS and HELPERS: shared with scripts/coverage.sh --vm.
+# PKGS, HELPERS and GUEST_MODULES: shared with scripts/coverage.sh --vm.
 # shellcheck source=test/vm/suites.sh
 . "$here/suites.sh"
 
@@ -203,7 +202,7 @@ done
 # those of overlay and btrfs this run loads (VM_MODULES, below), so a guest that loads them fails a fixture whose mount
 # fails, and a row whose guests load none runs the fixtures its kernel has built in and logs the others MOUNTS-ABSENT.
 fs_required=""
-for m in ${VM_MODULES-overlay btrfs unix_diag tcp_diag}; do
+for m in ${VM_MODULES-${GUEST_MODULES[*]}}; do
 	case "$m" in overlay | btrfs) fs_required="${fs_required:+$fs_required }$m" ;; esac
 done
 if [ -n "$fs_required" ]; then
@@ -282,18 +281,10 @@ done
 run_args=()
 [ -z "${VM_RUN:-}" ] || run_args+=("-test.run=$VM_RUN")
 module_args=()
-# overlay by default: the decision plane's overlayfs cell (internal/bpf TestPlaneStepAHooksDecide's overlay
-# subtest) skips, and root-skips.txt allows only where the kernel has no overlayfs, so an unset VM_MODULES runs it.
-# btrfs by default (amended 2026-10-05): internal/runtime/enforce/cgroup's TestPlaneRunBtrfsSubvolumeInodeIdentity
-# mounts a loop-file btrfs, the guest has no modprobe to load it on demand, and root-skips.txt allows its skip in the
-# plain build only. unix_diag by default (2026-10-16): the supervisor asks sock_diag which file each unix socket the
-# run bound is bound to (supervisor R11a), the guest has no modprobe for the kernel's own autoload, and without it every
-# socket under a write entry is refused unix-origin-unread. tcp_diag, with inet_diag under it, by default (2026-10-27): the
-# dashboard asks sock_diag which cgroup each TCP client socket was made in (internal/platform/peer TCPSocketCgroup), the
-# kernel answers ENOENT with no module to answer it, and the dashboard refused every sign-in and POST
-# (internal/control/cli TestServeOpenPrintsTheURLAndOpensIt, internal/platform/peer TestTCPSocketCgroupIsTheMakersCgroup).
-# VM_MODULES="" loads nothing.
-for m in ${VM_MODULES-overlay btrfs unix_diag tcp_diag}; do module_args+=(--module "$m"); done
+# test/vm/suites.sh's GUEST_MODULES by default, which says what needs each (overlay; btrfs, amended 2026-10-05;
+# unix_diag, 2026-10-16; tcp_diag, 2026-10-27); scripts/coverage.sh --vm's guests load the same. VM_MODULES="" loads
+# nothing.
+for m in ${VM_MODULES-${GUEST_MODULES[*]}}; do module_args+=(--module "$m"); done
 fixture_args=()
 if [ -n "${VM_FIXTURE_ROOT:-}" ]; then
 	[ -d "$VM_FIXTURE_ROOT" ] || { echo "root-suites.sh: VM_FIXTURE_ROOT is not a directory: $VM_FIXTURE_ROOT" >&2; exit 2; }

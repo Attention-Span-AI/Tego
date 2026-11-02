@@ -120,8 +120,9 @@ func runStopAgent(ctx context.Context, name string, requested time.Duration, std
 	return identity.ExitOK
 }
 
-// runStop is the in-process body of stop. requested is --grace, 0 when it was not given.
-func runStop(ctx context.Context, runID string, requested time.Duration, stdout, stderr io.Writer) (code int) {
+// runStop is the in-process body of stop. ref is the run's id, whole or abbreviated (runIDUnder, H08); every line
+// it prints names the whole id. requested is --grace, 0 when it was not given.
+func runStop(ctx context.Context, ref string, requested time.Duration, stdout, stderr io.Writer) (code int) {
 	m, cds, err := loadMachine(config.TrustWarn)
 	writeConfigDiagnostics(stderr, cds)
 	if err != nil {
@@ -146,9 +147,9 @@ func runStop(ctx context.Context, runID string, requested time.Duration, stdout,
 		message(stderr, "", 0, 0, "tego stop: "+err.Error(), codeIO)
 		return identity.ExitError
 	}
-	if !ledger.IsRunID(runID) {
-		message(stderr, "", 0, 0, fmt.Sprintf("tego stop: %q %v", runID, errBadRunID), codeUsage)
-		return identity.ExitUsage // R25: usage error
+	runID, err := runIDUnder(ref, root)
+	if err != nil {
+		return runRefFailed(stderr, "stop", err) // R25: a usage error, or the root's errno, 125 [io]
 	}
 	dir := filepath.Join(root, runID)
 	if _, err := os.Stat(dir); err != nil {

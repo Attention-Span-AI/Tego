@@ -60,7 +60,9 @@
 #   package-substring    with --vm only: the privileged packages whose path contains one of these
 # Environment: GO (go); TEGO_VM_LOCK, a file every suite's guest boot takes `flock` on, for a machine where
 # several jobs boot guests (matrix.sh takes its own, TEGO_VM_CACHE's guest.lock); VM_SUITE_TIMEOUT (seconds
-# per guest, default 1500, above 300; the suite's own -test.timeout is that less 300); matrix.sh's VM_* and kvm-run.sh's TEGO_VM_*; TEGO_VM_HARNESS, a directory that
+# per guest, default 1500, above 300; the suite's own -test.timeout is that less 300); VM_MODULES (the kernel
+# modules each guest loads, space-separated: default test/vm/suites.sh's GUEST_MODULES, as root-suites.sh's guests,
+# and none on a kernel-matrix row's kernel, TEGO_VM_KERNEL=matrix-<row>, unless named); matrix.sh's VM_* and kvm-run.sh's TEGO_VM_*; TEGO_VM_HARNESS, a directory that
 # stands in for test/vm (kvm-run.sh, matrix.sh, fetch-kernel.py, go-shim.sh), for scripts/coverage_test.sh.
 set -euo pipefail
 
@@ -114,7 +116,7 @@ if [ -n "$kill_row" ]; then
 	*) echo "coverage: --kill-tests: \"$kill_row\" is not a kernel-matrix row (rows:$rows)" >&2; exit 2 ;;
 	esac
 fi
-# The same packages, working directories, helpers and sudo identity as test/vm/root-suites.sh, whose
+# The same packages, working directories, helpers, kernel modules and sudo identity as test/vm/root-suites.sh, whose
 # comments say why each is what it is; only the -cover build and the data coming back are added. They are
 # chosen before anything runs, so a filter that matches nothing stops the script before the unit and
 # integration suites spend their minutes.
@@ -131,6 +133,27 @@ if [ "${#filters[@]}" -gt 0 ]; then
 	pkgs=("${selected[@]+"${selected[@]}"}")
 	[ "${#pkgs[@]}" -gt 0 ] || { echo "coverage: no privileged package matches ${filters[*]}" >&2; exit 2; }
 fi
+# The kernel modules each guest loads before its suite (kvm-run.sh --module): VM_MODULES, space-separated, by default
+# suites.sh's GUEST_MODULES, the ones root-suites.sh's guests load, which says what needs each. These guests loaded
+# none until 2026-11-02, and without tcp_diag internal/control/web's and internal/control/cli's suites failed in them:
+# the dashboard refuses every sign-in it cannot look up. kvm-run.sh asks apt for a kernel's module package, and a
+# kernel-matrix row's kernel (TEGO_VM_KERNEL=matrix-<row>) has none, so there the default is none, as in
+# root-suites.sh's row runs: VM_MODULES names the row's own after `test/vm/fetch-kernel.py --modules <row>` has
+# extracted them, as vm-matrix.yml's coverage step does for debian-13.
+modules=""
+if [ "$vm" = 1 ]; then
+	modules="${VM_MODULES-${GUEST_MODULES[*]}}"
+	case "${TEGO_VM_KERNEL:-}" in
+	matrix-*)
+		if [ -z "${VM_MODULES+x}" ]; then
+			modules=""
+			echo "coverage: TEGO_VM_KERNEL=$TEGO_VM_KERNEL is a kernel-matrix row's kernel, which apt has no module package for: its guests load no module, and the suites that need one fail or skip there (the dashboard's, without tcp_diag); test/vm/fetch-kernel.py --modules ${TEGO_VM_KERNEL#matrix-} extracts the row's own, for VM_MODULES to name" >&2
+		fi
+		;;
+	esac
+fi
+module_args=()
+for m in $modules; do module_args+=(--module "$m"); done
 case "$out" in /*) ;; *) out="$PWD/$out" ;; esac
 cd "$repo"
 module="$("$GO" list -m)"
@@ -205,6 +228,7 @@ if [ "$vm" = 1 ]; then
 	done
 	lock=()
 	[ -z "${TEGO_VM_LOCK:-}" ] || lock=(flock "$TEGO_VM_LOCK")
+	echo "== each guest loads: ${modules:-no kernel module}"
 	for p in "${pkgs[@]}"; do
 		suite="${p//\//_}"
 		bin="$vmout/bin/$suite.test"
@@ -226,7 +250,7 @@ if [ "$vm" = 1 ]; then
 		# suite, whatever its result: a failing suite's coverage is still what it exercised.
 		# shellcheck disable=SC2016 # the script is the guest's, and the guest's sh expands it
 		"${lock[@]}" "$vmdir/kvm-run.sh" --sudo --timeout "$suite_timeout" \
-			--log "$vmout/logs/$suite.console" --status "$vmout/logs/$suite.status" \
+			--log "$vmout/logs/$suite.console" --status "$vmout/logs/$suite.status" "${module_args[@]+"${module_args[@]}"}" \
 			--file "$bin:/vm/$suite.test" --file "$vmout/src:/src" --file "$vmout/prebuilt:/vm/prebuilt" \
 			--file "$vmdir/go-shim.sh:/usr/local/bin/go" --cwd "/src/$p" "${env_args[@]+"${env_args[@]}"}" \
 			-- /bin/sh -c '

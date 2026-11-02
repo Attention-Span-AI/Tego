@@ -60,9 +60,67 @@ type fixture struct {
 
 func newFixture(t testing.TB) *fixture {
 	t.Helper()
+	return newFixtureIn(t, t.TempDir())
+}
+
+// newSocketFixture is newFixture for a test whose contract or test rows name unix socket paths in the fixture, tail
+// the longest of them below its root ("project/lk/s.sock"). The parser refuses a socket path past sun_path's 107
+// bytes (ParseEndpoint), and t.TempDir's root carries the test's name and two more parts
+// (<GOTMPDIR or TMPDIR>/TestBindTablePolicy<random>/001), which left no room for project/alias/allowed.sock under a
+// directory past 46 bytes or so, as one under ~/.cache often is. This root is socketTempDir's.
+func newSocketFixture(t testing.TB, tail string) *fixture {
+	t.Helper()
+	return newFixtureIn(t, socketTempDir(t, tail))
+}
+
+// socketTempDir is a new directory under GOTMPDIR (when set and short enough, as t.TempDir uses it) or TMPDIR,
+// resolved and removed when the test ends, with room below it for tail, a unix socket path relative to it, within
+// sun_path's 107 bytes: os.MkdirTemp's short name, not t.TempDir's test-named one. When neither leaves room, the test
+// skips before it makes anything, naming the limit and the length that would fit; skipgate then fails the local gate
+// on the unlisted skip, so a gate run needs one of them that short.
+func socketTempDir(t testing.TB, tail string) string {
+	t.Helper()
+	// <base>/tg<os.MkdirTemp's random part, a uint32 in decimal>/<tail>
+	room := unixPathMax - 1 - len("/tg4294967295/"+tail)
+	// GOTMPDIR first, where t.TempDir makes its folders when it is set, then TMPDIR: the first with room is used.
+	var base string
+	var tried []string
+	for _, dir := range []string{os.Getenv("GOTMPDIR"), os.TempDir()} {
+		if dir == "" {
+			continue
+		}
+		b, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(b) <= room {
+			base = b
+			break
+		}
+		tried = append(tried, fmt.Sprintf("%s (%d bytes)", b, len(b)))
+	}
+	if base == "" {
+		t.Skipf("sun_path holds a unix socket path of at most %d bytes, and %s below a directory in GOTMPDIR or TMPDIR (%s) does not fit: run with one of %d bytes or less",
+			unixPathMax-1, tail, strings.Join(tried, ", "), room)
+	}
+	d, err := os.MkdirTemp(base, "tg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(d); err != nil {
+			t.Errorf("socketTempDir cleanup: %v", err)
+		}
+	})
+	return d
+}
+
+// newFixtureIn is newFixture built in dir, which the caller made and removes.
+func newFixtureIn(t testing.TB, dir string) *fixture {
+	t.Helper()
 	// Resolved, because Compile resolves every entry (FSRule.Resolved, E8) and the expectations built from
 	// root must name what it names: under a TMPDIR that is or holds a symlink, t.TempDir's spelling is not it.
-	root, err := filepath.EvalSymlinks(t.TempDir())
+	root, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

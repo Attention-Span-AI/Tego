@@ -61,7 +61,7 @@ func runReceipt(ctx context.Context, ref string, asJSON, verify bool, stdout, st
 			message(stderr, "", 0, 0, "tego receipt: "+err.Error(), codeNotFound)
 			return identity.ExitError
 		}
-	} else if dir, err = resolveRunDir(ref, true, mc); err != nil {
+	} else if dir, err = resolveRunDir("receipt", ref, true, mc); err != nil {
 		return runRefFailed(stderr, "receipt", err)
 	}
 	r, err := ledger.OpenReader(dir)

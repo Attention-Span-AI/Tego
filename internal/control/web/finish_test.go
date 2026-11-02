@@ -148,6 +148,43 @@ func TestRulesFoldAndOpen(t *testing.T) {
 	}
 }
 
+// TestRulesDefaultHits: a group's last line counts the run's lines it decided (the lines no rule named, by kind) and
+// links to them in Logs: one exec line on the programs default, two net lines on the network's.
+func TestRulesDefaultHits(t *testing.T) {
+	f := newRulesFix(t)
+	src := filepath.Join(f.proj, "dhits.yaml")
+	run := "r-aaaaaaaa-0000000000035-dhitsx"
+	attr := `"attribution":{"confidence":"unattributed","method":"none"}`
+	f.run(t, run, src, finishRules, time.Now().Add(-10*time.Minute).UTC(), false,
+		`"kind":"exec","source":"seccomp","rule":"unmatched","verdict":"refused","authority":"rule",`+attr+`,"argv":["curl"],"exec_id":"x/10/3","path":"/usr/bin/curl"`,
+		`"kind":"net","source":"supervisor","rule":"unmatched","verdict":"allow",`+attr+`,"dst":"203.0.113.9:443","proto":"tcp"`,
+		`"kind":"net","source":"supervisor","rule":"unmatched","verdict":"allow",`+attr+`,"dst":"203.0.113.9:80","proto":"tcp"`,
+		`"kind":"run_end","source":"supervisor","reason":"exit","exit_code":0`)
+	code, body := f.get(t, "/rules?run="+run)
+	if code != 200 {
+		t.Fatalf("GET: %d %s", code, body)
+	}
+	for _, c := range []struct{ kind, hits string }{{"exec", ">1 hit</a>"}, {"net", ">2 hits</a>"}} {
+		// html/template writes a URL's & and + as entities in an attribute.
+		href := strings.NewReplacer("&", "&amp;", "+", "&#43;").Replace(logsURL(run, "rule:unmatched kind:"+c.kind))
+		link := `<a class="n-link r-dhits" href="` + href + `"`
+		i := strings.Index(body, link)
+		if i < 0 {
+			t.Errorf("no default hits link for %s lines:\n%s", c.kind, body)
+			continue
+		}
+		if a := body[i:]; !strings.Contains(a[:strings.Index(a, "</a>")+4], c.hits) {
+			t.Errorf("the %s default's link does not say %s: %s", c.kind, c.hits, a[:strings.Index(a, "</a>")+4])
+		}
+	}
+	if n := strings.Count(body, `class="n-link r-dhits"`); n != 2 {
+		t.Errorf("%d default hits links, want the programs' and the network's", n)
+	}
+	if !strings.Contains(body, "3 lines</a> decided by defaults") {
+		t.Error("the page lost the run's total of lines the defaults decided")
+	}
+}
+
 // TestMachineNewestWatched: when the newest run only watched, This machine still names the newest run at each tier
 // it used, says the newest was watch-only, and keeps the capability ids under Technical detail.
 func TestMachineNewestWatched(t *testing.T) {

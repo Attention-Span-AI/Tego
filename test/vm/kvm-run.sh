@@ -15,7 +15,8 @@
 #   2. this host's own kernel (linux-image-unsigned-$(uname -r), else linux-image-$(uname -r)), so a
 #      guest result says something about the kernel the box really runs; modules only on --module. A
 #      vmlinuz already under $TEGO_VM_CACHE/kernel/$TEGO_VM_KERNEL/ is booted as it is, which is how
-#      test/vm/matrix.sh boots each kernel-matrix row's distro kernel (test/vm/fetch-kernel.py puts it there);
+#      test/vm/matrix.sh boots each kernel-matrix row's distro kernel (test/vm/fetch-kernel.py puts it there,
+#      and with --modules the row's own module tree beside it, where --module reads it);
 #   3. an initramfs-only root: static busybox, test/vm/guest-init.sh as /init, and a copy of the host
 #      userland the tests exec (dash, coreutils, python3, bwrap, ldconfig, openssl + libssl, ...);
 #   4. a boot with console=ttyS0 panic=-1, lsm= set to the host's own list plus bpf, and the host's
@@ -230,10 +231,19 @@ fetch_kernel() {
 }
 
 # fetch_module_tree extracts linux-modules-$KVER (and -extra when asked) for --module only: the root
-# is an initramfs and the console is a built-in 8250 UART, so an ordinary boot needs no module.
+# is an initramfs and the console is a built-in 8250 UART, so an ordinary boot needs no module. apt has
+# that package only for a kernel it knows. A kernel-matrix row's kernel (matrix-<row>) is not one: its tree
+# is the one test/vm/fetch-kernel.py --modules extracts from the row's own package, stamped with that
+# package's digest (.package-sha256), and it is all the modules the row has, with no -extra to add.
 fetch_module_tree() {
-	[ -d "$KDIR/mods/lib/modules/$KVER" ] || fetch_debs "$KDIR/mods" "linux-modules-$KVER"
-	if [ "${1:-}" = extra ] && ! grep -qx "linux-modules-extra-$KVER" "$KDIR/mods/.fetched" 2>/dev/null; then
+	if [ ! -d "$KDIR/mods/lib/modules/$KVER" ]; then
+		case "$KVER" in
+		matrix-*) env_fail "--module on the kernel-matrix row ${KVER#matrix-} needs its own module tree: test/vm/fetch-kernel.py --modules ${KVER#matrix-} extracts it (a row whose image package carries its modules: debian-13)" ;;
+		esac
+		fetch_debs "$KDIR/mods" "linux-modules-$KVER"
+	fi
+	if [ "${1:-}" = extra ] && [ ! -f "$KDIR/mods/.package-sha256" ] &&
+		! grep -qx "linux-modules-extra-$KVER" "$KDIR/mods/.fetched" 2>/dev/null; then
 		fetch_debs "$KDIR/mods" "linux-modules-extra-$KVER"
 	fi
 }

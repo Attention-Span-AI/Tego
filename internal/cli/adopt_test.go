@@ -293,6 +293,32 @@ func TestAdoptCommandRefusesWhatIsNeverAdopted(t *testing.T) {
 	}
 }
 
+// The refusal of the machine config names the command refused: tego adopt and tego agents --adopt said tego run, whose
+// function (configRefused) they share.
+func TestAdoptConfigRefusalNamesTheCommand(t *testing.T) {
+	t.Setenv("TEGO_CONFIG", filepath.Join(t.TempDir(), "missing.yaml"))
+	refusal := func(errs string) string {
+		for _, line := range strings.Split(errs, "\n") {
+			if strings.Contains(line, "[config-untrusted]") {
+				return line
+			}
+		}
+		return ""
+	}
+	calls := sandboxAdopt(t, terminalProcs(), true)
+	code, _, errs := runAdoptCmd(t, t.Context(), "--pid", "500")
+	if line := refusal(errs); code != identity.ExitConfig || !strings.HasPrefix(line, "tego adopt: ") || len(calls.roots()) != 0 {
+		t.Errorf("tego adopt under a missing $TEGO_CONFIG: exit %d, %d adopted, want %d and a refusal led by tego adopt:\n%s",
+			code, len(calls.roots()), identity.ExitConfig, errs)
+	}
+	sandboxAgents(t, t.TempDir(), true)
+	code, _, errs = runAgentsCmd(t, "--follow", "--adopt", "--uid", "1000")
+	if line := refusal(errs); code != identity.ExitConfig || !strings.HasPrefix(line, "tego agents: ") {
+		t.Errorf("tego agents --adopt under a missing $TEGO_CONFIG: exit %d, want %d and a refusal led by tego agents:\n%s",
+			code, identity.ExitConfig, errs)
+	}
+}
+
 func TestAdoptCommandAdoptsAndSaysWhat(t *testing.T) {
 	calls := sandboxAdopt(t, terminalProcs(), true)
 	code, _, errs := runAdoptCmd(t, t.Context(), "--pid", "500")

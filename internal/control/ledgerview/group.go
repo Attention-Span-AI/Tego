@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // Grouping: Logs' matched lines gathered by process, by target or by rule, so 11,000 lines of a watched run read as
@@ -21,7 +23,9 @@ const (
 	GroupProcess = "process"
 	// GroupTarget gathers lines by what they name (a path, an address, a command line), across runs.
 	GroupTarget = "target"
-	// GroupRule gathers lines by the rule that decided them, across runs.
+	// GroupRule gathers lines by the rule that decided them, across runs. A line nothing decided (verdict observed:
+	// recorded only, as every action of a watched run is) is gathered apart, under the rule it names
+	// (GroupRow.Observed).
 	GroupRule = "rule"
 	// GroupSeverity gathers lines by severity (Severity: High, Medium, Low, Routine), then Observed, Asked, Answered,
 	// Allowed and Recorded for the lines that were not blocked, across runs. Observed is a watched run's line: nothing
@@ -42,9 +46,15 @@ type GroupRow struct {
 	Run     string
 	PID     int
 	Program string
-	// Target is a target group's target and Kind its newest line's kind; Rule a rule group's rule ("" for lines
-	// no rule decided).
+	// Target is a target group's target and Kind its newest line's kind; Rule a rule group's rule: the rule that
+	// decided its lines or, on an Observed group, the rule they name ("" for the lines that name no rule: a run's start
+	// and end, a gap note, an answer).
 	Target, Kind, Rule string
+	// Observed marks a rule group of lines that name Rule but that nothing decided (verdict observed); the lines Rule
+	// decided are another group. Watched says every one of them is of a watched run (WatchedLine), where Rule is the
+	// contract entry they would have matched. Split marks a rule group whose rule has a group of the other kind in the
+	// search too, so the verdict names which of the rule's lines are this group's.
+	Observed, Watched, Split bool
 	// Severity is a severity group's name (sevOrder).
 	Severity string
 	// Agent is the newest line's agent.
@@ -147,6 +157,9 @@ func (s *Snapshot) Group(f Filter, by string, limit int, sens func(*Run) Sensiti
 		if row.runs > 1 {
 			row.Run = ""
 		}
+		if by == GroupRule && row.Rule != "" {
+			_, row.Split = all[ruleGroupKey(row.Rule, !row.Observed)]
+		}
 		out.Rows = append(out.Rows, *row)
 	}
 	slices.SortFunc(out.Rows, func(a, b GroupRow) int {
@@ -172,6 +185,7 @@ func mergeGroup(a, b *GroupRow) {
 	a.Lines += b.Lines
 	a.Refused += b.Refused
 	a.runs += b.runs
+	a.Watched = a.Watched && b.Watched
 	if b.First.Before(a.First) {
 		a.First = b.First
 	}
@@ -200,6 +214,7 @@ func groupRun(r *Run, rm *runMatch, by string, sens Sensitive) *runGroups {
 			continue
 		}
 		var key string
+		observed := false
 		switch by {
 		case GroupProcess:
 			prog := programAt(names, of, idx)
@@ -211,7 +226,9 @@ func groupRun(r *Run, rm *runMatch, by string, sens Sensitive) *runGroups {
 			}
 			key = e.Target
 		case GroupRule:
-			key = e.Rule
+			// verdict:observed names these lines in a query (verdictOf), so the group is the lines it lists.
+			observed = e.Rule != "" && verdictOf(e) == string(record.VerdictObserved)
+			key = ruleGroupKey(e.Rule, observed)
 		case GroupSeverity:
 			key = lineSeverity(e, sig)
 		}
@@ -224,7 +241,8 @@ func groupRun(r *Run, rm *runMatch, by string, sens Sensitive) *runGroups {
 			case GroupTarget:
 				row.Target = e.Target
 			case GroupRule:
-				row.Rule = e.Rule
+				// One run's lines of a group are all of its tier: a watched run's observed lines are all watched.
+				row.Rule, row.Observed, row.Watched = e.Rule, observed, observed && WatchedLine(r, e)
 			case GroupSeverity:
 				row.Severity = key
 			}
@@ -242,6 +260,15 @@ func groupRun(r *Run, rm *runMatch, by string, sens Sensitive) *runGroups {
 		}
 	}
 	return g
+}
+
+// ruleGroupKey is the group key of rule's lines: those it decided, or (observed) those that name it but that nothing
+// decided.
+func ruleGroupKey(rule string, observed bool) string {
+	if observed {
+		return rule + "\x00observed"
+	}
+	return rule
 }
 
 // lineSeverity is the severity group of line e (sevOrder).

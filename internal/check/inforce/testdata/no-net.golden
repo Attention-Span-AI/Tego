@@ -36,7 +36,7 @@ Always on: Protections every run gets, written in no rules file.
 
 Rule keys:
   change fs.write fs.write[./out/] enforced
-  programs exec.allow exec[bash] enforced
+  programs exec.allow exec[bash] enforced (+1 more)
   programs exec.allow exec[cat] enforced
   always-on built-in.deny_read fs.deny_read[$T/home/.ssh] enforced (+1 more)
   always-on built-in.host-sockets host-sockets best_effort

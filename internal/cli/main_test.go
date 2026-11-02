@@ -19,6 +19,10 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
+// shortRunRef is the end of the message for a run argument too short to abbreviate a run id by either end, in a
+// directory holding nothing of its name: an end needs four characters, a start four past r-<host8>-.
+const shortRunRef = "give the run's id, or at least its last 4 characters or its first 15 (4 past r-<host8>-) [usage]"
+
 // run invokes Main in-process (I6) and returns code, stdout, stderr.
 func run(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
@@ -56,16 +60,21 @@ func TestDispatchExitCodes(t *testing.T) {
 		// contract either it is a usage error.
 		{"run without a command", []string{"run", "a.yaml"}, identity.ExitLauncher, "", "[path-missing]"},
 		{"run without a contract or a command", []string{"run"}, identity.ExitUsage, "", "[usage]"},
-		{"stop a malformed run id", []string{"stop", "r-1"}, identity.ExitUsage, "", "[usage]"},
-		{"status of a malformed run id", []string{"status", "r-1"}, identity.ExitUsage, "", "[usage]"},
+		// status, stop and the ask commands take a run by its id alone, whole or abbreviated (runIDUnder).
+		{"stop a malformed run id", []string{"stop", "r-1"}, identity.ExitUsage, "", `tego stop: "r-1" is not a run id: ` + shortRunRef},
+		{"status of a malformed run id", []string{"status", "r-1"}, identity.ExitUsage, "", `tego status: "r-1" is not a run id: ` + shortRunRef},
+		{"approve a malformed run id", []string{"approve", "r-1", "q-0123456789abcdef0123456789abcdef"}, identity.ExitUsage, "",
+			`tego approve: "r-1" is not a run id: ` + shortRunRef},
+		{"stop a path", []string{"stop", "./r-1"}, identity.ExitUsage, "", `tego stop: "./r-1" is not a run id [usage]`},
 		// An empty argument listed every run, as if none were given.
 		{"status of an empty run id", []string{"status", ""}, identity.ExitUsage, "", `"" is not a run id [usage]`},
-		// A malformed run id is a usage error in every command that takes one.
-		{"drift a malformed run id", []string{"drift", "r-1"}, identity.ExitUsage, "", `"r-1" is not a run id or a run directory [usage]`},
-		{"measure a malformed run id", []string{"measure", "r-1"}, identity.ExitUsage, "", `"r-1" is not a run id or a run directory [usage]`},
-		{"learn a malformed run id", []string{"learn", "r-1"}, identity.ExitUsage, "", `"r-1" is not a run id or a run directory [usage]`},
-		{"events a malformed run id", []string{"events", "r-1"}, identity.ExitUsage, "", `"r-1" is not a run id or a run directory [usage]`},
-		{"verify a malformed run id", []string{"events", "r-1", "--verify"}, identity.ExitUsage, "", `"r-1" is not a run id or a run directory [usage]`},
+		// A malformed run id is a usage error in every command that takes one. Three characters are too few to
+		// abbreviate one (resolveRunDir), and the message says how many are enough.
+		{"drift a malformed run id", []string{"drift", "r-1"}, identity.ExitUsage, "", `"r-1" is not a run id or a run directory: ` + shortRunRef},
+		{"measure a malformed run id", []string{"measure", "r-1"}, identity.ExitUsage, "", `"r-1" is not a run id or a run directory: ` + shortRunRef},
+		{"learn a malformed run id", []string{"learn", "r-1"}, identity.ExitUsage, "", `"r-1" is not a run id or a run directory: ` + shortRunRef},
+		{"events a malformed run id", []string{"events", "r-1"}, identity.ExitUsage, "", `"r-1" is not a run id or a run directory: ` + shortRunRef},
+		{"verify a malformed run id", []string{"events", "r-1", "--verify"}, identity.ExitUsage, "", `"r-1" is not a run id or a run directory: ` + shortRunRef},
 		{"events bad kind", []string{"events", "r-1", "--kind", "fss"}, identity.ExitUsage, "", "unknown event kind"},
 		// A negative --limit was taken, --all beside a run id was ignored, and init in a directory that does not exist
 		// failed as 125 [io] on its first write.
@@ -134,6 +143,9 @@ func TestUnstatableRunIsIONotUsage(t *testing.T) {
 	for _, args := range [][]string{
 		{"status", id}, {"stop", id}, {"events", id}, {"drift", id}, {"measure", id}, {"learn", id},
 		{"events", filepath.Join(root, id, "nested")},
+		// An abbreviation is expanded from the root's names, which it cannot list: no word on whether the run is there.
+		{"events", id[len(id)-6:]}, {"status", id[len(id)-6:]}, {"stop", id[len(id)-6:]}, {"ask", id[len(id)-6:]},
+		{"approve", id[len(id)-6:], "q-0123456789abcdef0123456789abcdef"},
 	} {
 		code, out, errs := run(t, args...)
 		if code != identity.ExitError || !strings.Contains(errs, "permission denied") || !strings.Contains(errs, "[io]") {

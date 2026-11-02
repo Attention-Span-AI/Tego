@@ -23,10 +23,10 @@ import (
 //     no other narrowing it is that run's events file itself, a refused action's mirror line included (Filter.Ledger),
 //     so its chain checks; any other search gives the matching lines as Logs counts them, without the mirror lines,
 //     which the button's title says is not a chain anything can check.
-//   - GET /logs.csv is the page's columns in words, masked as the page masks them (shown.go), for a spreadsheet. A cell
-//     a spreadsheet would read as a formula (it starts with = + - @, a tab or a carriage return) is prefixed with ',
-//     and an invisible character (a bidi override in a file name) is written as the page writes it, ⟦U+202E⟧
-//     (visibleText).
+//   - GET /logs.csv is the page's columns in words, the rule as the row words it (rowLabeler), masked as the page masks
+//     them (shown.go), for a spreadsheet. A cell a spreadsheet would read as a formula (it starts with = + - @, a tab
+//     or a carriage return) is prefixed with ', and an invisible character (a bidi override in a file name) is written
+//     as the page writes it, ⟦U+202E⟧ (visibleText).
 //
 // Both stop at maxExportLines lines and then say so in a last row; both are oldest first unless order=newest.
 
@@ -125,18 +125,13 @@ func (s *Server) logsCSV(w http.ResponseWriter, r *http.Request) {
 	}
 	cw := csv.NewWriter(w)
 	_ = cw.Write(csvHeader) // a failed write shows in cw.Error, checked as rows go
-	lists := map[string]rulesview.Lists{}
+	labels := rowLabeler{ledger: s.cfg.Ledger, snap: snap, runs: map[string]*runLabels{}}
 	n, cut := 0, false
 	row := make([]string, len(csvHeader))
 	snap.Each(lq.f, exportOrder(r), func(e *ledgerview.Event, _ func() ([]byte, error)) bool {
 		if n == maxExportLines {
 			cut = true
 			return false
-		}
-		l, ok := lists[e.Run]
-		if !ok {
-			l = rulesview.RunLists(s.cfg.Ledger, e.Run)
-			lists[e.Run] = l
 		}
 		what := shown(*e)
 		if e.Kind == "exec" {
@@ -152,7 +147,7 @@ func (s *Server) logsCSV(w http.ResponseWriter, r *http.Request) {
 			verdict = v
 		}
 		row = append(row[:0], e.TS.Local().Format("2006-01-02 15:04:05.000 MST"), e.Run, e.Agent,
-			strconv.FormatUint(e.Seq, 10), e.Kind, verdict, shownOp(*e), what, e.Rule, ruleLabel(*e, l), reasonWords(*e),
+			strconv.FormatUint(e.Seq, 10), e.Kind, verdict, shownOp(*e), what, e.Rule, labels.label(e), reasonWords(*e),
 			e.Host, pid)
 		for i := range row {
 			row[i] = csvCell(visibleText(row[i]))
@@ -167,4 +162,41 @@ func (s *Server) logsCSV(w http.ResponseWriter, r *http.Request) {
 		_ = cw.Write([]string{"# stopped at " + strconv.Itoa(maxExportLines) + " lines: narrow the search to download the rest"}) // as above
 	}
 	cw.Flush()
+}
+
+// rowLabeler words a line's rule as its Logs row does (rowViews: labelRows, then relabelLive, then watchLabels), one
+// line at a time for the CSV: a watched run's observed line reads watchedLabel, a live block's refusal who blocked it
+// and when (blockLabels), any other line its rule in words (ruleLabel). Each run's contract lists and live blocks are
+// read once.
+type rowLabeler struct {
+	ledger string
+	snap   *ledgerview.Snapshot
+	runs   map[string]*runLabels
+}
+
+// runLabels is what rowLabeler read of one run: blocks is nil until the run's first live-block line.
+type runLabels struct {
+	run    *ledgerview.Run
+	lists  rulesview.Lists
+	blocks map[string]string
+}
+
+func (l *rowLabeler) label(e *ledgerview.Event) string {
+	r := l.runs[e.Run]
+	if r == nil {
+		r = &runLabels{run: l.snap.Find(e.Run), lists: rulesview.RunLists(l.ledger, e.Run)}
+		l.runs[e.Run] = r
+	}
+	if ledgerview.WatchedLine(r.run, e) {
+		return watchedLabel
+	}
+	if strings.HasPrefix(e.Rule, "live.block[") {
+		if r.blocks == nil {
+			r.blocks = blockLabels(r.run)
+		}
+		if b, ok := r.blocks[e.Rule]; ok {
+			return b
+		}
+	}
+	return ruleLabel(*e, r.lists)
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -26,6 +27,9 @@ type runScan struct {
 	lines   int
 	// rules counts each rule key the lines carry; from the read model (cachedScan) it is shared and only read.
 	rules map[string]int
+	// unmatched counts, by line kind, the lines whose rule is unmatched (the defaults decided them), so each counts
+	// on the default of the group that decided it (inforce's CountDefault).
+	unmatched map[string]int
 	// execDirs is the directories of the programs the run exec'd, first seen first, from at most maxExecScan lines.
 	execDirs []string
 }
@@ -43,7 +47,7 @@ func scanRun(ctx context.Context, dir string) (*runScan, error) {
 		return nil, err
 	}
 	defer func() { _ = r.Close() }() // read-only
-	sc := &runScan{rules: map[string]int{}}
+	sc := &runScan{rules: map[string]int{}, unmatched: map[string]int{}}
 	execs := 0
 	seenDir := map[string]bool{}
 	for line, err := range r.Lines() {
@@ -72,6 +76,9 @@ func scanRun(ctx context.Context, dir string) (*runScan, error) {
 		}
 		if len(rule) > 0 {
 			sc.rules[string(rule)]++ // the conversion in a map index does not allocate
+			if string(rule) == agent.UnmatchedRule {
+				sc.unmatched[string(kind)]++
+			}
 		}
 		switch record.Kind(kind) {
 		case record.KindRunEnd:
@@ -92,7 +99,8 @@ func scanRun(ctx context.Context, dir string) (*runScan, error) {
 // cachedScan is scanRun's findings for a run the dashboard's read model holds: run_start read from the ledger (the
 // read model keeps its common fields, not the payload a compile needs), the rest from r: its lines, its end, the
 // hits per rule key (ledgerview.RuleHits: a refused action's mirror left out, so a refusal counts once as Logs counts
-// it) and its programs' folders from its first maxExecScan exec lines.
+// it), its unmatched lines by kind (mirrors left out alike) and its programs' folders from its first maxExecScan exec
+// lines.
 func cachedScan(dir string, r *ledgerview.Run) (*runScan, error) {
 	rd, err := ledger.OpenReader(dir)
 	if err != nil {
@@ -114,14 +122,16 @@ func cachedScan(dir string, r *ledgerview.Run) (*runScan, error) {
 	}
 	execs := 0
 	seen := map[string]bool{}
+	sc.unmatched = map[string]int{}
 	evs := r.AllEvents()
 	for i := range evs {
-		if evs[i].Kind != string(record.KindExec) {
+		if evs[i].Rule == agent.UnmatchedRule && !evs[i].Mirror {
+			sc.unmatched[evs[i].Kind]++
+		}
+		if evs[i].Kind != string(record.KindExec) || execs >= maxExecScan {
 			continue
 		}
-		if execs++; execs > maxExecScan {
-			break
-		}
+		execs++
 		var p record.ExecPayload
 		if json.Unmarshal([]byte(evs[i].Raw), &p) != nil || !filepath.IsAbs(p.Path) {
 			continue

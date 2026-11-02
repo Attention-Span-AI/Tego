@@ -35,7 +35,10 @@ import (
 	"github.com/attention-span-ai/tego/internal/testutil"
 )
 
-const contractName = "supply-chain-codex-chatgpt"
+const (
+	contractName = "supply-chain-codex-chatgpt"
+	oldMark      = ".moved-by-demo-sh" // demo.sh's OLD_MARK: the file naming the folder reset moved a ledger to
+)
 
 var (
 	buildOnce sync.Once
@@ -500,7 +503,8 @@ func TestSupplyChainProtected(t *testing.T) {
 // TestRetakeRestoresContract: a "Never allow" during a take rewrites the filled contract so the
 // token read is denied outright. The next take then never shows the 0:15 ask. reset fills the contract again from
 // the template and moves the ledger (its .rule-changes journal with it), check says why before it does, and
-// reset keeps only the newest three old ledgers.
+// reset keeps only the newest three old ledgers it moved. It used to delete every <ledger>.old-* folder past the
+// newest three, so a folder of that name it never made went too; now such a folder, or a copy of a moved one, stays.
 func TestRetakeRestoresContract(t *testing.T) {
 	w := newWorld(t)
 	w.mustDemo("setup")
@@ -536,16 +540,30 @@ func TestRetakeRestoresContract(t *testing.T) {
 	if err := os.WriteFile(journal, []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for i := 1; i <= 4; i++ {
-		d := fmt.Sprintf("%s.old-0%d", w.ledger, i)
+	// Four old ledgers reset moved, each marked with the folder it was moved to, and, older than all of them, two it
+	// did not make: a folder of that name made by hand, and a copy of a moved one (its mark names the original).
+	oldLedger := func(name, mark string, age time.Duration) string {
+		d := w.ledger + ".old-" + name
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		past := time.Now().Add(-time.Duration(10-i) * time.Hour)
+		if mark != "" {
+			if err := os.WriteFile(filepath.Join(d, oldMark), []byte(mark+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		past := time.Now().Add(-age)
 		if err := os.Chtimes(d, past, past); err != nil {
 			t.Fatal(err)
 		}
+		return d
 	}
+	for i := 1; i <= 4; i++ {
+		name := fmt.Sprintf("0%d", i)
+		oldLedger(name, w.ledger+".old-"+name, time.Duration(10-i)*time.Hour)
+	}
+	handMade := oldLedger("x", "", 20*time.Hour)
+	copied := oldLedger("copy", w.ledger+".old-01", 21*time.Hour)
 
 	w.mustDemo("reset")
 	if got := readFile(t, w.filled()); got != original {
@@ -558,21 +576,32 @@ func TestRetakeRestoresContract(t *testing.T) {
 		t.Errorf("the new ledger is not empty: %v", entries)
 	}
 	olds, _ := filepath.Glob(w.ledger + ".old-*")
-	if len(olds) != 3 {
-		t.Errorf("reset keeps the newest 3 old ledgers; found %v", olds)
+	var marked []string // the ones reset moved: each mark names its own folder
+	for _, d := range olds {
+		if b, err := os.ReadFile(filepath.Join(d, oldMark)); err == nil && string(b) == d+"\n" {
+			marked = append(marked, d)
+		}
+	}
+	if len(marked) != 3 {
+		t.Errorf("reset keeps the newest 3 old ledgers it moved; found %v of %v", marked, olds)
 	}
 	moved := false
-	for _, d := range olds {
+	for _, d := range marked {
 		if _, err := os.Stat(filepath.Join(d, ".rule-changes", "journal.jsonl")); err == nil {
 			moved = true
 		}
 	}
 	if !moved {
-		t.Errorf("the .rule-changes journal did not move with the ledger: %v", olds)
+		t.Errorf("the .rule-changes journal is in no old ledger marked as moved: %v of %v", marked, olds)
 	}
 	for _, gone := range []string{w.ledger + ".old-01", w.ledger + ".old-02"} {
 		if _, err := os.Stat(gone); err == nil {
 			t.Errorf("%s should have been pruned", gone)
+		}
+	}
+	for _, kept := range []string{handMade, copied} {
+		if _, err := os.Stat(kept); err != nil {
+			t.Errorf("reset deleted %s, a folder it did not move: %v", kept, err)
 		}
 	}
 	// and the ask is back

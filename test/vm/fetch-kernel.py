@@ -27,14 +27,23 @@
 # kernel, 6.17 (Landlock ABI 7), the series this project is developed on. Ubuntu 22.04's row is its GA kernel,
 # 5.15, where Landlock is ABI 1 and no tier is offered: it is the one doctor-only row (DOCTOR_ONLY below).
 #
+# A guest that wants a module (kvm-run.sh --module) needs the row's own: kvm-run.sh asks apt for linux-modules-<kernel>,
+# which exists only for a kernel apt knows, never for a row's. --modules extracts the row's module tree from the package
+# it has just authenticated, into the directory kvm-run.sh reads before it asks apt. Only a .deb row whose image package
+# carries its modules has one: Debian's does (debian-13); Ubuntu's ship theirs in a package of their own
+# (linux-modules-<release>) and an RPM row's kernel-core carries only some, and those rows are refused.
+#
 # Usage: fetch-kernel.py <row>            print the path of the row's vmlinuz, fetching it once
 #        fetch-kernel.py --list           the rows: name, series, source kind, body (full or doctor-only), label
 #        fetch-kernel.py --refresh <row>  fetch again even when an image is cached
 #        fetch-kernel.py --name <row>     the TEGO_VM_KERNEL name kvm-run.sh boots it under
 #        fetch-kernel.py --body <row>     what the row's guest runs: full, or doctor-only (see DOCTOR_ONLY)
+#        fetch-kernel.py --modules <row>  print the path of the row's module tree, fetching the row first as <row>
+#                                         does and extracting the tree once per package (module_tree)
 # Exit code: 0 with the path on stdout; 97 when the row cannot be fetched here (no network, the mirror no
 # longer carries the package), with a message naming what failed; 2 on a usage error. 97 is kvm-run.sh's
 # own "this box cannot do it" code, so a matrix row that could not start is never mistaken for a test fail.
+import contextlib
 import fcntl
 import datetime
 import email.utils
@@ -295,9 +304,10 @@ def deb_index(base, suite, p, work):
     return out
 
 
-def deb_vmlinuz(path):
-    """The kernel image inside a .deb: an ar archive whose data.tar.* member is read as a stream, because
-    Debian's image package carries every module too and is hundreds of megabytes unpacked."""
+@contextlib.contextmanager
+def deb_data_tar(path):
+    """The data.tar.* member of a .deb, an ar archive, opened as a tar stream through its decompressor: Debian's
+    image package carries every module too and is hundreds of megabytes unpacked, so nothing holds it whole."""
     with open(path, "rb", buffering=0) as f:
         if f.read(8) != b"!<arch>\n":
             raise EnvError(f"{os.path.basename(path)} is not an ar archive (.deb)")
@@ -316,15 +326,47 @@ def deb_vmlinuz(path):
                 proc = subprocess.Popen(cmd, stdin=f, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
                 try:
                     with tarfile.open(fileobj=proc.stdout, mode="r|") as tar:
-                        for m in tar:
-                            if re.fullmatch(r"\.?/?boot/vmlinuz-.*", m.name) and m.isfile():
-                                return tar.extractfile(m).read(), m.name.rsplit("vmlinuz-", 1)[1]
+                        yield tar
                 finally:
                     proc.stdout.close()
                     proc.kill()
                     proc.wait()
+                return
             off += 60 + size + (size & 1)
+    raise EnvError(f"{os.path.basename(path)} holds no data.tar member")
+
+
+def deb_vmlinuz(path):
+    """The kernel image inside a .deb, and the release its name carries."""
+    with deb_data_tar(path) as tar:
+        for m in tar:
+            if re.fullmatch(r"\.?/?boot/vmlinuz-.*", m.name) and m.isfile():
+                return tar.extractfile(m).read(), m.name.rsplit("vmlinuz-", 1)[1]
     raise EnvError(f"{os.path.basename(path)} holds no boot/vmlinuz-*")
+
+
+def deb_modules(path, release, dest):
+    """Writes the .deb's lib/modules/<release>/ (usr/lib/modules/ in a merged-/usr package) under dest, each file at
+    its path below that directory, as kvm-run.sh --module reads a linux-modules package's tree, and returns how many
+    kernel modules it wrote. Regular files only (the build and source links are left out), and only when every part
+    of the path is a plain name: a member with an empty, "." or ".." part is refused, so nothing lands outside dest."""
+    under = re.compile(r"\.?/?(?:usr/)?lib/modules/" + re.escape(release) + r"/(.+)")
+    kos = 0
+    with deb_data_tar(path) as tar:
+        for m in tar:
+            got = under.fullmatch(m.name)
+            if not got or not m.isfile():
+                continue
+            parts = got.group(1).split("/")
+            if any(part in ("", ".", "..") for part in parts):
+                raise EnvError(f"{os.path.basename(path)}: refusing the member {m.name!r}, whose path is not plain")
+            out = os.path.join(dest, *parts)
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            with tar.extractfile(m) as src, open(out, "xb") as dst:
+                shutil.copyfileobj(src, dst, 1 << 20)
+            if re.search(r"\.ko(\.[a-z]+)?$", parts[-1]):
+                kos += 1
+    return kos
 
 
 def fetch_deb(p, work):
@@ -579,16 +621,69 @@ def check_series(row, series, info):
                        f"is kernel {info.get('release')} (series {got}); --refresh fetches the row again")
 
 
-def fetch(row, refresh=False):
-    """The cached image of a row, fetched first when it is missing. The cache is shared by every checkout and
-    matrix run on the box, so the whole call runs under an flock on the row's directory: a second caller waits,
-    then finds the finished pair the first wrote (or repairs it) instead of reading a half-refreshed one."""
+def fetch(row, refresh=False, modules=False):
+    """The cached image of a row, fetched first when it is missing; with modules, the path of the row's module tree
+    (module_tree) instead. The cache is shared by every checkout and matrix run on the box, so the whole call runs
+    under an flock on the row's directory: a second caller waits, then finds the finished pair the first wrote (or
+    repairs it) instead of reading a half-refreshed one."""
     pin = trusted_pin(row) # a configured but invalid/missing pin fails before any network or cache mutation
     dest_dir = os.path.join(cache_root(), "kernel", kernel_name(row))
     os.makedirs(dest_dir, exist_ok=True)
     with open(os.path.join(dest_dir, ".lock"), "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        return _fetch_locked(row, refresh, dest_dir, pin)
+        image, info = _fetch_locked(row, refresh, dest_dir, pin)
+        return module_tree(row, dest_dir, info) if modules else image
+
+
+def remove_path(path):
+    """Removes a file, link or directory tree at path, if there is one."""
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path)
+    elif os.path.lexists(path):
+        os.unlink(path)
+
+
+def module_tree(row, dest_dir, info):
+    """The row's own module tree, where kvm-run.sh --module looks before it asks apt for linux-modules-<kernel>:
+    kernel/matrix-<row>/mods/lib/modules/matrix-<row>/. apt serves that package for the kernel this host runs, never
+    for a row's distro kernel, so a row's guests can load a module only from this tree (test/vm/README.md). Debian's
+    image package carries its modules beside the image, so a .deb row's tree is lib/modules/<release>/ of the package
+    _fetch_locked has just authenticated (proof/package), extracted once per package: mods/.package-sha256 names the
+    package it came from, a tree from another package is replaced, and a fresh fetch removes it with the old image.
+    A row whose image package carries no modules is an EnvError: Ubuntu's are a package of their own
+    (linux-modules-<release>), which this script does not fetch, and an RPM row's kernel-core carries only some."""
+    kind = ROWS[row][2]
+    if kind != "deb":
+        raise EnvError(f"--modules reads the modules a .deb row's image package carries, and {row} is a {kind} row")
+    mods = os.path.join(dest_dir, "mods")
+    tree = os.path.join(mods, "lib", "modules", kernel_name(row))
+    want = (info.get("sha256") or "").lower()
+    try:
+        have = read_bytes(os.path.join(mods, ".package-sha256")).decode("utf-8", "replace").strip()
+    except OSError:
+        have = ""
+    if want and have == want and os.path.isdir(tree):
+        return tree
+    with tempfile.TemporaryDirectory(dir=dest_dir) as work:
+        kos = deb_modules(os.path.join(dest_dir, "proof", "package"), info["release"],
+                          os.path.join(work, "lib", "modules", kernel_name(row)))
+        if not kos:
+            raise EnvError(f"{info.get('package')} carries no kernel module under lib/modules/{info['release']}/ "
+                           "(Ubuntu ships them in linux-modules-<release>, which this script does not fetch)")
+        with open(os.path.join(work, ".package-sha256"), "w") as f:
+            f.write(want + "\n")
+        # The old tree is moved aside, not removed first, so a guest staging its modules meanwhile finds a whole
+        # tree at the path for all but the instant between the two renames.
+        aside = None
+        if os.path.isdir(mods) and not os.path.islink(mods):
+            aside = tempfile.mkdtemp(dir=dest_dir)
+            os.replace(mods, aside)
+        else:
+            remove_path(mods)
+        os.replace(work, mods)
+        if aside:
+            shutil.rmtree(aside)
+    return tree
 
 
 def _fetch_locked(row, refresh, dest_dir, pin=None):
@@ -625,10 +720,12 @@ def _fetch_locked(row, refresh, dest_dir, pin=None):
         finally:
             if os.path.exists(tmp_src):
                 os.unlink(tmp_src)
-        return image
+        return image, info
 
     # Legacy image/source.json pairs lack a signing proof and are always fetched again. Publish the proof,
     # source and image in that order; interruption cannot leave an image that bypasses fresh verification.
+    # The module tree goes first: a new package's image must never boot with the old package's modules.
+    remove_path(os.path.join(dest_dir, "mods"))
     for stale in (image, src):
         if os.path.lexists(stale):
             os.unlink(stale)
@@ -648,7 +745,7 @@ def _fetch_locked(row, refresh, dest_dir, pin=None):
         os.replace(work, proof)
         os.replace(os.path.join(proof, "source.json"), src)
         os.replace(os.path.join(proof, "vmlinuz"), image)
-    return image
+    return image, info
 
 
 def main(argv):
@@ -665,12 +762,15 @@ def main(argv):
     if len(args) == 2 and args[0] == "--body" and args[1] in ROWS:
         print(body_of(args[1]))
         return 0
+    modules = len(args) == 2 and args[0] == "--modules"
+    if modules:
+        args = args[1:]
     if len(args) != 1 or args[0] not in ROWS:
-        print("usage: fetch-kernel.py [--refresh] <row> | --list | --name <row> | --body <row>", file=sys.stderr)
+        print("usage: fetch-kernel.py [--refresh] [--modules] <row> | --list | --name <row> | --body <row>", file=sys.stderr)
         print("rows: " + " ".join(ROWS), file=sys.stderr)
         return EXIT_USAGE
     try:
-        print(fetch(args[0], refresh))
+        print(fetch(args[0], refresh, modules=True) if modules else fetch(args[0], refresh))
     except EnvError as e:
         print(f"fetch-kernel: {args[0]}: {e}", file=sys.stderr)
         return EXIT_ENV

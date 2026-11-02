@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/attention-span-ai/tego/pkg/policy/gate"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
@@ -26,7 +27,8 @@ type limit struct {
 	pos        agent.Pos
 }
 
-// The list keys a decl holds, each a contract key.
+// The list keys a decl holds, each a contract key (net.http's and net.ingress's entries, which are mappings, are held
+// apart: decl.http, decl.ingress).
 const (
 	kFSWrite     = "fs.write"
 	kFSAsk       = "fs.ask"
@@ -40,11 +42,26 @@ const (
 	kNetAllow    = "net.allow"
 	kNetAsk      = "net.ask"
 	kNetListen   = "net.listen"
+	kNetHTTP     = "net.http"
+	kNetIngress  = "net.ingress"
 	kEnvPass     = "env.pass"
 	kEnvDeny     = "env.deny"
 	kEnvSet      = "env.set"
 	kModels      = "models"
 )
+
+// httpRule is one net.http entry: the requests a model service may be sent (agent.HTTPRule).
+type httpRule struct {
+	host           string
+	allow, methods []string
+	pos            agent.Pos
+}
+
+// ingressRule is one net.ingress entry: a source a declared listener accepts (agent.IngressRule).
+type ingressRule struct {
+	from, to string
+	pos      agent.Pos
+}
 
 // limitKeys are the limits keys in the order the limits group lists them.
 var limitKeys = []string{"wall", "tokens", "cost_usd", "memory", "memory_high", "pids", "cpu", "cpu_weight", "stall_after", "repeats"}
@@ -61,6 +78,18 @@ type decl struct {
 	cmdPos  agent.Pos
 
 	lists map[string][]item
+
+	// http is net.http's entries; ingress net.ingress's, and ingressKey says the key is present, even empty (then only
+	// the sources listed reach the listeners).
+	http       []httpRule
+	ingress    []ingressRule
+	ingressKey bool
+
+	// gate is the gate's scored rules as agent.CompileGateConfig reads them, nil when there are none or they do not
+	// read (gateBad); gatePos is each rule's position, in its Rules' order.
+	gate    *gate.Policy
+	gatePos []agent.Pos
+	gateBad bool
 
 	hasFS, hasNet, hasExec bool
 	execAllowKey           bool // exec.allow is present (allow-list mode), even empty
@@ -124,6 +153,15 @@ func fromContract(c *agent.Contract, file string) decl {
 		add(kNetAllow, c.Net.Allow)
 		add(kNetAsk, c.Net.Ask)
 		add(kNetListen, c.Net.Listen)
+		for i, h := range c.Net.HTTP {
+			p, _ := c.Pos("net.http." + strconv.Itoa(i))
+			d.http = append(d.http, httpRule{host: h.Host, allow: slices.Clone(h.Allow), methods: slices.Clone(h.Methods), pos: p})
+		}
+		d.ingressKey = c.Net.Ingress != nil
+		for i, r := range c.Net.Ingress {
+			p, _ := c.Pos("net.ingress." + strconv.Itoa(i))
+			d.ingress = append(d.ingress, ingressRule{from: r.From, to: r.To, pos: p})
+		}
 	}
 	d.envPassKey = c.Env.Pass != nil
 	add(kEnvPass, c.Env.Pass)
@@ -176,7 +214,24 @@ func fromContract(c *agent.Contract, file string) decl {
 	}
 	sortLimits(d.limits)
 	readAsk(&d, &c.Ask, func(key string) agent.Pos { p, _ := c.Pos(key); return p })
+	if c.Gate.Kind != 0 {
+		d.gate, d.gateBad = readGate(c)
+		for i := range d.gate.Rules() {
+			p, _ := c.Pos("gate.rules." + strconv.Itoa(i))
+			d.gatePos = append(d.gatePos, p)
+		}
+	}
 	return d
+}
+
+// readGate reads a contract's gate as the compiler does (without the home: a read pattern keeps its ~), so the view
+// lists the rules a run scores, in their order; bad is true for a gate: key whose rules do not read.
+func readGate(c *agent.Contract) (p *gate.Policy, bad bool) {
+	p, err := agent.CompileGateConfig(c)
+	if err != nil {
+		return nil, true
+	}
+	return p, false
 }
 
 // readAsk reads the ask: block's timeout and on_timeout, which the contract keeps as a node.
@@ -279,6 +334,32 @@ func fromYAML(text []byte, path string) (decl, error) {
 		for _, k := range []string{"allow", "ask", "listen"} {
 			seq(nt, "net", k)
 		}
+		scalars := func(n *yaml.Node, key string) []string {
+			var out []string
+			if v := mapGet(n, key); v != nil && v.Kind == yaml.SequenceNode {
+				for _, e := range v.Content {
+					if e.Kind == yaml.ScalarNode {
+						out = append(out, e.Value)
+					}
+				}
+			}
+			return out
+		}
+		if hs := mapGet(nt, "http"); hs != nil && hs.Kind == yaml.SequenceNode {
+			for _, h := range hs.Content {
+				if h.Kind == yaml.MappingNode {
+					d.http = append(d.http, httpRule{host: scalar(h, "host"), allow: scalars(h, "allow"), methods: scalars(h, "methods"), pos: at(h)})
+				}
+			}
+		}
+		if in := mapGet(nt, "ingress"); in != nil && in.Kind == yaml.SequenceNode {
+			d.ingressKey = true
+			for _, r := range in.Content {
+				if r.Kind == yaml.MappingNode {
+					d.ingress = append(d.ingress, ingressRule{from: scalar(r, "from"), to: scalar(r, "to"), pos: at(r)})
+				}
+			}
+		}
 	}
 	if env := mapGet(root, "env"); env != nil && env.Kind == yaml.MappingNode {
 		d.envPassKey = mapGet(env, "pass") != nil
@@ -311,6 +392,14 @@ func fromYAML(text []byte, path string) (decl, error) {
 	}
 	sortLimits(d.limits)
 	readAsk(&d, mapGet(root, "ask"), func(string) agent.Pos { return agent.Pos{} })
+	if g := mapGet(root, "gate"); g != nil {
+		d.gate, d.gateBad = readGate(&agent.Contract{Gate: *g})
+		if rs := mapGet(g, "rules"); rs != nil && rs.Kind == yaml.SequenceNode && len(rs.Content) == len(d.gate.Rules()) {
+			for _, n := range rs.Content {
+				d.gatePos = append(d.gatePos, at(n))
+			}
+		}
+	}
 	return d, nil
 }
 

@@ -142,14 +142,7 @@ func TestAskUnixScopesAreHeldAtTheConnect(t *testing.T) {
 func TestAskUnixScopeIsMatchedByItsResolvedSpelling(t *testing.T) {
 	f := newFixture(t)
 	// Not under the fixture's root: a socket path there is past sun_path's 107 bytes.
-	out, err := os.MkdirTemp("", "eyas")
-	if err == nil {
-		t.Cleanup(func() { _ = os.RemoveAll(out) })
-		out, err = filepath.EvalSymlinks(out)
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
+	out := socketTempDir(t, "link/sub/deep/app.sock")
 	if err := os.Mkdir(filepath.Join(out, "real"), 0o755); err != nil {
 		t.Fatal(err)
 	}

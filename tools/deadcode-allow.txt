@@ -129,6 +129,7 @@ github.com/attention-span-ai/tego/internal/watch/tree.Tree.PIDs	test-api	interna
 github.com/attention-span-ai/tego/pkg/policy/fsplan.Contains	public-api	compares clean absolute paths at component boundaries, for consumers of pkg/policy
 github.com/attention-span-ai/tego/pkg/policy/fsplan.FirstCover	public-api	the first listed grant covering a target, for consumers of pkg/policy
 github.com/attention-span-ai/tego/pkg/policy/fsplan.Plan.Enumerate	public-api	lists a plan's targets for consumers of pkg/policy
+github.com/attention-span-ai/tego/pkg/spec/agent.BuiltInDenyWriteNames	test-api	internal/control/ledgerview's severity test holds laterFiles to the engine's built-in deny_write set with it
 github.com/attention-span-ai/tego/pkg/spec/agent.Endpoint.Static	public-api	says whether an entry never needs DNS (literal IP, CIDR or unix socket), for consumers of pkg/spec
 github.com/attention-span-ai/tego/pkg/spec/agent.TestTable.Run	public-api	contract test tables (tego's examples and other consumers) run their rows with it
 github.com/attention-span-ai/tego/pkg/spec/agent.TestTable.RunBy	public-api	contract test tables run their rows with a caller's decider (pkg/policy/evaluate)

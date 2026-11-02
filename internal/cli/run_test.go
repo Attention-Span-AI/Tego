@@ -4,6 +4,7 @@ package cli
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,7 +52,7 @@ func TestRunPrices(t *testing.T) {
 			m := config.Builtin()
 			m.Prices = config.Setting[string]{Value: tc.path}
 			var stderr bytes.Buffer
-			table, gap := runPrices(m, nil, &stderr)
+			table, gap := runPrices(m, nil, "tego run", &stderr)
 			if gap != tc.wantGap {
 				t.Fatalf("gap %q, want %q", gap, tc.wantGap)
 			}
@@ -112,7 +113,7 @@ func TestCostBudgetWithoutPrices(t *testing.T) {
 	rt.Limits.CostUSD = 1.5
 	rt.Limits.Set |= agent.BudgetCostUSD
 	var stderr bytes.Buffer
-	runPrices(m, rt, &stderr)
+	runPrices(m, rt, "tego run", &stderr)
 	if want := "the cost_usd budget of 1.5 never trips"; !strings.Contains(stderr.String(), want) {
 		t.Errorf("run's line %q does not name the budget (%q)", stderr.String(), want)
 	}
@@ -153,7 +154,7 @@ func TestRunWarnsThatEtcUsersIsReadByTegodOnly(t *testing.T) {
 		Value:  map[string]config.UserPolicy{"1000": {MaxRuns: 1}},
 		Source: config.Provenance{File: "/etc/tego/config.yaml", Line: 7, Layer: config.LayerEtc}}}
 	var stderr bytes.Buffer
-	warnUsersIgnored(&stderr, m)
+	warnUsersIgnored(&stderr, "tego run", m)
 	want := "/etc/tego/config.yaml:7: users: is read by tegod only; tego run ignores it"
 	if !strings.Contains(stderr.String(), want) || !strings.Contains(stderr.String(), "[config-ignored]") {
 		t.Errorf("stderr %q lacks %q [config-ignored]", stderr.String(), want)
@@ -198,5 +199,106 @@ func TestRunFlagsCheckedFirst(t *testing.T) {
 	}
 	if _, _, errs := run(t, "run", missing, "--", "true"); strings.Contains(errs, "[unenforced]") {
 		t.Errorf("a run with neither flag warned:\n%s", errs)
+	}
+}
+
+// TestRunSaysTheContractsRecordOffAtItsEnd: a contract's own record: off, or a profile's it extends, is what its
+// author wrote and weakens no rule, so a run or a bounded watch prints nothing for it before the agent starts (A quiet
+// start, limits-check-doctor-cli.md R29); a start line said it on every run. The run's end says "record off: refusals
+// only", the summary's line or the watch's footer, as it does for --record off, whose R29 warning is still printed once
+// at the start; a --record that raises the record, or a contract at the default, says neither.
+func TestRunSaysTheContractsRecordOffAtItsEnd(t *testing.T) {
+	calls := sandboxedLaunch(t)
+	dir := trustedDir(t)
+	off, plain := filepath.Join(dir, "off.yaml"), filepath.Join(dir, "plain.yaml")
+	writeTestFile(t, off, "version: 0\nname: quiet\ncommand: [\"true\"]\nrecord: off\n")
+	writeTestFile(t, plain, "version: 0\nname: plain\ncommand: [\"true\"]\n")
+	const flagLine = ": --record off is in effect: the ledger keeps only this run's refusals"
+	// check runs argv and splits its stderr at the run's end (the summary's line or the watch's footer names the run
+	// sandboxedLaunch's launcher returns): before it, the --record off warning is printed flagged times and nothing
+	// else speaks of record: off; after it, the end says record off exactly when the run recorded off.
+	check := func(t *testing.T, argv []string, record agent.RecordMode, flagged int) {
+		t.Helper()
+		*calls = nil
+		var errs bytes.Buffer
+		if code := mainWith(t.Context(), argv, io.Discard, &errs, []Command{cmdRun(), cmdWatch()}); code != identity.ExitOK {
+			t.Fatalf("%q: exit %d:\n%s", argv[1:], code, errs.String())
+		}
+		if len(*calls) != 1 || (*calls)[0].record != record {
+			t.Fatalf("%q: the launcher saw %+v, want one run recording %s", argv[1:], *calls, record)
+		}
+		out := errs.String()
+		i := strings.Index(out, "r-test-run")
+		if i < 0 {
+			t.Fatalf("%q: no end of run:\n%s", argv[1:], out)
+		}
+		start, end := out[:i], out[i:]
+		rest := strings.ReplaceAll(start, flagLine, "")
+		if n := strings.Count(start, flagLine); n != flagged || strings.Contains(rest, "record: off") || strings.Contains(rest, "record off") {
+			t.Errorf("%q: the --record off warning %d times, want %d, and no other word of record off before the run:\n%s",
+				argv[1:], n, flagged, start)
+		}
+		if said := strings.Contains(end, " · record off: refusals only · "); said != (record == agent.RecordOff) {
+			t.Errorf("%q: the end says record off: %v, want %v:\n%s", argv[1:], said, record == agent.RecordOff, end)
+		}
+	}
+	check(t, []string{"tego", "run", off, "--offline", "--", "true"}, agent.RecordOff, 0)
+	check(t, []string{"tego", "watch", "--offline", "--boundary", off, "--", "true"}, agent.RecordOff, 0)
+	check(t, []string{"tego", "run", off, "--offline", "--record", "off", "--", "true"}, agent.RecordOff, 1)
+	check(t, []string{"tego", "watch", "--offline", "--boundary", plain, "--record", "off", "--", "true"}, agent.RecordOff, 1)
+	check(t, []string{"tego", "run", off, "--offline", "--record", "summary", "--", "true"}, agent.RecordSummary, 0)
+	check(t, []string{"tego", "run", plain, "--offline", "--", "true"}, agent.RecordSummary, 0)
+
+	// A profile's record: off, which the contract extends without saying so itself, is the contract's.
+	profiles := filepath.Join(dir, "profiles")
+	if err := os.Mkdir(profiles, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(profiles, "quiet.yaml"), "record: off\n")
+	heir := filepath.Join(dir, "heir.yaml")
+	writeTestFile(t, heir, "version: 0\nname: heir\nextends: quiet\ncommand: [\"true\"]\n")
+	cfg := filepath.Join(dir, "tego.yaml")
+	writeTestFile(t, cfg, "ledger_root: "+filepath.Join(dir, "runs")+"\nprofiles: "+profiles+"\n")
+	t.Setenv("TEGO_CONFIG", cfg)
+	check(t, []string{"tego", "run", heir, "--offline", "--", "true"}, agent.RecordOff, 0)
+}
+
+// TestTheContractsRecordOffIsACompileNote: tego compile notes a contract's own record: off, [record-off] at the line
+// that set it, with its fix, and a run or a bounded watch prints that note before the agent starts only under -v, as it
+// prints every note (A quiet start). A run whose record is off by --record off prints the flag's warning and no note.
+func TestTheContractsRecordOffIsACompileNote(t *testing.T) {
+	calls := sandboxedLaunch(t)
+	dir := trustedDir(t)
+	off := filepath.Join(dir, "off.yaml")
+	writeTestFile(t, off, "version: 0\nname: quiet\ncommand: [\"true\"]\nrecord: off\n")
+	note := "warning: " + off + ":4:9: record: off keeps only a run's refusals in its ledger: no program it runs, and no file " +
+		"it opens or connection it makes that the contract allows [record-off]\n  fix: set record: summary (the default) or " +
+		"full to record what the agent does; tego run --record summary records one run so\n"
+	var errs bytes.Buffer
+	if code := mainWith(t.Context(), []string{"tego", "compile", off, "--offline"}, io.Discard, &errs, []Command{cmdCompile()}); code != identity.ExitOK ||
+		!strings.Contains(errs.String(), note) {
+		t.Errorf("tego compile: exit %d, stderr lacks the note %q:\n%s", code, note, errs.String())
+	}
+	for _, c := range []struct {
+		argv  []string
+		noted int
+	}{
+		{[]string{"tego", "run", "-v", off, "--offline", "--", "true"}, 1},
+		{[]string{"tego", "watch", "-v", "--offline", "--boundary", off, "--", "true"}, 1},
+		{[]string{"tego", "run", "-v", off, "--offline", "--record", "off", "--", "true"}, 0},
+	} {
+		*calls = nil
+		errs.Reset()
+		if code := mainWith(t.Context(), c.argv, io.Discard, &errs, []Command{cmdRun(), cmdWatch()}); code != identity.ExitOK || len(*calls) != 1 {
+			t.Fatalf("%q: exit %d, %d launches:\n%s", c.argv[1:], code, len(*calls), errs.String())
+		}
+		out := errs.String()
+		i := strings.Index(out, "r-test-run")
+		if i < 0 {
+			t.Fatalf("%q: no end of run:\n%s", c.argv[1:], out)
+		}
+		if n := strings.Count(out[:i], "[record-off]"); n != c.noted || c.noted == 1 && !strings.Contains(out[:i], note) {
+			t.Errorf("%q: %d record-off notes before the run, want %d:\n%s", c.argv[1:], n, c.noted, out[:i])
+		}
 	}
 }
