@@ -1,0 +1,38 @@
+[
+ {
+  "name": "list-truncated",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"list\",\"nonce\":\"NONCE\"}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"pending\":[{\"score\":87,\"gate_rule\":\"gate.rules[2]\",\"ask_id\":\"q-00000000000000000000000000000002\",\"op\":\"http_request\",\"target\":\"api.example.com POST /v1/messages?redacted\",\"rule\":\"net.ask[rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"hold\":\"request\",\"pid\":4242,\"tid\":4243,\"rule_truncated\":true}]}"
+   }
+  ],
+  "result": "[{\"score\":87,\"gate_rule\":\"gate.rules[2]\",\"ask_id\":\"q-00000000000000000000000000000002\",\"op\":\"http_request\",\"target\":\"api.example.com POST /v1/messages?redacted\",\"rule\":\"net.ask[rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\",\"hold\":\"request\",\"pid\":4242,\"tid\":4243,\"rule_truncated\":true}]"
+ },
+ {
+  "name": "detail-full",
+  "frames": [
+   {
+    "dir": "s2c",
+    "data": "{\"ready\":\"NONCE\"}"
+   },
+   {
+    "dir": "c2s",
+    "data": "{\"action\":\"detail\",\"nonce\":\"NONCE\",\"ask_id\":\"q-00000000000000000000000000000002\"}"
+   },
+   {
+    "dir": "s2c",
+    "data": "{\"request\":{\"score\":87,\"gate_rule\":\"gate.rules[2]\",\"ask_id\":\"q-00000000000000000000000000000002\",\"op\":\"http_request\",\"target\":\"api.example.com POST /v1/messages?redacted\",\"rule\":\"net.ask[rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr]\",\"hold\":\"request\",\"pid\":4242,\"tid\":4243}}"
+   }
+  ],
+  "result": "{\"score\":87,\"gate_rule\":\"gate.rules[2]\",\"ask_id\":\"q-00000000000000000000000000000002\",\"op\":\"http_request\",\"target\":\"api.example.com POST /v1/messages?redacted\",\"rule\":\"net.ask[rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr]\",\"hold\":\"request\",\"pid\":4242,\"tid\":4243}"
+ }
+]
