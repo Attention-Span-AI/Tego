@@ -212,7 +212,13 @@ func waitComm(t *testing.T, pid int, comm string) {
 
 func startWatcher(t *testing.T, src Source, c *seen, children bool) (w *Watcher, stop func() error) {
 	t.Helper()
-	w = New(NewFS(""), Options{Rules: sig.Default(), Emit: c.emit, Children: children})
+	return startWatcherOn(t, NewFS(""), src, c, children)
+}
+
+// startWatcherOn is startWatcher reading p for /proc.
+func startWatcherOn(t *testing.T, p Proc, src Source, c *seen, children bool) (w *Watcher, stop func() error) {
+	t.Helper()
+	w = New(p, Options{Rules: sig.Default(), Emit: c.emit, Children: children})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx, src) }()
@@ -390,6 +396,132 @@ func TestIntegrationOverrunResynchronisesWithTheRealKernel(t *testing.T) {
 	}
 	if w.Sessions() != 0 || w.Processes() != 0 {
 		t.Fatalf("%d session(s) and %d process(es) still followed after everything exited\n%s", w.Sessions(), w.Processes(), dump(c.all()))
+	}
+}
+
+// listHook is the real /proc, except that the first listing of process pid's tasks runs hook before it reads them.
+type listHook struct {
+	*FS
+	mu   sync.Mutex
+	pid  int
+	hook func()
+}
+
+func (h *listHook) Tasks(pid int) (Proc, []int, error) {
+	h.mu.Lock()
+	hook := h.hook
+	if pid == h.pid {
+		h.hook = nil
+	} else {
+		hook = nil
+	}
+	h.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	return h.FS.Tasks(pid)
+}
+
+// endAndWait lets the fake agent that waits on fifo go on (it exits 7) and waits until /proc shows its process a zombie
+// or gone. It runs on the watcher's goroutine, so it fails by returning an error, never through t.
+func endAndWait(fifo string, pid int) error {
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		// O_NONBLOCK: an open for writing with no reader yet fails (ENXIO) instead of waiting for one.
+		f, err := os.OpenFile(fifo, os.O_WRONLY|unix.O_NONBLOCK, 0)
+		if err == nil {
+			_, err = f.Write([]byte("go\n"))
+			_ = f.Close()
+			if err != nil {
+				return err
+			}
+			break
+		}
+		if !errors.Is(err, unix.ENXIO) || time.Now().After(deadline) {
+			return fmt.Errorf("let pid %d go: %w", pid, err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	for ; time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil {
+			return nil // reaped
+		}
+		if i := strings.LastIndexByte(string(b), ')'); i >= 0 && i+2 < len(b) && (b[i+2] == 'Z' || b[i+2] == 'X') {
+			return nil
+		}
+	}
+	return fmt.Errorf("pid %d did not exit within 10 s of its fifo", pid)
+}
+
+// TestIntegrationAnAgentThatEndsBeforeAnOverrunsListingIsReportedOnce: after lost events the watcher lists again the
+// tasks of every process it follows, after its scan has read /proc, and an agent can end between the two. Nothing of
+// it runs at the listing, so it is reported ended there, once, its status unknown, and its exit event, read next, adds
+// nothing. The listing used to end the agent's group without a line, and the exit event could then end nothing, so
+// its session was followed until another overrun's scan: TestIntegrationOverrunResynchronisesWithTheRealKernel on a
+// CI runner waited 20 s for B's exit after a second overrun's scan read /proc just before B ended. Here the agent's
+// end is put in that window on purpose: the listing of its tasks lets it go and waits until it has exited.
+func TestIntegrationAnAgentThatEndsBeforeAnOverrunsListingIsReportedOnce(t *testing.T) {
+	requireRoot(t)
+	l := openListener(t)
+	if err := l.SetRecvBuffer(4096); err != nil {
+		t.Fatalf("SetRecvBuffer: %v", err)
+	}
+	src := newGated(l)
+	c := &seen{}
+	p := &listHook{FS: NewFS("")}
+	w, stop := startWatcherOn(t, p, src, c, false)
+	<-src.ready
+
+	a := newFakeAgents(t, "claude")
+	aCmd := a.start(t, false)
+	pid := aCmd.Process.Pid
+	c.wait(t, "the agent's start", func(s Sighting) bool {
+		return s.Event == EventAgentStarted && s.PID == int32(pid) && s.Seen == SeenExec
+	})
+	// Followed from its exec, the agent's tasks are listed only by an overrun's scan.
+	hookErr := make(chan error, 1)
+	p.mu.Lock()
+	p.pid, p.hook = pid, func() { hookErr <- endAndWait(a.agentGo, pid) }
+	p.mu.Unlock()
+
+	gate := src.hold()
+	// The watcher may be blocked in the socket's poll: one harmless event wakes it, and it then waits at the gate.
+	if err := exec.Command("/bin/sh", "-c", "exit 0").Run(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	for i := 0; i < 1500; i++ { // a fork, an exec and an exit each: far over a 4 KiB buffer
+		if err := exec.Command("/bin/sh", "-c", "exit 0").Run(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src.release(gate)
+
+	select {
+	case err := <-hookErr:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatalf("no scan listed the agent's tasks (stats %+v); saw:\n%s", w.Stats(), dump(c.all()))
+	}
+	end := c.wait(t, "the agent's end", func(s Sighting) bool { return s.Event == EventAgentExited && s.PID == int32(pid) })
+	if end.ExitCode != nil || !strings.Contains(end.Note, "listed") {
+		t.Errorf("agent_exited = %+v: want no status, and a note that its tasks were listed after it ended", end)
+	}
+	time.Sleep(500 * time.Millisecond) // its exit event, read after the listing, is handled meanwhile
+	if err := stop(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if n := c.count(func(s Sighting) bool { return s.Event == EventAgentExited && s.PID == int32(pid) }); n != 1 {
+		t.Errorf("the agent's end reported %d times, want once\n%s", n, dump(c.all()))
+	}
+	if st := w.Stats(); st.Overruns == 0 {
+		t.Fatalf("the kernel's buffer never overflowed (stats %+v): the test did not reach what it is for", st)
+	}
+	if w.Sessions() != 0 || w.Processes() != 0 {
+		t.Fatalf("%d session(s) and %d process(es) still followed after the agent ended\n%s", w.Sessions(), w.Processes(), dump(c.all()))
 	}
 }
 

@@ -5,6 +5,7 @@ package landlock
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -80,6 +81,12 @@ func TestCompileCrossCheck(t *testing.T) {
 // denying one file in it), and nothing before this package rejects or merges the pair. Compile must
 // still emit both, and Prepare must not turn the more specific entry into a grant on the broader
 // target's other children — the whole subtree stays denied and the run still reports CapReadDeny.
+//
+// The pair is read off the entries the fixture decides, not off a count of every deny_read, because compile
+// also denies what the machine holds: R6a denies tego's host state directory, /run/tego, wherever a root
+// launcher has made it (ADR 0034). CI's root-suites job runs every suite on one runner, where
+// enforce/cgroup's root tests have made it (pinState) by the time this suite runs, so a count of every
+// entry but the ledger root's found three there on every push to main, and two in a fresh guest.
 func TestCompileCrossCheckNested(t *testing.T) {
 	root := tempDir(t)
 	mkTree(t, root, "secrets/prod/app.key", "secrets/staging/db.pem", "secrets/aws.json", "work/src/main.py", "ledger/")
@@ -102,14 +109,20 @@ func TestCompileCrossCheckNested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v\n%v", err, ds)
 	}
-	denies := 0
+	// Every deny_read the contract declared, and every one inside the fixture's tree, whatever added it; a
+	// built-in entry outside the tree is the machine's (R6a's /run/tego), not this contract's.
+	var denied []string
 	for _, r := range rt.FS {
-		if r.Kind == agent.FSDenyRead && r.Path != m.LedgerRoot.Value { // the ledger root's is R6a's
-			denies++
+		if r.Kind != agent.FSDenyRead || r.Path == m.LedgerRoot.Value { // the ledger root's is R6a's
+			continue
+		}
+		if !r.BuiltIn || strings.HasPrefix(r.Path, root+"/") {
+			denied = append(denied, r.Path)
 		}
 	}
-	if denies != 2 {
-		t.Fatalf("compile emitted %d deny_read entries, want the nested pair (the shape E29 must handle)", denies)
+	slices.Sort(denied)
+	if want := []string{secrets, filepath.Join(secrets, "prod", "app.key")}; !slices.Equal(denied, want) {
+		t.Fatalf("compile emitted deny_read %q, want the nested pair %q (the shape E29 must handle)", denied, want)
 	}
 	h, _ := prepare(t, 7, rt)
 	if len(h.unenforced) != 0 || !h.Capabilities().Has(backend.CapReadDeny) {

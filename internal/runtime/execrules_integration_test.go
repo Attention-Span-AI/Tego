@@ -215,11 +215,19 @@ func TestIntegrationExecDenySubcommand(t *testing.T) {
 // TestIntegrationExecAllowListSubcommands: under allow: [git status, git diff, git log, git st] git runs only as
 // those; push is refused unlisted, and an alias works when listed: git's probe of the dashed git-st keeps its ENOENT
 // (never EACCES), and the alias re-execs git status, which is allowed.
+//
+// The repository's commit is made with automatic maintenance off. A commit starts `git maintenance run --auto
+// --detach`, and from git 2.55 the detached process holds .git/objects/maintenance.lock until it ends, after the
+// commit has returned: agentOwnsTree's walk, as root, listed the lock and found it gone when it came to chown it
+// (GitHub's root-suites, git 2.56, 2026-11-02: "lchown .../.git/objects/maintenance.lock: no such file or directory").
+// With maintenance.auto false git starts no maintenance at all, so nothing but this test writes the tree it hands to
+// the agent. The run loses nothing by it: of the commands it runs only the commit, which it refuses, would start one.
 func TestIntegrationExecAllowListSubcommands(t *testing.T) {
 	needGit(t)
 	f := newFixture(t, execRulesContract("xallow", "/bin/sh", `  allow: ["git status", "git diff", "git log", "git st", "/bin/sh", "/bin/echo"]`))
 	repo := filepath.Join(f.out, "repo")
-	for _, args := range [][]string{{"init", "-q", repo}, {"-C", repo, "config", "alias.st", "status"}, {"-C", repo, "config", "user.email", "a@b"}, {"-C", repo, "config", "user.name", "a"}, {"-C", repo, "commit", "-q", "--allow-empty", "-m", "x"}} {
+	for _, args := range [][]string{{"init", "-q", repo}, {"-C", repo, "config", "alias.st", "status"}, {"-C", repo, "config", "user.email", "a@b"}, {"-C", repo, "config", "user.name", "a"},
+		{"-C", repo, "config", "maintenance.auto", "false"}, {"-C", repo, "commit", "-q", "--allow-empty", "-m", "x"}} {
 		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}

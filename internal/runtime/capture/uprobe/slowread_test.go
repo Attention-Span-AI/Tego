@@ -79,9 +79,9 @@ func keepAliveServer(t *testing.T, hold func(n int64)) int {
 	return ln.Addr().(*net.TCPAddr).Port
 }
 
-// startKeepAliveCapture starts a kernel-mode source on this test's own cgroup and returns it with its sink
-// and the pinned maps directory.
-func startKeepAliveCapture(t *testing.T) (*Uprobe, *fakeSink, string) {
+// startKeepAliveCapture starts a kernel-mode source on a run's cgroup (runCgroup) and returns it with its sink,
+// the pinned maps directory and the descriptor that starts the client in the run's cgroup (inRun).
+func startKeepAliveCapture(t *testing.T) (*Uprobe, *fakeSink, string, int) {
 	t.Helper()
 	requireObjects(t)
 	requireRoot(t)
@@ -90,7 +90,7 @@ func startKeepAliveCapture(t *testing.T) (*Uprobe, *fakeSink, string) {
 	}
 	const hash = "integration"
 	root, maps := bpffsPinRoot(t, hash)
-	cg := selfCgroupID(t)
+	cgFD, cg := runCgroup(t)
 	seedRunSet(t, maps, map[uint64]uint32{cg: 1})
 	u, err := New(Options{Kernel: true, PinRoot: root})
 	if err != nil {
@@ -102,7 +102,7 @@ func startKeepAliveCapture(t *testing.T) (*Uprobe, *fakeSink, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = u.Stop() })
-	return u, sink, maps
+	return u, sink, maps, cgFD
 }
 
 // pairedResponses maps each ssl_response's request_id to the size of the ssl_request it was paired with (Pair),
@@ -147,13 +147,13 @@ func TestIntegrationSlowFirstByteKeepsPairing(t *testing.T) {
 	if err != nil {
 		t.Skipf("no python3: %v", err)
 	}
-	u, sink, _ := startKeepAliveCapture(t)
+	u, sink, _, cgFD := startKeepAliveCapture(t)
 	port := keepAliveServer(t, func(n int64) {
 		if n == 1 {
 			time.Sleep(62 * time.Second)
 		}
 	})
-	out, err := exec.Command(python, "-c", keepAliveClient, strconv.Itoa(port)).CombinedOutput()
+	out, err := inRun(exec.Command(python, "-c", keepAliveClient, strconv.Itoa(port)), cgFD).CombinedOutput()
 	if err != nil {
 		t.Fatalf("python3: %v: %s", err, out)
 	}
@@ -208,7 +208,7 @@ func unreadReadIsAGap(t *testing.T, mutate func(m *ebpf.Map, k bpf.SSLKey, v bpf
 	if err != nil {
 		t.Skipf("no python3: %v", err)
 	}
-	u, sink, maps := startKeepAliveCapture(t)
+	u, sink, maps, cgFD := startKeepAliveCapture(t)
 	got1 := make(chan struct{})
 	release := make(chan struct{})
 	var once sync.Once
@@ -218,7 +218,7 @@ func unreadReadIsAGap(t *testing.T, mutate func(m *ebpf.Map, k bpf.SSLKey, v bpf
 			<-release
 		}
 	})
-	cmd := exec.Command(python, "-c", keepAliveClient, strconv.Itoa(port))
+	cmd := inRun(exec.Command(python, "-c", keepAliveClient, strconv.Itoa(port)), cgFD)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)

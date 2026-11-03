@@ -53,6 +53,34 @@ func opt(name, short string, long ...string) execmatch.Opt {
 	return o
 }
 
+// ends marks an option after which every token is an operand, as after `--` (node's --prof-process, execmatch.Opt.Ends).
+func ends(o execmatch.Opt) execmatch.Opt {
+	o.Ends = true
+	return o
+}
+
+// endsAttached marks an option after which every token is an operand when it is written with an attached value
+// (node's --trace-events-enabled=v, execmatch.Opt.EndsAttached).
+func endsAttached(o execmatch.Opt) execmatch.Opt {
+	o.EndsAttached = true
+	return o
+}
+
+// unlocatable marks an option whose every value makes an invocation unlocatable: the tool runs what a file names
+// (node's --build-snapshot-config, execmatch.Opt.Rewrite).
+func unlocatable(o execmatch.Opt) execmatch.Opt {
+	o.Rewrite = func(string) bool { return true }
+	return o
+}
+
+// nextWord is an option that takes the next token as its value only when that token is a word, not an option, and
+// whose word is the option to's value as well (node's -p, whose word is --eval's: execmatch.ArgNextWord, Opt.WordTo).
+func nextWord(name, short, to string) execmatch.Opt {
+	o := flag(name, short)
+	o.Arg, o.WordTo = execmatch.ArgNextWord, to
+	return o
+}
+
 // leaf is a level with options and operands, no subcommands.
 func leaf(syn execmatch.Syntax, opts ...execmatch.Opt) *execmatch.Level {
 	return &execmatch.Level{Syntax: syn, Opts: opts}

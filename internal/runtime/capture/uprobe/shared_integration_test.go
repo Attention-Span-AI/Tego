@@ -82,7 +82,7 @@ func TestIntegrationSharedProbesAreAdoptedAndCaptureOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := t.TempDir()
-	cg := selfCgroupID(t)
+	cgFD, cg := runCgroup(t)
 	seedRunSet(t, maps, map[uint64]uint32{cg: 1})
 	var mu sync.Mutex
 	var handed []detachJob
@@ -156,7 +156,7 @@ func TestIntegrationSharedProbesAreAdoptedAndCaptureOnce(t *testing.T) {
 	if got := pinnedLinkIDs(t, build); len(got) != len(placed) {
 		t.Fatalf("the detacher removed probes a run holds: %v", got)
 	}
-	out, err := exec.Command(python, "-c", eagerClient, strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)).CombinedOutput()
+	out, err := inRun(exec.Command(python, "-c", eagerClient, strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)), cgFD).CombinedOutput()
 	if err != nil {
 		t.Fatalf("python3: %v: %s", err, out)
 	}
@@ -219,7 +219,7 @@ func TestIntegrationProbesOverRecreatedMapsArePlacedAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := t.TempDir()
-	cg := selfCgroupID(t)
+	cgFD, cg := runCgroup(t)
 	seedRunSet(t, maps, map[uint64]uint32{cg: 1})
 	// Each run's collection is without the multi dispatchers, as a kernel without uprobe_multi loads it, so the
 	// probes are individual ones whatever this kernel offers.
@@ -336,7 +336,7 @@ func TestIntegrationProbesOverRecreatedMapsArePlacedAgain(t *testing.T) {
 			}
 		}
 	}
-	out, err := exec.Command(python, "-c", eagerClient, strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)).CombinedOutput()
+	out, err := inRun(exec.Command(python, "-c", eagerClient, strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)), cgFD).CombinedOutput()
 	if err != nil {
 		t.Fatalf("python3: %v: %s", err, out)
 	}
@@ -385,7 +385,7 @@ func TestIntegrationProbesWhoseDetacherDiedGoAtTheNextStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := t.TempDir()
-	cg := selfCgroupID(t)
+	_, cg := runCgroup(t)
 	seedRunSet(t, maps, map[uint64]uint32{cg: 1})
 	start := func(id string, detach func(detachJob)) *Uprobe {
 		t.Helper()

@@ -265,14 +265,21 @@ func TestInterpreterDispatchReadsBothWays(t *testing.T) {
 		facts execmatch.Facts
 		want  string
 	}{
-		{"unknown long option", node("node", "--redirect-warnings", "/tmp/w", cli, "publish"), npmDeny},
+		{"unknown long option", node("node", "--unlisted", "/tmp/w", cli, "publish"), npmDeny},
 		{"unknown short option, no clusters", node("node", "-Z", "/tmp/w", cli, "publish"), npmDeny},
 		{"two unknown options", node("node", "--a", "/tmp/w", "--b", "/tmp/x", cli, "publish"), npmDeny},
-		{"unknown option as a flag", node("node", "--trace-exit", cli, "publish"), npmDeny},
-		{"unknown option with an attached value", node("node", "--redirect-warnings=/tmp/w", cli, "publish"), npmDeny},
+		{"unknown option as a flag", node("node", "--unlisted", cli, "publish"), npmDeny},
+		{"unknown option with an attached value", node("node", "--unlisted=/tmp/w", cli, "publish"), npmDeny},
+		{"a listed value option", node("node", "--redirect-warnings", "/tmp/w", cli, "publish"), npmDeny},
+		{"listed options in front of npm", node("node", "--no-warnings", "--expose-gc", "--trace-deprecation", "--title", "t", cli, "publish"), npmDeny},
 		{"node --env-file v", node("node", "--env-file", "/tmp/e", cli, "publish"), npmDeny},
 		{"node --env-file=v", node("node", "--env-file=/tmp/e", cli, "publish"), npmDeny},
 		{"node --inspect-port v", node("node", "--inspect-port", "9230", cli, "publish"), npmDeny},
+		// A V8 option takes no token of node's: V8 takes its value from the options node hands it, -0 here past node's
+		// own --require and --title, and node runs the script after it (probed with --max-old-space-size).
+		{"a V8 value option past --require", node("node", "--max-old-space-size", "--require", "./x.js", "-0", cli, "publish"), npmDeny},
+		{"a V8 value option past --title", node("node", "--max-old-space-size", "--title", "t", "-0", cli, "publish"), npmDeny},
+		{"--stack-size is V8's too", node("node", "--stack-size", "--title", "t", "-1", cli, "publish"), npmDeny},
 		{"six unknown options before the script", node("node", "--a", "--b", "--c", "--d", "--e", "--f", cli, "publish"), unresolved},
 		// docs/GAPS.md C49: the option's value reading takes the script, so the script's own flags fork too.
 		{"one unknown option, six flags past the script", node("node", "--a", "./app.js", "--f0", "--f1", "--f2", "--f3", "--f4", "--f5"), ""},
@@ -280,9 +287,66 @@ func TestInterpreterDispatchReadsBothWays(t *testing.T) {
 		{"no script, seven unknown options", node("node", "-e", "code", "--f0", "--f1", "--f2", "--f3", "--f4", "--f5", "--f6"), unresolved},
 		{"-- in front of the script stops the forks", node("node", "--a", "--", "./app.js", "--f0", "--f1", "--f2", "--f3", "--f4", "--f5", "--f6"), ""},
 		{"-- in front of the script keeps a deny", node("node", "--a", "--", cli, "publish"), npmDeny},
-		{"another subcommand", node("node", "--redirect-warnings", "/tmp/w", cli, "pack"), ""},
+		// C49: an option the row lists forks nothing, so a script's own flags are not counted, whatever their number.
+		{"C49's jest line", node("node", "--expose-gc", "./node_modules/jest/bin/jest.js", "--ci", "--coverage", "--runInBand", "--silent", "--verbose", "--forceExit", "--detectOpenHandles"), ""},
+		{"node's options and V8's in front of the script", node("node", "--stack-trace-limit=50", "--experimental-vm-modules", "--no-deprecation", "--frozen-intrinsics", "--allow-natives-syntax", "--no-opt", "./app.js", "--f0", "--f1", "--f2", "--f3", "--f4", "--f5", "--f6"), ""},
+		{"another subcommand", node("node", "--unlisted", "/tmp/w", cli, "pack"), ""},
 		{"-e is opaque", node("node", "-e", "code", cli, "publish"), ""},
-		{"a script past the first", node("node", "--trace-exit", "./app.js", cli, "publish"), npmDeny},
+		// -p, --print and --no-print take a word after them as -e's code (node's alias `--print <arg>`, which node
+		// applies to the negated name too) and nothing before an option, where node runs the script after its options
+		// (each probed on node 20.19.4 with a script in npm's place). An attached =value is dropped, as node drops a
+		// boolean's.
+		{"-p code is opaque", node("node", "-p", "code", cli, "publish"), ""},
+		{"--print=v code is opaque", node("node", "--print=v", "code", cli, "publish"), ""},
+		{"--no-print code is opaque", node("node", "--no-print", "code", cli, "publish"), ""},
+		{"--no-print takes npm's path as code", node("node", "--no-print", cli, "publish"), ""},
+		{"-p before an option", node("node", "-p", "--title", "t", cli, "publish"), npmDeny},
+		{"-p before -r", node("node", "-p", "-r", "./x.js", cli, "publish"), npmDeny},
+		{"-p before --", node("node", "-p", "--", cli, "publish"), npmDeny},
+		{"--print before --", node("node", "--print", "--", cli, "publish"), npmDeny},
+		{"--print=v before an option", node("node", "--print=v", "--title", "t", cli, "publish"), npmDeny},
+		{"--no-print before an option", node("node", "--no-print", "--title", "t", cli, "publish"), npmDeny},
+		{"--no-print before --", node("node", "--no-print", "--", cli, "publish"), npmDeny},
+		{"--no-print before a flag", node("node", "--no-print", "--no-warnings", cli, "publish"), npmDeny},
+		{"--no-print=1 before an option", node("node", "--no-print=1", "--title", "t", cli, "publish"), npmDeny},
+		{"-p before -e: -e's code is opaque", node("node", "--title", "t", "-p", "-e", "code", cli, "publish"), ""},
+		// Under -i or --build-snapshot node runs the script after its options and leaves the code unrun, wherever they
+		// stand among the options (probed on node 20.19.4).
+		{"-i runs the script past -e's code", node("node", "-i", "-e", "1", cli, "publish"), npmDeny},
+		{"-i after the code", node("node", "-e", "1", "-i", cli, "publish"), npmDeny},
+		{"--interactive=1 with --eval=", node("node", "--interactive=1", "--eval=1", cli, "publish"), npmDeny},
+		{"-i with -p's code", node("node", "-i", "-p", "x", cli, "publish"), npmDeny},
+		{"-i with --print's code", node("node", "-i", "--print", "x.js", cli, "publish"), npmDeny},
+		{"--no-interactive then -i", node("node", "--no-interactive", "-i", "-e", "1", cli, "publish"), npmDeny},
+		{"--build-snapshot runs the script past -e's code", node("node", "--build-snapshot", "-e", "1", cli, "publish"), npmDeny},
+		// node reads `_` in a name as `-`, so --build_snapshot is --build-snapshot (review of 198d04b9: these let npm
+		// publish through, with --no-print's code read as the only thing node runs).
+		{"--build_snapshot runs the script past --no-print's code", node("node", "--build_snapshot", "--no-print", "0", cli, "publish"), npmDeny},
+		{"--build_snapshot after --title=t", node("node", "--title=t", "--build_snapshot", "--no-print", "0", cli, "publish"), npmDeny},
+		{"--build_snapshot after the code", node("node", "--no-print", "0", "--build_snapshot", cli, "publish"), npmDeny},
+		{"--build_snapshot=1", node("node", "--build_snapshot=1", "--no-print", "0", cli, "publish"), npmDeny},
+		{"--no_build_snapshot leaves the code", node("node", "--build_snapshot", "--no_build_snapshot", "-e", "0", cli, "publish"), npmDeny},
+		// An option the row does not list could be another spelling of -i or --build-snapshot: the line is read for its
+		// script past the code too.
+		{"an unlisted option with code", node("node", "--unlisted", "-e", "0", cli, "publish"), npmDeny},
+		{"an unlisted =value option with code", node("node", "--unlisted=1", "-p", "0", cli, "publish"), npmDeny},
+		// Under --build-snapshot-config node runs the builder its file names: the script is not in argv.
+		{"--build-snapshot-config", node("node", "--build-snapshot-config", "cfg.json", cli, "publish"), unresolved},
+		{"--build_snapshot_config=", node("node", "--build_snapshot_config=cfg.json", "-e", "0"), unresolved},
+		// node runs a module -r or --import names before the script or code, with the script's arguments, and one --loader
+		// names with none (probed: `node -r npm-cli.js app.js --version` prints npm's version).
+		{"npm's entry script without .js", node("node", strings.TrimSuffix(cli, ".js"), "publish"), npmDeny},
+		{"-r npm's entry script without .js", node("node", "-r", strings.TrimSuffix(cli, ".js"), "app.js", "publish"), npmDeny},
+		{"-r runs npm's entry script", node("node", "-r", cli, "app.js", "publish"), npmDeny},
+		{"--require= past code", node("node", "--require="+cli, "-e", "0", "x", "publish"), npmDeny},
+		{"--import", node("node", "--import", cli, "app.js", "publish"), npmDeny},
+		{"-r in front of -- and the script", node("node", "--no-warnings", "-r", cli, "--", "app.js", "publish"), npmDeny},
+		{"-r without the script's publish", node("node", "-r", cli, "app.js", "pack"), ""},
+		{"a loader's module gets no arguments", node("node", "--loader", cli, "app.js", "publish"), ""},
+		{"--no-interactive leaves the code", node("node", "--no-interactive", "-e", "1", cli, "publish"), ""},
+		{"-i past the script is the script's", node("node", "-e", "1", cli, "publish", "-i"), ""},
+		{"a script past the first", node("node", "--unlisted", "./app.js", cli, "publish"), npmDeny},
+		{"a listed flag keeps the first script", node("node", "--trace-exit", "./app.js", cli, "publish"), ""},
 		{"three unknown options", node("node", "--a", "--b", "--c", "./app.js"), ""},
 		{"perl -I v", facts("/usr/bin/perl", "perl", "perl", "-I", "/tmp/lib", "./deploy.sh", "prod"), deployDeny},
 		{"perl -Iv", facts("/usr/bin/perl", "perl", "perl", "-I/tmp/lib", "./deploy.sh", "prod"), deployDeny},
@@ -303,6 +367,30 @@ func TestInterpreterDispatchReadsBothWays(t *testing.T) {
 		}
 		if r.Outcome != execmatch.OutcomeRefused || r.Rule() != c.want {
 			t.Errorf("%s: %s, want refused %s", c.name, decided(r), c.want)
+		}
+	}
+}
+
+// TestNodePreloadsUnderALoader: given a --loader, node runs each module -r names in its hooks thread too, with no
+// arguments, beside the run in the main thread with the script's (probed on 20.19.4: `node -r ./p.js --loader ./h.mjs
+// app.js a` runs p.js with [a] and again with []). Under allow: [npm publish], which constrains npm, npm run that way
+// with no arguments is unlisted and refused; without a loader it runs with publish alone and is allowed. An --import
+// module node does not run in that thread; the row reads it there too, which only refuses more.
+func TestNodePreloadsUnderALoader(t *testing.T) {
+	ix := rules(t, "allow: npm publish")
+	const cli = "/usr/share/nodejs/npm/bin/npm-cli.js"
+	for _, c := range []struct {
+		argv []string
+		want string
+	}{
+		{[]string{"node", "-r", cli, "app.js", "publish"}, "allowed exec.allow[npm publish]"},
+		{[]string{"node", "--loader", "./h.mjs", "-r", cli, "app.js", "publish"}, "refused exec.args[npm]"},
+		{[]string{"node", "-r", cli, "--experimental_loader=./h.mjs", "-e", "0", "x", "publish"}, "refused exec.args[npm]"},
+		{[]string{"node", "--loader", "./h.mjs", "--import", cli, "app.js", "publish"}, "refused exec.args[npm]"},
+	} {
+		f := facts("/usr/bin/node", "node", c.argv...)
+		if got := decided(ix.Decide(&f)); got != c.want {
+			t.Errorf("%s: %s, want %s", strings.Join(c.argv, " "), got, c.want)
 		}
 	}
 }

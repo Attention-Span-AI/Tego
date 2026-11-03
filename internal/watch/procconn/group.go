@@ -259,10 +259,13 @@ func (g *Group) Why() string {
 	case g.since == 0:
 		return "no lower bound could be read for its events (CLOCK_MONOTONIC or the time namespace's offset), so the " +
 			"exits read of it may be older than its listing"
+	case g.unlisted:
+		// Before lost: a listing after dropped events (Resync) that finds nothing running sets both, and it is the
+		// listing, read once the process had ended, that left no exit of it to read.
+		return "no task of it ran when its tasks were listed, after it was found or after the kernel dropped events, " +
+			"so no exit of it was read"
 	case g.lost:
 		return "the kernel dropped process events after its main thread exited, and a code among them may differ"
-	case g.unlisted:
-		return "no task of it ran when its tasks were listed, after it was found, so no exit of it was read"
 	case g.exiting:
 		return "every task of it was already exiting when its tasks were listed, after it was found, and the exit " +
 			"that decided its status may have been filled before"

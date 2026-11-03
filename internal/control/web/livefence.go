@@ -14,6 +14,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/control/rules"
+	"github.com/attention-span-ai/tego/internal/control/rulesview"
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -351,7 +352,7 @@ func (s *Server) liftPreview(w http.ResponseWriter, r *http.Request, id string) 
 	if d.Err == "" {
 		lb, err := runact.Live(s.cfg.Ledger, id)
 		if err != nil {
-			d.Err = "The run's live rules could not be read: " + plainErr(err) + "."
+			d.Err = "The run's live rules could not be read: " + rulesview.LiveErrWords(err) + "."
 		} else {
 			d.Serial = lb.Serial
 			d.Ack = svc.LiveAck(id, d.Kind, d.Value, until, perm, d.Serial)

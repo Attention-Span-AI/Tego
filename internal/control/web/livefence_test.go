@@ -131,6 +131,22 @@ func TestLiftPreview(t *testing.T) {
 	mustContain(t, "a preview with a passed limit", body, "The time limit is not one")
 }
 
+// TestLiftPreviewUnreadableOverlay: a live-blocks file the lift preview cannot read is said in plain words
+// (rulesview.LiveErrWords), never a JSON decoder's words, and the preview offers no confirm.
+func TestLiftPreviewUnreadableOverlay(t *testing.T) {
+	s, c, dir := liveFenceServer(t)
+	if err := os.WriteFile(filepath.Join(dir, liveblock.FileName), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := do(s, "GET", "/runs/"+adjRun+"/lift?kind=read&value=/srv/exports&for=1h", "127.0.0.1:8484", c)
+	body := w.Body.String()
+	mustContain(t, "the preview of a run whose overlay is damaged", body,
+		"The run&#39;s live rules could not be read: live-block.json is damaged, or a newer Tego wrote it.")
+	if strings.Contains(body, "invalid character") || strings.Contains(body, `name="ack"`) {
+		t.Error("the preview words a damaged overlay as the decoder does, or offers a confirm")
+	}
+}
+
 // TestLiftPostRefusals: a confirm without the checkbox, without the acknowledgement, with a stale one (another live
 // change came first) or with a limit that has passed writes nothing.
 func TestLiftPostRefusals(t *testing.T) {

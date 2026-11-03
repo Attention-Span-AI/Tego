@@ -35,7 +35,7 @@ const emptyPathAddr = 0x7f0000
 // wantExecAnswer checks how the loop answered one exec (R16, R16b): an allowed exec is continued for
 // Landlock to decide on the inode, and a refused one is refused by the loop itself with the refusal errno,
 // never continued — a continued refusal is a ledger line the kernel may not honour.
-func wantExecAnswer(t *testing.T, f *fakeKernel, v record.Verdict) {
+func wantExecAnswer(t testing.TB, f *fakeKernel, v record.Verdict) {
 	t.Helper()
 	got, ok := f.lastResp()
 	if !ok {

@@ -8,9 +8,9 @@
 # What it holds timing-budgets.sh to: every budget test passing in budget mode passes the script, a TARGET-MISS among
 # them included (and listed); a test that fails, is skipped, prints no PASS line, or passes without one line of
 # budget mode fails it, as does a binary that exits non-zero with every line passing and a package that does not
-# build; each binary runs from its own package directory with TEGO_TIMING_BUDGETS=1, -test.run naming exactly its
-# tests, -test.v and -test.count 1, built cgo-free with its package's tags; and an output directory the script did
-# not make is refused, not emptied.
+# build; each binary runs from its own package directory with TEGO_TIMING_BUDGETS=1 (hosted under --hosted),
+# -test.run naming exactly its tests, -test.v and -test.count 1, built cgo-free with its package's tags; and an output
+# directory the script did not make is refused, not emptied.
 set -eu
 
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
@@ -109,6 +109,13 @@ expect "a's binary runs from pkg/a in budget mode with its tests" "^run pkg/a $t
 expect "b's binary runs from pkg/b in budget mode with its test" "^run pkg/b $t/pkg/b budgets=1 -test.run ^(TestB)\$ -test.v -test.count 1" "$tmp/log"
 expect "a builds cgo-free with its tags" "^build pkg/a tags=x cgo=0" "$tmp/log"
 expect "b builds cgo-free with none" "^build pkg/b tags= cgo=0" "$tmp/log"
+
+t=$(tree hosted)
+run "$t" --hosted -o "$tmp/o-hosted"
+check "--hosted: every budget met" 0 "$rc"
+expect "--hosted: a's binary runs on a hosted runner's switch" "^run pkg/a $t/pkg/a budgets=hosted -test.run ^(TestA1|TestA2)\$ -test.v -test.count 1" "$tmp/log"
+expect "--hosted: b's binary too" "^run pkg/b $t/pkg/b budgets=hosted -test.run ^(TestB)\$ -test.v" "$tmp/log"
+expect "--hosted: the switch is printed" "TEGO_TIMING_BUDGETS=hosted;" "$tmp/out"
 
 t=$(tree miss)
 sed -i 's|^--- PASS: TestA2|    a_test.go:21: TARGET-MISS: case two 600ns > 500ns (ADR 0048 C8)\n--- PASS: TestA2|' "$t/pkg/a/out.txt"

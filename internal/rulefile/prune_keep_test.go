@@ -279,7 +279,8 @@ func TestPruneKeepsTheChangesUndoReaches(t *testing.T) {
 
 // TestPruneLooksAtTheFilesBeforeItLocks: whether a contract's file is there is looked at before Prune takes a lock,
 // and waited for at most lookWait. A file on a stale mount, whose lstat never returns, counts as there, so its newest
-// changes stay, and neither a write meanwhile nor the run start that prunes waits on it.
+// changes stay, and neither a write meanwhile nor the run start that prunes waits on it; the prune says which file it
+// could not look at (ErrNotLooked), where it said nothing and the file's lines stayed on every pass unexplained.
 func TestPruneLooksAtTheFilesBeforeItLocks(t *testing.T) {
 	g, path := fixture(t)
 	clock(t, time.Now().Add(-60*day))
@@ -290,32 +291,26 @@ func TestPruneLooksAtTheFilesBeforeItLocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	pl := filepath.Join(g.LedgerRoot, JournalDirName, LocksDir, pruneLock)
-	release, returned := make(chan struct{}), make(chan struct{})
 	free := make(chan bool, 1) // whether a write could take prune.lock while the file was looked at
-	lstat = func(name string) (os.FileInfo, error) {
+	staleMount(t, 100*time.Millisecond, func(name string) bool {
 		if name != path {
-			return os.Lstat(name)
+			return false
 		}
-		defer close(returned)
 		f, err := os.Open(pl)
-		free <- err == nil && unix.Flock(int(f.Fd()), unix.LOCK_SH|unix.LOCK_NB) == nil
+		select {
+		case free <- err == nil && unix.Flock(int(f.Fd()), unix.LOCK_SH|unix.LOCK_NB) == nil:
+		default:
+		}
 		if err == nil {
 			_ = f.Close() // drops the flock
 		}
-		<-release // the stale mount answers once the test is over
-		return os.Lstat(name)
-	}
-	prevWait := lookWait
-	lookWait = 100 * time.Millisecond
-	t.Cleanup(func() {
-		close(release)
-		<-returned
-		lstat, lookWait = os.Lstat, prevWait
+		return true
 	})
 	start := time.Now()
 	p, err := Prune(context.Background(), g.LedgerRoot, PruneOptions{Before: time.Now().Add(-30 * day)})
-	if err != nil || p.Lines != 0 {
-		t.Errorf("pruned %+v, %v; want a file that never answered to count as there, keeping its changes", p, err)
+	if !errors.Is(err, ErrNotLooked) || !strings.Contains(err.Error(), path) || p.Lines != 0 {
+		t.Errorf("pruned %+v, %v; want a file that never answered to count as there, keeping its changes, and named",
+			p, err)
 	}
 	if took := time.Since(start); took > 2*time.Second {
 		t.Errorf("Prune took %s waiting on a file that never answers", took)

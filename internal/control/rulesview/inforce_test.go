@@ -360,7 +360,7 @@ func TestUndoWords(t *testing.T) {
 }
 
 // TestInForceLiveBlocks: a running run's live block is in the live group with the hits of its refusals; once the
-// run has ended its blocks no longer refuse anything and leave the group, with a note.
+// run has ended its blocks leave the group, with a note that they refuse nothing now.
 func TestInForceLiveBlocks(t *testing.T) {
 	f := newFixture(t, "r-aaaaaaaa-0000000000013-liveb1")
 	_, err := liveblock.Update(context.Background(), f.dir, f.run, func(o *liveblock.Overlay) (bool, error) {
@@ -370,6 +370,7 @@ func TestInForceLiveBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	confirm(f, "exec", "/usr/bin/curl", 1) // the launcher put it in force, then refused under it
 	f.add(`"kind":"exec","source":"seccomp","rule":"live.block[exec:/usr/bin/curl]","verdict":"refused","authority":"rule","argv":["curl"],"exec_id":"x/10/2","path":"/usr/bin/curl"`)
 	v := f.inForce(t)
 	live := v.View.Group(inforce.GroupLive)
@@ -384,7 +385,7 @@ func TestInForceLiveBlocks(t *testing.T) {
 	if !v.Ended || len(v.View.Group(inforce.GroupLive).Rules) != 0 || v.LiveBlocks != 1 {
 		t.Errorf("ended %v live rules %d blocks %d, want an ended run with no live rule", v.Ended, len(v.View.Group(inforce.GroupLive).Rules), v.LiveBlocks)
 	}
-	if !strings.Contains(strings.Join(v.View.Notes, " "), "no longer refuse") {
+	if !strings.Contains(strings.Join(v.View.Notes, " "), "The run has ended, so its live block refuses nothing now.") {
 		t.Errorf("notes %q, want the ended run's live blocks named", v.View.Notes)
 	}
 }
@@ -419,7 +420,8 @@ func TestInForceRefusesABadRun(t *testing.T) {
 	}
 }
 
-// TestContractsFromRuns: distinct rules files, the newest run's first, counted with their live runs.
+// TestContractsFromRuns: distinct rules files, the newest run's first, counted with their live runs. No file is at
+// any of these paths, so each is gone.
 func TestContractsFromRuns(t *testing.T) {
 	t0 := time.Date(2026, 10, 26, 9, 0, 0, 0, time.UTC)
 	s := &ledgerview.Snapshot{Runs: []*ledgerview.Run{
@@ -431,14 +433,64 @@ func TestContractsFromRuns(t *testing.T) {
 	}}
 	got := ContractsFromRuns(s)
 	want := []ContractRun{
-		{Path: "/p/b.yaml", Agent: "codex", Newest: "r-3", NewestStart: t0.Add(3 * time.Hour), Runs: 2, Live: 1},
-		{Path: "/p/a.yaml", Agent: "claude", Newest: "r-2", NewestStart: t0.Add(2 * time.Hour), Runs: 1},
+		{Path: "/p/b.yaml", Gone: true, Agent: "codex", Newest: "r-3", NewestStart: t0.Add(3 * time.Hour), Runs: 2, Live: 1},
+		{Path: "/p/a.yaml", Gone: true, Agent: "claude", Newest: "r-2", NewestStart: t0.Add(2 * time.Hour), Runs: 1},
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("ContractsFromRuns =\n%+v\nwant\n%+v", got, want)
 	}
 	if ContractsFromRuns(nil) != nil {
 		t.Error("a nil snapshot lists contracts")
+	}
+}
+
+// TestContractsFromRunsMarksAGoneFile: a rules file still at its path is not gone, also through a linked folder; one
+// removed since its runs is, and so is one under a folder that is a file now. A folder this user may not search says
+// nothing either way, so its file is not called gone.
+func TestContractsFromRunsMarksAGoneFile(t *testing.T) {
+	base := t.TempDir()
+	proj := filepath.Join(base, "proj")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(proj, filepath.Join(base, "link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "flat"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(proj, "agent.yaml"), []byte("version: 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	locked := filepath.Join(base, "locked")
+	if err := os.MkdirAll(locked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gone := map[string]bool{
+		filepath.Join(proj, "agent.yaml"):         false,
+		filepath.Join(base, "link", "agent.yaml"): false,
+		filepath.Join(proj, "removed.yaml"):       true,
+		filepath.Join(base, "flat", "agent.yaml"): true,
+	}
+	if os.Geteuid() != 0 { // root searches a folder whatever its mode says
+		if err := os.Chmod(locked, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(locked, 0o755) }) // so TempDir can remove it
+		gone[filepath.Join(locked, "agent.yaml")] = false
+	}
+	s := &ledgerview.Snapshot{}
+	for p := range gone {
+		s.Runs = append(s.Runs, &ledgerview.Run{ID: "r-" + filepath.Base(filepath.Dir(p)), Contract: p})
+	}
+	got := ContractsFromRuns(s)
+	if len(got) != len(gone) {
+		t.Fatalf("ContractsFromRuns = %+v, want one entry per path", got)
+	}
+	for _, c := range got {
+		if c.Gone != gone[c.Path] {
+			t.Errorf("%s: gone %v, want %v", c.Path, c.Gone, gone[c.Path])
+		}
 	}
 }
 

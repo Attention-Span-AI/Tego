@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -371,13 +372,43 @@ func TestParseSockDiagReply(t *testing.T) {
 	}
 }
 
+// admitterCostChildEnv makes this test binary, re-executed by TestProcAdmitterCostDoesNotGrowWithOpenSockets, take the
+// measurement in the re-executed process.
+const admitterCostChildEnv = "TEGO_FORWARDER_ADMITTER_COST_CHILD"
+
 // M1: with a thousand other connections open, admitting one more reads a handful of descriptor links, not one per
 // open socket; a connection whose descriptor number was closed and reused unseen is still found; and a failed
 // sock_diag falls back to the tcp table.
+//
+// The measurement runs in a process of its own: this binary re-executed for this test alone. Its bounds count on the
+// kernel giving each new socket the lowest number free, where the admitter probes, so they hold only while nothing
+// else in the process frees a descriptor below the test's sockets. In the package's process, earlier tests leave
+// descriptors that close later. One is the pipe pair io.Copy between two TCP connections splices through: the Go
+// runtime keeps it in a pool (internal/poll), and a runtime cleanup closes it once the pool has dropped it, two
+// collections after its last use, wherever the collector's pace puts that. The race job's unit step failed this test
+// with connection 0 and kept connection 1 each missing the probe and searching the tables of every process in the
+// job's cgroup (57 and 55 links read), which is the pattern one pair of descriptors freed between the warm-up and
+// connection 0 gives. In that run's order a duplex CONNECT test leaves such a pipe four tests before this one; with the
+// collector's pace moved, it closes here and fails the test with those two lines, and at the default pace on a quiet
+// machine it closes a test earlier.
 func TestProcAdmitterCostDoesNotGrowWithOpenSockets(t *testing.T) {
 	id, err := liveCgroupID()
 	if err != nil {
 		t.Skipf("this machine cannot place a process in a cgroup2 hierarchy: %v", err)
+	}
+	if os.Getenv(admitterCostChildEnv) == "" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestProcAdmitterCostDoesNotGrowWithOpenSockets$", "-test.count=1",
+			"-test.v", "-test.timeout=5m")
+		cmd.Env = append(os.Environ(), admitterCostChildEnv+"=1")
+		cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("the measurement, in a process of its own: %v\n%s", err, out)
+		}
+		if !strings.Contains(string(out), "--- PASS: TestProcAdmitterCostDoesNotGrowWithOpenSockets") {
+			t.Fatalf("the measurement, in a process of its own, did not pass:\n%s", out)
+		}
+		return
 	}
 	ln, err := net.Listen("tcp", net.JoinHostPort(Loopback, "0"))
 	if err != nil {
@@ -404,6 +435,15 @@ func TestProcAdmitterCostDoesNotGrowWithOpenSockets(t *testing.T) {
 		}
 		return c, s, peer, local, int(a.links.Load() - before)
 	}
+	// descriptor is c's number, which a failure names: one below the sockets this test opened is a number something
+	// else in the process freed.
+	descriptor := func(c net.Conn) int {
+		n := -1
+		if rc, err := c.(syscall.Conn).SyscallConn(); err == nil {
+			_ = rc.Control(func(fd uintptr) { n = int(fd) })
+		}
+		return n
+	}
 	// The first admission lists every table; the ones after it do not.
 	c, s, peer, local, _ := admit("warm-up")
 	a.forget(peer, local)
@@ -412,8 +452,8 @@ func TestProcAdmitterCostDoesNotGrowWithOpenSockets(t *testing.T) {
 	for i := range 20 {
 		c, s, peer, local, links := admit("next")
 		if links > 20 {
-			t.Errorf("connection %d read %d descriptor links with %d sockets open; the cost grows with them", i,
-				links, len(open))
+			t.Errorf("connection %d (descriptor %d) read %d descriptor links with %d sockets open; the cost grows with them",
+				i, descriptor(c), links, len(open))
 		}
 		a.forget(peer, local)
 		_ = c.Close()
@@ -428,7 +468,7 @@ func TestProcAdmitterCostDoesNotGrowWithOpenSockets(t *testing.T) {
 		c, s, _, _, links := admit("kept")
 		open = append(open, c, s)
 		if links > 8 {
-			t.Errorf("kept connection %d read %d descriptor links", i, links)
+			t.Errorf("kept connection %d (descriptor %d) read %d descriptor links", i, descriptor(c), links)
 		}
 	}
 	// Closed without the admitter being told: the number is reused and remembered with its old socket.
@@ -480,12 +520,27 @@ func TestARefusalsSearchDoesNotHoldBackAnAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = ln.Close() }()
+	// A descriptor below this test's sockets that closes after the warm-up, as one of an earlier test of this binary
+	// does when a goroutine of that test closes its connection late or a finalizer closes a file it leaked.
+	late, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
 	a := newProcAdmitter()
 	c, s, peer, local := livePair(t, ln)
 	defer func() { _ = c.Close(); _ = s.Close() }()
+	// The connection admitted while the refusal searches is open before the warm-up, whose table search reads every
+	// descriptor of this process and so remembers where its socket is: its admission is one the memory answers (held,
+	// a single link read), whatever descriptor number it got. One opened after the warm-up is answered by the memory
+	// only at a number probe reads (one it saw freed, or just past the highest socket), while it gets the lowest free
+	// number, late's once late has closed: its find then rightly waits for the next table search, which this test holds
+	// until release.
+	c2, s2, peer2, local2 := livePair(t, ln)
+	defer func() { _ = c2.Close(); _ = s2.Close() }()
 	if _, err := a.admit(peer, local, id); err != nil {
 		t.Fatalf("warm-up: %v", err)
 	}
+	_ = late.Close()
 	// An outsider: a socket inode no run process holds.
 	outsider := netip.MustParseAddrPort("127.0.0.1:1")
 	a.diag = func(p, l netip.AddrPort) (uint64, error) {
@@ -501,8 +556,6 @@ func TestARefusalsSearchDoesNotHoldBackAnAdmission(t *testing.T) {
 	go func() { _, err := a.admit(outsider, local, id); refused <- err }()
 	<-entered
 
-	c2, s2, peer2, local2 := livePair(t, ln)
-	defer func() { _ = c2.Close(); _ = s2.Close() }()
 	admitted := make(chan error, 1)
 	go func() { _, err := a.admit(peer2, local2, id); admitted <- err }()
 	select {
@@ -510,9 +563,8 @@ func TestARefusalsSearchDoesNotHoldBackAnAdmission(t *testing.T) {
 		if err != nil {
 			t.Errorf("the run's own connection was refused: %v", err)
 		}
-	// The refusal's search is held until release, so an admission waiting behind it never completes: a long
-	// bound loses nothing. The admission's own search reads every process in the test's cgroup, which on a busy
-	// CI runner under the race detector (other packages' test binaries share that cgroup) took over 5 s.
+	// The refusal's search is held until release, and no other search starts before it ends (searchLoop runs one
+	// at a time), so an admission waiting behind it never completes: a long bound loses nothing.
 	case <-time.After(time.Minute):
 		close(release)
 		t.Fatal("the run's own connection waited behind a refusal's descriptor search")

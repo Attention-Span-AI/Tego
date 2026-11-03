@@ -7,7 +7,11 @@
 # a package is matched by its import path or its path in the module; lines that are not JSON, or not JSON objects, are passed
 # over; the stream can come on stdin. With --must-pass, a listed test that passed passes, and one that
 # skipped, failed or never ran fails; over several streams, one that some stream passed and none failed passes. A failed test's own output is printed either way, since the job's log
-# is JSON otherwise.
+# is JSON otherwise. A test binary that ended while tests of it ran (go test's -timeout panic, an exit) has each of
+# them named as unfinished, with its panic, the panic's list of running tests and the goroutine dump, or with its last
+# lines where nothing panicked; a test that ended is never named so, and one another stream (another build of the
+# package) passed is named where it was left unfinished. The dump starts at the binary's own panic, past one a child
+# process printed before it.
 set -eu
 
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
@@ -125,6 +129,93 @@ run "a missing list is a usage error" 2 "$tmp/nosuchlist" "$tmp/listed.json"
 run "a failed test is printed with its output, and failures are go test's to judge" 0 "$tmp/allow" "$tmp/failed.json"
 has "a failed test is printed" "^--- FAIL: TestA (internal/cli)"
 has "a failed test's output is printed" "got 1, want 2"
+
+# go test's -timeout panic: test2json gives the tests that were running no result, only the package's fail, so the log
+# said FAIL for internal/runtime and nothing more (CI, 2026-11-02)
+pkgline() { # pkgline PACKAGE OUTPUT: a package's own output line
+	printf '{"Action":"output","Package":"%s/%s","Output":"%s\\n"}\n' "$m" "$1" "$2"
+}
+{
+	ev run internal/runtime TestFast
+	ev pass internal/runtime TestFast
+	ev run internal/runtime TestHang
+	ev output internal/runtime TestHang "=== RUN   TestHang"
+	ev run internal/runtime TestWaiting
+	ev output internal/runtime TestHang "panic: test timed out after 10m0s"
+	ev output internal/runtime TestHang '\trunning tests:'
+	ev output internal/runtime TestHang '\t\tTestHang (9m59s)'
+	ev output internal/runtime TestHang ""
+	ev output internal/runtime TestHang "goroutine 7 [chan receive, 9 minutes]:"
+	ev output internal/runtime TestHang "runtime.waitForTheRun(0x1)"
+	pkgline internal/runtime "FAIL\\t$m/internal/runtime\\t600.127s"
+	printf '{"Action":"fail","Package":"%s/internal/runtime"}\n' "$m"
+	ev run internal/cli TestExits
+	ev output internal/cli TestExits "    the last thing it said"
+	pkgline internal/cli "FAIL\\t$m/internal/cli\\t1.0s"
+	printf '{"Action":"fail","Package":"%s/internal/cli"}\n' "$m"
+} >"$tmp/timeout.json"
+run "a test binary that timed out names the tests it left unfinished" 0 "$tmp/allow" "$tmp/timeout.json"
+has "a timed-out test is named" "^--- UNFINISHED: TestHang (internal/runtime)"
+has "a test waiting to run when the binary ended is named" "^--- UNFINISHED: TestWaiting (internal/runtime)"
+has "the timeout's panic is printed" "^    panic: test timed out after 10m0s"
+has "the panic's list of running tests is printed" "TestHang (9m59s)"
+has "the goroutine dump is printed" "runtime.waitForTheRun"
+has "a binary that ended with no panic: its last lines are printed" "the last thing it said"
+has "a binary that ended with no panic: its test is named" "^--- UNFINISHED: TestExits (internal/cli)"
+if grep -q "UNFINISHED: TestFast" "$tmp/out"; then
+	echo "FAIL a test that passed is named unfinished" >&2
+	fail=1
+fi
+run "a stream whose every test ended names none unfinished" 0 "$tmp/allow" "$tmp/failed.json"
+if grep -q "UNFINISHED" "$tmp/out"; then
+	echo "FAIL a stream whose every test ended names a test unfinished" >&2
+	fail=1
+fi
+
+# root-suites.sh gives skipgate.sh a package's plain and tagged builds as two streams: a test one of them left
+# unfinished is named, with its stream, though the other passed it.
+{
+	ev run internal/runtime TestHang
+	ev pass internal/runtime TestHang
+	pkgline internal/runtime "ok  \\t$m/internal/runtime\\t1.0s"
+} >"$tmp/plain.json"
+cp "$tmp/timeout.json" "$tmp/tagged-timeout.json"
+run "a test one build passed and another left unfinished" 0 "$tmp/allow" "$tmp/plain.json" "$tmp/tagged-timeout.json"
+has "a test another build passed is still named where it was left unfinished" \
+	"^--- UNFINISHED: TestHang (internal/runtime, in tagged-timeout.json)"
+has "how that build's binary ended is printed, with its stream" \
+	"^--- how the test binary of internal/runtime, in tagged-timeout.json ended:"
+has "that build's timeout panic is printed" "^    panic: test timed out after 10m0s"
+
+# A child process that shares the test binary's output can print a panic of its own before the binary's: the dump
+# starts at go test's timeout panic, or, with none, at the last panic the binary printed.
+{
+	ev run internal/runtime TestChild
+	ev output internal/runtime TestChild "panic: a child process's own panic"
+	ev output internal/runtime TestChild "main.child()"
+	ev pass internal/runtime TestChild
+	ev run internal/runtime TestHang
+	ev output internal/runtime TestHang "panic: test timed out after 10m0s"
+	ev output internal/runtime TestHang '\trunning tests:'
+	ev output internal/runtime TestHang '\t\tTestHang (9m59s)'
+	pkgline internal/runtime "FAIL\\t$m/internal/runtime\\t600.1s"
+	printf '{"Action":"fail","Package":"%s/internal/runtime"}\n' "$m"
+	ev run internal/cli TestChild
+	ev output internal/cli TestChild "panic: a child process's own panic"
+	ev pass internal/cli TestChild
+	ev run internal/cli TestCrash
+	ev output internal/cli TestCrash "panic: the binary's own crash"
+	ev output internal/cli TestCrash "internal/cli.TestCrash()"
+	pkgline internal/cli "FAIL\\t$m/internal/cli\\t1.0s"
+	printf '{"Action":"fail","Package":"%s/internal/cli"}\n' "$m"
+} >"$tmp/childpanic.json"
+run "a child's panic before the binary's own" 0 "$tmp/allow" "$tmp/childpanic.json"
+has "the timeout's panic is printed past a child's" "^    panic: test timed out after 10m0s"
+has "the binary's own crash is printed past a child's" "^    panic: the binary's own crash"
+if grep -q "a child process's own panic" "$tmp/out"; then
+	echo "FAIL the dump of how a binary ended starts at a child's panic, not the binary's own" >&2
+	fail=1
+fi
 
 run "--must-pass: a listed test that passed" 0 --must-pass "$tmp/must" "$tmp/listed.json"
 has "--must-pass: a listed test that passed" "^ok   internal/cli TestA"

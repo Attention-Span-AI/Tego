@@ -438,9 +438,10 @@ func (w *Watcher) group(tgid int32) *procconn.Group {
 
 // relist lists, after a scan, the tasks of each process the scan newly follows (not in before, the processes followed
 // when it began, in pid order), where its procconn.Group starts, and of every followed process after lost events
-// (Group.Resync). A process whose listing finds nothing that runs has ended, and is reported so. Without lost events,
-// a process followed before the scan is left as its events have it: it may have ended since the scan read /proc, and a
-// listing would then lose what its events say of its status.
+// (Group.Resync). A process whose listing finds nothing that runs has ended, and is reported so, its status unknown:
+// it ended after the scan read /proc, so its exits were filled before the listing, which is its lower bound now, and
+// none of them can end it later. Without lost events, a process followed before the scan is left as its events have
+// it: it may have ended since the scan read /proc, and a listing would then lose what its events say of its status.
 func (w *Watcher) relist(lost bool, before []int32) error {
 	for _, tgid := range w.tr.Followed() {
 		if _, old := slices.BinarySearch(before, tgid); old && !lost {
@@ -450,10 +451,10 @@ func (w *Watcher) relist(lost bool, before []int32) error {
 		l := w.listTasks(tgid)
 		if kept {
 			g.Resync(l)
-			continue
+		} else {
+			g = procconn.NewGroup(tgid, l, func() procconn.Listing { return w.listTasks(tgid) })
+			w.groups[tgid] = g
 		}
-		g = procconn.NewGroup(tgid, l, func() procconn.Listing { return w.listTasks(tgid) })
-		w.groups[tgid] = g
 		if g.Ended() {
 			if err := w.ended(tgid); err != nil {
 				return err

@@ -3,6 +3,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -268,6 +269,33 @@ func TestRulesPageOneFileTwoSpellings(t *testing.T) {
 	}
 }
 
+// TestRulesPageChooserMarksAGoneFile: a rules file removed since its runs is still listed, so its runs' rules can be
+// read, and its option says "file gone"; a file still at its path does not.
+func TestRulesPageChooserMarksAGoneFile(t *testing.T) {
+	f := newRulesFix(t)
+	if err := os.Remove(f.other); err != nil {
+		t.Fatal(err)
+	}
+	option := func(body, value string) string {
+		i := strings.Index(body, `<option value="`+value+`"`)
+		if i < 0 {
+			return ""
+		}
+		j := strings.Index(body[i:], "</option>")
+		return body[i : i+j]
+	}
+	_, body := f.get(t, "/rules")
+	if o := option(body, rules.Ref(f.other)); !strings.Contains(o, "other-agent") || !strings.Contains(o, " · file gone") {
+		t.Errorf("the removed rules file's option reads %q, want it marked gone", o)
+	}
+	if o := option(body, rules.Ref(f.source)); o == "" || strings.Contains(o, "file gone") {
+		t.Errorf("the rules file still in place reads %q, want it listed and not gone", o)
+	}
+	if code, page := f.get(t, "/rules?c="+rules.Ref(f.other)); code != http.StatusOK || !strings.Contains(page, "Policy · other-agent") {
+		t.Errorf("the removed rules file's runs: %d, want its newest run's rules", code)
+	}
+}
+
 // TestRulesPageRunListHoldsTheRunShown: the run list holds a rules file's newest maxChooserRuns runs and, when the run
 // shown is older than those (reached by ?run=), that run too, selected: the list never names another run than the one
 // the page shows.
@@ -403,6 +431,101 @@ func TestRulesPageLiveBlocks(t *testing.T) {
 	}
 	if _, body := f.get(t, "/rules?run="+rulesRunA); strings.Contains(body, "/unblock") {
 		t.Error("an ended run offers Remove")
+	}
+}
+
+// endedRun writes an ended run of the fixture's rules file whose overlay holds a block on curl, added from the
+// dashboard (serial 1), and one on /p/data from the terminal (serial 2): tier is its run_start's tier and fields after
+// it, and lines its lines between run_start and run_end.
+func endedRun(t *testing.T, f *rulesFix, id, tier string, lines ...string) {
+	t.Helper()
+	f.run(t, id, f.source, rulesSource, time.Now().Add(-40*time.Minute).UTC().Truncate(time.Millisecond), false,
+		append(lines, `"kind":"run_end","source":"supervisor","reason":"exit","exit_code":0`)...)
+	events := filepath.Join(f.root, id, "events.jsonl")
+	b, err := os.ReadFile(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(events, bytes.Replace(b, []byte(`"tier":"landlock"`), []byte(`"tier":`+tier), 1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := liveblock.Update(context.Background(), filepath.Join(f.root, id), id, func(o *liveblock.Overlay) (bool, error) {
+		if _, _, err := o.Add(liveblock.KindExec, "/usr/bin/curl", "uid:1000 pid:42 dashboard", time.Now()); err != nil {
+			return false, err
+		}
+		_, ok, err := o.Add(liveblock.KindPath, "/p/data", "uid:1000 pid:43 cli", time.Now())
+		return ok, err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// curlLine is a line under the live block on curl, with verdict v; curlGap is the launcher's line confirming that the
+// block (serial 1) is in force.
+func curlLine(v string, n int) string {
+	return fmt.Sprintf(`"kind":"exec","source":"seccomp","rule":"live.block[exec:/usr/bin/curl]","verdict":"%s","authority":"rule","argv":["curl"],"exec_id":"x/10/%d","path":"/usr/bin/curl"`, v, n)
+}
+
+const curlGap = `"kind":"gap","source":"supervisor","what":"enforce","why":"live-block-added","live_block":{"op":"add","kind":"exec","value":"/usr/bin/curl","rule":"live.block[exec:/usr/bin/curl]","by":"uid:1000 pid:42 dashboard","serial":1,"at":"2026-10-25T12:01:10Z"}`
+
+// TestRulesPageEndedLiveBlocks: an ended run's live blocks refuse nothing, so no live table lists them and none offers
+// Remove; the note says they refuse nothing now, and a collapsed row under it says what each did while the run ran,
+// with who added it and its hits: the block the run put in force "Was blocked", the one it ended before putting in
+// force "Never put in force". Nothing says an ended block refuses, or that the second ever did.
+func TestRulesPageEndedLiveBlocks(t *testing.T) {
+	f := newRulesFix(t)
+	const run = "r-aaaaaaaa-0000000000036-endblk"
+	endedRun(t, f, run, `"landlock"`, curlGap, curlLine("refused", 2), curlLine("refused", 3))
+	_, body := f.get(t, "/rules?run="+run)
+	mustContain(t, "the ended run's page", body, "The run has ended, so its 2 live blocks refuse nothing now.",
+		`<details class="r-fold rules-ended"><summary>This run's live blocks <span class="soft">(2)</span>`,
+		"<span>Was blocked: cannot run /usr/bin/curl</span>", "live, from the dashboard", "2 hits",
+		"<span>Never put in force: cannot open or change /p/data</span>", "live, from the cli")
+	if i, j := strings.Index(body, "Was blocked: cannot run /usr/bin/curl"), strings.Index(body, "Can change files in ./out/"); i > j {
+		t.Error("the ended run's live blocks are listed after the rules file's groups")
+	}
+	for _, not := range []string{"/unblock", `rules-ended" open`, "Blocked live now", `id="g-live"`, "no longer refuse", "Was blocked: cannot open or change /p/data"} {
+		if strings.Contains(body, not) {
+			t.Errorf("the ended run's page shows %q", not)
+		}
+	}
+}
+
+// TestRulesPageEndedWatchedMarks: an ended watched run's marks recorded what they named and refused nothing, so the
+// page lists them as marks, never as blocks: "Was marked (recorded, not refused)" under "This run's live marks", with
+// the hits of the lines they recorded, and the note says they record nothing now. Nothing on the page says one was
+// blocked, or that one refused anything.
+func TestRulesPageEndedWatchedMarks(t *testing.T) {
+	f := newRulesFix(t)
+	const run = "r-aaaaaaaa-0000000000037-endmrk"
+	endedRun(t, f, run, `"observe","fs_reads":{"reads":"direct","why":"records-only"},"reads_notified":{"notified":false,"why":"records-only"}`,
+		curlGap, curlLine("observed", 2), curlLine("observed", 3))
+	_, body := f.get(t, "/rules?run="+run)
+	mustContain(t, "the ended watched run's page", body, "Watched only · nothing blocked",
+		"The run has ended, so its 2 live marks record nothing now.",
+		`<summary>This run's live marks <span class="soft">(2)</span>`,
+		"<span>Was marked (recorded, not refused): cannot run /usr/bin/curl</span>", "2 hits",
+		"<span>Was marked (recorded, not refused): cannot open or change /p/data</span>")
+	for _, not := range []string{"Was blocked", "Never put in force", "This run's live blocks", "live blocks refuse", "no longer refuse", "/unblock"} {
+		if strings.Contains(body, not) {
+			t.Errorf("the ended watched run's page says %q", not)
+		}
+	}
+}
+
+// TestRulesPageUnreadableLiveBlocks: a live-blocks file the page cannot read is said in plain words, the file and what
+// is wrong with it, never as Go's error.
+func TestRulesPageUnreadableLiveBlocks(t *testing.T) {
+	f := newRulesFix(t)
+	if err := os.WriteFile(filepath.Join(f.root, rulesRunB, liveblock.FileName), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, body := f.get(t, "/rules?run="+rulesRunB)
+	mustContain(t, "a damaged live-blocks file", body, "The run's live blocks could not be read: live-block.json is damaged, or a newer Tego wrote it.")
+	for _, not := range []string{"liveblock:", "invalid character"} {
+		if strings.Contains(body, not) {
+			t.Errorf("the page words a damaged live-blocks file with %q", not)
+		}
 	}
 }
 

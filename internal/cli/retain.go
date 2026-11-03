@@ -39,8 +39,9 @@ var retentionBudget = 2 * time.Second
 // never rewritten: a removed run's line stays, so the runs left verify as before and `events <removed> --verify`
 // reports the anchored ledger missing. The rule-change journal is pruned with the same retention in what is left of
 // the budget (pruneRuleChanges, which ds, the machine config's diagnostics, may stop), by a root start (`sudo tego
-// run`, which tiers 2 and 3 need) as the invoking user whose journal it is. It never fails the run that is starting.
-// Its lines name cmd, the command starting the run.
+// run`, which tiers 2 and 3 need) as the invoking user whose journal it is; a journal it leaves unpruned, or pruned
+// but for the rules files it could not look at, is in tego's own log. It never fails the run that is starting. Its
+// lines name cmd, the command starting the run.
 func retainBeforeRun(ctx context.Context, m *config.Machine, cmd string, ds []config.Diagnostic, stderr io.Writer) {
 	if m.GCInterval.Value <= 0 {
 		return
@@ -71,9 +72,16 @@ func retainBeforeRun(ctx context.Context, m *config.Machine, cmd string, ds []co
 		message(stderr, "", 0, 0, fmt.Sprintf("%s: retention removed %d ended run(s) older than %s, ended %d orphaned",
 			cmd, res.Deleted, config.FormatDuration(m.Retention.Value), res.Orphaned), codeSweep)
 	}
-	pruned, err := pruneRuleChanges(pass, root, m.Retention.Value, false, false, nil, ds)
-	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
-		logOwn("retention: rule-change journal: " + err.Error())
+	// Every journal the pass leaves unpruned, or prunes in part, is logged: a cause that recurs (a rules file on a stale
+	// mount, a budget the runs spend) otherwise stops the prune on every pass with no word of it.
+	pruned, perr := pruneRuleChanges(pass, root, m.Retention.Value, false, false, nil, ds)
+	switch {
+	case perr == nil:
+	case errors.Is(perr, context.DeadlineExceeded):
+		logOwn(fmt.Sprintf("retention: rule-change journal: not pruned, the pass's %s budget ran out; the next pass "+
+			"prunes it", retentionBudget))
+	default:
+		logOwn("retention: rule-change journal: " + perr.Error())
 	}
 	if pruned.Lines > 0 {
 		message(stderr, "", 0, 0, fmt.Sprintf("%s: retention pruned %d rule-change journal line(s) older than %s", cmd,
@@ -120,20 +128,32 @@ func pruneRuleChanges(ctx context.Context, root string, keep time.Duration, expl
 }
 
 // Test seams, the real calls in a product build: procEUID is this process's effective uid, invokingUID the SUDO_UID
-// rule (config.InvokingUID), and runAs sys.RunAs.
+// rule (config.InvokingUID), invokingGID the group a root tego gives the invoking user's files (sudoGID), and runAs
+// sys.RunAs.
 var (
 	procEUID    = os.Geteuid
 	invokingUID = config.InvokingUID
+	invokingGID = sudoGID
 	runAs       = sys.RunAs
 )
 
+// errGroupUnknown is a root pass that leaves the invoking user's journal unpruned because it cannot tell that user's
+// group, which the prune would run with.
+var errGroupUnknown = errors.New("the group of the user whose journal it is is not known")
+
 // journalOwner says as whom root's rule-change journal is pruned: as this process (ok false), or, when this process is
 // root and the journal is the invoking user's (`sudo tego run` and `sudo tego gc` work in that user's ledger root), as
-// that user (ok, with the user's ids and no capability; sys.RunAs). Root may not write there: a journal file root
-// made would be refused by the user's own writes, and acting as the user, the prune can do there only what the user
-// could. A root process that meets the journal of a user who did not invoke it leaves it to that user
-// (rulefile.ErrOtherOwner). The owner is read before the prune and checked again by it (rulefile.Prune opens only a
-// journal of the user it runs as), so a directory swapped meanwhile is refused, never written as another user.
+// that user (ok; sys.RunAs). Root may not write there: a journal file root made would be refused by the user's own
+// writes, and acting as the user, the prune can do there only what the user could. A root process that meets the
+// journal of a user who did not invoke it leaves it to that user (rulefile.ErrOtherOwner). The owner is read before
+// the prune and checked again by it (rulefile.Prune opens only a journal of the user it runs as), so a directory
+// swapped meanwhile is refused, never written as another user.
+//
+// The prune runs with the user's uid and the user's group alone, SUDO_GID or else the passwd database's (sudoGID),
+// which a root `tego run` drops its agent to as well, and no capability. It took the journal folder's group, which
+// says only what group the folder carries: one a setgid ledger root or a chgrp gave it, which the user may not even
+// be in, held by the prune as its own. A user whose group neither names leaves the journal unpruned
+// (errGroupUnknown), as a root run of theirs is refused for the same lack.
 func journalOwner(root string) (sys.TaskCreds, bool, error) {
 	if procEUID() != 0 {
 		return sys.TaskCreds{}, false, nil
@@ -142,11 +162,18 @@ func journalOwner(root string) (sys.TaskCreds, bool, error) {
 	if err := unix.Lstat(filepath.Join(root, rulefile.JournalDirName), &st); err != nil || st.Uid == 0 {
 		return sys.TaskCreds{}, false, nil // no journal, which Prune finds too, or root's own
 	}
-	if uid, viaSudo := invokingUID(); !viaSudo || st.Uid != uint32(uid) {
+	uid, viaSudo := invokingUID()
+	if !viaSudo || st.Uid != uint32(uid) {
 		return sys.TaskCreds{}, false, fmt.Errorf("%w: uid %d's, which did not invoke this tego; it is left to its owner",
 			rulefile.ErrOtherOwner, st.Uid)
 	}
-	return sys.TaskCreds{EUID: st.Uid, EGID: st.Gid, FSUID: st.Uid, FSGID: st.Gid, Groups: []uint32{st.Gid}}, true, nil
+	gid, ok := invokingGID(uid)
+	if !ok {
+		return sys.TaskCreds{}, false, fmt.Errorf("%w: uid %d's, and neither SUDO_GID nor the passwd database names "+
+			"its group; it is left to its owner", errGroupUnknown, uid)
+	}
+	g := uint32(gid)
+	return sys.TaskCreds{EUID: st.Uid, EGID: g, FSUID: st.Uid, FSGID: g, Groups: []uint32{g}}, true, nil
 }
 
 // skippedLayer is the first of ds that says the load left a machine config layer out: one TrustWarn skipped as

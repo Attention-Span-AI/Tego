@@ -226,10 +226,10 @@ func (h *Handle) rearmExpired() {
 // do. A build inside its linger is re-armed too otherwise: (8) bounds its stay only while its timer lives. A build
 // whose timer cannot be started is swept as the timer would (sweepBuild), so a build past its linger still goes.
 // Stop's own latency stays an exec per timerless build, not a removal's 1.7 to 3.7 s of ftrace locks. A build its
-// timer file shows no live timer for is looked up in the kernel's lock table as well, read once (procLocksTable), so
-// a build a launcher holds, or whose timer is an older tego's that wrote no pid, gets none. It needs root: the pins
-// and the state directory are root's. An exe that is this process's own image starts no timer in a Go test binary
-// (timerExe), and the pass sweeps instead.
+// timer file shows no live timer for is looked up in the kernel's lock table as well, read at most twice
+// (lockHolders), so a build a launcher holds, or whose timer is an older tego's that wrote no pid, gets none. It
+// needs root: the pins and the state directory are root's. An exe that is this process's own image starts no timer
+// in a Go test binary (timerExe), and the pass sweeps instead.
 func RearmTimers(opts SweepOptions, exe string) ([]BuildState, error) {
 	table := procLocksTable
 	if opts.lockTable != nil {
@@ -247,10 +247,11 @@ func RearmTimers(opts SweepOptions, exe string) ([]BuildState, error) {
 // rearmTimers starts, with start, the timer of every build but own (and of every build gone with its plane
 // directories left, which the timer's sweep removes) whose timer is not running, idle past opts.Linger when
 // opts.ExpiredOnly. Neither lock is taken (proclocks.go): a timer runs when its timer file names a live timer process
-// (timerRunning); for a build that shows none, a table, when given, is the kernel's lock table, read at most once,
-// and a build whose lock a launcher holds or whose timer lock is held gets no timer. A table that cannot be read shows
-// no holder. A timer started beside a live one exits on the timer lock. A build whose timer start fails is swept here.
-func rearmTimers(opts SweepOptions, own string, table func() ([]byte, error), start func(hash string) error) ([]BuildState, error) {
+// (timerRunning); for a build that shows none, a table, when given, reads the kernel's lock table, at most twice
+// (lockHolders: once, and again when the first read shows a build no holder), and a build whose lock a launcher holds
+// or whose timer lock is held gets no timer. A table that cannot be read shows no holder. A timer started beside a
+// live one exits on the timer lock. A build whose timer start fails is swept here.
+func rearmTimers(opts SweepOptions, own string, table func(first int) ([]byte, error), start func(hash string) error) ([]BuildState, error) {
 	if opts.BPFFS == "" {
 		opts.BPFFS = DefaultBPFFS
 	}
@@ -323,8 +324,7 @@ func rearmTimers(opts SweepOptions, own string, table func() ([]byte, error), st
 		// first look. A gone build's plane directories are removed at the timer's first sweep.
 		cands = append(cands, c)
 	}
-	var locks []procLock
-	read := false
+	holders := lockHolders{read: table} // unreadable: no holder is shown, and each candidate gets a timer
 	for _, c := range cands {
 		hash := c.st.Hash
 		if timerRunning(d, hash, opts.timerProcess) {
@@ -333,16 +333,12 @@ func rearmTimers(opts SweepOptions, own string, table func() ([]byte, error), st
 			continue
 		}
 		if table != nil {
-			if !read {
-				b, _ := table() // unreadable: no holder is shown, and each candidate gets a timer
-				locks, read = parseProcLocks(b), true
-			}
-			if c.locked && heldOn(locks, c.lock, false) {
+			if c.locked && holders.held(c.lock, false) {
 				c.st.Why, c.st.Idle = whyBusy, 0 // its launcher starts its timer when it leaves, its reaper if it dies
 				out = append(out, c.st)
 				continue
 			}
-			if timer, err := d.Stat("bpf-" + hash + ".timer"); err == nil && heldOn(locks, timer, true) {
+			if timer, err := d.Stat("bpf-" + hash + ".timer"); err == nil && holders.held(timer, true) {
 				c.st.Why = whyTimed // a timer that wrote no pid: an older tego's
 				out = append(out, c.st)
 				continue
@@ -578,8 +574,9 @@ type SweepOptions struct {
 	// runSetLive answers whether the run set pinned at path names a cgroup that exists under mount, an error
 	// wrapping os.ErrNotExist when there is none; nil means loading the pinned map (a test's seam).
 	runSetLive func(path, mount string) (bool, error)
-	// lockTable reads the kernel's lock table for RearmTimers; nil means /proc/locks (procLocksTable).
-	lockTable func() ([]byte, error)
+	// lockTable reads the kernel's lock table for RearmTimers, its first read(2) asking for first bytes when first
+	// is not 0; nil means /proc/locks (procLocksTable).
+	lockTable func(first int) ([]byte, error)
 	// timerProcess tells whether a pid is build hash's timer for a re-arm pass; nil means isTimerProcess under /proc
 	// as uid 0 (timerRunning).
 	timerProcess func(pid int, hash string) bool

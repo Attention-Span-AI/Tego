@@ -30,7 +30,9 @@
 // live, always-on. The env group names variables and never shows a value: env.set values are often secrets, and a
 // page or a JSON answer that printed them would leak them to whoever reads it (TestNoEnvValues). The live group is
 // empty here; the caller adds a running run's live blocks with (*View).AddLiveStatus, each with its state now
-// (internal/check/livestatus), or (*View).AddLive, which claims one in force.
+// (internal/check/livestatus), or (*View).AddLive, which claims one in force. LiveRule says a block as a rule outside
+// any group. An ended run's blocks refuse nothing, so a caller lists them apart, never in the live group, each said by
+// EndedLiveRule by what it did while the run ran: blocked, marked on a watched run, or never put in force.
 //
 // Nothing here does I/O, reads a clock or starts a goroutine: the caller hands it a table, a contract's bytes or the
 // rule keys of a run's events.

@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -22,7 +21,6 @@ import (
 	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/internal/rulefile"
-	"github.com/attention-span-ai/tego/internal/runlock"
 	"github.com/attention-span-ai/tego/internal/testutil/ledgertest"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -142,39 +140,18 @@ func askServer(t *testing.T) (*Server, *http.Cookie, string, string) {
 	return s, login(t, s), contract, proj
 }
 
-// holdLock makes this test binary hold run directory dir's lock as a launcher does (TestHelperLockHolder), so the
-// run reads as live to the rule service and to the live-block writer, until the test ends. A hold of markLive's on
-// the run is let go first, so the helper is the holder.
+// holdLock makes run directory dir's run live until the test ends: its lock held, as its launcher holds it from taking
+// the lock to run_end, and the run listed in the dashboard's live index (<root>/.live), so it reads as live to the
+// pages, the rule service and the live-block writer. The hold is this process's own, markLive's (it takes the place of
+// one markLive already holds on the run): each of those only asks whether the lock is held, on a descriptor of its own
+// (runlock.ProbeLock, ledger.LockHeld), and a flock this process holds answers that exactly as a launcher's does. A
+// helper process (TestHelperLockHolder) used to hold it, with 10 s to take it, and in the race job it once did not
+// (TestLiftGovernedPeer: "the helper never held the run's lock"), though none of these tests needs the holder to be
+// another process. Stop, which proves and signals the holder, still starts one (TestStopThroughHandler).
 func holdLock(t *testing.T, dir string) {
 	t.Helper()
 	letGo(dir)
-	holder := exec.Command(os.Args[0], "-test.run=^TestHelperLockHolder$")
-	holder.Env = append(os.Environ(), holderEnv+"="+dir)
-	if err := holder.Start(); err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan error, 1)
-	go func() { done <- holder.Wait() }()
-	t.Cleanup(func() {
-		_ = holder.Process.Kill()
-		<-done
-	})
-	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
-		if held, info, err := runlock.ProbeLock(dir); err == nil && held && info.PID == holder.Process.Pid {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the helper never held the run's lock")
-		}
-	}
-	// The dashboard's own list of live runs (ledgerview reads <root>/.live).
-	live := filepath.Join(filepath.Dir(dir), ".live")
-	if err := os.MkdirAll(live, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(live, filepath.Base(dir)), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	markLive(t, filepath.Dir(dir), filepath.Base(dir))
 }
 
 // inline posts form to target as static/live.js does (X-Tego-Inline) and returns the action's JSON answer.

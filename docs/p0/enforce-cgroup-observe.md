@@ -1317,8 +1317,11 @@ in `/proc/<pid>/status` are 0 (`TestIsTimerProcessReadsUidsAndCommandLine`, `Tes
 never by taking the timer or build lock, which would make a timer starting in that moment exit, and not from
 `/proc/locks`, whose read waits for an RCU grace period (29 to 60 ms a read on 6.1, where the pass took 48 ms of the 50 ms slot; ADR 0022 note 2026-10-16). A
 timer it does not show, and a build a launcher holds, get a timer that exits on the timer lock or waits for the
-launcher. A pass off the run's path (`tego stop`) reads `/proc/locks` for the builds that show no timer, at most once
-(`TestParseProcLocksReadsHeldFlocksOnly`, `FuzzProcLocks`, `TestTheLockTableShowsAHeldFlock`,
+launcher. A pass off the run's path (`tego stop`) reads `/proc/locks` for the builds that show no timer, a page per
+`read(2)`, and, when that read shows a build no holder, once more with every seam half a page further, since a lock
+let go between two of a read's pages moves the line after it out of the read (ADR 0022 note 2026-11-02;
+`TestParseProcLocksReadsHeldFlocksOnly`, `FuzzProcLocks`, `TestTheLockTableShowsAHeldFlock`,
+`TestTheLockTableShowsEveryFlockHeldThroughChurn`, `TestRearmTimersLooksAgainWhereTheLockTableShowsNoHolder`,
 `TestRearmTimersReadsTheLockTableOnlyForABuildWithNoTimerShown`), and gives none to a build a launcher holds; a table
 that cannot be read shows no holder. Only a build whose timer cannot be started (an exec that fails, a test
 binary with no stage binary) is removed by `Prepare` itself (`TestPrepareRemovesAnExpiredBuildWhoseTimerCannotStart`).

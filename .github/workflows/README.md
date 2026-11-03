@@ -26,15 +26,17 @@ cancelled.
 | `coverage` | Per-package coverage, uploaded as an artifact (report only) |
 | `deadcode-report` | Every function the shipped binaries cannot reach is classified in `tools/deadcode-allow.txt`; an unclassified one or a stale entry fails the job |
 
-**`root-suites` runs on pushes to `main` only, not on pull requests.** It can take 250 minutes of hosted time, too
-much for every pull request. That is a limit on cost, not a security boundary: `bpf-load` and `build-test-arm64` run a
-pull request's code as root too, and a pull request runs its own copy of these files. A fork's code is held by the
-runner, a fresh VM with no secrets and a read-only token, and by GitHub's approval of a first-time contributor's run.
-A maintainer should run the privileged suites (or look at the `main` run) before merging
-a change that touches enforcement. Locally, `make vm-root-test` runs them in a KVM guest.
+**`root-suites` runs on pushes to `main` only, not on pull requests.** It runs on every pull request, a fork's included,
+and on a push to `main`, and the main ruleset requires it, so a change is merged only after the privileged suites
+pass. It runs the change's code as root, as `bpf-load` and `build-test-arm64` do: a pull request runs its own copy of
+these files, and a fork's code is held by the runner, a fresh VM with no secrets and a read-only token, and by
+GitHub's approval of a first-time contributor's run. Its two hours cost nothing on a public repository's hosted runners. Locally, `make vm-root-test` runs them in a KVM guest.
 
 **`bench-gate` runs on a shared runner.** Its absolute timing budgets assume nothing else is running, and shared runners
-are noisy. Treat a failure as a prompt to re-run and look, not as proof.
+are noisy. The budgets are figures on a developer's machine, and a hosted runner makes a system call at two to three
+times its cost, so the job holds the two exec cases whose cost is a few system calls and that missed their limits there
+to twice their figures (`scripts/timing-budgets.sh --hosted`), and compares the exec path with the base commit's
+(`BenchmarkExecCommandCost`) for a smaller regression. Treat a failure as a prompt to re-run and look, not as proof.
 
 ## vm-matrix.yml
 

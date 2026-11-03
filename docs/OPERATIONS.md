@@ -719,10 +719,15 @@ how far it is from the restart (`--json`: `ledger_bytes`, `ledger_ceiling_bytes`
 however old. The same pass prunes the rule-change journal (`<ledger_root>/.rule-changes/`) to `retention`, but keeps
 every line written since the oldest run still in the ledger root started, and every line that names such a run (a
 live block placed on it), so an agent that runs for weeks keeps the changes its page lists and the blocks an Undo must
-not lift; and each rules file keeps its newest 20 changes still standing while the file is there. A pass started as
-root (`sudo tego run`, as tiers 2 and 3 are) prunes the invoking user's journal as that user; a journal of any other
-user is left to them, which the pass logs. It spends at most 2 s and stops between runs, and the next pass goes on
-from the oldest run left. `tego gc` with no flags is the same pass and counts as one. A removed run's line stays in
+not lift; and each rules file keeps its newest 20 changes still standing while the file is there. A rules file the
+pass cannot look at counts as there: one in a folder you cannot search, or one on a stale mount, which the pass waits
+for at most 3 s and at most half of what is left of its 2 s, looking at the other files meanwhile; it prunes the rest
+of the journal and logs which files it could not look at (`tego gc` says so on stderr). A pass started as root (`sudo
+tego run`, as tiers 2 and 3 are) prunes the invoking user's journal as that user, looking at the rules files as that
+user too: their uid and their group alone (`SUDO_GID`, else their passwd group, the group a root run's agent gets)
+and no capability; a journal of any other user is left to them, which the pass logs. It spends at most 2 s and stops
+between runs, and the next pass goes on from the oldest run left; a journal the budget left unpruned is logged too.
+`tego gc` with no flags is the same pass and counts as one. A removed run's line stays in
 `~/.tego/chain.log` (a line per run, never rewritten), so every run left still verifies, and `tego events <removed
 run> --verify` says its anchored ledger is missing rather than that it never ran. Without `gc_interval` nothing is
 removed unless you run `tego gc`, and with it nothing is removed while no run starts: an agent that runs for weeks

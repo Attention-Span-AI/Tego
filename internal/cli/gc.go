@@ -51,7 +51,8 @@ func init() { register(cmdGC) }
 // its file is there), then the blobs no line left names and the lock files of contracts with no line left. --dry-run
 // counts what would go, the runs it would remove counted as gone. When gc applies the machine's retention (no --keep),
 // a machine config layer the load skipped leaves the journal as it is, since the retention that layer may set is not
-// known. As root, gc prunes the invoking user's journal as that user.
+// known. A rules file the prune could not look at (a stale mount) keeps its lines and is reported, as a journal not
+// pruned is. As root, gc prunes the invoking user's journal as that user (journalOwner).
 func cmdGC() Command {
 	var (
 		keepText string

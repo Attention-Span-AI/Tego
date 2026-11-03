@@ -14,7 +14,7 @@ import (
 )
 
 // nrFor picks this architecture's number for a syscall named in the dispatch table.
-func nrFor(t *testing.T, name string) int32 {
+func nrFor(t testing.TB, name string) int32 {
 	t.Helper()
 	for k, e := range buildDispatch() {
 		if e.name == name {

@@ -13,9 +13,10 @@
 # it is not root, and a skip there means the job lost what it exists for.
 #
 # It also prints the run the way a reader of a CI log needs it, since the job's own output is JSON: each
-# package's result line, the build errors and each failed test's own output, and every skip with its reason
-# and whether the list allows it. A test's failure is reported, not judged: the exit status of `go test` is
-# the verdict on failures, and this script's is the verdict on skips.
+# package's result line, the build errors and each failed test's own output, the tests a test binary left
+# unfinished when it ended (a timeout, a crash) with how it ended, and every skip with its reason and whether
+# the list allows it. A test's failure is reported, not judged: the exit status of `go test` is the verdict on
+# failures, and this script's is the verdict on skips.
 #
 # Usage: scripts/skipgate.sh [--must-pass] LIST [JSON...]   (the streams are read from stdin when no JSON is
 #   named). LIST holds one test per line, "<package> <test> # <reason>", where the package is the import
@@ -80,10 +81,14 @@ if [ "$must" = 1 ] && [ ! -s "$tmp/list" ]; then
 	exit 2
 fi
 
+# Each stream is one test binary's run (root-suites.sh gives a package's plain and tagged builds as two streams); the
+# tests a binary left unfinished are found stream by stream.
 if [ $# -gt 0 ]; then
 	cat -- "$@" >"$tmp/events"
+	streams=("$@")
 else
 	cat >"$tmp/events"
+	streams=("$tmp/events")
 fi
 
 # One line per test result, "<action> <package> <test>", and the packages' own result lines. A stream line
@@ -113,6 +118,50 @@ if [ -n "$failed" ]; then
 		echo "--- FAIL: $test (${pkg#"$module"/})"
 		output "$pkg" "$test"
 	done <<<"$failed"
+fi
+
+# A test binary that ends while tests of it run (go test's -timeout panic, a crash, an os.Exit) gives them no result
+# at all: test2json ends the stream with the package's own fail, and the package line reads FAIL with no failed test
+# under it (internal/runtime's integration suite at 600 s on GitHub's runner, 2026-11-02, said nothing more). Each
+# such test is named, and how its package's binary ended is printed: from its panic on (go test's timeout panic where
+# there is one, else the last panic or fatal error the binary printed, since a child process sharing its output can
+# print one of its own earlier), its list of the tests that were running and its goroutine dump, up to dumplines
+# lines, or the package's last 20 lines where nothing panicked. A test is unfinished in the stream that ran it and gave
+# it no result, whatever another stream (another build of the package) said of it.
+dumplines=2000
+: >"$tmp/unfinished"
+n=0
+for s in "${streams[@]}"; do
+	n=$((n + 1))
+	jq -Rr 'fromjson? | objects | select(.Test != null and (.Action == "run" or .Action == "pass" or .Action == "fail"
+		or .Action == "skip")) | "\(.Action) \(.Package) \(.Test)"' "$s" |
+		awk -v s="$n" '$1 == "run" { k = $2 " " $3; if (!(k in seen)) order[++n] = k; seen[k] = 1; next }
+			{ ended[$2 " " $3] = 1 }
+			END { for (i = 1; i <= n; i++) if (!(order[i] in ended)) print s, order[i] }' >>"$tmp/unfinished"
+done
+if [ -s "$tmp/unfinished" ]; then
+	echo
+	echo "== tests that never ended (their package's test binary ended while they ran)"
+	# instream names the stream where there are several: the same package's builds are told apart by their files.
+	instream() { [ "${#streams[@]}" -gt 1 ] && printf ', in %s' "$(basename -- "${streams[$1 - 1]}")"; return 0; }
+	while read -r k pkg test; do
+		echo "--- UNFINISHED: $test (${pkg#"$module"/}$(instream "$k"))"
+	done <"$tmp/unfinished"
+	while read -r k pkg; do
+		echo "--- how the test binary of ${pkg#"$module"/}$(instream "$k") ended:"
+		# awk reads its input to the end, so jq never writes to a closed pipe (pipefail would end the gate here).
+		jq -Rrj --arg p "$pkg" 'fromjson? | objects | select(.Action == "output" and .Package == $p) | .Output' \
+			"${streams[$k - 1]}" |
+			awk -v max="$dumplines" '{ line[NR] = $0 }
+				/^panic: test timed out after / { timeout = NR }
+				/^(panic|fatal error): / { last = NR }
+				END {
+					from = timeout ? timeout : last
+					if (!from) { for (i = (NR > 20 ? NR - 19 : 1); i <= NR; i++) print line[i]; exit }
+					for (i = from; i <= NR && i < from + max; i++) print line[i]
+					if (NR - from + 1 > max) printf "(%d more lines of it in the go test -json stream)\n", NR - from + 1 - max
+				}' | sed 's/^/    /'
+	done < <(awk '{ print $1, $2 }' "$tmp/unfinished" | sort -u)
 fi
 
 status=0

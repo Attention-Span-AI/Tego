@@ -156,7 +156,9 @@ task took the leader's pid), and of the two the one filled later is the end. A l
 ended between the scan's read of `/proc` and the listing) leaves its next exit to end it, unknown; the watcher lists
 only what a scan newly follows, so a process followed from its events keeps their account. Lost events relist the
 tasks (`Group.Resync`): while the leader runs nothing dropped says anything of the status, once it has exited the
-status is unknown. The status: the leader's code when every exit read after the leader's carries the same code (a
+status is unknown. *Amended 2026-11-02:* a listing that finds no task ends the process there, unknown, its exits
+being older than the listing that is its lower bound, and the watcher reports that end at the scan, for what a scan
+newly follows and for what lost events relist alike (Implementation notes, 2026-11-02). The status: the leader's code when every exit read after the leader's carries the same code (a
 dumped core's bit aside), signals like any other code; else unknown; codes read before the leader's exit say nothing
 (they are of tasks that left alone, or of a group exit that gave the leader the same code). So a status tego states
 is the one `wait(2)` reports: with no group exit `wait` reports the leader's own code, and a group exit gives its code to
@@ -823,6 +825,17 @@ root-cgroup rule.
   the fresh listing their reader gives (`confirmUnlisted`), as an emptied set of an unstable listing is checked. The
   two-task model runs by default; the three-task one takes longer than go test's 10-minute default on a loaded box and
   runs with `TEGO_TEST_EXIT_MODEL=full`.
+- 2026-11-02: the watcher's scan after lost events relisted every followed process (`Group.Resync`) and reported an
+  end only for what the scan newly followed. A process followed from its events that ended after the scan read `/proc`
+  and before its tasks were listed again was ended by the listing with no line, and its exit event, filled before the
+  listing, could then end nothing: its session stayed followed until another overrun's scan. The root-suites job met it
+  on a GitHub runner (kernel 7.0), where `TestIntegrationOverrunResynchronisesWithTheRealKernel`'s agent B ended just as
+  a second overrun's scan read `/proc`, and its exit was never reported. The relist now reports such an end at the scan,
+  status unknown, and `Group.Why` names the listing as the reason (it named the dropped events, though the process ran
+  past them). Tests that fail before the change: the relisted row of `TestAProcessThatEndsDuringAScanIsEndedByItsExit`,
+  the last part of `TestGroupAfterDroppedEvents`, and, as root on the real proc connector,
+  `TestIntegrationAnAgentThatEndsBeforeAnOverrunsListingIsReportedOnce`, which lets the agent end when its tasks are
+  listed.
 - 2026-10-25: `GovernedBy` and `AdoptionScopeRun`, the "already-governed" rule of the scope guard's
   table, moved unchanged to `internal/runscope` (ADR 0100 (7)), with their tables (TestGovernedByUnchanged). `Check`
   still applies it under the rule `governed`; the watcher and the adoption reaper call it there. `ScopeName` stays in

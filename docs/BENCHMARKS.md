@@ -428,15 +428,42 @@ yardstick models the machine, and the code under test is not the model.
   medians of five 100 ms `testing.Benchmark` runs of each side. Nothing divides, retries or widens a figure.
   `scripts/timing-budgets.sh` builds the tests and runs them this way, and fails when a budget test fails, is skipped,
   reports no PASS or never ran in budget mode. CI's bench-gate job runs it first, on its own runner with nothing else
-  running, before the gate's builds and rounds, for every push and pull request (a new branch included); its findings
-  go to the job summary, and a missed budget fails the job after the gate has run. On a developer's machine `make
-  budgets` runs it; it is only meaningful with the machine otherwise idle, and prints the load average it started at.
-  Any value of the variable other than `1` or unset fails the test, so a misspelled switch cannot leave a budget run
-  holding only the ceilings. The script names its tests, and `TestTimingBudgetsListsEveryBudgetTest` (internal/testutil,
+  running, before the gate's builds and rounds, for every push and pull request (a new branch included), with
+  `--hosted` (below); its findings go to the job summary, and a missed budget fails the job after the gate has run. On
+  a developer's machine `make budgets` runs it; it is only meaningful with the machine otherwise idle, and prints the
+  load average it started at. Any value of the variable other than `1`, `hosted` or unset fails the test, so a
+  misspelled switch cannot leave a budget run holding only the ceilings. The script names its tests, and
+  `TestTimingBudgetsListsEveryBudgetTest` (internal/testutil,
   every unit run) holds that list to the tree: it parses every `_test.go` file `./...` reaches and fails when a test
   that calls `testutil.TimingMode` is not listed, a listed test does not call it, a test is listed under build tags its
   file does not build with, `TimingMode` is called outside a test function, or a `testutil.Mode` is built by hand. A
   budget test left off the list would be held only to its ceiling everywhere.
+- **Budget mode on a hosted CI runner** (`TEGO_TIMING_BUDGETS=hosted`, `scripts/timing-budgets.sh --hosted`;
+  *2026-11-02*): every budget as written, but one whose cost is a handful of system calls and whose Limit the runner's
+  figures missed (`testutil.Budget.SystemCalls`: C8's unguarded exec and its `#!/bin/sh` script) is held to
+  `testutil.HostedSystemCallFactor` (2) times its Target and Limit, and its lines name the reference figure beside the
+  scaled one. A quiet runner is still another machine than the reference box. GitHub's ubuntu-24.04 runner (an Azure
+  VM, AMD EPYC 7763 or 9V74, kernel 7.0) made an open and a close (`BenchmarkOwnedOpenClose`, in the same bench-gate
+  jobs) in 2.80 and 3.32 µs against the box's 1.13 µs, while it computes at about the box's speed (the index over 512
+  patterns 499 and 513 ns against 476 to 499 ns; `TestBorrowCostRatio` 2.07 against 1.6 to 1.9). C8's cases that add
+  system calls read 0.9 to 2.3 times their figures on the box there (the unguarded exec +11.5 and +13.7 µs against
+  +6.9 µs, the script +35.1 and +30.3 µs against +15.6 to +16.4 µs, 16 arguments +18.0 and +19.9 µs against +10.8 to
+  +11.8 µs, the floor's refusal at 8 arguments +11.5 and +13.7 µs against +8.5 to +12.4 µs), and the cases that copy
+  and match argv 0.7 to 1.7 times. Held as written there, the unguarded and script cases missed their Limits on 2 of 10
+  pushes to main (+13.7 µs against +12, +35.1 and +30.3 µs against +30), and the code was not slower: this tree's test
+  and the one of 2026-10-17, run in turn ten times each on one host (at load average 16), read within 2 µs of each
+  other in the three cases both have that add system calls. Twice keeps those two Limits 1.7 to 2.1 times the runner's
+  own figures, where the box's are 1.7 to 1.9 times its figures, so a regression that makes either case cost more than
+  that many times what it does fails on the runner as on the box; a smaller one, such as the 8,000-round copy (+7 µs,
+  1.5 to 1.6 times the unguarded case there), passes budget mode on the runner and fails the job's comparison with
+  the base (below). The 16-argument case and the floor's refusal at 8 arguments add the same reads but met their
+  Limits on the runner with room (+30 and +20 µs, 1.46 to 1.75 times their runner figures), so they stay as written
+  there: nothing showed those Limits wrong for it. Rejected: raising the two Limits for every machine (the box would
+  then pass a regression twice the size); judging them on the runner against a yardstick of system calls measured
+  beside them (the 2026-10-17 rejection of yardsticks holds); holding them on the runner only to the unit gate's ten
+  Limits; scaling every case that adds system calls (two of them were never short of their Limits there); and cutting
+  the with-rules path's system calls (the head's reopen, `fstat`, `fstatfs`, `pread` and `close` and argv's reads are
+  each a check ADR 0048 (3) needs, and one fewer saves a fraction of a microsecond of a doubled cost).
 - **The unit gate** (precommit, CI's test jobs, any `go test`): the same measurement, held to `testutil.CeilingFactor`
   (10) times the Limit, and where that figure is the thread's own time, its wall clock to `testutil.WallCeilingFactor`
   (100) times it. No `TARGET-MISS` is printed there, since its figure is not the one a Target is written in; its log
@@ -705,17 +732,40 @@ pace's margin is the machine's, above). A run of
 failure, its stand-in rewritten through the filesystem's journal (53 runs of 200 failed); it is a memfd now, and
 200 of 200 pass so.
 
+**C8's exec path against the base (2026-11-02).** On CI's runner budget mode holds C8's exec cases to figures of
+another machine, and its unguarded and script cases are held to twice them (`--hosted`, above), which a regression of
+about +7 µs no longer reaches. So bench-gate (`scripts/bench-gate.sh`, ADR 0028 S1) also compares
+C8's exec path with the base commit's, on the same runner in the same job: `BenchmarkExecCommandCost` handles one exec's
+notification in a run with command rules, with real `process_vm_readv` reads of the process and a real head read as
+the test makes them, for each case of `TestExecCommandCostBudget` whose op takes microseconds (the unguarded exec, the
+script, 16 and 128 arguments, the exec the floor refuses at 8 arguments), and the gate fails a sub-benchmark more than
+25% slower than the base's at p<0.01, as it does every hot path it gates. The comparison needs no figure of any
+machine. On the runner the unguarded case's op takes about 14 to 17 µs (its with-rules figure in the 2026-11-02
+bench-gate jobs), so the 8,000-round copy makes it about half again as long there; a quiet runner's ops of a few
+microseconds that are mostly system calls vary by a few percent from round to round (`BenchmarkOwnedOpenClose` ±1 to 3%,
+`NotificationRoundTrip`'s exec cases ±3 to 6%, in the same jobs). Proof, on the reference host at load average 24 to 27
+from other jobs (spreads of ±10 to ±73%, and the copy's own loop slowed by the load too): `bench-gate.sh` with only this
+benchmark, the 8,000-round copy (a loop of dependent multiply-adds at the top of `decideCommand`, built from this tree)
+against the unmodified tree, failed 2 runs of 2 (the unguarded case +57.8% and +72.2%, p ≤ 0.007; 16 arguments and the
+floor's refusal both times, the script once), and the unmodified tree against itself passed 2 of 2. A regression of up
+to a quarter of an op, or one that creeps in over several commits each under it, passes the comparison; budget mode on
+the reference box (`make budgets`) holds the figures as written.
+
 **What it costs.** The unit gate no longer catches a regression of less than several times a budget, whether it works or
 waits: the 8,000-round copy, about 1.2 to 1.5 times the unguarded Limit, passes it under the busy loops, as do a 20 µs
 sleep in every command-rule decision and a 60,000-round loop in the flood's handler, and on a busy machine a wait of up
 to a hundred Limits can pass where another process's work fills it without the thread blocking. Such a regression fails
-budget mode, and so fails CI's bench-gate job, on the push or pull request that makes it; locally it shows only in `make
-budgets` on an idle machine. Budget mode is only as good as the machine is quiet: in the KVM guest above, idle but on a
+budget mode on the reference box (`make budgets`, on an idle machine), and CI's bench-gate job on the push or pull
+request that makes it: in budget mode where the runner holds the budget as written, and for C8's exec cases, of which
+it holds the unguarded and script cases to twice their figures, in the comparison with the base
+(`BenchmarkExecCommandCost`, above), which the 8,000-round copy fails. Budget mode is only as good as the machine is quiet: in the KVM guest above, idle but on a
 host other work kept at load average 7 to 19, the unmodified C8 cases met their Limits in 9 runs of 22 and the whole
 script in 4 of 9. CI's runner is not the reference host either: a runner slower than it, or a busy one, can miss a budget
 the code meets on the reference host, and a faster one gives a regression more room, as the raw comparison in CI's test
 jobs did before (it already ran these budgets there, beside other packages' tests). A budget the runner misses is a
-finding to investigate, never a reason to relax it.
+finding to investigate, never a reason to relax it: the runner's misses of 2026-11-02 were its system calls, measured
+in the same jobs, and the two cases they hit are held to twice their figures on a hosted runner alone (`--hosted`,
+above), with the comparison against the base for what that leaves through; the budgets themselves are unchanged.
 
 **The figures today** (budget mode on the reference host, the fastest of the rounds above, at load average 2.5,
 2026-10-16): the unguarded case +6.9 µs (Target +6), the `#!/bin/sh` script +15.6 to +16.4 µs (Target +15), 16
