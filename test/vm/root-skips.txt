@@ -238,7 +238,7 @@ internal/runtime/enforce/cgroup TestTier2UnixEndToEnd # untagged: the end-to-end
 internal/runtime/enforce/cgroup TestTier2DatagramLineIsTheKernels # untagged: the end-to-end run belongs to the tegobpf suite, whose skip gate and no-failure rule hold it
 internal/runtime/enforce/cgroup TestUnixRowsPurgedOnRealMaps # untagged: needs the compiled objects
 internal/runtime/enforce/cgroup TestUnspecifiedDestinationIsRefused # untagged: needs the compiled objects
-internal/runtime/enforce/cgroup TestV1HierarchyDoesNotTouchTheRun # untagged: needs the compiled objects
+internal/runtime/enforce/cgroup TestV1HierarchyDoesNotTouchTheRun # needs the compiled objects (the plain build skips), and stages its case only when a v1 named hierarchy's directory lands on a unified cgroup's id within 400 rounds, which a host's kernfs steps may not give on a run (GitHub's runner: some runs)
 internal/runtime/observe TestIntegrationChainReturnIsTheVerdict # untagged: needs the compiled objects
 internal/runtime/observe TestIntegrationHeldRecordsAreTheirOwnActions # untagged: needs the compiled objects
 internal/runtime/observe TestIntegrationChainReturnIsTheVerdict/probe # lockdown=confidentiality (TEGO_VM_LOCKDOWN) refuses trace_proc's probe build; the rdonly subtest runs there
