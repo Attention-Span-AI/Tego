@@ -13,6 +13,11 @@
 // NoFDLeak is the descriptor table's check (ADR 0023 A8): it fails a test whose descriptor table grew between
 // its call and the test's Cleanup, and refuses a parallel test, where the delta would mean nothing.
 //
+// PollReadable is how a test waits, up to a bound, for a descriptor to become readable: poll(2), resumed for the
+// time left when a signal ends it. poll is never restarted after a signal handler, and a Go test process takes
+// signals while it waits (the runtime's own preemption signal among them), so a single poll that takes EINTR for a
+// failure fails a test at random.
+//
 // GuardedMain, GuardedLeakCheckMain and GuardedStdioLeakCheckMain (which also fails the binary on a standard
 // descriptor a test closed or replaced) are the other TestMain gate (over GuardRealTego): they fail a package
 // whose tests can start a run, a sweep, a gc, a reaper or the tego binary when anything in the invoking user's
@@ -31,27 +36,27 @@
 // invoking user's.
 //
 // TimingMode, Mode.Measure, Mode.Judge and Mode.JudgeRatio are how a test holds code to an absolute timing budget
-// (docs/BENCHMARKS.md, "Timing budgets in the test suites"): Measure takes the fastest of many interleaved rounds,
-// less the clock's own cost, on the wall clock alone in budget mode (MinOf) and in the unit gate on the calling
-// thread's figures from the same samples (MinOfThread: the wall clock, the thread's own time and its CPU time), and
-// Judge (JudgeRatio, for a ratio to a fixed workload) holds the Figure to the budget's Limit and Target as its spec
-// writes them in budget mode (BudgetsEnv=1, which scripts/timing-budgets.sh sets where the machine is quiet). In
-// every other run, the unit gate, it holds the own time to CeilingFactor times the Limit and the same samples' wall
-// clock to WallCeilingFactor times it; a pace across threads and processes, which no one thread's figures are, is
-// held on the wall clock to CeilingFactor times its Limit. A sample's own time is its wall clock less the thread's
-// run-queue delay over it (/proc/thread-self/schedstat) beyond the CPU time the process's other threads had over it,
-// where the thread never blocked, and its whole wall clock where it did: it keeps the code's work, the work it hands
-// to other goroutines and the waits the code makes, and leaves out the waits for a CPU that other processes fill,
-// which nothing bounds. A wait can still hide in it where another process's work fills it and the thread never
-// blocks (a thread that process preempts just as it parks, or a wait that yields its CPU instead of sleeping), which
-// takes another process wanting the thread's CPU, and the fastest sample can be one where it did; the wall clock
-// never hides one, so a wait past a hundred Limits fails on any machine, and one past ten fails wherever it cannot
-// hide.
-// CPU time alone would never see a regression that only waits. MinOf on ThreadCPU alone is for relative bounds, two
-// sizes of the same code.
+// (docs/BENCHMARKS.md, "Timing budgets in the test suites"): Measure takes the fastest of many interleaved rounds, less
+// the clock's own cost, on the wall clock alone in budget mode (MinOf) and in the unit gate on the calling thread's
+// figures from the same samples (MinOfThread: the wall clock, the thread's own time and its CPU time), and Judge
+// (JudgeRatio, for a ratio to a fixed workload) holds the Figure to the budget's Limit and Target as its spec writes
+// them in budget mode (BudgetsEnv=1, which scripts/timing-budgets.sh sets where the machine is quiet, and
+// BudgetsEnv=hosted on a hosted CI runner, which holds a SystemCalls budget, one whose cost is a few system calls and
+// whose Limit the runner's figures missed, to HostedSystemCallFactor times its figures). In every other run, the unit gate, it holds the own time to CeilingFactor times the Limit and the
+// same samples' wall clock to WallCeilingFactor times it; a pace across threads and processes, which no one thread's
+// figures are, is held on the wall clock to CeilingFactor times its Limit. A sample's own time is its wall clock less
+// the thread's run-queue delay over it (/proc/thread-self/schedstat) beyond the CPU time the process's other threads
+// had over it, where the thread never blocked, and its whole wall clock where it did: it keeps the code's work, the
+// work it hands to other goroutines and the waits the code makes, and leaves out the waits for a CPU that other
+// processes fill, which nothing bounds. A wait can still hide in it where another process's work fills it and the
+// thread never blocks (a thread that process preempts just as it parks, or a wait that yields its CPU instead of
+// sleeping), which takes another process wanting the thread's CPU, and the fastest sample can be one where it did; the
+// wall clock never hides one, so a wait past a hundred Limits fails on any machine, and one past ten fails wherever it
+// cannot hide. CPU time alone would never see a regression that only waits. MinOf on ThreadCPU alone is for relative
+// bounds, two sizes of the same code.
 //
-// Imports: the standard library and internal/realtego (which imports only the standard library, and is where
-// the test build of tego finds the same homes). Must not import anything else under internal/ or pkg/: a helper
+// Imports: the standard library, golang.org/x/sys/unix and internal/realtego (which imports only the standard
+// library, and is where the test build of tego finds the same homes). Must not import anything else under internal/ or pkg/: a helper
 // every package's tests import cannot depend on any of them without an import cycle.
 // The separate contracttest and ledgertest subpackages depend on the public
 // compiler and record schema respectively; importing either never changes this

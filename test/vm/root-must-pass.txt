@@ -36,6 +36,7 @@ internal/runtime/enforce/landlock TestRootMissingWriteDirIsTheDroppedUsers # a w
 
 internal/watch/watcher TestIntegrationWatcherSeesAFakeAgentItsChildAndTheirExit # the agent watcher sees a fake agent, its child and their exits through the real proc connector (CAP_NET_ADMIN)
 internal/watch/watcher TestIntegrationOverrunResynchronisesWithTheRealKernel # a real ENOBUFS (the kernel's buffer overflows) is followed by a scan that leaves each agent reported once
+internal/watch/watcher TestIntegrationAnAgentThatEndsBeforeAnOverrunsListingIsReportedOnce # an agent that ends between an overrun's scan of /proc and the listing of its tasks is reported ended once, not left followed
 internal/cli TestIntegrationAgentsFollowSeesAFakeAgentOnTheRealKernel # tego agents --follow end to end on the real proc connector and /proc, as root
 
 internal/runtime TestIntegrationRootSweepEndsAUsersKilledLauncher # a root sweep ends a user launcher's orphan in the user's delegated subtree (the test delegates one when none is there)

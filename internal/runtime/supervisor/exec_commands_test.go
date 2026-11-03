@@ -22,7 +22,7 @@ import (
 // commandPolicy is a policy whose contract holds the given exec entries ("deny: git push", "allow: git status"),
 // compiled into RuleTable.ExecCommands, with exec rules granting /usr/bin/git, /usr/bin/rm and /usr/bin/python3
 // for an allow-list section.
-func commandPolicy(t *testing.T, entries ...string) *Policy {
+func commandPolicy(t testing.TB, entries ...string) *Policy {
 	t.Helper()
 	sec := &agent.ExecSection{}
 	var ps []*execmatch.Pattern

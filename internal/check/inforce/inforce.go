@@ -256,25 +256,46 @@ func (v *View) AddLive(kind, value, by string) {
 
 // AddLiveStatus lists a running run's live block in the live group with its state now (internal/check/livestatus):
 // state and sentence are livestatus.Status's for the block on its run, so a block on a watched run reads "Recorded,
-// not enforced" and a path block on a run that does not see its reads says reads still go through. Only an in-force
-// or partial block is best effort; every other state is not enforced.
+// not enforced" and a path block on a run that does not see its reads says reads still go through. The rule is
+// LiveRule's.
 func (v *View) AddLiveStatus(kind, value, by string, state livestatus.State, sentence string) {
 	g := v.Group(GroupLive)
 	if g == nil {
 		return
 	}
+	g.Rules = append(g.Rules, LiveRule(kind, value, by, state, sentence))
+	g.Title, g.Lede, g.Default = liveGroupCopy(g.Rules)
+}
+
+// LiveRule is a live block said as a rule in its state (AddLiveStatus's arguments), without adding it to a group. Its
+// rule key is the one a refusal under it carries, live.block[kind:value]. Only an in-force or partial block is best
+// effort; every other state is not enforced. An ended run's blocks are said by EndedLiveRule, which builds on it.
+func LiveRule(kind, value, by string, state livestatus.State, sentence string) Rule {
 	st := StateNotEnforced
 	if state.Refuses() {
 		st = StateBestEffort
 	}
-	r := Rule{
-		Group: GroupLive, Key: "live.block", Entry: string(kind) + ":" + value,
+	return Rule{
+		Group: GroupLive, Key: "live.block", Entry: kind + ":" + value,
 		RuleKey: "live.block[" + kind + ":" + value + "]", Target: value, Effect: EffectDeny,
 		Enforced: false, State: st, EnforcedText: sentence, Source: Source{Origin: OriginLive(by)}, Live: state,
+		Sentence: liveSentenceIn(kind, value, state),
 	}
-	r.Sentence = liveSentenceIn(kind, value, state)
-	g.Rules = append(g.Rules, r)
-	g.Title, g.Lede, g.Default = liveGroupCopy(g.Rules)
+}
+
+// EndedLiveRule is a live block of a run that has ended, said as a rule by what it did while the run ran, without
+// adding it to a group: a caller lists an ended run's blocks apart from the live group, whose rules each refuse
+// something now or will. was is the block's state as livestatus.Status gave it on the run's facts with the run not
+// ended, against the serial of the add that made it: a block the run put in force reads "Was blocked: cannot run curl"
+// (a path block on a run that did not see its reads "Was blocked: cannot change /p/data (reads went through)"), a
+// watched run's mark "Was marked (recorded, not refused): …", and a block the run ended before putting in force "Never
+// put in force: …". Any other state claims nothing: "Ended with the run: …". Its state now is livestatus.Ended, not
+// enforced, so nothing says it refuses anything now.
+func EndedLiveRule(kind, value, by string, was livestatus.State) Rule {
+	sentence, text := liveEnded(kind, value, was)
+	r := LiveRule(kind, value, by, livestatus.Ended, text)
+	r.Sentence = sentence
+	return r
 }
 
 // OriginLive is a live block's origin: who added it, as liveblock recorded the writer.

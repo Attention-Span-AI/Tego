@@ -49,6 +49,12 @@ const (
 	// ArgMaybe may take the next token as its value: when Opt.Values lists the values it takes, a next token among
 	// them; otherwise either reading, as for an option the row does not list (npm's --browser).
 	ArgMaybe
+	// ArgNextWord takes the next token as its value when that token is a word, not empty and not starting with '-',
+	// and takes no other value: node's -p and --print, whose alias `--print <arg>` reads a word after them as -e's
+	// code, while before an option they are a flag (`node -p --title t app.js` runs app.js). An attached `=value` is
+	// no value of it, as node drops a boolean's, and its --no- form reads the same, as node applies the alias to the
+	// negated name too (`node --no-print x` evaluates x).
+	ArgNextWord
 )
 
 // Opt is one option a level reads.
@@ -63,6 +69,10 @@ type Opt struct {
 	Arg Arg
 	// Values are the separate values an ArgMaybe option takes (npm's --color takes always, true and false).
 	Values []string
+	// WordTo names the option at this level whose value an ArgNextWord option's word is as well: node expands
+	// `--print <arg>` to -pe, which is --print then --eval <arg>, so `node -p x` holds --eval x too, and an entry naming
+	// -e matches it. "" for none.
+	WordTo string
 	// SepOnly is a value-taking option whose value is always the next token, never attached: git's global -C and -c,
 	// where `-C.` is an unknown option.
 	SepOnly bool
@@ -74,10 +84,28 @@ type Opt struct {
 	// Stop ends option parsing at this level: every later token is an operand (python's -c and -m, after their
 	// value).
 	Stop bool
+	// Ends ends the options after it as `--` does, negated or not: every later token is an operand, and the first is
+	// an interpreter's script even when it starts with '-'. Node's --prof-process, whose alias is {--prof-process, --}
+	// (`node --no-prof-process -x` loads -x as its main module, probed). Unlike Stop it leaves the script where a script
+	// stands (Reading.Dispatch).
+	Ends bool
+	// EndsAttached ends the options as Ends does, only when the option is written with an attached value that is not
+	// empty (`--name=v`): node's --trace-events-enabled, whose alias inserts the value node gives its categories. With
+	// `=v` node takes the categories from v and leaves the inserted token unread, and a token that is no option ends
+	// node's option loop, so `node --trace-events-enabled=v -x a.js` loads -x as its main module (src/node_options-inl.h,
+	// probed on 20.19.4). Written without a value it is a flag.
+	EndsAttached bool
 	// Rewrite marks a visible rewrite trigger: an interpretation whose tokens hold this option with a value for which
 	// Rewrite reports true is unlocatable (ADR 0048 (2): cargo's --config naming a file or an alias, gcloud's
-	// --flags-file). nil for every other option.
+	// --flags-file, node's --build-snapshot-config, and node's --import naming a module as a URL the row does not
+	// resolve). nil for every other option.
 	Rewrite func(value string) bool
+}
+
+// ends reports whether the options end after this option, written with the value it holds when hasValue: Ends, or
+// EndsAttached and an attached value that is not empty.
+func (o *Opt) ends(hasValue bool, value string) bool {
+	return o.Ends || o.EndsAttached && hasValue && value != ""
 }
 
 // Syntax is how one level of a tool spells its options.
@@ -113,6 +141,11 @@ type Syntax struct {
 	ShortWords bool
 	// BoolValues lets a flag take a following true or false (npm's nopt: --save false).
 	BoolValues bool
+	// Underscores reads `_` in a long option's name as `-`, before the name is looked up or read as a negation (node
+	// replaces each `_` of an option's name, up to `=`, with `-` before anything else: `--build_snapshot` is
+	// `--build-snapshot` and `--no_print` is `--no-print`, src/node_options-inl.h). An entry's option words are read the
+	// same way.
+	Underscores bool
 }
 
 // Level is one level of a tool's command line: the options it reads and, when it has them, its subcommands.
@@ -219,11 +252,30 @@ type InterpSpec struct {
 	Module string
 	// Code are the options whose value is code (python's c, node's e and p, sh's c): opaque, no interpretation.
 	Code []string
+	// CodeUnless are options under which the interpreter runs its script though code is given, so a reading that holds
+	// one, not negated, is read for its script: node's -i and --build-snapshot, with which `node -i -e x app.js` runs
+	// app.js and leaves the code unrun (probed on 20.19.4). Node reads them after the code too, up to the script.
+	CodeUnless []string
+	// Preload are options whose value is a module the interpreter runs in the same process before its script or code,
+	// with the script's arguments: node's -r and --import, so `node -r ./npm-cli.js app.js publish` runs npm publish
+	// (probed on 20.19.4), and node's --test-reporter, whose module node imports in the same process when a test runs.
+	// Each such module is read as a script the interpreter runs (scriptTools), and, when it starts with `\-`, without
+	// the backslash too: node takes a separate value `\-x` as `-x` (src/node_options-inl.h), and a reading does not
+	// keep whether a value was attached.
+	Preload []string
+	// Loaders are options whose value is a module the interpreter runs with no arguments of the script's: node's
+	// --loader, whose module runs in node's hooks thread (process.argv holds nothing past the script there, probed).
+	// Where one is given, that thread runs the Preload modules too, with no arguments (node's -r, probed).
+	Loaders []string
 	// Modules maps a module's top-level name to the tool it is (pip3 → pip); any other module is its own name.
 	Modules map[string]string
 	// Scripts maps an entry script's basename to the tool it is (npm-cli.js → npm); any other script is its
 	// basename.
 	Scripts map[string]string
+	// Extensions are the extensions the interpreter tries on a script or module whose name, as given, names no file:
+	// node runs `node ./deploy` as deploy.js when no file deploy exists (Module._findPath, probed on 20.19.4). A script
+	// is read by its name and by its name with each of them.
+	Extensions []string
 }
 
 // Rows is a set of rows, looked up by name.

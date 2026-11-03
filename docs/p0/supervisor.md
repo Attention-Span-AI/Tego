@@ -4784,3 +4784,10 @@ memory, and gaps in tests and wording. The rule bodies carry each change; this r
   and a directory move out of coverage, at tiers cgroup and bpflsm; `nameMove`'s refusal is a floor. Before, each
   merge alone was right, and together an approval made `.env.local` in an ask scope. Test:
   `TestAskMutationRefusesNameMatchedFile`.
+- 2026-11-02, R13b, R22 and ADR 0048 C8 (where the budgets of the 2026-10-16 entries are asserted): CI's bench-gate
+  job asserts them with `TEGO_TIMING_BUDGETS=hosted` (`scripts/timing-budgets.sh --hosted`): the flood's two budgets,
+  C8's index and every C8 exec case as written, but the unguarded exec and the `#!/bin/sh` script, whose added cost is
+  a handful of system calls and which missed their Limits on the hosted runner (it makes a system call at 2.5 to 2.9
+  times the reference box's cost), at `testutil.HostedSystemCallFactor` (2) times their figures. The same job compares
+  C8's exec path with the base commit's (`BenchmarkExecCommandCost`), which a regression of about +7 µs fails there;
+  `make budgets` holds every budget as written on the reference box (ADR 0048's 2026-11-02 note).

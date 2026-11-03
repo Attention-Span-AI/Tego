@@ -89,6 +89,40 @@ func TestRunLiveWatched(t *testing.T) {
 	}
 }
 
+// TestRunPageUnreadableLiveBlocks: a live-blocks file the run page's Block now panel cannot read is said in plain
+// words, as the Rules page says it (rulesview.LiveErrWords): the file and what is wrong with it, never liveblock's
+// error with its package prefixes, a JSON decoder's words or the run's folder.
+func TestRunPageUnreadableLiveBlocks(t *testing.T) {
+	root := fixture(t)
+	overlay := filepath.Join(root, harmRun, liveblock.FileName)
+	s := newServer(t, root)
+	c := login(t, s)
+	check := func(name, want string) {
+		t.Helper()
+		live := blockPanel(t, get(t, s, c, "/runs/"+harmRun))
+		mustContain(t, name, live, "The run's live blocks could not be read: "+want+".")
+		for _, raw := range []string{"liveblock:", "invalid character", "overlay file", filepath.Join(root, harmRun)} {
+			if strings.Contains(live, raw) {
+				t.Errorf("%s: the panel says %q", name, raw)
+			}
+		}
+	}
+	if err := os.WriteFile(overlay, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	check("a damaged file", "live-block.json is damaged, or a newer Tego wrote it")
+	if err := os.Chmod(overlay, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	check("a file others may write", "live-block.json is writable by its group or others, so it is not trusted")
+	if os.Geteuid() != 0 { // root reads a file whatever its mode says
+		if err := os.Chmod(overlay, 0o200); err != nil {
+			t.Fatal(err)
+		}
+		check("a file this user may not read", "this user may not read live-block.json")
+	}
+}
+
 // TestRunLiveEnforcing: on an enforcing run a block waits until the launcher's line confirms its serial, then reads "In
 // force since line #N"; the change arrives as a fresh r-run-live region (what live.js swaps in over /events), and the
 // Rules page says the same states.

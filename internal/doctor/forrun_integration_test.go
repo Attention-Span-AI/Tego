@@ -27,9 +27,10 @@ import (
 )
 
 // TestIntegrationForRunAsRoot is ACC-F2-probe-per-run on a real kernel, as root: a run at reach landlock runs
-// no program-load, LSM or fanotify probe; a run at reach cgroup probes D7's tier-2 rows and D8 once, keeps the
-// answer in /run/tego, and the next run reads it; every tier at or below the reach is offered and explained
-// as doctor.Run offers and explains it; and an entry anyone but root could have written is never read.
+// no program-load, LSM or fanotify probe; a run at reach cgroup probes D7's tier-2 rows and D8 once, takes the
+// plane's answer from this build's pin directory where a run left the build pinned and else probes it (R21),
+// keeps the answer in /run/tego, and the next run reads it; every tier at or below the reach is offered and
+// explained as doctor.Run offers and explains it; and an entry anyone but root could have written is never read.
 func TestIntegrationForRunAsRoot(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("a run's probe differs from doctor's only as root, where D6, D7 and D8 load programs (CAP_BPF, CAP_SYS_ADMIN)")
@@ -79,18 +80,33 @@ func TestIntegrationForRunAsRoot(t *testing.T) {
 	}
 	path := filepath.Join("/run/tego", c.name(key))
 	c.drop(key)
+	// With no answer kept, a run adopts the plane's answer from this build's pin directory when the map there records
+	// the mode bpf.plane would select, and only else probes (enforce-plane R21). A tier-2 run leaves its build pinned
+	// for bpf.linger after it ends (ADR 0022), so which of the two the first run after the drop gives is the
+	// machine's: a fresh KVM guest has no build pinned, but where the root suites run one after another on one host
+	// (CI's root-suites job, VM_HOST=sudo) internal/runtime's tegobpf suite has just left this one pinned. The pin is
+	// read here as the run reads it, before the run and after it; a build its timer swept, or a run pinned, in between
+	// leaves either answer right. Until 2026-11-02 this test wanted a probe on every machine, and the runner's
+	// adoption failed every root-suites job.
+	pinnedPlane, pinned := adoptPinnedPlane(planePin(nil))
 	start = time.Now()
 	first, err := ForRun(ctx, nil, backend.TierCgroup)
 	if err != nil {
 		t.Fatal(err)
 	}
-	probed := time.Since(start)
+	took := time.Since(start)
+	_, stillPinned := adoptPinnedPlane(planePin(nil))
 	start = time.Now()
 	second, err := ForRun(ctx, nil, backend.TierCgroup)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("reach cgroup: probed %v, then %v (from cache %v)", probed, time.Since(start), second.FromCache())
+	source := "none"
+	if first.Plane != nil {
+		source = first.Plane.Source
+	}
+	t.Logf("reach cgroup: %v with the plane's answer %s (this build pinned before the run %v, after it %v), then %v (from cache %v)",
+		took, source, pinned, stillPinned, time.Since(start), second.FromCache())
 	same("reach cgroup, probed", first, backend.TierCgroup)
 	same("reach cgroup, second", second, backend.TierCgroup)
 	// The plane's rows are read at reach cgroup: they select tier cgroup's plane mode (enforce-plane R19).
@@ -104,8 +120,17 @@ func TestIntegrationForRunAsRoot(t *testing.T) {
 			t.Errorf("reach cgroup probed %s (tier %q, capture %v), which no tier up to cgroup reads", r.Hook, r.Tier, r.Capture)
 		}
 	}
-	if first.Plane == nil || first.Plane.Source != planeSourceProbed {
-		t.Errorf("reach cgroup after a drop: plane %+v, want a probed answer", first.Plane)
+	switch {
+	case first.Plane == nil:
+		t.Error("reach cgroup after a drop: no plane answer")
+	case pinned && stillPinned && (first.Plane.Source != planeSourcePin || first.Plane.Selected != pinnedPlane.Selected):
+		t.Errorf("reach cgroup after a drop, with this build pinned in %s mode before and after the run: plane %+v, "+
+			"want the pinned answer", pinnedPlane.Selected, first.Plane)
+	case !pinned && !stillPinned && first.Plane.Source != planeSourceProbed:
+		t.Errorf("reach cgroup after a drop, with this build pinned neither before nor after the run: plane %+v, "+
+			"want a probed answer", first.Plane)
+	case first.Plane.Source != planeSourceProbed && first.Plane.Source != planeSourcePin:
+		t.Errorf("reach cgroup after a drop: plane %+v, want a probed answer or the pinned build's", first.Plane)
 	}
 	if first.FromCache() {
 		t.Error("the first run after a drop read the cache")

@@ -12,16 +12,22 @@
 # moved from 1.6-1.9 to 2.50. So in the unit gate (precommit, CI's test jobs, any go test) these tests hold their
 # measurement only to ten times its Limit (testutil.CeilingFactor), and this script runs them with
 # TEGO_TIMING_BUDGETS=1, which makes each hold its Limit (over it fails) and Target (over it prints TARGET-MISS) exactly
-# as its spec writes them. Run it where nothing else runs: CI's bench-gate job runs it first, alone on the job's runner;
-# on a developer's machine, `make budgets` with the machine otherwise idle. It prints the load average it started at,
-# for the record.
+# as its spec writes them. Run it where nothing else runs: on a developer's machine, `make budgets` with the machine
+# otherwise idle; CI's bench-gate job runs it first, alone on the job's runner, with --hosted. A hosted runner is
+# another machine than the reference box: a quiet one of GitHub's made an open and a close at 2.5 to 2.9 times the
+# reference box's cost while it computes at about the box's speed, and C8's unguarded exec and script, whose added cost
+# is a handful of system calls, missed their Limits there. --hosted runs the tests with TEGO_TIMING_BUDGETS=hosted,
+# which holds those two budgets (testutil.Budget.SystemCalls) to testutil.HostedSystemCallFactor times their figures
+# and every other one as written (docs/BENCHMARKS.md); the job's bench-gate compares C8's exec path with the base
+# commit's for a regression smaller than that. It prints the load average it started at, for the record.
 #
 # Method: each package's test binary is built (CGO_ENABLED=0, its build tags), then run once from its package
-# directory with -test.run naming its budget tests, -test.v and -test.count 1, under TEGO_TIMING_BUDGETS=1. A
+# directory with -test.run naming its budget tests, -test.v and -test.count 1, under TEGO_TIMING_BUDGETS=1 (or hosted). A
 # budget test that fails, is skipped, reports no PASS, or never says it ran in budget mode fails the script: a
 # budget that was not asserted is not met. A binary that does not build or exits non-zero fails it too.
 #
-# Usage: scripts/timing-budgets.sh [-o DIR]
+# Usage: scripts/timing-budgets.sh [--hosted] [-o DIR]
+#   --hosted on a hosted CI runner: TEGO_TIMING_BUDGETS=hosted instead of 1
 #   -o DIR   where binaries and logs go (default: a new temporary directory, kept and named); an existing DIR must be
 #            empty or one this script made
 # Environment: GO (default go); TIMING_BUDGETS_TESTS replaces the test list (the self-test's fake packages).
@@ -49,8 +55,10 @@ usage() {
 }
 
 out=""
+budgets=1
 while [ $# -gt 0 ]; do
 	case "$1" in
+	--hosted) budgets=hosted; shift ;;
 	-o) out=${2:?}; shift 2 ;;
 	-h | --help) usage ;;
 	*) usage ;;
@@ -68,7 +76,8 @@ fi
 mkdir -p "$out"
 : >"$out/.timing-budgets"
 rm -f "$out"/*.test "$out"/*.log
-echo "timing-budgets: $root, results in $out; load average $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo unknown)"
+echo "timing-budgets: $root, results in $out; TEGO_TIMING_BUDGETS=$budgets;" \
+	"load average $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo unknown)"
 
 # judge LOG TEST...: one line per test, "ok", "TARGET-MISS" or "FAIL", from the -test.v output in LOG. The tests
 # run one after another, so a log line belongs to the test whose "=== RUN" came last.
@@ -114,7 +123,7 @@ while read -r pkg tags names; do
 	fi
 	regex="^($(printf '%s' "$names" | tr -s ' ' '|'))\$"
 	rc=0
-	(cd "$root/$pkg" && TEGO_TIMING_BUDGETS=1 "$bin" -test.run "$regex" -test.v -test.count 1 -test.timeout 10m) \
+	(cd "$root/$pkg" && TEGO_TIMING_BUDGETS=$budgets "$bin" -test.run "$regex" -test.v -test.count 1 -test.timeout 10m) \
 		>"$log" 2>&1 || rc=$?
 	cat "$log"
 	# shellcheck disable=SC2086 # names is a space-separated list of test names

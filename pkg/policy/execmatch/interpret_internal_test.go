@@ -4,6 +4,7 @@ package execmatch
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -85,4 +86,51 @@ func TestInterpretationsOverflowSentinel(t *testing.T) {
 // hasSentinel reports whether interpretations end in the ViaOverflow sentinel.
 func hasSentinel(invs []Invocation) bool {
 	return len(invs) > 0 && invs[len(invs)-1].Via == ViaOverflow
+}
+
+// TestCodeUnlessReadsUnlistedOptions: on a row where an option makes the interpreter run its script past code
+// (InterpSpec.CodeUnless), a reading that holds an option the row does not list is read for its script too, since that
+// option could be another spelling of the one that cancels the code (node's --build_snapshot was one until the row
+// read Syntax.Underscores). On a row with no such option the code stays opaque. A spelling the level's Syntax reads
+// (`_` for `-`, Syntax.Underscores) is the option itself, and an option with EndsAttached ends the options only when
+// written with a value.
+func TestCodeUnlessReadsUnlistedOptions(t *testing.T) {
+	interp := func(unless bool) *Row {
+		r := &Row{Tool: "ip", Root: &Level{Syntax: Syntax{LongEquals: true, LongSep: true, Negatable: true, Underscores: true}, Opts: []Opt{
+			{Name: "eval", Short: "e", Long: []string{"eval"}, Arg: ArgRequired},
+			{Name: "run-script", Long: []string{"run-script"}},
+			{Name: "cats", Long: []string{"cats"}, EndsAttached: true},
+		}}, Interp: &InterpSpec{Code: []string{"eval"}}}
+		if unless {
+			r.Interp.CodeUnless = []string{"run-script"}
+		}
+		return r
+	}
+	for _, c := range []struct {
+		unless bool
+		argv   string
+		denied bool
+	}{
+		{true, "ip -e x app.js", false},
+		{true, "ip --run-script -e x app.js", true},
+		{true, "ip --run_script -e x app.js", true},
+		{true, "ip --no-run_script -e x app.js", false},
+		{true, "ip --unlisted -e x app.js", true},
+		{false, "ip --unlisted -e x app.js", false},
+		{false, "ip --cats --unlisted=1 app.js", true},
+		{false, "ip --cats=v --unlisted=1 app.js", false},
+		{false, "ip --cats=v -x app.js", false},
+		{false, "ip --cats=v app.js", true},
+	} {
+		rows := NewRows(interp(c.unless))
+		deny, err := Parse("app.js", ListDeny, rows)
+		if err != nil {
+			t.Fatal(err)
+		}
+		argv := strings.Fields(c.argv)
+		f := Facts{Requested: "ip", Image: "ip", Argv0: "ip", Argv: argv, ArgvComplete: true}
+		if r := NewIndex(rows, []*Pattern{deny}, IndexOptions{}).Decide(&f); (r.Outcome == OutcomeRefused) != c.denied {
+			t.Errorf("CodeUnless %v, %s: %s %q, want refused %v", c.unless, c.argv, r.Outcome, r.Rule(), c.denied)
+		}
+	}
 }

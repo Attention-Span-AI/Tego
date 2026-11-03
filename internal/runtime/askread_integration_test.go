@@ -147,8 +147,11 @@ func (s *askReadScene) start(t *testing.T) (*exec.Cmd, string) {
 			t.Logf("tego run said:\n%s", out.String())
 		}
 	})
-	for deadline := time.Now().Add(askSceneStartWait); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+	wait := askSceneStartWait()
+	begun := time.Now()
+	for deadline := begun.Add(wait); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 		if dir := liveRun(t, s.f.root, true); dir != "" {
+			t.Logf("tego run started its run in %v", time.Since(begun).Round(time.Millisecond))
 			return run, dir
 		}
 		var info unix.Siginfo
@@ -159,16 +162,28 @@ func (s *askReadScene) start(t *testing.T) (*exec.Cmd, string) {
 			t.Fatalf("tego run ended before its run started under %s", s.f.root)
 		}
 	}
-	t.Fatalf("no live run appeared under %s within %s", s.f.root, askSceneStartWait)
+	t.Fatalf("no live run appeared under %s within %s", s.f.root, wait)
 	return nil, ""
 }
 
 // askSceneStartWait bounds `tego run`'s start up to its run_start line. It is no budget, only the point past which a
 // start that never comes fails; a launcher that exits first fails the subtest at once (waitid WNOWAIT, which leaves the
-// child for the scene's own Wait). The first tier-2 or tier-3 run after a KVM guest boots probes and loads the plane
-// cold, as dnsCLIReportWait measures: 21 to 30 s for TestRootAskUnix's first cgroup cell on 2026-10-19 (a loaded host),
-// where the 30 s this was expired in three of six runs of the lsm-bpf boot.
-const askSceneStartWait = 5 * time.Minute
+// child for the scene's own Wait). As root, 5 minutes: the first tier-2 or tier-3 run after a KVM guest boots probes
+// and loads the plane cold, as dnsCLIReportWait measures: 21 to 30 s for TestRootAskUnix's first cgroup cell on
+// 2026-10-19 (a loaded host), where the 30 s this was expired in three of six runs of the lsm-bpf boot. Unprivileged,
+// 2 minutes: such a run loads no plane, and the 41 scene starts of this package's unprivileged suite took 95 to 216 ms
+// at a load average of 19 to 20 (2026-11-02; start's log line says how long each took). The bound must also end
+// before go test's own: CI's build-test runs this package's integration suite unprivileged in about 320 s (d9e6cec,
+// 2026-11-02) of go test's 600 s, so at 5 minutes a start that never came outlived that deadline, and go test killed
+// the binary with no test failed and its FAIL line the only word, as it killed this package's on 40de30f (which test
+// hung there is not known). At 2 minutes the test fails on its own message, with what tego run said, and the package's
+// other tests still report.
+func askSceneStartWait() time.Duration {
+	if os.Geteuid() == 0 {
+		return 5 * time.Minute
+	}
+	return 2 * time.Minute
+}
 
 // pending waits for the one request the run holds, through `tego ask --json`.
 func (s *askReadScene) pending(t *testing.T, runID string) map[string]any {

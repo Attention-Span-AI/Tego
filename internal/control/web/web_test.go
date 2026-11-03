@@ -74,8 +74,8 @@ var heldHere sync.Map
 
 // markLive lists run in root's live index and holds the run's lock in this process until the test ends, as the run's
 // launcher does from taking its lock to run_end: the dashboard reads a listed run as running only while a process
-// holds its lock. holdLock hands the lock to a process of its own instead, for the actions that prove and signal the
-// holder (Stop); letGo lets it go, as a launcher that died does.
+// holds its lock. TestStopThroughHandler hands the lock to a process of its own instead, since Stop proves and signals
+// the holder; letGo lets it go, as a launcher that died does.
 func markLive(t *testing.T, root, run string) {
 	t.Helper()
 	live := filepath.Join(root, ".live")

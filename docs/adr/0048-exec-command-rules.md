@@ -330,6 +330,16 @@ interpretation that names it. A caller-chosen argv[0] can add an interpretation;
      entry-script table (`npm-cli.js` → npm, `npx-cli.js` → npx, `pnpm.cjs` → pnpm, `yarn.js` → yarn) or the
      basename itself (`node /usr/bin/npm publish` is `npm publish`; `bash ./deploy.sh prod` is `deploy.sh prod`);
    - `-c` and `-e` code strings are opaque, with no interpretation (a residual, R1).
+   - *Amended 2026-11-02 (docs/GAPS.md C49):* a module the interpreter runs before its script or code is
+     `(tool of its basename, the script's arguments)` through the same table: node's `-r`, `--import` and
+     `--test-reporter`, and `--loader` with no arguments (`node -r .../npm-cli.js app.js publish` runs npm publish).
+     A script's basename is its cleaned path's, as node's `path.resolve` cleans it (`node ./deploy.js/. prod` runs
+     deploy.js), and node's is read with `.js` too, which node tries on a name that names no file (`node ./deploy`).
+     A module node reads as a URL in a spelling that changes the file it names (a query, a fragment, a `%` escape, a
+     backslash, a scheme other than `data:` and `node:`), or a configuration file that names the script node runs
+     (`--build-snapshot-config`, `--experimental-sea-config`), makes the exec unlocatable. Where an option makes the
+     interpreter run its script past the code (node's `-i`), a line that holds an option the row does not list is
+     read for its script as well as its code. docs/spec/exec-command-rows.md, node, has the rest.
 6. **The `#!` interpreter.** For a `script` form, each stage's `(interpreter, [arg?, script path] + argv[1:])` is
    an interpretation too: exactly the argv binfmt_script gives the interpreter. *Amended 2026-10-06 (final
    review):* a stage is read as a direct image is, by three names: the `#!` line's path (the interpreter's argv[0]),
@@ -2215,6 +2225,37 @@ read +27.9 µs beside the busy loop); budget mode sees it. Rejected: the process
 the own time (another goroutine of the process working on another CPU at once would raise the own time past the wall
 clock); a sample with an involuntary switch and CPU time far under the wall clock less its delay counted whole (a
 hand-off's sample has neither: its own time equals its CPU time).
+
+*Amended 2026-11-02 (implementation note): C8 on a hosted CI runner.* CI's bench-gate job asserted C8 as written on its
+own quiet runner, and failed 2 of 10 pushes to main on the unguarded exec (+13.7 µs against +12 µs) and the `#!/bin/sh`
+script (+35.1 and +30.3 µs against +30 µs). The code was not slower: this tree's test and the one of 2026-10-17, run in
+turn ten times each on one host, read within 2 µs of each other in the unguarded, script and 16-argument cases. The
+runner is another machine than the reference box: GitHub's ubuntu-24.04 runner (an Azure VM, AMD EPYC 7763 or 9V74,
+kernel 7.0) made an open and a close (`BenchmarkOwnedOpenClose`, in the same jobs) in 2.80 and 3.32 µs against the box's
+1.13 µs, while it ran the index over 512 patterns in 499 and 513 ns against 476 to 499 ns. The cases whose added cost is
+a handful of system calls (the head's reopen, `fstat`, `fstatfs`, `pread` and `close`, and argv's reads) read 0.9 to
+2.3 times their figures on the box there; the cases that copy and match argv read 0.7 to 1.7 times theirs. The
+Targets and Limits above are unchanged and still asserted as written on the reference box (`make budgets`). On a
+hosted runner (`TEGO_TIMING_BUDGETS=hosted`, `scripts/timing-budgets.sh --hosted`, which bench-gate runs) the two cases
+whose figures missed their Limits there, the unguarded exec and the script (`testutil.Budget.SystemCalls`), are held
+to `testutil.HostedSystemCallFactor`, twice, their Targets and Limits, and the lines that judge them name the reference
+figure beside the scaled one. That keeps their Limits 1.7 to 2.1 times the runner's own figures, where the box's are
+1.7 to 1.9 times its figures, so a regression that makes either cost more than that many times what it does fails on
+the runner as on the box; the slowed copy of the note above (about +7 µs, 1.5 to 1.6 times the unguarded case on the
+runner) passes it there and fails the comparison with the base (next paragraph). The guarded exec of 16 arguments and the exec the floor refuses
+at 8 arguments add the same reads but met their Limits on the runner with room (+18.0 and +19.9 µs against +30, +11.5
+and +13.7 µs against +20), so they are held as written there, as are the other cases and the index (docs/BENCHMARKS.md,
+"Timing budgets in the test suites"). Rejected: raising those Limits for every machine (the box would pass a regression
+twice the size); a yardstick of system calls measured beside the cases (the note above rejects yardsticks); only the
+unit gate's ten Limits on the runner; scaling every case that adds system calls (two were never short of their Limits
+there); cutting the path's system calls (each is a check (3) needs, and one fewer saves a fraction of a microsecond of a
+doubled cost).
+CI's bench-gate job also compares C8's exec path with the base commit's on its runner (`BenchmarkExecCommandCost`: one
+exec's notification handled with command rules, for the unguarded exec, the script, 16 and 128 arguments and the exec
+the floor refuses at 8 arguments; over +25% at p<0.01 fails, as for every hot path the gate holds), which needs no
+figure of any machine. The slowed copy above (about +7 µs before every command-rule decision) failed it 2 runs of 2
+against the unmodified tree on the reference host at load average 24 to 27 (the unguarded case +57.8% and +72.2%), and
+the unmodified tree against itself passed 2 of 2 (docs/BENCHMARKS.md, "C8's exec path against the base").
 
 ## Implementation note (2026-10-16)
 

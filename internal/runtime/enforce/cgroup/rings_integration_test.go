@@ -105,13 +105,20 @@ func (b ringBuild) has(t *testing.T, slot uint32) bool {
 }
 
 // TestRingUseWhileRingsComeAndGo is L1 of the round-7 review: the walk that counts every build's rings opens each
-// inner ring by id, and a ring another process removes meanwhile (a trim, a reclaim, a build's removal: none
-// holds the rings lock the counting Prepare holds shared or not at all) is gone by the time it is opened. That is a
+// inner ring by id, and a ring another process removes meanwhile (a build's removal, which takes no rings lock; a
+// trim and a reclaim hold it exclusively, as the counting Prepare does) is gone by the time it is opened. That is a
 // ring not counted, never an error that fails the Prepare. Four writers replace rings as fast as the kernel lets
 // them while the walk runs over and over. Slots 32 to 39 hold rings no writer touches, so every walk must count
 // at least those: a walk that loses rings the outer kept the whole time (a listing cut short while the map changes)
 // under-reads the rings in use, and placeRings' ring budget would then let more in than it allows. The churned
-// slots may all be caught mid-replacement, so a walk may count only the stable eight (GitHub's runner, 2026-11-02).
+// slots may all be missed: the walk lists the ring ids in one batch lookup and opens them after, and on 7.0 an
+// update or delete of the outer waits 50 to 90 us for its grace period, so the writers replace a churned ring about
+// every 0.2 ms between them; a walk the scheduler stops for a millisecond or two between the listing and the opens
+// finds every churned id freed, a ring removed meanwhile, which is not counted. GitHub's runner (7.0.0-1017-azure,
+// 2026-11-02) failed the old test, 32 churned slots alone, on a walk that counted none. In a 7.0 guest a pause put
+// between the listing and the opens left 1.0 of the 32 opened on average at 1 ms and none at 4 ms, while the stable
+// eight were all counted at 8 ms; with no pause, 1 walk of 5,308 opened no churned ring. Placements never meet this:
+// a ring is inserted only by placeRings, under the exclusive rings lock the counting Prepare holds.
 func TestRingUseWhileRingsComeAndGo(t *testing.T) {
 	root := ringTree(t)
 	b := newRingBuild(t, root, "churn")

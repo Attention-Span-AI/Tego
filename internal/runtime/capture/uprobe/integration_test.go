@@ -210,7 +210,7 @@ func TestIntegrationStopReadsTheLostCounterLast(t *testing.T) {
 	requireRoot(t)
 	const hash = "integration"
 	root, maps := bpffsPinRoot(t, hash)
-	cg := selfCgroupID(t)
+	_, cg := runCgroup(t)
 	seedRunSet(t, maps, map[uint64]uint32{cg: 1})
 	u, err := New(Options{Kernel: true, PinRoot: root})
 	if err != nil {
@@ -248,7 +248,7 @@ func TestIntegrationRecordDropsAreNotCaptures(t *testing.T) {
 	requireRoot(t)
 	const hash = "integration"
 	root, maps := bpffsPinRoot(t, hash)
-	cg := selfCgroupID(t)
+	_, cg := runCgroup(t)
 	seedRunSet(t, maps, map[uint64]uint32{cg: 1})
 	u, err := New(Options{Kernel: true, PinRoot: root, Preattach: func() []string { return nil }})
 	if err != nil {
@@ -307,9 +307,9 @@ const captureResponse = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nRe
 
 // TestIntegrationCapturesAPythonExchange is the uprobe half of kill test 2 on one exchange, in the shape
 // production runs it (Options.Kernel): the source loads the capture object under a build's pins, a real
-// CPython client in this test's cgroup — the cgroup in the run set — talks TLS to a server over loopback,
-// and the plaintext comes back as one ssl_request and one ssl_response. The server is crypto/tls in this
-// process, which maps no libssl, so the only probes that fire are the client's.
+// CPython client in the run's cgroup (runCgroup) — the cgroup in the run set — talks TLS to a server over
+// loopback, and the plaintext comes back as one ssl_request and one ssl_response. The server is crypto/tls in
+// this process, which maps no libssl, so the only probes that fire for the run are the client's.
 //
 // OnExec and OnOpen are called where the kernel record would call them: at the exec, which sees no libssl,
 // and at the open of libssl.so.3 that `import ssl` makes. No gap may be left for the client. Pre-attach is
@@ -332,9 +332,9 @@ func TestIntegrationCapturesAPythonExchange(t *testing.T) {
 	served := make(chan error, 1)
 	go func() { served <- serveOne(ln) }()
 
-	cg := selfCgroupID(t)
-	// The run set the probes filter on (R9) and the source scopes itself by: this test's own cgroup,
-	// inserted as Prepare inserts a run's, before the source starts.
+	cgFD, cg := runCgroup(t)
+	// The run set the probes filter on (R9) and the source scopes itself by: the run's cgroup, inserted as
+	// Prepare inserts a run's, before the source starts.
 	seedRunSet(t, maps, map[uint64]uint32{cg: 1})
 	u, err := New(Options{Kernel: true, PinRoot: root, Preattach: func() []string { return nil }, Logger: testLogger(t)})
 	if err != nil {
@@ -351,7 +351,7 @@ func TestIntegrationCapturesAPythonExchange(t *testing.T) {
 	}
 
 	port := ln.Addr().(*net.TCPAddr).Port
-	cmd := exec.Command(python, "-c", captureClient, strconv.Itoa(port))
+	cmd := inRun(exec.Command(python, "-c", captureClient, strconv.Itoa(port)), cgFD)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -529,7 +529,7 @@ func TestIntegrationLongConversationAndReusedConnections(t *testing.T) {
 	go func() { _ = srv.Serve(ln) }()
 	defer srv.Close()
 
-	cg := selfCgroupID(t)
+	cgFD, cg := runCgroup(t)
 	seedRunSet(t, maps, map[uint64]uint32{cg: 1})
 	u, err := New(Options{Kernel: true, PinRoot: root})
 	if err != nil {
@@ -544,7 +544,7 @@ func TestIntegrationLongConversationAndReusedConnections(t *testing.T) {
 	if u.cache.size() == 0 {
 		t.Fatalf("Start pre-attached nothing; gaps %+v", u.Gaps())
 	}
-	out, err := exec.Command(python, "-c", conversationClient, strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)).CombinedOutput()
+	out, err := inRun(exec.Command(python, "-c", conversationClient, strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)), cgFD).CombinedOutput()
 	if err != nil {
 		t.Fatalf("python3: %v: %s", err, out)
 	}
@@ -610,7 +610,7 @@ func TestIntegrationPreattachCapturesTheFirstRequest(t *testing.T) {
 	served := make(chan error, 1)
 	go func() { served <- serveOne(ln) }()
 
-	cg := selfCgroupID(t)
+	cgFD, cg := runCgroup(t)
 	seedRunSet(t, maps, map[uint64]uint32{cg: 1})
 	u, err := New(Options{Kernel: true, PinRoot: root, Logger: testLogger(t)})
 	if err != nil {
@@ -629,7 +629,7 @@ func TestIntegrationPreattachCapturesTheFirstRequest(t *testing.T) {
 		t.Fatalf("Start pre-attached nothing; the host's libssl is %q", systemLibraries("/", nil))
 	}
 
-	out, err := exec.Command(python, "-c", eagerClient, strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)).CombinedOutput()
+	out, err := inRun(exec.Command(python, "-c", eagerClient, strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)), cgFD).CombinedOutput()
 	if err != nil {
 		t.Fatalf("python3: %v: %s", err, out)
 	}
@@ -667,7 +667,7 @@ func TestIntegrationARunWithoutACaptureRingDoesNotCapture(t *testing.T) {
 	requireRoot(t)
 	const hash = "integration"
 	root, maps := bpffsPinRoot(t, hash)
-	cg := selfCgroupID(t)
+	_, cg := runCgroup(t)
 	seedRuns(t, maps, map[uint64]uint32{cg: 1}, map[uint32]bool{1: true})
 	u, err := New(Options{Kernel: true, PinRoot: root})
 	if err != nil {
@@ -873,28 +873,25 @@ func selfSigned(t *testing.T) tls.Certificate {
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
 }
 
-// selfCgroupID is this process's cgroup v2 id: the inode number of its cgroup directory, which is what
-// bpf_get_current_cgroup_id returns.
-func selfCgroupID(t *testing.T) uint64 {
+// runCgroup is the cgroup of a test's run: a child of this process's own, made for the run as a run's agent gets a
+// cgroup of its own, with an O_PATH descriptor that starts a client in it (inRun) and its id, which is what
+// bpf_get_current_cgroup_id returns for the client and so what the test seeds in the run set and gives Start. A run's
+// cgroup is never this process's own: the probes on the host's libssl fire for every process that maps it, and this
+// process's cgroup can hold others that speak TLS through that very file. A CI runner's sudo leaves the test binary in
+// the runner's service cgroup (/system.slice/hosted-compute-agent.service on GitHub's hosted runners), beside the
+// runner's own HTTPS clients, and their exchanges were recorded as the run's: a request with no request id beside the
+// test's, malformed gaps for a connection met mid-way, a connection still open at Stop.
+func runCgroup(t *testing.T) (fd int, id uint64) {
 	t.Helper()
-	b, err := os.ReadFile("/proc/self/cgroup")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var rel string
-	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
-		if p, ok := strings.CutPrefix(line, "0::"); ok {
-			rel = p
-		}
-	}
-	if rel == "" {
-		t.Skip("not on a cgroup v2 hierarchy")
-	}
-	var st unix.Stat_t
-	if err := unix.Stat(filepath.Join("/sys/fs/cgroup", rel), &st); err != nil {
-		t.Fatalf("stat this process's cgroup: %v", err)
-	}
-	return st.Ino
+	_, fd, id = childCgroupOf(t, "run")
+	return fd, id
+}
+
+// inRun makes cmd's process start in the run's cgroup, fd from runCgroup (clone3's CLONE_INTO_CGROUP: no instruction
+// of it runs anywhere else).
+func inRun(cmd *exec.Cmd, fd int) *exec.Cmd {
+	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: fd}
+	return cmd
 }
 
 // mappedLibssl is the libssl a live process maps, as its own maps name it.

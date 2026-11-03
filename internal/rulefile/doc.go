@@ -78,11 +78,14 @@
 // A live line stays or goes with the line it belongs to, and a torn line goes. It rewrites journal.jsonl under
 // journal.lock (a new file renamed over it; one a crashed prune left goes on the next), then removes the blobs no line
 // left names once older than the retention, and the lock files of contracts with no line left, each under its own
-// flock. It lists the runs and looks at the contracts' files before it takes a lock, waiting at most a few seconds for
-// a file that does not answer (a stale mount), which counts as there. A journal holding a line this version does not
-// read, or two lines of one id, is left whole. A root pass prunes the invoking user's journal as that user
-// (internal/cli); a journal of another user is ErrOtherOwner. Only the machine's ledger root is pruned: a journal `tego
-// rule` keeps under another root (a run directory given by its path) is not.
+// flock. It lists the runs and looks at the contracts' files before it takes a lock, a few at once, waiting at most a
+// few seconds, and at most half of what is left of its context's time, for a file that does not answer (a stale
+// mount): such a file counts as there, its lines stay, and the prune, done with the rest, says which (ErrNotLooked).
+// Everything it touches, those looks included, it touches with the credentials of the thread that called it. A
+// journal holding a line this version does not read, or two lines of one id, is left whole. A root pass prunes the
+// invoking user's journal on a thread holding that user's ids (internal/cli, sys.RunAs); a journal of another user is
+// ErrOtherOwner. Only the machine's ledger root is pruned: a journal `tego rule` keeps under another root (a run
+// directory given by its path) is not.
 //
 // Imports: internal/check/rule, internal/ledger, internal/platform/sys, pkg/spec/agent, pkg/spec/config,
 // pkg/spec/identity, pkg/spec/record, golang.org/x/sys/unix and the standard library.

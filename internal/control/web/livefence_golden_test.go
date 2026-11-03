@@ -74,15 +74,6 @@ func wbrPath(p string) *regexp.Regexp {
 	return regexp.MustCompile(b.String())
 }
 
-// localUTC makes the pages print clock times in UTC for the rest of the test: they print the local zone, and
-// t.Setenv("TZ") alone does not change it, since time.Local is read once.
-func localUTC(t *testing.T) {
-	t.Helper()
-	was := time.Local
-	time.Local = time.UTC
-	t.Cleanup(func() { time.Local = was })
-}
-
 // machineNames gives the pages a fixed machine name and a fixed login name for uid 1000 (the fixture's answerer): they
 // print this computer's, which differ on every machine.
 func machineNames(t *testing.T, s *Server) {
@@ -133,7 +124,7 @@ func checkLocked(t *testing.T, name, page string) {
 // form's time limit, and its Rules page is the page it was plus the Mode line (ADR 0125 "What stays the same in
 // Locked").
 func TestLockedPagesUnchanged(t *testing.T) {
-	localUTC(t)
+	// The pages print their clock times in UTC, as the goldens hold them: TestMain sets time.Local for the binary.
 	s, c, contract, proj := askServer(t)
 	machineNames(t, s)
 	holdLock(t, filepath.Join(s.cfg.Ledger, actRun))

@@ -32,6 +32,12 @@ const (
 	migrateEnv = "TEGO_DEPUTY_MIGRATE"
 	// readlinkEnv makes the re-executed binary readlink the path it names and print the errno ("ok" for none).
 	readlinkEnv = "TEGO_DEPUTY_READLINK"
+	// selfExe is how the tests re-execute this binary: through /proc/self/exe, as launch's stage execs the deputy. A
+	// child that execs it as nobody reaches the image through the magic link wherever the binary lies; by its path it
+	// needs search permission on every directory above it, which a binary under a 0750 home does not give nobody
+	// (GitHub's root-suites, binaries under $RUNNER_TEMP, 2026-11-02: "fork/exec .../internal_runtime_deputy.test:
+	// permission denied").
+	selfExe = "/proc/self/exe"
 )
 
 func TestMain(m *testing.M) {
@@ -120,7 +126,7 @@ func startDeputyAs(t testing.TB, cred *syscall.Credential, env ...string) (*Clie
 	}
 	stageF := os.NewFile(uintptr(stage), "stage")
 	readyW := os.NewFile(uintptr(ready[1]), "ready")
-	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	cmd := exec.Command(selfExe, "-test.run=^$")
 	cmd.Env = append(append(os.Environ(), deputyEnv+"=1", deputyArgsEnv+"=--parent "+strconv.Itoa(os.Getpid()),
 		"GODEBUG=decoratemappings=0"), env...)
 	cmd.ExtraFiles = []*os.File{stageF, readyW}
@@ -299,7 +305,7 @@ func TestDeputyIsNotDumpable(t *testing.T) {
 	fd3 := "/proc/" + strconv.Itoa(c.PID()) + "/fd/3"
 	if cred != nil {
 		// A readlink as the deputy's own uid, which a dumpable process would let in: this binary re-executed so.
-		rl := exec.Command(os.Args[0], "-test.run=^$")
+		rl := exec.Command(selfExe, "-test.run=^$")
 		rl.Env = append(os.Environ(), readlinkEnv+"="+fd3)
 		rl.SysProcAttr = &syscall.SysProcAttr{Credential: cred}
 		if out, err := rl.Output(); err != nil || string(out) != "EACCES" {
@@ -396,7 +402,7 @@ func forbiddenMain(what string) int {
 func TestDeputyFilterKillsForbiddenSyscalls(t *testing.T) {
 	for _, what := range []string{"socket", "execve", "fork", "ptrace", "ioctl", "kill-other", "write-file", "fcntl-lock", "allowed"} {
 		t.Run(what, func(t *testing.T) {
-			cmd := exec.Command(os.Args[0], "-test.run=^$")
+			cmd := exec.Command(selfExe, "-test.run=^$")
 			cmd.Env = append(os.Environ(), forbiddenEnv+"="+what)
 			err := cmd.Run()
 			if what == "allowed" {
@@ -423,7 +429,7 @@ func TestDeputyFilterKillsForbiddenSyscalls(t *testing.T) {
 // the deputy died with requests in flight (the race job's TestDeputyPinsAndOpens, "receive: connection reset by peer",
 // on Ubuntu 24.04's glibc 2.39), and every held open after it was refused held-unavailable.
 func TestDeputyFilterRefusesAFileReadAndLives(t *testing.T) {
-	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	cmd := exec.Command(selfExe, "-test.run=^$")
 	cmd.Env = append(os.Environ(), forbiddenEnv+"=read-file")
 	err := cmd.Run()
 	var ee *exec.ExitError

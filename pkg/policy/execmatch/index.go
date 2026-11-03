@@ -517,8 +517,12 @@ func (ix *Index) dispatchSettled(invs []Invocation) bool {
 	return true
 }
 
-// interpSettled reports whether an interpreter invocation's every reading found its module, script or code.
+// interpSettled reports whether an interpreter invocation's every reading found its module, script or code, as
+// dispatchInterp reads code (InterpSpec.runsCode): a prefix that ends at node's -p or -e has not read whether code
+// follows. Code with no script yet settles nothing on a row with CodeUnless options, which may still follow it (node
+// reads -i after -e's code, and then runs the script).
 func (ix *Index) interpSettled(inv *Invocation) bool {
+	spec := inv.Row.Interp
 	for _, r := range ix.normalizer(inv.Row).NormalizeOpen(inv.Tokens, inv.Open) {
 		if r.Unlocatable {
 			return false
@@ -526,15 +530,7 @@ func (ix *Index) interpSettled(inv *Invocation) bool {
 		if r.Dispatch >= 0 || r.DispatchAfter >= 0 {
 			continue
 		}
-		code := false
-		for _, h := range r.Hits {
-			for _, c := range inv.Row.Interp.Code {
-				if h.Opt != nil && h.Opt.Name == c {
-					code = true
-				}
-			}
-		}
-		if !code {
+		if len(spec.CodeUnless) > 0 || !spec.runsCode(&r) {
 			return false
 		}
 	}

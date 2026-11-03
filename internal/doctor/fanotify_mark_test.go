@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/testutil"
 	"golang.org/x/sys/unix"
 )
 
@@ -31,11 +32,13 @@ func unprivilegedFanotify(t *testing.T) int {
 	return fd
 }
 
-// pendingEvents reports how many events are queued on the group, waiting up to the bound above.
+// pendingEvents reports how many events are queued on the group, waiting up to the bound above. A signal that lands
+// while it waits resumes the wait (testutil.PollReadable): the race job's integration step failed
+// TestFanotifyProbeMarksTheObjectItOpens after 0.00 s with "poll: interrupted system call", a single poll's first
+// wait, for an event that must not come, ended by a signal.
 func pendingEvents(t *testing.T, fd int) int {
 	t.Helper()
-	pfd := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
-	n, err := unix.Poll(pfd, int(fanotifyMarkProbeTimeout/time.Millisecond))
+	n, err := testutil.PollReadable(fd, fanotifyMarkProbeTimeout)
 	if err != nil {
 		t.Fatalf("poll: %v", err)
 	}

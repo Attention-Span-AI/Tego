@@ -571,7 +571,13 @@ run it, only where `TEGO_DISPOSABLE_HOST` says the machine is disposable (a GitH
 anywhere else it is the `tegotesthooks` build of the same tags with a machine config, chain anchor and own-log home
 of the run's own in `VM_OUT/doctor-iso`, since the product build under sudo logs to your own `~/.tego/tego.log`
 (identity-config.md R27). There, each suite starts in the runner's service cgroup rather
-than in a user's delegated subtree, and the kernel's lsm= list has no `bpf`. `VM_CGROUP=service` makes a
+than in a user's delegated subtree, and the kernel's lsm= list has no `bpf`. The suites also share one host, where
+each guest's suite has a kernel of its own: a tier-2 run leaves its build pinned under `/sys/fs/bpf/tego` for
+`bpf.linger` (five minutes) after it ends (ADR 0022), so a suite can start with an earlier suite's build still
+pinned, and a run in it adopts that build and its plane answer. A test must not take a fresh bpffs for granted:
+doctor's `TestIntegrationForRunAsRoot` wanted a probed plane answer and failed every root-suites job of
+2026-11-02 on the build internal/runtime's tegobpf suite had left; it now reads the build's pin directory for
+which answer to want. `VM_CGROUP=service` makes a
 guest start its suite the same way, from `/system.slice/tego-ci.service` with another process beside it (an
 orphan init has adopted, not a child of the suite: a runner's suite has none, and the arming tests of ADR 0021 (2)
 count their own children), and with `TEGO_VM_LSM=kernel TEGO_VM_LOCKDOWN=none` the guest's LSMs and lockdown are
@@ -585,6 +591,15 @@ VM_BPF=yes VM_CGROUP=service TEGO_VM_LSM=kernel TEGO_VM_LOCKDOWN=none test/vm/ro
 
 Under that placement the launch suite's three tests that need a delegated `user@0.service` skip, and the
 cgroup suite's two tests of the delegated subtree skip, as they will on a runner.
+
+One difference no guest has: through sudo every suite runs on one host after the suites before it, and finds
+what they left there, where each guest boots without it. The host state directory is one such thing. The cgroup
+suite, which runs first, makes `/run/tego` as a root launcher does (its `pinState`), and agent-contract R6a
+denies reading it in every table compiled while it exists. A test that counted every deny_read entry of a
+compiled table therefore counted one more on the runner than in a guest: enforce/landlock's
+`TestCompileCrossCheckNested` did, in every root-suites run of 2026-11-02. To see a later suite as the runner
+does, make the directory, root 0700, in the guest before the test binary starts, with
+`/bin/sh -c 'mkdir -m 0700 /run/tego && exec "$@"' sh` ahead of the binary in `kvm-run.sh`'s command.
 
 A test that changes host-wide state it cannot isolate (`TestRootLauncherRefusesGroupHostState`:
 `/run/tego` and `/etc/group`) runs only where `TEGO_DISPOSABLE_HOST` is set: every guest gets it, and

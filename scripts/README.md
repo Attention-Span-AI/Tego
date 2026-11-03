@@ -16,11 +16,14 @@ checkout against a base checkout's, alternating rounds, decided by benchstat; ba
 BASE=<dir>`) and `bench-gate_test.sh` (its decision and runs, with stand-ins for go and benchstat, or the pinned
 benchstat when `BENCHSTAT` names it; `make bench-gate-test`), `timing-budgets.sh` (the absolute timing budgets,
 ADR 0048 C8's, the plane fill's, the datagram flood's, ADR 0023 P1's Borrow ratio and the Rules page's 55k-line read (`TestInForceLongRunIsFast`), asserted as written with
-`TEGO_TIMING_BUDGETS=1`; first in CI's bench-gate job; bash; `make budgets`, on an idle machine; its test list is held
+`TEGO_TIMING_BUDGETS=1`; first in CI's bench-gate job, with `--hosted` (`TEGO_TIMING_BUDGETS=hosted`: a hosted runner's
+system calls cost several times the reference box's, so C8's unguarded exec and script, which missed their Limits
+there, are held to twice their figures); bash; `make budgets`, on an idle machine; its test list is held
 to the tree's `testutil.TimingMode` callers by internal/testutil's `TestTimingBudgetsListsEveryBudgetTest`) and
 `timing-budgets_test.sh` (its runs and decision, with a stand-in for go; `make budgets-test`), `skipgate.sh`
 (which reads `go test -json` and fails on a skip that `test/unit-skips.txt` does not allow, or with `--must-pass`
-on a listed test that did not pass, as CI's unit step and root-suites job use it; bash and jq) with `skipgate_test.sh` (`make
+on a listed test that did not pass, as CI's unit step and root-suites job use it, and names the tests a test binary
+left unfinished when it timed out or crashed, with its panic and goroutine dump; bash and jq) with `skipgate_test.sh` (`make
 skipgate-test`), `check-skiplists.sh` (the skip and must-pass lists name tests that exist, once each, and every
 root-only skip the integration step allows is in the root run's lists; CI's build-test), `check-exits.sh`
 (`os.Exit` only in `cmd/`, no bare exit code in `internal/cli`: limits-check-doctor-cli.md I6, I9, checked by

@@ -347,6 +347,9 @@ func (p *Pattern) parseRow(words []string) error {
 				return err
 			}
 			i += n
+			if k := len(p.Opts); k > 0 && p.Opts[k-1].Opt != nil && p.Opts[k-1].Opt.ends(p.Opts[k-1].HasValue, p.Opts[k-1].Value) {
+				opsOnly = true // the option ends the options, as `--` does (Opt.Ends, Opt.EndsAttached)
+			}
 		}
 	}
 	return nil
@@ -360,6 +363,9 @@ func (p *Pattern) optionWord(lv *Level, depth int, words []string, i int) (int, 
 	if long {
 		body := strings.TrimLeft(w, "-")
 		name, value, hasEq := strings.Cut(body, "=")
+		if lv.Syntax.Underscores {
+			name = strings.ReplaceAll(name, "_", "-") // as the normalizer reads the tool's argv (Syntax.Underscores)
+		}
 		o := lv.long(name)
 		neg := false
 		if o == nil && lv.Syntax.Negatable && strings.HasPrefix(name, "no-") {
@@ -381,7 +387,9 @@ func (p *Pattern) optionWord(lv *Level, depth int, words []string, i int) (int, 
 			po.Long = name[3:]
 		}
 		used := 0
-		if o != nil && !neg && !hasEq && takesNext(o, words, i) {
+		// An ArgNextWord option takes a word after its --no- form too, as the normalizer reads it; an attached value
+		// in a pattern stays the glob it was written as.
+		if o != nil && (!neg || o.Arg == ArgNextWord) && !hasEq && takesNext(o, words, i) {
 			po.Value, po.HasValue, used = words[i+1], true, 1
 		}
 		if o == nil && p.List == ListAllow {
@@ -423,7 +431,7 @@ func (p *Pattern) optionWord(lv *Level, depth int, words []string, i int) (int, 
 			}
 			continue
 		}
-		if o.Arg == ArgNone {
+		if o.Arg == ArgNone || o.Arg == ArgNextWord && j < len(w)-1 {
 			p.Opts = append(p.Opts, PatOpt{Opt: o, Raw: string([]byte{w[0], c}), Short: c, Depth: depth})
 			continue
 		}
@@ -443,8 +451,9 @@ func (p *Pattern) optionWord(lv *Level, depth int, words []string, i int) (int, 
 	return 0, nil
 }
 
-// takesNext reports whether a pattern's option word takes the next word as its value: a value-taking option does, and
-// an ArgMaybe option when the next word is one of its values. A trailing * is never a value.
+// takesNext reports whether a pattern's option word takes the next word as its value: a value-taking option does, an
+// ArgMaybe option when the next word is one of its values, and an ArgNextWord option when it is a word, not an
+// option. A trailing * is never a value.
 func takesNext(o *Opt, words []string, i int) bool {
 	if i+1 >= len(words) || words[i+1] == "*" {
 		return false
@@ -458,6 +467,8 @@ func takesNext(o *Opt, words []string, i int) bool {
 				return true
 			}
 		}
+	case ArgNextWord:
+		return words[i+1] != "" && words[i+1][0] != '-'
 	case ArgNone, ArgOptional:
 	}
 	return false

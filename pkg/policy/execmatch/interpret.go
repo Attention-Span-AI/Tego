@@ -381,8 +381,35 @@ func (ix *Index) argv0Sub(name string) (*Row, string, bool) {
 	return nil, "", false
 }
 
-// dispatchInterp adds the invocation an interpreter runs: python -m <module>'s module, or the first operand that is a
-// script, through the row's module and entry-script tables. Code given with -c or -e is opaque.
+// runsCode reports whether a reading runs code given on the command line in place of a module or script (R1): one of
+// the row's Code options holds its code, a value it took (python's -c, node's -e) or, for a flag, the operand it makes
+// code (sh's -c), and no CodeUnless option stands with it. A Code option that took no value gives none: node's -p
+// before an option, which node reads as a flag and then runs the script after its options (ArgNextWord), or -e where
+// a staged prefix ends. Under node's -i the code gives none either: node runs the script. On a row with CodeUnless
+// options, a reading that holds an option the row does not list gives none: that option could be another spelling of
+// one of them, or one a later version adds, so the reading is read for its script too (the fail-closed direction:
+// --build_snapshot was such a spelling until the node row read Underscores).
+func (spec *InterpSpec) runsCode(r *Reading) bool {
+	if len(spec.CodeUnless) > 0 && r.Unknown {
+		return false
+	}
+	code := false
+	for _, h := range r.Hits {
+		switch {
+		case h.Opt == nil:
+		case slices.Contains(spec.CodeUnless, h.Opt.Name) && !h.Neg:
+			return false
+		case slices.Contains(spec.Code, h.Opt.Name) && (h.HasValue || h.Opt.Arg == ArgNone && !h.Neg):
+			code = true
+		}
+	}
+	return code
+}
+
+// dispatchInterp adds the invocations an interpreter runs: python -m <module>'s module, or the first operand that is a
+// script, through the row's module and entry-script tables, and each module a Preload or Loaders option names (node's
+// -r, --import and --loader), whether the reading runs code or a script. Code given with -c or -e is opaque
+// (InterpSpec.runsCode).
 func (ix *Index) dispatchInterp(b *builder, inv Invocation) {
 	spec := inv.Row.Interp
 	for _, r := range ix.normalizer(inv.Row).NormalizeOpen(inv.Tokens, inv.Open) {
@@ -392,17 +419,9 @@ func (ix *Index) dispatchInterp(b *builder, inv Invocation) {
 			b.overflow = true
 			continue
 		}
-		code, module, after := false, "", -1
+		code, module, after := spec.runsCode(&r), "", -1
 		for _, h := range r.Hits {
-			if h.Opt == nil {
-				continue
-			}
-			for _, c := range spec.Code {
-				if h.Opt.Name == c {
-					code = true
-				}
-			}
-			if spec.Module != "" && h.Opt.Name == spec.Module && h.HasValue {
+			if h.Opt != nil && spec.Module != "" && h.Opt.Name == spec.Module && h.HasValue {
 				module, after = h.Value, r.DispatchAfter
 			}
 		}
@@ -416,14 +435,70 @@ func (ix *Index) dispatchInterp(b *builder, inv Invocation) {
 			}
 			b.add2(ix, tool, ViaInterpreter, tail(inv.Tokens, after))
 		case r.Dispatch >= 0:
-			script := base(inv.Tokens[r.Dispatch])
-			tool := script
-			if t, ok := spec.Scripts[script]; ok {
-				tool = t
+			for _, tool := range spec.scriptTools(inv.Tokens[r.Dispatch]) {
+				b.add2(ix, tool, ViaInterpreter, tail(inv.Tokens, r.Dispatch+1))
 			}
-			b.add2(ix, tool, ViaInterpreter, tail(inv.Tokens, r.Dispatch+1))
+		}
+		// A preloaded module runs with the arguments past the first operand, a loader's with none. Where a loader is
+		// given, the loaders' thread runs the preloaded modules too, with no arguments (node runs -r's there, probed;
+		// --import's it does not, so that reading only refuses more).
+		var args []string
+		if r.Dispatch >= 0 {
+			args = tail(inv.Tokens, r.Dispatch+1)
+		}
+		loader := slices.ContainsFunc(r.Hits, func(h Hit) bool {
+			return h.Opt != nil && h.HasValue && !h.Neg && slices.Contains(spec.Loaders, h.Opt.Name)
+		})
+		for _, h := range r.Hits {
+			switch {
+			case h.Opt == nil || !h.HasValue || h.Neg:
+			case slices.Contains(spec.Preload, h.Opt.Name):
+				for _, tool := range spec.moduleTools(h.Value) {
+					b.add2(ix, tool, ViaInterpreter, args)
+					if loader {
+						b.add2(ix, tool, ViaInterpreter, nil)
+					}
+				}
+			case slices.Contains(spec.Loaders, h.Opt.Name):
+				for _, tool := range spec.moduleTools(h.Value) {
+					b.add2(ix, tool, ViaInterpreter, nil)
+				}
+			}
 		}
 	}
+}
+
+// scriptTools are the tools a script an interpreter runs may be: for the basename of its path, cleaned lexically as
+// node's path.resolve cleans it (`node ./deploy.js/x/.. publish` runs deploy.js, probed on 20.19.4), and for that
+// basename with each of the row's Extensions, the entry-script table's tool, else the basename itself. Cleaning
+// changes the name only where the path ends in `.` or `..`, which python and the shells run as a directory or not at
+// all, so reading it cleaned only refuses more there.
+func (spec *InterpSpec) scriptTools(script string) []string {
+	if script == "" {
+		return nil
+	}
+	name := path.Base(path.Clean(script))
+	names := []string{name}
+	for _, ext := range spec.Extensions {
+		names = append(names, name+ext)
+	}
+	for i, n := range names {
+		if t, ok := spec.Scripts[n]; ok {
+			names[i] = t
+		}
+	}
+	return names
+}
+
+// moduleTools are the tools a module a Preload or Loaders option names may be: scriptTools of the value as written
+// and, when it starts with `\-`, without the backslash, which is how node reads that value given separately
+// (src/node_options-inl.h: "Treat \- as escaping an -"); attached, node reads it as written.
+func (spec *InterpSpec) moduleTools(value string) []string {
+	tools := spec.scriptTools(value)
+	if v, ok := strings.CutPrefix(value, `\`); ok && strings.HasPrefix(v, "-") {
+		tools = append(tools, spec.scriptTools(v)...)
+	}
+	return tools
 }
 
 // wouldDispatch reports whether a dispatcher invocation, left unresolved by the depth or interpretation bounds, would

@@ -138,18 +138,8 @@ func runUnderLiveBlock(t *testing.T, f *fixture, argv []string, value, word, out
 		ran <- err
 	}()
 
-	var dir string
 	deadline := time.Now().Add(30 * time.Second)
-	for dir == "" && time.Now().Before(deadline) {
-		if dirs := runDirs(t, f.root); len(dirs) == 1 {
-			dir = dirs[0]
-		} else {
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-	if dir == "" {
-		t.Fatal("no run directory")
-	}
+	dir := liveRunDir(t, f.root, ran, deadline, 10*time.Millisecond)
 	value, err := liveblock.Normalize(liveblock.KindNet, value)
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +156,12 @@ func runUnderLiveBlock(t *testing.T, f *fixture, argv []string, value, word, out
 		}
 	}
 	if !inForce {
-		t.Fatal("the block never came into force")
+		select {
+		case err := <-ran:
+			t.Fatalf("the block never came into force: the run ended first (%v)", err)
+		default:
+			t.Fatal("the block never came into force")
+		}
 	}
 	if err := os.WriteFile(word, nil, 0o644); err != nil {
 		t.Fatal(err)
@@ -183,6 +178,66 @@ func runUnderLiveBlock(t *testing.T, f *fixture, argv []string, value, word, out
 		t.Fatal(err)
 	}
 	return got
+}
+
+// liveRunDir waits until deadline, looking every poll, for root's one run directory to be live, its lock held by its
+// launcher, and returns it; ran is the run's Run, and the test fails with its error should it end first. A live-block
+// writer writes a run's overlay only then, as tego block and the dashboard do (the CLI's applyBlock and
+// runact.BlockUntil refuse a run whose lock nobody holds). The launcher makes the run directory, opens its ledger
+// there only while the directory holds nothing (ledger.WithFreshRunDir: a directory swapped in under the run's name is
+// never written through), and takes the lock after that. An overlay written as soon as the directory appeared could
+// land in between: the launcher then refused the run, as it must, and removed its directory under the write, so the
+// rename into live-block.json failed with ENOENT, or the block never came into force.
+func liveRunDir(t *testing.T, root string, ran <-chan error, deadline time.Time, poll time.Duration) string {
+	t.Helper()
+	for {
+		if dirs := runDirs(t, root); len(dirs) == 1 {
+			if held, _, err := ProbeLock(dirs[0]); err == nil && held {
+				return dirs[0]
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no run directory whose lock its launcher holds")
+		}
+		select {
+		case err := <-ran:
+			t.Fatalf("the run ended before its launcher held its lock: %v", err)
+		default:
+		}
+		time.Sleep(poll)
+	}
+}
+
+// TestIntegrationAnOverlayWrittenOnceTheLockIsHeldKeepsTheRun pins what liveRunDir relies on: the launcher takes its
+// run's lock only after its ledger accepted the run directory as one that holds nothing, so a live-block writer that
+// waits for the lock, as every writer of the product does, never makes a run refuse its own directory, however soon
+// after the lock it writes. Here the overlay is written the moment the lock is seen (no pause between looks). Written
+// the moment the directory appeared instead, every one of 20 runs was refused: "open ledger: ledger: run directory
+// ... already holds [live-block.lock .live-block.json.<random>], not the one this process made".
+func TestIntegrationAnOverlayWrittenOnceTheLockIsHeldKeepsTheRun(t *testing.T) {
+	sleep, err := filepath.EvalSymlinks("/bin/sleep")
+	if err != nil {
+		t.Skipf("no sleep: %v", err)
+	}
+	for i := range 5 {
+		f := newFixture(t, contractFor("lockfirst", []string{"/bin/sh"},
+			[]string{"/bin/sh", "/usr/bin/sh", "/bin/sleep", "/usr/bin/sleep", sleep}))
+		ran := make(chan error, 1)
+		go func() {
+			_, err := Run(context.Background(), f.rt, []string{"/bin/sh", "-c", "while [ ! -e out/go ]; do sleep 0.01; done"},
+				f.deps(t, nil))
+			ran <- err
+		}()
+		dir := liveRunDir(t, f.root, ran, time.Now().Add(30*time.Second), 0)
+		_, werr := liveblock.Update(context.Background(), dir, filepath.Base(dir), func(o *liveblock.Overlay) (bool, error) {
+			_, _, err := o.Add(liveblock.KindNet, "127.0.0.1:9", "t", time.Now())
+			return true, err
+		})
+		touch(t, filepath.Join(f.out, "go"))
+		if err := <-ran; err != nil || werr != nil {
+			t.Fatalf("run %d: an overlay written once the lock was held (write: %v) made the run fail: %v", i, werr, err)
+		}
+	}
 }
 
 // groupProbe waits for the test's word, then sends a labelled datagram to the port under test at every address a UDP

@@ -16,6 +16,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/runtime/ask"
+	"github.com/attention-span-ai/tego/internal/testutil"
 	"github.com/attention-span-ai/tego/pkg/policy/gate"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
@@ -93,10 +94,12 @@ func testHeldOpenCompletion(t *testing.T, readGate bool) {
 		t.Fatalf("actual listener: %v", r.err)
 	}
 	defer r.ln.Close() //nolint:errcheck // New took it and no Run closes it; a second Close is a no-op
+	// The wait resumes after a signal (testutil.PollReadable): a single poll that one ends would fail the test with
+	// EINTR, as it did TestFanotifyProbeMarksTheObjectItOpens in the race job.
 	var n int
 	if e := r.ln.Borrow(func(fd int) error {
 		var e error
-		n, e = unix.Poll([]unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}, 3000)
+		n, e = testutil.PollReadable(fd, 3*time.Second)
 		return e
 	}); e != nil || n == 0 {
 		t.Fatalf("actual pending open: n=%d err=%v", n, e)

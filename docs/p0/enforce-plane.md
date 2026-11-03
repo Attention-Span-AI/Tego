@@ -324,7 +324,8 @@ constructs tier `bpflsm` (T7, §2.10).
   build and binary; entry format 7), else adopts it from the build's pin directory when the pinned
   `tego_plane_probe` map there records the mode `bpf.plane` would select (`PinPlaneAnswer`, the backend's call
   at T6), and only else probes (`TestAdoptingRunProbesNoPlane`, `TestAdoptPinnedPlane`,
-  `TestIntegrationPlanePinRoundTrip`). Every path that returns leaves no pin, descriptor, cgroup or fixture
+  `TestIntegrationPlanePinRoundTrip`; as root on a real kernel, `TestIntegrationForRunAsRoot`, which adopts
+  where a run left this build lingering, as on CI's root-suites host, and probes in a fresh guest). Every path that returns leaves no pin, descriptor, cgroup or fixture
   (`TestIntegrationPlaneProbeCleansUpWhenTheChildFails`, `TestIntegrationDoctorCancelledDuringThePlaneLeavesNothing`);
   a probe killed before it returns leaves its pid-named fixture directory, which the next probe removes once that pid
   no longer runs and the directory is ten minutes old (`TestProbeFixtureDirsSweepAKilledProbesTree`).

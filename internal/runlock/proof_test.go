@@ -36,6 +36,52 @@ func heldProofFile(t *testing.T, path string) (*os.File, syscall.Stat_t) {
 	return f, st
 }
 
+// listedTable reads /proc/locks until a read lists pid's flock on inode ino, at most 100 reads, and returns that read;
+// it fails t when none does, since then the kernel does not list the lock. One read can leave out a flock held all
+// along: /proc/locks is a seq_file read a page of lines a pass, and a lock another process takes or lets go between
+// two passes moves the lines after it, so the next pass starts past one of them (the omission
+// TestLockHolderProofAfterRealProcPaginationOmission stages). A table longer than a page, which that test builds on
+// purpose, is read in several passes whatever the buffer, and a host's other processes (a CI runner's other test
+// binaries) take and let go flocks all the time. Each read asks for 256 KiB at a time, more than any page, so a table
+// that fits a page is read in one pass.
+func listedTable(t *testing.T, pid int, ino uint64) []byte {
+	t.Helper()
+	var last []byte
+	for range 100 {
+		b, err := readProcLocks()
+		if err != nil {
+			t.Fatalf("read /proc/locks: %v", err)
+		}
+		if flockHeldBy(b, pid, ino) {
+			return b
+		}
+		last = b
+	}
+	t.Fatalf("no read of /proc/locks in 100 lists pid %d's flock on inode %d; the last read:\n%s", pid, ino, last)
+	return nil
+}
+
+// readProcLocks reads /proc/locks whole, 256 KiB a read(2).
+func readProcLocks() ([]byte, error) {
+	f, err := os.Open("/proc/locks")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	var out []byte
+	buf := make([]byte, 256<<10)
+	for {
+		n, err := f.Read(buf)
+		out = append(out, buf[:n]...)
+		if errors.Is(err, io.EOF) || (n == 0 && err == nil) {
+			return out, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+}
+
 func TestLockHolderProofWithMissingGlobalRow(t *testing.T) {
 	dir := t.TempDir()
 	f, st := heldProofFile(t, lockPath(dir))
@@ -104,10 +150,8 @@ func TestLockHolderProofAfterRealProcPaginationOmission(t *testing.T) {
 		}
 	}
 	pid := os.Getpid()
-	initial, err := os.ReadFile("/proc/locks")
-	if err != nil || !flockHeldBy(initial, pid, uint64(st.Ino)) {
-		t.Fatalf("initial real table must contain the held target: %v", err)
-	}
+	// The real table lists the held target (listedTable: a read another process's lock splits may not).
+	listedTable(t, pid, uint64(st.Ino))
 	stream, err := os.Open("/proc/locks")
 	if err != nil {
 		t.Fatal(err)
@@ -129,10 +173,8 @@ func TestLockHolderProofAfterRealProcPaginationOmission(t *testing.T) {
 	}
 	omitted := append(first, rest...)
 	observedOmission := !flockHeldBy(omitted, pid, uint64(st.Ino))
-	fresh, err := os.ReadFile("/proc/locks")
-	if err != nil || !flockHeldBy(fresh, pid, uint64(st.Ino)) {
-		t.Fatalf("fresh kernel table must still contain target: %v", err)
-	}
+	// A fresh table still lists the target: the omission was the read's, not the kernel's.
+	listedTable(t, pid, uint64(st.Ino))
 	probe, err := os.OpenFile(lockPath(dir), os.O_RDWR, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -168,10 +210,7 @@ func TestLockHolderProofAfterRealProcPaginationOmission(t *testing.T) {
 func TestLockHolderProofRejectsOtherFilesystem(t *testing.T) {
 	_, st := heldProofFile(t, lockPath(t.TempDir()))
 	pid := os.Getpid()
-	table, err := os.ReadFile("/proc/locks")
-	if err != nil || !flockHeldBy(table, pid, uint64(st.Ino)) {
-		t.Fatalf("actual inode-only row must be present: %v", err)
-	}
+	table := listedTable(t, pid, uint64(st.Ino)) // the actual inode-only row
 	// A second filesystem with the same inode was separately demonstrated with two real private
 	// tmpfs mounts. This unit case varies only the expected device, preserving actual kernel records.
 	foreign := st

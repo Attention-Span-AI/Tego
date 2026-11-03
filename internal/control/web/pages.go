@@ -821,8 +821,9 @@ type runData struct {
 	// per folded group, so it agrees with the rows below it (the receipt counts lines).
 	Rows  int
 	Chain ledgerview.Chain
-	// Blocks are the run's live blocks; BlockErr says why they could not be read. Live is what each one does to the
-	// run now (livechip.go): the run's live facts and the blocks' serials.
+	// Blocks are the run's live blocks; BlockErr says why they could not be read, in plain words
+	// (rulesview.LiveErrWords). Live is what each one does to the run now (livechip.go): the run's live facts and the
+	// blocks' serials.
 	Blocks     []liveblock.Entry
 	BlockErr   string
 	BlockKinds []liveblock.Kind
@@ -918,7 +919,7 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 		d.Live.Pause = pauseAskOf(runact.PauseRequest(s.cfg.Ledger, id), d.Live.Facts)
 	}
 	if lb, err := runact.Live(s.cfg.Ledger, id); err != nil {
-		d.BlockErr = err.Error()
+		d.BlockErr = rulesview.LiveErrWords(err)
 	} else {
 		d.Blocks, d.Live.Serials, d.Live.Serial = lb.Blocks, lb.Serials, lb.Serial
 		d.Live.Now = s.cfg.Now()

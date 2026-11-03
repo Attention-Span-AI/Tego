@@ -232,7 +232,7 @@ func TestIntegrationABuildWhoseTimerDiedIsRemovedAtTheNextPrepare(t *testing.T) 
 			for range 3 {
 				time.Sleep(100 * time.Millisecond)
 				start := time.Now()
-				if _, err := procLocksTable(); err != nil {
+				if _, err := procLocksTable(0); err != nil {
 					t.Fatalf("read /proc/locks: %v", err)
 				}
 				reads = append(reads, time.Since(start).Round(10*time.Microsecond))

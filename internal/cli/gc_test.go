@@ -330,8 +330,22 @@ func TestGCDryRunGivesNoModeBack(t *testing.T) {
 // prunes 2 lines, 3 blobs (each text) and 1 lock file (the contract's).
 func journaled(t *testing.T, root string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "agent.yaml")
-	texts := []string{"version: 0\nname: a\n", "version: 0\nname: b\n", "version: 0\nname: c\n"}
+	journaledIn(t, root, t.TempDir(), "", false)
+}
+
+// journaledIn is journaled with the contract, dir/agent.yaml, named name in its texts, so that no line of another
+// contract names one of its 3 blobs; it returns the contract's path, and leaves the file there when keep.
+func journaledIn(t *testing.T, root, dir, name string, keep bool) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(dir) // the journal names a contract by its resolved path
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "agent.yaml")
+	var texts []string
+	for _, v := range []string{"a", "b", "c"} {
+		texts = append(texts, "version: 0\nname: "+name+v+"\n")
+	}
 	if err := os.WriteFile(path, []byte(texts[0]), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -342,9 +356,12 @@ func journaled(t *testing.T, root string) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.Remove(path); err != nil {
-		t.Fatal(err)
+	if !keep {
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
 	}
+	return path
 }
 
 // journalLines is how many lines root's rule-change journal holds.

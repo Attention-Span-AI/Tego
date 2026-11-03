@@ -194,6 +194,19 @@ func TestGroupAfterDroppedEvents(t *testing.T) {
 	if _, known := g.Status(); known || !strings.Contains(g.Why(), "dropped") {
 		t.Fatalf("leader gone at the resync: known %v, why %q; want unknown, for the dropped events", known, g.Why())
 	}
+	// It ended after /proc was read and before its tasks were listed: the listing ends it, and its exit, filled before
+	// the listing, says nothing. The reason is the listing, read once it had ended (the watcher's relist reports it).
+	g = NewGroupAt(tgid, Event{Kind: Fork, PID: tgid, TGID: tgid, TimestampNS: 1})
+	g.Resync(Listing{Since: 10, Exiting: true})
+	if !g.Ended() {
+		t.Fatal("a listing that found nothing running did not end it")
+	}
+	if g.Exit(Event{Kind: Exit, PID: tgid, TGID: tgid, ExitCode: 3 << 8, TimestampNS: 9}) {
+		t.Fatal("its exit, filled before the listing, ended it a second time")
+	}
+	if _, known := g.Status(); known || !strings.Contains(g.Why(), "listed") {
+		t.Fatalf("nothing running at the resync: known %v, why %q; want unknown, for the listing", known, g.Why())
+	}
 }
 
 // TestParseTimensOffsets: the monotonic offset of a time namespace, by name or by clock id; none is no offset known.

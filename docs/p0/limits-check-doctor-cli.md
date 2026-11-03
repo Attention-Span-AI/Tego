@@ -161,7 +161,7 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
 | Chain anchor (read) | `~/.tego/chain.log` of the invoking user, whatever `ledger_root` is; beside the ledger root for an account with no home (`record-ledger.md` §3) | `0600` | `<run> <head>` per line | the launcher appends at `Close`, a sweep for the orphans it ends | sequential scan by `events --verify` (R29); opened `O_NOFOLLOW`; never written here | none |
 | Activity sidecar (read) | `<ledger_root>/<run>/activity` | `0600` | 16 bytes: the CLOCK_MONOTONIC `mono_ns` as a little-endian `uint64`, then its bitwise complement | the launcher (`Writer.OpenActivity`, `O_CREAT\|O_EXCL\|O_NOFOLLOW` through the run directory's descriptor), rewritten in place by one `pwrite(2)` at most once a second from the budget watcher's loop (R9) | read by `status` only while the run's lock is held; opened `O_NOFOLLOW\|O_NONBLOCK`, regular files only; anything but one whole reading (short, long, zero, halves that disagree because it was read mid-write) is no reading (`ledger.ReadActivity`) | none; not part of the record, and left in place at run end, where nothing reads it |
 | Stop marker (write) | `<ledger_root>/<run>/stop.request` | `0600` | empty, or one Go duration and `\n` when `stop --grace` was given | `tego stop`, `O_EXCL` temp file + `link(2)`, never `rename` (`runtime-launch.md` R9) | read once by the launcher's first stop signal (`runtime-launch.md` R9); `O_NOFOLLOW`, at most 64 bytes | none |
-| Rule-change journal (pruned) | `<ledger_root>/.rule-changes/`: `journal.jsonl`, `blobs/<sha256>.yaml`, `locks/` | `0700` directories and `0600` files, the user's, writable by no one else (`internal/rulefile`) | JSON Lines (`internal/rulefile/doc.go`) | `tego rule` and the dashboard write it; `gc` and a run start's retention pass prune it (R29, *added 2026-11-02*) | the prune lists the ledger root's runs and looks at the contracts' files first, with no lock (a file that does not answer within a few seconds counts as there), then holds `locks/prune.lock` exclusively (a write holds it shared from its first blob to its line) and `locks/journal.lock` while it rewrites the journal; a contract's lock file is removed only under its own flock, and a writer that locked a removed file locks the name again | the journal is rewritten through a new file, fsync'ed and renamed over it, then its folder fsync'ed (a new file a crashed prune left goes on the next); blobs go only after |
+| Rule-change journal (pruned) | `<ledger_root>/.rule-changes/`: `journal.jsonl`, `blobs/<sha256>.yaml`, `locks/` | `0700` directories and `0600` files, the user's, writable by no one else (`internal/rulefile`) | JSON Lines (`internal/rulefile/doc.go`) | `tego rule` and the dashboard write it; `gc` and a run start's retention pass prune it (R29, *added 2026-11-02*) | the prune lists the ledger root's runs and looks at the contracts' files first, with no lock, a few at once and with its caller's credentials (a file that does not answer within a few seconds, and within half of what is left of a run start's 2 s, counts as there, and the prune names it, *amended 2026-11-02*), then holds `locks/prune.lock` exclusively (a write holds it shared from its first blob to its line) and `locks/journal.lock` while it rewrites the journal; a contract's lock file is removed only under its own flock, and a writer that locked a removed file locks the name again | the journal is rewritten through a new file, fsync'ed and renamed over it, then its folder fsync'ed (a new file a crashed prune left goes on the next); blobs go only after |
 | Machine config layers | spec/config/v0 | trust rule (one name included); write-protected to the agent by every name (`config.Machine.Layers`, agent-contract.md R10, ADR 0059) | YAML | operator/root | resolved once at CLI start via one `config.Load` | none |
 | BTF | `/sys/kernel/btf/vmlinux` | kernel-exposed | raw BTF | kernel | single `open(2)`+`read`, never `stat`-then-`open` | n/a |
 | securityfs | `/sys/kernel/security/lsm` | kernel-exposed | CSV string | kernel | single read | n/a |
@@ -1119,6 +1119,9 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     entry, else from the build's pin directory when the pinned build records the mode `bpf.plane` would select
     (`/sys/fs/bpf/tego/<bpf_hash>-<mode>/tego_plane_probe`, written by the backend that loads it, T6), and only
     else from a probe, so an adopting run probes nothing (`TestAdoptingRunProbesNoPlane`, `TestAdoptPinnedPlane`).
+    A build stays pinned for `bpf.linger` after its last run (ADR 0022), so the first run after the cache's answer is
+    gone adopts where a run ended within it and probes where none did; as root on a real kernel,
+    `TestIntegrationForRunAsRoot` holds that run to the source this build's pin directory calls for.
   - At reach `bpflsm` it runs what reach `cgroup` runs, cache and adoption included, and D6's LSM list without
     its counting program: tier `bpflsm` is the plane in LSM mode over tier `cgroup` (enforce-plane R19), so it
     reads tier `cgroup`'s checks, `bpf` in the LSM list and LSM mode's answer, whose probe counts the plane's own
@@ -1756,8 +1759,12 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     and in `errors` (prefixed `rule-change journal: `), the exit staying 0. A machine config layer gc cannot read whole
     ends it with 125 before anything is pruned (above); where the load passes a layer over without failing (the
     per-user layer of a uid with no passwd entry), the journal is left as it is (`[config-ignored]`) unless a `--keep`
-    gives the retention, since that layer may set it. As root, `gc` prunes the invoking user's journal as that user (their uid and gid, no
-    capability); another user's journal is left to its owner and reported.
+    gives the retention, since that layer may set it. A rules file the prune cannot look at counts as there, so its
+    lines stay: one in a folder its user cannot search, or one on a stale mount, waited for at most 3 s while the
+    other files are looked at; the prune goes on with the rest and names it on stderr and in `errors`. As root, `gc`
+    prunes the invoking user's journal as that user, its looks at the rules files included: their uid and their group
+    alone (`SUDO_GID`, else their passwd group, the group a root run's agent gets; with neither, the journal is left
+    and the pass says why) and no capability; another user's journal is left to its owner and reported.
   - `licenses` (0; *added 2026-11-02*, docs/GAPS.md B12): the licence texts and third-party notices the binary
     embeds, the licence files of the release's licenses archive, each whole under a `==> <name> <==` line: `LICENSE`,
     `NOTICE`, `THIRD_PARTY_NOTICES.txt`, then `LICENSES/*.txt` by name. No argument (2). `tego-control licenses` prints
@@ -1946,6 +1953,14 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   `status`, `events`, `drift` and `measure` give the same answers on the command line, each with `--json`.
 
 **Changes.** R1's changes are listed under R1.
+- 2026-11-02, R27 "What a run probes" (a test, no behaviour): `TestIntegrationForRunAsRoot` wanted the first run
+  after a dropped answer to probe the plane on every machine, where R27 has it adopt a build pinned in the mode
+  `bpf.plane` selects. A fresh KVM guest has no build pinned; CI's root-suites job runs the suites one after another
+  on one host, and internal/runtime's tegobpf suite left this build lingering, so the run adopted it and the test
+  failed every job (`Source:pin, want a probed answer`). It now reads this build's pin directory before and after
+  the run and wants the pinned answer when it was there throughout, a probe when it was there at neither reading, and
+  either when the build was swept or pinned in between; reproduced in a fedora-7.0 guest by running it after
+  `TestIntegrationRestrictedRootRunAfterFullRoot`, whose full-root runs leave the build pinned.
 - 2026-11-02, R25 run argument (H08): every command that resolves `<run>` as `events` does takes four or more
   characters from the end of a run id, or its start up to four or more past `r-<host8>-`, for the one run under the
   ledger root that has them, where it took only the whole id; two or more runs that have them are a usage error
@@ -1992,6 +2007,20 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   (`TestRootRunStartPrunesTheJournalAsTheInvokingUser`, `TestRootPassLeavesAnotherUsersJournal`), and prune nothing
   of the machine's own retention when a machine config layer was skipped
   (`TestGCJournalNotPrunedWhenALayerWasSkipped`, `TestRunStartJournalNotPrunedWithoutTheUserLayer`).
+- 2026-11-02, R29 `gc`, the journal's root path: a root pass's prune of the invoking user's journal is the user's
+  whole. Its looks at the rules files ran on goroutines of their own, so on threads of root's with every capability:
+  it saw files the user cannot and pruned their lines on that (a folder the user cannot search), and lstat'ed what the
+  user's journal names with root's authority. They now run on threads that take the caller's credentials
+  (`TestRootRunStartPrunesTheJournalAsTheInvokingUser` as root, `TestPruneLooksAsItsCaller`). Its group was the journal
+  folder's, which a setgid ledger root or a chgrp sets; it is the user's own, `SUDO_GID` or else their passwd group,
+  and the journal of a user neither names is left (`TestRootPassLeavesTheJournalOfAUserWithNoGroup`). And one rules
+  file on a stale mount stopped the prune on every run start's pass with no word: its look was waited for 3 s, longer
+  than the pass's 2 s, and every file after it in the journal was never looked at. The files are looked at a few at
+  once, the wait is at most half of what is left of the pass's budget, and the prune names what it could not look at
+  (`TestPruneLooksPastAFileThatDoesNotAnswer`, `TestPrunePrunesInTheBudgetALookLeft`); a run start logs a journal
+  its budget left unpruned too (`TestRunStartRetentionStopsAtItsBudget`). The two root tests failed in
+  the root suites, where the journal a root test makes is root's own, which a root pass prunes as root; as root they
+  now hand it to a user of their own and prune as that user for real.
 - 2026-11-02, R29 `licenses` (docs/GAPS.md B12): an installed tego or tego-control carried no third-party notice,
   only the release's licenses archive did. Both binaries now embed the licence files (the module root's `notices.go`)
   and print them (`TestLicensesPrintsWhatTheBinaryCarries`, `TestControlLicensesPrintsWhatTheBinaryCarries`); `licenses`

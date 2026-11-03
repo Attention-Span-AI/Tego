@@ -40,6 +40,7 @@ internal/runtime/enforce/landlock TestRootMissingWriteDirIsTheDroppedUsers # nee
 internal/runtime/supervisor TestDeputyWalkRefusesItsOwnProcOnEveryMount # needs root: mounts a procfs instance and two bind mounts
 internal/watch/watcher TestIntegrationWatcherSeesAFakeAgentItsChildAndTheirExit # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
 internal/watch/watcher TestIntegrationOverrunResynchronisesWithTheRealKernel # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
+internal/watch/watcher TestIntegrationAnAgentThatEndsBeforeAnOverrunsListingIsReportedOnce # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
 internal/watch/watcher TestIntegrationWatcherFollowsAnAgentWhoseMainThreadExits # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
 internal/watch/watcher TestIntegrationWatcherEndsAnAgentFoundWithItsMainThreadGone # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN
 internal/watch/watcher TestIntegrationAGroupReadsGoneAtItsLastTasksExitEvent # needs root: the proc connector is a multicast netlink group that needs CAP_NET_ADMIN

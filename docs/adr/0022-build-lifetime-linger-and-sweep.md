@@ -380,3 +380,31 @@ its `lentSinks` admit `unix.Open`, `Openat` and `Stat` of any path built from a 
 `dup2`: an fdinfo opened before and read after says `O_RDONLY`, the old pattern's wrong file, while `readFdinfo` has
 read it before it returns and says `O_WRONLY`; a `readFdinfo` that returns without reading fails it); as root, the
 memlock and ring tests above.
+
+*Implementation note 2026-11-02 (the lock table read in pieces):* `tego stop`'s pass (`RearmTimers`) could take a
+build its launcher held for one with no holder, and start its timer. `/proc/locks` is a seq_file over the host's
+list of locks: each `read(2)` prints at most a page of lines (the seq_file buffer, 4 KiB on amd64) from one view of
+the list, then lets the list go, and the next `read(2)` goes on at the next line's position in the list as it then
+stands (`fs/locks.c` `locks_start`/`locks_stop`, `fs/seq_file.c` `seq_read_iter`). Locks let go between two reads
+ahead of that position move the lines after them up, and the lines that were next are never printed, whoever holds
+them. The pass read the table with `io.ReadAll`, whose first reads ask for 512 bytes, so it had a seam every eight
+lines or so, and on GitHub's runners `TestRearmTimersStartsTheTimerOfEveryBuildWithout` saw its held build lock
+left out (build-test and root-suites, 2026-11-02: "timers started: [deadpid expired gone held lingering]"); a pass
+on a host whose other processes take and let go flocks meets the same. The table is now read a page or more per
+`read(2)`, which leaves no seam in a table of up to a page, and a file the first read shows no holder of is looked
+up again in a second read whose first `read(2)` asks for half a page, so that its seams fall half a page of lines
+from the first read's (`lockHolders`). A lock either read lists is held: it was at a moment of the pass, and its
+holder (a launcher, which starts the timer when it leaves, or a timer) answers for the build. A lock held all along
+is missed by both reads only if half a page of the locks listed before it came or went between them; the pass then
+starts a timer, which exits on the timer lock or waits for the launcher, as on any reading that shows no holder. A
+pass whose first read shows the holder of every build it asks about reads once; one that starts a timer reads twice,
+a second grace period on a path off any run's. Rejected: reading until two reads agree (a lock let go and taken again
+at the same place in the list repeats a seam's loss in the next read, so agreement proves nothing, and the reads
+are unbounded); reading descriptors' `fdinfo` (every descriptor of every process on the host, since the holder of a
+build lock is not known); probing the lock (note 2026-10-16). On a 6.17 development host, with four goroutines taking and
+letting go flocks, the old read left one of twenty held flocks out in three of four one-second runs; the new reading
+left none out in twenty, its second read finding what the first missed in up to 37% of a run's passes. Tests:
+`TestTheLockTableShowsEveryFlockHeldThroughChurn`, `TestRearmTimersLooksAgainWhereTheLockTableShowsNoHolder` (the
+first read leaves out the held build's lock and an older tego's timer lock: the old pass started both timers),
+`TestTheLockTableIsReadAPageAtATime`, `TestRearmTimersStartsTheTimerOfEveryBuildWithout` (the real table, read twice),
+`TestRearmTimersStartsATimerWhenTheLockTableCannotBeRead` (read once).

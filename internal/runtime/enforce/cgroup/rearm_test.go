@@ -3,13 +3,17 @@
 package cgroup
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,9 +51,9 @@ func TestParseProcLocksReadsHeldFlocksOnly(t *testing.T) {
 	}
 }
 
-// TestTheLockTableShowsAHeldFlock reads the running kernel's /proc/locks: an exclusive flock this process takes is
-// there as held for writing, a shared one as held but not for writing, and neither once let go. It is what a re-arm
-// pass reads instead of taking a timer's or a launcher's lock.
+// TestTheLockTableShowsAHeldFlock reads the running kernel's /proc/locks as a re-arm pass does (lockHolders): an
+// exclusive flock this process takes is there as held for writing, a shared one as held but not for writing, and
+// neither once let go. It is what a re-arm pass reads instead of taking a timer's or a launcher's lock.
 func TestTheLockTableShowsAHeldFlock(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "bpf-x.timer")
@@ -64,11 +68,12 @@ func TestTheLockTableShowsAHeldFlock(t *testing.T) {
 	}
 	look := func(write bool) bool {
 		t.Helper()
-		b, err := procLocksTable()
-		if err != nil {
-			t.Fatalf("read the lock table: %v", err)
+		holders := lockHolders{read: procLocksTable}
+		held := holders.held(st, write)
+		if holders.err != nil {
+			t.Fatalf("read the lock table: %v", holders.err)
 		}
-		return heldOn(parseProcLocks(b), st, write)
+		return held
 	}
 	if look(false) {
 		t.Fatal("a file no one locked is listed as held")
@@ -90,6 +95,175 @@ func TestTheLockTableShowsAHeldFlock(t *testing.T) {
 	}
 	if look(false) {
 		t.Fatal("a flock let go is still listed as held")
+	}
+}
+
+// TestTheLockTableShowsEveryFlockHeldThroughChurn reads the running kernel's /proc/locks as a re-arm pass does
+// (lockHolders) while four other locks are taken and let go without pause: every one of twenty shared flocks held
+// throughout is shown held, in every pass of a second's worth. /proc/locks prints a page of the host's list of locks
+// per read(2) and goes on at a position in the list as it stands at the next read, so a lock let go between two
+// reads ahead of a held one moves it past that position, unprinted. The pass read the table with io.ReadAll, whose
+// first reads ask for 512 bytes, and on GitHub's runners (build-test and root-suites, 2026-11-02) it left out the
+// build lock TestRearmTimersStartsTheTimerOfEveryBuildWithout held, and started that build's timer. Not parallel:
+// the locks it churns would be seams in the tables the parallel lock-table tests read.
+func TestTheLockTableShowsEveryFlockHeldThroughChurn(t *testing.T) {
+	dir := t.TempDir()
+	var held []unix.Stat_t
+	for i := range 20 {
+		f, err := os.Create(filepath.Join(dir, "held-"+strconv.Itoa(i)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if err := unix.Flock(int(f.Fd()), unix.LOCK_SH); err != nil {
+			t.Fatal(err)
+		}
+		var st unix.Stat_t
+		if err := unix.Fstat(int(f.Fd()), &st); err != nil {
+			t.Fatal(err)
+		}
+		held = append(held, st)
+	}
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range 4 {
+		f, err := os.Create(filepath.Join(dir, "churn-"+strconv.Itoa(i)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				_ = unix.Flock(int(f.Fd()), unix.LOCK_EX)
+				_ = unix.Flock(int(f.Fd()), unix.LOCK_UN)
+			}
+		}()
+	}
+	passes, second := 0, 0
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); passes++ {
+		holders := lockHolders{read: procLocksTable}
+		for i, st := range held {
+			if !holders.held(st, false) {
+				t.Errorf("pass %d: held flock %d (inode %d) is not shown held after %d reads", passes, i, st.Ino, holders.reads)
+			}
+		}
+		if holders.reads == 2 {
+			second++ // the first read left one out
+		}
+	}
+	close(stop)
+	wg.Wait()
+	t.Logf("%d passes, %d of which needed the second read", passes, second)
+}
+
+// TestTheLockTableIsReadAPageAtATime: procLocksTable's reads ask for at least two pages, so each is cut short only by
+// the kernel's own page (a stand-in reader gives a page a read here), the first asks for first bytes when first is
+// set, the table comes back whole, and one past the limit is refused.
+func TestTheLockTableIsReadAPageAtATime(t *testing.T) {
+	t.Parallel()
+	page := os.Getpagesize()
+	table := bytes.Repeat([]byte("1: FLOCK  ADVISORY  WRITE 1234 00:1a:5678 0 EOF\n"), 3*page/48)
+	for _, first := range []int{0, page / 2} {
+		r := &pageReader{data: table, page: page}
+		got, err := readTable(r, first, procLocksLimit)
+		if err != nil || !bytes.Equal(got, table) {
+			t.Fatalf("first %d: readTable = %d bytes, %v; want the table's %d", first, len(got), err, len(table))
+		}
+		if first != 0 && r.asks[0] != first {
+			t.Errorf("first %d: the first read asked for %d bytes", first, r.asks[0])
+		}
+		for i, ask := range r.asks {
+			if (i > 0 || first == 0) && ask < 2*page {
+				t.Errorf("first %d: read %d asked for %d bytes, under two pages: the buffer would end it, not the page",
+					first, i, ask)
+			}
+		}
+	}
+	if _, err := readTable(&pageReader{data: table, page: page}, 0, len(table)-1); err == nil {
+		t.Error("a table past the limit was read")
+	}
+}
+
+// pageReader gives at most a page a read, as a seq_file does, and records how much each read asked for.
+type pageReader struct {
+	data []byte
+	page int
+	asks []int
+}
+
+func (r *pageReader) Read(p []byte) (int, error) {
+	r.asks = append(r.asks, len(p))
+	if len(r.data) == 0 {
+		return 0, io.EOF
+	}
+	n := copy(p[:min(len(p), r.page)], r.data)
+	r.data = r.data[n:]
+	return n, nil
+}
+
+// TestRearmTimersLooksAgainWhereTheLockTableShowsNoHolder is stop's pass over a lock table read in pieces, whose first
+// read left out a lock held all along: the build lock its launcher holds, and the timer lock of an older tego's timer
+// (TestTheLockTableShowsEveryFlockHeldThroughChurn). A pass that took that read alone started both builds' timers.
+// Neither is started now: the first read showed them no holder, so the table is read again with every seam half a page
+// further, and that read lists them. A build neither read lists gets its timer. A pass whose first read lists the
+// holder of every build it asks about reads the table once.
+func TestRearmTimersLooksAgainWhereTheLockTableShowsNoHolder(t *testing.T) {
+	t.Parallel()
+	r := newRearmHost(t)
+	r.build("expired", 2*time.Hour)
+	r.build("held", 2*time.Hour)
+	r.build("timed", 2*time.Hour)
+	if err := os.WriteFile(filepath.Join(r.state, "bpf-timed.timer"), nil, 0o600); err != nil {
+		t.Fatal(err) // its timer wrote no pid
+	}
+	line := func(name, kind string) string {
+		t.Helper()
+		var st unix.Stat_t
+		if err := unix.Stat(filepath.Join(r.state, name), &st); err != nil {
+			t.Fatal(err)
+		}
+		return fmt.Sprintf("1: FLOCK  ADVISORY  %s 4242 %02x:%02x:%d 0 EOF\n", kind,
+			unix.Major(uint64(st.Dev)), unix.Minor(uint64(st.Dev)), st.Ino) //nolint:unconvert // Dev is uint32 on some arches
+	}
+	other := "1: FLOCK  ADVISORY  WRITE 77 00:1a:5678 0 EOF\n"
+	whole := other + line("bpf-held.lock", "READ") + line("bpf-timed.timer", "WRITE")
+	var firsts []int
+	started, states, err := r.rearm(false, nil, func(first int) ([]byte, error) {
+		firsts = append(firsts, first)
+		if len(firsts) == 1 {
+			return []byte(other), nil // the seams fell on both locks' lines
+		}
+		return []byte(whole), nil
+	})
+	if err != nil {
+		t.Fatalf("rearmTimers: %v", err)
+	}
+	why := map[string]string{}
+	for _, s := range states {
+		why[s.Hash] = s.Why
+	}
+	if !slices.Equal(started, []string{"expired"}) || why["held"] != whyBusy || why["timed"] != whyTimed {
+		t.Errorf("timers started %v, reasons %v: want only expired's, held %q and timed %q", started, why, whyBusy, whyTimed)
+	}
+	if want := []int{0, os.Getpagesize() / 2}; !slices.Equal(firsts, want) {
+		t.Errorf("the table was read with first reads of %v bytes, want %v", firsts, want)
+	}
+
+	firsts = nil
+	r = newRearmHost(t) // line reads r's state directory
+	r.build("held", 2*time.Hour)
+	if started, _, err := r.rearm(false, nil, func(first int) ([]byte, error) {
+		firsts = append(firsts, first)
+		return []byte(other + line("bpf-held.lock", "READ")), nil
+	}); err != nil || len(started) != 0 || len(firsts) != 1 {
+		t.Errorf("a pass over a held build alone: started %v after reads %v, %v; want none after one", started, firsts, err)
 	}
 }
 
@@ -134,7 +308,8 @@ func (r rearmHost) flock(name string, how int) {
 
 // rearm runs a re-arm pass whose timer starts are recorded and fail with startErr: Prepare's (expired builds only,
 // no lock table) when prepare, else stop's, which reads table, nil meaning the kernel's (procLocksTable).
-func (r rearmHost) rearm(prepare bool, startErr error, table func() ([]byte, error)) (started []string, states []BuildState, err error) {
+func (r rearmHost) rearm(prepare bool, startErr error,
+	table func(first int) ([]byte, error)) (started []string, states []BuildState, err error) {
 	r.t.Helper()
 	opts := SweepOptions{BPFFS: r.bpffs, StateDir: r.state, CgroupMount: r.t.TempDir(), Linger: time.Hour,
 		ExpiredOnly: prepare, Now: func() time.Time { return r.now },
@@ -181,16 +356,20 @@ func TestRearmTimersStartsTheTimerOfEveryBuildWithout(t *testing.T) {
 	if err := os.MkdirAll(plane, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	reads := 0
-	started, states, err := r.rearm(false, nil, func() ([]byte, error) { reads++; return procLocksTable() })
+	var firsts []int
+	started, states, err := r.rearm(false, nil, func(first int) ([]byte, error) {
+		firsts = append(firsts, first)
+		return procLocksTable(first)
+	})
 	if err != nil {
 		t.Fatalf("rearmTimers: %v", err)
 	}
 	if want := []string{"deadpid", "expired", "gone", "lingering"}; !slices.Equal(started, want) {
 		t.Errorf("timers started: %v, want %v", started, want)
 	}
-	if reads != 1 {
-		t.Errorf("stop's pass read the lock table %d times, want once", reads)
+	// Builds the first read shows no holder of are looked up again in a read whose seams fall half a page further.
+	if want := []int{0, os.Getpagesize() / 2}; !slices.Equal(firsts, want) {
+		t.Errorf("stop's pass read the lock table with first reads of %v bytes, want %v", firsts, want)
 	}
 	why := map[string]string{}
 	for _, s := range states {
@@ -224,7 +403,7 @@ func TestRearmTimersReadsTheLockTableOnlyForABuildWithNoTimerShown(t *testing.T)
 	r.timer("a", 4242, true)
 	r.timer("b", 4343, true)
 	reads := 0
-	started, _, err := r.rearm(false, nil, func() ([]byte, error) { reads++; return nil, nil })
+	started, _, err := r.rearm(false, nil, func(int) ([]byte, error) { reads++; return nil, nil })
 	if err != nil || len(started) != 0 || reads != 0 {
 		t.Errorf("started %v, %d lock-table reads, %v; want none, none, nil", started, reads, err)
 	}
@@ -233,16 +412,17 @@ func TestRearmTimersReadsTheLockTableOnlyForABuildWithNoTimerShown(t *testing.T)
 // TestRearmTimersStartsATimerWhenTheLockTableCannotBeRead: a table that cannot be read shows no holder, so the pass
 // starts a timer for every build it would otherwise ask about, a timed one too; the timer that was running keeps its
 // timer lock and the new one exits (TestASecondTimerOfABuildExitsAtOnce), which costs an exec, where trusting no
-// timer to be running costs nothing to the build's bound.
+// timer to be running costs nothing to the build's bound. A table that cannot be read is not read again.
 func TestRearmTimersStartsATimerWhenTheLockTableCannotBeRead(t *testing.T) {
 	t.Parallel()
 	r := newRearmHost(t)
 	r.build("expired", 2*time.Hour)
 	r.build("timed", 2*time.Hour)
 	r.flock("bpf-timed.timer", unix.LOCK_EX)
-	started, _, _ := r.rearm(false, nil, func() ([]byte, error) { return nil, errors.New("EACCES") })
-	if want := []string{"expired", "timed"}; !slices.Equal(started, want) {
-		t.Errorf("timers started: %v, want %v", started, want)
+	reads := 0
+	started, _, _ := r.rearm(false, nil, func(int) ([]byte, error) { reads++; return nil, errors.New("EACCES") })
+	if want := []string{"expired", "timed"}; !slices.Equal(started, want) || reads != 1 {
+		t.Errorf("timers started: %v after %d reads, want %v after one", started, reads, want)
 	}
 }
 
@@ -446,7 +626,7 @@ func TestRearmTimersStartsNoTestBinaryAsATimer(t *testing.T) {
 	r := newRearmHost(t)
 	expired, lingering := r.build("expired", 2*time.Hour), r.build("lingering", time.Minute)
 	opts := SweepOptions{BPFFS: r.bpffs, StateDir: r.state, CgroupMount: t.TempDir(), Linger: time.Hour,
-		Now: func() time.Time { return r.now }, lockTable: func() ([]byte, error) { return nil, nil }}
+		Now: func() time.Time { return r.now }, lockTable: func(int) ([]byte, error) { return nil, nil }}
 	states, err := RearmTimers(opts, "/proc/self/exe")
 	if err != nil {
 		t.Fatalf("RearmTimers: %v", err)

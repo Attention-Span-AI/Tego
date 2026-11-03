@@ -306,37 +306,71 @@ func TestTheScanListsTheThreadsTheEventsDidNotSay(t *testing.T) {
 // TestAProcessThatEndsDuringAScanIsEndedByItsExit: a scan lists the tasks of what it follows after reading /proc once,
 // so a process can end between the two reads. One the scan found then has no task listed and is reported ended there,
 // with no status (its listing is its lower bound, and none of its exits is filled after it); one
-// followed from its events before the scan is not listed again, so its exit gives its status. Either way no session is
-// left.
+// followed from its events before the scan is not listed again, so its exit gives its status; and one followed before
+// a scan that follows lost events is listed again (Group.Resync), so it is one the scan found: ended there, with no
+// status. That last one was left open: the listing ended its group without a line, and the exit event read next,
+// filled before the listing, could not end it, so its session stayed followed until another overrun's scan (the
+// root-suites job's TestIntegrationOverrunResynchronisesWithTheRealKernel on a CI runner, where B ended just as a
+// second overrun's scan read /proc and its exit was never reported). Either way exactly one line ends it and no
+// session is left.
 func TestAProcessThatEndsDuringAScanIsEndedByItsExit(t *testing.T) {
-	for _, followed := range []bool{false, true} {
-		t.Run(fmt.Sprintf("followed before the scan %v", followed), func(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		followed, lost bool
+	}{
+		{"found by the scan", false, false},
+		{"found by a scan after lost events", false, true},
+		{"followed before the scan", true, false},
+		{"followed before a scan after lost events", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			fp, o := newFake(), &out{}
 			fp.add(500, claudeProc(400, termCG, ""))
 			w := newWatcher(fp, o, false)
-			if followed {
+			if tc.followed {
 				handle(t, w, evExec(500))
+			}
+			// It exits after the last read of /proc that finds it running, before its tasks are listed: its exit event is
+			// filled then, older than the listing.
+			var exitAt uint64
+			gone := false
+			fp.onStat = func(pid, _ int) {
+				if pid == 500 && !gone {
+					exitAt = procconn.Monotonic()
+				}
 			}
 			fp.onTasks = func(pid int) {
 				if pid == 500 {
-					fp.del(500) // it exits after the scan's read of /proc, before its tasks are listed
+					gone = true
+					fp.del(500)
 				}
 			}
-			must(t, w.rescan(false))
-			fp.onTasks = nil
-			if want := map[bool]int{false: 0, true: 1}[followed]; w.Sessions() != want {
+			if tc.lost {
+				must(t, w.Overrun())
+			} else {
+				must(t, w.rescan(false))
+			}
+			fp.onStat, fp.onTasks = nil, nil
+			if want := map[bool]int{false: 0, true: 1}[tc.followed && !tc.lost]; w.Sessions() != want {
 				t.Fatalf("%d session(s) after the scan, want %d: %v", w.Sessions(), want, o.kinds())
 			}
-			handle(t, w, evExit(500, 3<<8))
+			exit := evExit(500, 3<<8)
+			if gone {
+				exit.TimestampNS = exitAt
+			}
+			handle(t, w, exit)
 			x := o.find(EventAgentExited, 500)
 			if x == nil || w.Sessions() != 0 || len(w.groups) != 0 {
 				t.Fatalf("agent_exited = %+v, %d session(s), groups %v; want it ended and nothing left", x, w.Sessions(),
 					w.groups)
 			}
+			if n := strings.Count(strings.Join(o.kinds(), ","), EventAgentExited); n != 1 {
+				t.Fatalf("%d agent_exited lines, want 1: %v", n, o.kinds())
+			}
 			switch {
-			case followed && (x.ExitCode == nil || *x.ExitCode != 3):
+			case tc.followed && !tc.lost && (x.ExitCode == nil || *x.ExitCode != 3):
 				t.Fatalf("agent_exited = %+v, want code 3 (its events were followed from its exec)", x)
-			case !followed && (x.ExitCode != nil || x.Signal != 0 || !strings.Contains(x.Note, "listed")):
+			case (!tc.followed || tc.lost) && (x.ExitCode != nil || x.Signal != 0 || !strings.Contains(x.Note, "listed")):
 				t.Fatalf("agent_exited = %+v, want no status and a note that its tasks were listed after it ended", x)
 			}
 		})

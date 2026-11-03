@@ -52,6 +52,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+      # The module downloads first, retried: a stream error from proxy.golang.org once failed a job mid-build
+      # (bpf-gen, 2026-11-02); every later go command then reads the module cache.
+      - name: download the modules, retried
+        shell: bash
+        run: for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (try $i), retrying" >&2; sleep $((i * 15)); done; exit 1
       # The files, not only the verdict; golangci-lint's gofmt formatter reports them too.
       - name: fmt
         shell: bash
@@ -211,6 +216,18 @@ jobs:
           ./scripts/in-user-manager.sh go test -count=1 -tags integration -json ./... >"$RUNNER_TEMP/integration.json" || status=$?
           ./scripts/skipgate.sh test/integration-skips.txt "$RUNNER_TEMP/integration.json" || status=1
           exit "$status"
+      # The two steps' go test -json streams, kept when the job failed: a package go test killed at its -timeout said
+      # nothing in the log but its FAIL line (internal/runtime at 600 s, 40de30f, 2026-11-02), and its stream holds every
+      # test's output, the tests it was running, its panic and its goroutine dump, which skipgate.sh prints in part.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: build-test-json
+          retention-days: 14
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/unit.json
+            ${{ runner.temp }}/integration.json
   build-test-arm64:
     # arm64 is a released architecture (.goreleaser.yaml), and this job builds and tests it. On GitHub's arm64
     # runner: the static release build with the objects (uprobessl has an arm64 object of
@@ -231,6 +248,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+      # The module downloads first, retried: a stream error from proxy.golang.org once failed a job mid-build
+      # (bpf-gen, 2026-11-02); every later go command then reads the module cache.
+      - name: download the modules, retried
+        shell: bash
+        run: for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (try $i), retrying" >&2; sleep $((i * 15)); done; exit 1
       - name: build (static, with the objects)
         run: make build
       - name: vet
@@ -387,6 +409,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+      # The module downloads first, retried: a stream error from proxy.golang.org once failed a job mid-build
+      # (bpf-gen, 2026-11-02); every later go command then reads the module cache.
+      - name: download the modules, retried
+        shell: bash
+        run: for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (try $i), retrying" >&2; sleep $((i * 15)); done; exit 1
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/tego/bpf-toolchain
@@ -411,6 +438,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+      # The module downloads first, retried: a stream error from proxy.golang.org once failed a job mid-build
+      # (bpf-gen, 2026-11-02); every later go command then reads the module cache.
+      - name: download the modules, retried
+        shell: bash
+        run: for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (try $i), retrying" >&2; sleep $((i * 15)); done; exit 1
       - name: build the privileged suites
         run: |
           CGO_ENABLED=0 go test -c -tags 'integration tegobpf' -o "$RUNNER_TEMP/bpf.test" ./internal/bpf/
@@ -488,15 +520,23 @@ jobs:
     # runs in the user manager: BenchmarkSeccompNotifyRoundTrip needs only no_new_privs and pidfd_getfd of its
     # own child, which a plain step allows (it skips, naming why, where seccomp notification is unavailable).
     # Wall time, measured on a developer laptop: about 10 s of builds with a warm cache and 150 s
-    # of rounds; on the runner, with both trees' builds cold, about 5 to 6 minutes.
+    # of rounds (about 20 s more since C8's exec path joined them, 2026-11-02); on the runner, with both trees' builds
+    # cold, about 5 to 6 minutes.
     # The job first asserts the tree's absolute timing budgets (scripts/timing-budgets.sh; docs/BENCHMARKS.md, "Timing
     # budgets in the test suites"): ADR 0048 C8's exec costs, enforce-plane §10's plan fill, DGRAM-VERDICT's flood,
     # ADR 0023 P1's Borrow ratio and the Rules page's 150 ms read of a 55k-line run (TestInForceLongRunIsFast), held
-    # to their Limits (and Targets) exactly as written. This runner runs nothing but this job, and the step runs before
+    # to their Limits (and Targets) as written. This runner runs nothing but this job, and the step runs before
     # the gate's builds and rounds, so the figures are taken on a quiet machine; the unit gate (build-test, precommit)
     # holds the same tests only to ten times their Limits, since a busy machine slows CPU work two to five times
-    # through the whole measurement. The budgets need no base: a new branch runs them too,
-    # and the job's last step fails it when one was missed. About 30 s of tests after the five test binaries build.
+    # through the whole measurement. A quiet hosted runner is still not the reference box the budgets are figures on: it
+    # makes a system call at 2.5 to 2.9 times the box's cost (BenchmarkOwnedOpenClose below) and computes at about its
+    # speed, and C8's unguarded exec and script, whose added cost is a handful of system calls, missed their Limits on 2
+    # of 10 pushes to main (2026-11-02). --hosted holds those two to twice their figures
+    # (testutil.HostedSystemCallFactor) and every other budget as written. The budgets need no base: a new branch runs
+    # them too, and the job's last step fails it when one was missed. About 30 s of tests after the five test binaries
+    # build.
+    # A regression of C8's exec path smaller than the doubled figures the gate fails instead: BenchmarkExecCommandCost
+    # (one exec's notification handled with command rules) is among the benchmarks it compares with the base.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -507,6 +547,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+      # The module downloads first, retried: a stream error from proxy.golang.org once failed a job mid-build
+      # (bpf-gen, 2026-11-02); every later go command then reads the module cache.
+      - name: download the modules, retried
+        shell: bash
+        run: for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (try $i), retrying" >&2; sleep $((i * 15)); done; exit 1
       # Its status is kept and decided by the job's last step, so a missed budget does not leave the gate below
       # unrun; a status that was never written fails there too.
       - name: the absolute timing budgets (ADR 0048 C8, the plane fill's plan, the datagram flood, the Borrow ratio, the 55k-line rules read)
@@ -514,7 +559,7 @@ jobs:
         shell: bash
         run: |
           rc=0
-          ./scripts/timing-budgets.sh -o "$RUNNER_TEMP/budgets" 2>&1 | tee "$RUNNER_TEMP/timing-budgets.log" || rc=$?
+          ./scripts/timing-budgets.sh --hosted -o "$RUNNER_TEMP/budgets" 2>&1 | tee "$RUNNER_TEMP/timing-budgets.log" || rc=$?
           echo "rc=$rc" >>"$GITHUB_OUTPUT"
       - name: the base commit
         id: base
@@ -614,11 +659,12 @@ jobs:
     # user@0.service skip; the list holds only tests that passed as root in a KVM guest set up that way. The
     # script also holds every skip to test/vm/root-skips.txt, so a test that stops running
     # as root fails the step, and checks the must-pass list itself, over the suites' go test -json logs.
-    # A push to main only, because this job can take 250 minutes of hosted time. That is a limit on cost, not a
-    # security boundary: a pull request still runs code as root in bpf-load and build-test-arm64, and it runs its own
-    # copy of this file. A fork's code is held by the runner, a fresh VM with no secrets and a read-only token, and by
-    # GitHub's approval of a first-time contributor's run. A change to a privileged path meets this job after it merges.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # On every pull request and on a push to main, a fork's pull request included: the job takes about two hours,
+    # which costs nothing on a public repository's hosted runners, and the main ruleset requires it, so a change is
+    # merged only after the privileged suites pass. A fork's code runs as root here as it does in bpf-load and
+    # build-test-arm64: on a fresh VM with no secrets and a read-only token, after a maintainer approves the run of a
+    # first-time contributor.
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     # enforce/cgroup has 100 minutes (VM_SUITE_TIMEOUT below) in each of its two builds: its tegobpf suite took
     # 2517-3765 s in KVM guests on a loaded host and timed out once at the 2700 s it had. The other suites
@@ -632,9 +678,15 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+      # The module downloads first, retried: a stream error from proxy.golang.org once failed a job mid-build
+      # (bpf-gen, 2026-11-02); every later go command then reads the module cache.
+      - name: download the modules, retried
+        shell: bash
+        run: for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (try $i), retrying" >&2; sleep $((i * 15)); done; exit 1
       # The suites' binaries go under /tmp, not $RUNNER_TEMP: that sits in the runner's 0750 home, where a test's child in
-      # a user namespace, or the open deputy run as nobody, cannot reach the binary it must exec (the first run on
-      # GitHub, 2026-11-02: "fork/exec .../_temp/root-suites/bin/...: permission denied").
+      # a user namespace cannot reach the binary it execs by its path (the first run on GitHub, 2026-11-02: "fork/exec
+      # .../_temp/root-suites/bin/...: permission denied"). The deputy's tests, whose deputy runs as nobody, exec theirs
+      # through /proc/self/exe, as tego execs the deputy, which needs no search permission above the binary.
       - name: the privileged suites, as root through sudo; every skip allowed and the root-only tests passed
         run: VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=6000" VM_HOST=sudo VM_BPF=yes VM_OUT=/tmp/root-suites test/vm/root-suites.sh
       - name: upload the suites' logs
@@ -669,6 +721,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+      # The module downloads first, retried: a stream error from proxy.golang.org once failed a job mid-build
+      # (bpf-gen, 2026-11-02); every later go command then reads the module cache.
+      - name: download the modules, retried
+        shell: bash
+        run: for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (try $i), retrying" >&2; sleep $((i * 15)); done; exit 1
       # The suites that put a process in a run cgroup run inside the runner user's systemd user manager, where an
       # unprivileged tego run can place its agent. A step runs in the runner's own service, outside that subtree,
       # and from there the kernel refuses every placement (docs/p0/runtime-launch.md case 41), so those tests would
@@ -707,6 +764,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+      # The module downloads first, retried: a stream error from proxy.golang.org once failed a job mid-build
+      # (bpf-gen, 2026-11-02); every later go command then reads the module cache.
+      - name: download the modules, retried
+        shell: bash
+        run: for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (try $i), retrying" >&2; sleep $((i * 15)); done; exit 1
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           version: ${{ env.GORELEASER_VERSION }}
@@ -746,6 +808,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+      # The module downloads first, retried: a stream error from proxy.golang.org once failed a job mid-build
+      # (bpf-gen, 2026-11-02); every later go command then reads the module cache.
+      - name: download the modules, retried
+        shell: bash
+        run: for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (try $i), retrying" >&2; sleep $((i * 15)); done; exit 1
       # The suites that put a process in a run cgroup run inside the runner user's systemd user manager, where an
       # unprivileged tego run can place its agent. A step runs in the runner's own service, outside that subtree,
       # and from there the kernel refuses every placement (docs/p0/runtime-launch.md case 41), so those tests would
@@ -781,6 +848,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
+      # The module downloads first, retried: a stream error from proxy.golang.org once failed a job mid-build
+      # (bpf-gen, 2026-11-02); every later go command then reads the module cache.
+      - name: download the modules, retried
+        shell: bash
+        run: for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (try $i), retrying" >&2; sleep $((i * 15)); done; exit 1
       - name: report collector and formatter tests
         run: ./scripts/deadcode-report_test.sh && go test -count=1 ./tools/deadcodereport
       - name: collect all production build profiles

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,10 +56,17 @@ type InForceView struct {
 	Started time.Time `json:"started"`
 	Ended   bool      `json:"ended"`
 	Lines   int       `json:"lines"`
-	// LiveBlocks is how many live blocks the run's overlay holds; an ended run's are not in View (they no longer
-	// refuse anything). LiveErr is why the overlay could not be read, "" when it was or there is none.
+	// LiveBlocks is how many live blocks the run's overlay holds. LiveErr is why the overlay could not be read, in plain
+	// words that follow "The run's live blocks could not be read:" (the file and what is wrong with it, never Go's
+	// error), "" when it was or there is none.
 	LiveBlocks int    `json:"live_blocks"`
 	LiveErr    string `json:"live_err,omitempty"`
+	// EndedLive is an ended run's live blocks, each said by what it did while the run ran (inforce.EndedLiveRule: "Was
+	// blocked: cannot run curl" for a block the run put in force, "Never put in force: …" for one it did not, "Was
+	// marked (recorded, not refused): …" on a watched run), with who added it and the hits of the lines under its rule
+	// key in the run. They refuse nothing now, so they are not in View's live group, and a note in View.Notes counts
+	// them. Nil while the run has not ended.
+	EndedLive []inforce.Rule `json:"ended_live,omitempty"`
 	// Pending says the rules file changed after the run started, so the next run gets other rules, or that it loads
 	// to other rules with nothing to date the change (Pending.Differs). Nil when it still loads to the run's rules
 	// (changed and changed back too), or could not be compared and nothing dates a change.
@@ -143,6 +151,9 @@ func InForce(ctx context.Context, root, run string, o Options) *InForceView {
 	for kind, n := range sc.unmatched {
 		v.View.CountDefault(kind, n)
 	}
+	for i := range v.EndedLive { // in no group, so Count passed them by: each counts the refusals under its key
+		v.EndedLive[i].Hits = sc.rules[v.EndedLive[i].RuleKey]
+	}
 	v.Pending = pendingOf(root, v.Source, v.Started, src)
 	return v
 }
@@ -224,28 +235,28 @@ func relocate(v *inforce.View, place, copyPath string) {
 	}
 }
 
-// addLive lists the run's live blocks in the view while the run has not ended, each with its state now
-// (internal/check/livestatus): facts gives the run's live facts, called only when there is a block to say.
+// addLive lists the run's live blocks in the view's live group while the run has not ended, each with its state now
+// (internal/check/livestatus): facts gives the run's live facts, called only when there is a block to say. Once the
+// run has ended they refuse nothing: addEnded lists them in EndedLive instead. An overlay that cannot be read lists
+// nothing and says why in LiveErr.
 func (v *InForceView) addLive(dir, run string, facts func() ledgerview.LiveFacts) {
 	ov, err := liveblock.Read(dir, run)
 	if errors.Is(err, os.ErrNotExist) {
 		return
 	}
 	if err != nil {
-		v.LiveErr = err.Error()
+		v.LiveErr = LiveErrWords(err)
 		return
 	}
 	v.LiveBlocks = len(ov.Blocks)
-	if v.Ended {
-		if n := len(ov.Blocks); n > 0 {
-			v.View.Notes = append(v.View.Notes, fmt.Sprintf("The run has ended, so its %d live block(s) no longer refuse anything.", n))
-		}
-		return
-	}
 	if len(ov.Blocks) == 0 {
 		return
 	}
 	f := facts()
+	if v.Ended {
+		v.addEnded(ov, f)
+		return
+	}
 	// Each block's serial is its latest add's, or the overlay's when that add is no longer listed (runact.Live).
 	serial := make(map[string]uint64, len(ov.Blocks))
 	for _, c := range ov.Changes {
@@ -263,6 +274,90 @@ func (v *InForceView) addLive(dir, run string, facts func() ledgerview.LiveFacts
 		st := livestatus.StatusAt(string(e.Kind), f.Facts, s, f.Confirmed, time.Now(), e.From, e.Until)
 		v.View.AddLiveStatus(string(e.Kind), e.Value, e.By, st.State, st.Sentence)
 	}
+}
+
+// addEnded lists an ended run's live blocks (ov holds at least one) in EndedLive, apart from the live group, each
+// said by what it did while the run ran (inforce.EndedLiveRule): its state as livestatus.Status gives it on the run's
+// facts f with the run not ended, against the serial of the add that made it (madeAt). So a block the launcher put in
+// force reads "Was blocked", one it never did "Never put in force", and a watched run's mark "Was marked", whatever
+// any of them does now. The note counts them and says only what holds of every one now: blocks refuse nothing, marks
+// record nothing.
+func (v *InForceView) addEnded(ov *liveblock.Overlay, f ledgerview.LiveFacts) {
+	running := f.Facts
+	running.Ended = false
+	made := madeAt(ov)
+	for _, e := range ov.Blocks {
+		was := livestatus.Status(string(e.Kind), running, made[e.Key()], f.Confirmed)
+		v.EndedLive = append(v.EndedLive, inforce.EndedLiveRule(string(e.Kind), e.Value, e.By, was.State))
+	}
+	n := len(ov.Blocks)
+	var note string
+	switch {
+	case running.Observe && n == 1:
+		note = "The run has ended, so its live mark records nothing now."
+	case running.Observe:
+		note = fmt.Sprintf("The run has ended, so its %d live marks record nothing now.", n)
+	case n == 1:
+		note = "The run has ended, so its live block refuses nothing now."
+	default:
+		note = fmt.Sprintf("The run has ended, so its %d live blocks refuse nothing now.", n)
+	}
+	v.View.Notes = append(v.View.Notes, note)
+}
+
+// madeAt is the overlay serial of the add that made each block ov holds (by Entry.Key): the oldest add of it the
+// overlay lists since it was last removed for good (a remove with no time limit). The launcher stores every block of
+// the overlay it reads and then confirms each change it read, so a confirmed serial at or past this one means the run
+// put the block in force. A later add of a block it holds (a longer time limit, a block again after an unblock for a
+// while) does not undo that, though it gives the block a new serial (runact.Live's): a run that ended before
+// confirming that add still had the block in force. A block made before the oldest change the overlay lists (it keeps
+// the newest liveblock.MaxChanges) is judged by the first add it lists of it, or, with none, by the overlay's serial as
+// runact.Live judges it: a serial later than the one that made it can only say "never put in force" of a block that
+// was, never the reverse.
+func madeAt(ov *liveblock.Overlay) map[string]uint64 {
+	made := make(map[string]uint64, len(ov.Blocks))
+	for _, c := range ov.Changes { // oldest first
+		k := liveblock.Key(c.Kind, c.Value)
+		switch {
+		case c.Op == liveblock.OpAdd:
+			if _, ok := made[k]; !ok {
+				made[k] = c.Serial
+			}
+		case c.Op == liveblock.OpRemove && c.Until.IsZero():
+			delete(made, k) // removed for good: a later add makes another block
+		}
+	}
+	for _, e := range ov.Blocks {
+		if _, ok := made[e.Key()]; !ok {
+			made[e.Key()] = ov.Serial
+		}
+	}
+	return made
+}
+
+// LiveErrWords is why liveblock.Read (or runact.Live, which hands its error on) could not read a run's overlay, in
+// plain words that follow "The run's live blocks could not be read:": a file Tego does not trust says what is wrong
+// with it ("live-block.json is a symlink"), one that does not decode is damaged or a newer Tego's, one this user may
+// not read says so, and any other error is the system's own words without Go's prefixes or the run's folder. It is
+// the dashboard's one wording of an overlay it cannot read: the Rules page's LiveErr, the run page's Block now panel
+// and the fence's lift preview.
+func LiveErrWords(err error) string {
+	switch {
+	case errors.Is(err, liveblock.ErrUntrusted):
+		// liveblock names the file and what is wrong with it after its sentinel's words.
+		if why, ok := strings.CutPrefix(err.Error(), liveblock.ErrUntrusted.Error()+": "); ok && why != "" {
+			return why + ", so it is not trusted"
+		}
+		return liveblock.FileName + " is not trusted"
+	case errors.Is(err, liveblock.ErrInvalid):
+		return liveblock.FileName + " is damaged, or a newer Tego wrote it"
+	case errors.Is(err, fs.ErrPermission):
+		return "this user may not read " + liveblock.FileName
+	}
+	for u := errors.Unwrap(err); u != nil; u = errors.Unwrap(err) {
+		err = u // a path error's own words ("input/output error"), without the operation and the path
+	}
+	return err.Error()
 }
 
 // liveFacts is run's live facts from the read model's run when the caller handed it, else from a read of the run;

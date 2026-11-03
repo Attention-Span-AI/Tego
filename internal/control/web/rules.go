@@ -20,10 +20,11 @@ import (
 )
 
 // The Rules page (GET /rules[?run=<id>|?c=<ref>]): one run's Rules in force (rulesview.InForce), one table per group
-// in plain sentences, with each rule's hits in that run linking to Logs, the run's live blocks with Remove, a banner
-// when its rules file changed for the next run, and the raw contract and compile table behind a toggle. The chooser
-// picks a rules file a run of this ledger recorded (by an opaque ref, never a path) and one of its runs. The page
-// reads; Remove posts to /runs/<run>/unblock, and Change rules opens /rules/change (rules_change.go).
+// in plain sentences, with each rule's hits in that run linking to Logs, the run's live blocks with Remove (an ended
+// run's, which refuse nothing, under a collapsed row), a banner when its rules file changed for the next run, and the
+// raw contract and compile table behind a toggle. The chooser picks a rules file a run of this ledger recorded (by an
+// opaque ref, never a path) and one of its runs. The page reads; Remove posts to /runs/<run>/unblock, and Change rules
+// opens /rules/change (rules_change.go).
 //
 // The ref is the rule service's (rules.Ref, rules.ContractRef.Ref), worked out here from the path a run recorded, so
 // the page needs no service to name a file and Change rules is linked to with no hop. The runs and the run shown come
@@ -61,10 +62,11 @@ func (m refMemo) of(path string) string {
 	return ref
 }
 
-// contractOpt is one rules file in the chooser.
+// contractOpt is one rules file in the chooser; Gone marks one no longer at its path (rulesview.ContractRun).
 type contractOpt struct {
 	Ref, Path, Agent string
 	Runs, Live       int
+	Gone             bool
 }
 
 // runOpt is one run of the chosen rules file in the chooser.
@@ -132,6 +134,10 @@ type rulesData struct {
 	Running, Watch      bool
 	Groups              []ruleGroup
 	Live                *ruleGroup
+	// EndedLive is an ended run's live blocks, each said by what it did while the run ran (rulesview's EndedLive:
+	// blocked, marked on a watched run, or never put in force), listed under a collapsed row below the note that counts
+	// them; they refuse nothing now, so no live table holds them and none offers Remove.
+	EndedLive []ruleRow
 	// Text and Table are the run's copy and compile table with env.set values hidden; Hint the terminal twin.
 	Text, Table, Hint string
 	// CopyNote says why positions are the run copy's lines, "" when they are the rules file's.
@@ -304,7 +310,8 @@ func (s *Server) fillLiveMode(d *rulesData) {
 
 // chooserContracts is the chooser's rules files: those the runs named (ran, the newest run's file first), one per ref,
 // so a file two runs recorded through two spellings of its folder (one through a link) is one entry, under its newest
-// run's spelling, counting the runs of both; then those the rule service set up here that no run ran yet.
+// run's spelling, counting the runs of both, and gone when nothing is at that spelling now (both reach one file when
+// they share a ref); then those the rule service set up here that no run ran yet.
 func (s *Server) chooserContracts(ran []rulesview.ContractRun, refs refMemo) []contractOpt {
 	var out []contractOpt
 	at := map[string]int{}
@@ -316,7 +323,7 @@ func (s *Server) chooserContracts(ran []rulesview.ContractRun, refs refMemo) []c
 			continue
 		}
 		at[ref] = len(out)
-		out = append(out, contractOpt{Ref: ref, Path: c.Path, Agent: c.Agent, Runs: c.Runs, Live: c.Live})
+		out = append(out, contractOpt{Ref: ref, Path: c.Path, Agent: c.Agent, Runs: c.Runs, Live: c.Live, Gone: c.Gone})
 	}
 	for _, c := range s.notRunContracts() {
 		if _, ok := at[c.Ref]; !ok { // its first run is in the snapshot already
@@ -426,6 +433,11 @@ func (s *Server) fillRules(d *rulesData) {
 			continue
 		}
 		d.Groups = append(d.Groups, rg)
+	}
+	for _, rl := range v.EndedLive {
+		row := ruleRow{Sentence: rl.Sentence, Hits: rl.Hits, HitsURL: logs(rl.RuleKey)}
+		row.Source, row.SourceTitle = sourceWords(rl.Source.File, rl.Source.Line, rl.Source.Origin, v)
+		d.EndedLive = append(d.EndedLive, row)
 	}
 	d.Text, d.Table = v.Contract.Shown()
 	if v.Source != "" {

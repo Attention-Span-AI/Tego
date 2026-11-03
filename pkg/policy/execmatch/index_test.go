@@ -118,6 +118,31 @@ func TestStagedFinal(t *testing.T) {
 	if r := prefix("python3", "-u"); r.Final {
 		t.Errorf("an interpreter whose script is not read yet is not final: %+v", r)
 	}
+	// A prefix that ends at node's -p, or at -e before its code, has not read whether code follows: node runs the script
+	// after `-p --title t`, so the decision waits for the rest of argv.
+	for _, argv := range [][]string{{"node", "-p"}, {"node", "--no-print"}, {"node", "--print=v"}, {"node", "-e"}} {
+		if r := prefix(argv...); r.Final {
+			t.Errorf("%v as a prefix: settled, want the rest of argv read: %+v", argv, r)
+		}
+	}
+	// Nor does code settle node before its script is read: node reads -i after the code, and then runs the script.
+	if r := prefix("node", "-p", "code"); r.Final {
+		t.Errorf("node -p code as a prefix: settled, want the rest of argv read (node -p code -i app.js runs app.js): %+v", r)
+	}
+	if r := prefix("node", "-e", "code", "app.js"); !r.Final {
+		t.Errorf("node reads no option past its script: node -e code app.js as a prefix is settled: %+v", r)
+	}
+	// Ending at --trace-events-enabled=v, node's options have ended and the script is the next token, whatever it is.
+	if r := prefix("node", "--trace-events-enabled=v"); r.Final {
+		t.Errorf("node --trace-events-enabled=v as a prefix: settled, want the script read: %+v", r)
+	}
+	// --build-snapshot-config makes node run a builder its file names: refused on any prefix that holds it.
+	if r := prefix("node", "--build_snapshot_config"); !r.Final || r.Outcome != execmatch.OutcomeRefused || r.Rule() != execmatch.RuleCommandUnresolved {
+		t.Errorf("node --build_snapshot_config as a prefix: %+v, want refused %s", r, execmatch.RuleCommandUnresolved)
+	}
+	if r := prefix("python3", "-c", "code"); !r.Final {
+		t.Errorf("python's -c ends its options: python3 -c code as a prefix is settled: %+v", r)
+	}
 }
 
 // TestGuarded: names alone tell whether an exec needs argv past argv[0].

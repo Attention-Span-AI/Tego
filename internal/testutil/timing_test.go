@@ -42,26 +42,77 @@ func (r *judgeTB) logged(sub string) bool {
 	return false
 }
 
-// TestTimingModeReadsItsSwitch: unset or empty is the unit gate, "1" budget mode, and anything else fails the test
-// rather than holding only the ceilings in a run that meant to assert the budgets.
+// TestTimingModeReadsItsSwitch: unset or empty is the unit gate, "1" budget mode, "hosted" budget mode on a hosted CI
+// runner, and anything else fails the test rather than holding only the ceilings in a run that meant to assert the
+// budgets.
 func TestTimingModeReadsItsSwitch(t *testing.T) {
 	for _, c := range []struct {
-		value   string
-		budgets bool
-		fatal   bool
+		value           string
+		budgets, hosted bool
+		fatal           bool
 	}{
-		{"", false, false},
-		{"1", true, false},
-		{"true", false, true},
-		{"0", false, true},
-		{"yes", false, true},
+		{"", false, false, false},
+		{"1", true, false, false},
+		{"hosted", true, true, false},
+		{"true", false, false, true},
+		{"0", false, false, true},
+		{"yes", false, false, true},
+		{"Hosted", false, false, true},
 	} {
 		t.Setenv(BudgetsEnv, c.value)
 		r := &judgeTB{TB: t}
 		m := TimingMode(r)
-		if m.Budgets() != c.budgets || (len(r.fatals) > 0) != c.fatal {
-			t.Errorf("%s=%q: budgets %v, fatal %q; want budgets %v, fatal %v", BudgetsEnv, c.value, m.Budgets(), r.fatals,
-				c.budgets, c.fatal)
+		if m.Budgets() != c.budgets || m.hosted != c.hosted || (len(r.fatals) > 0) != c.fatal {
+			t.Errorf("%s=%q: budgets %v, hosted %v, fatal %q; want budgets %v, hosted %v, fatal %v", BudgetsEnv, c.value,
+				m.Budgets(), m.hosted, r.fatals, c.budgets, c.hosted, c.fatal)
+		}
+	}
+}
+
+// TestJudgeHoldsASystemCallBudgetToItsFactorOnAHostedRunner: on a hosted CI runner a SystemCalls budget is held to
+// HostedSystemCallFactor times its Target and Limit, and its log line, TARGET-MISS line and failure say so, each
+// beside the reference figure; any other budget there, and every budget on the reference box, is held as written.
+func TestJudgeHoldsASystemCallBudgetToItsFactorOnAHostedRunner(t *testing.T) {
+	calls := Budget{Name: "case", Target: 6 * time.Microsecond, Limit: 12 * time.Microsecond, Spec: "ADR 0048 C8",
+		Added: true, SystemCalls: true}
+	work := calls
+	work.SystemCalls = false
+	hosted, reference := Mode{budgets: true, hosted: true}, Mode{budgets: true}
+	for _, c := range []struct {
+		m          Mode
+		b          Budget
+		d          time.Duration
+		miss, fail bool
+	}{
+		{hosted, calls, 12 * time.Microsecond, false, false},
+		{hosted, calls, 12*time.Microsecond + 1, true, false},
+		{hosted, calls, 24 * time.Microsecond, true, false},
+		{hosted, calls, 24*time.Microsecond + 1, true, true},
+		{hosted, work, 12*time.Microsecond + 1, true, true},
+		{reference, calls, 6*time.Microsecond + 1, true, false},
+		{reference, calls, 12*time.Microsecond + 1, true, true},
+	} {
+		r := &judgeTB{TB: t}
+		c.m.Judge(r, c.b, Figure{Wall: c.d})
+		if r.logged("TARGET-MISS: case +") != c.miss || (len(r.errs) > 0) != c.fail || len(r.fatals) > 0 {
+			t.Errorf("hosted %v, system calls %v, %v: logs %q errors %q fatals %q; want TARGET-MISS %v, failure %v",
+				c.m.hosted, c.b.SystemCalls, c.d, r.logs, r.errs, r.fatals, c.miss, c.fail)
+		}
+		scaled := c.m.hosted && c.b.SystemCalls
+		if said := r.logged("limit +24µs, 2 times the reference box's +12µs for system calls on a hosted runner; " +
+			"ADR 0048 C8, budget mode)"); said != scaled {
+			t.Errorf("hosted %v, system calls %v: logs %q; want the scaled limit named %v", c.m.hosted, c.b.SystemCalls,
+				r.logs, scaled)
+		}
+		if c.fail && scaled && !strings.Contains(r.errs[0], "over the +24µs limit, 2 times the reference box's +12µs") {
+			t.Errorf("a hosted failure %q does not name the scaled limit", r.errs[0])
+		}
+		// A TARGET-MISS against a scaled Target names the reference Target it stands for, and one against a Target
+		// as written names none.
+		if said := r.logged("> +12µs, 2 times the reference box's +6µs for system calls on a hosted runner (ADR 0048 " +
+			"C8)"); said != (c.miss && scaled) {
+			t.Errorf("hosted %v, system calls %v, %v: logs %q; want the TARGET-MISS line to name the scaled target %v",
+				c.m.hosted, c.b.SystemCalls, c.d, r.logs, c.miss && scaled)
 		}
 	}
 }

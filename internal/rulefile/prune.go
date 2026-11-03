@@ -38,13 +38,26 @@ const pruneLock = "prune.lock"
 // the user's.
 var ErrOtherOwner = errors.New("rulefile: the rule-change journal is another user's")
 
-// lookWait bounds how long a Prune waits for the contracts' files to be looked at (there): a file on a stale mount,
-// whose lstat never returns, counts as there once it is spent, so its lines stay and the pass goes on. A variable so
-// a test can spend it.
+// ErrNotLooked is a Prune that went on without knowing whether some contracts' files are there: a look did not answer
+// within its wait (a stale NFS or FUSE mount), or no looker could take its caller's credentials. Such a file counts as
+// there, so its lines stay; the rest of the journal is pruned, the Pruned returned with the error counts what went,
+// and the error names the files.
+var ErrNotLooked = errors.New("rulefile: some rules files were not looked at")
+
+// lookWait bounds how long a Prune waits for the contracts' files to be looked at (there), and so does half of what is
+// left before its context's deadline: a file on a stale mount, whose lstat never returns, counts as there once the wait
+// is spent (ErrNotLooked), so its lines stay and the prune goes on in what is left. A variable so a test can spend it.
 var lookWait = 3 * time.Second
+
+// lookers is how many contracts' files a Prune looks at at once: a file on a stale mount holds one looker for good,
+// and the others go on with the rest.
+const lookers = 4
 
 // lstat is os.Lstat; a test replaces it to play a file that never answers.
 var lstat = os.Lstat
+
+// runAs is sys.RunAs, which each looker runs under; a test replaces it to see the credentials a look asks for.
+var runAs = sys.RunAs
 
 // PruneOptions are a Prune's.
 type PruneOptions struct {
@@ -90,24 +103,28 @@ type Pruned struct {
 // journal under journal.lock through a new file renamed over it; only then do the files in blobs/ that no line left
 // names go, once their modification time is before o.Before, and the lock files of contracts with no line left, each
 // removed while Prune holds its flock, so one a write holds stays (flock). The runs are listed and the contracts' files
-// looked at before any lock is taken, the looks waited for at most lookWait. A journal holding a line this tego does
-// not read, or two lines of one id, is left whole, and so is one another user owns (ErrOtherOwner). No journal is
-// nothing to do.
+// looked at before any lock is taken: as the thread that called Prune, a few at once, waited for at most lookWait and
+// at most half of what is left before ctx's deadline (lookThere). A file whose look did not answer counts as there,
+// and Prune, having pruned the rest, says which (ErrNotLooked). A journal holding a line this tego does not read, or
+// two lines of one id, is left whole, and so is one another user owns (ErrOtherOwner). No journal is nothing to do.
+//
+// Everything Prune touches it touches with the credentials of the thread that called it, so a root pass that runs it
+// on a thread holding the user's (sys.RunAs) does there only what that user could.
 func Prune(ctx context.Context, root string, o PruneOptions) (Pruned, error) {
 	var p Pruned
-	if err := ctx.Err(); err != nil {
-		return p, err
-	}
 	j, err := openJournalRead(root)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		return p, nil
+		return p, nil // whatever is left of ctx: a pass whose budget ran out has no journal to say it left unpruned
 	case errors.Is(err, ErrGuard) && otherOwner(root):
 		return p, fmt.Errorf("%w: %v", ErrOtherOwner, err)
 	case err != nil:
 		return p, err
 	}
 	defer j.close()
+	if err := ctx.Err(); err != nil {
+		return p, err
+	}
 	runs, oldest, err := j.runsIn(ctx, o.Gone)
 	if err != nil {
 		return p, err
@@ -122,10 +139,10 @@ func Prune(ctx context.Context, root string, o PruneOptions) (Pruned, error) {
 	if err != nil {
 		return p, err
 	}
-	seen := lookThere(ctx, losing(pre, r))
+	seen, unknown, why := lookThere(ctx, losing(pre, r))
 	r.there = func(c string) bool { t, ok := seen[c]; return !ok || t }
 	if err := ctx.Err(); err != nil {
-		return p, err // the pass's budget went on looking: the next pass prunes
+		return p, err // the pass's budget ran out while the files were looked at: the next pass prunes
 	}
 	if !o.DryRun {
 		unlock, err := j.flock(ctx, pruneLock, unix.LOCK_EX,
@@ -145,7 +162,23 @@ func Prune(ctx context.Context, root string, o PruneOptions) (Pruned, error) {
 	if err == nil {
 		err = j.pruneLocks(o, kept, &p)
 	}
+	if err == nil && len(unknown) > 0 {
+		err = notLooked(unknown, why)
+	}
 	return p, err
+}
+
+// notLooked is the ErrNotLooked of the contracts in unknown, which why kept from being looked at.
+func notLooked(unknown []string, why error) error {
+	const named = 3
+	list := strings.Join(unknown[:min(len(unknown), named)], ", ")
+	if len(unknown) > named {
+		list += fmt.Sprintf(" and %d more", len(unknown)-named)
+	}
+	if why == nil {
+		why = errors.New("no answer")
+	}
+	return fmt.Errorf("%w (%w): %s; their lines stay, and the next pass looks again", ErrNotLooked, why, list)
 }
 
 // pruneLines rewrites the journal without the lines that go, under journal.lock, and returns the blobs the lines left
@@ -426,48 +459,90 @@ func losing(ls []jline, r keepRule) []string {
 	return cs
 }
 
-// lookThere is, for each of cs, whether the contract's file is there (there). The files are looked at off the
-// caller's goroutine, waited for at most lookWait or until ctx ends: a stale hard NFS or FUSE mount never answers an
-// lstat, and a run's start must not wait on one. A contract the wait did not reach is not in the map, which counts as
-// there. The goroutine stops at the next file once the wait is over; one stuck in an lstat ends when it returns.
-func lookThere(ctx context.Context, cs []string) map[string]bool {
-	out := make(map[string]bool, len(cs))
+// lookThere is, for each of cs, whether the contract's file is there (there), and the contracts it could not tell,
+// which count as there, with why. A stale hard NFS or FUSE mount never answers an lstat, and a run's start must not
+// wait on one, so the files are looked at off the caller's goroutine and waited for at most lookWait, and at most half
+// of what is left before ctx's deadline: a run start's pass (2 s) then leaves the prune itself the other half, where a
+// wait as long as the pass spent it whole and no pass ever pruned. Up to lookers files are looked at at once, so one on
+// a stale mount holds up its own looker and no other file. A looker stops at its next file once the wait is over; one
+// stuck in an lstat ends when it returns.
+//
+// Each looker looks with the credentials of the thread lookThere was called on (sys.ThreadCreds), on a thread that
+// takes them (runAs): a goroutine runs on whatever thread of the process is free, which under a root pass's sys.RunAs
+// is one of root's with every capability. Looking as root, the prune of a user's journal saw files that user cannot
+// (and pruned on what it saw), and lstat'ed, with root's authority, whatever paths the user's journal names.
+func lookThere(ctx context.Context, cs []string) (map[string]bool, []string, error) {
+	seen := make(map[string]bool, len(cs))
 	if len(cs) == 0 {
-		return out
+		return seen, nil, nil
 	}
+	as, err := sys.ThreadCreds()
+	if err != nil {
+		return seen, cs, err
+	}
+	wait := lookWait
+	if d, ok := ctx.Deadline(); ok {
+		wait = min(wait, time.Until(d)/2)
+	}
+	todo := make(chan string, len(cs))
+	for _, c := range cs {
+		todo <- c
+	}
+	close(todo)
 	type look struct {
 		contract string
 		there    bool
 	}
-	looks := make(chan look, len(cs)) // never full: the goroutine sends once per contract
+	looks := make(chan look, len(cs)) // never full: one send per contract
+	n := min(lookers, len(cs))
+	ended := make(chan error, n) // never full: one send per looker
 	stop := make(chan struct{})
 	defer close(stop)
-	go func() {
-		defer close(looks)
-		for _, c := range cs {
-			select {
-			case <-stop:
-				return
-			default:
-			}
-			looks <- look{c, there(c)}
-		}
-	}()
-	wait := time.NewTimer(lookWait)
-	defer wait.Stop()
-	for {
+	for range n {
+		go func() {
+			ended <- runAs(as, func() {
+				for c := range todo {
+					select {
+					case <-stop:
+						return
+					default:
+					}
+					looks <- look{c, there(c)}
+				}
+			})
+		}()
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	var why error
+looking:
+	for done := 0; done < n; {
 		select {
-		case l, ok := <-looks:
-			if !ok {
-				return out
+		case l := <-looks:
+			seen[l.contract] = l.there
+		case e := <-ended:
+			done++
+			if e != nil {
+				why = e
 			}
-			out[l.contract] = l.there
-		case <-wait.C:
-			return out
+		case <-timer.C:
+			why = fmt.Errorf("no answer within %s", wait.Round(time.Millisecond))
+			break looking
 		case <-ctx.Done():
-			return out
+			return seen, nil, ctx.Err()
 		}
 	}
+	for len(looks) > 0 { // what an ended looker sent before it ended
+		l := <-looks
+		seen[l.contract] = l.there
+	}
+	var unknown []string
+	for _, c := range cs {
+		if _, ok := seen[c]; !ok {
+			unknown = append(unknown, c)
+		}
+	}
+	return seen, unknown, why
 }
 
 // isWrite is whether op is a line that wrote a contract: a change, a revert or a creation.

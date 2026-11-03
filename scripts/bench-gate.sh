@@ -49,7 +49,7 @@ set -euo pipefail
 default_packages='
 internal/policy/decide               ^BenchmarkIndexedEvaluator$
 internal/runtime/enforce/cgroup      ^Benchmark(PolicyDecide|DecideOpenByEntryCount|DecideEventOffTheRun|ListenerHandle|SlotAcquireRelease|BuildRuleMaps)
-internal/runtime/supervisor          ^Benchmark(NotificationRoundTrip|ParseSockaddr|NearestFS|SendMMsgTail|SeccompNotifyRoundTrip)$  integration
+internal/runtime/supervisor          ^Benchmark(NotificationRoundTrip|ParseSockaddr|NearestFS|SendMMsgTail|SeccompNotifyRoundTrip|ExecCommandCost)$  integration
 internal/runtime                     ^Benchmark(PipelineEvent|QueueEmit|SweepLiveNRuns)$
 internal/runtime/derive              ^BenchmarkSteps
 internal/runtime/capture/httpstream  ^Benchmark(Feed|FeedExchange|Chunked|Feed1ByteChunks)$

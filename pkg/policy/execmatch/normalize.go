@@ -13,7 +13,8 @@ const MaxReadings = 16
 type Hit struct {
 	// Opt is the row's option, nil for one the row does not list.
 	Opt *Opt
-	// Raw is the spelling as written, without its value: "--forc", "-x", "--newopt".
+	// Raw is the spelling as written, without its value: "--forc", "-x", "--newopt". On a level whose Syntax reads
+	// Underscores it is the spelling the tool reads, `_` as `-` ("--build-snapshot" for --build_snapshot).
 	Raw string
 	// Value is the option's value when HasValue.
 	Value    string
@@ -295,6 +296,11 @@ func (nz *Normalizer) long(s *parseState, toks []string, body string) (parseStat
 	if lv == nil {
 		lv = &Level{}
 	}
+	if lv.Syntax.Underscores && strings.Contains(name, "_") {
+		// node reads the name with `_` as `-` before it looks for the option or its negation (Syntax.Underscores).
+		name = strings.ReplaceAll(name, "_", "-")
+		raw = raw[:len(raw)-len(name)] + name
+	}
 	o := lv.long(name)
 	neg := false
 	if o == nil && lv.Syntax.Negatable && strings.HasPrefix(name, "no-") {
@@ -328,6 +334,11 @@ func (nz *Normalizer) long(s *parseState, toks []string, body string) (parseStat
 	}
 	s.i++
 	h := Hit{Opt: o, Raw: raw, Value: value, HasValue: hasEq, Neg: neg, Depth: s.depth}
+	if o.Arg == ArgNextWord {
+		// Neither an attached value nor the negation settles it: only the next token does (ArgNextWord).
+		h.Value, h.HasValue = "", false
+		return nz.separate(s, toks, h)
+	}
 	if hasEq || neg || o.Arg == ArgRequired && !(lv.Syntax.LongSep || o.SepOnly || lv.Syntax.SingleDashLong) {
 		nz.hit(s, h)
 		return parseState{}, false
@@ -374,6 +385,20 @@ func (nz *Normalizer) separate(s *parseState, toks []string, h Hit) (parseState,
 			h.Value, h.HasValue = next, true
 			s.i++
 		}
+	case ArgNextWord:
+		if has && next != "" && next[0] != '-' {
+			h.Value, h.HasValue = next, true
+			s.i++
+			if o.WordTo == "" {
+				break
+			}
+			if to := s.lv.long(o.WordTo); to != nil {
+				// The word is the WordTo option's value as well: node's -p x is --print --eval x.
+				nz.hit(s, h)
+				nz.hit(s, Hit{Opt: to, Raw: h.Raw, Value: next, HasValue: true, Depth: s.depth})
+				return parseState{}, false
+			}
+		}
 	case ArgOptional:
 	}
 	nz.hit(s, h)
@@ -398,7 +423,7 @@ func (nz *Normalizer) short(s *parseState, toks []string, tok string) (parseStat
 	}
 	if !lv.Syntax.Clusters && len(tok) > 2 {
 		// A level that does not cluster reads -abc as one option it does not list, unless -a takes an attached value.
-		if o := lv.shortOpt(tok[1]); o != nil && o.Arg != ArgNone && !o.SepOnly && (lv.Syntax.ShortAttach || o.Arg == ArgOptional || lv.Syntax.ShortEquals && tok[2] == '=') {
+		if o := lv.shortOpt(tok[1]); o != nil && o.Arg != ArgNone && o.Arg != ArgNextWord && !o.SepOnly && (lv.Syntax.ShortAttach || o.Arg == ArgOptional || lv.Syntax.ShortEquals && tok[2] == '=') {
 			v := tok[2:]
 			if lv.Syntax.ShortEquals && v[0] == '=' {
 				v = v[1:]
@@ -425,7 +450,9 @@ func (nz *Normalizer) short(s *parseState, toks []string, tok string) (parseStat
 			// reading where they are this option's value moves no subcommand.
 			continue
 		}
-		if o.Arg == ArgNone {
+		if o.Arg == ArgNone || o.Arg == ArgNextWord {
+			// An ArgNextWord letter takes no attached value: letters after it are options, and a word after the
+			// cluster is its value.
 			if j == len(tok)-1 {
 				return nz.separate(s, toks, Hit{Opt: o, Raw: string([]byte{tok[0], c}), Depth: s.depth})
 			}
@@ -483,6 +510,9 @@ func (nz *Normalizer) hit(s *parseState, h Hit) {
 		}
 	}
 	s.r.Hits = append(s.r.Hits, h)
+	if o.ends(h.HasValue, h.Value) {
+		s.afterDD = true
+	}
 	if o.Stop {
 		s.opsOnly = true
 		if s.depth == 0 {

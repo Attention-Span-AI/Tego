@@ -4,6 +4,7 @@ package cgroup
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,6 +35,16 @@ import (
 // namespace does not list a lock whose holder it cannot see (fs/locks.c locks_show), which its readers take as no
 // holder: a re-arm pass there starts a timer beside a live one, which exits on its timer lock, and a build a launcher
 // holds gets a timer that waits for it. Nothing is removed on that reading: a removal takes the build lock itself.
+//
+// The table is read in pieces, and a piece can leave out a lock held all along (note 2026-11-02). /proc/locks is a
+// seq_file over the host's list of locks, which every flock(2) changes: each read(2) prints lines from one consistent
+// view of the list, at most a page of them (the seq_file buffer, 4 KiB on amd64), then lets the list go
+// (fs/locks.c locks_start and locks_stop around fs/seq_file.c seq_read_iter), and the next read(2) goes on at the
+// next line's position in the list as it then stands. Locks let go between two reads ahead of that position move
+// every line after them up, so the lines that were next are never printed, whoever holds them. So the table is read
+// a page a time (procLocksTable), which leaves no seam at all in a table of up to a page, and a pass that finds no
+// holder of a file in one read looks again in a second read whose seams fall half a page from the first's
+// (lockHolders); a lock is shown held when either read lists it.
 
 // procLock is one flock(2) lock the table lists as held, not waited for.
 type procLock struct {
@@ -47,24 +58,89 @@ type procLock struct {
 // on, and it is answered as unknown (procLocksTable's error) rather than read without end.
 const procLocksLimit = 16 << 20
 
-// procLocksTable reads /proc/locks (SweepOptions.lockTable stands in for it in a test).
-func procLocksTable() ([]byte, error) { return readLimited("/proc/locks", procLocksLimit) }
-
-// readLimited reads path whole, failing on one longer than limit.
-func readLimited(path string, limit int64) ([]byte, error) {
-	f, err := os.Open(path)
+// procLocksTable reads /proc/locks once, a page or more a read(2), so that each read prints a whole page from one
+// view of the list; first, when it is not 0, is how many bytes the first read asks for, which moves every seam of the
+// read by as much (lockHolders' second read). SweepOptions.lockTable stands in for it in a test.
+func procLocksTable(first int) ([]byte, error) {
+	f, err := os.Open("/proc/locks")
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
-	b, err := io.ReadAll(io.LimitReader(f, limit+1))
+	b, err := readTable(f, first, procLocksLimit)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("read %s: longer than %d bytes", path, limit)
+		return nil, fmt.Errorf("read /proc/locks: %w", err)
 	}
 	return b, nil
+}
+
+// readTable reads r to its end: a first read of first bytes when first is positive, then reads of at least two
+// pages (tableReadSize), so that what ends each of those is the kernel's page, never the buffer. It fails on a table
+// longer than limit.
+func readTable(r io.Reader, first, limit int) ([]byte, error) {
+	buf := make([]byte, tableReadSize())
+	var out []byte
+	for want := first; ; want = len(buf) {
+		if want <= 0 || want > len(buf) {
+			want = len(buf)
+		}
+		n, err := r.Read(buf[:want])
+		out = append(out, buf[:n]...)
+		if len(out) > limit {
+			return nil, fmt.Errorf("longer than %d bytes", limit)
+		}
+		if errors.Is(err, io.EOF) || (n == 0 && err == nil) {
+			return out, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+}
+
+// tableReadSize is the size of procLocksTable's reads after the first: 64 KiB, or two pages where a page is larger.
+func tableReadSize() int { return max(64<<10, 2*os.Getpagesize()) }
+
+// lockHolders is a re-arm pass's reading of the kernel's lock table, read only when a build's timer file shows no
+// live timer, at most twice. The first read is procLocksTable's whole pages. A file it shows no holder of is looked
+// up again in a second read whose first read(2) asks for half a page, so every seam of that read falls half a page
+// of lines from the first read's: a lock left out at a seam of the first lies well inside a page of the second, and
+// is missed by both only if half a page of the locks listed before it came or went between the two. A file either
+// read lists is held: it was, at a moment of the pass, and its holder is a launcher, which starts the build's timer
+// when it leaves (its reaper, if it dies), or a timer. A table the first read cannot read shows no holder, and is
+// not read again.
+type lockHolders struct {
+	read  func(first int) ([]byte, error)
+	locks []procLock
+	reads int
+	err   error
+}
+
+// held reports whether a read of the table lists a held flock lock on the file st describes, a write one only when
+// write is set (heldOn).
+func (l *lockHolders) held(st unix.Stat_t, write bool) bool {
+	if l.reads == 0 {
+		l.add(0)
+	}
+	if heldOn(l.locks, st, write) {
+		return true
+	}
+	if l.reads == 1 && l.err == nil {
+		l.add(os.Getpagesize() / 2)
+		return heldOn(l.locks, st, write)
+	}
+	return false
+}
+
+// add reads the table once more, its first read(2) asking for first bytes, and keeps the locks it lists beside the
+// ones read before.
+func (l *lockHolders) add(first int) {
+	b, err := l.read(first)
+	l.reads++
+	if l.reads == 1 {
+		l.err = err
+	}
+	l.locks = append(l.locks, parseProcLocks(b)...)
 }
 
 // parseProcLocks returns the flock locks a /proc/locks table lists as held. A line of any other kind (POSIX, OFD,
