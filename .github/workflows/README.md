@@ -26,7 +26,7 @@ cancelled.
 | `coverage` | Per-package coverage, uploaded as an artifact (report only) |
 | `deadcode-report` | Every function the shipped binaries cannot reach is classified in `tools/deadcode-allow.txt`; an unclassified one or a stale entry fails the job |
 
-**`root-suites` runs on pushes to `main` only, not on pull requests.** It runs on every pull request, a fork's included,
+**`root-suites` runs on every pull request**, a fork's included,
 and on a push to `main`, and the main ruleset requires it, so a change is merged only after the privileged suites
 pass. It runs the change's code as root, as `bpf-load` and `build-test-arm64` do: a pull request runs its own copy of
 these files, and a fork's code is held by the runner, a fresh VM with no secrets and a read-only token, and by

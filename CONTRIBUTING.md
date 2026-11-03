@@ -68,7 +68,7 @@ runs in. A plain `make gen` in your checkout makes different bytes, and CI's `bp
 - Anything that needs root or a specific kernel goes under `test/integration` or `test/e2e` with a build tag, never in
   unit tests.
 - The privileged suites run in a KVM guest: `make vm-root-test` (see `test/vm/README.md`). They need `/dev/kvm`. CI runs
-  them on pushes to `main`.
+  them as root on its runner, on every pull request and on pushes to `main`.
 - Use `go test -count=1`. A cached result can hide a change that only a subprocess test notices.
 - Tests must not touch your real `~/.tego` or `~/.config/tego`. Point them at a temporary directory.
 
@@ -95,3 +95,23 @@ git config core.hooksPath .githooks
 ```
 
 `git commit --no-verify` skips the hook for a work-in-progress commit.
+
+## After you open a pull request
+
+CI runs two workflows on it: `ci.yml`, whose jobs are `build-test`, `build-test-arm64`, `scripts-and-workflows`, `bpf-gen`,
+`bpf-load`, `bench-gate`, `root-suites`, `race`, `reproducible`, `coverage` and `deadcode-report`, and `container.yml`.
+[`.github/workflows/README.md`](.github/workflows/README.md) says what each job checks.
+
+- `root-suites` runs the privileged test suites as root on the runner. It runs on every pull request and takes about two
+  hours, so it is usually the last check to finish.
+- GitHub runs no workflow on a pull request from a fork until a maintainer approves the run, a safeguard for public
+  repositories. This repository asks for that approval on every pull request from outside the project, not only on a
+  first one, so a wait before the checks start is normal.
+- A job that fails on something your change did not touch, such as a network fetch or a timing budget on a busy runner,
+  can be re-run. Say so in the pull request and name the job, and a maintainer re-runs it.
+
+How your change lands: this repository is published from a source repository by an export, so a pull request is not
+merged here. Once it is approved, a maintainer ports your change into the source repository with you as its author, and
+the next export publishes it in a commit that credits you (a `Co-authored-by` line) and names your pull request. The
+pull request then shows as closed rather than merged, with a link to that commit. If the port has to differ from your
+patch, the maintainer says why in the pull request.
