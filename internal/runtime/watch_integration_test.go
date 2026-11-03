@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -88,8 +89,10 @@ record: summary
 			ops = append(ops, p.Op)
 		}
 	}
-	if len(ops) < 2 || ops[0] != "inotify_add_watch" || ops[1] != "fcntl" {
-		t.Errorf("refused watch lines %q, want the inotify watch's first, then the dnotify watch's (and the fanotify "+
-			"mark's, where the kernel offers one)", ops)
+	// Each line's target, rule and reason are checked above; which of the watch lines the ledger holds first is not a
+	// promise (under -race the dnotify line has landed after the fanotify mark's), so only their presence is.
+	if !slices.Contains(ops, "inotify_add_watch") || !slices.Contains(ops, "fcntl") {
+		t.Errorf("refused watch lines %q, want the inotify watch's and the dnotify watch's (and the fanotify mark's, "+
+			"where the kernel offers one)", ops)
 	}
 }
