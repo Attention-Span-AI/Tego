@@ -81,3 +81,9 @@ internal/control/web TestLogsWarmBudget # opt-in: measures only a demo-shaped le
 internal/control/web TestTwinJSWritesOnlyChanges # runs static/twin.js under node; skips where node is not installed
 internal/control/web TestTwinJSQuotesAsGo # runs static/twin.js under node; skips where node is not installed
 internal/control/web TestTwinJSWritesWhatTheFormDoes # runs static/twin.js under node; skips where node is not installed
+
+# The node row's differential tests run node itself and need the version the row reads (v20.19.4).
+pkg/policy/execmatch/rows TestNodeRowCodeDifferential # compares the node row with node v20.19.4's own reading of each line; skips where node on PATH is another version (ubuntu-24.04 runners ship node 22)
+pkg/policy/execmatch/rows TestNodeRowSpellingsDifferential # compares the node row with node v20.19.4's own reading of each line; skips where node on PATH is another version (ubuntu-24.04 runners ship node 22)
+pkg/policy/execmatch/rows TestNodeRowModulesDifferential # compares the node row with node v20.19.4's own reading of each line; skips where node on PATH is another version (ubuntu-24.04 runners ship node 22)
+pkg/policy/execmatch/rows TestNodeRowGeneratedDifferential # compares the node row with node v20.19.4's own reading of each line; skips where node on PATH is another version (ubuntu-24.04 runners ship node 22)

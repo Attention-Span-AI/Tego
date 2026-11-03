@@ -95,6 +95,8 @@ internal/cli TestIntegrationInitPresetInsideARun # tego init --preset as the age
 internal/runtime/enforce/cgroup TestPinsRemoveKeepsTheBuildUnderAPlaneItCannotRemove # root bypasses directory write mode bits, so the stuck-plane removal refusal cannot be staged; the unprivileged unit and integration suites exercise it
 internal/runtime/enforce/cgroup TestUnpinKeepsTheBuildUnderAPlaneItCannotRemove # root bypasses directory write mode bits, so the stuck-plane unpin refusal cannot be staged; the unprivileged unit and integration suites exercise it
 internal/cli TestInitReadOnlyParent # root bypasses directory write permission, which this test relies on
+internal/cli TestCompileOfAContractItMayNotOpenIsAnIOFailure # root opens a file of mode 000, so the unreadable contract cannot be staged
+internal/runtime/enforce/landlock TestPrepareSaysAWriteEntryItCouldNotCreate # root bypasses directory write permission, which this test relies on
 internal/cli TestStatusEACCESIsNotAnEmptyReport # root reads every directory; EACCES cannot be provoked
 internal/cli TestRunRestoresTheConfigLayerBeforeReadingIt # a root launcher reads the config through any mode and restores none (TestRestoreOwnStateLeavesWhatIsNotTheLaunchers holds it to that); the unprivileged unit run covers it
 internal/cli TestRunLeavesALayerOthersCouldWriteToTheTrustCheck # a root launcher restores no mode, so there is no owner's bit to give back; the unprivileged unit run covers it

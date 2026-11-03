@@ -380,3 +380,9 @@ internal/runtime TestRootRetrieverRunTiesActionsToReplies # needs root: a root l
 internal/runtime/enforce/cgroup TestPlaneNameRowsFillAndClear # needs root: a decision-plane slot's name map filled by Prepare and cleared by Detach and the reaper (CAP_BPF)
 internal/runtime/enforce/cgroup TestPlaneNameMapAdoption # needs root: a pinned plane whose name map pin is removed is not adopted (CAP_BPF)
 internal/runtime/enforce/cgroup TestCompactedTableStaysAtBPFLSM # needs root: an auto run at tier bpflsm of a table the plane holds only by compaction (CAP_BPF, a cgroup)
+
+# The node row's differential tests run node itself and need the version the row reads (v20.19.4).
+pkg/policy/execmatch/rows TestNodeRowCodeDifferential # compares the node row with node v20.19.4's own reading of each line; skips where node on PATH is another version (ubuntu-24.04 runners ship node 22)
+pkg/policy/execmatch/rows TestNodeRowSpellingsDifferential # compares the node row with node v20.19.4's own reading of each line; skips where node on PATH is another version (ubuntu-24.04 runners ship node 22)
+pkg/policy/execmatch/rows TestNodeRowModulesDifferential # compares the node row with node v20.19.4's own reading of each line; skips where node on PATH is another version (ubuntu-24.04 runners ship node 22)
+pkg/policy/execmatch/rows TestNodeRowGeneratedDifferential # compares the node row with node v20.19.4's own reading of each line; skips where node on PATH is another version (ubuntu-24.04 runners ship node 22)
