@@ -37,6 +37,17 @@ const (
 	sparkBar          = 18
 )
 
+// LiveSince is the start of a run whose time taken is measured to now (RFC 3339, as the "iso" helper writes it), or
+// "" when the time is fixed (an ended run, or one measured to its last line). The tile marks such a time a clock
+// (data-since, data-ck): live.js ticks it, and the region's hash leaves its text out, so the Receipt tab is not re-sent
+// whenever the seconds change (regions.go).
+func (v *receiptView) LiveSince() string {
+	if v.R == nil || !v.R.Time.SoFar || v.R.Time.Note != "" || v.R.Started == nil {
+		return ""
+	}
+	return v.R.Started.UTC().Format(time.RFC3339Nano)
+}
+
 // Took is the time taken, short ("3m 05s").
 // It is the dashboard's one duration formatter (human, "188 ms", "3 m 5 s"), so the Receipt reads like every other
 // page (QA QU-16); `tego receipt` keeps its own compact form.

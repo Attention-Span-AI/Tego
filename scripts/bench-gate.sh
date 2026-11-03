@@ -70,8 +70,11 @@ internal/platform/sys                ^Benchmark(Borrow|Hold|OwnedOpenClose)$
 # op is a whole 100,000-line ledger), SeccompNotifyRoundTrip (a real kernel round trip: two context switches an
 # op on a shared runner), SlotAcquireRelease (a file and its lock per op), Blob and SplitBlobsStage (a blob file
 # created and renamed per op), OwnedOpenClose (an open and a close of /dev/null per op; ADR 0023's P9 records it
-# beside its raw twin, while Borrow and Hold, the lease itself, are gated).
-noisy='Feed FeedExchange BuildRuleMaps SendMMsgTail IterFullRun SeccompNotifyRoundTrip SlotAcquireRelease Blob SplitBlobsStage OwnedOpenClose'
+# beside its raw twin, while Borrow and Hold, the lease itself, are gated), NearestFS (a ~50 ns lookup whose code
+# and benchmark were unchanged when, on 2026-11-03 for PR 20, it read +30.4% and +30.5% against the base on two
+# AMD EPYC 7763 runners and +3.5% on an Intel Xeon 8370C: two builds' code layout, not the lookup; decide's
+# IndexedEvaluator stays gated with absolute query budgets).
+noisy='Feed FeedExchange BuildRuleMaps SendMMsgTail IterFullRun SeccompNotifyRoundTrip SlotAcquireRelease Blob SplitBlobsStage OwnedOpenClose NearestFS'
 
 GO=${GO:-go}
 BENCHSTAT=${BENCHSTAT:-benchstat}
