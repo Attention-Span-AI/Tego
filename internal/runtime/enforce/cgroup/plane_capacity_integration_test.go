@@ -29,14 +29,20 @@ import (
 func TestPlaneCapBoundaryNeverEMFILE(t *testing.T) {
 	bin, uid, gid, _ := capPreconditions(t)
 	// A host whose descriptor limit is huge (GitHub's runner: 1048575) puts the cap out of this test's range; the
-	// test lowers its own soft limit to 4096 instead of skipping. syscall.Setrlimit, not x/sys's prlimit, so Go
-	// stops restoring the original limit in children and the root launcher this test starts inherits this one.
+	// test lowers its own limit to 4096 instead of skipping. ReadFDBudget, here and in the launcher, raises a soft
+	// limit under hard-1 back to hard-1, so the hard limit goes down too, to 4097 (root raises it back after).
+	// syscall.Setrlimit, not x/sys's prlimit, so Go stops restoring the original limit in children and the root
+	// launcher this test starts inherits this one.
 	var lim syscall.Rlimit
-	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &lim); err == nil && lim.Cur > 4096 {
+	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &lim); err == nil && lim.Max > 4097 && os.Geteuid() == 0 {
 		old := lim
-		lim.Cur = 4096
+		lim.Cur, lim.Max = 4096, 4097
 		if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &lim); err == nil {
-			t.Cleanup(func() { _ = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &old) })
+			t.Cleanup(func() {
+				if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &old); err != nil {
+					t.Errorf("restore RLIMIT_NOFILE %+v: %v", old, err)
+				}
+			})
 		}
 	}
 	b, err := landlock.ReadFDBudget()
