@@ -5,6 +5,7 @@ package uprobe
 import (
 	"bytes"
 	"debug/elf"
+	bin "encoding/binary"
 	"encoding/hex"
 	"errors"
 	"os"
@@ -103,29 +104,101 @@ func FuzzReadBinary(f *testing.F) {
 	})
 }
 
-// hasUnbackedSymbol is FuzzReadBinary's own reading of ErrSymbolOutsideFile's condition, over debug/elf rather
-// than through fileOffset: a function of Symbols at an address an executable PT_LOAD maps (below its Memsz)
-// where that segment holds no byte of the file (at or past its Filesz, or at or past the file's end).
+// hasUnbackedSymbol checks R37 independently of fileOffset. Read complete entries even if a table ends in a
+// partial entry: debug/elf's Symbols rejects that whole table, whereas readBinary still sees its functions.
+// Names ending at the string table's end are seen too, as by collectOffsets. Neither malformed spelling
+// makes a symbol in a segment's zero-filled tail safe to probe or to silently omit from capture (I4).
 func hasUnbackedSymbol(data []byte) bool {
 	ef, err := elf.NewFile(bytes.NewReader(data))
 	if err != nil {
 		return false
 	}
-	syms, _ := ef.DynamicSymbols()
-	static, _ := ef.Symbols()
 	size := uint64(len(data))
-	for _, s := range append(syms, static...) {
-		if !slices.Contains(Symbols, s.Name) || elf.ST_TYPE(s.Info) != elf.STT_FUNC || s.Value == 0 {
+	for _, typ := range []elf.SectionType{elf.SHT_DYNSYM, elf.SHT_SYMTAB} {
+		sec := ef.SectionByType(typ)
+		if sec == nil || int(sec.Link) >= len(ef.Sections) || ef.Sections[sec.Link].Type != elf.SHT_STRTAB {
 			continue
 		}
-		for _, p := range ef.Progs {
-			if p.Type != elf.PT_LOAD || p.Flags&elf.PF_X == 0 || s.Value < p.Vaddr || s.Value-p.Vaddr >= p.Memsz {
+		table, err := sec.Data()
+		if err != nil {
+			continue
+		}
+		strs, err := ef.Sections[sec.Link].Data()
+		if err != nil {
+			continue
+		}
+		entrySize := elf.Sym64Size
+		if ef.Class == elf.ELFCLASS32 {
+			entrySize = elf.Sym32Size
+		}
+		for pos := entrySize; pos+entrySize <= len(table); pos += entrySize {
+			var s elf.Sym64
+			if ef.Class == elf.ELFCLASS32 {
+				var s32 elf.Sym32
+				if _, err := bin.Decode(table[pos:], ef.ByteOrder, &s32); err != nil {
+					continue
+				}
+				s = elf.Sym64{Name: s32.Name, Info: s32.Info, Shndx: s32.Shndx, Value: uint64(s32.Value)}
+			} else if _, err := bin.Decode(table[pos:], ef.ByteOrder, &s); err != nil {
 				continue
 			}
-			if d := s.Value - p.Vaddr; d >= p.Filesz || p.Off >= size || d >= size-p.Off {
-				return true
+			if uint64(s.Name) >= uint64(len(strs)) || elf.ST_TYPE(s.Info) != elf.STT_FUNC || s.Value == 0 ||
+				elf.SectionIndex(s.Shndx) == elf.SHN_UNDEF || elf.SectionIndex(s.Shndx) >= elf.SHN_LORESERVE {
+				continue
+			}
+			name, _, _ := bytes.Cut(strs[s.Name:], []byte{0})
+			if !slices.Contains(Symbols, string(name)) {
+				continue
+			}
+			for _, p := range ef.Progs {
+				if p.Type != elf.PT_LOAD || p.Flags&elf.PF_X == 0 || s.Value < p.Vaddr || s.Value-p.Vaddr >= p.Memsz {
+					continue
+				}
+				if d := s.Value - p.Vaddr; d >= p.Filesz || p.Off >= size || d >= size-p.Off {
+					return true
+				}
 			}
 		}
 	}
 	return false
+}
+
+func TestUnbackedSymbolCheck(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		opts   elfOptions
+		shrink elf.SectionType
+		want   bool
+	}{
+		{"file bytes", elfOptions{Dynamic: map[string]uint64{SymReadEx: 0x1010}}, elf.SHT_NULL, false},
+		{"zero-filled tail", elfOptions{Dynamic: map[string]uint64{SymReadEx: 0x1800}}, elf.SHT_NULL, true},
+		{"partial dynsym", elfOptions{Dynamic: map[string]uint64{SymReadEx: 0x1800, SymWrite: 0x1010}}, elf.SHT_DYNSYM, true},
+		{"partial symtab", elfOptions{Static: map[string]uint64{SymReadEx: 0x1800, SymWrite: 0x1010}}, elf.SHT_SYMTAB, true},
+		{"unterminated name", elfOptions{Dynamic: map[string]uint64{SymReadEx: 0x1800}}, elf.SHT_STRTAB, true},
+		{"undefined", elfOptions{Dynamic: map[string]uint64{SymReadEx: 0x1800}, Undefined: true}, elf.SHT_NULL, false},
+		{"not a function", elfOptions{Dynamic: map[string]uint64{SymReadEx: 0x1800}, NotFunc: true}, elf.SHT_NULL, false},
+		{"unmapped", elfOptions{Dynamic: map[string]uint64{SymReadEx: 0x2800}}, elf.SHT_NULL, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := writeELFWithText(t, tc.opts, 0x400, 0x1000)
+			if tc.shrink != elf.SHT_NULL {
+				ef, err := elf.NewFile(bytes.NewReader(data))
+				if err != nil {
+					t.Fatal(err)
+				}
+				// writeELF writes ELF64 little-endian headers. Trim the first matching section by a byte,
+				// leaving its last symbol or its final name incomplete, as in the nightly crash input.
+				shoff := bin.LittleEndian.Uint64(data[40:48])
+				for i, sec := range ef.Sections {
+					if sec.Type == tc.shrink {
+						bin.LittleEndian.PutUint64(data[shoff+uint64(i)*64+32:], sec.Size-1)
+						break
+					}
+				}
+			}
+			if got := hasUnbackedSymbol(data); got != tc.want {
+				t.Errorf("hasUnbackedSymbol = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }

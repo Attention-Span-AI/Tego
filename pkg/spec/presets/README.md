@@ -34,8 +34,8 @@ fails from then on if those bytes change. The release enforces the addition: `ma
 runs that test with `TEGO_RELEASE_VERSION` set, which then fails for every catalog revision `released` lacks and
 prints the line to add; `scripts/release.sh tag` runs it before the gate and `release.yml` before it builds
 (docs/VERSIONING.md §5). A run records an unpinned preset by its name and the sha256 of the bytes it merged, which
-`released` maps to the revision. Before the first release carries the presets, `released` is empty and
-revision 1 is edited in place, as it was for `fs.reads: held` and the CI `deny_write` entries.
+`released` maps to the revision. v0.1.0, the first release, froze revision 1 of each preset: a change to one is now
+revision 2.
 
 ## What a preset may set
 

@@ -56,3 +56,23 @@ PKGS=(
 GUEST_MODULES=(overlay btrfs unix_diag tcp_diag)
 # Helpers the tests `go build` at run time; go-shim.sh serves them by last path element.
 HELPERS=(cmd/tego test/conformance/cmd/actor internal/runtime/cgroup/testdata/memhog test/workloads/model-agent test/workloads/retriever-agent test/workloads/signaller test/workloads/sigio test/workloads/procscope test/workloads/uringsock test/workloads/uringbind test/workloads/execracer test/workloads/ifaces test/vm/cmd/permlistener)
+# The shards of CI's root-suites job (.github/workflows/ci.yml's root-suites-shard matrix, one runner each), for
+# VM_SHARD=<name> test/vm/root-suites.sh: "<name>|<packages>|<part>". <packages> is a space-separated list of exact
+# package paths, or "*" for every package of PKGS no other shard names, so a package added to PKGS runs without a new
+# shard. <part> is empty (the packages' whole suites) or "j/n": each of those packages' suites, plain and tegobpf, runs
+# only part j of its top-level tests (every n-th of its .list, from the j-th; part n runs every test the other parts do
+# not, the fuzz targets and any the list missed included), and parts 1 to n of the same packages must all be shards
+# here. `test/vm/root-suites.sh --gather DIR` then holds every shard named here to have run and passed, and runs the
+# must-pass gate over all of them. On GitHub's runner (run 41706261848, 2026-11-03, one job) enforce/cgroup's tegobpf
+# suite took 48 of the job's 91 minutes and its plain one 4, internal/runtime's two 15, test/conformance 10 (its
+# TestConformanceKernel 8.7 alone) and the other 28 suites 11 together; every-4th parts of enforce/cgroup's lists sum
+# to 12.4-14 minutes each of its two suites on those numbers.
+ROOT_SHARDS=(
+	"cgroup-1|internal/runtime/enforce/cgroup|1/4"
+	"cgroup-2|internal/runtime/enforce/cgroup|2/4"
+	"cgroup-3|internal/runtime/enforce/cgroup|3/4"
+	"cgroup-4|internal/runtime/enforce/cgroup|4/4"
+	"runtime|internal/runtime|"
+	"conformance|test/conformance|"
+	"rest|*|"
+)

@@ -214,11 +214,14 @@ if sed -n '/^preset-freeze:/,/^[^[:space:]]/p' Makefile | grep -q '\$(VERSION)';
 	echo "FAIL: the Makefile's preset-freeze pastes \$(VERSION) into its recipe"; fail=1
 fi
 
-# 24. both installers are in the checksums file, so the signature over it and the attestations of what it lists cover
-#     them; release.extra_files alone uploads them and adds nothing to it.
+# 24. both installers and the Lima template are release assets (the one-line installs fetch them from
+#     releases/latest/download) and are in the checksums file, so the signature over it and the attestations of what it
+#     lists cover them; release.extra_files alone uploads them and adds nothing to it.
 sums="$(sed -n '/^checksum:/,/^[a-z#]/p' .goreleaser.yaml)"
-for f in scripts/install.sh scripts/install-maze.sh; do
+assets="$(sed -n '/^release:/,/^[a-z#]/p' .goreleaser.yaml)"
+for f in scripts/install.sh scripts/install-maze.sh examples/lima/tego.yaml; do
 	grep -qE "^ +- glob: \./$f\$" <<<"$sums" || { echo "FAIL: .goreleaser.yaml's checksum section does not list $f"; fail=1; }
+	grep -qE "^ +- glob: \./$f\$" <<<"$assets" || { echo "FAIL: .goreleaser.yaml's release section does not ship $f"; fail=1; }
 done
 
 # 13. no govulncheck in release.yml's release job, which holds id-token, attestations and contents write.

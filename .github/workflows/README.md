@@ -20,7 +20,7 @@ cancelled.
 | `bpf-gen` | The committed BPF objects are exactly what the pinned clang makes of `bpf/` |
 | `bpf-load` | Every BPF program loads, and the tier-2 backend decides, on the runner's kernel, as root |
 | `bench-gate` | The hot paths' benchmarks against the base commit's (`scripts/bench-gate.sh`), plus the absolute timing budgets (`scripts/timing-budgets.sh`) |
-| `root-suites` | Every privileged test suite, as root on the runner through `sudo` (`test/vm/root-suites.sh`) |
+| `root-suites` | Every privileged test suite, as root on the runner through `sudo` (`test/vm/root-suites.sh`), in the seven parallel `root-suites-shard` jobs; `root-suites` passes only when every shard passed and the root-only tests of `test/vm/root-must-pass.txt` passed in them |
 | `race` | The unit and unprivileged integration tests under the race detector, in shuffled order |
 | `reproducible` | The release target built twice, at two paths with two build caches; the bytes of `tego`, `tego-control` and `maze` for linux/amd64 must match |
 | `coverage` | Per-package coverage, uploaded as an artifact (report only) |
@@ -30,7 +30,7 @@ cancelled.
 and on a push to `main`, and the main ruleset requires it, so a change is merged only after the privileged suites
 pass. It runs the change's code as root, as `bpf-load` and `build-test-arm64` do: a pull request runs its own copy of
 these files, and a fork's code is held by the runner, a fresh VM with no secrets and a read-only token, and by
-GitHub's approval of a first-time contributor's run. Its two hours cost nothing on a public repository's hosted runners. Locally, `make vm-root-test` runs them in a KVM guest.
+GitHub's approval of a first-time contributor's run. Its shards' runners cost nothing on a public repository's hosted runners. Locally, `make vm-root-test` runs them in a KVM guest.
 
 **`bench-gate` runs on a shared runner.** Its absolute timing budgets assume nothing else is running, and shared runners
 are noisy. The budgets are figures on a developer's machine, and a hosted runner makes a system call at two to three

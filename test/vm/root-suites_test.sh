@@ -155,6 +155,10 @@ case "$1 $2" in
 "list -m") echo github.com/attention-span-ai/tego; exit 0 ;;
 "tool test2json") cat; exit 0 ;;
 esac
+# list -f names the test files of the package, for root-suites.sh's .list: those this directory holds (part 4)
+if [ "$1" = list ]; then
+	for a in "$@"; do [ "$a" != -f ] || { for f in *_test.go; do [ ! -f "$f" ] || printf '%s ' "$f"; done; exit 0; }; done
+fi
 out=""
 while [ $# -gt 0 ]; do
 	[ "$1" != -o ] || out="$2"
@@ -162,7 +166,7 @@ while [ $# -gt 0 ]; do
 done
 [ -z "$out" ] || {
 	# what it built records, when asked, its own path and the isolation it was given (part 3)
-	printf '#!/bin/sh\n[ -z "${STUB_RUNS:-}" ] || echo "$0 config=${TEGO_CONFIG:-} anchor=${TEGO_TEST_CHAIN_ANCHOR:-} ownlog=${TEGO_TEST_OWN_LOG_HOME:-}" >>"$STUB_RUNS"\nexit 0\n' >"$out"
+	printf '#!/bin/sh\n[ -z "${STUB_RUNS:-}" ] || echo "$0 config=${TEGO_CONFIG:-} anchor=${TEGO_TEST_CHAIN_ANCHOR:-} ownlog=${TEGO_TEST_OWN_LOG_HOME:-}" >>"$STUB_RUNS"\ncase "$0" in *.test) [ -z "${STUB_RUNS:-}" ] || echo "ARGS $*" >>"$STUB_RUNS.args" ;; esac\nexit 0\n' >"$out"
 	chmod +x "$out"
 }
 exit 0
@@ -271,5 +275,110 @@ grep -qF "tegotesthooks build" "$tmp/stub.log" || fail "the console does not say
 run_sudo_stub TEGO_DISPOSABLE_HOST=ci
 grep -vqF "$tmp/sudoout/prebuilt/tego config= anchor= ownlog=" "$tmp/doctor.runs" &&
 	fail "VM_HOST=sudo on a disposable machine did not run the product doctor as a root user would: $(cat "$tmp/doctor.runs")"
+
+# 4. VM_SHARD runs one shard of test/vm/suites.sh's ROOT_SHARDS, CI's root-suites-shard matrix. The plan itself: the
+# real one holds (every package of PKGS in a shard, every part of a split present), and a shard nobody planned, or
+# package names beside VM_SHARD, are usage errors before anything is built.
+bash -c 'set -u; here=$1; repo=$2; eval "$(sed -n "/^shard_plan() {/,/^}/p" "$here/root-suites.sh")"; . "$here/suites.sh"; shard_plan' \
+	_ "$here" "$here/../.." || fail "test/vm/suites.sh's ROOT_SHARDS does not hold (above)"
+# ci.yml's root-suites-shard matrix lists every shard of the plan, in its order, and no other.
+names=$(bash -c '. "$1"; for e in "${ROOT_SHARDS[@]}"; do printf "%s, " "${e%%|*}"; done' _ "$here/suites.sh")
+ci="$here/../../.github/workflows/ci.yml"
+grep -qF "shard: [${names%, }]" "$ci" || fail "ci.yml's root-suites-shard matrix is not 'shard: [${names%, }]': $(grep -n 'shard: \[' "$ci")"
+for bad in "VM_SHARD=nope|is not a shard" "VM_SHARD=rest VM_RUN=TestX|VM_RUN would narrow it"; do
+	: >"$tmp/go.log"
+	rc=0
+	# shellcheck disable=SC2086 # the assignments, one or two, are words of env's command line
+	env ${bad%%|*} PATH="$tmp/bin:$PATH" GO="$tmp/bin/go" VM_OUT="$tmp/out" VM_BPF=no VM_HOST=sudo \
+		"$here/root-suites.sh" >"$tmp/run.log" 2>&1 || rc=$?
+	if [ "$rc" != 2 ] || ! grep -qF "${bad#*|}" "$tmp/run.log"; then fail "${bad%%|*}: exit $rc, want 2 and \"${bad#*|}\": $(cat "$tmp/run.log")"; fi
+	[ ! -s "$tmp/go.log" ] || fail "${bad%%|*}: built after a usage error: $(cat "$tmp/go.log")"
+done
+rc=0
+env VM_SHARD=rest PATH="$tmp/bin:$PATH" GO="$tmp/bin/go" VM_OUT="$tmp/out" VM_BPF=no VM_HOST=sudo \
+	"$here/root-suites.sh" internal/bpf >"$tmp/run.log" 2>&1 || rc=$?
+if [ "$rc" != 2 ] || ! grep -qF "selects its own packages" "$tmp/run.log"; then fail "VM_SHARD with a package named: exit $rc: $(cat "$tmp/run.log")"; fi
+# A broken plan stops the run: a split with a part missing, and a package in two shards.
+cp "$repo/test/vm/suites.sh" "$tmp/suites.sh.orig"
+for plan in '"a|internal/bpf|1/3" "b|internal/bpf|3/3" "r|*|"@has no part 2' '"a|internal/bpf|" "b|internal/bpf internal/runtime|" "r|*|"@runs internal/bpf in shard b' \
+	'"a|internal/nosuch|" "r|*|"@not in PKGS' '"a|internal/bpf|"@no shard of ROOT_SHARDS runs'; do
+	{ cat "$tmp/suites.sh.orig"; echo "ROOT_SHARDS=(${plan%%@*})"; } >"$repo/test/vm/suites.sh"
+	rc=0
+	env -i PATH="$tmp/stub:$PATH" HOME="$tmp" TMPDIR="$tmp" GO="$tmp/stub/go" VM_OUT="$tmp/sudoout" VM_BPF=no VM_HOST=sudo VM_SHARD=a \
+		"$repo/test/vm/root-suites.sh" >"$tmp/stub.log" 2>&1 || rc=$?
+	if [ "$rc" != 2 ] || ! grep -qF "${plan#*@}" "$tmp/stub.log"; then fail "plan ${plan%%@*}: exit $rc, want 2 and \"${plan#*@}\": $(cat "$tmp/stub.log")"; fi
+done
+
+# The parts of a split: each runs every n-th test of the suite's list by -test.run, the last skips the others' by
+# -test.skip (so it runs what the list misses too), and each part's .list is its own tests. The "*" shard runs the
+# packages no other shard names. The stand-in package holds five tests.
+{ cat "$tmp/suites.sh.orig"; echo 'ROOT_SHARDS=("p1|internal/runtime/enforce/landlock|1/2" "p2|internal/runtime/enforce/landlock|2/2" "r|*|")'; } >"$repo/test/vm/suites.sh"
+printf 'package landlock\n\nfunc TestA(t *testing.T) {\n}\nfunc TestB(t *testing.T) {\n}\nfunc TestC(t *testing.T) {\n}\nfunc TestD(t *testing.T) {\n}\nfunc TestE(t *testing.T) {\n}\n' \
+	>"$repo/internal/runtime/enforce/landlock/x_test.go"
+for want in "p1@-test.run=^(TestA|TestC|TestE)\$@TestA TestC TestE" "p2@-test.skip=^(TestA|TestC|TestE)\$@TestB TestD"; do
+	shard=${want%%@*} rest=${want#*@}
+	args=${rest%%@*} list=${rest#*@}
+	: >"$tmp/runs"
+	: >"$tmp/runs.args"
+	rm -rf "$tmp/sudoout"
+	env -i PATH="$tmp/stub:$PATH" HOME="$tmp" TMPDIR="$tmp" GO="$tmp/stub/go" VM_OUT="$tmp/sudoout" VM_BPF=no VM_HOST=sudo \
+		STUB_RUNS="$tmp/runs" STUB_SUDO="$tmp/sudo.log" VM_SHARD="$shard" "$repo/test/vm/root-suites.sh" >"$tmp/stub.log" 2>&1 || true
+	[ "$(wc -l <"$tmp/runs.args")" = 1 ] || fail "shard $shard ran $(wc -l <"$tmp/runs.args") suites, want 1: $(cat "$tmp/runs.args") $(tail -5 "$tmp/stub.log")"
+	grep -qF -- " $args" "$tmp/runs.args" || fail "shard $shard's suite did not get $args: $(cat "$tmp/runs.args")"
+	[ "$(paste -sd' ' "$tmp/sudoout/logs/internal_runtime_enforce_landlock.list")" = "$list" ] ||
+		fail "shard $shard's .list is not its part ($list): $(cat "$tmp/sudoout/logs/internal_runtime_enforce_landlock.list")"
+	dn=$(cut -d' ' -f1 "$tmp/sudoout/shard.done" 2>/dev/null || true)
+	[ "$dn" = "$shard" ] || fail "shard $shard wrote no shard.done naming it"
+done
+# every package's directory, which a suite runs from
+npkgs=$(bash -c '. "$1"; for p in "${PKGS[@]}"; do mkdir -p "$2/$p"; done; echo "${#PKGS[@]}"' _ "$here/suites.sh" "$repo")
+: >"$tmp/runs"
+: >"$tmp/runs.args"
+env -i PATH="$tmp/stub:$PATH" HOME="$tmp" TMPDIR="$tmp" GO="$tmp/stub/go" VM_OUT="$tmp/sudoout" VM_BPF=no VM_HOST=sudo \
+	STUB_RUNS="$tmp/runs" STUB_SUDO="$tmp/sudo.log" VM_SHARD=r "$repo/test/vm/root-suites.sh" >"$tmp/stub.log" 2>&1 || true
+[ "$(wc -l <"$tmp/runs.args")" = $((npkgs - 1)) ] || fail "the \"*\" shard ran $(wc -l <"$tmp/runs.args") suites, want every package but the split one ($((npkgs - 1)))"
+if grep -q 'test\.run\|test\.skip\|landlock' "$tmp/runs.args"; then fail "the \"*\" shard ran a part, or the split package: $(cat "$tmp/runs.args")"; fi
+cp "$tmp/suites.sh.orig" "$repo/test/vm/suites.sh"
+
+# 5. --gather DIR, the job named root-suites after its shards: every shard of the plan finished with 0, none missing,
+# twice or unknown, and root-must-pass.txt over all their logs together. The logs here pass every must-pass test, each
+# in the shard of its own package.
+module=$(sed -n 's/^module //p' "$here/../../go.mod")
+g="$tmp/gather"
+mkgather() {
+	rm -rf "$g"
+	bash -c '. "$1"; for e in "${ROOT_SHARDS[@]}"; do echo "${e%%|*}"; done' _ "$here/suites.sh" | while read -r s; do
+		mkdir -p "$g/root-suites-$s/logs"
+		echo "$s 0" >"$g/root-suites-$s/shard.done"
+	done
+	grep -v '^#' "$here/root-must-pass.txt" | sed 's/[[:space:]]#.*//' | while read -r p t; do
+		[ -n "$p" ] || continue
+		printf '{"Action":"pass","Package":"%s/%s","Test":"%s"}\n' "$module" "$p" "$t"
+	done >"$g/root-suites-rest/logs/all.json"
+}
+gather() {
+	rc=0
+	"$here/root-suites.sh" --gather "$g" >"$tmp/gather.log" 2>&1 || rc=$?
+	[ "$rc" = "$1" ] || fail "--gather ($2): exit $rc, want $1: $(cat "$tmp/gather.log")"
+	[ -z "${3:-}" ] || grep -qF -- "$3" "$tmp/gather.log" || fail "--gather ($2): no \"$3\": $(cat "$tmp/gather.log")"
+}
+mkgather
+gather 0 "every shard passed" "ok   cgroup-4"
+mkgather
+rm "$g/root-suites-cgroup-3/shard.done"
+gather 1 "a shard did not finish" "FAIL cgroup-3: no shard.done"
+mkgather
+echo "runtime 1" >"$g/root-suites-runtime/shard.done"
+gather 1 "a shard failed" "FAIL runtime: exit 1"
+mkgather
+mkdir -p "$g/again"
+echo "rest 0" >"$g/again/shard.done"
+gather 1 "a shard twice" "finished twice"
+mkgather
+sed -i '1s/"pass"/"skip"/' "$g/root-suites-rest/logs/all.json"
+gather 1 "a must-pass test skipped" ": skip"
+rc=0
+"$here/root-suites.sh" --gather "$tmp/no-such-dir" >"$tmp/gather.log" 2>&1 || rc=$?
+[ "$rc" = 2 ] || fail "--gather of no directory: exit $rc, want 2"
 
 echo "ok root-suites_test.sh"

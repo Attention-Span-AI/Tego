@@ -12,7 +12,7 @@
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <a href="docs/INSTALL.md"><img alt="Go 1.27" src="https://img.shields.io/badge/go-1.27-00ADD8?logo=go&amp;logoColor=white"></a>
   <a href="docs/TIERS.md"><img alt="Platform: Linux" src="https://img.shields.io/badge/platform-Linux-FCC624?logo=linux&amp;logoColor=black"></a>
-  <a href="docs/CHANGELOG.md"><img alt="Status: pre-release" src="https://img.shields.io/badge/status-pre--release-F26327"></a>
+  <a href="docs/CHANGELOG.md"><img alt="Release: v0.1.0" src="https://img.shields.io/badge/release-v0.1.0-F26327"></a>
 </p>
 
 <p align="center">
@@ -74,7 +74,39 @@ Anthropic Python SDK and an agent of your own.
 
 ## Quickstart
 
-### Install from source
+### Install
+
+**Linux** (amd64 or arm64):
+
+```sh
+curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh
+```
+
+The script is an asset of the latest release. It installs that release's `tego` and `tego-control` into
+`~/.local/bin`, checks their checksums, and prints the next steps.
+
+**macOS**, in a Linux VM made by [Lima](https://lima-vm.io):
+
+```sh
+brew install lima
+limactl start --name=tego https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
+limactl shell tego tego doctor
+```
+
+**Windows**, in WSL2. In PowerShell:
+
+```powershell
+wsl --install -d Ubuntu-24.04
+```
+
+Then open Ubuntu and run the Linux line there.
+
+What each was tested on: the Linux line on Ubuntu 25.10 (kernel 6.17), installing a local build of the release. The
+macOS template passes Lima's own check (`limactl validate`) but has not been booted on a Mac yet, and the Windows steps
+have not been run yet. [docs/INSTALL.md](docs/INSTALL.md) has the details, and how to check the installer before it
+runs.
+
+### Build from source
 
 You need Linux, `git`, `make` and Go 1.27.
 
@@ -89,8 +121,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 Keep `tego` and `tego-control` in the same directory: `tego serve` hands off to the `tego-control` beside it and
 refuses any other. Add the `export` to your shell's profile if your login does not already put `~/.local/bin` on
-`PATH`. There is no tagged release yet, so source is the way to install. [docs/INSTALL.md](docs/INSTALL.md) has the
-details.
+`PATH`.
 
 ### First run
 
@@ -173,7 +204,7 @@ flowchart LR
 | 2, `cgroup` | root (`sudo`), Landlock ABI 2 or newer, cgroup v2, BTF | cgroup-attached BPF and fanotify: the kernel records reads too |
 | 3, `bpflsm` | root, and `bpf` in the kernel's boot LSM list | Tier 2, with the decision plane running as BPF LSM hooks |
 
-All three tiers are in the binary that `make build` produces. `tego doctor` says which tier your machine gets, and each
+All three tiers are in the release binary and in the one `make build` produces. `tego doctor` says which tier your machine gets, and each
 run records the tier it had. Details, including the one boot line Ubuntu needs for tier 3, are in
 [docs/TIERS.md](docs/TIERS.md).
 

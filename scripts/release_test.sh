@@ -142,6 +142,20 @@ else
 	fail=1
 fi
 
+# `notes` prints the section release.yml publishes as the release notes: its body, headings kept, without the
+# version's own heading; a version with no section is refused.
+if sh scripts/release.sh notes v2.1.0 >"$tmp/out" 2>&1 && [ "$(grep -c '^### ' "$tmp/out")" -eq 3 ] &&
+	! grep -q '^## v2.1.0' "$tmp/out"; then
+	echo "ok   notes prints the version's changelog section"
+else
+	echo "FAIL notes did not print the version's changelog section"; sed 's/^/    /' "$tmp/out"; fail=1
+fi
+if sh scripts/release.sh notes v9.9.9 >"$tmp/out" 2>&1 || ! grep -q "has no '## v9.9.9' section" "$tmp/out"; then
+	echo "FAIL notes for a version with no section did not refuse"; sed 's/^/    /' "$tmp/out"; fail=1
+else
+	echo "ok   notes refuses a version with no section"
+fi
+
 # A version with shell syntax in it stops at release.sh's shape check, which is release.yml's gate's. A shape the gate
 # takes gets past it, and on to the missing tag.
 # shellcheck disable=SC2016 # Literal shell syntax: the versions are never expanded.

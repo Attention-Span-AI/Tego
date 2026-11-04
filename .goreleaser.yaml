@@ -163,15 +163,17 @@ sboms:
 checksum:
   name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
   algorithm: sha256
-  # The installers are release assets too (release.extra_files below), and release.extra_files adds nothing here. Listed,
-  # they are covered by the signature over this file and by the provenance attestations, for whoever downloads,
+  # The installers and the Lima template are release assets too (release.extra_files below), and release.extra_files
+  # adds nothing here. Listed, they are covered by the signature over this file and by the provenance attestations, for whoever downloads,
   # verifies and then runs them (docs/INSTALL.md). That does nothing for `curl … | sh`, where nothing reads a checksum
   # before the script runs (docs/GAPS.md B11).
   extra_files:
     - glob: ./scripts/install.sh
     - glob: ./scripts/install-maze.sh
+    - glob: ./examples/lima/tego.yaml
 
-# docs/CHANGELOG.md is the hand-maintained record (VERSIONING.md §5); no second, commit-log-derived one.
+# docs/CHANGELOG.md is the hand-maintained record (VERSIONING.md §5); no second, commit-log-derived one. release.yml
+# passes the tag's section of it as --release-notes (scripts/release.sh notes).
 changelog:
   disable: true
 
@@ -185,7 +187,10 @@ release:
   draft: true
   replace_existing_draft: true
   # The installers are release assets, so `curl …/releases/latest/download/install.sh | sh` (tego, scripts/install.sh) and
-  # `…/install-maze.sh | sh` (maze) work.
+  # `…/install-maze.sh | sh` (maze) work, and so is the macOS Lima template, so `limactl start
+  # …/releases/latest/download/tego.yaml` does; the template fetches install.sh from the same place. The one-line
+  # installs docs/INSTALL.md gives take these assets, never a branch's copy.
   extra_files:
     - glob: ./scripts/install.sh
     - glob: ./scripts/install-maze.sh
+    - glob: ./examples/lima/tego.yaml

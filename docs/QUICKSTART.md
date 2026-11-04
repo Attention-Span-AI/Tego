@@ -3,12 +3,34 @@
 Your first governed run, from `tego version` to the dashboard. It takes a few minutes and needs no root and no agent
 account: the demo command it runs is a short shell script that shows what each rule does.
 
-Before you start, [install Tego](INSTALL.md). Run every command in a plain terminal, as yourself, not inside another
-`tego run`.
+Run every command in a plain terminal, as yourself, not inside another `tego run`.
 
 The output below comes from a fresh Ubuntu 24.04 cloud image, as a new user, `dana`, over SSH in a
 `systemd-run --user --scope bash` shell. Your paths, ids and kernel lines will differ, and a value in angle brackets is
 your own build's.
+
+## Install
+
+On **Linux**:
+
+```sh
+curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh
+```
+
+On **macOS**, Tego runs in a Lima VM. Install it, then do the steps below inside the VM, in a shell in your user's
+cgroup:
+
+```sh
+brew install lima
+limactl start --name=tego https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
+limactl shell tego
+systemd-run --user --scope bash
+```
+
+On **Windows**, run `wsl --install -d Ubuntu-24.04` in PowerShell, then the Linux line inside Ubuntu.
+
+The second way is to [build from source](INSTALL.md#build-from-source). [INSTALL.md](INSTALL.md) says what each way
+was tested on.
 
 ## 1. Check the build
 
@@ -286,7 +308,8 @@ Four things catch people out:
 - **Never with `sudo`.** `tego-control` refuses to run as root, so the dashboard is always started as yourself.
 - **If port 8484 is busy,** pass `--addr 127.0.0.1:<port>`. The address must be on loopback.
 - **Over SSH,** forward the same port (`ssh -L 8484:127.0.0.1:8484 <host>`) and open the printed link on your own machine.
-  A different local port is refused with `wrong Host header`.
+  A different local port is refused with `wrong Host header`. In the macOS VM that is
+  `ssh -F ~/.lima/tego/ssh.config -N -L 8484:127.0.0.1:8484 lima-tego`, run on the Mac ([INSTALL.md](INSTALL.md#macos)).
 
 ## Next
 

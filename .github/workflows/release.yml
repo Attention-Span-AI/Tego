@@ -7,13 +7,13 @@
 #   - gate refuses a tag whose name is not vX.Y.Z or vX.Y.Z-pre, or that is not annotated, not on main, or whose
 #     commit has no green ci run;
 #   - goreleaser builds the static binaries (.goreleaser.yaml), one SPDX SBOM per binary, and the sha256
-#     checksums file, and creates the GitHub release as a draft;
+#     checksums file, and creates the GitHub release as a draft, described by the tag's docs/CHANGELOG.md section;
 #   - govulncheck scans the rebuilt (byte-identical) binaries in reproduce, a job with no write token, and a
 #     reachable vulnerability stops the release there, unpublished;
 #   - cosign signs the checksums file keylessly: the certificate names this workflow at this tag, issued
 #     against GitHub's OIDC token, and the bundle is logged in Sigstore's transparency log;
 #   - actions/attest-build-provenance attests every file the checksums file lists (SLSA provenance), the two
-#     installers among them;
+#     installers and the Lima template among them;
 #   - the bundle is uploaded to the draft, and the checksums file handed to the next job as an artifact;
 #   - reproduce builds the same tag again on a fresh runner and compares with those checksums;
 #   - publish, which needs both, takes the draft public: nothing is public before it is signed and reproduced
@@ -105,6 +105,13 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: VERSION="$TAG" make preset-freeze
+      # The release's description is the tag's section of docs/CHANGELOG.md, the text release.sh tag also puts in the
+      # tag's message (.goreleaser.yaml writes no changelog of its own). A tag with no section stops here. The file is
+      # written outside the checkout, which goreleaser requires to be clean.
+      - name: the release notes are the tag's changelog section
+        env:
+          TAG: ${{ github.ref_name }}
+        run: scripts/release.sh notes "$TAG" > "$RUNNER_TEMP/release-notes.md"
       - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           syft-version: ${{ env.SYFT_VERSION }}
@@ -115,7 +122,7 @@ jobs:
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           version: ${{ env.GORELEASER_VERSION }}
-          args: release --clean
+          args: release --clean --release-notes ${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # The tego-control goreleaser built is the one each tego pins (ADR 0100 (1b)): the tego build's pre hook built

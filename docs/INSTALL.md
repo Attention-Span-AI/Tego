@@ -1,16 +1,114 @@
 # Install
 
-Tego runs on Linux. Today the way to install it is to build it from source. There is no tagged release yet.
+Tego runs on Linux. On macOS and Windows it runs inside a Linux VM. Each has a one-command install, below; building from
+source is the other way.
+
+| System | Install | Tested on |
+|---|---|---|
+| Linux | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | Ubuntu 25.10, kernel 6.17, against a local build of the release |
+| macOS | `limactl start --name=tego https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml` | Not run on a Mac yet. Lima's `limactl validate` passes on the template |
+| Windows | `wsl --install -d Ubuntu-24.04`, then the Linux line inside Ubuntu | Not run on Windows yet |
 
 ## Requirements
 
 | | |
 |---|---|
-| Operating system | Linux, amd64 or arm64. macOS and Windows have no native build: run Tego inside a Linux VM (on Windows, WSL2 works) and install it there. |
+| Operating system | Linux, amd64 or arm64. macOS and Windows have no native build: Tego runs inside a Linux VM there (below). |
 | Kernel | Tier 1 (no root) needs Landlock ABI 2 or newer, which is Linux 5.19 or later or a backport such as RHEL 9's 5.14, and cgroup v2 with a subtree delegated to your user. The oldest kernels the project tests are 6.1 and RHEL 9's 5.14. Ubuntu 22.04's stock 5.15 has Landlock ABI 1, so no tier runs on it. Tiers 2 and 3 need root, and tier 3 needs `bpf` in the boot LSM list. [TIERS.md](TIERS.md) has the table. |
+| To install a release | `curl` and `sha256sum` (or `shasum`). With `cosign`, or a `gh` that is logged in, on `PATH`, the installer also checks who published the release. |
 | To build | `git`, `make` and Go 1.27 (CI builds with 1.27.3). You do not need clang: the compiled BPF objects are committed. |
 
-## Build and install from source
+## Linux
+
+```sh
+curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh
+```
+
+`install.sh` is an asset of the latest release, listed in its signed checksums file. It downloads that release's `tego`
+and `tego-control` for your architecture, checks each against the release's
+sha256 checksums, and installs both into `~/.local/bin`. When `cosign` is on `PATH`, or a `gh` that is logged in, it
+also checks that the checksums were signed by this repository's release workflow at that tag; without either it says
+that only the checksum was checked. It runs the new `tego` before it replaces anything, and it needs no root. It ends
+with the next steps: the `export PATH` line if `~/.local/bin` is not on your `PATH` yet, `tego doctor`, `tego test` and
+`tego serve --open`.
+
+Settings are environment variables, given to `sh`:
+
+```sh
+curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | TEGO_VERSION=v0.1.0 sh
+```
+
+`TEGO_VERSION` picks a tag (default: the latest release), `TEGO_PREFIX` the folder (default `$HOME/.local/bin`) and
+`TEGO_VERIFY` the check (`auto`, `cosign`, `gh` or `sha256`). The installer exits with 2 for a missing dependency, 3 for
+an unsupported platform, 4 for an unsupported architecture, 5 when there is no such release, 6 for a failed download, 7
+for a checksum mismatch, 8 for a failed install step and 9 when the signature or provenance did not verify. Run it again
+to upgrade.
+
+Do not fetch `install.sh` from a branch: the installer is the root of trust, so take it from a tagged release, as the
+line above does. Piped into `sh`, it still runs before anything checks it. To run only a script you have checked, verify
+it first: [Check the installer first](#check-the-installer-first).
+
+**Tested on** Ubuntu 25.10 (kernel 6.17, `dash` as `sh`): the script piped into `sh`, installing a local build of the
+v0.1.0 release (`goreleaser release --snapshot`) laid out as the release is, then `tego version`, `tego doctor`, `tego
+test` and `tego serve`. The download from GitHub itself, `releases/latest/download` included, runs once the release is
+published. `scripts/install_test.sh`
+covers each check, the piped form and the exit codes.
+
+## macOS
+
+Tego runs in an Ubuntu 24.04 VM made by [Lima](https://lima-vm.io), on Apple silicon or Intel.
+
+```sh
+brew install lima
+limactl start --name=tego https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
+limactl shell tego tego doctor
+```
+
+The template is a release asset, [examples/lima/tego.yaml](../examples/lima/tego.yaml) in this repository, listed in
+the release's signed checksums file like `install.sh`. It boots Ubuntu 24.04 LTS with 4 CPUs, 4 GiB of
+memory and a 20 GiB disk, and on the first boot runs the Linux line above as your user in the VM, taking `install.sh` from the latest release
+too. Tier 1 needs nothing
+more there: Ubuntu 24.04's kernel has Landlock, and its systemd delegates a cgroup to your user. Your Mac home is
+visible in the VM read-only; Tego's data and the projects an agent works on live in the VM's own home.
+
+`limactl shell` logs in over SSH, which starts outside your user's cgroup, so for a run start a shell in it first:
+
+```sh
+limactl shell tego
+systemd-run --user --scope bash
+tego test
+```
+
+The dashboard answers only connections made by its own user, and Lima's default port forwarding connects as root
+inside the VM, so the template does not forward its port. Start `tego serve` in the VM, forward the port over SSH from
+another terminal on the Mac, and open the URL `tego serve` printed:
+
+```sh
+ssh -F ~/.lima/tego/ssh.config -N -L 8484:127.0.0.1:8484 lima-tego
+```
+
+`limactl stop tego` stops the VM and `limactl delete tego` removes it.
+
+**Tested on** Linux only: Lima 2.2.1's `limactl validate` passes on the template. It has not been booted on a Mac yet.
+
+## Windows
+
+Tego runs in WSL2, which runs a real Linux kernel. In PowerShell:
+
+```powershell
+wsl --install -d Ubuntu-24.04
+```
+
+Restart if Windows asks you to, then open Ubuntu, create your user, and run the Linux line there. `tego doctor` says
+which tier WSL2 gives you. Tier 3 needs `bpf` in the boot LSM list, which the stock WSL2 kernel does not have.
+
+[scripts/install-wsl.ps1](../scripts/install-wsl.ps1) does the same two steps: it installs Ubuntu-24.04 if WSL has no
+such distribution, and otherwise runs the Linux line inside it. Download it, read it, then run
+`powershell -ExecutionPolicy Bypass -File install-wsl.ps1`.
+
+**Tested on** nothing yet: neither the steps nor the script have been run on Windows.
+
+## Build from source
 
 ```sh
 git clone https://github.com/Attention-Span-AI/Tego
@@ -125,18 +223,7 @@ fix: add lsm=lockdown,capability,landlock,yama,apparmor,bpf to the kernel comman
 ok   dashboard: the dashboard can tell which run a connection comes from
 ```
 
-## From a release
-
-After the first tag, `scripts/install.sh` will install both binaries from a release and verify them. It reads
-`TEGO_VERSION`, `TEGO_PREFIX` (default `$HOME/.local/bin`) and `TEGO_VERIFY` (`auto`, `cosign`, `gh` or `sha256`), checks
-the checksums and, when `cosign` or `gh` is present, who published them. It exits with 2 for a missing dependency, 3 for an
-unsupported platform, 4 for an unsupported architecture, 5 when there is no such release, 6 for a failed download, 7 for a
-checksum mismatch, 8 for a failed install step and 9 when the signature or provenance did not verify.
-
-Until a release exists it exits 5 and says so. Do not fetch `install.sh` from a branch: the installer is the root of trust,
-so take it from a tagged release.
-
-### Check the installer first
+## Check the installer first
 
 The installer is a release asset, listed in the release's checksums file. That file is signed, so you can check the
 script before it runs:
@@ -153,8 +240,11 @@ grep '  install\.sh$' "$sums" | sha256sum -c -
 TEGO_VERSION=$tag sh install.sh
 ```
 
-If `cosign` fails, or `sha256sum` does not print `install.sh: OK`, do not run the script. `install-maze.sh` is checked the
-same way.
+If `cosign` fails, or `sha256sum` does not print `install.sh: OK`, do not run the script. `install-maze.sh` and the macOS
+template `tego.yaml` are checked the same way: download them from `$base` and give their names to the `grep`.
+
+Set `tag` to the release you install (the releases page names the latest). The identity names that tag, because the
+release workflow signs as itself, run for that tag.
 
 This shows that the script is the one the release workflow published at that tag. It protects you only if you check before
 you run:

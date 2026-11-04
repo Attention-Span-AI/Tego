@@ -518,4 +518,77 @@ check "a directory at the tego-control path is refused" 8 "$code"
 grep -q old "$tmp/prefix/tego" || { echo "FAIL a refused install replaced the working tego" >&2; fail=1; }
 rm -rf "$tmp/prefix"
 
+
+# The one-line install, `curl -fsSL .../scripts/install.sh | sh`: the script arrives on the shell's stdin through a
+# pipe. piped SCRIPT [VAR=VALUE...] feeds SCRIPT to sh (or to $pipe_sh) that way, in sha256 mode, with a fresh prefix.
+piped() {
+	script=$1
+	shift
+	rm -rf "$tmp/prefix" "$tmp/log" && : >"$tmp/log"
+	set +e
+	# shellcheck disable=SC2002 # the pipe is the point: it is how curl ... | sh hands the shell its script
+	cat "$script" | env -i HOME="$tmp" TMPDIR="$tmp" PATH="$sysbin" FAKE_LOG="$tmp/log" \
+		TEGO_VERSION="$version" TEGO_BASE_URL="file://$tmp/releases" TEGO_PREFIX="$tmp/prefix" TEGO_VERIFY=sha256 \
+		"$@" "${pipe_sh:-$sysbin/sh}" >"$tmp/out" 2>&1
+	code=$?
+	set -e
+	return "$code"
+}
+
+piped "$installer" TEGO_VERSION= TEGO_API_URL="file://$tmp/latest" && code=0 || code=$?
+check "piped into sh with no TEGO_VERSION, the script installs the latest release" 0 "$code"
+installed || { echo "FAIL a piped install installed no tego" >&2; fail=1; }
+expect "a piped install installs the tag the latest lookup names" "installed tego ${version}" "$tmp/out"
+for step in "Next steps:" "tego doctor " "tego test " "tego serve --open " "Quickstart: https://github.com/"; do
+	expect "the install ends with its next steps ($step)" "$step" "$tmp/out"
+done
+expect "a prefix that is not on PATH gets its export line" "export PATH=\"$tmp/prefix:\$PATH\" .*is not on your PATH" "$tmp/out"
+if grep -q 'systemd-run' "$tmp/out"; then echo "FAIL an install outside SSH printed the SSH scope line" >&2; fail=1; fi
+
+piped "$installer" TEGO_VERIFY=bogus && code=0 || code=$?
+check "a piped install still refuses an unknown TEGO_VERIFY" 2 "$code"
+expect "a piped install's messages name the script, not the shell" "^install.sh: TEGO_VERIFY must be" "$tmp/out"
+
+# A command the script starts gets no part of the script as its stdin: here the release's tego reads all of its
+# stdin when asked its version. Run before the shell had read the rest of the script, it would eat it, and the
+# install would stop there with nothing installed. How far a shell reads ahead of a pipe is its own: dash reads
+# blocks, bash reads a pipe a line at a time, so bash is the shell that would show it.
+pin=$(sha256sum "$rel/$control" | cut -d' ' -f1)
+printf '#!/bin/sh\ncat >/dev/null\necho "tego %s"\necho "control_sha256=%s"\n' "$version" "$pin" >"$rel/$archive"
+resum
+stdin_case() { # stdin_case SHELL
+	pipe_sh=$1
+	piped "$installer" && code=0 || code=$?
+	check "a piped install whose tego reads stdin still installs ($(basename "$pipe_sh"))" 0 "$code"
+	installed || { echo "FAIL a tego that reads stdin cut the piped install short under $pipe_sh" >&2; fail=1; }
+	expect "a piped install whose tego reads stdin ends with its next steps ($pipe_sh)" "Next steps:" "$tmp/out"
+	pipe_sh=""
+}
+stdin_case "$sysbin/sh"
+if bash_path=$(command -v bash); then
+	stdin_case "$bash_path"
+else
+	echo "skip a piped install under bash: no bash"
+fi
+release
+
+# A download cut short is a script with no end, and the shell must run none of it: here the connection drops just
+# after the line that moves tego into place, so a script run line by line would have installed both binaries.
+cut=$(grep -n 'tmp_bin="" # moved' "$installer" | cut -d: -f1)
+head -n "$cut" "$installer" >"$tmp/install-cut.sh"
+piped "$tmp/install-cut.sh" && code=0 || code=$?
+if installed_any || grep -q 'installed tego' "$tmp/out"; then
+	echo "FAIL an install script cut short, piped into sh, installed something (exit $code)" >&2
+	sed 's/^/     /' "$tmp/out" >&2
+	fail=1
+else
+	echo "ok   an install script cut short, piped into sh, installs nothing (exit $code)"
+fi
+
+# The export line only when the prefix is not on PATH, and the scope line only over SSH.
+run "$tmp/prefix" TEGO_VERIFY=sha256 SSH_CONNECTION="192.0.2.1 50000 192.0.2.2 22" && code=0 || code=$?
+check "an install over SSH into a prefix on PATH installs" 0 "$code"
+if grep -q 'export PATH' "$tmp/out"; then echo "FAIL a prefix already on PATH got an export line" >&2; fail=1; fi
+expect "an install over SSH says to start a shell in the user's cgroup" "systemd-run --user --scope bash" "$tmp/out"
+
 exit "$fail"

@@ -1,6 +1,6 @@
 # Tiers
 
-Tego enforces a contract at one of three tiers. All three are in the binary that `make build` makes. `tego doctor` says which
+Tego enforces a contract at one of three tiers. All three are in the release binary and in the one `make build` makes. `tego doctor` says which
 one your machine gets, `tego run --tier <name>` pins one, and every run records the tier it had (`run_start.tier`).
 The per-tier capability table is [spec/backend/CAPABILITIES.md](../spec/backend/CAPABILITIES.md).
 

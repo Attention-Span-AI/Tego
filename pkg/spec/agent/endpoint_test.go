@@ -95,3 +95,54 @@ func TestEndpointRefusalsSayWhatToWrite(t *testing.T) {
 		t.Errorf("err %v", err)
 	}
 }
+
+// v0's endpoint and net.ask grammar uses lowercase unix:, tcp:// and udp://. HTTP and other URL schemes
+// are not destination selectors. None may fall through to the case-folding of a bare DNS host.
+func TestEndpointSchemeCase(t *testing.T) {
+	for _, tc := range []struct {
+		in      string
+		wantErr bool
+	}{
+		{"unix:/run/x", false},
+		{"uniX:/run/x", true},
+		{"UNIX:@bus", true},
+		{"unix:0", true},
+		{"uniX:0", true},
+		{"unix:rel/x", true},
+		{"UniX:rel/x", true},
+		{"unix:@", true},
+		{"Unix:@", true},
+		{"tcp://example.com:443", false},
+		{"TcP://example.com:443", true},
+		{"TCP://example.com:0", true},
+		{"udp://[::1]:53", false},
+		{"uDp://[::1]:53", true},
+		{"UDP://example.com:0", true},
+		{"http://example.com:80", true},
+		{"hTtP://example.com:80", true},
+		{"https://example.com:443", true},
+		{"hTtPs://example.com:443", true},
+		{"inet://example.com:443", true},
+		{"iNeT://example.com:443", true},
+		{"file:///run/x", true},
+		{"FiLe:///run/x", true},
+		{"sctp://example.com:443", true},
+		{"ScTp://example.com:443", true},
+		// Without a selector delimiter these remain ordinary, case-insensitive DNS hosts.
+		{"TcP:443", false},
+		{"uDp:53", false},
+		{"hTtP:80", false},
+		{"hTtPs:443", false},
+	} {
+		t.Run(tc.in, func(t *testing.T) {
+			e, err := ParseEndpoint(tc.in)
+			if tc.wantErr {
+				if !errors.Is(err, ErrEndpoint) {
+					t.Fatalf("ParseEndpoint = %+v, %v; want ErrEndpoint", e, err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
