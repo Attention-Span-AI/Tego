@@ -183,11 +183,13 @@ func raiseNoFile(t *testing.T, n uint64) {
 	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &r); err != nil {
 		t.Fatal(err)
 	}
-	if r.Cur >= n {
-		return
-	}
+	// Set the limit even when it is already high enough: Go remembers the soft limit it started with and gives it
+	// back to every child it execs, until a Setrlimit call clears that memory. Without this, a holder this test starts
+	// gets the original low limit (1024 on CI), its inherited descriptors fill every slot, and its dynamic loader
+	// fails with EMFILE, so the fill sees none of them. Earlier tests in the package hid this: each calls Setrlimit,
+	// and the root suites' shards ran this test without them (2026-11-03, PR 21's cgroup-2 shard).
 	old := r
-	r.Cur = n
+	r.Cur = max(r.Cur, n)
 	if r.Max < n {
 		r.Max = n
 	}
