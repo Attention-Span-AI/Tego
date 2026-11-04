@@ -49,6 +49,8 @@ var globalFiles = map[string]string{
 	"internal/runtime/enforce/landlock/integration_abi_test.go": "test/vm/fetch-kernel_test.sh reads rowABIFloor",
 	// m0-demo.sh copies it, through a variable no scan reads, and test/e2e/m0_demo_test.sh runs m0-demo.sh.
 	"test/workloads/python-httpx/agent.py": "test/e2e/m0_demo_test.sh copies it",
+	// A release asset beside the installers: scripts/precommit_test.sh holds .goreleaser.yaml to shipping it.
+	"examples/lima/tego.yaml": "scripts/precommit_test.sh reads it as a release asset",
 }
 
 var globalDirs = map[string]string{

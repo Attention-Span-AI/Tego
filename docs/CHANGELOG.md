@@ -7,9 +7,91 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ## Unreleased
 
-Changes after the first source release, listed here until the next tag.
+Nothing yet.
+
+## v0.1.0 - 2026-11-03
+
+The first release. Tego runs an AI coding agent under a contract you write, a YAML file of rules for files, programs
+and network hosts, and enforces it from outside the agent: the Linux kernel and Tego's supervisor refuse what the
+contract rules out, can hold an action until you answer, and keep a hash-chained record of every run. Tego runs on
+Linux (amd64 and arm64); on macOS and Windows it runs inside a Linux VM. It sends nothing home and never calls a model
+itself.
+
+### Install
+
+- Linux: `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh` installs
+  `tego` and `tego-control` into `~/.local/bin`, checks them against the release's checksums, and checks who published
+  them when `cosign` or a logged-in `gh` is on `PATH`.
+- macOS: `limactl start --name=tego https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml`
+  starts an Ubuntu 24.04 VM with Tego installed (`brew install lima` first).
+- Windows: `wsl --install -d Ubuntu-24.04`, then the Linux line inside Ubuntu.
+- From source: `make build` (Go 1.27). `docs/INSTALL.md` has every route and what each was tested on.
+
+### Added
+
+Contracts
+
+- `tego init` writes a starter contract, from the built-in presets `no-secrets`, `no-prod` and `repo-only-writes` with
+  `--preset`; `tego compile` checks one and prints its rule table, and `--test` asks what each tier would do with an
+  action; `tego learn` proposes a contract from what a finished run did. Revision 1 of each preset is frozen from this
+  release on.
+- Rules for files (`fs`), programs (`exec`), network hosts and ports (`net`), environment variables and limits (tokens,
+  cost, time, stalls, repeats, memory, processes). A run that passes a limit ends with exit code 124.
+
+Three enforcement tiers, all in the release binary
+
+- Tier 1 (`landlock`), no root: Landlock and a seccomp supervisor. The kernel refuses writes and programs outside the
+  contract; Tego's supervisor decides network hosts.
+- Tier 2 (`cgroup`), root: BPF programs attached to the run's cgroup, and fanotify. Hosts are decided in the kernel.
+- Tier 3 (`bpflsm`), root, on a machine with `bpf` in the boot LSM list: BPF LSM hooks.
+- `tego doctor` says which tier a machine gets and prints a fix for each gap; `tego test` shows four harmless actions
+  refused at that tier, with no root and no agent.
+
+Live rules and approvals
+
+- An `ask` rule holds a file open or a connection until you answer with `tego approve` or `tego deny`, or in the
+  dashboard. Held file reads (`fs.ask_read`) are tier 1 only; `exec.ask` is reserved and refuses.
+- A running run can be paused, resumed, stopped and blocked (`tego pause`, `resume`, `stop`, `block`, `unblock`), and
+  `tego rule` turns something a run did into a rule. A run in the Adjustable live mode (tiers 2 and 3) can also be
+  loosened while it runs (`docs/user/live-modes.md`).
+- MCP tool rules: a relay allows, holds or denies single tools of an MCP server, and `tego mcp` changes that live.
+
+The record
+
+- Every run writes a hash-chained record, anchored in `~/.tego/chain.log`. `tego receipt` summarises a run, `tego events`
+  prints it and `tego events <run> --verify` checks its chain, `tego drift` compares what was allowed with what was
+  used, and `tego measure` counts steps, tokens, cost and time. What the record holds depends on the tier: by default
+  tier 1 records programs, writes and connections, and no file reads (`record: full` records reads).
+
+The dashboard
+
+- `tego serve --open` serves a dashboard on `127.0.0.1:8484` for one person: runs, logs, refusals, held requests to allow
+  or deny, each run's rules, and stop, pause and block. It runs as `tego-control`, which refuses to run as root.
+
+The agent watcher
+
+- `tego watch` runs any command as a black box and records what it does. `tego agents` lists the agent processes
+  running on the machine and `tego adopt` moves one that is already running into a governed run; both need root.
+
+Supported agents
+
+- `examples/agents/` has contracts for Claude Code (print mode and the full-screen interface), OpenAI Codex (API key
+  through Tego's forwarder, or a ChatGPT sign-in), a Python agent on the Claude Agent SDK, one on the Anthropic Python
+  SDK, a Python retriever with one MCP server, and an agent of your own left to run unattended. Any other agent is an
+  ordinary process: write a contract for it, or start with `tego watch`.
+
+Release
+
+- Static binaries for Linux amd64 and arm64, with the tier-2 and tier-3 BPF objects built in. The checksums file is
+  signed with cosign (keyless, by this repository's release workflow at this tag) and every file it lists has a build
+  provenance attestation; the binaries are built again from the tag on a fresh runner and must match byte for byte
+  before the release is published. `install.sh` and the macOS template `tego.yaml` are release assets too, in the same
+  checksums file, and the one-line installs take them from the latest release. `tego_0.1.0_licenses.tar.gz` holds the
+  licence texts, and `tego licenses` prints them.
 
 ### Security
+
+Fixed since the source was first published on 2026-11-02.
 
 - At tier landlock an agent could open a `deny_write` file such as `.git/config` for writing through a symlink whose
   body goes through its own `/proc/self/task/<tid>` and climbs back out. The supervisor now resolves such a link the
@@ -22,6 +104,8 @@ Changes after the first source release, listed here until the next tag.
   flyctl, Supabase and OCI CLI stores.
 
 ### Fixed
+
+Since the source was first published on 2026-11-02.
 
 - Set up a new agent takes a long form and keeps a comment on the name line; removing an entry listed twice removes
   both; `tego rule` changes read in words in the dashboard's history and undo the right way.
@@ -116,69 +200,20 @@ Changes after the first source release, listed here until the next tag.
 - The suite holds on GitHub's hosted runners: kernel 7.0, which refuses an IPv4 source route to an unprivileged task
   itself (CVE-2026-53249), arm64, git 2.56 and the race detector's pace.
 
-## v0.1.0 - unreleased
-
-The first version. No release has been tagged, so build it from source (`docs/INSTALL.md`). Tiers 2 and 3 are in the
-binary that `make build` produces; the limits that remain are in `docs/GAPS.md`.
-
-### Added
-
-Running an agent
-
-- `tego init` writes a starter contract (`agent.yaml`). With `--preset` it writes one from the built-in presets
-  (`no-secrets`, `no-prod`, `repo-only-writes`), the folders you may write (`--write`), the hosts you may reach
-  (`--allow-host`) and a command (`--command`). `tego init --list` prints the presets.
-- `tego compile` validates a contract and prints its rule table. `--test` evaluates a hypothetical action per tier
-  without running anything.
-- `tego run` runs an unmodified agent process under a contract and ends with a summary. Its exit code is the agent's;
-  124 means Tego stopped the run on a limit, 125 means Tego itself failed.
-- `tego test` is a one-second self-check with no root: four harmless actions on decoy files, each refused and recorded.
-- `tego doctor` tests the kernel (BTF, cgroup v2, Landlock, seccomp, LSM list), prints the tier the machine gets and
-  one fix line per gap.
-
-Enforcement
-
-- Three tiers, all in the binary: Landlock plus a seccomp supervisor with no root (kernel minimums below); cgroup-attached
-  BPF plus fanotify with root; BPF LSM with root on machines with `bpf` in the boot LSM list. Every run records the tier
-  it had.
-- Rules for files (`fs`), programs (`exec`), network hosts and ports (`net`), environment variables and limits.
-- Held requests: an action can pause until you answer with `tego approve` or `tego deny`, or in the dashboard.
-- Limits for tokens, cost, wall-clock time, stalls and repeats end a run with `cgroup.kill` and exit 124.
-- Live changes to a running run: `tego block`, `tego unblock`, `tego pause`, `tego resume`, and the Locked and Adjustable
-  live modes (`docs/user/live-modes.md`).
-- MCP per-tool rules (`tego mcp`) and model routes (`tego route`) for a running run.
-
-Seeing what happened
-
-- A hash-chained record of every run, anchored in `~/.tego/chain.log`. `tego events` prints it and checks the chain;
-  `tego receipt` summarises a run (time, files, connections, secrets read, refusals, asks, tokens); `tego drift`
-  compares declared against used; `tego measure` counts steps, tokens, cost and time; `tego status` shows a run's state.
-- Model traffic is attributed to the step that caused each action where capture can see it (OpenSSL uprobes and a
-  loopback forwarder for `models[]`), with a `gap` event where it cannot.
-- `tego learn` proposes a contract from what a finished run did, and `tego rule` turns something a run did into a rule.
-- `tego serve` starts a dashboard on `127.0.0.1` for one person: runs, logs, refusals, held requests, each run's rules,
-  and stop, pause and block buttons. `--preview` also lists the MCP tools and Model routes pages.
-
-Agents already running
-
-- `tego watch` runs any command as a black box and records what it does. `tego agents` lists agent processes and reports
-  new ones. `sudo tego adopt` moves a running agent's process tree into a governed run.
-
-Release tooling
-
-- `.goreleaser.yaml`, `scripts/install.sh` and the tag process in `docs/VERSIONING.md` section 7. The first tag also needs
-  the steps listed there.
-- The installers are in the signed checksums file, so you can check one before you run it (`docs/INSTALL.md`). That does not
-  help a script piped into `sh` (`docs/GAPS.md` B11).
-
 ### Known limitations
 
 See `docs/GAPS.md`. The ones most likely to matter on the first day:
 
 - Every destination a contract allows is a way for data to leave (A1), and an allowed interpreter can do anything inside
   its own memory (A2).
+- At tier 1, under the default `record: summary`, a read that `deny_read` refuses is still refused but leaves no line,
+  so a clean receipt says nothing about reads; `record: full` records them. A record-only run (`tego watch` with no
+  `--boundary`, `tego run --observe`) has no Landlock rules, so its agent can rewrite its own record.
 - Tier 3 needs `bpf` in the boot LSM list, which Ubuntu and the stock WSL2 kernel do not have by default (B1).
 - `tego serve` is for one person on one machine. It listens on loopback and refuses to run as root.
+- Piping the installer into `sh` runs it before anything can check it (B11); `docs/INSTALL.md` shows how to check it
+  first.
+- The macOS template and the Windows script have not been run on those systems yet.
 
 ### Record `v`
 1 (`spec/record/v1`, record minor 29)

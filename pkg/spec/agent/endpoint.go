@@ -53,7 +53,12 @@ func ParseEndpoint(raw string) (Endpoint, error) {
 	if s == "" {
 		return e, fmt.Errorf("%w: empty entry", ErrEndpoint)
 	}
-	if rest, ok := strings.CutPrefix(s, "unix:"); ok {
+	if scheme, rest, ok := strings.Cut(s, ":"); ok && strings.EqualFold(scheme, ProtoUnix) {
+		// v0 spells selectors in lowercase, as for tcp:// and udp://. Letting a mixed-case unix:
+		// fall through as a DNS host bypassed the socket-path checks and changed kind on a round trip.
+		if scheme != ProtoUnix {
+			return e, fmt.Errorf("%w: unix selector must be lowercase: write %q", ErrEndpoint, "unix:"+rest)
+		}
 		return parseUnixEndpoint(e, rest)
 	}
 	if scheme, rest, ok := strings.Cut(s, "://"); ok {

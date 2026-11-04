@@ -15,6 +15,7 @@
 # not pass. Each suite's go test -json stream is kept beside its console log (VM_OUT/logs/<suite>.json).
 #
 # Usage: test/vm/root-suites.sh [package-substring...]   (default: every package below)
+#        test/vm/root-suites.sh --gather DIR              (after the VM_SHARD runs: below)
 # Environment: GO (go), VM_OUT (bin/vm: binaries, logs, summary.json), VM_BPF (auto|yes|no: whether
 #   to build the tegobpf variants; auto builds them when internal/bpf compiles with the tag, i.e.
 #   after `make gen`), VM_RUN (a -test.run pattern for every suite), VM_SUITE_TIMEOUT (seconds per
@@ -47,6 +48,11 @@
 # itself for a throwaway machine. On a developer's own machine it skips, and the skip gate below fails the
 # run for it, so a sudo run there is not mistaken for a full one.
 #
+# VM_SHARD=<name> runs one shard of test/vm/suites.sh's ROOT_SHARDS, as CI's root-suites-shard matrix does: its
+# packages, and with a part "j/n" only part j of each of their suites' top-level tests (below), the must-pass gate
+# left to `test/vm/root-suites.sh --gather DIR`, which holds every shard's VM_OUT under DIR to have finished and
+# passed and runs that gate over all their logs (CI's root-suites job; test/vm/README.md "CI's shards").
+#
 # VM_CGROUP=service starts each guest's suite from /system.slice/tego-ci.service with another process
 # beside it, where a CI runner's `sudo` from a job step starts it, instead of from a copy of this shell's
 # cgroup chain. With TEGO_VM_LSM=kernel and TEGO_VM_LOCKDOWN=none it is the nearest this harness comes to
@@ -68,6 +74,108 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=test/vm/conformance-require.sh
 . "$here/conformance-require.sh"
 repo="$(cd "$here/../.." && pwd)"
+
+# ---- the shards (VM_SHARD, --gather) -------------------------------------------------------------
+# shard_plan checks test/vm/suites.sh's ROOT_SHARDS (sourced by the caller) against PKGS: every name once, every
+# package named a package of PKGS, no package in two shards unless they are its parts, every part 1..n of a split
+# set of packages present once, at most one "*" shard, and every package of PKGS in some shard. It prints each
+# problem and returns 1 when there is one.
+shard_plan() {
+	local bad=0 e name pkgs part p q j n stars=0
+	declare -A seen_name=() owner=() parts=() nparts=()
+	for e in "${ROOT_SHARDS[@]}"; do
+		IFS='|' read -r name pkgs part <<<"$e"
+		case "$name" in "" | *[!a-z0-9-]*) echo "root-suites: ROOT_SHARDS entry '$e': a name is lower-case letters, digits and -" >&2; bad=1; continue ;; esac
+		[ -z "${seen_name[$name]:-}" ] || { echo "root-suites: ROOT_SHARDS names shard $name twice" >&2; bad=1; }
+		seen_name[$name]=1
+		if [ "$pkgs" = "*" ]; then
+			stars=$((stars + 1))
+			[ -z "$part" ] || { echo "root-suites: ROOT_SHARDS shard $name: the \"*\" shard runs whole suites, not a part" >&2; bad=1; }
+			continue
+		fi
+		[ -n "$pkgs" ] || { echo "root-suites: ROOT_SHARDS shard $name names no package" >&2; bad=1; continue; }
+		if [ -n "$part" ]; then
+			j="${part%%/*}" n="${part#*/}"
+			case "$j/$n" in [1-9]/[1-9] | [1-9]/[1-9][0-9] | [1-9][0-9]/[1-9][0-9]) ;; *) echo "root-suites: ROOT_SHARDS shard $name: part '$part' is not j/n" >&2; bad=1; continue ;; esac
+			[ "$j" -le "$n" ] && [ "$n" -ge 2 ] || { echo "root-suites: ROOT_SHARDS shard $name: part $part is not one of 2 or more" >&2; bad=1; continue; }
+			[ -z "${parts[$pkgs/$j]:-}" ] || { echo "root-suites: ROOT_SHARDS has part $j of '$pkgs' twice" >&2; bad=1; }
+			parts[$pkgs/$j]=$n
+			if [ -z "${nparts[$pkgs]:-}" ]; then nparts[$pkgs]=$n; elif [ "${nparts[$pkgs]}" != "$n" ]; then
+				echo "root-suites: ROOT_SHARDS splits '$pkgs' into ${nparts[$pkgs]} parts and into $n" >&2
+				bad=1
+			fi
+		fi
+		for p in $pkgs; do
+			q=""
+			for q in "${PKGS[@]}"; do [ "$q" != "$p" ] || break; done
+			[ "$q" = "$p" ] || { echo "root-suites: ROOT_SHARDS shard $name names $p, which is not in PKGS" >&2; bad=1; continue; }
+			if [ -n "${owner[$p]:-}" ] && { [ -z "$part" ] || [ "${owner[$p]}" != "parts of $pkgs" ]; }; then
+				echo "root-suites: ROOT_SHARDS runs $p in shard $name and in ${owner[$p]}" >&2
+				bad=1
+			fi
+			if [ -n "$part" ]; then owner[$p]="parts of $pkgs"; else owner[$p]="shard $name"; fi
+		done
+	done
+	for e in "${!nparts[@]}"; do
+		for ((j = 1; j <= ${nparts[$e]}; j++)); do
+			[ -n "${parts[$e/$j]:-}" ] || { echo "root-suites: ROOT_SHARDS splits '$e' into ${nparts[$e]} parts and has no part $j" >&2; bad=1; }
+		done
+	done
+	[ "$stars" -le 1 ] || { echo "root-suites: ROOT_SHARDS has $stars \"*\" shards" >&2; bad=1; }
+	if [ "$stars" = 0 ]; then
+		for p in "${PKGS[@]}"; do
+			[ -n "${owner[$p]:-}" ] || { echo "root-suites: no shard of ROOT_SHARDS runs $p" >&2; bad=1; }
+		done
+	fi
+	return "$bad"
+}
+
+# --gather DIR: the last step of CI's root-suites job, after its shards. DIR holds each shard's VM_OUT (its logs/,
+# summary.json and shard.done), one directory each, in any layout. Every shard of ROOT_SHARDS must have finished and
+# passed, none twice and no other, and then root-must-pass.txt is checked over the go test -json logs of all of them
+# together: a root-only test must have passed in some shard's build and failed in none, as one whole run checks it.
+if [ "${1:-}" = --gather ]; then
+	[ $# = 2 ] && [ -d "$2" ] || { echo "usage: test/vm/root-suites.sh --gather DIR (the shards' VM_OUT directories)" >&2; exit 2; }
+	gdir="$(cd "$2" && pwd)"
+	# shellcheck source=test/vm/suites.sh
+	. "$here/suites.sh"
+	shard_plan || exit 2
+	status=0
+	declare -A done_by=()
+	while IFS= read -r -d '' f; do
+		read -r gname gstatus <"$f" || true
+		[ -z "${done_by[$gname]:-}" ] || { echo "root-suites: shard $gname finished twice: ${done_by[$gname]} and $f" >&2; status=1; }
+		done_by[$gname]="$f"
+		known=0
+		for e in "${ROOT_SHARDS[@]}"; do [ "${e%%|*}" != "$gname" ] || known=1; done
+		[ "$known" = 1 ] || { echo "root-suites: $f names shard '$gname', which ROOT_SHARDS does not" >&2; status=1; }
+	done < <(find "$gdir" -name shard.done -type f -print0)
+	echo "== shards (test/vm/suites.sh ROOT_SHARDS)"
+	for e in "${ROOT_SHARDS[@]}"; do
+		gname="${e%%|*}"
+		if [ -z "${done_by[$gname]:-}" ]; then
+			echo "FAIL $gname: no shard.done (the shard did not run, did not finish or uploaded no logs)"
+			status=1
+			continue
+		fi
+		read -r _ gstatus <"${done_by[$gname]}" || true
+		if [ "$gstatus" = 0 ]; then echo "ok   $gname"; else echo "FAIL $gname: exit ${gstatus:-none}"; status=1; fi
+	done
+	jsons=()
+	for f in "${done_by[@]}"; do
+		for j in "$(dirname "$f")"/logs/*.json; do [ ! -s "$j" ] || jsons+=("$j"); done
+	done
+	echo
+	if [ "${#jsons[@]}" = 0 ]; then
+		echo "root-suites: the shards left no go test -json log" >&2
+		exit 1
+	fi
+	"$repo/scripts/skipgate.sh" --must-pass "$here/root-must-pass.txt" "${jsons[@]}" >"$gdir/skipgate-must-pass.log" 2>&1 || status=1
+	if grep -q '^== must pass' "$gdir/skipgate-must-pass.log"; then sed -n '/^== must pass/,$p' "$gdir/skipgate-must-pass.log"; else cat "$gdir/skipgate-must-pass.log"; fi
+	echo
+	echo "== root-suites: ${#ROOT_SHARDS[@]} shards, ${#jsons[@]} suites' logs: $([ "$status" = 0 ] && echo pass || echo FAIL)"
+	exit "$status"
+fi
 GO="${GO:-go}"
 OUT="${VM_OUT:-$repo/bin/vm}"
 case "$OUT" in /*) ;; *) OUT="$repo/$OUT" ;; esac
@@ -163,7 +271,37 @@ if [ $# -gt 0 ]; then
 	[ "${#PKGS[@]}" -gt 0 ] || { echo "root-suites: no package matches $*" >&2; exit 2; }
 fi
 
+# VM_SHARD=<name>: one shard of ROOT_SHARDS (test/vm/suites.sh), CI's root-suites-shard matrix: that shard's packages,
+# and of each of their suites the part it names (PART, "j/n", below). The must-pass gate is --gather's, over every
+# shard; this run writes VM_OUT/shard.done ("<name> <status>") at its end for it.
+SHARD="${VM_SHARD:-}"
+PART=""
+if [ -n "$SHARD" ]; then
+	[ $# -eq 0 ] || { echo "root-suites: VM_SHARD=$SHARD selects its own packages; name none" >&2; exit 2; }
+	[ -z "${VM_RUN:-}" ] || { echo "root-suites: VM_SHARD=$SHARD runs its own part of each suite; VM_RUN would narrow it again" >&2; exit 2; }
+	shard_plan || exit 2
+	entry=""
+	for e in "${ROOT_SHARDS[@]}"; do [ "${e%%|*}" != "$SHARD" ] || entry="$e"; done
+	[ -n "$entry" ] || { echo "root-suites: VM_SHARD=$SHARD is not a shard of test/vm/suites.sh's ROOT_SHARDS" >&2; exit 2; }
+	IFS='|' read -r _ shard_pkgs PART <<<"$entry"
+	if [ "$shard_pkgs" = "*" ]; then
+		declare -A named=()
+		for e in "${ROOT_SHARDS[@]}"; do
+			IFS='|' read -r _ q _ <<<"$e"
+			[ "$q" = "*" ] || for p in $q; do named[$p]=1; done
+		done
+		selected=()
+		for p in "${PKGS[@]}"; do [ -n "${named[$p]:-}" ] || selected+=("$p"); done
+	else
+		read -r -a selected <<<"$shard_pkgs"
+	fi
+	PKGS=("${selected[@]+"${selected[@]}"}")
+	[ "${#PKGS[@]}" -gt 0 ] || { echo "root-suites: VM_SHARD=$SHARD has no package to run" >&2; exit 2; }
+	echo "root-suites: shard $SHARD: ${PKGS[*]}${PART:+, part $PART of each suite}"
+fi
+
 mkdir -p "$OUT/bin" "$OUT/prebuilt" "$OUT/logs"
+rm -f "$OUT/shard.done"
 results="$OUT/results.tsv"
 : >"$results"
 cd "$repo" || exit 1
@@ -335,6 +473,26 @@ for s in "${suites[@]+"${suites[@]}"}"; do
 		case "$w" in *=*) [ "${w%%=*}" != "$pkg" ] || SUITE_TIMEOUT="${w#*=}" ;; *) SUITE_TIMEOUT="$w" ;; esac
 	done
 	go_timeout="$((SUITE_TIMEOUT - 300))s"
+	# A part j/n of the suite: the top-level tests at positions j, j+n, j+2n... of its .list (read from its sources),
+	# by -test.run; part n skips every other part's tests instead (-test.skip), so it also runs whatever the list does
+	# not hold (fuzz targets, examples, a test the list's sed missed), and the n parts together run every test once.
+	# The .list is then this part's tests, for summarize.py's "never started".
+	part_args=()
+	if [ -n "$PART" ]; then
+		pj="${PART%%/*}" pn="${PART#*/}" mine=() others=() i=0
+		while IFS= read -r t; do
+			[ -n "$t" ] || continue
+			if [ $((i % pn + 1)) = "$pj" ]; then mine+=("$t"); else others+=("$t"); fi
+			i=$((i + 1))
+		done <"$OUT/logs/$suite.list"
+		if [ "$pj" != "$pn" ]; then
+			part_args=("-test.run=^($(IFS='|'; echo "${mine[*]}"))\$")
+		elif [ "${#others[@]}" -gt 0 ]; then
+			part_args=("-test.skip=^($(IFS='|'; echo "${others[*]}"))\$")
+		fi
+		printf '%s\n' "${mine[@]+"${mine[@]}"}" >"$OUT/logs/$suite.list"
+		echo "   part $PART of $suite: ${#mine[@]} of the $i tests its sources list$([ "$pj" != "$pn" ] || echo ', and any they do not')"
+	fi
 	echo
 	if [ "$HOSTMODE" = sudo ]; then
 		echo "== $suite (go test -tags $tags ./$pkg, as root on this host)"
@@ -342,7 +500,7 @@ for s in "${suites[@]+"${suites[@]}"}"; do
 		[ -z "$DISPOSABLE" ] || env_args+=("TEGO_DISPOSABLE_HOST=$DISPOSABLE")
 		[ "$tags" = integration ] || env_args+=("GOFLAGS=-tags=$tags")
 		(cd "$repo/$pkg" && "${as_root[@]+"${as_root[@]}"}" env "${env_args[@]}" \
-			"$here/bounded-run.sh" "$SUITE_TIMEOUT" "$bin" -test.v -test.timeout=$go_timeout "${run_args[@]+"${run_args[@]}"}") 2>&1 |
+			"$here/bounded-run.sh" "$SUITE_TIMEOUT" "$bin" -test.v -test.timeout=$go_timeout "${run_args[@]+"${run_args[@]}"}" "${part_args[@]+"${part_args[@]}"}") 2>&1 |
 			tee "$OUT/logs/$suite.console"
 		code="${PIPESTATUS[0]}"
 	else
@@ -358,7 +516,7 @@ for s in "${suites[@]+"${suites[@]}"}"; do
 			"${module_args[@]+"${module_args[@]}"}" --file "$bin:/vm/$(basename "$bin")" --file "$OUT/src:/src" --file "$OUT/prebuilt:/vm/prebuilt" \
 			--file "$here/go-shim.sh:/usr/local/bin/go" --cwd "/src/$pkg" "${env_args[@]+"${env_args[@]}"}" \
 			"${fixture_args[@]+"${fixture_args[@]}"}" \
-			-- "${service_cgroup[@]+"${service_cgroup[@]}"}" "/vm/$(basename "$bin")" -test.v -test.timeout=$go_timeout "${run_args[@]+"${run_args[@]}"}"
+			-- "${service_cgroup[@]+"${service_cgroup[@]}"}" "/vm/$(basename "$bin")" -test.v -test.timeout=$go_timeout "${run_args[@]+"${run_args[@]}"}" "${part_args[@]+"${part_args[@]}"}"
 		code="$(vm_code $? "$OUT/logs/$suite.status")"
 	fi
 	tr -d '\r' <"$OUT/logs/$suite.console" | "$GO" tool test2json -p "$module/$pkg" >"$OUT/logs/$suite.json" 2>/dev/null
@@ -462,10 +620,11 @@ if [ "${#lenient[@]}" -gt 0 ]; then
 	"$repo/scripts/skipgate.sh" "$here/root-skips.txt" "${lenient[@]}" >"$OUT/logs/skipgate-plain.log" 2>&1 || status=1
 	gate_report '^== skipped tests' "$OUT/logs/skipgate-plain.log"
 fi
-if [ $# -eq 0 ] && [ -z "${VM_RUN:-}" ] && [ "${#strict[@]}" -gt 0 ]; then
+if [ $# -eq 0 ] && [ -z "${VM_RUN:-}" ] && [ -z "$SHARD" ] && [ "${#strict[@]}" -gt 0 ]; then
 	echo
 	"$repo/scripts/skipgate.sh" --must-pass "$here/root-must-pass.txt" "${strict[@]}" "${lenient[@]+"${lenient[@]}"}" \
 		>"$OUT/logs/skipgate-must-pass.log" 2>&1 || status=1
 	gate_report '^== must pass' "$OUT/logs/skipgate-must-pass.log"
 fi
+[ -z "$SHARD" ] || echo "$SHARD $status" >"$OUT/shard.done"
 exit "$status"

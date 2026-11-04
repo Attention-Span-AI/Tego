@@ -14,8 +14,7 @@ the advisory if you want that.
 
 ## Supported versions
 
-No release has been tagged yet. Until one is, only the `main` branch is supported. After the first tag, this section
-will name the supported versions.
+The latest release (the first is v0.1.0) and the `main` branch are supported.
 
 ## Scope
 

@@ -646,7 +646,7 @@ jobs:
         run: |
           [ "$RC" = 0 ] || { echo "::error::a timing budget was missed or not asserted (status '${RC:-none}'; the timing budgets step has the findings)"; exit 1; }
 
-  root-suites:
+  root-suites-shard:
     # The privileged suites ran per push nowhere, only inside vm-matrix's report-only
     # coverage step, and four packages' root-only tests ran nowhere at all. This is test/vm/root-suites.sh on
     # the runner itself, through its passwordless sudo (VM_HOST=sudo), as bpf-load runs its two suites: each
@@ -654,23 +654,34 @@ jobs:
     # beside it where the package's tests load the objects, which are committed, so nothing is generated
     # here), run as root with -test.v from its own package directory, then `tego doctor --require cgroup` as
     # root. The step fails on a failed test, a suite that did not build or ran nothing, and a doctor below
-    # tier cgroup; the next fails when a root-only test test/vm/root-must-pass.txt names did not pass. Under
+    # tier cgroup. Under
     # sudo a suite starts in the runner's service cgroup, where launch's three tests that need a delegated
     # user@0.service skip; the list holds only tests that passed as root in a KVM guest set up that way. The
     # script also holds every skip to test/vm/root-skips.txt, so a test that stops running
-    # as root fails the step, and checks the must-pass list itself, over the suites' go test -json logs.
-    # On every pull request and on a push to main, a fork's pull request included: the job takes about two hours,
-    # which costs nothing on a public repository's hosted runners, and the main ruleset requires it, so a change is
+    # as root fails the step.
+    #
+    # One job took 91 minutes (run 41706261848, 2026-11-03), the whole run's wall clock, 48 of them enforce/cgroup's
+    # tegobpf suite. So the suites run as the shards of test/vm/suites.sh's ROOT_SHARDS, one runner each (VM_SHARD):
+    # enforce/cgroup's two suites in four parts of their tests, internal/runtime's, test/conformance's, and every other
+    # package's in the last; the matrix lists the plan's names, in its order, as root-suites_test.sh checks. The job
+    # named root-suites, below, is the one the main ruleset requires: it holds every shard to have passed and runs
+    # the must-pass gate over all their logs.
+    # On every pull request and on a push to main, a fork's pull request included: the shards take about 20 minutes each,
+    # which costs nothing on a public repository's hosted runners, and the main ruleset requires root-suites, so a change is
     # merged only after the privileged suites pass. A fork's code runs as root here as it does in bpf-load and
     # build-test-arm64: on a fresh VM with no secrets and a read-only token, after a maintainer approves the run of a
-    # first-time contributor.
+    # first-time contributor. root-suites, below, runs on the same events.
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    # enforce/cgroup has 100 minutes (VM_SUITE_TIMEOUT below) in each of its two builds: its tegobpf suite took
-    # 2517-3765 s in KVM guests on a loaded host and timed out once at the 2700 s it had. The other suites
-    # take the rest: 50 minutes, as before, so a cgroup suite that runs to its own bound is reported by root-suites.sh
-    # with its log, never cut off by the job's.
-    timeout-minutes: 250
+    # enforce/cgroup has 50 minutes (VM_SUITE_TIMEOUT below) in each of its two builds: a quarter of its tests took
+    # 12.4-14 minutes of both builds together on that run, and its whole tegobpf suite took 2517-3765 s in KVM guests on a
+    # loaded host. The other shards' suites have 25 minutes each, as before, so a suite that runs to its own bound
+    # is reported by root-suites.sh with its log, never cut off by the job's.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false # every shard's verdict, as the one job gave every suite's
+      matrix:
+        shard: [cgroup-1, cgroup-2, cgroup-3, cgroup-4, runtime, conformance, rest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -687,17 +698,54 @@ jobs:
       # a user namespace cannot reach the binary it execs by its path (the first run on GitHub, 2026-11-02: "fork/exec
       # .../_temp/root-suites/bin/...: permission denied"). The deputy's tests, whose deputy runs as nobody, exec theirs
       # through /proc/self/exe, as tego execs the deputy, which needs no search permission above the binary.
-      - name: the privileged suites, as root through sudo; every skip allowed and the root-only tests passed
-        run: VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=6000" VM_HOST=sudo VM_BPF=yes VM_OUT=/tmp/root-suites test/vm/root-suites.sh
+      - name: the privileged suites of this shard, as root through sudo; every skip allowed
+        env:
+          VM_SHARD: ${{ matrix.shard }}
+        run: VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=3000" VM_HOST=sudo VM_BPF=yes VM_OUT=/tmp/root-suites test/vm/root-suites.sh
       - name: upload the suites' logs
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: root-suites
+          name: root-suites-${{ matrix.shard }}
           retention-days: 14
           path: |
             /tmp/root-suites/logs/
             /tmp/root-suites/summary.json
+            /tmp/root-suites/shard.done
+          if-no-files-found: warn
+
+  root-suites:
+    # The check the main ruleset requires, after every shard above. always(): a job skipped because a shard failed
+    # would count as passed for a required check, so this one runs whatever they did and fails unless every shard
+    # succeeded. root-suites.sh --gather holds each shard of ROOT_SHARDS to have finished with 0, none missing, and
+    # checks test/vm/root-must-pass.txt over all the shards' go test -json logs together: a root-only test must have
+    # passed in some build and failed in none, as the one job checked it.
+    needs: root-suites-shard
+    if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: root-suites-*
+          path: ${{ runner.temp }}/root-suites
+      - name: every shard passed, and the root-only tests passed in them
+        run: test/vm/root-suites.sh --gather "$RUNNER_TEMP/root-suites"
+      - name: the shards' own verdict
+        if: always()
+        env:
+          RESULT: ${{ needs.root-suites-shard.result }}
+        run: '[ "$RESULT" = success ] || { echo "::error::root-suites-shard: $RESULT (a shard failed, was cancelled or was skipped)"; exit 1; }'
+      - name: upload the gathered logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: root-suites
+          retention-days: 14
+          path: ${{ runner.temp }}/root-suites/
           if-no-files-found: warn
 
   race:

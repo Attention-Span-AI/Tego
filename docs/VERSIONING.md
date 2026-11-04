@@ -1,7 +1,7 @@
 # Versioning and releases
 
 ## 1. Binary
-- Semver `0.y.z` until 1.0. The first release will be `v0.1.0`; no tag has been cut yet. `tego` and `tego-control` are built for linux on
+- Semver `0.y.z` until 1.0. The first release is `v0.1.0`. `tego` and `tego-control` are built for linux on
   amd64 and arm64 with `-tags tegobpf` (`.goreleaser.yaml`), so `tego` carries the BPF objects and the root tiers (cgroup
   and bpflsm) are in the binary. They still need root and a kernel that offers them, which no build changes (`tego
   doctor` says what a machine gives). PATCH = fixes; MINOR = features or a new supported record/contract version; a MAJOR
@@ -171,7 +171,7 @@ of this; retraction is deliberately not automated (§7.4).
    `v*` tag on `origin` is what `.github/workflows/release.yml` builds and publishes from (§5). The tier-2
    objects are committed (§4) and `.goreleaser.yaml` builds with `-tags tegobpf`, so the published binary
    carries them with no clang and no `make gen`.
-3. `release.yml` takes it from there: a draft release, the binary scan, the signature, the provenance, then
+3. `release.yml` takes it from there: a draft release described by the tag's CHANGELOG section (`release.sh notes`), the binary scan, the signature, the provenance, then
    publication; `reproduce` rebuilds the tag and compares. A release whose workflow failed stays a draft, never
    public; re-running the workflow for the same tag replaces that draft (`replace_existing_draft`), which is safe
    because the tag itself is unchanged and nothing was published under it.

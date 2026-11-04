@@ -612,9 +612,37 @@ fixture fails, naming the variable (ADR 0017).
 Every run, in a guest or through sudo, ends with two gates over the suites' `go test -json` logs
 (`VM_OUT/logs/<suite>.json`), through `scripts/skipgate.sh`: each skip must be one `test/vm/root-skips.txt`
 allows, with its reason (an entry whose reason starts `untagged:` only in the plain build of a package whose
-tests load the objects), and, on a run of every package with no `VM_RUN`, each test `root-must-pass.txt`
-names must have passed in some build and failed in none. `scripts/check-skiplists.sh` checks that both lists
-name tests that exist.
+tests load the objects), and, on a run of every package with no `VM_RUN` and no `VM_SHARD`, each test
+`root-must-pass.txt` names must have passed in some build and failed in none. `scripts/check-skiplists.sh` checks
+that both lists name tests that exist.
+
+### CI's shards: `VM_SHARD` and `--gather`
+
+One job running every suite took 91 minutes on GitHub's runner (run 41706261848, 2026-11-03), the whole CI run's
+wall clock: enforce/cgroup's tegobpf suite 48 of them and its plain suite 4, internal/runtime's two suites 15,
+test/conformance 10 (its `TestConformanceKernel` 8.7 alone, which no split of the suite can shorten), and the other
+28 suites 11 together. So CI runs the suites as the shards `test/vm/suites.sh`'s `ROOT_SHARDS` names, one runner
+each, and `VM_SHARD=<name> test/vm/root-suites.sh` is one of them: its packages (a `*` shard takes every package
+no other shard names), and with a part `j/n` only part j of each of their suites' top-level tests. A part is every
+n-th test of the suite's `.list`, read from its sources, from the j-th, given to the binary as `-test.run`; part n
+instead skips the other parts' tests with `-test.skip`, so it also runs the fuzz targets and anything the list
+misses, and the parts run every test once. On that run's numbers every-4th parts of enforce/cgroup sum to 12.4 to
+14 minutes of its two suites each. A shard runs the skip gate over its own suites (each skip is judged alone, so a
+shard judges its skips as the whole run would) and the doctor check, and writes `VM_OUT/shard.done`.
+
+The must-pass gate needs every shard's logs together: CI's `root-suites` job, the check the ruleset requires,
+downloads every shard's logs and runs `test/vm/root-suites.sh --gather DIR`, which fails unless every shard of the
+plan wrote its `shard.done` with status 0 (none missing, twice or unknown), then runs
+`scripts/skipgate.sh --must-pass` over all their `go test -json` logs. A shard is a fresh runner: a suite no longer
+finds what the suites before it in one job left on the host (the cgroup suite's `/run/tego`, a lingering build),
+which is how each guest has always run them. To run the shards here, one after another:
+
+```sh
+for s in cgroup-1 cgroup-2 cgroup-3 cgroup-4 runtime conformance rest; do
+	VM_SHARD=$s VM_OUT=bin/vm-shards/$s VM_BPF=yes test/vm/root-suites.sh
+done
+test/vm/root-suites.sh --gather bin/vm-shards
+```
 
 ### Getting the BPF objects without clang: `make gen`, `make vm-clang`
 

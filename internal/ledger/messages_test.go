@@ -712,31 +712,54 @@ func FuzzSpliceRoundTrip(f *testing.F) {
 	} {
 		f.Add([]byte(s))
 	}
-	f.Fuzz(func(t *testing.T, body []byte) {
-		w, dir := startedWriter(t)
-		before := blobFiles(t, dir)
-		stored, ok, err := w.splitRequest(body)
-		if err != nil {
-			t.Fatal(err)
+	f.Fuzz(checkSpliceRoundTrip)
+}
+
+// TestSpliceRoundTripClosesDescriptors checks the fuzz callback's lifetime, including its early return for
+// the crash corpus's non-spliced body. TempDir removes files, but does not close a Writer's descriptors.
+func TestSpliceRoundTripClosesDescriptors(t *testing.T) {
+	for _, body := range []string{"0", `{"messages":["a message long enough to splice"]}`} {
+		before := openFDs(t)
+		t.Run(body, func(t *testing.T) { checkSpliceRoundTrip(t, []byte(body)) })
+		// As in TestWriterLeaksNoDescriptor, an earlier test may close a descriptor while this runs.
+		if after := openFDs(t); after > before {
+			t.Errorf("%q: open descriptors before %d, after %d", body, before, after)
 		}
-		if !ok {
-			return
+	}
+}
+
+func checkSpliceRoundTrip(t *testing.T, body []byte) {
+	t.Helper()
+	w, dir := startedWriter(t)
+	// Each fuzz input owns a Writer, even when splitRequest declines the body. The callback needs no
+	// run_end or durability barrier, but must release the Writer before TempDir removes its files.
+	defer func() {
+		if err := w.Abandon(); err != nil {
+			t.Error(err)
 		}
-		if added, bound := blobFiles(t, dir)-before, 4*len(body)/BlobThreshold+3; added > bound {
-			t.Fatalf("a %d-byte body added %d files, bound %d", len(body), added, bound)
-		}
-		r, err := OpenReader(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer r.Close()
-		ev := sslRequest(nil, map[string]any{"frame": stored.frame, "body_sha256": stored.whole, "size": len(body)})
-		got, err := r.Body(ev)
-		if err != nil {
-			t.Fatalf("%q: %v", body, err)
-		}
-		if !bytes.Equal(got, body) {
-			t.Fatalf("rebuilt %q, stored %q", got, body)
-		}
-	})
+	}()
+	before := blobFiles(t, dir)
+	stored, ok, err := w.splitRequest(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		return
+	}
+	if added, bound := blobFiles(t, dir)-before, 4*len(body)/BlobThreshold+3; added > bound {
+		t.Fatalf("a %d-byte body added %d files, bound %d", len(body), added, bound)
+	}
+	r, err := OpenReader(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	ev := sslRequest(nil, map[string]any{"frame": stored.frame, "body_sha256": stored.whole, "size": len(body)})
+	got, err := r.Body(ev)
+	if err != nil {
+		t.Fatalf("%q: %v", body, err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Fatalf("rebuilt %q, stored %q", got, body)
+	}
 }

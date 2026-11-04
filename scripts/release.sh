@@ -4,7 +4,8 @@
 # The tag process (docs/VERSIONING.md §7): the mechanical, safe-to-automate half of cutting a tego release.
 # `check` runs the release gate; `tag` cuts an annotated tag once the gate is green and docs/CHANGELOG.md has
 # a section for it; `push` sends a cut tag to origin, which is what the tag-triggered release workflow
-# actually builds and publishes from. Retracting a bad release is deliberately NOT automated — `undo` only
+# actually builds and publishes from; `notes` prints that section, which release.yml publishes as the release's
+# description. Retracting a bad release is deliberately NOT automated — `undo` only
 # prints the commands, and says why (docs/VERSIONING.md §7).
 set -eu
 
@@ -22,6 +23,7 @@ usage() {
 usage: ${prog} check          run the release gate (build, test, integration, vet, lint, spdx, govulncheck)
        ${prog} tag vX.Y.Z     run the gate, then cut an annotated tag from CHANGELOG.md's section for it
        ${prog} push vX.Y.Z    push the branch, then the tag once ci is green for it
+       ${prog} notes vX.Y.Z   print CHANGELOG.md's section for it, the release notes release.yml publishes
        ${prog} undo vX.Y.Z    print (do not run) the commands to retract a bad release
 EOF
 }
@@ -91,6 +93,16 @@ ${section}"
 	git -C "$root" tag -a --cleanup=verbatim "$version" -m "$msg"
 	echo "${prog}: tagged ${version} on $(git -C "$root" rev-parse --short HEAD)."
 	echo "${prog}: review with 'git show ${version}', then '${prog} push ${version}'."
+}
+
+cmd_notes() {
+	# release.yml passes this to goreleaser as the release's description (.goreleaser.yaml writes no changelog of its
+	# own). A tag with no section fails here, before anything is built: §7.1 asks for one before tagging.
+	version="${1:?usage: ${prog} notes vX.Y.Z}"
+	require_version "$version"
+	section=$(changelog_section "$version")
+	[ -n "$section" ] || die "docs/CHANGELOG.md has no '## ${version}' section (or it is empty); it is the release's notes" 1
+	printf '%s\n' "$section"
 }
 
 cmd_push() {
@@ -163,6 +175,10 @@ case "${1:-}" in
 	push)
 		shift
 		cmd_push "${1:-}"
+		;;
+	notes)
+		shift
+		cmd_notes "${1:-}"
 		;;
 	undo)
 		shift

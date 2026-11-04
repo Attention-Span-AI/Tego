@@ -49,9 +49,12 @@ var catalog = []Preset{
 
 // released is the sha256 of every released revision's bytes, by its pinned name without the prefix
 // (no-secrets@1). A revision listed here is frozen: TestReleasedRevisionsAreFrozen fails when its file changes,
-// and a change is a new revision. Empty until the first release carries the presets; revision 1 is edited in place
-// until then (README.md).
-var released = map[string]string{}
+// and a change is a new revision (README.md). v0.1.0, the first release, carries revision 1 of each.
+var released = map[string]string{
+	"no-secrets@1":       "1a57482703807021e712fe717dd3f12483c9e5b7f97761dbe8546788541c51a4",
+	"no-prod@1":          "bb02323c70e8d7ffe2198e00b04c7853cda7d4c6d760e8d1f8cf56bdf8f7fcc4",
+	"repo-only-writes@1": "3790f38bb816736507f46382764e0ff59e3f7552965e80d7f2f17729a7280d71",
+}
 
 // List returns every preset, in catalog order.
 func List() []Preset { return append([]Preset(nil), catalog...) }

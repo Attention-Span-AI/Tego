@@ -42,8 +42,8 @@ present `fs.write` is what turns the write side to an allow-list. `TestRevisionO
 is revision `n` alone (precedent: Kubernetes Pod Security Standards levels, enforced at a named `enforce-version`).
 A fix reaches every unpinned contract with a release, and a pin keeps a run reproducible across releases. A released
 revision is frozen: a change is a new revision `v<n+1>/<name>.yaml`, never an edit, and `TestReleasedRevisionsAreFrozen`
-holds every revision listed in `released` to the sha256 of its bytes at release. Before the first release carries
-the presets, revision 1 is edited in place and `released` is empty. The release fills
+holds every revision listed in `released` to the sha256 of its bytes at release. Before the first release carried
+the presets, revision 1 was edited in place and `released` was empty; v0.1.0 filled it. The release fills
 the table, or does not happen: `make preset-freeze VERSION=vX.Y.Z` runs that test with `TEGO_RELEASE_VERSION` set,
 which then fails for every catalog revision `released` lacks and prints the line to add; `scripts/release.sh tag`
 runs it before the gate and `release.yml` before it builds (docs/VERSIONING.md §5). The profile-name rule
