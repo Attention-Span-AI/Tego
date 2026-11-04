@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -26,13 +25,13 @@ print("RESULT beneath-file", result, flush=True)
 assert result == errno.ENOTDIR, result
 `
 
-// TestPlaneRunBindLookupFailureIsTheKernels is the run's half of ADR 0019's design note (-2s4-3): under a listener
-// policy a decision-plane run hands a pathname unix bind
-// to the plane (the supervisor's bindHandoffReady), which decides it at path_mknod, and a bind whose lookup fails (here
-// beneath a regular file, ENOTDIR) never reaches that hook. The agent gets the kernel's own errno, and the bind's one
-// line is the kernel recorder's, observed, rule unmatched, with that errno: no line is refused path-unreliable, the
-// supervisor bindUnix's answer, which compile --test's plane column gave such a row before the note
-// (limits-check-doctor-cli R28's net.bind amendment; that column now answers the row on its spelling).
+// TestPlaneRunBindLookupFailureIsTheKernels retains the lookup-error regression
+// from ADR 0019. With ADR 0113's immutable boundary, the supervisor walks the
+// captured pathname before continuing it and returns the task's ENOTDIR without
+// performing a bind. Its one result must be supervisor-owned, observed and
+// unmatched, with the exact errno and captured spelling. The syscall-exit
+// producer must suppress its unmarked duplicate, and no plane decision or
+// missing-kernel-metadata gap may be invented for this owned completion.
 //
 // The listener the contract declares sits in a directory, out/b.sock, and the agent binds a name it does not declare,
 // beneath a file: a plane run holds each declared listener's directory at prepare (the Landlock fill's
@@ -82,6 +81,9 @@ record: full
 				}
 				var binds []map[string]any
 				for _, e := range runEvents(t, p.ledger) {
+					if e["kind"] == "gap" && e["why"] == "bind-metadata-missing" {
+						t.Errorf("owned lookup failure acquired a missing-kernel-metadata gap: %v", e)
+					}
 					if e["kind"] != "net" {
 						continue
 					}
@@ -96,10 +98,11 @@ record: full
 					t.Fatalf("bind lines %d, want 1\n%s", len(binds), ledgerDump(p.ledger))
 				}
 				b := binds[0]
-				if b["source"] != "kernel" || b["verdict"] != "observed" || b["rule"] != "unmatched" ||
-					b["syscall_errno"] != float64(20) || !strings.HasPrefix(fmt.Sprint(b["dst"]), "unix:") ||
-					!strings.HasSuffix(fmt.Sprint(b["dst"]), "out/file/b.sock") {
-					t.Errorf("the bind's line: %v, want the kernel recorder's observed, rule unmatched, errno 20", b)
+				if b["source"] != "supervisor" || b["verdict"] != "observed" || b["rule"] != "unmatched" ||
+					b["syscall_errno"] != float64(20) || b["syscall_ret"] != float64(-20) ||
+					b["dst"] != "unix:out/file/b.sock" || b["proto"] != "unix" ||
+					b["mechanism"] != nil || b["decision_plane"] != nil || b["verdict_from"] != nil {
+					t.Errorf("the bind's line: %v, want one supervisor-observed lookup ENOTDIR without a claimed policy decision", b)
 				}
 			})
 		}

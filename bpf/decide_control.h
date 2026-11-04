@@ -119,6 +119,23 @@ TEGO_PLANE_HOOK(capable, capable, security_capable,
         return 0;
     if (cap != 21) /* CAP_SYS_ADMIN, include/uapi/linux/capability.h */
         return 0;
-    /* No slot-header lookup may turn this unconditional floor into an allow. */
+    /* A stacking filesystem performs backing operations with its stashed
+     * credentials (override_creds), after deciding the agent's merged path.
+     * Those kernel-internal checks do not grant the task CAP_SYS_ADMIN.
+     * A userspace credential change commits both pointers together; mount
+     * APIs therefore still meet the floor, in every user namespace (ADR 0055).
+     * Require both readable non-NULL pointers and the exact active override.
+     * io_uring also issues under override_creds: a personality the task
+     * registered (security_uring_override_creds), which userspace chose. An
+     * io thread (PF_IO_WORKER: io-wq, SQPOLL) or a task with an io_uring
+     * context therefore keeps the floor even under an override. */
+    struct task_struct *task = bpf_get_current_task_btf();
+    const struct cred *active = task->cred, *real = task->real_cred;
+    int uring = (task->flags & 0x00000010) != 0; /* PF_IO_WORKER, include/linux/sched.h */
+    if (bpf_core_field_exists(task->io_uring) && task->io_uring)
+        uring = 1;
+    if (active && real && active != real && cred == active && !uring)
+        return 0;
+    /* No slot-header lookup may turn the task's capability floor into an allow. */
     return tego_control_refuse(run, TEGO_HOOK_CAPABLE, TEGO_R_PROCESS_SCOPE, 0, cap);
 }

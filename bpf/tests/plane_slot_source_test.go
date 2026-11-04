@@ -34,9 +34,16 @@ func TestPlaneEveryHookReadsTheSlotHeader(t *testing.T) {
 		mode := planeRunModeGuard(body)
 		if name == "bpf" || name == "capable" {
 			// These floors have no policy-row read or contract opt-out. An absent
-			// slot must never permit BPF commands or CAP_SYS_ADMIN.
+			// slot must never permit BPF commands or the task's CAP_SYS_ADMIN.
+			// A filesystem's own credential override is backing work (ADR 0055).
 			if mode == nil || !strings.Contains(body[mode[1]:], "return tego_control_refuse(run, TEGO_HOOK_"+strings.ToUpper(name)+", TEGO_R_PROCESS_SCOPE") {
 				t.Errorf("%s lost its unconditional governed refusal", name)
+			}
+			// An io_uring personality is an override userspace chose, never backing work:
+			// an io thread (PF_IO_WORKER, 0x10; comments are stripped) or a ring user keeps the floor.
+			if name == "capable" && (!strings.Contains(body, "task->flags & 0x00000010") ||
+				!strings.Contains(body, "task->io_uring") || !strings.Contains(body, "&& !uring)")) {
+				t.Error("capable admits a credential override without excluding io_uring's")
 			}
 			continue
 		}

@@ -440,3 +440,14 @@ tego builds but cgroup and bpflsm, which need root)` for that user, `... but bpf
 for root on a kernel without it; `--json`'s `from` and `compile --exec`'s tiers line carry the same text. No column
 changed. Pinned by `TestCompileTestHeaderNamesWhatAutoLeftOut`, `TestCompileTestHeaderNamesTheBuiltTiersAutoLeftOut`
 (under `-tags tegobpf` as a normal user it fails at the previous tip) and doctor's `TestAutoTiers`.
+
+- 2026-11-04 CI portability: ADR 0113's immutable bind precheck resolves a
+  captured pathname before handing it to the plane. A task-equivalent lookup
+  error such as ENOTDIR completes there without performing a bind. It has one
+  supervisor `observed`/`unmatched` result, the actual lookup errno and the copied
+  attempted spelling, with no claimed plane decision. The supervisor marks that
+  completion owned before responding, so sys_exit_bind suppresses its unmarked
+  duplicate. `TestPlaneRunBindLookupFailureIsTheKernels` retains the historical
+  regression name and now holds that ownership distinction in every mode,
+  without a preemption-waiver exception. Native terminal results without a
+  supervisor owner still require their own kernel evidence (ADR 0024).

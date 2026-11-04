@@ -65,6 +65,16 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ### Fixed
 
+- Protected host-server paths that the invoking user cannot traverse no longer prevent startup; reachable
+  objects remain pinned and unexpected identity errors still refuse launch. Compiled built-in entry names
+  stay the same when host servers are installed or removed. Record-only adoption remains unrestricted.
+- Native Unix peer checks use the correct kernel-memory reader, and protected-name walks keep the original
+  verifier instruction budget across kernels.
+- Permitted overlay copy-up can use kernel-installed filesystem credentials without granting the agent
+  CAP_SYS_ADMIN; task-initiated mount changes and trusted xattr operations, including through an io_uring
+  personality, remain refused. Missing kernel
+  bind/listen metadata is explicitly disclosed instead of inferred from a copied attempt. Frozen bind lookup
+  errors keep supervisor ownership and one observed result with their actual errno.
 - Interactive Claude examples use short private session socket paths, check the complete path at launch and
   refuse an overlong path with a fix. PTY peer delivery checks filesystem policy, live blocks and gates without
   changing the supervisor's controlling terminal.

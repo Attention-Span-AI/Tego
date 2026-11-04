@@ -76,29 +76,8 @@ func (k *compiler) builtinRefusals() {
 	guardNames := map[string]bool{}
 	all := append(append(append(slices.Clone(b.Runtime), b.IPCDirs...), b.TegoDirs...), b.Nodes...)
 	for _, d := range all {
-		resolved, err := filepath.EvalSymlinks(d)
-		if err != nil {
-			resolved = d
-		}
+		resolved := builtinResolvedPath(d)
 
-		named := resolved
-		for {
-			parent := filepath.Dir(named)
-			if _, err := os.Stat(parent); err == nil {
-				break
-			}
-			if parent == "/" || parent == named {
-				break
-			}
-			named = parent
-		}
-		parent := filepath.Dir(named)
-		if canonical, err := filepath.EvalSymlinks(parent); err == nil {
-			if suffix, err := filepath.Rel(parent, resolved); err == nil {
-				resolved = filepath.Join(canonical, suffix)
-			}
-			parent = canonical
-		}
 		if resolved != d {
 			switch {
 			case slices.Contains(b.Runtime, d):
@@ -130,9 +109,10 @@ func (k *compiler) builtinRefusals() {
 				break
 			}
 		}
-		guardKey := filepath.Join(parent, filepath.Base(named))
+		parent := builtinResolvedPath(filepath.Dir(d))
+		guardKey := filepath.Join(parent, filepath.Base(d))
 		if !guardNames[guardKey] {
-			b.Names = append(b.Names, BuiltinName{Path: "builtin:" + resolved, Parent: parent, Name: filepath.Base(named), Target: resolved})
+			b.Names = append(b.Names, BuiltinName{Path: "builtin:" + d, Parent: parent, Name: filepath.Base(d), Target: resolved})
 			guardNames[guardKey] = true
 		}
 		rule := b.WriteRule(d, false)
@@ -145,6 +125,21 @@ func (k *compiler) builtinRefusals() {
 		k.ds.errorf(k.pos("io_uring"), CodeIOUring, "io_uring: true cannot carry builtin.host_ipc and builtin.tego_surface: ring operations bypass the socket identity relay").fix("drop io_uring: so every connect uses the built-in boundary")
 	}
 	k.rt.Builtins = b
+}
+
+// Canonicalize existing prefixes without using presence to select an entry's
+// name. /var/run must remain /run even when a server directory is absent.
+func builtinResolvedPath(p string) string {
+	for head := p; ; head = filepath.Dir(head) {
+		if canonical, err := filepath.EvalSymlinks(head); err == nil {
+			if suffix, err := filepath.Rel(head, p); err == nil {
+				return filepath.Join(canonical, suffix)
+			}
+		}
+		if head == "/" {
+			return p
+		}
+	}
 }
 
 // builtinContainerAliases keeps a declared /var/run spelling usable after the

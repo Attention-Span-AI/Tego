@@ -16,8 +16,9 @@ const (
 	BuiltinOtherTTY    = "builtin.other_tty"
 )
 
-// BuiltinName pins a protected entry to an existing parent even before the
-// entry exists. Target is the deny-write row that names a refusal.
+// BuiltinName names a configured protected entry, independently of host presence.
+// Prepare pins its parent (or the first missing component beneath an existing
+// ancestor). Target is the deny-write row that names a refusal.
 type BuiltinName struct{ Path, Parent, Name, Target string }
 
 // BuiltinRefusals captures the invoking host's immutable ADR 0113 boundary.

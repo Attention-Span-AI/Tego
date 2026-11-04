@@ -464,8 +464,8 @@ func TestRootRouteChangesRefused(t *testing.T) {
 					t.Errorf("the run changed lo: %s", addrs)
 				}
 				counts := familyLines(t, evs)
-				if counts["allow/route-query"] == 0 || counts["refused/route-change"] != 3 || counts["refused/unmatched"] != 3 {
-					t.Errorf("netlink lines %v, want route-query, 3 refused route-change, 3 refused unmatched", counts)
+				if counts["allow/route-query"] == 0 || counts["refused/route-change"] != 3 || counts["refused/unmatched"] != 1 || counts["refused/builtin.host_ipc"] != 2 {
+					t.Errorf("netlink lines %v, want route-query, 3 refused route-change, 1 refused unmatched, 2 refused builtin.host_ipc", counts)
 				}
 			})
 			t.Run("control: no net section keeps the capability", func(t *testing.T) {

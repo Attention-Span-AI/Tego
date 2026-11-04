@@ -258,6 +258,29 @@ func (l *Loop) finishBind(n *notif, c *compiled, d dest, proto string, dec verdi
 	l.finishListenerOp(n, c, d, proto, dec, err, continued, "bind")
 }
 
+// A frozen pathname lookup can fail before the task enters socket_bind. Own
+// that completion so its unmarked sys_exit_bind cannot become a second line
+// claiming kernel authority. No policy allow or refusal decided this error.
+func (l *Loop) finishBindLookupFailure(n *notif, c *compiled, d dest, err error) {
+	if l.bindHandoffReady() {
+		l.saveBindNaming(n, d, ruleUnmatched, true)
+		if n.gone {
+			return
+		}
+	}
+	l.respond(n, respResult(0, err))
+	if !c.recording() {
+		return
+	}
+	var errno unix.Errno
+	if !errors.As(err, &errno) {
+		errno = unix.EIO
+	}
+	ev := action(l.event(n, record.KindNet, record.SourceSupervisor), ruleUnmatched, record.VerdictObserved, "")
+	l.emitFor(n, ev, bindPayload{NetPayload: record.NetPayload{Proto: protoUnix, Dst: d.String(), Op: "bind",
+		SyscallRet: -int64(errno), SyscallErrno: int(errno)}})
+}
+
 func (l *Loop) finishListenerOp(n *notif, c *compiled, d dest, proto string, dec verdictOf, err error, continued bool, op string) {
 	if n.gone {
 		return

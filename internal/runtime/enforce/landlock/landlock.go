@@ -330,12 +330,22 @@ func (bd *builder) planeKeys() error {
 	if rows == nil {
 		return nil
 	}
+	if err := bd.planeProtectedParents(); err != nil {
+		return err
+	}
 	neutral := make(map[string]accessFS, len(rows.Neutral))
 	for _, n := range rows.Neutral {
 		neutral[n.Path] = accessFS(n.Access) & readSet
 	}
 	for _, p := range rows.Keyed {
-		if _, err := bd.hold(p, kindPlaneKey, neutral[p]); err != nil && !errors.Is(err, ErrPathVanished) {
+		if _, err := bd.hold(p, kindPlaneKey, neutral[p]); err != nil {
+			if bd.builtinOptionalKey(p) {
+				if builtinUnreachable(err) {
+					continue
+				}
+			} else if errors.Is(err, ErrPathVanished) {
+				continue
+			}
 			return err
 		}
 	}

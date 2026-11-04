@@ -91,6 +91,8 @@ const (
 	GapExecUnresolved = "exec-unresolved"
 	// GapExecMetadataMissing is an exec outcome with no matching before-CONTINUE attempt metadata.
 	GapExecMetadataMissing = "exec-metadata-missing"
+	// GapBindMetadataMissing is a terminal listener result missing the matched
+	// supervisor attempt or the kernel permission hook's marker.
 	GapBindMetadataMissing = "bind-metadata-missing"
 	// GapExecArgvMismatch means actual mapped arguments differed from the blocked notification's metadata.
 	GapExecArgvMismatch = "exec-argv-mismatch"

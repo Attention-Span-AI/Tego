@@ -341,3 +341,30 @@ a follow-up.
 (15)'s arm64 residual: GitHub's arm64 runner's 7.0 kernel is built `SMP PREEMPT`, so fmod_ret mode is ruled out there
 and `build-test-arm64` checks doctor's refusal; of the 2026-10-06 amendment's plane run, the directory walk's stress
 cell still runs there in fmod_ret mode under the waiver, required, and the end-to-end and rename cells no longer do.
+
+### CI portability amendment (2026-11-04): built-in walk verifier form
+
+ADR 0113's protected-name ancestry check now follows the global-subprogram plus
+`bpf_loop` callback form of the filesystem walk. Its dentry is passed as a scalar
+through the task's existing scratch field; its result packs the matched rule and
+match class without a trusted-pointer argument. The 64-level bound and protected
+name/peer semantics remain. The verifier's existing instruction budgets remain,
+including socket_listen's separately measured budget. The native Unix peer's
+inode and link count use the selected probe/readonly reader throughout, rather
+than dereferencing an address returned by `bpf_probe_read_kernel`.
+
+The `capable` hook recognizes only a kernel-installed credential override for
+backing filesystem work (ADR 0055's CI portability amendment), never an io_uring
+personality: an io thread or a task with an io_uring context keeps the floor. The
+task's own CAP_SYS_ADMIN refusal remains mandatory, including in fresh user
+namespaces.
+
+A native terminal bind result with no kernel permission marker stays `observed`,
+`unmatched`, with the actual syscall return, unknown authority and an unavailable
+name, and now explicitly counts `bind-metadata-missing`. A copied supervisor
+attempt cannot replace that missing evidence. ADR 0113's early, frozen pathname
+lookup errors are instead supervisor-owned completions: ownership is saved
+before the errno is returned, the supervisor records the result and the terminal
+producer's duplicate is suppressed. The lookup-failure regression requires one
+such correctly owned line in every mode, with no metadata-gap or waiver
+exception. This does not change fmod_ret's preemption admission rule.

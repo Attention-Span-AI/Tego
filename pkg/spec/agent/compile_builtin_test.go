@@ -197,3 +197,61 @@ func TestBuiltinFIFOBudgetProtectsUninventoriedSubtree(t *testing.T) {
 		t.Fatalf("budget fallback failed: %s", render(k.ds.list))
 	}
 }
+
+// Creating a protected directory must change neither its configured entry name
+// nor its compiled parent; only Prepare's held identity depends on presence.
+func TestBuiltinNamesIndependentOfHostPresence(t *testing.T) {
+	f := newFixture(t)
+	root := t.TempDir()
+	target := filepath.Join(root, "missing/podman/podman.sock")
+	t.Setenv("SCREENDIR", target)
+	compileName := func() BuiltinName {
+		rt, _ := f.compile(f.load("version: 0\nname: stable-builtin\ncommand: [\"python\"]\n"))
+		for _, n := range rt.Builtins.Names {
+			if n.Path == "builtin:"+target {
+				return n
+			}
+		}
+		t.Fatal("configured entry disappeared")
+		return BuiltinName{}
+	}
+	want := BuiltinName{Path: "builtin:" + target, Parent: filepath.Dir(target), Name: "podman.sock", Target: target}
+	if got := compileName(); got != want {
+		t.Fatalf("absent entry: %+v, want %+v", got, want)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got := compileName(); got != want {
+		t.Fatalf("present parent changed configured name: %+v, want %+v", got, want)
+	}
+	if err := os.WriteFile(target, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := compileName(); got != want {
+		t.Fatalf("present entry changed configured name: %+v, want %+v", got, want)
+	}
+}
+
+func TestBuiltinConfiguredAliasKeepsItsName(t *testing.T) {
+	f := newFixture(t)
+	root := t.TempDir()
+	actual, alias := filepath.Join(root, "actual"), filepath.Join(root, "configured")
+	if err := os.Mkdir(actual, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(actual, alias); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SCREENDIR", alias)
+	rt, _ := f.compile(f.load("version: 0\nname: alias-builtin\ncommand: [\"python\"]\n"))
+	for _, n := range rt.Builtins.Names {
+		if n.Path == "builtin:"+alias {
+			if n.Name != "configured" || n.Parent != root || n.Target != actual {
+				t.Fatalf("configured entry took its name from its target: %+v", n)
+			}
+			return
+		}
+	}
+	t.Fatal("configured alias has no immutable name row")
+}

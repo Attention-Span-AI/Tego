@@ -43,3 +43,9 @@ that socket residual as
 opens; at tier landlock a read refusal under summary recording may have no event. The root tiers, which need
 root, attribute recorded kernel terminal refusals as well. `--observe` enforces
 nothing. See [ADR 0113](../adr/0113-built-in-refusals-for-tego-surfaces.md) for the exact list and limits.
+
+A fixed host-server path that cannot be traversed by the invoking user (permission
+denied or not found) does not prevent startup. Prepare records no present identity
+for that unreachable path and keeps its name refusal; reachable objects are pinned
+as before. Other identity errors fail startup. Compiled entry names come from the
+configured table and do not change when a server is installed or removed.

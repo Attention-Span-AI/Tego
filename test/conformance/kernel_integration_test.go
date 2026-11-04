@@ -505,6 +505,13 @@ func runFixture(t *testing.T, bin, actor string, uid, gid int, fx *Fixture, ax a
 			stdout.String(), stderr.String())
 	}
 	events := ledgerEvents(t, filepath.Join(e.base, "state", "ledger"))
+	if len(fx.Mounts) > 0 {
+		for _, ev := range events {
+			if ev["kind"] == "refused" && ev["rule"] == "mount-topology" {
+				t.Logf("mount fixture capability refusal: %v", ev)
+			}
+		}
+	}
 	t.Logf("tier %s, plane %q, answering %v, %d ledger lines", tier, ax.pin, ax.want, len(events))
 	label := ax.label
 	rep.Ran[RunnerKernel+"|"+string(label)], rep.Ran[RunnerLedger+"|"+string(label)] = true, true

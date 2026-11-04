@@ -18,15 +18,12 @@ import (
 	"github.com/attention-span-ai/tego/internal/testutil"
 )
 
-// TestTier2ConnectHasOneLine is supervisor.md R7's one line per connect through the whole of `tego run
-// --tier cgroup`, as root under sudo, with no net: section. The supervisor answers each of the agent's
-// connects CONTINUE, so the agent's own task makes it, and the kernel recorder's security_socket_connect
-// fentry records it: each TCP connect had two lines, the kernel's and the supervisor's best-effort one. The
-// kernel's is now the only one. A unix connect, which that hook does not record, keeps the supervisor's line,
-// also exactly one. The kernel's line names a connect as the supervisor's did (supervisor.Loop.ContinuedNet):
-// a UDP connect to the run's resolver on port 53 is net.resolver, which the recorder's own matcher named
-// unmatched, and one no entry names is unmatched allow. It needs no objects in this test binary, only in the tego it builds, so both of the
-// package's root builds run it (test/vm/root-must-pass.txt).
+// TestTier2ConnectHasOneLine holds R7's one line per connect at tier cgroup,
+// for TCP, Unix and resolver connects, with summary and full recording. ADR
+// 0113 freezes every enforcing connect to protect local control ports as well
+// as Unix servers, including with no net: section. These relayed connects run
+// outside the agent's cgroup, so the supervisor owns their one result line.
+// Both root builds run this (test/vm/root-must-pass.txt).
 func TestTier2ConnectHasOneLine(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("tier 2 needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`")
@@ -135,23 +132,22 @@ func TestTier2ConnectHasOneLine(t *testing.T) {
 					tcpLines)
 			}
 			for _, e := range tcpLines {
-				if e["source"] != "kernel" {
-					t.Errorf("a TCP connect's line came from %v, want the kernel recorder's: %v", e["source"], e)
+				if e["source"] != "supervisor" {
+					t.Errorf("a TCP connect's line came from %v, want the supervisor relay's: %v", e["source"], e)
 				}
 				if e["rule"] != "unmatched" || e["verdict"] != "allow" {
 					t.Errorf("a TCP connect no entry names is %v/%v, want the supervisor's unmatched/allow: %v",
 						e["rule"], e["verdict"], e)
 				}
 			}
-			// The kernel's line replaces the supervisor's, so it names the query the way the supervisor did:
-			// the resolver exception, not unmatched (R7, enforce-cgroup-observe R5).
+			// The relay preserves the resolver exception as well as the result (R7).
 			if len(dnsLines) != connectOnceCount {
 				t.Errorf("%d lines for %d UDP connects to the resolver %s:53, want one each: %v", len(dnsLines),
 					connectOnceCount, connectOnceResolver, dnsLines)
 			}
 			for _, e := range dnsLines {
-				if e["source"] != "kernel" || e["rule"] != "net.resolver" || e["verdict"] != "allow" {
-					t.Errorf("a resolver connect's line is %v %v/%v, want the kernel's net.resolver/allow: %v",
+				if e["source"] != "supervisor" || e["rule"] != "net.resolver" || e["verdict"] != "allow" {
+					t.Errorf("a resolver connect's line is %v %v/%v, want the supervisor's net.resolver/allow: %v",
 						e["source"], e["rule"], e["verdict"], e)
 				}
 			}
@@ -176,10 +172,8 @@ const connectOnceCount = 3
 // nothing, so no server has to answer there.
 const connectOnceResolver = "127.0.0.2"
 
-// connectOnceContract has no net: section: every connect is the agent's own, continued by the supervisor. It sets
-// host_sockets: true, since the unix socket it connects to is the test's, which the unix-only state of a contract with no
-// net: section refuses (ADR 0070, rule host-sockets); the opt-out keeps the reach this test is about, as the supervisor's
-// unit tests that pinned it do.
+// connectOnceContract has no net: section. host_sockets: true admits the test's
+// ordinary Unix peer; the immutable built-in boundary still freezes all connects.
 const connectOnceContract = `version: 0
 name: t2-connect-once
 command: ["python3", "./agent.py"]

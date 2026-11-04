@@ -728,13 +728,16 @@ func compileAdoptionTable(ctx context.Context, m *config.Machine, o adoptOptions
 	return rt, identity.ExitOK
 }
 
-// recordOnly is a record-only adoption's table: the compiled one less its deny_read rows. The compiler read-denies
+// recordOnly is a record-only adoption's table: no deny_read or immutable refusal state. The compiler read-denies
 // tego's own records whatever a contract says (an empty deny_read keeps that entry), and at tier 2 with no plane a
 // deny_read row is the fanotify listener's: it would refuse the agent's reads there, mark the mount for every process
 // on the host, and arm the adopter, which then could start no reaper for the guard's next adoption. A record-only
 // adoption refuses nothing, and the agent could read those records before it was adopted.
 func recordOnly(rt *agent.RuleTable) *agent.RuleTable {
 	out := *rt
+	// ADR 0113 adds Unix hooks even without net:. A record-only adoption
+	// must omit that immutable enforcement state, as observe compilation does.
+	out.Builtins = nil
 	out.FS = nil
 	for _, r := range rt.FS {
 		if r.Kind != agent.FSDenyRead {

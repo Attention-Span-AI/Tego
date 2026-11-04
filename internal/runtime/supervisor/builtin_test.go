@@ -5,8 +5,10 @@
 package supervisor
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 	"golang.org/x/sys/unix"
@@ -106,5 +108,62 @@ func TestBuiltinObserveKeepsUnresolvedConnectDirect(t *testing.T) {
 	}
 	if p.Rules.Builtins == nil {
 		t.Fatal("observation changed the enforcing caller's table")
+	}
+}
+
+func TestBuiltinBindLookupFailureOwnsItsResult(t *testing.T) {
+	for _, errno := range []unix.Errno{unix.ENOTDIR, unix.ENOENT, unix.EACCES} {
+		for _, ready := range []bool{false, true} {
+			for _, off := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/handoff=%v/off=%v", errno, ready, off), func(t *testing.T) {
+					const path = "/work/out/file/b.sock"
+					f := newFake()
+					f.tgid[42] = 40
+					f.stats[40] = procStat{ppid: 1, start: 1234}
+					f.fsTargetErrs[path] = errno
+					raw := sockaddrUn(path)
+					f.put(0x40000, raw)
+					p := testPolicy(nil, nil, nil)
+					p.Rules.Builtins = &agent.BuiltinRefusals{Runtime: []string{"/runtime"}}
+					p.Rules.Listen = []agent.ListenRule{}
+					if off {
+						p.Rules.Record = agent.RecordOff
+					}
+					l, sink := newTestLoop(t, f, p)
+					l.kernelBindHandoff = func() bool { return ready }
+					l.mono = func() uint64 { return 100 }
+					handleBind(l, notifFor(connectNR(), 42, 5, 0x40000, uint64(len(raw))))
+					response, ok := f.lastResp()
+					if !ok || response.Flags&unix.SECCOMP_USER_NOTIF_FLAG_CONTINUE != 0 || response.Error != -int32(errno) {
+						t.Fatalf("lookup failure was not frozen: %+v", response)
+					}
+					owned, found := l.ContinuedBind(42, 40, 1234*proc.NanosPerTick+99, 110)
+					if found != ready || ready && (!owned.SupervisorOwned || owned.Path != path) {
+						t.Fatalf("terminal ownership: %+v found=%v, want handoff=%v", owned, found, ready)
+					}
+					if off {
+						if len(sink.all()) != 0 {
+							t.Fatal("record: off emitted an observed lookup failure")
+						}
+						return
+					}
+					ev := sink.one(t)
+					var payload bindPayload
+					if err := ev.DecodePayload(&payload); err != nil {
+						t.Fatal(err)
+					}
+					if ev.Source != record.SourceSupervisor || ev.Verdict != record.VerdictObserved || ev.Rule != ruleUnmatched || ev.Reason != "" ||
+						payload.Op != "bind" || payload.Dst != "unix:"+path || payload.SyscallRet != -int64(errno) || payload.SyscallErrno != int(errno) || payload.Mechanism != "" {
+						t.Fatalf("lookup error claimed a different source or decision: %+v %+v", ev, payload)
+					}
+					if err := ev.Validate(); err != nil {
+						t.Fatal(err)
+					}
+					if f.fdBalance() != 0 {
+						t.Fatal("lookup leaked a descriptor")
+					}
+				})
+			}
+		}
 	}
 }

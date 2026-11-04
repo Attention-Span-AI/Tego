@@ -83,3 +83,31 @@ func TestBuiltinLedgerRowsCarryOnlyControlClassification(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltinPlaneKeepsConfiguredAndResolvedNames(t *testing.T) {
+	rt := &agent.RuleTable{FS: []agent.FSRule{{Path: "/", Kind: agent.FSWrite}},
+		DenyWrite: []agent.FSRule{{Path: "/work/configured", Resolved: "/actual/server", Kind: agent.FSDenyWrite, BuiltIn: true, BuiltinRule: agent.BuiltinHostIPC}},
+		Builtins: &agent.BuiltinRefusals{Runtime: []string{"/work/configured", "/actual/server"}, Names: []agent.BuiltinName{{
+			Path: "builtin:/work/configured", Parent: "/work", Name: "configured", Target: "/actual/server",
+		}}}}
+	rows, err := CompilePlane(rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, r := range rows.Protected {
+		if r.Rule&0x8000 != 0 {
+			names[r.Parent+"/"+r.Name] = true
+		}
+	}
+	if len(names) != 2 || !names["/work/configured"] || !names["/actual/server"] {
+		t.Fatalf("replacing a resolved target lost its name refusal: %v", names)
+	}
+	parents := map[string]bool{}
+	for _, p := range rows.Keyed {
+		parents[p] = true
+	}
+	if !parents["/work"] || !parents["/actual"] || rt.Builtins.Names[0].Name != "configured" {
+		t.Fatalf("configured name changed or a parent is not keyed: %+v %v", rt.Builtins.Names, parents)
+	}
+}

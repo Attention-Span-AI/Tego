@@ -80,12 +80,15 @@ func (r *Recorder) handleBindResult(rec *Record) {
 	if joined && owned {
 		return
 	}
-	if !joined && !uring {
-		r.gap(GapBindMetadataMissing, 1)
-	}
 	rule, reason, planeReason := RuleUnmatched, record.Reason(""), ""
 	v, from, mechanism := record.VerdictObserved, "unknown", ""
 	marked := b.Flags&bpf.BindMarked != 0
+	if !uring && (!joined || !marked) {
+		// The syscall may fail before its permission hook, or a test-waived
+		// fmod_ret trampoline may skip it. Attempt metadata cannot supply a
+		// kernel-copied name or decision; disclose that missing evidence.
+		r.gap(GapBindMetadataMissing, 1)
+	}
 	decided := marked && b.Flags&bpf.BindDecided != 0
 	if decided {
 		if rec.Verdict != KernelAllow && rec.Verdict != KernelRefused {
