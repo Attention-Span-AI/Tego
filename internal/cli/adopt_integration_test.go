@@ -311,6 +311,9 @@ func (e *adoptEnv) tegoCmd(args ...string) *exec.Cmd {
 	cmd := exec.Command(e.tego, args...)
 	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "TEGO_CONFIG=" + e.config,
 		"TEGO_TEST_CHAIN_ANCHOR=" + filepath.Join(e.state, "chain.log"), "TEGO_TEST_OWN_LOG_HOME=" + filepath.Join(e.state, "ownlog")}
+	// Preserve the root suite's explicit waiver in this tegotesthooks binary too: a product build on a kernel
+	// that preempts kernel code offers no fmod_ret mode, so the boundary test would exercise no plane there.
+	cmd.Env = append(cmd.Env, "TEGO_TEST_PLANE_PREEMPT="+os.Getenv("TEGO_TEST_PLANE_PREEMPT"))
 	return cmd
 }
 
@@ -802,7 +805,7 @@ func TestIntegrationAdoptBoundaryRefusesThroughThePlane(t *testing.T) {
 	}
 	a, run, ok := e.tryAdopt("--uid", "65534", "--boundary", contract)
 	if !ok {
-		if !strings.Contains(a.text(), "no decision plane decides") {
+		if os.Getenv("TEGO_TEST_PLANE_PREEMPT") == "waive" || !strings.Contains(a.text(), "no decision plane decides") {
 			t.Fatalf("tego adopt --boundary ended before it recorded: %s", a.text())
 		}
 		t.Skipf("no plane mode decides tier cgroup on this boot, so no boundary holds on an adopted process: %s", a.text())
