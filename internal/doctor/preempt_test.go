@@ -261,6 +261,7 @@ func TestACachedPlaneAnswerIsHeldToTheKernelsModeNow(t *testing.T) {
 // TestFmodRetAdmittedNowReadsAfresh: the check a reused answer is held to reads the kernel each time, and a test build's
 // waiver admits a preemptive kernel only where it is set.
 func TestFmodRetAdmittedNowReadsAfresh(t *testing.T) {
+	noPreemptWaiver(t)
 	lsm := LSMState{Source: LSMSourceSyscall}
 	stubPreempt(t, preemptVoluntary, debugfsPreemptPath)
 	if env, why := fmodRetAdmittedNow("", lsm); why != "" || env.Preempt != preemptVoluntary {
