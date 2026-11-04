@@ -274,12 +274,21 @@ func openAt(dirfd int, name string, follow bool, s *fdSet) (int, unix.Stat_t, er
 	return fd, st, nil
 }
 
+// Preserve the open origin separately from errno: an EACCES/ENOENT while
+// inspecting an already-open descriptor is uncertainty, not traversal failure.
+type pathOpenError struct{ error }
+
+func (e *pathOpenError) Unwrap() error { return e.error }
+
 func classifyOpenErr(name string, held int, err error) error {
+	var classified error
 	switch {
 	case errors.Is(err, unix.ENOENT), errors.Is(err, unix.ELOOP), errors.Is(err, unix.ENOTDIR), errors.Is(err, unix.ENAMETOOLONG):
-		return fmt.Errorf("%w: %q: %w", ErrPathVanished, name, err)
+		classified = fmt.Errorf("%w: %q: %w", ErrPathVanished, name, err)
 	case errors.Is(err, unix.EMFILE), errors.Is(err, unix.ENFILE):
-		return fmt.Errorf("%w: %d fds held when opening %q: %w", ErrFDExhausted, held, name, err)
+		classified = fmt.Errorf("%w: %d fds held when opening %q: %w", ErrFDExhausted, held, name, err)
+	default:
+		classified = fmt.Errorf("open %q: %w", name, err)
 	}
-	return fmt.Errorf("open %q: %w", name, err)
+	return &pathOpenError{classified}
 }

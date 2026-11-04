@@ -269,3 +269,48 @@ Both interactive contracts now explicitly request `env.set.XDG_RUNTIME_DIR: "%R"
 The stand-in uses the actual PID filename, absolute resolution, byte threshold and shared fallback. Decision tables cover 103/104 bytes, UTF-8 and a seven-digit PID. Both actual templates are exercised under a deliberately long project path: a private PID socket binds/connects and a Bash tool call completes. An app deliberately selecting the fallback is refused, and an old overlong explicit runtime is refused before agent start. This establishes the stand-in socket/tool path, not logged-in real-model interoperability. Real-client socket evidence is recorded below.
 
 Real-client measurement (2026-11-04, installed Claude Code 2.1.318): both unchanged interactive policies initialized a kernel-bound Unix socket beneath this run's `hook-state/cc-socks/<seven-digit pid>.sock`, each 94 bytes, observed with `lstat` and `/proc/net/unix` while the real interactive client was live. Each probe used its own mode-0700 temporary runtime base beneath `/run/user/<uid>`, removed at probe exit, so no normal user runs could be swept. The homes/configs/ledgers were isolated, with no credential environment or login; only presentation/onboarding and project-trust flags were seeded in the private Claude config. Both interfaces reached the prompt and were stopped with SIGINT. Each recorded six refusals: four undeclared helper execs (`dpkg`, `sh`, `ssh`, `sh`) and two undeclared TCP destinations, with no session-socket/fallback refusal. No permission was added for those helpers/destinations. `--version` exited 0 and unauthenticated print reached `Not logged in` (exit 1) under both contracts. This proves real socket initialization and the interactive prompt without a login; it does **not** prove a real model response or real Claude tool execution. Tool execution is established only by the repository stand-in and local model stub.
+
+
+### CI portability amendment (2026-11-04): configured names and unreachable servers
+
+Immutable entry names come from the configured table, including their final
+basename; the existence of a host server or its parent does not select a name.
+Existing symlink prefixes still canonicalize parent identities. Prepare, rather
+than compilation, pins the first missing component beneath a held ancestor when
+a protected parent is absent. This retains coverage if an outside server creates
+it later, without broadening an exact SSH/container or own-runtime exception.
+
+For host-server identity pins, ENOENT and EACCES mean absent or unreachable:
+there is no present identity to retain, and launch proceeds. The unprivileged
+agent has the invoking user's credentials and Landlock only removes access.
+The configured name refusal remains. A reachable object is held until teardown
+as before. Other errors, including ELOOP, ENOTDIR and descriptor exhaustion, fail
+launch; this exception does not relax contractual entries, ledger pins or the
+conservative FIFO inventory. Regression tests cover absent and unsearchable
+parents, retained reachable identities, unexpected errors, configured aliases,
+and names before and after a server's parents are created.
+
+A record-only adoption drops the immutable enforcement state, as observe
+compilation does. Retaining that state accidentally installed Unix refusal hooks
+on an adoption that promises to record without refusing; the approval-broker
+probe must reach the broker and receive its own unauthorized response.
+
+The native peer's link count is read through the selected kernel-memory reader:
+probe-read addresses are scalars and cannot be dereferenced as trusted pointers.
+The protected-name ancestor walk uses a global subprogram and a bounded
+`bpf_loop` callback, following ADR 0024's verifier form, with no increase to the
+verified-instruction budget or change to the protected names.
+
+A captured pathname bind whose parent lookup fails completes in the supervisor
+with the task-equivalent errno, without handing mutable arguments back. That
+lookup error is recorded as supervisor `observed`/`unmatched`, not a policy
+allow/refusal or kernel decision. With terminal recording active, its owned
+handoff is saved before responding so the unmarked syscall-exit duplicate is
+suppressed. The copied spelling is supervisor evidence only. This preserves the
+immutable precheck and one result line (ADR 0019's CI portability note).
+
+The plane additionally keeps a resolved target's parent/name guard when a
+configured entry is a symlink. Its old inode remains pinned and both the
+configured alias and an outside replacement of the resolved target remain
+protected. These are runtime plane rows; the compiled entry keeps its configured
+name. The native 107-byte replacement-directory regression uses such an alias.

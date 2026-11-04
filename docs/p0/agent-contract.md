@@ -1687,3 +1687,12 @@ attach Unix programs even without a `net:` section, while no-net IP access stays
 control ports. `io_uring: true` at a potentially root tier is a compile error until ring paths can
 carry the socket identity boundary. The ADR's implementation note defines exact precedence, relay,
 scopes and plane checks and their remaining best-effort cells.
+
+*CI portability amendment, 2026-11-04:* immutable entry basenames come from the
+configured table, regardless of host presence. Prepare pins their parents at
+runtime, retaining a refusal at the first absent component when needed. A host
+server whose identity open returns ENOENT or EACCES is absent/unreachable and
+contributes no present identity; this does not prevent launch. Configured name
+refusals remain, reachable identities remain held, and other errors fail launch.
+This does not relax contractual path requirements or FIFO inventory failures
+(ADR 0113).

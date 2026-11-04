@@ -470,6 +470,12 @@ table:
      "Target": "$HOME/.tego"
     },
     {
+     "Name": "tego",
+     "Parent": "/run/user/4242",
+     "Path": "builtin:/run/user/4242/tego",
+     "Target": "/run/user/4242/tego"
+    },
+    {
      "Name": "system_bus_socket",
      "Parent": "/run/dbus",
      "Path": "builtin:/run/dbus/system_bus_socket",
@@ -482,16 +488,28 @@ table:
      "Target": "/run/docker.sock"
     },
     {
-     "Name": "podman",
-     "Parent": "/run",
+     "Name": "podman.sock",
+     "Parent": "/run/podman",
      "Path": "builtin:/run/podman/podman.sock",
      "Target": "/run/podman/podman.sock"
     },
     {
-     "Name": "containerd",
-     "Parent": "/run",
+     "Name": "containerd.sock",
+     "Parent": "/run/containerd",
      "Path": "builtin:/run/containerd/containerd.sock",
      "Target": "/run/containerd/containerd.sock"
+    },
+    {
+     "Name": "docker.sock",
+     "Parent": "/run/user/4242",
+     "Path": "builtin:/run/user/4242/docker.sock",
+     "Target": "/run/user/4242/docker.sock"
+    },
+    {
+     "Name": "podman.sock",
+     "Parent": "/run/user/4242/podman",
+     "Path": "builtin:/run/user/4242/podman/podman.sock",
+     "Target": "/run/user/4242/podman/podman.sock"
     }
    ],
    "Nodes": [

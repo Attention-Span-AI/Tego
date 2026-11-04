@@ -108,7 +108,7 @@ func (l *Loop) builtinBind(n *notif, c *compiled) bool {
 			if lookupFailure(err) {
 				// Returning the lookup error performs no bind and never hands
 				// mutable arguments back to the kernel. A retry is decided afresh.
-				l.respond(n, respResult(0, err))
+				l.finishBindLookupFailure(n, c, d, err)
 				return true
 			}
 			l.finishBind(n, c, d, protoUnix, refuse(agent.BuiltinHostIPC), nil, false)

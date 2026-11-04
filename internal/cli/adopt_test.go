@@ -670,9 +670,6 @@ func TestGuardExitStatusIsTheAdoptedAgentsOwn(t *testing.T) {
 	}
 }
 
-// TestRecordOnlyAdoptionRefusesNothing: the compiler read-denies tego's own records whatever the contract says, and
-// a record-only adoption's table drops that row (at tier 2 with no plane it would be a fanotify mark that refuses the
-// agent's reads and arms the adopter); every other row stays.
 // TestAdoptNoticeNamesWhatOnlyTheFilterHolds: a boundary contract refuses System V IPC unless it sets ipc: true, and
 // tier 1's filter admits only the socket families the network rules govern; neither is held on an adopted process,
 // and the notice says so before anything moves.
@@ -691,14 +688,20 @@ func TestAdoptNoticeNamesWhatOnlyTheFilterHolds(t *testing.T) {
 	}
 }
 
+// TestRecordOnlyAdoptionRefusesNothing: neither deny-read marks nor ADR 0113's
+// Unix hooks may enforce a record-only adoption. Its other rows remain available
+// to the recorder, and the input table remains unchanged.
 func TestRecordOnlyAdoptionRefusesNothing(t *testing.T) {
-	rt := &agent.RuleTable{FS: []agent.FSRule{
+	rt := &agent.RuleTable{Builtins: &agent.BuiltinRefusals{Nodes: []string{"/run/podman/podman.sock"}}, FS: []agent.FSRule{
 		{Path: "/root/.tego", Kind: agent.FSDenyRead, BuiltIn: true},
 		{Path: "/tmp/runs", Kind: agent.FSImplicit},
 		{Path: "/home/u/.ssh", Kind: agent.FSDenyRead},
 		{Path: "/home/u/w", Kind: agent.FSWatch},
 	}}
 	got := recordOnly(rt)
+	if got.Builtins != nil || rt.Builtins == nil {
+		t.Fatal("record-only adoption retained immutable enforcement or changed the input")
+	}
 	if len(got.FS) != 2 || got.FS[0].Kind != agent.FSImplicit || got.FS[1].Kind != agent.FSWatch {
 		t.Fatalf("record-only rows %+v", got.FS)
 	}

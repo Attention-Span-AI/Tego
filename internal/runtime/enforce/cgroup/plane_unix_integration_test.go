@@ -11,6 +11,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"golang.org/x/net/bpf"
@@ -171,5 +172,63 @@ func TestRootBuiltinRefusalsPeer(t *testing.T) {
 		} else if err != nil {
 			t.Errorf("%s: %v", ops[i], err)
 		}
+	}
+	rootBuiltinNameWidths(t)
+}
+
+// Replacing the protected directory after Prepare leaves its old inode pinned.
+// Only the configured parent/name can refuse the new directory's peer. The raw
+// socket spelling is an explicitly allowed short alias, so it cannot pass this
+// test by matching the protected prefix or the old directory's FS row.
+func rootBuiltinNameWidths(t *testing.T) {
+	for _, width := range []int{7, 8, 9, 63, 64, 65, 107} {
+		t.Run(fmt.Sprintf("name-bytes-%d", width), func(t *testing.T) {
+			var protected string
+			_, dir, u := planeUnixRunWith(t, fmt.Sprintf("p%03d", width), func(u *unixFixture, rt *agent.RuleTable) {
+				protected = filepath.Join(u.work, strings.Repeat("p", width))
+				if err := os.Mkdir(protected, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				configured := protected
+				if width == 107 {
+					configured = filepath.Join(u.work, "configured")
+					if err := os.Symlink(protected, configured); err != nil {
+						t.Fatal(err)
+					}
+				}
+				rt.FS = rt.FS[:1]
+				rt.Contract = &agent.Contract{HostSockets: true}
+				rt.Builtins = &agent.BuiltinRefusals{Runtime: []string{configured, protected}, Names: []agent.BuiltinName{{
+					Path: "builtin:" + configured, Parent: u.work, Name: filepath.Base(configured), Target: protected,
+				}}}
+				rt.DenyWrite = []agent.FSRule{{Path: protected, Resolved: protected, Kind: agent.FSDenyWrite, BuiltinRule: agent.BuiltinHostIPC}}
+				rt.Net = []agent.NetRule{{Proto: agent.ProtoUnix, UnixPath: filepath.Join(u.work, "alias.dg"), Verdict: agent.VerdictAllow, Static: true},
+					{Proto: agent.ProtoUnix, UnixPath: u.workDgram, Verdict: agent.VerdictAllow, Static: true}}
+			})
+			if err := os.Rename(protected, protected+".old"); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(protected, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			fd, err := unix.Open(protected, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = unix.Close(fd) })
+			// The proc spelling fits sun_path even for a 107-byte ancestor.
+			receiveUnixgram(t, fmt.Sprintf("/proc/self/fd/%d/dg", fd))
+			alias := filepath.Join(u.work, "alias.dg")
+			if err := os.Symlink(filepath.Join(protected, "dg"), alias); err != nil {
+				t.Fatal(err)
+			}
+			got := runUnixHelper(t, dir, u.work, []string{"sendto " + alias, "sendto " + u.workDgram})
+			if !errors.Is(got[0], unix.EACCES) && !errors.Is(got[0], unix.EPERM) {
+				t.Errorf("%d-byte protected name through alias: %v, want native refusal", width, got[0])
+			}
+			if got[1] != nil {
+				t.Errorf("ordinary peer: %v", got[1])
+			}
+		})
 	}
 }

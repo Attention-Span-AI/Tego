@@ -880,3 +880,42 @@ TEGO_VM_LSM=lockdown,capability,landlock,yama,apparmor,ima,evm,bpf test/vm/kvm-r
 VM_BPF=yes VM_BOOTS=both VM_RUN='TestIntegrationAdopt|TestIntegrationGuard|TestIntegrationAgentsFollow' \
   test/vm/root-suites.sh internal/cli
 ```
+
+### CI portability amendment (2026-11-04): filesystem overrides are not task authority
+
+The NET09 `capable` floor continues to refuse the task's CAP_SYS_ADMIN checks in
+every user namespace, including every mount API and non-mount uses such as direct
+`trusted.*` xattrs. It no longer refuses a check made with a kernel-installed
+credential override: both `current->cred` and `current->real_cred` must be non-NULL,
+different, and the hook's credential must be exactly the active overridden one.
+Unreadable or unrecognized state retains the refusal; an override identical to the real credential is not a distinct override and still meets the floor. No slot-header or contract
+option can lift the task's floor.
+
+Overlayfs performs backing operations with its stashed filesystem credentials
+([Linux 7.0 copy-up](https://github.com/torvalds/linux/blob/v7.0/fs/overlayfs/copy_up.c#L1170)),
+after the merged path's policy check. Refusing their trusted-xattr work also
+refused permitted copy-up on an ext4-backed overlay. This was reproduced with
+the pre-fix rdonly plane: the lower-file write failed EPERM with `capable` attached and
+succeeded when that hook alone was detached. The correction retains the hook and
+admits only the recognized override. Ordinary credential changes, including
+setuid and user namespaces, update both credential pointers together through
+[`commit_creds`](https://github.com/torvalds/linux/blob/v7.0/kernel/cred.c#L329);
+userspace cannot install an `override_creds` window around its mount syscall.
+
+io_uring is the one userspace-selected override: a ring's registered personality
+is issued under `override_creds` (`security_uring_override_creds`), with
+credentials the task chose, and an adopted process has no seccomp filter to keep
+it off rings. So the recognized override excludes every io thread
+(`PF_IO_WORKER`: io-wq workers and SQPOLL) and every task with an io_uring
+context (`task->io_uring`): those keep the floor even under an override.
+`TestPlaneStepBHooksDecide` sets a `trusted.*` xattr through `IORING_OP_SETXATTR`
+under a personality registered before a credential change and requires EPERM.
+An adopted process that uses io_uring itself therefore meets the floor on an
+overlay copy-up too (EPERM, fail-closed); a launched run cannot hold a ring
+unless `io_uring: true`, a compile error at the root tiers.
+
+The native Step B xattr matrix uses `user.*` for filesystem row decisions and
+separately requires EPERM for task-initiated trusted-xattr changes. Those checks,
+permitted and refused overlay writes, and NET09's ten topology operations in each
+of the initial and a new user namespace are validated together. The preemption
+waiver and its disclosed skipped-program limit are unchanged.

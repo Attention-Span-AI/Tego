@@ -409,6 +409,9 @@ func CompilePlane(rt *agent.RuleTable) (*PlaneRows, error) {
 		}
 		for _, n := range rt.Builtins.Names {
 			paths[n.Parent] = true
+			if n.Target != filepath.Join(n.Parent, n.Name) {
+				paths[filepath.Dir(n.Target)] = true
+			}
 		}
 		own := rt.Builtins.OwnRuntimeResolved
 		if own == "" {
@@ -558,6 +561,13 @@ func CompilePlane(rt *agent.RuleTable) (*PlaneRows, error) {
 			for i, r := range s.FS {
 				if r.Path == n.Target {
 					s.Protected = append(s.Protected, PlaneListenRow{Path: n.Path, Parent: n.Parent, Name: n.Name, Rule: 0x8000 | i})
+					// Configured aliases keep their own names. Also guard the
+					// resolved target's name if an outside server replaces it;
+					// its old inode alone cannot protect that replacement.
+					if n.Target != filepath.Join(n.Parent, n.Name) {
+						s.Protected = append(s.Protected, PlaneListenRow{Path: "builtin-target:" + n.Path,
+							Parent: filepath.Dir(n.Target), Name: filepath.Base(n.Target), Rule: 0x8000 | i})
+					}
 					found = true
 					break
 				}

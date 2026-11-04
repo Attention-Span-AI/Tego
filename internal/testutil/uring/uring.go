@@ -23,9 +23,10 @@ import (
 
 // Opcodes and constants of include/uapi/linux/io_uring.h, stable ABI.
 const (
-	opSocket = 45 // IORING_OP_SOCKET, 5.19+
-	opBind   = 56 // IORING_OP_BIND, 6.11+
-	opListen = 57 // IORING_OP_LISTEN, 6.11+
+	opSetxattr = 42 // IORING_OP_SETXATTR, 5.19+
+	opSocket   = 45 // IORING_OP_SOCKET, 5.19+
+	opBind     = 56 // IORING_OP_BIND, 6.11+
+	opListen   = 57 // IORING_OP_LISTEN, 6.11+
 
 	offSQRing = 0
 	offCQRing = 0x8000000
@@ -37,6 +38,8 @@ const (
 	setupSQPoll      = 1 << 1 // IORING_SETUP_SQPOLL
 	sqeAsync         = 1 << 4 // IOSQE_ASYNC
 	sqeSize, cqeSize = 64, 16
+
+	registerPersonality = 9 // IORING_REGISTER_PERSONALITY, 5.6+
 )
 
 // Mode is which task of the process carries out a submission. The kernel decides a socket made through each the same
@@ -178,6 +181,39 @@ var ioURingEnter = func(ring int, toSubmit, minComplete, flags uintptr) unix.Err
 	return errno
 }
 
+// SetxattrPersonality submits one IORING_OP_SETXATTR of name=value on path under a registered personality: the ring
+// registers the calling thread's credentials (IORING_REGISTER_PERSONALITY), change replaces that thread's (any
+// commit_creds), and the entry names the registered ones, so the kernel issues it under override_creds with
+// credentials userspace chose (security_uring_override_creds). The entry always goes to an io-wq worker. The decision
+// plane's capability floor must not take that for a filesystem's own backing override (ADR 0055). It returns the
+// completion's result, 0 or a negative errno.
+func SetxattrPersonality(path, name string, value []byte, change func() error) (int32, error) {
+	if len(value) == 0 {
+		return 0, errors.New("uring: empty xattr value")
+	}
+	buf := make([]byte, 0, len(path)+len(name)+len(value)+2)
+	buf = append(append(append(append(append(buf, path...), 0), name...), 0), value...)
+	at := func(off int) uint64 { return uint64(uintptr(unsafe.Pointer(&buf[off]))) }
+	var personality uint16
+	runtime.LockOSThread() // registration, the change and the submission are one thread's credentials
+	defer runtime.UnlockOSThread()
+	return submitRing(Inline, func(ring int) error {
+		id, _, errno := unix.Syscall6(unix.SYS_IO_URING_REGISTER, uintptr(ring), registerPersonality, 0, 0, 0, 0)
+		if errno != 0 {
+			return fmt.Errorf("%w: register a personality: %w", ErrUnavailable, errno)
+		}
+		personality = uint16(id)
+		return change()
+	}, func(sqe []byte) {
+		sqe[0] = opSetxattr
+		*(*uint64)(unsafe.Pointer(&sqe[8])) = at(len(path) + 1 + len(name) + 1) // addr2: the value
+		*(*uint64)(unsafe.Pointer(&sqe[16])) = at(len(path) + 1)                // addr: the name
+		*(*uint32)(unsafe.Pointer(&sqe[24])) = uint32(len(value))               // len: the value's size
+		*(*uint16)(unsafe.Pointer(&sqe[42])) = personality                      // personality
+		*(*uint64)(unsafe.Pointer(&sqe[48])) = at(0)                            // addr3: the path
+	}, buf)
+}
+
 // submit sets a ring up, submits the one entry fill writes inline, waits for its completion and returns its result.
 // keep is memory the entry points at, kept alive until the completion.
 func submit(fill func(sqe []byte), keep []byte) (res int32, err error) {
@@ -186,6 +222,11 @@ func submit(fill func(sqe []byte), keep []byte) (res int32, err error) {
 
 // submitMode is submit in mode.
 func submitMode(mode Mode, fill func(sqe []byte), keep []byte) (res int32, err error) {
+	return submitRing(mode, nil, fill, keep)
+}
+
+// submitRing is submitMode with onRing, when set, called on the new ring before the entry is written.
+func submitRing(mode Mode, onRing func(ring int) error, fill func(sqe []byte), keep []byte) (res int32, err error) {
 	var p params
 	if mode == SQPoll {
 		p.Flags |= setupSQPoll
@@ -219,6 +260,11 @@ func submitMode(mode Mode, fill func(sqe []byte), keep []byte) (res int32, err e
 		return 0, fmt.Errorf("%w: map the submission entries: %w", ErrUnavailable, err)
 	}
 	defer func() { _ = unix.Munmap(sqes) }()
+	if onRing != nil {
+		if err := onRing(ring); err != nil {
+			return 0, err
+		}
+	}
 
 	u32 := func(b []byte, off uint32) *uint32 { return (*uint32)(unsafe.Pointer(&b[off])) }
 	tail := atomic.LoadUint32(u32(sq, p.SqOff.Tail))

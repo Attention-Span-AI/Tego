@@ -1133,7 +1133,7 @@ TEGO_PLANE_HOOK(path_rename, path_rename, security_path_rename,
     } else {
         rule = srule;
     }
-    if (tego_builtin_name(run,old_dentry,&rule) || tego_builtin_name(run,new_dentry,&rule))
+    if (tego_builtin_name(sc,run,old_dentry,&rule) || tego_builtin_name(sc,run,new_dentry,&rule))
         reason = TEGO_R_RENAME_OUTSIDE_CONTRACT;
     settled = tego_plane_settle(sc, reason, rule);
     reason = settled >> 32;
@@ -1201,7 +1201,7 @@ TEGO_PLANE_HOOK(path_link, path_link, security_path_link,
     } else {
         rule = drule;
     }
-    if (tego_builtin_name(run,old_dentry,&rule) || tego_builtin_name(run,new_dentry,&rule))
+    if (tego_builtin_name(sc,run,old_dentry,&rule) || tego_builtin_name(sc,run,new_dentry,&rule))
         reason = TEGO_R_WRITE_OUTSIDE_CONTRACT;
     settled = tego_plane_settle(sc, reason, rule);
     reason = settled >> 32;
@@ -1247,7 +1247,7 @@ static __always_inline __u8 tego_modify_hook(struct dentry *dentry, struct vfsmo
         reason = res == TEGO_NAME_DENY ? refuse_as : tego_walk_failed(res);
         rule32 = res == TEGO_NAME_DENY ? nrule : TEGO_PLANE_RULE_NONE;
     }
-    if (tego_builtin_name(run,dentry,&rule32))
+    if (tego_builtin_name(sc,run,dentry,&rule32))
         reason = refuse_as;
     settled = tego_plane_settle(sc, reason, rule32);
     reason = settled >> 32;
@@ -1612,9 +1612,9 @@ static __always_inline void tego_builtin_peer_sample(const struct tego_run *run,
 {
     tego_plane_fallback_sample(run,
         TEGO_RD_WORD((__u64)dentry + bpf_core_field_offset(struct dentry, d_name) + bpf_core_field_offset(struct qstr, name)),
-        dentry->d_parent->d_inode->i_ino,
+        TEGO_I_INO(TEGO_D_INODE(TEGO_D_PARENT(dentry))),
         (__u64)rule | (__u64)TEGO_R_NET_NOT_ALLOWED << 32 | (__u64)TEGO_HOOK_UNIX_MAY_SEND << 40,
-        (__u64)dentry->d_sb->s_dev << 32);
+        (__u64)TEGO_LISTEN_D_DEV(dentry) << 32);
 }
 
 /* ADR 0113: raw sockaddr checks cannot recognize a pre-existing alias after a
@@ -1663,10 +1663,18 @@ TEGO_PLANE_HOOK(unix_may_send, unix_may_send, security_unix_may_send,
             return 0;
         if (!path.dentry || !path.mnt)
             break;
-        match = tego_builtin_name_decision(run, path.dentry, &rule, 1);
+        match = tego_builtin_name_decision(sc, run, path.dentry, &rule, 1);
         if (match == 2)
             return 0; /* own runtime, even a linked run-created socket */
-        if (path.dentry->d_inode->i_nlink > 1) {
+        __u64 inode = TEGO_D_INODE(path.dentry);
+        if (!inode)
+            break;
+    #if TEGO_PLANE_RDONLY
+        __u32 nlink = bpf_core_cast((void *)inode, struct inode)->i_nlink;
+    #else
+        __u32 nlink = tego_rd32(inode + bpf_core_field_offset(struct inode, i_nlink));
+    #endif
+        if (nlink != 1) {
             rule = TEGO_PLANE_RULE_BUILTIN_HOST;
             break;
         }

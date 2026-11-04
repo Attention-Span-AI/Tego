@@ -334,3 +334,23 @@ func TestURingListenerResultsNeedNoSupervisorNaming(t *testing.T) {
 		t.Fatalf("io_uring listen refusal %+v %+v", evs[1], p)
 	}
 }
+
+func TestBindLookupWithoutKernelMarkerDisclosesMissingEvidence(t *testing.T) {
+	f := newFixture(t)
+	r, sink := runRecorder(t, f, Options{BindResults: true, ContinuedBind: func(int, int, uint64, uint64) (supervisor.BindNaming, bool) {
+		return supervisor.BindNaming{Path: "/copied-attempt-not-kernel-evidence", Rule: "wrong"}, true
+	}}, bindResultSample(sample{PID: 50, TID: 50, Start: 900, MonoNS: 1, Verdict: KernelObserved},
+		-int64(unix.ENOTDIR), 0, uint32(bpf.PlaneRuleNone), 0, 0, ""))
+	evs := sink.byKind(record.KindNet)
+	if len(evs) != 1 {
+		t.Fatalf("terminal results: %+v", evs)
+	}
+	p := payload[record.NetPayload](t, evs[0])
+	if evs[0].Verdict != record.VerdictObserved || evs[0].Rule != RuleUnmatched || p.Dst != "<unavailable>" ||
+		p.SyscallErrno != int(unix.ENOTDIR) || p.VerdictFrom != "unknown" || p.Mechanism != "" {
+		t.Fatalf("missing kernel evidence became a named decision: %+v %+v", evs[0], p)
+	}
+	if gapCount(r.Gaps())[GapBindMetadataMissing] != 1 {
+		t.Fatalf("missing marker was not disclosed: %+v", r.Gaps())
+	}
+}

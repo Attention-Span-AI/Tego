@@ -129,7 +129,7 @@ env:
 			t.Errorf("N=%d, half the cap, was refused", n)
 		}
 		if !strings.Contains(msg, "its cap on this launcher") && !strings.Contains(msg, "descriptor cap is") &&
-			!strings.Contains(msg, "at most 4096") {
+			!strings.Contains(msg, "at most 4096") && !strings.Contains(msg, "unix name rows exceed the trie's 4096") {
 			t.Errorf("N=%d: the refusal names no cap", n)
 		}
 		if strings.Contains(msg, "RESULT") {

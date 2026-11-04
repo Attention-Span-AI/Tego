@@ -5,6 +5,7 @@
 package runtime
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -120,8 +121,8 @@ func TestIntegrationAskUnixScopeSpellings(t *testing.T) {
 //     a relative name, by getcwd's canonical name and by the declared name all reach the scope's place and are asked
 //     (nobody answers: ask-timeout), and the socket renamed away is the run's own, the write entry's (before, the
 //     relative and canonical names were refused unix-ask-scope with nobody asked);
-//   - a bind of the run's own socket whose directory is missing binds nothing, and the same socket bound after the
-//     directory is made is the write entry's;
+//   - a bind of the run's own socket whose directory is missing binds nothing and is one supervisor observed line
+//     with its ENOENT, and the same socket bound after the directory is made is the write entry's;
 //   - a connect by a relative name in the symlinked project, approved, is relayed with a person's authority;
 //   - a scope declared through a symlink that leads nowhere when the run starts, whose target directory the run
 //     makes, is approved and relayed (before, refused unmatched);
@@ -173,7 +174,31 @@ func runAskUnixSpellings(t *testing.T, bin, tier string) {
 		if rc := s.out("rc-first"); rc != "ENOENT" {
 			t.Errorf("the first bind came to %q; want ENOENT", rc)
 		}
-		spellingWantAt(t, s, evs, "x.sock", "out/sub/x.sock", "ok", "allow", "fs.write[./out/]")
+		// The first bind binds nothing: ADR 0113's frozen precheck meets the missing directory and completes it with
+		// the lookup's ENOENT, as one supervisor line, observed and unmatched, at every tier (ADR 0019's CI portability
+		// note). Every other line for the name is the write entry's.
+		var rest []*record.Event
+		failed := 0
+		for _, e := range evs {
+			if e.Kind == record.KindNet && e.Verdict == record.VerdictObserved {
+				m := map[string]any{}
+				if err := json.Unmarshal(e.Payload, &m); err != nil {
+					t.Fatal(err)
+				}
+				if m["dst"] == "unix:out/sub/x.sock" && m["op"] == "bind" {
+					failed++
+					if e.Source != record.SourceSupervisor || e.Rule != "unmatched" || m["syscall_errno"] != float64(unix.ENOENT) {
+						t.Errorf("the failed bind's line: %s %s %v, want the supervisor's, unmatched, ENOENT", e.Source, e.Rule, m)
+					}
+					continue
+				}
+			}
+			rest = append(rest, e)
+		}
+		if failed != 1 {
+			t.Errorf("%d observed lines for the bind whose directory was missing, want one", failed)
+		}
+		spellingWantAt(t, s, rest, "x.sock", "out/sub/x.sock", "ok", "allow", "fs.write[./out/]")
 	})
 	t.Run("approved by a relative name in a symlinked project", func(t *testing.T) {
 		_, link := symlinked(t)

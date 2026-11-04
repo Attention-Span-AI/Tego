@@ -1269,6 +1269,20 @@ func planeHelperStepB(f []string) (string, bool) {
 		return errnoString(unix.Setxattr(f[1], f[2], []byte("1"), 0)), true
 	case "removexattr":
 		return errnoString(unix.Removexattr(f[1], f[2])), true
+	case "uring-setxattr-personality":
+		// The personality holds this thread's credentials from before setgroups replaced them (with the same groups),
+		// so the worker issues the entry with credentials that are not its own.
+		res, err := uring.SetxattrPersonality(f[1], f[2], []byte("1"), func() error {
+			groups, err := unix.Getgroups()
+			if err != nil {
+				return err
+			}
+			return unix.Setgroups(groups)
+		})
+		if err != nil {
+			return "err " + err.Error(), true
+		}
+		return strconv.Itoa(int(-res)), true
 	case "setacl":
 		return errnoString(unix.Setxattr(f[1], "system.posix_acl_access", planeACLValue, 0)), true
 	case "removeacl":
@@ -1443,17 +1457,31 @@ func planeStepBCells(t *testing.T, coll *ebpf.Collection, mode PlaneMode, runIdx
 	check("chmod under deny_read (not a deny_write target)", "0", "chmod", w("secret/f"), "600")
 	check("chmod above the target (.git)", "0", "chmod", w(".git"), "755")
 	check("chmod under a row whose identity is gone", eacces, "chmod", w("bad/f"), "600")
-	if err := unix.Setxattr(w("attr"), "trusted.tego", []byte("1"), 0); err != nil {
-		t.Logf("trusted xattrs are not supported here (%v): the xattr cells are not run", err)
+	if err := unix.Setxattr(w("attr"), "user.tego", []byte("1"), 0); err != nil {
+		t.Logf("user xattrs are not supported here (%v): the xattr cells are not run", err)
 	} else {
-		check("setxattr on a deny_write target's file", eacces, "setxattr", target, "trusted.tego")
+		check("setxattr on a deny_write target's file", eacces, "setxattr", target, "user.tego")
 		scratch("setxattr on a deny_write target's file", hook("inode_setxattr"), 1, uint8(ReasonWriteOutsideContract), ruleHooks)
-		check("setxattr in a write entry", "0", "setxattr", w("f"), "trusted.tego")
-		if err := unix.Setxattr(target, "trusted.tego", []byte("1"), 0); err != nil {
+		check("setxattr in a write entry", "0", "setxattr", w("f"), "user.tego")
+		if err := unix.Setxattr(target, "user.tego", []byte("1"), 0); err != nil {
 			t.Fatalf("setxattr outside the run: %v", err)
 		}
-		check("removexattr on a deny_write target's file", eacces, "removexattr", target, "trusted.tego")
-		check("removexattr in a write entry", "0", "removexattr", w("f"), "trusted.tego")
+		check("removexattr on a deny_write target's file", eacces, "removexattr", target, "user.tego")
+		check("removexattr in a write entry", "0", "removexattr", w("f"), "user.tego")
+		// NET09's capability floor precedes the inode hook for trusted.*.
+		// Keep that negative control separate from the filesystem row checks.
+		if err := unix.Setxattr(w("attr"), "trusted.tego", []byte("1"), 0); err == nil {
+			check("trusted xattr needs the refused CAP_SYS_ADMIN", "1", "setxattr", w("attr"), "trusted.tego")
+			check("trusted xattr removal needs the refused CAP_SYS_ADMIN", "1", "removexattr", w("attr"), "trusted.tego")
+			// A registered io_uring personality is an override_creds window userspace chose: the floor holds there,
+			// unlike for a filesystem's own backing work (ADR 0055's CI portability amendment).
+			switch got := helper.do(t, "uring-setxattr-personality", w("attr"), "trusted.tego"); {
+			case strings.HasPrefix(got, "err ") || got == strconv.Itoa(int(unix.EINVAL)):
+				t.Logf("no io_uring IORING_OP_SETXATTR under a personality here (%s): that floor cell is not run", got)
+			case got != "1":
+				t.Errorf("a trusted xattr set by an io-wq worker under a registered personality answered %s, want EPERM (1)", got)
+			}
+		}
 	}
 	if err := unix.Setxattr(w("attr"), "system.posix_acl_access", planeACLValue, 0); err != nil {
 		t.Logf("POSIX ACLs are not supported here (%v): the setfacl cells are not run", err)
