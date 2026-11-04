@@ -5,7 +5,9 @@
       "rdonly_cast": true,
       "lockdown": "none",
       "lto": "none",
-      "lto_source": "/boot/config-6.17.0-test"
+      "lto_source": "/boot/config-6.17.0-test",
+      "preempt": "voluntary",
+      "preempt_source": "/sys/kernel/debug/sched/preempt"
     },
     "build": "decide_rd",
     "build_why": "bpf_rdonly_cast is in BTF",

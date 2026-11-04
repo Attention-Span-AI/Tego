@@ -105,12 +105,14 @@ jobs:
       # 0017's conformance runner, whose tier bpflsm axis and parity cells run on the lsm=...,bpf boot and whose fmod_ret
       # axis runs on the boot without bpf. Every row that offers a tier, rhel-9 included: RHEL 9's 5.14 carries bpf LSM
       # and the plane (enforce-plane R28). A row's name reaches the guests as TEGO_VM_ROW, and root-suites.sh fetches
-      # its kernel.
+      # its kernel. TEGO_TEST_PLANE_PREEMPT=waive keeps the fmod_ret axis on the rows whose kernel preempts kernel code
+      # (fedora-7.0 and fedora-7.2: lazy preemption), where a product build rules that mode out (ADR 0024 (16)); it changes
+      # nothing on a row whose kernel does not.
       - name: tier 3 suites on the ${{ matrix.part }} boot of ${{ matrix.kernel }}, as root
         if: matrix.part != 'row' && steps.body.outputs.body != 'doctor-only'
         shell: bash
         run: |
-          TEGO_VM_ROW="$KERNEL" TEGO_VM_LOCKDOWN=none TEGO_VM_MEM=1536M \
+          TEGO_TEST_PLANE_PREEMPT=waive TEGO_VM_ROW="$KERNEL" TEGO_VM_LOCKDOWN=none TEGO_VM_MEM=1536M \
             VM_BOOTS="$PART" VM_BPF=yes VM_SUITE_MEM=internal/runtime/enforce/cgroup=2560M VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=6000" VM_OUT="$RUNNER_TEMP/tier3" \
             test/vm/root-suites.sh internal/runtime/enforce/cgroup internal/bpf test/conformance
       # Landlock alone on a kernel that has ABI 9 and 10 (enforce-landlock R21, R22): the one row whose kernel does is

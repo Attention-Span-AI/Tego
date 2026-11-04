@@ -1143,7 +1143,14 @@ to pass, see the lsm mode line`, whose detail and fix say why); editing `lsm=` f
 - **`fmod_ret` and its residual.** Without `bpf` in `lsm=`, tier 2 runs the plane as `fmod_ret` hooks on the `security_*`
   functions. A refusal there skips the other LSMs' hooks for that access, so AppArmor's own check and its audit record
   of that access do not happen. A kernel built with Clang LTO, which can inline a `security_` function at a call site,
-  has no `fmod_ret` mode.
+  has no `fmod_ret` mode. Nor has a kernel not proven never to preempt kernel code (ADR 0024 (16)): under full, lazy
+  or RT preemption the kernel skips an `fmod_ret` program on a CPU where a preempted task is still inside it, and the
+  hook goes on undecided, so doctor rules the mode out and its line names the model it read (`preemption lazy, from
+  /sys/kernel/debug/sched/preempt`) or what it could not read. That is every x86_64 and arm64 kernel from 7.0, which
+  offer only full and lazy preemption; a 6.x kernel whose preemption is none or voluntary (Ubuntu's 6.17 by default,
+  measured) keeps the mode where doctor can read its live mode in debugfs (a dynamic build; lockdown can refuse that
+  file, and then the mode is refused too), and a `preempt=full` or `preempt=lazy` boot line takes it away. Such a machine needs `bpf` in `lsm=` for a plane mode (LSM programs are never skipped this way), else tier 2
+  decides on the fanotify fallback.
 - **`bpf.plane`** (`auto`, `lsm`, `fmod_ret`) is honoured from `/etc/tego/config.yaml` only, like `bpf.linger`: a
   user's layer that sets it gets a warning and changes nothing. `auto` takes the best mode that passed doctor's probe,
   `lsm` before `fmod_ret`, else the fanotify fallback. A pin to a mode that did not pass falls back to fanotify at tier

@@ -31,6 +31,7 @@ func TestRunProbeFlightProcess(t *testing.T) {
 	if os.Getenv("TEGO_DOCTOR_FLIGHT_HELPER") != "1" {
 		return
 	}
+	stubPreempt(t, preemptVoluntary, debugfsPreemptPath) // the kernel passingPlane's answer was kept under, as testCache's
 	k := testKey()
 	c := &runCache{base: os.Getenv("TEGO_DOCTOR_FLIGHT_DIR"), dir: []string{"run", "tego"}, owner: os.Geteuid(),
 		key: func(string, int) (runCacheKey, bool) { return k, true }}

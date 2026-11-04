@@ -269,6 +269,8 @@ func (g *guard) wait() guardStats {
 // adoption: R6a's deny of the owner's own records attaches
 // to the directory a compile found. A table that cannot be compiled again fails the adoption: it is never adopted
 // under the old one. Adoptions already running keep the table they started with.
+// A table prepared with the decision plane in fmod_ret mode is prepared again, so selected again, when this kernel no
+// longer admits that mode (preparedAdoption.fmodRetLapsed, ADR 0024 (16)), and an adoption is never made under it.
 // Only that directory is rechecked: a built-in deny_read path made after the start (a new ~/.aws) is not covered
 // until the guard restarts, as a deny_read glob covers only the files that exist when it is compiled (SEMANTICS §2).
 func (g *guard) sharedTable(uid int) (*preparedAdoption, error) {
@@ -278,11 +280,16 @@ func (g *guard) sharedTable(uid int) (*preparedAdoption, error) {
 	if a == nil {
 		return nil, fmt.Errorf("no boundary table was compiled for uid %d", uid)
 	}
-	if !a.stale() {
+	lapsed := a.fmodRetLapsed()
+	if !a.stale() && lapsed == "" {
 		return a, nil
 	}
 	fresh, code := adoptPrepare(g.ctx, g.m, g.o, adopt.Process{}, uid, io.Discard)
 	if fresh == nil {
+		if lapsed != "" {
+			return nil, fmt.Errorf("uid %d's boundary table was prepared with the decision plane in fmod_ret mode, which "+
+				"this kernel no longer admits (%s), and it could not be prepared again (exit %d)", uid, lapsed, code)
+		}
 		return nil, fmt.Errorf("uid %d's ~/.tego is no longer the directory its boundary table denies (or its home, "+
 			"missing then, exists now), and the table could not be compiled again to deny it (exit %d)", uid, code)
 	}

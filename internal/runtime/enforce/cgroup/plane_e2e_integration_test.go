@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -56,6 +57,50 @@ const doctorWait = 5 * time.Minute
 // planeSelected is the plane doctor selects for tier cgroup under TEGO_TEST_PLANE=pin: lsm, fmod_ret or fanotify.
 func planeSelected(t *testing.T, bin, pin string) string {
 	t.Helper()
+	return planeDoctor(t, bin, pin).Selected
+}
+
+// planeModeAnswer is one mode's line of doctor --json's plane.
+type planeModeAnswer struct {
+	Mode    string `json:"mode"`
+	OK      bool   `json:"ok"`
+	Tested  bool   `json:"tested"`
+	Faulted bool   `json:"faulted"`
+	Detail  string `json:"detail"`
+	Fix     string `json:"fix"`
+}
+
+// planeDoctorAnswer is doctor --json's plane: what it selected and why, the build and where the answer came from
+// (probed, the run-probe cache, or a pinned build's), the kernel's preemption model, and each mode's line.
+type planeDoctorAnswer struct {
+	Selected    string `json:"selected"`
+	SelectedWhy string `json:"selected_why"`
+	Build       string `json:"build"`
+	BuildWhy    string `json:"build_why"`
+	Source      string `json:"source"`
+	Env         struct {
+		Preempt       string `json:"preempt"`
+		PreemptSource string `json:"preempt_source"`
+		PreemptWaived bool   `json:"preempt_waived"`
+	} `json:"env"`
+	Modes []planeModeAnswer `json:"modes"`
+}
+
+// mode is mode m's line, false when doctor gave none.
+func (a planeDoctorAnswer) mode(m string) (planeModeAnswer, bool) {
+	for _, r := range a.Modes {
+		if r.Mode == m {
+			return r, true
+		}
+	}
+	return planeModeAnswer{}, false
+}
+
+// planeDoctor is doctor --json's plane under TEGO_TEST_PLANE=pin. A pinned mode doctor did not select is logged with
+// everything doctor said of it: one such answer on GitHub's arm64 runner (2026-11-02) said no more than "doctor
+// selects fanotify".
+func planeDoctor(t *testing.T, bin, pin string) planeDoctorAnswer {
+	t.Helper()
 	cmd := isolatedTego(t, bin, "doctor", "--json")
 	cmd.Env = append(cmd.Env, "TEGO_TEST_PLANE="+pin, "GOTRACEBACK=all")
 	var stdout, stderr bytes.Buffer
@@ -83,31 +128,96 @@ func planeSelected(t *testing.T, bin, pin string) string {
 	}
 	out := stdout.Bytes()
 	var rep struct {
-		Plane *struct {
-			Selected string `json:"selected"`
-		} `json:"plane"`
+		Plane *planeDoctorAnswer `json:"plane"`
 	}
 	if err := json.Unmarshal(out, &rep); err != nil || rep.Plane == nil {
 		t.Fatalf("tego doctor --json under TEGO_TEST_PLANE=%s: %v\n%s", pin, err, out)
 	}
-	return rep.Plane.Selected
+	a := *rep.Plane
+	if m, ok := a.mode(pin); ok && a.Selected != pin {
+		t.Logf("doctor under TEGO_TEST_PLANE=%s selects %s (%s; build %q: %s; answer %s; preemption %q from %s, waived %v): "+
+			"%s mode ok=%v tested=%v faulted=%v: %s (fix: %s)", pin, a.Selected, a.SelectedWhy, a.Build, a.BuildWhy, a.Source,
+			a.Env.Preempt, a.Env.PreemptSource, a.Env.PreemptWaived, m.Mode, m.OK, m.Tested, m.Faulted, m.Detail, m.Fix)
+	}
+	return a
 }
 
-// planeModesHere are the plane modes this machine passes, each selected when pinned.
+// planeModesHere are the plane modes this machine passes, each selected when pinned. A mode doctor ruled out before
+// any load (a precondition: bpf in no active LSM list, Clang LTO, a kernel that preempts kernel code for fmod_ret
+// mode, ADR 0024 (16)) is one this machine does not offer, and is logged; a mode doctor loaded and probed and that
+// then failed or faulted is this kernel deciding a probe cell wrongly, or a probe that could not finish, and fails
+// the test rather than leave it to skip the mode.
 func planeModesHere(t *testing.T, bin string) []string {
 	t.Helper()
 	var modes []string
 	for _, m := range []string{"lsm", "fmod_ret"} {
-		if got := planeSelected(t, bin, m); got == m {
+		a := planeDoctor(t, bin, m)
+		if a.Selected == m {
 			modes = append(modes, m)
-		} else {
-			t.Logf("plane mode %s is not available here (doctor selects %s under that pin)", m, got)
+			if m == "fmod_ret" && a.Env.PreemptWaived {
+				planeWaivedModes.Store(m, true)
+				t.Logf("plane mode %s is admitted here only by the test builds' waiver of its preemption precondition "+
+					"(preemption %q from %s): a run in it can meet a skipped plane program, whose hook proceeds undecided "+
+					"(plane_waiver_integration_test.go)", m, a.Env.Preempt, a.Env.PreemptSource)
+			}
+			continue
+		}
+		r, ok := a.mode(m)
+		switch {
+		case !ok:
+			t.Errorf("doctor under TEGO_TEST_PLANE=%s selects %s and gives no line for the mode", m, a.Selected)
+		case !r.Tested && !r.Faulted:
+			t.Logf("plane mode %s is ruled out here before any load: %s", m, r.Detail)
+		case r.Faulted:
+			t.Errorf("doctor's probe of plane mode %s could not finish here: %s", m, r.Detail)
+		default:
+			t.Errorf("plane mode %s failed doctor's probe on this kernel: %s", m, r.Detail)
 		}
 	}
 	if got := planeSelected(t, bin, PlaneFanotify); got != PlaneFanotify {
 		t.Fatalf("TEGO_TEST_PLANE=fanotify selects %q, want the listener", got)
 	}
 	return modes
+}
+
+// planeAnswersFirst reports whether the plane answers an action before every other LSM that refuses it, refusers:
+// Landlock for a write outside every entry, Landlock and Yama (planeAttachRefusers) for a ptrace attach to a process
+// that is not the agent's descendant. A fmod_ret program runs before the whole security_ function, so before every
+// LSM; an lsm program runs in the chain's order, which /sys/kernel/security/lsm lists, and the first LSM that refuses
+// ends it. The lsm=...,bpf boot appends bpf after landlock; a kernel's own list can put yama before bpf and bpf before
+// landlock (Fedora 7.0's lockdown,capability,yama,selinux,bpf,landlock,...).
+func planeAnswersFirst(mode string, refusers ...string) bool {
+	if mode == "fmod_ret" {
+		return true
+	}
+	b, err := os.ReadFile("/sys/kernel/security/lsm")
+	if err != nil {
+		return false
+	}
+	order := strings.Split(strings.TrimSpace(string(b)), ",")
+	bpf := slices.Index(order, "bpf")
+	if bpf < 0 {
+		return false
+	}
+	for _, l := range refusers {
+		if i := slices.Index(order, l); i >= 0 && i < bpf {
+			return false
+		}
+	}
+	return true
+}
+
+// planeAttachRefusers are the LSMs besides the plane that refuse the agent's ptrace attach to a process that is not
+// its descendant: Landlock's scope, which confines the agent's domain, and Yama, whose ptrace_scope of 1 or more
+// admits only a descendant (/proc/sys/kernel/yama/ptrace_scope; 0, or no Yama, refuses nothing).
+func planeAttachRefusers() []string {
+	refusers := []string{"landlock"}
+	if b, err := os.ReadFile("/proc/sys/kernel/yama/ptrace_scope"); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && n >= 1 {
+			refusers = append(refusers, "yama")
+		}
+	}
+	return refusers
 }
 
 // planeProject is one run's directory: the project the sudo caller owns, and root's ledger, config and hooks'
@@ -689,11 +799,13 @@ func planeRefusalLines(t *testing.T, p *planeProject, events []map[string]any, m
 		unlisted.source = "kernel"
 		alias.source, alias.mechanism = "kernel", "plane"
 	}
-	// A write outside every entry: in lsm mode Landlock refuses it first (LSM order: the line is the kernel record's,
-	// its verdict the chain's, and it names no mechanism or decision_plane); in fmod_ret mode the plane's hook runs
-	// before the LSM chain and decides it.
+	// A write outside every entry: where Landlock comes before bpf in the LSM order (the lsm=...,bpf boot appends bpf)
+	// Landlock refuses it first in lsm mode: the line is the kernel record's, its verdict the chain's, and it names no
+	// mechanism or decision_plane. In fmod_ret mode the plane's hook runs before the whole chain, and a kernel whose own
+	// list puts bpf first (Fedora's: ...,selinux,bpf,landlock,...) runs the plane's lsm program first: the plane
+	// decides it.
 	forbidden := refusedWant{"fs", "open", "/forbidden.txt", 1, "kernel", "", "unmatched", "write-outside-contract", ""}
-	if mode == "fmod_ret" {
+	if planeAnswersFirst(mode, "landlock") {
 		forbidden.mechanism = "plane"
 	}
 	// A rename or a link out of the deny_read tree is the plane's at both tiers: step E's fs half hands the filter's

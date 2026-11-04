@@ -98,13 +98,18 @@ func TestIntegrationPlaneProbeOnThisKernel(t *testing.T) {
 	if st.Build == "" {
 		t.Fatalf("no build of decide.bpf.c chosen on this kernel: %s", st.BuildWhy)
 	}
-	want := map[bpfobj.PlaneMode]bool{bpfobj.PlaneFmodRet: true, bpfobj.PlaneLSM: lsm.BPFActive}
+	fmodRet := fmodRetOffered(t, st)
+	want := map[bpfobj.PlaneMode]bool{bpfobj.PlaneFmodRet: fmodRet, bpfobj.PlaneLSM: lsm.BPFActive}
 	for _, m := range st.Modes {
 		if m.OK != want[m.Mode] {
-			t.Errorf("mode %s: ok=%v, want %v (bpf active: %v): %s", m.Mode, m.OK, want[m.Mode], lsm.BPFActive, m.Detail)
+			t.Errorf("mode %s: ok=%v, want %v (bpf active: %v, preemption %q): %s", m.Mode, m.OK, want[m.Mode],
+				lsm.BPFActive, st.Env.Preempt, m.Detail)
 		}
 	}
 	wantSel, boot := "fmod_ret", "default"
+	if !fmodRet {
+		wantSel = PlaneFanotify
+	}
 	if lsm.BPFActive {
 		wantSel, boot = "lsm", "lsm"
 	}
@@ -213,6 +218,11 @@ func TestIntegrationPlaneProbeRejectsAFlippedKnownAnswer(t *testing.T) {
 		}
 	}
 	if reached == 0 {
+		if lsm, err := ReadLSMState(); err == nil && !lsm.BPFActive && !fmodRetOffered(t, st) {
+			t.Skipf("no plane mode is offered here (bpf is no active LSM, and fmod_ret mode is ruled out: preemption %q "+
+				"from %s), so no mode reaches the known answers; TEGO_TEST_PLANE_PREEMPT=waive probes fmod_ret mode",
+				st.Env.Preempt, st.Env.PreemptSource)
+		}
 		t.Fatal("no mode reached the known answers")
 	}
 	line := planeSummary(st, false) // fanotify is selected: the bpf bit does not reach the clause
@@ -240,7 +250,7 @@ func TestIntegrationPlaneProbeAnswersTheNameCells(t *testing.T) {
 	uid, _ := config.InvokingUID()
 	_, release, _ := probeKernelVersion()
 	st, _ := probePlane(true, uid, release, config.PlaneAuto, true)
-	want := map[bpfobj.PlaneMode]bool{bpfobj.PlaneFmodRet: true, bpfobj.PlaneLSM: lsm.BPFActive}
+	want := map[bpfobj.PlaneMode]bool{bpfobj.PlaneFmodRet: fmodRetOffered(t, st), bpfobj.PlaneLSM: lsm.BPFActive}
 	for _, m := range st.Modes {
 		t.Logf("mode %s: ok=%v tested=%v %s; the known answers took %v: %s", m.Mode, m.OK, m.Tested, m.Detail,
 			m.KnownTook, strings.Join(m.KnownPhases, ", "))
@@ -293,6 +303,11 @@ func TestIntegrationPlaneProbeRejectsAFlippedNameAnswer(t *testing.T) {
 		}
 	}
 	if reached == 0 {
+		if lsm, err := ReadLSMState(); err == nil && !lsm.BPFActive && !fmodRetOffered(t, st) {
+			t.Skipf("no plane mode is offered here (bpf is no active LSM, and fmod_ret mode is ruled out: preemption %q "+
+				"from %s), so no mode reaches the known answers; TEGO_TEST_PLANE_PREEMPT=waive probes fmod_ret mode",
+				st.Env.Preempt, st.Env.PreemptSource)
+		}
 		t.Fatal("no mode reached the known answers")
 	}
 	if st.Selected != PlaneFanotify {

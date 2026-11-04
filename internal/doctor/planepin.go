@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/cilium/ebpf"
+	"golang.org/x/sys/unix"
 
 	bpfobj "github.com/attention-span-ai/tego/internal/bpf"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -178,7 +179,9 @@ func adoptPlaneFrom(pin string, lsm LSMState, hash string, read func(dir string)
 	return st, nil
 }
 
-// adoptPinnedPlane is scope.adopt in production: this build's pin directory, read through bpffs.
+// adoptPinnedPlane is scope.adopt in production: this build's pin directory, read through bpffs. An fmod_ret answer
+// is adopted only while this kernel's preemption model, read afresh, still admits the mode (adoptStillAdmitted): the
+// build may have been pinned by a test build that waived it, or before the mode was changed in debugfs.
 func adoptPinnedPlane(pin string) (*PlaneState, bool) {
 	hash, err := bpfobj.Hash()
 	if err != nil {
@@ -189,5 +192,31 @@ func adoptPinnedPlane(pin string) (*PlaneState, bool) {
 		return nil, false
 	}
 	st, err := adoptPlaneFrom(pin, lsm, hash, readPlanePin)
-	return st, err == nil
+	if err != nil {
+		return nil, false
+	}
+	var u unix.Utsname
+	if err := unix.Uname(&u); err != nil {
+		return nil, false
+	}
+	env, _ := fmodRetAdmittedNow(unix.ByteSliceToString(u.Release[:]), lsm)
+	if !adoptStillAdmitted(st, env, lsm) {
+		return nil, false
+	}
+	return st, true
+}
+
+// adoptStillAdmitted reports whether an adopted answer's mode passes its preconditions on this kernel now; the
+// adopted state then carries the preemption reading. An fmod_ret answer on a kernel that preempts kernel code is
+// not adopted: the run probes, and the probe rules the mode out with the reason.
+func adoptStillAdmitted(st *PlaneState, env PlaneEnv, lsm LSMState) bool {
+	for _, r := range st.Modes {
+		if r.Mode == bpfobj.PlaneFmodRet {
+			if why, _ := fmodRetPreemptRefusal(env, lsm); why != "" {
+				return false
+			}
+		}
+	}
+	st.Env.Preempt, st.Env.PreemptSource, st.Env.PreemptWaived = env.Preempt, env.PreemptSource, env.PreemptWaived
+	return true
 }

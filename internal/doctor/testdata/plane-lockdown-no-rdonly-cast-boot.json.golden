@@ -5,7 +5,9 @@
       "rdonly_cast": false,
       "lockdown": "confidentiality",
       "lto": "none",
-      "lto_source": "/boot/config-6.1.0-test"
+      "lto_source": "/boot/config-6.1.0-test",
+      "preempt": "none",
+      "preempt_source": "/boot/config-6.1.0-test"
     },
     "build": "",
     "build_why": "lockdown=confidentiality refuses the probe-read build and this kernel's BTF has no bpf_rdonly_cast for the rd build",

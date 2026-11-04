@@ -29,6 +29,7 @@
 #   VM_SUITE_MEM (per-package guest memory, "pkg=size ...", over
 #   TEGO_VM_MEM; e.g. "internal/runtime/enforce/cgroup=2560M" for its 32 concurrent runs), plus kvm-run.sh's
 #   TEGO_VM_* knobs.
+#   TEGO_TEST_PLANE_PREEMPT=waive reaches every suite (PREEMPT_WAIVER below).
 #   VM_FIXTURE_ROOT optionally stages a directory's contents at the guest root,
 #   for extra tools and their libraries a manual run wants in the guest.
 #   TEGO_VM_ROW=<row> boots a kernel-matrix row (fetch-kernel.py --list; `host` is this box's own kernel) instead of the
@@ -187,6 +188,15 @@ HOSTMODE="${VM_HOST:-kvm}"
 DISPOSABLE="${TEGO_DISPOSABLE_HOST:-}"
 [ -n "$DISPOSABLE" ] || [ "${GITHUB_ACTIONS:-}" != true ] || DISPOSABLE=github-actions
 CGROUP="${VM_CGROUP:-}"
+# PREEMPT_WAIVER is TEGO_TEST_PLANE_PREEMPT, which every suite gets when the caller sets it: "waive" lets a test
+# build's doctor probe fmod_ret mode on a kernel that preempts kernel code (internal/doctor preempt_testhook.go, ADR
+# 0024 (16)), which a product build rules out. CI's root-suites job sets it on GitHub's x86_64 runner, whose 7.0 kernel
+# offers only full and lazy preemption and no bpf LSM, so that the plane suites keep testing fmod_ret mode's
+# decisions there, and vm-matrix's tier-3 step for its fedora-7.0 and fedora-7.2 rows (lazy preemption). Without it
+# such a kernel offers tier cgroup no plane mode unless bpf is an active LSM, so the plane suites skip and
+# test/conformance's required fmod_ret axis (conformance-require.sh) fails. The arm64 job's first root step leaves it
+# unset (its kernel preempts fully, and doctor's refusal is what that step checks); its next sets it for the stress cell.
+PREEMPT_WAIVER="${TEGO_TEST_PLANE_PREEMPT:-}"
 case "$HOSTMODE" in kvm | sudo) ;; *) echo "root-suites: VM_HOST must be kvm or sudo, not $HOSTMODE" >&2; exit 2 ;; esac
 case "$CGROUP" in "" | service) ;; *) echo "root-suites: VM_CGROUP must be empty or service, not $CGROUP" >&2; exit 2 ;; esac
 
@@ -498,6 +508,7 @@ for s in "${suites[@]+"${suites[@]}"}"; do
 		echo "== $suite (go test -tags $tags ./$pkg, as root on this host)"
 		env_args=("PATH=$host_path" "TEGO_VM_PREBUILT=$OUT/prebuilt" "TEGO_CONFORMANCE_REQUIRE=$conformance_required" "${conformance_env[@]+"${conformance_env[@]}"}")
 		[ -z "$DISPOSABLE" ] || env_args+=("TEGO_DISPOSABLE_HOST=$DISPOSABLE")
+		[ -z "$PREEMPT_WAIVER" ] || env_args+=("TEGO_TEST_PLANE_PREEMPT=$PREEMPT_WAIVER")
 		[ "$tags" = integration ] || env_args+=("GOFLAGS=-tags=$tags")
 		(cd "$repo/$pkg" && "${as_root[@]+"${as_root[@]}"}" env "${env_args[@]}" \
 			"$here/bounded-run.sh" "$SUITE_TIMEOUT" "$bin" -test.v -test.timeout=$go_timeout "${run_args[@]+"${run_args[@]}"}" "${part_args[@]+"${part_args[@]}"}") 2>&1 |
@@ -506,6 +517,7 @@ for s in "${suites[@]+"${suites[@]}"}"; do
 	else
 		echo "== $suite (go test -tags $tags ./$pkg, as root in a KVM guest)"
 		env_args=(--env "TEGO_CONFORMANCE_REQUIRE=$conformance_required" "${conformance_env_args[@]+"${conformance_env_args[@]}"}" --env "TEGO_DISPOSABLE_HOST=kvm")
+		[ -z "$PREEMPT_WAIVER" ] || env_args+=(--env "TEGO_TEST_PLANE_PREEMPT=$PREEMPT_WAIVER")
 		[ "$tags" = integration ] || env_args+=(--env "GOFLAGS=-tags=$tags")
 		# VM_SUITE_MEM gives one package's guests their own TEGO_VM_MEM ("pkg=size ..."), where the rest share a
 		# smaller one: enforce/cgroup's 32 concurrent runs of TestTier2ConcurrentRunsOfOneBuild need about 2.5G, and in

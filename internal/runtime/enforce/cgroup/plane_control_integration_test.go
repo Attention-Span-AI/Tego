@@ -328,22 +328,6 @@ while not os.path.exists("out/stop-b"):
     time.sleep(0.05)
 `
 
-// planeAnswersFirst reports whether the plane answers a ptrace attach before Landlock's own scope does. A fmod_ret
-// program runs before the whole security_ function, so before every LSM; an lsm program runs in the chain's order,
-// which /sys/kernel/security/lsm lists, and the lsm=...,bpf boot appends bpf after landlock.
-func planeAnswersFirst(mode string) bool {
-	if mode == "fmod_ret" {
-		return true
-	}
-	b, err := os.ReadFile("/sys/kernel/security/lsm")
-	if err != nil {
-		return false
-	}
-	order := strings.Split(strings.TrimSpace(string(b)), ",")
-	landlock, bpf := slices.Index(order, "landlock"), slices.Index(order, "bpf")
-	return landlock < 0 || (bpf >= 0 && bpf < landlock)
-}
-
 // moveTask puts pid in the cgroup dir the way root does from outside the run: a write to its cgroup.procs.
 func moveTask(t *testing.T, dir string, pid int) {
 	t.Helper()
@@ -442,8 +426,9 @@ func controlOutsideIsNotDecided(t *testing.T, victim int) {
 // own child, in the run. It then asks to be traced by a child's parent in the run, and by its own parent, the
 // launcher outside it. The plane refuses what is not its own run and generation with EACCES, one `refused` line each
 // (op ptrace or ptrace_traceme, rule process-scope, reason landlock-topology, the peer's pid), and allows the child
-// and the parent in the run, with no line. The first two attaches are answered by Landlock's scope before the plane
-// where the LSM order puts it first (planeAnswersFirst): EPERM and no line, which the cell expects exactly then.
+// and the parent in the run, with no line. The first two attaches are answered by Landlock's scope, or by Yama's
+// ptrace_scope, before the plane where the LSM order puts either first (planeAnswersFirst, planeAttachRefusers): EPERM
+// and no line, which the cell expects exactly then. The two moved descendants are admitted by both.
 //
 // Spec: docs/p0/enforce-plane.md R1, R3, R22, R23.
 func TestPlaneRunControlPtraceIsRunScoped(t *testing.T) {
@@ -530,12 +515,12 @@ func controlPtraceCell(t *testing.T, bin string, uid, gid int, tier, mode, recor
 		t.Fatalf("the agent reported no parent: %q", res["parent"])
 	}
 
-	// What each step must answer. An attach out of the run is Landlock's EPERM where Landlock is first, the plane's
-	// EACCES where the plane is; the two it can only refuse, and the traceme under the launcher (which Landlock
+	// What each step must answer. An attach out of the run is Landlock's or Yama's EPERM where either is first, the
+	// plane's EACCES where the plane is; the two it can only refuse, and the traceme under the launcher (which Landlock
 	// admits: an unconfined parent may trace a confined child), are the plane's in both modes.
 	const eperm, eacces = "refused errno=1", "refused errno=13"
 	out := eperm
-	if planeAnswersFirst(mode) {
+	if planeAnswersFirst(mode, planeAttachRefusers()...) {
 		out = eacces
 	}
 	steps := []struct {

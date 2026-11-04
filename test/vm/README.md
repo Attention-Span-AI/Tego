@@ -19,6 +19,12 @@ skip only in the plain build, so the tegobpf build fails without the module (*ad
 `tcp_diag` answer the supervisor's and the dashboard's sock_diag lookups, which refuse what they cannot look up. On a
 hosted runner (`VM_HOST=sudo`) the kernel loads each on demand. `VM_MODULES=""` loads none.
 
+`TEGO_TEST_PLANE_PREEMPT=waive` (*added 2026-11-02*, ADR 0024 (16)) reaches every suite `root-suites.sh` runs, and lets a
+test build's doctor probe fmod_ret mode on a kernel that preempts kernel code, where a product build rules it out. Set it
+on a row whose kernel does (`fedora-7.0`, `fedora-7.2`: lazy preemption; any `preempt=full` boot), as CI's root-suites job
+and vm-matrix's tier-3 step do: without it tier cgroup has no plane mode there unless bpf is an active LSM, so the plane
+suites skip and `test/conformance`'s required fmod_ret axis fails.
+
 `TEGO_VM_ROW=<row>` (*added 2026-10-05*) runs `root-suites.sh` on a kernel-matrix row's own kernel (below) instead of this
 box's: the row is fetched (unless `TEGO_VM_KERNEL` already names it), every guest boots it, and each suite's guest gets the
 row's name in its environment, where `test/conformance` reads it as a baseline entry's `where.row` and `enforce/landlock`'s

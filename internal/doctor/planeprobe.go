@@ -243,6 +243,11 @@ func probePlaneMode(m bpfobj.PlaneMode, spec *btf.Spec, env PlaneEnv, lsm LSMSta
 		return planeProbeFailed(m, err, rows), rows
 	}
 	v := planeModeVerdict(m, rows, run.scope, run.known)
+	if m == bpfobj.PlaneFmodRet && env.PreemptWaived {
+		v.Detail += "; its preemption precondition is waived by a test build's $TEGO_TEST_PLANE_PREEMPT: this kernel " +
+			"is not shown never to preempt kernel code (preemption " + env.Preempt + ", from " + env.PreemptSource +
+			"), so a run in this mode can meet a skipped program, whose hook then proceeds undecided"
+	}
 	v.ExecPin = run.execPin
 	v.KnownTook, v.KnownPhases = run.knownTook.Total, run.knownTook.Phases
 	return v, rows
