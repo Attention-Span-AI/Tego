@@ -292,3 +292,52 @@ residuals are unchanged.
 *Note 2026-10-06 (KT5, enforce-plane §10.1):* (14)'s exception for contracts with `fs.ask` entries is measured by kill test 5 (`test/e2e/kt5-ask.sh`, results in `test/vm/README.md`). On the 6.17 guest's two boots and on six matrix rows, an `fs.ask` and a `net.ask` entry the workload never touches turned the pip build's 19 notifications at tiers cgroup and bpflsm into 2,509 and its run 160 to 692 ms slower (60 to 280 µs for each notification kept); the 20-step agent, whose run notifies twice, was within 12 ms; every cell was inside the allowance, which is the larger of 1% of wall time and 1 s, by its 1 s. The exception stands; its cost is a stated condition, which a workload of about ten thousand fs notifications a run would exceed, and the narrower filter that removes it (a filter arm that keeps only the write-opens whose path can match an ask scope) is not built.
 
 *Amended 2026-10-06 (arm64):* (15)'s arm64 residual says the plane is unmeasured there until an arm64 row runs ADR 0017. A measurement of the plane itself no longer waits for that row: `ci.yml`'s `build-test-arm64` runs, as root on GitHub's arm64 runner, the plane's hook sets (`TestPlaneLoadsAndAttaches`, `TestPlaneStepAHooksDecide`), a run decided by it in fmod_ret mode (`TestPlaneRunEndToEnd`), doctor as root and the stress cell for the recorder's directory walk (`TestPlaneSeqcountStress`, enforce-plane §2.15), and fails unless each passed, with a fmod_ret cell among them. The decision text stands: the probe decides there and the fallback is expected until a log says otherwise, and nothing has run there yet. ADR 0017's conformance on arm64 is a later step of the same job, and what the first log shows is entered in enforce-plane R28.
+
+*Amended 2026-11-02 (16), fmod_ret mode needs a kernel that does not preempt kernel code:* (2)'s fmod_ret mode is
+offered only on a kernel whose preemption model never preempts kernel code (none or voluntary); doctor rules it out
+before any load under full, lazy and RT preemption, and wherever nothing proves which model the kernel runs.
+In fmod_ret mode the plane's programs are BPF tracing programs, which the kernel's trampoline runs under a per-CPU
+recursion check (`bpf_prog_check_recur`, `__bpf_prog_enter_recur`, unchanged in the 7.x sources): a program already
+active on a CPU is skipped there, a recursion miss is counted, and the hooked `security_` call goes on as if the
+program had returned 0. Where the kernel preempts kernel code, a task preempted inside a plane program keeps it
+active on its CPU, so every other task that reaches the same hook there before it resumes is decided by nothing. LSM
+programs take no such check (`bpf_prog_check_recur` is false for `BPF_PROG_TYPE_LSM`), so LSM mode is not affected.
+Measured 2026-11-02, one tier-cgroup run opening a `deny_read` file in fmod_ret mode: on 6.17 booted `preempt=full`,
+16 processes made 320,000 opens and 87,075 of them succeeded (`tego_fmr_file_open` counted 87,085 misses); under lazy
+preemption (Fedora's 7.0 default, `Dynamic Preempt: lazy`, and 6.17 booted `preempt=lazy`) eight processes opening
+it beside eight spawning `/usr/bin/true` opened it 2,809 and 2,313 times in 20 s, which no privilege and no
+`io_uring` were needed for; under 6.17's default voluntary preemption no open succeeded in either workload and no
+program counted a miss. The run ended with exit 0 and a verified chain each time: nothing recorded the bypass.
+Kernels from 7.0 offer x86_64 and arm64 (which have lazy preemption) only full and lazy (`preempt=none` and
+`voluntary` are refused), so on those architectures fmod_ret mode ends with 7.0: tier cgroup there needs `bpf` in
+`lsm=` for a plane mode, else it decides on the fanotify listener, and doctor says which and why.
+Doctor admits the mode on proof alone, and refuses it on any doubt (`internal/doctor` preempt.go; *revised
+2026-11-03*, after a review found a build's default, a kernel log line and a boot line each standing in for a live
+mode they do not prove: a dynamic kernel booted `preempt=full preempt=bogus` read as its voluntary default, and a
+voluntary default read where debugfs was not mounted). A build that is not PREEMPT_DYNAMIC must have a readable config
+(`/proc/config.gz`, `/boot/config-<release>`, `/lib/modules/<release>/config`) setting `CONFIG_PREEMPT_NONE` or
+`CONFIG_PREEMPT_VOLUNTARY` and none of `CONFIG_PREEMPT`, `CONFIG_PREEMPT_LAZY`, `CONFIG_PREEMPT_RT` and
+`CONFIG_PREEMPT_DYNAMIC`, with no PREEMPT flag in `uname -v`. A PREEMPT_DYNAMIC build (by `uname -v` or its config)
+must have `/sys/kernel/debug/sched/preempt` readable now, selecting none or voluntary; the boot line, the build's
+default and the kernel log are not read. Debugfs not mounted, or refused by lockdown, refuses the mode, with LSM mode
+and mounting debugfs as the fixes. The reading is never kept: every probe reads it, and a reused answer is held to a
+fresh reading before a run or an adoption takes fmod_ret mode from it: a pinned build's answer (`adoptStillAdmitted`),
+a run-probe cache hit, which probes when the reading differs from the one the answer was kept under
+(`planePreemptCurrent`, `TestACachedPlaneAnswerIsHeldToTheKernelsModeNow`), and `tego agents --follow --adopt`'s
+prepared boundary backend, which is prepared and selected again (`preparedAdoption.fmodRetLapsed`,
+`TestGuardSelectsAgainWhenFmodRetLapses`).
+A test build's `TEGO_TEST_PLANE_PREEMPT=waive` (`internal/doctor` preempt_testhook.go) waives the precondition so that
+CI's root suites keep exercising fmod_ret mode's decisions on GitHub's 7.0 runners, as they did before it; a product
+build never reads it. A run under the waiver can meet the skip; there `TestPlaneSeqcountStress` measures the directory
+walk and counts its wrong allows without holding them (no count of the kernel's skips can tell a skip-made wrong allow
+from a plane fault), and every other plane test holds them to none, as before; the stress cell holds them to none
+wherever the mode is admitted without the waiver.
+What this amendment leaves open, stated rather than watched (docs/GAPS.md C53): root switching a dynamic kernel's
+mode while a run or an adoption lives is not seen by it (root is outside the threat model; the next run or adoption
+reads the mode again); recursion misses are not detected at run time; and the tier-2 recorder's fexit programs
+(ADR 0016) are tracing programs too, skipped the same way in both modes on a kernel that preempts kernel code, so they
+can drop records with no `tego_lost` count. Detection, with an adoption frozen rather than released when it fires, is
+a follow-up.
+(15)'s arm64 residual: GitHub's arm64 runner's 7.0 kernel is built `SMP PREEMPT`, so fmod_ret mode is ruled out there
+and `build-test-arm64` checks doctor's refusal; of the 2026-10-06 amendment's plane run, the directory walk's stress
+cell still runs there in fmod_ret mode under the waiver, required, and the end-to-end and rename cells no longer do.

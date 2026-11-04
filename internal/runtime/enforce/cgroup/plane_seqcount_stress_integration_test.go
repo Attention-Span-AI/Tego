@@ -119,7 +119,8 @@ func readStressLedger(t *testing.T, ledger string, c stressChain, project string
 // emits ldaddal, or an exclusive pair and dmb ish), and internal/bpf TestDirWalkFencesItsSequenceReads checks the
 // compiled walk carries it. x86's loads are not reordered, so on amd64 this cell can only confirm the protocol; on
 // arm64, where loads are, it is what would show a walk whose reads slipped past it. ci.yml's build-test-arm64 runs
-// it there.
+// it there; on that runner's 7.0 kernel, which preempts kernel code, doctor rules fmod_ret mode out (ADR 0024 (16)),
+// so it runs report-only under the test builds' TEGO_TEST_PLANE_PREEMPT=waive.
 //
 // A run's agent churns a leaf directory through a descriptor it holds (mkdir and rmdir, create and unlink, symlink
 // and unlink, an open and a read of a file), on several threads, so that every action is decided by the plane and
@@ -185,6 +186,9 @@ type stressResult struct {
 	tally         stressTally        // the ledger, read by the oracle
 	plane         string             // run_start's decision_plane
 	lines, flips  int
+	// waived says the mode is admitted here by the test builds' waiver alone (plane_waiver_integration_test.go): the
+	// run measures the walk, and its wrong allows are counted, not held.
+	waived bool
 }
 
 // check holds a run to what both of the cell's runs must show: decided by the mode under test, no path the chain
@@ -198,13 +202,24 @@ func (r stressResult) check(t *testing.T, mode string, minOps int) {
 		t.Errorf("%d ledger lines under the chain name a path it never had (the walk's reads of one dentry or of several "+
 			"were torn and its sequence check missed it), or no path at all; the first: %q", r.tally.wrong, r.tally.wrongPath)
 	}
-	if r.tally.wrongAllow > 0 || r.denied["allowed"] > 0 {
-		t.Errorf("a wrong allow: the agent was allowed %.0f of its %.0f attempts at what the contract denies, and the ledger "+
-			"has %d lines about them that are not refusals, the first: %q", r.denied["allowed"], r.denied["attempts"],
+	// A wrong allow fails the cell on a kernel that admits the mode. Under the waiver alone the kernel can skip a plane
+	// program and let a denied call through, which no count over the run can tell from a plane fault (a 2026-11-03
+	// review), so there the cell measures the walk and says what it saw; the plane's decisions are held with no
+	// tolerance by every other plane test under the waiver, and by this cell wherever the mode is admitted.
+	allowed := int(r.denied["allowed"])
+	switch {
+	case r.waived && (r.tally.wrongAllow > 0 || allowed > 0):
+		t.Logf("not held under the test builds' waiver of fmod_ret mode's preemption precondition (ADR 0024 (16)): %d of "+
+			"the agent's %.0f attempts at what the contract denies were allowed, and %d ledger lines about them are not "+
+			"refusals; the first: %q", allowed, r.denied["attempts"], r.tally.wrongAllow, r.tally.wrongAllowLine)
+	case r.tally.wrongAllow > 0 || allowed > 0:
+		t.Errorf("a wrong allow: the agent was allowed %d of its %.0f attempts at what the contract denies, and the ledger "+
+			"has %d lines about them that are not refusals, the first: %q", allowed, r.denied["attempts"],
 			r.tally.wrongAllow, r.tally.wrongAllowLine)
 	}
-	if r.denied["attempts"] == 0 || r.denied["refused"]+r.denied["other"] != r.denied["attempts"] {
-		t.Errorf("the agent's attempts at what is denied: %v, want some, every one an error", r.denied)
+	if r.denied["attempts"] == 0 || r.denied["refused"]+r.denied["other"]+r.denied["allowed"] != r.denied["attempts"] {
+		t.Errorf("the agent's attempts at what is denied: %v, want some, each refused, an error, or a wrong allow said above",
+			r.denied)
 	}
 	if r.churn["ops"] < float64(minOps) {
 		t.Errorf("the agent completed %.0f calls, want at least %d: the churn did not run", r.churn["ops"], minOps)
@@ -238,6 +253,7 @@ func stressRun(t *testing.T, bin string, uid, gid int, mode string, seconds, thr
 
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
+	waived := mode == "fmod_ret" && planeModeWaived(mode)
 	var out bytes.Buffer
 	cmd := p.run(ctx, bin, "agent.yaml", mode, &out)
 	if err := cmd.Start(); err != nil {
@@ -279,7 +295,7 @@ func stressRun(t *testing.T, bin string, uid, gid int, mode string, seconds, thr
 	}
 
 	res := agentResults(t, out.String())
-	r := stressResult{churn: stressFields(res["stress"]), denied: stressFields(res["denied"]), flips: f.flips}
+	r := stressResult{churn: stressFields(res["stress"]), denied: stressFields(res["denied"]), flips: f.flips, waived: waived}
 	r.tally, r.plane, r.lines = readStressLedger(t, p.ledger, chain, project)
 	var uts unix.Utsname
 	_ = unix.Uname(&uts)
@@ -288,9 +304,9 @@ func stressRun(t *testing.T, bin string, uid, gid int, mode string, seconds, thr
 		phase = "churn"
 	}
 	t.Logf("SEQCOUNT-STRESS mode=%s phase=%s arch=%s kernel=%s seconds=%.1f threads=%d ops=%.0f flips=%d lines=%d named=%d marked=%d "+
-		"wrong_path=%d refused_in_chain=%d denied_attempts=%.0f denied_refused=%d wrong_allow=%d",
+		"wrong_path=%d refused_in_chain=%d denied_attempts=%.0f denied_refused=%d wrong_allow=%d waived=%v",
 		mode, phase, runtime.GOARCH, unix.ByteSliceToString(uts.Release[:]), r.churn["seconds"], int(r.churn["threads"]), r.churn["ops"],
 		r.flips, r.lines, r.tally.named, r.tally.marked, r.tally.wrong, r.tally.refusedInChain, r.denied["attempts"],
-		r.tally.deniedRefused, r.tally.wrongAllow+int(r.denied["allowed"]))
+		r.tally.deniedRefused, r.tally.wrongAllow+int(r.denied["allowed"]), r.waived)
 	return r
 }

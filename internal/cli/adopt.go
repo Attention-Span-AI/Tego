@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v3"
 
+	"github.com/attention-span-ai/tego/internal/doctor"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
@@ -309,6 +310,24 @@ type preparedAdoption struct {
 	// errHomeNotOwners) and none was there: no `tego run` of the owner's can have made records there, so records is
 	// the zero value too.
 	homeNotOwners bool
+	// fmodRet says the backend was selected with the decision plane in fmod_ret mode, which the kernel's preemption
+	// model must still admit before each adoption under it (fmodRetLapsed, ADR 0024 (16)).
+	fmodRet bool
+}
+
+// adoptFmodRetRefused is doctor.FmodRetRefusedNow: why this kernel, read afresh, no longer admits fmod_ret mode, ""
+// when it does. A variable so a test can change the kernel's mode between two adoptions.
+var adoptFmodRetRefused = doctor.FmodRetRefusedNow
+
+// fmodRetLapsed reports a backend selected in fmod_ret mode on a kernel that no longer admits the mode (root changed
+// a PREEMPT_DYNAMIC kernel's mode in debugfs, or debugfs can no longer be read): the guard selects again before it
+// adopts under it (guard.sharedTable), as every `tego run` reads the mode again (ADR 0024 (16)). An adoption already
+// running keeps its mode: a change made while it lives is not watched.
+func (a *preparedAdoption) fmodRetLapsed() string {
+	if !a.fmodRet {
+		return ""
+	}
+	return adoptFmodRetRefused()
 }
 
 // stale reports a boundary table whose owner's ~/.tego is no longer the directory the table denies (records): it was
@@ -565,11 +584,12 @@ func prepareAdoption(ctx context.Context, m *config.Machine, o adoptOptions, t a
 	if a.boundary {
 		rt.Capture = agent.CaptureOff
 		sel := runOptions{cmd: "tego adopt", tier: string(backend.TierCgroup), adopted: true}
-		b, srt, _, code := selectBackend(ctx, sel, m, rt, stderr)
+		b, srt, rep, code := selectBackend(ctx, sel, m, rt, stderr)
 		if b == nil {
 			return nil, code
 		}
 		a.backend, a.rt = b, srt
+		a.fmodRet = rep != nil && rep.Plane != nil && rep.Plane.Selected == config.PlaneFmodRet
 	} else {
 		b, err := enforce.AdoptionRecorder(m)
 		if err != nil {

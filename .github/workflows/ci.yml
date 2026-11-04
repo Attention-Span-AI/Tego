@@ -284,7 +284,7 @@ jobs:
           echo "lockdown: $(cat /sys/kernel/security/lockdown 2>&1)"
           echo "cgroup root: $(stat -fc %T /sys/fs/cgroup 2>&1)"
           ls -l /sys/kernel/btf/vmlinux 2>&1 || true
-          grep -E '^CONFIG_(BPF_JIT|BPF_LSM|BPF_SYSCALL|DEBUG_INFO_BTF|FUNCTION_ERROR_INJECTION|DYNAMIC_FTRACE_WITH_[A-Z_]+|LTO_CLANG|SECURITY_LANDLOCK|FANOTIFY_ACCESS_PERMISSIONS|CGROUP_BPF|LOCKDOWN_LSM)=' \
+          grep -E '^CONFIG_(BPF_JIT|BPF_LSM|BPF_SYSCALL|DEBUG_INFO_BTF|FUNCTION_ERROR_INJECTION|DYNAMIC_FTRACE_WITH_[A-Z_]+|LTO_CLANG|SECURITY_LANDLOCK|FANOTIFY_ACCESS_PERMISSIONS|CGROUP_BPF|LOCKDOWN_LSM|PREEMPT[A-Z_]*)=' \
             "/boot/config-$(uname -r)" 2>&1 || true
           sudo ./bin/tego doctor 2>&1 || true
       # Every program through the verifier, and the decision plane (TIER3-PLAN T2, T3): each mode's hook set loads and
@@ -329,24 +329,65 @@ jobs:
       # ends with `tego doctor --require cgroup` as root, so doctor's own answer for this kernel is in the log too.
       # The loops require each test to have passed, not skipped (a skipped test is not a pass), and each plane test to
       # have passed in fmod_ret mode, since a mode this kernel lacks skips its subtest and the test around it passes.
-      # A freeze would fail this runner's job, not a host.
+      # Unless doctor rules fmod_ret mode out before any load because this kernel preempts kernel code (ADR 0024 (16)):
+      # this runner's arm64 7.0 kernel is built SMP PREEMPT, and bpf is in no LSM list, so then no plane mode runs here.
+      # The plane tests are then left out, doctor's refusal must name the preemption, and its fanotify fallback must be
+      # what tier cgroup selects; the step runs no waiver (TEGO_TEST_PLANE_PREEMPT), since under full preemption a run
+      # in fmod_ret mode meets skipped programs, whose hooks proceed undecided. A freeze would fail this runner's job,
+      # not a host.
       - name: the freeze, arming, process-start, doctor, plane and stress tests, as root through sudo
+        id: arm64root
         shell: bash
         timeout-minutes: 60
         run: |
-          VM_HOST=sudo VM_BPF=yes VM_SUITE_TIMEOUT=1200 VM_OUT=/tmp/arm64-root \
-            VM_RUN='TestStartIdentityOutlivesPidReuse|TestStageExecUnderGCNeverWaitsOnItsOwnGroup|TestKilledListenerReleasesTheMount|TestUnmarkAllFlushesOnlyTheMountMarks|TestStoppedListenerHoldsItsMountUntilContinued|TestTier2ArmsAfterTheStageExec|TestIntegrationAsRoot|TestPlaneRunEndToEnd|TestPlaneRunNamesTrueUnderRenamesAndMountMoves|TestPlaneSeqcountStress' \
+          plane_tests='TestPlaneRunEndToEnd TestPlaneRunNamesTrueUnderRenamesAndMountMoves TestPlaneSeqcountStress'
+          sudo ./bin/tego doctor --json | tee "$RUNNER_TEMP/doctor.json" >/dev/null
+          fmod=$(jq -c '.plane.modes[] | select(.mode == "fmod_ret") | {ok, tested, detail}' "$RUNNER_TEMP/doctor.json")
+          echo "doctor's fmod_ret line: $fmod"
+          if jq -e '.plane.modes[] | select(.mode == "fmod_ret") | (.tested == false and (.detail | test("preempts kernel code|preemption model is not proven")))' \
+              "$RUNNER_TEMP/doctor.json" >/dev/null; then
+            jq -e '.plane.selected == "fanotify"' "$RUNNER_TEMP/doctor.json" >/dev/null ||
+              { echo "::error::doctor ruled fmod_ret mode out on this preemptive kernel but selects $(jq -r .plane.selected "$RUNNER_TEMP/doctor.json")"; exit 1; }
+            echo "::notice::fmod_ret mode is ruled out on this kernel (it preempts kernel code); the plane tests are left out"
+            echo "fmod_ruled_out=yes" >>"$GITHUB_OUTPUT"
+            plane_tests=''
+          fi
+          run='TestStartIdentityOutlivesPidReuse|TestStageExecUnderGCNeverWaitsOnItsOwnGroup|TestKilledListenerReleasesTheMount|TestUnmarkAllFlushesOnlyTheMountMarks|TestStoppedListenerHoldsItsMountUntilContinued|TestTier2ArmsAfterTheStageExec|TestIntegrationAsRoot'
+          for t in $plane_tests; do run="$run|$t"; done
+          VM_HOST=sudo VM_BPF=yes VM_SUITE_TIMEOUT=1200 VM_OUT=/tmp/arm64-root VM_RUN="$run" \
             test/vm/root-suites.sh internal/platform/proc internal/runtime/enforce/cgroup internal/doctor
           logs=/tmp/arm64-root/logs
           for t in TestStartIdentityOutlivesPidReuse TestStageExecUnderGCNeverWaitsOnItsOwnGroup TestKilledListenerReleasesTheMount \
                    TestUnmarkAllFlushesOnlyTheMountMarks TestStoppedListenerHoldsItsMountUntilContinued TestTier2ArmsAfterTheStageExec \
-                   TestIntegrationAsRoot TestPlaneRunEndToEnd TestPlaneRunNamesTrueUnderRenamesAndMountMoves TestPlaneSeqcountStress; do
+                   TestIntegrationAsRoot $plane_tests; do
             grep -q -- "--- PASS: $t " "$logs"/*.console || { echo "::error::$t did not pass on arm64"; exit 1; }
           done
-          for t in TestPlaneRunEndToEnd TestPlaneRunNamesTrueUnderRenamesAndMountMoves TestPlaneSeqcountStress; do
+          for t in $plane_tests; do
             grep -q -- "--- PASS: $t/fmod_ret " "$logs"/*.console ||
               { echo "::error::$t passed no fmod_ret cell on arm64: the plane does not run here (doctor's report is above)"; exit 1; }
           done
+          [ -z "$plane_tests" ] || grep -h -- 'SEQCOUNT-STRESS' "$logs"/*.console
+      # Where the step above left the plane tests out, the directory walk's stress cell runs here in fmod_ret mode under
+      # the test builds' waiver (TEGO_TEST_PLANE_PREEMPT=waive), and must pass: TestPlaneSeqcountStress is the one run
+      # of the plane's walk (enforce-plane §2.15), which LSM mode uses too, on a CPU that reorders loads. Under this
+      # kernel's full preemption the trampoline skips plane programs, whose calls go on undecided (ADR 0024 (16)), so
+      # under the waiver the cell measures the walk and does not hold its wrong allows, which its SEQCOUNT-STRESS line
+      # counts (wrong_allow, waived=true); a torn walk, a short or idle run, or any other failure fails the step. The
+      # plane's decisions are held with no tolerance wherever the mode is admitted and by the plane tests under the
+      # waiver on x86_64; the end-to-end and rename cells are not run in fmod_ret mode here, since a skipped program
+      # leaves their decisions undecided on this kernel. TestStressTallyReadsLedgerLines, the cell's oracle, runs beside it
+      # because it is in both builds: the plain build holds no TestPlaneSeqcountStress, and root-suites' skip gate fails
+      # a build whose stream holds no result at all.
+      - name: the directory walk's stress cell in fmod_ret mode under the test waiver, as root through sudo
+        if: ${{ !cancelled() && steps.arm64root.outputs.fmod_ruled_out == 'yes' }}
+        shell: bash
+        timeout-minutes: 45
+        run: |
+          TEGO_TEST_PLANE_PREEMPT=waive VM_HOST=sudo VM_BPF=yes VM_SUITE_TIMEOUT=1200 VM_OUT=/tmp/arm64-root-waived \
+            VM_RUN='TestPlaneSeqcountStress|TestStressTallyReadsLedgerLines' test/vm/root-suites.sh internal/runtime/enforce/cgroup
+          logs=/tmp/arm64-root-waived/logs
+          grep -q -- "--- PASS: TestPlaneSeqcountStress/fmod_ret " "$logs"/*.console ||
+            { echo "::error::TestPlaneSeqcountStress passed no fmod_ret cell on arm64 under the waiver"; exit 1; }
           grep -h -- 'SEQCOUNT-STRESS' "$logs"/*.console
       - name: upload the privileged suites' logs
         if: ${{ !cancelled() }}
@@ -357,6 +398,7 @@ jobs:
           path: |
             /tmp/arm64-root/logs/
             /tmp/arm64-root/summary.json
+            /tmp/arm64-root-waived/logs/
           if-no-files-found: warn
   scripts-and-workflows:
     # The shell scripts and these workflows had no linter. shellcheck reads every tracked
@@ -698,10 +740,35 @@ jobs:
       # a user namespace cannot reach the binary it execs by its path (the first run on GitHub, 2026-11-02: "fork/exec
       # .../_temp/root-suites/bin/...: permission denied"). The deputy's tests, whose deputy runs as nobody, exec theirs
       # through /proc/self/exe, as tego execs the deputy, which needs no search permission above the binary.
+      # TEGO_TEST_PLANE_PREEMPT=waive: this runner's 7.0 x86_64 kernel offers only full and lazy preemption, under which a
+      # product build rules fmod_ret mode out (ADR 0024 (16)), and bpf is in no LSM list, so without it no plane mode
+      # would run here. The waiver lets the suites' test builds probe and run fmod_ret mode all the same, to keep testing
+      # its decisions, as before the precondition; a run in it can still meet a skipped plane program, as it could then.
+      # The product build's doctor at the end of the step is not waived, and the next step holds its fmod_ret line.
       - name: the privileged suites of this shard, as root through sudo; every skip allowed
         env:
           VM_SHARD: ${{ matrix.shard }}
-        run: VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=3000" VM_HOST=sudo VM_BPF=yes VM_OUT=/tmp/root-suites test/vm/root-suites.sh
+        run: TEGO_TEST_PLANE_PREEMPT=waive VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=3000" VM_HOST=sudo VM_BPF=yes VM_OUT=/tmp/root-suites test/vm/root-suites.sh
+      # The product build refuses fmod_ret mode on this kernel and says why (ADR 0024 (16)): unless doctor proves a
+      # preemption model that never preempts kernel code (none or voluntary), its fmod_ret line must be ruled out before
+      # any load, naming the preemption, and tier cgroup must not select the mode.
+      - name: the product doctor rules fmod_ret mode out where the kernel preempts kernel code
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          d=/tmp/root-suites/prebuilt/tego.tegobpf
+          [ -x "$d" ] || { echo "::error::no product build at $d"; exit 1; }
+          sudo "$d" doctor --json >"$RUNNER_TEMP/doctor-product.json" || true
+          jq -c '{preempt: .plane.env.preempt, source: .plane.env.preempt_source, selected: .plane.selected,
+            fmod_ret: (.plane.modes[] | select(.mode == "fmod_ret") | {ok, tested, detail})}' "$RUNNER_TEMP/doctor-product.json"
+          case "$(jq -r '.plane.env.preempt // ""' "$RUNNER_TEMP/doctor-product.json")" in
+          none | voluntary) echo "::notice::this kernel never preempts kernel code; fmod_ret mode is offered"; exit 0 ;;
+          esac
+          jq -e '.plane.modes[] | select(.mode == "fmod_ret") | (.ok == false and .tested == false and
+              (.detail | test("preempts kernel code|preemption model is not proven")))' "$RUNNER_TEMP/doctor-product.json" >/dev/null ||
+            { echo "::error::the product doctor did not rule fmod_ret mode out on a kernel that preempts kernel code"; exit 1; }
+          jq -e '.plane.selected != "fmod_ret"' "$RUNNER_TEMP/doctor-product.json" >/dev/null ||
+            { echo "::error::the product doctor selects fmod_ret mode on a kernel that preempts kernel code"; exit 1; }
       - name: upload the suites' logs
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

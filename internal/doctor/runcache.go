@@ -73,6 +73,13 @@ type runCacheKey struct {
 	// MemfdNoexec is vm.memfd_noexec, "" when the kernel has none. At 2 the plane probe cannot make the executable
 	// memfd it execs, and that answer is kept, so a change of the sysctl must not read it.
 	MemfdNoexec string `json:"memfd_noexec"`
+	// Preempt is a PREEMPT_DYNAMIC kernel's live mode file (/sys/kernel/debug/sched/preempt), "" where it cannot be
+	// read. fmod_ret mode needs a mode that never preempts kernel code, and root can change it without a reboot where
+	// debugfs is readable (lockdown refuses both), so a change must not read an answer kept under the other mode.
+	Preempt string `json:"preempt,omitempty"`
+	// PreemptWaived is a test build's waiver of that precondition (planePreemptWaived): an answer it kept is never
+	// read by a run without it.
+	PreemptWaived bool `json:"preempt_waived,omitempty"`
 	// Binary is the running executable's device, inode, size and modification time: an upgraded or rebuilt
 	// tego judges with its own code, even when its programs hash the same.
 	Binary string `json:"binary"`
@@ -209,6 +216,10 @@ func machineRunCacheKey(release string, uid int) (runCacheKey, bool) {
 	if k.BPFHash, err = bpfobj.Hash(); err != nil {
 		return k, false
 	}
+	if b, err := os.ReadFile(debugfsPreemptPath); err == nil {
+		k.Preempt = strings.TrimSpace(string(b))
+	}
+	k.PreemptWaived = planePreemptWaived
 	var st unix.Stat_t
 	if err := unix.Stat("/proc/self/exe", &st); err != nil {
 		return k, false
@@ -605,4 +616,14 @@ func (r *Report) DiscardCache() {
 		return
 	}
 	r.cached.cache.dropIf(r.cached.key, &r.cached.id)
+}
+
+// planePreemptCurrent reports whether a cached plane answer was kept under the preemption reading this kernel gives
+// now, read afresh into now (fmodRetAdmittedNow): the model and the test build's waiver. A run whose reading differs
+// probes instead, so a kernel whose mode changed since the answer was kept is judged by its mode now, both ways: a
+// cached fmod_ret admission is not taken on a kernel that no longer proves it, and a refusal is not kept on one that
+// does. The cache's key holds the debugfs mode file too, but a key cannot see what changed in a file it could not read.
+func planePreemptCurrent(cached *PlaneState, release string, now *PlaneEnv) bool {
+	*now, _ = fmodRetAdmittedNow(release, LSMState{Source: LSMSourceNone})
+	return cached.Env.Preempt == now.Preempt && cached.Env.PreemptWaived == now.PreemptWaived
 }

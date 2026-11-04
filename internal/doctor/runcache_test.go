@@ -39,6 +39,9 @@ func testCache(t *testing.T) (*runCache, string) {
 	if err := os.Chmod(filepath.Join(base, "run"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// A cache hit reads the kernel's preemption model again (planePreemptCurrent): the kernel these tests' answers
+	// were kept under (passingPlane's) is the one it reads, unless a test changes it.
+	stubPreempt(t, preemptVoluntary, debugfsPreemptPath)
 	k := testKey()
 	c := &runCache{base: base, dir: []string{"run", "tego"}, owner: os.Geteuid(),
 		key: func(string, int) (runCacheKey, bool) { return k, true }}

@@ -5,7 +5,9 @@
       "rdonly_cast": false,
       "lockdown": "none",
       "lto": "none",
-      "lto_source": "/boot/config-5.14.0-test"
+      "lto_source": "/boot/config-5.14.0-test",
+      "preempt": "voluntary",
+      "preempt_source": "/boot/config-5.14.0-test"
     },
     "build": "",
     "build_why": "this kernel's BTF has no bpf_loop (5.17+ or a backport), which the plane's walk needs",

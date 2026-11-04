@@ -1408,6 +1408,104 @@ func TestGuardRecompilesATableWhoseOwnersRecordsChanged(t *testing.T) {
 	}
 }
 
+// TestGuardSelectsAgainWhenFmodRetLapses: the guard prepares each uid's boundary backend once and adopts many agents
+// under it, so a backend selected with the plane in fmod_ret mode would keep the mode after root changed the kernel's
+// preemption mode (a 2026-11-03 review). Before each adoption the guard reads the mode again (ADR 0024 (16)): a
+// backend whose fmod_ret mode the kernel no longer admits is prepared again, which selects again, and an adoption is
+// never made under it; one that cannot be prepared again fails the adoption.
+func TestGuardSelectsAgainWhenFmodRetLapses(t *testing.T) {
+	p := terminalProcs()
+	const sess = "/user.slice/user-1000.slice/session-2.scope"
+	p.add(510, 300, "/usr/bin/claude", sess, 1000)
+	p.add(520, 300, "/usr/bin/claude", sess, 1000)
+	p.add(530, 300, "/usr/bin/claude", sess, 1000)
+	calls := sandboxAdopt(t, p, true)
+	var mu sync.Mutex
+	prepared, failNext, refused := 0, false, ""
+	refusedNow := adoptFmodRetRefused
+	adoptFmodRetRefused = func() string { mu.Lock(); defer mu.Unlock(); return refused }
+	t.Cleanup(func() { adoptFmodRetRefused = refusedNow })
+	adoptPrepare = func(_ context.Context, m *config.Machine, o adoptOptions, _ adopt.Process, owner int, _ io.Writer) (*preparedAdoption, int) {
+		mu.Lock()
+		defer mu.Unlock()
+		if failNext {
+			return nil, identity.ExitLauncher
+		}
+		prepared++
+		rt := &agent.RuleTable{Contract: &agent.Contract{Name: fmt.Sprintf("b-%d", prepared)}, Tier: backend.TierCgroup}
+		// Doctor selects fmod_ret mode while the kernel admits it, else another mode.
+		return &preparedAdoption{rt: rt, m: m, cleanup: func() {}, boundary: true, owner: owner, fmodRet: refused == ""},
+			identity.ExitOK
+	}
+	tables := map[int]string{}
+	run := adoptRun
+	adoptRun = func(ctx context.Context, rt *agent.RuleTable, spec tegoruntime.AdoptSpec, d tegoruntime.AdoptDeps) (tegoruntime.Result, error) {
+		mu.Lock()
+		tables[spec.Root.PID] = rt.Contract.Name
+		mu.Unlock()
+		return run(ctx, rt, spec, d)
+	}
+	m, _, err := loadMachine(config.TrustAbort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var sightings []watcher.Sighting
+	g, err := newGuard(ctx, m, []int{1000}, adoptOptions{boundary: "b.yaml"}, func(s watcher.Sighting) error {
+		mu.Lock()
+		sightings = append(sightings, s)
+		mu.Unlock()
+		return nil
+	}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside := true
+	sight := func(pid int32) {
+		g.observe(watcher.Sighting{Event: watcher.EventAgentStarted, PID: pid, OutsideGovernedRun: &outside, Exe: "/usr/bin/claude"})
+	}
+	sight(500)
+	waitFor(t, func() bool { return len(calls.roots()) == 1 })
+	mu.Lock()
+	refused = "this kernel preempts kernel code (preemption full, from /sys/kernel/debug/sched/preempt)"
+	mu.Unlock()
+	sight(510)
+	waitFor(t, func() bool { return len(calls.roots()) == 2 })
+	sight(520)
+	waitFor(t, func() bool { return len(calls.roots()) == 3 })
+	mu.Lock()
+	if tables[500] != "b-1" || tables[510] != "b-2" || tables[520] != "b-2" || prepared != 2 {
+		t.Errorf("adopted under %v with %d preparations; want 500 under the fmod_ret backend, 510 and 520 under the one "+
+			"prepared again once the kernel no longer admitted fmod_ret mode", tables, prepared)
+	}
+	mu.Unlock()
+
+	// A backend in fmod_ret mode the kernel no longer admits, which cannot be prepared again: the adoption fails.
+	g.sharedMu.Lock()
+	g.shared[1000].fmodRet = true
+	g.sharedMu.Unlock()
+	mu.Lock()
+	failNext = true
+	mu.Unlock()
+	sight(530)
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, s := range sightings {
+			if s.PID == 530 && s.Event == watcher.EventAdoptionFailed {
+				return strings.Contains(s.Note, "no longer admits")
+			}
+		}
+		return false
+	})
+	cancel()
+	g.wait()
+	if roots := calls.roots(); len(roots) != 3 {
+		t.Errorf("adopted %v; the agent whose fmod_ret backend lapsed was adopted under it", roots)
+	}
+}
+
 func TestAdoptCommandRechecksBeforeTheMove(t *testing.T) {
 	calls := sandboxAdopt(t, terminalProcs(), true)
 	if code, _, errs := runAdoptCmd(t, t.Context(), "--pid", "500"); code != identity.ExitOK {

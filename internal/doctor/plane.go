@@ -64,6 +64,13 @@ type PlaneEnv struct {
 	// MemfdNoexec is vm.memfd_noexec (0 when the kernel has none). At 2 the kernel refuses every executable
 	// memfd, which the probe's child needs to exec a file no path names, so no mode can be probed.
 	MemfdNoexec int `json:"memfd_noexec,omitempty"`
+	// Preempt is the kernel's preemption model (preempt.go): none, voluntary, full, lazy, rt, or "full or lazy" and
+	// "none or voluntary" for a build only uname -v describes; "" when nothing said. fmod_ret mode needs one that
+	// never preempts kernel code (preemptsKernelCode). PreemptSource names what it was read from.
+	Preempt       string `json:"preempt,omitempty"`
+	PreemptSource string `json:"preempt_source,omitempty"`
+	// PreemptWaived is a test build's waiver of that precondition (planePreemptWaived), never set in a product build.
+	PreemptWaived bool `json:"preempt_waived,omitempty"`
 }
 
 // PlaneModeResult is one mode's answer.
@@ -332,8 +339,16 @@ func readPlaneEnv(spec *btf.Spec, release string) PlaneEnv {
 	if b, err := os.ReadFile(memfdNoexecPath); err == nil {
 		env.MemfdNoexec, _ = strconv.Atoi(strings.TrimSpace(string(b)))
 	}
+	env.Preempt, env.PreemptSource = readPreempt(release)
+	env.PreemptWaived = planePreemptWaived && preemptsKernelCode(env.Preempt)
 	return env
 }
+
+// planePreemptWaived is set only by a test build's TEGO_TEST_PLANE_PREEMPT=waive (preempt_testhook.go): fmod_ret mode
+// is then probed on a kernel that preempts kernel code, so that the root suites keep exercising its decisions on a
+// CI runner whose kernel offers no other mode (7.0 on x86_64 offers full and lazy only), and doctor says so in the
+// mode's line. A product build never sets it.
+var planePreemptWaived bool
 
 // parseLockdown returns the bracketed mode of /sys/kernel/security/lockdown ("none [integrity] confidentiality").
 func parseLockdown(s string) string {
@@ -452,8 +467,8 @@ func choosePlaneBuild(env PlaneEnv, have func(bpfobj.Object) bool) (bpfobj.Objec
 }
 
 // modePrecondition is what rules mode m out before any load: LSM mode needs bpf in the active LSM list (a BPF LSM
-// program attaches and never runs otherwise), fmod_ret mode a kernel without Clang LTO. It returns "" when nothing
-// does, else the detail and the fix.
+// program attaches and never runs otherwise), fmod_ret mode a kernel without Clang LTO whose preemption model never
+// preempts kernel code (fmodRetPreemptRefusal). It returns "" when nothing does, else the detail and the fix.
 func modePrecondition(m bpfobj.PlaneMode, env PlaneEnv, lsm LSMState) (string, string) {
 	if env.MemfdNoexec == 2 {
 		return "vm.memfd_noexec=2 forbids the executable memfd the probe's child execs, so this mode cannot be " +
@@ -468,6 +483,9 @@ func modePrecondition(m bpfobj.PlaneMode, env PlaneEnv, lsm LSMState) (string, s
 		if env.LTO == ltoClang {
 			return fmt.Sprintf("this kernel is built with Clang LTO (%s), which can inline a security_ function at "+
 				"a call site the program then never sees", env.LTOSource), "boot a kernel built without CONFIG_LTO_CLANG"
+		}
+		if why, fix := fmodRetPreemptRefusal(env, lsm); why != "" {
+			return why, fix
 		}
 	}
 	return "", ""

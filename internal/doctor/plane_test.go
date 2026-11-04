@@ -67,7 +67,8 @@ func passingPlane(pin string) *PlaneState {
 	}
 	rows := passingPlaneRows()
 	st := &PlaneState{Env: PlaneEnv{BPFLoop: true, RdonlyCast: true, Lockdown: "none", LTO: ltoNone,
-		LTOSource: "/boot/config-6.17.0-test"}, Build: bpfobj.ObjectPlaneRdonly, BuildWhy: "bpf_rdonly_cast is in BTF",
+		LTOSource: "/boot/config-6.17.0-test", Preempt: preemptVoluntary,
+		PreemptSource: debugfsPreemptPath}, Build: bpfobj.ObjectPlaneRdonly, BuildWhy: "bpf_rdonly_cast is in BTF",
 		BuildHash: "0123abcd4567ef890123abcd4567ef89", Pin: pin, Source: planeSourceProbed}
 	for _, m := range bpfobj.PlaneModes {
 		var mine []HookResult
@@ -135,7 +136,7 @@ func TestModePrecondition(t *testing.T) {
 		t.Errorf("fmod_ret under Clang LTO: %q, fix %q", d, fix)
 	}
 	for _, lto := range []string{ltoNone, ltoUnknown} {
-		if d, _ := modePrecondition(bpfobj.PlaneFmodRet, PlaneEnv{LTO: lto}, inactive); d != "" {
+		if d, _ := modePrecondition(bpfobj.PlaneFmodRet, PlaneEnv{LTO: lto, Preempt: preemptVoluntary}, inactive); d != "" {
 			t.Errorf("fmod_ret with LTO %s ruled out: %q", lto, d)
 		}
 	}
@@ -169,7 +170,7 @@ func TestUnreadLSMListIsNotAnInactiveBPF(t *testing.T) {
 		!strings.Contains(fix, "securityfs") {
 		t.Errorf("LSM mode on an unread list: %q, fix %q", d, fix)
 	}
-	if d, _ := modePrecondition(bpfobj.PlaneFmodRet, PlaneEnv{}, unread); d != "" {
+	if d, _ := modePrecondition(bpfobj.PlaneFmodRet, PlaneEnv{Preempt: preemptVoluntary}, unread); d != "" {
 		t.Errorf("fmod_ret ruled out by an unread LSM list: %q", d)
 	}
 	rep := state(func(st *probeState) {
@@ -800,9 +801,16 @@ func TestPlaneDoctorGolden(t *testing.T) {
 	boots["fanotify-fallback-boot"] = noPlaneBoot(PlaneEnv{BPFLoop: true, RdonlyCast: true,
 		Lockdown: "none", LTO: ltoClang, LTOSource: "/boot/config-6.17.0-test"}, false)
 	boots["lockdown-no-rdonly-cast-boot"] = noPlaneBoot(PlaneEnv{BPFLoop: true, Lockdown: "confidentiality",
-		LTO: ltoNone, LTOSource: "/boot/config-6.1.0-test"}, true)
+		LTO: ltoNone, LTOSource: "/boot/config-6.1.0-test", Preempt: preemptNone,
+		PreemptSource: "/boot/config-6.1.0-test"}, true)
 	boots["no-bpf-loop-boot"] = noPlaneBoot(PlaneEnv{RdonlyCast: false, Lockdown: "none", LTO: ltoNone,
-		LTOSource: "/boot/config-5.14.0-test"}, true)
+		LTOSource: "/boot/config-5.14.0-test", Preempt: preemptVoluntary,
+		PreemptSource: "/boot/config-5.14.0-test"}, true)
+	// A 7.0 x86_64 kernel's lazy preemption, on a boot without bpf in lsm=: fmod_ret mode is ruled out before any load
+	// (ADR 0024 (16)), so tier cgroup decides on the fanotify listener and doctor says why and what would change it.
+	boots["preempt-lazy-boot"] = noPlaneBoot(PlaneEnv{BPFLoop: true, RdonlyCast: true, Lockdown: "none", LTO: ltoNone,
+		LTOSource: "/boot/config-7.0.0-test", Preempt: preemptLazy,
+		PreemptSource: debugfsPreemptPath}, false)
 	for name, st := range boots {
 		text, js := goldenReport(t, st)
 		checkGolden(t, "plane-"+name+".txt.golden", text)

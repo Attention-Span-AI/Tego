@@ -33,6 +33,10 @@ func TestIntegrationPlaneExecPinCell(t *testing.T) {
 		}
 	}
 	if passed == 0 {
+		if lsm, err := ReadLSMState(); err == nil && !lsm.BPFActive && !fmodRetOffered(t, st) {
+			t.Skipf("no plane mode is offered here (bpf is no active LSM, and fmod_ret mode is ruled out: preemption %q "+
+				"from %s); TEGO_TEST_PLANE_PREEMPT=waive probes fmod_ret mode", st.Env.Preempt, st.Env.PreemptSource)
+		}
 		t.Fatalf("no plane mode passed on this boot: %+v", st.Modes)
 	}
 	if after := leftovers(t); !sameLeftovers(after, before) {

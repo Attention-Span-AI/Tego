@@ -231,7 +231,18 @@ constructs tier `bpflsm` (T7, §2.10).
   (the rd build); lockdown from securityfs (`confidentiality` without `bpf_rdonly_cast`: no build, since the
   probe-read build's reads are refused there); Clang LTO from `/proc/config.gz`, `/boot/config-<release>` or
   `/lib/modules/<release>/config` (a file with no `CONFIG_` line answers nothing), else from `.llvm.` suffixes in
-  kallsyms (LTO rules fmod_ret mode out; unknown does not). LSM mode needs `bpf` in the active LSM list, with the boot
+  kallsyms (LTO rules fmod_ret mode out; unknown does not). fmod_ret mode also needs a kernel that does not preempt
+  kernel code (ADR 0024 (16), *added 2026-11-02, revised 2026-11-03*): preemption none or voluntary, proven, read by
+  `internal/doctor` preempt.go. A build that is not PREEMPT_DYNAMIC needs a readable build config setting
+  `CONFIG_PREEMPT_NONE` or `CONFIG_PREEMPT_VOLUNTARY` and none of `CONFIG_PREEMPT`, `_LAZY`, `_RT` and `_DYNAMIC`, with
+  `uname -v` carrying no PREEMPT flag; a PREEMPT_DYNAMIC build needs `/sys/kernel/debug/sched/preempt` readable now
+  and selecting none or voluntary (no boot line, build default or kernel log is read). Full, lazy, RT, an unreadable
+  config and an unreadable or unmounted debugfs rule it out, naming the model or what could not be read, with LSM
+  mode, `preempt=voluntary` and mounting debugfs as the fixes (`TestPreemptModel`,
+  `TestFmodRetNeedsAKernelThatDoesNotPreempt`, golden `plane-preempt-lazy-boot.*`). A test build's
+  `TEGO_TEST_PLANE_PREEMPT=waive` waives it and says so on the mode's line. The reading is never kept: an adopted
+  pinned answer (`TestAdoptionRechecksPreemption`), a run-probe cache hit (`TestACachedPlaneAnswerIsHeldToTheKernelsModeNow`)
+  and the guard's prepared boundary backend (`TestGuardSelectsAgainWhenFmodRetLapses`) are held to a fresh one. LSM mode needs `bpf` in the active LSM list, with the boot
   line as its fix, the live list plus `bpf` in the tool the distribution uses (`update-grub` on Debian and Ubuntu,
   `grubby` on the RHEL family; `TestGRUBFixPerFamily`) (`TestChoosePlaneBuild`, `TestModePrecondition`,
   `TestParseLockdownAndLTO`).
@@ -2181,7 +2192,18 @@ agent cannot reach `bpf(2)` (ADR 0033).
   no `CAP_LINUX_IMMUTABLE` (`noatime`, `nodump`). Its contents, name, mode, owner, xattrs and ACLs stay protected
   (R12); mtime-based checks (make, rsync) over it are not. Tiers 1 and 2 refuse neither (agent-contract E35).
 - arm64 is unmeasured; the probe decides and the fallback is expected. CI's `build-test-arm64` runs the plane's own
-  tests there as root from 2026-10-06 (R28), and its first log is what measures it.
+  tests there as root from 2026-10-06 (R28), and its first log is what measures it. *Amended 2026-11-02:* that
+  runner's 7.0 kernel is built `SMP PREEMPT`, so fmod_ret mode is ruled out there (ADR 0024 (16)) and the job checks
+  doctor's refusal instead of a plane run; under the test builds' `TEGO_TEST_PLANE_PREEMPT=waive` it still requires
+  `TestPlaneSeqcountStress`'s fmod_ret cell (§2.15's walk on a CPU that reorders loads), which under the waiver
+  measures the walk and counts its wrong allows without holding them; the plane's programs still load, attach and
+  decide there as `internal/bpf`'s tests load them.
+- A kernel program skipped by the trampoline's per-CPU recursion check (ADR 0024 (16)). fmod_ret mode is admitted only
+  where doctor proves the kernel never preempts kernel code, read afresh at every run and adoption, and LSM programs
+  take no such check. Not covered by this (docs/GAPS.md C53): root changing a dynamic kernel's mode while a run lives
+  is not watched; recursion misses are not detected at run time; `cgroup_track`'s `cgroup_mkdir` and the recorder's
+  tracing programs are skipped the same way in every mode on a kernel that preempts kernel code, a recorder skip
+  dropping its record with no `tego_lost` count (enforce-cgroup-observe §7).
 - Host cost while a build is attached: a lookup per host open, exec, mmap and path operation (ADR 0024 measured
   +0.2 µs per open; LSM mode +25 to +72 ns more than `fmod_ret`).
 

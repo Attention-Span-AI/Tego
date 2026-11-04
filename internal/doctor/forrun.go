@@ -428,10 +428,15 @@ func (s scope) run(ctx context.Context) probeState {
 			// A cached answer adopted from a pinned build knows the one mode that build was loaded in: a pin naming the
 			// other mode is not answered by it, and probes (TIER3-PLAN T6 found a bpf.plane change running every later
 			// run on the listener until the cache's boot ended).
-			if entry != nil && entry.Plane.answers(s.planePin) {
+			// The preemption precondition is never taken from the cache (ADR 0024 (16)): it is read again, and an entry
+			// kept under another reading is no answer for this run, which probes.
+			var preemptNow PlaneEnv
+			if entry != nil && entry.Plane.answers(s.planePin) && planePreemptCurrent(entry.Plane, st.release, &preemptNow) {
 				hit = entry
 				st.cached = &cachedAnswer{cache: cache, key: key, id: entryID}
 				plane := *entry.Plane
+				plane.Env.Preempt, plane.Env.PreemptSource = preemptNow.Preempt, preemptNow.PreemptSource
+				plane.Env.PreemptWaived = preemptNow.PreemptWaived
 				plane.Pin, plane.Source = s.planePin, planeSourceRunCache
 				selectPlane(&plane)
 				withPlane(entry.Programs, entry.Hooks, &plane, entry.PlaneRows)
