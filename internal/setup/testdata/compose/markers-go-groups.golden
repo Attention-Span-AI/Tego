@@ -48,8 +48,8 @@ env:
   # Variables tego sets for the agent, so its temporary files and caches land in folders it may write.
   set:
     # go.mod: the build cache inside the writable ./.tego/cache/
-    GOCACHE: "$PROJECT/.tego/cache/go-build"
+    GOCACHE: "${TEGO_PROJECT_DIR}/.tego/cache/go-build"
     # go.mod: the module cache inside the writable ./.tego/cache/
-    GOMODCACHE: "$PROJECT/.tego/cache/go-mod"
+    GOMODCACHE: "${TEGO_PROJECT_DIR}/.tego/cache/go-mod"
     # TMPDIR inside the writable ./.tego/tmp/
-    TMPDIR: "$PROJECT/.tego/tmp"
+    TMPDIR: "${TEGO_PROJECT_DIR}/.tego/tmp"

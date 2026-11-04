@@ -82,3 +82,8 @@ the tego binary.
 The hook also has a `--mode stderr`, for a hook you wire by hand: it prints the same text on stderr with exit 2,
 which Claude Code shows to Claude after a tool call and at the end of a turn. Tego's own settings file always uses
 the default, `--mode json`.
+
+
+Built-in refusals name `builtin.host_ipc`, `builtin.tego_surface` or `builtin.other_tty` in the existing
+`rule` field. An allow entry cannot override them. Read the [built-in refusals](built-in-refusals.md)
+for the fixed exceptions and the datagram and kernel-only recording limits.

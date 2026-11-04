@@ -28,6 +28,12 @@ func Words(ruleKey string) string {
 		return "Cannot hold"
 	case "host-sockets":
 		return "Host socket"
+	case "builtin.host_ipc":
+		return "Host IPC blocked"
+	case "builtin.tego_surface":
+		return "Tego control blocked"
+	case "builtin.other_tty":
+		return "Other terminal blocked"
 	}
 	for _, m := range []struct{ key, label string }{
 		{"fs.write", "Write: "}, {"fs.deny_read", "Never read: "}, {"fs.deny_write", "No changes: "},

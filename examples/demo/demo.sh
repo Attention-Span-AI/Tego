@@ -40,12 +40,13 @@ plain() {
 }
 
 HERE=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$HERE/../.." && pwd -P)
 quotable "the demo kit's folder" "$HERE"
 STAGE=${DEMO_STAGE:-$HERE/stage}
 case $STAGE in /*) ;; *) STAGE=$PWD/$STAGE ;; esac
 plain "the stage" "$STAGE" "set DEMO_STAGE to a path without them"
-mkdir -p "$STAGE"
-STAGE=$(cd "$STAGE" && pwd)
+STAGE=$(readlink -m -- "$STAGE")
+plain "the stage" "$STAGE" "set DEMO_STAGE to a path without them"
 PORT=${DEMO_PORT:-8787}
 TEGO=${TEGO:-tego}
 CONTROL=${TEGO_CONTROL:-tego-control}
@@ -57,6 +58,37 @@ PROJECT="$STAGE/project"
 SECRETS="$STAGE/secrets"
 HOMEISH="$STAGE/home"
 export SECRETS SINK HOMEISH PROJECT
+
+# Setup (also implicit in an act) claims only a new or empty stage. The marker
+# binds ownership to its physical path; a copied marker cannot claim a new path.
+STAGE_MARK=.tego-demo-stage
+stage_path() {
+  case $STAGE in /|"$(readlink -m -- "$HOME")"|"$(readlink -m -- "$HERE")") die "refusing protected stage: $STAGE" ;; esac
+  case "$ROOT/" in "$STAGE/"*) die "refusing checkout or its ancestor as stage: $STAGE" ;; esac
+}
+require_stage() {
+  stage_path
+  [ ! -L "$STAGE/$STAGE_MARK" ] && [ -f "$STAGE/$STAGE_MARK" ] || die "stage has no valid $STAGE_MARK from setup: $STAGE"
+  stage_owner=$(cat "$STAGE/$STAGE_MARK") || die "cannot read stage marker: $STAGE/$STAGE_MARK"
+  [ "$stage_owner" = "$STAGE" ] || die "stage has no valid $STAGE_MARK from setup: $STAGE"
+}
+prepare_stage() {
+  stage_path
+  if [ ! -e "$STAGE/$STAGE_MARK" ] && [ ! -L "$STAGE/$STAGE_MARK" ]; then
+    if [ -d "$STAGE" ]; then
+      # Count entries without exposing their names to newline trimming.
+      entries=$(find "$STAGE" -mindepth 1 -maxdepth 1 -printf x) || die "cannot list stage: $STAGE"
+      [ -z "$entries" ] || die "stage is not empty and has no $STAGE_MARK from setup: $STAGE"
+    fi
+    mkdir -p "$STAGE"
+    (set -C; printf '%s\n' "$STAGE" >"$STAGE/$STAGE_MARK") || die "cannot mark stage: $STAGE"
+  fi
+  require_stage
+  # Acts write beneath these names. Refuse links before traversing a child.
+  for child in secrets home project always-on tampered claude-code codex codex-home c cc s; do
+    [ ! -L "$STAGE/$child" ] || die "generated directory is a symlink: $STAGE/$child"
+  done
+}
 
 say() { printf '\n== %s\n' "$*"; }
 # show prints a command as the presenter would type it, then runs it.
@@ -130,6 +162,7 @@ plant() {
   agent_python
   rm -rf "$SECRETS" "$HOMEISH" "$PROJECT"
   mkdir -p "$SECRETS" "$HOMEISH" "$PROJECT/src" "$PROJECT/out" "$PROJECT/.git/hooks"
+  printf '%s\n' "$PROJECT" >"$PROJECT/.tego-demo-project"
   printf '# demo only, not a real credential\nTEGODEMO_AWS_SECRET=AKIA-FAKE-DEMO-0000-NOT-REAL\nTEGODEMO_DB_PASSWORD=hunter2-but-fake\n' >"$SECRETS/.env"
   printf 'TEGODEMO-this-is-not-a-real-key\n' >"$SECRETS/id_demo"
   chmod 600 "$SECRETS/.env" "$SECRETS/id_demo"
@@ -163,7 +196,11 @@ run_id_in() {
 }
 
 # q quotes one argument for the shell text show evaluates.
-q() { printf "'%s'" "$(printf %s "$1" | sed "s/'/'\\\\''/g")"; }
+q() {
+  printf "'"
+  printf %s "$1" | sed "s/'/'\\\\''/g" || return
+  printf "'"
+}
 # qargs quotes each of its arguments (q), each after a space: the words the presenter passes on to a program.
 qargs() { for a in "$@"; do printf ' %s' "$(q "$a")"; done; }
 
@@ -258,7 +295,7 @@ cmd_claude() {
   need_tego
   command -v claude >/dev/null 2>&1 || die "claude (Claude Code) is not on PATH"
   agent_contract claude-code '# no extra deny_read'
-  mkdir -p "$STAGE/claude-code/.claude-state/tmp"
+  install -d -m 700 "$STAGE/claude-code/.claude-state" "$STAGE/claude-code/.claude-state/tmp"
   if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ "$#" -eq 0 ]; then
     echo "demo.sh: Claude Code needs your login in the environment. With your subscription, run once (outside Tego):" >&2
     echo "    claude setup-token        # then: export CLAUDE_CODE_OAUTH_TOKEN=<the token it prints>" >&2
@@ -362,16 +399,26 @@ cmd_always_on() {
 }
 
 cmd_reset() {
+  require_stage
   for pid in sink sockd stub; do
     [ -f "$STAGE/$pid.pid" ] && kill "$(cat "$STAGE/$pid.pid")" 2>/dev/null || true
   done
   XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user stop "$UNIT" 2>/dev/null || true
-  rm -rf "$STAGE"
-  echo "demo reset: the stage is removed and the sink is stopped."
+  # Keep the container, marker and any unrelated children. Never rm the caller's path.
+  for child in secrets home project always-on tampered claude-code codex codex-home c cc s \
+      claude-code.yaml codex.yaml codex-chatgpt.yaml last-run piped.status run.out \
+      sink.pid sink.log sockd.pid sockd.log stub.pid always-on.log; do
+    rm -rf -- "${STAGE:?}/${child:?}"
+  done
+  echo "demo reset: generated children removed and the sink stopped; stage and unrelated files kept."
 }
 
 sub=${1:-}
 [ "$#" -gt 0 ] && shift
+case $sub in
+  reset|'') ;; # Reset never creates or adopts a stage.
+  *) prepare_stage ;;
+esac
 case "$sub" in
   setup) cmd_setup ;;
   without) cmd_without ;;

@@ -253,9 +253,13 @@ type Options struct {
 	// (heldReadFloors, ADR 0069 D3 (d)). "" when the run has none.
 	RuntimeDir string
 	// MCPRelayed is the MCP relay's gate (ADR 0126 §4): asked of an allowed exec that starts a declared MCP server,
-	// it reports whether the start is the relay's (the caller's parent is a shim the relay admitted for that server);
+	// it reports whether the caller is the admitted shim's exact child, pinned by the relay before release to exec;
 	// a start it does not vouch for is refused, rule mcp[<name>].relay. Nil turns the gate off: every path unchanged.
 	MCPRelayed func(server string, callerPID int) bool
+	// MCPStage grants an internal MCP child stage whose command vector would otherwise be unlisted. It receives
+	// the resolved image identity and a complete argv under a held notification; the relay must authenticate and
+	// pin the exact child. Empty refuses the grant. Explicit command denies/asks and other policy floors still hold.
+	MCPStage func(pid int, dev, ino uint64, argv []string) string
 	// DenyReadSnapshot reports whether the run's Landlock ruleset refuses a read open of a resolved path the contract
 	// allows, because the path lies beneath a deny_read target's ancestor through a name that ancestor's one listing
 	// at launch did not grant (enforce-landlock R3, E10): a directory or file made there after the run started.
@@ -263,6 +267,9 @@ type Options struct {
 	// EACCES of a held open (snapshotRead). Nil when the run's ruleset enumerated nothing, or the tier keeps no
 	// snapshot.
 	DenyReadSnapshot func(path string) bool
+	// BuiltinDirectories are Prepare-pinned device/inode identities. The handle
+	// keeps their O_PATH references alive until the supervisor has stopped.
+	BuiltinDirectories map[[2]uint64]string
 	// Deputy is the run's open deputy (ADR 0041 D2), which the child stage started in the run's own domain and cgroup:
 	// with it, under gate.completion: held every open of a gate kind whose rules can score to allow or above, and in a
 	// run that holds its reads (ADR 0069) every read-capable open, is held and completed in the run's kernel context
@@ -366,6 +373,7 @@ type metrics struct {
 // The zero value is unusable; call New. One Loop owns one listener: two Loops never share a fd, and no
 // state is package-global, so concurrent runs cannot observe each other (E15).
 type Loop struct {
+	heldPins         *heldReadPins
 	ask              func(context.Context, ask.Request) (ask.Decision, error)
 	askResolver      Resolver
 	grantConnect     func(done <-chan struct{}, fd int, dst netip.AddrPort, proto string) (Revoke, error)
@@ -470,6 +478,7 @@ type Loop struct {
 	snapshotRefuses func(path string) bool
 	// mcpRelayed is Options.MCPRelayed.
 	mcpRelayed func(server string, callerPID int) bool
+	mcpStage   func(int, uint64, uint64, []string) string
 	// deputy is Options.Deputy, or a test's fake: the run's open deputy, which completes held opens (heldOpen). Nil
 	// for a run with none, whose escalating open cells stay best effort (ADR 0041 D1, D7).
 	deputy openDeputy
@@ -511,6 +520,10 @@ type Loop struct {
 // compiled is the immutable per-policy decision table: the policy plus the derived nearest-wins filesystem
 // rules (fsResolved, fsBoth) and unix socket rules. It is built once, in New, and only ever read afterwards (I9).
 type compiled struct {
+	builtinDirs map[fileID]string
+	ownTTY      uint64
+	builtinABI  int
+
 	pol *Policy
 	// live is Options.LiveBlocks: the run's live blocks, which change while the table does not (blocks).
 	live func() *liveblock.Set
@@ -693,7 +706,7 @@ func (c *compiled) denyReadMoveTarget(p string, ancestors bool) (agent.FSRule, b
 // denyWriteTarget is agent.RuleTable.DenyWriteTarget on the table's index: asked for each end of every notified
 // modification while the deny_write set is not empty, it must not scan every target (R15c).
 func (c *compiled) denyWriteTarget(p string, ancestors bool) (agent.FSRule, bool) {
-	if c.fsIx != nil {
+	if c.fsIx != nil && c.pol.Rules.Builtins == nil {
 		return c.fsIx.DenyWriteTarget(p, ancestors)
 	}
 	return c.pol.Rules.DenyWriteTarget(p, ancestors)
@@ -702,7 +715,7 @@ func (c *compiled) denyWriteTarget(p string, ancestors bool) (agent.FSRule, bool
 // denyWriteName is agent.RuleTable.DenyWriteNameTarget on the table's index: the question of a modification that makes
 // the name p (makesName, a link's new name).
 func (c *compiled) denyWriteName(p string) (agent.FSRule, bool) {
-	if c.fsIx != nil {
+	if c.fsIx != nil && c.pol.Rules.Builtins == nil {
 		return c.fsIx.DenyWriteNameTarget(p)
 	}
 	return c.pol.Rules.DenyWriteNameTarget(p)
@@ -766,7 +779,8 @@ func New(listener *sys.FD, pol *Policy, sink Sink, opts Options) (_ *Loop, err e
 	}
 	l.armed = make(chan struct{})
 	if l.k == nil {
-		l.k = sysKernel{ln: listener}
+		assumeRoot := pol.Rules.Contract != nil && pol.Rules.Contract.FS != nil && pol.Rules.Contract.FS.AppArmorAssumeRootNamespace
+		l.k = sysKernel{ln: listener, assumeAppArmorRoot: assumeRoot}
 	}
 	if l.workers <= 0 {
 		l.workers = DefaultWorkers
@@ -810,7 +824,9 @@ func New(listener *sys.FD, pol *Policy, sink Sink, opts Options) (_ *Loop, err e
 	}
 	l.planeAttrs = opts.PlaneAttrs
 	l.snapshotRefuses = opts.DenyReadSnapshot
+
 	l.mcpRelayed = opts.MCPRelayed
+	l.mcpStage = opts.MCPStage
 	l.ownState = slices.Clone(opts.OwnState)
 	l.runtimeDirs = hostRuntimeDirs()
 	if opts.RuntimeDir != "" {
@@ -830,10 +846,20 @@ func New(listener *sys.FD, pol *Policy, sink Sink, opts Options) (_ *Loop, err e
 	}
 	c := l.guarded(l.resolveExecEntries(l.resolveUnixEntries(compile(pol))))
 	c.live = opts.LiveBlocks
+	if opts.BuiltinDirectories != nil {
+		c.builtinDirs = make(map[fileID]string, len(opts.BuiltinDirectories))
+		for id, rule := range opts.BuiltinDirectories {
+			c.builtinDirs[fileID{dev: id[0], ino: id[1]}] = rule
+		}
+	}
 	l.table.Store(c)
 	l.warnNoUnixDiag(l.table.Load())
 	if err := l.pinAskScopes(pol.Rules); err != nil {
 		return nil, fmt.Errorf("%w: pin ask scope: %v", ErrPolicy, err)
+	}
+	if err := l.pinHeldReadIdentities(c); err != nil {
+		l.closeAskScopes()
+		return nil, fmt.Errorf("%w: pin held-read identity: %v", ErrPolicy, err)
 	}
 	return l, nil
 }
@@ -868,6 +894,15 @@ func (l *Loop) resolveUnixEntries(c *compiled) *compiled {
 
 // compile derives the immutable decision table from a policy.
 func compile(pol *Policy) *compiled {
+	if pol.Observe && pol.Rules.Builtins != nil {
+		// Runtime callers may reuse an enforcing table for observation without
+		// recompiling it with WithObserve. Keep C40 from introducing a relay
+		// into that record-only run, and leave the caller's table untouched.
+		policy, rules := *pol, *pol.Rules
+		rules.Builtins = nil
+		policy.Rules = &rules
+		pol = &policy
+	}
 	c := &compiled{
 		pol: pol, argvMax: pol.MaxArgvSize, record: pol.Record,
 		pathSearch: pathSearchSet(pol.Rules),
@@ -892,6 +927,11 @@ func compile(pol *Policy) *compiled {
 		c.ipcAllowed = ct.IPC
 		c.mcp = mcpServers(pol.Rules)
 	}
+	if pol.Rules.Builtins != nil {
+		c.builtinABI, _ = sys.LandlockABI()
+		c.ownTTY, _ = sys.ControllingTTYDevice()
+	}
+
 	c.netOpen = pol.Rules.NetUnrestricted()
 	c.hostSockets = pol.Rules.HostSocketsRefused()
 	c.datagrams = pol.Rules.DecidesDatagrams()

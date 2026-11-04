@@ -53,6 +53,7 @@ while IFS= read -r line <&3; do
 	write) echo x >"$AGENT_WRITE" ;;
 	writeout) echo x >"$AGENT_OUTSIDE" ;;
 	secret) read -r _ <"$AGENT_SECRET" ;;
+	mountns) unshare --mount /bin/true ;;
 	exit) exit 7 ;;
 	esac
 	echo "$line $?" >>"$AGENT_ACKS"
@@ -1143,4 +1144,109 @@ func exitCode(err error) int {
 		return ee.ExitCode()
 	}
 	return -1
+}
+
+// NET09: the watcher gives a running agent the same topology floor as explicit
+// adoption. Prove the command works before adoption and after release, and that
+// the intervening refusal is the plane's capability decision in the ledger.
+func TestIntegrationAdoptBoundaryRefusesThroughThePlaneWatcher(t *testing.T) {
+	e := newAdoptEnv(t)
+	// Give the agent CAP_SYS_ADMIN in its own user namespace, with an
+	// unprivileged host owner whose passwd home is absent in the guest. This
+	// exercises the namespace boundary without creating records in root's home.
+	const uid = 65534
+	for _, path := range []string{e.dir, e.cmds} {
+		if err := os.Chown(path, uid, uid); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e.startAgentWith(func(c *exec.Cmd) {
+		c.SysProcAttr.Cloneflags = unix.CLONE_NEWUSER | unix.CLONE_NEWNS
+		c.SysProcAttr.UidMappings = []syscall.SysProcIDMap{{ContainerID: 0, HostID: uid, Size: 1}}
+		c.SysProcAttr.GidMappings = []syscall.SysProcIDMap{{ContainerID: 0, HostID: uid, Size: 1}}
+		c.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: 0, NoSetGroups: true}
+		c.Dir = "/"
+	}, adoptAgentScript)
+	if status := e.send("mountns"); status != 0 {
+		t.Fatalf("unconfined mount-namespace control: exit %d", status)
+	}
+	contract := filepath.Join(filepath.Dir(e.dir), "boundary.yaml")
+	y := fmt.Sprintf("version: 0\nname: topology\ncommand: [\"/bin/sh\"]\nrecord: full\nfs:\n  write: [%q]\n", e.dir)
+	if err := os.WriteFile(contract, []byte(y), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	guard := e.tegoCmd("agents", "--follow", "--adopt", "--uid", strconv.Itoa(uid), "--boundary", contract, "--json")
+	var out, errs lockedBuffer
+	guard.Stdout, guard.Stderr = &out, &errs
+	if err := guard.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- guard.Wait() }()
+	stopped := false
+	t.Cleanup(func() {
+		if !stopped {
+			_ = guard.Process.Kill()
+			<-done
+		}
+		if t.Failed() {
+			t.Logf("guard stdout: %s; stderr: %s", out.String(), errs.String())
+		}
+	})
+	var run string
+	// A cold boundary adoption runs doctor's kernel probes before it can arm;
+	// allow the same startup budget as adoptStart, including when run alone.
+	deadline := time.NewTimer(60 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	for run == "" {
+		for _, line := range strings.Split(out.String(), "\n") {
+			var s watcher.Sighting
+			if json.Unmarshal([]byte(line), &s) == nil && s.Event == watcher.EventAdopted && int(s.PID) == e.agentPID {
+				run = s.Run
+			}
+		}
+		if run != "" {
+			break
+		}
+		select {
+		case err := <-done:
+			stopped = true
+			t.Fatalf("guard exited before adoption: %v", err)
+		case <-deadline.C:
+			t.Fatal("the guard did not adopt the agent")
+		case <-tick.C:
+		}
+	}
+	if status := e.send("mountns"); status != 1 {
+		t.Errorf("adopted mount-namespace creation: exit %d, want unshare's EPERM exit 1", status)
+	}
+	_ = guard.Process.Signal(syscall.SIGTERM)
+	select {
+	case err := <-done:
+		stopped = true
+		if err != nil {
+			t.Fatalf("guard: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the guard did not release the agent")
+	}
+	if status := e.send("mountns"); status != 0 {
+		t.Errorf("released mount-namespace control: exit %d", status)
+	}
+	found := false
+	for _, ev := range e.lines(run) {
+		if ev.Kind == record.KindRefused {
+			var p record.RefusedPayload
+			if err := ev.DecodePayload(&p); err != nil {
+				t.Fatal(err)
+			}
+			found = found || p.Op == "capable" && p.Rule == "mount-topology" && p.Target == "capability 21" &&
+				p.Mechanism == record.MechanismPlane && p.DecisionPlane != ""
+		}
+	}
+	if !found {
+		t.Error("the watcher boundary recorded no plane topology refusal")
+	}
 }

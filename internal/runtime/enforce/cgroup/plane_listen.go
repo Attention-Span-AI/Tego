@@ -17,7 +17,13 @@ func planPlaneListenFill(plan *planeFillPlan, rows *decide.PlaneRows, held heldF
 		return fmt.Errorf("plane fill: %d Unix listener rows exceeds cap %d", len(rows.Listen), bpf.PlaneListenRowsMax)
 	}
 	seen := make(map[int]bool)
-	for _, r := range rows.Listen {
+	type namedParent struct {
+		dev, ino uint64
+		name     string
+	}
+	names := make(map[namedParent]int)
+	// The immutable guard wins over a listener declaration at the same inode/name.
+	for _, r := range append(append([]decide.PlaneListenRow{}, rows.Protected...), rows.Listen...) {
 		if r.Abstract {
 			continue
 		}
@@ -32,13 +38,29 @@ func planPlaneListenFill(plan *planeFillPlan, rows *decide.PlaneRows, held heldF
 			return fmt.Errorf("plane fill: Unix listeners share parent descriptor %d", fd)
 		}
 		seen[fd] = true
-		if r.Rule < 0 || r.Rule > int(bpf.PlaneRuleMax) || len(r.Name) == 0 || len(r.Name) > 107 {
+		if r.Rule < 0 || (r.Rule > int(bpf.PlaneRuleMax) && r.Rule&0xe000 == 0) || len(r.Name) == 0 || len(r.Name) > 107 {
 			return fmt.Errorf("plane fill: invalid Unix listener %s", r.Path)
 		}
 		e := planeFillEntry{FD: fd, Path: r.Parent, What: bpf.PlaneFillListen, RuleIdx: uint16(r.Rule), Name: r.Name, Parent: r.Parent}
 		if err := identify(&e, id); err != nil {
 			return err
 		}
+		key := namedParent{e.Dev, e.Ino, e.Name}
+		if at, duplicate := names[key]; duplicate {
+			old := &plan.Entries[at]
+			if old.RuleIdx&0xe000 != 0 {
+				// A peer exception never removes the mutation refusal. Keep
+				// the first refusing FS row and combine only the private tags.
+				if old.RuleIdx&0x8000 == 0 && e.RuleIdx&0x8000 != 0 {
+					old.RuleIdx = e.RuleIdx | (old.RuleIdx & 0xe000)
+				} else {
+					old.RuleIdx |= e.RuleIdx & 0xe000
+				}
+				continue
+			}
+			return fmt.Errorf("plane fill: duplicate Unix listener name %s", r.Path)
+		}
+		names[key] = len(plan.Entries)
 		plan.Entries = append(plan.Entries, e)
 	}
 	sort.Slice(plan.Entries, func(i, j int) bool {

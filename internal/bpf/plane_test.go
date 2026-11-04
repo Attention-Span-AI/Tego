@@ -22,6 +22,8 @@ var planeDeclared = map[string]int{
 	"socket_create": 4, "mmap_file": 4, "file_mprotect": 3,
 	"socket_bind": 3, "ptrace_access_check": 2, "ptrace_traceme": 1, "bpf": 3, "key_permission": 3,
 	"socket_listen": 2,
+	"capable":       3,
+	"unix_may_send": 2,
 }
 
 // planeDeclaredFmodRet is the arguments a hook's fmod_ret program reads where its security_ function takes fewer

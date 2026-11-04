@@ -143,6 +143,7 @@ script_tests() {
 	# The python helpers some self-tests run leave no __pycache__ in the tree.
 	export PYTHONDONTWRITEBYTECODE=1
 	for t in scripts/install_test.sh scripts/install-maze_test.sh scripts/coverage_test.sh scripts/bench-gate_test.sh scripts/timing-budgets_test.sh scripts/check-spdx_test.sh scripts/check-licenses_test.sh scripts/scrub-capture_test.sh scripts/fuzz-corpus_test.sh scripts/deadcode-report_test.sh scripts/skipgate_test.sh \
+		scripts/demo-credentials_test.sh scripts/demo-reset_test.sh scripts/cleanup-guards_test.sh \
 		scripts/check-skiplists_test.sh scripts/release_test.sh scripts/check-control-pin_test.sh scripts/bpf-toolchain_test.sh scripts/tree-files_test.sh \
 		scripts/precommit_test.sh scripts/check-bpf-objects_test.sh scripts/fd-churn_test.sh scripts/check-fd_test.sh scripts/check-edgelint_test.sh test/vm/kvm-step_test.sh test/vm/python-pkgs_test.sh test/vm/fetch-kernel_test.sh \
 		test/e2e/lib_test.sh test/e2e/pydeps_test.sh test/e2e/kt4_test.sh test/e2e/kt5_test.sh test/e2e/kt2_pairs_test.sh test/e2e/m0_demo_test.sh test/e2e/overhead/kt3_test.sh test/e2e/overhead/bench_test.sh test/e2e/overhead/run_test.sh \
@@ -214,6 +215,11 @@ add_full() {
 	else
 		pc_add static - "actionlint" note "not installed (CI's scripts-and-workflows job runs it)"
 	fi
+	# Export tooling stays private; its tests must gate changes to the public transformation.
+	if [ -f tools/oss/export.py ]; then
+		pc_add static oss "public export self-tests" step python3 -m unittest discover -s tools/oss -p 'test_*.py'
+	fi
+
 	pc_add tests unit "unit tests (test/unit-skips.txt)" step gated_unit ./...
 	# In the unit job, after the unit pass: beside it, the unit pass's timing tests (rulesview's InForce) ran slow.
 	# precommit_test.sh holds this list to the directories with tegotesthooks test files.

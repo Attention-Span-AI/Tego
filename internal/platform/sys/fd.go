@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -547,6 +548,31 @@ func (f *FD) Fstat(st *unix.Stat_t) error {
 	return unix.Fstat(int(f.num), st)
 }
 
+// Fstatfs is fstatfs(2) on the number.
+func (f *FD) Fstatfs(st *unix.Statfs_t) error {
+	if f == nil || !f.acquire() {
+		return ErrClosed
+	}
+	defer f.unlease()
+	return unix.Fstatfs(int(f.num), st)
+}
+
+// InotifyWatch watches target through its /proc/self/fd name while both owners
+// hold their numbers. The kernel retains the watched inode, not that name. The
+// returned watch descriptor belongs to the instance and needs no separate close.
+func (f *FD) InotifyWatch(target *FD, mask uint32) (int, error) {
+	if f == nil || !f.acquire() {
+		return -1, ErrClosed
+	}
+	defer f.unlease()
+	if target == nil || !target.acquire() {
+		return -1, ErrClosed
+	}
+	defer target.unlease()
+	path := "/proc/self/fd/" + strconv.Itoa(int(target.num))
+	return unix.InotifyAddWatch(int(f.num), path, mask)
+}
+
 // Fstatat is fstatat(2) of name relative to the number.
 func (f *FD) Fstatat(name string, st *unix.Stat_t, flags int) error {
 	if f == nil || !f.acquire() {
@@ -637,4 +663,41 @@ func (f *FD) ProcPath(fn func(path string) error) error {
 	}
 	defer f.unlease()
 	return fn("/proc/self/fd/" + strconv.Itoa(int(f.num)))
+}
+
+// AddLandlockPath adds a beneath rule while leasing both the ruleset and path.
+func (f *FD) AddLandlockPath(path *FD, access uint64) error {
+	if f == nil || !f.acquire() {
+		return ErrClosed
+	}
+	defer f.unlease()
+	if path == nil || !path.acquire() {
+		return ErrClosed
+	}
+	defer path.unlease()
+	a := unix.LandlockPathBeneathAttr{Allowed_access: access, Parent_fd: int32(path.num)}
+	return LandlockAddRule(int(f.num), unix.LANDLOCK_RULE_PATH_BENEATH, unsafe.Pointer(&a), 0)
+}
+
+// RestrictLandlock applies this ruleset while its descriptor is leased.
+func (f *FD) RestrictLandlock(flags uint32) error {
+	if f == nil || !f.acquire() {
+		return ErrClosed
+	}
+	defer f.unlease()
+	return RestrictSelf(int(f.num), flags)
+}
+
+// SendSeccompDescriptor atomically installs source in a notified task and
+// replies. The returned number belongs to that task, never to this process.
+func (f *FD) SendSeccompDescriptor(id uint64, source *FD, closeOnExec bool) (target int, err error) {
+	if f == nil || !f.acquire() {
+		return -1, ErrClosed
+	}
+	defer f.unlease()
+	if source == nil || !source.acquire() {
+		return -1, ErrClosed
+	}
+	defer source.unlease()
+	return SeccompNotifAddfdSend(int(f.num), id, int(source.num), closeOnExec)
 }

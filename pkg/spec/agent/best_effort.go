@@ -16,6 +16,12 @@ import (
 // (unenforced) and run_start lists the run's ids in best_effort (D7). A cell leaves the list when its action
 // is completed race-free (D1's Stage B).
 const (
+	// BestEffortAppArmorNamespace discloses the administrator's explicit opt-in,
+	// whether or not a particular open needed the assumption. Never implicit.
+	BestEffortAppArmorNamespace = "apparmor/assumed-root-namespace"
+
+	// BestEffortBuiltinIPC discloses the continued-datagram boundary of ADR 0113.
+	BestEffortBuiltinIPC = "builtin.host_ipc/datagram"
 	// BestEffortGateFSReadOpen: an open an `fs.read matches` gate scores, continued when it allows.
 	BestEffortGateFSReadOpen = "gate.fs.read/open"
 	// BestEffortGateFSReadMove: the source of a rename or hard link, scored with the read predicates on its
@@ -56,13 +62,13 @@ const (
 	// the decided facts.
 	BestEffortExecRules = "exec.rules/argv"
 	// BestEffortHostSocketsRoot: the unix-only state of a contract with no net: section (ADR 0070,
-	// RuleTable.HostSocketsRefused) at tier cgroup or bpflsm, where no kernel program of the run decides a unix
+	// RuleTable.HostSocketsRefused) at tier cgroup or bpflsm. Kernel raw-name checks do not decide every unix
 	// destination for it yet: the cgroup unix programs and the decision plane's unix hooks hold no row for such a
 	// contract. A plane leaves connect, sendto and sendmsg notified (it narrows only the fs notifications, enforce-plane
 	// R22, R27), so the state rests on what carries it at tier landlock: the supervisor's relay of every connect and of
 	// the addressed datagrams it can reproduce (supervisor R7b), the abstract scope from Landlock ABI 6 and
 	// RESOLVE_UNIX from ABI 9, and the datagram residual BestEffortHostSocketsDatagram names. Listed at the root tiers
-	// in that cell's place, on every unix connect and send, until those tiers carry a kernel program for it (ADR 0070 (5)).
+	// in that cell's place on every unix connect and send; immutable name programs do not remove its alias residual (ADR 0113).
 	BestEffortHostSocketsRoot = "host_sockets/root-tier"
 	// BestEffortHostSocketsDatagram: the unix-only state at tier landlock (ADR 0070). The supervisor relays on its
 	// duplicate every connect, every Fast-Open send, every send on a stream socket without a peer and every addressed
@@ -83,6 +89,9 @@ const (
 
 // bestEffortWhy is the compile warning's text for each id.
 var bestEffortWhy = map[string]string{
+	BestEffortAppArmorNamespace: "fs.apparmor_assume_root_namespace accepts the risk of bypassing hidden ancestor restrictions when AppArmor namespace depth is unreadable; an administrator must establish root policy-namespace visibility outside the container",
+
+	BestEffortBuiltinIPC: "a continued datagram re-reads the address and descriptor; the kernel name checks cover protected names where attached, but aliases and unsupported send shapes remain best effort without a native peer plane",
 	BestEffortGateFSReadOpen: "an open the fs.read gate allows is continued, and the kernel reads its pathname again, " +
 		"so a sibling thread can open another name than the one scored",
 	BestEffortGateFSReadMove: "a rename or hard link source the fs.read gate allows is continued on its copied name",
@@ -103,11 +112,9 @@ var bestEffortWhy = map[string]string{
 		"seqpacket socket) is continued, so below Landlock ABI 9 a sibling thread that rewrites its address " +
 		"and swaps a unix datagram socket onto its descriptor can reach a host datagram socket such as the journal's; no " +
 		"stream daemon (docker.sock, the session bus, an SSH or gpg agent) is reachable so",
-	BestEffortHostSocketsRoot: "with no net: section a unix socket the run did not bind is refused (rule host-sockets) " +
-		"at tiers cgroup and bpflsm by the supervisor's relay and Landlock alone, as at tier landlock, with no kernel " +
-		"program of the run deciding it, and a send the supervisor continues (an unaddressed sendmsg, a sendmmsg " +
-		"batch, one with ancillary data or MSG_MORE, or an addressed send on a connected seqpacket socket) can reach a host " +
-		"datagram socket below Landlock ABI 9: best effort at the root tiers until they carry a kernel program for it",
+	BestEffortHostSocketsRoot: "with no net: section the supervisor's relay and Landlock refuse outside sockets, as at tier landlock; " +
+		"root tiers also carry immutable Unix name checks, but those programs do not establish a peer inode for every alias, " +
+		"and a send the supervisor continues can re-read a changed destination: best effort at the root tiers for aliases and unsupported datagrams",
 }
 
 // BestEffortCells are the ids of the table's (D) cells, in a fixed order (ADR 0041 D1, D7). A gate kind
@@ -146,6 +153,9 @@ func (rt *RuleTable) bestEffortCells(held, execPinned bool) []string {
 		return nil
 	}
 	var out []string
+	if rt.Contract != nil && rt.Contract.FS != nil && rt.Contract.FS.AppArmorAssumeRootNamespace {
+		out = append(out, BestEffortAppArmorNamespace)
+	}
 	if rt.ExecCommands.HasRules() && !execPinned {
 		out = append(out, BestEffortExecRules)
 	}
@@ -199,13 +209,16 @@ func (rt *RuleTable) BestEffortCellsAt(tier backend.Tier, planeMode string) []st
 // claim: exec.rules/argv and gate.exec leave the list only with it (ADR 0048 (6)).
 func (rt *RuleTable) BestEffortCellsRun(tier backend.Tier, planeMode string, deputy, execPinned bool) []string {
 	out := rt.bestEffortCells(deputy && rt.GateOpensHeld(), execPinned)
+	if rt != nil && rt.Builtins != nil && !rt.HostSocketsRefused() && tier != backend.TierObserve && !(tier != backend.TierLandlock && (planeMode == "lsm" || planeMode == "fmod_ret")) {
+		out = append(out, BestEffortBuiltinIPC)
+	}
 	if rt.HostSocketsRefused() && (tier == backend.TierCgroup || tier == backend.TierBPFLSM) {
 		out = append(out, BestEffortHostSocketsRoot)
 	}
 	if rt.HostSocketsRefused() && tier == backend.TierLandlock {
 		out = append(out, BestEffortHostSocketsDatagram)
 	}
-	if rt == nil || len(rt.DenyWrite) == 0 || rt.FilesystemAssurance() == FSAssuranceKernel {
+	if rt == nil || !rt.hasDenyWriteResidual() || rt.FilesystemAssurance() == FSAssuranceKernel {
 		return out
 	}
 	noPlane := planeMode != record.DecisionPlaneLSM && planeMode != record.DecisionPlaneFmodRet
@@ -225,6 +238,9 @@ func (rt *RuleTable) BestEffortCellsRun(tier backend.Tier, planeMode string, dep
 // (ADR 0071): each is its own best-effort cell.
 func (rt *RuleTable) denyWriteKinds() (builtIn, user bool) {
 	for i := range rt.DenyWrite {
+		if rt.DenyWrite[i].BuiltinRule != "" && !rt.DenyWrite[i].Unenforced {
+			continue
+		}
 		if !rt.DenyWrite[i].IsDeclaredDenyWrite() {
 			builtIn = true
 		} else {
@@ -292,7 +308,7 @@ func (rt *RuleTable) BestEffortCellsFor(a Action, got EvalResult, tier backend.T
 	if a.Kind == ActionExec && got.CommandRule != "" && got.Verdict != VerdictRefused {
 		applies = append(applies, BestEffortExecRules)
 	}
-	if got.Verdict == VerdictRefused && got.Score == nil {
+	if got.Verdict == VerdictRefused && got.Score == nil && slices.Contains([]ActionKind{ActionFSWrite, ActionFSDelete, ActionFSRename, ActionFSMkdir, ActionFSLink, ActionFSAttr}, a.Kind) {
 		if id := rt.denyWriteCell(got.Rule); id != "" {
 			applies = append(applies, id)
 		}
@@ -303,7 +319,7 @@ func (rt *RuleTable) BestEffortCellsFor(a Action, got EvalResult, tier backend.T
 	}
 	if a.Kind == ActionNetSend && got.Verdict != VerdictRefused {
 		// Tier landlock's unix-only state: a datagram it admits may be one it continues (ADR 0070); a refusal is exact.
-		applies = append(applies, BestEffortHostSocketsDatagram)
+		applies = append(applies, BestEffortHostSocketsDatagram, BestEffortBuiltinIPC)
 	}
 	var out []string
 	for _, id := range cells {
@@ -337,8 +353,8 @@ func (k *compiler) warnBestEffort() {
 			fix("remove gate.completion, or add the fs gate rules it is meant to hold")
 	}
 	for _, id := range k.rt.BestEffortCells() {
-		if id == BestEffortExecRules {
-			continue // warned once per tier at the exec: section (execCommandWarnings)
+		if id == BestEffortExecRules || id == BestEffortAppArmorNamespace {
+			continue // disclosed by execCommandWarnings or the fs namespace opt-in warning
 		}
 		k.ds.warnf(k.pos("gate"), CodeUnenforced, "best effort (%s): %s; the cell is recorded in run_start best_effort "+
 			"and never counted as enforced (ADR 0041 D1)", id, bestEffortWhy[id]).

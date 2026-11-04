@@ -42,7 +42,9 @@ type ID struct{ Dev, Ino uint64 }
 // the file its walk reached, read as Facts reads a direct image: the basename of the walked image's link, and its
 // identity when HasID. An interpreter reached through a symlink is read by all three.
 type Stage struct {
-	Path, Arg string
+	// NodeVersion is attested from this interpreter image, never its name or argv.
+	NodeVersion string
+	Path, Arg   string
 	// EmptyArg says the line has an argument and it is empty (agent.ShebangArgv): the interpreter gets an empty element.
 	EmptyArg bool
 	// Image is the walked interpreter's basename (the walk's link); "" when unknown.
@@ -56,6 +58,9 @@ func (st Stage) hasArg() bool { return st.Arg != "" || st.EmptyArg }
 
 // Facts are what an exec's decision reads, copied by the caller (ADR 0048 (2)). The matcher reads nothing else.
 type Facts struct {
+	// NodeVersion is the version of an exact inventoried executable build,
+	// attested by the I/O caller. Empty selects the compatibility row.
+	NodeVersion string
 	// Requested is the requested pathname's basename, "" for an image named by descriptor alone; Image is the
 	// resolved image's basename (the walk's link); Argv0 is argv[0] (its basename is read).
 	Requested, Image, Argv0 string
@@ -133,11 +138,15 @@ func (v Via) String() string {
 // Invocation is one interpretation of an exec: the tool it is, the tokens it reads, and (for a tool with a row and
 // a rule) every reading the row makes of them.
 type Invocation struct {
-	Tool     string
-	Row      *Row
-	Via      Via
-	Tokens   []string
-	Readings []Reading
+	// scanArgv0 is the actual argv[0] for interpreter pre-scanners (including #!).
+	scanArgv0 string
+	// NodeVersion follows the image that supplied this invocation.
+	NodeVersion string
+	Tool        string
+	Row         *Row
+	Via         Via
+	Tokens      []string
+	Readings    []Reading
 	// Open says Tokens end where a staged read stopped, not where the vector ends (Facts.ArgvComplete false).
 	Open bool
 	// Argv0 is the exec's argv[0] as it was given, whole, on an interpretation of the exec's own image (by its name,
@@ -172,9 +181,10 @@ func (ix *Index) Interpretations(f *Facts) []Invocation {
 			argv0 = base(f.Argv[0])
 		}
 	}
-	b := builder{ix: ix, open: !f.ArgvComplete, argv0: f.Argv0}
+	b := builder{ix: ix, open: !f.ArgvComplete, argv0: f.Argv0, scanArgv0: f.Argv0, nodeVersion: f.NodeVersion}
 	if b.argv0 == "" && len(f.Argv) > 0 {
 		b.argv0 = f.Argv[0]
+		b.scanArgv0 = f.Argv[0]
 	}
 	names := [...]struct {
 		name string
@@ -203,6 +213,8 @@ func (ix *Index) Interpretations(f *Facts) []Invocation {
 		}
 		chain := []string{script}
 		for _, st := range f.Interp {
+			b.nodeVersion = st.NodeVersion
+			b.scanArgv0 = st.Path
 			toks := make([]string, 0, len(chain)+1+len(argv1))
 			if st.hasArg() {
 				toks = append(toks, st.Arg)
@@ -236,6 +248,7 @@ func (ix *Index) Interpretations(f *Facts) []Invocation {
 	// execve of its own follows (ADR 0048 (2)).
 	if f.Loaded != nil {
 		lf := f.loadedFacts()
+		b.nodeVersion = lf.NodeVersion
 		for _, inv := range ix.Interpretations(&lf) {
 			if inv.Via == ViaOverflow {
 				// The program's own reading overflowed: it is this exec's, and fails it closed too. Re-added as an
@@ -243,6 +256,8 @@ func (ix *Index) Interpretations(f *Facts) []Invocation {
 				b.overflow = true
 				continue
 			}
+			b.nodeVersion = inv.NodeVersion
+			b.scanArgv0 = inv.scanArgv0
 			b.add(inv.Tool, inv.Row, ViaLoader, inv.Tokens)
 		}
 	}
@@ -256,6 +271,8 @@ func (ix *Index) Interpretations(f *Facts) []Invocation {
 	overflow := false
 	for i := 0; i < len(b.out); i++ {
 		inv := b.out[i]
+		b.nodeVersion = inv.NodeVersion
+		b.scanArgv0 = inv.scanArgv0
 		if inv.Row == nil || !(inv.Row.Multicall || inv.Row.Interp != nil) {
 			continue
 		}
@@ -567,19 +584,34 @@ type builder struct {
 	open     bool
 	overflow bool
 	// argv0 is the exec's whole argv[0], kept on the interpretations of its own image (Invocation.Argv0).
-	argv0 string
+	argv0       string
+	scanArgv0   string
+	nodeVersion string
 }
 
-// add appends an invocation unless one of the same tool and tokens is already there. Past maxInterpretations a new
+// add appends an invocation unless one of the same tool, row and tokens is already there. Past maxInterpretations a new
 // one is not kept, and the builder overflows (fails closed, ADR 0048 (2)): any interpretation could be the one that
 // reaches a ruled tool, and one dropped in silence read the exec as if it had none (an exec whose reading needs more
 // than the bound was decided on the first 32 and could be allowed unmatched).
 func (b *builder) add(tool string, row *Row, via Via, toks []string) {
+	if row != nil && row.Interp != nil && len(row.Interp.Versions) > 0 && !slices.Contains(row.Interp.Versions, b.nodeVersion) {
+		row = row.Interp.Fallback
+		if row == nil {
+			b.overflow = true
+			return
+		}
+	}
+	// Inspect every raw observation before deduplicating. A different argv[0]
+	// can trigger a Node pre-scanner even when tool, row and tokens coincide.
+	if row != nil && row.Interp != nil && row.Interp.ArgvRewrite != nil && row.Interp.ArgvRewrite(prepend(b.scanArgv0, toks)) {
+		b.overflow = true
+		return
+	}
 	if tool == "" {
 		return
 	}
 	for _, o := range b.out {
-		if o.Tool == tool && sameTokens(o.Tokens, toks) {
+		if o.Tool == tool && o.Row == row && sameTokens(o.Tokens, toks) {
 			return
 		}
 	}
@@ -587,7 +619,7 @@ func (b *builder) add(tool string, row *Row, via Via, toks []string) {
 		b.overflow = true
 		return
 	}
-	inv := Invocation{Tool: tool, Row: row, Via: via, Tokens: toks, Open: b.open}
+	inv := Invocation{scanArgv0: b.scanArgv0, NodeVersion: b.nodeVersion, Tool: tool, Row: row, Via: via, Tokens: toks, Open: b.open}
 	if via.direct() {
 		inv.Argv0 = b.argv0
 	}

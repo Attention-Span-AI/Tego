@@ -768,6 +768,9 @@ func (k *bpfKernel) attachCgroup(path string, owner ebpfbindings.NetOwner) error
 		ebpfbindings.ProgSendmsgUnix: ebpf.AttachCgroupUnixSendmsg,
 	}
 	for _, name := range ebpfbindings.CgroupPrograms {
+		if owner.Flags&netOwnerUnixOnly != 0 && !isUnixProgram(name) {
+			continue
+		}
 		prog, ok := k.progs[name]
 		if !ok {
 			if isUnixProgram(name) {
@@ -801,6 +804,9 @@ func (k *bpfKernel) attachCgroup(path string, owner ebpfbindings.NetOwner) error
 			configured = true
 		}
 	}
+	if owner.Flags&netOwnerUnixOnly != 0 {
+		return nil
+	} // below 6.7 the plane decides unix, otherwise the inherited relay
 	if !configured {
 		return fmt.Errorf("%w: no program that reads %s was attached to %s", ErrProgramLoad,
 			ebpfbindings.MapNetOwners, path)

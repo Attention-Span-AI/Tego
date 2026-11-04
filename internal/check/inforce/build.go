@@ -19,6 +19,7 @@ type facts struct {
 	tier    backend.Tier
 	best    map[string]bool
 	observe bool
+	plane   bool
 	held    bool       // the run holds its reads (ReadsHeldAt), so a shadowed deny_read is refused all the same
 	exec    *execNames // what a run's lines call each program entry
 }
@@ -31,6 +32,7 @@ func newFacts(rt *agent.RuleTable, tier backend.Tier, planeMode string) *facts {
 	for _, c := range rt.BestEffortCellsAt(tier, planeMode) {
 		f.best[c] = true
 	}
+	f.plane = (tier == backend.TierCgroup || tier == backend.TierBPFLSM) && (planeMode == record.DecisionPlaneLSM || planeMode == record.DecisionPlaneFmodRet)
 	f.held = rt.ReadsHeldAt(tier)
 	return f
 }
@@ -133,7 +135,7 @@ func (f *facts) builtInDenyRead() (keys []string, c claim) {
 	seen := map[string]bool{}
 	for i := range f.rt.FS {
 		r := &f.rt.FS[i]
-		if r.Kind != agent.FSDenyRead || !r.BuiltIn {
+		if r.Kind != agent.FSDenyRead || !r.BuiltIn || r.BuiltinRule != "" {
 			continue
 		}
 		if k := r.RuleName(); !seen[k] {
@@ -159,7 +161,7 @@ func (f *facts) builtInDenyWrite() (present bool, keys []string, c claim) {
 	seen := map[string]bool{}
 	for i := range f.rt.DenyWrite {
 		r := &f.rt.DenyWrite[i]
-		if r.IsDeclaredDenyWrite() {
+		if r.IsDeclaredDenyWrite() || r.BuiltinRule != "" {
 			continue
 		}
 		present = true
@@ -729,12 +731,26 @@ func buildAlwaysOn(v *View, d decl, f *facts, add func(string, Rule), src func(a
 		}
 		add(GroupAlwaysOn, r)
 	}
+	if f == nil || f.rt.Builtins != nil {
+		for _, entry := range []struct{ id, sentence string }{
+			{agent.BuiltinHostIPC, "Cannot reach session services, non-SSH credential agents, system D-Bus, X11 or the listed multiplexer and editor sockets; protects their folders from changes"},
+			{agent.BuiltinTegoSurface, "Cannot reach tego's control sockets or local control ports; its own runtime folder stays available"},
+			{agent.BuiltinOtherTTY, "Cannot open other terminals; its own terminal and ptys it creates stay available"},
+		} {
+			c := claim{true, "Enforced by the operating system and tego"}
+			if entry.id != agent.BuiltinOtherTTY && f != nil && !f.plane {
+				c = claim{false, textBestEffort}
+			}
+			enforced, words := at(c)
+			add(GroupAlwaysOn, Rule{Key: entry.id, RuleKey: entry.id, Sentence: entry.sentence, Effect: EffectDeny, Enforced: enforced, EnforcedText: words})
+		}
+	}
 	ok, text := at(kernel)
 	add(GroupAlwaysOn, Rule{Key: "built-in.own-records", Sentence: "Can never read or change tego's records of its runs", Effect: EffectDeny, Enforced: ok, EnforcedText: text})
 	add(GroupAlwaysOn, Rule{Key: "built-in.contract", Sentence: "Cannot change its own rules file", Effect: EffectDeny, Enforced: ok, EnforcedText: text})
 	if !d.hasNet {
 		if d.hostSockets {
-			add(GroupAlwaysOn, Rule{Key: "host_sockets", Sentence: "Can reach other programs on this computer through their local sockets (host_sockets: true)", Effect: EffectAllow})
+			add(GroupAlwaysOn, Rule{Key: "host_sockets", Sentence: "Can reach other local sockets except the fixed host IPC and tego control surfaces (host_sockets: true)", Effect: EffectAllow})
 		} else {
 			c := kernel
 			if f != nil && (f.best[agent.BestEffortHostSocketsDatagram] || f.best[agent.BestEffortHostSocketsRoot]) {

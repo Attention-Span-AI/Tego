@@ -523,6 +523,9 @@ func (ix *Index) dispatchSettled(invs []Invocation) bool {
 // reads -i after -e's code, and then runs the script).
 func (ix *Index) interpSettled(inv *Invocation) bool {
 	spec := inv.Row.Interp
+	if inv.Open && spec.ArgvRewrite != nil {
+		return false // a later token can load code even after the entry script
+	}
 	for _, r := range ix.normalizer(inv.Row).NormalizeOpen(inv.Tokens, inv.Open) {
 		if r.Unlocatable {
 			return false

@@ -258,13 +258,44 @@ func dynamicELF(t *testing.T, path, interp string) {
 	}
 }
 
-// tempDir is t.TempDir resolved. The builder opens every entry through its symlinks and compares entries at
+// tempDir is a private directory resolved, with a short prefix so its unix socket fixtures fit sockaddr_un.
+// The builder opens every entry through its symlinks and compares entries at
 // their resolved paths (E8, enumerate's ancestor set), so under a TMPDIR that is or holds a symlink the
 // unresolved spelling is not what it reports, and a test's expectations built from it would name another
 // path than the one Prepare held.
 func tempDir(t testing.TB) string {
 	t.Helper()
-	d, err := filepath.EvalSymlinks(t.TempDir())
+	base, err := os.MkdirTemp("", "ll-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(base); err != nil {
+			t.Error(err)
+		}
+	})
+	// Keep a parent to clean up roots a test renames to a sibling, as t.TempDir does.
+	dir := filepath.Join(base, "r")
+	if err := os.Mkdir(dir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	d, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+// shortTempDir keeps socket fixtures below sockaddr_un's path bound without
+// moving them out of TMPDIR when testing's name-based directory is too long.
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	d, err := os.MkdirTemp("", "ll")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(d) })
+	d, err = filepath.EvalSymlinks(d)
 	if err != nil {
 		t.Fatal(err)
 	}

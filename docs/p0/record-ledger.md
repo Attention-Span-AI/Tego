@@ -682,3 +682,16 @@ Resolved (2026-09-22): the v1 kind set is the record README's 15 kinds and P0 wr
 **Changes.**
 - 2026-09-22, §4 `Open`: `Open` resumes a lost run's chain; folded into §4 `Open`.
 - 2026-09-22, §4 `State`, `Close`: tail-only `RunState`; blobs synced before `events.jsonl`; folded into §4.
+
+
+### Append batches (amended 2026-11-03, M5)
+
+`Writer.AppendBatch(events ...*record.Event) error` accepts already redacted and
+blob-split events and appends them in order while holding the writer mutex once.
+The runtime pipeline and DNS broker use it for a refused action followed by its
+mirror, after preparing both payloads. Every event still has its own sequence,
+hash and single write; other writers cannot insert lines between the pair.
+This is serialization, not transactional durability: an error can leave a written
+prefix, and requires the same run termination as an `Append` failure. No event
+format changes. Readers retain the legacy four-line pairing fallback for existing
+ledgers; they cannot reliably repair historically displaced mirrors.

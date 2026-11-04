@@ -543,6 +543,25 @@ func (w *Writer) WriteRunStartIn(start record.RunStartPayload, cgroup uint64) er
 func (w *Writer) Append(e *record.Event) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	return w.appendNext(e)
+}
+
+// AppendBatch appends prepared events without another writer interleaving them.
+// Each line keeps its own hash and write. On failure an already written prefix
+// remains; the caller must end the run as for any failed Append.
+func (w *Writer) AppendBatch(events ...*record.Event) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, e := range events {
+		if err := w.appendNext(e); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// appendNext checks sequencing under the writer mutex.
+func (w *Writer) appendNext(e *record.Event) error {
 	if w.closed {
 		return ErrClosed
 	}

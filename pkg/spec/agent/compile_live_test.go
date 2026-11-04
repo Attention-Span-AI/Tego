@@ -185,7 +185,7 @@ func compileGolden(t *testing.T, c goldenContract, home, bin string, subst *stri
 	}
 	rt, ds, err := Compile(ct, machine, WithCwd(filepath.Dir(c.path)), WithHome(home), WithPATH(bin), WithMountInfo(""),
 		WithResolver(goldenResolver{}), WithTiers(backend.Tiers()...), WithChainAnchor(filepath.Join(home, ".tego", "chain.log")),
-		WithClock(func() time.Time { return time.Unix(1_700_000_000, 0).UTC() }))
+		withHostSocketProbe("", 4242), WithClock(func() time.Time { return time.Unix(1_700_000_000, 0).UTC() }))
 	ds = onGoldensHost(t, c.name, ct, ds)
 	var b strings.Builder
 	b.WriteString("load:\n" + render(loadDs) + "compile:\n" + render(ds))
@@ -333,6 +333,8 @@ func goldenHome(t *testing.T, home string) {
 // nor a #! script, so no loader or interpreter enters a table, and the host's loader identities (ExecCommands) are
 // left out of the golden.
 func TestLiveOffGolden(t *testing.T) {
+	t.Setenv("TMUX_TMPDIR", "")
+	t.Setenv("SCREENDIR", "")
 	tmp := t.TempDir()
 	home, bin, starter := filepath.Join(tmp, "home"), filepath.Join(tmp, "bin"), filepath.Join(tmp, "starter")
 	for _, d := range []string{home, bin, starter} {

@@ -175,6 +175,13 @@ func evalFSTier(rt *agent.RuleTable, kind agent.ActionKind, path string, tier ba
 	if tier == backend.TierObserve {
 		return evalObserveFS(rt, path)
 	}
+	if rt.Builtins != nil && agent.OtherTTY(path) {
+		why := record.ReasonReadDenied
+		if kind != agent.ActionFSRead {
+			why = record.ReasonWriteOutsideContract
+		}
+		return agent.EvalResult{Verdict: agent.VerdictRefused, Rule: agent.BuiltinOtherTTY, Reason: why}
+	}
 	if res, ok := evalDenyWrite(rt, kind, path); ok {
 		return res
 	}

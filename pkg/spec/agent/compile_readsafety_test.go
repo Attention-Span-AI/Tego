@@ -563,7 +563,7 @@ func TestDenyWriteProbeCost(t *testing.T) {
 		rt := compileWithin(t, f, f.load(contract), 10*time.Second)
 		t.Logf("compiled in %s", time.Since(start))
 		want := filepath.Join(work, "r0", deepValue(0))
-		if !slices.ContainsFunc(rt.DenyWrite, func(r FSRule) bool { return r.Path == want }) {
+		if !slices.ContainsFunc(ordinaryDenyWriteRows(rt), func(r FSRule) bool { return r.Path == want }) {
 			t.Errorf("a hooks directory that exists, however deep, is still in the set")
 		}
 	})
@@ -654,7 +654,7 @@ func TestDenyWriteCutSearchStillWarns(t *testing.T) {
 		}
 	}
 	rt, ds := f.compile(f.load(contract))
-	if len(rt.DenyWrite) != 0 {
+	if len(ordinaryDenyWriteRows(rt)) != 0 {
 		t.Fatalf("the plant is past the budget, so the repository is not reached: %v", denyWritePaths(rt))
 	}
 	if !warned(ds, "ran out of its budget") {
@@ -1180,7 +1180,7 @@ func TestDenyWriteUnreadableFiles(t *testing.T) {
 				t.SkipNow()
 			}
 			rt, ds := compileDiagsWithin(t, f, f.load(contract), 10*time.Second)
-			if len(rt.DenyWrite) != 0 {
+			if len(ordinaryDenyWriteRows(rt)) != 0 {
 				t.Fatalf("the .git file was read after all: %v", denyWritePaths(rt))
 			}
 			if !cutBy(ds, "wt/", "named nothing beneath it, but it could not read "+dotgit+" ("+u.why+")") {
@@ -1205,7 +1205,7 @@ func TestDenyWriteUnreadableFiles(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = os.Chmod(team, 0o755) })
 		rt, ds := compileDiagsWithin(t, f, f.load(contract), 10*time.Second)
-		if len(rt.DenyWrite) != 0 {
+		if len(ordinaryDenyWriteRows(rt)) != 0 {
 			t.Fatalf("the directory was searched after all: %v", denyWritePaths(rt))
 		}
 		if !cutBy(ds, "src/", "it could not read "+team+" (a directory it could not open: permission denied)") {
@@ -1220,7 +1220,7 @@ func TestDenyWriteUnreadableFiles(t *testing.T) {
 		procSelfFD = filepath.Join(f.root, "no-proc", "self", "fd") + "/"
 		t.Cleanup(func() { procSelfFD = saved })
 		rt, ds := compileDiagsWithin(t, f, f.load("version: 0\nname: t\ncommand: [\"python\"]\nfs:\n  write: [\"src/\"]\n"), 10*time.Second)
-		if len(rt.DenyWrite) != 0 {
+		if len(ordinaryDenyWriteRows(rt)) != 0 {
 			t.Fatalf("without /proc nothing is resolved, so nothing is in the set: %v", denyWritePaths(rt))
 		}
 		if !cutBy(ds, "src/", "/proc is not mounted") {

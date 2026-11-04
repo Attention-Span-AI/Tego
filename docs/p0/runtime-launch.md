@@ -827,7 +827,9 @@ Descriptor traversal streams batches of 128 entries, refuses beyond 8,192 scanne
 five-second budget between entries; the budget does not interrupt an individual kernel call. Each fdinfo
 payload is limited to 4,096 bytes, with one extra byte read to detect overrun. Unavailable or exhausted proof
 returns `ErrNotLockHolder`. The exact-device global path preserves control of a non-dumpable launcher when
-its target fdinfo is inaccessible (`TestLockHolderProofForNonDumpableLauncher`). If a filesystem's printed
+its target fdinfo is inaccessible and the global read contains its row (`TestLockHolderProofForNonDumpableLauncher`).
+If pagination omits that row while target descriptor inspection is denied, the request is refused for that
+observation too; this is unavailable ownership proof, not evidence that the launcher died. If a filesystem's printed
 superblock device differs from the actual `stat` device and target descriptor inspection is also denied,
 ownership cannot be proved and the request is refused; that refusal does not mean the launcher died.
 

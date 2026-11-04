@@ -263,7 +263,7 @@ BASE_VERSION=4
 # The python packages are the host's own (python_host_pkgs), not a version named here.
 HOST_PKGS="dash bash coreutils coreutils-from-uutils rust-coreutils gnu-coreutils findutils grep sed
 mawk util-linux mount procps iproute2 libc-bin kmod python3-minimal $(python_host_pkgs)
-bubblewrap openssl libssl3t64 bpftool strace git"
+bubblewrap openssl libssl3t64 bpftool strace git apparmor"
 # Names that live outside any package list (update-alternatives links) or that must exist.
 HOST_EXTRA="/usr/bin/awk /usr/bin/python3 /usr/bin/sh /etc/ld.so.conf /etc/ld.so.conf.d /etc/os-release
 /usr/lib/os-release /etc/ssl/openssl.cnf /usr/lib/ssl"

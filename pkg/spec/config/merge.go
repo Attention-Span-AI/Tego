@@ -44,6 +44,7 @@ func (g merger) apply(m *Machine, d *layerData) {
 	g.capture(&m.Capture, d.capture)
 	g.limits(&m.Limits, &d.limits)
 
+	setting(&m.ServePort, d.servePort, g)
 	setting(&m.LedgerRoot, d.ledgerRoot, g)
 	setting(&m.Prices, d.prices, g)
 	setting(&m.Profiles, d.profiles, g)

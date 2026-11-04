@@ -83,34 +83,51 @@ func (s *Service) serveStdio(nc net.Conn) {
 		_ = nc.Close()
 		return
 	}
+	if _, exists := s.pending[pid]; exists {
+		s.mu.Unlock()
+		refuse("this shim already has a pending start")
+		return
+	}
 	s.pending[pid] = pendingStart{server: hello.Server, shim: shim}
 	s.conns[c] = struct{}{}
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
 		delete(s.conns, c)
-		if s.pending[pid].shim == shim {
-			delete(s.pending, pid)
-		}
 		s.mu.Unlock()
+		s.clearPending(shim)
 		c.close()
 	}()
 	if err := fw.Write(Frame{OK: true}); err != nil {
 		return
 	}
+	bound := false
 	for {
 		f, err := fr.Read()
 		if err != nil {
 			return
 		}
 		switch {
-		case f.Started != 0:
-			// The start has been made (proc.Start returns after the exec): a later start by this shim is not relayed.
-			s.mu.Lock()
-			if s.pending[pid].shim == shim {
-				delete(s.pending, pid)
+		case f.Stage != nil:
+			if bound || !s.prepareStage(shim, *f.Stage) {
+				_ = fw.Write(Frame{Error: "server stage could not be prepared"})
+				return
 			}
-			s.mu.Unlock()
+			if err := fw.Write(Frame{OK: true}); err != nil {
+				return
+			}
+		case f.Child != 0:
+			if bound || !s.bindChild(shim, f.Child) {
+				_ = fw.Write(Frame{Error: "server child could not be pinned"})
+				return
+			}
+			bound = true
+			if err := fw.Write(Frame{OK: true}); err != nil {
+				return
+			}
+		case f.Started != 0:
+			// The shim waited for the stage's close-on-exec control socket: the server exec has passed the gate.
+			s.clearPending(shim)
 		case f.C != nil:
 			c.clientLine(f.C)
 		case f.S != nil:

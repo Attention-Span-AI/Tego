@@ -884,12 +884,11 @@ func adoptNotice(t adopt.Process, bounded bool, rec agent.RecordMode) string {
 	held := "  holds: nothing. No rule refuses anything.\n"
 	if bounded {
 		held = "  holds: the contract's file rules and exec allow-list (programs, never arguments), through the kernel\n" +
-			"  decision plane, from the attach on. Not what only a seccomp filter refuses: System V IPC (even without\n" +
+			"  decision plane, from the attach on. The plane refuses CAP_SYS_ADMIN in every user namespace, holding\n" +
+			"  the mount topology (mount APIs and mount-namespace changes), and other uses of that capability.\n" +
+			"  Not what only a seccomp filter refuses: System V IPC (even without\n" +
 			"  ipc: true), socket families outside the network rules (AF_VSOCK, AF_PACKET, SCTP...), io_uring, openat2,\n" +
-			"  open_by_handle_at, clone3, the terminal-input ioctls, and the mount topology: new mount or user namespaces,\n" +
-			"  setns and mount(2), so an agent able to mount (root, or through a user namespace) can bind mount a\n" +
-			"  directory where the file rules' paths do not reach it, or mount an overlay that reads a deny_read directory\n" +
-			"  (a gap says so).\n"
+			"  open_by_handle_at, clone3, the terminal-input ioctls (a gap says so).\n"
 	}
 	recorded := "every program it starts, every file it opens, every connection it makes"
 	switch rec {

@@ -441,6 +441,14 @@ func TestCodexContractFilled(t *testing.T) {
 // stops the unit named from that stage and never tego-demo-agent, which may be a user's own always-on demo.
 func TestResetLeavesTheDefaultUnitAlone(t *testing.T) {
 	dir := t.TempDir()
+	stage := filepath.Join(dir, "stage")
+	if err := os.MkdirAll(stage, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The ownership marker setup writes; reset never adopts an unmarked folder.
+	if err := os.WriteFile(filepath.Join(stage, ".tego-demo-stage"), []byte(stage+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	log := filepath.Join(dir, "systemctl.log")
 	stub := filepath.Join(dir, "bin")
 	if err := os.MkdirAll(stub, 0o755); err != nil {
@@ -454,7 +462,7 @@ func TestResetLeavesTheDefaultUnitAlone(t *testing.T) {
 		_ = os.Remove(log)
 		cmd := exec.Command("sh", "demo.sh", "reset")
 		cmd.Env = append([]string{"PATH=" + stub + ":/usr/local/bin:/usr/bin:/bin", "HOME=" + dir,
-			"DEMO_STAGE=" + filepath.Join(dir, "stage")}, extra...)
+			"DEMO_STAGE=" + stage}, extra...)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("demo.sh reset: %v\n%s", err, out)
 		}
@@ -846,6 +854,9 @@ esac
 	t.Cleanup(func() { _, _ = demo("reset") })
 	// An earlier Act 2 left its run for Act 3.
 	if err := os.MkdirAll(stage, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stage, ".tego-demo-stage"), []byte(stage+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(stage, "last-run"), []byte("r-earlier\n"), 0o644); err != nil {

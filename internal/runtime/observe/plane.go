@@ -281,6 +281,10 @@ func planeFSKind(hook uint16) (Kind, bool) {
 // (planeFS); the object as a file operation's, by its directory's (dev, ino) and final component through the rule
 // table's directory index, since the plane has no bpf_d_path. A rename or a link names its source alone.
 func (r *Recorder) handlePlaneFS(rec *Record) {
+	if rec.Plane.Hook == bpf.PlaneHookNumber("unix_may_send") {
+		r.handleBuiltinPeer(rec)
+		return
+	}
 	kind, ok := planeFSKind(rec.Plane.Hook)
 	if !ok {
 		r.gap(GapMalformedRecord, 1)

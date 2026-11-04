@@ -33,10 +33,12 @@ the exec is refused `command-unresolved`, in a run with command rules. The count
 of the script: a value reading can take the script itself, that reading still has no script, and the script's own
 flags are then read both ways too. So one such option in front of the script with seven bare flags after it reaches
 the bound, as do six in front with none after; an `=value` spelling does not count (docs/GAPS.md, C-section row on
-interpreter options). The node row reads node's options as node 20.19.4 does, every option and alias of its table and
-V8's common flags (see node below), so node reaches the bound only through a spelling the row leaves out: an option a
-later node adds, another V8 flag or V8 spelling (`-expose-gc`, `--noexpose-gc`), `-pe`, or one of the three node 20
-no-ops. `--trace_exit` is no such spelling: node reads `_` as `-`, and so does the row.
+interpreter options). For exactly pinned builds, the node row inventories Node 20.19.4 and 22.21.1, including
+their full canonical V8 option lists (see node below). Only unknown spellings fork: version-dependent `--stack-trace-limit`, three legacy no-op names,
+alternate V8 spellings (`-expose-gc`, `--noexpose-gc`), or future option spellings **within an attested build**.
+An unknown executable build/version uses the master Node row, including its bounded two-way readings,
+plus the universal raw scans below. Unknown attached options retain the documented preload residual.
+`--trace_exit` is no such spelling: Node reads `_` as `-`, and so does the row.
 
 ## The rows
 
@@ -49,7 +51,7 @@ no-ops. `--trace_exit` is no such spelling: node reads `_` as `-`, and so does t
 | go | probed | go1.27.1 | `go` | `-C dir` | build, run, test, install, get, list, vet, generate, clean, env, fmt, doc, fix, bug, version, tool, help; mod, work and telemetry with a second level; Go's flag package stops at the first operand, except `go test`, which reads its flags after the package list too, up to `-args` or `--` | `GOFLAGS` |
 | systemctl | probed | systemd 257 | `systemctl`; argv[0] `reboot`, `poweroff`, `halt`; the file being systemctl, an argv[0] that contains one of them (`xrebootx`, systemd's `invoked_as` is strstr) | getopt_long options anywhere around the verb | the verb is the first operand; condrestart, condreload, condstop and force-reload fold onto their verbs | `shutdown(8)` is not covered |
 | python | probed | 3.13.7 | `python`, `python3`, `python3.N`, `python2`, `pypy3` | its own options; `-m module` and `-c code` end them | interpreter: `-m` through the module table (pip, pip3 → pip; twine, pipx, poetry, uv), else the first operand's basename | `-c` code (R1) |
-| node | probed | 20.19.4 | `node`, `nodejs` | every option and alias of node 20.19.4 by its type, `_` read as `-`, and `--no-<name>`; V8's options as flags; `-e` takes code, and `-p` a word after it; `--prof-process` and `--trace-events-enabled=v` end the options (node, below) | interpreter: entry scripts (npm-cli.js, npx-cli.js, pnpm.cjs, yarn.js), else the script's basename, of its path cleaned and with `.js` too; the modules `-r`, `--import`, `--loader` and `--test-reporter` name, read as scripts, and refused where node reads the module's name as a URL; `--build-snapshot-config` and `--experimental-sea-config` refused | `-e` and `-p` code (R1); `NODE_OPTIONS`, also from an `--env-file` file (node, below) |
+| node | probed | 20.19.4, 22.21.1 | `node`, `nodejs`, numeric `node-N` / `node-N.N.N` | exact pinned builds: the versioned union by Node argv arity (conflicts unknown); unknown builds: master row plus universal scans; `_` read as `-`, and `--no-<name>`; all inventoried canonical V8 names as flags; `-e` takes code, and `-p` a word after it; `--prof-process` and `--trace-events-enabled=v` end the options (node, below) | interpreter: entry scripts (npm-cli.js, npx-cli.js, pnpm.cjs, yarn.js), else the script's basename, of its path cleaned and with `.js` too; the modules `-r`, `--import`, `--loader` and `--test-reporter` name, read as scripts, and refused where node reads the module's name as a URL; `--build-snapshot-config`, `--experimental-sea-config` refused on both paths; pinned inventory also refuses `--run`, `--entry-url`, non-isolated tests; raw config/dotenv prefixes refuse on every build | `-e` and `-p` code (R1); `NODE_OPTIONS` from the environment (env-file options refuse; node, below) |
 | sh, bash, dash | probed | dash 0.5.12, bash 5.2 | `sh`, `bash`, `rbash`, `dash` | clusters, `+o`; a lone `-` ends the options, as `--` does; `-c` and `-s` are opaque | interpreter: the script's basename | `-c` code (R1) |
 | zsh, ksh | documented | 5.9, 93u+m | `zsh`, `ksh`, `mksh`, `ksh93` | as sh | as sh | as sh |
 | perl, ruby | documented | 5, 3 | `perl`, `perl5`, `ruby` | own options, perl's `-I` with a separate value too; `-e` is code | interpreter: the script's basename | `-e` code (R1) |
@@ -129,8 +131,17 @@ A tool with no row is read by the generic fallback:
 
 ## node
 
-- **How node reads its options**, as node 20.19.4's OptionsParser::Parse does (src/node_options-inl.h, shipped in
-  libnode-dev): up to the first token that is not an option, which is the script, or up to `--`. Only a `--` option
+The option details below describe the pinned inventory unless a paragraph explicitly discusses the
+master compatibility row. Build selection and the universal scans apply as specified below.
+
+`node-22`, `node-20.1` and other numeric versioned names now select this row, on pinned
+and unknown builds alike. Master sent those names to the generic fallback: for example,
+`node-22 b.js` under `deny: b.js` now refuses where master had no command match;
+`node-22 a.js` under `allow: a.js` now matches that allow. Master-equivalence below concerns
+the names master recognized as Node (`node` and `nodejs`), not this added name dispatch.
+
+- **How node reads its options**, as Node 20.19.4 and 22.21.1's OptionsParser::Parse do
+  (src/node_options-inl.h): up to the first token that is not an option, which is the script, or up to `--`. Only a `--` option
   splits an `=value` off. `_` in an option's name is `-` (`--build_snapshot` is `--build-snapshot`, `--no_print` is
   `--no-print`), and then `--no-<name>` is `<name>` negated. Node expands its aliases next, some of which insert tokens,
   and an option it does not know goes to V8 and takes no token of node's. It neither clusters letters nor takes a
@@ -138,7 +149,7 @@ A tool with no row is read by the generic fallback:
   below), and `TestNodeRowTable` holds it to node's own tables: every option of node's options binding with its type,
   every alias by its form, and every spelling of the row's own in node's tables or V8's (`node --v8-options`). Until
   2026-11-02 the row read a `_` spelling as an option it did not list, both ways.
-- **Options** are node 20.19.4's own, typed as its options binding types them: a string, list, number or host:port
+- **Options** are the compatible union of both installed versions, typed as their options bindings type them: a string, list, number or host:port
   option takes the next token or an attached `=value`, and node refuses one followed by a token that starts with `-`
   (`requires an argument`); a boolean or a no-op takes none. Node's plain aliases are spellings of their options
   (`--loader`, `--debug-port`, `--report-directory`, `--security-reverts`, `--enable-network-family-autoselection`,
@@ -152,8 +163,8 @@ A tool with no row is read by the generic fallback:
   `{--trace-event-categories, v8,node,node.async_hooks}`: written bare it is a flag, since the inserted token is the
   categories' value, and written with `=v` node takes the categories from v, leaves the inserted token unread, and that
   token, being no option, ends node's options (`node --trace-events-enabled=v -x a.js` loads `-x`, probed;
-  `Opt.EndsAttached`). Until 2026-11-02 the row read node's options on past both. `-pe` is `--print --eval`; the row
-  leaves it out, which only over-refuses (the token after it is code, never a script).
+  `Opt.EndsAttached`). Until 2026-11-02 the row read node's options on past both. `-pe` is exactly `--print --eval`;
+  `Syntax.ClusterWords` permits that exact cluster without accepting other clusters or attached short values.
 - **Code**: `-e` and `--eval` take the next token as code. `-p` and `--print` are a boolean, and node's alias `--print
   <arg>` is `-pe`, `--print --eval <arg>`: a token after them that is not empty and does not start with `-` is `-e`'s
   code, and the row reads it as `-e`'s too (`Opt.WordTo`), so `deny: [node -e *]` refuses `node -p x`. Followed by an
@@ -181,12 +192,78 @@ A tool with no row is read by the generic fallback:
 - **V8's options are flags**, whatever V8's type: node hands an option of V8's to V8 and leaves the next token alone,
   and V8 takes a value only from the options node handed it, never the script. So `node --max-old-space-size --require
   ./x.js -0 app.js` runs app.js with -0 as V8's value. Until 2026-11-02 the row read `--max-old-space-size` and
-  `--stack-size` as taking the next token, which read x.js as the script there. The row lists the V8 options node lists
-  and V8's common flags (`--allow-natives-syntax`, `--trace-gc`, `--no-opt` and the rest).
-- **Left out**, and so read both ways: `--experimental-specifier-resolution`, its alias
-  `--es-module-specifier-resolution`, and `--http-parser`, no-ops in node 20 that took a value in an older node; `-pe`;
-  V8's other flags, and V8's own spellings of its flags (`-expose-gc`, `--noexpose-gc`); and what a later node adds.
-  The row is node 20.19.4's: an option whose kind a later node changed would be read as node 20 reads it.
+  `--stack-size` as taking the next token, which read x.js as the script there. The row lists the union of canonical names
+  from both binaries' full `--v8-options` output.
+  **Exception:** `--stack-trace-limit` is a V8 option in Node 20 but a native integer option in Node 22;
+  its bare spelling stays unknown and forks. Node 22 rejects its separate-value spelling at the
+  subsequent V8 validation stage; `--stack-trace-limit=N` works in both versions and reads one way.
+  **Contract compatibility change:** master accepted `allow: node --stack-trace-limit=5 a.js`;
+  it now fails compilation, "row node does not list the option". The conflicting option is
+  unknown to the contract grammar, so no predicate for it can be proved. This is distinct from
+  CLI dispatch: attached `=N` still reads one way at run time, but a constrained Node allow
+  requiring an unlisted option refuses `exec.args[node]`. Bare runtime spellings retain both
+  arity readings on pinned builds; the unknown-build row keeps master's flag reading.
+- **Left unknown**, and so read both ways: `--experimental-specifier-resolution`, its alias
+  `--es-module-specifier-resolution`, and `--http-parser` (legacy no-ops with historical value arities);
+  bare `--stack-trace-limit` (a measured arity conflict between 20 and 22); alternate V8 spellings
+  (`-expose-gc`, `--noexpose-gc`); and future additions. Past 16 readings the dispatch fails closed,
+  including after code: an unknown could override code. Once a reading finds its entry script, every
+  subsequent token belongs to that script's **main-parser** argv and cannot fork that reading.
+  The pre-scanners below are an exception: a script argument can still load code. Neither `-e`, `-p`, `-c`,
+  `-i`, `--test` nor `--watch` is treated as a generic option terminator: Node still reads options up
+  to the entry operand. `--` ends options; `-` selects stdin and ends Node's option reading too.
+- **Build selection and universal pre-scanners (round 3, 2026-11-03).** Only the two standalone
+  Linux x64 executable hashes in `node_builds_generated.go` select the full 20.19.4/22.21.1
+  inventory. The supervisor hashes the walk's reopened regular-file descriptor, verifies its
+  identity and unchanged size/mtime/ctime, and bounds hashing at 256 MiB. A process-local FIFO
+  cache holds at most 64 digests keyed by `(dev, ino, size, mtime, ctime)` (both timestamps
+  include nanoseconds). Concurrent misses for a key share one hash outside the cache mutex.
+  Hits and waiting callers re-stat their own reopened descriptor before accepting the digest;
+  failed or unstable reads are not retained. Stable unrecognized digests are cached too.
+  A same-inode rewrite invalidates the entry through ctime even if size and mtime are restored.
+  No command rules means no head/attestation request and no hash. Any command rule can name a
+  Node entry script, so attestation is not skipped merely because no rule literally names node.
+  A cold/evicted/changed file still hashes synchronously in a notification worker; cache churn
+  can still consume that bounded work, and no background worker is introduced. A digest miss,
+  unreadable/changed file or absent attestation selects **the master Node row**, preserved from
+  commit `142497e8742906281a5c517af5b5254b9d6e180a` in `node_fallback.go`, plus the raw scans
+  below. Its unknown options retain both readings, bounded at 16; past the bound they fail closed.
+  Round 2's unconditional `command-unresolved` on an unknown build is removed: an unknown build
+  must not add refusals over master for `node`/`nodejs` except for these scans. In particular ordinary distro Node,
+  nvm patch versions, arm64 and Node in a Lima VM keep master's command behavior.
+  No process is started to identify a binary; neither reported nor embedded version strings
+  select the inventory. This host's small shared-libnode `/usr/bin/node` is unpinned because
+  hashing its launcher does not identify its library. Node 18/24/25 are also unknown, regardless
+  of the review probes. A hash identifies a build, not every binary reporting that semver.
+  Selection is independent for the direct image, each shebang interpreter and a loader program;
+  duplicate invocations with different selected rows retain both interpretations. Raw scans run
+  before deduplication so every argv[0] is checked without duplicating ordinary shebang scripts.
+  Command patterns are compiled against the compatibility row too, preserving its option and
+  alias matching. An inventory-only allow predicate that master could not compile stays unproved
+  on this path and does not admit an exec. Compile-time facts (`compile --test` and own-command preflight) have no
+  attestation and use this same fallback; ordinary Node commands are no longer refused merely
+  for that absence. `node`, `nodejs`, and numeric `node-N` / `node-N.N.N` names use the Node row.
+  Arbitrarily renamed copies remain ADR 0048 R2. Hashing a descriptor adds no atomic kernel
+  check of the content the eventual exec loads: the userspace image/content race remains.
+
+  **On every Node build**, the config-file pre-scanner compares raw prefixes **anywhere in argv**, even after the entry
+  script, `--`, or stdin `-`: any token, **including argv[0]**, starting with `--experimental-config-file` or
+  `--experimental-default-config-file` makes the dispatch unlocatable. The separate value and
+  attached/prefix spellings all refuse. Underscores are not normalized by this scan. Node's
+  dotenv scan reaches past the entry script and stdin but stops at `--`; any raw `--env-file*`
+  token before that boundary refuses, including `--env-file-if-exists`. Their files can inject
+  `NODE_OPTIONS` preloads. All Node argv must therefore be read before settling an allow; an
+  unreadable suffix or a vector past the existing bound refuses `args-unreadable`. Ordinary
+  script flags continue to belong to the script and do not consume the ambiguity budget.
+- **Node 22 dispatch changes (pinned inventory).** `--permission` aliases the same boolean as Node 20's
+  `--experimental-permission`. New options with compatible arities are included even when absent in
+  the other version, which rejects them. `--entry-url` makes entry resolution URL-based, and
+  `--experimental-config-file` / `--experimental-default-config-file` can inject preloads from a file.
+  They are unlocatable and refused `command-unresolved`, even when no explicit script follows.
+  `--run` takes a package.json command name, not an entry-script path; it too fails closed rather
+  than pretending its value or next operand is the code that runs. `--experimental-test-isolation=none`
+  is refused too: with `--test`, it executes multiple operands or discovered tests in the current
+  process, outside the single-entry-script model. The `process` value keeps normal dispatch.
 - **Modules before the script.** Node runs each module `-r` (`--require`) or `--import` names before its script or code,
   in the same process, with the script's arguments (the ones past the first operand), and each `--loader` names in its
   hooks thread with none: `node -r /usr/share/nodejs/npm/bin/npm-cli.js app.js publish` and `node
@@ -218,10 +295,19 @@ A tool with no row is read by the generic fallback:
   library (R1). Cleaning changes a name only where the path ends in `.` or `..`, which python and the shells run as a
   directory or not at all, so every interpreter row reads its script that way. Until 2026-11-02 the row read the
   basename as written, so `node ./deploy.js/. publish` was not deploy.js and `node .../npm-cli publish` was not npm.
-- **Not read:** `NODE_OPTIONS`, from the environment or from a file `--env-file` (or `--env-file-if-exists`) names,
+- **Residuals, including unknown builds:** `NODE_OPTIONS` from the environment (raw env-file options
+  before the first `--` are refused on every build),
   which node 20 applies (probed), can name a module node preloads; node refuses `-i`, `-e`, `-p`, `--build-snapshot` and
-  `--prof-process` there, so it never changes which script argv names (ADR 0048 R3). A script named through a package's
-  metadata is not read either: a directory node runs by its package.json `main` or its index.js, a bare module name
+  `--prof-process` there, so it never changes which script argv names (ADR 0048 R3).
+  **Unknown builds also retain master's option-semantics residual:** an unknown attached `=value`
+  does not fork or identify a module loaded in process. On Node 24/25,
+  `node --test --test-global-setup=./b.js ./a.js` can load denied B in the parent process while
+  the resolver names and allows A. `node --test --test-isolation=none ./a.js ./b.js` can similarly
+  run both scripts in the parent while only A is identified. These are deliberately still open
+  for unknown builds; the bounded arity fallback does not establish future options' semantics.
+  This also includes inventory-only features absent from master, such as Node 22's
+  `--experimental-test-isolation=none`, when that build is unpinned.
+  A script named through a package's metadata is not read either: a directory node runs by its package.json `main` or its index.js, a bare module name
   resolved through a package's `exports`, or a name a loader's resolve hook maps (the loader is code, R1); these are
   R9's named entry points. `--snapshot-blob` without `--build-snapshot` runs the code a snapshot holds, which a `node
   --build-snapshot` line built and the decision read then. Node's other values name data or output (a policy, an OpenSSL
@@ -229,30 +315,75 @@ A tool with no row is read by the generic fallback:
   its value as a module or a script but those above (reviewed 2026-11-02 over every option node's internal modules read
   with getOptionValue, and the files its snapshot and single-executable builders read). docs/GAPS.md A2 covers what an
   allowed interpreter does in-process.
-- **Tests.** `TestNodeRowTable` holds the row to node's tables, as above; it fails only under node 20.19.4, the row's
-  version, and logs what differs under another. `TestNodeRowReadsWhatNodeLoads` holds the reading of each file node
-  loads, above, on lines probed against node, under `-short` too. Four differentials hold the row to what the installed
-  node runs, each through scripts that print their name and arguments when node runs them, as its main module, its
-  snapshot builder, or a module it loads first: wherever node runs a script, a deny entry naming it must refuse the
-  line, the dispatch must give it node's arguments, and no prefix of the line may be settled as anything but refused.
-  They run only under node 20.19.4 and skip under another node, as on a CI runner whose node is not pinned: another
-  node's table differs (a later node drops options the lines hold). `TestNodeRowSpellingsDifferential` runs every
-  spelling of every option the row lists, as written and with `_` for `-`, negated, with an attached value, and as a
-  letter, in front of a word and a script, and in front of a script whose name starts with `-`, which node runs only past
-  the end of its options; an option that checks its value gets one node accepts, a module option a module (and
-  `--test-reporter` `--test`), and a configuration option a file that names a script. `TestNodeRowCodeDifferential`
-  runs the code options' forms, alone and with `-i`, `--interactive=1`, `--build_snapshot`, `--no-interactive` and both
-  orders of `-i` and `--no-interactive`, before and after the code, in front of `a.js b.js`, `--title t a.js b.js` and
-  `-- a.js b.js`, and `--build-snapshot-config` and `--experimental-sea-config`. `TestNodeRowModulesDifferential` runs
-  each module option in front of each spelling of a module above (a path, without `.js`, with dot segments, a trailing
-  slash, absolute, a `file:` URL, `//localhost`, a query, a fragment, a `%` escape, a backslash, a space or tab, a
-  newline, `data:`, `node:`, a bare name, `#`, `\-x.js`) and the script in the spellings of a path.
-  `TestNodeRowGeneratedDifferential` runs seeded random lines of one to four units, each a mechanism of node's parser, a
-  module spelling or a spelling of a listed option, then a tail; it runs 300 lines by default, and was run over 60,000
-  lines and three seeds when the row was written and over 24,000 lines and four seeds on 2026-11-02
-  (`TEGO_NODE_DIFF_LINES`, `TEGO_NODE_DIFF_SEED`). Not run: the debugger's options, `--watch`, V8's perf options (they
-  write `/tmp/perf-<pid>.map`), `--abort-on-uncaught-exception`, and the options whose value is a file of another
-  format (a policy, an OpenSSL configuration) or `--snapshot-blob`'s.
+- **Inventory and proof (2026-11-03).** `scripts/node-options.py NODE20 NODE22` captures the installed
+  official standalone v20.19.4 and v22.21.1 Linux x64 binaries' `--help`, `--v8-options`,
+  `node -p 'JSON.stringify([...process.allowedNodeEnvironmentFlags].sort())'`, and the typed
+  `internalBinding('options').getCLIOptionsInfo()` options/aliases under `--expose-internals`.
+  The snapshots are `pkg/policy/execmatch/rows/testdata/node-v*.json`; `--check` reproduces them and
+  `node_v8_generated.go` and `node_builds_generated.go` byte for byte. Shared-libnode launchers are
+  rejected as pin inputs. Only these exact captured executable hashes select the expanded inventory;
+  it never invokes Node or trusts a reported version. The standalone builds are from Node's official
+  [20.19.4 distribution](https://nodejs.org/download/release/v20.19.4/) and
+  [22.21.1 distribution](https://nodejs.org/download/release/v22.21.1/). Their **bin/node** SHA-256
+  digests (not the archive digests) are:
+
+  | Version / build | Executable SHA-256 |
+  | --- | --- |
+  | 20.19.4 Linux x64 | `43d6cf63f2a460b463eba6b19df5e9a259771c56f11b5130e04178a15bb99490` |
+  | 22.21.1 Linux x64 | `92181daccf61361e7c54d6404a3e2c2307a916d076492e3c0b388e6e5f86a854` |
+
+  Arity references are the [20.19.4 CLI](https://nodejs.org/download/release/v20.19.4/docs/api/cli.html),
+  [22.21.1 CLI](https://nodejs.org/download/release/v22.21.1/docs/api/cli.html), and their
+  [20 parser](https://github.com/nodejs/node/blob/v20.19.4/src/node_options-inl.h) /
+  [22 parser](https://github.com/nodejs/node/blob/v22.21.1/src/node_options-inl.h) for hidden aliases,
+  V8 forwarding and underscore/negation semantics. Inspector optional values are proved by the
+  `[=[host:]port]` syntax and the `--inspect*=` aliases: bare inspector options never consume a separate value.
+  The raw pre-scanner exceptions are implemented in Node 22's
+  [node_config_file.cc](https://github.com/nodejs/node/blob/v22.21.1/src/node_config_file.cc) and
+  [node_dotenv.cc](https://github.com/nodejs/node/blob/v22.21.1/src/node_dotenv.cc), called with the full
+  argument vector in [node.cc](https://github.com/nodejs/node/blob/v22.21.1/src/node.cc).
+  There are **1,028 canonical options: 954 flags, 69 required values, four attached-only optional
+  values, and one next-word option in the pinned inventory**. Plain aliases are additional spellings of these options;
+  exact `-pe`, `--`, and stdin `-` are parser forms rather than additional canonical options.
+- **Attestation cache proofs.** `TestNodeBuildCacheRewrite` rewrites a real file in place with
+  identical size and restored mtime, and verifies the digest changes through ctime. Key-field,
+  four-caller coalescing, FIFO bound, failed-read retry and no-command-rule tests cover reuse.
+  `BenchmarkNodeExecImage` measures the pinned Node 22 walk; `BenchmarkNodeSupervisorPool4`
+  measures batches of four exec notifications through the actual four-worker `Loop.Run` pool,
+  with real fd walks and argv reads but synthetic notification transport (no seccomp ioctl or
+  JavaScript launch). `BenchmarkNodeSeccompPool4` also measures four real parallel Node
+  processes through a real seccomp listener and the four-worker pool, including startup and
+  exit, with a TSYNC filter covering all target threads. Cold misses still cost a full hash;
+  the cache adds no kernel content pin.
+- **Tests.** `TestNodeRowTable` checks the versioned union offline, all native arities, alias expansions,
+  and V8 coverage. `TestNodeOptionDenyContract` checks every known spelling against allow A / deny B,
+  with B positioned to expose either arity error, attached values, negations, code overridden after
+  its value, script-owned flags, and every staged prefix. `TestNodeUnknownStillFailsClosed` holds
+  unknown/version-conflicting readings and overflow, plus C49's Jest and code regressions.
+  `TestNodeInventoryDifferential` checks the installed inventories exactly on either pinned version
+  and runs real scripts that print their own paths, checking dispatch, denial and staged reads;
+  it skips only without Node. The existing code, spelling, module and generated differentials now
+  run on both pinned versions. Arbitrary V8 diagnostic flags are checked against the complete typed
+  inventories and offline arity contracts; only a safe sample is executed. Skips are recorded in
+  both unit and integration skip lists. The module, URL, snapshot, path-cleaning and code-override
+  adversarial cases from the earlier reviews remain in `node_test.go` and `more_test.go`.
+  `TestNodeUnknownBuildMatchesMaster` compares verdicts and script interpretations against a
+  frozen master-row oracle, including code, aliases, arities, attached unknowns and overflow.
+  `TestNodeUnknownBuildNodePatterns` checks compatibility option matching; `TestNodeInventorySelection`
+  proves unknown builds cannot borrow full-inventory arities. `TestNodeScansEveryBuild` and
+  `TestNodeReviewPrescans` reproduce the exact pre-scan vectors, argv[0], stdin, `--`, suffix/prefix
+  spellings and staged reads on known and unknown builds. `TestNodeReviewDifferential` runs those vectors on the installed Node and
+  optional distributions under `TEGO_NODE_REVIEW_DIR`; probing 18/24/25 never pins them. It requires
+  B to execute where the reviewed runtime supports the spelling (24.22.2 rejects the default-config
+  `=1` form, while 22/25 execute B), then requires the resolver to refuse the raw scans.
+  The pinned CLIs must also reject the Node 24/25-only reviewer spellings as `bad option`,
+  before JavaScript runs; these are not added to the arity inventory.
+  The Node 24/25 attached-option cases explicitly record B executing with a master-compatible
+  allow on unknown builds, rather than claiming those residuals are closed. `TestNodeImageBuildPin`
+  exercises the supervisor's real opened-file producer against pinned builds, unknown builds,
+  forged version strings and wrong-inode reads. CI's `node-options` job installs 20.19.4 and
+  22.21.1 using a full-SHA-pinned setup action and checks pass events for all live differentials;
+  a skipped test fails that job.
 
 ## Adding or changing a row
 

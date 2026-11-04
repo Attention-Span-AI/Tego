@@ -67,14 +67,13 @@
     feed = rows && rows.dataset.rows ? rows : null;
   }
   findFeed();
-  var sig = d.sig, rev = d.rev, MAX = 200;
+  var sig = d.sig, rev = d.rev, renderedSig = sig, renderedRev = rev, MAX = 200;
+  var regionRetry = 0, regionBackoff = 1000, MAX_REGION_BACKOFF = 30000;
   var backoff = 2000, poller = 0, every = 0, fetching = false, again = false, last = 0, feeding = false, feedAgain = false;
   var es = null, retry = 0;
   var navMode = false, navGen = 0, navigating = false; // a view change (place.js): kids merging it, its count, on its way
-
   function title(n) { document.title = (n > 0 ? '(' + n + ') ' : '') + d.title; }
   function conn(s) { body.setAttribute('data-conn', out ? 'out' : s); } // once signed out, it stays so
-
   // signedOut: a 401 means the dashboard restarted (each serve has a new token) or the session is gone. Following
   // stops (no stream, 2 s polling, region or row fetch: each could only fail again) and a banner says how to get back
   // in; its text is this constant only. One quiet check every 30 s notices a sign-in from another tab (the link sets
@@ -83,6 +82,7 @@
   function signedOut() {
     if (out) return;
     out = true;
+    if (regionRetry) { clearTimeout(regionRetry); regionRetry = 0; }
     hang();
     polling(0);
     conn('out');
@@ -111,17 +111,18 @@
       .catch(function () { /* not reachable yet: the next check asks again */ });
   }
   function gone(r) { if (r.status === 401) signedOut(); throw new Error(r.status); } // a failed answer
-
   function onState(s) {
     title(s.pending);
     var moved = s.rev !== rev;
-    if (s.sig === sig && !moved) return;
+    if (s.sig === sig && !moved) {
+      if ((renderedSig !== sig || renderedRev !== rev) && !regionRetry) refresh();
+      return;
+    }
     sig = s.sig;
     rev = s.rev;
     refresh();
     if (moved) { if (feed) more(); document.dispatchEvent(new CustomEvent('tego:moved')); } // and a page's own follower (logs.js)
   }
-
   function poll() {
     fetch('/status.json', { credentials: 'same-origin', cache: 'no-store' })
       .then(function (r) { if (!r.ok) gone(r); return r.json(); })
@@ -168,7 +169,6 @@
     poll(); // catch up at once, then follow the stream again
     connect();
   });
-
   // --- merging a fresh region into the page
   function key(n) { return n.nodeType === 1 ? (n.id || n.getAttribute('data-k') || '') : ''; }
   function selecting(el) {
@@ -250,7 +250,6 @@
     el.classList.add('live-new');
     setTimeout(function () { el.classList.remove('live-new'); }, 2600);
   }
-
   function shown() {
     var top = window.scrollY - (window.tegoRoom || 0) < 120 && !/[?&]before=/.test(location.search), out = [];
     document.querySelectorAll('[data-live]').forEach(function (el) {
@@ -268,7 +267,8 @@
     fetching = true;
     again = false;
     last = Date.now();
-    var gen = navGen;
+    var gen = navGen, wantSig = sig, wantRev = rev;
+    if (regionRetry) { clearTimeout(regionRetry); regionRetry = 0; }
     fetch(location.pathname + location.search, { credentials: 'same-origin', cache: 'no-store', headers: { 'X-Tego-Regions': have.join(',') } })
       .then(function (r) { if (!r.ok) gone(r); return r.text(); })
       .then(function (html) {
@@ -288,8 +288,14 @@
         // so the next Tab starts in the page (main:focus shows no ring).
         if (had && had !== body && !had.isConnected) document.querySelector('main').focus({ preventScroll: true });
         if (retry) setTimeout(refresh, 2000);
+        else { renderedSig = wantSig; renderedRev = wantRev; }
+        regionBackoff = 1000;
       })
-      .catch(function () { /* the next change asks again */ })
+      .catch(function () {
+        if (out || regionRetry) return;
+        regionRetry = setTimeout(function () { regionRetry = 0; refresh(); }, regionBackoff);
+        regionBackoff = Math.min(regionBackoff * 2, MAX_REGION_BACKOFF);
+      })
       .then(function () { fetching = false; if (again) refresh(); });
   }
 

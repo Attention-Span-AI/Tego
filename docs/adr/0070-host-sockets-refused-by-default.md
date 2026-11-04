@@ -234,3 +234,12 @@ under the unix-only state this ADR already refuses those sockets.
   accepts, which `sendtoconn`'s own connects made, and takes `EOPNOTSUPP` as proof only for `sendtostream` where the
   kernel's Fast Open client is off, never R10's refusal; with the connected IP stream relay replaced by a refusal it
   fails (0 bytes), where it passed before.
+
+
+### C40 implementation amendment — 2026-11-03
+
+ADR 0113's immutable refusals now precede this ADR's `host_sockets: true` and explicit Unix allows.
+A default contract retains this ADR's `host-sockets` policy for other host sockets and retains IP access,
+except local Tego control ports. Root tiers attach Unix programs even without `net:`; this does not
+attach IP restrictions to such a contract. See ADR 0113's implementation note for the relay, scopes,
+root plane, fail-closed ring restriction and remaining datagram/copy-path limitations.

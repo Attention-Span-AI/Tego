@@ -175,11 +175,21 @@ func TestSignalWatchRunShowsTheObservedKeyReadAndSend(t *testing.T) {
 	if got["/w/home/.ssh/id_rsa"] != 1 || got["/w/home/.config/telemetry/token"] != 1 || got["/w/codex-home/auth.json"] != 1 || len(got) != 3 {
 		t.Fatalf("secrets %v", got)
 	}
-	if d := s.Outbound[0]; d.Key != "127.0.0.1:8801" || d.Observed != 2 || !d.NearSecret {
-		t.Fatalf("first destination %+v, want 127.0.0.1:8801 observed twice, next to a secret", d)
-	}
-	if d := s.Outbound[1]; d.Key != "172.64.155.209:443" || d.NearSecret {
-		t.Fatalf("second destination %+v, want the API, not near a secret", d)
+	// A repeated successful API contact next to a read is also a warning when
+	// no reliable contract reference identifies it as the project's API.
+	for _, key := range []string{"127.0.0.1:8801", "172.64.155.209:443"} {
+		found := false
+		for _, d := range s.Outbound {
+			if d.Key == key {
+				found = true
+				if !d.NearSecret {
+					t.Errorf("%s lost its particular read/send association", key)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("missing destination %s", key)
+		}
 	}
 	if len(s.Groups) != 0 || s.BackgroundLines != 0 {
 		t.Fatalf("groups %+v in a run with no refusal", s.Groups)

@@ -19,31 +19,22 @@ import (
 // went (QA PW-1). The two share the closeness rule (secretpath.NearSeconds, NearLines) and the classifiers
 // (secretpath, syslookup); TestLeakRuleAgreesWithTheVerdict, in internal/control/rulesview, holds them equal.
 //
-// A destination counts as where a secret went when it got through at least once, the contract does not name it, it is
-// no system lookup, and its first contact lies within the window of a secret touch; and at least one open of a secret
-// for reading (secretpath.ReadOpen, the receipt's test) that went through lies within the window of the first contact
-// of a destination off the contract, any such open and not only the first: a run that opened the file an hour ago
-// and sends it now has it in hand now. A create, an unlink, a rename or a failed open is a touch and reads nothing. A
-// watched line carries no return, so such an open is one the run made or tried to make, and the words say so. Three
-// things differ from the page:
-//
-//   - A watched run is judged on its own, not against the enforced run of its pair, so a service the pair's contract
-//     names reads as off the contract here. That only withholds more.
-//   - A path is a secret by its name or by the rule that decided its line; the page also reads the contract's
-//     deny_read and ask_read entries, which the record does not hold.
-//   - A refused-only destination the page folds as background still counts toward "a secret next to a send" here.
-//     That too only withholds more.
+// A destination counts only when a particular successful send and a particular
+// successful secret read lie within both proximity bounds. Refused sends and
+// refused reads cannot supply either half. Repeated contacts are checked at their
+// own sequence and timestamp. The page also knows contract sensitive entries and
+// may borrow a reliably paired run's contract, which the standalone learner does not.
 //
 // Port 53 off this machine is judged here as on the page: only the engine's rule makes it a resolver, any server can
 // listen there, and tego allows the machine's resolvers on its own (SEMANTICS §2), so leaving a real one out of
 // net.allow costs nothing. The warning is its own (Leak.Resolver).
 //
-// What the rule cannot see: a place first reached before the read, and a secret renamed or linked to a name that says
-// nothing and read there.
+// What the rule cannot see: a secret renamed or linked to a name that says nothing and read there.
 //
-// The fold keeps only what the last NearLines lines can still match, so its memory is one entry per distinct secret
-// and destination (bounded by maxDistinct, as every other map here), never one per touch: a run that rereads a
-// secret a million times costs nothing.
+// The fold keeps only the contacts the last NearLines lines can still match.
+// Distinct secrets, destinations and associations are each capped by maxDistinct;
+// one confirmed witness per destination preserves warnings after association truncation.
+// Repeated reads and sends never retain a record per historical contact.
 
 // nearWindow is secretpath.NearSeconds as a duration.
 const nearWindow = secretpath.NearSeconds * time.Second
@@ -85,7 +76,7 @@ func (a leakLine) near(b leakLine) bool {
 type seenSecret struct {
 	path  string
 	first leakLine
-	near  map[*seenDest]bool // destinations first contacted next to an open of this path for reading
+	near  map[*seenDest]bool // destinations with a particular successful read/send pair
 }
 
 // seenTouch is one touch of a secret in the last NearLines lines.
@@ -99,9 +90,10 @@ type seenTouch struct {
 type seenDest struct {
 	key       string
 	first     leakLine
-	got       bool // a line for it was allowed or observed
-	contract  bool // a line for it carried a net[...] entry, or the resolver's rule
-	nearTouch bool // its first contact lies next to a secret touch
+	got       bool        // a line for it was allowed or observed
+	contract  bool        // a line for it carried a net[...] entry, or the resolver's rule
+	nearTouch bool        // a successful contact lies next to a successful secret read
+	witness   *seenSecret // one confirmed read, retained even when the association list fills
 }
 
 // sendAddr ties a destination's key to one address it was reached at.
@@ -110,14 +102,20 @@ type sendAddr struct {
 	addr netKey
 }
 
+type seenSend struct {
+	leakLine
+	dest *seenDest
+}
+
 // leakRule folds a run's lines for the rule above.
 type leakRule struct {
-	secrets   map[string]*seenSecret
-	dests     map[string]*seenDest
-	sends     map[sendAddr]bool
-	touches   []seenTouch // every touch in the last NearLines lines
-	freshDest []*seenDest // first contacts in the last NearLines lines
-	truncated bool
+	secrets     map[string]*seenSecret
+	dests       map[string]*seenDest
+	sends       map[sendAddr]bool
+	touches     []seenTouch // every touch in the last NearLines lines
+	recentSends []seenSend  // successful contacts in the last NearLines lines
+	links       int         // bounded associations, plus at most one witness per destination
+	truncated   bool
 }
 
 func newLeakRule() *leakRule {
@@ -127,7 +125,7 @@ func newLeakRule() *leakRule {
 // prune forgets what a line at seq can no longer be near. Lines arrive in order, so each list is oldest first.
 func (r *leakRule) prune(seq uint64) {
 	r.touches = dropBefore(r.touches, seq, func(t seenTouch) uint64 { return t.seq })
-	r.freshDest = dropBefore(r.freshDest, seq, func(d *seenDest) uint64 { return d.first.seq })
+	r.recentSends = dropBefore(r.recentSends, seq, func(d seenSend) uint64 { return d.seq })
 }
 
 func dropBefore[T any](s []T, seq uint64, at func(T) uint64) []T {
@@ -154,20 +152,31 @@ func (r *leakRule) touch(e *record.Event, p, rule string, read bool) {
 		r.secrets[p] = s
 	}
 	t := seenTouch{leakLine: at, secret: s, read: read}
-	for _, d := range r.freshDest {
-		if at.near(d.first) {
-			t.nextTo(d)
+	for _, send := range r.recentSends {
+		if at.near(send.leakLine) {
+			t.nextTo(r, send.dest)
 		}
 	}
 	r.touches = append(r.touches, t)
 }
 
-// nextTo marks a destination whose first contact lies next to this touch. The fold bounds what it marks: a first
-// contact is near only the touches of the lines around it.
-func (t seenTouch) nextTo(d *seenDest) {
+// nextTo keeps an association only after both particular operations succeeded.
+// Its global budget prevents repeated contacts from growing a quadratic map.
+func (t seenTouch) nextTo(r *leakRule, d *seenDest) {
+	if !t.read {
+		return
+	}
 	d.nearTouch = true
-	if t.read && t.secret != nil {
+	if d.witness == nil {
+		d.witness = t.secret
+	}
+	if t.secret != nil && !t.secret.near[d] {
+		if r.links >= maxDistinct {
+			r.truncated = true
+			return
+		}
 		t.secret.near[d] = true
+		r.links++
 	}
 }
 
@@ -188,10 +197,12 @@ func (r *leakRule) send(e *record.Event, proto, dst, host, rule string, got bool
 		}
 		d = &seenDest{key: key, first: at}
 		r.dests[key] = d
-		r.freshDest = append(r.freshDest, d)
+	}
+	if got {
+		r.recentSends = append(r.recentSends, seenSend{at, d})
 		for _, t := range r.touches {
 			if at.near(t.leakLine) {
-				t.nextTo(d)
+				t.nextTo(r, d)
 			}
 		}
 	}
@@ -246,27 +257,30 @@ func onPort53(dst string) bool {
 func (r *leakRule) judge() ([]*Leak, []string) {
 	off := func(d *seenDest) bool { return !d.contract && !routine(d.key) }
 	var secrets []*seenSecret
+	seen := map[*seenSecret]bool{}
 	for _, s := range r.secrets {
 		for d := range s.near {
 			if off(d) {
 				secrets = append(secrets, s)
+				seen[s] = true
 				break
 			}
 		}
 	}
-	if len(secrets) == 0 {
-		return nil, nil
-	}
-	slices.SortFunc(secrets, func(a, b *seenSecret) int { return compareLine(a.first, b.first, a.path, b.path) })
 	var dests []*seenDest
 	for _, d := range r.dests {
 		if d.got && d.nearTouch && off(d) {
 			dests = append(dests, d)
+			if d.witness != nil && !seen[d.witness] {
+				seen[d.witness] = true
+				secrets = append(secrets, d.witness)
+			}
 		}
 	}
 	if len(dests) == 0 {
 		return nil, nil
 	}
+	slices.SortFunc(secrets, func(a, b *seenSecret) int { return compareLine(a.first, b.first, a.path, b.path) })
 	slices.SortFunc(dests, func(a, b *seenDest) int { return compareLine(a.first, b.first, a.key, b.key) })
 	leaks := make([]*Leak, 0, len(dests))
 	for _, d := range dests {
@@ -440,7 +454,11 @@ func (p *Proposal) Warnings() []string {
 		}
 	}
 	// "or tried to": a watched line carries no return, so the record cannot say the open worked.
-	opened := "this run opened " + listNames(p.LeakSecrets) + " for reading, or tried to,"
+	names := listNames(p.LeakSecrets)
+	if len(p.LeakSecrets) == 0 {
+		names = "secret files whose names were omitted"
+	}
+	opened := "this run opened " + names + " for reading, or tried to,"
 	if len(withheld) > 0 {
 		out = append(out, fmt.Sprintf("%s next to a send to %s, which is how a leak looks in the record: the proposal leaves that out; add an address back only if you know it is the agent's own service",
 			opened, listNames(withheld)))

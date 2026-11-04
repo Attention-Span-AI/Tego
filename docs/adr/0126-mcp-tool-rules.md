@@ -63,7 +63,14 @@ The forwarder passes every header on as the agent sent it.
   the run): connects to `TEGO_MCP_RELAY`, says hello `{v, server, argv}`; the service admits it only when the TCP peer
   is in the run's cgroup subtree, its image is the launcher's own `tego` executable (dev and inode of
   `/proc/self/exe`) with argv `… mcp relay …`, the server is declared with `tools`, and argv after `--` equals the
-  declared command. Then the shim starts the server over two AF_UNIX socket pairs it alone holds (not pipes: a pipe
+  declared command. The shim prepares the fresh release socket and exact stage argv with the service before starting its
+  waiting `__mcp_server` child over AF_UNIX sockets. A constrained `mcp relay *` grant needs no broader user
+  permission: only that fresh-socket child can receive the conditional runtime stage grant. The shim reports the child's
+  PID and waits for the service to pin it with a process pidfd and acknowledge it before releasing it to exec the
+  server in place. A private close-on-exec control socket reports exec completion or failure; only then does the shim
+  send `Started`. A failed registration closes the admitted connection before killing/reaping the waiting child,
+  so a delayed registration cannot pin a reused PID (*amended 2026-11-03*, SEC06 and compatibility follow-up; protocol v3,
+  v1/v2 refused). The server channels are socket pairs it alone holds (not pipes: a pipe
   can be opened again through `/proc/<pid>/fd/N` with no ptrace attach, and a socket cannot) and is a byte pipe that forwards
   nothing on its own: every client line goes to the service, which answers `to_server` (allowed), `to_client` (a
   refusal) or holds it (ask); every server line goes to the service, which passes it (filtering the result of a
@@ -75,13 +82,17 @@ The forwarder passes every header on as the agent sent it.
   `mcp-tool-denied`, no tool (*amended 2026-11-01*: it may have been a call, and the record had no trace of it; the line past
   the bound got no answer either). If the control connection drops, the shim kills the server and exits non-zero.
 - **The gate** (`internal/runtime/supervisor`, new `Options.MCPRelayed`): an exec the supervisor already names as a
-  declared server's start (`mcpServerOf`) for a server with `tools` is allowed only when the caller's parent is a
-  shim the service admitted for that server and whose start is pending; otherwise it is refused, rule
-  `mcp[<name>].relay`, reason `exec-not-allowed`. So a start by anything but a child of an admitted shim is refused; the gate does not check that the child is the one the shim started (see Residuals). An
+  declared server's start (`mcpServerOf`) for a server with `tools` is allowed only for the exact child registered by
+  its admitted shim before release to exec. The service opens the child's pidfd while it waits, verifies its parent
+  at registration and the shim's admission again, then retains the pidfd until the one start is consumed or the
+  connection ends. At the gate the registered PID must match and the pidfd must still name a live process; no
+  parent-PID lookup authorizes an exec. An unrelated child cannot consume the pending start, and a dead child or
+  unreadable/closed pidfd fails closed. Otherwise the exec is refused, rule `mcp[<name>].relay`, reason
+  `exec-not-allowed` (*amended 2026-11-03*, SEC06). An
   argv the supervisor could not read whole names no server but may still be the declared start, since a fault stops its
   read and not the kernel's copy: when the part read could be a declared vector the relay is asked of each such server,
-  and without its word the exec is refused, by that server's rule, or `args-unreadable` when several could be it. A NULL
-  or empty argv reads as `[""]`, as the kernel gives it, so it is the start of a server declared with no arguments.
+  and without its word the exec is refused, by that server's rule, or `args-unreadable` when several could be it. A NULL or empty argv reads as `[""]`, as the kernel gives it, so it is the
+  start of a server declared with no arguments (*amended 2026-11-01*).
 - **HTTP** (`url` servers with `tools`): compile no longer derives the `net.allow` entry for the URL (agent-contract
   R16a's derived rule). Under a `net:` section that does not itself admit the URL, the agent's only route is the relay.
   With no `net:` section every destination is admitted, the URL included, so the agent can reach the server around
@@ -139,12 +150,14 @@ the import-direction tests forbid `internal/runtime` → `internal/check`.
 ## Security argument
 
 **The relay.** (1) Decisions are made in the launcher, outside the run, from the contract and an overlay the agent
-cannot write; the in-run shim is Tego's own static binary, and it forwards only what the service says. (2) The agent
-cannot go around it under a `net:` section that does not admit the URL: an HTTP server's URL is no longer derived into
-the run's rules, and a stdio server's declared start is refused unless an admitted shim is its parent. Admission proves a
+cannot write; the in-run shim is Tego's own static binary, and it forwards only what the service says. (2) The gate
+refuses a stdio server's declared start unless it is the admitted shim's pre-registered, pidfd-pinned child. An HTTP
+server's URL gets no derived network grant; direct access is refused only when the run's `net:` rules do not admit
+that URL. Neither property denies the attach authority described in C50. Admission proves a
 process holds the connection's socket, not that it wrote the hello, so the gate looks again as the server starts: the
-parent is the admitted process by its start time, with tego's image and the shim's argv, holds the admitted socket, and
-holds no other TCP socket. A shim dials one connection, so a shim the agent started with the socket inherited and a
+parent is the admitted process by its start time, with tego's image and the shim's argv, holds the admitted socket with CLOEXEC set, and
+holds no other TCP socket. The shim's own dial sets CLOEXEC; an inherited descriptor cannot retain it across exec,
+so it cannot register a forged child before the shim has dialled its real connection (SEC06). A shim dials one connection, so a shim the agent started with the socket inherited and a
 listener of its own in `TEGO_MCP_RELAY` shows up as a second one, and a pending start an open connection kept past the
 shim's death fails the start time. (3) A held call waits for a person on the broker the Approvals page
 answers; loosening needs an acknowledgement bound to its preview and is refused from inside a run. (4) Every
@@ -156,7 +169,9 @@ ran. A running relay now costs the run that handover, as command rules do, and w
 `net:` section compile warns that the agent can reach it around the relay); the gate recognises the declared command line exactly (the rule that already names a server's start),
 so another spelling of the same server is not the server (deny it with `exec.deny`); with Yama `ptrace_scope` 1 or 0 the
 agent can ptrace the shim it started, or take its descriptors with `pidfd_getfd`, and write to the server's socket: both
-need ATTACH, and a `tools:` server whose run allows that is not protected from it; the gate checks the caller's parent, not that the caller is the child the shim started, so an agent that forks a child and then execs the shim in the parent can have that child take the pending start and run the declared server on pipes the agent holds, with no `mcp` line and no ATTACH (*added 2026-11-01*, not fixed: the shim's `Started` frame comes after the exec the gate is holding, so it cannot be compared there); a server that opens `/dev/stdin` by
+need ATTACH, and a `tools:` server whose run allows that is not protected from it. The fork-then-exec pending-start
+theft is closed by pre-exec registration of the exact child and its retained pidfd (SEC06/C51); this adds no attach
+or socket-copy denial (C50). A server that opens `/dev/stdin` by
 name fails, ENXIO, since its stdin is a socket; `tools/list` filtering is a courtesy, the
 enforced thing is `tools/call`; a server that offers the same capability under an allowed name is allowed.
 
@@ -180,3 +195,58 @@ The dashboard's side nav no longer lists MCP tools by default. It is left out un
 given, so a first-time reader sees only the pages that work for every run. The page itself is unchanged and answers at
 `/mcp` as before; a link to it still opens it. Where this record says "the nav's" link or item, read "the nav's, with
 `--preview`". docs/DASHBOARD.md ("Start it") holds the flag.
+
+## Proposed amendment 2026-11-03: preview or security boundary
+
+Status: **proposed**. The owner decides the C50 options; SEC06 child binding and its compatibility fix are implemented.
+
+**Compatibility consequence (implemented, SEC06 follow-up).** The first child-binding change introduced an
+internal `<tego> __mcp_server …` exec that did not match an existing `<tego> mcp relay *` grant, so the shim failed
+before it could register the child. Preserve that contract: no additional user grant or migration is required.
+Before starting its child, the admitted shim registers its freshly created release socket inode and exact stage
+vector. For an otherwise unlisted command, the supervisor may grant only this launcher's resolved image, that
+whole vector, and the live child whose fd 3 is that socket while the authenticated shim still holds it. The relay
+pins the child with a pidfd at that held exec; the subsequent registration must confirm the same child before its
+server start can be consumed. A preexisting sibling cannot inherit the fresh socket. This adds no general
+`__mcp_server` pattern or permission for another tego subcommand. Explicit command denies/asks, image/read floors,
+live blocks, fences and gates still apply. The grant is named `exec.mcp-stage[<tego path>]` in the exec line and
+`run_start.runtime_grants`; a plane pin covers the whole vector. At plane tiers the kernel keeps ownership of
+the actual outcome: a pin refusal/kill stays refused and missing proof cannot claim the runtime grant. Tier 1
+retains the existing copied-argv assurance
+limit. The private protocol is v3 (v1/v2 refused); launcher and shims are rebuilt together. Integration covers the
+constrained grant, a direct stage attempt and another tego subcommand, at Landlock and both plane tiers.
+This compatibility decision does not choose either C50 option below or change the proposed status.
+
+SEC06 closes C51's specific fork-then-exec theft: only the child registered before exec, still alive through its
+retained pidfd, can consume the shim's start. C50 stays open. An agent allowed to attach to the shim or server can
+inject bytes or duplicate a server socket with `pidfd_getfd`, bypassing decisions and their `mcp` record. Current
+same-run process scoping is insufficient (`bpf/decide_control.h` admits same-run peers unless separately guarded).
+`--preview` currently controls the dashboard navigation, not whether contracts can enable the relay.
+
+**(a) Make the relay a security boundary.** Deny ATTACH authority over both shim and server before the agent can
+reach them, throughout exec and for descendants that inherit server channels. Cover `PTRACE_ATTACH`/`SEIZE`,
+`TRACEME`, `process_vm_*`, `/proc/<pid>/mem` and `pidfd_getfd`; refuse an already-traced shim or child and remove
+inherited memory/socket descriptors. Preserve an authenticated pre-exec child handshake, fail closed on missing
+hooks, and constrain alternate server spellings. A shim's `PR_SET_DUMPABLE=0` alone is insufficient: it is too late
+for an existing tracer and an ordinary server exec resets dumpability.
+
+| Tier | Candidate enforcement and compatibility cost |
+|---|---|
+| 1, Landlock + seccomp | Install irreversible run-wide seccomp denials for attach/memory-copy/`pidfd_getfd` syscalls before any agent task exists, and refuse protected proc-memory opens through the supervisor using pinned targets. Audit inherited FDs. A blanket denial is simpler than racing target-PID checks, but removes in-run debugging; shim-only seccomp does not constrain the attacker. |
+| 2, cgroup | Keep the tier-1 denial on the fanotify fallback. In fmod_ret plane mode, extend the existing kernel-resolved ptrace hooks with protected shim/server identities and exec/fork lifecycle handling; reject existing tracing before admitting a shim. Fanotify alone cannot deny ptrace or socket copying. |
+| 3, BPF LSM | Apply the same protected-task lifecycle in `ptrace_access_check` and `ptrace_traceme`; ATTACH checks also cover `pidfd_getfd`. Require the hooks, including server exec transitions and inherited channels, instead of relying on Yama or optional command guards. |
+
+Validation requires design review, adversarial tests (Yama 0/1, pre-attached tracers,
+socket theft, preexisting children, PID reuse, disconnects), capability/reporting changes and KVM kernel-matrix proof.
+Tier-1 supervisor readability and debugger workflows
+need explicit acceptance. A host Yama setting is an operational mitigation, not a portable per-run guarantee.
+
+**(b) Retain the preview and state the limit.** Keep the present exposure, with the child-binding fix, and describe
+C50, exact command matching and the scope of `--preview` in release notes and README **Known limits**. Make no
+adversarial boundary claim for stdio `tools` rules. Keep a forbidden capability out of a reachable server, or use a
+remote server whose direct endpoint the network policy refuses. The README and Unreleased notes now disclose the current behavior.
+
+**Recommendation: (b)** for this release. SEC06 removes the demonstrated no-attach start theft without changing
+process authority. Option (a) changes debugging and descriptor access across every tier and needs lifecycle and
+kernel-matrix proof before a boundary claim is credible. Choosing (b) accepts the remaining C50 risk explicitly;
+it neither closes C50 nor authorizes removing the preview label. No owner decision is recorded here.

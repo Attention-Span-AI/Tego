@@ -47,6 +47,9 @@ type askReadKernel struct {
 	// onSend, when set, runs at each ADDFD+SEND (CompleteAskOpen, DeliverFD): the moment the kernel releases the
 	// thread, whose next syscall can then be received.
 	onSend func()
+	// beforeCheck, when set, runs after CompleteAskOpen reopened the pin and before the loop's check of the reopened
+	// descriptor: what another process does during the completion.
+	beforeCheck func()
 }
 
 func (k *askReadKernel) sent() {
@@ -63,7 +66,22 @@ func (k *askReadKernel) PrepareAskOpen(q pathQuery, flags int) (*heldAskOpen, er
 	return sysKernel{}.PrepareAskOpen(q, flags)
 }
 
-func (k *askReadKernel) CompleteAskOpen(_ uint64, _ *heldAskOpen, flags int, _ uint32) (int, error) {
+func (k *askReadKernel) CompleteAskOpen(_ uint64, h *heldAskOpen, flags int, _ uint32, check func(int) error) (int, error) {
+	if check != nil {
+		// Reopened as sysKernel does (the pin's own inode, read-only here: the fake delivers nothing), then checked.
+		fd, err := unix.Open("/proc/self/fd/"+strconv.Itoa(h.fd), unix.O_RDONLY|unix.O_CLOEXEC, 0)
+		if err != nil {
+			return -1, err
+		}
+		if k.beforeCheck != nil {
+			k.beforeCheck()
+		}
+		err = check(fd)
+		_ = unix.Close(fd)
+		if err != nil {
+			return -1, &askOpenDeliveryError{err}
+		}
+	}
 	k.sent()
 	k.mu.Lock()
 	defer k.mu.Unlock()

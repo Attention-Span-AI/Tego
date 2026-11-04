@@ -41,6 +41,7 @@ func DefaultAskNotify() []string { return []string{"cli", "desktop"} }
 func Builtin() *Machine {
 	src := Provenance{Layer: LayerBuiltin}
 	return &Machine{
+		ServePort:  Setting[int]{Value: 7433, Source: src},
 		Tier:       Ceiling[TierSetting]{Value: TierSetting{Auto: true}, Source: src},
 		Capture:    Ceiling[CaptureSetting]{Value: CaptureSetting{Auto: true}, Source: src},
 		LedgerRoot: Setting[string]{Value: DefaultLedgerRoot, Source: src},

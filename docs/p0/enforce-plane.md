@@ -65,10 +65,12 @@ before Arm places the run's row, as the stage's own exec of tego does.
 | `mmap_file`, `file_mprotect` | ADR 0027's exec-map policy | C |
 | `socket_connect`, `socket_sendmsg` (AF_UNIX; loaded only where `cgroup/connect_unix` is absent) | `unix:` entries below 6.7 (§2.11; ADR 0024 named `unix_stream_connect`, `unix_may_send`) | D |
 | `socket_bind` (AF_UNIX addresses; any other family returns 0) | `net.listen`'s `unix:` entries: an abstract name here, a pathname at `path_mknod` against its resolved parent; autobind refused | E54 (§2.20) |
+| `unix_may_send` (every kernel with a plane) | ADR 0113 immutable IPC floor on the actual bound datagram peer; peer/name and inode checks, including connected sends and aliases | C40 |
 | `socket_listen` | `net.listen`: a Unix socket's bound name; an inet TCP socket's bound address against the cgroup bind table | E54 (§2.20) |
 | `ptrace_access_check` (ATTACH mode), `ptrace_traceme` | the run-tree process boundary (FEATURES E8): the peer must be in the same run and gen | E54 (§2.20) |
 | `bpf` | every `bpf(2)` command of a governed task is refused | E54 (§2.20) |
 | `key_permission` (where present) | `keyring: true`; without it every key permission check is refused | E54 (§2.20) |
+| `capable` (mandatory) | refuse CAP_SYS_ADMIN in every user namespace, holding mount topology for adopted tasks too; no contract opt-out | ADR 0055 NET09 |
 
 ### 2.2 Maps (all reused from tier 2 except the rows)
 
@@ -895,7 +897,7 @@ same macro, walk, readers and records; tier cgroup's backend loads them with Ste
   `TestPlaneRowOK`, `TestPlaneParamsMatchTheSource`. Root, in the guest (`root-must-pass.txt`):
   `TestPlaneStepBHooksDecide` (both builds, both modes), `TestPlaneRunEndToEnd`'s step B cells (a mkdir and a create
   under the nested `deny_read` refused with nothing left, a chmod and a setfacl of `.git/config` refused, each one
-  line), `TestPlaneRunAdmitsIOUring`, and the conformance cell `fs/mkdir-in-deny-read-nested-in-write`, which passes in
+  line), `TestPlaneRunRefusesIOUring` (C40 now checks startup refusal), and the conformance cell `fs/mkdir-in-deny-read-nested-in-write`, which passes in
   both plane modes and left `baseline.json`.
 
 Found here, stated as conditions:
@@ -1895,9 +1897,10 @@ exactly that name, live, taken once (`TestPlaneUnixApprovalOnRealKernel`). A dec
 `TestPlaneRunIOUringListenerOutcomes`.
 Step B as built (§2.12): only under a
 `net:` section (the slot header's net flags, `TestNetPolicyRow`), the filter's allowlist (`TestPlaneSocketCreateIsTheAllowlist`),
-through socket(2) and io_uring's `IORING_OP_SOCKET` (`TestPlaneStepBHooksDecide`), and `io_uring: true` admitted
-with a plane mode (step D covers unix names below 6.7) (`TestFilterIOUringArm`, `TestPrepareAdmitsIOUringOnlyWithThePlane`,
-`TestSelectWarnsWhenIOUringHasNoEffect`, `TestPlaneRunAdmitsIOUring`).
+through socket(2) and low-level io_uring fixtures (`TestPlaneStepBHooksDecide`). ADR 0113's C40
+amendment now refuses `io_uring: true` in enforcing contracts that may select a root tier, because
+rings bypass the local TCP control-port relay (`TestPlaneRunRefusesIOUring`). The lower-level
+filter and backend fixtures retain coverage of their ring-handling code.
 
 **R15 — Arming point (built, T6).** The `run_set` row is inserted after the stage's first `execve` and before
 the ack. The tego binary's exec therefore meets no row and needs no admission, the agent cannot exist before the
@@ -2176,11 +2179,17 @@ agent cannot reach `bpf(2)` (ADR 0033).
 - In `fmod_ret` mode a refusal skips the other LSMs' hooks for that access, their audit included.
 - An unmount after launcher and reaper both die (ADR 0025 (5)).
 - A descriptor received by SCM_RIGHTS from outside the run is not re-decided.
-- A mount made after the fill (no hook is on mounting or on namespace changes): the walk follows the mount tree as it
-  stands, so a directory outside every write entry bound beneath one is written, and an overlay whose lower layer is
-  a `deny_read` directory is read through its merged path; a bind of a `deny_read` directory or a `deny_write` target
-  itself is still refused (its row keys the inode). A launched run's agent cannot mount (Landlock and the filter, §2
-  condition 2); an adopted one may (ADR 0055). `TestPlaneRunWalksTheMountTreeAsItStands` (root, both modes).
+- A mount made after the fill by a process outside the run: the walk follows the mount tree as it stands,
+  so a directory outside every write entry bound beneath one is written, and an overlay whose lower layer is
+  a `deny_read` directory is read through its merged path. A bind of a keyed deny target itself stays refused.
+  `TestPlaneRunWalksTheMountTreeAsItStands` demonstrates these outside-root changes. Since NET09 (ADR 0055),
+  the mandatory `capable` hook refuses CAP_SYS_ADMIN in every user namespace for plane-governed tasks, launched
+  or adopted: mount APIs and mount-namespace creation/installation are refused, including new mount APIs and
+  descriptors prepared before adoption. Other uses of that capability are also refused. A user namespace alone
+  may still be created but cannot change the mount view. Doctor's invalid-descriptor move_mount probe must
+  return EBADF outside the scope and EPERM inside, with the hook's run count increasing; missing BTF, load,
+  attachment or functional proof makes the mode unavailable. Already-completed pre-attach changes, an operation
+  already past its capability check at the arm, and mounts changed outside the run remain residuals.
 - Root outside the run can read inode addresses (heap, not text) from the maps and can detach the plane.
 - Anonymous executable memory (GAPS A2); code mapped from a readable pre-existing file outside write entries and
   never modified (ADR 0027).
@@ -2786,3 +2795,18 @@ Open conditions (none is relaxed in the suite):
 - 2026-09-29: §2.7 records T3's Step A bodies over §2.4's rows; R1, R2, R7 to R11, I1, I2, I4 (step A) and §6 cases 2
   and 3 built with their tests; exec rows gain `flags`, a policy row at key 0 and name keys; kernel reason codes 10 and
   11; two conditions found (overlay copy-up, an exec by directory recorded as a row).
+
+
+### C40 implementation amendment — 2026-11-03
+
+ADR 0113 adds the mandatory `unix_may_send` hook beside the older raw-name hooks of §2.11.
+It looks up the current run, validates its slot generation and immutable-floor flag, then checks the
+kernel's actual bound peer path, protected parent/name guards, multiple-link refusal and the nearest
+FS row's `TEGO_ROW_BUILTIN_IPC` bit. An own-runtime guard stops before outer refusals; exact SSH and
+explicitly allowed container peers have a peer-only exception tag. Those tags never lift filesystem
+mutation protection. Thus an admitted datagram redirected through a pre-existing alias still meets
+the built-in floor. This does not change ordinary contract net-policy guarantees for unlisted peers.
+Its named refusal sample becomes an ordinary net/sendmsg line carrying `builtin.host_ipc` or
+`builtin.tego_surface`; map sizes are unchanged and adoption uses the changed object hash. The existing FS-row and fill-template `pad2` field carries bit 0 for ledger ancestry; it is copied into the walk hit, so only `ask.sock`/`operator.sock` are refused beneath a custom or shared ledger root. It does not become a whole-directory IPC refusal.
+The tty slot flag also delegates default terminal write opens to the independent Landlock tty layer;
+explicit protected/read-deny rows retain priority. No per-pty row is installed.

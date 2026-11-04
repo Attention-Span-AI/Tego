@@ -45,7 +45,7 @@ static __always_inline __u8 tego_listen_key_reason(struct tego_run *run,
         return TEGO_R_PATH_UNRESOLVED;
     }
     row = bpf_map_lookup_elem(rows, key);
-    if (!row || row->gen != run->gen)
+    if (!row || row->gen != run->gen || (row->rule_idx & 0xe000))
         return TEGO_R_NET_NOT_ALLOWED;
     if (!key->abstract && (!parent || row->parent_ino != TEGO_I_INO(parent) ||
                           row->parent_generation != TEGO_I_GEN(parent) || row->s_dev != TEGO_I_SDEV(parent))) {

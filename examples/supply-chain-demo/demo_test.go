@@ -572,8 +572,8 @@ func TestRetakeRestoresContract(t *testing.T) {
 	if out, code := w.demo("check"); code != 0 || !strings.Contains(out, "READY") {
 		t.Errorf("check after reset: exit %d\n%s", code, out)
 	}
-	if entries, _ := os.ReadDir(w.ledger); len(entries) != 0 {
-		t.Errorf("the new ledger is not empty: %v", entries)
+	if entries, err := os.ReadDir(w.ledger); err != nil || len(entries) != 1 || entries[0].Name() != ".tego-supply-chain-ledger" {
+		t.Errorf("the new ledger should hold only its setup marker: %v (%v)", entries, err)
 	}
 	olds, _ := filepath.Glob(w.ledger + ".old-*")
 	var marked []string // the ones reset moved: each mark names its own folder

@@ -319,6 +319,124 @@ table:
   "AskConfig": null,
   "AskDenyWrite": null,
   "AskReadRelaxes": null,
+  "Builtins": {
+   "IPCDirs": [
+    "/tmp/tmux-4242",
+    "/run/screen/S-4242",
+    "/var/run/screen/S-4242",
+    "$HOME/.screen",
+    "/tmp/emacs4242",
+    "/tmp/nvim.4242",
+    "/tmp/.X11-unix"
+   ],
+   "Ledger": "$HOME/.tego/runs",
+   "LedgerResolved": "$HOME/.tego/runs",
+   "Names": [
+    {
+     "Name": "4242",
+     "Parent": "/run/user",
+     "Path": "builtin:/run/user/4242",
+     "Target": "/run/user/4242"
+    },
+    {
+     "Name": "tmux-4242",
+     "Parent": "/tmp",
+     "Path": "builtin:/tmp/tmux-4242",
+     "Target": "/tmp/tmux-4242"
+    },
+    {
+     "Name": "S-4242",
+     "Parent": "/run/screen",
+     "Path": "builtin:/run/screen/S-4242",
+     "Target": "/run/screen/S-4242"
+    },
+    {
+     "Name": ".screen",
+     "Parent": "$HOME",
+     "Path": "builtin:$HOME/.screen",
+     "Target": "$HOME/.screen"
+    },
+    {
+     "Name": "emacs4242",
+     "Parent": "/tmp",
+     "Path": "builtin:/tmp/emacs4242",
+     "Target": "/tmp/emacs4242"
+    },
+    {
+     "Name": "nvim.4242",
+     "Parent": "/tmp",
+     "Path": "builtin:/tmp/nvim.4242",
+     "Target": "/tmp/nvim.4242"
+    },
+    {
+     "Name": ".X11-unix",
+     "Parent": "/tmp",
+     "Path": "builtin:/tmp/.X11-unix",
+     "Target": "/tmp/.X11-unix"
+    },
+    {
+     "Name": ".tego",
+     "Parent": "$HOME",
+     "Path": "builtin:$HOME/.tego",
+     "Target": "$HOME/.tego"
+    },
+    {
+     "Name": "system_bus_socket",
+     "Parent": "/run/dbus",
+     "Path": "builtin:/run/dbus/system_bus_socket",
+     "Target": "/run/dbus/system_bus_socket"
+    },
+    {
+     "Name": "docker.sock",
+     "Parent": "/run",
+     "Path": "builtin:/run/docker.sock",
+     "Target": "/run/docker.sock"
+    },
+    {
+     "Name": "podman",
+     "Parent": "/run",
+     "Path": "builtin:/run/podman/podman.sock",
+     "Target": "/run/podman/podman.sock"
+    },
+    {
+     "Name": "containerd",
+     "Parent": "/run",
+     "Path": "builtin:/run/containerd/containerd.sock",
+     "Target": "/run/containerd/containerd.sock"
+    }
+   ],
+   "Nodes": [
+    "/run/dbus/system_bus_socket",
+    "/var/run/dbus/system_bus_socket",
+    "/run/docker.sock",
+    "/var/run/docker.sock",
+    "/run/podman/podman.sock",
+    "/var/run/podman/podman.sock",
+    "/run/containerd/containerd.sock",
+    "/var/run/containerd/containerd.sock",
+    "/run/user/4242/docker.sock",
+    "/run/user/4242/podman/podman.sock"
+   ],
+   "OwnRuntime": "",
+   "OwnRuntimeResolved": "",
+   "PeerNames": null,
+   "PeerSockets": [
+    "/run/user/4242/gnupg/S.gpg-agent.ssh",
+    "/run/user/4242/openssh_agent",
+    "/run/user/4242/ssh-agent.socket",
+    "/run/user/4242/keyring/ssh",
+    "/run/user/4242/gcr/ssh"
+   ],
+   "Runtime": [
+    "/run/user/4242"
+   ],
+   "ServePort": 7433,
+   "TegoDirs": [
+    "$HOME/.tego",
+    "/run/user/4242/tego"
+   ],
+   "UID": 4242
+  },
   "Capture": "uprobe",
   "Contract": {
    "Ask": {
@@ -734,7 +852,428 @@ table:
     "Rule": "fs.deny_read[$HOME/.var/app/com.vivaldi.Vivaldi]"
    }
   ],
-  "DenyWrite": [],
+  "DenyWrite": [
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/run/user/4242",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/user/4242",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/tmp/tmux-4242",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/tmp/tmux-4242",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/run/screen/S-4242",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/screen/S-4242",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/var/run/screen/S-4242",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/screen/S-4242",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "$HOME/.screen",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "$HOME/.screen",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/tmp/emacs4242",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/tmp/emacs4242",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/tmp/nvim.4242",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/tmp/nvim.4242",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/tmp/.X11-unix",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/tmp/.X11-unix",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.tego_surface",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "$HOME/.tego",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "$HOME/.tego",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.tego_surface",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/run/user/4242/tego",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/user/4242/tego",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/run/dbus/system_bus_socket",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/dbus/system_bus_socket",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/var/run/dbus/system_bus_socket",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/dbus/system_bus_socket",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/run/docker.sock",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/docker.sock",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/var/run/docker.sock",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/docker.sock",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/run/podman/podman.sock",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/podman/podman.sock",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/var/run/podman/podman.sock",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/podman/podman.sock",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/run/containerd/containerd.sock",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/containerd/containerd.sock",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/var/run/containerd/containerd.sock",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/containerd/containerd.sock",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/run/user/4242/docker.sock",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/user/4242/docker.sock",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   },
+   {
+    "Access": 0,
+    "AskRead": false,
+    "BuiltIn": true,
+    "BuiltinRule": "builtin.host_ipc",
+    "Kind": "deny_write",
+    "Missing": false,
+    "Path": "/run/user/4242/podman/podman.sock",
+    "Pos": {
+     "Col": 0,
+     "File": "",
+     "Line": 0
+    },
+    "Raw": "",
+    "Regular": false,
+    "Resolved": "/run/user/4242/podman/podman.sock",
+    "Runtime": "",
+    "RuntimeDev": 0,
+    "RuntimeIno": 0,
+    "Unenforced": false
+   }
+  ],
   "DenyWriteLinked": null,
   "Env": [
    "PATH",

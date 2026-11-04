@@ -224,7 +224,22 @@ func fileHere(p string, st *unix.Stat_t) (unixFile, bool) {
 		return unixFile{}, false
 	}
 	f := unixFileOf(&here)
-	return f, f.dev == st.Dev && f.ino == st.Ino
+	if f.dev != st.Dev || f.ino != st.Ino {
+		return unixFile{}, false
+	}
+	f.nlink = uint64(here.Nlink)
+	for dir := path.Dir(p); dir != "/"; dir = path.Dir(dir) {
+		if f.parentsN == len(f.parents) {
+			return unixFile{}, false
+		}
+		var pst unix.Stat_t
+		if unix.Stat(dir, &pst) != nil {
+			return unixFile{}, false
+		}
+		f.parents[f.parentsN] = fileID{dev: pst.Dev, ino: pst.Ino}
+		f.parentsN++
+	}
+	return f, true
 }
 
 // readlinkRaw is readlink(2) returning the bare errno, which is what a relayed result carries (respResult).
@@ -326,6 +341,9 @@ func (l *Loop) relayUnixAs(n *notif, c *compiled, t *target, d dest, raw []byte,
 			if c.hostSockets {
 				dec = hostSocketsRule(dec) // the unix-only state names a socket no process of the run bound (ADR 0070)
 			}
+			if rule := c.builtinFile(resolved, file); rule != "" {
+				dec = refuse(rule)
+			}
 			// A live block names the socket where this walk landed too, whatever name reached it (liveUnixLanded).
 			dec = c.liveUnixLanded(dec, resolved)
 			if resolved != "" {
@@ -383,6 +401,9 @@ func (l *Loop) relayUnixAs(n *notif, c *compiled, t *target, d dest, raw []byte,
 // (unixConnectLine).
 func (l *Loop) finishUnix(n *notif, c *compiled, d dest, t *target, o unixOutcome, ud unixDecision, res resp) {
 	line := unixConnectLine(o, t.dec, ud.dec)
+	if c.pol.Rules.Builtins != nil && o == unixUnreliable {
+		line = refuse(agent.BuiltinHostIPC)
+	}
 	switch o {
 	case unixConnected, unixUnresolved:
 		l.respond(n, res)
@@ -453,6 +474,12 @@ func (l *Loop) grantedUnixVerdict(d dest, dec verdictOf, res resp) record.Verdic
 // R11c). implicit says the admit is the write entry's, which holds only for a socket the run bound (R11a): the caller
 // asks boundByRun.
 func (c *compiled) decideResolved(resolved string) (dec verdictOf, implicit bool) {
+	if rule := c.pol.Rules.BuiltinUnixRule(resolved); rule != "" {
+		return refuse(rule), false
+	}
+	if c.netOpen && !c.hostSockets && c.pol.Rules.Builtins != nil {
+		return verdictOf{rule: ruleUnmatched, allowed: true}, false
+	}
 	for _, u := range c.unix {
 		if u.path != "" && u.resolved == resolved {
 			return verdictOf{rule: u.name, allowed: true}, false

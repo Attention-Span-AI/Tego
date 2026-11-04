@@ -229,9 +229,8 @@ func (p *Proposal) leftOut() []string {
 	out = append(out, "env: there is no env section, so env stays open: every variable of the launcher's environment reaches the agent, secrets"+
 		" included. Add env.pass with the names the agent needs.")
 	if p.LeakChecked && len(p.Leaks) == 0 {
-		out = append(out, fmt.Sprintf("leaks: no place off the contract was first reached within %d s and %d lines of an open of a secret for reading."+
-			" That rule goes by file names and closeness: it proves nothing, it does not judge system lookups or port 53 on this machine,"+
-			" and a place first reached before the read is not caught.", secretpath.NearSeconds, secretpath.NearLines))
+		out = append(out, fmt.Sprintf("leaks: no successful send off the contract was recorded within %d s and %d lines of an open of a secret for reading."+
+			" That rule goes by file names and closeness: it proves nothing, it does not judge system lookups or port 53 on this machine.", secretpath.NearSeconds, secretpath.NearLines))
 	}
 	if n := p.leftCount("fs", "workspace"); n > 0 {
 		out = append(out, fmt.Sprintf("writes outside the workspace %s: %d of them, listed under fs.write as observed, not allowed."+
@@ -272,7 +271,7 @@ func (p *Proposal) leftOut() []string {
 		out = append(out, fmt.Sprintf("%d execs of the harness hook the run grants itself (exec.harness-hook), its exact argv only: an entry naming the tego binary would admit every argv.", p.HarnessHookGranted))
 	}
 	if p.Truncated {
-		out = append(out, "the run touched more distinct paths and endpoints than learn keeps, so what is listed is incomplete.")
+		out = append(out, "the run exceeded learn's bounds for paths, endpoints or read/send associations, so what is listed is incomplete.")
 	}
 	out = append(out, "models, capture and tier: the record holds none of them, so tego's defaults apply.")
 	out = append(out, "DNS lookups to the machine's resolver need no entry: tego allows the resolver itself.")

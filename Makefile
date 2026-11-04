@@ -1,6 +1,8 @@
 # Common targets. `make help` lists them.
 .PHONY: help gen build build-bpf maze maze-tap test integration lint precommit precommit-affected spdx licenses vm-test vm-matrix vm-root-test vm-perf vm-pairs vm-clang release doctor overhead e2e-reason
 GO ?= go
+# Override for an isolated build without replacing the checkout's binaries.
+BIN_DIR ?= bin
 # CLANG: another clang for `make gen` than the pinned toolchain, e.g. CLANG=$$(test/vm/fetch-clang.sh), for
 # trying a change (its objects are not the ones to commit). gen.go says `-cc clang` and bpf2go derives
 # `llvm-strip` from it, so CLANG must name a file called clang with an llvm-strip beside it; its directory goes
@@ -42,12 +44,12 @@ gen:         ## regenerate the committed bpf2go objects and bindings with the pi
 # tego built without it refuses the handoff [control-unpinned]. tego-control links no BPF and takes no tag.
 # check-control-pin.sh then checks the pin and that both print the same version.
 build:       ## both static binaries: bin/tego (tier-2 BPF objects embedded) pinned to bin/tego-control's SHA-256
-	CGO_ENABLED=0 $(GO) build -buildmode=exe -trimpath -ldflags '-s -w' -o bin/tego-control ./cmd/tego-control
-	chmod go-w bin/tego-control
-	pin=$$(sha256sum bin/tego-control | cut -d' ' -f1) && \
+	CGO_ENABLED=0 $(GO) build -buildmode=exe -trimpath -ldflags '-s -w' -o "$(BIN_DIR)/tego-control" ./cmd/tego-control
+	chmod go-w "$(BIN_DIR)/tego-control"
+	pin=$$(sha256sum "$(BIN_DIR)/tego-control" | cut -d' ' -f1) && \
 		CGO_ENABLED=0 $(GO) build -buildmode=exe -tags tegobpf -trimpath \
-		-ldflags "-s -w -X github.com/attention-span-ai/tego/internal/handoff.controlSHA256=$$pin" -o bin/tego ./cmd/tego
-	./scripts/check-control-pin.sh bin/tego bin/tego-control
+		-ldflags "-s -w -X github.com/attention-span-ai/tego/internal/handoff.controlSHA256=$$pin" -o "$(BIN_DIR)/tego" ./cmd/tego
+	./scripts/check-control-pin.sh "$(BIN_DIR)/tego" "$(BIN_DIR)/tego-control"
 build-bpf: build ## the same binary as build, under the name the fix lines and older docs give
 maze:        ## build the maze CLI and install it as `maze` in $(go env GOBIN) (~/go/bin), on macOS and Linux
 	$(GO) install -trimpath ./cmd/maze

@@ -330,8 +330,8 @@ func openRunDir(dir string, mustExist bool) (d *sys.FD, handTo owner, ok bool, e
 // must not include O_CREAT: with create, the file is made 0600 by an O_CREAT|O_EXCL open when it is
 // missing, created reports that, and a file made inside a directory another uid owns is handed to that
 // uid (giveCreated). The name is never followed as a symlink and a FIFO there never blocks the open; the
-// file must be regular and, when this process is root, have one link — a hard link is the other way to
-// aim root's write at a file the directory's owner does not own.
+// file must be regular and have one link: an alias beneath a governed write entry
+// could rewrite an ordinary user's records too (ADR 0059, SEC07).
 func openFileAt(at *sys.FD, dir, name string, flags int, create bool) (f *os.File, created bool, err error) {
 	path := filepath.Join(dir, name)
 	flags |= unix.O_NOFOLLOW | unix.O_NONBLOCK
@@ -353,7 +353,7 @@ func openFileAt(at *sys.FD, dir, name string, flags int, create bool) (f *os.Fil
 	if err := fd.Fstat(&st); err != nil {
 		return nil, false, &os.PathError{Op: "fstat", Path: path, Err: err}
 	}
-	if st.Mode&unix.S_IFMT != unix.S_IFREG || (os.Geteuid() == 0 && st.Nlink != 1) {
+	if st.Mode&unix.S_IFMT != unix.S_IFREG || st.Nlink != 1 {
 		return nil, false, fmt.Errorf("ledger: %s is not a regular file with one link", path)
 	}
 	if created {

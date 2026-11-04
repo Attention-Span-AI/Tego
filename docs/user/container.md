@@ -1,7 +1,8 @@
 # Run agents under Tego in a container
 
-The container image is built from this repository
-(`examples/container/Dockerfile`); no published image exists yet. It holds `tego` and `tego-control` as static
+Every release tag publishes `ghcr.io/attention-span-ai/tego` for Linux amd64 and arm64, built from this repository's
+`examples/container/Dockerfile`. The [install guide](https://github.com/Attention-Span-AI/Tego/blob/main/docs/INSTALL.md#run-in-a-container)
+shows how to verify a release's image digest and run it. The image holds `tego` and `tego-control` as static
 binaries, an entrypoint that prepares the container for `tego run`, and an example agent.
 `examples/container/compose.yaml` runs an agent under `tego run` and the dashboard (`tego-control serve`) on the
 host's loopback. This page says what each setting is for, which tier works inside a container and which does not,
@@ -12,7 +13,8 @@ run; the last section lists what it checks and what nobody has checked yet.
 
 ## Quick start
 
-From `examples/container/`, on a Linux host with cgroup v2 and Docker with the compose plugin:
+For a local source build, from `examples/container/`, on a Linux host with cgroup v2 and Docker with BuildKit and the
+compose plugin:
 
 ```sh
 export TEGO_UID=$(id -u) TEGO_GID=$(id -g)   # the dashboard answers only your own uid; see "The dashboard"
@@ -35,7 +37,7 @@ programs it needs. A program being installed allows nothing: the contract's `exe
 
 | Path | What it is |
 | ---- | ---------- |
-| `/usr/local/bin/tego`, `/usr/local/bin/tego-control` | The `make build` pair: static, not PIE, BPF objects embedded, `tego-control`'s SHA-256 pinned in `tego` (`tego serve` hands off only to that file). |
+| `/usr/local/bin/tego`, `/usr/local/bin/tego-control` | The matched pair: static, not PIE, BPF objects embedded, `tego-control`'s SHA-256 pinned in `tego` (`tego serve` hands off only to that file). |
 | `/usr/local/bin/tego-entrypoint` | The entrypoint (`examples/container/tego-entrypoint.sh`), below. |
 | `/etc/tego/config.yaml` | The machine config: `ledger_root: /var/lib/tego/runs`. Root's, mode 0644, as tego's trust check wants. |
 | `/home/tego` | The home of the user `tego` (uid 10001 unless built with `TEGO_UID`), which every run is started as. `~/.tego` holds the chain anchor (`chain.log`) and tego's own log. |
@@ -50,6 +52,11 @@ page says the entrypoint does, or that entrypoint itself.
 
 The base images are pinned by digest (`golang:1.27.3-trixie`, the Go of `go.mod`, and `debian:trixie-slim`), and
 Dependabot proposes their updates.
+
+Published images copy the original release binaries after signature, checksum, reproduction and control-pin checks.
+Local builds compile them from source with the release's flags. The binary reproduction requirement stays the same;
+the complete Debian image is not claimed reproducible ([release runbook](../VERSIONING.md#5-releases)). The published
+image uses uid/gid 10001; build locally with your own uid/gid for the dashboard as above.
 
 ## What the entrypoint does
 
@@ -123,6 +130,27 @@ On Docker's defaults (no capability added, `docker-default`), the entrypoint say
 `tego run` refuses with `runtime: cgroup: ...`; were the cgroup there, `clone3` would fail with `ENOSYS` and tego
 says so, naming the outer seccomp profile (moby#42680). `--privileged` works around all of it and gives the container
 everything; it is not what this image asks for.
+
+### A secret inside the work folder
+
+A `.env` (or another `deny_read` target) inside a folder the agent writes, such as `/work/.env` under
+`fs.write: ["/work/"]`, makes a tier landlock run hold its reads (`fs.reads: auto`, ADR 0069): the open deputy completes
+every read and the supervisor refuses the secret by its identity, under any name the agent gives it. That needs the
+secret, its folder and every protected folder on a local filesystem whose changes the kernel reports and whose files
+keep their identity: ext4, xfs, btrfs, f2fs, bcachefs, tmpfs, ramfs and a few read-only ones. The folders above them
+may also be overlayfs, which is what a container's `/` is.
+
+- **Works:** `/work` as a named volume (compose.yaml's `tego-work`, Docker's `local` driver keeps it on the host's
+  filesystem) or a bind mount of a host folder on a local filesystem (`./project:/work`).
+- **Refused at launch:** a project copied into the image or written to the container's writable layer (it is on the
+  overlay itself, whose copy-up renumbers files), and a work folder on NFS, CIFS, FUSE (Docker Desktop's file sharing
+  on macOS and Windows, sshfs) or another filesystem that is not on the list: the run stops before the agent starts,
+  with `held-read stable identities/replacement events unavailable on filesystem 0x...` naming the folder. Use a
+  named volume, keep the secret out of the folder the agent writes, or set `fs.reads: direct` (the target is then
+  unenforced at tier landlock, as compile warns).
+- **Keep the mounts as they were at launch.** Unmounting or remounting the work volume, or mounting over the project,
+  while the run is alive makes tego refuse every held read for the rest of the run (`held-read-identity-unknown`):
+  restart the run after such a change.
 
 ### Tiers that need root
 
@@ -218,6 +246,11 @@ dashboard answers the runner's own curl on the host's loopback, lists the hello 
 another uid with 403. Report-only, it records `docker exec` through the entrypoint, the image on Docker's defaults,
 and the root launcher in a privileged container.
 
+A secret inside the work folder, without a container runtime (KVM guest, as root,
+`TestHeldOpenDifferentialAcrossMounts/held-read-container-workspace`): an overlayfs mounted as the container's root with
+a local directory bind-mounted into it as the work folder starts held reads and refuses a nested `.env` after a
+rename; a project on the overlay itself is refused at launch. No Docker container has run it.
+
 Not verified anywhere yet: the remount and the delegation inside a real Docker container (CI is the first run);
 Podman, Kubernetes, SELinux hosts and arm64 images; the dashboard's changes and live-run actions from its container;
 running tego as root in a container (`TEGO_LAUNCHER=root`).
@@ -232,5 +265,6 @@ running tego as root in a container (`TEGO_LAUNCHER=root`).
 | `tego run: ... clone3 is being filtered` | The seccomp profile refuses `clone3` | `CAP_SYS_ADMIN` in the container, or a profile that allows it |
 | `tego doctor`: `FAIL landlock` | The host kernel has no Landlock in its LSM list | Add `landlock` to the host's `lsm=` boot line |
 | `tego doctor`: `yama ptrace_scope=2 without CAP_SYS_PTRACE` | The host's Yama setting | Set the host's `kernel.yama.ptrace_scope` to 1 |
+| `held-read stable identities/replacement events unavailable on filesystem 0x794c7630` | A secret the agent's write entry holds (a `.env` in the project) lies on the container's own layer (overlayfs, `0x794c7630`) or another unsupported filesystem | Put the project on a named volume or a bind mount of a local folder ([A secret inside the work folder](#a-secret-inside-the-work-folder)) |
 | The dashboard says 403 to your browser | The image's `tego` uid is not yours | Build with `TEGO_UID=$(id -u) TEGO_GID=$(id -g)` |
 | `tego doctor`: `warn dashboard: the kernel answers no TCP socket lookup` | The host has not loaded `inet_diag` and `tcp_diag`; tego-control refuses every dashboard action until it is loaded | On the host: `sudo modprobe tcp_diag` (and add it to /etc/modules-load.d) |

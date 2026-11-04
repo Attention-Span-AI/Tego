@@ -508,6 +508,12 @@ func Summary(e *record.Event) string {
 			}
 			s = strings.Join(parts, " ")
 		}
+		if p["fileless"] == true {
+			s += " [fileless: executable in memory]"
+		}
+		if p["dropped"] == true {
+			s += " [dropped: file written by the agent]"
+		}
 		// ADR 0048 (8): an exec a command rule decided names the entry, how it matched and how it was read.
 		if rule := str("command_rule"); rule != "" {
 			s += " command=" + str("command_list") + ":" + rule

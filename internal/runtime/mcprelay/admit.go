@@ -117,11 +117,17 @@ func shimImage(pid int) error {
 // after the shim dies, and the number can be reissued to a process of its own. It is still tego's image and shim
 // command line. And the admitted socket is the only TCP socket it holds: a shim dials exactly one connection before it
 // starts a server, so a second TCP socket is the relay it really dialled, and the admitted one is a descriptor it
-// inherited, the hello written by someone else. Only TCP is counted: a client may hand the shim socket stdio, and the
+// inherited, the hello written by someone else. The admitted descriptor must also have CLOEXEC: net.Dial creates it
+// that way, while a socket inherited across the shim's exec cannot retain that flag. This refuses a forged child
+// registration before the shim has dialled its real connection, when there is no second TCP socket yet (SEC06).
+// Only TCP is counted: a client may hand the shim socket stdio, and the
 // server's own channels are AF_UNIX. The table read is the process's own network namespace, since a socket dialled in
 // another one is in no table of the launcher's. Any read that fails says no.
 func procStillShim(a admission) bool {
 	if start, err := startOf(a.pid); err != nil || start != a.start || shimImage(a.pid) != nil {
+		return false
+	}
+	if !socketCloexec(a.pid, a.inode) {
 		return false
 	}
 	held, ok := socketsOf(a.pid)
@@ -139,6 +145,36 @@ func procStillShim(a admission) bool {
 	}
 	start, err := startOf(a.pid)
 	return err == nil && start == a.start
+}
+
+// socketCloexec requires a close-on-exec descriptor on the admitted socket in the shim itself. The flag is per
+// descriptor: a duplicate in the agent cannot change it after exec unshares the shim's descriptor table.
+func socketCloexec(pid int, inode uint64) bool {
+	dir := "/proc/" + strconv.Itoa(pid)
+	ents, err := os.ReadDir(dir + "/fd")
+	if err != nil {
+		return false
+	}
+	want := "socket:[" + strconv.FormatUint(inode, 10) + "]"
+	for _, e := range ents {
+		if link, err := os.Readlink(dir + "/fd/" + e.Name()); err != nil || link != want {
+			continue
+		}
+		info, err := os.ReadFile(dir + "/fdinfo/" + e.Name())
+		if err != nil {
+			return false
+		}
+		for line := range strings.SplitSeq(string(info), "\n") {
+			f := strings.Fields(line)
+			if len(f) == 2 && f[0] == "flags:" {
+				flags, err := strconv.ParseUint(f[1], 8, 64)
+				if err == nil && flags&unix.O_CLOEXEC != 0 {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // isShimArgv reports whether argv is `<tego> mcp relay …`, the shim's own command line, up to its "--".

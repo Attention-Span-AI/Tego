@@ -102,20 +102,21 @@ func (s ChildSpec) Validate() error {
 // wireSpec is what crosses the control pipe: ChildSpec minus the parent-only members (files, Handle), plus
 // the child-side fd numbers and the parent pid the child verifies after arming PDEATHSIG.
 type wireSpec struct {
-	RunID         string               `json:"run_id"`
-	AgentID       string               `json:"agent_id"`
-	Command       []string             `json:"command"`
-	Env           []string             `json:"env"`
-	Dir           string               `json:"dir"`
-	UID           int                  `json:"uid"` // -1: keep the current uid
-	GID           int                  `json:"gid"` // -1: keep the current gid
-	Privileged    bool                 `json:"privileged"`
-	Setuid        bool                 `json:"setuid,omitempty"`
-	DropNetAdmin  bool                 `json:"drop_net_admin,omitempty"`
-	ParentPID     int                  `json:"parent_pid"`
-	RulesetFD     int                  `json:"ruleset_fd"` // -1: no Landlock domain
-	LandlockFlags uint32               `json:"landlock_flags"`
-	Seccomp       []bpf.RawInstruction `json:"seccomp"` // empty: no filter, no listener
+	BuiltinRefusals bool                 `json:"builtin_refusals,omitempty"`
+	RunID           string               `json:"run_id"`
+	AgentID         string               `json:"agent_id"`
+	Command         []string             `json:"command"`
+	Env             []string             `json:"env"`
+	Dir             string               `json:"dir"`
+	UID             int                  `json:"uid"` // -1: keep the current uid
+	GID             int                  `json:"gid"` // -1: keep the current gid
+	Privileged      bool                 `json:"privileged"`
+	Setuid          bool                 `json:"setuid,omitempty"`
+	DropNetAdmin    bool                 `json:"drop_net_admin,omitempty"`
+	ParentPID       int                  `json:"parent_pid"`
+	RulesetFD       int                  `json:"ruleset_fd"` // -1: no Landlock domain
+	LandlockFlags   uint32               `json:"landlock_flags"`
+	Seccomp         []bpf.RawInstruction `json:"seccomp"` // empty: no filter, no listener
 	// ResetSignals are the signals the stage sets to SIG_DFL before it execs the agent: the job-control
 	// stops a tier-2 launcher ignores for itself (HoldJobControl), whose ignored disposition would otherwise
 	// reach the agent across execve.
@@ -189,6 +190,9 @@ func (s ChildSpec) toWire(parentPID int, hasRuleset, hasDeputy bool) wireSpec {
 	}
 	if s.Privileged {
 		w.UID, w.GID = s.TargetUID, s.TargetGID
+	}
+	if h, ok := s.Handle.(interface{ BuiltinRefusals() bool }); ok {
+		w.BuiltinRefusals = h.BuiltinRefusals()
 	}
 	if hasRuleset {
 		w.RulesetFD = childRulesetFD

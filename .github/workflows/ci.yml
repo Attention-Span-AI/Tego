@@ -228,6 +228,39 @@ jobs:
           path: |
             ${{ runner.temp }}/unit.json
             ${{ runner.temp }}/integration.json
+  node-options:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: '20.19.4'
+      - name: node 20.19.4 inventory and live security differentials
+        shell: bash
+        run: |
+          TEGO_NODE20_BIN="$(command -v node)" go test -count=1 -run '^TestNodeImageBuildPin$' ./internal/runtime/supervisor
+          go test -count=1 -json -run '^TestNode' ./pkg/policy/execmatch/rows > "$RUNNER_TEMP/node-20.19.4.json"
+          for t in TestNodeRowCodeDifferential TestNodeRowSpellingsDifferential TestNodeRowModulesDifferential TestNodeRowGeneratedDifferential TestNodeInventoryDifferential TestNodeReviewDifferential; do
+            jq -se --arg t "$t" 'any(.[]; .Test == $t and .Action == "pass")' "$RUNNER_TEMP/node-20.19.4.json"
+          done
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: '22.21.1'
+      - name: node 22.21.1 inventory and live security differentials
+        shell: bash
+        run: |
+          TEGO_NODE22_BIN="$(command -v node)" go test -count=1 -run '^TestNodeImageBuildPin$' ./internal/runtime/supervisor
+          go test -count=1 -json -run '^TestNode' ./pkg/policy/execmatch/rows > "$RUNNER_TEMP/node-22.21.1.json"
+          for t in TestNodeRowCodeDifferential TestNodeRowSpellingsDifferential TestNodeRowModulesDifferential TestNodeRowGeneratedDifferential TestNodeInventoryDifferential TestNodeReviewDifferential; do
+            jq -se --arg t "$t" 'any(.[]; .Test == $t and .Action == "pass")' "$RUNNER_TEMP/node-22.21.1.json"
+          done
+
   build-test-arm64:
     # arm64 is a released architecture (.goreleaser.yaml), and this job builds and tests it. On GitHub's arm64
     # runner: the static release build with the objects (uprobessl has an arm64 object of
@@ -412,6 +445,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: demo credential and cleanup regressions
+        run: ./scripts/demo-credentials_test.sh && ./scripts/demo-reset_test.sh && ./scripts/cleanup-guards_test.sh
       - name: fetch shellcheck and actionlint
         shell: bash
         env:
@@ -435,6 +470,12 @@ jobs:
         run: git ls-files -z '*.sh' .githooks/pre-commit | xargs -0 "$RUNNER_TEMP/lint/shellcheck" -e SC1091
       - name: actionlint
         run: '"$RUNNER_TEMP/lint/actionlint" -shellcheck "$RUNNER_TEMP/lint/shellcheck"'
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: release workflow authority, artifact and digest boundaries
+        run: go test -count=1 ./examples/container/ -run '^TestRelease(Workflow|SigningInputs)$'
+
 
   bpf-gen:
     # The committed bpf2go output (internal/bpf/*_bpfe[lb].{go,o}) must be exactly what the pinned
@@ -458,10 +499,10 @@ jobs:
         run: for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (try $i), retrying" >&2; sleep $((i * 15)); done; exit 1
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cache/tego/bpf-toolchain
+          path: ~/.cache/tego/bpf-toolcache
           key: bpf-toolchain-${{ hashFiles('scripts/bpf-toolchain.sh') }}
       - name: the committed objects are what bpf/ compiles to
-        run: BPF_TOOLCHAIN="$HOME/.cache/tego/bpf-toolchain" ./scripts/check-bpf-objects.sh
+        run: BPF_TOOLCHAIN="$HOME/.cache/tego/bpf-toolcache" ./scripts/check-bpf-objects.sh
       - name: build and test with the objects (no privilege)
         run: go build -tags tegobpf ./... && go test -count=1 -tags tegobpf ./internal/bpf/... ./bpf/...
 

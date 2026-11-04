@@ -51,25 +51,6 @@ func requireRowABI(t *testing.T, abi int) {
 	}
 }
 
-// shortTempDir is a scratch directory whose socket paths fit sockaddr_un's 108 bytes: t.TempDir() under a long $TMPDIR
-// does not.
-func shortTempDir(t *testing.T) string {
-	t.Helper()
-	if d := tempDir(t); len(d) <= 48 {
-		return d
-	}
-	d, err := os.MkdirTemp("/tmp", "ll")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(d) })
-	d, err = filepath.EvalSymlinks(d)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return d
-}
-
 // listenUnix listens on a pathname socket and closes each connection it accepts.
 func listenUnix(t *testing.T, path string) {
 	t.Helper()

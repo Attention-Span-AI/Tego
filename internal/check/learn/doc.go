@@ -21,7 +21,7 @@
 //     any unix socket under the user's runtime directory that the run did not create itself.
 //   - limits are suggested in comments from the run's resource peaks, never written as a limit.
 //
-// A place first reached next to an open of a secret for reading is not allowed (leak.go): the dashboard's "secret read,
+// A place successfully contacted next to a successful open of a secret for reading is not allowed (leak.go): the dashboard's "secret read,
 // then send" verdict, read from the same lines below the control layer, leaves such an address out and says so; the
 // rule goes by names and closeness and has limits, which leak.go and the proposal state. The dashboard, which holds a
 // verdict of its own, turns it off with Options.LeaveLeaksToCaller. The proposal also says what it leaves open: env (it

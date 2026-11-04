@@ -367,6 +367,9 @@ func (h *Handle) Attach(cgroupID uint64) error {
 // so the three answer a ping socket alike. The owner's Gen is the run's, which the program stamps on its own
 // refusal record (R5): it reads the attachment's storage, never the run set, whose row exists only from Arm.
 func socketFlags(rt *agent.RuleTable) uint32 {
+	if rt.Builtins != nil && rt.NetUnrestricted() {
+		return netOwnerUnixOnly
+	}
 	if rt.NetSocketPolicy().ICMP {
 		return ebpfbindings.NetOwnerICMP
 	}

@@ -174,13 +174,13 @@ func handleConnect(l *Loop, n *notif) {
 			}
 		}
 	}
-	if c.hostSockets && !hostSocketRelayable(t.domain) {
+	if (c.hostSockets || c.pol.Rules.Builtins != nil) && !hostSocketRelayable(t.domain) {
 		// A connect on a socket of a domain the unix-only state does not reach (AF_NETLINK, AF_PACKET, ...): refused,
 		// keyed on the socket's own domain, so it is never relayed from this process (hostSocketRelayable).
-		l.refuseNet(n, d, t.proto, refuse(ruleHostSockets))
+		l.refuseNet(n, d, t.proto, refuse(c.socketBoundaryRule()))
 		return
 	}
-	if t.relaysIP() || c.hostSockets {
+	if t.relaysIP() || c.hostSockets || c.pol.Rules.Builtins != nil {
 		// A net gate's IP connect is relayed on the copy it scored (ADR 0041 D6), and one under a live net block on the
 		// copy the block was matched against; in the unix-only state every connect is relayed on the duplicate (R7b,
 		// ADR 0070), so the socket and the address it decided are the ones connected.
@@ -196,7 +196,7 @@ func handleConnect(l *Loop, n *notif) {
 		return
 	}
 	if !t.dec.allowed {
-		if l.askConnect(n, c, &t, d, raw) {
+		if !isBuiltinRule(t.dec.rule) && l.askConnect(n, c, &t, d, raw) {
 			return
 		}
 		l.refuseNet(n, d, t.proto, t.dec)
@@ -527,7 +527,7 @@ func (c *compiled) refusesUndecidable(d dest, connectOp, guarded bool) bool {
 // socket (AF_UNSPEC outside connect(2), refusesUndecidable): that refusal does not depend on the socket, so a
 // socket that could not be read changes nothing about it.
 func (c *compiled) passesUnresolved(r *reader, d dest, connectOp bool) bool {
-	if c.pol.Rules.Gate.Has(gate.Net) || !c.netOpen || c.guard != nil || c.hostSockets {
+	if c.pol.Rules.Gate.Has(gate.Net) || !c.netOpen || c.guard != nil || c.hostSockets || c.pol.Rules.Builtins != nil {
 		return false // the unix-only state decides every unix destination, so what it cannot read it refuses (R7b)
 	}
 	if c.blocks().HasNet() {
@@ -602,7 +602,7 @@ func (l *Loop) resolveSocket(n *notif, c *compiled, sockfd int) (t target, why s
 		t.ipGated = gated && ip
 		t.ipLive = live && ip
 	}
-	if c.hostSockets && t.domain == 0 {
+	if (c.hostSockets || c.pol.Rules.Builtins != nil) && t.domain == 0 {
 		// The unix-only state keys its relay on the socket's own domain (ADR 0041 D6, ADR 0070 Decision 3): read on
 		// the duplicate, which a sibling's dup2 cannot swap. A domain that cannot be read stays 0, not relayable, so
 		// the socket is refused (hostSocketRelayable), fail closed.
@@ -794,15 +794,23 @@ func (l *Loop) decide(c *compiled, r *reader, d dest, proto string, connectOp, g
 
 // decideContract is decide under the contract alone.
 func (l *Loop) decideContract(c *compiled, r *reader, d dest, proto string, connectOp, guarded bool) verdictOf {
+	if rule := l.builtinNet(c, d, proto); rule != "" {
+		return refuse(rule)
+	}
 	if guarded {
 		return l.decideGuarded(c, d, proto, connectOp)
 	}
 	dec := l.decideDest(c, r, d, proto, connectOp)
-	if !c.netOpen || c.refusesUndecidable(d, connectOp, false) {
+	if isBuiltinRule(dec.rule) || !c.netOpen || c.refusesUndecidable(d, connectOp, false) {
 		return dec
 	}
 	if c.hostSockets && d.isUnix() {
 		return l.decideHostSocket(d, dec)
+	}
+	if c.pol.Rules.Builtins != nil {
+		dec = continuedOf(dec)
+		dec.continued = false
+		return dec
 	}
 	return continuedOf(dec)
 }
@@ -1011,7 +1019,7 @@ func (l *Loop) decideUnix(c *compiled, r *reader, d dest, connectOp bool) verdic
 		scoped = func() bool { return l.unixScopeOf(r.n, c, d, p) != nil }
 	}
 	dec := c.decideUnixName(p, scoped)
-	if dec.allowed && !connectOp && (!c.netOpen || c.hostSockets) {
+	if dec.allowed && !connectOp && (!c.netOpen || c.hostSockets || c.pol.Rules.Builtins != nil) {
 		dec = l.decideLanded(c, r.n, unixQuery{tid: r.n.pid, path: d.unixPath, joined: p})
 	}
 	if dec.sockPath == "" {
@@ -1025,6 +1033,9 @@ func (l *Loop) decideUnix(c *compiled, r *reader, d dest, connectOp bool) verdic
 // name that reaches a net.ask unix: scope's place (scoped, nil for a datagram and for compile's question) is not
 // admitted by a write entry at all, whatever entry its spelling lies under: it is asked (unixScopeOf, askUnix, R11c).
 func (c *compiled) decideUnixName(p string, scoped func() bool) verdictOf {
+	if rule := c.pol.Rules.BuiltinUnixRule(p); rule != "" {
+		return refuse(rule)
+	}
 	for _, u := range c.unix {
 		if u.path != "" && u.path == p {
 			return verdictOf{rule: u.name, allowed: true}
@@ -1058,6 +1069,10 @@ func (c *compiled) landedVerdict(place unixPlace, err error, bound func(unixFile
 		return unixLandedRefusal(err)
 	}
 	dec, implicit := c.decideResolved(place.at)
+	if rule := c.builtinFile(place.at, place.file); rule != "" {
+		dec = refuse(rule)
+		implicit = false
+	}
 	if implicit {
 		dec = bound(place.file, dec)
 	}

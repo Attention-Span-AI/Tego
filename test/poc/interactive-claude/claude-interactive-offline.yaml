@@ -22,9 +22,8 @@ fs:
     # The task's own output.
     - "./work/"
     # Claude Code's own state (CLAUDE_CONFIG_DIR and its scratch directory, set below) and the private runtime
-    # directory it makes a socket in (cc-socks/); /dev/null and /dev/tty are the shell's and the TUI's plumbing.
+    # session runtime supplied by Tego (%R); /dev/null and /dev/tty are the shell's and the TUI's plumbing.
     - "./.claude-state/"
-    - "@ROOT@/xdg/"
     - "/dev/null"
     - "/dev/tty"
   # A write under held/ pauses Claude Code until a person answers (tego ask / approve / deny).
@@ -58,7 +57,8 @@ env:
     CLAUDE_CONFIG_DIR: ".claude-state"
     CLAUDE_CODE_TMPDIR: ".claude-state/tmp"
     TMPDIR: ".claude-state/tmp"
-    XDG_RUNTIME_DIR: "@ROOT@/xdg"
+    # The run-private harness runtime; launch checks the full PID socket path against 103 bytes.
+    XDG_RUNTIME_DIR: "%R"
 limits:
   pids: 512
   memory: 4GiB

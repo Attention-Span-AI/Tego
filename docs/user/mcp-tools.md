@@ -32,8 +32,9 @@ mcp:
 - An entry without `tools:` runs exactly as before: no relay, nothing new in the run.
 - `ask:` entries need the contract's `ask:` section; without it the run has no one to ask.
 - Not at `tier: observe`: the relay needs an enforcing tier to keep the agent from going around it.
-- With an `exec.allow` list, add the `tego` binary to it: the agent's MCP client starts the server as
-  `tego mcp relay …`. `tego compile` warns when it is missing.
+- With an `exec.allow` list, admit the shim as `<absolute-tego-path> mcp relay *`. The internal server stage
+  needs no additional grant: Tego grants only the exact child the admitted shim starts. A direct stage attempt
+  or another tego subcommand receives no permission from that runtime grant. Explicit denies and asks still apply.
 - For a `url` server, give the contract a `net:` section (`net: {allow: []}` is enough): the relay is then the
   agent's only route to the server, since its URL is no longer admitted to the run. `tego compile` warns otherwise.
 
@@ -117,11 +118,13 @@ A switch lasts for the run. To keep a rule for the next run, change the contract
   and a start around the shim is refused.
 - The shim dials one TCP connection, so a shim holding another TCP socket is refused as it starts its server. An MCP
   client that leaks a TCP socket into the processes it starts has its server refused, rule `mcp[<name>].relay`.
-- With Yama `ptrace_scope` 0 or 1 the agent could ptrace the shim it started and write to the server's socket.
-- The gate checks that a server's start comes from a child of an admitted shim, not that it is the child the shim started. An agent that forks a
-  child and then execs the shim in the parent can have that child start the declared server around the relay, with no `mcp` line and no ptrace.
-  So a stdio server's `tools` rules are not a boundary against an agent that attacks the relay: a tool that must not run has to stay out of what
-  the run can start.
+- The gate pins the shim's exact child with a pidfd before releasing it to exec. A child forked before its parent
+  became the shim cannot steal that pending start (SEC06, GAPS C51).
+- The relay remains preview functionality. Where the run may attach to its own processes (including Yama
+  `ptrace_scope` 0 or 1), an agent can ptrace the shim or server, or copy their sockets with `pidfd_getfd`, and write
+  calls that bypass decisions and their `mcp` lines. The child-binding fix adds no denial of that authority (GAPS C50).
+  A tool that must not run has to stay out of any server the run can reach. The owner has not decided whether to
+  harden this into a boundary; see the proposed amendment to ADR 0126.
 - A stdio server's stdin and stdout are sockets, not pipes, so a run cannot reopen them through `/proc`. A server that opens `/dev/stdin` by name fails.
 - `tools/list` filtering is a courtesy; what is enforced is `tools/call`. A server that offers the same capability
   under an allowed name is allowed. A `tools/list` answer the server sends inside a JSON-RPC batch array is passed

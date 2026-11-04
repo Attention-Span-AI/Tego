@@ -12,11 +12,11 @@ test/poc/interactive-claude/run.sh negative   # the session three times, a rule 
 ```
 
 It needs `claude` on `PATH` (or `CLAUDE=<path>`), `go`, `python3`, `openssl`, `jq`, and a kernel with Landlock (the box
-this was written on has ABI 7). No root. Everything happens under `$ROOT` (a temporary directory by default; `ROOT=<dir>`
+this was written on has ABI 7). No root. All durable files stay under `$ROOT` (a temporary directory by default; `ROOT=<dir>`
 keeps it): tego's own machine config, ledger, chain anchor and log (the `tegotesthooks` build redirects them), an
 isolated `HOME`, the agent's workspace, the stand-in and its certificate. `~/.tego` is listed before and after, and the
 contract denies the agent `~/.claude`, `~/.claude.json`, `~/.codex`, `~/.config/anthropic` and `~/.tego` (Claude Code
-reads the passwd-database home's `~/.claude/skills` whatever `HOME` says). The scripts never read those paths.
+reads the passwd-database home's `~/.claude/skills` whatever `HOME` says). The scripts never read those paths. Session sockets use `%R`, Tego's private per-run harness runtime inside a short mode-0700 temporary base beneath `/run/user/<uid>` (removed at script exit); launch validates the complete seven-digit-PID socket path against 103 bytes. The shared `/tmp` fallback stays ungranted. The captured 2.1.290 model/tool results below are historical; C40 Round 3 revalidated 2.1.318 socket initialization without login, not real model/tool execution.
 
 ## The parts
 

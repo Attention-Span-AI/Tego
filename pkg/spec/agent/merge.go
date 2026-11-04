@@ -63,6 +63,7 @@ var contractMergeRows = []mergeRow{
 	// fs.reads (ADR 0069): held, then auto, then direct, which counts only from the top-level contract, so a
 	// profile cannot leave a deny_read inside a write entry unenforced (a profile's direct is ignored with a warning).
 	stricterRow("fs.reads", readsOrder, string(ReadsDirect)),
+	keyRow("fs.apparmor_assume_root_namespace", classRefusedInProfile),
 
 	keyRow("net", classSection),
 	keyRow("net.assurance", classContractWins),

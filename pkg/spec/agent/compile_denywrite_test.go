@@ -33,7 +33,7 @@ func gitRepo(t *testing.T, f *fixture, dir string) {
 
 func denyWritePaths(rt *RuleTable) []string {
 	var out []string
-	for _, r := range rt.DenyWrite {
+	for _, r := range ordinaryDenyWriteRows(rt) {
 		out = append(out, r.Path)
 	}
 	slices.Sort(out)
@@ -72,12 +72,12 @@ func TestBuiltInDenyWriteSet(t *testing.T) {
 	if got := denyWritePaths(rt); !slices.Equal(got, want) {
 		t.Fatalf("deny_write set %v\nwant %v", got, want)
 	}
-	for _, r := range rt.DenyWrite {
+	for _, r := range ordinaryDenyWriteRows(rt) {
 		if r.Kind != FSDenyWrite || !r.BuiltIn || !r.Unenforced || r.RuleName() != "fs.deny_write["+r.Path+"]" {
 			t.Errorf("%+v: want a built-in, unenforced deny_write rule named after its path", r)
 		}
 	}
-	if r := rt.DenyWrite[slices.IndexFunc(rt.DenyWrite, func(r FSRule) bool { return strings.HasSuffix(r.Path, ".gitconfig") })]; r.Resolved != filepath.Join(work, "gitconfig") {
+	if r := ordinaryDenyWriteRows(rt)[slices.IndexFunc(ordinaryDenyWriteRows(rt), func(r FSRule) bool { return strings.HasSuffix(r.Path, ".gitconfig") })]; r.Resolved != filepath.Join(work, "gitconfig") {
 		t.Errorf("a home dotfile is governed where it resolves: %+v", r)
 	}
 	for _, r := range rt.FS {
@@ -91,10 +91,10 @@ func TestBuiltInDenyWriteSet(t *testing.T) {
 			warned = append(warned, d)
 		}
 	}
-	if len(warned) != len(rt.DenyWrite) {
-		t.Fatalf("want one warning per target (%d), have %d:\n%s", len(rt.DenyWrite), len(warned), render(ds))
+	if len(warned) != len(ordinaryDenyWriteRows(rt)) {
+		t.Fatalf("want one warning per target (%d), have %d:\n%s", len(ordinaryDenyWriteRows(rt)), len(warned), render(ds))
 	}
-	for _, r := range rt.DenyWrite {
+	for _, r := range ordinaryDenyWriteRows(rt) {
 		i := slices.IndexFunc(warned, func(d Diagnostic) bool { return strings.Contains(d.Message, r.RuleName()) })
 		if i < 0 || warned[i].Line == 0 || warned[i].IsError() || !strings.Contains(warned[i].Message, "best effort") ||
 			!strings.Contains(warned[i].Message, BestEffortDenyWrite) || !strings.Contains(warned[i].Fix, "fs.assurance: kernel") {
@@ -156,7 +156,7 @@ func TestBuiltInDenyWriteNames(t *testing.T) {
 
 	rt, _ := f.compile(f.load("version: 0\nname: t\ncommand: [\"python\"]\nfs:\n  write: [\"work/\"]\n"))
 	held := map[string]bool{}
-	for _, r := range rt.DenyWrite {
+	for _, r := range ordinaryDenyWriteRows(rt) {
 		rel, err := filepath.Rel(work, r.Path)
 		if err != nil || !filepath.IsLocal(rel) {
 			rel, _ = filepath.Rel(f.home, r.Path)
@@ -229,11 +229,11 @@ func TestDenyWriteGitLayouts(t *testing.T) {
 	}
 
 	rt, _ = f.compile(f.load("version: 0\nname: t\ncommand: [\"python\"]\nfs:\n  write: [\"sub/\"]\n"))
-	if len(rt.DenyWrite) != 0 {
+	if len(ordinaryDenyWriteRows(rt)) != 0 {
 		t.Errorf("a gitdir outside every write entry is not writable, so it is not in the set: %v", denyWritePaths(rt))
 	}
 	rt, ds := f.compile(f.load("version: 0\nname: t\ncommand: [\"python\"]\nfs:\n  write: [\"out/\"]\n"))
-	if len(rt.DenyWrite) != 0 || strings.Contains(render(ds), "deny_write") {
+	if len(ordinaryDenyWriteRows(rt)) != 0 || strings.Contains(render(ds), "deny_write") {
 		t.Errorf("out/ reaches nothing in the set:\n%v\n%s", denyWritePaths(rt), render(ds))
 	}
 }
@@ -711,8 +711,8 @@ func TestDenyWriteCandidateLeadingNowhereIsDisclosed(t *testing.T) {
 	if disclosed(ds, hk) {
 		t.Errorf("a hooks link whose target is there is disclosed as leading nowhere:\n%s", render(ds))
 	}
-	if !slices.ContainsFunc(rt.DenyWrite, func(r FSRule) bool { return r.Resolved == hk }) {
-		t.Errorf("deny_write set %v does not hold %s, where the link leads", rt.DenyWrite, hk)
+	if !slices.ContainsFunc(ordinaryDenyWriteRows(rt), func(r FSRule) bool { return r.Resolved == hk }) {
+		t.Errorf("deny_write set %v does not hold %s, where the link leads", ordinaryDenyWriteRows(rt), hk)
 	}
 	outside := filepath.Join(f.root, "outside", "hk")
 	if err := os.Remove(hooks); err != nil {
@@ -985,7 +985,7 @@ func TestCompileDenyWriteBestEffortByDefault(t *testing.T) {
 	}{{"pinned landlock", "tier: landlock\n", f.machine}, {"machine-held landlock", "", &held}, {"auto", "", f.machine},
 		{"pinned cgroup", "tier: cgroup\n", f.machine}} {
 		rt, ds, err := Compile(f.load(fmt.Sprintf(denyWriteCompile, tc.tier, "")), tc.m, f.opts()...)
-		if err != nil || len(rt.DenyWrite) != 2 || countDiagnostics(ds, func(d Diagnostic) bool {
+		if err != nil || len(ordinaryDenyWriteRows(rt)) != 2 || countDiagnostics(ds, func(d Diagnostic) bool {
 			return denyWriteFinding(d) && !d.IsError() && strings.Contains(d.Message, "best effort")
 		}) != 2 || countDiagnostics(ds, func(d Diagnostic) bool { return denyWriteFinding(d) && d.IsError() }) != 0 {
 			t.Errorf("%s: want it to compile with one best-effort warning per target (err %v):\n%s", tc.name, err, render(ds))
@@ -1000,4 +1000,17 @@ func TestCompileDenyWriteBestEffortByDefault(t *testing.T) {
 			t.Errorf("pinned bpflsm (%q): the plane decides every target there, so nothing is to warn:\n%s", a, render(ds))
 		}
 	}
+}
+
+// ordinaryDenyWriteRows keeps the pre-ADR-0113 R20 and contractual-target
+// assertions focused on those targets. C40's immutable rows have no opt-out and
+// are tested independently, including when no write entry overlaps them.
+func ordinaryDenyWriteRows(rt *RuleTable) []FSRule {
+	var rows []FSRule
+	for _, r := range rt.DenyWrite {
+		if r.BuiltinRule == "" {
+			rows = append(rows, r)
+		}
+	}
+	return rows
 }

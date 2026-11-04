@@ -10,6 +10,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/platform/sys"
@@ -17,9 +18,10 @@ import (
 )
 
 // holdOnce makes the first lock-file open of a run take a shared flock, as a status probe would, and returns
-// its release.
-func holdOnce(t *testing.T) func() {
+// its release and a signal that the probe has acquired the lock.
+func holdOnce(t *testing.T) (release func(), acquired <-chan struct{}) {
 	t.Helper()
+	ready := make(chan struct{})
 	var mu sync.Mutex // the hook runs in the sweep's goroutine, release in the test's or a timer's
 	var held *os.File
 	done := false
@@ -40,8 +42,9 @@ func holdOnce(t *testing.T) func() {
 			t.Error(err)
 		}
 		held = f
+		close(ready)
 	}
-	release := func() {
+	release = func() {
 		mu.Lock()
 		defer mu.Unlock()
 		if held != nil {
@@ -50,7 +53,7 @@ func holdOnce(t *testing.T) func() {
 		}
 	}
 	t.Cleanup(func() { lockOpened = prev; release() })
-	return release
+	return release, ready
 }
 
 // TestGCKeepsALostRunItsSweepDidNotEnd: a probe holding the lock when the sweep opens it made the sweep return
@@ -59,7 +62,7 @@ func TestGCKeepsALostRunItsSweepDidNotEnd(t *testing.T) {
 	root := t.TempDir()
 	now := fixedStart.Add(40 * 24 * time.Hour)
 	lost := makeRun(t, root, fixedStart, "a00003", StateLost)
-	release := holdOnce(t)
+	release, _ := holdOnce(t)
 	calls := 0
 	hook := func(context.Context, sys.Lender, record.RunRef) error { calls++; return nil }
 	rep, err := GC(context.Background(), root, 24*time.Hour, false,
@@ -78,11 +81,21 @@ func TestGCKeepsALostRunItsSweepDidNotEnd(t *testing.T) {
 
 // TestSweepWaitsOutAProbesHold: a probe's momentary hold of the lock no longer skips the hook.
 func TestSweepWaitsOutAProbesHold(t *testing.T) {
+	synctest.Test(t, testSweepWaitsOutAProbesHold)
+}
+
+func testSweepWaitsOutAProbesHold(t *testing.T) {
 	root := t.TempDir()
 	now := fixedStart.Add(time.Hour)
 	lost := makeRun(t, root, fixedStart, "a00003", StateLost)
-	release := holdOnce(t)
-	go func() { time.Sleep(5 * time.Millisecond); release() }()
+	release, acquired := holdOnce(t)
+	// Start the hold's clock only once the probe owns the lock. Virtual time makes this exercise
+	// the retry even when the machine cannot schedule a real 5 ms timer within freshLockWait.
+	go func() {
+		<-acquired
+		time.Sleep(5 * time.Millisecond)
+		release()
+	}()
 	calls := 0
 	hook := func(context.Context, sys.Lender, record.RunRef) error { calls++; return nil }
 	rep, err := GC(context.Background(), root, 24*time.Hour, false,

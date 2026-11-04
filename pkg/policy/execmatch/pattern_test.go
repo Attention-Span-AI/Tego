@@ -179,7 +179,7 @@ func index(t testing.TB, entries ...string) *execmatch.Index {
 
 // decide is one exec by name, as "refused <rule>", "allowed <rule>" or "none".
 func decide(ix *execmatch.Index, argv ...string) string {
-	f := execmatch.Facts{Requested: argv[0], Image: argv[0], Argv0: argv[0], Argv: argv, ArgvComplete: true}
+	f := execmatch.Facts{NodeVersion: "20.19.4", Requested: argv[0], Image: argv[0], Argv0: argv[0], Argv: argv, ArgvComplete: true}
 	r := ix.Decide(&f)
 	switch r.Outcome {
 	case execmatch.OutcomeNone:

@@ -272,3 +272,41 @@ func syncDirAt(at *sys.FD) error {
 	}
 	return err
 }
+
+// AnchoredRuns lists run ids from complete, validated anchor lines, including runs whose
+// directories disappeared. Verification uses these names to resolve abbreviations before
+// it checks the selected head. A torn final line has never committed an anchor.
+func AnchoredRuns(path string) ([]string, error) {
+	f, err := openAnchor(filepath.Dir(path), filepath.Base(path), unix.O_RDONLY)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	seen := map[string]string{}
+	var ids []string
+	for l, err := range scanLines(f) {
+		if err != nil {
+			return nil, fmt.Errorf("ledger: read anchor: %w", err)
+		}
+		if !l.terminated {
+			break
+		}
+		r, h, ok := bytes.Cut(l.data, []byte{' '})
+		if !ok || !IsRunID(string(r)) || !record.IsID(string(h)) {
+			return nil, fmt.Errorf("%w: invalid anchor line", ErrCorruptLedger)
+		}
+		id, head := string(r), string(h)
+		if old, exists := seen[id]; exists {
+			if old != head {
+				return nil, fmt.Errorf("%w: chain.log holds two heads for %s", ErrCorruptLedger, id)
+			}
+			continue
+		}
+		seen[id] = head
+		ids = append(ids, id)
+	}
+	return ids, nil
+}

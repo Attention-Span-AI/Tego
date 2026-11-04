@@ -67,6 +67,15 @@ var (
 		t.Helper()
 		mkdirs(t, filepath.Join(m.work, ".deps"))
 	}}
+	claudePrivateRuntime = setupStep{says: "install -d -m 700 .claude-state .claude-state/tmp", do: func(t *testing.T, m standIn) {
+		t.Helper()
+		for _, sub := range []string{"tmp"} {
+			if err := os.MkdirAll(filepath.Join(m.work, ".claude-state", sub), 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}}
+
 	// makeConfigDir is the project's ./config, which retriever.yaml watches: a watched directory must exist.
 	makeConfigDir = setupStep{says: "a config/ directory", do: func(t *testing.T, m standIn) {
 		t.Helper()
@@ -108,7 +117,7 @@ func mkdirs(t *testing.T, dirs ...string) {
 var freshSetup = map[string][]setupStep{
 	"anthropic-sdk-python.yaml":    {installProfiles, installPrices},
 	"claude-agent-sdk.yaml":        {installSDK, installProfiles, installPrices},
-	"claude-code-interactive.yaml": {},
+	"claude-code-interactive.yaml": {claudePrivateRuntime},
 	"claude-code.yaml":             {installPrices},
 	"codex-chatgpt.yaml":           {codexChatGPTHome, codexFiles},
 	"codex.yaml":                   {codexFiles},

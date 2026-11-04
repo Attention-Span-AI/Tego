@@ -614,9 +614,13 @@ the same for each of its figures.
 | `TestInterpreterCheckCostIsLinear` | best wall time of 3, small then large | the least process CPU time of 3, interleaved |
 | `TestExtendsMergeCostIsLinear` | best wall time of 3, small then large | the least process CPU time of 5, interleaved |
 
-Two tests keep their own method, unchanged: `TestIntegrationFastPath` and `TestIntegrationFastPathOps` hold a
-notification's round trip to R22's 200 µs scaled by measured scheduler noise (the best of three against
-max(200 µs, 12 × a pipe ping-pong measured in the run), supervisor.md's 2026-09-30 R22 entry). The other tests that
+`TestIntegrationFastPath` and `TestIntegrationFastPathOps` use the same split since 2026-11-04: budget mode
+keeps their best of three against max(200 µs, 12 × a pipe ping-pong measured in the run), supervisor.md R22;
+the unit/race gate holds that wall-clock round trip to `CeilingFactor` times 200 µs. A pipe ping-pong does
+not measure the handler's instrumented CPU work: a loaded tagged race run measured 276–411 µs for the common
+operations while its gauge stayed at 11–19 µs. Both tests are now in `scripts/timing-budgets.sh`, whose
+uninstrumented build still asserts the original budget, and both keep their operation/notification checks.
+The other tests that
 assert a duration bound a timer or a hang (a 50 ms upstream timeout answered within 500 ms, a stop bounded at
 seconds) with margins of five to ten times. The busy-loop runs found load-dependent failures that are no budget, each
 fixed in its own commit with the same assertions: `TestHTTP2RefusalPreservesOneConnectionAndMeteredSiblings` counted

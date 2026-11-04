@@ -18,6 +18,11 @@ import (
 func hookProcess(t *testing.T, f *fixture, stdin []byte, start <-chan struct{}) (string, error) {
 	cmd := exec.Command(os.Args[0], Harness) //nolint:gosec // the test binary itself, as the hook
 	cmd.Env = f.env()
+	budget := time.Minute // also bound helpers when go test is run with -timeout=0
+	if deadline, ok := t.Deadline(); ok {
+		budget = time.Until(deadline)
+	}
+	cmd.Env = append(cmd.Env, helperBudgetEnv+"="+budget.String())
 	cmd.Stdin = bytes.NewReader(stdin)
 	var o, e bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &o, &e

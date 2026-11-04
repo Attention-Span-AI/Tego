@@ -300,10 +300,11 @@ func ledgerStage(s ledger.Stage, onErr func(*record.Event, error)) Stage {
 // exactly one writer (§6), and it starts writing only once run_start is on disk: the queue buffers
 // whatever the sources produce before that (ledger.Append refuses any event before run_start).
 type pipeline struct {
-	q      *Queue
-	handle func(*record.Event)
-	stamp  runStamp
-	log    *slog.Logger
+	q         *Queue
+	handle    func(*record.Event)
+	pairWrite func(*record.Event, *record.Event)
+	stamp     runStamp
+	log       *slog.Logger
 
 	// failed counts events a stage or Append refused; reportRefused turns it into a gap at drain time.
 	failed atomic.Int64
@@ -333,7 +334,7 @@ const maxPendingRequests = 4096
 // newPipeline builds the stage chain in front of terminal. terminal is the ledger writer's Append
 // in production and a test double otherwise. budget is the run's budget watcher as a stage, nil
 // when the caller runs no budgets.
-func newPipeline(q *Queue, terminal ledger.Sink, redact, split ledger.Stage, stamp runStamp, attr, budget Stage, log *slog.Logger) *pipeline {
+func newPipeline(q *Queue, terminal ledger.Sink, redact, split ledger.Stage, stamp runStamp, attr, budget Stage, log *slog.Logger, batch ...func(...*record.Event) error) *pipeline {
 	p := &pipeline{q: q, stamp: stamp, log: log}
 	onErr := func(ev *record.Event, err error) {
 		p.failed.Add(1)
@@ -353,6 +354,26 @@ func newPipeline(q *Queue, terminal ledger.Sink, redact, split ledger.Stage, sta
 		p.written.Add(1)
 		if ev.Kind == record.KindSSLRequest && ev.Pair != 0 {
 			p.rememberRequest(ev.Pair, ev.Seq)
+		}
+	}
+	if len(batch) > 0 && batch[0] != nil {
+		p.pairWrite = func(a, m *record.Event) {
+			var ready []*record.Event
+			prepare := redact(split(func(e *record.Event) error { ready = append(ready, e); return nil }))
+			for _, e := range []*record.Event{a, m} {
+				if err := prepare(e); err != nil {
+					onErr(e, err)
+					return
+				}
+			}
+			if err := batch[0](ready...); err != nil {
+				onErr(a, err)
+				if p.onLedgerFail != nil {
+					p.ledgerFailed.Do(func() { p.onLedgerFail(err) })
+				}
+				return
+			}
+			p.written.Add(int64(len(ready)))
 		}
 	}
 	// The budget watcher sits third, and the position is the contract: after stampRule and
@@ -592,6 +613,10 @@ func (p *pipeline) mirrorRefusals(next func(*record.Event)) func(*record.Event) 
 		m.Attr = nil
 		m.ID, m.Prev, m.Seq = "", "", 0 // the writer stamps the mirror as its own line
 		m.Payload = refusedPayload(ev)
+		if p.pairWrite != nil {
+			p.pairWrite(ev, &m)
+			return
+		}
 		written := p.written.Load()
 		next(ev)
 		if p.written.Load() == written {

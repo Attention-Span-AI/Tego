@@ -338,7 +338,7 @@ func TestCapabilityLine(t *testing.T) {
 						c == backend.CapSocketFamilies {
 						want = false // these doubles provide no actual attachment proof
 					}
-					if t := tc.backend.Tier(); (c == backend.CapReadDenyNested || c == backend.CapReadDenyCreatedLater) &&
+					if t := tc.backend.Tier(); (c == backend.CapReadDenyNested || c == backend.CapReadDenyCreatedLater || c == backend.CapReadDenyMoved) &&
 						(t == backend.TierLandlock || t == backend.TierObserve) {
 						want = false // no run here holds its reads, which is what makes both hold at tier landlock (ADR 0069)
 					}
@@ -504,7 +504,7 @@ func TestCapabilityLineHeldReadsClaimNoGateCompletion(t *testing.T) {
 		t.Errorf("capabilities[%s] = true in a run whose deputy holds only its reads", backend.CapGateFSOpenCompletion)
 	}
 	for c, want := range map[backend.Capability]bool{backend.CapReadDenyNested: true, backend.CapReadDenyCreatedLater: true,
-		backend.CapReadDenyMoved: false} {
+		backend.CapReadDenyMoved: true} {
 		if got[string(c)] != want {
 			t.Errorf("capabilities[%s] = %t, want %t", c, got[string(c)], want)
 		}

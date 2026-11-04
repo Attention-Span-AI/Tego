@@ -5,6 +5,7 @@ package ledgerview
 import (
 	"path"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 )
@@ -28,8 +29,8 @@ type Reference struct {
 }
 
 // ReferenceRun is the run whose contract a watched run r is read against: its PairOf, the run in runs that enforced
-// (not tier observe) the same program (the base name of the command's first word) and started closest to it. It is
-// nil when r is not a watched run or no enforced run of its program is listed.
+// (not tier observe) the same recorded workspace and nonempty agent identity, harness and program, and started closest to it. It is
+// nil when r is not a watched run or no reliably matching enforced run is listed.
 func ReferenceRun(runs []*Run, r *Run) *Run {
 	if r == nil || r.Tier != "observe" {
 		return nil
@@ -38,7 +39,7 @@ func ReferenceRun(runs []*Run, r *Run) *Run {
 }
 
 // PairOf is the run of the other kind (enforced for a watched run, watched for an enforced one) in runs (newest
-// first) that ran r's program and started closest to r; the newest wins a tie. The demo starts its two takes
+// first) with the same workspace, agent, harness and program, starting closest to r; the newest wins a tie. The demo starts its two takes
 // together, so a later enforced run of the same program (a Block now take, a rehearsal) is not the watched take's
 // pair: the run page's reference, its Compare button and the Overview's pair all name the same run.
 func PairOf(runs []*Run, r *Run) *Run {
@@ -49,7 +50,7 @@ func PairOf(runs []*Run, r *Run) *Run {
 	gap := func(o *Run) time.Duration { return max(o.Start.Sub(r.Start), r.Start.Sub(o.Start)) }
 	var best *Run
 	for _, o := range runs {
-		if o == nil || o.ID == r.ID || o.Tier == "" || (o.Tier == "observe") == watched || !SameProgram(o, r) {
+		if o == nil || o.ID == r.ID || o.Tier == "" || (o.Tier == "observe") == watched || !sameIdentity(o, r) {
 			continue
 		}
 		if best == nil || gap(o) < gap(best) {
@@ -57,6 +58,12 @@ func PairOf(runs []*Run, r *Run) *Run {
 		}
 	}
 	return best
+}
+
+// sameIdentity requires recorded workspace and agent identities. A program name and
+// a nearby start time alone cannot authorize borrowing another run's contract.
+func sameIdentity(a, b *Run) bool {
+	return SameProgram(a, b) && path.IsAbs(a.Cwd) && a.Cwd == b.Cwd && a.Agent != "" && a.Agent == b.Agent && a.Harness == b.Harness
 }
 
 // SameProgram reports whether two runs ran the same program (the base name of each command's first word).
@@ -147,10 +154,31 @@ func nearSend(st *SecretTouch, outbound []Dest) (near, read bool) {
 		if d.Background || d.InContract || ResolverDst(d.Key) {
 			continue
 		}
-		if nearOne(st.reads, d.FirstSeq, d.First) {
+		if pairDistance(st.reads, d.sends) != ^uint64(0) {
 			return true, true
 		}
+		near = near || nearOne(st.reads, d.FirstSeq, d.First)
 		near = near || nearOne(first, d.FirstSeq, d.First)
 	}
 	return near, false
+}
+
+// pairDistance measures only successful read/send pairs inside both windows.
+// Sequence order bounds the candidates even when a destination was contacted
+// thousands of times before its first secret read.
+func pairDistance(reads, sends []touchAt) uint64 {
+	best := ^uint64(0)
+	for _, send := range sends {
+		i := sort.Search(len(reads), func(i int) bool { return reads[i].seq >= send.seq || send.seq-reads[i].seq <= NearSecretLines })
+		for ; i < len(reads); i++ {
+			r := reads[i]
+			if r.seq > send.seq && r.seq-send.seq > NearSecretLines {
+				break
+			}
+			if delta := r.ts.Sub(send.ts); delta >= -NearSecretWindow && delta <= NearSecretWindow {
+				best = min(best, nearest(send.seq, []uint64{r.seq}))
+			}
+		}
+	}
+	return best
 }

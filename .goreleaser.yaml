@@ -173,9 +173,10 @@ checksum:
     - glob: ./examples/lima/tego.yaml
 
 # docs/CHANGELOG.md is the hand-maintained record (VERSIONING.md §5); no second, commit-log-derived one. release.yml
-# passes the tag's section of it as --release-notes (scripts/release.sh notes).
+# passes the tag's section as --release-notes, which bypasses commit-log generation. This pipe must stay enabled:
+# disabling it also ignores --release-notes and creates an empty release body (first public release, v0.1.0).
 changelog:
-  disable: true
+  disable: false
 
 release:
   github:

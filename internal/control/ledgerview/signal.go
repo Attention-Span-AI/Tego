@@ -89,6 +89,8 @@ type Dest struct {
 	// Query is the Logs search text that finds its lines.
 	Query  string
 	groups map[int]bool
+	// sends holds particular successful outbound events, in ledger order.
+	sends []touchAt
 }
 
 // Approval is one ask and what became of it.

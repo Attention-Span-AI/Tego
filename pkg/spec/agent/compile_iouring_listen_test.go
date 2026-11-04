@@ -47,7 +47,11 @@ func TestIOUringWithNoListenListWarnsAtTheRootTiers(t *testing.T) {
 			if tc.built != nil {
 				opts = append(opts, WithTiers(tc.built...))
 			}
-			_, ds := f.compile(c, opts...)
+			_, ds, err := Compile(c, f.machine, f.opts(opts...)...)
+			rootReach := !strings.Contains(tc.body, "tier: landlock") && (tc.built == nil || slices.Contains(tc.built, cgroup) || slices.Contains(tc.built, bpflsm))
+			if (err != nil) != (c.IOUring && rootReach) {
+				t.Fatalf("immutable ring boundary: %v\n%s", err, render(ds))
+			}
 			var found []Diagnostic
 			for _, d := range ds {
 				if d.Code == CodeIOUring && strings.Contains(d.Message, "IORING_OP_LISTEN") {

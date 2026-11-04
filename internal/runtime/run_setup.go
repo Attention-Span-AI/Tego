@@ -317,6 +317,18 @@ func (r *runner) createRuntimeDir() error {
 	if err := privateRuntimeDirs("", dir); err != nil {
 		return err // made just now, 0700, by this euid: another owner or mode is a race, refused whatever the run
 	}
+	if r.rt != nil && r.rt.Builtins != nil {
+		resolved, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			return err
+		}
+		rt := *r.rt
+		b := *rt.Builtins
+		b.OwnRuntime = dir
+		b.OwnRuntimeResolved = resolved
+		rt.Builtins = &b
+		r.rt = &rt
+	}
 	// The run's last refusal is mirrored here, where the agent can read it, since the ledger root is
 	// read-denied to it (agent-contract.md R6a); TEGO_REASON names the file (REASON-CHANNEL §2). A mirror
 	// that cannot be set up costs the harness that channel, not the run.
@@ -516,6 +528,11 @@ func (r *runner) grantCodexHome() error {
 		return err
 	}
 	out := *r.rt
+	if out.Builtins != nil {
+		b := *out.Builtins
+		b.OwnRuntime = r.runtimeDir
+		out.Builtins = &b
+	}
 	out.FS = append(slices.Clone(r.rt.FS), agent.FSRule{
 		Path: r.codexHome, Resolved: resolved, Kind: agent.FSWrite, Access: agent.AccessWriteSet,
 		Runtime: agent.CodexHomeGrant, RuntimeDev: r.codexHomeID.dev, RuntimeIno: r.codexHomeID.ino,

@@ -117,6 +117,10 @@ var PlaneHooks = []PlaneHook{
 	{Name: "bpf", LSM: "bpf", Security: "security_bpf", Decides: true},
 	{Name: "key_permission", LSM: "key_permission", Security: "security_key_permission", Decides: true, Optional: true},
 	{Name: "socket_listen", LSM: "socket_listen", Security: "security_socket_listen", Decides: true},
+	// Mandatory on every plane: adopted tasks have no inherited topology floor.
+	{Name: "capable", LSM: "capable", Security: "security_capable", Decides: true},
+
+	{Name: "unix_may_send", LSM: "unix_may_send", Security: "security_unix_may_send", Decides: true},
 }
 
 // PlaneDecidesMappings reports whether the plane's hooks include step C's, whose bodies decide an executable mapping
@@ -449,6 +453,12 @@ const (
 	// P2): bprm_check refuses one whose pin is missing or differs, sched_process_exec kills one whose mapped argument
 	// area is not the covered one, and the ptrace hooks refuse a peer of an argv-guarded task.
 	PlaneSlotExecPin uint32 = 0x100
+	// PlaneSlotBuiltinTTY delegates terminal opens to the inherited tty domain.
+	PlaneSlotBuiltinTTY uint32 = 0x200
+	// PlaneRuleBuiltinHost is a native peer refusal whose inode could not name a row.
+	PlaneRuleBuiltinHost uint32 = 0x40000
+	// PlaneRuleBuiltinSurface names the ledger control socket floor.
+	PlaneRuleBuiltinSurface uint32 = 0x80000
 )
 
 // The exec pin's forms (ExecPin.Form, enum tego_pin_form) and flags (ExecPin.Flags, enum tego_pin_flag).

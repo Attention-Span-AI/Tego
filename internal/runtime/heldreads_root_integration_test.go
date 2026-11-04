@@ -40,11 +40,13 @@ func TestIntegrationHeldReadsAtRootTier(t *testing.T) {
 	testutil.RequireTier(t, c.doctorRequire(t, "cgroup"), "cgroup")
 	t.Run("cgroup", func(t *testing.T) {
 		heldReadsAtRootTier(t, c, "cgroup")
+		heldIdentityScene(t, c.f, "cgroup", func() *exec.Cmd { return c.command(t, false, "run", filepath.Join(c.f.dir, "agent.yaml")) })
 		heldReadsOPathAtRootTier(t, c, "cgroup")
 	})
 	t.Run("bpflsm", func(t *testing.T) {
 		testutil.RequireTier(t, c.doctorRequire(t, "bpflsm"), "bpflsm")
 		heldReadsAtRootTier(t, c, "bpflsm")
+		heldIdentityScene(t, c.f, "bpflsm", func() *exec.Cmd { return c.command(t, false, "run", filepath.Join(c.f.dir, "agent.yaml")) })
 		heldReadsOPathAtRootTier(t, c, "bpflsm")
 	})
 }

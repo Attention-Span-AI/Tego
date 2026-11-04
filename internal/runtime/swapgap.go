@@ -24,8 +24,8 @@ const (
 	// WarnHeldUnavailable: gate.completion: held whose open deputy did not start, so the open cells are best effort for
 	// the run (ADR 0041, the launch probe's degrade).
 	WarnHeldUnavailable = "held-unavailable"
-	// WarnHeldLabel: the disclosure that a held open is decided by the contract's rules, not by a tighter LSM profile
-	// on the agent (ADR 0041 D2's label check, not built; heldLabelWarning).
+	// WarnHeldLabel: held completion requires equivalent task and completer LSM labels
+	// (ADR 0041 D2; heldLabelWarning).
 	WarnHeldLabel = "held-label"
 )
 

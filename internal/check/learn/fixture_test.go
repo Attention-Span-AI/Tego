@@ -158,13 +158,17 @@ func TestCodexStartupProposal(t *testing.T) {
 	}
 	nets := entries(c, "net")
 	for _, want := range []string{
-		"tcp://140.82.114.3:443",
 		"unix:/var/run/nscd/socket",
 		"unix:/home/user/.cache/tego-workdir/poc-run/home-codex/.codex/app-server-control/app-server-control.sock", // made by the run
 	} {
 		if !slices.Contains(nets, want) {
 			t.Errorf("net.allow lacks %s", want)
 		}
+	}
+	// A previously reached service is still a particular successful send next to
+	// credential reads. Without a contract reference the learner cannot call it safe.
+	if slices.Contains(nets, "tcp://140.82.114.3:443") || !slices.Contains(leakDests(p), "140.82.114.3:443") {
+		t.Error("the later successful GitHub contact lost its secret-read warning")
 	}
 	if !strings.Contains(c, "a socket the run created") {
 		t.Error("a socket the run made is not marked")

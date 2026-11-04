@@ -452,7 +452,7 @@ func TestPlaneEveryHookRecordsItsDecision(t *testing.T) {
 			}
 			continue
 		}
-		if slices.Contains([]string{"ptrace_access_check", "ptrace_traceme", "bpf", "key_permission"}, name) {
+		if slices.Contains([]string{"ptrace_access_check", "ptrace_traceme", "bpf", "key_permission", "capable"}, name) {
 			if !strings.Contains(body, c) || !strings.Contains(body, "tego_control_refuse(run, "+c) {
 				t.Errorf("%s has no correctly attributed control refusal", name)
 			}
@@ -971,7 +971,7 @@ func TestPlaneStepBRefusalsWriteTheirSample(t *testing.T) {
 		t.Error("the plane's step B sample reads a name with a probe-read string helper or bpf_d_path")
 	}
 	for name := range bodies {
-		terminalOrControl := slices.Contains([]string{"socket_bind", "socket_listen", "ptrace_access_check", "ptrace_traceme", "bpf", "key_permission"}, name)
+		terminalOrControl := slices.Contains([]string{"socket_bind", "socket_listen", "ptrace_access_check", "ptrace_traceme", "bpf", "key_permission", "capable"}, name)
 		if _, fexit := planeFexitHooks[name]; !fexit && !terminalOrControl && name != "bprm_check" && !planeUnixHook(name) && !strings.Contains(bodies[name], "_sample(") &&
 			!strings.Contains(bodies[name], "tego_protect_hook(") && !strings.Contains(bodies[name], "tego_map_decide(") {
 			t.Errorf("%s has no recorder fexit and writes no sample of its own", name)

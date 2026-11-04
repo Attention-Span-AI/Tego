@@ -148,6 +148,24 @@ func (k sysKernel) OpenAlternate(h *heldAskOpen, alt *ask.AlternateFile, flags i
 	return fd, resolved, nil
 }
 
+// A person's choice cannot override deny_read (ADR 0057 D2). Consult the
+// retained identities even for a write-only alternate, before any truncation.
+func (l *Loop) heldAlternateCheck(c *compiled, a *ask.AlternateFile) error {
+	if c.heldReads == nil {
+		return nil
+	}
+	return a.Control(func(fd int) error {
+		var st unix.Stat_t
+		if err := unix.Fstat(fd, &st); err != nil {
+			return err
+		}
+		if rule, refused := l.heldReadIdentityRefusal(c, unix.O_RDONLY, decide.HeldReadID{Dev: st.Dev, Ino: st.Ino}, true); refused {
+			return alternateRefused("%s", rule)
+		}
+		return nil
+	})
+}
+
 // openAlternate is the checks on pin, the descriptor of the file the person named (by named), and its reopen, on
 // the thread runAskOpenAs gave the task's credentials.
 func openAlternate(pin int, named string, reopen int, refuse func(string) string) (int, string, error) {

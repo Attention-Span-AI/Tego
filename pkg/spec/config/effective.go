@@ -44,6 +44,7 @@ func (m *Machine) Effective() []Value {
 	}
 	named("tier", m.Tier.Value.String(), m.Tier.Source, m.Tier.Bounded)
 	named("capture", m.Capture.Value.String(), m.Capture.Source, m.Capture.Bounded)
+	settingRow("serve.port", strconv.Itoa(m.ServePort.Value), m.ServePort.Source)
 	settingRow("ledger_root", m.LedgerRoot.Value, m.LedgerRoot.Source)
 	settingRow("retention", FormatDuration(m.Retention.Value), m.Retention.Source)
 	settingRow("gc_interval", FormatDuration(m.GCInterval.Value), m.GCInterval.Source)

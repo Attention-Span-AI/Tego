@@ -44,9 +44,8 @@ type signalSlot struct {
 }
 
 // maxSignals bounds the cache: one entry per run, dropped wholesale when more runs than this were asked for. It is
-// far above a ledger's run count: the overview asks for every run with a refusal on each load, and a bound below
-// that count emptied the cache on every load.
-const maxSignals = 1 << 14
+// limited independently of the number of runs, and discarded with evicted windows.
+const maxSignals = 64
 
 var (
 	signalMu    sync.Mutex

@@ -108,6 +108,59 @@ such distribution, and otherwise runs the Linux line inside it. Download it, rea
 
 **Tested on** nothing yet: neither the steps nor the script have been run on Windows.
 
+## Run in a container
+
+Signing runs in an isolated job after the binary and image builds. The certificate identity remains this
+repository's `release.yml` workflow at the tag; job names do not enter it. The verification commands below therefore
+use the same workflow/tag identity as the binary installer.
+
+Tagged releases publish `ghcr.io/attention-span-ai/tego` for Linux amd64 and arm64. Stable `v0.1.0` has image tags
+`0.1.0`, `0.1` and `latest`; prereleases have only their full version tag, such as `0.1.0-rc.1`. The image contains the
+exact `tego` and `tego-control` binaries checked by the release's signed checksums and reproduction job.
+
+Copy the image digest from the chosen release's notes into `digest` below. Verify it with cosign before running,
+using that release's exact tag identity (including the leading `v`). Docker selects your machine's architecture
+from the signed multi-platform index. The digest pins the image even if a tag later moves.
+
+```sh
+tag=v0.1.0
+image=ghcr.io/attention-span-ai/tego
+digest='sha256:REPLACE_WITH_THE_RELEASE_NOTES_DIGEST'
+cosign verify \
+  --certificate-identity "https://github.com/Attention-Span-AI/Tego/.github/workflows/release.yml@refs/tags/$tag" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "$image@$digest" &&
+docker run --rm --user 10001:10001 --cap-drop ALL \
+  --security-opt no-new-privileges:true "$image@$digest" tego version
+```
+
+Build provenance is stored in GitHub and GHCR for the same digest. With an authenticated GitHub CLI:
+
+```sh
+gh attestation verify "oci://$image@$digest" --repo Attention-Span-AI/Tego \
+  --cert-identity "https://github.com/Attention-Span-AI/Tego/.github/workflows/release.yml@refs/tags/$tag" \
+  --source-ref "refs/tags/$tag"
+```
+
+To run the included hello agent after verification succeeds, the entrypoint needs a private cgroup v2 namespace and
+capabilities to prepare the user's subtree. It drops them before starting Tego. Keep its state and ledger on separate
+volumes:
+
+```sh
+docker run --rm --init --cgroupns=private --stop-timeout 40 \
+  --cap-drop ALL --cap-add SYS_ADMIN --cap-add SYS_PTRACE --cap-add CHOWN \
+  --cap-add SETUID --cap-add SETGID --cap-add SETPCAP \
+  --security-opt apparmor=unconfined --security-opt no-new-privileges:true \
+  -e TEGO_DELEGATE=yes \
+  -v tego-state:/home/tego/.tego -v tego-ledger:/var/lib/tego/runs -v tego-work:/work \
+  "$image@$digest" tego run /usr/local/share/tego/hello.yaml
+```
+
+The host's Linux kernel still determines which tier works. See [the container guide](user/container.md) for the
+settings, supported hosts and a Compose setup. The published image uses uid/gid 10001; build it locally with your own
+uid/gid when opening the dashboard from the host. First publication also needs an organization/package admin to make
+the GHCR package public once; see [the release runbook](VERSIONING.md#72-how-the-tag-is-made).
+
 ## Build from source
 
 ```sh
@@ -271,7 +324,11 @@ Tego's data is in `~/.tego` (runs, the chain anchor, config). Remove it only if 
 
 ## Containers
 
-To run an agent under Tego in a container, see [user/container.md](user/container.md).
+To run an agent under Tego in a container, see [user/container.md](user/container.md). A project with a `.env` inside
+the folder the agent writes needs that folder on a local filesystem: a named volume or a bind mount of a local folder,
+not the image's own layer and not a network or FUSE share (Docker Desktop's file sharing on macOS and Windows is one);
+[user/container.md](user/container.md#a-secret-inside-the-work-folder) says why. The same holds outside containers: on
+NFS, sshfs or a VM's shared folder, keep such a project on the machine's own disk.
 
 ## Next
 

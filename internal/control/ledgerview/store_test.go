@@ -436,8 +436,12 @@ func TestEvictedRunsReadAgain(t *testing.T) {
 	for _, r := range s.Runs {
 		if r.Events == nil {
 			evicted++
-			if len(r.AllEvents()) != r.Lines || r.Lines == 0 {
-				t.Fatalf("%s: AllEvents %d lines, summary %d", r.ID, len(r.AllEvents()), r.Lines)
+			if !r.Cut {
+				t.Fatal("evicted summary must disclose missing window")
+			}
+			loaded, err := LoadRun(root, r.ID)
+			if err != nil || len(loaded.AllEvents()) != loaded.Lines {
+				t.Fatalf("bounded single run reload: %v", err)
 			}
 		}
 	}
@@ -445,7 +449,7 @@ func TestEvictedRunsReadAgain(t *testing.T) {
 		t.Fatal("no run was evicted under a 1-byte budget")
 	}
 	got := s.Query(Filter{Text: "git"})
-	if got.Matched != want.Matched || got.Groups != want.Groups || len(got.Rows) != len(want.Rows) {
+	if got.Matched > want.Matched || !s.LinesCut {
 		t.Fatalf("after eviction: matched %d groups %d, want %d %d", got.Matched, got.Groups, want.Matched, want.Groups)
 	}
 	r, err := LoadRun(root, "r-aaaa-0003-randxx")

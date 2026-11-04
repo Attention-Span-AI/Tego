@@ -4,4 +4,5 @@
 # fails on a line with fewer.
 internal/runtime/launch/child.go inheritFile 1
 internal/runtime/launch/child.go stage.setup 1
+internal/runtime/mcprelay/server.go ServerMain 1
 internal/runtime/reap.go inheritReapFDs 5

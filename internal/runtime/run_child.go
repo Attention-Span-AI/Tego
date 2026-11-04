@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/doctor"
 	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/internal/platform/startphase"
 
@@ -91,7 +92,8 @@ func (r *runner) startChild(ctx context.Context) error {
 			r.deputy = c
 			r.keepDeputy()
 			if r.deps.Warn != nil {
-				r.warnHeldLabel(os.ReadFile(lsmListPath))
+				state, err := doctor.ReadLSMState()
+				r.warnHeldLabel([]byte(strings.Join(state.Modules, ",")), err)
 			}
 		}
 	}
@@ -155,9 +157,6 @@ func (r *runner) deputyUnavailable(err error) error {
 	return nil
 }
 
-// lsmListPath is securityfs's list of the active LSMs.
-const lsmListPath = "/sys/kernel/security/lsm"
-
 // taskLabellingLSMs are the LSMs that label each task, a label an exec can change: an AppArmor profile's attachment, a
 // SELinux domain transition, a Smack label.
 var taskLabellingLSMs = []string{"apparmor", "selinux", "smack"}
@@ -170,6 +169,14 @@ func (r *runner) warnHeldLabel(lsm []byte, err error) {
 		return
 	}
 	if w := heldLabelWarning(r.heldBy(), lsm, err); w != "" {
+		if strings.Contains(","+strings.TrimSpace(string(lsm))+",", ",apparmor,") {
+			assume := r.rt != nil && r.rt.Contract != nil && r.rt.Contract.FS != nil && r.rt.Contract.FS.AppArmorAssumeRootNamespace
+			if assume {
+				w += "; fs.apparmor_assume_root_namespace: true accepts hidden-ancestor risk when namespace depth is unreadable; run_start.best_effort records apparmor/assumed-root-namespace"
+			} else if _, e := os.ReadFile("/sys/kernel/security/apparmor/.ns_level"); e != nil {
+				w += fmt.Sprintf("; AppArmor namespace depth is unreadable (%v): file completions return EACCES / Permission denied (held-label-unavailable); expose readable securityfs from the root AppArmor policy namespace, or have the container administrator accept hidden-ancestor risk with fs.apparmor_assume_root_namespace: true", e)
+			}
+		}
 		r.deps.Warn(WarnHeldLabel, w)
 	}
 }
@@ -190,24 +197,16 @@ func (r *runner) heldBy() string {
 	return strings.Join(by, " and ")
 }
 
-// heldLabelWarning is the disclosure of ADR 0041 D2's label check, which is not built: a held open
-// is the open deputy's, made under the deputy's own LSM label, so a process of the run that an AppArmor profile or a
-// SELinux domain confines more tightly than the deputy (an agent binary with a profile of its own, or a tool it execs
-// into one) is not held to that confinement for its held opens. It is a required disclosure, so it is never left out of a
-// run's start; it is one line in plain words (the presenter's first line read like a failure). It names the
-// task-labelling LSMs lsm lists (the contents of lsmListPath, read with err), says so when the list cannot be read,
-// and is "" when none is active. by names the key that holds the run's opens (runner.heldBy): a run that holds only
-// its reads speaks of a file read, any other of a file open. The words are the audience's, not tego's own: "held read"
-// and a repo path (docs/OPERATIONS.md, ADR 0041 D2) meant nothing to a person with an installed binary; the full
-// account is in docs/OPERATIONS.md, held opens.
+// heldLabelWarning explains ADR 0041 D2's fail-closed label comparison in plain
+// words. A run holding only reads names a file read; gate completion also covers
+// write opens. The full account is in OPERATIONS, held opens.
 func heldLabelWarning(by string, lsm []byte, err error) string {
 	what := "file open that tego checks and makes"
 	if strings.HasPrefix(by, "fs.reads:") && !strings.Contains(by, "gate.completion") {
 		what = "file read that tego checks and opens"
 	}
 	if err != nil {
-		return fmt.Sprintf("the host's security modules could not be read (%v); if AppArmor or SELinux is active, a %s for "+
-			"the agent is decided by the contract's rules, and a tighter profile on the agent is not applied to it", err, what)
+		return fmt.Sprintf("the host's security modules could not be read (%v); a %s for the agent is refused when its security labels cannot be verified; permit lsm_list_modules in the outer seccomp filter or expose readable /sys/kernel/security/lsm", err, what)
 	}
 	var names, holds []string
 	for _, name := range strings.Split(strings.TrimSpace(string(lsm)), ",") {
@@ -222,8 +221,17 @@ func heldLabelWarning(by string, lsm []byte, err error) string {
 	if len(names) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("on %s a %s for the agent is decided by the contract's rules; a tighter %s on the agent is not "+
-		"applied to it", strings.Join(names, "/"), what, strings.Join(holds, " or "))
+	if slices.Contains(names, "Smack") {
+		return fmt.Sprintf("on %s a %s for the agent is refused because Smack's process-specific rules cannot be verified across processes", strings.Join(names, "/"), what)
+	}
+	note := fmt.Sprintf("on %s a %s for the agent requires the same %s as the process opening the file; a different or unreadable label refuses it", strings.Join(names, "/"), what, strings.Join(holds, " or "))
+	if slices.Contains(names, "AppArmor") {
+		note += "; AppArmor also requires proof that all profile components are visible (readable policy namespace depth zero)"
+	}
+	if slices.Contains(names, "SELinux") {
+		note += "; SELinux file creation contexts must also match before creating a file"
+	}
+	return note
 }
 
 // lsmDisplay is each task-labelling LSM's name as people write it and what it confines a program with.
@@ -336,7 +344,7 @@ func (r *runner) childSpec() (launch.ChildSpec, error) {
 // agentEnv is the agent's environment before a harness provision's additions (harnessEnv): env.pass/deny/set applied
 // to the launcher's own (agentBaseEnv), the identity set written last and unconditionally (SEMANTICS §9, R3), then the DNS broker's
 // and the guarded resolver's variables. provisionHarness tells the provisioner this environment, and childSpec execs
-// it, so the two cannot differ.
+// it. The explicit XDG_RUNTIME_DIR %R request is resolved after provisioning (claudesockets.go).
 func (r *runner) agentEnv() []string {
 	env := identity.Env{
 		RunID: r.id, Agent: r.agentID, ParentRun: identity.RunID(r.deps.ParentRun),

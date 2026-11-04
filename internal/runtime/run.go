@@ -731,6 +731,9 @@ func (r *runner) prepare(ctx context.Context) error {
 	if err := r.provisionHarness(); err != nil {
 		return err
 	}
+	if err := r.configureClaudeSockets(); err != nil {
+		return err
+	}
 	if err := r.prepareEnforcement(ctx); err != nil {
 		return err
 	}

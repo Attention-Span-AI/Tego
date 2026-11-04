@@ -33,7 +33,13 @@ func handleTkill(l *Loop, n *notif)            { l.answerSignal(n, "tkill") }
 func handleTgkill(l *Loop, n *notif)           { l.answerSignal(n, "tgkill") }
 func handleRtSigqueueinfo(l *Loop, n *notif)   { l.answerSignal(n, "rt_sigqueueinfo") }
 func handleRtTgsigqueueinfo(l *Loop, n *notif) { l.answerSignal(n, "rt_tgsigqueueinfo") }
-func handleIoctl(l *Loop, n *notif)            { l.answerSignal(n, "ioctl") }
+func handleIoctl(l *Loop, n *notif) {
+	if uint32(n.args[1]) == unix.TIOCGPTPEER {
+		l.ptyPeer(n)
+		return
+	}
+	l.answerSignal(n, "ioctl")
+}
 
 // handleFcntl answers the two fcntl(2) commands a filter notifies: F_NOTIFY, a dnotify watch, which the watch arm
 // notifies (enforce-landlock R11e) and handleDnotify decides (R36), and F_SETOWN or F_SETOWN_EX, which the signal-scope

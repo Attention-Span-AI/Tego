@@ -16,7 +16,8 @@ import (
 // HeldReadIndex is a table's held-read floor, indexed once: its queries allocate one folded copy of the path and
 // nothing else. A nil index refuses nothing.
 type HeldReadIndex struct {
-	rt *agent.RuleTable
+	rt     *agent.RuleTable
+	pinned map[HeldReadID]string
 	// literal is every literal deny_read name rule (a built-in home path, a glob with no metacharacter left after its
 	// escapes), ASCII folded, to its rule; globs are the rest, as compiled and folded.
 	literal map[string]string
@@ -27,12 +28,25 @@ type HeldReadIndex struct {
 
 type heldGlob struct{ pattern, folded, rule string }
 
+// HeldReadID identifies a live object. The caller retains its descriptor so an
+// unlinked inode cannot be recycled while the index is in use.
+type HeldReadID struct{ Dev, Ino uint64 }
+
+// HeldReadPin is a launch-pinned object and the entry that refuses its reads.
+type HeldReadPin struct {
+	ID   HeldReadID
+	Rule string
+}
+
 // NewHeldReadIndex indexes rt's held-read floor (agent.RuleTable.Reads), nil for a nil table.
-func NewHeldReadIndex(rt *agent.RuleTable) *HeldReadIndex {
+func NewHeldReadIndex(rt *agent.RuleTable, pins ...HeldReadPin) *HeldReadIndex {
 	if rt == nil {
 		return nil
 	}
-	x := &HeldReadIndex{rt: rt, literal: map[string]string{}}
+	x := &HeldReadIndex{rt: rt, literal: map[string]string{}, pinned: map[HeldReadID]string{}}
+	for _, p := range pins {
+		x.pinned[p.ID] = p.Rule
+	}
 	for _, p := range rt.Reads.Patterns {
 		if lit, ok := literalPattern(p.Pattern); ok {
 			if _, dup := x.literal[agent.FoldName(lit)]; !dup {
@@ -86,9 +100,20 @@ func literalPattern(p string) (string, bool) {
 //	    reopens its own subtree, as it does under (a).
 //
 // rules is the table's resolved advisory list where the caller has one (the supervisor's), nil to ask the table by
-// scan. Rule (b), the targets' identities pinned at launch, is ADR 0069's next step and not asked here; (d), tego's own
+// scan. RefusalOn also checks (b), the launch-pinned identity; (d), tego's own
 // state, is the supervisor's (ownStateOf).
 func (x *HeldReadIndex) Refusal(rules *AdvisoryList, path string, dir bool) (rule string, refused bool) {
+	return x.RefusalOn(rules, path, dir, HeldReadID{})
+}
+
+// RefusalOn checks the retained launch identity before the object's current name.
+// This also refuses a hard-link alias or a nameless reopened descriptor.
+func (x *HeldReadIndex) RefusalOn(rules *AdvisoryList, path string, dir bool, id HeldReadID) (rule string, refused bool) {
+	if x != nil {
+		if rule, ok := x.pinned[id]; ok {
+			return rule, true
+		}
+	}
 	if x == nil || path == "" || path[0] != '/' {
 		return "", false
 	}

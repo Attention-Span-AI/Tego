@@ -157,7 +157,7 @@ func TestLoadIsBounded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !r.Cut || r.Lines != MaxLines || !r.Ended || r.ExitCode != 3 {
+	if !r.Cut || r.Lines != MaxLines+12 || len(r.Events) > MaxLines || !r.Ended || r.ExitCode != 3 {
 		t.Fatalf("big run: cut %v lines %d ended %v exit %d", r.Cut, r.Lines, r.Ended, r.ExitCode)
 	}
 	if _, err := LoadRun(root, "../etc"); !os.IsNotExist(err) {

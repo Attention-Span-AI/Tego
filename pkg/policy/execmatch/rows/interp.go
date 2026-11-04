@@ -19,7 +19,7 @@ var pythonModules = map[string]string{"pip": "pip", "pip3": "pip", "twine": "twi
 var entryScripts = map[string]string{"npm-cli.js": "npm", "npx-cli.js": "npx", "pnpm.cjs": "pnpm", "pnpm.js": "pnpm",
 	"yarn.js": "yarn", "yarn.cjs": "yarn"}
 
-// interpreters are the interpreter rows: python (probed 3.13), node (probed 20), sh, bash and dash (probed), zsh,
+// interpreters are the interpreter rows: python (probed 3.13), node (probed 20 and 22), sh, bash and dash (probed), zsh,
 // perl and ruby (documented). Each reads its own options up to the script, module or code; dispatch is by the
 // module and entry-script tables, else the script's basename. Code given with -c or -e is opaque (R1).
 func interpreters() []*execmatch.Row {
@@ -43,10 +43,10 @@ func interpreters() []*execmatch.Row {
 	// only, `_` in the name is `-` (Underscores), and then --no-<name> is <name> negated: a boolean turns off, a V8
 	// option goes to V8, and any other is refused, so --no-<name> takes no value. node expands its aliases on the
 	// negated name too, so --no-print reads a word after it as code, as --print does (nextWord). It neither clusters
-	// letters nor takes a prefix of a name.
-	nodeSyn := execmatch.Syntax{LongEquals: true, LongSep: true, Negatable: true, Underscores: true}
+	// letters (except the exact -pe alias) nor takes a prefix of a name.
+	nodeSyn := execmatch.Syntax{LongEquals: true, LongSep: true, Negatable: true, Underscores: true, ClusterWords: []string{"-pe"}}
 	node := &execmatch.Row{
-		Tool: "node", Names: []string{"nodejs"}, Version: "20.19.4", Source: execmatch.SourceProbed,
+		Tool: "node", Names: []string{"nodejs"}, Version: "20.19.4 / 22.21.1", Source: execmatch.SourceProbed,
 		Docs: "node(1), src/node_options-inl.h's parser, src/node_options.cc's options and aliases as its options binding lists them, node --v8-options",
 		Root: leaf(nodeSyn, nodeOpts()...),
 		// Under -i or --build-snapshot node runs the script after its options and leaves the code unrun, wherever they
@@ -55,7 +55,7 @@ func interpreters() []*execmatch.Row {
 		// arguments, and each --loader names, with none; and it imports each module --test-reporter names that is not
 		// one of its own reporters when a test runs, with the script's arguments too (probed, with --test and with a
 		// script that runs a test). It finds a script or a -r module named without its .js (probed).
-		Interp: &execmatch.InterpSpec{Code: []string{"eval", "print"}, CodeUnless: []string{"interactive", "build-snapshot"},
+		Interp: &execmatch.InterpSpec{Versions: []string{"20.19.4", "22.21.1"}, Fallback: fallbackNodeRow(), ArgvRewrite: nodeArgvRewrite, Code: []string{"eval", "print"}, CodeUnless: []string{"interactive", "build-snapshot"},
 			Preload: []string{"require", "import", "test-reporter"}, Loaders: []string{"loader"}, Scripts: entryScripts,
 			Extensions: []string{".js"}},
 	}
@@ -107,14 +107,9 @@ func interpreters() []*execmatch.Row {
 	}
 }
 
-// nodeOpts are the node row's options: node 20.19.4's own, typed as its options binding types them, each of its aliases
-// read as node expands it, and V8's common flags (TestNodeRowTable holds them to node's tables, and the
-// TestNodeRow*Differential tests to what node runs). An option the row lacks is read both ways in front of the script,
-// and each one forks the readings toward MaxReadings, past which the exec is refused command-unresolved (docs/GAPS.md
-// C49). Left out, and so read both ways: a no-op that took a value in an older node
-// (--experimental-specifier-resolution, its alias --es-module-specifier-resolution, and --http-parser), -pe (--print
-// --eval, whose code is never a script), V8's other flags and spellings (-expose-gc, --noexpose-gc), and what a later
-// node adds.
+// nodeOpts combines the versioned inventories captured by scripts/node-options.py with the
+// aliases whose expansions affect dispatch. Arity is Node's, not V8's: a forwarded
+// V8 option never consumes Node's next token. See docs/spec/exec-command-rows.md.
 func nodeOpts() []execmatch.Opt {
 	opts := []execmatch.Opt{
 		// -p and --print are a boolean, and node's alias `--print <arg>` is -pe, --print --eval <arg>: a word after them
@@ -125,6 +120,7 @@ func nodeOpts() []execmatch.Opt {
 		esmModule(val("import", "")), esmModule(val("test-reporter", "")),
 		val("inspect-port", "", "inspect-port", "debug-port"), val("report-dir", "", "report-dir", "report-directory"),
 		val("security-revert", "", "security-revert", "security-reverts"),
+		flag("experimental-permission", "", "experimental-permission", "permission"),
 		flag("network-family-autoselection", "", "network-family-autoselection", "enable-network-family-autoselection"),
 		// The debugger's, which take a host:port only attached (--inspect=9229), through node's aliases.
 		opt("inspect", ""), opt("inspect-brk", ""), opt("inspect-brk-node", ""), opt("inspect-wait", ""),
@@ -142,8 +138,22 @@ func nodeOpts() []execmatch.Opt {
 		// the file's "main" in its own process, whatever argv holds (probed); without it node writes the blob and runs
 		// nothing, which the row cannot tell from argv either.
 		unlocatable(val("experimental-sea-config", "")),
+		// Node 22 reads options/preloads from config, resolves an entry as a URL,
+		// or dispatches a package.json command. Their actual targets are not in argv.
+		unlocatable(val("experimental-config-file", "")),
+		unlocatable(flag("experimental-default-config-file", "")),
+		unlocatable(flag("entry-url", "")),
+		unlocatable(val("run", "")),
+		unlocatable(val("env-file", "")), unlocatable(val("env-file-if-exists", "")),
+		// With no process isolation, --test executes multiple operands (or
+		// discovered tests) in this process, not just the first entry script.
+		{Name: "experimental-test-isolation", Long: []string{"experimental-test-isolation"},
+			Arg: execmatch.ArgRequired, Rewrite: func(v string) bool { return v == "none" }},
 	}
 	for _, name := range nodeFlags {
+		opts = append(opts, flag(name, ""))
+	}
+	for _, name := range nodeV8Flags {
 		opts = append(opts, flag(name, ""))
 	}
 	for _, name := range nodeValues {
@@ -209,12 +219,19 @@ func urlScheme(s string) bool {
 // takes a value only from the options node handed it, never the script, so `node --max-old-space-size --require
 // ./x.js -0 app.js` runs app.js with -0 as V8's value.
 var nodeFlags = []string{
-	// booleans
+	// booleans present in 22.21.1 but absent in 20.19.4 (which rejects them)
+	"disable-sigusr1", "experimental-addon-modules", "experimental-async-context-frame",
+	"experimental-global-navigator", "experimental-inspector-network-resource", "experimental-sqlite",
+	"experimental-strip-types", "experimental-transform-types", "experimental-webstorage",
+	"experimental-worker-inspection", "report-exclude-env", "test-update-snapshots", "trace-env",
+	"trace-env-js-stack", "trace-env-native-stack", "use-env-proxy", "use-system-ca",
+	"experimental-test-snapshots",
+	// booleans shared with 20.19.4
 	"addons", "allow-addons", "allow-child-process", "allow-wasi", "allow-worker", "build-snapshot", "completion-bash",
 	"cpu-prof", "debug", "debug-arraybuffer-allocations", "debug-brk", "deprecation", "disable-wasm-trap-handler",
 	"enable-fips", "enable-source-maps", "experimental-detect-module", "experimental-eventsource", "experimental-fetch",
 	"experimental-global-customevent", "experimental-global-webcrypto", "experimental-import-meta-resolve",
-	"experimental-network-imports", "experimental-network-inspection", "experimental-permission",
+	"experimental-network-imports", "experimental-network-inspection",
 	"experimental-print-required-tla", "experimental-repl-await", "experimental-require-module",
 	"experimental-shadow-realm", "experimental-test-coverage", "experimental-test-module-mocks",
 	"experimental-vm-modules", "experimental-wasm-modules", "experimental-websocket", "expose-internals",
@@ -236,10 +253,7 @@ var nodeFlags = []string{
 	"abort-on-uncaught-exception", "disallow-code-generation-from-strings", "enable-etw-stack-walking", "expose-gc",
 	"harmony-shadow-realm", "huge-max-old-generation-size", "interpreted-frames-native-stack", "jitless",
 	"max-old-space-size", "max-semi-space-size", "perf-basic-prof", "perf-basic-prof-only-functions", "perf-prof",
-	"perf-prof-unwinding-info", "prof", "stack-trace-limit",
-	// V8's common flags beyond node's list
-	"allow-natives-syntax", "async-stack-traces", "harmony", "lazy", "maglev", "opt", "predictable", "single-threaded",
-	"sparkplug", "stack-size", "trace-deopt", "trace-gc", "trace-opt", "turbofan",
+	"perf-prof-unwinding-info", "prof",
 }
 
 // nodeValues are node's options that take the next token as their value: the string, list and number options of its
@@ -247,12 +261,16 @@ var nodeFlags = []string{
 // of these values as a module or a script: those it does are listed above, -r, --import, --loader and --test-reporter
 // read as modules node runs and --build-snapshot-config and --experimental-sea-config refused (reviewed 2026-11-02
 // over every option node 20.19.4's internal modules read with getOptionValue, and the files its snapshot and
-// single-executable builders read). Two of these name a file whose content can still change what node runs, outside
-// argv: --env-file's (and --env-file-if-exists') can set NODE_OPTIONS, which the row does not read (ADR 0048 R3), and
-// --snapshot-blob's blob holds code a node --build-snapshot line built, a line whose script the decision read.
+// single-executable builders read). A snapshot file can still change what node runs, outside
+// argv. Env files are separately refused by the pre-scan, even in script arguments.
+// --snapshot-blob can restore code from a previously built snapshot (ADR 0048 R3).
 var nodeValues = []string{
+	// present in 22.21.1 but absent in 20.19.4
+	"localstorage-file", "max-old-space-size-percentage",
+	"test-coverage-branches", "test-coverage-exclude", "test-coverage-functions", "test-coverage-include",
+	"test-coverage-lines", "test-skip-pattern", "watch-kill-signal",
 	"allow-fs-read", "allow-fs-write", "cpu-prof-dir", "cpu-prof-interval", "cpu-prof-name", "diagnostic-dir",
-	"disable-proto", "disable-warning", "dns-result-order", "env-file", "env-file-if-exists",
+	"disable-proto", "disable-warning", "dns-result-order",
 	"experimental-default-type", "experimental-policy", "heap-prof-dir", "heap-prof-interval", "heap-prof-name",
 	"heapsnapshot-near-heap-limit", "heapsnapshot-signal", "icu-data-dir", "input-type", "inspect-publish-uid",
 	"max-http-header-size", "network-family-autoselection-attempt-timeout", "openssl-config", "policy-integrity",
@@ -282,4 +300,23 @@ func multicall() []*execmatch.Row {
 	toybox := mc("toybox", "0.8", execmatch.SourceDocumented)
 	toybox.Argv0Prefix = true // toy_find: the multiplexer's name works as a prefix
 	return []*execmatch.Row{busybox, coreutils, toybox}
+}
+
+// nodeArgvRewrite mirrors the pre-scanners' reach, not OptionsParser's. Config
+// prefixes are read even past -- and stdin; dotenv scanning stops only at --.
+// Do not normalize underscores: these scans compare the raw bytes (C49 review).
+func nodeArgvRewrite(args []string) bool {
+	env := true
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--experimental-config-file") || strings.HasPrefix(arg, "--experimental-default-config-file") {
+			return true
+		}
+		if arg == "--" {
+			env = false
+		}
+		if env && strings.HasPrefix(arg, "--env-file") {
+			return true
+		}
+	}
+	return false
 }

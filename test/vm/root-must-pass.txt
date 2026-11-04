@@ -337,3 +337,12 @@ internal/runtime TestAdoptedAgentCannotAnswer # ask hardening: a process tego ad
 
 # The dashboard's peer-uid check (F21) on the kernel's own tcp table, against a process of a second real uid.
 internal/control/web TestPeerUIDRefusesAnotherRealUser # a client running as uid 65534 gets 403 and no cookie, with the token and with the session's cookie, each page naming its socket and that uid; the serving user's own client gets in
+# ADR 0055 NET09: live processes receive the mount-topology floor in both modes.
+internal/runtime/enforce/cgroup TestPlaneAdoptedProcessCannotChangeMountTopology # a live task without Landlock or seccomp must be refused mount and mount-namespace changes by the plane
+internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlaneWatcher # the watcher arms a live agent, refuses its mount-namespace change through the plane and releases it cleanly
+internal/runtime TestIntegrationAdoptFreezesTopologyAtMigration # the runtime arms the empty scope before migration; the agent attempts a bind immediately after the real cgroup write
+
+
+internal/runtime TestRootBuiltinRefusals # ADR 0113: immutable IPC, control and tty refusals at cgroup and bpflsm
+internal/runtime/enforce/cgroup TestPlaneRunIOUringListenerOutcomes # ADR 0113: root ring opt-in refuses startup
+internal/runtime/enforce/cgroup TestRootBuiltinRefusalsPeer # ADR 0113: the native peer closes explicitly allowed hard-link and symlink datagram aliases

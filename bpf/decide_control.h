@@ -102,3 +102,23 @@ TEGO_PLANE_HOOK(key_permission, key_permission, security_key_permission,
         return 0;
     return tego_control_refuse(run, TEGO_HOOK_KEY_PERMISSION, TEGO_R_READ_DENIED, 0, need_perm);
 }
+
+/* ADR 0055 NET09: unlike a launched task, an adopted one has no Landlock
+ * domain or seccomp namespace arm. Every topology-changing mount API and
+ * mount-namespace install/copy requires CAP_SYS_ADMIN through security_capable,
+ * including checks against a newly created user namespace's credentials.
+ * Refuse the capability in every user namespace: checking only the initial
+ * namespace would leave rootless mounts open. No optional userns_create hook
+ * is needed; creating a user namespace alone changes no mount view.
+ * This deliberately also refuses non-mount uses of CAP_SYS_ADMIN. */
+TEGO_PLANE_HOOK(capable, capable, security_capable,
+                 (const struct cred *cred, struct user_namespace *ns, int cap), (cred, ns, cap))
+{
+    struct tego_run *run = tego_current_run(&tego_run_set);
+    if (!run || run->plane != TEGO_PLANE_RUN_MODE(mode))
+        return 0;
+    if (cap != 21) /* CAP_SYS_ADMIN, include/uapi/linux/capability.h */
+        return 0;
+    /* No slot-header lookup may turn this unconditional floor into an allow. */
+    return tego_control_refuse(run, TEGO_HOOK_CAPABLE, TEGO_R_PROCESS_SCOPE, 0, cap);
+}

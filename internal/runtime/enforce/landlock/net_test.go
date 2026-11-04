@@ -190,7 +190,8 @@ func TestNoNetSectionHandlesNoUnixRight(t *testing.T) {
 // agent's own connect to a host daemon's socket is refused by the kernel behind the supervisor's relay; the abstract
 // scope stays handled from ABI 6; and its filter notifies bind(2), so the supervisor records the run's own sockets.
 func TestUnixOnlyStateHandlesResolveUnix(t *testing.T) {
-	root := tempDir(t)
+	// Keep the socket fixture short enough for sun_path under a long TMPDIR.
+	root := shortTempDir(t)
 	mkTree(t, root, "out/", "dns/")
 	broker := filepath.Join(root, "dns", "dns.sock")
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: broker, Net: "unix"})

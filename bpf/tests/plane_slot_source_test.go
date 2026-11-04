@@ -32,11 +32,11 @@ func TestPlaneEveryHookReadsTheSlotHeader(t *testing.T) {
 		`tego_decide_remove\(|tego_plane_unix_reason\(|tego_socket_allowed\(|&tego_plane_exec_rows|tego_name_key\(`)
 	for name, body := range bodies {
 		mode := planeRunModeGuard(body)
-		if name == "bpf" {
-			// BPF commands are unconditionally refused for a governed task. No
-			// absent slot can create permission or introduce a policy-row read.
-			if mode == nil || !strings.Contains(body[mode[1]:], "return tego_control_refuse(run, TEGO_HOOK_BPF, TEGO_R_PROCESS_SCOPE") {
-				t.Error("BPF command lost unconditional governed refusal")
+		if name == "bpf" || name == "capable" {
+			// These floors have no policy-row read or contract opt-out. An absent
+			// slot must never permit BPF commands or CAP_SYS_ADMIN.
+			if mode == nil || !strings.Contains(body[mode[1]:], "return tego_control_refuse(run, TEGO_HOOK_"+strings.ToUpper(name)+", TEGO_R_PROCESS_SCOPE") {
+				t.Errorf("%s lost its unconditional governed refusal", name)
 			}
 			continue
 		}

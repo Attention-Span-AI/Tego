@@ -186,18 +186,23 @@ func (r *runner) emitDNS(e dnsbroker.Event) error {
 	}
 	// Serialize the decision before upstream dispatch. A failed completion
 	// write ends the run and withholds the response, but cannot retract a query.
-	if err := r.writer.RedactStage(r.writer.Append)(ev); err != nil {
-		r.ledgerFailed(err)
-		return err
-	}
+	events := []*record.Event{ev}
 	if !e.Allowed {
 		mirror := *ev
 		mirror.Kind, mirror.Verdict, mirror.Authority, mirror.Attr = record.KindRefused, "", "", nil
 		mirror.Payload = refusedPayload(ev)
-		if err := r.writer.RedactStage(r.writer.Append)(&mirror); err != nil {
+		events = append(events, &mirror)
+	}
+	prepare := r.writer.RedactStage(r.writer.SplitBlobsStage(func(*record.Event) error { return nil }))
+	for _, event := range events {
+		if err := prepare(event); err != nil {
 			r.ledgerFailed(err)
 			return err
 		}
+	}
+	if err := r.writer.AppendBatch(events...); err != nil {
+		r.ledgerFailed(err)
+		return err
 	}
 	if r.budget != nil {
 		r.budget.Touch(r.deps.Clock.MonoNS())

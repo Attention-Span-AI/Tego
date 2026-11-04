@@ -41,8 +41,8 @@ type relayShim struct {
 	out    io.Writer
 	stderr io.Writer
 	env    func(string) string
-	// start starts cmd (proc.Start in the binary, a test's own in tests).
-	start func(*proc.Cmd) (int, error)
+	// start registers its waiting child before releasing it to exec cmd.
+	start func(*proc.Cmd, func(mcprelay.Frame) error) (int, error)
 }
 
 // shimEnvRefused are variables the shim refuses to run under: a library preloaded into the shim could forward
@@ -109,7 +109,29 @@ func (s *relayShim) run(ctx context.Context) int {
 	}
 	defer func() { _ = fromServer.Close() }()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = serverIn, serverOut, os.Stderr
-	pid, err := s.start(cmd)
+	pid, err := s.start(cmd, func(frame mcprelay.Frame) error {
+		acknowledged := false
+		defer func() {
+			if !acknowledged {
+				// Invalidate admission before start reaps the child: a delayed registration must not pin a reused PID.
+				_ = conn.Close()
+			}
+		}()
+		if err := fw.Write(frame); err != nil {
+			return err
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(shimHelloWait))
+		ans, err := fr.Read()
+		_ = conn.SetReadDeadline(time.Time{})
+		if err != nil {
+			return err
+		}
+		if !ans.OK {
+			return fmt.Errorf("relay refused server child: %s", ans.Error)
+		}
+		acknowledged = true
+		return nil
+	})
 	// The server's ends are the server's now: a copy kept here would keep its input and output from ever ending.
 	_, _ = serverIn.Close(), serverOut.Close()
 	if err != nil {
@@ -270,11 +292,62 @@ func killServer(cmd *proc.Cmd, exited <-chan struct{}) {
 	}
 }
 
-// startRelayedServer is the shim's one process start: the declared MCP server, a child of the shim inside the run.
-func startRelayedServer(cmd *proc.Cmd) (int, error) {
+// startRelayedServer starts a waiting copy of tego, registers that exact child, then releases it to exec the server
+// in place. The close-on-exec control socket keeps Started after the exec gate, and reports exec failures. Failure
+// to register, release or exec kills and reaps the stage, so an uncertain child never reaches the server.
+func startRelayedServer(cmd *proc.Cmd, register func(mcprelay.Frame) error) (int, error) {
+	control, childControl, err := serverChannel()
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _, _ = control.Close(), childControl.Close() }()
+	exe, err := os.Executable()
+	if err != nil {
+		return 0, err
+	}
+	if cmd.Err != nil {
+		return 0, cmd.Err
+	}
+	cmd.Args = append([]string{exe, mcprelay.ServerCommand, cmd.Path}, cmd.Args...)
+	cmd.Path = exe
+	cmd.ExtraFiles = []*os.File{childControl}
+	var st unix.Stat_t
+	if err := sys.FstatFile(childControl, &st); err != nil {
+		return 0, err
+	}
+	// The child is not known until Start returns, which waits for exec. Register its fresh socket first: the
+	// supervisor sees it at fd 3 while that exec is held, and pins the exact child before granting the stage.
+	if err := register(mcprelay.Frame{Stage: &mcprelay.StageRequest{Socket: st.Ino, Argv: cmd.Args}}); err != nil {
+		return 0, err
+	}
 	id, err := proc.Start(cmd)
 	if err != nil {
 		return 0, err
 	}
+	_ = childControl.Close()
+	started := false
+	defer func() {
+		if !started {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+	}()
+	if err := register(mcprelay.Frame{Child: id.PID}); err != nil {
+		return 0, err
+	}
+	if err := control.SetDeadline(time.Now().Add(shimHelloWait)); err != nil {
+		return 0, err
+	}
+	if _, err := control.Write([]byte{1}); err != nil {
+		return 0, err
+	}
+	msg, err := io.ReadAll(io.LimitReader(control, 4096))
+	if err != nil {
+		return 0, err
+	}
+	if len(msg) != 0 {
+		return 0, fmt.Errorf("server exec: %s", msg)
+	}
+	started = true
 	return id.PID, nil
 }

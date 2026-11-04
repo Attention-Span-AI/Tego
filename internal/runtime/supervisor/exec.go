@@ -208,6 +208,7 @@ func (l *Loop) recordExec(n *notif, dirfd int32, pathAddr, argvAddr uint64, flag
 	// with no line (quiet, below: no exec gate, record: off, not a refusal) is not walked, since
 	// dropped is read only by a line; the rules leave its verdict as the floor gave it, so quiet is already known.
 	var cmd execCommand
+	stageGranted := false
 	floorAllows := d.verdict == record.VerdictAllow
 	lineless := !floorAllows && !c.pol.Rules.Gate.Has(gate.Exec) && !c.recording() && d.verdict != record.VerdictRefused
 	// A pinned run walks every exec it may continue, line or not: the pin holds the kernel to the form that walk reads.
@@ -219,7 +220,17 @@ func (l *Loop) recordExec(n *notif, dirfd int32, pathAddr, argvAddr uint64, flag
 		dropped = dropped || cmd.dropped
 		if !floorAllows {
 			cmd = execCommand{}
-		} else if cmd.refuses() {
+		} else {
+			var rule string
+			cmd, rule = l.mcpStageGrant(c, n, r, cmd, img, argvAddr)
+			if n.gone {
+				return
+			}
+			if rule != "" {
+				d.rule, stageGranted = rule, true
+			}
+		}
+		if floorAllows && !stageGranted && cmd.refuses() {
 			d, listener = commandDecision(cmd), false
 			// An observe run enforces nothing: the would-be refusal runs (respond CONTINUEs, the line is stamped
 			// observed), so run_end's exec_rules counts only what was actually refused, not what ran. The line still carries
@@ -373,9 +384,14 @@ func (l *Loop) recordExec(n *notif, dirfd int32, pathAddr, argvAddr uint64, flag
 				naming.MCPName = c.mcpServerOf(name, img, argv)
 				naming.MCPPath = strings.TrimSuffix(img.link, deletedSuffix)
 			}
-			if cmd.decided {
+			if cmd.decided || stageGranted {
 				naming.CommandRule, naming.CommandList, naming.CommandMatch, naming.CommandVia, naming.ClosureOf = commandFields(cmd)
 				naming.ArgvFacts, naming.ArgvRead = record.ArgvFactsCopied, cmd.res.K
+			}
+			if stageGranted {
+				// Keep the kernel's actual exec outcome (including pin refusal/kill), with runtime provenance only
+				// after it confirms the successful vector. A predicted seccomp allow must not hide a later kill.
+				naming.RuntimeRule = d.rule
 			}
 			naming.PinSeq = pinSeq
 		}
@@ -418,7 +434,7 @@ func (l *Loop) recordExec(n *notif, dirfd int32, pathAddr, argvAddr uint64, flag
 		GateFields:    gatePayload(d.gate, d.unsupported),
 	}
 	payload.PinUnavailable = pinRefused
-	if cmd.decided || cmd.refuses() {
+	if cmd.decided || cmd.refuses() || stageGranted {
 		// exec.ask is reserved: its refusal carries completion_unsupported as an unsupported gate ask does.
 		payload.CompletionUnsupported = payload.CompletionUnsupported || d.unsupported
 		ep := &payload.ExecPayload

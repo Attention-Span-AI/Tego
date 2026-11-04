@@ -2,7 +2,10 @@
 
 package execmatch
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // MaxReadings bounds the readings one interpretation keeps. Each option the row does not list, standing where a
 // subcommand could still be, doubles them; past the bound the interpretation is unlocatable, which matches every
@@ -421,7 +424,7 @@ func (nz *Normalizer) short(s *parseState, toks []string, tok string) (parseStat
 			return nz.separate(s, toks, Hit{Opt: o, Raw: tok, Depth: s.depth})
 		}
 	}
-	if !lv.Syntax.Clusters && len(tok) > 2 {
+	if !lv.Syntax.Clusters && len(tok) > 2 && !slices.Contains(lv.Syntax.ClusterWords, tok) {
 		// A level that does not cluster reads -abc as one option it does not list, unless -a takes an attached value.
 		if o := lv.shortOpt(tok[1]); o != nil && o.Arg != ArgNone && o.Arg != ArgNextWord && !o.SepOnly && (lv.Syntax.ShortAttach || o.Arg == ArgOptional || lv.Syntax.ShortEquals && tok[2] == '=') {
 			v := tok[2:]

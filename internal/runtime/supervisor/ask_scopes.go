@@ -57,6 +57,7 @@ func (l *Loop) pinAskScopes(rt *agent.RuleTable) error {
 }
 
 func (l *Loop) closeAskScopes() {
+	l.heldPins.close()
 	for p, s := range l.askScopes {
 		_ = unix.Close(s.fd)
 		delete(l.askScopes, p)

@@ -8,6 +8,8 @@
 // One builder serves three surfaces: `tego receipt` and tego run's end summary (internal/cli) and the dashboard's
 // Receipt tab (internal/control/web), so the terminal and the page cannot show different numbers. A field the ledger
 // cannot support says so (Field.Note) and carries no number: the receipt never invents one.
+// Exact unanswered totals need pending identities beyond the ask list's cap. Their separate count/byte budget
+// returns ErrAskLimit and no receipt before it would fill; answers release capacity.
 //
 // This is a first version: one streaming pass, no receipt.json in the run directory, no schema file yet. The cost estimate goes through measure.Prices, the interface `tego measure`
 // prices with, so the two print one figure. A file is secret-looking by internal/check/secretpath, the classifier

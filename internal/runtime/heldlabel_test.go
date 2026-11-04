@@ -14,8 +14,8 @@ import (
 )
 
 // The run's warnings carry codes of their own: a consumer keyed on the code must not file the
-// held completion's degrade or its label residual as a swap warning, which every runtime warning was printed as. The
-// degrade is held-unavailable, the label residual unenforced, and the swap cap swap-uncapped (swapgap_test.go).
+// held completion's degrade or its label policy as a swap warning, which every runtime warning was printed as. The
+// degrade is held-unavailable, the label policy held-label, and the swap cap swap-uncapped (swapgap_test.go).
 func TestHeldWarningsCarryTheirOwnCodes(t *testing.T) {
 	type warning struct{ code, what string }
 	var got []warning
@@ -34,9 +34,8 @@ func TestHeldWarningsCarryTheirOwnCodes(t *testing.T) {
 	}
 }
 
-// ADR 0041 D2's LSM label check is not built: a held open is the open deputy's, under the
-// deputy's own label. A run that started its deputy on a host with a task-labelling LSM says so, naming the LSMs and
-// the check it lacks; a host without one hears nothing; a list that cannot be read is said too, never taken as none.
+// The label note names the active task-label LSMs and the refusal policy. An
+// unreadable module list is never presented as a host with no task labels.
 func TestHeldLabelWarning(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -44,10 +43,10 @@ func TestHeldLabelWarning(t *testing.T) {
 		err  error
 		want []string // substrings; none for no warning
 	}{
-		{"ubuntu", "lockdown,capability,landlock,yama,apparmor,bpf,ima,evm\n", nil, []string{"on AppArmor a file open that tego checks and makes for the agent is decided by the contract's rules; a tighter AppArmor profile on the agent is not applied to it"}},
-		{"selinux and smack", "capability,selinux,smack", nil, []string{"on SELinux/Smack", "SELinux domain or Smack label"}},
+		{"ubuntu", "lockdown,capability,landlock,yama,apparmor,bpf,ima,evm\n", nil, []string{"on AppArmor a file open that tego checks and makes for the agent requires the same AppArmor profile as the process opening the file; a different or unreadable label refuses it"}},
+		{"selinux and smack", "capability,selinux,smack", nil, []string{"on SELinux/Smack", "is refused", "process-specific rules cannot be verified across processes"}},
 		{"no labelling lsm", "lockdown,capability,landlock,yama,bpf\n", nil, nil},
-		{"unreadable", "", errors.New("no securityfs"), []string{"could not be read (no securityfs)", "decided by the contract's rules"}},
+		{"unreadable", "", errors.New("no securityfs"), []string{"could not be read (no securityfs)", "refused when its security labels cannot be verified"}},
 	} {
 		got := heldLabelWarning("gate.completion: held", []byte(tc.lsm), tc.err)
 		// The note is the audience's words: no tego term and no repo path a person with an installed binary lacks.
@@ -81,11 +80,11 @@ func TestHeldLabelWarningSaysWhatIsHeld(t *testing.T) {
 		wantNone string
 	}{
 		{"held reads", &agent.RuleTable{Tier: backend.TierLandlock, Reads: agent.HeldReads{Mode: agent.ReadsHeld}},
-			"a file read that tego checks and opens for the agent is decided", "gate.completion"},
+			"a file read that tego checks and opens for the agent requires", "gate.completion"},
 		{"held gate", &agent.RuleTable{Tier: backend.TierLandlock, Reads: agent.HeldReads{Mode: agent.ReadsDirect},
-			Gate: heldLabelGate(t)}, "a file open that tego checks and makes for the agent is decided", "file read"},
+			Gate: heldLabelGate(t)}, "a file open that tego checks and makes for the agent requires", "file read"},
 		{"both", &agent.RuleTable{Tier: backend.TierLandlock, Reads: agent.HeldReads{Mode: agent.ReadsHeld},
-			Gate: heldLabelGate(t)}, "a file open that tego checks and makes for the agent is decided", "file read"},
+			Gate: heldLabelGate(t)}, "a file open that tego checks and makes for the agent requires", "file read"},
 	} {
 		var got string
 		r := &runner{rt: tc.rt, log: slog.New(slog.DiscardHandler), deps: Deps{Warn: func(_, what string) { got = what }}}

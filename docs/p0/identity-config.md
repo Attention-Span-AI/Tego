@@ -1060,3 +1060,13 @@ the schema of:
 
 ## Resolved conflicts
 Resolved (2026-09-22): `tego run` never exits 211 or 213; an unavailable pinned tier and an untrusted machine config both exit 125 with codes `[tier-unavailable]` and `[config-untrusted]` (RUN-IDENTITY, config README updated); `doctor --require` alone exits 211.
+
+
+### env.set path token amendment, 2026-11-03 (ADR 0068)
+
+During `agent.Compile`, the exact `${TEGO_PROJECT_DIR}` token in env.set values expands
+once to the absolute working directory used for relative contract paths. All other
+characters, including `$HOME`, `${NAME}` and command substitutions, stay literal. The
+compiled Set and effective PATH use the expanded values; the loaded contract, canonical
+copy and contract hash retain the original token. `internal/runtime.buildEnv` continues
+to install the compiled Set without performing shell or environment expansion.

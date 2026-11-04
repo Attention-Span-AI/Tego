@@ -20,8 +20,8 @@ import (
 // TestIntegrationRunStartBestEffortListsGateCells is ADR 0041 D7's run half: a run whose gate opens (D) cells
 // (here an `fs.read matches` read gate and an `exec matches` gate) names them in run_start's best_effort, at
 // record_minor 6 or later, so a reader of the ledger alone learns which gate decisions were copied-syscall
-// best effort. The contract has no net: section, so tier landlock's unix-only state adds host_sockets/datagram
-// (ADR 0070); a run with no gate under host_sockets: true writes no best_effort at all.
+// best effort. Every enforcing contract also lists C40's immutable datagram
+// refusal's copied-address residual, including under host_sockets: true.
 func TestIntegrationRunStartBestEffortListsGateCells(t *testing.T) {
 	bin := tegoBinary(t)
 	for _, tc := range []struct {
@@ -32,7 +32,7 @@ func TestIntegrationRunStartBestEffortListsGateCells(t *testing.T) {
 			[]string{agent.BestEffortGateFSReadOpen, agent.BestEffortGateFSReadMove, agent.BestEffortGateExec,
 				agent.BestEffortHostSocketsDatagram}},
 		{"ungated", "", []string{agent.BestEffortHostSocketsDatagram}},
-		{"ungated, host_sockets: true", "host_sockets: true\n", nil},
+		{"ungated, host_sockets: true", "host_sockets: true\n", []string{agent.BestEffortBuiltinIPC}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t, contractFor("ibesteffort", []string{"/bin/true"}, []string{"/bin/true"})+tc.gate)

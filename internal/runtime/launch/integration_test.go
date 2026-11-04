@@ -729,10 +729,8 @@ func TestAgentInheritsNothingTheLauncherInherited(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = unix.Close(high) })
-	child := startSleeper(t, nil, "/bin/sleep", "60")
-	// The planted descriptors must be gone, checked by number and by what they refer to. The whole set is
-	// not compared with {0,1,2}: startSleeper returns at the exec, and /bin/sleep's loader can hold a
-	// descriptor of its own for a moment after it (seen once in CI-like runs as fd 3 on a shared library).
+	child := startReadyAgent(t, nil)
+	// The planted descriptors must be gone, checked by number and by what they refer to.
 	planted := map[string]bool{}
 	for _, fd := range []int{p[0], p[1], high} {
 		if l, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", fd)); err == nil {
@@ -814,9 +812,52 @@ func startSleeper(t *testing.T, cgFD sys.Lender, argv ...string) *Child {
 	return child
 }
 
+// startReadyAgent waits for an agent instruction, after the dynamic loader has closed its own
+// descriptors. comm changes at exec, while those descriptors may still be open. The shell uses
+// only builtins and blocks on stdin, so no program started after readiness can reopen a descriptor.
+func startReadyAgent(t *testing.T, cgFD sys.Lender) *Child {
+	t.Helper()
+	input, _ := agentPipe(t) // cleanup keeps the write end open while the agent blocks in read
+	ready, output := agentPipe(t)
+	ctx := t.Context()
+	child, err := (&Launcher{}).Start(ctx, ChildSpec{
+		Command: []string{"/bin/sh", "-c", "printf 'ready\\n'; read ignored"}, Dir: "/",
+		Env: []string{"PATH=/usr/bin:/bin"}, Handle: fakeHandle{ruleset: -1}, Stdin: input, Stdout: output,
+	}, cgFD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = child.Kill(context.Background()); child.Close() })
+	_ = input.Close()
+	_ = output.Close()
+	if err := takeListener(t)(child.WaitNotifyFD(ctx)); err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Ack(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ready.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if line, err := bufio.NewReader(ready).ReadString('\n'); err != nil || line != "ready\n" {
+		t.Fatalf("agent readiness = %q, %v", line, err)
+	}
+	return child
+}
+
+func agentPipe(t *testing.T) (*os.File, *os.File) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close(); _ = w.Close() })
+	return r, w
+}
+
 func TestSignalTermForwarded(t *testing.T) {
 	_, cgFD := testCgroup(t)
-	child := startSleeper(t, cgFD, "/bin/sleep", "60")
+	child := startReadyAgent(t, cgFD)
 	// R6/invariant 4: the agent inherited nothing of the handshake, not even its own listener.
 	entries, err := os.ReadDir(fmt.Sprintf("/proc/%d/fd", child.PID))
 	if err != nil {

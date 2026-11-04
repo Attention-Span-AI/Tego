@@ -83,7 +83,7 @@ func TestBlockThroughALinkOnAnOlderLauncher(t *testing.T) {
 	code, out, errs := run(t, "block", id, "path", value)
 	if code != identity.ExitOK || strings.Contains(out, "refuses both") ||
 		!strings.Contains(out, value+" leads to "+target+" through a link, but "+id+" was started by an older tego") ||
-		!strings.Contains(out, "tego block "+id+" path "+target) {
+		!strings.Contains(out, "tego block '"+id+"' path -- '"+target+"'") {
 		t.Fatalf("block through a link on an older launcher: exit %d stdout %q stderr %q", code, out, errs)
 	}
 	o, err := liveblock.Read(dir, id)

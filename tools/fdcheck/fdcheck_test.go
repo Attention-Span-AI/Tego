@@ -197,6 +197,9 @@ func TestFdcheckFixtures(t *testing.T) {
 		{"pidfd is kernel cloexec", "func f() { _, _ = sys.Own(unix.PidfdOpen(1, 0)) }\n", nil},
 		{"epoll_create never cloexec", "func f() { _, _ = sys.Own(unix.EpollCreate(1)) }\n", []string{l(kCloexec, 0)}},
 		// F10: sys.OwnSyscall's pairs, and the raw producer traps outside it.
+		{"owned pty peer", "func f(fd uintptr, flags int) { _, _ = sys.OwnSyscall(unix.Syscall(unix.SYS_IOCTL, fd, unix.TIOCGPTPEER, uintptr(flags)|unix.O_CLOEXEC)) }\n", nil},
+		{"pty peer without cloexec", "func f(fd uintptr) { _, _ = sys.OwnSyscall(unix.Syscall(unix.SYS_IOCTL, fd, unix.TIOCGPTPEER, unix.O_RDWR)) }\n", []string{l(kCloexec, 0)}},
+		{"owned nonproducer ioctl", "func f(fd uintptr) { _, _ = sys.OwnSyscall(unix.Syscall(unix.SYS_IOCTL, fd, unix.TIOCGDEV, 0)) }\n", []string{l(kOwnSyscall, 0)}},
 		{"bpf prog load", "func f(a uintptr) { _, _ = sys.OwnSyscall(unix.Syscall(unix.SYS_BPF, unix.BPF_PROG_LOAD, a, 0)) }\n", nil},
 		{"bpf map update", "func f(a uintptr) { _, _ = sys.OwnSyscall(unix.Syscall(unix.SYS_BPF, unix.BPF_MAP_UPDATE_ELEM, a, 0)) }\n", []string{l(kOwnSyscall, 0)}},
 		{"bpf literal command", "func f(a uintptr) { _, _ = sys.OwnSyscall(unix.Syscall(unix.SYS_BPF, 28, a, 0)) }\n", []string{l(kOwnSyscall, 0)}},

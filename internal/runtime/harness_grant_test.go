@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -103,7 +104,7 @@ func TestHarnessHookWritableIsNotGranted(t *testing.T) {
 			}
 			continue
 		}
-		if s.Provisioned || s.Why != record.HarnessWhyHookWritable || s.Hook == nil || s.Hook.Granted || r.rt != rt {
+		if s.Provisioned || s.Why != record.HarnessWhyHookWritable || s.Hook == nil || s.Hook.Granted || !sameHarnessPolicy(r.rt, rt) {
 			t.Errorf("%s: run_start.harness %+v (hook %+v), want unprovisioned, %s, the table unchanged", c.name, s, s.Hook, record.HarnessWhyHookWritable)
 		}
 		if len(warned) != 1 || !strings.Contains(warned[0], "rule "+c.rule+":") || !strings.Contains(warned[0], "could rewrite") {
@@ -475,4 +476,18 @@ func TestExecAssuranceKernelIsRefusedAlikeWithTheGrant(t *testing.T) {
 	if !slices.Contains(runtimeGrants(d.Table), d.Table.HarnessHookRule()) {
 		t.Errorf("runtime_grants %q lack the grant", runtimeGrants(d.Table))
 	}
+}
+
+// Binding the run's private runtime directory clones only immutable boundary
+// metadata. A rejected harness provision must leave every executable/fs grant
+// unchanged, without requiring pointer identity for that metadata clone.
+func sameHarnessPolicy(a, b *agent.RuleTable) bool {
+	copy := *a
+	if a.Builtins != nil && b.Builtins != nil {
+		boundary := *a.Builtins
+		boundary.OwnRuntime = b.Builtins.OwnRuntime
+		boundary.OwnRuntimeResolved = b.Builtins.OwnRuntimeResolved
+		copy.Builtins = &boundary
+	}
+	return reflect.DeepEqual(&copy, b)
 }

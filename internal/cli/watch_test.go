@@ -297,7 +297,7 @@ func TestWatchSpeaksAsWatch(t *testing.T) {
 	sandboxedLaunch(t)
 	prev := startRun
 	startRun = func(ctx context.Context, rt *agent.RuleTable, command []string, d tegoruntime.Deps) (tegoruntime.Result, error) {
-		d.Warn(tegoruntime.WarnHeldLabel, "on AppArmor a file read that tego checks and opens for the agent is decided by the contract's rules")
+		d.Warn(tegoruntime.WarnHeldLabel, "on AppArmor a file read that tego checks and opens for the agent requires matching security labels")
 		return prev(ctx, rt, command, d)
 	}
 	var errs bytes.Buffer
@@ -308,7 +308,7 @@ func TestWatchSpeaksAsWatch(t *testing.T) {
 	if strings.Contains(out, "tego run:") || strings.Contains(out, "--observe is in effect") {
 		t.Errorf("tego watch printed a tego run line:\n%s", out)
 	}
-	note := strings.Index(out, "note: tego watch: on AppArmor a file read that tego checks and opens for the agent is decided by the contract's rules [held-label]")
+	note := strings.Index(out, "note: tego watch: on AppArmor a file read that tego checks and opens for the agent requires matching security labels [held-label]")
 	if note < 0 {
 		t.Fatalf("the held-label note is missing or mislabelled:\n%s", out)
 	}

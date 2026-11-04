@@ -60,10 +60,15 @@ func killSample(h sample, seq uint32, reason bpf.ReasonCode, killErr int32, argv
 // namingSeq, and returns the recorder, its lines and the backstop's kills.
 func pinRun(t *testing.T, namingSeq uint32, samples ...[]byte) (*Recorder, *fakeSink, [][2]uint64) {
 	t.Helper()
-	f := newFixture(t)
 	n := outcomeNaming(10)
 	n.PinSeq = namingSeq
 	n.ArgvFacts = record.ArgvFactsCopied
+	return pinRunNaming(t, n, samples...)
+}
+
+func pinRunNaming(t *testing.T, n supervisor.ExecNaming, samples ...[]byte) (*Recorder, *fakeSink, [][2]uint64) {
+	t.Helper()
+	f := newFixture(t)
 	var (
 		mu    sync.Mutex
 		kills [][2]uint64
@@ -77,6 +82,59 @@ func pinRun(t *testing.T, namingSeq uint32, samples ...[]byte) (*Recorder, *fake
 			return nil
 		}}, samples...)
 	return r, sink, kills
+}
+
+// A process-bound runtime grant supplies provenance, never an outcome. A successful held pin names the grant;
+// an exec killed by the plane remains refused, and a lost proof never claims the runtime decision was held.
+func TestExecPinRuntimeGrantKeepsKernelOutcome(t *testing.T) {
+	h := execOutcomeHeader(30)
+	exec := pinnedExecSample(h, pinTestSeq, []string{"tool", "argument"})
+	held := heldSample(h, pinTestSeq)
+	kill := killSample(h, pinTestSeq, bpf.ReasonArgvChanged, 0, []string{"tool", "changed"})
+	const rule = "exec.mcp-stage[/opt/tego]"
+	for name, samples := range map[string][][]byte{"held": {exec, held}, "killed": {exec, kill}, "unproven": {exec}} {
+		t.Run(name, func(t *testing.T) {
+			n := outcomeNaming(10)
+			n.PinSeq, n.RuntimeRule = pinTestSeq, rule
+			_, sink, _ := pinRunNaming(t, n, samples...)
+			ev, p := oneExecOutcome(t, sink)
+			switch name {
+			case "held":
+				if ev.Rule != rule || ev.Verdict != record.VerdictAllow || p.ArgvFacts != record.ArgvFactsKernelPinned {
+					t.Fatalf("confirmed runtime grant: %+v %+v", ev, p)
+				}
+			case "killed":
+				if ev.Rule != RuleExecPin || ev.Verdict != record.VerdictRefused || p.PlaneReason != "argv-changed" {
+					t.Fatalf("runtime grant hid a kernel kill: %+v %+v", ev, p)
+				}
+			case "unproven":
+				if ev.Rule == rule || p.ArgvFacts != record.ArgvFactsUnproven {
+					t.Fatalf("lost kernel proof claimed a runtime grant: %+v %+v", ev, p)
+				}
+			}
+		})
+	}
+}
+
+func TestExecRuntimeGrantRequiresKernelVector(t *testing.T) {
+	const rule = "exec.mcp-stage[/opt/tego]"
+	for _, match := range []bool{true, false} {
+		t.Run(fmt.Sprint(match), func(t *testing.T) {
+			n := outcomeNaming(10)
+			n.RuntimeRule = rule
+			argv := []string{"tool", "argument"}
+			if !match {
+				argv[1] = "other"
+			}
+			_, sink := runRecorder(t, newFixture(t), Options{ExecResults: true,
+				ContinuedExec: func(int, int, uint64, uint64) (supervisor.ExecNaming, bool) { return n, true },
+			}, pinnedExecSample(execOutcomeHeader(30), 0, argv))
+			ev, _ := oneExecOutcome(t, sink)
+			if (ev.Rule == rule) != match {
+				t.Fatalf("runtime grant attributed with matching vector %v: %+v", match, ev)
+			}
+		})
+	}
 }
 
 func TestExecPinFoldHeldIsKernelPinned(t *testing.T) {

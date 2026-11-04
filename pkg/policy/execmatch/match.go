@@ -47,6 +47,15 @@ func (p *Pattern) Match(inv *Invocation) Match {
 		}
 		return MatchNone
 	}
+	if p.Row != nil && p.Row.Interp != nil && p.Row.Interp.Fallback != nil && inv.Row == p.Row.Interp.Fallback {
+		if p.fallback != nil {
+			return p.fallback.Match(inv)
+		}
+		if p.List == ListAllow {
+			return MatchNone
+		}
+		return MatchAmbiguous
+	}
 	deny := p.List != ListAllow
 	if p.Row == nil || inv.Row == nil || inv.Row != p.Row {
 		var ok bool

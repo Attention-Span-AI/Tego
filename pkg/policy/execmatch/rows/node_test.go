@@ -5,13 +5,13 @@ package rows
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,7 +22,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
 )
 
-// The node row reads node's command line as node 20.19.4's OptionsParser::Parse does (src/node_options-inl.h). The
+// The node row reads Node 20.19.4 and 22.21.1's command lines (src/node_options-inl.h). The
 // tests here hold it to node: TestNodeRowTable to node's own option and alias tables, and the differentials to what the
 // installed node runs, over every spelling of every option the row lists, over code and the options that change what
 // node runs, and over generated lines.
@@ -164,7 +164,9 @@ func TestNodeRowReadsItsOptions(t *testing.T) {
 				case execmatch.ArgNextWord:
 					nextWord(sp)
 				case execmatch.ArgNone, execmatch.ArgOptional, execmatch.ArgMaybe:
-					reads(1, sp, "./app.js")
+					if !unlocatable {
+						reads(1, sp, "./app.js")
+					}
 					refuses(want, sp)
 				}
 				neg, ok := strings.CutPrefix(sp, "--")
@@ -345,8 +347,8 @@ func TestNodeEntriesReadAsArgv(t *testing.T) {
 }
 
 // nodeLeftOut are node's options and aliases the row leaves out, so it reads them both ways: no-ops in node 20 that
-// took a value in an older node.
-var nodeLeftOut = map[string]bool{"--experimental-specifier-resolution": true, "--es-module-specifier-resolution": true, "--http-parser": true}
+// took a value in an older node, and stack-trace-limit, which changes arity between 20 and 22.
+var nodeLeftOut = map[string]bool{"--experimental-specifier-resolution": true, "--es-module-specifier-resolution": true, "--http-parser": true, "--stack-trace-limit": true}
 
 // TestNodeRowTable holds the node row to node's own tables, as the installed node's options binding lists them
 // (internalBinding('options').getCLIOptionsInfo() under --expose-internals). Every option node reads is listed with the
@@ -354,46 +356,45 @@ var nodeLeftOut = map[string]bool{"--experimental-specifier-resolution": true, "
 // one the row reads by its form: "-x" → [--name] is name's letter x; "--a" → [--b] a long name of b; "--a=" → [--a] a
 // flag whose value node drops; "--a=" → [--inspect-port, --a] an option with a value only attached (ArgOptional);
 // "--a <arg>" → [-pe] an option that takes a word after it (ArgNextWord), -pe being [--a, --eval]; "--a" → [--a, --]
-// Opt.Ends; and "--a" → [--b, word], b taking a value, Opt.EndsAttached. -pe itself and nodeLeftOut are read both ways.
+// Opt.Ends; and "--a" → [--b, word], b taking a value, Opt.EndsAttached. Only nodeLeftOut stays unknown.
 // An option or an alias node adds, or a form the row does not read, fails the test. A spelling of the row's that node
-// does not list is V8's, as `node --v8-options` lists it, or one of node's letters. The tables are node 20.19.4's: under
-// another node the test logs what differs, and the differentials hold the row to what that node does.
+// does not list is V8's, as `node --v8-options` lists it, or one of node's letters. Both captured versions are checked
+// without requiring Node on PATH; TestNodeInventoryDifferential verifies the installed binary against its snapshot.
 func TestNodeRowTable(t *testing.T) {
-	bin, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("no node installed")
-	}
 	row := Builtin().Lookup("node")
-	const dump = "const {internalBinding}=require('internal/test/binding');const b=internalBinding('options');" +
-		"const i=b.getCLIOptionsInfo();const n=Object.fromEntries(Object.entries(b.types).map(([k,v])=>[v,k]));" +
-		"process.stdout.write(JSON.stringify({version:process.version,options:[...i.options].map(([k,o])=>[k,n[o.type]])," +
-		"aliases:Object.fromEntries(i.aliases)}))"
-	out, dumpErr := exec.Command(bin, "--expose-internals", "--no-warnings", "-e", dump).Output()
-	version, _ := exec.Command(bin, "--version").Output()
-	report := t.Errorf
-	if v := strings.TrimSpace(string(version)); v != "v"+row.Version {
-		t.Logf("node %s is not the row's %s: what differs is logged, not failed", v, row.Version)
-		report = t.Logf
-	}
-	if dumpErr != nil {
-		report("node's options binding: %v", dumpErr)
-		return
-	}
-	var tbl struct {
-		Options [][2]string
-		Aliases map[string][]string
-	}
-	if err := json.Unmarshal(out, &tbl); err != nil {
-		t.Fatalf("node's options binding: %v", err)
-	}
-	v8out, err := exec.Command(bin, "--v8-options").Output()
-	if err != nil {
-		t.Fatalf("node --v8-options: %v", err)
-	}
+	// The union is checked offline too: adding a Node 22 option must not hide
+	// a different arity in Node 20. Only explicitly unknown conflicts may differ.
+	tbl := nodeInventory{Options: map[string]string{}, Aliases: map[string][]string{}}
 	v8 := map[string]bool{}
-	for _, m := range regexp.MustCompile(`(?m)^  --([A-Za-z0-9_-]+) \(`).FindAllStringSubmatch(string(v8out), -1) {
-		v8[m[1]] = true
+	for _, version := range nodeVersions {
+		data := readNodeInventory(t, version)
+		hash, err := hex.DecodeString(data.BuildSHA256)
+		if err != nil || len(hash) != 32 {
+			t.Fatalf("invalid build digest: %s", data.BuildSHA256)
+		}
+		var sum [32]byte
+		copy(sum[:], hash)
+		if NodeBuildVersion(sum) != strings.TrimPrefix(version, "v") {
+			t.Fatalf("inventory is not pinned to %s", version)
+		}
+		for name, typ := range data.Options {
+			if prev := tbl.Options[name]; prev != "" && prev != typ && !nodeLeftOut[name] &&
+				!((prev == "kNoOp" && typ == "kBoolean") || (prev == "kBoolean" && typ == "kNoOp")) {
+				t.Errorf("%s changes type from %s to %s without staying unknown", name, prev, typ)
+			}
+			tbl.Options[name] = typ
+		}
+		for name, exp := range data.Aliases {
+			if prev := tbl.Aliases[name]; prev != nil && !slices.Equal(prev, exp) {
+				t.Errorf("%s changes alias from %v to %v", name, prev, exp)
+			}
+			tbl.Aliases[name] = exp
+		}
+		for name := range data.V8 {
+			v8[name] = true
+		}
 	}
+	report := t.Errorf
 	byLong, byShort := map[string]*execmatch.Opt{}, map[byte]*execmatch.Opt{}
 	for i := range row.Root.Opts {
 		o := &row.Root.Opts[i]
@@ -404,12 +405,7 @@ func TestNodeRowTable(t *testing.T) {
 			byShort[o.Short[j]] = o
 		}
 	}
-	nodeOpt := map[string]string{}
-	for _, nt := range tbl.Options {
-		if strings.HasPrefix(nt[0], "--") {
-			nodeOpt[nt[0]] = nt[1]
-		}
-	}
+	nodeOpt := tbl.Options
 	// Every option node reads, by its kind.
 	for name, typ := range nodeOpt {
 		o := byLong[name]
@@ -449,7 +445,9 @@ func TestNodeRowTable(t *testing.T) {
 		}
 		switch {
 		case key == "-pe" && slices.Equal(exp, []string{"--print", "--eval"}):
-			// read both ways: an unlisted spelling, which only over-refuses (the code it takes is never a script)
+			if !slices.Contains(row.Root.Syntax.ClusterWords, key) {
+				report("node's %s alias is not an exact permitted cluster", key)
+			}
 		case nodeLeftOut[key]:
 			if byLong[key] != nil {
 				report("node alias %s: left out, but the row lists it", key)
@@ -493,6 +491,18 @@ func TestNodeRowTable(t *testing.T) {
 			}
 		default:
 			report("node alias %s → %v: a form the row does not read", key, exp)
+		}
+	}
+	// Every canonical V8 name is present too, except the explicit conflicts.
+	for name := range v8 {
+		if nodeLeftOut["--"+name] {
+			continue
+		}
+		o := byLong["--"+name]
+		if o == nil {
+			report("V8 lists --%s, and the row does not", name)
+		} else if nodeOpt["--"+name] == "" && o.Arg != execmatch.ArgNone {
+			report("V8-only --%s consumes Node's next token (kind %d)", name, o.Arg)
 		}
 	}
 	// The row's own spellings and forms, each from node's tables.
@@ -569,7 +579,7 @@ var (
 		"watch": true, "watch-path": true, "perf-basic-prof": true, "perf-basic-prof-only-functions": true, "perf-prof": true,
 		"perf-prof-unwinding-info": true, "abort-on-uncaught-exception": true}
 	nodeUnread = map[string]bool{"experimental-policy": true, "policy-integrity": true, "openssl-config": true,
-		"snapshot-blob": true}
+		"snapshot-blob": true, "run": true, "experimental-config-file": true, "experimental-default-config-file": true}
 )
 
 // nodeRan is a script node ran on a command line and the arguments it gave that script.
@@ -603,14 +613,24 @@ func runNodeLine(nodePath, base string, args []string) (argv []string, main node
 		}
 	}
 	for name, cfg := range map[string]string{"cfg.json": `{"builder":"b.js"}`,
-		"sea.json": `{"main":"b.js","output":"sea.blob","useSnapshot":true}`} {
+		"sea.json":         `{"main":"b.js","output":"sea.blob","useSnapshot":true}`,
+		"node.json":        `{"nodeOptions":{"import":["./b.js"]}}`,
+		"evil.json":        `{"nodeOptions":{"import":["./b.js"]}}`,
+		"evil.env":         `NODE_OPTIONS="--require ./b.js"`,
+		"node.config.json": `{"nodeOptions":{"import":["./b.js"]}}`} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(cfg), 0o600); err != nil {
 			return nil, nodeRan{}, nil, err
 		}
 	}
+	arg0 := nodePath
+	if len(argv) > 0 && strings.HasPrefix(argv[0], "@ARGV0@") {
+		arg0 = strings.TrimPrefix(argv[0], "@ARGV0@")
+		argv = argv[1:]
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, nodePath, argv...)
+	cmd.Args[0] = arg0
 	cmd.Dir, cmd.Env = dir, []string{"HOME=" + dir, "TMPDIR=" + dir, "PATH=/usr/bin:/bin"}
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -644,6 +664,7 @@ func runNodeLine(nodePath, base string, args []string) (argv []string, main node
 func holdNodeLines(t *testing.T, bin string, lines [][]string) (mains, loads int) {
 	t.Helper()
 	base := t.TempDir()
+	attested := nodeAttestedBuild(t, bin)
 	ran, loaded := make([]bool, len(lines)), make([]bool, len(lines))
 	bad := make([]string, len(lines))
 	ranArgv := slices.Clone(lines)
@@ -663,7 +684,7 @@ func holdNodeLines(t *testing.T, bin string, lines [][]string) (mains, loads int
 			ran[i], loaded[i] = main.script != "", len(pre) > 0
 			for _, r := range append(pre, main) {
 				if r.script != "" && bad[i] == "" {
-					bad[i] = nodeLineHolds(append([]string{"node"}, argv...), r)
+					bad[i] = nodeLineHolds(t, append([]string{"node"}, argv...), r, attested)
 				}
 			}
 		}()
@@ -686,14 +707,30 @@ func holdNodeLines(t *testing.T, bin string, lines [][]string) (mains, loads int
 // nodeLineHolds checks the row's reading of argv, a node command line on which node ran r: a deny entry naming the
 // script refuses the line, the dispatch gives the script the arguments node gives it (or the line fails closed), and no
 // prefix of argv is settled as anything but refused, so a staged read cannot stop short of the script. It returns ""
-// when all three hold, else what fails.
-func nodeLineHolds(argv []string, r nodeRan) string {
+// when all three hold, else what fails. Unknown builds are checked against
+// master plus raw pre-scanners instead of claiming the pinned inventory proof.
+func nodeLineHolds(t *testing.T, argv []string, r nodeRan, attested string) string {
 	p, err := execmatch.Parse(r.script, execmatch.ListDeny, Builtin())
 	if err != nil {
 		return "deny: [" + r.script + "]: " + err.Error()
 	}
 	ix := execmatch.NewIndex(Builtin(), []*execmatch.Pattern{p}, execmatch.IndexOptions{})
 	f := facts("/usr/bin/node", "node", argv...)
+	f.NodeVersion = attested
+	if attested == "" {
+		want := nodeMasterRules(t, "deny: "+r.script).Decide(&f)
+		got := ix.Decide(&f)
+		if nodeArgvRewrite(argv) {
+			if got.Rule() != execmatch.RuleCommandUnresolved {
+				return "unknown build did not refuse a raw pre-scan token"
+			}
+		} else if got.Outcome != want.Outcome || got.Rule() != want.Rule() {
+			return "unknown build differs from master: " + decided(got) + ", want " + decided(want)
+		}
+		// Unknown runtimes keep master's residuals. Do not assert the full
+		// inventory's real-script property for an unmeasured runtime.
+		return ""
+	}
 	if res := ix.Decide(&f); res.Outcome != execmatch.OutcomeRefused {
 		return "node ran " + r.script + ", and deny: [" + r.script + "] gives " + decided(res)
 	}
@@ -709,6 +746,7 @@ func nodeLineHolds(argv []string, r nodeRan) string {
 	for k := 1; k < len(argv); k++ {
 		pf := facts("/usr/bin/node", "node", argv[:k]...)
 		pf.ArgvComplete = false
+		pf.NodeVersion = attested
 		if res := ix.Decide(&pf); res.Final && res.Outcome != execmatch.OutcomeRefused {
 			return "node ran " + r.script + ", and the prefix " + strconv.Quote(strings.Join(argv[:k], " ")) + " is settled " + decided(res)
 		}
@@ -716,10 +754,9 @@ func nodeLineHolds(argv []string, r nodeRan) string {
 	return ""
 }
 
-// nodeBin is the installed node, skipping the test where there is none, under -short, and where node is not the row's
-// version: the differentials hold the row to node 20.19.4, and another node reads another table (a later node removes
-// options the lines hold, and adds others), which TestNodeRowTable logs. CI's runners do not pin node, so CI runs the
-// differentials only where its node is the row's.
+// nodeBin selects an inventoried Node version, skipping without Node, under -short,
+// or on another version. TestNodeInventoryDifferential still runs its safe execution
+// samples on unpinned versions; TestNodeRowTable checks both inventories offline.
 func nodeBin(t *testing.T) string {
 	t.Helper()
 	bin, err := exec.LookPath("node")
@@ -733,8 +770,8 @@ func nodeBin(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("node --version: %v", err)
 	}
-	if v, want := strings.TrimSpace(string(out)), "v"+Builtin().Lookup("node").Version; v != want {
-		t.Skipf("node %s is not the row's %s", v, want)
+	if v := strings.TrimSpace(string(out)); !slices.Contains(nodeVersions, v) {
+		t.Skipf("node %s is outside the versioned inventories %v", v, nodeVersions)
 	}
 	return bin
 }
@@ -750,7 +787,7 @@ func TestNodeRowSpellingsDifferential(t *testing.T) {
 	bin := nodeBin(t)
 	var lines [][]string
 	for _, o := range Builtin().Lookup("node").Root.Opts {
-		if nodeUnsafe[o.Name] || nodeUnread[o.Name] {
+		if nodeUnsafe[o.Name] || nodeUnread[o.Name] || nodeSkipV8Probe(o.Name) {
 			continue
 		}
 		value := nodeValueOf[o.Name]
@@ -913,7 +950,7 @@ func nodeLines(seed int64, n int) [][]string {
 	rnd := rand.New(rand.NewSource(seed))
 	var listed [][]string
 	for _, o := range Builtin().Lookup("node").Root.Opts {
-		if nodeUnsafe[o.Name] || o.Name == "snapshot-blob" {
+		if nodeUnsafe[o.Name] || nodeUnread[o.Name] || nodeSkipV8Probe(o.Name) {
 			continue
 		}
 		value := o.Arg == execmatch.ArgRequired || o.Arg == execmatch.ArgNextWord

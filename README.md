@@ -160,6 +160,23 @@ The rest writes a small contract, shows its rule table, runs a demo command unde
 
 ### Run a real agent
 
+In a project with no `agent.yaml`, create one for Claude Code:
+
+```sh
+tego init --agent claude-code --write src/ --prompt 'Review this project'
+tego compile agent.yaml
+tego run agent.yaml
+```
+
+This runs one task in Claude's print mode through the capture forwarder. Without
+`--prompt`, the task is to describe the project without changing files. For the
+full-screen interface use `claude-code-interactive.yaml` below; its model bytes are not captured.
+Set `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` before running it. `tego init --list`
+shows the setup commands. `--agent codex` selects Codex exec with `CODEX_API_KEY`;
+ChatGPT sign-in uses the example below. `--prompt` is one literal argument. Init
+reads no credentials and calls no model. Its state folders are separate from your
+usual agent state, and only your `--write` folders and its state are writable.
+
 Copy `claude-code-interactive.yaml`, `codex.yaml` or `codex-chatgpt.yaml` from
 [examples/agents/](examples/agents/README.md) and change the paths it marks CHANGE. With `claude` or `codex` on `PATH`,
 this starts the agent under the contract with no login and no prompt, the quickest check that a copy works on your
@@ -251,6 +268,11 @@ The full list, with what to do about each, is in **[docs/GAPS.md](docs/GAPS.md)*
 - The record is tamper-evident against an agent held by a contract, not against the person who started the run. A
   record-only run (`tego watch` with no `--boundary`, `tego run --observe`) has no Landlock rules, so its agent, which
   runs as you, can rewrite its own record.
+- The MCP relay remains a preview feature (`--preview` lists its dashboard page). Its stdio gate pins the exact
+  child before exec, but a run with ptrace or `pidfd_getfd` authority over the shim or server can write directly to
+  the server socket, bypassing tool decisions and their ledger lines. It also recognises only the declared command
+  spelling. Keep a forbidden capability out of any server the run can reach. See GAPS C50/C51 and the
+  [proposed ADR 0126 amendment](docs/adr/0126-mcp-tool-rules.md#proposed-amendment-2026-11-03-preview-or-security-boundary).
 - Linux only. On macOS and Windows, run it inside a Linux VM.
 
 ## Documentation

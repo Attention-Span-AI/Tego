@@ -212,6 +212,9 @@ func (r *Recorder) settleExec(x *pinExec, s *Record) {
 		return // no MCP start: the exec may have been killed, and that line would say a server ran
 	}
 	x.p.ArgvFacts = record.ArgvFactsKernelPinned
+	if x.naming.RuntimeRule != "" && x.ev.Verdict != record.VerdictRefused {
+		x.ev.Rule, x.ev.Verdict, x.ev.Reason = x.naming.RuntimeRule, record.VerdictAllow, ""
+	}
 	r.setPayload(x.ev, x.p)
 	r.emitAction(x.ev)
 	if x.mcp != nil {

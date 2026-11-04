@@ -67,3 +67,54 @@ func TestAbstractPlaneListenersUseExactBytesAndGeneration(t *testing.T) {
 		t.Fatal("over capacity fill accepted")
 	}
 }
+
+func TestBuiltinNameFillCoalescesAliasesAndOverridesListener(t *testing.T) {
+	rows := &decide.PlaneRows{
+		Protected: []decide.PlaneListenRow{{Path: "builtin:one", Parent: "/w", Name: "blocked", Rule: 0x8000}, {Path: "builtin:two", Parent: "/alias", Name: "blocked", Rule: 0x8001}},
+		Listen:    []decide.PlaneListenRow{{Path: "/w/blocked", Parent: "/w", Name: "blocked", Rule: 0}},
+	}
+	held := map[string]int{"builtin:one": 10, "builtin:two": 11, "/w/blocked": 12}
+	id := &fakeIdentity{fds: map[int][3]uint64{10: {30, 7, 100}, 11: {30, 7, 100}, 12: {30, 7, 100}}, paths: map[string][2]uint64{"/w": {7, 100}, "/alias": {7, 100}}}
+	plan := &planeFillPlan{RunIdx: 2, Gen: 4}
+	if err := planPlaneListenFill(plan, rows, heldOf(held), id); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Entries) != 1 || plan.Entries[0].RuleIdx != 0x8000 {
+		t.Fatalf("immutable alias/listener conflict: %+v", plan.Entries)
+	}
+}
+
+func TestBuiltinTTYSlotDelegatesToTheDomain(t *testing.T) {
+	plain := slotHeader(planeFillRequest{Rows: &decide.PlaneRows{}}, false, 0, 0)
+	builtin := slotHeader(planeFillRequest{Rows: &decide.PlaneRows{BuiltinTerminals: true}}, false, 0, 0)
+	if plain.Flags&bpf.PlaneSlotBuiltinTTY != 0 || builtin.Flags&bpf.PlaneSlotBuiltinTTY == 0 {
+		t.Fatalf("terminal delegation flags plain=%#x builtin=%#x", plain.Flags, builtin.Flags)
+	}
+}
+
+func TestBuiltinPeerExceptionKeepsMutationRefusal(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		protected := []decide.PlaneListenRow{{Path: "deny", Parent: "/w", Name: "ssh", Rule: 0x8007}, {Path: "peer", Parent: "/w", Name: "ssh", Rule: 0x2000}}
+		if reverse {
+			protected[0], protected[1] = protected[1], protected[0]
+		}
+		rows := &decide.PlaneRows{Protected: protected}
+		held := map[string]int{"deny": 10, "peer": 11}
+		id := &fakeIdentity{fds: map[int][3]uint64{10: {30, 7, 100}, 11: {30, 7, 100}}, paths: map[string][2]uint64{"/w": {7, 100}}}
+		plan := &planeFillPlan{}
+		if err := planPlaneListenFill(plan, rows, heldOf(held), id); err != nil {
+			t.Fatal(err)
+		}
+		if len(plan.Entries) != 1 || plan.Entries[0].RuleIdx != 0xa007 {
+			t.Fatalf("peer/write separation: %+v", plan.Entries)
+		}
+	}
+}
+
+func TestBuiltinLedgerClassifierReachesFillTemplate(t *testing.T) {
+	plan := &planeFillPlan{Entries: []planeFillEntry{{BuiltinFlags: 1}}}
+	_, v := plan.wants(1)
+	if len(v) != 1 || v[0].Pad2 != 1 {
+		t.Fatalf("lost ledger ancestry classifier: %+v", v)
+	}
+}

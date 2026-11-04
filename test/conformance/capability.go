@@ -33,6 +33,7 @@ type compileJSONTable struct {
 		Kind                string `json:"kind"`
 		Raw                 string `json:"raw"`
 		BuiltIn             bool   `json:"builtin"`
+		BuiltinRule         string `json:"rule"`
 		Unenforced          bool   `json:"unenforced"`
 		KernelPlaneRequired bool   `json:"kernel_plane_required"`
 		BestEffort          bool   `json:"best_effort"`
@@ -78,6 +79,12 @@ func CompileCapabilityCrossCheck(m Model, table []byte, rel func(abs string) str
 				out = append(out, fmt.Sprintf("%s: compile marks deny_read %s enforced by the ruleset at tier landlock, the oracle does not (a write entry covers it)", OverClaim, p))
 			}
 		case "deny_write":
+			// The model covers the fixture's filesystem entries. C40's
+			// immutable host surfaces are tested by the builtin integration
+			// matrix, independently of these contract-entry capabilities.
+			if e.BuiltinRule != "" {
+				continue
+			}
 			if p == "" {
 				out = append(out, fmt.Sprintf("%s: compile's deny_write target %s lies outside the project", Unmodeled, e.Path))
 				continue

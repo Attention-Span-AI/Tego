@@ -214,6 +214,7 @@ var planeParams = map[string][]string{
 	"socket_create":       {"int", "int", "int", "int"},
 	"socket_connect":      {"socket", "sockaddr", "int"},
 	"socket_sendmsg":      {"socket", "msghdr"},
+	"unix_may_send":       {"socket", "socket"},
 	"mmap_file":           {"file", "__u64", "__u64", "__u64"},
 	"file_mprotect":       {"vm_area_struct", "__u64", "__u64"},
 	"socket_bind":         {"socket", "sockaddr", "int"},
@@ -222,6 +223,7 @@ var planeParams = map[string][]string{
 	"ptrace_traceme":      {"task_struct"},
 	"bpf":                 {"int", "bpf_attr", "int"},
 	"key_permission":      {"key_ref_t", "cred", "int"},
+	"capable":             {"cred", "user_namespace", "int"},
 }
 
 // planeParamsFmodRet is a hook's parameters in fmod_ret mode where its security_ function takes fewer than its LSM

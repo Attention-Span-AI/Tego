@@ -31,18 +31,27 @@ func init() { register(cmdStatus) }
 // Exit 1 when what it shows is a finding — a stalled or lost run (R25); exit 0 otherwise.
 func cmdStatus() Command {
 	var (
-		asJSON bool
-		all    bool
+		asJSON    bool
+		all       bool
+		agentName string
 	)
 	return Command{
 		Name:    "status",
 		Summary: "state of a run",
-		Usage:   "[run] [--json] [--all]",
+		Usage:   "[run | --agent <name>] [--json] [--all]",
 		Flags: func(fs *flag.FlagSet) {
 			fs.BoolVar(&asJSON, "json", false, "one JSON object")
 			fs.BoolVar(&all, "all", false, "every run under the ledger root, oldest first")
+			fs.StringVar(&agentName, "agent", "", "select runs of this agent (the contract's name:); newest only unless --all")
 		},
 		Run: func(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
+			if flagGiven(fs, "agent") {
+				if _, err := identity.ParseAgentID(agentName); err != nil || fs.NArg() != 0 {
+					message(stderr, "", 0, 0, "tego status: --agent needs a valid agent name and no run id; use tego status --agent <name> [--all]", codeUsage)
+					return identity.ExitUsage
+				}
+				return runStatusSelected(ctx, "", agentName, all, asJSON, stdout, stderr)
+			}
 			if fs.NArg() > 1 {
 				message(stderr, "", 0, 0, "tego status: at most one run id", codeUsage)
 				return identity.ExitUsage // R25: usage error
@@ -150,6 +159,10 @@ type statusListJSON struct {
 
 // runStatus is the in-process body of status.
 func runStatus(ctx context.Context, runID string, all, asJSON bool, stdout, stderr io.Writer) int {
+	return runStatusSelected(ctx, runID, "", all, asJSON, stdout, stderr)
+}
+
+func runStatusSelected(ctx context.Context, runID, agentName string, all, asJSON bool, stdout, stderr io.Writer) int {
 	m, cds, err := loadMachine(config.TrustWarn)
 	writeConfigDiagnostics(stderr, cds)
 	if err != nil {
@@ -165,7 +178,7 @@ func runStatus(ctx context.Context, runID string, all, asJSON bool, stdout, stde
 		message(stderr, "", 0, 0, "tego status: interrupted", codeIO)
 		return identity.ExitError
 	}
-	snaps, skipped, err := collectStatus(ctx, root, runID, all, time.Now())
+	snaps, skipped, err := collectStatus(ctx, root, runID, all || agentName != "", time.Now())
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return readFailed(stderr, "status", err)
@@ -176,6 +189,13 @@ func runStatus(ctx context.Context, runID string, all, asJSON bool, stdout, stde
 		}
 		message(stderr, "", 0, 0, "tego status: "+err.Error(), readCode(err))
 		return identity.ExitError
+	}
+	if agentName != "" {
+		snaps = slices.DeleteFunc(snaps, func(s *status.Snapshot) bool { return s.Agent != agentName })
+		if !all && len(snaps) > 1 {
+			slices.SortFunc(snaps, func(a, b *status.Snapshot) int { return ledger.CompareRunIDs(b.Run, a.Run) })
+			snaps = snaps[:1]
+		}
 	}
 	// E26: a run this command could not read is reported as itself — one diagnostic line naming the
 	// run and the errno — never folded into a shorter table or into "no runs", which would read as
@@ -208,6 +228,11 @@ func runStatus(ctx context.Context, runID string, all, asJSON bool, stdout, stde
 			return identity.ExitOK
 		}
 		fmt.Fprintln(stdout, "no runs")
+		if agentName != "" {
+			fmt.Fprintf(stdout, "No recorded run has agent name %s; tego status --all lists the other agents.\n", agentName)
+		} else {
+			fmt.Fprintln(stdout, "next: tego init --preset no-secrets,repo-only-writes --write ./out, then tego run agent.yaml")
+		}
 		return identity.ExitOK
 	}
 	pauses := runPauses(root, snaps)

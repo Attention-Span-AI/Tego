@@ -313,6 +313,26 @@ Four things catch people out:
 
 ## Next
 
+For Claude Code, start in a project with no `agent.yaml`, set `ANTHROPIC_API_KEY` or
+`CLAUDE_CODE_OAUTH_TOKEN`, then run:
+
+```sh
+tego init --agent claude-code --write src/ --prompt 'Review this project'
+tego compile agent.yaml
+tego run agent.yaml
+```
+
+Claude runs one task in print mode through the forwarder; without `--prompt`, it
+describes the project without changing files. For the full-screen interface use
+`examples/agents/claude-code-interactive.yaml`; its model bytes are not captured.
+`tego init --list` lists agents and login setup. `--agent codex` selects Codex exec
+with `CODEX_API_KEY`; ChatGPT sign-in keeps its explicit example contract. Init reads
+no credentials and calls no model. The initial prompt is one literal argument.
+Generated cache and state paths move with the project; run it from that folder.
+
+Use `tego status --agent <name>` to find its newest run, or add `--all` for its history.
+`tego rules --last` shows the same rules, sources and enforcement details as the dashboard.
+
 - Real agents: [examples/agents/](../examples/agents/README.md) has contracts for Claude Code, Codex and a custom agent. Each
   needs editing for your machine before use, and each file's header says how. Keep a contract outside the project the agent
   works in: a contract the agent can rewrite is refused.

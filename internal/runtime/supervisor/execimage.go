@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/platform/sys"
+	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
 )
 
 // fileID is a file's identity: the device and inode a Landlock rule is bound to (enforce-landlock R3 opens
@@ -66,6 +67,10 @@ type pathQuery struct {
 	// head asks ExecImage for the image's first binprmBuf bytes, read through the walk's own descriptor
 	// (ADR 0048 (3)): a run with command rules reads every image's #! line, since any ruled tool can be an interpreter.
 	head bool
+	// nodePin asks only for Node build attestation of a loader's mapped program.
+	// Mapping that file does not require MAY_EXEC; q.head's exec permission check
+	// belongs only to an actual binfmt image/interpreter walk.
+	nodePin bool
 	// predict is compile --test's question (Land), asked of the tree as compile finds it, before the agent runs. A
 	// component that does not exist yet is taken as a directory the agent makes later: the names after it lie beneath
 	// it, a ".." among them climbs back out of it, and once the walk is back in the existing tree it goes on there,
@@ -113,6 +118,8 @@ type execImage struct {
 	// It is read by reopening the walk's own O_PATH descriptor through /proc/self/fd, never by resolving the path
 	// again, and kept only when the reopened file is the walked inode (readHead).
 	head []byte
+	// nodeVersion is attested from the opened executable, never its path/argv.
+	nodeVersion string
 	// name is the name an exec line gives a pathname with a ".." component (lineName's rule): where this walk landed the
 	// directory of its final component, as spelled, joined with that component, never followed. "" for any other
 	// pathname, and where that directory is not where it lies in this process's view.
@@ -172,16 +179,20 @@ func (k sysKernel) ExecImage(q pathQuery) (execImage, error) {
 		img.kid, img.kidErr = k.kernelID(fd)
 		img.kidOK = img.kidErr == nil
 	}
-	if err == nil && q.head && img.regular {
+	if err == nil && (q.head || q.nodePin) && img.regular {
 		// A file the kernel's do_open_execat is sure to refuse the task, EACCES before it reads a byte, is that
 		// lookup's failure, and its head is never read: the supervisor, root at tiers cgroup and bpflsm, would
 		// otherwise read a file the task cannot run, and answer from its #! line what the task cannot learn.
-		if execRefused(fd, img, q.tid) {
+		if q.head && execRefused(fd, img, q.tid) {
 			return execImage{name: name}, unix.EACCES
 		}
 		// Only a regular file is reopened: anything else keeps head nil, its form unknown, and a run with command
 		// rules refuses it image-unreadable with EACCES, the kernel's own answer to its exec.
-		img.head = readHead(fd, img.id)
+		if execmatch.NodeName(path.Base(q.path)) || execmatch.NodeName(path.Base(img.link)) {
+			img.head, img.nodeVersion = readExecBytes(fd, img.id, true)
+		} else if q.head {
+			img.head = readHead(fd, img.id)
+		}
 	}
 	return img, err
 }
@@ -241,21 +252,34 @@ var headOpen = func(p string) (int, error) {
 // file cannot be read (an execute-only file at tier 1): the exec's form is then unknown. The caller reopens only a
 // file the O_PATH descriptor's fstat found regular (execImage.regular).
 func readHead(fd int, id fileID) []byte {
+	head, _ := readExecBytes(fd, id, false)
+	return head
+}
+
+// readExecBytes binds the inventory to the same inode as the executable walk.
+// Version strings and node --version are not attestations. Hash only named Node
+// images, at most 256 MiB, and reject a changed/read-failed file. Shared-libnode
+// loader hashes are intentionally absent: they do not bind the runtime library.
+func readExecBytes(fd int, id fileID, node bool) ([]byte, string) {
 	rd, err := headOpen("/proc/self/fd/" + strconv.Itoa(fd))
 	if err != nil {
-		return nil
+		return nil, ""
 	}
 	defer unix.Close(rd) //nolint:errcheck // a read-only descriptor this call opened
 	var st unix.Stat_t
 	if err := unix.Fstat(rd, &st); err != nil || st.Mode&unix.S_IFMT != unix.S_IFREG || uint64(st.Dev) != id.dev || st.Ino != id.ino {
-		return nil
+		return nil, ""
 	}
 	buf := make([]byte, binprmBuf)
 	n, err := unix.Pread(rd, buf, 0)
 	if err != nil || n < 0 {
-		return nil
+		return nil, ""
 	}
-	return buf[:n] // an empty file reads empty, not unreadable: the kernel answers its exec ENOEXEC
+	head := buf[:n]
+	if !node || st.Size <= 0 || st.Size > 256<<20 {
+		return head, ""
+	}
+	return head, nodeBuilds.version(rd, st)
 }
 
 // dirOf is the /proc link of the directory an exec starts from: the task's cwd, or its dirfd.

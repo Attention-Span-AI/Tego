@@ -168,7 +168,7 @@ func TestMarkersAndGroupsExpand(t *testing.T) {
 	s := squeeze(r.Contract)
 	for _, want := range []string{
 		`"./src/"   # --write`, `"./target/"   # Cargo.toml`, `"./.venv/"   # pyproject.toml`, `"./.tego/cache/"   # go.mod`,
-		`"./.tego/tmp/"`, `GOCACHE: "` + filepath.Join(dir, ".tego/cache/go-build"), `TMPDIR: "` + filepath.Join(dir, ".tego/tmp"),
+		`"./.tego/tmp/"`, `GOCACHE: "${TEGO_PROJECT_DIR}/.tego/cache/go-build`, `TMPDIR: "${TEGO_PROJECT_DIR}/.tego/tmp`,
 		`"proxy.golang.org:443"   # --allow-host @go-proxy`, `"sum.golang.org:443"   # --allow-host @go-proxy`,
 		`"example.com:443"   # --allow-host, port 443`, `"[::1]:443"`, `"[::1]:8080"`,
 	} {
@@ -317,7 +317,7 @@ func TestAgentNeeds(t *testing.T) {
 	}
 	got := string(res.Contract)
 	for _, want := range []string{`"./.tego/claude/"`, "CLAUDE_CONFIG_DIR", `"api.anthropic.com:443"`, `"CLAUDE_CODE_OAUTH_TOKEN"`,
-		`"SERVICE_TOKEN"`, "ask_read:", `"/home/u/.config/telemetry/token"`, "timeout: 5m", "tier: landlock", "/cc-socks/", `"/dev/tty"`} {
+		`"SERVICE_TOKEN"`, "ask_read:", `"/home/u/.config/telemetry/token"`, "timeout: 5m", "tier: landlock", "XDG_RUNTIME_DIR", `"%R"`, `"/dev/tty"`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("contract lacks %s:\n%s", want, got)
 		}

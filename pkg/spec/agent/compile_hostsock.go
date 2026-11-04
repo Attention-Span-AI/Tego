@@ -89,7 +89,7 @@ func x11Sockets(root string) []string {
 // reaches only a socket a process of the run bound and tego's own endpoints; every other one, the daemon sockets
 // below among them, is refused rule host-sockets. At tier landlock that is race-free (the supervisor relays every
 // connect and addressed send, the abstract scope from Landlock ABI 6 and RESOLVE_UNIX from ABI 9 back it); at the root
-// tiers it is the supervisor's alone until they carry a kernel program for it (ADR 0070 (5)), which compile states where the run may land there.
+// tiers immutable raw-name checks now back the relay; alias and unsupported-datagram residuals remain disclosed (ADR 0113).
 //
 // host_sockets: true is the opt-out, all or nothing like keyring: true, and the one default whose reach depends on
 // what else runs on the machine, so compile names the well-known daemon sockets that exist here and what each one
@@ -120,11 +120,11 @@ func (k *compiler) hostSocketsReachable() {
 		list = "these among them: " + strings.Join(found, "; ")
 	}
 	k.ds.warnf(k.pos("host_sockets"), CodeHostSockets, "host_sockets: true lets the agent connect to every host socket "+
-		"its uid can open, %s; and to every abstract socket (the X server's @/tmp/.X11-unix/X0, systemd's buses) on a "+
+		"its uid can open except ADR 0113's immutable built-in refusals; these sockets exist here (protected sockets in this list remain refused): %s; and to every abstract socket (the X server's @/tmp/.X11-unix/X0, systemd's buses) on a "+
 		"kernel below Landlock ABI 6 (Linux 6.12), where no scope refuses them", list).
 		fix("remove host_sockets: true and add a net: section naming each endpoint the agent needs, with a unix: entry " +
-			"for the one socket it uses (unix:/run/user/<uid>/openssh_agent for git over ssh, the gpg-agent socket for " +
-			"signing): host_sockets opens every socket at once")
+			"for the one socket it uses (unix:/run/user/<uid>/openssh_agent for git over ssh); the session buses, " +
+			"gpg-agent's main socket and Tego's surfaces remain refused")
 }
 
 // hostSocketsFound is each well-known daemon socket that exists here, as "path: what it gives".
@@ -169,4 +169,15 @@ func HostSocketWhat(path, runtimeDir string) string {
 func isSocket(p string) bool {
 	fi, err := os.Stat(p)
 	return err == nil && fi.Mode()&os.ModeSocket != 0
+}
+
+func (k *compiler) containerSocketWarning() {
+	if k.rt.Builtins == nil {
+		return
+	}
+	for _, r := range k.rt.Net {
+		if r.Runtime == "" && r.Proto == ProtoUnix && !r.Abstract && r.Verdict == VerdictAllow && IsContainerSocket(r.UnixPath, k.rt.Builtins.Runtime) {
+			k.ds.warnf(r.Pos, CodeContainerSocketEscape, "%s admits a container daemon that can start containers outside the run", r.RuleName()).fix("keep this exact socket allowance only when the agent needs that authority")
+		}
+	}
 }

@@ -24,12 +24,13 @@
 # environment. TEGO / TEGO_CONTROL name the binaries (default: bin/ of this checkout, else PATH).
 set -eu
 
-HERE=$(cd "$(dirname "$0")" && pwd)
-ROOT=$(cd "$HERE/../.." && pwd)
+HERE=$(cd "$(dirname "$0")" && pwd -P)
+ROOT=$(cd "$HERE/../.." && pwd -P)
 # shellcheck source=demo.env
 . "$HERE/demo.env"
 
 STAGE=$(readlink -m "${DEMO_STAGE:-$HERE}")   # made by setup, after it has checked where it is
+DEMO_LEDGER=$(readlink -m -- "$DEMO_LEDGER")
 LEFT_DIR=$STAGE/without
 RIGHT_DIR=$STAGE/with
 API_LOG=$STAGE/api.log
@@ -82,14 +83,29 @@ die() { printf 'demo.sh: %s\n' "$*" >&2; exit 1; }
 # shq quotes one word the way a person would type it.
 shq() {
   case $1 in
-    '' | *[!A-Za-z0-9_@%+=:,./-]*) printf "'%s'" "$(printf %s "$1" | sed "s/'/'\\\\''/g")" ;;
+    '' | *[!A-Za-z0-9_@%+=:,./-]*)
+      printf "'"
+      printf %s "$1" | sed "s/'/'\\\\''/g" || return
+      printf "'"
+      ;;
     *) printf %s "$1" ;;
   esac
 }
-# printcmd prints a command line, quoted.
+# The only command printer. CMD_DIR adds a working directory; redaction applies
+# to every caller, including backup, without changing the executed arguments.
 printcmd() {
   printf '$'
-  for a in "$@"; do printf ' %s' "$(shq "$a")"; done
+  [ -z "${CMD_DIR:-}" ] || printf ' cd %s &&' "$(shq "$CMD_DIR")"
+  for a in "$@"; do
+    case $a in CLAUDE_CODE_OAUTH_TOKEN=*|ANTHROPIC_API_KEY=*) a="${a%%=*}=..." ;; esac
+    if [ "${DEMO_QUIET:-0}" = 1 ]; then
+      case $a in
+        USER=*|LOGNAME=*|SHELL=*|XDG_RUNTIME_DIR=*|DBUS_SESSION_BUS_ADDRESS=*|DISPLAY=*|WAYLAND_DISPLAY=*|XAUTHORITY=*) continue ;;
+        PATH=*) a='PATH=...' ;;
+      esac
+    fi
+    printf ' %s' "$(shq "$a")"
+  done
   printf '\n'
 }
 # run prints a command, then runs it.
@@ -144,6 +160,60 @@ stage_problem() {
   for h in $(tego_homes); do
     if under "$STAGE" "$h"; then echo "the stage $STAGE is inside tego's home $h"; return; fi
   done
+}
+
+# The source kit is the default stage, so unrelated siblings are allowed. Only
+# setup claims its reserved child names, and only when none of them exists.
+STAGE_MARK=.tego-supply-chain-stage
+LEDGER_MARK=.tego-supply-chain-ledger
+check_owned_path() {
+  case $1 in /) die "refusing root: $1" ;; esac
+  case $1 in *'
+'*) die "refusing a newline in a generated-state path: $1" ;; esac
+  case "$(readlink -m -- "$HOME")/" in "$1/"*) die "refusing home or its ancestor: $1" ;; esac
+  case "$ROOT/" in "$1/"*) die "refusing checkout or its ancestor: $1" ;; esac
+}
+require_owned() {
+  check_owned_path "$1"
+  [ ! -L "$1/$2" ] && [ -f "$1/$2" ] || die "no valid $2 from setup in $1"
+  owner=$(cat "$1/$2") || die "cannot read marker: $1/$2"
+  [ "$owner" = "$1" ] || die "no valid $2 from setup in $1"
+}
+require_stage_owner() {
+  require_owned "$STAGE" "$STAGE_MARK"
+  for child in without with api.log; do
+    [ ! -L "$STAGE/$child" ] || die "generated child is a symlink: $STAGE/$child"
+  done
+  for d in "$LEFT_DIR" "$RIGHT_DIR"; do
+    for child in home proj codex-home claude-home; do
+      [ ! -L "$d/$child" ] || die "generated child is a symlink: $d/$child"
+    done
+  done
+}
+claim_stage() {
+  check_owned_path "$STAGE"
+  if [ ! -e "$STAGE/$STAGE_MARK" ] && [ ! -L "$STAGE/$STAGE_MARK" ]; then
+    for child in without with api.log; do
+      [ ! -e "$STAGE/$child" ] && [ ! -L "$STAGE/$child" ] ||
+        die "it is not a demo side owned by setup (no $STAGE_MARK): $STAGE/$child"
+    done
+    mkdir -p "$STAGE"
+    (set -C; printf '%s\n' "$STAGE" >"$STAGE/$STAGE_MARK") || die "cannot mark stage: $STAGE"
+  fi
+  require_stage_owner
+}
+claim_ledger() {
+  check_owned_path "$DEMO_LEDGER"
+  if [ ! -e "$DEMO_LEDGER/$LEDGER_MARK" ] && [ ! -L "$DEMO_LEDGER/$LEDGER_MARK" ]; then
+    if [ -d "$DEMO_LEDGER" ]; then
+      # Count entries without exposing their names to newline trimming.
+      entries=$(find "$DEMO_LEDGER" -mindepth 1 -maxdepth 1 -printf x) || die "cannot list ledger: $DEMO_LEDGER"
+      [ -z "$entries" ] || die "refusing ledger without $LEDGER_MARK from setup: $DEMO_LEDGER"
+    fi
+    mkdir -p "$DEMO_LEDGER"
+    (set -C; printf '%s\n' "$DEMO_LEDGER" >"$DEMO_LEDGER/$LEDGER_MARK") || die "cannot mark ledger: $DEMO_LEDGER"
+  fi
+  require_owned "$DEMO_LEDGER" "$LEDGER_MARK"
 }
 
 need_tools() {
@@ -208,6 +278,7 @@ write_contract() {
 # lay_side NAME: the fake home and a fresh copy of the project. The agent's own folder is kept if it exists (Codex's
 # login is in it); its settings are written again.
 lay_side() {
+  require_stage_owner
   d=$STAGE/$1
   rm -rf "${d:?}/home" "${d:?}/proj" "${d:?}/backup.log"
   mkdir -p "$d/home/.ssh" "$d/home/.config/telemetry" "$d/$AGENT_HOME"
@@ -258,20 +329,33 @@ OLD_MARK=.moved-by-demo-sh
 # rotate_ledger moves a ledger that holds runs to <ledger>.old-<time> (its .rule-changes journal goes with it) and
 # marks it, starts an empty one (mode 0700) and deletes all but the newest DEMO_KEEP_LEDGERS of the old ones it marked.
 rotate_ledger() {
-  case $DEMO_LEDGER in '' | / | "$HOME") die "refusing to rotate the ledger '$DEMO_LEDGER'" ;; esac
-  if [ -d "$DEMO_LEDGER" ] && [ -n "$(ls -A "$DEMO_LEDGER" 2>/dev/null)" ]; then
-    old=$DEMO_LEDGER.old-$(date +%y%m%d-%H%M%S)
-    run mv "$DEMO_LEDGER" "$old"
+  require_owned "$DEMO_LEDGER" "$LEDGER_MARK"
+  # ls below is line-oriented. Refuse ambiguous candidates before any move or
+  # pruning; splitting a pathname must never select another marked directory.
+  for old_candidate in "$DEMO_LEDGER".old-*; do
+    case $old_candidate in *'
+'*) die "refusing a newline in an old-ledger path: $old_candidate" ;; esac
+  done
+  entries=$(find "$DEMO_LEDGER" -mindepth 1 -maxdepth 1 ! -name "$LEDGER_MARK" -printf x) || die "cannot list ledger: $DEMO_LEDGER"
+  if [ -n "$entries" ]; then
+    # Reserve our own empty destination. A timestamp alone can collide with an
+    # unrelated directory: ordinary mv would nest the ledger there, then mark
+    # that unrelated parent for pruning. -T replaces only the reserved directory.
+    old=$(mktemp -d -- "$DEMO_LEDGER.old-$(date +%y%m%d-%H%M%S).XXXXXX")
+    run mv -T -- "$DEMO_LEDGER" "$old"
     printf '%s\n' "$old" >"$old/$OLD_MARK"
   fi
   mkdir -p "$DEMO_LEDGER"
+  printf '%s\n' "$DEMO_LEDGER" >"$DEMO_LEDGER/$LEDGER_MARK"
   chmod 700 "$DEMO_LEDGER"
   note "ledger: $DEMO_LEDGER (empty, mode 0700)"
   n=0
   # ls -t is the newest-first order. A marked name is this script's own <ledger>.old-<date>, with no newline in it.
   # shellcheck disable=SC2012
   ls -dt "$DEMO_LEDGER".old-* 2>/dev/null | while IFS= read -r d; do
-    [ ! -L "$d" ] && [ -f "$d/$OLD_MARK" ] && [ "$(head -n 1 "$d/$OLD_MARK" 2>/dev/null)" = "$d" ] || continue
+    [ ! -L "$d" ] && [ ! -L "$d/$OLD_MARK" ] && [ -f "$d/$OLD_MARK" ] || continue
+    owner=$(cat "$d/$OLD_MARK" 2>/dev/null) || continue
+    [ "$owner" = "$d" ] || continue
     n=$((n + 1))
     if [ "$n" -gt "$DEMO_KEEP_LEDGERS" ]; then rm -rf "$d"; echo "deleted the old ledger $d (keeping the newest $DEMO_KEEP_LEDGERS)"; fi
   done
@@ -280,13 +364,15 @@ rotate_ledger() {
 # clear_state removes the generated state (without/, with/, api.log), and only what looks like this demo's own:
 # a side without its proj/ and an agent's folder (codex-home/ or claude-home/) is somebody else's folder of the same name.
 clear_state() {
+  require_stage_owner
+  # Preflight both sides, so a bad second side leaves the first one intact too.
   for d in "$LEFT_DIR" "$RIGHT_DIR"; do
     [ -e "$d" ] || continue
     if [ ! -d "$d/proj" ] || { [ ! -d "$d/codex-home" ] && [ ! -d "$d/claude-home" ]; }; then
       die "refusing to remove $d: it is not a demo side (it needs proj/ and codex-home/ or claude-home/)"
     fi
-    rm -rf "$d"
   done
+  rm -rf -- "$LEFT_DIR" "$RIGHT_DIR"
   rm -f "$API_LOG"
 }
 
@@ -325,6 +411,8 @@ cmd_setup() {
   fi
   prob=$(stage_problem)
   [ -z "$prob" ] || die "$prob. Choose another stage (DEMO_STAGE=...) or ledger (DEMO_LEDGER=...): a contract in either is not writable for the dashboard's rule edits"
+  claim_stage
+  claim_ledger
   say "Setup: two sides, each with its own fake home, a project copy and $AGENT_NAME's own folder"
   mkdir -p "$STAGE"
   stop_units
@@ -582,12 +670,6 @@ side_command() {
     agent_env="CLAUDE_CONFIG_DIR=$STAGE/$side/claude-home
 DISABLE_AUTOUPDATER=1
 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"
-    login=$(claude_login)
-    if [ -n "$login" ]; then
-      eval "val=\${$login}"
-      agent_env="$agent_env
-$login=$val"
-    fi
   else
     agent_env="CODEX_HOME=$STAGE/$side/codex-home"
   fi
@@ -605,6 +687,14 @@ $login=$val"
     $extra "$@"
   set +f
   IFS=$oldifs
+  if [ "$DEMO_AGENT" = claude ]; then
+    login=$(claude_login)
+    if [ -n "$login" ]; then
+      eval "val=\${$login}"
+      shift 2 # env -i; insert the login as one word, even if it contains a newline
+      set -- env -i "$login=$val" "$@"
+    fi
+  fi
   # A function's "$@" is its own: hand the words back as one string the caller turns into "$@" with
   #   eval "set -- $SIDE_CMD"
   SIDE_CMD=
@@ -616,19 +706,7 @@ $login=$val"
 # DEMO_QUIET=1 leaves your desktop variables (user name, display, session bus) and the long PATH out of the
 # printed line; the command that runs is the same.
 launch() {
-  printf '$ cd %s &&' "$(shq "$SIDE_DIR")"
-  for a in "$@"; do
-    # a real login is never printed
-    case $a in CLAUDE_CODE_OAUTH_TOKEN=*|ANTHROPIC_API_KEY=*) a="${a%%=*}=..." ;; esac
-    if [ "${DEMO_QUIET:-0}" = 1 ]; then
-      case $a in
-        USER=*|LOGNAME=*|SHELL=*|XDG_RUNTIME_DIR=*|DBUS_SESSION_BUS_ADDRESS=*|DISPLAY=*|WAYLAND_DISPLAY=*|XAUTHORITY=*) continue ;;
-        PATH=*) a='PATH=...' ;;
-      esac
-    fi
-    printf ' %s' "$(shq "$a")"
-  done
-  printf '\n'
+  CMD_DIR=$SIDE_DIR printcmd "$@"
   cd "$SIDE_DIR"
   exec "$@"
 }
@@ -739,7 +817,7 @@ cmd_backup() {
   say "Backup, LEFT: the project's tests under tego watch (nothing blocked)"
   side_command without "$TEGO_BIN" watch --record full -- python3 -m unittest -v
   eval "set -- $SIDE_CMD"
-  printf '$ cd %s &&' "$(shq "$SIDE_DIR")"; for a in "$@"; do printf ' %s' "$(shq "$a")"; done; printf '\n'
+  CMD_DIR=$SIDE_DIR printcmd "$@"
   (cd "$SIDE_DIR" && "$@" </dev/null >"$LEFT_DIR/backup.log" 2>&1) && lrc=0 || lrc=$?
   left_run=$(run_id_of "$LEFT_DIR/backup.log")
   grep -E '^\[telemetry_helper\]|^Ran |^OK|^FAILED' "$LEFT_DIR/backup.log" | sed 's/^/  /' || true
@@ -748,7 +826,7 @@ cmd_backup() {
   say "Backup, RIGHT: the same tests under tego run; the token ask is denied for you"
   side_command with "$TEGO_BIN" run ${OFFLINE:+"$OFFLINE"} "$FILLED" -- python3 -m unittest -v
   eval "set -- $SIDE_CMD"
-  printf '$ cd %s &&' "$(shq "$SIDE_DIR")"; for a in "$@"; do printf ' %s' "$(shq "$a")"; done; printf '\n'
+  CMD_DIR=$SIDE_DIR printcmd "$@"
   (cd "$SIDE_DIR" && exec "$@" </dev/null >"$RIGHT_DIR/backup.log" 2>&1) &
   pid=$!
   right_run=
@@ -1053,6 +1131,8 @@ cmd_reset() {
   esac
   prob=$(stage_problem)
   [ -z "$prob" ] || die "$prob"
+  require_stage_owner
+  require_owned "$DEMO_LEDGER" "$LEDGER_MARK"
   # A run still going would keep writing into the ledger this moves, out of the dashboard's sight.
   live=$(live_runs)
   if [ -n "$live" ]; then

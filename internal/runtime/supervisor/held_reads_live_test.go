@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/internal/runtime/ask"
+	"github.com/attention-span-ai/tego/pkg/policy/gate"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -121,6 +123,76 @@ func TestHeldReadLiveRefusalOnThePinnedObject(t *testing.T) {
 			x.openAs(t, l, benign, unix.O_RDONLY, 0)
 			if len(x.k.heldDelivered) != delivered+1 {
 				t.Fatal("an open of an allowed object was not delivered")
+			}
+		})
+	}
+}
+
+// The copied name is benign, but the deputy reaches a blocked write target.
+// Check both access classes of O_RDWR, and O_CREAT/O_TRUNC before their effects.
+func TestHeldWriteLiveRefusalOnThePinnedObject(t *testing.T) {
+	for _, kind := range []liveblock.Kind{liveblock.KindWrite, liveblock.KindPath} {
+		for _, flags := range []int{unix.O_WRONLY, unix.O_RDWR, unix.O_WRONLY | unix.O_TRUNC, unix.O_RDONLY | unix.O_CREAT} {
+			t.Run(string(kind)+"/"+strconv.Itoa(flags), func(t *testing.T) {
+				x, _ := heldReadsFixture(t, agent.RecordFull)
+				x.pol.Rules.Gate = testGate(t, gate.WriteOutsideWorktree, "", 60).WithHeldCompletion()
+				blocked := filepath.Join(x.dir, "blocked")
+				if err := os.WriteFile(blocked, []byte("keep"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				x.live = func() *liveblock.Set {
+					return liveblock.CompileEntries([]liveblock.Entry{{Kind: kind, Value: blocked, At: time.Now()}}, 1, liveblock.Resolved{})
+				}
+				l, sink, _ := x.loop(t, func(ask.Request) ask.Decision { return ask.Decision{} })
+				x.dep.swapTo = blocked
+				x.openAs(t, l, filepath.Join(x.dir, "src", "a.txt"), flags, 0)
+				res, _ := x.f.lastResp()
+				if x.dep.pins == 0 {
+					t.Fatal("open was not held")
+				}
+				if res.Error != -int32(unix.EACCES) || len(x.k.heldDelivered) != 0 || len(x.dep.opened) != 0 {
+					t.Fatalf("answer %+v, delivered %v, opens %v: want refusal before open", res, x.k.heldDelivered, x.dep.opened)
+				}
+				if evs := sink.all(); len(evs) != 1 || evs[0].Rule != "live.block["+string(kind)+":"+blocked+"]" {
+					t.Fatalf("lines %+v: want the block's rule", evs)
+				}
+			})
+		}
+	}
+}
+
+func TestHeldWriteRechecksLiveBlocksBeforeDelivery(t *testing.T) {
+	for _, flags := range []int{unix.O_WRONLY, unix.O_WRONLY | unix.O_TRUNC, unix.O_WRONLY | unix.O_CREAT} {
+		t.Run(strconv.Itoa(flags), func(t *testing.T) {
+			x, _ := heldReadsFixture(t, agent.RecordFull)
+			x.pol.Rules.Gate = testGate(t, gate.WriteOutsideWorktree, "", 60).WithHeldCompletion()
+			var set *liveblock.Set
+			x.live = func() *liveblock.Set { return set }
+			l, sink, _ := x.loop(t, func(ask.Request) ask.Decision { return ask.Decision{} })
+			x.dep.afterOpen = func(int, string) {
+				set = liveblock.CompileEntries([]liveblock.Entry{{Kind: liveblock.KindWrite, Value: x.dir, At: time.Now()}}, 1, liveblock.Resolved{})
+			}
+			path := filepath.Join(x.dir, "src", "a.txt")
+			if flags&unix.O_CREAT != 0 {
+				path = filepath.Join(x.dir, "new")
+			}
+			x.openAs(t, l, path, flags, 0o600)
+			res, _ := x.f.lastResp()
+			if res.Error != -int32(unix.EACCES) || len(x.k.heldDelivered) != 0 {
+				t.Fatalf("answer %+v, delivered %v: block arriving during open was ignored", res, x.k.heldDelivered)
+			}
+			evs := sink.all()
+			if len(evs) != 1 || !strings.HasPrefix(evs[0].Rule, "live.block[write:") {
+				t.Fatalf("lines %+v: want one refusal naming the new block", evs)
+			}
+			p := decodeHeldOutcome(t, evs[0])
+			if p.OperationCompleted == nil || !*p.OperationCompleted || p.FDDelivered || p.SyscallRet == nil || *p.SyscallRet != -int64(unix.EACCES) {
+				t.Fatalf("payload %s: want the completed open and undelivered descriptor", evs[0].Payload)
+			}
+			if flags&(unix.O_CREAT|unix.O_TRUNC) != 0 {
+				if data, err := os.ReadFile(path); err != nil || len(data) != 0 {
+					t.Fatalf("open effect: contents %q, error %v: want the created/truncated file", data, err)
+				}
 			}
 		})
 	}

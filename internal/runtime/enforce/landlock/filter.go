@@ -413,6 +413,8 @@ func BuildFilter(arch Arch, full, frames bool) ([]bpf.Instruction, error) {
 
 // filterOpts is everything a run's filter varies by.
 type filterOpts struct {
+	builtin bool // ADR 0113: terminal relay, immutable socket boundary
+
 	full     bool // record: full notifies every open (R16)
 	gateRead bool // a read gate needs notifications even under summary/off
 	// askRead notifies every open, as record: full does: fs.ask_read holds a read-open for a person, and a classic BPF
@@ -586,6 +588,7 @@ func planeSkips(hooks map[string]bool, full, ask bool) planeSkip {
 // (filterTestOmit, TEGO_TEST_FILTER_OMIT), so that a root test reaches what those arms answer first in a product
 // run: the decision plane's bpf and key_permission hooks (enforce-plane §2.20). A product build omits nothing.
 func buildFilter(arch Arch, o filterOpts) ([]bpf.Instruction, error) {
+	builtin := o.builtin
 	full, gateRead, gateWrite, abi, m, sa, plane := o.full, o.gateRead || o.askRead, o.gateWrite, o.abi, o.memfd, o.socket, o.plane
 	t, err := tableFor(arch)
 	if err != nil {
@@ -624,7 +627,7 @@ func buildFilter(arch Arch, o filterOpts) ([]bpf.Instruction, error) {
 			prog = append(prog, bpf.JumpIf{Cond: bpf.JumpEqual, Val: s.NR, SkipFalse: 1}, bpf.RetConstant{Val: retENOSYS})
 		}
 	}
-	if o.listenControl || o.unixBinds {
+	if o.listenControl || o.unixBinds || o.builtin {
 		prog = append(prog, bpf.JumpIf{Cond: bpf.JumpEqual, Val: t.Bind, SkipFalse: 1}, bpf.RetConstant{Val: retNotify})
 	}
 	if o.listenControl {
@@ -647,6 +650,10 @@ func buildFilter(arch Arch, o filterOpts) ([]bpf.Instruction, error) {
 			continue // a test build's seam (filter_hooks.go); a product build omits nothing
 		}
 		prog = append(prog, bpf.JumpIf{Cond: bpf.JumpEqual, Val: s.NR, SkipFalse: 1}, bpf.RetConstant{Val: retNotify})
+	}
+	if o.builtin {
+		prog = append(prog, bpf.JumpIf{Cond: bpf.JumpEqual, Val: 438, SkipFalse: 1}, bpf.RetConstant{Val: retNotify})
+		prog = append(prog, bpf.JumpIf{Cond: bpf.JumpEqual, Val: t.Ioctl, SkipFalse: 4}, bpf.LoadAbsolute{Off: offArg0 + argSize, Size: 4}, bpf.JumpIf{Cond: bpf.JumpEqual, Val: unix.TIOCGPTPEER, SkipFalse: 1}, bpf.RetConstant{Val: retNotify}, bpf.LoadAbsolute{Off: offNR, Size: 4})
 	}
 	prog = append(prog, terminalInjectionTest(t.Ioctl)...)
 	prog = append(prog, mptcpSocketTest(t.Socket)...)
@@ -724,6 +731,9 @@ func buildFilter(arch Arch, o filterOpts) ([]bpf.Instruction, error) {
 		// CONTINUE by the supervisor's record-only handler and would truncate anyway (R2, E31).
 		if abi < minTruncateABI {
 			prog = append(prog, readOnlyTruncateTest(o.nr, o.arg)...)
+		}
+		if builtin {
+			prog = append(prog, flagNotifyTest(o.nr, o.arg, unix.O_NOCTTY)...)
 		}
 		if full || gateRead {
 			prog = append(prog, bpf.JumpIf{Cond: bpf.JumpEqual, Val: o.nr, SkipFalse: 1}, bpf.RetConstant{Val: retNotify})
@@ -1340,4 +1350,9 @@ func MemfdNoexecSealSupported() bool {
 	}
 	_ = unix.Close(fd)
 	return true
+}
+
+// flagNotifyTest inspects only a scalar open flag, never task memory.
+func flagNotifyTest(nr uint32, arg int, mask uint32) []bpf.Instruction {
+	return []bpf.Instruction{bpf.JumpIf{Cond: bpf.JumpEqual, Val: nr, SkipFalse: 4}, bpf.LoadAbsolute{Off: uint32(offArg0 + arg*argSize), Size: 4}, bpf.JumpIf{Cond: bpf.JumpBitsSet, Val: mask, SkipFalse: 1}, bpf.RetConstant{Val: retNotify}, bpf.LoadAbsolute{Off: offNR, Size: 4}}
 }

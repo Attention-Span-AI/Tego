@@ -48,7 +48,13 @@ func newProvEnv(t *testing.T) *provEnv {
 	if os.Geteuid() == 0 {
 		t.Skip("as root the launcher makes no runtime directory, so no harness is provisioned (reason-unavailable)")
 	}
-	e := &provEnv{bin: buildTego(t), w: t.TempDir()}
+	return newProvEnvAt(t, t.TempDir())
+}
+
+// newProvEnvAt lets socket tests supply a short private root (sun_path is 108 bytes).
+func newProvEnvAt(t *testing.T, root string) *provEnv {
+	t.Helper()
+	e := &provEnv{bin: buildTego(t), w: root}
 	if err := os.Chmod(e.w, 0o700); err != nil {
 		t.Fatal(err)
 	}

@@ -182,3 +182,19 @@ func TestEvaluateHeldReads(t *testing.T) {
 		t.Errorf("the ruleset alone refuses a nested target: %+v", got)
 	}
 }
+
+func TestHeldReadRefusalByRetainedIdentity(t *testing.T) {
+	rt := &agent.RuleTable{}
+	id := HeldReadID{Dev: 7, Ino: 42}
+	x := NewHeldReadIndex(rt, HeldReadPin{ID: id, Rule: "fs.deny_read[secret]"})
+	for _, path := range []string{"/write/alias", ""} {
+		if rule, refused := x.RefusalOn(nil, path, false, id); !refused || rule != "fs.deny_read[secret]" {
+			t.Fatalf("%q: refusal %t by %q, want the retained identity", path, refused, rule)
+		}
+	}
+	for _, other := range []HeldReadID{{Dev: 8, Ino: 42}, {Dev: 7, Ino: 43}, {}} {
+		if _, refused := x.RefusalOn(nil, "/write/alias", false, other); refused {
+			t.Fatalf("unrelated object %+v refused", other)
+		}
+	}
+}

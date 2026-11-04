@@ -14,7 +14,7 @@
 # allow; and, on a run of every package with no VM_RUN, when a test test/vm/root-must-pass.txt names did
 # not pass. Each suite's go test -json stream is kept beside its console log (VM_OUT/logs/<suite>.json).
 #
-# Usage: test/vm/root-suites.sh [package-substring...]   (default: every package below)
+# Usage: test/vm/root-suites.sh [package-substring | =exact/package ...] (default: every package below)
 #        test/vm/root-suites.sh --gather DIR              (after the VM_SHARD runs: below)
 # Environment: GO (go), VM_OUT (bin/vm: binaries, logs, summary.json), VM_BPF (auto|yes|no: whether
 #   to build the tegobpf variants; auto builds them when internal/bpf compiles with the tag, i.e.
@@ -274,7 +274,12 @@ if [ $# -gt 0 ]; then
 	selected=()
 	for p in "${PKGS[@]}"; do
 		for f in "$@"; do
-			case "$p" in *"$f"*) selected+=("$p"); break ;; esac
+			case "$f" in
+			=*) [ "$p" = "${f#=}" ] || continue ;;
+			*) case "$p" in *"$f"*) ;; *) continue ;; esac ;;
+			esac
+			selected+=("$p")
+			break
 		done
 	done
 	PKGS=("${selected[@]+"${selected[@]}"}")

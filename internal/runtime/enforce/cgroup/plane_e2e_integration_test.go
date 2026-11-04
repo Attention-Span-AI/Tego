@@ -949,101 +949,23 @@ func planeStepBRunCells(t *testing.T, p *planeProject, res map[string]string, ev
 	}
 }
 
-// planeIOUringContract declares io_uring: true under a net: section (ADR 0018 (5)).
-const planeIOUringContract = `version: 0
-name: plane-iouring
-command: ["python3", "./agent.py"]
-fs:
-  write: ["./out/"]
-exec:
-  allow: ["python3", "./bin/uringsock"]
-net:
-  allow: []
-io_uring: true
-env:
-  pass: ["PATH", "HOME"]
-record: full
-`
-
-// planeIOUringAgent makes two sockets through io_uring, one of a family outside ADR 0018's allowlist.
-const planeIOUringAgent = `import subprocess
-for name, args in (("uring-vsock", ["40", "1", "0"]), ("uring-tcp", ["2", "1", "0"])):
-    r = subprocess.run(["./bin/uringsock", name] + args, capture_output=True, text=True)
-    print(r.stdout.strip() or "RESULT %s failed exit=%d %s" % (name, r.returncode, r.stderr.strip()), flush=True)
-`
-
-// TestPlaneRunAdmitsIOUring is ADR 0018 (5)'s admission (TIER3-PLAN T13, enforce-plane R14): a contract that
-// declares io_uring: true runs with io_uring at tier cgroup where a plane mode decides it (its unix names decided by
-// cgroup/connect_unix on 6.7+ and step D's hooks below), and the plane's socket_create refuses a socket of a family outside
-// the allowlist that no seccomp filter sees, io_uring's IORING_OP_SOCKET, with the plane's own refused line; a
-// family inside it is made. On the fanotify listener io_uring stays refused (ENOSYS).
-func TestPlaneRunAdmitsIOUring(t *testing.T) {
-	if os.Geteuid() != 0 {
-		t.Skip("the plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`")
-	}
-	uid, gid, ok := sudoIDs()
-	if !ok {
-		t.Skip("a root `tego run` drops the agent to the sudo caller and refuses without SUDO_UID and SUDO_GID")
-	}
-	if _, err := bpfHash(); err != nil {
-		t.Skipf("this test binary carries no BPF objects; the run belongs to the tegobpf suite: %v", err)
-	}
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skipf("the agent is a python3 script: %v", err)
-	}
-	dir := t.TempDir()
-	bin := buildPlaneTego(t, dir)
-	requireTier(t, bin, "cgroup")
-	uringsock := filepath.Join(dir, "uringsock")
-	build := exec.Command("go", "build", "-o", uringsock, "github.com/attention-span-ai/tego/test/workloads/uringsock")
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if b, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build the io_uring workload: %v: %s", err, b)
-	}
-	sock, err := os.ReadFile(uringsock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	modes := planeModesHere(t, bin)
-	// kernel.io_uring_disabled (6.6, backported to RHEL 9, where it is set) refuses io_uring_setup with EPERM to a
-	// task it does not admit, the agent included: the plane's admission then has no io_uring to decide (TIER3-PLAN T11).
-	uringOff := ""
-	if b, err := os.ReadFile("/proc/sys/kernel/io_uring_disabled"); err == nil && strings.TrimSpace(string(b)) != "0" {
-		uringOff = strings.TrimSpace(string(b))
-	}
+// TestPlaneRunRefusesIOUring holds ADR 0113's immutable identity boundary:
+// no plane mode may admit rings that bypass the Unix inode relay.
+func TestPlaneRunRefusesIOUring(t *testing.T) {
+	bin, uid, gid, modes := planePreconditions(t)
 	for _, mode := range append(modes, PlaneFanotify) {
 		t.Run(mode, func(t *testing.T) {
-			if uringOff != "" && mode != PlaneFanotify {
-				t.Skipf("kernel.io_uring_disabled is %s here: io_uring_setup is EPERM to the agent whatever the plane admits", uringOff)
-			}
-			p := newPlaneProject(t, uid, gid, map[string]string{"agent.py": planeIOUringAgent, "agent.yaml": planeIOUringContract,
-				"bin/uringsock": string(sock)}, []string{"out"}, nil)
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			p := newPlaneProject(t, uid, gid, map[string]string{"agent.yaml": `version: 0
+name: builtin-ring-refusal
+command: ["/bin/true"]
+tier: cgroup
+io_uring: true
+`}, nil, nil)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
 			var out bytes.Buffer
-			cmd := p.run(ctx, bin, "agent.yaml", mode, &out)
-			err := cmd.Run()
-			t.Logf("tego run (%s): %v\n%s", mode, err, out.String())
-			if err != nil {
-				t.Fatalf("the run did not complete: %v\nledger:\n%s", err, ledgerDump(p.ledger))
-			}
-			res := agentResults(t, out.String())
-			if mode == PlaneFanotify {
-				for _, name := range []string{"uring-vsock", "uring-tcp"} {
-					if !strings.HasPrefix(res[name], "unavailable") {
-						t.Errorf("%s without an admitting plane: %q, want io_uring unavailable (ENOSYS)", name, res[name])
-					}
-				}
-				return
-			}
-			if res["uring-vsock"] != "refused errno=13" || res["uring-tcp"] != "ok" {
-				t.Errorf("io_uring sockets under the plane: vsock %q, tcp %q; want EACCES and ok", res["uring-vsock"], res["uring-tcp"])
-			}
-			if findEvent(runEvents(t, p.ledger), func(e map[string]any) bool {
-				return e["kind"] == "refused" && e["op"] == "socket" && e["reason"] == "net-not-allowed" &&
-					strings.HasPrefix(fmt.Sprint(e["target"]), "AF_VSOCK") && e["mechanism"] == "plane" && e["source"] == "kernel"
-			}) == nil {
-				t.Error("no refused socket line of the plane's for the io_uring AF_VSOCK socket")
+			if err := p.run(ctx, bin, "agent.yaml", mode, &out).Run(); err == nil || !strings.Contains(out.String(), "builtin.host_ipc") {
+				t.Fatalf("ring opt-in bypassed immutable boundary: %v\n%s", err, out.String())
 			}
 		})
 	}

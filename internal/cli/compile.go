@@ -893,6 +893,7 @@ type TableFS struct {
 	FSType  string `json:"filesystem,omitempty"`
 	Missing bool   `json:"missing,omitempty"`
 	BuiltIn bool   `json:"builtin,omitempty"`
+	Rule    string `json:"rule,omitempty"` // immutable built-in rule, when this entry carries one
 	// The printed table's NOTES column. --json left out the deny_write set and these, so a reader of it could
 	// not tell an unenforced deny_read (landlock: parent writable) from an enforced one, nor see the
 	// supervisor-only deny_write entries at all. Added keys only: --json never renames one.
@@ -1017,7 +1018,7 @@ func tableJSON(rt *agent.RuleTable) Table {
 	for _, r := range append(append([]agent.FSRule(nil), rt.FS...), rt.DenyWrite...) {
 		deny := r.Unenforced && r.Kind == agent.FSDenyWrite
 		t.FS = append(t.FS, TableFS{Path: r.Path, Kind: string(r.Kind), Raw: r.Raw, Mount: r.Mount,
-			FSType: r.Filesystem, Missing: r.Missing, BuiltIn: r.BuiltIn,
+			FSType: r.Filesystem, Missing: r.Missing, BuiltIn: r.BuiltIn, Rule: r.BuiltinRule,
 			MountPoint: r.IsMountPoint, Overlay: r.Overlay, Btrfs: r.Btrfs, AskRead: r.AskRead && r.Kind == agent.FSDenyRead,
 			Unenforced:          r.Unenforced && r.Kind != agent.FSDenyWrite,
 			KernelPlaneRequired: deny && kernel,

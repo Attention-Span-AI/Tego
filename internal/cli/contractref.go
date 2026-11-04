@@ -4,6 +4,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -64,6 +65,9 @@ func registryPlaces(m *config.Machine) (registry.Places, *registry.Error) {
 // printRefusedName prints a refused name under its own code, naming the file it is about.
 func printRefusedName(stderr io.Writer, cmd string, e *registry.Error) {
 	message(stderr, e.Path, 0, 0, cmd+": "+e.Error(), e.Code)
+	if e.Code == registry.CodeNotFound && cmd == "tego run" {
+		fmt.Fprintln(stderr, "To create an agent contract: tego init --agent claude-code (or --agent codex), then tego run agent.yaml")
+	}
 }
 
 // load is agent.Load of the file: for a name, the bytes the registry read through the descriptor it checked, labelled

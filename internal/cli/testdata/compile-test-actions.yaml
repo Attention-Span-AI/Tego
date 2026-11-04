@@ -95,4 +95,4 @@ tests:
     action: net.connect
     path: unix:/run/docker.sock
     expect: refused
-    rule: unmatched
+    rule: builtin.host_ipc

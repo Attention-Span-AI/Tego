@@ -21,12 +21,11 @@ fs:
   write:
     # The task's own output: the one place a scenario's write is allowed.
     - "./work/"
-    # Claude Code's own state, scratch and runtime directory (CLAUDE_CONFIG_DIR, TMPDIR, XDG_RUNTIME_DIR below) and
+    # Claude Code's own state and scratch (CLAUDE_CONFIG_DIR and TMPDIR below), and
     # the run's HOME, so that its start-up writes are not refusals the hook would tell the model about; /dev/null and
     # /dev/tty are the shell's and the interface's plumbing.
     - "./.claude-state/"
     - "@ROOT@/home/"
-    - "@ROOT@/xdg/"
     - "/dev/null"
     - "/dev/tty"
   # Claude Code reads the passwd-database home's agent configuration (~/.claude/skills and the rest) whatever HOME
@@ -54,7 +53,8 @@ env:
     CLAUDE_CONFIG_DIR: ".claude-state"
     CLAUDE_CODE_TMPDIR: ".claude-state/tmp"
     TMPDIR: ".claude-state/tmp"
-    XDG_RUNTIME_DIR: "@ROOT@/xdg"
+    # The run-private harness runtime; launch checks the full PID socket path against 103 bytes.
+    XDG_RUNTIME_DIR: "%R"
 limits:
   pids: 512
   memory: 4GiB

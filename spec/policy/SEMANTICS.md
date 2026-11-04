@@ -9,7 +9,7 @@ here is undefined and must be added here before it is coded.
 |---|---|
 | no `fs:` | no write entry: every write is refused as under `fs: {}` (next row); reads allowed; the built-in `deny_read` list and the implicit entries (§2, last paragraph) apply; record per `record:` (amended, below) |
 | `fs: {}` or `fs.write: []` | all writes, deletes, renames, mkdir, symlink, link, truncate and mknod (fifo, unix socket, device) refused; chmod is not refused at any tier (`fs.deny_chmod` is absent at every tier, CAPABILITIES.md; amended 2026-10-19, below), only beneath a `deny_write` target where a decision plane decides; reads allowed |
-| no `net:` | deny no IP destination, except guarded `models[]` endpoints under `capture: forwarder` (below; amended 2026-10-05: the 2026-10-01 text also refused every undeclared destination on a named model's port here, which no longer holds); every IP destination is allowed, but a unix connect, or a datagram sent to a socket the run did not bind (pathname or abstract), is refused, rule `host-sockets`: the run reaches only the unix sockets a process of it bound and Tego's own endpoints (the DNS broker's socket), the unix-only state (*amended 2026-10-24*, [ADR 0070](../../docs/adr/0070-host-sockets-refused-by-default.md); before, it reached every host socket its uid could open). Top-level `host_sockets: true` restores that reach, and `compile` then warns naming the well-known host daemon sockets that exist (agent-contract R19); a profile cannot set it. A `net:` section decides unix destinations by its own entries and is unchanged |
+| no `net:` | apply the immutable built-in refusals below first; otherwise deny no IP destination, except guarded `models[]` endpoints under `capture: forwarder` (below; amended 2026-10-05: the 2026-10-01 text also refused every undeclared destination on a named model's port here, which no longer holds); every IP destination is allowed, but a unix connect, or a datagram sent to a socket the run did not bind (pathname or abstract), is refused, rule `host-sockets`: the run reaches only the unix sockets a process of it bound and Tego's own endpoints (the DNS broker's socket), the unix-only state (*amended 2026-10-24*, [ADR 0070](../../docs/adr/0070-host-sockets-refused-by-default.md); before, it reached every host socket its uid could open). Top-level `host_sockets: true` restores that reach, and `compile` then warns naming the well-known host daemon sockets that exist (agent-contract R19); a profile cannot set it. A `net:` section decides unix destinations by its own entries and is unchanged |
 | `net: {}` or `net.allow: []` | all connects refused |
 | no `exec:` | deny nothing |
 | `exec:` with `deny` or `ask` and no `allow` key, even `deny: []` (amended 2026-10-06, ADR 0048 (1)) | deny-list mode: images unrestricted, as no `exec:`; the command rules of §4 apply. The mode is the keys present, never whether a list is empty |
@@ -566,6 +566,23 @@ constrained allow entry only when every reading does.
   script (*amended 2026-11-01*). In a run with command rules, an exec whose argv[0] was not read, unreadable or past
   the bound, is refused `args-unreadable` as well: a binary can read its applet from argv[0], so its names alone do
   not settle what runs (*amended 2026-11-01*).
+  *Amended 2026-11-03 (C49):* Node's row inventories 20.19.4 and 22.21.1 with native and V8 argv
+  arities ([row reference](../../docs/spec/exec-command-rows.md#node)). Each reading stops Node options
+  at the entry script, so ordinary script flags do not fork that reading. *Review correction:*
+  config/default-config raw prefixes anywhere in argv, and env-file raw prefixes before `--`,
+  can still load code after the script and are refused. Node allows require the whole bounded
+  vector. *Round-3 architecture decision:* exact inventoried standalone executable hashes select
+  the full inventory; unknown hashes/versions/builds, shared-libnode launchers and absent
+  attestations select exactly master's Node row plus these universal raw scans. An absent pin
+  alone no longer refuses an exec. The master fallback retains both unknown-arity readings,
+  bounded at 16 and failing closed past the bound; ordinary unknown-build commands cannot gain
+  refusals except from the raw scans. Pinned builds keep bare `--stack-trace-limit` unknown
+  because its arity differs between 20 and 22. Their known `--entry-url`, `--run` and
+  `--experimental-test-isolation=none` fail closed. Alongside external `NODE_OPTIONS` preloads,
+  unknown builds retain master's future attached-option residual: Node 24/25
+  `--test-global-setup=./b.js` or `--test-isolation=none` can execute denied B in process while
+  the resolver names and allows A. The fallback does not claim to identify all code newer
+  versions load.
 
 **Root tiers.** (Tier 3. Tier 2 installs the Landlock tier's ruleset and filter and adds a fanotify
 `FAN_OPEN_EXEC_PERM` check that matches exact and directory paths, so its exec semantics are the Landlock tier's
@@ -1437,6 +1454,9 @@ moves bytes through the uprobe source's probes, in every record mode.
 ## 9. Environment
 
 `env.pass` selects inherited variables, `env.deny` removes, `env.set: {NAME: value}` adds or overrides after both;
+*amended 2026-11-03 (ADR 0068)*: the exact `${TEGO_PROJECT_DIR}` token in a set value expands once
+at compile time to the absolute working directory used by relative filesystem rules. Other dollar expressions
+stay literal. The source contract and its hash retain the token;
 `compile` rejects a name present in both `set` and `deny`. Runtime variables are applied last and cannot be
 overridden by the contract: `TEGO_*`, the propagation set, `ANTHROPIC_BASE_URL` and its peers when `capture:
 forwarder`, `DOCKER_HOST` when `docker:` is present. `compile` warns when the contract sets `ANTHROPIC_BASE_URL` or
@@ -1476,3 +1496,42 @@ Rootless/container contracts and Docker-proxy/daemon adoption are future product
 and `docker` fields are rejected by this binary. The proposed design would omit filesystem rights from the
 root-tier Landlock domain, retain network/scope rights, and use BPF ancestry with a pre-created daemon parent.
 Neither the selected root-tier implementation nor generic run-set membership implements that container flow.
+
+*Amended 2026-11-03 (ADR 0069 D3(b), SEC09/SEC10):* the held-read floor retains device/inode identities of
+launch-nested deny_read targets and denied descendants. A rename, hard link or nameless reopen cannot remove that
+refusal. A file put at a protected entry or in a denied directory during the run is pinned in turn; a change that
+cannot be followed, or a lost watch history, makes identity uncertain and refuses held reads until restart
+(`held-read-identity-unknown`); inability to establish the launch snapshot refuses launch.
+Human-selected alternates obey the same retained-identity and history floor, including write-only alternates
+(ADR 0057 D2); a late refusal records any completed truncate without delivering the descriptor. So do approvals of
+an `fs.ask`, `fs.ask_read` or copied gate's ask, which reopen the supervisor's own pin: its identity is checked before
+the person is asked and again on the reopened descriptor before delivery. An approval's identity floor holds whatever
+the access mode (a write-only alias of a protected file is refused, as its name is); a held open that is not an
+approval is checked only when it can read. This amends
+the moved-target residual in §2 above. Future name-only matches outside those watched launch targets are not part
+of that snapshot. ADR 0041's same-date amendment applies live write/path blocks to ordinary held write-opens too,
+with a live-set recheck after descriptor identity verification, before delivery.
+
+*Amended 2026-11-04 (SEC08, ADR 0041):* `fs.apparmor_assume_root_namespace` is a boolean, default false,
+`refused-in-profile` (top-level contract only). True accepts hidden-ancestor AppArmor restrictions when the
+reader cannot read its policy namespace depth; the administrator must establish root namespace visibility
+externally. It does not override known nonzero/malformed depth, any label comparison, module discovery,
+SELinux creation attributes or Smack refusal. Canonicalization includes true; compile warns and
+`run_start.best_effort` lists `apparmor/assumed-root-namespace` whenever enabled, even when no open needed it.
+
+
+### Built-in refusals — 2026-11-03, ADR 0113
+
+Every enforcing contract first applies `builtin.host_ipc`, `builtin.tego_surface` and
+`builtin.other_tty`. They precede `net.allow`, `host_sockets: true`, filesystem grants and empty deny
+lists. The no-`net:` case keeps IP destinations allowed except local Tego control ports and the
+existing model guard. Protected IPC sockets include the session runtime (SSH-only fixed exceptions
+and the run's own runtime excepted), system D-Bus, X11 and listed multiplexer/editor directories.
+Tego sockets and local configured serve.port/default 7433 plus legacy 8484 are refused. Numeric pty
+slaves and consoles other than the inherited terminal and master-relayed own ptys are refused.
+Only an exact explicit container-daemon socket allow removes that socket's default refusal, with
+`container-socket-escape`. Both named and reached paths are checked, multiple-link sockets are
+refused, and protected directory identities are pinned at Prepare. Protected directory mutations
+cannot be enabled by a contract. See [ADR 0113](../../docs/adr/0113-built-in-refusals-for-tego-surfaces.md)
+for the full fixed list and implementation note, including fail-closed abstract attribution,
+`pidfd_getfd` imports, root-tier io_uring refusal, FIFO snapshots and datagram/copied-path residuals.

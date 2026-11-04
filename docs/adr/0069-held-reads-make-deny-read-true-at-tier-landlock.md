@@ -2,7 +2,8 @@
 
 Status: **accepted 2026-10-24**; implemented 2026-10-24: D1 to D6, verified
 2026-10-25 (KVM: AL2023 6.1 and the host row). Rule (b) of D3, the targets' identities pinned at launch, and
-D5's created-then-moved residual are not built (GAPS A11). Amends ADR 0041 D4's one re-pin
+D5's created-then-moved residual were not built initially; the 2026-11-03 amendment below implements launch
+identities and fails closed on replacement uncertainty (GAPS A11). Amends ADR 0041 D4's one re-pin
 (the 2026-10-25 note). Builds on ADR 0041 Stage B (held completion) and ADR 0043 (name entries); refines
 SEMANTICS §1, §2 and §7, supervisor.md R15 and R22, enforce-landlock R10 and R16, agent-contract R5 and R6,
 CAPABILITIES (three rows) and spec/record/v1 (record_minor 18).
@@ -89,10 +90,12 @@ it covers `fs.ask_read` ones), beneath a `deny_read` or not. It reads nothing, a
 
 1. A nested target renamed or hard-linked to another name inside the write entry, then read by that name: the floor
    checks the object's path and name, not its identity. `fs.deny_read.moved` is false at landlock, and compile's
-   warning says so, until the targets' identities are pinned at launch.
+   warning says so, until the targets' identities are pinned at launch. *Closed 2026-11-03 for launch-nested targets
+   and their denied descendants (the amendment below, SEC09).*
 2. A target written or replaced during the run by a process outside the run, then moved by the agent before it
-   reads it.
-3. ADR 0041 Stage B's disclosed residual: D2's LSM label check is not built.
+   reads it. *Closed 2026-11-03 (SEC10, the amendment below): a file put at a protected name, or in a denied
+   directory, is pinned in turn; a change that cannot be followed refuses every held read until restart.*
+3. ADR 0041 Stage B's task authority check (SEC08, amended 2026-11-04) by default refuses completion unless full AppArmor labels match from a proven root policy namespace, or full SELinux contexts and creation attributes match. Smack always refuses because process-rule equivalence cannot be established. Unavailable facts refuse; this is the limited held-file boundary in ADR 0041's SEC08 note and GAPS B14, not general MAC-policy equivalence. Fresh timing acceptance remains open.
 4. Opens of device files outside the mem and tty classes are refused `held-unsupported` while reads are held (ADR
    0041 D4: the deputy's open would act in its own context); a GPU or other device the agent reads needs
    `fs.reads: direct` or a root tier.
@@ -359,3 +362,187 @@ about 57 µs more per open, 10 of 10,170 notifications over 200 µs. The 0.1 ms 
   tiers keep the inherited ruleset's enumeration and are not wired or verified in KVM; under `record: summary` with no
   arm that notifies opens the open is not seen at all, as every tier-landlock read refusal there; the remedy for a
   long run is a restart (docs/OPERATIONS.md, "Names made after a run started").
+
+*Amended 2026-11-03 (SEC09, SEC10): retained identities and replacement uncertainty.*
+- **D3(b) implemented.** Before releasing the agent, the supervisor retains O_PATH descriptors for nested deny_read
+  targets and the denied objects in their directory trees. The nearest write entry still reopens its subtree;
+  symlinks inside a tree are not followed. Directory bind views are traversed separately because their submounts
+  can differ, even when the directory inode is the same. `decide.HeldReadIndex.RefusalOn` checks `(device, inode)` before any
+  pathname, including for a nameless descriptor. The retained descriptors prevent inode reuse after unlink.
+  Missing or unreadable targets, a changed target that became a symlink, failed enumeration or watches, and the
+  8,192-visited-name/watch or MaxWalk bound refuse launch. Pinned files and watch directories must be on the explicitly supported local
+  filesystems; remote, FUSE, overlay and unknown filesystems refuse launch because an empty inotify queue cannot certify
+  remote replacements ([inotify(7)](https://man7.org/linux/man-pages/man7/inotify.7.html), limitations). Overlayfs
+  is refused because copy-up can change device/inode identity (ADR 0010 and the
+  [kernel inode-properties table](https://docs.kernel.org/filesystems/overlayfs.html#inode-properties)).
+  Every file view is checked before identity deduplication, so a view whose identity matched an earlier local pin
+  could not skip that refusal (`TestHeldReadPinsCheckEveryFilesystemView`, on a simulated filesystem type). On 6.17
+  that match does not occur: the KVM `TestHeldOpenDifferentialAcrossMounts/held-read-overlay-file-view` logs an
+  overlay file view (all layers on one filesystem, through a single-file bind mount) with the lower file's inode
+  number and the overlay's own device (0x1f against 0x1b), so the ordering is defensive. What the subtest proves is
+  the refusal itself: on master the view was accepted and, after a copy-up renumbered it, its bytes were delivered.
+  Non-nested home trees are not enumerated.
+- **D5.2 closed for those launch targets.** Inotify watches are armed before enumeration
+  on the nested target's parent, every ancestor entry, and denied directories in its tree. The canonical ancestor
+  walk arms each parent before lookup and refuses an ancestor changed into a symlink, rather than following it into
+  an unwatched chain. *Revised the same day (below, "Objects made during the run are followed"):* the first build
+  treated any object installed at a protected entry or added to a denied directory as an unrecoverable replacement
+  and refused every held read for the rest of the run; such an object is now pinned in turn, and only a change that
+  cannot be followed latches `EACCES`, `read-denied`, `held-read-identity-unknown` until restart. A queue overflow,
+  unmount, malformed event, read error, or drain exceeding 64 batches latches too.
+  Removing or moving an entry away during the launch enumeration refuses launch too: the scan may not yet have
+  pinned that object. Directory barriers settle the launch scan before sealing it; later removals preserve the
+  retained pins (`TestHeldReadSnapshotRemovalFailsClosed`).
+- **Publication order matters.** A VFS mutation can expose a dentry before fsnotify queues its event. After the
+  deputy opens, each watched directory's retained read descriptor takes one `getdents64` step, even at EOF. The
+  VFS directory read lock waits for mutations visible before that open to publish their events; the queue is
+  drained only after every such step. A barrier error latches uncertainty. Kernel basis:
+  [`iterate_dir`](https://github.com/torvalds/linux/blob/v6.17/fs/readdir.c) and
+  [`vfs_rename`/parent locking](https://github.com/torvalds/linux/blob/v6.17/fs/namei.c).
+  This work grows with the watch count; fresh per-open and startup measurements remain open, and compile no longer
+  quotes the older 0.1 ms estimate as this implementation's cost.
+- The queue is checked before opening and again after the returned descriptor's existing identity check, before
+  delivery. The second identity query uses the actual opened descriptor, including a read-capable O_CREAT whose
+  absent leaf was pinned by its parent: a protected hard link installed at that leaf must not be delivered.
+  A late refusal after a create/truncate records `operation_completed: true`, `fd_delivered: false` and
+  the syscall errno. Pins and watches close on failed launch and after the supervisor workers stop.
+- Human-selected alternates obey the same retained-identity and history floor (ADR 0057 D2), including write-only
+  alternates. The candidate is checked before any reopen/truncate; the actual returned descriptor and history are
+  checked before delivery. Tests `TestHeldReadAlternateFollowsIdentity` and
+  `TestHeldReadAlternateRechecksHistoryAfterOpen` cover renamed/replaced secrets and a late completed truncate.
+- Approvals on the loop's own pin obey them too (review, 2026-11-03). An `fs.ask`, `fs.ask_read` or copied-gate ask
+  completes by reopening this loop's pin (`completeHeldAskOpen`), not through the deputy, and checked `deny_read` by
+  name only: a preexisting hard link of a launch-pinned target under an `fs.ask_read` scope was put to a person and,
+  approved, delivered. The pin's identity is now checked before anyone is asked and again, with the directory
+  barriers, once the answer is back and before delivery; a pin that cannot be stat'ed refuses.
+  `TestHeldReadIdentityHoldsUnderAnOwnPinAsk` (the hard link, and a replacement made while the person decides)
+  failed on both rows with the previous `ask_open.go` overlaid. The deputy's ask range already took the check, since
+  `heldFloors` runs before `heldAsk` and `openHeld` checks the returned descriptor.
+- Which filesystems (narrowed in review round 2). The local-filesystem list (stable identities, local change events)
+  holds every pinned object and every directory whose entries are protected: a target's parent and each denied
+  directory. A directory above a target's parent may also be overlayfs: the parent passed the list, so a mount of a
+  local filesystem lies between them; such an ancestor is replaced only by a rename through the VFS (the mountpoint
+  itself cannot be renamed, `EBUSY`), which overlayfs reports in its own view. A change made directly in an overlay
+  layer is outside overlayfs's supported use and is not seen. *Corrected in review round 3:* this note said removing
+  the mount raises `IN_UNMOUNT` on the mounted directory's watch. It need not: the kernel sends `IN_UNMOUNT` when the
+  filesystem is torn down, and a lazy unmount (`MNT_DETACH`) kept alive by a descriptor (the pins are such
+  descriptors) tears nothing down, while a mount over a watched directory raises no inotify event at all. The
+  snapshot now opens `/proc/self/mountinfo` before arming any watch (polling it consumes the kernel's change
+  indication; nothing is read from it) and records the places the snapshot relies on. *Corrected in review round 4:*
+  the first version recorded a directory only when its inotify watch was new, so of two bind views of one directory
+  (one watch, inotify_add_watch(2)) only the first was a place, and detaching the other went unseen; and it compared a
+  target file with its launch inode, so after a certified replacement of the `.env` any unrelated mount (a container
+  starting, a snap, an automount) refused every held read for the rest of the run. Now every canonical directory view
+  is a place of its own, whatever watch it shares, with its mount id, device and inode (a directory cannot be replaced
+  in a certified state: one installed at a launch or ancestor name latches); a target file's place is its placement
+  alone, the mount id and device it lies on (statx; a kernel without `STATX_MNT_ID` refuses launch), and its identity
+  stays with the pins, so a replacement certified by the events changes nothing the mount check compares. When the
+  kernel flags the mount table as changed (`POLLPRI`, polled at every certification, after the open), every place is
+  resolved again without following symlinks or automounts: a directory view that resolves to another object, or a
+  target that lies on another mount, latches `held-read-identity-unknown`; nothing there is a renamed or removed
+  entry, whose name's reuse raises an event in its parent's watch. A mount elsewhere re-resolves the places, finds them
+  where they were, and moves on. The run makes no mount namespace (`topology.go` refuses `CLONE_NEWNS`), so its lookups
+  resolve in this process's. Residual, a support condition: a topology change made and undone between two held reads
+  is not seen; changing mounts needs a privilege outside the run. So a container whose `/` is overlayfs, with the project on a named volume or a bind
+  mount of a local folder, holds its reads (docs/user/container.md). Still refused at launch: a target, its parent or
+  a denied directory on overlayfs (a project in the image layer), and any protected place or ancestor on NFS, CIFS,
+  FUSE (Docker Desktop's file sharing), ZFS or another unlisted filesystem. First build (2026-11-03): every ancestor
+  up to `/` was held to the list, which refused a nested `.env` on a container's local work volume.
+  `TestHeldReadPinsAcceptAnOverlayAncestor` (simulated types) failed on its overlay-ancestor row before the change;
+  the KVM `TestHeldOpenDifferentialAcrossMounts/held-read-container-workspace` mounts an overlay root with a
+  bind-mounted local work folder (no container runtime on the test host; the closest equivalent).
+- **Objects made during the run are followed (revised 2026-11-03).** The first build latched on any install, and
+  the gate's `TestConformanceKernel` failed on 22 landlock cells: the agent's own permitted create, link, symlink,
+  mkdir and exchange inside `out/keys/` (fs.yaml), and an rmdir of a denied subdirectory, refused every later read of
+  the run, a benign `config/app.toml` included. Now an object a drained event installs at a protected name or in a
+  denied directory is opened through the watched directory's retained descriptor and pinned under the rule its path
+  takes; one more barrier and drain must show that name untouched since its event, or the open may have met another
+  object (uncertain). An object installed and moved out within one round is followed by its rename cookie to a
+  watched destination and pinned there under the rule of the name it left, so `RENAME_EXCHANGE` into a denied
+  directory pins both objects. Uncertain (the latch): an install deleted or moved out of sight in the same round,
+  two installs of one name in a round, a directory installed at a launch name or an ancestor's, a pin whose open
+  fails, a watch lost before launch is sealed. A removal after launch is no uncertainty (the object keeps its pin),
+  and a watched denied subdirectory removed after launch was empty and is dropped at its `IN_IGNORED`; its barrier's
+  `ENOENT` (a dead directory) is accepted. A directory made under a new name inside a denied directory is not
+  followed: a file made in it later and moved out before any held read is the created-later residual. Tests:
+  `TestHeldReadPinsFollowObjectsMadeDuringTheRun` (made then moved, made and moved in one round, linked in, exchanged
+  in; and the made-and-deleted, installed-twice and moved-out-of-sight rows that must stay uncertain),
+  `TestHeldReadPinsRemovedDeniedDirectory`, `TestHeldReadReplacementDuringOpenIsPinned`; every follow row failed with
+  the previous `held_read_pins.go` overlaid, the uncertain rows pass on both. `TestConformanceKernel`'s landlock axis
+  passes with 0 disagreements (22 before); `grid-write.deny.write/read-abc`, a read the first build refused, is
+  allowed again under the known `landlock-read-names-write` naming.
+- **Review round 2 (2026-11-04).** (1) A move chain: a protected replacement renamed to an unprotected name in a
+  watched directory, renamed again, and the intermediate name made again with a harmless file or a symlink. The
+  round followed only the first cookie and pinned the harmless file. Moves are now followed in event order: a move
+  out of a tracked name carries its rule to its arrival, at any name of a watched directory, which is tracked in
+  turn; a tracked name made again, deleted, or moved with no arrival in a watched directory is uncertain
+  (`TestHeldReadPinsFollowAMoveChain`, red on both made-again rows with "NEW SECRET" delivered). (2) An approval on the
+  loop's own pin (`fs.ask`, `fs.ask_read`, a copied gate's ask) reopened and delivered inside `CompleteAskOpen`, which
+  checked only the file class: it now takes a check put to the reopened descriptor with the directory barriers
+  before ADDFD|SEND (`TestHeldReadOwnPinAskChecksTheReopenedDescriptor`, red with the check withheld). (3) An
+  approval's identity floor holds for a write-only open too: an `O_WRONLY|O_TRUNC` hard-link alias of a protected
+  file was approved and truncated it, under an `fs.ask` scope and through a held gate ask
+  (`TestHeldWriteOnlyApprovalOfAProtectedAliasIsRefused`, red on both on a copy of 6b018a16a). Ordinary held opens
+  that are not approvals keep the read-capable floor. (4) The filesystem list narrowed (above). (5) The overlay
+  subtests skip a kernel with no overlayfs (`ENODEV` from the probe only), with root-skips entries.
+- **Review round 3 (2026-11-04).** (1) A pinned destination lost its verification: between a round's drain and the
+  pin's open of a followed destination, the destination moved on and its name was made again with a harmless file;
+  the verifying round dropped events of that unprotected name, so the harmless file stayed pinned and the
+  replacement readable at its last name. A name the last round pinned now stays relevant through its verification
+  (`TestHeldReadPinsVerifyAFollowedDestination`, a hook between drain and pin; red with the pending names left out of
+  the relevance test, "NEW SECRET" delivered). (2) A deputy approval went from the answer straight to the deputy's open,
+  so a pinned file put at a protected name during the wait was truncated by an approved `O_TRUNC` before the
+  descriptor check refused it: the identities and history are checked again after the answer
+  (`TestHeldGateAskRechecksIdentityAfterTheAnswer`, red: the protected file truncated). (3) The mount topology (the
+  correction above; the KVM `TestHeldOpenDifferentialAcrossMounts/held-read-mount-topology`: a work volume detached
+  lazily under a retained descriptor, and a tmpfs mounted over the project, each followed by a new `.env` renamed by
+  the agent).
+- **Review round 4 (2026-11-04).** (1) Bind views sharing one watch: every canonical directory view is now a place
+  (the KVM `TestHeldOpenDifferentialAcrossMounts/held-read-bind-alias-detached`: two private bind aliases of one
+  directory in a denied directory, the one the watch was not taken through detached lazily, a secret written into the
+  directory it exposed and renamed out of the denied tree: refused; on the previous commit it was delivered).
+  (2) A certified replacement under unrelated mount activity: a target file's place is its placement only
+  (`TestHeldReadPinsUnrelatedMountAfterAReplacement`, red with inodes compared for files too: the benign read after
+  the mount refused; and the KVM `held-read-mount-topology/unrelated-mount-after-a-certified-replacement` with a real
+  tmpfs mounted elsewhere).
+- **Verified 2026-11-03 in KVM** (the host's 6.17 kernel, lsm-bpf boot, as root; `test/vm/root-suites.sh internal/runtime
+  internal/ledger` with one `VM_RUN` filter, through `vmslot`, `TEGO_VM_MEM=3G`). On the branch:
+  `TestIntegrationHeldReadsAtRootTier` passes at tier cgroup and tier bpflsm with `rename`, `hardlink`,
+  `replace-rename` and `replace-hardlink` each, in the plain and the tegobpf builds;
+  `TestIntegrationHeldReadIdentityAtLandlock` passes as root; the supervisor suite passes 34 of 34 (bind views, the
+  overlay file view, the follow and SEC11 tests); `TestLedgerRefusesHardLinkedFiles` passes. On a copy of master with
+  these tests: `replace-rename` and `replace-hardlink` read the secret at both root tiers (`rename` and `hardlink`
+  pass there, the kernel refusing a move out of a `deny_read` tree, as this ADR says), the landlock identity test
+  reads it in all four subtests as root, `held-read-bind-views` and `held-read-overlay-file-view` deliver protected
+  bytes, and the SEC11 tests fail. Not run: the default-LSM boot and the kernel matrix rows.
+- **Verified 2026-11-03 at tier landlock** (6.17 host, ordinary user): `TestIntegrationHeldReadIdentityAtLandlock`
+  through the real binary, on a copy of master with this test added, read the secret (`identity bypass: result
+  "s3cr3t"`) in all four subtests (`rename`, `hardlink`, `replace-rename`, `replace-hardlink`); on the branch all
+  four are refused, and `TestIntegrationHeldReadsAtLandlock` passes.
+- Compile no longer says launch targets escape by rename/hard link. `fs.deny_read.moved` is true when held reads
+  are served, for **launch-nested targets**, including existing descendants and preexisting aliases. This does not
+  promise identity tracking for every future name-only glob match: a new matching filename outside the watched
+  launch targets, moved before any held read, remains a residual. Extending the snapshot to every non-nested home
+  secret or recursively watching every name-rule scope is not part of this change.
+- Reproductions: `TestHeldReadFollowsLaunchIdentity` (rename, hard link, preexisting alias, directory rename and
+  child hard link), `TestHeldReadReplacementThenMoveFailsClosed` (replacement then rename/link and ancestor
+  replacement), `TestHeldReadReplacementDuringOpenIsPinned`, `TestHeldReadPinsFailClosedOnMissingTarget`,
+  `TestHeldReadPinsRefuseAfterQueueLoss`, `TestHeldReadCreateChecksTheOpenedIdentity`,
+  `TestHeldReadPinsRefuseUnobservableFilesystem`, `TestHeldReadPinsKeepNearerWriteReadable` and
+  `TestHeldReadPinsBoundAliasedTree`, `TestHeldReadPinsRefuseAfterBarrierLoss` and
+  `TestHeldReadPinsRefuseChangedAncestorSymlink`; real-binary `TestIntegrationHeldReadIdentityAtLandlock` and the root-tier
+  held-read suite; `TestHeldOpenDifferentialAcrossMounts/held-read-bind-views` checks preexisting aliases behind
+  distinct submounts of two views of one directory. Before the fix, the ordinary-user tests delivered the secret under every alternate name.
+
+
+*2026-11-04, SEC08:* D5.3's held-file label bypass is addressed by ADR 0041 D2's conservative
+refusal boundary by default: full AppArmor equality from a proven root policy namespace, full SELinux contexts plus
+`fscreate` for potential file creation, and unconditional Smack refusal because process rules are not queryable
+across tasks. Missing facts refuse by default, including hidden namespace depth even when visible profiles match.
+The explicit administrator opt-in `fs.apparmor_assume_root_namespace: true` (default false) can substitute
+only for unreadable depth, accepting hidden-ancestor risk; known nonzero/malformed depth still refuses.
+The canonical contract hashes the key; compile warns and `run_start.best_effort` always discloses
+`apparmor/assumed-root-namespace` when enabled. ADR 0041 records the investigation and limits.
+This is not general policy equivalence or label adoption. D5.1 and D5.2 are addressed separately within the SEC09/SEC10 boundary above; their named residuals remain. The original Ubuntu
+AppArmor controls cover landlock and both root tiers; the additional policy regressions name their exact shapes.
+Fresh checks supersede the zero-/proc-read budget; prior performance figures are historical.

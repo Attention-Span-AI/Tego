@@ -438,14 +438,15 @@ func TestLockHolderProofForNonDumpableLauncher(t *testing.T) {
 	}
 	wantID := fmt.Sprintf("%02x:%02x:%d", unix.Major(uint64(st.Dev)), unix.Minor(uint64(st.Dev)), st.Ino)
 	deviceMatches := strings.Fields(row)[5] == wantID
-	start, err := StartBootNS(child.Process.Pid)
-	if err != nil {
-		t.Fatal(err)
-	}
-	target, err := OpenStopTarget(dir, child.Process.Pid, start)
+	// Exercise the positive global-proof path with a read that actually contains the row.
+	// A fresh read in OpenStopTarget may omit it when unrelated locks change between seq_file
+	// fills. With inaccessible target descriptors that is unavailable proof, correctly refused;
+	// neither the child's ready file nor the parent's fdinfo makes that new table read stable.
+	table := listedTable(t, child.Process.Pid, uint64(st.Ino))
+	err = requireLockHolderFromSnapshot(table, child.Process.Pid, st)
 	if !deviceMatches && descriptorErr != nil {
-		if !errors.Is(err, ErrNotLockHolder) || target != nil {
-			t.Fatalf("inaccessible descriptor plus printed-device mismatch must fail closed: target=%v err=%v", target, err)
+		if !errors.Is(err, ErrNotLockHolder) {
+			t.Fatalf("inaccessible descriptor plus printed-device mismatch must fail closed: %v", err)
 		}
 		t.Logf("explicit unavailable-proof limit: kernel=%s actual=%s", strings.Fields(row)[5], wantID)
 		return
@@ -453,8 +454,19 @@ func TestLockHolderProofForNonDumpableLauncher(t *testing.T) {
 	if err != nil {
 		t.Fatalf("exact global device/owner/inode proof must preserve non-dumpable launcher control: %v", err)
 	}
+	if err := requireLockHolderFromSnapshot(nil, child.Process.Pid, st); descriptorErr != nil && !errors.Is(err, ErrNotLockHolder) {
+		t.Fatalf("no global row and inaccessible descriptors must fail closed: %v", err)
+	}
+	start, err := StartBootNS(child.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := openPidfdTarget(child.Process.Pid, start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = target.Close() }()
 	if err := target.Signal(0); err != nil {
 		t.Fatalf("verified non-dumpable launcher remains signalable: %v", err)
 	}
-	_ = target.Close()
 }

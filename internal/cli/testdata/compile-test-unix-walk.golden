@@ -9,10 +9,10 @@ PASS 06 a datagram beneath a file
 PASS 07 a connect beneath it keeps the name's verdict
 PASS 08 a connect to a dangling link, taken to its target [path resolved to <dir>/elsewhere/nothing.sock]
 PASS 09 a datagram to a missing socket beneath a link [path resolved to <dir>/elsewhere/missing.sock]
-PASS 10 a datagram to a name not spelled canonically, tier landlock
+PASS 10 a datagram to a name not spelled canonically, tier landlock [best effort: builtin.host_ipc/datagram]
 PASS 11 the same at tier cgroup
 PASS 12 the same at tier bpflsm
-PASS 13 control, a datagram through a symlink in the write entry to the declared socket [path resolved to <dir>/run/d.sock]
+PASS 13 control, a datagram through a symlink in the write entry to the declared socket [path resolved to <dir>/run/d.sock] [best effort: builtin.host_ipc/datagram]
 PASS 14 a bind beneath a file with no listener policy is the creation floor's, the kernel answering it
 PASS 15 a datagram to a name through /proc/self/fd that the agent opens later
 PASS 16 a connect to it
@@ -27,7 +27,7 @@ PASS 24 a connect to it
 PASS 25 a datagram to that directory by its plain name
 PASS 26 a datagram climbing out of a missing part back to it
 PASS 27 a datagram to a regular file already there
-PASS 28 a directory the declared socket's name makes is the declared entry's [path resolved to <dir>/run/d.sock]
+PASS 28 a directory the declared socket's name makes is the declared entry's [path resolved to <dir>/run/d.sock] [best effort: builtin.host_ipc/datagram]
 PASS 28c a connect to it, in every column [path resolved to <dir>/run/d.sock]
 PASS 29 control, a missing plain name in a missing directory is the socket the agent binds
 30 rows: 30 passed, 0 failed

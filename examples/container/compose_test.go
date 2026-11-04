@@ -229,8 +229,12 @@ func TestDockerfilePinsAndPaths(t *testing.T) {
 	for _, in := range ins {
 		if m := pinned.FindStringSubmatch(in); m != nil {
 			seen[m[3]] = m[1] + ":" + m[2]
-		} else if strings.HasPrefix(in, "FROM ") && in != "FROM scratch AS binaries" {
-			t.Errorf("%s: want FROM <image>:<tag>@sha256:<digest> AS <stage>", in)
+		} else if strings.HasPrefix(in, "FROM ") {
+			switch in {
+			case "FROM scratch AS binaries", "FROM scratch AS verified", "FROM ${BINARY_SOURCE} AS selected":
+			default:
+				t.Errorf("%s: want a pinned base image or the selected binary stage", in)
+			}
 		}
 		if v, ok := strings.CutPrefix(in, "VOLUME "); ok {
 			volume = v

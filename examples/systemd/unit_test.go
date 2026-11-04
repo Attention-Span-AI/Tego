@@ -103,7 +103,7 @@ func TestUnitTemplateExitStatuses(t *testing.T) {
 	u := readUnit(t, name)
 	wantOnce(t, name, u, "Service", map[string]string{
 		"Type":                     "exec",
-		"ExecStart":                "%h/.local/bin/tego run %i",
+		"ExecStart":                "%h/.local/bin/tego run --service %i",
 		"Restart":                  "on-failure",
 		"SuccessExitStatus":        strconv.Itoa(identity.ExitStoppedTerm),
 		"RestartPreventExitStatus": strconv.Itoa(identity.ExitStoppedTerm) + " " + strconv.Itoa(identity.ExitLauncher),

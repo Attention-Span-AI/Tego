@@ -152,3 +152,11 @@ users: {}                         # honoured from /etc/tego/config.yaml only (AD
   the three caps (the kernel removes the xattr on write or chown); otherwise doctor's sentence and the unprivileged
   tier. Install it `0750 root:<group>`, because `+ep` grants the caps to whoever can execute it. *Conditioned
   2026-10-05 (ADR 0042 (3)(c)):* not delivered in this release; the setting only warns, and a copy is refused.
+
+### Built-in surface port (ADR 0113)
+
+`serve: {port: 7433}` selects the local TCP port refused by
+`builtin.tego_surface` in every enforcing run. `serve.port` is a last-wins
+setting, integer 1..65535. `port:` may not be zero. The current dashboard's
+legacy default 8484 is protected as well. Set this before using `serve --addr`
+with another port; a per-command address is not machine policy.

@@ -54,10 +54,48 @@ rm -f "$tmp/scratch"
 mkdir -m 777 "$tmp/scratch"
 run "a pre-created loose-mode scratch dir is tightened" 0 "ok (4 files identical)" ":"
 [ "$(stat -c %a "$tmp/scratch")" = 700 ] || { echo "FAIL: scratch mode not 0700"; fail=1; }
-# The scratch directory is removed on exit (the lock file stays).
+# The pre-marker tool leaves only its empty lock after a successful run. NET09's
+# object changes make the full gate meet the demo cleanup guard on that state.
+rm -f "$tmp/scratch/.tego-bpf-check"
+run "a legacy empty lock can be migrated" 0 "ok (4 files identical)" ":"
+[ -f "$tmp/scratch/.tego-bpf-check" ] || { echo "FAIL: legacy scratch was not marked"; fail=1; }
+
+# This exception must never claim unmarked data, aliases or a failed listing.
+rm -f "$tmp/scratch/.tego-bpf-check"
+printf valuable >"$tmp/scratch/lock"
+run "a nonempty legacy lock is refused" 2 "refusing nonempty" ":"
+[ "$(cat "$tmp/scratch/lock")" = valuable ] && [ ! -e "$tmp/scratch/.tego-bpf-check" ] || {
+	echo "FAIL: nonempty legacy lock changed or was claimed"; fail=1;
+}
+rm -f "$tmp/scratch/lock"
+: >"$tmp/empty-lock"
+ln "$tmp/empty-lock" "$tmp/scratch/lock"
+run "a hard-linked legacy lock is refused" 2 "refusing nonempty" ":"
+[ ! -e "$tmp/scratch/.tego-bpf-check" ] || { echo "FAIL: hard-linked lock was claimed"; fail=1; }
+rm -f "$tmp/scratch/lock"
+ln -s "$tmp/empty-lock" "$tmp/scratch/lock"
+run "a symlinked legacy lock is refused" 2 "refusing nonempty" ":"
+[ ! -e "$tmp/scratch/.tego-bpf-check" ] || { echo "FAIL: symlinked lock was claimed"; fail=1; }
+rm -f "$tmp/scratch/lock"
+: >"$tmp/scratch/lock"
+entry=$'\n\n'
+mkdir "$tmp/scratch/$entry"
+printf valuable >"$tmp/scratch/$entry/keep"
+run "legacy lock with newline-only state is refused" 2 "refusing nonempty" ":"
+[ -f "$tmp/scratch/$entry/keep" ] && [ ! -e "$tmp/scratch/.tego-bpf-check" ] || {
+	echo "FAIL: legacy state changed or was claimed"; fail=1;
+}
+rm -rf "$tmp/scratch/$entry"
+printf '#!/bin/sh\necho "listing failed" >&2\nexit 71\n' >"$tmp/bin/find"
+chmod +x "$tmp/bin/find"
+run "failed legacy enumeration refuses migration" 2 "listing failed" ":"
+[ ! -e "$tmp/scratch/.tego-bpf-check" ] || { echo "FAIL: failed listing claimed legacy scratch"; fail=1; }
+rm -f "$tmp/bin/find"
+run "legacy scratch recovers after a listing failure" 0 "ok (4 files identical)" ":"
+# Generated scratch children are removed on exit; the lock and ownership marker stay.
 shopt -s nullglob dotglob
 for remaining in "$tmp/scratch"/*; do
-	[ "${remaining##*/}" = lock ] || { echo "FAIL: scratch directory left behind: $remaining"; fail=1; }
+	case ${remaining##*/} in lock|.tego-bpf-check) ;; *) echo "FAIL: scratch directory left behind: $remaining"; fail=1 ;; esac
 done
 [ "$fail" -eq 0 ] && echo "check-bpf-objects_test: ok"
 exit "$fail"

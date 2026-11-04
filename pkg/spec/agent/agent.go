@@ -149,6 +149,10 @@ type FSSection struct {
 	// inside a write entry, and a file a deny_read name rule covers that was made during the run, is refused at
 	// tier landlock. "" reads as auto.
 	Reads ReadsMode `yaml:"reads,omitempty"`
+	// AppArmorAssumeRootNamespace is an administrator's assertion used only when
+	// AppArmor's policy namespace depth is unreadable. It accepts the risk of
+	// hidden ancestor restrictions; labels are still compared. Default false.
+	AppArmorAssumeRootNamespace bool `yaml:"apparmor_assume_root_namespace,omitempty" json:",omitempty"`
 }
 
 // MarshalYAML keeps the explicit `deny_read: []` in Canonical. The omitempty
@@ -489,6 +493,8 @@ type Pos struct {
 // It is never mutated after Compile returns it (I4); a TTL refresh builds a
 // new table.
 type RuleTable struct {
+	Builtins *BuiltinRefusals // immutable ADR 0113 boundary; nil only for synthetic tables
+
 	NetAssurance NetAssurance // effective assurance; never empty after Compile
 	FSAssurance  FSAssurance  // effective fs.assurance (FilesystemAssurance); never empty after Compile
 
@@ -701,6 +707,8 @@ const (
 
 // FSRule is one filesystem entry, resolved to an absolute path.
 type FSRule struct {
+	BuiltinRule string `json:",omitempty"` // immutable ADR 0113 rule name, independent of contract spelling
+
 	Path   string
 	Kind   FSKind
 	Access AccessSet // rights the entry grants; 0 for deny_read, watch and implicit entries

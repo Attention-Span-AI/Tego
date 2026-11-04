@@ -91,6 +91,38 @@ contract alone does not link the core, and external modules cannot import `inter
   `maze` for linux/amd64, the runner's target: the build embeds the
   commit's own date, `-trimpath` and `CGO_ENABLED=0` remove paths and cgo, and the pinned toolchain (§1) removes
   the compiler. Attestations need the repository public or on GitHub Enterprise Cloud.
+- The release body comes from `scripts/release.sh notes "$TAG"`, passed as `--release-notes`. Keep GoReleaser's
+  `changelog.disable: false`: disabling the pipe also ignores the supplied file, rather than just disabling
+  commit-log generation (the cause of the first public release's empty body). A supplied file already bypasses
+  generation. The release job rejects blank notes, checks the draft body against the tagged section, and uploads
+  that section as a same-run artifact. Immediately before publication, the publisher requires draft status and a
+  body matching that artifact; it builds the final notes from the artifact plus the image digest. It reads back the
+  full body and public status even if the edit command fails, since the update may already have applied remotely.
+  An edit error, body mismatch, unexpected state or failed read triggers an attempt to restore draft status and
+  fails the job. A failed restore remains an API failure for the maintainer to inspect; a green job requires a
+  successful edit and verified public status and notes.
+- Every tag also publishes `ghcr.io/attention-span-ai/tego` for `linux/amd64` and `linux/arm64`, built with
+  `examples/container/Dockerfile` from the same tagged commit after `gate`, `release` and `reproduce` succeed.
+  The version tag drops the leading `v` (`v0.1.0` becomes `0.1.0`); stable releases also update `0.1` and `latest`.
+  Prereleases such as `0.1.0-rc.1` update only their full version tag. The image job checks each binary hash against
+  the release job's checksums and each control pin,
+  then copies the release's original `tego` and `tego-control` into the image using the Dockerfile's `verified`
+  stage. This avoids a second compiler invocation with potentially different VCS metadata. Local image builds
+  still compile from source by default. The binary reproducibility checks above are unchanged; the complete image
+  is **not claimed reproducible**, since Debian package repositories and image layer metadata can change.
+  OCI labels and index annotations record source, revision, version, Apache-2.0 and description. The image's index
+  digest is signed keylessly by `release.yml@refs/tags/<tag>` with issuer `https://token.actions.githubusercontent.com`,
+  and has build provenance in GitHub and GHCR. The digest is in the signing job summary and the release notes; use it
+  to pin pulls. A dedicated `sign` job alone holds `id-token: write` and `attestations: write`. It downloads all
+  checksummed release assets and the image digest, verifies every file hash and the control pins without executing
+  them, then fetches and hashes the GHCR index and checks its platforms and tagged-source annotations. It signs
+  the checksums and image and attests both. It runs no checkout, project code, builds or build hooks. Only `container`
+  (image push) and `sign` (image signature/provenance push) hold `packages: write`; neither has `contents: write`.
+  `release` can create the draft and `publish` can upload the signature bundle and publish it, but neither can request
+  an OIDC token. Moving signing between jobs does not change the certificate identity: [Fulcio uses the workflow](https://docs.sigstore.dev/certificate_authority/oidc-in-fulcio/#github-1)
+  file at the tag, never the job name. `install.sh`, cosign and gh still verify that exact workflow ref and issuer.
+  The exported `examples/container/release_workflow_test.go` checks the graph, permissions, action pins, checkout,
+  artifact verification, digest and installer identity; CI's `scripts-and-workflows` and the unit/private gates run it.
 - `install.sh` and `install-maze.sh` are release assets, and both are in the checksums file (`checksum.extra_files` in
   `.goreleaser.yaml`), so the signature and the attestations cover them. That helps someone who downloads, verifies and
   only then runs them (docs/INSTALL.md). It does nothing for a script piped into `sh`, which runs before anything can
@@ -171,10 +203,20 @@ of this; retraction is deliberately not automated (§7.4).
    `v*` tag on `origin` is what `.github/workflows/release.yml` builds and publishes from (§5). The tier-2
    objects are committed (§4) and `.goreleaser.yaml` builds with `-tags tegobpf`, so the published binary
    carries them with no clang and no `make gen`.
-3. `release.yml` takes it from there: a draft release described by the tag's CHANGELOG section (`release.sh notes`), the binary scan, the signature, the provenance, then
-   publication; `reproduce` rebuilds the tag and compares. A release whose workflow failed stays a draft, never
-   public; re-running the workflow for the same tag replaces that draft (`replace_existing_draft`), which is safe
-   because the tag itself is unchanged and nothing was published under it.
+3. `release.yml` takes it from there: a draft release described by the tag's CHANGELOG section (`release.sh notes`),
+   `reproduce` rebuilding, comparing and scanning the binaries, then `container` building and pushing the two-platform
+   image. The isolated `sign` job verifies the downloaded release assets and pushed index before signing and attesting
+   them. `publish` uploads the checksum signature bundle, appends the verified digest to the notes and makes the draft
+   public only after all four jobs succeed. A failed workflow
+   leaves the binary release a draft. A push necessarily precedes image signing: a later failure can leave an
+   unsigned image or updated aliases in GHCR. Verify by digest before running it. Re-running the unchanged tag
+   replaces the draft (`replace_existing_draft`) and retries the image publication; the image digest may change.
+4. **Once, after the first GHCR push:** an organization/package admin opens the `tego` package's settings and changes
+   visibility to public. New packages start private even when the linked source repository is public. The documented
+   [Packages REST API](https://docs.github.com/en/rest/packages/packages) has no visibility-update endpoint, so this
+   workflow does not try to do it with `GITHUB_TOKEN` or add a secret. See GitHub's
+   [package visibility instructions](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
+   Confirm an anonymous `docker pull ghcr.io/attention-span-ai/tego:<version>` works afterward.
 
 ### 7.3 What the schema version does at a release
 Record `v` (`spec/record/v1`, currently `1`) and the contract's `version:` field (`spec/agent/v0`, currently
@@ -195,5 +237,9 @@ judgment call each time, not a default-safe operation:
    tag with the fix instead.
 3. Mark the section in `docs/CHANGELOG.md` `### Yanked` (Keep a Changelog's own term) naming the replacement
    tag, rather than deleting it — the changelog stays an honest record of what was actually published.
-4. If anyone may have already fetched `vX.Y.Z`, deleting the release does not reach them; the fix ships as a
+4. GHCR is separate from the GitHub release: deleting the release/tag does not remove its image. Review the package
+   versions and move the stable aliases to a verified replacement, or remove the affected image version by hand.
+   Record the yanked digest in the changelog; signatures and provenance describe what was built, not whether it is
+   still recommended.
+5. If anyone may have already fetched `vX.Y.Z`, deleting the release does not reach them; the fix ships as a
    new tag with its own note pointing back at this one.

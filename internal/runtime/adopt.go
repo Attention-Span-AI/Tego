@@ -36,8 +36,8 @@ import (
 // Adoption (ADR 0055; ADR 0054's stage 2): an agent that was already running when
 // Tego met it, started from any terminal or IDE, is governed from the kernel. A running process cannot be given a
 // seccomp filter, Landlock or another environment, so this is root's and the kernel's alone: Adopt moves the agent's
-// own process tree, and nothing else, into a fresh cgroup of a run (adopt-<run id>.scope), prepares tier 2 for it,
-// arms it, and from then on the trace programs, which are host-wide and filter on the run set by the current task's
+// own process tree, and nothing else, into a fresh cgroup of a run (adopt-<run id>.scope), after preparing, attaching
+// and arming tier 2 in that empty scope. From each move the trace programs, which filter on the current task's
 // cgroup, record its execs, opens and connects into the run's ledger. A boundary contract adds the decision plane's
 // rules where it decides them for every task in the cgroup (fs reads and writes, execs); nothing else of a contract
 // can be added to a running process, and the caller refuses it beforehand.
@@ -90,13 +90,10 @@ const (
 	// filter refuses is not held on a process that was already running, whatever the contract says: System V IPC
 	// (refused unless the contract sets ipc: true), the socket families outside the network rules (AF_VSOCK, AF_PACKET,
 	// AF_TIPC, SCTP and the rest of the family allowlist), io_uring, openat2, open_by_handle_at, clone3, the
-	// terminal-input ioctls, and the namespace arm: new mount and user namespaces and setns, which tier 1 refuses so
-	// that its rules hold on one mount tree. The plane has no mount or namespace hook, and its walk follows the
-	// process's own mount tree, so an agent that can mount (root, or one that can make a user namespace) can put a
-	// file where the contract's paths do not reach it (a directory outside every write entry bound beneath one is
-	// written; an overlay whose lower layer is a deny_read directory is read: TestPlaneRunWalksTheMountTreeAsItStands):
-	// the file rules hold on the mount topology as it stands. The
-	// plane holds the keyring, the file rules on that topology and exec.allow's programs; nothing else.
+	// terminal-input ioctls. The plane's mandatory capable hook holds the mount topology by refusing
+	// CAP_SYS_ADMIN in every user namespace (ADR 0055 NET09). Creating a user namespace alone may still succeed;
+	// mount-namespace creation, installation and mount APIs require the refused capability. The plane also holds
+	// the keyring, file rules and exec.allow's programs; the other syscall-filter properties remain absent.
 	GapAdoptionNoFilter = "adoption-no-syscall-filter"
 )
 
@@ -119,11 +116,11 @@ type AdoptSpec struct {
 	Boundary bool
 	// Keyed are the files a boundary's rows must be written at, at the identities the caller checked them at: the
 	// agent owner's own ~/.tego, which R6a's deny attaches to (ADR 0055 Decision 5). The agent runs unconfined until
-	// the arm, and Prepare keys a row at whatever its path names then (a path gone keys nothing), so after Prepare,
+	// the move, and Prepare keys a row at whatever its path names then (a path gone keys nothing), so after Prepare,
 	// before the attach, each must be one of the files the plane's fs rows were written at
 	// (enforce.PlaneKeyedReporter) with that device and inode, or the adoption fails, named (ErrAdoptUnkeyed). A row
 	// keys an inode, so from the fill on a rename of the file moves the deny with it, and
-	// the path could name another file or none at the arm: after the arm, from which the plane refuses the agent a
+	// the path could name another file or none at the move: after migration, from which the plane refuses the agent a
 	// rename or removal of it, the path must still lead to that device and inode too (checkKeyedPaths).
 	Keyed []AdoptKeyed
 	// Started is told once the tree has moved and the run records it; nil tells no one.
@@ -141,7 +138,7 @@ type AdoptStarted struct {
 	Scope, From string
 	Moved       []adopt.Process
 	Skipped     []adopt.Skip
-	// Window is from the root's identification to the attach: the least of what the record misses.
+	// Window is from the root's identification to migration completion: the least of what the record misses.
 	Window time.Duration
 	// DecisionPlane is the plane's mode a boundary adoption decides in, "" for a record-only one.
 	DecisionPlane string
@@ -195,7 +192,7 @@ var ErrAdoptNoPlane = errors.New("runtime: no decision plane decides this contra
 
 // ErrAdoptUnkeyed is a boundary adoption whose plane holds no row at a file its caller requires one at (AdoptSpec.Keyed):
 // the file was removed or replaced between the caller's check and Prepare, and its deny would hold nothing; or whose
-// path, once armed, no longer leads to the file the row keys (removed or replaced between Prepare and the arm), so the
+// path, once migrated, no longer leads to the file the row keys (removed or replaced before migration), so the
 // records written there next would be under no row.
 var ErrAdoptUnkeyed = errors.New("runtime: the decision plane keys no row at a file the boundary requires")
 
@@ -221,9 +218,9 @@ type adoption struct {
 	rec   adoptRecord
 	cgm   AdoptCgroups
 	moved adopt.MoveResult
-	// identified is when the root was identified, armed when the run's row went in.
-	identified, armed time.Time
-	planeMode         string
+	// identified is when the root was identified, migrated when the tree's move completed.
+	identified, migrated time.Time
+	planeMode            string
 	// release is set once the adoption has released its tree, with what it did; releasedBy is who asked for it
 	// through a release request (ReleaseAdoption), "" when the adopter was asked to stop.
 	release    *adopt.ReleaseResult
@@ -330,8 +327,8 @@ func (a *adoption) run(ctx context.Context) (Result, error) {
 
 // prepare is the adoption's steps before run_start, each recorded on the adoption so unwind releases exactly what was
 // taken: the run directory and its lock, the lock on the process, the scope, the record root's tools act on, the
-// reaper, the move (contain first: from here on every process the agent forks is born in the scope), then tier 2's
-// Prepare, Attach and Arm (recording starts at the arm), and the pipeline and the kernel recorder.
+// reaper, tier 2's Prepare, Attach and Arm in the empty scope, then the move and the final keyed-path check,
+// and the pipeline and the kernel recorder. Every moved process and its future children are governed immediately.
 func (a *adoption) prepare(ctx context.Context) error {
 	r := a.r
 	if err := r.mintRun(); err != nil {
@@ -368,10 +365,14 @@ func (a *adoption) prepare(ctx context.Context) error {
 	if err := a.startReaper(); err != nil {
 		return err
 	}
+	if err := a.prepareEnforcement(ctx); err != nil {
+		return err
+	}
 	if err := a.move(ctx); err != nil {
 		return err
 	}
-	if err := a.prepareEnforcement(ctx); err != nil {
+	a.migrated = time.Now()
+	if err := a.checkKeyedPaths(); err != nil {
 		return err
 	}
 	return a.startWorkers(ctx)
@@ -458,6 +459,10 @@ func (a *adoption) prepareEnforcement(ctx context.Context) error {
 		return fmt.Errorf("%w: the plane runs in no mode here or cannot hold this contract (tego doctor says which); "+
 			"adopt with no --boundary to record it", ErrAdoptNoPlane)
 	}
+	armer, ok := h.(api.Armer)
+	if !ok {
+		return fmt.Errorf("%w: %s handle cannot arm the empty adoption scope", ErrAdoptDeps, r.deps.Enforce.Tier())
+	}
 	if err := a.checkKeyed(h); err != nil {
 		return err
 	}
@@ -471,13 +476,10 @@ func (a *adoption) prepareEnforcement(ctx context.Context) error {
 	if err := h.Attach(r.cg.ID); err != nil {
 		return fmt.Errorf("runtime: attach %s: %w", r.deps.Enforce.Tier(), err)
 	}
-	if armer, ok := h.(api.Armer); ok {
-		if err := armer.Arm(); err != nil {
-			return fmt.Errorf("runtime: arm %s: %w", r.deps.Enforce.Tier(), err)
-		}
+	if err := armer.Arm(); err != nil {
+		return fmt.Errorf("runtime: arm %s: %w", r.deps.Enforce.Tier(), err)
 	}
-	a.armed = time.Now()
-	return a.checkKeyedPaths()
+	return nil
 }
 
 // checkKeyed is AdoptSpec.Keyed's check, after Prepare and before the attach: each required file is one the plane's fs
@@ -512,15 +514,15 @@ func (a *adoption) checkKeyed(h api.Handle) error {
 	return nil
 }
 
-// checkKeyedPaths is AdoptSpec.Keyed's second check, after the arm: each required file's name (AdoptKeyed.Name) is
+// checkKeyedPaths is AdoptSpec.Keyed's second check, after migration: each required file's name (AdoptKeyed.Name) is
 // still, itself and not through a link at it, the directory its row keys, at that device and inode. checkKeyed holds
-// the row to the directory the table was compiled against, but the agent runs unconfined until the arm, so between
-// the fill and the arm it can rename that directory away, with or without a new one at its name: the row follows the
+// the row to the directory the table was compiled against, but the agent runs unconfined until its move, so between
+// the fill and the move it can rename that directory away, with or without a new one at its name: the row follows the
 // old inode, and the owner's next run would write its records into a directory no row keys. It can also put a link
 // to the keyed directory at the name: followed,
 // the name leads to the row's inode, but the link is under no row, and under a write entry over the home the plane
-// lets the agent unlink it and make a directory there once armed, so a name that is no directory itself fails the
-// check. From the arm on the plane refuses the agent a rename,
+// lets the agent unlink it and make a directory there once migrated, so a name that is no directory itself fails the
+// check. From migration on the already-armed plane refuses the agent a rename,
 // removal or replacement of the keyed directory, so what this check sees holds for the rest of the adoption.
 func (a *adoption) checkKeyedPaths() error {
 	for _, want := range a.spec.Keyed {
@@ -530,18 +532,18 @@ func (a *adoption) checkKeyedPaths() error {
 		}
 		var st unix.Stat_t
 		if err := unix.Lstat(name, &st); err != nil {
-			return fmt.Errorf("%w: %s, %s, was removed after the plane keyed it and before the arm (%v), so its deny "+
+			return fmt.Errorf("%w: %s, %s, was removed after the plane keyed it and before migration (%v), so its deny "+
 				"holds a directory no longer at that path; adopt again", ErrAdoptUnkeyed, want.What, name, err)
 		}
 		if st.Mode&unix.S_IFMT != unix.S_IFDIR {
-			return fmt.Errorf("%w: %s, %s, is no directory itself once armed (a link or a file is at the name), so the "+
+			return fmt.Errorf("%w: %s, %s, is no directory itself after migration (a link or a file is at the name), so the "+
 				"agent could put a directory no row keys there; make it a directory and adopt again", ErrAdoptUnkeyed,
 				want.What, name)
 		}
 		dev := uint64(st.Dev) //nolint:unconvert // Dev is uint64 on amd64 and arm64, not everywhere
 		got := adopt.FileID{Dev: unix.Mkdev(unix.Major(dev), unix.Minor(dev)), Ino: st.Ino}
 		if got != (adopt.FileID{Dev: unix.Mkdev(unix.Major(want.ID.Dev), unix.Minor(want.ID.Dev)), Ino: want.ID.Ino}) {
-			return fmt.Errorf("%w: %s, %s, was replaced after the plane keyed it and before the arm (the path leads to "+
+			return fmt.Errorf("%w: %s, %s, was replaced after the plane keyed it and before migration (the path leads to "+
 				"%d:%d, the row is at %d:%d), so its deny holds a directory no longer at that path; adopt again",
 				ErrAdoptUnkeyed, want.What, name, got.Dev, got.Ino, want.ID.Dev, want.ID.Ino)
 		}
@@ -603,7 +605,7 @@ func (a *adoption) ledgerFailed(err error) {
 // startedInfo is what Started is told.
 func (a *adoption) startedInfo() AdoptStarted {
 	return AdoptStarted{RunID: string(a.r.id), Dir: a.r.dir, Scope: a.r.cg.Path, From: a.spec.Root.Cgroup,
-		Moved: a.moved.Moved, Skipped: a.moved.Skipped, Window: a.armed.Sub(a.identified), DecisionPlane: a.planeMode}
+		Moved: a.moved.Moved, Skipped: a.moved.Skipped, Window: a.migrated.Sub(a.identified), DecisionPlane: a.planeMode}
 }
 
 // releasePoll is how often an adoption looks for a release request (ReleaseAdoption).
@@ -1069,7 +1071,7 @@ func heldByAny(held func(string, bool) bool, path string, aliases []string, writ
 // keyed file's row decides it under every name it has, a hard link no rule names included. The walk then looks each
 // directory above it up by its inode too, so for each directory the
 // name passes through that a row is keyed at (dirs.at: a deny_read directory renamed after the fill, while the agent
-// ran unconfined until the arm), held is also asked by the file's path beneath that row's path.
+// ran unconfined until the move), held is also asked by the file's path beneath that row's path.
 func heldFile(held func(string, bool) bool, dirs *keyedDirs, path string, aliases []string, ids []adopt.FileID,
 	writes bool) bool {
 	if heldByAny(held, path, aliases, writes) {

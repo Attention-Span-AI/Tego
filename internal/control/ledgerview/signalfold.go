@@ -245,6 +245,7 @@ func (f *signalFold) take(e *Event) {
 		}
 		d.Resolver = d.Resolver || e.Rule == syslookup.ResolverRule
 		if e.Verdict == "allow" || e.Verdict == "observed" {
+			d.sends = append(d.sends, touchAt{e.Seq, e.TS})
 			h, _ := hostPort(dst)
 			f.reached[h] = true
 		}
@@ -463,6 +464,11 @@ func (f *signalFold) finish(r *Run) *RunSignal {
 			// A destination the contract allows is where the agent is meant to talk: a send to it right after a
 			// secret read is not the attack the mark points at.
 			d.NearSecret = !d.InContract && near(d.FirstSeq, d.First)
+			if !d.InContract {
+				for _, send := range d.sends {
+					d.NearSecret = d.NearSecret || near(send.seq, send.ts)
+				}
+			}
 		}
 		if !d.Background && d.Refused > 0 && d.Allowed+d.Observed+d.Asked == 0 {
 			d.Background = true

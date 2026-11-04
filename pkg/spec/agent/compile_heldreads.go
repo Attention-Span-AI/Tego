@@ -35,9 +35,9 @@ const (
 // readsOrder is fs.reads' merge order, strictest first (merge.go): held, then auto, then direct, which is loosening.
 var readsOrder = []string{string(ReadsHeld), string(ReadsAuto), string(ReadsDirect)}
 
-// HeldReadCost is the cost compile states for held reads, per read open (ADR 0041 §Performance's held p50 against
-// the gated path's, measured again for ADR 0069; docs/OPERATIONS.md "Cost per open").
-const HeldReadCost = "each read open about 0.1 ms more"
+// HeldReadCost describes the work added per read open. The pre-identity figures
+// predate the directory barriers; current cost grows with the watched tree.
+const HeldReadCost = "extra work per read open grows with the protected tree; current overhead is unmeasured"
 
 // Why a run's reads are held or direct (RuleTable.ReadsWhy): run_start fs_reads.why's values, which the record
 // defines (record.FSReadsWhy*).
@@ -215,7 +215,7 @@ func (k *compiler) heldPatterns(builtIn bool) []DenyReadPattern {
 
 // heldReadsDiagnostics is what compile says of fs.reads: under fs.reads: direct, or auto where no run can land at
 // tier landlock, each nested target's unenforced warning as before ADR 0069; where reads are held at tier landlock,
-// which targets are held, the cost, and the residual (a target moved or hard-linked to another name, ADR 0069 D5);
+// which targets are held, the cost, and the launch identity and replacement checks (ADR 0069 D3(b));
 // under fs.reads: held, the cost at every tier.
 func (k *compiler) heldReadsDiagnostics() {
 	h := &k.rt.Reads
@@ -234,8 +234,8 @@ func (k *compiler) heldReadsDiagnostics() {
 	}
 	for _, n := range h.Nested {
 		k.ds.warnf(n.Pos, CodeHeldReads, "deny_read %s%s lies inside write entry %s%s: at tier landlock the run's reads are held (fs.reads: %s), "+
-			"so the open deputy completes every read open, %s, and this target is refused; a copy of it the agent moves or "+
-			"hard-links to another name is not (capability fs.deny_read.moved)",
+			"so the open deputy completes every read open, %s; launch-pinned targets stay refused after rename or hard link; "+
+			"a file put at a protected name later is pinned in turn; a change that cannot be followed refuses held reads until restart",
 			n.Path, resolvedNote(n.Path, n.Resolved), n.Write, resolvedNote(n.Write, n.WriteResolved), h.Mode, HeldReadCost).
 			fix("move the secret outside the write entry to read directly, or pin a root tier").only(backend.TierLandlock)
 	}
@@ -329,14 +329,14 @@ func heldReadsLine(rt *RuleTable) string {
 	switch {
 	case h.Mode == ReadsHeld:
 		return "held at every tier (fs.reads: held); " + HeldReadCost + held +
-			"; a target moved or hard-linked to another name is not refused at tier landlock"
+			"; launch-pinned targets moved or hard-linked to another name stay refused; a file put at a protected name later is pinned in turn; a change that cannot be followed refuses held reads until restart"
 	case h.Mode == ReadsDirect && len(h.Nested) > 0:
 		return "direct (fs.reads: direct): " + strconv.Itoa(len(h.Nested)) + " deny_read target(s) inside write entries unenforced at tier landlock: " + targets()
 	case h.Mode == ReadsDirect:
 		return "direct (fs.reads: direct)"
 	case len(h.Nested) > 0 && rt.mayLandAt(backend.TierLandlock):
 		return "held at tier landlock (fs.reads: auto: " + targets() + "); " + HeldReadCost + held +
-			"; a target moved or hard-linked to another name is not refused there"
+			"; launch-pinned targets moved or hard-linked to another name stay refused; a file put at a protected name later is pinned in turn; a change that cannot be followed refuses held reads until restart"
 	case len(h.Nested) > 0:
 		return "direct (fs.reads: auto: the kernel refuses a deny_read inside a write entry at this table's tiers)"
 	}

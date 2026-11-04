@@ -25,6 +25,9 @@
 // A run's live blocks (Options.LiveBlocks, internal/liveblock) are refused here on top of the contract, since this
 // loop is where tier landlock decides at run time: an exec, a connect or send, and a notified fs action that a block
 // names is refused by this loop itself, never continued (liveblock.go).
+// A relay's private stage may receive a process-bound runtime grant for an otherwise unlisted command vector:
+// Options.MCPStage authenticates the exact fresh-socket child and pins its pidfd. Explicit refusals still hold;
+// this adds no general exec pattern (ADR 0126).
 //
 // An --observe run (Policy.Observe, R30) makes it authoritative for nothing: every refusal it would have
 // answered is answered CONTINUE, and every action event is recorded verdict observed against the entry it

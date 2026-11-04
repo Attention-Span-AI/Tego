@@ -34,6 +34,9 @@
 // TegoEnv is the environment a test gives a tego binary built with -tags tegotesthooks that it starts as a
 // subprocess: the chain anchor, the own-log home and XDG_RUNTIME_DIR in the test's own directory, never the
 // invoking user's.
+// ShortRuntimeDir makes a unique mode-0700 temporary child of /run/user/<uid> for clients whose
+// Unix socket paths cannot fit beneath TempDir. Cleanup removes only that child; the normal
+// login runtime is never handed to a test run or swept. Durable state still belongs in TempDir.
 //
 // TimingMode, Mode.Measure, Mode.Judge and Mode.JudgeRatio are how a test holds code to an absolute timing budget
 // (docs/BENCHMARKS.md, "Timing budgets in the test suites"): Measure takes the fastest of many interleaved rounds, less

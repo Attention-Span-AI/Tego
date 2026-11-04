@@ -5,7 +5,11 @@
 # What makes it work interactively (test/poc/watch-demo/real-agents/README.md, docs/OPERATIONS.md):
 #  - capture: off and net.allow naming api.anthropic.com:443. With capture: forwarder Claude Code exits 1
 #    on its first connectivity check, which goes straight to api.anthropic.com whatever the base URL says.
-#  - fs.write has /dev/tty (the full-screen interface draws there) and the cc-socks socket directory.
+#  - fs.write has /dev/tty (the full-screen interface draws there) and private session sockets in the run's harness runtime (%R).
+#    env.set.XDG_RUNTIME_DIR: "%R" uses Tego's existing fs.harness-state grant, not a project path.
+#    Launch checks cc-socks/9999999.sock against Claude's 103-byte limit; a long invoking XDG_RUNTIME_DIR
+#    refuses launch with a clear fix. Use the normal /run/user/<uid> base and an unprivileged run.
+#    The shared /tmp fallback stays ungranted; builtin.host_ipc still protects the host runtime.
 #  - CLAUDE_CONFIG_DIR / CLAUDE_CODE_TMPDIR keep Claude Code's state inside the project, so ~/.claude is never
 #    written. Your login reaches Claude Code through the environment, never through ~/.claude: either
 #    CLAUDE_CODE_OAUTH_TOKEN (your Pro/Max subscription: run `claude setup-token` once, outside Tego) or
@@ -21,7 +25,7 @@ command: ["claude"]
 record: full
 capture: off
 fs:
-  write: ["./", "/dev/null", "/dev/tty", "@@XDG@@/cc-socks/"]
+  write: ["./", "/dev/null", "/dev/tty"]
 exec:
   allow: ["bash", "git"]
 net:
@@ -34,6 +38,7 @@ env:
     CLAUDE_CONFIG_DIR: ".claude-state"
     CLAUDE_CODE_TMPDIR: ".claude-state/tmp"
     TMPDIR: ".claude-state/tmp"
+    XDG_RUNTIME_DIR: "%R"
 limits:
   pids: 512
   memory: 4GiB

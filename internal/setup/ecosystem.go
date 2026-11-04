@@ -2,7 +2,10 @@
 
 package setup
 
-import "path/filepath"
+import (
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
+	"path/filepath"
+)
 
 // eco is what a project's markers add to a contract whose writes are restricted: the folders its package manager
 // writes, the cache variables pointed inside the project, and the .gitignore lines for what init generates.
@@ -28,7 +31,7 @@ func ecosystem(dir string) eco {
 		e.writes = append(e.writes, entry{"./.venv/", "pyproject.toml or requirements*.txt: the virtualenv"})
 	}
 	if at("go.mod") {
-		cache := filepath.Join(dir, ".tego", "cache")
+		cache := agent.ProjectDirToken + "/.tego/cache"
 		e.writes = append(e.writes, entry{"./.tego/cache/", "go.mod: the Go build and module caches"})
 		e.env = append(e.env,
 			entry{"GOCACHE=" + filepath.Join(cache, "go-build"), "go.mod: the build cache inside the writable ./.tego/cache/"},

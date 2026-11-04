@@ -45,6 +45,16 @@ skips the typed confirmation.
 
 ## What was verified, and how
 
+Setup claims only a new or empty ledger and vault, using
+`.tego-live-demo-ledger` and `.tego-live-demo-vault` markers naming their physical
+paths. Reset validates both before any deletion or `sudo`; `/`, `$HOME`, the
+checkout and their ancestors are refused, including aliases. Move an old
+unmarked vault aside manually. Move the old ledger aside too, or choose fresh
+`DEMO_LEDGER` and matching `DEMO_CONFIG` paths before setup. Keep personal files
+out of generated directories. These shell checks do not pin paths against a
+concurrent same-user replacement; [ADR 0129](../../docs/adr/0129-demo-script-state.md)
+states the boundary.
+
 - `tego compile contract.filled.yaml` accepts the contract: Adjustable, one read fence entry refused at start, tier
   cgroup (a build without the tier-2 objects warns `tier-unavailable`; `make build` includes them).
 - The whole loop (refused, lifted with `--for`, `read ok`, restored, refused, every read under

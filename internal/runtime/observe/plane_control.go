@@ -34,6 +34,10 @@ func (r *Recorder) handlePlaneControl(rec *Record) {
 		op, rule = "key_permission", "keyring"
 		target = "permission " + strconv.Itoa(int(rec.Plane.Type))
 		expected, reason = bpf.ReasonReadDenied, record.ReasonReadDenied
+	case bpf.PlaneHookNumber("capable"):
+		op, rule = "capable", "mount-topology"
+		target = "capability " + strconv.Itoa(int(rec.Plane.Type))
+		expected, reason = bpf.ReasonProcessScope, record.ReasonLandlockTopology
 	default:
 		r.gap(GapMalformedRecord, 1)
 		return

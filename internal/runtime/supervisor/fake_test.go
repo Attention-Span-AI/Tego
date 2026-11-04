@@ -38,7 +38,8 @@ type region struct {
 // fakeKernel is the whole syscall seam under test control: a queue of notifications, an address space,
 // the /proc links, and a record of everything the loop answered and did.
 type fakeKernel struct {
-	mu sync.Mutex
+	mu             sync.Mutex
+	openLabelCheck func(tid, opener, flags int) error
 
 	pending []sysNotif
 	regions []region
@@ -248,6 +249,13 @@ type fakeKernel struct {
 	hup        bool
 	nextFD     int
 	waitCalled int
+}
+
+func (f *fakeKernel) CheckOpenLabel(tid, opener, flags int) error {
+	if f.openLabelCheck != nil {
+		return f.openLabelCheck(tid, opener, flags)
+	}
+	return nil
 }
 
 // procStat is one fake /proc/<pid>/stat answer.

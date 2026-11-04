@@ -28,6 +28,7 @@ type field[T any] struct {
 
 // layerData is the typed content of one layer file, before merging.
 type layerData struct {
+	servePort        field[int]
 	version          field[int]
 	tier             field[string]
 	capture          field[string]
@@ -181,6 +182,14 @@ func (p *parser) mapping(n *yaml.Node) []keyed {
 
 func (p *parser) topLevel(d *layerData, key, v *yaml.Node) {
 	switch key.Value {
+	case "serve":
+		for _, kv := range p.mapping(v) {
+			if kv.name == "port" {
+				d.servePort = p.integerIn(kv.value, "serve.port", 1, 65535)
+			} else {
+				p.errorf(kv.key, "unknown serve key %q", kv.name)
+			}
+		}
 	case "version":
 		p.version(d, v)
 	case "tier":

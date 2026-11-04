@@ -34,7 +34,7 @@ func TestAskOpenActualFilesystemEffectIsDistinctFromDescriptorDelivery(t *testin
 		t.Fatal(err)
 	}
 	defer unix.Close(h.fd)
-	if _, err = k.CompleteAskOpen(1, h, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL, 0600); !errors.Is(err, unix.EEXIST) {
+	if _, err = k.CompleteAskOpen(1, h, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL, 0600, nil); !errors.Is(err, unix.EEXIST) {
 		t.Fatalf("exclusive existing open: %v", err)
 	}
 	var delivery *askOpenDeliveryError
@@ -44,7 +44,7 @@ func TestAskOpenActualFilesystemEffectIsDistinctFromDescriptorDelivery(t *testin
 	if b, err := os.ReadFile(p); err != nil || string(b) != "before" {
 		t.Fatalf("exclusive failure changed file %q %v", b, err)
 	}
-	fd, err := k.CompleteAskOpen(1, h, unix.O_WRONLY|unix.O_TRUNC, 0600)
+	fd, err := k.CompleteAskOpen(1, h, unix.O_WRONLY|unix.O_TRUNC, 0600, nil)
 	if fd >= 0 || !errors.As(err, &delivery) || !errors.Is(err, unix.EBADF) {
 		t.Fatalf("completed open without FD delivery fd%d err%v", fd, err)
 	}
@@ -58,7 +58,7 @@ func TestAskOpenActualFilesystemEffectIsDistinctFromDescriptorDelivery(t *testin
 	}
 	defer unix.Close(created.fd)
 	created.umask = 0077
-	if _, err = k.CompleteAskOpen(1, created, unix.O_WRONLY|unix.O_CREAT, 0666); !errors.As(err, &delivery) {
+	if _, err = k.CompleteAskOpen(1, created, unix.O_WRONLY|unix.O_CREAT, 0666, nil); !errors.As(err, &delivery) {
 		t.Fatalf("actual creation failure phase: %v", err)
 	}
 	if st, err := os.Stat(newPath); err != nil || st.Mode().Perm() != 0600 {
@@ -68,7 +68,7 @@ func TestAskOpenActualFilesystemEffectIsDistinctFromDescriptorDelivery(t *testin
 
 type withdrawnOpenKernel struct{ *heldTestKernel }
 
-func (k *withdrawnOpenKernel) CompleteAskOpen(id uint64, h *heldAskOpen, flags int, _ uint32) (int, error) {
+func (k *withdrawnOpenKernel) CompleteAskOpen(id uint64, h *heldAskOpen, flags int, _ uint32, _ func(int) error) (int, error) {
 	fd, err := unix.Open("/proc/self/fd/"+strconv.Itoa(h.fd), unix.O_WRONLY|unix.O_TRUNC|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return -1, err
@@ -270,7 +270,7 @@ func (k *heldTestKernel) PrepareAskOpen(pathQuery, int) (*heldAskOpen, error) {
 	h.fd = fd
 	return &h, nil
 }
-func (k *heldTestKernel) CompleteAskOpen(uint64, *heldAskOpen, int, uint32) (int, error) {
+func (k *heldTestKernel) CompleteAskOpen(uint64, *heldAskOpen, int, uint32, func(int) error) (int, error) {
 	k.completed++
 	return 8, nil
 }

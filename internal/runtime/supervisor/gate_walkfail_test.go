@@ -4,6 +4,7 @@
 package supervisor
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -82,6 +83,12 @@ gate:
 				}
 				if got.Flags != 0 || got.Error != -int32(refusalErrno) {
 					t.Fatalf("a %s walk scored the spelling and answered %+v; want the refusal", tc.name, got)
+				}
+				if call.name != "read-open" && !errors.Is(tc.err, errLinkedElsewhere) {
+					if ev.Verdict != record.VerdictRefused || ev.Rule != agent.BuiltinHostIPC || ev.Authority != record.AuthorityRule {
+						t.Fatalf("immutable floor must precede the gate on an unreadable mutation: %+v", ev)
+					}
+					return
 				}
 				if ev.Verdict != record.VerdictRefused || ev.Rule != "gate.unreadable" || ev.Reason != record.ReasonFSGate ||
 					ev.Authority != record.AuthorityGate {

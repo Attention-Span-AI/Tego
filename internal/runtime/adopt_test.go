@@ -330,6 +330,9 @@ func (c *adoptCgroups) Remove(_ context.Context, cg cgroup.Cgroup) error {
 // adoptBackend is a tier-cgroup backend over a handle that records its calls.
 type adoptBackend struct {
 	prepareErr error
+	attachErr  error
+	armErr     error
+	noArmer    bool
 	plane      string
 	handle     *adoptHandle
 	// keyed is what the handle's PlaneKeyed reports (the files the plane's fill wrote the fs rows at), with keyedOK.
@@ -349,7 +352,14 @@ func (b *adoptBackend) Prepare(_ context.Context, rt *agent.RuleTable, ref enfor
 	if rt.Tier != backend.TierCgroup {
 		return nil, fmt.Errorf("table at tier %s", rt.Tier)
 	}
-	b.handle = &adoptHandle{plane: b.plane, ref: ref, keyed: b.keyed, keyedOK: b.keyedOK, onArm: b.onArm}
+	b.handle = &adoptHandle{plane: b.plane, ref: ref, keyed: b.keyed, keyedOK: b.keyedOK, onArm: b.onArm,
+		attachErr: b.attachErr, armErr: b.armErr}
+	if b.noArmer {
+		return struct {
+			api.Handle
+			enforce.DecisionPlaneReporter
+		}{b.handle, b.handle}, nil
+	}
 	return b.handle, nil
 }
 
@@ -361,13 +371,19 @@ type adoptHandle struct {
 	keyed                             []enforce.PlaneKeyed
 	keyedOK                           bool
 	onArm                             func()
+	attachErr, armErr                 error
 }
 
 func (h *adoptHandle) PlaneKeyed() ([]enforce.PlaneKeyed, bool) { return h.keyed, h.keyedOK }
 
 func (h *adoptHandle) LandlockRuleset() (int, bool)                { return -1, false }
 func (h *adoptHandle) SeccompFilter() ([]bpf.RawInstruction, bool) { return nil, false }
-func (h *adoptHandle) Attach(uint64) error                         { h.mu.Lock(); h.attached++; h.mu.Unlock(); return nil }
+func (h *adoptHandle) Attach(uint64) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.attached++
+	return h.attachErr
+}
 func (h *adoptHandle) Arm() error {
 	if h.onArm != nil {
 		h.onArm()
@@ -375,7 +391,7 @@ func (h *adoptHandle) Arm() error {
 	h.mu.Lock()
 	h.armed++
 	h.mu.Unlock()
-	return nil
+	return h.armErr
 }
 func (h *adoptHandle) Detach() error                 { h.mu.Lock(); h.detached++; h.mu.Unlock(); return nil }
 func (h *adoptHandle) Close() error                  { h.mu.Lock(); h.closed++; h.mu.Unlock(); return nil }
@@ -750,25 +766,40 @@ func TestReleaseRequestToALiveAdopterThatLeftProcesses(t *testing.T) {
 	}
 }
 
-// TestAdoptKeepsTheRecordWhenAFailedPrepareLeavesProcesses: a failure after the move and before run_start (Prepare
-// here) releases the tree; when the cgroup it came from is gone by then (a session scope systemd removed once the tree
+// TestAdoptKeepsTheRecordWhenAFailedMigrationCheckLeavesProcesses: a failure after the move and before run_start
+// (the keyed-path check here) releases the tree; when the cgroup it came from is gone by then (a session scope systemd removed once the tree
 // left it) and none above takes it, its processes stay in the scope. The record used to go anyway, with the run
 // directory: nothing could release them, and the guard refused them as governed for ever. The record now stays,
 // marked released and unstarted, the error says what stays, and a later release moves them out with no run to end.
-func TestAdoptKeepsTheRecordWhenAFailedPrepareLeavesProcesses(t *testing.T) {
+func TestAdoptKeepsTheRecordWhenAFailedMigrationCheckLeavesProcesses(t *testing.T) {
 	f := newAdoptFixture(t)
 	prevEnv := adoptReleaseEnv
 	adoptReleaseEnv = func() adopt.Env { return f.host.env() }
 	t.Cleanup(func() { adoptReleaseEnv = prevEnv })
-	f.backend.prepareErr = errors.New("prepare timed out")
+	records := filepath.Join(t.TempDir(), ".tego")
+	if err := os.Mkdir(records, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var st unix.Stat_t
+	if err := unix.Stat(records, &st); err != nil {
+		t.Fatal(err)
+	}
+	dev := uint64(st.Dev) //nolint:unconvert // Dev differs on other architectures
+	f.backend.plane = record.DecisionPlaneFmodRet
+	f.backend.keyed = []enforce.PlaneKeyed{{Path: records, Dev: dev, Ino: st.Ino}}
+	f.backend.keyedOK = true
+	spec := f.spec(t)
+	spec.Boundary = true
+	spec.Keyed = []AdoptKeyed{{Path: records, ID: adopt.FileID{Dev: dev, Ino: st.Ino}, What: "records"}}
 	f.host.onAdd = func(pid int) {
 		if pid == 201 { // the last of the tree leaves the session, which ends
 			_ = os.RemoveAll(filepath.Join(f.host.mount, "user.slice"))
+			_ = os.Rename(records, records+".old")
 		}
 	}
-	_, err := Adopt(context.Background(), f.rt, f.spec(t), f.deps)
+	_, err := Adopt(context.Background(), f.rt, spec, f.deps)
 	f.host.onAdd = nil
-	if !errors.Is(err, ErrAdoptLeftInScope) || !strings.Contains(err.Error(), "prepare timed out") ||
+	if !errors.Is(err, ErrAdoptLeftInScope) || !strings.Contains(err.Error(), "was removed") ||
 		!strings.Contains(err.Error(), "2 process(es) stay in") {
 		t.Fatalf("Adopt = %v; want the cause and that 2 processes stay in the scope", err)
 	}
@@ -889,6 +920,61 @@ func TestAdoptionOfAProcessWhoseLeaderExited(t *testing.T) {
 	if run, err := AdoptionOf(h, f.state, 200); err != nil || run != s.RunID {
 		t.Errorf("AdoptionOf(a process whose leader exited, its thread in the scope) = %q, %v; want run %s", run, err,
 			s.RunID)
+	}
+}
+
+func TestAdoptArmsTheEmptyScopeBeforeAnyMove(t *testing.T) {
+	f := newAdoptFixture(t)
+	f.backend.onArm = func() {
+		if len(f.host.moves) != 0 {
+			t.Error("processes moved before the empty scope was armed")
+		}
+	}
+	f.host.onAdd = func(int) {
+		h := f.backend.handle
+		if h == nil || h.attached != 1 || h.armed != 1 {
+			t.Error("a process moved before enforcement was attached and armed")
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s, done := f.adoptRunning(t, ctx, f.spec(t))
+	if s.Window <= 0 {
+		t.Error("migration window was not measured")
+	}
+	cancel()
+	waitResult(t, done)
+}
+
+func TestAdoptNeverMovesOnEnforcementFailure(t *testing.T) {
+	for _, phase := range []string{"prepare", "attach", "arm", "plane", "no armer"} {
+		t.Run(phase, func(t *testing.T) {
+			f := newAdoptFixture(t)
+			failure := errors.New(phase + " failed")
+			spec := f.spec(t)
+			switch phase {
+			case "prepare":
+				f.backend.prepareErr = failure
+			case "attach":
+				f.backend.attachErr = failure
+			case "arm":
+				f.backend.armErr = failure
+			case "plane":
+				spec.Boundary = true
+				failure = ErrAdoptNoPlane
+			case "no armer":
+				f.backend.plane = record.DecisionPlaneFmodRet
+				f.backend.noArmer = true
+				spec.Boundary = true
+				failure = ErrAdoptDeps
+			}
+			_, err := Adopt(context.Background(), f.rt, spec, f.deps)
+			if !errors.Is(err, failure) {
+				t.Fatalf("Adopt: %v; want %v", err, failure)
+			}
+			if len(f.host.moves) != 0 {
+				t.Fatalf("enforcement failed but processes moved: %v", f.host.moves)
+			}
+		})
 	}
 }
 
@@ -1071,7 +1157,7 @@ func TestAdoptAsksTheRowsByTheKeyedInode(t *testing.T) {
 
 // TestAdoptAsksTheRowsByEachKeyedDirectoryAboveTheName: the plane's walk looks each directory above the object up by
 // its inode (bpf/decide.bpf.c tego_walk_step), so a deny_read directory renamed after the fill (the agent runs
-// unconfined until the arm) still refuses a read of every file in it under its new name. The count asks the rows, for
+// unconfined until the move) still refuses a read of every file in it under its new name. The count asks the rows, for
 // each directory a held file's name passes through that a row is keyed at, by the file's path under that row's path:
 // a file held in the renamed directory, by a descriptor or a mapping, is across the rule, and so is a deny_read file
 // beneath a renamed write entry, which the row's own path would not be; one in a directory no row keys, and a file the
@@ -1180,15 +1266,15 @@ func TestAdoptCountsARingItCannotReadUnread(t *testing.T) {
 
 // TestAdoptRefusesABoundaryWhoseRequiredRowIsElsewhere: a boundary requires the plane's row for the agent owner's
 // ~/.tego at the directory its table was compiled against (AdoptSpec.Keyed). The agent runs unconfined until the
-// arm, so it can remove or replace the directory before Prepare keys it: a row at
-// another inode, no row at that path, or a tier that cannot say, fails the adoption before the attach, named, and the
-// tree is given back. It can also do so after the fill and before the arm, when the row stays on the directory it
+// move, so it can remove or replace the directory before Prepare keys it: a row at
+// another inode, no row at that path, or a tier that cannot say, fails the adoption before the attach, named, and
+// no process moves. It can also do so after the fill and before the move, when the row stays on the directory it
 // keyed while the path names another or nothing, and the owner's next run would write its records where no row is:
-// from the arm on the plane refuses a rename, removal or
-// replacement of the keyed directory, so the path is checked then too, and one that no longer leads to it fails the
+// from migration on the plane refuses a rename, removal or
+// replacement of the keyed directory, so the path is checked after migration too, and one that no longer leads to it fails the
 // adoption, named, with the tree given back. The row and the path at the directory compiled against run.
 func TestAdoptRefusesABoundaryWhoseRequiredRowIsElsewhere(t *testing.T) {
-	// replace and remove stand in for the agent, between the fill and the arm.
+	// replace and remove stand in for the agent, between the fill and the move.
 	replace := func(t *testing.T, records string) {
 		if err := os.Rename(records, records+".old"); err != nil {
 			t.Error(err)
@@ -1220,7 +1306,7 @@ func TestAdoptRefusesABoundaryWhoseRequiredRowIsElsewhere(t *testing.T) {
 		name    string
 		keyed   func(path string, id adopt.FileID) []enforce.PlaneKeyed
 		keyedOK bool
-		onArm   func(t *testing.T, records string)
+		onMove  func(t *testing.T, records string)
 		refused string
 		// armed says the refusal comes after the arm (the path's check), the tree given back all the same.
 		armed bool
@@ -1251,8 +1337,14 @@ func TestAdoptRefusesABoundaryWhoseRequiredRowIsElsewhere(t *testing.T) {
 		f := newAdoptFixture(t)
 		f.backend.plane = record.DecisionPlaneFmodRet
 		f.backend.keyed, f.backend.keyedOK = c.keyed(records, id), c.keyedOK
-		if c.onArm != nil {
-			f.backend.onArm = func() { c.onArm(t, records) }
+		if c.onMove != nil {
+			changed := false
+			f.host.onAdd = func(pid int) {
+				if pid == 200 && !changed {
+					changed = true
+					c.onMove(t, records)
+				}
+			}
 		}
 		spec := f.spec(t)
 		spec.Boundary = true

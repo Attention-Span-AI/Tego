@@ -1,6 +1,6 @@
 # ADR 0055: adopt an agent that is already running: move its own process tree into a run, record it from the kernel, never kill it
 
-Status: **accepted 2026-10-16** (stage 2 of ADR 0054); `tego adopt`, the guard (`tego agents --follow --adopt --uid`), the release request, the reaper and the scope guard are built and run as root on the real kernel; the pre-armed standby scope (question 3), network rules on an adopted process (question 4) and plane hooks holding its mount topology (question 6) are not built. Amends in part ADR 0054 (stage 2 holds no network rule).
+Status: **accepted 2026-10-16** (stage 2 of ADR 0054); `tego adopt`, the guard (`tego agents --follow --adopt --uid`), the release request, the reaper and the scope guard are built and run as root on the real kernel; the mount-topology floor is built (question 6, NET09); the pre-armed standby scope (question 3) and network rules on an adopted process (question 4) are not built. Amends in part ADR 0054 (stage 2 holds no network rule).
 
 Stage 2 of ADR 0054: "decided only after stage 1's evidence: put the matched agent in a fresh cgroup of its own and
 attach the root tiers' programs". Measured, built and tested as a POC (2026-10-06), merged on 2026-10-16, where the scope guard was reviewed and tightened
@@ -227,13 +227,15 @@ release the same write outside the workspace succeeded again.
 
 ## Decision
 
-1. **Adoption is a move into a fresh cgroup, then tier 2 armed there**, with the BPF objects as they are:
+1. **Adoption is a move into a fresh cgroup with tier 2 already armed there**, with the BPF objects as they are:
    `tego.slice/tego-<agent>.slice/adopt-<run id>.scope` under the cgroup2 root. It is not `run-<id>.scope` on purpose:
    the sweep and `tego stop` kill a launched run's scope whose launcher is gone (ADR 0020), and an adopted agent is
    the operator's own process.
-2. **Contain first, record from the arm, say what is missing.** Order: identify (pid and start time), lock the
-   identity host-wide, make the scope, write the root-only record, start the reaper, move, then Prepare, Attach, Arm,
-   start the recorder, run_start. Right before the move, under a host-wide move lock (`/run/tego/adopted/moves.lock`,
+2. **Arm the empty scope, govern from each move, say what is missing.** Order: identify (pid and start time), lock the
+   identity host-wide, make the scope, write the root-only record, start the reaper, Prepare, Attach and Arm the empty scope,
+   move, check the required keyed paths again, start the recorder, run_start. A failed Prepare, Attach or Arm moves
+   no process; a handle without an armer is refused too. Each moved process and its future children are governed immediately, including during the remaining
+   setup. The reported window ends at migration completion. This does not shorten the unconfined time before the move. Right before the move, under a host-wide move lock (`/run/tego/adopted/moves.lock`,
    held by every adopter while it rechecks and moves), the root is read again and every rule of (d) and the owner
    filter of (6) is applied to it again: a root that exec'd tego, changed its user or namespaces, or was taken by
    another adoption since it was identified is refused then, and nothing moves. Two adoptions whose trees overlap (the
@@ -321,7 +323,7 @@ release the same write outside the workspace succeeded again.
    it cannot check is the file's, the earlier rule), and statting each row's path at the count instead of asking
    the fill (a keyed file renamed after the fill would be missed). *Amended 2026-10-17:* the walk looks
    each directory above the object up by its inode too, so a `deny_read` directory renamed after the fill (the agent
-   runs unconfined until the arm) refuses a read of each file in it under its new name, which the count, asking by
+   runs unconfined until the move) refuses a read of each file in it under its new name, which the count, asking by
    the held file's own inode only, missed. The count now looks each directory a held file's name passes through up
    in tego's namespace (an `lstat`, once per directory per count) and, where a row is keyed at it, also asks the rows
    by the file's path beneath that row's path (`TestAdoptAsksTheRowsByEachKeyedDirectoryAboveTheName`). And a ring's
@@ -458,31 +460,31 @@ release the same write outside the workspace succeeded again.
    subtree, which would deny every `.tego` beneath the home), and compiling the table at every adoption (a compile
    runs the `.env` scan and the globs, up to 2 s each, while the agent runs unadopted).
    *Amended 2026-10-17:* every check above runs before the move, while
-   the agent is unconfined, and so it stays until the arm: Prepare keys the row at whatever the path names when it
+   the agent is unconfined, and so it stays until the move: Prepare keys the row at whatever the path names when it
    opens it, and a path gone by then keys nothing, with nothing said (planPlaneFill's `Absent`). So the adopter
    requires the plane's row for `~/.tego` to be at the directory the table was compiled against (`AdoptSpec.Keyed`):
    after Prepare and before the attach, the files the fill wrote its rows at (`enforce.PlaneKeyedReporter`) must hold
-   that path at that device and inode, or the adoption fails, named (`ErrAdoptUnkeyed`), the tree given back; from the
+   that path at that device and inode, or the adoption fails, named (`ErrAdoptUnkeyed`), before any process moves; from the
    fill on, a rename of the directory moves the deny with it, since a row keys an inode (`TestPlaneRunKeyedFilesAreTheInodesItDecides`
-   shows it on the kernel). The sentence above that the agent cannot replace the directory holds from the arm on.
+   shows it on the kernel). The sentence above that the agent cannot replace the directory holds from migration on.
    Rejected: rechecking the path's stat after Prepare (a directory swapped away and back between the fill and the
    check would pass with the row on another), and marking the keyed path required in the fill (the fill's plan is the
-   launched run's too, where a missing implicit entry is no error). *Amended 2026-10-17:* the row check alone left the window between the fill and the arm open:
+   launched run's too, where a missing implicit entry is no error). *Amended 2026-10-17:* the row check alone left the window between the fill and the move open:
    the agent can rename `~/.tego` away then, with or without a new directory at its name, and the row, keyed on the
    old inode, passes while the owner's next `tego run` writes into a directory no row keys (reproduced as root in a
-   KVM guest on both plane boots: the read of a file in the fresh `~/.tego` succeeded). So after the arm, from which
+   KVM guest on both plane boots: the read of a file in the fresh `~/.tego` succeeded). So after migration into the armed scope, from which
    the plane refuses the agent a rename, removal or replacement of the keyed directory, the adopter also requires the
    path (followed, as the compile resolved it) to lead to the row's device and inode; one that does not fails the
    adoption, named (`ErrAdoptUnkeyed`: removed or replaced after the plane keyed it), and the tree is given back
    (`TestAdoptRefusesABoundaryWhoseRequiredRowIsElsewhere`). The option rejected above checked the path alone and
-   before the arm; both checks together, the second after the arm, leave no window the agent can use (amended
+   before migration; both checks together, the second after migration, leave no window the agent can use (amended
    2026-10-17: when `~/.tego` is itself a directory; a link at
-   that name to one, which the owner may have made or the agent may put there between the fill and the arm, followed
+   that name to one, which the owner may have made or the agent may put there between the fill and the move, followed
    led to the row's inode, but the link is under no row, so under a write entry over the home the plane let the agent
-   unlink it and make a fresh directory there once armed, and the owner's next records there were readable,
-   reproduced as root in a KVM guest on both plane boots. The compile and the check after the arm now read the name
+   unlink it and make a fresh directory there once migrated, and the owner's next records there were readable,
+   reproduced as root in a KVM guest on both plane boots. The compile and the check after migration now read the name
    itself, not followed (`lstat`), and a `~/.tego` that is a link refuses the boundary, named, before anything moves,
-   or fails the adoption after the arm, with the tree given back. Rejected: a row at the link's own inode that refuses
+   or fails the adoption after migration, with the tree given back. Rejected: a row at the link's own inode that refuses
    its rename and removal, as R11 does for a `deny_write` file's ancestors, which needs a fill-plan change for a case
    an owner fixes by making `~/.tego` a directory, and refusing only a link under a write entry, which would need the
    adopter to mirror the plane's write decision). And the row
@@ -605,26 +607,18 @@ after the last pass is caught only by the next one, up to 16.
   unsaid). Rejected: refusing every boundary that does not set `ipc: true` (the families cannot be set at all, since
   a `net:` section is refused, so a disclosure is needed whatever is refused). Nor can it give Landlock,
   no_new_privs, a new environment, or the forwarder (so no model traffic capture).
-- *Amended 2026-10-16.* It does not hold the mount topology. Tier 1's filter refuses new mount
-  and user namespaces and every `setns` (enforce-cgroup-observe E24), and Landlock refuses `mount(2)`, because the
-  file rules are paths on one mount tree. The plane has no mount or namespace hook and its walk follows the process's
-  own mount tree (`mnt_parent` at each mount root), so an adopted agent that can mount (root, or one that can make a
-  user namespace, where the kernel and its LSMs allow that) can make a mount after the attach that puts a file where
-  the contract's paths do not reach it, and the plane's condition "neither the agent nor its launcher can mount"
-  (enforce-plane §2 condition 2) does not hold for it. The notice names this before the move and
-  `adoption-no-syscall-filter` covers it in the ledger. Decided: kept as disclosed, not
-  refused. Rejected: refusing a boundary adoption wherever unprivileged user namespaces are available (no host
-  setting tells it reliably: AppArmor's restriction admits profiled helpers, a root-owned agent needs none, and on most
-  distributions' defaults it would refuse every boundary adoption, a scope cut); changing
-  the host's user-namespace settings (host-wide control, out of scope). The fix that would hold it is a plane hook
-  refusing mounts and namespace changes to the run's tasks (question 6). *Amended 2026-10-17:* shown
-  on the kernel as root in KVM guests (`TestPlaneRunWalksTheMountTreeAsItStands`; 6.17.0-41 in both plane modes, and
-  AL2023 6.1, which loads no overlay module): after the fill, a directory outside every write entry bound beneath one
-  is written through, and an overlay whose lower layer is a `deny_read` directory is read through its merged path
-  (the plane decides the user's open on the overlay's own inode and skips overlayfs' open of the layer, enforce-plane
-  §2.12). A bind of what the rows key by inode is not enough: a `deny_read` directory or a `deny_write` target bound
-  beneath a write entry is still refused. So the residual reaches reads too, not only writes, and the notice names
-  both kinds of mount.
+- *Amended 2026-11-03 (NET09).* The plane now holds the mount topology from each process's migration into the pre-armed scope by refusing
+  `CAP_SYS_ADMIN` in every user namespace through the mandatory `capable` hook, in LSM and fmod_ret modes.
+  This covers legacy mounts, binds, remounts, unmounts, overlay mounts, the new mount APIs (including a detached
+  tree prepared before adoption), pivot_root, and mount-namespace creation and installation. Creating a user
+  namespace alone may still succeed; changing its mount view requires the refused capability. Other uses of
+  `CAP_SYS_ADMIN` are refused too, without an opt-out. No optional `userns_create` hook is needed, so older
+  supported kernels keep the same floor. A mode whose hook cannot be proved in BTF, loaded, attached and
+  exercised inside and outside the probe scope is unavailable; without a plane the boundary adoption fails.
+  The old disclosed bind/overlay escape by the adopted task is closed. Topology changes completed
+  before migration, operations already past their capability check then, and topology changes made by processes
+  outside the run remain outside this guarantee. The existing mount-tree test still demonstrates outside-root
+  changes: the plane walks the topology as it stands, and does not lock an entire shared namespace against root.
 - No network rule (b). A boundary adoption is tier cgroup with the plane; tier 3 is out of scope.
 - It is fail-open on the adopter's death, a boundary adoption too: the reaper releases the agent unconfined (the
   launch path kills instead), and run_end `orphaned` says so (Decision 4).
@@ -660,9 +654,9 @@ after the last pass is caught only by the next one, up to 16.
    supervisor-like seam; both are new code (a BPF change for the first). Not built.
 5. ~~Accept this as ADR 0055 and stage 2 of ADR 0054?~~ Accepted 2026-10-16; ADR 0054's
    P0 rows are unchanged (FEATURES W5).
-6. Holding the mount topology on an adopted process with decision-plane hooks on mounting and on namespace changes
-   (`sb_mount`, `move_mount`, `sb_pivotroot`, `userns_create` where the kernel has it), in both plane modes on every
-   matrix row, needs new BPF code and a load test of every row. Not built.
+6. Built 2026-11-03 (NET09): the mandatory `capable` hook refuses `CAP_SYS_ADMIN` in every user namespace,
+   covering the mount and namespace APIs at their common capability check instead of separate mount hooks and an
+   optional `userns_create`. See the implementation note for measured kernels and remaining verification.
 
 ## Verification at acceptance (2026-10-16)
 
@@ -679,8 +673,40 @@ root-cgroup rule.
 
 ## Implementation notes
 
-- 2026-10-16: the notice and `adoption-no-syscall-filter` name the
-  namespace arm and the mount topology ("What it does not do"); an adopted owner's own `~/.tego` is read-denied
+- 2026-11-04 (NET09 review): `adoption.prepare` now prepares, attaches and arms the **empty** destination scope
+  before calling `adopt.Move`. Previously, the move preceded Prepare/Attach/Arm, so an agent could observe its new
+  cgroup and bind an outside directory beneath a write entry while setup was still running, retaining that view.
+  The reaper's durable target is written before attachment, and failure unwinds the empty scope without moving
+  any process. The keyed-directory path check stays after migration: the agent can still rename an inode or
+  replace its name before moving, even though the destination is armed. Failure releases the moved tree as before.
+  The window reported to the caller includes setup through migration completion. CAP_SYS_ADMIN remains refused
+  broadly as documented above; no new namespace or capability exception is introduced.
+  `TestIntegrationAdoptFreezesTopologyAtMigration` uses the real runtime adoption and cgroup filesystem. Its
+  filesystem wrapper completes the actual cgroup.procs write, then lets the agent attempt a bind mount and waits
+  for the result before returning to setup. The same bind succeeds before migration. Unlike the earlier hook
+  test, it does not prepare or arm enforcement itself. That regression supplies the baseline/fixed KVM check.
+  NET07's standby scope remains unbuilt: discovery and cold setup still happen while the agent is outside the run.
+
+- 2026-11-03 (NET09): `decide_control.h` adds the mandatory `capable` hook, emitted in both plane modes.
+  It returns EACCES for CAP_SYS_ADMIN for every plane-governed task, regardless of the supplied credentials or
+  user namespace, and even when the slot header is missing. Kernel capability callers generally translate this
+  into EPERM. Record-only adoptions have no plane run marker and remain unrestricted. The recorder emits
+  `refused`, op `capable`, rule `mount-topology`, reason `landlock-topology`, target `capability 21`.
+  Doctor checks the prototype, load, attachment, execution and refusal using `move_mount` with invalid descriptors:
+  EBADF outside the scope, EPERM inside; no topology changes are made by the probe. A missing hook is never optional.
+  Its xattr probes use `user.*`: `trusted.*` requires CAP_SYS_ADMIN before the xattr hook, so that fixture would
+  correctly refuse at the topology floor without proving the xattr hook.
+  This path is shared by explicit adoption and the agent watcher, and by launched plane runs (whose inherited
+  Landlock and namespace filter already prohibit topology changes). Kernel verification and baseline comparisons use the topology regressions described here. The existing general fmod_ret deciding-program skip risk (SEC01) remains.
+  Sources for the common check:
+  [Linux fs/namespace.c](https://github.com/torvalds/linux/blob/v6.17/fs/namespace.c)
+  (`may_mount`, mount APIs, `mntns_install`) and
+  [kernel/nsproxy.c](https://github.com/torvalds/linux/blob/v6.17/kernel/nsproxy.c)
+  (`copy_namespaces`, `unshare_nsproxy_namespaces`).
+
+
+- 2026-10-16: the notice and `adoption-no-syscall-filter` then named the
+  namespace arm and the mount topology (superseded by NET09 above); an adopted owner's own `~/.tego` is read-denied
   (Decision 5); "no path" in `adoption-open-descriptors` is read from the process's mount table (replaced, below), and a process in
   another mount namespace is counted unread (Decision 3). Tests: `TestNoPathOnTheRealKernel` (a memfd, shared
   anonymous memory and the AIO ring on this kernel), `TestNoPathIsTheKernelsInternalDevices` (then named for the mount table),
@@ -737,8 +763,9 @@ root-cgroup rule.
   (Decision 3). Tests: `TestAdoptAsksTheRowsByEachKeyedDirectoryAboveTheName` (count 0, want 3, before the change),
   `TestARingOnTheSharedAnonInodeHasNoIdentity` (the ring kept its inode with the shared one stood in for by it, before
   the change), `TestRingIdentityOnTheRealKernel` and a row of `TestAdoptCountsARingItCannotReadUnread` (a ring with
-  no identity, held and mapped, is unread). The mount-topology residual ("What it does not do") is shown on the
-  kernel by `TestPlaneRunWalksTheMountTreeAsItStands`, and the notice names the overlay read. KVM guests: on
+  no identity, held and mapped, is unread). The mount-topology residual was shown on the
+  kernel by `TestPlaneRunWalksTheMountTreeAsItStands`, and the notice then named the overlay read (NET09 above
+  closes changes by the run; the test still demonstrates outside-root changes). KVM guests: on
   6.17.0-41, both boots (lsm=...,bpf and the default list), the whole `internal/watch/adopt` suite, the adoption
   tests of `internal/runtime` (the held-file and hard-link root tests included) and of `internal/cli` (both builds),
   and `TestPlaneRunKeyedFilesAreTheInodesItDecides` and `TestPlaneRunWalksTheMountTreeAsItStands` in both plane

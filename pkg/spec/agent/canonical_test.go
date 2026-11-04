@@ -166,6 +166,8 @@ func TestFSSectionEmptyDenyReadKeepsEveryField(t *testing.T) {
 			v.Field(i).Set(reflect.ValueOf(FSAssuranceKernel))
 		case f.Type == reflect.TypeFor[ReadsMode]():
 			v.Field(i).Set(reflect.ValueOf(ReadsHeld))
+		case f.Type == reflect.TypeFor[bool]():
+			v.Field(i).SetBool(true)
 		default:
 			t.Fatalf("FSSection.%s is a %s: extend this test to fill it", f.Name, f.Type)
 		}

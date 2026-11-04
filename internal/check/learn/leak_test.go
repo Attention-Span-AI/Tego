@@ -111,13 +111,13 @@ func TestLeakRule(t *testing.T) {
 			r.read(keyFile)
 			r.sent(sink, "").TS = r.t0.Add(6 * time.Second)
 		}, allow: []string{"tcp://" + sink}},
-		// The limit the header states: only the first contact counts.
+		// A later successful contact has its own read/send association.
 		{name: "a place first reached long before the read", build: func(r *run) {
 			r.sent(sink, "")
 			r.padding(30)
 			r.read(keyFile)
 			r.sent(sink, "")
-		}, allow: []string{"tcp://" + sink}},
+		}, leaks: []string{sink}},
 		{name: "a destination the contract names", build: func(r *run) {
 			r.read(keyFile)
 			r.sent(sink, "").Rule = "net[" + sink + "]"
@@ -397,8 +397,8 @@ func TestLeakProposalSaysWhatItLeavesOpen(t *testing.T) {
 	for _, want := range []string{
 		"env: there is no env section, so env stays open: every variable of the launcher's environment reaches the agent, secrets included.",
 		"so reads stay open: the agent can read any file that list does not name.",
-		"leaks: no place off the contract was first reached within 5 s and 16 lines of an open of a secret for reading.",
-		"it does not judge system lookups or port 53 on this machine, and a place first reached before the read is not caught.",
+		"leaks: no successful send off the contract was recorded within 5 s and 16 lines of an open of a secret for reading.",
+		"it does not judge system lookups or port 53 on this machine.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the proposal lacks %q:\n%s", want, text)
@@ -447,5 +447,25 @@ func TestLeakFoldStaysSmall(t *testing.T) {
 	}
 	if n := len(l.leak.secrets[keyFile].near); n != 1 {
 		t.Errorf("the secret holds %d near marks", n)
+	}
+}
+
+func TestLeakAssociationBudgetPreservesAWarning(t *testing.T) {
+	r := newRun(t, "/work")
+	r.read(keyFile)
+	r.sent(sink, "")
+	l := New(Options{Executable: testExecutable})
+	l.leak.links = maxDistinct
+	for _, e := range r.events {
+		if err := l.Add(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p, err := l.Proposal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Truncated || !slices.Equal(leakDests(p), []string{sink}) || !slices.Equal(p.LeakSecrets, []string{keyFile}) || len(allowed(t, p)) != 0 {
+		t.Fatal("association truncation lost its actual leak witness or admitted the destination")
 	}
 }

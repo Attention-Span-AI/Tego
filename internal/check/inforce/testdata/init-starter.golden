@@ -34,6 +34,9 @@ Limits: When the run is stopped or slowed down.
 
 Always on: Protections every run gets, written in no rules file.
   - Can never read the usual secret files: SSH and cloud keys, browser profiles, .env files and similar  [Enforced by the operating system; built in]
+  - Cannot reach session services, non-SSH credential agents, system D-Bus, X11 or the listed multiplexer and editor sockets; protects their folders from changes  [Best effort: tego refuses it, but a program built to race tego could get past; built in]
+  - Cannot reach tego's control sockets or local control ports; its own runtime folder stays available  [Best effort: tego refuses it, but a program built to race tego could get past; built in]
+  - Cannot open other terminals; its own terminal and ptys it creates stay available  [Enforced by the operating system and tego; built in]
   - Can never read or change tego's records of its runs  [Enforced by the operating system; built in]
   - Cannot change its own rules file  [Enforced by the operating system; built in]
   - Can read this computer's network setup: interface names and addresses, routes, and the nearby machines it has talked to  [built in]
@@ -45,4 +48,7 @@ Rule keys:
   change fs.write fs.write[/dev/null] enforced
   programs exec.allow exec[python3] enforced (+1 more)
   always-on built-in.deny_read fs.deny_read[$T/home/.ssh] enforced (+1 more)
+  always-on builtin.host_ipc builtin.host_ipc best_effort
+  always-on builtin.tego_surface builtin.tego_surface best_effort
+  always-on builtin.other_tty builtin.other_tty enforced
   always-on built-in.route-read route-query none

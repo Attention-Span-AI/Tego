@@ -51,7 +51,10 @@ func (r *runner) startWorkers(ctx context.Context) error {
 	r.wireKernelActivity()
 	r.pipe = newPipeline(r.queue, terminal, r.writer.RedactStage, r.writer.SplitBlobsStage,
 		runStamp{PID: os.Getpid(), TID: syscall.Gettid(), Cgroup: r.cg.ID},
-		r.attributeStage(), budgets(r.budget, r.deps.Clock), r.log)
+		r.attributeStage(), budgets(r.budget, r.deps.Clock), r.log, r.writer.AppendBatch)
+	if r.deps.Sink != nil {
+		r.pipe.pairWrite = nil
+	}
 	r.pipe.onLedgerFail = r.ledgerFailed
 	r.pipe.onCaptureLost = r.captureLost
 	r.runPipeline(ctx)
@@ -267,6 +270,7 @@ func (r *runner) startNotifyLoop(ctx context.Context) error {
 	// tego's own state, though the compiled table does not name them.
 	supOpts.OwnState = runtimeOwnState()
 	supOpts.MCPRelayed = r.mcpRelayedGate() // nil unless an MCP relay runs (ADR 0126 §4 "The gate")
+	supOpts.MCPStage = r.mcpStageGrant()
 	// The run's own runtime directory is the run's to read (its reason file, its CODEX_HOME): a held read there is not
 	// refused as tego's own state (ADR 0069 D3 (d)). Named as the deputy's pins name it, resolved.
 	if r.runtimeDir != "" {
@@ -279,6 +283,9 @@ func (r *runner) startNotifyLoop(ctx context.Context) error {
 	// such, never recorded allow. Only the tier-1 handle keeps the snapshot; a records-only run enforces nothing.
 	if s, ok := r.handle.(denyReadSnapshotter); ok && !policy.Observe {
 		supOpts.DenyReadSnapshot = s.DenyReadSnapshot()
+	}
+	if h, ok := r.handle.(interface{ BuiltinSocketDirectories() map[[2]uint64]string }); ok && !policy.Observe {
+		supOpts.BuiltinDirectories = h.BuiltinSocketDirectories()
 	}
 	// The open deputy completes the gate's escalating fs opens in the run (ADR 0041 Stage B, gate.completion: held).
 	if r.deputy != nil {

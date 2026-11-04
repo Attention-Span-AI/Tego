@@ -204,7 +204,7 @@ func TestHostSocketsUnixOnlyState(t *testing.T) {
 func TestHostSocketsRootTierBestEffort(t *testing.T) {
 	f := newFixture(t)
 	roots := WithTiers(backend.TierLandlock, backend.TierCgroup, backend.TierBPFLSM)
-	const msg = "best effort at the root tiers until they carry a kernel program for it"
+	const msg = "best effort at the root tiers for aliases and unsupported datagrams"
 	rt, ds := f.compile(f.load("version: 0\nname: t\ncommand: [\"python\"]\ntier: cgroup\n"), roots)
 	if !strings.Contains(render(ds), msg) || !hasCode(ds, CodeUnenforced) {
 		t.Errorf("a run that may land at tier cgroup must be told %q:\n%s", msg, render(ds))

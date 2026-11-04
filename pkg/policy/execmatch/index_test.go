@@ -94,7 +94,7 @@ func TestPrecedence(t *testing.T) {
 func TestStagedFinal(t *testing.T) {
 	ix := index(t, "deny: git push", "allow: git add", "allow: git log --oneline", "deny: rm -r")
 	prefix := func(argv ...string) execmatch.Result {
-		f := execmatch.Facts{Requested: argv[0], Image: argv[0], Argv0: argv[0], Argv: argv, ArgvComplete: false}
+		f := execmatch.Facts{NodeVersion: "20.19.4", Requested: argv[0], Image: argv[0], Argv0: argv[0], Argv: argv, ArgvComplete: false}
 		return ix.Decide(&f)
 	}
 	if r := prefix("git", "push"); !r.Final || r.Outcome != execmatch.OutcomeRefused {
@@ -129,8 +129,8 @@ func TestStagedFinal(t *testing.T) {
 	if r := prefix("node", "-p", "code"); r.Final {
 		t.Errorf("node -p code as a prefix: settled, want the rest of argv read (node -p code -i app.js runs app.js): %+v", r)
 	}
-	if r := prefix("node", "-e", "code", "app.js"); !r.Final {
-		t.Errorf("node reads no option past its script: node -e code app.js as a prefix is settled: %+v", r)
+	if r := prefix("node", "-e", "code", "app.js"); r.Final {
+		t.Errorf("node pre-scanners can read past its script: prefix must stay open: %+v", r)
 	}
 	// Ending at --trace-events-enabled=v, node's options have ended and the script is the next token, whatever it is.
 	if r := prefix("node", "--trace-events-enabled=v"); r.Final {

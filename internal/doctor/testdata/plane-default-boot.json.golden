@@ -24,7 +24,7 @@
         "mode": "fmod_ret",
         "ok": true,
         "tested": true,
-        "detail": "28 of 28 hooks load, attach and run, each refused in the scratch cgroup and passed outside it; 16 known answers matched",
+        "detail": "30 of 30 hooks load, attach and run, each refused in the scratch cgroup and passed outside it; 16 known answers matched",
         "scope": "the probe row was met 1 times in the scratch cgroup and 0 times outside it",
         "known": [
           {
@@ -436,6 +436,26 @@
       "decides": true
     },
     {
+      "hook": "lsm/capable",
+      "btf": true,
+      "loaded": false,
+      "attached": false,
+      "plane": "lsm",
+      "function": "bpf_lsm_capable",
+      "arity": 4,
+      "decides": true
+    },
+    {
+      "hook": "lsm/unix_may_send",
+      "btf": true,
+      "loaded": false,
+      "attached": false,
+      "plane": "lsm",
+      "function": "bpf_lsm_unix_may_send",
+      "arity": 2,
+      "decides": true
+    },
+    {
       "hook": "fmod_ret/security_file_open",
       "object": "decide_rd",
       "btf": true,
@@ -821,6 +841,34 @@
       "attached": true,
       "plane": "fmod_ret",
       "function": "security_socket_listen",
+      "arity": 2,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_capable",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_capable",
+      "arity": 4,
+      "decides": true,
+      "ran": true,
+      "inside": "refused",
+      "outside": "passed"
+    },
+    {
+      "hook": "fmod_ret/security_unix_may_send",
+      "object": "decide_rd",
+      "btf": true,
+      "loaded": true,
+      "attached": true,
+      "plane": "fmod_ret",
+      "function": "security_unix_may_send",
       "arity": 2,
       "decides": true,
       "ran": true,

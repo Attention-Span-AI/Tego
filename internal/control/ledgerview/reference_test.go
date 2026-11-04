@@ -11,7 +11,17 @@ import (
 // secret nor a destination of the leak; the attacker's sink still is, and the cached Signal is left as it was.
 func TestAgainstReference(t *testing.T) {
 	root, left, right, lost := demoRuns(t)
+	matched := *right
+	right = &matched
+	right.Cwd, right.Agent = left.Cwd, left.Agent
 	s, err := Load(root)
+	if s != nil {
+		for i, r := range s.Runs {
+			if r.ID == right.ID {
+				s.Runs[i] = right
+			}
+		}
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

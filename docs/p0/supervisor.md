@@ -269,7 +269,9 @@ answered, nothing recorded); and the notification gone (nothing answered, the la
 
 ## 5. Business rules
 
-**R1 — dispatch scope.** A notification for a syscall the table has no entry for is answered `ENOSYS`, as the
+**R1 — dispatch scope.** `pidfd_getfd` is notified under ADR 0113 and refused `builtin.other_tty`: descriptor imports cannot bypass the terminal domain. `ioctl(TIOCGPTPEER)` is relayed from a pinned master and installed with ADDFD.
+
+ A notification for a syscall the table has no entry for is answered `ENOSYS`, as the
 kernel answers every notifying syscall once the listener is gone, never `CONTINUE`, which would make a refusal by
 notification alone fail open on a missing or misnumbered entry. `TestEveryNotifiedSyscallHasAHandler`
 (enforce/landlock) walks every filter variant on both arches and fails when a notified number has no entry
@@ -707,10 +709,31 @@ target, a linked file, `RuleTable.DenyWriteLinked`, an fs entry), so its refusal
 the run, whose own path the model allows, is explained by the model's answer at the path it keys the file at
 (`planeKeyedAt`; amended 2026-10-25, GAPS C38, `TestHeldOpenKernelErrnoExplainedByIdentity`). A fanotify listener's refusal of a held open writes its own line,
 not the recorder's, so where the listener refuses what this loop's floor allowed (a model divergence), its line stands
-beside this loop's, a residual. A second residual: ADR 0041 D2's LSM label check is not built, so
-the deputy's open is made under the deputy's own LSM label, and a process of the run that an AppArmor profile or a
-SELinux domain confines more tightly than the deputy is not held to that confinement for its held opens, whose lines
-carry the kernel's answer to the deputy; the run warns of it on a host with such an LSM active (ADR 0041's review note).
+beside this loop's, a residual. *Amended 2026-11-04 (SEC08, ADR 0041 D2):* before a held file open acquires a descriptor,
+compare fresh trapping **TID**/actual-opener authority facts under `ID_VALID` before and after the reads.
+AppArmor current-string equality authorizes only from a reader whose policy-namespace depth is proven zero;
+otherwise invisible ancestor stack components can differ. Missing, malformed or nonzero depth refuses by default.
+The explicit top-level contract key `fs.apparmor_assume_root_namespace: true` (default false) permits an
+administrator assertion only for unreadable depth, accepting hidden-ancestor risk. It never overrides known
+nonzero/malformed depth, unreadable/different labels, unknown active modules, or SELinux/Smack facts. The
+canonical contract hashes the opt-in; compile warns and `run_start.best_effort` always lists
+`apparmor/assumed-root-namespace` when enabled, whether or not an open needed the assertion.
+SELinux requires equal complete `attr/current` contexts and, for potential file creation (`O_CREAT`/`O_TMPFILE`),
+equal readable `attr/fscreate` (successful empty reads mean policy defaults). Key and socket creation attributes
+are outside this file-open operation. Smack completions all refuse: its current label omits per-process rules,
+and there is no cross-task query to establish their equivalence. Generic attributes require SELinux to be the
+sole task-label LSM. A complete module set comes from `lsm_list_modules(2)` (6.8+) or securityfs, never inferred
+from CONFIG-dependent proc directories or one readable label. Unknown modules or unavailable facts refuse.
+A known difference returns `EACCES`, `held-label-differs`, reason `fs-gate`; missing authority facts return
+`held-label-unavailable`. The check precedes the overlapped read-only pin/open and every later destructive
+open; supervisor-completed approvals and alternates compare against the supervisor. Approval does not bypass this authority check or its explicit administrator assumption.
+The deputy cannot change labels or creation attributes under its filter, and the supervisor does not change them.
+Masking only the securityfs list can work through the syscall; missing AppArmor namespace-depth visibility
+still refuses matching visible labels by default; the warning names unreadable namespace depth, `EACCES` /
+`held-label-unavailable`, readable securityfs from the root policy namespace as the fix, and the administrator
+opt-in with its residual. No helper adopts another label, no policy equivalence is established,
+and no guarantee about network relays or non-open operations is added. No task label is cached. Fresh reads
+supersede Stage B's zero-task-/proc-read budget; the old timings are historical.
 
 **R7b — the unix-only state (ADR 0070).** A contract with no `net:` section and no `host_sockets: true`
 (`RuleTable.HostSocketsRefused`, `compiled.hostSockets`) admits every IP destination, but no connect is answered
@@ -2528,7 +2551,10 @@ needs the object's name, and no gate decided it.
 handler, only increments a slow-notification counter and, at `log.level: debug`, logs `recvAt`→now with `nr`. It is
 distinct from the **typical measured** fast-path figure (<10 µs, P0-DESIGN §9) — see §11, parent report. The tests that
 assert the round trip (`TestIntegrationFastPath`, `TestIntegrationFastPathOps`) hold the best of three runs to this
-ceiling, or on a loaded box to 12 times a pipe ping-pong measured in the same run; the production threshold is unchanged.
+ceiling, or on a loaded box to 12 times a pipe ping-pong measured in the same run, in budget mode
+(`make budgets`, uninstrumented). In the unit/race gate they use `testutil.CeilingFactor` times the 200 µs limit,
+as the other cross-process timing tests do: a pipe ping-pong measures neither race instrumentation nor the
+handler's CPU work. The production threshold is unchanged (ADR 0029, 2026-11-04 amendment).
 
 *Amended 2026-10-06 (ADR 0048 (3)):* a guarded exec of more than 128 arguments whose decision needs its whole vector can exceed the 200 µs soft ceiling while it holds a worker; such a hold counts as an anomaly like any other, and `run_end.supervisor.exec_rules` counts the command rules' refusals.
 
@@ -4791,3 +4817,15 @@ memory, and gaps in tests and wording. The rule bodies carry each change; this r
   times the reference box's cost), at `testutil.HostedSystemCallFactor` (2) times their figures. The same job compares
   C8's exec path with the base commit's (`BenchmarkExecCommandCost`), which a regression of about +7 µs fails there;
   `make budgets` holds every budget as written on the reference box (ADR 0048's 2026-11-02 note).
+
+*Amended 2026-11-03 (ADR 0069 D3(b), SEC09/SEC10; ADR 0041 D3, SEC11):* before releasing a held-read agent,
+retain O_PATH identities of launch-nested deny_read targets and denied descendants, respecting nearer write entries.
+Check identity before pathname on each held read and drain the protected-entry/ancestor/denied-directory watch queue
+before open and after descriptor verification. After open, a getdents64 step on every watched directory waits
+for earlier mutations to publish their events before the queue is drained. Unknown replacement history, lost watches, overflow or bounded-drain
+exhaustion permanently refuse held reads until restart. Snapshot/watch failure or the 8,192-visited-name/watch bound refuses
+launch. Close retained descriptors and watches on failed launch and after workers stop. Ordinary held write-opens
+also apply liveHeld to the pinned object, and every held open reloads live blocks before delivery. If a late check
+refuses after create/truncate, record the operation as completed with no descriptor delivered. Copied mutations,
+previously delivered descriptors, future name-only matches outside watched launch targets and D2's LSM labels retain
+their disclosed limits.

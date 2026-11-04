@@ -178,9 +178,9 @@ func targetMain() int {
 		return emitReport(rep)
 	}
 	install := sys.SeccompSetFilterNewListener
-	if os.Getenv(helperFilterGate) != "" {
-		// A gate harness's target runs opens on several threads, as an agent does: every thread carries the filter
-		// (an agent's do, from its first execve).
+	if os.Getenv(helperFilterGate) != "" || mode == modeNodePoolBench {
+		// Gate opens and parallel Node execs run on several threads, as an agent does:
+		// every thread must carry the filter (an agent's do, from its first execve).
 		install = installTSyncListener
 	}
 	fd, err := install(raw)
@@ -198,6 +198,14 @@ func targetMain() int {
 		return 3
 	}
 	switch mode {
+	case modeNodePoolBench:
+		var err error
+		rep.LoopOps, rep.LoopNS, err = targetNodePoolLoop()
+		rep.Checks = []checkResult{{Name: modeNodePoolBench}}
+		if err != nil {
+			rep.Checks[0].Err = err.Error()
+		}
+		return emitReport(rep)
 	case modeNoNet:
 		rep.Checks = noNetChecks()
 		return emitReport(rep)
@@ -1459,30 +1467,38 @@ func TestIntegrationSupervisor(t *testing.T) {
 // The figure is the best of up to three runs: a mean over 2000 operations absorbs every scheduling stall of
 // a loaded box (211 µs against the 200 µs ceiling with the load average near 40, 2026-09-29), while the path's
 // own cost is what the best run shows. The ceiling is the soft ceiling or, on a box whose scheduler alone
-// costs more, noiseFactor times the median pipe ping-pong measured in the same run (noiseGauge): a per-op slowdown
-// still exceeds it, a busy machine no longer does. A run under the ceiling ends the loop early.
+// costs more, noiseFactor times the median pipe ping-pong measured in the same run (noiseGauge). That is
+// the budget-mode assertion. The unit/race gate uses the shared timing framework's ceiling: a pipe
+// ping-pong does not measure race instrumentation or slower CPU work in the notification handler.
 func TestIntegrationFastPath(t *testing.T) {
+	mode := testutil.TimingMode(t)
 	const ops, attempts = 2000, 3
 	best := time.Duration(1<<63 - 1)
+	budget := testutil.Budget{Name: "record+CONTINUE round trip", Limit: SoftCeiling, Spec: "supervisor R22"}
 	ceiling, gauge := SoftCeiling, new(noiseGauge)
+	if !mode.Budgets() {
+		ceiling = budget.Ceiling()
+	}
 	for i := 0; i < attempts && best > ceiling; i++ {
 		h := startHarness(t, ops)
 		m := h.stop(t)
 		if h.report.LoopOps != ops {
 			t.Fatalf("the target reported %d operations, want %d", h.report.LoopOps, ops)
 		}
+		if m.Notifications < ops {
+			t.Errorf("%d notifications for %d notified calls", m.Notifications, ops)
+		}
 		per := time.Duration(h.report.LoopNS / int64(h.report.LoopOps))
 		t.Logf("attempt %d: record+CONTINUE round trip %v per notification over %d operations (budget %v)",
 			i+1, per, ops, 10*time.Microsecond)
 		t.Logf("metrics: notifications=%d held_ms=%d anomalies=%d", m.Notifications, m.HeldMS, m.Anomalies)
 		best = min(best, per)
-		if best > ceiling {
+		if best > ceiling && mode.Budgets() {
 			ceiling = max(ceiling, gauge.ceiling(t))
+			budget.Limit = ceiling
 		}
 	}
-	if best > ceiling {
-		t.Errorf("round trip %v, the best of %d runs, exceeds the ceiling %v", best, attempts, ceiling)
-	}
+	mode.Judge(t, budget, testutil.Figure{Wall: best})
 }
 
 // TestIntegrationListenerHangup is the end of a run: once the last task carrying the filter is gone the

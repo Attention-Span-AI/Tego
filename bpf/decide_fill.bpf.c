@@ -137,6 +137,7 @@ static __always_inline void tego_fill_one(struct tego_plane_fill_cfg *cfg, struc
         row.kind = w->kind;
         row.scope = w->scope; /* ADR 0043 D4: a scope directory's bit, which only the name check's climb reads */
         row.exec_rule = w->exec_rule;
+        row.pad2 = w->pad2; /* C40: immutable ledger control-name classifier */
         err = bpf_map_update_elem(rows, &key, &row, BPF_ANY);
         if (err) {
             w->status = TEGO_FILL_UPDATE;

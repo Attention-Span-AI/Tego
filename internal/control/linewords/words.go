@@ -26,7 +26,7 @@ var labels = map[string]string{
 	"argv_truncated": "Command line cut", "argv_facts": "How the command line was read", "argv_from": "Command line taken from",
 	"argv_read": "Command line arguments read", "argv_decided": "Command line decided on", "exec_id": "Process id (this run)",
 	"parent_exec_id": "Parent process id", "attempt_path": "Path the agent asked for", "path_search": "A PATH lookup",
-	"fileless": "Ran from memory, not a file", "command_rule": "Command rule", "command_list": "Command list",
+	"fileless": "Executable in memory", "exec.dropped": "Program file written by the agent", "command_rule": "Command rule", "command_list": "Command list",
 	"command_match": "Command match", "command_via": "Command matched by", "closure_of": "Allowed as part of",
 	"signal": "Signal", "dst": "Destination", "host": "Host name", "proto": "Protocol", "method": "HTTP method",
 	"http_authority": "HTTP host", "peer": "Peer", "detected_bypass": "Bypass detected", "mechanism": "Refused by",

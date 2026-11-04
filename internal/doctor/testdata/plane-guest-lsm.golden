@@ -1,6 +1,6 @@
 build decide_rd: bpf_rdonly_cast is in BTF
 bpf_loop=true rdonly_cast=true lto=none
-mode lsm ok=true tested=true: 28 of 28 hooks load, attach and run, each refused in the scratch cgroup and passed outside it; 16 known answers matched [the probe row was met N times in the scratch cgroup and 0 times outside it]
+mode lsm ok=true tested=true: 30 of 30 hooks load, attach and run, each refused in the scratch cgroup and passed outside it; 16 known answers matched [the probe row was met N times in the scratch cgroup and 0 times outside it]
   known deny-read-across-mount: refused counters none, want refused counters none
   known stale-row: passed counters none, want passed counters none
   known identity-mismatch: refused counters mismatch=1, want refused counters mismatch=1
@@ -17,7 +17,7 @@ mode lsm ok=true tested=true: 28 of 28 hooks load, attach and run, each refused 
   known name-dependency-dir: passed counters none, want passed counters none
   known name-dir-renamed-within: passed counters none, want passed counters none
   known name-dir-moved-out: refused counters none, want refused counters none
-mode fmod_ret ok=true tested=true: 28 of 28 hooks load, attach and run, each refused in the scratch cgroup and passed outside it; 16 known answers matched [the probe row was met N times in the scratch cgroup and 0 times outside it]
+mode fmod_ret ok=true tested=true: 30 of 30 hooks load, attach and run, each refused in the scratch cgroup and passed outside it; 16 known answers matched [the probe row was met N times in the scratch cgroup and 0 times outside it]
   known deny-read-across-mount: refused counters none, want refused counters none
   known stale-row: passed counters none, want passed counters none
   known identity-mismatch: refused counters mismatch=1, want refused counters mismatch=1
@@ -63,6 +63,9 @@ lsm/ptrace_traceme bpf_lsm_ptrace_traceme arity=1 decides=true btf=true loaded=t
 lsm/bpf bpf_lsm_bpf arity=4 decides=true btf=true loaded=true attached=true ran=true inside=refused outside=passed
 lsm/key_permission bpf_lsm_key_permission arity=3 decides=true btf=true loaded=true attached=true ran=true inside=refused outside=passed
 lsm/socket_listen bpf_lsm_socket_listen arity=2 decides=true btf=true loaded=true attached=true ran=true inside=refused outside=passed
+lsm/capable bpf_lsm_capable arity=4 decides=true btf=true loaded=true attached=true ran=true inside=refused outside=passed
+
+lsm/unix_may_send bpf_lsm_unix_may_send arity=2 decides=true btf=true loaded=true attached=true ran=true inside=refused outside=passed
 fmod_ret/security_file_open security_file_open arity=1 decides=true btf=true loaded=true attached=true ran=true inside=refused outside=passed
 fmod_ret/security_bprm_check security_bprm_check arity=1 decides=true btf=true loaded=true attached=true ran=true inside=refused outside=passed
 fmod_ret/security_path_rename security_path_rename arity=5 decides=true btf=true loaded=true attached=true ran=true inside=refused outside=passed
@@ -91,3 +94,6 @@ fmod_ret/security_ptrace_traceme security_ptrace_traceme arity=1 decides=true bt
 fmod_ret/security_bpf security_bpf arity=4 decides=true btf=true loaded=true attached=true ran=true inside=refused outside=passed
 fmod_ret/security_key_permission security_key_permission arity=3 decides=true btf=true loaded=true attached=true ran=true inside=refused outside=passed
 fmod_ret/security_socket_listen security_socket_listen arity=2 decides=true btf=true loaded=true attached=true ran=true inside=refused outside=passed
+fmod_ret/security_capable security_capable arity=4 decides=true btf=true loaded=true attached=true ran=true inside=refused outside=passed
+
+fmod_ret/security_unix_may_send security_unix_may_send arity=2 decides=true btf=true loaded=true attached=true ran=true inside=refused outside=passed

@@ -13,6 +13,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/runtime/capture/uprobe"
 	"github.com/attention-span-ai/tego/internal/runtime/deputy"
 	cgroupenforce "github.com/attention-span-ai/tego/internal/runtime/enforce/cgroup"
+	"github.com/attention-span-ai/tego/internal/runtime/mcprelay"
 	"github.com/attention-span-ai/tego/internal/runtime/supervisor"
 	"github.com/attention-span-ai/tego/internal/selftest"
 )
@@ -28,6 +29,9 @@ func main() {
 	// The child stage is dispatched before anything else so no CLI setup runs inside the run's process.
 	if len(os.Args) > 1 && os.Args[1] == childCommand {
 		os.Exit(childMain(os.Args[2:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == mcprelay.ServerCommand {
+		os.Exit(mcprelay.ServerMain(os.Args[2:]))
 	}
 	// So is the run's open deputy, which the child stage starts in the run's own domain and cgroup (ADR 0041 D2): it
 	// confines itself before it says hello, and walks with the supervisor's own walk.

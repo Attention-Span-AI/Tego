@@ -53,6 +53,8 @@ func TestLeakRuleAgreesWithTheVerdict(t *testing.T) {
 		{"a failed open next to the send, the read far from it", slices.Concat([]ln{{"fs", `"rule":"unmatched","verdict":"observed","op":"open","errno":2,"path":"/home/u/.ssh/id_rsa"`}, {"net", sink}}, pad(30), []ln{{"fs", key}}), nil},
 		{"a refused read next to the send, the read far from it", slices.Concat([]ln{{"refused", `"rule":"fs.deny_read[/home/u/.ssh/]","reason":"read-denied","op":"open","target":"/home/u/.ssh/id_rsa"`}, {"net", sink}}, pad(30), []ln{{"fs", key}}), nil},
 		{"an ask, then a send", []ln{{"ask", `"ask_id":"q-1","ask_rule":"fs.ask_read[/p/]","hold":"open","op":"read","target":"/home/u/.ssh/id_rsa"`}, {"net", sink}}, nil},
+		{"unrelated successful and refused pairs", slices.Concat([]ln{{"fs", key}, {"refused", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"198.51.100.4:443"`}}, pad(30), []ln{{"refused", `"rule":"fs.deny_read[/home/u/.ssh/]","reason":"read-denied","op":"open","target":"/home/u/.ssh/id_ed25519"`}, {"net", sink}}), nil},
+		{"later successful send to a known destination", slices.Concat([]ln{{"net", sink}}, pad(30), []ln{{"fs", key}, {"net", sink}}), []string{"203.0.113.9:443"}},
 	}
 	const id = "r-12345678-0aaaaaaaaaaaa-abcdef"
 	t0 := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)

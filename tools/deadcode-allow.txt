@@ -92,8 +92,6 @@ github.com/attention-span-ai/tego/internal/platform/startphase.Stack	tag-only	in
 github.com/attention-span-ai/tego/internal/platform/startphase.Stat	tag-only	internal/bpf/loadstats_tegotesthooks.go records a phase's time with it
 github.com/attention-span-ai/tego/internal/platform/sys.Accept4	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-MID/FD-LATE (C5-C19), which move its callers onto it
 github.com/attention-span-ai/tego/internal/platform/sys.InertForTest	test-api	test fakes in other packages hand out a *FD that closes nothing; ADR 0023 C3's lint (F4) keeps every caller in a _test.go file
-github.com/attention-span-ai/tego/internal/platform/sys.LandlockCreateRulesetFD	pending	ADR 0023 C1/C2 owning wrapper over sys.LandlockCreateRuleset, built ahead of FD-LATE (landlock, C5), which calls it
-github.com/attention-span-ai/tego/internal/platform/sys.OwnSyscall	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-MID/FD-LATE (C5-C19), which move its callers onto it
 github.com/attention-span-ai/tego/internal/platform/sys.PidfdOpenThreadFD	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-MID/FD-LATE (C5-C19), which move its callers onto it
 github.com/attention-span-ai/tego/internal/platform/sys.Pipe2	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-MID/FD-LATE (C5-C19), which move its callers onto it
 github.com/attention-span-ai/tego/internal/platform/sys.ReceiveRights	pending	ADR 0023 C1/C2 owning helper, built ahead of FD-LATE (ask and dnsbroker, C14), which calls it

@@ -290,7 +290,7 @@ func TestWatchedReached(t *testing.T) {
 		{"a send 17 lines after the read", 10 * time.Millisecond,
 			slices.Concat([][2]string{{"fs", key}}, many(NearSecretLines+1, [2]string{"fs", noise}), [][2]string{send("203.0.113.9:443")}), VerdictWatched, 1},
 		{"a send to a host it contacted long before", time.Second,
-			slices.Concat([][2]string{send("203.0.113.9:443")}, many(30, [2]string{"fs", noise}), [][2]string{{"fs", key}, send("203.0.113.9:443")}), VerdictWatched, 1},
+			slices.Concat([][2]string{send("203.0.113.9:443")}, many(30, [2]string{"fs", noise}), [][2]string{{"fs", key}, send("203.0.113.9:443")}), VerdictLeak, 0},
 		{"no send at all", time.Second, [][2]string{{"fs", key}}, VerdictWatched, 0},
 		{"lookups and a unix socket", time.Minute, [][2]string{{"fs", key},
 			{"net", `"rule":"net.resolver","verdict":"observed","proto":"udp","dst":"127.0.0.53:53"`},

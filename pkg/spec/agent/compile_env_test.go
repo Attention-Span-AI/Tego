@@ -147,3 +147,46 @@ func TestSecretEnvNamesMatch(t *testing.T) {
 		}
 	}
 }
+
+func TestEnvProjectDirectoryTokenDoesNotExpandShellVariables(t *testing.T) {
+	f := newFixture(t)
+	c := f.load("version: 0\nname: a\ncommand: [python]\nenv:\n  set:\n    TMPDIR: '${TEGO_PROJECT_DIR}/.tego/tmp'\n    LITERAL: '$HOME/${UNSET}/$(false)'\n")
+	rt, ds := f.compile(c)
+	if HasErrors(ds) {
+		t.Fatal(render(ds))
+	}
+	if !filepath.IsAbs(rt.Set["TMPDIR"]) || strings.Contains(rt.Set["TMPDIR"], ProjectDirToken) {
+		t.Fatalf("TMPDIR: %q", rt.Set["TMPDIR"])
+	}
+	if rt.Set["LITERAL"] != "$HOME/${UNSET}/$(false)" {
+		t.Fatalf("literal changed: %q", rt.Set["LITERAL"])
+	}
+	if c.Env.Set["TMPDIR"] != ProjectDirToken+"/.tego/tmp" {
+		t.Fatal("compile changed the source contract and its hash")
+	}
+}
+
+func TestCodexHomeSourceIsInformationalButOverridesStillWarn(t *testing.T) {
+	f := newFixture(t)
+	c := f.load("version: 0\nname: a\ncommand: [python]\ncapture: forwarder\nmodels:\n  - {provider: openai, host: api.openai.com, port: 443}\nenv:\n  set:\n    CODEX_HOME: /config/source\n    TEGO_RUN_ID: wrong\n    OPENAI_BASE_URL: http://elsewhere\n")
+	_, ds := f.compile(c)
+	found := map[string]bool{}
+	for _, d := range ds {
+		if d.Code != CodeEnvRuntimeReserved {
+			continue
+		}
+		for _, name := range []string{"CODEX_HOME", "TEGO_RUN_ID", "OPENAI_BASE_URL"} {
+			if strings.Contains(d.Message, name) {
+				found[name] = true
+				if d.Informational() != (name == "CODEX_HOME") {
+					t.Errorf("%s: informational=%v: %+v", name, d.Informational(), d)
+				}
+			}
+		}
+	}
+	for _, name := range []string{"CODEX_HOME", "TEGO_RUN_ID", "OPENAI_BASE_URL"} {
+		if !found[name] {
+			t.Errorf("no diagnostic for %s: %+v", name, ds)
+		}
+	}
+}

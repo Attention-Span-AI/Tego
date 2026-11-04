@@ -90,6 +90,9 @@ type Pattern struct {
 	// entry. Such a pattern matches exactly: Argv0 is the argv[0] it admits, and Words every element after it.
 	Runtime, Argv0 string
 
+	// fallback is this entry parsed against the interpreter compatibility row.
+	fallback *Pattern
+
 	genWords, genOpts []string // the generic fallback's non-option and option words
 }
 
@@ -284,6 +287,14 @@ func Parse(entry string, list List, rows *Rows) (*Pattern, error) {
 	}
 	if err := p.parseRow(rest); err != nil {
 		return nil, err
+	}
+	if spec := p.Row.Interp; spec != nil && spec.Fallback != nil {
+		fallback, err := Parse(entry, list, NewRows(spec.Fallback))
+		if err == nil {
+			p.fallback = fallback
+		}
+		// An inventory-only allow option may be unknown to the compatibility
+		// row. Match fails closed there rather than falling back to token matching.
 	}
 	return p, nil
 }

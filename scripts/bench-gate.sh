@@ -298,15 +298,10 @@ head=${head:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}
 head=$(CDPATH='' cd -- "$head" && pwd)
 packages=${BENCH_GATE_PACKAGES:-$default_packages}
 out=${out:-$(mktemp -d "${TMPDIR:-/tmp}/bench-gate.XXXXXX")}
-# DIR's base/ and head/ are emptied before a run, so a DIR that holds anything else is one this script did not
-# make, and is refused rather than emptied: -o names it, and a slip there must not remove someone's base/.
-if [ -e "$out" ] && [ ! -e "$out/.bench-gate" ] && [ -n "$(ls -A "$out")" ]; then
-	echo "bench-gate: $out is not empty and is not a directory bench-gate.sh made; not using it" >&2
-	exit 2
-fi
-mkdir -p "$out"
-: >"$out/.bench-gate"
-rm -rf "${out:?}/base" "${out:?}/head" "$out/notes"
+# shellcheck source=scripts/safe-output-dir.sh
+. "$(dirname -- "$0")/safe-output-dir.sh"
+out=$(safe_output_dir "$out" .bench-gate "$(dirname -- "$0")/..") || exit 2
+rm -rf -- "${out:?}/base" "${out:?}/head" "$out/notes"
 echo "bench-gate: base $base, head $head, $rounds rounds at $benchtime, results in $out"
 
 broken=0

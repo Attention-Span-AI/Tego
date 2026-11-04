@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -297,6 +298,7 @@ type Recorder struct {
 	// which no read is aggregated (SEMANTICS §7).
 	silent bool
 	full   bool
+	ownTTY [2]uint64 // inherited terminal file identity for builtin.other_tty attribution
 	// exits drops the second record of one process's exit (exitSeen); drain-goroutine-owned.
 	exits exitSeen
 	// owned holds the run's ring Start opened and Stop must close; empty when the caller supplied its own
@@ -375,7 +377,7 @@ var _ runtime.DecisionPlaneNamer = (*Recorder)(nil)
 // counter, from which Start opens the run's own ring by its slot.
 func New(opts Options) (*Recorder, error) {
 	r := &Recorder{opts: opts, rules: newRuleIndexAt(opts.Rules, cmp.Or(opts.mountinfo, selfMountinfo)),
-		gaps: map[string]int64{}}
+		gaps: map[string]int64{}, ownTTY: inheritedTTYIdentity()}
 	if opts.Rules != nil {
 		r.silent = opts.Rules.Record == agent.RecordOff
 		r.full = opts.Rules.Record == agent.RecordFull
@@ -1448,6 +1450,12 @@ func (r *Recorder) handleExec(rec *Record) {
 		rule, verdict, reason = r.planeExecRule(idx), record.VerdictAllow, ""
 		payload.Mechanism, payload.DecisionPlane = record.MechanismPlane, r.opts.DecisionPlane
 	}
+	if !r.opts.ExecPins && joined && naming.RuntimeRule != "" && verdict != record.VerdictRefused &&
+		!rec.Exec.ArgvTruncated && !naming.ArgvTruncated && slices.Equal(rec.Exec.Argv, naming.Argv) {
+		// A process-bound allowance is not an ambient command pattern. Name its authority only after the
+		// kernel confirms the successful vector; pinned runs wait for their held sample in settleExec.
+		rule, verdict, reason = naming.RuntimeRule, record.VerdictAllow, ""
+	}
 	ev := r.event(rec, record.KindExec, rule, verdict, reason)
 	mcp := r.execMCP(rec, naming, joined)
 	if r.opts.ExecResults {
@@ -1518,7 +1526,14 @@ func (r *Recorder) handleOpen(rec *Record) {
 	// fallback: where a plane mode decides the run there is no listener, the plane is in the chain and stamps each
 	// refusal, and an open the chain let through happened.
 	listener := !write && m.DenyRead && m.Read.Unenforced && r.opts.DecisionPlane == ""
+	builtinTTY := r.builtinTTYRefusal(rec, path)
 	fv := r.fsVerdict(rec, path, !listener, func() (record.Verdict, record.Reason) {
+		if builtinTTY {
+			if write {
+				return record.VerdictRefused, record.ReasonWriteOutsideContract
+			}
+			return record.VerdictRefused, record.ReasonReadDenied
+		}
 		if write && m.Entry == nil && rec.FS.RetOK {
 			// A write-open outside every entry: the Landlock ruleset the run inherits grants no write there, so
 			// the chain's refusal is that ruleset's, unmatched, as compile --test answers it. Asked with no chain
@@ -1560,6 +1575,9 @@ func (r *Recorder) handleOpen(rec *Record) {
 		return
 	}
 	rule := fv.ruleOr(m.Rule)
+	if builtinTTY && verdict == record.VerdictRefused {
+		rule = agent.BuiltinOtherTTY
+	}
 	if write && verdict == record.VerdictAllow && !rec.FS.PathTruncated {
 		rule = r.grantName(record.FSOpen, path, rule)
 	}

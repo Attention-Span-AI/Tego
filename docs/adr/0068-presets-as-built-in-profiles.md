@@ -153,3 +153,44 @@ the contract stays the one readable list of what a run may reach.
   `setup.Create` makes the folders. Not built: `--agent` and the harness descriptor
   (so no `models:` entry is written for a detected harness, and the compile warning deferred above stays deferred),
   `--prompt`.
+
+
+### Amendment 2026-11-03: agent setup and movable projects
+
+`tego init --agent claude-code|codex [--prompt <text>]` selects a descriptor in
+`internal/setup/harness.go`. With no explicit presets it uses no-secrets, no-prod and
+repo-only-writes, and with no write entries it grants `./out/`. It writes the harness,
+its model through the capture forwarder, the required environment names and writable
+state and terminal paths. It never reads credentials. Claude Code runs one task in
+print mode (`claude -p --permission-mode acceptEdits`), accepting an API key
+or setup-token; Codex uses `codex exec` with `CODEX_API_KEY`. ChatGPT sign-in remains
+an explicit example contract because the forwarder does not capture it. The generated
+notes name the credentials and the next commands. `--list` includes these descriptors.
+`--command` and `--agent` cannot be combined. `--prompt` is one literal argv element,
+including quotes and shell metacharacters; it needs `--agent`. Both agents default to
+“Describe this project without changing files.” when no prompt is given. No model is
+called by init; the user starts the agent with `tego run agent.yaml`.
+
+Round-2 correction: fresh interactive Claude state performs a direct connectivity
+check which ignores the forwarder's base URL (test/poc/interactive-claude/RESULTS.md).
+Init therefore selects print mode; it does not seed onboarding or login state. For
+the full-screen interface, use examples/agents/claude-code-interactive.yaml, whose
+direct model connection is allowed and whose model bytes are not captured.
+
+Generated env.set paths use `${TEGO_PROJECT_DIR}`. At compile time this exact token
+expands to the absolute working directory, the same base used by relative fs entries.
+No other shell or environment expression is expanded, and the source contract and its
+hash retain the token. This keeps Go caches (which need absolute paths), TMPDIR and
+agent state paths aligned with their write grants after a project moves. This does not
+change the existing rule that a contract is run from its project's directory.
+
+The earlier implementation note's missing --agent, descriptor and --prompt are closed.
+Automatic contract selection for an unregistered `tego run claude` remains an owner
+choice; this amendment creates explicit contracts and changes no registry precedence.
+
+The installed Codex rehearsal clarified its generated CODEX_HOME comment: it names
+settings to copy; the forwarder supplies a writable home for each run. This supported
+settings source is an informational compile note (also visible with run -v), rather
+than an actionable warning on every start. Overrides of actual runtime-owned values
+remain warnings. Init leaves informational notes to the compile command it prints as
+its next step, and keeps errors and warnings about weakened enforcement visible.

@@ -290,6 +290,13 @@ func newPlaneIndex(rt *agent.RuleTable) *planeIndex {
 // denyWriteIdx is RuleTable.DenyWriteTarget as a position for a clean path p: the first target at or above
 // p, or, with ancestors (a rename), beneath it; the tests hold it to the scan in planerows_test.go.
 func (x *planeIndex) denyWriteIdx(p string, ancestors bool) (int, bool) {
+	if rule := x.rt.Builtins.WriteRule(p, ancestors); rule != "" {
+		for j, r := range x.rt.DenyWrite {
+			if r.BuiltinRule == rule && (agent.Covers(r.Canonical(), p) || ancestors && agent.Covers(p, r.Canonical())) {
+				return j, true
+			}
+		}
+	}
 	best := -1
 	take := func(j int) {
 		if best < 0 || j < best {
@@ -298,6 +305,9 @@ func (x *planeIndex) denyWriteIdx(p string, ancestors bool) (int, bool) {
 	}
 	for cur, ok := p, true; ok; cur, ok = parent(cur) {
 		if j, hit := x.dwAt[cur]; hit {
+			if x.rt.DenyWrite[j].BuiltinRule != "" && x.rt.Builtins.OwnPath(p) {
+				continue
+			}
 			take(j)
 		}
 	}

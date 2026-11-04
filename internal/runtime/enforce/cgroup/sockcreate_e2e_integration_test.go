@@ -195,7 +195,7 @@ func TestIOUringSocketsMeetTheKernelBackstops(t *testing.T) {
 	for _, mode := range modes {
 		t.Run(mode, func(t *testing.T) {
 			if uringOff != "" {
-				t.Skipf("kernel.io_uring_disabled is %s here: io_uring_setup is EPERM to the agent whatever the run admits", uringOff)
+				t.Logf("io_uring_disabled=%s; compile refusal must still hold", uringOff)
 			}
 			switch mode {
 			case PlaneFanotify:
@@ -332,6 +332,9 @@ func dumpRefusals(t *testing.T, events []map[string]any) {
 
 // fallbackIOUringCells is the fanotify fallback's half: p with the test seam, then q, the control, without it.
 func fallbackIOUringCells(t *testing.T, bin string, p, q *planeProject) {
+	if builtinRingStartupRefused(t, bin, p, "cgroup", PlaneFanotify) {
+		return
+	}
 	t.Helper()
 	res, events, out := uringRun(t, bin, p, PlaneFanotify, "TEGO_TEST_FALLBACK_IOURING=1")
 	if !strings.Contains(out, "TEGO_TEST_FALLBACK_IOURING") {
@@ -405,6 +408,9 @@ func fallbackIOUringCells(t *testing.T, bin string, p, q *planeProject) {
 // planeIOUringCells is a plane mode's half, at tier cgroup or tier bpflsm: io_uring admitted in a product build, the
 // plane refusing first.
 func planeIOUringCells(t *testing.T, bin, tier, mode string, p *planeProject) {
+	if builtinRingStartupRefused(t, bin, p, tier, mode) {
+		return
+	}
 	t.Helper()
 	res, events, _ := uringRunAt(t, bin, p, tier, mode)
 	if strings.HasPrefix(res["tcp-inline"], "unavailable") {
@@ -435,4 +441,20 @@ func planeIOUringCells(t *testing.T, bin, tier, mode string, p *planeProject) {
 	wantURingULP(t, res, events)
 	wantSocketFamilies(t, events, tier, true)
 	dumpRefusals(t, events)
+}
+
+// C40 supersedes the legacy admitted-ring cases below each caller's guard.
+// Keep their kernel-backstop assertions for a future identity-safe ring path;
+// the product must currently refuse before any such workload starts.
+func builtinRingStartupRefused(t *testing.T, bin string, p *planeProject, tier, mode string) bool {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	var out bytes.Buffer
+	err := p.runAt(ctx, bin, tier, "agent.yaml", mode, &out).Run()
+	if err != nil && strings.Contains(out.String(), "builtin.host_ipc") {
+		return true
+	}
+	t.Fatalf("ring workload bypassed the immutable identity boundary: %v\n%s", err, out.String())
+	return false
 }

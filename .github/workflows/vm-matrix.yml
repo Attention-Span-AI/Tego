@@ -213,3 +213,50 @@ jobs:
             ${{ runner.temp }}/coverage/vm/logs/
             ${{ runner.temp }}/coverage/killtests/vm/matrix/debian-13/results.tsv
           if-no-files-found: warn
+
+  held-labels:
+    # Live policy fixtures have dedicated boots; ordinary root-suite skips do
+    # not apply. This workflow runs nightly, on release tags and by hand, never
+    # on pull_request. Per-PR CI runs the comparator units, not these proofs.
+    name: held labels (${{ matrix.policy }}, ${{ matrix.kernel }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - policy: selinux
+            kernel: fedora-7.0
+          - policy: smack
+            kernel: ubuntu-25.10
+    env:
+      POLICY: ${{ matrix.policy }}
+      GOMAXPROCS: '4'
+      GOMEMLIMIT: 2GiB
+      TEGO_VM_MEM: 3G
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: enable KVM and install the fixture compiler
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm --settle
+          test -r /dev/kvm && test -w /dev/kvm
+          sudo apt-get update -qq
+          sudo apt-get install -y secilc
+      - name: load policy and require live regressions without skips
+        run: test/vm/held-label-tests.sh "$POLICY" "$RUNNER_TEMP/held-labels"
+      - name: upload live policy evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: held-labels-${{ matrix.policy }}-${{ matrix.kernel }}
+          path: |
+            ${{ runner.temp }}/held-labels/guest.status
+            ${{ runner.temp }}/held-labels/guest.console
+          if-no-files-found: error

@@ -77,7 +77,7 @@ func e2eScenario(t *testing.T, py, tego, claude, s string) {
 	ws, home, outside := filepath.Join(root, "ws"), filepath.Join(root, "home"), filepath.Join(root, "outside")
 	cfgDir := filepath.Join(root, "cfg") // tego denies the agent this directory: nothing the agent reads is under it
 	for _, d := range []string{filepath.Join(ws, "work"), filepath.Join(ws, "bin"), filepath.Join(ws, ".claude-state", "tmp"),
-		filepath.Join(home, ".claude"), outside, filepath.Join(root, "xdg"), filepath.Join(cfgDir, "runs"), filepath.Join(root, "stub")} {
+		filepath.Join(home, ".claude"), outside, filepath.Join(cfgDir, "runs"), filepath.Join(root, "stub")} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -123,13 +123,12 @@ func e2eScenario(t *testing.T, py, tego, claude, s string) {
 	run := exec.Command(tego, "run", contractPath, "--", "claude", "-p", "--permission-mode", "bypassPermissions",
 		"--script", script, "--result", result, "Carry out the scripted steps.")
 	run.Dir = ws
-	// tego's chain anchor and own log go beside its machine config, not in TegoEnv's directory, which also holds the
-	// runtime directory: tego denies the agent its own directories, and the provisioned settings file must stay
-	// readable (RESULTS.md R4; tego does not yet refuse a provision the run denies).
+	// Keep durable state beside the private machine config. The test-owned short runtime
+	// holds %R and the provisioned settings, outside the agent-denied config directory (RESULTS.md R4).
 	run.Env = testutil.TegoEnv(t, root, "TEGO_CONFIG="+cfg, "TEGO_TEST_CHAIN_ANCHOR="+filepath.Join(cfgDir, "chain.log"),
 		"TEGO_TEST_OWN_LOG_HOME="+filepath.Join(cfgDir, "home"), "HOME="+home, "LANG=C.UTF-8", "SSL_CERT_FILE="+cert,
 		"PATH="+filepath.Join(ws, "bin")+":"+filepath.Dir(claude)+":/usr/bin:/bin", "ANTHROPIC_API_KEY=dummy-not-a-key",
-		"CLAUDE_CODE_SIMPLE=", "CLAUDE_CODE_SAFE_MODE=")
+		"CLAUDE_CODE_SIMPLE=", "CLAUDE_CODE_SAFE_MODE=", "XDG_RUNTIME_DIR="+testutil.ShortRuntimeDir(t))
 	if out, err := run.CombinedOutput(); err != nil {
 		t.Fatalf("tego run of the stand-in: %v\n%s", err, out)
 	}

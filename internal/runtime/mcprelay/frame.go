@@ -14,14 +14,15 @@ import (
 )
 
 // The shim's control protocol (ADR 0126 §4 "Stdio shim"): newline-delimited JSON frames over one TCP connection to
-// the service's control listener. The shim says hello, waits for ok, starts the server and says started; from then
+// the service's control listener. The shim says hello, waits for ok, prepares Stage, waits for ok, starts a waiting child, sends Child and waits
+// for the service to pin it and answer ok, then releases it to exec the server and says started; from then
 // on every client line goes to the service as C and every server line as S, and the shim writes to the server only
 // what a ToServer frame carries and to the client only what a ToClient frame carries. A line travels as bytes
 // (base64 in JSON), so a line that is not UTF-8 reaches the service unchanged. The service answers it: a server line
 // passes as it came, a client line goes to the server only in its wire form (wireLine).
 
 // ProtocolVersion is the hello's v.
-const ProtocolVersion = 1
+const ProtocolVersion = 3
 
 // EnvRelay is the variable naming the control listener (127.0.0.1:<port>) in the run's environment.
 const EnvRelay = "TEGO_MCP_RELAY"
@@ -39,6 +40,13 @@ const MaxLine = mcp.MaxMessage
 // maxFrame bounds one control frame: a line in base64 and its frame.
 const maxFrame = MaxLine/3*4 + 4096
 
+// StageRequest identifies the fresh release socket and exact argv the shim is about to give its child. It lets the
+// supervisor admit that child's internal exec under a shim-only command grant, before proc.Start can return its PID.
+type StageRequest struct {
+	Socket uint64   `json:"socket"`
+	Argv   []string `json:"argv"`
+}
+
 // Frame is one control message, either way.
 type Frame struct {
 	// Hello (shim -> service).
@@ -49,6 +57,10 @@ type Frame struct {
 	// Answer to the hello (service -> shim).
 	OK    bool   `json:"ok,omitempty"`
 	Error string `json:"error,omitempty"`
+	// Stage prepares the private child exec before the shim starts it (shim -> service).
+	Stage *StageRequest `json:"stage,omitempty"`
+	// Child is the waiting child's pid, registered and acknowledged before its server exec (shim -> service).
+	Child int `json:"child,omitempty"`
 	// Started is the server's pid, once the shim started it (shim -> service).
 	Started int `json:"started,omitempty"`
 	// C is a client line and S a server line (shim -> service).

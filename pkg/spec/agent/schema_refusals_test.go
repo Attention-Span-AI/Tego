@@ -145,6 +145,9 @@ func TestIsRuntimeRule(t *testing.T) {
 		"fs.harness-state[/r/hook-state]":            true,
 		"fs.harness-state[r/hook-state]":             false,
 		"fs.harness-state":                           false,
+		"exec.mcp-stage[/opt/tego]":                  true,
+		"exec.mcp-stage[relative]":                   false,
+		"exec.mcp-stage[/opt/tego":                   false,
 	} {
 		if got := IsRuntimeRule(rule); got != want {
 			t.Errorf("IsRuntimeRule(%q) = %v", rule, got)

@@ -327,6 +327,7 @@ func buildDispatchFor(arch uint32) dispatchTable {
 		}
 		t[k] = e
 	}
+	add(438, entry{name: "pidfd_getfd", fn: handlePidfdGetfd})
 	switch arch {
 	case auditArchARM:
 		add(nrARMConnect, conn)

@@ -15,7 +15,7 @@ import (
 )
 
 // MaxResidentBytes bounds the decoded lines the read model keeps (an estimate, eventBytes). Past it, the lines of the
-// ended runs no page asked for longest are dropped (their summaries, counts and asks stay) and read again from the
+// least recently used runs (live or ended) are dropped (their summaries, counts and asks stay) and read again from the
 // file when a page needs them. A variable so tests can lower it.
 var MaxResidentBytes int64 = 512 << 20
 
@@ -74,6 +74,17 @@ func (s *Store) Rev() uint64 {
 func (s *Store) state(id string) *runState {
 	st := s.runs[id]
 	if st == nil {
+		if len(s.runs) >= MaxRuns {
+			for key, old := range s.runs {
+				if old.reading == nil {
+					if old.resident {
+						s.resident -= old.bytes
+					}
+					delete(s.runs, key)
+					break
+				}
+			}
+		}
 		st = newRunState(id, filepath.Join(s.root, id, "events.jsonl"))
 		st.store = s
 		s.runs[id] = st
@@ -183,9 +194,6 @@ func (s *Store) bring(ws []want, wait bool) (deferred bool) {
 			s.mu.Unlock()
 			s.readAll(mine)
 			s.mu.Lock()
-			for _, j := range mine {
-				s.finish(j)
-			}
 		}
 		// Only now, holding no claim, wait for the others: two requests each waiting with a claim of its own would
 		// wait for each other for ever.
@@ -207,7 +215,7 @@ func (s *Store) readAll(jobs []*job) {
 	n := readWorkers(len(jobs))
 	if n <= 1 {
 		for _, j := range jobs {
-			j.changed, j.err = s.read(j.st, j.seen)
+			s.readOne(j)
 		}
 		return
 	}
@@ -218,7 +226,7 @@ func (s *Store) readAll(jobs []*job) {
 		go func() {
 			defer wg.Done()
 			for j := range next {
-				j.changed, j.err = s.read(j.st, j.seen)
+				s.readOne(j)
 			}
 		}()
 	}
@@ -227,6 +235,16 @@ func (s *Store) readAll(jobs []*job) {
 	}
 	close(next)
 	wg.Wait()
+}
+
+// Publish and evict each finished cold read immediately. Keeping all completed
+// jobs until the entire root finished would retain every run before eviction.
+func (s *Store) readOne(j *job) {
+	j.changed, j.err = s.read(j.st, j.seen)
+	s.mu.Lock()
+	s.finish(j)
+	s.evict(nil)
+	s.mu.Unlock()
 }
 
 // finish publishes a read run, under a new revision when anything a page shows changed, and ends its claim. s.mu
@@ -262,15 +280,15 @@ func (s *Store) touch(st *runState) {
 	st.used = s.tick
 }
 
-// evict drops the lines of the least recently used ended runs until the resident estimate is under
-// MaxResidentBytes, never those of keep, of a run not ended or of a run being read. s.mu must be held.
+// evict drops the lines of the least recently used runs until the resident estimate is under
+// MaxResidentBytes, never those of keep or of a run being read. s.mu must be held.
 func (s *Store) evict(keep *runState) {
 	if s.resident <= MaxResidentBytes {
 		return
 	}
 	var cands []*runState
 	for _, st := range s.runs {
-		if st.reading == nil && st.resident && st != keep && st.b.Ended && !st.live && st.bytes > 0 {
+		if st.reading == nil && st.resident && st != keep && st.bytes > 0 {
 			cands = append(cands, st)
 		}
 	}
@@ -281,8 +299,16 @@ func (s *Store) evict(keep *runState) {
 		}
 		s.resident -= st.bytes
 		st.bytes, st.resident = 0, false
+		st.paired = nil
 		st.b.Events = nil
-		st.publish(st.pub.Rev) // the same content, so the same revision; only the lines are gone
+		signalMu.Lock()
+		delete(signalCache, st.id)
+		signalMu.Unlock()
+		progCache.Lock()
+		delete(progCache.m, st)
+		progCache.Unlock()
+		s.rev++
+		st.publish(s.rev) // root views now disclose that this window is absent
 	}
 }
 
@@ -291,6 +317,9 @@ func (s *Store) evict(keep *runState) {
 func (s *Store) lines(st *runState) []Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.runs[st.id] != st {
+		return nil
+	} // a pruned old version cannot repopulate the store
 	for st.reading != nil {
 		ch := st.reading
 		s.mu.Unlock()
@@ -298,18 +327,17 @@ func (s *Store) lines(st *runState) []Event {
 		s.mu.Lock()
 	}
 	if !st.resident {
-		old := st.pub
 		st.reading = make(chan struct{})
 		s.mu.Unlock()
-		_, _ = s.read(st, nil)
+		err := st.loadWindow()
 		s.mu.Lock()
-		s.resident += st.bytes // it was not resident, so it counted nothing before
-		rev := old.Rev
-		if st.b.Lines != old.Lines || (len(st.b.Events) > 0 && st.b.Events[len(st.b.Events)-1].Seq != old.LastSeq) {
-			s.rev++
-			rev = s.rev
+		if err != nil {
+			st.b.Bad++
+			st.b.Cut = true
 		}
-		st.publish(rev)
+		s.resident += st.bytes
+		s.rev++ // the retained window's visibility changed
+		st.publish(s.rev)
 		close(st.reading)
 		st.reading = nil
 		s.touch(st)
@@ -383,10 +411,14 @@ func (s *Store) snapshot(wait bool) (*Snapshot, error) {
 		cands = cands[:MaxRuns]
 		snap.RunsCut = true
 	}
+	selected := map[string]bool{}
+	for _, c := range cands {
+		selected[c.id] = true
+	}
 	pubs := make([]*Run, 0, len(cands))
 	s.mu.Lock()
 	for id, st := range s.runs {
-		if !present[id] && st.reading == nil { // a run being read leaves on a later look
+		if (!present[id] || !selected[id]) && st.reading == nil { // a run being read leaves on a later look
 			if st.resident {
 				s.resident -= st.bytes
 			}
@@ -419,21 +451,34 @@ func (s *Store) snapshot(wait bool) (*Snapshot, error) {
 
 	total := 0
 	for _, p := range pubs {
-		total += p.Lines
+		snap.LinesCut = snap.LinesCut || p.Cut
+		total += len(p.Events)
 	}
 	if total <= MaxLines {
 		snap.Runs, snap.Lines = pubs, total
 	} else {
 		budget := MaxLines
 		for _, p := range pubs {
-			r, used := p, p.Lines
-			if limit := max(budget, 1); p.Lines > limit {
+			r, used := p, len(p.Events)
+			if limit := max(budget, 0); len(p.Events) > limit {
 				r, used = cutRun(p, limit), limit
 				snap.LinesCut = true
 			}
 			budget -= used
 			snap.Lines += used
 			snap.Runs = append(snap.Runs, r)
+		}
+	}
+	// A root request does not rehydrate every evicted run and pin every derived
+	// index in its snapshot. Individual run pages rehydrate one bounded window.
+	for i, p := range snap.Runs {
+		if p.Events == nil && p.Lines > 0 {
+			r := *p
+			r.st = nil
+			r.Cut = true
+			r.memo = &runMemo{}
+			snap.Runs[i] = &r
+			snap.LinesCut = true
 		}
 	}
 	sort.SliceStable(snap.Runs, func(i, j int) bool { return snap.Runs[i].Start.After(snap.Runs[j].Start) })
@@ -458,15 +503,17 @@ func (s *Store) bump() {
 	s.mu.Unlock()
 }
 
-// cutRun is p read only as far as its first limit lines, as the line bound has it.
+// cutRun limits the event window while preserving the full incremental summary.
 func cutRun(p *Run, limit int) *Run {
 	all := p.AllEvents()
 	if len(all) <= limit {
 		return p
 	}
-	r := replay(p.ID, all[:limit], true, &all[len(all)-1])
-	r.Live, r.Rev = p.Live, p.Rev
-	return r
+	r := *p
+	r.Events = all[len(all)-limit:]
+	r.Cut = true
+	r.memo = &runMemo{}
+	return &r
 }
 
 // Run brings one run up to date and returns it with its lines in memory. A malformed id or a missing run is

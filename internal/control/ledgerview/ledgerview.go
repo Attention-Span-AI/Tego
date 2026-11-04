@@ -18,11 +18,10 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// The scan's bounds. A request reads at most MaxRuns run directories (the newest by their events file's mtime) and
-// at most MaxLines ledger lines in all, plus the first line (and, when cut, the last line) of each run read, so
-// every run has its summary; a view that hit either bound says it shows part only. Every line is wanted:
-// the bounds are now far above a working ledger's size and stay only as a memory guard; the Store
-// keeps refreshes cheap. Variables so tests can lower them.
+// The presentation bounds. Decoding maintains full-run summary counters but keeps
+// only bounded recent windows (cache.go), even for live runs. A root request selects
+// at most MaxRuns directories and presents at most MaxLines events. Variables let
+// tests exercise rotation without writing production-sized ledgers.
 var (
 	MaxRuns  = 100_000
 	MaxLines = 5_000_000
@@ -142,9 +141,11 @@ type Run struct {
 	Kinds     map[string]int
 	Events    []Event
 	Pending   []Ask
-	// Cut is set when the line budget ran out before the end of this run's file.
+	// Cut means Events covers only a bounded part of the run; summary counters are complete.
 	Cut bool
-	// Bad counts lines that did not decode.
+	// PendingCut reports more simultaneous unanswered asks than the bounded display can retain.
+	PendingCut bool
+	// Bad counts malformed lines and unsupported record kinds.
 	Bad int
 	// Identity and policy, from run_start: who started the run, where, under which exact contract and build.
 	User, Host, Kernel, TegoVersion, ContractHash, Harness, Capture string
@@ -302,7 +303,12 @@ func (r *Run) add(ev Event) {
 		}
 	}
 	r.Lines++
-	r.Kinds[ev.Kind]++
+	kind := ev.Kind
+	if !record.Kind(kind).Valid() {
+		kind = "unknown"
+		r.Bad++
+	}
+	r.Kinds[kind]++
 	if r.Agent == "" {
 		r.Agent = ev.Agent
 	}

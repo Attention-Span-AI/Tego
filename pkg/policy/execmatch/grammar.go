@@ -112,6 +112,9 @@ func (o *Opt) ends(hasValue bool, value string) bool {
 type Syntax struct {
 	// Clusters reads -rf as -r -f.
 	Clusters bool
+	// ClusterWords permits only these exact clusters on a non-clustering row:
+	// Node's -pe alias is --print --eval; -ep and -peCODE remain unknown.
+	ClusterWords []string
 	// ShortAttach reads -n5 as -n 5 for a value-taking short option.
 	ShortAttach bool
 	// ShortEquals reads -n=5 as -n 5 (pflag); elsewhere the value is "=5".
@@ -248,6 +251,14 @@ func (r *Row) ready() *Row {
 
 // InterpSpec is how an interpreter row dispatches to the tool it runs (ADR 0048 (2), interpretation 5).
 type InterpSpec struct {
+	// Versions selects this row only for these binary-attested runtime versions.
+	Versions []string
+	// Fallback is the compatibility row for other builds. Nil fails closed.
+	// It has no version gate of its own.
+	Fallback *Row
+	// ArgvRewrite detects pre-scanners which can load code outside the entry
+	// parser. It reads every token; an open prefix cannot settle dispatch.
+	ArgvRewrite func([]string) bool
 	// Module is the option that names a module to run (python's m), "" when none.
 	Module string
 	// Code are the options whose value is code (python's c, node's e and p, sh's c): opaque, no interpretation.
@@ -308,6 +319,9 @@ func (rs *Rows) Lookup(name string) *Row {
 	}
 	if r := rs.byName[name]; r != nil {
 		return r
+	}
+	if NodeName(name) {
+		return rs.byName["node"]
 	}
 	return nil
 }
@@ -479,3 +493,21 @@ func (lv *Level) prefixes(dst []string, tok string) []string {
 
 // Sub returns a subcommand's level by canonical name, for tests and rows.
 func (lv *Level) Sub(name string) *Level { return lv.Subs[name] }
+
+// NodeName recognizes Node's standard and numeric versioned command names.
+// Renamed copies remain the identity/copy residual of ADR 0048 R2.
+func NodeName(name string) bool {
+	if name == "node" || name == "nodejs" {
+		return true
+	}
+	v, ok := strings.CutPrefix(name, "node-")
+	if !ok || v == "" {
+		return false
+	}
+	for _, c := range v {
+		if c != '.' && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	return v[0] >= '0' && v[0] <= '9'
+}

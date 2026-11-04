@@ -66,7 +66,7 @@ const (
 	CapGateExecCompletion Capability = "gate.exec_completion"
 	// CapGateNetCompletion is a connect, Fast-Open send or addressed datagram a net gate allows, performed on the
 	// duplicate socket with the address it scored (ADR 0041 D6): every tier, on IP-domain sockets; addressed unix
-	// datagrams, and unix connects with no net: section, stay (D).
+	// datagrams stay (D); enforcing Unix stream connects use the held-inode relay (ADR 0113).
 	CapGateNetCompletion Capability = "gate.net_completion"
 	// CapProtectedWriteTargets is the deny_write set refused race-free, the built-in targets (agent-contract R20) and a
 	// contract's fs.deny_write entries (ADR 0071) alike, since both are RuleTable.DenyWrite: only a kernel decision
@@ -99,7 +99,7 @@ const (
 	// plane row names it (ADR 0069 D3 (c), ADR 0043).
 	CapReadDenyCreatedLater Capability = "fs.deny_read.created_later"
 	// CapReadDenyMoved is a deny_read target inside a write entry the agent renamed or hard-linked to another name
-	// before reading it there (ADR 0069 D5's residual at tier landlock).
+	// before reading it there (ADR 0069 D3(b), retained launch identities).
 	CapReadDenyMoved Capability = "fs.deny_read.moved"
 )
 

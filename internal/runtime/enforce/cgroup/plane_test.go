@@ -182,7 +182,7 @@ func TestPlaneFillCarriesTheUnixPolicy(t *testing.T) {
 	}{
 		{name: "6.7+: connect_unix decides", unix: false},
 		{name: "below 6.7 with a net: section", unix: true, want: true},
-		{name: "below 6.7 with no net: section", unix: true, noNet: true},
+		{name: "below 6.7 with no net: section", unix: true, noNet: true, want: true},
 		{name: "a launcher inside the run's cgroup", unix: true, self: "/tego.slice/run-1.scope", wantPrepErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

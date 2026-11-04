@@ -21,6 +21,11 @@ while IFS= read -r t; do
 	grep -q -- "$t" scripts/precommit.sh || { echo "FAIL: $ci runs $t but scripts/precommit.sh does not"; fail=1; }
 done < <(grep -o '[A-Za-z0-9_./-]*_test\.sh' "$ci" | sed 's#^\./##' | sort -u)
 
+if [ -f tools/oss/export.py ]; then
+	grep -q 'pc_add static oss .*step python3 -m unittest discover -s tools/oss' scripts/precommit.sh ||
+		{ echo "FAIL: private gate does not run the export tests"; fail=1; }
+fi
+
 # 1b. every tracked *_test.sh is named by CI (a test no job runs guards nothing).
 for t in $(./scripts/tree-files.sh | tr '\0' '\n' | grep '_test\.sh$'); do
 	grep -q -- "$t" "$ci" || { echo "FAIL: $t is tracked but $ci does not run it"; fail=1; }
@@ -224,11 +229,11 @@ for f in scripts/install.sh scripts/install-maze.sh examples/lima/tego.yaml; do
 	grep -qE "^ +- glob: \./$f\$" <<<"$assets" || { echo "FAIL: .goreleaser.yaml's release section does not ship $f"; fail=1; }
 done
 
-# 13. no govulncheck in release.yml's release job, which holds id-token, attestations and contents write.
+# 13. govulncheck stays in the read-only reproduction job, away from release asset writes.
 if sed -n '/^  release:/,/^  reproduce:/p' .github/workflows/release.yml | grep -q 'govulncheck@'; then
-	echo "FAIL: release.yml runs govulncheck in the release job, beside the signing identity and the write token"; fail=1
+	echo "FAIL: release.yml runs govulncheck in the release job, beside the release asset write token"; fail=1
 fi
-sed -n '/^  reproduce:/,/^  publish:/p' .github/workflows/release.yml | grep -q 'govulncheck@' ||
+sed -n '/^  reproduce:/,/^  container:/p' .github/workflows/release.yml | grep -q 'govulncheck@' ||
 	{ echo "FAIL: release.yml's reproduce job does not run govulncheck"; fail=1; }
 
 # 14. every Makefile target `make help` lists (a "##" comment) is phony: a file of a target's name at the root would
@@ -261,7 +266,7 @@ done < <(grep -nE '^ *(owner: |homepage: https://github\.com/)' .goreleaser.yaml
 
 # 17. maze's release artifacts are held as tego's are: reproduce compares its binaries and govulncheck scans them,
 #     and the release job checks that install-maze.sh names the repository, like install.sh.
-rp="$(sed -n '/^  reproduce:/,/^  publish:/p' .github/workflows/release.yml)"
+rp="$(sed -n '/^  reproduce:/,/^  container:/p' .github/workflows/release.yml)"
 [[ "$rp" == *maze-binaries.sha256* ]] || { echo "FAIL: release.yml's reproduce job does not compare the maze binaries"; fail=1; }
 [[ "$rp" == *"dist/maze_*/maze"* ]] || { echo "FAIL: release.yml's govulncheck does not scan the maze binaries"; fail=1; }
 grep -q 'INSTALLER=scripts/install-maze.sh scripts/check-installer-repo.sh' .github/workflows/release.yml ||
@@ -284,6 +289,117 @@ while IFS= read -r p; do
 	*) echo "FAIL: release.yml's checksums artifact path $p is outside dist/, so the artifact does not download flat"; fail=1 ;;
 	esac
 done <<<"$up"
+
+# 25. Execute the release image's own scripts: stable aliases never move on a prerelease, and no changed,
+# missing binary reaches Docker. The Go release workflow tests cover isolated signing and its identity;
+# real keyless signing and registry operations still need a tag run on GitHub.
+workflow_run() {
+	awk -v name="$1" '
+		$0 == "      - name: " name {found=1; next}
+		found && /^      - / {exit}
+		found && /^        run: \|$/ {body=1; next}
+		body {sub(/^          /, ""); print}
+	' .github/workflows/release.yml
+}
+image_meta="$(workflow_run 'image tags and OCI metadata')"
+image_verify="$(workflow_run "verify the image's binaries against the release")"
+image_publish="$(workflow_run 'publish the release with its image digest')"
+for body in "$image_meta" "$image_verify" "$image_publish"; do
+	[ -n "$body" ] || { echo "FAIL: missing release image script"; fail=1; }
+done
+im="$(mktemp -d)"
+mkdir -p "$im/bin" "$im/container-binaries"
+for tag in v0.1.0 v12.34.56 v0.1.0-rc.1; do
+	TAG=$tag IMAGE=ghcr.io/attention-span-ai/tego GITHUB_OUTPUT="$im/meta" bash -c "$image_meta" >"$im/out" 2>&1 || fail=1
+	tags="$(sed -n '/^tags<<TAGS$/,/^TAGS$/p' "$im/meta" | sed '1d;$d')"
+	version="${tag#v}"
+	want="ghcr.io/attention-span-ai/tego:$version"
+	if [[ "$tag" != *-* ]]; then want+=$'\n'"ghcr.io/attention-span-ai/tego:${version%.*}"$'\n'"ghcr.io/attention-span-ai/tego:latest"; fi
+	[ "$tags" = "$want" ] || { echo "FAIL: image tags for $tag: $tags"; fail=1; }
+	rm -f "$im/meta"
+done
+image_fixture() {
+	local arch bin hash
+	: >"$im/container-binaries/tego_0.1.0_checksums.txt"
+	for arch in amd64 arm64; do
+		mkdir -p "$im/container-binaries/$arch"
+		printf 'control %s\n' "$arch" >"$im/container-binaries/$arch/tego-control"
+		hash="$(sha256sum "$im/container-binaries/$arch/tego-control" | cut -d' ' -f1)"
+		printf 'tego pins %s\n' "$hash" >"$im/container-binaries/$arch/tego"
+		for bin in tego tego-control; do
+			hash="$(sha256sum "$im/container-binaries/$arch/$bin" | cut -d' ' -f1)"
+			printf '%s  %s_0.1.0_linux_%s\n' "$hash" "$bin" "$arch" >>"$im/container-binaries/tego_0.1.0_checksums.txt"
+		done
+	done
+}
+image_check() (
+	RUNNER_TEMP="$im" GITHUB_WORKSPACE="$PWD" TAG=v0.1.0 \
+		PATH="$im/bin:$PATH" bash -c "$image_verify" >"$im/out" 2>&1
+)
+image_fixture
+if ! image_check; then echo "FAIL: image refuses verified release binaries"; cat "$im/out"; fail=1; fi
+for arch in amd64 arm64; do
+	for bin in tego tego-control; do
+		image_fixture
+		printf corrupt >>"$im/container-binaries/$arch/$bin"
+		if image_check; then echo "FAIL: image accepts changed $arch/$bin"; fail=1; fi
+		image_fixture
+		rm "$im/container-binaries/$arch/$bin"
+		if image_check; then echo "FAIL: image accepts missing $arch/$bin"; fail=1; fi
+	done
+done
+image_fixture
+sed -i '/tego-control_0.1.0_linux_arm64/d' "$im/container-binaries/tego_0.1.0_checksums.txt"
+if image_check; then echo "FAIL: image accepts a binary absent from the checksums"; fail=1; fi
+image_fixture
+# Correct checksums alone cannot excuse a broken handoff pin.
+printf 'broken pin\n' >"$im/container-binaries/amd64/tego"
+hash="$(sha256sum "$im/container-binaries/amd64/tego" | cut -d' ' -f1)"
+sed -i "s/^[^ ]*  tego_0.1.0_linux_amd64$/$hash  tego_0.1.0_linux_amd64/" "$im/container-binaries/tego_0.1.0_checksums.txt"
+if image_check; then echo "FAIL: image accepts a pair with no control pin"; fail=1; fi
+
+# Publication preserves the changelog notes, appends the image's digest and refuses a missing digest.
+cat >"$im/bin/gh" <<'STUB'
+#!/bin/bash
+set -euo pipefail
+case "$1 $2" in
+	'release upload') [ -s "$4" ] && [ "${IMAGE_UPLOAD_FAIL:-0}" = 0 ] ;;
+	'release view')
+		if [ -f "$IMAGE_NOTES.edited" ]; then cat "$IMAGE_NOTES"; else printf 'Existing changelog notes\n'; fi ;;
+	'release edit')
+		: >"$IMAGE_NOTES.edited"
+		while [ "$#" -gt 0 ]; do
+			if [ "$1" = --notes-file ]; then cp "$2" "$IMAGE_NOTES"; fi
+			shift
+		done ;;
+	*) exit 1 ;;
+esac
+STUB
+chmod +x "$im/bin/gh"
+mkdir -p "$im/release-signatures" "$im/release-notes"
+printf 'Existing changelog notes\n' >"$im/release-notes/release-notes.md"
+printf 'inert bundle\n' >"$im/release-signatures/tego_0.1.0_checksums.txt.sigstore.json"
+digest="sha256:$(printf '%064d' 1)"
+if ! RUNNER_TEMP="$im" TAG=v0.1.0 GITHUB_REPOSITORY=Attention-Span-AI/Tego DIGEST="$digest" \
+	IMAGE_NOTES="$im/notes" PATH="$im/bin:$PATH" bash -c "$image_publish" >"$im/out" 2>&1 ||
+	! grep -q '^Existing changelog notes$' "$im/notes" || ! grep -qF "ghcr.io/attention-span-ai/tego@$digest" "$im/notes"; then
+	echo "FAIL: release notes lose the changelog or image digest"; cat "$im/out"; fail=1
+fi
+if RUNNER_TEMP="$im" TAG=v0.1.0 GITHUB_REPOSITORY=Attention-Span-AI/Tego DIGEST='' \
+	IMAGE_NOTES="$im/notes" PATH="$im/bin:$PATH" bash -c "$image_publish" >"$im/out" 2>&1; then
+	echo "FAIL: release publishes without an image digest"; fail=1
+fi
+rm -f "$im/notes.edited"
+if RUNNER_TEMP="$im" TAG=v0.1.0 GITHUB_REPOSITORY=Attention-Span-AI/Tego DIGEST="$digest" IMAGE_UPLOAD_FAIL=1 \
+	IMAGE_NOTES="$im/notes" PATH="$im/bin:$PATH" bash -c "$image_publish" >"$im/out" 2>&1 || [ -f "$im/notes.edited" ]; then
+	echo "FAIL: release publishes after a signature upload failure"; fail=1
+fi
+rm "$im/release-signatures/tego_0.1.0_checksums.txt.sigstore.json"
+if RUNNER_TEMP="$im" TAG=v0.1.0 GITHUB_REPOSITORY=Attention-Span-AI/Tego DIGEST="$digest" \
+	IMAGE_NOTES="$im/notes" PATH="$im/bin:$PATH" bash -c "$image_publish" >"$im/out" 2>&1 || [ -f "$im/notes.edited" ]; then
+	echo "FAIL: release publishes without a checksum signature"; fail=1
+fi
+rm -rf "$im"
 
 # 21. precommit.sh's runner (scripts/precommit-runner.sh): steps are reported in the order they were added whatever
 #     finished first, with their output; a failing step fails the run; a killed step (a command killed by a signal,
@@ -523,5 +639,11 @@ grep -qx 'unset TEGO_PRECOMMIT_SINCE' .githooks/pre-commit || { echo "FAIL: .git
 grep -q 'PC_VERDICT="precommit: every selected step passed' scripts/precommit.sh ||
 	{ echo "FAIL: precommit.sh's scoped and docs modes do not print their own verdict line"; fail=1; }
 
+# C49: both inventoried Node builds must run the live differentials in CI;
+# listing a skip without provisioning their versions does not prove the row.
+for node_version in 20.19.4 22.21.1; do
+	grep -q "node-version: '$node_version'" "$ci" || { echo "FAIL: $ci does not install node $node_version"; fail=1; }
+done
+grep -qE 'uses: actions/setup-node@[a-f0-9]{40} ' "$ci" || { echo "FAIL: setup-node is absent or not SHA pinned"; fail=1; }
 [ "$fail" -eq 0 ] && echo "precommit_test: ok"
 exit "$fail"

@@ -158,6 +158,7 @@ func placeOn(t *testing.T, m standIn, name string, rewrite ...string) string {
 	// The Codex examples name the user's home (/home/USER/) and the helper directory Codex's installation holds
 	// (/CHANGE/, which the example tells the reader to replace); the stand-in machine's home and PATH directory stand in.
 	y = strings.ReplaceAll(y, "/home/USER/", m.home+"/")
+	y = strings.ReplaceAll(y, "/path/to/project/", m.work+"/")
 	y = strings.ReplaceAll(y, "/CHANGE/codex-code-mode-host", filepath.Join(m.bin, "codex-code-mode-host"))
 	// The same for the runtime directory: the stand-in machine's own, never the uid an example names.
 	y = runtimeUserDir.ReplaceAllLiteralString(y, `"`+runtimeDir(m.work)+`/`)

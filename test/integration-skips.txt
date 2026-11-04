@@ -62,6 +62,7 @@ internal/cli TestIntegrationAdoptKilledAdopterLeavesNothingAttached # needs root
 internal/cli TestIntegrationAdoptBusyAgentRecordsTheGap # needs root: an adoption moves another process between cgroups and loads tier 2's programs
 internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlane # needs root: an adoption moves another process between cgroups and loads tier 2's programs
 internal/cli TestIntegrationGuardAdoptsAnAgentAsItStarts # needs root: the guard listens to the proc connector (CAP_NET_ADMIN) and adopts
+internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlaneWatcher # needs root: the watcher adopts a live agent under the decision plane
 internal/cli TestIntegrationAdoptReleaseCommand # needs root: an adoption moves another process between cgroups and loads tier 2's programs
 test/vm/cmd/permlistener TestIntegrationDenyRefusesOneFileAndNoOther # needs root: a fanotify permission group needs CAP_SYS_ADMIN, and the test mounts a tmpfs
 test/vm/cmd/permlistener TestIntegrationAllowTouchDecidesOnTheMarkedMountWithoutDeadlock # needs root: a fanotify permission group needs CAP_SYS_ADMIN, and the test mounts a tmpfs
@@ -128,6 +129,7 @@ internal/platform/sys TestIntegrationRunAsTakesTheTaskCredentials # needs root: 
 internal/runtime TestIntegrationRootSweepAnchorsTheOwnersRun # needs root: only root can end another account's run
 internal/runtime TestIntegrationRootSweepEndsAUsersKilledLauncher # needs root: a sweep of another account's run, and a launcher of another uid
 internal/runtime TestIntegrationHeldCompletionAtRootTier # needs root: a root launcher at tier cgroup, the agent and the deputy dropped to the invoking user
+internal/runtime TestIntegrationHeldOpenRespectsAppArmor # needs root to load a disposable AppArmor profile
 internal/runtime TestIntegrationHeldReadsAtRootTier # needs root: fs.reads: held from a root launcher at tier cgroup, the agent and the deputy dropped to the invoking user
 internal/runtime TestIntegrationReasonReadsAtTierCgroup # needs root: tier cgroup from a root launcher, the agent dropped to the invoking user (ADR 0077)
 internal/runtime TestIntegrationRootSweepEndsARootLauncherTheUserCannot # needs root: a root launcher the user's sweep cannot end
@@ -302,7 +304,7 @@ internal/runtime/enforce/cgroup TestPlaneCapBoundaryNeverEMFILE # a run at a roo
 internal/runtime/enforce/cgroup TestPlaneConcurrentRunsOfOneBuildAreIsolated # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
 internal/runtime/enforce/cgroup TestPlaneSecondRunAdoptsThePlane # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
 internal/runtime/enforce/cgroup TestPlaneLauncherKillLeavesTheRunDecidedAndTheReaperPurges # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
-internal/runtime/enforce/cgroup TestPlaneRunAdmitsIOUring # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
+internal/runtime/enforce/cgroup TestPlaneRunRefusesIOUring # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
 internal/runtime/enforce/cgroup TestIOUringSocketsMeetTheKernelBackstops # tier cgroup needs root: a root `tego run` of a test build
 internal/runtime/enforce/cgroup TestPlaneRunFillMismatchFailsPrepare # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
 internal/runtime/enforce/cgroup TestPlaneRunMulticallLinks # the decision plane needs root: run as `sudo go test -tags integration,tegobpf` or `make vm-root-test`
@@ -381,8 +383,23 @@ internal/runtime/enforce/cgroup TestPlaneNameRowsFillAndClear # needs root: a de
 internal/runtime/enforce/cgroup TestPlaneNameMapAdoption # needs root: a pinned plane whose name map pin is removed is not adopted (CAP_BPF)
 internal/runtime/enforce/cgroup TestCompactedTableStaysAtBPFLSM # needs root: an auto run at tier bpflsm of a table the plane holds only by compaction (CAP_BPF, a cgroup)
 
-# The node row's differential tests run node itself and need the version the row reads (v20.19.4).
-pkg/policy/execmatch/rows TestNodeRowCodeDifferential # compares the node row with node v20.19.4's own reading of each line; skips where node on PATH is another version (ubuntu-24.04 runners ship node 22)
-pkg/policy/execmatch/rows TestNodeRowSpellingsDifferential # compares the node row with node v20.19.4's own reading of each line; skips where node on PATH is another version (ubuntu-24.04 runners ship node 22)
-pkg/policy/execmatch/rows TestNodeRowModulesDifferential # compares the node row with node v20.19.4's own reading of each line; skips where node on PATH is another version (ubuntu-24.04 runners ship node 22)
-pkg/policy/execmatch/rows TestNodeRowGeneratedDifferential # compares the node row with node v20.19.4's own reading of each line; skips where node on PATH is another version (ubuntu-24.04 runners ship node 22)
+# The node row's differential tests run node itself and need one of the captured versions (v20.19.4 or v22.21.1).
+pkg/policy/execmatch/rows TestNodeRowCodeDifferential # compares the node row with node 20.19.4/22.21.1's own reading; skips without node, under -short, or for an unpinned version
+pkg/policy/execmatch/rows TestNodeRowSpellingsDifferential # compares the node row with node 20.19.4/22.21.1's own reading; skips without node, under -short, or for an unpinned version
+pkg/policy/execmatch/rows TestNodeRowModulesDifferential # compares the node row with node 20.19.4/22.21.1's own reading; skips without node, under -short, or for an unpinned version
+pkg/policy/execmatch/rows TestNodeRowGeneratedDifferential # compares the node row with node 20.19.4/22.21.1's own reading; skips without node, under -short, or for an unpinned version
+pkg/policy/execmatch/rows TestNodeInventoryDifferential # checks installed node inventories and actual script paths; skips only where node is absent
+pkg/policy/execmatch/rows TestNodeReviewDifferential # executes the security review argv; skips only without node
+
+internal/runtime/supervisor TestOpenLabelAppArmorHiddenAncestors # AppArmor policy test: root required, skips when AppArmor is inactive
+internal/runtime/supervisor TestOpenLabelWithoutSecurityFSList # AppArmor discovery test: root required, skips when AppArmor is inactive
+internal/runtime/supervisor TestOpenLabelSELinuxCreation # needs enforcing SELinux and the disposable SEC08 policy guest
+internal/runtime/supervisor TestOpenLabelSmackProcessRules # needs root and an active Smack kernel
+internal/runtime TestIntegrationHeldOpenRespectsAppArmorWithoutLSMList # AppArmor root guest: masks only the securityfs LSM list in a private mount namespace
+internal/runtime TestIntegrationHeldCreateRespectsSELinux # needs the disposable enforcing SELinux policy guest
+internal/runtime TestIntegrationHeldOpenSameAppArmorProfileWithoutLSMList # root guest with a shared named AppArmor profile and masked LSM list
+internal/runtime/supervisor TestOpenLabelDockerAppArmor # dedicated Docker container with docker-default, exercised by the disposable Docker harness
+
+internal/runtime TestRootBuiltinRefusals # needs root: cgroup and bpflsm built-in boundary
+internal/runtime/enforce/cgroup TestPlaneRunIOUringListenerOutcomes # needs root: ring startup refusal at root tiers
+internal/runtime/enforce/cgroup TestRootBuiltinRefusalsPeer # needs root: actual native Unix peer refusal in both plane modes

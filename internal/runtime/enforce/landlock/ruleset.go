@@ -98,6 +98,9 @@ func closeRuleset(sc landlockSyscalls, fd int) error {
 // Close; the kernel domain the child installs from the ruleset lives on independently. Its method
 // set is api.Handle plus enforce.Reporter; enforce hands it out behind those interfaces.
 type Handle struct {
+	builtin     bool
+	builtinDirs map[[2]uint64]string
+
 	sc         landlockSyscalls // Close probes the ruleset number through it (closeRuleset)
 	rulesetFD  int              // -1 once released
 	filter     []bpf.RawInstruction
@@ -236,3 +239,6 @@ func (h *Handle) PlaneListenParent(path string) (int, bool) {
 	}
 	return h.fds.open[i].FD, true
 }
+
+// BuiltinRefusals reports whether the child installs ADR 0113's terminal layer.
+func (h *Handle) BuiltinRefusals() bool { return h.builtin }

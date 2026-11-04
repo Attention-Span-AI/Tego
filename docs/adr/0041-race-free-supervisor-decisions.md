@@ -1,6 +1,6 @@
 # ADR 0041: a supervisor decision on copied arguments is completed in the run's own kernel context, refused, or disclosed; it is never silently CONTINUEd
 
-Status: **accepted 2026-10-05**, D1 decided **(a)** (the 2026-10-05 note near the end); Stage A Steps 1, 3, 4, 5 and 6 built 2026-10-05, Step 2 built 2026-10-05 and measured 2026-10-16, Step 5's capability rows and `compile --test` columns 2026-10-16; Stage B built 2026-10-16 as the contract opt-in `gate.completion: held`, and its open faults (its held opens held to the kernel's own answers over 395 open shapes, two fail-closed divergences named) closed 2026-10-17, and later fixes refusing a held open of the open deputy's own thread group's `/proc` tree (its leader's `/proc/<tgid>` and every thread's `/proc/<tid>`), by name, through a descriptor or on any procfs mount, a third fail-closed divergence; its budget missed (TARGET-MISS: 2.01× the gated path on the host, 2.83× and the root tiers' 4.14× in KVM), the default unchanged; D2's LSM label check not built (a disclosed residual); its bind-mount and overlay spaces held to the kernel's answers by the differential suite as root, the conformance suite's own fixtures for them waiting on ADR 0017 space (5) (§Implementation notes). Supersedes ADR 0040 (1). Amends ADR 0007 (where a gate verdict is completed) and ADR 0008 (where a held open is completed). Records the `deny_write` launch rule of ADR 0016/0024 as stated in agent-contract R20, enforce-landlock R5a, supervisor R15c and SEMANTICS §2.
+Status: **accepted 2026-10-05**, D1 decided **(a)** (the 2026-10-05 note near the end); Stage A Steps 1, 3, 4, 5 and 6 built 2026-10-05, Step 2 built 2026-10-05 and measured 2026-10-16, Step 5's capability rows and `compile --test` columns 2026-10-16; Stage B built 2026-10-16 as the contract opt-in `gate.completion: held`, and its open faults (its held opens held to the kernel's own answers over 395 open shapes, two fail-closed divergences named) closed 2026-10-17, and later fixes refusing a held open of the open deputy's own thread group's `/proc` tree (its leader's `/proc/<tgid>` and every thread's `/proc/<tid>`), by name, through a descriptor or on any procfs mount, a third fail-closed divergence; its budget missed (TARGET-MISS: 2.01× the gated path on the host, 2.83× and the root tiers' 4.14× in KVM), the default unchanged; D2's held-file authority check amended 2026-11-04 by conservative refusal (SEC08, implementation note below); its bind-mount and overlay spaces held to the kernel's answers by the differential suite as root, the conformance suite's own fixtures for them waiting on ADR 0017 space (5) (§Implementation notes). Supersedes ADR 0040 (1). Amends ADR 0007 (where a gate verdict is completed) and ADR 0008 (where a held open is completed). Records the `deny_write` launch rule of ADR 0016/0024 as stated in agent-contract R20, enforce-landlock R5a, supervisor R15c and SEMANTICS §2.
 Amended in part by ADR 0048 (accepted 2026-10-06): D1 gains the command-rule rows (`exec.rules/argv`, disclosed (D) at every tier until P2's pins); with pins, the `gate.exec` row's argv and names leave `best_effort` at C+ and B.
 Amended in part by ADR 0047 (accepted 2026-10-20): a mutation in an `fs.ask` scope is completed by the supervisor on pinned names (the deputy holds no right there); a gated mutation in the ask range inside one write entry is to be completed by the open deputy (decided, not built: it stays (R) `completion_unsupported`); rejected option 14 no longer covers `fs.ask` scopes.
 Amended in part by ADR 0044 (accepted 2026-10-16, not built): a fourth outcome, (V) verified before the first instruction, for an approved exec (`exec.ask`, `exec.unlisted: ask`, the gate's exec ask range) at every tier.
@@ -1145,7 +1145,7 @@ built; the 2026-10-05 note near the end says why.
   `TestHeldPinWhoseNameIsRemovedIsUnreadable` (the symlinked secret, unlinked just after the pin, was delivered
   before; an unlinked file behind `/proc/self/fd` is still delivered), `TestDeputyPinSaysHowItReached`, and the
   protocol's round trip and the deputy's integration test for the bit.
-- **Not built: D2's LSM label check.** D2 has the deputy compare the task's `/proc/<tid>/attr/current` with its
+- **D2's LSM label check was not built at this review (addressed within the 2026-11-04 SEC08 boundary below).** D2 has the deputy compare the task's `/proc/<tid>/attr/current` with its
   own label where a task-labelling LSM is active and refuse a mismatch `held-label-differs`. No code reads a label on
   the held path, and the Step 7 and Step 8 notes neither built it nor listed it. A held open is the deputy's, made under
   the deputy's own label (the tego binary's, unconfined on a stock host), so a process of the run that an AppArmor
@@ -1911,3 +1911,130 @@ The 2026-10-16 entry on a gone name refused every such pin `gate.unreadable`; it
 open made then walks the name again, checked and scored on the second pin, and the second answer stands: a second
 such pin is refused `gate.unreadable` where a gate scores the open, `held-unsupported` where it is held only as a
 read. That entry's property, never decided on the copied name, stands (`TestHeldPinWhoseNameIsRemovedIsUnreadable`).
+
+*Amended 2026-11-03 (SEC11): live blocks cover ordinary held write-opens.*
+`heldFloors` applies `liveHeld` to the deputy's pinned object's path with the full access class of the open,
+including O_RDWR, O_CREAT and O_TRUNC. The earlier read-only floor missed write/path blocks when a benign copied
+name was swapped before the deputy's lookup. The live set is loaded again after the opened descriptor matches
+the pin and before delivery, for ordinary held opens as well as asks. A late block after the open is recorded
+with the operation-completed/descriptor-not-delivered fields instead of hiding possible create/truncate effects.
+`TestHeldWriteLiveRefusalOnThePinnedObject` failed before the change for write and path blocks, and
+`TestHeldWriteRechecksLiveBlocksBeforeDelivery` covers a block installed during the deputy's open. This does not
+upgrade copied mutation decisions or revoke descriptors delivered before a block. ADR 0069's 2026-11-03 amendment
+adds retained launch identities, objects pinned as they are put in protected places, and an uncertainty latch to
+held reads on the same delivery path.
+
+*2026-11-04, SEC08: D2's held-open authority check; replaces the incomplete 2026-11-03 implementation note.*
+
+- **Boundary.** This is a conservative refusal mechanism for held **file opens**, including supervisor-completed
+  approvals and alternates. It does not adopt a label or ask whether two policies permit a particular file.
+  Fresh facts about the trapping TID and actual opener are bracketed by `ID_VALID`, before the overlapped
+  read-only pin/open and before every later destructive open, including after human approval. The deputy's
+  filter permits no exec or label/creation-attribute writes; the supervisor changes none of these attributes.
+  Neither a label nor a TGID cache substitutes for the trapping thread. Loss of the notification aborts the check.
+- **AppArmor.** Compare full current strings, including modes, only after the **reader's**
+  `apparmor/.ns_level` reports zero. A child policy namespace can omit different ancestor profiles while
+  displaying the same local component, without `---`; equality there is insufficient. By default nonzero, unreadable or
+  malformed namespace depth refuses even when visible strings match (the explicit administrator opt-in below
+  can substitute only for unreadable depth). The root policy namespace sees all
+  components (`apparmorfs.c`'s `seq_ns_level_show`, `label.c`'s `aa_label_snxprint`, Linux 6.17).
+- **SELinux.** Require equal complete `attr/current` contexts, including user, role and MLS/MCS fields.
+  For `O_CREAT` or `O_TMPFILE`, also compare `attr/fscreate`: an empty successful read means the policy default;
+  an unreadable attribute does not. A different explicit creation context cannot use the opener's default
+  `create_sid`. `keycreate` and `sockcreate` govern key/socket creation; this path performs neither operation.
+  Generic attributes are accepted only with SELinux as the sole task-label LSM; no ambiguous-module fallback.
+- **Smack.** Refuse all held completions. Equal current labels do not establish equal `load-self2` rules.
+  The smackfs reader enumerates `current_cred()->smk_rules`, with no cross-task query; it cannot establish
+  the trapping TID's effective process restrictions. Reading the supervisor's rules would answer another question.
+- **Discovery and refusal.** Obtain the complete active module set with unprivileged `lsm_list_modules(2)`
+  (6.8+), falling back to securityfs when that syscall is absent or blocked. Unknown modules/IDs and duplicate,
+  malformed, empty or unavailable lists refuse. Proc per-LSM directory presence depends on kernel configuration,
+  not activation, and a readable label alone cannot exclude another module. Named AppArmor attributes avoid
+  generic-attribute ambiguity. A known difference returns `EACCES`, `held-label-differs`, reason `fs-gate`;
+  an unavailable authority fact returns `held-label-unavailable`. No refusal falls back to `CONTINUE`.
+- **Containers.** Masking `/sys/kernel/security/lsm` alone no longer refuses matching-label completions when
+  the syscall can enumerate modules and AppArmor namespace depth remains visible. If all securityfs is hidden
+  on an AppArmor host, proc labels cannot prove complete stack visibility: depth is genuinely unavailable and
+  completion refuses by default. The explicit administrator opt-in below can accept that residual.
+  Likewise, when both enumeration interfaces are blocked, the module set is unknown and still refuses.
+  Users receive `EACCES` and a `held-label-unavailable` ledger line; the warning/log names the missing fact.
+  With held reads a dynamic loader can fail while opening its libraries. Direct opens and `O_PATH` are unchanged.
+- **Evidence and limits.** The original Ubuntu 6.17 KVM regression (landlock, cgroup, bpflsm) established
+  exec-attached AppArmor read/truncate/create denials against an unconfined opener. Additional regressions in
+  `open_label_integration_test.go` establish two different ancestor profiles with an identical visible local
+  component on Ubuntu 6.17, and equal-label/different-process-rule Smack controls on that kernel. Fedora's
+  7.0.14 kernel boots the harness's Ubuntu userland with a disposable enforcing SELinux policy: the old
+  engine creates the forbidden leaf and the fix refuses it at landlock, cgroup and bpflsm, while reads and
+  truncation still succeed (`TestIntegrationHeldCreateRespectsSELinux`). The container variant masks only
+  the LSM list while running actual held completions. An enforcing named-profile control observes the
+  supervisor's real label and keeps all nine direct/held/gate cases working at the three tiers
+  (`TestIntegrationHeldOpenSameAppArmorProfileWithoutLSMList`), where the reviewed engine refuses held opens.
+  These prove the named policy shapes,
+  not a general policy-equivalence algorithm or every distro policy. Network relays, non-open mutations and
+  moved/replaced-target protection remain outside this check. GAPS B14, supervisor R7a and OPERATIONS state
+  the same boundary.
+- **Cost.** Fresh attributes and discovery supersede Stage B's zero-task-/proc-read budget. An AppArmor
+  check adds namespace-depth and two label reads; SELinux creation adds two `fscreate` reads. Multi-stage
+  completions can check again. The previous latency figures predate these checks; current performance
+  acceptance remains open. There is no exec-invalidated label cache.
+
+Kernel interfaces: [AppArmor namespace facts](https://github.com/torvalds/linux/blob/v6.17/security/apparmor/apparmorfs.c),
+[AppArmor formatting](https://github.com/torvalds/linux/blob/v6.17/security/apparmor/label.c),
+[SELinux creation](https://github.com/torvalds/linux/blob/v6.17/security/selinux/hooks.c),
+[Smack process-rule reader](https://github.com/torvalds/linux/blob/v6.17/security/smack/smackfs.c),
+[LSM enumeration](https://github.com/torvalds/linux/blob/v6.17/security/lsm_syscalls.c).
+
+*2026-11-04, SEC08 round three: Docker namespace-depth assertion and required live-policy jobs.*
+
+No sound automatic root-namespace proof was found without securityfs. Linux 6.17's
+[`apparmor_getprocattr` / `apparmor_getselfattr`](https://github.com/torvalds/linux/blob/v6.17/security/apparmor/lsm.c)
+route `current`, `prev` and `exec` through
+[`aa_getprocattr`](https://github.com/torvalds/linux/blob/v6.17/security/apparmor/procattr.c), which formats
+relative to `aa_get_current_ns()`. Names and enforcement modes omit ancestor components; even `unconfined`
+can be a namespace-local view. `SO_PEERSEC` is projected too. Shared ancestry at launch is insufficient:
+exec attachments and permitted changes can tighten an invisible ancestor after launch, and the task's
+filter does not prohibit every profile transition. The hidden-ancestor live regression is the concrete
+counterexample to trusting equal visible strings. This is an investigation of these interfaces and this
+launch path, not a claim that a future kernel interface or different helper design is impossible.
+
+The project lead's fallback is therefore explicit: `fs.apparmor_assume_root_namespace: true` is a top-level
+contract-only administrator opt-in, off by default. An administrator who establishes root namespace
+visibility externally may accept the hidden-ancestor residual when depth is unreadable. A successfully
+read nonzero or malformed depth still refuses. Every other required fact and full-label comparison
+remains mandatory. The canonical contract hashes the option; compile warns, startup names the risk, and
+`run_start.best_effort` lists `apparmor/assumed-root-namespace` whenever enabled, including legacy
+approvals/alternates without a deputy. The record discloses enabled authority, not a count of opens that
+needed the assertion. Default refusal names the cause (unreadable AppArmor namespace depth), the observed
+`EACCES` / Permission denied and ledger marker, and fixes (readable securityfs from the root policy
+namespace, or the administrator's explicit acceptance). Module enumeration must still work.
+
+The `vm-matrix` workflow now has dedicated Fedora 7.0 SELinux and Ubuntu 25.10 Smack boots via
+`test/vm/held-label-tests.sh`. The fixture is loaded before each test, including SELinux enforcing mode.
+The supervisor's native-policy test must pass; SELinux also requires the actual engine creation test at
+all three tiers. `held-label-required.sh` rejects any skipped subtest or missing required top-level pass.
+These run nightly, on release tags and through manual dispatch; **per-PR CI does not run the live
+SELinux/Smack proofs**. Ordinary root-suite skips remain valid on other boots. The Fedora row is a Fedora
+kernel with the harness's Ubuntu userland and disposable policy, not stock Fedora policy. Smack's proof
+is the native-read/process-rule guard; full Smack engine execution is still unproven.
+
+Round-three Docker evidence: `TestOpenLabelDockerAppArmor` ran in real Docker 29.1.3 (containerd 2.2.1,
+runc 1.3.4) in the Ubuntu 6.17.0-41 KVM guest. A read-only securityfs bind remained unreadable with
+`EACCES` under the actual enforcing `docker-default` profile. The reviewed `3f4a5103d` decision logic,
+adapted only to accept and ignore the new boolean argument, fails the same test by refusing the explicit
+assertion; the fixed checker passes. `test/vm/held-label-docker.sh` also verifies actual engine
+read/truncate/create at tier landlock: native/direct all succeed; default held completion refuses all
+three with `held-label-unavailable`, preserving bytes and leaving the create leaf absent; the explicit
+opt-in succeeds and the run record names it. The existing hidden-ancestor test passes and also checks
+that the opt-in cannot override a readable child namespace depth.
+
+The Docker test uses outer `seccomp=unconfined` so module enumeration and Tego's APIs are available.
+Actual root engine runs additionally need `CAP_SYS_ADMIN`, `CAP_SYS_PTRACE`, host cgroup namespace and
+a writable cgroup bind. The profile is unchanged `docker-default`, not a permissive substitute. The daemon
+uses VFS, no bridge/iptables, and `DOCKER_RAMDISK=1` for the guest's initramfs. This proves these controls,
+not unchanged Docker seccomp defaults, container root tiers or automatic namespace inference.
+
+The same new policy-boot commands passed locally through the VM-slot wrapper: Fedora 7.0.14's enforcing
+SELinux fixture ran the native comparator and all six native/held engine leaves at the three tiers; Ubuntu
+6.17's Smack fixture ran the equal-label/process-rule native-read regression and refusal check. Neither
+boot skipped a test. The required-pass guard also rejects a missing top-level pass or a skipped subtest.
+This is local execution of the workflow's commands; a GitHub-hosted dispatch has not been observed here.

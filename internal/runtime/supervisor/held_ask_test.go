@@ -108,6 +108,8 @@ func (d *inProcessDeputy) Open(pin int, leaf string, flags int, mode uint32, _ i
 
 func (d *inProcessDeputy) Outstanding() int64 { return 0 }
 
+func (d *inProcessDeputy) PID() int { return d.tid }
+
 // heldAskKernel is askReadKernel (the real alternate open, a fake notification and delivery) with a held open's
 // delivery and the task's identity read from the test's own thread.
 type heldAskKernel struct {

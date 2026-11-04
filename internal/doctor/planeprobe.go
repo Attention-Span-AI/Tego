@@ -931,6 +931,22 @@ func planeXattrPassed(err error) error {
 func planeAction(hook, dir string, pre planePre) error {
 	image := pre.image
 	switch hook {
+	case "capable":
+		// move_mount checks may_mount before looking up either descriptor, on
+		// every supported kernel. Invalid descriptors make this probe harmless:
+		// EBADF proves the capability check passed; EPERM is its refusal. The
+		// program's run count must also grow (probePlaneSyscalls).
+		// Keep the invalid fd positive: kernels with null-path support take
+		// a different pathname branch for an empty name and a negative fd.
+		const invalidFD = 1<<31 - 1
+		err := unix.MoveMount(invalidFD, "", invalidFD, "", unix.MOVE_MOUNT_F_EMPTY_PATH|unix.MOVE_MOUNT_T_EMPTY_PATH)
+		if errors.Is(err, unix.EBADF) {
+			return nil
+		}
+		if errors.Is(err, unix.EPERM) {
+			return unix.EACCES
+		}
+		return fmt.Errorf("move_mount capability probe: unexpected result %v", err)
 	case "socket_bind", "socket_listen", "ptrace_access_check", "ptrace_traceme", "bpf", "key_permission":
 		return planeControlAction(hook, pre)
 	case "mmap_file", "file_mprotect":
@@ -942,6 +958,19 @@ func planeAction(hook, dir string, pre planePre) error {
 		}
 		defer done()
 		return unix.Connect(fd, &unix.SockaddrUnix{Name: filepath.Join(dir, "sock")})
+	case "unix_may_send":
+		fd, done, err := planeSocket(pre.dgram, unix.SOCK_DGRAM)
+		if err != nil {
+			return err
+		}
+		defer done()
+		if pre.dgram < 0 {
+			if err := unix.Connect(fd, &unix.SockaddrUnix{Name: filepath.Join(dir, "dg")}); err != nil {
+				return err
+			}
+		}
+		_, err = unix.Write(fd, []byte{0})
+		return err
 	case "socket_sendmsg":
 		fd, done, err := planeSocket(pre.dgram, unix.SOCK_DGRAM)
 		if err != nil {
@@ -1010,9 +1039,11 @@ func planeAction(hook, dir string, pre planePre) error {
 	case "path_chown":
 		return unix.Chown(filepath.Join(dir, "cho"), -1, -1)
 	case "inode_setxattr":
-		return planeXattrPassed(unix.Setxattr(filepath.Join(dir, "xat"), "trusted.tego-probe", []byte("1"), 0))
+		// trusted.* asks for CAP_SYS_ADMIN before the xattr hook. Use user.*
+		// so the topology floor does not preempt the hook being proved here.
+		return planeXattrPassed(unix.Setxattr(filepath.Join(dir, "xat"), "user.tego-probe", []byte("1"), 0))
 	case "inode_removexattr":
-		return planeXattrPassed(unix.Removexattr(filepath.Join(dir, "xat"), "trusted.tego-probe"))
+		return planeXattrPassed(unix.Removexattr(filepath.Join(dir, "xat"), "user.tego-probe"))
 	case "inode_set_acl":
 		return planeXattrPassed(unix.Setxattr(filepath.Join(dir, "acl"), "system.posix_acl_access", planeACL, 0))
 	case "inode_remove_acl":
@@ -1248,6 +1279,10 @@ func PlaneProbeMain(args []string) int {
 		return 1
 	}
 	defer pre.closeControls()
+	if err := unix.Connect(pre.dgram, &unix.SockaddrUnix{Name: filepath.Join(dir, "dg")}); err != nil {
+		fmt.Fprintln(os.Stderr, "the preconnected datagram:", err)
+		return 1
+	}
 	if pre.trunc, err = unix.Open(filepath.Join(dir, "ftr"), unix.O_WRONLY|unix.O_CLOEXEC, 0); err != nil {
 		fmt.Fprintln(os.Stderr, "the file to truncate:", err)
 		return 1

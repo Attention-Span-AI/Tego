@@ -28,9 +28,11 @@ import (
 //     or a carriage return) is prefixed with ', and an invisible character (a bidi override in a file name) is written
 //     as the page writes it, ⟦U+202E⟧ (visibleText).
 //
-// Both stop at maxExportLines lines and then say so in a last row; both are oldest first unless order=newest.
+// Filtered downloads stop at maxExportLines and say so. A whole-run JSONL download streams the
+// complete file observed at open, preserving its chain even when the dashboard holds only a window.
+// Both orders default to oldest first.
 
-// maxExportLines bounds one download.
+// maxExportLines bounds filtered downloads and CSV.
 const maxExportLines = 1_000_000
 
 // exportNote is the JSONL note row: not a ledger line (it has no seq or kind), only a sentence and the counts.
@@ -58,6 +60,7 @@ func (s *Server) logsJSONL(w http.ResponseWriter, r *http.Request) {
 	}
 	lq := readLogsQuery(r.URL.Query(), s.cfg.Now())
 	lq.f.Ledger = true
+	_, whole := lq.f.WholeRun()
 	h := w.Header()
 	h.Set("Content-Type", "application/x-ndjson; charset=utf-8")
 	h.Set("Content-Disposition", `attachment; filename="`+exportName(s.cfg.Now(), "jsonl")+`"`)
@@ -68,7 +71,7 @@ func (s *Server) logsJSONL(w http.ResponseWriter, r *http.Request) {
 	bw := bufio.NewWriterSize(w, 64<<10)
 	n, skipped, cut := 0, 0, false
 	snap.Each(lq.f, exportOrder(r), func(_ *ledgerview.Event, raw func() ([]byte, error)) bool {
-		if n == maxExportLines {
+		if !whole && n == maxExportLines {
 			cut = true
 			return false
 		}

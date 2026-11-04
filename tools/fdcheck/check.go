@@ -899,6 +899,9 @@ func (c *fileCheck) admitted(x *ast.CallExpr) (string, bool) {
 	switch {
 	case ownSyscallTraps[trap]:
 		return trap, true
+	case trap == "SYS_IOCTL":
+		req, ok := c.constName(arg(2))
+		return trap, ok && req == "TIOCGPTPEER"
 	case trap == "SYS_BPF":
 		cmd, ok := c.constName(arg(1))
 		return trap, ok && bpfFDCommands[cmd]

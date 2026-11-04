@@ -28,10 +28,13 @@ func buildTego(t *testing.T) string {
 	return bin
 }
 
-// TestPeerInsideRealRunIsGoverned: the agent of a real tier-1 run (tier landlock, unprivileged, in its run's scope
+// TestPeerInsideRealRunIsGoverned: the agent of a real record-only run (unprivileged, in its run's scope
 // in the invoking user's delegated subtree) connects to a socket outside the run. Identify proves the agent itself
 // is the peer, with the run's own cgroup; Refuse answers [run-member]; and GovernedBy names the very run the ledger
-// recorded. So a socket that serves the person refuses the agents it governs, by the one rule.
+// recorded. Observe leaves the connect in the agent: enforcing runs relay it
+// after C40's inode decision, so connection credentials identify the relay.
+// C40's integration tests instead require the immutable control-socket refusal
+// before such a relayed connection reaches any control service.
 func TestPeerInsideRealRunIsGoverned(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("as root, tego run launches a privileged run, whose agent runs as the invoking user; this is the unprivileged shape")
@@ -81,7 +84,7 @@ limits:
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	run := exec.Command(bin, "run", "agent.yaml")
+	run := exec.Command(bin, "run", "--observe", "agent.yaml")
 	run.Dir, run.Env, run.Stdout, run.Stderr = proj, env, &out, &out
 	if err := run.Start(); err != nil {
 		t.Fatal(err)

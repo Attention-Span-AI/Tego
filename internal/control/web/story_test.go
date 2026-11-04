@@ -25,7 +25,8 @@ const (
 
 // storyFixture is the supply-chain demo as the QA lane recorded it, in small: LEFT watched (robbed: the key and the
 // token read next to sends to its sink), RIGHT enforced (both reads and both sends refused, the token asked first),
-// a lost run with an open ask, and a live run with an ask waiting.
+// a lost run with an open ask, and a live run with an ask waiting. The two takes
+// record the same workspace and agent identity to authorize a contract reference.
 func storyFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -56,15 +57,15 @@ func storyFixture(t *testing.T) string {
 		line(leftRun, "watch-codex", 6, at(1), "net", `"rule":"net.resolver","verdict":"observed","dst":"127.0.0.53:53","proto":"udp"`),
 		line(leftRun, "watch-codex", 7, at(2), "run_end", `"reason":"exit","exit_code":0`))
 	write(rightRun, "fs:\n  ask:\n    - ./held/\n  deny_read:\n    - /d/with/home/.ssh/\n  ask_read:\n    - /d/with/home/.config/telemetry/\nnet:\n  allow:\n    - 127.0.0.1:59465\n",
-		line(rightRun, "codex-tego", 0, at(60), "run_start", `"tier":"landlock","command":["codex"],"cwd":"/d/with/proj",`+user),
-		line(rightRun, "codex-tego", 1, at(61), "refused", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"127.0.0.1:43437"`),
-		line(rightRun, "codex-tego", 2, at(61), "refused", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"127.0.0.1:43437"`),
-		line(rightRun, "codex-tego", 3, at(61), "refused", `"rule":"fs.deny_read[/d/with/home/.ssh/]","reason":"read-denied","op":"open","target":"/d/with/home/.ssh/id_rsa"`),
-		line(rightRun, "codex-tego", 4, at(61), "ask", `"ask_id":"q-1","ask_rule":"fs.ask_read[/d/with/home/.config/telemetry/]","hold":"open","op":"read","target":"/d/with/home/.config/telemetry/token"`),
-		line(rightRun, "codex-tego", 5, at(90), "answer", `"ask_id":"q-1","approved":false,"by":"uid:1000 pid:42","after_s":29.0`),
-		line(rightRun, "codex-tego", 6, at(90), "refused", `"rule":"fs.ask_read[/d/with/home/.config/telemetry/]","reason":"ask-denied","op":"open","target":"/d/with/home/.config/telemetry/token"`),
-		line(rightRun, "codex-tego", 7, at(91), "net", `"rule":"net[127.0.0.1:59465]","verdict":"allow","dst":"127.0.0.1:59465","host":"127.0.0.1","proto":"tcp"`),
-		line(rightRun, "codex-tego", 8, at(92), "run_end", `"reason":"exit","exit_code":0`))
+		line(rightRun, "watch-codex", 0, at(60), "run_start", `"tier":"landlock","command":["codex"],"cwd":"/d/without/proj",`+user),
+		line(rightRun, "watch-codex", 1, at(61), "refused", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"127.0.0.1:43437"`),
+		line(rightRun, "watch-codex", 2, at(61), "refused", `"rule":"unmatched","reason":"net-not-allowed","op":"net","target":"127.0.0.1:43437"`),
+		line(rightRun, "watch-codex", 3, at(61), "refused", `"rule":"fs.deny_read[/d/with/home/.ssh/]","reason":"read-denied","op":"open","target":"/d/with/home/.ssh/id_rsa"`),
+		line(rightRun, "watch-codex", 4, at(61), "ask", `"ask_id":"q-1","ask_rule":"fs.ask_read[/d/with/home/.config/telemetry/]","hold":"open","op":"read","target":"/d/with/home/.config/telemetry/token"`),
+		line(rightRun, "watch-codex", 5, at(90), "answer", `"ask_id":"q-1","approved":false,"by":"uid:1000 pid:42","after_s":29.0`),
+		line(rightRun, "watch-codex", 6, at(90), "refused", `"rule":"fs.ask_read[/d/with/home/.config/telemetry/]","reason":"ask-denied","op":"open","target":"/d/with/home/.config/telemetry/token"`),
+		line(rightRun, "watch-codex", 7, at(91), "net", `"rule":"net[127.0.0.1:59465]","verdict":"allow","dst":"127.0.0.1:59465","host":"127.0.0.1","proto":"tcp"`),
+		line(rightRun, "watch-codex", 8, at(92), "run_end", `"reason":"exit","exit_code":0`))
 	write(lostRun, "",
 		line(lostRun, "crashed", 0, at(120), "run_start", `"tier":"landlock","command":["sh"],"cwd":"/d/loop"`),
 		line(lostRun, "crashed", 1, at(121), "ask", `"ask_id":"q-9","ask_rule":"fs.ask[/d/loop/held/]","hold":"open","op":"write","target":"/d/loop/held/note.md"`))
@@ -375,9 +376,9 @@ func TestSigMemoReadsEachRunOnce(t *testing.T) {
 // newer enforced run of another program does not take its place.
 func TestComparePicksTheSameProgram(t *testing.T) {
 	runs := []*ledgerview.Run{ // newest first
-		{ID: "r-loop", Tier: "landlock", Command: "bash ./loop.sh"},
-		{ID: "r-left", Tier: "observe", Command: "python3 -m unittest"},
-		{ID: "r-right", Tier: "landlock", Command: "/usr/bin/python3 -m unittest"},
+		{ID: "r-loop", Tier: "landlock", Cwd: "/project", Agent: "same", Command: "bash ./loop.sh"},
+		{ID: "r-left", Tier: "observe", Cwd: "/project", Agent: "same", Command: "python3 -m unittest"},
+		{ID: "r-right", Tier: "landlock", Cwd: "/project", Agent: "same", Command: "/usr/bin/python3 -m unittest"},
 	}
 	if p := cmpPick(runs); p.A != "r-left" || p.B != "r-right" {
 		t.Errorf("cmpPick = %+v, want r-left against r-right", p)
@@ -436,9 +437,9 @@ func TestHomeIn(t *testing.T) {
 func TestPairIsTheClosestStart(t *testing.T) {
 	t0 := time.Date(2026, 10, 27, 19, 46, 52, 0, time.UTC)
 	runs := []*ledgerview.Run{ // newest first
-		{ID: "r-later", Tier: "landlock", Command: "codex --no-daemon", Start: t0.Add(13 * time.Minute)},
-		{ID: "r-left", Tier: "observe", Command: "codex --no-daemon", Start: t0},
-		{ID: "r-right", Tier: "landlock", Command: "/usr/bin/codex --no-daemon", Start: t0.Add(time.Second)},
+		{ID: "r-later", Tier: "landlock", Cwd: "/project", Agent: "same", Command: "codex --no-daemon", Start: t0.Add(13 * time.Minute)},
+		{ID: "r-left", Tier: "observe", Cwd: "/project", Agent: "same", Command: "codex --no-daemon", Start: t0},
+		{ID: "r-right", Tier: "landlock", Cwd: "/project", Agent: "same", Command: "/usr/bin/codex --no-daemon", Start: t0.Add(time.Second)},
 	}
 	if ref := ledgerview.ReferenceRun(runs, runs[1]); ref == nil || ref.ID != "r-right" {
 		t.Errorf("ReferenceRun = %v, want r-right", ref)
