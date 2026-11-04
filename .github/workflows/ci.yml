@@ -758,7 +758,7 @@ jobs:
         run: |
           d=/tmp/root-suites/prebuilt/tego.tegobpf
           [ -x "$d" ] || { echo "::error::no product build at $d"; exit 1; }
-          sudo "$d" doctor --json >"$RUNNER_TEMP/doctor-product.json" || true
+          sudo "$d" doctor --json | tee "$RUNNER_TEMP/doctor-product.json" >/dev/null || true # the file is the runner user's
           jq -c '{preempt: .plane.env.preempt, source: .plane.env.preempt_source, selected: .plane.selected,
             fmod_ret: (.plane.modes[] | select(.mode == "fmod_ret") | {ok, tested, detail})}' "$RUNNER_TEMP/doctor-product.json"
           case "$(jq -r '.plane.env.preempt // ""' "$RUNNER_TEMP/doctor-product.json")" in
