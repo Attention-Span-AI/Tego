@@ -1,8 +1,8 @@
 # ADR 0100: The second binary and the handoff
 
 Status: **accepted 2026-10-24**; implemented: the second binary, its sealed handoff, the noun rule, the link gates, the
-engine clients of (7), ask.sock's peer rule and the dashboard's own peer checks are built. Not built: the refusals of
-ADR 0113, which (7) names. Section numbers are stable because code, tests and lint rules cite them (for example
+engine clients of (7), ask.sock's peer rule and the dashboard's own peer checks are built. The built-in refusals of
+ADR 0113 were implemented 2026-11-03; its implementation note states the remaining limits. Section numbers are stable because code, tests and lint rules cite them (for example
 "ADR 0100 (1b)").
 
 ## Context
@@ -103,7 +103,7 @@ single source of an ask's ledger form; `internal/runscope` (`GovernedBy`, `Looks
 
 Narrowing changes: `ask.sock` refuses peers in any run scope or another cgroup namespace, and the broker serves only the
 ledger form of a target. The built-in refusals of [ADR 0113](0113-built-in-refusals-for-tego-surfaces.md) are a further
-narrowing, designed and not built.
+narrowing, implemented 2026-11-03 with the limits in that ADR's implementation note.
 
 ## Rejected options
 
@@ -167,3 +167,12 @@ narrowing, designed and not built.
   and `http.Transport` calls that dial, `tls` dials and listens, and the raw socket calls. What the edge does stays allowed:
   `net.File*` over the descriptors it is handed, `http.Serve`, `(*http.Server).Serve[TLS]` and `http2.Server.ServeConn`. The
   lint reads names, so it cannot see a dial made inside another package's call.
+
+
+### Amendment 2026-11-03: terminal rules view
+
+`rules` is a built handoff noun: `tego rules <run>` or `tego rules --last` renders the
+same `rulesview.InForce` model as the dashboard. Unique run-id abbreviations work too.
+Text includes enforcement limits, sources, hits and live blocks; `--json` is a
+version-1 object and omits contract bytes and environment values. It is read-only and
+retains the control binary's refusal of root. The engine still links no control code.

@@ -22,7 +22,7 @@ import (
 
 // kernel is every syscall the loop makes, behind one seam so the dispatch, the readers and the decisions
 // are unit-tested against a fake target without a kernel (docs/p0/supervisor.md §10). The production
-// implementation is sysKernel; it holds the listener fd and nothing else.
+// implementation is sysKernel; it holds the listener fd and an immutable authority option.
 type kernel interface {
 	// Wait blocks until the listener has a notification pending, wake becomes readable, or timeoutMS
 	// elapses, and reports which of those happened.
@@ -169,14 +169,20 @@ type kernel interface {
 	SendToRaw(fd int, p []byte, flags int, sa []byte) (int, error)
 	// CloseFD closes a duplicate this loop owns.
 	CloseFD(fd int) error
+	// CheckOpenLabel establishes equivalent task-label authority for this open,
+	// including creation attributes when flags can create a file.
+	CheckOpenLabel(tid, opener, flags int) error
 }
 
-// sysKernel is the production kernel: the notify fd plus plain syscalls. It owns no other state, so two
+// sysKernel is the production kernel: the notify fd, an immutable authority option and plain syscalls. Two
 // Loops on two fds never interact (E15). ln owns the listener (supervisor.New moved it in); each call on it
 // borrows the number for that call alone (ADR 0023), so a close under the loop is an error the call reports,
 // never a call on a number that was closed and reused. The zero value, which the methods that make plain
 // syscalls are called on, owns none.
-type sysKernel struct{ ln *sys.FD }
+type sysKernel struct {
+	ln                 *sys.FD
+	assumeAppArmorRoot bool
+}
 
 // waitState is the outcome of one Wait: what woke the poll.
 type waitState int

@@ -295,6 +295,10 @@ func applyBlock(ctx context.Context, name string, add bool, ref string, kind liv
 // what to type instead where the terminal has something to offer, and returns exit 1.
 func blockRefused(name, run string, add bool, value string, err error, stderr io.Writer) int {
 	hint := ""
+	path := "block the path instead"
+	if cmd := blockCommand(run, liveblock.KindPath, value); cmd != "" {
+		path += " (" + cmd + ")"
+	}
 	switch {
 	case errors.Is(err, liveblock.ErrNotRunning) && add:
 		hint = "; for its next run, make it a rule of the contract (tego rule)"
@@ -303,9 +307,9 @@ func blockRefused(name, run string, add bool, value string, err error, stderr io
 	case errors.Is(err, liveblock.ErrOldLauncher):
 		// An older launcher fails to read an overlay holding this kind: it would keep its last blocks and ignore every
 		// later change, tego unblock included, until this block is removed. It enforces a path block.
-		hint = fmt.Sprintf("; block the path instead (tego block %s path %s), or make it a rule for its next run (tego rule)", run, value)
+		hint = "; " + path + ", or make it a rule for its next run (tego rule)"
 	case errors.Is(err, liveblock.ErrReadsUnseen):
-		hint = fmt.Sprintf("; block the path instead (tego block %s path %s), which refuses changes to it", run, value)
+		hint = "; " + path + ", which refuses changes to it"
 	}
 	message(stderr, "", 0, 0, "tego "+name+": "+liveblock.RunWords(err)+hint, liveCode(err))
 	return identity.ExitFinding
@@ -346,7 +350,10 @@ var execReach = liveblock.ReachOf
 // nothing more to say. A bare name is matched by name alone, so it is what refuses one name of a multi-call program.
 func execWords(run, value string, r liveblock.ExecReach) string {
 	v, name := record.Printable(value), record.Printable(filepath.Base(value))
-	bare := fmt.Sprintf(" A bare name is matched by name only: tego block %s exec %s", run, name)
+	bare := ""
+	if cmd := blockCommand(run, liveblock.KindExec, filepath.Base(value)); cmd != "" {
+		bare = " A bare name is matched by name only: " + cmd
+	}
 	switch {
 	case r.Missing && filepath.IsAbs(value):
 		return fmt.Sprintf("Note: %s is not a file here now; the block still refuses it if it appears.", v)
@@ -377,13 +384,25 @@ func realWords(run string, kind liveblock.Kind, value string, link liveblock.Rea
 		return fmt.Sprintf("%s leads to %s through a link; the block refuses both.", v, record.Printable(link.Real))
 	case link.Uncovered != "":
 		u := record.Printable(link.Uncovered)
+		hint := "; block that path too"
+		if cmd := blockCommand(run, kind, link.Uncovered); cmd != "" {
+			hint += ": " + cmd
+		}
 		return fmt.Sprintf("%s leads to %s through a link, but %s was started by an older tego that does not follow it, "+
-			"so the block refuses %s as written only; block that path too: tego block %s %s %s", v, u, run, v, run, kind, u)
+			"so the block refuses %s as written only", v, u, run, v) + hint
 	case link.Unknown:
 		return fmt.Sprintf("Whether %s leads elsewhere through a link could not be worked out in time, so the block refuses "+
 			"it as written only; if it does, block the path it leads to too.", v)
 	}
 	return ""
+}
+
+// blockCommand keeps a suggested command literal without printing terminal controls as executable input.
+func blockCommand(run string, kind liveblock.Kind, value string) string {
+	if value != record.Printable(value) {
+		return ""
+	}
+	return fmt.Sprintf("tego block %s %s -- %s", shellQuote(run), kind, shellQuote(value))
 }
 
 // limitWords says what a time limit did to the block, from the block the overlay holds after the change (after, Kind

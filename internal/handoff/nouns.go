@@ -18,6 +18,7 @@ type Noun struct {
 // nouns as commands and names the others on one "planned" line, so help offers nothing that would only answer that it
 // is not there yet.
 var nouns = []Noun{
+	{"rules", "show a run's rules, their enforcement and hits", true},
 	{"serve", "start the local dashboard", true},
 }
 

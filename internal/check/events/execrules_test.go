@@ -22,3 +22,15 @@ func TestSummaryNamesTheCommandRule(t *testing.T) {
 		}
 	}
 }
+
+func TestExecSummaryNamesFilelessAndDropped(t *testing.T) {
+	for _, tc := range []struct{ payload, want string }{
+		{`{"path":"/memfd:x","fileless":true}`, "/memfd:x [fileless: executable in memory]"},
+		{`{"path":"/p/tool","dropped":true}`, "/p/tool [dropped: file written by the agent]"},
+		{`{"path":"/bin/ls","fileless":false,"dropped":false}`, "/bin/ls"},
+	} {
+		if got := Summary(&record.Event{Kind: record.KindExec, Payload: []byte(tc.payload)}); got != tc.want {
+			t.Errorf("%s: %q", tc.payload, got)
+		}
+	}
+}

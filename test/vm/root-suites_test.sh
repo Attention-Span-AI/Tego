@@ -189,6 +189,13 @@ run_stub() {
 	[ -s "$tmp/boots" ] || fail "the stand-in tree booted nothing: $(tail -5 "$tmp/stub.log")"
 }
 
+# An exact parent-package selector must not also boot all its subpackages.
+: >"$tmp/boots"
+env -i PATH="$tmp/stub:$PATH" HOME="$tmp" TMPDIR="$tmp" GO="$tmp/stub/go" VM_OUT="$tmp/stubout" VM_BPF=no STUB_BOOTS="$tmp/boots" VM_HOST=kvm \
+	"$repo/test/vm/root-suites.sh" =internal/runtime >"$tmp/stub.log" 2>&1 || true
+grep -qF -- "--cwd /src/internal/runtime " "$tmp/boots" || fail "exact runtime selector booted no runtime suite"
+if grep -qF -- "--cwd /src/internal/runtime/" "$tmp/boots"; then fail "exact runtime selector booted subpackages"; fi
+
 # A row named, with its kernel named too (the script fetches the kernel itself only when none is named, which needs the
 # network): every guest boots that kernel, and the suite's guest, the one whose tests read the row, is told its name.
 run_stub VM_HOST=kvm TEGO_VM_ROW=fedora-7.2 TEGO_VM_KERNEL=matrix-fedora-7.2

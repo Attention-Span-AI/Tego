@@ -29,8 +29,8 @@ var planeArity = map[string]int{"file_open": 1, "bprm_check": 1, "path_rename": 
 	"path_rmdir": 2, "path_mknod": 4, "path_mkdir": 3, "path_symlink": 3, "path_truncate": 1, "file_truncate": 1,
 	"path_chmod": 2, "path_chown": 3, "inode_setxattr": 6, "inode_removexattr": 3, "inode_set_acl": 4,
 	"inode_remove_acl": 3, "socket_create": 4,
-	"socket_connect": 3, "socket_sendmsg": 3, "mmap_file": 4, "file_mprotect": 3,
-	"socket_bind": 3, "socket_listen": 2, "ptrace_access_check": 2, "ptrace_traceme": 1, "bpf": 4, "key_permission": 3}
+	"socket_connect": 3, "socket_sendmsg": 3, "unix_may_send": 2, "mmap_file": 4, "file_mprotect": 3,
+	"socket_bind": 3, "socket_listen": 2, "ptrace_access_check": 2, "ptrace_traceme": 1, "bpf": 4, "key_permission": 3, "capable": 4}
 
 // planeArityFmodRet is the security_ function's count where it differs from the LSM hook's.
 var planeArityFmodRet = map[string]int{"mmap_file": 3}
@@ -374,6 +374,39 @@ func TestPlaneParamsMatchTheSource(t *testing.T) {
 	for _, h := range bpfobj.PlaneHooks {
 		if !seen[h.Name] {
 			t.Errorf("no TEGO_PLANE_HOOK parameters read for %s", h.Name)
+		}
+	}
+}
+
+// Adoption has no inherited topology floor. A mode must prove this mandatory
+// hook's complete path before it can be selected for either adoption caller.
+func TestPlaneRequiresProvenTopologyHook(t *testing.T) {
+	for _, mode := range bpfobj.PlaneModes {
+		var rows []HookResult
+		for _, row := range passingPlaneRows() {
+			if row.Plane == mode {
+				rows = append(rows, row)
+			}
+		}
+		i := slices.IndexFunc(bpfobj.PlaneHooks, func(h bpfobj.PlaneHook) bool { return h.Name == "capable" })
+		if i < 0 || bpfobj.PlaneHooks[i].Optional {
+			t.Fatal("the topology hook must be mandatory")
+		}
+		for name, fault := range map[string]func(*HookResult){
+			"BTF":     func(r *HookResult) { r.BTF = false },
+			"load":    func(r *HookResult) { r.Loaded = false },
+			"attach":  func(r *HookResult) { r.Attached = false },
+			"run":     func(r *HookResult) { r.Ran = false },
+			"refusal": func(r *HookResult) { r.Inside = planePassed },
+			"scope":   func(r *HookResult) { r.Outside = planeRefused },
+		} {
+			t.Run(string(mode)+"/"+name, func(t *testing.T) {
+				bad := slices.Clone(rows)
+				fault(&bad[i])
+				if got := planeModeVerdict(mode, bad, planeScope{Inside: 1}, passingKnown()); got.OK {
+					t.Fatalf("unproven topology hook admitted: %+v", got)
+				}
+			})
 		}
 	}
 }

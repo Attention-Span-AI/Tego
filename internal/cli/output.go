@@ -4,6 +4,7 @@ package cli
 
 import (
 	"io"
+	"strings"
 	"sync"
 )
 
@@ -35,3 +36,6 @@ func (w *outputWriter) failure() error {
 	defer w.mu.Unlock()
 	return w.err
 }
+
+// shellQuote keeps a suggested command's argument literal in a POSIX shell.
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }

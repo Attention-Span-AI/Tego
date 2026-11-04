@@ -235,6 +235,7 @@ type Machine struct {
 	Layers []string
 	// Home is the invoking user's home directory from the passwd database, "" when unknown (E9);
 	// a leading "~/" in a path setting was expanded against it at Load.
+	ServePort        Setting[int] // serve.port: local TCP port protected by builtin.tego_surface
 	Home             string
 	Tier             Ceiling[TierSetting]
 	Capture          Ceiling[CaptureSetting]

@@ -1,6 +1,8 @@
 # test/vm — kernels and root, in a VM
 
 Two harnesses live here. Both boot a KVM guest with `kvm-run.sh` and return the command's own exit code.
+`root-suites.sh` accepts package substrings, or `=internal/runtime` to select exactly that package
+without its subpackages; this keeps a targeted `VM_RUN` from producing empty suites in unrelated packages.
 
 | Harness | What it is for | Needs on the host |
 |---|---|---|
@@ -743,7 +745,7 @@ after that:
    - these host packages, copied whole except `/usr/share`: dash, bash, coreutils (uutils and GNU),
      findutils, grep, sed, mawk, util-linux, mount, procps, iproute2, libc-bin (so `ldconfig -p`
      works), kmod, python3 (the host's own version, from python-pkgs.sh), bubblewrap, openssl, libssl3t64 (a real OpenSSL for the uprobe tests),
-     bpftool and strace;
+     bpftool, strace and AppArmor's parser (SEC08 loads a disposable policy in the guest);
    - every shared library those binaries load, with symlinks and hard links kept as they are on the
      host, so `/bin/sleep` is the same uutils link it is here.
 
@@ -827,3 +829,70 @@ Run `test/vm/fetch-kernel_test.sh` for cache/concurrency tests and real cryptogr
 tests using disposable signing keys. Those tests cover wrong keys, modified
 metadata/index/package/payload/image bytes, missing signatures, weak signature
 hashes, and a substituted cache with a self-consistent `source.json`.
+
+## Held-file security authority regressions
+
+`internal/runtime/supervisor`'s integration tests include three independent policy controls:
+`TestOpenLabelAppArmorHiddenAncestors` loads different ancestor profiles stacked with one identical visible
+namespace-local profile; `TestOpenLabelSELinuxCreation` uses equal current contexts with different `fscreate`;
+`TestOpenLabelSmackProcessRules` uses equal labels with different `load-self2` restrictions. Each requires a
+native denied open and a less-restricted opener that succeeds. The SELinux/Smack setup script refuses to run
+outside `kvm-run.sh`'s disposable initramfs. AppArmor's test loads and removes its own profiles.
+
+Build the supervisor integration binary statically (`CGO_ENABLED=0 go test -c -tags integration
+./internal/runtime/supervisor`). Compile the small guest policy with `secilc -M false -c 33 -o policy.bin
+-f file_contexts internal/runtime/supervisor/testdata/labels/selinux.cil`. This policy permits unknown classes
+and permissions so only the named creation check is constrained; it is a regression fixture, not a distro policy.
+Stage the binary, compiled policy and `held-label-policy.sh` with `--file`. For the Fedora kernel row boot
+`TEGO_VM_LSM=capability,selinux,landlock,yama,bpf,ima,evm TEGO_VM_APPEND=enforcing=1`, run the setup script
+as `held-label-policy.sh selinux /vm/policy.bin`, then the SELinux test. For Smack, boot Ubuntu with
+`TEGO_VM_LSM=capability,smack,landlock,yama,bpf`, run `held-label-policy.sh smack`, then the Smack test.
+`run-in-vm.sh fedora-7.0` uses a Fedora kernel with the harness's host-userland initramfs, not a Fedora installation.
+
+The runtime integration tests `TestIntegrationHeldOpenRespectsAppArmor` and
+`TestIntegrationHeldOpenRespectsAppArmorWithoutLSMList` exercise actual read/truncate/create completions at
+landlock, cgroup and bpflsm. The latter masks only the securityfs LSM list in a private mount namespace;
+AppArmor namespace depth remains readable. `TestIntegrationHeldOpenSameAppArmorProfileWithoutLSMList`
+adds an enforcing named profile shared by the supervisor, deputy and plain agent, with the supervisor's label
+observed from the root namespace. Its permissive fixture includes `/` execution because AppArmor can name a
+sealed executable FD `/`; `/**` alone misses it and can cause unrelated helper-start failures. Both masked-list
+fixtures require the enumeration syscall; older kernels or an outer filter blocking it skip that positive control.
+Hiding namespace depth as well must refuse by default because visible labels cannot prove there are no hidden ancestors.
+`TestIntegrationHeldCreateRespectsSELinux` exercises actual native and held creates at all three tiers using
+that disposable enforcing policy: equal current contexts, explicit restricted task `fscreate`, default deputy,
+and permitted read/truncate controls.
+
+The dedicated `vm-matrix` **held labels** jobs now build and run these exact fixtures:
+
+```sh
+test/vm/held-label-tests.sh selinux /path/to/results/selinux
+test/vm/held-label-tests.sh smack /path/to/results/smack
+```
+
+Install `secilc` on the build host (or set `SECILC` to its executable). Each command loads the policy in a
+disposable guest and runs `held-label-required.sh`: any skip, missing top-level pass, test failure or
+unreported guest exit fails. SELinux also requires `TestIntegrationHeldCreateRespectsSELinux` at all
+three tiers. On a shared development host set `VM_RUNNER` to its VM-slot wrapper and run the whole command
+through its resource-limited runner. `TEGO_VM_MEM` defaults to 3G. Output includes the console and guest
+status. These jobs run nightly, on release tags and through **Run workflow** / manual dispatch.
+**Per-PR CI does not run these SELinux/Smack live-policy tests**; it runs the comparator unit coverage.
+The ordinary root-suite skip entries apply to other boots and do not permit a skip in these jobs.
+
+`held-label-docker.sh` is a separate disposable Ubuntu guest proof. Stage a working Docker installation
+(client, dockerd, containerd, runc and their shared libraries), the static supervisor/runtime integration
+binaries at `/vm/supervisor.test` and `/vm/runtime.test`, the static testhooks engine at `/vm/tego`, and
+`held-label-docker-engine.sh` plus `held-label-required.sh` under `/vm`. Run the Docker script as root in
+the guest. It starts its own VFS daemon with no bridge/iptables or image pull; `DOCKER_RAMDISK=1` supports
+the initramfs root. It imports BusyBox and those binaries as a local image. An optional
+`/vm/supervisor-reviewed.test` runs the same Docker regression against the reviewed decision logic and
+must fail before the fixed test passes.
+
+The profile stays the real enforcing `docker-default`. A read-only securityfs bind lets the profile
+itself deny access. Outer seccomp is disabled to permit the tested APIs; the engine runs additionally get
+`CAP_SYS_ADMIN`, `CAP_SYS_PTRACE` and a writable host cgroup view for Tego's root launch. The script tests
+native/direct success, default refusal of held read/truncate/create with preserved bytes and no created
+leaf, and opt-in success with `apparmor/assumed-root-namespace` present in the run record. This is tier
+landlock in a real Docker container, not a proof for unchanged Docker seccomp defaults, container root
+tiers, every container manager, or safe automatic inference of AppArmor namespace visibility. The default
+still refuses unreadable depth; administrators explicitly accepting that residual can set
+`fs.apparmor_assume_root_namespace: true`. The Docker proof is separate from the SELinux/Smack CI jobs.

@@ -79,6 +79,9 @@ func (b unixBinding) key() bindingKey {
 // the mount it was reached on (STATX_MNT_ID; mnt is 0 when the kernel did not report one), whose superblock device
 // mountinfo names (kernel.MountDev), and its birth time.
 type unixFile struct {
+	nlink    uint64
+	parents  [64]fileID
+	parentsN int
 	dev, ino uint64
 	mnt      uint64
 	// born is the file's birth time (STATX_BTIME) in nanoseconds since the epoch, 0 when the filesystem did not

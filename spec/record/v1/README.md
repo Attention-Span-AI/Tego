@@ -157,6 +157,11 @@ the built-in `deny_write` set of a run no kernel decision plane decides (tier la
 listener), refused by the supervisor on copied pathnames. It is a static property of the compiled contract at the
 run's tier and decision plane, not an event; absent at revision 6 or later, the run had none, and absent in ledgers
 that predate it.
+*Added 2026-11-04 (SEC08, ADR 0041):* the extensible `best_effort` list also discloses
+`apparmor/assumed-root-namespace` whenever the top-level contract enables
+`fs.apparmor_assume_root_namespace: true` (default false). This records the administrator opt-in even when
+no open needed the assumption; it is not a per-open use counter. Hidden ancestor restrictions may differ
+when AppArmor namespace depth is unreadable. Other authority facts remain mandatory.
 At `record_minor` 7 (2026-10-06, [ADR 0048](../../../docs/adr/0048-exec-command-rules.md) (8)), an `exec` line an exec
 command rule decided carries, all optional and additive: `command_rule` (the entry as compiled: `git push`, or the
 constrained tool for an unlisted invocation), `command_list` (`deny`, `ask`, `allow` or `unlisted`), `command_match`
@@ -549,12 +554,16 @@ Record minors 30 to 34 are reserved. Their fields are declared and validated ahe
 refused in a ledger below their revision; nothing writes `record_minor` 30 or more, and a launcher refuses to start a run whose `run_start` would carry one.
 
 At `record_minor` 11 (2026-10-16, [agent-contract.md](../../../docs/p0/agent-contract.md) R10a), `run_start` also
-carries the optional `runtime_grants`: the rule name of every entry the run added to its table on its own authority
+carries the optional `runtime_grants`: the rule name of every grant the run makes on its own authority
 rather than read from the contract, in table order — each capture listener (`net.capture[<addr>]`), the DNS broker's
 socket (`net.dns-broker[unix:<path>]`) and the run's own generated `CODEX_HOME` (`fs.codex_home[<path>]`, a write grant
 on exactly `$XDG_RUNTIME_DIR/tego/<run id>/codex`). At revision 14 the run's `hook-state` directory joins them
 (`fs.harness-state[<path>]`, a write grant on exactly `$XDG_RUNTIME_DIR/tego/<run id>/hook-state`); at revision 20 the
-harness hook's exact-argv exec grant (`exec.harness-hook[<tego binary>]`) follows them. The contract hash does not cover them; lines those grants decide
+harness hook's exact-argv exec grant (`exec.harness-hook[<tego binary>]`) follows them. Since the SEC06 compatibility
+follow-up (2026-11-03, ADR 0126), a relayed stdio server also lists `exec.mcp-stage[<tego path>]`: a conditional
+allowance for the admitted shim's exact fresh-socket child, authenticated and pidfd-pinned at its held stage exec.
+This adds no general command pattern to the table; its presence records the available runtime authority, while
+an exec line with that rule records its use. Explicit denies and asks still hold. The contract hash does not cover them; lines those grants decide
 carry the same rule names. `net.resolver`, the run's own allowance of a query to a configured resolver on port 53
 (docs/p0/supervisor.md R14), is a decision the supervisor makes, not an entry, and is not listed here; its lines carry
 the rule `net.resolver`. Absent at revision 11 or later, the run added no such entry; absent in ledgers that predate
@@ -868,3 +877,22 @@ rewritten: rewriting would change every `id` and break the anchor. Removing an e
 missing, which is the record that the run existed and was removed.
 
 Gate fields (optional, record minor 5): `score` is the saturated integer score 0..100, `gate_rule` names the first contributing bounded declaration, `gate_outcome` is the scored allow/ask/refused decision, and `gate_facts: copied_syscall` labels its provenance. At `record_minor` 10 (2026-10-16, [ADR 0041](../../../docs/adr/0041-race-free-supervisor-decisions.md) D5, under a contract's `gate.completion: held`), `gate_facts: held_object` labels a decision taken on the object the run's open deputy pinned, the larger of the copied name's score and the pinned object's: the open was completed in the run by the deputy and the descriptor delivered is that object, so the line's `path` is the pinned object's and its authority `rule` (`human` once a person approved it, `gate` for a gate refusal). A held open that failed with the kernel's errno, or was performed and not delivered, carries `operation_completed`, `fd_delivered`, the optional `result_unknown` and `syscall_ret`, as an approved open's line does; a held refusal this loop made without the kernel's word names `held-unsupported`, `held-unavailable` or `held-limit` in `rule`, reason `fs-gate`. `run_start.best_effort` then lists `gate.fs.read/o_path` in place of `gate.fs.read/open` and no `gate.fs.write/open`, unless the deputy did not start. `completion_unsupported: true` marks a scored ask that the operation cannot safely complete and therefore refused. Kernel final outcome remains authoritative and may differ from the copied-fact gate allow; metadata is attached to that same action line. Human-approved actual outcomes retain authority human. Ask/answer records may carry score and gate_rule; they report the coordination decision separately from the actual operation result.
+
+
+Writer clarification (2026-11-03, review M5): production pipeline and DNS refused
+action/mirror pairs are prepared together and appended contiguously under the
+ledger writer's mutex. Each remains a separate chained line. No payload or envelope
+field changes, so this does not allocate a record minor or change verifier rules.
+Readers of older ledgers still use the bounded legacy pairing heuristic: a mirror
+already displaced beyond that window has no reliable action reference and can count
+as a separate refusal. A failed pair append may leave its action without its mirror.
+
+### Built-in refusals (ADR 0113, implemented 2026-11-03)
+
+Ordinary refusal lines use the existing `rule` strings `builtin.host_ipc`, `builtin.tego_surface` and
+`builtin.other_tty`. Net connects/sends/binds keep `net-not-allowed`; tty reads/imports keep
+`read-denied`; filesystem writes keep their existing write refusal reason. No new event kind, reason
+or record minor is introduced. The pty relay records an installed slave as an allowed filesystem open
+under `builtin.other_tty`. `builtin.host_ipc/datagram` is a `best_effort` cell disclosing admitted or
+unsupported datagram/address alias limitations where no native peer plane runs, not a
+new reason. The native Unix peer plane emits an ordinary refused net/sendmsg line with its built-in rule and `mechanism: plane`. At root tiers, an actual kernel refusal of a numeric terminal is attributed to `builtin.other_tty` using the recorded file identity and inherited-terminal exception. Tier landlock may have no line for a read without a notification under summary mode.

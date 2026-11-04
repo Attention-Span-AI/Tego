@@ -89,7 +89,9 @@ func TestGeneratedTruncateCellsTakeTheFloorBelowABI3(t *testing.T) {
 // writes the line up to 6.12 (ADR 0016). An attach out of the run is the plane's EACCES on an axis whose plane answers
 // before Landlock (plane_first), Landlock's EPERM elsewhere.
 func TestWantWhereAnswersOnItsMachines(t *testing.T) {
-	current := Machine{Kernel: [2]int{6, 17}, ABI: 7, MemfdNoexecSeal: true, UnixDiag: true}
+	// The baseline has no abstract-name scope; the ABI >= 6 conditional
+	// expectation is tested by constructing its own matching machine below.
+	current := Machine{Kernel: [2]int{6, 17}, ABI: 5, MemfdNoexecSeal: true, UnixDiag: true}
 	seen := 0
 	for _, fx := range Fixtures() {
 		for i := range fx.Cells {
@@ -102,6 +104,11 @@ func TestWantWhereAnswersOnItsMachines(t *testing.T) {
 					on.Kernel = b
 				} else if b, err := parseBound(cw.Where.KernelMin); err == nil {
 					on.Kernel = b
+				}
+				if cw.Where.ABIMin != 0 {
+					on.ABI = cw.Where.ABIMin
+				} else if cw.Where.ABIMax != 0 {
+					on.ABI = cw.Where.ABIMax
 				}
 				if cw.MemfdNoexecSeal != nil {
 					on.MemfdNoexecSeal = *cw.MemfdNoexecSeal

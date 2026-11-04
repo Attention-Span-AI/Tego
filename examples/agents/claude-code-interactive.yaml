@@ -2,16 +2,20 @@
 #
 # Claude Code, interactive (the full-screen interface), under tego, signed in with your subscription or an API key.
 # claude-code.yaml is the print-mode shape (`claude -p`, forwarder capture, one task); this is the one for a person at a
-# terminal. It is the contract proven on a laptop by examples/demo/contracts/claude-code.yaml, which the demo kit fills
+# terminal. It shares its policy with examples/demo/contracts/claude-code.yaml, which the demo kit fills
 # in from the same lines: TestInteractiveExamplesMatchTheDemoKit (examples/demo) fails when the two drift apart.
 #
 # Run it from the project (the directory Claude Code works in), with the contract kept OUTSIDE it (a contract the agent
 # could rewrite is refused):
-#   mkdir -p .claude-state/tmp
+#   install -d -m 700 .claude-state .claude-state/tmp
 #   tego compile ~/contracts/claude-code-interactive.yaml
 #   tego run ~/contracts/claude-code-interactive.yaml
 #
-# CHANGE: the uid in the cc-socks path below (`id -u`; it is /run/user/<uid>/, which $XDG_RUNTIME_DIR names).
+# XDG_RUNTIME_DIR: "%R" asks Tego for this run's private writable harness runtime. Keep the invoking
+# XDG_RUNTIME_DIR short (normally /run/user/<uid>); Tego checks cc-socks/9999999.sock fits Claude's
+# 103-byte budget before launch. A long project path does not affect it. The shared /tmp fallback is
+# ungranted, and host runtime sockets remain refused by builtin.host_ipc. Requires an unprivileged run
+# with a provisioned claude-code harness; Tego creates and removes the private directory itself.
 #
 # Logging in. Claude Code's own /login is not used: it needs claude.ai and the console, which net.allow leaves out, and
 # it would store the login under CLAUDE_CONFIG_DIR. Your login reaches Claude Code through the environment instead,
@@ -25,7 +29,7 @@
 #     connectivity check, which goes straight to api.anthropic.com whatever the base URL says. The bytes of the model
 #     calls are therefore not recorded; the connection, every file write, program and refusal is (record: full).
 #   - fs.write has /dev/tty (the full-screen interface draws there), /dev/null (the Bash tool redirects into it) and
-#     the cc-socks directory (a socket Claude Code makes there). "./" is the project: ask for less if the task allows.
+#     the project. The existing fs.harness-state grant covers private session sockets. Ask for less if the task allows.
 #   - CLAUDE_CONFIG_DIR and CLAUDE_CODE_TMPDIR keep Claude Code's state inside the project, so ~/.claude is never
 #     written.
 #   - exec.allow: bash and git are what its Bash tool needs; anything else it tries is refused and recorded. Add the
@@ -42,7 +46,7 @@ command: ["claude"]
 record: full
 capture: off
 fs:
-  write: ["./", "/dev/null", "/dev/tty", "/run/user/1000/cc-socks/"]
+  write: ["./", "/dev/null", "/dev/tty"]
 exec:
   allow: ["bash", "git"]
 net:
@@ -55,6 +59,7 @@ env:
     CLAUDE_CONFIG_DIR: ".claude-state"
     CLAUDE_CODE_TMPDIR: ".claude-state/tmp"
     TMPDIR: ".claude-state/tmp"
+    XDG_RUNTIME_DIR: "%R"
 limits:
   pids: 512
   memory: 4GiB

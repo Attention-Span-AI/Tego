@@ -545,6 +545,13 @@ func baseNames(ps []string) string {
 // storyOf is the run page's verdict banner: red when secrets left, green when Tego stopped an attempt, neutral
 // otherwise. The title is the fact; the second line is labels, joined with " · ".
 func storyOf(v ledgerview.Verdict, live bool) storyText {
+	if v.Partial {
+		v.Partial = false
+		st := storyOf(v, live)
+		st.Title = "In this event window: " + st.Title
+		st.Sub = "This verdict does not cover every recorded event; inspect the ledger for the full record."
+		return st
+	}
 	switch v.Kind {
 	case ledgerview.VerdictLeak:
 		st := storyText{Tone: "leak", Icon: "i-triangle-alert",
@@ -615,6 +622,16 @@ type chipText struct {
 // Both sides count distinct secrets (len(Exposed), Verdict.Protected); the refusals behind a protected count are in
 // its title: "2 secrets kept; 2 secret reads and 2 sends to 127.0.0.1:9821 refused".
 func chipOf(v ledgerview.Verdict) chipText {
+	if v.Partial {
+		v.Partial = false
+		c := chipOf(v)
+		if c.Text == "" {
+			c = chipText{"b-observed", "i-eye", "partial", "This verdict does not cover every recorded event"}
+		} else {
+			c.Title += "; some events are not covered"
+		}
+		return c
+	}
 	switch v.Kind {
 	case ledgerview.VerdictLeak:
 		return chipText{"b-bad", "i-triangle-alert", strconv.Itoa(len(v.Exposed)) + " exposed",

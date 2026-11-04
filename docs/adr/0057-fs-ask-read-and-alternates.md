@@ -92,6 +92,15 @@ beneath `.husky` or `.githooks`, anything beneath the harness and editor setting
 `fs.ask` scope. Not refused: a file beneath a write entry, the project's included (R10 keeps the contract file out of
 every write entry). Its identity is fixed when it is named, and its bytes are the agent's own already.
 
+*Implementation note 2026-11-03 (SEC09/SEC10, ADR 0069).* In a held-read run, the alternate's retained descriptor
+is checked against the launch deny_read identities at answer time and before reopening, including for a write-only
+alternate. The returned descriptor is checked again, with the directory barriers and replacement-history check,
+before delivery. Renaming a protected file to an ordinary name cannot make it an alternate. Uncertain replacement
+history refuses the alternate too. A late refusal records any completed truncate, the alternate path and
+`alternate_for`, with no descriptor delivered and `result_unknown` if the reply is lost. `TestHeldReadAlternateFollowsIdentity` first delivered both the
+renamed launch secret and its replacement without these checks; `TestHeldReadAlternateRechecksHistoryAfterOpen`
+holds the late refusal's effect fields and permits an unchanged benign alternate.
+
 *Implementation note 2026-10-20 (agent-contract R26).* The user registry's `agents/` and
 `skills/` (the machine config's `registry:`) are refused for a write alternate, from their own list,
 `RuleTable.OwnReadable`, not from tego's own state above: a run may read them, so a read alternate there is one like

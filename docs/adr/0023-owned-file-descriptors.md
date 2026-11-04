@@ -2097,3 +2097,13 @@ cannot follow, so that is a lease site. `internal/runlock` (the run lock and the
 `sys.PidfdSendSignal`, which takes a bare number, so sys gives an owner form, `PidfdSendSignalFD`: it borrows the
 pidfd for the call, and a closed or nil owner is `ErrClosed`, as `StopTarget.Signal`'s own `Borrow` was. `edges.txt`
 was regenerated, and `TestPidfdSendSignalFD` holds the owner form.
+
+### C40 descriptor additions — 2026-11-03
+
+The tty layer leases its ruleset and path owners through `FD.AddLandlockPath`. Controlling-terminal
+lookup owns its `/dev/tty` open. The pty relay owns a new peer at birth with
+`OwnSyscall(SYS_IOCTL, ..., TIOCGPTPEER, flags | O_CLOEXEC)` and leases both source and listener through `FD.SendSeccompDescriptor` for ADDFD/SEND;
+the agent's requested close-on-exec flag is applied separately at delivery. F10 now admits only that
+named descriptor-producing ioctl under OwnSyscall, and F9 requires O_CLOEXEC. F5 additionally
+recognises the non-producing TIOCGDEV and TIOCGPTN queries. Bare TIOCGPTPEER and other ioctls remain
+refused by the ownership checker; decision-table tests hold all three cases. No raw-site ratchet is raised.

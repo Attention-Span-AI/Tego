@@ -67,15 +67,17 @@ func (r *runner) capabilityLine(capture string) map[string]bool {
 	set[backend.CapProtectedWriteTargets] = r.planeDecides()
 	// Held reads (ADR 0069): the run's open deputy completes every read-capable open and its floor refuses a deny_read
 	// inside a write entry, and a file a name rule covers made during the run, on the object reached. Without them
-	// neither holds at tier landlock, whatever the tier's column says; a moved or hard-linked target is never caught
-	// there (the matrix's own false).
+	// none holds at tier landlock, whatever the tier's column says. Launch pins also
+	// refuse moved targets; an uncertain replacement history refuses held reads.
 	if r.readsHeldServed() {
 		set[backend.CapReadDeny] = true
 		set[backend.CapReadDenyNested] = true
 		set[backend.CapReadDenyCreatedLater] = true
+		set[backend.CapReadDenyMoved] = true
 	} else if t := r.deps.Enforce.Tier(); t == backend.TierLandlock || t == backend.TierObserve || recordsOnly(r.handle) {
 		set[backend.CapReadDenyNested] = false
 		set[backend.CapReadDenyCreatedLater] = false
+		set[backend.CapReadDenyMoved] = false
 	}
 	net := r.networkGuarantees()
 	set[backend.CapTCPDestinationKernel] = net.TCPDestination

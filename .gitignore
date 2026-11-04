@@ -22,7 +22,7 @@ __pycache__/
 /maze
 *.tsbuildinfo
 
-# The demo kit's stage: fake secrets, the sink log, a copy of the project (examples/demo/demo.sh reset removes it).
+# The demo kit's stage: fake secrets, logs and project copies (reset retains the stage's ownership marker).
 examples/demo/stage/
 
 # The lint configs scripts/lint-untagged.sh and scripts/check-fd_test.sh write in the root while they run.

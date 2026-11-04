@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -59,6 +60,7 @@ type config struct {
 	sessionID     string
 	model         string
 	spillDir      string
+	sessionSocket bool
 	bare          bool
 	prompt        string
 }
@@ -66,7 +68,7 @@ type config struct {
 var (
 	valueFlags   = map[string]bool{"--settings": true, "--script": true, "--result": true, "--cwd": true, "--session-id": true, "--model": true, "--spill-dir": true}
 	ignoredValue = map[string]bool{"--permission-mode": true, "--output-format": true, "--allowedTools": true, "--allowed-tools": true, "--append-system-prompt": true, "--max-turns": true}
-	boolFlags    = map[string]bool{"--bare": true, "-p": true, "--print": true, "--verbose": true}
+	boolFlags    = map[string]bool{"--bare": true, "--session-socket": true, "-p": true, "--print": true, "--verbose": true}
 )
 
 // parseArgs reads the command line. A flag's value is the next argv element whole (or follows =), so inline settings
@@ -95,6 +97,9 @@ func parseArgs(args []string) (config, error) {
 		case boolFlags[name]:
 			if hasVal {
 				return c, fmt.Errorf("%s takes no value", name)
+			}
+			if name == "--session-socket" {
+				c.sessionSocket = true
 			}
 			if name == "--bare" {
 				c.bare = true
@@ -282,6 +287,40 @@ func run(args, env []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "fakeclaude: %v\n", err)
 		return 1
 	}
+	// Optional startup probe for the interactive examples: real Claude Code binds
+	// a session socket under XDG_RUNTIME_DIR/cc-socks before using its tools.
+	if cfg.sessionSocket {
+		base := getenv(env, "XDG_RUNTIME_DIR")
+		if base == "" {
+			base = getenv(env, "CLAUDE_CODE_TMPDIR")
+		}
+		if base == "" {
+			base = os.TempDir()
+		}
+		path, err := sessionSocketPath(base, os.Getuid(), os.Getpid())
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		socket, err := net.Listen("unix", path)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		defer socket.Close() //nolint:errcheck // startup fixture endpoint
+		peer, err := net.DialTimeout("unix", socket.Addr().String(), 5*time.Second)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		_ = peer.Close() // the probe needs only the run-local connection
+		fmt.Fprintln(stdout, "fakeclaude session socket:", path)
+	}
+
 	model := cfg.model
 	if model == "" {
 		model = getenv(env, "ANTHROPIC_MODEL")
@@ -320,6 +359,20 @@ func run(args, env []string, stdout, stderr io.Writer) int {
 		}
 	}
 	return code
+}
+
+// sessionSocketPath models installed Claude Code 2.1.318, including the stricter
+// application threshold that selects a shared fallback before sun_path overflows.
+func sessionSocketPath(runtime string, uid, pid int) (string, error) {
+	leaf := strconv.Itoa(pid) + ".sock"
+	path, err := filepath.Abs(filepath.Join(runtime, "cc-socks", leaf))
+	if err != nil {
+		return "", err
+	}
+	if len(path) > 103 {
+		return filepath.Join("/tmp", "cc-socks-"+strconv.Itoa(uid), leaf), nil
+	}
+	return path, nil
 }
 
 func writeJSON(path string, v any) error {

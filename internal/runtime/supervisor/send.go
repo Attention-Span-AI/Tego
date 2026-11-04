@@ -296,7 +296,7 @@ func (l *Loop) relayToPeer(n *notif, t *target, args sendArgs, sa []byte) {
 func (l *Loop) sendConnectedUnixOnly(n *notif, t *target, d dest, raw []byte, control bool, flags uint64, prepare func() (sendArgs, bool)) {
 	switch {
 	case !hostSocketRelayable(t.domain):
-		l.refuseNet(n, d, t.proto, refuse(ruleHostSockets))
+		l.refuseNet(n, d, t.proto, refuse(l.table.Load().socketBoundaryRule()))
 	case t.sockType != unix.SOCK_STREAM, t.domain != unix.AF_UNIX && (control || zeroCopy(int(int32(flags)))):
 		l.respond(n, respContinue())
 	default:
@@ -759,7 +759,7 @@ func (l *Loop) sendDecisionCtl(n *notif, r *reader, sockfd int, d dest, raw []by
 		//
 		// The unix-only state (ADR 0070) guards the descriptor as well, which the kernel looks up again after a
 		// CONTINUE: sendConnectedUnixOnly.
-		if c.hostSockets {
+		if c.hostSockets || c.pol.Rules.Builtins != nil {
 			l.sendConnectedUnixOnly(n, &t, d, raw, control, flags, prepare)
 			return
 		}
@@ -782,7 +782,7 @@ func (l *Loop) sendDecisionCtl(n *notif, r *reader, sockfd int, d dest, raw []by
 		}
 	}
 	if !t.stream() {
-		if !t.dec.allowed && l.askDatagram(n, c, &t, d, raw, control, prepare) {
+		if !t.dec.allowed && !isBuiltinRule(t.dec.rule) && l.askDatagram(n, c, &t, d, raw, control, prepare) {
 			// A UDP destination nothing admits that a net.ask scope reaches is held for a person and, approved,
 			// relayed from the copies read here (R13d).
 			return
@@ -808,11 +808,11 @@ func (l *Loop) sendDecisionCtl(n *notif, r *reader, sockfd int, d dest, raw []by
 			l.relayRouteQuery(n, c, &t, d, raw, prepare)
 			return
 		}
-		if c.hostSockets && !hostSocketRelayable(t.domain) {
+		if (c.hostSockets || c.pol.Rules.Builtins != nil) && !hostSocketRelayable(t.domain) {
 			// An addressed datagram on a socket of a domain the unix-only state does not reach (AF_NETLINK save the
 			// route query above, AF_PACKET, ...): refused, keyed on the socket's own domain, so it is never relayed
 			// from this process with its credentials (hostSocketRelayable).
-			l.refuseNet(n, d, t.proto, refuse(ruleHostSockets))
+			l.refuseNet(n, d, t.proto, refuse(l.table.Load().socketBoundaryRule()))
 			return
 		}
 		if c.hostSockets && t.dec.allowed && l.relayUnixOnly(n, c, &t, d, raw, control, flags, prepare) {
@@ -843,13 +843,13 @@ func (l *Loop) sendDecisionCtl(n *notif, r *reader, sockfd int, d dest, raw []by
 		l.emitNet(n, c, d, t.proto, t.dec, netVerdict(d, t.dec), netMarks{bestEffort: true})
 		return
 	}
-	if c.hostSockets && !hostSocketRelayable(t.domain) {
+	if (c.hostSockets || c.pol.Rules.Builtins != nil) && !hostSocketRelayable(t.domain) {
 		// A stream send on a socket of a domain the unix-only state does not reach: refused, keyed on the socket's
 		// own domain, as a connect of one is (handleConnect, hostSocketRelayable).
-		l.refuseNet(n, d, t.proto, refuse(ruleHostSockets))
+		l.refuseNet(n, d, t.proto, refuse(l.table.Load().socketBoundaryRule()))
 		return
 	}
-	if t.relaysIP() || c.hostSockets {
+	if t.relaysIP() || c.hostSockets || c.pol.Rules.Builtins != nil {
 		// A Fast-Open send a net gate or a live net block admitted on an IP socket connects to the copy it decided,
 		// relayed as handleConnect relays the connect (ADR 0041 D6). In the unix-only state a stream send that reaches here
 		// (one on a socket without a peer, or one carrying MSG_FASTOPEN) is decided like a connect and relayed on
@@ -945,7 +945,9 @@ const sizeofSockaddrNL = 12
 
 // decidesNetlink reports whether this run decides what its netlink sockets send: a net: section, or ADR 0070's
 // unix-only state. Under host_sockets: true a send to the netlink family is continued like every destination there.
-func (c *compiled) decidesNetlink() bool { return !c.netOpen || c.hostSockets }
+func (c *compiled) decidesNetlink() bool {
+	return !c.netOpen || c.hostSockets || c.pol.Rules.Builtins != nil
+}
 
 // routeSocket reports whether t is a NETLINK_ROUTE socket, its domain and protocol read on the duplicate, which a
 // sibling's dup2 cannot change. A domain or protocol that cannot be read is no route socket.

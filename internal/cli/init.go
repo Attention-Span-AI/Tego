@@ -54,27 +54,31 @@ func init() { register(cmdInit) }
 // is written; --list prints the presets and host groups.
 func cmdInit() Command {
 	var (
-		name    string
-		force   bool
-		list    bool
-		preset  string
-		command string
-		writes  []string
-		hosts   []string
-		live    string
+		name      string
+		force     bool
+		list      bool
+		preset    string
+		command   string
+		agentKind string
+		prompt    string
+		writes    []string
+		hosts     []string
+		live      string
 	)
 	return Command{
 		Name:    "init",
 		Summary: "scaffold .tego/ and a starter agent.yaml in a project directory",
-		Usage:   "[--name <agent>] [--force] [--live-mode locked|adjustable] [--preset <list> [--write <dir>]... [--allow-host <host[:port]|@group>]... [--command <line>]] [--list] [dir]",
+		Usage:   "[--name <agent>] [--force] [--live-mode locked|adjustable] [--agent claude-code|codex] [--prompt <text>] [--preset <list> [--write <dir>]... [--allow-host <host[:port]|@group>]... [--command <line>]] [--list] [dir]",
 		Flags: func(fs *flag.FlagSet) {
 			fs.StringVar(&name, "name", "", "agent id for the starter contract (default: the directory name)")
 			fs.BoolVar(&force, "force", false, "replace an agent.yaml that tego init did not write")
 			fs.StringVar(&preset, "preset", "", "write a contract from presets, a comma list of no-secrets, no-prod, repo-only-writes")
-			fs.Func("write", "with --preset: a folder the agent may write (repeatable)", func(v string) error { writes = append(writes, v); return nil })
-			fs.Func("allow-host", "with --preset: a host[:port] or @group the agent may reach (repeatable)", func(v string) error { hosts = append(hosts, v); return nil })
+			fs.Func("write", "with --preset or --agent: a folder the agent may write (repeatable)", func(v string) error { writes = append(writes, v); return nil })
+			fs.Func("allow-host", "with --preset or --agent: a host[:port] or @group the agent may reach (repeatable)", func(v string) error { hosts = append(hosts, v); return nil })
+			fs.StringVar(&agentKind, "agent", "", "write a contract for claude-code or codex (API key); --list shows setup commands")
+			fs.StringVar(&prompt, "prompt", "", "with --agent: an initial task, passed as one literal argument")
 			fs.StringVar(&command, "command", "", "with --preset: the agent's command line (default: a short demo of the presets)")
-			fs.BoolVar(&list, "list", false, "print the presets and host groups")
+			fs.BoolVar(&list, "list", false, "print the presets, agents and host groups")
 			fs.StringVar(&live, "live-mode", string(agent.LiveLocked), "how the agent's rules change while it runs: locked (the default: file, program and network rules are "+
 				"fixed when the run starts; tighten while it runs, loosen from the next run) or adjustable (live both ways: loosen and tighten "+
 				"while it runs inside a fence Tego's live layer enforces; needs tier cgroup or bpflsm). docs/user/live-modes.md weighs the two")
@@ -101,6 +105,18 @@ func cmdInit() Command {
 				message(stderr, "", 0, 0, fmt.Sprintf("tego init: --live-mode %q is not locked or adjustable (docs/user/live-modes.md)", live), codeUsage)
 				return identity.ExitUsage // R25: usage error
 			}
+			if agentKind != "" {
+				if preset == "" {
+					preset = "no-secrets,no-prod,repo-only-writes"
+				}
+				if len(writes) == 0 {
+					writes = []string{"./out/"}
+				}
+			}
+			if flagGiven(fs, "agent") && agentKind == "" || flagGiven(fs, "prompt") && (prompt == "" || agentKind == "") {
+				message(stderr, "", 0, 0, "tego init: --agent and --prompt need non-empty values; use tego init --agent claude-code --prompt <text>", codeUsage)
+				return identity.ExitUsage
+			}
 			if preset == "" {
 				if len(writes) > 0 || len(hosts) > 0 || command != "" {
 					message(stderr, "", 0, 0, "tego init: --write, --allow-host and --command fill a preset contract; add --preset <list>", codeUsage)
@@ -108,7 +124,7 @@ func cmdInit() Command {
 				}
 				return runInitLive(dir, name, force, nil, mode, stdout, stderr)
 			}
-			return runInitLive(dir, name, force, &setup.Options{Presets: []string{preset}, Writes: writes, Hosts: hosts, Command: command}, mode, stdout, stderr)
+			return runInitLive(dir, name, force, &setup.Options{Presets: []string{preset}, Writes: writes, Hosts: hosts, Command: command, Agent: agentKind, Prompt: prompt}, mode, stdout, stderr)
 		},
 	}
 }
@@ -198,6 +214,9 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 	if _, _, err := readInitFile(filepath.Join(abs, initGitignore)); !step("", false, err, initGitignore) {
 		return identity.ExitError // R25: Tego's own error, as ensureLine's refusal below
 	}
+	if write && composed != nil && refusedComposed(stderr, contractPath, composed) {
+		return identity.ExitFinding
+	}
 	done, err := ensureDir(filepath.Join(abs, initDir))
 	if !step("created "+initDir+"/", done, err, initDir) {
 		if errors.Is(err, errInitDirTaken) {
@@ -208,9 +227,6 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 	if write && composed != nil {
 		// Draft compiled the composed bytes offline before anything is created: a contract that does not compile
 		// leaves no agent.yaml and no folder behind.
-		if refusedComposed(stderr, contractPath, composed) {
-			return identity.ExitFinding // R25: a finding, as compile's own exit for the same contract
-		}
 		// Apply creates the folders and compiles again with them in place (a check Draft could not make, R10); it
 		// removes them again when that compile refuses.
 		made, ds, ok, err := setup.Apply(composed, po.Dir, env)
@@ -261,6 +277,9 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 	notApplied := func() {
 		if composed != nil && !write {
 			fmt.Fprintf(stdout, "tego init: %s already exists, so these --preset flags were not applied: edit it, or re-run with --force to replace it\n", initContract)
+			if po.Agent != "" {
+				fmt.Fprintf(stdout, "--agent and --prompt were not applied either; to replace the contract: tego init --force --agent %s %s\n", shellQuote(po.Agent), shellQuote(abs))
+			}
 		}
 		if adjustable && !write {
 			fmt.Fprintf(stdout, "tego init: %s already exists, so --live-mode adjustable was not applied: add its live: section (docs/user/live-modes.md), or re-run with --force to replace it\n", initContract)
@@ -306,7 +325,7 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 // refusedComposed prints the diagnostics Draft's offline compile found for r and, when one is an error, the line
 // saying nothing was written, with compile's own code; it reports whether init must stop.
 func refusedComposed(stderr io.Writer, contractPath string, r *setup.Result) bool {
-	_ = agent.WriteDiagnostics(stderr, r.Diagnostics) // best effort: stderr is the diagnostics' only reader
+	_ = agent.WriteDiagnostics(stderr, runNotices(r.Diagnostics, false)) // best effort: stderr is the diagnostics' only reader
 	if r.OK {
 		return false
 	}
@@ -354,6 +373,13 @@ func printPresetList(stdout, stderr io.Writer) int {
 	if err != nil {
 		message(stderr, "", 0, 0, "tego init: "+err.Error(), codeIO)
 		return identity.ExitError // R25: Tego's own error
+	}
+	fmt.Fprintln(stdout, "agents (--agent; init reads no credentials):")
+	for _, a := range setup.Harnesses() {
+		fmt.Fprintf(stdout, "  %s: %s\n", a.Name, a.Summary)
+		for _, n := range a.Notes {
+			fmt.Fprintln(stdout, n)
+		}
 	}
 	fmt.Fprintln(stdout, "host groups (--allow-host @group):")
 	for _, g := range gs {

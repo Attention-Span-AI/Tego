@@ -319,10 +319,29 @@ old runs then keep writing into the moved ledger.
 Reload the dashboard page: it now shows the new, empty ledger (*0 runs in this ledger*). If you did stop and
 restart the dashboard (`./demo.sh dashboard`), open the new link it prints: an old tab says *Signed out: open the
 link from your terminal*, and a reload shows the *Sign in · Tego* page; nothing else breaks.
-Each side keeps its Codex login. The old ledger is moved to `~/tego-demo-ledger.old-<time>` (with its
+Each side keeps its Codex login. The old ledger is moved to `~/tego-demo-ledger.old-<time>.<random>` (with its
 `.rule-changes` journal), and only the newest three are kept; older ones are deleted. `reset` deletes only the
 folders it moved there, each marked by a `.moved-by-demo-sh` file that names it: a folder of that name you made or
 copied is never deleted, and neither is one an older `demo.sh` moved (it has no mark), so delete those by hand.
+The destination is reserved with `mktemp` before moving, so an existing folder
+with the same timestamp is never adopted or marked for pruning.
+Newlines in generated-state paths or old-ledger candidate names are refused:
+the prune list cannot safely carry those names. Choose another path or move
+the ambiguous old candidate aside manually.
+
+Setup writes `.tego-supply-chain-stage` and `.tego-supply-chain-ledger`, each
+naming its physical directory. Reset requires both before stopping units,
+deleting sides or rotating the ledger. Setup claims only absent reserved stage
+children and a new or empty ledger; lookalike `proj/` and agent-home folders do
+not establish ownership. A new ledger holds only its marker until the first run.
+Old unmarked state is refused: move it aside manually or choose fresh paths and
+run setup. The stage container and unrelated siblings are retained.
+
+Every printed command, including both backup sides and quiet mode, masks
+`CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY` assignments as `...`. Execution
+still receives the login. Marker checks are operator safeguards, not protection
+against a concurrent same-user path replacement; see the
+[script spec](../../docs/p0/demo-scripts.md).
 
 **The end of the demo:**
 ```sh

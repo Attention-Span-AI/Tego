@@ -1000,6 +1000,373 @@ func TestHeldOpenDifferentialAcrossMounts(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("root only: bind, overlay and nosymfollow mounts, and a symlink of another owner")
 	}
+	// The closest this suite comes to a container (docker is not part of it): an overlayfs mounted as the container's
+	// root, a local directory bind-mounted into it as the work folder, a .env nested in the project there. Held reads
+	// start and keep the target by identity; a project on the overlay itself is refused at launch (review round 2,
+	// finding 4).
+	t.Run("held-read-container-workspace", func(t *testing.T) {
+		if !overlayMounts(t) {
+			t.Skip("this kernel mounts no overlayfs (ENODEV; a matrix row's guest loads no module): no container root to put the work folder under")
+		}
+		for _, onOverlay := range []bool{false, true} {
+			t.Run(map[bool]string{false: "local-work-volume", true: "project-on-the-overlay"}[onOverlay], func(t *testing.T) {
+				x, _ := heldReadsFixture(t, agent.RecordFull)
+				layers, root, volume := filepath.Join(x.dir, "layers"), filepath.Join(x.dir, "root"), filepath.Join(x.dir, "volume")
+				for _, dir := range []string{filepath.Join(layers, "l"), filepath.Join(layers, "u"), filepath.Join(layers, "w"), root, filepath.Join(volume, "proj", "src")} {
+					if err := os.MkdirAll(dir, 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := unix.Mount("overlay", root, "overlay", 0, "lowerdir="+layers+"/l,upperdir="+layers+"/u,workdir="+layers+"/w"); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = unix.Unmount(root, unix.MNT_DETACH) })
+				proj := filepath.Join(root, "work", "proj")
+				if onOverlay {
+					proj = filepath.Join(root, "proj")
+					if err := os.MkdirAll(filepath.Join(proj, "src"), 0o700); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					if err := os.Mkdir(filepath.Join(root, "work"), 0o700); err != nil {
+						t.Fatal(err)
+					}
+					if err := unix.Mount(volume, filepath.Join(root, "work"), "", unix.MS_BIND, ""); err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { _ = unix.Unmount(filepath.Join(root, "work"), unix.MNT_DETACH) })
+				}
+				secret, benign := filepath.Join(proj, ".env"), filepath.Join(proj, "src", "a.txt")
+				for p, body := range map[string]string{secret: "CONTAINER=secret", benign: "benign"} {
+					if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				x.pol.Rules.FS = append(x.pol.Rules.FS,
+					agent.FSRule{Path: proj, Resolved: proj, Kind: agent.FSWrite, Raw: proj, Access: agent.AccessWriteSet},
+					agent.FSRule{Path: secret, Resolved: secret, Kind: agent.FSDenyRead, BuiltIn: true, Unenforced: true})
+				l, err := New(testListener(), x.pol, &testSink{}, Options{kernel: x.k, openDeputy: x.dep})
+				if onOverlay {
+					if err == nil {
+						l.closeAskScopes()
+						t.Fatal("held reads started with the project itself on the overlay")
+					}
+					if !strings.Contains(err.Error(), "filesystem") {
+						t.Fatal(err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("held reads refused a local work volume under an overlay root: %v", err)
+				}
+				t.Cleanup(l.closeAskScopes)
+				x.openAs(t, l, benign, unix.O_RDONLY, 0)
+				if len(x.k.heldDelivered) != 1 || x.k.heldDelivered[0] != "benign" {
+					t.Fatalf("delivered %q: a benign read in the work volume was refused", x.k.heldDelivered)
+				}
+				alias := filepath.Join(proj, "src", "renamed")
+				if err := os.Rename(secret, alias); err != nil {
+					t.Fatal(err)
+				}
+				x.openAs(t, l, alias, unix.O_RDONLY, 0)
+				if res, _ := x.f.lastResp(); res.Error != -int32(unix.EACCES) || len(x.k.heldDelivered) != 1 {
+					t.Fatalf("answer %+v, delivered %q: the renamed .env escaped in the work volume", res, x.k.heldDelivered)
+				}
+			})
+		}
+	})
+	// The mount topology under the protected places (review round 3, finding 4): the container layout above, then the
+	// work volume detached lazily while a descriptor keeps it alive (no IN_UNMOUNT), or a tmpfs mounted over the
+	// project (no inotify event at all). An outside process puts a new .env at the canonical path and the agent
+	// renames it: the mount table's change is seen and every held read is refused.
+	t.Run("held-read-mount-topology", func(t *testing.T) {
+		if !overlayMounts(t) {
+			t.Skip("this kernel mounts no overlayfs (ENODEV; a matrix row's guest loads no module): no container root to change the topology under")
+		}
+		for _, how := range []string{"work-volume-detached-lazily", "tmpfs-mounted-over-the-project", "unrelated-mount-after-a-certified-replacement"} {
+			t.Run(how, func(t *testing.T) {
+				x, _ := heldReadsFixture(t, agent.RecordFull)
+				layers, root, volume := filepath.Join(x.dir, "layers"), filepath.Join(x.dir, "root"), filepath.Join(x.dir, "volume")
+				for _, dir := range []string{filepath.Join(layers, "l"), filepath.Join(layers, "u"), filepath.Join(layers, "w"), root, filepath.Join(volume, "proj")} {
+					if err := os.MkdirAll(dir, 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := unix.Mount("overlay", root, "overlay", 0, "lowerdir="+layers+"/l,upperdir="+layers+"/u,workdir="+layers+"/w"); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = unix.Unmount(root, unix.MNT_DETACH) })
+				work := filepath.Join(root, "work")
+				if err := os.Mkdir(work, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := unix.Mount(volume, work, "", unix.MS_BIND, ""); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = unix.Unmount(work, unix.MNT_DETACH) })
+				proj := filepath.Join(work, "proj")
+				secret := filepath.Join(proj, ".env")
+				if err := os.WriteFile(secret, []byte("CONTAINER=secret"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				x.pol.Rules.FS = append(x.pol.Rules.FS,
+					agent.FSRule{Path: proj, Resolved: proj, Kind: agent.FSWrite, Raw: proj, Access: agent.AccessWriteSet},
+					agent.FSRule{Path: secret, Resolved: secret, Kind: agent.FSDenyRead, BuiltIn: true, Unenforced: true})
+				l, err := New(testListener(), x.pol, &testSink{}, Options{kernel: x.k, openDeputy: x.dep})
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(l.closeAskScopes)
+				kept, err := os.Open(proj) // a retained descriptor keeps the detached volume alive
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer kept.Close()
+				if how == "unrelated-mount-after-a-certified-replacement" {
+					// An ordinary atomic replacement of the .env, certified by a held read, then a mount elsewhere:
+					// benign reads go on, and the replacement stays refused under another name (review round 4).
+					benign, fresh := filepath.Join(proj, "a.txt"), filepath.Join(proj, "fresh")
+					for p, body := range map[string]string{benign: "benign", fresh: "ROTATED"} {
+						if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if err := os.Rename(fresh, secret); err != nil {
+						t.Fatal(err)
+					}
+					x.openAs(t, l, benign, unix.O_RDONLY, 0)
+					elsewhere := filepath.Join(x.dir, "elsewhere")
+					if err := os.Mkdir(elsewhere, 0o700); err != nil {
+						t.Fatal(err)
+					}
+					if err := unix.Mount("tmpfs", elsewhere, "tmpfs", 0, "mode=0700"); err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { _ = unix.Unmount(elsewhere, unix.MNT_DETACH) })
+					x.openAs(t, l, benign, unix.O_RDONLY, 0)
+					if len(x.k.heldDelivered) != 2 {
+						t.Fatalf("delivered %q: an unrelated mount refused benign reads after a certified replacement", x.k.heldDelivered)
+					}
+					alias := filepath.Join(proj, "rotated")
+					if err := os.Rename(secret, alias); err != nil {
+						t.Fatal(err)
+					}
+					x.openAs(t, l, alias, unix.O_RDONLY, 0)
+					if res, _ := x.f.lastResp(); res.Error != -int32(unix.EACCES) || len(x.k.heldDelivered) != 2 {
+						t.Fatalf("answer %+v, delivered %q: the certified replacement escaped by rename", res, x.k.heldDelivered)
+					}
+					return
+				}
+				if how == "work-volume-detached-lazily" {
+					if err := unix.Unmount(work, unix.MNT_DETACH); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.MkdirAll(proj, 0o700); err != nil { // now on the overlay, beneath where the volume was
+						t.Fatal(err)
+					}
+				} else {
+					if err := unix.Mount("tmpfs", proj, "tmpfs", 0, "mode=0700"); err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { _ = unix.Unmount(proj, unix.MNT_DETACH) })
+				}
+				if err := os.WriteFile(secret, []byte("NEW SECRET"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				alias := filepath.Join(proj, "renamed")
+				if err := os.Rename(secret, alias); err != nil {
+					t.Fatal(err)
+				}
+				x.openAs(t, l, alias, unix.O_RDONLY, 0)
+				if res, _ := x.f.lastResp(); res.Error != -int32(unix.EACCES) || len(x.k.heldDelivered) != 0 {
+					t.Fatalf("answer %+v, delivered %q: a secret put under a changed mount topology escaped", res, x.k.heldDelivered)
+				}
+			})
+		}
+	})
+	// Two private bind aliases of one directory inside a denied directory share one inotify watch (review round 4,
+	// finding 1). Each view is a place of its own: detaching the alias the watch was not taken through, writing a
+	// secret into the directory it exposed and renaming it out of the denied tree is refused.
+	t.Run("held-read-bind-alias-detached", func(t *testing.T) {
+		x, _ := heldReadsFixture(t, agent.RecordFull)
+		shared := filepath.Join(x.dir, "shared")
+		views := []string{filepath.Join(x.denied, "a"), filepath.Join(x.denied, "b")}
+		for _, dir := range append([]string{shared}, views...) {
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, v := range views {
+			if err := unix.Mount(shared, v, "", unix.MS_BIND, ""); err != nil {
+				t.Fatal(err)
+			}
+			if err := unix.Mount("", v, "", unix.MS_PRIVATE, ""); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = unix.Unmount(v, unix.MNT_DETACH) })
+		}
+		// The launch walk reads the denied directory in getdents order and takes the watch through the first view.
+		d, err := os.Open(x.denied)
+		if err != nil {
+			t.Fatal(err)
+		}
+		order, err := d.Readdirnames(-1)
+		_ = d.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		second := views[1]
+		for _, name := range order {
+			if name == "a" || name == "b" {
+				if name == "b" {
+					second = views[0]
+				}
+				break
+			}
+		}
+		l, err := New(testListener(), x.pol, &testSink{}, Options{kernel: x.k, openDeputy: x.dep})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(l.closeAskScopes)
+		if err := unix.Unmount(second, unix.MNT_DETACH); err != nil {
+			t.Fatal(err)
+		}
+		exposed := filepath.Join(second, "planted")
+		if err := os.WriteFile(exposed, []byte("NEW SECRET"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		escaped := filepath.Join(x.dir, "src", "escaped")
+		if err := os.Rename(exposed, escaped); err != nil {
+			t.Fatal(err)
+		}
+		x.openAs(t, l, escaped, unix.O_RDONLY, 0)
+		if res, _ := x.f.lastResp(); res.Error != -int32(unix.EACCES) || len(x.k.heldDelivered) != 0 {
+			t.Fatalf("answer %+v, delivered %q: a secret put under the detached alias %s escaped", res, x.k.heldDelivered, second)
+		}
+	})
+	t.Run("held-read-overlay-file-view", func(t *testing.T) {
+		if !overlayMounts(t) {
+			t.Skip("this kernel mounts no overlayfs (ENODEV; a matrix row's guest loads no module): the refusal it checks has no overlay to meet")
+		}
+		x, _ := heldReadsFixture(t, agent.RecordFull)
+		lower, upper, merged := filepath.Join(x.dir, "lower"), filepath.Join(x.dir, "upper"), filepath.Join(x.dir, "merged")
+		for _, dir := range []string{lower, upper, merged} {
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// Every layer on one filesystem. Whether the view's identity can equal the lower file's depends on the kernel's
+		// overlay st_dev rules; it is logged, and the refusal below must hold either way (the ordering itself is
+		// TestHeldReadPinsCheckEveryFilesystemView's, on a simulated filesystem type).
+		for _, dir := range []string{filepath.Join(upper, "u"), filepath.Join(upper, "w")} {
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		secret := filepath.Join(lower, "secret")
+		if err := os.WriteFile(secret, []byte("view-secret"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := unix.Mount("overlay", merged, "overlay", 0, "lowerdir="+lower+",upperdir="+upper+"/u,workdir="+upper+"/w"); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = unix.Unmount(merged, unix.MNT_DETACH) })
+		bound := filepath.Join(x.dir, "bound")
+		if err := os.WriteFile(bound, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := unix.Mount(filepath.Join(merged, "secret"), bound, "", unix.MS_BIND, ""); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = unix.Unmount(bound, unix.MNT_DETACH) })
+		a, err := os.Stat(secret)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.Stat(bound)
+		if err != nil {
+			t.Fatal(err)
+		}
+		as, bs := a.Sys().(*syscall.Stat_t), b.Sys().(*syscall.Stat_t)
+		t.Logf("lower file dev %#x ino %d; overlay view dev %#x ino %d; same identity %t", as.Dev, as.Ino, bs.Dev, bs.Ino, os.SameFile(a, b))
+		for _, path := range []string{secret, bound} {
+			x.pol.Rules.FS = append(x.pol.Rules.FS, agent.FSRule{Path: path, Resolved: path, Kind: agent.FSDenyRead, Unenforced: true})
+		}
+		l, err := New(testListener(), x.pol, &testSink{}, Options{kernel: x.k, openDeputy: x.dep})
+		if err != nil {
+			if !strings.Contains(err.Error(), "filesystem") {
+				t.Fatal(err)
+			}
+			return
+		}
+		defer l.closeAskScopes()
+		if err := os.Chmod(filepath.Join(merged, "secret"), 0o640); err != nil {
+			t.Fatal(err)
+		}
+		alias := filepath.Join(merged, "alias")
+		if err := os.Rename(filepath.Join(merged, "secret"), alias); err != nil {
+			t.Fatal(err)
+		}
+		x.openAs(t, l, alias, unix.O_RDONLY, 0)
+		t.Fatalf("accepted an unstable duplicate filesystem view; after copy-up delivered %q", x.k.heldDelivered)
+	})
+	t.Run("held-read-bind-views", func(t *testing.T) {
+		x, _ := heldReadsFixture(t, agent.RecordFull)
+		shared := filepath.Join(x.dir, "shared")
+		if err := os.MkdirAll(filepath.Join(shared, "sub"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		mount := func(source, target string) {
+			t.Helper()
+			if err := unix.Mount(source, target, "", unix.MS_BIND, ""); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = unix.Unmount(target, unix.MNT_DETACH) })
+			if err := unix.Mount("", target, "", unix.MS_PRIVATE|unix.MS_REC, ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var aliases []string
+		for _, name := range []string{"a", "b"} {
+			view := filepath.Join(x.denied, name)
+			origin := filepath.Join(x.dir, "origin-"+name)
+			for _, dir := range []string{view, origin} {
+				if err := os.Mkdir(dir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			key := filepath.Join(origin, "key")
+			if err := os.WriteFile(key, []byte("protected-"+name), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			alias := filepath.Join(x.dir, "public-"+name)
+			if err := os.Link(key, alias); err != nil {
+				t.Fatal(err)
+			}
+			aliases = append(aliases, alias)
+			mount(shared, view)
+			mount(origin, filepath.Join(view, "sub"))
+		}
+		a, err := os.Stat(filepath.Join(x.denied, "a", "sub", "key"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.Stat(filepath.Join(x.denied, "b", "sub", "key"))
+		if err != nil || os.SameFile(a, b) {
+			t.Fatalf("the bind views must expose distinct files: %v", err)
+		}
+		// The two views share a directory identity, but their submounts hold
+		// different protected files. Neither traversal may be skipped as seen.
+		l, _, _ := x.loop(t, nil)
+		for _, alias := range aliases {
+			x.openAs(t, l, alias, unix.O_RDONLY, 0)
+			res, _ := x.f.lastResp()
+			if res.Error != -int32(unix.EACCES) || len(x.k.heldDelivered) != 0 {
+				t.Fatalf("alias %s: answer %+v, delivered %q", alias, res, x.k.heldDelivered)
+			}
+		}
+	})
 	as, own := heldAgent(t)
 	old, err := os.ReadFile("/proc/sys/fs/protected_symlinks")
 	if err != nil {
@@ -1255,7 +1622,9 @@ func heldDeputyGoneChecks() []checkResult {
 }
 
 // TestHeldOpenOfADeadDeputyIsRefusedNotHung: a run whose open deputy died (the agent can kill it, being its uid; a
-// filter's kill ends it) refuses its next held open held-unavailable, EACCES, at once (ADR 0041 D4). The deputy holds
+// filter's kill ends it) refuses its next held open EACCES at once (ADR 0041 D4). On a task-label LSM host, SEC08's
+// earlier label check can find its label gone and refuse held-label-unavailable; otherwise the protocol refuses
+// held-unavailable. The deputy holds
 // the only copy of its end of the control socket, as the launcher closes its own after starting the stage, so the
 // request socket handed over to the dead deputy fails at once. The race job's held race hung its target 60 s there:
 // this harness kept that end open until the run was over, so the handover went into a queue no one would read and the
@@ -1269,19 +1638,20 @@ func TestHeldOpenOfADeadDeputyIsRefusedNotHung(t *testing.T) {
 			rt.Reads = agent.HeldReads{Mode: agent.ReadsHeld}
 		},
 		outOfTime: func(t testing.TB, ran time.Duration) {
-			t.Fatalf("the held open after the deputy died was still waiting %v later: a dead deputy refuses held-unavailable, never hangs", ran.Round(time.Millisecond))
+			t.Fatalf("the held open after the deputy died was still waiting %v later: a dead deputy must refuse, never hang", ran.Round(time.Millisecond))
 		}})
 	h.stop(t)
 	open := h.check(t, "open")
 	if open.Err != "EACCES" {
-		t.Fatalf("the held open after the deputy died: %q after %d µs, want EACCES (held-unavailable)", open.Err, open.N)
+		t.Fatalf("the held open after the deputy died: %q after %d µs, want EACCES", open.Err, open.N)
 	}
 	var refused bool
 	for _, ev := range h.sink.all() {
-		refused = refused || ev.Rule == ruleHeldUnavailable && ev.Verdict == record.VerdictRefused
+		unavailable := ev.Rule == ruleHeldUnavailable || ev.Rule == ruleHeldLabelUnavailable
+		refused = refused || unavailable && ev.Verdict == record.VerdictRefused
 	}
 	if !refused {
-		t.Fatalf("no refused %s line: %+v", ruleHeldUnavailable, h.sink.all())
+		t.Fatalf("no refused %s or %s line: %+v", ruleHeldUnavailable, ruleHeldLabelUnavailable, h.sink.all())
 	}
 }
 
@@ -1586,9 +1956,10 @@ func heldOpenBudget(b *testing.B, at heldBenchAt, name string) {
 	if held.mallocsPerOp > 64 {
 		miss(true, "%.1f allocations per held open (budget 64)", held.mallocsPerOp)
 	}
-	// One read per thread, its thread group the first time it traps (tgidOf), is per thread, not per open.
+	// SEC08 supersedes the zero-/proc-read budget: fresh task and completer
+	// labels are required on each completion where a task-label LSM is active.
 	if reads := held.procReadsPerOp * float64(held.ops); reads > 8 {
-		miss(true, "%.0f task /proc reads over %d held opens (budget 0 per open, one per thread)", reads, held.ops)
+		b.Logf("LSM label verification: %.0f task /proc reads over %d held opens", reads, held.ops)
 	}
 	if held.threadsGrown > 16 {
 		miss(true, "this process grew %d threads over %d held opens (budget: none per open)", held.threadsGrown, held.ops)

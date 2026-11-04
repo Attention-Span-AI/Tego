@@ -15,6 +15,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/doctor"
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/runtime/mcprelay"
 	"github.com/attention-span-ai/tego/internal/testutil"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
@@ -31,6 +32,9 @@ var testHome string
 // would land in their ~/.tego/tego.log, and the built-in ledger root would be their ~/.tego/runs. The
 // binary fails when anything in the real ~/.tego changed while the tests ran (testutil.GuardedLeakCheckMain).
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == mcprelay.ServerCommand {
+		os.Exit(mcprelay.ServerMain(os.Args[2:]))
+	}
 	// The test binary is doctor's plane probe child (/proc/self/exe __doctor-plane-probe), as cmd/tego is: doctor
 	// and a run's tier check run that probe in this process (TestTestBinaryIsThePlaneProbesChild).
 	if len(os.Args) > 1 && os.Args[1] == doctor.PlaneProbeCommand {

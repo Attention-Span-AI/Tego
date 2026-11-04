@@ -42,6 +42,13 @@ try:
     save("direct", "ran %d" % p.returncode)
 except OSError as e:
     save("direct", "%s %s" % (errno.errorcode.get(e.errno, str(e.errno)), e.filename))
+for name, argv in [("stage", [tego, "__mcp_server", server[0]] + server), ("other", [tego, "__probe"])]:
+    try:
+        p = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        p.communicate("", timeout=20)
+        save(name, "ran %d" % p.returncode)
+    except OSError as e:
+        save(name, "%s %s" % (errno.errorcode.get(e.errno, str(e.errno)), e.filename))
 shim = subprocess.Popen([tego, "mcp", "relay", "--server", "files", "--"] + server, stdin=subprocess.PIPE,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 shim.stdin.write(json.dumps({"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "read_file", "arguments": {}}}) + "\n")
@@ -85,7 +92,7 @@ mcp:
 limits:
   pids: 64
 record: summary
-`, tier, python, resolved, bin, server[0], server[1])
+`, tier, python, resolved, bin+" mcp relay *", server[0], server[1])
 	agentFiles := map[string]string{
 		"agent.yaml": contract,
 		"server.py":  mcpGateServer,
@@ -106,9 +113,58 @@ record: summary
 	return s, server
 }
 
-// TestRootMCPRelayGate: at each mode of the plane, the start around the relay is refused under mcp[files].relay and
-// never ran, and the start through the shim runs and has one exec line and one mcp line, both the kernel recorder's,
-// as the handover would have left them.
+// TestIntegrationMCPRelayConstrainedGrant keeps ADR 0126's shim-only exec grant working: an internal stage is
+// the admitted shim's implementation detail, and no broader grant of the tego binary is required.
+func TestIntegrationMCPRelayConstrainedGrant(t *testing.T) {
+	bin := tegoBinary(t)
+	agentReaches(t, bin)
+	s, _ := newMCPGateScene(t, bin, "landlock", "")
+	run, dir := s.start(t)
+	evs := s.finish(t, run, dir)
+	if got := s.out("shim"); got != "0" || !strings.Contains(s.out("answer"), `"result"`) {
+		t.Fatalf("shim exit %q, answer %q, stderr %q", got, s.out("answer"), s.out("shim-err"))
+	}
+	assertMCPStageGrant(t, s, evs)
+}
+
+func assertMCPStageGrant(t *testing.T, s *askReadScene, evs []*record.Event) {
+	t.Helper()
+	rule := "exec.mcp-stage[" + s.bin + "]"
+	var start record.RunStartPayload
+	stages := 0
+	for _, ev := range evs {
+		if ev.Kind == record.KindRunStart {
+			if err := ev.DecodePayload(&start); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if ev.Kind != record.KindExec || ev.Verdict != record.VerdictAllow {
+			continue
+		}
+		var p record.ExecPayload
+		if err := ev.DecodePayload(&p); err != nil {
+			t.Fatal(err)
+		}
+		if len(p.Argv) > 1 && p.Argv[1] == "__mcp_server" {
+			stages++
+			if ev.Rule != rule || p.CommandList == "unlisted" {
+				t.Errorf("stage rule %q list %q, want runtime grant %q", ev.Rule, p.CommandList, rule)
+			}
+		}
+	}
+	if stages != 1 || !slices.Contains(start.RuntimeGrants, rule) {
+		t.Errorf("%d allowed stages, runtime grants %q, want one stage and %q", stages, start.RuntimeGrants, rule)
+	}
+	for _, name := range []string{"stage", "other"} {
+		if got := s.out(name); got != "EACCES "+s.bin {
+			t.Errorf("unrelated %s start: %q, want EACCES", name, got)
+		}
+	}
+}
+
+// TestRootMCPRelayGate: at tier landlock and each mode of the plane, the start around the relay is refused under
+// mcp[files].relay and never ran. The start through the shim runs; at the root tiers its exec and server lines are
+// still the kernel recorder's, as the handover would have left them.
 func TestRootMCPRelayGate(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("needs root: tiers cgroup and bpflsm")
@@ -118,7 +174,7 @@ func TestRootMCPRelayGate(t *testing.T) {
 	}
 	bin := tegoBPFBinary(t)
 	agentReaches(t, bin)
-	for _, tc := range []struct{ tier, plane string }{{"cgroup", "fmod_ret"}, {"bpflsm", "lsm"}} {
+	for _, tc := range []struct{ tier, plane string }{{"landlock", ""}, {"cgroup", "fmod_ret"}, {"bpflsm", "lsm"}} {
 		t.Run(tc.tier, func(t *testing.T) {
 			if tc.tier == "bpflsm" {
 				lsms, err := os.ReadFile("/sys/kernel/security/lsm")
@@ -130,6 +186,7 @@ func TestRootMCPRelayGate(t *testing.T) {
 			testutil.RequireTier(t, s.tego(t, "doctor", "--require", tc.tier), tc.tier)
 			run, dir := s.start(t)
 			evs := s.finish(t, run, dir)
+			assertMCPStageGrant(t, s, evs)
 			var start record.RunStartPayload
 			var refused, started, calls []*record.Event
 			var serverLines []*record.Event
@@ -175,11 +232,11 @@ func TestRootMCPRelayGate(t *testing.T) {
 			if len(refused) != 1 || refused[0].Rule != "mcp[files].relay" || refused[0].Reason != record.ReasonExecNotAllowed {
 				t.Errorf("refused starts %v: want one, rule mcp[files].relay", refused)
 			}
-			if len(started) != 1 || started[0].Source != record.SourceKernel {
-				t.Errorf("starts %v: want one line, the kernel recorder's", started)
+			if len(started) != 1 || tc.tier != "landlock" && started[0].Source != record.SourceKernel {
+				t.Errorf("starts %v: want one line (the kernel recorder's at a plane tier)", started)
 			}
-			if len(serverLines) != 1 || serverLines[0].Source != record.SourceKernel {
-				t.Errorf("server lines %v: want one, the kernel recorder's", serverLines)
+			if len(serverLines) != 1 || tc.tier != "landlock" && serverLines[0].Source != record.SourceKernel {
+				t.Errorf("server lines %v: want one (the kernel recorder's at a plane tier)", serverLines)
 			}
 			if len(calls) != 1 || calls[0].Verdict != record.VerdictAllow {
 				t.Errorf("tools/call lines %v: want one allowed", calls)

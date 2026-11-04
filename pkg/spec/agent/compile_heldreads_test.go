@@ -250,7 +250,7 @@ func TestHeldReadsPrint(t *testing.T) {
 		want  []string
 	}{
 		{"auto", []string{"reads     held at tier landlock (fs.reads: auto: " + filepath.Join(f.project, "secrets", "key.pem") + " in ",
-			HeldReadCost, "landlock_* answer ENOSYS", "moved or hard-linked", "held(landlock: parent writable)"}},
+			HeldReadCost, "landlock_* answer ENOSYS", "launch-pinned targets moved or hard-linked", "until restart", "held(landlock: parent writable)"}},
 		{"held", []string{"reads     held at every tier (fs.reads: held); " + HeldReadCost, "held(landlock: parent writable)"}},
 		{"direct", []string{"reads     direct (fs.reads: direct): ", "unenforced(landlock: parent writable)"}},
 	} {

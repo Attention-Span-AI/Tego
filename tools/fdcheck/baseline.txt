@@ -8,7 +8,7 @@ internal/askclient newfile=1 producer=1
 internal/bpf opaque=1
 internal/doctor close=34 dup=4 fd=1 newfile=6 producer=28
 internal/platform/sys api=9 ioctl=1 producer=2
-internal/runtime close=21 newfile=7 producer=9
+internal/runtime close=21 newfile=6 producer=8
 internal/runtime/ask api=1 close=8 dup=2 fd=1 newfile=2 producer=2 rights=5
 internal/runtime/capture/forwarder close=1 producer=1
 internal/runtime/capture/uprobe close=6 fd=15 producer=2

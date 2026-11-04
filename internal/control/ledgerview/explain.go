@@ -150,6 +150,14 @@ func ExplainLine(root, run string, seq uint64) (*LineView, error) {
 // Explain explains line seq of r, whose run directory is under root. A seq r does not hold is os.ErrNotExist.
 func Explain(root string, r *Run, seq uint64) (*LineView, error) {
 	evs := r.AllEvents()
+	if findSeq(evs, seq) < 0 && r.Cut && seq < ^uint64(0)-consequenceWindow-1 {
+		window, err := WindowBefore(root, r, seq+consequenceWindow+1)
+		if err != nil {
+			return nil, err
+		}
+		r = window
+		evs = r.Events
+	}
 	i := findSeq(evs, seq)
 	if i < 0 {
 		return nil, os.ErrNotExist
@@ -169,15 +177,20 @@ func Explain(root string, r *Run, seq uint64) (*LineView, error) {
 		lv.Pretty = buf.String()
 	}
 	env := &lv.Envelope
-	env.V, env.Seq, env.Position, env.Total = cur.V, seq, i+1, len(evs)
+	env.V, env.Seq, env.Position, env.Total = cur.V, seq, i+1, r.Lines
+	if cur.Seq > 0 && env.Position == 1 {
+		env.Position = 2
+	} // the window boundary is not the first ledger line
 	env.ID, env.Prev, env.TS, env.MonoNS, env.Run, env.Agent = cur.ID, cur.Prev, e.TS, cur.MonoNS, e.Run, e.Agent
 	env.PID, env.TID, env.Cgroup, env.Source = cur.PID, cur.TID, cur.Cgroup, e.Source
 	env.SourceWords, _ = linewords.Source(e.Source)
-	if i == 0 {
+	if cur.Seq == 0 {
 		env.PrevOK = cur.Prev == ""
 	} else if prev != nil {
-		env.PrevSeq, env.PrevOK = evs[i-1].Seq, cur.Prev == prev.ID
-		env.SincePrev = e.TS.Sub(evs[i-1].TS)
+		env.PrevSeq, env.PrevOK = prev.Seq, cur.Prev == prev.ID
+		if i > 0 {
+			env.SincePrev = e.TS.Sub(evs[i-1].TS)
+		}
 	}
 	if !r.Start.IsZero() {
 		env.SinceStart = e.TS.Sub(r.Start)
@@ -301,6 +314,11 @@ func readLines(root, run string, evs []Event, i int) (cur, prev *lineHead) {
 			prev = headOf([]byte(lf.Raw), evs[i-1].Seq)
 		}
 	}
+	if prev == nil && evs[i].Seq > 0 {
+		if lf, err := Line(root, run, evs[i].Seq-1); err == nil {
+			prev = headOf([]byte(lf.Raw), evs[i].Seq-1)
+		}
+	}
 	return cur, prev
 }
 
@@ -330,11 +348,19 @@ var envelopeKeys = map[string]bool{"v": true, "seq": true, "id": true, "prev": t
 // lineFields is every key of the line raw after the envelope, in written order, nested objects flattened.
 func lineFields(raw []byte, runDir string, names func(string) string) []Field {
 	var out []Field
+	var meta struct {
+		Kind string `json:"kind"`
+	}
+	_ = json.Unmarshal(raw, &meta) // the reader already checked the record JSON
 	walkObject("", raw, func(key string, v json.RawMessage) {
 		if envelopeKeys[key] {
 			return
 		}
-		out = append(out, field(key, v, runDir, names))
+		f := field(key, v, runDir, names)
+		if meta.Kind == "exec" && key == "dropped" {
+			f.Label, _ = linewords.Label("exec.dropped")
+		}
+		out = append(out, f)
 	})
 	return out
 }

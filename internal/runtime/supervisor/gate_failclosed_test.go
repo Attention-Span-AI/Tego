@@ -40,7 +40,7 @@ gate:
     - 'fs.read matches "*.env"': 90
     - fs.write outside worktree: 90
 `, contracttest.Tree{"work/": "", "outside/secret.env": "owned"}, agent.WithCwd(filepath.Join(root, "work")))
-				if len(compiled.Rules.DenyWrite) != 0 || len(compiled.Rules.FSAsk) != 0 {
+				if hasOrdinaryWriteFloor(compiled.Rules) || len(compiled.Rules.FSAsk) != 0 {
 					t.Fatalf("not gate-only: deny%v ask%v", compiled.Rules.DenyWrite, compiled.Rules.FSAsk)
 				}
 				f := newFake()
@@ -191,8 +191,19 @@ fs:
   write: [../outside]
   deny_read: []
 `+rules, contracttest.Tree{"work/": "", "outside/secret.env": "owned"}, agent.WithCwd(filepath.Join(root, "work")))
-	if len(f.Rules.DenyWrite) != 0 || len(f.Rules.FSAsk) != 0 {
+	if hasOrdinaryWriteFloor(f.Rules) || len(f.Rules.FSAsk) != 0 {
 		t.Fatal("fixture is not gate-only")
 	}
 	return f.Rules
+}
+
+// C40 is present even in gate-only fixtures; these assertions disable the
+// contract and R20 targets whose priority these gate tests originally isolated.
+func hasOrdinaryWriteFloor(rt *agent.RuleTable) bool {
+	for _, r := range rt.DenyWrite {
+		if r.BuiltinRule == "" {
+			return true
+		}
+	}
+	return false
 }

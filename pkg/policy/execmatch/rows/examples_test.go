@@ -192,5 +192,5 @@ func TestAdversarialChecks(t *testing.T) {
 
 // facts builds exec facts: requested pathname, image basename, then argv.
 func facts(requested, image string, argv ...string) execmatch.Facts {
-	return execmatch.Facts{Requested: requested, Path: requested, Image: image, Argv0: argv[0], Argv: argv, ArgvComplete: true}
+	return execmatch.Facts{NodeVersion: "20.19.4", Requested: requested, Path: requested, Image: image, Argv0: argv[0], Argv: argv, ArgvComplete: true}
 }

@@ -100,3 +100,19 @@ directory, checked against `stat` in `TestTCPSocketCgroupIsTheMakersCgroup`.
   the 403 says why.
 - Every widening form posts `ack=<hex>` instead of `ackwiden=1`/`ackfree=1`; `TestNoBooleanAckInTemplates` holds the
   templates to it. A dashboard restart makes a new key, so a preview left open across a restart asks again.
+
+
+Amended 2026-11-03 (dashboard correctness M3/M4/M8): a watched run may borrow a
+contract reference only from the same recorded workspace and nonempty agent
+identity, with the same harness and program. Missing identity preserves its warning.
+Leak descriptions must associate particular successful reads with particular
+successful outbound events; run-wide counts cannot establish those associations.
+Time/sequence proximity remains a heuristic, not proof of transferred content.
+Browser region refreshes distinguish received from rendered revisions and retry
+failures with bounded backoff even while a run is quiet awaiting approval. These
+read-side corrections make no change to the authority/process model in ADR 0100.
+
+The standalone learner uses the same successful-pair condition (M8), with a bounded
+recent-send fold and capped associations. A confirmed witness preserves each
+withheld destination if the detailed association list fills; incomplete names are
+reported. It cannot borrow the dashboard's contract reference.

@@ -58,6 +58,18 @@ func evalNet(rt *agent.RuleTable, a agent.Action, tier backend.Tier, datagram bo
 		}
 		return agent.EvalResult{Verdict: agent.VerdictAllow, Rule: agent.UnmatchedRule}
 	}
+	if proto == agent.ProtoUnix {
+		for _, p := range []string{host, a.Landed} {
+			if rule := rt.BuiltinUnixRule(p); rule != "" {
+				return agent.EvalResult{Verdict: agent.VerdictRefused, Rule: rule, Reason: record.ReasonNetNotAllowed}
+			}
+		}
+	}
+	if b := rt.Builtins; b != nil && proto != agent.ProtoUnix && proto != "udp" && (a.Port == int(b.ServePort) || a.Port == 8484) {
+		if ip, err := netip.ParseAddr(host); err == nil && (ip.Unmap().IsLoopback() || ip.IsUnspecified()) {
+			return agent.EvalResult{Verdict: agent.VerdictRefused, Rule: agent.BuiltinTegoSurface, Reason: record.ReasonNetNotAllowed}
+		}
+	}
 	explicit := ok && rt.Net[i].Verdict == agent.VerdictAllow
 	if !explicit || rt.Net[i].Runtime != agent.CaptureGrant {
 		if res, guarded := evalGuard(rt, host, a.Port, proto, explicit); guarded {

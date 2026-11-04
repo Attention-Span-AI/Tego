@@ -260,4 +260,7 @@ func TestInitPresetThatDoesNotCompileWritesNothing(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, ".tego", "tmp")); err == nil {
 		t.Error(".tego/tmp/ was created for a contract that was not written")
 	}
+	if _, err := os.Stat(filepath.Join(dir, ".tego")); err == nil {
+		t.Error(".tego/ was created despite the promise that nothing was written")
+	}
 }

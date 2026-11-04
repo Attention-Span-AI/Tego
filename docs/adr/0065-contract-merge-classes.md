@@ -59,6 +59,7 @@ substituted table.
 | `host_sockets` | `stricter` | `false` > `true`; `true` loosening |
 | `fs.deny_write` | `union` | |
 | `revision` | `refused-in-profile` | |
+| `fs.apparmor_assume_root_namespace` | `refused-in-profile` | default false; administrator depth assertion (SEC08, ADR 0041) |
 
 **D4. Between two parents** (the rule the list form of `extends` implements for `extends: [a, b]`): the parents are combined in
 the order the list names them before the contract is laid on top. `concat`, `union` and `keymerge` combine in that order

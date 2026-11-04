@@ -157,7 +157,7 @@ func (sysKernel) UnixFile(p string) (unixFile, error) {
 
 // unixFileMask is what R11a asks statx about a socket file: its inode, the mount it was reached on, and its birth
 // time, which decides where st_dev is not the superblock's (owns).
-const unixFileMask = unix.STATX_INO | unix.STATX_MNT_ID | unix.STATX_BTIME
+const unixFileMask = unix.STATX_NLINK | unix.STATX_INO | unix.STATX_MNT_ID | unix.STATX_BTIME
 
 // unixFileOf is a statx answer as R11a matches it; mnt stays 0 when the kernel reported no mount id, and born when it
 // reported no birth time.

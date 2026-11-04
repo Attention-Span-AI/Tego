@@ -14,7 +14,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// The Signal as one pass computed it before it was made faster, copied unchanged but for the names (and
+// The independent one-pass Signal reference, updated for particular successful sends and for the names (and
 // secretpath.Is for IsSecretPath, which is now memoized) and for what was added to the Signal since (Dest.Addrs, a
 // live-blocked host), so that the
 // equivalence test (signal_fold_test.go) checks the incremental fold against the code that decided the demo's
@@ -201,6 +201,7 @@ func refSignal(r *Run, s Sensitive) *RunSignal {
 			}
 			d.Resolver = d.Resolver || e.Rule == "net.resolver"
 			if e.Verdict == "allow" || e.Verdict == "observed" {
+				d.sends = append(d.sends, touchAt{e.Seq, e.TS})
 				h, _ := hostPort(dst)
 				reached[h] = true
 			}
@@ -364,6 +365,11 @@ func refSignal(r *Run, s Sensitive) *RunSignal {
 			// A destination the contract allows is where the agent is meant to talk: a send to it right after a
 			// secret read is not the attack the mark points at.
 			d.NearSecret = !d.InContract && near(d.FirstSeq, d.First)
+			if !d.InContract {
+				for _, send := range d.sends {
+					d.NearSecret = d.NearSecret || near(send.seq, send.ts)
+				}
+			}
 		}
 		if !d.Background && d.Refused > 0 && d.Allowed+d.Observed+d.Asked == 0 {
 			d.Background = true

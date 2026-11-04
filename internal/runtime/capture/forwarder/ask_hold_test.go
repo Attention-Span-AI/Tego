@@ -21,6 +21,11 @@ import (
 
 func askHarness(t *testing.T, maxBody int, request func(context.Context, ask.Request) (ask.Decision, error), handler http.HandlerFunc) (*Listener, *fakeSink) {
 	t.Helper()
+	return askHarnessWithin(t, maxBody, time.Second, request, handler)
+}
+
+func askHarnessWithin(t *testing.T, maxBody int, timeout time.Duration, request func(context.Context, ask.Request) (ask.Decision, error), handler http.HandlerFunc) (*Listener, *fakeSink) {
+	t.Helper()
 	up := httptest.NewTLSServer(handler)
 	t.Cleanup(up.Close)
 	host, port := hostPort(t, up.Listener.Addr().String())
@@ -30,7 +35,7 @@ func askHarness(t *testing.T, maxBody int, request func(context.Context, ask.Req
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = m.Stop() })
-	rt := &agent.RuleTable{Record: agent.RecordSummary, HTTP: p, AskConfig: &agent.AskConfig{Hold: agent.AskHoldRequest, Timeout: agent.Duration(time.Second), MaxPending: 8}, NetAsk: []agent.NetRule{{Host: host, Port: port, Proto: agent.ProtoTCP, Verdict: agent.VerdictAsk}}}
+	rt := &agent.RuleTable{Record: agent.RecordSummary, HTTP: p, AskConfig: &agent.AskConfig{Hold: agent.AskHoldRequest, Timeout: agent.Duration(timeout), MaxPending: 8}, NetAsk: []agent.NetRule{{Host: host, Port: port, Proto: agent.ProtoTCP, Verdict: agent.VerdictAsk}}}
 	if err = m.ConfigureAsk(rt, request); err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +58,13 @@ func TestRequestAskActualTLSCoalescesRetriesAndSeparatesBodiesCredentials(t *tes
 	var asks, upstreams atomic.Int64
 	queued := make(chan ask.Request, 8)
 	approve := make(chan struct{})
-	l, _ := askHarness(t, 4096, func(ctx context.Context, r ask.Request) (ask.Decision, error) {
+	// Peer admission and instrumented TLS setup are not part of the coalescing contract. Use
+	// the test's deadline here; the separate deadline-refusal test keeps its one-second hold.
+	budget := time.Minute
+	if deadline, ok := t.Deadline(); ok {
+		budget = time.Until(deadline)
+	}
+	l, _ := askHarnessWithin(t, 4096, budget, func(ctx context.Context, r ask.Request) (ask.Decision, error) {
 		asks.Add(1)
 		queued <- r
 		select {
@@ -68,14 +79,15 @@ func TestRequestAskActualTLSCoalescesRetriesAndSeparatesBodiesCredentials(t *tes
 		w.Header().Set("X-Upstream", "one")
 		_, _ = w.Write(append([]byte("echo:"), b...))
 	})
-	client := &http.Client{Timeout: 3 * time.Second}
+	client := &http.Client{}
+	t.Cleanup(client.CloseIdleConnections)
 	results := make(chan string, 8)
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			r, _ := http.NewRequest("POST", l.BaseURL()+"/allowed?token=never-metadata", strings.NewReader("same"))
+			r, _ := http.NewRequestWithContext(t.Context(), "POST", l.BaseURL()+"/allowed?token=never-metadata", strings.NewReader("same"))
 			r.Header.Set("Authorization", "Bearer first-credential")
 			r.Header.Set(RetryHeader, string(rune('0'+i)))
 			resp, e := client.Do(r)
@@ -97,8 +109,10 @@ func TestRequestAskActualTLSCoalescesRetriesAndSeparatesBodiesCredentials(t *tes
 		if req.PID != os.Getpid() || strings.Contains(req.Target, "token") || strings.Contains(req.Target, "credential") {
 			t.Fatal(req)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("request did not ask")
+	case early := <-results:
+		t.Fatalf("request finished before approval: %s", early)
+	case <-t.Context().Done():
+		t.Fatal("test ended before the request asked")
 	}
 	if upstreams.Load() != 0 {
 		t.Fatal("upstream request before answer")
@@ -115,7 +129,7 @@ func TestRequestAskActualTLSCoalescesRetriesAndSeparatesBodiesCredentials(t *tes
 		t.Fatalf("same retry asks=%d upstream=%d", asks.Load(), upstreams.Load())
 	}
 	for _, tc := range []struct{ body, credential string }{{"changed", "first-credential"}, {"same", "second-credential"}} {
-		r, _ := http.NewRequest("POST", l.BaseURL()+"/allowed?token=never-metadata", strings.NewReader(tc.body))
+		r, _ := http.NewRequestWithContext(t.Context(), "POST", l.BaseURL()+"/allowed?token=never-metadata", strings.NewReader(tc.body))
 		r.Header.Set("Authorization", "Bearer "+tc.credential)
 		resp, e := client.Do(r)
 		if e != nil {

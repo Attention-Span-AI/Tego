@@ -3,6 +3,7 @@
 package ledgerview
 
 import (
+	"bufio"
 	"bytes"
 	"container/heap"
 	"errors"
@@ -120,19 +121,58 @@ func (s *Snapshot) eachLine(id string, order Order, fn func(e *Event, raw func()
 	if r == nil {
 		return
 	}
-	evs := r.AllEvents()
+	f, err := os.OpenFile(filepath.Join(s.Root, id, "events.jsonl"), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return
+	}
+	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
+	if err != nil {
+		return
+	}
+	if order == OldestFirst {
+		br := bufio.NewReaderSize(io.LimitReader(f, fi.Size()), 64<<10)
+		var off int64
+		for {
+			raw, size, err := boundedLine(br)
+			if err != nil {
+				return
+			}
+			if raw == nil {
+				off += size
+				continue
+			}
+			if e, _, ok := decodeLine(raw[:len(raw)-1]); ok {
+				e.off = off
+				if !fn(&e, func() ([]byte, error) { return raw[:len(raw)-1], nil }) {
+					return
+				}
+			}
+			off += size
+		}
+	}
+	// Reverse downloads walk bounded windows. No offset list proportional to the
+	// ledger size is retained. Each window carries the exact offsets for raw reads.
 	rd := newLineReader(s.Root)
 	defer rd.close()
-	for k := range evs {
-		i := k
-		if order == NewestFirst {
-			i = len(evs) - 1 - k
+	before := ^uint64(0)
+	for {
+		w, err := WindowBefore(s.Root, r, before)
+		if err != nil || len(w.Events) == 0 {
+			return
 		}
-		e := &evs[i]
-		if !fn(e, func() ([]byte, error) { return rd.read(r.ID, e.off, e.Seq) }) {
+		for i := len(w.Events) - 1; i >= 0; i-- {
+			e := &w.Events[i]
+			if !fn(e, func() ([]byte, error) { return rd.read(id, e.off, e.Seq) }) {
+				return
+			}
+		}
+		before = w.Events[0].Seq
+		if before == 0 {
 			return
 		}
 	}
+
 }
 
 // linePart is one run's matched lines, in order, and how far Each has given them.
@@ -213,7 +253,7 @@ func (lr *lineReader) file(run string) *windowFile {
 	if !validRunID(run) {
 		w.err = os.ErrNotExist
 	} else {
-		w.f, w.err = os.OpenFile(filepath.Join(lr.root, run, "events.jsonl"), os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+		w.f, w.err = os.OpenFile(filepath.Join(lr.root, run, "events.jsonl"), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	}
 	lr.files[run] = w
 	lr.order = append(lr.order, run)

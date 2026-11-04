@@ -78,6 +78,11 @@ func TestHTTPPolicyDeniesBeforeBodyAndTransport(t *testing.T) {
 // policyHarness uses real TLS upstream sockets and production peer admission.
 func policyHarness(t *testing.T, allow, methods []string, handler http.HandlerFunc) (*Listener, *fakeSink, *Manager) {
 	t.Helper()
+	return policyHarnessBeforeStart(t, allow, methods, handler, nil)
+}
+
+func policyHarnessBeforeStart(t *testing.T, allow, methods []string, handler http.HandlerFunc, setup func(*Listener)) (*Listener, *fakeSink, *Manager) {
+	t.Helper()
 	up := httptest.NewTLSServer(handler)
 	t.Cleanup(up.Close)
 	host, port := hostPort(t, up.Listener.Addr().String())
@@ -85,6 +90,9 @@ func policyHarness(t *testing.T, allow, methods []string, handler http.HandlerFu
 	m, err := NewManager([]agent.ModelEndpoint{{Provider: "anthropic", Host: host, Port: port}}, Options{HTTPPolicy: p, Transport: up.Client().Transport})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if setup != nil {
+		setup(m.Listeners()[0])
 	}
 	id, err := liveCgroupID()
 	if err != nil {
@@ -461,7 +469,20 @@ func TestHTTPPolicyUnreadRefusalClosesSocket(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var upstream atomic.Int64
-			l, sink, _ := policyHarness(t, []string{"/allowed"}, nil, func(w http.ResponseWriter, r *http.Request) { upstream.Add(1) })
+			active := make(chan struct{}, 1)
+			watch := func(l *Listener) {
+				// StateActive follows real peer admission and parsing the headers. Install before
+				// serving, so the unread-body assertion times neither of those setup steps.
+				l.srv.ConnState = func(_ net.Conn, state http.ConnState) {
+					if state == http.StateActive {
+						select {
+						case active <- struct{}{}:
+						default:
+						}
+					}
+				}
+			}
+			l, sink, _ := policyHarnessBeforeStart(t, []string{"/allowed"}, nil, func(w http.ResponseWriter, r *http.Request) { upstream.Add(1) }, watch)
 			if tc.foreign {
 				p := policyFor(t, "h", 443, []string{"/allowed"}, nil)
 				m, err := NewManager([]agent.ModelEndpoint{{Host: "h"}}, Options{HTTPPolicy: p})
@@ -472,6 +493,7 @@ func TestHTTPPolicyUnreadRefusalClosesSocket(t *testing.T) {
 				run := testRun
 				run.CgroupID = foreignCgroupID
 				sink = &fakeSink{}
+				watch(m.Listeners()[0])
 				if err := m.Start(context.Background(), run, sink); err != nil {
 					t.Fatal(err)
 				}
@@ -482,8 +504,13 @@ func TestHTTPPolicyUnreadRefusalClosesSocket(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer c.Close()
-			_ = c.SetDeadline(time.Now().Add(time.Second))
 			_, _ = io.WriteString(c, tc.wire)
+			select {
+			case <-active:
+			case <-t.Context().Done():
+				t.Fatal("test ended before the server parsed the headers")
+			}
+			_ = c.SetReadDeadline(time.Now().Add(time.Second))
 			br := bufio.NewReader(c)
 			resp, err := http.ReadResponse(br, &http.Request{Method: tc.method})
 			if err != nil {

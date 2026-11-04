@@ -380,9 +380,15 @@ func (l *Loop) recordOpen(n *notif, dirfd int32, addr uint64, flags int, decideO
 	if n.gone {
 		return
 	}
+	if decideOp == record.FSOpen && l.ptyOpen(n, r, p, raw, flags) {
+		return
+	}
 	// The open follows its final component unless O_NOFOLLOW says not to or O_CREAT|O_EXCL makes a final symlink an
 	// EEXIST (open(2)); a mknod makes its name as a mkdir does (openLookup).
 	q := pathQuery{tid: n.pid, dirfd: dirfd, path: raw, joined: p}.as(openLookup(flags, decideOp == decide.OpMknod))
+	if decideOp == record.FSOpen && flags&unix.O_PATH == 0 && l.builtinTTYOpen(n, r, p, q, flags) {
+		return
+	}
 	if decideOp == record.FSOpen && l.heldDirect(flags) && !walkNamed(raw) {
 		// A held open is decided where the deputy's pin lands (heldOpen): this loop's own walk of the name would only
 		// repeat it, so the copied name is decided as spelled, and R15c's early refusal is the spelling's. A spelling
@@ -711,7 +717,7 @@ type fsEnd struct {
 func (l *Loop) denyWrite(n *notif, r *reader, d fsDecided, op string, flags int, ends ...fsEnd) fsDecided {
 	c := l.table.Load()
 	rt := c.pol.Rules
-	if rt == nil || len(rt.DenyWrite) == 0 || isRead(op, flags) {
+	if rt == nil || (len(rt.DenyWrite) == 0 && rt.Builtins == nil) || isRead(op, flags) {
 		return d
 	}
 	ancestors, names := op == record.FSRename, makesName(op, flags)
@@ -727,7 +733,11 @@ func (l *Loop) denyWrite(n *notif, r *reader, d fsDecided, op string, flags int,
 		return fsDecided{rule: target.RuleName(), verdict: record.VerdictRefused, reason: reasonFor(op), enforce: true, floor: true}
 	}
 	if unwalked {
-		return fsDecided{rule: rulePathUnreliable, verdict: record.VerdictRefused, reason: reasonFor(op), enforce: true, floor: true}
+		rule := rulePathUnreliable
+		if rt.Builtins != nil {
+			rule = agent.BuiltinHostIPC
+		}
+		return fsDecided{rule: rule, verdict: record.VerdictRefused, reason: reasonFor(op), enforce: true, floor: true}
 	}
 	if r.unreadPath != "" {
 		return fsDecided{rule: r.unreadPath, verdict: record.VerdictRefused, reason: reasonFor(op), enforce: true, floor: true}

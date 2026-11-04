@@ -24,9 +24,9 @@
 #        CLAUDE=<path to claude>  TEGO_BIN=<tego built with -tags tegotesthooks>  ROOT=<dir> (kept)  KEEP=1
 #        WRITE_GOLDEN=1 rewrites the golden's entries from this run (the real binary is the reference)
 # Exit 0 when every check passed, 1 on a FAIL, 2 when a tool is missing, 77 (SKIP) when no claude is installed.
-# Nothing outside $ROOT is written: tego's machine config, ledger, chain anchor, own log and runtime directory are
-# there (the tegotesthooks build), HOME is $ROOT/home, the contract denies the agent the account's own agent
-# configuration (Claude Code reads the passwd-database home's ~/.claude whatever HOME says), and the real ~/.tego is
+# Durable files (machine config, ledger, chain anchor, own log and HOME) are under $ROOT. The short per-run
+# %R runtime is under a private temporary base in /run/user/<uid> and removed at script exit. HOME is $ROOT/home. The contract denies the
+# agent the account's own configuration (Claude Code reads the passwd-database home's ~/.claude whatever HOME says), and the real ~/.tego is
 # listed before and after.
 set -uo pipefail
 
@@ -44,8 +44,10 @@ root=${ROOT:-$(mktemp -d "${TMPDIR:-/tmp}/tego-reason-e2e-XXXXXX")}
 mkdir -p "$root" && chmod 755 "$root"
 root=$(cd "$root" && pwd)
 stub_pid=
+runtime_base=
 cleanup() {
 	[ -n "$stub_pid" ] && kill "$stub_pid" 2>/dev/null
+	[ -z "$runtime_base" ] || rm -rf "$runtime_base"
 	[ "${KEEP:-0}" = 1 ] || [ -n "${ROOT:-}" ] || rm -rf "$root"
 }
 trap cleanup EXIT
@@ -55,7 +57,7 @@ check() { # check <0|1> <what>
 }
 section() { printf '\n==== %s\n' "$1"; }
 
-# --- tego, as drive.py expects it: $root/bin/tego, its files under $root/state, its runtime directory $root/run ---
+# --- tego, as drive.py expects it: files under $root/state, short per-run runtime under the login base ---
 mkdir -p "$root/bin" && chmod 755 "$root/bin"
 if [ -n "${TEGO_BIN:-}" ]; then
 	cp "$TEGO_BIN" "$root/bin/tego"
@@ -69,10 +71,12 @@ grep -aq TEGO_TEST_CHAIN_ANCHOR "$bin" || { echo "run.sh: $bin is not built with
 state=$root/state
 mkdir -p "$state/runs" "$state/ownlog" && chmod 755 "$state"
 printf 'version: 0\nledger_root: %s\nstop_grace: 3s\n' "$state/runs" >"$state/config.yaml" && chmod 600 "$state/config.yaml"
-# Not under $state: tego denies the agent its own state directory, and the settings file is read from here.
-mkdir -p "$root/run" && chmod 700 "$root/run"
+# A short private base keeps %R within 103 bytes and never sweeps the user's normal runtime.
+runtime_base=$(mktemp -d "/run/user/$(id -u)/tXXXXXX") || exit 2
+chmod 700 "$runtime_base"
+printf '%s\n' "$runtime_base" >"$state/runtime"
 export TEGO_CONFIG=$state/config.yaml TEGO_TEST_CHAIN_ANCHOR=$state/chain.log TEGO_TEST_OWN_LOG_HOME=$state/ownlog
-export XDG_RUNTIME_DIR=$root/run SSL_CERT_FILE=$root/stub/cert.pem
+export XDG_RUNTIME_DIR=$runtime_base SSL_CERT_FILE=$root/stub/cert.pem
 real_home=$(getent passwd "$(id -u)" | cut -d: -f6)
 tego_home_listing() { [ -d "$real_home/.tego" ] && find "$real_home/.tego" -printf '%p %s %T@\n' 2>/dev/null | sort; }
 tego_home_listing >"$root/tego-home-before.txt"
@@ -93,10 +97,9 @@ KEY="sk-ant-api03-OFFLINE-DUMMY-NOT-A-REAL-KEY-00000000000000000000"
 layout() {
 	local port
 	ws=$root/ws
-	rm -rf "${ws:?}" "${root:?}/home" "$root/outside" "$root/contract" "$root/xdg" "$state/runs"
+	rm -rf "${ws:?}" "${root:?}/home" "$root/outside" "$root/contract" "$state/runs"
 	mkdir -p "$ws/work" "$ws/bin" "$ws/.claude-state/tmp" "$root/home" "$root/outside" "$root/contract" "$state/runs"
 	chmod 755 "$ws" "$root/home" "$root/outside" "$root/contract"
-	mkdir -p "$root/xdg" && chmod 700 "$root/xdg"
 	cp "$poc/git" "$ws/bin/git"
 	# Claude Code's first-run record (no credential): without it, its first act is a check against api.anthropic.com.
 	# The workspace is recorded trusted, so the interactive session (h) never meets the trust dialog, which the driver
@@ -120,7 +123,7 @@ ledger() { find "$state/runs" -mindepth 2 -maxdepth 2 -name events.jsonl | head 
 # claude_p <args...>: claude -p under tego run, from the workspace, in an environment built from nothing.
 claude_p() {
 	(cd "$ws" && env -i PATH="$ws/bin:$(dirname "$claude"):/usr/bin:/bin" HOME="$root/home" LANG=C.UTF-8 \
-		XDG_RUNTIME_DIR="$root/run" SSL_CERT_FILE="$SSL_CERT_FILE" TEGO_CONFIG="$TEGO_CONFIG" \
+		XDG_RUNTIME_DIR="$runtime_base" SSL_CERT_FILE="$SSL_CERT_FILE" TEGO_CONFIG="$TEGO_CONFIG" \
 		TEGO_TEST_CHAIN_ANCHOR="$TEGO_TEST_CHAIN_ANCHOR" TEGO_TEST_OWN_LOG_HOME="$TEGO_TEST_OWN_LOG_HOME" ANTHROPIC_API_KEY="$KEY" \
 		timeout 300 "$bin" run "$root/contract/agent.yaml" -- claude -p --permission-mode bypassPermissions "$@" \
 		"Carry out the scripted steps." >"$root/claude.out" 2>"$root/claude.err")

@@ -297,6 +297,19 @@ func (s *stage) applyLandlock() error {
 	if s.spec.RulesetFD < 0 {
 		return nil
 	}
+	if s.spec.BuiltinRefusals {
+		rs, err := ttyRuleset()
+		if err != nil {
+			return fail(StepLandlock, err)
+		}
+		err = rs.RestrictLandlock(s.spec.LandlockFlags)
+		if closeErr := rs.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			return fail(StepLandlock, err)
+		}
+	}
 	// The ruleset stays a bare number until ADR 0023 C5 gives the launcher an owner to pass on: landlock_restrict_self
 	// takes it through sys.RestrictSelf, whose ABI fallback the lint cannot follow a lent number into.
 	if err := sys.RestrictSelf(s.spec.RulesetFD, s.spec.LandlockFlags); err != nil {

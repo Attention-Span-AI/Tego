@@ -238,6 +238,9 @@ const (
 	// exec grant (ADR 0064, agent-contract.md R27): under an allow-list contract the launcher admits the tego binary
 	// with the hook's exact argv and no other. Its rule name is "exec.harness-hook[<tego binary>]".
 	HarnessHookGrant = "harness-hook"
+	// MCPStageGrant names the process-bound allowance for the relay's private stage (ADR 0126). It adds no
+	// general command pattern: the relay authenticates the fresh socket and pins the child while its exec is held.
+	MCPStageGrant = "mcp-stage"
 )
 
 // IsRuntimeRule reports whether a rule name denotes a grant the runtime makes on its own authority, so a
@@ -250,7 +253,8 @@ func IsRuntimeRule(rule string) bool {
 		strings.HasPrefix(rule, "net."+DNSBrokerGrant+"[unix:/") && strings.HasSuffix(rule, "]") ||
 		strings.HasPrefix(rule, "fs."+CodexHomeGrant+"[/") && strings.HasSuffix(rule, "]") ||
 		strings.HasPrefix(rule, "fs."+HarnessStateGrant+"[/") && strings.HasSuffix(rule, "]") ||
-		strings.HasPrefix(rule, "exec."+HarnessHookGrant+"[/") && strings.HasSuffix(rule, "]")
+		strings.HasPrefix(rule, "exec."+HarnessHookGrant+"[/") && strings.HasSuffix(rule, "]") ||
+		strings.HasPrefix(rule, "exec."+MCPStageGrant+"[/") && strings.HasSuffix(rule, "]")
 }
 
 // MaxWalk bounds the root tiers' ancestor walk at the kernel's own bound
@@ -424,6 +428,9 @@ func FSReason(kind ActionKind) record.Reason {
 // so it carries its resolved path instead. A deny_read entry compiled from fs.ask_read is named after the key
 // it was declared in, fs.ask_read[...], so a refusal, a held read and drift all name the entry the author wrote.
 func (r FSRule) RuleName() string {
+	if r.BuiltinRule != "" {
+		return r.BuiltinRule
+	}
 	if r.Fence {
 		return LiveFenceRule(LiveKindRead, r.Path)
 	}

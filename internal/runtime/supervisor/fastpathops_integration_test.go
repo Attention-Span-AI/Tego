@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/attention-span-ai/tego/internal/testutil"
 )
 
 // modeBenchOps is a target that times one kind of notified fs syscall (helperOp) in a tree of a project's
@@ -88,13 +90,22 @@ func targetOpLoop() (int, int64) {
 
 // TestIntegrationFastPathOps is TestIntegrationFastPath for each common fs case: the round trip the agent sees
 // per notified syscall, logged per case as the best of three runs (a loaded box's stalls are not the path's cost)
-// and held to the soft ceiling, or to noiseFactor ping-pongs measured in the same run when the box is loaded.
+// and judged in the same budget/unit-gate modes as that test.
 func TestIntegrationFastPathOps(t *testing.T) {
+	mode := testutil.TimingMode(t)
+	if mode.Budgets() {
+		// The budget collector accounts for this parent before the subtests' verbose headings.
+		t.Log("fast-path round trips (supervisor R22, budget mode)")
+	}
 	const ops, attempts = 2000, 3
 	for _, op := range fastPathOps {
 		t.Run(op, func(t *testing.T) {
 			best := time.Duration(1<<63 - 1)
+			budget := testutil.Budget{Name: "FASTPATH " + op, Limit: SoftCeiling, Spec: "supervisor R22"}
 			ceiling, gauge := SoftCeiling, new(noiseGauge)
+			if !mode.Budgets() {
+				ceiling = budget.Ceiling()
+			}
 			for i := 0; i < attempts && best > ceiling; i++ {
 				h := startHarnessWith(t, harnessOpts{
 					loops:   ops,
@@ -110,14 +121,13 @@ func TestIntegrationFastPathOps(t *testing.T) {
 					t.Errorf("%d notifications for %d notified calls", m.Notifications, ops)
 				}
 				best = min(best, time.Duration(h.report.LoopNS/int64(ops)))
-				if best > ceiling {
+				if best > ceiling && mode.Budgets() {
 					ceiling = max(ceiling, gauge.ceiling(t))
+					budget.Limit = ceiling
 				}
 			}
-			t.Logf("FASTPATH %s: %v per notification (best of %d runs of %d)", op, best, attempts, ops)
-			if best > ceiling {
-				t.Errorf("round trip %v exceeds the ceiling %v", best, ceiling)
-			}
+			t.Logf("FASTPATH %s: %v per notification (best of up to %d runs of %d)", op, best, attempts, ops)
+			mode.Judge(t, budget, testutil.Figure{Wall: best})
 		})
 	}
 }

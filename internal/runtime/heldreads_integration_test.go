@@ -260,7 +260,7 @@ func TestIntegrationHeldReadsAtLandlock(t *testing.T) {
 			t.Errorf("run_start.fs_reads = %+v, want held, nested, naming the .env", start.FSReads)
 		}
 		for c, want := range map[backend.Capability]bool{backend.CapReadDenyNested: true, backend.CapReadDenyCreatedLater: true,
-			backend.CapReadDenyMoved: false} {
+			backend.CapReadDenyMoved: true} {
 			if got := start.Capabilities[string(c)]; got != want {
 				t.Errorf("capabilities[%s] = %t, want %t", c, got, want)
 			}

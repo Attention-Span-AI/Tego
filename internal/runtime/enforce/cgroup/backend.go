@@ -678,3 +678,14 @@ func recordModeOf(m agent.RecordMode) ebpfbindings.RecordMode {
 		return ebpfbindings.RecordFull
 	}
 }
+
+// BuiltinRefusals reports whether the inherited domain installs ADR 0113.
+func (h *Handle) BuiltinRefusals() bool { return h.table != nil && h.table.Builtins != nil }
+
+// BuiltinSocketDirectories forwards the inherited Prepare-pinned socket roots.
+func (h *Handle) BuiltinSocketDirectories() map[[2]uint64]string {
+	if inherited, ok := h.inherited.(interface{ BuiltinSocketDirectories() map[[2]uint64]string }); ok {
+		return inherited.BuiltinSocketDirectories()
+	}
+	return nil
+}

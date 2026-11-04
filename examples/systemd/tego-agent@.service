@@ -25,8 +25,9 @@
 # A planned restart, once a day, is tego-agent-restart@.timer's: the stop `systemctl --user stop` makes, then a new
 # run. Not RuntimeMaxSec= here: systemd stops the unit with SIGTERM at that limit, an agent that dies of it ends the
 # run 143, which RestartPreventExitStatus keeps from restarting, and the unit is left failed (Result=timeout).
-# Not covered: a stop whose agent ignores SIGTERM for all of stop_grace ends with cgroup.kill, 137, and is
-# restarted like a kill by memory; give it a longer stop_grace or `tego stop --grace`.
+# With --service, an intentional tego stop exits 143 even if the agent ignores SIGTERM and stop_grace
+# ends it with SIGKILL. The ledger keeps exit 137 and escalated: true; memory and pids kills still exit 137
+# and restart. A record or anchor failure still exits 125.
 
 [Unit]
 Description=Tego agent %i
@@ -37,7 +38,7 @@ StartLimitBurst=12
 Type=exec
 # Relative paths in the contract resolve against this directory.
 WorkingDirectory=%h
-ExecStart=%h/.local/bin/tego run %i
+ExecStart=%h/.local/bin/tego run --service %i
 # A machine config of its own for these agents; otherwise tego reads ~/.tego/config.yaml.
 #Environment=TEGO_CONFIG=%h/.config/tego/always-on.yaml
 StandardInput=null

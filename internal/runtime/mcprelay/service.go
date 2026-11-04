@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/mcptools"
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/runtime/ask"
 	"github.com/attention-span-ai/tego/internal/runtime/source"
 	"github.com/attention-span-ai/tego/pkg/policy/mcptool"
@@ -100,6 +101,10 @@ type Service struct {
 type pendingStart struct {
 	server string
 	shim   admission
+	pid    int
+	child  *sys.FD // pinned before the shim releases its child to exec
+	bound  bool    // the shim acknowledged this PID after its waiting stage exec
+	stage  *StageRequest
 }
 
 // New binds the control listener (and one HTTP relay listener per relayed url server) on loopback, so the ports
@@ -270,25 +275,93 @@ func (s *Service) Stop() error {
 // Gaps is nothing: the relay covers what it relays, and reports no shortfall at run_end.
 func (s *Service) Gaps() []source.Gap { return nil }
 
-// Relayed is the supervisor's gate (ADR 0126 §4 "The gate"): a start of server's declared command by callerPID is
-// allowed only when the caller's parent is a shim this service admitted for that server and whose start is pending,
-// and that parent is still that shim, talking only to this service (procStillShim). The start is consumed first, so one
-// admitted shim gets one answer and starts one server. callerPID itself is not checked to be the child the shim
-// started, so a child forked before the shim's exec passes (ADR 0126 residuals).
+// Relayed is the supervisor's gate (ADR 0126 §4): only the child pinned before its exec can consume the admitted
+// shim's one start. A live pidfd keeps p.pid bound to that process, even if the shim's parent relationship changes.
+// A sibling forked before the shim's exec cannot consume it. The admitted shim must still pass procStillShim.
 func (s *Service) Relayed(server string, callerPID int) bool {
-	ppid := ppidOf(callerPID)
-	if ppid <= 0 {
+	s.mu.Lock()
+	var p pendingStart
+	for shim, pending := range s.pending {
+		if pending.pid == callerPID && pending.child != nil && pending.bound && pending.server == server {
+			p = pending
+			delete(s.pending, shim)
+			break
+		}
+	}
+	s.mu.Unlock()
+	if p.child == nil {
+		return false
+	}
+	defer func() { _ = p.child.Close() }()
+	if !s.opts.stillShim(p.shim) {
+		return false
+	}
+	exited, err := sys.PollPidfdFD(p.child, 0)
+	return err == nil && !exited
+}
+
+// bindChild runs while the shim's child is waiting to exec. The trusted shim reports the PID proc.Start returned,
+// before it can reap the child. On registration failure the shim closes its admitted connection before reaping,
+// so procStillShim fails before that PID can be reused. Pinning here and checking liveness after the proc reads
+// binds the successful registration to that child.
+// The parent check admits a registration; it is never the authority for a later server exec.
+func (s *Service) bindChild(shim admission, pid int) bool {
+	if pid <= 0 || ppidOf(pid) != shim.pid || !s.opts.stillShim(shim) {
 		return false
 	}
 	s.mu.Lock()
-	p, ok := s.pending[ppid]
-	if !ok || p.server != server {
+	p, ok := s.pending[shim.pid]
+	if ok && p.shim == shim && p.child != nil {
+		// A constrained stage was already pinned while its first exec was held. Registration confirms the same
+		// child; it cannot replace that identity with a sibling or a recycled PID.
+		exited, err := sys.PollPidfdFD(p.child, 0)
+		if p.pid != pid || p.bound || s.stopped || err != nil || exited {
+			s.mu.Unlock()
+			return false
+		}
+		p.bound = true
+		s.pending[shim.pid] = p
 		s.mu.Unlock()
+		return true
+	}
+	s.mu.Unlock()
+	child, err := sys.PidfdOpenProcessFD(pid)
+	if err != nil {
 		return false
 	}
-	delete(s.pending, ppid)
-	s.mu.Unlock()
-	return s.opts.stillShim(p.shim)
+	keep := false
+	defer func() {
+		if !keep {
+			_ = child.Close()
+		}
+	}()
+	if ppidOf(pid) != shim.pid || !s.opts.stillShim(shim) {
+		return false
+	}
+	if exited, err := sys.PollPidfdFD(child, 0); err != nil || exited {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok = s.pending[shim.pid]
+	if !ok || p.shim != shim || p.child != nil || s.stopped {
+		return false
+	}
+	p.pid, p.child, p.bound = pid, child, true
+	s.pending[shim.pid] = p
+	keep = true
+	return true
+}
+
+// clearPending releases the child's pidfd on disconnect, failed exec or a completed start. The admission comparison
+// keeps an old connection's cleanup from removing another connection's start.
+func (s *Service) clearPending(shim admission) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p, ok := s.pending[shim.pid]; ok && p.shim == shim {
+		delete(s.pending, shim.pid)
+		_ = p.child.Close()
+	}
 }
 
 // IsRelayed reports whether server is behind this relay.

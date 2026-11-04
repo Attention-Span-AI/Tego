@@ -41,7 +41,7 @@ set -euo pipefail
 # when a test is listed under tags its file does not build with.
 default_tests='
 internal/runtime/supervisor      -            TestExecCommandCostBudget TestExecCommandIndexCostBudget
-internal/runtime/supervisor      integration  TestIntegrationUDPFlood
+internal/runtime/supervisor      integration  TestIntegrationUDPFlood TestIntegrationFastPath TestIntegrationFastPathOps
 internal/runtime/enforce/cgroup  -            TestPlanPlaneFillStaysUnderItsBudgetAt1000Rows
 internal/platform/sys            -            TestBorrowCostRatio
 internal/control/rulesview       -            TestInForceLongRunIsFast
@@ -69,9 +69,13 @@ root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 tests=${TIMING_BUDGETS_TESTS:-$default_tests}
 out=${out:-$(mktemp -d "${TMPDIR:-/tmp}/timing-budgets.XXXXXX")}
 # A DIR that holds anything and was not made here is refused rather than emptied.
-if [ -e "$out" ] && [ ! -e "$out/.timing-budgets" ] && [ -n "$(ls -A "$out")" ]; then
-	echo "timing-budgets: $out is not empty and is not a directory timing-budgets.sh made; not using it" >&2
-	exit 2
+if [ -e "$out" ] && [ ! -e "$out/.timing-budgets" ]; then
+	# Fixed output per entry preserves newline-only names and listing failures.
+	entries=$(cd -- "$out" && find . -mindepth 1 -maxdepth 1 -printf x) || exit 2
+	if [ -n "$entries" ]; then
+		echo "timing-budgets: $out is not empty and is not a directory timing-budgets.sh made; not using it" >&2
+		exit 2
+	fi
 fi
 mkdir -p "$out"
 : >"$out/.timing-budgets"

@@ -30,7 +30,7 @@ func TestDispatchTables(t *testing.T) {
 		{
 			arch: auditArchX86,
 			want: map[string]int32{
-				"connect": 42, "sendto": 44, "sendmsg": 46, "sendmmsg": 307, "bind": 49, "listen": 50,
+				"pidfd_getfd": 438, "connect": 42, "sendto": 44, "sendmsg": 46, "sendmmsg": 307, "bind": 49, "listen": 50,
 				"execve": 59, "execveat": 322,
 				"open": 2, "openat": 257, "creat": 85,
 				"unlink": 87, "unlinkat": 263,
@@ -56,7 +56,7 @@ func TestDispatchTables(t *testing.T) {
 		{
 			arch: auditArchARM,
 			want: map[string]int32{
-				"connect": 203, "sendto": 206, "sendmsg": 211, "sendmmsg": 269, "bind": 200, "listen": 201,
+				"pidfd_getfd": 438, "connect": 203, "sendto": 206, "sendmsg": 211, "sendmmsg": 269, "bind": 200, "listen": 201,
 				"execve": 221, "execveat": 281,
 				"openat": 56, "unlinkat": 35, "renameat": 38, "renameat2": 276,
 				"mkdirat": 34, "symlinkat": 36, "linkat": 37, "mknodat": 33,
@@ -384,8 +384,9 @@ func TestRunDrainsAndStops(t *testing.T) {
 	}
 	fs := []agent.FSRule{{Path: "/work", Kind: agent.FSWrite}}
 	sink := &testSink{}
-	// What the loop starts, it ends: the goroutines and descriptors before New and after Run returns (the package's leak
-	// gate sees only goroutines blocked for good).
+	// What the loop starts, it ends. Other tests' asynchronous closes and os.File cleanups can
+	// shrink the process-wide descriptor count; only growth is a leak. Check this loop's own
+	// listener and wake pipe below as well (the package's goroutine gate sees only permanent blocks).
 	g0, fd0 := runtime.NumGoroutine(), openFDs(t)
 	l, err := New(testListener(), testPolicy(nil, fs, nil), sink, Options{kernel: f, Workers: 4})
 	if err != nil {
@@ -408,8 +409,11 @@ func TestRunDrainsAndStops(t *testing.T) {
 	for deadline := time.Now().Add(2 * time.Second); runtime.NumGoroutine() > g0 && time.Now().Before(deadline); {
 		time.Sleep(time.Millisecond)
 	}
-	if g, fd := runtime.NumGoroutine(), openFDs(t); g > g0 || fd != fd0 {
+	if g, fd := runtime.NumGoroutine(), openFDs(t); g > g0 || fd > fd0 {
 		t.Errorf("after Run returned: %d goroutines (%d before New), %d descriptors (%d before)", g, g0, fd, fd0)
+	}
+	if !f.closedList || l.wakeR != -1 || l.wakeW != -1 {
+		t.Errorf("Run left resources open: listener closed=%v, wake pipe=%d/%d", f.closedList, l.wakeR, l.wakeW)
 	}
 	m := l.Metrics()
 	if m.Notifications != count {

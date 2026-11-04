@@ -193,17 +193,18 @@ func (b *Backend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run) (*H
 // builder is the per-Prepare state: the fd owner, the rules derived so far and the counters the ctx
 // check and diagnostics need. It lives for one Prepare call on one goroutine.
 type builder struct {
-	ctx        context.Context
-	rt         *agent.RuleTable
-	run        Run
-	profile    abiProfile
-	sc         landlockSyscalls
-	sealProbe  func() bool // the MFD_NOEXEC_SEAL probe; nil means MemfdNoexecSealSupported
-	fds        *fdSet
-	heldNames  map[string]string // actual dentry name when each declared path was first held
-	fsPlan     fsplan.Plan
-	listenHeld map[string]int           // listener path -> dedicated parent entry; never an alias in fds.paths
-	levels     map[string]snapshotLevel // each enumerated ancestor's one listing (noteLevel), for the Snapshot
+	ctx         context.Context
+	rt          *agent.RuleTable
+	run         Run
+	profile     abiProfile
+	sc          landlockSyscalls
+	sealProbe   func() bool // the MFD_NOEXEC_SEAL probe; nil means MemfdNoexecSealSupported
+	fds         *fdSet
+	heldNames   map[string]string // actual dentry name when each declared path was first held
+	fsPlan      fsplan.Plan
+	listenHeld  map[string]int // listener path -> dedicated parent entry; never an alias in fds.paths
+	builtinDirs map[[2]uint64]string
+	levels      map[string]snapshotLevel // each enumerated ancestor's one listing (noteLevel), for the Snapshot
 
 	governed     []governedPath // write/ask/deny_read entries, resolved once for R5's loader check
 	governedOnce bool
@@ -247,7 +248,7 @@ func (bd *builder) build() (*Handle, error) {
 	if err := bd.ctx.Err(); err != nil { // E20: a stop before the first open
 		return nil, fmt.Errorf("landlock: prepare cancelled: %w", err)
 	}
-	for _, stage := range []func() error{bd.fsEntries, bd.denyRead, bd.execGrants, bd.deputyGrant, bd.netRules, bd.implicitRun, bd.planeKeys} {
+	for _, stage := range []func() error{bd.fsEntries, bd.denyRead, bd.ttyGrants, bd.execGrants, bd.deputyGrant, bd.netRules, bd.implicitRun, bd.planeKeys, bd.builtinDirectories} {
 		if err := stage(); err != nil {
 			return nil, err
 		}
@@ -282,6 +283,7 @@ func (bd *builder) build() (*Handle, error) {
 		unixBinds: bd.unixRestricted, // R11c: the supervisor's record of the run's own unix sockets (supervisor R11a)
 		ingress:   bd.rt.Ingress != nil,
 		rootTier:  bd.rt.Tier == backend.TierCgroup || bd.rt.Tier == backend.TierBPFLSM,
+		builtin:   bd.rt.Builtins != nil,
 		ioUring:   bd.run.IOUring && bd.rt.Contract != nil && bd.rt.Contract.IOUring}
 	filter, err := assembleFilter(NativeArch(), fopts)
 	if err != nil {
@@ -298,17 +300,19 @@ func (bd *builder) build() (*Handle, error) {
 	// capability line says so rather than leaving the opt-out on record only in contract_hash.
 	provide(caps, backend.CapExecDeny, !bd.execAnonymous)
 	return &Handle{
-		sc:         bd.sc,
-		rulesetFD:  rulesetFD,
-		filter:     filter,
-		fds:        bd.fds,
-		unenforced: bd.unenforced,
-		abi:        bd.profile.Version,
-		caps:       caps,
-		filterOpts: fopts,
-		ask:        hasAsk(bd.rt),
-		listenHeld: bd.listenHeld,
-		snapshot:   bd.snapshot(),
+		builtin:     bd.rt.Builtins != nil,
+		builtinDirs: bd.builtinDirs,
+		sc:          bd.sc,
+		rulesetFD:   rulesetFD,
+		filter:      filter,
+		fds:         bd.fds,
+		unenforced:  bd.unenforced,
+		abi:         bd.profile.Version,
+		caps:        caps,
+		filterOpts:  fopts,
+		ask:         hasAsk(bd.rt),
+		listenHeld:  bd.listenHeld,
+		snapshot:    bd.snapshot(),
 	}, nil
 }
 
@@ -362,7 +366,7 @@ func (bd *builder) planeKeys() error {
 // than reopening a mutable pathname.
 func (bd *builder) planeListenParents() error {
 	bd.listenHeld = make(map[string]int)
-	for _, r := range bd.run.Plane.Listen {
+	for _, r := range append(append([]decide.PlaneListenRow{}, bd.run.Plane.Listen...), bd.run.Plane.Protected...) {
 		if r.Abstract {
 			continue
 		}

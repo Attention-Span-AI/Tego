@@ -9,8 +9,8 @@
 # and then reads the ledger back and checks it: no connection to an Anthropic address was ever allowed, every model
 # request the stand-in answered is an ssl_request source=forwarder, and what each step did.
 #
-# Everything lives under $ROOT; the real ~/.tego, ~/.claude, ~/.claude.json, ~/.codex and ~/.config/anthropic are
-# neither read nor written (the contract denies the agent the last four, `tego watch` is built with the
+# Durable files live under $ROOT; the short per-run %R runtime uses a private temporary base in /run/user/<uid>.
+# The real ~/.tego, ~/.claude, ~/.claude.json, ~/.codex and ~/.config/anthropic are neither read nor written (the contract denies the agent the last four, `tego watch` is built with the
 # tegotesthooks tag so its chain anchor and log live in $ROOT, and ~/.tego is listed before and after).
 #
 # Usage: run.sh [probe|session|all|negative]     default all
@@ -29,9 +29,11 @@ mkdir -p "$root" && chmod 755 "$root"
 root=$(cd "$root" && pwd)
 claude=${CLAUDE:-$(command -v claude || true)}
 helpers=()
+runtime_base=
 cleanup() {
 	local p
 	for p in "${helpers[@]}"; do kill "$p" 2>/dev/null; done
+	[ -z "$runtime_base" ] || rm -rf "$runtime_base"
 	[ "${KEEP:-0}" = 1 ] || [ -n "${ROOT:-}" ] || rm -rf "$root"
 }
 trap cleanup EXIT
@@ -70,17 +72,17 @@ ledger_root: $state/runs
 stop_grace: 3s
 CFG
 chmod 600 "$state/config.yaml"
-# The run's runtime directory (drive.py names the same one): a launch makes <XDG_RUNTIME_DIR>/tego and sweeps the
-# directories the invoking user's crashed runs left there, so it is this POC's own, 0700 as tego requires
-# (identity-config.md R27 clause b4). It is not under $state: tego denies the agent its own state directory, and the
-# Claude Code settings file a run provisions lives in the runtime directory, where the agent must read it.
-mkdir -p "$root/run" && chmod 700 "$root/run"
+# drive.py reads this script-owned base from state/runtime. %R lives in this run's private
+# harness-state directory; launch validates the complete PID socket path.
+runtime_base=$(mktemp -d "/run/user/$(id -u)/tXXXXXX") || exit 2
+chmod 700 "$runtime_base"
+printf '%s\n' "$runtime_base" >"$state/runtime"
 cat >"$state/env.sh" <<ENVS
 # source this in a second terminal to use tego ask / approve / deny / events against this run
 export TEGO_CONFIG=$state/config.yaml
 export TEGO_TEST_CHAIN_ANCHOR=$state/chain.log
 export TEGO_TEST_OWN_LOG_HOME=$state/ownlog
-export XDG_RUNTIME_DIR=$root/run
+export XDG_RUNTIME_DIR=$runtime_base
 ENVS
 # shellcheck disable=SC1091 # written just above
 . "$state/env.sh"
@@ -103,10 +105,9 @@ chmod 644 "$root/stub/cert.pem"
 layout() {
 	local seed=$1 port entries p
 	ws=$root/ws home=$root/home
-	rm -rf "$ws" "$home" "$root/outside" "$root/contract" "$root/xdg" "$state/runs"
+	rm -rf "$ws" "$home" "$root/outside" "$root/contract" "$state/runs"
 	mkdir -p "$ws/work" "$ws/held" "$ws/bin" "$ws/.claude-state" "$home" "$root/outside" "$root/contract" "$state/runs"
 	chmod 755 "$ws" "$home" "$root/outside" "$root/contract"
-	mkdir -p "$root/xdg" && chmod 700 "$root/xdg"
 	cp "$here/git" "$ws/bin/git"
 	if [ "$seed" = onboarded ]; then
 		# Claude Code's own first-run record: "the first-run steps are done". It holds no credential. Without it, its

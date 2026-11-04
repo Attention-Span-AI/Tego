@@ -37,13 +37,29 @@ func TestMain(m *testing.M) {
 // fakeShimMain dials one connection, says hello on it only as a real shim would, starts a child as a shim starts its
 // server, prints the child's pid, and holds until stdin ends.
 func fakeShimMain(mode string) int {
-	c, err := net.Dial("tcp", os.Getenv(envFakeDial))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+	if mode == "stage-child" {
+		_, _ = io.Copy(io.Discard, os.Stdin)
+		return 0
 	}
-	defer func() { _ = c.Close() }()
-	if mode == "real" {
+	var preexisting *exec.Cmd
+	if mode == "preexisting" {
+		preexisting = exec.Command("sleep", "30")
+		if err := preexisting.Start(); err != nil {
+			return 1
+		}
+		defer func() { _ = preexisting.Process.Kill(); _ = preexisting.Wait() }()
+	}
+	var c net.Conn
+	if mode != "undialled" {
+		var err error
+		c, err = net.Dial("tcp", os.Getenv(envFakeDial))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		defer func() { _ = c.Close() }()
+	}
+	if mode == "real" || mode == "preexisting" {
 		if err := NewFrameWriter(c).Write(Frame{V: ProtocolVersion, Server: "files", Argv: filesCmd, PID: os.Getpid()}); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -59,7 +75,20 @@ func fakeShimMain(mode string) int {
 		return 1
 	}
 	defer func() { _ = child.Process.Kill(); _ = child.Wait() }()
-	fmt.Println(child.Process.Pid)
+	if mode == "real" || mode == "preexisting" {
+		if err := NewFrameWriter(c).Write(Frame{Child: child.Process.Pid}); err != nil {
+			return 1
+		}
+		if f, err := NewFrameReader(c, 0).Read(); err != nil || !f.OK {
+			fmt.Fprintln(os.Stderr, "child not admitted:", err, f.Error)
+			return 1
+		}
+	}
+	if preexisting != nil {
+		fmt.Println(preexisting.Process.Pid)
+	} else {
+		fmt.Println(child.Process.Pid)
+	}
 	_, _ = io.Copy(io.Discard, os.Stdin)
 	return 0
 }
@@ -174,6 +203,50 @@ func TestGatePassesARealShim(t *testing.T) {
 	})
 }
 
+// The real admission admits the shim's image and connection, but an earlier child
+// still cannot use the start registered for the shim's new child (SEC06/C51).
+func TestGateRefusesARealShimsPreexistingChild(t *testing.T) {
+	s := realGate(t)
+	pid, attacker := fakeShim(t, "preexisting", s.ctl.Addr().String(), nil)
+	p := pendingOf(t, s, pid)
+	if s.Relayed("files", attacker) {
+		t.Fatal("a child created before the shim's hello consumed the pending start")
+	}
+	if !s.Relayed("files", p.pid) {
+		t.Fatal("the preexisting child stole the shim's registered start")
+	}
+}
+
+// Before the shim has dialled it holds only the inherited TCP socket. A forged
+// hello and registration on it must still fail: the shim did not create it.
+func TestGateRefusesInheritedControlBeforeShimDials(t *testing.T) {
+	s := realGate(t)
+	c, err := net.Dial("tcp", s.ctl.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	inherited, err := c.(*net.TCPConn).File()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = inherited.Close() }()
+	pid, child := fakeShim(t, "undialled", "", nil, inherited)
+	fw, fr := NewFrameWriter(c), NewFrameReader(c, 0)
+	if err := fw.Write(Frame{V: ProtocolVersion, Server: "files", Argv: filesCmd, PID: pid}); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := fr.Read(); err != nil || !f.OK {
+		t.Fatalf("admitting the inherited socket: %v %+v", err, f)
+	}
+	if err := fw.Write(Frame{Child: child}); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := fr.Read(); err != nil || f.OK || f.Error == "" {
+		t.Fatalf("an inherited socket authorized a forged child registration: %v %+v", err, f)
+	}
+}
+
 // TestGateRefusesAShimUnderARelayOfTheAgents: procAdmit proves a process holds the socket, not that it wrote the hello.
 // The agent dials, starts a real shim with that descriptor inherited and the relay variable naming its own listener, and
 // writes the hello. The shim is admitted, dials the agent's listener, and would write whatever that says to the server,
@@ -204,6 +277,12 @@ func TestGateRefusesAShimUnderARelayOfTheAgents(t *testing.T) {
 			if f, err := NewFrameReader(c, 0).Read(); err != nil || !f.OK {
 				t.Fatalf("the inherited socket's hello should pass admission, which cannot tell: %v %q", err, f.Error)
 			}
+			if err := NewFrameWriter(c).Write(Frame{Child: child}); err != nil {
+				t.Fatal(err)
+			}
+			if f, err := NewFrameReader(c, 0).Read(); err != nil || f.OK || f.Error == "" {
+				t.Fatalf("a shim under the agent's relay registered a child: %v %+v", err, f)
+			}
 			if s.Relayed("files", child) {
 				t.Fatal("a shim holding a second TCP socket started a declared server")
 			}
@@ -225,6 +304,7 @@ func TestGateRefusesAnotherProcessOrSocket(t *testing.T) {
 			s := realGate(t)
 			pid, child := fakeShim(t, "real", s.ctl.Addr().String(), nil)
 			p := pendingOf(t, s, pid)
+			t.Cleanup(func() { _ = p.child.Close() })
 			tc.alter(&p.shim)
 			s.mu.Lock()
 			s.pending[pid] = p

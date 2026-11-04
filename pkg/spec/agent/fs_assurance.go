@@ -42,5 +42,19 @@ func (rt *RuleTable) FilesystemAssurance() FSAssurance {
 // deny_write targets and fs.assurance: kernel (enforce-landlock R5a). enforce.Select, the Landlock backend's
 // Prepare and tier cgroup's plane choice ask it, so the three refuse the same tables.
 func (rt *RuleTable) DenyWriteNeedsPlane() bool {
-	return len(rt.DenyWrite) != 0 && rt.FilesystemAssurance() == FSAssuranceKernel
+	return rt.hasDenyWriteResidual() && rt.FilesystemAssurance() == FSAssuranceKernel
+}
+
+// Nonoverlapping C40 targets are already unwritable in the ordinary domain;
+// retaining their attribution rows does not add a copied-path write residual.
+func (rt *RuleTable) hasDenyWriteResidual() bool {
+	if rt == nil {
+		return false
+	}
+	for _, r := range rt.DenyWrite {
+		if r.BuiltinRule == "" || r.Unenforced {
+			return true
+		}
+	}
+	return false
 }

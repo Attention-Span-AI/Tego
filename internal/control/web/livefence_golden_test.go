@@ -14,8 +14,9 @@ import (
 	"github.com/attention-span-ai/tego/internal/control/rules"
 )
 
-// updateLocked rewrites the Locked goldens: run once on the base (before ADR 0125's dashboard), so they hold the pages
-// as they were.
+// updateLocked rewrites the Locked baseline only for intentional shared-policy
+// UI changes. C40 adds the immutable refusal rows; ADR 0125's live-mode
+// additions remain stripped and checked separately.
 var updateLocked = flag.Bool("update-locked", false, "rewrite testdata/locked-*.golden")
 
 var (
@@ -115,14 +116,14 @@ func checkLocked(t *testing.T, name, page string) {
 			i++
 		}
 		lo := max(0, i-200)
-		t.Fatalf("%s differs from the Locked page before ADR 0125 at byte %d:\n got: %q\nwant: %q", name, i,
+		t.Fatalf("%s differs from the Locked baseline (including C40) at byte %d:\n got: %q\nwant: %q", name, i,
 			a[lo:min(len(a), i+200)], b[lo:min(len(b), i+200)])
 	}
 }
 
-// TestLockedPagesUnchanged: a Locked run's run page is the page it was before ADR 0125 except for the Block now
-// form's time limit, and its Rules page is the page it was plus the Mode line (ADR 0125 "What stays the same in
-// Locked").
+// TestLockedPagesUnchanged holds the shared-policy baseline (C40's immutable
+// refusal rows included). ADR 0125 adds only the Block now time limit and Mode
+// line to a Locked run, never an Adjustable fence ("What stays the same in Locked").
 func TestLockedPagesUnchanged(t *testing.T) {
 	// The pages print their clock times in UTC, as the goldens hold them: TestMain sets time.Local for the binary.
 	s, c, contract, proj := askServer(t)

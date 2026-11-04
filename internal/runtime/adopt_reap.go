@@ -17,6 +17,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/platform/proc"
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/runscope"
 	"github.com/attention-span-ai/tego/internal/runtime/cgroup"
 	cgroupenforce "github.com/attention-span-ai/tego/internal/runtime/enforce/cgroup"
@@ -70,11 +71,15 @@ func (a *adoption) startReaper() error {
 // there (cgroup.StartHelper), in a session of its own, with this process's pidfd and the run directory, from w, as
 // its only descriptors beyond /dev/null.
 func startAdoptReaperProcess(exe, stateDir, run string, w *ledger.Writer) error {
-	pfd, err := unix.PidfdOpen(os.Getpid(), 0)
+	pfd, err := sys.PidfdOpenProcessFD(os.Getpid())
 	if err != nil {
 		return fmt.Errorf("pidfd_open(self): %w", err)
 	}
-	pidfd := os.NewFile(uintptr(pfd), "adopter-pidfd")
+	defer func() { _ = pfd.Close() }()
+	pidfd, err := pfd.Release("adopter-pidfd")
+	if err != nil {
+		return err
+	}
 	defer func() { _ = pidfd.Close() }()
 	if w == nil {
 		return errors.New("the run has no ledger writer")

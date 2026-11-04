@@ -16,6 +16,7 @@
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import time
@@ -33,13 +34,16 @@ os.makedirs(ev, exist_ok=True)
 # The key is an obvious dummy; the stand-in does not look at it. SSL_CERT_FILE is tego's own (the forwarder's TLS
 # client trusts the stand-in's certificate through it); the contract does not pass it, so the agent never has it.
 KEY = "sk-ant-api03-OFFLINE-DUMMY-NOT-A-REAL-KEY-" + "0" * 20
-# tego's runtime directory is the POC's own (run.sh makes the same one): the launch makes <XDG_RUNTIME_DIR>/tego and
-# sweeps the directories the invoking user's crashed runs left there (identity-config.md R27 clause b4); 0700, as tego
-# requires. The agent's own XDG_RUNTIME_DIR is the contract's env.set. Not under state/: tego denies the agent its own
-# state directory, and the Claude Code settings file a run provisions is in the runtime directory.
-runtime_dir = f"{root}/run"
-os.makedirs(runtime_dir, exist_ok=True)
-os.chmod(runtime_dir, 0o700)
+# run.sh creates this short private base and removes it at script exit. Never
+# hand Tego the normal login directory, where its sweep could touch real runs.
+with open(f"{root}/state/runtime", encoding="utf-8") as runtime_file:
+    runtime_dir = runtime_file.read().strip()
+info = os.lstat(runtime_dir)
+if (not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700
+        or info.st_uid != os.getuid()
+        or os.path.dirname(runtime_dir) != f"/run/user/{os.getuid()}"
+        or not re.fullmatch(r"t[A-Za-z0-9]{6}", os.path.basename(runtime_dir))):
+    raise RuntimeError("run.sh must supply its own short mode-0700 runtime base")
 tego_env = {
     "PATH": f"{ws}/bin:" + os.environ.get("PATH", "/usr/bin:/bin"),
     "LANG": os.environ.get("LANG", "C.UTF-8"),

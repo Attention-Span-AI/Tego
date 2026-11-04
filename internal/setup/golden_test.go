@@ -22,10 +22,16 @@ func squeeze(b []byte) string {
 	return regexp.MustCompile(` {2,}`).ReplaceAllString(string(b), "   ")
 }
 
-// golden compares got, the project directory written as $PROJECT, with testdata/compose/<name>.golden.
+// golden compares got with machine-specific paths normalized. UID width also changes the comment column, so
+// quoted list entries with comments use a fixed gap when the runtime socket path is present.
 func golden(t *testing.T, name, dir string, got []byte) {
 	t.Helper()
 	s := strings.ReplaceAll(string(got), dir, "$PROJECT")
+	uidPath := regexp.MustCompile(`/run/user/[0-9]+/cc-socks/`)
+	if uidPath.MatchString(s) {
+		s = uidPath.ReplaceAllLiteralString(s, "/run/user/$UID/cc-socks/")
+		s = regexp.MustCompile(`(?m)^([ \t]*- "(?:[^"\\]|\\.)*") +(#.*)$`).ReplaceAllString(s, "$1  $2")
+	}
 	path := filepath.Join("testdata", "compose", name+".golden")
 	if *update {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

@@ -1537,6 +1537,8 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     needs named, since without one every run of it is refused `[budget-unmetered]` and `compile` says so (R32).
   - `doctor [--require <tier>] [--json]` (R27; 0, 1 when no tier runs, 211 when `--require` is unmet, R25).
   - `compile <file> [--test <table> [--tier <t>[,<t>]]] [--offline] [--json] [--merged] [--upgrade]` (0/1/2).
+    Filesystem entries carrying an immutable ADR 0113 refusal include its `rule` id in `--json`, beside
+    `builtin: true`; these targets apply independently of the contract's write entries and opt-outs.
     `--merged` (*added 2026-10-25*, ADR 0068 D6) prints, once the contract has compiled, its merged canonical form
     (`agent.Contract.Canonical`: every profile of its `extends` laid in, a built-in preset's included) in place of
     the rule table, and nothing else on stdout: the bytes a run keeps as `contract.yaml`, whose sha256 is
@@ -2534,6 +2536,15 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
 
 ## 7. Failure modes and handling
 
+Amended 2026-11-03 (dashboard review round 2): the receipt's 1,000-item ask list
+is a presentation bound only. Exact unanswered accounting retains at most
+32,768 pending IDs / 8 MiB estimated state (128 bytes per identity plus its ID
+bytes), releasing each on its answer. Before either limit would be exceeded,
+`Compute` returns `ErrAskLimit` and no partial receipt. A later answer cannot
+rescue an oversized unmatched prefix. `tego receipt` reports the error through
+its existing failure path (125); the dashboard Receipt tab shows the error in
+place of receipt numbers. No record format or minor changes.
+
 | Failure | Detection | Response | Ledger | Exit/Event | User sees |
 |---|---|---|---|---|---|
 | Token/cost/repeat ceiling crossed | `Observe` totals > ceiling | `trip`: `limit` event, `cgroup.Kill` | `limit{which,value,ceiling}`, then facade's `run_end reason=limit` | 124 | ceiling name + measured value |
@@ -2816,3 +2827,48 @@ an explicit golden update in the same PR. `compile --test` ships one real `tests
 Resolved (2026-09-22): `Limits.Repeats` (`repeats`, default 5) is a contract field and machine ceiling; `limit-repeats` is in the closed reason set; `measure`'s P0 columns exclude the ask columns until P1 (FEATURES C5); a minimal versioned price table is P0 (FEATURES E62); `run_start.limits{...}` is an optional v1 payload (record README).
 
 Resolved (2026-09-22): E16 against `runtime-launch.md`'s `0 -> "max"` for `pids.max`/`memory.max`. E16 wins for every dimension — an explicit 0 is the tightest setting and omission is the only spelling of "unbounded" — and `runtime-launch.md` case 30 is amended to say it was describing the absent key all along. `runtime-launch.md`'s `Limits` struct comments now read `absent -> "max", an explicit 0 -> "0"`. `cpu.weight` is the single exception, on the kernel's authority rather than ours: its range starts at 1, so a 0 is an invalid value, and the machine config refuses a `limits.cpu_weight` outside 1..10000 at parse time, matching the contract schema, so no 0 reaches the cgroup writer.
+
+
+Learn leak heuristic amendment (2026-11-03, M8): withhold a destination only from
+particular successful read/send associations within both proximity bounds. Refused
+operations cannot supply a half, and later contacts to a known host are checked at
+their own sequence/time. The recent-contact fold is bounded by the line window;
+secret/destination maps and the stored association list are capped at 100,000.
+After association truncation, retain one confirmed read witness per destination
+so a known leak is still withheld, and report incomplete detail. The dashboard and
+CLI agreement tests include mixed successful/refused pairs. Proximity is still a
+heuristic, not proof of transferred bytes.
+
+### CLI front-door amendment, 2026-11-03
+
+- `init --agent claude-code|codex [--prompt <text>]` and the descriptors, defaults,
+  credential notes and literal prompt argv follow ADR 0068's 2026-11-03 amendment.
+- `status --agent <name>` selects the newest retained run with that contract name;
+  `--all` lists all matching runs, oldest first. It cannot accompany a run id. A bad
+  or empty name is exit 2; an unreadable retained run keeps the incomplete-report
+  exit 125, even when its agent name could not be determined. JSON stays an object
+  containing a `runs` array, including when no run matches.
+- `run --service` returns 143 for an intentional `run_end.reason: stopped`, including
+  escalation. It changes only the CLI exit; the record keeps the actual exit and
+  escalated flag. OOM, pids and all other outcomes keep their normal codes, and a
+  record or anchor failure still returns 125. Without the flag nothing changes.
+  The systemd example opts in so `RestartPreventExitStatus=143 125` works after an
+  agent ignores SIGTERM.
+- `events <abbreviation> --verify` matches the union of directory names and validated
+  complete anchor lines. A unique deleted anchored run reaches verification and
+  exits 1; a deleted and a surviving run sharing the abbreviation are ambiguous
+  (exit 2). Unreadable or malformed anchors fail closed (125). This does not add
+  deleted runs to ordinary status or events listings.
+- `tego rules` is the read-only handoff described by ADR 0100's 2026-11-03 amendment.
+  With `--last` before any run exists it exits 125, as receipt does, and names the
+  init/run commands. An explicit unknown or ambiguous run selector is usage (2).
+  `--last` skips directories whose events file is absent or empty, so interrupted
+  startup does not hide an older recorded run. Unreadable, non-regular or corrupt
+  records still fail with 125; they never cause fallback to an older record.
+- Exec summaries name `fileless` and `dropped` when true. The detail label for exec's
+  `dropped` is “Program file written by the agent”; gap's dropped count remains “Lines dropped”.
+
+- Quiet-start follow-up, 2026-11-03: forwarder CODEX_HOME is a supported settings
+  source, so its env-runtime-reserved diagnostic is informational (compile and -v
+  still show it). Actual overrides of TEGO_* and forwarder URLs remain actionable.
+  Init prints errors and actionable warnings; its compile next step shows all notes.

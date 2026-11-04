@@ -28,6 +28,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/mcptools"
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/runtime/ask"
 	"github.com/attention-span-ai/tego/internal/runtime/source"
 	"github.com/attention-span-ai/tego/pkg/policy/mcptool"
@@ -110,7 +111,8 @@ func dial(t *testing.T, s *Service, server string, argv []string) (*shim, Frame)
 
 func (sh *shim) read() Frame {
 	sh.t.Helper()
-	_ = sh.c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	// MaxLine-sized wire normalization and framing take more than five seconds under -race on a shared host.
+	_ = sh.c.SetReadDeadline(time.Now().Add(30 * time.Second))
 	f, err := sh.fr.Read()
 	if err != nil {
 		sh.t.Fatalf("read frame: %v", err)
@@ -517,6 +519,23 @@ func (l *lockedWriter) Write(b []byte) (int, error) {
 	return l.w.Write(b)
 }
 
+// A child forked before the parent execs the shim has the admitted shim as its
+// parent too. A hello alone must never authorize that child's server exec.
+func TestGateRefusesUnregisteredChild(t *testing.T) {
+	s, _, _ := start(t, nil, filesServer())
+	child := exec.Command("sleep", "30")
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
+	if _, f := dial(t, s, "files", filesCmd); !f.OK {
+		t.Fatal(f.Error)
+	}
+	if s.Relayed("files", child.Process.Pid) {
+		t.Fatal("an unregistered child consumed the admitted shim's pending start")
+	}
+}
+
 func TestGateRelayedConsumesPendingStart(t *testing.T) {
 	s, _, _ := start(t, nil, filesServer())
 	child := exec.Command("sleep", "5")
@@ -531,6 +550,12 @@ func TestGateRelayedConsumesPendingStart(t *testing.T) {
 	if !f.OK {
 		t.Fatal(f.Error)
 	}
+	if err := sh.fw.Write(Frame{Child: child.Process.Pid}); err != nil {
+		t.Fatal(err)
+	}
+	if f := sh.read(); !f.OK {
+		t.Fatal(f.Error)
+	}
 	if s.Relayed("other", child.Process.Pid) {
 		t.Fatal("relayed for another server")
 	}
@@ -541,6 +566,117 @@ func TestGateRelayedConsumesPendingStart(t *testing.T) {
 		t.Fatal("one admitted shim started two servers")
 	}
 	_ = sh
+}
+
+func TestGatePinsOnlyTheRegisteredChild(t *testing.T) {
+	s, _, _ := start(t, nil, filesServer())
+	children := make([]*exec.Cmd, 2)
+	for i := range children {
+		child := exec.Command("sleep", "30")
+		if err := child.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
+		children[i] = child
+	}
+	sh, f := dial(t, s, "files", filesCmd)
+	if !f.OK {
+		t.Fatal(f.Error)
+	}
+	if err := sh.fw.Write(Frame{Child: children[0].Process.Pid}); err != nil {
+		t.Fatal(err)
+	}
+	if f := sh.read(); !f.OK {
+		t.Fatal(f.Error)
+	}
+	if s.Relayed("files", children[1].Process.Pid) {
+		t.Fatal("another child of the admitted shim consumed the registered child's start")
+	}
+	if !s.Relayed("files", children[0].Process.Pid) {
+		t.Fatal("the sibling's exec consumed the registered child's start")
+	}
+	if err := sh.fw.Write(Frame{Child: children[1].Process.Pid}); err != nil {
+		t.Fatal(err)
+	}
+	if f := sh.read(); f.OK || f.Error == "" {
+		t.Fatalf("a second registration after consumption succeeded: %+v", f)
+	}
+}
+
+func TestGateRefusesLostChildIdentity(t *testing.T) {
+	for _, how := range []string{"exited", "closed pidfd"} {
+		t.Run(how, func(t *testing.T) {
+			s, _, _ := start(t, nil, filesServer())
+			child := exec.Command("sleep", "30")
+			if err := child.Start(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
+			sh, f := dial(t, s, "files", filesCmd)
+			if !f.OK {
+				t.Fatal(f.Error)
+			}
+			if err := sh.fw.Write(Frame{Child: child.Process.Pid}); err != nil {
+				t.Fatal(err)
+			}
+			if f := sh.read(); !f.OK {
+				t.Fatal(f.Error)
+			}
+			p := pendingOf(t, s, os.Getpid())
+			if how == "exited" {
+				_ = child.Process.Kill()
+				_ = child.Wait()
+			} else {
+				_ = p.child.Close()
+			}
+			if s.Relayed("files", child.Process.Pid) {
+				t.Fatal("the child was authorized without its live pidfd identity")
+			}
+		})
+	}
+}
+
+func TestChildRegistrationFailsClosed(t *testing.T) {
+	s, _, _ := start(t, nil, filesServer())
+	if _, f := dial(t, s, "files", filesCmd); !f.OK {
+		t.Fatal(f.Error)
+	}
+	p := pendingOf(t, s, os.Getpid())
+	for _, pid := range []int{-1, 0, os.Getpid()} {
+		if s.bindChild(p.shim, pid) {
+			t.Fatalf("registered PID %d without proving it is the shim's live child", pid)
+		}
+	}
+}
+
+func TestChildPIDFDClosedOnDisconnect(t *testing.T) {
+	s, _, _ := start(t, nil, filesServer())
+	child := exec.Command("sleep", "30")
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
+	sh, f := dial(t, s, "files", filesCmd)
+	if !f.OK {
+		t.Fatal(f.Error)
+	}
+	if err := sh.fw.Write(Frame{Child: child.Process.Pid}); err != nil {
+		t.Fatal(err)
+	}
+	if f := sh.read(); !f.OK {
+		t.Fatal(f.Error)
+	}
+	p := pendingOf(t, s, os.Getpid())
+	_ = sh.c.Close()
+	if err := s.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sys.PollPidfdFD(p.child, 0); !errors.Is(err, sys.ErrClosed) {
+		t.Fatalf("disconnected child's pidfd was not closed: %v", err)
+	}
+	if s.Relayed("files", child.Process.Pid) {
+		t.Fatal("a disconnected shim retained its server start")
+	}
 }
 
 func TestVarsConfigEndpoints(t *testing.T) {
@@ -699,6 +835,7 @@ func TestHTTPRelayRefusesAnUndecidedBody(t *testing.T) {
 	defer upstream.Close()
 	s, sk, _ := start(t, nil, Server{Name: "web", URL: upstream.URL + "/mcp", Rules: mcptool.Rules{Deny: []string{"delete_file"}}})
 	s.https[0].admitConn = func(netip.AddrPort, netip.AddrPort, uint64) error { return nil }
+	s.https[0].holderPID = func() int { return os.Getpid() }
 	relay := s.httpURLs()["web"]
 	u, err := url.Parse(relay)
 	if err != nil {
@@ -793,10 +930,13 @@ func TestProcAdmitRefusesOutsideRunAndNonShim(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = ln.Close() }()
+	stop, done := make(chan struct{}), make(chan struct{})
+	t.Cleanup(func() { close(stop); <-done })
 	go func() {
+		defer close(done)
 		c, err := net.Dial("tcp", ln.Addr().String())
 		if err == nil {
-			time.Sleep(time.Second)
+			<-stop
 			_ = c.Close()
 		}
 	}()

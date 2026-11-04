@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -129,13 +130,22 @@ func TestRegionUnchanged204(t *testing.T) {
 // that run's lines answer it in full.
 func TestRegionUnchanged204Reference(t *testing.T) {
 	root := fixture(t)
+	file := filepath.Join(root, harmRun, "events.jsonl")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = []byte(strings.Replace(string(data), `"tier":"landlock"`, `"tier":"landlock","cwd":"/p"`, 1))
+	if err := os.WriteFile(file, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	const watched = "r-aaaaaaaa-0000000000003-watchx"
 	// Started with harmRun (12:01), so harmRun is its pair (ledgerview.PairOf), not cleanRun, which also runs sh.
 	t0 := time.Date(2026, 10, 25, 12, 1, 0, 0, time.UTC)
 	if err := os.MkdirAll(filepath.Join(root, watched), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ls := line(watched, "demo-harm", 0, t0, "run_start", `"tier":"observe","command":["sh","agent.sh"]`) +
+	ls := line(watched, "demo-harm", 0, t0, "run_start", `"tier":"observe","cwd":"/p","command":["sh","agent.sh"]`) +
 		line(watched, "demo-harm", 1, t0.Add(time.Second), "net", `"verdict":"allow","proto":"tcp","dst":"93.184.216.34:443","host":"example.com"`) +
 		line(watched, "demo-harm", 2, t0.Add(2*time.Second), "run_end", `"reason":"exit","exit_code":0`)
 	if err := os.WriteFile(filepath.Join(root, watched, "events.jsonl"), []byte(ls), 0o644); err != nil {

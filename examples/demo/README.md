@@ -9,6 +9,8 @@ make build && export PATH=$PWD/bin:$PATH && cd examples/demo
 ./demo.sh with
 ./demo.sh why
 ./demo.sh dashboard            # in a second terminal, left running; opens the dashboard (else open the URL it prints)
+# Claude sockets use Tego's private run runtime (%R). Keep invoking XDG_RUNTIME_DIR short
+# (normally /run/user/<uid>); launch validates the complete 103-byte socket-path budget.
 ./demo.sh claude               # or: ./demo.sh codex   (needs your own login)
 ./demo.sh always-on            # then: ./demo.sh always-on status, ./demo.sh always-on stop
 ./demo.sh tiers                # tier 1 here, tier 2 with sudo (your password), tier 3 or its enable steps
@@ -110,6 +112,8 @@ Use your own login. Nothing is stored in this kit and the demo never logs in for
 ```
 claude setup-token             # once, outside Tego: your Pro/Max subscription login as a token
 export CLAUDE_CODE_OAUTH_TOKEN=... # the token it printed (or: export ANTHROPIC_API_KEY=... for an API key)
+# Claude sockets use Tego's private run runtime (%R). Keep invoking XDG_RUNTIME_DIR short
+# (normally /run/user/<uid>); launch validates the complete 103-byte socket-path budget.
 ./demo.sh claude               # Claude Code, interactive, under contracts/claude-code.yaml (the copy-paste form is examples/agents/claude-code-interactive.yaml)
 ./demo.sh codex                # Codex, interactive, under contracts/codex.yaml; choose "Provide your own API key" on its login screen
 ```
@@ -215,10 +219,21 @@ A 15-minute order: `setup`, `without`, `with`, `why` (4 min); `rules` (3); `alwa
 ## Reset
 
 ```
-./demo.sh reset                # stops the sink and the service, removes stage/
+./demo.sh reset                # stops the sink and the service, removes generated children of stage/
                                # (a DEMO_STAGE other than the default names its own unit, tego-demo-agent-<n>;
                                #  TEGO_DEMO_UNIT overrides: reset never stops a unit it did not start)
 ```
+
+`setup` (also implicit in an act) claims a new or empty stage with a
+`.tego-demo-stage` marker naming its physical path. Reset requires that marker
+before stopping anything or deleting files. `/`, `$HOME`, the checkout, its
+ancestors and the kit directory are refused, including aliases. Reset keeps the
+stage, marker and unrelated siblings; the named generated children may be
+regenerated, so keep personal files outside them. Old unmarked stages are
+refused: move them aside manually or choose a fresh `DEMO_STAGE` and run setup.
+These shell checks do not protect against a concurrent same-user process
+replacing path components; [the script spec](../../docs/p0/demo-scripts.md)
+states that limit.
 
 ## What the commands are
 
@@ -238,7 +253,7 @@ A 15-minute order: `setup`, `without`, `with`, `why` (4 min); `rules` (3); `alwa
 | `ask`, `approve`, `deny` | `tego run stage/c/ask.yaml`; `tego ask <run>` then `tego approve`/`tego deny <run> <ask_id>` |
 | `limits`, `deny-write` | `tego run` of the fork, memory and hooks tricks; `tego events <run> --kind run_end`, `tego status <run>` |
 | `identity`, `doctor`, `features` | `tego events <run> --kind run_start --json`; `tego doctor`; prints the feature map |
-| `reset` | stops everything (the sink, the stand-in sockets, the model stub, the service), removes the stage |
+| `reset` | stops everything (the sink, the stand-in sockets, the model stub, the service), removes generated children of a marked stage |
 
 `go test -tags integration ./examples/demo/` proves Acts 1 to 3, every feature scene that runs without root, a key or a
 login (the Claude Code hook scene when `go` and `openssl` are installed), and compiles every contract, in isolation.

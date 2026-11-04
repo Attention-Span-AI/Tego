@@ -73,8 +73,6 @@ func loadNormalised(t *testing.T, path string) map[string]any {
 			switch {
 			case strings.Contains(x, "codex-code-mode-host"):
 				return "<codex helper>"
-			case strings.Contains(x, "cc-socks/"):
-				return "<runtime dir>/cc-socks/"
 			case strings.HasSuffix(x, "/codex-chatgpt/") || x == "@@CODEXHOME@@/":
 				return "<codex home>/"
 			}
@@ -96,6 +94,12 @@ func TestInteractiveExamplesMatchTheDemoKit(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("%s and examples/demo/contracts/%s differ beyond their own paths:\n%s: %v\n%s: %v", p.example, p.kit, p.example, got, p.kit, want)
+			}
+			if p.example == "claude-code-interactive.yaml" {
+				env := got["env"].(map[string]any)
+				if env["set"].(map[string]any)["XDG_RUNTIME_DIR"] != "%R" {
+					t.Fatal("interactive Claude sockets must use the run runtime, independent of project path length")
+				}
 			}
 		})
 	}

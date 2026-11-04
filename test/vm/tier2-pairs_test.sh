@@ -61,7 +61,7 @@ def check(ok, message):
     print('ok   ' + message, flush=True)
 
 
-with tempfile.TemporaryDirectory(prefix='tego-pair-cleanup.', dir='/tmp') as name:
+with tempfile.TemporaryDirectory(prefix='tego-pair-cleanup.', dir=os.environ.get('TMPDIR')) as name:
     base = Path(name)
     real_rm = shutil.which('rm')
     tools = base / 'tools'
@@ -247,6 +247,12 @@ with tempfile.TemporaryDirectory(prefix='tego-pair-cleanup.', dir='/tmp') as nam
         driver = root / 'driver.sh'
         driver.write_text('set -u\nw=$1\nN=$PAIR_N\nMODE=$2\nTEGO=A\nTEGO_B=B\nPLANE=$5\nwant_plane=$6\n'
             'SELF_DENY=$7\nactor_self=$8\nKILL_MIN=$9\nSETTLE=$PAIR_SETTLE\n'
+            # Exercise the attempt and deadline bounds separately. Python/rm
+            # startup under host load must not consume the attempt fixture's
+            # five seconds. Unsetting SECONDS removes its special clock
+            # behavior; nap below advances the deadline fixture explicitly.
+            'if [ "$PAIR_TEST_MODE" = persistent ] || [ "$PAIR_TEST_MODE" = deadline ]; then '
+            'unset SECONDS; SECONDS=0; fi\n'
             'SECRET=' + secret + '\nSELF_LINK=' + self_link + '\nsecret_text=\'' + secret_text + '\'\nCOPY_B=0\nLISTENER=\nlpid=\n'
             # The stand-in launcher: its ledger and output from the case's templates, then its status. A case with
             # a late part leaves a stand-in reaper behind, which writes the output's late lines and then the run_end.

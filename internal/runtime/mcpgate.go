@@ -22,6 +22,42 @@ type mcpGateSource interface {
 	IsRelayed(server string) bool
 }
 
+// mcpStageSource grants only the admitted shim's private child stage, before Start can return its PID.
+type mcpStageSource interface {
+	Stage(pid int, dev, ino uint64, argv []string) string
+	StageRule() string
+}
+
+func (r *runner) mcpStageGrant() func(int, uint64, uint64, []string) string {
+	var sources []mcpStageSource
+	for _, s := range r.deps.Extra {
+		if g, ok := s.(mcpStageSource); ok && g.StageRule() != "" {
+			sources = append(sources, g)
+		}
+	}
+	if len(sources) == 0 {
+		return nil
+	}
+	return func(pid int, dev, ino uint64, argv []string) string {
+		for _, g := range sources {
+			if rule := g.Stage(pid, dev, ino, argv); rule != "" {
+				return rule
+			}
+		}
+		return ""
+	}
+}
+
+func (r *runner) mcpStageRules() []string {
+	var rules []string
+	for _, s := range r.deps.Extra {
+		if g, ok := s.(mcpStageSource); ok && g.StageRule() != "" {
+			rules = append(rules, g.StageRule())
+		}
+	}
+	return rules
+}
+
 // runtimeDirSource is a source that writes a file the agent reads into the run's runtime directory before the
 // agent's environment is built (the relay's client config, TEGO_MCP_CONFIG).
 type runtimeDirSource interface {

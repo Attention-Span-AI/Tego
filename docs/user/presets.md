@@ -182,8 +182,8 @@ fs:
 ```
 
 Always on, in every contract init writes and every other: the
-host's local daemon sockets (docker, the D-Bus bus, ssh-agent) are refused unless the contract sets `host_sockets:
-true`, and the agent cannot gain privilege (`no_new_privs` is set on every run). It can always read the machine's network
+host's other local sockets are refused unless the contract sets `host_sockets:
+true`; the immutable built-in refusals still hold, and the agent cannot gain privilege (`no_new_privs` is set on every run). It can always read the machine's network
 setup: interface names and addresses, routes, and the nearby machines it has talked to. Your agent's own needs are yours to
 add: `--allow-host` passes a model host straight through, not through the forwarder (use a `models:` entry, as in the
 example above, to have tokens counted), its API key goes in `env.pass`, and a home folder it writes (Claude Code's
@@ -199,3 +199,32 @@ makes the folders the file names in the project, never through a symbolic link (
 is refused, by name; one that already exists is used where it is, as above), writes `agent.yaml` in that folder (never over an existing one) and shows the line to start it, for example
 `cd ~/project && tego run agent.yaml`: the command you typed is in the file. "From a run" drafts the file from a finished run instead: it allows
 what that run did and no more (`tego learn`), except where a run that leaked sent its secrets: that address is left out, and a red notice says so. The new file is on the Rules page as "not run yet" until its first run.
+
+
+## Choose an agent (From source)
+
+`tego init --agent claude-code --write src/ --prompt 'Review this project'` writes a
+Claude Code print-mode contract for one task, with the three presets, its forwarded model, a separate state
+folder and the environment names its login needs. Use `ANTHROPIC_API_KEY`, or run
+`claude setup-token` outside Tego and export `CLAUDE_CODE_OAUTH_TOKEN` with that token.
+Then run `tego compile agent.yaml` and `tego run agent.yaml` from this folder.
+Without `--prompt`, it asks Claude to describe the project without changing files.
+For the full-screen interface use [the interactive example](../../examples/agents/claude-code-interactive.yaml);
+its direct model connection works with fresh state, but model bytes are not captured.
+
+`tego init --agent codex --write src/ --prompt 'Review this project'` selects Codex exec
+with `CODEX_API_KEY`. Set that variable before `tego run agent.yaml`. ChatGPT sign-in
+uses [the explicit example](../../examples/agents/codex-chatgpt.yaml) instead. Init
+reads no keys and calls no model. `tego init --list` lists both agents and their setup
+steps. A prompt is passed as one argument, never evaluated by a shell. Without
+`--write`, only `./out/` and the generated state folders are writable. Add the folders
+the task needs, keeping the contract outside every write grant.
+
+Generated cache, temporary and agent state variables use `${TEGO_PROJECT_DIR}`. Tego
+resolves it to the run's working folder when compiling, so these paths keep working
+after a move or clone. Continue to run the contract from its project folder.
+
+The [built-in refusals](built-in-refusals.md) apply after every preset is combined. Neither
+`host_sockets: true` nor an explicit socket allow reopens the session bus, the systemd user manager,
+non-SSH GnuPG agents, Tego control sockets or other terminals. An exact container-daemon socket allow
+is the documented exception, with an escape warning.

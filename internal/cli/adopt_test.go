@@ -680,7 +680,7 @@ func TestAdoptNoticeNamesWhatOnlyTheFilterHolds(t *testing.T) {
 	p := adopt.Process{Identity: adopt.Identity{PID: 500}, Exe: "/usr/bin/claude"}
 	n := adoptNotice(p, true, agent.RecordFull)
 	for _, want := range []string{"System V IPC", "socket families outside the network rules", "io_uring", "a gap says so",
-		"new mount or user namespaces", "setns and mount(2)", "bind mount", "an overlay that reads a deny_read directory",
+		"CAP_SYS_ADMIN in every user namespace", "mount APIs and mount-namespace changes",
 		"open_by_handle_at", "clone3"} {
 		if !strings.Contains(n, want) {
 			t.Errorf("the boundary notice %q lacks %q", n, want)

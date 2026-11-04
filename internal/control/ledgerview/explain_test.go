@@ -367,3 +367,17 @@ func BenchmarkExplain(b *testing.B) {
 		}
 	}
 }
+
+func TestDroppedExecAndLostLinesHaveDifferentLabels(t *testing.T) {
+	for raw, want := range map[string]string{
+		`{"kind":"exec","dropped":true}`: "Program file written by the agent",
+		`{"kind":"gap","dropped":3}`:     "Lines dropped",
+	} {
+		fields := lineFields([]byte(raw), "", nil)
+		for _, f := range fields {
+			if f.Key == "dropped" && f.Label != want {
+				t.Errorf("%s: %q", raw, f.Label)
+			}
+		}
+	}
+}

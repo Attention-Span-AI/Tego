@@ -430,6 +430,13 @@ func (s *Server) eventDetail(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, http.StatusInternalServerError, "The run could not be read", err.Error())
 		return
 	}
+	if rr.Cut && seq < ^uint64(0)-contextLines-1 {
+		rr, err = ledgerview.WindowBefore(s.cfg.Ledger, rr, seq+contextLines+1)
+		if err != nil {
+			s.fail(w, http.StatusInternalServerError, "The line could not be read", err.Error())
+			return
+		}
+	}
 	before, at, after, ok := ledgerview.Context(rr, seq, contextLines)
 	if !ok {
 		s.fail(w, http.StatusNotFound, "No such line", "Run "+run+" has no line #"+strconv.FormatUint(seq, 10)+".")

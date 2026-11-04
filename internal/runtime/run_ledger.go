@@ -198,7 +198,7 @@ func (r *runner) writeRunStart() error {
 		AskReadRelaxes: askReadRelaxes(r.rt.AskReadRelaxes),
 		// The grants the run made on its own authority (agent-contract.md R10a): the contract hash does not cover
 		// them, so this is where a reader learns of them, as of run_command_grant.
-		RuntimeGrants: runtimeGrants(r.rt),
+		RuntimeGrants: append(runtimeGrants(r.rt), r.mcpStageRules()...),
 		// The file the launching user named, by path or by registry name (agent-contract.md R26).
 		ContractSource: r.deps.ContractSource,
 		// The harness the run was provisioned for, and whether it was (agent-contract.md R27, ADR 0062).

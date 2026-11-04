@@ -115,3 +115,28 @@ func TestPlaneUnixHooksDecideAsConnectUnixDoes(t *testing.T) {
 		t.Error("cgroup_net.bpf.c's tego_unix_relayed does not use common.h's tego_unix_relay_name")
 	}
 }
+
+// ADR 0113's datagram floor must read the actual bound peer, never msg_name.
+func TestBuiltinUnixNativePeerFloor(t *testing.T) {
+	body := planeBodies(t)["unix_may_send"]
+	for _, required := range []string{"tego_current_run(", "struct unix_sock", "peer->path.dentry", "i_nlink", "tego_builtin_name_decision(", "TEGO_ROW_BUILTIN_IPC", "hit.pad2 & 1", "tego_builtin_control_name(", "tego_builtin_peer_sample(", "return -EACCES;"} {
+		if !strings.Contains(body, required) {
+			t.Errorf("native peer floor lacks %q", required)
+		}
+	}
+	if strings.Contains(body, "msg_name") || strings.Contains(body, "sockaddr") {
+		t.Fatal("native peer floor trusts a supplied address")
+	}
+	for _, hook := range ebpfbindings.PlaneHooks {
+		if hook.Name == "unix_may_send" && (hook.Unix || !hook.Decides) {
+			t.Fatal("native peer floor must load on every kernel with the plane")
+		}
+	}
+}
+
+func TestBuiltinNameTagsNeverGrantAListener(t *testing.T) {
+	body := functionBody(t, filepath.Join("..", "decide_socket.h"), "tego_listen_key_reason")
+	if !strings.Contains(body, "row->rule_idx & 0xe000") {
+		t.Fatal("private immutable/peer tags must not become listener grants")
+	}
+}

@@ -1,6 +1,6 @@
 # ADR 0059: no run writes what a later run loads: R10 protects every name a policy file is read by, and the loaders read none it cannot see
 
-Status: **accepted 2026-10-20**; implemented 2026-10-20; the record files' link counts (a residual) not built.
+Status: **accepted 2026-10-20**; implemented 2026-10-20; record files' link counts checked for every euid since 2026-11-03 (amendment below).
 Amends agent-contract.md R10 and R26,
 spec/config v0 R20 (identity-config.md R20) and limits-check-doctor-cli.md §3.
 
@@ -145,6 +145,10 @@ it closed for the run.
   one name, which a run cannot add to (4). A second name a person makes (`cp -al ~/.tego backup/`, a hard-linking
   backup of the ledger root) is not checked: a run whose write entry reaches the backup could rewrite those records.
   Checking the anchor's and the run files' link counts belongs to the ledger (`internal/ledger`) and is not built.
+  *Closed in part 2026-11-03 (SEC07, amendment below):* the writer's and the anchor's opens (`openFileAt`:
+  `events.jsonl`, `lock`, `chain.log`, the publication lock) now refuse a file with a second link for every euid.
+  Still by name only: the read side (`Reader`'s `openRegular` of `events.jsonl`, blob reads), files made fresh with
+  `O_EXCL` (the activity sidecar, the live index entry, blobs) once made, and gc's removal lock.
 - **A bind mount is a name a link count does not show.** One the administrator makes of a policy file or of a
   protected directory, onto a path a write entry reaches, is not seen; a run cannot make one, since a Landlock domain
   refuses `mount(2)` and every other change of the filesystem topology (the kernel's Landlock documentation), and
@@ -316,3 +320,18 @@ it closed for the run.
   every rule on an inode, which a place with nothing there has not, so it would be held by the supervisor's path check
   and by no plane, one rule with two meanings); refusing the contract (the same risk as a `hooks` not there at all,
   R20's residual, which is not refused either).
+
+*Amended 2026-11-03 (SEC07): ledger and anchor descriptors require one link for every euid.*
+`ledger.openFileAt` now requires `S_IFREG` and `st_nlink == 1` on the descriptor it actually opened, including for
+ordinary-user launchers. The earlier root-only condition left a writable backup alias attached to `events.jsonl`,
+`lock` or `chain.log`; a governed write entry reaching the alias could modify those bytes. The common check is used
+by ledger open/resume and the anchor probe/append, so an aliased anchor refuses the run before the agent starts.
+`TestLedgerRefusesHardLinkedFiles` failed on all three files as an ordinary user before the fix. The historical
+record-file residual above is closed at these opens; this does not prevent the owning user or another ungoverned
+process from modifying an already-open file or creating a new alias later, and bind mounts remain the disclosed
+administrator-created alias. Not covered by this check (the Residuals entry above): the read side (`Reader` opens
+`events.jsonl` with a regular-file check only, and blob reads), and gc's removal lock (`lockForRemoval`), which takes
+an flock and writes nothing. Verified 2026-11-03: `TestLedgerRefusesHardLinkedFiles` fails on all three rows on a
+copy of master (`accepted a ledger with a writable hard-link alias`, `accepted an anchor ...`) and passes on the
+branch, as an ordinary user; as root it passes on both (root was already held to one link), in the KVM guest of
+ADR 0069's 2026-11-03 verification.

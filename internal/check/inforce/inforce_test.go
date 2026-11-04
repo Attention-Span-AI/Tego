@@ -1148,3 +1148,39 @@ func TestDeclaredBadShapes(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltinRefusalsAreSeparateAlwaysOnRules(t *testing.T) {
+	f := newFixture(t)
+	text := "version: 0\nname: builtin-view\ncommand: [bash]\nfs:\n  write: [./out/]\n  deny_read: []\n  deny_write: []\nhost_sockets: true\n"
+	rt := f.compile(t, text, nil)
+	for _, tt := range []struct {
+		tier  backend.Tier
+		plane string
+		ipc   bool
+	}{{backend.TierLandlock, "", false}, {backend.TierCgroup, "fanotify", false}, {backend.TierCgroup, "fmod_ret", true}, {backend.TierBPFLSM, "lsm", true}, {backend.TierObserve, "", false}} {
+		view := Of(rt, tt.tier, tt.plane)
+		for _, id := range []string{agent.BuiltinHostIPC, agent.BuiltinTegoSurface, agent.BuiltinOtherTTY} {
+			row := findRule(t, &view, id, "")
+			want := tt.ipc
+			if id == agent.BuiltinOtherTTY {
+				want = tt.tier != backend.TierObserve
+			}
+			if row.RuleKey != id || row.Group != GroupAlwaysOn || row.Editable || row.Enforced != want {
+				t.Errorf("%s/%s: %+v", tt.tier, id, row)
+			}
+			if Words(id) == id {
+				t.Errorf("missing built-in label for %s", id)
+			}
+		}
+	}
+	declared, err := Declared([]byte(text), "agent.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{agent.BuiltinHostIPC, agent.BuiltinTegoSurface, agent.BuiltinOtherTTY} {
+		row := findRule(t, &declared, id, "")
+		if row.Enforced {
+			t.Errorf("text-only view claims enforcement: %+v", row)
+		}
+	}
+}

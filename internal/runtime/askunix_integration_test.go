@@ -15,7 +15,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/testutil"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -212,8 +214,8 @@ os.rename("out/extmoved", "out/ext.sock")
 // symlink the agent made — is asked, whoever bound the socket there: the run (out/app.sock) or a process outside it
 // (out/ext.sock); nobody answers, so each is refused ask-timeout. Under any other name — a hard link, the name the
 // socket was renamed to — a connect is decided on the socket it reaches, as R11a decides every one: the run's own
-// socket is the write entry's, as a socket it bound there afresh would be, and the outside process's is refused
-// unix-foreign.
+// multiply-linked socket is refused by builtin.host_ipc, including after a rename
+// that retains its other link. The separate own.sock is still admitted by the write entry.
 func TestIntegrationAskUnixScopeIsAPlace(t *testing.T) {
 	runAskUnixPlaces(t, tegoBinary(t), "landlock")
 }
@@ -275,11 +277,11 @@ record: summary
 	for _, c := range []struct{ name, rc, verdict, rule, reason string }{
 		{"alias", "EACCES", "refused", "net[unix:" + scope + "]", "ask-timeout"},
 		{"extlink", "EACCES", "refused", "net[unix:" + ext + "]", "ask-timeout"},
-		{"hard", "ok", "allow", "fs.write[./out/]", ""},
-		{"moved", "ok", "allow", "fs.write[./out/]", ""},
+		{"hard", "EACCES", "refused", agent.BuiltinHostIPC, ""},
+		{"moved", "EACCES", "refused", agent.BuiltinHostIPC, ""},
 		{"own.sock", "ok", "allow", "fs.write[./out/]", ""},
-		{"exthard", "EACCES", "refused", "unix-foreign", ""},
-		{"extmoved", "EACCES", "refused", "unix-foreign", ""},
+		{"exthard", "EACCES", "refused", agent.BuiltinHostIPC, ""},
+		{"extmoved", "EACCES", "refused", agent.BuiltinHostIPC, ""},
 	} {
 		if rc := s.out("rc-" + c.name); rc != c.rc {
 			t.Errorf("connect to out/%s came to %q; want %q", c.name, rc, c.rc)
@@ -331,20 +333,27 @@ func runAskUnixCase(t *testing.T, bin, tier string, tc askUnixCase) {
 	t.Helper()
 	target := "@tego-askunix-" + strconv.Itoa(os.Getpid()) + "-" + tier + "-" + strings.ReplaceAll(tc.name, " ", "-")
 	if !tc.abstract {
-		// Not t.TempDir(): its path is past sun_path's 108 bytes.
-		dir, err := os.MkdirTemp("", "askunix")
-		if err == nil {
-			t.Cleanup(func() { _ = os.RemoveAll(dir) })
-			dir, err = filepath.EvalSymlinks(dir)
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		target = filepath.Join(dir, "app.sock")
+		target = askUnixPath(t)
 	}
 	accepted := listenUnix(t, target)
 	s := newAskUnixScene(t, bin, tier, tc.timeout, target, tc.connects)
 	run, dir := s.start(t)
+	if abi, err := sys.LandlockABI(); tc.abstract && err == nil && abi >= 6 {
+		evs := s.finish(t, run, dir)
+		if s.out("rc1") != "EACCES" || accepted.Load() != 0 || len(lines(t, evs, record.KindAsk)) != 0 || len(lines(t, evs, record.KindAnswer)) != 0 {
+			t.Fatalf("outside abstract socket reached an approval: rc=%s accepted=%d", s.out("rc1"), accepted.Load())
+		}
+		found := false
+		for _, line := range lines(t, evs, record.KindNet) {
+			if line["_rule"] == agent.BuiltinHostIPC && line["_verdict"] == "refused" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("outside abstract refusal lacks builtin.host_ipc")
+		}
+		return
+	}
 	req := s.pending(t, filepath.Base(dir))
 	if req["op"] != "connect" || req["target"] != "unix:"+target || req["rule"] != "net[unix:"+target+"]" || req["hold"] != "connect" {
 		t.Fatalf("held request %v", req)
@@ -390,4 +399,20 @@ func runAskUnixCase(t *testing.T, bin, tier string, tc askUnixCase) {
 			t.Fatalf("net line %v", l)
 		}
 	}
+}
+
+// Approval tests use a pathname outside the immutable IPC directories. An
+// outside abstract endpoint cannot be reopened by approval at ABI >= 6.
+func askUnixPath(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "askunix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir, err = filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(dir, "app.sock")
 }

@@ -181,12 +181,12 @@ func TestIntegrationRouteQueries(t *testing.T) {
 		lines map[string]int // refused lines to the netlink family, every one of them
 	}{
 		{"net: {}", "net: {}\n", []map[string]string{routeQueriesWork, routeChangesRefused},
-			map[string]int{"refused/route-change": 3, "refused/unmatched": 3}},
+			map[string]int{"refused/route-change": 3, "refused/unmatched": 1, "refused/builtin.host_ipc": 2}},
 		{"a listener policy", "net:\n  listen: [\"tcp://127.0.0.1:0\"]\n", []map[string]string{routeQueriesWork, routeChangesRefused},
-			map[string]int{"refused/route-change": 3, "refused/unmatched": 3}},
+			map[string]int{"refused/route-change": 3, "refused/unmatched": 1, "refused/builtin.host_ipc": 2}},
 		{"no net: section", "", []map[string]string{routeQueriesWork, unaddressed, refusedByRelay,
 			{"generic": "ok", "sock_diag": "ok"}},
-			map[string]int{"refused/route-change": 3, "refused/host-sockets": 3}},
+			map[string]int{"refused/route-change": 3, "refused/builtin.host_ipc": 3}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t, contractFor("routequery", []string{python}, []string{python, resolved})+tc.net)

@@ -41,7 +41,12 @@ func (sysKernel) BindRaw(fd int, sa []byte) error {
 // did when bind was not notified. An observe run's filter carries the same arm, and its binds are continued the
 // same way, listener policy or not: before it, an observe run's filter did not notify bind at all.
 func handleBind(l *Loop, n *notif) {
-	if c := l.table.Load(); c.pol.Rules.Listen == nil || c.pol.Observe {
+	if c := l.table.Load(); c.pol.Rules.Builtins != nil && !c.pol.Observe {
+		if l.builtinBind(n, c) {
+			return
+		}
+	}
+	if c := l.table.Load(); c.pol.Rules.Listen == nil && c.pol.Rules.Builtins == nil || c.pol.Observe {
 		r := l.newReader(n)
 		raw := r.sockaddr(n.args[1], socklen(n.args[2]))
 		if n.gone {
@@ -55,7 +60,7 @@ func handleBind(l *Loop, n *notif) {
 			l.runSockets.lost("")
 		case d.isUnix() && d.unixPath != "":
 			l.recordRunSocket(n, d, l.boundPath(r, d))
-		case d.isUnix() && len(d.abstract) > 0 && c.hostSockets:
+		case d.isUnix() && len(d.abstract) > 0 && (c.hostSockets || c.pol.Rules.Builtins != nil):
 			l.recordRunAbstract(n)
 		}
 		l.respond(n, respContinue())
@@ -82,7 +87,7 @@ func handleBind(l *Loop, n *notif) {
 	if d.isUnix() {
 		if d.unixPath != "" {
 			l.recordRunSocket(n, d, l.boundPath(r, d)) // R11a; a bind the listener policy refuses binds nothing
-		} else if len(d.abstract) > 0 && c.hostSockets {
+		} else if len(d.abstract) > 0 && (c.hostSockets || c.pol.Rules.Builtins != nil) {
 			l.recordRunAbstract(n)
 		}
 		if l.bindHandoffReady() {
@@ -111,6 +116,14 @@ func handleBind(l *Loop, n *notif) {
 				dec.rule = ruleUnmatched
 			}
 		}
+	}
+	// The relay runs outside the task's Landlock domain. Preserve its
+	// withheld BIND_TCP right when a net section declares no listeners.
+	if d.isInet() && proto == protoTCP && !c.netOpen && c.pol.Rules.Listen == nil {
+		dec = refuse(ruleUnmatched)
+	}
+	if rule := c.builtinNet(d, proto); rule != "" {
+		dec = refuse(rule)
 	}
 	if !dec.allowed {
 		l.finishBind(n, c, d, proto, dec, nil, false)

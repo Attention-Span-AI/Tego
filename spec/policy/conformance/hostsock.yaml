@@ -40,12 +40,18 @@ cells:
       landlock: refused host-sockets
       root: refused host-sockets
     want_where:
+      # C40's immutable scope refusal precedes the ordinary host-socket policy.
+      - abi_min: 6
+        want:
+          landlock: refused builtin.host_ipc
+          root: refused builtin.host_ipc
       # Without sock_diag for AF_UNIX the supervisor cannot read which socket holds an abstract name, and says so.
       - unix_diag: false
+        abi_max: 5
         want:
           landlock: refused unix-origin-unread
           root: refused unix-origin-unread
-    source: 'SEMANTICS §1 (no net: section: an abstract name no socket of the run holds is refused host-sockets) and §5; ADR 0070'
+    source: 'SEMANTICS §1 and §5; ADR 0070; ADR 0113 implementation amendment: builtin.host_ipc at ABI >= 6'
   - name: connect-ip-no-net
     op: connect-tcp
     addr: 127.0.0.1:{{PORT}}

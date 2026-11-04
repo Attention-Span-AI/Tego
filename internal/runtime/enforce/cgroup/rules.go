@@ -66,6 +66,7 @@ type RuleMaps struct {
 	// cgroup (§5 R1), because a deciding program with no row to match refuses, and the kernel would then
 	// refuse every connect the supervisor relays.
 	Unrestricted bool
+	UnixOnly     bool // ADR 0113: attach unix hooks while IP remains unrestricted
 }
 
 // SkippedRule is one compiled entry the network programs cannot decide, and why.
@@ -166,8 +167,11 @@ func BuildRuleMaps(rt *agent.RuleTable, runIdx uint32, resolvers []netip.AddrPor
 		out.Rules[names] = agent.ResolverRule
 	}
 	if rt.NetUnrestricted() {
-		out.Unrestricted = true
-		return out, nil
+		if rt.Builtins == nil {
+			out.Unrestricted = true
+			return out, nil
+		}
+		out.UnixOnly = true
 	}
 
 	exact := map[bpf.NetKey]bpf.NetVerdict{}
@@ -308,6 +312,9 @@ func BuildRuleMaps(rt *agent.RuleTable, runIdx uint32, resolvers []netip.AddrPor
 		return out, err
 	}
 
+	if err := builtinUnixRows(unix, rt, runIdx, &out); err != nil {
+		return out, err
+	}
 	out.Exact = sortedExact(exact)
 	out.CIDR = sortedCIDR(cidr)
 	out.Unix = sortedUnix(unix)

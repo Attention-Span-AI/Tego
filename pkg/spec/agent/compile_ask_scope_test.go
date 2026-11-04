@@ -30,7 +30,7 @@ func TestAskScopeDoesNotGrantWriteAndKeepsProtectedConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile: %v %v", err, ds)
 	}
-	if len(rt.FSAsk) != 1 || len(rt.DenyWrite) != 0 {
+	if len(rt.FSAsk) != 1 || len(ordinaryDenyWriteRows(rt)) != 0 {
 		t.Fatal("ask scope changed ordinary write authority")
 	}
 	for _, tier := range []backend.Tier{backend.TierLandlock, backend.TierCgroup, backend.TierBPFLSM} {

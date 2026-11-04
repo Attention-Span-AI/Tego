@@ -19,9 +19,18 @@
 // same walk and kept per run version and filter (facets.go), and Snapshot.Each gives every matching line with its
 // exact bytes for the downloads (export.go). Each line's program (Row.Program, the query's prog:, the Program facet)
 // comes from the run's exec lines in one pass, continued as a live run grows (program.go), and Group gathers the
-// matched lines by process, target or rule, kept per run version like the facets (group.go). Lines are kept in memory up to MaxResidentBytes (an estimate); past it the lines of the
-// ended runs no page asked for longest are dropped, their summaries stay, and Run.AllEvents reads them again when a
-// view needs them. Chain verdicts of ended runs are kept by (run directory, events file identity, size, mtime, ctime,
+// matched lines by process, target or rule, kept per run version like the facets (group.go). Decoding itself keeps
+// recent event windows bounded by count and an estimate that reserves room for these derived views (cache.go).
+// Full-run counters and start/end metadata continue incrementally. MaxResidentBytes budgets resident windows;
+// eviction includes active runs and discards their signal/program caches. Root snapshots label evicted summaries
+// partial and do not rehydrate every window; an individual run reloads its retained byte interval. WindowBefore
+// scans earlier disk history with bounded retention, and a complete ledger download streams its exact bytes.
+// A window's verdict is explicitly partial; full-history incremental Signal and a persistent offset index are
+// not provided. Cold reads still cost O(file bytes). Active requests can retain older immutable versions, so this
+// estimate is not an RSS cap. Each completed cold run publishes/evicts before the other cold reads finish.
+// Pending approvals have a separate count/8 MiB estimated budget charging every retained string after window
+// rotation; PendingCut discloses truncation. Full-ledger receipts instead return an explicit pending-ID limit error.
+// Chain verdicts of ended runs are kept by (run directory, events file identity, size, mtime, ctime,
 // last line's id, anchor path) and stand while the anchor answers for the run as it did when the verdict was reached:
 // one view per chain.log (anchorview.go) answers for every run and every check, costs an lstat while the file is
 // unchanged and one read after any change and at least every ten minutes, read without a lock and shared by the looks

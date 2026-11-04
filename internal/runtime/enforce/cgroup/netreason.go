@@ -31,7 +31,7 @@ func (h *Handle) KernelNet(ap netip.AddrPort, proto string, notified time.Time) 
 		return "", "", ""
 	}
 	rules := h.Rules()
-	if rules.Unrestricted {
+	if rules.Unrestricted || rules.UnixOnly {
 		return record.VerdictAllow, "", ""
 	}
 	br, found, err := h.kern.breadcrumb(h.run.CgroupID)

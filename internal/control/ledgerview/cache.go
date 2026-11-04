@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"syscall"
 
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -59,13 +60,15 @@ type runState struct {
 	store *Store
 	// reading is non-nil while a request reads this run outside the Store's mutex; it is closed when the read is
 	// published, so a request needing the run waits on it instead of reading it at the same time.
-	reading chan struct{}
-	id      string
-	path    string
-	file    fileID // as of the last look
-	off     int64  // the end of the last complete line read
-	b       Run
-	asks    map[string]Ask
+	reading   chan struct{}
+	id        string
+	path      string
+	file      fileID // as of the last look
+	windowOff int64  // oldest retained line, also after eviction
+	off       int64  // the end of the last complete line read
+	b         Run
+	asks      map[string]Ask
+	askBytes  int64
 	// askOrder is the ask ids in the order they were first seen; lastAsk is the newest line with verdict ask.
 	askOrder []string
 	lastAsk  *Event
@@ -88,14 +91,20 @@ func newRunState(id, path string) *runState {
 
 func (st *runState) reset() {
 	st.off, st.asks, st.askOrder, st.lastAsk, st.lastID, st.bytes, st.paired = 0, map[string]Ask{}, nil, nil, "", 0, nil
+	st.windowOff, st.askBytes = 0, 0
 	st.b = Run{ID: st.id, Kinds: map[string]int{}}
 	st.resident = true
 }
 
-// eventBytes estimates what one decoded line keeps in memory: the struct, its payload text and the strings the
-// intern table does not share.
+// eventBytes estimates one decoded line and its derived views. Charge every string, including envelope fields
+// absent from Raw: the intern table deliberately does not share long values. Counting shared values again is safe.
 func eventBytes(e *Event) int64 {
-	return 256 + int64(len(e.Raw)+len(e.Target)+len(e.AskID)+len(e.askOp)+len(e.askTarget)+len(e.askName)+len(e.askName2))
+	// Reserve room for the memo's folds, text, process/ask indexes and signal
+	// state as well as the decoded strings. This is an estimate, not an RSS cap.
+	n := len(e.Run) + len(e.Agent) + len(e.Kind) + len(e.Source) + len(e.Rule) + len(e.Verdict) + len(e.Authority) + len(e.Reason)
+	n += len(e.Op) + len(e.Target) + len(e.Proto) + len(e.Host) + len(e.AskID) + len(e.Raw)
+	n += len(e.askOp) + len(e.askTarget) + len(e.askName) + len(e.askName2) + len(e.to) + len(e.path) + len(e.blob)
+	return 4096 + 8*int64(n)
 }
 
 // take adds one decoded line to the summary: whether it mirrors a refused action, whether its paths name secrets
@@ -103,7 +112,13 @@ func eventBytes(e *Event) int64 {
 func (st *runState) take(ev Event) {
 	st.markMirror(&ev)
 	markSecret(&ev)
+	// Trim while decoding, before an append can allocate an unbounded slice.
+	st.trim(eventBytes(&ev))
 	st.b.add(ev)
+	st.b.LastSeq = ev.Seq
+	if len(st.b.Events) > 0 {
+		st.windowOff = st.b.Events[0].off
+	}
 	if st.resident {
 		st.bytes += eventBytes(&ev)
 	}
@@ -118,17 +133,39 @@ func (st *runState) take(ev Event) {
 		case st.lastAsk != nil:
 			a.Op, a.Target, a.Rule = st.lastAsk.Op, st.lastAsk.Target, st.lastAsk.Rule
 		}
-		if _, seen := st.asks[ev.AskID]; !seen {
-			st.askOrder = append(st.askOrder, ev.AskID)
+		previous, seen := st.asks[ev.AskID]
+		bytes := askBytes(a)
+		oldBytes := int64(0)
+		if seen {
+			oldBytes = askBytes(previous)
 		}
-		st.asks[ev.AskID] = a
+		if (!seen && len(st.asks) >= maxWindowLines) || st.askBytes-oldBytes+bytes > maxPendingBytes {
+			st.b.PendingCut = true
+		} else {
+			if !seen {
+				st.askOrder = append(st.askOrder, ev.AskID)
+			}
+			st.asks[ev.AskID] = a
+			st.askBytes += bytes - oldBytes
+		}
 	case string(record.KindAnswer):
+		if a, ok := st.asks[ev.AskID]; ok {
+			st.askBytes -= askBytes(a)
+		}
 		delete(st.asks, ev.AskID)
+		st.askOrder = slices.DeleteFunc(st.askOrder, func(id string) bool { return id == ev.AskID })
 	}
 	if ev.Verdict == string(record.VerdictAsk) {
 		e := ev
 		st.lastAsk = &e
 	}
+}
+
+const maxPendingBytes int64 = 8 << 20
+
+// Pending asks outlive the event window, so charge all their strings independently of eventBytes.
+func askBytes(a Ask) int64 {
+	return 256 + 8*int64(len(a.Run)+len(a.Agent)+len(a.AskID)+len(a.Hold)+len(a.Op)+len(a.Target)+len(a.Rule))
 }
 
 // pending is the asks with no answer, in first-seen order; none once the run ended.
@@ -160,9 +197,7 @@ func (st *runState) publish(rev uint64) {
 	}
 	p.Pending = st.pending()
 	p.Live = st.live && !p.Ended
-	if n := len(st.b.Events); n > 0 {
-		p.LastSeq = st.b.Events[n-1].Seq
-	}
+
 	p.Rev, p.st, p.memo = rev, st, &runMemo{}
 	p.lastID, p.file = st.lastID, st.file
 	st.pub = &p
@@ -175,7 +210,7 @@ func (s *Store) read(st *runState, seen os.FileInfo) (bool, error) {
 	if seen != nil && st.pub != nil && idOf(seen) == st.file {
 		return false, nil // unchanged; an evicted run stays evicted until a page asks for its lines
 	}
-	f, err := os.OpenFile(st.path, os.O_RDONLY|syscall.O_NOFOLLOW, 0) // read-only, no lock
+	f, err := os.OpenFile(st.path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0) // read-only, no lock
 	if err != nil {
 		return false, err
 	}
@@ -184,22 +219,30 @@ func (s *Store) read(st *runState, seen os.FileInfo) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if !fi.Mode().IsRegular() {
+		return false, os.ErrNotExist
+	}
 	now := idOf(fi)
 	changed := false
-	if st.pub == nil || rewritten(now, st.file, st.off) || !st.resident {
+	if st.pub == nil || rewritten(now, st.file, st.off) {
 		st.reset()
 		changed = true
 	}
 	st.file = now
+	if !st.resident {
+		if err := st.loadWindow(); err != nil {
+			return changed, err
+		}
+	}
 	if now.size <= st.off {
 		return changed, nil
 	}
 	if _, err := f.Seek(st.off, io.SeekStart); err != nil {
 		return changed, err
 	}
-	br := bufio.NewReaderSize(f, 256<<10)
+	br := bufio.NewReaderSize(io.LimitReader(f, now.size-st.off), 64<<10)
 	for {
-		line, err := br.ReadBytes('\n')
+		line, size, err := boundedLine(br)
 		if errors.Is(err, io.EOF) {
 			break // no newline yet: the line is still being written, so it is left for a later read
 		}
@@ -207,8 +250,12 @@ func (s *Store) read(st *runState, seen os.FileInfo) (bool, error) {
 			return true, err
 		}
 		at := st.off
-		st.off += int64(len(line))
+		st.off += size
 		changed = true
+		if line == nil {
+			st.b.Bad++
+			continue
+		}
 		body := line[:len(line)-1]
 		if len(body) == 0 {
 			continue
@@ -232,6 +279,101 @@ func (s *Store) read(st *runState, seen os.FileInfo) (bool, error) {
 		st.take(ev)
 	}
 	return changed, nil
+}
+
+// boundedLine consumes one complete line with a fixed allocation ceiling. Oversized
+// lines return nil and their size; a torn tail is retried from its original offset.
+func boundedLine(br *bufio.Reader) ([]byte, int64, error) {
+	var line []byte
+	var size int64
+	oversized := false
+	for {
+		part, err := br.ReadSlice('\n')
+		size += int64(len(part))
+		if size > maxLineBytes {
+			oversized = true
+			line = nil
+		}
+		if !oversized {
+			line = append(line, part...)
+		}
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		return line, size, err
+	}
+}
+
+// Windows bound both raw events and the derived indexes built from them. Eviction
+// also applies to live runs. Full-history counts live in Run, not in this window.
+const maxWindowLines = 32768
+const maxWindowBytes int64 = 128 << 20
+
+func (st *runState) trim(incoming int64) {
+	limit := max(1, min(MaxLines, maxWindowLines))
+	evs := st.b.Events
+	if len(evs) == 0 || len(evs) < limit && st.bytes+incoming <= maxWindowBytes {
+		return
+	}
+	// Drop at least half, amortizing copies while keeping published slices immutable.
+	n := 0
+	for n < len(evs) && (n < len(evs)/2 || len(evs)-n >= limit || st.bytes+incoming > maxWindowBytes) {
+		st.bytes -= eventBytes(&evs[n])
+		n++
+	}
+	st.b.Events = slices.Clone(evs[n:])
+	st.paired = slices.DeleteFunc(st.paired, func(i int) bool { return i < n })
+	for i := range st.paired {
+		st.paired[i] -= n
+	}
+	st.b.Cut = true
+	if len(st.b.Events) > 0 {
+		st.windowOff = st.b.Events[0].off
+	} else {
+		st.windowOff = st.off
+	}
+}
+
+// loadWindow rehydrates only the retained byte interval; summary counters never
+// replay, and requests for evicted live runs cannot reallocate their whole history.
+func (st *runState) loadWindow() error {
+	f, err := os.OpenFile(st.path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if rewritten(idOf(fi), st.file, st.off) {
+		return ErrLineMoved
+	}
+	tmp := newRunState(st.id, st.path)
+	br := bufio.NewReaderSize(io.NewSectionReader(f, st.windowOff, st.off-st.windowOff), 64<<10)
+	at := st.windowOff
+	for {
+		line, size, err := boundedLine(br)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if line != nil {
+			if ev, _, ok := decodeLine(line[:len(line)-1]); ok {
+				ev.off = at
+				if ev.blob != "" {
+					resolveBlob(filepath.Dir(st.path), &ev)
+				}
+				tmp.take(ev)
+			}
+		}
+		at += size
+	}
+	st.b.Events, st.bytes, st.paired = tmp.b.Events, tmp.bytes, tmp.paired
+	st.resident = true
+	return nil
 }
 
 // decodeLine is decode, also returning the line's id.
@@ -258,7 +400,7 @@ func (s *Store) internEvent(e *Event) {
 		}
 		if v, ok := s.intern[*p]; ok {
 			*p = v
-		} else if len(s.intern) < maxIntern {
+		} else if len(s.intern) < maxIntern && len(*p) <= 256 {
 			s.intern[*p] = *p
 		}
 	}

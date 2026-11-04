@@ -30,7 +30,7 @@ func cmdReceipt() Command {
 	return Command{
 		Name:    "receipt",
 		Summary: "what a run did: time, files, connections, secrets read, refusals, asks, tokens",
-		Usage:   "[<run>] [--json] [--verify]",
+		Usage:   "[<run> | --last] [--json] [--verify]",
 		Flags: func(fs *flag.FlagSet) {
 			fs.BoolVar(&asJSON, "json", false, "one JSON object")
 			fs.BoolVar(&verify, "verify", false, "also check the run's hash chain and its chain.log anchor, as events --verify (exit 1 when it fails)")
@@ -58,7 +58,7 @@ func runReceipt(ctx context.Context, ref string, asJSON, verify bool, stdout, st
 	if ref == "" {
 		dir, err = newestRunDir(mc)
 		if err != nil {
-			message(stderr, "", 0, 0, "tego receipt: "+err.Error(), codeNotFound)
+			message(stderr, "", 0, 0, "tego receipt: "+err.Error()+"; run tego init --preset no-secrets,repo-only-writes --write ./out, then tego run agent.yaml", codeNotFound)
 			return identity.ExitError
 		}
 	} else if dir, err = resolveRunDir("receipt", ref, true, mc); err != nil {

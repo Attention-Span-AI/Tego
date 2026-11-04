@@ -370,6 +370,7 @@ func TestAskCLIAlternateAnswersAHeldOpenWithAnotherFile(t *testing.T) {
 	}
 
 	first := held(read)
+	_ = pendingAskID(t, id, dir)
 	var out, errs bytes.Buffer
 	if code := askAt(t.Context(), "ask", id, dir, "", false, false, false, "", &out, &errs); code != 0 || !strings.Contains(out.String(), " open read /home/u/.aws/credentials") {
 		t.Fatalf("the listing %q (exit %d): a held read says read", out.String(), code)

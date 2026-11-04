@@ -290,7 +290,7 @@ func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
 	exp.HideNoise = false // the export links carry no noise filter: they hold every line
 	if id, ok := exp.WholeRun(); ok {
 		if run := snap.Find(id); run != nil {
-			d.ExportLedger = len(run.AllEvents())
+			d.ExportLedger = run.Lines
 		}
 	}
 	d.ExportMore, d.ExportLines = d.Page.NoiseHidden, d.Page.Matched+d.Page.NoiseHidden

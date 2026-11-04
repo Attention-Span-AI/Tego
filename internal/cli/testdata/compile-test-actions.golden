@@ -10,7 +10,7 @@ PASS an SCTP socket, outside the allowlist
 PASS a packet socket
 PASS a ping socket with no ICMP entry
 PASS a unix socketpair
-PASS a datagram to the declared destination
+PASS a datagram to the declared destination [best effort: builtin.host_ipc/datagram]
 PASS a datagram to an undeclared one
 PASS a datagram to an undeclared abstract socket
 PASS an anonymous image, which exec.allow cannot name

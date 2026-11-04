@@ -76,3 +76,7 @@ func (k *compiler) secretEnv() {
 		len(names), strings.Join(names, ", ")).
 		fix("add env.pass naming the variables the agent needs")
 }
+
+// ProjectDirToken in env.set values expands to the run's absolute working directory,
+// the same base as relative filesystem entries. Other dollar expressions stay literal.
+const ProjectDirToken = "${TEGO_PROJECT_DIR}"

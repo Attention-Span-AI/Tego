@@ -48,7 +48,7 @@ type progEntry struct {
 }
 
 // maxProgRuns bounds the index cache (one entry per run read; dropped wholesale past it).
-const maxProgRuns = 1 << 12
+const maxProgRuns = 64
 
 var progCache = struct {
 	sync.Mutex

@@ -87,7 +87,8 @@
         "watch": {"type": "array", "items": {"$ref": "#/$defs/path"}},
         "deny_write": {"type": "array", "items": {"type": "string", "minLength": 1, "pattern": "^[^*?\\[]*$", "description": "literal file or directory beneath a write entry whose every modification is refused; best effort at tier landlock (ADR 0071)"}},
         "assurance": {"type": "string", "enum": ["best-effort", "kernel"]},
-        "reads": {"type": "string", "enum": ["auto", "held", "direct"], "description": "auto holds read opens at tier landlock while a deny_read target lies inside a write entry; held at every tier; direct never (ADR 0069)"}
+        "reads": {"type": "string", "enum": ["auto", "held", "direct"], "description": "auto holds read opens at tier landlock while a deny_read target lies inside a write entry; held at every tier; direct never (ADR 0069)"},
+        "apparmor_assume_root_namespace": {"type": "boolean", "default": false, "description": "Administrator assertion of root AppArmor policy-namespace visibility when namespace depth cannot be read. Accepts the risk of hidden ancestor restrictions; labels must still match. Top-level contract only; disclosed in run_start.best_effort (ADR 0041)."}
       }
     },
     "net": {

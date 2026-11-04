@@ -107,7 +107,17 @@ func TestRefuseCodes(t *testing.T) {
 // listen serves a unix socket in a fresh directory of the test's.
 func listen(t *testing.T) (*net.UnixListener, string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "s")
+	// t.TempDir includes the test's name, which can exhaust sockaddr_un even under a modest TMPDIR.
+	dir, err := os.MkdirTemp("", "peer-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Error(err)
+		}
+	})
+	path := filepath.Join(dir, "s")
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	if err != nil {
 		t.Fatal(err)
@@ -544,10 +554,7 @@ func containsDetail(err error, s string) bool {
 // socket, whichever test that is, and are no test's leak.
 func noFDLeak(t *testing.T) {
 	t.Helper()
-	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: filepath.Join(t.TempDir(), "warm"), Net: "unix"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	ln, _ := listen(t)
 	_ = ln.Close()
 	testutil.NoFDLeak(t)
 }

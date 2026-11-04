@@ -32,6 +32,10 @@ const (
 	MaxRefusals = 1000
 	// MaxAsks is the most asks the list holds.
 	MaxAsks = 1000
+	// MaxPendingAsks bounds unanswered identities tracked for exact aggregate counts, independently of MaxAsks.
+	MaxPendingAsks = 32_768
+	// MaxPendingAskBytes bounds their estimated storage, including long IDs and a per-entry allowance.
+	MaxPendingAskBytes = 8 << 20
 	// MaxBuckets is the most per-minute buckets (a week); later refusals fold into the last one.
 	MaxBuckets = 10080
 	// DefaultStallThreshold is the quiet span from which a window counts as stalled.
@@ -297,6 +301,10 @@ const (
 // ErrNoRun is a ledger whose first line is not run_start.
 var ErrNoRun = errors.New("no run record")
 
+// ErrAskLimit means exact ask accounting exceeded its pending identity count or byte budget. Compute returns no
+// receipt: dropping identities would make a later answer indistinguishable from one with no recorded ask.
+var ErrAskLimit = errors.New("pending ask limit exceeded")
+
 // payload is the union of the payload keys the receipt reads.
 type payload struct {
 	Op           string   `json:"op"`
@@ -342,7 +350,8 @@ type builder struct {
 	lastMono  uint64
 	rules     map[[2]string]int
 	seen      map[string]bool // path+category already listed
-	asks      map[string]int  // ask_id -> index in rc.Asks.List
+	asks      map[string]int  // pending ask_id -> display index, -1 beyond the display cap
+	askBytes  int64           // estimated pending identity storage, independent of the display list
 	// stall
 	prevMono   uint64
 	prevGap    bool
@@ -363,7 +372,8 @@ type builder struct {
 	act         activity
 }
 
-// Compute builds one run's receipt from its ledger in one streaming pass. Memory is bounded by the caps.
+// Compute builds one run's receipt from its ledger in one streaming pass. Pending ask identities are bounded
+// separately from the display list; exceeding that budget returns ErrAskLimit and no partial receipt.
 func Compute(ctx context.Context, r *ledger.Reader, opt Options) (*Receipt, error) {
 	if r == nil {
 		return nil, fmt.Errorf("receipt: no ledger reader")
@@ -389,7 +399,9 @@ func Compute(ctx context.Context, r *ledger.Reader, opt Options) (*Receipt, erro
 		if rc.Lines%ctxEvery == 0 && ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		b.line(e)
+		if err := b.line(e); err != nil {
+			return nil, fmt.Errorf("receipt: seq %d: %w", e.Seq, err)
+		}
 	}
 	if first {
 		return nil, fmt.Errorf("%w: the ledger holds no line", ErrNoRun)
@@ -398,7 +410,7 @@ func Compute(ctx context.Context, r *ledger.Reader, opt Options) (*Receipt, erro
 	return rc, nil
 }
 
-func (b *builder) line(e *record.Event) {
+func (b *builder) line(e *record.Event) error {
 	rc := b.rc
 	if rc.Run == "" {
 		rc.Run, rc.Agent = e.Run, e.Agent
@@ -446,7 +458,9 @@ func (b *builder) line(e *record.Event) {
 	case record.KindExec:
 		b.program(e, &p)
 	case record.KindAsk:
-		b.ask(e, &p)
+		if err := b.ask(e, &p); err != nil {
+			return err
+		}
 	case record.KindAnswer:
 		b.answer(&p)
 	case record.KindSSLResponse:
@@ -488,6 +502,7 @@ func (b *builder) line(e *record.Event) {
 		cp := p
 		b.lastAsk, b.lastAskRule = &cp, e.Rule
 	}
+	return nil
 }
 
 // target is what a refused line names: a path, a destination, or a program path (never an argv).
@@ -586,7 +601,9 @@ func (b *builder) file(e *record.Event, p *payload) {
 		}
 	case record.FSTruncate:
 		b.written(p)
-	case record.FSMkdir, record.FSSymlink, record.FSLink:
+	case record.FSLink:
+		b.add(&f.Created, "c", p.Path2)
+	case record.FSMkdir, record.FSSymlink:
 		b.add(&f.Created, "c", p.Path)
 	case record.FSUnlink, "rmdir":
 		b.add(&f.Deleted, "d", p.Path)
@@ -622,12 +639,23 @@ var devices = map[string]bool{"/dev/null": true, "/dev/zero": true, "/dev/full":
 // names a file elsewhere when lk is a symlink.
 func device(path string) bool { return devices[path] || strings.HasPrefix(path, "/dev/pts/") }
 
-func (b *builder) ask(e *record.Event, p *payload) {
+func pendingAskBytes(id string) int64 { return 128 + int64(len(id)) }
+
+func (b *builder) ask(e *record.Event, p *payload) error {
+	if _, pending := b.asks[p.AskID]; !pending {
+		bytes := pendingAskBytes(p.AskID)
+		if len(b.asks) >= MaxPendingAsks || b.askBytes+bytes > MaxPendingAskBytes {
+			return fmt.Errorf("%w (maximum %d unanswered IDs or %d estimated bytes)", ErrAskLimit, MaxPendingAsks, MaxPendingAskBytes)
+		}
+		b.askBytes += bytes
+	}
 	a := &b.rc.Asks
 	a.Asked++
+	a.Unanswered++
+	b.asks[p.AskID] = -1
 	if len(a.List) >= MaxAsks {
 		a.Truncated = true
-		return
+		return nil
 	}
 	item := Ask{AskID: p.AskID, TS: e.TS, Op: p.Op, Target: p.Target, Rule: p.AskRule}
 	if b.lastAsk != nil {
@@ -646,6 +674,7 @@ func (b *builder) ask(e *record.Event, p *payload) {
 	}
 	b.asks[p.AskID] = len(a.List)
 	a.List = append(a.List, item)
+	return nil
 }
 
 func (b *builder) answer(p *payload) {
@@ -668,8 +697,14 @@ func (b *builder) answer(p *payload) {
 		a.Denied++
 	}
 	a.WaitS += p.AfterS
-	if i, ok := b.asks[p.AskID]; ok && a.List[i].Answer == "" {
-		a.List[i].Answer, a.List[i].By, a.List[i].AfterS = word, p.By, p.AfterS
+	// Answer totals include asks beyond the presentation cap.
+	if i, pending := b.asks[p.AskID]; pending {
+		a.Unanswered--
+		b.askBytes -= pendingAskBytes(p.AskID)
+		if i >= 0 && a.List[i].Answer == "" {
+			a.List[i].Answer, a.List[i].By, a.List[i].AfterS = word, p.By, p.AfterS
+		}
+		delete(b.asks, p.AskID)
 	}
 }
 
@@ -741,11 +776,6 @@ func (b *builder) finish(opt Options) {
 		need := min(b.minute(end)+1, MaxBuckets)
 		for len(rc.OverTime.Counts) < need {
 			rc.OverTime.Counts = append(rc.OverTime.Counts, 0)
-		}
-	}
-	for _, a := range rc.Asks.List {
-		if a.Answer == "" {
-			rc.Asks.Unanswered++
 		}
 	}
 

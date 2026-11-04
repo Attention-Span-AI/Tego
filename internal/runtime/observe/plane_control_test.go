@@ -25,6 +25,7 @@ func TestRecorderPlaneControlRefusals(t *testing.T) {
 				{"ptrace_access_check", "ptrace", "process-scope", "123", bpf.ReasonProcessScope, record.ReasonLandlockTopology, 123, 0},
 				{"ptrace_traceme", "ptrace_traceme", "process-scope", "456", bpf.ReasonProcessScope, record.ReasonLandlockTopology, 456, 0},
 				{"bpf", "bpf", "bpf", "command 5", bpf.ReasonProcessScope, record.ReasonLandlockTopology, 0, 5},
+				{"capable", "capable", "mount-topology", "capability 21", bpf.ReasonProcessScope, record.ReasonLandlockTopology, 0, 21},
 				{"key_permission", "key_permission", "keyring", "permission 3", bpf.ReasonReadDenied, record.ReasonReadDenied, 0, 3},
 				{"key_permission", "key_permission", "keyring", "permission 3", bpf.ReasonPathUnresolved, record.ReasonPathUnresolved, 0, 3},
 			}

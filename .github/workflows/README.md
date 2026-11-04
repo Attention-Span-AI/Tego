@@ -16,7 +16,7 @@ cancelled.
 |---|---|
 | `build-test` | gofmt, `go vet` (plain and with the build tags), golangci-lint, the SPDX check, `tools/rulecheck`, `govulncheck`, the shell-script self-tests, the unit tests held to `test/unit-skips.txt` by `scripts/skipgate.sh`, and every package's unprivileged integration tests |
 | `build-test-arm64` | The arm64 build with its BPF objects, the unit tests, every BPF program through the verifier as root, and the first runs of the decision plane on an arm64 kernel |
-| `scripts-and-workflows` | shellcheck over every tracked shell script and actionlint over the workflows |
+| `scripts-and-workflows` | shellcheck over every tracked shell script, actionlint over the workflows and release workflow security tests |
 | `bpf-gen` | The committed BPF objects are exactly what the pinned clang makes of `bpf/` |
 | `bpf-load` | Every BPF program loads, and the tier-2 backend decides, on the runner's kernel, as root |
 | `bench-gate` | The hot paths' benchmarks against the base commit's (`scripts/bench-gate.sh`), plus the absolute timing budgets (`scripts/timing-budgets.sh`) |
@@ -68,3 +68,13 @@ default branch must be named `main` for the gate to find the history. No release
 
 A fuzz finding is fixed together with a committed input under its package's `testdata/fuzz` that fails with the fix taken
 out. Some tests (`TestFuzzBodyCorpusSetsOnlyKnownModes` is one) keep committed inputs inside what their target defines.
+
+The release's `container` job waits for the release binaries and their reproduction/vulnerability check, then pushes
+`ghcr.io/attention-span-ai/tego` for linux/amd64 and linux/arm64 with those exact binaries. The dedicated `sign` job
+verifies downloaded release assets and the pushed index digest, signs both keylessly, and attests provenance. It
+holds the only OIDC/attestation write permissions and runs no checkout, project code or build hooks. `container`
+holds package write permission to push the image; `sign` holds it to push signatures and provenance. `publish`
+uploads the checksum signature bundle, includes the digest in the notes and waits for every preceding job to succeed.
+Prereleases never update the stable major.minor or latest aliases. A registry push precedes signing, so a failure can
+leave an image in GHCR while the binary release stays a draft. The public release workflow tests run in
+`scripts-and-workflows` and the unit gate.

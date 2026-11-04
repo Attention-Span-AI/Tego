@@ -48,6 +48,7 @@ func cmdRun() Command {
 		offline    bool
 		verbose    bool
 		noSummary  bool
+		service    bool
 	)
 	return Command{
 		Name:         "run",
@@ -55,7 +56,7 @@ func cmdRun() Command {
 		Passthrough:  true,
 		Supervises:   true,
 		Summary:      "run a command under a contract",
-		Usage:        "<agent.yaml | name> [--tier <t>] [--record <full|summary|off>] [--no-summary] [--observe] [--offline] [-- <cmd> [args]]",
+		Usage:        "<agent.yaml | name> [--tier <t>] [--record <full|summary|off>] [--no-summary] [--service] [--observe] [--offline] [-- <cmd> [args]]",
 		Flags: func(fs *flag.FlagSet) {
 			fs.StringVar(&tier, "tier", "", "pin the enforcement tier for this run (auto|landlock|cgroup|bpflsm)")
 			fs.StringVar(&recordMode, "record", "", "override the contract's record mode (full|summary|off)")
@@ -63,6 +64,7 @@ func cmdRun() Command {
 			fs.BoolVar(&offline, "offline", false, "an unresolvable host is a warning, not an error")
 			fs.BoolVar(&verbose, "v", false, "print every compile note at the start, not only those that need you or mean less is enforced")
 			fs.BoolVar(&verbose, "verbose", false, "same as -v")
+			fs.BoolVar(&service, "service", false, "exit 143 after tego stop, including an escalated stop, so a service manager can suppress restart")
 			fs.BoolVar(&noSummary, "no-summary", false, "print no summary when the agent exits (run id, tier, refusals, asks, files written, chain)")
 		},
 		// The agent owns stdout and stderr: they are passed to the child untouched, and tego's
@@ -82,7 +84,7 @@ func cmdRun() Command {
 			}
 			return runRun(ctx, runOptions{
 				contract: args[0], command: args[1:], tier: tier,
-				record: recordMode, observe: observe, offline: offline, verbose: verbose, noSummary: noSummary,
+				record: recordMode, observe: observe, offline: offline, verbose: verbose, noSummary: noSummary, service: service,
 			}, stderr)
 		},
 	}
@@ -128,6 +130,7 @@ type runOptions struct {
 	// noSummary turns off the end-of-run summary (runsummary.go): only the one line for a run that did not simply
 	// exit is printed, as before the summary existed.
 	noSummary bool
+	service   bool
 	// report, when set, is told the run's result once the run is over, with its end summary (nil with noSummary,
 	// or for a run that never started), before the exit code is returned. A watched run's summary is printed by
 	// report (watch's footer), not by the run path.
@@ -348,7 +351,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	if o.report != nil {
 		o.report(res, sum)
 	}
-	return runExitCode(stderr, o.cmdName(), res)
+	return serviceExitCode(stderr, o.cmdName(), res, o.service)
 }
 
 // runNotices is the compile findings a run prints before its agent starts. A run prints a notice only when it needs
@@ -979,3 +982,12 @@ var (
 	// errAmbiguousRun is an abbreviation of a run id that more than one run under the ledger root has.
 	errAmbiguousRun = errors.New("names more than one run")
 )
+
+// serviceExitCode distinguishes an intentional stop from a memory kill for RestartPreventExitStatus.
+// Recording failures retain exit 125, and the ledger always keeps the actual process exit.
+func serviceExitCode(stderr io.Writer, cmd string, res tegoruntime.Result, service bool) int {
+	if service && res.RecordErr == nil && res.Reason == record.RunEndStopped {
+		return identity.ExitStoppedTerm
+	}
+	return runExitCode(stderr, cmd, res)
+}

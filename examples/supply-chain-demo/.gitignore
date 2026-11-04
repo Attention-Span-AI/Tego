@@ -3,6 +3,7 @@
 /without/
 /with/
 /api.log
+/.tego-supply-chain-stage
 /sink.log
 /sink-*.log
 /sink-*.pid

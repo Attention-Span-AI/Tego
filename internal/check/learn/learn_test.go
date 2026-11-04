@@ -576,7 +576,7 @@ func TestBoundedMemory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !p.Truncated || len(l.nets) != maxDistinct || !strings.Contains(p.Contract(), "more distinct paths and endpoints than learn keeps") {
+	if !p.Truncated || len(l.nets) != maxDistinct || !strings.Contains(p.Contract(), "exceeded learn's bounds") {
 		t.Errorf("truncated=%v, %d nets kept", p.Truncated, len(l.nets))
 	}
 }

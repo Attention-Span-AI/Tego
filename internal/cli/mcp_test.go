@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -30,6 +31,106 @@ func TestShimRefusesPreload(t *testing.T) {
 	sh := &relayShim{server: "files", argv: []string{"cat"}, in: strings.NewReader(""), out: &bytes.Buffer{}, stderr: &stderr,
 		env: shimEnv(map[string]string{"LD_PRELOAD": "/tmp/x.so", mcprelay.EnvRelay: "127.0.0.1:1"}), start: startRelayedServer}
 	if code := sh.run(context.Background()); code != identity.ExitUsage || !strings.Contains(stderr.String(), "LD_PRELOAD") {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+}
+
+func TestShimWaitsForChildRegistration(t *testing.T) {
+	for _, refuse := range []bool{false, true} {
+		t.Run(strconv.FormatBool(refuse), func(t *testing.T) {
+			marker := filepath.Join(t.TempDir(), "server-ran")
+			cmd := proc.Command("sh", "-c", `echo ran > "$1"`, "sh", marker)
+			var child int
+			denied := errors.New("registration refused")
+			pid, err := startRelayedServer(cmd, func(f mcprelay.Frame) error {
+				if f.Stage != nil {
+					return nil
+				}
+				child = f.Child
+				if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("server ran before child registration: %v", err)
+				}
+				if refuse {
+					return denied
+				}
+				return nil
+			})
+			if refuse {
+				if !errors.Is(err, denied) || child <= 0 {
+					t.Fatalf("registration: child %d, err %v", child, err)
+				}
+				if err := syscall.Kill(child, 0); !errors.Is(err, syscall.ESRCH) {
+					t.Fatalf("refused child was not reaped: %v", err)
+				}
+				if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("refused child ran the server: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := cmd.Wait(); err != nil {
+				t.Fatal(err)
+			}
+			if pid != child {
+				t.Fatalf("server pid %d differs from registered child %d", pid, child)
+			}
+			if _, err := os.Stat(marker); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestShimReportsServerExecFailure(t *testing.T) {
+	cmd := proc.Command(filepath.Join(t.TempDir(), "missing-server"))
+	if _, err := startRelayedServer(cmd, func(mcprelay.Frame) error { return nil }); err == nil {
+		t.Fatal("the child stage hid the server's exec failure")
+	}
+}
+
+// A failed registration must invalidate the shim's admission before start cleans
+// up/reaps its child, or a delayed pidfd_open could name a recycled PID.
+func TestShimClosesAdmissionBeforeFailedChildCleanup(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	closed := make(chan bool, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			closed <- false
+			return
+		}
+		defer func() { _ = c.Close() }()
+		fr, fw := mcprelay.NewFrameReader(c, 0), mcprelay.NewFrameWriter(c)
+		_, _ = fr.Read()
+		_ = fw.Write(mcprelay.Frame{OK: true})
+		_, _ = fr.Read()
+		_ = fw.Write(mcprelay.Frame{Error: "registration refused"})
+		_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		var b [1]byte
+		_, err = c.Read(b[:])
+		closed <- errors.Is(err, io.EOF)
+	}()
+	var stderr bytes.Buffer
+	sh := &relayShim{server: "files", argv: []string{"cat"}, in: strings.NewReader(""), out: io.Discard,
+		stderr: &stderr, env: shimEnv(map[string]string{mcprelay.EnvRelay: ln.Addr().String()}),
+		start: func(_ *proc.Cmd, register func(mcprelay.Frame) error) (int, error) {
+			err := register(mcprelay.Frame{Child: 7})
+			if err == nil {
+				t.Fatal("the refused registration succeeded")
+			}
+			// This is the point at which startRelayedServer would kill and reap the child.
+			if !<-closed {
+				t.Error("the admission was still live when the failed child would be reaped")
+			}
+			return 0, err
+		}}
+	if code := sh.run(context.Background()); code != identity.ExitError {
 		t.Fatalf("exit %d: %s", code, stderr.String())
 	}
 }
@@ -61,6 +162,8 @@ func TestShimForwardsOnlyServiceFramesAndKillsServerOnDrop(t *testing.T) {
 				return
 			}
 			switch {
+			case f.Stage != nil || f.Child != 0:
+				_ = fw.Write(mcprelay.Frame{OK: true})
 			case f.Started != 0:
 				pidc <- f.Started
 			case f.C != nil:
@@ -81,8 +184,10 @@ func TestShimForwardsOnlyServiceFramesAndKillsServerOnDrop(t *testing.T) {
 	defer func() { _ = pw.Close() }()
 	var stderr, stdout bytes.Buffer
 	sh := &relayShim{server: "files", argv: []string{"cat"}, in: pr, out: &stdout, stderr: &stderr,
-		env:   shimEnv(map[string]string{mcprelay.EnvRelay: ln.Addr().String()}),
-		start: func(c *proc.Cmd) (int, error) { return startRelayedServer(c) }}
+		env: shimEnv(map[string]string{mcprelay.EnvRelay: ln.Addr().String()}),
+		start: func(c *proc.Cmd, register func(mcprelay.Frame) error) (int, error) {
+			return startRelayedServer(c, register)
+		}}
 	done := make(chan int, 1)
 	go func() { done <- sh.run(context.Background()) }()
 	var pid int
@@ -206,6 +311,8 @@ func TestShimServerStdioCannotBeReopened(t *testing.T) {
 				return
 			}
 			switch {
+			case f.Stage != nil || f.Child != 0:
+				_ = fw.Write(mcprelay.Frame{OK: true})
 			case f.Started != 0:
 				pidc <- f.Started
 			case f.C != nil:
@@ -301,8 +408,12 @@ func TestShimClientEOFEndsTheServer(t *testing.T) {
 		}
 		_ = fw.Write(mcprelay.Frame{OK: true})
 		for {
-			if _, err := fr.Read(); err != nil {
+			f, err := fr.Read()
+			if err != nil {
 				return
+			}
+			if f.Stage != nil || f.Child != 0 {
+				_ = fw.Write(mcprelay.Frame{OK: true})
 			}
 		}
 	}()

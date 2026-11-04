@@ -61,17 +61,12 @@ func writeInCgroup(t *testing.T, cgroupFD int, path string) int {
 	return -1
 }
 
-// TestPlaneRunWalksTheMountTreeAsItStands is the residual an adoption discloses (ADR 0055 "What it does not do", the
-// mount topology; enforce-plane §2 condition 2), shown on the kernel as root: the plane has no mount hook, and its
-// walk follows the mount tree as it stands when the hook runs, crossing at each mount's root to where it is mounted.
-// A process tier 1 does not hold (an adopted one: no seccomp filter refusing new mount and user namespaces, no
-// Landlock refusing mount(2)) that can mount may therefore, after the fill, bind a directory outside every write
-// entry beneath one and write its files there, and mount an overlay whose lower layer is a deny_read directory and
-// read its files through the merged path (the plane decides the user's open on the overlay's own inode, and skips
-// overlayfs' open of the layer on its private clone, enforce-plane §2.12). A bind of what the rows key by inode is
-// not enough: a deny_read directory bound beneath the write entry is still refused a read, and a deny_write target's
-// file a write. If a plane hook ever refuses the mounts themselves (ADR 0055 question 6), the residual cases fail
-// here and the disclosure is to be amended.
+// TestPlaneRunWalksTheMountTreeAsItStands demonstrates topology changes made
+// by root OUTSIDE the governed scope (ADR 0055 NET09). The capable hook refuses
+// the governed task's mount operations, but cannot prevent an outside process
+// from changing a shared namespace. Such a bind can move an outside directory
+// beneath a write entry, and an overlay can expose a deny_read layer through the
+// merged path. Keyed deny targets themselves remain refused through a bind.
 func TestPlaneRunWalksTheMountTreeAsItStands(t *testing.T) {
 	requireBPFCaps(t)
 	if _, err := bpfHash(); err != nil {
@@ -127,7 +122,7 @@ func TestPlaneRunWalksTheMountTreeAsItStands(t *testing.T) {
 	if errno := writeInCgroup(t, fd, filepath.Join(hooks, "pre-commit")); errno != int(unix.EACCES) {
 		t.Fatalf("a write beneath the deny_write target %s: errno %d, want EACCES", hooks, errno)
 	}
-	// Mounts made after the fill, as an agent that can mount would make them.
+	// Outside root makes these mounts after the fill in a namespace shared with the run.
 	for _, m := range [][2]string{{outside, filepath.Join(work, "m")}, {keys, filepath.Join(work, "k")}, {hooks, filepath.Join(work, "h")}} {
 		if err := unix.Mount(m[0], m[1], "", unix.MS_BIND, ""); err != nil {
 			t.Fatalf("bind %s on %s: %v", m[0], m[1], err)
@@ -136,8 +131,7 @@ func TestPlaneRunWalksTheMountTreeAsItStands(t *testing.T) {
 	}
 	if errno := writeInCgroup(t, fd, filepath.Join(work, "m", "f")); errno != 0 {
 		t.Errorf("a write of the file outside every write entry, bound beneath one after the fill: errno %d, want it "+
-			"to go ahead (the walk follows the mount tree as it stands; if the plane now refuses it, ADR 0055's "+
-			"mount-topology disclosure and question 6 are to be amended)", errno)
+			"to go ahead after the outside-root mount (the walk follows the mount tree as it stands)", errno)
 	}
 	if errno := openInCgroup(t, fd, filepath.Join(work, "k", "id")); errno != int(unix.EACCES) {
 		t.Errorf("a read of the deny_read directory's file, bound beneath the write entry: errno %d, want EACCES "+
@@ -160,8 +154,7 @@ func TestPlaneRunWalksTheMountTreeAsItStands(t *testing.T) {
 		t.Cleanup(func() { _ = unix.Unmount(merged, unix.MNT_DETACH) })
 		if errno := openInCgroup(t, fd, filepath.Join(merged, "id")); errno != 0 {
 			t.Errorf("a read of the deny_read directory's file through an overlay mounted on it after the fill: errno "+
-				"%d, want it to go ahead (the plane decides the merged file; if it now refuses it, ADR 0055's "+
-				"mount-topology disclosure and question 6 are to be amended)", errno)
+				"%d, want it to go ahead after the outside-root mount (the plane decides the merged file)", errno)
 		}
 	})
 }

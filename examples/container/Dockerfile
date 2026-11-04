@@ -24,6 +24,9 @@
 # 2026-10-27, and written out in the FROM lines, where Dependabot's docker ecosystem proposes the updates. The Go
 # image is go.mod's toolchain (compose_test.go holds the two equal).
 
+# Local builds compile the source below. release.yml selects verified instead, with a named `release` context
+# containing the signed release's exact binaries for each architecture; no second Go build can change their bytes.
+ARG BINARY_SOURCE=build
 FROM golang:1.27.3-trixie@sha256:c124b9ad3452f46061b5054607d26ea51730dae5372c5e469920063ba2bc6dcc AS build
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -45,8 +48,15 @@ RUN set -eu; \
 		-ldflags "-s -w $x -X $mod/internal/handoff.controlSHA256=$pin" -o /out/tego ./cmd/tego; \
 	./scripts/check-control-pin.sh /out/tego /out/tego-control
 
+FROM scratch AS verified
+ARG TARGETARCH
+COPY --from=release /${TARGETARCH}/tego /out/tego
+COPY --from=release /${TARGETARCH}/tego-control /out/tego-control
+
+FROM ${BINARY_SOURCE} AS selected
+
 FROM scratch AS binaries
-COPY --from=build /out/tego /out/tego-control /usr/local/bin/
+COPY --from=selected /out/tego /out/tego-control /usr/local/bin/
 
 FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS runtime
 ARG EXTRA_PACKAGES=""
@@ -71,7 +81,7 @@ RUN set -eu; \
 	install -d -m 0700 -o tego -g tego /home/tego/.tego /var/lib/tego/runs; \
 	install -d -m 0755 -o tego -g tego /work /work/out; \
 	chmod 0755 /home/tego
-COPY --from=build /out/tego /out/tego-control /usr/local/bin/
+COPY --from=selected /out/tego /out/tego-control /usr/local/bin/
 COPY examples/container/tego-entrypoint.sh /usr/local/bin/tego-entrypoint
 COPY examples/container/config.yaml /etc/tego/config.yaml
 COPY examples/container/hello.yaml examples/container/hello-agent.sh examples/container/smoke.sh /usr/local/share/tego/

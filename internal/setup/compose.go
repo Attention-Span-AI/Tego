@@ -28,6 +28,8 @@ type Options struct {
 	Hosts []string
 	// Command is --command, one line; empty writes a short demo command.
 	Command string
+	// Agent selects a shipped harness descriptor; Prompt is passed as one literal argument.
+	Agent, Prompt string
 	// Name is the agent id, already checked by the caller.
 	Name string
 	// Dir is the project directory, absolute, with its symlinks resolved (filepath.EvalSymlinks): Create opens it with
@@ -40,7 +42,7 @@ type Options struct {
 	Pass, AskRead []string
 	// AgentNeeds adds what the command's agent needs to run under the presets, where they restrict it: Claude Code's
 	// or Codex's own folder (in the project), its socket folder, its model host and its login variables
-	// (agentNeeds). The dashboard's New policy sets it; tego init does not.
+	// (agentNeeds). The dashboard's New policy and init --agent set it.
 	AgentNeeds bool
 }
 
@@ -140,6 +142,19 @@ type entry struct{ value, why string }
 // Compose builds the contract for o. It reads Dir for project markers and the existence of each --write folder,
 // and writes nothing.
 func Compose(o Options) (*Result, error) {
+	desc, err := harnessFor(o.Agent)
+	if err != nil {
+		return nil, err
+	}
+	if o.Prompt != "" && desc == nil {
+		return nil, usagef("--prompt needs --agent claude-code or --agent codex")
+	}
+	if desc != nil {
+		if o.Command != "" {
+			return nil, usagef("--agent and --command cannot be combined; choose an agent or a custom command")
+		}
+		o.Command, o.AgentNeeds = desc.Command, true
+	}
 	ps, err := ParsePresets(o.Presets)
 	if err != nil {
 		return nil, err
@@ -185,7 +200,7 @@ func Compose(o Options) (*Result, error) {
 		res.Ignore = append(res.Ignore, eco.ignore...)
 		tmp := filepath.Join(o.Dir, ".tego", "tmp")
 		writes = appendEntry(writes, entry{"./.tego/tmp/", "TMPDIR: the agent's temporary files stay in the project"})
-		envSet = append(envSet, entry{"TMPDIR=" + tmp, "TMPDIR inside the writable ./.tego/tmp/"})
+		envSet = append(envSet, entry{"TMPDIR=" + agent.ProjectDirToken + "/.tego/tmp", "TMPDIR inside the writable ./.tego/tmp/"})
 		if !exists(tmp) {
 			res.makeDir(tmp, "./.tego/tmp/")
 		}
@@ -242,22 +257,41 @@ func Compose(o Options) (*Result, error) {
 			envSet = append(envSet, need.env...)
 			res.Ignore = append(res.Ignore, need.ignore...)
 		}
-		if has("no-prod") || len(hosts) > 0 {
+		if (has("no-prod") || len(hosts) > 0) && desc == nil {
 			hosts = grant("no-prod", hosts, need.hosts)
 		}
 		if has("no-secrets") || len(pass) > 0 {
 			pass = grant("no-secrets", pass, need.pass)
 		}
 	}
-	res.Contract = render(o.Name, ps, commandArgv(command), demo, writes, hosts, envSet, pass, askRead)
+	argv := commandArgv(command)
+	if desc != nil {
+		argv = append([]string(nil), desc.Argv...)
+		if o.Prompt != "" {
+			argv = append(argv, "--", o.Prompt)
+		} else {
+			argv = append(argv, "--", "Describe this project without changing files.")
+		}
+
+	}
+	res.Contract = render(o.Name, ps, argv, demo, writes, hosts, envSet, pass, askRead, desc != nil)
+	if desc != nil {
+		res.Contract = append(res.Contract, []byte(desc.Contract)...)
+	}
 	for _, p := range ps {
 		res.Presets = append(res.Presets, p.Name)
 		res.Notes = append(res.Notes, fmt.Sprintf("  %s@%d: %s", p.Ref(), p.Revision, p.Promise))
 	}
-	if has("no-secrets") {
+	if desc != nil {
+		res.Notes = append(res.Notes, desc.Notes...)
+		if keys := res.Grants["no-secrets"]; len(keys) > 0 {
+			res.Notes = append(res.Notes, "  no-secrets also passes these login variables for this agent: "+strings.Join(keys, ", ")+"; their values reach the agent")
+		}
+	}
+	if has("no-secrets") && desc == nil {
 		res.Notes = append(res.Notes, "  no-secrets passes only an allow-list of variables: an agent that needs its API key adds it to env.pass (the file says where)")
 	}
-	if has("no-prod") && len(hosts) == 0 {
+	if has("no-prod") && len(hosts) == 0 && desc == nil {
 		res.Notes = append(res.Notes, "  no-prod with no --allow-host refuses every host, the agent's model included: add --allow-host <host> or a models: entry")
 	}
 	if has("repo-only-writes") && !(o.AgentNeeds && len(agentNeedsOf(o, commandArgv(command)).writes) > 0) {
@@ -270,7 +304,7 @@ func Compose(o Options) (*Result, error) {
 // opened by a comment saying why it is there and each generated entry closed by a comment naming the flag or the
 // project marker it came from. Lists are aligned so the reasons read as a column. The bytes are deterministic for
 // the same inputs (golden tests in testdata/compose/).
-func render(name string, ps []presets.Preset, argv []string, demo bool, writes, hosts, envSet, pass, askRead []entry) []byte {
+func render(name string, ps []presets.Preset, argv []string, demo bool, writes, hosts, envSet, pass, askRead []entry, hasModels bool) []byte {
 	var b strings.Builder
 	var names, refs []string
 	has := map[string]bool{}
@@ -344,6 +378,8 @@ func render(name string, ps []presets.Preset, argv []string, demo bool, writes, 
 		}
 		b.WriteString("\nnet:\n  allow:\n")
 		writeList(&b, "    ", hosts)
+	case has["no-prod"] && hasModels:
+		b.WriteString("\n# No direct hosts were granted. The model below is reached through the capture forwarder.\n")
 	case has["no-prod"]:
 		b.WriteString("\n# No --allow-host was given, so no-prod refuses every host, the agent's model included. Name the ones it\n")
 		b.WriteString("# needs, for example:\n# net:\n#   allow:\n#     - \"api.example.com:443\"\n")
@@ -384,7 +420,7 @@ func render(name string, ps []presets.Preset, argv []string, demo bool, writes, 
 		b.WriteString("  # Variables tego sets for the agent, so its temporary files and caches land in folders it may write.\n")
 		b.WriteString("  set:\n")
 		for _, e := range envSet {
-			// The reason goes above the line: the values are absolute paths, too long to keep a column beside.
+			// Keep the reason above the path so the value stays easy to edit.
 			k, v, _ := strings.Cut(e.value, "=")
 			fmt.Fprintf(&b, "    # %s\n    %s: %s\n", e.why, k, strconv.Quote(v))
 		}
@@ -651,28 +687,36 @@ func agentNeedsOf(o Options, argv []string) agentNeed {
 		v := "./.tego/" + sub + "/"
 		n.writes = append(n.writes, entry{v, why})
 		n.made[v] = dir
-		n.env = append(n.env, entry{envKey + "=" + dir, why})
+		n.env = append(n.env, entry{envKey + "=" + agent.ProjectDirToken + "/.tego/" + sub, why})
 		n.ignore = append(n.ignore, ".tego/"+sub+"/")
 	}
 	switch filepath.Base(argv[0]) {
 	case "claude":
 		own("claude", "CLAUDE_CONFIG_DIR", "Claude Code's own folder: its login, settings and sessions")
-		socks := "/run/user/" + strconv.Itoa(os.Getuid()) + "/cc-socks/"
+		n.env = append(n.env, entry{"XDG_RUNTIME_DIR=%R", "private per-run session sockets; launch checks Claude's 103-byte path budget"})
 		n.writes = append(n.writes, entry{"/dev/null", "its Bash tool redirects into it"},
-			entry{"/dev/tty", "the full-screen interface draws there"}, entry{socks, "Claude Code's session sockets"})
-		n.made[socks] = filepath.Clean(socks)
+			entry{"/dev/tty", "the full-screen interface draws there"})
 		n.hosts = append(n.hosts, entry{"api.anthropic.com:443", "Claude Code's model"})
 		n.env = append(n.env, entry{"DISABLE_AUTOUPDATER=1", "no self-update inside the run"},
 			entry{"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1", "no optional network calls"})
 		n.pass = append(n.pass, entry{"CLAUDE_CODE_OAUTH_TOKEN", "Claude Code's login (claude setup-token)"},
 			entry{"ANTHROPIC_API_KEY", "or an API key"})
 	case "codex":
-		own("codex", "CODEX_HOME", "Codex's own folder: its login and settings")
+		why := "Codex's own folder: its login and settings"
+		if o.Agent == "codex" {
+			why = "Codex config source; the forwarder creates the writable home for each run"
+		}
+		own("codex", "CODEX_HOME", why)
 		n.writes = append(n.writes, entry{"/dev/null", "its tools redirect into it"}, entry{"/dev/tty", "the full-screen interface draws there"},
 			entry{"/dev/ptmx", "Codex runs each command in a pseudo-terminal"}, entry{"/dev/pts/", "the same pseudo-terminals"})
 		n.hosts = append(n.hosts, entry{"chatgpt.com:443", "Codex's model (ChatGPT sign-in)"},
 			entry{"auth.openai.com:443", "Codex's sign-in"})
-		n.pass = append(n.pass, entry{"OPENAI_API_KEY", "Codex with an API key"})
+		if o.Agent == "codex" {
+			// Explicit CLI setup selects exec; keep the dashboard's existing credential grant unchanged.
+			n.pass = append(n.pass, entry{"CODEX_API_KEY", "Codex exec with an API key"})
+		} else {
+			n.pass = append(n.pass, entry{"OPENAI_API_KEY", "Codex with an API key"})
+		}
 	}
 	return n
 }

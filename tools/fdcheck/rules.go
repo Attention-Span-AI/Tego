@@ -166,7 +166,7 @@ var ioctlAllowed = map[string]bool{
 	"TCGETS": true, "TCSETS": true, "TCSETSW": true, "TCSETSF": true, "TIOCGWINSZ": true, "TIOCSWINSZ": true,
 	"TIOCINQ": true, "TIOCOUTQ": true, "FIONREAD": true, "FIONBIO": true, "TIOCSCTTY": true, "TIOCNOTTY": true,
 	"TIOCGPGRP": true, "TIOCSPGRP": true, "NS_GET_NSTYPE": true, "FS_IOC_GETFLAGS": true, "FS_IOC_SETFLAGS": true,
-	"TIOCGETA": true, "TIOCSETA": true,
+	"TIOCGETA": true, "TIOCSETA": true, "TIOCGDEV": true, "TIOCGPTN": true,
 }
 
 // ioctlReqWrappers are the x/sys ioctl wrappers whose second argument is the request. Each one throws ioctl's
@@ -260,6 +260,7 @@ var cloexecRules = map[string]cloexecRule{
 // ownSyscallCloexec are the admitted raw traps whose flags F9 checks, by argument index of the Syscall call
 // (the trap is argument 0).
 var ownSyscallCloexec = map[string]cloexecRule{
+	"SYS_IOCTL":           {arg: 3, flag: "O_CLOEXEC"},
 	"SYS_MEMFD_CREATE":    {arg: 2, flag: "MFD_CLOEXEC"},
 	"SYS_PERF_EVENT_OPEN": {arg: 5, flag: "PERF_FLAG_FD_CLOEXEC"},
 	"SYS_OPENAT2": {arg: -1, unread: "a raw SYS_OPENAT2's flags sit behind a pointer F9 cannot read: write " +

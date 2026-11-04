@@ -450,6 +450,7 @@ const (
 	planerdProgTegoExecPinLsm           = "tego_exec_pin_lsm"
 	planerdProgTegoFmrBpf               = "tego_fmr_bpf"
 	planerdProgTegoFmrBprmCheck         = "tego_fmr_bprm_check"
+	planerdProgTegoFmrCapable           = "tego_fmr_capable"
 	planerdProgTegoFmrFileMprotect      = "tego_fmr_file_mprotect"
 	planerdProgTegoFmrFileOpen          = "tego_fmr_file_open"
 	planerdProgTegoFmrFileTruncate      = "tego_fmr_file_truncate"
@@ -476,8 +477,10 @@ const (
 	planerdProgTegoFmrSocketCreate      = "tego_fmr_socket_create"
 	planerdProgTegoFmrSocketListen      = "tego_fmr_socket_listen"
 	planerdProgTegoFmrSocketSendmsg     = "tego_fmr_socket_sendmsg"
+	planerdProgTegoFmrUnixMaySend       = "tego_fmr_unix_may_send"
 	planerdProgTegoLsmBpf               = "tego_lsm_bpf"
 	planerdProgTegoLsmBprmCheck         = "tego_lsm_bprm_check"
+	planerdProgTegoLsmCapable           = "tego_lsm_capable"
 	planerdProgTegoLsmFileMprotect      = "tego_lsm_file_mprotect"
 	planerdProgTegoLsmFileOpen          = "tego_lsm_file_open"
 	planerdProgTegoLsmFileTruncate      = "tego_lsm_file_truncate"
@@ -504,6 +507,7 @@ const (
 	planerdProgTegoLsmSocketCreate      = "tego_lsm_socket_create"
 	planerdProgTegoLsmSocketListen      = "tego_lsm_socket_listen"
 	planerdProgTegoLsmSocketSendmsg     = "tego_lsm_socket_sendmsg"
+	planerdProgTegoLsmUnixMaySend       = "tego_lsm_unix_may_send"
 	planerdVarTegoBtfEvExecHeld         = "tego_btf_ev_exec_held"
 	planerdVarTegoBtfEvExecKill         = "tego_btf_ev_exec_kill"
 	planerdVarTegoBtfEvPlane            = "tego_btf_ev_plane"
@@ -573,6 +577,7 @@ type planerdProgramSpecs struct {
 	TegoExecPinLsm           *ebpf.ProgramSpec `ebpf:"tego_exec_pin_lsm"`
 	TegoFmrBpf               *ebpf.ProgramSpec `ebpf:"tego_fmr_bpf"`
 	TegoFmrBprmCheck         *ebpf.ProgramSpec `ebpf:"tego_fmr_bprm_check"`
+	TegoFmrCapable           *ebpf.ProgramSpec `ebpf:"tego_fmr_capable"`
 	TegoFmrFileMprotect      *ebpf.ProgramSpec `ebpf:"tego_fmr_file_mprotect"`
 	TegoFmrFileOpen          *ebpf.ProgramSpec `ebpf:"tego_fmr_file_open"`
 	TegoFmrFileTruncate      *ebpf.ProgramSpec `ebpf:"tego_fmr_file_truncate"`
@@ -599,8 +604,10 @@ type planerdProgramSpecs struct {
 	TegoFmrSocketCreate      *ebpf.ProgramSpec `ebpf:"tego_fmr_socket_create"`
 	TegoFmrSocketListen      *ebpf.ProgramSpec `ebpf:"tego_fmr_socket_listen"`
 	TegoFmrSocketSendmsg     *ebpf.ProgramSpec `ebpf:"tego_fmr_socket_sendmsg"`
+	TegoFmrUnixMaySend       *ebpf.ProgramSpec `ebpf:"tego_fmr_unix_may_send"`
 	TegoLsmBpf               *ebpf.ProgramSpec `ebpf:"tego_lsm_bpf"`
 	TegoLsmBprmCheck         *ebpf.ProgramSpec `ebpf:"tego_lsm_bprm_check"`
+	TegoLsmCapable           *ebpf.ProgramSpec `ebpf:"tego_lsm_capable"`
 	TegoLsmFileMprotect      *ebpf.ProgramSpec `ebpf:"tego_lsm_file_mprotect"`
 	TegoLsmFileOpen          *ebpf.ProgramSpec `ebpf:"tego_lsm_file_open"`
 	TegoLsmFileTruncate      *ebpf.ProgramSpec `ebpf:"tego_lsm_file_truncate"`
@@ -627,6 +634,7 @@ type planerdProgramSpecs struct {
 	TegoLsmSocketCreate      *ebpf.ProgramSpec `ebpf:"tego_lsm_socket_create"`
 	TegoLsmSocketListen      *ebpf.ProgramSpec `ebpf:"tego_lsm_socket_listen"`
 	TegoLsmSocketSendmsg     *ebpf.ProgramSpec `ebpf:"tego_lsm_socket_sendmsg"`
+	TegoLsmUnixMaySend       *ebpf.ProgramSpec `ebpf:"tego_lsm_unix_may_send"`
 }
 
 // planerdMapSpecs contains maps before they are loaded into the kernel.
@@ -811,6 +819,7 @@ type planerdPrograms struct {
 	TegoExecPinLsm           *ebpf.Program `ebpf:"tego_exec_pin_lsm"`
 	TegoFmrBpf               *ebpf.Program `ebpf:"tego_fmr_bpf"`
 	TegoFmrBprmCheck         *ebpf.Program `ebpf:"tego_fmr_bprm_check"`
+	TegoFmrCapable           *ebpf.Program `ebpf:"tego_fmr_capable"`
 	TegoFmrFileMprotect      *ebpf.Program `ebpf:"tego_fmr_file_mprotect"`
 	TegoFmrFileOpen          *ebpf.Program `ebpf:"tego_fmr_file_open"`
 	TegoFmrFileTruncate      *ebpf.Program `ebpf:"tego_fmr_file_truncate"`
@@ -837,8 +846,10 @@ type planerdPrograms struct {
 	TegoFmrSocketCreate      *ebpf.Program `ebpf:"tego_fmr_socket_create"`
 	TegoFmrSocketListen      *ebpf.Program `ebpf:"tego_fmr_socket_listen"`
 	TegoFmrSocketSendmsg     *ebpf.Program `ebpf:"tego_fmr_socket_sendmsg"`
+	TegoFmrUnixMaySend       *ebpf.Program `ebpf:"tego_fmr_unix_may_send"`
 	TegoLsmBpf               *ebpf.Program `ebpf:"tego_lsm_bpf"`
 	TegoLsmBprmCheck         *ebpf.Program `ebpf:"tego_lsm_bprm_check"`
+	TegoLsmCapable           *ebpf.Program `ebpf:"tego_lsm_capable"`
 	TegoLsmFileMprotect      *ebpf.Program `ebpf:"tego_lsm_file_mprotect"`
 	TegoLsmFileOpen          *ebpf.Program `ebpf:"tego_lsm_file_open"`
 	TegoLsmFileTruncate      *ebpf.Program `ebpf:"tego_lsm_file_truncate"`
@@ -865,6 +876,7 @@ type planerdPrograms struct {
 	TegoLsmSocketCreate      *ebpf.Program `ebpf:"tego_lsm_socket_create"`
 	TegoLsmSocketListen      *ebpf.Program `ebpf:"tego_lsm_socket_listen"`
 	TegoLsmSocketSendmsg     *ebpf.Program `ebpf:"tego_lsm_socket_sendmsg"`
+	TegoLsmUnixMaySend       *ebpf.Program `ebpf:"tego_lsm_unix_may_send"`
 }
 
 func (p *planerdPrograms) Close() error {
@@ -873,6 +885,7 @@ func (p *planerdPrograms) Close() error {
 		p.TegoExecPinLsm,
 		p.TegoFmrBpf,
 		p.TegoFmrBprmCheck,
+		p.TegoFmrCapable,
 		p.TegoFmrFileMprotect,
 		p.TegoFmrFileOpen,
 		p.TegoFmrFileTruncate,
@@ -899,8 +912,10 @@ func (p *planerdPrograms) Close() error {
 		p.TegoFmrSocketCreate,
 		p.TegoFmrSocketListen,
 		p.TegoFmrSocketSendmsg,
+		p.TegoFmrUnixMaySend,
 		p.TegoLsmBpf,
 		p.TegoLsmBprmCheck,
+		p.TegoLsmCapable,
 		p.TegoLsmFileMprotect,
 		p.TegoLsmFileOpen,
 		p.TegoLsmFileTruncate,
@@ -927,6 +942,7 @@ func (p *planerdPrograms) Close() error {
 		p.TegoLsmSocketCreate,
 		p.TegoLsmSocketListen,
 		p.TegoLsmSocketSendmsg,
+		p.TegoLsmUnixMaySend,
 	)
 }
 

@@ -3,6 +3,15 @@ Operator scripts: `install.sh`, `install-maze.sh`, `release.sh`. Plain POSIX sh,
 `tego doctor` says whether it is on. `install-wsl.ps1` is the Windows route: PowerShell that installs Ubuntu 24.04 in
 WSL2 when it is missing and runs `install.sh` inside it. It has not been run on Windows (its header says so).
 
+Reusable output directories in coverage, benchmarks and BPF tooling pass
+`safe-output-dir.sh`: nonempty directories need the tool's regular ownership
+marker; symlinks, home, checkout roots and their ancestors are refused. A BPF
+toolchain `stamp` alone no longer establishes ownership. Move old unmarked
+outputs aside or choose fresh paths. `demo-credentials_test.sh`,
+`demo-reset_test.sh` and `cleanup-guards_test.sh` exercise command redaction and
+scratch-only cleanup in CI's `scripts-and-workflows` job and precommit.
+[ADR 0129](../docs/adr/0129-demo-script-state.md) records the operator-tool boundary.
+
 Developer scripts, not shipped: `check-spdx.sh` (CI's SPDX header check),
 `check-licenses.sh [dist-directory]` (license texts, linked dependency notices, the licence files the binaries embed for
 `licenses`, and optional checksummed release archive),

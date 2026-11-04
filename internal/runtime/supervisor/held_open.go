@@ -32,6 +32,7 @@ import (
 
 // openDeputy is the deputy's client as this loop uses it (deputy.Client); tests fake it.
 type openDeputy interface {
+	PID() int
 	Pin(q deputy.PinQuery, wait func() bool) (deputy.Pinned, error)
 	PinOpenStart(q deputy.PinQuery, flags int) (*deputy.Pending, error)
 	Open(pin int, leaf string, flags int, mode uint32, umask int, wait func() bool) (int, error)
@@ -78,8 +79,9 @@ const (
 	ruleHeldLimit       = "held-limit"
 )
 
-// procReads counts this loop's reads of a task's /proc files (status, stat): the cost the Stage B budget holds at zero
-// per non-O_CREAT held open (ADR 0041 §Performance), which BenchmarkHeldOpen reads.
+// procReads counts task /proc reads, including LSM attributes. SEC08 supersedes
+// Stage B's zero-read budget with fresh label verification on each completion;
+// BenchmarkHeldOpen reports the cost (ADR 0041's SEC08 implementation note).
 var procReads atomic.Int64
 
 // gateFactsHeld is GateFields.GateFacts of a decision taken on the pinned object (D5, record minor 10): the score is
@@ -101,7 +103,8 @@ type heldPlan struct {
 	// anonymous inode, an unlinked file): no name a predicate could match.
 	resolved string
 	// human is set once a person approved the open (the ask range): its lines carry authority human.
-	human bool
+	human     bool
+	performed bool // the deputy opened; a subsequent refusal records any side effects
 	// opened is the deputy's open made with the pin (a read-only open of a regular file or a directory, deputy
 	// opPinOpen), -1 when none was; openErr is that open's errno when it failed. It is delivered only once every check
 	// of the pin has passed.
@@ -168,6 +171,10 @@ func (l *Loop) heldOpen(n *notif, r *reader, q pathQuery, flags int, d fsDecided
 		return true
 	case r.noDirfd && q.path != "" && !strings.HasPrefix(q.path, "/"):
 		l.heldAnswer(h, unix.EBADF)
+		return true
+	}
+	// Before opPinOpen: even its overlapped read must use equivalent MAC authority.
+	if !l.heldLabel(h) {
 		return true
 	}
 	// A read-only open's pin and open are asked for now, so the deputy walks while the copied name is checked below;
@@ -654,6 +661,18 @@ func sameNetNS(tid int) bool {
 // approval takes the stricter checks a hold of this loop's pin takes (heldAskFloors). A nameless object has no entry
 // to check, as Landlock's own check of it allows it (is_nouser_or_private).
 func (l *Loop) heldFloors(h *heldPlan, c *compiled) bool {
+	var id decide.HeldReadID
+	if h.leaf == "" && h.flags&unix.O_TMPFILE != unix.O_TMPFILE {
+		id = decide.HeldReadID{Dev: h.st.Dev, Ino: h.st.Ino}
+	}
+	if rule, refused := l.heldReadIdentityRefusal(c, h.flags, id, false); refused {
+		l.heldRefuse(h, rule, record.ReasonReadDenied, h.d.gate)
+		return false
+	}
+	if d, refused := c.liveHeld(h.resolved, h.flags); refused {
+		l.heldRefuse(h, d.rule, d.reason, h.d.gate)
+		return false
+	}
 	if h.resolved == "" {
 		return true
 	}
@@ -683,6 +702,16 @@ func (l *Loop) heldAskFloors(h *heldPlan, c *compiled, g *gate.Decision) bool {
 		l.heldRefuse(h, nearest.Name, record.ReasonReadDenied, g)
 		return false
 	}
+	// The protected identities too, whatever the access mode, as the name above is: a write-only alias of a
+	// protected file is never put to a person (openHeld checks the returned descriptor again).
+	var id decide.HeldReadID
+	if h.leaf == "" && h.flags&unix.O_TMPFILE != unix.O_TMPFILE {
+		id = decide.HeldReadID{Dev: h.st.Dev, Ino: h.st.Ino}
+	}
+	if rule, refused := l.heldIdentityFloor(c, id, false); refused {
+		l.heldRefuse(h, rule, record.ReasonReadDenied, g)
+		return false
+	}
 	if !isRead(record.FSOpen, h.flags) {
 		if t, denied := c.pol.Rules.AskDenyWriteTarget(h.resolved, false); denied {
 			l.heldRefuse(h, t.RuleName(), record.ReasonWriteOutsideContract, g)
@@ -701,6 +730,9 @@ func (l *Loop) openHeld(h *heldPlan) (repin bool) {
 	fd, err := h.opened, h.openErr
 	h.opened = -1 // owned below
 	if fd < 0 && err == nil {
+		if !l.heldLabel(h) {
+			return false
+		}
 		fd, err = l.deputyOpen(h)
 	}
 	if fd < 0 {
@@ -726,7 +758,28 @@ func (l *Loop) openHeld(h *heldPlan) (repin bool) {
 	// and a copy kept meanwhile is a second reference to the open file description the agent holds, so a FIFO it opened
 	// would keep a reader or a writer after its close, and an flock it released by its close stay held. The deputy's
 	// own copy is closed once its reply is sent.
-	if !l.heldIdentity(h, fd) {
+	st, same := l.heldIdentity(h, fd)
+	if !same {
+		return false
+	}
+	h.performed = !readOnlyOpen(h.flags)
+	// Check again on the verified descriptor: a block or a replacement may have
+	// arrived while the deputy was opening it. An absent leaf's parent pin is
+	// insufficient here: a protected hard link may have appeared before O_CREAT.
+	c := l.table.Load()
+	id := decide.HeldReadID{Dev: st.Dev, Ino: st.Ino}
+	rule, refused := l.heldReadIdentityRefusal(c, h.flags, id, true)
+	if h.human && !refused {
+		rule, refused = l.heldIdentityFloor(c, id, true) // an approval's floor holds for a write-only open too
+	}
+	if refused {
+		l.closeDup(fd)
+		l.heldRefuse(h, rule, record.ReasonReadDenied, h.d.gate)
+		return false
+	}
+	if d, denied := c.liveHeld(h.resolved, h.flags); denied {
+		l.closeDup(fd)
+		l.heldRefuse(h, d.rule, d.reason, h.d.gate)
 		return false
 	}
 	// No ID_VALID before the delivery: ADDFD|SEND on a notification that is gone fails ENOENT, handled below.
@@ -829,33 +882,33 @@ func readOnlyOpen(flags int) bool {
 
 // heldIdentity is D3 step 6: the opened descriptor is the pinned inode, or for a create the new file beneath the
 // pinned parent under the leaf. A mismatch is never delivered (heldMismatch), and fd is closed before its line.
-func (l *Loop) heldIdentity(h *heldPlan, fd int) bool {
+func (l *Loop) heldIdentity(h *heldPlan, fd int) (unix.Stat_t, bool) {
 	var got unix.Stat_t
 	if err := unix.Fstat(fd, &got); err != nil {
 		l.closeDup(fd)
 		l.heldMismatch(h, err)
-		return false
+		return got, false
 	}
 	want := h.st
 	switch {
 	case h.flags&unix.O_TMPFILE == unix.O_TMPFILE:
 		// A new nameless file in the pinned directory: its device is the directory's.
 		if got.Dev == want.Dev && got.Mode&unix.S_IFMT == unix.S_IFREG {
-			return true
+			return got, true
 		}
 	case h.leaf != "":
 		var leaf unix.Stat_t
 		if unix.Fstatat(h.pin, h.leaf, &leaf, unix.AT_SYMLINK_NOFOLLOW) == nil && leaf.Dev == got.Dev && leaf.Ino == got.Ino {
-			return true
+			return got, true
 		}
 	default:
 		if got.Dev == want.Dev && got.Ino == want.Ino {
-			return true
+			return got, true
 		}
 	}
 	l.closeDup(fd)
 	l.heldMismatch(h, errors.New("the opened descriptor is not the pinned inode"))
-	return false
+	return got, false
 }
 
 // heldMismatch answers a held open whose descriptor failed the identity check: it is never delivered. A read-only
@@ -954,6 +1007,17 @@ func (l *Loop) heldRefuse(h *heldPlan, rule string, reason record.Reason, g *gat
 	}
 	l.respond(h.n, respErrno(refusalErrno))
 	d := fsDecided{rule: rule, verdict: record.VerdictRefused, reason: reason, enforce: true, gate: g}
+	if h.performed {
+		l.metrics.orphaned.Add(1)
+		h.d = d
+		ret := -int64(refusalErrno)
+		var result *int64
+		if !h.n.gone {
+			result = &ret
+		}
+		l.emitHeldOutcome(h, true, false, h.n.gone, result)
+		return
+	}
 	l.emitHeldFS(h, path, d)
 }
 
@@ -992,7 +1056,7 @@ func (l *Loop) heldAsk(h *heldPlan, g *gate.Decision) {
 	alt, alternates := l.k.(askAlternateKernel)
 	id, identity := l.k.(taskIdentityKernel)
 	var as *heldAskOpen
-	if alternates && identity {
+	if alternates && identity && l.openLabel(n, os.Getpid(), h.flags) == "" && !n.gone {
 		if creds, mask, err := id.TaskIdentity(n.pid); err == nil {
 			as = &heldAskOpen{fd: -1, resolved: h.resolved, creds: creds, umask: mask}
 			// The check is a hold's own (alternateCheck): the protected paths, the live Set, then the gate scoring the
@@ -1000,7 +1064,14 @@ func (l *Loop) heldAsk(h *heldPlan, g *gate.Decision) {
 			// hold's is.
 			c := l.table.Load()
 			rt, own, flags := c.pol.Rules, l.ownState, h.flags
+			id, tid := n.id, n.pid
 			req.Alternates = ask.NewAlternateCheck(func(a *ask.AlternateFile) (string, error) {
+				if err := l.alternateProbeLabel(id, tid, flags); err != nil {
+					return "", err
+				}
+				if err := l.heldAlternateCheck(c, a); err != nil {
+					return "", err
+				}
 				_, resolved, err := alt.OpenAlternate(as, a, flags, true, alternateCheck(rt, own, c.blocks, flags, nil))
 				return resolved, err
 			})
@@ -1039,6 +1110,17 @@ func (l *Loop) heldAsk(h *heldPlan, g *gate.Decision) {
 		return
 	}
 	if refuseLive() {
+		return
+	}
+	// The protected identities and the names' history again, now that the answer is back and before the deputy
+	// opens anything (review round 3): the pinned file put at a protected name during the person's wait must not be
+	// truncated by an approved O_TRUNC before openHeld's check of the returned descriptor refuses it.
+	var pinned decide.HeldReadID
+	if h.leaf == "" && h.flags&unix.O_TMPFILE != unix.O_TMPFILE {
+		pinned = decide.HeldReadID{Dev: h.st.Dev, Ino: h.st.Ino}
+	}
+	if rule, refused := l.heldIdentityFloor(l.table.Load(), pinned, true); refused {
+		l.heldRefuse(h, rule, record.ReasonReadDenied, g)
 		return
 	}
 	// An approved absent leaf is created O_EXCL: a file appearing during the person's wait is never silently

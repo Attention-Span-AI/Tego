@@ -654,7 +654,8 @@ var (
 	// tego-control (serve to alert, ADR 0100 (2)) are commands like these, and tego-control's services will keep their
 	// state under the state directory. `block` and `unblock` reach a running run's live control under ledger_root, and
 	// `test` starts tego runs of its own; `route` writes a running run's model-routes.json under ledger_root.
-	subcommands = `(?:run|watch|gc|stop|events|status|ask|approve|deny|alternate|doctor|drift|learn|adopt|agents|measure|receipt|detect|compile|rule|block|unblock|pause|resume|lift|grant|restore|test|dns|init|serve|control|inbox|people|role|access|whoami|alert|mcp|vault|route)`
+	// `rules` reads a run's ledger, anchor and contract for the terminal rules view.
+	subcommands = `(?:run|watch|gc|stop|events|status|ask|approve|deny|alternate|doctor|drift|learn|adopt|agents|measure|receipt|detect|compile|rule|rules|block|unblock|pause|resume|lift|grant|restore|test|dns|init|serve|control|inbox|people|role|access|whoami|alert|mcp|vault|route)`
 	// launches are the subcommands that start a run (agents with --adopt): each launch makes <XDG_RUNTIME_DIR>/tego
 	// and first removes the directories there whose launcher's lock is free (SH-7).
 	launches = `(?:run|watch|adopt|agents)`

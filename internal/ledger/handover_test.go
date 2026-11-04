@@ -116,3 +116,32 @@ func TestGiveTreeHandsOverOnlyWhatTheWriterMakes(t *testing.T) {
 		t.Fatalf("handed over %v\nwant %v", got, want)
 	}
 }
+
+// A backup alias writable by a governed run must not stay attached to a ledger or
+// anchor that a later run trusts (ADR 0059). This applies to the ordinary owner too.
+func TestLedgerRefusesHardLinkedFiles(t *testing.T) {
+	for _, name := range []string{EventsFile, LockFile, "chain.log"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, name)
+			if err := os.WriteFile(path, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			alias := filepath.Join(t.TempDir(), "writable-backup")
+			if err := os.Link(path, alias); err != nil {
+				t.Fatal(err)
+			}
+			if name == "chain.log" {
+				if err := ProbeAnchor(path); err == nil {
+					t.Fatal("accepted an anchor with a writable hard-link alias")
+				}
+				return
+			}
+			w, err := Open(dir, testRef, WithAnchor(&memAnchor{}))
+			if err == nil {
+				_ = w.Abandon()
+				t.Fatal("accepted a ledger with a writable hard-link alias")
+			}
+		})
+	}
+}

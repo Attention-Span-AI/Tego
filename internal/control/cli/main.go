@@ -84,6 +84,7 @@ func mainWith(ctx context.Context, argv []string, stdout, stderr io.Writer, p pr
 const (
 	codeUsage    = "usage"
 	codeNotBuilt = "not-built"
+	codeNotFound = "not-found"
 	codeIO       = "io"
 )
 
@@ -91,6 +92,7 @@ const (
 var exits = map[string]int{
 	codeUsage:    identity.ExitUsage,
 	codeNotBuilt: identity.ExitError,
+	codeNotFound: identity.ExitError,
 	codeIO:       identity.ExitError,
 }
 

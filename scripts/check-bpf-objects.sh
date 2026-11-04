@@ -31,13 +31,18 @@ case "${1:-}" in
 esac
 repo="${BPF_CHECK_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 tmp="${BPF_CHECK_TMP:-/tmp/tego-bpf-check}"
-mkdir -p "$tmp" || exit 2
 # The path is fixed (clang's BTF depends on it) and /tmp is shared: refuse a directory another user pre-created or a
 # symlink, and take it to 0700, so nobody else can swap the tree make gen runs in.
-if [ -L "$tmp" ] || [ ! -d "$tmp" ] || [ ! -O "$tmp" ] || ! chmod 700 "$tmp"; then
+if [ -L "$tmp" ] || { [ -e "$tmp" ] && { [ ! -d "$tmp" ] || [ ! -O "$tmp" ]; }; }; then
 	echo "check-bpf-objects: $tmp is not a directory owned by you (remove it, or set BPF_CHECK_TMP)" >&2
 	exit 2
 fi
+# shellcheck source=scripts/safe-output-dir.sh
+. "$(dirname -- "$0")/safe-output-dir.sh"
+# Preserve the canonical BTF path when upgrading an old check's lock-only directory.
+# Any unmarked generated state still refuses; the guard migrates only an empty lock.
+tmp=$(safe_output_dir "$tmp" .tego-bpf-check "$repo" lock) || exit 2
+chmod 700 "$tmp" || exit 2
 # One run at a time: the path is fixed. The lock lives inside the verified directory.
 if command -v flock >/dev/null; then
 	exec 9>"$tmp/lock" && flock 9

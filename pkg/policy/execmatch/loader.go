@@ -11,6 +11,8 @@ import (
 // execve anyone sees. The decision reads it as the exec's image, by its operand's name, by the walked file's name and
 // by its identity, with the argv the loader gives it (ADR 0048 (2), as amended).
 type Loaded struct {
+	// NodeVersion is attested from the loaded program image, not the loader.
+	NodeVersion string
 	// Path is the program operand as the loader's argv spells it.
 	Path string
 	// Image is the walked program's basename (the walk's link); "" when it was not walked.
@@ -140,7 +142,7 @@ func LoaderProgram(argv []string) (i int, progArgv []string, out LoaderOutcome) 
 func (f *Facts) loadedFacts() Facts {
 	l := f.Loaded
 	lf := Facts{
-		Requested: base(l.Path), Path: l.Path, Image: l.Image, ID: l.ID, HasID: l.HasID,
+		NodeVersion: l.NodeVersion, Requested: base(l.Path), Path: l.Path, Image: l.Image, ID: l.ID, HasID: l.HasID,
 		Form: FormDirect, Argv: l.Argv, ArgvComplete: f.ArgvComplete,
 	}
 	if len(l.Argv) > 0 {

@@ -1,0 +1,43 @@
+Rules for run r-12345678-0000000000000-abcdef (demo), tier landlock
+The run has ended; these are the rules it ran with.
+
+Can read
+  Files the agent can open and read.
+  Can read any other file on this computer, except the ones under Never reads and Always on. (hits: 0)
+
+Can change
+  Files and folders the agent can create, edit or delete.
+  Cannot change any file. (hits: 0)
+
+Programs
+  The programs the agent can start.
+  Can run true, the command it starts with [Enforced by the operating system] (hits: 0; contract $PROJECT/proj/agent.yaml:3)
+  Can run any program. (hits: 0)
+
+Network
+  Where the agent can connect.
+  Can connect to any address. Other programs' local sockets stay closed (see Always on). (hits: 0)
+
+Settings it gets
+  Environment variables the agent starts with, by name. Values are never shown here.
+  Gets APP_KEY, set in its rules (hits: 0; contract $PROJECT/proj/agent.yaml:7)
+  Gets every variable in your shell, secrets included. (hits: 0)
+
+Limits
+  When the run is stopped or slowed down.
+  No limits of its own: this computer's defaults apply. (hits: 0)
+
+Always on
+  Protections every run gets, written in no rules file.
+  Can never read the usual secret files: SSH and cloud keys, browser profiles, .env files and similar [Enforced by the operating system] (hits: 0; built in)
+  Cannot reach session services, non-SSH credential agents, system D-Bus, X11 or the listed multiplexer and editor sockets; protects their folders from changes [Best effort: tego refuses it, but a program built to race tego could get past] (hits: 0; built in)
+  Cannot reach tego's control sockets or local control ports; its own runtime folder stays available [Best effort: tego refuses it, but a program built to race tego could get past] (hits: 0; built in)
+  Cannot open other terminals; its own terminal and ptys it creates stay available [Enforced by the operating system and tego] (hits: 0; built in)
+  Can never read or change tego's records of its runs [Enforced by the operating system] (hits: 0; built in)
+  Cannot change its own rules file [Enforced by the operating system] (hits: 0; built in)
+  Cannot reach other programs on this computer through their local sockets (Docker, ssh-agent, the desktop bus) [Best effort: tego refuses it, but a program built to race tego could get past] (hits: 0; built in)
+  Can read this computer's network setup: interface names and addresses, routes, and the nearby machines it has talked to (hits: 0; built in)
+  Cannot gain root through sudo or other setuid programs [Enforced by the operating system] (hits: 0; built in)
+  Writes every refusal and question to a record that cannot be changed unnoticed, and a summary of the rest (hits: 0; built in)
+
+Next: tego receipt r-12345678-0000000000000-abcdef

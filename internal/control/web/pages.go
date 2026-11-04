@@ -508,10 +508,15 @@ const maxBanner = 3
 
 func (s *Server) chromeOf(snap *ledgerview.Snapshot, title, nav string) chrome {
 	c := chrome{Title: title, Nav: nav, Now: s.cfg.Now()}
+	pendingCut := false
 	for _, r := range snap.Runs {
+		pendingCut = pendingCut || r.PendingCut
 		if r.Live {
 			c.Live = true
 		}
+	}
+	if pendingCut {
+		c.Notes = append(c.Notes, "Too many pending requests to list. Inspect the ledger or stop the affected run.")
 	}
 	c.Asks = snap.Pending()
 	c.Pending = len(c.Asks)
@@ -525,7 +530,7 @@ func (s *Server) chromeOf(snap *ledgerview.Snapshot, title, nav string) chrome {
 		c.Notes = append(c.Notes, fmt.Sprintf("Showing the newest %d of %d runs.", ledgerview.MaxRuns, snap.TotalRuns))
 	}
 	if snap.LinesCut {
-		c.Notes = append(c.Notes, fmt.Sprintf("Read the first %d ledger lines of this request; older or later lines of long runs are not shown.", ledgerview.MaxLines))
+		c.Notes = append(c.Notes, "Showing bounded event windows. Run totals cover all decoded events; searches and highlights cover the displayed windows.")
 	}
 	return c
 }
@@ -927,7 +932,13 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 	// The timeline reads newest first, with identical refusals folded, so a live run's latest action is at the top.
 	// It shows timelinePage rows at a time and "Older" pages back by seq (?before=<seq>), so a new line never shifts
 	// a page; a live run's newest page adds its new rows itself (static/live.js fetching /runs/<id>/rows).
-	tl := s.timelineOf(snap.Runs, run, d.Verdict)
+	view := run
+	if before, err := strconv.ParseUint(r.URL.Query().Get("before"), 10, 64); err == nil && run.Cut && before > 0 {
+		if window, err := ledgerview.WindowBefore(s.cfg.Ledger, run, before); err == nil {
+			view = window
+		}
+	}
+	tl := s.timelineOf(snap.Runs, view, d.Verdict)
 	d.Total, d.After = tl.Len(), lastSeq(run)
 	d.Rows = d.Total
 	if d.Verdict != "" {
@@ -939,7 +950,7 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 		start = tl.Below(b)
 	}
 	rows := tl.Rows(start, start+timelinePage)
-	if tl.Len()-start > timelinePage {
+	if tl.Len()-start > timelinePage || view.Cut && len(rows) > 0 && rows[len(rows)-1].Seq > 0 {
 		d.Older = rows[len(rows)-1].Seq
 	}
 	lists := rulesview.RunLists(s.cfg.Ledger, id)
@@ -997,8 +1008,11 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 		// meta refresh is for a browser without JavaScript.
 		c.Refresh = 3
 	}
+	if run.PendingCut {
+		c.Notes = append(c.Notes, "Too many simultaneous unanswered requests to list; inspect the full ledger or stop the run.")
+	}
 	if run.Cut {
-		c.Notes = append(c.Notes, fmt.Sprintf("This run has more than %d lines; the first %d are shown.", ledgerview.MaxLines, ledgerview.MaxLines))
+		c.Notes = append(c.Notes, "Showing a bounded window of this run. Counts cover the full run; highlights, searches and process details cover this window. Older opens earlier timeline windows; download the full ledger for all events.")
 	}
 	s.render(w, http.StatusOK, "run", c, d)
 }

@@ -204,6 +204,7 @@ static long tego_walk_step(__u32 i, struct tego_walk_state *s)
                     s->rule_idx = r->rule_idx;
                     s->kind = r->kind;
                     s->exec_rule = r->exec_rule;
+                    s->pad = r->pad2;
                     s->result = TEGO_WALK_HIT;
                     return 1;
                 }
@@ -290,6 +291,7 @@ __attribute__((noinline)) int tego_plane_walk(__u64 dentry, __u64 vfsmount, __u3
         hit->rule_idx = s.rule_idx;
         hit->kind = s.kind;
         hit->exec_rule = s.exec_rule;
+        hit->pad2 = s.pad;
         break;
     case TEGO_WALK_UNRESOLVED:
         TEGO_PLANE_COUNT(run_idx, unresolved);
@@ -633,6 +635,7 @@ static __always_inline void tego_plane_unslotted_fs(const struct tego_run *run, 
 
 /* ADR 0043's name entries: the prefilter, the name check, the climb and D5, which the hooks below ask. */
 #include "decide_names.h"
+#include "decide_builtin.h"
 
 TEGO_PLANE_HOOK(file_open, file_open, security_file_open, (struct file *file), (file))
 {
@@ -681,7 +684,9 @@ TEGO_PLANE_HOOK(file_open, file_open, security_file_open, (struct file *file), (
         ;
     else if (read && (kind & TEGO_ROW_READ_DENY))
         reason = TEGO_R_READ_DENIED;
-    else if (modify && !(kind & TEGO_ROW_MODIFY_ALLOW))
+    else if (modify && !(kind & TEGO_ROW_MODIFY_ALLOW) &&
+             !((hdr->flags & TEGO_SLOT_BUILTIN_TTY) && !(kind & (TEGO_ROW_PROTECTED | TEGO_ROW_READ_DENY)) &&
+               tego_builtin_terminal(file)))
         reason = TEGO_R_WRITE_OUTSIDE_CONTRACT;
     else if (!tego_is_dir(file->f_inode) && tego_names_on(hdr)) {
         /* The walk allows both questions: a covered file is refused as its own deny_read entry would refuse it, a read
@@ -1128,6 +1133,8 @@ TEGO_PLANE_HOOK(path_rename, path_rename, security_path_rename,
     } else {
         rule = srule;
     }
+    if (tego_builtin_name(run,old_dentry,&rule) || tego_builtin_name(run,new_dentry,&rule))
+        reason = TEGO_R_RENAME_OUTSIDE_CONTRACT;
     settled = tego_plane_settle(sc, reason, rule);
     reason = settled >> 32;
     rule = (__u32)settled;
@@ -1194,6 +1201,8 @@ TEGO_PLANE_HOOK(path_link, path_link, security_path_link,
     } else {
         rule = drule;
     }
+    if (tego_builtin_name(run,old_dentry,&rule) || tego_builtin_name(run,new_dentry,&rule))
+        reason = TEGO_R_WRITE_OUTSIDE_CONTRACT;
     settled = tego_plane_settle(sc, reason, rule);
     reason = settled >> 32;
     rule = (__u32)settled;
@@ -1238,6 +1247,8 @@ static __always_inline __u8 tego_modify_hook(struct dentry *dentry, struct vfsmo
         reason = res == TEGO_NAME_DENY ? refuse_as : tego_walk_failed(res);
         rule32 = res == TEGO_NAME_DENY ? nrule : TEGO_PLANE_RULE_NONE;
     }
+    if (tego_builtin_name(run,dentry,&rule32))
+        reason = refuse_as;
     settled = tego_plane_settle(sc, reason, rule32);
     reason = settled >> 32;
     rule32 = (__u32)settled;
@@ -1594,3 +1605,88 @@ TEGO_PLANE_HOOK(socket_sendmsg, socket_sendmsg, security_socket_sendmsg, (struct
 #include "decide_control.h"
 
 #include "decide_listen.h"
+
+/* No recorder fexit wraps unix_may_send. Its named sample has one owner,
+ * regardless of the filesystem recorder mask. */
+static __always_inline void tego_builtin_peer_sample(const struct tego_run *run, struct dentry *dentry, __u32 rule)
+{
+    tego_plane_fallback_sample(run,
+        TEGO_RD_WORD((__u64)dentry + bpf_core_field_offset(struct dentry, d_name) + bpf_core_field_offset(struct qstr, name)),
+        dentry->d_parent->d_inode->i_ino,
+        (__u64)rule | (__u64)TEGO_R_NET_NOT_ALLOWED << 32 | (__u64)TEGO_HOOK_UNIX_MAY_SEND << 40,
+        (__u64)dentry->d_sb->s_dev << 32);
+}
+
+/* ADR 0113: raw sockaddr checks cannot recognize a pre-existing alias after a
+ * sibling changes an admitted datagram's address/descriptor. This hook sees
+ * the actual bound peer, including connected sends with no msg_name. */
+TEGO_PLANE_HOOK(unix_may_send, unix_may_send, security_unix_may_send,
+                 (struct socket *sock, struct socket *other), (sock, other))
+{
+    struct tego_run *run = tego_current_run(&tego_run_set);
+    const struct tego_plane_slot *hdr;
+    struct tego_plane_decision *sc;
+    struct path path = {};
+    struct sock *sk;
+    __u32 rule = TEGO_PLANE_RULE_BUILTIN_HOST;
+    struct tego_plane_hit hit = {};
+    int match;
+
+    if (!run || run->plane != TEGO_PLANE_RUN_MODE(mode))
+        return 0;
+    hdr = tego_plane_slot_of(run);
+    if (!hdr) {
+        tego_plane_unslotted(TEGO_HOOK_UNIX_MAY_SEND, (__u64)other);
+        return -EACCES;
+    }
+    if (!(hdr->flags & TEGO_SLOT_BUILTIN_TTY))
+        return 0;
+    sc = tego_plane_scratch_get();
+    if (!sc)
+        return -EACCES;
+    /* A single decision pass; every failure reaches one sampled refusal. */
+    do {
+        sk = other->sk;
+        if (!sk)
+            break;
+    #if TEGO_PLANE_RDONLY
+        struct unix_sock *peer = bpf_core_cast(sk, struct unix_sock);
+        path.dentry = peer->path.dentry;
+        path.mnt = peer->path.mnt;
+    #else
+        if (bpf_core_read(&path, sizeof(path), &((struct unix_sock *)sk)->path))
+            break;
+    #endif
+        /* Abstract/unnamed peers have no filesystem path. The inherited abstract
+         * scope is the authority for them. A partial path is uncertainty. */
+        if (!path.dentry && !path.mnt)
+            return 0;
+        if (!path.dentry || !path.mnt)
+            break;
+        match = tego_builtin_name_decision(run, path.dentry, &rule, 1);
+        if (match == 2)
+            return 0; /* own runtime, even a linked run-created socket */
+        if (path.dentry->d_inode->i_nlink > 1) {
+            rule = TEGO_PLANE_RULE_BUILTIN_HOST;
+            break;
+        }
+        if (match == 3)
+            return 0;
+        if (match == 1)
+            break;
+        rule = TEGO_PLANE_RULE_BUILTIN_HOST;
+        if (tego_walk_failed(tego_plane_walk_path(sc, path.dentry, path.mnt, run, &hit)))
+            break;
+        if ((hit.pad2 & 1) && tego_builtin_control_name(path.dentry)) {
+            rule = TEGO_PLANE_RULE_BUILTIN_SURFACE;
+            break;
+        }
+        if (!(hit.kind & TEGO_ROW_BUILTIN_IPC))
+            return 0;
+        rule = hit.rule_idx;
+    } while (0);
+    tego_plane_record(sc, TEGO_HOOK_UNIX_MAY_SEND, (__u64)other, rule, TEGO_R_NET_NOT_ALLOWED);
+    if (path.dentry)
+        tego_builtin_peer_sample(run, path.dentry, rule);
+    return -EACCES;
+}

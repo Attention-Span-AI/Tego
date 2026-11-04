@@ -48,9 +48,10 @@ type planeFillEntry struct {
 	What ebpfbindings.PlaneFillWhat
 	// Kind is an fs row's decide.PlaneKind; RuleIdx the row's rule_idx (an fs row's position in PlaneRows.FS, an
 	// exec row's entry in RuleTable.Exec).
-	Kind     uint8
-	RuleIdx  uint16
-	ExecRule uint16
+	BuiltinFlags uint16
+	Kind         uint8
+	RuleIdx      uint16
+	ExecRule     uint16
 	// Scope is an fs row's scope bit (ADR 0043 D4, decide.PlaneRow.Scopes), which the fill copies into the row.
 	Scope uint8
 	// Name is an exec row's final component, Parent its directory.
@@ -193,7 +194,7 @@ func planPlaneFill(rows *decide.PlaneRows, runIdx, gen uint32, held heldFD, id f
 		if r.Exec >= 0 {
 			execRule = uint16(r.Exec)
 		}
-		if err := add(planeFillEntry{Path: r.Path, What: ebpfbindings.PlaneFillFS, Kind: uint8(r.Kind), RuleIdx: uint16(i), ExecRule: execRule, Scope: r.Scopes}); err != nil {
+		if err := add(planeFillEntry{Path: r.Path, What: ebpfbindings.PlaneFillFS, Kind: uint8(r.Kind), RuleIdx: uint16(i), ExecRule: execRule, Scope: r.Scopes, BuiltinFlags: r.BuiltinFlags}); err != nil {
 			return nil, err
 		}
 	}
@@ -215,7 +216,7 @@ func planPlaneFill(rows *decide.PlaneRows, runIdx, gen uint32, held heldFD, id f
 		if rows.FS[m.Row].Exec >= 0 {
 			execRule = uint16(rows.FS[m.Row].Exec)
 		}
-		if err := add(planeFillEntry{Path: m.Path, What: ebpfbindings.PlaneFillFS, Kind: uint8(kind), RuleIdx: uint16(m.Row), ExecRule: execRule}); err != nil {
+		if err := add(planeFillEntry{Path: m.Path, What: ebpfbindings.PlaneFillFS, Kind: uint8(kind), RuleIdx: uint16(m.Row), ExecRule: execRule, BuiltinFlags: rows.FS[m.Row].BuiltinFlags}); err != nil {
 			return nil, err
 		}
 	}
@@ -276,6 +277,7 @@ func (p *planeFillPlan) wants(tgid uint32) ([]uint64, []ebpfbindings.PlaneFillRo
 		v := &vals[i]
 		v.What, v.Kind, v.RuleIdx, v.Gen = e.What, e.Kind, e.RuleIdx, p.Gen
 		v.ExecRule, v.Scope = e.ExecRule, e.Scope
+		v.Pad2 = e.BuiltinFlags
 		v.NameLen = uint8(len(e.Name))
 		copy(v.Name[:], e.Name)
 	}

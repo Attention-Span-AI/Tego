@@ -12,7 +12,7 @@ It is dated against the Claude Code **2.1.310** documentation (hooks reference, 
 ## What it does
 
 ```
-fakeclaude [--settings FILE|JSON] [--bare] [--script FILE] [--result FILE] [--cwd DIR] [--session-id ID]
+fakeclaude [--settings FILE|JSON] [--bare] [--session-socket] [--script FILE] [--result FILE] [--cwd DIR] [--session-id ID]
            [--model NAME] [-p] [prompt]
 ```
 
@@ -157,3 +157,8 @@ checks and the same golden, so that drift between the stand-in and the real bina
 refusal of the run in the next request as `reason.Text` renders the ledger line.
 `RESULTS.md` is a run's output, passed through `scripts/scrub-capture.sh`, which exits 1 when the home, the user name
 or the host name is still in it anywhere (in any case, inside a longer word too).
+
+`--session-socket` models Claude Code 2.1.318's actual socket selector: `XDG_RUNTIME_DIR/cc-socks/<pid>.sock` (using `CLAUDE_CODE_TMPDIR`, then the OS temporary directory when XDG is unset), falling back to `/tmp/cc-socks-<uid>/<pid>.sock` when the candidate exceeds 103 bytes. It binds and connects to that selected socket before a Bash tool call. Unit tests cover the 103/104-byte boundary, UTF-8 byte lengths and a seven-digit PID. The interactive-template test uses `%R` and a long project path, checks the private PID socket and tool result, rejects the old overlong explicit runtime before agent start, and proves an app forcing the shared fallback is refused. This is a socket/tool probe, not a model of the full terminal interface.
+
+
+The shared real/stand-in contract uses `XDG_RUNTIME_DIR: "%R"`. The launch helpers use the short script-owned mode-0700 temporary base beneath `/run/user/<uid>` so project and temporary-root depth cannot trigger Claude's shared fallback. Tego creates/removes each private runtime; the helper removes its temporary base at exit and never sweeps the login runtime's ordinary runs; durable configs, homes, ledgers, anchors and logs stay under the test root. The reason-only demo scene does not initialize a socket and omits its unused XDG override.

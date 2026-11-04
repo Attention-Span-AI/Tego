@@ -62,6 +62,8 @@ const (
 	// (ADR 0043 D4): only the name check's climb reads it (its scope bits); the walk passes it, so the row changes no
 	// answer and no walk bound. A scope directory that is another row's path carries its bits on that row instead.
 	PlaneScopeOnly PlaneKind = 1 << 6
+	// PlaneBuiltinIPC is an immutable IPC/Tego target checked against the native Unix peer.
+	PlaneBuiltinIPC PlaneKind = 1 << 7
 )
 
 // Strictness orders kinds for REFER (enforce-plane R10): 2 for a row that refuses reads, 1 for one that allows
@@ -132,8 +134,9 @@ func (r PlaneRule) Name(rt *agent.RuleTable) string {
 // write entry nested under a deny_read at the same path), and one u16 cannot name both. The ledger resolves the
 // position by the hook's question (PlaneRows.RuleAt).
 type PlaneRow struct {
-	Path string
-	Kind PlaneKind
+	Path         string
+	Kind         PlaneKind
+	BuiltinFlags uint16 // bit 0: ledger root or descendant; control socket names only
 	// Read and Modify are the entries deciding each question here; PlaneNoRule when none does.
 	Read, Modify PlaneRule
 	// Rename is the deny_write target a rename of this inode itself carries (PlaneRenameRefused), else none.
@@ -191,9 +194,11 @@ type PlaneRows struct {
 	// Names is the bare-name exec entries.
 	Names []PlaneExecName
 	// Listen contains only Unix listeners. IP bind policy is compiled separately.
-	Listen []PlaneListenRow
+	Listen    []PlaneListenRow
+	Protected []PlaneListenRow // immutable parent/name targets, Rule carries 0x8000 plus an FS row
 	// ListenPolicy distinguishes an omitted listener section from an empty list.
-	ListenPolicy bool
+	ListenPolicy     bool
+	BuiltinTerminals bool // every enforcing run has the independent Landlock tty layer
 	// Keyed is every path whose inode the plane keys, opened following a final symlink: the fs rows but NoFollow's,
 	// the executables and their directories, sorted.
 	Keyed []string
@@ -286,7 +291,7 @@ func (e *ErrPlaneCap) Error() string {
 // keyed without following and per mounted root (two paths on one inode share one, so it can be fewer; a deny_read
 // target's enumerated siblings and the other entries are more).
 func (s *PlaneRows) Held() int {
-	n := len(s.Keyed) + len(s.NoFollow) + len(s.Mounts)
+	n := len(s.Keyed) + len(s.NoFollow) + len(s.Mounts) + len(s.Protected)
 	for _, r := range s.Listen {
 		if !r.Abstract {
 			n++ // a dedicated parent descriptor per declaration, even with a shared parent
@@ -370,6 +375,7 @@ func CompilePlane(rt *agent.RuleTable) (*PlaneRows, error) {
 	}
 	s := &PlaneRows{fsByPath: make(map[string]int, len(rt.FS)), execByPath: make(map[string]int, len(rt.Exec)), nameRule: map[string]int{}}
 	s.ListenPolicy = rt.Listen != nil
+	s.BuiltinTerminals = rt.Builtins != nil
 	for i, r := range rt.Listen {
 		if r.Proto != agent.ProtoUnix {
 			continue
@@ -391,12 +397,38 @@ func CompilePlane(rt *agent.RuleTable) (*PlaneRows, error) {
 			paths[rt.FS[i].Canonical()] = true
 		}
 	}
+	if rt.Builtins != nil {
+		for _, p := range []string{rt.Builtins.Ledger, rt.Builtins.LedgerResolved} {
+			if p != "" {
+				paths[p] = true
+			}
+		}
+		for _, n := range rt.Builtins.PeerNames {
+			paths[n.Parent] = true
+			s.Protected = append(s.Protected, PlaneListenRow{Path: n.Path, Parent: n.Parent, Name: n.Name, Rule: 0x2000})
+		}
+		for _, n := range rt.Builtins.Names {
+			paths[n.Parent] = true
+		}
+		own := rt.Builtins.OwnRuntimeResolved
+		if own == "" {
+			own = rt.Builtins.OwnRuntime
+		}
+		if own != "" {
+			parent := filepath.Dir(own)
+			paths[parent] = true
+			s.Protected = append(s.Protected, PlaneListenRow{Path: "builtin-own:" + own, Parent: parent, Name: filepath.Base(own), Rule: 0x4000})
+		}
+	}
 	// A deny_write target and every directory above it up to the outermost write entry that encloses it
 	// (enforce-plane R11): renaming any of them carries the target out of its place. Above that entry no write
 	// entry covers the path, so every modification there is refused already.
 	px := newPlaneIndex(rt)
 	for j := range rt.DenyWrite {
 		t := denyWritePath(rt.DenyWrite[j])
+		if rt.DenyWrite[j].BuiltinRule != "" {
+			paths[t] = true
+		}
 		top, ok := px.outermostWrite(t)
 		if !ok {
 			continue // compile keeps only targets beneath a write entry; nothing to key otherwise
@@ -520,6 +552,24 @@ func CompilePlane(rt *agent.RuleTable) (*PlaneRows, error) {
 			s.Neutral = append(s.Neutral, NeutralRule{Path: p, Access: a})
 		}
 	}
+	if rt.Builtins != nil {
+		for _, n := range rt.Builtins.Names {
+			found := false
+			for i, r := range s.FS {
+				if r.Path == n.Target {
+					s.Protected = append(s.Protected, PlaneListenRow{Path: n.Path, Parent: n.Parent, Name: n.Name, Rule: 0x8000 | i})
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil, fmt.Errorf("decide: immutable target %s has no plane row", n.Target)
+			}
+		}
+	}
+	if len(s.Protected)+len(s.Listen) > PlaneListenRowsMax {
+		return nil, fmt.Errorf("decide: immutable and Unix listener names %d exceed %d", len(s.Protected)+len(s.Listen), PlaneListenRowsMax)
+	}
 	return s, nil
 }
 
@@ -533,6 +583,33 @@ func planeKeep(rt *agent.RuleTable, paths, noFollow map[string]bool, s *PlaneRow
 		}
 	}
 	keep := map[string]bool{}
+	if rt.Builtins != nil {
+		for _, p := range []string{rt.Builtins.Ledger, rt.Builtins.LedgerResolved} {
+			if p != "" {
+				keep[p] = true
+			}
+		}
+	}
+	for _, n := range s.Protected {
+		keep[n.Parent] = true
+	}
+	for _, r := range rt.DenyWrite {
+		if r.BuiltinRule != "" {
+			keep[denyWritePath(r)] = true
+		}
+	}
+	if rt.Builtins != nil {
+		for _, n := range rt.Builtins.Names {
+			keep[n.Parent] = true
+		}
+		own := rt.Builtins.OwnRuntimeResolved
+		if own == "" {
+			own = rt.Builtins.OwnRuntime
+		}
+		if own != "" {
+			keep[filepath.Dir(own)] = true
+		}
+	}
 	for p := range paths {
 		if !entry[p] || noFollow[p] {
 			keep[p] = true
@@ -621,6 +698,13 @@ func compileRow(px *planeIndex, x *RootIndex, p string) PlaneRow {
 	row := PlaneRow{Path: p, Read: planeNone, Modify: planeNone, Rename: planeNone, Exec: -1}
 	rv, mv := x.Walk(p, true), x.Walk(p, false)
 	row.Named = rv.Named
+	if b := px.rt.Builtins; b != nil {
+		for _, root := range []string{b.Ledger, b.LedgerResolved} {
+			if root != "" && agent.Covers(root, p) {
+				row.BuiltinFlags |= 1
+			}
+		}
+	}
 	switch {
 	case rv.Unresolved:
 		row.Kind |= PlaneReadDeny // an exhausted walk refuses both questions (SEMANTICS §2)
@@ -633,6 +717,9 @@ func compileRow(px *planeIndex, x *RootIndex, p string) PlaneRow {
 	if j, ok := px.denyWriteIdx(p, false); ok {
 		row.Modify = PlaneRule{Section: PlaneDenyWriteRule, Index: j}
 		row.Kind |= PlaneProtected
+		if px.rt.DenyWrite[j].BuiltinRule != "" {
+			row.Kind |= PlaneBuiltinIPC
+		}
 	} else if !mv.Unresolved {
 		if mv.Allow {
 			row.Kind |= PlaneModifyAllow

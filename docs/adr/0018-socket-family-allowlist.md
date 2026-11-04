@@ -225,3 +225,13 @@ did not hold as the 2026-10-16 note built it, and now does. Decided and built he
   held anyway: root-suites gates the tagged builds against root-skips without its `untagged:` entries
   (`root-skips.tagged.txt`), so a skip of one of them in the tegobpf build, which CI's `VM_BPF=yes` always runs,
   fails the job, and a renamed or removed one fails `check-skiplists.sh`, since its entry then names no test.
+
+
+### C40 narrowing — 2026-11-03
+
+ADR 0113's immutable socket identity refusal now takes precedence over this ADR's root-tier
+`io_uring: true` admission. The compiler refuses that opt-in when an enforcing contract may select
+cgroup or bpflsm: raw-name Unix trie hooks do not carry the relay's peer-inode alias checks. The
+kernel socket-family programs remain available, but ring admission needs an identity-safe kernel
+path before it can be exposed again. Root startup tests cover both an absent listener section and
+an explicit listener allow. Landlock-only ring policy remains ENOSYS.

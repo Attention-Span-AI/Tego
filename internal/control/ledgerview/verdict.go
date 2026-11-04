@@ -33,6 +33,8 @@ const (
 // Verdict is what a run's Signal says happened to its secrets.
 type Verdict struct {
 	Kind string
+	// Partial means some history or unsupported records are outside the verdict.
+	Partial bool
 	// Observe is a run at tier observe (tego watch): it records only and blocked nothing.
 	Observe bool
 	// Exposed are the secret paths read next to a send that got through (a leak); Read are the secret paths a
@@ -119,17 +121,15 @@ func (v Verdict) NeverAllow() []string {
 
 // RunVerdict reads one run's verdict from its signal (Signal(r, ...)).
 func RunVerdict(r *Run, s *RunSignal) Verdict {
-	v := Verdict{Kind: VerdictQuiet, Observe: r.Tier == "observe"}
+	v := Verdict{Kind: VerdictQuiet, Partial: r.Cut || r.Bad > 0, Observe: r.Tier == "observe"}
 	if s == nil {
 		return v
 	}
 	v.Asked = s.Approved + s.Denied
-	var exposedAt []uint64
 	var refusedPaths []string
 	for _, st := range s.Secrets {
 		if st.ReadNearSend {
 			v.Exposed = append(v.Exposed, st.Path)
-			exposedAt = append(exposedAt, st.FirstSeq)
 		} else if st.Observed+st.Allowed > st.Unread {
 			v.Read = append(v.Read, st.Path)
 		}
@@ -158,9 +158,14 @@ func RunVerdict(r *Run, s *RunSignal) Verdict {
 		if !sendNearSecret(d) {
 			continue
 		}
-		if d.Observed+d.Allowed > 0 && len(exposedAt) > 0 {
-			leak = append(leak, dest{d.Key, nearest(d.FirstSeq, exposedAt), d.Observed + d.Allowed, d.Addrs})
+		dist := ^uint64(0)
+		for _, st := range s.Secrets {
+			dist = min(dist, pairDistance(st.reads, d.sends))
 		}
+		if dist != ^uint64(0) {
+			leak = append(leak, dest{d.Key, dist, d.Observed + d.Allowed, d.Addrs})
+		}
+
 		if d.Refused > 0 {
 			v.Sends += d.Refused
 			refused = append(refused, dest{key: d.Key, n: d.Refused})
@@ -187,13 +192,13 @@ func RunVerdict(r *Run, s *RunSignal) Verdict {
 		}
 	case v.Stopped() > 0:
 		v.Kind = VerdictProtected
-		v.Read = nil
+		v.Read, v.Exposed = nil, nil
 		v.Kept = refusedPaths
 		if v.Sends > 0 {
 			// No send got through, so a secret read next to a refused send stayed here too.
-			for _, p := range v.Exposed {
-				if !slices.Contains(v.Kept, p) {
-					v.Kept = append(v.Kept, p)
+			for _, st := range s.Secrets {
+				if st.NearSend && len(st.reads) > 0 && !slices.Contains(v.Kept, st.Path) {
+					v.Kept = append(v.Kept, st.Path)
 				}
 			}
 		}

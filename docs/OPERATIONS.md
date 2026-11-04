@@ -670,10 +670,10 @@ failed; `systemctl --user stop` sends SIGTERM to tego alone (`KillMode=mixed`), 
 `stop_grace`, so an agent that dies of it is 143 too; a run tego refused to start or could not record (125) is not
 retried. Checked by hand on the user manager with these keys: a stop by name left the unit `inactive`,
 `Result=success`, with no restart; `systemctl --user stop` the same; an agent exiting 7 with two sleeps left behind was
-restarted every `stop_grace` + `RestartSec`. Not covered: an agent that ignores SIGTERM for all of `stop_grace` is
-ended by `cgroup.kill`, 137, and a unit restarts that like a kill by memory, so give such an agent a longer
-`stop_grace`; and an agent that catches SIGTERM and exits with a code of its own ends the run with that code (list it
-in `SuccessExitStatus=`). The user manager runs only while you are logged in unless linger is on (`loginctl
+restarted every `stop_grace` + `RestartSec`. The template now uses `tego run --service`: an intentional `tego stop` exits 143 even when
+`stop_grace` expires and the agent is killed. Its ledger still records exit 137 and escalation; a memory or pids kill
+still exits 137 and restarts. Without `--service`, the normal exit codes remain. A `systemctl stop` is an explicit
+stop job and systemd does not restart it. A failed record or chain anchor still exits 125. The user manager runs only while you are logged in unless linger is on (`loginctl
 enable-linger $USER`).
 
 **A planned restart, once a day (2026-11-02).** `examples/systemd/tego-agent-restart@.timer` starts
@@ -866,11 +866,12 @@ database, so `~` and the built-in lists (`~/.ssh`, `~/.aws`, shell startup files
 the guard compiles one table per `--uid` when it starts, and a boundary for a uid with no home there is refused. What
 only tier 1's seccomp filter refuses is not held on an adopted process, whatever the contract says: System V IPC (even
 without `ipc: true`), socket families outside the network rules (AF_VSOCK, AF_PACKET, SCTP and the rest), io_uring,
-openat2, open_by_handle_at, clone3, the terminal-input ioctls, and the mount topology: tier 1 refuses new mount and user
-namespaces and `setns`, and nothing refuses them on an adopted process, so an agent that can mount (root, or through
-a user namespace) can put a file where the contract's paths do not reach it (bind a directory outside every write
-entry beneath one and write its files, or mount an overlay whose lower layer is a `deny_read` directory and read its
-files; a bind of a `deny_read` directory or a `deny_write` target itself is still refused); the notice says so and the ledger has `gap what=enforce adoption-no-syscall-filter`; each refusal is a ledger line with `mechanism: plane`. It needs a plane mode on this
+openat2, open_by_handle_at, clone3 and the terminal-input ioctls; the ledger has
+`gap what=enforce adoption-no-syscall-filter`. The plane holds the mount topology by refusing `CAP_SYS_ADMIN`
+in every user namespace: mount APIs and mount-namespace creation or installation are refused, as are other uses
+of that capability. Creating a user namespace alone may still succeed but does not permit mounts. This starts
+at the arm; earlier changes and changes by processes outside the run remain outside the guarantee. Each plane
+refusal is a ledger line with `mechanism: plane` (rule `mount-topology` for this capability). It needs a plane mode on this
 machine (`sudo tego doctor`: `decision plane: fmod_ret` or `lsm`); the fanotify fallback cannot refuse a write, so
 there the adoption is refused. Every rule that cannot be added to a running process is refused before anything moves,
 each one named: a `net:` section (a socket made before the adoption would not be governed, and the record could not
@@ -1319,9 +1320,36 @@ What it costs and what it leaves:
   sandboxes its tools with Landlock finds it unavailable. `tego compile` says so in its gate line.
 - A deputy that cannot start fails nothing: the run warns `[held-unavailable]`, decides those opens on copied facts,
   and `run_start.best_effort` keeps the open cells (run_start's `capabilities` row `gate.fs_open_completion` is
-  false). On a host with
-  AppArmor, SELinux or Smack the run warns `[unenforced]`: a held open is made under the deputy's own LSM label, so a
-  process the agent execs into a stricter profile is not held to that profile for its held opens.
+  false).
+- **Host security authority (SEC08, amended 2026-11-04).** A held file open checks the requesting thread
+  against the process opening the file, including before reads, creates, truncates, approvals and alternates.
+  AppArmor needs equal full labels and proof that the reader is in the root policy namespace (readable
+  `.ns_level` zero). Equal visible profiles in a child namespace can hide different ancestor restrictions.
+  SELinux needs equal full contexts and, before potential file creation, equal readable `fscreate` contexts.
+  Smack always refuses because the other thread's process rules cannot be queried. Differences return
+  `EACCES`, `held-label-differs`; unavailable authority facts return `held-label-unavailable` in the ledger,
+  with the missing fact in the log and the `[held-label]` warning explaining the requirements.
+  The active module list uses `lsm_list_modules(2)` on 6.8+ with securityfs fallback: hiding the securityfs list
+  alone does not break matching-label opens when the syscall works and AppArmor depth remains visible.
+  Hiding all securityfs on AppArmor also hides depth; proc labels cannot prove stack completeness, so those
+  completions refuse by default even for identical visible profiles. A dynamic program under held reads can then fail
+  loading libraries. Direct opens and `O_PATH` keep their existing behavior. Differently labelled tasks can
+  lose otherwise permitted opens. No label adoption or per-file policy-equivalence query is implemented.
+  **Container administrator opt-in:** first establish outside the container that the supervisor reads from the
+  root AppArmor policy namespace (for example the host sees its complete label and namespace setup). If
+  securityfs cannot be exposed readably, the top-level contract may set
+  `fs.apparmor_assume_root_namespace: true` (default false). This accepts the risk that hidden ancestor
+  restrictions differ; matching `docker-default` names or enforce mode alone is insufficient evidence. It
+  substitutes only for an unreadable depth, never a known nonzero/malformed depth or other missing facts.
+  The opt-in is refused in inherited profiles, hashed in the canonical contract, warned at compile/startup,
+  and always listed as `apparmor/assumed-root-namespace` in `run_start.best_effort` when enabled. That list
+  discloses that the option was enabled, not that every open needed the assertion. Leave it false when the
+  administrator cannot establish the assertion or will not accept that residual. The default refusal warning
+  names unreadable AppArmor namespace depth, `EACCES` / Permission denied, `held-label-unavailable`, the
+  readable-securityfs fix, and this opt-in. An outer seccomp filter must still permit `lsm_list_modules`
+  when securityfs cannot enumerate modules; the option never supplies a guessed module list.
+  Key/socket creation and other operations are outside this file-open check. Previous timing figures predate
+  these checks; current performance acceptance remains open.
 - Still copied: `O_PATH` opens (`gate.fs.read/o_path`), non-open changes (rename, unlink, chmod and the rest:
   `gate.fs.write/mutation`), and the completion of an `fs.ask` or `fs.ask_read` approval or an alternate, which the
   supervisor makes as the agent's credentials.
@@ -1353,29 +1381,33 @@ are true only in a run that held them. A `.env`, `.env.<x>` (not the example fil
 that is made during a held run, by the agent or by anyone else, is refused by the name rule.
 
 What it costs and what it leaves:
-- **Cost per open.** A held read costs about 0.05 ms more than a direct one: `BenchmarkHeldReadOpen` measured a p50
+- **Cost per open.** Before SEC08's label check, a held read cost about 0.05 ms more than a direct one: `BenchmarkHeldReadOpen` measured a p50
   of 52 µs and a p99 of 77 µs (supervisor R22's soft ceiling is 200 µs) on an idle 6.17 host. `grep -r` (ugrep 7.8,
   multi-threaded) over 10,000 small files took 605 ms held against 35 ms direct, the medians of seven alternated runs
   on a 16-CPU host at load 2 to 4: about 57 µs more per open, and 10 of the run's 10,170 notifications took longer
   than 200 µs. A build or a test suite that opens many files pays that per open; `fs.reads: direct`, or keeping
   secrets outside writable folders, avoids it.
-- **Not caught at tier landlock:** a nested target the agent renames or hard-links to another name before reading it
-  (the capability row `fs.deny_read.moved` is false there, and compile's warning says so), and a target written by
-  someone outside the run that the agent then moves. The root tiers cover the first where a decision plane decides:
-  tier bpflsm refuses a rename or link out of a `deny_read` tree on the inode (Landlock's `REFER` rule), tier cgroup
-  does in a plane mode, and on cgroup's fanotify listener the supervisor refuses one by the copied names, best effort
-  (the matrix row `fs.deny_read.moved`). No tier's kernel covers the second: a file replaced from outside during the
-  run is a new inode that no row keyed at launch names (ADR 0069 D5.2).
+- **Moved launch targets stay protected (2026-11-03).** Held reads retain device/inode pins for nested targets
+  and denied descendants, so a rename or hard link does not make their bytes readable. A file put at a protected
+  name or inside its denied tree later (the agent's own, or another program's) is pinned in turn. A change that
+  cannot be followed (one deleted or moved out of sight before the next held read, a directory replaced at a
+  protected name, a replaced parent directory) makes the history uncertain: further held reads refuse
+  `held-read-identity-unknown` until you restart the run. Lost watches or queue overflow also refuse;
+  missing/unreadable targets, remote/FUSE/overlay/unknown watch filesystems (for the target, its folder and its denied tree; a
+  folder above them may also be overlayfs, so a container's overlay `/` with the project on a local volume works, while
+  a project in the image layer is refused; docs/user/container.md), or more than 8,192 visited names/watches refuse launch. This is the scope of
+  `fs.deny_read.moved`; it does not cover a future glob/name match outside the watched launch targets that is moved
+  away before any held read. Each held read also synchronizes with every watched directory before delivery. Existing performance figures
+  above predate these checks; current overhead has not been measured.
 - **Refused that a direct run reads:** device files other than `/dev/null`, `/dev/zero`, `/dev/full`,
   `/dev/random`, `/dev/urandom` and terminals (`held-unsupported`): an agent that reads a GPU or another device needs
   `fs.reads: direct` or a root tier.
 - **The deputy is required.** A held run whose deputy does not start is refused before it begins (exit 125), never
   run with the target readable; its processes cannot make Landlock domains of their own (`landlock_*` answer
-  `ENOSYS`); on a host with AppArmor, SELinux or Smack the run prints ADR 0041 D2's label residual as a note tagged
-  `[held-label]` ("on AppArmor a file read that tego checks and opens for the agent is decided by the contract's rules;
-  a tighter AppArmor profile on the agent is not applied to it"; a run whose gate holds its opens says "a file open that
-  tego checks and makes"): the deputy opens under its own label, so a tighter profile or domain on the agent is not
-  applied to a held open.
+  `ENOSYS`). The same fail-closed host-label check described under held opens applies to every held read:
+  a different or unverifiable profile/domain refuses it, even when the contract allows it. The `[held-label]`
+  note describes that policy. AppArmor is verified in the Ubuntu KVM guest; SELinux and Smack comparison paths
+  have unit coverage, with real-policy guest acceptance still open.
 - `record: summary` keeps no line for an allowed held read; every refusal has its line and reaches the reason file.
 
 ## Names made after a run started beside a `deny_read` (2026-10-26)

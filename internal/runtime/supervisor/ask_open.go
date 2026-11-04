@@ -51,7 +51,9 @@ func (l *Loop) askLineName(n *notif, q pathQuery, h *heldAskOpen) string {
 
 type askOpenKernel interface {
 	PrepareAskOpen(pathQuery, int) (*heldAskOpen, error)
-	CompleteAskOpen(uint64, *heldAskOpen, int, uint32) (int, error)
+	// CompleteAskOpen reopens h with the agent's flags and delivers it; check, when set, is put to the reopened
+	// descriptor before ADDFD|SEND, and its error leaves the descriptor undelivered (askOpenDeliveryError).
+	CompleteAskOpen(id uint64, h *heldAskOpen, flags int, mode uint32, check func(fd int) error) (int, error)
 }
 
 // askOpenDeliveryError means the approved open already succeeded, including
@@ -181,7 +183,7 @@ func runAskOpenAs(creds sys.TaskCreds, mask int, fn func() error) error {
 
 // Linux's ADDFD+SEND returns the injected descriptor and completes the original
 // syscall atomically. No approval is implemented with CONTINUE or SETFD.
-func (k sysKernel) CompleteAskOpen(id uint64, h *heldAskOpen, flags int, mode uint32) (int, error) {
+func (k sysKernel) CompleteAskOpen(id uint64, h *heldAskOpen, flags int, mode uint32, check func(fd int) error) (int, error) {
 	fd := -1
 	err := runAskOpenAs(h.creds, h.umask, func() error {
 		var e error
@@ -223,6 +225,11 @@ func (k sysKernel) CompleteAskOpen(id uint64, h *heldAskOpen, flags int, mode ui
 	if err = setNonblock(fd, flags&unix.O_NONBLOCK != 0); err != nil {
 		return -1, &askOpenDeliveryError{err}
 	}
+	if check != nil {
+		if err = check(fd); err != nil {
+			return -1, &askOpenDeliveryError{err}
+		}
+	}
 	n, err := k.addFDSend(id, fd, flags)
 	if err != nil {
 		return -1, &askOpenDeliveryError{err}
@@ -256,6 +263,12 @@ func (k sysKernel) addFDSend(id uint64, fd int, flags int) (agentFD int, err err
 	})
 	return agentFD, err
 }
+
+// heldIdentityRefused is the protected-identity floor's refusal of a reopened descriptor (its rule), put through
+// CompleteAskOpen's check: the descriptor was opened and is not delivered.
+type heldIdentityRefused string
+
+func (r heldIdentityRefused) Error() string { return "held-read identity refused: " + string(r) }
 
 // replyLost reports whether a delivery's error says the kernel holds the notification as answered with nothing
 // delivered (sys.ErrNotifReplyLost): nothing may answer it again, and what the agent's syscall returned is not known.
@@ -397,8 +410,21 @@ func (l *Loop) completeHeldAskOpen(n *notif, r *reader, q pathQuery, flags int, 
 		l.respond(n, respErrno(refusalErrno))
 		l.emitFS(n, r, record.FSOpen, lineAt, "", flags, fsDecided{rule: name, verdict: record.VerdictRefused, reason: reason, enforce: true, gate: g})
 	}
+	if labelRule := l.openLabel(n, os.Getpid(), flags); labelRule != "" {
+		refuse(record.ReasonFSGate, labelRule)
+		return true
+	}
+	if n.gone {
+		return true
+	}
 	if rule, why, refused := l.heldNameRefused(h.resolved); refused {
 		refuse(why, rule)
+		return true
+	}
+	// A person is never asked about an object the run's held reads refuse by identity (ADR 0069 D3(b)): a hard link
+	// of a launch-pinned target under an ask entry's name stays the target.
+	if rule, refused := l.heldAskIdentityRefusal(h.fd, false); refused {
+		refuse(record.ReasonReadDenied, rule)
 		return true
 	}
 	// The open syscall is what is held, whatever ask.hold says: that places network asks only (ask-4).
@@ -414,7 +440,14 @@ func (l *Loop) completeHeldAskOpen(n *notif, r *reader, q pathQuery, flags int, 
 		// once this returns while a late answer's check may still run.
 		c := l.table.Load()
 		rt, own := c.pol.Rules, l.ownState
+		id, tid := n.id, n.pid
 		req.Alternates = ask.NewAlternateCheck(func(a *ask.AlternateFile) (string, error) {
+			if err := l.alternateProbeLabel(id, tid, flags); err != nil {
+				return "", err
+			}
+			if err := l.heldAlternateCheck(c, a); err != nil {
+				return "", err
+			}
 			_, resolved, err := alt.OpenAlternate(h, a, flags, true, alternateCheck(rt, own, c.blocks, flags, nil))
 			return resolved, err
 		})
@@ -461,6 +494,12 @@ func (l *Loop) completeHeldAskOpen(n *notif, r *reader, q pathQuery, flags int, 
 		refuse(why, rule)
 		return true
 	}
+	// Again once the answer is back, with the directory barriers: a replacement made before the pin, or while the
+	// person decided, refuses the read as it does a deputy's (heldReadIdentityRefusal).
+	if rule, refused := l.heldAskIdentityRefusal(h.fd, true); refused {
+		refuse(record.ReasonReadDenied, rule)
+		return true
+	}
 	if refuseLive() {
 		return true
 	}
@@ -474,8 +513,48 @@ func (l *Loop) completeHeldAskOpen(n *notif, r *reader, q pathQuery, flags int, 
 	// ADDFD+SEND answers the notification and releases the thread in one ioctl, as respond's Send does, so the next
 	// notification of the thread is ordered after this one's line the same way (R23a): sent is set before the ioctl,
 	// where admit can see it. A completion that fails before the ioctl is answered by respond below.
+	if labelRule := l.openLabel(n, os.Getpid(), flags); labelRule != "" {
+		refuse(record.ReasonFSGate, labelRule)
+		return true
+	}
+	if n.gone {
+		return true
+	}
 	atomic.StoreUint32(&n.sent, 1)
-	fd, err := k.CompleteAskOpen(n.id, h, flags, mode)
+	// The reopened descriptor is the one the agent would get: its identity and the names' history are checked on it,
+	// after the reopen and before delivery, as a deputy's held read is (openHeld). A protected object put at the
+	// pinned inode's place, or the pinned inode put at a protected name, during the completion is refused here.
+	var check func(int) error
+	if l.table.Load().heldReads != nil {
+		check = func(fd int) error {
+			if rule, refused := l.heldAskIdentityRefusal(fd, true); refused {
+				return heldIdentityRefused(rule)
+			}
+			return nil
+		}
+	}
+	fd, err := k.CompleteAskOpen(n.id, h, flags, mode, check)
+	var identity heldIdentityRefused
+	if err != nil && errors.As(err, &identity) {
+		l.metrics.orphaned.Add(1)
+		l.respond(n, respErrno(refusalErrno))
+		ev := action(l.event(n, record.KindFS, record.SourceSupervisor), string(identity), record.VerdictRefused, record.ReasonReadDenied)
+		ret := -int64(refusalErrno)
+		var result *int64
+		if !n.gone {
+			result = &ret
+		}
+		l.awaitPrev(n)
+		l.emit(ev, struct {
+			record.FSPayload
+			GateFields
+			OperationCompleted bool   `json:"operation_completed"`
+			FDDelivered        bool   `json:"fd_delivered"`
+			ResultUnknown      bool   `json:"result_unknown,omitempty"`
+			SyscallRet         *int64 `json:"syscall_ret,omitempty"`
+		}{record.FSPayload{Op: record.FSOpen, Path: h.resolved, Flags: flags}, gatePayload(g, false), !readOnlyOpen(flags), false, n.gone, result})
+		return true
+	}
 	if err == nil {
 		n.answered = true
 		if l.activity != nil {
@@ -539,6 +618,19 @@ func (l *Loop) completeAlternate(n *notif, r *reader, q pathQuery, flags int, h 
 	if !l.valid(n) {
 		return true
 	}
+	if labelRule := l.openLabel(n, os.Getpid(), flags); labelRule != "" {
+		if held != nil {
+			l.heldRefuse(held, labelRule, record.ReasonFSGate, g)
+		} else {
+			lineAt := l.askLineName(n, q, h)
+			l.respond(n, respErrno(refusalErrno))
+			l.emitFS(n, r, record.FSOpen, lineAt, "", flags, fsDecided{rule: labelRule, verdict: record.VerdictRefused, reason: record.ReasonFSGate, enforce: true, gate: g})
+		}
+		return true
+	}
+	if n.gone {
+		return true
+	}
 	if rule != nil && !l.askScopeValid(rule, h.resolved) {
 		refuse(record.ReasonAskUnavailable)
 		return true
@@ -547,6 +639,10 @@ func (l *Loop) completeAlternate(n *notif, r *reader, q pathQuery, flags int, h 
 	// The delivered line carries the gate's decision on the file delivered, not the target's g:
 	// the record says what the gate scored for the path it names. The live Set is loaded again here, at delivery.
 	var ag *gate.Decision
+	if err := l.heldAlternateCheck(c, d.File); err != nil {
+		refuse(record.ReasonAskUnavailable)
+		return true
+	}
 	fd, resolved, err := alt.OpenAlternate(h, d.File, flags, false, alternateCheck(c.pol.Rules, l.ownState, c.blocks, flags, &ag))
 	if err != nil {
 		refuse(record.ReasonAskUnavailable)
@@ -555,6 +651,36 @@ func (l *Loop) completeAlternate(n *notif, r *reader, q pathQuery, flags int, h 
 	gf := gatePayload(ag, false)
 	if held != nil {
 		gf = heldGatePayload(ag)
+	}
+	if c.heldReads != nil {
+		var st unix.Stat_t
+		rule, refused := ruleHeldIdentityUnknown, true
+		if err := unix.Fstat(fd, &st); err == nil {
+			rule, refused = l.heldReadIdentityRefusal(c, unix.O_RDONLY, decide.HeldReadID{Dev: st.Dev, Ino: st.Ino}, true)
+		}
+		if refused {
+			// The alternate may already have been truncated. Close before recording
+			// the refusal and preserve that effect without claiming delivery.
+			l.closeDup(fd)
+			l.metrics.orphaned.Add(1)
+			l.respond(n, respErrno(refusalErrno))
+			ev := action(l.event(n, record.KindFS, record.SourceSupervisor), rule, record.VerdictRefused, record.ReasonReadDenied)
+			ret := -int64(refusalErrno)
+			var result *int64
+			if !n.gone {
+				result = &ret
+			}
+			l.awaitPrev(n)
+			l.emit(ev, struct {
+				record.FSPayload
+				GateFields
+				OperationCompleted bool   `json:"operation_completed"`
+				FDDelivered        bool   `json:"fd_delivered"`
+				ResultUnknown      bool   `json:"result_unknown,omitempty"`
+				SyscallRet         *int64 `json:"syscall_ret,omitempty"`
+			}{record.FSPayload{Op: record.FSOpen, Path: resolved, Flags: flags, AlternateFor: req.Target}, gf, true, false, n.gone, result})
+			return true
+		}
 	}
 	defer l.closeDup(fd)
 	if !l.valid(n) {

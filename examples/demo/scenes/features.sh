@@ -268,8 +268,7 @@ cmd_reason_hook() {
   command -v openssl >/dev/null 2>&1 || die "openssl is needed for the model stub's certificate"
   mini_plant
   cc="$STAGE/cc"; ws="$cc/ws"
-  rm -rf "$cc"; mkdir -p "$cc/bin" "$ws/work" "$ws/.claude-state/tmp" "$cc/home/.claude" "$cc/xdg" "$cc/stub"
-  chmod 700 "$cc/xdg"
+  rm -rf "$cc"; mkdir -p "$cc/bin" "$ws/work" "$ws/.claude-state/tmp" "$cc/home/.claude" "$cc/stub"
   say "Reason to the agent, the Claude Code way: tego's PostToolUse hook tells the model why, in the next request"
   echo "(a stand-in Claude Code, test/e2e/reason-claude/fakeclaude, and a local model stub: no login, no model, no network)"
   show "(cd '$repo' && CGO_ENABLED=0 go build -o '$cc/bin/claude' ./test/e2e/reason-claude/fakeclaude)"

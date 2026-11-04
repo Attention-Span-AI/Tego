@@ -367,11 +367,23 @@ and 157 ms before). Whether a line's paths name a secret
 parts ask, and the Rules page keeps a run version's scan of the ledger.
 
 Bounds: a request covers at most the newest 100,000 runs (by their ledger file's change time) and 5,000,000 lines
-(`MaxRuns`, `MaxLines`, raised from 200 and 20,000 on 2026-10-25 when every line was asked for), plus each run's
-first and last line so every run has its summary; a page that hits a bound says so in a banner. Decoded lines are
-kept up to an estimated 512 MiB (`MaxResidentBytes`); past that the lines of the ended runs no page asked for longest
-leave memory (their summaries, counts and asks stay) and are read again from the file when a page needs them, so a
-ledger larger than that is correct but slower on whole-ledger pages (Logs, Overview).
+(`MaxRuns`, `MaxLines`). Full-run summary counters continue beyond the presentation bound; a page that hits
+a bound says so in a banner. Decoded lines are
+kept under an estimated 512 MiB (`MaxResidentBytes`), with space reserved for derived views and indexes.
+Amended 2026-11-03 (M2): decoding itself retains at most 32,768 recent events and 128 MiB estimated per run
+(further limited by `MaxLines`), including active runs. The reader stops at the file size it observed and discards
+oversized lines with bounded buffers. The estimate charges all retained strings, including envelope fields absent
+from the payload and long values excluded from interning. Full-run counters and start/end metadata update incrementally outside the
+window; the Signal, searches and process details cover retained windows. The page labels these limits, including
+partial verdicts. Root pages do not rehydrate every evicted window; a single run page can reload its bounded
+interval by byte offset. Older timeline windows scan earlier disk history with bounded retention. Whole-run ledger
+JSONL downloads stream the complete file observed at open without the filtered-export line cap;
+reverse downloads may rescan earlier bytes for each window. These are
+allocation/retention bounds, not a process RSS limit: concurrent requests can hold older immutable versions.
+More than 32,768 simultaneous pending asks or 8 MiB of estimated pending-request state are labelled as
+truncated. That estimate charges every retained ask string, including `Hold` and `Op`, after event-window
+rotation. Full-history incremental Signal and a
+persistent historical offset index remain unimplemented. The following performance numbers predate this amendment.
 
 Measured 2026-10-26 on an isolated ledger written by the real ledger writer with a valid chain (`go run
 ./tools/dashgen`: 300 ended runs of 500 lines, one ended run of 200,000 lines and 107 MB, one live run; 350,800
@@ -1004,3 +1016,23 @@ purpose when severity came in (2026-11-01), and the table above took the bar's p
 ## Not built yet
 
 - Remote access: the dashboard answers on this computer only, for the person at it.
+
+
+Correctness amendment (2026-11-03): automatic watched/enforced comparison requires
+the same recorded workspace, nonempty agent identity, harness and program; without
+that reference a watched warning stays. Separate demo workspace copies are not an
+automatic trusted pair. Leak highlights use particular successful read/send pairs
+within both proximity bounds, including later contacts to an already known host;
+refused operations cannot supply a successful pair. Region refresh tracks received
+and rendered revisions separately and retries a failed fetch from 1 s up to 30 s,
+even without new state, resetting after success and stopping after sign-out.
+
+The receipt records a hard link's newly created `path2` and a symbolic link's `path`.
+Its unanswered ask total includes requests after the 1,000-item presentation cap.
+The receipt separately bounds pending identities at 32,768 / 8 MiB estimated
+(128 bytes per entry plus ID bytes); answers release capacity. A ledger prefix
+exceeding either limit produces an explicit error on the Receipt tab and no
+partial receipt. Counts in successfully computed receipts remain exact beyond the
+presentation cap; no disk-backed identity index is provided.
+New refusal pairs append without interleaving; older displaced mirrors remain an
+ambiguous historical counting limit (record v1 writer clarification).

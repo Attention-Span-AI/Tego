@@ -197,3 +197,49 @@ func TestTheRefusedMirrorNamesTheMechanism(t *testing.T) {
 		t.Errorf("the mirror of a line naming no mechanism: %+v (present %v), want none", p, ok)
 	}
 }
+
+// A second writer can append well beyond the old four-line pairing window.
+func TestRefusedPairWithCompetingWriter(t *testing.T) {
+	const id = "r-00000000-000000000000a-pairxx"
+	dir := filepath.Join(t.TempDir(), id)
+	w, err := ledger.Open(dir, record.RunRef{ID: id, Agent: "pair"}, ledger.WithAnchor(nopAnchor{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"sh"}, Tier: "landlock"}); err != nil {
+		t.Fatal(err)
+	}
+	terminal := func(e *record.Event) error {
+		if err := w.Append(e); err != nil {
+			return err
+		}
+		if e.Kind == record.KindFS {
+			for range 8 {
+				g := &record.Event{Kind: record.KindGap, Source: record.SourceSupervisor}
+				_ = g.SetPayload(record.GapPayload{What: "record", Why: "queue-full"})
+				if err := w.Append(g); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	pipe := newPipeline(NewQueue(4), terminal, w.RedactStage, w.SplitBlobsStage, runStamp{PID: 1, TID: 1}, nil, nil, slog.New(slog.DiscardHandler), w.AppendBatch)
+	pipe.handle(refusedFS(t, "/work/private"))
+	if err := w.Close(record.RunEndPayload{Reason: record.RunEndExit}); err != nil {
+		t.Fatal(err)
+	}
+	evs := events(t, dir)
+	var action, mirror uint64
+	for _, e := range evs {
+		if e.Kind == record.KindFS {
+			action = e.Seq
+		}
+		if e.Kind == record.KindRefused {
+			mirror = e.Seq
+		}
+	}
+	if mirror != action+1 {
+		t.Fatalf("action at %d, mirror at %d: competing appends split the pair", action, mirror)
+	}
+}

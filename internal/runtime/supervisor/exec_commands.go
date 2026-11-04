@@ -103,7 +103,7 @@ func (e execCommand) refuses() bool {
 func (l *Loop) decideCommand(c *compiled, n *notif, r *reader, q pathQuery, raw string, img execImage, argvAddr uint64, walkOnly bool) (out execCommand, ok bool) {
 	ix := c.cmds.Index
 	f := execmatch.Facts{
-		Path:  raw,
+		NodeVersion: img.nodeVersion, Path: raw,
 		Image: path.Base(strings.TrimSuffix(img.link, deletedSuffix)),
 		ID:    execmatch.ID{Dev: img.id.dev, Ino: img.id.ino}, HasID: img.linked,
 	}
@@ -224,7 +224,7 @@ func (l *Loop) shebangChain(c *compiled, n *notif, img execImage, root *taskRoot
 		unsure = unsure || next.unsure
 		dropped = dropped || l.droppedImage(c, next)
 		stages = append(stages, execmatch.Stage{
-			Path: interp, Arg: arg, EmptyArg: emptyArg,
+			NodeVersion: next.nodeVersion, Path: interp, Arg: arg, EmptyArg: emptyArg,
 			Image: path.Base(strings.TrimSuffix(next.link, deletedSuffix)),
 			ID:    execmatch.ID{Dev: next.id.dev, Ino: next.id.ino}, HasID: next.linked,
 		})
@@ -334,7 +334,7 @@ func (l *Loop) loadedProgram(c *compiled, n *notif, r *reader, f *execmatch.Fact
 	if !l.valid(n) {
 		return nil, false
 	}
-	q := pathQuery{tid: n.pid, dirfd: atFDCWD, path: operand, joined: r.resolve(atFDCWD, operand), root: root}.as(agent.LookupFollow)
+	q := pathQuery{tid: n.pid, dirfd: atFDCWD, path: operand, joined: r.resolve(atFDCWD, operand), nodePin: true, root: root}.as(agent.LookupFollow)
 	if n.gone {
 		return nil, false
 	}
@@ -347,6 +347,7 @@ func (l *Loop) loadedProgram(c *compiled, n *notif, r *reader, f *execmatch.Fact
 		return lp, true
 	}
 	out.dropped = out.dropped || l.droppedImage(c, pimg) // the loader maps it and jumps to it: it is what runs
+	f.Loaded.NodeVersion = pimg.nodeVersion
 	f.Loaded.Image = path.Base(strings.TrimSuffix(pimg.link, deletedSuffix))
 	f.Loaded.ID, f.Loaded.HasID = execmatch.ID{Dev: pimg.id.dev, Ino: pimg.id.ino}, pimg.linked
 	if execmatch.LoaderName(f.Loaded.Image) || execmatch.LoaderName(operand) || f.Loaded.HasID && c.cmds.Index.Loader(f.Loaded.ID) {

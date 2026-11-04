@@ -61,6 +61,10 @@ var globalDirs = map[string]string{
 	// names): scoped mode runs no self-test, so only the full gate's see a change here.
 	"internal/control/web/testdata/edgelint/": "scripts/check-edgelint_test.sh lints it",
 	"test/workloads/build/":                   "test/e2e/pydeps_test.sh and test/e2e/overhead/run_test.sh read it",
+	// The demo safety self-tests copy whole kits, including assets read through shell variables.
+	"examples/demo/":              "scripts/demo-reset_test.sh and scripts/cleanup-guards_test.sh copy it",
+	"examples/supply-chain-demo/": "scripts/demo-credentials_test.sh and scripts/cleanup-guards_test.sh read it",
+	"examples/live-modes-demo/":   "scripts/cleanup-guards_test.sh copies it",
 }
 
 func makePlan(in input) *plan {

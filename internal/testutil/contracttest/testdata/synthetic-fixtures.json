@@ -385,6 +385,12 @@
       "why": "Kernel mechanism fixture: partial map/record/credential inputs and fixed actor identity; contract acceptance is covered separately by actual CLI and compiled conformance fixtures."
     }
   },
+  "internal/runtime/enforce/cgroup/plane_topology_integration_test.go": {
+    "TestPlaneAdoptedProcessCannotChangeMountTopology": {
+      "count": 1,
+      "why": "Kernel mechanism fixture: live root tasks receive plane rows without Landlock or seccomp, isolating the topology floor; CLI adoption and compiled conformance fixtures cover contract acceptance."
+    }
+  },
   "internal/runtime/enforce/cgroup/plane_stale_integration_test.go": {
     "TestPlaneStaleRowsOfTheSlotsLastRunAreAbsent": {
       "count": 1,
@@ -679,6 +685,28 @@
     "watchRuleTable": {
       "count": 1,
       "why": "Kernel mechanism fixture: one deny_read row at tier landlock, so the watch arm's refusals (supervisor R36) are measured against the kernel alone; contract acceptance is covered separately by the CLI's tier-landlock watch test through a compiled contract."
+    }
+  },
+  "internal/runtime/observe/builtin_test.go": {
+    "TestBuiltinTTYKernelAttribution": {
+      "count": 1,
+      "why": "Synthetic recorded inode/errno and inherited-tty identities exercise attribution without a live kernel open."
+    }
+  },
+  "internal/runtime/enforce/cgroup/builtin_test.go": {
+    "TestBuiltinUnixRowsOverrideAllAllows": {
+      "count": 1,
+      "why": "Synthetic Unix trie decision table includes deliberately conflicting allows; actual contract acceptance is covered by C40 CLI integration."
+    }
+  },
+  "internal/runtime/supervisor/builtin_test.go": {
+    "TestBuiltinMovedLedgerIdentityDoesNotReserveOrdinarySockets": {
+      "count": 1,
+      "why": "Synthetic pinned inode identities exercise directory moves and control-name classification independently of filesystem names."
+    },
+    "TestBuiltinSocketIdentityDecisionTable": {
+      "count": 1,
+      "why": "Synthetic link counts and prepared directory identities exercise immutable refusal precedence; real socket aliases are covered by C40 integration."
     }
   }
 }

@@ -301,8 +301,14 @@ func Compile(c *Contract, m *config.Machine, opts ...CompileOption) (*RuleTable,
 	live := k.compileLive()
 	k.builtInDenyReadPatterns()
 	k.fs()
+	if c.FS != nil && c.FS.AppArmorAssumeRootNamespace {
+		k.ds.warnf(k.pos("fs.apparmor_assume_root_namespace"), CodeUnenforced, "best effort (%s): %s; run_start.best_effort records this opt-in", BestEffortAppArmorNamespace, bestEffortWhy[BestEffortAppArmorNamespace]).
+			fix("leave this false unless the container administrator accepts the risk and establishes root AppArmor policy-namespace visibility")
+	}
 	k.fsAsk()
 	k.fsAskRead()
+	k.builtinRefusals() // after contract entries: no contract can remove these
+	k.builtinFIFOs()
 	k.heldReads()   // after the fs.ask_read entries, which may replace a built-in deny_read, and before the exec grants
 	k.reasonReads() // after heldReads and before stallReadsUnseen, which asks what the filter notifies
 	// After every pass that adds an fs entry: the plane keys one row per file.
@@ -329,6 +335,9 @@ func Compile(c *Contract, m *config.Machine, opts ...CompileOption) (*RuleTable,
 	if err := k.o.ctx.Err(); err != nil {
 		return nil, k.ds.list, err
 	}
+	k.builtinContainerAliases()
+	k.builtinPeerNames()
+	k.containerSocketWarning()
 	k.hostSocketsReachable()
 	k.harness()
 	k.credentialsAndRelayTier() // ADR 0126: after tierAndCapture, which resolved the run's capture
@@ -1275,7 +1284,7 @@ func (k *compiler) env() {
 		sort.Strings(keys)
 		for _, n := range keys {
 			k.reserved(n, forwarding, "env.set."+n, "set")
-			k.rt.Set[n] = e.Set[n] // the value still passes through (R12)
+			k.rt.Set[n] = strings.ReplaceAll(e.Set[n], ProjectDirToken, k.o.cwd)
 		}
 	}
 	k.rt.PATH = k.effectivePATH(denied)
@@ -1293,7 +1302,7 @@ func (k *compiler) reserved(name string, forwarding bool, key, verb string) bool
 		// The launcher reads the contract's CODEX_HOME to find the user's config.toml it copies into the run's
 		// own (internal/runtime codexhome.go), so it stays in the pass list.
 		k.ds.warnf(k.pos(key), CodeEnvRuntimeReserved, "env.%s %s is replaced by the run's own when the capture forwarder (capture: %s) serves an openai model; the contract's value only names the Codex config.toml the run copies", verb, name, k.rt.Capture).
-			fix("keep %s only to name that config, or set capture: off", name)
+			fix("keep %s only to name that config, or set capture: off", name).info()
 	case forwarding && identity.ForwarderVar(name):
 		// identity.ForwarderVar recognizes the fixed forwarder-owned variables (R7).
 		k.ds.warnf(k.pos(key), CodeEnvRuntimeReserved, "env.%s %s is set by the capture forwarder (capture: %s) and the contract's value is overridden", verb, name, k.rt.Capture).
@@ -1310,7 +1319,7 @@ func (k *compiler) reserved(name string, forwarding bool, key, verb string) bool
 // inherited value when env.pass admits it (or there is no pass list) and
 // env.deny does not remove it.
 func (k *compiler) effectivePATH(denied map[string]bool) string {
-	if v, ok := k.c.Env.Set["PATH"]; ok {
+	if v, ok := k.rt.Set["PATH"]; ok {
 		return v
 	}
 	if denied["PATH"] || !k.o.pathSet {

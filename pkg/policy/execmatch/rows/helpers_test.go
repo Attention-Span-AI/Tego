@@ -31,7 +31,7 @@ func rules(t testing.TB, entries ...string) *execmatch.Index {
 // run decides an exec of argv by name (requested, image and argv[0] all argv[0]'s basename unless the facts say
 // otherwise).
 func run(ix *execmatch.Index, argv ...string) execmatch.Result {
-	f := execmatch.Facts{Requested: argv[0], Image: argv[0], Argv0: argv[0], Argv: argv, ArgvComplete: true}
+	f := execmatch.Facts{NodeVersion: "20.19.4", Requested: argv[0], Image: argv[0], Argv0: argv[0], Argv: argv, ArgvComplete: true}
 	return ix.Decide(&f)
 }
 

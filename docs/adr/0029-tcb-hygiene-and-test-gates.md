@@ -155,3 +155,15 @@ literal path or the inherited value copied through another name, and a quoted Py
 giving tego a directory unless the script also refuses the login session's. identity-config.md R27 clause b4 states
 SH-7's limit (it reads a script and does not evaluate it) and the guard's two reports a developer's own launch or
 killed run during the tests causes.
+
+*Amended 2026-11-04 (fast-path timing gates):* `TestIntegrationFastPath` and
+`TestIntegrationFastPathOps` now use the same budget/unit-gate split as the other absolute timing tests
+(`docs/BENCHMARKS.md`). Their pipe ping-pong gauge measures scheduling, not the handler's instrumented CPU
+work: a tagged race run on the shared host measured common operations at 276–411 µs while the gauge stayed
+at 11–19 µs, so an otherwise correct run failed the 200–228 µs ceiling. The unit/race gate now uses the
+existing `testutil.CeilingFactor` times R22's 200 µs limit, on the same wall-clock round trip; its operation and
+notification assertions still run. `scripts/timing-budgets.sh` includes both tests, in an uninstrumented
+build, and budget mode keeps the original best of three against max(200 µs, 12 pipe ping-pongs). The existing
+slowdown hook can refute both modes. No production threshold, ownership proof or skip list changes. Rejected:
+skip these tests under `-race`, which would lose their notification checks; change R22's production limit;
+keep asserting a production latency figure on instrumented code using a gauge that does not measure that work.

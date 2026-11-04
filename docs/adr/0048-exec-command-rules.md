@@ -340,6 +340,54 @@ interpretation that names it. A caller-chosen argv[0] can add an interpretation;
      (`--build-snapshot-config`, `--experimental-sea-config`), makes the exec unlocatable. Where an option makes the
      interpreter run its script past the code (node's `-i`), a line that holds an option the row does not list is
      read for its script as well as its code. docs/spec/exec-command-rows.md, node, has the rest.
+   - *Amended 2026-11-03 (C49):* the Node row inventories 20.19.4 and 22.21.1 from both binaries,
+     with all canonical V8 option names and proven native arities. V8 forwarding consumes no next
+     token of Node's argv, while inspector optional values require `=`. The measured arity conflict
+     `--stack-trace-limit` stays unknown, preserving both readings and the 16-reading bound. Each
+     reading stops Node options at its entry script; code options do not stop Node options because
+     later `-i` / `--build-snapshot` can select a script instead. Node 22's config-file/default-config,
+     `--entry-url`, `--experimental-test-isolation=none`, and `--run` are known but unlocatable and fail
+     closed. The versioned sources,
+     counts, per-option allow-A/deny-B contracts and real-binary proofs are in
+     [the row reference](../spec/exec-command-rows.md#node). Existing module/code/config residuals remain.
+   - *Corrected after the 2026-11-03 C49 security review:* the main entry parser's stopping point is
+     not the reach of Node's config/dotenv pre-scanners. Raw config-file/default-config prefixes
+     anywhere in argv (argv[0], after the script, `--` and stdin too) and env-file prefixes before the first
+     `--` (even after the script) now make dispatch unlocatable. A Node allow requires the complete
+     vector, within the existing argv bound. The prior claim that all script arguments were inert
+     to Node was false. Only an attestation of the **exact inventoried
+     standalone Linux x64 build**, by full SHA-256 of the walked executable descriptor, selects
+     the expanded inventory; a name, version string or child `node --version` probe cannot.
+     *Round-3 architecture decision (2026-11-03):* round 2's unconditional refusal of unknown
+     builds regressed master. Unknown/changed/unreadable hashes, shared-libnode launchers,
+     other patch/architecture builds (including Node in Lima), and compile-time facts without
+     attestation now use **exactly master's Node row plus the universal raw scans above**.
+     The master row is frozen at `142497e8742906281a5c517af5b5254b9d6e180a`; unknown options
+     retain both arity readings, bounded at 16 and failing closed past the bound. Only the raw
+     scans add refusals for unknown builds named `node`/`nodejs`. Numeric versioned names
+     newly select this row rather than master's generic fallback, so that equivalence does not
+     cover `node-22`/`node-20.1`. Node 18/24/25 remain unknown, even when probed.
+     Selection is separate for the direct image, each shebang interpreter and a loader's program;
+     a known stage cannot select an inventory for another stage. Command patterns use the
+     selected grammar as well. Numeric node-N names get the Node row; arbitrary renamed copies
+     retain R2. The userspace image lookup/content race remains: the descriptor hash does not
+     atomically constrain bytes loaded after the decision. Both pinned builds are required by
+     CI. Frozen-master equivalence tests, exact review-vector executions and descriptor-producer
+     tests establish this narrower scope; see the row reference for hashes and proof boundaries.
+   - *Round-4 performance amendment (2026-11-03):* hashing the 123 MB standalone Node 22
+     on every exec monopolized R21's four notification workers. Keep at most 64 process-local
+     FIFO digest entries, keyed by `(dev, ino, size, mtime, ctime)` with nanosecond timestamps.
+     Concurrent callers share a miss; hashing happens outside the cache mutex. Each caller
+     validates its own reopened descriptor after a hit/wait, and changed or failed hashes
+     are not retained. Stable digest misses are cached too. A same-size rewrite with restored
+     mtime changes ctime and invalidates the prior entry. Runs without command rules already
+     skip attestation; any rule can name a Node script, so literal-node-only filtering is unsound.
+     Cold/evicted/rewritten files still hash synchronously (bounded at 256 MiB); adversarial
+     churn can retain that cost. No goroutine or unbounded cache is added. This does not close
+     the existing userspace image/content race, writable-copy rewrites after observation or
+     filesystems serving inconsistent bytes. The row reference names the regression tests and
+     real-fd/four-worker benchmarks. The omitted `--stack-trace-limit` contract predicate is
+     a compilation compatibility break from master, recorded in the row spec and changelog.
 6. **The `#!` interpreter.** For a `script` form, each stage's `(interpreter, [arg?, script path] + argv[1:])` is
    an interpretation too: exactly the argv binfmt_script gives the interpreter. *Amended 2026-10-06 (final
    review):* a stage is read as a direct image is, by three names: the `#!` line's path (the interpreter's argv[0]),
@@ -1285,9 +1333,18 @@ handle to it, as it does `KernelExecs`. `ExecNaming` gains `PinSeq`, `CommandRul
 - **R3. Rewriting from outside argv.** cargo, gh and aws config aliases, kubectl `kuberc` aliases, and environment
   variables that change parsing are not read. git aliases and git autocorrect are covered. Compile notes it on each
   affected entry.
+  **Node preload residual (C49 round 3):** the raw config/dotenv scans above apply to every build,
+  but external `NODE_OPTIONS` preloads remain unread. Unknown Node builds also retain master's
+  future-option residual: an attached unknown `=value` can load code in process without naming
+  that code in any interpretation. On Node 24/25, `node --test --test-global-setup=./b.js ./a.js`
+  can run denied B while the resolver allows A; `node --test --test-isolation=none ./a.js ./b.js`
+  can run both in the parent with the same missed deny. The compatibility fallback does not
+  close these cases; unpinned Node 22's inventory-only `--experimental-test-isolation=none` is
+  likewise absent from master. This deliberately preserves master rather than refusing every unknown build.
 - **R4. Tables are versioned data.** A tool release can add a value-taking global option, a subcommand alias, a
   helper, or a parse rule, and that can mislocate a subcommand until the row learns it.
-  - Unknown options fail closed for deny entries.
+  - Unknown arities retain conservative readings and fail closed past their bound. This does not
+    cover new in-process code-loading semantics such as Node's attached options in R3.
   - A new built-in alias of a denied subcommand is missed until the row lists it.
   - A new helper fails closed: an allowed operation is refused until the closure lists it.
   - For git's autocorrect, drift in the candidate set or the scoring is a fail-open regression. The freshness and

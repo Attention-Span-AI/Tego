@@ -53,3 +53,33 @@ it. `tego status` shows no version for a run without the key, because there is d
 ## Rejected options
 
 - **A real-looking placeholder domain:** rejected. Another party can hold any name that looks real.
+
+*Amended 2026-11-03 (container releases):* the release image's registry name is
+`ghcr.io/attention-span-ai/tego`, lowercase as GHCR requires. Each release builds the tagged Dockerfile for amd64 and
+arm64 with the exact release binaries, after binary reproduction and vulnerability checks. The image job
+verifies the checksums and both binary/control pins before copying them. The isolated signing job described below
+signs the checksums and multi-platform digest with the same keyless workflow/tag identity and attests provenance. Stable aliases are major.minor
+and latest; prereleases publish only their full version. Binary reproducibility remains required; the Debian image
+is not claimed reproducible. The release notes record the digest. A registry push happens before signing, so failed
+runs can leave images in GHCR while the GitHub release remains a draft. New GHCR packages start private and need an
+organization/package admin to make them public once; the documented API has no visibility-update endpoint.
+
+*Amended 2026-11-04 (signing authority):* build jobs have no OIDC or attestation write permission. A dedicated `sign`
+job downloads and verifies the release assets and image digest, reads artifacts without executing them, then signs
+and attests both. It checks out no project code and runs no builds or build hooks. Registry write permission belongs
+to `container` for the image push and `sign` for the signature/provenance push. Only `sign` holds `id-token: write`
+and `attestations: write`; `publish` receives its checksum bundle as an artifact and uploads it before making the draft
+public. Any failure leaves the release a draft. The certificate identity stays the workflow file at the tag, independent
+of job name, so installer verification is unchanged. Exported CI tests guard the graph, permissions, action pins,
+checkout and digest checks; the private gate also runs the export tool's tests.
+
+*Amended 2026-11-04 (release body):* GoReleaser's changelog pipe must remain enabled to read the tag's
+`--release-notes` file; the file itself bypasses automatic commit-log generation. Disabling the pipe discarded that
+file in the first public release. The release job rejects blank generated notes and compares the draft body with
+the tagged changelog section before it succeeds, then passes that section to publish as a same-run artifact. The
+publisher compares the draft against this artifact immediately before publication and builds the final notes from
+the artifact plus image metadata. It explicitly handles edit errors: an update may have applied remotely before a
+client failure. It reads back both body and public status, including after an edit error; an edit error, body mismatch,
+unexpected state or failed read attempts to restore draft status and fails the job. A failed restore requires manual
+inspection. CI-run workflow tests cover the artifact boundary, changed drafts and edits that apply remotely before
+reporting failure. No binary build, image contents or signing identity changes.

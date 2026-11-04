@@ -69,6 +69,15 @@ func cmdServe() Command {
 					code, fix+", or unset "+config.EnvConfigVar+", or name the ledger with --ledger DIR")
 				return exits[codeIO]
 			}
+			addrSet := false
+			fs.Visit(func(f *flag.Flag) {
+				if f.Name == "addr" {
+					addrSet = true
+				}
+			})
+			if !addrSet && mr.err == nil && mr.m.ServePort.Value != 0 && mr.m.ServePort.Source.Layer != config.LayerBuiltin {
+				listen = net.JoinHostPort("127.0.0.1", strconv.Itoa(mr.m.ServePort.Value))
+			}
 			root := *ledger
 			if root == "" {
 				if root, err = machineLedgerRoot(); err != nil {

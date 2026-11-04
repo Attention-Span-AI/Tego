@@ -112,7 +112,7 @@ func TestMoreRows(t *testing.T) {
 		t.Errorf("reboot as systemctl: %s", decided(r))
 	}
 	ix = rules(t, "deny: npm publish")
-	f := execmatch.Facts{Requested: "/usr/bin/node", Image: "node", Argv0: "node", Argv: []string{"node", "/usr/share/nodejs/npm/bin/npm-cli.js", "publish"}, ArgvComplete: true}
+	f := execmatch.Facts{NodeVersion: "20.19.4", Requested: "/usr/bin/node", Image: "node", Argv0: "node", Argv: []string{"node", "/usr/share/nodejs/npm/bin/npm-cli.js", "publish"}, ArgvComplete: true}
 	if r := ix.Decide(&f); r.Outcome != execmatch.OutcomeRefused || r.Via != execmatch.ViaInterpreter {
 		t.Errorf("node npm-cli.js publish: %s via %s", decided(r), r.Via)
 	}
@@ -272,8 +272,8 @@ func TestInterpreterDispatchReadsBothWays(t *testing.T) {
 		{"unknown option with an attached value", node("node", "--unlisted=/tmp/w", cli, "publish"), npmDeny},
 		{"a listed value option", node("node", "--redirect-warnings", "/tmp/w", cli, "publish"), npmDeny},
 		{"listed options in front of npm", node("node", "--no-warnings", "--expose-gc", "--trace-deprecation", "--title", "t", cli, "publish"), npmDeny},
-		{"node --env-file v", node("node", "--env-file", "/tmp/e", cli, "publish"), npmDeny},
-		{"node --env-file=v", node("node", "--env-file=/tmp/e", cli, "publish"), npmDeny},
+		{"node --env-file v", node("node", "--env-file", "/tmp/e", cli, "publish"), unresolved},
+		{"node --env-file=v", node("node", "--env-file=/tmp/e", cli, "publish"), unresolved},
 		{"node --inspect-port v", node("node", "--inspect-port", "9230", cli, "publish"), npmDeny},
 		// A V8 option takes no token of node's: V8 takes its value from the options node hands it, -0 here past node's
 		// own --require and --title, and node runs the script after it (probed with --max-old-space-size).

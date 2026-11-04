@@ -6,6 +6,8 @@
 # demo.sh fills in @@CC@@ (the scene's folder) and "@@PORT@@", quotes and all, with the stub's port (quoted, the
 # template is YAML that examples/agents reads; filled in, the port is a number). Derived from
 # test/e2e/reason-claude/contract.yaml.
+# This reason-only stand-in does not initialize session sockets. It needs no
+# XDG_RUNTIME_DIR override; its hook discovers the run through TEGO_REASON.
 version: 0
 name: demo-claude-standin
 command: ["claude"]
@@ -20,7 +22,6 @@ fs:
     - "./work/"
     - "./.claude-state/"
     - "@@CC@@/home/"
-    - "@@CC@@/xdg/"
     - "/dev/null"
     - "/dev/tty"
   deny_read: ["@@CC@@/home/.claude"]
@@ -38,7 +39,6 @@ env:
     CLAUDE_CONFIG_DIR: ".claude-state"
     CLAUDE_CODE_TMPDIR: ".claude-state/tmp"
     TMPDIR: ".claude-state/tmp"
-    XDG_RUNTIME_DIR: "@@CC@@/xdg"
 limits:
   pids: 512
   memory: 1GiB

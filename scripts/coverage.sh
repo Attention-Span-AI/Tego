@@ -122,6 +122,7 @@ fi
 # integration suites spend their minutes.
 # shellcheck source=test/vm/suites.sh
 . "$repo/test/vm/suites.sh"
+# shellcheck disable=SC2153 # PKGS is assigned by the sourced suites.sh.
 pkgs=("${PKGS[@]}")
 if [ "${#filters[@]}" -gt 0 ]; then
 	selected=()
@@ -159,11 +160,10 @@ cd "$repo"
 module="$("$GO" list -m)"
 
 marker=.tego-coverage
-if [ -e "$out" ] && [ ! -f "$out/$marker" ] && [ -n "$(ls -A "$out" 2>/dev/null)" ]; then
-	echo "coverage: $out exists and was not made by coverage.sh (no $marker in it); not emptying it. Name another directory with -o." >&2
-	exit 2
-fi
-rm -rf "$out"
+# shellcheck source=scripts/safe-output-dir.sh
+. "$here/safe-output-dir.sh"
+out=$(safe_output_dir "$out" "$marker" "$repo") || exit 2
+rm -rf -- "$out"
 mkdir -p "$out/unit" "$out/integration"
 echo "made by scripts/coverage.sh, which empties this directory on its next run" >"$out/$marker"
 

@@ -23,10 +23,19 @@ case "${1:-}" in
     if { echo "# installed by the agent" >>"$HOMEISH/.bashrc"; } 2>/dev/null; then ok "PROFILE CHANGED"; else ok "refused"; fi
     ;;
   command)
+    # This act deliberately deletes src/. Only plant()'s fake project may be
+    # used, even when someone starts the stand-in directly with their own env.
+    project_path=$(cd "${PROJECT:?}" && pwd -P) || exit 1
+    marker=$PROJECT/.tego-demo-project
+    if [ -L "$marker" ] || [ ! -f "$marker" ] ||
+      ! IFS= read -r marked <"$marker" || [ "$marked" != "$project_path" ]; then
+      say "refusing a project without the marker from demo setup"
+      exit 1
+    fi
     say "list the project (ls)"
     if ls "$PROJECT/src" >/dev/null 2>&1; then ok "ran (allowed)"; else ok "refused"; fi
     say "delete the source tree (rm -r src)"
-    rm -r "$PROJECT/src" 2>/dev/null
+    rm -r -- "$PROJECT/src" 2>/dev/null
     if [ -d "$PROJECT/src" ]; then ok "refused: src/ is still there"; else ok "SRC DELETED"; fi
     ;;
   net)

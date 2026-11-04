@@ -265,11 +265,17 @@ func TestStopDrainPastItsBudgetCountsWhatIsLeft(t *testing.T) {
 
 // heldFollower is a capture source whose OnExec does not return until release is closed: one attaching at a
 // file a traced process chose, which is how long the kernel record waited on it.
-type heldFollower struct{ release chan struct{} }
+type heldFollower struct{ entered, release chan struct{} }
 
-func (h heldFollower) OnExec(int, uint64, string) { <-h.release }
-func (heldFollower) OnOpen(int, uint64, string)   {}
-func (heldFollower) OnExit(int)                   {}
+func (h heldFollower) OnExec(int, uint64, string) {
+	select {
+	case h.entered <- struct{}{}:
+	default:
+	}
+	<-h.release
+}
+func (heldFollower) OnOpen(int, uint64, string) {}
+func (heldFollower) OnExit(int)                 {}
 
 // TestAFollowerHeldInOneCallDoesNotHoldStop: the runtime feeds a follower through a queue, and a full queue made the
 // recorder's drain wait for room. A follower held in one OnExec behind a burst of libssl opens therefore held Stop's
@@ -277,10 +283,37 @@ func (heldFollower) OnExit(int)                   {}
 // StopDrain.
 func TestAFollowerHeldInOneCallDoesNotHoldStop(t *testing.T) {
 	f := newFixture(t)
-	follower := heldFollower{release: make(chan struct{})}
+	follower := heldFollower{entered: make(chan struct{}, 1), release: make(chan struct{})}
 	t.Cleanup(func() { close(follower.release) })
 	hook, closeQueue, dropped := runtime.NewHookQueue(follower)
 	t.Cleanup(func() { closeQueue(0) })
+	// Establish the blocked follower and full queue before starting the stop clock. Decoding
+	// 5,000 samples within StopDrain is a throughput assumption, especially under -race.
+	hook.OnExec(50, 77, "/usr/bin/python3.13")
+	select {
+	case <-follower.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the follower never entered OnExec")
+	}
+	filled := make(chan struct{})
+	go func() {
+		defer close(filled)
+		for range 5000 {
+			hook.OnOpen(50, 77, "/usr/lib/x86_64-linux-gnu/libssl.so.3")
+			if dropped() != 0 {
+				return
+			}
+		}
+	}()
+	select {
+	case <-filled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("filling the hook queue blocked")
+	}
+	before := dropped()
+	if before == 0 {
+		t.Fatal("the fixture did not fill the hook queue")
+	}
 	q := newQuietRing()
 	const stopDrain = 2 * time.Second
 	r, err := New(Options{Rules: f.rules, Reader: q, Proc: f.procFS, FlushInterval: time.Hour, ReadInterval: time.Hour,
@@ -294,16 +327,9 @@ func TestAFollowerHeldInOneCallDoesNotHoldStop(t *testing.T) {
 	if err := r.Start(context.Background(), source.RunRef{ID: "r-1", Agent: "a"}, &fakeSink{}); err != nil {
 		t.Fatal(err)
 	}
-	h := sample{MonoNS: 1000, CgroupID: 77, PID: 50, TID: 50, PPID: 1}
-	samples := [][]byte{execSample(h, 900*proc.NanosPerTick, "python3", "/usr/bin/python3.13", []string{"python3"}, false)}
-	for i := range 5000 {
-		open := h
-		open.Kind, open.MonoNS = KindOpen, h.MonoNS+uint64(i)+1
-		samples = append(samples, fsSample(open, 0, 1, 2049, "/usr/lib/x86_64-linux-gnu/libssl.so.3", ""))
-	}
-	q.push(samples...)
+	q.push(endOfRun(50, 1000)...)
 	stopWithin(t, r, stopDrain+3*time.Second)
-	if dropped() == 0 {
-		t.Error("the queue dropped nothing, so nothing tested a full queue")
+	if delta := dropped() - before; delta != 2 {
+		t.Errorf("Stop dropped %d hooks, want its exec and libssl open to encounter the full queue", delta)
 	}
 }

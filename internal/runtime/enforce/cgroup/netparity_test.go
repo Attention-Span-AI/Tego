@@ -55,10 +55,9 @@ func TestPrepareWritesTheRunsResolverRows(t *testing.T) {
 	}
 }
 
-// TestAttachUnrestrictedAttachesNoNetworkProgram is SEMANTICS §1 for a contract with no net: section: Attach
-// attaches nothing to the run's cgroup, because a deciding program with no rows refuses every destination,
-// including every one the supervisor admits and relays. The id check still runs.
-func TestAttachUnrestrictedAttachesNoNetworkProgram(t *testing.T) {
+// TestAttachUnrestrictedAttachesUnixBuiltinPrograms holds ADR 0113: a no-net
+// run retains unrestricted IP while its immutable Unix destination rows attach.
+func TestAttachUnrestrictedAttachesUnixBuiltinPrograms(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	open := *f.table
@@ -68,19 +67,23 @@ func TestAttachUnrestrictedAttachesNoNetworkProgram(t *testing.T) {
 		t.Fatalf("Prepare: %v", err)
 	}
 	defer h.Close()
-	if !h.Rules().Unrestricted {
-		t.Fatal("a contract with no net: section compiled as restricted")
+	if h.Rules().Unrestricted || !h.Rules().UnixOnly {
+		t.Fatal("no-net contract must keep IP open and attach built-in Unix policy")
 	}
-	if n := f.kernel.net.rowsFor(h.Slot()); n != 0 {
-		t.Fatalf("%d verdict rows for a run that denies nothing", n)
+	if n := f.kernel.net.rowsFor(h.Slot()); n == 0 {
+		t.Fatalf("%d verdict rows: missing built-in refusals", n)
 	}
 	if err := h.Attach(f.run.CgroupID); err != nil {
 		t.Fatalf("Attach: %v", err)
 	}
+	attached := false
 	for _, c := range f.kernel.calls {
 		if c == "attachCgroup" {
-			t.Fatalf("calls %v: a network program was attached to a run whose contract has no net: section", f.kernel.calls)
+			attached = true
 		}
+	}
+	if !attached {
+		t.Fatal("built-in Unix programs were not attached")
 	}
 	if err := h.Attach(f.run.CgroupID + 1); !errors.Is(err, ErrNotPrepared) {
 		t.Fatalf("Attach with another cgroup's id = %v, want ErrNotPrepared", err)

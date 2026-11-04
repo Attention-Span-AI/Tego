@@ -1,6 +1,6 @@
 # ADR 0113: Built-in refusals in every run: host IPC that escapes the run, Tego's own surfaces, and the person's other terminals
 
-Status: **accepted 2026-10-24**; not built yet. Amends SEMANTICS section 1's "no `net:`" row with the exception below, and
+Status: **accepted 2026-10-24**; implemented 2026-11-03, with the limits below. Amends SEMANTICS section 1's "no `net:`" row with the exception below, and
 composes with [ADR 0070](0070-host-sockets-refused-by-default.md): its refusals hold under a `net:` section and under
 `host_sockets: true`, and in the unix-only state ADR 0070 already refuses these sockets.
 
@@ -119,10 +119,9 @@ amendment of this ADR.
 **(4) The record.** A refusal writes an ordinary refused line naming the built-in rule id (`builtin.host_ipc`,
 `builtin.tego_surface` or `builtin.other_tty`) with the reason a refusal of that kind records today (`net-not-allowed` for a
 connect, send or bind, `read-denied` for a read, the built-in `deny_write` set's reason for a write), so no new reason value and
-no record minor is needed. One refusal writes no refused line: an abstract name the Landlock scope refuses at ABI 6 and later.
-That is the kernel's check in the agent's own domain; the supervisor continues the connect and cannot see who bound the name,
-so the connect's line says `allow` with `best_effort`, as SEMANTICS section 1 already says, and `run_start.capabilities`
-(`net.unix_abstract_scope`) records that the run had the scope (ADR 0016).
+no record minor is needed. At ABI 6 and later the supervisor refuses an abstract destination whose run origin is outside or
+unknown with `builtin.host_ipc`, rather than continuing mutable arguments. The Landlock abstract
+scope remains installed. Below ABI 6 the abstract-scope residual remains disclosed.
 
 **(5) The SEMANTICS exception.** The "no `net:`" row of the SEMANTICS section 1 table becomes: "deny nothing, except guarded
 `models[]` endpoints under `capture: forwarder` and the built-in refusals that hold in every contract (ADR 0113); `compile`
@@ -183,11 +182,14 @@ dated Changes entry, lists the refusals of (1) to (3) as this record states them
 - The supervisor now sees bind for contracts with no `net:` section, and `TIOCGPTPEER` and `O_NOCTTY` opens for every contract.
   The build is to measure the overhead and record it, and no budget is relaxed.
 
-## Tests planned
+## Verification
 
-None of these tests exists yet, because this record is not built. The build is to be held by them, at tier landlock (unprivileged) and at tiers cgroup and bpflsm in the KVM root suite:
+The implementation is exercised by `TestIntegrationBuiltinRefusals` at tier landlock and
+`TestRootBuiltinRefusals` at cgroup and bpflsm in the KVM root suite.
+`TestRootBuiltinRefusalsPeer` exercises native datagram decisions without the supervisor.
+The following design-level cases describe the intended coverage; the executable matrices combine them:
 TestNetlessRunCannotReachSessionBus, TestNetlessRunCannotReachX11 (pathname; abstract at ABI 6 and later, expecting the connect
-line `allow` and `net.unix_abstract_scope` true), TestNetlessRunCannotReachTmuxServer, TestNetlessRunCannotReachScreenServer,
+line `refused` with `builtin.host_ipc` and `net.unix_abstract_scope` true), TestNetlessRunCannotReachTmuxServer, TestNetlessRunCannotReachScreenServer,
 TestNetlessRunCannotReachRuntimeDirSocket (by connect and by datagram send), TestNetlessRunCannotReachLinkedHostSocket (with
 `/tmp` writable: a symbolic link, a hard link and a moved directory each refused at connect; the move, link and unlink
 themselves refused, and at tier landlock recorded as best effort), TestEnvironmentAddsNoException,
@@ -195,3 +197,75 @@ TestCredentialAgentSocketStillReachable (the SSH-agent sockets), TestGpgAgentMai
 TestAgentCannotReadOtherPty, TestOwnTerminalStillWorks, TestRunOwnPtyStillWorks (`TIOCGPTPEER`, an `O_NOCTTY` open by path,
 `posix_openpt` with `/dev/ptmx` a link to `pts/ptmx`, and a race: the master closed while the open is pending gives a refusal,
 never another pty), TestSerialDeviceNotRefusedAsTerminal, TestContainerSocketNeedsExplicitAllow.
+
+
+## Implementation note (2026-11-03, including Round 2 review on 2026-11-04)
+
+The compiler installs all three immutable rule IDs in enforcing contracts. A built-in refusal
+wins over `host_sockets: true`, an explicit `net.allow`, filesystem allows and approvals.
+The fixed SSH exceptions remove only the built-in floor; ordinary contract permission is still
+required. An exact container-daemon socket allow is the documented exception, with its escape
+warning. Observe runs enforce none of these rules. Existing record `rule` fields carry the IDs;
+no new reason or record minor is introduced.
+
+| Rule | All tiers | Additional root-tier enforcement |
+| --- | --- | --- |
+| `builtin.host_ipc` | Supervisor frozen connect/bind relay checks copied names, reached inode paths, multiple links and prepared directory identities. Landlock supplies abstract scope from ABI 6, immutable directory write restrictions and existing-FIFO read restrictions. | Cgroup Unix name rows override allows. The LSM/fmod_ret decision plane adds protected parent/name rows and a mandatory native Unix datagram-peer hook, including connected sends and aliases. |
+| `builtin.tego_surface` | The same Unix relay protects runtime/control and ledger ask/operator sockets. Frozen TCP relay reserves configured `serve.port` (7433 by default) and legacy port 8484 on local addresses for connect and bind. | Unix name, protected-parent and native peer checks also apply. |
+| `builtin.other_tty` | An independent Landlock domain intersects the contract and withholds numeric foreign terminals, including future nodes. The inherited terminal retains READ/WRITE/IOCTL_DEV. Agent `pidfd_getfd` is refused. Both own-PTY APIs use a verified master, TIOCGPTPEER and atomic ADDFD/SEND, without opening a slave pathname. | The same domain and relay apply; there is no per-PTY BPF row. |
+
+Master ownership supplies no filesystem grant. Before delivery the relay verifies the held
+slave's device class, inode and kernel path, then checks filesystem read/write permissions,
+explicit denies, live blocks and gates. Read/write opens need both permissions. Device
+approval completion is unsupported, so fs ask scopes and gate ask ranges cannot deliver a
+slave by bypassing an answer. Refusal lines retain the responsible policy rule. Live blocks
+are checked again immediately before delivery. Unit tables and landlock/cgroup/bpflsm
+integration cover explicit read/write denies and live read/write blocks for both APIs.
+
+FIFO inventory permission failures protect the containing subtree, including listing without
+search permission; ENOENT during runtime churn and inventory budget exhaustion also protect
+the remaining subtree. Other metadata or
+resolution errors fail compilation. Successfully inventoried directories still have the
+future outside-created FIFO limit.
+
+The implementation chooses the fail-closed reading on uncertain abstract origins and refuses
+root-tier `io_uring: true`, whose operations bypass the relay. Relative host directory
+configuration is resolved from the invoking cwd, preserving symlink/.. semantics; an
+unplaceable base fails compilation. Unsupported/unreadable bind arguments also fail closed.
+
+Remaining limits include copied-path mutations and admitted/unsupported datagram aliases
+without a native decision plane, inherited descriptors, future outside-created FIFOs, abstract
+sockets below ABI 6 and host servers at unlisted paths. `builtin.host_ipc/datagram` records the
+non-native datagram residual. Full recording supplies notified read refusal attribution;
+landlock summary reads can lack a line. Kernel root tiers attribute recorded terminal refusals.
+M0 overhead and a logged-in interactive real-client session are not established by these tests.
+The Claude examples now use an absolute project-private runtime directory for session sockets;
+the repository stand-in exercises startup binding and a Bash tool under both example policies,
+with only the model transport redirected to a local server.
+
+On 2026-11-04, installed Claude Code 2.1.318 was also started under both interactive contracts,
+using an empty home and no login credentials. `--version` exited 0; `-p --max-turns 1` reached
+its expected “Not logged in” result and exited 1. All four runs recorded zero Tego refusals and
+verified their chains. This is real-client startup evidence, not a logged-in model/tool session.
+
+The relay also forces `O_NOCTTY` on its own `TIOCGPTPEER` call, even when the caller
+omits that flag. The kernel opens the peer in the current task's context
+([pty.c](https://github.com/torvalds/linux/blob/v6.17/drivers/tty/pty.c#L589));
+without `O_NOCTTY`, a session leader can acquire it as its controlling terminal
+([tty_io.c](https://github.com/torvalds/linux/blob/v6.17/drivers/tty/tty_io.c#L2043)).
+`TestIntegrationPtyPeerPreservesSession` starts an isolated session leader and verifies
+the relay leaves its terminal unset. Without the forced flag, it acquired a terminal
+and received SIGHUP on close. The policy matrix also includes peer requests omitting
+`O_NOCTTY`. The caller can assign its own controlling terminal explicitly after receiving
+an allowed descriptor; the relay never assigns one to the supervisor.
+
+
+### Round 3 review amendment (2026-11-04): actual Claude socket budget
+
+The Round 2 stand-in's short leaf did not model Claude Code 2.1.318. Its real Linux selector resolves `XDG_RUNTIME_DIR/cc-socks/<pid>.sock` and uses `/tmp/cc-socks-<uid>/<pid>.sock` above 103 bytes, before the kernel's 108-byte `sun_path` capacity. A long project path therefore made the previous templates choose an ungranted shared fallback. Version/unauthenticated print startup alone did not establish socket initialization.
+
+Both interactive contracts now explicitly request `env.set.XDG_RUNTIME_DIR: "%R"`. After harness provisioning, `runtime.configureClaudeSockets` resolves this to the existing private writable `hook-state` directory beneath this run's runtime. The existing inode-checked `fs.harness-state` grant and own-runtime built-in exception cover it; no new filesystem grant, host-IPC exception or record field is introduced. The invoking environment and immutable compiled table remain unchanged. The request requires an unprivileged run with a provisioned Claude harness; an unavailable/dropped harness fails closed. Launch checks the full `cc-socks/9999999.sock` candidate against 103 bytes, including for explicit legacy absolute paths, and refuses before agent start with a clear shorter-runtime fix. Normally the invoking base is `/run/user/<uid>`. Project depth no longer affects the socket address. Shared `/tmp` fallback access stays ungranted.
+
+The stand-in uses the actual PID filename, absolute resolution, byte threshold and shared fallback. Decision tables cover 103/104 bytes, UTF-8 and a seven-digit PID. Both actual templates are exercised under a deliberately long project path: a private PID socket binds/connects and a Bash tool call completes. An app deliberately selecting the fallback is refused, and an old overlong explicit runtime is refused before agent start. This establishes the stand-in socket/tool path, not logged-in real-model interoperability. Real-client socket evidence is recorded below.
+
+Real-client measurement (2026-11-04, installed Claude Code 2.1.318): both unchanged interactive policies initialized a kernel-bound Unix socket beneath this run's `hook-state/cc-socks/<seven-digit pid>.sock`, each 94 bytes, observed with `lstat` and `/proc/net/unix` while the real interactive client was live. Each probe used its own mode-0700 temporary runtime base beneath `/run/user/<uid>`, removed at probe exit, so no normal user runs could be swept. The homes/configs/ledgers were isolated, with no credential environment or login; only presentation/onboarding and project-trust flags were seeded in the private Claude config. Both interfaces reached the prompt and were stopped with SIGINT. Each recorded six refusals: four undeclared helper execs (`dpkg`, `sh`, `ssh`, `sh`) and two undeclared TCP destinations, with no session-socket/fallback refusal. No permission was added for those helpers/destinations. `--version` exited 0 and unauthenticated print reached `Not logged in` (exit 1) under both contracts. This proves real socket initialization and the interactive prompt without a login; it does **not** prove a real model response or real Claude tool execution. Tool execution is established only by the repository stand-in and local model stub.

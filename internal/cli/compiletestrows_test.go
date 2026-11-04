@@ -137,7 +137,11 @@ func TestCompileTestConformanceActionsGolden(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("the example contract names sh, not on PATH")
 	}
-	want, err := os.ReadFile(filepath.Join("testdata", "compile-test-actions.golden"))
+	golden, err := filepath.Abs(filepath.Join("testdata", "compile-test-actions.golden"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile(golden)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +162,11 @@ func TestCompileTestConformanceActionsGolden(t *testing.T) {
 	if code != identity.ExitFinding {
 		t.Fatalf("exit %d, want %d\nstdout %s\nstderr %s", code, identity.ExitFinding, out, errs)
 	}
-	if out != string(want) {
+	if *updateGolden {
+		if err := os.WriteFile(golden, []byte(out), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	} else if out != string(want) {
 		t.Errorf("output drifted from the golden file:\ngot:\n%s\nwant:\n%s", out, want)
 	}
 	// --json: the plane column's fs.link and fs.attr cells are the plane's rows; socket, send and the anonymous

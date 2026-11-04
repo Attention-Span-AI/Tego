@@ -836,7 +836,7 @@ func TestEffective(t *testing.T) {
 	for _, v := range values {
 		byKey[v.Key] = v
 	}
-	if len(values) != 33 {
+	if len(values) != 34 {
 		t.Errorf("%d values", len(values))
 	}
 	cases := []struct {
@@ -971,5 +971,28 @@ func TestLayerPathIsAnOpaqueByteString(t *testing.T) {
 	m, _ := mustLoad(t, Sources{EnvFile: src.EnvFile}, "")
 	if m.StopGrace.Value != 7*time.Second || m.StopGrace.Source.File != path {
 		t.Errorf("stop_grace = %v from %q, want 7s from %q", m.StopGrace.Value, m.StopGrace.Source.File, path)
+	}
+}
+
+func TestServePortLayeringAndValidation(t *testing.T) {
+	for _, tt := range []struct {
+		value string
+		want  int
+		bad   bool
+	}{{"1", 1, false}, {"65535", 65535, false}, {"0", 7433, true}, {"65536", 7433, true}, {"abc", 7433, true}} {
+		t.Run(tt.value, func(t *testing.T) {
+			src := layers(t, trustedDir(t), "serve:\n  port: 9000\n", "", "serve:\n  port: "+tt.value+"\n")
+			m, ds, err := LoadSources(src, "/home/test", os.Getuid(), TrustAbort)
+			if (HasErrors(ds) || err != nil) != tt.bad {
+				t.Fatalf("port diagnostic: %v %+v", err, ds)
+			}
+			if !tt.bad && m.ServePort.Value != tt.want {
+				t.Fatalf("layered serve port %d want %d", m.ServePort.Value, tt.want)
+			}
+		})
+	}
+	m, _ := mustLoad(t, Sources{}, "/home/test")
+	if m.ServePort.Value != 7433 {
+		t.Fatalf("builtin serve port %d", m.ServePort.Value)
 	}
 }

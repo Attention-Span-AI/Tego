@@ -80,6 +80,9 @@ Limits: When the run is stopped or slowed down.
 Always on: Protections every run gets, written in no rules file.
   - Can never read the usual secret files: SSH and cloud keys, browser profiles, .env files and similar  [built in]
   - Can never change files that would run code outside the agent: git hooks, shell startup files and agent settings, where a run finds any in the folders it can change  [built in]
+  - Cannot reach session services, non-SSH credential agents, system D-Bus, X11 or the listed multiplexer and editor sockets; protects their folders from changes  [built in]
+  - Cannot reach tego's control sockets or local control ports; its own runtime folder stays available  [built in]
+  - Cannot open other terminals; its own terminal and ptys it creates stay available  [built in]
   - Can never read or change tego's records of its runs  [built in]
   - Cannot change its own rules file  [built in]
   - Can read this computer's network setup: interface names and addresses, routes, and the nearby machines it has talked to  [built in]
@@ -125,4 +128,7 @@ Rule keys:
   network net.allow net[unix:/var/run/nscd/socket] none
   network net.allow net[tcp://chatgpt.com:443] none
   network net.allow net[tcp://auth.openai.com:443] none
+  always-on builtin.host_ipc builtin.host_ipc none
+  always-on builtin.tego_surface builtin.tego_surface none
+  always-on builtin.other_tty builtin.other_tty none
   always-on built-in.route-read route-query none

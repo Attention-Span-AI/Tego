@@ -59,7 +59,7 @@ func cmdEvents() Command {
 		},
 		Run: func(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
 			if fs.NArg() != 1 {
-				message(stderr, "", 0, 0, "tego events: exactly one run id or run directory", codeUsage)
+				message(stderr, "", 0, 0, "tego events: give one run id or run directory; tego status --all lists the ids, then tego events <run> shows its record", codeUsage)
 				return identity.ExitUsage // R25: usage error
 			}
 			if verify {
@@ -313,7 +313,19 @@ func runDirUnderRoot(cmd, ref string, mustExist bool, mc *machineOnce) (string, 
 	}
 	id := ref
 	if !ledger.IsRunID(ref) {
-		id, err = expandRunAbbrev(ref, root)
+		if mustExist {
+			id, err = expandRunAbbrev(ref, root)
+		} else {
+			anchor, aerr := anchorPath(m)
+			if aerr != nil {
+				return "", aerr
+			}
+			ids, aerr := ledger.AnchoredRuns(anchor)
+			if aerr != nil {
+				return "", aerr
+			}
+			id, err = expandRunAbbrevWith(ref, root, ids)
+		}
 		note := localDirNote(ref)
 		switch {
 		case err != nil && note != "" && (errors.Is(err, errRunNotFound) || errors.Is(err, errAmbiguousRun)):
@@ -426,14 +438,25 @@ func abbrevEnds(s string) (start, end bool) {
 // whatever the entry is (a run directory, or a link put in its place), as a whole id names it. A root that is not
 // there holds no run; one that cannot be read is its errno, 125 [io], since the run may be there.
 func expandRunAbbrev(abbrev, root string) (string, error) {
+	return expandRunAbbrevWith(abbrev, root, nil)
+}
+
+func expandRunAbbrevWith(abbrev, root string, anchored []string) (string, error) {
 	start, end := abbrevEnds(abbrev)
 	entries, err := os.ReadDir(root)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return "", fmt.Errorf("read ledger root: %w", err)
 	}
 	var ids []string
+	seen := map[string]bool{}
+	for _, id := range anchored {
+		if (start && strings.HasPrefix(id, abbrev) || end && strings.HasSuffix(id, abbrev)) && !seen[id] {
+			ids = append(ids, id)
+			seen[id] = true
+		}
+	}
 	for _, e := range entries {
-		if n := e.Name(); ledger.IsRunID(n) && (start && strings.HasPrefix(n, abbrev) || end && strings.HasSuffix(n, abbrev)) {
+		if n := e.Name(); ledger.IsRunID(n) && !seen[n] && (start && strings.HasPrefix(n, abbrev) || end && strings.HasSuffix(n, abbrev)) {
 			ids = append(ids, n)
 		}
 	}

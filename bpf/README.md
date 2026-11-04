@@ -6,7 +6,7 @@ decision plane's two files once per reader of kernel memory, and the plane's hoo
 
 | File | Attach point | Purpose |
 |---|---|---|
-| `decide.bpf.c` | `lsm/` and `fmod_ret/security_` (one mode loaded, never both): the filesystem and exec hooks in this file and `decide_stepb.h`, `mmap_file`/`file_mprotect` in `decide_stepc.h`, ptrace/BPF/key hooks in `decide_control.h`, and `socket_bind`/`socket_listen` in `decide_socket.h`/`decide_listen.h`; ADR 0043's name entries (the prefilter, the global name check and climb, D5) in `decide_names.h` | tier 3's decision plane: a governed run's resolved objects, process authority and requested listeners, 0 or `-EACCES` (ADRs 0024, 0025, 0043; built as `planerd` and `planepr`; `internal/bpf/plane.go` lists all 28 hooks) |
+| `decide.bpf.c` | `lsm/` and `fmod_ret/security_` (one mode loaded, never both): the filesystem and exec hooks in this file and `decide_stepb.h`, `mmap_file`/`file_mprotect` in `decide_stepc.h`, ptrace/BPF/key hooks in `decide_control.h`, the immutable Unix peer hook `unix_may_send` (ADR 0113), and `socket_bind`/`socket_listen` in `decide_socket.h`/`decide_listen.h`; ADR 0043's name entries (the prefilter, the global name check and climb, D5) in `decide_names.h` | tier 3's decision plane: a governed run's resolved objects, process authority and requested listeners, 0 or `-EACCES` (ADRs 0024, 0025, 0043; built as `planerd` and `planepr`; `internal/bpf/plane.go` lists all 29 hooks) |
 | `decide_fill.bpf.c` | `iter/task_file`, `syscall` | the plane's fill of its inode-keyed rows from the launcher's held descriptors, and the clear of a slot's stale rows (ADR 0025; built as `planefillrd` and `planefillpr`) |
 | `cgroup_net.bpf.c` | `cgroup/connect4,6`, `sendmsg4,6`, `bind4,6`, `post_bind4,6`, `connect_unix`, `sendmsg_unix` (the two unix ones 6.7+), `cgroup/sock_create`, `cgroup/setsockopt`; `cgroup_skb/ingress,egress` from `net_packet.h`, `sockops` and `cgroup/sock_release` from `net_budget.h` | scoped destination and listener admission, ingress/reply state, network budgets and one-shot connect approvals; requested controls determine required attachments (`internal/runtime/enforce/cgroup/network_control.go`, `docs/p0/network-controls.md`), no BPF LSM needed for these cgroup hooks. `cgroup/sock_create` refuses an inet socket outside ADR 0018's allowlist (`include/socket_allow.h`, the plane's `socket_create` shares it) on any path to `inet_create`, and records its own refusal on the run's ring (`TEGO_EV_SOCK_CREATE`); `cgroup/setsockopt` refuses `SOL_TCP`'s `TCP_ULP`, whatever the name, on any path to the protocol's setsockopt (io_uring's `SOCKET_URING_OP_SETSOCKOPT` included) and records its own refusal (`TEGO_EV_SOCKOPT`; ADR 0018 (7)); both loaded with the object and attached and pinned with the run's links wherever they attach (`enforce/cgroup` `attachSocketPrograms`, ADR 0018 PR 2) |
 | `cgroup_track.bpf.c` | `tp_btf/cgroup_mkdir`, `tp_btf/cgroup_rmdir` | materializes descendant cgroups into the run set |
@@ -45,7 +45,7 @@ headers. `internal/bpf/gen.go` drives `bpf2go`, and `make gen` runs it.
 
 | Input | Version used to produce the committed state | Where it lives |
 |---|---|---|
-| clang / LLVM | **20.1.8** (`LLVM-20.1.8-Linux-X64.tar.xz`, sha256 `1ead36b3dfcb774b57be530df42bec70ab2d239fbce9889447c7a29a4ddc1ae6`), run on the C library below | fetched by `scripts/bpf-toolchain.sh` into `~/.cache/tego/bpf-toolchain`, which `make gen` runs |
+| clang / LLVM | **20.1.8** (`LLVM-20.1.8-Linux-X64.tar.xz`, sha256 `1ead36b3dfcb774b57be530df42bec70ab2d239fbce9889447c7a29a4ddc1ae6`), run on the C library below | fetched by `scripts/bpf-toolchain.sh` into `~/.cache/tego/bpf-toolcache`, which `make gen` runs; the legacy unmarked cache is left untouched |
 | the C library clang runs on | Ubuntu 24.04's `libc6` **2.39-0ubuntu8.9** (sha256 `ff5557d99b51f761c4b7c92368b9cc45565eda17df9bf9eb4b134d09825008be`) and `zlib1g` 1:1.3.dfsg-3.1ubuntu2.2 (sha256 `84b9cf5752b29c9f92c27cd4c4ba9bbcc70b5ccf9b1b515421a28ae23212e273`); the release clang is linked against the host's glibc and its output depends on it, so the wrapper runs it through these, never the host's | the same script, from the Ubuntu archive's pool, or Launchpad's permanent package URLs when the pool fails; each download retried, and checked by its sha256 |
 | libbpf headers | **v1.7.0** — `bpf_helpers.h`, `bpf_helper_defs.h`, `bpf_core_read.h`, `bpf_tracing.h`, `bpf_endian.h` from `github.com/libbpf/libbpf` `src/` | vendored verbatim, with their upstream `(LGPL-2.1 OR BSD-2-Clause)` SPDX lines, in `include/libbpf/` |
 | `vmlinux.h` | generated from **Linux 6.17.0-41-generic** (Ubuntu) with `bpftool` **v7.7.0 / libbpf v1.7** | `include/vmlinux.h`, committed; exempt from the SPDX check (`scripts/check-spdx.sh`) |
@@ -93,6 +93,13 @@ pinned packages, with none of the host's and without the environment variables t
 the same bytes on every x86_64 Linux machine whose `/etc/ld.so.preload` is empty.
 `make gen CLANG=/path/to/clang` still compiles with another clang (`test/vm/fetch-clang.sh` fetches Ubuntu's
 `clang-20` without root) for trying a change; its objects are not the ones to commit.
+
+**Cache-path correction, 2026-11-04.** The marked default cache is `bpf-toolcache`,
+the same basename length as the legacy `bpf-toolchain`, which is left untouched.
+With identical pinned compiler/libc hashes, a longer `bpf-toolchain-owned` path
+changed four objects and their adoption metadata. The legacy and new default
+paths each reproduced all 49 generated files. A custom cache path can affect the
+output too; the fixed-path reproduction check decides whether its bytes match.
 
 Warm pinned-object adoption uses `bpf.LoadAdoption`. `make gen` also runs
 `tools/adoptiongen` over the completed ELF files and writes

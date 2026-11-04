@@ -42,9 +42,9 @@ func TestBlockExecNotes(t *testing.T) {
 		want  []string // nil: no note
 	}{
 		{filepath.Join(bin, "ls"), []string{"Note: " + filepath.Join(bin, "ls") + " is one file with 3 names here (a multi-call program",
-			"so it refuses every one of those names, not ls alone.", "A bare name is matched by name only: tego block " + id + " exec ls\n"}},
+			"so it refuses every one of those names, not ls alone.", "A bare name is matched by name only: tego block " + shellQuote(id) + " exec -- 'ls'\n"}},
 		{alias, []string{"Note: " + alias + " leads to " + tool + "; the block matches that file", "not alias alone.",
-			"tego block " + id + " exec alias\n"}},
+			"tego block " + shellQuote(id) + " exec -- 'alias'\n"}},
 		{"crul", []string{"Note: no program named crul is on this PATH; the block still refuses any program by that name"}},
 		{filepath.Join(bin, "gone"), []string{"Note: " + filepath.Join(bin, "gone") + " is not a file here now"}},
 		{"tool", nil},

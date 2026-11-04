@@ -174,6 +174,9 @@ func slotHeader(req planeFillRequest, unix bool, fsRows, execRows int) ebpfbindi
 	if req.Rows != nil && req.Rows.ListenPolicy {
 		h.Flags |= ebpfbindings.PlaneSlotListenDecides
 	}
+	if req.Rows != nil && req.Rows.BuiltinTerminals {
+		h.Flags |= ebpfbindings.PlaneSlotBuiltinTTY
+	}
 	if req.KeyringAllowed {
 		h.Flags |= ebpfbindings.PlaneSlotKeyringAllowed
 	}

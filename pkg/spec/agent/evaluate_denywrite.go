@@ -45,6 +45,9 @@ func (rt *RuleTable) denyWriteTargetAt(p string, ancestors, name bool) (FSRule, 
 		return FSRule{}, false
 	}
 	p = filepath.Clean(p)
+	if rule := rt.Builtins.WriteRule(p, ancestors); rule != "" {
+		return FSRule{Path: p, Resolved: p, Kind: FSDenyWrite, BuiltIn: true, BuiltinRule: rule}, true
+	}
 	for j := range rt.DenyWrite {
 		if r := &rt.DenyWrite[j]; rt.denyWriteReaches(r, p, ancestors, name) {
 			return *r, true
@@ -61,6 +64,9 @@ func (r FSRule) IsDeclaredDenyWrite() bool { return r.Kind == FSDenyWrite && !r.
 // denyWriteReaches is moveReaches with nearest wins for an fs.deny_write entry (DenyWriteTarget). p is clean; name is
 // denyWriteTargetAt's.
 func (rt *RuleTable) denyWriteReaches(r *FSRule, p string, ancestors, name bool) bool {
+	if r.BuiltinRule != "" && rt.Builtins != nil && rt.Builtins.OwnPath(p) && !(ancestors && Covers(p, rt.Builtins.OwnRuntime)) {
+		return false
+	}
 	var reopens []string
 	asked := false
 	for _, t := range [2]string{r.Path, r.Resolved} {

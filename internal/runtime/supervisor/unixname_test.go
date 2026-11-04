@@ -315,7 +315,7 @@ func TestBoundFileIsBornInItsBind(t *testing.T) {
 			t.Fatalf("%s: born %d, the bind answered at %d and seen bound at %d: %d, want bornInBind", made, f.born, rs.binds[0], rs.seen, fit)
 		}
 		if i%50 == 0 {
-			entries, err := k.UnixDump(unixDumpMax, needConnect(unix.SOCK_STREAM))
+			entries, err := dumpWhenCalm(k, unixDumpMax, needConnect(unix.SOCK_STREAM))
 			if err != nil {
 				t.Fatalf("UnixDump: %v", err)
 			}

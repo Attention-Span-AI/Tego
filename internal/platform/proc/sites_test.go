@@ -194,7 +194,7 @@ var startSites = []startSite{
 	},
 	{
 		file: "internal/cli/mcp_relay.go", fn: "startRelayedServer", call: "proc.Start", n: 1, rel: guarded,
-		when: "the MCP relay shim's start of the declared server (ADR 0126 §4): its caller's row says when it calls it, and " +
+		when: "the MCP relay shim's start of the waiting server stage (ADR 0126 §4), registered before exec: its caller's row says when it calls it, and " +
 			"Start refuses it with ErrArmed while this process holds marks",
 	},
 	{

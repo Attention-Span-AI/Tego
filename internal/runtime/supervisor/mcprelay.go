@@ -8,8 +8,36 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
+
+// mcpStageGrant replaces only an unlisted command refusal, after the image/read floors. It adds no command
+// pattern for the binary: explicit denies/asks, unreadable vectors, live blocks, fences and gates still apply.
+// The relay authenticates the exact prepared child with its fresh socket and pidfd (ADR 0126).
+func (l *Loop) mcpStageGrant(c *compiled, n *notif, r *reader, cmd execCommand, img execImage, argvAddr uint64) (execCommand, string) {
+	if l.mcpStage == nil || !cmd.res.Unlisted || cmd.res.Outcome != execmatch.OutcomeRefused || cmd.res.Overflow || cmd.res.Match == execmatch.MatchAmbiguous ||
+		cmd.unreadable || cmd.headless || cmd.interpErr != nil || cmd.loader != "" || cmd.form != execmatch.FormDirect {
+		return cmd, ""
+	}
+	argv, truncated := r.argv(argvAddr, c.argvMax)
+	if truncated || len(argv) == 0 || !r.ok() || !l.valid(n) {
+		return cmd, ""
+	}
+	pid, err := l.k.Tgid(n.pid)
+	if err != nil || pid <= 0 || !l.valid(n) {
+		return cmd, ""
+	}
+	rule := l.mcpStage(pid, img.id.dev, img.id.ino, argv)
+	if !l.valid(n) || rule == "" {
+		return cmd, ""
+	}
+	// Keep the image walk, but replace the unlisted match with the grant's whole copied vector. A plane pin must
+	// cover every element the runtime allowance checked, even if the normal staged match stopped at the prefix.
+	cmd.argv, cmd.complete, cmd.staged, cmd.guarded, cmd.decided = argv, true, true, true, false
+	cmd.res = execmatch.Result{K: len(argv)}
+	return cmd, rule
+}
 
 // mcpRelayGate is ADR 0126 §4's gate: an exec this loop would continue that starts a declared MCP server
 // (mcpServerOf) is asked of the relay (Options.MCPRelayed), and refused unless the relay vouches for it, rule

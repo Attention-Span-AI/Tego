@@ -33,6 +33,8 @@ func TestCapabilityCrossCheck(t *testing.T) {
 		want  []string // a prefix per problem, in order; none for agreement
 	}{
 		{"agreement", m, agree, nil},
+		{"immutable host refusal outside the fixture", m,
+			strings.Replace(agree, `{"path":"/p/out","kind":"write","raw":"./out/"},`, `{"path":"/run/user/1000","kind":"deny_write","builtin":true,"rule":"builtin.host_ipc"},{"path":"/p/out","kind":"write","raw":"./out/"},`, 1), nil},
 		{"compile claims a shadowed deny_read enforced at tier landlock", m,
 			strings.Replace(agree, `"raw":"./out/keys/","unenforced":true`, `"raw":"./out/keys/"`, 1), []string{OverClaim}},
 		{"compile marks an enforceable deny_read unenforced", m,
@@ -189,6 +191,18 @@ func checkProblems(t *testing.T, name string, got, want []string) {
 	for i := range got {
 		if !strings.HasPrefix(got[i], want[i]) {
 			t.Errorf("%s: problem %q, want it to start %q", name, got[i], want[i])
+		}
+	}
+}
+
+func TestBuiltinAbstractExpectationUsesActualABI(t *testing.T) {
+	cw, err := (tableCond{ABIMin: 6, Want: map[string]tableWant{"landlock": {Want{Verdict: Refused, Rule: "builtin.host_ipc"}}}}).cond()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, abi := range []int{0, 1, 5, 6, 7, 11} {
+		if got := cw.Matches(Machine{ABI: abi}); got != (abi >= 6) {
+			t.Errorf("ABI %d matches=%t", abi, got)
 		}
 	}
 }

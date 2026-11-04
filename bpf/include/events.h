@@ -696,6 +696,8 @@ enum tego_plane_hook {
     TEGO_HOOK_BPF = 26,
     TEGO_HOOK_KEY_PERMISSION = 27,
     TEGO_HOOK_SOCKET_LISTEN = 28,
+    TEGO_HOOK_CAPABLE = 29,
+    TEGO_HOOK_UNIX_MAY_SEND = 30,
 };
 
 /* A slot's unix policy for the plane's step D hooks (socket_connect, socket_sendmsg; enforce-plane R14), in
@@ -731,6 +733,7 @@ enum tego_plane_slot_flag {
      * the pid namespace the header's pidns_dev and pidns_ino name, and the plane holds the exec to it (bprm_check,
      * then sched_process_exec). Clear, bprm_check and the pin program return after this flag test. */
     TEGO_SLOT_EXEC_PIN = 0x100,
+    TEGO_SLOT_BUILTIN_TTY = 0x200, /* ADR 0113: the inherited Landlock tty layer decides terminal opens */
 };
 
 /* A slot's header, in tego_plane_slots at run_idx (enforce-plane R6): the gen of the run whose rows the slot holds
@@ -816,6 +819,7 @@ enum tego_plane_row_kind {
                                          * Prepare for the attribute hooks' walk inside a superblock (R12): the
                                          * walk that crosses mounts passes it as absent and meets the target's
                                          * own row above the mountpoint */
+    TEGO_ROW_BUILTIN_IPC = 0x80,       /* native Unix peer immutable floor */
     TEGO_ROW_SCOPE_ONLY = 0x40,        /* a name entry's scope directory no entry, target or exec grant keys
                                          * (ADR 0043 D4, decide.PlaneScopeOnly): only the name check's climb reads
                                          * it, for its scope bit; every walk passes it as absent, so it changes no
@@ -831,6 +835,8 @@ enum tego_plane_row_kind {
  * (decide.PlaneRows.ExecRuleAt, TIER3-PLAN T9). */
 #define TEGO_PLANE_RULE_FS_ROW 0x10000
 #define TEGO_PLANE_RULE_LISTEN 0x20000
+#define TEGO_PLANE_RULE_BUILTIN_HOST 0x40000
+#define TEGO_PLANE_RULE_BUILTIN_SURFACE 0x80000
 
 /* The rule_idx of a refusal a name entry decided (ADR 0043 D8): TEGO_PLANE_RULE_NAME | scope bit << 6 | the entry's
  * position in RuleTable.NameDeny (decide.PlaneNameTag). fs rows stay below TEGO_PLANE_ROWS_MAX, so a reader tests

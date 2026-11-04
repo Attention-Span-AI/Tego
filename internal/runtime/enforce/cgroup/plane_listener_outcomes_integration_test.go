@@ -9,14 +9,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/attention-span-ai/tego/internal/platform/sys"
 )
 
 const listenerOutcomesAgent = `import errno, os, socket
@@ -144,118 +140,31 @@ record: %s
 	}
 }
 
-// TestPlaneRunIOUringListenerOutcomes is enforce-plane §2.20's records for io_uring: IORING_OP_BIND and
-// IORING_OP_LISTEN (6.11+) reach the plane's socket_bind and socket_listen with no bind or listen syscall exit, so
-// each still needs its one terminal line, and the listener marker its refused bind left must not outlive the op: the
-// same task's later plain mknod(S_IFSOCK) in a writable directory is no bind and must succeed without a bind line.
-// This test is run only in the coordinated disposable privileged guest.
+// TestPlaneRunIOUringListenerOutcomes now requires startup refusal, including
+// an explicit listener allowance: ADR 0113 precedes the old ring admission.
 func TestPlaneRunIOUringListenerOutcomes(t *testing.T) {
 	bin, uid, gid, modes := planePreconditions(t)
-	if b, err := os.ReadFile("/proc/sys/kernel/io_uring_disabled"); err == nil && strings.TrimSpace(string(b)) != "0" {
-		t.Skipf("kernel.io_uring_disabled is %s here: io_uring_setup is EPERM to the agent whatever the plane admits", strings.TrimSpace(string(b)))
-	}
-	kernel, err := sys.Kernel()
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	uringbind := filepath.Join(dir, "uringbind")
-	build := exec.Command("go", "build", "-o", uringbind, "github.com/attention-span-ai/tego/test/workloads/uringbind")
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if b, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build the io_uring workload: %v: %s", err, b)
-	}
-	workload, err := os.ReadFile(uringbind)
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, mode := range modes {
-		tiers := []string{"cgroup"}
-		if mode == "lsm" {
-			tiers = append(tiers, "bpflsm")
-		}
-		for _, tier := range tiers {
-			for _, recording := range []string{"full", "off"} {
-				t.Run(tier+"@"+mode+"/"+recording, func(t *testing.T) {
-					name := fmt.Sprintf("tego-uring-listener-%d-%d", os.Getpid(), time.Now().UnixNano())
-					contract := fmt.Sprintf(`version: 0
-name: uring-listener-outcomes
-command: ["./bin/uringbind", %q]
-fs:
-  write: ["./out/"]
-exec:
-  allow: ["./bin/uringbind"]
+		for _, tier := range []string{"cgroup", "bpflsm"} {
+			if tier == "bpflsm" && mode != "lsm" {
+				continue
+			}
+			t.Run(tier+"@"+mode, func(t *testing.T) {
+				p := newPlaneProject(t, uid, gid, map[string]string{"agent.yaml": `version: 0
+name: ring-listener-refusal
+command: ["/bin/true"]
+io_uring: true
 net:
   allow: []
-  listen: ["unix:@%s"]
-io_uring: true
-env:
-  pass: ["PATH", "HOME"]
-record: %s
-`, name, name, recording)
-					p := newPlaneProject(t, uid, gid, map[string]string{"agent.yaml": contract, "bin/uringbind": string(workload)},
-						[]string{"out"}, nil)
-					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-					defer cancel()
-					var out bytes.Buffer
-					if err := p.runAt(ctx, bin, tier, "agent.yaml", mode, &out).Run(); err != nil {
-						t.Fatalf("io_uring listener workload: %v\n%s\n%s", err, out.String(), ledgerDump(p.ledger))
-					}
-					res := agentResults(t, out.String())
-					skip, err := uringBindGap(res["uring"], kernel)
-					if err != nil {
-						t.Fatalf("%v\n%s\n%s", err, out.String(), ledgerDump(p.ledger))
-					}
-					if skip {
-						t.Skipf("kernel %s has no IORING_OP_BIND", kernel)
-					}
-					for step, want := range map[string][]string{
-						"uring-bind-undeclared-abstract": {"13", "1"}, "uring-bind-undeclared-path": {"13", "1"},
-						"standalone-mknod": {"0"}, "uring-listen-unbound": {"13", "1"},
-						"uring-bind-declared": {"0"}, "uring-listen-declared": {"0"},
-					} {
-						if !slices.Contains(want, res[step]) {
-							t.Errorf("%s: errno %q, want one of %v", step, res[step], want)
-						}
-					}
-					var binds, listens []map[string]any
-					for _, e := range runEvents(t, p.ledger) {
-						if e["kind"] != "net" || e["op"] != "bind" && e["op"] != "listen" {
-							continue
-						}
-						if e["source"] != "kernel" || e["proto"] != "unix" {
-							t.Errorf("terminal source/protocol: %v", e)
-						}
-						if strings.Contains(fmt.Sprint(e["dst"]), "uring-standalone.sock") {
-							t.Errorf("standalone mknod fabricated a bind: %v", e)
-						}
-						if e["op"] == "bind" {
-							binds = append(binds, e)
-						} else {
-							listens = append(listens, e)
-						}
-					}
-					wantBinds, wantListens := 3, 2
-					if recording == "off" {
-						wantBinds, wantListens = 2, 1 // refusals are recorded whatever record says
-					}
-					if len(binds) != wantBinds || len(listens) != wantListens {
-						t.Fatalf("io_uring terminal binds/listens=%d/%d want %d/%d\n%s\n%s", len(binds), len(listens),
-							wantBinds, wantListens, out.String(), ledgerDump(p.ledger))
-					}
-					if binds[0]["verdict"] != "refused" || binds[0]["dst"] != "unix:@"+name+"-undeclared" ||
-						binds[0]["syscall_ret"] != float64(-13) {
-						t.Errorf("undeclared abstract io_uring bind: %v", binds[0])
-					}
-					if listens[0]["verdict"] != "refused" || listens[0]["syscall_ret"] != float64(-13) {
-						t.Errorf("unbound io_uring listen: %v", listens[0])
-					}
-					if recording == "full" && (binds[2]["verdict"] != "allow" || binds[2]["dst"] != "unix:@"+name ||
-						listens[1]["verdict"] != "allow") {
-						t.Errorf("declared io_uring bind/listen: %v %v", binds[2], listens[1])
-					}
-				})
-			}
+  listen: ["unix:@builtin-ring"]
+`}, nil, nil)
+				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				defer cancel()
+				var out bytes.Buffer
+				if err := p.runAt(ctx, bin, tier, "agent.yaml", mode, &out).Run(); err == nil || !strings.Contains(out.String(), "builtin.host_ipc") {
+					t.Fatalf("listener allow reopened ring path: %v\n%s", err, out.String())
+				}
+			})
 		}
 	}
 }

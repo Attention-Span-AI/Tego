@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/platform/sys"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -134,9 +135,9 @@ def absent_dgram():
     s.sendto(b"x", os.path.join(d, "absent.dg"))
 def nondumpable_child(kind, listen):
     # A child that makes itself non-dumpable before it binds, as ssh-agent does: a supervisor without CAP_SYS_PTRACE
-    # (tier landlock's, unprivileged) can neither read its bind's address nor duplicate its socket, so the bind goes
-    # unrecorded (R11a) and, under a net: section, its listen is refused, because the filter cannot tell a unix listen
-    # from a TCP one and the socket cannot be read (GAPS C44); a root supervisor passes the dumpable check.
+    # (tier landlock's, unprivileged) can neither read its bind's address nor duplicate its socket. C40 refuses the
+    # unreadable bind before a socket is created; a root supervisor passes the dumpable check. The pipe reports the
+    # actual child errno, so a generic readiness error cannot masquerade as the security refusal.
     import ctypes
     p = os.path.join(d, "agent.sock" if kind == socket.SOCK_DGRAM else "agent-listen.sock")
     r, w = os.pipe()
@@ -154,13 +155,15 @@ def nondumpable_child(kind, listen):
                 srv.accept() if listen else srv.recv(1)
             except OSError:
                 pass
+        except OSError as e:
+            os.write(w, bytes([e.errno]))
         finally:
             os._exit(0)
     os.close(w)
     ready = os.read(r, 1)
     try:
         if ready != b"y":
-            raise OSError(errno.EIO, "the non-dumpable child did not get its socket ready")
+            raise OSError(ready[0] if ready else errno.EIO, "the non-dumpable child's bind/listen was refused")
         c = socket.socket(socket.AF_UNIX, kind)
         if listen:
             c.connect(p)
@@ -173,7 +176,7 @@ def nondumpable():
     nondumpable_child(socket.SOCK_DGRAM, False)
 def nondumpable_listen():
     nondumpable_child(socket.SOCK_STREAM, True)
-# nondumpable runs last: once a bind of the run went unrecorded, R11a no longer calls any socket foreign.
+# Non-dumpable cases exercise C40 after the ordinary socket-provenance cases.
 for k, f in (("own_stream", own_stream), ("own_dgram", own_dgram), ("own_renamed", own_renamed), ("daemon_stream", daemon_stream),
              ("daemon_dgram", daemon_dgram), ("planted_dgram", planted_dgram), ("planted_stream", planted_stream),
              ("dotdot_dgram", dotdot_dgram), ("dotdot_own", dotdot_own), ("dotdot_daemon", dotdot_daemon),
@@ -215,8 +218,8 @@ func tracesAnyone(t *testing.T) bool {
 // socket the run bound and then renamed is still the run's; a datagram to a name that names nothing reads ENOENT,
 // unix-absent; a socket a non-dumpable process outside the run bound is foreign, and one a non-dumpable child of the
 // run bound (as ssh-agent does) is decided by whether the supervisor could read its bind: unprivileged it cannot, and
-// the socket is refused unix-bind-unrecorded, never unix-foreign; with CAP_SYS_PTRACE (root, as in the
-// KVM guest) it reads it, and the socket is the run's own (base verification item 6).
+// C40 refuses its unreadable bind as builtin.tego_surface before a socket exists; with CAP_SYS_PTRACE (root, as in
+// the KVM guest) it reads the bind, and the socket is the run's own (base verification item 6).
 //
 // A name is decided on what it reaches when the task's own lookup resolves it, never on its spelling: a symlink the
 // agent puts at a name a unix: entry declares, leading outside every entry, is refused and the socket there receives
@@ -331,9 +334,9 @@ func TestUnixForeign(t *testing.T) {
 			// filesystem, its file found by identity (on btrfs and overlayfs the directory a bind's name reached decided, and
 			// a magic link left it unknown, refused unix-origin-unread).
 			magicBind := "ok"
-			nondumpable, nondumpableRule, nondumpableListen := "EACCES", "unix-bind-unrecorded", "EIO"
+			nondumpable, nondumpableListen := "EACCES", "EACCES"
 			if privileged {
-				nondumpable, nondumpableRule, nondumpableListen = "ok", "", "ok"
+				nondumpable, nondumpableListen = "ok", "ok"
 			}
 			for k, want := range map[string]string{"own_stream": "ok", "own_dgram": "ok", "own_renamed": "ok",
 				"daemon_stream": daemon, "daemon_dgram": daemon, "planted_dgram": "EACCES", "planted_stream": "EACCES",
@@ -369,10 +372,14 @@ func TestUnixForeign(t *testing.T) {
 				t.Error("the socket outside every entry at x/ps.sock accepted a connection")
 			}
 			lines := map[string]*record.Event{}
+			builtinBinds := 0
 			for _, e := range events(t, runDirs(t, f.root)[0]) {
 				var p record.NetPayload
 				if e.Kind == record.KindNet && e.DecodePayload(&p) == nil {
 					lines[p.Dst] = e
+					if p.Op == "bind" && e.Verdict == record.VerdictRefused && e.Rule == agent.BuiltinTegoSurface {
+						builtinBinds++
+					}
 				}
 			}
 			for _, p := range []string{stream, dgram} {
@@ -401,19 +408,29 @@ func TestUnixForeign(t *testing.T) {
 				t.Errorf("sub/../daemon.dg: line %s/%s, want allow by its unix: entry", e.Verdict, e.Rule)
 			}
 			// Refused for what the name reaches, and the rule says why; what R11a cannot know is not called foreign: a name
-			// that names nothing, and a socket a non-dumpable child bound where the supervisor
-			// could not read the bind.
+			// that names nothing. Non-dumpable children are refused earlier, at bind, by C40.
 			refusals := map[string]string{
 				"pg.dg": "unmatched", "pg.sock": "unmatched", "lnk/../dd.dg": "unmatched", "me/mg.dg": "path-unreliable",
 				"nd.sock": "unix-foreign", "absent.dg": "unix-absent",
-			}
-			if nondumpableRule != "" {
-				refusals["agent.sock"] = nondumpableRule
 			}
 			for name, rule := range refusals {
 				e := lines["unix:"+f.out+"/"+name]
 				if e == nil || e.Verdict != record.VerdictRefused || e.Rule != rule {
 					t.Errorf("%s: line %+v, want refused/%s", name, e, rule)
+				}
+			}
+			wantBinds := 2
+			if privileged {
+				wantBinds = 0
+			}
+			if builtinBinds != wantBinds {
+				t.Errorf("immutable unreadable-bind refusals = %d, want %d", builtinBinds, wantBinds)
+			}
+			if !privileged {
+				for _, name := range []string{"agent.sock", "agent-listen.sock"} {
+					if _, err := os.Stat(filepath.Join(f.out, name)); !os.IsNotExist(err) {
+						t.Errorf("unreadable bind created %s: %v", name, err)
+					}
 				}
 			}
 			if privileged {

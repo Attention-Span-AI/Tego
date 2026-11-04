@@ -14,7 +14,7 @@
 # either changes the output too (GLIBC_TUNABLES=glibc.malloc.mmap_threshold=4096 did). The output is then the same
 # on every x86_64 Linux machine whose /etc/ld.so.preload is empty, which the loader still reads.
 #
-# Usage: scripts/bpf-toolchain.sh [DIR]   (default ${XDG_CACHE_HOME:-$HOME/.cache}/tego/bpf-toolchain)
+# Usage: scripts/bpf-toolchain.sh [DIR]   (default ${XDG_CACHE_HOME:-$HOME/.cache}/tego/bpf-toolcache)
 # Needs curl, sha256sum, tar with xz, ar and zstd. Prints DIR/bin on stdout; progress goes to stderr.
 set -euo pipefail
 
@@ -30,10 +30,15 @@ LIBC_SHA256=ff5557d99b51f761c4b7c92368b9cc45565eda17df9bf9eb4b134d09825008be
 ZLIB_URLS="https://snapshot.ubuntu.com/ubuntu/20261001T000000Z/pool/main/z/zlib/zlib1g_1.3.dfsg-3.1ubuntu2.2_amd64.deb https://launchpad.net/ubuntu/+archive/primary/+files/zlib1g_1.3.dfsg-3.1ubuntu2.2_amd64.deb"
 ZLIB_SHA256=84b9cf5752b29c9f92c27cd4c4ba9bbcc70b5ccf9b1b515421a28ae23212e273
 
-dir="${1:-${XDG_CACHE_HOME:-$HOME/.cache}/tego/bpf-toolchain}"
+# Leave the pre-marker cache untouched rather than adopting its stamp as ownership.
+# Keep the basename's length: a longer compiler path changes some pinned objects.
+dir="${1:-${XDG_CACHE_HOME:-$HOME/.cache}/tego/bpf-toolcache}"
 # The wrappers' own version is part of the stamp, so a change to them is written into an existing toolchain.
 WRAPPERS=2
 marker=.tego-bpf-toolchain
+# shellcheck source=scripts/safe-output-dir.sh
+. "$(dirname -- "$0")/safe-output-dir.sh"
+dir=$(safe_output_dir "$dir" "$marker" "$(dirname -- "$0")/..") || exit 2
 # Two runs on one directory (two `make gen`s on the default cache) would remove each other's half-built toolchain,
 # so the second waits for the first and then finds its stamp.
 mkdir -p "$(dirname "$dir")"
@@ -46,18 +51,12 @@ if [ "$(cat "$dir/stamp" 2>/dev/null)" = "$stamp" ] && [ -x "$dir/bin/clang" ]; 
 	echo "$dir/bin"
 	exit 0
 fi
-# DIR is emptied below, so a directory that is not this script's own (no marker, and no stamp from before there
-# was one) is refused, as scripts/coverage.sh refuses one it did not make.
-if [ -e "$dir" ] && [ ! -f "$dir/$marker" ] && [ ! -f "$dir/stamp" ] && [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
-	echo "bpf-toolchain: $dir exists and was not made by bpf-toolchain.sh (no $marker in it); not emptying it. Name another directory." >&2
-	exit 2
-fi
 [ "$(uname -m)" = x86_64 ] || { echo "bpf-toolchain: the pinned toolchain is x86_64 only, not $(uname -m)" >&2; exit 1; }
 for tool in curl sha256sum tar xz ar zstd; do
 	command -v "$tool" >/dev/null || { echo "bpf-toolchain: $tool is not on PATH" >&2; exit 1; }
 done
 
-rm -rf "$dir"
+rm -rf -- "$dir"
 mkdir -p "$dir/dl" "$dir/lib"
 echo "made by scripts/bpf-toolchain.sh, which empties this directory when its toolchain changes" >"$dir/$marker"
 fetch() { # "url..." sha256 file: the first URL whose download has the sha256, each tried with curl's retries

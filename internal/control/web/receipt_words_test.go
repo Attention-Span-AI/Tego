@@ -62,7 +62,7 @@ func markFixture(t *testing.T) string {
 		add(markGuardRun, ms, kind, `"rule":"`+rule+`","verdict":"refused","reason":"`+reason+`",`+payload)
 		add(markGuardRun, ms, "refused", `"rule":"`+rule+`","reason":"`+reason+`","op":"`+op+`","target":"`+target+`"`)
 	}
-	add(markGuardRun, 60000, "run_start", `"tier":"landlock","command":["codex"],"cwd":"/s/with/proj"`)
+	add(markGuardRun, 60000, "run_start", `"tier":"landlock","command":["codex"],"cwd":"/s/without/proj"`)
 	refuse(60010, "fs", "fs.deny_read[/s/with/home/.ssh/]", "read-denied", "open", "/s/with/home/.ssh/id_rsa",
 		`"op":"open","path":"/s/with/home/.ssh/id_rsa"`)
 	refuse(60012, "fs", "fs.deny_read[/s/with/home/.config/telemetry/]", "read-denied", "open", "/s/with/home/.config/telemetry/token",
@@ -224,11 +224,11 @@ func TestReceiptTabShowsTheReceiptsNotes(t *testing.T) {
 func TestComparePairsByStart(t *testing.T) {
 	t0 := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 	runs := []*ledgerview.Run{ // newest first
-		{ID: "r-right3", Tier: "landlock", Command: "codex", Start: t0.Add(5 * time.Minute)},
-		{ID: "r-left2", Tier: "observe", Command: "codex", Start: t0.Add(time.Minute)},
-		{ID: "r-right2", Tier: "landlock", Command: "codex", Start: t0.Add(time.Minute)},
+		{ID: "r-right3", Tier: "landlock", Cwd: "/project", Agent: "same", Command: "codex", Start: t0.Add(5 * time.Minute)},
+		{ID: "r-left2", Tier: "observe", Cwd: "/project", Agent: "same", Command: "codex", Start: t0.Add(time.Minute)},
+		{ID: "r-right2", Tier: "landlock", Cwd: "/project", Agent: "same", Command: "codex", Start: t0.Add(time.Minute)},
 		{ID: "r-other", Tier: "landlock", Command: "bash", Start: t0.Add(time.Minute)},
-		{ID: "r-left1", Tier: "observe", Command: "codex", Start: t0},
+		{ID: "r-left1", Tier: "observe", Cwd: "/project", Agent: "same", Command: "codex", Start: t0},
 	}
 	if p := cmpPick(runs); p.A != "r-left2" || p.B != "r-right2" {
 		t.Errorf("cmpPick = %+v, want r-left2 against r-right2", p)

@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/testutil/contracttest"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -253,9 +254,9 @@ func TestFallbackMutationWalkFailures(t *testing.T) {
 		verdict    record.Verdict
 		rule       string
 	}{
-		{"EIO", "work/plain/x", unix.EIO, true, record.VerdictRefused, rulePathUnreliable},
-		{"EMFILE", "work/plain/x", unix.EMFILE, true, record.VerdictRefused, rulePathUnreliable},
-		{"EXDEV", "work/plain/x", unix.EXDEV, true, record.VerdictRefused, rulePathUnreliable},
+		{"EIO", "work/plain/x", unix.EIO, true, record.VerdictRefused, agent.BuiltinHostIPC},
+		{"EMFILE", "work/plain/x", unix.EMFILE, true, record.VerdictRefused, agent.BuiltinHostIPC},
+		{"EXDEV", "work/plain/x", unix.EXDEV, true, record.VerdictRefused, agent.BuiltinHostIPC},
 		{"another view", "work/plain/x", errOtherView, false, record.VerdictObserved, rulePathUnreliable},
 		{"linked elsewhere", "work/plain/x", errLinkedElsewhere, false, record.VerdictObserved, rulePathUnreliable},
 		{"another view beneath the deny_read", "work/secret/x", errOtherView, false, record.VerdictRefused, "fs.deny_read[work/secret]"},
