@@ -209,18 +209,21 @@ func TestDemoNeverAllow(t *testing.T) {
 	if out("rc2") == "0" || out("got2.txt") != "" {
 		t.Errorf("the blocked read exited %q with %q", out("rc2"), out("got2.txt"))
 	}
-	lines := ledgerOf(t, w.ledger, id)
+	// The supervisor answers the read before its line reaches the ledger (the event is queued after the answer,
+	// R23), so the agent's rc2 can land a moment before the refusal line: wait for the line, as the Never allow
+	// link above waits for the first one.
+	var lines []ledgerLine
+	until(t, "a read refused by live.block[read:…]", 10*time.Second, func() bool {
+		lines = ledgerOf(t, w.ledger, id)
+		for _, l := range lines {
+			if strings.HasPrefix(l.Rule, "live.block[read:") && (l.Verdict == "refused" || l.Kind == "refused") {
+				return true
+			}
+		}
+		return false
+	})
 	if n := len(kindsOf(lines, "ask")); n != asksBefore {
 		t.Errorf("the blocked read asked: %d ask lines, %d before", n, asksBefore)
-	}
-	var byBlock bool
-	for _, l := range lines {
-		if strings.HasPrefix(l.Rule, "live.block[read:") && (l.Verdict == "refused" || l.Kind == "refused") {
-			byBlock = true
-		}
-	}
-	if !byBlock {
-		t.Error("no read refused by live.block[read:…]")
 	}
 
 	// The contract refuses the folder for every later run, and the journal holds the one dashboard change.
