@@ -27,13 +27,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/bpf"
 	"github.com/attention-span-ai/tego/internal/testutil"
 )
 
 // concurrentAgent is each run's agent in TestTier2ConcurrentRunsOfOneBuild: it opens its run's own watched file
 // E2E_OPENS times, execs true, and makes one TLS exchange with the fake Anthropic endpoint on E2E_PORT through
 // the host's libssl, whose capture probes the build's runs share.
-const concurrentAgent = `import os, socket, ssl, subprocess
+const concurrentAgent = `import os, socket, ssl, subprocess, time
+# The parent samples the active file-open program once every agent is waiting here.
+with open("out/ready", "w"):
+    pass
+while not os.path.exists("out/start"):
+    time.sleep(0.01)
 path = "out/data"
 for _ in range(int(os.environ["E2E_OPENS"])):
     os.close(os.open(path, os.O_RDONLY))
@@ -170,11 +176,12 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 		project, ledger, cfg string
 		stdout, stderr       strings.Builder
 		err                  error
+		done                 chan struct{}
 	}
 	runs := make([]*run, n)
 	for i := range n {
 		dir := filepath.Join(base, fmt.Sprintf("r%d-%d", n, i))
-		r := &run{project: filepath.Join(dir, "project"), ledger: filepath.Join(dir, "ledger"), cfg: filepath.Join(dir, "config.yaml")}
+		r := &run{project: filepath.Join(dir, "project"), ledger: filepath.Join(dir, "ledger"), cfg: filepath.Join(dir, "config.yaml"), done: make(chan struct{})}
 		if err := os.MkdirAll(filepath.Join(r.project, "out"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -232,6 +239,7 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer close(r.done)
 			cmd := tegoRunCommand(ctx, bin, "run", "--tier", "cgroup", filepath.Join(r.project, "agent.yaml"),
 				"--", python, "./agent.py")
 			cmd.Dir = r.project
@@ -241,7 +249,77 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 			r.err = cmd.Run()
 		}()
 	}
+	// Every agent is now running but has not opened its watched file. Sampling after this barrier
+	// includes the full round even on a cold build with no links before the first Prepare.
+	var counter *fileOpenCounter
+	var before, fileOpenSkips uint64
+	counterErr := func() error {
+		ticker := time.NewTicker(25 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			ready := true
+			for i, r := range runs {
+				select {
+				case <-r.done:
+					return fmt.Errorf("run %d ended before the watched-open barrier", i)
+				default:
+				}
+				if _, err := os.Stat(filepath.Join(r.project, "out", "ready")); err != nil {
+					if !os.IsNotExist(err) {
+						return err
+					}
+					ready = false
+				}
+			}
+			if ready {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+			}
+		}
+		hash, err := bpfHash()
+		if err != nil {
+			return err
+		}
+		counter, err = openFileOpenCounter(filepath.Join(DefaultBPFFS, pinRoot, hash, pinLinks, bpf.ProgFileOpen))
+		if err != nil {
+			return err
+		}
+		before, err = counter.read()
+		if err != nil {
+			return err
+		}
+		for _, r := range runs {
+			if err := os.WriteFile(filepath.Join(r.project, "out", "start"), nil, 0o644); err != nil {
+				return err
+			}
+		}
+		return nil
+	}()
+	if counterErr != nil {
+		cancel()
+	}
 	wg.Wait()
+	if counter != nil {
+		if counterErr == nil {
+			var after uint64
+			after, counterErr = counter.read()
+			if counterErr == nil {
+				if after < before {
+					counterErr = fmt.Errorf("file-open skip counter went backwards")
+				} else {
+					fileOpenSkips = after - before
+				}
+			}
+		}
+		counter.close()
+	}
+	if counterErr != nil {
+		t.Errorf("round-wide file-open coverage uncertain: %v", counterErr)
+	}
 	stderrs := make([]string, len(runs))
 	for i, r := range runs {
 		stderrs[i] = r.stderr.String()
@@ -253,6 +331,7 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 		t.Errorf("after %d runs of the build ended, its run set still holds a row of a live cgroup", n)
 	}
 
+	openCounts := make([]watchedOpenCount, 0, n)
 	for i, r := range runs {
 		if r.err != nil {
 			t.Errorf("run %d: tego run: %v\nstdout:\n%s\nstderr:\n%s", i, r.err, r.stdout.String(), r.stderr.String())
@@ -260,7 +339,7 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 		}
 		events := runEvents(t, r.ledger)
 		own := filepath.Join(r.project, "out", "data")
-		opens, trues := 0, 0
+		opens, trues, sharedMisses := 0, 0, 0
 		for _, e := range events {
 			path, _ := e["path"].(string)
 			if strings.HasPrefix(path, base+"/r") && !strings.HasPrefix(path, filepath.Dir(r.project)+"/") {
@@ -282,15 +361,24 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 				trues++
 			case e["kind"] == "gap":
 				switch e["why"] {
+				case "bpf-trampoline-miss/shared-build":
+					count, _ := e["count"].(float64)
+					sharedMisses += int(count)
 				case "kernel-record-unavailable", "mechanism-unavailable", "budget-unmetered", "ringbuf-full",
-					"ring-buffer-drop":
+					"ring-buffer-drop", "ringbuf-undrained", "bpf-trampoline-counter-unavailable":
 					t.Errorf("run %d: gap %v", i, e)
 				}
 			}
 		}
-		if opens != concurrentE2EOpens || trues != 1 {
-			t.Errorf("run %d recorded %d opens of its watched file and %d execs of true, want %d and 1", i, opens,
-				trues, concurrentE2EOpens)
+		// A preemptible kernel may skip the shared fexit program before it can identify this run. Require its
+		// explicit shared-build count as well as the single round-wide file-open bound below. Without a
+		// skip, every open is still required, and duplicates or unaccounted loss always fail.
+		openCounts = append(openCounts, watchedOpenCount{opens, sharedMisses})
+		if opens > concurrentE2EOpens || opens+sharedMisses < concurrentE2EOpens || trues != 1 {
+			t.Errorf("run %d recorded %d opens and %d execs of true, with %d shared-build trampoline misses; want %d opens (or a covering miss bound) and 1 exec", i, opens, trues, sharedMisses, concurrentE2EOpens)
+		}
+		if opens != concurrentE2EOpens {
+			t.Logf("run %d: %d watched opens missing; shared-build trampoline miss upper bound %d", i, concurrentE2EOpens-opens, sharedMisses)
 		}
 		start := findEvent(events, func(e map[string]any) bool { return e["kind"] == "run_start" })
 		if start == nil || start["capture"] != "uprobe" {
@@ -316,6 +404,13 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 			t.Errorf("run %d run_end %v, want reason exit", i, end)
 		}
 	}
+	if counterErr == nil {
+		if err := watchedOpenCoverage(openCounts, fileOpenSkips); err != nil {
+			t.Error(err)
+		}
+		t.Logf("round-wide shared file-open skipped executions: %d", fileOpenSkips)
+	}
+
 }
 
 // serveAnthropic answers every HTTP/1.1 request on every TLS connection with anthropicReply, until ln closes.

@@ -637,6 +637,11 @@ func loadTraceProc(t *testing.T, maps string) *ebpf.Collection {
 		t.Fatalf("load %s: %v", bpf.ObjectTraceProc, err)
 	}
 	t.Cleanup(coll.Close)
+	for _, dir := range []string{"progs", "links"} {
+		if err := os.MkdirAll(filepath.Join(filepath.Dir(maps), dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, name := range bpf.TracePrograms {
 		if coll.Programs[name] == nil {
 			continue
@@ -646,6 +651,12 @@ func loadTraceProc(t *testing.T, maps string) *ebpf.Collection {
 			t.Fatalf("attach %s: %v", name, err)
 		}
 		t.Cleanup(func() { _ = l.Close() })
+		if err := coll.Programs[name].Pin(filepath.Join(filepath.Dir(maps), "progs", name)); err != nil {
+			t.Fatal(err)
+		}
+		if err := l.Pin(filepath.Join(filepath.Dir(maps), "links", name)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return coll
 }

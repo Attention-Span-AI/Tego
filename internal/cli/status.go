@@ -137,6 +137,8 @@ type gapJSON struct {
 	Why    string `json:"why"`
 	Events int    `json:"events"`
 	Lost   int    `json:"lost"`
+	// SharedSkipped is reported skipped executions, possibly repeated across overlapping runs, not lost events.
+	SharedSkipped int `json:"shared_skipped_executions,omitempty"`
 	// Processes is how many processes the gaps that name a binary could not cover (gaps.Count).
 	Processes int      `json:"processes,omitempty"`
 	Binaries  []string `json:"binaries"`
@@ -147,7 +149,7 @@ func gapObjects(cs []gaps.Count) []gapJSON {
 	out := make([]gapJSON, 0, len(cs))
 	for _, c := range cs {
 		bins := append([]string{}, c.Binaries...)
-		out = append(out, gapJSON{What: c.What, Why: c.Why, Events: c.Events, Lost: c.Lost, Processes: c.Processes, Binaries: bins})
+		out = append(out, gapJSON{What: c.What, Why: c.Why, Events: c.Events, Lost: c.Lost, SharedSkipped: c.SharedSkipped, Processes: c.Processes, Binaries: bins})
 	}
 	return out
 }

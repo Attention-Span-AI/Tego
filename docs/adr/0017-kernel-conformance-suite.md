@@ -227,3 +227,21 @@ which now also asks link and attribute cells and lands every row with `superviso
 the ops with no row (exchange, the memfd ops, execmod, execmem, the three races, ptrace, the keyring calls, bpf(2))
 are listed with their reasons in `noCompileAction`, each such cell carrying `no_compile`
 (`TestEveryCellHasACompileAction`).
+
+*Amended 2026-11-04 (matrix guest prerequisites and doctor-only refusals):* the kernel matrix requests an explicit
+delegated user-manager cgroup fixture through `kvm-run.sh --sudo --delegate-user`, with cpu, memory and pids and
+the command inside that subtree. Copying a hosted runner's root-owned service chain supplied no user delegation;
+doctor correctly refused it, defeating the matrix's required user-tier checks. Other KVM suites retain the host-chain
+default. This changes the fixture, not the product's delegation or placement requirements. A doctor-only row checks
+that the final fix contains D4's Landlock remedy alongside every other tier-1 remedy, rather than requiring it first.
+Doctor already reports all blockers; a delegation fix cannot replace the ABI-1 kernel upgrade. Regression tests cover
+the fixture and matrix request, combined remedies, and a final line that omits the kernel remedy.
+
+### Matrix harness correction, 2026-11-04
+
+An unavailable LSM plane is already omitted with doctor's reason; it is not a failed cell unless the boot requires
+that axis. The Debian default-LSM matrix instead lost its conformance process to the OOM killer at 1536 MB, during
+`cgroup/grid-watch.deny.deny`. `generatedColumns` retained all 64 compile-only fixture trees (including actor
+binaries) until the parent ended, while the kernel fixtures ran. It now removes each tree immediately after reading
+its columns; those columns alone survive into the axes. `TestGeneratedColumnsReleaseTemporaryTrees` holds that
+lifetime independently of the guest's RAM size. No required axis or verdict check is removed.

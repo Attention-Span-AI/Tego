@@ -7,7 +7,7 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ## Unreleased
 
-## v0.1.1 - 2026-11-04
+## v0.1.1 - 2026-11-09
 
 This patch tightens the built-in refusals around an agent and checks the file identities and security labels
 used for approvals. Receipts and the dashboard give more reliable results for long runs, `tego rules` brings the
@@ -16,6 +16,8 @@ rules remain a preview, with the limits below.
 
 ### Security
 
+- Syscall outcome hooks refuse loading or adoption unless tracefs proves an eight-byte return at offset 16.
+  Doctor and run tier selection withhold root tiers on unverified layouts and retain the reason.
 - Enforcing runs refuse protected host IPC, Tego control surfaces and other terminals before grants. Own
   runtime, fixed SSH-agent exceptions, inherited terminals and policy-checked own PTYs work; exact
   container-daemon socket grants warn of escape authority. Root tiers add native Unix peer checks and reject
@@ -51,6 +53,20 @@ rules remain a preview, with the limits below.
 
 ### Fixed
 
+- RHEL 9 root-tier runs with `net.listen` can attach their required bind/listen outcome hooks. Bind, listen
+  and exec outcomes use the individual syscall event's BTF context; v0.1.0's listener preparation failed on
+  the tested RHEL 9 5.14 layout. No required hook or enforced property is dropped.
+- Root-tier recording samples shared tracing skips from the programs executing through active links.
+  Receipts and views report `bpf-trampoline-miss/shared-build` as shared skipped executions, with incomplete
+  coverage, rather than known lost events. Missing, changed or unreadable attachments/counters report uncertainty;
+  skips may belong to other runs or ungoverned tasks, and overlapping runs may count the same skip. Preemptible
+  kernels can still lose records (GAPS C53).
+- Built-in `.env` rename refusals and `tego learn` explain root-tier pip's name-coverage limit (C55) and its
+  measured contract/cwd remedy in [OPERATIONS.md](OPERATIONS.md#directory-moves-and-protected-names-c55).
+  Write entries alone add no name coverage; pip's copy fallback can exit 0 while recording rename refusals.
+- Kernel-matrix guests prepare delegation and authenticated Unix diagnostics/loop modules; doctor-only checks
+  accept combined remedies. Automount tests use the same kernel's native result, and conformance releases
+  compile-only fixture trees before kernel tests. The 6.1 plane retains its probe reader and kernel minimum.
 - Protected host-server paths that the invoking user cannot traverse no longer prevent startup; reachable
   objects remain pinned and unexpected identity errors still refuse launch. Compiled built-in entry names stay
   the same when host servers are installed or removed.
@@ -126,6 +142,8 @@ RHEL 9 (tier 1: ABI 1 is unsupported, and features are gated per ABI, see `spec/
 tier 2 needs root and cgroup v2; tier 3 needs root and `bpf` in the LSM list). A unix socket under an `fs.write` path is
 admitted without a `unix:` entry only with the kernel's socket diagnostics for `AF_UNIX` (`CONFIG_UNIX_DIAG`, built in
 or the loadable `unix_diag` module); without them such a socket is refused `unix-origin-unread`, and `tego doctor` says so.
+Syscall outcome hooks require readable tracefs event formats with an eight-byte `ret` at offset 16; unsupported
+or unverified layouts withhold root tiers. The kernel version minimum is unchanged.
 
 ## v0.1.0 - 2026-11-03
 

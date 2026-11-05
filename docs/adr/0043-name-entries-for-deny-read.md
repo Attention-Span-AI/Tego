@@ -1642,3 +1642,20 @@ grown since meant these departures from them:
   rows, the compacted table's bpflsm run, C10's guest figures and the conformance kernel runner's name space were run
   on the earlier build only. They need the KVM run (`test/vm`) here before the status above counts them.
 
+
+*Amended 2026-11-05 (release rollback, C55):* the declared-write-root coverage extension was reverted
+before v0.1.1. D10 remains the contract directory and launch cwd only. Write declarations add no scan or name
+scopes. The extension could spend the project's scan budget on excluded dependencies, missed scopes beneath
+moved ancestors (including exchanges), and gave Landlock a directory floor containing only built-in names,
+omitting declared held-read patterns. Its fixed-path guards and capacity changes are also reverted; enforcement
+is the same as before the extension. No new Landlock directory-move guarantee is claimed.
+
+The original pip `--target ./target` under a broad writable parent is an explicit root-tier limit (GAPS C55),
+not ordinary work passing R18: pip can copy after refused directory renames and exit 0. Ordinary root-tier KT4
+uses a covered `site-packages` destination; landlock still tests `target`. The root-tier limit cell checks the
+original refusal, its explanation and learn guidance, and a working remedy: pre-create and declare staging and
+target, keep the contract outside writable paths, and **launch from target** so the cwd supplies that existing
+protection root. Use absolute entries or rebase relative entries for the new cwd; match native-code exec rights
+at both ends. Explicit writes alone are not a remedy. KT4 separately checks a real coverage-losing directory
+rename containing `.env` at the root tiers. Landlock's future-name alias residual is GAPS A11; this release
+does not fix it. OPERATIONS gives the concrete contract and launch example.

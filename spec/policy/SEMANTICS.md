@@ -1535,3 +1535,9 @@ refused, and protected directory identities are pinned at Prepare. Protected dir
 cannot be enabled by a contract. See [ADR 0113](../../docs/adr/0113-built-in-refusals-for-tego-surfaces.md)
 for the full fixed list and implementation note, including fail-closed abstract attribution,
 `pidfd_getfd` imports, root-tier io_uring refusal, FIFO snapshots and datagram/copied-path residuals.
+
+*Amended 2026-11-05 (release rollback, C55):* write declarations add no built-in scan/name scopes;
+ADR 0043 D10 remains the contract directory and launch cwd. The rejected coverage extension and its
+Landlock directory-move floor are reverted. Root-tier pip moves into an uncovered `target` remain an
+explicit limit; OPERATIONS gives the tested staging/target declarations plus target-cwd arrangement.
+Landlock future-name aliases, including declared held patterns moved out of scope, remain GAPS A11.

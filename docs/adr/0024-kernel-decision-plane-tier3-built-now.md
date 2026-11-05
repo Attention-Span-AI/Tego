@@ -368,3 +368,96 @@ before the errno is returned, the supervisor records the result and the terminal
 producer's duplicate is suppressed. The lookup-failure regression requires one
 such correctly owned line in every mode, with no metadata-gap or waiver
 exception. This does not change fmod_ret's preemption admission rule.
+
+### RHEL 9 syscall outcome context correction (2026-11-05)
+
+`tego_bind_result` is a `BPF_PROG_TYPE_TRACEPOINT` program attached through
+`link.Tracepoint` / `BPF_LINK_CREATE(BPF_PERF_EVENT)` to
+`syscalls:sys_exit_bind`. It and `tego_listen_result` emit actual terminal results
+and clear the per-task listener marker, including failed operations. They remain
+mandatory for an explicit listener policy. They were added in a498c3bf6
+(2026-10-04), before the product rename in 2836e5bb1
+(2026-10-24). Public v0.1.0 (commit 309cead) includes them with the faulty context.
+
+The fault is CO-RE against `trace_event_raw_sys_exit`, which describes
+`raw_syscalls:sys_exit`, rather than the individual syscall event. In the exact
+matrix kernel, AlmaLinux/RHEL 9's 5.14.0-687.65.1.el9_8.x86_64, the backported
+`trace_entry.preempt_lazy_count` makes the common header 12 bytes. BTF places the
+raw event's `long id` at 16 and `ret` at 24. The individual event's `int nr` is
+at 12 and `ret` at 16; its size is 24. A CO-RE load at 24 therefore exceeds the
+event's extent. `perf_event_set_bpf_prog` rejects that access with `EACCES`,
+rendered by cilium/ebpf as `cannot create bpf perf link: permission denied`.
+This is neither missing perf-link support nor a lockdown refusal: in the same
+integrity-locked guest, a minimal tracepoint program reading offset 16 attaches
+and one reading offset 24 fails. The unmodified network-control suite reproduces
+the latter error. Tracefs's format and both BTF types agree on the distinction.
+The kernel producers and bound check are in
+[`trace_syscalls.c`](https://github.com/torvalds/linux/blob/v6.12/kernel/trace/trace_syscalls.c)
+(`perf_call_bpf_exit`) and
+[`events/core.c`](https://github.com/torvalds/linux/blob/v6.12/kernel/events/core.c)
+(`perf_event_set_bpf_prog`).
+
+Use `syscall_trace_exit` for bind, listen, execve and execveat outcomes, retaining
+CO-RE against the individual trace record layout. The two exec hooks had the same
+bug but took the optional, disclosed fallback instead of failing preparation.
+On supported layouts no hook is skipped by this correction and no enforcement
+or recording property is traded away.
+Existing missing-hook refusals and optional exec fallback disclosures remain.
+
+Review follow-up: the trace record is not the `syscall_tp_t` BPF wrapper supplied
+by `perf_call_bpf_exit`. All supported wrappers supply an eight-byte return at
+16, but an enlarged trace record could relocate the CO-RE read to 24 while its
+32-byte extent still passes the perf attachment bound check. Before loading or
+adopting any selected syscall-result program, the runtime now reads that event's
+tracefs `format` and requires `ret` at offset 16, size 8. Doctor applies the same
+check before loading either the real hook or a stand-in. A divergent, missing,
+malformed or unreadable return layout is a hard refusal with the event and plain
+reason, including for present optional exec events; it cannot become the optional
+attachment fallback. Doctor and the run's tier derivation withhold root tiers
+when any of these hooks fails the layout check, including listener rows that
+otherwise only describe optional network capabilities. The runtime checks only
+selected hooks, so an unselected listener imposes no format dependency there;
+truly absent optional exec events retain their existing disclosed fallback.
+`TestSyscallResultContextRejectsUnsupportedLayouts` covers divergence and missing
+returns for all four programs. Doctor's
+`TestSyscallResultContextRefusalWithholdsTierBeforeLoad` proves no object or
+stand-in loads and tier rejection keeps the reason; the runtime's
+`TestSyscallResultContextRefusalPrecedesLoadAndAdoption` proves both spec paths
+refuse before a collection can be loaded or pins adopted. This narrows admission
+on unverified layouts without removing an enforced property on supported ones.
+The regression relocates the actual compiled return loads against synthetic
+8-byte and RHEL 12-byte headers in both probe and readonly objects: the previous
+objects fail all eight RHEL cases by reading offset 24, and the corrected ones
+read offset 16 throughout.
+
+The historical support claim needs narrowing: v0.1.0's root-tier contracts with
+`net.listen` failed before the agent started on this RHEL layout. Ordinary
+outbound-only contracts did not require the listener hooks. Neither the kernel
+minimum nor a no-op doctor attachment probe established the full listener path.
+TIERS, CAPABILITIES and GAPS now carry that distinction.
+
+The requested `TestPlaneExecProcDirOracle` also had a separate RHEL fixture
+failure, present in the original matrix log: this kernel permits the caller to
+list `/proc/1/fdinfo`. It lacks the directory's newer `proc_fdinfo_permission`
+check, so the test's inaccessible-directory premise does not hold. The test now
+probes the listing directly as the caller before choosing its fixture. When
+fdinfo is public it uses root's `/proc/1/fd`, retaining all three EACCES results
+and the no-`exec_missing` assertion in every mode and contract. This is DAC
+coverage on RHEL; the fdinfo permission-hook oracle remains covered on kernels
+that deny that listing. The test logs this distinction without skipping. This
+changes no product policy and adds no authority beyond the kernel's own.
+
+KVM validation (2026-11-05): all ten affected network, listener, exec-outcome
+and proc-directory suites passed in every cell below, with no suite or subtest
+skipped. The compiled-context relocation regression also runs without root.
+
+| Matrix kernel | `lsm-bpf` boot | `default-lsm` boot |
+|---|---|---|
+| `rhel-9`, `5.14.0-687.65.1.el9_8.x86_64` | 10/10 | 10/10 |
+| `fedora-7.0`, `7.0.14-201.fc44.x86_64` | 10/10 | 10/10 |
+
+The guests used the matrix's `lockdown=none` setting, one guest at a time, with
+3 GiB each. Fedora's fmod_ret cases use the matrix's explicit test preemption
+waiver; this is a compatibility regression check, not product preemption-safety
+proof. The RHEL fixture's DAC limitation above remains. Other matrix failures,
+other kernel updates and live distro LSM policy are outside this proof.

@@ -902,6 +902,11 @@ func generatedColumns(t *testing.T, bin, actor string, fixtures []Fixture) map[s
 		}
 		e := materialize(t, t.TempDir(), fx, actor)
 		out[fx.Name] = compileAnswers(t, bin, e, machineConfig(t, e), compileTable(e, fx))
+		// Only the columns survive this phase. Retaining all 64 actor copies until the parent test's
+		// cleanup exhausted the small matrix guest's RAM filesystem before its root axes finished.
+		if err := os.RemoveAll(e.base); err != nil {
+			t.Fatalf("remove compile-only fixture %s: %v", fx.Name, err)
+		}
 	}
 	return out
 }

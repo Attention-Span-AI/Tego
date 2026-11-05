@@ -168,3 +168,27 @@ a watch inside a deny_read alike; a rename the plane refused can name its destin
 source's. A watch only records, so such a line misstates which rule refused, a rule-accuracy question for this ADR's
 "the verdict is what the mechanism answered" as well as a naming one. The conformance suite counts these as known
 naming classes (test/conformance/naming.go) until the naming question is settled; nothing else about the verdict changes.
+
+### Recording amendment, 2026-11-04: shared trampoline miss counters
+
+The Fedora 7.0 matrix's 32-run round completed in 7.5 seconds but lost watched opens without a ring-buffer drop.
+A local default-LSM KVM reproduction lost 55 watched opens while `tego_file_open` gained 124 `recursion_misses`.
+The trampoline can skip a preempted tracing program before its run-set lookup (GAPS C53); changing timeouts cannot
+restore those callbacks. This also happens with the LSM plane: it is the recorder's fexit callback that is skipped.
+
+The recorder resolves its build's executing tracing program instances from the pinned links and holds both
+references. It samples their cumulative miss counters before launch and reads them again after its final drain. A positive delta is a record gap,
+`bpf-trampoline-miss/shared-build`. The count is shared-build skipped executions in that window, including other
+runs and ungoverned tasks. It is neither an exact per-run loss count nor an upper bound on every record suppressed:
+one skipped exit may also lose held records. An executing instance that cannot be established, an attachment that
+changes during the window, or a counter that cannot be read or goes backwards yields
+`bpf-trampoline-counter-unavailable`. No callback is replayed and no verdict is inferred for a missing callback.
+Receipts and views keep coverage incomplete but call these reported skipped executions of shared tracing programs,
+possibly from other runs or ungoverned tasks; they do not claim a known lost-event count. Merged overlapping run
+windows may report the same skip more than once.
+The concurrent watched-open test retains each run's bound and also requires the total missing watched opens across
+all runs to fit one round-wide delta from the active file-open program alone. A barrier holds every agent before its
+first watched open until that initial sample; a single shared skip cannot excuse one loss in each of two runs.
+Other hooks' skips cannot excuse file-open loss;
+duplicates, unexplained loss, ring/queue loss and missing metering still fail. Runs with no recorded misses retain
+the exact-count assertion. Deciding and cgroup-tracking program misses and per-run loss attribution remain open C53 work.

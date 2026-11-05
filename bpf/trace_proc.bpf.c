@@ -509,7 +509,13 @@ static __always_inline bool tego_exec_restart(__s64 ret)
 /* A failed exec's terminal result follows every file-open/bprm refusal fragment. The syscall tracepoint's
  * common result layout is independent of architecture syscall numbers. Success has sched_process_exec's own
  * record, so only a negative return reaches the ring here; failed attempts are retained under record: off. */
-static __always_inline int tego_exec_result_emit(struct trace_event_raw_sys_exit *ctx)
+/* Individual syscall records use syscall_trace_exit, not raw_syscalls'
+ * trace_event_raw_sys_exit. RHEL 9's preempt_lazy_count extends trace_entry
+ * to 12 bytes: the former's int nr keeps ret at 16, while the latter's long
+ * id moves it to 24, outside the individual event's extent (perf EACCES).
+ * The BPF syscall_tp_t wrapper is separate: the loader checks tracefs ret
+ * is eight bytes at 16 before admitting these CO-RE record reads. */
+static __always_inline int tego_exec_result_emit(struct syscall_trace_exit *ctx)
 {
     __u64 cgroup_id = bpf_get_current_cgroup_id();
     struct tego_run *run = tego_run_lookup(&tego_run_set, cgroup_id);
@@ -543,13 +549,13 @@ static __always_inline int tego_exec_result_emit(struct trace_event_raw_sys_exit
 }
 
 SEC("tracepoint/syscalls/sys_exit_execve")
-int tego_exec_result(struct trace_event_raw_sys_exit *ctx)
+int tego_exec_result(struct syscall_trace_exit *ctx)
 {
     return tego_exec_result_emit(ctx);
 }
 
 SEC("tracepoint/syscalls/sys_exit_execveat")
-int tego_execat_result(struct trace_event_raw_sys_exit *ctx)
+int tego_execat_result(struct syscall_trace_exit *ctx)
 {
     return tego_exec_result_emit(ctx);
 }
@@ -1446,13 +1452,13 @@ static __always_inline int tego_listener_result_emit(__s64 ret, __u16 kind, int 
 }
 
 SEC("tracepoint/syscalls/sys_exit_bind")
-int tego_bind_result(struct trace_event_raw_sys_exit *ctx)
+int tego_bind_result(struct syscall_trace_exit *ctx)
 {
     return tego_listener_result_emit(ctx->ret,TEGO_EV_BIND_RESULT,0);
 }
 
 SEC("tracepoint/syscalls/sys_exit_listen")
-int tego_listen_result(struct trace_event_raw_sys_exit *ctx)
+int tego_listen_result(struct syscall_trace_exit *ctx)
 {
     return tego_listener_result_emit(ctx->ret,TEGO_EV_LISTEN_RESULT,0);
 }

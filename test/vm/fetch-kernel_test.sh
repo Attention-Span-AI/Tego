@@ -403,6 +403,33 @@ os.environ.pop("TEGO_VM_KERNEL_MANIFEST")
 # another release's module that is not the image's.
 import contextlib, io, lzma, tarfile
 
+def cpio_bytes(members):
+    out = bytearray()
+    for name, body, mode in [*members, ("TRAILER!!!", b"", 0)]:
+        name = name.encode() + b"\0"
+        fields = [1, mode, 0, 0, 1, 0, len(body), 0, 0, 0, 0, len(name), 0]
+        out += b"070701" + b"".join(f"{v:08x}".encode() for v in fields) + name
+        out += b"\0" * (-len(out) % 4)
+        out += body + b"\0" * (-len(body) % 4)
+    return bytes(out)
+
+rel = "6.1.123-amzn2023.x86_64"
+rpm_dest = tempfile.mkdtemp()
+kos = m.cpio_modules(io.BytesIO(cpio_bytes([
+    (f"./lib/modules/{rel}/kernel/net/unix/unix_diag.ko", b"diag", 0o100644),
+    (f"./lib/modules/{rel}/modules.builtin", b"builtins", 0o100644),
+    (f"./lib/modules/{rel}/build", b"/outside", 0o120777),
+    ("./lib/modules/other/kernel/foreign.ko", b"other", 0o100644),
+])), rel, rpm_dest)
+check("an RPM payload supplies only regular files of the image's own release",
+      kos == 1 and sorted(os.path.relpath(os.path.join(d, f), rpm_dest)
+                          for d, _, fs in os.walk(rpm_dest) for f in fs) ==
+      ["kernel/net/unix/unix_diag.ko", "modules.builtin"])
+for bad in ("../escape.ko", "kernel//escape.ko", "kernel/./escape.ko"):
+    check("an RPM module path with an unsafe component is refused: " + bad,
+          refused(lambda: m.cpio_modules(io.BytesIO(cpio_bytes([
+              (f"./lib/modules/{rel}/" + bad, b"bad", 0o100644)])), rel, tempfile.mkdtemp())))
+
 def deb_bytes(members):
     data = io.BytesIO()
     with tarfile.open(fileobj=data, mode="w:xz") as tar:
@@ -504,8 +531,44 @@ said = refusal(lambda: m.fetch("ubuntu-24.04", modules=True))
 check("a .deb row whose image package carries no module is refused, with no tree left behind",
       "carries no kernel module" in said and "linux-modules-<release>" in said
       and not os.path.lexists(os.path.join(cache2, "kernel", "matrix-ubuntu-24.04", "mods")))
-check("an RPM row is refused: its kernel-core carries only some modules",
-      "is a rpm row" in refusal(lambda: m.module_tree("rhel-9", tempfile.mkdtemp(), {"sha256": good_pkg})))
+saved_rpm_modules = m.rpm_modules
+m.rpm_modules = lambda *args: 0
+check("an RPM image with no modules is refused rather than serving an empty tree",
+      "carries no kernel module" in refusal(lambda: m.module_tree("rhel-9", tempfile.mkdtemp(),
+                                                                {"sha256": good_pkg, "release": "5.14"})))
+m.rpm_modules = saved_rpm_modules
+
+saved_download, saved_signed = m.download, m.rpm_signed_package
+companion = tempfile.mkdtemp()
+os.mkdir(os.path.join(companion, "proof"))
+asked = []
+def companion_download(url, path):
+    asked.append(url)
+    open(path, "wb").write(b"signed companion")
+m.download = companion_download
+image_info = {"version": "7.0.14-201.fc44", "release": "7.0.14-201.fc44.x86_64"}
+verified = []
+def companion_signed(path, keys, package):
+    verified.append((keys, package))
+    return {"publisher_signature_checked": True}, image_info["version"]
+m.rpm_signed_package = companion_signed
+package, proof = m.koji_module_package(companion, image_info)
+check("Fedora modules come from the signed companion of exactly the image build",
+      asked == [m.KOJI + "7.0.14/201.fc44/data/signed/" + m.KEYS["fedora-44"][-8:].lower() +
+                "/x86_64/kernel-modules-core-7.0.14-201.fc44.x86_64.rpm"]
+      and all(v == (["fedora-44"], "kernel-modules-core") for v in verified)
+      and proof["sha256"] == hashlib.sha256(b"signed companion").hexdigest())
+m.koji_module_package(companion, image_info)
+check("a retained companion is reauthenticated without downloading it again", len(asked) == 1 and len(verified) == 3)
+m.rpm_signed_package = lambda *args: ({}, "7.0.13-201.fc44")
+check("a correctly signed companion of a different build is refused",
+      refused(lambda: m.koji_module_package(companion, image_info)))
+def bad_signature(*args):
+    raise m.EnvError("bad signature")
+m.rpm_signed_package = bad_signature
+check("a retained companion with a bad signature is refused",
+      refused(lambda: m.koji_module_package(companion, image_info)))
+m.download, m.rpm_signed_package = saved_download, saved_signed
 out = io.StringIO()
 with contextlib.redirect_stdout(out):
     rc = m.main(["--modules", "debian-13"])

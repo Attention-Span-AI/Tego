@@ -1940,6 +1940,12 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   says the same in a note rather than as a coverage gap (*amended 2026-11-02*). `drift` prints the same three lines
   under its table, and `gap_words` in `--json`; a run with no run_end and no launcher, or a sum holding one, says its
   record may stop short, as a lost run's `status` does (*amended 2026-11-01*).
+  *Amended 2026-11-05:* `record/bpf-trampoline-miss/shared-build` counts reported skipped executions of shared
+  tracing programs, possibly belonging to other runs or ungoverned tasks. It adds to `shared_skipped_executions`
+  in gap JSON, never `lost`, and text preserves that meaning. Overlapping run windows may report the same skip.
+  This gap and `record/bpf-trampoline-counter-unavailable` make receipt coverage incomplete with code
+  `recording-uncertain`, without claiming known lost actions. Counter-unavailable occurrences do not add to
+  `lost` or `shared_skipped_executions` (ADR 0016, GAPS C53).
 
 - **R35 `serve`.** The local page (agents, run timelines, pending approvals, drift, measure over
   the ledger, on loopback: `127.0.0.1`, or another loopback address `--addr` names, `[::1]` included, *amended

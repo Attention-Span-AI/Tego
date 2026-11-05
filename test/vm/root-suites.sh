@@ -228,12 +228,18 @@ if [ -n "$ROW" ]; then
 		python3 "$here/fetch-kernel.py" "$ROW" >/dev/null || exit $?
 	fi
 	export TEGO_VM_KERNEL="$row_kernel"
-	# kvm-run.sh fetches a module package with apt, and only for the kernel this host runs (linux-modules-<version>): a
-	# row's distro kernel has none to fetch, and the default modules (overlay, btrfs) would end every guest with exit 97
-	# before its suite ran. A row's guests load none unless VM_MODULES names some; the tests that want overlayfs or btrfs
-	# then meet the row kernel's own, and test/vm/root-skips.txt says which of them may skip there.
+	# These rows have authenticated module packages. Without unix_diag the own-socket cells correctly refuse
+	# unix-origin-unread; Fedora's built-in btrfs still needs its loadable loop driver for the fixture image.
+	# Preserve an explicit VM_MODULES, including an empty one for missing-feature tests.
 	if [ "$ROW" != host ] && [ -z "${VM_MODULES+x}" ]; then
-		export VM_MODULES=""
+		case "$ROW" in
+		debian-13 | al2023 | al2023-6.12) export VM_MODULES="overlay crc32c_generic loop btrfs unix_diag tcp_diag" ;;
+		fedora-7.0 | fedora-7.2) export VM_MODULES="loop" ;;
+		*) export VM_MODULES="" ;;
+		esac
+	fi
+	if [ "$ROW" != host ] && [ -n "${VM_MODULES:-}" ]; then
+		python3 "$here/fetch-kernel.py" --modules "$ROW" >/dev/null || exit $?
 	fi
 fi
 

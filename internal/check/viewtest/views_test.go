@@ -187,3 +187,19 @@ func TestViewEventsJSONSkipsDecode(t *testing.T) {
 		t.Fatalf("table err=%v; json err=%v after writing %d lines:\n%s", terr, jerr, n, js.String())
 	}
 }
+
+func TestViewSharedTracingIsUncertainRatherThanEventsLost(t *testing.T) {
+	e := &record.Event{Kind: record.KindGap, Source: record.SourceKernel}
+	if err := e.SetPayload(record.GapPayload{What: record.GapRecord, Why: "bpf-trampoline-miss/shared-build", Count: 17}); err != nil {
+		t.Fatal(err)
+	}
+	dir := writeRun(t, e)
+	rep, err := drift.ComputeCtx(t.Context(), reader(t, dir), &agent.RuleTable{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := gapsLine(rep)
+	if strings.Contains(text, "events lost") || !strings.Contains(text, "17") || !strings.Contains(text, "other runs or ungoverned tasks") {
+		t.Fatalf("drift loses the shared counter's meaning: %s", text)
+	}
+}

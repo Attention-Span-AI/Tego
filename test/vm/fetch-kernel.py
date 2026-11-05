@@ -29,9 +29,9 @@
 #
 # A guest that wants a module (kvm-run.sh --module) needs the row's own: kvm-run.sh asks apt for linux-modules-<kernel>,
 # which exists only for a kernel apt knows, never for a row's. --modules extracts the row's module tree from the package
-# it has just authenticated, into the directory kvm-run.sh reads before it asks apt. Only a .deb row whose image package
-# carries its modules has one: Debian's does (debian-13); Ubuntu's ship theirs in a package of their own
-# (linux-modules-<release>) and an RPM row's kernel-core carries only some, and those rows are refused.
+# it has just authenticated, into the directory kvm-run.sh reads before it asks apt. Debian and Amazon Linux carry
+# their modules beside the image. Fedora uses the separately authenticated modules-core RPM of that exact build.
+# Ubuntu's separate linux-modules-<release> package remains unsupported here.
 #
 # Usage: fetch-kernel.py <row>            print the path of the row's vmlinuz, fetching it once
 #        fetch-kernel.py --list           the rows: name, series, source kind, body (full or doctor-only), label
@@ -486,6 +486,55 @@ def rpm_vmlinuz(path):
     return body, m.group(1)
 
 
+def cpio_modules(r, release, dest):
+    """Extract only regular files from this release's module tree; never follow archive links."""
+    under = re.compile(r"\.?/?(?:usr/)?lib/modules/" + re.escape(release) + r"/(.+)")
+    kos = 0
+    while True:
+        hdr = read_exact(r, 110)
+        if hdr[:6] not in (b"070701", b"070702"):
+            raise EnvError(f"unexpected cpio header {hdr[:6]!r}")
+        fields = [int(hdr[6 + 8 * i:14 + 8 * i], 16) for i in range(13)]
+        mode, size, namesize = fields[1], fields[6], fields[11]
+        name = read_exact(r, namesize)[:-1].decode("utf-8", "strict")
+        skip(r, (4 - (110 + namesize) % 4) % 4)
+        if name == "TRAILER!!!":
+            return kos
+        got = under.fullmatch(name)
+        if got and mode & 0o170000 == 0o100000:
+            parts = got.group(1).split("/")
+            if any(part in ("", ".", "..") for part in parts):
+                raise EnvError(f"refusing the module member {name!r}, whose path is not plain")
+            out = os.path.join(dest, *parts)
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            with open(out, "xb") as dst:
+                left = size
+                while left:
+                    chunk = read_exact(r, min(left, 1 << 20))
+                    dst.write(chunk)
+                    left -= len(chunk)
+            if re.search(r"\.ko(\.[a-z]+)?$", parts[-1]):
+                kos += 1
+        else:
+            skip(r, size)
+        skip(r, -size % 4)
+
+
+def rpm_modules(path, release, dest):
+    with open(path, "rb", buffering=0) as f:
+        off = rpm_payload_offset(f)
+        f.seek(off)
+        cmd = decompressor(f.read(6))
+        f.seek(off)
+        proc = subprocess.Popen(cmd, stdin=f, stdout=subprocess.PIPE)
+        try:
+            return cpio_modules(proc.stdout, release, dest)
+        finally:
+            proc.stdout.close()
+            proc.kill()
+            proc.wait()
+
+
 def repo_base(p):
     if "repo" in p:
         return p["repo"]
@@ -650,11 +699,16 @@ def module_tree(row, dest_dir, info):
     image package carries its modules beside the image, so a .deb row's tree is lib/modules/<release>/ of the package
     _fetch_locked has just authenticated (proof/package), extracted once per package: mods/.package-sha256 names the
     package it came from, a tree from another package is replaced, and a fresh fetch removes it with the old image.
-    A row whose image package carries no modules is an EnvError: Ubuntu's are a package of their own
-    (linux-modules-<release>), which this script does not fetch, and an RPM row's kernel-core carries only some."""
+    Amazon's kernel RPM carries its modules too. Fedora keeps them in the publisher-signed kernel-modules-core
+    RPM of the exact same build; authenticate that package separately before extracting any bytes.
+    Ubuntu's separate linux-modules packages are not fetched here."""
     kind = ROWS[row][2]
-    if kind != "deb":
-        raise EnvError(f"--modules reads the modules a .deb row's image package carries, and {row} is a {kind} row")
+    packages = [os.path.join(dest_dir, "proof", "package")]
+    proofs = []
+    if kind == "koji":
+        package, proof = koji_module_package(dest_dir, info)
+        packages.append(package)
+        proofs.append(proof)
     mods = os.path.join(dest_dir, "mods")
     tree = os.path.join(mods, "lib", "modules", kernel_name(row))
     want = (info.get("sha256") or "").lower()
@@ -665,13 +719,16 @@ def module_tree(row, dest_dir, info):
     if want and have == want and os.path.isdir(tree):
         return tree
     with tempfile.TemporaryDirectory(dir=dest_dir) as work:
-        kos = deb_modules(os.path.join(dest_dir, "proof", "package"), info["release"],
-                          os.path.join(work, "lib", "modules", kernel_name(row)))
+        extract = deb_modules if kind == "deb" else rpm_modules
+        kos = sum(extract(package, info["release"], os.path.join(work, "lib", "modules", kernel_name(row)))
+                  for package in packages)
         if not kos:
             raise EnvError(f"{info.get('package')} carries no kernel module under lib/modules/{info['release']}/ "
                            "(Ubuntu ships them in linux-modules-<release>, which this script does not fetch)")
         with open(os.path.join(work, ".package-sha256"), "w") as f:
             f.write(want + "\n")
+        with open(os.path.join(work, "packages.json"), "w") as f:
+            json.dump(proofs, f, indent=1)
         # The old tree is moved aside, not removed first, so a guest staging its modules meanwhile finds a whole
         # tree at the path for all but the instant between the two renames.
         aside = None
@@ -684,6 +741,29 @@ def module_tree(row, dest_dir, info):
         if aside:
             shutil.rmtree(aside)
     return tree
+
+
+def koji_module_package(dest_dir, info):
+    """The signed modules-core companion of the authenticated image, never another point release."""
+    ver, rel = info["version"].rsplit("-", 1)
+    key = "fedora-" + rel.split(".fc")[-1]
+    if key not in KEYS or info["release"] != info["version"] + ".x86_64":
+        raise EnvError("cannot identify the exact Fedora module build and signing key")
+    name = "kernel-modules-core"
+    url = f"{KOJI}{ver}/{rel}/data/signed/{KEYS[key][-8:].lower()}/x86_64/{name}-{info['release']}.rpm"
+    path = os.path.join(dest_dir, "proof", "modules-core.rpm")
+    if not os.path.isfile(path):
+        with tempfile.TemporaryDirectory(dir=dest_dir) as work:
+            downloaded = os.path.join(work, "modules-core.rpm")
+            download(url, downloaded)
+            _, version = rpm_signed_package(downloaded, [key], name)
+            if version != info["version"]:
+                raise EnvError("signed Fedora modules version differs from the image build")
+            os.replace(downloaded, path)
+    verification, version = rpm_signed_package(path, [key], name)
+    if version != info["version"]:
+        raise EnvError("signed Fedora modules version differs from the image build")
+    return path, {"url": url, "sha256": file_sha256(path), "verification": verification}
 
 
 def _fetch_locked(row, refresh, dest_dir, pin=None):

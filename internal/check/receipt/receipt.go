@@ -294,6 +294,8 @@ const (
 	CodeNoPriceTable = "no-price-table"
 	// CodeMissedActions: gap lines say tego missed some actions, so the counts are a floor (record).
 	CodeMissedActions = "missed-actions"
+	// CodeRecordUncertain: shared tracing counters cannot establish this run's recording coverage (record).
+	CodeRecordUncertain = "recording-uncertain"
 	// CodeNoRunEnd: the run has no run_end line yet (time_taken).
 	CodeNoRunEnd = "no-run-end"
 )
@@ -364,11 +366,12 @@ type builder struct {
 	lastAskRule string
 	runStart    record.RunStartPayload
 	prices      measure.Prices
-	gapLines    int  // gap lines that may have lost actions: the record's counts are a floor
-	captureGaps int  // gap what=capture lines: model traffic tego could not read
-	restored    int  // gap lines of a mode tego gave back to the owner of one of its own files: no action lost
-	noPrice     bool // a gap said the run had no usable price table
-	devWrite    bool // an allowed write reached a device, which Files does not list (device)
+	gapLines    int        // gap lines that may have lost actions: the record's counts are a floor
+	sharedGaps  gaps.Tally // shared tracing uncertainty, with its own count semantics
+	captureGaps int        // gap what=capture lines: model traffic tego could not read
+	restored    int        // gap lines of a mode tego gave back to the owner of one of its own files: no action lost
+	noPrice     bool       // a gap said the run had no usable price table
+	devWrite    bool       // an allowed write reached a device, which Files does not list (device)
 	act         activity
 }
 
@@ -871,6 +874,8 @@ func (b *builder) gap(e *record.Event) {
 		return
 	}
 	switch gaps.Classify(g.What, g.Why) {
+	case gaps.Uncertain:
+		b.sharedGaps.Add(e)
 	case gaps.Live:
 	case gaps.Price:
 		// An unpriced model is no missing table: the receipt prices each response itself, and its
@@ -935,6 +940,9 @@ func (b *builder) coverage() {
 	if b.gapLines > 0 {
 		add("record", CodeMissedActions, fmt.Sprintf("%d gap %s: tego knows it missed some actions, so the counts are a floor",
 			b.gapLines, plural(b.gapLines, "line", "lines")))
+	}
+	if cs := b.sharedGaps.Counts(); len(cs) > 0 {
+		add("record", CodeRecordUncertain, gaps.Words(cs, false))
 	}
 	if !rc.Ended {
 		add("time_taken", CodeNoRunEnd, "the run has no run_end line yet")

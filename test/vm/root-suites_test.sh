@@ -120,6 +120,15 @@ mkdir -p "$repo/test/vm" "$repo/scripts" "$repo/internal/bpf" "$repo/internal/ru
 cp "$here/root-suites.sh" "$here/fwd-run.sh" "$here/suites.sh" "$here/summarize.py" "$here/bounded-run.sh" "$here/go-shim.sh" \
 	"$here/root-skips.txt" "$here/root-must-pass.txt" "$here/fetch-kernel.py" "$here/kernel_auth.py" "$here/conformance-require.sh" "$repo/test/vm/"
 cp -r "$here/keys" "$repo/test/vm/keys"
+# Keep row validation real, while module preparation uses no network in these stand-in boots.
+mv "$repo/test/vm/fetch-kernel.py" "$repo/test/vm/fetch-kernel-real.py"
+cat >"$repo/test/vm/fetch-kernel.py" <<'EOF'
+import os, sys
+if sys.argv[1:2] == ["--modules"]:
+    print("fixture-module-tree")
+else:
+    os.execv(sys.executable, [sys.executable, os.path.join(os.path.dirname(__file__), "fetch-kernel-real.py"), *sys.argv[1:]])
+EOF
 cat >"$repo/scripts/tree-files.sh" <<'EOF'
 #!/bin/sh
 printf 'x\0'
@@ -208,13 +217,19 @@ run_stub VM_HOST=kvm
 if grep -qF -- "TEGO_VM_ROW" "$tmp/boots"; then fail "a guest was told a row the caller never named: $(cat "$tmp/boots")"; fi
 
 # Modules: kvm-run.sh fetches a module package with apt for this host's own kernel only, so the default list would end
-# every guest of a row's distro kernel at exit 97. A row's guests load none unless VM_MODULES names some (even an empty
-# VM_MODULES is a choice; a row's own come from fetch-kernel.py --modules), and a run without a row, or on the host row,
+# every guest of a row's distro kernel at exit 97. Supported rows now prepare their own dependencies; an explicit
+# VM_MODULES is a choice, including an empty one. A run without a row, or on the host row,
 # keeps the default: test/vm/suites.sh's GUEST_MODULES, whole, which scripts/coverage.sh --vm's guests load too.
 default_modules=$(bash -c '. "$1"; for m in "${GUEST_MODULES[@]}"; do printf -- "--module %s " "$m"; done' _ "$here/suites.sh")
 case "$default_modules" in *"--module tcp_diag "*) ;; *) fail "suites.sh's GUEST_MODULES lacks tcp_diag: $default_modules" ;; esac
 run_stub VM_HOST=kvm TEGO_VM_ROW=fedora-7.2 TEGO_VM_KERNEL=matrix-fedora-7.2
-if grep -qF -- "--module" "$tmp/boots"; then fail "a row's guest was asked for modules nobody can fetch for its kernel: $(cat "$tmp/boots")"; fi
+grep -qF -- "--module loop " "$tmp/boots" || fail "Fedora's btrfs fixture needs its loadable loop driver"
+for row in al2023 al2023-6.12 debian-13; do
+	run_stub VM_HOST=kvm TEGO_VM_ROW=$row TEGO_VM_KERNEL=matrix-$row
+	grep -qF -- "--module unix_diag " "$tmp/boots" || fail "$row's own Unix socket tests need unix_diag"
+done
+run_stub VM_HOST=kvm TEGO_VM_ROW=debian-13 TEGO_VM_KERNEL=matrix-debian-13 VM_MODULES=""
+if grep -qF -- "--module" "$tmp/boots"; then fail "an explicit empty VM_MODULES was ignored"; fi
 run_stub VM_HOST=kvm TEGO_VM_ROW=fedora-7.2 TEGO_VM_KERNEL=matrix-fedora-7.2 VM_MODULES=overlay
 grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" | grep -qF -- "--module overlay " ||
 	fail "a row's guest was not given the module the caller named: $(cat "$tmp/boots")"

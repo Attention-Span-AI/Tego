@@ -15,6 +15,26 @@ import (
 
 var update = flag.Bool("update", false, "rewrite the golden files under testdata/")
 
+func TestNameCoverageRenameExplainsRemedy(t *testing.T) {
+	got := Text(record.ReasonRenameOutsideContract, "rename", "/work/tmp/pkg", "fs.deny_read[/work/**/.env]")
+	for _, want := range []string{"lose protected-name coverage", "fs.write", "staging and destination", "launch working directory", "add no name coverage"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("refusal %q lacks %q", got, want)
+		}
+	}
+	if m := commandLike.FindString(got); m != "" {
+		t.Errorf("refusal reads as an instruction: %q", m)
+	}
+	ordinary := Text(record.ReasonRenameOutsideContract, "rename", "/work/tmp/pkg", "fs.write[/work]")
+	if strings.Contains(ordinary, "protected-name") {
+		t.Errorf("unrelated rename misdiagnosed: %s", ordinary)
+	}
+	file := Text(record.ReasonRenameOutsideContract, "rename", "/work/.env", "fs.deny_read[/work/**/.env]")
+	if strings.Contains(file, "this directory move") {
+		t.Errorf("a protected file's rename was misdiagnosed as a directory: %s", file)
+	}
+}
+
 // golden compares got with testdata/name, or writes it there under -update.
 func golden(t *testing.T, name, got string) {
 	t.Helper()

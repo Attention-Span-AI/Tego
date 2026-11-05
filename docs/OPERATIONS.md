@@ -1410,6 +1410,55 @@ What it costs and what it leaves:
   have unit coverage, with real-policy guest acceptance still open.
 - `record: summary` keeps no line for an allowed held read; every refusal has its line and reaches the reason file.
 
+## Directory moves and protected names (C55)
+
+At tiers `cgroup` and `bpflsm`, a directory move that loses `deny_read` name protection is refused even
+when both ends are writable and no secret exists in that directory. The built-in `.env` rule starts at the
+contract directory and launch cwd. It stops below `.git`, `node_modules`, `vendor`, `target`, `.venv` and
+`venv`. Declaring another directory in `fs.write` grants writes; it adds no scan or name scope.
+
+For example, ordinary `pip install --target ./target` with staging in `./tmp`, a broad `fs.write: ["./"]`,
+and the contract outside that write hits this limit at the root tiers. Pip may fall back to copying and exit 0;
+its recorded rename refusals still mean it did not run without interference. This also occurred in v0.1.0.
+Tier `landlock` allows those pip moves; it has no corresponding name-mutation floor (A11 below).
+
+One working arrangement retains protection at both ends using the existing contract-directory and cwd roots.
+From a project containing a read-only `agent.yaml` and writable `tmp/` and `target/`, pre-create both:
+
+```sh
+mkdir -p tmp target
+```
+
+Keep other required grants, and write entries relative to the **new launch cwd**, `target/`:
+
+```yaml
+fs:
+  write: ["../tmp/", "./"]
+exec:
+  allow: ["python3", "../tmp/", "./"]
+```
+
+Then launch from target, with the contract outside the writable paths:
+
+```sh
+(cd target && tego run ../agent.yaml -- python3 -m pip install --target . example-package)
+```
+
+Set `env.set.TMPDIR` to the **absolute** path of the pre-created staging directory. Rebase other relative
+contract entries for that cwd, or use absolute paths. The contract directory covers staging, while cwd covers
+target. The matching directory exec grants preserve REFER rights for native modules; retain the programs your
+workload needs. No secret waiver or `deny_read: []` is involved. This is the arrangement tested offline with
+pip and pytest by KT4. `tego learn <run>` explains it after the built-in-name rename refusal and leaves refused
+actions out of proposed allows. An alternative is to install under a name such as `site-packages`, within the
+existing protection at both ends.
+
+The limit remains for a broad parent alone, declarations alone, a further dependency boundary below either
+root, and moves outside all scopes. Separate deny rows and REFER still apply. Root planes protect their inode
+scopes; supervisor pathname checks have their existing race limits. At tier `landlock`, held reads protect
+launch-pinned identities, but a future name-only match outside watched launch targets can be renamed, exchanged
+or hard-linked into an uncovered place before a held read pins it (GAPS A11). Keep secrets outside writable
+folders; this remedy for ordinary pip work does not close that separate residual.
+
 ## Names made after a run started beside a `deny_read` (2026-10-26)
 At tier landlock an enforced `deny_read` is built from one listing, at launch, of each directory above the target:
 every name there is granted, the directory itself only lists. A directory or file made in one of those directories

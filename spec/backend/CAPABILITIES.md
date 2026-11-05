@@ -1,5 +1,12 @@
 # Backend capability matrix (spec v0)
 
+At the root tiers, preemptible kernels can skip tracing callbacks before run membership is checked. The record gap
+`bpf-trampoline-miss/shared-build` counts skipped executions of the build's shared recorder programs during the run;
+it includes other runs and ungoverned tasks, and is not an exact per-run lost-record count. One skipped callback can
+suppress multiple records. Unreadable counters produce `bpf-trampoline-counter-unavailable` (GAPS C53).
+The 6.1 plane uses the probe reader without `bpf_rdonly_cast`; confidentiality lockdown requires the read-only reader
+and therefore that kfunc.
+
 Every run records which tier ran and what it could do: `run_start.tier`, and `run_start.capabilities`, one boolean per
 row below — this table's column for that tier as the run's own enforcement narrowed it (an unenforced `deny_read`, the
 kernel's Landlock ABI), with the rows only the run can answer set from the run: capture from the sources that really
@@ -57,7 +64,7 @@ one. `observe` is a run mode (record only), not a tier.
 | unix sockets | seccomp connect; `RESOLVE_UNIX` on ABI ≥ 9 | `cgroup/connect_unix` on 6.7+, seccomp below | in-kernel, resolved path |
 | ask (pause for a human) | yes (seccomp; file reads too, `fs.ask_read`) | yes (no held read: `fs.ask_read` is refused) | yes (no held read: `fs.ask_read` is refused) |
 | record exec, write-open, connect | yes (seccomp supervisor, advisory against a hostile process) | yes (eBPF) | yes |
-| record reads, mmap, chmod | only with `record: full` (slow) | yes | yes |
+| record reads, mmap, chmod | only with `record: full` (slow) | yes; tracing callbacks can be skipped on preemptible kernels | yes; tracing callbacks can be skipped on preemptible kernels |
 | capture model traffic | forwarder | uprobes and forwarder | uprobes and forwarder |
 | log allowed actions with the rule matched | seccomp-visible kinds only | all | all |
 | adopted containers (daemon-created cgroups) | no: boundary events, API record, gaps | network and record yes; files by fanotify; `ask` refused inside | yes, plus delete/rename per cgroup; `ask` refused inside |
@@ -80,6 +87,25 @@ one. `observe` is a run mode (record only), not a tier.
 | deny read of a nested secret moved or hard-linked | enforced (held): launch-pinned identities, and files put at protected names later; a change that cannot be followed refuses held reads until restart | conditional (a decision plane refuses a rename or link out of a `deny_read` tree; on the fanotify listener the supervisor refuses one on copied names, best effort) | yes: a rename or link out of a `deny_read` tree is refused (REFER) |
 | minimum kernel | upstream tested floor 6.1 (ABI 2); upstream 6.2 truncate; 6.7 TCP ports; 6.12 scopes; 6.15 audit; 7.1 pathname unix; 7.2 UDP ports; ABI 1 unsupported; RHEL 9's 5.14 is a tested matrix row below that floor, run with its backported ABI 6 | upstream tested floor 6.1 (6.7 for `connect_unix`); RHEL 9's 5.14 is a tested matrix row below that floor, run with its backports | upstream tested floor 6.1, whose hook prototypes the plane declares (per-run maps and lsm hooks, ADR 0025); RHEL 9's 5.14 is a tested matrix row below that floor, run with its backported `bpf_loop` and `bpf_rdonly_cast` |
 | decision plane | none: the Landlock domain and the seccomp supervisor decide | `lsm` or `fmod_ret`, chosen per boot by doctor's probe; `fanotify` where neither passes | `lsm` (the plane's programs as `lsm/` hooks; needs `bpf` in the LSM list) |
+
+*RHEL 9 syscall outcome correction, 2026-11-05:* v0.1.0 already contained the bind/listen terminal producers, but
+their CO-RE context was `trace_event_raw_sys_exit` (the `raw_syscalls` layout). RHEL 9's backported
+`trace_entry.preempt_lazy_count` makes that type's `ret` offset 24; individual `syscalls:sys_exit_*` events use
+`syscall_trace_exit`, whose `ret` is at 16. The perf attachment rejects the out-of-bounds access with `EACCES`.
+Root-tier contracts declaring `net.listen` therefore failed preparation on RHEL 9; the minimum-kernel row was
+not proof of listener coverage in that release. Outbound-only contracts did not require the listener producers.
+The corrected bind, listen, execve and execveat producers use `syscall_trace_exit` and retain CO-RE, actual terminal
+results and listener marker cleanup. No attachment is made optional and no capability is weakened by this fix.
+Other missing or policy-denied hooks still follow the existing fail-closed listener requirements and disclosed
+optional exec-outcome fallback; a supported kernel version alone is never attachment proof.
+The proc-directory oracle suite measures DAC refusal on RHEL's private `/proc/1/fd`; its fdinfo directory is
+publicly searchable, so the newer fdinfo permission-hook oracle cannot be exercised there (GAPS B5).
+
+Syscall outcome hooks also require a readable tracefs event format whose `ret` field is eight bytes at
+offset 16, matching the supported BPF syscall exit wrapper. Doctor and the loader reject divergent, missing
+or unreadable layouts before loading or adopting the hooks, naming the reason. Doctor and run tier selection
+withhold root tiers on any such layout refusal, including listener capability rows; present exec events do
+not enter the optional attachment fallback for a layout failure.
 
 *Amended 2026-10-06:* the minimum-kernel row names RHEL 9's 5.14, which runs every tier with its backports
 (docs/ARCHITECTURE.md §14; TIER3-PLAN §7; the `rhel-9` rows of test/vm/README.md, doctor offering bpflsm and kill

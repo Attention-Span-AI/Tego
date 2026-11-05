@@ -1440,7 +1440,11 @@ hook under R1 to R3, in both modes, probed by doctor with one refused action eac
   its bound address and port need an allow row in `tego_bind_exact` (exact, then the family's wildcard address). An
   absent or other-gen `tego_net_control` row refuses.
 - Records: a Unix bind or listen decision is carried by the marker to its one terminal line, written with the
-  actual return by `sys_exit_bind`/`sys_exit_listen` (`tego_listener_result_emit`), which also clears the marker; a
+  actual return by `sys_exit_bind`/`sys_exit_listen` (`tego_listener_result_emit`), which also clears the marker.
+  These programs use the individual syscall event's `syscall_trace_exit` context, retaining CO-RE (not
+  `raw_syscalls`' `trace_event_raw_sys_exit`, whose return offset differs on RHEL 9; ADR 0024's 2026-11-05 correction).
+  The loader and doctor require tracefs's `ret` field at offset 16, size 8, matching the supported BPF syscall
+  exit wrapper; an unknown or divergent format refuses the hook before loading or adoption, with the reason. A
   refused inet listen writes the plane's own `TEGO_EV_PLANE_SOCKET` sample; a supervisor relay's line is its
   completion's. *Amended 2026-10-05:* io_uring's `IORING_OP_BIND` and `IORING_OP_LISTEN` (6.11+) reach both hooks
   through `__sys_bind_socket`/`__sys_listen_socket` with no bind or listen syscall exit, so their refusals had no

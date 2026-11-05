@@ -26,6 +26,12 @@ import (
 // still a gap, and dropping it from the summary would hide exactly the run it was written about.
 const Unknown = "unknown"
 
+// SharedTracingSkip and SharedTracingUnavailable carry uncertainty about this run, not known lost events.
+const (
+	SharedTracingSkip        = "bpf-trampoline-miss/shared-build"
+	SharedTracingUnavailable = "bpf-trampoline-counter-unavailable"
+)
+
 // maxBinaries bounds how many binaries one entry of the rendered line names; --json carries them
 // all. A run with a gap per binary (no-openssl on every helper a build spawns) would otherwise
 // print a line as long as its process list.
@@ -41,7 +47,11 @@ type Count struct {
 	// Lost is the sum of their count fields: events a producer dropped rather than recorded.
 	// Zero when no event of this kind carried a count. A gap that names a binary counts that binary's
 	// processes the source could not cover, not dropped events, and adds to Processes instead.
+	// Shared tracing skips add to SharedSkipped; unavailable-counter occurrences add to neither.
 	Lost int
+	// SharedSkipped is the reported sum of skipped shared tracing program executions. Overlapping runs may
+	// report the same execution; these are neither unique skips nor this run's lost events.
+	SharedSkipped int
 	// Processes is the sum of the count fields of gaps that name a binary.
 	Processes int
 	// Binaries are the distinct binary fields, sorted; empty when none named one.
@@ -72,9 +82,13 @@ func (t *Tally) Add(e *record.Event) {
 	if p.Why == "" {
 		p.Why = Unknown
 	}
-	lost, procs := 0, 0
+	lost, procs, skipped := 0, 0, 0
 	var bins []string
 	switch {
+	case p.What == record.GapRecord && p.Why == SharedTracingSkip:
+		skipped = max(p.Count, 0)
+	case p.What == record.GapRecord && p.Why == SharedTracingUnavailable:
+		// Count names counter failures, not lost events.
 	case p.Count > 0 && p.Binary != "":
 		procs = p.Count
 	case p.Count > 0:
@@ -83,11 +97,11 @@ func (t *Tally) Add(e *record.Event) {
 	if p.Binary != "" {
 		bins = []string{p.Binary}
 	}
-	t.add(p.What, p.Why, 1, lost, procs, bins)
+	t.add(p.What, p.Why, 1, lost, procs, skipped, bins)
 }
 
 // add folds events gap events of one (what, why) into the tally.
-func (t *Tally) add(what, why string, events, lost, procs int, binaries []string) {
+func (t *Tally) add(what, why string, events, lost, procs, skipped int, binaries []string) {
 	if t.counts == nil {
 		t.counts, t.seen = map[[2]string]*Count{}, map[[3]string]bool{}
 	}
@@ -98,6 +112,7 @@ func (t *Tally) add(what, why string, events, lost, procs int, binaries []string
 	}
 	c.Events = addCount(c.Events, events)
 	c.Lost = addCount(c.Lost, lost)
+	c.SharedSkipped = addCount(c.SharedSkipped, skipped)
 	c.Processes = addCount(c.Processes, procs)
 	for _, b := range binaries {
 		if !t.seen[[3]string{what, why, b}] {
@@ -137,12 +152,13 @@ func (t *Tally) Counts() []Count {
 }
 
 // Merge sums the tallies of several runs by (what, why), for drift's aggregate report: events and
-// lost add up and the binaries are the union.
+// lost add up and the binaries are the union. SharedSkipped sums reported counts; overlapping runs may
+// report the same skipped execution, so this is not a count of unique skips.
 func Merge(runs ...[]Count) []Count {
 	var t Tally
 	for _, cs := range runs {
 		for _, c := range cs {
-			t.add(c.What, c.Why, c.Events, c.Lost, c.Processes, c.Binaries)
+			t.add(c.What, c.Why, c.Events, c.Lost, c.Processes, c.SharedSkipped, c.Binaries)
 		}
 	}
 	return t.Counts()
@@ -162,6 +178,9 @@ func Line(cs []Count) string {
 		var b strings.Builder
 		fmt.Fprintf(&b, "%s/%s x%d", record.Printable(c.What), record.Printable(c.Why), c.Events)
 		var detail []string
+		if Classify(c.What, c.Why) == Uncertain {
+			detail = append(detail, SharedTracingWords(c.SharedSkipped, c.Why == SharedTracingUnavailable))
+		}
 		if c.Lost > 0 {
 			detail = append(detail, strconv.Itoa(c.Lost)+" events lost")
 		}
@@ -235,6 +254,8 @@ const (
 	// Restored is tego giving the owner back the rights something took from one of its own files
 	// (record.GapOwnStateModeRestored): nothing went unrecorded and nothing is short, so the counts stand.
 	Restored
+	// Uncertain is shared tracing counter evidence that cannot establish whether this run lost actions.
+	Uncertain
 )
 
 // priceWhys are the whys of a gap what=record that leave only the cost unestimated.
@@ -245,6 +266,8 @@ func Classify(what, why string) Class {
 	switch {
 	case LiveChange(what, why):
 		return Live
+	case what == record.GapRecord && (why == SharedTracingSkip || why == SharedTracingUnavailable):
+		return Uncertain
 	case what == record.GapCapture:
 		return Capture
 	case what == record.GapRecord && priceWhys[why]:
@@ -253,6 +276,19 @@ func Classify(what, why string) Class {
 		return Restored
 	}
 	return Missed
+}
+
+// SharedTracingWords preserves what these counters measure, including their inability to attribute skips to
+// this run. "Reported" also covers merged run windows that may count the same skipped execution more than once.
+func SharedTracingWords(skipped int, unavailable bool) string {
+	words := "recording coverage is uncertain"
+	if skipped > 0 {
+		words += fmt.Sprintf(": %d reported skipped executions of shared tracing programs, which may belong to other runs or ungoverned tasks", skipped)
+	}
+	if unavailable {
+		words += "; active shared tracing program counters could not be established or read"
+	}
+	return words + "; this run may have unrecorded actions"
 }
 
 // RestoredWords says how many of tego's own files had their owner's rights given back (Restored), in the words the
@@ -298,10 +334,15 @@ func Words(cs []Count, cutOff bool) string {
 	if len(cs) == 0 && !cutOff {
 		return ""
 	}
-	var missed, lost, capture, price, restored int
+	var missed, lost, capture, price, restored, skipped int
+	var uncertain, unavailable bool
 	var live []string
 	for _, c := range cs {
 		switch Classify(c.What, c.Why) {
+		case Uncertain:
+			uncertain = true
+			skipped = addCount(skipped, c.SharedSkipped)
+			unavailable = unavailable || c.Why == SharedTracingUnavailable
 		case Missed:
 			missed = addCount(missed, c.Events)
 			lost = addCount(lost, c.Lost)
@@ -328,8 +369,11 @@ func Words(cs []Count, cutOff bool) string {
 		parts = append(parts, fmt.Sprintf("%s in the record (counts are a minimum, %d events lost)", plural(missed, "gap"), lost))
 	case missed > 0:
 		parts = append(parts, plural(missed, "gap")+" in the record (counts are a minimum)")
-	case !cutOff:
+	case !cutOff && !uncertain:
 		parts = append(parts, "no action known to be missing")
+	}
+	if uncertain {
+		parts = append(parts, SharedTracingWords(skipped, unavailable))
 	}
 	if cutOff {
 		parts = append(parts, "the record has no end, so it may stop short of what the run did")

@@ -765,6 +765,15 @@ at run end, one `what=enforce` line per counter of the run's slot that is not ze
 `plane-identity-mismatch`, `plane-path-unresolved`, `plane-walk-bound`, `plane-no-rows`, `count` the refusals the
 plane made for that cause, and `why=plane-counters-unread` with no count when the slot could not be read
 (`docs/p0/enforce-plane.md` §2.8). Each counts refusals already made; none is an action allowed.
+At the root tiers, `what=record why=bpf-trampoline-miss/shared-build` counts skipped executions of the build's
+shared recorder programs between the recorder's start and final drain. The kernel can skip them before checking
+run membership, so `count` includes other runs and ungoverned tasks; it is not this run's lost-record count.
+One skip can suppress multiple records. `why=bpf-trampoline-counter-unavailable` means this accounting could not
+be read or its executing instance could not be established from the active link. The recorder retains the link and
+program references across its samples; it does not infer the executing instance from an independent program pin.
+Views and receipts keep recording coverage incomplete and describe these as reported shared skipped executions,
+not lost events or proof of loss in this run. Aggregating overlapping run windows may count the same skip again.
+Neither gap attributes a verdict to a missing callback (ADR 0016, GAPS C53).
 An adopted run (ADR 0055, additive within v1, 2026-10-06) writes, after `run_start`, one `exec` line per process it moved
 with `by: adoption` (the process was already running and its exec was not seen; its `exec_id` carries its start time), and
 `gap what=record` lines with `why` `adoption-pre-attach` (`binary` the agent, `count` the processes adopted: what each did
