@@ -7,121 +7,125 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ## Unreleased
 
+## v0.1.1 - 2026-11-04
+
+This patch tightens the built-in refusals around an agent and checks the file identities and security labels
+used for approvals. Receipts and the dashboard give more reliable results for long runs, `tego rules` brings the
+rules view to the terminal, and release automation adds signed container images alongside the binaries. MCP tool
+rules remain a preview, with the limits below.
+
 ### Security
 
-- Every enforcing run applies fixed refusals for protected host IPC, Tego control surfaces and other terminals,
-  before ordinary contract grants. The run's own runtime, fixed SSH-agent exceptions, inherited terminal and
-  policy-checked own PTYs remain usable; an exact container-daemon socket allow warns about escape authority.
-  Root tiers add native Unix peer checks and reject `io_uring: true`. Inherited descriptors, new outside FIFOs,
-  unlisted server paths and datagram/copied-path cases without a native plane retain documented limits.
-- (SEC08) keep unreadable AppArmor namespace depth fail-closed by default; add the explicit
-  top-level contract opt-in `fs.apparmor_assume_root_namespace: true` for administrators accepting hidden
-  ancestor restrictions. Compile warns and `run_start.best_effort` records the option. The VM matrix
-  requires SELinux/Smack live-policy fixtures without skips; per-PR CI does not run those live proofs.
-
-- By default held file opens require matching complete AppArmor labels from a proven root policy namespace, or matching
-  SELinux contexts and `fscreate` for potential file creation. Smack completions refuse because another task's process
-  rules cannot be queried. Unknown authority facts fail closed, including for approvals and alternates.
-- A masked securityfs LSM list can use the unprivileged kernel enumeration syscall. Matching-label
-  containers keep working when the required facts remain available; hidden AppArmor namespace depth
-  still returns `EACCES` with `held-label-unavailable` by default.
-
-- Held reads retain the identities of protected files and denied-directory descendants, so renames, hard links,
-  replacements and move chains cannot turn them into readable aliases. Approvals and alternate files check the
-  opened identity too, including write-only approvals. Lost mutation history or an unsupported filesystem refuses
-  held reads; new name-rule matches outside the launch snapshot and mount changes made and undone between reads
-  remain limits. Ordinary held write opens also recheck live blocks before delivery.
-- Ledger and anchor writers reject hard-linked record, lock and anchor files for every user. This does not protect
-  records from their owner or add link-count checks to historical readers and garbage collection.
-- A stdio MCP relay registers and pins its exact child before exec, closing pending-start theft by a preexisting
-  child. Existing `mcp relay *` grants still work through a narrowly authenticated private stage; explicit denies
-  and asks still apply. Old relay protocols are refused: rebuild the launcher and shims together. MCP remains a
-  preview, with the ptrace/socket-copy and alternate-command limits in [GAPS C50](GAPS.md).
-- Boundary adoption prepares and arms its empty destination before moving any process. The decision plane refuses
-  CAP_SYS_ADMIN in every user namespace, covering mount changes and mount-namespace installation; missing hook
-  proof refuses boundary adoption. Record-only adoption is unchanged. Earlier changes, operations already past the
-  capability check, outside processes, inherited descriptors, NET07 and NET08 remain limits.
-- Node command rules scan config and dotenv options across the arguments Node actually scans. Expanded option
-  inventories require an attested standalone Linux x64 Node 20.19.4 or 22.21.1 executable. Other builds retain the
-  previous bounded parser plus these scans, including the documented unknown-build and `NODE_OPTIONS` limits.
-- Demo command output masks Claude OAuth tokens and Anthropic API keys while preserving their exact argument
-  bytes. Demo resets and developer cleanup require ownership markers and reject protected or unmarked paths,
-  including newline-only entries and failed listings. Old unmarked demo state needs manual relocation or a fresh
-  path; shell markers guard accidental cleanup, not concurrent hostile path replacement. Source builds use a fresh
-  marked BPF toolchain cache and leave the old unmarked cache untouched.
-- Release signing runs in a separate job with no checkout, project code or build hooks. It verifies release assets
-  and the image digest before signing; publication waits for reproduction, vulnerability scanning and signing.
-
-- A stdio MCP start is bound to the admitted shim's exact child by a pidfd registered before exec. A child forked
-  before its parent became the shim can no longer steal the pending start (GAPS C51). Failed registration refuses
-  the start; relay protocols v1/v2 are refused, so rebuild launcher and shims together.
-- Existing `<tego-path> mcp relay *` grants continue to work. Tego conditionally admits the private stage only
-  for the admitted shim's exact fresh-socket child, with a retained pidfd; no broader user grant is needed.
-  Direct stage attempts and other tego subcommands receive no permission from it. Explicit denies/asks still apply.
-- The MCP relay remains preview functionality (`--preview` exposes its dashboard link). A run with ptrace or
-  `pidfd_getfd` authority over the shim/server can still bypass tool decisions and their ledger lines; other command
-  spellings need separate exec rules (GAPS C50). The owner's hardening decision remains
-  [proposed in ADR 0126](adr/0126-mcp-tool-rules.md#proposed-amendment-2026-11-03-preview-or-security-boundary).
+- Enforcing runs refuse protected host IPC, Tego control surfaces and other terminals before grants. Own
+  runtime, fixed SSH-agent exceptions, inherited terminals and policy-checked own PTYs work; exact
+  container-daemon socket grants warn of escape authority. Root tiers add native Unix peer checks and reject
+  `io_uring: true`. Limits remain for inherited descriptors, new outside FIFOs, unlisted server paths and
+  datagram/copied-path cases without native checks.
+- Held opens require matching complete AppArmor labels with proven root namespace visibility, or matching
+  SELinux contexts and `fscreate` for potential creation. Smack refuses: another task's rules cannot be queried.
+  Unknown facts refuse approvals and alternates. An unprivileged syscall discovers LSMs behind masked
+  securityfs. Containers need them; hidden AppArmor namespace depth gives `EACCES` / `held-label-unavailable` by
+  default. Administrators can waive only unreadable depth with `fs.apparmor_assume_root_namespace: true` in the
+  top-level contract, accepting hidden-ancestor risk; compile warns and `run_start.best_effort` records it.
+- Held reads track protected identities through renames, hard links, replacements and moves, including
+  denied-directory descendants. Approvals (including write-only) and alternates recheck opened identities. Lost
+  mutation history or unsupported filesystems refuse held reads; new name matches outside the launch snapshot
+  and mount changes undone between reads remain limits. Held writes recheck live blocks.
+- Record, lock and anchor writers reject hard links for everyone. Owners can still alter records; historical
+  readers and garbage collection gain no link-count checks.
+- Stdio MCP starts pin the admitted shim's exact child before exec, refusing preexisting children; failed
+  registration refuses. `mcp relay *` grants use an authenticated private stage, honoring denies/asks without
+  permitting other children or subcommands. Protocols v1/v2 refuse: rebuild launcher and shims together. MCP
+  stays a preview (`tego serve --preview` exposes its dashboard link): ptrace/socket-copy authority can bypass
+  decisions and their record; alternate command spellings need separate exec rules ([GAPS C50](GAPS.md)).
+  Hardening remains [proposed in ADR
+  0126](adr/0126-mcp-tool-rules.md#proposed-amendment-2026-11-03-preview-or-security-boundary).
+- Boundary adoption arms its empty destination before moving processes. The agent cannot use `CAP_SYS_ADMIN` in
+  any user namespace, covering mount changes and mount-namespace installation; missing hook proof refuses
+  adoption. Record-only adoption stays unrestricted. Earlier changes, operations past capability checks, outside
+  processes, inherited descriptors/mappings and pre-attachment actions remain outside protection. Adoption
+  refuses network contracts (`net:`); it cannot enforce them.
+- Node rules scan config and dotenv options wherever Node scans them. Expanded parsing needs exact standalone
+  Linux x64 builds 20.19.4 or 22.21.1; others keep bounded parsing plus these scans. Unknown builds may miss
+  code-loading options; external `NODE_OPTIONS` preloads remain unread.
 
 ### Fixed
 
 - Protected host-server paths that the invoking user cannot traverse no longer prevent startup; reachable
-  objects remain pinned and unexpected identity errors still refuse launch. Compiled built-in entry names
-  stay the same when host servers are installed or removed. Record-only adoption remains unrestricted.
+  objects remain pinned and unexpected identity errors still refuse launch. Compiled built-in entry names stay
+  the same when host servers are installed or removed.
 - Native Unix peer checks use the correct kernel-memory reader, and protected-name walks keep the original
   verifier instruction budget across kernels.
 - Permitted overlay copy-up can use kernel-installed filesystem credentials without granting the agent
   CAP_SYS_ADMIN; task-initiated mount changes and trusted xattr operations, including through an io_uring
-  personality, remain refused. Missing kernel
-  bind/listen metadata is explicitly disclosed instead of inferred from a copied attempt. Frozen bind lookup
-  errors keep supervisor ownership and one observed result with their actual errno.
+  personality, remain refused. Missing kernel bind/listen metadata is explicitly disclosed instead of inferred
+  from a copied attempt. Frozen bind lookup errors keep supervisor ownership and one observed result with their
+  actual errno.
 - Interactive Claude examples use short private session socket paths, check the complete path at launch and
   refuse an overlong path with a fix. PTY peer delivery checks filesystem policy, live blocks and gates without
   changing the supervisor's controlling terminal.
 - Developer correctness tests synchronize with observed readiness, lock state and peer admission, and bound Unix
   socket fixture paths. Fast-path timing tests retain their original uninstrumented budgets in
   `scripts/timing-budgets.sh`, with separate instrumented unit/race ceilings; production limits are unchanged.
+  The VM matrix, run by hand before a release, requires live SELinux/Smack policy fixtures without skips;
+  per-PR CI omits these proofs.
 - Dashboard event windows, indexes and pending asks have bounded retained state, with partial-history labels and
   explicit truncation. Full-ledger receipts report a limit error rather than an incomplete unanswered-ask count.
   Historical reads may rescan disk; these budgets are not a process memory cap.
-- Dashboard live regions retry after a failed refresh even if no new event arrives. Watched-run comparisons require
-  matching workspace and agent identity, preserving warnings when that identity is absent or different.
-- Receipts, dashboard verdicts and learned rules keep successful read/send pairs together; an unrelated refusal no
-  longer creates a leak warning. Proximity remains a heuristic. Newly written refusal/mirror pairs are contiguous,
-  and created-link and unanswered-ask totals agree across views; older displaced mirrors can remain ambiguous.
-- Fresh agent setup generates explicit, portable Claude print-mode and Codex contracts without seeding credentials.
-  Codex settings-source notes appear in compile and verbose output, keeping ordinary starts quiet.
-- `tego status --agent` selects the newest matching run; `--all` lists every matching retained run. Last-run
-  selection skips startup records with no events while still refusing unreadable or corrupt records. Run
-  abbreviation verification includes anchored runs whose directories have been deleted.
+- Dashboard live regions retry after a failed refresh even if no new event arrives. Watched-run comparisons
+  require matching workspace and agent identity, preserving warnings when that identity is absent or different.
+- Receipts, dashboard verdicts and learned rules keep successful read/send pairs together; an unrelated refusal
+  no longer creates a leak warning. Proximity remains a heuristic. Newly written refusal/mirror pairs are
+  contiguous, and created-link and unanswered-ask totals agree across views; older displaced mirrors can remain
+  ambiguous.
+- Fresh agent setup generates explicit, portable Claude print-mode and Codex contracts without seeding
+  credentials. Codex settings-source notes appear in compile and verbose output, keeping ordinary starts quiet.
+- Agent selection with `tego status --agent` uses the newest matching run; `--all` lists every matching retained
+  run. Last-run selection skips directories with no ledger file while still refusing unreadable or corrupt
+  records. Run abbreviation verification includes anchored runs whose directories have been deleted.
 - Suggested block commands quote paths and option-like program names safely. Exec summaries expose fileless and
-  dropped-program facts. Service-mode intentional stops return 143 after escalation while preserving actual ledger
-  exit status; OOM/process limits and record errors keep their distinct exit codes.
-- Release publication verifies and preserves the tagged changelog text, including recovery when a draft edit fails.
-
-- Tagged releases retain their changelog section in the release body. GoReleaser's changelog pipe stays enabled to
-  read `--release-notes`; the publisher checks the draft against the release job's same-run notes artifact immediately
-  before publication and verifies the published body and public status. Edit errors also trigger readback and an
-  attempt to restore draft status, including when the update applied remotely before the command reported failure.
+  dropped-program facts. Service-mode intentional stops return 143 after escalation while preserving actual
+  ledger exit status; OOM/process limits and record errors keep their distinct exit codes.
+- Demo commands mask Claude OAuth tokens and Anthropic API keys in printed environment assignments while
+  preserving their exact argument bytes. Demo resets and developer cleanup require ownership markers and reject
+  protected or unmarked paths, including newline-only entries and failed listings. Old unmarked demo state needs
+  manual relocation or a fresh path; shell markers guard accidental cleanup, not concurrent hostile path
+  replacement. Source builds use a fresh marked BPF toolchain cache and leave the old unmarked cache untouched.
+- Release publication preserves the tagged changelog section. The publisher checks the draft against the
+  same-run notes artifact immediately before publication, then reads back the body and public status even if
+  editing fails. After editing, an error, mismatched body or unverified state fails publication and triggers an
+  attempt to restore draft status; a failed restore needs manual inspection.
 
 ### Added
 
-- `tego rules` shows the same rules-in-force view as the dashboard, with text and versioned JSON, sources, hits,
-  enforcement details and live state. Before a first run, `rules --last` explains how to start. Like the dashboard,
-  this command requires a non-root user.
+- The `tego rules` command shows the same rules-in-force view as the dashboard, with text and versioned JSON,
+  sources, hits, enforcement details and live state. Before a first run, `rules --last` explains how to start.
+  Like the dashboard, this command requires a non-root user.
 - Inventoried Node builds resolve ordinary option-heavy commands without spending the ambiguity budget on script
-  arguments. A bounded executable-digest cache avoids rehashing stable builds. Numeric names such as `node-22` now
-  use the Node row. `--stack-trace-limit` is no longer accepted as a command-rule predicate because the inventoried
-  versions disagree on its arity; this does not ban the option itself.
-- The release workflow publishes multi-platform amd64/arm64 GHCR images containing the reproduced release binaries,
-  with keyless signatures, provenance and a recorded index digest. The container base is not claimed reproducible,
-  and a signing failure can leave an unsigned registry image while the GitHub release stays a draft.
+  arguments. A bounded executable-digest cache avoids rehashing stable builds. Numeric names such as `node-22`
+  now use the Node row. `--stack-trace-limit` is no longer accepted as a command-rule predicate because the
+  inventoried versions disagree on its arity; this does not ban the option itself.
+- Release automation publishes `ghcr.io/attention-span-ai/tego` for Linux amd64 and arm64 with the exact
+  reproduced `tego`/`tego-control` release binaries, keyless cosign signatures, provenance and an index digest
+  in the release notes. Stable releases update version, major.minor and latest image tags; prereleases update
+  only their version. Signing alone can request OIDC tokens and runs without checkout, project code or build
+  hooks, verifying assets and the image digest first. Publication waits for reproduction, vulnerability scanning
+  and signing; exported CI tests check these boundaries. The container base is not claimed reproducible; signing
+  failure can leave an unsigned registry image while the GitHub release stays a draft. The install guide covers
+  verification and use.
 
-- Tagged releases publish `ghcr.io/attention-span-ai/tego` for Linux amd64 and arm64 with the exact released
-  `tego`/`tego-control` binaries, a keyless cosign signature and build provenance. Release notes include the digest.
-  Stable releases update the version, major.minor and latest image tags; prereleases update only their version.
-  The install guide documents verification and running the image. Signing runs in a dedicated job with no build
-  hooks; build jobs cannot request OIDC tokens. Exported CI tests enforce the permission and publication boundaries.
+### Record `v`
+1 (`spec/record/v1`, record minor 29)
+
+### Contract schema
+0 (`spec/agent/v0`; the field set may change without notice before v0.2.0, `docs/VERSIONING.md` section 3)
+
+### Kernel minimums
+Linux 5.14 with Landlock ABI 2 or newer, which is Linux 5.19 or a backport such as RHEL 9's 5.14; tested from 6.1 and on
+RHEL 9 (tier 1: ABI 1 is unsupported, and features are gated per ABI, see `spec/backend/CAPABILITIES.md`;
+tier 2 needs root and cgroup v2; tier 3 needs root and `bpf` in the LSM list). A unix socket under an `fs.write` path is
+admitted without a `unix:` entry only with the kernel's socket diagnostics for `AF_UNIX` (`CONFIG_UNIX_DIAG`, built in
+or the loadable `unix_diag` module); without them such a socket is refused `unix-origin-unread`, and `tego doctor` says so.
 
 ## v0.1.0 - 2026-11-03
 
