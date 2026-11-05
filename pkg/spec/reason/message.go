@@ -50,6 +50,16 @@ var facts = map[record.Reason]string{
 	record.ReasonModelRouteChanged:     "a person moved this model endpoint to another route while the request waited for approval; send it again",
 }
 
+// BuiltInNameMove identifies a rename refused by ADR 0043's built-in label (D1 or D5), distinct from
+// ordinary fs.write/REFER refusals and literal deny_read targets. A label alone does not say whether
+// the object is a file or a directory. The compiler reserves ** in labels, outside glob syntax.
+func BuiltInNameMove(why record.Reason, rule string) bool {
+	return why == record.ReasonRenameOutsideContract && strings.HasPrefix(rule, "fs.deny_read[") &&
+		(strings.HasSuffix(rule, "/**/.env]") || strings.HasSuffix(rule, "/**/.env.*]"))
+}
+
+const nameMoveFact = "the built-in .env protection blocks this rename; directory moves that lose protected-name coverage are refused; explicit fs.write entries grant staging and destination access but add no name coverage; a pre-created target used as the launch working directory retains built-in protection, with the contract outside writable paths (C55)"
+
 // Text is the one plain sentence a refusal is told in: what Tego refused, why, and the rule, as facts. The target is
 // quoted, and the op and the rule are when they hold anything but plain printable text, so a string the agent chose
 // cannot pass for text of the sentence's own (Quote); each is cut to MaxShownBytes. A code outside the closed set
@@ -74,7 +84,9 @@ func text(reason record.Reason, op, target, rule string, opLen, targetLen, ruleL
 		b.WriteString("an action")
 	}
 	b.WriteString(": ")
-	if f, ok := facts[reason]; ok {
+	if BuiltInNameMove(reason, rule) {
+		b.WriteString(nameMoveFact)
+	} else if f, ok := facts[reason]; ok {
 		b.WriteString(f)
 	} else {
 		b.WriteString("the reason code is " + Show(string(reason)))

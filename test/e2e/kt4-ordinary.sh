@@ -11,10 +11,12 @@
 # What it attacks: that enforcement does not get in the way of work the contract actually allows.
 #
 # The three kinds of work R18 names, each under a contract that extends base/python-dev and adds only
-# its own write directory and the tool it runs:
+# its own write directories and the tools it runs:
 #   pip  — test/workloads/build/python/run.sh: `pip install` of the §9 build workload's pinned
 #          requirements from a local wheelhouse, then `pytest` over its tests (test/e2e/pydeps.sh
-#          fetches the wheels and pip once; no index is on the clock);
+#          fetches the wheels and pip once; no index is on the clock). Ordinary work uses
+#          site-packages at root tiers and target at landlock. The original --target ./target under
+#          a broad writable parent is a checked C55 limit at root tiers, with a tested remedy;
 #   npm  — `npm install` of test/workloads/npm-agent, a local zero-registry dependency;
 #   go   — `go build` of test/workloads/build/cpu in a module of its own, offline, with a build cache
 #          the five baseline runs warm, as a developer's cache is.
@@ -86,12 +88,15 @@ median() {
 # here. run_kind calls them by name ("prepare_$kind"), which shellcheck cannot follow.
 # shellcheck disable=SC2329
 prepare_pip() {
-	local py
+	local py dest="${1:-target}"
 	# shellcheck disable=SC2119 # pydeps.sh's default cache, not this function's arguments
 	py="$(kt_pydeps)" || { echo "the pip bootstrap and wheelhouse are not cached and cannot be fetched (test/e2e/pydeps.sh)"; return 2; }
 	cp -r "$py/pip-bootstrap" "$py/wheelhouse" "$work/"
 	chmod -R go+rX "$work/pip-bootstrap" "$work/wheelhouse"
-	cmd=(bash "$repo/test/workloads/build/python/run.sh" "$work/wheelhouse" "$work/pip-bootstrap" "$W/target" "$W/tmp")
+	# The original target case stays in check_pip_limit. The ordinary root-tier destination
+	# stays within name coverage; it does not claim the target restriction has been fixed.
+	pip_target="$W/$dest"
+	cmd=(bash "$repo/test/workloads/build/python/run.sh" "$work/wheelhouse" "$work/pip-bootstrap" "$pip_target" "$W/tmp")
 	cwd="$W"
 	# pip installs markupsafe's _speedups extension into target/, and pytest imports it: at the tiers a decision
 	# plane decides, a PROT_EXEC map of native code under a write entry needs an exec.allow entry covering it
@@ -101,11 +106,11 @@ prepare_pip() {
 	# right the destination alone grants is refused (Landlock's REFER rule, which tier 3's plane keeps: SEMANTICS
 	# §2), and target/'s exec.allow is such a right, so tmp/ is named in exec.allow too: without it every package's
 	# move was refused rename-outside-contract (pip then copies), and each run counted as broken (2026-10-24). Both are kept between runs, only emptied, for the same reason.
-	mkdir -p "$W/target" "$W/tmp"
-	reset="find '$W/target' '$W/tmp' -mindepth 1 -delete"
+	mkdir -p "$pip_target" "$W/tmp"
+	reset="find '$pip_target' '$W/tmp' -mindepth 1 -delete"
 	# dirname and mkdir are named as they are, hard links of one multi-call binary on a uutils host (Ubuntu 25.10)
 	# included: the plane keys an exec row per link (enforce-plane §6 E15), so each listed link runs.
-	execs="\"bash\", \"dirname\", \"mkdir\", \"$W/target/\", \"$W/tmp/\""
+	execs="\"bash\", \"dirname\", \"mkdir\", \"$pip_target/\", \"$W/tmp/\""
 	envset=""
 }
 
@@ -142,6 +147,101 @@ prepare_go() {
 	envset="GOCACHE: \"$W/gocache\", GOPATH: \"$W/gopath\", GOFLAGS: \"-mod=mod\", GOPROXY: \"off\", GOTOOLCHAIN: \"local\", CGO_ENABLED: \"0\", GOTELEMETRY: \"off\""
 }
 
+# Explicit write entries grant access; they do not add built-in name scopes (ADR 0043 D10).
+write_contract() {
+	local kind="$1" extra_writes=""
+	if [ "$kind" = pip ] && [ "${2:-scoped}" != broad ]; then
+		extra_writes="\"$W/tmp/\", \"$pip_target/\""
+	fi
+	cat >"$work/agent.yaml" <<-EOF
+	version: 0
+	name: kt4-$kind
+	extends: base/python-dev
+	command: [$(printf '"%s", ' "${cmd[@]}" | sed 's/, $//')]
+	fs:
+	  write: ["$W/"${extra_writes:+, $extra_writes}]
+	exec:
+	  allow: [$execs]
+	env:
+	  set: { HOME: "$W/agent-home", TMPDIR: "$W/tmp"${envset:+, $envset} }
+	limits:
+	  wall: 300s
+	EOF
+
+}
+
+# C55: keep the original broad-parent contract visible beside R18's ordinary case. Pip's copy
+# fallback is successful work with recorded refusals, not an R18 pass. The remedy uses a cwd root.
+check_pip_limit() {
+	local tier="$1" rundir rc from to
+	work="$(kt_workdir)"
+	W="$work/write"
+	mkdir -p "$W/agent-home" "$W/tmp" "$W/cache"
+	if ! prepare_pip >"$work/why"; then
+		result "pip-limit-$tier" SKIP "$(cat "$work/why")"
+		return
+	fi
+	kt_agent_owns "$W"
+	kt_config "$work" >/dev/null
+	write_contract pip broad
+	(cd "$cwd" && TEGO_CONFIG="$work/config.yaml" kt_run "$tego" run "$work/agent.yaml" --tier "$tier" --offline -- "${cmd[@]}") >"$work/limit.log" 2>&1
+	rc=$?
+	rundir="$(kt_rundir "$work")"
+	if [ "$rc" != 0 ] || [ -z "$rundir" ] || ! jq -e -s --arg tmp "$W/tmp/" \
+		'any(.[]; .kind == "refused" and .reason == "rename-outside-contract" and (.rule | endswith("/**/.env]")) and (.target | startswith($tmp)))' "$rundir/events.jsonl" >/dev/null; then
+		result "pip-limit-$tier" FAIL "broad-parent pip must exit 0 by copying and record its name-coverage rename refusal (exit $rc)"
+		return
+	fi
+	if ! grep -Fq 'lose protected-name coverage' "$rundir/last-refusal.json" ||
+		! grep -Fq 'launch working directory' "$rundir/last-refusal.json"; then
+		result "pip-limit-$tier" FAIL "the refusal does not explain coverage loss and the contract remedy"
+		return
+	fi
+	if ! TEGO_CONFIG="$work/config.yaml" "$tego" learn "$rundir" >"$work/learn.yaml" 2>"$work/learn.err" ||
+		! grep -Fq 'fs.write: ["./tmp/", "./target/"]' "$work/learn.yaml" || ! grep -Fq 'same exec.allow' "$work/learn.yaml" || ! grep -Fq 'cd target' "$work/learn.yaml"; then
+		result "pip-limit-$tier" FAIL "tego learn does not give the tested contract change"
+		return
+	fi
+	kt_note "C55 $tier: $(jq -r .text "$rundir/last-refusal.json")"
+	kt_save_fixture "kt4-pip-limit-$tier" "$rundir"
+
+	# A directory containing a protected name cannot escape through the excluded target directory,
+	# even though the broad write grants both ends. Use a real syscall, not mv's copy fallback.
+	from="$W/tmp/protected"; to="$W/target/escaped"
+	mkdir -p "$from"
+	printf 'KT4_FIXTURE=protected\n' >"$from/.env"
+	kt_agent_owns "$W"
+	rm -rf "$work/runs"
+	(cd "$cwd" && TEGO_CONFIG="$work/config.yaml" kt_run "$tego" run "$work/agent.yaml" --tier "$tier" --offline -- \
+		python3 -c 'import os,sys; os.rename(sys.argv[1], sys.argv[2])' "$from" "$to") >"$work/move.log" 2>&1
+	rc=$?
+	rundir="$(kt_rundir "$work")"
+	if [ "$rc" != 1 ] || [ ! -f "$from/.env" ] || [ -e "$to" ] || [ -z "$rundir" ] ||
+		! jq -e -s --arg src "$from" 'any(.[]; .kind == "refused" and .target == $src and .reason == "rename-outside-contract" and (.rule | startswith("fs.deny_read[")))' "$rundir/events.jsonl" >/dev/null; then
+		result "name-move-$tier" FAIL "a writable-to-writable directory move lost protected-name coverage (exit $rc)"
+		return
+	fi
+	kt_note "D5 $tier: $(jq -c --arg src "$from" 'select(.kind == "refused" and .target == $src)' "$rundir/events.jsonl")"
+	kt_save_fixture "kt4-name-move-$tier" "$rundir"
+	result "name-move-$tier" PASS "directory containing .env stayed at its source; rename out of name protection refused"
+
+	# Apply precisely the guidance above, keeping all other grants. No deny_read waiver is involved.
+	eval "$reset"
+	rm -rf "$work/runs"
+	write_contract pip
+	cwd="$W/target" # C55 remedy: target is the launch cwd, not an added write-root scope.
+	(cd "$cwd" && TEGO_CONFIG="$work/config.yaml" kt_run "$tego" run "$work/agent.yaml" --tier "$tier" --offline -- "${cmd[@]}") >"$work/remedy.log" 2>&1
+	rc=$?
+	rundir="$(kt_rundir "$work")"
+	if [ "$rc" != 0 ] || [ -z "$rundir" ] || ! jq -e -s --arg w "$W/" \
+		'all(.[]; .kind != "refused" or ((.target // "") | startswith($w) | not))' "$rundir/events.jsonl" >/dev/null; then
+		result "pip-limit-$tier" FAIL "explicit staging/target writes and launching from target did not remedy pip's refusal (exit $rc)"
+		return
+	fi
+
+	result "pip-limit-$tier" PASS "broad-parent refusal explained; learn's explicit writes plus target-cwd remedy ran pip without a declared-path refusal"
+}
+
 # run_kind runs one kind at one tier: five baseline runs outside tego, then KT4_RUNS under it.
 run_kind() {
 	local kind="$1" tier="$2" base_times=() base_median budget_ms i rc wall rundir pass_count=0
@@ -152,27 +252,16 @@ run_kind() {
 	# kt_save_fixture's guard against exporting account paths.
 	mkdir -p "$W/agent-home" "$W/tmp" "$W/cache"
 	# Called in this shell, not in a $(...), so the variables it sets survive; a skip's reason goes to a file.
-	if ! "prepare_$kind" >"$work/why"; then
+	local prep=()
+	# Landlock permits the original target workload. At root tiers it remains an explicit limit.
+	[ "$kind" != pip ] || [ "$tier" = landlock ] || prep=(site-packages)
+	if ! "prepare_$kind" "${prep[@]}" >"$work/why"; then
 		result "$kind-$tier" SKIP "$(cat "$work/why")"
 		return
 	fi
 	kt_agent_owns "$W"
 	kt_config "$work" >/dev/null
-	cat >"$work/agent.yaml" <<-EOF
-	version: 0
-	name: kt4-$kind
-	extends: base/python-dev
-	command: [$(printf '"%s", ' "${cmd[@]}" | sed 's/, $//')]
-	fs:
-	  write: ["$W/"]
-	exec:
-	  allow: [$execs]
-	env:
-	  set: { HOME: "$W/agent-home", TMPDIR: "$W/tmp"${envset:+, $envset} }
-	limits:
-	  wall: 300s
-	EOF
-
+	write_contract "$kind"
 	# The baseline runs as the agent will: as the user a root run drops to, with the same environment.
 	local as_agent=()
 	! kt_sudo_user || as_agent=(setpriv --reuid="$SUDO_UID" --regid="${SUDO_GID:-$SUDO_UID}" --clear-groups)
@@ -277,6 +366,7 @@ for tier in $tiers; do
 	fi
 	for kind in $kinds; do
 		run_kind "$kind" "$tier"
+		[ "$kind" != pip ] || [ "$tier" = landlock ] || check_pip_limit "$tier"
 	done
 done
 

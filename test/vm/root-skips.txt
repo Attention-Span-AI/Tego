@@ -385,3 +385,6 @@ internal/runtime TestIntegrationHeldOpenSameAppArmorProfileWithoutLSMList/bpflsm
 internal/runtime/supervisor TestOpenLabelDockerAppArmor # dedicated Docker container with docker-default, exercised by the disposable Docker harness
 
 internal/runtime TestRootBuiltinRefusals/bpflsm # needs BPF LSM; unavailable on default-lsm boot
+
+internal/runtime/observe TestMissCountersFollowAttachedPrograms # untagged: needs the compiled objects; the tegobpf suite must exercise real active links
+internal/runtime/observe TestMissingActiveMissInstanceIsUncertain # untagged: needs the compiled objects; the tegobpf suite must exercise real active links

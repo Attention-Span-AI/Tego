@@ -38,6 +38,8 @@
 #                     SUDO_USER and SUDO_COMMAND name the invoking user (who also gets a passwd entry
 #                     and a home), and the command sits in a copy of this shell's own cgroup chain
 #                     (same path, same subtree_control, same delegated ownership), not in a bare scope
+#   --delegate-user   with --sudo, provide cpu/memory/pids delegation in user@<uid>.service instead of copying
+#                     the host chain; the matrix needs a usable user tier even on CI's undelegated service scopes
 #   --prepare         fetch and build everything that is cached, then exit without booting
 #   --status FILE     write one line saying where the exit code came from: "guest <code>" when the
 #                     guest ran the command, else "timeout", "no-report", "env" or "usage" (see below)
@@ -99,6 +101,7 @@ logfile=""
 dmesg=0
 prepare=0
 sudo=0
+delegate_user=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--file) [ $# -ge 2 ] || usage; files+=("$2"); shift 2 ;;
@@ -111,6 +114,7 @@ while [ $# -gt 0 ]; do
 	--log) [ $# -ge 2 ] || usage; logfile="$2"; shift 2 ;;
 	--dmesg) dmesg=1; shift ;;
 	--sudo) sudo=1; shift ;;
+	--delegate-user) delegate_user=1; shift ;;
 	--prepare) prepare=1; shift ;;
 	--status) [ $# -ge 2 ] || usage; statusfile="$2"; : >"$statusfile"; shift 2 ;;
 	-h | --help) usage ;;
@@ -119,6 +123,7 @@ while [ $# -gt 0 ]; do
 	*) break ;;
 	esac
 done
+[ "$delegate_user" = 0 ] || [ "$sudo" = 1 ] || usage
 [ "$prepare" = 1 ] || [ $# -ge 1 ] || usage
 for e in "${envs[@]+"${envs[@]}"}"; do
 	case "$e" in [A-Za-z_]*=*) ;; *) echo "kvm-run: --env wants K=V, got \"$e\"" >&2; status usage; exit "$EXIT_USAGE" ;; esac
@@ -238,7 +243,7 @@ fetch_kernel() {
 fetch_module_tree() {
 	if [ ! -d "$KDIR/mods/lib/modules/$KVER" ]; then
 		case "$KVER" in
-		matrix-*) env_fail "--module on the kernel-matrix row ${KVER#matrix-} needs its own module tree: test/vm/fetch-kernel.py --modules ${KVER#matrix-} extracts it (a row whose image package carries its modules: debian-13)" ;;
+		matrix-*) env_fail "--module on the kernel-matrix row ${KVER#matrix-} needs its own authenticated module tree: test/vm/fetch-kernel.py --modules ${KVER#matrix-} prepares it (Debian, Amazon Linux and Fedora rows)" ;;
 		esac
 		fetch_debs "$KDIR/mods" "linux-modules-$KVER"
 	fi
@@ -607,6 +612,7 @@ done
 nonce="$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
 echo "$nonce" >"$P/.vm/nonce"
 cat "${TEGO_VM_CONTROLLERS_FILE:-/sys/fs/cgroup/cgroup.subtree_control}" >"$P/.vm/controllers" 2>/dev/null || true
+[ "$delegate_user" = 0 ] || echo "cpu memory pids" >"$P/.vm/controllers"
 [ "$dmesg" = 0 ] || : >"$P/.vm/dmesg"
 {
 	for e in "${envs[@]+"${envs[@]}"}"; do echo "export ${e%%=*}=$(sq "${e#*=}")"; done
@@ -619,11 +625,15 @@ cat "${TEGO_VM_CONTROLLERS_FILE:-/sys/fs/cgroup/cgroup.subtree_control}" >"$P/.v
 } >"$P/.vm/cmd"
 stage_modules "$P"
 
-# --sudo: who is calling, and the cgroup chain this shell sits in, top down, without its own leaf:
-# relative path | the host's subtree_control there | the host's owner uid:gid (systemd delegation).
-if [ "$sudo" = 1 ]; then
-	echo "$(id -u) $(id -g) $(id -un)" >"$P/.vm/sudo"
-	printf '%s' "$*" >"$P/.vm/sudo-command"
+# relative path | subtree_control | owner uid:gid. Most guests reproduce the caller's host chain;
+# the matrix explicitly requests a user-manager fixture, independent of the runner's service ownership.
+write_cgroup_chain() {
+	local uid="$1" gid="$2" own d rest
+	if [ "$delegate_user" = 1 ]; then
+		printf '%s|cpu memory pids|0:0\n' user.slice "user.slice/user-$uid.slice"
+		printf 'user.slice/user-%s.slice/user@%s.service|cpu memory pids|%s:%s\n' "$uid" "$uid" "$uid" "$gid"
+		return
+	fi
 	own="$(sed -n 's/^0:://p' /proc/self/cgroup)"
 	d=/sys/fs/cgroup
 	rest="${own#/}"
@@ -632,7 +642,12 @@ if [ "$sudo" = 1 ]; then
 		rest="${rest#*/}"
 		printf '%s|%s|%s\n' "${d#/sys/fs/cgroup/}" "$(cat "$d/cgroup.subtree_control" 2>/dev/null)" \
 			"$(stat -c %u:%g "$d" 2>/dev/null || echo 0:0)"
-	done >"$P/.vm/cgroup-chain"
+	done
+}
+if [ "$sudo" = 1 ]; then
+	echo "$(id -u) $(id -g) $(id -un)" >"$P/.vm/sudo"
+	printf '%s' "$*" >"$P/.vm/sudo-command"
+	write_cgroup_chain "$(id -u)" "$(id -g)" >"$P/.vm/cgroup-chain"
 fi
 
 # The host's hardening sysctls, which systemd-sysctl applies from /usr/lib/sysctl.d and /etc/sysctl.d at

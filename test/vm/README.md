@@ -32,11 +32,12 @@ box's: the row is fetched (unless `TEGO_VM_KERNEL` already names it), every gues
 row's name in its environment, where `test/conformance` reads it as a baseline entry's `where.row` and `enforce/landlock`'s
 integration tests read it to hold `fedora-7.2` to Landlock ABI 10. `host` is this box's own kernel. A name that is not a row, a
 doctor-only row (no tier is offered there, so no suite has anything to run), `VM_HOST=sudo` and a `TEGO_VM_KERNEL` that
-names another row's kernel are usage errors (exit 2) before anything is built. `kvm-run.sh` fetches a module package with apt
-for this box's own kernel only, so a row's guests load no module unless `VM_MODULES` names some (the default list ended every
-guest at exit 97), and the tests that want overlayfs or btrfs meet the row kernel's own, where `root-skips.txt` says which of
-them may skip. The modules `VM_MODULES` names on a row come from the row's own tree, which `fetch-kernel.py --modules <row>`
-extracts (below; debian-13 has one). The nightly runs it as `TEGO_VM_ROW=$KERNEL test/vm/root-suites.sh ...`.
+names another row's kernel are usage errors (exit 2) before anything is built. `root-suites.sh` prepares authenticated row modules by default on Debian 13 and Amazon Linux 2023
+(`overlay crc32c_generic loop btrfs unix_diag tcp_diag`), and Fedora (`loop`; btrfs and Unix diagnostics are built in).
+Without Unix diagnostics the supervisor correctly refuses the run's own socket with `unix-origin-unread`; without
+Fedora's loop driver the embedded btrfs image cannot mount. `VM_MODULES` overrides the list, including an explicit
+empty value for missing-feature tests. Other rows keep their previous empty list. The matrix runs it as
+`TEGO_VM_ROW=$KERNEL test/vm/root-suites.sh ...`.
 
 ## The tier-3 perf suite: `make vm-perf`
 
@@ -116,12 +117,20 @@ VM_ONLY=kt4 VM_KT4_TOOLS=1 VM_KT4_TIERS=bpflsm test/vm/matrix.sh debian-13   # k
 | `fedora-7.2` | 7.2 | the newest 7.2.x `kernel-core` on koji (*added 2026-10-05*): Landlock ABI 10, so the pathname unix socket rules of ABI 9 and the UDP port rules of ABI 10, which no other row's kernel has, run against a kernel that has them (`TestIntegrationUnixConnect` and `TestIntegrationUDPPorts` in `enforce/landlock`: with Landlock alone, no supervisor, an undeclared pathname socket and UDP port are refused by the kernel) |
 | `ubuntu-22.04` | 5.15 GA | `linux-image-generic`'s image in jammy-updates, archive.ubuntu.com (*added 2026-10-05*): **doctor-only**, see below |
 
+Matrix guests request `kvm-run.sh --sudo --delegate-user`: a `user@<uid>.service` subtree with cpu, memory and
+pids delegated to the invoking uid, and the command inside its leaf. This guest fixture is independent of
+the host's cgroup ownership. Hosted runners may start jobs in root-owned service scopes without a user manager;
+copying that chain made `doctor-user` and kill test 6 (a) fail before a user run could start. Plain `--sudo` still
+copies the host chain for suites that need to reproduce it. Doctor continues to require usable delegation.
+
 `ubuntu-22.04` is the one **doctor-only** row (`fetch-kernel.py --list`'s fourth column, or `--body <row>`; its
 `DOCTOR_ONLY` set). Its GA kernel, 5.15, has Landlock ABI 1, and ABI 1 kernels (5.13 to 5.18) are unsupported
 (ARCHITECTURE §14): doctor offers no tier there, tier 2 never runs, and no kill test has a tier to run at. `matrix.sh`
 boots such a row once and runs `run-matrix-row.sh --only doctor-refusal`, which is `doctor-refusal.sh` as the user and
-as root: `tego doctor` exits 1 and says `tier: none` and ends on `fix: boot a kernel >= 5.19 (Landlock ABI 2,
-LANDLOCK_ACCESS_FS_REFER)`; `doctor --require landlock` exits 211; `doctor --json` holds no tier and an ABI below 2;
+as root: `tego doctor` exits 1 and says `tier: none` and its final fix includes `boot a kernel >= 5.19 (Landlock ABI 2,
+LANDLOCK_ACCESS_FS_REFER)`. Other tier-1 blockers' remedies share that line in probe order, so delegation may
+precede the kernel upgrade. The check requires the Landlock remedy even then: delegation alone cannot make ABI 1
+supported. `doctor --require landlock` exits 211; `doctor --json` holds no tier and an ABI below 2;
 and `tego run` exits 125 `[tier-unavailable]` with that fix, with the tier auto-selected and with `--tier landlock`
 pinned. A kernel with no Landlock at all (`boot a kernel >= 5.13 with CONFIG_SECURITY_LANDLOCK=y`, or `add landlock to
 the kernel's lsm= line`) is the same refusal with another fix, and passes. The check fails when a part is wrong and
@@ -142,9 +151,12 @@ this host's userland and the console is the 8250 UART every one of these kernels
 `kvm-run.sh --module` reads `matrix-<row>/mods/lib/modules/matrix-<row>/` before it asks apt, and apt has no module
 package for a row's kernel. The tree is the `lib/modules/<release>/` of the package the same call has just
 authenticated, extracted once per package and stamped with its digest (`mods/.package-sha256`); a fetch that brings
-another package removes it with the old image. Only Debian's image package carries its modules (debian-13). Ubuntu
-ships them in a package of their own (`linux-modules-<release>`) and an RPM row's `kernel-core` carries only some, so
-those rows are refused (exit 97), and `kvm-run.sh` refuses a `--module` on a row with no tree, naming this command.
+another package removes it with the old image. Debian's image DEB and Amazon Linux's kernel RPM carry their modules. Fedora's loop driver comes from the
+publisher-signed `kernel-modules-core` RPM of exactly the image's version/release and signing key; that retained
+companion is authenticated again on each call, and its signature evidence and digest are recorded in
+`mods/packages.json`. Independent image/package manifest pins do not additionally pin this companion; its publisher
+signature is required. Ubuntu's separate `linux-modules-<release>` package is still unsupported here (exit 97).
+`kvm-run.sh` refuses a `--module` on a row with no prepared tree, naming this command.
 `kvm-run.sh` loads a module after what modinfo's `depends:` names, not its `softdep:`s. On debian-13's 6.12 btrfs
 needs `libcrc32c`, whose init needs a crc32c algorithm that Debian builds as a module, so a guest that loads btrfs
 there names `crc32c_generic` before it. `TestPlaneRunBtrfsSubvolumeInodeIdentity` mounts its btrfs on a loop device,

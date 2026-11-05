@@ -183,21 +183,19 @@ func newBPFKernel(ctx context.Context, h *Handle) (kernel, error) {
 		ebpfbindings.ObjectCgroupNet, ebpfbindings.ObjectCgroupTrack, ebpfbindings.ObjectTraceProc,
 	} {
 		objStart := time.Now()
-		spec, compact, err := loadKernelSpec(obj, true)
+		spec, compact, err := loadKernelSpec(obj, true, h.rules.Control)
 		if err != nil {
 			return k, fmt.Errorf("%w: %w", ErrProgramLoad, err)
 		}
-		selectNetworkControlPrograms(spec, h.rules.Control)
 		coll, adopted := k.adoptObject(spec, sharedLinksOf(obj, spec))
 		if !adopted {
 			// The compact description is only for checking existing kernel
 			// objects. Creating objects always uses the complete ELF and BTF.
 			if compact {
-				spec, _, err = loadKernelSpec(obj, false)
+				spec, _, err = loadKernelSpec(obj, false, h.rules.Control)
 				if err != nil {
 					return k, fmt.Errorf("%w: %w", ErrProgramLoad, err)
 				}
-				selectNetworkControlPrograms(spec, h.rules.Control)
 			}
 			// cilium/ebpf opens a map that is pinned and creates and pins one that is not; a concurrent first
 			// launcher of the build can pin the same name between the two, and this pin then fails with EEXIST.
@@ -321,9 +319,10 @@ func collectionPrograms(coll *ebpf.Collection) map[string]*ebpf.Program {
 	return coll.Programs
 }
 
-// loadKernelSpec applies the running kernel's optional-hook selection to either
-// an adoption description or the complete object used for a fresh load.
-func loadKernelSpec(obj ebpfbindings.Object, adoption bool) (*ebpf.CollectionSpec, bool, error) {
+// loadKernelSpec selects this run's hooks and checks their context before either
+// adopting pinned programs or loading new ones. A layout failure is a hard load
+// refusal, never the optional exec attachment fallback.
+func loadKernelSpec(obj ebpfbindings.Object, adoption bool, control *NetworkControlMaps) (*ebpf.CollectionSpec, bool, error) {
 	var (
 		spec    *ebpf.CollectionSpec
 		compact bool
@@ -346,8 +345,18 @@ func loadKernelSpec(obj ebpfbindings.Object, adoption bool) (*ebpf.CollectionSpe
 		dropTraceWhereAbsent(spec, kernelHasFunc)
 		dropExecResultsWhereAbsent(spec, ebpfbindings.ExecResultTracepointAvailable)
 	}
+	selectNetworkControlPrograms(spec, control)
+	for _, name := range ebpfbindings.TracePrograms {
+		if spec.Programs[name] != nil {
+			if err := validateSyscallResultContext(name); err != nil {
+				return nil, false, err
+			}
+		}
+	}
 	return spec, compact, nil
 }
+
+var validateSyscallResultContext = ebpfbindings.ValidateSyscallResultContext
 
 // sharedLinksOf names the host-wide links an object's programs run through, which attachShared pins: those of
 // its programs the spec still holds, since dropTraceWhereAbsent leaves a program out where its function is not in

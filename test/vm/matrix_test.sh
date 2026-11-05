@@ -152,6 +152,7 @@ has_arg() { grep -qxF -- "$1" "$tmp/args"; }
 # 1. The boot's bound: 3600 s alone, 3600 s plus kill test 3's own bound with VM_KT3=1, and a VM_ROW_TIMEOUT given
 # by hand as given. The guest is told the per-test bound it is to apply.
 run_matrix
+has_arg --delegate-user || fail "the matrix guest inherits user delegation from the host instead of providing its fixture"
 [ "$(arg_after --timeout)" = 3600 ] || fail "row bound without VM_KT3 is $(arg_after --timeout), want 3600"
 has_arg VM_TEST_TIMEOUT=1500 || fail "the guest was not given VM_TEST_TIMEOUT=1500"
 run_matrix VM_KT3=1

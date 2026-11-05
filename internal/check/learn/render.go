@@ -249,6 +249,9 @@ func (p *Proposal) leftOut() []string {
 	if p.Refused > 0 {
 		out = append(out, fmt.Sprintf("%d actions the record shows refused or held for approval: a refused action did not happen, so none is proposed.", p.Refused))
 	}
+	if p.NameCoverageRename {
+		out = append(out, "the built-in .env protection refused a rename. For a directory move that would lose protected-name coverage, create existing staging and destination directories before launch, then explicitly name both in the contract, for example fs.write: [\"./tmp/\", \"./target/\"] for pip (keep any other required entries). Write entries alone add no name coverage. Keep the contract outside writable paths and launch from the existing target: for a contract in the parent directory, (cd target && tego run ../agent.yaml). In that contract, use fs.write: [\"../tmp/\", \"./\"] instead of the parent-relative entries above, and adjust other relative entries for that cwd (or use absolute paths). The contract directory covers staging and the launch working directory covers target; a broad parent write alone stops at dependency directories. Keep the same exec.allow rights at both ends when moving native code. This does not permit renaming a protected .env file itself. Review the paths and recompile; no refused action is allowed automatically. See OPERATIONS, Directory moves and protected names (C55).")
+	}
 	if p.Alternates > 0 {
 		out = append(out, fmt.Sprintf("%d file opens a person answered with another file (tego alternate): the agent did not get the file it asked for, so none is proposed.", p.Alternates))
 	}

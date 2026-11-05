@@ -16,6 +16,22 @@ import (
 
 const ws = "/work/project"
 
+func TestNameCoverageRenameKeepsRefusalAndExplainsContractChange(t *testing.T) {
+	r := newRun(t, ws)
+	e := r.add(record.KindRefused, record.VerdictRefused, record.RefusedPayload{Op: record.FSRename,
+		Target: ws + "/tmp/package", Reason: record.ReasonRenameOutsideContract, Rule: "fs.deny_read[" + ws + "/**/.env]"})
+	e.Reason, e.Rule = record.ReasonRenameOutsideContract, "fs.deny_read["+ws+"/**/.env]"
+	p := r.propose(Options{})
+	if len(p.Write) != 0 || p.Refused != 1 {
+		t.Fatalf("a refused rename became an allow: %+v", p)
+	}
+	for _, want := range []string{"protected-name coverage", `fs.write: ["./tmp/", "./target/"]`, "existing", "same exec.allow", "cd target", "Write entries alone add no name coverage", `fs.write: ["../tmp/", "./"]`} {
+		if !strings.Contains(p.Contract(), want) {
+			t.Errorf("proposal lacks remedy %q:\n%s", want, p.Contract())
+		}
+	}
+}
+
 // TestWritesStayUnderTheWorkspace: fs.write is the directories under the workspace the run wrote to, and a write
 // anywhere else is reported, never allowed (C9: "never a broader directory than the workspace").
 func TestWritesStayUnderTheWorkspace(t *testing.T) {

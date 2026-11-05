@@ -11,12 +11,37 @@ The per-tier capability table is [spec/backend/CAPABILITIES.md](../spec/backend/
 | Kernel | Landlock ABI 2 or newer (Linux 5.19 or later, or a backport such as RHEL 9's 5.14), with cgroup v2 and a subtree delegated to your user. The oldest kernels tested are 6.1 and RHEL 9's 5.14 | Landlock ABI 2 or newer, BPF, BTF and cgroup v2; no boot change | As tier 2, plus `bpf` in the boot LSM list |
 | Works out of the box on | Any Linux 6.1 or later from a desktop login, Ubuntu 24.04 included, and RHEL 9. Not Ubuntu 22.04's stock 5.15, which has Landlock ABI 1. Over SSH, see [INSTALL.md](INSTALL.md#check-the-machine) | Any such host, with root | Debian 13, Fedora, RHEL 9 and 10, Amazon Linux 2023. Ubuntu after one boot line (below). Not stock WSL2 |
 | Held file reads (`fs.ask_read`) | Yes | Refused when the contract is compiled | Refused when the contract is compiled |
-| Record of file reads | Not recorded under `record: summary`, the default: a read that `deny_read` refuses is still refused, and leaves no line. `record: full` records reads and slows every open | Recorded by eBPF | Recorded by eBPF |
+| Record of file reads | Not recorded under `record: summary`, the default: a read that `deny_read` refuses is still refused, and leaves no line. `record: full` records reads and slows every open | Recorded by eBPF; preemptible kernels can skip callbacks, with a shared-build gap (below) | As tier 2 |
 | Live Adjustable mode | No | Yes | Yes |
 | On a hosted CI runner | Yes: this is the CI mode | Yes, through `sudo`, on `ubuntu-24.04` | No: a hosted runner cannot change the kernel command line |
 
 More rule kinds need a newer kernel at tier 1: TCP port rules need Landlock ABI 4 (Linux 6.7, or Red Hat's RHEL 9
 backport), and further rules arrive at ABIs 6, 7, 9 and 10 ([GAPS.md](GAPS.md) B5). `tego doctor` prints your ABI.
+
+RHEL 9 correction: v0.1.0 included the listener outcome hooks, but used the wrong BTF context for individual
+syscall exits. On RHEL 9's 5.14, root-tier runs declaring `net.listen` failed before the agent started with
+`attach tego_bind_result: cannot create bpf perf link: permission denied`. Ordinary outbound networking without
+`net.listen` did not require that hook. The corrected build uses the individual syscall event's context for bind,
+listen and exec outcomes; it keeps the required listener hooks and their coverage. The RHEL 9 support claim does
+not establish that v0.1.0's listener controls worked. See [GAPS.md](GAPS.md) B5 for the measured boundary.
+RHEL's proc-directory oracle test covers its private `fd` directory; the newer `fdinfo` directory permission
+check is absent there, and the test reports that coverage distinction.
+
+Syscall outcome hooks also require a readable tracefs event format whose `ret` field is eight bytes at
+offset 16, matching the supported BPF syscall exit wrapper. Doctor and the loader reject divergent, missing
+or unreadable layouts before loading or adopting the hooks, naming the reason. Doctor and run tier selection
+withhold root tiers on any such layout refusal, including listener capability rows; present exec events do
+not enter the optional attachment fallback for a layout failure.
+
+The 6.1 plane uses probe reads and does not require `bpf_rdonly_cast`; its read-only build is selected only where
+that kfunc exists. Under `lockdown=confidentiality`, 6.1 cannot load the probe reader. Both root tiers' tracing
+callbacks can be skipped on a preemptible kernel. A `bpf-trampoline-miss/shared-build` record gap reports skipped
+executions across that build during the run, including other runs and ungoverned tasks. It is not an exact count
+of this run's lost records; one skipped callback can suppress multiple records. The recorder resolves and retains
+program instances from their active links, rather than independent program pins. Missing, changed or unreadable
+attachments/counters produce `bpf-trampoline-counter-unavailable`. Receipts and views keep coverage incomplete
+and describe shared skipped executions, never “N events lost” or proof of loss in this run. Overlapping runs may
+report the same skip. See [GAPS C53](GAPS.md).
 
 ## Choosing
 
@@ -54,6 +79,27 @@ the same job.
 At tier 2 without `bpf` in the list, the decision plane loads as `fmod_ret` hooks where the kernel allows it, and the kernel
 decides opens, execs and file changes. `tego doctor` says which mode you are in. [OPERATIONS.md](OPERATIONS.md) ("Tier 3 and the
 decision plane") describes the residual.
+
+## Directory moves and protected names
+
+At root tiers `cgroup` and `bpflsm`, a directory move that loses built-in `.env` name protection is refused,
+even if both ends are writable and no secret exists there ([GAPS.md](GAPS.md) C55). An ordinary
+`pip install --target ./target` staged in `./tmp` under a broad writable parent hits this limit: `target` is a
+dependency boundary outside the parent's name coverage. Pip can copy instead and exit 0 with recorded refusals.
+This occurred in v0.1.0 too. Tier `landlock` permits those pip moves.
+
+Pre-create staging and target and explicitly declare both in `fs.write`. **Declarations alone do not extend
+name coverage.** Keep the contract outside writable paths and launch from target: for a contract in the project
+parent, use `fs.write: ["../tmp/", "./"]` and `(cd target && tego run ../agent.yaml ...)`. Use absolute entries
+or rebase all relative entries for that cwd, set TMPDIR to the absolute staging path, and keep matching
+`exec.allow` directory rights at both ends for native modules. The contract directory covers staging, and cwd
+covers target. The refusal and `tego learn` explain this tested remedy without automatically allowing refusals.
+Alternatively use a covered destination such as `site-packages`. A further dependency boundary and separate
+denies/REFER still have their existing limits. See [OPERATIONS.md](OPERATIONS.md#directory-moves-and-protected-names-c55).
+
+Landlock has no name-mutation floor: held reads retain launch-pinned objects, but future name-only matches
+outside watched launch targets can be renamed, exchanged or hard-linked out of coverage before they are pinned
+([GAPS.md](GAPS.md) A11). Keep secrets outside writable folders; changing tier does not erase other stated limits.
 
 ## What the tiers do not change
 

@@ -77,6 +77,12 @@ const (
 	// GapRingbufFull is the kernel's own lost-event counter: bpf_ringbuf_reserve failed, so a
 	// producer dropped a sample rather than blocking (I7).
 	GapRingbufFull = "ringbuf-full"
+	// GapTrampolineMiss counts build-wide skips, not this run's lost events: the kernel skips a
+	// tracing program before it can look up run membership (ADR 0016's recording amendment).
+	GapTrampolineMiss = "bpf-trampoline-miss/shared-build"
+	// GapTrampolineCounterUnavailable means the executing instance or its shared skipped-execution counters
+	// could not be established or read.
+	GapTrampolineCounterUnavailable = "bpf-trampoline-counter-unavailable"
 	// GapMalformedRecord is a sample this build could not decode.
 	GapMalformedRecord = "malformed-record"
 	// GapPathTruncated is E4: bpf_d_path filled the fixed path buffer with no room for a NUL.
@@ -290,11 +296,13 @@ type Recorder struct {
 
 	// Published under mu by Start, then owned by the drain goroutine until it returns and by
 	// whichever Stop caller joins that goroutine after it.
-	procs *procCache
-	agg   *aggTable
-	run   source.RunRef
-	sink  source.Sink
-	lost  uint64 // last value read from the kernel counter, drain-goroutine-owned
+	procs     *procCache
+	agg       *aggTable
+	run       source.RunRef
+	sink      source.Sink
+	lost      uint64      // last value read from the kernel counter, drain-goroutine-owned
+	misses    missCounter // build-wide trampoline misses; snapshotted before launch and after the final drain
+	missStart uint64
 
 	// silent is `record: off` (E23): drain and maintain the cache, emit nothing. full is `record: full`, under
 	// which no read is aggregated (SEMANTICS §7).
@@ -541,6 +549,7 @@ func (r *Recorder) Start(ctx context.Context, run source.RunRef, sink source.Sin
 		return nil
 	}
 
+	r.startMisses()
 	if n := len(r.rules.unindexed); n > 0 {
 		r.gap(GapDirUnindexed, int64(n))
 		r.logWarn("observe: unlink, rename and mkdir beneath these entries are recorded unresolved: stat does not "+
@@ -622,6 +631,7 @@ func (r *Recorder) Stop() error {
 			r.finalDrain()
 			r.settleAllPins()
 			r.pollLost()
+			r.stopMisses()
 			r.emitAggregates(r.agg.flushAll())
 		}
 		r.logProcCache()

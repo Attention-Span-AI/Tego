@@ -505,13 +505,18 @@ type objectLoader func(bpfobj.Object) (*ebpf.CollectionSpec, error)
 // unixSupported is the backend's own probe of BPF_CGROUP_UNIX_CONNECT. A variable so a test can give both answers.
 var unixSupported = cgroupenforce.UnixConnectSupported
 
+// Shared with the runtime loader; variables let tests establish a present event
+// with an unsafe context without privilege or the host's tracefs layout.
+var execResultTracepointAvailable = bpfobj.ExecResultTracepointAvailable
+var validateSyscallResultContext = bpfobj.ValidateSyscallResultContext
+
 // optionalAbsent reports whether the kernel lacks an optional hook, by the test the backend runs before it loads
 // (cgroup's dropTraceWhereAbsent: the function is in the kernel's BTF; dropUnixWhereUnsupported: a program with
 // the attach type loads). An unreadable BTF is not absence: the backend then tries the program, so the row is
 // left to the BTF check that follows.
 func optionalAbsent(h hook, spec *btf.Spec) (absent bool, why string, err error) {
 	if h.kind == hookTracepoint {
-		return !bpfobj.ExecResultTracepointAvailable(strings.TrimPrefix(h.attachTo, "syscalls/")), "syscall tracepoint " + h.attachTo + " is unavailable; exec decisions remain with the supervisor", nil
+		return !execResultTracepointAvailable(strings.TrimPrefix(h.attachTo, "syscalls/")), "syscall tracepoint " + h.attachTo + " is unavailable; exec decisions remain with the supervisor", nil
 	}
 	if h.kind == hookCgroupAddr {
 		ok, err := unixSupported()
@@ -584,6 +589,14 @@ func testHookWith(h hook, spec *btf.Spec, cg *scratchCgroup, cgErr error, kernel
 		}
 	}
 	out.BTF = true
+	if err := validateSyscallResultContext(h.program); err != nil {
+		// Unknown outcome layouts are an admission failure even for listener
+		// capability rows: a version or successful no-op probe cannot vouch
+		// for these reads. Keep the reason in the tier/run refusal.
+		out.CapabilityOnly = false
+		out.Detail = "load: " + err.Error()
+		return out
+	}
 
 	// A timed test build reports the hook's load, attach and detach as probe.hook.<hook>.* and the program's verifier
 	// statistics (enforce-plane §10.1's cold attribution); a product build times nothing.

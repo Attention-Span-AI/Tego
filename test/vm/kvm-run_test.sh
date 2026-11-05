@@ -18,10 +18,27 @@ fail() { echo "FAIL $*" >&2; exit 1; }
 
 # func NAME: the body of the top-level function NAME in kvm-run.sh.
 func() { awk -v n="$1" '$0 == n "() {" { p = 1 } p { print } p && $0 == "}" { exit }' "$here/kvm-run.sh"; }
-for f in fetch_kernel write_console_cpio; do
+for f in fetch_kernel write_console_cpio write_cgroup_chain; do
 	func "$f" >"$tmp/$f.sh"
 	[ -s "$tmp/$f.sh" ] || fail "kvm-run.sh has no function $f"
 done
+
+# The matrix needs a delegated user even when CI starts it in a root-owned service scope.
+# Its explicit fixture must not inherit the host's ownership or controller set.
+# shellcheck source=/dev/null
+. "$tmp/write_cgroup_chain.sh"
+# shellcheck disable=SC2034 # read by the extracted function
+delegate_user=1
+write_cgroup_chain 1001 1002 >"$tmp/chain"
+cat >"$tmp/want-chain" <<'EOF'
+user.slice|cpu memory pids|0:0
+user.slice/user-1001.slice|cpu memory pids|0:0
+user.slice/user-1001.slice/user@1001.service|cpu memory pids|1001:1002
+EOF
+diff -u "$tmp/want-chain" "$tmp/chain" || fail "the matrix user delegation depends on the host cgroup"
+rc=0
+"$here/kvm-run.sh" --delegate-user -- /bin/true >"$tmp/no-sudo" 2>&1 || rc=$?
+[ "$rc" = 2 ] || fail "--delegate-user without --sudo exited $rc, want usage (2)"
 
 mkdir "$tmp/bin" "$tmp/badcp" "$tmp/badstat"
 # cp writes half of its source, then dies, as a full disk does.

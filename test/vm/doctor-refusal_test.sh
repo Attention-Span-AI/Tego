@@ -39,6 +39,10 @@ if [ "$m" = none ]; then
 	abi=0
 	land="FAIL landlock: landlock_create_ruleset: function not implemented (tier landlock unavailable); fix: $fix"
 fi
+if [ "$m" = delegation-first ] || [ "$m" = delegation-only ]; then
+	fix="enable systemd user delegation (Delegate=cpu memory pids); and $fix"
+	[ "$m" != delegation-only ] || fix="enable systemd user delegation (Delegate=cpu memory pids)"
+fi
 doctor() {
 	echo "tego=v0 commit=x date=x go=go1.27.1 contract_schema=0 record_v=1"
 	echo "ok   kernel: 5.15.0-198-generic (>= 5.14.0)"
@@ -88,7 +92,7 @@ run)
 	pin="no enforcement tier available on this machine"
 	case " $* " in *" --tier landlock "*) pin="tier landlock pinned but not available" ;; esac
 	[ "$m" = noanchor ] && { echo "$2: $pin"; exit 125; }
-	echo "$2: $pin [tier-unavailable] missing for landlock: ${land#FAIL }" >&2
+	echo "$2: $pin [tier-unavailable] missing for landlock: ${land#FAIL }; fix: $fix" >&2
 	exit 125
 	;;
 esac
@@ -119,6 +123,10 @@ has "$LAST_OUT" "PASS:" "ABI 1"
 has "$LAST_OUT" "$FIX_ABI1" "ABI 1"
 check_case "no Landlock at all" pass STUB_MACHINE=none
 has "$LAST_OUT" "$FIX_NONE" "no Landlock"
+check_case "delegation and ABI 1 both need fixing" pass STUB_MACHINE=delegation-first
+has "$LAST_OUT" "$FIX_ABI1" "all blockers"
+check_case "the final fix omits the kernel blocker" fail STUB_MACHINE=delegation-only
+has "$LAST_OUT" "doctor's fix" "omitted Landlock remedy"
 # It runs `tego run` twice, the auto selection and a pin, and each is refused.
 [ "$(wc -l <"$tmp/ran" 2>/dev/null || echo 0)" -eq 2 ] || fail "the check ran tego run $(wc -l <"$tmp/ran" 2>/dev/null || echo 0) times, want 2 (auto, and --tier landlock)"
 

@@ -3,7 +3,7 @@
 #
 # run-matrix-row.sh — one kernel-matrix row's body, run as root inside the row's guest (P0-DESIGN §10 "Kernel
 # matrix", §12 "P0 is complete when, on the kernel matrix: ..."). test/vm/matrix.sh
-# boots the row's own kernel with test/vm/kvm-run.sh --sudo, so this script is root the way `sudo` makes
+# boots the row's own kernel with test/vm/kvm-run.sh --sudo --delegate-user, so this script is root the way `sudo` makes
 # a user root: SUDO_UID names the user, and a root `tego run` drops the agent to that user.
 #
 # What it runs, in this order, each with its own result line:

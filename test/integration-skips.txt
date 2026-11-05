@@ -403,3 +403,6 @@ internal/runtime/supervisor TestOpenLabelDockerAppArmor # dedicated Docker conta
 internal/runtime TestRootBuiltinRefusals # needs root: cgroup and bpflsm built-in boundary
 internal/runtime/enforce/cgroup TestPlaneRunIOUringListenerOutcomes # needs root: ring startup refusal at root tiers
 internal/runtime/enforce/cgroup TestRootBuiltinRefusalsPeer # needs root: actual native Unix peer refusal in both plane modes
+
+internal/runtime/observe TestMissCountersFollowAttachedPrograms # needs root, bpffs and the compiled objects; exercised in the tegobpf KVM root suite
+internal/runtime/observe TestMissingActiveMissInstanceIsUncertain # needs root, bpffs and the compiled objects; exercised in the tegobpf KVM root suite

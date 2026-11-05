@@ -16,6 +16,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
+	"github.com/attention-span-ai/tego/pkg/spec/reason"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -122,6 +123,8 @@ type Proposal struct {
 	// Refused counts the actions the record shows refused or held for approval (an enforced run's): none is
 	// proposed, since a refused action did not happen.
 	Refused int
+	// NameCoverageRename calls for contract guidance, never an automatically proposed allow.
+	NameCoverageRename bool
 	// Failed counts the exec and fs actions that did not succeed (a nonzero errno): none is proposed.
 	Failed int
 	// SearchMisses counts exec attempts that were not a program starting: a PATH search tries each directory in turn,
@@ -178,23 +181,24 @@ type Learner struct {
 	endTS   time.Time
 	endMono uint64
 
-	execs      map[string]*execStat
-	pending    map[string]pendingExec
-	devs       map[string]int
-	writeDirs  map[string]int
-	touched    map[string]bool
-	nets       map[netKey]int
-	reads      int
-	refused    int
-	alternates int
-	failed     int
-	misses     int
-	unresolved int
-	runtime    int
-	hookState  int
-	hookExecs  int
-	truncated  bool
-	leak       *leakRule
+	execs              map[string]*execStat
+	pending            map[string]pendingExec
+	devs               map[string]int
+	writeDirs          map[string]int
+	touched            map[string]bool
+	nets               map[netKey]int
+	reads              int
+	refused            int
+	nameCoverageRename bool
+	alternates         int
+	failed             int
+	misses             int
+	unresolved         int
+	runtime            int
+	hookState          int
+	hookExecs          int
+	truncated          bool
+	leak               *leakRule
 
 	// pairs holds the lines before the one being added: a refused line that mirrors a refused action line is that
 	// action again, and counts once, as drift and measure count it.
@@ -241,6 +245,7 @@ func (l *Learner) Add(e *record.Event) error {
 		}
 		l.end, l.endTS, l.endMono = &p, e.TS, e.MonoNS
 	case record.KindRefused:
+		l.nameCoverageRename = l.nameCoverageRename || reason.BuiltInNameMove(e.Reason, e.Rule)
 		if !mirrored {
 			l.refused++
 		}
@@ -424,6 +429,7 @@ func (l *Learner) addFS(e *record.Event) error {
 	n := max(1, p.Count)
 	switch {
 	case notDone(e):
+		l.nameCoverageRename = l.nameCoverageRename || reason.BuiltInNameMove(e.Reason, e.Rule)
 		l.refused++
 		return nil
 	case p.AlternateFor != "":
@@ -565,8 +571,9 @@ func (l *Learner) Proposal() (*Proposal, error) {
 		ws = path.Clean(ws)
 	}
 	p := &Proposal{
-		NoWorkspace: noWorkspace,
-		Run:         l.run.id, Agent: l.run.agent, Started: l.run.ts,
+		NameCoverageRename: l.nameCoverageRename,
+		NoWorkspace:        noWorkspace,
+		Run:                l.run.id, Agent: l.run.agent, Started: l.run.ts,
 		Workspace: ws, Reads: l.reads, Refused: l.refused, Failed: l.failed, SearchMisses: l.misses, Unresolved: l.unresolved,
 		Alternates: l.alternates, RuntimeGranted: l.runtime, HarnessStateGranted: l.hookState, HarnessHookGranted: l.hookExecs, Truncated: l.truncated,
 	}

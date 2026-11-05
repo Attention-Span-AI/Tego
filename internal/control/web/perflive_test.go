@@ -5,7 +5,9 @@ package web
 import (
 	"bytes"
 	"fmt"
+	"html/template"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -78,24 +80,73 @@ func TestHashRegionClock(t *testing.T) {
 }
 
 // TestLayoutTwinSamePage: a full page placed through the layout twin (each region rendered once) is byte for byte
-// the page the layout renders when it executes every region again.
+// the page the layout renders when it executes every region again, from the same handler snapshot. Two requests
+// can differ even with cfg.Now fixed: a live receipt reads CLOCK_MONOTONIC for its duration and quiet tail.
 func TestLayoutTwinSamePage(t *testing.T) {
 	root := fixture(t)
 	s := newServer(t, root)
+	// Every clock read advances: two requests cannot stand in for one render snapshot.
+	now := s.cfg.Now()
+	s.cfg.Now = func() time.Time {
+		now = now.Add(2 * time.Minute)
+		return now
+	}
 	c := login(t, s)
 	ps, err := parsedPages()
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Capture the handler's page at the template boundary. These templates belong only to this server; the real
+	// parsed sets and twins stay untouched. Both renderers below receive this exact data, including its receipt.
+	var snapshot page
+	var name string
+	s.pages = make(map[string]*template.Template)
+	for n := range ps.pages {
+		capture := template.New("capture").Funcs(template.FuncMap{"capture": func(p page) string {
+			name, snapshot = n, p
+			return ""
+		}})
+		if _, err := capture.Parse(`{{define "layout"}}{{capture .}}{{end}}`); err != nil {
+			t.Fatal(err)
+		}
+		for _, region := range regionsOf(n) {
+			if _, err := capture.New(region).Parse(""); err != nil {
+				t.Fatal(err)
+			}
+		}
+		s.pages[n] = capture
+	}
 	for _, p := range []string{"/", "/runs", "/runs/" + harmRun, "/runs/" + harmRun + "/receipt", "/logs", "/approvals", "/rules", "/rules/new"} {
-		got := do(s, "GET", p, "127.0.0.1:8484", c).Body.Bytes()
-		// The same page through the original set: swap the twins out for this one request.
-		saved := ps.twins
-		ps.twins = nil
-		want := do(s, "GET", p, "127.0.0.1:8484", c).Body.Bytes()
-		ps.twins = saved
+		name = ""
+		w := do(s, "GET", p, "127.0.0.1:8484", c)
+		if w.Code != http.StatusOK || name == "" {
+			t.Fatalf("%s: no page snapshot (status %d): %s", p, w.Code, w.Body.String())
+		}
+		set := ps.pages[name]
+		if _, ok := twinOf(set); !ok {
+			t.Fatalf("%s: no layout twin for %s", p, name)
+		}
+		w = httptest.NewRecorder()
+		renderPage(w, http.StatusOK, set, name, snapshot)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: twin render: %d: %s", p, w.Code, w.Body.String())
+		}
+		got := w.Body.Bytes()
+		if snapshot.L, err = regions(set, name, snapshot, nil); err != nil {
+			t.Fatal(err)
+		}
+		var original bytes.Buffer
+		if err := set.ExecuteTemplate(&original, "layout", snapshot); err != nil {
+			t.Fatal(err)
+		}
+		want := visibleHTML(original.Bytes())
 		if !bytes.Equal(got, want) {
-			t.Errorf("%s: the twin's page differs from the layout's own (%d vs %d bytes)", p, len(got), len(want))
+			i := 0
+			for i < min(len(got), len(want)) && got[i] == want[i] {
+				i++
+			}
+			t.Errorf("%s: the twin's page differs from the layout's own (%d vs %d bytes), first difference at byte %d: %q vs %q",
+				p, len(got), len(want), i, got[max(0, i-60):min(len(got), i+60)], want[max(0, i-60):min(len(want), i+60)])
 		}
 		if len(got) < 1000 || !bytes.Contains(got, []byte("</html>")) || bytes.IndexByte(got, 0) >= 0 {
 			t.Errorf("%s: not a whole page (%d bytes), or a region placeholder left in it", p, len(got))

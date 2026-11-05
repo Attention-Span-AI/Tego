@@ -17,6 +17,8 @@
 # The fix is the one doctor's D4 says for a kernel with Landlock ABI 1 ("boot a kernel >= 5.19 (Landlock ABI 2 ...)"),
 # or for one with none ("boot a kernel >= 5.13 with CONFIG_SECURITY_LANDLOCK=y", "add landlock to the kernel's lsm=
 # line ..."): a distro may build 5.15 either way, and either is a machine with no tier and a remedy.
+# Other tier-1 blockers have remedies on the same final line (doctor R27); the Landlock remedy must be present,
+# but need not be first. In particular, fixing delegation alone cannot make an ABI-1 kernel supported.
 #
 # It fails when a part of that is wrong, and when the machine offers a tier at all: a doctor-only row whose kernel
 # gained one is stale, and should run in full. It never starts a run on such a machine: `tego run` is only called
@@ -101,10 +103,14 @@ fix="$(sed -n 's/^fix: //p' <<<"$out" | tail -1)"
 if [ -z "$fix" ]; then
 	problem "doctor's output has no final fix: line"
 else
-	case "$fix" in
+	landlock_fix="$(sed -n 's/^FAIL landlock: .*; fix: //p' <<<"$out" | tail -1)"
+	case "$landlock_fix" in
 	"boot a kernel >= 5.19 "* | "boot a kernel >= 5.13 "* | "add landlock to the kernel's lsm= line"*) ;;
-	*) problem "doctor's fix is \"$fix\", want the remedy for Landlock: boot a kernel >= 5.19 (ABI 1), boot one >= 5.13 with CONFIG_SECURITY_LANDLOCK=y, or add landlock to lsm=" ;;
+	*) problem "doctor's landlock fix is \"$landlock_fix\", want boot a kernel >= 5.19 (ABI 1), boot one >= 5.13 with CONFIG_SECURITY_LANDLOCK=y, or add landlock to lsm=" ;;
 	esac
+	if [ -n "$landlock_fix" ]; then
+		grep -qF -- "$landlock_fix" <<<"$fix" || problem "doctor's fix \"$fix\" omits the Landlock remedy \"$landlock_fix\""
+	fi
 fi
 grep -qE '^FAIL landlock: .*; fix: ' <<<"$out" || problem "doctor's landlock line (D4) does not fail with a fix"
 grep -qE '^missing for landlock: ' <<<"$out" || problem "doctor does not say what is missing for landlock"

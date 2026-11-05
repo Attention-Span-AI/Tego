@@ -4,7 +4,7 @@
 # matrix.sh — `make vm-matrix`: the kernel matrix of P0-DESIGN §10 in one command, without root and without
 # virtme-ng. For each row it fetches the distro's own kernel (test/vm/fetch-kernel.py), boots it in
 # a KVM guest the way a fresh install boots — the kernel's own lsm= list, no lockdown — with
-# test/vm/kvm-run.sh --sudo, and runs test/vm/run-matrix-row.sh there: `tego doctor` as the user and as
+# test/vm/kvm-run.sh --sudo --delegate-user, and runs test/vm/run-matrix-row.sh there: `tego doctor` as the user and as
 # root, then kill tests 1, 2, 4, 5, 6 and 7 with their root halves. When the row's kernel does not have `bpf`
 # in its active LSM list, kill test 6 prints the lsm= line doctor gave, and this script boots the row a
 # second time with exactly that line to run half (c), as R16 (c) describes.
@@ -300,7 +300,7 @@ boot() {
 	echo "matrix: $row: $label (lsm=$lsm)"
 	TEGO_VM_KERNEL="$(if [ "$row" = host ]; then uname -r; else python3 "$here/fetch-kernel.py" --name "$row"; fi)" \
 		TEGO_VM_LSM="$lsm" TEGO_VM_LOCKDOWN=none \
-		fwd_run -L flock -o "$LOCK" "$here/kvm-run.sh" --sudo --timeout "$ROW_TIMEOUT" --log "$dir/$label.console" \
+		fwd_run -L flock -o "$LOCK" "$here/kvm-run.sh" --sudo --delegate-user --timeout "$ROW_TIMEOUT" --log "$dir/$label.console" \
 		--status "$dir/$label.status" \
 		--file "$stage/src:/src" --file "$stage/bin/tego:/vm/tego" "${jq_files[@]}" "${py_files[@]}" "${kt7_files[@]}" "${bench_files[@]}" \
 		"${kt4_files[@]}" \
