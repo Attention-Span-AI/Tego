@@ -20,7 +20,7 @@ make build && export PATH=$PWD/bin:$PATH && cd examples/demo
 ```
 
 An agent without Tego causes harm; the same agent under Tego is refused, and Tego says why. Then the
-dashboard, then real Claude Code and Codex in a terminal, then an agent that never stops.
+dashboard, then real Claude Code and Codex in a terminal (two examples), a custom Python agent, then an agent that never stops.
 Everything is fake and local: the "secrets" are planted files under `stage/`, the "internet" is a sink on
 `127.0.0.1` that only counts bytes, and the demo never reads your real home.
 

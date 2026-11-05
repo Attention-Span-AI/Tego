@@ -14,6 +14,8 @@ by side: the **left** Codex under `tego watch` (recorded, nothing blocked) and t
 on the right. Same project, same package, same prompt; only the behavior differs. The agent is never told to do
 anything bad, and the attack is ordinary Python that fires on import, as a real one does.
 
+Any other agent works the same way; this demo uses Codex because it is common.
+
 ## Safety on your own laptop
 
 The demo **never touches your real `~/.ssh`, `~/.config` or `~/.codex`.** Each side gets its own fake home inside

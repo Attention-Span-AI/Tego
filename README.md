@@ -6,7 +6,7 @@
   </picture>
 </h1>
 
-<p align="center"><strong>Run AI coding agents under rules you write, enforced from outside the agent.</strong></p>
+<p align="center"><strong>Tego limits what any AI agent can touch on Linux, and records every run.</strong></p>
 
 <p align="center">
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
@@ -24,8 +24,7 @@
   <a href="#security">Security</a>
 </p>
 
-Tego runs an AI coding agent under rules you write. The Linux kernel and Tego's supervisor, a process outside the
-agent, enforce them.
+Tego runs any AI agent that is a Linux process (an MCP server, a Python worker, a CI job that calls a model, a 24/7 assistant, your own agent, or a coding tool such as Claude Code) under a short written contract listing the files, programs and hosts it may use. The Linux kernel and Tego's supervisor enforce it from outside the agent, pause chosen file opens and connections until a person answers, and keep a hash-chained record of each run, with no AI model inside Tego.
 
 It refuses what the contract rules out (files, programs, network hosts), can pause a file open or a connection until
 you answer, and keeps a hash-chained record of each run. What that record holds depends on the tier: by default, tier 1
@@ -33,7 +32,7 @@ records programs, writes and connections, and no file reads.
 
 The agent is an ordinary process: Tego does not need to know what it is, and it never calls a model itself.
 
-**Why it exists.** A coding agent runs as you, next to your keys and your network, and a mistake or a prompt
+**Why it exists.** An AI agent runs as you, next to your keys and your network, and a mistake or a prompt
 injection can reach all of them. Rules that live inside the agent hold only while the agent follows them, so Tego keeps
 them outside it, and a prompt-injected or mistaken agent cannot talk its way past them.
 
@@ -63,7 +62,7 @@ their own machine, and the kernel programs.
 | <img src="docs/assets/icons/hand.svg" width="20" height="20" alt=""> **Held actions** | An `ask` rule on a file or a connection holds it until you allow or deny it, with `tego approve`, `tego deny` or the dashboard. Held file reads (`fs.ask_read`) are tier 1 only, and `exec.ask` is reserved: it refuses. |
 | <img src="docs/assets/icons/pause.svg" width="20" height="20" alt=""> **Live control** | `tego pause`, `resume`, `stop` and `block` act on a running run. An [Adjustable](docs/user/live-modes.md) run (tiers 2 and 3, which need root) can also be loosened while it runs. |
 | <img src="docs/assets/icons/link.svg" width="20" height="20" alt=""> **Hash-chained record** | Every run writes one. `tego receipt` and `tego events` read it, `tego events <run> --verify` checks its chain, `tego drift` compares what was allowed with what was used, and the dashboard shows it. |
-| <img src="docs/assets/icons/activity.svg" width="20" height="20" alt=""> **Run limits** | A run that passes its limits (tokens, cost, time, stall, repeats) ends with exit code 124. |
+| <img src="docs/assets/icons/activity.svg" width="20" height="20" alt=""> **Run limits** | A run that passes its limits (tokens, cost, time, stall, repeats) ends with exit code 124. Token and cost limits count Anthropic Messages traffic only. |
 | <img src="docs/assets/icons/eye.svg" width="20" height="20" alt=""> **Watch any agent** | `tego watch` runs any command as a black box and records it. `tego agents` lists the agents running here and `tego adopt` governs one already running; both need root. |
 | <img src="docs/assets/icons/layout-dashboard.svg" width="20" height="20" alt=""> **Local dashboard** | `tego serve --open` serves runs, logs, refusals and held requests on `127.0.0.1`, for one person. |
 | <img src="docs/assets/icons/server.svg" width="20" height="20" alt=""> **MCP tool rules** | A relay can allow, hold or deny single tools of an MCP server, and `tego mcp` changes that live ([guide](docs/user/mcp-tools.md)). |
@@ -160,7 +159,7 @@ The rest writes a small contract, shows its rule table, runs a demo command unde
 
 ### Run a real agent
 
-In a project with no `agent.yaml`, create one for Claude Code:
+In a project with no `agent.yaml`, create one. This example is for Claude Code; Codex works the same way, and any other command can use `tego watch -- <your command>` first:
 
 ```sh
 tego init --agent claude-code --write src/ --prompt 'Review this project'
