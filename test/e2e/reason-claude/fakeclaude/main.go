@@ -223,6 +223,24 @@ type HookRec struct {
 	TimedOut bool   `json:"timed_out,omitempty"`
 	Started  bool   `json:"started"`
 	Async    bool   `json:"async,omitempty"`
+	// Stdout and Stderr are the hook's own output, cut to recordedOutput bytes: a hook that exits 0 with a warning on
+	// stderr says nothing to the model, and the result is the only place a test can read why.
+	Stdout string `json:"stdout,omitempty"`
+	Stderr string `json:"stderr,omitempty"`
+	// Recorded is when the stand-in took the hook's result (after every hook of its event ended), in UTC, to set
+	// against the ledger's ts of a refusal the hook did or did not tell.
+	Recorded string `json:"recorded,omitempty"`
+}
+
+// recordedOutput is how much of a hook's stdout and stderr the result keeps.
+const recordedOutput = 4096
+
+// recorded is s cut to recordedOutput bytes.
+func recorded(s string) string {
+	if len(s) > recordedOutput {
+		return s[:recordedOutput]
+	}
+	return s
 }
 
 type agent struct {
@@ -473,7 +491,8 @@ func (a *agent) fire(event, tool, subject string, payload []byte) outcome {
 
 func (a *agent) recordHook(event, tool string, r hookRun, async bool) {
 	a.record(func(s *Summary) {
-		s.Hooks = append(s.Hooks, HookRec{Event: event, Tool: tool, Command: r.Spec.Display(), Exit: r.ExitCode, TimedOut: r.TimedOut, Started: r.Started, Async: async})
+		s.Hooks = append(s.Hooks, HookRec{Event: event, Tool: tool, Command: r.Spec.Display(), Exit: r.ExitCode, TimedOut: r.TimedOut, Started: r.Started, Async: async,
+			Stdout: recorded(r.Stdout), Stderr: recorded(r.Stderr), Recorded: time.Now().UTC().Format(time.RFC3339Nano)})
 	})
 }
 

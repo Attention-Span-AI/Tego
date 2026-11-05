@@ -129,8 +129,9 @@ func e2eScenario(t *testing.T, py, tego, claude, s string) {
 		"TEGO_TEST_OWN_LOG_HOME="+filepath.Join(cfgDir, "home"), "HOME="+home, "LANG=C.UTF-8", "SSL_CERT_FILE="+cert,
 		"PATH="+filepath.Join(ws, "bin")+":"+filepath.Dir(claude)+":/usr/bin:/bin", "ANTHROPIC_API_KEY=dummy-not-a-key",
 		"CLAUDE_CODE_SIMPLE=", "CLAUDE_CODE_SAFE_MODE=", "XDG_RUNTIME_DIR="+testutil.ShortRuntimeDir(t))
-	if out, err := run.CombinedOutput(); err != nil {
-		t.Fatalf("tego run of the stand-in: %v\n%s", err, out)
+	runOut, err := run.CombinedOutput()
+	if err != nil {
+		t.Fatalf("tego run of the stand-in: %v\n%s", err, runOut)
 	}
 	ledgers, err := filepath.Glob(filepath.Join(cfgDir, "runs", "*", "events.jsonl"))
 	if err != nil || len(ledgers) != 1 {
@@ -159,6 +160,18 @@ func e2eScenario(t *testing.T, py, tego, claude, s string) {
 	for _, r := range e2eRefused(t, ledgers[0]) {
 		if want := reason.Text(record.Reason(r.Reason), r.Op, r.Target, r.Rule); !strings.Contains(next, want) {
 			t.Errorf("the next request does not carry the ledger's refusal as reason.Text renders it:\n%s\nin\n%s", want, next)
+		}
+	}
+	if t.Failed() {
+		// A hook that exits 0 with a warning tells the model nothing, and only its stderr says why (public main
+		// 02d505d: scenario d's next request carried no note, and nothing showed which hook said what).
+		for i, h := range sum.Hooks {
+			t.Logf("hook %d %s %s at %s: exit %d timed_out %v started %v\nstdout: %s\nstderr: %s", i, h.Event, h.Tool,
+				h.Recorded, h.Exit, h.TimedOut, h.Started, h.Stdout, h.Stderr)
+		}
+		t.Logf("tego run of the stand-in:\n%s", runOut)
+		if b, err := os.ReadFile(ledgers[0]); err == nil {
+			t.Logf("the ledger %s:\n%s", ledgers[0], b)
 		}
 	}
 }

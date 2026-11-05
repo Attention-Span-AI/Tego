@@ -184,16 +184,24 @@ func killedTimerLeavesTheBuild(t *testing.T, e reapEnv) {
 	if hash == "" {
 		t.Fatalf("run_start of %s names no build", id)
 	}
-	// The run's own timer, or an earlier test's that held the timer lock, on which the run's exited.
+	// The run's own timer, or an earlier test's that held the timer lock, on which the run's exited: the scan can
+	// list the run's own in the moment before it exits, and its cgroup is then not there to read (timerCgroups).
 	pids := timers(hash)
 	if len(pids) == 0 {
 		t.Fatal("no timer runs for the build after its last run")
 	}
-	for _, pid := range pids {
-		cg, _ := os.ReadFile(fmt.Sprintf("/proc/%d/cgroup", pid))
-		if !strings.Contains(string(cg), "/tego.slice/helpers.scope") {
-			t.Errorf("the timer %d runs in %q, want tego.slice/helpers.scope", pid, strings.TrimSpace(string(cg)))
-		}
+	misplaced, gone, err := timerCgroups(pids)
+	if err != nil {
+		t.Fatalf("the timers' cgroups: %v", err)
+	}
+	for pid, cg := range misplaced {
+		t.Errorf("the timer %d runs in %q, want tego.slice/helpers.scope", pid, cg)
+	}
+	if len(gone) > 0 {
+		t.Logf("the timers %v exited between the scan and the read of their cgroup (on the build's timer lock)", gone)
+	}
+	if len(gone) == len(pids) {
+		t.Fatalf("every timer the scan found (%v) exited before its cgroup was read: none keeps the build", pids)
 	}
 	endTimers(t, hash)
 	time.Sleep(linger + 3*time.Second)
