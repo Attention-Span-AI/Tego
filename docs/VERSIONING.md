@@ -123,6 +123,14 @@ contract alone does not link the core, and external modules cannot import `inter
   file at the tag, never the job name. `install.sh`, cosign and gh still verify that exact workflow ref and issuer.
   The exported `examples/container/release_workflow_test.go` checks the graph, permissions, action pins, checkout,
   artifact verification, digest and installer identity; CI's `scripts-and-workflows` and the unit/private gates run it.
+  The release job hands `sign` those assets through `scripts/stage-release-assets.py`. GoReleaser leaves several
+  outside `dist/`'s top level: a raw binary is published as `tego_<version>_linux_amd64` while its bytes stay in its
+  build directory, and `checksum.extra_files` are hashed where they are in the checkout. The script finds each name
+  the checksums file lists in GoReleaser's `dist/artifacts.json` or among the files those globs in `.goreleaser.yaml`
+  match, so a new extra file needs no second list. It refuses a missing, doubled or outside-the-checkout file, a glob
+  that matches nothing or that it cannot read as GoReleaser does, and an extra file the checksums file does not list,
+  and it checks every byte it copies against the checksums file. `TestReleaseAssetStaging` covers those refusals and
+  this checkout's own extra files; CI's `reproducible` job runs the release job's staging step on a full snapshot.
 - `install.sh` and `install-maze.sh` are release assets, and both are in the checksums file (`checksum.extra_files` in
   `.goreleaser.yaml`), so the signature and the attestations cover them. That helps someone who downloads, verifies and
   only then runs them (docs/INSTALL.md). It does nothing for a script piped into `sh`, which runs before anything can

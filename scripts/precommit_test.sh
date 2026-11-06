@@ -162,7 +162,9 @@ done
 #     builds: it writes dist/<id>_linux_amd64_v1/<binary> and ignores --output, with exit 0 and no file (the job once
 #     read --output's path, so it failed on every run and never compared a binary). The script passes when the two
 #     builds match and fails when any one binary differs or is missing, each case proving one binary is compared.
-repro="$(sed -n '/- name: build the release target twice and compare/,/^$/p' "$ci" | sed -n '/^        run: |$/,$p' | sed '1d;/^$/d;s/^ \{10\}//')"
+#     The step ends at a blank line or at the first line indented less than its own keys (the next step, or its
+#     comment): it is not the job's last step, and the next one's YAML is not shell.
+repro="$(sed -n '/- name: build the release target twice and compare/,/^$\|^ \{0,7\}[^ ]/{/^ \{0,7\}[^ ]/!p}' "$ci" | sed -n '/^        run: |$/,$p' | sed '1d;/^$/d;s/^ \{10\}//')"
 [ -n "$repro" ] || { echo "FAIL: $ci has no reproducible step to run"; fail=1; }
 rd="$(mktemp -d)"
 mkdir -p "$rd/bin" "$rd/src/scripts"

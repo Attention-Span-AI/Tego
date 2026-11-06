@@ -1,6 +1,7 @@
 # Run agents under Tego in a container
 
-Every release tag publishes `ghcr.io/attention-span-ai/tego` for Linux amd64 and arm64, built from this repository's
+From v0.1.1, every release tag publishes `ghcr.io/attention-span-ai/tego` for Linux amd64 and arm64 (v0.1.0 has no
+image; build it yourself as below), built from this repository's
 `examples/container/Dockerfile`. The [install guide](https://github.com/Attention-Span-AI/Tego/blob/main/docs/INSTALL.md#run-in-a-container)
 shows how to verify a release's image digest and run it. The image holds `tego` and `tego-control` as static
 binaries, an entrypoint that prepares the container for `tego run`, and an example agent.

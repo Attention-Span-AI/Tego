@@ -172,20 +172,18 @@ jobs:
           set -euo pipefail
           (cd dist && sha256sum maze_*/maze) > dist/maze-binaries.sha256
           [ "$(wc -l < dist/maze-binaries.sha256)" -eq 4 ] || { echo "::error::expected four maze binaries in dist"; cat dist/maze-binaries.sha256; exit 1; }
-      # The signer receives every checksummed asset, not executable project hooks or a checkout.
+      # The signer receives every checksummed asset, not executable project hooks or a checkout. Several are not in
+      # dist/ under their published names: a raw binary stays in its build directory, and checksum.extra_files are
+      # hashed in the checkout. The script finds each one in goreleaser's dist/artifacts.json or by those globs in
+      # .goreleaser.yaml, refuses a missing, doubled or outside-the-checkout file, and checks every byte it hands over
+      # against the checksums file. CI's reproducible job runs this step on a full snapshot of every pull request.
       - name: stage the release assets for signing
         shell: bash
         env:
           SUMS: ${{ steps.sums.outputs.path }}
         run: |
           set -euo pipefail
-          dir="$RUNNER_TEMP/release-assets"
-          mkdir -p "$dir"
-          cp "$SUMS" "$dir/"
-          while read -r hash name || [ -n "$hash$name" ]; do
-            [[ "$hash" =~ ^[0-9a-f]{64}$ && "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || exit 1
-            cp -- "dist/$name" "$dir/$name"
-          done < "$SUMS"
+          python3 scripts/stage-release-assets.py "$SUMS" "$RUNNER_TEMP/release-assets"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-assets

@@ -474,7 +474,7 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: release workflow authority, artifact and digest boundaries
-        run: go test -count=1 ./examples/container/ -run '^TestRelease(Workflow|SigningInputs)$'
+        run: go test -count=1 ./examples/container/ -run '^TestRelease(Workflow|SigningInputs|AssetStaging)$'
 
 
   bpf-gen:
@@ -948,6 +948,25 @@ jobs:
           done
           # The tego-control goreleaser built is the one tego pins (ADR 0100 (1b)), so the release's check holds.
           scripts/check-control-pin.sh dist/tego_linux_amd64*/tego dist/tego-control_linux_amd64*/tego-control
+      # release.yml's release job hands the signer every file its checksums file lists. Its staging step is read from
+      # release.yml and run here on a full snapshot of this commit, every target and archive, so an asset or a
+      # checksum.extra_files glob that staging cannot find fails the pull request, not a tag's release job after the
+      # draft exists. A snapshot builds no SBOM and records no release.extra_files; TestReleaseAssetStaging covers both.
+      - name: stage a full snapshot's release assets as the release job does
+        shell: bash
+        run: |
+          set -euo pipefail
+          goreleaser release --snapshot --clean
+          sums=(dist/*_checksums.txt)
+          [ "${#sums[@]}" -eq 1 ] && [ -f "${sums[0]}" ] || { echo "::error::expected one checksums file in dist"; exit 1; }
+          python3 -I -c 'import sys, yaml; [s] = [s for s in yaml.safe_load(open(sys.argv[1]))["jobs"]["release"]["steps"] if s.get("name") == "stage the release assets for signing"]; sys.stdout.write(s["run"])' \
+            .github/workflows/release.yml > "$RUNNER_TEMP/stage-step.sh"
+          SUMS="${sums[0]}" bash --noprofile --norc -eo pipefail "$RUNNER_TEMP/stage-step.sh"
+          cd "$RUNNER_TEMP/release-assets"
+          sha256sum --check --strict "${sums[0]##*/}"
+          shopt -s dotglob
+          staged=(*)
+          [ "${#staged[@]}" -eq "$(($(wc -l < "${sums[0]##*/}") + 1))" ] || { echo "::error::the handoff holds files the checksums file does not list"; ls -la; exit 1; }
 
   coverage:
     # Report-only for now: per-package statement coverage of the unit and unprivileged integration suites

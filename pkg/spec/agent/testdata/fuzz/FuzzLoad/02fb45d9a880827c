@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("version: 0\nname: a\ncommand: [x]\ngate: {rules: [&r {\"exec matches a\": 10}, {\"exec matches b\": 90}, *r]}\n")
