@@ -62,7 +62,8 @@ green `ci` run on it), then goreleaser builds the binaries, SBOMs and checksums 
 the built binaries; the checksums, which also list the two installers, are signed with cosign (keyless) and build provenance
 is attested; then the release is published. A `reproduce`
 job rebuilds the tag and compares it with the published checksums (`docs/VERSIONING.md`, section 5). The repository's
-default branch must be named `main` for the gate to find the history. No release has been cut yet.
+default branch must be named `main` for the gate to find the history. The first release, v0.1.0, was published on
+2026-11-04.
 
 ## Fuzz findings, kept as tests
 

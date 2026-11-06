@@ -114,8 +114,9 @@ Signing runs in an isolated job after the binary and image builds. The certifica
 repository's `release.yml` workflow at the tag; job names do not enter it. The verification commands below therefore
 use the same workflow/tag identity as the binary installer.
 
-Tagged releases publish `ghcr.io/attention-span-ai/tego` for Linux amd64 and arm64. Stable `v0.1.0` has image tags
-`0.1.0`, `0.1` and `latest`; prereleases have only their full version tag, such as `0.1.0-rc.1`. The image contains the
+Releases from v0.1.1 on publish `ghcr.io/attention-span-ai/tego` for Linux amd64 and arm64; v0.1.0 has no image. A
+stable release such as `v0.1.1` has image tags `0.1.1`, `0.1` and `latest`; prereleases have only their full version tag,
+such as `0.1.1-rc.1`. The image contains the
 exact `tego` and `tego-control` binaries checked by the release's signed checksums and reproduction job.
 
 Copy the image digest from the chosen release's notes into `digest` below. Verify it with cosign before running,
