@@ -606,6 +606,13 @@ func untar(r io.Reader, dir string) ([]string, error) {
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {
+			// The reader stops at the end-of-archive marker, and git archive pads its stream past it to a whole
+			// 10240-byte record, 8704 bytes after a small tree's marker. Left unread they block git once its pipe
+			// is smaller, as a user's new pipes are (8192 bytes) when the user is over fs.pipe-user-pages-soft, and
+			// extractAt's Wait never returned: TestTotalCheck hung for its whole 10-minute timeout (2026-11-06).
+			if _, err := io.Copy(io.Discard, r); err != nil {
+				return nil, err
+			}
 			return goFiles, nil
 		}
 		if err != nil {

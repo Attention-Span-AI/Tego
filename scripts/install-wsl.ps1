@@ -6,7 +6,7 @@
 # UNTESTED: this script has not been run on Windows. It was written and reviewed on Linux, where it cannot run.
 # Each step is one command you can also type yourself (docs/INSTALL.md, "Windows").
 #
-# Usage, in PowerShell:
+# Usage, in PowerShell opened as administrator (step 1, `wsl --install`, needs it):
 #
 #   powershell -ExecutionPolicy Bypass -File install-wsl.ps1
 #

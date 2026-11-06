@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -85,11 +84,12 @@ record: summary
 	return s
 }
 
-// beats is the last number the agent's heartbeat wrote (out/n), 0 before the first.
-func (s *askReadScene) beats() int {
-	n, _ := strconv.Atoi(strings.TrimSpace(s.out("n")))
-	return n
-}
+// beats is how many beats the agent's heartbeat wrote: the lines of out/n, each appended whole by one echo, so a count
+// read while the agent writes never goes back. The heartbeat rewrote its number in place (echo $i > out/n) until
+// 2026-11-06, and a read between the shell's truncate and its write found the file empty and read 0: CI's build-test
+// failed "the agent wrote -39 beats in 1 s after the resume" so (run 42184797264). That loop, read as beats read it,
+// went back on 14 of 34,711 reads on the reference box at load 6; appended lines, on none of 33,814.
+func (s *askReadScene) beats() int { return strings.Count(s.out("n"), "\n") }
 
 // controlWhys is the whys of the run's pause and resume lines so far, in ledger order.
 func controlWhys(t *testing.T, dir string) []string {
@@ -140,7 +140,7 @@ func (s *askReadScene) progress(d time.Duration) int {
 func TestIntegrationPauseWaitsForAnAnsweredAsk(t *testing.T) {
 	s := pauseScene(t, func(secret string) string { return fmt.Sprintf("  ask_read: [%q]\n", secret) },
 		"#!/bin/sh\n"+
-			"( i=0; while [ ! -e out/stop ]; do i=$((i+1)); echo $i > out/n; sleep 0.1; done ) &\n"+
+			"( i=0; while [ ! -e out/stop ]; do i=$((i+1)); echo $i >> out/n; sleep 0.1; done ) &\n"+
 			"cat \"$SECRET\" > out/got1.txt 2> out/err1.txt; echo $? > out/rc1\n"+
 			"wait\n")
 	run, dir := s.start(t)
@@ -195,7 +195,7 @@ func TestIntegrationPauseBusyHeldReads(t *testing.T) {
 	s := pauseScene(t, func(string) string { return "  reads: held\n" },
 		"#!/bin/sh\n"+
 			"i=0\n"+
-			"while [ ! -e out/stop ]; do i=$((i+1)); cat out/src/1.txt out/src/2.txt out/src/3.txt out/src/4.txt out/src/5.txt > out/last; echo $i > out/n; done\n")
+			"while [ ! -e out/stop ]; do i=$((i+1)); cat out/src/1.txt out/src/2.txt out/src/3.txt out/src/4.txt out/src/5.txt > out/last; echo $i >> out/n; done\n")
 	if err := os.MkdirAll(filepath.Join(s.f.out, "src"), 0o755); err != nil {
 		t.Fatal(err)
 	}

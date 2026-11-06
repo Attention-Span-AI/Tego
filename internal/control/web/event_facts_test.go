@@ -25,6 +25,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/control/rules"
+	"github.com/attention-span-ai/tego/internal/testutil"
 )
 
 const (
@@ -415,11 +416,24 @@ func TestLinePageA11y(t *testing.T) {
 	}
 }
 
-// TestLinePageRenderBudget renders a line page of a 12,000-line run, warm, against its 25 ms budget.
+// lineRenderBudget is the line page's budget for a warm render of one line of a 12,000-line run
+// (docs/BENCHMARKS.md). The reference box read 0.9 to 2.2 ms on 2026-11-06, and 8.3 to 11 ms under the race detector.
+const lineRenderBudget = 25 * time.Millisecond
+
+// TestLinePageRenderBudget renders a line page of a 12,000-line run, warm, against its 25 ms budget, and checks that
+// every render it times is that line's page. In budget mode (testutil.BudgetsEnv, set by scripts/timing-budgets.sh,
+// which runs it alone) the figure is the fastest of five renders on the wall clock, held to the budget as written; in
+// the unit gate it is the fastest of five in the thread's own time (testutil.MinOfThread: the handler runs on the
+// calling goroutine), held to testutil.CeilingFactor times the budget and its wall clock to testutil.WallCeilingFactor
+// times it (docs/BENCHMARKS.md, "Timing budgets in the test suites"). The wall clock held to 25 ms in every run failed
+// on CI's race job beside three other packages' tests, 26.9 ms on 2026-11-06 (run 42184797264): the detector makes the
+// render about seven times slower, and a shared runner's fastest of five still waits for a CPU. Under -race the page is
+// still rendered and checked, but its time is not judged: that figure is the detector's, not the page's.
 func TestLinePageRenderBudget(t *testing.T) {
 	if testing.Short() {
 		t.Skip("-short")
 	}
+	mode := testutil.TimingMode(t)
 	root := t.TempDir()
 	rows := [][3]string{{"100", "run_start", `"tier":"landlock","command":["sh"],"cwd":"/p","launcher_pid":100,"launcher_start_ns":5`},
 		{"200", "exec", `"verdict":"allow","authority":"rule","rule":"exec[sh]","exec_id":"` + factsRun + `/200/6","parent_exec_id":"` + factsRun + `/100/5","path":"/bin/sh","argv":["sh"]`}}
@@ -430,19 +444,34 @@ func TestLinePageRenderBudget(t *testing.T) {
 	s := newServer(t, root)
 	c := login(t, s)
 	p := "/runs/" + factsRun + "/lines/6000"
-	if w := do(s, "GET", p, "127.0.0.1:8484", c); w.Code != http.StatusOK {
-		t.Fatalf("%d", w.Code)
+	var w *httptest.ResponseRecorder
+	render := func() { w = do(s, "GET", p, "127.0.0.1:8484", c) }
+	// Line 6000 is the 5,999th open, of /p/f298.txt (i%300 for i = 5998): a page of another line, or an error page,
+	// rendered fast would otherwise pass.
+	page := func(when string) {
+		t.Helper()
+		body := w.Body.String()
+		_, h1, _ := strings.Cut(body, "<h1>")
+		h1, _, _ = strings.Cut(h1, "</h1>")
+		if w.Code != http.StatusOK || !strings.HasPrefix(h1, "Line #6000:") || !strings.Contains(body, "/p/f298.txt") {
+			t.Fatalf("%s render of %s: status %d, heading %q, want 200, line #6000 and its open of /p/f298.txt", when, p,
+				w.Code, h1)
+		}
 	}
-	best := time.Hour
-	for range 5 {
+	render() // cold: the read model loads the run
+	page("the first")
+	if raceEnabled {
 		a := time.Now()
-		do(s, "GET", p, "127.0.0.1:8484", c)
-		best = min(best, time.Since(a))
+		render()
+		page("a warm")
+		t.Logf("warm line page of a 12k-line run under -race: %v, not judged (the %v budget is the code's, without the "+
+			"detector)", time.Since(a), lineRenderBudget)
+		return
 	}
-	t.Logf("warm line page of a 12k-line run: %v", best)
-	if best > 25*time.Millisecond {
-		t.Errorf("warm %v, budget 25 ms", best)
-	}
+	m := mode.Measure(5, render)
+	page("the last timed")
+	mode.Judge(t, testutil.Budget{Name: "warm line page of a 12k-line run", Limit: lineRenderBudget,
+		Spec: "the line page's budget (docs/BENCHMARKS.md)"}, m[0])
 }
 
 // TestLinePageGuardLeads: on a read the contract's deny_read refuses, the Act panel leads with the rule that refuses

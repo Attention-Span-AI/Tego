@@ -9,7 +9,7 @@ The per-tier capability table is [spec/backend/CAPABILITIES.md](../spec/backend/
 | Mechanism | Landlock and a seccomp supervisor | BPF programs attached to the run's cgroup, and fanotify | The kernel decision plane in LSM mode, on top of tier 2 |
 | Root | No | Yes: `sudo tego run`. The launcher is root for the whole run | Yes |
 | Kernel | Landlock ABI 2 or newer (Linux 5.19 or later, or a backport such as RHEL 9's 5.14), with cgroup v2 and a subtree delegated to your user. The oldest kernels tested are 6.1 and RHEL 9's 5.14 | Landlock ABI 2 or newer, BPF, BTF and cgroup v2; no boot change | As tier 2, plus `bpf` in the boot LSM list |
-| Works out of the box on | Any Linux 6.1 or later from a desktop login, Ubuntu 24.04 included, and RHEL 9. Not Ubuntu 22.04's stock 5.15, which has Landlock ABI 1. Over SSH, see [INSTALL.md](INSTALL.md#check-the-machine) | Any such host, with root | Debian 13, Fedora, RHEL 9 and 10, Amazon Linux 2023. Ubuntu after one boot line (below). Not stock WSL2 |
+| Works out of the box on | Any Linux 6.1 or later from a desktop login, Ubuntu 24.04 included, and RHEL 9. Not Ubuntu 22.04's stock 5.15, which has Landlock ABI 1. Over SSH, see [INSTALL.md](INSTALL.md#check-the-machine) | Any such host, with root | Debian 13, Fedora, RHEL 9 and 10, Amazon Linux 2023. Ubuntu after one boot line (below). Stock WSL2 from kernel 6.18.54.1 (WSL 3.0.3) |
 | Held file reads (`fs.ask_read`) | Yes | Refused when the contract is compiled | Refused when the contract is compiled |
 | Record of file reads | Not recorded under `record: summary`, the default: a read that `deny_read` refuses is still refused, and leaves no line. `record: full` records reads and slows every open | Recorded by eBPF; preemptible kernels can skip callbacks, with a shared-build gap (below) | As tier 2 |
 | Live Adjustable mode | No | Yes | Yes |
@@ -56,7 +56,7 @@ administrators ([OPERATIONS.md](OPERATIONS.md), "Privileged path"). `tego-contro
 
 ## Tier 3 on Ubuntu
 
-`bpf` is not in the boot LSM list on Ubuntu 24.04, 25.10 or 26.04, or on the stock WSL2 kernel. On Ubuntu this is one change
+`bpf` is not in the boot LSM list on Ubuntu 24.04, 25.10 or 26.04, or on WSL2 kernels before 6.18.54.1. On Ubuntu this is one change
 to the kernel command line:
 
 1. Run `sudo "$(command -v tego)" doctor`. Its `lsm` line prints the line to use, built from the list your machine runs now,

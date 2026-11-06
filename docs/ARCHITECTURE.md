@@ -423,19 +423,22 @@ Sleepable: `socket_connect`, `socket_bind`, `socket_sendmsg`; not sleepable: the
 ## 13. Desktop tier (ADR 0009)
 
 The engine stays Linux-only. **macOS**: a Lima VM (Lima ≥ 2.0, `vmType: vz` on macOS ≥ 13.5, project mounted by
-virtiofs, CLI native). The shipped template is the Fedora one: its stock kernel already lists `bpf` and `landlock`,
-ships BTF and cgroup v2, so both tiers work with no kernel build and no boot edit; for Ubuntu images a `provision`
-script writes the GRUB drop-in and the VM restarts once. `compile` and inode resolution run inside the VM against the
+virtiofs, CLI native). The shipped template ([examples/lima/tego.yaml](../examples/lima/tego.yaml)) is Ubuntu 24.04 LTS: its
+kernel has Landlock, BTF and cgroup v2, so tier 1 needs no setup. Ubuntu does not list `bpf` in the boot LSM list, so
+tier 3 needs one GRUB edit and a restart, which the template does not make (doctor prints the line). Lima's own Fedora
+template already lists `bpf` and needs no edit. `compile` and inode resolution run inside the VM against the
 virtiofs mount, never on the macOS side, and `doctor` runs a mount-identity check (stat two directories, drop caches,
 stat again; refuse enforcement on that mount if the numbers changed or two directories share an inode), because
-virtiofs on Apple's framework has undocumented inode semantics. **Windows**: WSL2 on the stock Microsoft kernel, which
-ships `CONFIG_BPF_LSM=y`, Landlock, BTF and cgroup v2 but no `bpf` in its LSM list; the hardened tier needs one line
-in `.wslconfig` (`kernelCommandLine = lsm=<current list>,bpf`) and `wsl --shutdown`, no custom kernel; the unprivileged
-tier needs nothing; eBPF inside WSL still needs root.
+virtiofs on Apple's framework has undocumented inode semantics. **Windows**: WSL2 on Microsoft's kernel, which
+ships `CONFIG_BPF_LSM=y`, Landlock, BTF and cgroup v2. Before 6.18.54.1 (WSL 3.0.3, 2026-10-09) its LSM list has no
+`bpf`: the hardened tier needs `wsl --update`, or one line in `.wslconfig` (`kernelCommandLine = lsm=<current list>,bpf`)
+and `wsl --shutdown`, no custom kernel. From 6.18.54.1 the kernel configuration (`CONFIG_LSM`) ends in `bpf` and the
+kernel release notes say "Bpf LSM is enabled by default"; this is read from the configuration, not measured with `tego
+doctor`. The unprivileged tier needs nothing; eBPF inside WSL still needs root.
 
 ## 14. Support matrix (verified 2026-09-21; the runtime probes, never trusts a version)
 
-*Note 2026-09-29 (ADR 0024, accepted; probe and step A built, the MATRIX suites not: T11; [enforce-plane](p0/enforce-plane.md) R28):* a per-row plane mode column (`tego doctor` D7 has the per-hook rows; the fill, load and probe ran on 6.17, RHEL 9.8's 5.14 and AL2023's 6.1): `lsm` where `bpf` is active (Debian 13, RHEL 9/10, AL2023, Fedora), `fmod_ret` on Ubuntu 24.04/25.10 and stock WSL2 without a boot change, `fanotify` where neither passes the probe (lockdown=confidentiality below 6.2, unmeasured arm64). The table below is unchanged; the per-mode host-cost table lands with T11's kill tests.
+*Note 2026-09-29 (ADR 0024, accepted; probe and step A built, the MATRIX suites not: T11; [enforce-plane](p0/enforce-plane.md) R28):* a per-row plane mode column (`tego doctor` D7 has the per-hook rows; the fill, load and probe ran on 6.17, RHEL 9.8's 5.14 and AL2023's 6.1): `lsm` where `bpf` is active (Debian 13, RHEL 9/10, AL2023, Fedora), `fmod_ret` on Ubuntu 24.04/25.10 and WSL2 kernels before 6.18.54.1 without a boot change, `fanotify` where neither passes the probe (lockdown=confidentiality below 6.2, unmeasured arm64). The table below is unchanged; the per-mode host-cost table lands with T11's kill tests.
 
 *Note 2026-10-06:* T11's suites are built (TIER3-PLAN §10); the plane mode per row and boot is measured by
 `make vm-matrix` as `cgroup_mode` (TIER3-PLAN §7, test/vm/README.md), and the per-mode costs are enforce-plane §2.18
@@ -460,9 +463,11 @@ link confined to one directory).
 | RHEL 9 / Alma / Rocky 9 | 5.14 + backports | yes | 6 (backported) | all tiers, no edit; full target through ABI 6, missing only post-ABI-6 features (TSYNC, pathname unix, UDP rules), none of which gates a tier |
 | RHEL 10 | 6.12 | yes | 6 | all tiers, no edit |
 | Amazon Linux 2023 default | 6.1 | yes | 2 | tiers 2 and 3 full; tier 1 fs-only (no net rules); `kernel6.12` gives ABI 6 |
-| WSL2 stock (WSL 2.9) | 6.18 (6.6 on old installs) | no | 7 (3 on 6.6) | tier 1; tier 3 after `.wslconfig kernelCommandLine`; root for eBPF |
-| macOS Lima, Fedora template | 7.x | yes | 8 | all tiers, no edit |
-| macOS Lima, Ubuntu image | 7.0 | no | 8 | tier 1; tier 3 after the drop-in via provision |
+| WSL2, kernel before 6.18.54.1 (WSL 2.9) | 6.18 (6.6 on old installs) | no | 7 (3 on 6.6) | tier 1; tier 3 after `wsl --update` or `.wslconfig kernelCommandLine`; root for eBPF |
+| WSL2, kernel 6.18.54.1 and later (WSL 3.0.3) | 6.18 | yes (from the kernel configuration; not measured) | 7 (not measured) | tier 1; tier 3 with no edit once `tego doctor` shows `bpf`; root for eBPF; untested on real hardware |
+| macOS Lima, Tego's template (Ubuntu 24.04, cloud image release-20260926) | 6.8 | no | 4 | the Ubuntu 24.04 row: tier 1; tier 2 with sudo; tier 3 after the GRUB edit and a restart (the template does not make it) |
+| macOS Lima, Fedora template (Lima's own, not Tego's) | 7.x | yes | 8 | all tiers, no edit |
+| macOS Lima, `template:ubuntu` (Lima's own: 26.04 in Lima 2.2.1, not Tego's) | 7.0 | no | 8 | tier 1; tier 3 after the GRUB edit |
 | Hosted CI (GitHub ubuntu-24.04) | Ubuntu | no | ≥ 4 | tier 1 + forwarder only; command line not editable |
 
 ## 15. Performance and scale

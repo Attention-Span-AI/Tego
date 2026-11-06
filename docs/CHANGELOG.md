@@ -111,6 +111,13 @@ rules remain a preview, with the limits below.
   same-run notes artifact immediately before publication, then reads back the body and public status even if
   editing fails. After editing, an error, mismatched body or unverified state fails publication and triggers an
   attempt to restore draft status; a failed restore needs manual inspection.
+- A contract string that the YAML writer stored as a block starting with a tab or a line break (a multi-line
+  `command` entry, for example) is now saved double-quoted in the run's `contract.yaml`, so the saved copy loads
+  back as the same contract when `tego drift` reloads it. Such a contract's hash changes; no other contract's bytes
+  or hash change.
+- Docs: Microsoft's WSL kernel lists `bpf` in its boot LSM list from 6.18.54.1 (WSL 3.0.3), so tier 3 no longer needs a
+  boot change there. INSTALL.md also now says PowerShell must be opened as administrator, and covers Lima's menu, the
+  read-only Mac home mount and `--mount-none`.
 
 ### Added
 

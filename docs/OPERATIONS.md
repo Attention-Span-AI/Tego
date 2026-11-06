@@ -1134,7 +1134,8 @@ in `lsm=`, fmod_ret is the pin's doing (`bpf.plane pins fmod_ret`) or LSM mode's
 to pass, see the lsm mode line`, whose detail and fix say why); editing `lsm=` fixes neither.
 
 - **LSM mode by distribution.** `bpf` is already in the boot `lsm=` list on Debian 13, Fedora, RHEL 9 and 10 and
-  Amazon Linux 2023: tier 3 needs no change there. Ubuntu (24.04, 25.10, 26.04) and the stock WSL2 kernel lack it.
+  Amazon Linux 2023: tier 3 needs no change there. Ubuntu (24.04, 25.10, 26.04) and WSL2 kernels before
+  6.18.54.1 lack it.
   Doctor's `lsm` line then fails for tier 3 only (tiers 1 and 2 are not affected) and prints one fix built from the live
   list, so no LSM the machine runs is dropped: `update-grub` after editing `GRUB_CMDLINE_LINUX_DEFAULT` in
   `/etc/default/grub` on Debian and Ubuntu, `grubby --update-kernel=ALL --args="lsm=..."` on the RHEL family, Fedora and

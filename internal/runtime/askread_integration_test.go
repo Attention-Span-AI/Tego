@@ -5,7 +5,9 @@
 package runtime
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,6 +18,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/runtime/cgroup"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -40,7 +44,17 @@ type askReadScene struct {
 	standIn string
 	// said is what `tego run` printed, whole once the run is over (finish).
 	said *strings.Builder
+	// run is the scene's one `tego run` (start); ended is closed once the scene's one Wait of it returned, with its
+	// error in waitErr.
+	run     *exec.Cmd
+	ended   chan struct{}
+	waitErr error
 }
+
+// sceneOutputGrace is how long a scene reads `tego run`'s output after it exits (exec.Cmd.WaitDelay). A run's processes
+// end with it, so its output pipe still open that long after is held by a process that outlived the run, and the Wait
+// returns exec.ErrWaitDelay instead of waiting on it for good.
+const sceneOutputGrace = 10 * time.Second
 
 func newAskReadScene(t *testing.T, timeout string, reads int) *askReadScene {
 	t.Helper()
@@ -127,57 +141,162 @@ func anchored(t *testing.T, dir string) {
 	}
 }
 
-// start launches `tego run` on the scene's contract and returns the command and the run's directory.
+// start launches `tego run` on the scene's contract and returns the command and the run's directory. The scene waits
+// for the command itself, once (ended): finish reads how it ended, and a test that ends with it still running has the
+// whole run killed (kill).
 func (s *askReadScene) start(t *testing.T) (*exec.Cmd, string) {
 	t.Helper()
+	if s.run != nil {
+		t.Fatal("a scene starts one run")
+	}
 	run := s.tego(t, "run", filepath.Join(s.f.dir, "agent.yaml"), "--", "/bin/sh", "agent.sh")
 	run.Dir = s.f.dir
 	out := &strings.Builder{}
 	s.said = out
 	run.Stdout, run.Stderr = out, out
+	run.WaitDelay = sceneOutputGrace
 	if err := run.Start(); err != nil {
 		t.Fatal(err)
 	}
+	ended := make(chan struct{})
+	s.run, s.ended = run, ended
+	go func() { s.waitErr = run.Wait(); close(ended) }()
+	var dir string // the run's directory, once start has seen it live
 	t.Cleanup(func() {
-		if run.ProcessState == nil {
-			_ = run.Process.Kill()
-			_ = run.Wait()
+		select {
+		case <-ended:
+		default:
+			s.kill(t, dir)
 		}
-		if t.Failed() {
-			t.Logf("tego run said:\n%s", out.String())
+		select {
+		case <-ended:
+			if t.Failed() {
+				t.Logf("tego run said:\n%s", out.String())
+			}
+		default: // its output is still being copied, so it is not read; kill said why
 		}
 	})
 	wait := askSceneStartWait()
 	begun := time.Now()
 	for deadline := begun.Add(wait); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-		if dir := liveRun(t, s.f.root, true); dir != "" {
+		if dir = liveRun(t, s.f.root, true); dir != "" {
 			t.Logf("tego run started its run in %v", time.Since(begun).Round(time.Millisecond))
 			return run, dir
 		}
-		var info unix.Siginfo
-		if err := unix.Waitid(unix.P_PID, run.Process.Pid, &info, unix.WEXITED|unix.WNOHANG|unix.WNOWAIT, nil); err != nil {
-			t.Fatalf("waitid on tego run: %v", err)
-		}
-		if info.Signo != 0 {
-			t.Fatalf("tego run ended before its run started under %s", s.f.root)
+		select {
+		case <-ended:
+			t.Fatalf("tego run ended before its run started under %s (%v)", s.f.root, s.waitErr)
+		default:
 		}
 	}
 	t.Fatalf("no live run appeared under %s within %s", s.f.root, wait)
 	return nil, ""
 }
 
+// kill ends for good the run of a test that ended with it still running: SIGKILL to the run's own cgroup, found as
+// `tego stop`'s backstop finds it (RunScope), then to tego run, and it waits for the scene's Wait. Killing tego run
+// alone did not end the run: the launcher's PDEATHSIG ends only the agent's first process (launch/child.go), so a
+// process the agent's script started in the background outlived it, as a run whose launcher died runs on until the
+// next `tego run`, `tego stop` or `tego gc` sweep ends it as orphaned (limits-check-doctor-cli.md), and it held tego
+// run's output pipe, so the Wait never returned. On 2026-11-06 TestIntegrationPauseWaitsForAnAnsweredAsk failed on CI
+// and its cleanup then waited 7m21s on the agent's heartbeat, which spun on the syscalls the dead launcher's listener
+// no longer answered, until go test's 10 m deadline killed the package with its test's failure unprinted (run
+// 42184797264).
+func (s *askReadScene) kill(t *testing.T, dir string) {
+	t.Helper()
+	m, scopes, err := killRuns(s.f.root, dir)
+	if err != nil {
+		t.Errorf("the run's own cgroup was not killed, so its processes may outlive the test: %v", err)
+	}
+	_ = s.run.Process.Kill()
+	bound := sceneOutputGrace + 10*time.Second
+	select {
+	case <-s.ended:
+		if errors.Is(s.waitErr, exec.ErrWaitDelay) {
+			t.Errorf("a process held tego run's output %s after tego run and its run's cgroup were killed", sceneOutputGrace)
+		}
+	case <-time.After(bound):
+		t.Errorf("tego run did not end within %s of its kill", bound)
+	}
+	// The killed launcher removes no scope: each is removed here once its processes are gone.
+	for _, c := range scopes {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := m.Remove(ctx, c); err != nil {
+			t.Logf("the killed run's cgroup %s stays: %v", c.Path, err)
+		}
+		cancel()
+	}
+}
+
+// killRuns SIGKILLs, through its own cgroup, the run whose directory is dir, or each run under the ledger root root
+// when dir is "" (a start that never saw its run live), and returns the cgroups it killed. A run with no run_start
+// names no agent, and one with no scope left ended with it: neither is killed, and neither is an error.
+func killRuns(root, dir string) (*cgroup.FS, []cgroup.Cgroup, error) {
+	dirs := []string{dir}
+	if dir == "" {
+		ents, err := os.ReadDir(root)
+		if err != nil {
+			return nil, nil, err
+		}
+		dirs = nil
+		for _, e := range ents {
+			if e.IsDir() && ledger.IsRunID(e.Name()) {
+				dirs = append(dirs, filepath.Join(root, e.Name()))
+			}
+		}
+	}
+	m, err := cgroup.Detect(os.Geteuid())
+	if err != nil {
+		return nil, nil, err
+	}
+	var killed []cgroup.Cgroup
+	var errs []error
+	for _, d := range dirs {
+		agent := runAgentOf(d)
+		if agent == "" {
+			continue
+		}
+		c, ok, err := RunScope(m, filepath.Dir(d), filepath.Base(d), agent)
+		if err != nil || !ok {
+			errs = append(errs, err)
+			continue
+		}
+		if err := m.Kill(c); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		killed = append(killed, c)
+	}
+	return m, killed, errors.Join(errs...)
+}
+
+// runAgentOf is the agent the run_start of the run whose directory is dir names, "" when it has none.
+func runAgentOf(dir string) string {
+	r, err := ledger.OpenReader(dir)
+	if err != nil {
+		return ""
+	}
+	defer r.Close()
+	for e, err := range r.Iter() {
+		if err != nil || e.Kind != record.KindRunStart {
+			return ""
+		}
+		return e.Agent
+	}
+	return ""
+}
+
 // askSceneStartWait bounds `tego run`'s start up to its run_start line. It is no budget, only the point past which a
-// start that never comes fails; a launcher that exits first fails the subtest at once (waitid WNOWAIT, which leaves the
-// child for the scene's own Wait). As root, 5 minutes: the first tier-2 or tier-3 run after a KVM guest boots probes
-// and loads the plane cold, as dnsCLIReportWait measures: 21 to 30 s for TestRootAskUnix's first cgroup cell on
-// 2026-10-19 (a loaded host), where the 30 s this was expired in three of six runs of the lsm-bpf boot. Unprivileged,
-// 2 minutes: such a run loads no plane, and the 41 scene starts of this package's unprivileged suite took 95 to 216 ms
-// at a load average of 19 to 20 (2026-11-02; start's log line says how long each took). The bound must also end
-// before go test's own: CI's build-test runs this package's integration suite unprivileged in about 320 s (d9e6cec,
-// 2026-11-02) of go test's 600 s, so at 5 minutes a start that never came outlived that deadline, and go test killed
-// the binary with no test failed and its FAIL line the only word, as it killed this package's on 40de30f (which test
-// hung there is not known). At 2 minutes the test fails on its own message, with what tego run said, and the package's
-// other tests still report.
+// start that never comes fails; a launcher that exits first fails the subtest at once (the scene's Wait returned). As
+// root, 5 minutes: the first tier-2 or tier-3 run after a KVM guest boots probes and loads the plane cold, as
+// dnsCLIReportWait measures: 21 to 30 s for TestRootAskUnix's first cgroup cell on 2026-10-19 (a loaded host), where
+// the 30 s this was expired in three of six runs of the lsm-bpf boot. Unprivileged, 2 minutes: such a run loads no
+// plane, and the 41 scene starts of this package's unprivileged suite took 95 to 216 ms at a load average of 19 to 20
+// (2026-11-02; start's log line says how long each took). The bound must also end before go test's own: CI's build-test
+// runs this package's integration suite unprivileged in about 320 s (d9e6cec, 2026-11-02) of go test's 600 s, so at 5
+// minutes a start that never came outlived that deadline, and go test killed the binary with no test failed and its
+// FAIL line the only word, as it killed this package's on 40de30f (which test hung there is not known). At 2 minutes
+// the test fails on its own message, with what tego run said, and the package's other tests still report.
 func askSceneStartWait() time.Duration {
 	if os.Geteuid() == 0 {
 		return 5 * time.Minute
@@ -246,14 +365,19 @@ func runStartPayload(t *testing.T, evs []*record.Event) record.RunStartPayload {
 	return p
 }
 
-// finish waits for the run and returns its ledger.
+// finish waits for the run, the one start returned, and returns its ledger.
 func (s *askReadScene) finish(t *testing.T, run *exec.Cmd, dir string) []*record.Event {
 	t.Helper()
-	done := make(chan error, 1)
-	go func() { done <- run.Wait() }()
+	if run == nil || run != s.run {
+		t.Fatal("finish: not the run this scene started")
+	}
 	select {
-	case err := <-done:
-		if code := exitCodeOf(t, err); code != 0 {
+	case <-s.ended:
+		if errors.Is(s.waitErr, exec.ErrWaitDelay) {
+			t.Fatalf("tego run exited, and a process held its output %s later: it outlived the run\n%s",
+				sceneOutputGrace, s.diagnose(t, dir))
+		}
+		if code := exitCodeOf(t, s.waitErr); code != 0 {
 			t.Fatalf("tego run exited %d\n%s", code, s.diagnose(t, dir))
 		}
 	case <-time.After(60 * time.Second):
