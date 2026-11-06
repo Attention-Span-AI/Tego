@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# example-restart-myapp.socket: AN EXAMPLE to adapt, not a unit Tego ships or needs. It is the supported way to let a
+# governed agent restart one service (docs/user/built-in-refusals.md, "An agent that must restart a service"). Tego
+# never lets a run reach the session bus or the systemd user manager, since through either one the agent could start
+# any command outside the run. This helper grants one verb instead: each connection to its socket starts
+# example-restart-myapp@.service once, which restarts myapp.service and does nothing else. The agent's contract allows
+# that one socket:
+#
+#   net:
+#     allow: ["unix:~/.local/state/tego-helpers/restart-myapp.sock"]
+#
+# The socket is outside /run/user/<uid> (%t), where builtin.host_ipc would refuse it, and outside ~/.tego. Keep its
+# directory out of the contract's fs.write, so the agent cannot remove the socket or put its own in its place, and keep
+# myapp.service's program, scripts, configuration, EnvironmentFile and drop-ins out of fs.write too: the restart runs
+# them outside the run with your account's full authority. Rename
+# both files and myapp.service for your service; one helper per service and verb.
+#
+#   cp example-restart-myapp.socket example-restart-myapp@.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now example-restart-myapp.socket
+
+[Unit]
+Description=Restart myapp.service on request of a governed agent (example)
+
+[Socket]
+ListenStream=%h/.local/state/tego-helpers/restart-myapp.sock
+SocketMode=0600
+DirectoryMode=0700
+# One service instance per connection (example-restart-myapp@<n>.service), one at a time.
+Accept=yes
+MaxConnections=1
+# A sixth connection within a minute is closed with no restart and stops the socket (Result=trigger-limit-hit), and
+# later ones are refused until you start it again.
+TriggerLimitIntervalSec=60s
+TriggerLimitBurst=5
+
+[Install]
+WantedBy=sockets.target

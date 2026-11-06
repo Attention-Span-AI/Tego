@@ -338,6 +338,7 @@ func Compile(c *Contract, m *config.Machine, opts ...CompileOption) (*RuleTable,
 	k.builtinContainerAliases()
 	k.builtinPeerNames()
 	k.containerSocketWarning()
+	k.builtinRefusedAllows() // after builtinContainerAliases: ADR 0113's built-ins always win over net.allow
 	k.hostSocketsReachable()
 	k.harness()
 	k.credentialsAndRelayTier() // ADR 0126: after tierAndCapture, which resolved the run's capture

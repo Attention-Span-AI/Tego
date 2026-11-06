@@ -356,7 +356,19 @@ func TestDangerousSocketsAreNeverAllowed(t *testing.T) {
 		{"podman", "/run/podman/podman.sock"},
 		{"containerd", "/run/containerd/containerd.sock"},
 		{"docker anywhere", "/opt/engine/docker.sock"},
+		// ADR 0113's built-in refusals refuse these in every enforcing run, so compile refuses an entry for one as a
+		// contradiction: a socket under the runtime directory (the run's own runtime directory is a new one each run),
+		// a multiplexer's or editor server's, and tego's own.
 		{"an unrelated socket under the runtime directory", "/run/user/1000/some-service/sock"},
+		{"a run's own runtime directory", "/run/user/1000/tego/r-1/codex/app.sock"},
+		{"tmux", "/tmp/tmux-1000/default"},
+		{"tmux under TMUX_TMPDIR", "/home/u/.cache/tmux/tmux-1000/default"},
+		{"screen", "/run/screen/S-u/1234.pts-0.host"},
+		{"screen in the home directory", "/home/u/.screen/1234.pts-0.host"},
+		{"emacs", "/tmp/emacs1000/server"},
+		{"neovim", "/tmp/nvim.u/0/nvim.1234.0"},
+		{"tego's home", "/home/u/.tego/api.sock"},
+		{"the ledger's ask socket", "/srv/ledger/ask.sock"},
 	}
 	for _, created := range []bool{false, true} {
 		for _, tc := range sockets {
@@ -366,16 +378,8 @@ func TestDangerousSocketsAreNeverAllowed(t *testing.T) {
 					r.fs(record.FSChmod, strings.TrimPrefix(tc.sock, "@"), "", 0) // the run made it, as far as the record shows
 				}
 				r.net("unix", "unix:"+tc.sock)
-				p := r.propose(Options{})
+				p := r.propose(Options{StateDirs: []string{"/srv/ledger"}})
 				c := p.Contract()
-				isRuntimeOnly := tc.name == "an unrelated socket under the runtime directory"
-				if created && isRuntimeOnly {
-					// The one exception: a socket the run created under the runtime directory is its own.
-					if got := entries(c, "net"); !slices.Equal(got, []string{"unix:" + tc.sock}) {
-						t.Errorf("net.allow = %q for a socket the run created\n%s", got, c)
-					}
-					return
-				}
 				if got := entries(c, "net"); len(got) != 0 {
 					t.Errorf("net.allow = %q, want nothing\n%s", got, c)
 				}

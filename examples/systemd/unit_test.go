@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
@@ -203,4 +204,49 @@ func configLine(t *testing.T, name string) string {
 		t.Fatalf("%s: %d lines set TEGO_CONFIG, want one: %q", name, len(found), found)
 	}
 	return found[0]
+}
+
+// TestExampleRestartHelper holds example-restart-myapp.socket and its service to what docs/user/built-in-refusals.md
+// says of them: the socket accepts one connection at a time under a trigger limit, at a path no built-in refuses (not
+// under the runtime directory %t, which builtin.host_ipc refuses, nor ~/.tego), mode 0600; each connection runs one
+// fixed command that reads nothing from it, and the connection's instance name is in no word of it, so the client
+// chooses neither the verb nor the unit; systemctl's output does not go back to the client.
+func TestExampleRestartHelper(t *testing.T) {
+	const sockName, svcName = "example-restart-myapp.socket", "example-restart-myapp@.service"
+	sock := readUnit(t, sockName)
+	wantOnce(t, sockName, sock, "Socket", map[string]string{
+		"SocketMode":     "0600",
+		"DirectoryMode":  "0700",
+		"Accept":         "yes",
+		"MaxConnections": "1",
+	})
+	if sock.value("Socket", "TriggerLimitBurst") == "" || sock.value("Socket", "TriggerLimitIntervalSec") == "" {
+		t.Errorf("%s sets no trigger limit: an agent could restart the service in a loop", sockName)
+	}
+	listen := sock["Socket"]["ListenStream"]
+	if len(listen) != 1 {
+		t.Fatalf("%s: ListenStream= %q, want one path", sockName, listen)
+	}
+	const home = "/home/u"
+	p := strings.Replace(listen[0], "%h", home, 1)
+	if strings.Contains(p, "%") || !strings.HasPrefix(p, "/") {
+		t.Fatalf("%s: ListenStream=%s is not a path under %%h: %%t is the runtime directory, which builtin.host_ipc refuses", sockName, listen[0])
+	}
+	b := &agent.BuiltinRefusals{Runtime: []string{"/run/user/1000"}, TegoDirs: []string{home + "/.tego", "/run/user/1000/tego"}}
+	if rule := b.UnixRule(p, false); rule != "" {
+		t.Errorf("%s listens at %s, which %s refuses: a contract could never allow it", sockName, p, rule)
+	}
+	svc := readUnit(t, svcName)
+	wantOnce(t, svcName, svc, "Service", map[string]string{
+		"Type":           "oneshot",
+		"StandardInput":  "socket",
+		"StandardOutput": "journal",
+		"StandardError":  "journal",
+		"ExecStart":      "systemctl --user restart myapp.service",
+	})
+	for _, k := range []string{"ExecStartPre", "ExecStartPost", "ExecStop", "ExecStopPost", "ExecCondition", "ExecReload"} {
+		if v := svc["Service"][k]; v != nil {
+			t.Errorf("%s: %s=%q runs more than the one verb", svcName, k, v)
+		}
+	}
 }

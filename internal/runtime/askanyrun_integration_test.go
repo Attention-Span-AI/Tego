@@ -176,12 +176,14 @@ func pythonPaths(t *testing.T) (string, string) {
 
 // otherRun runs run B to its end at tier, in a project of its own but under run A's machine config (one person's
 // ledger root, as on a real machine): its agent, answerProbe, tries to connect
-// to run A's ask.sock despite an explicit net.allow. C40 refuses before the broker.
+// to run A's ask.sock under host_sockets: true, the widest unix reach a contract
+// can give. C40 refuses before the broker. A net.allow entry naming the socket is
+// no longer a way to ask for it: compile refuses that entry as a contradiction
+// (ADR 0113, TestBuiltinRefusedAllowIsAContradiction).
 // It returns the path of the probe's result.
 func (h *askHolder) otherRun(t *testing.T, tier string) string {
 	t.Helper()
 	python, resolved := pythonPaths(t)
-	sock := filepath.Join(h.dir, "ask.sock")
 	contract := fmt.Sprintf(`version: 0
 name: ianyrunb
 command: ["/bin/sh"]
@@ -190,14 +192,13 @@ fs:
   write: ["./out/"]
 exec:
   allow: ["/bin/sh", %q, %q]
-net:
-  allow: [%q]
+host_sockets: true
 env:
   pass: ["PATH", "HOME"]
 limits:
   pids: 64
 record: summary
-`, python, resolved, "unix:"+sock)
+`, python, resolved)
 	b := newFixture(t, contract)
 	if tier != "landlock" {
 		pinned := strings.Replace(contract, "tier: landlock\n", "tier: "+tier+"\n", 1)
@@ -241,7 +242,7 @@ record: summary
 }
 
 // TestAgentInOtherRunCannotAnswer: run A holds an ask at tier landlock, unprivileged (as root, from a root launcher
-// with the agents dropped to the invoking user); run B's agent, whose contract lets it reach run A's ask.sock, tries
+// with the agents dropped to the invoking user); run B's agent, whose contract opens every host socket (host_sockets: true), tries
 // to approve it and is refused before connecting by builtin.tego_surface, the ask still pending; then the person's shell answers it. The
 // supervisor makes a contracted run's unix connects itself, here and at tier cgroup, so the broker sees run B's
 // launcher at the connect and the agent at the packet, and refused this answer by that mismatch before

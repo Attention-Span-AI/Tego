@@ -126,6 +126,14 @@ rules remain a preview, with the limits below.
 - Release: the signing step stages each checksummed asset from goreleaser's artifact list and the checksum globs, and
   refuses a missing, duplicate or changed file, so a tag's release job no longer stops on a raw binary or an extra
   file that goreleaser leaves outside `dist/`.
+- `tego compile` refuses a `net.allow` `unix:` entry that a built-in refusal always refuses, such as the session bus
+  or the systemd user manager, as a `contradiction` naming the entry and the rule (such a contract now fails at launch
+  with exit 125 instead of running with an entry that never applied), and notes that `host_sockets: true`
+  beside a `net:` section has no effect; `tego learn` no longer proposes such a socket, and
+  `docs/user/built-in-refusals.md` shows a one-verb helper for an agent that must restart a service.
+- The user service template `examples/systemd/tego-agent@.service` sets `Delegate=yes`, so on RHEL 9 the user
+  manager activates the delegated controllers along the service's ancestors and a governed service's runs can use
+  `limits.cpu`; an interactive run there still lacks cpu (GAPS B15).
 
 ### Added
 

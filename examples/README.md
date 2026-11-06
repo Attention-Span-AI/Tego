@@ -15,6 +15,8 @@ dashboard on the host's loopback, and the entrypoint that prepares the container
 `systemd/` holds the user units for an agent that runs all the time: `tego-agent@.service` runs one agent of your
 registry and restarts it after a crash or a limit, `tego-agent-restart@.timer` restarts it once a day, and
 `tego-gc.timer` runs the retention pass once a day (docs/OPERATIONS.md, "Agents that run all the time").
+`example-restart-myapp.socket` and its service are an example to adapt: a one-verb helper through which a governed
+agent restarts one service, since no contract can grant it the user manager's socket (docs/user/built-in-refusals.md).
 
 `lima/` holds `tego.yaml`, the Lima template for macOS: an Ubuntu 24.04 VM that installs Tego with the one-line
 install when it first boots (docs/INSTALL.md, "macOS"). `limactl validate` passes on it; it has not been booted on a

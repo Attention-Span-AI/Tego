@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# example-restart-myapp@.service: AN EXAMPLE, the service half of example-restart-myapp.socket, which says why and how.
+# One connection runs it once: it restarts myapp.service and nothing else. The connection is its standard input, and
+# it reads nothing from it, so the client chooses neither the verb nor the unit; the instance name (the connection's
+# number) appears nowhere in the command. The connection closes when the restart has finished, so the client sends
+# nothing and reads to end of file to wait for it (a byte it sent is never read, and the close then resets the
+# connection instead). systemctl's output goes to the journal, not to the client.
+
+[Unit]
+Description=Restart myapp.service for a governed agent (example)
+CollectMode=inactive-or-failed
+
+[Service]
+Type=oneshot
+StandardInput=socket
+StandardOutput=journal
+StandardError=journal
+ExecStart=systemctl --user restart myapp.service
