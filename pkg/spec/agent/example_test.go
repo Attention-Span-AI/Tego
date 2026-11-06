@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -320,6 +321,16 @@ func FuzzLoad(f *testing.F) {
 		b, _ := c2.Canonical()
 		if string(a) != string(b) {
 			t.Fatalf("canonical not a fixed point:\n%s\n---\n%s", a, b)
+		}
+		// R13: the copy is the contract, so no two contracts that differ share its bytes. A gate alias kept with
+		// its anchor cleared wrote one copy for two gates that score differently.
+		if !loadsAsItself(c, c2) {
+			t.Fatalf("canonical output loads back as another contract:\n%s", a)
+		}
+		g1, e1 := CompileGateConfig(c)
+		g2, e2 := CompileGateConfig(c2)
+		if (e1 == nil) != (e2 == nil) || !reflect.DeepEqual(g1, g2) {
+			t.Fatalf("canonical output compiles to another gate: %+v (%v), not %+v (%v)\n%s", g2, e2, g1, e1, a)
 		}
 	})
 }

@@ -145,7 +145,7 @@ func TestReleaseWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	ciTest := releaseStepNamed(t, ci.Jobs["scripts-and-workflows"], "release workflow authority, artifact and digest boundaries")
-	requireReleaseValue(t, ciTest.Run, "go test -count=1 ./examples/container/ -run '^TestRelease(Workflow|SigningInputs)$'")
+	requireReleaseValue(t, ciTest.Run, "go test -count=1 ./examples/container/ -run '^TestRelease(Workflow|SigningInputs|AssetStaging)$'")
 	for _, handoff := range []struct{ job, action, artifact, path string }{
 		{"release", "upload", "release-notes", "${{ runner.temp }}/release-notes.md"},
 		{"release", "upload", "release-assets", "${{ runner.temp }}/release-assets"},

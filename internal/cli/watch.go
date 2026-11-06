@@ -15,7 +15,6 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
-	"gopkg.in/yaml.v3"
 )
 
 func init() { register(cmdWatch) }
@@ -116,10 +115,12 @@ type genericContract struct {
 	Record  string   `yaml:"record"`
 }
 
-// genericContractYAML is that contract for command. The YAML encoder quotes the program, so it cannot become a
-// key or end the list.
+// genericContractYAML is that contract for command, written by Canonical's writer (agent.EncodeYAML). The encoder
+// quotes a program that would read as something else, so it cannot become a key or end the list, and the writer
+// double-quotes one it would write as a block that does not load back: yaml.Marshal wrote "\tagent\n", "\nagent\n"
+// and " agent\nx" as blocks the loader refused, so tego watch refused to run them.
 func genericContractYAML(command []string) ([]byte, error) {
-	return yaml.Marshal(genericContract{Version: 0, Name: watchName(command[0]), Command: command[:1], Record: "full"})
+	return agent.EncodeYAML(genericContract{Version: 0, Name: watchName(command[0]), Command: command[:1], Record: "full"})
 }
 
 // watchName is a contract name for argv0: its base name, lower case, with every character outside [a-z0-9-]

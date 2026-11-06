@@ -14,7 +14,10 @@ scratch-only cleanup in CI's `scripts-and-workflows` job and precommit.
 
 Developer scripts, not shipped: `check-spdx.sh` (CI's SPDX header check),
 `check-licenses.sh [dist-directory]` (license texts, linked dependency notices, the licence files the binaries embed for
-`licenses`, and optional checksummed release archive),
+`licenses`, and optional checksummed release archive), `stage-release-assets.py CHECKSUMS DESTINATION` (release.yml's
+handoff to the signing job: every file the checksums file lists, found in GoReleaser's `dist/artifacts.json` or by
+`.goreleaser.yaml`'s `checksum.extra_files` globs, checked against its hash and copied; Python 3 with PyYAML;
+`TestReleaseAssetStaging` in examples/container and CI's `reproducible` job, on a full snapshot),
 `install_test.sh` (install.sh's
 verification paths, tego-control beside tego and its pin included, against a release laid out on local disk;
 `make install-test`), `coverage.sh` (coverage

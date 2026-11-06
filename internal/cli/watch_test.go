@@ -19,6 +19,7 @@ import (
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/internal/runtime/enforce"
 	"github.com/attention-span-ai/tego/internal/runtime/source"
+	"github.com/attention-span-ai/tego/internal/watch/adopt"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -82,6 +83,37 @@ func TestGenericContractCarriesTheProgramExactly(t *testing.T) {
 		cleanup()
 		if err != nil || agent.HasErrors(ds) || c == nil || !slices.Equal(c.Command, []string{program}) {
 			t.Fatalf("%q: agent.Load = %v, %v, %v", program, c, ds, err)
+		}
+	}
+}
+
+// generatedLossyPrograms are program paths yaml.Marshal (at indent 4) wrote as a block that does not load back: tab-led
+// and line-break-led ones holding a line break, which the loader refused, so tego watch and tego adopt refused to run
+// them; and a space-led one ("  agent\n"), which loaded back as another program ("agent\n"). The rest sit beside them
+// as block strings that always loaded back.
+var generatedLossyPrograms = []string{"\tagent\n", "\t/opt/a b\nc", "\nagent\n", "\n\nagent", "\n\tagent\n", " agent\nx", "  agent\n", "a\nb\n"}
+
+// A watch contract and an adoption contract carry such a program exactly: both are written by agent.EncodeYAML,
+// Canonical's writer, and load back through the real loader with the program as it was.
+func TestGeneratedContractsCarryAProgramWithABreakExactly(t *testing.T) {
+	for _, program := range generatedLossyPrograms {
+		path, cleanup, err := writeGenericContract([]string{program, "--flag"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, ds, err := agent.Load(path, dirProfiles{})
+		cleanup()
+		if err != nil || c == nil || !slices.Equal(c.Command, []string{program}) {
+			t.Errorf("watch contract for %q: agent.Load = %v, %v\n%v", program, c, err, ds)
+		}
+		path, cleanup, err = writeAdoptContract(adopt.Process{Exe: program, Comm: "agent"}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, ds, err = agent.Load(path, nil)
+		cleanup()
+		if err != nil || c == nil || !slices.Equal(c.Command, []string{program}) {
+			t.Errorf("adopt contract for %q: agent.Load = %v, %v\n%v", program, c, err, ds)
 		}
 	}
 }

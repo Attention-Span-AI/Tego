@@ -443,7 +443,11 @@ func (l *loader) parse(file string, data []byte, isProfile bool) *Contract {
 	if len(l.ds.list) > before {
 		return nil
 	}
-	normalizeSchemaOnly(c)
+	if pos, err := normalizeSchemaOnly(c); err != nil {
+		l.ds.errorf(Pos{File: file, Line: pos.Line, Col: pos.Col}, CodeSchema, "%v", err).
+			fix("write the values out instead of repeating an alias")
+		return nil
+	}
 	if c.FS != nil && c.FS.DenyRead != nil && len(c.FS.DenyRead) == 0 {
 		l.emptyDenyRead = append(l.emptyDenyRead, w.origins["fs.deny_read"])
 	}
@@ -566,14 +570,68 @@ func invalidUTF8At(data []byte) (line, col int) {
 // normalizeSchemaOnly strips comments, styles and positions from the
 // schema-only yaml.Node fields so Canonical() depends on structure alone, and
 // zeroes an explicitly empty value so it is indistinguishable from absence (R2).
-func normalizeSchemaOnly(c *Contract) {
+//
+// Each alias in such a field is first replaced by a copy of the node it names (expandAliases). The typed decode
+// does that for every other field, but these keep the parser's nodes, and stripNode then cleared the anchor and
+// kept the alias: Canonical wrote `- *r` with no `&r`, so the run's contract.yaml did not load back ("unknown
+// anchor"), and `rules: [&r {a: 10}, {b: 90}, *r]` and `rules: [{a: 10}, &r {b: 90}, *r]` wrote the same bytes
+// and contract_hash while their gates scored the third rule differently (R13). On an error it returns the
+// position of the field it could not expand.
+func normalizeSchemaOnly(c *Contract) (Pos, error) {
 	for _, n := range []*yaml.Node{&c.Gate, &c.Docker, &c.Ask} {
+		if n.Kind != 0 {
+			e, err := expandAliases(n, maxExpandedNodes)
+			if err != nil {
+				return Pos{Line: n.Line, Col: n.Column}, err
+			}
+			*n = *e
+		}
 		if nodeEmpty(n) {
 			*n = yaml.Node{}
 			continue
 		}
 		stripNode(n)
 	}
+	return Pos{}, nil
+}
+
+// expandAliases returns a copy of n in which every alias is a copy of the node it names, followed through
+// aliases inside that node too, so the copy holds no alias and shares no node with n. An anchor stays (stripNode
+// clears it). Parse bounds a whole document's expansion at maxExpandedNodes before the typed decode
+// (expandedNodes), and yaml.v3 refuses an anchor whose node holds an alias of itself; the copy is bounded again
+// by limit, by maxAliasDepth hops per alias and by nesting depth, so a node built some other way cannot make it
+// run away either.
+func expandAliases(n *yaml.Node, limit int) (*yaml.Node, error) {
+	count := 0
+	var cp func(*yaml.Node, int) (*yaml.Node, error)
+	cp = func(n *yaml.Node, depth int) (*yaml.Node, error) {
+		for hops := 0; n.Kind == yaml.AliasNode; hops++ {
+			if n.Alias == nil || hops >= maxAliasDepth {
+				return nil, fmt.Errorf("an alias chain is too deep or names no node")
+			}
+			n = n.Alias
+		}
+		if depth > maxAliasDepth*64 {
+			return nil, fmt.Errorf("a value nests more than %d levels deep", maxAliasDepth*64)
+		}
+		if count++; count > limit {
+			return nil, fmt.Errorf("the document expands to more than %d YAML nodes through aliases", limit)
+		}
+		out := *n
+		out.Alias = nil
+		if n.Content != nil {
+			out.Content = make([]*yaml.Node, len(n.Content))
+			for i, c := range n.Content {
+				e, err := cp(c, depth+1)
+				if err != nil {
+					return nil, err
+				}
+				out.Content[i] = e
+			}
+		}
+		return &out, nil
+	}
+	return cp(n, 0)
 }
 
 // nodeEmpty reports whether a schema-only node carries no value: unset, null,

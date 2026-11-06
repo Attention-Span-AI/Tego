@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
-	"gopkg.in/yaml.v3"
 
 	"github.com/attention-span-ai/tego/internal/doctor"
 	"github.com/attention-span-ai/tego/internal/ledger"
@@ -780,7 +779,7 @@ func writeAdoptContract(t adopt.Process, record string) (string, func(), error) 
 	c := adoptContract{Version: 0, Name: adoptName(t), Command: []string{t.Exe}, Record: record,
 		Tier: string(backend.TierCgroup), Capture: string(agent.CaptureOff)}
 	c.FS.DenyRead = []string{}
-	data, err := yaml.Marshal(c)
+	data, err := agent.EncodeYAML(c) // Canonical's writer, so the program loads back as it is (genericContractYAML)
 	if err != nil {
 		return "", nil, err
 	}

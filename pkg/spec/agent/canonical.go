@@ -33,20 +33,60 @@ func (c *Contract) Canonical() ([]byte, error) {
 	if c == nil || !c.loaded {
 		return nil, ErrNotLoaded
 	}
-	doc, err := canonicalDoc(c)
+	for _, f := range []struct {
+		key string
+		n   *yaml.Node
+	}{{"gate", &c.Gate}, {"docker", &c.Docker}, {"ask", &c.Ask}} {
+		if err := nodeSelfContained(f.n); err != nil {
+			return nil, fmt.Errorf("agent: canonical: %s: %w", f.key, err)
+		}
+	}
+	b, err := EncodeYAML(c)
 	if err != nil {
 		return nil, fmt.Errorf("agent: canonical: %w", err)
+	}
+	return b, nil
+}
+
+// EncodeYAML is the YAML writer Canonical uses, for any value the yaml.v3 encoder takes: a 2-space indent, "\n"
+// line endings, and each string yaml.v3 would write as a block scalar that does not load back as that string
+// (blockLossy) written double-quoted. Generated contracts are written with it too (tego watch's and tego adopt's),
+// so a program path that starts with a tab or a line break loads back as written.
+func EncodeYAML(v any) ([]byte, error) {
+	doc, err := canonicalDoc(v)
+	if err != nil {
+		return nil, err
 	}
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 	if err := enc.Encode(doc); err != nil {
-		return nil, fmt.Errorf("agent: canonical: %w", err)
+		return nil, err
 	}
 	if err := enc.Close(); err != nil {
-		return nil, fmt.Errorf("agent: canonical: %w", err)
+		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// nodeSelfContained refuses a schema-only node the encoder would not write as itself: one holding an alias, which
+// is written `*name` and does not load back without its anchor, or an anchor, which writes bytes the same value
+// without one does not. Load expands and strips both (normalizeSchemaOnly); should that ever change, this keeps
+// Canonical failing closed: Compile fails on its error rather than record a contract_hash two policies share. It
+// runs before mapStrings, which would follow an alias's target.
+func nodeSelfContained(n *yaml.Node) error {
+	if n.Kind == yaml.AliasNode {
+		return errors.New("holds a YAML alias")
+	}
+	if n.Anchor != "" {
+		return errors.New("holds a YAML anchor")
+	}
+	for _, c := range n.Content {
+		if err := nodeSelfContained(c); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Hash is contract_hash: sha256 of Canonical() (R13).
@@ -62,9 +102,9 @@ func (c *Contract) Hash() ([32]byte, error) {
 // does not load back as that string (blockLossy); then canonicalNode, c's encoding with each such string
 // double-quoted. A contract without one takes the encoder's path it always took, so its bytes and contract_hash
 // are unchanged.
-func canonicalDoc(c *Contract) (any, error) {
+func canonicalDoc(c any) (any, error) {
 	lossy := false
-	mapStrings(reflect.ValueOf(c), func(s string) (string, bool) {
+	mapStrings(reflect.ValueOf(c), func(s string, _ bool) (string, bool) {
 		lossy = lossy || blockLossy(s)
 		return "", false
 	})
@@ -104,16 +144,28 @@ func blockLossy(s string) bool {
 // line break replaced by a plain stand-in, and each stand-in's scalar is given its string back: double-quoted
 // when it is blockLossy, otherwise with no style, which Canonical's encoder writes as the literal block it
 // writes from c (TestCanonicalNodeIsTheEncoders).
-func canonicalNode(c *Contract) (*yaml.Node, error) {
+//
+// A Go map key that holds a line break is refused. The encoder sorts a map's keys, so a key replaced by its
+// stand-in would sort by the stand-in, which is numbered in map iteration order: its place in the output would
+// differ from the encoder's, and could differ between two runs. No map a contract reaches has such a key today
+// (env.set's names are refused one), so this keeps a future map with free keys from writing nondeterministic bytes.
+func canonicalNode(c any) (*yaml.Node, error) {
 	taken := map[string]bool{}
 	var block []string
-	mapStrings(reflect.ValueOf(c), func(s string) (string, bool) {
+	keyBreak := ""
+	mapStrings(reflect.ValueOf(c), func(s string, key bool) (string, bool) {
+		if key && keyBreak == "" && strings.Contains(s, "\n") {
+			keyBreak = s
+		}
 		if !taken[s] && strings.Contains(s, "\n") {
 			block = append(block, s)
 		}
 		taken[s] = true
 		return "", false
 	})
+	if keyBreak != "" {
+		return nil, fmt.Errorf("a map key holds a line break: %q", keyBreak)
+	}
 	// A stand-in is a string the contract does not hold, so a scalar that comes back as one held a block
 	// string. Which stand-in a string gets does not reach the output: each is replaced before the encode.
 	standIn := make(map[string]string, len(block))
@@ -128,7 +180,7 @@ func canonicalNode(c *Contract) (*yaml.Node, error) {
 		taken[p] = true
 		standIn[s], back[p] = p, s
 	}
-	cp, _ := mapStrings(reflect.ValueOf(c), func(s string) (string, bool) {
+	cp, _ := mapStrings(reflect.ValueOf(c), func(s string, _ bool) (string, bool) {
 		p, ok := standIn[s]
 		return p, ok
 	})
@@ -156,12 +208,12 @@ func restoreStandIns(n *yaml.Node, back map[string]string) {
 
 // mapStrings returns v with f applied to each string the encoder can reach from it: exported struct fields,
 // through pointers, interfaces, slices, arrays and maps, map keys included. f answers a string and whether it
-// changed it. A part in which f changes nothing is v's own, so only the path to a changed string is copied and
-// v is never written.
-func mapStrings(v reflect.Value, f func(string) (string, bool)) (reflect.Value, bool) {
+// changed it; key says the string is (part of) a map key. A part in which f changes nothing is v's own, so only
+// the path to a changed string is copied and v is never written.
+func mapStrings(v reflect.Value, f func(s string, key bool) (string, bool)) (reflect.Value, bool) {
 	switch v.Kind() {
 	case reflect.String:
-		s, ok := f(v.String())
+		s, ok := f(v.String(), false)
 		if !ok {
 			return v, false
 		}
@@ -208,7 +260,7 @@ func mapStrings(v reflect.Value, f func(string) (string, bool)) (reflect.Value, 
 		var entries []entry
 		changed := false
 		for it := v.MapRange(); it.Next(); {
-			k, kok := mapStrings(it.Key(), f)
+			k, kok := mapStrings(it.Key(), func(s string, _ bool) (string, bool) { return f(s, true) })
 			e, eok := mapStrings(it.Value(), f)
 			entries = append(entries, entry{k, e})
 			changed = changed || kok || eok
