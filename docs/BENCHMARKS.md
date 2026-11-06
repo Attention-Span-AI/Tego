@@ -393,8 +393,12 @@ target at most a tenth behind its 10 s schedule, a notification held under R22's
 P1's pin of Borrow at most 2.5 times two atomic adds (`TestBorrowCostRatio`), a ratio to a fixed workload, which a
 busy machine moves as it moves a duration (below). The read of a 55k-line run from disk under 150 ms
 (`TestInForceLongRunIsFast`, the Rules page's refresh) joined them on 2026-10-28, after it read 213 and 228 ms beside
-the integration suites (70 ms alone). On 2026-10-16 the full gate failed `TestExecCommandCostBudget` at
-+12.247 µs against its +12 µs limit while other jobs loaded the host; alone it passed. Those budgets are now
+the integration suites (70 ms alone). The line page's warm render of one line of a 12,000-line run under 25 ms
+(`TestLinePageRenderBudget`, EVENT-PAGE) joined them on 2026-11-06, after CI's race job read 26.9 ms beside three other
+packages' tests (0.9 to 2.2 ms on the reference box, 8.3 to 11 ms there under the race detector, which makes it about
+seven times slower); under `-race` it renders and checks the page but judges no time. On 2026-10-16 the full gate
+failed `TestExecCommandCostBudget` at +12.247 µs against its +12 µs limit while other jobs loaded the host; alone it
+passed. Those budgets are now
 asserted, exactly as written, only where the machine is quiet, and every other run holds the same measurements to a
 ceiling ten times the Limit, on the measuring thread's own time where the cost is the calling goroutine's, with their
 wall clock held to a hundred times it (`internal/testutil/timing.go`).

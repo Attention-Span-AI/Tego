@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("version: 0\nname: a\ncommand: [\"\t0\r\r\"]")

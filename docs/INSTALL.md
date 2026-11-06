@@ -64,18 +64,26 @@ limactl start --name=tego https://github.com/Attention-Span-AI/Tego/releases/lat
 limactl shell tego tego doctor
 ```
 
+If Lima asks how to go on, choose **Proceed with the current configuration**. `limactl shell tego tego doctor` logs in
+over SSH, so its cgroup check fails until you start a shell in your user's cgroup (below).
+
 The template is a release asset, [examples/lima/tego.yaml](../examples/lima/tego.yaml) in this repository, listed in
 the release's signed checksums file like `install.sh`. It boots Ubuntu 24.04 LTS with 4 CPUs, 4 GiB of
 memory and a 20 GiB disk, and on the first boot runs the Linux line above as your user in the VM, taking `install.sh` from the latest release
 too. Tier 1 needs nothing
-more there: Ubuntu 24.04's kernel has Landlock, and its systemd delegates a cgroup to your user. Your Mac home is
-visible in the VM read-only; Tego's data and the projects an agent works on live in the VM's own home.
+more there: Ubuntu 24.04's kernel has Landlock, and its systemd delegates a cgroup to your user. 
+Your Mac home is visible in the VM read-only, at `/Users/<you>`. Tego's built-in secret paths name the VM user's home,
+not that one, so an agent in the VM can read your Mac's `~/.ssh` unless a contract denies it. To keep the Mac home out,
+create the VM with `limactl start --name=tego --mount-none <the URL above>` (Lima 2.0 or later). Tego's data and the
+projects an agent works on live in the VM's own home: when your Mac's current folder is mounted, `limactl shell` starts
+there, read-only, so run `cd ~` first.
 
 `limactl shell` logs in over SSH, which starts outside your user's cgroup, so for a run start a shell in it first:
 
 ```sh
 limactl shell tego
 systemd-run --user --scope bash
+cd ~
 tego test
 ```
 
@@ -93,20 +101,25 @@ ssh -F ~/.lima/tego/ssh.config -N -L 8484:127.0.0.1:8484 lima-tego
 
 ## Windows
 
-Tego runs in WSL2, which runs a real Linux kernel. In PowerShell:
+Tego runs in WSL2, which runs a real Linux kernel. In PowerShell opened as administrator:
 
 ```powershell
 wsl --install -d Ubuntu-24.04
 ```
 
 Restart if Windows asks you to, then open Ubuntu, create your user, and run the Linux line there. `tego doctor` says
-which tier WSL2 gives you. Tier 3 needs `bpf` in the boot LSM list, which the stock WSL2 kernel does not have.
+which tier WSL2 gives you. Tier 3 needs `bpf` in the boot LSM list. Microsoft's WSL kernel lists it by default from
+6.18.54.1 (WSL 3.0.3 and later), so on an older install run `wsl --update` and `wsl --shutdown` in PowerShell. Where you
+cannot update, put the `lsm=` value from `sudo "$(command -v tego)" doctor` under `[wsl2]` in `%UserProfile%\.wslconfig`
+as `kernelCommandLine = lsm=<the list doctor printed>`, then run `wsl --shutdown`. Ubuntu 24.04's WSL image runs
+systemd already (its `/etc/wsl.conf` has `[boot]` `systemd=true`).
 
 [scripts/install-wsl.ps1](../scripts/install-wsl.ps1) does the same two steps: it installs Ubuntu-24.04 if WSL has no
 such distribution, and otherwise runs the Linux line inside it. Download it, read it, then run
 `powershell -ExecutionPolicy Bypass -File install-wsl.ps1`.
 
-**Tested on** nothing yet: neither the steps nor the script have been run on Windows.
+**Tested on** nothing yet: neither the steps nor the script have been run on Windows. That the 6.18.54.1 kernel lists
+`bpf` is read from Microsoft's kernel configuration, not from a run of `tego doctor`.
 
 ## Run in a container
 

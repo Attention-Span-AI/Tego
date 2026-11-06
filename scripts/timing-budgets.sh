@@ -5,13 +5,13 @@
 # "Timing budgets in the test suites").
 #
 # Why it exists: ADR 0048 C8's exec costs, enforce-plane §10's plan fill, DGRAM-VERDICT's flood, the Rules page's
-# 55k-line read and ADR 0023 P1's Borrow ratio (to a fixed workload, two atomic adds) are figures on the reference box
-# (a developer laptop) with a Limit, most with a Target. A busy machine slows the code by a lower clock and a busy sibling
-# hyperthread through the whole measurement, which no fastest-of-N removes: under 16 busy loops on the reference box
-# C8's cases took 2.3 to 4.9 times their quiet figures even in the handling thread's own CPU time, and Borrow's ratio
-# moved from 1.6-1.9 to 2.50. So in the unit gate (precommit, CI's test jobs, any go test) these tests hold their
-# measurement only to ten times its Limit (testutil.CeilingFactor), and this script runs them with
-# TEGO_TIMING_BUDGETS=1, which makes each hold its Limit (over it fails) and Target (over it prints TARGET-MISS) exactly
+# 55k-line read, the line page's warm render of a 12k-line run and ADR 0023 P1's Borrow ratio (to a fixed workload, two
+# atomic adds) are figures on the reference box (a developer laptop) with a Limit, most with a Target. A busy machine
+# slows the code by a lower clock and a busy sibling hyperthread through the whole measurement, which no fastest-of-N
+# removes: under 16 busy loops on the reference box C8's cases took 2.3 to 4.9 times their quiet figures even in the
+# handling thread's own CPU time, and Borrow's ratio moved from 1.6-1.9 to 2.50. So in the unit gate (precommit, CI's
+# test jobs, any go test) these tests hold their measurement only to ten times its Limit (testutil.CeilingFactor), and
+# this script runs them with TEGO_TIMING_BUDGETS=1, which makes each hold its Limit (over it fails) and Target (over it prints TARGET-MISS) exactly
 # as its spec writes them. Run it where nothing else runs: on a developer's machine, `make budgets` with the machine
 # otherwise idle; CI's bench-gate job runs it first, alone on the job's runner, with --hosted. A hosted runner is
 # another machine than the reference box: a quiet one of GitHub's made an open and a close at 2.5 to 2.9 times the
@@ -45,6 +45,7 @@ internal/runtime/supervisor      integration  TestIntegrationUDPFlood TestIntegr
 internal/runtime/enforce/cgroup  -            TestPlanPlaneFillStaysUnderItsBudgetAt1000Rows
 internal/platform/sys            -            TestBorrowCostRatio
 internal/control/rulesview       -            TestInForceLongRunIsFast
+internal/control/web             -            TestLinePageRenderBudget
 '
 
 GO=${GO:-go}
