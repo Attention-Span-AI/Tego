@@ -225,12 +225,12 @@ func builtinRun(t *testing.T, bin, tier string, explicit bool) {
 	}
 	contract := fmt.Sprintf("version: 0\nname: ibuiltin\ncommand: [%q]\ntier: landlock\nfs:\n  write: [\"./out/\", \"/dev/pts/\"]\n  deny_read: []\nrecord: full\nlimits:\n  pids: 128\n", python)
 	if explicit {
-		var paths []string
-		for _, n := range []string{"bus", "moving", "systemd/private", "gnupg/S.gpg-agent", "gnupg/S.gpg-agent.extra", "gnupg/S.gpg-agent.ssh", "tego/other/operator.sock"} {
-			paths = append(paths, strconv.Quote("unix:"+filepath.Join(host, n)))
-		}
-		paths = append(paths, strconv.Quote("unix:"+filepath.Join(dir, "l/ask.sock")), strconv.Quote("unix:"+filepath.Join(dir, "project/out/ledger-link")))
-		contract += "net:\n  allow: [" + strings.Join(paths, ",") + "]\n"
+		// A net: section that names only the SSH exception: every other probe is refused by the built-ins before the
+		// section is read, as the probes' rule ids show. An entry naming a protected socket (the bus, the user
+		// manager, gpg-agent, another run's or the ledger's control socket, or a link that resolves to one) is a
+		// compile-time contradiction now (TestBuiltinRefusedAllowIsAContradiction). The root tiers load no kernel
+		// allow row for such an entry either (cgroup's builtinUnixRows), so dropping them changes no cell here.
+		contract += "net:\n  allow: [" + strconv.Quote("unix:"+filepath.Join(host, "gnupg/S.gpg-agent.ssh")) + "]\n"
 	} else {
 		contract += "host_sockets: true\n"
 	}

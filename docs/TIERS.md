@@ -9,7 +9,7 @@ The per-tier capability table is [spec/backend/CAPABILITIES.md](../spec/backend/
 | Mechanism | Landlock and a seccomp supervisor | BPF programs attached to the run's cgroup, and fanotify | The kernel decision plane in LSM mode, on top of tier 2 |
 | Root | No | Yes: `sudo tego run`. The launcher is root for the whole run | Yes |
 | Kernel | Landlock ABI 2 or newer (Linux 5.19 or later, or a backport such as RHEL 9's 5.14), with cgroup v2 and a subtree delegated to your user. The oldest kernels tested are 6.1 and RHEL 9's 5.14 | Landlock ABI 2 or newer, BPF, BTF and cgroup v2; no boot change | As tier 2, plus `bpf` in the boot LSM list |
-| Works out of the box on | Any Linux 6.1 or later from a desktop login, Ubuntu 24.04 included, and RHEL 9. Not Ubuntu 22.04's stock 5.15, which has Landlock ABI 1. Over SSH, see [INSTALL.md](INSTALL.md#check-the-machine) | Any such host, with root | Debian 13, Fedora, RHEL 9 and 10, Amazon Linux 2023. Ubuntu after one boot line (below). Stock WSL2 from kernel 6.18.54.1 (WSL 3.0.3) |
+| Works out of the box on | Any Linux 6.1 or later from a desktop login, Ubuntu 24.04 included, and RHEL 9 without CPU limits (the CPU delegation/activation exception is below). Not Ubuntu 22.04's stock 5.15, which has Landlock ABI 1. Over SSH, see [INSTALL.md](INSTALL.md#check-the-machine) | Any such host, with root | Debian 13, Fedora, RHEL 9 and 10, Amazon Linux 2023. Ubuntu after one boot line (below). Stock WSL2 from kernel 6.18.54.1 (WSL 3.0.3) |
 | Held file reads (`fs.ask_read`) | Yes | Refused when the contract is compiled | Refused when the contract is compiled |
 | Record of file reads | Not recorded under `record: summary`, the default: a read that `deny_read` refuses is still refused, and leaves no line. `record: full` records reads and slows every open | Recorded by eBPF; preemptible kernels can skip callbacks, with a shared-build gap (below) | As tier 2 |
 | Live Adjustable mode | No | Yes | Yes |
@@ -26,6 +26,14 @@ listen and exec outcomes; it keeps the required listener hooks and their coverag
 not establish that v0.1.0's listener controls worked. See [GAPS.md](GAPS.md) B5 for the measured boundary.
 RHEL's proc-directory oracle test covers its private `fd` directory; the newer `fdinfo` directory permission
 check is absent there, and the test reports that coverage distinction.
+
+RHEL 9 CPU-limit exception: on AlmaLinux 9.8, kernel 5.14.0-687.61.1.el9_8 and systemd 252, after
+cpu was added to user@'s delegation, `tego doctor` still reported cpu missing for an interactive
+tier-1 run (so a run with `limits.cpu` is expected to refuse; inferred from doctor, not measured with
+a run): cpu was available at user@ but inactive in its `cgroup.subtree_control`. A user service with `Delegate=yes`
+makes the user manager activate it, so Tego's separate `tego.slice` inherits it; that service path
+passed logout and reboot tests. Interactive activation and doctor's incomplete fix text remain open.
+This qualifies the table's RHEL 9 claim for CPU limits only; see [GAPS B15](GAPS.md).
 
 Syscall outcome hooks also require a readable tracefs event format whose `ret` field is eight bytes at
 offset 16, matching the supported BPF syscall exit wrapper. Doctor and the loader reject divergent, missing

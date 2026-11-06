@@ -18,7 +18,9 @@
 //   - net.allow is the TCP and UDP endpoints the run connected to, as addresses: the record holds the address a
 //     program connected to, never the name it asked for. Dangerous endpoints are never allowed, only reported: the
 //     D-Bus buses, systemd's private socket, gpg-agent and the SSH agents, the X server, the container daemons, and
-//     any unix socket under the user's runtime directory that the run did not create itself.
+//     every socket ADR 0113's built-in refusals refuse in an enforcing run, whether or not the run made it: any unix
+//     socket under the user's runtime directory, a terminal multiplexer's or editor server's, and tego's own (compile
+//     refuses a net.allow entry for one as a contradiction).
 //   - limits are suggested in comments from the run's resource peaks, never written as a limit.
 //
 // A place successfully contacted next to a successful open of a secret for reading is not allowed (leak.go): the dashboard's "secret read,

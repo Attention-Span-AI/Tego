@@ -14,7 +14,7 @@ net:
                              # D-Bus session bus, ssh-agent, docker) included. Name one socket the agent
                              # needs, e.g. "unix:/run/user/1000/ssh-agent.socket" for git over ssh. With
                              # no net: section every IP destination is allowed and the host's unix sockets
-                             # are still refused (ADR 0070); host_sockets: true opens them all
+                             # are still refused (ADR 0070); host_sockets: true opens all but the built-ins
 exec:
   allow: ["python3"]         # binaries the agent may run. command: above is implied, and it is what
                              # `tego run agent.yaml` runs; a command given after `--` on tego run

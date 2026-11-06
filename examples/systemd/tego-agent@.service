@@ -36,6 +36,10 @@ StartLimitBurst=12
 
 [Service]
 Type=exec
+# Ask the user manager to enable delegated controllers along this unit's ancestors, including
+# user@UID.service. Tego's run scopes live under its separate user@UID.service/tego.slice, not
+# under this unit. On RHEL 9, that slice gets cpu through the user manager's activation.
+Delegate=yes
 # Relative paths in the contract resolve against this directory.
 WorkingDirectory=%h
 ExecStart=%h/.local/bin/tego run --service %i

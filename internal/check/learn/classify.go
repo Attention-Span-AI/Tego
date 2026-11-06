@@ -55,6 +55,36 @@ func dangerous(sock string) string {
 	return ""
 }
 
+// Where ADR 0113's built-in refusals refuse every pathname connect of an enforcing run, by their default places for
+// any user (pkg/spec/agent compile_builtin.go's IPCDirs and TegoDirs, kept in step by hand as dangerous is).
+var (
+	// muxDirRE is a terminal multiplexer's or editor server's per-user directory: tmux's tmux-<uid> (in /tmp or in
+	// $TMUX_TMPDIR, so anywhere), screen's S-<user> and ~/.screen, Emacs's /tmp/emacs<uid> and Neovim's /tmp/nvim.<user>.
+	muxDirRE = regexp.MustCompile(`(^|/)tmux-[0-9]+/|^/(var/)?run/screen/S-[^/]+/|(^|/)\.screen/|^/tmp/emacs[0-9]+/|^/tmp/nvim\.[^/]+/`)
+	// tegoDirRE is a path in tego's own home, ~/.tego, whoever's home it is.
+	tegoDirRE = regexp.MustCompile(`(^|/)\.tego(/|$)`)
+)
+
+// builtinRefused is why the pathname socket sock is never proposed because a built-in refusal refuses every connect to
+// it in an enforcing run, or "". Compile refuses a net.allow entry there as a contradiction (ADR 0113, agent's
+// builtinRefusedAllows), so a proposal that listed one would not run. A socket under the runtime directory is left out
+// even when this run made it: the run's own runtime directory is a new one each run, and outside it a run cannot make
+// one there at all. Tego's own state directories (Options.StateDirs) hold its ledger's ask and operator sockets.
+func (l *Learner) builtinRefused(sock string) string {
+	p := path.Clean(sock)
+	switch {
+	case !path.IsAbs(p):
+		return ""
+	case runtimeDirRE.MatchString(p):
+		return "a socket under the user's runtime directory, which builtin.host_ipc refuses in every enforcing run, whether or not the run made it (ADR 0113): the session's own services live there"
+	case muxDirRE.MatchString(p):
+		return "a terminal multiplexer's or editor server's socket, which builtin.host_ipc refuses in every enforcing run (ADR 0113): it types into terminals outside the run"
+	case tegoDirRE.MatchString(p) || l.stateConflict(p) != "":
+		return "a socket in tego's own state, which builtin.tego_surface refuses in every enforcing run (ADR 0113)"
+	}
+	return ""
+}
+
 // classifyUnix decides one unix destination, "unix:<path>" or "unix:@<abstract name>".
 func (l *Learner) classifyUnix(dst string) (entry, note string, left *Excluded) {
 	sock, ok := strings.CutPrefix(dst, "unix:")
@@ -66,10 +96,10 @@ func (l *Learner) classifyUnix(dst string) (entry, note string, left *Excluded) 
 		return "", "", &Excluded{What: shown, Why: why}
 	}
 	abstract := strings.HasPrefix(sock, "@")
-	created := !abstract && l.touched[path.Clean(sock)]
-	if !abstract && runtimeDirRE.MatchString(path.Clean(sock)) && !created {
-		return "", "", &Excluded{What: shown, Why: "a socket under the user's runtime directory that this run did not create: the session's own services live there"}
+	if why := l.builtinRefused(sock); !abstract && why != "" {
+		return "", "", &Excluded{What: shown, Why: why}
 	}
+	created := !abstract && l.touched[path.Clean(sock)]
 	if !plain(sock) {
 		return "", "", &Excluded{What: shown, Why: "the name is not a plain path (a control or pattern character in it)"}
 	}

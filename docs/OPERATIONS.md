@@ -527,7 +527,8 @@ What it proposes, and what it never does:
   port) rather than QUIC: remove it unless the agent speaks UDP there. *Amended 2026-10-16.*
 - **Dangerous endpoints are never allowed**, only reported as `observed, not allowed`: the D-Bus session and system
   buses, systemd's private socket, gpg-agent and its ssh socket, an ssh-agent socket, X11 sockets, the Docker, Podman
-  and containerd sockets, raw sockets, and any unix socket under `/run/user/<uid>` that the run did not create itself.
+  and containerd sockets, raw sockets, and any unix socket a built-in refusal refuses (any socket under `/run/user/<uid>`,
+  tmux, screen and Tego's own sockets), whether or not the run created it.
 - `limits` are suggested in comments (memory about twice the run's peak, pids four times, wall three times how long it
   lasted), never written as limits. `fs.deny_read` is never touched: the built-in list applies, so a read the run made
   of a path on it will now be refused. Reads are not listed. `env`, `models`, `capture` and `tier` are not learned.
@@ -660,10 +661,15 @@ so its time is the distance from the end to the answer, not the ledger's length.
 - the machine reboots: the run is over, and nothing resumes it. Start the night from a unit that restarts the whole
   command (below).
 
-**Agents that run all the time: a systemd user unit (2026-10-26).** `examples/systemd/tego-agent@.service` runs one
+**Agents that run all the time: a systemd user unit (2026-10-26).**
+`examples/systemd/tego-agent@.service` runs one
 agent from your user registry per instance (`tego-agent@retriever` runs `~/.config/tego/agents/retriever.yaml`), each
-restart a new run on the same ledger. Its exit-status keys follow `tego run`'s exit codes, checked against
-`pkg/spec/identity` by `TestUnitTemplateExitStatuses`: a crash, a limit (124) or a kill by memory or pids (137) is
+restart a new run with its own ledger under the same ledger root. `Delegate=yes` asks the user manager to
+enable its delegated controllers along the unit's ancestors, including `user@UID.service`. Tego's run scopes
+live separately under `user@UID.service/tego.slice`, which then inherits those controllers. On RHEL 9,
+delegating cpu to user@ alone did not activate it for that slice; the service request also matters (GAPS B15).
+Its exit-status keys follow `tego run`'s exit
+codes, checked against `pkg/spec/identity` by `TestUnitTemplateExitStatuses`: a crash, a limit (124) or a kill by memory or pids (137) is
 restarted (`Restart=on-failure`, 10 s apart, at most 12 times in 30 minutes); `tego stop --agent retriever` ends the run
 143, which `RestartPreventExitStatus=143 125` keeps from restarting and `SuccessExitStatus=143` leaves inactive, not
 failed; `systemctl --user stop` sends SIGTERM to tego alone (`KillMode=mixed`), which forwards it and keeps
@@ -696,7 +702,9 @@ restart, in the same check), so the agent stays down. A `wall` in the contract's
 (124), but it ends the run with `cgroup.kill`, no SIGTERM first, and records a `limit` each time
 (`examples/demo/contracts/always-on.yaml` uses `wall: 1h` so).
 
-**Ledger space for an agent that never stops (2026-10-26).** A run's ledger is one file and one hash chain,
+#### Ledger space for an agent that never stops
+
+A run's ledger is one file and one hash chain,
 so tego does not rotate it while the run lives; instead the run ends at a size and the unit starts a new one. Set both
 in the machine config the agents run under (the template's `TEGO_CONFIG` line, or `~/.tego/config.yaml`):
 

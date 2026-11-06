@@ -103,6 +103,14 @@ func x11Sockets(root string) []string {
 // line under tego watch's notice that said the opposite of "No rule refuses anything".
 func (k *compiler) hostSocketsReachable() {
 	if k.c.Net != nil {
+		// The opt-out written beside a net: section is a no-op, and a contract author who wrote it may believe it
+		// opens something; say so, as an informational note. A record-only run refuses nothing either way.
+		if k.c.HostSockets && !k.o.observe {
+			k.ds.warnf(k.pos("host_sockets"), CodeRedundantRule, "host_sockets: true has no effect beside a net: section, "+
+				"which decides every unix destination by its own entries (ADR 0070); no contract key lifts the built-in "+
+				"refusals either (ADR 0113)").
+				fix("remove host_sockets: true; a net.allow unix: entry names each socket the agent needs")
+		}
 		return
 	}
 	if !k.c.HostSockets {
@@ -179,5 +187,54 @@ func (k *compiler) containerSocketWarning() {
 		if r.Runtime == "" && r.Proto == ProtoUnix && !r.Abstract && r.Verdict == VerdictAllow && IsContainerSocket(r.UnixPath, k.rt.Builtins.Runtime) {
 			k.ds.warnf(r.Pos, CodeContainerSocketEscape, "%s admits a container daemon that can start containers outside the run", r.RuleName()).fix("keep this exact socket allowance only when the agent needs that authority")
 		}
+	}
+}
+
+// builtinRefusedAllows is ADR 0113 seen at compile: a net.allow unix: entry that builtin.host_ipc or
+// builtin.tego_surface refuses, at its declared path or at the place it resolves to (NetRule.UnixResolved, the run's
+// own resolution), admits nothing in any enforcing run. Every layer decides the built-ins before net.allow
+// (decide.evalNet, the supervisor's builtinNet and builtinFile, the root tiers' rows, which overwrite such an entry's
+// row with the refusal), and the ADR gives them no contract opt-out besides the exact container-daemon sockets
+// (BuiltinUnixRule already counts those). Such an entry contradicts the boundary, as an fs.ask_read inside a deny_read
+// does (askReadAgainstFS), so it is an error: a contract that lists the session bus or the user manager reads as if the
+// agent could reach them, and the run refuses every connect with no word at launch.
+//
+// It runs after builtinContainerAliases, whose aliases BuiltinUnixRule reads. A record-only run (--observe, tego watch
+// with no --boundary) has no built-ins and so no contradiction. A socket reached through a hard link or a link made
+// after compile is not seen here; the run still refuses it by identity.
+func (k *compiler) builtinRefusedAllows() {
+	b := k.rt.Builtins
+	if b == nil {
+		return
+	}
+	runtimeDir := "/run/user/<uid>"
+	if len(b.Runtime) > 0 {
+		runtimeDir = b.Runtime[0]
+	}
+	for _, r := range k.rt.Net {
+		if r.Runtime != "" || r.Proto != ProtoUnix || r.Abstract || r.Verdict != VerdictAllow {
+			continue
+		}
+		at, rule := r.UnixPath, k.rt.BuiltinUnixRule(r.UnixPath)
+		if rule == "" && r.UnixResolved != "" && r.UnixResolved != r.UnixPath {
+			at, rule = r.UnixResolved, k.rt.BuiltinUnixRule(r.UnixResolved)
+		}
+		if rule == "" {
+			continue
+		}
+		what := ""
+		if w := HostSocketWhat(at, runtimeDir); w != "" {
+			what = "; the socket is " + w
+		}
+		d := k.ds.errorf(r.Pos, CodeContradiction, "%s%s is refused by %s in every enforcing run, before net.allow is read: "+
+			"no contract entry lifts a built-in refusal (ADR 0113), so this entry admits nothing%s",
+			r.RuleName(), resolvedNote(r.UnixPath, at), rule, what)
+		if rule == BuiltinTegoSurface {
+			d.fix("remove the entry: no run reaches Tego's own sockets (docs/user/built-in-refusals.md)")
+			continue
+		}
+		d.fix("remove the entry; to let the agent cause one operation through that socket, such as restarting one "+
+			"service, run a helper outside the run that does that one operation and nothing else, listening on a socket "+
+			"at a path no built-in refuses (outside %s), and allow that socket instead (docs/user/built-in-refusals.md)", runtimeDir)
 	}
 }
