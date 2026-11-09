@@ -5,7 +5,7 @@ go 1.27
 toolchain go1.27.3
 
 require (
-	github.com/andybalholm/brotli v1.2.7
+	github.com/andybalholm/brotli v1.2.8
 	github.com/cilium/ebpf v0.22.0
 	github.com/klauspost/compress v1.20.3
 	github.com/landlock-lsm/go-landlock v0.11.0
