@@ -14,6 +14,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 // Lists is what a run's contract names, read from the copy the run kept (<run>/contract.yaml), so the dashboard
@@ -107,14 +108,14 @@ func readLists(path string) Lists {
 		// Ask is decoded on its own, so an ask block this reading does not expect costs only the timeout, never the lists.
 		Ask yaml.Node `yaml:"ask"`
 	}
-	if yaml.Unmarshal(b, &c) != nil {
+	if config.GuardYAML(func() error { return yaml.Unmarshal(b, &c) }) != nil {
 		return Lists{}
 	}
 	var ask struct {
 		Hold    string `yaml:"hold"`
 		Timeout string `yaml:"timeout"`
 	}
-	if c.Ask.Kind != 0 && c.Ask.Decode(&ask) != nil {
+	if c.Ask.Kind != 0 && config.GuardYAML(func() error { return c.Ask.Decode(&ask) }) != nil {
 		ask.Hold, ask.Timeout = "", ""
 	}
 	return Lists{Write: c.FS.Write, Ask: c.FS.Ask, AskRead: c.FS.AskRead, DenyRead: c.FS.DenyRead, DenyWrite: c.FS.DenyWrite,

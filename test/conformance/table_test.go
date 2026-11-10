@@ -107,3 +107,11 @@ func TestVariantsKeepEveryExpectation(t *testing.T) {
 		t.Error("assurance-kernel took a contract with no fs.write line")
 	}
 }
+
+// TestParseTableRefusesAListKeyBesideAMergeKey: yaml.v3 panicked on a key that is a list beside a merge key
+// (config.GuardYAML).
+func TestParseTableRefusesAListKeyBesideAMergeKey(t *testing.T) {
+	if _, _, _, err := parseTable([]byte("{<<,[]}")); err == nil {
+		t.Fatal("no error")
+	}
+}

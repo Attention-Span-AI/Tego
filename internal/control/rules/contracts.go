@@ -19,6 +19,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/rulefile"
 	"github.com/attention-span-ai/tego/internal/runlock"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -489,7 +490,7 @@ func agentName(text []byte, path string) string {
 	var top struct {
 		Name string `yaml:"name"`
 	}
-	if yaml.Unmarshal(text, &top) == nil && top.Name != "" && len(top.Name) <= 128 {
+	if config.GuardYAML(func() error { return yaml.Unmarshal(text, &top) }) == nil && top.Name != "" && len(top.Name) <= 128 {
 		return top.Name
 	}
 	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))

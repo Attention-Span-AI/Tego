@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 // Baseline is tools/fdcheck/baseline.txt (ADR 0023 A9): per excluded package, its count of raw sites by kind.
@@ -329,7 +331,7 @@ func golangciBuildTags(src []byte) ([]string, error) {
 			BuildTags []string `yaml:"build-tags"`
 		} `yaml:"run"`
 	}
-	if err := yaml.Unmarshal(src, &c); err != nil {
+	if err := config.GuardYAML(func() error { return yaml.Unmarshal(src, &c) }); err != nil {
 		return nil, fmt.Errorf(".golangci.yml: %w", err)
 	}
 	return c.Run.BuildTags, nil
@@ -449,7 +451,7 @@ func ParseShrinking(src []byte) (map[string]bool, error) {
 		return nil, err
 	}
 	var cfg golangciConfig
-	if err := yaml.Unmarshal(src, &cfg); err != nil {
+	if err := config.GuardYAML(func() error { return yaml.Unmarshal(src, &cfg) }); err != nil {
 		return nil, fmt.Errorf(".golangci.yml: %w", err)
 	}
 	l := cfg.Linters
@@ -523,7 +525,7 @@ func exclusionRules(n *yaml.Node) ([]exclusionRule, error) {
 					return nil, fmt.Errorf(".golangci.yml: linters.exclusions.rules item at line %d is not a mapping", item.Line)
 				}
 				var r exclusionRule
-				if err := item.Decode(&r); err != nil {
+				if err := config.GuardYAML(func() error { return item.Decode(&r) }); err != nil {
 					return nil, fmt.Errorf(".golangci.yml: linters.exclusions.rules: %w", err)
 				}
 				for j, name := range r.Linters {

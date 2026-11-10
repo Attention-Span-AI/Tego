@@ -649,3 +649,11 @@ func TestAUserRegistryWithDotDotAfterALinkIsTheDirectoryTheKernelReaches(t *test
 		t.Fatalf("entry = %+v, err = %v, want %s naming %s", e, err, CodeAmbiguous, want)
 	}
 }
+
+// TestNameOfRefusesAListKeyBesideAMergeKey: yaml.v3 panicked on a key that is a list beside a merge key
+// (config.GuardYAML), and nameOf reads an entry before the contract load does.
+func TestNameOfRefusesAListKeyBesideAMergeKey(t *testing.T) {
+	if name, err := nameOf([]byte("name: a\n<<: {}\n[]: 0\n")); err == nil {
+		t.Fatalf("nameOf = %q, want an error", name)
+	}
+}

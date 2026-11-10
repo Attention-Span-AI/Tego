@@ -173,3 +173,26 @@ func TestFileCantDecideWhatIsFixed(t *testing.T) {
 		t.Errorf("only %d changes reported: %+v", len(ignored), ignored)
 	}
 }
+
+// TestAListKeyBesideAMergeKeyIsABadFile: yaml.v3 panicked on a key that is a list beside a merge key (guardYAML), in
+// the workspace file an agent working in the project can write and in the approved copy.
+func TestAListKeyBesideAMergeKeyIsABadFile(t *testing.T) {
+	bad := []byte("version: 1\n<<: {}\n[]: 0\n")
+	var w Workspace
+	if err := decodeRules(WorkspaceFile, bad, &w); err == nil {
+		t.Error("decodeRules: no error")
+	}
+	root, home := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, WorkspaceDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, WorkspaceFile), []byte("version: 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Approve(home, root, bad); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckApproval(home, root); err == nil {
+		t.Error("CheckApproval: no error")
+	}
+}

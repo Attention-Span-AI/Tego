@@ -25,6 +25,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/runlock"
 	"github.com/attention-span-ai/tego/pkg/policy/modelroute"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -139,7 +140,7 @@ func models(dir string) ([]agent.ModelEndpoint, error) {
 	var doc struct {
 		Models []agent.ModelEndpoint `yaml:"models"`
 	}
-	if err := yaml.Unmarshal(b, &doc); err != nil {
+	if err := config.GuardYAML(func() error { return yaml.Unmarshal(b, &doc) }); err != nil {
 		return nil, fmt.Errorf("routeact: contract copy: %w", err)
 	}
 	for i := range doc.Models {

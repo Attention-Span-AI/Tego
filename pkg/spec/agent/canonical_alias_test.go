@@ -250,6 +250,9 @@ func TestLoadRefusesMergeKeysInEveryContractMapping(t *testing.T) {
 		`env: {set: {<<: {A: b}}}`,
 		`limits: {<<: {pids: 10}}`,
 		`mcp: [{<<: {name: m}, command: [srv]}]`,
+		// A key that is a list where a merge key applies made the typed decode panic (config.GuardYAML).
+		"<<: {}\n[]: 0",
+		`fs: {<<: {}, []: 0}`,
 	} {
 		src := "version: 0\nname: a\ncommand: [x]\n" + body + "\n"
 		if c, _, err := LoadBytes("a.yaml", []byte(src), nil); err == nil {

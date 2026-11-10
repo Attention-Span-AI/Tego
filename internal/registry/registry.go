@@ -462,7 +462,7 @@ func nameOf(data []byte) (string, error) {
 	var doc struct {
 		Name string `yaml:"name"`
 	}
-	if err := yaml.Unmarshal(data, &doc); err != nil {
+	if err := config.GuardYAML(func() error { return yaml.Unmarshal(data, &doc) }); err != nil {
 		return "", err
 	}
 	if doc.Name == "" {

@@ -83,7 +83,7 @@ func CheckApproval(home, root string) (Approval, error) {
 		return Approval{Recorded: true, Same: true}, nil
 	}
 	var a Workspace
-	if err := yaml.Unmarshal(approved, &a); err != nil {
+	if err := guardYAML(func() error { return yaml.Unmarshal(approved, &a) }); err != nil {
 		return Approval{}, fmt.Errorf("read the approved copy: %w", err)
 	}
 	a.Rules, _ = normalize(os.Getenv("HOME"), a.Rules, true)

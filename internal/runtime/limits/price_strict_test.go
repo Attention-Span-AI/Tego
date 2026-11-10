@@ -88,3 +88,20 @@ func TestLoadRejectsTrailingPriceDocuments(t *testing.T) {
 		t.Fatalf("one document with a trailing comment: %v", err)
 	}
 }
+
+// TestParseRefusesAKeyThatIsAListWhereAMergeKeyApplies: yaml.v3 panicked on a mapping where a merge key (<<) applies
+// and a key is a list or a mapping (config.GuardYAML), and the panic left parse. The fuzzer found it as "<<:\n? ?"
+// (public run 42815942318). Such a table is refused like any table that does not parse.
+func TestParseRefusesAKeyThatIsAListWhereAMergeKeyApplies(t *testing.T) {
+	for _, in := range []string{
+		"<<:\n? ?", // the fuzzer's input: a merge key, then a key that is a mapping
+		"{<<,[]}",  // a key that is a list
+		"version: 1\nmodels:\n  m: {<<: {}, []: 0}\n",
+		"version: 1\n---\n{<<: 0, !!str []: 0}\n", // the second document, decoded into an interface
+		"version: 1\n---\n{<<: {[]: 0}, 1: 2}\n",  // a list key in the mapping a merge brings in
+	} {
+		if tab, err := parse("p.yaml", []byte(in)); tab != nil || !errors.Is(err, ErrPriceTable) {
+			t.Errorf("parse(%q) = %v, %v; want no table and an ErrPriceTable", in, tab, err)
+		}
+	}
+}

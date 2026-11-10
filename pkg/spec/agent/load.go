@@ -432,7 +432,7 @@ func (l *loader) parse(file string, data []byte, isProfile bool) *Contract {
 	c := &Contract{file: file, origins: w.origins}
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
-	if err := dec.Decode(c); err != nil {
+	if err := config.GuardYAML(func() error { return dec.Decode(c) }); err != nil {
 		if len(l.ds.list) == before {
 			// The walk accepted the document, so this is a value the typed
 			// decode could not represent; report it rather than swallow it.
