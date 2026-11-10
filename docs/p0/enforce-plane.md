@@ -438,9 +438,17 @@ rows, which the fill (T4, §2.6) writes; tier cgroup's backend loads them for a 
   nothing for an object no path names, as Landlock's walk lets it through: an SB_NOUSER superblock (a pipe reopened
   through `/dev/stdout`, a socket), a private inode, a pseudo file on an internal mount (a memfd, an nsfs file). It
   skips a file on a private clone (`tego_internal_mount`, R8), FMODE_BACKING opens included, by the mount alone: it
-  reads no FMODE_BACKING bit. Step C reads the bit (§2.14), whose position is 24 from 6.11 and 25 before (bit 24 was
-  FMODE_DIO_PARALLEL_WRITE, set on every ext4 and xfs file), so the layout is read from BTF
-  (`file_operations.fop_flags`, `struct backing_file`), not a version.
+  reads no FMODE_BACKING bit. Step C reads it (§2.14). Its position moved with a94204f4d48e: bit 25 from 6.5
+  (62d53c4a1dfe) until that commit, bit 24 after it. Mainline took it in 6.14 and the 6.12 stable series in 6.12.105;
+  RHEL 9.8 (5.14.0-687) and RHEL 10.0 to 10.2 (6.12.0) have not. No version or BTF field marks the move:
+  `file_operations.fop_flags` (6.10, 210a03c9d51a) came earlier. Keyed on fop_flags until 2026-11-10, step C tested
+  bit 24 on RHEL 9.8 and 10.2 and recognised no backing file there, so an overlay file under a write entry could be
+  mprotected executable (measured in guests by `TestPlaneStepCHooksDecide`'s overlay cell and a `tego run`). Step C
+  now takes a file with FMODE_NOACCOUNT, which every backing file carries, and bit 24 or 25; the other FMODE_NOACCOUNT
+  files are the kernel's own; that no mapping of the agent's holds one is read from mainline code, not measured, and
+  not checked in RHEL's sources. No backing file exists where BTF has no `struct backing_file`. The check fails open:
+  on a kernel that moves FMODE_BACKING to a third bit, step C would not recognise a backing file and would allow
+  such a mapping, and the root suites' overlay cell is the test that shows it.
 - **`bprm_check`** decides only when the slot header's `TEGO_SLOT_EXEC_DECIDES` is set (R6): the contract has an
   `exec:` section; `TEGO_SLOT_EXEC_ANON` carries `exec.anonymous`, which decides an anonymous image (an image whose
   dentry is its own parent or unhashed: a memfd, a file unlinked since it was opened) with no rule. A `#!` stage passes.

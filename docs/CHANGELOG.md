@@ -16,6 +16,14 @@ rules remain a preview, with the limits below.
 
 ### Security
 
+- Tiers cgroup and bpflsm, on overlayfs: on kernels that have `file_operations.fop_flags` but keep FMODE_BACKING at
+  bit 25 (RHEL 9.8, RHEL 10.0 to 10.2, Linux 6.10 to 6.13, and 6.12 stable before 6.12.105), the decision plane did
+  not recognise an overlayfs backing file. An agent could map a file under a write entry readable and `mprotect` it
+  executable, which lets it run that file's machine code although no `exec.allow` covers it. A direct executable
+  `mmap` was still refused. Present since v0.1.0. The plane now recognises a backing file whether FMODE_BACKING is
+  bit 24 or bit 25, which covers every kernel checked from 5.14 to 7.1. Measured on AlmaLinux 9.8 and 10.2 for a
+  file already on the overlay mount: the old build allowed it and the new build refuses it. The other kernels in
+  the list are read from their headers.
 - Syscall outcome hooks refuse loading or adoption unless tracefs proves an eight-byte return at offset 16.
   Doctor and run tier selection withhold root tiers on unverified layouts and retain the reason.
 - Enforcing runs refuse protected host IPC, Tego control surfaces and other terminals before grants. Own

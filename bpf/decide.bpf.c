@@ -347,19 +347,27 @@ static __always_inline int tego_plane_walk_path(struct tego_plane_decision *sc, 
 #define TEGO_SB_NOUSER (1U << 31)
 #define TEGO_MNT_INTERNAL 0x4000
 
-/* FMODE_BACKING (6.6+): a file the kernel opened for a stacking filesystem, whose user's own open was decided
- * already (ADR 0024 (6)); step C's walk starts at its user_path. file_open's skip of it is keyed on the private
- * clone alone (R8). Its bit moved when 6.11 moved per-file-type bits into file_operations.fop_flags: bit 24
- * from there on, bit 25 before, where bit 24 was FMODE_DIO_PARALLEL_WRITE, which ext4 and xfs set on every regular
- * file. So the layout is read from BTF, not from a version: fop_flags present, bit 24; else struct backing_file
- * present, bit 25; else no backing files exist. */
+/* FMODE_BACKING (6.5+): a file the kernel opened for a stacking filesystem (alloc_empty_backing_file, which sets it
+ * together with FMODE_NOACCOUNT), whose user's own open was decided already (ADR 0024 (6)); step C's walk starts at
+ * its user_path. file_open's skip of it is keyed on the private clone alone (R8). The bit is a #define, so no BTF
+ * holds it, and it moved once, with a94204f4d48e (which gave bit 25 to FMODE_NONOTIFY): bit 25 from 6.5
+ * (62d53c4a1dfe) until that commit, bit 24 after it. Neither a version nor a field says which a kernel has: mainline
+ * took it in 6.14, the 6.12 stable series in 6.12.105 (07ee6057f92a), and RHEL 9.8 (5.14.0-687) and RHEL 10.0 to
+ * 10.2 (6.12.0-55 to 6.12.0-211) have not, their kernel-devel headers defining bit 25; file_operations.fop_flags
+ * (6.10, 210a03c9d51a) came before it, so keying bit 24 on fop_flags missed every backing file on 6.10 to 6.13 and
+ * those RHEL kernels. So no position is chosen: a backing file is one with FMODE_NOACCOUNT (bit 29 from 5.14 to 7.1,
+ * which alloc_empty_backing_file always sets with FMODE_BACKING) and bit 24 or 25. The other files with
+ * FMODE_NOACCOUNT are the kernel's own (kernel_file_open, kernel_tmpfile_open, alloc_file_pseudo_noaccount's block
+ * device files), which no descriptor table holds, so none is in a mapping step C decides; and no backing file exists
+ * where BTF has no struct backing_file. */
+#define TEGO_FMODE_NOACCOUNT 0x20000000
+#define TEGO_FMODE_BACKING_EITHER ((1U << 24) | (1U << 25))
+
 static __always_inline int tego_is_backing(__u32 fmode)
 {
-    if (bpf_core_field_exists(struct file_operations, fop_flags))
-        return (fmode & (1U << 24)) != 0;
-    if (bpf_core_type_exists(struct backing_file))
-        return (fmode & (1U << 25)) != 0;
-    return 0;
+    if (!bpf_core_type_exists(struct backing_file))
+        return 0;
+    return (fmode & TEGO_FMODE_NOACCOUNT) && (fmode & TEGO_FMODE_BACKING_EITHER);
 }
 
 /* An object no path names, which no fs entry can cover: a pipe, socket or anonymous inode (a superblock the kernel
