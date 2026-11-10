@@ -751,7 +751,7 @@ func readsAlone(src string, n *yaml.Node) bool {
 // onlyRenamed says out reads as text does with its top-level name set to name, and differs from it in nothing else.
 func onlyRenamed(text, out []byte, name string) bool {
 	var was, now map[string]any
-	if yaml.Unmarshal(text, &was) != nil || yaml.Unmarshal(out, &now) != nil || was == nil {
+	if config.GuardYAML(func() error { return yaml.Unmarshal(text, &was) }) != nil || yaml.Unmarshal(out, &now) != nil || was == nil {
 		return false
 	}
 	was["name"] = name

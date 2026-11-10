@@ -146,6 +146,11 @@ rules remain a preview, with the limits below.
 - A rule change from the dashboard or `tego rule` on a contract whose text has a lone CR, NEL, LS or PS line break
   looked for each node after that break on the wrong line: it could panic, and a removal could take a comment on the
   next line with it. Such a contract is now written from its YAML tree, as is one in UTF-16.
+- A YAML file where a merge key (`<<`) applies to a mapping with a list or a mapping as a key, such as `{<<,[]}`,
+  made the YAML decoder panic instead of failing to parse. In the price table it stopped `tego run` and
+  `tego measure` with an internal error, and in a contract, a registry entry, a run's saved `contract.yaml` or a
+  `maze` workspace file it stopped the command or dashboard request that read it. Such a file is now read as one
+  that does not parse: a price table is reported as unreadable, and cost is not estimated.
 
 ### Added
 

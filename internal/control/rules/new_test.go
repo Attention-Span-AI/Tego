@@ -532,3 +532,15 @@ func TestBuiltInSecretRulesFollowFamilies(t *testing.T) {
 		t.Errorf("the logins row names %d paths, want the %d login rows once each", len(named[loginRow]), logins)
 	}
 }
+
+// TestAListKeyBesideAMergeKeyIsReadAsText: yaml.v3 panicked on a key that is a list beside a merge key
+// (config.GuardYAML). agentName then falls back to the file's name, and renamed still sets the name.
+func TestAListKeyBesideAMergeKeyIsReadAsText(t *testing.T) {
+	text := []byte("name: a\n<<: {}\n[]: 0\n")
+	if got := agentName(text, "/p/x.yaml"); got != "x" {
+		t.Errorf("agentName = %q, want x", got)
+	}
+	if out := renamed(text, "b"); !strings.Contains(string(out), `"b"`) {
+		t.Errorf("renamed did not set the name:\n%s", out)
+	}
+}

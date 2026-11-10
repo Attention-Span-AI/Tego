@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"unicode"
@@ -28,6 +29,28 @@ type BadFileError struct {
 
 func (e *BadFileError) Error() string { return e.File + " " + e.Reason }
 
+// errYAMLMergeKey is guardYAML's error for the input yaml.v3 panics on.
+var errYAMLMergeKey = errors.New("yaml: a list or a mapping as a key, where a merge key (<<) applies")
+
+// guardYAML is the engine's config.GuardYAML, which maze may not import (doc.go): it runs decode and returns as an
+// error yaml.v3's panic on a key that is a list or a mapping where a merge key (<<) applies, a key its merge code
+// puts in a Go map ("hash of unhashable type"). The workspace file is in the project, where an agent working there
+// can write it. Any other panic is raised again.
+func guardYAML(decode func() error) (err error) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		if re, ok := r.(runtime.Error); ok && strings.Contains(re.Error(), "hash of unhashable type") {
+			err = errYAMLMergeKey
+			return
+		}
+		panic(r)
+	}()
+	return decode()
+}
+
 // decodeRules reads a rules file strictly: unknown fields and words with control characters are refused.
 func decodeRules(file string, data []byte, v any) error {
 	if len(bytes.TrimSpace(data)) == 0 {
@@ -35,7 +58,7 @@ func decodeRules(file string, data []byte, v any) error {
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
-	if err := dec.Decode(v); err != nil {
+	if err := guardYAML(func() error { return dec.Decode(v) }); err != nil {
 		msg := err.Error()
 		msg = strings.TrimPrefix(msg, "yaml: ")
 		if strings.Contains(msg, "not found in type") {

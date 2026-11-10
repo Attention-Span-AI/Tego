@@ -227,3 +227,17 @@ func TestRefusals(t *testing.T) {
 		t.Errorf("tightening from inside a run: %v", err)
 	}
 }
+
+// TestServersRefusesAListKeyBesideAMergeKey: yaml.v3 panicked on a key that is a list beside a merge key in the run's
+// contract copy (config.GuardYAML), at the top or in an mcp entry.
+func TestServersRefusesAListKeyBesideAMergeKey(t *testing.T) {
+	for _, text := range []string{"{<<,[]}", "mcp: [{<<: {}, []: 0}]\n"} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "contract.yaml"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := servers(dir); err == nil {
+			t.Errorf("%q: no error", text)
+		}
+	}
+}

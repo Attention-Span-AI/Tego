@@ -149,12 +149,12 @@ func parse(path string, b []byte) (*PriceTable, error) {
 	var raw rawPriceTable
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	dec.KnownFields(true)
-	if err := dec.Decode(&raw); err != nil && !errors.Is(err, io.EOF) {
+	if err := config.GuardYAML(func() error { return dec.Decode(&raw) }); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("%w: %s: %w", ErrPriceTable, path, err)
 	}
 	// A second decode must reach EOF: even an empty later document is not part of this table.
 	var trailing any
-	if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
+	if err := config.GuardYAML(func() error { return dec.Decode(&trailing) }); !errors.Is(err, io.EOF) {
 		if err == nil {
 			err = errors.New("expected exactly one YAML document")
 		}

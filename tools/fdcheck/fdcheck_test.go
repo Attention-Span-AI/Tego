@@ -1806,3 +1806,20 @@ func TestTotalCheck(t *testing.T) {
 		}
 	}
 }
+
+// TestGolangciRefusesAListKeyBesideAMergeKey: yaml.v3 panicked on a key that is a list beside a merge key
+// (config.GuardYAML), at each typed decode of .golangci.yml.
+func TestGolangciRefusesAListKeyBesideAMergeKey(t *testing.T) {
+	if _, err := golangciBuildTags([]byte("{<<,[]}")); err == nil {
+		t.Error("golangciBuildTags: no error")
+	}
+	const top = "version: \"2\"\nrun: {build-tags: [integration, tegobpf, tegotesthooks]}\n"
+	for _, cfg := range []string{
+		top + "linters: {<<: {}, []: 0}\n",
+		top + "linters: {enable: [forbidigo], settings: {forbidigo: {analyze-types: true}}, exclusions: {rules: [{<<: {}, []: 0}]}}\n",
+	} {
+		if _, err := ParseShrinking([]byte(cfg)); err == nil {
+			t.Errorf("ParseShrinking(%q): no error", cfg)
+		}
+	}
+}

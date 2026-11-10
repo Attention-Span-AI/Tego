@@ -176,6 +176,8 @@ func TestFromMachine(t *testing.T) {
 		{name: "an empty path", m: machine(""), wantWhy: GapNoPriceTable},
 		{name: "a missing file", m: machine(filepath.Join("testdata", "nope.yaml")), wantWhy: GapNoPriceTable},
 		{name: "a version mismatch", m: machine(trustedCopy(t, "prices-v99.yaml")), wantWhy: GapVersionMismatch},
+		// yaml.v3 panicked on a key that is a list beside a merge key, which failed the run instead (config.GuardYAML).
+		{name: "a list key beside a merge key", m: machine(trustedCopy(t, "prices-mergekey.yaml")), wantWhy: GapNoPriceTable},
 		// A table that loads and lists no model prices nothing, as a missing one does: a cost_usd budget under it
 		// passed every response at $0, never tripped and drew no word from compile or run.
 		{name: "a table listing no models", m: machine(trustedCopy(t, "prices-empty.yaml")), wantWhy: GapNoPriceTable},

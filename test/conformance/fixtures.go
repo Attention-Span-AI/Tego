@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v3"
 
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 	tables "github.com/attention-span-ai/tego/spec/policy/conformance"
 )
 
@@ -176,7 +177,7 @@ func parseTable(data []byte) (Fixture, []string, []DeferredCell, error) {
 	var doc table
 	d := yaml.NewDecoder(bytes.NewReader(data))
 	d.KnownFields(true)
-	if err := d.Decode(&doc); err != nil {
+	if err := config.GuardYAML(func() error { return d.Decode(&doc) }); err != nil {
 		return Fixture{}, nil, nil, err
 	}
 	switch {

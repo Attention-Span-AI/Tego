@@ -44,3 +44,22 @@ func TestAskTimeout(t *testing.T) {
 		t.Errorf("no copy: %+v, want zero", l)
 	}
 }
+
+// TestReadListsOverAListKeyBesideAMergeKey: yaml.v3 panicked on a key that is a list beside a merge key in the run's
+// contract copy (config.GuardYAML). At the top the copy is not read; in ask: the lists are kept and only the timeout
+// is lost, as for any ask block this reading does not expect.
+func TestReadListsOverAListKeyBesideAMergeKey(t *testing.T) {
+	dir := t.TempDir()
+	top, ask := filepath.Join(dir, "top.yaml"), filepath.Join(dir, "ask.yaml")
+	for p, text := range map[string]string{top: "{<<,[]}", ask: "fs: {write: [/w]}\nask: {<<: {}, []: 0}\n"} {
+		if err := os.WriteFile(p, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if l := readLists(top); l.OK {
+		t.Errorf("the top: %+v, want not read", l)
+	}
+	if l := readLists(ask); !l.OK || len(l.Write) != 1 || l.Write[0] != "/w" {
+		t.Errorf("in ask: %+v, want read with write [/w]", l)
+	}
+}

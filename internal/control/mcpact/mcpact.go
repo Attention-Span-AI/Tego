@@ -24,6 +24,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/mcptools"
 	"github.com/attention-span-ai/tego/internal/runlock"
 	"github.com/attention-span-ai/tego/pkg/policy/mcptool"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -159,13 +160,13 @@ func servers(dir string) ([]contractServer, error) {
 	var doc struct {
 		MCP []yaml.Node `yaml:"mcp"`
 	}
-	if err := yaml.Unmarshal(b, &doc); err != nil {
+	if err := config.GuardYAML(func() error { return yaml.Unmarshal(b, &doc) }); err != nil {
 		return nil, fmt.Errorf("mcpact: contract copy: %w", err)
 	}
 	var out []contractServer
 	for i := range doc.MCP {
 		var cs contractServer
-		if err := doc.MCP[i].Decode(&cs); err != nil {
+		if err := config.GuardYAML(func() error { return doc.MCP[i].Decode(&cs) }); err != nil {
 			return nil, fmt.Errorf("mcpact: contract copy mcp: %w", err)
 		}
 		// A present tools: key, even {}, is what puts a server behind the relay.
