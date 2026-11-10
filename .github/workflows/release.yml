@@ -130,6 +130,9 @@ jobs:
           args: release --clean --release-notes ${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Two tags can name one commit (v0.1.1 on v0.1.1-rc.1's), and goreleaser would then build the first that
+          # `git tag --points-at HEAD --sort -version:refname` lists, the -rc.1 one, so it is given the pushed tag.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
       # changelog.disable also disables --release-notes; a green upload alone cannot prove the body survived.
       - name: verify the draft contains the changelog section
         shell: bash
@@ -256,6 +259,7 @@ jobs:
         shell: bash
         env:
           TAG: ${{ github.ref_name }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }} # the pushed tag, as in the release job's goreleaser step
         run: |
           set -euo pipefail
           goreleaser build --clean

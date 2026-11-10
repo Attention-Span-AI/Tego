@@ -7,7 +7,7 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ## Unreleased
 
-## v0.1.1 - 2026-11-09
+## v0.1.1 - 2026-11-11
 
 This patch tightens the built-in refusals around an agent and checks the file identities and security labels
 used for approvals. Receipts and the dashboard give more reliable results for long runs, `tego rules` brings the
@@ -134,6 +134,9 @@ rules remain a preview, with the limits below.
 - The user service template `examples/systemd/tego-agent@.service` sets `Delegate=yes`, so on RHEL 9 the user
   manager activates the delegated controllers along the service's ancestors and a governed service's runs can use
   `limits.cpu`; an interactive run there still lacks cpu (GAPS B15).
+- A rule change from the dashboard or `tego rule` on a contract whose text has a lone CR, NEL, LS or PS line break
+  looked for each node after that break on the wrong line: it could panic, and a removal could take a comment on the
+  next line with it. Such a contract is now written from its YAML tree, as is one in UTF-16.
 
 ### Added
 
@@ -152,6 +155,27 @@ rules remain a preview, with the limits below.
   and signing; exported CI tests check these boundaries. The container base is not claimed reproducible; signing
   failure can leave an unsigned registry image while the GitHub release stays a draft. The install guide covers
   verification and use.
+
+### Record `v`
+1 (`spec/record/v1`, record minor 29)
+
+### Contract schema
+0 (`spec/agent/v0`; the field set may change without notice before v0.2.0, `docs/VERSIONING.md` section 3)
+
+### Kernel minimums
+Linux 5.14 with Landlock ABI 2 or newer, which is Linux 5.19 or a backport such as RHEL 9's 5.14; tested from 6.1 and on
+RHEL 9 (tier 1: ABI 1 is unsupported, and features are gated per ABI, see `spec/backend/CAPABILITIES.md`;
+tier 2 needs root and cgroup v2; tier 3 needs root and `bpf` in the LSM list). A unix socket under an `fs.write` path is
+admitted without a `unix:` entry only with the kernel's socket diagnostics for `AF_UNIX` (`CONFIG_UNIX_DIAG`, built in
+or the loadable `unix_diag` module); without them such a socket is refused `unix-origin-unread`, and `tego doctor` says so.
+Syscall outcome hooks require readable tracefs event formats with an eight-byte `ret` at offset 16; unsupported
+or unverified layouts withhold root tiers. The kernel version minimum is unchanged.
+
+## v0.1.1-rc.1 - 2026-11-10
+
+This is a release candidate for v0.1.1, with the changes listed under v0.1.1 in docs/CHANGELOG.md. It exists to
+rehearse the release run: signed binaries, the container image and the published notes. Use v0.1.0, or wait for
+v0.1.1, unless you are testing the release itself.
 
 ### Record `v`
 1 (`spec/record/v1`, record minor 29)

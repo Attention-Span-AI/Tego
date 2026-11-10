@@ -6,12 +6,17 @@
 # included; nothing is merged automatically. The toolchain itself (GO_VERSION in each workflow) is not an
 # ecosystem Dependabot updates and is bumped by hand.
 version: 2
+# Paused for launch week: a limit of 0 stops version update pull requests, and they do not come back on their own.
+# Restore the limits on Mon Nov 23, 2026: set gomod's back to 5, and remove the line from github-actions and docker,
+# which had none (Dependabot's default is 5). Security update pull requests for Go modules and actions are not
+# affected: they have a separate, fixed limit of 10. Dependabot has no security updates for docker, so until then
+# the two base images below get no new digest, the Debian base's security fixes included.
 updates:
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     # A module bump in the privileged binary is reviewed on its own, one module per pull request.
     commit-message:
       prefix: deps
@@ -19,6 +24,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
     groups:
       # Action bumps change CI, never the binary, so one pull request carries them all.
       actions:
@@ -32,5 +38,6 @@ updates:
     directory: /examples/container
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
     commit-message:
       prefix: container
