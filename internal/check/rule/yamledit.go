@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -251,15 +252,42 @@ func scalarText(entry string) (string, bool) {
 	return s, !strings.Contains(s, "\n")
 }
 
+// parserLines is text cut after each "\n", and whether those are the lines the parser numbers: lines[n.Line-1] is
+// then the line a node n says it is on. They are for UTF-8 text that ends its lines with LF or CR LF. The parser
+// (yaml.v3, which reads YAML 1.1's line breaks) also ends a line at a CR no LF follows, at NEL (U+0085), LS (U+2028)
+// and PS (U+2029), and it decodes UTF-16 behind a byte order mark: a node of such a text names another of these
+// lines, or none, so ok is false and nothing is read by line from it.
+func parserLines(text []byte) (lines []string, ok bool) {
+	s := string(text)
+	if !utf8.ValidString(s) {
+		return nil, false
+	}
+	for i, r := range s {
+		switch r {
+		case '\r':
+			if !strings.HasPrefix(s[i+1:], "\n") {
+				return nil, false
+			}
+		case 0x85, 0x2028, 0x2029:
+			return nil, false
+		}
+	}
+	return strings.SplitAfter(s, "\n"), true
+}
+
 // splice makes c in the text itself: an entry added after the last item of a block list, or a new list key put first
 // in a block section, or a new section at the end; an entry removed with its own line, each copy's. ok is false where
-// it cannot say the edit is that simple; edit then checks what it made against the tree anyway.
+// it cannot say the edit is that simple, and for a text whose lines are not the parser's (parserLines), where a
+// node's Line would be read from another line; what it does make, edit checks against the tree anyway.
 func splice(text []byte, c Change) ([]byte, bool) {
 	_, top, err := parse(text)
 	if err != nil {
 		return nil, false
 	}
-	lines := strings.SplitAfter(string(text), "\n")
+	lines, ok := parserLines(text)
+	if !ok {
+		return nil, false
+	}
 	sec, field, _ := strings.Cut(c.Key, ".")
 	m, _ := lookup(top, sec)
 	if c.Remove {
@@ -433,10 +461,11 @@ func flowItemEnd(line string, i int) int {
 }
 
 // itemDash is where the dash of a one-item line "<indent>-  value" is, the value starting at column col (1-based);
-// ok is false for any other line.
+// ok is false for any other line, and for a column past the line's end (the byte before the value, a space after
+// the dash, must be in the line), so no byte outside the line is read.
 func itemDash(line string, col int) (int, bool) {
 	d := col - 2
-	if d < 1 || d > len(line) {
+	if d < 1 || d >= len(line) {
 		return 0, false
 	}
 	for d > 0 && line[d-1] == ' ' {
