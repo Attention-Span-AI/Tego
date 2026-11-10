@@ -315,6 +315,11 @@ func TestNeverOf(t *testing.T) {
 
 // FuzzApplyEdits: whatever the contract text and entry, the edit core never panics, and what it returns parses,
 // carries the entry as a string, and was what the compiler saw.
+//
+// testdata/fuzz/FuzzApplyEdits/26c3908ce564734d is the nightly fuzzer's input for the line splice reading a node's
+// line from the lines "\n" cuts: a CR alone ends a line for the parser, so it numbers the list's items one line
+// further down than "\n" does, the item `0` was looked for on the text's last line, "    -", and the space after
+// its dash one byte past the end. TestEditOnOtherLineBreaks and TestParserLines name the case.
 func FuzzApplyEdits(f *testing.F) {
 	f.Add(editBase, "./notes/", 0)
 	f.Add("fs:\n  deny_read: [a]\n", "a #b", 1)

@@ -14,7 +14,8 @@
 //     lexical model of the file (direction.go) that a page confirms a widening by.
 //
 // The edit is made on the YAML node tree, so the file's comments and key order are kept; where the change is one
-// list item added to or removed from a block list the text is spliced line by line and every other byte is kept.
+// list item added to or removed from a block list the text is spliced line by line and every other byte is kept
+// (a text whose lines end in LF or CR LF: with any other line break the parser counts, the tree writes the file).
 // A removal takes every copy of its entry the list holds (a file may list one twice: compile warns redundant-rule),
 // since a copy left would keep the rule. An added line carries "# from run <id> line #N, <date>" (Apply) or
 // "# added via <via>, <date>" (ApplyEdits).

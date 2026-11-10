@@ -1,0 +1,4 @@
+go test fuzz v1
+string("fs:\n ask_read:\r    - 0\n    -")
+string("0")
+int(-1)
