@@ -292,6 +292,12 @@ func (fs *FS) SetLimits(c Cgroup, l Limits) error {
 	return nil
 }
 
+// limitKeys names the contract key behind each control file SetLimits writes, for a refusal's message.
+var limitKeys = map[string]string{
+	"cpu.max": "limits.cpu", "cpu.weight": "limits.cpu_weight", "memory.max": "limits.memory",
+	fileSwapMax: "limits.memory", "memory.high": "limits.memory_high", "pids.max": "limits.pids",
+}
+
 // classify maps a control-file write error to the package's error classes.
 func (fs *FS) classify(c Cgroup, f limitFile, err error) error {
 	path := filepath.Join(c.Path, f.Name)
@@ -300,7 +306,7 @@ func (fs *FS) classify(c Cgroup, f limitFile, err error) error {
 		switch errno {
 		case unix.ENOENT:
 			return &MissingControllerError{
-				Controller: f.Controller, File: path, Root: fs.root,
+				Controller: f.Controller, Limit: limitKeys[f.Name], File: path, Root: fs.root,
 				// The fix a root launcher must be given is not the one an unprivileged launcher
 				// needs; Fix() branches on this rather than naming a systemd drop-in that has no
 				// bearing on the cgroup2 mount root.

@@ -791,8 +791,12 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     a guess in both directions (a backporting distribution has it in a "5.14"; the runtime's rule is that D1 is
     advice and the functional probes are the answer), and because `cgroup.kill` has no substitute: without it a
     stop or a limit breach falls back to the freeze/enumerate/`SIGKILL` loop that raced forks for runc and crun.
-    Last, `cpu`, `memory` and `pids` must all be enabled in the delegated root's `cgroup.subtree_control`. Any
-    one of these can be D3's sole failure. When `cgroup.Detect` itself refuses, D3's detail and fix are that
+    Last, D3 reads the delegated root's `cgroup.subtree_control` and reports which of `cpu`, `memory` and `pids` it
+    enables. A missing one does not fail D3 (2026-11-10, GAPS B15): a run needs a controller only for a limit that
+    uses it, and `SetLimits` refuses a run with such a limit at start, before its agent exists (`runtime-launch.md`
+    case 31, exit 125). D3's line names the limits refused there and the fix that allows them, the one that refusal
+    prints (`cgroup.EnableFix`). A read of the file that fails does fail D3. Any one of the other checks can be D3's
+    sole failure. When `cgroup.Detect` itself refuses, D3's detail and fix are that
     refusal's own `Diagnosis` and `Remedy` (every Detect refusal is a `*cgroup.DetectError`), not a canned
     `Delegate=` line and not prose D3 splits apart: `ErrNotDelegated` covers more than one cause, and case 39
     (`runtime-launch.md`, a cgroup namespace looking at the host's `/sys/fs/cgroup`, asked of the uid-0 branch as

@@ -6,7 +6,8 @@
 // D2 BTF by opening and parsing /sys/kernel/btf/vmlinux and finding in it, by name, every kernel type and
 // member the embedded objects read through CO-RE, D3 cgroup v2 delegation by statfs magic plus a
 // writable delegated subtree, a scratch mkdir+rmdir, an access(W_OK) on that scratch cgroup's
-// cgroup.kill, and cpu, memory and pids enabled in the subtree's cgroup.subtree_control,
+// cgroup.kill, and a readable cgroup.subtree_control in the subtree (which of cpu, memory and pids it
+// enables is reported, not required: a run with a limit on a missing one is refused at start),
 // D4 the Landlock ABI from the raw landlock_create_ruleset(NULL, 0, VERSION) syscall,
 // D5 a real seccomp NEW_LISTENER filter on a throwaway locked thread, never the main thread, answered with
 // SECCOMP_IOCTL_NOTIF_ADDFD and SECCOMP_ADDFD_FLAG_SEND (made again on a new thread, up to five times, when a
