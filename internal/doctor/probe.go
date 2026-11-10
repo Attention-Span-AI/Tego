@@ -158,8 +158,8 @@ const delegateFix = "enable systemd user delegation: Delegate=cpu memory pids in
 // user@<uid>.service and cannot, although everything below can be shown there); that root's cgroup.procs
 // and cgroup.subtree_control are writable; a scratch cgroup can be made one level below and removed
 // again; that scratch cgroup has a writable cgroup.kill, asked between the mkdir and the rmdir since
-// only a non-root cgroup has the file; and cpu, memory and pids are all enabled in the root's
-// cgroup.subtree_control.
+// only a non-root cgroup has the file; and the root's cgroup.subtree_control can be read. Which of cpu,
+// memory and pids that file enables is reported, not required (controllersResult).
 func probeCgroup(uid int) Result {
 	return probeCgroupWith(uid, cgroup.Detect)
 }
@@ -207,13 +207,19 @@ func probeCgroupWith(uid int, detect func(uid int) (*cgroup.FS, error)) Result {
 				"stopped atomically)", root, cgroupKillFile, killErr),
 			Fix: fmt.Sprintf("boot a kernel >= %s (cgroup.kill)", Version{5, 14, 0})}
 	}
-	return controllersResult(root, fix)
+	return controllersResult(root, fix, fs.Privileged())
 }
 
-// controllersResult is D3's last step: cpu, memory and pids enabled in root's cgroup.subtree_control.
-// A read that fails is reported with its errno: an empty list from it would be misdiagnosed as the
-// controllers being missing, with a Delegate= fix that changes nothing.
-func controllersResult(root, fix string) Result {
+// controllersResult is D3's last step: which of cpu, memory and pids root's cgroup.subtree_control enables.
+// One that is missing does not fail D3, so it does not take tier 1 away: a run needs a controller only for a
+// limit that uses it, and a run with such a limit is refused at start, before its agent exists, when the
+// controller is missing (FS.SetLimits, runtime-launch.md case 31, exit 125). The detail names the limits that
+// are refused here and the fix that allows them, the same fix that refusal prints (cgroup.EnableFix). Failing D3
+// instead left a fresh RHEL 9 login, whose user manager enables memory and pids but not cpu, with no tier at all,
+// even for a contract with no limits (GAPS B15). A read that fails is reported with its errno and fails D3: an
+// empty list from it would be misdiagnosed as the controllers being missing, with a Delegate= fix that changes
+// nothing.
+func controllersResult(root, fix string, privileged bool) Result {
 	enabled, err := os.ReadFile(filepath.Join(root, "cgroup.subtree_control"))
 	if err != nil {
 		return Result{ID: CheckCgroupV2, Detail: fmt.Sprintf("read %s/cgroup.subtree_control: %v", root, err), Fix: fix}
@@ -231,10 +237,21 @@ func controllersResult(root, fix string) Result {
 	}
 	detail := fmt.Sprintf("%s delegated, %s writable, controllers: %s", root, cgroupKillFile, strings.Join(controllers, " "))
 	if len(missing) > 0 {
-		return Result{ID: CheckCgroupV2, Detail: detail + "; missing " + strings.Join(missing, " "),
-			Fix: fmt.Sprintf("add %s to Delegate= of user@.service (limits on them fail at run start otherwise)", strings.Join(missing, " "))}
+		var limits []string
+		for _, c := range missing {
+			limits = append(limits, controllerLimits[c])
+		}
+		detail += fmt.Sprintf("; not enabled: %s, so a run with %s is refused at start; to allow those limits, %s",
+			strings.Join(missing, " "), strings.Join(limits, " or "), cgroup.EnableFix(missing, root, privileged))
 	}
 	return Result{ID: CheckCgroupV2, OK: true, Detail: detail}
+}
+
+// controllerLimits names the contract limits each controller applies (cgroup.limitFiles).
+var controllerLimits = map[string]string{
+	cgroup.ControllerCPU:    "limits.cpu or limits.cpu_weight",
+	cgroup.ControllerMemory: "limits.memory or limits.memory_high",
+	cgroup.ControllerPids:   "limits.pids",
 }
 
 // detectFailure splits a cgroup.Detect or FS.CanPlace refusal into D3's detail and fix. ErrNotDelegated is not one

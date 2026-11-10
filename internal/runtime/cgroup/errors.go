@@ -5,6 +5,8 @@ package cgroup
 import (
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"syscall"
 )
 
@@ -67,6 +69,7 @@ func refuse(remedy string, wraps []error, format string, args ...any) *DetectErr
 // fix is different: the parent's cgroup.subtree_control, not the contract.
 type MissingControllerError struct {
 	Controller string // cpu | memory | pids
+	Limit      string // the contract key that asked for the write, e.g. limits.cpu
 	File       string // the control file that does not exist
 	Root       string // the delegated root the controller must be enabled on
 	// Privileged is FS.Privileged(): the root is the cgroup2 mount point, not a systemd user
@@ -84,23 +87,54 @@ func (e *MissingControllerError) Error() string {
 	if e.EnableErr != nil {
 		cause = "; enabling it failed: " + e.EnableErr.Error()
 	}
-	return fmt.Sprintf("cgroup: controller %q is not delegated (%s: %v%s); fix: %s",
-		e.Controller, e.File, e.Errno, cause, e.Fix())
+	limit := ""
+	if e.Limit != "" {
+		limit = ", so " + e.Limit + " cannot be applied and the run is refused"
+	}
+	return fmt.Sprintf("cgroup: controller %q is not delegated%s (%s: %v%s); fix: %s",
+		e.Controller, limit, e.File, e.Errno, cause, e.Fix())
 }
 
 // Fix is the one-line delegation fix for the missing controller (case 31 requires the error to name
-// it). The lever depends on which root Detect chose, so the parenthetical branches: Delegate= "is
-// available on scope and service units only. It's expressly not available on slice units"
-// (systemd.io/CGROUP_DELEGATION), and the cgroup2 mount point is no unit at all — so pointing a root
-// launcher at user@.service.d/ names a drop-in that cannot affect its run. The lever there is the
-// mount root's own cgroup.subtree_control, which is what the first half of the message already says.
+// it): EnableFix for this error's controller and root.
 func (e *MissingControllerError) Fix() string {
-	how := "systemd: Delegate=cpu memory pids in user@.service.d/"
-	if e.Privileged {
-		how = fmt.Sprintf("root: echo '+%s' > %s/cgroup.subtree_control; Delegate= applies to service "+
-			"and scope units, not to the cgroup2 mount root", e.Controller, e.Root)
+	return EnableFix([]string{e.Controller}, e.Root, e.Privileged)
+}
+
+// EnableFix is the one-line fix for controllers missing from root's cgroup.subtree_control, shared by a refused
+// limit (MissingControllerError) and doctor's D3, so both name the same lever. It depends on which root Detect
+// chose, so the parenthetical branches: Delegate= "is available on scope and service units only. It's expressly
+// not available on slice units" (systemd.io/CGROUP_DELEGATION), and the cgroup2 mount point is no unit at all, so
+// a user@.service.d/ drop-in is not a root launcher's lever. The lever there is the mount root's own
+// cgroup.subtree_control. RHEL 9's systemd 252 ships neither cpu in user@.service's Delegate= nor a user slice
+// with a CPU weight (GAPS B15); the slice setting below is the one Fedora ships in its user app.slice. Measured
+// on fresh AlmaLinux 9.8 guests: with the user@ drop-in alone and a reboot, cpu was in user@UID.service's
+// cgroup.controllers but not in its subtree_control; with the drop-in, that slice setting and a reboot, cpu was
+// enabled there for a fresh login. Our reading of systemd, not measured: the user manager enables a controller
+// there only for a unit of its own that uses it, and memory and pids are on through the default accounting. At
+// the mount root, a direct "+cpu" write was gone after a daemon-reload, a transient unit and a service restart
+// (read once, after all three); a CPU weight on system.slice and a reboot kept cpu on across the same three
+// steps, and limits.cpu applied to a root run.
+func EnableFix(missing []string, root string, privileged bool) string {
+	plus := make([]string, len(missing))
+	for i, c := range missing {
+		plus[i] = "+" + c
 	}
-	return fmt.Sprintf("add %q to cgroup.subtree_control of %s (%s)", "+"+e.Controller, e.Root, how)
+	add := strings.Join(plus, " ")
+	if privileged {
+		direct := fmt.Sprintf("echo '%s' > %s/cgroup.subtree_control; Delegate= applies to service and scope "+
+			"units, not to the cgroup2 mount root", add, root)
+		if slices.Contains(missing, ControllerCPU) {
+			direct = "under systemd, which undoes a direct write there: CPUWeight=100 under [Slice] in " +
+				"/etc/systemd/system/system.slice.d/, then reboot; without systemd: " + direct
+		}
+		return fmt.Sprintf("add %q to cgroup.subtree_control of %s (root: %s)", add, root, direct)
+	}
+	how := "as root: Delegate=cpu memory pids in /etc/systemd/system/user@.service.d/"
+	if slices.Contains(missing, ControllerCPU) {
+		how += ", and CPUWeight=100 under [Slice] in /etc/systemd/user/app.slice.d/ so the user manager enables cpu"
+	}
+	return fmt.Sprintf("add %q to cgroup.subtree_control of %s (%s; then reboot)", add, root, how)
 }
 
 // Unwrap exposes both the class sentinel and the errno.

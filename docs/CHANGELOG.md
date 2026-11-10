@@ -53,6 +53,14 @@ rules remain a preview, with the limits below.
 
 ### Fixed
 
+- On RHEL 9 (AlmaLinux 9.8 tested), systemd turns on the memory and pids controllers by default, but not cpu.
+  `tego doctor` failed on that and found no tier, so every enforced run was refused, including runs with no
+  limits, for a user and for root. Now only a run that sets `limits.cpu` or `limits.cpu_weight` is refused, at
+  start, and doctor and the refusal give the one-time setup that turns cpu on (`docs/TIERS.md`, GAPS B15). A
+  `limits.cpu` ceiling in `/etc/tego/config.yaml` gives every `tego run` a CPU limit, so with one they are all
+  refused, although `tego doctor` still reports tier landlock for a user. Memory and process limits apply. For
+  root, doctor's fix now names a CPU weight on system.slice instead of user@.service, because a hand-written
+  `+cpu` in the root cgroup does not last under systemd.
 - RHEL 9 root-tier runs with `net.listen` can attach their required bind/listen outcome hooks. Bind, listen
   and exec outcomes use the individual syscall event's BTF context; v0.1.0's listener preparation failed on
   the tested RHEL 9 5.14 layout. No required hook or enforced property is dropped.
@@ -131,9 +139,10 @@ rules remain a preview, with the limits below.
   with exit 125 instead of running with an entry that never applied), and notes that `host_sockets: true`
   beside a `net:` section has no effect; `tego learn` no longer proposes such a socket, and
   `docs/user/built-in-refusals.md` shows a one-verb helper for an agent that must restart a service.
-- The user service template `examples/systemd/tego-agent@.service` sets `Delegate=yes`, so on RHEL 9 the user
-  manager activates the delegated controllers along the service's ancestors and a governed service's runs can use
-  `limits.cpu`; an interactive run there still lacks cpu (GAPS B15).
+- The user service template `examples/systemd/tego-agent@.service` sets `Delegate=yes`. On RHEL 9, once an
+  administrator has added cpu to `Delegate=` of `user@.service`, this makes the user manager turn cpu on for the
+  service, so its runs can use `limits.cpu`. An interactive run there needs the setup in `docs/TIERS.md` for CPU
+  limits (GAPS B15).
 - A rule change from the dashboard or `tego rule` on a contract whose text has a lone CR, NEL, LS or PS line break
   looked for each node after that break on the wrong line: it could panic, and a removal could take a comment on the
   next line with it. Such a contract is now written from its YAML tree, as is one in UTF-16.

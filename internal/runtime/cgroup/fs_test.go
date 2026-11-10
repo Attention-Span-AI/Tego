@@ -589,6 +589,72 @@ func TestMissingControllerFixPerRoot(t *testing.T) {
 	}
 }
 
+// TestMissingControllerNamesTheLimitAndAWorkingFix: with tier 1 kept where a controller is missing (doctor's D3
+// reports it rather than failing), this refusal is what a run with a limit on that controller meets, so it names
+// the contract key, and its fix is one that works. On AlmaLinux 9.8 Delegate=cpu on user@.service made cpu
+// available there, but the user manager did not enable it until its app.slice had a CPU weight (Fedora ships
+// CPUWeight=100 on the user app.slice). A run with no limit writes no control file and is not refused.
+func TestMissingControllerNamesTheLimitAndAWorkingFix(t *testing.T) {
+	fs := newTestFS(t)
+	c, err := fs.Create("a", "r-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	if err := fs.SetLimits(c, Limits{}); err != nil {
+		t.Fatalf("a run with no limits needs no controller: %v", err)
+	}
+	for _, tc := range []struct {
+		l          Limits
+		controller string
+		limit      string
+		cpuFix     bool
+	}{
+		{Limits{CPUMax: "100000 100000"}, "cpu", "limits.cpu", true},
+		{Limits{CPUWeight: 50}, "cpu", "limits.cpu_weight", true},
+		{Limits{MemoryMax: 1 << 20}, "memory", "limits.memory", false},
+		{Limits{MemoryHigh: 1 << 20}, "memory", "limits.memory_high", false},
+		{Limits{PidsMax: 64}, "pids", "limits.pids", false},
+	} {
+		var mc *MissingControllerError
+		if err := fs.SetLimits(c, tc.l); !errors.As(err, &mc) {
+			t.Fatalf("%s: want *MissingControllerError, got %v", tc.limit, err)
+		}
+		msg := mc.Error()
+		if mc.Controller != tc.controller || mc.Limit != tc.limit ||
+			!strings.Contains(msg, "so "+tc.limit+" cannot be applied and the run is refused") {
+			t.Errorf("%s: refusal does not name the limit: %s", tc.limit, msg)
+		}
+		if got := strings.Contains(msg, "CPUWeight=100") && strings.Contains(msg, "/etc/systemd/user/app.slice.d/"); got != tc.cpuFix {
+			t.Errorf("%s: CPU weight step in the fix = %v, want %v: %s", tc.limit, got, tc.cpuFix, msg)
+		}
+		if !strings.Contains(msg, "/etc/systemd/system/user@.service.d/") || !strings.Contains(msg, "reboot") {
+			t.Errorf("%s: fix lacks the delegation and the reboot: %s", tc.limit, msg)
+		}
+	}
+}
+
+// TestMissingCPUFixAtTheMountRootSurvivesSystemd: on a systemd host the cgroup2 mount root is the system manager's,
+// and on AlmaLinux 9.8 the "+cpu" a root launcher was told to write there was gone after the next daemon-reload, so
+// a root run with limits.cpu was refused again. A CPU weight on system.slice kept cpu on across a reboot there, so
+// that is the fix for cpu; the direct write stays for a host without systemd, and for the other controllers.
+func TestMissingCPUFixAtTheMountRootSurvivesSystemd(t *testing.T) {
+	cpu := EnableFix([]string{ControllerCPU}, "/sys/fs/cgroup", true)
+	for _, want := range []string{"/etc/systemd/system/system.slice.d/", "CPUWeight=100", "reboot",
+		"without systemd: echo '+cpu' > /sys/fs/cgroup/cgroup.subtree_control"} {
+		if !strings.Contains(cpu, want) {
+			t.Errorf("root's cpu fix lacks %q: %s", want, cpu)
+		}
+	}
+	if strings.Contains(cpu, "user@.service.d") || strings.Contains(cpu, "app.slice") {
+		t.Errorf("root's cpu fix names a user manager setting: %s", cpu)
+	}
+	if pids := EnableFix([]string{ControllerPids}, "/sys/fs/cgroup", true); strings.Contains(pids, "system.slice") ||
+		!strings.Contains(pids, "echo '+pids' > /sys/fs/cgroup/cgroup.subtree_control") {
+		t.Errorf("root's pids fix: %s", pids)
+	}
+}
+
 // TestKillNamesWhyItFailed separates ENOENT's two causes. Every supported host has had
 // cgroup.kill since 5.14, so a Kill that lands after the scope is gone — which the signal killer's
 // copy of the value can do at any moment, and does through Path once Remove has closed the fd —
