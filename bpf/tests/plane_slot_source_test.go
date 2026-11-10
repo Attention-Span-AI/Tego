@@ -122,3 +122,40 @@ func TestPlaneOpenSkipKeysOnThePrivateClone(t *testing.T) {
 		t.Error("step C no longer starts a backing file's walk at its user_path")
 	}
 }
+
+// TestPlaneBackingFileNeedsNoBitPosition pins how step C finds a backing file. FMODE_BACKING is a #define no BTF
+// holds, and its position moved with a94204f4d48e: bit 25 before, bit 24 after, which mainline took in 6.14, the
+// 6.12 stable series in 6.12.105, and RHEL 9.8 and RHEL 10.0 to 10.2 not at all. No version or field marks it:
+// keyed on file_operations.fop_flags (6.10), bit 24 missed every backing file on RHEL 9.8 and 10.2, where an overlay
+// file under a write row was mprotected executable (TestPlaneStepCHooksDecide's overlay cell), and keyed on the
+// version, bit 25 missed them on Debian 13's 6.12.115. So no position is chosen: FMODE_NOACCOUNT, which every
+// backing file carries, and bit 24 or 25.
+func TestPlaneBackingFileNeedsNoBitPosition(t *testing.T) {
+	t.Parallel()
+	decide := read(t, filepath.Join(sourceDir, "decide.bpf.c"))
+	for _, def := range []string{"#define TEGO_FMODE_NOACCOUNT 0x20000000",
+		"#define TEGO_FMODE_BACKING_EITHER ((1U << 24) | (1U << 25))"} {
+		if !strings.Contains(decide, def) {
+			t.Fatalf("decide.bpf.c lacks %q", def)
+		}
+	}
+	start := strings.Index(decide, "static __always_inline int tego_is_backing(__u32 fmode)\n{")
+	if start < 0 {
+		t.Fatal("tego_is_backing is gone from decide.bpf.c")
+	}
+	body := decide[start:]
+	body = body[:strings.Index(body, "\n}\n")]
+	for _, want := range []string{
+		"if (!bpf_core_type_exists(struct backing_file))\n        return 0;",
+		"return (fmode & TEGO_FMODE_NOACCOUNT) && (fmode & TEGO_FMODE_BACKING_EITHER);",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("tego_is_backing lacks %q", want)
+		}
+	}
+	for _, guess := range []string{"fop_flags", "LINUX_KERNEL_VERSION", "KERNEL_VERSION("} {
+		if strings.Contains(body, guess) {
+			t.Errorf("tego_is_backing picks FMODE_BACKING's position by %s, which does not mark the move", guess)
+		}
+	}
+}
