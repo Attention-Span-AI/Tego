@@ -69,6 +69,11 @@ func TestMain(m *testing.M) {
 	selfInRun = func() (bool, error) { return false, nil }
 	testHome = home
 	ownLogHomeOf = func(int) string { return home }
+	// The process's appender is built once, by the first command that logs (processOwnLog), from ownLogHomeOf as it is
+	// then. It is built here so it is this home's whatever order the tests run in. A test that points ownLogHomeOf at a
+	// home of its own (userStateFor) and runs first would otherwise bind it to that test's temporary directory for the
+	// rest of the binary, and every later line, the ones the own-log and retention tests read, was lost with it.
+	processOwnLog()
 	code := testutil.GuardedLeakCheckMain(m)
 	_ = os.RemoveAll(dir)
 	os.Exit(code)
