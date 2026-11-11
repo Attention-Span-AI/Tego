@@ -105,6 +105,12 @@ func ParseStat(line []byte) (Stat, error) {
 	if err != nil {
 		return Stat{}, fmt.Errorf("%w: pid: %v", ErrStat, err)
 	}
+	// A negative pid is not one a kernel wrote. It is refused here, as a negative ppid, pgrp and num_threads are
+	// below, so no caller holds a Stat whose PID kill(2) would take for a process group, or for every process
+	// (FuzzParseStat).
+	if pid < 0 {
+		return Stat{}, fmt.Errorf("%w: pid %d", ErrStat, pid)
+	}
 	tail := bytes.Fields(line[rparen+1:])
 	field := func(n int) ([]byte, error) {
 		i := n - statFirstFieldAfterComm
