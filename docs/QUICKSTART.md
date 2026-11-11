@@ -42,7 +42,7 @@ tego version
 tego=v0.0.0-<commit date>-<commit, 12 digits>
 commit=<commit, 40 digits>
 date=<commit date>
-go=go1.27.3
+go=go1.27.4
 contract_schema=0
 record_v=1
 record_readers=1
@@ -61,7 +61,7 @@ tego doctor
 ```
 
 ```text
-tego=v0.0.0-<commit date>-<commit, 12 digits> commit=<commit, 40 digits> date=<commit date> go=go1.27.3 contract_schema=0 record_v=1
+tego=v0.0.0-<commit date>-<commit, 12 digits> commit=<commit, 40 digits> date=<commit date> go=go1.27.4 contract_schema=0 record_v=1
 ok   kernel: 6.8.0-147-generic (>= 5.14.0); without: Landlock ABI 5 (ioctl_dev) (6.10.0, device ioctls are not restricted), Landlock ABI 6 (scopes) (6.12.0, abstract unix sockets and signals are not scoped), Landlock ABI 7 (audit) (6.15.0, Landlock refusals are not in the audit log)
 ok   btf: /sys/kernel/btf/vmlinux (6103569 bytes); all 94 kernel types and fields the BPF programs read are present
 ok   cgroupv2: /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service delegated, cgroup.kill writable, controllers: cpu memory pids

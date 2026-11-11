@@ -51,7 +51,7 @@ The `binaries` target is the two binaries on an empty base, for an agent image o
 `tego serve` refuses a `tego-control` whose hash is not the one it was built with. Your image then needs what this
 page says the entrypoint does, or that entrypoint itself.
 
-The base images are pinned by digest (`golang:1.27.3-trixie`, the Go of `go.mod`, and `debian:trixie-slim`), and
+The base images are pinned by digest (`golang:1.27.4-trixie`, the Go of `go.mod`, and `debian:trixie-slim`), and
 Dependabot proposes their updates.
 
 Published images copy the original release binaries after signature, checksum, reproduction and control-pin checks.

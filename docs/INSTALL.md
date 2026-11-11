@@ -16,7 +16,7 @@ source is the other way.
 | Operating system | Linux, amd64 or arm64. macOS and Windows have no native build: Tego runs inside a Linux VM there (below). |
 | Kernel | Tier 1 (no root) needs Landlock ABI 2 or newer, which is Linux 5.19 or later or a backport such as RHEL 9's 5.14, and cgroup v2 with a subtree delegated to your user. The oldest kernels the project tests are 6.1 and RHEL 9's 5.14. Ubuntu 22.04's stock 5.15 has Landlock ABI 1, so no tier runs on it. Tiers 2 and 3 need root, and tier 3 needs `bpf` in the boot LSM list. [TIERS.md](TIERS.md) has the table. |
 | To install a release | `curl` and `sha256sum` (or `shasum`). With `cosign`, or a `gh` that is logged in, on `PATH`, the installer also checks who published the release. |
-| To build | `git`, `make` and Go 1.27 (CI builds with 1.27.3). You do not need clang: the compiled BPF objects are committed. |
+| To build | `git`, `make` and Go 1.27 (CI builds with 1.27.4). You do not need clang: the compiled BPF objects are committed. |
 
 ## Linux
 
@@ -205,7 +205,7 @@ tego version
 tego=v0.0.0-<commit date>-<commit, 12 digits>
 commit=<commit, 40 digits>
 date=<commit date>
-go=go1.27.3
+go=go1.27.4
 contract_schema=0
 record_v=1
 record_readers=1
@@ -262,7 +262,7 @@ release `doctor` accepts at all, not tier 1's minimum: tier 1 also needs the `la
 `doctor` adds a note on a release below 6.1, the tested floor.
 
 ```text
-tego=v0.0.0-<commit date>-<commit, 12 digits> commit=<commit, 40 digits> date=<commit date> go=go1.27.3 contract_schema=0 record_v=1
+tego=v0.0.0-<commit date>-<commit, 12 digits> commit=<commit, 40 digits> date=<commit date> go=go1.27.4 contract_schema=0 record_v=1
 ok   kernel: 6.8.0-147-generic (>= 5.14.0); without: Landlock ABI 5 (ioctl_dev) (6.10.0, device ioctls are not restricted), Landlock ABI 6 (scopes) (6.12.0, abstract unix sockets and signals are not scoped), Landlock ABI 7 (audit) (6.15.0, Landlock refusals are not in the audit log)
 ok   btf: /sys/kernel/btf/vmlinux (6103569 bytes); all 94 kernel types and fields the BPF programs read are present
 ok   cgroupv2: /sys/fs/cgroup delegated, cgroup.kill writable, controllers: cpu memory pids
