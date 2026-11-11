@@ -42,6 +42,7 @@ func TestParseStat(t *testing.T) {
 		{"no parens", "42 python3 S 1\n", Stat{}, true},
 		{"unclosed comm", "42 (python3 S 1\n", Stat{}, true},
 		{"non-numeric pid", "x (a) S 1 2 3\n", Stat{}, true},
+		{"negative pid", statLine(-1, "a", 1, 1, 5), Stat{}, true},
 		{"truncated tail", "42 (a) S 1\n", Stat{}, true},
 		{"empty", "", Stat{}, true},
 		{"only a paren", ")", Stat{}, true},

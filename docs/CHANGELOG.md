@@ -163,6 +163,9 @@ rules remain a preview, with the limits below.
   `tego measure` with an internal error, and in a contract, a registry entry, a run's saved `contract.yaml` or a
   `maze` workspace file it stopped the command or dashboard request that read it. Such a file is now read as one
   that does not parse: a price table is reported as unreadable, and cost is not estimated.
+- The reader of `/proc/<pid>/stat` took a line that starts with a negative pid, such as `-1 (a) S ...`, as a process
+  with that pid, where it already refused a negative parent pid, process group or thread count. Such a line is now
+  refused as malformed. Linux does not write one.
 
 ### Added
 
