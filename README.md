@@ -12,7 +12,7 @@
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <a href="docs/INSTALL.md"><img alt="Go 1.27" src="https://img.shields.io/badge/go-1.27-00ADD8?logo=go&amp;logoColor=white"></a>
   <a href="docs/TIERS.md"><img alt="Platform: Linux" src="https://img.shields.io/badge/platform-Linux-FCC624?logo=linux&amp;logoColor=black"></a>
-  <a href="docs/CHANGELOG.md"><img alt="Release: v0.1.0" src="https://img.shields.io/badge/release-v0.1.0-F26327"></a>
+  <a href="docs/CHANGELOG.md"><img alt="Release: v0.1.1" src="https://img.shields.io/badge/release-v0.1.1-F26327"></a>
 </p>
 
 <p align="center">
@@ -84,6 +84,12 @@ curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/in
 The script is an asset of the latest release. It installs that release's `tego` and `tego-control` into
 `~/.local/bin`, checks their checksums, and prints the next steps.
 
+The installer does not change your `PATH`. If `~/.local/bin` is not on it yet, the [First run](#first-run) commands
+answer `tego: command not found` until you run the first of those next steps,
+`export PATH="/home/<you>/.local/bin:$PATH"` with your own home folder, or log in again (a new SSH session, or log out
+and back in). On Ubuntu, `~/.profile` adds `~/.local/bin` at login. Elsewhere, add the `export` line to your shell's
+profile.
+
 **macOS**, in a Linux VM made by [Lima](https://lima-vm.io):
 
 ```sh
@@ -100,10 +106,12 @@ wsl --install -d Ubuntu-24.04
 
 Then open Ubuntu and run the Linux line there.
 
-What each was tested on: the Linux line on Ubuntu 25.10 (kernel 6.17), installing a local build of the release. The
-macOS template passes Lima's own check (`limactl validate`) but has not been booted on a Mac yet, and the Windows steps
-have not been run yet. [docs/INSTALL.md](docs/INSTALL.md) has the details, and how to check the installer before it
-runs.
+What each was tested on: the installer put the published v0.1.1 on AlmaLinux 9.8, Ubuntu 24.04, Debian 13, Fedora 44,
+Amazon Linux 2023 and Ubuntu 26.04.1, and a new user's `tego doctor`, `tego test` and a governed run reached tier
+landlock on each
+([docs/TIERS.md](docs/TIERS.md#the-published-release-as-a-new-user)). The macOS template passes Lima's own check
+(`limactl validate`) but has not been booted on a Mac yet, and the Windows steps have not been run yet.
+[docs/INSTALL.md](docs/INSTALL.md) has the details, and how to check the installer before it runs.
 
 ### Build from source
 

@@ -5,7 +5,7 @@ source is the other way.
 
 | System | Install | Tested on |
 |---|---|---|
-| Linux | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | Ubuntu 25.10, kernel 6.17, against a local build of the release |
+| Linux | `curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh \| sh` | The published v0.1.1 as a new user, tier landlock: AlmaLinux 9.8, Ubuntu 24.04 and 26.04.1, Debian 13, Fedora 44, Amazon Linux 2023 ([details](TIERS.md#the-published-release-as-a-new-user)) |
 | macOS | `limactl start --name=tego https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml` | Not run on a Mac yet. Lima's `limactl validate` passes on the template |
 | Windows | `wsl --install -d Ubuntu-24.04`, then the Linux line inside Ubuntu | Not run on Windows yet |
 
@@ -30,12 +30,15 @@ sha256 checksums, and installs both into `~/.local/bin`. When `cosign` is on `PA
 also checks that the checksums were signed by this repository's release workflow at that tag; without either it says
 that only the checksum was checked. It runs the new `tego` before it replaces anything, and it needs no root. It ends
 with the next steps: the `export PATH` line if `~/.local/bin` is not on your `PATH` yet, `tego doctor`, `tego test` and
-`tego serve --open`.
+`tego serve --open`. The installer does not change your `PATH`, so until you run that line, or log in again, the shell
+answers `tego: command not found`. For the default folder the line is `export PATH="/home/<you>/.local/bin:$PATH"`,
+with your own home folder. Ubuntu's `~/.profile` adds `~/.local/bin` at login; elsewhere, add the line to your shell's
+profile.
 
 Settings are environment variables, given to `sh`:
 
 ```sh
-curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | TEGO_VERSION=v0.1.0 sh
+curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | TEGO_VERSION=v0.1.1 sh
 ```
 
 `TEGO_VERSION` picks a tag (default: the latest release), `TEGO_PREFIX` the folder (default `$HOME/.local/bin`) and
@@ -48,11 +51,12 @@ Do not fetch `install.sh` from a branch: the installer is the root of trust, so 
 line above does. Piped into `sh`, it still runs before anything checks it. To run only a script you have checked, verify
 it first: [Check the installer first](#check-the-installer-first).
 
-**Tested on** Ubuntu 25.10 (kernel 6.17, `dash` as `sh`): the script piped into `sh`, installing a local build of the
-v0.1.0 release (`goreleaser release --snapshot`) laid out as the release is, then `tego version`, `tego doctor`, `tego
-test` and `tego serve`. The download from GitHub itself, `releases/latest/download` included, runs once the release is
-published. `scripts/install_test.sh`
-covers each check, the piped form and the exit codes.
+**Tested on** 2026-11-11 with the published v0.1.1, as a new user, on AlmaLinux 9.8, Ubuntu 24.04, Debian 13,
+Fedora 44, Amazon Linux 2023 and Ubuntu 26.04.1: [Check the installer first](#check-the-installer-first) with `tag=v0.1.1`,
+then `tego doctor --require landlock`, `tego test`, a run and the record's checks, all at tier landlock
+([TIERS.md](TIERS.md#the-published-release-as-a-new-user)). On a fresh Ubuntu 24.04, the first line of this section, as written,
+installed v0.1.1 with the checksum check only, since that image has no `cosign`. `scripts/install_test.sh` covers each
+check, the piped form and the exit codes.
 
 ## macOS
 
@@ -137,7 +141,7 @@ using that release's exact tag identity (including the leading `v`). Docker sele
 from the signed multi-platform index. The digest pins the image even if a tag later moves.
 
 ```sh
-tag=v0.1.0
+tag=v0.1.1
 image=ghcr.io/attention-span-ai/tego
 digest='sha256:REPLACE_WITH_THE_RELEASE_NOTES_DIGEST'
 cosign verify \
@@ -215,7 +219,7 @@ control_sha256=<hash of your tego-control>
 ```
 
 A value in angle brackets is your own build's. A build from a checkout with no release tag names its commit, as here; a
-release prints its tag, such as `tego=v0.1.0`. The `control_sha256=` line is the hash built into `tego`, and
+release prints its tag, such as `tego=v0.1.1`. The `control_sha256=` line is the hash built into `tego`, and
 `tego-control version` prints the same hash as `sha256`.
 
 ## Running with sudo
@@ -296,7 +300,7 @@ The installer is a release asset, listed in the release's checksums file. That f
 script before it runs:
 
 ```sh
-tag=v0.1.0
+tag=v0.1.1
 sums=tego_${tag#v}_checksums.txt
 base=https://github.com/Attention-Span-AI/Tego/releases/download/$tag
 curl -fsSL -O "$base/install.sh" -O "$base/$sums" -O "$base/$sums.sigstore.json"
