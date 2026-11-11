@@ -19,7 +19,7 @@ const leakProfile = "goroutineleak"
 // lookupProfile is pprof.Lookup, a variable so the gate's own test can take the profile away.
 var lookupProfile = pprof.Lookup
 
-// errNoLeakProfile is a toolchain without leakProfile. go.mod names go1.27.3 as the toolchain, so only a
+// errNoLeakProfile is a toolchain without leakProfile. go.mod names go1.27.4 as the toolchain, so only a
 // build that refused it (GOTOOLCHAIN=local on an older Go) gets here, and its gate would check nothing.
 var errNoLeakProfile = fmt.Errorf("this toolchain has no %q profile, so no leak can be found: "+
 	"build with the toolchain go.mod names (Go 1.27)", leakProfile)

@@ -14,10 +14,10 @@
   is the pin.
 - Version source, the same for both binaries (`internal/buildinfo`): goreleaser's ldflags on tags
   (`-X github.com/attention-span-ai/tego/internal/buildinfo.version=...`, `commit`, `date`); otherwise `debug.ReadBuildInfo()` (`Main.Version` from the VCS tag,
-  `+dirty` when modified; `dev` when none). `go.mod` declares `go 1.27` and `toolchain go1.27.3` (ADR 0029 step 1);
-  CI, the fuzzers and the release build with exactly Go 1.27.3 (`GO_VERSION` in each workflow), the same patch
+  `+dirty` when modified; `dev` when none). `go.mod` declares `go 1.27` and `toolchain go1.27.4` (ADR 0029 step 1);
+  CI, the fuzzers and the release build with exactly Go 1.27.4 (`GO_VERSION` in each workflow), the same patch
   release, so no job downloads another toolchain, pinned so that two builds of one commit are byte-identical (§5).
-  A packager's older Go with the default `GOTOOLCHAIN=auto` downloads go1.27.3, and fails offline; with
+  A packager's older Go with the default `GOTOOLCHAIN=auto` downloads go1.27.4, and fails offline; with
   `GOTOOLCHAIN=local` it refuses the module. 1.26 was never tested: under 1.26.8 the tree built and vetted, but
   `compress/flate` wrote other bytes and httpstream's `TestGoldenEncodings` (gzip, deflate) failed, and the
   goroutine leak gate (internal/testutil) has no profile to read there and now fails rather than pass.

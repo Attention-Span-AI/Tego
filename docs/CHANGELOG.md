@@ -58,6 +58,10 @@ rules remain a preview, with the limits below.
 - Node rules scan config and dotenv options wherever Node scans them. Expanded parsing needs exact standalone
   Linux x64 builds 20.19.4 or 22.21.1; others keep bounded parsing plus these scans. Unknown builds may miss
   code-loading options; external `NODE_OPTIONS` preloads remain unread.
+- The release is built with Go 1.27.4, which fixes GO-2026-6859 in net/http: an HTTP/1 server could crash when a
+  handler reads a request body limited by `MaxBytesReader` while response headers are written on another goroutine.
+  tego-control's dashboard is an HTTP/1 server on 127.0.0.1 and limits form posts with `MaxBytesReader`; it reads
+  each form in the handler's own goroutine, before writing a response.
 
 ### Fixed
 

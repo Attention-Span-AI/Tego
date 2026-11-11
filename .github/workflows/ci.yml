@@ -31,7 +31,7 @@ env:
   # floating version makes two builds of one commit differ (job reproducible, docs/VERSIONING.md §5), and
   # it can change behaviour under a green check nobody re-ran. Dependabot does not update this line; a Go
   # patch release is taken by editing it here, in fuzz.yml, vm-matrix.yml and release.yml together.
-  GO_VERSION: '1.27.3'
+  GO_VERSION: '1.27.4'
   # The goreleaser the reproducible job builds with: release.yml's GORELEASER_VERSION, which precommit_test.sh holds equal.
   GORELEASER_VERSION: v2.18.2
 

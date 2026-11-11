@@ -122,6 +122,12 @@ GO-2026-6607 and the Windows-only GO-2026-6604) and crypto/x509's GO-2026-6809 i
 patch release is pinned in go.mod and in every workflow, and the pin moves when a newer patch release fixes a
 vulnerability the code reaches.
 
+*Amended 2026-11-10 (toolchain patch release):* go.mod's toolchain, every workflow's `GO_VERSION` and the container
+example's `golang` image move from go1.27.3 to go1.27.4. govulncheck found one standard-library vulnerability in
+go1.27.3 that Tego's code reaches, GO-2026-6859 (net/http: an HTTP/1 server can panic when `MaxBytesReader` sets
+`Connection: close` while the handler writes headers on another goroutine), fixed in go1.27.4. No module requirement
+moves: the same scan found no vulnerability in a required module. Step 1's rule holds as amended on 2026-10-24.
+
 *Amended 2026-10-24 (ADR 0061):* the 2026-10-05 note's correction of fact under (4) names an allowlist of
 internal/runtime/reason and internal/adapters. internal/runtime/reason is removed: the reason file it was kept for is
 `pkg/spec/reason`, live code. The other two stay placeholders.

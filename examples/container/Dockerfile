@@ -20,14 +20,14 @@
 #   VERSION, COMMIT, DATE  what `tego version` prints; CI passes the commit's. Left empty, the build has no VCS
 #                   stamp to fall back on (.git is not sent to the build) and prints "dev".
 #
-# The base images are pinned by digest (an index digest, so every architecture), resolved from the registry on
-# 2026-10-27, and written out in the FROM lines, where Dependabot's docker ecosystem proposes the updates. The Go
-# image is go.mod's toolchain (compose_test.go holds the two equal).
+# The base images are pinned by digest (an index digest, so every architecture), resolved from the registry
+# (Debian on 2026-10-27, Go on 2026-11-10), and written out in the FROM lines, where Dependabot's docker ecosystem
+# proposes the updates. The Go image is go.mod's toolchain (compose_test.go holds the two equal).
 
 # Local builds compile the source below. release.yml selects verified instead, with a named `release` context
 # containing the signed release's exact binaries for each architecture; no second Go build can change their bytes.
 ARG BINARY_SOURCE=build
-FROM golang:1.27.3-trixie@sha256:c124b9ad3452f46061b5054607d26ea51730dae5372c5e469920063ba2bc6dcc AS build
+FROM golang:1.27.4-trixie@sha256:b54b2639de8c1bfe538ec5ffc45f29b1932235ac5f6d63c059853646677112d9 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
