@@ -70,10 +70,44 @@ report the same skip. See [GAPS C53](GAPS.md).
 
 ## Platforms checked for v0.1.1
 
-Measured on 2026-11-10 in local virtual machines. The user and root checks on RHEL 10 and arm64, and the first run
+Measured in local virtual machines. The first two parts below were measured on 2026-11-11 with the published v0.1.1,
+apart from the root doctor on Ubuntu 26.04 (stated there). The rest
+was measured on 2026-11-10. There, the user and root checks on RHEL 10 and arm64, and the first run
 of the RHEL 9 root test suites, used a build from just before the overlayfs fix in the changelog's Security list.
 That fix changes only the decision plane's programs. The overlayfs results and the second RHEL 9 run used the fixed
 build, which is v0.1.1's code, and the Fedora 44 results used both builds.
+
+### The published release, as a new user
+
+On 2026-11-11, on each system below, a new user checked the published installer with cosign
+([INSTALL.md](INSTALL.md#check-the-installer-first), `tag=v0.1.1`) and installed v0.1.1 with it. `releases/latest`
+pointed to v0.1.1. Then `tego doctor --require landlock` and `tego test` passed, a run exited 0 at tier landlock,
+refused a `deny_read` file and recorded the refused and the allowed read, and `tego events <run> --verify` and
+`tego receipt <run> --verify` passed. All ten checks passed on all six systems. These were user checks only: no root
+tier and no root test suite ran in these guests.
+
+| System | Kernel | systemd | Tier |
+|---|---|---|---|
+| AlmaLinux 9.8 | 5.14.0-687.61.1.el9_8 | 252 | landlock |
+| Amazon Linux 2023 | 6.1.189-236.400.amzn2023 | 252 | landlock |
+| Ubuntu 24.04.5 | 6.8.0-147-generic | 255 | landlock |
+| Debian 13 | 6.12.115+deb13.1-cloud-amd64 | 257 | landlock |
+| Fedora 44 | 6.19.10-300.fc44 | 259 | landlock |
+| Ubuntu 26.04.1 | 7.0.0-38-generic | 259 | landlock |
+
+On a fresh Ubuntu 24.04, the README's install line and its first run, typed as written, also passed, once
+`~/.local/bin` was on `PATH` (a new login).
+
+### Ubuntu 26.04
+
+Ubuntu 26.04.1 LTS, kernel 7.0.0-38-generic, systemd 259.5, Landlock ABI 8, and no `bpf` in the boot LSM list. With
+the published v0.1.1, a new user passed the ten checks above at tier landlock, and `tego doctor` reported Landlock
+ABI 8. As root, `tego doctor` reports tier cgroup: 27 of 27 hooks load and attach, and the decision plane uses
+fanotify. Doctor says a refused open would reach the agent as `EPERM`; no refusal was measured there. Tier bpflsm
+needs `bpf` added to the LSM list
+([below](#tier-3-on-ubuntu)). The root doctor ran with a local build from just before the tag (the head of
+public pull request 38), not with the published binary. No run at tier cgroup or bpflsm was made, and the root test
+suites were not run on Ubuntu 26.04.
 
 ### RHEL 10
 

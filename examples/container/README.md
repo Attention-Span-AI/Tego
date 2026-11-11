@@ -19,8 +19,8 @@ without a container runtime; `.github/workflows/container.yml` builds and runs t
 
 ## Published releases
 
-Every release tag publishes `ghcr.io/attention-span-ai/tego` for Linux amd64 and arm64. `v0.1.0` produces `0.1.0`,
-`0.1` and `latest`; a prerelease such as `v0.1.0-rc.1` produces only `0.1.0-rc.1`. The release notes and the image
+Every release tag publishes `ghcr.io/attention-span-ai/tego` for Linux amd64 and arm64. `v0.1.1` produces `0.1.1`,
+`0.1` and `latest`; a prerelease such as `v0.1.1-rc.1` produces only `0.1.1-rc.1`. The release notes and the image
 job summary give the signed multi-platform digest. The
 [install guide](https://github.com/Attention-Span-AI/Tego/blob/main/docs/INSTALL.md#run-in-a-container) shows
 `docker run` and verification with cosign against the exact tag's `release.yml` identity.

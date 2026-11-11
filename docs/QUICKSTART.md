@@ -17,6 +17,10 @@ On **Linux**:
 curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | sh
 ```
 
+The installer does not change your `PATH`. If `~/.local/bin` is not on it yet, its next steps start with
+`export PATH="/home/<you>/.local/bin:$PATH"`, with your own home folder: run that line, or log in again, or `tego`
+below answers `command not found`.
+
 On **macOS**, Tego runs in a Lima VM. Install it, then do the steps below inside the VM, in a shell in your user's
 cgroup:
 
@@ -52,7 +56,7 @@ control_sha256=<hash of your tego-control>
 ```
 
 The first lines are your version and commit. A build from a checkout with no release tag names its commit, as here; a
-release prints its tag, such as `tego=v0.1.0`. Put these lines at the top of any bug report.
+release prints its tag, such as `tego=v0.1.1`. Put these lines at the top of any bug report.
 
 ## 2. Check the machine
 

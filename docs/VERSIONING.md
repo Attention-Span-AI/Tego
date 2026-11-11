@@ -189,6 +189,8 @@ of this; retraction is deliberately not automated (§7.4).
 - `docs/CHANGELOG.md` has a `## vX.Y.Z` (or `## vX.Y.Z - date`) section for the exact version being tagged — not still folded into
   `## Unreleased` — ending in its Record `v` / Contract schema / Kernel minimums lines (§5). `release.sh tag`
   refuses to run without one; it becomes the annotated tag's message.
+- For a stable tag, the public README's release badge names it. The badge is fixed text, so it does not move by
+  itself; the maintainers' export tests fail once the changelog has a newer `## vX.Y.Z` section than the badge names.
 - Every built-in preset revision listed in `pkg/spec/presets`' `released` with its sha256 (§5, `make preset-freeze
   VERSION=vX.Y.Z`, which `release.sh tag` runs first and prints the lines to add).
 - A clean working tree, on `main`, at the commit that passed CI. `release.sh push` refuses another branch, a
