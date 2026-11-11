@@ -68,6 +68,115 @@ attachments/counters produce `bpf-trampoline-counter-unavailable`. Receipts and 
 and describe shared skipped executions, never “N events lost” or proof of loss in this run. Overlapping runs may
 report the same skip. See [GAPS C53](GAPS.md).
 
+## Platforms checked for v0.1.1
+
+Measured on 2026-11-10 in local virtual machines. The user and root checks on RHEL 10 and arm64, and the first run
+of the RHEL 9 root test suites, used a build from just before the overlayfs fix in the changelog's Security list.
+That fix changes only the decision plane's programs. The overlayfs results and the second RHEL 9 run used the fixed
+build, which is v0.1.1's code, and the Fedora 44 results used both builds.
+
+### RHEL 10
+
+On stock AlmaLinux 10.2 (kernel 6.12.0-211.74.1.el10_2, systemd 257, SELinux enforcing), no setup is needed: systemd
+turns cpu on by default. A new user over SSH got tier landlock: `tego doctor --require landlock` and `tego test`
+passed, a run refused a `deny_read` file and recorded it, `tego events <run> --verify` and `tego receipt <run> --verify`
+passed, and CPU, memory and process limits applied. As root, `tego doctor` reports tier bpflsm with 27 of 27 hooks,
+and runs at tiers cgroup and bpflsm refused a `deny_read` file, verified their records and applied CPU, memory and
+process limits. With the fixed build, root runs at both tiers refused to make a file already on an overlay mount,
+under a write entry, executable with `mprotect`; the build before the fix allowed it. The binaries were copied in,
+not installed by the release installer, and the root test suites were not run there.
+
+### arm64
+
+In an emulated arm64 guest (QEMU without KVM, Ubuntu 24.04, kernel 6.8.0-147), a new user got tier landlock and
+passed the same checks as on RHEL 10, limits aside; as root, `tego doctor` reports tier cgroup with 27 of 27 hooks
+(Ubuntu's boot LSM list has no `bpf`). An emulated CPU is not arm64 hardware. On hardware, CI's `build-test-arm64`
+job runs on GitHub's arm64 runner: it builds Tego, runs the unit tests, root `tego doctor` and selected root tests,
+the plane's load test among them. It does not run the steps above as a user, and the full root test suites run on
+amd64 only.
+
+### Root test suites on RHEL 9
+
+On stock AlmaLinux 9.8 (kernel 5.14.0-687.61.1.el9_8, SELinux enforcing, xfs), root `tego doctor` reports tier
+bpflsm with 25 of 25 hooks, and root runs at tiers cgroup and bpflsm refused a `deny_read` file and verified their
+records, with the fixed build too.
+
+v0.1.1's root test suites (`test/vm/root-suites.sh`) do not all pass there. Every failure and both hangs below are
+now explained. Apart from the overlayfs case, which v0.1.1 fixes, each is a bug in a test or a test that assumes a
+host unlike RHEL 9; no product bug was found. Those tests are fixed for the next release: with the fixes, every
+suite that failed or hung there runs to the end and its tests pass, with the skips named below. The suites ran as
+root in local guests, one suite at a time, not in CI's shards. As of 2026-11-10:
+
+- **Runs:** the first run reached 31 of 33 suites: 5817 top-level tests passed, 14 failed and 247 skipped. The
+  second run added the two suites the first did not start: `test/conformance` (78 passed, 1 failed) and the four
+  parts of the `tegobpf` build of `internal/runtime/enforce/cgroup` (565 passed, 1 failed). `internal/runtime`
+  finished in neither run, because one of its tests hangs (below).
+- **Fixed in v0.1.1:** the plane test's overlayfs case (the Security fix). With the fixed build that check passes on
+  this kernel.
+- **Two hangs, both in tests:** `TestHeldCloseEndsTheListenerBeforeTheDescriptorLimit` in
+  `internal/runtime/enforce/cgroup` marks the mount of its temporary directory for fanotify permission events, and
+  then starts a helper from its own test binary, which was on the same mount on this guest. Go starts the helper
+  with vfork, so the helper's exec waits for the test's own fanotify group; if a garbage collection starts in that
+  window, the whole test process stops, and Go's test timeout never fires. With `GOGC=1` it hung in 3 of 100 runs
+  without the CPU setup above and in 1 of 100 with it, so the setup is not the cause. In `internal/runtime`,
+  `TestIntegrationExecRuleNonRegularImage` runs its agent through `/bin/sh`, which is bash on RHEL: bash answers the
+  refused exec of a FIFO by opening the FIFO to read it, and that open waits for a writer forever, with or without
+  Tego.
+- **SELinux execmod:** with SELinux enforcing, this host refuses to make a modified private file mapping executable,
+  with or without Tego, so a contract cannot allow it here. SELinux decides before the plane's LSM hook runs, so in
+  LSM mode the run's record has no line for that refusal; in fmod_ret mode the plane's own line is there
+  ([GAPS.md](GAPS.md) B16). The plane's step C test, the conformance suite's execmod case and the plane's exec-map
+  run test expect the mapping to be allowed, or decided by the plane, and fail. With SELinux permissive and the
+  fixed build, the step C test passes. AlmaLinux 10.2 enforcing does not refuse it.
+- **NSS:** `/etc/nsswitch.conf` has `passwd: sss files systemd`, so a program in a run that looks up a user or group
+  connects to `/var/run/nscd/socket` and `/var/lib/sss/pipes/nss`. Under a contract whose `net:` section allowed one
+  TCP address, the run refused and recorded those connects (tier landlock, launched as root). RHEL's bash also opens
+  `/dev/tty` when it starts, which the run refused and recorded. Three tests do not expect these lines.
+- **`RESOLVE_CACHED`:** on this kernel, `openat2` with `RESOLVE_CACHED` through a symlink failed with `EAGAIN` on
+  xfs and on a tmpfs mounted `strictatime`, and succeeded on a `relatime` tmpfs once the link's access time was
+  updated, so SELinux is not the reason. Tego's two-syscall fast path for an exec path through a symlink is not used
+  there, and the full walk answers, which was right. One supervisor test expects the fast path. Which kernel
+  function makes it fall back on xfs is not isolated.
+- **Host's os-release:** a doctor golden test reads the host's `/etc/os-release`, so on any RHEL-family host it gets
+  doctor's `grubby` fix line instead of the Debian `update-grub` line it expects. Doctor's line is right for the
+  host; the test is wrong.
+- **OOM timing:** a cgroup test gives the kernel 20 s to stop a child capped at 16 MiB with no swap. On the stock
+  guest it was not stopped in time. Run from xfs, the child's own code was dropped from memory and read back again
+  and again: in 25 s it hit its limit 666,918 times and was not killed, while its memory stayed within the cap. Run
+  from tmpfs, it was killed in 0.03 s. After the CPU setup and a reboot the test passed once, in 16.81 s against the
+  20 s bound; the setup is not shown to be the cause. Whether the kernel or xfs causes the thrash is not isolated. A
+  program at a run's memory limit whose code is on xfs may thrash the same way; that was not measured with `tego run`.
+- **No `WAIT_KILLABLE_RECV`:** this kernel refuses that seccomp listener flag, so a datagram or connect whose answer
+  races a signal can be recorded twice. Under load, the UDP flood test once saw 4 more lines than datagrams in
+  100,048 notifications; alone, it passed 6 of 6 runs.
+- **Other host differences:** one cgroup test needs cpu on in the root cgroup and passes after the CPU setup above.
+  xfs refused a 1024-byte symlink target, and two tests need one of about 2.5 KB. `nobody`'s home is `/`, so a root
+  sweep of a run owned by `nobody` anchors it in `/.tego` at the file system root, which one test does not expect.
+  Python 3.9 has no `os.unshare`, which one test calls. RHEL's bash (5.1.8) retries a refused create without
+  `O_CREAT`, which gives one test a second line it does not expect. One conformance case expects RHEL 9's 5.14 to
+  lack BPF perf links, which this 5.14 has.
+- **Skips:** RHEL 9 refuses `io_uring_setup`, and those tests skip, as CI's skip list allows. CI's skip list does
+  not name ten skips seen there, each with its own message: 6 btrfs tests (RHEL 9 ships no btrfs), one that needs
+  busybox, one that skips while auditd runs, as it does on the stock image, and two `/proc/<pid>/fdinfo` cases,
+  because the agent can list that directory there. Six more came from the test setup, not from RHEL: two plane
+  compaction tests whose fixture only sets up ext4, f2fs or tmpfs, and four web tests that need node, which the
+  guest did not have.
+
+### Plane tests on Fedora 44
+
+On Fedora 44 (kernel 6.19.10-300.fc44), v0.1.1's plane load test and its step A, B and C tests fail, with the build
+before the overlayfs fix and the fixed build alike. Those tests hold the plane's programs to 20,000 verified
+instructions (`socket_listen` to 64,000), and on this kernel the largest verifies in 63,939 (the kernel's own limit
+is 1,000,000). Root `tego doctor` there loads the plane in LSM mode and reports tier bpflsm with 27 of 27 hooks.
+
+The count comes from the kernel, not from the programs. The same bytes of the programs that call `bpf_loop` verify
+in at most 14,562 instructions on mainline 6.19.3 and in up to 63,939 on mainline 6.19.4, 6.19.10 and 6.19.14; they
+grew by up to 9.5 times, and the programs without `bpf_loop` did not change. Fedora 44's 6.19.10 counts exactly what
+mainline 6.19.10 does, and on Fedora's 7.0.14 and 7.2.9 kernels the programs that call `bpf_loop` verify in at most
+19,834. The likely cause is the stable backport, in 6.19.4, of upstream commit f597664454bd ("bpf: bpf_scc_visit
+instance and backedges accumulation for bpf_loop()"). That is named from a bisection over releases, not isolated: no
+kernel was built without it. The tests' budget is fixed for Linux 6.19.4 to 6.19.y for the next release.
+
 ## Choosing
 
 - **No root, or you are not sure:** tier 1. It enforces files, programs and network rules, some of them in Tego's supervisor and
