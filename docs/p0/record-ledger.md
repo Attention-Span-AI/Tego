@@ -323,7 +323,7 @@ Beside them, the functions this package exports for its neighbours: `func (r *Re
 | Live index | `<ledger_root>/.live/<run>` (*added 2026-09-24*, see **Live index** below) | `0700` directory, `0600` entries | one empty file per run, named by the run id | created by the launcher (`MarkLive`) while it holds the run's lock, before `run_start`; removed once the run reads as ended (`ClearLive`) or by a sweep (`SweepLive`) | n/a — which runs `run` and `stop` sweep; a cache, never a source of state (ADR 0004, I7) |
 | Blobs | `<ledger_root>/<run>/blobs/<sha256>` | `0600` | raw bytes, content-addressed, per-run (not global CAS) | write-once; `O_CREAT\|O_EXCL` then rename (§5 R11) | part of the same fsync-at-close policy |
 | Contract copy | `<ledger_root>/<run>/contract.yaml` | `0600` | the canonical bytes of the merged contract (`agent.Contract.Canonical`, agent-contract.md R13): sha256 = `contract_hash`, self-contained, its `extends:` kept by name only; `tego run` hands those bytes to `Open`, never the file as written, which would not hash to `contract_hash` and would need the profiles of the day to recompile | written once at `Open`, never modified | best-effort (not part of the hash chain) |
-| Last refusal | `<ledger_root>/<run>/last-refusal.json` | `0600` | the reason file v1 (`pkg/spec/reason.File`, ADR 0061; *amended 2026-10-24*, was `record.RefusedPayload` + `reason`, `rule`): the latest refusal's `RefusedPayload` keys at the top level with `v`, `run`, `seq`, `ts`, `pid`, `text`, `refusals` and `recent` (the newest 32), at most 64 KiB | rewritten (not appended) after `refused` events — one of the two files in the run dir that ARE overwritten (the other is the activity sidecar below; *amended 2026-10-05*); latest wins, written off `Append`'s path at most every 10 ms (`refusalWindow`): always one whole refusal, never an older one after a newer, at most 10 ms behind the ledger while the run is open, and the latest written by `Close`/`Abandon`; a crash loses at most the last 10 ms | best-effort, advisory only; the ledger line is authoritative |
+| Last refusal | `<ledger_root>/<run>/last-refusal.json` | `0600` | the reason file v1 (`pkg/spec/reason.File`, ADR 0061; *amended 2026-10-24*, was `record.RefusedPayload` + `reason`, `rule`): the latest refusal's `RefusedPayload` keys at the top level with `v`, `run`, `seq`, `ts`, `pid`, `text`, `refusals` and `recent` (the newest 32), at most 64 KiB | rewritten (not appended) after `refused` events, one of the two files in the run dir that ARE overwritten (the other is the activity sidecar below; *amended 2026-10-05*); latest wins, written off `Append`'s path at most every 10 ms (`refusalWindow`): always one whole refusal, never an older one after a newer, never a refusal `events.jsonl` does not hold yet, behind the ledger while the run is open by up to the 10 ms window plus the timer's and the box's delay (more than 70 ms seen on CI; *amended 2026-11-11*: this said at most 10 ms), and the latest written by `Close`/`Abandon`; a crash loses at most the last window. The mirror the run reads (`TEGO_REASON`) is written first, under its own lock, and this copy after it, so a slow rename here never delays the mirror, and a crash between the two leaves the mirror a write ahead (*amended 2026-11-11*: one lock wrote this copy first, so a slow write of it could hold the mirror back) | best-effort, advisory only; the ledger line is authoritative |
 | Activity sidecar | `<ledger_root>/<run>/activity` (*added 2026-10-05*) | `0600` | 16 bytes: a CLOCK_MONOTONIC `mono_ns`, little-endian `uint64`, then its bitwise complement, so a read that met a write in progress is told from a reading | made once by the launcher (`Writer.OpenActivity`, `O_CREAT\|O_EXCL\|O_NOFOLLOW` relative to the run directory's descriptor, handed over like every file the Writer creates), overwritten in place with one `pwrite(2)` at most once a second; read by `status` (`ReadActivity`, `O_NOFOLLOW\|O_NONBLOCK`, regular files only) only while the lock is held (limits-check-doctor-cli.md R9) | none — not part of the record: no hash, no fsync, nothing reads it once the lock is free, and it is left in place |
 | Chain anchor | `~/.tego/chain.log` of the invoking user, whatever `ledger_root` is; for an account with no home — no passwd entry, or a passwd home that does not exist, like a service account's `/nonexistent` — `<ledger_root>/../chain.log`, beside the ledger root (`ledger.AnchorPath`, which `internal/runtime`'s `AnchorPath` and the dashboard both apply; handed to `Open` as `WithAnchor`; the ledger's own default beside the root, `DefaultAnchorPath`, serves callers that name none, which are tests) | `0600` | `"<run> <head>\n"`, one line per run, appended once at `Close` | shared across that user's runs on the host (across every home-less account's runs on that ledger root, for the fallback); `O_APPEND`, single `write(2)` per line (same atomicity argument as events.jsonl); opened `O_NOFOLLOW` and refused unless a regular file (with one link, for root); created with `O_CREAT\|O_EXCL`, and only a `chain.log` the call created is handed over; its directory reached by the walk of the hand-over rule | fsync'd as part of `Close` |
 | Own log | `~/.tego/tego.log` | `0600` | structured line per operational event, rotated 10 MB × 5 | never the agent's data, never anything that belongs in a ledger line | independent of ledger durability |
@@ -337,6 +337,13 @@ Beside them, the functions this package exports for its neighbours: `func (r *Re
 `internal/ledger` owns all of the above except `tego.log` (`docs/OPERATIONS.md`). Concurrency: exactly one `Writer` per run directory for the run's lifetime, guaranteed by `flock`; any number of `Reader`s may open the same `events.jsonl` concurrently with the live Writer (read-only `open(2)`, no lock taken).
 
 **Changes.**
+- 2026-11-11, §3, last refusal: the run-readable mirror is written before the run directory's copy, under a lock of
+  its own, and the run directory's copy then takes the newest file the mirror got. One lock wrote the run directory's
+  copy first, so a slow rename there could hold the mirror back. On CI a refused line was not in the mirror 71 ms
+  after it was written, and a harness's hook told the refusal a request late; what held it back there was not
+  measured (a slow rename under that lock and the timer's delay both fit), and only the first is removed. The window
+  and the record are unchanged. The table no longer says the file is at most 10 ms behind: the timer and the box add
+  to the window (supervisor.md R23, GAPS C64).
 - 2026-11-02, §3: tego restores the modes an agent took from its own files and directories, and records each (GAPS C52):
   `~/.tego`, its config layer and `tego.log` before the config is read, the runtime parent and the run's runtime
   directory too; only the owner's bits are added, so the trust checks still judge group and other bits; and the lines
@@ -695,3 +702,19 @@ This is serialization, not transactional durability: an error can leave a writte
 prefix, and requires the same run termination as an `Append` failure. No event
 format changes. Readers retain the legacy four-line pairing fallback for existing
 ledgers; they cannot reliably repair historically displaced mirrors.
+
+### Binding a pass (amended 2026-11-10)
+
+`Reader.Bind() *Binder` attaches a `Binder` that the next pass of `Lines` feeds, and
+only that pass (so `Entries` and `Iter`, which read through `Lines`, feed it too).
+Each scanned line is checked as `Verify` checks it (`runCheck` with validation, the
+run named by the directory when that is a run id, nothing after `run_end`) before
+any view decodes or skips it, so a view under `SkipNewerVersions` still has its
+newer-version lines linked and counted. `Binder.Bound()` returns the run, the line
+count, the head, whether it ended, the torn tail's size, the newer lines, and the
+size and sha256 of every byte read: each complete line with its `"\n"` when it has
+one (a whole last line that lost its `"\n"`, E8, adds none), then the torn tail. For
+a record at rest that is what `sha256sum events.jsonl` prints. A pass that broke the
+chain, read past `run_end` or stopped before the end binds no head (`Bound.Err`).
+`tego receipt --json` binds the pass that computes the receipt
+(`limits-check-doctor-cli.md`, bound receipt amendment). No record format changes.

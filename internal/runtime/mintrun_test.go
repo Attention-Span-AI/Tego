@@ -30,7 +30,7 @@ func (c fixedClock) MonoNS() uint64 { return 1 }
 // overwritten." Case 16: "Symlink at the run-directory path (never legitimately pre-exists):
 // treated as EEXIST-equivalent corruption like case 1 — refused, exit 125, never followed."
 //
-// Both matter for the same reason: the run directory is the only record of a sandboxed agent, and
+// Both matter for the same reason: the run directory is the only record of an agent's run, and
 // "never overwritten" is the whole guarantee — a run that silently reused an existing path could
 // splice one run's ledger into another's or, for the symlink case, write into a location the
 // contract never declared. mkdir(2) refusing to walk into an existing dirent (symlink or not) is

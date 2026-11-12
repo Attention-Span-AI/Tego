@@ -1,0 +1,4 @@
+
+note multicall: <root>/bin/ls leads to <root>/lib/mc/ls, one program file with 3 names (hard links): an exec.allow entry for one of them admits that name's link at tiers cgroup and bpflsm, and the file by any name at tier landlock to an agent that wins the exec race; a build that reads argv[0] runs any program it holds through a listed name; tego compile notes such entries [exec-multicall]
+
+note multicall: <root>/bbin/ls leads to <root>/lib/bb/busybox, a multi-call program, which runs the program argv[0] or argv[1] names: an exec.allow entry for any of its names admits every program it holds, at every tier; tego compile notes such entries [exec-multicall]

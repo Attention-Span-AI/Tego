@@ -90,7 +90,7 @@ func TestLogsRowsReadInWords(t *testing.T) {
 	text := visible(page)
 	for _, want := range []string{"Asked to read", "Allowed once by user 4000000000 after 27 s:", "Run started:", "codex exec fix the tests",
 		"Run ended, exit 0", "Model traffic not recorded (no model capture for this agent)", "… /bin/bash -c curl -s -H",
-		"Authorization: Bearer ••••", "not on the allowed hosts", "a read the rules refuse", "codex #1", "1 asked", "2 blocked"} {
+		"Authorization: Bearer ••••", "not on the allowed hosts", "a read the rules refuse", "codex #1", "1 asked", "2 refused"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("Logs lacks %q", want)
 		}

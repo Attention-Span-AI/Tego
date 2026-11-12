@@ -104,3 +104,26 @@ func TestTheTierTwoHandleReleasesWhatItInherited(t *testing.T) {
 	var _ KernelRecorder = h
 	var _ Reporter = h
 }
+
+// frozenInherited is composed tier-1 state whose ruleset listed dirs for its deny_read entries.
+type frozenInherited struct {
+	fakeInherited
+	dirs []string
+}
+
+func (f frozenInherited) DenyReadFrozen() []string { return f.dirs }
+
+// TestTheTierTwoHandleNamesWhatItsRulesetFroze (GAPS A12): a root tier installs the tier-1 ruleset it composed, the
+// same enumeration, so its handle names the directories that ruleset listed once at launch, for run_start's
+// deny_read_frozen; inherited state that lists none names none.
+func TestTheTierTwoHandleNamesWhatItsRulesetFroze(t *testing.T) {
+	closed := 0
+	h := cgroupHandle{Handle: new(cgroupenforce.Handle), inherited: frozenInherited{fakeInherited{&closed}, []string{"/", "/home"}}}
+	if got := h.DenyReadFrozen(); len(got) != 2 || got[0] != "/" || got[1] != "/home" {
+		t.Errorf("DenyReadFrozen() = %q, want the inherited ruleset's [/ /home]", got)
+	}
+	if got := (cgroupHandle{Handle: new(cgroupenforce.Handle), inherited: fakeInherited{&closed}}).DenyReadFrozen(); got != nil {
+		t.Errorf("inherited state that lists nothing: %q", got)
+	}
+	var _ interface{ DenyReadFrozen() []string } = (*landlock.Handle)(nil)
+}

@@ -33,7 +33,12 @@ const (
 // forwarder and a dummy key. report.py e2e then holds the stub's log and the run's ledger to the checks run.sh makes
 // and to testdata/next-request.golden, which the real binary wrote: a change in the hook, the provision or the
 // stand-in that moves the next request away from what Claude Code 2.1.310 sent fails here, on every CI run. On top,
-// every refusal of the run is in the next request as reason.Text renders it from the ledger line.
+// every refusal of the run is in the next request, or in the one after it, as reason.Text renders it from the ledger
+// line. The one after it is allowed because a refused line may land in the record after the agent saw the refusal
+// (supervisor.md R23, "What a reader may rely on"), and a hook tells only what the reason file lists: such a refusal is
+// told by the first hook that runs once the file lists it, which the scenarios' one-second wait after the refused
+// turn provides, and report.py holds the stand-in's hook runs (--result: their times and the reason file's seq before
+// each began) to that.
 func TestReasonEndToEndThroughTheStandIn(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("as root the launcher makes no runtime directory, so no harness is provisioned (reason-unavailable)")
@@ -140,7 +145,7 @@ func e2eScenario(t *testing.T, py, tego, claude, s string) {
 
 	report := exec.Command(py, "-I", "../report.py", "e2e", stubLog, "--ledger", ledgers[0], "--scenario", s,
 		"--sub", ws+"=@W@", "--sub", outside+"=@OUT@", "--sub", root+"=@ROOT@", "--isolation", filepath.Join(home, ".claude"),
-		"--golden", e2eGolden)
+		"--golden", e2eGolden, "--result", result)
 	out, err := report.CombinedOutput()
 	if err != nil {
 		t.Errorf("report.py e2e %s: %v\n%s", s, err, out)
@@ -156,18 +161,24 @@ func e2eScenario(t *testing.T, py, tego, claude, s string) {
 			t.Errorf("request %d: the stub's reply named tools the stand-in's script did not run", r.N)
 		}
 	}
-	next := e2eTailText(t, stubLog, 2)
+	next, after := e2eTailText(t, stubLog, 2), e2eTailText(t, stubLog, 3)
 	for _, r := range e2eRefused(t, ledgers[0]) {
-		if want := reason.Text(record.Reason(r.Reason), r.Op, r.Target, r.Rule); !strings.Contains(next, want) {
-			t.Errorf("the next request does not carry the ledger's refusal as reason.Text renders it:\n%s\nin\n%s", want, next)
+		want := reason.Text(record.Reason(r.Reason), r.Op, r.Target, r.Rule)
+		if n := strings.Count(next, want) + strings.Count(after, want); n != 1 {
+			t.Errorf("the next request and the one after it carry the ledger's refusal as reason.Text renders it %d times, want once:\n%s\nin\n%s\nand\n%s",
+				n, want, next, after)
 		}
 	}
 	if t.Failed() {
 		// A hook that exits 0 with a warning tells the model nothing, and only its stderr says why (public main
 		// 02d505d: scenario d's next request carried no note, and nothing showed which hook said what).
 		for i, h := range sum.Hooks {
-			t.Logf("hook %d %s %s at %s: exit %d timed_out %v started %v\nstdout: %s\nstderr: %s", i, h.Event, h.Tool,
-				h.Recorded, h.Exit, h.TimedOut, h.Started, h.Stdout, h.Stderr)
+			seq := "none"
+			if h.ReasonSeq != nil {
+				seq = fmt.Sprint(*h.ReasonSeq)
+			}
+			t.Logf("hook %d %s %s began %s (reason file at seq %s), recorded %s: exit %d timed_out %v started %v\nstdout: %s\nstderr: %s",
+				i, h.Event, h.Tool, h.Began, seq, h.Recorded, h.Exit, h.TimedOut, h.Started, h.Stdout, h.Stderr)
 		}
 		t.Logf("tego run of the stand-in:\n%s", runOut)
 		if b, err := os.ReadFile(ledgers[0]); err == nil {
@@ -208,7 +219,8 @@ func e2eRefused(t *testing.T, path string) []e2eRefusal {
 }
 
 // e2eTailText is every string of the stub's "tail" for the request of turn: the messages after its last assistant
-// message (the tool results and the system message of hook notes), joined by newlines.
+// message (the tool results and the system message of hook notes), joined by newlines; "" when the stub logged no
+// request for turn (scenario e has no turn after the next request).
 func e2eTailText(t *testing.T, logPath string, turn int) string {
 	t.Helper()
 	fh, err := os.Open(logPath)
@@ -239,6 +251,5 @@ func e2eTailText(t *testing.T, logPath string, turn int) string {
 		}
 		return b.String()
 	}
-	t.Fatalf("the stub logged no request for turn %d", turn)
 	return ""
 }

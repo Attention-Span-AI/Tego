@@ -82,14 +82,14 @@ func chipIn(t *testing.T, what, page, from, to string) string {
 // TestAskAndAnswerChipsAgree: each line has one chip on every page that shows it: the asks read Asked and the answers
 // the person's Denied and Allowed on the run timeline, on the line page (headline and What happened), in "Around it"
 // and in Logs. The yes is no decision of its own, so its decision panel gives no reason; the read it let through
-// still reads "Not blocked".
+// still reads "Not refused".
 func TestAskAndAnswerChipsAgree(t *testing.T) {
 	s, c := chipRun(t)
 	want := []string{
 		"neutral i-eye Recorded",  // #0 the run's start: nothing decided it
 		"asked i-hand Asked",      // #1 the ask
 		"refused i-ban Denied",    // #2 the person's no
-		"refused i-ban Blocked",   // #3 the read it refused
+		"refused i-ban Refused",   // #3 the read it refused
 		"asked i-hand Asked",      // #4 the second ask
 		"allowed i-check Allowed", // #5 the person's yes
 		"allowed i-check Allowed", // #6 the read it let through
@@ -122,10 +122,10 @@ func TestAskAndAnswerChipsAgree(t *testing.T) {
 			t.Errorf("the timeline row of #%d is not v-%s", seq, class)
 		}
 	}
-	if strings.Contains(lines[5], "Not blocked") {
+	if strings.Contains(lines[5], "Not refused") {
 		t.Error("the person's yes reads as an action that was not blocked")
 	}
-	mustContain(t, "the read the yes let through", lines[6], `<dt>Reason</dt><dd><span class="soft">Not blocked</span></dd>`)
+	mustContain(t, "the read the yes let through", lines[6], `<dt>Reason</dt><dd><span class="soft">Not refused</span></dd>`)
 }
 
 // TestLineVerdict: a line's own verdict decides its chip; an ask line reads Asked and an answer line the person's
@@ -139,8 +139,8 @@ func TestLineVerdict(t *testing.T) {
 		want string
 	}{
 		{"an allowed action", ledgerview.Event{Kind: "exec", Verdict: "allow"}, "allowed i-check Allowed"},
-		{"a refused action", ledgerview.Event{Kind: "fs", Verdict: "refused"}, "refused i-ban Blocked"},
-		{"a refusal note", ledgerview.Event{Kind: "refused"}, "refused i-ban Blocked"},
+		{"a refused action", ledgerview.Event{Kind: "fs", Verdict: "refused"}, "refused i-ban Refused"},
+		{"a refusal note", ledgerview.Event{Kind: "refused"}, "refused i-ban Refused"},
 		{"an action held for a person", ledgerview.Event{Kind: "fs", Verdict: "ask"}, "asked i-hand Asked"},
 		{"a watched action", ledgerview.Event{Kind: "net", Verdict: "observed"}, "observed i-eye Observed"},
 		{"an ask line", ledgerview.Event{Kind: "ask"}, "asked i-hand Asked"},

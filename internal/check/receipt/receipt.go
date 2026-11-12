@@ -17,6 +17,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/check/internal/mirror"
 	"github.com/attention-span-ai/tego/internal/check/measure"
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
@@ -62,6 +63,10 @@ type Options struct {
 	// ledger does not record the run's HOME, so the caller passes the one it knows (tego run its own, tego receipt
 	// its reader's); "" prints every path outside the run's folder whole. JSON always keeps the full paths.
 	Home string
+	// Bind binds the receipt to the record it reads (Receipt.Binding), by the tego named here: the one pass that
+	// computes the receipt also checks every line as Verify does and hashes the bytes it read. Only `tego receipt
+	// --json` sets it; nil leaves Binding out, so the dashboard's receipt and tego run's end summary are unchanged.
+	Bind *MadeBy
 }
 
 // Receipt is one run's V1 receipt. Every field that cannot be read off the ledger has Recorded false and a Note.
@@ -91,11 +96,15 @@ type Receipt struct {
 	// ConnectionsMore is how many other destinations there were and ConnectionTries how many connections in all,
 	// listed or not. A routine system lookup (syslookup.Routine: nscd, systemd's userdb and resolved, the D-Bus buses,
 	// a DNS lookup) is not a place the run sent its data: it is counted in SystemLookups, never here, as the
-	// dashboard's verdict folds it, so "most:" can never name the nscd socket.
+	// dashboard's verdict folds it, so "most:" can never name the nscd socket. A socket call that names no place
+	// (syslookup.NoPlace: an AF_UNSPEC connect, the kernel's netlink socket) is never here either: one that was not
+	// refused is counted in RoutineSockets, and a refused one (such as a send to an AF_UNSPEC address, which the
+	// supervisor refuses) only in Refusals, as the dashboard's verdict counts it.
 	Connections     []Connection `json:"connections"`
 	ConnectionsMore int          `json:"connections_more,omitempty"`
 	ConnectionTries int          `json:"connection_tries"`
 	SystemLookups   int          `json:"system_lookups,omitempty"`
+	RoutineSockets  int          `json:"routine_sockets,omitempty"`
 	// ConnectionsNote says what the list cannot hold (a tier that records refused connections only).
 	ConnectionsNote string `json:"connections_note,omitempty"`
 	// Programs is the programs the run started, most often first: the top MaxTop; ProgramsMore is how many other
@@ -112,6 +121,10 @@ type Receipt struct {
 	// SensitiveReadsUnknown says the run did not record every read, or its ledger does not say whether it did, so an
 	// empty list means nothing: a file may have been read all the same.
 	SensitiveReadsUnknown bool `json:"sensitive_reads_unknown,omitempty"`
+	// ReadsNotified is run_start.reads_notified as the run wrote it: whether every read open reached the supervisor,
+	// so that a read the contract refused has a line, and why. nil for a record written before the field (record_minor
+	// 23), which does not say.
+	ReadsNotified *record.ReadsNotified `json:"reads_notified,omitempty"`
 	// Coverage says which fields this run's ledger could not support in full, and why.
 	Coverage Coverage `json:"coverage"`
 	// Lines is how many ledger lines the receipt read.
@@ -120,9 +133,23 @@ type Receipt struct {
 	// newer version skipped), and the modes tego gave back to the owner of its own files (restoredNote), which lost no
 	// action.
 	Notes []string `json:"notes,omitempty"`
+	// Binding ties the receipt to the record it was computed from (Options.Bind); nil when unbound.
+	Binding *Binding `json:"binding,omitempty"`
 
 	// home is Options.Home, for the text layout only.
 	home string
+	// ulpTLS and ulpOther count the refusals Refusals.ByRule holds under unmatched and net-not-allowed that are tego's
+	// built-in refusal of setsockopt(TCP_ULP) (builtInULP): kernel TLS, and any other name. Only the words read them
+	// (RefusalGroups); every count a script reads keeps them as the record does.
+	ulpTLS, ulpOther int
+	// sameFile is each refused exec a live block refused as another name of its program's file
+	// (liveblock.SameFileNote), with its count, in the order first seen, at most MaxTop: only the words read it
+	// (SameFile).
+	sameFile []SameFileRefusal
+	// price is where the cost sits in Coverage (reprice); startMono and lastMono are the run_start line's clock reading
+	// and the largest one of any line, which a live receipt's time taken counts from and must pass (Check).
+	price               pricing
+	startMono, lastMono uint64
 }
 
 // TimeTaken is the run's wall clock: run_start to run_end on the ledger's monotonic clock.
@@ -185,6 +212,36 @@ type Refusal struct {
 	Reason string    `json:"reason"`
 	// Minute is the refusal's minute from run_start (0 is the first).
 	Minute int `json:"minute"`
+}
+
+// SameFileRefusal is a program path a live block refused because it is another name of the program file the block's
+// path leads to (a multi-call program's applets are one file): Note says so (liveblock.SameFileNote), Count is how many
+// times.
+type SameFileRefusal struct {
+	Path, Note string
+	Count      int
+}
+
+// SameFile is the refused execs a live block refused as another name of its program's file, in the order first seen,
+// at most MaxTop: the words the run summary and the receipt add, since the line's rule names the block's path and not
+// the path that ran.
+func (rc *Receipt) SameFile() []SameFileRefusal { return rc.sameFile }
+
+// sameFileRefusal counts a refused exec of path under rule when a live block refused it as another name of its file.
+func (b *builder) sameFileRefusal(rule, path string) {
+	note := liveblock.SameFileNote(rule, path)
+	if note == "" {
+		return
+	}
+	for i := range b.rc.sameFile {
+		if s := &b.rc.sameFile[i]; s.Path == path && s.Note == note {
+			s.Count++
+			return
+		}
+	}
+	if len(b.rc.sameFile) < MaxTop {
+		b.rc.sameFile = append(b.rc.sameFile, SameFileRefusal{Path: path, Note: note, Count: 1})
+	}
 }
 
 // OverTime is the refusals per minute from run_start: Counts[i] is minute i.
@@ -258,6 +315,28 @@ type Tokens struct {
 type Coverage struct {
 	Complete bool          `json:"complete"`
 	Gaps     []CoverageGap `json:"gaps"`
+	// DenyReadFrozen is run_start's deny_read_frozen: the directories the run's Landlock ruleset listed once at launch,
+	// in which a name made during the run was unreadable to it (GAPS A12). It is what the run's rules were, not what
+	// the record missed, so it is no gap and leaves Complete as it is. Absent when run_start has none.
+	DenyReadFrozen *record.DenyReadFrozen `json:"deny_read_frozen,omitempty"`
+}
+
+// FrozenText is the sentence the receipt's Coverage prints for DenyReadFrozen, the same in `tego receipt` and on the
+// dashboard's Receipt tab, with the paths escaped by record.Printable; "" when there is none.
+func (c Coverage) FrozenText() string {
+	f := c.DenyReadFrozen
+	if f == nil {
+		return ""
+	}
+	list := strings.Join(f.Dirs, ", ")
+	switch {
+	case f.Omitted > 0 && len(f.Dirs) > 0:
+		list += fmt.Sprintf(" and %d more", f.Omitted)
+	case f.Omitted > 0:
+		list = fmt.Sprintf("%d directories", f.Omitted)
+	}
+	return "Frozen at launch: deny_read listed " + record.Printable(list) + " once; a file or directory made directly " +
+		"in one of them during the run could not be read."
 }
 
 // CoverageGap is one field the ledger could not support in full: its JSON key, why as a code a program can match (one
@@ -389,6 +468,12 @@ func Compute(ctx context.Context, r *ledger.Reader, opt Options) (*Receipt, erro
 	rc.Files.Written, rc.Files.Created, rc.Files.Deleted, rc.Files.Renamed = []string{}, []string{}, []string{}, []Rename{}
 	rc.Refusals.ByRule, rc.Refusals.List, rc.Asks.List = []RuleCount{}, []Refusal{}, []Ask{}
 	rc.OverTime.BucketSeconds, rc.OverTime.Counts = 60, []int{}
+	var binder *ledger.Binder
+	if opt.Bind != nil {
+		// The binder rides this pass (ledger.Reader.Bind): it sees every line before Iter decodes or skips it, so the
+		// head binds exactly the lines these numbers came from, newer-version lines included.
+		binder = r.Bind()
+	}
 	first := true
 	for e, err := range r.Iter() {
 		if err != nil {
@@ -410,6 +495,9 @@ func Compute(ctx context.Context, r *ledger.Reader, opt Options) (*Receipt, erro
 		return nil, fmt.Errorf("%w: the ledger holds no line", ErrNoRun)
 	}
 	b.finish(opt)
+	if binder != nil {
+		rc.Binding = bindingOf(binder.Bound(), *opt.Bind, rc.Tier)
+	}
 	return rc, nil
 }
 
@@ -556,6 +644,14 @@ func (b *builder) refusal(e *record.Event, p *payload) {
 		reason = p.Reason
 	}
 	b.rules[[2]string{e.Rule, reason}]++
+	if e.Kind == record.KindExec {
+		b.sameFileRefusal(e.Rule, p.Path)
+	}
+	if tls, ok := builtInULP(opOf(e, p), target(e, p), e.Rule, reason); ok && tls {
+		b.rc.ulpTLS++
+	} else if ok {
+		b.rc.ulpOther++
+	}
 	m := b.minute(e.MonoNS)
 	ot := &b.rc.OverTime
 	if m >= MaxBuckets {
@@ -744,6 +840,7 @@ func (b *builder) compactWindows() {
 
 func (b *builder) finish(opt Options) {
 	rc := b.rc
+	rc.startMono, rc.lastMono = b.startMono, b.lastMono
 	end, live := b.lastMono, false
 	if !rc.Ended && opt.NowMonoNS > b.lastMono {
 		end, live = opt.NowMonoNS, true
@@ -838,15 +935,7 @@ func (b *builder) finish(opt Options) {
 			t.Note = fmt.Sprintf("%d of %d model responses carried no token counts", t.ModelCalls-t.Metered, t.ModelCalls)
 		}
 	}
-	if t.Metered > 0 {
-		if !math.IsInf(t.EstCostUSD, 0) {
-			t.EstCostUSD = math.Round(t.EstCostUSD*1e6) / 1e6 // a micro-dollar, as measure's --json keeps it
-		}
-		t.CostText = measure.CostText(t.EstCostUSD) + " est."
-		if t.Unpriced > 0 {
-			t.CostText += fmt.Sprintf(" (%d unpriced)", t.Unpriced)
-		}
-	}
+	t.price()
 	if b.restored > 0 {
 		rc.Notes = append(rc.Notes, restoredNote(b.restored))
 	}
@@ -921,13 +1010,10 @@ func (b *builder) coverage() {
 	} else if rc.Tokens.Metered < rc.Tokens.ModelCalls {
 		add("tokens", CodeUnmetered, rc.Tokens.Note)
 	}
-	if rc.Tokens.Metered > 0 && rc.Tokens.Unpriced > 0 {
-		add("tokens.est_cost_usd", CodeUnpriced, fmt.Sprintf("%d of %d metered responses had no price", rc.Tokens.Unpriced,
-			rc.Tokens.Metered))
-	} else if b.noPrice && b.prices == nil && rc.Tokens.Recorded && rc.Tokens.ModelCalls > 0 {
-		// Only a run with model calls has a cost to estimate, and with prices of its own the receipt estimates it
-		// anyway, so the run's missing table is no gap then; a run whose traffic was not captured has the tokens note.
-		add("tokens.est_cost_usd", CodeNoPriceTable, "no price table: the cost is not estimated")
+	rc.price = pricing{at: len(g), noPriceLine: b.noPrice}
+	if pg, ok := priceGap(rc.Tokens, b.noPrice && b.prices == nil); ok {
+		rc.price.gap = true
+		g = append(g, pg)
 	}
 	if b.captureGaps > 0 && rc.Tokens.Recorded {
 		add("tokens.capture", CodeCaptureGap, fmt.Sprintf(
@@ -947,7 +1033,70 @@ func (b *builder) coverage() {
 	if !rc.Ended {
 		add("time_taken", CodeNoRunEnd, "the run has no run_end line yet")
 	}
-	rc.Coverage = Coverage{Complete: len(g) == 0, Gaps: g}
+	rc.Coverage = Coverage{Complete: len(g) == 0, Gaps: g, DenyReadFrozen: b.runStart.DenyReadFrozen}
+}
+
+// price writes the cost's text from the estimate and the unpriced count, for a run with a metered response: the
+// estimate rounded to a micro-dollar, as measure's --json keeps it, then "est." and how many went unpriced.
+func (t *Tokens) price() {
+	if t.Metered == 0 {
+		return
+	}
+	if !math.IsInf(t.EstCostUSD, 0) {
+		t.EstCostUSD = math.Round(t.EstCostUSD*1e6) / 1e6
+	}
+	t.CostText = measure.CostText(t.EstCostUSD) + " est."
+	if t.Unpriced > 0 {
+		t.CostText += fmt.Sprintf(" (%d unpriced)", t.Unpriced)
+	}
+}
+
+// priceGap is the coverage gap the cost estimate leaves, if any: metered responses no price covered, or, when none was
+// metered, a run that said it had no usable price table and a reader that priced nothing (noTable). Only a run with
+// model calls has a cost to estimate, and with prices of its own the receipt estimates it anyway, so the run's missing
+// table is no gap then; a run whose traffic was not captured has the tokens note.
+func priceGap(t Tokens, noTable bool) (CoverageGap, bool) {
+	switch {
+	case t.Metered > 0 && t.Unpriced > 0:
+		return CoverageGap{Field: "tokens.est_cost_usd", Code: CodeUnpriced,
+			Why: fmt.Sprintf("%d of %d metered responses had no price", t.Unpriced, t.Metered)}, true
+	case t.Metered == 0 && noTable && t.Recorded && t.ModelCalls > 0:
+		return CoverageGap{Field: "tokens.est_cost_usd", Code: CodeNoPriceTable,
+			Why: "no price table: the cost is not estimated"}, true
+	}
+	return CoverageGap{}, false
+}
+
+// pricing is where the receipt's cost sits in its coverage, so Check can price a receipt again as another reader's
+// table priced it (reprice): the index its price gap has, or would have, among the gaps, whether it has one, and
+// whether a gap line said the run had no usable price table.
+type pricing struct {
+	at          int
+	gap         bool
+	noPriceLine bool
+}
+
+// reprice sets the cost as a reader whose table left unpriced of the metered responses unpriced and estimated the rest
+// at est dollars would have computed it (table false: a reader with no table at all), with the cost's text and its
+// price gap made from them as Compute makes them. Check uses it to compare everything but the two numbers, which only
+// the price table of the machine that made a receipt gives.
+func (rc *Receipt) reprice(est float64, unpriced int, table bool) {
+	t := &rc.Tokens
+	t.EstCostUSD, t.Unpriced, t.CostText = est, unpriced, ""
+	t.price()
+	before := rc.Coverage.Gaps[:rc.price.at]
+	after := rc.Coverage.Gaps[rc.price.at:]
+	if rc.price.gap {
+		after = after[1:]
+	}
+	g := append([]CoverageGap{}, before...)
+	pg, ok := priceGap(*t, rc.price.noPriceLine && !table)
+	if ok {
+		g = append(g, pg)
+	}
+	g = append(g, after...)
+	rc.price.gap = ok
+	rc.Coverage.Complete, rc.Coverage.Gaps = len(g) == 0, g
 }
 
 // Summary returns the receipt's headline in one plain sentence, for a list or a page head.

@@ -138,7 +138,7 @@ func TestOverlayKeepsNewestChanges(t *testing.T) {
 func TestDecodeRefusesMalformed(t *testing.T) {
 	for name, body := range map[string]string{
 		"not json":          "{",
-		"wrong version":     `{"v":5,"run":"` + testRun + `"}`,
+		"wrong version":     `{"v":6,"run":"` + testRun + `"}`,
 		"unknown kind":      `{"v":1,"run":"` + testRun + `","blocks":[{"kind":"file","value":"/x"}]}`,
 		"not normalized":    `{"v":1,"run":"` + testRun + `","blocks":[{"kind":"path","value":"/x/../y"}]}`,
 		"twice":             `{"v":1,"run":"` + testRun + `","blocks":[{"kind":"path","value":"/y"},{"kind":"path","value":"/y"}]}`,
@@ -174,7 +174,7 @@ func TestSetMatches(t *testing.T) {
 		Files: map[string]FileID{"/usr/bin/curl": curlID},
 	})
 	exec := func(id FileID, idOK bool, names ...string) string {
-		e, ok := s.MatchExec(names, id, idOK)
+		e, ok := s.MatchExec(names, id, idOK, nil)
 		if !ok {
 			return ""
 		}

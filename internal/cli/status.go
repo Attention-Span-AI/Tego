@@ -233,7 +233,10 @@ func runStatusSelected(ctx context.Context, runID, agentName string, all, asJSON
 		if agentName != "" {
 			fmt.Fprintf(stdout, "No recorded run has agent name %s; tego status --all lists the other agents.\n", agentName)
 		} else {
-			fmt.Fprintln(stdout, "next: tego init --preset no-secrets,repo-only-writes --write ./out, then tego run agent.yaml")
+			// The one command a newcomer starts from (ADR 0142 (5)): tego setup says which step this
+			// machine is on and what to type next. It was tego init's preset line, which skipped the check and the
+			// recorded run a contract is best learned from.
+			fmt.Fprintln(stdout, "next: tego setup")
 		}
 		return identity.ExitOK
 	}

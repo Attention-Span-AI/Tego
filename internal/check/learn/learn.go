@@ -8,11 +8,13 @@ import (
 	"net/netip"
 	"os"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/check/internal/mirror"
+	"github.com/attention-span-ai/tego/internal/check/syslookup"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
@@ -53,6 +55,18 @@ type Options struct {
 	// judges them. The dashboard does, with its own verdict, which knows the run's pair and its contract
 	// (rulesview.Withhold). Anything else leaves it false, so a proposal leaves out every address the rule names.
 	LeaveLeaksToCaller bool
+	// Hosts are the names the person gave with tego learn --allow-host, each with its answer here now, looked up by
+	// the caller (this package does no I/O). Each is written in place of the run's addresses its answer holds
+	// (nameHosts), or the proposal is refused with a HostError. None: the proposal names hosts only where the
+	// record does. Not with LeaveLeaksToCaller: the proposal is then refused, since learn would know no address the
+	// leak rule withholds.
+	Hosts []HostAnswer
+	// DeniedResolved is the machine config's denied_resolved_addresses: ranges no entry by host name admits, on top of
+	// the built-in classes (agent.DeniedResolvedClass). Compile drops an address in them from a name's answer, so a
+	// name of Hosts never stands for one: it stays an address, as a loopback or metadata address does.
+	DeniedResolved []netip.Prefix
+	// Now is the time a refusal of a name measures the run's age from; zero says no age.
+	Now time.Time
 }
 
 // executable is Options.Executable's default: a regular file with an execute bit, by os.Stat, which follows links
@@ -99,7 +113,12 @@ type Proposal struct {
 	Name        string
 	Command     []string
 	CommandNote string
-	Workspace   string
+	// ReasonReads writes reason: {reads: on} (ADR 0077): a read the contract refuses has a line at tier landlock under
+	// every record level, at a cost compile states. Set by the caller (tego learn --reads on); off by default.
+	ReasonReads bool
+	// Cwd is the run's working directory as its run_start recorded it, "" when it names none.
+	Cwd       string
+	Workspace string
 	// NoWorkspace is why there is no workspace to allow writes under, when Workspace is empty.
 	NoWorkspace string
 
@@ -117,6 +136,9 @@ type Proposal struct {
 	Leaks       []*Leak
 	LeakSecrets []string
 	LeakChecked bool
+
+	// Named is what each name of Options.Hosts covered, in the order given.
+	Named []NamedHost
 
 	// Reads is how many file opens for reading the run made; none of them is in the proposal.
 	Reads int
@@ -152,6 +174,14 @@ type Proposal struct {
 	Collapsed string
 	// Truncated is true when a bound (maxDistinct) cut what the learner kept.
 	Truncated bool
+
+	// resolvers are the entries left out of net.allow as the machine's resolver (Learner.machineResolver): tego allows
+	// the run's resolver itself, and an address kept would admit whatever answers there once the contract is used on
+	// another network. The net section names them in a comment.
+	resolvers []string
+	// resolversKept are the machine's resolver entries kept in net.allow because no other TCP or UDP entry is left
+	// (keepResolvers). AddressEntries leaves them out: no host name stands for them.
+	resolversKept map[string]bool
 }
 
 // WriteDirs are the fs.write entries of the proposal, without the devices.
@@ -187,6 +217,9 @@ type Learner struct {
 	writeDirs          map[string]int
 	touched            map[string]bool
 	nets               map[netKey]int
+	names              map[netKey]string // the host name the entry that allowed a destination names (namedDst)
+	resolverLines      map[netKey]int    // the lines to a destination the engine named a query to the run's resolver
+	tcpPorts           map[uint16]bool   // the ports the run reached over TCP (tcpOnPort)
 	reads              int
 	refused            int
 	nameCoverageRename bool
@@ -208,14 +241,16 @@ type Learner struct {
 // New is a Learner for one run.
 func New(o Options) *Learner {
 	return &Learner{
-		opts:      o,
-		execs:     map[string]*execStat{},
-		pending:   map[string]pendingExec{},
-		devs:      map[string]int{},
-		writeDirs: map[string]int{},
-		touched:   map[string]bool{},
-		nets:      map[netKey]int{},
-		leak:      newLeakRule(),
+		opts:          o,
+		execs:         map[string]*execStat{},
+		pending:       map[string]pendingExec{},
+		devs:          map[string]int{},
+		writeDirs:     map[string]int{},
+		touched:       map[string]bool{},
+		nets:          map[netKey]int{},
+		names:         map[netKey]string{},
+		resolverLines: map[netKey]int{},
+		leak:          newLeakRule(),
 	}
 }
 
@@ -408,8 +443,38 @@ func (l *Learner) addNet(e *record.Event) error {
 		l.refused++
 		return nil
 	}
-	l.bumpNet(netKey{p.Proto, p.Dst})
+	k := netKey{p.Proto, p.Dst}
+	l.bumpNet(k)
+	if name := namedDst(e.Rule, p.Host); name != "" && l.names[k] == "" && len(l.names) < maxDistinct {
+		l.names[k] = name
+	}
+	if _, kept := l.nets[k]; kept && e.Rule == syslookup.ResolverRule {
+		l.resolverLines[k]++
+	}
 	return nil
+}
+
+// machineResolver is whether the engine named every line to k a query to a resolver the run has (net.resolver): the
+// machine's resolver, which tego allows itself in every tier (SEMANTICS §5) and which has no host name. Port 53 of
+// an address the engine did not name so on some line is a connect like any other (syslookup.Resolver).
+func (l *Learner) machineResolver(k netKey) bool {
+	if ap, ok := destAddr(k); !ok || ap.Port() != 53 {
+		return false // the engine writes net.resolver on port 53 only (decide.IsResolver)
+	}
+	n := l.resolverLines[k]
+	return n > 0 && n == l.nets[k]
+}
+
+// namedDst is the host name a connect's line holds when a net.allow entry that names a host allowed it: the record
+// then knows a name for the address, the one the contract's author wrote and the run's lookup of it returned this
+// address for, and the proposal writes that name rather than an address of the day. A watched run's line has none
+// (the record holds the address a program connected to, never the name it looked up); nor has one a literal address
+// entry, the resolver or a grant the runtime made allowed.
+func namedDst(rule, host string) string {
+	if !strings.HasPrefix(rule, "net[") || !agent.HostFiltered(host) || !plain(host) {
+		return ""
+	}
+	return host
 }
 
 // Open flags (Linux, asm-generic and x86-64): the access mode, and the two bits that make a read-only open
@@ -573,7 +638,7 @@ func (l *Learner) Proposal() (*Proposal, error) {
 	p := &Proposal{
 		NameCoverageRename: l.nameCoverageRename,
 		NoWorkspace:        noWorkspace,
-		Run:                l.run.id, Agent: l.run.agent, Started: l.run.ts,
+		Run:                l.run.id, Agent: l.run.agent, Started: l.run.ts, Cwd: l.start.Cwd,
 		Workspace: ws, Reads: l.reads, Refused: l.refused, Failed: l.failed, SearchMisses: l.misses, Unresolved: l.unresolved,
 		Alternates: l.alternates, RuntimeGranted: l.runtime, HarnessStateGranted: l.hookState, HarnessHookGranted: l.hookExecs, Truncated: l.truncated,
 	}
@@ -593,7 +658,9 @@ func (l *Learner) Proposal() (*Proposal, error) {
 	}
 	l.proposeWrites(p, ws)
 	l.proposeExecs(p, first)
-	l.proposeNet(p)
+	if err := l.proposeNet(p); err != nil {
+		return nil, err
+	}
 	sortLeft(p.Left)
 	p.Truncated = p.Truncated || l.leak.truncated
 	return p, nil
@@ -830,9 +897,11 @@ func (l *Learner) proposeExecs(p *Proposal, first string) {
 	}
 }
 
-// proposeNet decides net.allow from the connections the run made.
-func (l *Learner) proposeNet(p *Proposal) {
+// proposeNet decides net.allow from the connections the run made. Its errors are a HostError, a name of
+// Options.Hosts that the proposal cannot write, and Options.Hosts given with LeaveLeaksToCaller.
+func (l *Learner) proposeNet(p *Proposal) error {
 	var held map[netKey]*Leak
+	l.tcpPorts = nil // made again from the lines added so far
 	if !l.opts.LeaveLeaksToCaller {
 		p.LeakChecked = true
 		p.Leaks, p.LeakSecrets = l.leak.judge()
@@ -848,7 +917,16 @@ func (l *Learner) proposeNet(p *Proposal) {
 		}
 		return keys[i].dst < keys[j].dst
 	})
+	// Names first, then the withhold: an entry a name made is withheld like the address it replaced, and a name
+	// whose answer holds a withheld address is refused outright (nameHosts).
+	byHost, err := l.nameHosts(p, keys, held)
+	if err != nil {
+		return err
+	}
 	probes, probed := 0, 0
+	at, withheld := map[string]int{}, map[string]bool{}
+	resolverCount := map[string]int{}
+	hosts := map[string]*hostEntry{}
 	for _, k := range keys {
 		n := l.nets[k]
 		entry, note, left := l.classify(k)
@@ -859,21 +937,125 @@ func (l *Learner) proposeNet(p *Proposal) {
 		case left != nil:
 			left.Section, left.Count = "net", n
 			p.Left = append(p.Left, *left)
+		case entry != "" && l.machineResolver(k):
+			// The engine named every line to it a query to the run's resolver (net.resolver), which it allows before
+			// any entry in every tier (decide.EvaluateIn, SEMANTICS §5): the run's next lookups need no entry, and an
+			// address kept here would outlive the network it was the resolver of. Port 53 of an address with any other
+			// line is proposed below like any connect. keepResolvers puts it back when no other TCP or UDP entry stays.
+			// Two spellings of one resolver (an IPv4-mapped one) are one entry.
+			if _, seen := resolverCount[entry]; !seen {
+				p.resolvers = append(p.resolvers, entry)
+			}
+			resolverCount[entry] += n
 		case entry != "":
-			if _, err := agent.ParseEndpoint(entry); err != nil {
-				p.Left = append(p.Left, Excluded{Section: "net", What: record.Printable(entry), Why: "tego would not accept it: " + record.Printable(err.Error()), Count: n})
-				continue
+			type candidate struct{ entry, note string }
+			var cands []candidate
+			if name := l.names[k]; name != "" {
+				cands = append(cands, candidate{named(k, name), nameNote})
 			}
-			if p.withhold(held, k, entry, n) {
-				continue
+			for _, h := range byHost[k] {
+				e := named(k, h.Host)
+				he := hosts[e]
+				if he == nil {
+					he = &hostEntry{answer: p.namedAnswer(h.Host, h.Port)}
+					hosts[e] = he
+				}
+				if ap, ok := destAddr(k); ok && !slices.Contains(he.covered, ap.Addr()) {
+					he.covered = append(he.covered, ap.Addr())
+				}
+				he.probe = he.probe || (k.proto == "udp" && note != "")
+				if !slices.ContainsFunc(cands, func(c candidate) bool { return c.entry == e }) { // a name given twice, or the record's own
+					cands = append(cands, candidate{e, ""})
+				}
 			}
-			p.Net = append(p.Net, Item{Value: entry, Count: n, Note: note})
+			if len(cands) == 0 {
+				cands = []candidate{{entry, note}}
+			}
+			for _, c := range cands {
+				if _, err := agent.ParseEndpoint(c.entry); err != nil {
+					p.Left = append(p.Left, Excluded{Section: "net", What: record.Printable(c.entry), Why: "tego would not accept it: " + record.Printable(err.Error()), Count: n})
+					continue
+				}
+				if p.withhold(held, k, c.entry, n) {
+					withheld[c.entry] = true
+					continue
+				}
+				if i, ok := at[c.entry]; ok { // another address of the same name
+					p.Net[i].Count += n
+					continue
+				}
+				at[c.entry] = len(p.Net)
+				p.Net = append(p.Net, Item{Value: c.entry, Count: n, Note: c.note})
+			}
+		}
+	}
+	// A name one of whose addresses the leak rule withheld is withheld whole: it would admit that address again.
+	p.Net = slices.DeleteFunc(p.Net, func(it Item) bool { return withheld[it.Value] })
+	p.keepResolvers(resolverCount)
+	for i, it := range p.Net {
+		if he := hosts[it.Value]; he != nil {
+			p.Net[i].Note = he.note()
 		}
 	}
 	if probed > 0 {
 		p.Left = append(p.Left, Excluded{Section: "net", What: fmt.Sprintf("udp port %d of %d addresses", routeProbePort, probed),
 			Why: routeProbeWhy, Count: probes})
 	}
+	return nil
+}
+
+// resolverKeptNote is the note of a machine's resolver entry keepResolvers kept.
+const resolverKeptNote = "the machine's resolver when this run was recorded; kept as the only TCP or UDP entry:" +
+	" with none, Landlock may refuse a lookup the run sends over UDP from Linux 7.2"
+
+// keepResolvers settles the machine's resolver entries proposeNet left out (count is the lines of each). One that
+// net.allow holds anyway, from an address with another line, is no longer left out. When net.allow holds no other TCP
+// or UDP entry, they are kept: Tego's Landlock layer grants port 53 only beside a TCP or UDP entry (enforce-landlock
+// R6, R22). A lookup the decision allows as net.resolver over TCP, or on a UDP socket it connects, is made by the
+// supervisor on a duplicate of the socket, outside the run's Landlock domain (supervisor handleConnect, R7), so no ABI
+// refuses it; guests at ABI 4 (Ubuntu 24.04) and ABI 6 (AlmaLinux 9.8) looked names up over TCP and UDP with an empty
+// net.allow. An addressed UDP send the decision allows is continued, and the kernel checks it in the run's own domain
+// (enforce-landlock R14): from ABI 10 (Linux 7.2), which handles UDP, it may be refused with no port 53 rule. That
+// case is read from the code, not measured: no kernel here has ABI 10. The entry is kept for it.
+func (p *Proposal) keepResolvers(count map[string]int) {
+	p.resolvers = slices.DeleteFunc(p.resolvers, func(r string) bool {
+		return slices.ContainsFunc(p.Net, func(it Item) bool { return it.Value == r })
+	})
+	if len(p.resolvers) == 0 {
+		return
+	}
+	for _, it := range p.Net {
+		if e, err := agent.ParseEndpoint(it.Value); err == nil && agent.IsIPProtocol(e.Proto) {
+			return
+		}
+	}
+	// Every entry left is a unix socket's, so the resolvers go first, in proposeNet's order (protoRank).
+	p.resolversKept = map[string]bool{}
+	kept := make([]Item, 0, len(p.resolvers))
+	for _, r := range p.resolvers {
+		kept = append(kept, Item{Value: r, Count: count[r], Note: resolverKeptNote})
+		p.resolversKept[r] = true
+	}
+	p.Net, p.resolvers = append(kept, p.Net...), nil
+}
+
+// namedAnswer is the answer p.Named holds for the name host given with port.
+func (p *Proposal) namedAnswer(host string, port int) []netip.Addr {
+	for _, n := range p.Named {
+		if n.Host == host && n.Port == port {
+			return n.Answer
+		}
+	}
+	return nil
+}
+
+// named is the entry for destination k by the host name the record holds for it: the address's protocol and port.
+func named(k netKey, name string) string {
+	ap, err := netip.ParseAddrPort(k.dst)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%s://%s:%d", k.proto, name, ap.Port())
 }
 
 func protoRank(proto string) int {
@@ -912,8 +1094,12 @@ func (l *Learner) classify(k netKey) (entry, note string, left *Excluded) {
 		if k.proto == "udp" && ap.Port() == routeProbePort {
 			return "", "", &Excluded{What: k.proto + " " + ap.String(), Why: routeProbeWhy}
 		}
-		if k.proto == "udp" && l.nets[netKey{"tcp", k.dst}] > 0 {
+		switch {
+		case k.proto != "udp":
+		case l.nets[netKey{"tcp", k.dst}] > 0:
 			note = "possibly the C library's address-sorting probe, a UDP connect that sends nothing (glibc makes one to each address a lookup returns, on the service's port), which the record cannot tell from traffic: remove it unless the agent speaks UDP (QUIC) here"
+		case l.tcpOnPort(ap.Port()):
+			note = "possibly the C library's address-sorting probe of another address the same lookup returned (a UDP connect that sends nothing): then this run did not use it, and a later run may connect to it over TCP, which this file does not allow; allow the service by name instead"
 		}
 		return k.proto + "://" + ap.String(), note, nil
 	case "unix":
@@ -922,6 +1108,19 @@ func (l *Learner) classify(k netKey) (entry, note string, left *Excluded) {
 		return "", "", &Excluded{What: "raw socket " + record.Printable(k.dst), Why: rawWhy(k.dst)}
 	}
 	return "", "", &Excluded{What: record.Printable(k.proto + " " + k.dst), Why: "not a TCP, UDP or unix connection"}
+}
+
+// tcpOnPort is whether the run connected over TCP to some address on port, from a set made once per proposal.
+func (l *Learner) tcpOnPort(port uint16) bool {
+	if l.tcpPorts == nil {
+		l.tcpPorts = map[uint16]bool{}
+		for k := range l.nets {
+			if ap, err := netip.ParseAddrPort(k.dst); err == nil && k.proto == "tcp" {
+				l.tcpPorts[ap.Port()] = true
+			}
+		}
+	}
+	return l.tcpPorts[port]
 }
 
 // routeProbePort is the port musl's getaddrinfo connects a UDP socket to, for each address a lookup returns, to

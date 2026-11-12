@@ -13,8 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/check/receipt"
 	"github.com/attention-span-ai/tego/internal/check/secretpath"
 	"github.com/attention-span-ai/tego/internal/check/syslookup"
+	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -100,6 +103,16 @@ type Event struct {
 // back: its Target is then the program's path alone.
 func (e *Event) ArgvMissing() bool { return e.argvMissing }
 
+// SameFile is, on an exec line a live block refused as another name of the program file the block's path leads to
+// (a multi-call program's applets are one file), the words that say so: "same program file as /bin/ls, which is
+// blocked" (liveblock.SameFileNote, read from the line's rule and its program path). "" on every other line.
+func (e *Event) SameFile() string {
+	if e.Kind != string(record.KindExec) {
+		return ""
+	}
+	return liveblock.SameFileNote(e.Rule, e.path)
+}
+
 // AskTarget is what an ask line asks about, or an answer line answered (its payload's target, as the ledger holds
 // it), "" on other lines and on a line written without one.
 func (e *Event) AskTarget() string { return e.askTarget }
@@ -155,6 +168,17 @@ type Run struct {
 	Stdin, Deployment string
 	// StoppedBy is the principal a stopped run_end names, empty when it names none.
 	StoppedBy string
+	// ReadsUnrecorded is a run whose run_start capability line says it kept no file read (backend.CapRecordReads
+	// off: tier landlock under record: summary or off), so an empty list of secret reads proves nothing.
+	// RefusedReadsUnseen is one of those whose reads_notified says Landlock refused reads without telling the
+	// supervisor (SEMANTICS §7), so a refused read left no line either. RefusedReadsUnknown is one of those whose
+	// run_start has no reads_notified (a ledger older than it), which cannot say whether a refused read left a line.
+	// All false when run_start does not say.
+	ReadsUnrecorded, RefusedReadsUnseen, RefusedReadsUnknown bool
+	// ReceiptReadsUnrecorded is what this run's receipt says of its refused reads (receipt.ReadsUnrecordedBy, from
+	// reads_notified alone, with or without the capability line): a read it refused left no line, so "Nothing was
+	// refused." would not hold (ReceiptRefusedWords).
+	ReceiptReadsUnrecorded bool
 	// SysRefusals counts the refusals (Event.Refusal) of a system lookup socket (IsSystemLookup).
 	SysRefusals int
 	// Rev is the read model's revision at which this run last changed (lines appended, the file replaced, its live
@@ -338,6 +362,8 @@ func (r *Run) add(ev Event) {
 			Deployment struct {
 				Name string `json:"name"`
 			} `json:"deployment"`
+			Capabilities  map[string]bool       `json:"capabilities"`
+			ReadsNotified *record.ReadsNotified `json:"reads_notified"`
 		}
 		_ = json.Unmarshal([]byte(ev.Raw), &p)
 		// ev.Target is the command too, read back from its blob when the writer moved it to one (resolveBlob).
@@ -345,6 +371,14 @@ func (r *Run) add(ev Event) {
 		r.User, r.UID, r.Host, r.Kernel, r.TegoVersion = p.User, p.UID, p.Host, p.Kernel, p.TegoVersion
 		r.ContractHash, r.Capture, r.Harness = p.ContractHash, p.Capture, p.Harness.Name
 		r.Stdin, r.Deployment = p.Stdio.Stdin, p.Deployment.Name
+		reads, said := p.Capabilities[string(backend.CapRecordReads)]
+		r.ReadsUnrecorded = said && !reads
+		// A root tier's kernel record carries a refused read, and a run that enforces nothing refuses none.
+		rn := p.ReadsNotified
+		r.RefusedReadsUnseen = r.ReadsUnrecorded && rn != nil && !rn.Notified &&
+			rn.Why != record.ReadsNotifiedWhyKernel && rn.Why != record.ReadsNotifiedWhyRecordsOnly
+		r.RefusedReadsUnknown = r.ReadsUnrecorded && rn == nil
+		r.ReceiptReadsUnrecorded = receipt.ReadsUnrecordedBy(rn)
 	case string(record.KindRunEnd):
 		r.end(ev)
 	case string(record.KindAsk):

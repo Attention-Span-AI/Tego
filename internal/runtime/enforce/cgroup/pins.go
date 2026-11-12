@@ -14,6 +14,7 @@ import (
 	"github.com/cilium/ebpf/link"
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/runtime/hoststate"
 )
 
@@ -371,7 +372,7 @@ func lockBuildExclusiveNB(d *hoststate.Dir, hash string, create bool) (f *os.Fil
 		if err != nil {
 			return nil, false, err
 		}
-		buildLockOpened(name)
+		buildLockOpened(name, f)
 		if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 			_ = f.Close()
 			if errors.Is(err, unix.EWOULDBLOCK) {
@@ -387,9 +388,19 @@ func lockBuildExclusiveNB(d *hoststate.Dir, hash string, create bool) (f *os.Fil
 	return nil, true, nil
 }
 
+// unlockClose lets go the flock f holds, then closes f. A close alone drops an flock only with the last descriptor
+// of its open file description, and a child that any goroutine of this process forks while f is open holds a copy
+// of that descriptor until its exec closes it (every lock file here is opened close-on-exec): the lock outlived
+// the look that took it for that long, and a timer's probe in that moment found the build still held and backed off
+// a whole linger (ADR 0022 (8)). LOCK_UN releases the description's lock whatever copies of it live.
+func unlockClose(f *os.File) {
+	_ = sys.Flock(f, unix.LOCK_UN) // best effort: the close below releases it too, once no copy is left
+	_ = f.Close()
+}
+
 // buildLockOpened runs between lockBuildExclusiveNB's open and its flock; a test replaces it to remove and recreate
-// the lock file in that window.
-var buildLockOpened = func(string) {}
+// the lock file in that window, or to hand a copy of the opened file to a child as a fork there does.
+var buildLockOpened = func(string, *os.File) {}
 
 // lastOut converts the hold to exclusive without blocking. True means no other launcher of this build is
 // running and the caller may unpin; false is the ordinary multi-run case and not an error (§7). Only a

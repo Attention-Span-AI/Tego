@@ -332,6 +332,10 @@ func (s *Server) block(w http.ResponseWriter, r *http.Request, run string, add b
 			// liveblock's words, which tego block and tego unblock print: a Remove left on a page across the run's end
 			// is refused as tego unblock is, since the run's blocks ended with it.
 			why = plainErr(err) + "."
+		case errors.Is(err, runact.ErrStarting):
+			why = startingWords
+		case errors.Is(err, runact.ErrStartUnreadable):
+			why = unreadableStartWords
 		case errors.Is(err, runact.ErrNoTimeLimits):
 			why = "this run was started by an older tego that has no time limits: block it with no end, or restart the run."
 		case errors.Is(err, liveblock.ErrInvalid):

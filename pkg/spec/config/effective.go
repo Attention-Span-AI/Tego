@@ -80,6 +80,21 @@ func (m *Machine) Effective() []Value {
 	return out
 }
 
+// LimitCeilings lists the limits.* ceilings some layer set, each with its file and line: the limits every run gets
+// whatever its contract says (agent-contract.md R11). Pure; nil for a nil m.
+func (m *Machine) LimitCeilings() []Value {
+	if m == nil {
+		return nil
+	}
+	var out []Value
+	for _, v := range m.Effective() {
+		if v.Ceiling && !v.Unbounded && strings.HasPrefix(v.Key, "limits.") {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // WriteEffective prints one line per value: "<kind> <key>=<value>  (<source>)".
 func (m *Machine) WriteEffective(w io.Writer) error {
 	for _, v := range m.Effective() {

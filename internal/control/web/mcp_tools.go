@@ -234,6 +234,12 @@ func mcpErrWords(err error) string {
 		return "this server is not behind Tego's relay: add tools: to it in the contract to get switches."
 	case errors.Is(err, mcpact.ErrNoBroker):
 		return "this run has no approvals (its contract has no ask: section), so Ask would refuse every call."
+	case errors.Is(err, mcpact.ErrStarting):
+		return startingWords
+	case errors.Is(err, mcpact.ErrStartUnreadable):
+		return unreadableStartWords
+	case errors.Is(err, mcpact.ErrLocked):
+		return lockedWords
 	case errors.Is(err, mcpact.ErrGoverned):
 		return "a governed agent cannot loosen its own rules."
 	case errors.Is(err, mcpact.ErrAck):

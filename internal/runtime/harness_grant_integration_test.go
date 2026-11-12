@@ -128,8 +128,14 @@ func TestIntegrationHarnessHookWritableRunsUnprovisioned(t *testing.T) {
 		"exec:\n  allow: [/bin/sh]\nfs:\n  write: ["+dir+"]\nenv:\n  pass: [PATH, HOME]\nlimits:\n  pids: 64\n")
 	deps := f.deps(t, nil)
 	deps.Harness = func(harness.Name) Provisioner { return hookProvisioner() }
+	// The machine's built-in deny_read entries also give this run the frozen-directories note (GAPS A12, record minor
+	// 30); this test counts the harness's own warning alone.
 	var warned []string
-	deps.Warn = func(code, what string) { warned = append(warned, code+": "+what) }
+	deps.Warn = func(code, what string) {
+		if code != WarnDenyReadFrozen {
+			warned = append(warned, code+": "+what)
+		}
+	}
 	res, err := Run(context.Background(), f.rt, []string{"/bin/sh", "-c", `[ -z "$TEGO_T_EXE" ] || exit 3`}, deps)
 	if err != nil || res.ExitCode != 0 {
 		t.Fatalf("Run: %+v %v (3: the dropped provision's environment reached the agent)", res, err)

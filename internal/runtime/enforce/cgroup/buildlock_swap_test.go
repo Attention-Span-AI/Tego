@@ -22,7 +22,7 @@ func swapLockOnOpen(t *testing.T, state, hash string) {
 	saved := buildLockOpened
 	t.Cleanup(func() { buildLockOpened = saved })
 	fired := false
-	buildLockOpened = func(name string) {
+	buildLockOpened = func(name string, _ *os.File) {
 		if fired || name != filepath.Base(lock) {
 			return
 		}

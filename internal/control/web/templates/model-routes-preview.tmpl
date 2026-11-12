@@ -1,8 +1,8 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
 {{/* model-routes-preview: the check before sending a model endpoint's requests elsewhere (model_routes.go, routeact.Plan). */}}
 {{define "content"}}<link rel="stylesheet" href="/static/routes.css">{{with .Data}}{{$d := .}}
-<div class="head"><div><h1>Check this change</h1><p class="lede">This sends the agent's model requests somewhere other than where they go now. Nothing changes until you confirm.</p></div></div>
-{{with .Err}}<section class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow"><strong>{{.}}</strong></div></section>{{end}}
+<div class="head"><div><h1>Check this change</h1>{{if not .Err}}<p class="lede">This sends the agent's model requests somewhere other than where they go now. Nothing changes until you confirm.</p>{{end}}</div></div>
+{{with .Err}}<section class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow"><strong>Not done: {{.}}</strong></div></section>{{end}}
 {{with .Plan}}
 <section class="panel rt-preview">
 <dl class="rt-change">
@@ -11,11 +11,11 @@
 <dt>After</dt><dd><span class="mono">{{.To.Name}}</span> <span class="soft mono">{{.To.Authority}}</span> <span class="b {{if .To.TLS}}b-verified{{else}}b-waiting{{end}}">{{if .To.TLS}}TLS, certificate checked{{else}}Plaintext, this machine{{end}}</span></dd>
 <dt>Run</dt><dd class="mono">{{rid .Run}}</dd>
 </dl>
-{{if .Widens}}{{if not $d.Err}}
+{{if $d.Err}}<a class="btn" href="{{$d.Back}}">Back to Model routes</a>{{else if .Widens}}
 <form method="post" action="/routes/set" class="rt-confirm"><input type="hidden" name="csrf" value="{{$d.CSRF}}"><input type="hidden" name="run" value="{{.Run}}"><input type="hidden" name="endpoint" value="{{.Endpoint}}"><input type="hidden" name="route" value="{{.To.Name}}">
 <label class="ev-ack"><input type="checkbox" name="ack" value="{{.Ack}}" required><span>From the next request, the prompts this agent sends to <strong class="mono">{{.Endpoint}}</strong> go to <strong class="mono">{{.To.Authority}}</strong> instead, for the rest of this run. The request's headers go with them, so a key the agent holds itself goes there too.{{with layerRouteNote}} {{.}}{{end}}</span></label>
 <div class="rt-actions"><button class="btn btn-primary" type="submit">Confirm</button><a class="btn" href="{{$d.Back}}">Cancel</a></div>
-</form>{{end}}{{else}}<p>This change sends nothing anywhere new; go back and apply it from the page.</p><a class="btn" href="{{$d.Back}}">Back to Model routes</a>{{end}}
+</form>{{else}}<p>This change sends nothing anywhere new; go back and apply it from the page.</p><a class="btn" href="{{$d.Back}}">Back to Model routes</a>{{end}}
 </section>{{end}}
 {{if not .Plan}}<a class="btn" href="{{.Back}}">Back to Model routes</a>{{end}}
 {{end}}{{end}}

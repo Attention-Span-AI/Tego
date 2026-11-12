@@ -30,4 +30,4 @@ amendment first.
 | [exec-ask-plan.md](exec-ask-plan.md) | Work packages for holding a command live for a person (ADR 0044). Unbuilt |
 | [TIER3-PLAN.md](TIER3-PLAN.md) | The tier-3 build plan, finished 2026-10-04. Kept because `tools/rulecheck` and the ADR 0024/0025 tests read it |
 
-The build-order plan that used to sit here (STEPS.md, 2026-09-23) was finished and is not published; the ADRs that cite "docs/p0/STEPS.md §1" mean that file.
+The build-order plan that used to sit here (docs/p0/STEPS.md, 2026-09-23) was finished and is not published; the ADRs that cite "docs/p0/STEPS.md §1" mean that file.

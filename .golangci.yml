@@ -490,9 +490,10 @@ linters:
         # authentication, TLS server, QR or control code (TestEngineLinksNoControl). The leaf packages that write
         # governance lines for the engine's own commands are not control code, so they are not denied.
         # The exceptions are the tests whose parity spans both binaries: the noun tables (TestNoNounInBothBinaries,
-        # serve_test.go), a rule change's verdict (ruleparity_test.go) and a run's chain verdict (chainparity_test.go).
+        # serve_test.go), a rule change's verdict (ruleparity_test.go), a run's chain verdict (chainparity_test.go) and
+        # the file a contract saved from a run is (saveparity_test.go).
         engine-never-imports-control:
-          files: ["$all", "!**/cmd/tego-control/**", "!**/internal/control/**", "!**/tools/**", "!**/test/**", "!**/internal/cli/serve_test.go", "!**/internal/cli/ruleparity_test.go", "!**/internal/cli/chainparity_test.go"]
+          files: ["$all", "!**/cmd/tego-control/**", "!**/internal/control/**", "!**/tools/**", "!**/test/**", "!**/internal/cli/serve_test.go", "!**/internal/cli/ruleparity_test.go", "!**/internal/cli/chainparity_test.go", "!**/internal/cli/saveparity_test.go"]
           deny:
             - pkg: github.com/attention-span-ai/tego/internal/control
               desc: the engine (Layer 1) and the shared leaves never import the dashboard (Layer 2, ADR 0100 (1a))
@@ -546,6 +547,28 @@ linters:
               desc: a package tego-control links (Layer 2) never links the BPF library (ADR 0100 (1a))
             - pkg: github.com/landlock-lsm/go-landlock
               desc: a package tego-control links (Layer 2) never links the engine's Landlock library (ADR 0100 (1a))
+        # The guide (ADR 0142): which step of six a machine is on, for tego setup and the
+        # dashboard's guide alike. tego-control will link it, so it reaches neither the engine nor the doctor, whose
+        # probes run in internal/cli and are handed in as a check; and neither binary's command layer.
+        guide-never-imports-engine:
+          files: ["**/internal/guide/**"]
+          deny:
+            - pkg: github.com/attention-span-ai/tego/internal/runtime
+              desc: the guide is linked by tego-control and never imports the engine (ADR 0100 (1a), ADR 0142)
+            - pkg: github.com/attention-span-ai/tego/internal/doctor
+              desc: the guide never runs the probes; tego setup runs them and hands their answer in (ADR 0142)
+            - pkg: github.com/attention-span-ai/tego/internal/policy
+              desc: the guide never imports the decision core
+            - pkg: github.com/attention-span-ai/tego/internal/bpf
+              desc: the guide never imports BPF
+            - pkg: github.com/attention-span-ai/tego/internal/cli
+              desc: the guide is below the command line, never above it
+            - pkg: github.com/attention-span-ai/tego/internal/control
+              desc: the guide is below the dashboard, never above it
+            - pkg: github.com/cilium/ebpf
+              desc: the guide never imports the BPF library
+            - pkg: github.com/landlock-lsm/go-landlock
+              desc: the guide never imports Landlock
         # The edge (the web pages, the edge child and its two helpers) holds no authority (ADR 0100 (1d)): it reaches
         # the control process only over the link, so it imports none of the packages that decide, write, sign or connect.
         edge-holds-no-authority:

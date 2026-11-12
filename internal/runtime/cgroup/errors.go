@@ -27,6 +27,17 @@ var (
 	// found and may not move a process into it (case 41): the subtree is this uid's, but no run can be
 	// placed in it from here.
 	ErrOutsideSubtree = errors.New("cgroup: this process runs outside its delegated cgroup v2 subtree")
+	// ErrBesideSubtree is the one ErrOutsideSubtree refusal that a shell inside the subtree cures: this process's
+	// cgroup was read and lies beside the subtree, which Detect found delegated and writable, so the user manager
+	// that owns it runs, and only the ancestor the kernel asks about is not this uid's (an SSH or console login's
+	// session scope, a service). Callers name the shell to open on it (doctor's Report.OutsideUserManager, the
+	// next: line of tego run, watch and test); an unreadable /proc/self/cgroup matches ErrOutsideSubtree alone.
+	ErrBesideSubtree = errors.New("cgroup: this process runs beside its delegated cgroup v2 subtree, not in it")
+	// ErrNoUserManager is the one ErrNotDelegated refusal whose cure is not delegation: no user manager runs for the
+	// uid, so its user@<uid>.service has no cgroup to delegate (an account reached through su or sudo -u that never
+	// logged in and has no linger). Its remedy is NoManagerFix; doctor's Report.NoUserManager and tego setup's check
+	// name LingerCommand.
+	ErrNoUserManager = errors.New("cgroup: no user manager runs for this user")
 	// ErrControllerMissing is the class of a *MissingControllerError (case 31).
 	ErrControllerMissing = errors.New("cgroup: controller not enabled on the delegated subtree")
 	// ErrInvalidLimit is a limit value the kernel refused with EINVAL (§4 SetLimits).
@@ -75,7 +86,11 @@ type MissingControllerError struct {
 	// Privileged is FS.Privileged(): the root is the cgroup2 mount point, not a systemd user
 	// delegation. It only selects the wording of Fix(), because the lever differs (see Fix).
 	Privileged bool
-	Errno      syscall.Errno
+	// Offered is Root's cgroup.controllers as a set, read when the refusal was built (Offered), nil when it could
+	// not be read: only for a controller listed there can the launcher enable it in Root's cgroup.subtree_control
+	// itself. It too only selects the wording of Fix().
+	Offered map[string]bool
+	Errno   syscall.Errno
 	// EnableErr is the refusal of the write that should have enabled the controller in a slice above the
 	// scope (FS.Create), nil when none was refused: the cause, where the missing file is only the symptom.
 	EnableErr error
@@ -98,7 +113,7 @@ func (e *MissingControllerError) Error() string {
 // Fix is the one-line delegation fix for the missing controller (case 31 requires the error to name
 // it): EnableFix for this error's controller and root.
 func (e *MissingControllerError) Fix() string {
-	return EnableFix([]string{e.Controller}, e.Root, e.Privileged)
+	return EnableFix([]string{e.Controller}, e.Root, e.Privileged, e.Offered)
 }
 
 // EnableFix is the one-line fix for controllers missing from root's cgroup.subtree_control, shared by a refused
@@ -115,7 +130,16 @@ func (e *MissingControllerError) Fix() string {
 // the mount root, a direct "+cpu" write was gone after a daemon-reload, a transient unit and a service restart
 // (read once, after all three); a CPU weight on system.slice and a reboot kept cpu on across the same three
 // steps, and limits.cpu applied to a root run.
-func EnableFix(missing []string, root string, privileged bool) string {
+//
+// offered is root's cgroup.controllers (Offered): what root's parent lets it enable, nil when it could not be read.
+// A non-root launcher can write "+<controller>" to root's cgroup.subtree_control only for a controller listed
+// there; the kernel refuses any other. So when one missing controller is not offered, the fix starts with the
+// administrator's steps and says which controllers the user cannot add alone and why. When the file could not be
+// read the fix also starts with the administrator's steps, and says it could not tell, rather than claim what the
+// kernel offers. *Amended 2026-11-11:* the fix always led with that write, and on AlmaLinux 9.8 a new user's
+// user@<uid>.service is offered memory and pids only, so doctor's first lever for cpu was one the user could not
+// pull. A root launcher's fix does not read offered: the mount root lists every controller the kernel has.
+func EnableFix(missing []string, root string, privileged bool, offered map[string]bool) string {
 	plus := make([]string, len(missing))
 	for i, c := range missing {
 		plus[i] = "+" + c
@@ -133,6 +157,21 @@ func EnableFix(missing []string, root string, privileged bool) string {
 	how := "as root: Delegate=cpu memory pids in /etc/systemd/system/user@.service.d/"
 	if slices.Contains(missing, ControllerCPU) {
 		how += ", and CPUWeight=100 under [Slice] in /etc/systemd/user/app.slice.d/ so the user manager enables cpu"
+	}
+	if offered == nil {
+		return fmt.Sprintf("%s; then reboot (%s/cgroup.controllers could not be read, so whether this user can add "+
+			"%q to cgroup.subtree_control of %s alone is not known)", how, root, add, root)
+	}
+	var absent []string
+	for _, c := range missing {
+		if !offered[c] {
+			absent = append(absent, c)
+		}
+	}
+	if len(absent) > 0 {
+		return fmt.Sprintf("%s; then reboot (this user cannot add %q to cgroup.subtree_control of %s alone: "+
+			"%s/cgroup.controllers does not offer %s)", how, "+"+strings.Join(absent, " +"), root, root,
+			strings.Join(absent, " "))
 	}
 	return fmt.Sprintf("add %q to cgroup.subtree_control of %s (%s; then reboot)", add, root, how)
 }

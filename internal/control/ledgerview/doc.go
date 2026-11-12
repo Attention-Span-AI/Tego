@@ -121,7 +121,8 @@
 //
 // The web pages read the ledger in this process, through this package.
 //
-// Imports: the standard library, pkg/spec/record, internal/control/linewords (the glossary and the credential mask),
+// Imports: the standard library, pkg/spec/record, pkg/spec/backend (the capability ids run_start names),
+// internal/control/linewords (the glossary and the credential mask),
 // internal/ledger (VerifyRunDir, VerdictOf and AnchorHeads; OpenReader for the receipt; LockHeld for a run's live state and, with OpenRegular, a result's stamp), and the read-side cores internal/check/receipt, measure, livestatus,
 // secretpath and syslookup.
 // Must not import: the engine (internal/runtime, internal/policy, internal/bpf, internal/cli).

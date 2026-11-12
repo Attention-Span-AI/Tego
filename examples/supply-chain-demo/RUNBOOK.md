@@ -133,7 +133,8 @@ Go to **Approvals**. The header's **Auto / Light / Dark** switch follows the sys
 ```sh
 ./demo.sh left
 ```
-`tego watch` prints four lines before Codex's screen:
+`tego watch` prints four lines before Codex's screen, and in a terminal a fifth, `  stop: let it do a normal job, then
+Ctrl-C, or let it end; the record is kept.` (`TEGO_HINTS=off` leaves it and the `next:` block below out):
 ```
 tego watch: recording codex and everything it starts. No rule refuses anything (details: tego watch -v -- codex).
   recorded: every program it starts, every file it opens (reads included), every connection it makes.
@@ -146,6 +147,9 @@ the left terminal's last lines are the run's summary:
 tego watch: recorded as run r-…: ended (exited with code 0) · wrote 4 files · chain verified
   seen: 4 connections to 2 places (most: 127.0.0.1:8801) · 2 sensitive files read (first: ~/.ssh/id_rsa)
   more: tego receipt r-…    tego events r-…
+
+next: make a contract from what it did, and read it before you use it:
+  tego learn <the run id's last 6 characters> --save <the folder's name>
 ```
 
 `left` and `right` first print the exact `env -i ...` command they run (about 1.5 KB, with your user name and desktop
@@ -158,9 +162,12 @@ the same. Either way Codex's screen replaces it.
 ```
 Before Codex starts, `tego run` prints, in this order: on AppArmor one note,
 `note: tego run: on AppArmor a file read that tego checks and opens for the agent is decided by the contract's rules; a tighter AppArmor profile on the agent is not applied to it [held-label]`,
+then one note naming the folders the contract's `deny_read` entries froze at launch,
+`note: tego run: deny_read lists /, … once, at launch: a file or directory made directly in one of them during this run cannot be read until it ends (a new run lists them again) [deny-read-frozen]`
+(a long line: every folder above each `deny_read` target, the stage's `with/home` among them),
 then one line, `tego run: <run> can hold an operation for your approval; answer from another terminal: tego ask
-<run>, then tego approve <run> <ask_id> (or deny), or on the dashboard's Approvals page`. Both are normal, and the
-second is the run id to answer with if you ever answer in a terminal instead of the dashboard. When Codex exits, the
+<run>, then tego approve <run> <ask_id> (or deny), or on the dashboard's Approvals page`. All are normal, and the
+last is the run id to answer with if you ever answer in a terminal instead of the dashboard. When Codex exits, the
 last lines are the run's summary, for example `tego run: r-… ended (exited with code 0) · tier landlock · refused 9 (not
 allowed by any rule 6, …) · asked 2 (1 approved, 1 denied) · wrote 4 files · chain verified`, then `more: tego receipt r-…`. Nothing else
 is printed: the compile notes stay with `tego compile` (`[mount]` for `/dev/pts/`, `[held-reads]`, and

@@ -639,7 +639,7 @@ func TestMissingControllerNamesTheLimitAndAWorkingFix(t *testing.T) {
 // a root run with limits.cpu was refused again. A CPU weight on system.slice kept cpu on across a reboot there, so
 // that is the fix for cpu; the direct write stays for a host without systemd, and for the other controllers.
 func TestMissingCPUFixAtTheMountRootSurvivesSystemd(t *testing.T) {
-	cpu := EnableFix([]string{ControllerCPU}, "/sys/fs/cgroup", true)
+	cpu := EnableFix([]string{ControllerCPU}, "/sys/fs/cgroup", true, nil)
 	for _, want := range []string{"/etc/systemd/system/system.slice.d/", "CPUWeight=100", "reboot",
 		"without systemd: echo '+cpu' > /sys/fs/cgroup/cgroup.subtree_control"} {
 		if !strings.Contains(cpu, want) {
@@ -649,7 +649,7 @@ func TestMissingCPUFixAtTheMountRootSurvivesSystemd(t *testing.T) {
 	if strings.Contains(cpu, "user@.service.d") || strings.Contains(cpu, "app.slice") {
 		t.Errorf("root's cpu fix names a user manager setting: %s", cpu)
 	}
-	if pids := EnableFix([]string{ControllerPids}, "/sys/fs/cgroup", true); strings.Contains(pids, "system.slice") ||
+	if pids := EnableFix([]string{ControllerPids}, "/sys/fs/cgroup", true, nil); strings.Contains(pids, "system.slice") ||
 		!strings.Contains(pids, "echo '+pids' > /sys/fs/cgroup/cgroup.subtree_control") {
 		t.Errorf("root's pids fix: %s", pids)
 	}

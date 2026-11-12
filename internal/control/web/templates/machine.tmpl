@@ -11,7 +11,7 @@
 <section class="panel" aria-labelledby="h-facts"><div class="panel-head"><h2 id="h-facts">Newest run</h2><span class="soft"><a class="mono link" href="/runs/{{pathEsc .Run.ID}}">{{rid .Run.ID}}</a> · {{tier .Tier}}</span></div>
 <div class="panel-body stack-sm"><dl class="kv">
 <dt>Kernel</dt><dd>{{if .Kernel}}Linux {{.Kernel}}{{else}}<span class="muted">Not recorded</span>{{end}}</dd>
-<dt>Kernel decides</dt><dd>{{if .Plane}}{{.Plane}}{{else}}<span class="muted" title="Basic and watched runs decide no file or program in a kernel plane">Nothing</span>{{end}}</dd>
+<dt>Kernel decides</dt><dd>{{if .Plane}}{{.Plane}}{{else if eq .Tier "landlock"}}<span title="Landlock refuses the files and programs the contract does not allow; at this level Tego's supervisor decides hosts">Files and programs (Landlock)</span>{{else if .Watch}}<span class="muted">Nothing: watched only</span>{{else}}<span class="muted">Not recorded</span>{{end}}</dd>
 <dt>Network</dt><dd>{{if eq .NetAssurance "best-effort"}}<span title="tego checks each connection; the kernel does not prove every kind">Best effort</span>{{else if .NetAssurance}}{{.NetAssurance}}{{else}}<span class="muted">Not recorded</span>{{end}}</dd>
 <dt>Capabilities</dt><dd>{{len .Caps}} on · {{len .NoCaps}} unavailable{{if .BestEffort}} · {{len .BestEffort}} best effort{{end}}</dd>
 </dl>

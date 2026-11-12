@@ -16,52 +16,32 @@ import (
 // pageCmd is a terminal command a page gives, as written in its <code>.
 var pageCmd = regexp.MustCompile(`<code>(tego [^<]*)</code>`)
 
-// TestEmptyStatesStartAnInteractiveAgent: with no run yet, the Overview and the Runs page give the same commands, and
-// each starts an interactive Claude Code or Codex as it stands. tego run takes a copy of an examples/agents/ contract
-// under ~/contracts/, written as that contract's own header writes the command, so the page and the file the person
-// copies agree. tego init's starter agent.yaml is never named: it runs python3 agent.py and sends the model through
-// the forwarder, and Claude Code exits 1 on its start-up check under it. tego watch runs Codex with --no-daemon:
-// without it Codex hands its commands to a background server, and one an earlier session started runs them outside
-// the run (docs/OPERATIONS.md, "Interactive Codex under a boundary").
-func TestEmptyStatesStartAnInteractiveAgent(t *testing.T) {
+// TestEmptyStatesGiveOneStepForAnyAgent: with no run yet, the Overview and the Runs page give the same one command,
+// tego watch with the person's own agent command, which every install has, and point at New contract's From a run for
+// what comes after. They name no agent and no file the installer does not put on the machine (examples/ is only in a
+// source checkout), and the step is not folded away.
+func TestEmptyStatesGiveOneStepForAnyAgent(t *testing.T) {
 	s := newServer(t, filepath.Join(t.TempDir(), "none"))
 	c := login(t, s)
-	var cmds []string
 	for _, path := range []string{"/", "/runs"} {
 		body := get(t, s, c, path)
 		var got []string
 		for _, m := range pageCmd.FindAllStringSubmatch(body, -1) {
 			got = append(got, html.UnescapeString(m[1]))
 		}
-		if path == "/" {
-			cmds = got
-		} else if !slices.Equal(got, cmds) {
-			t.Errorf("the empty Runs page gives %q, the empty Overview %q", got, cmds)
+		if !slices.Equal(got, []string{"tego watch -- <the command that starts your agent>"}) {
+			t.Errorf("%s gives %q, not the one tego watch step", path, got)
 		}
-		if !strings.Contains(body, "examples/agents/") {
-			t.Errorf("%s does not say where the contracts to copy are", path)
-		}
-	}
-	var copied []string
-	for _, cmd := range cmds {
-		name, isRun := strings.CutPrefix(cmd, "tego run ~/contracts/")
-		switch {
-		case isRun:
-			b, err := os.ReadFile(filepath.Join("..", "..", "..", "examples", "agents", name))
-			if err != nil {
-				t.Errorf("%q: %v", cmd, err)
-			} else if !strings.Contains(string(b), cmd+"\n") {
-				t.Errorf("%q is not how examples/agents/%s says to run it", cmd, name)
+		empty := body[strings.Index(body, "<h3>No runs"):]
+		empty = empty[:strings.Index(empty, "</section>")]
+		for _, bad := range []string{"examples/", "claude", "codex", "<details"} {
+			if strings.Contains(strings.ToLower(empty), bad) {
+				t.Errorf("%s's empty state has %q:\n%s", path, bad, empty)
 			}
-			copied = append(copied, name)
-		case cmd == "tego watch -- codex --no-daemon":
-		default:
-			t.Errorf("an empty state gives %q, which is not known to start an interactive agent", cmd)
 		}
-	}
-	if !slices.Contains(copied, "claude-code-interactive.yaml") || !slices.Contains(copied, "codex-chatgpt.yaml") ||
-		!slices.Contains(cmds, "tego watch -- codex --no-daemon") {
-		t.Errorf("the empty states give %q: not a contract for Claude Code, one for Codex and a watch", cmds)
+		if !strings.Contains(empty, `href="/rules/new?mode=run"`) {
+			t.Errorf("%s's empty state does not say where the run goes next:\n%s", path, empty)
+		}
 	}
 }
 

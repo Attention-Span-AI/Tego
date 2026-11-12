@@ -82,6 +82,9 @@ func (a *requestAsks) Close() error {
 	}
 }
 
+// readProcStat reads one /proc/<pid>/stat file; a test stands a sequence of lines in for it.
+var readProcStat = func(pid int) ([]byte, error) { return os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat") }
+
 // requestAskIdentity is the coalescing key of a held request: the sender (pid and birth), the method, the declared
 // endpoint, the route the request chose ("" for an endpoint without routes, direct for its own upstream), the target,
 // the body and every semantic header. The route is in it so a repeat that arrives after a person moved the endpoint
@@ -90,11 +93,8 @@ func (a *requestAsks) Close() error {
 func requestAskIdentity(r *http.Request, pid int, authority, route string, body []byte) ([32]byte, error) {
 	// Retain the sender's birth in the key, so a reused numeric PID cannot
 	// inherit a cached approval from an earlier process of the same run.
-	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
-	if err != nil {
-		return [32]byte{}, err
-	}
-	st, err := proc.ParseStat(b)
+	// A released line (process group -1) is read again: a live process is its own line, a gone one ENOENT.
+	st, err := proc.ReadParsedStat(func() ([]byte, error) { return readProcStat(pid) })
 	if err != nil {
 		return [32]byte{}, err
 	}

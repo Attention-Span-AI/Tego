@@ -1323,8 +1323,12 @@ describes its raw numbers.
     `tego stop` and the sweep keep using from anywhere: `nil` when this process's cgroup lies inside the root, or
     when it may write the common ancestor's `cgroup.procs`, and always for a privileged root (uid 0 may write the
     mount root's, the ancestor of every cgroup); otherwise a `*DetectError` matching `ErrOutsideSubtree` and the
-    errno, whose `Remedy` is to start tego inside the subtree (`systemd-run --user --scope tego ...`, which has
-    the user manager ask the system manager to move the caller into a new scope there). `runtime.Run` asks it
+    errno, whose `Remedy` is to start tego from a shell inside the subtree (`systemd-run --user --scope bash`, which
+    has the user manager ask the system manager to move the caller into a new scope there; *amended 2026-11-11*: the
+    remedy used to name the cgroup's path and `tego ...` outside angle brackets, which a new user read as the
+    instruction). The refusal of a process whose own cgroup was read and lies beside the subtree also matches
+    `ErrBesideSubtree`, which tego setup, doctor, run, watch and test turn into the `next:` line that opens that shell
+    (ADR 0142's amendment). `runtime.Run` asks it
     right after `Detect`, before anything is created, and `doctor`'s D3 asks it too, so the two agree: from such
     a shell tier `landlock` is unavailable and says why. `TestIntegrationCanPlaceIsTheKernelsAnswer` holds the
     check to a real `clone3` into the chosen root on whatever machine runs it.

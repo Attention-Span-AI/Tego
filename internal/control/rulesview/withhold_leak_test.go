@@ -207,3 +207,77 @@ func TestWithholdCostGrowsWithItsDests(t *testing.T) {
 		t.Errorf("Withhold costs %v at %d dests against %v at %d: its cost grows faster than its dests", m[1], large, m[0], small)
 	}
 }
+
+// TestWithholdKeepsTheAddressWordTrue: learn's header warns that the proposal allows addresses, not host names. When
+// Withhold comments out the last address, that line goes with it; while one is left, it stays.
+func TestWithholdKeepsTheAddressWordTrue(t *testing.T) {
+	const sink, api = "127.0.0.1:8801", "203.0.113.9:443"
+	const warning = "# WARNING: net.allow has entries that are addresses, not host names"
+	in := proposalText(t, sink)
+	if !strings.Contains(in, warning) {
+		t.Fatalf("learn's proposal of an address lacks the address warning:\n%s", in)
+	}
+	out, _ := Withhold(in, []string{sink})
+	if strings.Contains(out, "not host names") {
+		t.Errorf("the address warning is left after the last address was withheld:\n%s", out)
+	}
+	out, _ = Withhold(proposalText(t, sink, api), []string{sink})
+	if !strings.Contains(out, warning) {
+		t.Errorf("the address warning went while %s is still allowed:\n%s", api, out)
+	}
+}
+
+// TestWithholdPutsTheResolverBack: learn leaves the machine's resolver out beside a TCP or UDP entry, since Landlock
+// grants port 53 beside one (learn keepResolvers). When Withhold comments out the last such entry, the resolver goes
+// back in as learn would have kept it; while one is left, it stays out (review M1 of 2026-11-11).
+func TestWithholdPutsTheResolverBack(t *testing.T) {
+	const sink, api, resolver = "203.0.113.66:443", "203.0.113.9:443", "udp://10.0.2.3:53"
+	text := func(dsts ...string) string {
+		t.Helper()
+		l := learn.New(learn.Options{Executable: func(string) bool { return true }, LeaveLeaksToCaller: true})
+		t0 := time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC)
+		var seq uint64
+		add := func(kind record.Kind, rule string, payload any) {
+			t.Helper()
+			e := &record.Event{V: record.Version, Seq: seq, Run: "r-12345678-0aaaaaaaaaaaa-abcdef", Agent: "a", PID: 100,
+				TS: t0.Add(time.Duration(seq) * time.Millisecond), Kind: kind, Rule: rule, Source: record.SourceSupervisor}
+			if kind != record.KindRunStart {
+				e.Verdict = record.VerdictObserved
+			}
+			seq++
+			if err := e.SetPayload(payload); err != nil {
+				t.Fatal(err)
+			}
+			if err := l.Add(e); err != nil {
+				t.Fatal(err)
+			}
+		}
+		add(record.KindRunStart, "", record.RunStartPayload{Command: []string{"agent"}, Cwd: "/work/proj", Tier: "observe"})
+		add(record.KindNet, "unmatched", record.NetPayload{Proto: "unix", Dst: "unix:/var/run/nscd/socket"})
+		add(record.KindNet, "net.resolver", record.NetPayload{Proto: "udp", Dst: "10.0.2.3:53", Host: "10.0.2.3"})
+		for _, d := range dsts {
+			add(record.KindNet, "unmatched", record.NetPayload{Proto: "tcp", Dst: d})
+		}
+		p, err := l.Proposal()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p.Contract()
+	}
+	in := text(sink)
+	if got, _, _ := netAllow(t, in); slices.Contains(got, resolver) {
+		t.Fatalf("learn kept the resolver beside a TCP entry:\n%s", in)
+	}
+	out, held := Withhold(in, []string{sink})
+	got, _, _ := netAllow(t, out)
+	if !slices.Equal(held, []string{sink}) || !slices.Equal(got, []string{resolver, "unix:/var/run/nscd/socket"}) && !slices.Equal(got, []string{"unix:/var/run/nscd/socket", resolver}) {
+		t.Errorf("withheld %q, net.allow = %q, want the resolver back beside the socket:\n%s", held, got, out)
+	}
+	if strings.Contains(out, "# left out: "+resolver) {
+		t.Errorf("the resolver is back and still called left out:\n%s", out)
+	}
+	out, _ = Withhold(text(sink, api), []string{sink})
+	if got, _, _ := netAllow(t, out); slices.Contains(got, resolver) {
+		t.Errorf("the resolver is back while %s is still allowed: %q\n%s", api, got, out)
+	}
+}

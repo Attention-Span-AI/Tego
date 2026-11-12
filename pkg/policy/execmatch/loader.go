@@ -19,6 +19,8 @@ type Loaded struct {
 	Image string
 	ID    ID
 	HasID bool
+	// Links is the walked program's link count, read as Facts.Links is; 0 when unknown.
+	Links uint64
 	// Argv is the program's vector as the loader passes it: argv[0] (the operand, or --argv0's value), then the
 	// words after the operand.
 	Argv []string
@@ -143,7 +145,7 @@ func (f *Facts) loadedFacts() Facts {
 	l := f.Loaded
 	lf := Facts{
 		NodeVersion: l.NodeVersion, Requested: base(l.Path), Path: l.Path, Image: l.Image, ID: l.ID, HasID: l.HasID,
-		Form: FormDirect, Argv: l.Argv, ArgvComplete: f.ArgvComplete,
+		Links: l.Links, Form: FormDirect, Argv: l.Argv, ArgvComplete: f.ArgvComplete,
 	}
 	if len(l.Argv) > 0 {
 		lf.Argv0 = l.Argv[0]

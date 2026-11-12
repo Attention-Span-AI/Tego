@@ -5,10 +5,12 @@ package landlock
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/policy/decide"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
@@ -84,5 +86,41 @@ func TestDenyReadSnapshotIsNilWithNothingEnumerated(t *testing.T) {
 	rt.FS[1].Unenforced = true
 	if h, _ := prepare(t, 7, rt); h.DenyReadSnapshot() != nil {
 		t.Error("a run whose only deny_read is unenforced keeps a snapshot")
+	}
+}
+
+// TestDenyReadFrozenNamesEveryListedAncestor: the directories a run's deny_read enumeration listed once at launch are
+// what run_start.deny_read_frozen and the run's note name (GAPS A12), so a refusal of a name made there later can be
+// read off the record. They are every ancestor of each enforced target, "/" included, each once and sorted; a target
+// beneath a write entry (R4) lists nothing, and the compile-time prediction (decide.FrozenLevels) names the same set.
+func TestDenyReadFrozenNamesEveryListedAncestor(t *testing.T) {
+	root := tempDir(t)
+	mkTree(t, root, "a/secret/key", "b/key", "w/inner/key")
+	rt := denyTable([]string{filepath.Join(root, "a", "secret"), filepath.Join(root, "b", "key"), filepath.Join(root, "w", "inner")},
+		filepath.Join(root, "w"))
+	rt.FS[3].Unenforced = true // compile's answer for the target beneath the write entry (I5)
+	h, _ := prepare(t, 7, rt)
+	var want []string
+	for cur := root; ; cur = filepath.Dir(cur) {
+		want = append(want, cur)
+		if cur == "/" {
+			break
+		}
+	}
+	want = append(want, filepath.Join(root, "a"), filepath.Join(root, "b"))
+	slices.Sort(want)
+	got := h.DenyReadFrozen()
+	if !slices.Equal(got, want) {
+		t.Errorf("DenyReadFrozen() = %q, want %q", got, want)
+	}
+	if pred := decide.FrozenLevels(rt); !slices.Equal(pred, want) {
+		t.Errorf("decide.FrozenLevels = %q, want what Prepare listed, %q", pred, want)
+	}
+	got[0] = "changed"
+	if h.DenyReadFrozen()[0] == "changed" {
+		t.Error("DenyReadFrozen hands out the snapshot's own slice")
+	}
+	if h, _ := prepare(t, 7, denyTable(nil, filepath.Join(root, "w"))); h.DenyReadFrozen() != nil {
+		t.Errorf("a run with nothing denied names %q", h.DenyReadFrozen())
 	}
 }

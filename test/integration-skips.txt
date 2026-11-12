@@ -64,6 +64,8 @@ internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlane # needs root: an
 internal/cli TestIntegrationGuardAdoptsAnAgentAsItStarts # needs root: the guard listens to the proc connector (CAP_NET_ADMIN) and adopts
 internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlaneWatcher # needs root: the watcher adopts a live agent under the decision plane
 internal/cli TestIntegrationAdoptReleaseCommand # needs root: an adoption moves another process between cgroups and loads tier 2's programs
+internal/cli TestIntegrationAdoptAppliesPidsAndCPUCeilings # needs root: an adoption moves another process between cgroups and loads tier 2's programs
+internal/cli TestIntegrationAdoptRefusesATreeOverItsPidsCeiling # needs root: an adoption moves another process between cgroups and loads tier 2's programs
 test/vm/cmd/permlistener TestIntegrationDenyRefusesOneFileAndNoOther # needs root: a fanotify permission group needs CAP_SYS_ADMIN, and the test mounts a tmpfs
 test/vm/cmd/permlistener TestIntegrationAllowTouchDecidesOnTheMarkedMountWithoutDeadlock # needs root: a fanotify permission group needs CAP_SYS_ADMIN, and the test mounts a tmpfs
 test/vm/cmd/permlistener TestIntegrationADecisionThatStallsIsLetThroughAtTheDeadline # needs root: a fanotify permission group needs CAP_SYS_ADMIN, and the test mounts a tmpfs
@@ -108,11 +110,13 @@ internal/doctor TestIntegrationPlaneProbeCopiesTheBinaryOnce # the plane probe l
 internal/doctor TestIntegrationPlaneProbeRejectsAFlippedKnownAnswer # the plane probe loads and attaches programs, and its known answers mount a tmpfs, as root (CAP_BPF, CAP_SYS_ADMIN)
 internal/doctor TestIntegrationPlaneProbeAnswersTheNameCells # the plane probe loads and attaches programs, and its known answers mount a tmpfs, as root (CAP_BPF, CAP_SYS_ADMIN)
 internal/doctor TestIntegrationPlaneProbeRejectsAFlippedNameAnswer # the plane probe loads and attaches programs, and its known answers mount a tmpfs, as root (CAP_BPF, CAP_SYS_ADMIN)
+internal/doctor TestIntegrationKnownAnswerChildIsSeenThroughProcRoot # the known answers' child makes a mount namespace and mounts a tmpfs, as root (CAP_SYS_ADMIN)
 internal/doctor TestIntegrationDoctorCancelledDuringThePlaneLeavesNothing # the plane probe loads and attaches programs as root (CAP_BPF, CAP_SYS_ADMIN)
 internal/doctor TestIntegrationPlanePinRoundTrip # pinning on bpffs needs root
 internal/runtime/enforce/cgroup TestDoctorDuringALiveTier2RunChangesNoVerdict # tier 2 and doctor's D7 need root
 test/conformance TestMemfdControlSeesTheSysctl # its child is pid 1 of a pid namespace of its own and raises that namespace's vm.memfd_noexec, which needs root
 internal/runtime/cgroup TestIntegrationAHelperOutlivesItsLaunchersCgroup # needs root: a helper is placed in tego.slice at the cgroup2 root
+internal/runtime/cgroup TestIntegrationThePlacementFixReadByAnotherUserNamesSudo # needs root: starts processes of uids 4243 and 4242
 internal/ledger TestIntegrationAChainLogRootDidNotCreateKeepsItsOwner # needs root: the hand-over rule is what a root launcher does
 internal/ledger TestIntegrationALiveRootRunIgnoresASwappedLedgerRoot # needs root: the hand-over rule is what a root launcher does
 internal/ledger TestIntegrationASweepHandsOverOnlyWhatItCreates # needs root: the hand-over rule is what a root launcher does

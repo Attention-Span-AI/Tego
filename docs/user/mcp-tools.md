@@ -1,7 +1,7 @@
 # Per-tool MCP rules
 
 Tego can decide, tool by tool, which MCP tools an agent may call: allow it, hold it for a person, or deny it. The
-decision is made by Tego's MCP relay, outside the agent's sandbox, on every `tools/call`, and every decision is a line
+decision is made by Tego's MCP relay, outside the agent's run, on every `tools/call`, and every decision is a line
 in the run's ledger. You can change a tool's rule while the run goes on, from the dashboard or the terminal, in either
 direction. Design: [ADR 0126](../adr/0126-mcp-tool-rules.md) §4.
 
@@ -91,9 +91,12 @@ A loosening is refused from inside any Tego run (an agent cannot widen its own r
 own run is allowed from inside it, as `tego block` is. Each change is a `gap` line in the run's ledger
 (`why: mcp-tool-changed`, with the server, tool, decision, who and when).
 
-Locked covers file, program and network rules. It does not yet cover these switches: `tego mcp allow` and the dashboard
-can still loosen a tool on a Locked run, from outside every run and with confirmation, because the mode check is not
-built (docs/GAPS.md C39).
+On a Locked run (the default, and the only mode at tier landlock; docs/user/live-modes.md) no switch makes a tool looser
+than its contract: `tego mcp allow` or `ask` on a tool the contract denies, or `allow` on one it asks for, is refused
+with `[locked]` and exit 1, and the dashboard says "Not done: this run is Locked: loosening applies from its next run."
+A tightening is taken, and so is `tego mcp reset` back to the contract. These switches loosen live on an Adjustable
+run. Tego's own writers make this check; the relay does not, so a switch written into the run's `mcp-tools.json` some
+other way still applies (docs/GAPS.md C39).
 
 A switch lasts for the run. To keep a rule for the next run, change the contract's `mcp[].tools`.
 

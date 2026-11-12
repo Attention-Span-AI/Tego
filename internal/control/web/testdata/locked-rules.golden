@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 
-<title>Policy · fixture · Tego</title>
+<title>Contract · fixture · Tego</title>
 <script src="/static/theme.js"></script>
 <script src="/static/live.js" defer></script>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="/static/mvp.css">
 <link rel="stylesheet" href="/static/signal.css">
 </head>
-<body data-sig="e3b0c44298fc" data-rev="H" data-title="Policy · fixture · Tego">
+<body data-sig="e3b0c44298fc" data-rev="H" data-title="Contract · fixture · Tego">
 <a class="skip" href="#main">Skip to content</a>
 <header class="topbar">
   <a class="brand" href="/" aria-label="Tego overview"><svg class="logo" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#logo"/></svg><span class="word">tego</span></a>
@@ -39,11 +39,11 @@
       <li><a href="/runs"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-activity"/></svg><span class="lbl">Runs</span></a></li>
       <li><a href="/approvals"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-inbox"/></svg><span class="lbl">Approvals</span></a></li>
       <li><a href="/logs"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-scroll-text"/></svg><span class="lbl">Logs</span></a></li>
-      <li class="nav-rules"><a href="/rules" aria-current="page"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-shield"/></svg><span class="lbl">Policies</span></a></li>
+      <li class="nav-rules"><a href="/rules" aria-current="page"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-shield"/></svg><span class="lbl">Contracts</span></a></li>
       <li class="sep" role="separator"></li>
       <li class="more-item"><a href="/machine"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-terminal"/></svg><span class="lbl">This machine</span></a></li>
       
-      <li class="nav-more"><button type="button" popovertarget="more-menu"><span class="dots" aria-hidden="true">···</span><span>More</span></button><ul class="more-menu" id="more-menu" popover><li><a href="/rules"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-shield"/></svg>Policies</a></li><li><a href="/machine"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-terminal"/></svg>This machine</a></li></ul></li>
+      <li class="nav-more"><button type="button" popovertarget="more-menu"><span class="dots" aria-hidden="true">···</span><span>More</span></button><ul class="more-menu" id="more-menu" popover><li><a href="/rules"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-shield"/></svg>Contracts</a></li><li><a href="/machine"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-terminal"/></svg>This machine</a></li></ul></li>
     </ul></div>
   </nav>
   <main id="main" tabindex="-1">
@@ -53,12 +53,12 @@
 </div>
 <div class="lr" data-live="content" data-h="H"><link rel="stylesheet" href="/static/rules.css">
 
-<div class="head"><div><h1>Policy · fixture</h1>
+<div class="head"><div><h1>Contract · fixture</h1>
 <p class="lede rules-ctx">Basic (Landlock) · run <a class="mono link" href="/runs/r-aaaaaaaa-0000000000006-askedx" title="r-aaaaaaaa-0000000000006-askedx">r-…PATH</a> · running · <span class="code-i" title="…PATH">…PATH</span></p></div>
-<div class="head-actions"><a class="btn btn-primary" href="/rules/change?c=…PATH"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-scroll-text"/></svg>Edit policy</a></div></div>
+<div class="head-actions"><a class="btn btn-primary" href="/rules/change?c=…PATH"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-scroll-text"/></svg>Edit contract</a></div></div>
 
 <form class="frow rules-pick" action="/rules" method="get" aria-label="Choose the rules to show">
-  <label class="field rp-file">Policy file<select class="select" name="c"><option value="…PATH" selected>fixture · …PATH</option></select></label>
+  <label class="field rp-file">Contract file<select class="select" name="c"><option value="…PATH" selected>fixture · …PATH</option></select></label>
   <label class="field rp-run">Run<select class="select" name="run"><option value="r-aaaaaaaa-0000000000006-askedx" selected>r-…PATH</option></select></label>
   <button class="btn" type="submit">Show</button>
 </form>
@@ -69,7 +69,7 @@
   
   <p>The file's rules differ from what this run ran, and nothing dates the change: a profile it extends changed, or this run started from another version of the file · not live on this run</p>
   <p class="soft">To apply all: stop it (<a class="link" href="/runs/r-aaaaaaaa-0000000000006-askedx/stop">Stop this run</a>); its next run gets these rules:</p>
-  <div class="cli"><code>tego run …PATH</code></div><p class="soft"><span title="Same policy file and command; add options the run was started with, such as --tier or --record">Restart with</span></p>
+  <div class="cli"><code>tego run …PATH</code></div><p class="soft"><span title="Same contract file and command; add options the run was started with, such as --tier or --record">Restart with</span></p>
 </div></section>
 
 <p class="note"><svg class="i" aria-hidden="true" focusable="false"><use href="/static/sprite.svg#i-scroll-text"/></svg><span>Line numbers are the run&#39;s own copy of its rules: the rules file no longer loads to the rules this run ran.</span></p>
@@ -108,12 +108,12 @@
 
 <details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>cd …PATH</code></div><div class="cli"><code>tego block --list r-aaaaaaaa-0000000000006-askedx</code></div></details>
 
-<details class="panel rules-raw"><summary class="panel-head"><h2>Policy file and compiled form</h2><span class="soft">YAML</span></summary>
+<details class="panel rules-raw"><summary class="panel-head"><h2>Contract file and compiled form</h2><span class="soft">YAML</span></summary>
 <div class="panel-body stack-lg">
 <dl class="kv">
   <dt>Run copy</dt><dd><span class="muted">No copy recorded</span></dd>
   
-  <dt>Policy file</dt><dd class="mono">…PATH</dd>
+  <dt>Contract file</dt><dd class="mono">…PATH</dd>
   <dt>Directory</dt><dd class="mono">…PATH</dd>
   <dt>In a terminal</dt><dd class="mono">cd …PATH</dd>
 </dl>

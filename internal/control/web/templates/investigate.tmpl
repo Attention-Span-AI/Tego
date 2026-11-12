@@ -4,12 +4,12 @@
 {{define "content"}}{{with .Data}}{{$d := .D}}
 <nav class="crumbs" aria-label="Breadcrumb"><a href="/detections">Detections</a> › <a href="/detections?sev={{lower $d.Severity.String}}">{{$d.Severity}}</a></nav>
 <div class="head iv-head"><div><h1><span class="sev sev-{{$d.Severity}}">{{$d.Severity}}</span> <span class="iv-verb">{{$d.Verb}}</span> {{template "sptv" (spt (mask (tilde $d.Subject)) $d.Home 80)}}</h1>{{with .Kind}}<p class="lede">{{.}}</p>{{end}}</div>
-<div class="head-actions"><span class="soft iv-pos">{{.Pos}} of {{.OfSev}} {{$d.Severity}}</span><a class="btn" href="/runs/{{pathEsc $d.Run}}/lines/{{$d.Seq}}?a=allow#act-check" title="Preview the policy change first">{{template "i" "i-check"}}Allow from now on</a><a class="btn btn-primary" data-review="{{$d.Run}}-{{$d.Seq}}" href="{{with .Next}}/runs/{{pathEsc .Run}}/investigate/{{.FirstSeq}}{{else}}/detections?sev={{lower $d.Severity.String}}{{end}}">{{template "i" "i-shield"}}Keep blocked{{if .Next}} · Next{{end}}</a></div></div>
+<div class="head-actions"><span class="soft iv-pos">{{.Pos}} of {{.OfSev}} {{$d.Severity}}</span><a class="btn" href="/runs/{{pathEsc $d.Run}}/lines/{{$d.Seq}}?a=allow#act-check" title="Preview the contract change first">{{template "i" "i-check"}}Allow from now on</a><a class="btn btn-primary" data-review="{{$d.Run}}-{{$d.Seq}}" href="{{with .Next}}/runs/{{pathEsc .Run}}/investigate/{{.FirstSeq}}{{else}}/detections?sev={{lower $d.Severity.String}}{{end}}">{{template "i" "i-shield"}}Keep refused{{if .Next}} · Next{{end}}</a></div></div>
 <script src="/static/review.js" defer></script>
 
 <section class="panel" aria-labelledby="h-what"><div class="panel-head"><h2 id="h-what">What</h2></div>
 <dl class="iv-facts panel-body">
-<dt>Result</dt><dd><strong>Blocked</strong>{{if gt $d.Count 1}} · {{$d.Count}} times{{end}}{{if $d.Hosts}} · <span title="{{mask (someOf $d.Targets 24)}}">{{$d.Hosts}} addresses</span>{{end}}{{if gt (len $d.Ports) 1}} · {{len $d.Ports}} ports{{end}}</dd>
+<dt>Result</dt><dd><strong>Refused</strong>{{if gt $d.Count 1}} · {{$d.Count}} times{{end}}{{if $d.Hosts}} · <span title="{{mask (someOf $d.Targets 24)}}">{{$d.Hosts}} addresses</span>{{end}}{{if gt (len $d.Ports) 1}} · {{len $d.Ports}} ports{{end}}</dd>
 {{if gt (len $d.Ports) 1}}<dt>Ports</dt><dd><span class="mono">{{portSpans $d.Ports 200}}</span> · <a class="link" href="{{logsByTarget $d}}">Each in Logs</a></dd>{{end}}
 <dt>Rule</dt><dd>{{$d.Rule}}{{with .Policy}} · <a class="link" href="/rules?run={{pathEsc $d.Run}}">{{.}}</a>{{end}}</dd>
 <dt>Channel</dt><dd>{{$d.Channel}}</dd>
@@ -30,7 +30,7 @@
 
 <section class="panel" aria-labelledby="h-now"><div class="panel-head"><h2 id="h-now">What now</h2></div>
 <div class="panel-body row iv-now">
-<a class="btn" href="/runs/{{pathEsc $d.Run}}/lines/{{$d.Seq}}#act">{{template "i" "i-shield"}}All policy options</a>
+<a class="btn" href="/runs/{{pathEsc $d.Run}}/lines/{{$d.Seq}}#act">{{template "i" "i-shield"}}All contract options</a>
 <a class="btn" href="{{logsFor $d}}">{{template "i" "i-scroll-text"}}Logs</a>
 <a class="btn" href="/runs/{{pathEsc $d.Run}}">{{template "i" "i-activity"}}Run</a>
 </div></section>

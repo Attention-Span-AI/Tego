@@ -390,16 +390,30 @@ exit 7
 	if allowed == 0 || refused == 0 {
 		t.Fatalf("fs verdicts: %d allowed, %d refused", allowed, refused)
 	}
+	// Where /bin/sh is bash (the RHEL family), the shell opens /dev/tty at start (O_RDWR|O_NONBLOCK), which the
+	// contract does not give it, and where nsswitch.conf names sss it looks its user up through nscd's and sssd's
+	// sockets (nssSockets): those refusals are true lines of the shell's, not of the write (AlmaLinux 9.8).
+	var refusedOutside int
 	for _, e := range evs {
 		if e.Kind == record.KindRefused {
 			var p record.RefusedPayload
 			if err := e.DecodePayload(&p); err != nil {
 				t.Fatal(err)
 			}
-			if p.Target != outside {
+			switch {
+			case p.Target == outside:
+				refusedOutside++
+			case p.Target == "/dev/tty":
+				t.Logf("refused line %s: the shell's own open of its terminal", e.Payload)
+			case nssSockets[p.Target]:
+				t.Logf("refused line %s: the shell's user lookup through NSS", e.Payload)
+			default:
 				t.Fatalf("refused target %q, want %q", p.Target, outside)
 			}
 		}
+	}
+	if refusedOutside == 0 {
+		t.Fatalf("no refused line names %s", outside)
 	}
 }
 

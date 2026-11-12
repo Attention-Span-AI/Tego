@@ -87,6 +87,16 @@ type Facts struct {
 	Adjustable bool
 	// Fence is an Adjustable run's fence as its run_start lists it; nil on a Locked run.
 	Fence []record.LiveFenceEntry
+	// Started is a run whose run_start line was read: the facts above are its own. False is a run whose launcher has not
+	// written that line yet (it holds the run's lock a few seconds before, acceptance 2B, 2026-11-11), or one whose
+	// first line cannot be read (StartUnreadable): no fact is known, and a writer refuses what depends on one as not
+	// known, never as Locked or as an older launcher (liveblock.ErrStarting, liveblock.ErrStartUnreadable).
+	Started bool
+	// StartUnreadable is a run whose first record line is there and is not a run_start this build can read: it does
+	// not decode (a damaged line, or one a newer tego wrote), it is another kind of line, its payload does not decode,
+	// or the ledger cannot be read. Waiting does not make it readable, so a writer never says "try again"
+	// (liveblock.ErrStartUnreadable; the review's S1). Started is false with it.
+	StartUnreadable bool
 }
 
 // NarrowKinds reports whether the run's launcher knows the read and write live blocks (record.MinorLiveControl). An
@@ -162,6 +172,7 @@ func FromStart(p *record.RunStartPayload) Facts {
 	f := facts(p.Tier, p.FSReads, p.ReadsNotified, p.DecisionPlane)
 	f.RecordMinor = p.RecordMinor
 	f.live(p.LiveMode, p.LiveFence)
+	f.Started = true
 	return f
 }
 
@@ -187,7 +198,8 @@ func (f Facts) InFence(kind, value string) (record.LiveFenceEntry, bool) {
 }
 
 // FromStartJSON is FromStart of a run_start payload as the ledger holds it (record.Event.Payload). A payload that does
-// not decode gives no facts: an enforcing run that does not see its reads, the claim that promises least.
+// not decode gives no facts but StartUnreadable: an enforcing run that does not see its reads, the claim that promises
+// least.
 func FromStartJSON(raw []byte) Facts {
 	var p struct {
 		Tier          string                `json:"tier"`
@@ -199,11 +211,12 @@ func FromStartJSON(raw []byte) Facts {
 		LiveFence     *record.LiveFence     `json:"live_fence"`
 	}
 	if json.Unmarshal(raw, &p) != nil {
-		return Facts{}
+		return Facts{StartUnreadable: true}
 	}
 	f := facts(p.Tier, p.FSReads, p.ReadsNotified, p.DecisionPlane)
 	f.RecordMinor = p.RecordMinor
 	f.live(p.LiveMode, p.LiveFence)
+	f.Started = true
 	return f
 }
 

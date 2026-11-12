@@ -211,6 +211,9 @@ func (r *runner) writeRunStart() error {
 		FSReads: r.fsReads(),
 		// Whether every read open reached the supervisor, so that a read Landlock refused is recorded (ADR 0077).
 		ReadsNotified: r.readsNotified(),
+		// The directories the ruleset listed once to build its deny_read entries, in which a name made during the
+		// run is unreadable to it (GAPS A12): written on every run whose ruleset listed one.
+		DenyReadFrozen: r.denyReadFrozen(),
 	}
 	// An Adjustable run's mode and fence (ADR 0125 decision 9); a Locked run writes neither field.
 	start.LiveMode, start.LiveFence = runLiveFence(r.rt)
@@ -222,7 +225,51 @@ func (r *runner) writeRunStart() error {
 		return fmt.Errorf("runtime: write run_start: %w", err)
 	}
 	r.anchored.Store(true)
+	r.noteFrozen(start.DenyReadFrozen)
 	return nil
+}
+
+// denyReadFrozenLister is a handle whose Landlock ruleset lists directories to build its deny_read entries: tier 1's
+// own (landlock.Handle.DenyReadFrozen) and a root tier's, which installs the tier-1 ruleset it composed.
+type denyReadFrozenLister interface {
+	DenyReadFrozen() []string
+}
+
+// denyReadFrozen is run_start.deny_read_frozen (record.MinorDenyReadFrozen): the directories the run's ruleset listed
+// once at launch (enforce-landlock R3, E28), nil when it listed none or the run is records-only, whose handle builds
+// no ruleset.
+func (r *runner) denyReadFrozen() *record.DenyReadFrozen {
+	h, ok := r.handle.(denyReadFrozenLister)
+	if !ok || recordsOnly(r.handle) {
+		return nil
+	}
+	return record.NewDenyReadFrozen(h.DenyReadFrozen())
+}
+
+// noteFrozen prints, once, before the agent runs, the note naming the directories run_start.deny_read_frozen names, so
+// a person learns that a name made in one of them during a long run will be unreadable to it, which under record:
+// summary no line records (GAPS A12). It says nothing for a run whose ruleset listed none.
+func (r *runner) noteFrozen(f *record.DenyReadFrozen) {
+	if f == nil || r.deps.Warn == nil {
+		return
+	}
+	r.deps.Warn(WarnDenyReadFrozen, FrozenNote(f.Dirs, f.Omitted, "this run"))
+}
+
+// FrozenNote is the sentence tego run and tego compile print for the directories a deny_read freezes (GAPS A12): every
+// one of dirs, then how many more the record left out, then what that means for a name made in one of them during run
+// ("this run", "a run"). Every directory is named, since the one a person will make a name in (their home, the
+// project) sorts after its ancestors.
+func FrozenNote(dirs []string, omitted int, run string) string {
+	list := strings.Join(dirs, ", ")
+	switch {
+	case omitted > 0 && len(dirs) > 0:
+		list += fmt.Sprintf(" and %d more", omitted)
+	case omitted > 0:
+		list = fmt.Sprintf("%d directories", omitted)
+	}
+	return fmt.Sprintf("deny_read lists %s once, at launch: a file or directory made directly in one of them during %s "+
+		"cannot be read until it ends (a new run lists them again)", list, run)
 }
 
 // fillRunIdentity sets run_start's run identity (ADR 0073, record.MinorRunIdentity), for a run and an adoption alike:

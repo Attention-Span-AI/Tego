@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/internal/modelroutes"
 )
 
@@ -40,9 +42,19 @@ const zeros = "0000000000000000000000000000000000000000000000000000000000000001"
 
 const endpoint = "api.anthropic.com:443"
 
-// fixture is a ledger root with one run: its contract copy, a run_start, two requests (one direct, one by corp) and a
-// change line, and the run lock held by this process (a live run).
+// fixture is a ledger root with one Adjustable run (ADR 0125), whose routes may move off direct: its contract copy, a
+// run_start, two requests (one direct, one by corp) and a change line, and the run lock held by this process (a live
+// run).
 func fixture(t *testing.T) (*Service, string) {
+	t.Helper()
+	return fixtureMode(t, adjustable)
+}
+
+// adjustable is a run_start's live mode and fence (an empty one): an Adjustable run.
+const adjustable = `,"live_mode":"adjustable","live_fence":{"sha256":"` + zeros + `","entries":[]}`
+
+// fixtureMode is fixture with live as the run_start's live fields: "" is a Locked run (no live_mode, the default).
+func fixtureMode(t *testing.T, live string) (*Service, string) {
 	t.Helper()
 	root := t.TempDir()
 	dir := filepath.Join(root, run)
@@ -52,7 +64,7 @@ func fixture(t *testing.T) (*Service, string) {
 	if err := os.WriteFile(filepath.Join(dir, "contract.yaml"), []byte(contract), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ls := `{"v":1,"seq":0,"id":"` + zeros + `","prev":"","ts":"2026-10-27T12:00:00Z","mono_ns":1,"run":"` + run + `","agent":"t","pid":1,"tid":1,"cgroup":1,"kind":"run_start","source":"supervisor","record_minor":27}` + "\n" +
+	ls := `{"v":1,"seq":0,"id":"` + zeros + `","prev":"","ts":"2026-10-27T12:00:00Z","mono_ns":1,"run":"` + run + `","agent":"t","pid":1,"tid":1,"cgroup":1,"kind":"run_start","source":"supervisor","record_minor":27` + live + `}` + "\n" +
 		`{"v":1,"seq":1,"id":"` + zeros + `","prev":"","ts":"2026-10-27T12:00:01Z","mono_ns":2,"run":"` + run + `","agent":"t","pid":1,"tid":1,"cgroup":1,"kind":"ssl_request","source":"forwarder","endpoint":"anthropic","method":"POST","path":"/v1/messages","host":"api.anthropic.com","size":1,"route":{"name":"direct","authority":"api.anthropic.com:443"}}` + "\n" +
 		`{"v":1,"seq":2,"id":"` + zeros + `","prev":"","ts":"2026-10-27T12:00:02Z","mono_ns":3,"run":"` + run + `","agent":"t","pid":1,"tid":1,"cgroup":1,"kind":"gap","source":"forwarder","what":"enforce","why":"model-route-changed","model_route":{"model":"api.anthropic.com:443","route":"corp","authority":"llm-proxy.corp.example:8443","by":"uid:1 pid:2 cli","serial":1,"at":"2026-10-27T12:00:02Z"}}` + "\n" +
 		`{"v":1,"seq":3,"id":"` + zeros + `","prev":"","ts":"2026-10-27T12:00:03Z","mono_ns":4,"run":"` + run + `","agent":"t","pid":1,"tid":1,"cgroup":1,"kind":"ssl_request","source":"forwarder","endpoint":"anthropic","method":"POST","path":"/v1/messages","host":"api.anthropic.com","size":1,"route":{"name":"corp","authority":"llm-proxy.corp.example:8443"}}` + "\n"
@@ -169,6 +181,7 @@ func TestRefusals(t *testing.T) {
 	}
 }
 
+// TestEndedRun: a run no launcher holds is refused a route change ErrNotRunning, in the preview and in Set.
 func TestEndedRun(t *testing.T) {
 	s, dir := fixture(t)
 	other := filepath.Join(filepath.Dir(dir), "r-aaaaaaaa-0000000000004-route1")
@@ -179,8 +192,13 @@ func TestEndedRun(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(other, "contract.yaml"), b, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	p, _ := s.Plan("r-aaaaaaaa-0000000000004-route1", endpoint, "corp")
-	if _, err := s.Set(context.Background(), "r-aaaaaaaa-0000000000004-route1", endpoint, "corp", p.Ack); !errors.Is(err, ErrNotRunning) {
+	// The preview of a route off direct is refused too, with no acknowledgement: the Locked check never takes a free
+	// lock for a go-ahead.
+	p, err := s.Plan("r-aaaaaaaa-0000000000004-route1", endpoint, "corp")
+	if !errors.Is(err, ErrNotRunning) || p == nil || p.Ack != "" {
+		t.Fatalf("the preview of an ended run: %+v %v, want ErrNotRunning with no acknowledgement", p, err)
+	}
+	if _, err := s.Set(context.Background(), "r-aaaaaaaa-0000000000004-route1", endpoint, "corp", "x"); !errors.Is(err, ErrNotRunning) {
 		t.Fatalf("an ended run: %v", err)
 	}
 }
@@ -231,5 +249,64 @@ func TestModelsRefusesAListKeyBesideAMergeKey(t *testing.T) {
 		if _, err := models(dir); err == nil {
 			t.Errorf("%q: no error", text)
 		}
+	}
+}
+
+// TestLockedRunRefusesARoute: on a Locked run (ADR 0125, ADR 0127 §6) a route other than direct is refused ErrLocked,
+// in Plan and in Set, with no acknowledgement minted and nothing written: neither the overlay nor the run's ledger (a
+// writer's refusal is not a ledger line, as a refused lift is not; ADR 0125 decision 5). Direct, back to the contract,
+// is taken, and so is a route on an Adjustable run.
+func TestLockedRunRefusesARoute(t *testing.T) {
+	ctx := context.Background()
+	s, dir := fixtureMode(t, "")
+	events := filepath.Join(dir, ledger.EventsFile)
+	ledgerBefore, err := os.ReadFile(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	overlayBefore := modelroutes.Stat(dir)
+	for _, route := range []string{"corp", "local"} {
+		p, err := s.Plan(run, endpoint, route)
+		if !errors.Is(err, ErrLocked) || !errors.Is(err, liveblock.ErrLocked) || p == nil || p.Ack != "" {
+			t.Fatalf("Plan %s: %+v %v, want ErrLocked with no acknowledgement", route, p, err)
+		}
+		if err.Error() != "the run is Locked: it keeps to its contract while it runs, so nothing loosens until its next run" {
+			t.Fatalf("Plan %s: words %q", route, err)
+		}
+		if _, err := s.Set(ctx, run, endpoint, route, "forged"); !errors.Is(err, ErrLocked) {
+			t.Fatalf("Set %s: %v, want ErrLocked", route, err)
+		}
+	}
+	if modelroutes.Stat(dir) != overlayBefore {
+		t.Fatal("a refused route wrote the overlay")
+	}
+	if b, err := os.ReadFile(events); err != nil || string(b) != string(ledgerBefore) {
+		t.Fatalf("a refused route changed the run's ledger: %v", err)
+	}
+	// An endpoint put on a route before (an older tego's write) goes back to direct on a Locked run.
+	if _, err := modelroutes.Update(ctx, dir, run, func(o *modelroutes.Overlay) (bool, error) {
+		return o.Set(endpoint, "corp", "uid:1 pid:3 cli", s.now())
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := s.Clear(ctx, run, endpoint); err != nil || !p.Changed || p.To.Name != "direct" {
+		t.Fatalf("clear on a Locked run: %+v %v", p, err)
+	}
+	// A run_start that cannot be read is refused too, never as Locked (acceptance 2B, 2026-11-11): a first line that does
+	// not decode as not readable (the review's S1), no ledger yet as still starting.
+	if err := os.WriteFile(events, []byte("{\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Set(ctx, run, endpoint, "corp", "x"); !errors.Is(err, ErrStartUnreadable) || errors.Is(err, ErrStarting) || errors.Is(err, ErrLocked) {
+		t.Fatalf("an unreadable run_start: %v, want ErrStartUnreadable", err)
+	}
+	if err := os.Remove(events); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Set(ctx, run, endpoint, "corp", "x"); !errors.Is(err, ErrStarting) || errors.Is(err, ErrLocked) {
+		t.Fatalf("no ledger: %v, want ErrStarting", err)
+	}
+	if _, err := s.Clear(ctx, run, endpoint); err != nil {
+		t.Fatalf("clear with no ledger: %v", err)
 	}
 }

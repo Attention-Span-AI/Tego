@@ -94,7 +94,7 @@ func FuzzParseKernelRelease(f *testing.F) {
 // and never EACCES, and tier 2's FAN_CLASS_CONTENT listener sends the bare FAN_DENY on every kernel
 // (docs/p0/enforce-cgroup-observe.md §6 E2), so no release gains or loses anything by it.
 func TestMechanismsListOnlyWhatThisBinaryUses(t *testing.T) {
-	for _, m := range MissingMechanisms(Version{5, 14, 0}) {
+	for _, m := range missingMechanisms(Version{5, 14, 0}, kernelProbe{}) {
 		if strings.Contains(m.Name, "FAN_DENY_ERRNO") {
 			t.Errorf("D1 reports %s (%s) missing on 5.14, a feature no part of tego uses", m.Name, m.Since)
 		}

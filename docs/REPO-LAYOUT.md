@@ -51,7 +51,7 @@ tego/
 │   │   ├── status/  drift/  measure/  learn/  events/
 │   │   ├── receipt/           the run receipt: one streaming builder for tego receipt, tego run's end summary and the dashboard's Receipt tab
 │   │   ├── secretpath/        the name-based secret classifier (secretpath.Is): pure, stdlib only; the receipt and ledgerview share it
-│   │   ├── syslookup/         the routine system lookup classifier (nscd, userdb, D-Bus, the run's resolvers): pure, stdlib only; the receipt and ledgerview share it
+│   │   ├── syslookup/         the routine system lookup classifier (nscd, userdb, D-Bus, the run's resolvers) and NoPlace (AF_UNSPEC, netlink): pure, stdlib only; the receipt, learn and ledgerview share it
 │   ├── control/               Layer 2, the dashboard: its command line, pages, and the views and actions behind them
 │   ├── doctor/                machine checks in plain sentences
 │   ├── registry/              an agent's name to its contract file: project registry, then user registry (agent-contract.md R26)

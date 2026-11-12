@@ -17,6 +17,8 @@ import (
 type receiptView struct {
 	R   *ledgerview.Receipt
 	Err string
+	// Gap is readGap for the run: on a run that kept no file read it replaces the receipt's own reads note.
+	Gap string
 }
 
 // loadReceipt is run id's receipt for the Receipt tab.
@@ -38,9 +40,10 @@ const (
 )
 
 // LiveSince is the start of a run whose time taken is measured to now (RFC 3339, as the "iso" helper writes it), or
-// "" when the time is fixed (an ended run, or one measured to its last line). The tile marks such a time a clock
-// (data-since, data-ck): live.js ticks it, and the region's hash leaves its text out, so the Receipt tab is not re-sent
-// whenever the seconds change (regions.go).
+// "" when the time is fixed (an ended run, or one measured to its last line). Each place the tab shows it (the line at
+// the top, the tile, the chart's axis) marks such a time a clock (data-since, data-ck): live.js ticks it, and the
+// region's hash leaves its text out, so the Receipt tab is not re-sent whenever the seconds change (regions.go).
+// With only the tile marked, the other two still moved the hash every second (TestRegionRequest's race-job failures).
 func (v *receiptView) LiveSince() string {
 	if v.R == nil || !v.R.Time.SoFar || v.R.Time.Note != "" || v.R.Started == nil {
 		return ""
@@ -119,28 +122,44 @@ func (v *receiptView) OutcomeWord() string {
 	return "Ended"
 }
 
-// ruleBar is one rule's refusals, with its bar's length as a percentage of the largest rule's count.
+// ruleBar is one rule's refusals, with its bar's length as a percentage of the largest rule's count. Label, when set,
+// names a built-in refusal the record files under the default deny (tego's refusal of setsockopt(TCP_ULP)).
 type ruleBar struct {
 	ledgerview.ReceiptRuleCount
-	Pct int
+	Label string
+	Pct   int
 }
 
-// Rules is the refusals by rule, most first, each with its bar.
+// Rules is the refusals by rule, most first, each with its bar: the receipt's RefusalGroups, so a built-in TCP_ULP
+// refusal has a bar of its own named as tego receipt and tego run's summary name it, and the counts still sum to the
+// total.
 func (v *receiptView) Rules() []ruleBar {
+	gs := v.R.RefusalGroups()
 	top := 0
-	for _, r := range v.R.Refusals.ByRule {
-		top = max(top, r.Count)
+	for _, g := range gs {
+		top = max(top, g.Count)
 	}
-	out := make([]ruleBar, 0, len(v.R.Refusals.ByRule))
-	for _, r := range v.R.Refusals.ByRule {
+	out := make([]ruleBar, 0, len(gs))
+	for _, g := range gs {
 		pct := 0
 		if top > 0 {
-			pct = max(r.Count*100/top, 2)
+			pct = max(g.Count*100/top, 2)
 		}
-		out = append(out, ruleBar{ReceiptRuleCount: r, Pct: pct})
+		bar := ruleBar{ReceiptRuleCount: ledgerview.ReceiptRuleCount{Rule: g.Rule, Reason: g.Reason, Count: g.Count}, Pct: pct}
+		if g.BuiltIn {
+			bar.Label = g.Kind
+		}
+		out = append(out, bar)
 	}
 	return out
 }
+
+// BuiltIn is a listed refusal's built-in kind ("built in: kernel TLS"), or "" when its rule names it.
+func (v *receiptView) BuiltIn(r ledgerview.ReceiptRefusal) string { return v.R.BuiltInKind(r) }
+
+// NoneOverTime is the refusals-over-time panel's words for a receipt with no refusal: tego receipt's, which say
+// nothing of what was not recorded (the "Refused, by rule" panel says that, in RefusedWords).
+func (v *receiptView) NoneOverTime() string { return ledgerview.ReceiptNoneOverTime }
 
 // sparkCol is one column of the refusals-over-time sparkline, in the SVG's own units (sparkW by sparkH).
 type sparkCol struct {

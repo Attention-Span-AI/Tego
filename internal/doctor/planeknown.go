@@ -344,11 +344,20 @@ func planeKnownSetup(dir string) error {
 	return nil
 }
 
+// planeKnownRole is argv[2] of the known-answer child.
+const planeKnownRole = "known"
+
 // planeKnownMain is the known-answer child, `tego __doctor-plane-probe known <dir>`: it makes its half of the
 // fixtures, says ready, then for each cell name read makes the cell's action and prints "<cell>\t<outcome>", until
-// its input ends. It runs on one thread, the one its mount namespace is on.
+// its input ends. It runs on one thread, the one its mount namespace is on, which must be the thread-group leader
+// (init keeps it there, onLeader): doctor reaches the namespace's files through /proc/<pid>/root, the leader's view.
 func planeKnownMain(dir string) int {
 	runtime.LockOSThread() // never unlocked: the thread's namespace is not the process's
+	if tid, pid := unix.Gettid(), unix.Getpid(); tid != pid {
+		fmt.Fprintf(os.Stderr, "known answers: the child runs on thread %d, not its thread-group leader %d, so doctor "+
+			"would not see its mount namespace through /proc/%d/root\n", tid, pid, pid)
+		return 1
+	}
 	if err := planeKnownSetup(dir); err != nil {
 		fmt.Fprintln(os.Stderr, "known answers:", err)
 		return 1
@@ -512,7 +521,7 @@ func exercisePlaneKnown(rig *planeRig, known *planeKnownRows, uid int) (out []Pl
 		return nil, tm, fmt.Errorf("known answers: scratch cgroup: %w", err)
 	}
 	defer cg.remove()
-	child, err := startPlaneChildAs(cg, "known", dir, -1)
+	child, err := startPlaneChildAs(cg, planeKnownRole, dir, -1)
 	if err != nil {
 		return nil, tm, fmt.Errorf("known answers: %w", err)
 	}

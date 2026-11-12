@@ -21,7 +21,7 @@ func WriteResults(w io.Writer, rs []Result) error { return writeResults(w, rs, n
 //
 // Use Run for the derived report; this function is the flat result list.
 func Probe(ctx context.Context, uid int) []Result {
-	return runProbes(ctx, uid, "").results
+	return runProbes(ctx, uid, "", nil).results
 }
 
 // probePrograms is D7 over every tier's rows and capture's, as a test drives it.

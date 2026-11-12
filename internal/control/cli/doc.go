@@ -15,8 +15,9 @@
 // internal/platform/sys (capabilities), pkg/spec/identity (exit codes), the module root's package (the licence texts
 // licenses prints), internal/platform/proc (open starts the browser), and for serve internal/control/web (the
 // dashboard), internal/control/rules (its rule service), internal/profilesrc (where a rules file's extends: names are
-// read from, as tego reads them), internal/ledger (ledger.AnchorPath), pkg/spec/config (the ledger_root) and
-// pkg/spec/record (terminal-safe text).
+// read from, as tego reads them), internal/ledger (ledger.AnchorPath), internal/guide (the Overview's setup steps, for
+// which serve names the tego a person types: setupguide.go), pkg/spec/config (the ledger_root) and pkg/spec/record
+// (terminal-safe text).
 // Must not import: the engine (internal/runtime, internal/policy, internal/bpf, internal/cli, cilium/ebpf,
 // go-landlock): depguard control-links-no-engine and TestControlLinksNoEngine.
 package cli

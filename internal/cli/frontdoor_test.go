@@ -186,7 +186,7 @@ func TestEmptyFirstHourCommandsNameTheNextCommand(t *testing.T) {
 		code int
 		want string
 	}{
-		{[]string{"status"}, 0, "next: tego init --preset no-secrets,repo-only-writes --write ./out, then tego run agent.yaml"},
+		{[]string{"status"}, 0, "no runs\nnext: tego setup\n"},
 		{[]string{"receipt", "--last"}, 125, "then tego run agent.yaml"},
 		{[]string{"events"}, 2, "tego status --all lists the ids, then tego events <run>"},
 	} {
@@ -194,6 +194,10 @@ func TestEmptyFirstHourCommandsNameTheNextCommand(t *testing.T) {
 		if code != tc.code || !strings.Contains(out+errs, tc.want) {
 			t.Errorf("%q: %d %s %s", tc.args, code, out, errs)
 		}
+	}
+	// The no-runs line names tego setup (slice 2); status --json is byte for byte what it was.
+	if code, out, errs := run(t, "status", "--json"); code != 0 || out != "{\"runs\":[]}\n" || errs != "" {
+		t.Errorf("status --json with no runs: %d %q %q", code, out, errs)
 	}
 }
 

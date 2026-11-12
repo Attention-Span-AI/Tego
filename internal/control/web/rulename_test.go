@@ -12,7 +12,7 @@ import "testing"
 func TestRuleNameLabels(t *testing.T) {
 	for rule, want := range map[string]string{
 		"":                               "",
-		"unmatched":                      "Not in policy",
+		"unmatched":                      "Not in contract",
 		"net.resolver":                   "DNS lookup",
 		"held-unsupported":               "Cannot hold",
 		"host-sockets":                   "Host socket",

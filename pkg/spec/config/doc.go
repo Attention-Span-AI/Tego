@@ -6,7 +6,8 @@
 // $TEGO_CONFIG), the ceiling-versus-setting rule (a ceiling may only be lowered by a later layer,
 // a setting is last-layer-wins), the per-layer trust check (open then fstat: regular file, owned by
 // root or the invoking uid, no group/other write bit, and the same for its directory), the SUDO_UID
-// and AT_SECURE rules, the YAML units (IEC byte sizes, durations with a d suffix), the
+// and AT_SECURE rules, whether a person of another user reads what this process prints (StartedByAnother, from
+// /proc, never the environment), the YAML units (IEC byte sizes, durations with a d suffix), the
 // effective-value report that prints every value with the file and line it came from, and the
 // invoking user's runtime directory bases (RuntimeDirBases, agent-contract.md R10a), the one list the
 // launcher, the CLI's compiles and the dashboard's rule service all name.

@@ -98,7 +98,7 @@ func TestStaleSaveRecovers(t *testing.T) {
 		t.Fatalf("the second POST answered %d %q", w.Code, loc)
 	}
 	body := follow(t, f.s, f.c, w)
-	if !strings.Contains(body, "Already in the policy") || strings.Contains(body, "changed since you looked") {
+	if !strings.Contains(body, "Already in the contract") || strings.Contains(body, "changed since you looked") {
 		t.Errorf("the second POST's page does not say the file already has the change:\n%s", body)
 	}
 	if readText(t, f.source) != after || journalLen(t, f.root) != 1 {

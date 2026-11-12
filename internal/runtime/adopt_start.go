@@ -14,8 +14,9 @@ import (
 )
 
 // writeRunStart is an adoption's run_start: the run's first line, as `tego run` writes it, with what an adoption
-// is: launcher_pid the adopter, command and cwd the adopted agent's own (as /proc read them), no limits (an adoption
-// writes no cgroup limit), capture off (the agent's environment cannot be changed, so no forwarder reaches it), and a
+// is: launcher_pid the adopter, command and cwd the adopted agent's own (as /proc read them), no limits block (it
+// carries budgets, which nothing meters on an adoption; the cpu, cpu_weight and pids a boundary writes into its scope
+// have no key there, for a launched run either), capture off (the agent's environment cannot be changed, so no forwarder reaches it), and a
 // capability line that says what an adopted process can be given and nothing more (adoptionCapabilities).
 func (a *adoption) writeRunStart() error {
 	r := a.r

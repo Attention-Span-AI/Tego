@@ -40,6 +40,12 @@ const (
 	// blocks it last read and ignores every later change, so a real path written to it would undo every later block.
 	// Like ControlName it is a mark of capability, not of authority.
 	RealName = "live-real"
+	// LinkName is the launcher's mark that it reads a block that matches by link (Entry.Match, VersionLink): an empty
+	// file it makes once its live-block poll runs (MarkLink). A writer places such a block only on a run whose
+	// directory has it (TakesLink), and the whole-file block otherwise: a launcher from before it refuses the whole
+	// overlay once it is VersionLink, keeps the blocks it last read and ignores every later change. Like ControlName it
+	// is a mark of capability, not of authority.
+	LinkName = "live-link"
 )
 
 // lockWait bounds how long a writer waits for another writer's lock.
@@ -105,6 +111,14 @@ func MarkReal(dir string) error { return mark(dir, RealName) }
 // TakesReal reports whether the launcher of the run in dir reads a block's real path: dir holds RealName as MarkReal
 // makes it (as TakesControl checks ControlName).
 func TakesReal(dir string) bool { return marked(dir, RealName) }
+
+// MarkLink makes dir's LinkName, the launcher's mark that it reads a block that matches by link (0600, no symlink
+// followed); one already there is kept.
+func MarkLink(dir string) error { return mark(dir, LinkName) }
+
+// TakesLink reports whether the launcher of the run in dir reads a block that matches by link: dir holds LinkName as
+// MarkLink makes it (as TakesControl checks ControlName).
+func TakesLink(dir string) bool { return marked(dir, LinkName) }
 
 // Read is the overlay in dir, decoded and validated against run. A file that is not there is os.ErrNotExist (no live
 // blocks). A file is read only when it is a regular file, reached with no symlink followed, owned by this process's

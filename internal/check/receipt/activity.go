@@ -66,6 +66,7 @@ type activity struct {
 	connOver int
 	tries    int // every connection counted, listed or past the cap
 	lookups  int // the routine system lookups, counted apart from conns
+	sockets  int // the socket calls that name no place (syslookup.NoPlace), counted apart from conns
 	progs    map[string]int
 	progOver int
 	sens     map[string]int  // path -> index in Receipt.SensitiveReads
@@ -106,9 +107,20 @@ func (b *builder) connection(e *record.Event, p *payload) {
 // countConn counts one connection to dst under rule. A routine system lookup (syslookup.Routine: the nscd socket a real
 // Codex asks for every name it resolves, userdb, D-Bus, a DNS lookup) carries none of the run's data: it is counted in
 // SystemLookups, never as a place, so the receipt, tego watch's "seen:" line and the dashboard's verdict (which
-// folds the same destinations by the same classifier) never name it as where the run connected.
+// folds the same destinations by the same classifier) never name it as where the run connected. A socket call that
+// names no place (syslookup.NoPlace: glibc's connect(AF_UNSPEC) resets, the kernel's netlink socket) is no place
+// either: the first watch of a Python fetch named "unspec" its most used place. One that was not refused is counted in
+// RoutineSockets. A refused one is no routine call: the supervisor refuses a send whose address is AF_UNSPEC (R4,
+// since udp_sendmsg sends to the address behind the family word) and a netlink send that is no route query (ADR
+// 0128). Refusals counts and lists it, and, as on the dashboard, it is neither a place nor a routine socket call.
 func (b *builder) countConn(dst, rule string, verdict record.Verdict) {
 	a := &b.act
+	if syslookup.NoPlace(dst, rule) {
+		if verdict != record.VerdictRefused {
+			a.sockets++
+		}
+		return
+	}
 	if syslookup.Routine(dst, rule) {
 		a.lookups++
 		return
@@ -205,7 +217,7 @@ func (b *builder) finishActivity() {
 	} else if a.connOver > 0 {
 		rc.ConnectionsMore = a.connOver
 	}
-	rc.Connections, rc.ConnectionTries, rc.SystemLookups = conns, a.tries, a.lookups
+	rc.Connections, rc.ConnectionTries, rc.SystemLookups, rc.RoutineSockets = conns, a.tries, a.lookups, a.sockets
 
 	progs := make([]Program, 0, len(a.progs))
 	for p, n := range a.progs {
@@ -229,6 +241,7 @@ func (b *builder) finishActivity() {
 	// list of sensitive reads proves nothing.
 	caps := b.runStart.Capabilities
 	rc.SensitiveReadsUnknown = !caps[string(backend.CapRecordReads)]
+	rc.ReadsNotified = b.runStart.ReadsNotified
 	if caps == nil {
 		return
 	}
@@ -254,6 +267,19 @@ func readsNote(rn *record.ReadsNotified) string {
 		return allowed + "; only refused reads are listed"
 	}
 	return "this run did not record the files it read, allowed or refused (record: full records them)"
+}
+
+// RefusedReadsUnrecorded reports whether run_start says a read this run refused left no line (reads_notified false, at
+// an enforcing tier: reason.reads off, or no supervisor), so Refusals cannot count it: a tier-landlock run whose
+// deny_read refused a read said "Nothing was refused." A root tier's refused read is in its kernel record, a run that
+// enforces nothing refuses nothing, and a record older than reads_notified does not say; an unknown reason counts as
+// unrecorded, as readsNote reads it.
+func (rc *Receipt) RefusedReadsUnrecorded() bool { return ReadsUnrecordedBy(rc.ReadsNotified) }
+
+// ReadsUnrecordedBy is RefusedReadsUnrecorded for run_start's reads_notified rn: the one rule, which the dashboard
+// reads from a run's run_start without building its receipt.
+func ReadsUnrecordedBy(rn *record.ReadsNotified) bool {
+	return rn != nil && !rn.Notified && rn.Why != record.ReadsNotifiedWhyKernel && rn.Why != record.ReadsNotifiedWhyRecordsOnly
 }
 
 // foldTempRenames folds the write-then-rename that saves a file in one step (Python's .pyc cache, editors, git):

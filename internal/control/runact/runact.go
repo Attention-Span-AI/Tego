@@ -241,6 +241,22 @@ func Block(ctx context.Context, root, run, kind, value string, add bool) (Blocke
 // and ignore every later change), a read or write block it does not know (ErrOldLauncher), and a read block on a run
 // whose reads are not seen (ErrReadsUnseen).
 func BlockUntil(ctx context.Context, root, run, kind, value string, add bool, until time.Time, via string) (Blocked, error) {
+	return blockUntil(ctx, root, run, kind, value, add, until, via, false)
+}
+
+// BlockFromContract adds the live block the rules editor derives from a narrowing of run's contract ("Also apply now",
+// Apply now: internal/control/rules), by the dashboard. An exec block on an absolute program path is placed as a block
+// that matches by link (liveblock.AddLink): it refuses what the run's contract grants under the exec.allow entry
+// removed, as the run fixed that grant when it started, so on a multi-call program (one file under many names) the
+// other names the contract keeps still run. That needs a launcher that reads such a block (liveblock.TakesLink): a
+// run started by an older tego gets the whole-file block Block places, which refuses more, never less, and never a
+// block it would drop. Every other block is Block's.
+func BlockFromContract(ctx context.Context, root, run, kind, value string) (Blocked, error) {
+	return blockUntil(ctx, root, run, kind, value, true, time.Time{}, "dashboard", true)
+}
+
+// blockUntil is BlockUntil; link asks an add for a block that matches by link where the run's launcher reads one.
+func blockUntil(ctx context.Context, root, run, kind, value string, add bool, until time.Time, via string, link bool) (Blocked, error) {
 	dir, err := runDir(root, run)
 	if err != nil {
 		return Blocked{}, err
@@ -277,8 +293,13 @@ func BlockUntil(ctx context.Context, root, run, kind, value string, add bool, un
 		var err error
 		if add {
 			// An add only narrows (AddUntil): the block it leaves ends at the later of its own end and until, and a
-			// block already held to no sooner is left as it is ("already blocked"). out.Until is that block's end.
-			_, ok, err = o.AddUntil(k, v, liveblock.By(via), time.Now(), until)
+			// block already held to no sooner is left as it is ("already blocked"). out.Until is that block's end. A
+			// link block is written only where the launcher reads it; it never narrows a held whole-file block.
+			if link && until.IsZero() && liveblock.TakesLink(dir) {
+				_, ok, err = o.AddLink(k, v, liveblock.By(via), time.Now())
+			} else {
+				_, ok, err = o.AddUntil(k, v, liveblock.By(via), time.Now(), until)
+			}
 			if e, found := o.Find(k, v); found && err == nil {
 				out.Until, placed = e.Until, e
 			}
@@ -312,24 +333,29 @@ func BlockUntil(ctx context.Context, root, run, kind, value string, add bool, un
 // liveblock.CheckBlock and liveblock.CheckFence decide on.
 func liveTarget(run string, held bool, f livestatus.Facts) liveblock.Target {
 	return liveblock.Target{Run: run, Running: held, Timed: f.Timed, NarrowKinds: f.NarrowKinds(), ReadsSeen: f.ReadsSeen,
-		Adjustable: f.Adjustable}
+		Adjustable: f.Adjustable, Starting: !f.Started, StartUnreadable: f.StartUnreadable}
 }
 
 // StartFacts is what the run in dir says of how it can enforce a live block, read from its run_start line
-// (livestatus.FromStartJSON): no facts when that line cannot be read.
+// (livestatus.FromStartJSON): no facts when that line cannot be read. They say StartUnreadable when a first line is
+// there and is not a run_start this tego reads, or the ledger cannot be read; not when no first line is there yet (no
+// events file, an empty one, or a first line still being written), which is a run still starting (the review's S1).
 func StartFacts(dir string) livestatus.Facts {
 	rd, err := ledger.OpenReader(dir)
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
 		return livestatus.Facts{}
+	}
+	if err != nil {
+		return livestatus.Facts{StartUnreadable: true}
 	}
 	defer func() { _ = rd.Close() }() // read-only
 	for line, err := range rd.Lines() {
 		if err != nil {
-			break
+			return livestatus.Facts{StartUnreadable: true}
 		}
 		e, err := record.Decode(line)
 		if err != nil || e.Kind != record.KindRunStart {
-			break
+			return livestatus.Facts{StartUnreadable: true}
 		}
 		return livestatus.FromStartJSON(e.Payload)
 	}

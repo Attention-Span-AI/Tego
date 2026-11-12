@@ -299,6 +299,8 @@ internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlane # untagged: a bo
 internal/cli TestIntegrationAdoptReleaseCommand # untagged: an adoption records from tier 2's trace programs, which only the tegobpf build carries
 internal/cli TestIntegrationGuardAdoptsAnAgentAsItStarts # untagged: the guard's adoptions record from tier 2's trace programs, which only the tegobpf build carries
 internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlaneWatcher # untagged: a boundary adoption requires the embedded decision plane
+internal/cli TestIntegrationAdoptAppliesPidsAndCPUCeilings # untagged: a boundary adoption is held by the decision plane, which only the tegobpf build carries
+internal/cli TestIntegrationAdoptRefusesATreeOverItsPidsCeiling # untagged: a boundary adoption is held by the decision plane, which only the tegobpf build carries
 internal/runtime/enforce/cgroup TestPlaneRunBtrfsSubvolumeInodeIdentity # untagged: the plane's runs belong to the tegobpf suite, whose run needs only the btrfs module root-suites.sh loads (VM_MODULES)
 internal/runtime/enforce/cgroup TestPlaneExecCommandRulesEndToEnd # untagged: the plane's runs belong to the tegobpf suite
 internal/runtime/enforce/cgroup TestPlaneExecMissWritesNoLine # untagged: the plane's runs belong to the tegobpf suite

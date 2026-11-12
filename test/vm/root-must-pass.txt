@@ -124,6 +124,7 @@ internal/platform/proc TestStartIdentityOutlivesPidReuse # proc.Start identity t
 internal/runtime TestMainProcessOOMIsReasonOOM # runtime-launch R10: an agent over its memory cap is OOM-killed, with swap or without (ADR 0038)
 
 internal/runtime/cgroup TestIntegrationAHelperOutlivesItsLaunchersCgroup # a helper is placed beside the agents' slices, which needs root
+internal/runtime/cgroup TestIntegrationThePlacementFixReadByAnotherUserNamesSudo # the placement fix read by another uid's shell names sudo -u, over the real /proc (k-svcuser review M1)
 
 test/conformance TestConformanceKernel # ADR 0017's cells performed in real runs on every axis the machine offers (landlock, cgroup on the listener and per plane mode, bpflsm); a skip would leave the kernel unchecked against compile --test
 
@@ -329,6 +330,7 @@ internal/runtime/enforce/cgroup TestPlaneNameRowsFillAndClear # ADR 0043 D9: Pre
 internal/runtime/enforce/cgroup TestPlaneNameMapAdoption # ADR 0043 D9: a pinned plane without its name map pin is not adopted; the next run's rows land in its own programs' map
 internal/doctor TestIntegrationPlaneProbeAnswersTheNameCells # ADR 0043 C9: each plane mode answers the name cells exactly in a build that enforces name entries, or is not selected
 internal/doctor TestIntegrationPlaneProbeRejectsAFlippedNameAnswer # ADR 0043 C9: a flipped name cell fails every mode that reached the known answers and doctor names it
+internal/doctor TestIntegrationKnownAnswerChildIsSeenThroughProcRoot # doctor sees the known answers' child's mount namespace through /proc/<pid>/root (the child stays on its thread-group leader)
 internal/runtime/enforce/cgroup TestCompactedTableStaysAtBPFLSM # ADR 0043 D6: 4,500 .env files compile to a compacted table; an auto run gets bpflsm and refuses each, named by its own entry; a second link refused
 
 # Ask hardening (ADR 0008, ADR 0100 (7)): the ask broker answers only the person.

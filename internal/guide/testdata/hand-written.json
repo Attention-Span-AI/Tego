@@ -1,0 +1,73 @@
+{
+  "schema": "tego.setup/1",
+  "tego": {
+    "version": "v0.0.0-fixture",
+    "commit": "f1x7ure"
+  },
+  "as": null,
+  "host": {
+    "kernel": "6.8.0-fixture",
+    "boot_id": "6b1c2d3e-4f50-4a6b-8c7d-8e9fa0b1c2d3"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "title": "Install",
+      "state": "done",
+      "fact": "tego v0.0.0-fixture (commit f1x7ure)",
+      "source": "the binary's build info"
+    },
+    {
+      "id": "check",
+      "title": "Check this machine",
+      "state": "done",
+      "fact": "ready: tier 1 (landlock) from a shell in your user manager's cgroup, checked 2026-11-11 09:30 UTC",
+      "source": "<root>/home/.tego/state/check.json"
+    },
+    {
+      "id": "find",
+      "title": "Find your agents",
+      "state": "done",
+      "fact": "you recorded sh",
+      "source": "<root>/home/.tego/runs/r-f16d05ec-0dmsa61z34x6o-b88krx",
+      "run": "r-f16d05ec-0dmsa61z34x6o-b88krx",
+      "link": "the newest run under the ledger root"
+    },
+    {
+      "id": "record",
+      "title": "Record one run",
+      "state": "skipped",
+      "fact": "no run was recorded first; the contract was not made from one",
+      "source": "<root>/home/.tego/runs"
+    },
+    {
+      "id": "contract",
+      "title": "Make its contract",
+      "state": "skipped",
+      "fact": "no contract in the registries; run b88krx ran under <root>/home/bot/agent.yaml",
+      "source": "<root>/home/.tego/runs/r-f16d05ec-0dmsa61z34x6o-b88krx",
+      "run": "r-f16d05ec-0dmsa61z34x6o-b88krx"
+    },
+    {
+      "id": "enforce",
+      "title": "Enforce it",
+      "state": "done",
+      "fact": "run b88krx ran at tier landlock and ended; its record checks out now",
+      "source": "<root>/home/.tego/runs/r-f16d05ec-0dmsa61z34x6o-b88krx",
+      "run": "r-f16d05ec-0dmsa61z34x6o-b88krx",
+      "link": "the newest ended run under a contract, checked against <root>/home/.tego/chain.log"
+    }
+  ],
+  "next": {
+    "step": "",
+    "rule": "enforce-done",
+    "text": "every step is done; see what the last enforced run did:",
+    "command": "tego receipt b88krx",
+    "needs_root": false,
+    "placeholder": false
+  },
+  "not_known": [
+    "agents Tego never recorded: nothing here looks for them yet",
+    "a contract in no registry (a file given by its path) that no run used"
+  ]
+}

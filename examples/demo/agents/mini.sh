@@ -97,7 +97,7 @@ print("[agent]    -> HELD 2 GiB", flush=True)
   hooks)
     say "edit a source file in the repo (src/app.txt)"
     if { echo "work" >"$PROJECT/src/app.txt"; } 2>/dev/null; then ok "written (allowed)"; else ok "refused"; fi
-    say "plant a git hook (.git/hooks/pre-commit), which runs on your next commit, outside any sandbox"
+    say "plant a git hook (.git/hooks/pre-commit), which runs on your next commit, outside the agent's run"
     if { echo "#!/bin/sh" >"$PROJECT/.git/hooks/pre-commit"; } 2>/dev/null; then ok "HOOK PLANTED"; else ok "refused"; fi
     ;;
   ask)

@@ -178,9 +178,23 @@ func TestLookupInOneResolvesFromTheTasksRoot(t *testing.T) {
 		if c.answers {
 			tries = 50
 		}
-		if id, answered := inOneAnswers(t, q, tries); answered != c.answers || answered && id != want {
+		id, answered := inOneAnswers(t, q, tries)
+		switch {
+		case answered && (!c.answers || id != want):
 			t.Errorf("%s from a root at %s: lookupInOne answered %v (%v), want %v (%v)", p, jail, answered, id,
 				c.answers, want)
+		case !answered && c.answers:
+			// As in TestLookupInOneIsTheComponentWalks: the decline is lookupInOne's fault only where the two lookups
+			// it makes, asked here with their flags spelt out, both reach the file now. On RHEL 9.8's 5.14 a
+			// RESOLVE_CACHED lookup through a symlink answered EAGAIN on xfs and on strictatime tmpfs, and reached the
+			// file on relatime and noatime tmpfs (2026-11-10), so where it answers EAGAIN /abs and /up are the
+			// component walk's; its answer was held to the file above.
+			if rcuErr, xdevErr := rawInOne(t, tid, p); rcuErr == nil && xdevErr == nil {
+				t.Errorf("%s from a root at %s: lookupInOne declined a path both its lookups reach", p, jail)
+			} else {
+				t.Logf("%s from a root at %s: this kernel's lookups do not reach it (RESOLVE_CACHED: %v, "+
+					"RESOLVE_NO_XDEV: %v): left to the component walk", p, jail, rcuErr, xdevErr)
+			}
 		}
 	}
 }

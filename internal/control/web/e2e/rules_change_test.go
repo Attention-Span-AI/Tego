@@ -20,12 +20,20 @@ import (
 // The Change rules journey: over one real run at tier landlock, a person opens Change
 // rules on the dashboard, removes /bin/ls from the programs, sees the preview say Narrows with "Also apply now" ticked
 // for the running run, and saves. The rules file loses the entry, the running run gets a live block, and the agent's
-// next /bin/ls is refused while the run goes on. Undo then gives the file its exact old text back.
+// next /bin/ls is refused while the run goes on, while /bin/sleep, which the new rules still allow, keeps running. Undo
+// then gives the file its exact old text back.
+//
+// On a host whose core utilities are one multi-call program under many names (Ubuntu 25.10 and 26.04: uutils, about
+// 115 hard links of one file), /bin/ls and /bin/sleep are one file. The block "Also apply now" places matches that file
+// under the removed name only (liveblock.MatchLink), so it refuses what the next run's contract refuses and no more:
+// before, it matched the whole file and refused /bin/sleep too, and the agent's wait loop spun on refused sleeps. On a
+// host with GNU coreutils they are two files and the check holds trivially.
 
 const rulesAgent = `#!/bin/sh
 /bin/ls > out/ls1.txt; echo $? > out/rc1
 until [ -e out/go ]; do /bin/sleep 0.1; done
 /bin/ls > out/ls2.txt 2> out/err2.txt; echo $? > out/rc2
+/bin/sleep 0 2> out/err3.txt; echo $? > out/rc3
 until [ -e out/end ]; do /bin/sleep 0.1; done
 `
 
@@ -153,12 +161,29 @@ func TestRulesChangeJourney(t *testing.T) {
 	if out("rc2") == "0" {
 		t.Errorf("the second ls ran after the change applied now (%s)", out("err2.txt"))
 	}
-	refused := false
-	for _, l := range kindsOf(ledgerOf(t, w.ledger, id), "exec") {
-		refused = refused || (l.Verdict == "refused" && strings.HasPrefix(l.Rule, "live.block[exec:"))
+	// The new rules still allow /bin/sleep, so the block placed now must not refuse it, even where it is the same
+	// program file as /bin/ls.
+	until(t, "the agent's sleep after the change", 20*time.Second, func() bool { return out("rc3") != "" })
+	if out("rc3") != "0" {
+		t.Errorf("/bin/sleep, which the new rules allow, exited %q after the change applied now (%s)", out("rc3"), out("err3.txt"))
 	}
-	if !refused {
-		t.Error("no exec line refused by the live block")
+	// Waited for, not read once: the supervisor answers a refused exec before the pipeline writes its line
+	// (supervisor.md R23, "what a reader may rely on"), so the line can land after the agent saw the refusal and
+	// wrote rc2. In a gate run under load one read made as soon as rc2 appeared found no refused line, and the run's
+	// ledger held it when the test ended (the second ls, refused 40 ms after the block landed).
+	until(t, "an exec line refused by the live block", 20*time.Second, func() bool {
+		for _, l := range kindsOf(ledgerOf(t, w.ledger, id), "exec") {
+			if l.Verdict == "refused" && strings.HasPrefix(l.Rule, "live.block[exec:") {
+				return true
+			}
+		}
+		return false
+	})
+	for _, l := range kindsOf(ledgerOf(t, w.ledger, id), "exec") {
+		if l.Verdict == "refused" && strings.Contains(l.Raw, `"path":"/bin/sleep"`) {
+			t.Errorf("/bin/sleep was refused after the change applied now: %s", l.Raw)
+			break
+		}
 	}
 
 	// Undo: widens, so it is acknowledged with the Ack the Saved page offers (the old ackwiden=1 undoes nothing); the

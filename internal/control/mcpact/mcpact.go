@@ -37,6 +37,15 @@ var (
 	ErrNoBroker   = errors.New("mcpact: the run has no approvals (no ask: section), so an asked tool would be refused every time")
 	ErrGoverned   = errors.New("mcpact: a change that loosens a run's rules is refused from inside a run")
 	ErrBadName    = errors.New("mcpact: not a server or tool name")
+	// ErrLocked is a switch that would leave a Locked run looser than its contract (runact.CheckLoosening, ADR 0126
+	// §4): it changes from the run's next run only.
+	ErrLocked = runact.ErrLocked
+	// ErrStarting is such a switch asked while the run's run_start cannot be read yet: its mode is not known, so it is
+	// refused as not known yet, never as Locked (runact.ErrStarting).
+	ErrStarting = runact.ErrStarting
+	// ErrStartUnreadable is such a switch asked of a run whose first record line is not a run_start this tego can
+	// read: refused as not known, never as Locked (runact.ErrStartUnreadable).
+	ErrStartUnreadable = runact.ErrStartUnreadable
 )
 
 // opMCPTool is the ask op of a held tools/call (internal/runtime/mcprelay.OpMCPTool, which this package may not link).
@@ -368,6 +377,19 @@ func (s *Service) plan(run, server, tool, decision string) (*Plan, string, error
 	p := &Plan{Run: run, Server: server, Tool: tool, From: mcptool.Decide(rules, live, server, tool), To: decision, rules: rules}
 	if decision == "" {
 		p.Reset, p.To = true, mcptool.Contract(rules, server, tool).Decision
+	}
+	// A Locked run is never looser than its contract while it runs (ADR 0125): a switch to a decision looser than the
+	// contract's is refused, while one that tightens, or a reset to the contract, is taken, as a live block and its
+	// removal are. The contract and the change decide it, not the overlay, so the writers' lock has nothing to decide
+	// again.
+	if mcptool.Loosens(mcptool.Contract(rules, server, tool).Decision, p.To) {
+		if err := runact.CheckLoosening(dir, run); err != nil {
+			p.Loosens = mcptool.Loosens(p.From.Decision, p.To)
+			if errors.Is(err, runact.ErrNotRunning) {
+				err = ErrNotRunning
+			}
+			return p, dir, err
+		}
 	}
 	if p.To == mcptool.Ask && !readFacts(dir).broker {
 		return p, dir, ErrNoBroker

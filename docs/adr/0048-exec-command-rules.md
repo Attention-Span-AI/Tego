@@ -322,7 +322,11 @@ interpretation that names it. A caller-chosen argv[0] can add an interpretation;
    `(applet, argv[2:])`. *Amended 2026-10-06:* GNU coreutils' single binary (the coreutils-single package,
    as UBI-minimal images install it) is the same `coreutils` row and dispatches three more ways (src/coreutils.c):
    `--coreutils-prog=PROG` is `(PROG, argv[2:])`, its `#!` form `--coreutils-prog-shebang=PROG` is `(PROG,
-   argv[3:])` (argv[2] is the script), and argv[0] `lt-PROG` is `(PROG, argv[1:])`.
+   argv[3:])` (argv[2] is the script), and argv[0] `lt-PROG` is `(PROG, argv[1:])`. *Amended 2026-11-11:* for deny
+   and ask entries only, a multicall image (a file of more than one link under a name uutils links its file under, or
+   one named `coreutils`) is also read for the applet upstream uutils picks by its names: a name ending in a ruled
+   tool's name, unless a longer utility name ends it, and a name ending in `utils` or `box` with the applet in
+   argv[1]. See the amendment of that date below.
 5. **Interpreter dispatch.** For `python*`, `node`/`nodejs`, `sh`/`bash`/`dash`/`zsh`, `perl` and `ruby`:
    - `python -m <module>` is `(tool of module, tokens after it)`, through a module table (`pip`, `pip3` → pip;
      `twine` → twine; `pipx`, `poetry`, `uv` where installed as modules);
@@ -2993,6 +2997,133 @@ about a quarter of the case. The read now reads the word after a last batch that
 `TestExecCommandCostBudget` checks each case's answer before it measures it. The 8192-argument figures above were taken
 on that refusal; one later unit run read +451 µs of the thread's own time, inside the case's 2 ms Limit.
 
+## Amendment (2026-11-11): deny and ask entries read a multicall image's applet by its names
+
+**Why.** On Ubuntu 25.10 and 26.04 the core utilities are one uutils file under about 115 hard links. Upstream uutils
+(read at main `a4b65e12` and release 0.12.0, `src/bin/coreutils.rs`, `src/common/validation.rs`; not run) takes the
+program name from AT_EXECFN, or from argv[0] when AT_EXECFN starts with `/proc/` or `/dev/fd/` or names a file it can
+open that starts with `#!`, or always on musl, and runs the longest utility name it ends with; a name ending in `utils`
+or `box` runs argv[1]'s applet. Interpretation 4 read only argv[1] after an exact dispatcher name, so `deny: [rm -r]`
+gave none for 7 of 9 such forms, and on an Ubuntu 26.04.1 guest 7 of 11 forms were recorded `exec[/bin/ls] allow`;
+the binary, not Tego, kept them from running rm: two ran `ls`, and Ubuntu's own patch to rust-coreutils refused the
+other five (What was measured, below).
+
+**What was measured (2026-11-11).**
+- The matcher, on the dev host (Ubuntu 25.10, rust-coreutils 0.2.2-0ubuntu2.1, whose one file,
+  `/usr/bin/coreutils`, has 115 links: itself and 114 names under `/usr/lib/cargo/bin/coreutils/`), with
+  `deny: [rm -r]` and the tree before this amendment run through `go test -overlay`: of nine name forms upstream uutils
+  runs as `rm -r` (read, not run; the first of them only on musl, since a glibc build reads AT_EXECFN there), two were refused
+  `exec.deny[rm -r]` (the `ls` link with argv[0] `rm`, via argv[0]; `coreutils rm -r`, via multicall) and seven gave
+  none (`/proc/self/fd/3` of `ls` with argv[0] `xrm`, `rm.x` or `farm`; with argv[0] `myutils` or `xbox` and argv[1]
+  `rm`; symlinks `xrm` and `uu-rm` to `ls`). These nine forms are the table `nameForms` in
+  `pkg/policy/execmatch/rows/multicall_test.go`, each with the answer it had before.
+- A guest, Ubuntu 26.04.1 LTS (cloud image release-20261016, kernel 7.0.0-38-generic) with rust-coreutils
+  0.10.0-1ubuntu2~26.04.1 (one file of 116 links), tier landlock, a v0.1.1-rc.1 build, a contract that allows only
+  `/bin/sh` and `/bin/ls`, run once without and once with `deny: ["rm -r"]`, 14 forms each. The target file survived
+  every form in both runs. With the deny entry, 4 of the 11 forms on the `ls` file were refused `exec.deny[rm -r]`
+  (argv[0] `rm`, `/proc/self/fd/3` with argv[0] `rm` or `coreutils`, a symlink `rm`); 7 were recorded
+  `exec[/bin/ls] allow` (argv[0] `xrm` or `myutils`; `/proc/self/fd/3` with argv[0] `xrm` or `myutils`; `/dev/fd/3`
+  with argv[0] `xrm`; execveat with argv[0] `xrm`; a symlink `xrm`). Of those, the argv[0] forms ran `ls` (this
+  build ignores argv[0] on that path) and the rest were refused by the binary itself ("Security violation: Requested
+  utility ... does not match executable name"). `/usr/bin/coreutils rm` (the same file) was refused by the supervisor
+  as not allowed. The 26.04 release image's 0.8.0-0ubuntu3 was not measured.
+
+**Decision.**
+- **Gate.** A multicall image is a walked file whose link count is more than one and whose walked name is one a uutils
+  build links its file under: a stem that ends with a name of `Row.Applets` (`ls`, `xrm`, `uu-rm`, `sha3-256sum`), or
+  with `utils` or `box`, or is one of `Row.LinkNames` (`[`, `relpath`, `hostname`, `kill`, `more`, `uptime`). A file
+  whose name is a dispatcher row that lists `Row.Applets` (`coreutils`) is one whatever its count.
+  `fs.protected_hardlinks` keeps an agent from adding a link of its own to a root-owned file, so every name of the
+  uutils file on such a host passes; a hard-linked program of another name (on Ubuntu 25.10: `unzip` and `zipinfo`,
+  `perl` and `perl5.40.1`, `perlbug` and `perlthanks`, 2 links each) is read as before. A file the agent owns, linked
+  under any name, is a copy (R2). The link count is `Facts.Links` (and `Stage.Links`, `Loaded.Links`): the supervisor's
+  `fstat` of the walk's own O_PATH descriptor, the call that already gives the image's `(dev, ino)` (`describeImage`).
+  It is no new syscall and no read of the agent's memory. `compile --test` stats no file and passes 0, so for it only
+  the name gates. The gate's scoring (5) reads `Interpretations`, which these readings leave unchanged. A file named
+  `busybox` or `toybox` with one link is not gated (with more than one, its name ends with `box` and it is): both read
+  argv[0] exactly and a prefix of their own name, which (1) and (4) already read, and gating them would turn two probed
+  none cells (`TestCoreutilsSingleBinaryDispatch`) into refusals for a reading they never make.
+- **Names.** On a multicall image the matcher reads the requested pathname, the walked file's name and argv[0]; for a
+  `#!` interpreter that is one, the exec's requested pathname, the `#!` path and the interpreter's walked name (uutils
+  reads the `#!` path when it can open the script and read `#!`, and AT_EXECFN, the script's own pathname, when it
+  cannot, as for an execute-only script); for a loader's program, its operand, walked name and argv[0]. Each name's stem
+  is Rust's `Path::file_stem` of its last component (`multicall.go`, `programStem`).
+- **Applets.** For each stem, every tool a deny or ask entry names that the stem ends with, unless a longer name of
+  `Row.Applets` ends it too; a stem ending in `utils` reads none. `Row.Applets` is the intersection of Ubuntu 25.10's
+  rust-coreutils 0.2.2 links and upstream main's utility crates (104 names). As with git's autocorrect candidates (2), a
+  subset of a build's list is sound for that build: if it runs ruled tool T for a stem, no longer name in its list ends
+  the stem, so none in the subset does. This holds for the two builds whose lists were read (0.2.2 and main, each
+  packaged with every utility); uutils can be built with fewer utilities, and a build without `printenv` runs `env` for
+  it, which the matcher does not read. A stem ending in `utils` or `box` is read as the dispatcher row itself,
+  `coreutils <argv[1:]>`: (4) dispatches it to argv[1]'s applet with argv[2:], again for an applet that is itself a
+  dispatcher, under (4)'s bounds, and a deny entry on `coreutils` meets it. On an argv prefix that ends before argv[1],
+  that invocation has no tokens, so the decision is not final and the staged read (3) goes on to argv[1].
+- **Deny and ask only.** `Index.Decide` meets these invocations (`command_via: multicall`) with deny and ask entries
+  alone, before the allow side: deny entries on the existing interpretations, then deny entries on these, then ask
+  entries on each, so an ask entry the plain reading meets never names an exec whose applet a deny entry refuses (1).
+  One the existing interpretations already hold is not read twice. They never admit an exec and never make an
+  invocation unlisted, so the allow side's answer is unchanged. Two consequences, both deny precedence (1): an exec
+  the allow side refuses unlisted, whose name also reads as a denied applet, is refused under the deny entry; and an
+  exec an allow entry admits under one reading (`ls -l`) and a deny entry names under another (`rm -r`) is refused.
+  `Index.Guarded` gains the same names (a newly guarded exec gets the staged argv read and, in a pinned run, the
+  `guard` bit), and `Final` waits for these invocations' deny and ask entries too (`denySettled`). Their overflow
+  past (2)'s bounds fails closed like any other.
+
+**Where the facts come from, per tier, and the argv residual.**
+- **Tier landlock and tier cgroup's fanotify fallback (L, C⊘).** The requested pathname and argv are the
+  supervisor's copies from the agent's memory at notification time; the image name and link count are its walk's. A
+  second thread can rewrite argv (argv[0] included) or the pathname after the copy, before the kernel copies them
+  again, and the kernel then runs what it copied: ADR 0041's row "exec: argv: no, at any tier" and this ADR's R5 and
+  `exec.rules/argv` (D). These readings add no new race and close none: a rewrite to a name that reads as a denied
+  applet runs it, as a rewrite to `rm -r` does today.
+- **Plane tiers with pins (C+, B).** The names these readings use are among the facts P2's pin already binds: the
+  basename of `bprm->filename` (unless the exec named its image by descriptor, where `Requested` is empty), the
+  image's final dentry name, its `(s_dev, i_ino)`, and the first `k` argv strings under `mac_cov`, which hold argv[0]
+  and, for a `utils` or `box` name, the argv[1] the decision read. A guarded exec's pin sets `guard`. This is read
+  from (3) and `exec_pin.go`; no guest has run these forms at a plane tier. The link count is not pinned: it is the
+  pinned inode's, it changes only by `link(2)` or `unlink(2)`, and it only decides whether the names are read, not
+  what the program does. A file of one link named for an applet is R2's copy.
+- Nothing here reads more of the agent's memory for an exec that was not guarded before, except the staged read
+  (3) of an exec these readings newly guard.
+
+**Residuals.**
+- The allow side does not read the applet: under `exec.allow: [/bin/ls]` on an upstream uutils build,
+  `/proc/self/fd/N` of ls with argv[0] `xrm` runs rm (binding the applet for an allowed multicall image is not built).
+- A name a build lists and `Row.Applets` does not (`b3sum`, `sha3sum`) can be read as a shorter ruled tool (`sum`):
+  more refusals, never fewer.
+- Not read: a symlink chain's middle names; main's symlink fallback, which reads one `readlink` of the program path
+  it chose (AT_EXECFN, or argv[0] for a `/proc/`, `/dev/fd/` or readable `#!` exec), so on main `/proc/self/fd/N` of
+  ls with argv[0] a path to the agent's symlink `q -> xrm` runs rm; toybox's `readlink` of argv[0] read as a path; and
+  a one-link copy, or a copy the agent links under more names (R2). Each needs a write entry, as a copy does.
+- On busybox and toybox, and on Ubuntu's patched uutils, these readings refuse names the binary would not run as the
+  applet (`exec -a xrm /bin/ls` runs ls on a glibc build): more refusals of unusual execs, deny and ask only. So does
+  a hard-linked program that is not uutils whose name ends with a listed utility: on the test machine, klibc's `zcat`
+  (3 links, `/usr/lib/klibc/bin`) under `deny: [cat]`.
+- These refusals can meet an exec an allow entry admits (deny precedence, above): the allow side's own answer is
+  unchanged, but the exec is refused.
+
+**Tests.** `pkg/policy/execmatch/rows/multicall_test.go`: the nine name forms measured above (`nameForms`) on a file of 116 links (seven failed before
+this change, shown again with `go test -overlay` of the earlier `index.go`, `grammar.go`, `rows/interp.go` and no
+`multicall.go`), the same forms on one link and on an unknown count (unchanged), the longest-applet and stem cases, and
+the `#!` and loader cases. Added after review the same day: an argv prefix that ends before argv[1] of a `utils` or
+`box` name is not final (`TestMulticallArgv1PrefixIsNotFinal`), a `#!` script is read by its own name
+(`TestMulticallScriptReadByItsOwnName`), the gate's names (`TestMulticallGateNeedsAUtilityName`, `TestMulticallGate`),
+and deny before ask (`TestMulticallDenyBeforeAsk`); each failed before its fix.
+`pkg/policy/execmatch/multicall_test.go`: `TestMulticallOnlyTightens` (every exec of a vocabulary under eight contracts,
+decided with and without the readings: equal on non-multicall images; elsewhere only new deny or ask refusals via
+multicall, or more argv read) and `FuzzMulticallOnlyTightens`, seeded with those nine forms and the Ubuntu 26.04.1 guest's forms;
+`TestMulticallPrefixFinalHolds`, and the same check in the fuzz target, hold the staged read's property: a final
+decision on an argv prefix that does not refuse is the whole argv's. `internal/runtime/supervisor`:
+`TestExecCommandMulticallLinks` (the walk's link count reaches the decision; it fails with the earlier
+`exec_commands.go`) and `TestExecCommandMulticallArgv1PastTheFirstStage` (an argv[0] of 8191 or 9000 bytes before `rm
+-r` on a symlink named `xbox` is refused; before the fix it was allowed unmatched). The conformance fixture `execrules`
+gains four cells on a hard-linked actor (`t/mcN/ls`, `t/mcN/xrm`) and one on a copy of one link; compile --test, which
+stats no file, skips the four. Run on the test machine (Ubuntu 25.10, 6.17, not root, so tier landlock only),
+`TestConformanceKernel/landlock/execrules` passes: the three deny cells are refused `EACCES` with an `exec.deny[rm -r]`
+line, the two others allowed. The same fixture on the tree before this change reported the three as `FAIL-OPEN` (the
+kernel ran them, the line said `allow unmatched`). Tiers cgroup and bpflsm were not run. `BenchmarkDecide` (load average
+12 to 15): an exec of a one-link file decides in the same time and allocations as before, within the noise of that load.
+
 ## Amendment (2026-11-11): a staged prefix is final only when no later token can change a reading
 
 **What was wrong.** (3)'s staged read ends at the first stage (32 elements or 8 KiB) when the decision there is final,
@@ -3057,3 +3188,14 @@ and `deny: [pip]`, `cargo pub` under `deny: [cargo publish]`) and
 `TestExecCommandAllowEntryPrefixNotFinalPastTheFirstStage` (python's exec under `allow: [pip list]`, and `cargo build`
 ... `--config alias.build=publish` under `allow: [cargo build]`, the tool granted) are refused; with the earlier
 `normalize.go`, `index.go` and `grammar.go` overlaid they were continued.
+
+**The multicall readings (not in v0.1.1 or v0.1.2).** On a tree with the multicall readings (the amendment above),
+`denySettled` is a third check of finality: `Index.Decide` makes a prefix final only when `denySettled` holds too.
+It read only whether a multicall reading was located, so case 3 held when cargo is reached only through a multicall
+image's argv[1] dispatch (`myutils ./cargo build`, fifteen `--features f` pairs, then `--config alias.build=publish`,
+116 links) under `deny: [cargo publish]` and `ask: [cargo publish]`. `denySettled` treats a pending reading as not
+settled too. `TestMulticallPrefixPendingReading` holds that case; `TestPrefixFinalHoldsMulticall` holds the property
+for every row reached as argv[1] of a uutils image (`myutils ./tool`, `xbox tool`), and `FuzzPrefixFinalHolds` picks
+among the three shapes (120 s and 1.7 million execs; no failure). `FuzzMulticallOnlyTightens` checks the property
+without the exemption it had for the sh case, runs under `deny: cargo publish` too, and is seeded with the sh and the
+multicall cargo vectors. These tests and seeds failed with the earlier `multicall.go` overlaid.

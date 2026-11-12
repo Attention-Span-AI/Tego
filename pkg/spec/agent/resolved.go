@@ -186,3 +186,9 @@ func HostFiltered(h string) bool {
 	_, err := netip.ParseAddr(strings.TrimSuffix(strings.TrimPrefix(h, "["), "]"))
 	return err != nil
 }
+
+// PrivateAddr reports whether a lies in a private range (RFC 1918, the RFC 6598 shared address space, RFC 4193 unique
+// local IPv6), by the address an IPv4-mapped or NAT64 spelling stands for: the class an entry by host name keeps for a
+// whole run when its answer at run start held one (NetRule.PublicAnswer). tego learn --allow-host refuses a name whose
+// answer holds one the run did not reach.
+func PrivateAddr(a netip.Addr) bool { return privateAddr(a) }

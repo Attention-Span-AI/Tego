@@ -50,6 +50,7 @@
 .page > .cli-pair { margin: var(--space-5) 0 var(--space-4); }
 .cli-pair .cli code { overflow-wrap: anywhere; white-space: pre-wrap; }
 .rules-raw > summary.panel-head { list-style: none; flex-wrap: wrap; }
+.rules-raw > summary.panel-head .soft { min-width: 0; overflow-wrap: anywhere; }
 .rules-raw > summary.panel-head::-webkit-details-marker { display: none; }
 .rules-raw > summary h2::before { content: "▸"; color: var(--c-text3); margin-right: var(--space-2); font-size: var(--text-sm); }
 .rules-raw[open] > summary h2::before { content: "▾"; }
@@ -72,6 +73,10 @@
 .nw-rules { list-style: none; margin: 0; padding: var(--space-2) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
 .nw-rules li { display: flex; gap: var(--space-3); align-items: baseline; font-size: var(--text-sm); overflow-wrap: anywhere; }
 .nw-rules li .b { flex: none; }
+.nw-note { display: block; margin-top: 2px; font-size: var(--text-xs); }
+.nw-note .i { width: 12px; height: 12px; margin-right: 4px; vertical-align: -1px; }
+.nw-to { margin-top: var(--space-1); }
+.nw-reads { max-width: 44rem; }
 .nw-more > summary { cursor: pointer; padding: 0 var(--space-4) var(--space-2); font-size: var(--text-sm); color: var(--c-link); }
 .nw-create .cli code, .page .panel .cli code { overflow-wrap: anywhere; white-space: pre-wrap; }
 @media (max-width: 640px) {

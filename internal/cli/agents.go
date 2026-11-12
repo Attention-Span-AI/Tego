@@ -8,14 +8,17 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/internal/watch/procconn"
 	"github.com/attention-span-ai/tego/internal/watch/sig"
 	"github.com/attention-span-ai/tego/internal/watch/watcher"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 	"golang.org/x/sys/unix"
 )
 
@@ -136,14 +139,69 @@ func cmdAgents() Command {
 			if adoptAll {
 				guardOpts = &agentsAdopt{uids: uids, o: adoptOptions{boundary: boundary, record: recordMode}}
 			}
+			if !agentsPrivileged() {
+				message(stderr, "", 0, 0, agentsPrivilegeMessage(rules, fs.NFlag() > 0), codePrivilege)
+				// The way without root, part of the refusal (an exit 125 has no hint): tego watch records any agent
+				// started under it, by whatever name.
+				fmt.Fprintln(stderr, "to record any agent without root, start it under tego watch -- "+startPlaceholder)
+				return identity.ExitLauncher
+			}
 			return runAgents(ctx, rules, follow, children, asJSON, guardOpts, stdout, stderr)
 		},
 	}
 }
 
-// privilegeMessage is the one sentence a refusal for want of privilege says.
+// privilegeMessage is the one sentence a refusal for want of privilege says once the command is running as root
+// and the kernel still refuses it.
 const privilegeMessage = "tego agents: needs root (CAP_NET_ADMIN, to listen to the kernel's process events, and the right to read other " +
 	"users' /proc entries): run it with sudo; it only observes and changes no process"
+
+// agentsPrivilegeMessage is the refusal of a tego agents run without root: a command sudo can run (sudoSelf: it said
+// "run it with sudo", and `sudo tego agents` answered "sudo: tego: command not found" on Ubuntu and Fedora), what it
+// looks for and how to name another agent (a fresh guest's own agent was none of the four, FIRST-TEN-MINUTES stumble
+// 5). flags says the command line had flags, which the command run as root needs too.
+func agentsPrivilegeMessage(rules sig.List, flags bool) string {
+	run := sudoSelf("agents")
+	if flags {
+		run += " with the same flags"
+	}
+	return "tego agents: needs root (CAP_NET_ADMIN, to listen to the kernel's process events, and the right to read other " +
+		"users' /proc entries): run it as " + run + "; it looks for " + ruleNames(rules) +
+		" (another agent: --signature <its program name>), and only observes, changing no process"
+}
+
+// sudoSelf is `sudo <this tego's absolute path> <args>`, a command a person can paste: sudo resets PATH to its
+// secure_path, which leaves out ~/.local/bin, where the installer puts tego (doctor's fix lines name it the same way,
+// doctor.sudoDoctor). A binary whose path cannot be read is named as the docs name it.
+func sudoSelf(args string) string {
+	path, err := executable()
+	if err != nil || path == "" {
+		return `sudo "$(command -v tego)" ` + args
+	}
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real
+	}
+	return "sudo " + shellword.Quote(path) + " " + args
+}
+
+// agentsNext is the "next:" block a scan's text report ends with, true for what it found: the pids of the agents
+// found outside every governed run and the runs that govern the others. An agent outside a run can be recorded where
+// it is (tego adopt, from the kernel; adopt says itself what else it can and cannot hold on a running process); one
+// inside a run is that run's; and finding none may mean the agent goes by a name no rule knows, or it is started some
+// other way, which tego watch records whatever its name.
+func agentsNext(outside []int32, runs []string) (text, command string) {
+	switch {
+	case len(outside) > 0:
+		pid := "<a pid above>"
+		if len(outside) == 1 {
+			pid = strconv.Itoa(int(outside[0]))
+		}
+		return "record it while it runs; Ctrl-C releases it, never kills it:", sudoSelf("adopt --pid " + pid)
+	case len(runs) > 0:
+		return "it runs inside a tego run; see that run:", "tego status " + record.Printable(runs[0])
+	}
+	return "if yours goes by another name, record it as you start it:", "tego watch -- " + startPlaceholder
+}
 
 // agentsAdopt is the guard's part of `tego agents --follow --adopt`.
 type agentsAdopt struct {
@@ -151,11 +209,8 @@ type agentsAdopt struct {
 	o    adoptOptions
 }
 
+// runAgents is the scan or the follow, once the caller has checked for root (agentsPrivilegeMessage).
 func runAgents(ctx context.Context, rules sig.List, follow, children, asJSON bool, adoptAll *agentsAdopt, stdout, stderr io.Writer) int {
-	if !agentsPrivileged() {
-		message(stderr, "", 0, 0, privilegeMessage, codePrivilege)
-		return identity.ExitLauncher
-	}
 	emit := watcher.Text(stdout)
 	if asJSON {
 		emit = watcher.JSONLines(stdout)
@@ -179,10 +234,19 @@ func runAgents(ctx context.Context, rules sig.List, follow, children, asJSON boo
 		}
 		emit = g.emit
 	}
-	var found int
+	var (
+		found   int
+		outside []int32
+		runs    []string
+	)
 	counted := func(s watcher.Sighting) error {
 		if s.Event == watcher.EventAgentStarted {
 			found++
+			if s.OutsideGovernedRun != nil && *s.OutsideGovernedRun {
+				outside = append(outside, s.PID)
+			} else if s.RunCgroupID != "" {
+				runs = append(runs, s.RunCgroupID)
+			}
 		}
 		err := emit(s)
 		if g != nil {
@@ -200,15 +264,20 @@ func runAgents(ctx context.Context, rules sig.List, follow, children, asJSON boo
 			"its process tree moves into a run that records it from the kernel, nothing else moves, and it is released, never "+
 			"killed, when this stops\n", ruleNames(rules), adoptAll.uids)
 	} else {
-		fmt.Fprintf(stderr, "tego agents: looking for %s; this only observes and never signals, moves, blocks or changes a process\n", ruleNames(rules))
+		fmt.Fprintf(stderr, "tego agents: looking for %s (add another with --signature); this only observes and never signals, moves, "+
+			"blocks or changes a process\n", ruleNames(rules))
 	}
 	if !follow {
 		if err := w.Scan(); err != nil {
 			message(stderr, "", 0, 0, "tego agents: "+err.Error(), codeIO)
 			return identity.ExitError
 		}
-		if found == 0 && !asJSON {
-			fmt.Fprintln(stdout, "no agent process is running")
+		if !asJSON {
+			if found == 0 {
+				fmt.Fprintln(stdout, "no agent process is running")
+			}
+			text, command := agentsNext(outside, runs)
+			runHint(stderr, text, command)
 		}
 		return identity.ExitOK
 	}

@@ -245,6 +245,9 @@ func TestWhereMatches(t *testing.T) {
 	m69 := mach("6.9.0", 4, "arm64", false, "")
 	m617 := mach("6.17.0-41-generic", 7, "amd64", true, "ubuntu-25.10")
 	noABI := mach("6.17.0", 0, "amd64", true, "")
+	rhel9 := mach("5.14.0-570.el9.x86_64", 6, "amd64", true, "rhel-9")
+	rhel98 := rhel9
+	rhel98.BPFPerfLink = true
 	for _, c := range []struct {
 		name  string
 		where Where
@@ -283,6 +286,12 @@ func TestWhereMatches(t *testing.T) {
 		{"bpf_lsm true on a boot without", Where{BPFLSM: ptr(true)}, m61, false},
 		{"bpf_lsm false on a boot without", Where{BPFLSM: ptr(false)}, m61, true},
 		{"bpf_lsm false on a bpf boot", Where{BPFLSM: ptr(false)}, m617, false},
+
+		// RHEL 9.8's 5.14 has the BPF perf links of 5.15 and an earlier RHEL 9 5.14 did not: the probe decides.
+		{"bpf_perf_link true where the kernel makes them", Where{BPFPerfLink: ptr(true)}, rhel98, true},
+		{"bpf_perf_link true where it does not", Where{BPFPerfLink: ptr(true)}, rhel9, false},
+		{"bpf_perf_link false where it does not", Where{BPFPerfLink: ptr(false)}, rhel9, true},
+		{"bpf_perf_link false where the kernel makes them", Where{BPFPerfLink: ptr(false)}, rhel98, false},
 
 		{"row on its row", Where{Row: "al2023"}, m61, true},
 		{"row on another row", Where{Row: "al2023"}, m617, false},

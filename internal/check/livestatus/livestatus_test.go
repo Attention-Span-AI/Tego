@@ -81,22 +81,22 @@ func TestFromStart(t *testing.T) {
 		raw  string
 		want Facts
 	}{
-		{"watch", `{"tier":"observe","fs_reads":{"reads":"direct","why":"records-only"},"reads_notified":{"notified":false,"why":"records-only"}}`, Facts{Observe: true}},
-		{"held", `{"tier":"landlock","fs_reads":{"reads":"held","why":"contract"}}`, Facts{ReadsSeen: true}},
-		{"record-full", `{"tier":"landlock","fs_reads":{"reads":"direct","why":"none-nested"},"reads_notified":{"notified":true,"why":"record-full"}}`, Facts{ReadsSeen: true}},
-		{"direct", `{"tier":"landlock","fs_reads":{"reads":"direct","why":"none-nested"},"reads_notified":{"notified":false,"why":"reason-off"}}`, Facts{}},
-		{"old ledger", `{"tier":"cgroup"}`, Facts{}},
-		{"r6 launcher", `{"tier":"landlock","record_minor":23}`, Facts{RecordMinor: 23}},
-		{"r7 launcher", `{"tier":"landlock","record_minor":24}`, Facts{RecordMinor: 24}},
-		{"lsm plane", `{"tier":"bpf-lsm","record_minor":24,"decision_plane":"lsm"}`, Facts{RecordMinor: 24, KernelDecidesChanges: true}},
-		{"fmod_ret plane", `{"tier":"bpf-lsm","decision_plane":"fmod_ret"}`, Facts{KernelDecidesChanges: true}},
-		{"fanotify listener", `{"tier":"cgroup","decision_plane":"fanotify"}`, Facts{}},
-		{"not json", `{`, Facts{}},
-		{"lp1 launcher, Locked", `{"tier":"cgroup","record_minor":26}`, Facts{RecordMinor: 26, Timed: true}},
+		{"watch", `{"tier":"observe","fs_reads":{"reads":"direct","why":"records-only"},"reads_notified":{"notified":false,"why":"records-only"}}`, Facts{Started: true, Observe: true}},
+		{"held", `{"tier":"landlock","fs_reads":{"reads":"held","why":"contract"}}`, Facts{Started: true, ReadsSeen: true}},
+		{"record-full", `{"tier":"landlock","fs_reads":{"reads":"direct","why":"none-nested"},"reads_notified":{"notified":true,"why":"record-full"}}`, Facts{Started: true, ReadsSeen: true}},
+		{"direct", `{"tier":"landlock","fs_reads":{"reads":"direct","why":"none-nested"},"reads_notified":{"notified":false,"why":"reason-off"}}`, Facts{Started: true}},
+		{"old ledger", `{"tier":"cgroup"}`, Facts{Started: true}},
+		{"r6 launcher", `{"tier":"landlock","record_minor":23}`, Facts{Started: true, RecordMinor: 23}},
+		{"r7 launcher", `{"tier":"landlock","record_minor":24}`, Facts{Started: true, RecordMinor: 24}},
+		{"lsm plane", `{"tier":"bpf-lsm","record_minor":24,"decision_plane":"lsm"}`, Facts{Started: true, RecordMinor: 24, KernelDecidesChanges: true}},
+		{"fmod_ret plane", `{"tier":"bpf-lsm","decision_plane":"fmod_ret"}`, Facts{Started: true, KernelDecidesChanges: true}},
+		{"fanotify listener", `{"tier":"cgroup","decision_plane":"fanotify"}`, Facts{Started: true}},
+		{"not json", `{`, Facts{StartUnreadable: true}},
+		{"lp1 launcher, Locked", `{"tier":"cgroup","record_minor":26}`, Facts{Started: true, RecordMinor: 26, Timed: true}},
 		{"Adjustable", `{"tier":"cgroup","record_minor":26,"live_mode":"adjustable","live_fence":{"sha256":"` + sha + `","entries":[{"kind":"read","value":"/srv/x","source":"new","rule":"live.fence[read:/srv/x]"}]}}`,
-			Facts{RecordMinor: 26, Timed: true, Adjustable: true, Fence: []record.LiveFenceEntry{{Kind: "read", Value: "/srv/x", Source: "new", Rule: "live.fence[read:/srv/x]"}}}},
-		{"mode below 26", `{"tier":"cgroup","record_minor":25,"live_mode":"adjustable","live_fence":{"sha256":"` + sha + `","entries":[]}}`, Facts{RecordMinor: 25}},
-		{"mode without fence", `{"tier":"cgroup","record_minor":26,"live_mode":"adjustable"}`, Facts{RecordMinor: 26, Timed: true}},
+			Facts{Started: true, RecordMinor: 26, Timed: true, Adjustable: true, Fence: []record.LiveFenceEntry{{Kind: "read", Value: "/srv/x", Source: "new", Rule: "live.fence[read:/srv/x]"}}}},
+		{"mode below 26", `{"tier":"cgroup","record_minor":25,"live_mode":"adjustable","live_fence":{"sha256":"` + sha + `","entries":[]}}`, Facts{Started: true, RecordMinor: 25}},
+		{"mode without fence", `{"tier":"cgroup","record_minor":26,"live_mode":"adjustable"}`, Facts{Started: true, RecordMinor: 26, Timed: true}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -105,12 +105,15 @@ func TestFromStart(t *testing.T) {
 			}
 		})
 	}
+	if FromStart(nil).Started {
+		t.Fatal("FromStart(nil) says a run_start was read")
+	}
 	p := &record.RunStartPayload{Tier: "landlock", FSReads: &record.FSReads{Reads: record.FSReadsHeld}}
-	if got := FromStart(p); !reflect.DeepEqual(got, Facts{ReadsSeen: true}) {
+	if got := FromStart(p); !reflect.DeepEqual(got, Facts{Started: true, ReadsSeen: true}) {
 		t.Fatalf("FromStart = %+v", got)
 	}
 	p = &record.RunStartPayload{Tier: "bpf-lsm", RecordMinor: record.MinorLiveControl, DecisionPlane: record.DecisionPlaneLSM}
-	if got := FromStart(p); !reflect.DeepEqual(got, Facts{RecordMinor: record.MinorLiveControl, KernelDecidesChanges: true}) || !got.NarrowKinds() {
+	if got := FromStart(p); !reflect.DeepEqual(got, Facts{Started: true, RecordMinor: record.MinorLiveControl, KernelDecidesChanges: true}) || !got.NarrowKinds() {
 		t.Fatalf("FromStart(plane) = %+v", got)
 	}
 	if (Facts{RecordMinor: record.MinorLiveControl - 1}).NarrowKinds() || (Facts{}).NarrowKinds() {

@@ -1,0 +1,22 @@
+--- tego setup: stdout
+Tego on this machine, step by step:
+  [x] 1 Install             tego v0.0.0-fixture (commit f1x7ure)
+  [x] 2 Check this machine  ready: tier 1 (landlock) from a shell in your user manager's cgroup, checked 2026-11-11 09:30 UTC; not from a shell outside your user manager's cgroup, where you are now, which starts no run, not even tego watch
+  [x] 3 Find your agents    you recorded sh
+  [x] 4 Record one run      run b883rx recorded python3 bot.py --loop and ended
+  [x] 5 Make its contract   bot compiles now
+  [x] 6 Enforce it          run b88krx ran at tier landlock and ended; its record checks out now
+Not known:
+  - agents Tego never recorded: nothing here looks for them yet
+  - a contract in no registry (a file given by its path) that no run used
+--- tego setup: stderr
+
+next: every step is done; see what the last enforced run did:
+  tego receipt b88krx
+--- tego doctor: stderr after its table
+
+Not ready: this shell is outside your user manager's cgroup, so tego starts no run from it, not even tego watch.
+
+next: open a shell in your user manager's cgroup, then run tego setup there:
+  systemd-run --user --scope bash
+--- tego receipt b88krx: stderr

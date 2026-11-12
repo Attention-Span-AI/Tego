@@ -1259,7 +1259,7 @@ func PlaneProbeMain(args []string) int {
 	if len(args) == 1 && args[0] == "noop" {
 		return 0
 	}
-	if len(args) == 2 && args[0] == "known" {
+	if len(args) == 2 && args[0] == planeKnownRole {
 		return planeKnownMain(args[1])
 	}
 	if len(args) == 2 && args[0] == planePinWriterRole {

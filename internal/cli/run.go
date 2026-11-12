@@ -22,6 +22,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/internal/runtime/capture/uprobe"
+	rtcgroup "github.com/attention-span-ai/tego/internal/runtime/cgroup"
 	"github.com/attention-span-ai/tego/internal/runtime/enforce"
 	"github.com/attention-span-ai/tego/internal/runtime/enforce/cgroup"
 	"github.com/attention-span-ai/tego/internal/runtime/launch"
@@ -106,6 +107,9 @@ type runOptions struct {
 	// command is the command given after the contract, empty when none was: the run then execs the
 	// contract's own command: (commandFor).
 	command []string
+	// given is command as the person gave it, kept when runRun puts the contract's own in its place: the end hint
+	// repeats the command line as typed (runAgain).
+	given   []string
 	tier    string
 	record  string
 	observe bool
@@ -189,7 +193,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	if rt == nil {
 		return code
 	}
-	o.command = commandFor(o, rt)
+	o.given, o.command = o.command, commandFor(o, rt)
 	// What Compile resolved capture to, before the run's tier can lower it: warnForwarderEnv speaks only where
 	// Compile kept a variable the forwarder then overrides.
 	compiledCapture := rt.Capture
@@ -307,9 +311,10 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		// held completion whose deputy did not start (held-unavailable), a boundary not held (unenforced).
 		Warn: func(code, what string) {
 			// The held-label disclosure is a note, not a warning: it says how held opens are decided on this host, and the
-			// presenter's first line read like a failure as "warning: ... [unenforced]".
+			// presenter's first line read like a failure as "warning: ... [unenforced]". So is the list of directories a
+			// deny_read freezes (GAPS A12): it says what the ruleset is, not that a rule was weakened.
 			lead := "warning: "
-			if code == tegoruntime.WarnHeldLabel {
+			if code == tegoruntime.WarnHeldLabel || code == tegoruntime.WarnDenyReadFrozen {
 				lead = "note: "
 			}
 			message(stderr, "", 0, 0, lead+o.cmdName()+": "+what, code)
@@ -334,6 +339,10 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		// probes").
 		startFailed(rep)
 		message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), codeRun)
+		if errors.Is(err, rtcgroup.ErrBesideSubtree) {
+			// tego watch places its run where tego run does, and is refused from the same shell (acceptance B, 2026-11-11).
+			outsideHint(stderr, "run this again there")
+		}
 		return identity.ExitLauncher // R2: every pre-run_start failure is 125
 	}
 	// The end summary: after the agent's process tree is gone, from the run's own ledger and the record mode it ran
@@ -346,7 +355,13 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	case sum == nil:
 		writeRunSummary(stderr, res)
 	case !o.watched:
-		_, _ = io.WriteString(stderr, sum.text()) // tego's own words; a stderr it cannot write never changes the exit (output_test)
+		// The summary's two lines, then the reads line (a fact, whatever TEGO_HINTS says), then the next step, except
+		// for a run whose record could not be completed: that is tego's own error, exit 125 [ledger], with no next step.
+		_, _ = io.WriteString(stderr, sum.text()+sum.readsLine()) // tego's own words; a stderr it cannot write never changes the exit (output_test)
+		if res.RecordErr == nil {
+			text, command := sum.runHint(o)
+			writeHint(stderr, text, command)
+		}
 	}
 	if o.report != nil {
 		o.report(res, sum)
@@ -829,9 +844,27 @@ func selectBackend(ctx context.Context, o runOptions, m *config.Machine, rt *age
 		fmt.Fprintln(stderr, record.Printable(d.String()))
 	}
 	if b == nil {
+		if rep.OutsideUserManager && landlockWillDo(rt, only) {
+			// The refusal names the cgroup; the shell that is inside it is what this one lacks (acceptance B, 2026-11-11).
+			outsideHint(stderr, "run this again there")
+		}
 		return nil, nil, nil, identity.ExitLauncher // 125 [tier-unavailable]
 	}
 	return b, rt.AtTier(b.Tier()), rep, identity.ExitOK
+}
+
+// landlockWillDo reports whether tier landlock can be this run's tier: neither --tier (only) nor the contract's tier:
+// names a tier above it. Only then does a shell in the user manager's cgroup, where tier landlock runs, cure a refusal
+// for want of one.
+func landlockWillDo(rt *agent.RuleTable, only backend.Tier) bool {
+	if only != "" && only != backend.TierLandlock {
+		return false
+	}
+	if rt == nil || rt.Contract == nil {
+		return true
+	}
+	t := backend.Tier(rt.Contract.Tier)
+	return t == "" || t == backend.TierAuto || t == backend.TierLandlock
 }
 
 // probeMachine is the tier derivation `tego doctor` reports (derive.go), over the checks of the tiers this

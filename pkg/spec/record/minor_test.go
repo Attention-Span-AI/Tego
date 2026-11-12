@@ -15,7 +15,7 @@ import (
 
 // declaredAheadMinors are the reserved record revisions, declared before their writers (ADR 0100): above Minor no ledger holds them yet, so they open no gap a reader could misread. TestRecordMinorsHaveNoGap
 // and TestRecordMinorsAreContiguous admit them above Minor, and no other constant.
-var declaredAheadMinors = map[string]int{"MinorStoppedBy": 30, "MinorDeployment": 32, "MinorSecrets": 33, "MinorShares": 34}
+var declaredAheadMinors = map[string]int{"MinorStoppedBy": 35, "MinorDeployment": 32, "MinorSecrets": 33, "MinorShares": 34}
 
 // TestRecordMinorsAreContiguous holds the rule that numbers a revision (spec/record/v1/README.md, "Revisions"): a
 // revision is the next free number in the build that holds it, so the revisions a build writes are 1 to Minor, each

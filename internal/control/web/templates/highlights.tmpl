@@ -1,17 +1,20 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
 {{/* The run page's Highlights card and its grouped refusals: ledgerview.Signal read for a person. */}}
-{{define "vcounts"}}{{if .Refused}}<span class="b b-refused">{{template "i" "i-ban"}}Blocked {{.Refused}}</span>{{end}}{{if .Asked}}<span class="b b-asked">{{template "i" "i-hand"}}Asked {{.Asked}}</span>{{end}}{{if .Allowed}}<span class="b b-allowed">{{template "i" "i-check"}}Allowed {{.Allowed}}</span>{{end}}{{if .Observed}}<span class="b b-observed">{{template "i" "i-eye"}}Observed {{.Observed}}</span>{{end}}{{end}}
+{{define "vcounts"}}{{if .Refused}}<span class="b b-refused">{{template "i" "i-ban"}}Refused {{.Refused}}</span>{{end}}{{if .Asked}}<span class="b b-asked">{{template "i" "i-hand"}}Asked {{.Asked}}</span>{{end}}{{if .Allowed}}<span class="b b-allowed">{{template "i" "i-check"}}Allowed {{.Allowed}}</span>{{end}}{{if .Observed}}<span class="b b-observed">{{template "i" "i-eye"}}Observed {{.Observed}}</span>{{end}}{{end}}
 {{/* gotthrough: on a watched run, what was only observed next to a secret got through: red, as Compare says it. */}}
 {{define "gotthrough"}}<span class="b b-bad" title="Watched only: nothing stopped it">{{template "i" "i-triangle-alert"}}Got through {{.}}</span>{{end}}
 {{/* hl-dest: one destination. On a watched run read against an enforced run's contract (.Ref), what that contract
 allows is marked so; with no contract to check against, only the destination the verdict names (.Lead) is red and
 the others next to a secret are only "Not on a list". */}}
-{{define "hl-dest"}}{{$soft := and .Obs .V.NearSecret (not .Ref) .Lead (ne .V.Key .Lead)}}<li><a class="hl-what" href="{{logsURL .Run .V.Query}}" title="Every line for {{.V.Key}}"><span class="ut">{{cut .V.Key 48}}</span></a><span class="hl-v">{{if and .Obs .V.NearSecret (not $soft)}}{{template "gotthrough" .V.Observed}}{{else}}{{template "vcounts" .V}}{{end}}</span>{{if $soft}}<span class="hl-tag" title="A watched run has no contract, so Tego cannot tell whether the job needs this destination. Its first contact was within 16 ledger lines and 5 s of a secret touch.">Not on a list</span>{{else if .V.NearSecret}}<span class="hl-tag hl-tag-near" title="First contact within 16 ledger lines and 5 s of a secret touch">{{template "i" "i-key-round"}}After a secret read</span>{{end}}{{if .V.InContract}}{{if not .Obs}}<span class="hl-tag">In policy</span>{{else if .Ref}}<span class="hl-tag" title="The contract of run {{.Ref}} allows it">Allowed in the enforced run</span>{{end}}{{end}}</li>{{end}}
+{{define "hl-dest"}}{{$soft := and .Obs .V.NearSecret (not .Ref) .Lead (ne .V.Key .Lead)}}<li><a class="hl-what" href="{{logsURL .Run .V.Query}}" title="Every line for {{.V.Key}}"><span class="ut">{{cut .V.Key 48}}</span></a><span class="hl-v">{{if and .Obs .V.NearSecret (not $soft)}}{{template "gotthrough" .V.Observed}}{{else}}{{template "vcounts" .V}}{{end}}</span>{{if $soft}}<span class="hl-tag" title="A watched run has no contract, so Tego cannot tell whether the job needs this destination. Its first contact was within 16 ledger lines and 5 s of a secret touch.">Not on a list</span>{{else if .V.NearSecret}}<span class="hl-tag hl-tag-near" title="First contact within 16 ledger lines and 5 s of a secret touch">{{template "i" "i-key-round"}}After a secret read</span>{{end}}{{if .V.InContract}}{{if not .Obs}}<span class="hl-tag">In contract</span>{{else if .Ref}}<span class="hl-tag" title="The contract of run {{.Ref}} allows it">Allowed in the enforced run</span>{{end}}{{end}}</li>{{end}}
 {{define "hl-prog"}}<li><a class="hl-what" href="{{logsURL .Run .V.Program}}" title="Every line naming {{.V.Program}}"><span class="ut">{{.V.Program}}</span></a><span class="xn">×{{.V.N}}</span><span class="hl-why" title="{{.V.Rule}}">{{ruleName .V.Rule}}</span>{{if .V.Background}}<span class="hl-tag" title="Every refusal of it is routine: the agent's own retries">routine</span>{{end}}</li>{{end}}
+{{/* readfix names the contract setting that keeps every file read (readGap says what a run without it cannot list)
+and its cost: about 60 µs an open against 1 under record: summary (docs/OPERATIONS.md, "What the ledger costs"). */}}
+{{define "readfix"}}To record every read, add <code>record: full</code> to the contract; each file open then costs about 60 µs more.{{end}}
 {{/* verdict is the run's verdict banner (storyOf): red when secrets left, green when Tego stopped an attempt. The run
 page places it right under its header (r-run-top), above the pause banner, the waiting asks and the Block now panel,
 so the run's outcome is the first thing under its name, live or ended. */}}
-{{define "verdict"}}{{with story .Story (eq .Run.State "running")}}<section class="banner verdict verdict-{{.Tone}}" role="status" aria-label="What happened in this run">{{template "i" .Icon}}<div class="grow"><p class="vt">{{.Title}}</p>{{if .Sub}}<p class="vs">{{.Sub}}</p>{{end}}</div></section>{{end}}{{end}}
+{{define "verdict"}}{{with story .Story .Run}}<section class="banner verdict verdict-{{.Tone}}" role="status" aria-label="What happened in this run">{{template "i" .Icon}}<div class="grow"><p class="vt">{{.Title}}</p>{{if .Sub}}<p class="vs">{{.Sub}}</p>{{end}}</div></section>{{end}}{{end}}
 {{define "highlights"}}{{$r := .Run}}{{$id := $r.ID}}{{$home := .Home}}{{$obs := eq $r.Tier "observe"}}
 {{with .Signal}}
 <section class="panel hl" aria-labelledby="h-hl">
@@ -19,6 +22,7 @@ so the run's outcome is the first thing under its name, live or ended. */}}
 <div class="hl-grid">
 <section class="hl-sec hl-half" aria-labelledby="h-hl-s"><h3 id="h-hl-s">{{template "i" "i-key-round"}}Secrets <span class="n">{{len .Secrets}}</span></h3>
 {{if .Secrets}}<ul class="hl-list">{{range .Secrets}}<li><a class="hl-what" href="{{logsURL $id .Path}}">{{template "spv" (spIn .Path $home $r.Cwd)}}</a><span class="hl-v">{{if and $obs .NearSend .Observed}}{{template "gotthrough" .Observed}}{{else}}{{template "vcounts" .}}{{end}}</span>{{if .NearSend}}<span class="hl-tag hl-tag-near" title="Touched within 16 ledger lines and 5 s of a connection outside the contract">{{template "i" "i-activity"}}Followed by a connection</span>{{end}}<span class="hl-why"{{if .Rule}} title="{{.Rule}}"{{end}}>{{secretWhy .}}</span></li>{{end}}</ul>
+{{else if readGap $r}}<p class="hl-none">{{readGap $r}}</p><p class="hl-bg">{{template "readfix"}}</p>
 {{else}}<p class="hl-none" title="Allowed reads are recorded only under record: full">No secrets touched</p>{{end}}
 </section>
 <section class="hl-sec hl-half" aria-labelledby="h-hl-o"><h3 id="h-hl-o">{{template "i" "i-activity"}}Outbound <span class="n">{{len .Outbound}}</span></h3>
@@ -26,7 +30,7 @@ so the run's outcome is the first thing under its name, live or ended. */}}
 {{if $head}}<ul class="hl-list">{{range $head}}{{template "hl-dest" (hl $id . $obs $ref $lead)}}{{end}}</ul>
 {{if $tail}}<details class="hl-more"><summary>{{len $tail}} more {{plural (len $tail) "destination" "destinations"}}</summary><ul class="hl-list">{{range $tail}}{{template "hl-dest" (hl $id . $obs $ref $lead)}}{{end}}</ul></details>{{end}}{{end}}
 {{if .BackgroundDests}}<p class="hl-bg" title="System lookups, DNS and the agent's own probes: never next to a secret, never counted as a send">{{if .BackgroundDestLines}}<a class="link" href="/runs/{{pathEsc $id}}/refusals?bg=open#bg">Routine · {{.BackgroundDests}} {{plural .BackgroundDests "host" "hosts"}}</a>{{else}}Routine · {{.BackgroundDests}} {{plural .BackgroundDests "host" "hosts"}}{{end}}</p>{{end}}
-{{if not .Outbound}}<p class="hl-none">No connections</p>{{else if and $obs $ref}}<p class="hl-bg">Checked against <a class="link mono" href="/runs/{{pathEsc $ref}}" title="The enforced run's policy">{{rid $ref}}</a></p>{{else if $obs}}<p class="hl-bg" title="Only the host nearest the secrets is marked red">No policy to check against</p>{{end}}
+{{if not .Outbound}}<p class="hl-none">No connections</p>{{else if and $obs $ref}}<p class="hl-bg">Checked against <a class="link mono" href="/runs/{{pathEsc $ref}}" title="The enforced run's contract">{{rid $ref}}</a></p>{{else if $obs}}<p class="hl-bg" title="Only the host nearest the secrets is marked red">No contract to check against</p>{{end}}
 </section>
 <section class="hl-sec hl-third" aria-labelledby="h-hl-a"><h3 id="h-hl-a">{{template "i" "i-hand"}}Approvals <span class="n">{{len .Approvals}}</span></h3>
 {{if .Approvals}}<p class="hl-sum">{{if .PendingN}}<a class="b b-waiting" href="#{{(index $r.Pending 0).AskID}}">{{template "i" "i-hand"}}{{.PendingN}} waiting on you</a> {{end}}{{if .Approved}}{{.Approved}} allowed{{end}}{{if and .Approved .Denied}} · {{end}}{{if .Denied}}{{.Denied}} denied{{end}}{{if and (or .Approved .Denied) .Unanswered}} · {{end}}{{if .Unanswered}}{{.Unanswered}} not answered{{end}}</p>
@@ -36,11 +40,11 @@ so the run's outcome is the first thing under its name, live or ended. */}}
 {{else}}<p class="hl-none">None</p>{{end}}
 </section>
 <section class="hl-sec hl-third" aria-labelledby="h-hl-b"><h3 id="h-hl-b">{{template "i" "i-ban"}}Live blocks <span class="n">{{len .Blocks}}</span></h3>
-{{if .Blocks}}<ul class="hl-list">{{range .Blocks}}{{$kv := blockKV .Value}}<li><a class="hl-what" href="{{logsURL $id .Rule}}" title="{{.Rule}}">{{if $kv.Kind}}<span class="op">{{$kv.Kind}}</span> {{end}}{{if $kv.Path}}{{template "spv" (spIn $kv.Path $home $r.Cwd)}}{{else}}<span class="ut">{{$kv.Value}}</span>{{end}}</a><span class="b b-refused">{{template "i" "i-ban"}}Blocked {{.N}}</span></li>{{end}}</ul>
+{{if .Blocks}}<ul class="hl-list">{{range .Blocks}}{{$kv := blockKV .Value}}<li><a class="hl-what" href="{{logsURL $id .Rule}}" title="{{.Rule}}">{{if $kv.Kind}}<span class="op">{{$kv.Kind}}</span> {{end}}{{if $kv.Path}}{{template "spv" (spIn $kv.Path $home $r.Cwd)}}{{else}}<span class="ut">{{$kv.Value}}</span>{{end}}</a><span class="b b-refused">{{template "i" "i-ban"}}Refused {{.N}}</span></li>{{end}}</ul>
 {{else}}<p class="hl-none">None</p>{{end}}
 {{$nb := activeBlocks $.Blocks $.Now}}{{if and $nb (eq $r.State "running")}}<p class="hl-sum"><a class="link" href="#block">{{$nb}} {{plural $nb "block" "blocks"}} active now</a></p>{{end}}
 </section>
-<section class="hl-sec hl-third" aria-labelledby="h-hl-p"><h3 id="h-hl-p">{{template "i" "i-terminal"}}Programs blocked <span class="n">{{len .Programs}}</span></h3>
+<section class="hl-sec hl-third" aria-labelledby="h-hl-p"><h3 id="h-hl-p">{{template "i" "i-terminal"}}Programs refused <span class="n">{{len .Programs}}</span></h3>
 {{if .Programs}}{{$ph := .ProgHead 6}}{{$pt := .ProgTail 6}}<ul class="hl-list">{{range $ph}}{{template "hl-prog" (bind $id .)}}{{end}}</ul>
 {{if $pt}}<details class="hl-more"><summary>{{len $pt}} more</summary><ul class="hl-list">{{range $pt}}{{template "hl-prog" (bind $id .)}}{{end}}</ul></details>{{end}}
 {{else}}<p class="hl-none">None</p>{{end}}

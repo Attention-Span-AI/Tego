@@ -27,11 +27,19 @@ scripts:
     #!{{P}}/t/sh1/rm -rf
   t/sh2/run.sh: |
     #!{{P}}/t/sh2/x -rf
-actors: [t/push/git, t/push-c/git, t/dashed/git-push, t/spoof/git, t/lnk-real/git, t/status/git, t/rmfr/rm, t/rmrec/rm, t/rmf/rm, t/npm/npm, t/sh1/rm, t/sh2/rm, t/race/git]
+actors: [t/push/git, t/push-c/git, t/dashed/git-push, t/spoof/git, t/lnk-real/git, t/status/git, t/rmfr/rm, t/rmrec/rm, t/rmf/rm, t/npm/npm, t/sh1/rm, t/sh2/rm, t/race/git, t/mc1/ls, t/mc2/ls, t/mc3/ls, t/mc4/ls, t/one/xrm]
 exec_only_actors: [t/xonly/git]
 links:
   t/lnk/tool: ../lnk-real/git
   t/sh2/x: rm
+# Each t/mcN/ls and its hard link t/mcN/xrm are one file of two links: a multicall image, which the matcher reads for
+# the applet upstream uutils would run by the name (ADR 0048 (2) 4, amended 2026-11-11). One pair per cell, since a
+# cell owns its paths. t/one/xrm is a copy of one link.
+hard_links:
+  t/mc1/xrm: t/mc1/ls
+  t/mc2/xrm: t/mc2/ls
+  t/mc3/xrm: t/mc3/ls
+  t/mc4/xrm: t/mc4/ls
 fifos: [t/fifo/f]
 model:
   write: [out]
@@ -156,3 +164,47 @@ cells:
     want:
       all: {verdict: refused, errno: EACCES}
     source: 'ADR 0048 (3) and R5 (exec.rules/argv: an allow is decided on the copied argv, and a thread that changes it after the copy is the disclosed race; the closed direction holds: no copy that read the denied word is allowed)'
+  - name: multicall-suffix-name
+    op: exec
+    path: t/mc1/xrm
+    argv: [xrm, -r, out/tree]
+    runs: t/mc1/rm
+    want:
+      all: refused exec.deny[rm -r]
+    source: 'ADR 0048 (2) 4 as amended 2026-11-11: on a file of more than one link, a name ending with rm is read as rm (upstream uutils picks the longest utility name the program name ends with; runs names that applet for the invariant)'
+    no_compile: 'compile --test makes no stat of a row''s file (CommandFacts), so it cannot know the image has two links; the supervisor reads st_nlink from its walk'
+  - name: multicall-argv0-suffix
+    op: exec
+    path: t/mc2/ls
+    argv: [xrm, -fr, out/tree]
+    runs: t/mc2/rm
+    want:
+      all: refused exec.deny[rm -r]
+    source: 'ADR 0048 (2) 4 as amended 2026-11-11: argv[0] names the applet on a /proc/self/fd or /dev/fd exec and on musl builds, so it is read on every exec of a multicall image'
+    no_compile: 'compile --test makes no stat of a row''s file (CommandFacts), so it cannot know the image has two links; the supervisor reads st_nlink from its walk'
+  - name: multicall-utils-argv1
+    op: exec
+    path: t/mc3/ls
+    argv: [myutils, rm, -r, out/tree]
+    runs: t/mc3/rm
+    want:
+      all: refused exec.deny[rm -r]
+    source: 'ADR 0048 (2) 4 as amended 2026-11-11: a program name ending with utils or box runs the applet argv[1] names'
+    no_compile: 'compile --test makes no stat of a row''s file (CommandFacts), so it cannot know the image has two links; the supervisor reads st_nlink from its walk'
+  - name: multicall-applet-without-r
+    op: exec
+    path: t/mc4/xrm
+    argv: [xrm, -f, out/x]
+    runs: t/mc4/rm
+    want:
+      all: allow
+    source: 'ADR 0048 (2) 4 as amended 2026-11-11: the applet is read under the entry''s words like any rm (an option word narrows the entry)'
+    no_compile: 'compile --test makes no stat of a row''s file (CommandFacts), so it cannot know the image has two links; the supervisor reads st_nlink from its walk'
+  - name: one-link-suffix-name
+    op: exec
+    path: t/one/xrm
+    argv: [xrm, -r, out/tree]
+    want:
+      all: allow
+    source: 'ADR 0048 (2) 4 as amended 2026-11-11: a file of one link is no multicall image, so xrm is read as xrm (a renamed copy is R2''s residual)'
+

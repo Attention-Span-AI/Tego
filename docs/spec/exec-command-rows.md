@@ -62,7 +62,7 @@ it past 16 readings (sh's `-c`, perl's and ruby's `-e`, before the first operand
 | sh, bash, dash | probed | dash 0.5.12, bash 5.2 | `sh`, `bash`, `rbash`, `dash` | clusters, `+o`; a lone `-` ends the options, as `--` does; `-c` and `-s` are opaque | interpreter: the script's basename | `-c` code (R1) |
 | zsh, ksh | documented | 5.9, 93u+m | `zsh`, `ksh`, `mksh`, `ksh93` | as sh | as sh | as sh |
 | perl, ruby | documented | 5, 3 | `perl`, `perl5`, `ruby` | own options, perl's `-I` with a separate value too; `-e` is code | interpreter: the script's basename | `-e` code (R1) |
-| busybox, coreutils | probed (GNU's single binary documented) | 1.37.0, uutils 0.2.2 | multicall | (none) | the applet is argv[1], or argv[0], a leading `-` dropped (`-rm` is rm, read for every exec); an argv[0] starting `busybox` is the dispatcher on any file, also as an applet of itself; for `coreutils` also GNU's single-binary forms: `--coreutils-prog=PROG` (argv[2:]), `--coreutils-prog-shebang=PROG` (argv[3:]; argv[2] is the script) and argv[0] `lt-PROG` | busybox sh runs applets in process (R1) |
+| busybox, coreutils | probed (GNU's single binary documented) | 1.37.0, uutils 0.2.2 | multicall | (none) | the applet is argv[1], or argv[0], a leading `-` dropped (`-rm` is rm, read for every exec); an argv[0] starting `busybox` is the dispatcher on any file, also as an applet of itself; for `coreutils` also GNU's single-binary forms: `--coreutils-prog=PROG` (argv[2:]), `--coreutils-prog-shebang=PROG` (argv[3:]; argv[2] is the script) and argv[0] `lt-PROG`; for deny and ask entries on a multicall image, uutils' applet by name (below) | busybox sh runs applets in process (R1) |
 | toybox | documented | 0.8 | multicall | (none) | as busybox, an argv[0] starting `toybox` | as busybox |
 | pnpm | documented | 9 | `pnpm`, `pnpm.cjs`, `pnpm.js`, `pn` | `-C`, `--filter` and the rest, anywhere | commands and aliases (i, up, rm, ln, ls, t, m, c) | |
 | yarn | documented | 1.22 and 4 | `yarn`, `yarn.js`, `yarn.cjs`, `yarnpkg` | `--cwd` and the rest, anywhere | classic's `publish` and berry's `npm publish` both listed | |
@@ -77,6 +77,72 @@ it past 16 readings (sh's `-c`, perl's and ruby's `-e`, before the first operand
 | aws | documented | 2 | `aws` | globals anywhere (`--region`, `--profile`, `--endpoint-url`, `--query`, `--cli-*`) | a service, then an operation (s3's high-level commands are operations) | `~/.aws/cli/alias` |
 | gcloud | documented | 5xx | `gcloud` | globals anywhere; `--flags-file` makes the command unlocatable | an optional release track (alpha, beta, preview, dropped), then groups and a command | |
 | (any other tool) | generic | | its basename | | | |
+
+## Multicall applets by name (added 2026-11-11)
+
+A multicall binary is one file under many names (uutils coreutils on Ubuntu 25.10 and 26.04: about 115 hard links of
+one file; busybox and toybox through symlinks), and it picks what it does from a name. Every exec is read by its exact
+names and by busybox's and toybox's argv[0] forms (the table above). Upstream uutils picks more widely. Read from
+`src/bin/coreutils.rs` and `src/common/validation.rs` at main `a4b65e12` (2026-11-10, workspace version 0.13.0) and at
+release 0.12.0, not run:
+
+- **The program name** is the file stem (the last path component, without its last extension: `rm.x` is `rm`) of
+  AT_EXECFN, the pathname as passed to execve. It is argv[0]'s instead when their basenames are equal (0.12.0), when
+  AT_EXECFN starts with `/proc/` or `/dev/fd/` (an exec through a descriptor), or when it names a file uutils can
+  open that starts with `#!` (a script whose interpreter is uutils; an execute-only script it cannot open keeps its
+  own name). On musl and other platforms it is always argv[0]'s.
+- **The applet** is the longest utility name the program name ends with: `xrm`, `farm` and `uu-rm` run rm, and
+  `stty` runs stty, not tty. A name ending in `utils` never runs its suffix.
+- **Otherwise** a name ending in `utils` or `box` runs the applet argv[1] names, with argv[2:] (`myutils rm -r`).
+- **main only:** with no match, the name a symlink at that program path (AT_EXECFN, or argv[0] where argv[0] is
+  taken) points to, read the same way.
+
+Ubuntu patches this (`require-utility-to-be-invoked-at-matching-path`): its rust-coreutils refuses a name that does
+not match `/proc/self/exe`. On Ubuntu 26.04.1 (rust-coreutils 0.10.0-1ubuntu2~26.04.1) no such name ran rm through an
+allowed `/bin/ls` (measured 2026-11-11). Tego does not rely on the patch.
+
+**What the matcher reads.** On a multicall image it reads each of these names as uutils would, for **deny and ask
+entries only**:
+
+- **A multicall image** is a file whose link count, read by the supervisor's own `fstat` of the walk's descriptor (the
+  one that gives its identity), is more than one, under a walked name a uutils build links its file under: one ending
+  with a listed utility (`ls`, `xrm`, `uu-rm`), with `utils` or `box`, or one of `[`, `relpath`, `hostname`, `kill`,
+  `more`, `uptime`. A file named `coreutils` (the row that lists the applets) is one whatever its count. A hard-linked
+  program of another name (`unzip`, `perl`) is not one. A file named `busybox` or `toybox` with one link is not one:
+  those read argv[0] exactly, as the table above already does. `compile --test` stats no file, so for it only a file
+  named `coreutils` is one. The gate's scores do not read these applets.
+- **The names**: the requested pathname, the walked file's own name (the symlink fallback) and argv[0], for the exec's
+  image; the requested pathname, the `#!` path and the walked interpreter's name, for a `#!` interpreter that is a
+  multicall image; and the operand, the walked program's name and its argv[0], for a program run through the dynamic
+  loader. The matcher cannot tell build, libc or patch apart, so it reads them all.
+- **The applet** of each name: every tool a deny or ask entry names that the name's stem ends with, unless a longer
+  utility name of the row's list ends it too (`readlink` is never `link`, `chmod` never `od`). The list is the 104
+  names both Ubuntu 25.10's rust-coreutils 0.2.2 (its links) and upstream main (its utility crates) have: a subset
+  of each of those two builds' lists, so for them a listed name never hides an applet the build would run. uutils can
+  be built with fewer utilities; such a build may run a shorter name (`printenv` as `env`) that is not read. A name a
+  build lists and the row does not (`b3sum`, `sha3sum`) can be read as a shorter ruled tool (`sum`), which only
+  refuses more. A stem ending in `utils` or `box` is read as `coreutils` with argv[1:], so argv[1] is the applet,
+  with argv[2:], and a deny entry on `coreutils` meets it; until the staged read reaches argv[1] the decision is not
+  final.
+- **The record** says `command_via: multicall`.
+
+These readings never admit an exec and never make a constrained tool's invocation unlisted, so the allow side's own
+answer is unchanged (`TestMulticallOnlyTightens` holds every decision of a vocabulary of names, link counts and argv,
+with and without them, to that, and `FuzzMulticallOnlyTightens` the same for any input). A deny entry wins over an
+allow entry here as everywhere, so some execs an allow entry admits are now refused: an exec whose names read both
+as `ls -l` (allowed) and as `rm -r` (denied) is refused. Deny entries are met on every reading before ask entries,
+so an ask entry on `ls` never names an exec that reads as a denied `rm -r`. A hard-linked program that is not uutils
+but whose name ends with a listed utility (klibc's `zcat`, 3 links) is refused under `deny: [cat]`.
+
+**Not read.** An allow entry still admits what the binary picks: under `exec.allow: [/bin/ls]` on an upstream uutils
+build, `/proc/self/fd/N` of ls with argv[0] `xrm` runs rm. A one-link copy of a multicall binary under another name
+is R2's copy, and so is a copy the agent links under more names. A symlink chain's middle names (the matcher reads the
+requested name and the walk's last link). main's symlink fallback, one readlink of the program path it chose, which
+is argv[0] for a `/proc/` or `/dev/fd/` exec: `/proc/self/fd/N` of ls with argv[0] a path to the agent's symlink
+`q -> xrm` runs rm on main. toybox's own fallback, a readlink of argv[0] read as a path. Making any of these needs a
+write entry, as a copy does. The argv a decision read is a copied fact at tier landlock and on tier cgroup's
+fanotify fallback (ADR 0041, `exec.rules/argv`); at a plane tier the pin binds the names these readings use (ADR 0048
+amendment of 2026-11-11).
 
 ## The generic fallback
 

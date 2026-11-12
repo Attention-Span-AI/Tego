@@ -45,8 +45,10 @@ func summaryLedger(t *testing.T, root, anchor string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Every read recorded (record: full), so its summary has no reads line (TestReadsLineFollowsTheFieldNeverTheLevel).
 	if err := w.WriteRunStart(record.RunStartPayload{Command: []string{"agent"}, Cwd: "/w/proj", Tier: "landlock", Capture: "off",
-		Capabilities: map[string]bool{string(backend.CapRecordExecOpenNet): true, string(backend.CapRecordReads): true}}); err != nil {
+		Capabilities:  map[string]bool{string(backend.CapRecordExecOpenNet): true, string(backend.CapRecordReads): true},
+		ReadsNotified: &record.ReadsNotified{Notified: true, Why: record.ReadsNotifiedWhyFull}}); err != nil {
 		t.Fatal(err)
 	}
 	add := func(kind record.Kind, verdict record.Verdict, rule string, reason record.Reason, payload any) {

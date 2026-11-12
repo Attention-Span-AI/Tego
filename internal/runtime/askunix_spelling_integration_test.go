@@ -6,6 +6,7 @@ package runtime
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -272,20 +273,36 @@ func runAskUnixSpellings(t *testing.T, bin, tier string) {
 		// out/l0 .. out/l4 are a chain of symlinks each through 500 directories and back to the next, and out/l5 leads
 		// through the same directories to 600 that do not exist. They are made before the run, as a previous run of
 		// the agent could have made them: the plane refuses the agent an fs path deeper than 64 below its nearest
-		// entry (enforce-plane), and the placement is the supervisor's at every tier.
+		// entry (enforce-plane), and the placement is the supervisor's at every tier. A filesystem that stores no
+		// symlink target that long (xfs: 1024 bytes, against these 2.5 KB; AlmaLinux 9.8's /tmp, 2026-11-10) gets 200
+		// directories and 300: each target then fits in 1,013 bytes, and the chain still takes about 2,500 names,
+		// twice what the supervisor walks (agent.ResolveUnixPlace).
 		s := spellingScene(t, bin, tier, project, scope, "2s", spellingChainProbe, func(string) {
 			out := filepath.Join(project, "out")
-			down := strings.Repeat("m/", 500)
+			depth := 500
+			probe := filepath.Join(out, "long-target")
+			switch err := os.Symlink(strings.Repeat("x/", 1300), probe); {
+			case errors.Is(err, unix.ENAMETOOLONG):
+				depth = 200
+				t.Logf("this filesystem refuses a 2.6 KB symlink target (%v): the chain goes through %d directories", err, depth)
+			case err != nil:
+				t.Fatal(err)
+			default:
+				if err := os.Remove(probe); err != nil {
+					t.Fatal(err)
+				}
+			}
+			down := strings.Repeat("m/", depth)
 			if err := os.MkdirAll(filepath.Join(out, "deep", down), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			for i := 0; i < 5; i++ {
-				target := "deep/" + down + strings.Repeat("../", 501) + "l" + strconv.Itoa(i+1)
+				target := "deep/" + down + strings.Repeat("../", depth+1) + "l" + strconv.Itoa(i+1)
 				if err := os.Symlink(target, filepath.Join(out, "l"+strconv.Itoa(i))); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if err := os.Symlink("deep/"+down+strings.Repeat("n/", 600)+"app.sock", filepath.Join(out, "l5")); err != nil {
+			if err := os.Symlink("deep/"+down+strings.Repeat("n/", depth+100)+"app.sock", filepath.Join(out, "l5")); err != nil {
 				t.Fatal(err)
 			}
 		})

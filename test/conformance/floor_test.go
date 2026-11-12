@@ -122,6 +122,9 @@ func TestWantWhereAnswersOnItsMachines(t *testing.T) {
 				if cw.UnixDiag != nil {
 					on.UnixDiag = *cw.UnixDiag
 				}
+				if cw.ExecmodRefused != nil {
+					on.ExecmodRefused = *cw.ExecmodRefused
+				}
 				if cw.Matches(current) || !cw.Matches(on) {
 					t.Fatalf("%s: want_where[%d] matches the current machine or not its own", fx.ID(c), n)
 				}

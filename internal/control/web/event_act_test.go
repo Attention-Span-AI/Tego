@@ -221,7 +221,7 @@ func TestNeverAllowOnAskedLine(t *testing.T) {
 	if loc := w.Header().Get("Location"); !strings.HasPrefix(loc, line+"?a=block&level=1&flash=") || !strings.HasSuffix(loc, "#flash") {
 		t.Errorf("a stale base returned to %q", loc)
 	}
-	mustContain(t, "a stale base's page", follow(t, s, c, w), "Not saved · the policy changed since you looked", "Confirm: never allow")
+	mustContain(t, "a stale base's page", follow(t, s, c, w), "Not saved · the contract changed since you looked", "Confirm: never allow")
 	if b, _ := os.ReadFile(contract); string(b) != askContract {
 		t.Fatal("a stale base wrote the contract")
 	}

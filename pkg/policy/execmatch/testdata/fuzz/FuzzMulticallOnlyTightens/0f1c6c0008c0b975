@@ -1,0 +1,6 @@
+go test fuzz v1
+string("0od")
+string("")
+string("0")
+uint64(173)
+bool(false)

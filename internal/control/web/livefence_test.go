@@ -292,7 +292,7 @@ func TestAdjustableRulesPage(t *testing.T) {
 	}
 	body := w.Body.String()
 	mustContain(t, "the Rules page", body, ">Adjustable</span>", "Compare modes", `id="live-fence"`,
-		"Live policy inside the fence", ">Fence (kernel)</span>",
+		"Live contract inside the fence", ">Fence (kernel)</span>",
 		"Read /srv/exports", ">Refused<", "Granted until ", "· granted by ", "Connect to api.stripe.com:443", "Run /usr/bin/psql",
 		"best effort: a copy of the program under another name is not covered", "Grant…", "Lift…",
 		`action="/runs/`+adjRun+`/restore"`, `action="/runs/`+adjRun+`/lift"`, `<option value="1h" selected="selected">1 hour</option>`)

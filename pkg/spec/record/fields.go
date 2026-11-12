@@ -18,13 +18,13 @@ import (
 	"unicode/utf8"
 )
 
-// This file validates the fields of the reserved record revisions (minors 30 to 34): their
+// This file validates the fields of the reserved record revisions (minors 31 to 35), and run_start.deny_read_frozen (30): their
 // grammars, their codes and the revision below which each is refused.
 
 // The grammars of the reserved revisions' fields. Each is frozen with its revision: a line written at that revision holds
 // exactly what these accept, whatever a later revision allows.
 const (
-	// StoppedByPattern is the grammar of the reserved run_end.stopped_by (minor 30).
+	// StoppedByPattern is the grammar of the reserved run_end.stopped_by (minor 35).
 	StoppedByPattern = `^(person:p-[0-9a-f]{16}|device:d-[0-9a-f]{16}|service:deploy-[a-z][a-z0-9-]{0,47})$`
 	// DeploymentIDPattern is a deployment id: dep_ and 26 characters of the run id's base32-Crockford alphabet.
 	DeploymentIDPattern = `^dep_[0-9a-hjkmnp-tv-z]{26}$`
@@ -151,6 +151,7 @@ func (p *RunStartPayload) ValidateFields() error {
 		{"run_start.secrets", p.Secrets != nil, MinorSecrets},
 		{"run_start.vault", p.Vault != nil, MinorSecrets},
 		{"run_start.shares", p.Shares != nil, MinorShares},
+		{"run_start.deny_read_frozen", p.DenyReadFrozen != nil, MinorDenyReadFrozen},
 	} {
 		if err := belowMinor(b.field, b.present, m, b.need); err != nil {
 			return err
@@ -175,6 +176,11 @@ func (p *RunStartPayload) ValidateFields() error {
 	}
 	if p.Shares != nil {
 		if err := validateShares(p.Shares); err != nil {
+			return err
+		}
+	}
+	if p.DenyReadFrozen != nil {
+		if err := p.DenyReadFrozen.validate(); err != nil {
 			return err
 		}
 	}
@@ -273,6 +279,35 @@ func validateShares(ss []ShareUse) error {
 	return nil
 }
 
+// validate is run_start.deny_read_frozen's rule [deny-read-frozen]: at least one directory named or omitted, at most
+// MaxDenyReadFrozen named, each a frozenDir, in strictly ascending byte order (so each once), and Omitted not negative.
+func (f *DenyReadFrozen) validate() error {
+	const at = "run_start.deny_read_frozen"
+	switch {
+	case f.Dirs == nil:
+		return fieldErr("deny-read-frozen", at+".dirs", "absent; the field always lists dirs, [] when every one is omitted")
+	case len(f.Dirs) > MaxDenyReadFrozen:
+		return fieldErr("deny-read-frozen", at+".dirs", "%d directories, more than %d", len(f.Dirs), MaxDenyReadFrozen)
+	case f.Omitted < 0:
+		return fieldErr("deny-read-frozen", at+".omitted", "%d is negative", f.Omitted)
+	case len(f.Dirs) == 0 && f.Omitted == 0:
+		return fieldErr("deny-read-frozen", at, "names no directory and omits none; a run whose ruleset listed none has no field")
+	}
+	for i, d := range f.Dirs {
+		if !frozenDir(d) {
+			return fieldErr("deny-read-frozen", at+".dirs", "entry %d: %q is not / or a clean absolute path of at most %d "+
+				"bytes of UTF-8 without a control character", i, d, MaxSharePathBytes)
+		}
+		if i > 0 && f.Dirs[i-1] >= d {
+			return fieldErr("deny-read-frozen", at+".dirs", "entry %d: %q does not follow %q in byte order", i, d, f.Dirs[i-1])
+		}
+	}
+	return nil
+}
+
+// frozenDir is a directory run_start.deny_read_frozen can name: "/" or a cleanAbsPath.
+func frozenDir(d string) bool { return d == "/" || cleanAbsPath(d) }
+
 // cleanAbsPath reports a path that is absolute, not /, and already clean (no ., .., // or trailing /), at most
 // MaxSharePathBytes of valid UTF-8 with no C0 or C1 control character and no DEL.
 func cleanAbsPath(p string) bool {
@@ -346,7 +381,7 @@ type mvpKey struct {
 var mvpKeys = [...]mvpKey{
 	{"deployment", KindRunStart}, {"secrets", KindRunStart}, {"vault", KindRunStart}, {"shares", KindRunStart},
 	{"stopped_by", KindRunEnd}, {RedactionsKey, ""},
-	{"live_mode", KindRunStart}, {"live_fence", KindRunStart},
+	{"live_mode", KindRunStart}, {"live_fence", KindRunStart}, {"deny_read_frozen", KindRunStart},
 }
 
 // IsMVPField reports whether key, a payload key of a line of kind k, is a field of a reserved revision, or a key a
@@ -362,7 +397,7 @@ func IsMVPField(k Kind, key string) bool {
 	return false
 }
 
-// ValidateAt applies Validate's rules and then those of the fields of the reserved record revisions (minors 30 to 34) to a line
+// ValidateAt applies Validate's rules and then those of the exactly read fields (the reserved revisions' 31 to 35, deny_read_frozen's 30) to a line
 // of a ledger at revision minor, the ledger's run_start record_minor; on a run_start, minor must be that line's own
 // record_minor [record-minor]. Each field is read exactly, as a reader holding only the line would: a key, at the top
 // level or inside a block, that a reader matching names without regard to case would take for a field but that is not
@@ -514,7 +549,7 @@ func validateRunStartAt(minor int, fields []field, raw map[string][]byte) error 
 		key string
 		v   any
 	}{{"deployment", &p.Deployment}, {"secrets", &p.Secrets}, {"vault", &p.Vault}, {"shares", &p.Shares},
-		{"live_mode", &p.LiveMode}, {"live_fence", &p.LiveFence}} {
+		{"live_mode", &p.LiveMode}, {"live_fence", &p.LiveFence}, {"deny_read_frozen", &p.DenyReadFrozen}} {
 		if v, ok := raw[b.key]; ok {
 			if err := decodeField("run_start."+b.key, v, b.v); err != nil {
 				return err
@@ -565,6 +600,9 @@ var fieldKeyCodes = map[string]string{
 	"gap.live_block.at":                         "live-block",
 	"gap.live_block.until":                      "live-block",
 	"gap.live_block.refused":                    "live-block",
+	"run_start.deny_read_frozen":                "deny-read-frozen",
+	"run_start.deny_read_frozen.dirs":           "deny-read-frozen",
+	"run_start.deny_read_frozen.omitted":        "deny-read-frozen",
 	"run_start.live_mode":                       "live-mode",
 	"run_start.live_fence":                      "live-fence",
 	"run_start.live_fence.sha256":               "live-fence",

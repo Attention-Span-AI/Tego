@@ -3,8 +3,10 @@
 package doctor
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -245,4 +247,71 @@ func kindName(k decide.PlaneKind) string {
 		return n
 	}
 	return "other"
+}
+
+// TestTheProbeChildrenThatNeedTheLeaderStartOnIt: init keeps main on the thread-group leader for each probe child
+// whose work must be done there (onLeader): the ptrace_traceme helper, and the known answers' child, whose mount
+// namespace doctor reads through /proc/<pid>/root, the leader's view. Only the traceme helper was kept there, and the
+// known answers' child that the scheduler had moved made its namespace on another thread: doctor's hold of x/xd
+// failed ENOENT in the 7.0 guest's cgroup-1 shard (acceptance 2C, 2026-11-11). Every other argv runs as before.
+func TestTheProbeChildrenThatNeedTheLeaderStartOnIt(t *testing.T) {
+	for _, tc := range []struct {
+		argv []string
+		want bool
+	}{
+		{[]string{"tego", PlaneProbeCommand, planeTracemeRole}, true},
+		{[]string{"tego", PlaneProbeCommand, planeKnownRole, "/run/tego/.tego-doctor-plane-1/k"}, true},
+		{[]string{"tego", PlaneProbeCommand, "child", "/run/tego/.tego-doctor-plane-1/c"}, false},
+		{[]string{"tego", PlaneProbeCommand, "ptrace-target"}, false},
+		{[]string{"tego", PlaneProbeCommand, "noop"}, false},
+		{[]string{"tego", PlaneProbeCommand}, false},
+		{[]string{"tego", "doctor", planeKnownRole}, false},
+	} {
+		if got := onLeader(tc.argv); got != tc.want {
+			t.Errorf("onLeader(%q) = %v, want %v", tc.argv, got, tc.want)
+		}
+	}
+}
+
+// TestTheKnownAnswersChildRefusesToRunOffItsLeader: the known answers' child refuses, with the reason and before it
+// makes any namespace or mount, when its main is on a thread other than the thread-group leader, so a child the init
+// failed to keep on the leader fails the probe closed (no plane mode offered, the reason on stderr) rather than answer
+// from a namespace doctor cannot see through /proc/<pid>/root. A KVM guest showed that such a child is the failure
+// TestIntegrationKnownAnswerChildIsSeenThroughProcRoot guards (integration 6, 2026-11-11: off the leader, x/xd/img
+// was ENOENT through /proc/<pid>/root). Here the leader is held by another goroutine, so the child's main runs off it.
+func TestTheKnownAnswersChildRefusesToRunOffItsLeader(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "k")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr := os.Stderr
+	os.Stderr = w
+	code := make(chan int, 1)
+	go func() {
+		// Hold this thread; when it is the leader, the child's main runs in a goroutine that cannot be scheduled on it.
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		if unix.Gettid() != unix.Getpid() {
+			code <- planeKnownMain(dir) // it stays locked: the thread ends with this goroutine, as the child's would
+			return
+		}
+		inner := make(chan int, 1)
+		go func() { inner <- planeKnownMain(dir) }()
+		code <- <-inner
+	}()
+	got := <-code
+	os.Stderr = stderr
+	_ = w.Close()
+	said, _ := io.ReadAll(r)
+	_ = r.Close()
+	if got != 1 || !strings.Contains(string(said), "not its thread-group leader") {
+		t.Errorf("the known answers' child off its leader: exit %d, stderr %q; want 1 and the reason", got, said)
+	}
+	if ents, err := os.ReadDir(dir); err != nil || len(ents) != 0 {
+		t.Errorf("the refused child made %d entries in its folder (%v)", len(ents), err)
+	}
 }

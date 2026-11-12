@@ -308,7 +308,7 @@ func TestKeepPlaceInChrome(t *testing.T) {
 	ru.until(t, "loaded", `document.readyState === "complete" && location.search.indexOf("`+rulesRunA+`") >= 0 && !!document.querySelector("main .rules-pick")`)
 	ru.eval(t, `window.__tegoMark = "kept"`)
 	ru.eval(t, `(function () { var f = document.querySelector("main .rules-pick"); f.querySelector('select[name="run"]').value = "`+rulesRunB+`"; f.requestSubmit(); })()`)
-	ru.until(t, "the other run's rules", `location.search.indexOf("run=`+rulesRunB+`") >= 0 && document.querySelector('main .rules-pick select[name="run"]').value === "`+rulesRunB+`" && document.querySelector("main").textContent.indexOf("Policy · rules-demo") >= 0`)
+	ru.until(t, "the other run's rules", `location.search.indexOf("run=`+rulesRunB+`") >= 0 && document.querySelector('main .rules-pick select[name="run"]').value === "`+rulesRunB+`" && document.querySelector("main").textContent.indexOf("Contract · rules-demo") >= 0`)
 	kept(ru, "after the Rules picker")
 
 	fmt.Println("keep place in chrome: Runs chips and a Logs facet and search in place, at the same scroll, Back and Forward at theirs; no reload")

@@ -54,7 +54,7 @@ func TestRunHighlightsAndGroupedRefusals(t *testing.T) {
 	hl := body[strings.Index(body, `id="h-hl"`):strings.Index(body, "run-facts")]
 	for _, want := range []string{
 		`class="sev sev-High"`, "400 routine", "/w/home/.ssh/id_rsa", "Never read",
-		"127.0.0.1:8802", "After a secret read", "chatgpt.com:443", "In policy", "Routine · 1 host",
+		"127.0.0.1:8802", "After a secret read", "chatgpt.com:443", "In contract", "Routine · 1 host",
 		`href="/logs?q=%2Fw%2Fhome%2F.ssh%2Fid_rsa&amp;run=` + run + `"`, `href="/logs?q=127.0.0.1%3A8802&amp;run=` + run + `"`,
 	} {
 		if !strings.Contains(hl, want) {

@@ -19,6 +19,14 @@ func init() {
 	funcs["cmpForm"] = cmpForm
 	funcs["cmpSide"] = cmpSide
 	funcs["cmpStats"] = func(a, b ledgerview.CmpSide) []cmpStatView { return []cmpStatView{cmpStat(a, "A"), cmpStat(b, "B")} }
+	// cmpUnrec is readGap for a secret row's cell that saw nothing on a run that kept no file read: "not seen" there
+	// would claim an absence the run could not record.
+	funcs["cmpUnrec"] = func(c ledgerview.CmpCell, class string, r *ledgerview.Run) string {
+		if c.Seen || class != "secret" {
+			return ""
+		}
+		return readGap(r)
+	}
 	funcs["cmpTone"] = func(c ledgerview.CmpCell) string {
 		switch c.Tone {
 		case ledgerview.ToneBad:
@@ -72,6 +80,9 @@ func cmpStat(s ledgerview.CmpSide, label string) cmpStatView {
 		st.Detail = plural4(len(v.Read), "secret read, none sent", "secrets read, none sent")
 	default:
 		st.Detail = "no attempt on a secret seen"
+	}
+	if v.Kind != ledgerview.VerdictLeak && v.Kind != ledgerview.VerdictProtected && readGap(s.Run) != "" {
+		st.Detail = "file reads not recorded"
 	}
 	return st
 }

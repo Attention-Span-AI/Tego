@@ -4,6 +4,7 @@ package rows
 
 import (
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"slices"
 	"strings"
@@ -133,6 +134,26 @@ func prefixFacts(tool, argv0 string, toks []string) execmatch.Facts {
 	return execmatch.Facts{NodeVersion: "20.19.4", Requested: tool, Path: tool, Image: tool, Argv0: argv0, Argv: argv, ArgvComplete: true}
 }
 
+// muxFacts is an exec of a uutils multicall image (116 links) under a stem its argv[1] dispatch reads (myutils, xbox),
+// with arg1 as argv[1] and tokens after it. A row's tool named there is reached only through the multicall readings,
+// whose finality denySettled decides, not settled.
+func muxFacts(stem, arg1 string, toks []string) execmatch.Facts {
+	argv := append([]string{stem, arg1}, toks...)
+	return execmatch.Facts{NodeVersion: "20.19.4", Requested: "3", Path: "/proc/self/fd/3", Image: "ls", Argv0: stem, Argv: argv,
+		ArgvComplete: true, Links: 116}
+}
+
+// prefixShapes are the ways an exec reaches a row's tool: by its name (prefixFacts, argv[0] given), as a script
+// argv[1] names under myutils, and as argv[1] by name under xbox (muxFacts; argv[0] is the stem).
+var prefixShapes = []struct {
+	name  string
+	facts func(tool, argv0 string, toks []string) execmatch.Facts
+}{
+	{"by name", prefixFacts},
+	{"myutils ./tool", func(tool, _ string, toks []string) execmatch.Facts { return muxFacts("myutils", "./"+tool, toks) }},
+	{"xbox tool", func(tool, _ string, toks []string) execmatch.Facts { return muxFacts("xbox", tool, toks) }},
+}
+
 // TestPrefixFinalHoldsEveryRow is prefixHolds for every built-in row under every contract prefixRows gives it, at
 // every prefix length: each vector of up to two tokens of its vocabulary with argv[0] the tool's name, and 250 seeded
 // vectors of up to 10 tokens, every other one with argv[0] empty. -short leaves the pairs out.
@@ -181,6 +202,57 @@ func TestPrefixFinalHoldsEveryRow(t *testing.T) {
 	t.Logf("%d tools, %d execs checked at every prefix length", len(prs), checked)
 }
 
+// TestPrefixFinalHoldsMulticall is prefixHolds for every built-in row reached through a multicall image's readings
+// (prefixShapes after the first), under every contract prefixRows gives it, at every prefix length: each vector of
+// one token of its vocabulary, each of the row's first subcommand and two tokens, and 250 seeded vectors of up to 10
+// tokens. -short leaves the subcommand triples out.
+func TestPrefixFinalHoldsMulticall(t *testing.T) {
+	prs := prefixRows(t)
+	rng := rand.New(rand.NewPCG(48, 4))
+	checked := 0
+	for _, shape := range prefixShapes[1:] {
+		for _, pr := range prs {
+			var vecs [][]string
+			sub := ""
+			if pr.row != nil && pr.row.Root != nil && len(pr.row.Root.Subs) > 0 {
+				sub = slices.Sorted(maps.Keys(pr.row.Root.Subs))[0]
+			}
+			for _, a := range pr.vocab {
+				vecs = append(vecs, []string{a})
+				if testing.Short() {
+					continue
+				}
+				for _, b := range pr.vocab {
+					if sub != "" {
+						vecs = append(vecs, []string{sub, a, b})
+					} else {
+						vecs = append(vecs, []string{a, b})
+					}
+				}
+			}
+			for range 250 {
+				v := make([]string, 1+rng.IntN(10))
+				for i := range v {
+					v[i] = pr.vocab[rng.IntN(len(pr.vocab))]
+				}
+				vecs = append(vecs, v)
+			}
+		contracts:
+			for i, ix := range pr.ixs {
+				for _, v := range vecs {
+					f := shape.facts(pr.tool, "", v)
+					if why := prefixHolds(ix, &f); why != "" {
+						t.Errorf("%s, row %s, %v, argv %q: %s", shape.name, pr.tool, pr.contracts[i], f.Argv, why)
+						continue contracts
+					}
+					checked++
+				}
+			}
+		}
+	}
+	t.Logf("%d multicall execs checked at every prefix length", checked)
+}
+
 // TestPrefixCodeBeforeItsEnd: an interpreter that has read its code option still reads options until its first
 // operand, and each option it does not list forks the readings; past MaxReadings the whole vector is refused
 // command-unresolved. So a prefix that has read the code option is not final until no option can follow. The first
@@ -210,7 +282,8 @@ func TestPrefixCodeBeforeItsEnd(t *testing.T) {
 }
 
 // FuzzPrefixFinalHolds is prefixHolds over any row, contract and vector of its vocabulary (prefixRows): plan's bytes
-// pick the row, the contract, argv[0] and up to 16 words.
+// pick the row, the contract, argv[0] and the shape (prefixShapes: by name, or through a multicall image), and up to
+// 16 words.
 func FuzzPrefixFinalHolds(f *testing.F) {
 	prs := prefixRows(f)
 	shRow := slices.IndexFunc(prs, func(pr prefixRow) bool { return pr.tool == "sh" })
@@ -219,6 +292,14 @@ func FuzzPrefixFinalHolds(f *testing.F) {
 	f.Add([]byte{byte(shRow), 0, 1, vocabAt(sh, "+c0"), vocabAt(sh, "+0"), vocabAt(sh, "+0"), vocabAt(sh, "+0"),
 		vocabAt(sh, "+0"), vocabAt(sh, "+0"), vocabAt(sh, "")})
 	f.Add([]byte{0, 0, 0, 1, 2, 3})
+	// cargo reached as myutils' argv[1] script, under deny: cargo x: the first subcommand, then --config naming an
+	// alias, which makes the whole vector unlocatable; its prefix located at the subcommand was a final none when
+	// denySettled read no pending reading.
+	cargoRow := slices.IndexFunc(prs, func(pr prefixRow) bool { return pr.tool == "cargo" })
+	cargo := prs[cargoRow]
+	sub := slices.Sorted(maps.Keys(cargo.row.Root.Subs))[0]
+	f.Add([]byte{byte(cargoRow), byte(slices.IndexFunc(cargo.contracts, func(c []string) bool { return slices.Equal(c, []string{"deny: cargo x"}) })), 2, vocabAt(cargo, sub),
+		vocabAt(cargo, "--config"), vocabAt(cargo, "alias.x")})
 	f.Fuzz(func(t *testing.T, plan []byte) {
 		if len(plan) < 3 || len(plan) > 19 {
 			return
@@ -229,13 +310,14 @@ func FuzzPrefixFinalHolds(f *testing.F) {
 		if plan[2]%2 == 1 {
 			argv0 = ""
 		}
+		shape := prefixShapes[int(plan[2]/2)%len(prefixShapes)]
 		toks := make([]string, 0, len(plan)-3)
 		for _, b := range plan[3:] {
 			toks = append(toks, pr.vocab[int(b)%len(pr.vocab)])
 		}
-		fx := prefixFacts(pr.tool, argv0, toks)
+		fx := shape.facts(pr.tool, argv0, toks)
 		if why := prefixHolds(pr.ixs[i], &fx); why != "" {
-			t.Fatalf("row %s, %v, argv %q: %s", pr.tool, pr.contracts[i], fx.Argv, why)
+			t.Fatalf("%s, row %s, %v, argv %q: %s", shape.name, pr.tool, pr.contracts[i], fx.Argv, why)
 		}
 	})
 }

@@ -88,13 +88,23 @@ const Version = 1
 //	29 an action's attribution can be method tool_id, naming the reply's tool_use_id, or method tid; an ssl_request
 //	   carries side when it is a model host's side traffic and tool_results when derive read the tool results it
 //	   reports (capture-derive.md R40, R42, 2026-10-20)
+//	30 run_start's deny_read_frozen names the directories a deny_read's enumeration listed once at launch, in whose
+//	   listing a name made later is no sibling the Landlock ruleset grants (enforce-landlock R3, GAPS A12,
+//	   2026-11-11; it took 30, and run_end.stopped_by moved from 30 to 35)
 //
 // A revision is the next free number in the build that merges it, whatever number a plan expected, so a build writes
 // 1 to Minor and every one of them (TestRecordMinorsAreContiguous, spec/record/v1/README.md "Revisions").
 //
-// 30 to 34 are reserved record revisions (MinorStoppedBy, MinorDeployment, MinorSecrets, MinorShares; 31 is reserved),
+// 31 to 35 are reserved record revisions (MinorDeployment, MinorSecrets, MinorShares, MinorStoppedBy; 31 is reserved),
 // declared and validated ahead of their writers: Minor reaches each only when the package that writes its field merges.
-const Minor = MinorAttribution
+const Minor = MinorDenyReadFrozen
+
+// MinorDenyReadFrozen is the first revision whose run_start writes deny_read_frozen for every run whose Landlock
+// ruleset enumerated a deny_read target's ancestors (enforce-landlock R3, E28): the directories listed once at launch,
+// in which a name made during the run is unreadable to it until it ends (GAPS A12). Absent at this revision or later,
+// the run's ruleset listed no directory (nothing denied, every target unenforced, or a records-only run); below it,
+// the writer did not say.
+const MinorDenyReadFrozen = 30
 
 // MinorAttribution is the first revision whose attribute stage ties an action to the reply that asked for it by
 // that reply's tool_use id (method tool_id, attribution.tool_use_id) or to its own thread's step (method tid), and
@@ -183,14 +193,14 @@ const MinorHeldReads = 18
 // Event.ValidateAt and the payloads' ValidateFields refuse a field in a ledger below its revision [below-minor], so no
 // writer can put one in a ledger whose record_minor does not say it knew the field.
 //
-//	30 run_end.stopped_by
 //	31 reserved; no field is defined, so no constant
 //	32 run_start.deployment
 //	33 run_start.secrets, run_start.vault and every line's redactions
 //	34 run_start.shares
+//	35 run_end.stopped_by (declared at 30 until 2026-11-11, when MinorDenyReadFrozen took 30)
 const (
 	// MinorStoppedBy is the first revision whose run_end may carry stopped_by.
-	MinorStoppedBy = 30
+	MinorStoppedBy = 35
 	// MinorDeployment is the first revision whose run_start may carry deployment.
 	MinorDeployment = 32
 	// MinorSecrets is the first revision whose run_start may carry secrets and vault, and whose lines may carry

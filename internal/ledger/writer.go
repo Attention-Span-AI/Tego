@@ -670,9 +670,16 @@ const refusalWindow = 10 * time.Millisecond
 // lastRefusal is last-refusal.json's latest-wins writer (record-ledger.md §3), in the reason file's v1 shape
 // (pkg/spec/reason, ADR 0061). What its readers (a harness polling TEGO_REASON after the refusal it saw) may rely
 // on: the file is always one whole file (temp file and rename); its seq and refusal count only grow from one write
-// to the next, so a newer refusal is never followed by an older one; it is at most refusalWindow behind the ledger
-// while the Writer is open; and Close and Abandon write the latest before they return. A crash loses at most the
-// last window; the ledger line is authoritative.
+// to the next, so a newer refusal is never followed by an older one; it lists only refused lines events.jsonl already
+// holds (post runs after the line's write); it trails the ledger by refusalWindow plus the timer's and the box's delay
+// while the Writer is open; and Close and Abandon write the latest before they return. A crash loses at most the last
+// window; the ledger line is authoritative.
+//
+// Of the two copies, the mirror (the run-readable one a harness's hook reads, MirrorLastRefusal) is written first,
+// under a lock of its own, and the run directory's copy, which no process of the run reads, after it: a refusal reaches
+// the hook as soon as the window allows and never waits behind a rename on a slow disk. A crash between the two
+// writes leaves the mirror one write ahead of the run directory's copy, never the other way, and both list only lines
+// the ledger holds (record-ledger.md §3).
 //
 // The newest reason.RingSize refused lines are kept in a ring, filled by post() under mu with no file I/O and no
 // decoding (a payload's cost to decode is the agent's to choose): post() copies the payload, into the slot's own
@@ -689,11 +696,19 @@ type lastRefusal struct {
 	armed   bool      // a flush is scheduled
 	last    time.Time // when the file was last written
 	done    bool      // Close or Abandon has flushed; nothing is written after
-	// fileMu serializes the writes and keeps the directory descriptors open under them: Close, Abandon and
-	// MirrorLastRefusal take it before they close one.
-	fileMu  sync.Mutex
-	writes  int // files written, under fileMu; for tests
-	decoded int // payloads decoded, under fileMu; for tests
+	// dirFile is the newest file the mirror got and the run directory's copy has not, nil when there is none; under
+	// mu. A write of the run directory's copy takes it, so that copy is never older than the one it replaces.
+	dirFile []byte
+	// mirrorMu serializes the writes from their copy of the ring to the mirror's write, the decoding included, and
+	// keeps the mirror's descriptor open under them. fileMu serializes the writes of the run directory's copy and
+	// keeps the run directory's descriptor open under them; a write takes it only after it let go of mirrorMu, so a
+	// rename in the run directory on a slow disk never holds up the mirror. Close, Abandon and MirrorLastRefusal take
+	// the lock of a descriptor before they close it.
+	mirrorMu sync.Mutex
+	fileMu   sync.Mutex
+	dirDone  bool // the final write of the run directory's copy is done; under fileMu
+	writes   int  // run directory copies written, under fileMu; for tests
+	decoded  int  // payloads decoded, under mirrorMu; for tests
 }
 
 // refusalSlot is one refused line of the ring: what the reason file takes from it. Until a write decodes it, its
@@ -805,17 +820,19 @@ func (r *lastRefusal) settle(recent []refusalSlot) {
 	}
 }
 
-// flushRefusal writes the file, if a refusal came since it was last written. final is Close's and Abandon's: it
-// writes what is pending and stops every later write, so no scheduled flush reaches a descriptor after it is
-// closed. The ring is copied under the refusal lock, which fileMu's order makes later than the copy any earlier
-// write took: the seq and count a write carries only grow.
+// flushRefusal writes the file, if a refusal came since it was last written: the mirror first, under mirrorMu, then
+// the run directory's copy, under fileMu, with the newest file the mirror got (dirFile). final is Close's and
+// Abandon's: it writes what is pending and stops every later write, and it returns only after every earlier write
+// has finished with both descriptors, so no scheduled flush reaches a descriptor after it is closed. The ring is
+// copied under the refusal lock, which mirrorMu's order makes later than the copy any earlier write took: the seq and
+// count a write carries only grow, in both copies.
 func (w *Writer) flushRefusal(final bool) {
 	r := &w.refusal
-	r.fileMu.Lock()
-	defer r.fileMu.Unlock()
+	r.mirrorMu.Lock()
 	r.mu.Lock()
 	if r.done {
 		r.mu.Unlock()
+		r.mirrorMu.Unlock()
 		return
 	}
 	var recent []refusalSlot
@@ -826,24 +843,56 @@ func (w *Writer) flushRefusal(final bool) {
 	}
 	r.dirty, r.armed, r.done = false, false, final
 	r.mu.Unlock()
-	if !dirty {
+	if dirty {
+		b := w.encodeLastRefusal(count, recent)
+		w.writeMirror(b)
+		r.mu.Lock()
+		r.settle(recent)
+		if b != nil {
+			r.dirFile = b
+		}
+		r.mu.Unlock()
+	}
+	r.mirrorMu.Unlock()
+	// The run directory's copy: the newest file the mirror got, unless a write that came here first took it. A
+	// final flush with nothing new still waits here for the write before it, and marks the copy done.
+	r.fileMu.Lock()
+	defer r.fileMu.Unlock()
+	if r.dirDone {
 		return
 	}
-	w.writeLastRefusal(count, recent)
-	r.writes++
+	r.dirDone = final
 	r.mu.Lock()
-	r.settle(recent)
+	b := r.dirFile
+	r.dirFile = nil
 	r.mu.Unlock()
+	if b == nil {
+		return
+	}
+	if err := writeFileAt(w.dirFD, w.dir, LastRefusalFile, b, false); err != nil {
+		w.log.Warn("ledger: last-refusal not written", "run", w.ref.ID, "err", err)
+	}
+	r.writes++
 }
 
-// writeLastRefusal rewrites last-refusal.json, one of the two files in the run directory that are overwritten
-// (§3; the other is the activity sidecar), as the reason file of count refusals with recent the newest; the
-// mirror gets the same bytes. Each refusal no write has decoded yet is decoded here, off Append's path, and its
-// fields, cut, are left in its cut. The ring is taken newest first, and once the refusals taken pass the file even
-// at their smallest (reason.MinEntryBytes) the older ones are left out: Encode would list none of them, so the file
-// is the same and an agent's flood of long targets costs a few decodes a write, not one per slot. Advisory,
-// best-effort: the ledger line is authoritative. w.refusal.fileMu is held.
-func (w *Writer) writeLastRefusal(count uint64, recent []refusalSlot) {
+// writeMirror writes b, the reason file, into the mirror when there is one; w.refusal.mirrorMu is held.
+func (w *Writer) writeMirror(b []byte) {
+	if b == nil || w.mirrorFD == nil {
+		return
+	}
+	if err := writeFileAt(w.mirrorFD, w.mirror, LastRefusalFile, b, false); err != nil {
+		w.log.Warn("ledger: last-refusal mirror not written", "run", w.ref.ID, "dir", w.mirror, "err", err)
+	}
+}
+
+// encodeLastRefusal is last-refusal.json, one of the two files in the run directory that are overwritten (§3; the
+// other is the activity sidecar), as the reason file of count refusals with recent the newest; the mirror gets the
+// same bytes. It is nil, and logged, when it cannot be encoded. Each refusal no write has decoded yet is decoded here,
+// off Append's path, and its fields, cut, are left in its cut. The ring is taken newest first, and once the refusals
+// taken pass the file even at their smallest (reason.MinEntryBytes) the older ones are left out: Encode would list
+// none of them, so the file is the same and an agent's flood of long targets costs a few decodes a write, not one per
+// slot. Advisory, best-effort: the ledger line is authoritative. w.refusal.mirrorMu is held.
+func (w *Writer) encodeLastRefusal(count uint64, recent []refusalSlot) []byte {
 	first, size := len(recent), 0
 	for first > 0 && size <= reason.MaxFileBytes {
 		first--
@@ -870,17 +919,11 @@ func (w *Writer) writeLastRefusal(count uint64, recent []refusalSlot) {
 		rs = append(rs, *s.cut)
 	}
 	b, err := reason.Encode(w.ref.ID, count, rs)
-	if err == nil {
-		err = writeFileAt(w.dirFD, w.dir, LastRefusalFile, b, false)
-	}
 	if err != nil {
 		w.log.Warn("ledger: last-refusal not written", "run", w.ref.ID, "err", err)
+		return nil
 	}
-	if b != nil && w.mirrorFD != nil {
-		if err := writeFileAt(w.mirrorFD, w.mirror, LastRefusalFile, b, false); err != nil {
-			w.log.Warn("ledger: last-refusal mirror not written", "run", w.ref.ID, "dir", w.mirror, "err", err)
-		}
-	}
+	return b
 }
 
 // MirrorLastRefusal makes every later last-refusal.json be written into dir as well, a directory the run's
@@ -908,8 +951,8 @@ func (w *Writer) MirrorLastRefusal(dir string) error {
 		_ = d.Close()
 		return ErrClosed
 	}
-	w.refusal.fileMu.Lock() // a scheduled write may be using the old descriptor
-	defer w.refusal.fileMu.Unlock()
+	w.refusal.mirrorMu.Lock() // a scheduled write may be using the old descriptor
+	defer w.refusal.mirrorMu.Unlock()
 	_ = w.mirrorFD.Close()
 	w.mirrorFD, w.mirror = d, dir
 	return nil

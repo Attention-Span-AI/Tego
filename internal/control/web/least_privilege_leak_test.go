@@ -105,7 +105,7 @@ func TestLeastPrivilegeWithholdsTheLeak(t *testing.T) {
 	}
 
 	// The cache's value is shared: a second view withholds again from the same text, never twice.
-	if again := get(t, s, c, "/runs/"+sysWatchRun+"/least-privilege"); strings.Count(again, "# WARNING:") != 1 {
+	if again := get(t, s, c, "/runs/"+sysWatchRun+"/least-privilege"); strings.Count(again, "# WARNING: secrets") != 1 {
 		t.Error("a second view warns more than once: the shared proposal was modified")
 	}
 

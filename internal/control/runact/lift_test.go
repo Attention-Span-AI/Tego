@@ -5,10 +5,13 @@ package runact
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/liveblock"
 )
 
@@ -193,5 +196,50 @@ func TestGovernedBlockCannotShorten(t *testing.T) {
 	if b, err := BlockUntil(ctx, root, liveRun, "net", "api.example.com", true, later, "cli"); err != nil ||
 		b.Word != "blocked" || !b.Until.Equal(later) {
 		t.Fatalf("a longer limit = %+v, %v", b, err)
+	}
+}
+
+// TestCheckLoosening: a running Locked run and one whose run_start is below the modes are refused ErrLocked in the words
+// a Locked lift gets; one with no ledger to read yet is refused ErrStarting, never ErrLocked (acceptance 2B); a running Adjustable run is not; a run no launcher holds, Locked
+// or Adjustable, is refused ErrNotRunning, so no caller can take a free lock for a go-ahead.
+func TestCheckLoosening(t *testing.T) {
+	lift := liveblock.CheckFence(liveblock.Target{Run: liveRun, Running: true, Timed: true}, liveblock.KindRead, "/srv/x", time.Time{})
+	for name, start := range map[string]string{
+		"Locked":   `"tier":"cgroup","command":["sh"],"record_minor":26`,
+		"below 26": strings.Replace(adjustableStart, `"record_minor":26`, `"record_minor":25`, 1),
+	} {
+		_, dir := liveDir(t, start)
+		holdRunLock(t, dir)
+		if err := CheckLoosening(dir, liveRun); !errors.Is(err, ErrLocked) || err.Error() != lift.Error() {
+			t.Fatalf("%s: %v, want %v", name, err, lift)
+		}
+	}
+	_, dir := liveDir(t, adjustableStart)
+	holdRunLock(t, dir)
+	if err := CheckLoosening(dir, liveRun); err != nil {
+		t.Fatalf("an Adjustable run: %v", err)
+	}
+	if err := os.Remove(filepath.Join(dir, ledger.EventsFile)); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckLoosening(dir, liveRun); !errors.Is(err, ErrStarting) || errors.Is(err, ErrLocked) {
+		t.Fatalf("a run with no ledger: %v, want ErrStarting", err)
+	}
+	// A first line that is there and is no run_start this tego reads: ErrStartUnreadable, never ErrStarting, whose
+	// words say to try again (the review's S1); an empty file is still starting.
+	for text, want := range map[string]error{"{\n": ErrStartUnreadable, "": ErrStarting, `{"v":1`: ErrStarting} {
+		if err := os.WriteFile(filepath.Join(dir, ledger.EventsFile), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		other := map[error]error{ErrStarting: ErrStartUnreadable, ErrStartUnreadable: ErrStarting}[want]
+		if err := CheckLoosening(dir, liveRun); !errors.Is(err, want) || errors.Is(err, other) || errors.Is(err, ErrLocked) {
+			t.Fatalf("first line %q: %v, want %v", text, err, want)
+		}
+	}
+	for name, start := range map[string]string{"Locked": `"tier":"cgroup","command":["sh"],"record_minor":26`, "Adjustable": adjustableStart} {
+		_, ended := liveDir(t, start)
+		if err := CheckLoosening(ended, liveRun); !errors.Is(err, ErrNotRunning) {
+			t.Fatalf("a %s run that is not running: %v, want ErrNotRunning", name, err)
+		}
 	}
 }

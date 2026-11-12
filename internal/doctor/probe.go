@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/cilium/ebpf/btf"
@@ -17,6 +18,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/runtime/cgroup"
 	"github.com/attention-span-ai/tego/internal/shellword"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 // CheckID names one probe; the values are the fixed D1..D9 order of R27.
@@ -47,6 +49,12 @@ type Result struct {
 	// skipped probe has still not established the capability a tier needs, and every consumer that
 	// keys on OK keeps behaving as it did; only what a person reads changes.
 	Skipped bool `json:"skipped,omitempty"`
+	// beside is D3 failed only because this process runs beside its user manager's cgroup, which it found delegated
+	// (cgroup.ErrBesideSubtree): a shell inside it passes (Report.OutsideUserManager).
+	beside bool
+	// noManager is D3 failed because no user manager runs for the uid (cgroup.ErrNoUserManager): starting one that
+	// runs without a login cures it (Report.NoUserManager).
+	noManager bool
 }
 
 // btfPath is the kernel's own BTF (D2). A variable so the test can point D2 at a symlink; nothing in a
@@ -75,32 +83,68 @@ const cgroupKillFile = "cgroup.kill"
 
 // probeKernelVersion is D1 with the parsed release the later probes need.
 func probeKernelVersion() (Result, string, Version) {
+	r, release, v, _ := probeKernel()
+	return r, release, v
+}
+
+// probeKernel is probeKernelVersion with what the kernel answered for D1's Landlock rows (kernelProbe), the form
+// the check table calls, so D1 can be rendered again once D7 has answered for connect_unix (scope.run).
+func probeKernel() (Result, string, Version, kernelProbe) {
 	var u unix.Utsname
 	if err := unix.Uname(&u); err != nil {
-		return Result{ID: CheckKernel, Detail: fmt.Sprintf("uname(2): %v", err), Fix: "run on Linux"}, "", Version{}
+		return Result{ID: CheckKernel, Detail: fmt.Sprintf("uname(2): %v", err), Fix: "run on Linux"}, "", Version{}, kernelProbe{}
 	}
 	release := unix.ByteSliceToString(u.Release[:])
+	p := kernelLandlockProbe()
+	r, v := kernelResult(release, p)
+	return r, release, v, p
+}
+
+// kernelLandlockProbe asks the kernel what D1 judges its Landlock rows by: the same landlock_create_ruleset(VERSION)
+// answer D4 reports, asked here because D1 runs first. ENOSYS and EOPNOTSUPP are the kernel saying it has no
+// Landlock; any other error is no answer (kernelProbe).
+func kernelLandlockProbe() kernelProbe {
+	p := kernelProbe{asked: true}
+	abi, err := landlockVersion()
+	switch {
+	case err == nil:
+		p.landlockABI = abi
+	case errors.Is(err, unix.ENOSYS), errors.Is(err, unix.EOPNOTSUPP):
+		p.landlockOff = true
+	}
+	return p
+}
+
+// landlockVersion is sys.LandlockABI, a variable so a test can give D1 each of the kernel's answers.
+var landlockVersion = sys.LandlockABI
+
+// kernelResult is D1 on release, on a kernel that answered p. Above MinKernel D1 is ok and its detail is advice:
+// the upstream tested floor clause comes from the release alone, and the "without:" list from missingMechanisms,
+// whose Landlock and connect_unix rows follow the kernel's answers where it gave them. Neither D1's OK nor its Fix
+// reads p. *Amended 2026-11-11:* the clause said "the tested floor", while RHEL 9's 5.14 is a tested matrix row
+// below the upstream floor (spec/backend/CAPABILITIES.md's minimum-kernel row), and every row followed the release.
+func kernelResult(release string, p kernelProbe) (Result, Version) {
 	v, err := ParseKernelRelease(release)
 	if err != nil {
 		return Result{ID: CheckKernel, Detail: fmt.Sprintf("release %q: %v", release, err),
-			Fix: "run a kernel whose release starts with major.minor.patch"}, release, Version{}
+			Fix: "run a kernel whose release starts with major.minor.patch"}, Version{}
 	}
 	if !v.AtLeast(MinKernel) {
 		return Result{ID: CheckKernel, Detail: fmt.Sprintf("%s is below %s (cgroup.kill, SECCOMP_ADDFD_FLAG_SEND)", release, MinKernel),
-			Fix: fmt.Sprintf("boot a kernel >= %s", MinKernel)}, release, v
+			Fix: fmt.Sprintf("boot a kernel >= %s", MinKernel)}, v
 	}
 	detail := fmt.Sprintf("%s (>= %s)", release, MinKernel)
 	if !v.AtLeast(TestedFloor) {
-		detail += fmt.Sprintf("; below the tested floor %s", TestedFloor)
+		detail += fmt.Sprintf("; below the upstream tested floor %s", TestedFloor)
 	}
-	if missing := MissingMechanisms(v); len(missing) > 0 {
+	if missing := missingMechanisms(v, p); len(missing) > 0 {
 		names := make([]string, 0, len(missing))
 		for _, m := range missing {
 			names = append(names, fmt.Sprintf("%s (%s, %s)", m.Name, m.Since, m.What))
 		}
 		detail += "; without: " + strings.Join(names, ", ")
 	}
-	return Result{ID: CheckKernel, OK: true, Detail: detail}, release, v
+	return Result{ID: CheckKernel, OK: true, Detail: detail}, v
 }
 
 // probeBTF is D2: the kernel exposes its BTF, the precondition of every tier-2/3 program load, and that BTF
@@ -160,21 +204,22 @@ const delegateFix = "enable systemd user delegation: Delegate=cpu memory pids in
 // again; that scratch cgroup has a writable cgroup.kill, asked between the mkdir and the rmdir since
 // only a non-root cgroup has the file; and the root's cgroup.subtree_control can be read. Which of cpu,
 // memory and pids that file enables is reported, not required (controllersResult).
-func probeCgroup(uid int) Result {
-	return probeCgroupWith(uid, cgroup.Detect)
+func probeCgroup(uid int, ceilings []config.Value) Result {
+	return probeCgroupWith(uid, ceilings, cgroup.Detect)
 }
 
 // probeCgroupWith is probeCgroup with the detection step supplied, so a Detect refusal this machine
 // cannot produce (case 39 needs a cgroup namespace the test process is not in) can still be driven
 // through the code that turns it into D3's Result.
-func probeCgroupWith(uid int, detect func(uid int) (*cgroup.FS, error)) Result {
+func probeCgroupWith(uid int, ceilings []config.Value, detect func(uid int) (*cgroup.FS, error)) Result {
 	fs, err := detect(uid)
 	if err == nil {
 		err = fs.CanPlace()
 	}
 	if err != nil {
 		detail, fix := detectFailure(err)
-		return Result{ID: CheckCgroupV2, Detail: detail, Fix: fix}
+		return Result{ID: CheckCgroupV2, Detail: detail, Fix: fix, beside: errors.Is(err, cgroup.ErrBesideSubtree),
+			noManager: errors.Is(err, cgroup.ErrNoUserManager)}
 	}
 	fix := delegateFix
 	root := fs.Root()
@@ -207,7 +252,7 @@ func probeCgroupWith(uid int, detect func(uid int) (*cgroup.FS, error)) Result {
 				"stopped atomically)", root, cgroupKillFile, killErr),
 			Fix: fmt.Sprintf("boot a kernel >= %s (cgroup.kill)", Version{5, 14, 0})}
 	}
-	return controllersResult(root, fix, fs.Privileged())
+	return controllersResult(root, fix, fs.Privileged(), ceilings)
 }
 
 // controllersResult is D3's last step: which of cpu, memory and pids root's cgroup.subtree_control enables.
@@ -218,8 +263,9 @@ func probeCgroupWith(uid int, detect func(uid int) (*cgroup.FS, error)) Result {
 // instead left a fresh RHEL 9 login, whose user manager enables memory and pids but not cpu, with no tier at all,
 // even for a contract with no limits (GAPS B15). A read that fails is reported with its errno and fails D3: an
 // empty list from it would be misdiagnosed as the controllers being missing, with a Delegate= fix that changes
-// nothing.
-func controllersResult(root, fix string, privileged bool) Result {
+// nothing. A machine limits.* ceiling (ceilings, config.Machine.LimitCeilings) on a missing controller is every run's
+// limit, so the line names it and its file: every tego run is refused at start, while D3 and the tier stay as they are.
+func controllersResult(root, fix string, privileged bool, ceilings []config.Value) Result {
 	enabled, err := os.ReadFile(filepath.Join(root, "cgroup.subtree_control"))
 	if err != nil {
 		return Result{ID: CheckCgroupV2, Detail: fmt.Sprintf("read %s/cgroup.subtree_control: %v", root, err), Fix: fix}
@@ -237,21 +283,44 @@ func controllersResult(root, fix string, privileged bool) Result {
 	}
 	detail := fmt.Sprintf("%s delegated, %s writable, controllers: %s", root, cgroupKillFile, strings.Join(controllers, " "))
 	if len(missing) > 0 {
-		var limits []string
+		var limits, set []string
+		named := 0 // the missing controllers a ceiling sits on
 		for _, c := range missing {
-			limits = append(limits, controllerLimits[c])
+			limits = append(limits, controllerLimits[c]...)
+			before := len(set)
+			for _, v := range ceilings {
+				if slices.Contains(controllerLimits[c], v.Key) {
+					set = append(set, fmt.Sprintf("%s=%s (%s)", v.Key, v.Value, v.Source))
+				}
+			}
+			if len(set) > before {
+				named++
+			}
 		}
-		detail += fmt.Sprintf("; not enabled: %s, so a run with %s is refused at start; to allow those limits, %s",
-			strings.Join(missing, " "), strings.Join(limits, " or "), cgroup.EnableFix(missing, root, privileged))
+		detail += fmt.Sprintf("; not enabled: %s, so a run with %s is refused at start", strings.Join(missing, " "),
+			strings.Join(limits, " or "))
+		if len(set) > 0 {
+			ceiling, removed, enabled := "the ceiling", "the ceiling is removed", "the controller is enabled"
+			if len(set) > 1 {
+				ceiling, removed = "the ceilings", "the ceilings are removed"
+			}
+			if named > 1 {
+				enabled = "the controllers are enabled"
+			}
+			detail += fmt.Sprintf("; the machine config sets %s %s, so every tego run is refused at start until %s or %s",
+				ceiling, strings.Join(set, ", "), enabled, removed)
+		}
+		offered, _ := cgroup.Offered(root) // nil, not known, when unreadable: EnableFix says so
+		detail += "; to allow those limits, " + cgroup.EnableFix(missing, root, privileged, offered)
 	}
 	return Result{ID: CheckCgroupV2, OK: true, Detail: detail}
 }
 
 // controllerLimits names the contract limits each controller applies (cgroup.limitFiles).
-var controllerLimits = map[string]string{
-	cgroup.ControllerCPU:    "limits.cpu or limits.cpu_weight",
-	cgroup.ControllerMemory: "limits.memory or limits.memory_high",
-	cgroup.ControllerPids:   "limits.pids",
+var controllerLimits = map[string][]string{
+	cgroup.ControllerCPU:    {"limits.cpu", "limits.cpu_weight"},
+	cgroup.ControllerMemory: {"limits.memory", "limits.memory_high"},
+	cgroup.ControllerPids:   {"limits.pids"},
 }
 
 // detectFailure splits a cgroup.Detect or FS.CanPlace refusal into D3's detail and fix. ErrNotDelegated is not one

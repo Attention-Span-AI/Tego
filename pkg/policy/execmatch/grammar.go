@@ -218,6 +218,21 @@ type Row struct {
 	// Argv0Strip is a prefix a multicall dispatcher drops from argv[0]'s basename before it looks the applet up: GNU
 	// coreutils' single binary runs rm when called as lt-rm (src/coreutils.c, libtool's prefix). "" for none.
 	Argv0Strip string
+	// Applets, on a multicall dispatcher that picks its applet as the longest applet name its program name ends with
+	// (uutils' matched_utility), is a subset of the applet list of each build read for the row. Read on a multicall
+	// image only, and for deny and ask entries only (multicall.go): a longer listed applet the name ends with wins,
+	// so a name that is itself a listed applet runs that applet; a ruled tool the list lacks is read wherever the
+	// name ends with it. A subset only refuses more, for a build that lists every name of it; a build made with
+	// fewer utilities can run a shorter applet than the one read (the row's comment says which builds were read).
+	Applets []string
+	// Argv1Endings are the program-name endings under which such a dispatcher runs the applet argv[1] names (uutils:
+	// "utils", "box"); a name ending with NoAppletEnding ("utils") is never read for an applet it ends with.
+	Argv1Endings   []string
+	NoAppletEnding string
+	// LinkNames are the names a build links the dispatcher's file under that neither end with one of Applets nor with
+	// one of Argv1Endings (uutils: "[", relpath). With those, they gate a file of more than one link as a multicall
+	// image (multicall.go, linkName).
+	LinkNames []string
 	// Interp is set for an interpreter row (python, node, sh, perl, ruby).
 	Interp *InterpSpec
 	// Autocorrect turns on the git help_unknown_cmd port for the first subcommand word.

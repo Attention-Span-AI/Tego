@@ -3,7 +3,8 @@
 // Package web is tego-control serve's dashboard: a loopback-only web view of a ledger root's runs, logs,
 // refusals, pending approvals and each run's rules, built from the final design (tokens.css, app.css, sprite.svg)
 // with html/template and embed. It serves the listener its caller opened (it opens no socket), reads the ledger
-// through internal/control/ledgerview and the contracts through internal/control/rulesview, and does three things
+// through internal/control/ledgerview and the contracts through internal/control/rulesview, shows on the Overview the
+// setup steps `tego setup` prints (internal/guide, setupguide.go; it never probes the machine), and does three things
 // to a live run through internal/control/runact: Allow and Deny answer a held request as tego approve and tego deny
 // do, Block now adds a live block, and Stop stops a run as tego stop does. Each answers 303 back to the page the
 // form was on with one plain line, shown once (flash.go); no ledger line is shown raw.

@@ -37,6 +37,15 @@ var (
 	ErrNoRoute    = errors.New("routeact: the endpoint declares no such route")
 	ErrGoverned   = errors.New("routeact: a run's model route is never changed from inside a run")
 	ErrAck        = errors.New("routeact: this change needs the preview's acknowledgement, and the one sent is missing or out of date")
+	// ErrLocked is a route other than direct asked of a Locked run, which would leave it looser than its contract
+	// (runact.CheckLoosening, ADR 0127 §6): it changes from the run's next run only.
+	ErrLocked = runact.ErrLocked
+	// ErrStarting is such a route asked while the run's run_start cannot be read yet: its mode is not known, so it is
+	// refused as not known yet, never as Locked (runact.ErrStarting).
+	ErrStarting = runact.ErrStarting
+	// ErrStartUnreadable is such a route asked of a run whose first record line is not a run_start this tego can
+	// read: refused as not known, never as Locked (runact.ErrStartUnreadable).
+	ErrStartUnreadable = runact.ErrStartUnreadable
 )
 
 // maxContract bounds the contract copy read.
@@ -297,6 +306,17 @@ func (s *Service) plan(run, endpoint, route string) (*Plan, string, agent.ModelE
 		from = e.Route
 	}
 	p := &Plan{Run: run, Endpoint: endpoint, From: option(m, from), To: option(m, route), Widens: modelroute.Widens(from, route)}
+	// A Locked run is never looser than its contract while it runs (ADR 0125), and its contract starts every endpoint on
+	// direct: any other route is refused, while direct is taken, as a live block's removal is. The route alone decides
+	// it, not the overlay, so the writers' lock has nothing to decide again.
+	if route != modelroute.Direct {
+		if err := runact.CheckLoosening(dir, run); err != nil {
+			if errors.Is(err, runact.ErrNotRunning) {
+				err = ErrNotRunning
+			}
+			return p, dir, m, err
+		}
+	}
 	if p.Widens {
 		base, err := overlayBase(dir)
 		if err != nil {

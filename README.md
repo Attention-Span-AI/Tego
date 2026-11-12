@@ -261,17 +261,19 @@ The full list, with what to do about each, is in **[docs/GAPS.md](docs/GAPS.md)*
 - It does not stop data leaving through a destination you allowed. Rules match `host:port`, not what the connection is
   used for, so an allowed model endpoint and an allowed `github.com:443` are equally open. Treat every allowed host as a
   way out.
-- It is not a sandbox that hides the machine. The agent can read any path that is not in `deny_read`.
+- It does not hide the machine. The agent can read any path that is not in `deny_read`.
 - It limits only what the contract names. With no `net:` section every IP destination is reachable, and with no `exec:`
   section every program runs.
 - Not every rule is the kernel's at every tier. At tier 1 the supervisor, in user space, decides command rules and
   `deny_write` targets on its copy of the arguments, which is best effort: a racing thread of a hostile agent can change
   what the kernel then acts on. [spec/backend/CAPABILITIES.md](spec/backend/CAPABILITIES.md) lists each rule by tier.
-- By default it does not record reads at tier 1. Under `record: summary`, the default, Tego is not told about them: an
-  allowed read leaves no line, and a read that `deny_read` refuses fails with `EACCES` and leaves no line either. The read
-  is still refused, but `tego run` can print `refused 0` and `tego receipt` can print "Nothing was refused" after it, so a
-  clean receipt there says nothing about reads. `record: full` records reads and makes every open slower. Tiers 2 and 3
-  record them without it.
+- By default it does not record reads at tier 1. Under `record: summary`, the default, an allowed read leaves no line,
+  and a read that `deny_read` refuses fails with `EACCES` and leaves no line either, unless the supervisor is told of
+  reads: held reads (the default `fs.reads: auto` turns them on when a `deny_read` target lies inside a write entry),
+  `reason.reads: on`, `fs.ask_read` or a read gate; then a refused read leaves one line. Where it leaves none, the read
+  is still refused, but `tego run` can print `refused 0`, and `tego receipt` says that no recorded action was refused
+  and that the run does not record refused reads: a clean receipt there says nothing about reads. `record: full`
+  records reads and makes every open slower. Tiers 2 and 3 record them without it.
 - The record is tamper-evident against an agent held by a contract, not against the person who started the run. A
   record-only run (`tego watch` with no `--boundary`, `tego run --observe`) has no Landlock rules, so its agent, which
   runs as you, can rewrite its own record.

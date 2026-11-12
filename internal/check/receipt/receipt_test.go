@@ -34,7 +34,7 @@ type line struct {
 const t0 = uint64(1_000_000_000_000)
 
 // ledgerOf writes lines as a run directory's events.jsonl, chained as a writer would, and opens a reader on it.
-func ledgerOf(t *testing.T, lines []line) *ledger.Reader {
+func ledgerOf(t testing.TB, lines []line) *ledger.Reader {
 	t.Helper()
 	var buf bytes.Buffer
 	prev := ""
@@ -436,4 +436,135 @@ func equalStrs(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestUpperLayerProtocolRefusalSaysItIsBuiltIn: under a net: section tego refuses every setsockopt(TCP_ULP), whatever
+// the contract allows (ADR 0018 (7)); the record names rule "unmatched", which read "not allowed by any rule" beside
+// TCP_ULP "tls" (guest u2404, Nov 10), as if a rule could allow it. Its line now says it is built in, and why. The
+// connect beside it keeps the default deny's words.
+func TestUpperLayerProtocolRefusalSaysItIsBuiltIn(t *testing.T) {
+	const builtIn = `setsockopt TCP_ULP "tls"  ` + kernelTLSWords + ` (net-not-allowed)`
+	rc := compute(t, []line{
+		start("off", true),
+		{kind: record.KindNet, at: time.Second, verdict: record.VerdictRefused, rule: "unmatched", reason: record.ReasonNetNotAllowed,
+			payload: record.NetPayload{Proto: "tcp", Dst: "172.66.147.243:443"}},
+		{kind: record.KindRefused, at: time.Second, rule: "unmatched", reason: record.ReasonNetNotAllowed, // the connect's own
+			payload: record.RefusedPayload{Op: "connect", Target: "172.66.147.243:443", Reason: record.ReasonNetNotAllowed, Rule: "unmatched"}},
+		{kind: record.KindRefused, at: time.Second, rule: "unmatched", reason: record.ReasonNetNotAllowed,
+			payload: record.RefusedPayload{Op: "setsockopt", Target: `TCP_ULP "tls"`, Reason: record.ReasonNetNotAllowed, Rule: "unmatched"}},
+		end(2*time.Second, 0),
+	}, Options{})
+	var out bytes.Buffer
+	if err := rc.Text(&out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), builtIn) || !strings.Contains(out.String(), "172.66.147.243:443  not allowed by any rule (net-not-allowed)") {
+		t.Errorf("the receipt does not say the TCP_ULP refusal is built in:\n%s", out.String())
+	}
+}
+
+// The words a TCP_ULP refusal reads in, as TestUpperLayerProtocolRefusalsAreCountedButWorded pins them.
+const (
+	kernelTLSWords = `built in, no rule allows it: kernel TLS (TCP_ULP "tls") is refused under a net: section, and a TLS ` +
+		`library such as OpenSSL falls back to its own TLS`
+	otherULPWords = "built in, no rule allows it: every TCP upper-layer protocol is refused under a net: section, since one " +
+		"can turn an allowed socket into another kind"
+)
+
+// TestUpperLayerProtocolRefusalsAreCountedButWorded: on Ubuntu 24.04 every enforced HTTPS run of Python ended "refused 1
+// (not allowed by any rule 1)" and its receipt's by-rule table said "not allowed by any rule (net-not-allowed)" (guest
+// kit/acc2): OpenSSL's setsockopt(TCP_ULP, "tls"), which tego refuses under every net: section and no rule can allow.
+// The record and every count a script reads stay as they are (rule unmatched, Total, ByRule); only the words say it is
+// built in, for the supervisor's line and the root tiers' (mechanism cgroup) alike. A ULP other than "tls" (smc turns
+// a TCP socket into another family) is not called kernel TLS, and a default-deny connect keeps its words.
+func TestUpperLayerProtocolRefusalsAreCountedButWorded(t *testing.T) {
+	ulp := func(name string, mech string) line {
+		return line{kind: record.KindRefused, at: time.Second, rule: "unmatched", reason: record.ReasonNetNotAllowed,
+			payload: record.RefusedPayload{Op: "setsockopt", Target: "TCP_ULP " + name, Reason: record.ReasonNetNotAllowed,
+				Rule: "unmatched", Mechanism: mech}}
+	}
+	rc := compute(t, []line{
+		start("off", true),
+		{kind: record.KindNet, at: time.Second, verdict: record.VerdictRefused, rule: "unmatched", reason: record.ReasonNetNotAllowed,
+			payload: record.NetPayload{Proto: "tcp", Dst: "203.0.113.9:443"}},
+		{kind: record.KindRefused, at: time.Second, rule: "unmatched", reason: record.ReasonNetNotAllowed, // the connect's own
+			payload: record.RefusedPayload{Op: "connect", Target: "203.0.113.9:443", Reason: record.ReasonNetNotAllowed, Rule: "unmatched"}},
+		ulp(`"tls"`, ""),
+		ulp(`"tls"`, record.MechanismCgroup),
+		ulp(`"smc"`, ""),
+		end(2*time.Second, 0),
+	}, Options{})
+	rf := rc.Refusals
+	if rf.Total != 4 || len(rf.ByRule) != 1 || rf.ByRule[0] != (RuleCount{Rule: "unmatched", Reason: "net-not-allowed", Count: 4}) {
+		t.Fatalf("the counts changed: total %d, by rule %+v; want 4, one unmatched net-not-allowed 4", rf.Total, rf.ByRule)
+	}
+	var js bytes.Buffer
+	if err := rc.JSON(&js); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(js.String(), "built in") || strings.Contains(js.String(), "kernel TLS") {
+		t.Errorf("the JSON carries words, not only the record's values:\n%s", js.String())
+	}
+	want := []RefusalGroup{
+		{Kind: "built in: kernel TLS", Words: kernelTLSWords, Rule: "unmatched", Reason: "net-not-allowed", Count: 2, BuiltIn: true},
+		{Kind: "built in: TCP upper-layer protocol", Words: otherULPWords, Rule: "unmatched", Reason: "net-not-allowed", Count: 1, BuiltIn: true},
+		{Kind: "not allowed by any rule", Words: "not allowed by any rule", Rule: "unmatched", Reason: "net-not-allowed", Count: 1},
+	}
+	if got := rc.RefusalGroups(); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("RefusalGroups() =\n%+v\nwant\n%+v", got, want)
+	}
+	var out bytes.Buffer
+	if err := rc.Text(&out); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{"  Tego refused 4 actions.\n",
+		"       2  " + kernelTLSWords + " (net-not-allowed)\n",
+		"       1  " + otherULPWords + " (net-not-allowed)\n",
+		"       1  not allowed by any rule (net-not-allowed)\n",
+		`setsockopt TCP_ULP "smc"  ` + otherULPWords + " (net-not-allowed)\n",
+		"203.0.113.9:443  not allowed by any rule (net-not-allowed)\n"} {
+		if !strings.Contains(out.String(), w) {
+			t.Errorf("the receipt lacks %q:\n%s", w, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "       4  not allowed by any rule") {
+		t.Errorf("the by-rule table calls the TCP_ULP refusals not allowed by any rule:\n%s", out.String())
+	}
+
+	// A refusal with another rule or reason, or a TCP_ULP target on another op, is no built-in TCP_ULP refusal.
+	rc = compute(t, []line{
+		start("off", true),
+		{kind: record.KindRefused, at: time.Second, rule: "net-gate", reason: record.ReasonNetNotAllowed,
+			payload: record.RefusedPayload{Op: "setsockopt", Target: `TCP_ULP "tls"`, Reason: record.ReasonNetNotAllowed, Rule: "net-gate"}},
+		{kind: record.KindRefused, at: time.Second, rule: "unmatched", reason: record.ReasonNetNotAllowed,
+			payload: record.RefusedPayload{Op: "connect", Target: `TCP_ULP "tls"`, Reason: record.ReasonNetNotAllowed, Rule: "unmatched"}},
+		end(2*time.Second, 0),
+	}, Options{})
+	for _, g := range rc.RefusalGroups() {
+		if strings.HasPrefix(g.Kind, "built in") || g.BuiltIn {
+			t.Errorf("group %+v is called built in", g)
+		}
+	}
+	for _, r := range rc.Refusals.List {
+		if k := rc.BuiltInKind(r); k != "" {
+			t.Errorf("listed refusal %+v is called %q", r, k)
+		}
+	}
+}
+
+// TestBuiltInKindNamesEachListedULPRefusal: the dashboard's Receipt tab names a listed refusal by BuiltInKind, as tego
+// run's summary does; review 1 S1 found the tab calling the kernel-TLS refusal "Not in policy".
+func TestBuiltInKindNamesEachListedULPRefusal(t *testing.T) {
+	ulp := func(name string) line {
+		return line{kind: record.KindRefused, at: time.Second, rule: "unmatched", reason: record.ReasonNetNotAllowed,
+			payload: record.RefusedPayload{Op: "setsockopt", Target: "TCP_ULP " + name, Reason: record.ReasonNetNotAllowed, Rule: "unmatched"}}
+	}
+	rc := compute(t, []line{start("off", true), ulp(`"tls"`), ulp(`"smc"`), end(2*time.Second, 0)}, Options{})
+	var got []string
+	for _, r := range rc.Refusals.List {
+		got = append(got, rc.BuiltInKind(r))
+	}
+	if want := []string{"built in: kernel TLS", "built in: TCP upper-layer protocol"}; !equalStrs(got, want) {
+		t.Errorf("BuiltInKind = %q, want %q", got, want)
+	}
 }

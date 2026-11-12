@@ -247,7 +247,7 @@ func TestExecCommandLoaderProgramIsJudgedWhereItIsNamed(t *testing.T) {
 	}
 }
 
-// TestDenyListRefusesExecFromTheCodexHome isagent-contract.md R10a's deny-list half: a deny-list
+// TestDenyListRefusesExecFromTheCodexHome is agent-contract.md R10a's deny-list half: a deny-list
 // leaves images unrestricted, so the run's own CODEX_HOME grant would be a directory the agent writes to and runs
 // from, and a copy of a denied id there under another name ran. An image there is refused codex-home-exec, and so is a
 // directly-invoked loader's program there; a symlink there to a program elsewhere (Codex's tmp/arg0 links to its own

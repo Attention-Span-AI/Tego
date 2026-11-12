@@ -278,6 +278,10 @@ type adoptCgroups struct {
 	h                      *adoptHost
 	created, removed, kill int
 	removeErr              error
+	// controls are the control files CreateScope makes in the scope, as the kernel makes those of the controllers the
+	// scope's parent enables. SetLimits and LiftLimits are the real writer's (cgroup.FS) over them, so a limit whose
+	// file is absent is refused as on a host whose parent does not enable its controller.
+	controls []string
 }
 
 func (c *adoptCgroups) Root() string { return c.h.mount }
@@ -291,14 +295,42 @@ func (c *adoptCgroups) CreateScope(agentID, runID, scope string) (cgroup.Cgroup,
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return cgroup.Cgroup{}, err
 	}
+	for _, name := range c.controls {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+			return cgroup.Cgroup{}, err
+		}
+	}
 	c.created++
 	return cgroup.Cgroup{Path: dir, ID: 777}, nil
 }
 
-func (c *adoptCgroups) ID(cgroup.Cgroup) (uint64, error)             { return 777, nil }
-func (c *adoptCgroups) SetLimits(cgroup.Cgroup, cgroup.Limits) error { return nil }
-func (c *adoptCgroups) Kill(cgroup.Cgroup) error                     { c.kill++; return nil }
-func (c *adoptCgroups) OOMKilled(cgroup.Cgroup) (bool, error)        { return false, nil }
+// writer is the real limit writer over the fake host's cgroup tree.
+func (c *adoptCgroups) writer() (*cgroup.FS, error) { return cgroup.NewAt(c.h.mount) }
+
+func (c *adoptCgroups) SetLimits(cg cgroup.Cgroup, l cgroup.Limits) error {
+	fs, err := c.writer()
+	if err != nil {
+		return err
+	}
+	return fs.SetLimits(cg, l)
+}
+
+// LiftLimits empties each control file first: a file of the fake's keeps the tail of a longer old value, a control
+// file of the kernel's does not.
+func (c *adoptCgroups) LiftLimits(cg cgroup.Cgroup) error {
+	fs, err := c.writer()
+	if err != nil {
+		return err
+	}
+	for _, name := range c.controls {
+		_ = os.Truncate(filepath.Join(cg.Path, name), 0)
+	}
+	return fs.LiftLimits(cg)
+}
+
+func (c *adoptCgroups) ID(cgroup.Cgroup) (uint64, error)      { return 777, nil }
+func (c *adoptCgroups) Kill(cgroup.Cgroup) error              { c.kill++; return nil }
+func (c *adoptCgroups) OOMKilled(cgroup.Cgroup) (bool, error) { return false, nil }
 
 func (c *adoptCgroups) Events(ctx context.Context, _ cgroup.Cgroup) (<-chan bool, error) {
 	ch := make(chan bool)
@@ -324,6 +356,9 @@ func (c *adoptCgroups) Remove(_ context.Context, cg cgroup.Cgroup) error {
 		return c.removeErr
 	}
 	c.removed++
+	for _, name := range c.controls { // the kernel's control files go with the cgroup
+		_ = os.Remove(filepath.Join(cg.Path, name))
+	}
 	return os.Remove(cg.Path)
 }
 

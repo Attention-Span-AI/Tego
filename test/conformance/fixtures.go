@@ -338,18 +338,20 @@ type tableCond struct {
 	PlaneFirst      *bool  `yaml:"plane_first"`
 	SupervisorRoot  *bool  `yaml:"supervisor_root"`
 	UnixDiag        *bool  `yaml:"unix_diag"`
+	ExecmodRefused  *bool  `yaml:"execmod_refused"`
 	Want            map[string]tableWant
 }
 
 func (tc tableCond) cond() (CondWant, error) {
 	cw := CondWant{Where: Where{KernelMin: tc.KernelMin, KernelMax: tc.KernelMax, ABIMin: tc.ABIMin, ABIMax: tc.ABIMax, BPFLSM: tc.BPFLSM}, MemfdNoexecSeal: tc.MemfdNoexecSeal,
-		PlaneFirst: tc.PlaneFirst, SupervisorRoot: tc.SupervisorRoot, UnixDiag: tc.UnixDiag, Want: map[Key]Want{}}
+		PlaneFirst: tc.PlaneFirst, SupervisorRoot: tc.SupervisorRoot, UnixDiag: tc.UnixDiag, ExecmodRefused: tc.ExecmodRefused,
+		Want: map[Key]Want{}}
 	switch err := cw.Where.Validate(); {
 	case err != nil:
 		return CondWant{}, err
 	case tc.KernelMin == "" && tc.KernelMax == "" && tc.ABIMin == 0 && tc.ABIMax == 0 && tc.BPFLSM == nil && tc.MemfdNoexecSeal == nil && tc.PlaneFirst == nil && tc.SupervisorRoot == nil &&
-		tc.UnixDiag == nil:
-		return CondWant{}, fmt.Errorf("names no condition (kernel_min, kernel_max, abi_min, abi_max, bpf_lsm, memfd_noexec_seal, plane_first, supervisor_root, unix_diag)")
+		tc.UnixDiag == nil && tc.ExecmodRefused == nil:
+		return CondWant{}, fmt.Errorf("names no condition (kernel_min, kernel_max, abi_min, abi_max, bpf_lsm, memfd_noexec_seal, plane_first, supervisor_root, unix_diag, execmod_refused)")
 	case len(tc.Want) == 0:
 		return CondWant{}, fmt.Errorf("no want")
 	}

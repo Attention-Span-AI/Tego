@@ -8,6 +8,10 @@ import "strings"
 // the engine's own word for it (agent.ResolverRule, which this package does not import).
 const ResolverRule = "net.resolver"
 
+// UnspecRule is the rule the supervisor writes on connect(fd, {AF_UNSPEC}): the defined request to dissolve a socket's
+// association, which names no destination (its line's dst is "unspec").
+const UnspecRule = "net.unspec"
+
 // Sockets are the unix sockets the C library and system services open on their own for name, user and host lookups
 // (nscd, systemd's userdb and resolved, the D-Bus system bus). An entry ending in "/" is a directory.
 var Sockets = []string{
@@ -74,3 +78,15 @@ func thisMachine(host string) bool {
 // Routine reports whether a line to dst under rule is a routine system lookup: a system lookup socket (IsSocket) or a
 // DNS lookup (Resolver).
 func Routine(dst, rule string) bool { return IsSocket(dst) || Resolver(dst, rule) }
+
+// NoPlace reports whether a line to dst under rule names no place: an AF_UNSPEC connect (dst "unspec", or rule
+// UnspecRule), which dissolves a socket's association (glibc's getaddrinfo resets every probe socket so), or a netlink
+// socket, the kernel's own (dst "family(16)", AF_NETLINK, which the dashboard names "netlink"), where the C library
+// reads the machine's addresses and routes. Any other family is a place: a vsock (family 40) can carry the run's data
+// off the machine as well as an address can. It is no system lookup (Routine): the receipt counts the two apart, and
+// the dashboard folds both away. It reads no verdict, and a refused line is no routine call: the supervisor writes dst
+// "unspec" for a send whose address is AF_UNSPEC too, which it refuses (R4), and a refused family(16) line for a
+// netlink send that is no route query. Every reader keeps such a line as a refusal and names it as no place.
+func NoPlace(dst, rule string) bool {
+	return rule == UnspecRule || dst == "unspec" || dst == "family(16)" || dst == "netlink"
+}

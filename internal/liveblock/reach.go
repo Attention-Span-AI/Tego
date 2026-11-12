@@ -3,7 +3,9 @@
 package liveblock
 
 import (
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -54,6 +56,40 @@ func ReachOf(value, path string) ExecReach {
 	return r
 }
 
+// maxScan bounds the folder entries OtherNames reads.
+const maxScan = 4096
+
+// OtherNames is up to max other names file has in its own folder, sorted: the entries there that lead to the same file
+// (its hard links, and symbolic links to it), other than file's own name. They are names a block that matches the file
+// refuses beside its own, for a writer's words: a multi-call program keeps its applets in one folder (uutils' in
+// /usr/lib/cargo/bin/coreutils, busybox's links beside it). None when file or its folder cannot be read; at most
+// maxScan entries of the folder are looked at.
+func OtherNames(file string, max int) []string {
+	var st unix.Stat_t
+	if max <= 0 || unix.Stat(file, &st) != nil {
+		return nil
+	}
+	dir, own := filepath.Split(file)
+	f, err := os.Open(dir)
+	if err != nil {
+		return nil
+	}
+	ents, _ := f.ReadDir(maxScan)
+	_ = f.Close() // read only
+	var out []string
+	for _, e := range ents {
+		var o unix.Stat_t
+		if n := e.Name(); n != own && unix.Stat(filepath.Join(dir, n), &o) == nil && o.Dev == st.Dev && o.Ino == st.Ino {
+			out = append(out, n)
+		}
+	}
+	slices.Sort(out)
+	if len(out) > max {
+		out = out[:max]
+	}
+	return out
+}
+
 // onPath reports whether a folder of path holds name as a program: a regular file, links followed, with an execute
 // bit. Empty and relative entries are skipped, so the answer does not hang on the working directory.
 func onPath(name, path string) bool {
@@ -67,4 +103,24 @@ func onPath(name, path string) bool {
 		}
 	}
 	return false
+}
+
+// SameFileNote reads one refused exec line: rule is the rule it carries and path the program path it names (the
+// line's path). A block on an absolute program path matches the file the path leads to, under every name that file has
+// (a multi-call program's applets are one file), and a block placed from a rules change (Entry.Match) the file its
+// entry granted, by any name that reaches it there: so when rule is such a block's (live.block[exec:/bin/ls]) and the
+// line names another path, the exec was refused as another name of the same program file. SameFileNote is then
+// the words that say so, "same program file as /bin/ls, which is blocked", for the run summary, the receipt and the
+// dashboard's refused row; "" for every other line. The record holds no field for it: the rule and the path are the
+// facts, and this is the one place that reads them together.
+func SameFileNote(rule, path string) string {
+	v, ok := strings.CutPrefix(rule, "live.block["+string(KindExec)+":")
+	if !ok {
+		return ""
+	}
+	v, ok = strings.CutSuffix(v, "]")
+	if !ok || !linkable(KindExec, v) || !filepath.IsAbs(path) || filepath.Clean(path) == v {
+		return ""
+	}
+	return "same program file as " + v + ", which is blocked"
 }

@@ -10,6 +10,8 @@
 // UnresolvedHosts is the one lookup a change makes: the host names it adds to net.allow or net.ask, all at once and
 // within HostBudget, so `tego rule` and the dashboard's previews can warn of one that does not resolve here. It is never
 // a refusal: the next run resolves every host when it starts, and a mistyped one fails there.
+// LookupHosts is the same lookup with each name's answer, through the resolver a run's start uses: `tego learn
+// --allow-host` checks with it that a name the person gives resolves here now to an address the run reached.
 //
 // Imports: the standard library, internal/ledger, internal/profilesrc, pkg/spec/agent, pkg/spec/backend,
 // pkg/spec/config, pkg/spec/record.

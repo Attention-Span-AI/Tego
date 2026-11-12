@@ -35,6 +35,8 @@ type Reader struct {
 	skipNewer bool
 	newer     int
 	scanSize  int // the read buffer of a line scan; 0 is scanLines' default
+	// binder is the Binder Bind attached, which the next pass of Lines takes and feeds.
+	binder *Binder
 }
 
 // SkipNewerVersions makes Iter and Entries pass over a line whose record version is newer than this binary
@@ -236,29 +238,36 @@ func readLine(br *bufio.Reader) ([]byte, error) {
 // same place already failed all four. Each call rescans from byte 0; there is no follow mode.
 func (r *Reader) Lines() iter.Seq2[[]byte, error] {
 	return func(yield func([]byte, error) bool) {
-		var prev []byte // the last complete line, decoded only when a torn tail follows it
+		bind := r.takeBinder() // nil unless Bind asked for this pass
+		var prev []byte        // the last complete line, decoded only when a torn tail follows it
 		offset, n := int64(0), 0
 		for l, err := range r.scan() {
 			if err != nil {
+				bind.fail(err)
 				yield(nil, err)
 				return
 			}
 			n++
 			if !l.terminated {
 				if !wholeLine(l.data) {
+					bind.tornTail(l.data)
 					if afterRunEnd(prev) {
 						yield(nil, fmt.Errorf("%w %d: %d bytes at byte offset %d after run_end are not a record",
 							ErrCorruptLedger, n, len(l.data), offset))
+						return
 					}
+					bind.end()
 					return // torn tail: not a line
 				}
 			}
+			bind.line(l)
 			if !yield(l.data, nil) {
 				return
 			}
 			prev = l.data
 			offset += int64(len(l.data)) + 1
 		}
+		bind.end()
 	}
 }
 

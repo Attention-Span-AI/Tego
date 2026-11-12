@@ -39,8 +39,9 @@ import (
 // own process tree, and nothing else, into a fresh cgroup of a run (adopt-<run id>.scope), after preparing, attaching
 // and arming tier 2 in that empty scope. From each move the trace programs, which filter on the current task's
 // cgroup, record its execs, opens and connects into the run's ledger. A boundary contract adds the decision plane's
-// rules where it decides them for every task in the cgroup (fs reads and writes, execs); nothing else of a contract
-// can be added to a running process, and the caller refuses it beforehand.
+// rules where it decides them for every task in the cgroup (fs reads and writes, execs), and its table's cpu, cpu_weight
+// and pids limits, written into the empty scope before the move (adopt_limits.go); nothing else of a contract can be
+// added to a running process, and the caller refuses it beforehand.
 //
 // It is a normal run: the same ledger (run_start, the record, run_end), the same lock, the same live index, so
 // `tego status|events|drift <run>` read it. It differs from `tego run` in what it never does: it starts no agent,
@@ -144,10 +145,12 @@ type AdoptStarted struct {
 	DecisionPlane string
 }
 
-// AdoptCgroups is what an adoption needs of the cgroup manager: a run's, and a scope under its own name.
+// AdoptCgroups is what an adoption needs of the cgroup manager: a run's, a scope under its own name, and the lift of
+// its limits from processes a release left in it.
 type AdoptCgroups interface {
 	cgroup.Manager
 	CreateScope(agent, runID, scope string) (cgroup.Cgroup, error)
+	LiftLimits(c cgroup.Cgroup) error
 }
 
 // NoAdoptReaper as AdoptDeps.ReaperExe starts no reaper: a test binary is never tego.
@@ -225,6 +228,11 @@ type adoption struct {
 	// through a release request (ReleaseAdoption), "" when the adopter was asked to stop.
 	release    *adopt.ReleaseResult
 	releasedBy string
+	// limits are what a boundary adoption writes into its scope before the move (adoptionLimits): the table's cpu,
+	// cpu_weight and pids; the zero value writes nothing. liftErr is why they could not be lifted from processes a
+	// release left in the scope (liftLimits).
+	limits  cgroup.Limits
+	liftErr error
 	// reason is ReasonExit once the agent's tree has ended by itself; an error that ended the run is the runner's
 	// terminal reason (runner.fail), and a release with neither is reason stopped. left says the run's cgroup emptied
 	// while the agent still ran: its processes were moved out by someone other than tego (root, by hand).
@@ -261,6 +269,14 @@ func newAdoption(rt *agent.RuleTable, spec AdoptSpec, deps AdoptDeps) (*adoption
 	}
 	if err := refuseAdjustable(rt, true); err != nil {
 		return nil, err
+	}
+	var limits cgroup.Limits
+	if spec.Boundary {
+		l, err := adoptionLimits(rt.Limits)
+		if err != nil {
+			return nil, err
+		}
+		limits = l
 	}
 	agentID, err := identity.ParseAgentID(rt.Contract.Name)
 	if err != nil {
@@ -301,7 +317,7 @@ func newAdoption(rt *agent.RuleTable, spec AdoptSpec, deps AdoptDeps) (*adoption
 	if identified.IsZero() {
 		identified = time.Now()
 	}
-	return &adoption{r: r, spec: spec, deps: deps, env: env, identified: identified}, nil
+	return &adoption{r: r, spec: spec, deps: deps, env: env, identified: identified, limits: limits}, nil
 }
 
 // run is prepare (everything before run_start, contain first), run_start and the adoption's own lines, the wait,
@@ -398,15 +414,21 @@ func (a *adoption) move(ctx context.Context) error {
 	if err := a.spec.Recheck(t); err != nil {
 		return fmt.Errorf("runtime: adopt pid %d, rechecked before the move: %w", pid, err)
 	}
+	if err := a.checkTreeTasks(); err != nil {
+		return err
+	}
 	moved, err := adopt.Move(a.env, a.r.cg.Path, a.spec.Root, a.spec.Extra)
 	a.moved = moved
 	if err != nil {
 		return fmt.Errorf("runtime: adopt pid %d: %w", pid, err)
 	}
-	return nil
+	return a.checkScopeTasks()
 }
 
-// createScope makes tego.slice/tego-<agent>.slice/adopt-<run id>.scope under the cgroup2 mount root.
+// createScope makes tego.slice/tego-<agent>.slice/adopt-<run id>.scope under the cgroup2 mount root and writes a
+// boundary adoption's limits into it while it is empty: a write the kernel refuses (a controller the scope's parent
+// does not enable) fails the adoption before anything is armed or moved, and unwind removes the scope, with whatever
+// of the limits was written.
 func (a *adoption) createScope() error {
 	r := a.r
 	cgm := a.deps.Cgroups
@@ -422,6 +444,11 @@ func (a *adoption) createScope() error {
 		return fmt.Errorf("runtime: create the adoption's cgroup: %w", err)
 	}
 	a.cgm, r.cgm, r.cg = cgm, cgm, cg
+	if a.limits != (cgroup.Limits{}) {
+		if err := cgm.SetLimits(cg, a.limits); err != nil {
+			return fmt.Errorf("%w: %w", ErrAdoptLimits, err)
+		}
+	}
 	return nil
 }
 
@@ -682,6 +709,9 @@ func (a *adoption) releaseTree() {
 	}
 	res := adopt.Release(a.env, a.r.cg.Path, adopt.ReleaseTargets(a.env.Mount, a.spec.Root.Cgroup))
 	a.release = &res
+	if len(res.Left) > 0 {
+		a.liftLimits()
+	}
 	n := 0
 	for _, pids := range res.To {
 		n += len(pids)
@@ -689,7 +719,8 @@ func (a *adoption) releaseTree() {
 	a.r.log.Info("adopt: released the agent", "processes", n, "left", len(res.Left))
 }
 
-// releaseSummary says where a release sent the tree, for run_end's detail.
+// releaseSummary says where a release sent the tree, for run_end's detail, and, for processes it left in the scope,
+// a lift of the limits there that failed (liftLimits): they may still be held to a pids.max or a cpu.max tego wrote.
 func (a *adoption) releaseSummary() string {
 	if a.release == nil {
 		return ""
@@ -699,7 +730,11 @@ func (a *adoption) releaseSummary() string {
 		parts = append(parts, fmt.Sprintf("%d process(es) to %s", len(pids), strings.TrimPrefix(to, a.env.Mount)))
 	}
 	if len(a.release.Left) > 0 {
-		parts = append(parts, fmt.Sprintf("%d left in %s, released", len(a.release.Left), a.r.cg.Path))
+		left := fmt.Sprintf("%d left in %s, released", len(a.release.Left), a.r.cg.Path)
+		if a.liftErr != nil {
+			left += fmt.Sprintf(", and the limits written there could not all be lifted (%v)", a.liftErr)
+		}
+		parts = append(parts, left)
 	}
 	if len(parts) == 0 {
 		return "the tree had ended"
@@ -875,16 +910,20 @@ func (a *adoption) unwind(ctx context.Context, cause error) error {
 	}
 	r.abandonRun(true)
 	if left {
+		lifted := ""
+		if a.liftErr != nil {
+			lifted = fmt.Sprintf(", and the limits written there could not all be lifted (%v)", a.liftErr)
+		}
 		return fmt.Errorf("%w; %w: %d process(es) stay in %s (neither the cgroup they came from nor any above it takes "+
-			"them); `tego adopt --release --pid <pid>` moves them out once one does", cause, ErrAdoptLeftInScope,
-			len(a.release.Left), r.cg.Path)
+			"them)%s; `tego adopt --release --pid <pid>` moves them out once one does", cause, ErrAdoptLeftInScope,
+			len(a.release.Left), r.cg.Path, lifted)
 	}
 	return cause
 }
 
 // emitAdoptionLines writes, right after run_start, what the adoption did: one exec line per process it moved (by
 // adoption, its exec id carrying its start time, its parent's when that moved too), the pre-attach gap, the processes
-// of the tree it did not move, and the descriptors they held open.
+// of the tree it did not move, the budgets nothing meters, and the descriptors they held open.
 func (a *adoption) emitAdoptionLines() {
 	r := a.r
 	ids := map[int]string{}
@@ -913,6 +952,11 @@ func (a *adoption) emitAdoptionLines() {
 	}
 	for _, g := range r.deps.CaptureGaps {
 		r.emitGap(g)
+	}
+	// An adoption captures nothing (run_start.capture off), so a budget in its table, which only a machine ceiling
+	// imposes (a boundary contract's own budget is refused before this), never trips: the gap a tego run records (R32).
+	for _, b := range meteredBudgets(r.rt) {
+		r.emitGap(source.Gap{What: record.GapRecord, Why: GapBudgetUnmetered, Binary: b})
 	}
 	held := a.openDescriptors()
 	if held.sockets > 0 {

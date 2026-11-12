@@ -246,7 +246,23 @@ cells:
       landlock: {verdict: allow, no_line: true}
       cgroup/fanotify: {verdict: allow, no_line: true}
       plane: refused exec-map
-    source: 'ADR 0027 (c) (a private map of a readable file, written and mprotected to PROT_EXEC, is refused: execmod)'
+    want_where:
+      # A machine whose own LSM refuses execmod to every process (SELinux enforcing on AlmaLinux 9.8, selinuxuser_execmod
+      # off): its EACCES is a third party's, outside Tego's chain (ADR 0016), and no tier records it. A plane that
+      # answers first (fmod_ret, before every LSM) still refuses it and records exec-map; in lsm mode bpf follows
+      # selinux in the lsm=...,bpf boot, the plane's file_mprotect never runs, and the run has no line for it.
+      - execmod_refused: true
+        plane_first: true
+        want:
+          landlock: {verdict: refused, errno: EACCES, no_line: true}
+          cgroup/fanotify: {verdict: refused, errno: EACCES, no_line: true}
+      - execmod_refused: true
+        plane_first: false
+        want:
+          landlock: {verdict: refused, errno: EACCES, no_line: true}
+          cgroup/fanotify: {verdict: refused, errno: EACCES, no_line: true}
+          plane: {verdict: refused, errno: EACCES, no_line: true}
+    source: 'ADR 0027 (c) (a private map of a readable file, written and mprotected to PROT_EXEC, is refused: execmod); ADR 0016 (a third party''s refusal is outside Tego''s chain)'
   - name: execmem-readable-file
     op: execmem
     path: bin/tool7

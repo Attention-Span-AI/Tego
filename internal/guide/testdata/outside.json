@@ -1,0 +1,68 @@
+{
+  "schema": "tego.setup/1",
+  "tego": {
+    "version": "v0.0.0-fixture",
+    "commit": "f1x7ure"
+  },
+  "as": null,
+  "host": {
+    "kernel": "6.8.0-fixture",
+    "boot_id": "6b1c2d3e-4f50-4a6b-8c7d-8e9fa0b1c2d3"
+  },
+  "steps": [
+    {
+      "id": "install",
+      "title": "Install",
+      "state": "done",
+      "fact": "tego v0.0.0-fixture (commit f1x7ure)",
+      "source": "the binary's build info"
+    },
+    {
+      "id": "check",
+      "title": "Check this machine",
+      "state": "blocked",
+      "fact": "tego starts no run from a shell outside your user manager's cgroup, not even tego watch, checked 2026-11-11 09:30 UTC; a shell inside it can start one",
+      "source": "<root>/home/.tego/state/check.json"
+    },
+    {
+      "id": "find",
+      "title": "Find your agents",
+      "state": "todo",
+      "fact": "Tego has recorded no run here yet",
+      "source": "<root>/home/.tego/runs"
+    },
+    {
+      "id": "record",
+      "title": "Record one run",
+      "state": "todo",
+      "fact": "no run has been recorded with tego watch yet",
+      "source": "<root>/home/.tego/runs"
+    },
+    {
+      "id": "contract",
+      "title": "Make its contract",
+      "state": "todo",
+      "fact": "no contract in the registries",
+      "source": "<root>/home/.config/tego/agents and <root>/home/bot"
+    },
+    {
+      "id": "enforce",
+      "title": "Enforce it",
+      "state": "todo",
+      "fact": "no run under a contract has ended",
+      "source": "<root>/home/.tego/runs"
+    }
+  ],
+  "next": {
+    "step": "check",
+    "rule": "check-outside",
+    "text": "open a shell in your user manager's cgroup, then run tego setup there:",
+    "command": "systemd-run --user --scope bash",
+    "needs_root": false,
+    "placeholder": false
+  },
+  "not_known": [
+    "agents Tego never recorded: nothing here looks for them yet",
+    "a contract in no registry (a file given by its path) that no run used"
+  ]
+}

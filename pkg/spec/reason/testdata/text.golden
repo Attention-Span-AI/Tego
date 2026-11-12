@@ -14,7 +14,7 @@ ask-denied	Tego refused open "/home/u/proj/secrets.txt": it needed a person's ap
 ask-timeout	Tego refused open "/home/u/proj/secrets.txt": it needed a person's approval, and no answer came in time (rule fs.ask[secrets.txt]).
 ask-unavailable	Tego refused open "/home/u/proj/secrets.txt": it needed a person's approval, and no one could be asked (rule fs.ask[secrets.txt]).
 ask-unreadable	Tego refused open "/home/u/proj/secrets.txt": it needed a person's approval, and the request could not be read reliably enough to ask (rule fs.ask[secrets.txt]).
-landlock-topology	Tego refused ptrace "4242": it reaches a process outside this run's sandbox (rule process-scope).
+landlock-topology	Tego refused ptrace "4242": it reaches a process outside this run (rule process-scope).
 limit-tokens	Tego refused an action: the run reached its token limit (rule limits).
 limit-cost	Tego refused an action: the run reached its cost limit (rule limits).
 limit-wall	Tego refused an action: the run reached its time limit (rule limits).

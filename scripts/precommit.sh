@@ -21,6 +21,8 @@
 # bpf/ or internal/bpf/ differs from origin/main or has uncommitted changes, or when TEGO_PRECOMMIT_BPF=1.
 # Then the script self-tests build-test runs (install, coverage, bench-gate, timing-budgets, skipgate, release and
 # the harness tests, and precommit_test.sh, which holds this list to ci.yml's), and actionlint when it is installed.
+# Where tools/oss/export.py exists, the export's self-tests, and tools/oss/public_build.py: the public tree cut from
+# this checkout must compile (go vet under the tag sets above and tegotesthooks; nothing is linked or run).
 # govulncheck is not run: it needs the network. The absolute timing budgets themselves are not run here: they need
 # an idle machine (`make budgets`, scripts/timing-budgets.sh; CI's bench-gate job), and the gated tests hold them to
 # their unit-gate ceilings.
@@ -218,6 +220,10 @@ add_full() {
 	# Export tooling stays private; its tests must gate changes to the public transformation.
 	if [ -f tools/oss/export.py ]; then
 		pc_add static oss "public export self-tests" step python3 -m unittest discover -s tools/oss -p 'test_*.py'
+		# The public tree cut from this checkout compiles (go vet under the gate's tag sets and tegotesthooks; nothing
+		# linked or run): a public file or test that uses a symbol only a private file defines fails here, not on the
+		# public pull request (tools/oss/README.md).
+		pc_add static oss "public tree compiles (tools/oss/public_build.py)" step python3 tools/oss/public_build.py
 	fi
 
 	pc_add tests unit "unit tests (test/unit-skips.txt)" step gated_unit ./...

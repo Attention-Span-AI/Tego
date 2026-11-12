@@ -210,6 +210,30 @@ func TestAZombieOwnerIsNotAlive(t *testing.T) {
 	}
 }
 
+// releasedStat is a /proc/<pid>/stat line of a task released while it was read: fs/proc/array.c's do_task_stat
+// could not take its sighand lock, so process group and session are -1, ppid and num_threads 0. A reader on kernel
+// 6.17 caught it for a live process whose old leader an execve from another thread released (de_thread), so it
+// does not say the process is gone (internal/platform/proc's releasedStatLine gives the source lines).
+const releasedStat = "842314 (exe) Z 0 -1 -1 0 -1 4228108 40251 0 0 0 4 27 0 0 20 0 0 0 82606841 0 0 0 0 0 0 0 " +
+	"0 0 0 0 0 1 0 0 -1 6 0 0 0 0 0 0 0 0 0 0 0 0 0\n"
+
+// TestAReleasedLineIsNoProofTheOwnerIsGone: liveStartTicks reads a released line again (proc.ReadStat); a line
+// that stays released is ErrProcFormat, never ErrProcGone, so aliveBy keeps the owner's slot (it may be a live
+// launcher mid-exec), as for any line it cannot read.
+func TestAReleasedLineIsNoProofTheOwnerIsGone(t *testing.T) {
+	t.Parallel()
+	if _, err := liveTicksOf(842314, []byte(releasedStat)); !errors.Is(err, ErrProcFormat) || errors.Is(err, ErrProcGone) {
+		t.Fatalf("liveTicksOf(released) = %v, want ErrProcFormat and not ErrProcGone", err)
+	}
+	if _, err := parseStartTicks([]byte(releasedStat)); !errors.Is(err, ErrProcFormat) || errors.Is(err, ErrProcGone) {
+		t.Fatalf("parseStartTicks(released) = %v, want ErrProcFormat and not ErrProcGone", err)
+	}
+	o := owner{PID: 842314, StartTicks: 82606841}
+	if !o.aliveBy(func(pid int) (uint64, error) { return liveTicksOf(pid, []byte(releasedStat)) }) {
+		t.Fatal("an owner whose stat read as a released line counts as gone")
+	}
+}
+
 // TestCgroupPathOfPIDLive reads this process's own cgroup, which every Linux box running the suite has.
 func TestCgroupPathOfPIDLive(t *testing.T) {
 	t.Parallel()

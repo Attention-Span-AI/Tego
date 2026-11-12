@@ -32,6 +32,9 @@
 // The link check (links.go) fails a relative Markdown link, in any documentation file but the agents' working
 // notes, whose target does not exist or whose #anchor the target Markdown file does not define.
 //
+// The bare-name check (mdnames.go) fails a Markdown file named by its bare name, in those documents or in a Go
+// comment, that no Markdown file of the repository has: a citation of a working note outside the tree.
+//
 // Usage: go run ./tools/rulecheck [-v] [-strict] [root]   (root defaults to the working directory; -v lists the
 // untested rules by ID, not only their count; -strict adds the strict count and, always, its list). Exit: 0 when nothing fails, 1 when something does, 2 on a read error.
 //
@@ -711,6 +714,12 @@ func run(root string, verbose, strict bool, w *os.File) int {
 		return 2
 	}
 	findings = append(findings, links...)
+	bare, err := checkBareMDNamesUnder(root)
+	if err != nil {
+		fmt.Fprintln(w, "rulecheck:", err)
+		return 2
+	}
+	findings = append(findings, bare...)
 	for _, f := range findings {
 		fmt.Fprintln(w, "rulecheck: FAIL", f)
 	}

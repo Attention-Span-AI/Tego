@@ -3,8 +3,11 @@
 package record
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
@@ -174,6 +177,65 @@ type RunStartPayload struct {
 	// LiveFence is an Adjustable run's fence: the digest of its entries and each entry, with the rule a refusal under
 	// it, and an action allowed only because it is lifted, carries.
 	LiveFence *LiveFence `json:"live_fence,omitempty"`
+	// DenyReadFrozen names the directories the run's Landlock ruleset listed once at launch to build its deny_read
+	// entries (MinorDenyReadFrozen, enforce-landlock R3): a file or directory made directly in one of them after the
+	// run started is unreadable to the agent until the run ends, and everything beneath it too (GAPS A12). Absent at
+	// MinorDenyReadFrozen or later when the ruleset listed none.
+	DenyReadFrozen *DenyReadFrozen `json:"deny_read_frozen,omitempty"`
+}
+
+// MaxDenyReadFrozen bounds run_start.deny_read_frozen.dirs. The field stays on its run_start line (mvpKeys), where
+// Verify and every reader read it, so the record bounds it: at this bound and MaxSharePathBytes per entry it is at
+// most about 256 KiB, within the line bound of 2 MiB.
+const MaxDenyReadFrozen = 64
+
+// DenyReadFrozen is RunStartPayload.DenyReadFrozen: the directories, each once, in byte order, and how many more the
+// ruleset listed that the field leaves out. Each named directory is "/" or a clean absolute path of at most
+// MaxSharePathBytes of UTF-8 with no control character; one whose path is not such a string, and past
+// MaxDenyReadFrozen the shallowest, are counted in Omitted instead (NewDenyReadFrozen).
+type DenyReadFrozen struct {
+	Dirs    []string `json:"dirs"`
+	Omitted int      `json:"omitted,omitempty"`
+}
+
+// NewDenyReadFrozen is the field a run's writer records for the directories its ruleset listed, in any order and
+// with repeats: nil when there are none, else each one the field can hold, sorted, with the rest counted in Omitted.
+// Past MaxDenyReadFrozen it names the deepest (most path elements; the first in byte order among equals) and omits
+// the shallowest: every ancestor of a frozen directory is frozen too, since each is above the same deny_read target,
+// so a named directory implies the ones above it, and the deepest are where a person makes names (their home, the
+// project), which byte order would put after their ancestors and leave out first.
+// What it returns always passes ValidateFields, so the field can never stop a run_start from being written.
+func NewDenyReadFrozen(dirs []string) *DenyReadFrozen {
+	if len(dirs) == 0 {
+		return nil
+	}
+	sorted := slices.Clone(dirs)
+	slices.Sort(sorted)
+	sorted = slices.Compact(sorted)
+	f := &DenyReadFrozen{Dirs: []string{}}
+	for _, d := range sorted {
+		if frozenDir(d) {
+			f.Dirs = append(f.Dirs, d)
+			continue
+		}
+		f.Omitted++
+	}
+	if over := len(f.Dirs) - MaxDenyReadFrozen; over > 0 {
+		// A stable sort keeps byte order among directories of one depth.
+		slices.SortStableFunc(f.Dirs, func(a, b string) int { return cmp.Compare(frozenDepth(b), frozenDepth(a)) })
+		f.Dirs = f.Dirs[:MaxDenyReadFrozen]
+		slices.Sort(f.Dirs)
+		f.Omitted += over
+	}
+	return f
+}
+
+// frozenDepth is a frozen directory's number of path elements: 0 for "/", 1 for "/home", 2 for "/home/u".
+func frozenDepth(d string) int {
+	if d == "/" {
+		return 0
+	}
+	return strings.Count(d, "/")
 }
 
 // LiveModeAdjustable is RunStartPayload.LiveMode's one value (ADR 0125); a Locked run writes no live_mode.

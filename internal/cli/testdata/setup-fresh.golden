@@ -1,0 +1,15 @@
+--- stdout
+Tego on this machine, step by step:
+  [x] 1 Install             tego v0.0.0-fixture (commit f1x7ure)
+  [x] 2 Check this machine  ready: tier 1 (landlock) from a shell in your user manager's cgroup, checked 2026-11-11 09:30 UTC
+  [ ] 3 Find your agents    Tego has recorded no run here yet
+  [ ] 4 Record one run      no run has been recorded with tego watch yet
+  [ ] 5 Make its contract   no contract in the registries
+  [ ] 6 Enforce it          no run under a contract has ended
+Not known:
+  - agents Tego never recorded: nothing here looks for them yet
+  - a contract in no registry (a file given by its path) that no run used
+--- stderr
+
+next: record your own agent. From its folder, start it as you always do:
+  tego watch -- <the command you start it with>

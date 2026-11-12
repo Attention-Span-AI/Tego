@@ -57,7 +57,12 @@ func (c *compiled) decidesFastOpen() bool { return !c.netOpen || c.blocks().HasN
 // the image by any name this loop has for it (the line's name, the pathname as spelled, the image's own path) or by
 // its identity, and, while a program is blocked, when the walk named no image at all (walked false): it may be the
 // blocked one. unmatched is the marker decideExec refuses an unread pathname under. Every other decision stands.
-func (c *compiled) liveExec(d execDecision, names []string, img execImage, walked bool, unmatched string) execDecision {
+//
+// A block that matches by link (liveblock.MatchLink: the rules editor's "Also apply now" of an exec.allow entry
+// removed) is asked of the contract's own grant instead (entryGrants, from p, R6's spelling, and the walk's image):
+// it refuses what the contract grants under the entry at its value, as the run fixed that grant when it started, and
+// leaves every other exec to the contract. Where the contract holds no such entry, it matches the whole file.
+func (c *compiled) liveExec(d execDecision, p string, names []string, img execImage, walked bool, unmatched string) execDecision {
 	s := c.blocks()
 	if !s.HasExec() || !d.answer.cont {
 		return d
@@ -69,7 +74,8 @@ func (c *compiled) liveExec(d execDecision, names []string, img execImage, walke
 	for _, n := range names {
 		clean = append(clean, strings.TrimSuffix(n, deletedSuffix))
 	}
-	if e, ok := s.MatchExec(clean, liveblock.FileID{Dev: img.id.dev, Ino: img.id.ino}, walked && img.id != (fileID{})); ok {
+	grant := func(value string) (bool, bool) { return c.entryGrants(value, p, img, walked) }
+	if e, ok := s.MatchExec(clean, liveblock.FileID{Dev: img.id.dev, Ino: img.id.ino}, walked && img.id != (fileID{}), grant); ok {
 		return refused(e.Rule())
 	}
 	if !walked {

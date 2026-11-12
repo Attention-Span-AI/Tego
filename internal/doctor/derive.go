@@ -111,6 +111,34 @@ func (st probeState) missingAs(t, asked backend.Tier) []string {
 	return out
 }
 
+// outsideUserManager is Report.OutsideUserManager: D3 failed beside the user manager's cgroup, that failure is the
+// whole of tier landlock's missing list, and the machine config's ceiling (unbounded, or tier landlock) lets a run
+// take tier landlock once it starts inside that cgroup. As root D3 never fails so: uid 0 places anywhere.
+func (st probeState) outsideUserManager(ceiling backend.Tier) bool {
+	d3, ok := st.byID[CheckCgroupV2]
+	if !ok || d3.OK || !d3.beside || st.root || st.unprobed(backend.TierLandlock) {
+		return false
+	}
+	if ceiling != "" && ceiling != backend.TierLandlock {
+		return false
+	}
+	return len(st.missingFor(backend.TierLandlock)) == 1
+}
+
+// noUserManager is Report.NoUserManager: D3 failed because no user manager runs for the invoking uid
+// (cgroup.ErrNoUserManager), that failure is the whole of tier landlock's missing list, and the ceiling lets a run take
+// tier landlock once that manager runs and tego runs in a shell inside it. Root never fails D3 so.
+func (st probeState) noUserManager(ceiling backend.Tier) bool {
+	d3, ok := st.byID[CheckCgroupV2]
+	if !ok || d3.OK || !d3.noManager || st.root || st.unprobed(backend.TierLandlock) {
+		return false
+	}
+	if ceiling != "" && ceiling != backend.TierLandlock {
+		return false
+	}
+	return len(st.missingFor(backend.TierLandlock)) == 1
+}
+
 // unprobed reports whether tier t lies above the checks this state holds (probeState.reach). Only ForRun
 // makes such a state, for a run whose selection neither picks nor explains any tier above its reach.
 func (st probeState) unprobed(t backend.Tier) bool {

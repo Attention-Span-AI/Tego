@@ -550,8 +550,25 @@ person: its `ask` line carries hold `mutation` and, for a rename, a link or a sy
 and no other gate field. Nothing at this revision is written on every run; below it, every such mutation was refused
 unasked.
 
-Record minors 30 to 34 are reserved. Their fields are declared and validated ahead of any writer (`Event.ValidateAt`) and
-refused in a ledger below their revision; nothing writes `record_minor` 30 or more, and a launcher refuses to start a run whose `run_start` would carry one.
+At `record_minor` 30 (`MinorDenyReadFrozen`; 2026-11-11, [enforce-landlock.md](../../../docs/p0/enforce-landlock.md)
+R3, E10; [GAPS](../../../docs/GAPS.md) A12), `run_start` carries `deny_read_frozen` on every run whose Landlock ruleset
+listed a directory to build its `deny_read` entries: `{"dirs": [...], "omitted": n}`. A `deny_read` is built by
+granting every name one listing, at launch, found in each directory above the target, so a file or directory made
+directly in one of those directories after the run started is unreadable to the agent until the run ends, and so is
+everything beneath it; with the built-in `~/.ssh` entry `$HOME` is one. `dirs` names them, each once, in byte order,
+`/` included: at most 64 (`MaxDenyReadFrozen`), each `/` or a clean absolute path of at most 4096 bytes of UTF-8 with
+no control character; `omitted` (absent when 0) counts the directories not such a string and, past 64, the
+shallowest: every directory above a frozen one is frozen too, so the 64 deepest are named. `dirs` is `[]` when every
+one is omitted. They are directory paths of the kind `cwd` and `contract_source` already hold, never a
+name listed in them. The ruleset is that of tier landlock, and at tiers cgroup and bpflsm the tier-1 ruleset they
+compose; an `--observe` run builds none. Absent at revision 30 or later, the ruleset listed no directory (nothing
+denied, or every target beneath a write entry); absent below 30, the writer did not say. A reader that does not know
+the field ignores it, as any unknown key. `Event.ValidateAt` reads it exactly, below 30 [`below-minor`] and malformed
+[`deny-read-frozen`], and the ledger Writer keeps it on its line whatever its size. No released build wrote revision 30
+before this field took it.
+
+Record minors 31 to 35 are reserved. Their fields are declared and validated ahead of any writer (`Event.ValidateAt`) and
+refused in a ledger below their revision; nothing writes `record_minor` 31 or more, and a launcher refuses to start a run whose `run_start` would carry one.
 
 At `record_minor` 11 (2026-10-16, [agent-contract.md](../../../docs/p0/agent-contract.md) R10a), `run_start` also
 carries the optional `runtime_grants`: the rule name of every grant the run makes on its own authority

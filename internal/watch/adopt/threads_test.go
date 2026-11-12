@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/attention-span-ai/tego/internal/platform/proc"
 )
 
 // fakeStatLine is a /proc/<pid>/stat line with the given state, num_threads and start time (fields 3, 20 and 22).
@@ -183,4 +185,24 @@ func TestALeaderExitedProcessIsReadOnlyThroughAThreadOfIt(t *testing.T) {
 			t.Errorf("Identify(203) through a thread reused mid-read = %+v, %v; want ErrGone", p, err)
 		}
 	})
+}
+
+// TestIdentifyOfAReleasedLineIsNotGone: a stat line with process group -1 (fs/proc/array.c's do_task_stat could not
+// take the task's sighand lock; internal/platform/proc's releasedStatLine gives the source lines) is written for a
+// process reaped during the read and for a live one whose old leader an execve from another thread released. A
+// file that keeps it through every read is a stat Identify cannot read, never ErrGone: as ErrGone, a live process
+// mid-exec read as gone, and a boundary adoption counted nothing it could not read (GapAdoptionUnread).
+func TestIdentifyOfAReleasedLineIsNotGone(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "842314"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	released := "842314 (exe) Z 0 -1 -1 0 -1 4228108 40251 0 0 0 4 27 0 0 20 0 0 0 82606841" + strings.Repeat(" 0", 12) +
+		" 1 0 0 -1 6" + strings.Repeat(" 0", 13) + "\n"
+	if err := os.WriteFile(filepath.Join(root, "842314", "stat"), []byte(released), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := Identify(NewFS(root), 842314); !errors.Is(err, proc.ErrStat) || errors.Is(err, ErrGone) {
+		t.Fatalf("Identify(released) = %+v, %v; want proc.ErrStat and not ErrGone", p, err)
+	}
 }

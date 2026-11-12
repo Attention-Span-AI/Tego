@@ -27,6 +27,9 @@ const (
 	// WarnHeldLabel: held completion requires equivalent task and completer LSM labels
 	// (ADR 0041 D2; heldLabelWarning).
 	WarnHeldLabel = "held-label"
+	// WarnDenyReadFrozen: the directories a deny_read's Landlock enumeration listed once at launch, in which a name
+	// made during the run is unreadable to it (run_start.deny_read_frozen, GAPS A12). A note, not a warning.
+	WarnDenyReadFrozen = "deny-read-frozen"
 )
 
 // swapCapper is a cgroup manager that can tell whether a memory cap on a cgroup also holds the swap

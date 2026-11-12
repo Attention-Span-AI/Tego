@@ -58,9 +58,13 @@ func TestHeldCloseEndsTheListenerBeforeTheDescriptorLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cgdir.Close()
+	mount := mountOf(t, base)
+	// The helper execs a copy on a mount nothing here marks (unmarkedSelf): from the marked mount, its execve
+	// waited on this process's own group whenever a collection began in the vfork window.
+	helper := unmarkedSelf(t, []string{mount})
 	inRun := func(path string) unix.Errno {
 		t.Helper()
-		cmd := exec.Command(os.Args[0], "-test.run=^TestMovedHelper$")
+		cmd := exec.Command(helper, "-test.run=^TestMovedHelper$")
 		cmd.Env = append(os.Environ(), movedHelperEnv+"="+path)
 		cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: int(cgdir.Fd())}
 		out, err := cmd.Output()
@@ -79,10 +83,13 @@ func TestHeldCloseEndsTheListenerBeforeTheDescriptorLimit(t *testing.T) {
 
 	events := &sink{}
 	p := newPolicy(&agent.RuleTable{
-		FS:       []agent.FSRule{{Kind: agent.FSDenyRead, Path: denied, Mount: mountOf(t, base), Raw: "deny_read: denied"}},
+		FS:       []agent.FSRule{{Kind: agent.FSDenyRead, Path: denied, Mount: mount, Raw: "deny_read: denied"}},
 		Contract: &agent.Contract{},
 		Tier:     backend.TierCgroup, Record: agent.RecordFull,
 	}, rel)
+	if len(p.mounts) != 1 || p.mounts[0] != mount {
+		t.Fatalf("the policy marks %v, want %s alone, which the helper's copy is checked against", p.mounts, mount)
+	}
 	l, err := newFanotifyListener(p, Run{ID: "closer", Agent: "a", CgroupID: id, CgroupPath: rel}, events, time.Second)
 	if err != nil {
 		t.Fatalf("newFanotifyListener: %v", err)

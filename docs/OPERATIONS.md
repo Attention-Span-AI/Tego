@@ -490,13 +490,97 @@ KVM guest on the test machine's kernel (`test/vm/root-suites.sh`, the agent drop
 
 ## Learning a first contract from a run (`tego learn`, 2026-10-06)
 
-`tego learn <run> [--out <file>] [--workspace <dir>]` (FEATURES C9, E65) reads a finished run's ledger, an observe-only
+`tego learn <run> [--save <name> | --out <file>] [--allow-host <host>[:<port>]]... [--reads on|off] [--workspace <dir>]` (FEATURES C9, E65) reads a finished run's ledger, an observe-only
 `tego watch -- <agent>` run for instance, and prints a boundary contract PROPOSED from what the run did: it allows that
 and no more. It is deterministic over the record and calls no model. It only ever proposes: you read it, you edit it,
 `tego compile` it, and only then run the agent under it (`tego watch --boundary <file> -- <agent>`). Without `--out`
 the proposal is printed; `--out <file>` writes a new file, mode 0600, and refuses to replace one (exit 1 `[exists]`).
 Keep the file outside the agent's workspace: tego refuses a contract the agent could rewrite, and `learn` warns when
 `--out` is inside one of the proposal's own `fs.write` entries.
+
+`--save <name>` (2026-11-10) writes the proposal as the agent `<name>` of the user registry
+(`~/.config/tego/agents/<name>.yaml` by default, the folder made 0700, the file 0600), with `name: <name>`, so
+`tego run <name>` finds it. It compiles the proposal first and refuses, writing nothing (exit 1), a name that is not
+free from the working directory or from the run's own folder, where its `next:` line runs `tego run <name>` (a name a
+registry already resolves, or one `tego run` would find ambiguous there, such as a file of that name in the folder), a
+file that would lie inside one of the proposal's own `fs.write` entries, and a proposal that does not compile. A name
+that starts with `-` is exit 2, since `tego run` would read it as a flag. It refuses inside a governed run (125
+`[governed]`): an agent held by Tego does not save the contract it will be held to; and as root for another user
+under sudo (125 `[privilege]`): the file would be root's, in that user's registry, where their own `tego run` cannot
+read it. `--reads on` adds `reason: {reads: on}`: at tier 1 a read the contract refuses then has a ledger line
+under every record level, at the cost ADR 0077 measured (each read open about 17 µs more). *Amended 2026-11-10 (the
+project lead's decision):* `--save` writes `reason: {reads: on}` by default, so a newcomer sees, on every run, the read
+the contract refused; one stderr line after the save says what it costs (each read open about 17 µs more, the offline
+Claude Code workload 19 % slower), and `--reads off` leaves it out. The printed proposal and `--out` keep the
+contract's default unless `--reads on` is given, and a contract already saved does not change. The `next:` line of
+`tego learn <run>` repeats `--workspace` (as a full path), each `--allow-host` and `--reads` when they were given, and
+says that the saved contract records refused reads, so its `--save` writes the proposal printed with that one
+`reason:` block added; after `--out <file>` it names a file with no `/` as `./<file>`, which `tego run` reads as a
+path, never as an agent's name.
+
+`--allow-host <host>` or `--allow-host <host>:<port>` (2026-11-10, repeatable, at most 8) names the service a run
+reached at some of its addresses. A watched run's record holds the address a program connected to, never the name it
+looked up, so without it the proposal lists addresses, and the next run, which may pick another address of the same
+answer, can be refused. Learn looks each name up here, now, within 2 s, through the resolver a run's start uses (Go's
+system resolver, as `tego run` compiles with; a machine config's `resolver:` setting names the servers the agent may
+ask and changes neither), and writes `proto://<host>:<port>` in place of every TCP or UDP address the run reached that
+the answer holds, on the protocols and ports the run used (with `:<port>`, that port only). Each entry's comment says
+what the name resolves to here now and which addresses the run reached it covers; tego does not know which name the
+run looked up for an address, nor whether the run's own lookup gave the same answer, and on a shared address (a CDN)
+an entry by name reaches every site served there. A UDP entry by name allows UDP, QUIC included, to every address of
+the name, and keeps the probe note. stderr says, per name, how many addresses it resolves to and what the run reached
+there that it now allows, and, for every address still allowed by address, names them and `--allow-host <host>`. When
+the leak rule withheld a destination, that line names no `--allow-host` (learn refuses a name that also stands for a
+withheld address), and one more warning says which destination was withheld and why, that a run under the contract is
+refused it, and the two ways that work, both your own explicit act: write the host's name under `net.allow` in the
+saved file, or, after a run under it is refused that connection, `tego rule <run> <line> --allow`, with the line
+`tego events <run> --verdict refused` shows (*2026-11-11*, acceptance 2B: the warning used to name `--allow-host`,
+which learn then refused). Nothing re-admits a withheld destination by itself.
+Learn never picks a name itself and never asks DNS for the name of an address. Every name given is written where it
+covers an address, two names for one address included. The naming comes before the leak rule's withhold, so a name
+never admits again an address the rule withheld. Learn writes nothing, prints no proposal and exits 1 (`[allow-host]`)
+when a name does not resolve within 2 s (where DNS answers that it does not exist or has no addresses, a run under it
+would not start either; a run's start gives each name 3 s, so a slow name may still start one), covers no address the
+run reached (the message gives the run's age: the name may be wrong, or its addresses moved), answers with a private
+address (RFC 1918, RFC 6598, fc00::/7) the run did not reach under it, or answers with an address the leak rule
+withheld. A private address in the machine config's `denied_resolved_addresses` is not counted: no name admits it.
+The private check is made at learn time only; what a run allows is decided by the name's answer when that run starts
+(agent-contract R18). An address no entry by name admits (loopback, link-local, a cloud metadata address, or one in a
+range of the machine config's `denied_resolved_addresses`, which compile drops from a name's answer) stays an address
+even when the answer holds it. With `--allow-host`, a machine config that does not load is exit 125
+(`[config-untrusted]`): those ranges are then unknown. An address, a pattern, a URL, port 0 or a ninth name is a usage
+error (2).
+When the proposal still allows addresses and learn's leak rule found no destination the run's secrets may have gone
+to (`learn.Proposal.SuggestHosts`), the `next:` line after `tego watch` and after `tego learn <run>`, and `tego
+setup`'s learn step, add `--allow-host <host>`: the host is in angle brackets because only you know it. For a run
+whose secrets may have gone somewhere they name the plain form: a name whose answer holds an address learn withheld
+is refused, and a suggestion never asks you to name it (*2026-11-11*, a guest walk of ADR 0142's amendment). When learn refuses a name
+(exit 1, nothing written), its `next:` line is the same command without the names it refused. Learn leaves the machine's resolver
+out of `net.allow` (port 53 of an address whose every line in the record the engine named `net.resolver`, such as
+NetworkManager's 10.0.2.3 on AlmaLinux 9.8; a comment under `net:` names it) when another TCP or UDP entry stays:
+tego allows the run's resolver itself, before any entry (SEMANTICS §5), so a run on the machine it was learned on
+still looks names up. An entry kept there would admit that address
+on any network the contract is copied to. With no other TCP or UDP entry (a run that only looked names up), the
+resolver stays the address it is, with a note that says why: Landlock grants port 53 only beside a TCP or UDP
+entry, so without one, from Linux 7.2 (Landlock ABI 10), it may refuse a lookup the run sends over UDP to an address.
+A TCP lookup passes: tego makes the allowed connect itself, outside the run's Landlock domain (read from the code;
+measured at ABI 4 and 6). The dashboard
+puts it back the same way when it withholds the last such entry. Where it is left out, a run is refused that address
+only where its resolver is another one (another network, a changed `/etc/resolv.conf` or machine config `resolver:`
+list) or its contract sets `net.dns.mode: off` or `broker`. Port 53 of an address with any other line is proposed
+like any connect, and counted as an address to name; the resolver never is, and `--allow-host` with a name that
+stands only for it exits 1. *Changed 2026-11-11; until then learn kept the resolver as an address.*
+
+In a terminal, `watch`, `learn`, `run`, `adopt`, `agents`, `test`, `doctor` and `setup` end with a `next:` block on stderr:
+a line that starts `next: ` and, on the line after it, the one command to type, indented two spaces. It is guidance,
+not output: `TEGO_HINTS=off` turns it off, `TEGO_HINTS=on` turns it on where stderr is not a terminal, and it is never
+printed with `--json`, `--no-summary`, inside a governed run or after a usage or tego error. The `reads:` line after a
+run's summary is a fact, printed whatever `TEGO_HINTS` says: it is decided from the run's `run_start.reads_notified`
+alone and says when a read the contract refused left no line (`reason-off`, `no-supervisor`) or when the record does
+not say (a record older than the field). `tego receipt --json` carries that field as `reads_notified`. `tego setup`
+(2026-11-11, ADR 0142, `docs/user/setup.md`) lists the six steps from install to an enforced run, each with the fact that
+decided it, and names the next one; it stores its machine check in `~/.tego/state/check.json`, which `tego doctor`
+never writes.
 
 What it proposes, and what it never does:
 - `command` is the run's. `fs.write` is the directories under the **workspace** (the run's working directory, or
@@ -524,7 +608,13 @@ What it proposes, and what it never does:
   port 65535 of each address a lookup returns, to choose among them, and sends nothing): all of them are one
   `observed, not allowed` line. The record does not show sends on a connected socket, so a UDP connect to an address
   and port the run also reached over TCP is kept, with a note that it may be glibc's own probe (made on the service's
-  port) rather than QUIC: remove it unless the agent speaks UDP there. *Amended 2026-10-16.*
+  port) rather than QUIC: remove it unless the agent speaks UDP there. *Amended 2026-10-16.* A proposal that allows an
+  address now says so first, in its header and on stderr (and the dashboard's plan from a run says it as a note): one
+  name often has several addresses, a program picks among them anew each run, so a later run can be refused a
+  connection this run made; write the name instead. A UDP connect on a port the run reached over TCP at another
+  address is marked as possibly glibc's probe of another answer of the same lookup, which a later run may use over
+  TCP. A run under a contract that allows a host by name records that name on each connect it allowed, and the
+  proposal writes the name once, not its addresses of the day. *Amended 2026-11-10.*
 - **Dangerous endpoints are never allowed**, only reported as `observed, not allowed`: the D-Bus session and system
   buses, systemd's private socket, gpg-agent and its ssh socket, an ssh-agent socket, X11 sockets, the Docker, Podman
   and containerd sockets, raw sockets, and any unix socket a built-in refusal refuses (any socket under `/run/user/<uid>`,
@@ -773,6 +863,51 @@ run directory prints a note on stderr naming both. A refused `git push` is one r
 the agent's own search tried (133 for 7 pushes here), and an exec by name is one event per directory tried: count
 actions from the agent's own log and the `decision` events, not from refusals.
 
+**Reading a receipt.** In Connections, a place is where the run connected: an address, a host name, a unix socket or
+another socket family. Two kinds of connect are counted apart and never named as a place, in the receipt, in
+`tego watch`'s `seen:` line and on the dashboard alike. Routine system lookups (nscd, systemd's userdb and resolved,
+the D-Bus buses, a DNS lookup) are JSON `system_lookups`. Routine socket calls that name no place (JSON
+`routine_sockets`) are a `connect` with `AF_UNSPEC`, which only resets a socket (glibc's getaddrinfo makes them
+while it sorts addresses), and the kernel's netlink socket (`family(16)`), where the C library reads the machine's
+addresses. The dashboard's Receipt tab shows both counts. A refused one of either kind is listed under Refused
+actions, and a refused socket call is not counted in `routine_sockets` at all: the supervisor refuses a send to an
+`AF_UNSPEC` address, which reaches the host behind the family word, and a netlink send that is no route query.
+Under a `net:` section tego refuses every `setsockopt(TCP_ULP)`,
+whatever the contract says (ADR 0018 (7)); Python's HTTPS on Ubuntu 24.04 tries kernel TLS so through OpenSSL, is
+refused once, and falls back to OpenSSL's own TLS. The record names that refusal's rule `unmatched`, and it counts in every total and in `--json`'s `by_rule` as the
+record says, but the receipt's words say it is built in ("built in, no rule allows it: kernel TLS ..."), and
+`tego run`'s summary and the dashboard's Receipt tab name it `built in: kernel TLS` (`built in: TCP upper-layer
+protocol` for another name), not "not allowed by any rule": no rule can allow it. A run that does not
+record refused reads (tier landlock with `reason.reads` off, the `reads:` line after the run) never says "Nothing was
+refused.", in the terminal or on the dashboard's Receipt tab: it says "No recorded action was refused; this run does
+not record refused reads", and with refusals it adds that a read it refused is not counted.
+
+**Keeping a receipt and checking it later.** `--verify` checks a run against `~/.tego/chain.log`, so it works only
+on the machine and account that ran it; in CI that file goes with the runner. To check a run anywhere later, keep two
+files together: `tego receipt <run> --json > receipt.json`, and the run's folder (its `events.jsonl` is enough). The
+JSON receipt carries a `binding` block: the run, its line count, its last line's id (`head`), whether it ended, and
+the size and sha256 of `events.jsonl` (what `sha256sum` prints), plus the tego that made it (`receipt_by`) and its
+`limits`. Later, on any machine, `tego receipt --check receipt.json <run folder>` re-walks the record's hash chain to
+the receipt's head, matches the line count, bytes and sha256, and computes the receipt again from the record to
+compare the whole of it, every key and value. It reads no chain.log. Exit 0 is a match (`--json` says `match`, or `match-unended` when the
+record has no `run_end`, which a CI step that wants a whole run refuses), 1 a mismatch naming the check and the field,
+2 usage, 125 could not check. The numbers are compared only by the same tego build that made the receipt: run the
+check with the version in `binding.receipt_by`, or it exits 125. A receipt whose `receipt_by` names no version or no
+commit, or a build that is no exact one (`+dirty`, commit `none`), exits 125 too and says so: no tego can check it. What only the machine that made the receipt can
+give is taken from the receipt, once it is what that tego writes for the record, and named in the `facts` line and
+`--json`'s `not_compared`: the price table's two numbers, `tokens.est_cost_usd` (0 or more dollars, never `-0`, 0 when
+nothing was priced) and `tokens.unpriced_responses` (from 0 to the record's metered responses), taken only when the
+record has a metered response; whether a run whose launcher had no price table carries the `no-price-table` gap; and
+for a record with no `run_end`, `time_taken.seconds`, the clock reading a live run was measured to. The cost's text,
+its coverage gap, `coverage.complete`, the stall and the refusals per minute are made from those again and compared
+like the rest, so `coverage.complete` can follow from a taken number: a receipt whose only gap was its unpriced
+responses still matches with that count set to 0 and its cost text, gap and `coverage.complete` changed to follow, and
+the check names both numbers as taken. Numbers are compared as written, so keep
+the file as `tego receipt --json` wrote it: a tool that rewrites `1.5` as `1.50` makes a mismatch. Binding costs `tego receipt --json` one more check of every line: on
+a 20,002-line record it took 2.5 to 3 times as long as the receipt alone (0.6 s against 0.2 s). What a match does not
+show: that the record is complete, that the machine or the person who ran it was honest, who ran it, when, or that it
+is the run you expected. Anyone who can write both files can make a pair that matches; nothing is signed.
+
 ## Finding agents that were not started under Tego (2026-10-06)
 
 `sudo tego agents` lists the agent processes running on this machine: any process a signature names (shipped: `claude`,
@@ -783,6 +918,14 @@ line when an agent starts and when it exits, until you interrupt it (exit 0); `-
 `--json` writes one JSON object per line. `--signature <rule>` adds a signature, replaces every shipped one of the same name
 or, as `name=`, removes it; the rule is a program name (`mytool`), an absolute path, `name=<argv pattern>`
 (`web=node .../web/cli.js`) or `name=file:<dev>:<inode>`. `--no-default-signatures` starts from an empty list.
+
+After a scan, in a terminal, its `next:` line names the step that comes next for a person: `tego watch -- <the command
+you start it with>` (or `tego status <run>` for an agent inside a run), typed without `sudo`. When the shell you typed
+`sudo` in is outside your user manager's cgroup (an SSH or console login), it says that step in a line of its own and
+the `next:` line opens the scope (`systemd-run --user --scope bash`). Tego reads that shell's cgroup from the process
+tree, the nearest parent outside root's own sessions: on Fedora 44 sudo opened a session of root's own from a
+`systemd-run --user` scope, which made it send a person inside the scope to open the scope again (*2026-11-11*,
+acceptance 2B; the parents' cgroups in the unit test are reconstructed, only the command's own was logged).
 
 It **only observes**. It signals, moves, blocks, traces and changes no process, writes no cgroup and no ledger, and it does not
 confine what it reports: an agent started outside Tego is not protected by being listed, and a tier-1 filter, Landlock or the
@@ -883,10 +1026,34 @@ refusal is a ledger line with `mechanism: plane` (rule `mount-topology` for this
 machine (`sudo tego doctor`: `decision plane: fmod_ret` or `lsm`); the fanotify fallback cannot refuse a write, so
 there the adoption is refused. Every rule that cannot be added to a running process is refused before anything moves,
 each one named: a `net:` section (a socket made before the adoption would not be governed, and the record could not
-tell which), `fs.ask` and `ask`, `env`, `models` and `capture`, `limits`, `gate`, `mcp`, `docker`, a tier other than
-cgroup, and every exec command rule: `exec.deny`, `exec.ask` and an `exec.allow` entry with argument words are decided
-on argv by the supervisor, which an adopted process does not have (the plane decides which program runs, never its
-arguments). A file the agent opened across a rule before the adoption stays open, and a file it mapped stays mapped
+tell which), `fs.ask` and `ask`, `env`, `models` and `capture`, the limits an adoption cannot hold (`limits.memory`,
+`memory_high`, `wall`, `stall_after` and the contract's budgets), `gate`, `mcp`, `docker`, a tier other than cgroup, a
+`memory`, `memory_high`, `wall` or `stall_after` ceiling of the machine config (every `tego run` gets it, so each is
+named at its file and line: a moved process's memory stays charged to the cgroup it came from, so a cap would count
+only what it allocates after the move and would end it when reached, and a time limit ends it, which an adoption
+never does), and every exec command rule: `exec.deny`, `exec.ask` and an `exec.allow` entry with argument words
+are decided on argv by the supervisor, which an adopted process does not have (the plane decides which program runs,
+never its arguments). A budget ceiling (`limits.tokens`, `cost_usd` or `repeats`) does not refuse an adoption, as it
+does not refuse a `tego run` where nothing meters it (limits-check-doctor-cli.md R32): an adoption captures no model
+traffic, so it warns `[unenforced]` at the ceiling's file and line, and its run records
+`gap what=record why=budget-unmetered`. A record-only adoption is refused for no ceiling and warns of each one.
+A `cpu`, `cpu_weight` or `pids` limit (the contract's, clamped to its machine ceiling, or the ceiling alone) is applied
+to a boundary adoption (ADR 0055, limits amendment): `cpu.max`, `cpu.weight` and `pids.max` are written into the
+adoption's cgroup before tier 2 is armed and before anything moves, and the notice says them (`limits: cpu 2, pids 512,
+written to its cgroup before the move`). From its move on the agent is throttled, and a fork or a new thread past
+`pids.max` fails with `EAGAIN`. The kernel ends no process for them, but a program that cannot start a thread may end
+itself (Go and Node abort then). The adoption is refused (exit 125, `[adopt-refused]`), with nothing moved or left, when
+the cgroup root does not enable the controller (`cpu` on a stock RHEL 9: the refusal names the setup, GAPS B15), and
+when the agent's tree holds as many tasks (processes and threads) as `pids.max` or more, since its next fork would fail
+at once: the refusal gives the count and the ceiling; raise `limits.pids` above that count or adopt with no
+`--boundary`. A tree that grows to it while it moves is released where it came from and refused. A release that leaves
+processes in the adoption's cgroup sets its limits back to the kernel's default, and run_end's detail says a lift
+that failed. The record does not say which of the
+three were applied (run_start's `limits` holds budgets only); `run_end.resources` counts `pids_peak` and
+`cpu_nr_throttled` (GAPS C56).
+`tego adopt` prints these warnings; a record-only guard prints each once when it starts, not once per agent; a
+boundary guard prints the budget warnings at its start once for each `--uid` (GAPS C56).
+A file the agent opened across a rule before the adoption stays open, and a file it mapped stays mapped
 (`gap what=enforce adoption-open-descriptors` counts both, by the plane's own rows: a file held, or mapped at all,
 where the plane refuses a read (any deny_read entry, the built-in list and its `.env` names included), and a file held
 for writing, or mapped shared and writable or may-write, where it refuses a write: outside every write entry, or a
@@ -1218,6 +1385,43 @@ Raise `bpf.ring_budget` for more concurrent runs; raise `record.ringbuf` only if
 `/etc/tego/config.yaml` only: a user's layer that sets them gets a warning and changes nothing. A launcher killed
 before its teardown leaves its rings charged until its build's next run reclaims them.
 
+## Multi-call programs in `exec.allow` (2026-11-11)
+On Ubuntu 25.10 and later, `ls`, `cat`, `sleep`, `env` and about 110 more commands are one program file, uutils
+coreutils, hard-linked under each name (115 links on 25.10 and 116 on 26.04.1, measured). On a busybox host each
+command is usually a symlink to one file. Such a program picks what it does from the name it runs under, so an
+`exec.allow` entry for one name can admit more than that name:
+
+| The host's layout | Tier landlock | Tiers cgroup and bpflsm (root) |
+|---|---|---|
+| Names that are hard links of one file (uutils coreutils) | the listed names; an agent that wins the exec race can run the file by any of its names, `/usr/bin/coreutils rm` among them | the listed names only |
+| Names that are symlinks to one file (busybox) | every applet | every applet |
+| A build that runs the program `argv[0]` names (busybox; upstream uutils through `/proc/self/fd`) | any applet through a listed name | the same |
+
+Ubuntu's own coreutils build refuses a name that does not match the file it runs as, and with only `/bin/sh` and
+`/bin/ls` allowed none of the 11 name forms of the `ls` link tried made it act as `rm` on Ubuntu 26.04.1. Upstream
+uutils has no such check. `docs/GAPS.md` C63 says what was measured and what is not known, and SEMANTICS §4 states
+the rule. Since the same day an `exec.deny` or `exec.ask` entry also meets the names upstream uutils picks a utility
+by on such a file (`xrm`, `myutils rm`), even for an exec an `exec.allow` entry admits (ADR 0048's amendment of
+2026-11-11); an `exec.allow` entry does not read them.
+
+`tego compile` notes each such file once, at the first entry that leads to it, with the entries that share it and
+its link count:
+
+```
+warning: agent.yaml:8:7: the exec entries "ls" and "cat" lead to one program file, /usr/lib/cargo/bin/coreutils/ls, with 116 names (hard links). Tiers cgroup and bpflsm admit only the names listed; tier landlock admits the file by any of its names to an agent that wins the exec race, and a multi-call build that reads argv[0] (busybox, uutils without Ubuntu's patch) runs any program it holds through a listed name [exec-multicall]
+  fix: list such a file only where every program it holds may run; docs/GAPS.md says what each tier and each coreutils build admits
+```
+
+Where one of those entries names the file's dispatcher (`/usr/bin/coreutils`, `busybox`), in any order, the note
+names that file instead and says it runs the program `argv[0]` or `argv[1]` names at every tier.
+
+It is a note: it changes no rule and no exit code, and `tego run` prints it only with `-v`, since on such a host nearly
+every coreutils entry has one. The dashboard's contract check shows it as `tego compile` does. `tego doctor` prints a
+`multicall` line when the file behind `ls` has more than one link or is busybox, toybox or coreutils; it reads the
+file's link count and name and runs nothing. List a multi-call file only where every program it holds may run. Where
+the name must bound the program, run at tier cgroup or bpflsm, which needs root. `exec.deny` command rules read
+`coreutils rm` and `busybox rm` (ADR 0048), but not every name form upstream uutils accepts.
+
 ## Exec command rules
 `exec.deny`, `exec.ask` and words after a command in `exec.allow` name what a program is asked to do: a whole
 command, a subcommand, or an option set ([ADR 0048](adr/0048-exec-command-rules.md); the per-tool rows are in
@@ -1482,6 +1686,21 @@ records it wherever it sees opens: `record: full`, held reads, an `fs.ask_read`,
 and start it again, which lists the directories anew ; for a 24/7 agent, keep what it must read beneath a directory that exists before it
 starts, or put the secret outside the trees the agent works in.
 
+Which directories froze is said under every record mode (2026-11-11), so a refusal that `record: summary` leaves no
+line for can still be explained. `tego compile` prints a `note` line naming them, and `tego run` prints the same note
+on stderr before the agent runs:
+
+```text
+note: tego run: deny_read lists /, /home, /home/alice once, at launch: a file or directory made directly in one of them during this run cannot be read until it ends (a new run lists them again) [deny-read-frozen]
+```
+
+The run's `run_start` records them as `deny_read_frozen` (`{"dirs": [...]}`; past 64 it names the 64 deepest and
+counts the shallower rest in `omitted`; `tego events <run> --json | head -1`), and `tego receipt` and the dashboard's
+Receipt tab name them under Coverage ("Frozen at launch"). The note is printed at the start of every run whose
+ruleset listed one, without `-v` too: it weakens no rule, but it tells a person before it happens that a name made there later will be unreadable. A record
+from a tego before this change has no such field. The root tiers install the same tier-1 ruleset and their
+`run_start` names its directories too; that has not been run in a guest yet (docs/GAPS.md A12).
+
 ## Telling the agent why a secret read failed (`reason.reads`, 2026-10-25)
 At tier `landlock` under `record: summary` or `off` the seccomp filter tells tego of no read open, so a read of a
 `deny_read` file (`cat ~/.ssh/id_ed25519`) gets `EACCES` from Landlock and leaves no line, no entry in the reason file
@@ -1531,8 +1750,22 @@ under the ledger root, which the agent cannot write, and the launcher records ea
 under every name it has: a multi-call program (uutils' coreutils, busybox) is one file, and on a machine whose
 `/bin/ls` is one, a block on `/bin/ls` refuses `cat`, `sleep` and every other applet too. `tego block` says so when
 it places one ("Note: /bin/ls leads to …, one file with 115 names here …", from the file's link count, or a link
-named otherwise that leads to it) and gives the bare name, which is matched by name only and refuses that name
-alone; the dashboard's Block now says so too. `tego block` also notes a bare name no folder of its own PATH holds (a
+named otherwise that leads to it), names a few of the other names it refuses too, and gives the bare name, which is
+matched by name only and refuses that name alone; the dashboard's Block now says so too. A block the dashboard places
+from a rules change ("Also apply now" or Apply now, after a program is removed from `exec.allow`) is different: it
+refuses what the run's contract grants under the removed entry, which is fixed when the run starts: the file at the
+path the entry led to then, by that path, a symbolic link to it, or `/proc/self/fd/N` of a descriptor opened there. A
+link under the entry moved later does not move the block. So removing `/bin/ls` leaves `/bin/sleep`, another hard
+link of the same file, running where the new rules still allow it (`match: link` in the overlay, version 5; ADR 0124,
+amended 2026-11-11). Where an entry the rules keep leads to the same file at the same path (busybox's links all lead
+to `/bin/busybox`), the block refuses that file there for both entries, as the whole-file block did; the next run
+would run it. A run whose launcher predates it (it makes no `live-link` file in the run directory) gets the
+whole-file block. A tego older than this change cannot read a version 5 overlay: its `tego block`,
+`tego block --list` and dashboard say the file is invalid ("damaged, or a newer Tego wrote it") and change nothing,
+so use the newer tego on that run. When a block refuses
+another name of its file, the refused line's rule names the blocked path and its `path` the one that ran; `tego run`'s
+summary, `tego receipt` and the dashboard's row say so: "/bin/sleep: refused, same program file as /bin/ls, which is
+blocked". `tego block` also notes a bare name no folder of its own PATH holds (a
 typo, or a program not installed here) and an absolute path that is no file here now; either block still refuses
 the program if it appears. A `net` value is `host[:port]`, an IP, a unix socket path or `@name`; a `path` value is an absolute path and
 everything beneath it (a relative one is read against the working directory and printed as the absolute path), for
@@ -1892,6 +2125,9 @@ operator is responsible for that notice.
 Tego holds a mistaken or prompt-injected agent to its contract for files, network destinations and new processes,
 enforced by the kernel below the agent's code. It does not stop what an allowed interpreter does in its own memory,
 and it cannot prevent data the agent may read from leaving through any endpoint the contract allows: ordinary network grants match `host:port` and do not inspect how an opaque endpoint is used. An explicitly configured bounded `net.http` or fixed-model forwarder policy can additionally constrain the supported request facts; it is not arbitrary TLS, repository or database inspection. Data can still leave through requests and endpoints the policy permits, using the agent's credentials. Both published
-exfiltrations of this shape left through `github.com:443` rather than an attacker's host (`docs/GAPS.md` A1). It is
-not a sandbox: the process sees the machine, and reads are logged, not prevented, unless a path is in `deny_read`. It
-never calls a model and never rewrites what the agent does; it refuses, explains and records.
+exfiltrations of this shape left through `github.com:443` rather than an attacker's host (`docs/GAPS.md` A1). It does
+not hide the machine: the process sees it, and reads are not prevented unless a path is in `deny_read`. At tier 1,
+under the default `record: summary`, a read leaves no line unless the supervisor is told of reads: held reads (the
+default `fs.reads: auto` turns them on when a `deny_read` target lies inside a write entry), `reason.reads: on`,
+`fs.ask_read` or a read gate. Then a refused read leaves one line (`docs/p0/enforce-landlock.md`, the `deny_read`
+row). It never calls a model and never rewrites what the agent does; it refuses, explains and records.

@@ -48,7 +48,7 @@ func cmdTest() Command {
 				message(stderr, "", 0, 0, "tego test: find this tego binary: "+err.Error(), codeIO)
 				return identity.ExitError // R25: tego's own failure
 			}
-			rep, err := selftest.Run(ctx, selftest.Options{Tego: exe, Tier: tier})
+			rep, err := selftestRun(ctx, selftest.Options{Tego: exe, Tier: tier})
 			var ce *selftest.ConfigError
 			if errors.As(err, &ce) {
 				// The caller's $TEGO_CONFIG layer is one tego run refuses: the same sentence and code as tego run's.
@@ -72,7 +72,35 @@ func cmdTest() Command {
 			if err != nil {
 				return identity.ExitError // R25: the report could not be written
 			}
-			return rep.ExitCode()
+			code := rep.ExitCode()
+			switch {
+			case asJSON:
+			case code == identity.ExitOK:
+				// Every decoy action was refused: the machine holds a run here, and the next step is the person's own
+				// agent, which only they know how to start.
+				writeHint(stderr, testNext, "tego watch -- "+startPlaceholder)
+			case code == identity.ExitError && rep.Refused == 0 && (tier == "" || tier == "auto" || tier == "landlock") &&
+				hintsOn(stderr):
+				// No run under Tego started. When that is only because this shell is outside the user manager's cgroup,
+				// the next step is the shell that is inside it (acceptance B, 2026-11-11): the check of doctor's D3 that
+				// tego setup makes, which is what refused the runs.
+				if m, _, err := loadMachine(config.TrustWarn); err == nil {
+					if pa, err := testProbe(ctx, m); err == nil && pa.outside {
+						outsideHint(stderr, "run this again there")
+					}
+				}
+			}
+			return code
 		},
 	}
 }
+
+// testNext is the sentence of tego test's hint once every decoy action was refused.
+const testNext = "record your own agent. From its folder, start it as you always do:"
+
+// selftestRun is selftest.Run; a variable so a test can stand in a report without running tego.
+var selftestRun = selftest.Run
+
+// testProbe is probeHere, asked after a self-check whose runs under Tego all failed to start; a variable so a test
+// describes the shell without probing this one.
+var testProbe = probeHere

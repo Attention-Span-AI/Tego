@@ -453,10 +453,13 @@ func TestDefaultHits(t *testing.T) {
 func TestWordsMatchesWebLabels(t *testing.T) {
 	for key, want := range map[string]string{
 		"":                                   "",
-		"unmatched":                          "Not in policy",
+		"unmatched":                          "Not in contract",
 		"net.resolver":                       "DNS lookup",
 		"held-unsupported":                   "Cannot hold",
 		"host-sockets":                       "Host socket",
+		"builtin.host_ipc":                   "Host IPC refused",
+		"builtin.tego_surface":               "Tego control refused",
+		"builtin.other_tty":                  "Other terminal refused",
 		"fs.write[./tmp/]":                   "Write: ./tmp/",
 		"fs.deny_read[~/.ssh]":               "Never read: ~/.ssh",
 		"fs.deny_write[.git/hooks/]":         "No changes: .git/hooks/",

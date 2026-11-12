@@ -21,26 +21,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// planeVerifiedBudget is the most instructions the verifier may walk for one plane program. ADR 0024's T0 note
-// measured the walk's form d at 391-896 per program on 5.14, 6.1 and 6.17, rename's two calls included, against
-// 16k-573k for the loop forms it rejected; a body that pushes a program past this has left form d.
-const planeVerifiedBudget = 20000
-
-// planeListenVerifiedBudget is socket_listen's own budget. That hook walks no path, so form d's figures say
-// nothing about it: its body is decide_listen.h's bound-address and autobind checks, which the verifier walked
-// 16,945 to 18,295 times on 6.17 and 43,850 to 44,096 times on 7.0 (GitHub's runners, 7.0.0-1017-azure,
-// 2026-11-02), the program unchanged. A loop form would still show as a jump far past this; the kernel's own
-// limit is a million.
-const planeListenVerifiedBudget = 64000
-
-// planeBudget is the verified-instruction budget of the plane program that serves hook.
-func planeBudget(hook string) uint32 {
-	if hook == "socket_listen" {
-		return planeListenVerifiedBudget
-	}
-	return planeVerifiedBudget
-}
-
 // planeReaderUsable reports whether this kernel can load a plane build, and why not. The rd build calls the
 // bpf_rdonly_cast kfunc, which a kernel without it in BTF refuses outright; the pr build calls
 // bpf_probe_read_kernel, which lockdown=confidentiality refuses (ADR 0024's T0 note). The plane probe (T8) makes
@@ -86,7 +66,7 @@ func planeModeUsable(m PlaneMode) (bool, string) {
 
 // TestPlaneLoadsAndAttaches is TIER3-PLAN §9's verifier-load test for T2: each plane build this kernel can use
 // loads one mode's full hook set and attaches every program of it, in each mode this kernel offers, with the
-// verifier's instruction count and the load time logged per program and held to planeVerifiedBudget. file_open's
+// verifier's instruction count and the load time logged per program and held to planeBudget. file_open's
 // stub calls the walk, so the global walk subprogram is verified in every build and mode. The stubs decide
 // nothing (T3), and a process outside every run is looked up and passed, which the open after the attach checks.
 func TestPlaneLoadsAndAttaches(t *testing.T) {
@@ -142,8 +122,8 @@ func TestPlaneLoadsAndAttaches(t *testing.T) {
 						if info, err := p.Info(); err == nil {
 							if n, ok := info.VerifiedInstructions(); ok {
 								t.Logf("%s: %d instructions verified", name, n)
-								if n > planeBudget(h.Name) {
-									t.Errorf("%s: %d instructions verified, over the budget of %d", name, n, planeBudget(h.Name))
+								if b := planeBudget(t, o, h.Name); n > b {
+									t.Errorf("%s: %d instructions verified, over the budget of %d", name, n, b)
 								}
 							}
 						}
@@ -167,9 +147,8 @@ func TestPlaneLoadsAndAttaches(t *testing.T) {
 					if info, err := pin.Info(); err == nil {
 						if n, ok := info.VerifiedInstructions(); ok {
 							t.Logf("%s: %d instructions verified", PlaneExecPinProgram(mode), n)
-							if n > planeVerifiedBudget {
-								t.Errorf("%s: %d instructions verified, over the budget of %d", PlaneExecPinProgram(mode), n,
-									planeVerifiedBudget)
+							if b := planeBudget(t, o, ""); n > b {
+								t.Errorf("%s: %d instructions verified, over the budget of %d", PlaneExecPinProgram(mode), n, b)
 							}
 						}
 					}
@@ -206,7 +185,7 @@ func TestPlaneLoadsAndAttaches(t *testing.T) {
 // misses it before the name entries on 23 to 25 of either build's 28 lsm programs (the guests vary), those no name
 // entry touches included (ADR 0043's implementation notes have the times, base and with the name entries, loaded in
 // turn in one 6.17 guest: 3 to 99 ms at base), so this test reports each miss with its time, beside the verified
-// instructions that planeVerifiedBudget holds, instead of failing every run on a figure the plane did not meet before
+// instructions that planeBudget holds, instead of failing every run on a figure the plane did not meet before
 // NAME-BPF. The line starts BUDGET OVER, the repository's marker for a figure over its limit (test/perf's), never
 // TARGET-MISS, which is a figure over its target and inside its limit: the limit stands, unrelaxed, and its miss is the
 // open condition ADR 0043's Status line, its index row and enforce-plane §2.21 carry until the owner decides it

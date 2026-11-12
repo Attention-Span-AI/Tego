@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/attention-span-ai/tego/internal/platform/proc"
 )
 
 // reapInterval is the backstop poll of RunReaper: SIGCHLD is coalesced and can be taken by another
@@ -93,22 +95,20 @@ func scanChildren(ppid int) []int {
 	return pids
 }
 
+// readProcStat reads one /proc/<pid>/stat file; a test stands a sequence of lines in for it.
+var readProcStat = func(pid int) ([]byte, error) { return os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)) }
+
+// procStat reads and parses /proc/<pid>/stat through proc.ReadParsedStat: the line of a task released while it was
+// read (ppid 0, process group -1, and the state read before the release, Z for a live process mid-exec) is read
+// again, so a live process is its own line and a gone one is ENOENT. A line that stays released is an error.
+func procStat(pid int) (proc.Stat, error) {
+	return proc.ReadParsedStat(func() ([]byte, error) { return readProcStat(pid) })
+}
+
 // procPPid is the parent pid field of /proc/<pid>/stat.
 func procPPid(pid int) (int, bool) {
-	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-	if err != nil {
-		return 0, false
-	}
-	end := bytes.LastIndexByte(b, ')')
-	if end < 0 {
-		return 0, false
-	}
-	f := bytes.Fields(b[end+1:])
-	if len(f) < 2 {
-		return 0, false
-	}
-	p, err := strconv.Atoi(string(f[1]))
-	return p, err == nil
+	st, err := procStat(pid)
+	return st.PPID, err == nil
 }
 
 // procZombie reports whether /proc/<pid>/stat says the process is a zombie.
@@ -116,15 +116,11 @@ func procZombie(pid int) bool { return procStatState(pid) == 'Z' }
 
 // procStatState is the state letter of /proc/<pid>/stat (R, S, T, Z ...), 0 when unreadable.
 func procStatState(pid int) byte {
-	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	st, err := procStat(pid)
 	if err != nil {
 		return 0
 	}
-	end := bytes.LastIndexByte(b, ')')
-	if end < 0 || end+2 >= len(b) {
-		return 0
-	}
-	return b[end+2]
+	return st.State
 }
 
 // inCgroupTree reports whether the /proc cgroup line names own's cgroup or a descendant of it. The run's

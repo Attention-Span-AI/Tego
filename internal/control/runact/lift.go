@@ -24,8 +24,15 @@ const (
 // The refusals of a lift, a grant and a restore are liveblock's (liveblock.CheckFence, LiftKey), as `tego lift`,
 // `tego grant` and `tego restore` give them, beside ErrNotRunning and ErrNoTimeLimits.
 var (
-	// ErrLocked is a lift or a restore asked of a Locked run, which has no fence.
+	// ErrLocked is a lift or a restore asked of a Locked run, which has no fence, or a loosening past the contract of
+	// one (CheckLoosening).
 	ErrLocked = liveblock.ErrLocked
+	// ErrStarting is a change that depends on the run's mode or its launcher's facts, asked while its run_start cannot
+	// be read yet: refused as not known, never as Locked (liveblock.ErrStarting).
+	ErrStarting = liveblock.ErrStarting
+	// ErrStartUnreadable is such a change asked of a run whose first record line is not a run_start this tego can
+	// read: refused as not known, never as Locked, and with no "try again" (liveblock.ErrStartUnreadable).
+	ErrStartUnreadable = liveblock.ErrStartUnreadable
 	// ErrOutsideFence is a lift or a restore of an entry the run's fence does not list.
 	ErrOutsideFence = liveblock.ErrOutsideFence
 	// ErrNoKey is a lift of a run whose lift key cannot be read (liveblock.ReadKey).
@@ -108,6 +115,18 @@ func Restore(ctx context.Context, root, run, kind, value, via string) (Lifted, e
 	}
 	out.Serial = o.Serial
 	return out, nil
+}
+
+// CheckLoosening refuses a change that would leave the run in dir looser than its contract: liveblock.CheckLoosening,
+// running or not by the run's lock and Adjustable or not by its run_start (StartFacts). It fails closed both ways: a run
+// no launcher holds is refused ErrNotRunning, Locked or not, so no caller can read a free lock as a go-ahead; a lock
+// that cannot be probed counts as held, and a run_start that cannot be read is refused as not known (ErrStarting, or
+// ErrStartUnreadable for a first line this tego does not read). The MCP tool switches (internal/control/mcpact) and the
+// model routes (internal/control/routeact) call it before a loosening past the contract, and give ErrNotRunning in
+// their own words.
+func CheckLoosening(dir, run string) error {
+	held, _, err := runlock.ProbeLock(dir)
+	return liveblock.CheckLoosening(liveTarget(run, held || err != nil, StartFacts(dir)))
 }
 
 // fenceTarget is the run directory, kind, normalized value and start facts of a lift (until: its limit, zero for none)

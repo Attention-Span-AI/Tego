@@ -582,6 +582,11 @@ func TestIntegrationExecRuleShebangCRLF(t *testing.T) {
 // TestIntegrationExecRuleNonRegularImage: in a run with command rules, an exec of a FIFO or a character device is
 // refused image-unreadable with EACCES, the kernel's own answer, and the supervisor never opens it to read a #!
 // line (TestExecImageHeadOpensOnlyRegular holds the open itself).
+//
+// env(1) makes the two execs, not the shell: where /bin/sh is bash (the RHEL family), bash answers an EACCES from
+// execve by opening the file to read a sample of it, and its open of the FIFO waits for a writer that never comes
+// (wait_for_partner), so the run never ended (AlmaLinux 9.8, 2026-11-10; without tego too). env reports the errno
+// and exits 126, as dash does.
 func TestIntegrationExecRuleNonRegularImage(t *testing.T) {
 	f := newFixture(t, execRulesContract("xnonreg", "/bin/sh", "  deny: [rm -r]"))
 	fifo := filepath.Join(f.out, "f")
@@ -592,8 +597,8 @@ func TestIntegrationExecRuleNonRegularImage(t *testing.T) {
 	if err := os.Chmod(fifo, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	runScript(t, f, `./out/f >>out/log 2>&1; echo "f $?" >> out/st
-/dev/null >>out/log 2>&1; echo "n $?" >> out/st`)
+	runScript(t, f, `/usr/bin/env ./out/f >>out/log 2>&1; echo "f $?" >> out/st
+/usr/bin/env /dev/null >>out/log 2>&1; echo "n $?" >> out/st`)
 	st := statuses(t, f)
 	for _, c := range []string{"f", "n"} {
 		if st[c] != 126 {

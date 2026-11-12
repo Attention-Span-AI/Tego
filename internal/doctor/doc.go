@@ -2,7 +2,8 @@
 
 // Package doctor checks the machine and reports in plain sentences
 // (docs/p0/limits-check-doctor-cli.md §5 R27). It runs the nine probes in their fixed order —
-// D1 kernel version by uname(2) against the per-mechanism minimums of docs/ARCHITECTURE.md §14,
+// D1 kernel version by uname(2) against the per-mechanism minimums of docs/ARCHITECTURE.md §14, its Landlock rows
+// judged by the landlock_create_ruleset(VERSION) answer and its connect_unix row by D7's answer where D7 gave one,
 // D2 BTF by opening and parsing /sys/kernel/btf/vmlinux and finding in it, by name, every kernel type and
 // member the embedded objects read through CO-RE, D3 cgroup v2 delegation by statfs magic plus a
 // writable delegated subtree, a scratch mkdir+rmdir, an access(W_OK) on that scratch cgroup's

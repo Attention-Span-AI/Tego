@@ -149,7 +149,7 @@ func TestValidateRefusesTimed(t *testing.T) {
 		"add with mac":        `{"v":3,` + run + `,` + chg("add", `,"kind":"path","value":"/y","mac":"`+mac+`"`) + `}`,
 		"pause with until":    `{"v":2,` + run + `,"paused":true,` + chg("pause", `,"until":"2026-10-27T13:00:00Z"`) + `}`,
 		"version 0":           `{"v":0,` + run + `}`,
-		"version 5":           `{"v":5,` + run + `}`,
+		"version 6":           `{"v":6,` + run + `}`,
 	} {
 		if _, err := Decode([]byte(body), testRun); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: Decode = %v, want ErrInvalid", name, err)
@@ -249,7 +249,7 @@ func TestMatchStopsAtTheInstant(t *testing.T) {
 	ap := netip.MustParseAddrPort("192.0.2.1:443")
 	match := func() (bool, bool, bool) {
 		_, p := s.MatchPath("/srv/x/f", AccessRead)
-		_, e := s.MatchExec([]string{"/bin/ls"}, FileID{}, false)
+		_, e := s.MatchExec([]string{"/bin/ls"}, FileID{}, false, nil)
 		_, n := s.MatchInet(ap, "", nil)
 		return p, e, n
 	}
@@ -285,11 +285,11 @@ func TestDormantBlockReturnsAtFrom(t *testing.T) {
 	}
 	s := Compile(o, Resolved{Boot: map[string]time.Duration{DeadlineKey("exec:/bin/ls", back): fc.c.Pin(back)}})
 	fc.set(back.Add(-time.Nanosecond))
-	if _, ok := s.MatchExec([]string{"/bin/ls"}, FileID{}, false); ok {
+	if _, ok := s.MatchExec([]string{"/bin/ls"}, FileID{}, false, nil); ok {
 		t.Fatal("a dormant block refused before its From")
 	}
 	fc.set(back)
-	if e, ok := s.MatchExec([]string{"/bin/ls"}, FileID{}, false); !ok || e.Rule() != "live.block[exec:/bin/ls]" {
+	if e, ok := s.MatchExec([]string{"/bin/ls"}, FileID{}, false, nil); !ok || e.Rule() != "live.block[exec:/bin/ls]" {
 		t.Fatal("a dormant block did not refuse again at its From")
 	}
 }

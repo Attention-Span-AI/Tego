@@ -37,7 +37,7 @@ func TestUnauthorizedPage(t *testing.T) {
 		t.Fatalf("browser 401: %d %q", res.StatusCode, res.Header.Get("Content-Type"))
 	}
 	for _, want := range []string{"<title>Sign in · Tego</title>", "Open the dashboard from the link in your terminal",
-		"tego-control serve --open", `rel="icon"`, `name="viewport"`, `name="color-scheme" content="light dark"`} {
+		"tego serve --open", `rel="icon"`, `name="viewport"`, `name="color-scheme" content="light dark"`} {
 		if !strings.Contains(strings.ToLower(page), strings.ToLower(want)) {
 			t.Errorf("401 page lacks %q", want)
 		}
@@ -49,7 +49,7 @@ func TestUnauthorizedPage(t *testing.T) {
 	}
 	for _, accept := range []string{"", "*/*", "text/event-stream", "application/json"} {
 		res := get("/status.json", accept)
-		if b := respBody(t, res); res.StatusCode != http.StatusUnauthorized || !strings.HasPrefix(res.Header.Get("Content-Type"), "text/plain") || !strings.Contains(b, "needs the link") {
+		if b := respBody(t, res); res.StatusCode != http.StatusUnauthorized || !strings.HasPrefix(res.Header.Get("Content-Type"), "text/plain") || !strings.Contains(b, "needs the link tego serve (or tego-control serve) printed") {
 			t.Errorf("Accept %q: %d %q %q", accept, res.StatusCode, res.Header.Get("Content-Type"), b)
 		}
 	}
@@ -233,8 +233,8 @@ func TestReceiptActivity(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("receipt: %d %s", w.Code, body)
 	}
-	for _, want := range []string{"Sensitive files read", "id_rsa", "Read, not blocked 1", "Connections", "203.0.113.9:<wbr>443",
-		"Recorded, not blocked 1", "Programs run", "bin/<wbr>cat"} {
+	for _, want := range []string{"Sensitive files read", "id_rsa", "Read, not refused 1", "Connections", "203.0.113.9:<wbr>443",
+		"Recorded, not refused 1", "Programs run", "bin/<wbr>cat"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("receipt tab lacks %q", want)
 		}
@@ -270,9 +270,11 @@ func TestReceiptFilesTile(t *testing.T) {
 }
 
 // TestReceiptNoReadsRecorded: the Receipt tab shows the check mark and "None" for sensitive reads only on a run that
-// recorded its reads. The default tier 1 run keeps no allowed read, so its empty list says it does not know.
+// recorded its reads. A tier 1 run keeps no allowed read, so its empty list says what it did not record; this one's
+// run_start has no reads_notified, so it cannot say whether a refused read left a line either.
 func TestReceiptNoReadsRecorded(t *testing.T) {
-	const none, unknown = "None: no file that looks like a secret", "Not known: this run did not record every read"
+	const none, unknown = "None: no file that looks like a secret",
+		"Allowed file reads were not recorded, so a secret the agent read is not listed; a refused read may be missing too."
 	t0 := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
 		name, run, tier, caps string

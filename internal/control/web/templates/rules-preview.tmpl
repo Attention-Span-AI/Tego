@@ -1,7 +1,7 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
 {{/* rules-preview: one change planned and not written (rules_change.go): a host it adds that does not resolve here (hostwarn), sentences, direction, also-now (and "Live now" for a widening inside a running Adjustable run's fence, ADR 0125), diff, terminal twin. Save posts as a plain form (data-page, live.js): a refused Save answers with this page planned again on the file as it is now, so its form carries that plan's base and ack, where a background post would leave the old ones in place and every later Save would be refused too. */}}
 {{define "content"}}<link rel="stylesheet" href="/static/rules.css"><link rel="stylesheet" href="/static/rules-change.css">{{$csrf := $.CSRF}}{{with .Data}}{{$d := .}}{{$p := .P}}{{$e := .Edit}}
-<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a class="link" href="/rules">Rules</a><span aria-hidden="true">/</span><a class="link" href="/rules/change?c={{queryEsc $p.Ref}}">Change rules</a><span aria-hidden="true">/</span><span>Check</span></nav>
+<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a class="link" href="/rules">Contracts</a><span aria-hidden="true">/</span><a class="link" href="/rules/change?c={{queryEsc $p.Ref}}">Change rules</a><span aria-hidden="true">/</span><span>Check</span></nav>
 <h1>Check the change</h1>
 <p class="lede rules-ctx">For {{$p.Agent}}, in <span class="code-i" title="{{$p.Contract}}">{{tail $p.Contract 60}}</span> · nothing written yet</p></div></div>
 

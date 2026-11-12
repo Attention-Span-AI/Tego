@@ -57,7 +57,7 @@ const (
 
 	// TIOCSTI pushes a byte into the controlling terminal's input queue, and TIOCLINUX subcommand 2
 	// pastes the terminal's selection buffer into it. Either lets a process write a command the user's
-	// own shell then runs, with the user's privileges and outside the sandbox entirely: CVE-2017-5226
+	// own shell then runs, with the user's privileges and outside the run entirely: CVE-2017-5226
 	// against bubblewrap, and the reason flatpak, firejail and snap all refuse them. Landlock cannot
 	// see an ioctl, so the filter is the only place in tier 1 that can.
 	//

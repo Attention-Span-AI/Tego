@@ -98,6 +98,10 @@ func liveFactsOf(evs []Event) LiveFacts {
 			}
 		}
 	}
+	if !f.Started && len(evs) > 0 {
+		// Lines are there and none is a run_start this build reads: not a run still starting (the review's S1).
+		f.StartUnreadable = true
+	}
 	return f
 }
 

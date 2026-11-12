@@ -209,6 +209,12 @@ func routesErrWords(err error) string {
 		return "the run declares no such model endpoint."
 	case errors.Is(err, routeact.ErrNoRoute):
 		return "the contract declares no such route for this endpoint; only declared routes can be chosen."
+	case errors.Is(err, routeact.ErrStarting):
+		return startingWords
+	case errors.Is(err, routeact.ErrStartUnreadable):
+		return unreadableStartWords
+	case errors.Is(err, routeact.ErrLocked):
+		return lockedWords
 	case errors.Is(err, routeact.ErrGoverned):
 		return "a governed agent cannot choose its own model route."
 	case errors.Is(err, routeact.ErrAck):

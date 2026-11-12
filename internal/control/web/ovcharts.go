@@ -18,6 +18,9 @@ type ovCharts struct {
 	Secrets            []chartSeg
 	SecretsBar         *svgChart
 	Protected, Exposed int
+	// Unrecorded counts the runs that kept no file read (readGap): a secret read there may be in neither count (an
+	// allowed one at every tier, and at tier landlock a refused one too).
+	Unrecorded int
 }
 
 // sparkRuns is how many of the newest runs an Overview sparkline covers.
@@ -32,6 +35,9 @@ func overviewCharts(runs []*ledgerview.Run, v map[string]ledgerview.Verdict) ovC
 		vd := v[r.ID]
 		c.Protected += vd.Protected()
 		c.Exposed += len(vd.Exposed)
+		if r.ReadsUnrecorded {
+			c.Unrecorded++
+		}
 		if i < n {
 			ref[n-1-i], sec[n-1-i] = r.Refusals, vd.Protected()
 		}

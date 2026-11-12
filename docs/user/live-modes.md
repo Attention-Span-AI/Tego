@@ -13,7 +13,7 @@ You choose; neither is better for every agent. The table below weighs them.
 | | Locked (default) | Adjustable (live both ways) |
 |---|---|---|
 | What holds the fixed rules | The whole contract: Landlock and Tego's supervisor at every tier, plus fanotify and BPF at tiers cgroup and bpflsm. At tier landlock the supervisor, not the kernel, decides hosts, command rules are best effort, and `deny_write` is blocked for ordinary commands; not race-free at the no-root tier ([spec/backend/CAPABILITIES.md](../../spec/backend/CAPABILITIES.md)) | The fence: the contract plus every fence entry, at tiers cgroup and bpflsm. Inside the fence, Tego's live layer refuses each entry until you lift or grant it |
-| Loosen while it runs | No: from the next run. MCP tool switches and model routes are the exception, below | Yes, fence entries only, each one previewed, confirmed and recorded, optionally for a time. MCP tool switches and model routes are the same exception |
+| Loosen while it runs | No: from the next run, MCP tool switches and model routes included | Yes, fence entries only, each one previewed, confirmed and recorded, optionally for a time. MCP tool switches and model routes also loosen live, outside the fence |
 | Tighten while it runs | Yes: live blocks and pause | Yes: the same, plus Restore |
 | Time limits | Blocks and unblocks | Blocks, unblocks, lifts and grants |
 | What a compromised agent can do | What the contract allows. A live block on a file or a program can be raced with a symlink; reads that Tego holds cannot be | The same, plus: it can dodge an exec fence entry not yet granted by copying the program to a place where it can write and run. Read fence entries (no fence path may be or pass through a link) and TCP net fence entries cannot be raced; UDP is never fenced, so it stays refused. It can never lift its own rules |
@@ -21,13 +21,23 @@ You choose; neither is better for every agent. The table below weighs them.
 | Tiers | All | cgroup and bpflsm, which need root; refused at landlock (a policy choice) |
 | Performance | Baseline | With read entries, each read open costs about 0.1 ms more. The plane modes run the full seccomp filter |
 | What the ledger proves | Every refusal, under contract rules or `live.block[...]`, and every block change | The mode and the fence's digest when the run starts; every lift, restore, expiry and refused lift as Tego applied it; every action under `live.fence[...]`. It does not prove that the kernel enforced the live policy: the live layer did |
-| Who can loosen it while it runs | Nobody for file, program and network rules. MCP tool switches and model routes: you, from outside every run, with confirmation | You, from outside every run, with confirmation; never the agent. A process of yours outside every run that reads the run's key can too |
+| Who can loosen it while it runs | Nobody through this Tego's commands and dashboard: file, program and network rules, MCP tool switches and model routes all wait for the next run. An older Tego build, or a file written into the run's folder, can still change an MCP switch or a route (docs/GAPS.md C39) | You, from outside every run, with confirmation; never the agent. A process of yours outside every run that reads the run's key can too |
 
-In plain words: for file, program and network rules, Locked is the stronger promise, "never looser than its contract
-while it runs". It does not yet cover MCP tool switches or model routes: a person outside every run can still loosen
-those on a Locked run, with confirmation, because the mode check is not built (docs/GAPS.md C39). Adjustable is weaker
+In plain words: Locked is the stronger promise, "never looser than its contract while it runs". It covers MCP tool
+switches and model routes too: `tego mcp` and `tego route` (and their dashboard pages) refuse a change past the contract
+on a Locked run with `[locked]`, and still take a tightening or a change back to the contract. The MCP relay and the
+model forwarder do not check the mode themselves, so a switch written into the run's folder some other way still
+applies (docs/GAPS.md C39). Adjustable is weaker
 by exactly the fence: what you list there is held back by Tego, not by the kernel, until you lift it. Pick Adjustable
 for an agent that runs for days or weeks and whose access you expect to change; keep Locked for everything else.
+
+For a few seconds after a run starts, before its first record line (`run_start`) is written, Tego does not know its
+mode yet. A loosening, a lift, a grant, a restore, a time-limited block or a read or write block asked then is refused
+with `[starting]` ("... is still starting ...; try again in a few seconds"), on a Locked and an Adjustable run alike,
+and nothing is written. Ask again once the run is going. A plain block is taken at once. If the run's first record
+line is there but is not one this tego can read (a damaged line, or one a newer tego wrote), the same changes are
+refused with `[start-unreadable]` instead, since waiting does not change that; `tego events <run> --verify` checks the
+run's record.
 
 ## Choose a mode
 
@@ -121,7 +131,8 @@ confirmation, because they narrow. From inside a run, `tego block` and `tego res
 dashboard refuses every change sent from inside a run.
 
 For file, program and network rules, nothing outside the fence loosens while the run runs. Such a change applies from
-the next run. MCP tool switches and model routes are the exception in the table above.
+the next run. MCP tool switches and model routes are the exception: on an Adjustable run they loosen live, outside the
+fence (on a Locked run they wait for the next run too).
 
 **Today these are terminal commands, under `sudo`.** Adjustable runs only at tier cgroup or bpflsm, so its launcher is
 root, and while a root run is live its folder under the ledger root, the run's key included, is root's (mode 0700). The

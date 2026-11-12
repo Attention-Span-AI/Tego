@@ -21,6 +21,12 @@ import (
 // the page leaves to the run's verdict (Withhold).
 type Learned struct {
 	Text string
+	// TextReads is Text with refused reads recorded (reason: {reads: on}), rendered by the same code as `tego learn
+	// --reads on`: the proposal's own Contract with ReasonReads set.
+	TextReads string
+	// Cwd is the run's working directory as its run_start recorded it; WriteDirs the proposal's fs.write directories.
+	Cwd       string
+	WriteDirs []string
 	// Ended is false for a run with no run_end: the proposal is the run so far and suggests no limits.
 	Ended bool
 	Left  int
@@ -88,7 +94,10 @@ func learnRun(ctx context.Context, root, anchor, id string) *Learned {
 	if err != nil {
 		return &Learned{Err: err.Error()}
 	}
-	return &Learned{Text: p.Contract(), Ended: p.Ended, Left: len(p.Left)}
+	l := &Learned{Text: p.Contract(), Ended: p.Ended, Left: len(p.Left), Cwd: p.Cwd, WriteDirs: p.WriteDirs()}
+	p.ReasonReads = true
+	l.TextReads = p.Contract()
+	return l
 }
 
 // DriftRow is one contract entry, or one rule the run named that no entry declares.

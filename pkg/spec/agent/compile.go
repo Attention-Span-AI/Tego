@@ -324,6 +324,7 @@ func Compile(c *Contract, m *config.Machine, opts ...CompileOption) (*RuleTable,
 	k.execUnderWrite()
 	k.execSharedWritable()
 	k.execOverRuntimeDir()
+	k.execMulticall()
 	k.execMapNative()
 	k.execCommands()
 	k.execAssurance()

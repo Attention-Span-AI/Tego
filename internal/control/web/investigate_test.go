@@ -28,7 +28,7 @@ func TestInvestigate(t *testing.T) {
 	if !strings.Contains(page, "?a=allow#act-check") || !strings.Contains(page, `data-review="`) {
 		t.Error("Investigate lacks its two decisions: Allow from now on and Keep blocked")
 	}
-	for _, part := range []string{`id="h-what"`, `id="h-how"`, `id="h-else"`, `id="h-now"`, "All policy options"} {
+	for _, part := range []string{`id="h-what"`, `id="h-how"`, `id="h-else"`, `id="h-now"`, "All contract options"} {
 		i := strings.Index(page, part)
 		if i < 0 || i < last {
 			t.Errorf("%s missing or out of order", part)
@@ -52,7 +52,7 @@ func TestInvestigateRunWithNoContractPath(t *testing.T) {
 		t.Fatal("no Investigate link")
 	}
 	if page := get(t, s, c, m[1]); strings.Contains(page, `">.</a>`) {
-		t.Errorf("the policy reads as a dot:\n%s", page)
+		t.Errorf("the contract reads as a dot:\n%s", page)
 	}
 }
 

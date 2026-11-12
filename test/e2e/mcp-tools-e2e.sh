@@ -9,12 +9,18 @@
 # tools/list hides delete_file, read_file passes, delete_file is answered -32001 and never reaches the server (its
 # call log), nor does one hidden between lone CRs in a ping, which the server frames as the official Python SDK does
 # (universal newlines), write_file is held for a person (this script answers with tego approve, then tego deny), a direct start
-# of the declared server is refused (rule mcp[files].relay), a live `tego mcp allow` lets the next delete_file
-# through and a live `tego mcp deny` refuses the next read_file; the same on web, and a direct connect to the web
-# server is refused by net. The ledger is then checked for the lines ADR 0126 §5 names.
+# of the declared server is refused (rule mcp[files].relay), and a direct connect to the web server is refused by net.
+# The run is Locked (the default, and the only mode at tier landlock), so a live `tego mcp allow` and the dashboard's
+# Allow are refused [locked] and the next delete_file is still refused by the contract, while a live `tego mcp deny`
+# (a tightening) refuses the next read_file; the same on web (ADR 0126 §4, GAPS C39). The ledger is then checked for
+# the lines ADR 0126 §5 names, with one mcp-tool-changed line: the deny's.
+#
+# A second, Adjustable run (live.mode: adjustable, started at tier landlock through the test build's
+# TEGO_TEST_LIVE_ANY_TIER hook; the product keeps Adjustable to the root tiers) proves the live loosening a run that
+# is not Locked still takes: `tego mcp allow` lets its next delete_file through.
 #
 # Isolation: everything under $W (ledger_root, chain anchor, own log, HOME); never the real ~/.tego. No model, no
-# real agent. Needs TEGO (a -tags tegotesthooks build), python3 and jq.
+# real agent. Needs TEGO (a -tags tegotesthooks build, with tego-control beside it), python3, curl and jq.
 #
 # Exit 0 when every check passed, 1 when one failed, 77 when the box cannot run it.
 set -uo pipefail
@@ -25,6 +31,7 @@ W="${W:?set W to a scratch directory}"
 PORT="${PORT:-9523}"
 command -v python3 >/dev/null || { echo "SKIP: no python3"; exit 77; }
 command -v jq >/dev/null || { echo "SKIP: no jq"; exit 77; }
+command -v curl >/dev/null || { echo "SKIP: no curl"; exit 77; }
 [ -x "$TEGO" ] || { echo "SKIP: no tego at $TEGO"; exit 77; }
 
 # Tego's own state ($S) and the agent's files ($A) are separate trees: the agent may never write tego's own.
@@ -239,10 +246,21 @@ code="$(curl -s -o /dev/null -w '%{http_code}' -b "$jar" -H "Origin: http://127.
 check "the dashboard's POST /approvals/answer approves the held write_file (HTTP $code)" "$(if [ "$code" = 303 ] && [ -n "$dask" ]; then echo 0; else echo 1; fi)"
 waitf phase2 60
 R="$(run_id)"
-"$TEGO" mcp allow "$R" files delete_file --yes
-check "tego mcp allow (loosening, --yes)" $?
+# A Locked run: the loosening is refused [locked], exit 1, with --yes too, in the words tego lift says for a Locked run.
+"$TEGO" mcp allow "$R" files delete_file --yes >"$W/allow.out" 2>"$W/allow.err"
+rc=$?
+check "tego mcp allow on a Locked run is refused, exit 1 (got $rc)" "$(if [ "$rc" = 1 ]; then echo 0; else echo 1; fi)"
+check "the refusal says Locked and [locked]" "$(if grep -q "$R is Locked: it keeps to its contract while it runs, so nothing loosens until its next run" "$W/allow.err" && grep -q '\[locked\]' "$W/allow.err"; then echo 0; else echo 1; fi)"
+# The dashboard's Allow on the same run: refused, in the Locked words a lift gets there.
+mcsrf="$(curl -s -b "$jar" "http://127.0.0.1:$DPORT/mcp?run=$R" | grep -o 'name="csrf" value="[0-9a-f]*"' | head -1 | sed 's/.*value="//; s/"//')"
+loc="$(curl -s -o /dev/null -w '%{redirect_url}' -b "$jar" -H "Origin: http://127.0.0.1:$DPORT" \
+	--data-urlencode "csrf=$mcsrf" --data-urlencode "run=$R" --data-urlencode "server=files" --data-urlencode "tool=delete_file" \
+	--data-urlencode "decision=allow" "http://127.0.0.1:$DPORT/mcp/set")"
+dpage="$(curl -s -b "$jar" "$loc")"
+check "the dashboard's Allow on a Locked run is refused (flash: Not done, Locked)" "$(if printf '%s' "$dpage" | grep -q 'Not done: this run is Locked: loosening applies from its next run.'; then echo 0; else echo 1; fi)"
+check "no live switch was written by the refusals" "$(if [ ! -e "$S/ledger/$R/mcp-tools.json" ]; then echo 0; else echo 1; fi)"
 "$TEGO" mcp deny "$R" files read_file
-check "tego mcp deny (tightening)" $?
+check "tego mcp deny (tightening) on a Locked run" $?
 sleep 0.7
 # MCP_E2E_HOLD=<seconds> keeps the run live here, in its mixed state, for a person (or a screenshot) to look at.
 if [ -n "${MCP_E2E_HOLD:-}" ]; then
@@ -251,8 +269,9 @@ if [ -n "${MCP_E2E_HOLD:-}" ]; then
 fi
 touch "$A/work/go2"
 waitf phase3 60
-"$TEGO" mcp allow "$R" web delete_file --yes
-check "tego mcp allow on the HTTP server" $?
+"$TEGO" mcp allow "$R" web delete_file --yes 2>"$W/allow-web.err"
+rc=$?
+check "tego mcp allow on the HTTP server of a Locked run is refused [locked] (exit $rc)" "$(if [ "$rc" = 1 ] && grep -q '\[locked\]' "$W/allow-web.err"; then echo 0; else echo 1; fi)"
 "$TEGO" mcp tools "$R" >"$W/tools.out" 2>&1
 check "tego mcp tools" $?
 sleep 0.7
@@ -272,17 +291,17 @@ check "held write_file approved" "$(j '.write_approved.result != null')"
 check "held write_file denied" "$(j '.write_denied.error.data.tego.reason == "ask-denied"')"
 check "held write_file approved from the dashboard" "$(j '.write_dashboard.result != null')"
 check "direct start of the server refused" "$(j '.direct.rc != 0')"
-check "live allow: delete_file passes" "$(j '.delete2.result != null')"
+check "Locked: delete_file still refused by the contract after the refused allow" "$(j '.delete2.error.code == -32001 and .delete2.error.data.tego.rule == "mcp[files].tools.deny[delete_file]"')"
 check "live deny: read_file refused" "$(j '.read2.error.data.tego.rule == "mcp[files].live[read_file]"')"
 check "web tools/list hides delete_file" "$(j '(.web_list | index("delete_file")) == null')"
 check "web read_file allowed" "$(j '.web_read.result != null')"
 check "web delete_file refused" "$(j '.web_delete.error.code == -32001')"
 check "direct connect to the web server refused" "$(j '.web_direct != "connected"')"
-check "web live allow: delete_file passes" "$(j '.web_delete2.result != null')"
+check "Locked: web delete_file still refused after the refused allow" "$(j '.web_delete2.error.code == -32001')"
 deletes="$(grep -c delete_file "$A/work/files-calls.log" 2>/dev/null)"
-check "files server executed exactly one delete_file (after the live allow)" "$(if [ "$deletes" = 1 ]; then echo 0; else echo 1; fi)"
+check "files server executed no delete_file (the run is Locked)" "$(if [ "${deletes:-0}" = 0 ]; then echo 0; else echo 1; fi)"
 wdeletes="$(grep -c delete_file "$W/web-calls.log" 2>/dev/null)"
-check "web server executed exactly one delete_file (after the live allow)" "$(if [ "$wdeletes" = 1 ]; then echo 0; else echo 1; fi)"
+check "web server executed no delete_file (the run is Locked)" "$(if [ "${wdeletes:-0}" = 0 ]; then echo 0; else echo 1; fi)"
 
 ev="$S/ledger/$R/events.jsonl"
 jl() { jq -s -e "$1" "$ev" >/dev/null; echo $?; }
@@ -293,12 +312,99 @@ check "ledger: the dashboard's answer line (by tego-control's pid)" "$(jl 'map(s
 check "ledger: mcp refused ask-denied" "$(jl 'map(select(.kind=="mcp" and .reason=="ask-denied")) | length == 1')"
 check "ledger: ask lines with op mcp_tool" "$(jl 'map(select(.kind=="ask" and .op=="mcp_tool")) | length == 3')"
 check "ledger: exec refused mcp[files].relay" "$(jl 'map(select(.kind=="exec" and .rule=="mcp[files].relay" and .verdict=="refused")) | length >= 1')"
-check "ledger: gap mcp-tool-changed per live change" "$(jl 'map(select(.kind=="gap" and .why=="mcp-tool-changed")) | length == 3')"
+check "ledger: one gap mcp-tool-changed, the deny's (the refused allows wrote none)" "$(jl 'map(select(.kind=="gap" and .why=="mcp-tool-changed")) | [length, .[0].mcp_tool.decision] == [1, "deny"]')"
+check "ledger: the run is Locked (no live_mode adjustable)" "$(jl '.[0].live_mode != "adjustable"')"
 check "ledger: live rule on the refused read_file" "$(jl 'map(select(.kind=="mcp" and .rule=="mcp[files].live[read_file]")) | length == 1')"
 check "ledger: http transport lines" "$(jl 'map(select(.kind=="mcp" and .transport=="http")) | length >= 3')"
 "$TEGO" events "$R" --verify >"$W/verify.out" 2>&1
 check "tego verify the run" $?
 echo "run: $R  ledger: $ev"
+
+# The second run: Adjustable, so the same loosening is taken live. Its fence (one net entry nothing uses) is what makes
+# the mode compile; the test build's hook lets it start at tier landlock, and no tier: line pins landlock (compile
+# refuses Adjustable there).
+mkdir -p "$A/work2"
+cat >"$A/agent2.py" <<'PY'
+import json, os, subprocess, sys, time
+work = os.path.join(sys.argv[1], "work2")
+res = {}
+def save():
+    with open(os.path.join(work, "result.json"), "w") as f:
+        json.dump(res, f, indent=1)
+files = json.load(open(os.environ["TEGO_MCP_CONFIG"]))["mcpServers"]["files"]
+p = subprocess.Popen([files["command"]] + files["args"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+n = [0]
+def rpc(method, params=None):
+    n[0] += 1
+    msg = {"jsonrpc": "2.0", "id": n[0], "method": method}
+    if params is not None:
+        msg["params"] = params
+    p.stdin.write(json.dumps(msg) + "\n"); p.stdin.flush()
+    return json.loads(p.stdout.readline())
+rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}})
+res["delete1"] = rpc("tools/call", {"name": "delete_file", "arguments": {}})
+save()
+open(os.path.join(work, "phase"), "w").close()
+end = time.time() + 60
+while not os.path.exists(os.path.join(work, "go")) and time.time() < end:
+    time.sleep(0.1)
+res["delete2"] = rpc("tools/call", {"name": "delete_file", "arguments": {}})
+save()
+p.stdin.close()
+p.wait(timeout=10)
+open(os.path.join(work, "done"), "w").close()
+PY
+cat >"$A/agent2.yaml" <<YAML
+version: 0
+name: mcp-e2e-adjustable
+command: ["python3", "$A/agent2.py", "$A"]
+env:
+  pass: [PATH, LANG, HOME, TEGO_MCP_RELAY, TEGO_MCP_CONFIG]
+fs:
+  write: ["$A/work2/"]
+net:
+  allow: []
+mcp:
+  - name: files
+    command: ["python3", "$server", "--log", "$A/work2/files-calls.log"]
+    tools: {deny: [delete_file]}
+live:
+  mode: adjustable
+  fence:
+    net: ["127.0.0.1:9"]
+YAML
+TEGO_TEST_LIVE_ANY_TIER=1 "$TEGO" run "$A/agent2.yaml" >"$W/run2.out" 2>"$W/run2.err" &
+run2pid=$!
+w2() { # w2 <file>: wait up to 60 s for the second run's marker
+	local i=0
+	while [ ! -e "$A/work2/$1" ] && [ $i -lt 600 ]; do sleep 0.1; i=$((i + 1)); done
+	[ -e "$A/work2/$1" ]
+}
+if w2 phase; then
+	R2="$(run_id)"
+	"$TEGO" mcp allow "$R2" files delete_file --yes
+	check "tego mcp allow on an Adjustable run (loosening, --yes)" $?
+	sleep 0.7
+	touch "$A/work2/go"
+	w2 "done"
+	wait $run2pid
+	echo "run 2 exit: $?"
+	r2="$A/work2/result.json"
+	check "Adjustable: delete_file refused before the allow" "$(jq -e '.delete1.error.code == -32001' "$r2" >/dev/null; echo $?)"
+	check "Adjustable: live allow: delete_file passes" "$(jq -e '.delete2.result != null' "$r2" >/dev/null; echo $?)"
+	d2="$(grep -c delete_file "$A/work2/files-calls.log" 2>/dev/null)"
+	check "Adjustable: the server executed exactly one delete_file (after the live allow)" "$(if [ "$d2" = 1 ]; then echo 0; else echo 1; fi)"
+	ev2="$S/ledger/$R2/events.jsonl"
+	check "Adjustable ledger: run_start says live_mode adjustable" "$(jq -s -e '.[0].live_mode == "adjustable"' "$ev2" >/dev/null; echo $?)"
+	check "Adjustable ledger: one gap mcp-tool-changed, decision allow" "$(jq -s -e 'map(select(.kind=="gap" and .why=="mcp-tool-changed")) | [length, .[0].mcp_tool.decision] == [1, "allow"]' "$ev2" >/dev/null; echo $?)"
+	"$TEGO" events "$R2" --verify >"$W/verify2.out" 2>&1
+	check "tego verify the Adjustable run" $?
+	echo "run 2: $R2  ledger: $ev2"
+else
+	check "the Adjustable run reached its first call" 1
+	cat "$W/run2.err"
+	kill $run2pid 2>/dev/null
+fi
 [ $fails -eq 0 ] && { echo "ALL PASS"; exit 0; }
 echo "$fails FAILED"
 exit 1

@@ -183,7 +183,7 @@ func (t seenTouch) nextTo(r *leakRule, d *seenDest) {
 // send takes one outbound line to dst, named host when the line names one: a connect that got through or was held
 // (got tells them apart) or a refused one, whose proto is empty.
 func (r *leakRule) send(e *record.Event, proto, dst, host, rule string, got bool) {
-	if dst == "" || dst == "unspec" || dst == "netlink" || dst == "family(16)" {
+	if dst == "" || syslookup.NoPlace(dst, rule) {
 		return
 	}
 	key := leakKey(dst, host)
@@ -433,6 +433,44 @@ func listNames(names []string) string {
 	return s
 }
 
+// Withheld are the destinations whose net.allow entries the leak rule left out of the proposal (Warnings' first
+// sentence names them): a run under the proposal is refused them, and learn refuses an --allow-host name that stands
+// for one. Only the person re-admits one, by hand or with tego rule on a refused line of a later run.
+func (p *Proposal) Withheld() []string {
+	var out []string
+	for _, lk := range p.Leaks {
+		if leakClass(lk) == leakWithheld {
+			out = append(out, lk.Dest)
+		}
+	}
+	return out
+}
+
+// The classes of a Leak, in the order Warnings says them.
+const (
+	leakByName = iota
+	leakLocal
+	leakResolver
+	leakWithheld
+	leakOther
+)
+
+// leakClass is the one class of lk, the first of: recorded by name only, a local socket, a possible resolver, a
+// destination whose entries the proposal left out, and any other.
+func leakClass(lk *Leak) int {
+	switch {
+	case lk.ByName:
+		return leakByName
+	case lk.Local:
+		return leakLocal
+	case lk.Resolver:
+		return leakResolver
+	case len(lk.Entries) > 0:
+		return leakWithheld
+	}
+	return leakOther
+}
+
 // Warnings are what a person must know before using the proposal, one sentence each, the most serious first: the
 // destinations left out as a leak, the ones the leak rule cannot match to an entry, and what the proposal leaves
 // open. The file's header carries them, and tego learn says them on stderr.
@@ -440,14 +478,14 @@ func (p *Proposal) Warnings() []string {
 	var out []string
 	var withheld, byName, local, resolver, other []string
 	for _, lk := range p.Leaks {
-		switch {
-		case lk.ByName:
+		switch leakClass(lk) {
+		case leakByName:
 			byName = append(byName, lk.Dest)
-		case lk.Local:
+		case leakLocal:
 			local = append(local, lk.Dest)
-		case lk.Resolver:
+		case leakResolver:
 			resolver = append(resolver, lk.Dest)
-		case len(lk.Entries) > 0:
+		case leakWithheld:
 			withheld = append(withheld, lk.Dest)
 		default:
 			other = append(other, lk.Dest)
@@ -476,6 +514,9 @@ func (p *Proposal) Warnings() []string {
 	if len(byName) > 0 {
 		out = append(out, fmt.Sprintf("%s next to a send to %s, recorded only by host name: the record keeps no address for it, so the proposal cannot tell whether an address it allows is the same place; check every net.allow entry",
 			opened, listNames(byName)))
+	}
+	if len(p.AddressEntries()) > 0 {
+		out = append(out, AddressWarning)
 	}
 	out = append(out, "this proposal leaves env and reads open: with no env section every variable of the launcher's environment reaches the agent, secrets included, and the agent can read any file the built-in fs.deny_read list does not name; a secret it can read can leave through any address allowed here")
 	return out

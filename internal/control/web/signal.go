@@ -26,6 +26,10 @@ func logsURL(run, q string, verdicts ...string) string {
 // is under, or the well-known secret places (ledgerview.IsSecretPath).
 func secretWhy(t ledgerview.SecretTouch) string {
 	switch {
+	case strings.HasPrefix(t.Rule, "fs.deny_read[") && t.Allowed+t.Observed > t.Unread:
+		// The rule's label beside a read that went through (a watched run, a deny_read Landlock could not hold) read as
+		// "this file was never read" next to the count that says it was.
+		return "Never-read rule, not enforced"
 	case strings.HasPrefix(t.Rule, "fs.deny_read["):
 		return "Never read"
 	case strings.HasPrefix(t.Rule, "fs.ask_read["):
@@ -33,7 +37,7 @@ func secretWhy(t ledgerview.SecretTouch) string {
 	case strings.HasPrefix(t.Rule, "fs.ask["):
 		return "Ask first"
 	case t.Entry != "":
-		return "Policy: " + t.Entry
+		return "Contract: " + t.Entry
 	}
 	if k := fileKind(t.Path); k != "" {
 		return k

@@ -2,8 +2,8 @@
 {{/* severity: a person's own severity rules (severity.go), above the built-in ones; first match wins. Severity only
      sorts and colours: the policy decides what is blocked. */}}
 {{define "content"}}{{with .Data}}{{$csrf := $.CSRF}}
-<nav class="crumbs" aria-label="Breadcrumb"><a href="/rules">Policies</a></nav>
-<div class="head"><div><h1>Severity</h1><p class="lede" title="Severity sorts and colours; your policy decides what is blocked">Sorting only · never changes what is blocked</p></div></div>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/rules">Contracts</a></nav>
+<div class="head"><div><h1>Severity</h1><p class="lede" title="Severity sorts and colours; your contract decides what is refused">Sorting only · never changes what is refused</p></div></div>
 {{if .Off}}<section class="panel"><div class="empty"><h3>Not available here</h3></div></section>{{else}}
 <section class="panel" aria-labelledby="h-own"><div class="panel-head"><h2 id="h-own">Your rules</h2><span class="soft" title="{{.File}}">First match wins</span></div>
 {{if .Rules}}<div class="tw"><table class="t"><caption class="sr">Your severity rules, first match first</caption><thead><tr><th scope="col">Channel</th><th scope="col">Contains</th><th scope="col">Severity</th><th scope="col"><span class="sr">Remove</span></th></tr></thead>
@@ -18,7 +18,7 @@
 <p class="panel-body soft">Saved in <span class="mono">{{tilde .File}}</span> · not part of the record · secrets stay High</p></section>
 <section class="panel" aria-labelledby="h-built"><div class="panel-head"><h2 id="h-built">Built in</h2><a class="link" href="/glossary#severity">Glossary</a></div>
 <dl class="gl-list">
-<div class="gl-row"><dt><span class="sev sev-High">High</span></dt><dd>Secrets · connections not in the policy · ssh, curl and other reach-out programs · shell startup files and git hooks</dd></div>
+<div class="gl-row"><dt><span class="sev sev-High">High</span></dt><dd>Secrets · connections not in the contract · ssh, curl and other reach-out programs · shell startup files and git hooks</dd></div>
 <div class="gl-row"><dt><span class="sev sev-Medium">Medium</span></dt><dd>Other programs · changes outside the project · changes to an agent's settings · another agent's files</dd></div>
 <div class="gl-row"><dt><span class="sev sev-Low">Low</span></dt><dd>The agent reading its own files or writing its own caches · system network information</dd></div>
 <div class="gl-row"><dt><span class="sev sev-Routine">Routine</span></dt><dd>System lookups and probes · terminal devices</dd></div>

@@ -233,6 +233,24 @@ func writeSubtree(path, what string) error {
 	return werr
 }
 
+// Offered reads root's cgroup.controllers, the controllers root's parent lets it enable, as a set (EnableFix). When
+// the file cannot be read it returns nil and the error: nil is EnableFix's "not known", never "offers nothing",
+// which an empty file says with an empty set.
+func Offered(root string) (map[string]bool, error) {
+	data, err := os.ReadFile(filepath.Join(root, fileControllers))
+	if err != nil {
+		return nil, err
+	}
+	return fields(data), nil
+}
+
+// offeredOrUnknown is Offered without its error, nil (not known) when root's cgroup.controllers cannot be read: the
+// refusal it goes into is the error a caller sees, and its fix says that the file was not read.
+func offeredOrUnknown(root string) map[string]bool {
+	offered, _ := Offered(root)
+	return offered
+}
+
 // fields turns a space-separated control file into a set.
 func fields(data []byte) map[string]bool {
 	out := make(map[string]bool)
@@ -292,6 +310,19 @@ func (fs *FS) SetLimits(c Cgroup, l Limits) error {
 	return nil
 }
 
+// LiftLimits writes every limit file of c back to the kernel's default (liftFiles), one write(2) each, so the
+// processes c still holds keep no limit tego set. A file c does not have (its controller is not enabled there) holds
+// no limit and is skipped. Every file is tried; the failures are returned joined.
+func (fs *FS) LiftLimits(c Cgroup) error {
+	var errs []error
+	for _, f := range liftFiles() {
+		if err := writeControl(c, f.Name, f.Value); err != nil && !errors.Is(err, unix.ENOENT) {
+			errs = append(errs, fmt.Errorf("cgroup: lift %s: %w", filepath.Join(c.Path, f.Name), err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // limitKeys names the contract key behind each control file SetLimits writes, for a refusal's message.
 var limitKeys = map[string]string{
 	"cpu.max": "limits.cpu", "cpu.weight": "limits.cpu_weight", "memory.max": "limits.memory",
@@ -310,7 +341,7 @@ func (fs *FS) classify(c Cgroup, f limitFile, err error) error {
 				// The fix a root launcher must be given is not the one an unprivileged launcher
 				// needs; Fix() branches on this rather than naming a systemd drop-in that has no
 				// bearing on the cgroup2 mount root.
-				Privileged: fs.privileged, Errno: errno,
+				Privileged: fs.privileged, Offered: offeredOrUnknown(fs.root), Errno: errno,
 				EnableErr: c.enableRefused[f.Controller],
 			}
 		case unix.EINVAL:

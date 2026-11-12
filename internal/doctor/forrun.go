@@ -151,7 +151,7 @@ func autoTiers(root bool, bpfLSM func() bool, built func(backend.Tier) error) Au
 // (runtime-launch.md R2), never a run at a lower tier.
 func ForRun(ctx context.Context, m *config.Machine, reach backend.Tier) (*Report, error) {
 	uid, _ := config.InvokingUID()
-	s := scope{uid: uid, root: config.InitNSRoot(), checks: machineChecks, planePin: planePin(m)}
+	s := scope{uid: uid, root: config.InitNSRoot(), checks: machineChecks, planePin: planePin(m), ceilings: m.LimitCeilings()}
 	switch reach {
 	case backend.TierLandlock:
 		s.reach = reach
@@ -170,9 +170,9 @@ func ForRun(ctx context.Context, m *config.Machine, reach backend.Tier) (*Report
 // checks are the nine probes of R27, as fields so a test can describe a machine and count which of them a
 // scope runs.
 type checks struct {
-	kernel   func() (Result, string, Version)
+	kernel   func() (Result, string, Version, kernelProbe)
 	btf      func() Result
-	cgroup   func(uid int) Result
+	cgroup   func(uid int, ceilings []config.Value) Result
 	landlock func() (Result, int)
 	seccomp  func() (Result, PtraceState, error)
 	lsm      func(root bool) (Result, LSMState)
@@ -193,7 +193,7 @@ type checks struct {
 
 // machineChecks are the real probes.
 var machineChecks = checks{
-	kernel:      probeKernelVersion,
+	kernel:      probeKernel,
 	btf:         probeBTF,
 	cgroup:      probeCgroup,
 	landlock:    probeLandlockABI,
@@ -229,6 +229,9 @@ type scope struct {
 	cache *runCache
 	// planePin is the machine's bpf.plane setting, which selects tier cgroup's plane mode from the probe's answer.
 	planePin string
+	// ceilings are the machine's limits.* ceilings (config.Machine.LimitCeilings), which D3 names when their
+	// controller is missing: every run gets them.
+	ceilings []config.Value
 	// adopt reads a pinned plane build's recorded answer (planepin.go), nil for none: a run at reach cgroup
 	// that finds its build pinned in the mode it would select probes no plane (R21).
 	adopt func(pin string) (*PlaneState, bool)
@@ -299,8 +302,8 @@ func (s scope) run(ctx context.Context) probeState {
 	}
 	steps := []func(){
 		func() {
-			r, release, v := s.checks.kernel()
-			st.release, st.kernel = release, v
+			r, release, v, p := s.checks.kernel()
+			st.release, st.kernel, st.kernelProbe = release, v, p
 			add(r)
 			if cache == nil {
 				return
@@ -326,7 +329,7 @@ func (s scope) run(ctx context.Context) probeState {
 			}
 			add(s.checks.btf())
 		},
-		func() { add(s.checks.cgroup(s.uid)) },
+		func() { add(s.checks.cgroup(s.uid, s.ceilings)) },
 		func() {
 			r, abi := s.checks.landlock()
 			st.landlockABI = abi
@@ -487,6 +490,7 @@ func (s scope) run(ctx context.Context) probeState {
 		step()
 		end()
 	}
+	st.kernelFromD7()
 	if cache != nil {
 		st.cacheNote = cache.refused
 	}
@@ -526,4 +530,49 @@ func notProbed(id CheckID, reach backend.Tier) Result {
 	return Result{ID: id, Skipped: true,
 		Detail: fmt.Sprintf("not probed by tego run: no tier up to %s, the highest its selection can reach, reads it "+
 			"(tego doctor runs it)", reach)}
+}
+
+// kernelFromD7 renders D1 again with D7's answer for cgroup/connect_unix, where D1 was asked on this kernel and D7
+// answered (unixConnectAnswer): D7 loads that hook as root, and a kernel that backports it, or a release that
+// promises it to a kernel built without it, would otherwise have D1 list it against D7's own row. D1's OK and Fix
+// do not read the answer (kernelResult), so the tier does not move. Where D7 did not run or did not answer (a run's
+// scope below tier cgroup, or a user D7 cannot load for), D1 keeps the release's row.
+func (st *probeState) kernelFromD7() {
+	if !st.kernelProbe.asked {
+		return
+	}
+	ok, answered := unixConnectAnswer(st.hooks)
+	if !answered {
+		return
+	}
+	p := st.kernelProbe
+	p.unixConnect = &ok
+	r, _ := kernelResult(st.release, p)
+	st.kernelProbe = p
+	st.byID[CheckKernel] = r
+	for i := range st.results {
+		if st.results[i].ID == CheckKernel {
+			st.results[i] = r
+		}
+	}
+}
+
+// unixConnectAnswer is what D7 learned of BPF_CGROUP_UNIX_CONNECT on this kernel: the row is Absent when the
+// backend's own probe (cgroupenforce.UnixConnectSupported) found the kernel refuses the attach type, and Loaded when
+// a program of it loaded. Any other row (the probe's own error, a load that failed) answers nothing, and so does a D7
+// that made no row: not root, or a scope that did not run it.
+func unixConnectAnswer(hooks []HookResult) (supported, answered bool) {
+	for _, h := range hooks {
+		if h.Hook != "cgroup/connect_unix" || h.Plane != "" || h.Capture {
+			continue
+		}
+		switch {
+		case h.Absent:
+			return false, true
+		case h.Loaded:
+			return true, true
+		}
+		return false, false
+	}
+	return false, false
 }

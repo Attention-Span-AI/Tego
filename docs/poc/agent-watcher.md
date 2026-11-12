@@ -139,4 +139,4 @@ once. `tego agents --follow` was also run end to end in the guest.
 
 The watcher governs agent sessions only: processes matching the signature list and their descendants. It does not monitor or
 control other processes, users or the host. Root keeps full visibility and can remove it at any time. It is consensual audit and
-sandboxing of the operator's own AI-agent processes on the operator's own machine.
+control of the operator's own AI-agent processes on the operator's own machine.

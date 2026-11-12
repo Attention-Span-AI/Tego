@@ -6,7 +6,7 @@
 <dt>What</dt><dd>{{if $e.Op}}<span class="op">{{$e.Op}}</span> {{end}}{{if $d.FullCommand}}<span class="mono ev-wrap">{{cut (mask $d.FullCommand) 300}}</span> <span class="soft">({{len $d.FullCommand}} bytes)</span><details class="ev-full"><summary>Whole command</summary><pre class="raw ev-raw" tabindex="0" aria-label="The whole command">{{mask $d.FullCommand}}</pre></details>{{else if $e.Target}}<span class="mono ev-wrap">{{mask $e.Target}}</span>{{end}} <span class="soft">({{kindWords $e.Kind}}{{if $e.Source}}, seen by {{sourceWords $e.Source}}{{end}})</span></dd>
 <dt>When</dt><dd>{{if $f.Local}}<time datetime="{{iso $e.TS}}" title="{{$f.UTC}}">{{$f.Local}}</time>{{else}}<time datetime="{{iso $e.TS}}">{{stamp $e.TS}}</time>{{end}}{{if $f.Into}}<span class="soft ev-when"> · {{$f.Into}} into the run</span>{{end}}{{if and $f.SincePrev $d.Prev}}<span class="soft ev-when"> · {{$f.SincePrev}} after <a class="link" href="/runs/{{pathEsc $r.ID}}/lines/{{$d.Prev.Seq}}">line #{{$d.Prev.Seq}}</a></span>{{end}}</dd>
 <dt>Run</dt><dd><a class="link mono" href="/runs/{{pathEsc $r.ID}}" title="{{$r.ID}}">{{rid $r.ID}}</a>{{if $r.Agent}} · {{$r.Agent}}{{end}} {{template "state" $r}}</dd>
-{{if $r.Contract}}<dt>Policy</dt><dd class="mono ev-wrap">{{$r.Contract}}</dd>{{end}}
+{{if $r.Contract}}<dt>Contract</dt><dd class="mono ev-wrap">{{$r.Contract}}</dd>{{end}}
 </dl></section>{{end}}
 {{define "evfacts"}}{{$d := .}}{{$e := .Ev}}{{$r := .Run}}{{$f := .F}}{{$lv := $f.LV}}
 <section class="panel" aria-labelledby="h-dec"><div class="panel-head"><h2 id="h-dec">The decision</h2></div>
@@ -14,9 +14,9 @@
 <dt>Verdict</dt><dd>{{$f.Verdict}}</dd>
 {{with $f.By}}<dt>Decided by</dt><dd class="ev-wrap">{{.}}</dd>{{end}}
 <dt>Rule</dt><dd>{{if $f.RuleFound}}{{with $f.Rule}}<span class="ev-rule">{{.Sentence}}</span> <span class="ev-src">{{if .File}}<a class="link mono" href="/rules?run={{$r.ID}}{{with .Group}}#g-{{.}}{{end}}" title="{{.File}}{{if eq .Positions "copy"}} (the run's own copy: the rules file changed since){{end}}">{{$f.RuleFile}}:{{.Line}}</a>{{else}}<span class="soft">built into Tego</span>{{end}}{{with .StateWords}} <span class="b {{if eq . "enforced"}}b-verified{{else if eq . "best effort"}}b-besteffort{{else}}b-neutral{{end}}"{{with $f.Rule.EnforcedText}} title="{{.}}"{{end}}>{{.}}</span>{{end}}</span>{{end}}{{else if $d.Label}}{{$d.Label}}{{else}}<span class="soft">No rule named this line</span>{{end}}{{if $f.RuleKey}} <span class="mono muted ev-wrap"{{with $f.RuleKeyFull}} title="{{.}}"{{end}}>{{$f.RuleKey}}</span>{{end}}</dd>
-{{if $f.Reason}}<dt>{{if or (eq (verdictClass $e) "refused") (eq $e.Verdict "ask")}}Reason the agent got{{else}}Reason{{end}}</dt><dd>{{$f.Reason}} <span class="mono muted">{{$f.ReasonKey}}</span></dd>{{/* a person's yes (an answer line, no verdict of its own) is no allowed action */}}{{else if and $e.Verdict (eq (verdictClass $e) "allowed")}}<dt>Reason</dt><dd><span class="soft">Not blocked</span></dd>{{end}}
+{{if $f.Reason}}<dt>{{if or (eq (verdictClass $e) "refused") (eq $e.Verdict "ask")}}Reason the agent got{{else}}Reason{{end}}</dt><dd>{{$f.Reason}} <span class="mono muted">{{$f.ReasonKey}}</span></dd>{{/* a person's yes (an answer line, no verdict of its own) is no allowed action */}}{{else if and $e.Verdict (eq (verdictClass $e) "allowed")}}<dt>Reason</dt><dd><span class="soft">Not refused</span></dd>{{end}}
 {{with $f.Errno}}<dt>What the agent got</dt><dd>{{.}}</dd>{{end}}
-{{with $f.Mechanism}}<dt>Blocked by</dt><dd>{{.}}</dd>{{end}}
+{{with $f.Mechanism}}<dt>Refused by</dt><dd>{{.}}</dd>{{end}}
 {{with $f.Tier}}<dt>Enforcement</dt><dd>{{.}}</dd>{{end}}
 </dl></section>
 

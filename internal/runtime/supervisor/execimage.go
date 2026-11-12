@@ -97,6 +97,9 @@ type execImage struct {
 	// linked is st_nlink > 0. A memfd is created unlinked, and a file unlinked since it was opened is too:
 	// neither has a path any rule can name.
 	linked bool
+	// nlink is st_nlink from the same fstat: more than one marks a multicall image to the command rules
+	// (execmatch.Facts.Links). It is the inode's count, not a name the agent chose, and needs no read of its memory.
+	nlink uint64
 	// link is readlink(2) of the image's descriptor in this process's view, as the kernel spells it: a
 	// memfd reads "/memfd:<name> (deleted)", another anonymous inode "anon_inode:[...]".
 	link string
@@ -303,6 +306,7 @@ func describeImage(fd int) (execImage, error) {
 	img := execImage{
 		id:      fileID{dev: st.Dev, ino: st.Ino},
 		linked:  st.Nlink > 0,
+		nlink:   uint64(st.Nlink),
 		link:    link,
 		changed: time.Unix(st.Ctim.Sec, st.Ctim.Nsec),
 		regular: st.Mode&unix.S_IFMT == unix.S_IFREG,
@@ -377,10 +381,10 @@ func walkExec(q pathQuery, named bool) (fd int, missing, name string, err error)
 // the task's own thread group (ownMagicDir) is an unsure step, as an unsure directory is: the kernel follows such a
 // link for the task only when ptrace_may_access(PTRACE_MODE_READ_FSCREDS) lets the task at that process, which this
 // process cannot decide (Landlock's ptrace scoping and the other LSMs answer it, dumpability changes), while its own
-// rights (root at tiers cgroup and bpflsm, an unsandboxed process at tier landlock) let it follow a link the task
-// cannot. A walk through one that fails is EACCES, the kernel's answer wherever the task is refused, so a miss there
-// never tells the task whether a name exists behind the link; a walk that reaches a file is decided as before, and
-// nothing read from that file changes the task's errno. Rejected: EACCES for every such
+// rights (root at tiers cgroup and bpflsm, a process outside the agent's Landlock domain at tier landlock) let it
+// follow a link the task cannot. A walk through one that fails is EACCES, the kernel's answer wherever the task is
+// refused, so a miss there never tells the task whether a name exists behind the link; a walk that reaches a file is
+// decided as before, and nothing read from that file changes the task's errno. Rejected: EACCES for every such
 // link, which refused the exec of a granted file through a run process's descriptor the kernel lets the task follow,
 // and recorded a memfd reached that way by its spelling rather than as fileless; reading ptrace_may_access's
 // credential and dumpability rules here, which still leaves the LSMs unread.
@@ -1144,10 +1148,11 @@ const procOwnerDepth = 8
 // numbers are not this process's. The kernel lets the task into such a directory only as its permission operation
 // decides for the caller: /proc/<pid>/fdinfo is 0555 and asks ptrace_may_access (which Landlock's scoping, Yama and the
 // other LSMs answer), and a pid directory under hidepid asks whether the caller may see the process, none of which this
-// process can decide for the task, while its own rights (root at tiers cgroup and bpflsm, an unsandboxed process at
-// tier landlock) let it in. A procfs directory that belongs to no process (/proc itself, /proc/sys, /proc/driver) is
-// not foreign, nor are the task's own thread group's directories, a non-leader thread's top-level /proc/<tid> included,
-// nor any directory off procfs. It climbs ".." from fd to the directory just below this instance's root and reads that
+// process can decide for the task, while its own rights (root at tiers cgroup and bpflsm, a process outside the
+// agent's Landlock domain at tier landlock) let it in. A procfs directory that belongs to no process (/proc itself,
+// /proc/sys, /proc/driver) is not foreign, nor are the task's own thread group's directories, a non-leader thread's
+// top-level /proc/<tid> included, nor any directory off procfs. It climbs ".." from fd to the directory just below
+// this instance's root and reads that
 // directory's status file, which only a pid directory has: its Tgid line names the thread group the directory belongs
 // to, read through the directory itself. Anything it cannot open, read or compare is "yes".
 func (w *execWalk) procForeign(fd int, fsType uint32, fsErr error) bool {

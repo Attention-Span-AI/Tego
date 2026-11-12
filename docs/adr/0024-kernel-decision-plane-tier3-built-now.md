@@ -461,3 +461,34 @@ The guests used the matrix's `lockdown=none` setting, one guest at a time, with
 waiver; this is a compatibility regression check, not product preemption-safety
 proof. The RHEL fixture's DAC limitation above remains. Other matrix failures,
 other kernel updates and live distro LSM policy are outside this proof.
+
+### Verifier budget amendment (2026-11-10): one kernel family charges the plane more
+
+The plane's root tests hold each program's verified-instruction count to 20,000, the figure set against T0's form d
+(391-896 per program on 5.14, 6.1 and 6.17). On Fedora 44's 6.19.10 every walk-calling program exceeded it, up to
+63,939 (rd) and 28,681 (pr), with the same object bytes whose largest program verified in 13,819 on 5.14 and 6.12,
+14,562 on 6.18 and 6.19.3, and 19,834 on Fedora's 7.0.14. Measured in guests with one test binary: mainline 6.19.3
+verifies rd file_open in 11,367 and mainline 6.19.4 in 59,827, the Fedora figure exactly, as do 6.19.10 and
+6.19.14. The one bpf_loop-specific verifier change between 6.19.3 and 6.19.4 is the stable backport de2f14d97bda of
+f597664454bd ("bpf: bpf_scc_visit instance and backedges accumulation for bpf_loop()"), which makes the verifier
+treat every bpf_loop callback as a loop for state accumulation. T0's spike shows the same split: its bpf_loop forms
+grew (d-rd 1,032 to 3,789, d-pr 655 to 1,919, c-rd 1,975 to 7,507) and its plain-loop forms did not move (a-rd
+248,374 and b-pr 67,514 on both). The commit was not isolated by building a kernel without it; 6.19.4 also carries
+65d114b5270b (sync_linked_regs id preservation), which does not touch bpf_loop and would not leave the plain-loop
+forms unchanged. Fedora's 7.0.14 and 7.2.9 carry f597664454bd and verify the plane in 15,741 and 14,918 (rd
+file_open), so 7.0 offsets it by some change not identified here. The real plane loads on 6.19.10: root `tego
+doctor` reports tier bpflsm with every hook loaded, and the kernel's own limit is 1,000,000.
+
+The budget is now per kernel family (`internal/bpf/plane_budget_integration_test.go` `planeCharges`): 20,000
+everywhere except Linux 6.19.4 to 6.19.y, where it is scaled by what that family charges the same bytes against
+6.19.3, per reader: 87,817 (rd, 63,939 / 14,562) and 49,527 (pr, 28,681 / 11,582), the headroom 6.19.3 has. T0's
+plain-loop walks alone cost 248,374 (a-rd), 289,281 (b-rd) and 67,514 (b-pr) there, over those budgets. Form a-pr
+(16,338 there) is cheaper than the larger pr programs on that family, so no budget there tells it apart; it still
+fails on the other kernels. The family is a release range because the change came by stable backport, which no BTF
+type marks; a distribution kernel elsewhere that took it without 7.0's offset fails with its counts logged.
+
+Rejected: scaling by T0's form d walk measured on the running kernel. It tracks this family (d-rd 3,789) but not the
+plane elsewhere: RHEL 9.8's 5.14.0-687.61.1 verifies d-rd in 2,975 and Fedora's 7.0.14 in 2,179, while the plane
+there costs what it costs on 6.12, so the rd budget would have loosened to 70,331 and 51,514 on those kernels
+(7.0 is the hosted runners' kernel), and on RHEL 9.8 a plane program whose walk became form a-rd (35,855 alone on
+5.14 in T0) would have passed. socket_listen keeps its own 64,000, which 6.19.4 did not move.

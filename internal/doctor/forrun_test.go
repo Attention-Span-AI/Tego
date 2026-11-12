@@ -30,9 +30,11 @@ func passingChecks(c *calls) checks {
 	c.n = map[CheckID]int{}
 	ok := func(id CheckID) Result { c.n[id]++; return Result{ID: id, OK: true, Detail: "ok"} }
 	return checks{
-		kernel:   func() (Result, string, Version) { return ok(CheckKernel), "6.17.0-test", Version{6, 17, 0} },
+		kernel: func() (Result, string, Version, kernelProbe) {
+			return ok(CheckKernel), "6.17.0-test", Version{6, 17, 0}, kernelProbe{}
+		},
 		btf:      func() Result { return ok(CheckBTF) },
-		cgroup:   func(int) Result { return ok(CheckCgroupV2) },
+		cgroup:   func(int, []config.Value) Result { return ok(CheckCgroupV2) },
 		landlock: func() (Result, int) { return ok(CheckLandlock), 7 },
 		seccomp:  func() (Result, PtraceState, error) { return ok(CheckSeccomp), PtraceState{}, nil },
 		lsm: func(bool) (Result, LSMState) {

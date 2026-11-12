@@ -3,7 +3,10 @@
 package decide
 
 import (
+	"path/filepath"
+
 	"github.com/attention-span-ai/tego/pkg/policy/fsplan"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
 // This file is the pure half of the Landlock rule plan (enforce-landlock R3, R4; ADR 0028): which deny_read
@@ -43,4 +46,40 @@ func Outermost(resolved []string) []string { return fsplan.Outermost(resolved) }
 // internal/runtime/enforce/landlock TestAncestorSetGolden).
 func AncestorSet(resolvedTargets []string) (levels []string, onPath map[string]map[string]bool) {
 	return fsplan.Ancestors(resolvedTargets)
+}
+
+// FrozenLevels predicts, from the compiled table alone, the directories a run's Landlock ruleset will list once at
+// launch to build its deny_read entries (enforce-landlock R3 (3), E28; GAPS A12): every ancestor level of the
+// outermost enforced targets, which are the deny_read entries compile did not mark unenforced, by their resolved
+// path, and every absent built-in row's name (AbsentRow.At, ADR 0067 D3). A name made directly in one of them after
+// the run started is unreadable to it until the run ends. tego compile prints them; the run's own list is what
+// Prepare listed (landlock.Handle.DenyReadFrozen), which can name fewer where a level is the inode of a target reached
+// through a bind mount (E32 (d)). Sorted; nil when nothing is enumerated.
+func FrozenLevels(rt *agent.RuleTable) []string {
+	if rt == nil {
+		return nil
+	}
+	var targets []string
+	for _, r := range rt.FS {
+		if r.Kind != agent.FSDenyRead || r.Unenforced {
+			continue
+		}
+		p := r.Resolved
+		if p == "" {
+			p = r.Path
+		}
+		if p = filepath.Clean(p); p != "/" && filepath.IsAbs(p) {
+			targets = append(targets, p)
+		}
+	}
+	for _, a := range rt.AbsentDenyRead {
+		if p := filepath.Clean(a.At); p != "/" && filepath.IsAbs(p) {
+			targets = append(targets, p)
+		}
+	}
+	levels, _ := fsplan.Ancestors(fsplan.Outermost(targets))
+	if len(levels) == 0 {
+		return nil
+	}
+	return levels
 }

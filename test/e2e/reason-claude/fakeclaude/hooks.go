@@ -96,6 +96,37 @@ type hookRun struct {
 	Stdout   string
 	Stderr   string
 	StartErr string
+	// Began is when the hook's process was started, to set against the ledger's ts of a refused line: a hook can tell
+	// only a refusal whose line landed before it read the reason file.
+	Began time.Time
+	// ReasonSeq is the seq of the newest refusal the run's reason file ($TEGO_REASON) listed just before the hook
+	// started, 0 when there was no file yet, nil without TEGO_REASON or when the file could not be read as one. The
+	// file lists every refused line up to its seq and only grows, so the hook could tell every refusal up to it.
+	// The real Claude Code reads no such file; this is the stand-in's own record, for report.py e2e --result.
+	ReasonSeq *int64
+}
+
+// reasonSeq reads the seq of the run's reason file as runHook records it (hookRun.ReasonSeq).
+func reasonSeq(env []string) *int64 {
+	path := getenv(env, "TEGO_REASON")
+	if path == "" {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		var zero int64
+		return &zero
+	}
+	if err != nil {
+		return nil
+	}
+	var f struct {
+		Seq *int64 `json:"seq"`
+	}
+	if json.Unmarshal(b, &f) != nil {
+		return nil
+	}
+	return f.Seq
 }
 
 // hookWaitDelay is how long runHook waits for a hook's output pipes to close after the hook has exited; a variable so
@@ -125,6 +156,8 @@ func runHook(spec HookSpec, payload []byte, cwd string, env []string) hookRun {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = hookWaitDelay
+	r.ReasonSeq = reasonSeq(env)
+	r.Began = time.Now()
 	err := cmd.Run()
 	r.Stdout, r.Stderr = stdout.String(), stderr.String()
 	var ee *exec.ExitError
@@ -140,7 +173,7 @@ func runHook(spec HookSpec, payload []byte, cwd string, env []string) hookRun {
 		// hook ran and answered: what it wrote before then is its output, read as for any other exit 0.
 		r.Started, r.ExitCode = true, cmd.ProcessState.ExitCode()
 	default:
-		r.StartErr, r.ExitCode = err.Error(), -1
+		r.StartErr, r.ExitCode, r.Began, r.ReasonSeq = err.Error(), -1, time.Time{}, nil
 	}
 	return r
 }

@@ -150,15 +150,15 @@ func TestPagesRender(t *testing.T) {
 		"/":                              {"1 needs you", "demo-harm", "demo-clean", "Newest High and Medium", "system lookup"},
 		"/runs":                          {"2 runs", "demo-harm", "Running", "Exit 0"},
 		"/runs/" + harmRun:               {"Timeline", "/p/stolen.txt", "×2", "system lookup", "Stop run", `action="/approvals/answer"`},
-		"/runs/" + harmRun + "/refusals": {"Grouped", "Not in policy", "Highlights"},
-		"/runs/" + harmRun + "/refusals?view=lines": {"Reason the agent got", "Write outside policy", "write-outside-contract"},
+		"/runs/" + harmRun + "/refusals": {"Grouped", "Not in contract", "Highlights"},
+		"/runs/" + harmRun + "/refusals?view=lines": {"Reason the agent got", "Write outside contract", "write-outside-contract"},
 		"/runs/" + cleanRun + "/receipt":            {"Receipt", "Exit 0", "Time taken", "Tests result", "not recorded", "never asked", "tego receipt " + cleanRun, "What this receipt can vouch for"},
 		"/runs/" + harmRun + "/receipt":             {"Refused, by rule", "write-outside-contract", "Refusals over time"},
-		"/logs":                                     {"Logs", " blocked</span>", "/p/stolen.txt"},
+		"/logs":                                     {"Logs", " refused</span>", "/p/stolen.txt"},
 		"/logs?verdict=refused&sys=hide":            {"system lines hidden"},
 		"/logs?q=nomatch":                           {"No matching lines"},
 		"/approvals":                                {"tego approve " + harmRun + " ask-7", "tego deny " + harmRun + " ask-7", "example.com", `action="/approvals/answer"`, `value="approve"`, `value="deny"`},
-		"/rules":                                    {"Policy", "demo-harm", "the run left no contract.yaml"},
+		"/rules":                                    {"Contract", "demo-harm", "the run left no contract.yaml"},
 	} {
 		w := do(s, "GET", path, "127.0.0.1:8484", c)
 		if w.Code != http.StatusOK {

@@ -2038,3 +2038,7 @@ SELinux fixture ran the native comparator and all six native/held engine leaves 
 6.17's Smack fixture ran the equal-label/process-rule native-read regression and refusal check. Neither
 boot skipped a test. The required-pass guard also rejects a missing top-level pass or a skipped subtest.
 This is local execution of the workflow's commands; a GitHub-hosted dispatch has not been observed here.
+
+*Amended 2026-11-11 (wording):* in the Implementation notes entry "No process of a held run is in a Landlock domain
+the deputy does not share", rejected option (b)'s "a second sandbox to get right" means a second enforcement layer
+to get right. The decision is unchanged.

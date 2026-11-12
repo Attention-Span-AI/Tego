@@ -78,7 +78,11 @@ func newGuard(ctx context.Context, m *config.Machine, uids []int, o adoptOptions
 		defer mu.Unlock()
 		return emit(s)
 	}
-	if o.boundary != "" {
+	if o.boundary == "" {
+		// Each record-only adoption prepares with its output discarded, so the ceilings it does not apply are said
+		// once here (GAPS C56).
+		warnAdoptionCeilings(stderr, m.LimitCeilings(), false)
+	} else {
 		g.shared = map[int]*preparedAdoption{}
 		for _, uid := range uids {
 			if g.shared[uid] != nil {

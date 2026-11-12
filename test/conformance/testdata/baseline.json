@@ -9,54 +9,108 @@
     "cell": "execrules/allow-other-subcommand",
     "runner": "ledger",
     "tier": "bpflsm",
-    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Kernel 5.15 and later only: the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat, as BPF perf links, upstream 5.15) attach; on RHEL 9's 5.14 doctor reports them unavailable, the supervisor keeps every exec's line, and both cells pass (2026-10-16)",
+    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Only where the kernel makes BPF perf links (bpf_perf_link, a probe): the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat) attach, and they attach only as BPF perf links, upstream 5.15 and backported to RHEL 9.8's 5.14.0-687, where both cells disagree so on the stock AlmaLinux 9.8 guest (2026-11-10). On the RHEL 9 kernel of 2026-10-16 doctor reported them unavailable, the supervisor kept every exec's line, and both cells passed; a kernel bound could not tell those two 5.14 kernels apart",
     "where": {
-      "kernel_min": "5.15"
+      "bpf_perf_link": true
     }
   },
   {
     "cell": "execrules/allow-other-subcommand",
     "runner": "ledger",
     "tier": "cgroup@fmod_ret",
-    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Kernel 5.15 and later only: the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat, as BPF perf links, upstream 5.15) attach; on RHEL 9's 5.14 doctor reports them unavailable, the supervisor keeps every exec's line, and both cells pass (2026-10-16)",
+    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Only where the kernel makes BPF perf links (bpf_perf_link, a probe): the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat) attach, and they attach only as BPF perf links, upstream 5.15 and backported to RHEL 9.8's 5.14.0-687, where both cells disagree so on the stock AlmaLinux 9.8 guest (2026-11-10). On the RHEL 9 kernel of 2026-10-16 doctor reported them unavailable, the supervisor kept every exec's line, and both cells passed; a kernel bound could not tell those two 5.14 kernels apart",
     "where": {
-      "kernel_min": "5.15"
+      "bpf_perf_link": true
     }
   },
   {
     "cell": "execrules/allow-other-subcommand",
     "runner": "ledger",
     "tier": "cgroup@lsm",
-    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Kernel 5.15 and later only: the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat, as BPF perf links, upstream 5.15) attach; on RHEL 9's 5.14 doctor reports them unavailable, the supervisor keeps every exec's line, and both cells pass (2026-10-16)",
+    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Only where the kernel makes BPF perf links (bpf_perf_link, a probe): the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat) attach, and they attach only as BPF perf links, upstream 5.15 and backported to RHEL 9.8's 5.14.0-687, where both cells disagree so on the stock AlmaLinux 9.8 guest (2026-11-10). On the RHEL 9 kernel of 2026-10-16 doctor reported them unavailable, the supervisor kept every exec's line, and both cells passed; a kernel bound could not tell those two 5.14 kernels apart",
     "where": {
-      "kernel_min": "5.15"
+      "bpf_perf_link": true
     }
   },
   {
     "cell": "execrules/allow-rm-without-r",
     "runner": "ledger",
     "tier": "bpflsm",
-    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Kernel 5.15 and later only: the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat, as BPF perf links, upstream 5.15) attach; on RHEL 9's 5.14 doctor reports them unavailable, the supervisor keeps every exec's line, and both cells pass (2026-10-16)",
+    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Only where the kernel makes BPF perf links (bpf_perf_link, a probe): the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat) attach, and they attach only as BPF perf links, upstream 5.15 and backported to RHEL 9.8's 5.14.0-687, where both cells disagree so on the stock AlmaLinux 9.8 guest (2026-11-10). On the RHEL 9 kernel of 2026-10-16 doctor reported them unavailable, the supervisor kept every exec's line, and both cells passed; a kernel bound could not tell those two 5.14 kernels apart",
     "where": {
-      "kernel_min": "5.15"
+      "bpf_perf_link": true
     }
   },
   {
     "cell": "execrules/allow-rm-without-r",
     "runner": "ledger",
     "tier": "cgroup@fmod_ret",
-    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Kernel 5.15 and later only: the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat, as BPF perf links, upstream 5.15) attach; on RHEL 9's 5.14 doctor reports them unavailable, the supervisor keeps every exec's line, and both cells pass (2026-10-16)",
+    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Only where the kernel makes BPF perf links (bpf_perf_link, a probe): the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat) attach, and they attach only as BPF perf links, upstream 5.15 and backported to RHEL 9.8's 5.14.0-687, where both cells disagree so on the stock AlmaLinux 9.8 guest (2026-11-10). On the RHEL 9 kernel of 2026-10-16 doctor reported them unavailable, the supervisor kept every exec's line, and both cells passed; a kernel bound could not tell those two 5.14 kernels apart",
     "where": {
-      "kernel_min": "5.15"
+      "bpf_perf_link": true
     }
   },
   {
     "cell": "execrules/allow-rm-without-r",
     "runner": "ledger",
     "tier": "cgroup@lsm",
-    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Kernel 5.15 and later only: the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat, as BPF perf links, upstream 5.15) attach; on RHEL 9's 5.14 doctor reports them unavailable, the supervisor keeps every exec's line, and both cells pass (2026-10-16)",
+    "reason": "deny-list mode leaves images unrestricted, and an exec no command rule refuses is the image floor's: the supervisor's own line (tier landlock, the fanotify listener) says allow unmatched, but where a decision plane records execs the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), and compile --test's plane column says allow unmatched. Not a fail-open (the run allows the exec); the same split holds for any run whose images are unrestricted, with or without command rules, and is open in ADR 0048's implementation notes (2026-10-06). Only where the kernel makes BPF perf links (bpf_perf_link, a probe): the kernel's line is the terminal one only where the exec outcome links (tracepoint/syscalls/sys_exit_execve and sys_exit_execveat) attach, and they attach only as BPF perf links, upstream 5.15 and backported to RHEL 9.8's 5.14.0-687, where both cells disagree so on the stock AlmaLinux 9.8 guest (2026-11-10). On the RHEL 9 kernel of 2026-10-16 doctor reported them unavailable, the supervisor kept every exec's line, and both cells passed; a kernel bound could not tell those two 5.14 kernels apart",
     "where": {
-      "kernel_min": "5.15"
+      "bpf_perf_link": true
+    }
+  },
+  {
+    "cell": "execrules/multicall-applet-without-r",
+    "runner": "ledger",
+    "tier": "bpflsm",
+    "reason": "ADR 0048 (2) 4's multicall cells (amended 2026-11-11) under the deny-list contract, where images are unrestricted: the exec is allowed (the cell's want), and no command rule names it, so its line is the image floor's. Where a decision plane records execs, the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), not allow unmatched: the same open split as execrules/allow-other-subcommand and allow-rm-without-r (ADR 0048's implementation notes, 2026-10-06), not a fail-open (the run allows the exec) and not the multicall reading (GAPS C63), which the cell's allow already holds. Only where the kernel makes BPF perf links (bpf_perf_link), as for those cells. Measured on the fedora-7.0 row's 7.0.14 (2026-11-11): at cgroup@fmod_ret without bpf in the LSM list, the boot GitHub's runner has, and at cgroup@fmod_ret, cgroup@lsm and bpflsm on the lsm=...,bpf boot",
+    "where": {
+      "bpf_perf_link": true
+    }
+  },
+  {
+    "cell": "execrules/multicall-applet-without-r",
+    "runner": "ledger",
+    "tier": "cgroup@fmod_ret",
+    "reason": "ADR 0048 (2) 4's multicall cells (amended 2026-11-11) under the deny-list contract, where images are unrestricted: the exec is allowed (the cell's want), and no command rule names it, so its line is the image floor's. Where a decision plane records execs, the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), not allow unmatched: the same open split as execrules/allow-other-subcommand and allow-rm-without-r (ADR 0048's implementation notes, 2026-10-06), not a fail-open (the run allows the exec) and not the multicall reading (GAPS C63), which the cell's allow already holds. Only where the kernel makes BPF perf links (bpf_perf_link), as for those cells. Measured on the fedora-7.0 row's 7.0.14 (2026-11-11): at cgroup@fmod_ret without bpf in the LSM list, the boot GitHub's runner has, and at cgroup@fmod_ret, cgroup@lsm and bpflsm on the lsm=...,bpf boot",
+    "where": {
+      "bpf_perf_link": true
+    }
+  },
+  {
+    "cell": "execrules/multicall-applet-without-r",
+    "runner": "ledger",
+    "tier": "cgroup@lsm",
+    "reason": "ADR 0048 (2) 4's multicall cells (amended 2026-11-11) under the deny-list contract, where images are unrestricted: the exec is allowed (the cell's want), and no command rule names it, so its line is the image floor's. Where a decision plane records execs, the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), not allow unmatched: the same open split as execrules/allow-other-subcommand and allow-rm-without-r (ADR 0048's implementation notes, 2026-10-06), not a fail-open (the run allows the exec) and not the multicall reading (GAPS C63), which the cell's allow already holds. Only where the kernel makes BPF perf links (bpf_perf_link), as for those cells. Measured on the fedora-7.0 row's 7.0.14 (2026-11-11): at cgroup@fmod_ret without bpf in the LSM list, the boot GitHub's runner has, and at cgroup@fmod_ret, cgroup@lsm and bpflsm on the lsm=...,bpf boot",
+    "where": {
+      "bpf_perf_link": true
+    }
+  },
+  {
+    "cell": "execrules/one-link-suffix-name",
+    "runner": "ledger",
+    "tier": "bpflsm",
+    "reason": "ADR 0048 (2) 4's multicall cells (amended 2026-11-11) under the deny-list contract, where images are unrestricted: the exec is allowed (the cell's want), and no command rule names it, so its line is the image floor's. Where a decision plane records execs, the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), not allow unmatched: the same open split as execrules/allow-other-subcommand and allow-rm-without-r (ADR 0048's implementation notes, 2026-10-06), not a fail-open (the run allows the exec) and not the multicall reading (GAPS C63), which the cell's allow already holds. Only where the kernel makes BPF perf links (bpf_perf_link), as for those cells. Measured on the fedora-7.0 row's 7.0.14 (2026-11-11): at cgroup@fmod_ret without bpf in the LSM list, the boot GitHub's runner has, and at cgroup@fmod_ret, cgroup@lsm and bpflsm on the lsm=...,bpf boot",
+    "where": {
+      "bpf_perf_link": true
+    }
+  },
+  {
+    "cell": "execrules/one-link-suffix-name",
+    "runner": "ledger",
+    "tier": "cgroup@fmod_ret",
+    "reason": "ADR 0048 (2) 4's multicall cells (amended 2026-11-11) under the deny-list contract, where images are unrestricted: the exec is allowed (the cell's want), and no command rule names it, so its line is the image floor's. Where a decision plane records execs, the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), not allow unmatched: the same open split as execrules/allow-other-subcommand and allow-rm-without-r (ADR 0048's implementation notes, 2026-10-06), not a fail-open (the run allows the exec) and not the multicall reading (GAPS C63), which the cell's allow already holds. Only where the kernel makes BPF perf links (bpf_perf_link), as for those cells. Measured on the fedora-7.0 row's 7.0.14 (2026-11-11): at cgroup@fmod_ret without bpf in the LSM list, the boot GitHub's runner has, and at cgroup@fmod_ret, cgroup@lsm and bpflsm on the lsm=...,bpf boot",
+    "where": {
+      "bpf_perf_link": true
+    }
+  },
+  {
+    "cell": "execrules/one-link-suffix-name",
+    "runner": "ledger",
+    "tier": "cgroup@lsm",
+    "reason": "ADR 0048 (2) 4's multicall cells (amended 2026-11-11) under the deny-list contract, where images are unrestricted: the exec is allowed (the cell's want), and no command rule names it, so its line is the image floor's. Where a decision plane records execs, the kernel's terminal line is written by observe's matchExec, which names every exec no entry matches observed (rules.go), not allow unmatched: the same open split as execrules/allow-other-subcommand and allow-rm-without-r (ADR 0048's implementation notes, 2026-10-06), not a fail-open (the run allows the exec) and not the multicall reading (GAPS C63), which the cell's allow already holds. Only where the kernel makes BPF perf links (bpf_perf_link), as for those cells. Measured on the fedora-7.0 row's 7.0.14 (2026-11-11): at cgroup@fmod_ret without bpf in the LSM list, the boot GitHub's runner has, and at cgroup@fmod_ret, cgroup@lsm and bpflsm on the lsm=...,bpf boot",
+    "where": {
+      "bpf_perf_link": true
     }
   },
   {

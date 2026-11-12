@@ -69,8 +69,8 @@ func (t *runTally) count(e *Event, prog string) {
 	t.n++
 	t.kinds = bump(t.kinds, logsKind(e.Kind))
 	t.verdts = bump(t.verdts, verdictOf(e))
-	if e.Rule != "" {
-		t.rules[e.Rule]++
+	if rule := logsRule(e); rule != "" {
+		t.rules[rule]++
 	}
 	if e.Host != "" {
 		t.hosts[e.Host]++

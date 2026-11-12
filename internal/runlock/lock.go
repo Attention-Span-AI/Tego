@@ -420,7 +420,7 @@ func (t *StopTarget) Close() error {
 // returns it in nanoseconds since boot — the CLOCK_BOOTTIME-relative value an exec id and a lock
 // file carry (spec/identity/RUN-IDENTITY.md). It is immune to wall-clock steps (case 19).
 func StartBootNS(pid int) (uint64, error) {
-	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	b, err := proc.ReadStat(func() ([]byte, error) { return os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat") })
 	if err != nil {
 		return 0, fmt.Errorf("read /proc/%d/stat: %w", pid, err)
 	}
@@ -429,7 +429,8 @@ func StartBootNS(pid int) (uint64, error) {
 
 // parseStartBootNS is StartBootNS's pure half. It goes through proc.ParseStat, the one fuzzed parser
 // of the stat line every package shares, so the lock file, the launcher's child record and an exec id
-// all convert the same field with the same tick; a malformed line wraps proc.ErrStat.
+// all convert the same field with the same tick; a malformed line wraps proc.ErrStat. So does the line of a task
+// released while it was read (proc.ErrReleased) when StartBootNS's reads of it (proc.ReadStat) ran out.
 func parseStartBootNS(stat []byte) (uint64, error) {
 	st, err := proc.ParseStat(stat)
 	if err != nil {

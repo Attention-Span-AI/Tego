@@ -6,6 +6,7 @@ package supervisor
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/policy/decide"
 	"github.com/attention-span-ai/tego/internal/runtime/ask"
@@ -593,7 +595,7 @@ func (l *Loop) heldClass(h *heldPlan) bool {
 // heldTTY is the tty class (D4): the open always takes O_NOCTTY, so the deputy never acquires a controlling
 // terminal; it is refused where the task's own open would have acquired one (a session leader with none, whose call
 // lacks O_NOCTTY), and /dev/tty, whose open names the opener's controlling terminal, unless the task's is the run's.
-// One /proc/<tid>/stat read, for this class only.
+// A /proc/<tid>/stat read (readStat's: up to three while the line is a released task's), for this class only.
 func (l *Loop) heldTTY(h *heldPlan, major, minor uint32) bool {
 	session, tty, err := sessionTTY(h.n.pid)
 	if err != nil {
@@ -616,28 +618,27 @@ func (l *Loop) heldTTY(h *heldPlan, major, minor uint32) bool {
 }
 
 // sessionTTY reads a task's session id and controlling terminal (tty_nr, 0 for none), fields 6 and 7 of
-// /proc/<pid>/stat, counted after the command's closing parenthesis, which a command name cannot fake.
+// /proc/<pid>/stat, through readStat: the line of a task released while it was read prints session -1 and tty 0,
+// so it is read again, and one that stays released is errProcStat (parseSessionTTY).
 func sessionTTY(pid int) (session, tty int, err error) {
 	procReads.Add(1)
-	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	b, err := readStat(pid)
 	if err != nil {
 		return 0, 0, err
 	}
-	end := strings.LastIndexByte(string(b), ')')
-	if end < 0 {
-		return 0, 0, errProcStat
+	return parseSessionTTY(b)
+}
+
+// parseSessionTTY is sessionTTY's pure half, through proc.ParseStat, the one parser of the line: a malformed line,
+// and a released one (proc.ErrReleased), is errProcStat. A released line's session -1 is not a session; read by hand,
+// it passed as one. The task such a line is about has already been released, so the thread that asked had exited and
+// no open reached it: heldTTY's answer could not be seen. It is refused so that heldTTY only ever reads a real session.
+func parseSessionTTY(b []byte) (session, tty int, err error) {
+	st, err := proc.ParseStat(b)
+	if err != nil {
+		return 0, 0, fmt.Errorf("%w: %w", errProcStat, err)
 	}
-	f := strings.Fields(string(b[end+1:]))
-	if len(f) < 5 {
-		return 0, 0, errProcStat
-	}
-	if session, err = strconv.Atoi(f[3]); err != nil {
-		return 0, 0, errProcStat
-	}
-	if tty, err = strconv.Atoi(f[4]); err != nil {
-		return 0, 0, errProcStat
-	}
-	return session, tty, nil
+	return st.Session, st.TTY, nil
 }
 
 // sameNetNS reports whether the task shares this process's network namespace, which is the deputy's: the stage that

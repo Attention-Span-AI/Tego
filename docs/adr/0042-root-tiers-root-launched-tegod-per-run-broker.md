@@ -615,3 +615,7 @@ Tests: `TestIdentityUIDMap`, `TestReadUserNamespace`, `TestInitNSRootIsEffective
 `TestGuardPrivilegeRefusesWithTheCode` (`internal/cli`); and as root in the KVM guest (root-must-pass):
 `TestUnshareRootIsNotRoot`, `TestRootLauncherRefusesGroupHostState`, `TestFileCapabilityCopyIsRefused`,
 `TestAmbientIncidentalCapabilityRunsLandlock` (`internal/runtime`).
+
+*Amended 2026-11-11 (wording):* in Decision (2)(a), "an agent that escaped its sandbox" means an agent that escaped
+its run, the processes Tego holds to the contract. Tego does not hide the machine (README, Known limits). The
+decision is unchanged.

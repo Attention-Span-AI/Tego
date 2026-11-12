@@ -118,7 +118,7 @@ func TestTimedBlockAndUnblockExpire(t *testing.T) {
 	})
 	ap := netip.MustParseAddrPort("192.0.2.7:443")
 	r.pollLiveBlocks(ctx, b)
-	if _, ok := b.Load().MatchExec([]string{"/bin/ls"}, liveblock.FileID{}, false); !ok {
+	if _, ok := b.Load().MatchExec([]string{"/bin/ls"}, liveblock.FileID{}, false, nil); !ok {
 		t.Fatal("a block with a limit to come does not refuse")
 	}
 	if _, ok := b.Load().MatchInet(ap, "", nil); ok {
@@ -127,7 +127,7 @@ func TestTimedBlockAndUnblockExpire(t *testing.T) {
 	time.Sleep(time.Until(end) + 50*time.Millisecond)
 	r.pollLiveBlocks(ctx, b)
 	r.pollLiveBlocks(ctx, b) // each end is recorded once
-	if _, ok := b.Load().MatchExec([]string{"/bin/ls"}, liveblock.FileID{}, false); ok {
+	if _, ok := b.Load().MatchExec([]string{"/bin/ls"}, liveblock.FileID{}, false, nil); ok {
 		t.Fatal("a block past its limit still refuses")
 	}
 	if b.Load().HasExec() {
@@ -215,7 +215,7 @@ func TestLiftOnLockedRunIsRefused(t *testing.T) {
 	})
 	r.pollLiveBlocks(ctx, b)
 	r.pollLiveBlocks(ctx, b)
-	if _, ok := b.Load().MatchExec([]string{"/usr/bin/psql"}, liveblock.FileID{}, false); !ok {
+	if _, ok := b.Load().MatchExec([]string{"/usr/bin/psql"}, liveblock.FileID{}, false, nil); !ok {
 		t.Fatal("a lift on a Locked run loosened its live block")
 	}
 	lines := liveLines(t, r)

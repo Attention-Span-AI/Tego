@@ -8,6 +8,15 @@
 #   systemctl --user daemon-reload
 #   systemctl --user enable --now tego-agent@retriever
 #
+# A user unit needs that user's manager running when nobody is logged in: an administrator turns on linger once
+# (sudo loginctl enable-linger <user>). Without it, an account that never logged in (a nologin shell reached with
+# sudo -u or su -s) has no user manager, and tego starts no run for it; tego setup and tego doctor say so and name
+# that command (docs/user/run-as-a-service.md). For such an account an administrator, in their own shell: creates it
+# with a name that starts with a letter (systemd starts no user manager for a name of digits only); enables linger;
+# opens a shell as it in its user manager's cgroup with
+#   sudo -u <user> XDG_RUNTIME_DIR=/run/user/<uid> systemd-run --user --scope bash
+# (without sudo -u it opens the administrator's own); and runs tego setup there (docs/user/setup.md).
+#
 # How each way of ending a run reads here (pkg/spec/identity/exit.go):
 #   - the agent crashes or exits non-zero: the unit restarts it after RestartSec, at most StartLimitBurst
 #     times in StartLimitIntervalSec. A run ends when the agent's main process exits, stop_grace after it

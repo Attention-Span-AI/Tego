@@ -4,6 +4,7 @@ package conformance
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -39,6 +40,10 @@ type Machine struct {
 	BPFLSM bool
 	// Row is the matrix row's name ($TEGO_VM_ROW), "" outside the matrix.
 	Row string
+	// BPFPerfLink says the kernel makes BPF perf links (5.15, or a backport: RHEL 9.8's 5.14), the only way the
+	// decision plane's exec outcome tracepoints attach and pin, so where it is true a plane run's terminal exec line is
+	// the kernel's (bpfPerfLink, a probe, never the version). A baseline entry may name it (bpf_perf_link).
+	BPFPerfLink bool
 	// MemfdNoexecSeal says the kernel honours memfd_create's MFD_NOEXEC_SEAL (6.3, or a backport): a cell's
 	// want_where may name it (CondWant); no baseline entry does.
 	MemfdNoexecSeal bool
@@ -55,10 +60,15 @@ type Machine struct {
 	// itself asks): without it R11a cannot read which socket holds an abstract name or is bound to a file the run's own
 	// bind is recorded at, and refuses those unix-origin-unread. A cell's want_where may name it (unix_diag).
 	UnixDiag bool
+	// ExecmodRefused says the machine itself refuses this process execmod, a dirtied private map of a file made
+	// executable, with no run around it (execmodRefused, a probe): an LSM's policy, SELinux enforcing on AlmaLinux 9.8
+	// (selinuxuser_execmod off). A cell's want_where may name it (execmod_refused).
+	ExecmodRefused bool
 }
 
 func (m Machine) String() string {
-	return fmt.Sprintf("kernel %d.%d, Landlock ABI %d, %s, bpf LSM %t, row %q", m.Kernel[0], m.Kernel[1], m.ABI, m.Arch, m.BPFLSM, m.Row)
+	return fmt.Sprintf("kernel %d.%d, Landlock ABI %d, %s, bpf LSM %t, bpf perf link %t, row %q", m.Kernel[0], m.Kernel[1],
+		m.ABI, m.Arch, m.BPFLSM, m.BPFPerfLink, m.Row)
 }
 
 // CurrentMachine describes the machine this process runs on. A kernel release that does not start with
@@ -79,7 +89,32 @@ func CurrentMachine() (Machine, error) {
 		abi = 0
 	}
 	return Machine{Kernel: [2]int{major, minor}, ABI: abi, Arch: runtime.GOARCH, BPFLSM: bpfActiveLSM(), Row: os.Getenv(RowEnv),
-		MemfdNoexecSeal: memfdNoexecSeal(), SupervisorRoot: os.Geteuid() == 0, UnixDiag: supervisor.UnixDiagAvailable()}, nil
+		BPFPerfLink: bpfPerfLink(), MemfdNoexecSeal: memfdNoexecSeal(), SupervisorRoot: os.Geteuid() == 0, UnixDiag: supervisor.UnixDiagAvailable(),
+		ExecmodRefused: execmodRefused()}, nil
+}
+
+// execmodRefused maps a page of a temporary file private and writable, writes to it, and makes the map executable,
+// as the actor's execmod op does with the fixture's file, from this process and outside any run: EACCES is the
+// machine's own refusal. The file is made in the temporary directory the fixtures are, so a label policy sees the
+// same kind of file. Anything else that fails says nothing, and the answer is false.
+func execmodRefused() bool {
+	f, err := os.CreateTemp("", "tego-execmod-probe")
+	if err != nil {
+		return false
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+	defer func() { _ = f.Close() }()
+	page := os.Getpagesize()
+	if _, err := f.Write(make([]byte, page)); err != nil {
+		return false
+	}
+	b, err := unix.Mmap(int(f.Fd()), 0, page, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_PRIVATE)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = unix.Munmap(b) }()
+	b[0] = 1 // a copy-on-write page: the mapping gains an anon_vma, which is what execmod is
+	return errors.Is(unix.Mprotect(b, unix.PROT_READ|unix.PROT_EXEC), unix.EACCES)
 }
 
 // memfdNoexecSeal creates one memfd with MFD_NOEXEC_SEAL, as tier 1's MemfdNoexecSealSupported probe does: a kernel
@@ -108,6 +143,8 @@ type Where struct {
 	// BPFLSM is a pointer so that "bpf is not an active LSM" (false) is told from "does not matter" (absent).
 	BPFLSM *bool  `json:"bpf_lsm,omitempty"`
 	Row    string `json:"row,omitempty"`
+	// BPFPerfLink is Machine.BPFPerfLink: a capability RHEL backports, so no kernel bound can say it.
+	BPFPerfLink *bool `json:"bpf_perf_link,omitempty"`
 }
 
 var (
@@ -209,6 +246,9 @@ func (w Where) Matches(m Machine) bool {
 	if w.BPFLSM != nil && *w.BPFLSM != m.BPFLSM {
 		return false
 	}
+	if w.BPFPerfLink != nil && *w.BPFPerfLink != m.BPFPerfLink {
+		return false
+	}
 	return w.Row == "" || w.Row == m.Row
 }
 
@@ -249,6 +289,9 @@ func (w Where) String() string {
 	}
 	if w.Row != "" {
 		add("row", w.Row)
+	}
+	if w.BPFPerfLink != nil {
+		add("bpf_perf_link", *w.BPFPerfLink)
 	}
 	return strings.Join(f, " ")
 }

@@ -98,17 +98,17 @@ func TestFacetWordsForWatchedRows(t *testing.T) {
 	s := newServer(t, root)
 	c := login(t, s)
 	body := get(t, s, c, "/logs?run="+r9WatchRun)
-	if strings.Contains(body, ">Not in policy<") || !strings.Contains(body, ">Watched only<") {
-		t.Error("the Rule facet calls a watched run's line Not in policy, not Watched only")
+	if strings.Contains(body, ">Not in contract<") || !strings.Contains(body, ">Watched only<") {
+		t.Error("the Rule facet calls a watched run's line Not in contract, not Watched only")
 	}
 	if strings.Contains(body, "No verdict") || !strings.Contains(body, ">Recorded<") {
 		t.Error("the Verdict facet says No verdict, not Recorded")
 	}
 	// An enforced run's unmatched line keeps its words.
-	if got := ruleName("unmatched"); got != "Not in policy" {
+	if got := ruleName("unmatched"); got != "Not in contract" {
 		t.Errorf("ruleName(unmatched) = %q", got)
 	}
-	if l, _ := facetRule("unmatched", false); l != "Not in policy" {
+	if l, _ := facetRule("unmatched", false); l != "Not in contract" {
 		t.Errorf("an enforced unmatched facet reads %q", l)
 	}
 	if l, _ := facetRule("fs.read[/etc]", true); l != "Watched only · Read: /etc" {

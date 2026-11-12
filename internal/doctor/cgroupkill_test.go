@@ -23,7 +23,7 @@ import (
 // Without the check the detail never names cgroup.kill and this fails.
 func TestProbeCgroupChecksCgroupKill(t *testing.T) {
 	uid, _ := config.InvokingUID()
-	r := probeCgroup(uid)
+	r := probeCgroup(uid, nil)
 	t.Logf("%+v", r)
 	if !r.OK {
 		// No cgroup v2 delegation on this box: the probe never reached its scratch cgroup, so there
@@ -81,7 +81,7 @@ func TestProbeCgroupReportsTheFixDetectDiagnosed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := probeCgroupWith(1000, func(int) (*cgroup.FS, error) { return nil, tc.err })
+			r := probeCgroupWith(1000, nil, func(int) (*cgroup.FS, error) { return nil, tc.err })
 			if r.OK || r.ID != CheckCgroupV2 {
 				t.Fatalf("a Detect refusal is not a D3 failure: %+v", r)
 			}
@@ -112,7 +112,7 @@ func TestProbeCgroupReportsARealRefusalsRemedy(t *testing.T) {
 	if !errors.As(err, &de) {
 		t.Fatalf("cgroup.Detect(%d) = %v (%T), want a *cgroup.DetectError", nobody, err, err)
 	}
-	r := probeCgroupWith(nobody, cgroup.Detect)
+	r := probeCgroupWith(nobody, nil, cgroup.Detect)
 	if r.OK || r.Fix != de.Remedy || r.Detail != de.Diagnosis {
 		t.Errorf("D3 over a real refusal = %+v, want detail %q and fix %q", r, de.Diagnosis, de.Remedy)
 	}

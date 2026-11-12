@@ -145,9 +145,9 @@ func (l Lists) Explain(kind, op, verdict string) string {
 	case !refused && (op == "open" || op == "read" || kind == "fs" && op == ""):
 		return "Open by default"
 	case kind == "exec" || op == "exec":
-		return "Program not in policy"
+		return "Program not in contract"
 	case kind == "net" || op == "net" || op == "connect":
-		return "Host not in policy"
+		return "Host not in contract"
 	case refused:
 		return "Outside writable folders"
 	}

@@ -6,7 +6,7 @@ import "strings"
 
 // Words is the plain label for a ledger rule key, the one vocabulary for rule keys: the dashboard shows it wherever
 // it names a line's rule (web's ruleName reads it through rulesview.RuleWords), the key itself in the title, and
-// `tego rules` is to share it. "fs.write[./tmp/]" is "Write: ./tmp/"; "unmatched" is "Not in policy": no entry of the
+// `tego rules` is to share it. "fs.write[./tmp/]" is "Write: ./tmp/"; "unmatched" is "Not in contract": no entry of the
 // contract names the action, so the contract's default decided it. It labels every key form the engine writes, the
 // command rules, fs.watch and an Adjustable run's fence entries (live.fence[<kind>:<value>], named by the value as
 // the Rules page's fence panel names them) among them, and returns any other key as written.
@@ -21,7 +21,7 @@ func Words(ruleKey string) string {
 	case "":
 		return ""
 	case "unmatched":
-		return "Not in policy"
+		return "Not in contract"
 	case "net.resolver":
 		return "DNS lookup"
 	case "held-unsupported":
@@ -29,11 +29,11 @@ func Words(ruleKey string) string {
 	case "host-sockets":
 		return "Host socket"
 	case "builtin.host_ipc":
-		return "Host IPC blocked"
+		return "Host IPC refused"
 	case "builtin.tego_surface":
-		return "Tego control blocked"
+		return "Tego control refused"
 	case "builtin.other_tty":
-		return "Other terminal blocked"
+		return "Other terminal refused"
 	}
 	for _, m := range []struct{ key, label string }{
 		{"fs.write", "Write: "}, {"fs.deny_read", "Never read: "}, {"fs.deny_write", "No changes: "},

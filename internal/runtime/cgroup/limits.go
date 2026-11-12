@@ -59,6 +59,21 @@ func limitFiles(l Limits) []limitFile {
 	return out
 }
 
+// liftFiles lists the writes that put every file limitFiles can write back to the kernel's default, which is no
+// limit: "max" (cpu.max keeps its period), and cpu.weight's 100. LiftLimits writes them on a scope that keeps
+// processes tego no longer governs, so that none of them keeps a limit tego wrote (an adoption's release that left
+// processes there: ADR 0055, the 2026-11-11 limits amendment). Pure.
+func liftFiles() []limitFile {
+	return []limitFile{
+		{Name: "cpu.max", Value: fmt.Sprintf("max %d", cpuPeriod), Controller: ControllerCPU},
+		{Name: "cpu.weight", Value: "100", Controller: ControllerCPU},
+		{Name: "memory.max", Value: "max", Controller: ControllerMemory},
+		{Name: fileSwapMax, Value: "max", Controller: ControllerMemory},
+		{Name: "memory.high", Value: "max", Controller: ControllerMemory},
+		{Name: "pids.max", Value: "max", Controller: ControllerPids},
+	}
+}
+
 // fileSwapMax is the memory controller's swap cap, present only where the kernel accounts swap to cgroups
 // (CONFIG_SWAP and CONFIG_MEMCG, and no cgroup.memory=noswap or swapaccount=0 on the boot line). Its absence
 // does not mean the cgroup cannot swap: with swap accounting off and a swap area active, the kernel still

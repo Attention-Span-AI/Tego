@@ -1707,7 +1707,7 @@ targeting an unopened block index is `ErrSchema`, mapped to `why=schema`, never 
     ephemeral port is reused by another process between the accept and the `/proc` read is a TOCTOU window one
     connection wide; a socket passed over `SCM_RIGHTS` to a process inside the run's cgroup would be admitted as
     that process's own; and a process in the run's cgroup is the agent's own trust domain, so an agent that runs a
-    browser inside its sandbox and lets a page POST to the forwarder is not a boundary crossing this rule refuses.
+    browser inside its run and lets a page POST to the forwarder is not a boundary crossing this rule refuses.
     All three are narrower than the unauthenticated listener they replace, and closing them properly needs a peer
     credential the TCP socket itself carries (`SO_PEERCRED` on a unix socket, or `INET_DIAG_CGROUP_ID` over
     `sock_diag`) rather than a `/proc` lookup after the fact — a listener-transport decision §11 records as open.

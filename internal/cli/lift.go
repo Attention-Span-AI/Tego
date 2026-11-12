@@ -38,6 +38,12 @@ const (
 	codeLocked       = "locked"
 	codeOutsideFence = "outside-fence"
 	codeNoKey        = "no-key"
+	// codeStarting: the run's run_start cannot be read yet, so a change that depends on its mode or its launcher's
+	// facts is refused as not known (liveblock.ErrStarting), never as [locked].
+	codeStarting = "starting"
+	// codeStartUnreadable: the run's first record line is there and is not a run_start this tego can read, so such a
+	// change is refused as not known (liveblock.ErrStartUnreadable), with no "try again": waiting does not change it.
+	codeStartUnreadable = "start-unreadable"
 	// codeNotConfirmed: at a terminal, the person typed something other than the command's word.
 	codeNotConfirmed = "not-confirmed"
 )
@@ -167,8 +173,9 @@ func fenceRun(name, ref string, kind liveblock.Kind, value string, until time.Ti
 	return dir, run, e, identity.ExitOK
 }
 
-// fenceRefused writes the refusal of a lift, a grant or a restore (liveblock.CheckFence, LiftKey), in its words naming
-// the run, with what to do instead where the terminal has something to offer, and returns exit 1.
+// fenceRefused writes the refusal of a lift, a grant or a restore (liveblock.CheckFence, LiftKey), or of an MCP switch or
+// a model route on a Locked run (liveblock.CheckLoosening), in its words naming the run, with what to do instead where
+// the terminal has something to offer, and returns exit 1.
 func fenceRefused(name string, err error, stderr io.Writer) int {
 	hint := ""
 	switch {

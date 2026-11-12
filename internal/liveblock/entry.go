@@ -104,6 +104,17 @@ type Entry struct {
 	// a writer built before it refuses the file rather than drop the real path without notice, and it is written only
 	// to a run whose launcher reads it (TakesReal).
 	Real string `json:"real,omitempty"`
+	// Match is how an exec block on an absolute program path (not a folder) matches the file its value leads to. ""
+	// (the default) matches that file by its identity, under every name it has: a block a person places by a path
+	// (`tego block`, Block now) refuses the whole file, since Tego cannot know whether a multi-call program pins what
+	// it does to the name it is run by. MatchLink refuses what the running contract grants under the exec.allow entry
+	// at the value (Set.MatchExec, Grant): the file and the path the value resolved to when the run started, by any
+	// name that reaches it there, so another name of a multi-call file is left to the contract. The rules editor's
+	// "Also apply now" and Apply now place it when that entry is removed (ADR 0124, amended 2026-11-11). Where the
+	// running contract holds no entry at the value it matches the whole file. An overlay that holds one is VersionLink,
+	// written only to a run whose launcher reads it (TakesLink); for any other run the writer places the whole-file
+	// block instead (AddLink's caller).
+	Match string `json:"match,omitempty"`
 	// Fence marks a refusal of an Adjustable run's fence entry that the launcher made from its own state (ADR 0125
 	// decision 5). It never comes from the overlay file: a writer cannot name one.
 	Fence bool `json:"-"`
@@ -111,6 +122,16 @@ type Entry struct {
 	// the entry is granted, or the program name an exec.deny entry named), the entry's own value: the refusal then
 	// carries the entry's rule, live.fence[exec:<FenceOf>], never one the fence does not hold. "" otherwise.
 	FenceOf string `json:"-"`
+}
+
+// MatchLink is the Match of an exec block that refuses what the running contract grants under the exec.allow entry
+// at its value (Entry.Match).
+const MatchLink = "link"
+
+// linkable reports whether a block of kind on value (normalized) can match by link (MatchLink): an exec block on an
+// absolute program path, not a folder.
+func linkable(kind Kind, value string) bool {
+	return kind == KindExec && strings.HasPrefix(value, "/") && !strings.HasSuffix(value, "/")
 }
 
 // Key is the entry's identity in the overlay: its kind and value, "exec:/usr/bin/curl".

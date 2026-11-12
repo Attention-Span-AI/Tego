@@ -267,7 +267,7 @@ constructs tier `bpflsm` (T7, §2.10).
   `TestIntegrationPlaneProbeOnThisKernel`; guest goldens `plane-guest-lsm.golden`, `plane-guest-default.golden`).
   The control cells' helpers are children of doctor's binary too (`__doctor-plane-probe ptrace-target` and
   `ptrace-traceme`). `PTRACE_TRACEME` traces the calling thread only, so the `ptrace_traceme` helper makes it on its
-  thread-group leader (an init locks the main goroutine to the startup thread for that argument alone) and answers
+  thread-group leader (an init locks the main goroutine to the startup thread for that argument and the known answers' child alone) and answers
   failed rather than trace from another thread, whose exit would leave a zombie only a `__WALL` wait by its thread
   id reaps and doctor's wait for the helper unanswered; and it blocks every signal first, since a traced thread stops
   at the delivery of any signal, the Go runtime's `SIGURG` included, for a tracer that never resumes it
@@ -278,7 +278,11 @@ constructs tier `bpflsm` (T7, §2.10).
   `lsm`, 2 for `fmod_ret`) of its own unpinned row maps, which both modes' programs are loaded over, through the
   real fill (`enforce/cgroup` `ProbeRows`: `planPlaneFill`, the fill build's pass over doctor's descriptors,
   `checkPlaneFill`, the slot header) from O_PATH descriptors of its own fixtures; arms a second scratch cgroup
-  as a run of that slot; and has a child there (`__doctor-plane-probe known`) make one action per cell, each held
+  as a run of that slot; and has a child there (`__doctor-plane-probe known`, kept on its thread-group leader as the
+  `ptrace_traceme` helper is, since doctor reaches the child's mounts through `/proc/<pid>/root`, the leader's view; a
+  child whose main is on another thread refuses to start and the probe fails closed, *amended 2026-11-11*,
+  `TestTheKnownAnswersChildRefusesToRunOffItsLeader`, `TestIntegrationKnownAnswerChildIsSeenThroughProcRoot`) make one
+  action per cell, each held
   to an exact verdict and to what it adds to the slot's counters: a read two levels below a `deny_read` row across
   a tmpfs mount (refused), a read below a row of the slot's previous gen, written by a first fill (passed), a read
   below a row whose identity doctor flips after the fill (refused, `mismatch` +1: the one cell the fill cannot make,

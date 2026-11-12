@@ -58,7 +58,8 @@ models:
 		return fwd(seq, "gap", `"what":"enforce","why":"model-route-changed","model_route":{"model":"api.anthropic.com:443","route":"`+route+`","authority":"`+auth+`","by":"uid:1000 pid:4242 dashboard","serial":`+strconv.Itoa(serial)+`,"at":"`+t0.Add(time.Duration(seq)*10*time.Second).UTC().Format(time.RFC3339)+`"}`)
 	}
 	ls := []string{
-		line(routesRun, "routed-agent", 0, t0, "run_start", `"tier":"landlock","record_minor":27,"command":["python3","agent.py"]`),
+		line(routesRun, "routed-agent", 0, t0, "run_start", `"tier":"cgroup","record_minor":27,"command":["python3","agent.py"],"live_mode":"adjustable",`+
+			`"live_fence":{"sha256":"`+strings.Repeat("0", 64)+`","entries":[]}`),
 		req(1, "direct", "api.anthropic.com:443"),
 		req(2, "direct", "api.anthropic.com:443"),
 		change(3, "local", "127.0.0.1:11434", 1),

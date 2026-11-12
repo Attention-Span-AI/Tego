@@ -89,7 +89,7 @@ func initialPidNamespace(ns string) error {
 
 // procStartTicks reads field 22 of /proc/<pid>/stat, the process's start time in clock ticks since boot.
 func procStartTicks(pid int) (uint64, error) {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	data, err := readStat(pid)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
 			return 0, fmt.Errorf("%w: pid %d", ErrProcGone, pid)
@@ -105,7 +105,7 @@ func procStartTicks(pid int) (uint64, error) {
 // with one thread, are ErrProcGone. A zombie leader with live threads (num_threads above one, since the count
 // drops only at reaping) is a process that still runs and stays alive.
 func liveStartTicks(pid int) (uint64, error) {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	data, err := readStat(pid)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
 			return 0, fmt.Errorf("%w: pid %d", ErrProcGone, pid)
@@ -129,13 +129,22 @@ func liveTicksOf(pid int, data []byte) (uint64, error) {
 
 // parseStartTicks extracts the start time, in ticks, from a /proc/<pid>/stat line. It goes through
 // proc.ParseStat, the one fuzzed parser of that line, so a slot owner's identity is read exactly as the lock
-// file and an exec id read it; a malformed line is ErrProcFormat wrapping proc.ErrStat.
+// file and an exec id read it; a malformed line is ErrProcFormat wrapping proc.ErrStat. So is the line of a task
+// released while it was read (proc.ErrReleased) when readStat's reads of it ran out: it does not say whether the
+// process is gone.
 func parseStartTicks(data []byte) (uint64, error) {
 	st, err := proc.ParseStat(data)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %w", ErrProcFormat, err)
 	}
 	return st.StartTicks, nil
+}
+
+// readStat reads /proc/<pid>/stat through proc.ReadStat: the line of a task released while it was read is read
+// again, and the next read finds the process gone (ENOENT, which procStartTicks and liveStartTicks answer
+// ErrProcGone) or live (a thread other than the leader ran execve and holds the pid now).
+func readStat(pid int) ([]byte, error) {
+	return proc.ReadStat(func() ([]byte, error) { return os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)) })
 }
 
 // cgroupPathOfPID returns the cgroup v2 path of a process, as /proc/<pid>/cgroup reports it: an absolute path

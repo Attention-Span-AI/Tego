@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/attention-span-ai/tego/internal/ledger"
 	"github.com/attention-span-ai/tego/internal/mcptools"
 	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/internal/runtime/ask"
@@ -429,5 +430,80 @@ func TestShimClientEOFEndsTheServer(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("the server never saw the end of its input")
+	}
+}
+
+const mcpLockedContract = `version: 0
+name: t
+command: [python3]
+ask:
+  timeout: 1m
+mcp:
+  - name: files
+    command: [python3, /opt/fake-mcp/server.py]
+    tools: {deny: [delete_file], ask: [write_file]}
+`
+
+// mcpRun is a live stand-in run whose contract copy is mcpLockedContract and whose broker socket exists, with the
+// governed check answering "outside every run"; adjustable makes its run_start an Adjustable run's.
+func mcpRun(t *testing.T, adjustable bool) (dir, id string) {
+	t.Helper()
+	dir, id, _ = liveRun(t)
+	if err := os.WriteFile(filepath.Join(dir, "contract.yaml"), []byte(mcpLockedContract), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ask.SocketName), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if adjustable {
+		adjustableStart(t, dir)
+	}
+	old := selfInRun
+	selfInRun = func() (bool, error) { return false, nil }
+	t.Cleanup(func() { selfInRun = old })
+	return dir, id
+}
+
+// TestMCPSwitchRefusedOnALockedRun: on a Locked run (ADR 0125, ADR 0126 §4) a switch to a decision looser than the
+// contract's (deny to allow or ask, ask to allow) is refused [locked], exit 1, in the words `tego lift` says for a
+// Locked run, with --yes too; nothing is written, neither the overlay nor the run's ledger. A switch that tightens,
+// and a reset back to the contract, are taken. An Adjustable run takes the loosening; a first line that does not decode
+// is refused too, as not readable [start-unreadable] (TestALiveChangeToARunWhoseStartIsUnreadableSaysSo).
+func TestMCPSwitchRefusedOnALockedRun(t *testing.T) {
+	dir, id := mcpRun(t, false)
+	events := filepath.Join(dir, ledger.EventsFile)
+	before, err := os.ReadFile(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range [][]string{{"allow", "delete_file"}, {"ask", "delete_file"}, {"allow", "write_file"}} {
+		code, out, errs := run(t, "mcp", c[0], "--yes", id, "files", c[1])
+		if code != identity.ExitFinding || !strings.Contains(errs, "tego mcp "+c[0]+": "+id+lockedWordsCLI) || !strings.Contains(errs, "[locked]") ||
+			strings.Contains(out, "is now") {
+			t.Fatalf("mcp %v on a Locked run: exit %d stdout %q stderr %q", c, code, out, errs)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, mcptools.FileName)); !os.IsNotExist(err) {
+		t.Fatalf("an overlay was written: %v", err)
+	}
+	if b, err := os.ReadFile(events); err != nil || string(b) != string(before) {
+		t.Fatalf("the refusal changed the run's ledger: %v", err)
+	}
+	if code, out, errs := run(t, "mcp", "deny", id, "files", "read_file"); code != identity.ExitOK || !strings.Contains(out, "is now deny") {
+		t.Fatalf("a tightening on a Locked run: exit %d stdout %q stderr %q", code, out, errs)
+	}
+	if code, out, errs := run(t, "mcp", "reset", "--yes", id, "files", "read_file"); code != identity.ExitOK || !strings.Contains(out, "is now allow") {
+		t.Fatalf("a reset to the contract on a Locked run: exit %d stdout %q stderr %q", code, out, errs)
+	}
+	if err := os.WriteFile(events, []byte("{\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errs := run(t, "mcp", "allow", "--yes", id, "files", "delete_file"); code != identity.ExitFinding || !strings.Contains(errs, "[start-unreadable]") {
+		t.Fatalf("an unreadable run_start: exit %d stderr %q", code, errs)
+	}
+
+	_, aid := mcpRun(t, true)
+	if code, out, errs := run(t, "mcp", "allow", "--yes", aid, "files", "delete_file"); code != identity.ExitOK || !strings.Contains(out, "is now allow") {
+		t.Fatalf("a loosening on an Adjustable run: exit %d stdout %q stderr %q", code, out, errs)
 	}
 }

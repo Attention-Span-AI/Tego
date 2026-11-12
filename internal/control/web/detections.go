@@ -46,11 +46,17 @@ type detectionsData struct {
 	Now        time.Time
 }
 
-// ruleWord is the rule that blocked a detection, as a short label.
-func ruleWord(rule string) string {
+// ruleWord is the rule that blocked a detection (its group's newest line), as a short label. Tego's built-in refusal
+// of setsockopt(TCP_ULP) reads as the receipt names it (ledgerview.BuiltInRefusal), not as the default deny it is filed
+// under, which no rule could lift.
+func ruleWord(e ledgerview.Event) string {
+	if kind := ledgerview.BuiltInRefusal(e); kind != "" {
+		return kind
+	}
+	rule := e.Rule
 	switch {
 	case rule == "" || rule == "unmatched" || rule == "host-sockets" || rule == "held-unsupported":
-		return "Not in policy"
+		return "Not in contract"
 	case strings.HasPrefix(rule, "fs.deny_read"):
 		return "Never read"
 	case strings.HasPrefix(rule, "fs.ask"):
@@ -155,7 +161,7 @@ func (s *Server) detectionList(snap *ledgerview.Snapshot, sigs *sigMemo) (all []
 				continue
 			}
 			all = append(all, detection{Group: g, Run: run.ID, Agent: run.Agent, Project: path.Base(run.Cwd), Home: ledgerview.RunHome(run),
-				Channel: ledgerview.Channel(g.Class), Verb: verb(&g), Rule: ruleWord(g.Rule)})
+				Channel: ledgerview.Channel(g.Class), Verb: verb(&g), Rule: ruleWord(g.Event)})
 		}
 	}
 	slices.SortStableFunc(all, func(a, b detection) int {

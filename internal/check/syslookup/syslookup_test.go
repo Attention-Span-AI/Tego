@@ -51,6 +51,41 @@ func TestRoutine(t *testing.T) {
 	}
 }
 
+// TestNoPlace: an AF_UNSPEC connect and a netlink socket name no place, whatever their verdict; every other destination
+// does, a unix socket, an address and any other family included (a vsock, family 40, can carry the run's data).
+func TestNoPlace(t *testing.T) {
+	for _, c := range []struct {
+		dst, rule string
+		want      bool
+	}{
+		{"unspec", UnspecRule, true},
+		{"unspec", "unmatched", true},
+		{"unspec", "", true},
+		{"family(16)", "route-query", true},
+		{"family(16)", "route-change", true},
+		{"family(16)", "unmatched", true},
+		{"netlink", "", true}, // the dashboard's name for family(16)
+		{"", UnspecRule, true},
+		{"family(40)", "unmatched", false},
+		{"family(1)", "unmatched", false},
+		{"family(160)", "unmatched", false},
+		{"family(16", "unmatched", false},
+		{"unix:/tmp/agent.sock", "unmatched", false},
+		{"unix:unspec", "unmatched", false},
+		{"203.0.113.9:443", "unmatched", false},
+		{"unspec:443", "unmatched", false},
+		{"netlink.example:443", "unmatched", false},
+		{"", "unmatched", false},
+	} {
+		if got := NoPlace(c.dst, c.rule); got != c.want {
+			t.Errorf("NoPlace(%q, %q) = %v, want %v", c.dst, c.rule, got, c.want)
+		}
+		if c.want && Routine(c.dst, c.rule) {
+			t.Errorf("Routine(%q, %q): a socket that names no place is no system lookup", c.dst, c.rule)
+		}
+	}
+}
+
 // TestResolverRuleIsTheEngines: the classifier reads the rule the engine writes, which it cannot import.
 func TestResolverRuleIsTheEngines(t *testing.T) {
 	if ResolverRule != agent.ResolverRule {

@@ -11,7 +11,8 @@
 #             [--marker SUB]... [--shape GOLDEN]
 #   report.py shape STUB_LOG [--marker SUB]...        prints the request shape (see shape())
 #   report.py e2e STUB_LOG --ledger EVENTS --scenario a|c|d|e [--golden G [--write-golden]] [--sub VALUE=PH]...
-#             [--isolation PATH]...                   tego's reason channel end to end (see SCENARIOS)
+#             [--isolation PATH]... [--result RESULT.json]
+#                                                     tego's reason channel end to end (see SCENARIOS)
 #
 # A reminder is a text block wrapped in <system-reminder> tags; feedback is any other text block after the first
 # request. SUB=N asks for exactly N blocks containing SUB (default 1). A marker picks out the blocks a hook wrote
@@ -23,10 +24,12 @@
 # last turn's results, and may have sent no request at all when SessionStart ended it; no other turn may.
 # Exit 1 when a check fails.
 import argparse
+import calendar
 import json
 import os
 import re
 import sys
+import time
 
 REMINDER_OPEN = "<system-reminder>"
 
@@ -189,8 +192,20 @@ def run_checks(entries, args, rep, result=None, bad=()):
 #
 # A scenario is one `tego run` of the harness under contract.yaml against stub-<name>.json: turn 0 is a warm-up write
 # inside the workspace (the request after it carries whatever the harness's start-up made tego refuse), turn 1 is the
-# scenario's own, and the request after turn 1 is the "next request". What each scenario must have tego refuse in
-# turn 1, by reason code and operation, and whether that refusal may surface in a later request:
+# scenario's own, and the request after turn 1 is the "next request". Scenarios a, c and d then wait a second (turn 2,
+# a Bash `sleep 1`), so a hook runs well after any refused line of turn 1 has landed.
+#
+# When a refusal is told. A refused call's line may reach events.jsonl after the agent has seen the refusal (at tier
+# landlock the supervisor answers the call, then the pipeline writes the line; at the root tiers the kernel refuses
+# inside the call and the ring is read after it: docs/p0/supervisor.md R23), and the reason file follows the line by
+# its window plus the timer's and the box's delay. A hook tells only what the reason file lists when it runs, so a
+# refusal is told by the first hook that runs once the file lists it: the next request carries it, or, when the file
+# listed it only after that request's hooks ran, the request after it. Either way it is told exactly once, with its
+# own rule and sentence. With --result (fakeclaude's summary, whose hook runs carry when each began, when its result
+# was taken and the reason file's seq the stand-in read just before it began), a refusal also fails when a hook of a
+# tool event found it listed, ended before the teller began, and left it out, however soon after the line it ran.
+#
+# What each scenario must have tego refuse in turn 1, by reason code and operation:
 SCENARIOS = {
     "a": [("write-outside-contract", "open")],
     "c": [("exec-not-allowed", "exec")],
@@ -200,17 +215,40 @@ SCENARIOS = {
 NOTE = re.compile(r"(?:(?<=\n)|^)([A-Za-z]+(?::[A-Za-z_]+)?) hook additional context: ")
 TEGO_HEAD = "Tego, this run's access control, refused "
 MORE = re.compile(r"^\d+ more not listed\.$")
+# TELLING are the events whose hook claims and prints the refusals no hook has told yet. Stop is left out: a Stop hook
+# that already kept the turn going once (stop_hook_active) claims nothing by design, and the summary does not say
+# which Stop that was.
+TELLING = ("PostToolUse", "PostToolUseFailure", "PostToolBatch")
 
 
 def ledger_refusals(path):
-    """The run's refused lines, in seq order: seq, op, target, reason, rule."""
+    """The run's refused lines, in seq order: seq, ts, op, target, reason, rule."""
     out = []
     with open(path) as f:
         for line in f:
             e = json.loads(line)
             if e.get("kind") == "refused":
-                out.append({k: e.get(k, "") for k in ("seq", "op", "target", "reason", "rule")})
+                out.append({k: e.get(k, "") for k in ("seq", "ts", "op", "target", "reason", "rule")})
     return out
+
+
+def seconds(ts):
+    """An RFC 3339 UTC time with up to nine fractional digits (the ledger's ts, the summary's began) as seconds since
+    the epoch, None when absent. The fraction is read whole, not cut to microseconds."""
+    m = re.fullmatch(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(\.\d+)?(Z|\+00:00)", ts or "")
+    if not m:
+        return None
+    return calendar.timegm(time.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S")) + float(m.group(2) or 0)
+
+
+def hook_text(h):
+    """What a hook told the model: its additionalContext when its stdout is the JSON a context hook prints, else its
+    stdout as it is."""
+    out = h.get("stdout", "")
+    try:
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"]
+    except (ValueError, KeyError, TypeError):
+        return out
 
 
 def notes(entry):
@@ -338,20 +376,35 @@ def run_e2e(args, rep):
     if not rep.check(len(nxt) == 1, f"one request carries turn 1's results (turn 2 requests: {len(nxt)})"):
         return rep.failed
     nxt = nxt[0]
-    later = [e for e in entries[entries.index(nxt) + 1:]]
+    at = entries.index(nxt)
+    # The request after the next one, which carries what the hooks of the turn after it told: a refusal whose line
+    # landed after the next request's hooks ran (see "When a refusal is told" above).
+    after = entries[at + 1] if at + 1 < len(entries) else None
+    window = [nxt] + ([after] if after is not None else [])
     carried = tego_text(nxt, norm)
     own = [r for r in refused if not norm.isolated(f'"{r["target"]}"') and not norm.isolated(f'[{r["rule"]}]')]
+    hooks = None
+    if args.result:
+        with open(args.result) as f:
+            hooks = json.load(f).get("hooks") or []
     for reason, op in want:
         hits = [r for r in own if r["reason"] == reason and r["op"] == op]
         if not rep.check(bool(hits), f"the ledger has a {op} refused {reason}"):
             continue
         r = hits[0]
-        lines = [ln for ln in carried if f'Tego refused {op} "{r["target"]}"' in ln]
-        rep.check(bool(lines), f"the next request carries the refusal of {op} {norm(r['target'])} (ledger reason {reason})")
-        rep.check(any(f"(rule {r['rule']})" in ln or f'(rule "{r["rule"]}")' in ln for ln in lines),
+        key = f'Tego refused {op} "{r["target"]}"'
+        where = [k for k, e in enumerate(window) if any(key in ln for ln in tego_text(e, norm))]
+        lines = [ln for e in window for ln in tego_text(e, norm) if key in ln]
+        when = "the next request" if where[:1] == [0] else "the request after it, one hook later"
+        rep.check(bool(where), f"the next request, or the one after it, carries the refusal of {op} {norm(r['target'])} "
+                  f"(ledger reason {reason})" + (f": {when}" if where else ""))
+        rep.check(bool(lines) and all(f"(rule {r['rule']})" in ln or f'(rule "{r["rule"]}")' in ln for ln in lines),
                   f"... with its rule ({r['rule']})")
-        rep.check(not any(f'"{r["target"]}"' in ln for e in later for ln in told(e, norm)),
+        teller = entries.index(window[where[0]]) if where else at
+        rep.check(not any(f'"{r["target"]}"' in ln for e in entries[teller + 1:] for ln in told(e, norm)),
                   f"... and no later request repeats it (seq {r['seq']})")
+        if hooks is not None:
+            check_teller(rep, hooks, r, key)
     if not want:
         loose = stray(nxt, norm)
         rep.check(not carried and not loose, f"the next request carries no tego text ({len(carried)} refusal lines in "
@@ -363,6 +416,11 @@ def run_e2e(args, rep):
     lines = [norm(ln) for e in entries for ln in told(e, norm)]
     rep.check(len(lines) == len(set(lines)), f"no refusal line is told twice in the run ({len(lines)} told)")
     got = normalise(nxt, norm)
+    if after is not None:
+        # A refusal told one hook later is the next request's in the golden: its sentence and its note's channel.
+        late = [(channel, own) for channel, _, body in notes(after) for own in [tego_lines(body, norm)] if own]
+        got["notes"] = sorted(set(got["notes"]) | {channel for channel, _ in late})
+        got["refusals"] = sorted(got["refusals"] + [norm(ln) for _, own in late for ln in own])
     if args.write_golden:
         try:
             with open(args.golden) as f:
@@ -382,6 +440,33 @@ def run_e2e(args, rep):
     return rep.failed
 
 
+def check_teller(rep, hooks, r, key):
+    """The hook runs (fakeclaude's summary) agree with when r's line landed: exactly one hook told it, that hook ran
+    after the line landed, and no hook of a telling event left it out while the reason file listed it. A hook found r
+    listed when the file's seq the stand-in read just before starting it (reason_seq) is r's seq or more: the file
+    lists every refused line up to its seq. Only hooks that ended before the teller began count, since hooks of one
+    event start together and one of them claims what is new."""
+    landed = seconds(r["ts"])
+    tellers = [k for k, h in enumerate(hooks) if key in hook_text(h)]
+    rep.check(len(tellers) == 1, f"... told by one hook ({len(tellers)} told it)")
+    if not tellers or landed is None:
+        rep.check(landed is not None, f"... its line has a ts ({r['ts']!r})")
+        return
+    k = tellers[0]
+    h = hooks[k]
+    ended = seconds(h.get("recorded"))
+    rep.check(seconds(h.get("began")) is not None and ended is not None and ended >= landed,
+              f"... by a hook that ran after its line landed ({h.get('event')} began {h.get('began')}, line {r['ts']})")
+    tool = [m for m in hooks if m.get("event") in TELLING]
+    blind = [m for m in tool if not isinstance(m.get("reason_seq"), int)]
+    rep.check(not blind, f"... every tool hook carries the reason file's seq the stand-in read before it began ({len(blind)} does not)")
+    begun = seconds(h.get("began")) or 0
+    missed = [m for m in tool if m is not h and isinstance(m.get("reason_seq"), int) and m["reason_seq"] >= r["seq"]
+              and (seconds(m.get("recorded")) or begun) < begun]
+    rep.check(not missed, "... and no tool hook that ended before the teller began found it in the reason file and left it out"
+              + "".join(f"; {m.get('event')} began {m.get('began')} with the file at seq {m['reason_seq']}" for m in missed))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="report.py")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -393,6 +478,7 @@ def main(argv=None):
     e2e.add_argument("--write-golden", action="store_true")
     e2e.add_argument("--sub", action="append", default=[], help="VALUE=PLACEHOLDER")
     e2e.add_argument("--isolation", action="append", default=[])
+    e2e.add_argument("--result", help="fakeclaude's summary: hold the hooks' start times to when each refusal landed")
     for name in ("check", "shape"):
         p = sub.add_parser(name)
         p.add_argument("log")

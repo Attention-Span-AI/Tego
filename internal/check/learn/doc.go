@@ -16,11 +16,20 @@
 //     when the run opened them. A write outside the workspace is reported, not allowed.
 //   - exec.allow is the distinct programs the run started, except the agent's own first one.
 //   - net.allow is the TCP and UDP endpoints the run connected to, as addresses: the record holds the address a
-//     program connected to, never the name it asked for. Dangerous endpoints are never allowed, only reported: the
-//     D-Bus buses, systemd's private socket, gpg-agent and the SSH agents, the X server, the container daemons, and
-//     every socket ADR 0113's built-in refusals refuse in an enforcing run, whether or not the run made it: any unix
-//     socket under the user's runtime directory, a terminal multiplexer's or editor server's, and tego's own (compile
-//     refuses a net.allow entry for one as a contradiction).
+//     program connected to, never the name it asked for. Where a net.allow entry that names a host allowed a connect,
+//     the line holds that name, and the proposal writes the name once for all its addresses. A proposal that allows
+//     an address says first (AddressWarning) that a later run can be refused: one name has several addresses, a
+//     program picks among them anew each run, and they change. The person can name the service instead (Options.Hosts,
+//     tego learn --allow-host, allowhost.go): the caller looks each name up and hands in its answer, and every address
+//     the run reached that the answer holds is written as the name, on the run's protocols and ports. A name is never
+//     chosen by learn and never found by a reverse lookup; one that covers nothing, answers with a private address the
+//     run did not reach, or answers with an address the leak rule withheld refuses the proposal (HostError). An address
+//     no name may stand for (the built-in classes and the machine config's ranges, Options.DeniedResolved) stays an
+//     address. Dangerous endpoints are never allowed, only reported: the D-Bus buses, systemd's private socket,
+//     gpg-agent and the SSH agents, the X server, the container daemons, and every socket ADR 0113's built-in refusals
+//     refuse in an enforcing run, whether or not the run made it: any unix socket under the user's runtime directory, a
+//     terminal multiplexer's or editor server's, and tego's own (compile refuses a net.allow entry for one as a
+//     contradiction).
 //   - limits are suggested in comments from the run's resource peaks, never written as a limit.
 //
 // A place successfully contacted next to a successful open of a secret for reading is not allowed (leak.go): the dashboard's "secret read,

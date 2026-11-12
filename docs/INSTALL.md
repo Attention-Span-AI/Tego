@@ -28,9 +28,11 @@ curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/in
 and `tego-control` for your architecture, checks each against the release's
 sha256 checksums, and installs both into `~/.local/bin`. When `cosign` is on `PATH`, or a `gh` that is logged in, it
 also checks that the checksums were signed by this repository's release workflow at that tag; without either it says
-that only the checksum was checked. It runs the new `tego` before it replaces anything, and it needs no root. It ends
-with the next steps: the `export PATH` line if `~/.local/bin` is not on your `PATH` yet, `tego doctor`, `tego test` and
-`tego serve --open`. The installer does not change your `PATH`, so until you run that line, or log in again, the shell
+that only the checksum was checked, and how to get cosign
+([Sigstore's install page](https://docs.sigstore.dev/cosign/system_config/installation/)) or log `gh` in (`gh auth login`). It runs the new `tego` before it replaces anything, and it needs no root. It ends
+with the next steps: the `export PATH` line if `~/.local/bin` is not on your `PATH` yet, over SSH the
+`systemd-run --user --scope bash` line, then one next command: `tego setup` when the installed `tego` has it, else
+`tego doctor`. The installer does not change your `PATH`, so until you run that line, or log in again, the shell
 answers `tego: command not found`. For the default folder the line is `export PATH="/home/<you>/.local/bin:$PATH"`,
 with your own home folder. Ubuntu's `~/.profile` adds `~/.local/bin` at login; elsewhere, add the line to your shell's
 profile.
@@ -250,20 +252,28 @@ sudo "$(command -v tego)" doctor
 ```
 
 The first shows what you get without root. The second shows tiers 2 and 3. Each says the tier it found on its `summary:`
-line, after the checks and before the table. On a stock Ubuntu, tier 3 is reported as unavailable because `bpf` is not
+line, after the checks and before the table. In a terminal, each then ends on stderr with a `Ready:` or `Not ready:`
+line and the next step to type (`TEGO_HINTS=off` leaves them out). On a stock Ubuntu, tier 3 is reported as unavailable because `bpf` is not
 in the boot LSM list. That is a fact about the machine, not a fault in the install, and
 [TIERS.md](TIERS.md#tier-3-on-ubuntu) has the boot line. The last line is about the dashboard: the kernel loads the
 `inet_diag` and `tcp_diag` modules when Tego first asks, and the line warns only if they cannot load
 (`sudo modprobe tcp_diag`).
 
-**Over SSH.** Tier 1 needs a cgroup your user can place a process in. A login over SSH, or a service, starts outside
-`user@<uid>.service` and cannot, so `doctor`'s cgroup check fails and `tego run` is refused. Start a shell in your user's
-cgroup first: `systemd-run --user --scope bash`. If `doctor` says your user has no delegated cgroup, it prints the fix.
+**Over SSH.** Every run, one that only records included, starts in a cgroup your user can place a process in. A login
+over SSH or on a console, or a service, starts outside `user@<uid>.service` and cannot, so `doctor`'s cgroup check
+fails, and `tego run`, `tego watch` and `tego test` exit 125. Start a shell in your user's cgroup first:
+`systemd-run --user --scope bash`. In a terminal, `tego setup`, `tego doctor` and those three commands end with that
+command as their `next:` line when this is the only thing missing, and then you run `tego setup` (or the command again)
+in the new shell. If `systemd-run --user` cannot reach your user manager (after `su` or `sudo -u`, with no
+`XDG_RUNTIME_DIR`), the line says why and names no command; log in as yourself instead. If `doctor` says your user has
+no delegated cgroup, it prints the fix.
 
 This is `sudo "$(command -v tego)" doctor` on a fresh Ubuntu 24.04 cloud image, with your build's own values in angle
 brackets. The table is cut after five rows here; yours prints in full. `(>= 5.14.0)` on the `kernel` line is the oldest
 release `doctor` accepts at all, not tier 1's minimum: tier 1 also needs the `landlock` line to show ABI 2 or newer, and
-`doctor` adds a note on a release below 6.1, the tested floor.
+`doctor` adds a note on a release below 6.1, the upstream tested floor. The Landlock entries after `without:` come
+from the ABI the kernel answers, the one the `landlock` line shows, so a kernel with a backported Landlock (RHEL 9's
+5.14 answers ABI 6) lists only what it lacks.
 
 ```text
 tego=v0.0.0-<commit date>-<commit, 12 digits> commit=<commit, 40 digits> date=<commit date> go=go1.27.4 contract_schema=0 record_v=1

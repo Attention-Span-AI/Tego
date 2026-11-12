@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
+	"github.com/attention-span-ai/tego/internal/guide"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
@@ -67,6 +68,12 @@ type Config struct {
 	Profiles agent.ProfileSource
 	// SeverityFile is where the person's own severity rules are kept (the Severity page); "" offers none.
 	SeverityFile string
+	// Guide is what the Overview's guide is computed from (internal/guide, setupguide.go): the serving user's machine
+	// config, home, ledger root and chain anchor, the tego build a person types and this boot, with no working folder
+	// and no shell (ADR 0142). It is called on every Overview request, and the guide is computed again when the build
+	// it names changes, so a tego reinstalled while the dashboard runs shows at once. nil shows no guide: the empty
+	// Overview keeps its one first step for any agent.
+	Guide func() guide.Inputs
 	// Preview lists the preview pages (MCP tools and Model routes, empty unless the run's contract uses capture or mcp,
 	// and each layer's) in the nav; false leaves them out. Their addresses answer either way.
 	Preview bool
@@ -109,6 +116,8 @@ type Server struct {
 	memos regionMemos
 	// regionCache is each address's region render of the last second, shared by every viewer (regioncache.go).
 	regionCache regionCache
+	// guide is the Overview's last guide (setupguide.go).
+	guide guideMemo
 }
 
 // New builds a Server.
@@ -447,7 +456,7 @@ func (s *Server) refuse(w http.ResponseWriter, r *http.Request, why signedOutWhy
 	}
 	h.Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusUnauthorized)
-	line := "tego-control serve: this dashboard needs the link tego-control serve printed (it carries ?t=<token>)."
+	line := "tego-control serve: this dashboard needs the link tego serve (or tego-control serve) printed (it carries ?t=<token>)."
 	if why == signedOutCode {
 		line = "tego-control serve: " + codeUsedWords + "."
 	}
@@ -455,7 +464,7 @@ func (s *Server) refuse(w http.ResponseWriter, r *http.Request, why signedOutWhy
 }
 
 // codeUsedWords is what a used or expired one-time open code is told (opencode.go).
-const codeUsedWords = "This one-time open link was used or expired; open the link tego-control serve printed (?t=…)"
+const codeUsedWords = "This one-time open link was used or expired; open the link tego serve (or tego-control serve) printed (?t=…)"
 
 // signedOutStyle is the sign-in page's only style, inline so the page needs no file the missing session would
 // refuse. Its colours are tokens.css's (light, and dark under prefers-color-scheme).
@@ -481,11 +490,11 @@ const (
 <body><main role="main"><div class="brand"><img src="/static/favicon.svg" alt="">tego</div>
 <h1>Open the dashboard from the link in your terminal</h1>
 `
-	signedOutLead = `<p>When <b>tego-control serve</b> starts it prints a link with <b>?t=</b>; opening it signs this browser in. ` +
+	signedOutLead = `<p>When <b>tego serve</b> (or <b>tego-control serve</b>) starts it prints a link with <b>?t=</b>; opening it signs this browser in. ` +
 		`If the dashboard was restarted, its new link is the one that works.</p>
 `
 	signedOutTail = `<span class="lbl">Not running any more? Start it again and it opens the dashboard for you (one click selects the command):</span>
-<code>tego-control serve --open</code>
+<code>tego serve --open</code>
 <p>Nothing was changed. Each start of the dashboard prints a new link, and the old one stops working.</p>
 </main></body></html>
 `

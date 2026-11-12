@@ -27,6 +27,11 @@ const (
 	// (TakesReal), so a launcher that predates it never meets it; a writer that predates it refuses the file instead of
 	// dropping the real path without notice.
 	VersionReal = 4
+	// VersionLink adds an entry's match, an exec block that refuses what the running contract grants under the
+	// exec.allow entry at its value only (Entry.Match, MatchLink). It is written only to a run whose launcher made the
+	// mark that it reads it (TakesLink): a launcher that predates it would refuse the whole file and ignore every later
+	// change, so the writer places the whole-file block there instead, which refuses more, never less.
+	VersionLink = 5
 )
 
 // Bounds on one overlay. The writer refuses a block past MaxBlocks and keeps the newest MaxChanges changes; the
@@ -133,9 +138,28 @@ func (o *Overlay) Add(kind Kind, value, by string, at time.Time) (Change, bool, 
 // because an add narrows), can never cut short an operator's block. Shortening one is an unblock (Remove or
 // RemoveUntil), the loosening path, which is refused inside a run.
 func (o *Overlay) AddUntil(kind Kind, value, by string, at, until time.Time) (Change, bool, error) {
+	return o.add(kind, value, "", by, at, until)
+}
+
+// AddLink adds a block of kind on value, normalized, with no end, that matches by link (MatchLink): it refuses what
+// the running contract grants under the exec.allow entry at value (Set.MatchExec). It is the block the rules editor
+// derives from that entry removed, which refuses what the entry granted the run and leaves the rest to the contract.
+// A value that cannot match by link (a bare name, a folder, another kind) is added as Add adds it. It only narrows,
+// as AddUntil does: a held block that matches the whole file keeps doing so, and a held link block is left as it is.
+// The caller writes it only to a run whose launcher reads it (TakesLink).
+func (o *Overlay) AddLink(kind Kind, value, by string, at time.Time) (Change, bool, error) {
+	return o.add(kind, value, MatchLink, by, at, time.Time{})
+}
+
+// add is AddUntil with the match asked for (Entry.Match): a held block keeps the wider of its own match and the one
+// asked, where "" (the whole file) is the wider.
+func (o *Overlay) add(kind Kind, value, match, by string, at, until time.Time) (Change, bool, error) {
 	v, err := Normalize(kind, value)
 	if err != nil {
 		return Change{}, false, err
+	}
+	if !linkable(kind, v) {
+		match = ""
 	}
 	resolved := ""
 	at, until = at.UTC().Round(time.Millisecond), until.UTC()
@@ -150,16 +174,19 @@ func (o *Overlay) AddUntil(kind Kind, value, by string, at, until time.Time) (Ch
 		if o.Blocks[i].Real != "" {
 			resolved = o.Blocks[i].Real
 		}
+		if o.Blocks[i].Match == "" {
+			match = "" // a block that refuses the whole file is never narrowed to one name of it
+		}
 	}
 	switch {
-	case i >= 0 && o.Blocks[i].From.IsZero() && o.Blocks[i].Until.Equal(until) && o.Blocks[i].Real == resolved:
+	case i >= 0 && o.Blocks[i].From.IsZero() && o.Blocks[i].Until.Equal(until) && o.Blocks[i].Real == resolved && o.Blocks[i].Match == match:
 		return Change{}, false, nil
 	case i >= 0:
-		o.Blocks[i] = Entry{Kind: kind, Value: v, By: by, At: at, Until: until, Real: resolved}
+		o.Blocks[i] = Entry{Kind: kind, Value: v, By: by, At: at, Until: until, Real: resolved, Match: match}
 	case len(o.Blocks) >= MaxBlocks:
 		return Change{}, false, fmt.Errorf("%w: the run already has %d live blocks, the most it may hold", ErrInvalid, MaxBlocks)
 	default:
-		o.Blocks = append(o.Blocks, Entry{Kind: kind, Value: v, By: by, At: at, Until: until, Real: resolved})
+		o.Blocks = append(o.Blocks, Entry{Kind: kind, Value: v, By: by, At: at, Until: until, Real: resolved, Match: match})
 	}
 	return o.record(Change{Op: OpAdd, Kind: kind, Value: v, By: by, At: at, Until: until}), true, nil
 }
@@ -303,9 +330,15 @@ func (o *Overlay) Encode() ([]byte, error) {
 	return append(b, '\n'), nil
 }
 
-// MinVersion is the lowest version that holds o: VersionReal when an entry has a Real, VersionModes when a change it
-// lists is a lift or a restore, VersionTimed when an entry or a change has an until or a from, Version otherwise.
+// MinVersion is the lowest version that holds o: VersionLink when an entry has a Match, VersionReal when an entry has a
+// Real, VersionModes when a change it lists is a lift or a restore, VersionTimed when an entry or a change has an until
+// or a from, Version otherwise.
 func (o *Overlay) MinVersion() int {
+	for _, e := range o.Blocks {
+		if e.Match != "" {
+			return VersionLink
+		}
+	}
 	for _, e := range o.Blocks {
 		if e.Real != "" {
 			return VersionReal
@@ -352,14 +385,15 @@ func Decode(b []byte, run string) (*Overlay, error) {
 // a resume naming no block, and Paused agreeing with the last pause or resume the overlay still lists (or, when it
 // lists none and dropped none, false). From VersionTimed, an entry or a change may carry an until after its at, and an
 // entry a from before its until; from VersionModes, a change may be a lift (a fence kind, a MAC of 64 lower-case hex
-// digits) or a restore (a fence kind, no MAC and no until); from VersionReal, an entry may carry a real path. Nothing
-// newer than its version is accepted in a file.
+// digits) or a restore (a fence kind, no MAC and no until); from VersionReal, an entry may carry a real path; from
+// VersionLink, an exec entry on an absolute program path may carry the match MatchLink. Nothing newer than its version
+// is accepted in a file.
 func (o *Overlay) Validate(run string) error {
 	switch {
 	case o == nil:
 		return fmt.Errorf("%w: no overlay", ErrInvalid)
-	case o.V < Version || o.V > VersionReal:
-		return fmt.Errorf("%w: overlay version %d, want %d to %d", ErrInvalid, o.V, Version, VersionReal)
+	case o.V < Version || o.V > VersionLink:
+		return fmt.Errorf("%w: overlay version %d, want %d to %d", ErrInvalid, o.V, Version, VersionLink)
 	case run != "" && o.Run != run:
 		return fmt.Errorf("%w: overlay of run %q, want %q", ErrInvalid, o.Run, run)
 	case len(o.Blocks) > MaxBlocks:
@@ -377,6 +411,9 @@ func (o *Overlay) Validate(run string) error {
 		}
 		seen[e.Key()] = true
 		if err := o.realOf(e); err != nil {
+			return err
+		}
+		if err := o.matchOf(e); err != nil {
 			return err
 		}
 		if err := o.timed(e.Key(), e.At, e.Until, e.From); err != nil {
@@ -493,6 +530,21 @@ func (o *Overlay) realOf(e Entry) error {
 		return fmt.Errorf("%w: %s carries its own value as its real path", ErrInvalid, e.Key())
 	}
 	return normalized(e.Kind, e.Real)
+}
+
+// matchOf checks an entry's Match: none, or, from VersionLink, MatchLink on an exec block of an absolute program path.
+func (o *Overlay) matchOf(e Entry) error {
+	switch {
+	case e.Match == "":
+		return nil
+	case o.V < VersionLink:
+		return fmt.Errorf("%w: %s carries a match, which a version %d overlay cannot hold", ErrInvalid, e.Key(), o.V)
+	case e.Match != MatchLink:
+		return fmt.Errorf("%w: %s carries the match %q, not %q", ErrInvalid, e.Key(), e.Match, MatchLink)
+	case !linkable(e.Kind, e.Value):
+		return fmt.Errorf("%w: %s matches by link, which only an exec block on an absolute program path may", ErrInvalid, e.Key())
+	}
+	return nil
 }
 
 // normalized refuses a value that is not its own normal form, so two spellings of one block cannot both be held.

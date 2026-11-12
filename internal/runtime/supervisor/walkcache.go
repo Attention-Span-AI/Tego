@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/attention-span-ai/tego/internal/platform/proc"
 )
 
 // The walk cache (R15b's fast path). Every notified fs syscall's verdict is taken where its path lands, and on
@@ -222,29 +224,39 @@ func mutating(name string) bool {
 // a blocked thread is in): a thread runs one syscall at a time, so it left nr behind. A running thread, one
 // asleep in nr again, or one this process cannot read may.
 func mutationMayRun(tid int, nr int32) bool {
-	base := "/proc/" + strconv.Itoa(tid)
-	b, err := os.ReadFile(base + "/stat")
-	if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
+	switch ended, known := threadEnded(readStat(tid)); {
+	case !known:
+		return true
+	case ended:
 		return false
 	}
-	if err != nil {
-		return true
-	}
-	s := string(b)
-	i := strings.LastIndexByte(s, ')')
-	if i < 0 || i+2 >= len(s) {
-		return true
-	}
-	if st := s[i+2]; st == 'Z' || st == 'X' {
-		return false
-	}
-	b, err = os.ReadFile(base + "/syscall")
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(tid) + "/syscall")
 	if err != nil {
 		return true
 	}
 	f, _, _ := strings.Cut(strings.TrimSpace(string(b)), " ")
 	in, err := strconv.Atoi(f)
 	return err != nil || in < 0 || in == int(nr)
+}
+
+// threadEnded reads a read of /proc/<tid>/stat (readStat's): ended when the thread is gone (ENOENT, ESRCH) or its
+// line says dead or zombie, known false when the read failed otherwise or the line does not parse. A line of a task
+// released while it was read that stays so after readStat's reads is not known, so the mutation may run: the walk
+// cache stays invalidated. The task the line is about had itself ended (an execve from another thread kills a thread
+// that waits on a notification before it releases it), so "ended" was true of the thread that held the mutation;
+// "unknown" is only the more careful answer.
+func threadEnded(b []byte, err error) (ended, known bool) {
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
+		return true, true
+	}
+	if err != nil {
+		return false, false
+	}
+	st, err := proc.ParseStat(b)
+	if err != nil {
+		return false, false
+	}
+	return st.State == 'Z' || st.State == 'X', true
 }
 
 // cachedTarget answers FSTarget for q from the walk cache when q lands on its spelling there: ok false sends

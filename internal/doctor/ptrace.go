@@ -64,7 +64,7 @@ type PtraceState struct {
 
 // probePtrace reads Yama's scope and decides what it means for the supervisor. It never fails: an
 // unreadable sysctl is reported as unknown and, because the consequence of guessing wrong is a run
-// that reports a working sandbox while refusing everything, unknown is treated as blocking.
+// that reports a working tier while refusing everything, unknown is treated as blocking.
 func probePtrace(path string) PtraceState {
 	st := PtraceState{Scope: yamaAbsent}
 	if have, err := capSysPtrace(); err == nil {

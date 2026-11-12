@@ -11,6 +11,8 @@ import (
 	"path"
 	"slices"
 	"strings"
+
+	"github.com/attention-span-ai/tego/internal/check/syslookup"
 )
 
 // The classes of a comparison row, in the order the table lists them.
@@ -324,12 +326,13 @@ func normer(root, other string) func(string) string {
 	}
 }
 
-// background is a net line the table leaves out: name lookups, system sockets, netlink, and route probes
-// (RouteProbe: UDP to port 65535 of a remote host, the connect musl's getaddrinfo makes to sort addresses).
+// background is a net line the table leaves out: name lookups, system sockets, the calls that name no place
+// (syslookup.NoPlace: AF_UNSPEC, netlink; the receipt's routine sockets), and route probes (RouteProbe: UDP to port
+// 65535 of a remote host, the connect musl's getaddrinfo makes to sort addresses).
 func background(e *Event) bool {
 	_, dst := splitNet(e.Target)
 	switch {
-	case e.SystemLookup, e.Rule == "net.resolver", e.Rule == "net.unspec", dst == "netlink", dst == "unspec":
+	case e.SystemLookup, e.Rule == syslookup.ResolverRule, syslookup.NoPlace(dst, e.Rule):
 		return true
 	case strings.HasPrefix(dst, "unix:"):
 		return !strings.Contains(dst, "docker") && !strings.Contains(dst, "agent")

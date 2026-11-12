@@ -54,7 +54,7 @@ var matrix = map[Tier]map[Capability]cell{
 		CapUnixDestinationKernel:    {false, "no: supervisor plus ABI-gated pathname backstop"},
 		CapFileWriteDeny:            {true, "yes (EACCES)"},
 		CapFileDeleteRename:         {true, "yes (EACCES), per process tree"},
-		CapReadDeny:                 {true, "by sibling enumeration; unenforced under a writable parent"},
+		CapReadDeny:                 {true, "by sibling enumeration; under a writable parent, held reads (the default) refuse it; `fs.reads: direct` leaves it unenforced"},
 		CapExecDeny:                 {true, "by inode (`EXECUTE` on binaries, their loader, listed scripts)"},
 		CapNetHostDeny:              {true, "yes, supervisor-completed connects (Landlock grants declared TCP ports only)"},
 		CapUDPByDestination:         {false, "best-effort (address read: refused when refused, an admitted one continued and read again)"},

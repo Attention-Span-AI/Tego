@@ -163,11 +163,11 @@ func TestRulesPageInForce(t *testing.T) {
 	}
 	hits := logsURL(rulesRunB, "exec[git]")
 	for _, want := range []string{
-		"Policy · rules-demo", "Basic (Landlock) · run", " · running",
+		"Contract · rules-demo", "Basic (Landlock) · run", " · running",
 		"Can change", "Can change files in ./out/", "Programs", "Can run git",
 		"Settings it gets", "Gets DEMO_TOKEN, set in its rules", "Gets PATH from your shell",
 		`href="` + html.EscapeString(hits) + `"`, "2 hits", "No hits",
-		"agent.yaml:", "Edit policy",
+		"agent.yaml:", "Edit contract",
 		"cd " + f.proj + " &amp;&amp; tego compile " + f.source, "tego block --list " + rulesRunB,
 		`<details class="panel rules-raw">`, "DEMO_TOKEN: " + rulesview.Hidden, "/static/rules.css",
 	} {
@@ -211,7 +211,7 @@ func TestRulesPageInForce(t *testing.T) {
 func TestRulesPageChooser(t *testing.T) {
 	f := newRulesFix(t)
 	_, body := f.get(t, "/rules")
-	if !strings.Contains(body, "Policy · other-agent") {
+	if !strings.Contains(body, "Contract · other-agent") {
 		t.Error("/rules does not default to the newest run")
 	}
 	src, oth := f.svcRef(t, f.source), f.svcRef(t, f.other)
@@ -224,7 +224,7 @@ func TestRulesPageChooser(t *testing.T) {
 		t.Error("the chooser carries a path as a value")
 	}
 	_, body = f.get(t, "/rules?c="+src+"&run="+rulesRunO)
-	if !strings.Contains(body, "Policy · rules-demo") || !strings.Contains(body, `<option value="`+rulesRunB+`" selected`) {
+	if !strings.Contains(body, "Contract · rules-demo") || !strings.Contains(body, `<option value="`+rulesRunB+`" selected`) {
 		t.Error("?c= with another file's run does not show the file's newest run")
 	}
 	if !strings.Contains(body, `<option value="`+rulesRunA+`"`) || strings.Contains(body, `<option value="`+rulesRunO+`"`) {
@@ -291,7 +291,7 @@ func TestRulesPageChooserMarksAGoneFile(t *testing.T) {
 	if o := option(body, rules.Ref(f.source)); o == "" || strings.Contains(o, "file gone") {
 		t.Errorf("the rules file still in place reads %q, want it listed and not gone", o)
 	}
-	if code, page := f.get(t, "/rules?c="+rules.Ref(f.other)); code != http.StatusOK || !strings.Contains(page, "Policy · other-agent") {
+	if code, page := f.get(t, "/rules?c="+rules.Ref(f.other)); code != http.StatusOK || !strings.Contains(page, "Contract · other-agent") {
 		t.Errorf("the removed rules file's runs: %d, want its newest run's rules", code)
 	}
 }
@@ -309,7 +309,7 @@ func TestRulesPageRunListHoldsTheRunShown(t *testing.T) {
 			`"kind":"run_end","source":"supervisor","reason":"exit","exit_code":0`)
 	}
 	code, body := f.get(t, "/rules?run="+rulesRunA)
-	if code != http.StatusOK || !strings.Contains(body, "Policy · rules-demo") {
+	if code != http.StatusOK || !strings.Contains(body, "Contract · rules-demo") {
 		t.Fatalf("GET ?run= of an older run: %d", code)
 	}
 	_, list, _ := strings.Cut(body, `<select class="select" name="run">`)
@@ -501,7 +501,7 @@ func TestRulesPageEndedWatchedMarks(t *testing.T) {
 	endedRun(t, f, run, `"observe","fs_reads":{"reads":"direct","why":"records-only"},"reads_notified":{"notified":false,"why":"records-only"}`,
 		curlGap, curlLine("observed", 2), curlLine("observed", 3))
 	_, body := f.get(t, "/rules?run="+run)
-	mustContain(t, "the ended watched run's page", body, "Watched only · nothing blocked",
+	mustContain(t, "the ended watched run's page", body, "Watched only · nothing refused",
 		"The run has ended, so its 2 live marks record nothing now.",
 		`<summary>This run's live marks <span class="soft">(2)</span>`,
 		"<span>Was marked (recorded, not refused): cannot run /usr/bin/curl</span>", "2 hits",
@@ -529,16 +529,31 @@ func TestRulesPageUnreadableLiveBlocks(t *testing.T) {
 	}
 }
 
-// TestRulesPageEmptyAndRunLink: an empty ledger teaches tego init and tego run; the run page's "see the rules" opens
-// that run's rules (F9).
+// TestRulesPageEmptyAndRunLink: an empty ledger says a policy comes from presets or a finished run, with tego learn
+// for the terminal (tego init's starter runs python3 agent.py, not the person's agent) written as tego watch's footer
+// and the Quickstart write it: into a file under ~/contracts, outside the project, since tego refuses a contract its
+// agent could rewrite and --out makes no folder. The run page's "see the rules" opens that run's rules (F9).
 func TestRulesPageEmptyAndRunLink(t *testing.T) {
 	s := newServer(t, t.TempDir())
 	c := login(t, s)
-	if b := do(s, "GET", "/rules", "127.0.0.1:8484", c).Body.String(); !strings.Contains(b, "No policies yet") || !strings.Contains(b, "tego init") {
-		t.Error("the empty Rules page does not teach tego init")
+	const learn = "<code>mkdir -p ~/contracts &amp;&amp; tego learn &lt;run&gt; --out ~/contracts/&lt;name&gt;.yaml</code>"
+	if b := do(s, "GET", "/rules", "127.0.0.1:8484", c).Body.String(); !strings.Contains(b, "No contracts yet") || !strings.Contains(b, learn) {
+		t.Errorf("the empty Rules page does not give %s", learn)
 	}
 	f := newRulesFix(t)
 	if _, body := f.get(t, "/runs/"+rulesRunA); !strings.Contains(body, `href="/rules?run=`+rulesRunA+`"`) {
 		t.Error("the run page's rules link does not name the run")
+	}
+}
+
+// TestRulesNewFromRunSaysAddresses: New policy's From a run says what tego learn proposes for a watched run, the
+// addresses it connected to. Its record holds no host name, so "the hosts it reached" promised names the policy does
+// not hold, beside the plan's note (learn's address warning) that it has entries that are addresses, not host names.
+func TestRulesNewFromRunSaysAddresses(t *testing.T) {
+	f := newRulesFix(t)
+	f.withSetup(t)
+	code, body := f.get(t, "/rules/new?mode=run")
+	if code != http.StatusOK || !strings.Contains(body, "the addresses it connected to (tego learn)") || strings.Contains(body, "hosts it reached") {
+		t.Errorf("From a run answered %d and does not say it allows the addresses the run connected to:\n%s", code, body)
 	}
 }

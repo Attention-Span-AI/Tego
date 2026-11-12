@@ -4,6 +4,7 @@ package ledger
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -543,4 +544,166 @@ func TestAReasonFileCutStatesTheFieldsRealLength(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestTheHooksCopyIsWrittenBeforeTheRunDirectorysCopy: the mirror (the copy a harness's hook reads through
+// TEGO_REASON) is written first, under its own lock, so a refusal reaches it while a write of the run directory's
+// copy, which no process of the run reads, is still held up (a rename on a slow disk). Both copies were written under
+// one lock, the run directory's first, so a slow write there could hold the mirror back. On CI a refused line's
+// mirror entry was still missing 71 ms after the line, and the hook told the refusal one request late (2026-11-11);
+// what held it back there was not measured: a slow rename under that lock and the timer's delay both fit, and only
+// the first is removed here. Here the run directory's lock is held, as a slow rename would hold it, across three
+// refusals a window apart; the mirror must list each, and the run directory's copy must catch up, never older than
+// the one before it, once the lock is free.
+func TestTheHooksCopyIsWrittenBeforeTheRunDirectorysCopy(t *testing.T) {
+	w, dir, _ := openTestWriter(t)
+	t.Cleanup(func() { _ = w.Abandon() }) // after a failure, so the temporary directory can go; after Close, a no-op
+	startRun(t, w, 0)
+	mirror := t.TempDir()
+	if err := w.MirrorLastRefusal(mirror); err != nil {
+		t.Fatal(err)
+	}
+	w.refusal.fileMu.Lock() // as a write of the run directory's copy would, on a slow disk
+	held := true
+	release := func() {
+		if held {
+			held = false
+			w.refusal.fileMu.Unlock()
+		}
+	}
+	defer release()
+	for i := range 3 {
+		if err := w.Append(refusedEvent(fmt.Sprintf("/t/%d", i))); err != nil {
+			t.Fatal(err)
+		}
+		var f *reason.File
+		for deadline := time.Now().Add(5 * time.Second); f == nil || f.Refusals != uint64(i+1); time.Sleep(time.Millisecond) {
+			if time.Now().After(deadline) {
+				release()
+				t.Fatalf("refusal %d: the mirror waited for the run directory's copy (it lists %v)", i+1, f)
+			}
+			if b, err := os.ReadFile(filepath.Join(mirror, LastRefusalFile)); err == nil {
+				f, _ = reason.Decode(bytes.NewReader(b))
+			}
+		}
+		if f.Target != fmt.Sprintf("/t/%d", i) {
+			t.Fatalf("refusal %d: the mirror's latest is %s", i+1, f.Target)
+		}
+		if _, err := os.Stat(filepath.Join(dir, LastRefusalFile)); !os.IsNotExist(err) {
+			t.Fatalf("the run directory's copy was written while its lock was held: %v", err)
+		}
+	}
+	release()
+	got, b := waitReason(t, dir, func(f *reason.File) bool { return f.Refusals == 3 })
+	if got.Target != "/t/2" {
+		t.Errorf("the run directory's copy ends at %s, want /t/2", got.Target)
+	}
+	if m, _ := os.ReadFile(filepath.Join(mirror, LastRefusalFile)); !bytes.Equal(m, b) {
+		t.Errorf("the run directory's copy differs from the mirror once both are written")
+	}
+	if err := w.Close(record.RunEndPayload{Reason: record.RunEndExit}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestTheHooksCopyListsOnlyLinesTheLedgerHolds: a reader of the mirror never learns of a refusal the record does not
+// hold. A refused line is written to events.jsonl before the ring takes it (post runs after the write), and the
+// mirror is written from the ring, so every seq the mirror names, at any moment, is a line already in events.jsonl.
+// That is why the mirror is written first and the run directory's copy second: a crash between the two leaves the
+// mirror a write ahead of the run directory's copy, which no process of the run reads, and neither ahead of the
+// ledger. Four writers append refused lines while a reader checks each mirror it reads against events.jsonl.
+func TestTheHooksCopyListsOnlyLinesTheLedgerHolds(t *testing.T) {
+	w, dir, _ := openTestWriter(t)
+	startRun(t, w, 0)
+	mirror := t.TempDir()
+	if err := w.MirrorLastRefusal(mirror); err != nil {
+		t.Fatal(err)
+	}
+	ledgerSeqs := func() map[uint64]bool {
+		b, err := os.ReadFile(filepath.Join(dir, EventsFile))
+		if err != nil {
+			t.Error(err)
+			return nil
+		}
+		out := map[uint64]bool{}
+		lines := bytes.Split(b, []byte("\n"))
+		for _, l := range lines[:len(lines)-1] { // the last piece may be a line still being written
+			var e struct {
+				Seq  uint64 `json:"seq"`
+				Kind string `json:"kind"`
+			}
+			if err := json.Unmarshal(l, &e); err != nil {
+				t.Errorf("events.jsonl: %v: %s", err, l)
+				return nil
+			}
+			if e.Kind == string(record.KindRefused) {
+				out[e.Seq] = true
+			}
+		}
+		return out
+	}
+	stop := make(chan struct{})
+	var readers sync.WaitGroup
+	reads := 0
+	readers.Go(func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			b, err := os.ReadFile(filepath.Join(mirror, LastRefusalFile))
+			if err != nil {
+				time.Sleep(100 * time.Microsecond)
+				continue
+			}
+			f, err := reason.Decode(bytes.NewReader(b))
+			if err != nil {
+				t.Errorf("the mirror is not one whole file: %v", err)
+				return
+			}
+			have := ledgerSeqs() // read after the mirror: a line the mirror names was written before it
+			for _, r := range f.Recent {
+				if !have[r.Seq] {
+					t.Errorf("the mirror names seq %d, which events.jsonl does not hold", r.Seq)
+					return
+				}
+			}
+			reads++
+		}
+	})
+	var writers sync.WaitGroup
+	for g := range 4 {
+		writers.Go(func() {
+			for i := range 100 {
+				if err := w.Append(refusedEvent(fmt.Sprintf("/t/%d.%d", g, i))); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		})
+	}
+	writers.Wait()
+	if err := w.Close(record.RunEndPayload{Reason: record.RunEndExit}); err != nil {
+		t.Fatal(err)
+	}
+	close(stop)
+	readers.Wait()
+	if reads == 0 {
+		t.Error("the reader never read the mirror")
+	}
+	f, _ := waitReason(t, mirror, func(f *reason.File) bool { return f.Refusals == 400 })
+	if b, _ := os.ReadFile(filepath.Join(dir, LastRefusalFile)); f == nil || !bytes.Equal(b, mustRead(t, filepath.Join(mirror, LastRefusalFile))) {
+		t.Errorf("after Close the two copies differ")
+	}
+}
+
+// mustRead is the file at path.
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }

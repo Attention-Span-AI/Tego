@@ -86,7 +86,7 @@ func removeBuildState(d *hoststate.Dir, base, hash string, names []string) (int,
 	case busy:
 		return 0, nil // a launcher of it is starting
 	}
-	defer func() { _ = lock.Close() }()
+	defer unlockClose(lock)
 	stateLockHeld(hash)
 	// A launcher that held the lock until now may have pinned the build again.
 	if _, err := os.Stat(filepath.Join(base, hash)); !errors.Is(err, os.ErrNotExist) {

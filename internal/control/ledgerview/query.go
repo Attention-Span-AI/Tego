@@ -451,7 +451,7 @@ func (rm *runMatch) matchQuery(e *Event) bool {
 	if (len(f.Agents) > 0 && !slices.Contains(f.Agents, e.Agent)) || slices.Contains(f.Not.Agents, e.Agent) {
 		return false
 	}
-	if (len(f.Rules) > 0 && !ruleMatches(f.Rules, e.Rule)) || (len(f.Not.Rules) > 0 && ruleMatches(f.Not.Rules, e.Rule)) {
+	if (len(f.Rules) > 0 && !ruleMatches(f.Rules, logsRule(e))) || (len(f.Not.Rules) > 0 && ruleMatches(f.Not.Rules, logsRule(e))) {
 		return false
 	}
 	if (len(rm.hosts) > 0 && !slices.Contains(rm.hosts, e.Host)) || (e.Host != "" && slices.Contains(rm.notHosts, e.Host)) {

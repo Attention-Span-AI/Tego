@@ -191,14 +191,21 @@ example above, to have tokens counted), its API key goes in `env.pass`, and a ho
 
 ## Start from the dashboard
 
-The dashboard (`tego-control serve`) writes the same file without a terminal: Rules, then
-"Set up a new agent". Type the project folder, tick the presets, add the folders it may write and the hosts it may
+The dashboard (`tego-control serve`) writes the same file without a terminal: Contracts, then
+"New contract". Type the project folder, tick the presets, add the folders it may write and the hosts it may
 reach (comma-separated, as `--write` and `--allow-host` take them) and its command, then Preview: the page shows
 what the agent may do in plain sentences, every preset laid in, and what `tego compile --offline` says. Create
 makes the folders the file names in the project, never through a symbolic link (one on the way to a folder it makes
 is refused, by name; one that already exists is used where it is, as above), writes `agent.yaml` in that folder (never over an existing one) and shows the line to start it, for example
 `cd ~/project && tego run agent.yaml`: the command you typed is in the file. "From a run" drafts the file from a finished run instead: it allows
-what that run did and no more (`tego learn`), except where a run that leaked sent its secrets: that address is left out, and a red notice says so. The new file is on the Rules page as "not run yet" until its first run.
+what that run did and no more (`tego learn`), except where a run that leaked sent its secrets: that address is left out, and a red notice says so. A draft from a run is saved by default
+where `tego learn <run> --save <name>` saves it, `~/.config/tego/agents/<name>.yaml`, so `cd <run folder> && tego run
+<name>` and the `tego-agent@<name>` unit find it; "The project folder" writes `agent.yaml` there instead. A "Show
+refused reads (slower)" switch adds `reason: {reads: on}`: a read the contract refuses is recorded at tier 1 too, and
+each read open is about 17 µs slower. From a run it is on by default, as `--save`'s default is; with presets it is off,
+as `tego init` writes no `reason:` block. The run page's Tighten tab links to it
+("Make a contract from this run"). A new `agent.yaml` is on the Contracts page as "not run yet" until its first run;
+a saved registry entry is listed from its first run.
 
 
 ## Choose an agent (From source)

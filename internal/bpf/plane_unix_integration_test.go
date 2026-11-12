@@ -151,8 +151,8 @@ func planeUnixCells(t *testing.T, o Object, mode PlaneMode) {
 		if info, err := p.Info(); err == nil {
 			if n, ok := info.VerifiedInstructions(); ok {
 				t.Logf("%s: %d instructions verified", h.Program(mode), n)
-				if n > planeBudget(h.Name) {
-					t.Errorf("%s: %d instructions verified, over the budget of %d", h.Program(mode), n, planeBudget(h.Name))
+				if b := planeBudget(t, o, h.Name); n > b {
+					t.Errorf("%s: %d instructions verified, over the budget of %d", h.Program(mode), n, b)
 				}
 			}
 		}

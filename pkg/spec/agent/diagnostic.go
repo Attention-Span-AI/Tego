@@ -94,6 +94,11 @@ const (
 	// runs in tego's place the next time a person types its name (WithOwnBinaries). A warning: the directory is often
 	// the project's own, an activated .venv/bin, and holds nothing of tego's.
 	CodePathShadow = "path-shadow"
+	// CodeExecMulticall is the note on an allowed exec entry whose file has more than one hard link or is named
+	// busybox, toybox or coreutils, once per file: the names that lead to it, its link count, and what tier landlock
+	// and a multi-call program that reads argv[0] admit through a listed name (SEMANTICS §4, docs/GAPS.md). A note:
+	// it changes no rule, and `tego run` prints it only under -v.
+	CodeExecMulticall = "exec-multicall"
 
 	// The live: section's findings (ADR 0125), all errors but CodeLiveFenceLocal.
 

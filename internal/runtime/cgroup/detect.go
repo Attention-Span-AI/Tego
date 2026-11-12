@@ -10,9 +10,11 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
@@ -64,19 +66,39 @@ func (fs *FS) CanPlace() error {
 	}
 	// A read failure yields nil, which names no cgroup, and canPlace refuses it.
 	data, _ := os.ReadFile(procSelfCgroup)
-	return canPlace(Mount, data, fs.root)
+	return canPlace(Mount, data, fs.root, placementRemedy)
 }
 
-// placementFix is the remedy for a launcher started outside the delegated subtree: start it inside.
-// `systemd-run --user --scope` does that from any shell of the same user, since the user manager has
-// the system manager move the caller into a new scope of its own subtree.
-func placementFix(root string) string {
-	return fmt.Sprintf("start tego inside %s, for one with systemd-run --user --scope tego ...", root)
+// PlacementFix is the remedy for a launcher of uid started outside the delegated subtree: start it from a shell inside.
+// `systemd-run --user --scope bash` opens one from any shell of the same user whose user manager it can reach, since
+// the user manager has the system manager move the caller into a new scope of its own subtree. The fix names the
+// shell to open, not the cgroup's path: a new user read the path as the instruction, and the old "tego ..." was a
+// placeholder outside angle brackets (acceptance B, 2026-11-11). The path stays in the diagnosis. When the person who
+// reads it is another user, who started tego as uid through sudo or su (other, config.StartedByAnother), the shell is
+// opened as uid from that person's own shell (ScopeAsCommand): typed there, the bare command opens the reader's own
+// scope, the silent wrong-user result the next: line no longer gives (acceptance 3, 2026-11-11; the review's M1: the
+// fix: line of doctor and the error of run, watch and test still said the bare command after linger).
+func PlacementFix(uid int, other bool) string {
+	if other {
+		return "start tego from a shell in this user's user manager's cgroup: tego ran as this user, started from " +
+			"another user's shell through sudo or su, so open one as this user from your own login shell, not one sudo " +
+			"or su opened, with " + ScopeAsCommand(uid, "bash") + ", then run tego there"
+	}
+	return "start tego from a shell in your user manager's cgroup: open one with systemd-run --user --scope bash, " +
+		"then run tego there"
 }
+
+// placementRemedy is PlacementFix for this process: its real uid (a delegated FS is never root's), and whether the
+// person who reads the remedy is another user (readByAnother). It is asked only when CanPlace refuses.
+func placementRemedy() string { return PlacementFix(os.Getuid(), readByAnother()) }
+
+// readByAnother is config.ReadByAnother; a variable so a test is read by another user.
+var readByAnother = config.ReadByAnother
 
 // canPlace is CanPlace against an explicit mount, /proc/self/cgroup content and root, so a process can
-// drive the refusal over a temporary directory without being where it is about.
-func canPlace(mount string, procCgroup []byte, root string) error {
+// drive the refusal over a temporary directory without being where it is about. fix is the placement refusal's
+// remedy, asked only for that refusal.
+func canPlace(mount string, procCgroup []byte, root string, fix func() string) error {
 	own := ownCgroup(procCgroup)
 	if own == "" {
 		return refuse(fmt.Sprintf("run tego where %s is readable", procSelfCgroup), []error{ErrOutsideSubtree},
@@ -89,7 +111,7 @@ func canPlace(mount string, procCgroup []byte, root string) error {
 	}
 	anc := commonAncestor(from, root)
 	if err := unix.Access(path.Join(anc, fileProcs), unix.W_OK); err != nil {
-		return refuse(placementFix(root), []error{ErrOutsideSubtree, err},
+		return refuse(fix(), []error{ErrOutsideSubtree, ErrBesideSubtree, err},
 			"%v: this process's cgroup %s lies outside %s, and the kernel moves a process between the two only "+
 				"for a writer of %s/%s, their common ancestor's (cgroup v2 delegation containment): %v",
 			ErrOutsideSubtree, from, root, anc, fileProcs, err)
@@ -139,7 +161,105 @@ func detectDelegated(mount string, procCgroup []byte, uid, pid int) (*FS, error)
 	if err != nil {
 		return nil, err
 	}
-	return firstWritable(uid, candidates)
+	return firstWritableIn(mount, uid, candidates)
+}
+
+// firstWritableIn is firstWritable under mount, with one cause told apart (ErrNoUserManager): the only candidate is
+// the canonical user@<uid>.service, it does not exist, and mount holds systemd's user.slice. Then no user manager runs
+// for uid, as for an account with a nologin or false shell reached through su or sudo -u that never logged in and has
+// no linger (acceptance 2B, 2026-11-11, Ubuntu 24.04, AlmaLinux 9.8, Fedora 44). The delegation fix changes nothing
+// there; starting that user's manager does. Anything else keeps firstWritable's refusal.
+func firstWritableIn(mount string, uid int, candidates []string) (*FS, error) {
+	fs, err := firstWritable(uid, candidates)
+	if err == nil {
+		return fs, nil
+	}
+	canonical := canonicalSubtreeIn(mount, uid)
+	if len(candidates) != 1 || candidates[0] != canonical {
+		return nil, err
+	}
+	if _, serr := os.Stat(canonical); !errors.Is(serr, os.ErrNotExist) {
+		return nil, err
+	}
+	if fi, serr := os.Stat(path.Join(mount, "user.slice")); serr != nil || !fi.IsDir() {
+		return nil, err
+	}
+	return nil, refuse(NoManagerFix(uid), []error{ErrNotDelegated, ErrNoUserManager, os.ErrNotExist},
+		"%v for uid %d: no user manager runs for uid %d: %s does not exist (user@%d.service is not running, as for an "+
+			"account that has not logged in and has no linger)", ErrNotDelegated, uid, uid, canonical, uid)
+}
+
+// NoManagerFix is the remedy when no user manager runs for uid (ErrNoUserManager): an administrator starts it so that
+// it runs without a login (LingerCommand), then opens a shell in it as that user (ScopeAsCommand) and runs tego there.
+// The administrator types both in their own shell: the scope command written without sudo -u opened the
+// administrator's own scope on Ubuntu 24.04 and AlmaLinux 9.8, where tego setup then said ready for the wrong user,
+// and failed on Fedora 44 (acceptance 3, 2026-11-11); with it, it was ready at tier 1 on all three. When systemd
+// refuses the account's name (ManagerRefused), linger starts no manager, so the remedy names neither command and says
+// what can be done instead. Every word is fixed or comes from uid and its passwd entry, never from the environment.
+func NoManagerFix(uid int) string {
+	if why := ManagerRefused(uid); why != "" {
+		return why + ", so loginctl enable-linger starts none and tego starts no run for this account: an administrator " +
+			"runs the agent as an account whose name starts with a letter and holds only letters, digits, '_' and '-'"
+	}
+	return fmt.Sprintf("start a user manager for this user that runs without a login: an administrator runs %s; then "+
+		"opens a shell in it as this user, from the administrator's own shell, with %s, and runs tego there",
+		LingerCommand(uid), ScopeAsCommand(uid, "bash"))
+}
+
+// ManagerRefused is why systemd starts no user manager for uid, whose name in the passwd entry it refuses
+// (config.SystemdRefusedName: digits only, which it reads as a uid, among others), as a sentence; "" when there is no
+// entry or systemd accepts the name. The name is said only when every character of it prints.
+func ManagerRefused(uid int) string {
+	name, ok := lookupName(uid)
+	if !ok {
+		return ""
+	}
+	why := config.SystemdRefusedName(name)
+	if why == "" {
+		return ""
+	}
+	said := "the name of uid " + strconv.Itoa(uid)
+	if name != "" && strings.IndexFunc(name, func(r rune) bool { return !unicode.IsPrint(r) }) < 0 {
+		said += ", " + shellword.Quote(name) + ","
+	}
+	return "systemd starts no user manager for this account: " + said + " " + why + " (systemd.io/USER_NAMES)"
+}
+
+// LingerCommand is the command that starts uid's user manager at boot and keeps it running without a login: sudo
+// loginctl enable-linger and the user's name from the passwd entry (config.LookupPasswd, never $USER), as one quoted
+// word, or the uid itself, which loginctl takes too, when there is no entry, the name holds a character that does not
+// print, or loginctl would not read the name as a name: one that starts with '-' is an option to it, quoted or not,
+// and one of digits only is a uid (the review's S4; config.PlainUserName).
+func LingerCommand(uid int) string {
+	word := strconv.Itoa(uid)
+	if name, ok := lookupName(uid); ok && config.PlainUserName(name) {
+		word = shellword.Quote(name)
+	}
+	return "sudo loginctl enable-linger " + word
+}
+
+// ScopeAsCommand is the command that opens a shell (one of fixed words, such as bash) in uid's user manager's cgroup as
+// that user, typed by another user who may use sudo: sudo -u, the user's name from the passwd entry as one quoted word
+// ('#<uid>' when there is none or sudo would not read it as itself, config.PlainUserName), then
+// XDG_RUNTIME_DIR=/run/user/<uid>, where logind keeps that manager's sockets, since sudo -u leaves it unset and
+// systemd-run --user connects through it. Measured on Ubuntu 24.04, AlmaLinux 9.8 and Fedora 44 (acceptance 3,
+// 2026-11-11, GUEST-CHECK row 7b): a shell in that user's manager, where tego setup was ready at tier 1.
+func ScopeAsCommand(uid int, shell string) string {
+	word := "'#" + strconv.Itoa(uid) + "'"
+	if name, ok := lookupName(uid); ok && config.PlainUserName(name) {
+		word = shellword.Quote(name)
+	}
+	return "sudo -u " + word + " XDG_RUNTIME_DIR=" + path.Join(config.LogindRuntimeRoot, strconv.Itoa(uid)) +
+		" systemd-run --user --scope " + shell
+}
+
+// lookupName is uid's name in the passwd database (config.LookupPasswd); a variable so a test names its users.
+var lookupName = func(uid int) (string, bool) {
+	u, err := config.LookupPasswd(uid)
+	if err != nil {
+		return "", false
+	}
+	return u.Username, true
 }
 
 // candidatesIn is the ordered list of roots detectDelegated tries under a mount already known to
