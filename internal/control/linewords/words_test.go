@@ -124,6 +124,9 @@ func TestLabels(t *testing.T) {
 		{"capabilities.fs.deny_read", "What this protection level can do: fs.deny_read", true},
 		{"headers.user-agent", "Headers: user-agent", true},
 		{"gate_rule", "Gate rule", true},
+		{"deny_read_frozen", "Folders deny_read froze at launch", true},
+		{"deny_read_frozen.dirs", "Folders", true},
+		{"deny_read_frozen.omitted", "More not named", true},
 		{"zz_never_written", "zz_never_written", false},
 		{"resources.zz_new", "resources.zz_new", false},
 	} {

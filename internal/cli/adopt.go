@@ -263,6 +263,7 @@ func runAdopt(ctx context.Context, o adoptOptions, stdout, stderr io.Writer) int
 	}
 	defer a.cleanup()
 	fmt.Fprint(stderr, adoptNotice(t, o.boundary != "", a.rt.Record))
+	fmt.Fprint(stderr, adoptLimitsNotice(a.rt, o.boundary != ""))
 	exits := watchExit(p, t.Identity)
 	defer exits.stop()
 	// ctx ends on SIGINT or SIGTERM, which is the adoption's release; `tego stop` and `tego adopt --release` signal
@@ -274,12 +275,20 @@ func runAdopt(ctx context.Context, o adoptOptions, stdout, stderr io.Writer) int
 		ExitStatus: exits.status,
 	}, a.deps(identified, ownLogger(m)))
 	if err != nil {
-		message(stderr, "", 0, 0, "tego adopt: "+err.Error(), codeRun)
+		code := codeRun
+		if errors.Is(err, tegoruntime.ErrAdoptLimits) {
+			code = codeAdoptRefused
+		}
+		message(stderr, "", 0, 0, "tego adopt: "+err.Error(), code)
 		return identity.ExitLauncher
 	}
 	fmt.Fprint(stderr, adoptEndLine(res))
 	if res.RecordErr != nil {
 		message(stderr, "", 0, 0, "tego adopt: the record is incomplete: "+res.RecordErr.Error(), codeLedger)
+	} else if res.RunID != "" && a.rt.Record != agent.RecordOff {
+		// What the adoption recorded is a run like any other: tego learn makes a contract from it.
+		root, _ := ledgerRootOf(m)
+		writeHint(stderr, "make a contract from what it did:", "tego learn "+shortRun(root, res.RunID)+" --save <name>")
 	}
 	return res.ExitCode
 }
@@ -710,15 +719,8 @@ func compileAdoptionTable(ctx context.Context, m *config.Machine, o adoptOptions
 		}
 		a.records = after
 	}
-	if a.boundary {
-		if refused := unenforceableForAdoption(rt); len(refused) > 0 {
-			for _, r := range refused {
-				message(stderr, o.boundary, 0, 0, "tego adopt: "+r, codeAdoptRefused)
-			}
-			message(stderr, o.boundary, 0, 0, fmt.Sprintf("tego adopt: %d rule(s) of this contract cannot be held on a running "+
-				"process; remove them, or adopt with no --boundary to record the agent", len(refused)), codeAdoptRefused)
-			return nil, identity.ExitLauncher
-		}
+	if adoptionRefused(m, rt, o.boundary, stderr) {
+		return nil, identity.ExitLauncher
 	}
 	// An adopted process runs under no Landlock domain, so nothing leaves out an absent built-in row's name, and the
 	// models must not answer its reads refused (ADR 0067 D3): with no chain
@@ -796,6 +798,111 @@ func writeAdoptContract(t adopt.Process, record string) (string, func(), error) 
 	return path, cleanup, nil
 }
 
+// Why a boundary adoption refuses a limits key it does not apply (adoptLimitRefusal).
+const (
+	adoptNoMemory = "an adoption cannot cap memory: what the agent already holds stays charged to the cgroup it came " +
+		"from, so a cap would count only what it allocates after the move, and a cap reached would end it (the OOM " +
+		"killer), which an adoption never does"
+	adoptWouldEnd = "it would end the agent, which an adoption never does"
+	adoptNoBudget = "an adoption meters no model traffic, and a budget would end the agent, which an adoption never does"
+)
+
+// adoptRefusedLimits are the limits keys (as the contract and limits.* name them) a boundary adoption refuses, each
+// with why. cpu, cpu_weight and pids are applied instead (tegoruntime.AdoptionApplies); every key of the schemas is in
+// one of the two (TestEveryLimitsKeyIsAppliedOrRefusedByAnAdoption).
+var adoptRefusedLimits = map[string]string{
+	"memory": adoptNoMemory, "memory_high": adoptNoMemory,
+	"wall": adoptWouldEnd, "stall_after": adoptWouldEnd,
+	"tokens": adoptNoBudget, "cost_usd": adoptNoBudget, "repeats": adoptNoBudget,
+}
+
+// adoptLimitRefusal is why a boundary adoption refuses limits key ("memory" or "limits.memory"), "" for one it applies
+// to its scope before the move (cpu, cpu_weight, pids: ADR 0055, the 2026-11-11 limits amendment). A key neither
+// applied nor listed (one a later schema adds) is refused.
+func adoptLimitRefusal(key string) string {
+	key = strings.TrimPrefix(key, "limits.")
+	if tegoruntime.AdoptionApplies(key) {
+		return ""
+	}
+	if why, ok := adoptRefusedLimits[key]; ok {
+		return why
+	}
+	return "this tego does not know how an adoption would hold it"
+}
+
+// adoptionRefused prints, and reports, what refuses an adoption before anything moves. A boundary adoption is refused
+// for each contract rule unenforceableForAdoption names and for each kernel or time limit a limits.* ceiling of the
+// machine config imposes that an adoption cannot hold (memory, memory_high, wall, stall_after): every tego run gets
+// those (agent-contract.md R11), so the two sources of a limit are refused alike, each ceiling at its file and line
+// (ADR 0055, machine ceilings amendment). A cpu, cpu_weight or pids ceiling is applied: the runtime writes it into the
+// adoption's scope before the move (ADR 0055, the 2026-11-11 limits amendment). A budget a ceiling alone imposes is not
+// refused, as at tego run where nothing meters it (limits-check-doctor-cli.md R32): it is warned of and its run records
+// gap why=budget-unmetered. A record-only adoption holds no rule (ADR 0055 (5)) and goes on, with one warning per
+// ceiling (warnAdoptionCeilings).
+func adoptionRefused(m *config.Machine, rt *agent.RuleTable, boundary string, stderr io.Writer) bool {
+	ceilings := m.LimitCeilings()
+	if boundary == "" {
+		warnAdoptionCeilings(stderr, ceilings, false)
+		return false
+	}
+	refused := unenforceableForAdoption(rt)
+	for _, r := range refused {
+		message(stderr, boundary, 0, 0, "tego adopt: "+r, codeAdoptRefused)
+	}
+	if len(refused) > 0 {
+		message(stderr, boundary, 0, 0, fmt.Sprintf("tego adopt: %d rule(s) of this contract cannot be held on a running "+
+			"process; remove them, or adopt with no --boundary to record the agent", len(refused)), codeAdoptRefused)
+	}
+	held := 0
+	for _, v := range ceilings {
+		if budgetCeiling(v.Key) {
+			continue
+		}
+		why := adoptLimitRefusal(v.Key)
+		if why == "" {
+			continue // written into the adoption's scope before the move
+		}
+		held++
+		message(stderr, v.Source.File, v.Source.Line, 0, fmt.Sprintf("tego adopt: the machine ceiling %s=%s, which every "+
+			"tego run gets, cannot be held on a running process: %s", v.Key, v.Value, why), codeAdoptRefused)
+	}
+	if held > 0 {
+		message(stderr, "", 0, 0, fmt.Sprintf("tego adopt: the machine config sets %d limit ceiling(s) a boundary adoption "+
+			"cannot hold; adopt with no --boundary to record the agent (record-only, which holds nothing), or start the "+
+			"agent with tego run, which applies the ceilings; removing a ceiling lifts it for every run on the machine",
+			held), codeAdoptRefused)
+	}
+	if len(refused)+held > 0 {
+		return true
+	}
+	warnAdoptionCeilings(stderr, ceilings, true)
+	return false
+}
+
+// warnAdoptionCeilings prints one [unenforced] line, at its file and line, per machine ceiling an adoption goes on
+// without: a budget (tokens, cost_usd, repeats), which nothing meters on an adoption, and unless budgetsOnly every
+// other ceiling, which a record-only adoption does not apply. The guard prints them once at its start
+// (newGuard), since each of its record-only adoptions prepares with its output discarded.
+func warnAdoptionCeilings(stderr io.Writer, ceilings []config.Value, budgetsOnly bool) {
+	for _, v := range ceilings {
+		switch {
+		case budgetCeiling(v.Key):
+			message(stderr, v.Source.File, v.Source.Line, 0, fmt.Sprintf("warning: tego adopt: the machine ceiling %s=%s, "+
+				"which every tego run gets, is not metered: an adoption captures no model traffic, so the budget never "+
+				"trips, and its run records gap why=budget-unmetered", v.Key, v.Value), codeUnenforced)
+		case !budgetsOnly:
+			message(stderr, v.Source.File, v.Source.Line, 0, fmt.Sprintf("warning: tego adopt: the machine ceiling %s=%s, "+
+				"which every tego run gets, is not applied: a record-only adoption sets no limit and refuses nothing",
+				v.Key, v.Value), codeUnenforced)
+		}
+	}
+}
+
+// budgetCeiling is a limits.* key only a capture meters: tokens, cost_usd and repeats (R32).
+func budgetCeiling(key string) bool {
+	return key == "limits.tokens" || key == "limits.cost_usd" || key == "limits.repeats"
+}
+
 // unenforceableForAdoption names every rule of a boundary contract that cannot be held on a process tego did not
 // start, one line each: what needs a seccomp filter, Landlock, the supervisor, the forwarder, the environment or a
 // budget, and every network rule (a socket keeps the cgroup it was made in, so the run's network programs never
@@ -849,9 +956,8 @@ func unenforceableForAdoption(rt *agent.RuleTable) []string {
 	for name, set := range map[string]bool{"cpu": l.CPU != nil, "cpu_weight": l.CPUWeight != nil, "memory": l.Memory != nil,
 		"memory_high": l.MemoryHigh != nil, "pids": l.Pids != nil, "tokens": l.Tokens != nil, "cost_usd": l.CostUSD != nil,
 		"wall": l.Wall != nil, "stall_after": l.StallAfter != nil, "repeats": l.Repeats != nil} {
-		if set {
-			add("limits.%s: an adoption sets no limit (memory already charged elsewhere stays there, and a budget would end "+
-				"the agent, which an adoption never does)", name)
+		if why := adoptLimitRefusal(name); set && why != "" {
+			add("limits.%s: %s", name, why)
 		}
 	}
 	if ec := rt.ExecCommands; ec != nil {
@@ -906,6 +1012,31 @@ func adoptNotice(t adopt.Process, bounded bool, rec agent.RecordMode) string {
   mappings it already held.
   Ctrl-C, SIGTERM or tego stop releases it: its tree goes back where it came from. It is never killed.
 `, t.PID, printableExe(t), recorded, held)
+}
+
+// adoptLimitsNotice is the notice's line for the limits a boundary adoption writes into its cgroup before the move
+// (the table's cpu, cpu_weight and pids, from the contract or a machine ceiling), "" when it writes none.
+func adoptLimitsNotice(rt *agent.RuleTable, bounded bool) string {
+	if !bounded || rt == nil {
+		return ""
+	}
+	l := rt.Limits
+	var parts []string
+	if l.Bounded(agent.BudgetCPU) {
+		parts = append(parts, "cpu "+l.CPU)
+	}
+	if l.Bounded(agent.BudgetCPUWeight) {
+		parts = append(parts, "cpu_weight "+strconv.Itoa(l.CPUWeight))
+	}
+	if l.Bounded(agent.BudgetPids) {
+		parts = append(parts, "pids "+strconv.Itoa(l.Pids))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "  limits: " + strings.Join(parts, ", ") + ", written to its cgroup before the move: it is throttled, and a\n" +
+		"  fork or a thread past pids fails (EAGAIN); the kernel ends none, though a program that cannot start a\n" +
+		"  thread may end itself. A release takes the tree out from under them.\n"
 }
 
 // adoptedLine is the summary line of one adoption: what moved, from where, how long after it was found the record

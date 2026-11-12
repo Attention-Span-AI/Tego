@@ -166,9 +166,12 @@ type Deps struct {
 	// prices nothing, so only the cost ceiling (R2) is disabled; tokens, wall, stall and repeats
 	// still hold.
 	Prices *limits.PriceTable
-	// Warn prints one warning line where the user sees it (the CLI's stderr, before the agent runs), for a
-	// condition the run also records (a gap, or run_start's best_effort), under its own diagnostic code (WarnSwapUncapped,
-	// WarnHeldUnavailable, WarnHeldLabel); nil prints nothing.
+	// Warn prints one line per call where the user sees it (the CLI's stderr, before the agent runs), for a
+	// condition the run also records (a gap, run_start's best_effort, or run_start's deny_read_frozen), under its own
+	// diagnostic code (WarnSwapUncapped, WarnHeldUnavailable, WarnHeldLabel, WarnHarnessHookRefused,
+	// WarnDenyReadFrozen). The CLI leads
+	// WarnHeldLabel and WarnDenyReadFrozen with "note:", since neither weakens a rule, and prints them with or without
+	// -v; nil prints nothing.
 	Warn func(code, what string)
 	// PriceGap is the `why` of the gap this run records because no price table loaded (or the one that
 	// loaded lists no model): limits.GapNoPriceTable or limits.GapVersionMismatch (E15, R32). It is empty

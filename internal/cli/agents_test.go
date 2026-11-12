@@ -126,12 +126,13 @@ func TestAgentsUsageErrors(t *testing.T) {
 	}
 }
 
-// Without privilege it says so plainly and does nothing else, before it touches /proc or the kernel.
+// Without privilege it says so plainly, on a first line that ends with its code, and does nothing else, before it
+// touches /proc or the kernel.
 func TestAgentsNeedsRoot(t *testing.T) {
 	for _, args := range [][]string{nil, {"--follow"}, {"--json"}} {
 		sandboxAgents(t, filepath.Join(t.TempDir(), "no-proc-here"), false)
 		code, out, errs := runAgentsCmd(t, args...)
-		if code != identity.ExitLauncher || out != "" || !strings.Contains(errs, "needs root") || !strings.Contains(errs, "CAP_NET_ADMIN") || !strings.HasSuffix(strings.TrimSpace(errs), "[privilege]") {
+		if code != identity.ExitLauncher || out != "" || !strings.Contains(errs, "needs root") || !strings.Contains(errs, "CAP_NET_ADMIN") || !strings.HasSuffix(strings.SplitN(errs, "\n", 2)[0], "[privilege]") {
 			t.Fatalf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
 		}
 	}
@@ -343,5 +344,81 @@ func waitFor(t *testing.T, cond func() bool) {
 			t.Fatal("timed out waiting")
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// agentsSelf stands in for the running tego's path: the installer puts it in ~/.local/bin, which sudo's PATH leaves out.
+func agentsSelf(t *testing.T) string {
+	t.Helper()
+	const self = "/home/u/.local/bin/tego"
+	old := executable
+	executable = func() (string, error) { return self, nil }
+	t.Cleanup(func() { executable = old })
+	return self
+}
+
+// The refusal for want of root gives a command sudo can run, and says what it looks for and how to name another
+// agent. It said "run it with sudo", and on Ubuntu and Fedora `sudo tego agents` answered "sudo: tego: command not
+// found": sudo's PATH has no ~/.local/bin (FIRST-TEN-MINUTES, stumble 5).
+func TestAgentsRefusalNamesACommandSudoFinds(t *testing.T) {
+	self := agentsSelf(t)
+	sandboxAgents(t, filepath.Join(t.TempDir(), "no-proc-here"), false)
+	_, _, errs := runAgentsCmd(t)
+	for _, want := range []string{"run it as sudo " + self + " agents;", "it looks for claude, codex, opencode, gemini",
+		"another agent: --signature <its program name>"} {
+		if !strings.Contains(errs, want) {
+			t.Errorf("the refusal lacks %q:\n%s", want, errs)
+		}
+	}
+	if strings.Contains(errs, "same flags") {
+		t.Errorf("a refusal with no flags mentions flags:\n%s", errs)
+	}
+	_, _, errs = runAgentsCmd(t, "--signature", "worker=python3 .../worker.py")
+	if !strings.Contains(errs, "sudo "+self+" agents with the same flags") || !strings.Contains(errs, "gemini, worker (another agent") {
+		t.Errorf("a refusal with flags does not say to keep them, or does not name the added rule:\n%s", errs)
+	}
+}
+
+// After a scan the text report ends with the one next step that is true for what it found, in the hint format: record
+// an agent found outside a run with tego adopt, look at the run that governs one, or record one the shipped rules do
+// not know with tego watch. --json prints none, and a stderr that is not a terminal none unless TEGO_HINTS=on.
+func TestAgentsSaysTheNextStep(t *testing.T) {
+	self := agentsSelf(t)
+	f := newFakeProcRoot(t)
+	f.add(1, 0, "systemd", "systemd", []string{"/sbin/init"}, "/init.scope", "")
+	f.add(500, 1, "claude", "claude", []string{"claude"}, "/app.slice/term.scope", "")
+	f.add(600, 1, "codex", "codex", []string{"codex"}, agentsRunCG, "TEGO_RUN_ID="+agentsRunID+"\x00")
+	sandboxAgents(t, f.root, true)
+	hintsAt(t, false, "on")
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{nil, "\nnext: record it while it runs; Ctrl-C releases it, never kills it:\n  sudo " + self + " adopt --pid 500\n"},
+		{[]string{"--signature", "claude="}, "\nnext: it runs inside a tego run; see that run:\n  tego status " + agentsRunID + "\n"},
+		{[]string{"--signature", "claude=", "--signature", "codex="},
+			"\nnext: if yours goes by another name, record it as you start it:\n  tego watch -- <the command you start it with>\n"},
+	} {
+		code, _, errs := runAgentsCmd(t, tc.args...)
+		if code != identity.ExitOK || !strings.HasSuffix(errs, tc.want) || strings.Count(errs, "next: ") != 1 {
+			t.Errorf("%v: code %d, want the block %q last:\n%s", tc.args, code, tc.want, errs)
+		}
+	}
+	if _, _, errs := runAgentsCmd(t, "--json"); strings.Contains(errs, "next: ") {
+		t.Errorf("--json printed a next step:\n%s", errs)
+	}
+	hintsAt(t, false, "")
+	if _, _, errs := runAgentsCmd(t); strings.Contains(errs, "next: ") {
+		t.Errorf("a stderr that is no terminal got a next step:\n%s", errs)
+	}
+}
+
+// Without root, the refusal (exit 125) ends with the way that needs none: tego watch records any agent started under it.
+func TestAgentsWithoutRootNamesWatch(t *testing.T) {
+	sandboxAgents(t, filepath.Join(t.TempDir(), "no-proc-here"), false)
+	code, out, errs := runAgentsCmd(t)
+	if code != identity.ExitLauncher || out != "" ||
+		!strings.HasSuffix(errs, "\nto record any agent without root, start it under tego watch -- <the command you start it with>\n") {
+		t.Errorf("exit %d, stdout %q, stderr %q", code, out, errs)
 	}
 }

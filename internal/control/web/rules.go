@@ -79,6 +79,8 @@ type runOpt struct {
 // ruleRow is one rule as the page shows it.
 type ruleRow struct {
 	Sentence, Target string
+	// Note is said beside the rule: a draft from a run's note on an address entry (rules.AddressNote).
+	Note string
 	// Effect is inforce's effect word: allow, ask, deny, limit or note.
 	Effect string
 	// Enforced is how it is enforced; State is inforce's claim word (enforced, best_effort, not_enforced, none).
@@ -224,13 +226,13 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if found == nil {
-			s.fail(w, http.StatusNotFound, "No such policy file", "No run used that policy file · pick one on the Policy page")
+			s.fail(w, http.StatusNotFound, "No such contract file", "No run used that contract file · pick one on the Contracts page")
 			return
 		}
 		if found.Runs == 0 { // set up here, not run yet: its rules as written and the line that starts it
 			if d.NotRun = s.notRun(r, ref); d.NotRun != nil {
 				d.Ref, d.Agent = ref, found.Agent
-				c := s.chromeOf(snap, "Policy · "+found.Agent, "rules")
+				c := s.chromeOf(snap, "Contract · "+found.Agent, "rules")
 				s.render(w, http.StatusOK, "rules", c, d)
 				return
 			}
@@ -250,7 +252,7 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
 	if run == nil && len(snap.Runs) > 0 {
 		run = snap.Runs[0]
 	}
-	c := s.chromeOf(snap, "Rules", "rules")
+	c := s.chromeOf(snap, "Contracts", "rules")
 	if run == nil {
 		s.render(w, http.StatusOK, "rules", c, d)
 		return
@@ -263,7 +265,7 @@ func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
 	s.fillPendingLive(r.Context(), &d)
 	s.fillLiveMode(&d)
 	if d.Agent != "" {
-		c.Title = "Policy · " + d.Agent
+		c.Title = "Contract · " + d.Agent
 	}
 	s.render(w, http.StatusOK, "rules", c, d)
 }

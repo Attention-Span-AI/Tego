@@ -176,6 +176,9 @@ installed || { echo "FAIL sha256 mode: nothing installed" >&2; fail=1; }
 run "" && code=0 || code=$?
 check "auto mode with no verifier installs, and says the checksum is all it checked" 0 "$code"
 expect "auto mode with no verifier" "not who published it" "$tmp/out"
+# The note says how to get a verifier: it named cosign and not where it comes from (FIRST-TEN-MINUTES, stumble 12).
+expect "auto mode with no verifier says where cosign comes from" "https://docs.sigstore.dev/cosign/system_config/installation/" "$tmp/out"
+expect "auto mode with no verifier names gh's login" "gh auth login" "$tmp/out"
 
 run "$fake/cosign" && code=0 || code=$?
 check "auto mode picks cosign and installs when the bundle verifies" 0 "$code"
@@ -539,10 +542,14 @@ piped "$installer" TEGO_VERSION= TEGO_API_URL="file://$tmp/latest" && code=0 || 
 check "piped into sh with no TEGO_VERSION, the script installs the latest release" 0 "$code"
 installed || { echo "FAIL a piped install installed no tego" >&2; fail=1; }
 expect "a piped install installs the tag the latest lookup names" "installed tego ${version}" "$tmp/out"
-for step in "Next steps:" "tego doctor " "tego test " "tego serve --open " "Quickstart: https://github.com/"; do
-	expect "the install ends with its next steps ($step)" "$step" "$tmp/out"
-done
-expect "a prefix that is not on PATH gets its export line" "export PATH=\"$tmp/prefix:\$PATH\" .*is not on your PATH" "$tmp/out"
+expect "the install names the Quickstart" "Quickstart: https://github.com/" "$tmp/out"
+# It ends with tego's hint block: "next: " and the one command on the line after it, indented two spaces.
+ending=$(tail -n 2 "$tmp/out")
+want_ending=$(printf 'next: check this machine:\n  tego %s' doctor)
+check "the install ends with the one next command, tego doctor" "$want_ending" "$ending"
+expect "a prefix that is not on PATH says so and names the profile" "is not on your PATH. Run this line, and add it to your shell's profile (~/.profile) too:" "$tmp/out"
+expect "a prefix that is not on PATH gets its export line" "^  export PATH=\"$tmp/prefix:\$PATH\"$" "$tmp/out"
+if grep -q 'Next steps:\|serve --open' "$tmp/out"; then echo "FAIL the install still lists the old five next steps" >&2; fail=1; fi
 if grep -q 'systemd-run' "$tmp/out"; then echo "FAIL an install outside SSH printed the SSH scope line" >&2; fail=1; fi
 
 piped "$installer" TEGO_VERIFY=bogus && code=0 || code=$?
@@ -561,7 +568,7 @@ stdin_case() { # stdin_case SHELL
 	piped "$installer" && code=0 || code=$?
 	check "a piped install whose tego reads stdin still installs ($(basename "$pipe_sh"))" 0 "$code"
 	installed || { echo "FAIL a tego that reads stdin cut the piped install short under $pipe_sh" >&2; fail=1; }
-	expect "a piped install whose tego reads stdin ends with its next steps ($pipe_sh)" "Next steps:" "$tmp/out"
+	expect "a piped install whose tego reads stdin ends with its next step ($pipe_sh)" "^next: check this machine:$" "$tmp/out"
 	pipe_sh=""
 }
 stdin_case "$sysbin/sh"
@@ -590,5 +597,21 @@ run "$tmp/prefix" TEGO_VERIFY=sha256 SSH_CONNECTION="192.0.2.1 50000 192.0.2.2 2
 check "an install over SSH into a prefix on PATH installs" 0 "$code"
 if grep -q 'export PATH' "$tmp/out"; then echo "FAIL a prefix already on PATH got an export line" >&2; fail=1; fi
 expect "an install over SSH says to start a shell in the user's cgroup" "systemd-run --user --scope bash" "$tmp/out"
+# Over SSH tego watch fails too (acceptance B, 2026-11-11): the line never says such a shell can record.
+if grep -q 'can only record' "$tmp/out"; then echo "FAIL an install over SSH says the shell can only record" >&2; fail=1; fi
+
+# A release whose tego lists setup in its help ends with tego setup; the releases above, which list none, keep
+# tego doctor, so the line never names a command the installed tego lacks.
+pin=$(sha256sum "$rel/$control" | cut -d' ' -f1)
+# shellcheck disable=SC2016 # $1 is the fake tego's own argument, expanded when it runs.
+printf '#!/bin/sh\ncase "$1" in help) printf "commands:\\n  doctor  check\\n  setup   where this machine is\\n" ;;\n*) echo "tego %s"; echo "control_sha256=%s" ;; esac\n' \
+	"$version" "$pin" >"$rel/$archive"
+resum
+piped "$installer" && code=0 || code=$?
+check "a release with tego setup installs" 0 "$code"
+ending=$(tail -n 2 "$tmp/out")
+want_ending=$(printf 'next: see where this machine is, step by step, and what to type next:\n  tego %s' setup)
+check "the install of a tego with setup ends with tego setup" "$want_ending" "$ending"
+release
 
 exit "$fail"

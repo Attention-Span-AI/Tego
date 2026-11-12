@@ -84,7 +84,7 @@ func rowKeys(page string) []string {
 }
 
 // ruleGroupRe reads a By rule row: its words, their title, the rule key, the lines link and count, and the blocked count.
-var ruleGroupRe = regexp.MustCompile(`<span class="g-main"(?: title="([^"]*)")?>([^<]*)</span><span class="g-sub mono">([^<]*)</span></td><td role="cell" data-label="Lines" class="g-n"><a class="link" href="([^"]*)" title="Show these lines">([\d,]+)</a></td><td role="cell" data-label="Blocked" class="g-n">(?:<span class="n-refused">([\d,]+)</span>|<span class="soft">0</span>)`)
+var ruleGroupRe = regexp.MustCompile(`<span class="g-main"(?: title="([^"]*)")?>([^<]*)</span><span class="g-sub mono">([^<]*)</span></td><td role="cell" data-label="Lines" class="g-n"><a class="link" href="([^"]*)" title="Show these lines">([\d,]+)</a></td><td role="cell" data-label="Refused" class="g-n">(?:<span class="n-refused">([\d,]+)</span>|<span class="soft">0</span>)`)
 
 type ruleGroupCell struct {
 	words, title, key, link string
@@ -128,7 +128,7 @@ func TestByRuleKeepsWatchedLinesApart(t *testing.T) {
 		"Never read: /w/x/home/.ssh/":                {ssh, []string{pw3Enf + "-1"}, 1, false},
 		"Watched only · Never read: /w/x/home/.ssh/": {ssh, []string{pw3Watch + "-1"}, 0, true},
 		"Never read: /w/x/home/.aws/":                {aws, []string{pw3Enf + "-5"}, 1, false},
-		"Not in policy":                              {"unmatched", []string{pw3Enf + "-3"}, 1, false},
+		"Not in contract":                            {"unmatched", []string{pw3Enf + "-3"}, 1, false},
 		"Watched only":                               {"unmatched", []string{pw3Watch + "-2"}, 0, true},
 	}
 	sshGroups := []string{"Never read: /w/x/home/.ssh/", "Watched only · Never read: /w/x/home/.ssh/"}
@@ -248,7 +248,7 @@ func TestWatchedLineNamesNoDecider(t *testing.T) {
 	mustContain(t, "the refused read opened in place", opened(pw3Enf, "1"),
 		`<dt>Rule</dt><dd>Never read: /w/x/home/.ssh/ <span class="mono soft">fs.deny_read[/w/x/home/.ssh/]</span>`)
 	mustContain(t, "the refused connection opened in place", opened(pw3Enf, "3"),
-		`<dt>Rule</dt><dd>Host not in policy <span class="mono soft">unmatched</span>`)
+		`<dt>Rule</dt><dd>Host not in contract <span class="mono soft">unmatched</span>`)
 
 	decision := func(run, seq string) string { return lineDecision(t, s, c, run, seq) }
 	for _, seq := range []string{"1", "2"} {
@@ -260,7 +260,7 @@ func TestWatchedLineNamesNoDecider(t *testing.T) {
 	mustContain(t, "the watched read's decision", decision(pw3Watch, "1"), "Can never read files in ~/.ssh/",
 		`<span class="b b-neutral">watched only</span>`)
 	if d := decision(pw3Watch, "2"); !strings.Contains(d, `<dt>Rule</dt><dd>Watched only <span class="mono muted ev-wrap">unmatched</span>`) ||
-		strings.Contains(d, "not in policy") {
+		strings.Contains(d, "not in contract") {
 		t.Errorf("the watched send's rule does not read Watched only:\n%s", d)
 	}
 	refused := decision(pw3Enf, "1")
@@ -270,7 +270,7 @@ func TestWatchedLineNamesNoDecider(t *testing.T) {
 		t.Errorf("the enforced run's refusal reads watched only:\n%s", refused)
 	}
 	mustContain(t, "the refused connection's decision", decision(pw3Enf, "3"),
-		`<dt>Decided by</dt><dd class="ev-wrap">a rule</dd>`, `<dt>Rule</dt><dd>Host not in policy <span class="mono muted ev-wrap">unmatched</span>`)
+		`<dt>Decided by</dt><dd class="ev-wrap">a rule</dd>`, `<dt>Rule</dt><dd>Host not in contract <span class="mono muted ev-wrap">unmatched</span>`)
 
 	// The authority field, in the line page's Every field and in the row opened in place.
 	for _, tc := range []struct{ run, seq, want string }{
@@ -338,7 +338,7 @@ func TestObservedLineKeepsWhoAllowedIt(t *testing.T) {
 		{"observed", "rule", "Recorded only, not decided", ""},
 		{"observed", "human", "Recorded only, not decided", "a person"},
 		{"observed", "gate", "Recorded only, not decided", "a gate"},
-		{"refused", "rule", "Blocked", "a rule"},
+		{"refused", "rule", "Refused", "a rule"},
 	} {
 		v, by := decisionWords(&ledgerview.Event{Kind: "fs", Verdict: tc.verdict, Authority: tc.authority})
 		if v != tc.verdictWords || by != tc.by {
@@ -382,7 +382,7 @@ func TestLogsCSVRuleReadsAsTheRow(t *testing.T) {
 		pw3Watch + "-1": watchedLabel,
 		pw3Watch + "-2": watchedLabel,
 		pw3Enf + "-1":   "Never read: /w/x/home/.ssh/",
-		pw3Enf + "-3":   "Host not in policy",
+		pw3Enf + "-3":   "Host not in contract",
 		pw3Enf + "-5":   "Never read: /w/x/home/.aws/",
 	} {
 		if got[key] != want {

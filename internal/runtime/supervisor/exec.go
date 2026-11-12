@@ -248,7 +248,7 @@ func (l *Loop) recordExec(n *notif, dirfd int32, pathAddr, argvAddr uint64, flag
 	}
 	// A live block (liveExec) refuses an exec the floor, the command rules and the PATH search would continue; it comes
 	// before the gate and the pin, so a blocked exec is neither scored nor pinned, and its line is this loop's.
-	if live := c.liveExec(d, []string{name, raw, p, img.link}, img, ierr == nil && !unreadable, unmatched); live.rule != d.rule || live.verdict != d.verdict {
+	if live := c.liveExec(d, p, []string{name, raw, p, img.link}, img, ierr == nil && !unreadable, unmatched); live.rule != d.rule || live.verdict != d.verdict {
 		d, listener = live, false
 	}
 	// A relayed MCP server starts only under the shim its relay admitted (ADR 0126 §4 "The gate").
@@ -517,8 +517,9 @@ func execIDOf(run string, pid int, startTicks uint64) string {
 	return string(proc.ExecID(identity.RunID(run), pid, startTicks*proc.NanosPerTick))
 }
 
-// execFile is a file exec entry at its symlink-resolved path, under its rule name.
-type execFile struct{ path, name string }
+// execFile is a file exec entry at its symlink-resolved path, under its rule name; value is the entry's own path
+// (agent.ExecRule.Path), which a live block placed from a rules change names (entryGrants).
+type execFile struct{ path, name, value string }
 
 // execDir is a directory exec entry at its resolved path, under its rule name, with the identity of the directory
 // the Landlock builder bound its grant to when the loop first saw it (held, when it could be stat'ed).
@@ -559,7 +560,7 @@ func (l *Loop) resolveExecEntries(c *compiled) *compiled {
 				c.execIDs = map[fileID][]execFile{}
 			}
 			resolved := resolveDeclared(l.k, e.Path)
-			c.execIDs[id] = append(c.execIDs[id], execFile{path: resolved, name: e.RuleName()})
+			c.execIDs[id] = append(c.execIDs[id], execFile{path: resolved, name: e.RuleName(), value: e.Path})
 			if servers := c.mcp[cleanPath(e.Path)]; len(servers) > 0 && strings.Contains(e.Source, agent.ExecSourceMCP+":") {
 				if c.mcpIDs == nil {
 					c.mcpIDs = map[fileID][]mcpFile{}
@@ -935,6 +936,35 @@ func (c *compiled) execGranted(p string, img execImage, resolved bool) (string, 
 		}
 	}
 	return "", false
+}
+
+// entryGrants is what the run's contract says of an exec under its file entries at value, for a live block that
+// matches by link (liveblock.Grant): held when the contract has a file entry (not a folder) whose path is value, and
+// grants when such an entry grants this exec as execGranted grants it: by the spelling p while the entry has no
+// identity or the walk is not physical, else by the inode and the resolved path the loop fixed for it when it was
+// built (execIDs), which is where the walk landed (img.link). Whatever value leads to now does not enter: the
+// grant is the one the run has held since it started, so a link the agent repointed under value moves nothing.
+func (c *compiled) entryGrants(value, p string, img execImage, resolved bool) (held, grants bool) {
+	physical := resolved && img.here
+	for i := range c.pol.Rules.Exec {
+		e := &c.pol.Rules.Exec[i]
+		if e.IsDir || e.Path == "" || e.Path != value {
+			continue
+		}
+		held = true
+		if p != "" && p == value && !(physical && c.execPinned[e.Path]) {
+			return true, true
+		}
+	}
+	if !held || !physical {
+		return held, false
+	}
+	for _, f := range c.execIDs[img.id] {
+		if f.value == value && f.path == img.link {
+			return true, true
+		}
+	}
+	return true, false
 }
 
 // dirHeld reports whether a directory entry's resolved path still holds the inode the Landlock builder bound its

@@ -33,7 +33,9 @@
 // derives running, ended, lost or empty from the file and the lock alone (I7). Body returns an event's body in
 // whichever form it was stored, a splice rebuilt and checked against its recorded sha256. Verify re-hashes the chain,
 // holds every line to the run its directory names, and checks its head against chain.log; VerifyRunDir adds
-// the anchored run whose ledger is gone (`tego events --verify`).
+// the anchored run whose ledger is gone (`tego events --verify`). Bind attaches a Binder to the next pass of Lines:
+// it checks each line as Verify does and hashes the bytes read, so `tego receipt --json` binds the receipt to exactly
+// the lines its numbers came from (Bound).
 //
 // Follower (Follow, Lines) tails a live run: it reads each byte once from a Cursor, checks every line as it
 // arrives with the check Verify makes (runCheck), holds a half-written last line while the lock is held, ends

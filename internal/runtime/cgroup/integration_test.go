@@ -93,6 +93,14 @@ func TestIntegrationLifecycle(t *testing.T) {
 	}
 
 	l := Limits{CPUMax: "max 100000", CPUWeight: 50, MemoryMax: 256 << 20, MemoryHigh: 200 << 20, PidsMax: 64}
+	// A machine whose root cgroup has cpu off (stock RHEL 9: subtree_control "memory pids", until the TIERS.md setup)
+	// can give no scope cpu, and Missing saying so is the package's answer there: the cpu limits are left out and
+	// the rest of the lifecycle is still held. cpu missing below a root that has it is still a failure.
+	cpu := true
+	if missing := Missing(c, l); len(missing) == 1 && missing[0] == "cpu" && !rootSubtreeHas(t, "cpu") {
+		t.Logf("the root cgroup has cpu off (cgroup.subtree_control); the scope's cpu limits are not checked here")
+		l.CPUMax, l.CPUWeight, cpu = "", 0, false
+	}
 	if missing := Missing(c, l); len(missing) != 0 {
 		t.Fatalf("controllers %v not delegated on this box; cgroup.controllers=%v", missing, c.Controllers)
 	}
@@ -108,9 +116,11 @@ func TestIntegrationLifecycle(t *testing.T) {
 			t.Fatalf("%s = %q want %q", f.Name, got, f.Value)
 		}
 	}
-	// EINVAL is distinct from ENOENT (case 31 vs a bad value).
-	if err := fs.SetLimits(c, Limits{CPUMax: "banana"}); !errors.Is(err, ErrInvalidLimit) {
-		t.Fatalf("bad cpu.max: %v", err)
+	// EINVAL is distinct from ENOENT (case 31 vs a bad value). cpu.max is the one limit a string can make bad.
+	if cpu {
+		if err := fs.SetLimits(c, Limits{CPUMax: "banana"}); !errors.Is(err, ErrInvalidLimit) {
+			t.Fatalf("bad cpu.max: %v", err)
+		}
 	}
 
 	if p, err := Populated(c); err != nil || p {
@@ -234,6 +244,50 @@ var (
 // memhogBinary builds testdata/memhog once per test run (same pattern as internal/runtime's
 // tegoBinary): a real subprocess is required because memory.max is enforced by the kernel against
 // a real cgroup member, not something a fake Manager could exercise.
+// rootSubtreeHas reports whether the root cgroup turns controller on for its children (cgroup.subtree_control).
+func rootSubtreeHas(t *testing.T, controller string) bool {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(Mount, "cgroup.subtree_control"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range strings.Fields(string(b)) {
+		if c == controller {
+			return true
+		}
+	}
+	return false
+}
+
+// onTmpfs copies bin onto /dev/shm when that is a tmpfs, and returns the copy's path, or bin where it is not. Run
+// from a disk filesystem, memhog's own text pages are page cache the kernel can reclaim and read back: on AlmaLinux
+// 9.8's 5.14 from xfs, in a scope with memory.max 16 MiB and swap.max 0, memhog thrashed on them (memory.events max
+// 666918, oom 0, workingset_refault_file 18396986) and was not OOM-killed in 25 s, while the same binary from tmpfs
+// was killed in 0.03 s (2026-11-10). A tmpfs page with no swap cannot be reclaimed, so the kill comes when the
+// limit is reached, as swap.max 0 makes it for the anonymous pages.
+func onTmpfs(t *testing.T, bin string) string {
+	t.Helper()
+	var st unix.Statfs_t
+	if err := unix.Statfs("/dev/shm", &st); err != nil || st.Type != unix.TMPFS_MAGIC {
+		t.Logf("/dev/shm is not a tmpfs (%v): memhog runs from %s", err, bin)
+		return bin
+	}
+	dir, err := os.MkdirTemp("/dev/shm", "tego-memhog-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	b, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp := filepath.Join(dir, "memhog")
+	if err := os.WriteFile(cp, b, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return cp
+}
+
 func memhogBinary(t *testing.T) string {
 	t.Helper()
 	memhogOnce.Do(func() {
@@ -270,7 +324,7 @@ func memhogBinary(t *testing.T) string {
 // at memory.max regardless of what else is running on the box.
 func TestIntegrationOOM(t *testing.T) {
 	fs := placeOrSkip(t)
-	bin := memhogBinary(t)
+	bin := onTmpfs(t, memhogBinary(t))
 	c, err := fs.Create("itest-oom", newRunID(t))
 	if err != nil {
 		t.Fatal(err)

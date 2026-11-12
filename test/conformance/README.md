@@ -29,7 +29,10 @@ there carries its whole `Argv` (compile --test's `argv:`), and a script cell its
 `script_arg:`) and the interpreter its walk reaches (`Runs`). Each exec runs a copy of the actor under the ruled
 tool's name in a directory of its own; the actor marks the child, which exits 0 at once, so a refusal is the exec's
 own `EACCES`. P1 decides command rules in the supervisor at every tier, so each cell has one expectation for every
-tier and plane mode. `invariants_exec.go` adds the command-rule invariant: no exec runs a program a deny or ask
+tier and plane mode. The `multicall-*` cells each run one actor file under two hard links (`t/mcN/ls`,
+`t/mcN/xrm`), a multicall image, whose names the matcher reads for the applet upstream uutils would run (ADR 0048 (2)
+4, amended 2026-11-11); their `runs:` names that applet for the invariant, and compile --test, which stats no file,
+skips them. `invariants_exec.go` adds the command-rule invariant: no exec runs a program a deny or ask
 entry names with that entry's words, read from the contract and the cell alone, never from the matcher.
 
 ### The exec space (ADR 0017 space 2)
@@ -310,11 +313,12 @@ the machine, a field left out matches any machine, and an entry with no `where` 
 | `arch` | `amd64` or `arm64` (GOARCH, not `uname -m`). |
 | `bpf_lsm` | `true`: bpf is among the kernel's active LSMs (the `lsm=...,bpf` boot); `false`: it is not. |
 | `row` | the kernel matrix row, `$TEGO_VM_ROW`, which `test/vm/root-suites.sh` sets in each guest when it is run with `TEGO_VM_ROW=<row>`. Unset on a dev box, where a `row` bound matches nothing. |
+| `bpf_perf_link` | `true`: the kernel makes BPF perf links (upstream 5.15, or a backport such as RHEL 9.8's 5.14), a probe as root (`bpfPerfLink`), never the version; `false`: it does not, or the run is not root. The decision plane's exec outcome tracepoints attach only as such links. |
 
 A run reads only the entries whose `where` matches the machine it ran on. An entry written for another machine is not
 applied (the disagreement it excuses there is a new failure here) and is never stale here, so one baseline holds the
 entry for 6.1 and the entry for 6.17 of a cell that disagrees on both. Each runner logs the machine it read the baseline
-for (`baseline machine: kernel 6.17, Landlock ABI 7, amd64, bpf LSM true, row ""`), the facts a `where` is written
+for (`baseline machine: kernel 6.17, Landlock ABI 7, amd64, bpf LSM true, bpf perf link true, row ""`), the facts a `where` is written
 from. The file is read strictly: a field it does not know, a kernel bound that is not major.minor and a reversed range
 are errors, because a misspelt `where` key dropped silently would widen the entry.
 

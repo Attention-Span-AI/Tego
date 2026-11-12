@@ -65,7 +65,7 @@ func TestLeastPrivilegeTab(t *testing.T) {
 	if got := html.UnescapeString(m[1]); got != want {
 		t.Errorf("tab proposal:\n%s\nwant learn's:\n%s", got, want)
 	}
-	if !strings.Contains(want, "out") || !strings.Contains(w.Body.String(), `aria-current="page" title="The smallest policy change this run suggests">Tighten`) {
+	if !strings.Contains(want, "out") || !strings.Contains(w.Body.String(), `aria-current="page" title="The smallest contract change this run suggests">Tighten`) {
 		t.Errorf("proposal lacks the written directory, or the tab is not current:\n%s", want)
 	}
 	d := do(s, "GET", "/runs/"+cleanRun+"/least-privilege.yaml", "127.0.0.1:8484", c)
@@ -147,7 +147,7 @@ func TestUnusedPermissionsTab(t *testing.T) {
 	// The fixture's live run has no contract: its rules read as not in the contract.
 	fs := newServer(t, fixture(t))
 	w = do(fs, "GET", "/runs/"+harmRun+"/unused", "127.0.0.1:8484", login(t, fs))
-	if b := w.Body.String(); w.Code != 200 || !strings.Contains(b, "No policy copy") || !strings.Contains(b, "Not in policy") {
+	if b := w.Body.String(); w.Code != 200 || !strings.Contains(b, "No contract copy") || !strings.Contains(b, "Not in contract") {
 		t.Errorf("no-contract run's tab: %d %s", w.Code, b)
 	}
 }

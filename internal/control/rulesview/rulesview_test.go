@@ -121,8 +121,8 @@ func TestDriftFindsACommandOffTheDashboardsPATH(t *testing.T) {
 func TestExplainLabels(t *testing.T) {
 	l := Lists{OK: true, Net: []string{"tcp://chatgpt.com:443", "unix:/var/run/nscd/socket"}}
 	for _, c := range [][4]string{
-		{"net", "connect", "refused", "Host not in policy"},
-		{"exec", "exec", "refused", "Program not in policy"},
+		{"net", "connect", "refused", "Host not in contract"},
+		{"exec", "exec", "refused", "Program not in contract"},
 		{"fs", "open", "", "Open by default"},
 		{"refused", "mkdir", "refused", "Outside writable folders"},
 	} {

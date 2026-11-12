@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/check/livestatus"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // liveGap is a launcher's confirming gap line for one live-block change.
@@ -127,5 +128,25 @@ func TestLiveFactsFollowAppends(t *testing.T) {
 	}
 	if f := LiveFactsOf(r); f.Confirmed != 1 || f.ConfirmedSeq != 1 {
 		t.Fatalf("after: Confirmed = %d at #%d, want 1 at #1", f.Confirmed, f.ConfirmedSeq)
+	}
+}
+
+// TestLiveFactsSayAnUnreadableStart: lines with no run_start this build reads (another kind first, or a run_start
+// whose payload does not decode) are StartUnreadable, so the lift page never tells such a run to try again; no line
+// at all is a run still starting (the review's S1).
+func TestLiveFactsSayAnUnreadableStart(t *testing.T) {
+	for name, c := range map[string]struct {
+		evs        []Event
+		unreadable bool
+	}{
+		"no line":              {nil, false},
+		"a gap first":          {[]Event{{Kind: string(record.KindGap), Raw: `{"what":"record","why":"x"}`}}, true},
+		"a run_start not json": {[]Event{{Kind: string(record.KindRunStart), Raw: `{`}}, true},
+		"a run_start":          {[]Event{{Kind: string(record.KindRunStart), Raw: `{"tier":"landlock"}`}}, false},
+	} {
+		f := liveFactsOf(c.evs)
+		if f.StartUnreadable != c.unreadable || (f.Started && f.StartUnreadable) {
+			t.Errorf("%s: %+v", name, f.Facts)
+		}
 	}
 }

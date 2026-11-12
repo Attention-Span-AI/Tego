@@ -22,6 +22,34 @@ type (
 	ReceiptRefusal   = receipt.Refusal
 )
 
+// ReceiptNoneOverTime is the receipt's refusals-over-time words for a receipt with no refusal (receipt.NoneOverTime).
+const ReceiptNoneOverTime = receipt.NoneOverTime
+
+// ReceiptRefusedWords is the receipt's sentence beside a refusal count (receipt.RefusedSentence) for a run that
+// refused total lines and whose refused reads leave no line when readsUnrecorded (Run.ReceiptReadsUnrecorded).
+func ReceiptRefusedWords(total int, readsUnrecorded bool) string {
+	return receipt.RefusedSentence(total, readsUnrecorded)
+}
+
+// BuiltInRefusal is line e's built-in kind as the receipt names it ("built in: kernel TLS", receipt.BuiltInRefusal), or
+// "" for any other line: the rule every page that names one line's rule reads first, so it says what tego receipt says.
+func BuiltInRefusal(e Event) string { return receipt.BuiltInRefusal(e.Op, e.Target, e.Rule, e.Reason) }
+
+// BuiltInWords is line e's built-in refusal in the receipt's own sentence (receipt.BuiltInWords), or "" for any other
+// line: what the Logs row says under it.
+func BuiltInWords(e Event) string { return receipt.BuiltInWords(e.Op, e.Target, e.Rule, e.Reason) }
+
+// logsRule is the rule Logs counts, groups and queries line e by: its built-in kind (BuiltInRefusal, "built in: kernel
+// TLS") for tego's built-in refusal, which the record files under the default deny ("unmatched") and the receipt counts
+// apart from it; else its rule key. The Rule facet, By rule and a rule: token all read it, so "Not in contract" counts
+// and lists only what the contract's default decided, as the receipt's by-rule table does (acceptance 2B, 2026-11-11).
+func logsRule(e *Event) string {
+	if k := BuiltInRefusal(*e); k != "" {
+		return k
+	}
+	return e.Rule
+}
+
 // ReceiptDuration renders seconds as the receipt does ("3m 05s").
 func ReceiptDuration(s float64) string { return receipt.Duration(s) }
 

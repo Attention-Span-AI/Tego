@@ -59,7 +59,7 @@ func TestYamaConsequence(t *testing.T) {
 
 // TestProbePtraceReadsTheSysctl covers the file half: a value, a missing file (no Yama built in),
 // and a file that holds something else. An unreadable sysctl blocks, because guessing wrong there
-// means reporting a working sandbox for a run that will refuse every connect.
+// means reporting a working tier for a run that will refuse every connect.
 func TestProbePtraceReadsTheSysctl(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name, content string) string {
@@ -87,7 +87,7 @@ func TestProbePtraceReadsTheSysctl(t *testing.T) {
 // TestPtraceBlockedStopsEveryEnforcementTier is why the probe exists. Under ptrace_scope >= 2 the
 // launcher's pidfd_getfd of the child's seccomp listener returns EPERM (pidfd_getfd(2): "EPERM: the
 // calling process did not have PTRACE_MODE_ATTACH_REALCREDS permissions") and the run aborts, so a
-// doctor that still reported tier landlock would be promising a sandbox no run can get. Tier 2
+// doctor that still reported tier landlock would be promising a tier no run can get. Tier 2
 // installs the same filter and inherits the same supervisor, and tier 3 is tier 2 plus BPF LSM, so
 // all three have to go.
 func TestPtraceBlockedStopsEveryEnforcementTier(t *testing.T) {

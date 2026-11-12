@@ -83,7 +83,7 @@ func TestStoryRunPagesSayWhatHappened(t *testing.T) {
 	left := get(t, s, c, "/runs/"+leftRun)
 	for _, want := range []string{
 		`verdict-leak`, "Secrets left: id_rsa, token sent to 127.0.0.1:45805",
-		"Secrets left: ", "Watched only · nothing blocked",
+		"Secrets left: ", "Watched only · nothing refused",
 		"Got through", watchedLabel,
 		// The run's home (without/home, beside without/proj) reads as ~/, the file name in bold.
 		`<span class="sp-d">~/<wbr>.ssh/</span><wbr><b class="sp-b">id_rsa</b>`, `title="/d/without/home/.ssh/id_rsa"`,
@@ -92,8 +92,8 @@ func TestStoryRunPagesSayWhatHappened(t *testing.T) {
 			t.Errorf("LEFT run page lacks %q", want)
 		}
 	}
-	if strings.Contains(left, "In policy") {
-		t.Error("a watched run says In policy")
+	if strings.Contains(left, "In contract") {
+		t.Error("a watched run says In contract")
 	}
 	// The watched run is read against the enforced run's contract: its own API is allowed there, so it is neither
 	// "Got through" nor "After a secret read", and the card names the run whose contract it was checked against.
@@ -110,7 +110,7 @@ func TestStoryRunPagesSayWhatHappened(t *testing.T) {
 
 	right := get(t, s, c, "/runs/"+rightRun)
 	for _, want := range []string{
-		`verdict-ok`, "Protected: 2 secret reads and 2 sends to 127.0.0.1:43437 blocked", "1 request asked",
+		`verdict-ok`, "Protected: 2 secret reads and 2 sends to 127.0.0.1:43437 refused", "1 request asked",
 		// The answer names the person (the run recorded uid 1000 as alice), never "uid:1000 pid:42".
 		"by alice after 29 s", "Denied by " + who("uid:1000") + " after 29\u00a0s",
 	} {
@@ -205,7 +205,7 @@ func TestStoryWords(t *testing.T) {
 	if got := cutOf(d); len(got) != 1 || got[0] != "fs.write[./tmp/]" {
 		t.Errorf("cut %v, want only the unused grant: a deny or ask entry is a protection, never cut", got)
 	}
-	if got := ruleName("unmatched"); got != "Not in policy" {
+	if got := ruleName("unmatched"); got != "Not in contract" {
 		t.Errorf("unmatched reads %q", got)
 	}
 	r := &ledgerview.Run{User: "alice", UID: 1000}
@@ -334,7 +334,7 @@ func TestWatchedRunWithoutReference(t *testing.T) {
 	if api := item("127.0.0.1:59465"); strings.Contains(api, "Got through") || !strings.Contains(api, "Not on a list") {
 		t.Errorf("the other destination is marked like the attacker's: %s", api)
 	}
-	if !strings.Contains(out, "No policy to check against") {
+	if !strings.Contains(out, "No contract to check against") {
 		t.Error("the card does not say a watched run had no contract to check against")
 	}
 }

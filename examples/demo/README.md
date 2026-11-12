@@ -208,8 +208,8 @@ python3 runs as and the agent runs that, as in Act 2, so a pyenv or asdf shim on
   3 minutes. `approve` and `deny` answer only the ask scene's run, never another agent's ask.
 - `./demo.sh limits`. Say: "A runaway agent cannot take the machine with it." The run's end (`pids`, `oom`) is its
   `run_end` line and `tego status`. The fork bomb is bounded at 500 anyway.
-- `./demo.sh deny-write`. Say: "The whole repo is the agent's, except the hooks that would run outside any sandbox on
-  your next commit." At tier landlock this is best effort and the run says so in its gaps.
+- `./demo.sh deny-write`. Say: "The whole repo is the agent's, except the hooks that would run on your next commit,
+  outside the agent's run." At tier landlock this is best effort and the run says so in its gaps.
 - `./demo.sh identity`, `./demo.sh doctor`. Say: "Every run says who started it. And Tego tells you what this machine can
   enforce, without pretending." The root tiers need `sudo`; tier 3 also needs the BPF LSM on the kernel command line.
 

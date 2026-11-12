@@ -289,7 +289,7 @@ main() {
 			attested "$archive_path" "$archive"
 			;;
 		none)
-			echo "${prog}: note: neither cosign nor a logged-in gh is on PATH, so only the checksum is checked. It proves the download is intact, not who published it: install cosign (or set TEGO_VERIFY=sha256 to silence this)." >&2
+			echo "${prog}: note: neither cosign nor a logged-in gh is on PATH, so only the checksum is checked. It proves the download is intact, not who published it: install cosign (how: https://docs.sigstore.dev/cosign/system_config/installation/) or log gh in (gh auth login) and run this again, or set TEGO_VERIFY=sha256 to silence this." >&2
 			;;
 	esac
 
@@ -376,21 +376,50 @@ main() {
 	fi
 	echo "licence notices: ${base_url}/${tag}/tego_${version_no_v}_licenses.tar.gz"
 
-	# Next steps, short: the PATH line only when it is needed, the scope line only over SSH (tier 1 needs a cgroup
-	# the user can place a process in, and an SSH login starts outside one; docs/INSTALL.md "Check the machine").
-	echo ""
-	echo "Next steps:"
+	# What comes next, short: the PATH block only when it is needed (with the line for this shell's profile), the
+	# scope line only over SSH (tier 1 needs a cgroup the user can place a process in, and an SSH login starts outside
+	# one; docs/INSTALL.md "Check the machine"), then the one next command in tego's own hint format (a line starting
+	# "next: ", the command on the line after it, indented two spaces).
+	echo "Quickstart: https://github.com/${repo_owner}/${repo_name}/blob/main/docs/QUICKSTART.md"
 	case ":${PATH}:" in
 		*":${prefix}:"*) ;;
-		*) echo "  export PATH=\"${prefix}:\$PATH\"   # it is not on your PATH; add this line to your shell's profile too" ;;
+		*)
+			echo ""
+			case "${SHELL:-}" in
+				*/fish)
+					echo "${prefix} is not on your PATH. Run this line; fish keeps it for later shells too:"
+					echo "  fish_add_path \"${prefix}\""
+					;;
+				*)
+					# shellcheck disable=SC2088 # the profile is named for a person to read, not expanded
+					case "${SHELL:-}" in
+						*/zsh) profile="~/.zshrc" ;;
+						*/bash) profile="~/.bashrc" ;;
+						*) profile="your shell's profile (~/.profile)" ;;
+					esac
+					echo "${prefix} is not on your PATH. Run this line, and add it to ${profile} too:"
+					echo "  export PATH=\"${prefix}:\$PATH\""
+					;;
+			esac
+			;;
 	esac
 	if [ -n "${SSH_CONNECTION:-}" ]; then
-		echo "  systemd-run --user --scope bash    # over SSH, start a shell in your user's cgroup first"
+		echo ""
+		echo "over SSH, tego starts no run, not even tego watch, until you open a shell in your user manager's cgroup:"
+		echo "  systemd-run --user --scope bash"
 	fi
-	echo "  tego doctor                        # what this machine supports, with a fix line for anything missing"
-	echo "  tego test                          # watch Tego refuse four harmless actions on decoy files"
-	echo "  tego serve --open                  # the dashboard, on 127.0.0.1:8484"
-	echo "Quickstart: https://github.com/${repo_owner}/${repo_name}/blob/main/docs/QUICKSTART.md"
+	echo ""
+	# tego setup checks the machine and says which step it is on and what to type next (ADR 0142). A
+	# release made before it has no setup command, and this script installs any tag, so the installed tego's own
+	# command list decides: the line never names a command that tego lacks. Its stdin is not the script's (see the
+	# version check above).
+	if "$installed" help </dev/null 2>/dev/null | grep -q '^  setup '; then
+		echo "next: see where this machine is, step by step, and what to type next:"
+		echo "  tego setup"
+	else
+		echo "next: check this machine:"
+		echo "  tego doctor"
+	fi
 }
 
 main "$@"

@@ -4,36 +4,59 @@
      Waiting on you, Recent runs (the newest runs that are not running: a running run is under Running now) and Recent
      refusals. A panel renders nothing while the ledger has no run, and a grid with no panel in it is hidden (mvp.css, .ov-grid). */}}
 {{define "content"}}{{template "lr" (index $.L "r-ov-head")}}{{template "r-ov-head" $}}</div>
+{{template "lr" (index $.L "r-ov-guide")}}{{template "r-ov-guide" $}}</div>
 {{template "lr" (index $.L "r-ov-tiles")}}{{template "r-ov-tiles" $}}</div>
 <div class="grid ov-grid ov-now">{{template "lr" (index $.L "r-ov-live")}}{{template "r-ov-live" $}}</div>{{template "lr" (index $.L "r-ov-asks")}}{{template "r-ov-asks" $}}</div></div>
 <div class="grid ov-grid">{{template "lr" (index $.L "r-ov-recent")}}{{template "r-ov-recent" $}}</div>{{template "lr" (index $.L "r-ov-refusals")}}{{template "r-ov-refusals" $}}</div></div>
 {{end}}
 {{define "r-ov-head"}}{{with .Data}}<div class="head"><div>
-{{if .Pending}}<h1>{{len .Pending}} {{plural (len .Pending) "needs" "need"}} you</h1>{{else if .Leaked}}<h1 class="verdict verdict-leak ov-verdict">{{template "i" "i-triangle-alert"}}<span>{{.Leaked}} {{plural .Leaked "run" "runs"}} leaked secrets</span></h1>{{else if .Grid.High}}<h1 class="ov-h"><a class="sev sev-High sev-lg" href="/detections?sev=high">{{.Grid.High}} High</a> blocked</h1>{{else if .Grid.Medium}}<h1 class="ov-h"><a class="sev sev-Medium sev-lg" href="/detections?sev=medium">{{.Grid.Medium}} Medium</a> blocked</h1>{{else if .Watched}}<h1>{{.Watched}} {{plural .Watched "run" "runs"}} read secrets</h1>{{else if .Live}}<h1>All quiet: {{len .Live}} running</h1>{{else if .Total}}<h1>All quiet</h1>{{else}}<h1>Overview</h1>{{end}}
-<p class="lede">{{len .Live}} running · {{.Total}} {{plural .Total "run" "runs"}} · {{.Refused}} blocked</p></div></div>{{end}}{{end}}
+{{if .Pending}}<h1>{{len .Pending}} {{plural (len .Pending) "needs" "need"}} you</h1>{{else if .Leaked}}<h1 class="verdict verdict-leak ov-verdict">{{template "i" "i-triangle-alert"}}<span>{{.Leaked}} {{plural .Leaked "run" "runs"}} leaked secrets</span></h1>{{else if .Grid.High}}<h1 class="ov-h"><a class="sev sev-High sev-lg" href="/detections?sev=high">{{.Grid.High}} High</a> refused</h1>{{else if .Grid.Medium}}<h1 class="ov-h"><a class="sev sev-Medium sev-lg" href="/detections?sev=medium">{{.Grid.Medium}} Medium</a> refused</h1>{{else if .Watched}}<h1>{{.Watched}} {{plural .Watched "run" "runs"}} read secrets</h1>{{else if .Live}}<h1>All quiet: {{len .Live}} running</h1>{{else if .Total}}<h1>All quiet</h1>{{else}}<h1>Overview</h1>{{end}}
+<p class="lede">{{len .Live}} running · {{.Total}} {{plural .Total "run" "runs"}} · {{.Refused}} refused</p></div></div>{{end}}{{end}}
+{{/* r-ov-guide is the guide once the ledger has a run (setupguide.go): the steps open until every one is done, then
+     folded to one line; with no run, the empty state below shows it whole, and under it, unfolded, the first step for
+     any agent (firstrun-step) unless the guide's next step is already that one. */}}
+{{define "r-ov-guide"}}{{with .Data}}{{if and .Total .Guide}}{{with .Guide}}{{if .Done}}<details class="panel gd gd-fold">
+<summary class="gd-sum"><h2 class="gd-sum-h"><span class="b b-verified">{{template "i" "i-check"}}Done</span> Set up: every step is done</h2></summary><div class="panel-body">{{template "guide" .}}</div></details>
+{{else}}<section class="panel gd" aria-labelledby="h-gd"><div class="panel-head"><h2 id="h-gd">Set up, step by step</h2><span class="soft">Same as <span class="mono">tego setup</span></span></div>
+<div class="panel-body">{{template "guide" .}}</div></section>{{end}}{{end}}{{end}}{{end}}{{end}}
+{{/* guide is the object internal/guide computed, in tego setup's words (guide.State.Words): each step's state in
+     words beside its badge and the fact that decided it, as text; the next step's command as a command to copy only
+     when the guide built it (guide.Next.Built); and what it could not know. */}}
+{{define "guide"}}<ol class="gd-steps">{{range .Words.Steps}}{{$b := stepBadge .State}}<li class="gd-step" data-step="{{.ID}}" data-state="{{.State}}"><span class="gd-n" aria-hidden="true">{{.N}}</span><div class="gd-body"><p class="gd-line"><span class="gd-t">{{.Title}}</span> <span class="b {{index $b 0}}">{{template "i" (index $b 1)}}{{stepWord .State}}</span></p><p class="gd-f">{{.Fact}}</p></div></li>{{end}}</ol>
+<h3 class="gd-h">Next step</h3>
+<p class="gd-next" data-rule="{{.Next.Rule}}">{{.Next.Text}}</p>
+{{if .Next.Built}}<div class="cli cli-wrap gd-cmd"><code>{{.Next.Command}}</code></div>{{if .Next.NeedsRoot}}<p class="soft">This command runs as root.</p>{{end}}{{if .Next.Placeholder}}<p class="soft">The words in angle brackets are yours to fill in: Tego cannot know them.</p>{{end}}{{end}}
+{{with .Words.NotKnown}}<h3 class="gd-h">Not known</h3><ul class="gd-nk">{{range .}}<li>{{.}}</li>{{end}}</ul>{{end}}
+<p class="soft gd-note">The page never checks this machine itself: the check step is the one <span class="mono">tego setup</span> stored for this boot and this build.</p>{{end}}
 {{define "r-ov-tiles"}}{{with .Data}}{{if not .Total}}
-<section class="panel"><div class="empty">
+{{with .Guide}}<section class="panel gd" aria-labelledby="h-gd"><div class="panel-head"><h2 id="h-gd">Set up, step by step</h2><span class="soft">No runs yet · same as <span class="mono">tego setup</span></span></div>
+<div class="panel-body">{{template "guide" .}}</div></section>
+{{if .AnyAgent}}<section class="panel" aria-labelledby="h-any"><div class="panel-head"><h2 id="h-any">The first step for any agent</h2></div>
+<div class="panel-body"><p>Start your agent under Tego, in a terminal, from your project:</p>
+{{template "firstrun-step"}}</div></section>{{end}}
+{{else}}<section class="panel"><div class="empty">
   <div class="glyph">{{template "i" "i-activity"}}</div>
   <h3>No runs yet</h3>
   {{template "firstrun"}}
-</div></section>
+</div></section>{{end}}
 {{else}}
 <section aria-labelledby="h-glance"><h2 id="h-glance" class="sr">At a glance</h2>
 <div class="tiles">
   <div class="tile{{if .Pending}} attn{{end}}"><span class="label">{{template "i" "i-hand"}}Needs you</span><span class="value"><a href="/approvals" aria-label="{{len .Pending}} waiting for you, open Approvals">{{len .Pending}}</a></span><span class="meta">{{if .Pending}}Waiting{{else}}None waiting{{end}}</span></div>
   <div class="tile"><span class="label">{{template "i" "i-activity"}}Running now</span><span class="value"><a href="/runs?state=running" aria-label="{{len .Live}} running now, list them">{{len .Live}}</a></span><span class="meta">of {{.Total}} {{plural .Total "run" "runs"}}</span></div>
-  <div class="tile"><span class="label">{{template "i" "i-ban"}}Blocked</span><span class="value"><a href="/logs?verdict=refused" aria-label="{{.Refused}} blocked, open Logs">{{.Refused}}</a></span><span class="meta" title="Routine: system lookups and probes">{{.BgTotal}} routine</span><span class="tile-spark" title="Blocked per run, last {{.Charts.SparkRuns}} runs">{{template "spark" .Charts.RefSpark}}{{$runs := .Charts.SparkRuns}}{{with .Charts.RefSpark}}{{if .Line}}<span class="ch-spcap" aria-hidden="true">Each of the last {{$runs}} runs</span>{{end}}{{end}}</span></div>
+  <div class="tile"><span class="label">{{template "i" "i-ban"}}Refused</span><span class="value"><a href="/logs?verdict=refused" aria-label="{{.Refused}} refused, open Logs">{{.Refused}}</a></span><span class="meta" title="Routine: system lookups and probes">{{.BgTotal}} routine</span><span class="tile-spark" title="Refused per run, last {{.Charts.SparkRuns}} runs">{{template "spark" .Charts.RefSpark}}{{$runs := .Charts.SparkRuns}}{{with .Charts.RefSpark}}{{if .Line}}<span class="ch-spcap" aria-hidden="true">Each of the last {{$runs}} runs</span>{{end}}{{end}}</span></div>
   {{with .Chain}}{{if .Broken}}<div class="tile chain-bad" role="alert"><span class="label">{{template "i" "i-triangle-alert"}}Record</span><span class="value chain-v"><a href="/runs/{{pathEsc .Broken.Run}}">Broken · <span class="mono">{{rid .Broken.Run}}</span></a></span><span class="meta" title="{{.Broken.Reason}}">{{if .Broken.AtLine}}Broken at #{{.Broken.Line}}{{else if .Broken.Lines}}Broken after #{{.Broken.Line}}{{else}}No lines read{{end}}</span></div>
   {{else if .Verifying}}<div class="tile" aria-busy="true"><span class="label">{{template "i" "i-link"}}Record</span><span class="value chain-v"><a href="/runs?state=ended">Verifying…</a></span><span class="meta" title="Newest {{$.Data.MaxChain}} ended runs">{{.Verifying}} checking{{if .Checked}} · {{.Checked}} verified{{end}}</span></div>
   {{else if .Checked}}<div class="tile"><span class="label">{{template "i" "i-link"}}Record</span><span class="value chain-v"><a href="/runs?state=ended">Verified · {{.Checked}} {{plural .Checked "run" "runs"}}</a></span><span class="meta" title="Each ended run's hash chain and its chain.log anchor, for the newest {{$.Data.MaxChain}} ended runs at most{{if .Skipped}}; {{.Skipped}} not checked (running, lost or older){{end}}">{{with len $.Data.Live}}{{.}} running, checked at end{{else}}Hash chain checked{{end}}</span></div>
   {{else}}<div class="tile"><span class="label">{{template "i" "i-link"}}Record</span><span class="value chain-v"><a href="/runs">Not checked</a></span><span class="meta" title="{{.Reason}}">{{if .Reason}}{{.Reason}}{{else}}No ended run{{end}}</span></div>{{end}}{{end}}
 </div></section>
-{{with .Charts}}<section class="ch-row" aria-label="Blocked and secrets">
+{{with .Charts}}<section class="ch-row" aria-label="Refused and secrets">
 <figure class="panel ch-fig"><figcaption class="ch-cap"><span class="ch-h">Detections</span><a class="link" href="/detections">All</a></figcaption>
-<table class="t sev-grid"><caption class="sr">Blocked actions by severity and channel</caption><thead><tr><th scope="col"><span class="sr">Severity</span></th>{{range $.Data.Grid.Channels}}<th scope="col" class="num">{{.}}</th>{{end}}<th scope="col" class="num">All</th></tr></thead>
+<table class="t sev-grid"><caption class="sr">Refused actions by severity and channel</caption><thead><tr><th scope="col"><span class="sr">Severity</span></th>{{range $.Data.Grid.Channels}}<th scope="col" class="num">{{.}}</th>{{end}}<th scope="col" class="num">All</th></tr></thead>
 <tbody>{{range $.Data.Grid.Rows}}{{$sev := .Sev}}<tr><th scope="row"><span class="sev sev-{{.Sev}}">{{.Sev}}</span></th>{{range $i, $n := .Cells}}<td class="num" data-label="{{index $.Data.Grid.Channels $i}}">{{if $n}}<a href="/detections?sev={{lower $sev}}&amp;ch={{lower (index $.Data.Grid.Channels $i)}}" aria-label="{{$n}} {{$sev}}, {{index $.Data.Grid.Channels $i}}">{{$n}}</a>{{else}}<span class="sev-0">0</span>{{end}}</td>{{end}}<td class="num" data-label="All">{{if .Sum}}<a href="/detections?sev={{lower .Sev}}" aria-label="{{.Sum}} {{.Sev}}, all channels"><b>{{.Sum}}</b></a>{{else}}<span class="sev-0">0</span>{{end}}</td></tr>{{end}}</tbody></table></figure>
 <figure class="panel ch-fig"><figcaption class="ch-cap"><span class="ch-h">Secrets</span>{{$runs := .SparkRuns}}{{with .SecretSpark}}{{if .Line}}<span class="ch-n ch-sp" title="Protected per run, last {{$runs}} runs"><span aria-hidden="true">Protected, last {{$runs}} runs</span>{{template "spark" .}}</span>{{end}}{{end}}</figcaption>{{template "chart" .SecretsBar}}
-<ul class="ch-legend"><li><span class="sw ch-refused"></span>Protected <b>{{.Protected}}</b></li><li><span class="sw ch-leak"></span>Exposed <b>{{.Exposed}}</b></li></ul></figure>
+<ul class="ch-legend"><li><span class="sw ch-refused"></span>Protected <b>{{.Protected}}</b></li><li><span class="sw ch-leak"></span>Exposed <b>{{.Exposed}}</b></li></ul>
+{{with .Unrecorded}}<p class="soft">{{.}} {{plural . "run" "runs"}} did not record every file read, so a secret read there may be missing from these counts. {{template "readfix"}}</p>{{end}}</figure>
 </section>{{end}}
 {{end}}{{end}}{{end}}
 {{define "r-ov-live"}}{{with .Data}}{{if .Total}}<section class="panel s8" aria-labelledby="h-running"><div class="panel-head"><h2 id="h-running">Running now</h2><a class="link" href="/runs">All runs</a></div>

@@ -12,7 +12,7 @@ WATCH_ARGS="--boundary /path/claude-interactive.yaml" WATCH_CWD=<project> \
     python3 observe_agent.py claude 14 -- claude                              # under a boundary
 ```
 
-**A record-only run is not a sandbox.** The isolated `HOME` and the scrubbed environment keep the caller's credentials
+**A record-only run enforces no rule.** The isolated `HOME` and the scrubbed environment keep the caller's credentials
 out of the agent's environment, nothing more: the agent still runs as you, and can read and write anything you can,
 whatever `$HOME` says. Claude Code, for one, reads the real `~/.claude/skills` through the passwd database (seen below).
 Run these only with the agent idle at its first screen, as `observe_agent.py` does (nothing is typed into it), or under

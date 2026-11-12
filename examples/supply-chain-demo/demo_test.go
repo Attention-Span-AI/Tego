@@ -86,16 +86,6 @@ func binaries(t *testing.T) (tego, ctl string) {
 	return filepath.Join(binDir, "tego"), filepath.Join(binDir, "tego-control")
 }
 
-func freePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = l.Close() }()
-	return l.Addr().(*net.TCPAddr).Port
-}
-
 // world is one isolated demo: its own tego, config, ledger, stage, HOME, ports and unit prefix.
 type world struct {
 	t       *testing.T

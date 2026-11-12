@@ -176,3 +176,24 @@ body.nav-busy::before { content: ""; position: fixed; top: 0; left: 0; right: 0;
 body.nav-busy main { cursor: progress; }
 .nav-on { opacity: 0.6; }
 @media (prefers-reduced-motion: reduce) { body.nav-busy::before { animation: none; opacity: 0.6; } }
+/* The Overview's guide (setupguide.go): tego setup's six steps, a numbered list with each state in words beside its
+   badge and the fact under it. A fact is up to a kilobyte of text a same-user process may have chosen, so it wraps
+   anywhere and never widens the page. */
+.gd .panel-body { display: flex; flex-direction: column; gap: var(--space-2); }
+.gd-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.gd-step { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-2) 0; border-bottom: 1px solid var(--c-border); min-width: 0; }
+.gd-step:last-child { border-bottom: 0; }
+.gd-n { flex: none; width: 24px; height: 24px; border-radius: var(--radius-full); border: 1px solid var(--c-border); color: var(--c-text2); font-size: var(--text-xs); display: inline-flex; align-items: center; justify-content: center; }
+.gd-step[data-state="done"] .gd-n { border-color: var(--c-accent); color: var(--c-accent-text); }
+.gd-body { flex: 1; min-width: 0; }
+.gd-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; }
+.gd-t { font-weight: var(--weight-semibold); }
+.gd-f { margin: 2px 0 0; color: var(--c-text2); overflow-wrap: anywhere; }
+.gd-h { margin-top: var(--space-2); }
+.gd-next { margin: 0; overflow-wrap: anywhere; }
+.gd-cmd { max-width: 640px; }
+.gd-nk { margin: 0; padding-left: var(--space-5); color: var(--c-text2); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.gd-note { font-size: var(--text-xs); }
+.gd-fold > summary { padding: var(--space-3) var(--space-4); }
+.gd-sum-h { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-sm); margin: 0; }
+.page > .lr > .gd, .page > .lr > .gd-fold { margin-bottom: var(--space-4); }

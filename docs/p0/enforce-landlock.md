@@ -1002,6 +1002,12 @@ itself, `EACCES`, recorded `refused`, `read-denied`, rule `deny-read-snapshot`, 
 *Amended 2026-10-26 (ADR 0067 D3):* a read at or beneath an absent built-in row's `At` is
 answered refused, `read-denied`, by the row itself in the decision core (E9; `decide.AbsentRead`), so the line names
 the token store rather than `deny-read-snapshot`; the snapshot refusal covers the other names made mid-run.
+*Amended 2026-11-11 (GAPS A12):* the run says which directories froze. The handle names the enumerated ancestors
+(`Handle.DenyReadFrozen`, sorted; a root tier's handle names its composed tier-1 ruleset's), `run_start` records them as
+`deny_read_frozen` (record minor 30, at most 64 named, the deepest, the rest counted), `tego run` prints one note
+naming them before the agent runs, `tego compile` prints the same note from compile's resolved paths
+(`decide.FrozenLevels`), and `tego receipt` and the dashboard's Receipt tab name them under Coverage. Nothing in the ruleset changes (`TestDenyReadFrozenNamesEveryListedAncestor`,
+`TestIntegrationRunStartNamesTheFrozenDirectories`).
 E11. Fd exhaustion (large `deny_read` enumeration or many `exec.allow` directory entries): the plan is held to the
 launcher's descriptor budget (`FDBudget`: the soft `RLIMIT_NOFILE`, raised to one under the hard limit where lower, less the
 descriptors held when Prepare starts and a reserve of a sixteenth of the limit, 64 to 256), read before the first open;

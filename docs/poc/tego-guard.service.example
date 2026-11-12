@@ -10,6 +10,13 @@
 # the guard exits; it never kills one. Adopted agents live in tego.slice, not in this unit's cgroup, so the unit's
 # KillMode never reaches them; their reapers live in tego.slice/helpers.scope.
 #
+# Limits: with --boundary, the machine config's limits.cpu, limits.cpu_weight and limits.pids ceilings are written
+# into each adopted agent's cgroup before it moves (a fork past pids.max fails with EAGAIN; the kernel ends no
+# process for them, though a program that cannot start a thread may end itself); an agent whose tree holds as many
+# tasks as limits.pids or more is refused, and a limits.memory, memory_high, wall or stall_after ceiling refuses every
+# boundary adoption (ADR 0055, limits amendment). The guard prints no notice of them. A record-only guard, as below,
+# applies none.
+#
 # Install by hand, as root: copy to /etc/systemd/system/tego-guard.service, edit --uid (one per user whose agents
 # are governed; --uid 0 only if root's own agents should be), then `systemctl daemon-reload` and
 # `systemctl enable --now tego-guard`. Its lines: `journalctl -u tego-guard`. Remove: `systemctl disable --now

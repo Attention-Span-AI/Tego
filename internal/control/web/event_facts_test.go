@@ -162,7 +162,7 @@ func TestLinePageEveryField(t *testing.T) {
 		}
 	}
 	refused := get(t, s, c, "/runs/"+factsRun+"/lines/4")
-	for _, want := range []string{"What the agent got", "EACCES", "Already blocked by: <strong>"} {
+	for _, want := range []string{"What the agent got", "EACCES", "Already refused by: <strong>"} {
 		if !strings.Contains(refused, want) {
 			t.Errorf("the refused read lacks %q", want)
 		}
@@ -498,7 +498,7 @@ func TestLinePageGuardLeads(t *testing.T) {
 	line := "/runs/" + factsRun + "/lines/1"
 	page := get(t, s, c, line)
 	panel := page[strings.Index(page, `id="act"`):strings.Index(page, `</aside>`)]
-	lead, fold := strings.Index(panel, "Already blocked by:"), strings.Index(panel, `<details class="ev-change">`)
+	lead, fold := strings.Index(panel, "Already refused by:"), strings.Index(panel, `<details class="ev-change">`)
 	if lead < 0 || fold < 0 || lead > fold || !strings.Contains(panel, "Change this rule") || !strings.Contains(panel, "b b-widens") {
 		t.Fatalf("the panel does not lead with the rule and fold the options:\n%s", panel)
 	}

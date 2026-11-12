@@ -1,0 +1,31 @@
+--- stdout
+Tego on this machine, step by step:
+  as dana (uid 1000) from user-manager; root no, over SSH no, in your user manager's cgroup yes, in a tego run no
+  host: kernel 6.8.0-fixture, boot 6b1c2d3e-4f50-4a6b-8c7d-8e9fa0b1c2d3
+  [x] 1 Install             tego v0.0.0-fixture (commit f1x7ure)
+        read from: the binary's build info
+  [x] 2 Check this machine  ready: tier 1 (landlock) from a shell in your user manager's cgroup, checked 2026-11-11 09:30 UTC
+        read from: ~/.tego/state/check.json
+  [x] 3 Find your agents    you recorded sh
+        read from: ~/.tego/runs/r-f16d05ec-0dmsa61z34x6o-b88krx
+        run: r-f16d05ec-0dmsa61z34x6o-b88krx
+        why this one: the newest run under the ledger root
+  [x] 4 Record one run      run b883rx recorded python3 bot.py --loop and ended
+        read from: ~/.tego/runs/r-f16d05ec-0dms9yec6mm80-b883rx
+        run: r-f16d05ec-0dms9yec6mm80-b883rx
+        why this one: the newest ended run whose tier is observe (tego watch, --observe), checked against ~/.tego/chain.log
+  [x] 5 Make its contract   bot compiles now
+        read from: ~/.config/tego/agents/bot.yaml
+        why this one: the contract the newest ended run under a contract, b88krx, ran; its record checks out; compiled as run b88krx ran it, from its folder at its tier
+  [x] 6 Enforce it          run b88krx ran at tier landlock and ended; its record checks out now
+        read from: ~/.tego/runs/r-f16d05ec-0dmsa61z34x6o-b88krx
+        run: r-f16d05ec-0dmsa61z34x6o-b88krx
+        why this one: the newest ended run under a contract, checked against ~/.tego/chain.log
+Not known:
+  - agents Tego never recorded: nothing here looks for them yet
+  - a contract in no registry (a file given by its path) that no run used
+Next step chosen by rule enforce-done.
+--- stderr
+
+next: every step is done; see what the last enforced run did:
+  tego receipt b88krx

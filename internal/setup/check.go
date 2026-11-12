@@ -37,7 +37,12 @@ type CheckEnv struct {
 // diagnostic, labelled with dir/agent.yaml, sorted as compile prints them; ok is false when any is an error.
 // It reads the paths the contract names and writes nothing.
 func Check(contract []byte, dir string, env CheckEnv) (diags []agent.Diagnostic, ok bool) {
-	label := filepath.Join(dir, ContractFile)
+	return CheckFile(contract, filepath.Join(dir, ContractFile), dir, env)
+}
+
+// CheckFile is Check of contract as the file label, run from dir: a contract that does not live in dir, such as a
+// user registry's entry that `tego run <name>` typed in dir finds, is compiled as that file.
+func CheckFile(contract []byte, label, dir string, env CheckEnv) (diags []agent.Diagnostic, ok bool) {
 	profiles := env.Profiles
 	if profiles == nil {
 		profiles = (&agent.ProfileChain{}).WithBuiltin(presets.Source{})

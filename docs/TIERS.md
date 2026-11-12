@@ -30,10 +30,13 @@ check is absent there, and the test reports that coverage distinction.
 RHEL 9 CPU limits: on AlmaLinux 9.8 (kernel 5.14.0-687.61.1.el9_8, systemd 252), systemd turns on the memory
 and pids controllers by default, but not cpu, for a user's login and for root. Tier 1 runs there, and
 `tego doctor` says that cpu is not enabled. A run whose contract sets `limits.cpu` or `limits.cpu_weight` is
-refused at start (exit 125), before the agent starts, and the message gives the fix. A `limits.cpu` ceiling in
-`/etc/tego/config.yaml` gives every `tego run` a CPU limit, so with one they are all refused, although
-`tego doctor` still reports tier landlock for a user. Memory and process limits apply as usual. To allow CPU
-limits, an administrator runs this once, then reboots:
+refused at start (exit 125), before the agent starts, and the message gives the fix. When the user's cgroup is not
+offered cpu (its `cgroup.controllers` does not list it), a user cannot turn cpu on alone, so the fix starts with the
+administrator's steps below. A `limits.cpu` ceiling in
+`/etc/tego/config.yaml` gives every `tego run` a CPU limit, so with one they are all refused. `tego doctor`
+still reports tier landlock for a user; from the next release its cgroupv2 line also names that ceiling and says
+every run is refused. Memory and process limits apply as usual. To allow CPU limits, an administrator runs this
+once, then reboots:
 
 ```sh
 sudo mkdir -p /etc/systemd/system/user@.service.d /etc/systemd/user/app.slice.d /etc/systemd/system/system.slice.d
@@ -144,7 +147,8 @@ root in local guests, one suite at a time, not in CI's shards. As of 2026-11-10:
 - **Runs:** the first run reached 31 of 33 suites: 5817 top-level tests passed, 14 failed and 247 skipped. The
   second run added the two suites the first did not start: `test/conformance` (78 passed, 1 failed) and the four
   parts of the `tegobpf` build of `internal/runtime/enforce/cgroup` (565 passed, 1 failed). `internal/runtime`
-  finished in neither run, because one of its tests hangs (below).
+  finished in neither run. Its plain build stopped at its test timeout both times, because one of its tests hangs
+  (below). Its `tegobpf` build stopped at the first run's 240 s time budget and was not run in the second.
 - **Fixed in v0.1.1:** the plane test's overlayfs case (the Security fix). With the fixed build that check passes on
   this kernel.
 - **Two hangs, both in tests:** `TestHeldCloseEndsTheListenerBeforeTheDescriptorLimit` in
@@ -158,10 +162,12 @@ root in local guests, one suite at a time, not in CI's shards. As of 2026-11-10:
   Tego.
 - **SELinux execmod:** with SELinux enforcing, this host refuses to make a modified private file mapping executable,
   with or without Tego, so a contract cannot allow it here. SELinux decides before the plane's LSM hook runs, so in
-  LSM mode the run's record has no line for that refusal; in fmod_ret mode the plane's own line is there
-  ([GAPS.md](GAPS.md) B16). The plane's step C test, the conformance suite's execmod case and the plane's exec-map
-  run test expect the mapping to be allowed, or decided by the plane, and fail. With SELinux permissive and the
-  fixed build, the step C test passes. AlmaLinux 10.2 enforcing does not refuse it.
+  LSM mode, the default there, the run's record has no line for that refusal. In fmod_ret mode the plane decides
+  first and writes its own line, but only for a contract with an `exec:` section, the one kind whose execmod the
+  plane refuses; for a contract without one, no mode writes a line ([GAPS.md](GAPS.md) B16). The plane's step C
+  test, the conformance suite's execmod case and the plane's exec-map run test expect the mapping to be allowed, or
+  decided by the plane, and fail. With SELinux permissive and the fixed build, the step C test passes. AlmaLinux 10.2
+  enforcing does not refuse it.
 - **NSS:** `/etc/nsswitch.conf` has `passwd: sss files systemd`, so a program in a run that looks up a user or group
   connects to `/var/run/nscd/socket` and `/var/lib/sss/pipes/nss`. Under a contract whose `net:` section allowed one
   TCP address, the run refused and recorded those connects (tier landlock, launched as root). RHEL's bash also opens
@@ -187,14 +193,15 @@ root in local guests, one suite at a time, not in CI's shards. As of 2026-11-10:
   xfs refused a 1024-byte symlink target, and two tests need one of about 2.5 KB. `nobody`'s home is `/`, so a root
   sweep of a run owned by `nobody` anchors it in `/.tego` at the file system root, which one test does not expect.
   Python 3.9 has no `os.unshare`, which one test calls. RHEL's bash (5.1.8) retries a refused create without
-  `O_CREAT`, which gives one test a second line it does not expect. One conformance case expects RHEL 9's 5.14 to
-  lack BPF perf links, which this 5.14 has.
+  `O_CREAT`, which gives one test a second line it does not expect. Two conformance cases
+  (`execrules/allow-other-subcommand` and `execrules/allow-rm-without-r`, at tiers cgroup and bpflsm) expect RHEL 9's
+  5.14 to lack BPF perf links, which this 5.14 has.
 - **Skips:** RHEL 9 refuses `io_uring_setup`, and those tests skip, as CI's skip list allows. CI's skip list does
   not name ten skips seen there, each with its own message: 6 btrfs tests (RHEL 9 ships no btrfs), one that needs
   busybox, one that skips while auditd runs, as it does on the stock image, and two `/proc/<pid>/fdinfo` cases,
-  because the agent can list that directory there. Six more came from the test setup, not from RHEL: two plane
-  compaction tests whose fixture only sets up ext4, f2fs or tmpfs, and four web tests that need node, which the
-  guest did not have.
+  because the agent can list that directory there. Six more came from the test setup, not from RHEL: one plane
+  compaction test, once in each build, which needs its temporary directory on ext4, f2fs or tmpfs (the guest's
+  was on xfs), and four web tests that need node, which the guest did not have.
 
 ### Plane tests on Fedora 44
 

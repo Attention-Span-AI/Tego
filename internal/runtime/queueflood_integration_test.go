@@ -92,7 +92,7 @@ print(json.dumps({"pid": os.getpid(), "attempts": n, "errnos": errnos}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	refused, dropped := 0, 0
+	refused, dropped, nss := 0, 0, 0
 	kinds := make(map[string]int)
 	gapReasons := make(map[string]int)
 	var sampleNet *record.Event
@@ -102,7 +102,11 @@ print(json.dumps({"pid": os.getpid(), "attempts": n, "errnos": errnos}))
 		if sampleNet == nil && e.Kind == record.KindNet {
 			sampleNet = e
 		}
-		if e.Kind == record.KindNet && e.Verdict == record.VerdictRefused {
+		// The shell's user lookup through NSS where /bin/sh is bash and nsswitch.conf names sss (stock AlmaLinux
+		// 9.8): its connects to nscd's and sssd's sockets are refused and recorded, true lines that no actor counts.
+		if e.Kind == record.KindNet && e.Verdict == record.VerdictRefused && nssConnect(e) {
+			nss++
+		} else if e.Kind == record.KindNet && e.Verdict == record.VerdictRefused {
 			refused++
 		}
 		var g record.GapPayload
@@ -116,7 +120,8 @@ print(json.dumps({"pid": os.getpid(), "attempts": n, "errnos": errnos}))
 			}
 		}
 	}
-	t.Logf("result %+v: %d refused net lines written, %d events dropped as channel-full; actor results: %s", res, refused, dropped, actorResults)
+	t.Logf("result %+v: %d refused net lines written (and %d of the shell's NSS connects), %d events dropped as "+
+		"channel-full; actor results: %s", res, refused, nss, dropped, actorResults)
 	if refused == 0 {
 		t.Logf("recorded kinds: %v; gap reasons: %v; first net event: %+v", kinds, gapReasons, sampleNet)
 		if sampleGap != nil {

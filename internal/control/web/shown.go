@@ -441,6 +441,9 @@ func reasonWords(e ledgerview.Event) string {
 	if reasonOf(e) == "" {
 		return ""
 	}
+	if w := ledgerview.BuiltInWords(e); w != "" {
+		return w // the receipt's sentence for tego's built-in refusal, which no rule could allow
+	}
 	switch e.Reason {
 	case "net-not-allowed":
 		return "not on the allowed hosts"
@@ -665,7 +668,18 @@ func relabelLive(rows []ledgerview.Row, find func(id string) *ledgerview.Run) {
 			labels[e.Run] = l
 		}
 		if s, ok := l[e.Rule]; ok {
-			rows[i].Label = s
+			rows[i].Label = sameFileLabel(s, e)
 		}
 	}
+}
+
+// sameFileLabel is a live block's label for the row of e, with what the line itself shows when the block refused e's
+// program as another name of the blocked path's file (ledgerview.Event.SameFile): "Blocked live at 21:50 by you: same
+// program file as /bin/ls, which is blocked". The row names the path that ran and the rule the blocked one, so
+// without it the row reads as a block of something else.
+func sameFileLabel(label string, e *ledgerview.Event) string {
+	if note := e.SameFile(); note != "" {
+		return label + ": " + note
+	}
+	return label
 }

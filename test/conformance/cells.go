@@ -283,7 +283,9 @@ type Cell struct {
 	// reads it (`argv:`). nil is the actor's own [Path, "noop"], which no command rule reads.
 	Argv []string
 	// Runs is the program the kernel runs for an exec cell, relative to the project, when it is not the image the
-	// cell names: a script's #! interpreter as its walk resolves it. The command-rule invariant reads it.
+	// cell names: a script's #! interpreter as its walk resolves it, or the applet a multicall image (a file of more
+	// than one link under a name uutils links its file under) runs by its name (ADR 0048 (2) 4). The command-rule
+	// invariant reads its basename.
 	Runs string
 	// Generated is a cell the generator made (gen.go): it has no Want, and its judge is the kernel, held to the
 	// ledger, to compile --test's column for the axis, to the invariants and to the effect judge (ADR 0017 D1).
@@ -482,12 +484,14 @@ type CondWant struct {
 	SupervisorRoot *bool
 	// UnixDiag, when set, must equal Machine.UnixDiag.
 	UnixDiag *bool
-	Want     map[Key]Want
+	// ExecmodRefused, when set, must equal Machine.ExecmodRefused.
+	ExecmodRefused *bool
+	Want           map[Key]Want
 }
 
 // Matches reports whether the condition holds on m.
 func (cw CondWant) Matches(m Machine) bool {
 	return cw.Where.Matches(m) && (cw.MemfdNoexecSeal == nil || *cw.MemfdNoexecSeal == m.MemfdNoexecSeal) &&
 		(cw.PlaneFirst == nil || *cw.PlaneFirst == m.PlaneFirst) && (cw.SupervisorRoot == nil || *cw.SupervisorRoot == m.SupervisorRoot) &&
-		(cw.UnixDiag == nil || *cw.UnixDiag == m.UnixDiag)
+		(cw.UnixDiag == nil || *cw.UnixDiag == m.UnixDiag) && (cw.ExecmodRefused == nil || *cw.ExecmodRefused == m.ExecmodRefused)
 }

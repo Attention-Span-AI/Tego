@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/internal/mcptools"
 	"github.com/attention-span-ai/tego/internal/runlock"
 	"github.com/attention-span-ai/tego/internal/runtime/ask"
@@ -51,7 +52,8 @@ var mcpBeforeLock func()
 //
 // A switch that tightens (to deny, or allow to ask) applies at once, and may come from inside the run itself, as
 // tego block may. One that loosens asks y/N unless --yes, and is refused from inside any run: an agent cannot widen
-// its own governance (refuseGoverned).
+// its own governance (refuseGoverned). On a Locked run a switch to a decision looser than the contract's is refused
+// ([locked], ADR 0126 §4): such a run loosens from its next run.
 func cmdMCP() Command {
 	var (
 		asJSON, yes bool
@@ -367,6 +369,15 @@ func mcpSwitch(ctx context.Context, sub, ref, server, tool string, yes bool, std
 	to := sub
 	if sub == "reset" {
 		to = mcptool.Contract(rules, server, tool).Decision
+	}
+	// A Locked run is never looser than its contract while it runs (ADR 0125), so a switch to a decision looser than the
+	// contract's is refused [locked], in the words a lift of a Locked run gets; one that tightens, or a reset to the
+	// contract, is taken, as a block and an unblock are. A run_start that cannot be read is refused too, as not known
+	// (fail closed; liveblock.ErrStarting, or ErrStartUnreadable for a first line this tego does not read), never as Locked.
+	if mcptool.Loosens(mcptool.Contract(rules, server, tool).Decision, to) {
+		if err := liveblock.CheckLoosening(liveTarget(run, held, startFacts(dir))); err != nil {
+			return fenceRefused(name, err, stderr)
+		}
 	}
 	if to == mcptool.Ask {
 		if _, err := os.Stat(filepath.Join(dir, ask.SocketName)); err != nil {

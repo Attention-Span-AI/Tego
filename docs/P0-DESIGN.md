@@ -417,7 +417,7 @@ $XDG_RUNTIME_DIR/tego/<run>/  CODEX_HOME and the Docker proxy socket (P2); the f
 - **Threat model** (README): holds a mistaken or injected agent to its contract for files, network and new
   processes; does not stop in-process logic, nor exfiltration through *any* allowed endpoint — the model endpoint
   and, equally, the tool hosts a coding agent needs, because a rule matches `host:port` and not the use a host is
-  put to (A1, A4); not a sandbox.
+  put to (A1, A4); it does not hide the machine.
 - **Fuzz targets**: sockaddr and path readers in `supervisor`, `httpstream` parser, `derive/anthropic`, contract
   loader.
 

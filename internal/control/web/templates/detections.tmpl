@@ -11,20 +11,20 @@
 {{range .Severities}}<a class="chip" href="/detections?sev={{lower .}}{{with $d.Ch}}&ch={{.}}{{end}}"{{if eq $d.Sev (lower .)}} aria-current="true"{{end}}><span class="sev sev-{{.}}">{{.}}</span> {{index $d.SevCount .}}</a>{{end}}
 </nav>
 <section class="panel" aria-labelledby="h-dt">
-<div class="panel-head"><h2 id="h-dt" class="sr" data-say>Blocked actions · {{len .Rows}} shown</h2><nav class="tabs dt-ch" aria-label="Channel">
+<div class="panel-head"><h2 id="h-dt" class="sr" data-say>Refused actions · {{len .Rows}} shown</h2><nav class="tabs dt-ch" aria-label="Channel">
 <a href="/detections{{with $d.Sev}}?sev={{.}}{{end}}"{{if eq $d.Ch ""}} aria-current="page"{{end}}>All channels <span class="n">{{$d.Total}}</span></a>
 {{range .Channels}}<a href="/detections?ch={{lower .}}{{with $d.Sev}}&sev={{.}}{{end}}"{{if eq $d.Ch (lower .)}} aria-current="page"{{end}}>{{.}} <span class="n">{{index $d.ChCount .}}</span></a>{{end}}
 </nav></div>
 {{if .Rows}}{{template "dtable" (dtab .Rows .Now)}}{{end}}
 {{if .Low}}<details class="dt-low"><summary title="The agent's own files and system information">Low · {{len .Low}}</summary>{{template "dtable" (dtab .Low .Now)}}</details>{{end}}
-{{if not (or .Rows .Low)}}{{if and .Leaks (not .Total)}}<p class="panel-body soft">{{if .Routine}}Only routine actions blocked{{else}}No blocked actions{{end}}</p>
+{{if not (or .Rows .Low)}}{{if and .Leaks (not .Total)}}<p class="panel-body soft">{{if .Routine}}Only routine actions refused{{else}}No refused actions{{end}}</p>
 {{else}}<div class="empty">{{if not (or .Leaks .Watched)}}<div class="glyph">{{template "i" "i-check"}}</div>{{end}}
 {{if .Total}}<h3>No match</h3><a class="btn" href="/detections">Clear filters</a>
-{{else}}<h3>{{if .Routine}}Only routine actions blocked{{else}}Nothing blocked{{end}}</h3><a class="btn" href="/runs">Runs</a>{{end}}</div>{{end}}{{end}}
+{{else}}<h3>{{if .Routine}}Only routine actions refused{{else}}Nothing refused{{end}}</h3><p>What Tego refuses a run under a contract (<span class="mono">tego run</span>) shows here.</p><a class="btn" href="/runs">Runs</a>{{end}}</div>{{end}}{{end}}
 </section>
 {{end}}{{end}}
 {{/* dtable is a table of detections: severity, what was done to what, by which agent in which project, how often, when. */}}
-{{define "dtable"}}<div class="tw"><table class="t dt-table"><caption class="sr">Blocked actions, High first</caption>
+{{define "dtable"}}<div class="tw"><table class="t dt-table"><caption class="sr">Refused actions, High first</caption>
 <thead><tr><th scope="col">Severity</th><th scope="col">Action</th><th scope="col">Agent · Project</th><th scope="col" class="num">Times</th><th scope="col">Last</th><th scope="col"><span class="sr">Investigate</span></th></tr></thead>
 <tbody>{{$now := .Now}}{{range .Rows}}<tr class="dt-row" data-k="{{.Run}}-{{.FirstSeq}}" data-review-key="{{.Run}}-{{.Seq}}" data-sev="{{.Severity}}">
 <td><span class="sev sev-{{.Severity}}">{{.Severity}}</span></td>

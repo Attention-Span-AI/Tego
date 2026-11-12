@@ -218,6 +218,21 @@ func planeMapCells(t *testing.T, o Object, mode PlaneMode) {
 	if err := os.Link(filepath.Join(w, "bin/t1"), filepath.Join(w, "bin/t2")); err != nil {
 		t.Fatal(err)
 	}
+	// The machine's own answer to execmod, asked before this test attaches a hook: an LSM can refuse a dirtied
+	// private file map made executable for every process. SELinux enforcing does on AlmaLinux 9.8 (EACCES, and 0
+	// once permissive, with selinuxuser_execmod off and no AVC record, 2026-11-10). There the outside-run execmod
+	// answers what the machine answers, and in lsm mode, where bpf follows selinux in the LSM order, the plane's
+	// file_mprotect never runs for it, so its scratch says nothing; fmod_ret runs before every LSM and is still held.
+	execmodHere := planeMapMprotect([]string{"mprotect", strconv.Itoa(unix.PROT_READ | unix.PROT_WRITE),
+		strconv.Itoa(unix.PROT_READ | unix.PROT_EXEC), filepath.Join(o2, "sys.so"), "dirty"})
+	switch execmodHere {
+	case "0":
+	case eacces:
+		t.Logf("this machine refuses execmod itself (%s), with no plane hook attached; lsm order %s", execmodHere,
+			planeLSMOrder(t))
+	default:
+		t.Fatalf("execmod with no plane hook attached answered %s, want 0 or %s", execmodHere, eacces)
+	}
 	tree := &planeTree{tmpls: map[uint32]planeFillTmpl{}}
 	tree.hold(t, w, fsRow(gen, ruleMapW, PlaneRowModifyAllow))
 	execDir := fsRow(gen, ruleMapX, PlaneRowModifyAllow|PlaneRowExecDir)
@@ -260,8 +275,8 @@ func planeMapCells(t *testing.T, o Object, mode PlaneMode) {
 		if info, err := p.Info(); err == nil {
 			if n, ok := info.VerifiedInstructions(); ok && (h.Name == "mmap_file" || h.Name == "file_mprotect") {
 				t.Logf("%s: %d instructions verified", h.Program(mode), n)
-				if n > planeBudget(h.Name) {
-					t.Errorf("%s: %d instructions verified, over the budget of %d", h.Program(mode), n, planeBudget(h.Name))
+				if b := planeBudget(t, o, h.Name); n > b {
+					t.Errorf("%s: %d instructions verified, over the budget of %d", h.Program(mode), n, b)
 				}
 			}
 		}
@@ -342,7 +357,9 @@ func planeMapCells(t *testing.T, o Object, mode PlaneMode) {
 	scratch("a writable and executable private map (execmem)", hookMmap, notAllowed, uint32(PlaneRuleNone))
 	check("mprotect a private map to writable and executable (execmem)", eacces, "mprotect", r, rwx, sys)
 	check("a dirtied private map made executable (execmod)", eacces, "mprotect", rw, rx, sys, "dirty")
-	scratch("a dirtied private map made executable (execmod)", hookMprotect, notAllowed, uint32(PlaneRuleNone))
+	if execmodHere == "0" || mode != PlaneLSM {
+		scratch("a dirtied private map made executable (execmod)", hookMprotect, notAllowed, uint32(PlaneRuleNone))
+	}
 	check("an untouched writable private map made executable", "0", "mprotect", rw, rx, sys)
 	check("a writable shared map of a write entry's file under an exec.allow directory", "0", "map", rwx, shared,
 		pw("x/lib.so"))
@@ -374,11 +391,15 @@ func planeMapCells(t *testing.T, o Object, mode PlaneMode) {
 	scratch("a cleared header: an executable map of a memfd", hookMmap, uint8(ReasonPathUnresolved), uint32(PlaneRuleNone))
 	setSlot(gen, PlaneSlotExecDecides)
 
-	// Outside the run every one of them passes.
+	// Outside the run every one of them passes, but for execmod where the machine itself refuses it.
 	for _, c := range [][]string{{"map", rx, private, pw("drop.so")}, {"mprotect", r, rx, pw("drop.so")},
 		{"map", rwx, private, sys}, {"mprotect", rw, rx, sys, "dirty"}, {"memfdmap", rx}} {
-		if got := planeMapCommands[c[0]](c); got != "0" {
-			t.Errorf("outside the run %v answered %s", c, got)
+		want := "0"
+		if len(c) > 4 && c[4] == "dirty" {
+			want = execmodHere
+		}
+		if got := planeMapCommands[c[0]](c); got != want {
+			t.Errorf("outside the run %v answered %s, want %s", c, got, want)
 		}
 	}
 	var counts PlaneCounts
@@ -394,6 +415,16 @@ func planeMapCells(t *testing.T, o Object, mode PlaneMode) {
 		t.Errorf("fail-closed counts: %+v, want mismatch and one norows (the cleared header) only", counts)
 	}
 	planeMapOverlayCell(t, coll, runIdx, gen, helper)
+}
+
+// planeLSMOrder is the kernel's active LSM list, in its order, for a log line.
+func planeLSMOrder(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile("/sys/kernel/security/lsm")
+	if err != nil {
+		return err.Error()
+	}
+	return string(b)
 }
 
 // planeMapOverlayCell maps an overlayfs file whose merged directory is a write row and mprotects it executable. On

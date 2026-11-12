@@ -4,12 +4,15 @@ package learn
 
 import (
 	"fmt"
+	"net/netip"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/check/secretpath"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -99,7 +102,9 @@ func (p *Proposal) Contract() string {
 	var b strings.Builder
 	p.header(&b)
 	b.WriteString("version: 0\n")
-	fmt.Fprintf(&b, "name: %s\n", p.Name)
+	// Double-quoted, as tego init and the dashboard write it: an agent id may be all digits or a word YAML reads as a
+	// bool or a null (123, true, null), and name is a string.
+	fmt.Fprintf(&b, "name: %s\n", strconv.Quote(p.Name))
 	if p.CommandNote != "" {
 		fmt.Fprintf(&b, "# %s\n", p.CommandNote)
 	}
@@ -108,6 +113,12 @@ func (p *Proposal) Contract() string {
 		cmd[i] = quote(c)
 	}
 	fmt.Fprintf(&b, "command: [%s]\n", strings.Join(cmd, ", "))
+	if p.ReasonReads {
+		b.WriteString("\nreason:\n")
+		fmt.Fprintf(&b, "  # A read this contract refuses is recorded at tier landlock too, under every record level (%s).\n",
+			agent.ReasonReadCost)
+		b.WriteString("  reads: on\n")
+	}
 
 	b.WriteString("\nfs:\n")
 	b.WriteString("  # Reads are not restricted here; fs.deny_read is left to the built-in list, which learn never removes.\n")
@@ -121,24 +132,86 @@ func (p *Proposal) Contract() string {
 	p.list(&b, "allow", p.Exec, "exec")
 
 	b.WriteString("\nnet:\n")
-	if p.hasInet() {
+	if len(p.AddressEntries()) > 0 {
 		b.WriteString("  # tego records the address a program connected to, never the host name it asked for, so these\n")
 		b.WriteString("  # are addresses, and a service's addresses change. To allow a service by name, write the name in\n")
 		b.WriteString("  # place of its addresses, for example \"tcp://api.example.com:443\"; tego resolves it when the run starts.\n")
 	}
 	p.list(&b, "allow", p.Net, "net")
+	for _, r := range p.resolvers {
+		b.WriteString(resolverLeftOut + r + resolverLeftOutWhy + "\n")
+	}
 
 	p.limits(&b)
 	return b.String()
 }
 
-func (p *Proposal) hasInet() bool {
+// nameNote is the note of a net.allow entry learned by the name of the contract entry that allowed it (byName).
+const nameNote = "the name of the net.allow entry that allowed it in that run"
+
+// AddressWarning is what a proposal that allows a TCP or UDP address says first, on stderr and in its header, and what
+// the dashboard's plan made from the run says: on 2026-11-10 the run after a watched one picked the other address its
+// lookup returned and was refused, under a file whose only word on it was the comment above net.allow.
+const AddressWarning = "net.allow has entries that are addresses, not host names: the record holds the address this run connected to, not the name it looked up." +
+	" One name often has several addresses, a program may pick another one on its next run, and a service's addresses change," +
+	" so a later run under this file can be refused a connection this run made. Before you use it, write the name the agent" +
+	" uses in place of its addresses, for example tcp://api.example.com:443 for https://api.example.com; tego looks the name up" +
+	" when the run starts"
+
+// The net section's comment on an entry proposeNet left out as the machine's resolver: resolverLeftOut, the entry,
+// resolverLeftOutWhy.
+const (
+	resolverLeftOut    = "  # left out: "
+	resolverLeftOutWhy = ", the machine's resolver when this run was recorded; tego allows the run's resolver itself, so it needs no entry"
+)
+
+// ResolverItem is the net.allow item that puts back the machine's resolver a line of Contract's net section says was
+// left out, with the note keepResolvers writes, and false for any other line. A caller that takes net.allow's last
+// TCP or UDP item out of the text (rulesview.Withhold) puts it back, as keepResolvers would have kept it: Landlock
+// grants port 53 only beside a TCP or UDP entry, which an addressed UDP lookup may need from ABI 10.
+func ResolverItem(line string) (string, bool) {
+	rest, ok := strings.CutPrefix(line, resolverLeftOut)
+	if !ok {
+		return "", false
+	}
+	entry, ok := strings.CutSuffix(rest, resolverLeftOutWhy)
+	if !ok {
+		return "", false
+	}
+	if e, err := agent.ParseEndpoint(entry); err != nil || !agent.IsIPProtocol(e.Proto) {
+		return "", false
+	}
+	return "    - " + quote(entry) + "  # " + resolverKeptNote, true
+}
+
+// AddressEntries are the net.allow entries that name a TCP or UDP address, not a host. The machine's resolver is never
+// one: proposeNet leaves it out of net.allow (AlmaLinux 9.8, whose NetworkManager resolver is 10.0.2.3, 2026-11-10),
+// and where it keeps it (keepResolvers) no host name stands for it.
+func (p *Proposal) AddressEntries() []string {
+	var out []string
 	for _, it := range p.Net {
-		if strings.HasPrefix(it.Value, "tcp://") || strings.HasPrefix(it.Value, "udp://") {
-			return true
+		if p.resolversKept[it.Value] {
+			continue
+		}
+		rest, ok := strings.CutPrefix(it.Value, "tcp://")
+		if !ok {
+			rest, ok = strings.CutPrefix(it.Value, "udp://")
+		}
+		if _, err := netip.ParseAddrPort(rest); ok && err == nil {
+			out = append(out, it.Value)
 		}
 	}
-	return false
+	return out
+}
+
+// SuggestHosts reports whether a next step should propose --allow-host <host> for this proposal: it still allows
+// addresses by address (AddressEntries), and the leak rule found no destination the run's secrets may have gone to
+// (Leaks). With such a destination learn refuses a name whose answer holds a withheld address, and a suggestion never
+// asks a person to name a host a secret may have gone to: the plain form, which allows the addresses learn kept and
+// names --allow-host itself for them, is the step then (acceptance B, 2026-11-11). tego watch's next: line, tego
+// learn's own and tego setup's guide all decide by it, so the three agree.
+func (p *Proposal) SuggestHosts() bool {
+	return len(p.AddressEntries()) > 0 && len(p.Leaks) == 0
 }
 
 // list writes one allow list and the "observed, not allowed" comments of its section after it.
@@ -185,7 +258,7 @@ func (p *Proposal) limits(b *strings.Builder) {
 
 func (p *Proposal) header(b *strings.Builder) {
 	for _, w := range p.Warnings() {
-		if strings.HasPrefix(w, "this run opened") {
+		if strings.HasPrefix(w, "this run opened") || w == AddressWarning {
 			fmt.Fprintf(b, "# WARNING: %s.\n", w)
 		}
 	}
@@ -201,9 +274,28 @@ func (p *Proposal) header(b *strings.Builder) {
 		fmt.Fprintf(b, "# The run started %s; its record has no run_end, so it was still going or was cut off.\n", p.Started.UTC().Format(time.RFC3339))
 	}
 	b.WriteString("#\n")
-	b.WriteString("# This is a PROPOSAL for a person to review, not a policy to adopt unread. It allows what that run did and no\n")
-	b.WriteString("# more. It is built from the run's own record, so it is only as good as the run was representative, and anything\n")
-	b.WriteString("# the agent did while it was watched is in it. Read every entry, then run `tego compile` on the file.\n")
+	if p.byName() {
+		b.WriteString("# This is a PROPOSAL for a person to review, not a contract to use unread. It allows what that run did, except that\n")
+		b.WriteString("# a net.allow entry by host name allows every address that name resolves to when a run starts and each time tego\n")
+		b.WriteString("# looks it up again during the run, on that entry's protocol and port, not only the addresses this run used. Tego\n")
+		b.WriteString("# never admits some addresses by name, such as a cloud metadata or link-local address. It is built from the run's\n")
+		b.WriteString("# own record, so it is only as good as the run was representative, and anything the agent did while it was watched\n")
+		b.WriteString("# is in it. Read every entry, then run `tego compile` on the file.\n")
+		if p.allowHost("") {
+			b.WriteString("#\n")
+			b.WriteString("# The entries whose note says --allow-host are names given with --allow-host. tego looked each one up here, now,\n")
+			b.WriteString("# and wrote it in place of the addresses the run reached that its answer holds. It does not know which name the\n")
+			b.WriteString("# run looked up, nor whether the run's own lookup gave the same answer, and an address many sites share (a CDN)\n")
+			b.WriteString("# is covered by each of their names: an entry by such a name reaches every site served from its addresses.\n")
+		}
+		if p.allowHost("udp://") {
+			b.WriteString("# A udp entry by host name allows UDP, QUIC included, to every address the name resolves to on its port.\n")
+		}
+	} else {
+		b.WriteString("# This is a PROPOSAL for a person to review, not a contract to use unread. It allows what that run did and no\n")
+		b.WriteString("# more. It is built from the run's own record, so it is only as good as the run was representative, and anything\n")
+		b.WriteString("# the agent did while it was watched is in it. Read every entry, then run `tego compile` on the file.\n")
+	}
 	b.WriteString("#\n")
 	b.WriteString("# It never removes fs.deny_read: the built-in credential list is left to apply, so a read of a path on it that the\n")
 	b.WriteString("# run made will now be refused. Keep this file outside the workspace and outside every fs.write entry below: tego\n")
@@ -215,6 +307,18 @@ func (p *Proposal) header(b *strings.Builder) {
 		fmt.Fprintf(b, "#   - %s\n", l)
 	}
 	b.WriteString("#\n")
+}
+
+// byName reports a net.allow entry learned by host name (nameNote), which allows more than the addresses the run used.
+func (p *Proposal) byName() bool {
+	return slices.ContainsFunc(p.Net, func(it Item) bool { return it.Note == nameNote || strings.HasPrefix(it.Note, allowHostNote) })
+}
+
+// allowHost reports whether an entry named with --allow-host (allowHostNote) begins with proto ("" for any, "udp://").
+func (p *Proposal) allowHost(proto string) bool {
+	return slices.ContainsFunc(p.Net, func(it Item) bool {
+		return strings.HasPrefix(it.Note, allowHostNote) && strings.HasPrefix(it.Value, proto)
+	})
 }
 
 // leftOut is the header's list of what the proposal does not carry.
@@ -277,7 +381,12 @@ func (p *Proposal) leftOut() []string {
 		out = append(out, "the run exceeded learn's bounds for paths, endpoints or read/send associations, so what is listed is incomplete.")
 	}
 	out = append(out, "models, capture and tier: the record holds none of them, so tego's defaults apply.")
-	out = append(out, "DNS lookups to the machine's resolver need no entry: tego allows the resolver itself.")
+	if len(p.resolversKept) > 0 {
+		// keepResolvers: the entry is for Landlock's port 53 (UDP, ABI 10 and up), not for the decision.
+		out = append(out, "DNS lookups to the machine's resolver are allowed by tego itself; its entry is kept only because no other TCP or UDP entry is, and from Linux 7.2 Landlock may refuse a UDP lookup without one.")
+	} else {
+		out = append(out, "DNS lookups to the machine's resolver need no entry: tego allows the resolver itself.")
+	}
 	return out
 }
 

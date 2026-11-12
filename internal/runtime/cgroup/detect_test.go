@@ -375,11 +375,11 @@ func TestCanPlace(t *testing.T) {
 	inside := []byte("0::" + user + "/user@1000.service/app.slice/t.scope\n")
 	session := []byte("0::" + user + "/session-3.scope\n")
 
-	if err := canPlace(mount, inside, root); err != nil {
+	if err := canPlace(mount, inside, root, placementRemedy); err != nil {
 		t.Fatalf("a process inside the root was refused: %v", err)
 	}
 	// Outside the root, an ancestor this process may write is the kernel's condition, and it holds here.
-	if err := canPlace(mount, session, root); err != nil {
+	if err := canPlace(mount, session, root, placementRemedy); err != nil {
 		t.Fatalf("a writable common ancestor was refused: %v", err)
 	}
 	// The same shape where no cgroup.procs of the ancestor can be written: here it does not exist, which
@@ -387,7 +387,7 @@ func TestCanPlace(t *testing.T) {
 	if err := os.Remove(ancestorProcs); err != nil {
 		t.Fatal(err)
 	}
-	err := canPlace(mount, session, root)
+	err := canPlace(mount, session, root, placementRemedy)
 	var de *DetectError
 	if !errors.As(err, &de) || !errors.Is(err, ErrOutsideSubtree) || errors.Is(err, ErrNotDelegated) {
 		t.Fatalf("canPlace from a session scope = %v, want a *DetectError matching ErrOutsideSubtree only", err)
@@ -397,11 +397,17 @@ func TestCanPlace(t *testing.T) {
 			t.Errorf("the diagnosis does not name %q: %s", want, de.Diagnosis)
 		}
 	}
-	if !strings.Contains(de.Remedy, root) || !strings.Contains(de.Remedy, "systemd-run --user --scope") {
-		t.Errorf("the remedy %q does not say to start tego inside %s", de.Remedy, root)
+	// The remedy names the shell to open, never the cgroup's path as the instruction (acceptance B, 2026-11-11), and has no
+	// placeholder outside angle brackets.
+	if !strings.Contains(de.Remedy, "systemd-run --user --scope bash") || strings.Contains(de.Remedy, root) ||
+		strings.Contains(de.Remedy, "...") {
+		t.Errorf("the remedy %q does not name the shell to open, or names the path %s", de.Remedy, root)
 	}
-	if err := canPlace(mount, nil, root); !errors.Is(err, ErrOutsideSubtree) {
-		t.Fatalf("an unreadable /proc/self/cgroup = %v, want ErrOutsideSubtree", err)
+	if !errors.Is(err, ErrBesideSubtree) {
+		t.Errorf("canPlace from a session scope = %v, want ErrBesideSubtree too", err)
+	}
+	if err := canPlace(mount, nil, root, placementRemedy); !errors.Is(err, ErrOutsideSubtree) || errors.Is(err, ErrBesideSubtree) {
+		t.Fatalf("an unreadable /proc/self/cgroup = %v, want ErrOutsideSubtree and not ErrBesideSubtree", err)
 	}
 	// A privileged FS is the mount root, which uid 0 may always place in; CanPlace does not ask.
 	if err := (&FS{root: mount, privileged: true}).CanPlace(); err != nil {
@@ -432,7 +438,7 @@ func TestEveryDetectRefusalNamesItsRemedy(t *testing.T) {
 	_, rootAbsent := privilegedRoot(filepath.Join(tmp, "absent"), nil, os.Getpid())
 	_, notWritable := firstWritable(1000, []string{tmp})
 	outside := canPlace(tmp, []byte("0::/system.slice/x.service\n"),
-		filepath.Join(tmp, "user.slice/user-1000.slice/user@1000.service"))
+		filepath.Join(tmp, "user.slice/user-1000.slice/user@1000.service"), placementRemedy)
 	rows := []row{
 		{"an unprivileged launcher's mount is not cgroup2", notCgroup2, "systemd.unified_cgroup_hierarchy=1",
 			[]error{ErrNotDelegated, ErrNotCgroup2}, nil},

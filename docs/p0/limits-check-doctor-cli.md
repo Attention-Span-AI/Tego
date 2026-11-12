@@ -774,7 +774,16 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
 - **R27 Doctor probes, exact order, first-class syscalls** (`doctor.Run`'s `Results[0..7]`):
   - **D1 kernel**: `uname(2)` → parse `release` as `major.minor.patch`; compared against ARCHITECTURE §14's
     per-mechanism minimums (`cgroup.kill` 5.14, ring buffer 5.8, `pidfd_getfd` 5.6, `NEW_LISTENER` 5.0, `ADDFD`
-    5.9, `ADDFD_FLAG_SEND` 5.14, Landlock ABI 1 at 5.13).
+    5.9, `ADDFD_FLAG_SEND` 5.14, Landlock ABI 1 at 5.13). Below `MinKernel` 5.14 D1 fails; at or above it D1 is ok
+    and its line is advice: "below the upstream tested floor 6.1.0" below `TestedFloor`, then a "without:" list.
+    *Amended 2026-11-11 (docs/GAPS.md B18):* each Landlock ABI row of that list is judged by the ABI
+    `landlock_create_ruleset(LANDLOCK_CREATE_RULESET_VERSION)` answers, the value D4 reports, not by the release: a
+    row is listed when that ABI is lower than the row's; ENOSYS or EOPNOTSUPP (no Landlock) lists every Landlock row,
+    and any other error is no answer, so the release decides as before. The `cgroup connect_unix` row follows D7's
+    `cgroup/connect_unix` row once D7 has answered (absent: listed; loaded: not listed): the probe runner renders D1
+    again after D7, and D1's OK and fix do not change. Where D7 did not answer (not root, or a run's scope below tier
+    cgroup) and for the other rows, the release decides. On AlmaLinux 9.8 (5.14, ABI 6 backported) D1 listed ABI 2 to
+    6 as missing above D4's "ABI 6", every row was judged by the release, and the clause said "the tested floor".
   - **D2 BTF**: `open("/sys/kernel/btf/vmlinux", O_RDONLY)`; `ENOENT` ⇒ no tier-2/3 program loads possible.
     The file is then parsed (once per process, one parse shared with D7 and the plane, since `btf.LoadKernelSpec` keeps none, so the program loads of a run that
     follows do not parse it again), and a BTF that will not parse fails D2. Every kernel type, member
@@ -795,12 +804,29 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     enables. A missing one does not fail D3 (2026-11-10, GAPS B15): a run needs a controller only for a limit that
     uses it, and `SetLimits` refuses a run with such a limit at start, before its agent exists (`runtime-launch.md`
     case 31, exit 125). D3's line names the limits refused there and the fix that allows them, the one that refusal
-    prints (`cgroup.EnableFix`). A read of the file that fails does fail D3. Any one of the other checks can be D3's
+    prints (`cgroup.EnableFix`). That fix reads the delegated root's `cgroup.controllers`: where a missing controller
+    is not offered there, a non-root launcher cannot write it into `cgroup.subtree_control`, so the fix starts with
+    the administrator's steps and names the controllers the user cannot add and why; when that file cannot be read,
+    the fix also starts with those steps and says it could not tell (*amended 2026-11-11*, docs/GAPS.md B18; before,
+    it always led with that write). A `limits.*` ceiling in the machine config on a missing controller is every run's
+    limit (agent-contract.md R11), so D3's line also names it, with its file and line, and says that every `tego run`
+    is refused at start until the controller is enabled or the ceiling is removed (the controllers and the ceilings
+    when more than one is named); D3 still passes and the tier is
+    unchanged (*amended 2026-11-10*, `TestControllersResultNamesACeilingOnAMissingController`). Doctor reads the
+    machine config warn-and-skip, so a layer it cannot read or trust is skipped with its own warning, as before, and a
+    ceiling in that layer is not named; `tego run` refuses that layer at its load. A read of the file that fails does
+    fail D3. Any one of the other checks can be D3's
     sole failure. When `cgroup.Detect` itself refuses, D3's detail and fix are that
     refusal's own `Diagnosis` and `Remedy` (every Detect refusal is a `*cgroup.DetectError`), not a canned
     `Delegate=` line and not prose D3 splits apart: `ErrNotDelegated` covers more than one cause, and case 39
     (`runtime-launch.md`, a cgroup namespace looking at the host's `/sys/fs/cgroup`, asked of the uid-0 branch as
-    well) is cured by that namespace's own cgroup2 mount, which no `Delegate=` drop-in changes.
+    well) is cured by that namespace's own cgroup2 mount, which no `Delegate=` drop-in changes. Nor does it cure a uid
+    whose user manager is not running: when the only candidate is the canonical `user@<uid>.service`, it does not
+    exist and the mount holds `user.slice` (an account with a nologin shell reached through `su` or `sudo -u` that has
+    no linger), Detect's refusal also matches `cgroup.ErrNoUserManager`, and its remedy is to start that manager without
+    a login (`sudo loginctl enable-linger <user>`, the name from the passwd entry; `cgroup.LingerCommand`), then run
+    tego from a shell in it. Doctor's `Report.NoUserManager` is true when that is all tier landlock misses, and its
+    `next:` line names that command, never `tego setup` (*amended 2026-11-11*, acceptance 2B).
     Right after `Detect`, D3 asks `FS.CanPlace` whether this process can put a process into the root at all
     (`runtime-launch.md` case 41), and its refusal is reported the same way, `Diagnosis` and `Remedy`. A login
     over ssh or a service runs outside its `user@<uid>.service` and finds everything above true of it, the
@@ -824,9 +850,9 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     Yama exempts a descendant; **scope 2 keeps no such exemption and admits only `CAP_SYS_PTRACE`, and scope 3
     admits nobody, so scope ≥ 2 without `CAP_SYS_PTRACE` blocks every enforcement tier** — the launch aborts at
     `pidfd_getfd` with `ErrNotifyFDUnavailable`, and a `doctor` that still reported tier `landlock` would be
-    promising a sandbox no run can get. An absent sysctl (no `CONFIG_SECURITY_YAMA`) reads as scope 0; an
+    promising a tier no run can get. An absent sysctl (no `CONFIG_SECURITY_YAMA`) reads as scope 0; an
     unreadable or out-of-range one fails closed, because the cost of guessing wrong is a run that reports a
-    working sandbox while refusing every connect. **A round trip that fails on its own blocks every enforcement
+    working tier while refusing every connect. **A round trip that fails on its own blocks every enforcement
     tier too**, and is listed beside Yama's reason rather than hidden behind it: every tier installs the tier-1
     `NEW_LISTENER` filter, so a filter this process may not install is one no launch can install either —
     `EACCES` from an outer filter, or `EBUSY` when a listener already sits on this process's filter chain
@@ -1005,7 +1031,28 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   D7 hook's row by D7's `programs`), and leaves out a check that did not run for want of root wherever root is named.
   A user on a stock Ubuntu reads `summary: tier landlock; cgroup needs root; bpflsm needs root, lsm`. The summary says
   nothing the lines after the table do not, never starts with `tier: `, which scripts read from the tier line, and is
-  not in `--json` (`TestSummaryComesBeforeTheMatrix`). **The tiers are one derivation, and `tego run` selects from it**
+  not in `--json` (`TestSummaryComesBeforeTheMatrix`). After the report's own lines and before the dashboard line,
+  which stays last, one `note multicall:` line names the file `ls` leads to on doctor's PATH when it has more than one
+  hard link or is named `busybox`, `toybox` or `coreutils`: its link count, and what an `exec.allow` entry for one of
+  its names admits by tier (SEMANTICS §4's note of 2026-11-11, `docs/GAPS.md` C63). It is read by stat alone, runs no
+  program, never decides the exit, and is `multicall` in `--json` (`name`, `path`, `resolved`, `links`,
+  `dispatcher`), absent on a host with no such file (*added 2026-11-11*, `TestDoctorMulticallGolden`). After the whole report, on stderr and only when the guidance lines are on (a terminal, or
+  `TEGO_HINTS=on`; never with `--json`, with `TEGO_HINTS=off` or inside a governed run), one line gives the result and a
+  `next:` block the one next step (*amended 2026-11-10*: a newcomer met the answer on line 12 of 52 and no line said what
+  to type next; the stdout report is byte for byte what it was; ADR 0142's slice 1): `Ready: this shell can
+  enforce at tier 1 (landlock), no root needed.` (`a run started as root here` when doctor runs as root: a run started
+  without sudo gets tier landlock at most) and `tego test`; else `Not ready: this shell can only record.`, or `Not ready
+  for tier <n> (<t>), which --require asks for: ...`, and a step that points at the fix line (or the first failing
+  probe's fix) and then the check again (`doctor.Report.Verdict`, `TestVerdictSaysReadyOrNotAndForWhom`). *Amended
+  2026-11-11 (acceptance B, ADR 0142's amendment):* the check again is `tego setup`, never `tego doctor` itself, whose
+  `next:` line looped; for `--require cgroup` or `--require bpflsm` without root it is `sudo "$(command -v tego)"
+  doctor --require <t>`, which runs the root probes that tier needs; a root report's step is the sentence alone.
+  "Can only record" is said only where D3 passed: where D3 failed no run starts, one that records included, and the
+  line says `Not ready: tego can start no run from
+  this shell, not even tego watch.`; where D3's placement refusal beside the user manager's cgroup is all tier landlock
+  misses (`Report.OutsideUserManager`), `Not ready: this shell is outside your user manager's cgroup, so tego starts no
+  run from it, not even tego watch.` and the step opens a shell inside it (`systemd-run --user --scope bash`, then
+  `tego setup` there). The tier line's `none (...)` says the same; `tier: none` stays its first words. **The tiers are one derivation, and `tego run` selects from it**
   (`internal/doctor/derive.go`; `run` selects through `doctor.ForRun`'s `Report.Select`, over `Report.Probe` under
   the same machine config, and keeps no gate of its own; `ForRun` is this derivation over the checks of the tiers
   the run can reach, "What a run probes" below). A run refused a tier it asked for — `--tier <t>`, a
@@ -1540,6 +1587,13 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     endpoint would warn `model-direct-bypass`); its `cost_usd` budget is commented out with the price table it
     needs named, since without one every run of it is refused `[budget-unmetered]` and `compile` says so (R32).
   - `doctor [--require <tier>] [--json]` (R27; 0, 1 when no tier runs, 211 when `--require` is unmet, R25).
+  - `setup [--json] [-v]` (*added 2026-11-11*, ADR 0142, slice 2): runs doctor's no-root probes
+    (`doctor.ForRun` at reach landlock) from the invoking shell, stores their answer for this boot and this build in
+    `~/.tego/state/check.json` (doctor itself writes nothing), and prints the six steps `internal/guide` computes, each
+    with the fact that decided it, then the one next step as the `next:` block on stderr. `--json` is one object,
+    schema `tego.setup/1` (`docs/user/setup.md`). 0 when a tier runs from here, 1 when none does, 2 usage, 125 when the
+    machine config, the record or a registry cannot be read or a recorded run cannot be checked against the chain
+    anchor, inside a governed run (`[governed]`) and as root for another user (`[privilege]`).
   - `compile <file> [--test <table> [--tier <t>[,<t>]]] [--offline] [--json] [--merged] [--upgrade]` (0/1/2).
     Filesystem entries carrying an immutable ADR 0113 refusal include its `rule` id in `--json`, beside
     `builtin: true`; these targets apply independently of the contract's write entries and opt-outs.
@@ -1595,13 +1649,23 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     person's action (an error, with its fix) or when this run enforces less than the contract wrote (a warning
     about a rule: an unenforced or best-effort rule, a refused tier, a budget nothing counts). A note that only says
     how a rule applies and weakens nothing is left out of the start: a `[held-reads]` note, a `[redundant-rule]`
-    note, a `[mount]` note that a path is a mount point (`/dev/pts/`), and a `[record-off]` note that the
+    note, a `[mount]` note that a path is a mount point (`/dev/pts/`), a `[record-off]` note that the
     contract's own `record: off` keeps only a run's refusals, which the run's end says instead (`record off: refusals
-    only`, *amended 2026-11-02*). `tego compile` prints every one, as it always did (`doctor` checks the machine and
+    only`, *amended 2026-11-02*), and an `[exec-multicall]` note that a file an exec entry leads to has other names
+    or is a multi-call program (*amended 2026-11-11*: on Ubuntu 25.10 and later nearly every coreutils entry has one,
+    and the note says what the entry means there, which the author settles in the contract, not at each start).
+    `tego compile` prints every one, as it always did (`doctor` checks the machine and
     compiles no contract); `run -v` (`--verbose`) prints them at the start too. The `--record off` and `--observe`
     flags keep their warning (R29): the person typing them may not have meant to. A warning that weakens a rule is
     never hidden by the filter, and the AppArmor/SELinux disclosure of
-    held opens (ADR 0041 D2, `[unenforced]`) stays as one short line naming its fix. The run's record is unchanged:
+    held opens (ADR 0041 D2, `[unenforced]`) stays as one short line naming its fix. One more note is printed at
+    the start, `-v` or not (*amended 2026-11-11*, GAPS A12): `note: tego run: deny_read lists ... [deny-read-frozen]`, the
+    directories the run's Landlock ruleset listed once at launch to build its `deny_read` entries, on every run
+    whose ruleset listed one (with the built-in `~/.ssh` row, nearly every run). It weakens no rule, but a name made
+    in one of them during the run is unreadable to the agent until the run ends, and where tego does not see the
+    agent's opens (`record: summary` or `off` with direct reads) no line records that refused read, so the start is
+    the one place a person learns it before it happens; `run_start.deny_read_frozen` and the receipt's Coverage name
+    the same directories. The run's record is unchanged:
     the filter is on the terminal only, and the contract the run recorded (its copy and `contract_hash`) compiles
     to the same notes. `status` omits the `record/no-price-table` gap from its gap line for a run whose
     `run_start.limits` has no `cost_usd` (no price table serves a tokens or wall budget); the gap stays in the ledger
@@ -1667,11 +1731,39 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     process tree into `adopt-<run>.scope` and record it from the kernel until the tree ends (the agent's exit) or it is released
     (SIGINT, SIGTERM, `stop <run>`, `--release`); never kills it. A process the scope guard refuses, another user's without
     `--uid` naming its owner among them, is 125 `[adopt-refused]` with the rule named; a boundary rule a running process cannot be
-    held to is 125 `[adopt-refused]` naming the rule. `stop <run>` of an adoption is a release request that adoption alone
-    answers. Usage errors exit 2 (no `--pid`, arguments, `--release` with anything but `--pid`, a bad `--uid` or record level).
-  - `learn <run> [--out <file>] [--workspace <dir>]` (FEATURES C9): propose a contract from a finished run;
-    writes only a new file (0600) and never replaces one.
-  - `status [run] [--json] [--all]` (R7-R12, 0/1; a run id and `--all` together are a usage error, 2).
+    held to is 125 `[adopt-refused]` naming the rule. A boundary adoption under a `memory`, `memory_high`, `wall` or
+    `stall_after` ceiling of the machine config, which every `tego run` gets and an adoption cannot hold, is 125
+    `[adopt-refused]` too, one line per ceiling at its file and line. A `cpu`, `cpu_weight` or `pids` limit, a ceiling's
+    or the contract's, is written into the adoption's scope before the move (*amended 2026-11-11*, ADR 0055's limits
+    amendment, `TestBoundaryAdoptionAppliesCPUAndPidsCeilings`); the adoption is 125 `[adopt-refused]` when the
+    scope's parent does not enable the controller (the fix named) or the agent's tree holds as many tasks as `pids`
+    or more (the count and the limit named; *amended 2026-11-11 after review*: a tree of exactly `pids` tasks moved,
+    and its next fork failed at once).
+    A budget ceiling (`tokens`, `cost_usd`, `repeats`) does not refuse it, as R32 does not refuse a run: the adoption
+    goes on with one `warning: ... is not metered ... [unenforced]` line per budget at its file and line, and its run
+    records `gap what=record why=budget-unmetered`. A record-only adoption, which holds no rule (ADR 0055 (5)), goes on
+    with one `[unenforced]` line per ceiling and the same budget gap; a record-only guard prints those lines once when
+    it starts (*amended 2026-11-10*, GAPS C56, ADR 0055's machine ceilings amendment,
+    `TestAdoptionRefusesAMachineCeilingItCannotApply`, `TestBoundaryAdoptionGoesOnUnderABudgetCeiling`,
+    `TestRecordOnlyGuardWarnsOfEachCeilingOnceAtStart`). `stop <run>` of an adoption is a release request that adoption
+    alone answers. Usage errors exit 2 (no `--pid`, arguments, `--release` with anything but `--pid`, a bad `--uid` or
+    record level).
+  - `learn <run> [--save <name> | --out <file>] [--allow-host <host>[:<port>]]... [--reads on|off] [--workspace <dir>]` (FEATURES C9): propose a contract
+    from a finished run; writes only a new file (0600) and never replaces one. `--save <name>` writes it, named
+    `<name>` and compiled first, to the user registry (`<registry>/agents/<name>.yaml`, the folder 0700): a name that
+    is not free from the working directory or from the run's folder (a registry resolves it, or `tego run` would find
+    it ambiguous there), a file inside the proposal's own `fs.write` entries or a proposal that does not compile is 1
+    with nothing written; an invalid name, one that starts with `-`, or `--save` with `--out`, is 2; inside a governed
+    run 125 `[governed]`; as root for another user (sudo) 125 `[privilege]`.
+    `--reads on` writes `reason: {reads: on}` (ADR 0077); `--save` writes it unless `--reads off` (*amended
+    2026-11-10*). `--allow-host <host>[:<port>]` (repeatable, at most 8) writes the name in place of each address the
+    run reached that the name resolves to here now (docs/OPERATIONS.md, tego learn); a name that does not resolve
+    within 2 s, covers no address the run reached, answers with a private address the run did not reach or with an
+    address the leak rule withheld is 1 with nothing written and nothing printed on stdout; an address, a pattern,
+    port 0 or a ninth name is 2.
+  - `status [run] [--json] [--all]` (R7-R12, 0/1; a run id and `--all` together are a usage error, 2). With no runs it
+    prints `no runs` and `next: tego setup` (*amended 2026-11-11*: it named `tego init`'s preset line); `--json` prints
+    `{"runs":[]}` as before.
   - `ask <run> [ask_id] [--json]` lists pending approvals or inspects one target. `approve <run> <ask_id> [--json]` and `deny <run> <ask_id> [--json]` answer exactly one operation. The CLI verifies the live run lock/pidfd and broker credentials; server authentication checks each packet writer and rejects governed cgroup members/descendants (amended 2026-10-25: and a writer inside any run's or adoption's scope or a look-alike of one, or in another cgroup namespace than the broker's, ADR 0008; the refusal says whom the broker serves, and the request stays pending). A listed or inspected target is in its ledger form (an `http_request`'s path and query as record-ledger R9a records them). Unknown run or malformed protocol is usage error 2; unavailable endpoint, authentication or ledger failure is 125. The operation remains refused on failure. JSON adds the run and pending/request/decision object; text escapes control characters. No body or credential is displayed by request holds.
   - Status derives `waiting approval` after done/lost checks and before the stalled check (R9) and model/tool waits, while idle stays under `stall_after` plus the 1h `ask.timeout` ceiling (amended 2026-10-05: it was checked after R9; now before it, matching the watcher's R4 hold, and bounded as R9 states), from at most 64 recorded asks lacking a matching answer. Optional `pending_approvals` in JSON is present when positive. Matching legacy v1 answers need no additive `approved` field; duplicate/malformed payload fields or an impossible pending-state overflow fail the read, while unrelated events and unmatched answers create no readiness. Ended or unlocked runs report no live pending count.
   - `dns <name> [--type A] [--run-dir <dir>] [--server-pid <pid>] [--json]` queries a running run's DNS broker
@@ -1873,7 +1965,9 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   records `gap what=record why=budget-unmetered binary=<tokens|cost_usd|repeats>` right after `run_start`, one per
   such budget, whenever `run_start.capture` is `off`, compile warns `[unenforced]` for it only under `record: off`
   with a pinned `capture: uprobe`, and `run`'s one no-price-table line ends `, so the cost_usd budget of <v> never trips` for a
-  cost budget so imposed. The run exits as the agent did.
+  cost budget so imposed. The run exits as the agent did. An adoption, whose capture is always off, follows the same
+  rule: a boundary adoption is not refused for such a budget, warns `[unenforced]` at the ceiling's file and line,
+  and records the same gap (*amended 2026-11-10*, ADR 0055's machine ceilings amendment).
   A budget whose capture mechanism was given to the run and could not start fails closed instead: when the run
   has a `tokens`, `cost_usd` or `repeats` budget, `run_start.capture` would be `off`, and a mechanism the
   selection wanted is not running — a selection gap `why=mechanism-unavailable`, or a capture source that
@@ -1965,6 +2059,22 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   `status`, `events`, `drift` and `measure` give the same answers on the command line, each with `--json`.
 
 **Changes.** R1's changes are listed under R1.
+- 2026-11-11, R29 `adopt`: a boundary adoption under a `cpu`, `cpu_weight` or `pids` limit (a machine ceiling's or the
+  contract's) was refused, so a machine with a pids cap could adopt no service under a boundary. Those three are now
+  written into the adoption's scope before the move (ADR 0055, limits amendment); a controller the scope's parent does
+  not enable, and a tree with as many tasks as `pids` or more, refuse it with the fix or the count named
+  (`TestBoundaryAdoptionAppliesCPUAndPidsCeilings`, `TestEveryLimitsKeyIsAppliedOrRefusedByAnAdoption`).
+- 2026-11-10, R29 `adopt` and R27 D3: an adoption went on under a machine `limits.*` ceiling with no word, though
+  every `tego run` gets the ceiling and an adoption applies none. A boundary adoption is now refused for a kernel or
+  time limit ceiling, as for the contract's own limits, naming each ceiling's file and line, and the refusal says that
+  removing a ceiling lifts it for every run on the machine; a budget ceiling does not refuse it, as R32 does not refuse
+  a run, and is warned of, with the gap `why=budget-unmetered` in its record; a record-only adoption warns of each
+  ceiling, and a record-only guard does so once when it starts (`TestAdoptionRefusesAMachineCeilingItCannotApply`,
+  `TestBoundaryAdoptionGoesOnUnderABudgetCeiling`, `TestCeilingRefusalSaysWhatRemovingACeilingDoes`,
+  `TestRecordOnlyGuardWarnsOfEachCeilingOnceAtStart`, `TestAdoptionRecordsAnUnmeteredBudget`). D3 said nothing of a
+  ceiling on a controller that is not enabled, so on a stock RHEL 9 host with a `limits.cpu` ceiling every run was
+  refused (exit 125) while doctor reported tier landlock; D3 now names the ceiling and says so
+  (`TestControllersResultNamesACeilingOnAMissingController`).
 - 2026-11-02, R27 "What a run probes" (a test, no behaviour): `TestIntegrationForRunAsRoot` wanted the first run
   after a dropped answer to probe the plane on every machine, where R27 has it adopt a build pinned in the mode
   `bpf.plane` selects. A fresh KVM guest has no build pinned; CI's root-suites job runs the suites one after another
@@ -2131,6 +2241,14 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
   deny_read rows held by the name rows (ADR 0043 D6); <m> paths keyed` after the table (the table still lists every
   file, and tier landlock keeps them all); nothing for a table compacted nothing of (`TestCompilePrintsPlaneCompaction`;
   the guest's `TestCompactedTableStaysAtBPFLSM` reads it for 4,500 `.env` files).
+- 2026-11-11, R27 Output: a `note multicall:` line, before the dashboard line, names the file `ls` leads to when it
+  has more than one hard link or is busybox, toybox or coreutils (Ubuntu 25.10 and 26.04: 115 and 116 links), and
+  `--json` gains `multicall` there. Nothing said that an `exec.allow` entry for one such name admits more than the
+  name. It reads the link count and the name and runs no program; no other line moves.
+- 2026-11-10, R27 Output: after its report, on stderr and only when the guidance lines are on, `doctor` prints a
+  Ready or Not ready line and a `next:` block: `tego test`, or the fix. Its stdout keeps every line, its text and its
+  order (`TestVerdictSaysReadyOrNotAndForWhom`, the plane `.txt.golden` files unchanged). A first draft put a
+  `result:` and a `next:` line on stdout between the version banner and the probe lines; it moved before any merge.
 - 2026-11-02, R27 Output: `doctor` prints a `summary:` line between the probe lines and the capability table: the
   tier, a machine config's cap, and what each tier above it needs, by name. The tier line was the first answer a
   reader met, after the table's 31 rows. The tier line, the `missing for` lines and the fix line keep their place
@@ -2882,3 +3000,71 @@ heuristic, not proof of transferred bytes.
   source, so its env-runtime-reserved diagnostic is informational (compile and -v
   still show it). Actual overrides of TEGO_* and forwarder URLs remain actionable.
   Init prints errors and actionable warnings; its compile next step shows all notes.
+
+### Bound receipt and `receipt --check` amendment, 2026-11-10
+
+- `tego receipt --json` adds one key, `binding` (receipt_v stays 1; keys only grow):
+  `v` (1), `chain` (`run`, `lines`, `head`, `ended`, `bytes`, `sha256`, `torn_bytes`,
+  `newer_lines`, from the one pass that computes the receipt, `record-ledger.md`
+  "Binding a pass"), `receipt_by` (`tego_version`, `commit`), `limits` (fixed codes
+  `launching-user-can-rewrite`, `record-only` at tier observe, `tail-not-synced`,
+  `no-signature`, each with its words) and `error` (why no chain is bound, naming
+  the line; then `chain` is absent). A broken chain still prints the receipt, exit 0
+  as before, with one `warning:` line on stderr. The text receipt, `--verify`, the
+  dashboard's receipt and `tego run`'s end summary do not change. The run_start facts
+  (contract hash, grants beyond it) are not in `binding` yet: a list of what was
+  allowed beyond the contract waits until it can name live lifts and grants too.
+- `tego receipt --check <receipt.json> <run folder | events.jsonl> [--json]` compares
+  the two files alone. It never resolves or reads chain.log: the receipt's head stands
+  where the anchor's would. A flag, not a subcommand, since `tego receipt check`
+  already names the run whose id ends in `check`. With `--verify`, `--last`, no
+  record, two, or an empty file name it is usage (2). Checks, each `pass`, `fail`
+  or `not-checked` with a why: `receipt` (at most 64 MiB, one JSON object, no
+  duplicate key anywhere, receipt_v 1, a binding of v 1 with no `error`), `made_by`
+  (`receipt_by` is this tego, an exact build: no `+dirty`, no unknown version or
+  commit), `run`, `chain` (the `events --verify` walk), `head` (lines, head, end,
+  torn bytes, newer lines), `bytes` (size and sha256 of events.jsonl) and `facts`
+  (the receipt computed again from the record by this tego, compared whole with the
+  one given, every key and value with its JSON type, so an added key or an edited
+  path fails; see the round 3 entry below for the values taken from the receipt
+  rather than compared). Another
+  `receipt_by`, or a check by an inexact build, makes `facts` not-checked: there is
+  no partial compare.
+- Result: `match` (exit 0), `match-unended` (exit 0, the record has no `run_end`,
+  and the first text line says so), `mismatch` (exit 1, any check failed),
+  `cannot-check` (exit 125, a check did not run and none failed). `--json` writes
+  `check_v` 1, `result`, the record's `run`, `lines`, `head`, `ended`, `checks`,
+  `limits`, `not_shown` (`complete`, `honest-host`, `who`, `when`, `expected-job`),
+  `receipt_by`, `checked_by` and `not_compared` (round 3 below). Its words never say proof, signed or tamper-proof:
+  a matching pair can still have been made up by whoever could write both files.
+- Amended after review, 2026-11-10: `facts` compares every value whole (a message
+  cuts a long value to 80 characters and, when the two cut alike, names the byte of
+  their JSON where they differ); `head` compares the whole head and prints 12
+  characters; a `facts` pass carries a why naming what it did not compare; with no
+  readable record, `facts` says the record could not be read. Cost, measured by `BenchmarkComputeWithBind` (internal/check/receipt) on
+  a 20,002-line record: about 0.21 s unbound, 0.6 s bound, and about twice the bytes
+  allocated, since every line is also checked as `events --verify` checks it; only
+  `receipt --json` binds.
+- Amended after the second review (round 3), 2026-11-10: `facts` no longer drops
+  parts of either receipt before comparing. Of the values only the machine that
+  made the receipt can give, it takes from the receipt given: `tokens.est_cost_usd`
+  (a JSON number, 0 or more, 0 when no response was priced) and
+  `tokens.unpriced_responses` (a whole number from 0 to the record's metered
+  responses), when the record has a metered response; whether a run whose launcher
+  said it had no price table carries the `no-price-table` gap, when none was
+  metered; and for a record with no `run_end`, `time_taken.seconds` when it is a
+  reading past the record's last line (a live run's clock). It then computes the
+  receipt again with those (the cost's text, the price gap, `coverage.complete`,
+  the time taken's `so_far` and `note`, the stall and the refusals per minute) and
+  compares the whole of it. A value of the wrong type, out of range or missing is a
+  mismatch. `--json`'s `not_compared` lists what was taken (`[]` when nothing was,
+  null when `facts` compared nothing), and the `facts` line names it.
+- Amended after the third review (round 4), 2026-11-10: a cost written `-0`, which no
+  price table sums to and tego never writes, or one too large to round to a
+  micro-dollar, is a mismatch; with no metered response `facts` takes neither price
+  number, so `[]` in `not_compared` means every value came from the record. The
+  `receipt` check reads `receipt_v` and `binding.v` first: when both are 1, a bound
+  field (`run`, `tier`, `binding` or anything under it) of another type, or a count
+  such as `binding.chain.lines` written `98.0`, makes `receipt` fail naming the field,
+  a mismatch. Another `receipt_v` or `binding.v`, of any value or type, is still
+  cannot-check, as is a `receipt_by` that is not this tego's.

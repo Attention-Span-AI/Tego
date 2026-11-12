@@ -207,11 +207,24 @@ func TestIntegrationHeldOpenNeverExceedsLandlock(t *testing.T) {
 		}
 		var p struct {
 			Path       string `json:"path"`
+			Flags      int    `json:"flags"`
 			GateFacts  string `json:"gate_facts"`
 			SyscallRet *int64 `json:"syscall_ret"`
+			Completed  *bool  `json:"operation_completed"`
 		}
 		_ = json.Unmarshal(ev.Payload, &p)
 		if p.Path != filepath.Join(entry, "new") {
+			continue
+		}
+		if p.Flags&syscall.O_CREAT == 0 {
+			// RHEL's bash is built for AFS: a redirection whose create fails EACCES is opened once more without
+			// O_CREAT (bash-5.1.8-9.el9, AlmaLinux 9.8), which finds no file. That open is the shell's own, answered
+			// with its own ENOENT, and must have done nothing.
+			if p.SyscallRet == nil || *p.SyscallRet != -int64(syscall.ENOENT) || p.Completed == nil || *p.Completed {
+				t.Errorf("held: an open of the create's path without O_CREAT %s %s %s: want the task's own ENOENT, "+
+					"nothing performed", ev.Verdict, ev.Authority, ev.Payload)
+			}
+			t.Logf("held: the shell opened the path again without O_CREAT: %s", ev.Payload)
 			continue
 		}
 		found = true

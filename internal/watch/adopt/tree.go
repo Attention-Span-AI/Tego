@@ -121,6 +121,32 @@ func walk(p Proc, root Identity, from, dest string, extra []Identity) ([]Process
 	return out, skipped, nil
 }
 
+// TreeTasks counts the tasks of the processes Move would move now (root and its descendants still in root's cgroup,
+// and the extra identities'), every thread of each, as the pids controller counts them (pids.max, pids.current). A
+// process that exits while it is counted is not counted; one whose threads cannot be listed while it lives counts
+// its stat's thread count, at least one. It is a snapshot: the tree can grow before the move, so a caller holding a
+// pids ceiling checks the destination again after it.
+func TreeTasks(env Env, root Process, extra []Identity) (int, error) {
+	todo, _, err := walk(env.Proc, root.Identity, root.Cgroup, "", extra)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, t := range todo {
+		tids, err := env.Proc.Tasks(t.PID)
+		if err == nil {
+			n += len(tids)
+			continue
+		}
+		st, serr := env.Proc.Stat(t.PID)
+		if serr != nil || st.Gone() || st.StartTicks != t.Start {
+			continue // it exited: it will not move
+		}
+		n += max(st.NumThreads, 1)
+	}
+	return n, nil
+}
+
 // ErrIdentityChanged is a root whose start time is not the one it was identified with when the move came: its pid
 // names another process, and nothing is moved.
 var ErrIdentityChanged = errors.New("adopt: the process's pid now names another process")

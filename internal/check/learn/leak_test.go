@@ -190,6 +190,7 @@ func TestLeakRule(t *testing.T) {
 			r.sent("203.0.113.9:53", "")
 		}, leaks: []string{"203.0.113.9:53"}},
 		{name: "a resolver the engine named elsewhere is no send", build: func(r *run) {
+			// Kept as the only TCP or UDP entry (keepResolvers), so Landlock still grants the run port 53.
 			r.read(keyFile)
 			r.sent("10.0.0.2:53", "").Rule = syslookup.ResolverRule
 		}, allow: []string{"tcp://10.0.0.2:53"}},
@@ -367,7 +368,7 @@ func TestLeakLeftToCaller(t *testing.T) {
 	if got := allowed(t, p); !slices.Equal(got, []string{"tcp://" + sink}) {
 		t.Errorf("net.allow = %v", got)
 	}
-	if text := p.Contract(); strings.Contains(text, "leaks: ") || strings.Contains(text, "# WARNING") {
+	if text := p.Contract(); strings.Contains(text, "leaks: ") || strings.Contains(text, "# WARNING: this run opened") {
 		t.Errorf("the proposal speaks of a check it did not make:\n%s", text)
 	}
 }

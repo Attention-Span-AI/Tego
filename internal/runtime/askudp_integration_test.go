@@ -6,6 +6,7 @@ package runtime
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -473,7 +474,7 @@ limits:
 				t.Errorf("refused line %v; want no sendfile refused", l)
 			}
 		}
-		for _, l := range lines(t, evs, record.KindNet) {
+		for _, l := range netLinesBesideNSS(t, evs) {
 			t.Errorf("net line %v; a file copy is no network operation", l)
 		}
 		return
@@ -481,7 +482,7 @@ limits:
 	if _, err := fmt.Sscanf(s.out("rc"), "ok EACCES %d", &fd); err != nil {
 		t.Fatalf("the copies came to %q; want \"ok EACCES <fd>\" (%v); refused lines %v", s.out("rc"), err, lines(t, evs, record.KindRefused))
 	}
-	for _, l := range lines(t, evs, record.KindNet) {
+	for _, l := range netLinesBesideNSS(t, evs) {
 		t.Errorf("net line %v; a file copy is no network operation", l)
 	}
 	var copies []map[string]any
@@ -494,6 +495,40 @@ limits:
 		copies[0]["_reason"] != string(record.ReasonNetNotAllowed) {
 		t.Fatalf("refused sendfile lines %v; want one, rule fd-unreadable, target fd %d, reason net-not-allowed", copies, fd)
 	}
+}
+
+// nssSockets are the sockets glibc's NSS connects to for a user lookup: nscd's, and sssd's for "passwd: sss" in
+// nsswitch.conf (the RHEL family's default).
+var nssSockets = map[string]bool{"unix:/var/run/nscd/socket": true, "unix:/var/lib/sss/pipes/nss": true}
+
+// netLinesBesideNSS is the run's net lines but its connects to an NSS daemon's socket, which it logs. Where /bin/sh is
+// bash (the RHEL family), the agent's shell looks its user up at start, and on a host whose nsswitch.conf names sss
+// that lookup connects to nscd's and sssd's sockets, which the contract does not allow: the run refuses and records
+// them, true lines of the shell's (AlmaLinux 9.8: two to nscd's socket, one to sssd's, 2026-11-10). They are no
+// line about the copy, whose descriptor is a file; every other net line still is.
+func netLinesBesideNSS(t *testing.T, evs []*record.Event) []map[string]any {
+	t.Helper()
+	var out []map[string]any
+	for _, l := range lines(t, evs, record.KindNet) {
+		if dst, _ := l["dst"].(string); l["proto"] == "unix" && nssSockets[dst] {
+			t.Logf("net line %v: the shell's user lookup through NSS, not the copy", l)
+			continue
+		}
+		out = append(out, l)
+	}
+	return out
+}
+
+// nssConnect reports whether e is a net line of a connect to an NSS daemon's socket (nssSockets).
+func nssConnect(e *record.Event) bool {
+	if e.Kind != record.KindNet {
+		return false
+	}
+	var p struct {
+		Dst   string `json:"dst"`
+		Proto string `json:"proto"`
+	}
+	return json.Unmarshal(e.Payload, &p) == nil && p.Proto == "unix" && nssSockets[p.Dst]
 }
 
 // nonDumpableTwiceProbe makes itself non-dumpable, copies probe.py into out/<argv[1]> with sendfile twice, and writes

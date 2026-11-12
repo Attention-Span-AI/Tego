@@ -155,9 +155,24 @@ func TestIntegrationUDPFlood(t *testing.T) {
 		testutil.Figure{Wall: held})
 	allowed := h.netEvents(t, "127.0.0.1:"+strconv.Itoa(h.allowedPort))
 	denied := h.netEvents(t, "127.0.0.1:"+strconv.Itoa(h.deniedPort))
-	if len(allowed) != total-total/10 || len(denied) != total/10 {
-		t.Fatalf("%d lines for the declared port and %d for the undeclared one, want %d and %d", len(allowed), len(denied),
-			total-total/10, total/10)
+	// Every datagram has its line, and exactly one where the listener carries WAIT_KILLABLE_RECV: there a restart
+	// takes a fatal signal, so a line more than datagrams is the supervisor's own duplicate. Without the flag (5.19;
+	// RHEL 9.8's 5.14 answers it EINVAL) a non-fatal signal to the target that lands as the answer is sent restarts
+	// the sendto, and nothing here can tell that pair apart (E35). The Go target's own SIGURG does that: on AlmaLinux
+	// 9.8 under load, 100048 notifications and 4 lines more than datagrams (2026-11-10). Only there may the lines
+	// exceed the datagrams, and by no more than the notifications past one a datagram.
+	extra := len(allowed) + len(denied) - total
+	allowance := 0
+	if !waitKillableRecvHere(t) {
+		allowance = max(int(m.Notifications)-total, 0)
+	}
+	if len(allowed) < total-total/10 || len(denied) < total/10 || extra > allowance {
+		t.Fatalf("%d lines for the declared port and %d for the undeclared one, want %d and %d, and at most %d more "+
+			"(the notifications past one a datagram, on a kernel without WAIT_KILLABLE_RECV)", len(allowed), len(denied),
+			total-total/10, total/10, allowance)
+	}
+	if extra > 0 {
+		t.Logf("%d lines more than datagrams, within the %d notifications the kernel made again", extra, allowance)
 	}
 	for _, ev := range denied {
 		var p netPayload
@@ -168,4 +183,22 @@ func TestIntegrationUDPFlood(t *testing.T) {
 			t.Fatalf("an undeclared datagram's line is %s best_effort=%t, want the refusal made here", ev.Verdict, p.BestEffort)
 		}
 	}
+}
+
+// waitKillableRecvHere reports whether this kernel takes SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV, so whether the
+// supervisor's listener carries it (sys.SeccompSetFilterNewListener asks for it and falls back on EINVAL). It asks
+// the kernel, not the version, and installs nothing: seccomp(SECCOMP_SET_MODE_FILTER) checks its flags before it
+// reads the program, so a NULL program answers EINVAL for a flag the kernel does not know and EFAULT for one it does.
+func waitKillableRecvHere(t testing.TB) bool {
+	t.Helper()
+	_, _, errno := unix.Syscall(unix.SYS_SECCOMP, unix.SECCOMP_SET_MODE_FILTER,
+		unix.SECCOMP_FILTER_FLAG_NEW_LISTENER|unix.SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV, 0)
+	switch errno {
+	case unix.EFAULT:
+		return true
+	case unix.EINVAL:
+		return false
+	}
+	t.Fatalf("seccomp(SET_MODE_FILTER, NEW_LISTENER|WAIT_KILLABLE_RECV, NULL) = %v, want EFAULT or EINVAL", errno)
+	return false
 }

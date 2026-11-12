@@ -147,6 +147,17 @@ func (r *Report) finish() {
 	}
 }
 
+// judged counts the rows whose under-Tego half was judged: refused, allowed or unrecorded, not an error.
+func (r Report) judged() int {
+	n := 0
+	for _, row := range r.Checks {
+		if row.UnderTego.Result != ResultError {
+			n++
+		}
+	}
+	return n
+}
+
 // ExitCode is the report's exit status (R25): 0 pass, 1 an action got through or went unrecorded, 125 a check that
 // could not be judged.
 func (r Report) ExitCode() int {
@@ -199,12 +210,17 @@ func (r Report) WriteText(w io.Writer) error {
 		return err
 	}
 	b.WriteString("\n")
-	switch r.Verdict {
-	case VerdictPass:
+	switch {
+	case r.Verdict == VerdictPass:
 		b.WriteString("Each action works on this machine without Tego, and Tego refused and recorded every one.\n")
-	case VerdictFail:
+	case r.Verdict == VerdictFail:
 		b.WriteString("Tego did not refuse every action: a row marked allowed took effect under Tego, and one marked\n" +
 			"unrecorded was stopped without a record. Run tego doctor and report it.\n")
+	case r.judged() == 0:
+		// Not one run under Tego started (from a shell outside the user manager's cgroup, every one exits 125): nothing
+		// was judged, so "nothing got through" would claim what was never tried (acceptance B, 2026-11-11).
+		b.WriteString("No action could be judged: no run under Tego started (see the rows), so this says nothing\n" +
+			"about what Tego refuses here.\n")
 	default:
 		b.WriteString("Some actions could not be judged (see the rows): a refusal proves nothing when the action\n" +
 			"fails without Tego too. Nothing got through.\n")

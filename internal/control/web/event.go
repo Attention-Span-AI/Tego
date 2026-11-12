@@ -116,7 +116,7 @@ type ctxRow struct {
 func lineVerdict(e ledgerview.Event) (class, icon, word string) {
 	switch {
 	case e.Refused():
-		return "refused", "i-ban", "Blocked"
+		return "refused", "i-ban", "Refused"
 	case e.Verdict == "allow":
 		return "allowed", "i-check", "Allowed"
 	case e.Verdict == "ask", e.Kind == "ask" && e.Verdict == "":
@@ -474,7 +474,7 @@ func (s *Server) eventDetail(w http.ResponseWriter, r *http.Request) {
 	d.CLI = lineCLI(run, seq)
 	d.Label = ruleLabel(at, rulesview.RunLists(s.cfg.Ledger, run))
 	if l, ok := blockLabels(rr)[at.Rule]; ok {
-		d.Label = l
+		d.Label = sameFileLabel(l, &at)
 	}
 	if v, ok := strings.CutPrefix(at.Rule, "exec.deny["); ok && d.Label == at.Rule {
 		d.Label = "Denied command: " + strings.TrimSuffix(v, "]")
@@ -503,7 +503,7 @@ func (s *Server) eventDetail(w http.ResponseWriter, r *http.Request) {
 	if as, isAct := s.cfg.Rules.(ActService); noActKinds[at.Kind] {
 		d.NoAct = true
 	} else if !isAct {
-		d.ActErr = "Policy editing is off in this dashboard"
+		d.ActErr = "Contract editing is off in this dashboard"
 	} else {
 		s.act(r.Context(), as, &d, q)
 		if w := actErrWords(d.ActErr); w != d.ActErr {
@@ -711,7 +711,7 @@ func (s *Server) eventPost(w http.ResponseWriter, r *http.Request, rr *ledgervie
 	page := "/runs/" + url.PathEscape(rr.ID) + "/lines/" + strconv.FormatUint(at.Seq, 10)
 	as, ok := s.cfg.Rules.(ActService)
 	if !ok {
-		s.redirectBack(w, r, page+"#act", flash{Text: "Not done · policy editing is off in this dashboard"})
+		s.redirectBack(w, r, page+"#act", flash{Text: "Not done · contract editing is off in this dashboard"})
 		return
 	}
 	f := r.PostForm
@@ -797,7 +797,7 @@ func notSavedLine(p *rules.ActPlan) string {
 	case p.Nothing:
 		return "Nothing to save: " + p.PickErr
 	case p.Stale:
-		return "Not saved · the policy changed since you looked · check again and confirm"
+		return "Not saved · the contract changed since you looked · check again and confirm"
 	case p.AckMismatch:
 		return "Not saved · the preview changed · tick the box and confirm again"
 	case p.NeedsAck:
@@ -820,9 +820,9 @@ func undo(ctx context.Context, as ActService, q url.Values) flash {
 		}
 		return f
 	case errors.Is(err, rules.ErrStale):
-		return flash{Text: "Not undone · the policy changed since · edit it on the Policy page"}
+		return flash{Text: "Not undone · the contract changed since · edit it on the Contracts page"}
 	case errors.Is(err, rules.ErrAckMismatch):
-		return flash{Text: "Not undone · this Undo is out of date · use History under Edit policy"}
+		return flash{Text: "Not undone · this Undo is out of date · use History under Edit contract"}
 	case errors.Is(err, rules.ErrNeedsAck):
 		return flash{Text: "Not undone · tick \"Next run may do more\" to confirm"}
 	}

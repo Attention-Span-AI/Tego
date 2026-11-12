@@ -919,3 +919,83 @@ separately requires EPERM for task-initiated trusted-xattr changes. Those checks
 permitted and refused overlay writes, and NET09's ten topology operations in each
 of the initial and a new user namespace are validated together. The preemption
 waiver and its disclosed skipped-program limit are unchanged.
+
+### Machine ceilings amendment (2026-11-10): kernel and time limits refuse a boundary, budgets do not
+
+A `limits.*` ceiling in the machine config is part of every compiled table (agent-contract.md R11), and an
+adoption applies none of it. A boundary adoption under a kernel limit ceiling (`cpu`, `cpu_weight`, `memory`,
+`memory_high`, `pids`) or a time limit ceiling (`wall`, `stall_after`) is refused before anything moves, each
+ceiling named at its file and line, as (5) refuses the contract's own `limits`: an adoption cannot apply or
+enforce it, and a boundary adoption claims to hold its rules. A budget ceiling (`tokens`, `cost_usd`, `repeats`)
+does not refuse it, because `tego run` already goes on under a budget that only a machine ceiling imposes and
+nothing meters (limits-check-doctor-cli.md R32); an adoption, which captures nothing, does the same: it warns
+`[unenforced]` at the ceiling's file and line and records `gap what=record why=budget-unmetered`. A record-only
+adoption holds nothing, so no ceiling refuses it; it warns of each one (GAPS C56).
+
+### Limits amendment (2026-11-11): a boundary adoption applies cpu, cpu_weight and pids
+
+This amends (3) ("no limits"), (5) (`limits` refused) and the machine ceilings amendment above, for those three keys
+only. Until now an adoption applied no limit, so a boundary adoption on a machine whose config sets `limits.cpu`,
+`limits.cpu_weight` or `limits.pids` was refused (GAPS C56). Unattended agents are often services an init system
+started, adoption is how they come under rules, and a machine-wide pids cap is common hardening, so that refusal
+closed the main way to govern them.
+
+**What is applied.** A boundary adoption's table holds the contract's `cpu`, `cpu_weight` and `pids`, each clamped to
+its machine ceiling, or the ceiling alone (agent-contract.md R11). The runtime writes them as `cpu.max`, `cpu.weight`
+and `pids.max` into the adoption's scope while it is empty, right after it is made and before tier 2 is prepared,
+attached and armed and before anything moves, through the writer a launched run uses (`cgroup.Manager.SetLimits`). From
+its move on, each process of the tree is throttled by `cpu.max` and weighted by `cpu.weight`, and a fork or a new thread
+past `pids.max` fails with `EAGAIN`. The kernel ends no process for them, which is why an adoption can hold them: tego
+never ends the agent. A program may still end itself when it cannot start a thread: Go's runtime aborts then, as tego's
+own Go stage does under a pids limit below 6 (agent-contract.md R11), and Node may too (read, not run for this
+amendment). That is why the pids refusal below keeps room for at least one more task when the tree moves. The notice
+`tego adopt` prints says them (`limits: cpu 2, pids 512, written to its cgroup before the move`). A record-only adoption
+holds no rule and writes no limit, as before (5).
+
+**What is still refused, and why.** `memory` and `memory_high`: what the agent already holds stays charged to the
+cgroup it came from (a migration does not move a cgroup v2 memory charge), so a cap would count only what it
+allocates after the move, which is no cap on the agent; and a cap reached ends it through the OOM killer. `wall` and
+`stall_after`: they end the agent. The contract's budgets (`tokens`, `cost_usd`, `repeats`): an adoption meters no
+model traffic, and a budget ends the agent. A budget a machine ceiling alone imposes still does not refuse it (the
+machine ceilings amendment). A key a later schema adds is refused until it is classified
+(`TestEveryLimitsKeyIsAppliedOrRefusedByAnAdoption`).
+
+**Refusals the limits bring, before anything moves.** A scope whose parent does not enable the controller a limit needs
+(`cpu` on a stock RHEL 9 at the cgroup2 root, GAPS B15) refuses the write: the adoption is refused (exit 125,
+`[adopt-refused]`) with the setup that enables it (`EnableFix`: a CPU weight on `system.slice` and a reboot, for root).
+A tree that holds as many tasks as `pids.max` or more (processes and threads, as the pids controller counts them) is
+refused with the count, the ceiling and the least ceiling that goes on (the count plus one): the kernel charges a
+migration whatever the limit, so moved, the live agent's next fork or thread would fail at once. A ceiling equal to the
+count is refused too (*amended 2026-11-11 after review*; it first moved, as a launched run at its limit can be, but a
+launched run reaches its limit by its own forks, while a live service moved there fails its very next one, which is the
+harm this refusal is for). The count is taken under the host-wide move lock right after the root's recheck
+(`adopt.TreeTasks`).
+
+**The count can rise before the last member moves.** A member still in its old cgroup can fork until it moves, and its
+child's migration is charged past the limit. Once the tree has moved the scope's tasks are counted again
+(`cgroup.threads`); at the ceiling or over it, the adoption is refused and the tree released where it came from, the new
+processes with it, before run_start. It is never kept where its next fork fails. A fork the moved agent made inside the
+scope in that time counts the same, so it can refuse an adoption that would have had no room left: that fails closed,
+and the agent is back where it was. The window this choice leaves starts when a migration (which the kernel charges
+whatever the limit) brings the scope to the ceiling, inside the move, and lasts through the rest of the move, the
+listing and the release (the scope frozen, its processes moved back): in it a fork in the scope fails with `EAGAIN`.
+
+**Nothing is left behind.** A write that fails after others landed fails the adoption before tier 2 is prepared, and the
+unwind removes the scope with whatever it holds. A release that leaves processes in the scope (no cgroup takes them
+back) writes every limit file there back to the kernel's default (`cgroup.FS.LiftLimits`): those processes are released
+and governed by nothing, so none keeps a limit. The adopter does it as it releases, and a later release of the orphaned
+record (the reaper's, `tego adopt --release --pid`, a root sweep) does it again. A lift by the adopter that the kernel
+refuses is said in a refused adoption's error, and in run_end's detail of a run that ended (*amended 2026-11-11 after
+review*: the ended run's was only in tego's own log); a later release's is part of that release's error.
+
+**What the record says.** run_start's `limits` block carries budgets only (record-ledger.md), and has no key for
+`cpu`, `cpu_weight` or `pids`, for a launched run either; this change adds no field, so an adoption's record does not
+say which of them it applied. `run_end.resources` carries what the scope counted (`pids_peak`, `cpu_nr_throttled`,
+`cpu_throttled_usec`), as a launched run's does. Saying the applied values in the record needs a run_start field and
+is left open (GAPS C56).
+
+Measured: unit tests over the fake cgroup tree and the real writer (`internal/runtime` adopt_limits_test.go,
+`internal/cli` adopt_limits_test.go and adopt_ceiling_test.go, `internal/runtime/cgroup` lift_test.go,
+`internal/watch/adopt` treetasks_test.go). Root behaviour in a guest is written as
+`TestIntegrationAdoptAppliesPidsAndCPUCeilings` and `TestIntegrationAdoptRefusesATreeOverItsPidsCeiling`
+(`internal/cli`), not yet run.

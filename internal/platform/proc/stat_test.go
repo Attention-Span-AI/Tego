@@ -4,6 +4,8 @@ package proc
 
 import (
 	"errors"
+	"fmt"
+	"io/fs"
 	"reflect"
 	"strconv"
 	"strings"
@@ -24,6 +26,26 @@ func statLine(pid int, comm string, ppid int, threads int, start uint64) string 
 	return itoa(pid) + " (" + comm + ") " + strings.Join(tail, " ") + "\n"
 }
 
+// releasedStatLine is the line fs/proc/array.c's do_task_stat writes for a task released (release_task) after the
+// read took a reference to it and before the read took its sighand lock (torvalds/linux 1d4ee94a51bd,
+// fs/proc/array.c:474-475 and 518-541): __exit_signal set task->sighand to NULL, so lock_task_sighand fails and
+// ppid 0, pgid -1, sid -1, tty_nr 0, tty_pgrp -1 and num_threads 0 keep the values they were declared with. The
+// state was read before the lock (array.c:491), so it is whatever the task was then. The mm is gone (exit_mm), so
+// vsize, rss and the code and data addresses are 0, rsslim 0, and the signal masks are empty. Fields as
+// array.c:588-662 prints them, 52 in all.
+func releasedStatLine(pid int, comm string, state byte, start uint64) string {
+	tail := []string{
+		string(state), "0", "-1", "-1", "0", "-1", "4194308", // 3..9: state ppid pgrp session tty_nr tpgid flags
+		"120", "0", "0", "0", "3", "1", "0", "0", // 10..17: faults and times
+		"20", "0", "0", "0", utoa(start), // 18..22: priority nice num_threads itrealvalue starttime
+		"0", "0", "0", "0", "0", "0", "0", "0", // 23..30: vsize rss rsslim code stack esp eip
+		"0", "0", "0", "0", "0", "0", "0", // 31..37: signal masks, wchan, nswap, cnswap
+		"17", "3", "0", "0", "0", "0", "0", // 38..44: exit_signal cpu rt_priority policy blkio gtime cgtime
+		"0", "0", "0", "0", "0", "0", "0", "0", // 45..52: data, brk, arg, env, exit_code
+	}
+	return itoa(pid) + " (" + comm + ") " + strings.Join(tail, " ") + "\n"
+}
+
 func itoa(n int) string    { return strconv.Itoa(n) }
 func utoa(n uint64) string { return strconv.FormatUint(n, 10) }
 
@@ -34,15 +56,23 @@ func TestParseStat(t *testing.T) {
 		want Stat
 		err  bool
 	}{
-		{"plain", statLine(42, "python3", 7, 3, 1234), Stat{PID: 42, Comm: "python3", State: 'S', PPID: 7, Pgrp: 10, StartTicks: 1234, NumThreads: 3, Flags: 4194304}, false},
-		{"comm with spaces and parens", statLine(9, "my (odd) name", 1, 1, 5), Stat{PID: 9, Comm: "my (odd) name", State: 'S', PPID: 1, Pgrp: 10, StartTicks: 5, NumThreads: 1, Flags: 4194304}, false},
-		{"comm with a close paren last", statLine(9, "a)b", 1, 1, 5), Stat{PID: 9, Comm: "a)b", State: 'S', PPID: 1, Pgrp: 10, StartTicks: 5, NumThreads: 1, Flags: 4194304}, false},
-		{"exiting: PF_EXITING in the flags", strings.Replace(statLine(9, "a", 1, 1, 5), " 4194304 ", " 4194308 ", 1), Stat{PID: 9, Comm: "a", State: 'S', PPID: 1, Pgrp: 10, StartTicks: 5, NumThreads: 1, Flags: 4194308}, false},
+		{"plain", statLine(42, "python3", 7, 3, 1234), Stat{PID: 42, Comm: "python3", State: 'S', PPID: 7, Pgrp: 10, Session: 10, StartTicks: 1234, NumThreads: 3, Flags: 4194304}, false},
+		{"comm with spaces and parens", statLine(9, "my (odd) name", 1, 1, 5), Stat{PID: 9, Comm: "my (odd) name", State: 'S', PPID: 1, Pgrp: 10, Session: 10, StartTicks: 5, NumThreads: 1, Flags: 4194304}, false},
+		{"comm with a close paren last", statLine(9, "a)b", 1, 1, 5), Stat{PID: 9, Comm: "a)b", State: 'S', PPID: 1, Pgrp: 10, Session: 10, StartTicks: 5, NumThreads: 1, Flags: 4194304}, false},
+		{"exiting: PF_EXITING in the flags", strings.Replace(statLine(9, "a", 1, 1, 5), " 4194304 ", " 4194308 ", 1), Stat{PID: 9, Comm: "a", State: 'S', PPID: 1, Pgrp: 10, Session: 10, StartTicks: 5, NumThreads: 1, Flags: 4194308}, false},
 		{"non-numeric flags", strings.Replace(statLine(9, "a", 1, 1, 5), " 4194304 ", " x ", 1), Stat{}, true},
 		{"no parens", "42 python3 S 1\n", Stat{}, true},
 		{"unclosed comm", "42 (python3 S 1\n", Stat{}, true},
 		{"non-numeric pid", "x (a) S 1 2 3\n", Stat{}, true},
 		{"negative pid", statLine(-1, "a", 1, 1, 5), Stat{}, true},
+		{"pid zero", statLine(0, "a", 1, 1, 5), Stat{}, true},
+		{"process group -1 of a live task", strings.Replace(statLine(9, "a", 1, 1, 5), " 1 10 10 ", " 1 -1 10 ", 1), Stat{}, true},
+		{"session -1 of a live task", strings.Replace(statLine(9, "a", 1, 1, 5), " 1 10 10 ", " 1 10 -1 ", 1), Stat{}, true},
+		{"session -2", strings.Replace(statLine(9, "a", 1, 1, 5), " 1 10 10 ", " 1 10 -2 ", 1), Stat{}, true},
+		{"non-numeric session", strings.Replace(statLine(9, "a", 1, 1, 5), " 1 10 10 ", " 1 10 x ", 1), Stat{}, true},
+		{"non-numeric tty", strings.Replace(statLine(9, "a", 1, 1, 5), " 10 10 0 -1 ", " 10 10 x -1 ", 1), Stat{}, true},
+		{"process group -2", strings.Replace(releasedStatLine(9, "a", 'X', 5), " -1 -1 0 -1 ", " -2 -1 0 -1 ", 1), Stat{}, true},
+		{"reaped shape with a thread", strings.Replace(releasedStatLine(9, "a", 'X', 5), " 0 0 5 ", " 1 0 5 ", 1), Stat{}, true},
 		{"truncated tail", "42 (a) S 1\n", Stat{}, true},
 		{"empty", "", Stat{}, true},
 		{"only a paren", ")", Stat{}, true},
@@ -66,6 +96,120 @@ func TestParseStat(t *testing.T) {
 				t.Errorf("got %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+// deThreadStatLine is a line a reader on kernel 6.17 caught for a LIVE process: a thread other than the leader
+// of pid 842314 ran execve in a loop, and de_thread released the old leader while the read held it. It has the
+// released shape (releasedStatLine), state Z and exit_signal (field 38) -1. The process ran on under the same pid
+// and start time, and no read of it got ENOENT (measured in review on 2026-11-11 with a pread loop).
+const deThreadStatLine = "842314 (exe) Z 0 -1 -1 0 -1 4228108 40251 0 0 0 4 27 0 0 20 0 0 0 82606841 0 0 0 0 0 0 0 " +
+	"0 0 0 0 0 1 0 0 -1 6 0 0 0 0 0 0 0 0 0 0 0 0 0\n"
+
+// TestParseStatOfAReleasedTask: a task released while its stat was read is printed with process group -1
+// (releasedStatLine). One line cannot say whether the process is gone: the kernel writes it for a process reaped
+// during the read and for a live one whose old leader an execve released (deThreadStatLine). ParseStat answers
+// ErrStat and ErrReleased, never ErrGone, so a caller that does not read again fails closed.
+func TestParseStatOfAReleasedTask(t *testing.T) {
+	lines := []string{deThreadStatLine}
+	for _, state := range []byte{'X', 'Z', 'R', 'S'} {
+		lines = append(lines, releasedStatLine(4242, "a (b) c", state, 900))
+	}
+	for _, line := range lines {
+		if n := len(strings.Fields(line[strings.LastIndexByte(line, ')')+1:])); n != 50 {
+			t.Fatalf("%q has %d fields after the comm, want 50 (fields 3..52)", line, n)
+		}
+		s, err := ParseStat([]byte(line))
+		if !errors.Is(err, ErrStat) || !errors.Is(err, ErrReleased) || errors.Is(err, ErrGone) {
+			t.Fatalf("ParseStat(%q) = %+v, %v; want ErrStat and ErrReleased, not ErrGone", line, s, err)
+		}
+	}
+}
+
+// reads is a stat file that answers each read with the next of its results, and the last one after that.
+type reads struct {
+	lines []string
+	errs  []error
+	n     int
+}
+
+func (r *reads) read() ([]byte, error) {
+	i := min(r.n, len(r.lines)-1)
+	r.n++
+	if r.errs[i] != nil {
+		return nil, r.errs[i]
+	}
+	return []byte(r.lines[i]), nil
+}
+
+// TestReadStatReadsAReleasedLineAgain: ReadStat decides a released line by the next read. A process that is gone
+// is read's own error (ENOENT here, which FS.Stat answers ErrGone); a live process mid-exec is its next line; a
+// line that stays released through every read is returned, and ParseStat refuses it (ErrStat).
+func TestReadStatReadsAReleasedLineAgain(t *testing.T) {
+	released := releasedStatLine(842314, "exe", 'Z', 82606841)
+	live := statLine(842314, "exe", 842312, 1, 82606841)
+	enoent := fmt.Errorf("open /proc/842314/stat: %w", fs.ErrNotExist)
+	for _, c := range []struct {
+		name  string
+		lines []string
+		errs  []error
+		want  string
+		err   error
+		reads int
+	}{
+		{"live", []string{live}, []error{nil}, live, nil, 1},
+		{"reaped", []string{released, ""}, []error{nil, enoent}, "", enoent, 2},
+		{"a live process mid-exec", []string{deThreadStatLine, live}, []error{nil, nil}, live, nil, 2},
+		{"released on every read", []string{released}, []error{nil}, released, nil, statReads},
+		{"gone at once", []string{""}, []error{enoent}, "", enoent, 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := &reads{lines: c.lines, errs: c.errs}
+			b, err := ReadStat(r.read)
+			if string(b) != c.want || !errors.Is(err, c.err) || (c.err == nil) != (err == nil) || r.n != c.reads {
+				t.Fatalf("ReadStat = %q, %v after %d reads; want %q, %v after %d", b, err, r.n, c.want, c.err, c.reads)
+			}
+		})
+	}
+}
+
+// TestParseStatReadsSessionAndTTY: fields 6 and 7, the session and the controlling terminal (tty_nr, 0 for none),
+// which the supervisor's tty class reads (heldTTY).
+func TestParseStatReadsSessionAndTTY(t *testing.T) {
+	line := strings.Replace(statLine(9, "a", 1, 1, 5), " 1 10 10 0 -1 ", " 1 10 9 34817 10 ", 1)
+	s, err := ParseStat([]byte(line))
+	if err != nil || s.Session != 9 || s.TTY != 34817 {
+		t.Fatalf("ParseStat(%q) = %+v, %v; want session 9 and tty 34817", line, s, err)
+	}
+}
+
+// TestReadParsedStat: ReadParsedStat is ReadStat and then ParseStat. A released line read again is the live line
+// that follows it; one that stays released is ErrStat and ErrReleased; read's own error comes back unchanged.
+func TestReadParsedStat(t *testing.T) {
+	released := releasedStatLine(842314, "exe", 'Z', 82606841)
+	live := statLine(842314, "exe", 842312, 1, 82606841)
+	enoent := fmt.Errorf("open /proc/842314/stat: %w", fs.ErrNotExist)
+	s, err := ReadParsedStat((&reads{lines: []string{deThreadStatLine, live}, errs: []error{nil, nil}}).read)
+	if err != nil || s.PPID != 842312 || s.StartTicks != 82606841 {
+		t.Fatalf("mid-exec: ReadParsedStat = %+v, %v; want the live line", s, err)
+	}
+	if _, err := ReadParsedStat((&reads{lines: []string{released}, errs: []error{nil}}).read); !errors.Is(err, ErrStat) || !errors.Is(err, ErrReleased) {
+		t.Fatalf("released on every read: ReadParsedStat = %v; want ErrStat and ErrReleased", err)
+	}
+	if _, err := ReadParsedStat((&reads{lines: []string{released, ""}, errs: []error{nil, enoent}}).read); !errors.Is(err, fs.ErrNotExist) || errors.Is(err, ErrStat) {
+		t.Fatalf("reaped: ReadParsedStat = %v; want read's ENOENT", err)
+	}
+}
+
+// TestStatOfAReleasedTask: FS.Stat, and so every FS reader built on it, reads a released line again. A file that
+// keeps it is ErrStat, never ErrGone: no read said the process is gone.
+func TestStatOfAReleasedTask(t *testing.T) {
+	f := fakeProc(t, 4242, map[string]string{"stat": releasedStatLine(4242, "agent", 'X', 900)}, nil)
+	if _, err := f.Stat(4242); !errors.Is(err, ErrStat) || errors.Is(err, ErrGone) {
+		t.Fatalf("Stat(released) = %v, want ErrStat and not ErrGone", err)
+	}
+	if _, err := f.Identity(4242); !errors.Is(err, ErrStat) || errors.Is(err, ErrGone) {
+		t.Fatalf("Identity(released) = %v, want ErrStat and not ErrGone", err)
 	}
 }
 
@@ -167,16 +311,26 @@ func FuzzParseStat(f *testing.F) {
 	f.Add("1 (a) S 0 0 0 0 0")
 	f.Add(")(")
 	f.Add(statLine(1, "x", 0, 1, 18446744073709551615))
+	f.Add(releasedStatLine(7, "a", 'X', 3))
+	f.Add(deThreadStatLine)
 	f.Fuzz(func(t *testing.T, line string) {
 		s, err := ParseStat([]byte(line))
 		if err != nil {
-			if !errors.Is(err, ErrStat) {
-				t.Fatalf("ParseStat(%q) = %v, which is not ErrStat", line, err)
+			// Every error is ErrStat, the line of a task released while it was read too: one line cannot say the
+			// process is gone, so no line is ErrGone. ErrReleased marks only a line whose process group is -1.
+			if !errors.Is(err, ErrStat) || errors.Is(err, ErrGone) {
+				t.Fatalf("ParseStat(%q) = %v, which is not ErrStat, or is ErrGone", line, err)
+			}
+			if errors.Is(err, ErrReleased) {
+				tail := strings.Fields(line[strings.LastIndexByte(line, ')')+1:])
+				if len(tail) < 3 || tail[2] != "-1" {
+					t.Fatalf("ParseStat(%q) = %v, from a line whose process group is not -1", line, err)
+				}
 			}
 			return
 		}
-		if s.PID < 0 || s.PPID < 0 || s.NumThreads < 0 {
-			t.Fatalf("negative pid, ppid or thread count from %q: %+v", line, s)
+		if s.PID <= 0 || s.PPID < 0 || s.Pgrp < 0 || s.Session < 0 || s.NumThreads < 0 {
+			t.Fatalf("a pid of 0 or below, or a negative ppid, process group, session or thread count from %q: %+v", line, s)
 		}
 		// StartBootNS multiplied without a bound, so a starttime past 2^64/1e7 ticks wrapped to a small time and read as
 		// another process's start.

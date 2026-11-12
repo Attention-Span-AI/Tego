@@ -84,6 +84,19 @@ func TestSentencesAreFacts(t *testing.T) {
 	}
 }
 
+// TestSentencesDoNotCallTheRunASandbox: Tego holds a run to a contract and does not hide the machine, so no sentence
+// an agent or the ledger reads calls the run a sandbox (the README's Known limits).
+func TestSentencesDoNotCallTheRunASandbox(t *testing.T) {
+	for code, f := range facts {
+		if strings.Contains(strings.ToLower(f), "sandbox") {
+			t.Errorf("%s: %q calls the run a sandbox", code, f)
+		}
+	}
+	if strings.Contains(strings.ToLower(Instructions("/run/user/1000/tego/r/last-refusal.json")), "sandbox") {
+		t.Error("Instructions calls the run a sandbox")
+	}
+}
+
 // TestTextGolden is every code's sentence, for review of the wording (testdata/text.golden), with the forms an
 // empty op, target or rule takes, and a code outside the set.
 func TestTextGolden(t *testing.T) {

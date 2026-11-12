@@ -51,6 +51,19 @@ type Report struct {
 	// applied: the one tier derivation (derive.go), which `tego run` selects from. It is the value
 	// Probe returns and enforce.Select consumes; Tier is what the ceiling then allows.
 	Tiers backend.Probe `json:"tiers"`
+	// OutsideUserManager is true when no tier runs from this process only because it runs beside its user manager's
+	// cgroup (an SSH or console login's session scope): D3's placement refusal (cgroup.ErrBesideSubtree) is the one
+	// thing tier landlock misses, and the ceiling allows tier landlock. A shell opened inside that cgroup
+	// (systemd-run --user --scope) gets tier landlock; tego starts no run from this one, not even tego watch. It is
+	// the predicate `tego setup` stores and `tego doctor`, `tego run`, `tego watch` and `tego test` name that shell on
+	// (acceptance B, 2026-11-11). Not in --json: doctor's JSON stays as scripts read it.
+	OutsideUserManager bool `json:"-"`
+	// NoUserManager is true when no tier runs from this process only because no user manager runs for its user
+	// (cgroup.ErrNoUserManager: user@<uid>.service has no cgroup, as for an account with a nologin shell reached
+	// through su or sudo -u that has no linger), with the same conditions as OutsideUserManager. The delegation fix
+	// changes nothing there; doctor and tego setup name cgroup.LingerCommand (acceptance 2B, 2026-11-11). Not in
+	// --json.
+	NoUserManager bool `json:"-"`
 
 	// The raw state behind the results, for --json consumers and for tests.
 	Kernel      string      `json:"kernel"`
@@ -87,7 +100,7 @@ type Report struct {
 // Result{OK:false} and a fix, because a missing capability is an answer, not a failure (§4).
 func Run(ctx context.Context, m *config.Machine, require backend.Tier) (*Report, error) {
 	uid, _ := config.InvokingUID()
-	st := runProbes(ctx, uid, planePin(m))
+	st := runProbes(ctx, uid, planePin(m), m.LimitCeilings())
 	if ctx.Err() != nil {
 		return nil, fmt.Errorf("doctor: %w", ctx.Err())
 	}
@@ -120,6 +133,8 @@ func (st probeState) report(m *config.Machine, require backend.Tier) *Report {
 		r.Fanotify = &f
 	}
 	r.Tiers = st.probe()
+	r.OutsideUserManager = st.outsideUserManager(r.Ceiling)
+	r.NoUserManager = st.noUserManager(r.Ceiling)
 	// A concrete machine tier is both ceiling and pin, exactly as internal/runtime/enforce reads it
 	// (docs/p0/identity-config.md §5 R17), and `tego run` selects from this same r.Tiers, so the tier
 	// doctor reports is the tier a run of an auto contract gets under the same machine config; a
@@ -291,6 +306,70 @@ func (r *Report) WriteText(w io.Writer) error {
 	return nil
 }
 
+// Verdict is the line for a person who reads only the end of doctor's report, which `tego doctor` writes on stderr
+// after it (docs/p0/limits-check-doctor-cli.md R27; doctor's stdout stays as scripts read it), and fix, what doctor printed to make the
+// next tier up available, "" when the line says ready: the fix line, or the first failing check's own fix. Ready is
+// doctor's exit 0. A report made as root is a root run's: a run the same person starts without sudo gets tier
+// landlock at most, so its line says "a run started as root here", never "this shell".
+func (r *Report) Verdict() (line, fix string) {
+	who, can := "this shell", "this shell can"
+	if r.Root {
+		who, can = "a run started as root here", "a run started as root here can"
+	}
+	got := can + " only record"
+	if r.Tier != "" {
+		got = can + " enforce at " + TierWords(r.Tier)
+	}
+	// "Only record" holds only where D3 passed: a run that records is placed in the same cgroup, so where D3 fails
+	// tego watch fails too (acceptance B, 2026-11-11).
+	none := who + " can only record"
+	switch {
+	case r.OutsideUserManager:
+		none = who + " is outside your user manager's cgroup, so tego starts no run from it, not even tego watch"
+	case r.NoUserManager:
+		none = "no user manager runs for this user, so tego starts no run from " + who + ", not even tego watch"
+	case r.placementFailed():
+		none = "tego can start no run from " + who + ", not even tego watch"
+	}
+	if r.Tier == "" {
+		got = none
+	}
+	switch r.ExitCode() {
+	case identity.ExitOK:
+		line = "Ready: " + got
+		if !r.Root && r.Tier == backend.TierLandlock {
+			line += ", no root needed"
+		}
+		return line + ".", ""
+	case identity.ExitRequire:
+		line = fmt.Sprintf("Not ready for %s, which --require asks for: %s.", TierWords(r.Require), got)
+	default:
+		line = "Not ready: " + none + "."
+	}
+	fix = r.Fix
+	for _, res := range r.Results {
+		if fix == "" && !res.OK && !res.Skipped && res.Fix != "" {
+			fix = res.Fix
+		}
+	}
+	return line, fix
+}
+
+// TierWords is a tier as a newcomer reads it beside its key: "tier 1 (landlock)", "tier 2 (cgroup)", "tier 3
+// (bpflsm)" (docs/TIERS.md numbers them so).
+func TierWords(t backend.Tier) string {
+	switch t {
+	case backend.TierLandlock:
+		return "tier 1 (landlock)"
+	case backend.TierCgroup:
+		return "tier 2 (cgroup)"
+	case backend.TierBPFLSM:
+		return "tier 3 (bpflsm)"
+	case backend.TierObserve, backend.TierAuto:
+	}
+	return "tier " + string(t)
+}
+
 // tierText is what the tier line says after "tier: ", and the summary after "tier ": the tier this machine gets,
 // or none and why.
 func (r *Report) tierText() string {
@@ -302,10 +381,27 @@ func (r *Report) tierText() string {
 			text += " (available here: " + strings.Join(avail, ", ") + ")"
 		}
 		return text
+	case r.Tier == "" && r.OutsideUserManager:
+		return "none (this shell is outside your user manager's cgroup, so tego starts no run from it)"
+	case r.Tier == "" && r.NoUserManager:
+		return "none (no user manager runs for this user, so tego starts no run from here)"
+	case r.Tier == "" && r.placementFailed():
+		return "none (tego can start no run from here)"
 	case r.Tier == "":
 		return "none (this machine can only record)"
 	}
 	return string(r.Tier)
+}
+
+// placementFailed reports whether D3 ran and failed: every run, one that only records included, is made in the
+// cgroup D3 checks, so none starts from here.
+func (r *Report) placementFailed() bool {
+	for _, res := range r.Results {
+		if res.ID == CheckCgroupV2 {
+			return !res.OK && !res.Skipped
+		}
+	}
+	return false
 }
 
 // summary is the line WriteText prints between the probes and the matrix: the tier, a machine config that caps
@@ -411,11 +507,13 @@ func ceiling(m *config.Machine) backend.Tier {
 
 // probeState is what the nine probes learned, before it becomes a Report.
 type probeState struct {
-	results     []Result
-	byID        map[CheckID]Result
-	root        bool
-	release     string
-	kernel      Version
+	results []Result
+	byID    map[CheckID]Result
+	root    bool
+	release string
+	kernel  Version
+	// kernelProbe is what D1 asked the kernel, kept so D1 can be rendered again with D7's answer (kernelFromD7).
+	kernelProbe kernelProbe
 	landlockABI int
 	lsm         LSMState
 	hooks       []HookResult
@@ -447,8 +545,8 @@ type probeState struct {
 
 // runProbes runs D1..D9 in R27's exact order, stopping early when ctx ends: every check, as doctor
 // reports it, and never through the run-probe cache.
-func runProbes(ctx context.Context, uid int, pin string) probeState {
-	return scope{uid: uid, root: config.InitNSRoot(), checks: machineChecks, planePin: pin}.run(ctx)
+func runProbes(ctx context.Context, uid int, pin string, ceilings []config.Value) probeState {
+	return scope{uid: uid, root: config.InitNSRoot(), checks: machineChecks, planePin: pin, ceilings: ceilings}.run(ctx)
 }
 
 // planePin reads the machine's bpf.plane setting; an absent one is auto.

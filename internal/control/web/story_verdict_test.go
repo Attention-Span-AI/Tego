@@ -96,7 +96,7 @@ func TestStoryOneVerdictEverywhere(t *testing.T) {
 
 	guard := get(t, s, c, "/runs/"+sysGuardRun)
 	for _, want := range []string{
-		"Protected: 2 secret reads and 1 send to 127.0.0.1:48802 blocked",
+		"Protected: 2 secret reads and 1 send to 127.0.0.1:48802 refused",
 		"4 routine lookups",
 	} {
 		if !strings.Contains(guard, want) {
@@ -136,7 +136,7 @@ func TestStoryOneVerdictEverywhere(t *testing.T) {
 	}
 
 	ov := get(t, s, c, "/")
-	for _, want := range []string{"Blocked</span>", " routine</span>"} {
+	for _, want := range []string{"Refused</span>", " routine</span>"} {
 		if !strings.Contains(ov, want) {
 			t.Errorf("Overview lacks %q", want)
 		}

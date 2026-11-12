@@ -74,8 +74,9 @@ fakeclaude [--settings FILE|JSON] [--bare] [--session-socket] [--script FILE] [-
   `ANTHROPIC_BASE_URL` (`/v1/messages`, non-streaming) and only there: an unset URL, or a host that is not loopback, is
   refused, and a redirect is a failed request that is never followed (Go would resend the body and `x-api-key` to the
   target), so no run can reach a real model. `SSL_CERT_FILE` is honoured, which is how the HTTPS stub is trusted.
-- **Result.** `--result FILE` receives a JSON summary (requests, turns with their tool_use ids, hook runs, dropped
-  context, how the run ended) that `report.py` reads. A run a hook ended (`ended: stopped_by_hook`) is checked too: `report.py check --result` accepts the absence of the request that would have carried the last turn's results (and of any request when SessionStart ended it), and of no other. The final model text goes to stdout, as `claude -p` prints it.
+- **Result.** `--result FILE` receives a JSON summary (requests, turns with their tool_use ids, hook runs with when
+  each began, when its result was taken and `reason_seq`, the seq of the newest refusal `$TEGO_REASON` listed just
+  before it began, dropped context, how the run ended) that `report.py` reads. A run a hook ended (`ended: stopped_by_hook`) is checked too: `report.py check --result` accepts the absence of the request that would have carried the last turn's results (and of any request when SessionStart ended it), and of no other. The final model text goes to stdout, as `claude -p` prints it.
 
 ## What it does not model
 
@@ -144,7 +145,16 @@ rule, and the golden holds the whole line.
 | h | one interactive session (`test/poc/interactive-claude/drive.py <root> reason`) | the checks of a |
 
 Every scenario starts with a warm-up `Write` inside the workspace (turn 0): the request after it carries what Claude
-Code's start-up made tego refuse. The real binary reads the passwd-database home's `~/.claude` whatever `HOME` says;
+Code's start-up made tego refuse. After the refused turn, a, c and d wait a second (a `Bash` `sleep 1; echo settled`;
+in d beside the `Write` of `after.txt`), so that a hook runs well after every refused line of that turn has landed
+(*added 2026-11-11*; `RESULTS.md` was captured before this turn existed). A refused call's line can be written
+after the call returned (docs/p0/supervisor.md R23), and a hook tells only what the reason file lists, so
+`report.py e2e` takes a refusal from the next request or, told one hook later, from the request after it: it must be
+told exactly once, with its rule, and the next request's golden holds the refusals of both. Given the stand-in's
+summary (`--result`, whose hook runs carry when each began and the reason file's seq the stand-in read just before
+it began), it also fails a refusal told by more than one hook, by a hook that ended before its line landed, or after
+a hook of a tool event that found it in the reason file, ended before the teller began, and left it out, with
+no time margin. The real binary reads the passwd-database home's `~/.claude` whatever `HOME` says;
 the contract denies those reads (the account's configuration is neither seen nor changed), and their refusals are real
 and told to the model, so `report.py` leaves them out of every comparison (`--isolation`) and notes them. The next
 request of a, c, d and e, normalised (the scratch paths, a temporary file's suffix, a descriptor number and Claude

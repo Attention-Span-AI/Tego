@@ -62,10 +62,10 @@ func TestDetectionsPort53(t *testing.T) {
 			t.Errorf("Detections lacks %q:\n%s", want, d)
 		}
 	}
-	if strings.Contains(d, "Nothing blocked") || strings.Contains(d, "Routine 20") {
+	if strings.Contains(d, "Nothing refused") || strings.Contains(d, "Routine 20") {
 		t.Errorf("the attempts read as routine:\n%s", d)
 	}
-	if b := get(t, s, c, "/runs/"+run); !strings.Contains(b, "Protected: 20 sends to 203.0.113.9:53 blocked") {
+	if b := get(t, s, c, "/runs/"+run); !strings.Contains(b, "Protected: 20 sends to 203.0.113.9:53 refused") {
 		t.Errorf("the run's banner:\n%s", b)
 	}
 }
@@ -129,7 +129,7 @@ func TestPortScanIsOneDetection(t *testing.T) {
 	}
 
 	o := get(t, s, c, "/")
-	for _, want := range []string{`href="/detections?sev=high">1 High</a> blocked`, `aria-label="1 High, Network"`, ">150 ports</span>"} {
+	for _, want := range []string{`href="/detections?sev=high">1 High</a> refused`, `aria-label="1 High, Network"`, ">150 ports</span>"} {
 		if !strings.Contains(o, want) {
 			t.Errorf("the Overview lacks %q", want)
 		}
@@ -391,7 +391,7 @@ func TestWatchedSecretReadIsNoAllClear(t *testing.T) {
 	s := newServer(t, detectionsRoot(t, run, "observe", watchedRead(6)...))
 	c := login(t, s)
 	rp := get(t, s, c, "/runs/"+run)
-	for _, want := range []string{"Watched only: 1 secret read, no new destination next to it", "Nothing blocked · 1 destination reached"} {
+	for _, want := range []string{"Watched only: 1 secret read, no new destination next to it", "Nothing refused · 1 destination reached"} {
 		if !strings.Contains(rp, want) {
 			t.Errorf("the run page lacks %q:\n%s", want, rp)
 		}
@@ -404,7 +404,7 @@ func TestWatchedSecretReadIsNoAllClear(t *testing.T) {
 		t.Errorf("the Secrets chip's title:\n%s", ov)
 	}
 	d := get(t, s, c, "/detections")
-	if strings.Contains(d, "#i-check") || !strings.Contains(d, "Nothing blocked") {
+	if strings.Contains(d, "#i-check") || !strings.Contains(d, "Nothing refused") {
 		t.Errorf("Detections puts a check mark over a watched secret read:\n%s", d)
 	}
 
@@ -431,7 +431,7 @@ func TestDetectionsSaysRoutineWasBlocked(t *testing.T) {
 	s := newServer(t, root)
 	c := login(t, s)
 	body := get(t, s, c, "/detections")
-	if !strings.Contains(body, "Only routine actions blocked") || !strings.Contains(body, "Routine 2") || strings.Contains(body, "Nothing blocked") {
+	if !strings.Contains(body, "Only routine actions refused") || !strings.Contains(body, "Routine 2") || strings.Contains(body, "Nothing refused") {
 		t.Errorf("only routine lines:\n%s", body)
 	}
 	if !strings.Contains(body, "#i-check") {
@@ -441,14 +441,14 @@ func TestDetectionsSaysRoutineWasBlocked(t *testing.T) {
 	s = newServer(t, root)
 	c = login(t, s)
 	body = get(t, s, c, "/detections")
-	if !strings.Contains(body, "Only routine actions blocked") || strings.Contains(body, "No blocked actions") {
+	if !strings.Contains(body, "Only routine actions refused") || strings.Contains(body, "No refused actions") {
 		t.Errorf("a leak and routine lines:\n%s", body)
 	}
 }
 
 // TestLeaksLeadDetections: secrets that left are the worst thing the ledger can say, and no refusal group holds them. A
 // watched run's leak leads the page, above the filters and above a High row of another run, and stays there under a
-// filter that leaves nothing else; an all-watched ledger never shows a check mark and "Nothing blocked" beside it.
+// filter that leaves nothing else; an all-watched ledger never shows a check mark and "Nothing refused" beside it.
 func TestLeaksLeadDetections(t *testing.T) {
 	const watched, enforced = "r-aaaaaaaa-0000000000002-watchd", "r-aaaaaaaa-0000000000001-enforc"
 	const banner = "Secrets left: id_rsa sent to 198.51.100.7:443"
@@ -457,13 +457,13 @@ func TestLeaksLeadDetections(t *testing.T) {
 	s := newServer(t, root)
 	c := login(t, s)
 	body := get(t, s, c, "/detections")
-	if !strings.Contains(body, banner) || !strings.Contains(body, "Watched only · nothing blocked") || !strings.Contains(body, `href="/runs/`+watched+`"`) {
+	if !strings.Contains(body, banner) || !strings.Contains(body, "Watched only · nothing refused") || !strings.Contains(body, `href="/runs/`+watched+`"`) {
 		t.Errorf("Detections lacks the leak:\n%s", body)
 	}
-	if strings.Contains(body, "Nothing blocked") || strings.Contains(body, "#i-check") {
-		t.Errorf("an all-watched ledger shows a check mark or Nothing blocked beside a leak:\n%s", body)
+	if strings.Contains(body, "Nothing refused") || strings.Contains(body, "#i-check") {
+		t.Errorf("an all-watched ledger shows a check mark or Nothing refused beside a leak:\n%s", body)
 	}
-	if !strings.Contains(body, "No blocked actions") {
+	if !strings.Contains(body, "No refused actions") {
 		t.Error("the list does not say that nothing was blocked")
 	}
 
@@ -498,7 +498,7 @@ func TestRepeatsStayOnDetections(t *testing.T) {
 	if strings.Contains(body, "Routine 50") {
 		t.Error("Detections folds the repeated connect as routine")
 	}
-	if o := get(t, s, c, "/"); !strings.Contains(o, `href="/detections?sev=high">1 High</a> blocked`) {
+	if o := get(t, s, c, "/"); !strings.Contains(o, `href="/detections?sev=high">1 High</a> refused`) {
 		t.Errorf("the Overview's headline lacks the repeated connect:\n%s", o)
 	}
 }
@@ -566,9 +566,19 @@ func TestGlossary(t *testing.T) {
 		t.Error("the top bar does not link the Glossary")
 	}
 	g := get(t, s, c, "/glossary")
-	for _, want := range []string{"<dt>High</dt>", "<dt>Policy</dt>", "<dt>Protection level</dt>"} {
+	// Contract and Refused are the command line's words (docs/DASHBOARD.md, Contract and refused); each keeps the anchor of its older word, so a
+	// /glossary#policy or #blocked link still lands on it. Agent says any program first, since Tego holds every kind of
+	// agent (decided 2026-11-10).
+	for _, want := range []string{"<dt>High</dt>", `<div class="gl-row" id="contract"><dt><span id="policy"></span>Contract</dt>`,
+		`<div class="gl-row" id="refused"><dt><span id="blocked"></span>Refused</dt>`, "<dt>Protection level</dt>",
+		"<dt>Agent</dt><dd>Any program Tego governs"} {
 		if !strings.Contains(g, want) {
 			t.Errorf("Glossary lacks %s", want)
+		}
+	}
+	for _, gone := range []string{"<dt>Policy</dt>", "<dt>Blocked</dt>"} {
+		if strings.Contains(g, gone) {
+			t.Errorf("Glossary still has %s", gone)
 		}
 	}
 	// The dashboard says Basic, Strong and Strongest; the terminal, the docs and policy files say tier.

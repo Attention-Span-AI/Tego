@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -396,7 +397,7 @@ func (k sysKernel) Unlinked(name string) (bool, error) {
 
 // ProcStat reads /proc/<pid>/stat for the parent pid (field 4) and the start time (field 22).
 func (k sysKernel) ProcStat(pid int) (int, uint64, error) {
-	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	b, err := readStat(pid)
 	if err != nil {
 		return 0, 0, fmt.Errorf("read /proc/%d/stat: %w", pid, err)
 	}
@@ -406,13 +407,33 @@ func (k sysKernel) ProcStat(pid int) (int, uint64, error) {
 // parseProcStat is ProcStat's pure half: it takes the file's contents and returns ppid and starttime. It
 // goes through proc.ParseStat, the one fuzzed parser of the line, so the start an exec id is built from is
 // read exactly as every other package reads it (execIDOf); a malformed line is errProcStat wrapping
-// proc.ErrStat.
+// proc.ErrStat. So is the line of a task released while it was read (proc.ErrReleased) when readStat's reads of it
+// ran out: it does not say whether the process is gone.
 func parseProcStat(s string) (int, uint64, error) {
 	st, err := proc.ParseStat([]byte(s))
 	if err != nil {
 		return 0, 0, fmt.Errorf("%w: %w", errProcStat, err)
 	}
 	return st.PPID, st.StartTicks, nil
+}
+
+// readStat reads /proc/<pid>/stat through proc.ReadStat: the line of a task released while it was read is read
+// again, and the next read finds the process gone (ENOENT) or live (a thread other than the leader ran execve and
+// holds the pid now).
+func readStat(pid int) ([]byte, error) {
+	return proc.ReadStat(func() ([]byte, error) { return readStatFile(pid) })
+}
+
+// statFileSeam, when a test sets it, stands in for one read of /proc/<pid>/stat. It is atomic because a loop
+// another test left running may read a stat line while a test sets or clears it.
+var statFileSeam atomic.Pointer[func(pid int) ([]byte, error)]
+
+// readStatFile is one read of /proc/<pid>/stat: statFileSeam's when a test set it, the file's otherwise.
+func readStatFile(pid int) ([]byte, error) {
+	if f := statFileSeam.Load(); f != nil {
+		return (*f)(pid)
+	}
+	return os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
 }
 
 // Tgid reads the Tgid: line of /proc/<pid>/status.
@@ -444,13 +465,19 @@ func (k sysKernel) ProcCgroup(pid int) (string, error) {
 
 // ProcPgrp reads the process group of pid from /proc/<pid>/stat; a task that is gone is ESRCH.
 func (k sysKernel) ProcPgrp(pid int) (int, error) {
-	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	b, err := readStat(pid)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return 0, unix.ESRCH
 		}
 		return 0, fmt.Errorf("read /proc/%d/stat: %w", pid, err)
 	}
+	return parseProcPgrp(b)
+}
+
+// parseProcPgrp is ProcPgrp's pure half: field 5 of the line; a malformed line, or a released one (proc.ErrReleased)
+// readStat's reads ran out on, is errProcStat.
+func parseProcPgrp(b []byte) (int, error) {
 	st, err := proc.ParseStat(b)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %w", errProcStat, err)
@@ -476,8 +503,8 @@ func (k sysKernel) ProcessGroups() (map[int][]int, error) {
 }
 
 // groupsOf is ProcessGroups' pure half: it groups pids by what pgrp reads for each. A process that exited
-// during the scan (ESRCH) is skipped; any other failure (EMFILE, ENOMEM, EACCES, a stat it cannot parse)
-// fails the whole scan, naming the pid. A process the scan could not read may be an outside member of the
+// during the scan (ESRCH) is skipped; any other failure (EMFILE, ENOMEM, EACCES, a stat it cannot parse, the line
+// of a task released while it was read that stayed so on every read) fails the whole scan, naming the pid. A process the scan could not read may be an outside member of the
 // group being decided, and a snapshot without it would continue a group signal that reaches it (R33).
 func groupsOf(pids []int, pgrp func(int) (int, error)) (map[int][]int, error) {
 	groups := make(map[int][]int)

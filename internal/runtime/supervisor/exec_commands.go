@@ -105,7 +105,7 @@ func (l *Loop) decideCommand(c *compiled, n *notif, r *reader, q pathQuery, raw 
 	f := execmatch.Facts{
 		NodeVersion: img.nodeVersion, Path: raw,
 		Image: path.Base(strings.TrimSuffix(img.link, deletedSuffix)),
-		ID:    execmatch.ID{Dev: img.id.dev, Ino: img.id.ino}, HasID: img.linked,
+		ID:    execmatch.ID{Dev: img.id.dev, Ino: img.id.ino}, HasID: img.linked, Links: img.nlink,
 	}
 	if !q.empty && raw != "" {
 		f.Requested = path.Base(raw)
@@ -226,7 +226,7 @@ func (l *Loop) shebangChain(c *compiled, n *notif, img execImage, root *taskRoot
 		stages = append(stages, execmatch.Stage{
 			NodeVersion: next.nodeVersion, Path: interp, Arg: arg, EmptyArg: emptyArg,
 			Image: path.Base(strings.TrimSuffix(next.link, deletedSuffix)),
-			ID:    execmatch.ID{Dev: next.id.dev, Ino: next.id.ino}, HasID: next.linked,
+			ID:    execmatch.ID{Dev: next.id.dev, Ino: next.id.ino}, HasID: next.linked, Links: next.nlink,
 		})
 		kids = append(kids, next.kid)
 		if next.head == nil {
@@ -349,7 +349,7 @@ func (l *Loop) loadedProgram(c *compiled, n *notif, r *reader, f *execmatch.Fact
 	out.dropped = out.dropped || l.droppedImage(c, pimg) // the loader maps it and jumps to it: it is what runs
 	f.Loaded.NodeVersion = pimg.nodeVersion
 	f.Loaded.Image = path.Base(strings.TrimSuffix(pimg.link, deletedSuffix))
-	f.Loaded.ID, f.Loaded.HasID = execmatch.ID{Dev: pimg.id.dev, Ino: pimg.id.ino}, pimg.linked
+	f.Loaded.ID, f.Loaded.HasID, f.Loaded.Links = execmatch.ID{Dev: pimg.id.dev, Ino: pimg.id.ino}, pimg.linked, pimg.nlink
 	if execmatch.LoaderName(f.Loaded.Image) || execmatch.LoaderName(operand) || f.Loaded.HasID && c.cmds.Index.Loader(f.Loaded.ID) {
 		out.loader = ruleLoaderUnresolved
 		return lp, true

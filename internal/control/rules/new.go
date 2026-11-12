@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,6 +21,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/check/inforce"
 	"github.com/attention-span-ai/tego/internal/control/rulesview"
 	"github.com/attention-span-ai/tego/internal/profilesrc"
+	"github.com/attention-span-ai/tego/internal/registry"
 	"github.com/attention-span-ai/tego/internal/rulefile"
 	"github.com/attention-span-ai/tego/internal/setup"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -38,6 +40,11 @@ import (
 // link swapped into its path after the check is refused, never followed out of it. The new contract joins the
 // bounded set Contracts lists (its journal line names it), so the Rules page offers it and a later change can edit it
 // before any run of it.
+//
+// A draft from a run may instead be saved as the user registry's entry <name> (NewReq.Registry): registry.Save writes
+// it, the writer `tego learn --save` writes through, with the same refusals (a name taken from the run's folder, a
+// file inside the draft's own write entries, a draft that does not compile, a file already there) and the same 0700
+// folder and 0600 file. That entry is in no change record: the Rules page lists it from its first run.
 
 // NewFile is the file "Set up a new agent" writes in the project folder: what `tego init` writes and `tego run`
 // finds.
@@ -62,6 +69,14 @@ type NewReq struct {
 	// FromRun, when set, makes the draft that run's least-privilege proposal (rulesview.Learn) in place of the
 	// presets, with Name as its name: what the run did, and no more.
 	FromRun string
+	// Registry saves a FromRun draft as the user registry's entry Name (<registry>/agents/<Name>.yaml) through
+	// registry.Save, the writer `tego learn --save` writes through, in place of Dir/agent.yaml: `tego run <Name>`
+	// typed in Dir, and the tego-agent@<Name> unit, find it there. Dir is then the folder the agent runs in.
+	Registry bool
+	// Reads makes the draft record each read it refuses, at tier landlock too (reason: {reads: on}). A FromRun draft
+	// is then what `tego learn --reads on` writes, learn's own rendering of the proposal (rulesview.Learned.TextReads);
+	// a draft from presets gets the same block from setup (setup.Options.Reads).
+	Reads bool
 	// Withhold are the destinations the run FromRun leaked secrets to (the dashboard's verdict of it, never a field a
 	// person types): the draft leaves every one of them out of net.allow (rulesview.Withhold, QA PW-1).
 	Withhold []string
@@ -84,10 +99,17 @@ type NewGroup struct {
 	Rules                    []NewRule
 }
 
-// NewRule is one rule of a NewGroup: its sentence and effect word (allow, ask, deny, limit, note).
+// NewRule is one rule of a NewGroup: its sentence and effect word (allow, ask, deny, limit, note), and a note the
+// page shows beside it ("" for none).
 type NewRule struct {
 	Sentence, Effect string
+	Note             string
 }
+
+// AddressNote is what a draft from a run says beside each network entry that is an address: a watched run's record
+// holds the address it connected to, never the name it looked up, and the next run may pick another address of the
+// same name (learn.AddressWarning says it for the whole file).
+const AddressNote = "Tego saw an address, not a name; the next run may reach another address of this site. Write the host name."
 
 // NewPlan is what the form shows: the composed contract, its rules in sentences, what compile said, and what stops
 // Create, if anything. A mistake in the form is a Problem, never an error, so the form is shown again with it.
@@ -126,6 +148,11 @@ type NewPlan struct {
 	Protection string
 	// Exists is set when Dir already holds agent.yaml: Create is refused, and the Rules page opens it.
 	Exists bool
+	// Registry is set when File is the user registry's entry Name (NewReq.Registry), which tego run <Name> finds from
+	// Dir; Reads when the draft records each read it refuses (NewReq.Reads).
+	Registry, Reads bool
+	// writeDirs are a FromRun draft's fs.write directories, which a registry entry may not lie inside.
+	writeDirs []string
 }
 
 // Created is a new contract written.
@@ -138,6 +165,9 @@ type Created struct {
 	Command        string
 	// Made are the folders made for it, relative to Dir when inside it; Ignore the .gitignore lines they want.
 	Made, Ignore []string
+	// Registry is set when Path is the user registry's entry Name, which no change record holds: tego run <Name>
+	// typed in Dir finds it.
+	Registry bool
 }
 
 // PlanNew composes and checks the contract req asks for and writes nothing. Its error is the service's own failure
@@ -163,6 +193,9 @@ func (s *Service) CreateNew(ctx context.Context, req NewReq, base string) (*Crea
 		return nil, fmt.Errorf("%w: the contract does not compile, so nothing was written: %s", ErrRefused, strings.Join(p.Diagnostics, "; "))
 	case base == "" || base != p.Base:
 		return nil, fmt.Errorf("%w: the contract composed now is not the one previewed; look at the preview again", ErrStale)
+	}
+	if p.Registry {
+		return s.saveNew(ctx, p, env)
 	}
 	cr, ok := s.writer().(Creator)
 	if !ok {
@@ -239,8 +272,8 @@ func (s *Service) DescribeNew(ctx context.Context, ref string) (*NewPlan, error)
 // it, on a machine that could run stronger. Adjustable cannot run there, and at tier cgroup or bpflsm these reads are
 // refused without asking: that fails closed, but the field does not do what it says.
 const (
-	askReadBasic      = "Ask before reading runs this whole policy at Basic protection: only there can a read wait for you"
-	askReadAdjustable = "Adjustable runs at Strong or Strongest, where a read cannot wait: these reads are blocked without asking you"
+	askReadBasic      = "Ask before reading runs this whole contract at Basic protection: only there can a read wait for you"
+	askReadAdjustable = "Adjustable runs at Strong or Strongest, where a read cannot wait: these reads are refused without asking you"
 )
 
 // planNew is PlanNew with what CreateNew needs besides: the setup result and the compile environment (nil when a test
@@ -258,8 +291,19 @@ func (s *Service) planNew(ctx context.Context, req NewReq) (*NewPlan, *setup.Res
 		p.Problems = append(p.Problems, problem)
 	}
 	p.Name = name
+	p.Registry, p.Reads = req.Registry && p.FromRun != "", req.Reads
 	var st unix.Stat_t
-	if unix.Lstat(p.File, &st) == nil {
+	if p.Registry {
+		// The file is the registry's entry, and what Save would refuse is a problem now, before the preview.
+		sv := s.registrySave(p, nil)
+		path, err := sv.Check()
+		if path != "" {
+			p.File = path
+		}
+		if err != nil && problem == "" {
+			p.Problems = append(p.Problems, saveProblem(err, name))
+		}
+	} else if unix.Lstat(p.File, &st) == nil {
 		p.Exists = true
 		p.Problems = append(p.Problems, fmt.Sprintf("%s already holds %s, and a new agent's rules are never written over a "+
 			"file: open it on the Rules page, or pick another folder.", dir, NewFile))
@@ -383,7 +427,7 @@ func (s *Service) adjustable(ctx context.Context, p *NewPlan, req NewReq, res *s
 // plan's diagnostics; nil when the form's presets, folders or hosts are a mistake (a Problem).
 func (s *Service) fromPresets(ctx context.Context, p *NewPlan, req NewReq, env *setup.CheckEnv, seam bool) *setup.Result {
 	o := setup.Options{Presets: req.Presets, Writes: nonEmpty(req.Writes), Hosts: nonEmpty(req.Hosts), Command: p.Command,
-		Name: p.Name, Dir: p.Dir, Home: s.home(), Pass: nonEmpty(req.Pass), AskRead: nonEmpty(req.AskRead), AgentNeeds: true}
+		Name: p.Name, Dir: p.Dir, Home: s.home(), Pass: nonEmpty(req.Pass), AskRead: nonEmpty(req.AskRead), AgentNeeds: true, Reads: p.Reads}
 	if p.Name == "" {
 		o.Name = "agent" // composed for the preview anyway; the name's own Problem stops Create
 	}
@@ -425,8 +469,15 @@ func (s *Service) fromRun(ctx context.Context, p *NewPlan, withhold []string) *s
 		p.Problems = append(p.Problems, fmt.Sprintf("Run %s has no least-privilege proposal: %s.", p.FromRun, strings.TrimSuffix(l.Err, ".")))
 		return nil
 	}
-	proposal, held := rulesview.Withhold(l.Text, withhold)
+	draft := l.Text
+	if p.Reads {
+		draft = l.TextReads
+	}
+	proposal, held := rulesview.Withhold(draft, withhold)
 	p.Withheld = held
+	if w := rulesview.AddressWarning(proposal); w != "" {
+		p.Notes = append(p.Notes, "  "+w)
+	}
 	text := []byte(proposal)
 	if p.Name != "" {
 		text = renamed(text, p.Name)
@@ -440,14 +491,103 @@ func (s *Service) fromRun(ctx context.Context, p *NewPlan, withhold []string) *s
 	if len(held) > 0 {
 		p.Notes = append(p.Notes, "  run "+p.FromRun+" leaked secrets to "+strings.Join(held, ", ")+": that address is left out of the proposal")
 	}
+	p.writeDirs = l.WriteDirs
+	if p.Registry && len(p.Problems) == 0 {
+		// The write entries are known now: Save's check again, with them.
+		if _, err := s.registrySave(p, text).Check(); err != nil {
+			p.Problems = append(p.Problems, saveProblem(err, p.Name))
+		}
+	}
 	switch env := s.newEnv(); {
 	case s.Compile != nil || s.Check != nil:
 		p.Diagnostics, p.OK = s.seamCheck(ctx, p.File, p.Dir, text)
 	case env != nil:
-		ds, ok := setup.Check(text, p.Dir, *env)
+		ds, ok := setup.CheckFile(text, p.File, p.Dir, *env)
 		p.Diagnostics, p.OK = diagLines(ds, false), ok
 	}
 	return &setup.Result{Contract: text, Notes: p.Notes} // planNew sets p.Notes from the result
+}
+
+// registrySave is the registry.Save of p's draft text: the user registry of the machine config, the name looked up
+// from p.Dir, where tego run <name> is typed next, tego's own directories (the ledger root, the profiles directory,
+// the chain anchor's directory) refused as a registry's place, and p's write entries. Its Compile is the preview's
+// compile with the entry's path as the contract's file.
+func (s *Service) registrySave(p *NewPlan, text []byte) registry.Save {
+	uid, _ := config.InvokingUID()
+	places := registry.Places{Dir: p.Dir, UID: uid, Own: []string{s.Ledger}}
+	if s.Machine != nil {
+		places.User = s.Machine.Registry.Value
+		places.Own = append(places.Own, s.Machine.LedgerRoot.Value, s.Machine.Profiles.Value)
+	}
+	if s.Anchor != "" {
+		places.Own = append(places.Own, filepath.Dir(s.Anchor))
+	}
+	return registry.Save{Places: places, From: []string{p.Dir}, Name: p.Name, Text: text, Writes: p.writeDirs}
+}
+
+// saveNew is CreateNew of a plan saved in the user registry (NewReq.Registry): registry.Save writes it, the writer
+// `tego learn --save` writes through, after compiling it once more as the entry it will be. A refusal is ErrRefused
+// with the sentence saveProblem says; the entry is in no change record.
+func (s *Service) saveNew(ctx context.Context, p *NewPlan, env *setup.CheckEnv) (*Created, error) {
+	sv := s.registrySave(p, p.Text)
+	sv.Compile = func(path string, text []byte) error {
+		if env == nil { // a test compiler (Service.Compile)
+			if ds, ok := s.seamCheck(ctx, path, p.Dir, text); !ok {
+				return errors.New(strings.Join(ds, "; "))
+			}
+			return nil
+		}
+		if ds, ok := setup.CheckFile(text, path, p.Dir, *env); !ok {
+			return errors.New(strings.Join(diagLines(ds, true), "; "))
+		}
+		return nil
+	}
+	path, err := sv.Write()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrRefused, saveProblem(err, p.Name))
+	}
+	return &Created{Path: path, Dir: p.Dir, Name: p.Name, Command: p.Command, Registry: true}, nil
+}
+
+// saveProblem is a refused registry.Save as the form's sentence with its fix, in the words `tego learn --save` uses.
+func saveProblem(err error, name string) string {
+	var se *registry.SaveError
+	if !errors.As(err, &se) {
+		return "Tego could not save it: " + strings.TrimSuffix(err.Error(), ".") + "."
+	}
+	switch se.Step {
+	case registry.SaveName:
+		return "The agent name " + strings.TrimSuffix(se.Err.Error(), ".") + "."
+	case registry.SaveNoRegistry:
+		return "The machine config names no user registry (registry: in its file), so there is nowhere tego run " + name +
+			" finds a contract: save it in the project folder instead."
+	case registry.SaveTaken:
+		if se.Entry != nil {
+			return fmt.Sprintf("The agent name %q is already the contract %s: give another name.", name, se.Entry.Path)
+		}
+		var re *registry.Error
+		if errors.As(se.Err, &re) && re.Code == registry.CodeAmbiguous {
+			return fmt.Sprintf("The agent name %q is taken in %s: %s. Give another name.", name, se.Dir, strings.TrimSuffix(se.Err.Error(), "."))
+		}
+		return fmt.Sprintf("The registry cannot say whether the agent name %q is free in %s: %s. Nothing was saved.", name, se.Dir,
+			strings.TrimSuffix(se.Err.Error(), "."))
+	case registry.SaveInsideWrite:
+		return fmt.Sprintf("%s would lie inside the contract's own write entry %s, and tego refuses to run a contract its agent "+
+			"could rewrite: save it in the project folder instead.", se.Path, se.Write)
+	case registry.SaveNoCompile:
+		return "The contract does not compile here, so nothing was saved: " + strings.TrimSuffix(se.Err.Error(), ".") + "."
+	case registry.SaveExists:
+		return se.Path + " is there already, and a contract is never written over a file: give another name."
+	case registry.SaveUnusable:
+		return fmt.Sprintf("tego run %s in %s would refuse the file (%s), so nothing was saved.", name, se.Dir, strings.TrimSuffix(se.Err.Error(), "."))
+	case registry.SaveIO:
+		what := se.Op
+		if what == "mkdir" {
+			what = "make the folder"
+		}
+		return "Tego could not " + what + " " + se.Path + ": " + strings.TrimSuffix(se.Err.Error(), ".") + "."
+	}
+	return "Tego could not save it: " + strings.TrimSuffix(se.Error(), ".") + "."
 }
 
 // newEnv is the machine a new contract is compiled against, as nextrun compiles the next run of a contract and
@@ -515,10 +655,23 @@ func (s *Service) sentences(p *NewPlan) {
 		}
 		ng := NewGroup{ID: g.ID, Title: g.Title, Lede: g.Lede, Default: g.Default, Rules: extra}
 		for _, r := range g.Rules {
-			ng.Rules = append(ng.Rules, NewRule{Sentence: r.Sentence, Effect: string(r.Effect)})
+			nr := NewRule{Sentence: r.Sentence, Effect: string(r.Effect)}
+			if p.FromRun != "" && r.Key == "net.allow" && addressEntry(r.Entry) {
+				nr.Note = AddressNote
+			}
+			ng.Rules = append(ng.Rules, nr)
 		}
 		p.Groups = append(p.Groups, ng)
 	}
+}
+
+// addressEntry is whether a net.allow entry names an address and a port, not a host: tcp://, udp:// or no scheme.
+func addressEntry(entry string) bool {
+	for _, scheme := range []string{"tcp://", "udp://"} {
+		entry = strings.TrimPrefix(entry, scheme)
+	}
+	_, err := netip.ParseAddrPort(entry)
+	return err == nil
 }
 
 // builtInSecretsOn is whether the view's contract keeps the built-in secret list (it does not say deny_read: []).

@@ -1,8 +1,8 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
 {{/* mcp-preview: the check before a switch that loosens an MCP tool (mcp_tools.go, mcpact.Plan). */}}
 {{define "content"}}<link rel="stylesheet" href="/static/mcp.css">{{with .Data}}{{$d := .}}
-<div class="head"><div><h1>Check this change</h1><p class="lede">This gives the agent more than it has now. Nothing changes until you confirm.</p></div></div>
-{{with .Err}}<section class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow"><strong>{{.}}</strong></div></section>{{end}}
+<div class="head"><div><h1>Check this change</h1>{{if not .Err}}<p class="lede">This gives the agent more than it has now. Nothing changes until you confirm.</p>{{end}}</div></div>
+{{with .Err}}<section class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow"><strong>Not done: {{.}}</strong></div></section>{{end}}
 {{with .Plan}}{{$p := .}}
 <section class="panel mcp-preview">
 <dl class="mcp-change">
@@ -12,11 +12,11 @@
 <dt>After</dt><dd><span class="mcp-d mcp-d-{{.To}}">{{.To}}</span>{{if .Reset}} <span class="soft">(the contract's rule again)</span>{{end}}</dd>
 <dt>Run</dt><dd class="mono">{{rid .Run}}</dd>
 </dl>
-{{if .Loosens}}{{if not $d.Err}}
+{{if $d.Err}}<a class="btn" href="{{$d.Back}}">Back to MCP tools</a>{{else if .Loosens}}
 <form method="post" action="{{if .Reset}}/mcp/reset{{else}}/mcp/set{{end}}" class="mcp-confirm"><input type="hidden" name="csrf" value="{{$d.CSRF}}"><input type="hidden" name="run" value="{{.Run}}"><input type="hidden" name="server" value="{{.Server}}"><input type="hidden" name="tool" value="{{.Tool}}"><input type="hidden" name="decision" value="{{.To}}">
 <label class="ev-ack"><input type="checkbox" name="ack" value="{{.Ack}}" required><span>From the next call, the agent {{if eq .To "allow"}}may call <strong class="mono">{{.Tool}}</strong> on {{.Server}} without asking{{else}}may call <strong class="mono">{{.Tool}}</strong> on {{.Server}} once a person approves it{{end}}, for the rest of this run.</span></label>
 <div class="mcp-actions"><button class="btn btn-primary" type="submit">Confirm</button><a class="btn" href="{{$d.Back}}">Cancel</a></div>
-</form>{{end}}{{else}}<p>This change does not loosen anything; go back and apply it from the page.</p><a class="btn" href="{{$d.Back}}">Back to MCP tools</a>{{end}}
+</form>{{else}}<p>This change does not loosen anything; go back and apply it from the page.</p><a class="btn" href="{{$d.Back}}">Back to MCP tools</a>{{end}}
 </section>{{end}}
 {{if not .Plan}}<a class="btn" href="{{.Back}}">Back to MCP tools</a>{{end}}
 {{end}}{{end}}

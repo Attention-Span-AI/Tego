@@ -210,15 +210,25 @@ func planePtraceAttach(pid int) error {
 // planeTracemeRole is the ptrace_traceme cell's helper, `__doctor-plane-probe ptrace-traceme`.
 const planeTracemeRole = "ptrace-traceme"
 
-// init keeps the ptrace_traceme helper's main on the startup thread, the thread-group leader: the runtime runs every
-// init there, and a LockOSThread made in one makes main run on that thread too. planePtraceHelper's own
+// init keeps the main of the probe children that need the thread-group leader (onLeader) on the startup thread: the
+// runtime runs every init there, and a LockOSThread made in one makes main run on that thread too. Their own
 // LockOSThread pins the goroutine to whatever thread it is on, which is the leader only while the scheduler has not
-// moved the main goroutine since the inits; under load it had (TestPtraceTracemeHelperIsAlwaysReaped). Only this
-// argv is locked; every other process of the binary runs as before.
+// moved the main goroutine since the inits; under load it had (TestPtraceTracemeHelperIsAlwaysReaped, and the known
+// answers' failed hold of x/xd in a 7.0 guest on 2026-11-11). Only those argvs are locked; every other process of the
+// binary runs as before.
 func init() {
-	if len(os.Args) > 2 && os.Args[1] == PlaneProbeCommand && os.Args[2] == planeTracemeRole {
+	if onLeader(os.Args) {
 		runtime.LockOSThread()
 	}
+}
+
+// onLeader reports whether argv starts a probe child whose work must be done on the thread-group leader: the
+// ptrace_traceme helper (planePtraceHelper says why), and the known answers' child, which makes its mount namespace on
+// the thread it locks (planeKnownSetup), while doctor reaches that namespace's files through /proc/<pid>/root, which
+// is the leader's view: from any other thread the child's tmpfs at x is not there, and doctor's hold of x/xd fails
+// ENOENT, so the probe could not finish and the plane mode was not offered.
+func onLeader(argv []string) bool {
+	return len(argv) > 2 && argv[1] == PlaneProbeCommand && (argv[2] == planeTracemeRole || argv[2] == planeKnownRole)
 }
 
 // planePtraceHelper is the ptrace cells' helper process: "ptrace-target" says ready and waits to be attached to,

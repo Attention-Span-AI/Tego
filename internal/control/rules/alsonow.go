@@ -85,7 +85,10 @@ const (
 
 // blockOf is the live block that applies the list change c to a running run now, or why none does. rest is the
 // contract's entries after the change (rule.Entries; nil when they are not known). A live block is offered only where
-// it refuses nothing the new contract allows (it may refuse less: a write block leaves reads alone):
+// it refuses nothing the new contract allows (it may refuse less: a write block leaves reads alone), with one exception
+// that fails closed: an exec block refuses what the run grants under the removed entry (runact.BlockFromContract), and
+// where a kept entry was fixed to the same file at the same path when the run started (busybox's links), it refuses
+// that too, since the run cannot tell the two apart (ADR 0124, amended 2026-11-11):
 //
 //   - exec.allow X removed, or exec.deny X added: exec:X (a program; a command entry "git push" has none, since a
 //     live block names a whole program and would refuse git pull too), unless another exec.allow entry still allows
@@ -235,7 +238,12 @@ func execValue(v, cwd string) string {
 }
 
 // execStillAllowed is another program entry of rest that admits a program the block on v would refuse: the same
-// value, the same program name where either is a bare name, a directory holding the other.
+// value, the same program name where either is a bare name, a directory holding the other. It reads the entries'
+// text only. Where v and another entry lead to one file on this machine now, the block is still offered: the running
+// run grants v's entry by the file and path v led to when the run started, which nothing here can see, and a link
+// under v may have moved since. The block "Also apply now" places refuses what the run grants under v's entry only
+// (runact.BlockFromContract), so another name of the same file (a multi-call program's other applets) is left to the
+// contract.
 func execStillAllowed(v string, rest []string, cwd string) (string, bool) {
 	for _, e := range rest {
 		prog := e
@@ -495,7 +503,9 @@ func (s *Service) placeBlock(ctx context.Context, run, kind, value string) (runa
 	if s.block != nil {
 		return runact.Blocked{Run: run}, s.block(ctx, run, kind, value)
 	}
-	return runact.Block(ctx, s.Ledger, run, kind, value, true)
+	// The block a contract change asks for refuses what the change takes away: an exec block refuses what the run
+	// grants under the removed entry only, where the run's launcher reads such a block (runact.BlockFromContract).
+	return runact.BlockFromContract(ctx, s.Ledger, run, kind, value)
 }
 
 // journalLive is the journal's form of the outcomes.

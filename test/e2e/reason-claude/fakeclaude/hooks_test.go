@@ -224,3 +224,37 @@ func TestHookJSONOutputShapes(t *testing.T) {
 		t.Errorf("%+v", j)
 	}
 }
+
+// Each hook run carries the reason file's seq as the stand-in read it just before the hook started: what the hook
+// could tell (report.py e2e --result fails a tool hook that found a refusal listed and left it out). No file yet is
+// seq 0; no TEGO_REASON, or a file that cannot be read as one, is no seq at all, which report.py fails for a tool hook.
+func TestRunHookRecordsTheReasonFilesSeqBeforeItStarts(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "last-refusal.json")
+	args := []string{"__hook__", "context"}
+	spec := HookSpec{Type: "command", Command: os.Args[0], Args: &args}
+	seqOf := func(env []string) *int64 { return runHook(spec, nil, dir, env).ReasonSeq }
+	if s := seqOf(os.Environ()); s != nil {
+		t.Errorf("without TEGO_REASON: seq %d, want none", *s)
+	}
+	env := append(os.Environ(), "TEGO_REASON="+path)
+	if s := seqOf(env); s == nil || *s != 0 {
+		t.Errorf("before the first refusal: seq %v, want 0", s)
+	}
+	if err := os.WriteFile(path, []byte(`{"v":1,"seq":42,"refusals":3}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s := seqOf(env); s == nil || *s != 42 {
+		t.Errorf("after a refusal: seq %v, want 42", s)
+	}
+	if err := os.WriteFile(path, []byte(`{"v":1,"seq":"x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s := seqOf(env); s != nil {
+		t.Errorf("an unreadable file: seq %d, want none", *s)
+	}
+	r := runHook(HookSpec{Type: "command", Command: "/nonexistent/hook", Args: &[]string{}}, nil, dir, env)
+	if r.Started || r.ReasonSeq != nil || !r.Began.IsZero() {
+		t.Errorf("a hook that never started: %+v", r)
+	}
+}

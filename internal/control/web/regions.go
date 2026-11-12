@@ -42,7 +42,7 @@ var layoutRegions = []string{"r-top", "r-nav", "r-banner"}
 var pageRegions = map[string][]string{
 	// The Overview: its headline, tiles, Running now, Waiting on you, Recent runs and Recent refusals, so a live run's
 	// line resends the Running now table and the counts it moved, not the page.
-	"overview":  {"r-ov-head", "r-ov-tiles", "r-ov-live", "r-ov-asks", "r-ov-recent", "r-ov-refusals"},
+	"overview":  {"r-ov-head", "r-ov-guide", "r-ov-tiles", "r-ov-live", "r-ov-asks", "r-ov-recent", "r-ov-refusals"},
 	"approvals": {"content"},
 	// Detections and Investigate read the ledger top to bottom; Severity and the Glossary read no line of it.
 	"detections":  {"content"},
@@ -198,7 +198,7 @@ type fragWriter struct {
 // Unwrap lets http.ResponseController reach the connection.
 func (f *fragWriter) Unwrap() http.ResponseWriter { return f.ResponseWriter }
 
-// maxRegionHeader bounds X-Tego-Regions: a page has at most nine regions (the run page's, the Overview's) with
+// maxRegionHeader bounds X-Tego-Regions: a page has at most ten regions (the Overview's) with
 // 16-hex-digit hashes.
 const maxRegionHeader = 1 << 10
 

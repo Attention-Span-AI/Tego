@@ -116,7 +116,7 @@ func TestBlockPanelPrefill(t *testing.T) {
 	}
 }
 
-// When the contract could not be recompiled here, a rule the run named is not declared "Not in policy": the page
+// When the contract could not be recompiled here, a rule the run named is not declared "Not in contract": the page
 // says it cannot tell.
 func TestUnusedTabDoesNotClaimWhatItCannotKnow(t *testing.T) {
 	root := fixture(t)
@@ -126,7 +126,7 @@ func TestUnusedTabDoesNotClaimWhatItCannotKnow(t *testing.T) {
 	s := newServer(t, root)
 	c := login(t, s)
 	body := do(s, "GET", "/runs/"+harmRun+"/unused", "127.0.0.1:8484", c).Body.String()
-	if !strings.Contains(body, "Policy unknown here") || strings.Contains(body, `<span class="muted">Not in policy</span>`) {
+	if !strings.Contains(body, "Contract unknown here") || strings.Contains(body, `<span class="muted">Not in contract</span>`) {
 		t.Errorf("unused tab of a contract that was not recompiled:\n%s", body)
 	}
 }

@@ -106,7 +106,7 @@ func TestVerifyRefusesMVPFieldsItsRevisionDoesNotAdmit(t *testing.T) {
 		line       int
 		edit       func(*record.Event)
 	}{
-		{"stopped_by below 30", "below-minor", record.Minor, 1, func(e *record.Event) {
+		{"stopped_by below 35", "below-minor", record.Minor, 1, func(e *record.Event) {
 			e.Payload = mustSet(t, e, record.RunEndPayload{Reason: record.RunEndStopped, StoppedBy: "person:p-0123456789abcdef"})
 		}},
 		{"a share of /", "share-path", record.MinorShares, 0, func(e *record.Event) {
@@ -172,7 +172,7 @@ func TestResumeRefusesMVPFieldsItsRevisionDoesNotAdmit(t *testing.T) {
 func TestCloseRefusesARunEndItCannotWriteAndStaysOpen(t *testing.T) {
 	w, dir, anchor := openTestWriter(t)
 	start := startPayload()
-	start.RecordMinor = record.MinorShares
+	start.RecordMinor = record.MinorStoppedBy
 	if err := w.WriteRunStart(start); err != nil {
 		t.Fatal(err)
 	}

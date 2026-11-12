@@ -32,13 +32,62 @@ models:
 
 const routesEndpoint = "api.anthropic.com:443"
 
+// routesFixture is the harm fixture's live run with routesContract as its contract copy, made Adjustable (ADR 0125), so
+// its endpoints may move off direct; lockedRoutesFixture leaves it Locked.
 func routesFixture(t *testing.T) string {
+	t.Helper()
+	root := lockedRoutesFixture(t)
+	adjustableHarm(t, root)
+	return root
+}
+
+func lockedRoutesFixture(t *testing.T) string {
 	t.Helper()
 	root := fixture(t)
 	if err := os.WriteFile(filepath.Join(root, harmRun, "contract.yaml"), []byte(routesContract), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return root
+}
+
+// TestRoutesLockedRunRefusesARoute: on a Locked run (ADR 0127 §6) a route other than direct is refused in the words a
+// Locked lift gets, on the flash after the POST and on the preview, which offers no acknowledgement; nothing is
+// written. Back to direct still applies.
+func TestRoutesLockedRunRefusesARoute(t *testing.T) {
+	root := lockedRoutesFixture(t)
+	s := newServer(t, root)
+	c := login(t, s)
+	holdLock(t, filepath.Join(root, harmRun))
+	post := func(form url.Values) *httptest.ResponseRecorder {
+		r := govRequest("POST", "/routes/set", form)
+		r.AddCookie(c)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w
+	}
+	for _, ack := range []string{"", "forged"} {
+		w := post(url.Values{"csrf": {s.csrf}, "run": {harmRun}, "endpoint": {routesEndpoint}, "route": {"corp"}, "ack": {ack}})
+		loc := w.Header().Get("Location")
+		if w.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/routes?run=") {
+			t.Fatalf("a route on a Locked run (ack %q): %d %q", ack, w.Code, loc)
+		}
+		if body := html.UnescapeString(get(t, s, c, loc)); !strings.Contains(body, "Not done: "+lockedWords) {
+			t.Fatalf("the flash lacks the Locked words:\n%s", body)
+		}
+	}
+	// The preview says it as the flash does, offers no acknowledgement and no promise of one, and leads back.
+	prev := html.UnescapeString(get(t, s, c, "/routes/preview?"+url.Values{"run": {harmRun}, "endpoint": {routesEndpoint}, "route": {"corp"}}.Encode()))
+	if !strings.Contains(prev, "Not done: "+lockedWords) || strings.Contains(prev, `name="ack"`) ||
+		strings.Contains(prev, "until you confirm") || !strings.Contains(prev, `href="/routes?run=`+harmRun+`">Back to Model routes</a>`) {
+		t.Fatalf("the preview of a Locked run's route:\n%s", prev)
+	}
+	if _, err := os.Stat(filepath.Join(root, harmRun, modelroutes.FileName)); err == nil {
+		t.Fatal("a refused route wrote the overlay")
+	}
+	if w := post(url.Values{"csrf": {s.csrf}, "run": {harmRun}, "endpoint": {routesEndpoint}, "route": {"direct"}}); w.Code != http.StatusSeeOther ||
+		!strings.Contains(html.UnescapeString(get(t, s, c, w.Header().Get("Location"))), "already sends to direct") {
+		t.Fatalf("direct on a Locked run: %d %q", w.Code, w.Header().Get("Location"))
+	}
 }
 
 // TestRoutesPageRenders: the page lists the run's endpoints, the route in force (direct), the declared routes with

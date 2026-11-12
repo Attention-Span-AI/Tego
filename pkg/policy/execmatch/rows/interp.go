@@ -295,6 +295,8 @@ func multicall() []*execmatch.Row {
 	coreutils := mc("coreutils", "uutils 0.2.2", execmatch.SourceProbed)
 	coreutils.ProgOption, coreutils.Argv0Strip = "coreutils-prog", "lt-"
 	coreutils.Docs = "coreutils --help; GNU coreutils src/coreutils.c (--coreutils-prog)"
+	coreutils.Applets, coreutils.Argv1Endings, coreutils.NoAppletEnding = uutilsApplets, []string{"utils", "box"}, "utils"
+	coreutils.LinkNames = uutilsLinkNames
 	busybox := mc("busybox", "1.37.0", execmatch.SourceProbed)
 	busybox.Argv0Prefix = true
 	toybox := mc("toybox", "0.8", execmatch.SourceDocumented)
@@ -320,3 +322,28 @@ func nodeArgvRewrite(args []string) bool {
 	}
 	return false
 }
+
+// uutilsApplets are the utility names of uutils' multicall binary that both builds read for the coreutils row have:
+// the 114 names Ubuntu 25.10's rust-coreutils 0.2.2-0ubuntu2.1 links in /usr/lib/cargo/bin/coreutils (listed on the
+// test machine, 2026-11-11), and upstream main a4b65e12's Cargo.toml utility crates (workspace version 0.13.0, read).
+// A subset of the list of each build read, which is what the suffix applet needs (execmatch.Row.Applets): a name
+// such a build lists picks no applet the build does not, and only refuses more where the build lists a longer one.
+// uutils can be built with fewer utilities; such a build may run a shorter listed applet than the one read
+// (printenv as env, stty as tty). Not listed: [ (an alias), hashsum, relpath and the sha3 and shake names (0.2.2
+// only), hostname, kill, more and uptime (main only).
+var uutilsApplets = []string{
+	"arch", "b2sum", "base32", "base64", "basename", "basenc", "cat", "chcon", "chgrp", "chmod", "chown", "chroot",
+	"cksum", "comm", "cp", "csplit", "cut", "date", "dd", "df", "dir", "dircolors", "dirname", "du", "echo", "env",
+	"expand", "expr", "factor", "false", "fmt", "fold", "groups", "head", "hostid", "id", "install", "join",
+	"link", "ln", "logname", "ls", "md5sum", "mkdir", "mkfifo", "mknod", "mktemp", "mv", "nice", "nl", "nohup",
+	"nproc", "numfmt", "od", "paste", "pathchk", "pinky", "pr", "printenv", "printf", "ptx", "pwd", "readlink",
+	"realpath", "rm", "rmdir", "runcon", "seq", "sha1sum", "sha224sum", "sha256sum", "sha384sum", "sha512sum",
+	"shred", "shuf", "sleep", "sort", "split", "stat", "stdbuf", "stty", "sum", "sync", "tac", "tail", "tee",
+	"test", "timeout", "touch", "tr", "true", "truncate", "tsort", "tty", "uname", "unexpand", "uniq", "unlink",
+	"users", "vdir", "wc", "who", "whoami", "yes",
+}
+
+// uutilsLinkNames are the names the builds read link uutils' file under that end with no name of uutilsApplets and
+// with neither utils nor box (execmatch.Row.LinkNames): "[" and relpath (0.2.2's links), hostname, kill, more and
+// uptime (main's crates). hashsum, b3sum and the sha3 and shake names end with sum.
+var uutilsLinkNames = []string{"[", "relpath", "hostname", "kill", "more", "uptime"}

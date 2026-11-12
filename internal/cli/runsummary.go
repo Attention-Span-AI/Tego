@@ -16,6 +16,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/check/receipt"
 	"github.com/attention-span-ai/tego/internal/ledger"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
+	"github.com/attention-span-ai/tego/internal/shellword"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
@@ -56,6 +57,12 @@ type endSummary struct {
 	// recordOff says the run ran under record: off: its ledger kept its refusals and no exec or allowed action, so
 	// the summary says so (recordOffClause) and a watch's footer has no "seen:" line, whose counts it did not record.
 	recordOff bool
+	// root is the ledger root the run's record lies in, which a hint's short run id is unique under (shortRun); "" when
+	// it could not be resolved.
+	root string
+	// machine is the machine config the run was started under, whose registries a hint's proposed agent name is
+	// checked against (proposedName); nil for a summary built without one.
+	machine *config.Machine
 }
 
 // recordOffClause is what the summary of a run whose record was off says, before its chain clause.
@@ -70,12 +77,13 @@ func summarizeRun(ctx context.Context, m *config.Machine, anchor string, res teg
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), summaryBudget)
 	defer cancel()
-	s := &endSummary{run: res.RunID, how: endedHow(res.Reason), recordOff: mode == agent.RecordOff}
+	s := &endSummary{run: res.RunID, how: endedHow(res.Reason), recordOff: mode == agent.RecordOff, machine: m}
 	root, err := ledgerRootOf(m)
 	if err != nil {
 		s.err, s.chain = err, "chain not checked (no ledger root)"
 		return s
 	}
+	s.root = root
 	dir := filepath.Join(root, res.RunID)
 	// The receipt's pass and the chain check are two independent reads of the same closed file, each about half
 	// the cost: run side by side, the summary costs about 10 ms per 1,000 lines instead of 18 (BenchmarkEndSummary).
@@ -139,9 +147,78 @@ func (s *endSummary) text() string {
 		}
 		parts = append(append(parts, s.counts(false)...), s.tail())
 		fmt.Fprintf(&b, "tego run: %s ended (%s) · %s\n", run, s.rc.Outcome(), strings.Join(parts, " · "))
+		b.WriteString(sameFileLines(s.rc))
 	}
 	fmt.Fprintf(&b, "  more: tego receipt %s\n", run)
 	return b.String()
+}
+
+// The reads line (docs/OPERATIONS.md, after `tego learn`) is a fact, not a hint, so it prints whatever TEGO_HINTS says: after the
+// summary of a run whose record cannot hold a read its contract refused, the line says so, since "refused N" does not
+// count such a read. It is decided from run_start.reads_notified alone, never from the record level: a run at
+// record: summary under reason.reads: on, an fs.ask_read entry, a read gate or held reads records its refused reads.
+const (
+	readsLineReasonOff    = "  reads: not recorded at this level; a read the contract refused left no line and is not counted in \"refused N\".\n"
+	readsLineNoSupervisor = "  reads: not recorded; no supervisor answered this run's read notices.\n"
+	readsLineUnknown      = "  reads: this record does not say whether reads were recorded.\n"
+)
+
+// readsLine is the reads line for the run, "" when none applies: the run's every read open reached the supervisor
+// (notified), a root tier's kernel record holds its refused reads (kernel), or the run enforced nothing and so refused
+// no read (records-only). A summary with no receipt says nothing of reads: its line already says the summary is not
+// available.
+func (s *endSummary) readsLine() string {
+	if s == nil || s.rc == nil {
+		return ""
+	}
+	rn := s.rc.ReadsNotified
+	switch {
+	case rn == nil:
+		return readsLineUnknown
+	case rn.Notified:
+		return ""
+	case rn.Why == record.ReadsNotifiedWhyReasonOff:
+		return readsLineReasonOff
+	case rn.Why == record.ReadsNotifiedWhyNoSupervisor:
+		return readsLineNoSupervisor
+	}
+	return ""
+}
+
+// runHint is the "next:" block after tego run's summary and reads line, for the run o started. A record-only run
+// (--observe) has its contract: the step is to run it enforced. Otherwise, a run that refused something leads to its
+// receipt; one whose record level left its refused reads unrecorded (reason-off), or whose record does not say
+// (an older record), to the same run with every read recorded; and any other to the check of its record. A run no
+// supervisor answered (no-supervisor) is among the others: --record full does not change that.
+func (s *endSummary) runHint(o runOptions) (text, command string) {
+	if o.observe {
+		return "to enforce the contract, run it again without --observe:", runAgain(o, "")
+	}
+	run := shortRun(s.root, s.run)
+	switch line := s.readsLine(); {
+	case s.rc != nil && s.rc.Refusals.Total > 0:
+		return "see what it refused, under which rule:", "tego receipt " + run
+	case line == readsLineReasonOff || line == readsLineUnknown:
+		return "to see a read the contract refuses, run it again recording every read:", runAgain(o, "--record full")
+	}
+	return "check its record against the chain anchor:", "tego receipt " + run + " --verify"
+}
+
+// runAgain is the tego run command of o as a shell reads it, the contract and the command after it as the person
+// gave them, with flags in place of tego's own (which the hint does not repeat): "tego run <contract> [flags] [--
+// <command>]". Each word is quoted where a shell would read it as something else.
+func runAgain(o runOptions, flags string) string {
+	words := []string{"tego", "run", shellword.Quote(o.contract)}
+	if flags != "" {
+		words = append(words, flags)
+	}
+	if len(o.given) > 0 {
+		words = append(words, "--")
+		for _, w := range o.given {
+			words = append(words, shellword.Quote(w))
+		}
+	}
+	return record.Printable(strings.Join(words, " "))
 }
 
 // tail is the summary line's last clauses: the chain's, after recordOffClause for a run whose record was off. Both
@@ -195,8 +272,8 @@ func refusedClause(rc *receipt.Receipt) string {
 	}
 	var groups []group
 	at := map[string]int{}
-	for _, r := range rf.ByRule {
-		name, _, _ := strings.Cut(rc.RuleWords(r.Rule), "[")
+	for _, r := range rc.RefusalGroups() { // a built-in TCP_ULP refusal is named apart from the default deny
+		name := r.Kind
 		if i, ok := at[name]; ok {
 			groups[i].n += r.Count
 			continue
@@ -214,6 +291,26 @@ func refusedClause(rc *receipt.Receipt) string {
 		top = append(top, record.Printable(g.name)+" "+strconv.Itoa(g.n))
 	}
 	return s + " (" + strings.Join(top, ", ") + ")"
+}
+
+// maxSameFile is how many programs refused as another name of a blocked file the summary names.
+const maxSameFile = 3
+
+// sameFileLines is a line for each program a live block refused as another name of its program's file
+// (receipt.SameFile, liveblock.SameFileNote), at most maxSameFile: "  /bin/sleep: refused, same program file as
+// /bin/ls, which is blocked (404 times)". The refused line's rule names the blocked path, not the one that ran, so the
+// summary says why. "" when there is none.
+func sameFileLines(rc *receipt.Receipt) string {
+	var b strings.Builder
+	for i, s := range rc.SameFile() {
+		if i == maxSameFile {
+			fmt.Fprintf(&b, "  and %d more refused the same way\n", len(rc.SameFile())-maxSameFile)
+			break
+		}
+		fmt.Fprintf(&b, "  %s: refused, %s (%d %s)\n", record.Printable(s.Path), record.Printable(s.Note), s.Count,
+			pluralWord(s.Count, "time", "times"))
+	}
+	return b.String()
 }
 
 // askedClause is "asked M (a approved, d denied)", with the other answers named only when there are any.

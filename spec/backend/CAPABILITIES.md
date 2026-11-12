@@ -56,7 +56,7 @@ one. `observe` is a run mode (record only), not a tier.
 |---|---|---|---|
 | deny file write outside contract | yes (EACCES) | yes (Landlock and fanotify; fanotify refuses with EPERM) | yes, per cgroup, EACCES + reason (decision plane `lsm`; the plane returns 0 or -EACCES only) |
 | deny delete, rename, mkdir, mknod | yes (EACCES), per process tree | via Landlock inside the run (per process tree) | yes, per cgroup; a rename or link out of a `deny_read` tree is refused (REFER) |
-| deny read of secret paths | by sibling enumeration; unenforced under a writable parent | yes (fanotify, exact paths) | yes, by inode, the nearest entry wins, so a `deny_read` nested in a write entry holds |
+| deny read of secret paths | by sibling enumeration; under a writable parent, held reads (the default) refuse it; `fs.reads: direct` leaves it unenforced | yes (fanotify, exact paths) | yes, by inode, the nearest entry wins, so a `deny_read` nested in a write entry holds |
 | deny exec | by inode (`EXECUTE` on binaries, their loader, listed scripts) | by path (`FAN_OPEN_EXEC_PERM`) | by inode and name per binfmt stage (the file, its directory and its final name) |
 | deny network by host:port | yes, supervisor-completed connects (Landlock grants declared TCP ports only) | yes, in-kernel per cgroup, IPv4/IPv6 | yes |
 | UDP by destination | best-effort (address read: refused when refused, an admitted one continued and read again) | yes (`cgroup/sendmsg`) | yes (`cgroup/sendmsg`) |
@@ -124,6 +124,14 @@ rejected: a floor guessed from a release string (`el9`) states a promise the str
 the probed Landlock ABI would call any ABI-6 backport tested. `TestTestedFloorMatchesDocs` holds this row and §14 to
 `TestedFloor`.
 
+*Amended 2026-11-11:* D1's "without:" list now judges each Landlock ABI row by the ABI the kernel answers (the
+`landlock_create_ruleset` version D4 prints; ENOSYS or EOPNOTSUPP lists every Landlock row), not by the release, so on
+RHEL 9.8 it no longer lists ABI 2 to 6 as missing above D4's "ABI 6". Its connect_unix row follows D7's load of that
+hook where D7 answered (as root); the other rows, and these where no probe answered, are judged by the release. The floor clause reads "below the upstream
+tested floor 6.1.0", the wording of this row. The floor itself stays version-only, as decided above: the probed ABI
+changes only which Landlock rows D1 lists, never whether a kernel is called tested (`internal/doctor` `kernelResult`,
+`TestKernelLineTakesLandlockRowsFromTheProbe`; docs/GAPS.md B18).
+
 The write-denial row concerns writes outside declared grants. A contract's built-in `deny_write` targets (git
 hooks and config, harness settings, shell startup files beneath a write entry) are the protected-write-targets row,
 and are refused race-free only by a
@@ -143,7 +151,8 @@ tier. A write entry strictly beneath an entry reopens its subtree at every tier;
 target.
 
 The three rows from `deny read nested in a write entry` (ADR 0069, appended 2026-10-24, after every earlier row so no
-index moves) say what the `deny read of secret paths` row's "unenforced under a writable parent" became. At tier
+index moves) say what a target under a writable parent, which the Landlock ruleset leaves unenforced, became (the
+`deny read of secret paths` row said only "unenforced under a writable parent" until 2026-11-11). At tier
 landlock a `deny_read` target inside a write entry makes the run hold its reads (`fs.reads: auto`, the default): the
 open deputy completes every read-capable open and the supervisor refuses one on the object it reached, so the target
 holds, and so does a file a deny_read name rule covers that was made during the run (the built-in `.env` names, a

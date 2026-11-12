@@ -11,7 +11,7 @@
 <ul class="rp-list lf-warn">
 <li><span title="Enforced by Tego's live layer, not the kernel. A time limit stops new access; anything already read or copied, files still open and live connections stay.">Live layer · time limit stops new access only</span></li>
 {{if .Exec}}<li>Copies under another name not covered</li>{{end}}
-<li>Restore blocks it again · Policy page or <span class="mono">tego restore</span></li>
+<li>Restore blocks it again · Contracts page or <span class="mono">tego restore</span></li>
 </ul>
 <form class="stack" method="post" action="/runs/{{pathEsc $r.ID}}/lift"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="kind" value="{{.Kind}}"><input type="hidden" name="value" value="{{.Value}}"><input type="hidden" name="until" value="{{.Until}}"><input type="hidden" name="serial" value="{{.Serial}}"><input type="hidden" name="permanent" value="{{if .Permanent}}1{{end}}"><input type="hidden" name="ack" value="{{.Ack}}">
 <label class="rc-ack"><input type="checkbox" name="understand" value="yes" required> I understand this run gets this access now</label>

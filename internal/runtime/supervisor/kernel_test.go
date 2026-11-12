@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"unsafe"
 
@@ -60,6 +61,123 @@ func TestParseProcStat(t *testing.T) {
 				t.Errorf("= %d, %d; want %d, %d", ppid, start, tc.wantPPID, tc.wantStart)
 			}
 		})
+	}
+}
+
+// releasedStat is a /proc/<pid>/stat line of a task released while it was read: fs/proc/array.c's do_task_stat
+// could not take its sighand lock, so process group and session are -1, ppid and num_threads 0. A reader on kernel
+// 6.17 caught it for a live process whose old leader an execve from another thread released (de_thread), so it
+// does not say the process is gone (internal/platform/proc's releasedStatLine gives the source lines).
+const releasedStat = "842314 (exe) Z 0 -1 -1 0 -1 4228108 40251 0 0 0 4 27 0 0 20 0 0 0 82606841 0 0 0 0 0 0 0 " +
+	"0 0 0 0 0 1 0 0 -1 6 0 0 0 0 0 0 0 0 0 0 0 0 0\n"
+
+// TestAReleasedLineIsNotESRCH: a released line readStat's reads ran out on is errProcStat, never ESRCH. As ESRCH
+// it took a live process mid-exec for a gone one: groupsOf left it out of the snapshot a group signal is decided
+// on (R33), and groupMembers answered its group empty. The scan fails instead.
+func TestAReleasedLineIsNotESRCH(t *testing.T) {
+	if _, _, err := parseProcStat(releasedStat); !errors.Is(err, errProcStat) || errors.Is(err, unix.ESRCH) {
+		t.Fatalf("parseProcStat(released) = %v, want errProcStat and not ESRCH", err)
+	}
+	_, err := parseProcPgrp([]byte(releasedStat))
+	if !errors.Is(err, errProcStat) || errors.Is(err, unix.ESRCH) {
+		t.Fatalf("parseProcPgrp(released) = %v, want errProcStat and not ESRCH", err)
+	}
+	if g, err := groupsOf([]int{842314}, func(int) (int, error) { return 0, err }); err == nil {
+		t.Fatalf("groupsOf with a released line = %v, want the scan to fail", g)
+	}
+	if g, err := parseProcPgrp([]byte("9 (a) S 1 77 77 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 5")); err != nil || g != 77 {
+		t.Fatalf("parseProcPgrp(live) = %d, %v; want 77", g, err)
+	}
+}
+
+// TestTheTTYClassDoesNotReadAReleasedLine: heldTTY refuses an open that would have made a session leader with no
+// controlling terminal acquire one, by the session and tty_nr of the task's stat. A released line prints session -1
+// and tty 0; read by hand it passed as a real session. Its task had already been released, so no open reached the
+// thread that asked, but -1 is no session. sessionTTY now goes through readStat and ParseStat: a released line is
+// read again, and one that stays released is errProcStat, which heldTTY refuses as unavailable.
+func TestTheTTYClassDoesNotReadAReleasedLine(t *testing.T) {
+	if s, tty, err := parseSessionTTY([]byte(releasedStat)); !errors.Is(err, errProcStat) {
+		t.Fatalf("parseSessionTTY(released) = session %d, tty %d, %v; want errProcStat", s, tty, err)
+	}
+	if s, tty, err := parseSessionTTY([]byte("9 (a b) S 1 77 9 34817 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 5")); err != nil || s != 9 || tty != 34817 {
+		t.Fatalf("parseSessionTTY(live) = session %d, tty %d, %v; want 9, 34817", s, tty, err)
+	}
+}
+
+// TestAReleasedLineLeavesAThreadUnknown: mutationMayRun drops a pending mutation once its thread's stat says it
+// ended. Read by hand, a released line's state Z said "ended". That was true of the released task, but the line is
+// one ParseStat refuses, so threadEnded now answers unknown: the mutation may run, and the walk cache stays
+// invalidated. A gone thread (ENOENT, ESRCH) and a zombie's own line still end it.
+func TestAReleasedLineLeavesAThreadUnknown(t *testing.T) {
+	if ended, known := threadEnded([]byte(releasedStat), nil); known {
+		t.Fatalf("threadEnded(released) = %v, known; want unknown", ended)
+	}
+	if ended, known := threadEnded(nil, fmt.Errorf("open: %w", os.ErrNotExist)); !ended || !known {
+		t.Fatalf("threadEnded(ENOENT) = %v, %v; want ended", ended, known)
+	}
+	if ended, known := threadEnded(nil, unix.ESRCH); !ended || !known {
+		t.Fatalf("threadEnded(ESRCH) = %v, %v; want ended", ended, known)
+	}
+	if ended, known := threadEnded(nil, unix.EACCES); known {
+		t.Fatalf("threadEnded(EACCES) = %v, known; want unknown", ended)
+	}
+	if ended, known := threadEnded([]byte("9 (a) Z 1 77 77 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 5"), nil); !ended || !known {
+		t.Fatalf("threadEnded(zombie) = %v, %v; want ended", ended, known)
+	}
+	if ended, known := threadEnded([]byte("9 (a) S 1 77 77 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 5"), nil); ended || !known {
+		t.Fatalf("threadEnded(sleeping) = %v, %v; want running", ended, known)
+	}
+}
+
+// statReads stands lines in for readStatFile at pid, one per read (the last repeats), and counts the reads; every
+// other pid reads its file. A nil error and an empty line is the line; a non-nil error is that read's error.
+func statReads(t *testing.T, pid int, lines []string, errs []error) *atomic.Int32 {
+	t.Helper()
+	var n atomic.Int32
+	f := func(p int) ([]byte, error) {
+		if p != pid {
+			return os.ReadFile("/proc/" + strconv.Itoa(p) + "/stat")
+		}
+		i := min(int(n.Add(1))-1, len(lines)-1)
+		if errs[i] != nil {
+			return nil, errs[i]
+		}
+		return []byte(lines[i]), nil
+	}
+	statFileSeam.Store(&f)
+	t.Cleanup(func() { statFileSeam.Store(nil) })
+	return &n
+}
+
+// TestTheStatReadersReadAReleasedLineAgain drives sessionTTY and mutationMayRun through readStatFile, so a reader
+// that went back to one read of the file by hand fails here: no process holds the pid, so only the lines stood in
+// answer. A released line is read again and the live line after it is used; one that stays released after three
+// reads is errProcStat for sessionTTY and "may run" for mutationMayRun; a released line and then no file is gone.
+func TestTheStatReadersReadAReleasedLineAgain(t *testing.T) {
+	const pid = 1 << 30 // above any pid_max, so /proc/<pid> never exists
+	live := "1073741824 (a b) S 1 77 9 34817 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 5"
+	zombie := "1073741824 (a) Z 1 77 77 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 5"
+	gone := fmt.Errorf("open /proc/%d/stat: %w", pid, os.ErrNotExist)
+
+	n := statReads(t, pid, []string{releasedStat, releasedStat, live}, []error{nil, nil, nil})
+	if s, tty, err := sessionTTY(pid); err != nil || s != 9 || tty != 34817 || n.Load() != 3 {
+		t.Fatalf("sessionTTY(released, released, live) = %d, %d, %v after %d reads; want 9, 34817 after 3", s, tty, err, n.Load())
+	}
+	n = statReads(t, pid, []string{releasedStat}, []error{nil})
+	if s, tty, err := sessionTTY(pid); !errors.Is(err, errProcStat) || n.Load() != 3 {
+		t.Fatalf("sessionTTY(released x3) = %d, %d, %v after %d reads; want errProcStat after 3", s, tty, err, n.Load())
+	}
+	n = statReads(t, pid, []string{releasedStat}, []error{nil})
+	if !mutationMayRun(pid, 0) || n.Load() != 3 {
+		t.Fatalf("mutationMayRun(released x3) = false after %d reads; want may run after 3", n.Load())
+	}
+	n = statReads(t, pid, []string{releasedStat, zombie}, []error{nil, nil})
+	if mutationMayRun(pid, 0) || n.Load() != 2 {
+		t.Fatalf("mutationMayRun(released, zombie) = true after %d reads; want ended after 2", n.Load())
+	}
+	n = statReads(t, pid, []string{releasedStat, ""}, []error{nil, gone})
+	if mutationMayRun(pid, 0) || n.Load() != 2 {
+		t.Fatalf("mutationMayRun(released, gone) = true after %d reads; want ended after 2", n.Load())
 	}
 }
 

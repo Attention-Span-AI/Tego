@@ -24,7 +24,7 @@ func (e timeoutError) Error() string   { return "scripted net error" }
 func (e timeoutError) Timeout() bool   { return e.timeout }
 func (e timeoutError) Temporary() bool { return e.timeout }
 
-// Capture-derive.md R26's error-to-status mapping. A dial/TLS failure (any non-timeout error) is 502; a
+// capture-derive.md R26's error-to-status mapping. A dial/TLS failure (any non-timeout error) is 502; a
 // timeout — whether reported through net.Error, or through one of the two sentinel values RoundTrip can
 // return for a context/deadline expiry — is 504. This is the only place the distinction lives, so a
 // regression here changes what the agent sees without changing anything visible elsewhere.
@@ -114,7 +114,7 @@ func TestRequestsRejectedBeforeTransport(t *testing.T) {
 	}
 }
 
-// Capture-derive.md E34 — a retry-cache entry is not invalidated by the gap of the request it names.
+// capture-derive.md E34: a retry-cache entry is not invalidated by the gap of the request it names.
 // Close() races the response (#28) and gaps the in-flight original, but R24's cache is a separate,
 // TTL-scoped structure; a same-key request arriving inside the TTL must still find it and extend the
 // original, exactly as it would have had the response arrived normally. If Close ever started clearing

@@ -163,7 +163,7 @@ func TestRulesChangeForm(t *testing.T) {
 			t.Errorf("%s: %d, want 404", target, code)
 		}
 	}
-	if code, body := f.get(t, "/rules/change"); code != http.StatusOK || !strings.Contains(body, "Pick a policy file") {
+	if code, body := f.get(t, "/rules/change"); code != http.StatusOK || !strings.Contains(body, "Pick a contract file") {
 		t.Errorf("the chooser: %d", code)
 	}
 }
@@ -195,9 +195,9 @@ func TestChangePageLinksBackToItsRules(t *testing.T) {
 		if back := `href="/rules?c=` + c.Ref + `"`; code != http.StatusOK || !strings.Contains(form, back) {
 			t.Errorf("%s: Change rules (%d) does not link back to its Rules page by %s", c.Path, code, back)
 		}
-		want := "Policy · rules-demo"
+		want := "Contract · rules-demo"
 		if c.Runs == 0 {
-			want = "Policy · fresh-agent"
+			want = "Contract · fresh-agent"
 		}
 		if code, page := f.get(t, "/rules?c="+c.Ref); code != http.StatusOK || !strings.Contains(page, want) {
 			t.Errorf("%s: its Rules page answered %d, want %q", c.Path, code, want)
@@ -601,7 +601,7 @@ func TestChangeWithoutService(t *testing.T) {
 	s := newServer(t, fixture(t))
 	c := login(t, s)
 	for _, p := range []string{"/rules/change?c=x", "/rules/change/preview?c=x"} {
-		if w := do(s, "GET", p, "127.0.0.1:8484", c); w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "Policy editing is off") {
+		if w := do(s, "GET", p, "127.0.0.1:8484", c); w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "Contract editing is off") {
 			t.Errorf("GET %s: %d", p, w.Code)
 		}
 	}

@@ -13,7 +13,12 @@ prints the last one. The ledger is the authoritative record; the two channels be
 
 Inside the run, `$TEGO_REASON` names `last-refusal.json`: the latest refusal, a count of every refusal of the run,
 and the newest 32, each with its seq, reason code, rule and one sentence. Any harness or script in the run can read
-it. It is written at most every 10 ms, so it may lag the refusal by that much.
+it. It follows the ledger: a refused call's line can be written just after the agent saw the refusal (at tier
+landlock Tego answers the call, then writes the line; at the root tiers, which need root, the kernel refuses and Tego
+reads the event after it), and the file is rewritten at most every 10 ms after that. On a busy machine the two
+together can reach tens of milliseconds. A script that reads the file right after a refused call may not find that refusal yet: wait
+for a `refusals` count above the one you last read, with a bound. The file never lists a refusal the ledger does
+not hold.
 
 **Reads Landlock refuses.** At tier landlock under `record: summary` or `off`, a read of a `deny_read` file (an
 `~/.ssh` key, a `.env`) fails with `EACCES` and, by default, leaves no refusal here: the seccomp filter does not tell
@@ -36,7 +41,10 @@ Tego, this run's access control, refused 1 action:
 - Tego refused write "/home/user/out.txt": this run may not write to that path (rule fs.write).
 ```
 
-With nothing new it adds nothing. A note at the end of a turn keeps Claude going once; when Claude would stop
+With nothing new it adds nothing. A refusal the reason file did not list yet when the hook ran (see the reason file
+above) is told by the next hook that runs once it does, one tool call or one turn later, and still once; when no
+hook runs after that (the session's last turn), it is not told, and the ledger still holds it. A note at the end of
+a turn keeps Claude going once; when Claude would stop
 again, the hook stays silent, and refusals that came meanwhile are told after the next tool call. It reads only the reason file and its own state (and the few files every Go program reads
 at start), never your home or Tego's configuration, so it never causes a refusal of its own. Outside a Tego run it does nothing at all.
 

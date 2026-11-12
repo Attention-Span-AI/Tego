@@ -87,7 +87,7 @@ func TestCheckFence(t *testing.T) {
 			checkRun + " is not running, so nothing would apply it; a run's fence starts refused again in its next run"},
 		{"a limit before Locked", Target{Run: checkRun, Running: true}, soon, ErrNoTimeLimits, checkRun + ": " + ErrNoTimeLimits.Error()},
 		{"a Locked run", Target{Run: checkRun, Running: true, Timed: true}, soon, ErrLocked,
-			checkRun + " is Locked: the kernel holds it to its contract while it runs, so nothing loosens until its next run"},
+			checkRun + " is Locked: it keeps to its contract while it runs, so nothing loosens until its next run"},
 		{"outside the fence", Target{Run: checkRun, Running: true, Timed: true, Adjustable: true}, time.Time{}, ErrOutsideFence,
 			"read:/srv/x is outside " + checkRun + "'s fence, so it cannot change while the run runs"},
 		{"inside the fence", Target{Run: checkRun, Running: true, Timed: true, Adjustable: true, Fenced: true}, soon, nil, ""},
@@ -107,6 +107,29 @@ func TestCheckFence(t *testing.T) {
 				t.Errorf("Error = %q, want the words with \"the run\"", err)
 			}
 		})
+	}
+}
+
+// TestCheckLoosening: a running Locked run (and a running run with no facts, which is Locked) refuses a loosening in
+// the words a lift of a Locked run is refused with, both on the terminal and on the page; a running Adjustable run lets
+// the writer go on; a run that is not running, Locked or not, is refused ErrNotRunning first, as CheckFence orders it.
+func TestCheckLoosening(t *testing.T) {
+	soon := time.Now().Add(time.Hour)
+	lift := CheckFence(Target{Run: checkRun, Running: true, Timed: true}, KindRead, "/srv/x", soon)
+	for _, tg := range []Target{{Run: checkRun, Running: true, Timed: true}, {Run: checkRun, Running: true}} {
+		err := CheckLoosening(tg)
+		if !errors.Is(err, ErrLocked) || RunWords(err) != RunWords(lift) || err.Error() != lift.Error() {
+			t.Fatalf("CheckLoosening(%+v) = %v (%q), want the Locked lift's %v (%q)", tg, err, RunWords(err), lift, RunWords(lift))
+		}
+	}
+	if err := CheckLoosening(Target{Run: checkRun, Running: true, Timed: true, Adjustable: true}); err != nil {
+		t.Fatalf("an Adjustable run: %v", err)
+	}
+	for _, tg := range []Target{{Run: checkRun}, {Run: checkRun, Timed: true, Adjustable: true}} {
+		err := CheckLoosening(tg)
+		if !errors.Is(err, ErrNotRunning) || RunWords(err) != checkRun+" is not running, so nothing would apply it" {
+			t.Fatalf("CheckLoosening(%+v) = %v (%q), want ErrNotRunning", tg, err, RunWords(err))
+		}
 	}
 }
 
@@ -141,5 +164,74 @@ func TestBlockWord(t *testing.T) {
 		if got := BlockWord(tc.add, tc.changed); got != tc.want {
 			t.Errorf("BlockWord(%t, %t) = %q, want %q", tc.add, tc.changed, got, tc.want)
 		}
+	}
+}
+
+// TestCheckStarting: a running run whose run_start cannot be read yet (Target.Starting) is refused, as ErrStarting and
+// never as ErrLocked or as an older launcher, every change that decides on a fact it does not know: a loosening, a lift,
+// a grant, a restore, a time limit, a read or write block. A plain block needs none and is taken; a run that is not
+// running is still ErrNotRunning (acceptance 2B, 2026-11-11: an Adjustable run read as Locked while it started).
+func TestCheckStarting(t *testing.T) {
+	soon := time.Now().Add(time.Hour)
+	st := Target{Run: checkRun, Running: true, Starting: true}
+	words := checkRun + " is still starting: its first record line (run_start) cannot be read yet, so what it takes while it runs " +
+		"is not known; nothing was changed; try again in a few seconds"
+	for name, err := range map[string]error{
+		"loosening":     CheckLoosening(st),
+		"lift":          CheckFence(st, KindNet, "127.0.0.1:9", time.Time{}),
+		"grant":         CheckFence(st, KindNet, "127.0.0.1:9", soon),
+		"timed block":   CheckBlock(st, KindExec, true, soon),
+		"timed unblock": CheckBlock(st, KindExec, false, soon),
+		"read block":    CheckBlock(st, KindRead, true, time.Time{}),
+		"write block":   CheckBlock(st, KindWrite, true, time.Time{}),
+	} {
+		if !errors.Is(err, ErrStarting) || errors.Is(err, ErrLocked) || errors.Is(err, ErrOldLauncher) || errors.Is(err, ErrNoTimeLimits) {
+			t.Errorf("%s: %v, want ErrStarting alone", name, err)
+		} else if RunWords(err) != words {
+			t.Errorf("%s: %q, want %q", name, RunWords(err), words)
+		}
+	}
+	for name, err := range map[string]error{
+		"plain block":   CheckBlock(st, KindExec, true, time.Time{}),
+		"plain unblock": CheckBlock(st, KindPath, false, time.Time{}),
+	} {
+		if err != nil {
+			t.Errorf("%s: %v, want nil", name, err)
+		}
+	}
+	if err := CheckLoosening(Target{Run: checkRun, Starting: true}); !errors.Is(err, ErrNotRunning) {
+		t.Errorf("not running: %v, want ErrNotRunning", err)
+	}
+}
+
+// TestCheckStartUnreadable: a running run whose first record line is there and is not a run_start this tego reads
+// (Target.StartUnreadable) is refused what TestCheckStarting refuses, as ErrStartUnreadable alone: never ErrStarting,
+// whose words promise the line soon ("try again in a few seconds"), which waiting never makes true (the review's S1),
+// and never Locked or an older launcher. A plain block is still taken.
+func TestCheckStartUnreadable(t *testing.T) {
+	soon := time.Now().Add(time.Hour)
+	st := Target{Run: checkRun, Running: true, Starting: true, StartUnreadable: true}
+	for name, err := range map[string]error{
+		"loosening":   CheckLoosening(st),
+		"lift":        CheckFence(st, KindNet, "127.0.0.1:9", time.Time{}),
+		"grant":       CheckFence(st, KindNet, "127.0.0.1:9", soon),
+		"timed block": CheckBlock(st, KindExec, true, soon),
+		"read block":  CheckBlock(st, KindRead, true, time.Time{}),
+	} {
+		words := RunWords(err)
+		switch {
+		case !errors.Is(err, ErrStartUnreadable) || errors.Is(err, ErrStarting) || errors.Is(err, ErrLocked) ||
+			errors.Is(err, ErrOldLauncher) || errors.Is(err, ErrNoTimeLimits):
+			t.Errorf("%s: %v, want ErrStartUnreadable alone", name, err)
+		case !strings.HasPrefix(words, checkRun+"'s first record line is not a run_start this tego can read") ||
+			!strings.HasSuffix(words, "; tego events "+checkRun+" --verify checks its record") ||
+			strings.Contains(words, "try again") || strings.Contains(words, " yet"):
+			t.Errorf("%s: %q", name, words)
+		case strings.Contains(err.Error(), checkRun) || !strings.HasPrefix(err.Error(), "the run's first record line"):
+			t.Errorf("%s: the page's words %q", name, err.Error())
+		}
+	}
+	if err := CheckBlock(st, KindExec, true, time.Time{}); err != nil {
+		t.Errorf("plain block: %v, want nil", err)
 	}
 }

@@ -760,7 +760,7 @@ func sweepBuild(d *hoststate.Dir, opts SweepOptions, hash string, force bool) (B
 		st.Why = whyBusy
 		return st, nil
 	}
-	defer func() { _ = f.Close() }()
+	defer unlockClose(f)
 	var fst unix.Stat_t
 	if err := unix.Fstat(int(f.Fd()), &fst); err != nil {
 		st.Why = err.Error()
@@ -813,7 +813,7 @@ func sweepOrphanPlanes(d *hoststate.Dir, base, hash string) error {
 	if busy {
 		return nil // a launcher of it is starting
 	}
-	defer func() { _ = f.Close() }()
+	defer unlockClose(f)
 	if _, err := os.Stat(filepath.Join(base, hash)); !errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -924,7 +924,7 @@ func runTimer(hash string, linger time.Duration, bpffs, stateDir string, clock t
 	}
 	defer func() {
 		if timer != nil {
-			_ = timer.Close()
+			unlockClose(timer)
 		}
 	}()
 	opts := SweepOptions{BPFFS: bpffs, StateDir: stateDir, Linger: linger, Now: clock.now, runSetLive: clock.runSetLive}
@@ -1008,7 +1008,7 @@ func probeBuild(d *hoststate.Dir, pins pinLayout, hash string) (gone, held bool,
 	if err != nil || busy {
 		return false, busy, err
 	}
-	_ = f.Close()
+	unlockClose(f)
 	return false, false, nil
 }
 
@@ -1017,7 +1017,7 @@ func probeBuild(d *hoststate.Dir, pins pinLayout, hash string) (gone, held bool,
 // timer that takes the lock. If it is, the timer takes the lock again and keeps going with the file it returns, or
 // it returns nil when another timer took the lock first and keeps the build.
 func handOff(d *hoststate.Dir, pins pinLayout, hash string, timer *os.File, released func()) *os.File {
-	_ = timer.Close()
+	unlockClose(timer)
 	if released != nil {
 		released()
 	}

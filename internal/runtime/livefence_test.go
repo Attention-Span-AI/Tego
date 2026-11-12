@@ -75,9 +75,9 @@ func refusedRules(s *liveblock.Set) []string {
 	}
 	add(s.MatchPath(fenceRead+"/q3.csv", liveblock.AccessRead))
 	add(s.MatchInet(fenceDest, "", nil))
-	add(s.MatchExec([]string{fenceExec}, liveblock.FileID{}, false))
-	add(s.MatchExec([]string{fenceImage}, liveblock.FileID{}, false))
-	add(s.MatchExec([]string{"/opt/elsewhere/psql"}, liveblock.FileID{}, false))
+	add(s.MatchExec([]string{fenceExec}, liveblock.FileID{}, false, nil))
+	add(s.MatchExec([]string{fenceImage}, liveblock.FileID{}, false, nil))
+	add(s.MatchExec([]string{"/opt/elsewhere/psql"}, liveblock.FileID{}, false, nil))
 	return out
 }
 
@@ -391,7 +391,7 @@ func TestFenceBrokenOverlayDropsLifts(t *testing.T) {
 			if got := refusedRules(b.Load()); !slices.Equal(got, allRefused) {
 				t.Fatalf("after a %s overlay the Set refuses %q, want %q", broken, got, allRefused)
 			}
-			_, blocked := b.Load().MatchExec([]string{"/bin/ls"}, liveblock.FileID{}, false)
+			_, blocked := b.Load().MatchExec([]string{"/bin/ls"}, liveblock.FileID{}, false, nil)
 			if broken == "corrupt" && !blocked {
 				t.Fatal("a corrupt overlay dropped the blocks last read")
 			}

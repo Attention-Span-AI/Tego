@@ -98,7 +98,7 @@ func TestSignInPage(t *testing.T) {
 			t.Fatalf("%s: %d, cookies %v; want 401 and no session", name, res.StatusCode, res.Cookies())
 		}
 		for _, want := range []string{"<title>Sign in · Tego</title>", `<meta name="viewport" content="width=device-width, initial-scale=1">`,
-			`<meta name="color-scheme" content="light dark">`, "Open the dashboard from the link in your terminal", "<code>tego-control serve --open</code>"} {
+			`<meta name="color-scheme" content="light dark">`, "Open the dashboard from the link in your terminal", "<code>tego serve --open</code>"} {
 			if !strings.Contains(page, want) {
 				t.Errorf("%s: the page lacks %q", name, want)
 			}

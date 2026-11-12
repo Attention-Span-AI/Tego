@@ -7,6 +7,287 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ## Unreleased
 
+### Added
+
+- In a terminal, `tego doctor`, `test`, `watch`, `learn`, `run`, `adopt` and `agents` end with a `next:` line on
+  stderr that names the one command to type next. `TEGO_HINTS=off` turns these lines off, and `TEGO_HINTS=on`
+  turns them on where stderr is not a terminal; they are never printed with `--json`. No stdout line changes:
+  `tego doctor`'s Ready or Not ready line is on stderr, after its report.
+- `tego learn <run> --save <name>` writes the proposed contract, compiled first, to the user registry, so
+  `tego run <name>` finds it. It refuses a name that `tego run` would not find alone from the working directory
+  or from the run's folder, a name that starts with `-`, and running under sudo for another user. The contract
+  it saves has `reason: {reads: on}`, so a read the contract refuses is recorded at tier landlock too and a
+  newcomer sees the refusal on every run; one line says what it costs (each read open about 17 µs slower), and
+  `--reads off` leaves it out. The printed proposal, `--out` and contracts already saved do not change.
+- `tego learn --allow-host <host>[:<port>]` (repeatable, at most 8) names the service a watched run reached at
+  some of its addresses. Tego looks the name up now and writes `tcp://<host>:<port>` (`udp://` for UDP) in place
+  of each address the run reached that the name resolves to. A later run is then allowed the addresses Tego's own
+  lookups of the name return during that run, not only the one this run reached. An address no name may stand for
+  (loopback, link-local, cloud metadata, or a range in the machine config's `denied_resolved_addresses`) stays an
+  address. It writes nothing and exits 1 when the name does not resolve within 2 s, covers no address the run
+  reached, resolves to a private address the run did not reach, or resolves to an address learn withheld after a
+  secret read. It never chooses a name itself. When a proposal still allows addresses, stderr names them, and the
+  `next:` line after `tego watch` and `tego learn` adds `--allow-host <host>`. The machine's resolver is never
+  counted as an address to name (see Changed).
+- After a run whose refused reads were not recorded, a `reads:` line on stderr says so, and
+  `tego receipt --json` carries `reads_notified`.
+- `tego setup` checks the machine from your shell and lists the six steps from install to an agent held by its own
+  contract, each with the fact that decided it, then the one command to type next. It asks nothing, starts no
+  program and needs no root; `--json` prints one object (`tego.setup/1`) and `-v` says where each fact was read. It
+  stores its check in `~/.tego/state/check.json`, used only on the same boot with the same tego build; `tego doctor`
+  still writes nothing. The installer ends with the one next command: `tego setup` when the installed tego has
+  it, else `tego doctor`. `tego status` with no runs names `tego setup`.
+- `tego receipt --json` adds a `binding` block: the run, its line count, its last line's id, whether it ended,
+  the size and sha256 of `events.jsonl`, the tego that made the receipt (`receipt_by`) and its limits. No other
+  key changes; a script that compares two receipts of one record across tego versions sees `receipt_by` differ.
+  Binding checks every line as `tego events --verify` does, so on a long record `--json` takes 2.5 to 3 times
+  as long (20,002 lines: 0.6 s against 0.2 s); the text receipt does not bind.
+- `tego receipt --check <receipt.json> <run folder>` compares a kept receipt with a copy of its record on any
+  machine, without chain.log: exit 0 match, 1 mismatch, 2 usage, 125 could not check (an older receipt, or a
+  tego other than the one in `receipt_by`). It does not show that the record is complete or who made it, and
+  anyone who can write both files can make a pair that matches.
+- Dashboard: a finished run's Tighten tab has "Make a contract from this run". New contract, From a run, saves
+  the draft where `tego learn <run> --save <name>` saves it (`~/.config/tego/agents/<name>.yaml`), through the
+  same writer and with the same refusals, so `tego run <name>` in the run's folder and the `tego-agent@<name>` unit
+  find it; "The project folder" still writes `agent.yaml` there. For the same run the file is the one
+  `tego learn --save` writes, but for the header's `leaks:` line: the dashboard judges leaks by the run's verdict,
+  not by learn's rule, so it has no such line, and for a run that leaked secrets the two can allow different
+  addresses. A "Show refused reads (slower)" switch writes `reason: {reads: on}`: from a run it is on by default,
+  as `--reads on` writes it; from presets it is off by default. Each address in a draft from a run says to write
+  the host name. The dashboard now says the command line's words: Contracts, not Policies (nav, page titles, New
+  contract, the Glossary), and Refused, not Blocked, for what a rule stopped, on the line page, in the built-in
+  rules' names and in screen-reader labels too; Block now and live blocks keep their names. Addresses stay
+  `/rules`, and `/contracts` leads there.
+- At tier landlock a `deny_read` lets the agent read only the names each directory above the target held when the
+  run started, so a file or directory made directly in one of them later cannot be read until the run ends; with
+  the built-in `~/.ssh` entry, a new top-level entry in `$HOME` is one. Nothing said which directories those were.
+  Now `tego run` prints one `note:` line naming them before the agent runs, `tego compile` prints the same note,
+  `run_start` records them as `deny_read_frozen` (record minor 30), and `tego receipt` and the dashboard's Receipt
+  tab name them under Coverage. What is refused does not change. A reader that does not know the field ignores it.
+- `tego compile` notes an exec entry whose program file has more than one hard link, or is busybox, toybox or
+  coreutils (`[exec-multicall]`, once per file, naming the entries that share it and its link count). On Ubuntu 25.10
+  and later most coreutils commands are one such file, and an entry for one name can admit more than that name: at
+  tier landlock, the file by any name to an agent that wins the exec race; on busybox, every applet at every tier.
+  It changes no rule, exit code or `--json` table, and `tego run` prints it only with `-v`. `tego doctor` adds a
+  `multicall` line on such a host, read from the file's link count and name. `docs/GAPS.md` C63 says what was
+  measured.
+- The dashboard's Overview shows the steps `tego setup` prints, in the same words: each step's state and fact,
+  the one next step with its command to copy, and what is not known. It never checks the machine itself: it reads
+  the check `tego setup` stored for this boot and this tego, and says "not checked since this machine started"
+  without one. The dashboard also says what `tego receipt` says: the Receipt tab prints its sentences about
+  connections and refusals word for word, a run's Refusals tab with nothing refused says the receipt's sentence
+  (for a run that does not record refused reads, "No recorded action was refused", not "Nothing refused"), and a
+  run's timeline, Refusals tab, Logs and Detections name tego's refusal of kernel TLS `built in: kernel TLS`, not
+  "Not in contract". On the Logs page such a line says the receipt's sentence, not "not on the allowed hosts", and
+  the Rule facet and By rule count it as `built in: kernel TLS`, as `tego receipt` does; a `rule:unmatched` query no
+  longer lists it.
+
+### Changed
+
+- `tego learn`'s proposal opens with a `# WARNING:` line when it allows addresses, since a later run can be
+  refused a connection this run made, and writes an entry by host name where the run's record holds the name an
+  entry allowed. YAML keys are unchanged.
+- `tego learn` no longer lists the machine's resolver in `net.allow` when the proposal has another TCP or UDP
+  entry: port 53 of an address where every line of the run's record says `net.resolver`, such as
+  `udp://10.0.2.3:53` on AlmaLinux 9.8. A comment under `net:` names what was left out. A run under the contract
+  still reaches its resolver, because Tego allows the run's own resolver (from `/etc/resolv.conf`, or the machine
+  config's `resolver:` list) before it reads `net.allow`. The entry was not needed where the contract was learned,
+  and copied to another network it allowed whatever answers at that address. With no other TCP or UDP entry (a run
+  that only looked names up), learn keeps the resolver as before, with a note: without any such entry the kernel
+  layer opens no port 53, and from Linux 7.2 (Landlock ABI 10) it may refuse a lookup the run sends over UDP. TCP
+  lookups pass, because Tego makes the allowed connect itself (measured at Landlock ABI 4 and 6). A run is now
+  refused that address where it was allowed before only when learn left it out and the run's resolver is a different
+  one (another network, a changed `/etc/resolv.conf` or `resolver:` list) or the contract sets `net.dns.mode: off`
+  or `broker`. Port 53 of an address with any other line in the record is still proposed.
+  `--allow-host` with a name that stands only for the resolver now exits 1 and writes nothing.
+- `tego adopt --boundary`, and a boundary guard, applies a `cpu`, `cpu_weight` or `pids` limit (the machine config's
+  ceiling, or the contract's own) to the agent's cgroup before it moves the agent: the agent is throttled, and a fork
+  or a new thread past `pids` fails with `EAGAIN`. The kernel ends no process for them, though a program that cannot
+  start a thread may end itself. `tego adopt`'s notice before the adoption says them; a guard does not. It is refused
+  (exit 125, `[adopt-refused]`), with nothing moved, when the machine's cgroup root does not enable the controller
+  (`cpu` on a stock RHEL 9: the message names the setup), and when the agent's tree holds as many tasks as `pids` or
+  more, since its next fork would fail at once: the message gives the count and the limit. A `memory`, `memory_high`,
+  `wall` or `stall_after` ceiling still refuses it, named at its file and line: every `tego run` gets that ceiling,
+  and an adoption cannot hold it. A budget ceiling (`tokens`, `cost_usd`, `repeats`) does not refuse it: one
+  `[unenforced]` warning per budget, and the run records that the budget was not metered. A record-only adoption
+  applies no limit, goes on, and warns once for each ceiling. The record does not yet say which limits an adoption
+  applied.
+- Dashboard: the `landlock-topology` refusal reason reads Run boundary, not Sandbox boundary. The reason code is
+  unchanged.
+- The sentence that tells an agent about a `landlock-topology` refusal says "it reaches a process outside this run",
+  not "a process outside this run's sandbox". The reason code is unchanged.
+- `tego doctor`'s capability row `deny read of secret paths` at tier landlock now says that held reads, the
+  default, refuse a target under a writable parent, and that `fs.reads: direct` leaves it unenforced. It said
+  only "unenforced under a writable parent", which held reads made untrue before v0.1.0. What a run does is
+  unchanged.
+- `exec.deny` and `exec.ask` command entries now also match a multicall program (one file under many names, such as
+  uutils coreutils on Ubuntu 25.10 and 26.04) by the names it can pick its behaviour from. On a file of more than
+  one link whose name is one uutils links its file under (such as `ls` or `rm`), or a file named `coreutils`, a name
+  that ends with the tool's name (`xrm`, `uu-rm`, `rm.x`), and a name that ends with `utils` or `box` followed by
+  the tool as the next word (`myutils rm -r`), are read as that tool. The longest utility name wins, so `readlink`
+  is never read as `link`. This reads the requested path, the file's own name and argv[0], also for a `#!`
+  interpreter and a program run through the dynamic loader. Before, `deny: [rm -r]` let 7 of 9 such forms through.
+  On Ubuntu 26.04.1 the patched uutils ran none of them as rm (measured); upstream uutils, read from its source, runs
+  them as rm. `exec.allow` does not read these names. A deny entry still wins over an allow entry, so a contract
+  that denies a utility name may now refuse an exec that an allow entry admits, when one of the exec's names reads
+  as that utility.
+- A Locked run (the default, and the only mode at tier landlock) is no longer loosened by a live MCP tool switch
+  or model route. `tego mcp allow` or `ask` past the contract's decision, `tego route set` to any route but
+  `direct`, and the same changes on the dashboard's MCP tools and Model routes pages are refused with `[locked]`
+  (exit 1) and the words a lift of a Locked run gets. A tightening, `tego mcp reset` and `tego route clear` still
+  apply, and both kinds of change still loosen live on an Adjustable run. The relay and the forwarder do not check
+  the mode themselves, so a change written into the run's folder another way still applies
+  ([GAPS C39](GAPS.md)). The sentence every Locked refusal prints, `tego lift`'s included, now reads "`<run>` is
+  Locked: it keeps to its contract while it runs, so nothing loosens until its next run"; it named the kernel,
+  which holds neither a tool switch nor a route. The dashboard's preview of a refused change says "Not done: ",
+  as its flash does, and links back to the page.
+
+### Fixed
+
+- `tego doctor`, and a run's tier check where it probes the decision plane, could now and then fail a plane mode's
+  known answers with "hold /proc/<pid>/root/.../x/xd: no such file or directory" and so not offer that mode. The
+  probe's child makes its own mounts on the thread its main is locked to, and doctor sees them through
+  `/proc/<pid>/root`, which shows the main thread's mounts only; when Go had moved the child's main off that thread
+  first, the mounts were not there. The child now always runs on its main thread, and refuses to start, with the
+  reason, if it is not. Seen once in a KVM root suite; a guest test showed the cause by forcing the child off its
+  main thread. v0.1.1 has the same flaw (read from the code).
+- Over SSH and on a console login, the `next:` lines no longer loop (`tego setup` named `tego doctor`, which named
+  itself). Such a login starts outside your user manager's cgroup, where Tego starts no run, not even `tego watch`.
+  `tego setup`, `tego doctor`, `tego run`, `tego watch` and `tego test` now say so and name the command that opens
+  a shell inside it, `systemd-run --user --scope bash` (your login shell when it is bash, zsh, fish, sh, dash, ksh,
+  mksh, tcsh or csh and on `PATH`), and then to run `tego setup` or the command again there. `tego learn --save`
+  and `tego agents` do the same where their next step would start a run: they say that command, to type in the
+  new shell. Tests check, from an SSH login, a console login and such a shell, that no `next:` line names the
+  command that printed it or one that fails from that shell (see the next entry for two more places). `doctor` no
+  longer says such a shell "can only record", and `tego test` no longer says "Nothing got through" when no run
+  under Tego started. After a reboot, `tego setup` says which place is not checked since the machine started.
+  With several contracts, step 5 names the one your newest enforced run used. `tego learn`'s refusal of an
+  `--allow-host` name ends with the command without it, and the learn step names `--allow-host` only when no
+  secret of the run may have gone to an address it reached, on `tego watch`, `tego learn` and `tego setup` alike.
+  Saved contracts call themselves a contract in their header. The dashboard's "Make a contract" opens New
+  contract from that run in one click, and its sign-in text names `tego serve`.
+- Four more things a new user met (a second guest walk on Ubuntu 24.04, AlmaLinux 9.8 and Fedora 44):
+  - `tego learn` for a run that read a secret and then connected out withholds that destination, and its warning
+    still said `Name each with --allow-host <host>`, which learn then refuses for that host. The warning now says
+    which destination was withheld and why, and the two ways that work, both your own choice: write the host's
+    name under `net.allow` in the saved file, or, after a run under it is refused that connection,
+    `tego rule <run> <line> --allow`. Nothing re-admits it by itself.
+  - On Fedora 44, `sudo tego agents` typed inside a `systemd-run --user --scope` shell sent you to open that shell
+    again, since sudo there opens a session of root's own. Tego now reads the cgroup of the shell you typed sudo
+    in (the nearest parent outside root's own sessions), so from inside the scope it names the step itself, to
+    type without sudo. Unit tests check this; it has not yet been run on Fedora.
+  - A user with no user manager running (a nologin service account reached with `sudo -u` or `su -s`) was told to
+    enable systemd user delegation, and `tego setup` and `tego doctor` named each other. Both now say no user
+    manager runs for the user and name `sudo loginctl enable-linger <user>`, with the user's name from the passwd
+    database (or the uid, when loginctl would read the name as an option or a uid). On Fedora 44, after that
+    command, `tego setup` in the user's scope said `ready: tier 1 (landlock)`. Once the manager runs, a shell that
+    has no `XDG_RUNTIME_DIR` (after `sudo -u` or `su`) is no longer left with no command: when `/run/user/<uid>`
+    is the user's and holds its manager's socket, the `next:` line is
+    `XDG_RUNTIME_DIR=/run/user/<uid> systemd-run --user --scope bash`. Unit tests check these lines; they have not
+    yet been run in a guest.
+  - For the few seconds before a run's first record line is written, `tego mcp allow`, `tego lift`, `grant`,
+    `restore`, `route set`, a timed or read or write `tego block`, and the same dashboard actions said the run is
+    Locked (or was started by an older tego). They now refuse with `[starting]`, "... is still starting ...; try
+    again in a few seconds", and write nothing; the same command worked seconds later. A first record line that
+    is there but is not one this tego can read (a damaged line, or one a newer tego wrote) is refused with
+    `[start-unreadable]` instead, with no "try again", since waiting does not change it.
+
+  Tests now also check `sudo tego agents` from an SSH login and from inside the scope, and the user with no user
+  manager, before and after linger: no `next:` line names the command that printed it, a shell inside the user
+  manager is not sent to open one, and `tego setup` and `tego doctor` do not name each other. The `sudo` cases are
+  built from the cgroups the guests logged; on Fedora 44 only the command's own cgroup was logged, so the cgroups
+  of sudo and of the shell it was typed in are assumed from how sudo opens root's session. Places outside those
+  tests are not covered.
+- Two more lines for a service account (a third guest walk on Ubuntu 24.04, AlmaLinux 9.8 and Fedora 44):
+  - After `sudo loginctl enable-linger svc`, `sudo -u svc tego setup` named `XDG_RUNTIME_DIR=/run/user/<uid>
+    systemd-run --user --scope bash` and did not say to run it as `svc`. Typed by the administrator in their own
+    shell, it opened the administrator's own shell (where `tego setup` then said ready, for the wrong user) on Ubuntu
+    and AlmaLinux, and failed on Fedora. When tego was started from another user's shell through `sudo` or `su`, the
+    line is now `sudo -u svc XDG_RUNTIME_DIR=/run/user/<uid> systemd-run --user --scope bash`, the name from the
+    passwd database and the uid as a number, and the words say to type it in your own login shell and that it opens a
+    shell as `svc`, not in yours. `tego doctor`'s `fix:` line and the error line of `tego run`, `watch` and `test`
+    name the same command there; before, they named the bare `systemd-run --user --scope bash`. Tego tells that from
+    the session's login uid and the owners of the processes above it, not from `SUDO_UID`. Typed by `svc` in its own
+    login, the line is as before. A passwd name that starts with `#` (which `sudo -u` reads as a uid) or `+` is
+    written as the uid. `tego setup --json` adds `as.scope_as`. That `sudo -u` command, with `tego setup` in place of
+    the interactive `bash`, was run in the guests and ran `tego setup` in `svc`'s user manager, ready at tier 1. The
+    new words and the choice between the two lines are checked by unit tests; a root test in a guest also ran the
+    `fix:` line's choice over the real `/proc`, for a process started by one of another uid, not through real `sudo`.
+  - For an account whose name systemd refuses (digits only, such as `4242`, among others), linger starts no user
+    manager, and `tego setup` named the same linger command again. `tego setup` and `tego doctor` now say that
+    systemd runs no user manager for this account's name, name no `next:` command, and say to run the agent as an
+    account whose name starts with a letter. `tego setup --json` gives that step the new `next.rule`
+    `check-no-manager-name`. The rules for names are systemd's (systemd.io/USER_NAMES). The digits-only case was run
+    in a guest before this change; that the other refused names get no user manager is read from those rules, not
+    run; the new lines are checked by unit tests only.
+- `tego learn` writes the contract's `name:` in double quotes, as `tego init` does. An agent name that YAML reads
+  as a number, a bool or a null (`123`, `true`, `null`) was written bare, so `tego learn --save 123` failed with
+  "name must be a string" and `--save null` with "name is required"; both now save.
+- `tego receipt` and `tego watch`'s `seen:` line no longer count glibc's `connect(AF_UNSPEC)` resets and the
+  kernel's netlink socket as places the run connected to: the first watch of a Python fetch said `most: unspec`.
+  They are counted apart as routine socket calls that name no place, as the dashboard already folded them, and
+  the dashboard's Receipt tab shows the count. `tego receipt --json` adds `routine_sockets`, and `connections` and
+  `connection_tries` no longer count these calls. A refused one, such as a send to an `AF_UNSPEC` address, is
+  still counted and listed as a refusal.
+- `tego run`'s summary, `tego receipt` and the dashboard's Receipt tab say that the refusal of OpenSSL's
+  kernel-TLS probe (`setsockopt(TCP_ULP, "tls")`, refused under every `net:` section) is built in
+  (`built in: kernel TLS`), not "not allowed by any rule": no rule can allow it. It still counts as a refusal,
+  and `--json` is unchanged.
+- `tego receipt` and the dashboard's Receipt tab no longer say "Nothing was refused." for a run that does not
+  record refused reads (tier landlock with `reason.reads` off): they say no recorded action was refused and that
+  refused reads are not recorded. `tego receipt --check` on a receipt whose `receipt_by` names no tego build says
+  so, in place of blank version words; it still exits 125.
+- `tego doctor` says when a machine limit ceiling uses a cgroup controller that is not enabled, so that every
+  `tego run` is refused at start (for example `limits.cpu` on a stock RHEL 9 host). It names the ceiling, its
+  file and line, and the fix. The tier it reports does not change.
+- `tego doctor` on RHEL 9 (and Alma or Rocky 9): the kernel line no longer lists Landlock ABI 2 to 6 as missing
+  when the kernel answers ABI 6. Its Landlock entries now come from the ABI the kernel reports, as the `landlock`
+  line does, and it says "below the upstream tested floor 6.1.0". On a kernel without Landlock it lists every
+  Landlock entry. As root, its `cgroup connect_unix` entry follows what the programs check found. For a user whose
+  cgroup is not offered cpu, the cgroupv2 line and a refused run's message now start with the administrator's
+  steps and say why the user cannot add `+cpu` alone. The tier doctor reports and its exit code do not change.
+- The dashboard's Receipt tab of a running run shows its time taken as a clock in all three places (the top
+  line, the tile and the chart's axis); the top line and the axis stood still while the tile ticked, and the tab
+  was sent again for a change of seconds only.
+- Tiers cgroup and bpflsm: a look at a build's lock (the linger timer's, a sweep's) let the lock go by closing
+  the file, so a child that the same process started in that moment could hold it until its own program started.
+  The timer could then find the build still held and wait one more `bpf.linger` before removing it. Each look now
+  lets the lock go explicitly.
+- A process reaped while Tego read its `/proc/<pid>/stat` is read as gone, not as a malformed file. The kernel
+  writes that line with process group -1, which Tego refused as malformed since v0.1.0: `tego adopt --pid` then
+  printed `read process <pid>: ... malformed stat line: pgrp "-1"` `[io]` where it prints `no process <pid>`
+  `[adopt-refused]`, and tiers cgroup and bpflsm kept the slot of a launcher reaped during the check until the
+  next one. The kernel writes the same line for a live process when a thread other than its leader runs `execve`,
+  so the line alone does not say the process is gone. Tego reads the file again: no file means gone, and a live
+  line is used. A line that stays this way after three reads is still refused. The stat parser also refuses pid
+  0, which no kernel writes.
+- The MCP relay and the HTTP ask hold also read `/proc/<pid>/stat` again when its line has process group -1, as
+  above. While a thread other than the leader of the process ran `execve`, an MCP relay shim could be refused at
+  admission or when its server started, and a held HTTP request could be refused with `ask-unavailable`. A gone
+  process, and a line that stays this way after three reads, are still refused.
+- The Claude Code hook sometimes told a refusal one request late (once on a CI runner, where the reason file still
+  did not list it more than 70 ms after its ledger line). The reason file the hook reads was written after the run
+  directory's copy, under one lock, so a slow write there could hold it back; it is now written first. What held it
+  back on that runner was not measured, so this may not remove every case. A refusal can still reach the hook one
+  request late, at every tier on a busy machine, because its ledger line can be written just after the agent saw the
+  refusal; it is then told by the first later hook that finds it in the file, still once. A script that reads
+  `$TEGO_REASON` right after a refused call should wait for the refusal to appear.
+- On a machine whose core utilities are one program file under many names (Ubuntu 25.10 and 26.04, about 115
+  names), the dashboard's "Also apply now" after removing a program such as `/bin/ls` from `exec.allow` refused
+  every other name of that file in the running run too, `/bin/sleep` among them, though the new rules still allowed
+  them. That block now refuses only what the run was granted under the removed entry: the file at the path the entry
+  led to when the run started, by any name that reaches it there. Where a program the rules keep leads to the same
+  file by the same path (busybox's links all lead to `/bin/busybox`), it still refuses that file, as before. A block
+  you place yourself (`tego block <run> exec /bin/ls`, Block now) still refuses the whole file, and `tego block` now
+  names a few of the other names it refuses and how to block one name. When a block refuses another name of its file,
+  `tego run`'s summary, `tego receipt` and the dashboard say so: "/bin/sleep: refused, same program file as /bin/ls,
+  which is blocked". Runs started by an older tego keep the old block until they end; restart them to get the new
+  one. A tego older than this release cannot read such a block's file (overlay version 5): its `tego block` and
+  dashboard say the file is invalid and change nothing on that run.
+
+### Record `v`
+1 (`spec/record/v1`, record minor 30)
+
 ## v0.1.2 - 2026-11-11
 
 This patch fixes one flaw in how command rules read long command lines. It changes no other code.

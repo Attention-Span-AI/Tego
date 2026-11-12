@@ -198,7 +198,7 @@ func (l *rowLabeler) label(e *ledgerview.Event) string {
 			r.blocks = blockLabels(r.run)
 		}
 		if b, ok := r.blocks[e.Rule]; ok {
-			return b
+			return sameFileLabel(b, e)
 		}
 	}
 	return ruleLabel(*e, r.lists)

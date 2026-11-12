@@ -37,6 +37,13 @@
 // caller inside a run, to a Locked run and outside the fence; a restore narrows and is allowed from inside a run.
 // Each writes a request only: the launcher decides what takes effect and records it.
 //
+// CheckLoosening (lift.go) is the refusal of the live switches outside the overlay, an MCP tool switch
+// (internal/control/mcpact) and a model route (internal/control/routeact), before a change past the run's contract:
+// liveblock.CheckLoosening on the run's lock and run_start. It refuses a run no launcher holds (ErrNotRunning) and a
+// Locked run (ErrLocked, the words a Locked lift gets), and fails closed: a lock that cannot be probed counts as held,
+// and a run_start that cannot be read yet is refused as not known (ErrStarting; ErrStartUnreadable when the first line
+// is there and is not one this tego reads), never as Locked.
+//
 // Answer takes always as `tego approve|deny --always` does; Alternate is `tego alternate --file` (ADR 0057), with
 // the CLI's symbolic-link-free opener ported here (internal/runtime/ask is not linkable) and an absolute path.
 //

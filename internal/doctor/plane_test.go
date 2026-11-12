@@ -806,6 +806,16 @@ func checkGolden(t *testing.T, name, got string) {
 // lsm= with bpf (LSM mode, tier bpflsm's plane, and tier cgroup deciding by lsm) and the default boot (no bpf
 // LSM: LSM mode ruled out with the GRUB line, tier cgroup deciding by fmod_ret).
 func TestPlaneDoctorGolden(t *testing.T) {
+	// The goldens are a Debian machine's: the lsm check's fix is GRUBFixFor(bootDebian), and a plane mode's
+	// precondition fix (modePrecondition) is GRUBFix, which reads the boot family from os-release. Read from the
+	// host, it said grubby on every RHEL-family host and the goldens differed there (AlmaLinux 9.8, 2026-11-10).
+	debian := filepath.Join(t.TempDir(), "os-release")
+	if err := os.WriteFile(debian, []byte("ID=debian\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := osReleasePath
+	t.Cleanup(func() { osReleasePath = old })
+	osReleasePath = debian
 	boots := map[string]probeState{
 		"lsm-boot": state(func(st *probeState) {
 			st.plane = passingPlane("")

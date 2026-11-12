@@ -66,6 +66,9 @@ type execBlock struct {
 	base bool
 	id   FileID
 	idOK bool
+	// grant is a block that matches by link (MatchLink): it refuses what the running contract grants under the
+	// exec.allow entry at its value (Grant), and only where the contract holds no such entry the whole file.
+	grant bool
 }
 
 type fsBlock struct {
@@ -121,6 +124,7 @@ func CompileEntries(entries []Entry, serial uint64, res Resolved) *Set {
 		case KindExec:
 			b := execBlock{e: e, w: w, dir: strings.HasSuffix(e.Value, "/"), base: !strings.HasPrefix(e.Value, "/")}
 			b.id, b.idOK = res.Files[e.Value]
+			b.grant = e.Match == MatchLink && !b.dir && !b.base
 			s.exec = append(s.exec, b)
 		case KindNet:
 			b := netBlock{e: e, w: w}
@@ -252,11 +256,25 @@ func (s *Set) Hosts() []string {
 	return out
 }
 
+// Grant is what the running contract says of one exec, for a block that matches by link (MatchLink). Asked of such a
+// block's value, it reports whether the contract holds a program entry at that path (held) and, if so, whether that
+// entry grants this exec (grants): by the exec's spelling, or by the file and the path the value resolved to when the
+// run started, which the supervisor fixed then and grants it by for the whole run (execGranted). A nil Grant holds no
+// entry.
+type Grant func(value string) (held, grants bool)
+
 // MatchExec is the block that names an exec, if one does. names are what the supervisor knows the image by: the
 // name its line gives it, the pathname as spelled, the image's own path as its descriptor reads; id is the image's
 // identity when idOK. An absolute block matches a name equal to it, or the image whose identity its path had when the
 // launcher stat'ed it; a directory block, a name beneath it; a bare name, a name whose last element it is.
-func (s *Set) MatchExec(names []string, id FileID, idOK bool) (Entry, bool) {
+//
+// A block that matches by link (MatchLink, the rules editor's block for an exec.allow entry removed) is asked of g
+// instead: it refuses exactly the execs the running contract grants under the entry at its value, by any name, and
+// leaves every other exec to the contract, which grants or refuses it under its own entries as the next run's
+// contract would. That holds however the value's links were moved after the run started, since the grant is the one
+// the run fixed then. Where g holds no entry at the value (g nil, or a contract with no such entry), the block
+// matches as an absolute block does, the whole file, fail closed.
+func (s *Set) MatchExec(names []string, id FileID, idOK bool, g Grant) (Entry, bool) {
 	if s == nil {
 		return Entry{}, false
 	}
@@ -264,6 +282,14 @@ func (s *Set) MatchExec(names []string, id FileID, idOK bool) (Entry, bool) {
 	for _, b := range s.exec {
 		if !s.on(b.w, c) {
 			continue
+		}
+		if b.grant && g != nil {
+			if held, grants := g(b.e.Value); held {
+				if grants {
+					return b.e, true
+				}
+				continue
+			}
 		}
 		if idOK && b.idOK && b.id == id {
 			return b.e, true

@@ -1,0 +1,15 @@
+{
+  "busybox": {
+    "name": "ls",
+    "path": "<root>/bbin/ls",
+    "resolved": "<root>/lib/bb/busybox",
+    "links": 1,
+    "dispatcher": true
+  },
+  "uutils": {
+    "name": "ls",
+    "path": "<root>/bin/ls",
+    "resolved": "<root>/lib/mc/ls",
+    "links": 3
+  }
+}

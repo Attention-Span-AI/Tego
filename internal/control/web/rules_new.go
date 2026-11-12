@@ -14,6 +14,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/control/ledgerview"
 	"github.com/attention-span-ai/tego/internal/control/rules"
 	"github.com/attention-span-ai/tego/internal/control/rulesview"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
 // "Set up a new agent" (GET and POST /rules/new,): a form for a project folder, an agent
@@ -23,7 +24,12 @@ import (
 // answered as every action is (flash.go): 303 to the page of the agent set up (?created=<id>, what the write kept,
 // Server.keep) with one line, or that line as JSON for live.js, which shows that address in place (the whole page is
 // its live region); a refusal goes back to the preview with the line saying why. The created page shows the line
-// that starts the agent. The page makes no decision of its own: every check and the write are the service's, which runs in this process as the user who started the dashboard.
+// that starts the agent. From a run, the draft is saved by default as the user registry's entry <name> through
+// registry.Save, the writer tego learn --save writes through, so tego run <name> and the tego-agent@<name> unit find
+// it; "The project folder" writes agent.yaml as before. "Show refused reads (slower)" adds reason: {reads: on}: from a
+// run it is on by default, as --save's default is, and takes learn's own rendering; from presets it starts off, as
+// tego init writes no reason: block, and the composed draft gets the block (setup.Options.Reads). The run page's
+// Tighten tab links here with the run named, which previews at once. The page makes no decision of its own: every check and the write are the service's, which runs in this process as the user who started the dashboard.
 
 // SetupService is what "Set up a new agent" asks of the rule service (internal/control/rules new.go).
 type SetupService interface {
@@ -50,8 +56,16 @@ type newData struct {
 	// Pass and AskRead are the "Variables it needs" and "Ask before reading" fields, as typed.
 	Pass, AskRead string
 	Mode          string // presets | run
-	Presets       []presetOpt
-	Runs          []fromRunOpt
+	// To is where a draft from a run is saved: "registry" (the user registry's entry, for tego run <name>, as tego learn
+	// --save saves it; the default) or "project" (agent.yaml in the project folder). Reads is the "Show refused reads
+	// (slower)" switch: from a run on by default, as tego learn --save records them unless --reads off; from presets
+	// off by default, as tego init writes none.
+	To    string
+	Reads bool
+	// ReadsCost is what recording refused reads costs, as compile and tego learn --save state it.
+	ReadsCost string
+	Presets   []presetOpt
+	Runs      []fromRunOpt
 	// Plan is the preview, nil before the first one; Text its YAML with env.set values hidden.
 	Plan   *rules.NewPlan
 	Groups []newGroup
@@ -108,7 +122,9 @@ func (s *Server) rulesNew(w http.ResponseWriter, r *http.Request) {
 	}
 	d := s.newForm(r, snap, q.Get("dir"), q.Get("name"), q["preset"], q.Get("writes"), q.Get("hosts"), q.Get("cmd"), q.Get("from"), q.Get("mode"))
 	liveForm(&d, q)
-	if d.Off || (q.Get("dir") == "" && q.Get("preview") == "") {
+	// A run named in the address (the run page's "Make a contract from this run") is previewed at once: the folder is
+	// that run's own.
+	if d.Off || (q.Get("dir") == "" && q.Get("preview") == "" && (d.Mode != "run" || d.Form.FromRun == "")) {
 		s.renderNew(w, snap, http.StatusOK, d)
 		return
 	}
@@ -125,14 +141,14 @@ func (s *Server) rulesNewPost(w http.ResponseWriter, r *http.Request) {
 	f := r.PostForm
 	// The preview the form came from, to go back to when nothing is written: the same fields as a GET.
 	back := url.Values{"preview": {"1"}}
-	for _, k := range []string{"mode", "dir", "name", "writes", "hosts", "pass", "askread", "cmd", "from", "live", "fence_read", "fence_net", "fence_exec"} {
+	for _, k := range []string{"mode", "dir", "name", "writes", "hosts", "pass", "askread", "cmd", "from", "to", "reads", "live", "fence_read", "fence_net", "fence_exec"} {
 		if v := f.Get(k); v != "" {
 			back.Set(k, v)
 		}
 	}
 	back["preset"] = f["preset"]
 	if s.cfg.Setup == nil {
-		s.redirectBack(w, r, "/rules/new", flash{Text: "Not created · policy editing is off here · use tego init --preset"})
+		s.redirectBack(w, r, "/rules/new", flash{Text: "Not created · contract editing is off here · use tego init --preset"})
 		return
 	}
 	snap, _ := ledgerview.Load(s.cfg.Ledger) // as in rulesNew
@@ -140,16 +156,24 @@ func (s *Server) rulesNewPost(w http.ResponseWriter, r *http.Request) {
 	liveForm(&d, f)
 	c, err := s.cfg.Setup.CreateNew(r.Context(), d.Form, f.Get("base"))
 	if c == nil {
-		why := err.Error()
-		if errors.Is(err, rules.ErrStale) {
-			why = "the folder or the presets changed what the rules file would hold since the preview. The preview below is the file as it would be now: check it and create again."
+		// The registry's button says Save, and the service's sentence says why and what to do: once, after one lead.
+		lead, verb, why := "Not created: ", "create", err.Error()
+		if d.Form.Registry && d.Form.FromRun != "" {
+			lead, verb, why = "Not saved: ", "save", plainErr(err)
 		}
-		s.redirectBack(w, r, "/rules/new?"+back.Encode(), flash{Text: "Not created: " + why})
+		if errors.Is(err, rules.ErrStale) {
+			why = "the folder or the presets changed what the rules file would hold since the preview. The preview below is the file as it would be now: check it and " + verb + " again."
+		}
+		s.redirectBack(w, r, "/rules/new?"+back.Encode(), flash{Text: lead + why})
 		return
 	}
 	d.Created, d.Ref = c, c.Ref
 	d.Start = startLine(c.Dir)
 	line := "Set up " + c.Name + ": " + c.Path + " is written. Start it with: " + d.Start
+	if c.Registry {
+		d.Start = runLine(c.Dir, c.Name)
+		line = "Saved " + c.Name + ": " + c.Path + ". Start it with: " + d.Start
+	}
 	if err != nil { // written, not journaled (rulefile.ErrJournal)
 		d.Err = err.Error()
 		line += " (" + d.Err + ")"
@@ -160,7 +184,7 @@ func (s *Server) rulesNewPost(w http.ResponseWriter, r *http.Request) {
 
 // newForm reads the form's fields into newData, with the preset and run choices.
 func (s *Server) newForm(r *http.Request, snap *ledgerview.Snapshot, dir, name string, presets []string, writes, hosts, cmd, from, mode string) newData {
-	d := newData{Writes: writes, Hosts: hosts, Mode: mode, Off: s.cfg.Setup == nil}
+	d := newData{Writes: writes, Hosts: hosts, Mode: mode, Off: s.cfg.Setup == nil, ReadsCost: agent.ReasonReadCost + ", " + agent.ReasonReadWorkload}
 	if d.Mode != "run" {
 		d.Mode = "presets"
 	}
@@ -188,6 +212,24 @@ func (s *Server) newForm(r *http.Request, snap *ledgerview.Snapshot, dir, name s
 			}
 		}
 	}
+	if d.Mode == "run" {
+		// A fresh form (no preview yet, not a Create) saves to the user registry and records refused reads, as tego
+		// learn --save does; a form sent back says what was picked, and an unticked box sends nothing.
+		fresh := r.URL.Query().Get("preview") == "" && r.Method != http.MethodPost
+		d.To = r.FormValue("to")
+		if d.To != "registry" && d.To != "project" {
+			d.To = "project"
+			if fresh {
+				d.To = "registry"
+			}
+		}
+		d.Reads = r.FormValue("reads") == "on" || fresh
+		d.Form.Registry = d.To == "registry"
+	} else {
+		// From presets the switch starts off, as tego init writes no reason: block.
+		d.Reads = r.FormValue("reads") == "on"
+	}
+	d.Form.Reads = d.Reads
 	if d.Form.FromRun != "" {
 		// A contract made from a run that leaked never allows where its secrets went (QA PW-1). Preview and Create
 		// both come through here, so the draft, and the base hash Create checks, agree.
@@ -224,6 +266,9 @@ func (s *Server) fillPlan(d *newData, p *rules.NewPlan) {
 	}
 	if p.Dir != "" {
 		d.Start = startLine(p.Dir)
+		if p.Registry && p.Name != "" {
+			d.Start = runLine(p.Dir, p.Name)
+		}
 	}
 	if p.Name != "" && strings.TrimSpace(d.Form.Name) == "" {
 		d.Form.Name = p.Name
@@ -235,6 +280,12 @@ func (s *Server) fillPlan(d *newData, p *rules.NewPlan) {
 // it and hand the typed text to the person's own shell, where `a && b` runs b outside tego.
 func startLine(dir string) string {
 	return "cd " + shellWord(dir) + " && tego run " + rules.NewFile
+}
+
+// runLine is the terminal line that starts the agent saved as the user registry's entry name: tego run <name>, typed in
+// the folder it runs in, as tego learn --save's next: line says it.
+func runLine(dir, name string) string {
+	return "cd " + shellWord(dir) + " && tego run " + name
 }
 
 // splitList is a comma- or line-separated field as items, each trimmed, blanks dropped.
@@ -249,7 +300,7 @@ func splitList(s string) []string {
 }
 
 func (s *Server) renderNew(w http.ResponseWriter, snap *ledgerview.Snapshot, status int, d newData) {
-	c := chrome{Title: "New policy", Nav: "rules"}
+	c := chrome{Title: "New contract", Nav: "rules"}
 	if snap != nil {
 		c = s.chromeOf(snap, c.Title, c.Nav)
 	}
@@ -313,7 +364,7 @@ func newGroups(gs []rules.NewGroup) []newGroup {
 	for _, g := range gs {
 		ng := newGroup{ruleGroup: ruleGroup{ID: g.ID, Title: g.Title, Lede: g.Lede, Default: g.Default, Icon: groupIcon(g.ID)}}
 		for i, r := range g.Rules {
-			row := ruleRow{Sentence: r.Sentence, Effect: r.Effect}
+			row := ruleRow{Sentence: r.Sentence, Effect: r.Effect, Note: r.Note}
 			if i < maxGroupRows {
 				ng.Rows = append(ng.Rows, row)
 			} else {

@@ -243,6 +243,58 @@ func TestMovedHelper(t *testing.T) {
 	fmt.Printf("\nMOVED-RESULT %d\n", int(errno))
 }
 
+// unmarkedSelf copies this test binary onto a tmpfs of the test's own and returns the copy's path, for a test
+// that starts TestMovedHelper while its own group holds marks on marked (mount points). os/exec's clone suspends
+// the forking thread (CLONE_VFORK) until the child's execve is past its point of no return, and that thread
+// keeps its scheduler slot meanwhile, so a garbage collection that begins in the window waits for it. When the
+// binary sits on a marked mount, the execve's open then waits on this process's own group, whose loop the
+// collection has stopped, and nothing ever answers it: the cycle TestStageExecUnderGCNeverWaitsOnItsOwnGroup
+// pins for the launcher, which proc.Start closes by refusing a start while marks exist (ADR 0021 (3)). With the
+// mark on / it freezes every open on the machine, and the suite's own -test.timeout cannot fire. It hung
+// TestHeldCloseEndsTheListenerBeforeTheDescriptorLimit on AlmaLinux 9.8, whose /tmp and test binary share the
+// root xfs: the test thread in clone3's vfork wait, the helper in fanotify_get_response from execve, the loop's
+// goroutine stopping the world (2026-11-10). The copy is on no mount this process marks, so its execve raises no
+// event; the helper's own open, after the execve, is what the test asks the group about. Call it before the
+// marks exist: reading the binary is itself an open on its mount.
+func unmarkedSelf(t *testing.T, marked []string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "self")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Mount("tego-unmarked-self", dir, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV, "mode=0755"); err != nil {
+		t.Skipf("mount a tmpfs for the helper's binary needs CAP_SYS_ADMIN: %v", err)
+	}
+	t.Cleanup(func() { _ = unix.Unmount(dir, unix.MNT_DETACH) })
+	self, err := os.ReadFile("/proc/self/exe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "helper.test")
+	if err := os.WriteFile(bin, self, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mountID := func(path string) uint64 {
+		t.Helper()
+		var st unix.Statx_t
+		if err := unix.Statx(unix.AT_FDCWD, path, 0, unix.STATX_MNT_ID, &st); err != nil {
+			t.Fatalf("statx %s: %v", path, err)
+		}
+		if st.Mask&unix.STATX_MNT_ID == 0 {
+			t.Skipf("this kernel reports no mount id in statx (5.8+), so the helper's mount cannot be told apart")
+		}
+		return st.Mnt_id
+	}
+	own := mountID(bin)
+	for _, m := range marked {
+		if mountID(m) == own {
+			t.Fatalf("the helper's binary %s is on %s, which this test marks: its execve would wait on this "+
+				"process's own group", bin, m)
+		}
+	}
+	return bin
+}
+
 // TestDirectoryMovedIntoADeniedTreeIsStillAsked: what the listener allowed in a directory says nothing about
 // that directory once it has moved. The run reads a file in an allowed directory; a process outside the run
 // then renames the directory into a deny_read tree and creates a file in it there, as a user's shell or a
@@ -279,6 +331,7 @@ func TestDirectoryMovedIntoADeniedTreeIsStillAsked(t *testing.T) {
 		Contract: &agent.Contract{},
 		Tier:     backend.TierCgroup, Record: agent.RecordFull,
 	}, rel)
+	helper := unmarkedSelf(t, p.mounts)
 	l, err := newFanotifyListener(p, Run{ID: "moved", Agent: "a", CgroupID: id, CgroupPath: rel}, events, time.Second)
 	if err != nil {
 		if errors.Is(err, unix.EPERM) {
@@ -313,10 +366,10 @@ func TestDirectoryMovedIntoADeniedTreeIsStillAsked(t *testing.T) {
 	defer stop()
 
 	// inRun opens a path from a process placed in the run's cgroup at clone time, as the launcher places the
-	// agent, and returns the errno it got.
+	// agent, and returns the errno it got. It execs the copy on a mount nothing here marks (unmarkedSelf).
 	inRun := func(arg string) unix.Errno {
 		t.Helper()
-		cmd := exec.Command(os.Args[0], "-test.run=^TestMovedHelper$")
+		cmd := exec.Command(helper, "-test.run=^TestMovedHelper$")
 		cmd.Env = append(os.Environ(), movedHelperEnv+"="+arg)
 		cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: int(cgdir.Fd())}
 		out, err := cmd.Output()

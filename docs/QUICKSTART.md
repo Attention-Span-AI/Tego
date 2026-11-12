@@ -81,7 +81,7 @@ summary: tier landlock; cgroup needs root; bpflsm needs root, lsm
 capability matrix for tier landlock on this machine:
 deny file write outside contract                   yes  yes (EACCES)
 deny delete, rename, mkdir, mknod                  yes  yes (EACCES), per process tree
-deny read of secret paths                          yes  by sibling enumeration; unenforced under a writable parent
+deny read of secret paths                          yes  by sibling enumeration; under a writable parent, held reads (the default) refuse it; `fs.reads: direct` leaves it unenforced
 deny exec                                          yes  by inode (`EXECUTE` on binaries, their loader, listed scripts)
 deny network by host:port                          yes  yes, supervisor-completed connects (Landlock grants declared TCP ports only)
 [... 26 more rows of this table ...]
@@ -96,12 +96,17 @@ ok   dashboard: the dashboard can tell which run a connection comes from
 
 `doctor` tests the kernel features Tego uses. Its `summary:` line, after the checks, says which tier this machine gets
 and what each tier above it needs; the lines after the table say why, and the fix. Tier 1 (`landlock`) needs no root.
+In a terminal it ends with one more line on stderr, `Ready: this shell can enforce at tier 1 (landlock), no root needed.`
+or `Not ready: ...`, and the next command to type.
 Without root, `doctor` cannot check everything, and it says what it could not check. The capability table is cut after five
 rows above; yours prints in full. On a stock Ubuntu you will see that tier 3 is unavailable, because `bpf` is not in the boot
 LSM list ([TIERS.md](TIERS.md)). That is a fact about the machine, not a fault. The last line warns only if the kernel
 cannot load the `inet_diag` and `tcp_diag` modules, which the dashboard needs.
-`sudo "$(command -v tego)" doctor` shows what tiers 2 and 3 would get. Over SSH, start a shell in your user's cgroup first,
-or tier 1 has no cgroup to use: `systemd-run --user --scope bash` ([INSTALL.md](INSTALL.md#check-the-machine)).
+`sudo "$(command -v tego)" doctor` shows what tiers 2 and 3 would get. Over SSH or on a console login, start a shell in
+your user's cgroup first, or no run starts at all, not even one that only records: `systemd-run --user --scope bash`
+([INSTALL.md](INSTALL.md#check-the-machine)). From such a login, `doctor` says `Not ready: this shell is outside your
+user manager's cgroup, ...` and its `next:` line is that command. `tego setup` shows where you are in all six steps
+([user/setup.md](user/setup.md)).
 
 ## 3. Watch Tego refuse something
 
@@ -125,7 +130,8 @@ The actions ran on decoys in a temporary folder, removed now, and the four runs'
 Four harmless actions, run on decoy files in a temporary folder: read a fake SSH key, write outside the writable folder,
 run a program the contract does not list, connect to a port it does not allow. Each works without Tego and is refused with
 it, and each refusal is recorded. Nothing of yours is touched. It exits 0 when all four are refused, 1 if one was not, and
-125 if it could not tell, which is what you get over SSH outside your user's cgroup (step 2).
+125 if it could not tell, which is what you get over SSH outside your user's cgroup (step 2): then no run under Tego
+started, the report says nothing was judged, and its `next:` line opens a shell in your user's cgroup.
 [user/self-check.md](user/self-check.md) has the details.
 
 ## 4. Write a contract
@@ -276,8 +282,8 @@ each, how often the agent asked, and the tokens used with an estimated cost. Its
 not cover, which depends on the tier.
 
 **At tier 1, a clean receipt says nothing about reads.** Under `record: summary`, the default, Tego is not told about reads.
-A read that `deny_read` refuses fails with `EACCES` and leaves no line, so `tego run` can print `refused 0` and the receipt can
-say "Nothing was refused" after it. To see reads, set `record: full` in the contract, which makes every open slower, or run at
+A read that `deny_read` refuses fails with `EACCES` and leaves no line, so `tego run` can print `refused 0`. The receipt then
+says "No recorded action was refused; this run does not record refused reads", never "Nothing was refused". To see reads, set `record: full` in the contract, which makes every open slower, or run at
 tier 2 or 3. To see only the refused ones, set `reason.reads: on` ([user/reason-channel.md](user/reason-channel.md)).
 
 `tego receipt --last --verify` also checks the run's hash chain against its anchor in `~/.tego/chain.log`.
@@ -333,6 +339,35 @@ describes the project without changing files. For the full-screen interface use
 with `CODEX_API_KEY`; ChatGPT sign-in keeps its explicit example contract. Init reads
 no credentials and calls no model. The initial prompt is one literal argument.
 Generated cache and state paths move with the project; run it from that folder.
+
+For any other agent or command, record one run of it, then let Tego propose a contract from what that run did:
+
+```sh
+cd ~/myagent                                      # the folder your agent works in
+tego watch -- python3 agent.py                    # records it; no rule refuses anything; Ctrl-C keeps the record
+tego learn <run> --save myagent                   # <run>: the run id tego watch printed at the end
+tego run myagent
+```
+
+`tego learn <run> [--save <name> | --out <file>] [--allow-host <host>[:<port>]]... [--reads on|off] [--workspace <dir>]`
+reads the run's record and proposes a contract: the folders it wrote in, the programs it started, the addresses it
+connected to. Without `--save` or `--out` it prints the proposal. `--save myagent` writes it to
+`~/.config/tego/agents/myagent.yaml` (mode 0600, never over a file already there), where `tego run myagent` finds it;
+`--out` writes it to a new file you name. A contract `--save` writes records each read it refuses, so a refused read
+shows in `tego run`'s summary; each read open is about 17 µs slower, and `--reads off` leaves it out.
+`--workspace` is the folder writes may be allowed under (default: the folder the run started in). `<run>` may be the
+last characters of the run id (four or more) when they name one run. In a terminal, `tego watch`, `tego learn` and
+`tego run` each end with a `next:` line that names the command to type next. Read the proposal before you use it: it
+allows only what that run did. Keep it outside the folder the agent writes in, because Tego refuses a contract its
+agent could rewrite. Its
+network entries are the IP addresses that run connected to, not host names. One name often has several addresses and
+a program may pick another one on its next run, so a later run can be refused a connection this run made. Give the
+host name the agent uses with `--allow-host <host>`, for example `tego learn <run> --save myagent --allow-host
+example.com` for an agent that fetches https://example.com: Tego looks the name up now and writes
+`tcp://example.com:443` in place of each address the run reached that the name resolves to, and refuses, writing
+nothing, a name that covers no address the run reached. You can also write the host name in their place by hand.
+`tego learn` says so too, at the top of the file and in the terminal, and its `next:` line adds `--allow-host <host>`
+when the run reached addresses.
 
 Use `tego status --agent <name>` to find its newest run, or add `--all` for its history.
 `tego rules --last` shows the same rules, sources and enforcement details as the dashboard.

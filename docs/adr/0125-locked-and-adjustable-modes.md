@@ -120,7 +120,12 @@ because the fence is built into the Landlock domain.
 
 *Amended 2026-11-01:* as built, this covers file, program and network rules. MCP tool switches (ADR 0126 §4) and model
 routes (ADR 0127) can still be loosened on a running run, Locked or Adjustable, by a person outside every run, with
-confirmation: the mode check those two ADRs planned is not built (docs/GAPS.md C39).
+confirmation: the mode check those two ADRs planned is not built (docs/GAPS.md C39). *Amended 2026-11-11:* it is
+built in Tego's writers: on a Locked run `tego mcp`, `tego route` and their dashboard pages refuse a change past the
+contract (`liveblock.CheckLoosening`, `[locked]`), and still take a tightening or a change back to the contract. The
+MCP relay and the model forwarder do not read the mode, so a change written into the run's folder another way still
+applies (ADR 0126 and ADR 0127, "Amendment 2026-11-11: Locked runs"; GAPS C39, narrowed). On an Adjustable run both
+still loosen live, outside the fence.
 
 ### 4. Time limits on every live change, in both modes
 

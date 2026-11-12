@@ -52,7 +52,8 @@ mcp:
 		return strings.Replace(line(mcpRun, "mcp-demo", seq, t0.Add(time.Duration(seq)*time.Second), "mcp", extra), `"source":"supervisor"`, `"source":"proxy"`, 1)
 	}
 	ls := []string{
-		line(mcpRun, "mcp-demo", 0, t0, "run_start", `"tier":"landlock","record_minor":25,"command":["python3","agent.py"],"capabilities":{"ask":true}`),
+		line(mcpRun, "mcp-demo", 0, t0, "run_start", `"tier":"cgroup","record_minor":26,"command":["python3","agent.py"],"capabilities":{"ask":true},"live_mode":"adjustable",`+
+			`"live_fence":{"sha256":"`+strings.Repeat("0", 64)+`","entries":[]}`),
 		proxy(1, `"rule":"mcp[files]","verdict":"allow","authority":"rule","name":"files","transport":"stdio","tool":"read_file"`),
 		proxy(2, `"rule":"mcp[files]","verdict":"allow","authority":"rule","name":"files","transport":"stdio","tool":"read_file"`),
 		proxy(3, `"rule":"mcp[files].tools.deny[delete_file]","verdict":"refused","authority":"rule","reason":"mcp-tool-denied","name":"files","transport":"stdio","tool":"delete_file"`),

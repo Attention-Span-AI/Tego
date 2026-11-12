@@ -303,7 +303,7 @@ func TestWriteToASecretFolderIsNoted(t *testing.T) {
 	}
 }
 
-// TestAgentNeeds: the dashboard's New policy for Claude Code under all three presets gets Claude's own folder in the
+// TestAgentNeeds: the dashboard's New contract for Claude Code under all three presets gets Claude's own folder in the
 // project, its socket folder, its model host and its login variables, plus the asked-for variables and ask-first
 // reads; without AgentNeeds (tego init) none of Claude's needs are added.
 func TestAgentNeeds(t *testing.T) {
@@ -379,5 +379,24 @@ func TestAgentNeedsTerminal(t *testing.T) {
 	}
 	if strings.Contains(string(res.Contract), `"/dev/tty"`) {
 		t.Errorf("another program got the terminal:\n%s", res.Contract)
+	}
+}
+
+// TestReadsWritesTheReasonBlock: Options.Reads writes reason: {reads: on} after the command, in tego learn --reads
+// on's words, and the contract compiles with refused reads recorded; without it there is no reason: key, as tego init
+// writes it.
+func TestReadsWritesTheReasonBlock(t *testing.T) {
+	dir := project(t, "src/")
+	block := "\nreason:\n  # A read this contract refuses is recorded at tier landlock too, under every record level (" + agent.ReasonReadCost + ").\n  reads: on\n"
+	on := compose(t, Options{Presets: []string{"no-secrets"}, Command: "sh", Dir: dir, Name: "p", Reads: true})
+	if !strings.Contains(string(on.Contract), "command: [\"sh\"]\n"+block) {
+		t.Fatalf("no reason block after the command:\n%s", on.Contract)
+	}
+	if rt := compile(t, dir, t.TempDir(), on.Contract); rt.ReasonReads != agent.ReasonReadsOn {
+		t.Errorf("compiled reason.reads is %q, want on", rt.ReasonReads)
+	}
+	off := compose(t, Options{Presets: []string{"no-secrets"}, Command: "sh", Dir: dir, Name: "p"})
+	if strings.Contains(string(off.Contract), "reason:") {
+		t.Errorf("a draft without Reads has a reason: key:\n%s", off.Contract)
 	}
 }

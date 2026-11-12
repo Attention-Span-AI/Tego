@@ -7,11 +7,14 @@
 // page shows the decision the relay makes. Plan previews a switch and, for one that loosens, returns the
 // acknowledgement Set needs: an HMAC under this process's random key, domain tego-mcp-ack-v1, over the run, server,
 // tool, decision and the sha256 of the overlay file it was shown against, so a stale or forged preview is refused.
-// A tightening needs none. A loosening, and a reset that loosens, is refused to a caller inside a run.
+// A tightening needs none. A loosening, and a reset that loosens, is refused to a caller inside a run. A switch to a
+// decision looser than the contract's is refused on a Locked run (ErrLocked, runact.CheckLoosening, read from the
+// run's run_start; ADR 0126 §4), in the words a lift of a Locked run is refused with; on a run no launcher holds that
+// check refuses it ErrNotRunning, so the preview of such a switch is refused too, with no acknowledgement.
 //
 // The web package parses forms, renders and calls this; it never opens the overlay itself.
 //
 // Imports: the standard library, gopkg.in/yaml.v3, internal/mcptools, internal/ledger, internal/runlock,
-// internal/control/runact (SelfGoverned), pkg/policy/mcptool, pkg/spec/record.
+// internal/control/runact (SelfGoverned, CheckLoosening), pkg/policy/mcptool, pkg/spec/record.
 // Must not import: internal/runtime, internal/policy, internal/cli (control-links-no-engine).
 package mcpact

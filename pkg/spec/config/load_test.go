@@ -894,6 +894,28 @@ func TestEffective(t *testing.T) {
 	}
 }
 
+// TestLimitCeilings: the limits.* ceilings a layer set, with their lines, and none of tier, capture or
+// record.max_run_bytes; an adoption (which applies none) and doctor (which checks their controllers) read them.
+func TestLimitCeilings(t *testing.T) {
+	src := layers(t, trustedDir(t), etcLayer, "", "")
+	m, _ := mustLoad(t, src, "/home/test")
+	var got []string
+	for _, v := range m.LimitCeilings() {
+		got = append(got, v.Key+"="+v.Value+"@"+v.Source.String())
+	}
+	want := []string{"limits.cpu=8@" + src.Etc + ":6", "limits.memory=32GiB@" + src.Etc + ":7",
+		"limits.pids=4096@" + src.Etc + ":8", "limits.wall=1d@" + src.Etc + ":9"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("LimitCeilings = %q, want %q", got, want)
+	}
+	if c := Builtin().LimitCeilings(); len(c) != 0 {
+		t.Errorf("the built-in layer sets no ceiling, got %v", c)
+	}
+	if c := (*Machine)(nil).LimitCeilings(); c != nil {
+		t.Errorf("nil machine: %v", c)
+	}
+}
+
 func TestDiagnosticString(t *testing.T) {
 	d := Diagnostic{File: "/etc/tego/config.yaml", Line: 7, Col: 3, Message: "unknown key \"gpus\"", Code: CodeInvalid, Fix: "Remove it."}
 	if got := d.String(); got != `/etc/tego/config.yaml:7:3: unknown key "gpus" [config-invalid] Remove it.` {

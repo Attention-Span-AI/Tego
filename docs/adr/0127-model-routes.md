@@ -139,6 +139,7 @@ a contract, and on confirming the change, where `tego route set`'s y/N and the `
 - **Every change, widening or not, is refused from inside a run** (CLI `refuseGoverned`, the service's
   `SelfGoverned`, and the dashboard's governed-peer check on every POST, ADR 0123). Unlike a live block, which an agent
   may place on itself, a revert is refused too: the agent never chooses its route, in either direction.
+- **A Locked run takes no route but direct** (*amended 2026-11-11*, "Amendment 2026-11-11: Locked runs" below).
 
 ### 7. Record (minor 27, `MinorModelRoutes`)
 
@@ -183,9 +184,9 @@ loopback servers (under a `net:` section a guarded port refuses unknown destinat
   routes go between compatible endpoints; translation is not Tego's.
 - A per-request or weighted choice (load balancing, fallback on error): one route per endpoint at a time, by a person.
 - Saving a live route into the contract: a route lasts for the run; Change rules writes the contract.
-- The Locked and Adjustable modes: a route change is gated by its own acknowledgement and governed check, on a
-  Locked run too. The mode check is not built, so a person outside every run can still move a Locked run's endpoint to
-  a declared route, with confirmation (*amended 2026-11-01*; docs/GAPS.md C39).
+- The Locked and Adjustable modes: *amended 2026-11-11*, a Locked run's writers refuse every route but direct
+  ("Amendment 2026-11-11: Locked runs" below). The forwarder does not read the mode, so a route written into
+  `model-routes.json` some other way still applies (docs/GAPS.md C39).
 
 ## Consequences
 
@@ -238,3 +239,41 @@ given, so a first-time reader sees only the pages that
 work for every run. The page itself is unchanged and answers at `/routes` as before; a link to it still opens
 it. Where this record says "the nav's" link or item, read "the nav's, with `--preview`". docs/DASHBOARD.md ("Start it")
 holds the flag.
+
+## Amendment 2026-11-11: Locked runs
+
+The mode check this record left out (docs/GAPS.md C39) is built, as ADR 0126's amendment of the
+same day builds it for MCP tool switches:
+
+- **Who checks.** `tego route set|clear` (internal/cli/route.go) and `internal/control/routeact` (`Plan`, `Set`,
+  `Clear`). Each reads the run's live mode from its run_start and refuses with `liveblock.CheckLoosening`
+  (`runact.CheckLoosening` for the page): `liveblock.ErrLocked`, in the words a lift of a Locked run gets ("`<run>` is
+  Locked: it keeps to its contract while it runs, so nothing loosens until its next run"), `[locked]` and exit 1 on the
+  terminal, "Not done: this run is Locked: loosening applies from its next run." on the Model routes page's flash and
+  its preview, which then offers no acknowledgement, only a link back.
+- **What it refuses.** Any route but `direct` on a Locked run. A contract starts every endpoint on `direct`, so any
+  other route leaves the run looser than its contract (ADR 0125: "never looser than its contract while it runs"); a
+  clear back to `direct` is taken, as a live block's removal is. Only the route decides it, not the overlay. A set to
+  the route already in force (one an older build wrote) is refused too.
+- **Fail closed.** A run_start below record minor 26 counts as Locked. One not written yet is refused too, as still
+  starting (`liveblock.ErrStarting`, `[starting]`), never as Locked (*amended 2026-11-11*, acceptance 2B); a complete
+  first line that is not a run_start this tego reads is refused as not readable (`liveblock.ErrStartUnreadable`,
+  `[start-unreadable]`, with no "try again"). A run no launcher
+  holds gets `ErrNotRunning` first, from `liveblock.CheckLoosening` itself (so the preview of a route on it is refused
+  too, with no acknowledgement); a lock that cannot be probed counts as held.
+- **Record.** A refusal writes no overlay change and no ledger line, as a writer's refusal of a lift writes none.
+- **Not covered.** The forwarder applies whatever `model-routes.json` holds and does not read the mode; a route
+  written there some other way still applies, with its `model-route-changed` line (GAPS C39, narrowed).
+- **Consequence.** At tier landlock every run is Locked, so routes move live only on Adjustable runs (cgroup,
+  bpflsm). `test/e2e/model-route-e2e.sh` now starts its run Adjustable through the test build's
+  `TEGO_TEST_LIVE_ANY_TIER` hook; its previous version, run against the new build, stops at `tego route set` with
+  the `[locked]` refusal (measured 2026-11-11). It names no tier (compile refuses Adjustable with `tier: landlock`),
+  and as a user it still lands at landlock and prints the tier it got. As root through sudo (a KVM guest with
+  `kvm-run.sh --sudo`, 2026-11-11) the run also lands at landlock, and the script fails before any route step, the
+  same way with this change and before it: the agent runs as the invoking user, who cannot open the script's private
+  directory. So the script holds as a user's test only, as it did before.
+- **Verified** (on this host, as a user): `TestLockedRunRefusesARoute` (routeact), `TestRouteSetRefusedOnALockedRun`
+  (internal/cli), `TestRoutesLockedRunRefusesARoute` (web), each failing with the check removed (`go test -overlay`);
+  routeact's `TestEndedRun` (the preview of a route on a run no launcher holds is refused), which failed before
+  `liveblock.CheckLoosening` refused that run itself; `test/e2e/model-route-e2e.sh` passes. Not verified: a root tier
+  in a guest.

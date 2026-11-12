@@ -26,13 +26,13 @@ type verdictChip struct {
 func (v *receiptView) Chips(observed, allowed, refused int) []verdictChip {
 	var out []verdictChip
 	if refused > 0 {
-		out = append(out, verdictChip{Class: "b-refused", Text: "Blocked", N: refused})
+		out = append(out, verdictChip{Class: "b-refused", Text: "Refused", N: refused})
 	}
 	if allowed > 0 {
 		out = append(out, verdictChip{Class: "b-neutral", Text: "Allowed", N: allowed})
 	}
 	if observed > 0 {
-		out = append(out, verdictChip{Class: "b-observed", Text: "Recorded, not blocked", N: observed})
+		out = append(out, verdictChip{Class: "b-observed", Text: "Recorded, not refused", N: observed})
 	}
 	return out
 }
@@ -44,7 +44,7 @@ func (v *receiptView) SensChips(path string, observed, allowed, refused int) []v
 	var out []verdictChip
 	own := ledgerview.AgentOwn(ledgerview.CommandAgent(strings.Join(v.R.Command, " ")), path)
 	if observed > 0 {
-		out = append(out, verdictChip{Class: "b-leak", Text: "Read, not blocked", N: observed})
+		out = append(out, verdictChip{Class: "b-leak", Text: "Read, not refused", N: observed})
 	}
 	if allowed > 0 && own {
 		out = append(out, verdictChip{Class: "b-neutral", Text: "Allowed", N: allowed})
@@ -52,7 +52,7 @@ func (v *receiptView) SensChips(path string, observed, allowed, refused int) []v
 		out = append(out, verdictChip{Class: "b-asked", Text: "Read, allowed", N: allowed})
 	}
 	if refused > 0 {
-		out = append(out, verdictChip{Class: "b-refused", Text: "Blocked", N: refused})
+		out = append(out, verdictChip{Class: "b-refused", Text: "Refused", N: refused})
 	}
 	return out
 }

@@ -217,7 +217,7 @@ func (c *countingAnchor) Append(string, string) error       { c.n++; return nil 
 func (c *countingAnchor) Head(string) (string, bool, error) { return "", false, nil }
 
 func TestRunDirIsCreatedPrivate(t *testing.T) {
-	// The run directory holds the record of a sandboxed agent: it is 0700 and never group readable.
+	// The run directory holds the record of an agent's run: it is 0700 and never group readable.
 	dir := filepath.Join(t.TempDir(), "r-1")
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)

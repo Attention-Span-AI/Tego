@@ -270,7 +270,7 @@ type savedNext struct {
 func (s *Server) changeService(w http.ResponseWriter) (ChangeService, bool) {
 	svc, ok := s.cfg.Rules.(ChangeService)
 	if !ok {
-		s.fail(w, http.StatusNotFound, "Edit policy", "Policy editing is off here · start it with tego-control serve, or use tego rule <run> <line>")
+		s.fail(w, http.StatusNotFound, "Edit contract", "Contract editing is off here · start it with tego-control serve, or use tego rule <run> <line>")
 	}
 	return svc, ok
 }
@@ -289,7 +289,7 @@ func (s *Server) changeChrome(w http.ResponseWriter, title string) (chrome, bool
 func (s *Server) serviceFail(w http.ResponseWriter, heading string, err error) {
 	switch {
 	case errors.Is(err, rules.ErrNoContract):
-		s.fail(w, http.StatusNotFound, "No such policy file", "No run used that policy file · pick one on the Policy page")
+		s.fail(w, http.StatusNotFound, "No such contract file", "No run used that contract file · pick one on the Contracts page")
 	case errors.Is(err, rules.ErrNotWritable):
 		s.fail(w, http.StatusForbidden, heading, err.Error())
 	default:
@@ -417,7 +417,7 @@ func editOf(v url.Values) (rules.Edit, string) {
 	case e.Op != "add" && e.Op != "remove" && e.Op != "never":
 		return e, "Add, remove, or turn an ask into Never allow"
 	case !slices.Contains(rules.EditKeys(), e.Key):
-		return e, "Change one of the lists on Edit policy"
+		return e, "Change one of the lists on Edit contract"
 	case e.Entry == "":
 		return e, "Type the entry to add: " + hintOf(e.Key)
 	case len(e.Entry) > rules.MaxEntry:
@@ -514,7 +514,7 @@ func (s *Server) renderPreview(w http.ResponseWriter, status int, d previewData)
 func refusal(err error) (int, string, bool) {
 	switch {
 	case errors.Is(err, rules.ErrStale):
-		return http.StatusConflict, "Not saved · the policy changed since you looked · check again and save", true
+		return http.StatusConflict, "Not saved · the contract changed since you looked · check again and save", true
 	case errors.Is(err, rules.ErrAckMismatch):
 		return http.StatusBadRequest, "Not saved · the preview changed · tick the box and save", true
 	case errors.Is(err, rules.ErrNeedsAck):
@@ -577,7 +577,7 @@ func (s *Server) rulesChangePost(w http.ResponseWriter, r *http.Request) {
 // the file now has nothing to do, or cannot be made and the change the file holds now (the journal's newest, which
 // stands) made it. Only the words differ: nothing is written either way.
 func staleText(ctx context.Context, svc ChangeService, req rules.ChangeReq, e rules.Edit, text string) string {
-	const already = "Already in the policy · nothing written"
+	const already = "Already in the contract · nothing written"
 	p, err := svc.PlanChange(ctx, rules.ChangeReq{Ref: req.Ref, Edits: req.Edits})
 	switch {
 	case err != nil || p.Err == "":
@@ -828,7 +828,7 @@ func (s *Server) rulesRevert(w http.ResponseWriter, r *http.Request) {
 			text = "Not undone · tick \"Next run may do more\" and undo"
 		case errors.Is(err, rules.ErrStale):
 			// The page it goes back to is read again: its history offers Undo only on a change the file still holds.
-			text = "Not undone · the policy changed since · History reloaded"
+			text = "Not undone · the contract changed since · History reloaded"
 		}
 		back := "/rules/change"
 		// The way back names the contract only when the posted c is the one whose journal holds the entry: c is the

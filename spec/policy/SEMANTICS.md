@@ -618,10 +618,51 @@ holds the agent's securebits 8-11 clear at tiers 1 and 2. An unlisted script is 
 another path is refused by `run` even though it is the same inode: `compile --test` cannot see inodes, and the two
 must not disagree. The same holds the other way for a multi-call binary, one file hard-linked under many names
 (Ubuntu 25.10's uutils coreutils, where `/usr/bin/ls` and `/usr/bin/cat` are symlinks to two links of one inode;
-busybox's applets): each name `exec.allow` lists runs, under its own entry, and every other name of the file is
-refused at every tier (*amended 2026-09-30*, ADR 0025's note of that day). Which applet such a binary runs is its
-own choice from `argv[0]`, which no exec rule sees: a binary that honours any `argv[0]` (busybox) runs every applet
-through any name `exec.allow` lists, so list such a binary only where all of it may run.
+busybox's applets where they are hard links, *qualified 2026-11-11*: where they are symlinks to one file, as busybox
+usually installs them, the note below holds): each name `exec.allow` lists runs, under its own entry, and every other
+name of the file is refused at every tier (*amended 2026-09-30*, ADR 0025's note of that day). Which applet such a
+binary runs is its own choice from `argv[0]`, which no exec rule sees (*qualified 2026-11-11* by the amendment that
+ends this paragraph): a binary that honours any `argv[0]` (busybox) runs every applet through any name `exec.allow`
+lists, so list such a binary only where all of it may run. *(Amended 2026-11-11.)* `exec.allow` still does not read
+that choice; `exec.deny` and `exec.ask` command entries do: on a file of more than one link under a name uutils links
+its file under, or one named `coreutils`, they also read the applet upstream uutils picks by its names (a name ending
+in the tool's, `xrm`; a name ending in `utils` or `box` and the applet in argv[1]), ADR 0048 (2) 4 and
+docs/spec/exec-command-rows.md.
+
+*Note 2026-11-11 (what this paragraph holds by tier and by build; no rule changes, `docs/GAPS.md` C63).*
+- **Which tier bounds what.** At tiers `cgroup` and `bpflsm` the refusal of another name is race-free: the kernel
+  side decides on the link it opens, the fanotify listener by the path read back from the event's descriptor
+  (`internal/runtime/enforce/cgroup/fanotify.go:934-940`) and the plane by `bprm->file`'s inode, directory and name
+  (ADR 0025's note of 2026-09-30). At tier `landlock` the refusal is the supervisor's, which matches the inode and the
+  resolved link (`internal/runtime/supervisor/exec.go:905-931`) and is best effort against the race below ("The race
+  this walk does not close"). Landlock's `EXECUTE` is on the inode and admits every name of it
+  (`exec.go:887-888`). So at tier `landlock` the bound that holds against an agent that wins that race is the file,
+  not the name. On Ubuntu 25.10 and 26.04 that file is also `/usr/bin/coreutils`, which runs the utility its
+  `argv[1]` names (`coreutils rm`, measured 2026-11-11). The race itself was reasoned, not run.
+- **Names that are symlinks to one link.** Where an applet's name is a symlink to the one file (busybox's usual
+  install, `/bin/ls -> busybox`), every name resolves to that one link, which is the link the listed entry resolves
+  to. The supervisor matches it (`exec.go:557-562`, `exec.go:927-931`), the fanotify listener holds the entry's
+  resolved path (`internal/runtime/enforce/cgroup/policy.go:155-165`) and the plane's row is keyed by that link, so
+  one listed name admits every such name at every tier (ADR 0025's note: a row's path is the link a symlink chain
+  ends at). This corrects the busybox example above, which holds only for applets that are hard links. This was read
+  from the code, not run.
+- **What the coreutils build does with the name.** Ubuntu's rust-coreutils carries the patch
+  `require-utility-to-be-invoked-at-matching-path`, which refuses a utility name that does not match
+  `/proc/self/exe` ("Security violation: Requested utility ... does not match executable name"). Measured on
+  2026-11-11: on Ubuntu 25.10 (0.2.2-0ubuntu2.1, the binary alone, no Tego) each `argv[0]`, `/proc/self/fd` and
+  symlink form of the `ls` link tried was refused by the binary or ran `ls`; on Ubuntu 26.04.1 (0.10.0-1ubuntu2~26.04.1,
+  under Tego at tier `landlock` with only `/bin/sh` and `/bin/ls` allowed) none of 11 name forms of the `ls` link,
+  `/dev/fd` and `execveat` among them, made the file act as `rm`, and `/usr/bin/coreutils rm` was refused as another
+  link. Upstream uutils, read on its main branch and not run, has no such check. It takes the utility from the exec
+  path, and from `argv[0]` when the path starts with `/proc/` or `/dev/fd/` (on musl and off Linux, from `argv[0]`
+  always); it runs the longest utility name the name ends with (`xrm` runs `rm`), and a name ending in `utils` or
+  `box` dispatches on `argv[1]`. On such a build an allowed name, run through `/proc/self/fd/N` with a chosen
+  `argv[0]`, would run any utility at every tier, as busybox does. Which build an unmeasured release ships (26.04's
+  first image had 0.8.0-0ubuntu3) is not known.
+- **What compile says.** `tego compile` notes every allowed entry whose file has more than one hard link or is named
+  `busybox`, `toybox` or `coreutils` (`exec-multicall`, once per file, `pkg/spec/agent/compile_multicall.go`).
+  Where one of the entries that share a file reaches it by such a name, the note says the file runs the program
+  `argv[1]` names at every tier, whatever the entries' order.
 
 **What the supervisor decides, tiers 1 and 2 (amended 2026-09-23).** The seccomp supervisor used to
 continue every exec for Landlock's `EXECUTE` bit to decide and record a verdict it took from the pathname's spelling.

@@ -139,3 +139,69 @@ type resolverFunc func(ctx context.Context, host string) ([]netip.Addr, error)
 func (f resolverFunc) LookupNetIP(ctx context.Context, _, host string) ([]netip.Addr, error) {
 	return f(ctx, host)
 }
+
+// TestLookupHostsAnswers: tego learn --allow-host needs each name's addresses, not only the names that failed, and
+// needs every name looked up: a name past the compiler's bound of lookups at once (maxHosts) is looked up too, never
+// skipped, since a name skipped would read as one that covers nothing. Each answer is in the order the names were
+// given, its addresses each once and IPv4 unmapped, as compile keeps them.
+func TestLookupHostsAnswers(t *testing.T) {
+	r := &fakeResolver{
+		answers: map[string]error{"gone.test": &net.DNSError{Err: "no such host", Name: "gone.test", IsNotFound: true}},
+		empty:   map[string]bool{"empty.test": true},
+	}
+	var hosts []string
+	for i := range maxHosts + 2 {
+		hosts = append(hosts, fmt.Sprintf("h%d.test", i))
+	}
+	hosts = append(hosts, "gone.test", "empty.test")
+	got, err := LookupHosts(t.Context(), r, hosts, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(hosts) || len(r.names()) != len(hosts) {
+		t.Fatalf("%d answers for %d names, %d looked up", len(got), len(hosts), len(r.names()))
+	}
+	one := []netip.Addr{netip.MustParseAddr("192.0.2.1")}
+	for i, a := range got[:maxHosts+2] {
+		if a.Host != hosts[i] || !slices.Equal(a.Addrs, one) || a.Why != "" {
+			t.Errorf("answer %d = %+v, want %s at 192.0.2.1", i, a, hosts[i])
+		}
+	}
+	if a := got[maxHosts+2]; a.Host != "gone.test" || a.Addrs != nil || a.Why != "no such host" {
+		t.Errorf("a name that does not resolve: %+v", a)
+	}
+	if a := got[maxHosts+3]; a.Host != "empty.test" || a.Addrs != nil || a.Why != "no addresses" {
+		t.Errorf("a name with no addresses: %+v", a)
+	}
+
+	mapped := resolverFunc(func(context.Context, string) ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr("::ffff:104.20.23.154"), netip.MustParseAddr("104.20.23.154"),
+			netip.MustParseAddr("2606:4700:10::6814:179a")}, nil
+	})
+	got, err = LookupHosts(t.Context(), mapped, []string{"example.com"}, time.Second)
+	want := []netip.Addr{netip.MustParseAddr("104.20.23.154"), netip.MustParseAddr("2606:4700:10::6814:179a")}
+	if err != nil || len(got) != 1 || !slices.Equal(got[0].Addrs, want) {
+		t.Errorf("LookupHosts = %+v, %v; want %s", got, err, want)
+	}
+}
+
+// TestLookupHostsBudget: a resolver that never answers, even past its context, holds the caller no longer than the
+// budget, and the name comes back unanswered; a caller that is gone gets its context's error and no answer.
+func TestLookupHostsBudget(t *testing.T) {
+	r := &fakeResolver{hold: make(chan struct{})}
+	t.Cleanup(func() { close(r.hold) })
+	const budget = 50 * time.Millisecond
+	start := time.Now()
+	got, err := LookupHosts(t.Context(), r, []string{"slow.test"}, budget)
+	if elapsed := time.Since(start); elapsed > budget+time.Second {
+		t.Errorf("waited %s on a resolver that never answers; the budget is %s", elapsed, budget)
+	}
+	if err != nil || len(got) != 1 || got[0].Why != "no answer within 50ms" || got[0].Addrs != nil {
+		t.Errorf("LookupHosts = %+v, %v", got, err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if got, err := LookupHosts(ctx, &fakeResolver{}, []string{"a.test"}, time.Second); err == nil || got != nil {
+		t.Errorf("a cancelled lookup: %+v, %v", got, err)
+	}
+}

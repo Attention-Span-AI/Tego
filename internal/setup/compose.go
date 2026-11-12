@@ -42,8 +42,12 @@ type Options struct {
 	Pass, AskRead []string
 	// AgentNeeds adds what the command's agent needs to run under the presets, where they restrict it: Claude Code's
 	// or Codex's own folder (in the project), its socket folder, its model host and its login variables
-	// (agentNeeds). The dashboard's New policy and init --agent set it.
+	// (agentNeeds). The dashboard's New contract and init --agent set it.
 	AgentNeeds bool
+	// Reads writes reason: {reads: on} after the command, in the words tego learn --reads on writes it: each read the
+	// contract refuses is recorded at tier landlock too, at the cost compile states (ADR 0077). The dashboard's "Show
+	// refused reads (slower)" switch sets it; tego init does not.
+	Reads bool
 }
 
 // Result is the composed contract and what the caller does around it.
@@ -274,7 +278,7 @@ func Compose(o Options) (*Result, error) {
 		}
 
 	}
-	res.Contract = render(o.Name, ps, argv, demo, writes, hosts, envSet, pass, askRead, desc != nil)
+	res.Contract = render(o.Name, ps, argv, demo, o.Reads, writes, hosts, envSet, pass, askRead, desc != nil)
 	if desc != nil {
 		res.Contract = append(res.Contract, []byte(desc.Contract)...)
 	}
@@ -304,7 +308,7 @@ func Compose(o Options) (*Result, error) {
 // opened by a comment saying why it is there and each generated entry closed by a comment naming the flag or the
 // project marker it came from. Lists are aligned so the reasons read as a column. The bytes are deterministic for
 // the same inputs (golden tests in testdata/compose/).
-func render(name string, ps []presets.Preset, argv []string, demo bool, writes, hosts, envSet, pass, askRead []entry, hasModels bool) []byte {
+func render(name string, ps []presets.Preset, argv []string, demo, reads bool, writes, hosts, envSet, pass, askRead []entry, hasModels bool) []byte {
 	var b strings.Builder
 	var names, refs []string
 	has := map[string]bool{}
@@ -349,6 +353,11 @@ func render(name string, ps []presets.Preset, argv []string, demo bool, writes, 
 			quoted[i] = strconv.Quote(a)
 		}
 		fmt.Fprintf(&b, "command: [%s]\n", strings.Join(quoted, ", "))
+	}
+	if reads {
+		b.WriteString("\nreason:\n")
+		fmt.Fprintf(&b, "  # A read this contract refuses is recorded at tier landlock too, under every record level (%s).\n", agent.ReasonReadCost)
+		b.WriteString("  reads: on\n")
 	}
 
 	if len(writes) > 0 {

@@ -230,6 +230,21 @@ type HookRec struct {
 	// Recorded is when the stand-in took the hook's result (after every hook of its event ended), in UTC, to set
 	// against the ledger's ts of a refusal the hook did or did not tell.
 	Recorded string `json:"recorded,omitempty"`
+	// Began is when the hook's process was started, in UTC: report.py e2e --result sets it against the ledger's ts of
+	// a refusal and against the other hooks' Recorded (README.md, "End to end").
+	Began string `json:"began,omitempty"`
+	// ReasonSeq is the reason file's seq the stand-in read just before starting the hook (hookRun.ReasonSeq):
+	// report.py e2e --result fails a tool hook that found a refusal listed this way, ended before the hook that told
+	// it began, and left it out.
+	ReasonSeq *int64 `json:"reason_seq,omitempty"`
+}
+
+// began is a hook's start as the result records it, "" for a hook that never started.
+func began(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339Nano)
 }
 
 // recordedOutput is how much of a hook's stdout and stderr the result keeps.
@@ -492,7 +507,8 @@ func (a *agent) fire(event, tool, subject string, payload []byte) outcome {
 func (a *agent) recordHook(event, tool string, r hookRun, async bool) {
 	a.record(func(s *Summary) {
 		s.Hooks = append(s.Hooks, HookRec{Event: event, Tool: tool, Command: r.Spec.Display(), Exit: r.ExitCode, TimedOut: r.TimedOut, Started: r.Started, Async: async,
-			Stdout: recorded(r.Stdout), Stderr: recorded(r.Stderr), Recorded: time.Now().UTC().Format(time.RFC3339Nano)})
+			Stdout: recorded(r.Stdout), Stderr: recorded(r.Stderr), Recorded: time.Now().UTC().Format(time.RFC3339Nano),
+			Began: began(r.Began), ReasonSeq: r.ReasonSeq})
 	})
 }
 

@@ -377,37 +377,29 @@ var cgroup2Mount = sync.OnceValues(func() (string, error) {
 	return "", fmt.Errorf("%w: no cgroup2 mount in mountinfo", ErrPeer)
 })
 
+// readProcStat reads one /proc/<pid>/stat file; a test stands a sequence of lines in for it.
+var readProcStat = func(pid int) ([]byte, error) { return os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat") }
+
+// statOf reads and parses pid's stat line through proc.ReadParsedStat: the line of a task released while it was
+// read (process group -1) is read again, so a live process mid-exec is its own line and a gone one is ENOENT.
+func statOf(pid int) (proc.Stat, error) {
+	return proc.ReadParsedStat(func() ([]byte, error) { return readProcStat(pid) })
+}
+
 // startOf is pid's start time from /proc/<pid>/stat, in USER_HZ ticks: with the pid, what names one process over time.
 func startOf(pid int) (uint64, error) {
-	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
-	if err != nil {
-		return 0, err
-	}
-	st, err := proc.ParseStat(b)
+	st, err := statOf(pid)
 	if err != nil {
 		return 0, err
 	}
 	return st.StartTicks, nil
 }
 
-// ppidOf is pid's parent from /proc/<pid>/stat, 0 when it cannot be read.
+// ppidOf is pid's parent from /proc/<pid>/stat, 0 when it cannot be read or parsed: no shim has pid 0.
 func ppidOf(pid int) int {
-	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	st, err := statOf(pid)
 	if err != nil {
 		return 0
 	}
-	// The comm field may hold spaces and parentheses: the fields after the last ')' are state, ppid, ...
-	i := strings.LastIndexByte(string(b), ')')
-	if i < 0 {
-		return 0
-	}
-	f := strings.Fields(string(b[i+1:]))
-	if len(f) < 2 {
-		return 0
-	}
-	n, err := strconv.Atoi(f[1])
-	if err != nil {
-		return 0
-	}
-	return n
+	return st.PPID
 }

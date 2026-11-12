@@ -41,8 +41,8 @@ func pairFixture(t *testing.T) string {
 	return root
 }
 
-var refusedTile = regexp.MustCompile(`href="/logs\?verdict=refused" aria-label="(\d+) blocked`)
-var logsLede = regexp.MustCompile(`([\d,]+) lines? · <span class="n-refused">([\d,]+) blocked`)
+var refusedTile = regexp.MustCompile(`href="/logs\?verdict=refused" aria-label="(\d+) refused`)
+var logsLede = regexp.MustCompile(`([\d,]+) lines? · <span class="n-refused">([\d,]+) refused`)
 
 // TestLogsCountsOncePerAction: two refused connects are two refusals, not four lines: Logs says "2 refused" from one
 // run, the run page counts 2 and shows one row each, and the line page's Similar counts 2.
@@ -55,7 +55,7 @@ func TestLogsCountsOncePerAction(t *testing.T) {
 		t.Fatalf("logs lede %q, want 2 lines, 2 blocked", m)
 	}
 	run := do(s, "GET", "/runs/"+pairRun, "127.0.0.1:8484", c).Body.String()
-	if !strings.Contains(run, `Blocked <span class="n">2</span>`) {
+	if !strings.Contains(run, `Refused <span class="n">2</span>`) {
 		t.Error("the run page does not count 2 refusals")
 	}
 	if n := strings.Count(run, `class="tl v-`); n != 3 {

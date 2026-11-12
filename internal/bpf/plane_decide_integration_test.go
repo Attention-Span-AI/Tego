@@ -498,7 +498,7 @@ const eacces = "13"
 // offers, file_open, bprm_check, path_rename, path_link, path_unlink and path_rmdir refuse inside a run by the rows
 // of its slot and allow the same action outside it; a stale row counts as absent, a row whose identity no longer
 // matches refuses and counts, and each decision is recorded in the task's scratch value. It logs each program's
-// verified instruction count against planeVerifiedBudget.
+// verified instruction count against planeBudget.
 func TestPlaneStepAHooksDecide(t *testing.T) {
 	requireBPF(t)
 	ran := 0
@@ -630,8 +630,8 @@ func planeCells(t *testing.T, o Object, mode PlaneMode, stepB bool) {
 		if info, err := p.Info(); err == nil {
 			if n, ok := info.VerifiedInstructions(); ok {
 				t.Logf("%s: %d instructions verified", h.Program(mode), n)
-				if n > planeBudget(h.Name) {
-					t.Errorf("%s: %d instructions verified, over the budget of %d", h.Program(mode), n, planeBudget(h.Name))
+				if b := planeBudget(t, o, h.Name); n > b {
+					t.Errorf("%s: %d instructions verified, over the budget of %d", h.Program(mode), n, b)
 				}
 			}
 		}

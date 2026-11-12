@@ -228,7 +228,7 @@ func groupRun(r *Run, rm *runMatch, by string, sens Sensitive) *runGroups {
 		case GroupRule:
 			// verdict:observed names these lines in a query (verdictOf), so the group is the lines it lists.
 			observed = e.Rule != "" && verdictOf(e) == string(record.VerdictObserved)
-			key = ruleGroupKey(e.Rule, observed)
+			key = ruleGroupKey(logsRule(e), observed)
 		case GroupSeverity:
 			key = lineSeverity(e, sig)
 		}
@@ -242,7 +242,7 @@ func groupRun(r *Run, rm *runMatch, by string, sens Sensitive) *runGroups {
 				row.Target = e.Target
 			case GroupRule:
 				// One run's lines of a group are all of its tier: a watched run's observed lines are all watched.
-				row.Rule, row.Observed, row.Watched = e.Rule, observed, observed && WatchedLine(r, e)
+				row.Rule, row.Observed, row.Watched = logsRule(e), observed, observed && WatchedLine(r, e)
 			case GroupSeverity:
 				row.Severity = key
 			}

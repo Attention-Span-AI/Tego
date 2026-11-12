@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
 func inet(port int) agent.NetRule {
@@ -80,6 +81,46 @@ func TestNetRulesBands(t *testing.T) {
 	rt := &agent.RuleTable{Contract: contractWith(true, true), Net: []agent.NetRule{{Raw: "x", Proto: "quic"}}}
 	if err := prepareErr(t, 7, rt, nil); !errors.Is(err, ErrRulesetBuild) {
 		t.Errorf("unknown proto: %v", err)
+	}
+}
+
+// TestLearnedLookupContractGetsPort53: the contract tego learn writes for a run that only looked names up through a
+// resolver off loopback (AlmaLinux 9.8's 10.0.2.3) keeps that resolver as its one entry, so, compiled, it gets port
+// 53 for TCP at ABI 4 and up, and for UDP too at ABI 10: the run's lookups pass the kernel layer as the decision
+// allows them (net.resolver). With net.allow empty, no port is granted, so the layer refuses a TCP connect made inside
+// the domain at ABI 4 and up and a UDP send at ABI 10 (R6, R22). An allowed connect is made by the supervisor outside
+// the domain (R6's backstop note), so what the empty list can refuse is an addressed UDP lookup the supervisor
+// continues, from ABI 10, which is why learn keeps the entry (internal/check/learn keepResolvers).
+func TestLearnedLookupContractGetsPort53(t *testing.T) {
+	tcp := uint64(accessNetConnectTCP)
+	both := uint64(accessNetConnectTCP | accessNetConnectSendUDP)
+	bindUDP := uint64(accessNetBindUDP)
+	shapes := []struct {
+		name, allow string
+		want        map[int][]netCall
+	}{
+		{"the learned lookup contract", "\n    - \"udp://10.0.2.3:53\"", map[int][]netCall{
+			4: {{tcp, 53, 0}}, 7: {{tcp, 53, 0}}, 10: {{bindUDP, 0, 0}, {both, 53, 0}},
+		}},
+		{"net.allow empty", " []", map[int][]netCall{4: nil, 7: nil, 10: nil}},
+	}
+	for _, sh := range shapes {
+		text := "version: 0\nname: lookup\ncommand: [\"/bin/true\"]\nnet:\n  allow:" + sh.allow + "\n"
+		path := filepath.Join(t.TempDir(), "lookup.yaml")
+		c, ds, err := agent.LoadBytes(path, []byte(text), nil)
+		if err != nil {
+			t.Fatalf("%s: load: %v %v", sh.name, err, ds)
+		}
+		rt, ds, err := agent.Compile(c, config.Builtin(), agent.Offline())
+		if err != nil {
+			t.Fatalf("%s: compile: %v %v", sh.name, err, ds)
+		}
+		for abi, want := range sh.want {
+			_, fake := prepare(t, abi, rt)
+			if !reflect.DeepEqual(fake.nets, want) {
+				t.Errorf("%s at ABI %d: net rules = %+v, want %+v", sh.name, abi, fake.nets, want)
+			}
+		}
 	}
 }
 

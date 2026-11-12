@@ -162,3 +162,32 @@ func TestTextSaysARefusalMatchedByReason(t *testing.T) {
 		t.Errorf("the screen does not say the refusal matched by reason:\n%s", b.String())
 	}
 }
+
+// TestNothingJudgedSaysSo: when no run under Tego started (every under-Tego half an error, as from a shell outside the
+// user manager's cgroup), the report never says "Nothing got through", which would claim what was never tried; one
+// error among refusals keeps the old words (acceptance B, 2026-11-11).
+func TestNothingJudgedSaysSo(t *testing.T) {
+	r := fixedReport()
+	for i := range r.Checks {
+		r.Checks[i].UnderTego = Outcome{Result: ResultError, Detail: "exit status 125: no enforcement tier available"}
+	}
+	r.finish()
+	var b bytes.Buffer
+	if err := r.WriteText(&b); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(b.String(), "Nothing got through") || !strings.Contains(b.String(), "No action could be judged") ||
+		r.ExitCode() != identity.ExitError {
+		t.Errorf("exit %d:\n%s", r.ExitCode(), b.String())
+	}
+	r = fixedReport()
+	r.Checks[1].UnderTego = Outcome{Result: ResultError}
+	r.finish()
+	b.Reset()
+	if err := r.WriteText(&b); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), "Nothing got through") {
+		t.Errorf("one error among refusals:\n%s", b.String())
+	}
+}

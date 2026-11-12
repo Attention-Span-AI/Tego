@@ -306,6 +306,16 @@ type PlaneCount = cgroupenforce.PlaneCount
 // PlaneKeyed is one file a run's fs row is written at (PlaneKeyedReporter); the plane's backend declares it.
 type PlaneKeyed = cgroupenforce.PlaneKeyed
 
+// DenyReadFrozen is the directories the inherited tier-1 ruleset listed once at launch for its deny_read entries
+// (landlock.Handle.DenyReadFrozen): a root tier installs that ruleset as composed (enforce-cgroup-observe §5 R1), so
+// run_start names them at every tier that builds one (GAPS A12). nil when the inherited state lists none.
+func (h cgroupHandle) DenyReadFrozen() []string {
+	if f, ok := h.inherited.(interface{ DenyReadFrozen() []string }); ok {
+		return f.DenyReadFrozen()
+	}
+	return nil
+}
+
 // Close releases the tier-2 state, then the tier-1 state it inherited. Both halves are idempotent.
 func (h cgroupHandle) Close() error {
 	return errors.Join(h.Handle.Close(), h.inherited.Close())

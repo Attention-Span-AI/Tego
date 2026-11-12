@@ -208,6 +208,7 @@ func (r *runner) startNotifyLoop(ctx context.Context) error {
 		r.group.Go("liveblock", func() error { return r.watchLiveBlocks(ctx, blocks) })
 		r.markPauseReader() // only now does a pause written to the overlay reach a launcher that applies it
 		r.markRealReader()  // only now may a writer store a block's real path (VersionReal) for this run
+		r.markLinkReader()  // only now may a writer place a block that matches by link (VersionLink) on this run
 	}
 	supOpts.Ask = r.askRequest
 	supOpts.AskResolver = r.startAskDNS(ctx, opts, tick)

@@ -110,9 +110,10 @@ func (f *FS) Process(pid int) (Process, error) {
 	return p, nil
 }
 
-// Stat reads and parses /proc/<pid>/stat.
+// Stat reads and parses /proc/<pid>/stat, through ReadStat: the line of a task released while it was read is read
+// again, so a process that is gone is ErrGone and a live one is its own line.
 func (f *FS) Stat(pid int) (Stat, error) {
-	b, err := f.read(pid, "stat")
+	b, err := ReadStat(func() ([]byte, error) { return f.read(pid, "stat") })
 	if err != nil {
 		return Stat{}, err
 	}

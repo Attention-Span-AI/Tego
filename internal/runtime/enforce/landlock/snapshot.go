@@ -3,7 +3,9 @@
 package landlock
 
 import (
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -81,6 +83,20 @@ func (h *Handle) DenyReadSnapshot() func(path string) bool {
 		return nil
 	}
 	return h.snapshot.Refuses
+}
+
+// DenyReadFrozen is the directories the run's deny_read enumeration listed once at launch (Snapshot.Frozen), nil when
+// the ruleset enumerated no ancestor.
+func (h *Handle) DenyReadFrozen() []string { return h.snapshot.Frozen() }
+
+// Frozen is every ancestor the enumeration listed (R3 (3), E28), sorted, in a slice of its own: a name made directly in
+// one of them after launch is no sibling the ruleset grants, so a read beneath it is refused until the run ends
+// (GAPS A12). run_start.deny_read_frozen and the run's note name them. nil for a nil Snapshot.
+func (s *Snapshot) Frozen() []string {
+	if s == nil {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(s.levels))
 }
 
 // Refuses reports whether the run's Landlock ruleset refuses a read open of the object at p, a resolved absolute path

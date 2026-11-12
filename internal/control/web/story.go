@@ -26,7 +26,8 @@ func init() {
 	// spIn and sptIn are sp and spt with the run's working directory as a second root: ./confidential/plan.md.
 	funcs["spIn"] = func(p, home, cwd string) []pathPart { return shortPathIn(p, home, cwd, maxDir) }
 	funcs["sptIn"] = shortTargetIn
-	funcs["story"] = storyOf
+	funcs["story"] = storyOfRun
+	funcs["readGap"] = readGap
 	funcs["blockKV"] = blockKV
 	funcs["homeIn"] = homeIn
 	funcs["chip"] = chipOf
@@ -300,7 +301,7 @@ const watchedLabel = "Watched only, not enforced"
 
 // watchedRule is the rule of watched lines (ledgerview.WatchedLine) where a page names it in words: no rule decided
 // them, so it reads "Watched only · " and label, the words of the rule they name (the contract entry they would have
-// matched; "" takes ruleName's), and "Watched only" alone for unmatched, whose words ("Not in policy") would read as
+// matched; "" takes ruleName's), and "Watched only" alone for unmatched, whose words ("Not in contract") would read as
 // the default deny that refuses such a line on an enforced run.
 func watchedRule(rule, label string) string {
 	if rule == "" || rule == "unmatched" {
@@ -556,15 +557,15 @@ func storyOf(v ledgerview.Verdict, live bool) storyText {
 	case ledgerview.VerdictLeak:
 		st := storyText{Tone: "leak", Icon: "i-triangle-alert",
 			Title: "Secrets left: " + baseNames(v.Exposed) + " sent to " + v.Dest()}
-		st.Sub = "Not in policy"
+		st.Sub = "Not in contract"
 		if v.Observe {
-			st.Sub = "Watched only · nothing blocked"
+			st.Sub = "Watched only · nothing refused"
 		}
 		return st
 	case ledgerview.VerdictProtected:
 		// Each count names its own destination (RefusedWords), and the total is Stopped: the number the Runs chip
 		// and Compare's sentence print.
-		st := storyText{Tone: "ok", Icon: "i-shield", Title: "Protected: " + v.RefusedWords() + " blocked"}
+		st := storyText{Tone: "ok", Icon: "i-shield", Title: "Protected: " + v.RefusedWords() + " refused"}
 		var sub []string
 		if v.Asked > 0 {
 			sub = append(sub, plural4(v.Asked, "request", "requests")+" asked")
@@ -574,7 +575,7 @@ func storyOf(v ledgerview.Verdict, live bool) storyText {
 	case ledgerview.VerdictWatched:
 		st := storyText{Tone: "neutral", Icon: "i-eye",
 			Title: "Watched only: " + plural4(len(v.Read), "secret", "secrets") + " read, " + noNewDest(len(v.Read)),
-			Sub:   "Nothing blocked"}
+			Sub:   "Nothing refused"}
 		if v.Reached > 0 {
 			st.Sub += " · " + plural4(v.Reached, "destination", "destinations") + " reached"
 		}
@@ -590,6 +591,40 @@ func storyOf(v ledgerview.Verdict, live bool) storyText {
 	}
 	st.Sub = strings.Join(append(sub, lookupsWords(v)...), " · ")
 	return st
+}
+
+// storyOfRun is the run page's banner (storyOf) for run r. On a run that kept no file read, "nothing seen" is only
+// what was recorded: a refused read of a secret may have left no line (readGap), so the banner says reads went
+// unrecorded instead of standing as an all-clear.
+func storyOfRun(v ledgerview.Verdict, r *ledgerview.Run) storyText {
+	st := storyOf(v, r != nil && r.State() == "running")
+	if readGap(r) == "" || v.Kind == ledgerview.VerdictLeak || v.Kind == ledgerview.VerdictProtected {
+		return st
+	}
+	if v.Kind != ledgerview.VerdictWatched {
+		st.Title = strings.Replace(st.Title, "No attack seen", "No attack seen in the record", 1) // "… record yet" while live
+	}
+	sub := "File reads not recorded"
+	if st.Sub != "" {
+		sub += " · " + st.Sub
+	}
+	st.Sub = sub
+	return st
+}
+
+// readGap is what the secret lists of a run that kept no file read cannot show (Run.ReadsUnrecorded), in the words
+// the run page, its receipt, Compare and the Overview share; "" for a run that kept its reads, or whose run_start
+// does not say. The "readfix" template names the contract setting that keeps them.
+func readGap(r *ledgerview.Run) string {
+	switch {
+	case r == nil || !r.ReadsUnrecorded:
+		return ""
+	case r.RefusedReadsUnseen:
+		return "File reads were not recorded, refused ones included, so a secret the agent tried to read is not listed."
+	case r.RefusedReadsUnknown: // tego receipt's words for the same record (receipt.readsNote)
+		return "Allowed file reads were not recorded, so a secret the agent read is not listed; a refused read may be missing too."
+	}
+	return "Allowed file reads were not recorded, so a secret the agent read is not listed."
 }
 
 // noNewDest is what a watched verdict can say about sends after n secret reads: no destination was first contacted

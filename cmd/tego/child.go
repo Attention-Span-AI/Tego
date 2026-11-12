@@ -9,5 +9,5 @@ const childCommand = launch.ChildCommand
 
 // childMain runs the child stage and returns its exit code. main dispatches to it before anything else
 // when os.Args[1] == childCommand: the stage must never pass through the ordinary command-line
-// parser, which may print, read config or open files the sandboxed run must not see.
+// parser, which may print, read config or open files the run must not see.
 func childMain(args []string) int { return launch.ChildMain(args) }

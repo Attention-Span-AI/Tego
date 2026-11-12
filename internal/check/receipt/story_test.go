@@ -5,6 +5,7 @@ package receipt
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -369,6 +370,170 @@ func TestSystemLookupsAreNotPlaces(t *testing.T) {
 	_ = rc.Text(&text)
 	if want := "\nConnections\n  None, besides 1 routine system lookup (the name and user lookups any program makes).\n"; !strings.Contains(text.String(), want) {
 		t.Errorf("receipt lacks %q:\n%s", want, text.String())
+	}
+}
+
+// TestRoutineSocketsAreNotPlaces: glibc's getaddrinfo resets a probe socket with connect(AF_UNSPEC) and asks the
+// kernel's netlink socket for its addresses. Their lines (dst unspec, rule net.unspec; dst family(16)) name no place:
+// the first tego watch of a Python fetch on AlmaLinux 9.8 said "16 connections to 10 places (most: unspec)" and the
+// Ubuntu 24.04 receipt listed "unspec  6  recorded, not blocked" and "family(16)  1  allowed" (guest kit/acc2). They
+// are counted apart in RoutineSockets, as the dashboard folds them (syslookup.NoPlace), and an address, a unix socket
+// and any other family are still places.
+func TestRoutineSocketsAreNotPlaces(t *testing.T) {
+	obs := record.VerdictObserved
+	net := func(dst, rule string, verdict record.Verdict) line {
+		return line{kind: record.KindNet, at: time.Second, verdict: verdict, rule: rule, payload: record.NetPayload{Proto: "udp", Dst: dst}}
+	}
+	lines := []line{watchedStart()}
+	for range 6 {
+		lines = append(lines, net("unspec", "net.unspec", obs))
+	}
+	lines = append(lines, net("family(16)", "route-query", record.VerdictAllow), net("unix:/run/nscd/socket", "unmatched", obs))
+	for range 3 {
+		lines = append(lines, net("151.101.0.223:443", "unmatched", obs))
+	}
+	lines = append(lines, net("unix:/tmp/agent.sock", "unmatched", obs), net("family(40)", "unmatched", obs), end(2*time.Second, 0))
+	rc := compute(t, lines, Options{})
+	got := map[string]int{}
+	for _, c := range rc.Connections {
+		got[c.Destination] = c.Count
+	}
+	want := map[string]int{"151.101.0.223:443": 3, "unix:/tmp/agent.sock": 1, "family(40)": 1}
+	if fmt.Sprint(got) != fmt.Sprint(want) || rc.ConnectionTries != 5 || rc.SystemLookups != 1 || rc.RoutineSockets != 7 {
+		t.Fatalf("connections = %v, tries %d, lookups %d, routine sockets %d; want %v, 5, 1, 7", got, rc.ConnectionTries,
+			rc.SystemLookups, rc.RoutineSockets, want)
+	}
+	var text bytes.Buffer
+	_ = rc.Text(&text)
+	for _, want := range []string{"\nConnections\n  5 connections to 3 places.\n",
+		"  Also 1 routine system lookup (the name and user lookups any program makes), not counted above.\n",
+		"  Also 7 routine socket calls that name no place (disconnects with AF_UNSPEC, the kernel's netlink socket), not counted above.\n"} {
+		if !strings.Contains(text.String(), want) {
+			t.Errorf("receipt lacks %q:\n%s", want, text.String())
+		}
+	}
+	for _, bad := range []string{"unspec  ", "family(16)"} {
+		if strings.Contains(text.String(), bad) {
+			t.Errorf("the receipt lists %q as a place:\n%s", bad, text.String())
+		}
+	}
+	var js bytes.Buffer
+	if err := rc.JSON(&js); err != nil || !strings.Contains(js.String(), `"routine_sockets": 7`) {
+		t.Errorf("JSON lacks routine_sockets 7 (%v):\n%s", err, js.String())
+	}
+
+	// Only routine sockets: no connection, and the count still said; a run with none writes no key.
+	rc = compute(t, []line{watchedStart(), net("unspec", "net.unspec", obs), end(time.Second, 0)}, Options{})
+	text.Reset()
+	_ = rc.Text(&text)
+	if want := "\nConnections\n  None, besides 1 routine socket call that names no place (disconnects with AF_UNSPEC, the kernel's netlink socket).\n"; !strings.Contains(text.String(), want) {
+		t.Errorf("receipt lacks %q:\n%s", want, text.String())
+	}
+	rc = compute(t, []line{watchedStart(), net("unix:/run/nscd/socket", "unmatched", obs), net("family(16)", "route-query", record.VerdictAllow),
+		end(time.Second, 0)}, Options{})
+	text.Reset()
+	_ = rc.Text(&text)
+	if want := "\nConnections\n  None, besides 1 routine system lookup (the name and user lookups any program makes) and 1 routine " +
+		"socket call that names no place (disconnects with AF_UNSPEC, the kernel's netlink socket).\n"; !strings.Contains(text.String(), want) {
+		t.Errorf("receipt lacks %q:\n%s", want, text.String())
+	}
+	rc = compute(t, []line{watchedStart(), net("151.101.0.223:443", "unmatched", obs), end(time.Second, 0)}, Options{})
+	js.Reset()
+	if err := rc.JSON(&js); err != nil || strings.Contains(js.String(), "routine_sockets") {
+		t.Errorf("a run with no routine socket writes the key (%v):\n%s", err, js.String())
+	}
+}
+
+// TestARefusedCallThatNamesNoPlaceIsNoRoutineSocket: the supervisor refuses a sendto, sendmsg or sendmmsg whose
+// address is AF_UNSPEC (R4: udp_sendmsg sends to the sockaddr_in behind the family word) and writes it dst unspec, rule
+// unmatched, verdict refused, with no op; ADR 0128 refuses a netlink send that is no route query as a refused
+// family(16) line. Neither is a routine disconnect: review 1 measured both printed as "routine socket calls that name
+// no place (disconnects with AF_UNSPEC, ...)", and past the refused list's cap that was the only line naming the send.
+// A refused one is a refusal: it counts in Refusals as before and, as the dashboard's verdict folds it, is no place
+// and no routine socket call either. The allowed reset beside it is still counted.
+func TestARefusedCallThatNamesNoPlaceIsNoRoutineSocket(t *testing.T) {
+	refusedNet := func(proto, dst string) line {
+		return line{kind: record.KindNet, at: time.Second, verdict: record.VerdictRefused, rule: "unmatched",
+			reason: record.ReasonNetNotAllowed, payload: record.NetPayload{Proto: proto, Dst: dst}}
+	}
+	lines := []line{start("off", true)}
+	for i := range 10 { // fill the refused list to its cap
+		lines = append(lines, refusedNet("tcp", fmt.Sprintf("203.0.113.%d:443", i+1)))
+	}
+	lines = append(lines, refusedNet("udp", "unspec"), refusedNet("raw", "family(16)"),
+		line{kind: record.KindNet, at: time.Second, verdict: record.VerdictAllow, rule: "net.unspec",
+			payload: record.NetPayload{Proto: "udp", Dst: "unspec"}},
+		end(2*time.Second, 0))
+	rc := compute(t, lines, Options{})
+	if rc.Refusals.Total != 12 {
+		t.Errorf("refusals = %d, want 12: the refused send and the refused netlink line are refusals", rc.Refusals.Total)
+	}
+	if rc.RoutineSockets != 1 || rc.ConnectionTries != 10 || len(rc.Connections) != 10 {
+		t.Errorf("routine sockets %d, tries %d, places %d; want 1 (the allowed reset only), 10, 10", rc.RoutineSockets,
+			rc.ConnectionTries, len(rc.Connections))
+	}
+	for _, c := range rc.Connections {
+		if c.Destination == "unspec" || c.Destination == "family(16)" {
+			t.Errorf("%q is listed as a place", c.Destination)
+		}
+	}
+	var text bytes.Buffer
+	_ = rc.Text(&text)
+	if want := "  Also 1 routine socket call that names no place (disconnects with AF_UNSPEC, the kernel's netlink socket), " +
+		"not counted above.\n"; !strings.Contains(text.String(), want) {
+		t.Errorf("receipt lacks %q:\n%s", want, text.String())
+	}
+	if !strings.Contains(text.String(), "  Tego refused 12 actions.\n") {
+		t.Errorf("the receipt does not count the two refusals:\n%s", text.String())
+	}
+}
+
+// TestNothingRefusedSaysWhatTheRunDoesNotRecord (b):a tier-landlock run with reason.reads off leaves no line for a read
+// its deny_read refuses (ADR 0077), and its receipt said "Nothing was refused." with the note that reads went unrecorded
+// in another section. Where run_start says refused reads leave no line (reason-off, no-supervisor), the refusals say so
+// themselves; a run that records them, one that enforces nothing (tego watch) and a root tier's keep their words.
+func TestNothingRefusedSaysWhatTheRunDoesNotRecord(t *testing.T) {
+	const (
+		nothing    = "  Nothing was refused.\n"
+		unrecorded = "  No recorded action was refused; this run does not record refused reads (see Sensitive files read).\n"
+		alsoNot    = "  This run does not record refused reads, so a read it refused is not counted (see Sensitive files read).\n"
+	)
+	startWith := func(rn *record.ReadsNotified) line {
+		return line{kind: record.KindRunStart, payload: record.RunStartPayload{Tier: "landlock", Capture: "off",
+			Command: []string{"sh", "agent.sh"}, Cwd: "/p", ReadsNotified: rn,
+			Capabilities: map[string]bool{string(backend.CapRecordExecOpenNet): false}}}
+	}
+	refused := line{kind: record.KindRefused, at: time.Second, rule: "unmatched", reason: record.ReasonNetNotAllowed,
+		payload: record.RefusedPayload{Op: "net", Target: "203.0.113.9:443", Reason: record.ReasonNetNotAllowed, Rule: "unmatched"}}
+	for _, c := range []struct {
+		name    string
+		rn      *record.ReadsNotified
+		refuse  bool
+		want    string
+		notWant string
+	}{
+		{"reason off", &record.ReadsNotified{Why: record.ReadsNotifiedWhyReasonOff}, false, unrecorded, nothing},
+		{"no supervisor", &record.ReadsNotified{Why: record.ReadsNotifiedWhyNoSupervisor}, false, unrecorded, nothing},
+		{"reason off, one refusal", &record.ReadsNotified{Why: record.ReadsNotifiedWhyReasonOff}, true, alsoNot, nothing},
+		{"reason on", &record.ReadsNotified{Notified: true, Why: record.ReadsNotifiedWhyReason}, false, nothing, unrecorded},
+		{"watch", &record.ReadsNotified{Why: record.ReadsNotifiedWhyRecordsOnly}, false, nothing, unrecorded},
+		{"root tier", &record.ReadsNotified{Why: record.ReadsNotifiedWhyKernel}, false, nothing, unrecorded},
+		{"older record", nil, false, nothing, unrecorded},
+		{"reason on, one refusal", &record.ReadsNotified{Notified: true, Why: record.ReadsNotifiedWhyReason}, true, "  Tego refused 1 action.\n", alsoNot},
+	} {
+		lines := []line{startWith(c.rn)}
+		if c.refuse {
+			lines = append(lines, refused)
+		}
+		rc := compute(t, append(lines, end(2*time.Second, 0)), Options{})
+		var text bytes.Buffer
+		_ = rc.Text(&text)
+		if !strings.Contains(text.String(), c.want) || strings.Contains(text.String(), c.notWant) {
+			t.Errorf("%s: the receipt lacks %q or says %q:\n%s", c.name, c.want, c.notWant, text.String())
+		}
+		if got, want := rc.RefusedReadsUnrecorded(), c.want == unrecorded || c.want == alsoNot; got != want {
+			t.Errorf("%s: RefusedReadsUnrecorded() = %v, want %v", c.name, got, want)
+		}
 	}
 }
 

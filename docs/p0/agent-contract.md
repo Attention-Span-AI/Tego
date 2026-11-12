@@ -1554,6 +1554,7 @@ E39. A write entry holds native code the agent will map executable (an ELF share
 | `exec.allow` directory every user can write, or holding `/tmp`, `/var/tmp` or `/dev/shm` (added 2026-09-24) | E38 | `exec-writable`, warning | n/a | 0 | names the entry and the shared writable directory |
 | `fs.write` on procfs or on `/dev` (added 2026-09-24) | E38 | `kernel-fs-write`, warning | n/a | 0 | names the entry and what it writes to instead of storage |
 | `fs.write` over a PATH directory searched before `tego` or `tego-control` (added 2026-11-01) | R10 | `path-shadow`, warning | n/a | 0 | names the entry, the directory and the binary it would stand in for |
+| An allowed exec entry (the command, an MCP server's command, an `exec.allow` entry, a `#!` interpreter) whose file has more than one hard link, or whose file is named `busybox`, `toybox` or `coreutils`, in a contract that restricts images (added 2026-11-11) | R8, SEMANTICS §4 | `exec-multicall`, warning, a note: once per file, at the first entry's line; no rule changes | n/a | 0 | names every entry that leads to the file, the file and its link count, and what tier landlock and a multi-call program that reads `argv[0]` admit through a listed name; `tego run` prints it only under `-v` |
 | Native code or a native-module tree under a write entry that no `exec.allow` entry covers, at a tier a decision plane may decide (added 2026-09-30) | E39 | `exec-map`, warning | n/a | 0 | names the tree and the `exec.allow` entry to add |
 | An exec command pattern the grammar refuses: shell syntax, a path in a deny or ask command word, a glob command word, a misplaced `*`, an allow entry requiring an option its row does not list, the bounds; an unquoted path with spaces naming a file; a directory with words (added 2026-10-06, ADR 0048) | R25, R8 | `exec-rule`, error | none | 125 | names the entry and the word, and the fix (the basename, the separate entries, the quoted path) |
 | `$` or a backtick in a pattern word; a deny-list section with no entry (added 2026-10-06) | R25 | `exec-rule`, warning | n/a | 0 | the word is matched literally; the section restricts nothing |
@@ -1620,6 +1621,11 @@ E39. A write entry holds native code the agent will map executable (an ELF share
 - 2026-11-02, `record-off` row added: a contract's own `record: off`, or a profile's, cut its runs' ledgers to their
   refusals and no finding named it (`tego run`'s warning is for `--record off`). It is a note: what the author wrote
   weakens no rule, so a run's start leaves it out unless `-v`, and the run's end says `record off: refusals only`.
+- 2026-11-11, `exec-multicall` row added: on Ubuntu 25.10 and 26.04 most coreutils names are hard links of one
+  file (115 and 116 links measured), and busybox's applets lead to one file. An entry for one name admits that file
+  under that name at tiers cgroup and bpflsm, and by any name at tier landlock to an agent that wins the exec race,
+  which SEMANTICS §4's multi-call paragraph did not say (docs/GAPS.md). It is a note: it states what an entry means
+  on such a host and changes no rule, so a run's start leaves it out unless `-v`.
 
 ## 8. Invariants
 

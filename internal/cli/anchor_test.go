@@ -67,6 +67,9 @@ func TestMain(m *testing.M) {
 	// a private cgroup namespace, every tego unblock and widening tego rule here would be refused. governed_test.go
 	// sets it to refuse and holds the refusal.
 	selfInRun = func() (bool, error) { return false, nil }
+	// A run hint asks whether this process sits beside its user manager's cgroup, as a CI runner's or an SSH session's
+	// test binary does: the tests describe that place themselves (onPlace), never the developer's.
+	besideUserManager = func() bool { return false }
 	testHome = home
 	ownLogHomeOf = func(int) string { return home }
 	// The process's appender is built once, by the first command that logs (processOwnLog), from ownLogHomeOf as it is

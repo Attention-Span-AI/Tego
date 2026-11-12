@@ -227,6 +227,9 @@ func targetMain() int {
 	case modeExec, modeExecWalk:
 		rep.Checks = execChecks(arm)
 		return emitReport(rep)
+	case modeExecLiveLink:
+		rep.Checks = liveLinkChecks()
+		return emitReport(rep)
 	case modeDenyWrite, modeDenyWriteOff:
 		rep.Checks = denyWriteChecks()
 		return emitReport(rep)

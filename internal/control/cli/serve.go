@@ -105,7 +105,8 @@ func cmdServe() Command {
 			rs := ruleService(root, anchor, machine)
 			at := ln.Addr().(*net.TCPAddr) // the links name the address listened on: 127.0.0.1, another 127.x.y.z, or ::1
 			srv, err := web.New(web.Config{Ledger: root, Anchor: anchor, Host: at.IP.String(), Port: at.Port, Machine: machine,
-				Profiles: profilesrc.Chain(machine), Rules: rs, Setup: rs, Preview: *preview, SeverityFile: severityFile()})
+				Profiles: profilesrc.Chain(machine), Rules: rs, Setup: rs, Preview: *preview, SeverityFile: severityFile(),
+				Guide: guideInputs(machine, root, anchor)})
 			if err != nil {
 				diag(stderr, handoff.Name+" serve: "+err.Error(), codeIO, "report this build")
 				return exits[codeIO]

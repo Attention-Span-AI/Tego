@@ -2064,7 +2064,7 @@ procfs magic link of a process other than the task's own thread group is an unsu
 not the search check runs. The kernel follows one for the task only when `ptrace_may_access(PTRACE_MODE_READ_FSCREDS)`
 lets the task at that process (`proc_fd_access_allowed`), which this process cannot decide (Landlock's ptrace
 scoping, Yama and the other LSMs answer it; dumpability changes), while its own rights let it follow a link the task
-cannot: root at tiers cgroup and bpflsm, and at tier landlock an unsandboxed process outside the agent's Landlock
+cannot: root at tiers cgroup and bpflsm, and at tier landlock a process outside the agent's Landlock
 domain. A miss behind such a link was answered `ENOENT` with no line, so `/proc/<pid>/cwd/present` exited 126 and
 `/proc/<pid>/cwd/absent` 127 for a directory the agent cannot list, at every tier. A walk through one that fails is
 now `EACCES`, decided and recorded as an attempt; a walk that reaches a file is decided as before, its errno guarded as
@@ -2570,6 +2570,33 @@ keeping alone (`TestTheOrderWaitIsNotTheNotificationsHold`). `Options.Late` stil
 full waits for room up to its lane's bound (250 ms), then drops and counts (P0-DESIGN §2.4); either way it never
 delays or changes the response already sent, and the backpressure falls on the worker's next notifications.
 
+*Amended 2026-11-11, what a reader may rely on:* a refused call's line can reach `events.jsonl` shortly after the
+agent has seen the refusal, at every tier. At tier landlock the supervisor answers the call, then the pipeline
+writes the line (a write outside every write entry is answered `CONTINUE` and refused by Landlock in the kernel, and
+its line follows that). At the root tiers the kernel refuses inside the call and the recorder reads the ring after
+it; tier 2's fanotify listener and the supervisor's own refusals there (command rules among them) answer first and
+write the line after, as at tier landlock (the root tiers read from the code, not run in a guest). In the runs read
+the gap was well under a millisecond (0.33 ms for a refused `git push` on CI), and it grows with the box's load: in
+one private gate run at load 15 to 27 three lines were written 17 ms after their notifications were received (read
+from that run's ledger dump, not reproduced). The reason file trails the line by its window plus the timer's and
+the box's delay (record-ledger.md §3), and a harness's hook tells only what the file lists when the hook reads it.
+So a refusal is told by the first hook that runs once the reason file lists it, which can be a later hook than the
+refused call's own, and the next model request: with 150 ms injected before each refused line was written, the
+refused call's own PostToolUseFailure and PostToolBatch hooks both ran before its line landed, and the next turn's
+PostToolUse told it. It is not dropped by a later hook: the hook's cursor is the highest seq it has shown, a line
+that lands late has a higher seq, and the next hook tells it (or counts it as not listed when more than 32
+refusals came since; REASON-CHANNEL §3). It is not told at all when no hook that tells runs after the file lists
+it: a refusal that lands after the session's last such hook (a Stop hook that already kept the agent going once
+stays silent) is not told by the hook, though the agent saw its errno. Either way the record holds its line, or a gap line that counts
+it when the line was dropped (a lane full past its bound, P0-DESIGN §2.4; a ring overflow at the root tiers). A
+reader that acts on a refusal (a test, a dashboard, a harness reading the reason file) waits for the line, with a
+bound, and never takes its absence right after the refusal to mean the call was allowed. Rejected (2026-11-11):
+holding each refusal's answer until its line and the reason file are written. Under review it left the agent's
+thread unanswered when a handler returned without answering, a refusal flood cut the same run's allowed calls to
+between a sixth and a half of their rate, and on kernels without `SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV` (5.14 to
+5.18, RHEL 9) the longer hold let signals turn many more refused calls into `EINTR`. In the runs reviewed no refusal
+was lost under this order; a late one was told one model request later. GAPS C64.
+
 **R23a — one thread's lines in the order of its syscalls** (*added 2026-10-16*). A line's
 `mono_ns` is the `CLOCK_MONOTONIC` reading of its notification's receipt (`notif.recvMono`, taken under `recvMu`,
 derived from the `time.Now` the receipt already reads and an anchor `New` takes, so no clock is read beyond it), not
@@ -2944,6 +2971,9 @@ notified for it. Test: `TestWatchBeneathADenyReadTargetIsRefused`, `TestDnotifyO
 tier-landlock run's ledger `TestIntegrationAWatchOfADenyReadTargetIsRefused`.
 
 **Changes.**
+- 2026-11-11, R23: says what a reader may rely on. A refused call's line can land after the agent saw the refusal,
+  at every tier, so a hook tells it once the reason file lists it, possibly at the next model request, and a reader
+  waits for the line (GAPS C64). The order is unchanged; holding each refusal's answer for its line was rejected.
 - 2026-11-02, R1, R36 (GAPS A10): the watch calls are notified in every enforcing run. The arm was installed only
   where the table's fs rows withheld a read beneath a `deny_read` target, so a run whose only withholding was a name
   entry, a name rule, tego's own state or a live block or fence entry (which arrives after the filter is built) kept
@@ -3610,7 +3640,7 @@ IP connect or Fast-Open send under the `models[]` guard (R7).
 | An approved datagram's relay succeeded at tier 2 or 3 but its credit was left untaken (R13d: it joined a pending frame, or a refresh admitted its destination meanwhile) | the revoke's report | the relayed result, as the kernel answered it | `net verdict=observed authority=human rule=<the scope's>` | none | the agent's call returns the relayed count |
 | A relayed unix connect cannot be made as the task (R11): its `/proc/<tid>/status` or directories unreadable, or no thread can take its credentials (at tier 1: groups that differ from this process's, or an effective uid or gid that is none of its ids) | `TaskOf` / `sys.RunAs` error | not performed; R10's errno | `net verdict=refused reason=net-not-allowed rule=relay-credentials` | none | the agent's `connect()` fails with the R10 errno; never made with this process's credentials instead |
 | A relayed unix connect's walk cannot be vouched for in this process's view (R11): `ELOOP` (a magic link the relay will not follow, or a loop), a relative name from a task with a root of its own, or a resolved path that reaches another inode here (a task in another mount tree) | `ConnectUnixAs` outcome | not performed; R10's errno | `net verdict=refused reason=net-not-allowed rule=path-unreliable` | none | the agent's `connect()` fails with the R10 errno; never decided on a path that names another file here |
-| `connect()` on duplicate fails with a real network errno | the syscall's own return | relayed verbatim (R9) | `net verdict=allow` (the *policy* allowed it; the network itself refused) `rule=<matched>` | none | the agent sees the real `ECONNREFUSED`/`ENETUNREACH`/etc., indistinguishable from an unsandboxed run |
+| `connect()` on duplicate fails with a real network errno | the syscall's own return | relayed verbatim (R9) | `net verdict=allow` (the *policy* allowed it; the network itself refused) `rule=<matched>` | none | the agent sees the real `ECONNREFUSED`/`ENETUNREACH`/etc., indistinguishable from a run without Tego |
 | Malformed notification data (fuzz-class input) | bounds checks in every reader (R3, R4, R20) | never panics observably; degrades to R5/E20-style safe defaults, or is caught by R25 if a bound check itself has a bug | best-effort event, possibly empty fields | none | no crash; worst case a slightly incomplete record line |
 | Budget exceeded (slow notification) | `time.Since(recvAt) > budget` at respond time | none (soft) | none directly; feeds `held_ms` | none | none directly; visible only in `--log-level debug` and in `measure`'s overhead numbers |
 

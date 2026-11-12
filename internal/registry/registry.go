@@ -21,6 +21,10 @@
 // descriptor that was checked, and the caller compiles those bytes, so the file a run records is the file whose bytes
 // it compiled.
 //
+// Save is the user registry's one writer: `tego learn --save` and the dashboard's "Make a contract from this run"
+// both write <registry>/agents/<name>.yaml through it, never over a file or through a link, and read the entry back as
+// `tego run <name>` will.
+//
 // A registry is also the home of skills: <registry>/skills/<name>/ in either registry is where a skill a contract
 // declares will be found when skills are provisioned (FEATURES.md I6c). Until then `skills:` does not compile
 // (agent-contract.md R23), and nothing here reads that directory.

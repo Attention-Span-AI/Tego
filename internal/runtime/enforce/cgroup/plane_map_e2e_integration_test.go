@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -124,6 +125,35 @@ libc.personality(0x0400000)  # READ_IMPLIES_EXEC, for what remains
 attempt("rie-map-dropped", lambda: map_file("out/drop.so", PR))
 `
 
+// machineExecmod is this machine's own answer, outside any run, to execmod: a private writable map of a file,
+// written, then made executable, as the agent's execmod attempt does. "ok", or "refused errno=N" as the agent writes
+// it. An LSM can refuse it to every process: SELinux enforcing on AlmaLinux 9.8 answers EACCES (2026-11-10).
+func machineExecmod(t *testing.T) string {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "execmod-probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	page := os.Getpagesize()
+	if _, err := f.Write(make([]byte, page)); err != nil {
+		t.Fatal(err)
+	}
+	b, err := unix.Mmap(int(f.Fd()), 0, page, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_PRIVATE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = unix.Munmap(b) }()
+	b[0] = 1
+	var errno unix.Errno
+	if err := unix.Mprotect(b, unix.PROT_READ|unix.PROT_EXEC); errors.As(err, &errno) {
+		return fmt.Sprintf("refused errno=%d", int(errno))
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	return "ok"
+}
+
 // TestPlaneExecMapRunEndToEnd is TIER3-PLAN T14's acceptance through `tego run` (enforce-plane R26, R27): in each
 // plane mode this machine passes, a python3 agent whose contract has an exec: section maps code as native
 // extensions, JITs and droppers do. python3 itself, its libraries and a system library it loads with ctypes map as
@@ -141,6 +171,8 @@ func TestPlaneExecMapRunEndToEnd(t *testing.T) {
 		_ = unix.Close(fd)
 	}
 	t.Logf("MFD_NOEXEC_SEAL honoured: %v", seal)
+	execmod := machineExecmod(t)
+	t.Logf("this machine's own answer to execmod, outside any run: %s", execmod)
 	for _, mode := range append(modes, PlaneFanotify) {
 		t.Run(mode, func(t *testing.T) {
 			p := newPlaneProject(t, uid, gid, map[string]string{"agent.py": planeMapAgent, "agent.yaml": planeMapContract},
@@ -163,6 +195,9 @@ func TestPlaneExecMapRunEndToEnd(t *testing.T) {
 				for _, c := range []string{"map-dropped", "mprotect-dropped", "dlopen-dropped-lib", "execmod", "rie-map-dropped"} {
 					want[c] = "ok"
 				}
+				// The listener decides no map: where the machine itself refuses execmod (SELinux enforcing on
+				// AlmaLinux 9.8, selinuxuser_execmod off), the agent gets the machine's answer.
+				want["execmod"] = execmod
 				if seal {
 					want["memfd-create"], want["memfd-map-exec"] = "refused errno=13", "ok"
 				} else {

@@ -30,6 +30,7 @@ github.com/attention-span-ai/tego/internal/bpf/adoptionmeta.projectMap	tool-only
 github.com/attention-span-ai/tego/internal/check/measure.Report.Tokens	test-api	internal/cli's measure_watcher_agree_test compares measure with the live watcher by it
 github.com/attention-span-ai/tego/internal/check/status.WithMonoNow	test-api	internal/check/viewtest scripts the monotonic clock with it
 github.com/attention-span-ai/tego/internal/check/gaps.LiveWords	test-api	internal/control/linewords's words_test holds each live-change word to it
+github.com/attention-span-ai/tego/internal/check/learn.ResolverItem	control-only	internal/control/rulesview puts the machine's resolver back with it when Withhold drops the last TCP or UDP entry
 github.com/attention-span-ai/tego/internal/check/livestatus.FromStart	control-only	internal/control/rulesview reads a run_start's facts with it
 github.com/attention-span-ai/tego/internal/check/livestatus.State.Refuses	control-only	internal/check/inforce asks it, and only internal/control/rulesview calls inforce
 github.com/attention-span-ai/tego/internal/check/rule.ApplyEdits	control-only	internal/control/rules applies a form's edits with it
@@ -65,6 +66,7 @@ github.com/attention-span-ai/tego/internal/ledger.LiveWatch.names	pending	LiveWa
 github.com/attention-span-ai/tego/internal/ledger.LiveWatch.scan	pending	LiveWatch.Changes, reached as it is
 github.com/attention-span-ai/tego/internal/ledger.WatchLive	pending	docs/p0/record-ledger.md LEDGER-FOLLOW: the live index watch, built ahead of its first consumer
 github.com/attention-span-ai/tego/internal/liveblock.Compile	test-api	internal/cli, internal/control/runact and internal/runtime/supervisor tests build a Set with it
+github.com/attention-span-ai/tego/internal/liveblock.TakesLink	control-only	internal/control/runact's BlockFromContract (the dashboard's "Also apply now") asks it before it writes a link block; tego's own writers place whole-file blocks only
 
 # Packages both binaries link, where only tego-control reaches these
 github.com/attention-span-ai/tego/internal/mcptools.SHA256Base	control-only	internal/control/mcpact binds a preview to the file with it

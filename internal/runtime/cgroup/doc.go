@@ -44,7 +44,7 @@
 // helper's environment naming why. Every start goes through proc.Start, the one process start of
 // ADR 0021 (3), so it is refused (proc.ErrArmed) while this process is armed.
 //
-// Imports: standard library, golang.org/x/sys/unix, internal/platform/proc, pkg/spec/agent,
-// pkg/spec/identity.
+// Imports: standard library, golang.org/x/sys/unix, internal/platform/proc, internal/shellword (the one word of a
+// user's name in LingerCommand), pkg/spec/agent, pkg/spec/config, pkg/spec/identity.
 // Must not import: anything above internal/runtime.
 package cgroup

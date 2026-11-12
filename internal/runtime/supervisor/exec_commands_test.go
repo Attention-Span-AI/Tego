@@ -108,6 +108,53 @@ func TestExecCommandDeny(t *testing.T) {
 	}
 }
 
+// TestExecCommandMulticallLinks: the link count the walk's fstat read reaches the matcher (execmatch.Facts.Links), so a
+// symlink named xrm to a file of 116 links (Ubuntu 26.04's uutils ls) is refused under deny: [rm -r] as the rm
+// upstream uutils would run, via multicall, while the same name to a file of one link runs as before.
+func TestExecCommandMulticallLinks(t *testing.T) {
+	nr := nrFor(t, "execve")
+	const uu = "/usr/lib/cargo/bin/coreutils/ls"
+	for _, tc := range []struct {
+		links uint64
+		want  record.Verdict
+	}{{116, record.VerdictRefused}, {1, record.VerdictAllow}} {
+		f := newFake()
+		f.images["/w/xrm"] = execImage{id: fakeID(uu), linked: true, nlink: tc.links, link: uu, here: true}
+		l, sink := newTestLoop(t, f, commandPolicy(t, "deny: rm -r"))
+		execAt(l, f, nr, 42, 0, "/w/xrm", "xrm", "-r", "x")
+		wantExecAnswer(t, f, tc.want)
+		ev := sink.one(t)
+		if ev.Verdict != tc.want {
+			t.Errorf("%d links: %s %s, want %s", tc.links, ev.Verdict, ev.Rule, tc.want)
+			continue
+		}
+		if tc.want == record.VerdictRefused {
+			if p := execPayloadOf(t, ev); ev.Rule != "exec.deny[rm -r]" || p.CommandVia != "multicall" || p.ArgvRead != 3 {
+				t.Errorf("%d links: rule %s, payload %+v", tc.links, ev.Rule, p.ExecPayload)
+			}
+		}
+	}
+}
+
+// TestExecCommandMulticallArgv1PastTheFirstStage: a symlink named xbox to a file of 116 links runs the applet argv[1]
+// names (upstream uutils), and an argv[0] long enough that the first staged read (32 entries, 8 KiB) holds no argv[1]
+// does not settle the decision there: the read goes on and argv[1] is met (found in review on 2026-11-11: 8191 bytes or more of
+// argv[0] was allowed unmatched).
+func TestExecCommandMulticallArgv1PastTheFirstStage(t *testing.T) {
+	nr := nrFor(t, "execve")
+	const uu = "/usr/lib/cargo/bin/coreutils/ls"
+	for _, a0 := range []string{"xbox", strings.Repeat("A", 8100), strings.Repeat("A", 8191), strings.Repeat("A", 9000)} {
+		f := newFake()
+		f.images["/w/xbox"] = execImage{id: fakeID(uu), linked: true, nlink: 116, link: uu, here: true}
+		l, sink := newTestLoop(t, f, commandPolicy(t, "deny: rm -r"))
+		execAt(l, f, nr, 42, 0, "/w/xbox", a0, "rm", "-r", "x")
+		wantExecAnswer(t, f, record.VerdictRefused)
+		if ev := sink.one(t); ev.Verdict != record.VerdictRefused || ev.Rule != "exec.deny[rm -r]" {
+			t.Errorf("argv[0] of %d bytes: %s %s, want refused exec.deny[rm -r]", len(a0), ev.Verdict, ev.Rule)
+		}
+	}
+}
+
 // TestExecCommandPrefixNotFinalPastTheFirstStage: a first stage (32 elements) that ends where later argv can still
 // change the decision is not final, so the supervisor reads the rest and refuses. python's -m cut at element 32 has
 // not read its module, under an entry with words and under a bare entry on the module alike; cargo's --config after

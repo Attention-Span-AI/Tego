@@ -35,7 +35,7 @@ var facts = map[record.Reason]string{
 	record.ReasonAskTimeout:            "it needed a person's approval, and no answer came in time",
 	record.ReasonAskUnavailable:        "it needed a person's approval, and no one could be asked",
 	record.ReasonAskUnreadable:         "it needed a person's approval, and the request could not be read reliably enough to ask",
-	record.ReasonLandlockTopology:      "it reaches a process outside this run's sandbox",
+	record.ReasonLandlockTopology:      "it reaches a process outside this run",
 	record.ReasonLimitTokens:           "the run reached its token limit",
 	record.ReasonLimitCost:             "the run reached its cost limit",
 	record.ReasonLimitWall:             "the run reached its time limit",

@@ -200,7 +200,7 @@ def tentry(turn, tail):
     return e
 
 
-def run_e2e(entries, refused, scenario="a", golden=None):
+def run_e2e(entries, refused, scenario="a", golden=None, hooks=None):
     out = io.StringIO()
     with tempfile.TemporaryDirectory() as d:
         log, led = os.path.join(d, "stub.log"), os.path.join(d, "events.jsonl")
@@ -214,13 +214,38 @@ def run_e2e(entries, refused, scenario="a", golden=None):
             with open(gp, "w") as f:
                 json.dump({scenario: golden}, f)
             argv += ["--golden", gp]
+        if hooks is not None:
+            rp = os.path.join(d, "result.json")
+            with open(rp, "w") as f:
+                json.dump({"hooks": hooks}, f)
+            argv += ["--result", rp]
         with contextlib.redirect_stdout(out):
             code = report.main(argv)
     return code, out.getvalue()
 
 
+def hook(event, began, *lines, took=0.004, seen=None):
+    """A summary's hook run: tego's hook printing lines (nothing when there are none), began seconds after 12:00:00.
+    seen is the reason file's seq the stand-in read just before it began (reason_seq); None leaves the key out."""
+    out = ""
+    if lines:
+        body = "Tego, this run's access control, refused %d actions:\n" % len(lines) + "".join(f"- {ln}\n" for ln in lines)
+        out = json.dumps({"hookSpecificOutput": {"hookEventName": event.split(":")[0], "additionalContext": body}})
+    h = {"event": event.split(":")[0], "tool": event.partition(":")[2], "began": at(began), "recorded": at(began + took),
+         "stdout": out}
+    if seen is not None:
+        h["reason_seq"] = seen
+    return h
+
+
+def at(sec):
+    """A UTC time sec seconds after 2026-11-11T12:00:00Z, with nine fractional digits as the ledger writes them."""
+    return "2026-11-11T12:00:%02d.%09dZ" % (int(sec), round((sec - int(sec)) * 1e9))
+
+
 LEDGER_A = [{"seq": 5, "op": "open", "target": "/h/.claude/skills", "reason": "read-denied", "rule": "fs.deny_read[/h/.claude]"},
-            {"seq": 9, "op": "open", "target": f"{W}/out/x.tmp.12.ab", "reason": "write-outside-contract", "rule": "unmatched"}]
+            {"seq": 9, "op": "open", "target": f"{W}/out/x.tmp.12.ab", "reason": "write-outside-contract", "rule": "unmatched",
+             "ts": at(1.0)}]
 TURN0 = tentry(0, [txt("prompt")])
 TURN1 = tentry(1, [res("w"), note(ISO, label="PostToolUse:Write")])
 ERR = {"type": "tool_result", "tool_use_id": "o", "is_error": True, "content": f"EACCES: open '{W}/out/x.tmp.34.cd'"}
@@ -237,7 +262,81 @@ class E2ETest(unittest.TestCase):
     def test_a_missing_refusal_fails(self):
         code, out = run_e2e([TURN0, TURN1, tentry(2, [ERR]), tentry(3, [txt("done")])], LEDGER_A)
         self.assertEqual(code, 1)
-        self.assertIn("FAIL  the next request carries the refusal of open @W@/out/x.tmp.@TMP@ (ledger reason write-outside-contract", out)
+        self.assertIn("FAIL  the next request, or the one after it, carries the refusal of open @W@/out/x.tmp.@TMP@ (ledger reason "
+                      "write-outside-contract", out)
+
+    def test_a_refusal_told_one_request_later_passes_and_matches_the_golden(self):
+        # Its line landed after the next request's hooks ran: the request after it carries it (the turn after the
+        # refused one waits a second), and the golden, which is the next request's, holds it all the same.
+        golden = {"notes": ["system"], "refusals": ['Tego refused open "@W@/out/x.tmp.@TMP@": this run may not write to that path (rule unmatched).'],
+                  "tool_results": [{"is_error": True, "content": "EACCES: open '@W@/out/x.tmp.@TMP@'"}]}
+        late = [TURN0, TURN1, tentry(2, [ERR]), tentry(3, [res("s"), note(WRITE, label="PostToolUse:Bash")]), tentry(4, [txt("done")])]
+        code, out = run_e2e(late, LEDGER_A, golden=golden)
+        self.assertEqual(code, 0, out)
+        self.assertIn("PASS  the next request, or the one after it, carries the refusal of open @W@/out/x.tmp.@TMP@ "
+                      "(ledger reason write-outside-contract): the request after it, one hook later", out)
+        # Told in neither, it fails, and so does a refusal told only two requests later.
+        code, out = run_e2e([TURN0, TURN1, tentry(2, [ERR]), tentry(3, [res("s")]), tentry(4, [note(WRITE, label="Stop")])], LEDGER_A)
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL  the next request, or the one after it, carries the refusal", out)
+        # Told in both is told twice.
+        code, out = run_e2e([TURN0, TURN1, tentry(2, [ERR, note(WRITE)]), tentry(3, [res("s"), note(WRITE, label="PostToolUse:Bash")])], LEDGER_A)
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL  ... and no later request repeats it", out)
+        self.assertIn("FAIL  no refusal line is told twice in the run", out)
+
+    def test_a_refusal_told_with_the_wrong_rule_or_sentence_fails(self):
+        golden = {"notes": ["system"], "refusals": ['Tego refused open "@W@/out/x.tmp.@TMP@": this run may not write to that path (rule unmatched).'],
+                  "tool_results": [{"is_error": True, "content": "EACCES: open '@W@/out/x.tmp.@TMP@'"}]}
+        wrong_rule = WRITE.replace("(rule unmatched)", "(rule fs.write[./work/])")
+        for told_in in (2, 3):
+            tails = {2: [ERR], 3: [res("s")]}
+            tails[told_in] = tails[told_in] + [note(wrong_rule)]
+            code, out = run_e2e([TURN0, TURN1, tentry(2, tails[2]), tentry(3, tails[3])], LEDGER_A, golden=golden)
+            self.assertEqual(code, 1, out)
+            self.assertIn("FAIL  ... with its rule (unmatched)", out)
+        wrong_reason = WRITE.replace("may not write to that path", "may not read that path")
+        code, out = run_e2e([TURN0, TURN1, tentry(2, [ERR]), tentry(3, [res("s"), note(wrong_reason)])], LEDGER_A, golden=golden)
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL  the next request, normalised, equals", out)
+
+    def test_hook_runs_hold_a_late_refusal_to_the_first_hook_that_found_it_listed(self):
+        late = [TURN0, TURN1, tentry(2, [ERR]), tentry(3, [res("s"), note(WRITE, label="PostToolUse:Bash")]), tentry(4, [txt("done")])]
+        # The line (seq 9) landed at 1.0 s. The refused call's hooks began before the reason file listed it (the file's
+        # seq was still 5), the Bash's after its one-second wait, with it listed.
+        hooks = [hook("SessionStart", 0.1, seen=5), hook("PostToolUseFailure:Write", 0.99, seen=5), hook("PostToolBatch", 1.06, seen=5),
+                 hook("PostToolUse:Bash", 2.1, WRITE, seen=9), hook("PostToolBatch", 2.15, seen=9)]
+        code, out = run_e2e(late, LEDGER_A, hooks=hooks)
+        self.assertEqual(code, 0, out)
+        self.assertIn("PASS  ... and no tool hook that ended before the teller began found it in the reason file and left it out", out)
+        # A hook that found it listed and left it out failed to tell it, however soon after the line it began: 40 ms
+        # here, and one hook of the next request too (a 0.5 s margin let the first pass).
+        for k, dropped in enumerate((
+                hooks[:2] + [hook("PostToolBatch", 1.04, seen=9)] + hooks[3:],
+                hooks[:3] + [hook("PostToolUse:Bash", 2.1, seen=9), hook("PostToolBatch", 2.15, WRITE, seen=9)])):
+            code, out = run_e2e(late, LEDGER_A, hooks=dropped)
+            self.assertEqual(code, 1, (k, out))
+            self.assertIn("FAIL  ... and no tool hook that ended before the teller began found it in the reason file and left it out; "
+                          + ("PostToolBatch began" if k == 0 else "PostToolUse began"), out)
+        # Hooks of one event start together and one of them claims it: a sibling that found it listed and printed
+        # nothing did not run before the teller, and passes.
+        siblings = hooks[:3] + [hook("PostToolUse:Bash", 2.1, seen=9, took=0.05), hook("PostToolUse:Bash", 2.1005, WRITE, seen=9)] + hooks[4:]
+        code, out = run_e2e(late, LEDGER_A, hooks=siblings)
+        self.assertEqual(code, 0, out)
+        # A tool hook without the seq it began with cannot be judged, and fails.
+        blind = hooks[:2] + [hook("PostToolBatch", 1.06)] + hooks[3:]
+        code, out = run_e2e(late, LEDGER_A, hooks=blind)
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL  ... every tool hook carries the reason file's seq the stand-in read before it began (1 does not)", out)
+        # Two hooks telling it, or a teller that ran before the line landed, fail too.
+        twice = hooks[:2] + [hook("PostToolBatch", 1.04, WRITE, seen=9)] + hooks[3:]
+        code, out = run_e2e(late, LEDGER_A, hooks=twice)
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL  ... told by one hook (2 told it)", out)
+        early = hooks[:1] + [hook("PostToolUseFailure:Write", 0.5, WRITE, seen=5)] + hooks[2:3] + [hook("PostToolUse:Bash", 2.1, seen=9)] + hooks[4:]
+        code, out = run_e2e([TURN0, TURN1, tentry(2, [ERR, note(WRITE)]), tentry(3, [res("s")])], LEDGER_A, hooks=early)
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL  ... by a hook that ran after its line landed", out)
 
     def test_a_refusal_told_again_later_fails(self):
         code, out = run_e2e([TURN0, TURN1, tentry(2, [ERR, note(WRITE)]), tentry(3, [note(WRITE, label="Stop")])], LEDGER_A)

@@ -2,9 +2,9 @@
 {{/* rules-change: the Change rules form (rules_change.go). Every form names the contract by its ref and carries the base it was read at. */}}
 {{define "content"}}<link rel="stylesheet" href="/static/rules.css"><link rel="stylesheet" href="/static/rules-change.css">{{$csrf := $.CSRF}}{{with .Data}}{{$d := .}}
 {{if not .C}}
-<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a class="link" href="/rules">Rules</a><span aria-hidden="true">/</span><span>Change rules</span></nav><h1>Change rules</h1><p class="lede">Pick a policy file</p></div></div>
+<div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a class="link" href="/rules">Contracts</a><span aria-hidden="true">/</span><span>Change rules</span></nav><h1>Change rules</h1><p class="lede">Pick a contract file</p></div></div>
 {{if .Contracts}}<section class="panel"><ul class="list rc-files">{{range .Contracts}}<li><a class="link" href="/rules/change?c={{queryEsc .Ref}}"><b>{{.Agent}}</b> <span class="mono soft">{{tail .Path 60}}</span></a> <span class="soft">· {{.Runs}} {{plural .Runs "run" "runs"}}{{if .Live}} · running{{end}}{{if not .Writable}} · cannot be changed here{{end}}</span></li>{{end}}</ul></section>
-{{else}}<section class="panel"><div class="empty"><div class="glyph">{{template "i" "i-shield"}}</div><h3>No policy to edit yet</h3><p>Write one with <span class="mono">tego init</span> and start the agent under it with <span class="mono">tego run</span>; then its rules can be changed here.</p><div class="cli"><code>tego init &amp;&amp; tego run -- &lt;agent&gt;</code></div></div></section>{{end}}
+{{else}}<section class="panel"><div class="empty"><div class="glyph">{{template "i" "i-shield"}}</div><h3>No contract to edit yet</h3><p>Make one with <a class="link" href="/rules/new">New contract</a>; once it is written, its rules can be changed here.</p></div></section>{{end}}
 {{else}}{{$c := .C}}
 <div class="head"><div><nav class="crumbs" aria-label="Breadcrumb"><a class="link" href="/rules?c={{queryEsc $c.Ref}}">Rules</a><span aria-hidden="true">/</span><span>Change rules</span></nav>
 <h1>Change rules for {{$c.Agent}}</h1>

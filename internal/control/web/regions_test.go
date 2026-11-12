@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/attention-span-ai/tego/internal/ledger"
 )
 
 var regionRe = regexp.MustCompile(`data-live="([^"]+)" data-h="([0-9a-f]{16})"`)
@@ -46,6 +48,36 @@ func doRegions(s *Server, target, host string, c *http.Cookie, have string) *htt
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, r)
 	return w
+}
+
+var monoRe = regexp.MustCompile(`"mono_ns":(\d+)`)
+
+// atMono is ledger text ls with each line's mono_ns (line writes seq+1) moved onto base, a CLOCK_MONOTONIC reading.
+func atMono(ls string, base uint64) string {
+	return monoRe.ReplaceAllStringFunc(ls, func(m string) string {
+		n, _ := strconv.ParseUint(monoRe.FindStringSubmatch(m)[1], 10, 64)
+		return `"mono_ns":` + strconv.FormatUint(base+n, 10)
+	})
+}
+
+// youngRun moves live run's mono_ns onto CLOCK_MONOTONIC as it reads now, as a launcher stamps them, and returns that
+// base for the lines a test appends later (atMono). The Receipt tab measures a running run to that clock
+// (ledgerview.LoadReceipt), and line's own stamps make the run as old as the machine has been up: minutes on a fresh
+// CI runner, days on a workstation. Its time taken is a clock the region's hash leaves out, but its stall line (in
+// tenths of a minute) and its chart (a bar a minute) are not, so two renders a step apart differed. A run a moment old
+// shows no stall line and one bar for its first minute.
+func youngRun(t *testing.T, root, run string) uint64 {
+	t.Helper()
+	base := ledger.SystemClock{}.Mono()
+	p := filepath.Join(root, run, "events.jsonl")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(atMono(string(b), base)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return base
 }
 
 // TestRegionsInPages: every page shows the layout's regions and its own, each once, hashed.
@@ -83,6 +115,7 @@ func TestRegionsInPages(t *testing.T) {
 // answers nothing.
 func TestRegionRequest(t *testing.T) {
 	root := fixture(t)
+	mono := youngRun(t, root, harmRun) // so its Receipt moves only by its time taken, a clock, for a minute
 	s := newServer(t, root)
 	c := login(t, s)
 	pages := []string{"/", "/approvals", "/runs", "/runs/" + harmRun, "/runs/" + harmRun + "/refusals", "/runs/" + harmRun + "/receipt", "/logs"}
@@ -113,9 +146,9 @@ func TestRegionRequest(t *testing.T) {
 
 	// The live run writes a refusal whose target is markup, and a second ask.
 	t0 := time.Date(2026, 10, 25, 12, 1, 10, 0, time.UTC)
-	appendLine(t, root, harmRun, line(harmRun, "demo-harm", 7, t0, "refused", `"rule":"unmatched","reason":"net-not-allowed","op":"connect","target":"<img src=x onerror=alert(2)>:443"`))
-	appendLine(t, root, harmRun, line(harmRun, "demo-harm", 8, t0.Add(time.Second), "fs", `"verdict":"ask","rule":"fs.ask[/p/]","op":"write","path":"/p/held.txt"`))
-	appendLine(t, root, harmRun, line(harmRun, "demo-harm", 9, t0.Add(2*time.Second), "ask", `"ask_id":"ask-9","hold":"fs"`))
+	appendLine(t, root, harmRun, atMono(line(harmRun, "demo-harm", 7, t0, "refused", `"rule":"unmatched","reason":"net-not-allowed","op":"connect","target":"<img src=x onerror=alert(2)>:443"`), mono))
+	appendLine(t, root, harmRun, atMono(line(harmRun, "demo-harm", 8, t0.Add(time.Second), "fs", `"verdict":"ask","rule":"fs.ask[/p/]","op":"write","path":"/p/held.txt"`), mono))
+	appendLine(t, root, harmRun, atMono(line(harmRun, "demo-harm", 9, t0.Add(2*time.Second), "ask", `"ask_id":"ask-9","hold":"fs"`), mono))
 	for _, tc := range []struct {
 		page string
 		want map[string][]string // region → what its fresh HTML holds

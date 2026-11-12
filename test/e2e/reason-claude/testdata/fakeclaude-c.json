@@ -1,4 +1,5 @@
 {"prompt": "Carry out the scripted steps.", "turns": [
  {"calls": [{"write": "@W@/work/warmup.txt", "content": "warm-up\n"}]},
- {"calls": [{"bash": "git push origin main; echo \"git exit=$?\"", "description": "Push the work to origin"}]}
+ {"calls": [{"bash": "git push origin main; echo \"git exit=$?\"", "description": "Push the work to origin"}]},
+ {"calls": [{"bash": "sleep 1; echo settled", "description": "Wait a second"}]}
 ]}

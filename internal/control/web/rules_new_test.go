@@ -46,7 +46,7 @@ func TestRulesNewPreviewAndCreate(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("GET /rules/new: %d %s", code, body)
 	}
-	for _, want := range []string{"New policy", `name="preset" value="no-secrets" checked`, `name="preset" value="no-prod" checked`,
+	for _, want := range []string{"New contract", `name="preset" value="no-secrets" checked`, `name="preset" value="no-prod" checked`,
 		`name="preset" value="repo-only-writes">`, "From a run", `name="dir"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the form lacks %q", want)
@@ -96,11 +96,11 @@ func TestRulesNewPreviewAndCreate(t *testing.T) {
 	w = post(f.s, "/rules/new", form, own, "", f.c)
 	loc := w.Header().Get("Location")
 	body = follow(t, f.s, f.c, w)
-	if !strings.HasPrefix(loc, "/rules/new?created=") || !strings.Contains(body, "fresh-proj · policy written") || !strings.Contains(body, "Set up fresh-proj: ") ||
+	if !strings.HasPrefix(loc, "/rules/new?created=") || !strings.Contains(body, "fresh-proj · contract written") || !strings.Contains(body, "Set up fresh-proj: ") ||
 		!strings.Contains(body, "cd "+dir+" &amp;&amp; tego run agent.yaml</code>") {
 		t.Fatalf("Create went to %q: %s", loc, body)
 	}
-	if reload, _, _ := strings.Cut(loc, "&flash="); !strings.Contains(do(f.s, "GET", reload, "127.0.0.1:8484", f.c).Body.String(), "fresh-proj · policy written") {
+	if reload, _, _ := strings.Cut(loc, "&flash="); !strings.Contains(do(f.s, "GET", reload, "127.0.0.1:8484", f.c).Body.String(), "fresh-proj · contract written") {
 		t.Error("a reload of the created page does not show it")
 	}
 	ref := newRef.FindStringSubmatch(body)
@@ -123,7 +123,7 @@ func TestRulesNewPreviewAndCreate(t *testing.T) {
 		t.Fatalf("the chooser does not offer the new rules file")
 	}
 	code, body = f.get(t, "/rules?c="+ref[1])
-	for _, want := range []string{"Policy · fresh-proj", "not run yet", "cd " + dir + " &amp;&amp; tego run agent.yaml", "Network"} {
+	for _, want := range []string{"Contract · fresh-proj", "not run yet", "cd " + dir + " &amp;&amp; tego run agent.yaml", "Network"} {
 		if code != http.StatusOK || !strings.Contains(body, want) {
 			t.Errorf("the not-run page lacks %q (%d)", want, code)
 		}
@@ -261,7 +261,7 @@ func TestRulesNewNotRunHidesEnv(t *testing.T) {
 		t.Fatal("the chooser does not offer the set-up file")
 	}
 	code, body := f.get(t, "/rules?c="+ref[1])
-	if code != http.StatusOK || !strings.Contains(body, "Policy · rules-demo") {
+	if code != http.StatusOK || !strings.Contains(body, "Contract · rules-demo") {
 		t.Fatalf("not-run page: %d", code)
 	}
 	if strings.Contains(body, rulesCanary) || strings.Contains(html.UnescapeString(body), rulesCanary) {
@@ -280,7 +280,7 @@ func TestRulesNewOff(t *testing.T) {
 		t.Error("the Rules page offers setup without a service")
 	}
 	form := url.Values{"csrf": {f.s.csrf}, "dir": {f.proj}}
-	if b := follow(t, f.s, f.c, post(f.s, "/rules/new", form, own, "", f.c)); !strings.Contains(b, "Not created · policy editing is off") {
+	if b := follow(t, f.s, f.c, post(f.s, "/rules/new", form, own, "", f.c)); !strings.Contains(b, "Not created · contract editing is off") {
 		t.Errorf("POST without a service:\n%s", b)
 	}
 }
@@ -290,7 +290,7 @@ func TestRulesNewOff(t *testing.T) {
 func TestRulesNewAskReadNote(t *testing.T) {
 	f := newRulesFix(t)
 	f.withSetup(t)
-	if _, body := f.get(t, "/rules/new"); !strings.Contains(body, "Ask before reading runs the whole policy at Basic") {
+	if _, body := f.get(t, "/rules/new"); !strings.Contains(body, "Ask before reading runs the whole contract at Basic") {
 		t.Error("the form lacks the note")
 	}
 	dir := filepath.Join(filepath.Dir(f.proj), "ask-proj")
@@ -309,8 +309,8 @@ func TestRulesNewAskReadNote(t *testing.T) {
 		}
 		return html.UnescapeString(body)
 	}
-	const basic = "Ask before reading runs this whole policy at Basic protection"
-	const adjustable = "these reads are blocked without asking you"
+	const basic = "Ask before reading runs this whole contract at Basic protection"
+	const adjustable = "these reads are refused without asking you"
 	if b := preview(nil); strings.Contains(b, basic) || strings.Contains(b, adjustable) {
 		t.Error("a preview with no Ask before reading has the banner")
 	}

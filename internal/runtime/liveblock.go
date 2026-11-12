@@ -130,6 +130,20 @@ func (r *runner) markRealReader() {
 	}
 }
 
+// markLinkReader tells writers that this launcher reads a block that matches by link (liveblock.Entry.Match,
+// VersionLink): it makes the run directory's liveblock.LinkName once the live-block poll runs. The dashboard's "Also
+// apply now" places such a block only on a run that has the mark (liveblock.TakesLink), and the whole-file block on
+// any other, so an older launcher, which would refuse the whole overlay once it was VersionLink, never meets one. A
+// mark that cannot be made is logged: such a block then refuses the whole file, as before, never less.
+func (r *runner) markLinkReader() {
+	if r.dir == "" {
+		return
+	}
+	if err := liveblock.MarkLink(r.dir); err != nil {
+		r.log.Warn("live blocks: the run's link mark could not be made, so a block placed from a rules change refuses the program's whole file", "err", err)
+	}
+}
+
 // pollLiveBlocks reads the overlay when it changed: its blocks are compiled and put in force, and its changes since
 // the last poll get their lines, a pause or a resume once applied to the run's cgroup (livepause.go), a lift or a
 // restore once the fence applied it. An unchanged overlay only has a pause or resume that failed tried again. Every
@@ -773,6 +787,8 @@ var liveLookup = func(ctx context.Context, host string) ([]netip.Addr, error) {
 
 // resolveLiveBlocks is what entries name beyond their text: each blocked host's addresses (a host the lookup fails
 // for is still matched by the declared host an entry admitted it under) and each blocked absolute program's identity.
+// A block that matches by link uses that identity only where the running contract holds no entry at its value
+// (liveblock.Grant); the supervisor asks the contract's own grant otherwise.
 // What prev already holds is kept and not looked up again (a host prev holds with no addresses included). With lookup
 // false nothing is looked up: the result holds only what prev held, and pending reports whether some entry would be
 // looked up. failed are the hosts whose lookup failed.

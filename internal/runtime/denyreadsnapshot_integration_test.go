@@ -5,6 +5,7 @@
 package runtime
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -196,4 +197,71 @@ echo done > $r/done
 		t.Fatalf("the agent did not run to its end\n%s", s.diagnose(t, dir))
 	}
 	return s, evs
+}
+
+// TestIntegrationRunStartNamesTheFrozenDirectories (GAPS A12) at tier landlock through the real binary, under the
+// default record: summary with reads direct, where no read open reaches the supervisor: a directory made beside the
+// deny_read target's parent after the start (in the project, which stands here for $HOME: the test does not write in
+// the invoking user's home), and a file in it, cannot be read, and no line records that refusal. What explains it is
+// run_start's deny_read_frozen, which names the project, each of its ancestors up to /, and so the binary's own $HOME,
+// which the built-in ~/.ssh entry freezes too; and the one note tego run printed before the agent ran, which names
+// them as well.
+func TestIntegrationRunStartNamesTheFrozenDirectories(t *testing.T) {
+	s, evs := denyReadSnapshotScene(t, "direct", "summary", false)
+	project := s.f.dir
+	for _, n := range []string{"late", "top"} {
+		if rc := strings.TrimSpace(s.out("res/" + n + ".rc")); rc == "0" || rc == "" {
+			t.Errorf("%s: status %q, want a refusal (%q)", n, rc, s.out("res/"+n+".err"))
+		}
+	}
+	if len(evs) == 0 || evs[0].Kind != record.KindRunStart {
+		t.Fatal("the ledger does not open with run_start")
+	}
+	var start map[string]json.RawMessage
+	if err := evs[0].DecodePayload(&start); err != nil {
+		t.Fatal(err)
+	}
+	var frozen struct {
+		Dirs    []string `json:"dirs"`
+		Omitted int      `json:"omitted"`
+	}
+	if raw, ok := start["deny_read_frozen"]; !ok || json.Unmarshal(raw, &frozen) != nil {
+		t.Fatalf("run_start names no frozen directory: %s", evs[0].Payload)
+	}
+	for cur := project; ; cur = filepath.Dir(cur) {
+		if !slices.Contains(frozen.Dirs, cur) {
+			t.Errorf("run_start.deny_read_frozen %q does not name %s", frozen.Dirs, cur)
+		}
+		if cur == "/" {
+			break
+		}
+	}
+	// As root under sudo the run's built-in entries are the invoking user's, whose home this process does not read.
+	if home, err := os.UserHomeDir(); err == nil && os.Geteuid() != 0 && !slices.Contains(frozen.Dirs, filepath.Clean(home)) {
+		t.Errorf("run_start.deny_read_frozen %q does not name the run's $HOME %s", frozen.Dirs, home)
+	}
+	if slices.Contains(frozen.Dirs, filepath.Join(project, "old")) || frozen.Omitted != 0 {
+		t.Errorf("run_start.deny_read_frozen %q (omitted %d) names a sibling or omits one", frozen.Dirs, frozen.Omitted)
+	}
+	var minor int
+	if json.Unmarshal(start["record_minor"], &minor) != nil || minor < 30 {
+		t.Errorf("run_start record_minor %s, want 30 or more", start["record_minor"])
+	}
+	for _, e := range evs {
+		var p record.FSPayload
+		if e.Kind == record.KindFS && e.DecodePayload(&p) == nil && strings.HasPrefix(p.Path, filepath.Join(project, "late")) {
+			t.Errorf("record: summary wrote a line for %s (%s); the test assumes none, so run_start is the record's one explanation", p.Path, e.Verdict)
+		}
+	}
+	said := s.said.String()
+	var notes []string
+	for l := range strings.Lines(said) {
+		if strings.Contains(l, "deny_read lists ") {
+			notes = append(notes, l)
+		}
+	}
+	if len(notes) != 1 || !strings.HasPrefix(notes[0], "note: ") || !strings.Contains(notes[0], " "+project+",") && !strings.Contains(notes[0], " "+project+" ") ||
+		!strings.Contains(notes[0], "[deny-read-frozen]") {
+		t.Errorf("tego run's notes naming the frozen directories: %q\n%s", notes, said)
+	}
 }

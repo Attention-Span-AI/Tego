@@ -85,12 +85,26 @@ func cmdWatch() Command {
 			defer cleanup()
 			sockets := stdioHasSocket(tegoruntime.Stdio{In: os.Stdin, Out: os.Stdout, Err: os.Stderr})
 			fmt.Fprint(stderr, watchNotice(command[0], boundary != "", agent.RecordMode(recordMode), verbose, sockets))
+			// How a recording ends: a long-running agent has no end of its own, and nothing said that Ctrl-C keeps
+			// what was recorded (the run forwards the signal and closes its record with run_end). Guidance, so not with
+			// --no-summary. It is part of the notice, so it is said with it, before the run's own checks, which can
+			// still refuse the run (exit 125) as they can after the notice.
+			if !noSummary {
+				writeGuide(stderr, watchStopLine)
+			}
+			cwd, _ := os.Getwd() // the folder the hint names the contract after; "" gives "<name>"
 			// tego's own lines name the command the person typed: the run path writes "tego watch: " where a run writes
 			// "tego run: " (runOptions.cmd).
 			return runRun(ctx, runOptions{
 				cmd: "tego watch", contract: path, generated: boundary == "", command: command, tier: tier, record: recordMode,
 				observe: boundary == "", offline: offline, verbose: verbose, watched: true, noSummary: noSummary,
-				report: func(res tegoruntime.Result, sum *endSummary) { fmt.Fprint(stderr, watchFooter(res, sum)) },
+				report: func(res tegoruntime.Result, sum *endSummary) {
+					// The footer, then the reads line (a bounded watch can refuse a read), then the next step.
+					fmt.Fprint(stderr, watchFooter(res, sum)+sum.readsLine())
+					if text, command := watchNext(ctx, stderr, res, sum, boundary, cwd); text != "" {
+						writeHint(stderr, text, command)
+					}
+				},
 			}, stderr)
 		},
 	}
@@ -253,6 +267,42 @@ func watchFooter(res tegoruntime.Result, sum *endSummary) string {
 	}
 	fmt.Fprintf(&b, "  more: tego receipt %[1]s    tego events %[1]s\n", run)
 	return b.String()
+}
+
+// watchStopLine is the guidance line after a watch's notice: how to end the recording of an agent that runs until it
+// is stopped, and that ending it so keeps the record.
+const watchStopLine = "  stop: let it do a normal job, then Ctrl-C, or let it end; the record is kept.\n"
+
+// watchAddresses is runAddresses, the second read of the record a watch's hint makes; a variable so a test can count
+// the reads.
+var watchAddresses = runAddresses
+
+// watchNext is the next: block a watch ends with (watchHint). Whether the run reached addresses is a second read of the
+// record, up to summaryBudget, so it is made only when the block names the learn step and stderr shows it: a bounded
+// watch, a run whose record was off or not completed, and a script that does not see the hint do not wait for it.
+func watchNext(ctx context.Context, stderr io.Writer, res tegoruntime.Result, sum *endSummary, boundary, cwd string) (text, command string) {
+	if text, command = watchHint(res, sum, boundary, cwd, false); text == "" || !hintsOn(stderr) {
+		return text, command
+	}
+	return watchHint(res, sum, boundary, cwd, watchAddresses(ctx, sum, res))
+}
+
+// watchHint is a record-only watch's "next:" block, the route from the recording to a contract (FIRST-TEN-MINUTES,
+// stumble 3): tego learn of this run, saved under a name, which is the run folder's when tego run takes it there
+// (proposedName). "" for a bounded watch (it has its contract), with no summary (--no-summary prints only where the record is), for a
+// run whose record was off, whose ledger holds nothing to learn from, and for a run whose record could not be completed,
+// which exits 125 [ledger].
+// When the run reached addresses (runAddresses), the step names the host behind them with --allow-host, so that the
+// contract allows the service by name: a later run may pick another address of the same name and be refused.
+func watchHint(res tegoruntime.Result, sum *endSummary, boundary, cwd string, addresses bool) (text, command string) {
+	if boundary != "" || res.RunID == "" || sum == nil || sum.recordOff || res.RecordErr != nil {
+		return "", ""
+	}
+	command = "tego learn " + shortRun(sum.root, res.RunID) + " --save " + proposedName(sum.machine, cwd)
+	if addresses {
+		return watchNameHint, command + " --allow-host " + hostPlaceholder
+	}
+	return "make a contract from what it did, and read it before you use it:", command
 }
 
 // watchReport is what tego says when the run is over: where to read what happened.

@@ -397,6 +397,10 @@ func (s *Server) fenceEntryOf(run *ledgerview.Run, kind, value string) (k, v, wh
 	k = string(pk)
 	f := ledgerview.LiveFactsOf(run)
 	switch {
+	case !f.Started && f.StartUnreadable && run.State() == "running":
+		return k, v, "This run's first record line is not one this tego can read, so nothing can be lifted."
+	case !f.Started && run.State() == "running":
+		return k, v, "This run is still starting; try again in a few seconds."
 	case !f.Adjustable:
 		return k, v, "Locked run · loosening applies from the next run"
 	case run.State() != "running":
@@ -519,6 +523,19 @@ func (s *Server) restorePost(w http.ResponseWriter, r *http.Request, id string) 
 	s.redirectBack(w, r, back, flash{OK: true, Text: "Restored: " + what + " is refused again on run " + shortRun(id) + "."})
 }
 
+// lockedWords is the page's words for a loosening a Locked run refuses: a lift or a restore here, an MCP tool switch
+// (mcpErrWords) and a model route (routesErrWords).
+const lockedWords = "this run is Locked: loosening applies from its next run."
+
+// startingWords is the page's words for a change refused because the run's run_start cannot be read yet
+// (runact.ErrStarting): its mode is not known, which is never said as Locked (acceptance 2B, 2026-11-11).
+const startingWords = "this run is still starting, so what it takes while it runs is not known yet: try again in a few seconds."
+
+// unreadableStartWords is the page's words for a change refused because the run's first record line is not a
+// run_start this tego can read (runact.ErrStartUnreadable): waiting does not change that, so they never say to try
+// again (the review's S1).
+const unreadableStartWords = "this run's first record line is not one this tego can read, so what it takes while it runs is not known."
+
 // liftErr is why a lift or a restore was not asked, in plain words.
 func liftErr(err error) string {
 	switch {
@@ -528,8 +545,12 @@ func liftErr(err error) string {
 		return "this request came from inside a run, and an agent can never loosen its own rules."
 	case errors.Is(err, runact.ErrNotRunning):
 		return "the run is not running, so its fence no longer applies."
+	case errors.Is(err, runact.ErrStarting):
+		return startingWords
+	case errors.Is(err, runact.ErrStartUnreadable):
+		return unreadableStartWords
 	case errors.Is(err, runact.ErrLocked):
-		return "this run is Locked: loosening applies from its next run."
+		return lockedWords
 	case errors.Is(err, runact.ErrOutsideFence):
 		return "that entry is outside this run's fence, so it applies from the next run."
 	case errors.Is(err, runact.ErrNoKey):

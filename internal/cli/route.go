@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/liveblock"
 	"github.com/attention-span-ai/tego/internal/modelroutes"
 	"github.com/attention-span-ai/tego/internal/runlock"
 	"github.com/attention-span-ai/tego/pkg/policy/modelroute"
@@ -57,7 +58,8 @@ func routeQuestion(auth, run, route, backend string) string {
 //
 // <endpoint> is the models[] entry's host:port (host alone for port 443), or its provider when one entry has it. Only
 // routes the run's contract declares can be chosen. A set that widens (to any route but direct) asks y/N unless --yes;
-// every change is refused from inside any run, since the agent never chooses its route (refuseGoverned).
+// every change is refused from inside any run, since the agent never chooses its route (refuseGoverned). On a Locked
+// run a set to any route but direct is refused ([locked], ADR 0127 §6): such a run loosens from its next run.
 func cmdRoute() Command {
 	var asJSON, yes bool
 	return Command{
@@ -294,6 +296,15 @@ func routeChange(ctx context.Context, name, ref, endpoint, route string, yes boo
 	if !held {
 		message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s is not running, so a route change would apply to nothing", name, run), codeNotRunning)
 		return identity.ExitFinding
+	}
+	// A Locked run is never looser than its contract while it runs (ADR 0125), and its contract starts every endpoint on
+	// direct: any other route is refused [locked], in the words a lift of a Locked run gets, while direct is taken, as an
+	// unblock is. A run_start that cannot be read is refused too, as not known (fail closed; liveblock.ErrStarting, or
+	// ErrStartUnreadable for a first line this tego does not read).
+	if route != modelroute.Direct {
+		if err := liveblock.CheckLoosening(liveTarget(run, held, startFacts(dir))); err != nil {
+			return fenceRefused(name, err, stderr)
+		}
 	}
 	o, err := modelroutes.Read(dir, run)
 	if errors.Is(err, os.ErrNotExist) {

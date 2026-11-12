@@ -115,9 +115,9 @@ The forwarder passes every header on as the agent sent it.
   decided again, and a Deny put in force during the hold refuses it, rule `mcp[<name>].live[<tool>]`. Whether a change
   loosens is decided again on the overlay under the writers' lock, so a Deny that lands after the preview's read is not
   undone by a change nobody acknowledged; loosening needs the preview-bound acknowledgement on
-  the dashboard and `--yes` or a typed confirmation on the CLI, and is refused from inside any run. The Locked check
-  this paragraph planned is not built: a Locked run's tool switches can still be loosened, by a person outside every
-  run, with confirmation (*amended 2026-11-01*; docs/GAPS.md C39).
+  the dashboard and `--yes` or a typed confirmation on the CLI, and is refused from inside any run. On a Locked run a
+  switch to a decision looser than the contract's is refused by every writer (*amended 2026-11-11*, "Amendment
+  2026-11-11: Locked runs" below; docs/GAPS.md C39).
 - **Tools seen.** The service writes `<run dir>/mcp-seen.json` (`{server: [tool names]}`, at most 512 a server,
   names as above) from each `tools/list` result, so the dashboard can show a switch for a tool nobody has called.
 - **Record.** Each `tools/call` decision is an `mcp` line, source `proxy` (Tego's own in-path relay), payload
@@ -195,6 +195,53 @@ The dashboard's side nav no longer lists MCP tools by default. It is left out un
 given, so a first-time reader sees only the pages that work for every run. The page itself is unchanged and answers at
 `/mcp` as before; a link to it still opens it. Where this record says "the nav's" link or item, read "the nav's, with
 `--preview`". docs/DASHBOARD.md ("Start it") holds the flag.
+
+## Amendment 2026-11-11: Locked runs
+
+§4 planned a Locked check; until now it was not built, so `tego mcp allow` and the MCP tools page could loosen a
+Locked run while it ran (docs/GAPS.md C39). Built:
+
+- **Who checks.** Both writers: `tego mcp allow|ask|deny|reset` (internal/cli/mcp.go) and `internal/control/mcpact`
+  (the MCP tools page's `Plan`, `Set` and `Reset`). Each reads the run's live mode from its run_start
+  (livestatus.Facts.Adjustable, through `runact.CheckLoosening` for the page) and refuses with
+  `liveblock.CheckLoosening`, which returns `liveblock.ErrLocked` in the sentence a lift of a Locked run gets: on the
+  terminal "`<run>` is Locked: it keeps to its contract while it runs, so nothing loosens until its next run", with
+  the lift's hint and code `[locked]` (record.LiveRefusedLocked), exit 1; on the page "Not done: this run is Locked:
+  loosening applies from its next run." (the same constant as a refused lift), on the flash and on the preview, which
+  then has no acknowledgement to confirm, only a link back. The shared sentence named the kernel ("the kernel holds it
+  to its contract") until this amendment's review; it names no mechanism now, since the relay, not the kernel, holds a
+  tool switch, and it is the same for `tego lift`, `grant` and `restore`.
+- **What it refuses.** A switch whose result is looser than the contract's own decision for the tool (deny to ask or
+  allow, ask to allow). This follows ADR 0125's Locked promise, "never looser than its contract while it runs", as the
+  other live writers keep it: a Locked run takes a live block (a tightening) and its removal (back to the contract),
+  and refuses a lift. So a tightening is taken, and so is a reset or a switch back to the contract's decision; that
+  one still needs its acknowledgement when it loosens the run from now. The contract and the change decide it, not
+  the overlay, so the writers' lock has nothing more to decide.
+- **Fail closed.** A run below record minor 26 (or one that names no fence) counts as Locked. A run whose run_start
+  is not written yet (no events file, an empty one, or a first line still being written) is refused too, as still
+  starting (`liveblock.ErrStarting`, `[starting]`: "try again in a few seconds"), never as Locked: a launcher holds
+  its run a few seconds before it writes run_start, and an Adjustable run was refused as Locked in that window
+  (*amended 2026-11-11*, acceptance 2B). A complete first line that does not decode, or is not run_start, is refused
+  as not readable (`liveblock.ErrStartUnreadable`, `[start-unreadable]`), with no "try again", since waiting does
+  not change it (*amended 2026-11-11*, second review). A run no launcher holds gets the writers' not-running refusal first,
+  as `liveblock.CheckFence` orders it: `liveblock.CheckLoosening` refuses it `ErrNotRunning` itself, so a free lock is
+  never a go-ahead, and the page's preview of such a switch is refused too, with no acknowledgement; a lock that cannot
+  be probed counts as held.
+- **Record.** A refusal writes nothing: no overlay change and no ledger line, as a writer's refusal of a lift writes
+  none (ADR 0125 decision 5: lines come from what took effect). No record field changed.
+- **Not covered.** The relay applies whatever `mcp-tools.json` holds and does not read the mode. A switch written there
+  some other way (an older `tego`, or a same-user process outside every run writing the file) still loosens a Locked
+  run, with its `mcp-tool-changed` line. Refusing it in the relay needs a record shape for that refusal, so a record
+  revision; not built (GAPS C39, narrowed).
+- **Consequence.** At tier landlock every run is Locked (Adjustable is refused there, ADR 0125 decision 7), so live MCP
+  loosening is gone at landlock; it stays on Adjustable runs at cgroup and bpflsm.
+- **Verified** (on this host, as a user, 2026-11-11): unit tests in liveblock (`TestCheckLoosening`), runact
+  (`TestCheckLoosening`), mcpact (`TestLockedRunRefusesLoosening`, `TestLockedRunAcrossAnUnreadableStart`,
+  `TestEndedRunRefusesLoosening`, `TestAdjustableRunLoosens`), internal/cli (`TestMCPSwitchRefusedOnALockedRun`) and web
+  (`TestMCPLockedRunRefusesLoosening`); `test/e2e/mcp-tools-e2e.sh` at tier landlock (the Locked refusal by CLI and
+  dashboard, the tightening, and a second, Adjustable run through the test build's `TEGO_TEST_LIVE_ANY_TIER` hook
+  that takes the allow live). With the checks removed (`go test -overlay`, `go build -overlay`) the new tests and 10
+  of the e2e's checks fail. Not verified: a root tier (an Adjustable run at cgroup or bpflsm) in a guest.
 
 ## Proposed amendment 2026-11-03: preview or security boundary
 

@@ -224,6 +224,18 @@ func releaseOrphan(store *adoptStore, rec adoptRecord, env adopt.Env, dirfd int,
 // stays in keeps the record, so a later release (or sweep) can try again.
 func finishOrphan(store *adoptStore, rec adoptRecord, out *OrphanRelease) []error {
 	var errs []error
+	if len(out.Released.Left) > 0 {
+		// The processes left in the scope are released, governed by nothing: none keeps a limit the adoption wrote
+		// there (a boundary's cpu, cpu_weight, pids). The record does not say whether it wrote any, and a lift where
+		// none was written writes the kernel's defaults again.
+		fs, err := cgroup.NewAt(rec.Mount)
+		if err == nil {
+			err = fs.LiftLimits(cgroup.Cgroup{Path: rec.Scope})
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("lift the limits of the processes left in %s: %w", rec.Scope, err))
+		}
+	}
 	if len(out.Released.Left) == 0 {
 		fs, err := cgroup.NewAt(rec.Mount)
 		if err == nil {

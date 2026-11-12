@@ -19,6 +19,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/doctor"
 	"github.com/attention-span-ai/tego/internal/platform/dns"
 	"github.com/attention-span-ai/tego/internal/policy/decide"
+	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/internal/runtime/enforce"
 	"github.com/attention-span-ai/tego/internal/runtime/limits"
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
@@ -249,6 +250,9 @@ func runCompile(ctx context.Context, path string, req compileRequest, stdout, st
 		}
 		if err == nil {
 			err = printPlaneCompaction(stdout, rt)
+		}
+		if err == nil {
+			err = printFrozen(stdout, rt)
 		}
 		if err == nil {
 			err = printEffective(stdout, m)
@@ -713,6 +717,20 @@ func loadCode(err error) string {
 		return config.CodeUntrusted // a contract file with a second name (agent-contract.md R10, ADR 0059)
 	}
 	return agent.CodeSchema
+}
+
+// printFrozen writes one note naming the directories a run of rt will list once at launch to build its deny_read
+// entries (decide.FrozenLevels; enforce-landlock R3, GAPS A12), in which a name made during the run is unreadable to it.
+// Every contract tier builds that ruleset (a root tier composes tier 1's); nothing is printed when none is listed. A run
+// names the directories it did list in run_start.deny_read_frozen and prints the same sentence; an --observe run
+// builds no ruleset and lists none.
+func printFrozen(w io.Writer, rt *agent.RuleTable) error {
+	dirs := decide.FrozenLevels(rt)
+	if len(dirs) == 0 {
+		return nil
+	}
+	_, err := fmt.Fprintf(w, "note      %s\n", record.Printable(tegoruntime.FrozenNote(dirs, 0, "a run")))
+	return err
 }
 
 // printEffective writes the machine config's effective values under the rule table, each with the file

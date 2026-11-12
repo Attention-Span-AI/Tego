@@ -2,7 +2,8 @@
 
 // Package shellword writes a string as one word of a shell command line, for the lines Tego prints for a person to
 // paste into a terminal: the dashboard's terminal twins ("Same in a terminal": tego block, tego lift, tego compile,
-// cd <folder>, a run's restart line) and tego doctor's `sudo <path> doctor`. A word made only of letters, digits and
+// cd <folder>, a run's restart line), tego doctor's `sudo <path> doctor` and tego agents' `sudo <path> agents` and
+// `sudo <path> adopt`. A word made only of letters, digits and
 // / . _ - : @ , + =, which sh, bash, zsh and fish read as themselves, stays as it is unless it starts with = (zsh
 // reads =name as a program's path); any other word, the empty one included, goes in single quotes, with each ' and \
 // in it written outside them, so the quoted text holds nothing one of those shells reads specially.

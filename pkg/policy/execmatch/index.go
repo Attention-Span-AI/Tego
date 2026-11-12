@@ -43,6 +43,13 @@ type Index struct {
 	lds   map[ID]bool
 	nz    map[*Row]*Normalizer
 	order []*Pattern
+	// mc is the row whose Applets the multicall readings use, and mcNames the names of every tool a deny or ask entry
+	// names (multicall.go); nil and empty when the rows have no such row or the index no deny or ask entry.
+	mc      *Row
+	mcNames []string
+	// mcApplets is mc's Applets as a set, and mcLongest the length of its longest name.
+	mcApplets map[string]bool
+	mcLongest int
 }
 
 // NewIndex builds an index over patterns, in the order the contract lists them. A bare allow entry naming the tool by
@@ -101,6 +108,7 @@ func NewIndex(rows *Rows, patterns []*Pattern, opts IndexOptions) *Index {
 			ix.nz[r] = NewNormalizer(r, opts.Candidates)
 		}
 	}
+	ix.initMulticall()
 	return ix
 }
 
@@ -246,7 +254,7 @@ func (ix *Index) Guarded(f *Facts) bool {
 			return true
 		}
 	}
-	return f.Form == FormUnknown
+	return f.Form == FormUnknown || ix.multicallGuarded(f)
 }
 
 // nameGuarded reports whether one name leads to a ruled tool, or to a dispatcher that could reach one.
@@ -393,13 +401,41 @@ func (ix *Index) Decide(f *Facts) Result {
 			res.Guarded = true
 		}
 	}
-	// A concrete deny or ask match names its entry, whether or not the dispatch overflowed.
+	// A concrete deny or ask match names its entry, whether or not the dispatch overflowed. A multicall image's applets
+	// by its names (multicall.go) meet the deny and ask entries too, and nothing else: they never admit an exec and
+	// never make an invocation unlisted, so the allow side below reads invs alone. Deny comes first over both sets,
+	// then ask (ADR 0048 (1)): an ask entry the plain reading meets must not name an exec whose applet a deny entry
+	// refuses. The applets are read only when no deny entry meets invs.
+	matched := func(invs []Invocation, list List) (Result, bool) {
+		r, ok := ix.firstMatch(invs, list)
+		r.Guarded, r.Final, r.K = true, true, len(f.Argv)
+		return r, ok
+	}
 	if res.Guarded {
-		for _, list := range [...]List{ListDeny, ListAsk} {
-			if r, ok := ix.firstMatch(invs, list); ok {
-				r.Guarded, r.Final, r.K = true, true, len(f.Argv)
-				return r
-			}
+		if r, ok := matched(invs, ListDeny); ok {
+			return r
+		}
+	}
+	mc := ix.multicallInterpretations(f, invs)
+	mcGuarded := false
+	for i := range mc {
+		switch {
+		case mc[i].Via == ViaOverflow:
+			overflow = true
+		case ix.denyRuled(mc[i].Tool):
+			mcGuarded = true
+		}
+	}
+	for _, step := range [...]struct {
+		on   bool
+		invs []Invocation
+		list List
+	}{{mcGuarded, mc, ListDeny}, {res.Guarded, invs, ListAsk}, {mcGuarded, mc, ListAsk}} {
+		if !step.on {
+			continue
+		}
+		if r, ok := matched(step.invs, step.list); ok {
+			return r
 		}
 	}
 	// A dispatcher the bounds left unresolved could still reach any ruled tool, so the exec is refused before any
@@ -408,7 +444,7 @@ func (ix *Index) Decide(f *Facts) Result {
 		return Result{Outcome: OutcomeRefused, Overflow: true, Via: ViaOverflow, Guarded: true, Final: true, K: len(f.Argv)}
 	}
 	if !res.Guarded {
-		res.Final = f.ArgvComplete || ix.dispatchSettled(invs)
+		res.Final = f.ArgvComplete || ix.dispatchSettled(invs) && ix.denySettled(mc)
 		return res
 	}
 	var allowed *Result
@@ -430,10 +466,10 @@ func (ix *Index) Decide(f *Facts) Result {
 	}
 	if allowed != nil {
 		allowed.Guarded, allowed.K = true, len(f.Argv)
-		allowed.Final = f.ArgvComplete || ix.settled(invs, allowed)
+		allowed.Final = f.ArgvComplete || ix.settled(invs, allowed) && ix.denySettled(mc)
 		return *allowed
 	}
-	res.Final = f.ArgvComplete || ix.settled(invs, nil)
+	res.Final = f.ArgvComplete || ix.settled(invs, nil) && ix.denySettled(mc)
 	return res
 }
 

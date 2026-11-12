@@ -225,7 +225,7 @@ func (f *signalFold) take(e *Event) {
 			return
 		}
 		name, dst := splitNet(e.Target)
-		if dst == "" || dst == "unspec" || dst == "netlink" {
+		if dst == "" || syslookup.NoPlace(dst, e.Rule) { // the receipt's routine sockets: no destination
 			return
 		}
 		d := f.dest(e, dst, name)
@@ -337,7 +337,7 @@ func (f *signalFold) refused(e *Event) {
 	og.Count++
 	switch g.Class {
 	case "net":
-		if e.Target != "" && e.Target != "unspec" && e.Target != "netlink" {
+		if e.Target != "" && !syslookup.NoPlace(e.Target, e.Rule) {
 			d := f.dest(e, e.Target, "")
 			d.Refused++
 			d.groups[gi] = true

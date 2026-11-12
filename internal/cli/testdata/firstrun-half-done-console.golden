@@ -1,0 +1,21 @@
+--- tego setup: stdout
+Tego on this machine, step by step:
+  [x] 1 Install             tego v0.0.0-fixture (commit f1x7ure)
+  [!] 2 Check this machine  tego starts no run from a shell outside your user manager's cgroup, not even tego watch, checked 2026-11-11 09:30 UTC; a shell inside it can start one
+  [x] 3 Find your agents    you recorded python3 bot.py --loop
+  [x] 4 Record one run      run b883rx recorded python3 bot.py --loop and ended
+  [ ] 5 Make its contract   no contract in the registries
+  [ ] 6 Enforce it          no run under a contract has ended
+Not known:
+  - agents Tego never recorded: nothing here looks for them yet
+  - a contract in no registry (a file given by its path) that no run used
+--- tego setup: stderr
+
+next: open a shell in your user manager's cgroup, then run tego setup there:
+  systemd-run --user --scope bash
+--- tego doctor: stderr after its table
+
+Not ready: this shell is outside your user manager's cgroup, so tego starts no run from it, not even tego watch.
+
+next: open a shell in your user manager's cgroup, then run tego setup there:
+  systemd-run --user --scope bash

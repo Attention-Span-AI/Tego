@@ -93,10 +93,12 @@ var funcs = template.FuncMap{
 		}
 		return out
 	},
-	"ruleName": ruleName,
-	"lower":    strings.ToLower,
-	"baseName": path.Base,
-	"fileKind": fileKind,
+	"ruleName":  ruleName,
+	"stepWord":  stepWord,
+	"stepBadge": stepBadge,
+	"lower":     strings.ToLower,
+	"baseName":  path.Base,
+	"fileKind":  fileKind,
 	// dtab is a detections table's rows and the time they are read at (for "Yesterday 20:58").
 	"dtab": func(rows []detection, now time.Time) any {
 		return struct {
@@ -171,13 +173,15 @@ var funcs = template.FuncMap{
 		return "i-eye"
 	},
 	"reasonText": reasonText,
-	"foldKey":    foldKey,
-	"dict2":      func(runs []*ledgerview.Run, now time.Time) runTable { return runTable{Runs: runs, Now: now} },
-	"pathEsc":    url.PathEscape,
-	"queryEsc":   url.QueryEscape,
-	"acts":       rowActsOf,
-	"answerChip": answerChip,
-	"tl":         tlOf,
+	// noneRefused is the receipt's sentence for run r when it refused nothing recorded (the Refusals tab's empty state).
+	"noneRefused": func(r *ledgerview.Run) string { return ledgerview.ReceiptRefusedWords(0, r.ReceiptReadsUnrecorded) },
+	"foldKey":     foldKey,
+	"dict2":       func(runs []*ledgerview.Run, now time.Time) runTable { return runTable{Runs: runs, Now: now} },
+	"pathEsc":     url.PathEscape,
+	"queryEsc":    url.QueryEscape,
+	"acts":        rowActsOf,
+	"answerChip":  answerChip,
+	"tl":          tlOf,
 	"askForm": func(a ledgerview.Ask, csrf string) map[string]any {
 		// A stand-in file answers only a held file open (op read under fs.ask_read, or open): ADR 0057. A held read's
 		// ask line may follow no verdict line, so its card can carry the hold (open) and no op.
@@ -378,21 +382,21 @@ func tierWord(t string) string {
 func reasonText(code string) string {
 	switch code {
 	case "write-outside-contract":
-		return "Write outside policy"
+		return "Write outside contract"
 	case "delete-outside-contract", "rename-outside-contract", "mkdir-outside-contract":
-		return "Change outside policy"
+		return "Change outside contract"
 	case "read-denied":
-		return "Read blocked"
+		return "Read refused"
 	case "path-unresolved":
 		return "Unresolved path"
 	case "exec-not-allowed":
-		return "Program blocked"
+		return "Program refused"
 	case "net-not-allowed":
-		return "Connection blocked"
+		return "Connection refused"
 	case "net-http":
-		return "Request blocked"
+		return "Request refused"
 	case "fs-gate", "exec-gate", "net-gate":
-		return "Blocked by a gate"
+		return "Refused by a gate"
 	case "ask-denied":
 		return "Denied"
 	case "ask-timeout":
@@ -402,7 +406,7 @@ func reasonText(code string) string {
 	case "landlock-topology":
 		// A mount, a new namespace or a nested sandbox (SEMANTICS §10), or a signal, limit or priority change aimed at
 		// a process outside the run (rules signal-scope, process-scope).
-		return "Sandbox boundary"
+		return "Run boundary"
 	case "limit-tokens", "limit-cost", "limit-wall", "limit-stall", "limit-repeats":
 		return "A run limit was reached"
 	case "oom":
@@ -416,7 +420,7 @@ func reasonText(code string) string {
 	case "credential-unavailable":
 		return "Key unavailable"
 	case "mcp-tool-denied":
-		return "MCP tool blocked"
+		return "MCP tool refused"
 	case "model-route-changed":
 		return "Route changed while held"
 	case "":
@@ -582,6 +586,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		s.rulesChange(w, r)
 	case p == "/rules/new":
 		s.rulesNew(w, r)
+	case p == "/contracts" || strings.HasPrefix(p, "/contracts/"):
+		s.contractsAlias(w, r)
 	case p == "/rule":
 		s.rulePage(w, r)
 	case p == "/compare":
@@ -593,6 +599,26 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, http.StatusNotFound, "Not found", "There is no page at this address.")
 		}
 	}
+}
+
+// contractsAlias answers GET /contracts, /contracts/new and /contracts/change (with its /preview and /saved) with 303
+// to the same page under /rules, the query kept. The pages are named Contracts since the dashboard took the command
+// line's word (docs/DASHBOARD.md, Contract and refused); their addresses stay /rules, where every link, bookmark, form, live region and printed
+// line already points, and no address ever said policy. The alias only lets the page's name be typed. It is not
+// cached (Cache-Control no-store, as every page), so the canonical address can still change later. Any other path
+// under /contracts is the 404 page.
+func (s *Server) contractsAlias(w http.ResponseWriter, r *http.Request) {
+	dst := "/rules" + strings.TrimPrefix(r.URL.Path, "/contracts")
+	switch dst {
+	case "/rules", "/rules/new", "/rules/change", "/rules/change/preview", "/rules/change/saved":
+	default:
+		s.fail(w, http.StatusNotFound, "Not found", "There is no page at this address.")
+		return
+	}
+	if r.URL.RawQuery != "" {
+		dst += "?" + r.URL.RawQuery
+	}
+	http.Redirect(w, r, dst, http.StatusSeeOther)
 }
 
 func (s *Server) load(w http.ResponseWriter) (*ledgerview.Snapshot, bool) {
@@ -652,6 +678,9 @@ type overviewData struct {
 	// Grid is the detections counted by severity and channel; Top the newest High and Medium ones (detections.go).
 	Grid sevGrid
 	Top  []detection
+	// Guide is the machine's setup steps and the one next step, as tego setup tells them (setupguide.go); nil when the
+	// server has none.
+	Guide *setupGuide
 }
 
 // sevGrid is the Overview's figure: blocked actions that are not routine, by severity (rows) and channel (columns).
@@ -722,6 +751,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	d.Chain, d.MaxChain = ledgerview.VerifySnapshot(r.Context(), snap, s.cfg.Anchor), ledgerview.MaxChainRuns
+	d.Guide = s.setupGuide(r.Context(), snap)
 	c := s.chromeOf(snap, "Overview", "overview")
 	if c.Live {
 		c.Refresh = 5
@@ -860,6 +890,10 @@ type runData struct {
 	Withheld []string
 	// Adjustable is a run whose run_start says live_mode adjustable (ADR 0125): its head shows the mode's chip.
 	Adjustable bool
+	// CanSetUp is a dashboard with the rule service's New contract (Config.Setup), for a run that has ended: the head's
+	// "Make a contract" and the Tighten tab's "Make a contract from this run" then open it with the run chosen, which
+	// saves the proposal as tego learn --save does.
+	CanSetUp bool
 }
 
 type kindCount struct {
@@ -895,6 +929,9 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	d := runData{Run: run, Tab: tab, Now: s.cfg.Now(), Refusals: ledgerview.RunRefusals(run), Verdict: r.URL.Query().Get("verdict"),
 		Chain: ledgerview.VerifyRun(r.Context(), s.cfg.Ledger, id, s.cfg.Anchor, run)}
+	// Every tab's head links "Make a contract" straight to New contract from this run where it is served (acceptance B,
+	// 2026-11-11); the Tighten tab offers it too.
+	d.CanSetUp = s.cfg.Setup != nil && !run.Live
 	d.BlockKinds = liveblock.Kinds
 	if k, err := liveblock.ParseKind(r.URL.Query().Get("block")); err == nil {
 		if v := r.URL.Query().Get("value"); len(v) <= liveblock.MaxValueBytes {
@@ -906,6 +943,7 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 		d.Procs = procsFor(s.cfg.Ledger, run, d.Now)
 	case "receipt":
 		d.Receipt = loadReceipt(r.Context(), s.cfg.Ledger, id)
+		d.Receipt.Gap = readGap(run)
 	case "least-privilege":
 		d.Learn = rulesview.Learn(r.Context(), s.cfg.Ledger, s.cfg.Anchor, id)
 		if run.Tier != "observe" {
@@ -1271,9 +1309,14 @@ func (s *Server) labelRows(rows []ledgerview.Row) {
 	}
 }
 
-// ruleLabel is the rule an event shows: for a decision the contract's default made ("unmatched"), the exact list it
-// fell outside of, read from the run's contract copy; otherwise the rule key in words (ruleName).
+// ruleLabel is the rule an event shows: tego's built-in refusal of setsockopt(TCP_ULP) as the receipt names it
+// (ledgerview.BuiltInRefusal, the receipt's rule: "built in: kernel TLS", which no list of the contract could allow); for another decision
+// the contract's default made ("unmatched"), the exact list it fell outside of, read from the run's contract copy;
+// otherwise the rule key in words (ruleName).
 func ruleLabel(e ledgerview.Event, l rulesview.Lists) string {
+	if kind := ledgerview.BuiltInRefusal(e); kind != "" {
+		return kind
+	}
 	if e.Rule == "unmatched" {
 		if x := l.Explain(e.Kind, e.Op, e.Verdict); x != "" {
 			return x

@@ -322,3 +322,20 @@ func TestFixturesHaveNoHomeOfTheirAuthor(t *testing.T) {
 		}
 	}
 }
+
+// TestTheHeaderSaysContract: the header every saved contract carries, from tego learn and the dashboard's preview
+// alike, uses the product's word: contract, never policy (acceptance B, 2026-11-11). A path that holds the word
+// (/etc/crypto-policies) is a fact and may stay.
+func TestTheHeaderSaysContract(t *testing.T) {
+	for _, fx := range []string{claudeFixture, codexFixture} {
+		c := fixtureProposal(t, fx, Options{StateDirs: stateDirs}).Contract()
+		for _, line := range strings.Split(c, "\n") {
+			if strings.HasPrefix(line, "#") && strings.Contains(strings.ToLower(line), "a policy") {
+				t.Errorf("%s: the header says policy: %q", fx, line)
+			}
+		}
+		if !strings.Contains(c, "not a contract to use unread") {
+			t.Errorf("%s: the header does not say what the file is", fx)
+		}
+	}
+}

@@ -51,6 +51,8 @@ type Stage struct {
 	Image string
 	ID    ID
 	HasID bool
+	// Links is the walked interpreter's link count, read as Facts.Links is; 0 when unknown.
+	Links uint64
 }
 
 // hasArg reports whether binfmt_script gives the interpreter an argument element for this stage.
@@ -70,6 +72,9 @@ type Facts struct {
 	// ID is the image's identity when HasID.
 	ID    ID
 	HasID bool
+	// Links is the image's link count (st_nlink), read by the same fstat of the walk's own descriptor that gave ID; 0
+	// when unknown (compile --test and the gate stat no file). More than one marks a multicall image (multicall.go).
+	Links uint64
 	// Form is how the kernel runs the image; Interp is a script's #! chain.
 	Form   Form
 	Interp []Stage
@@ -96,7 +101,8 @@ const (
 	ViaIdentity
 	// ViaDashed is a <tool>-<sub> name.
 	ViaDashed
-	// ViaMulticall is a multicall binary's applet in argv[1].
+	// ViaMulticall is a multicall binary's applet: in argv[1], or (for deny and ask entries, on a multicall image) the
+	// one uutils picks by a name that ends with it (multicall.go).
 	ViaMulticall
 	// ViaInterpreter is an interpreter's module or script operand.
 	ViaInterpreter
@@ -206,44 +212,26 @@ func (ix *Index) Interpretations(f *Facts) []Invocation {
 			ix.addInvokedAs(&b, row, argv0, argv1)
 		}
 	}
-	if f.Form == FormScript && len(f.Interp) > 0 {
-		script := f.Path
-		if script == "" {
-			script = f.Requested
-		}
-		chain := []string{script}
-		for _, st := range f.Interp {
-			b.nodeVersion = st.NodeVersion
-			b.scanArgv0 = st.Path
-			toks := make([]string, 0, len(chain)+1+len(argv1))
-			if st.hasArg() {
-				toks = append(toks, st.Arg)
-			}
-			toks = append(toks, chain...)
-			toks = append(toks, argv1...)
-			// binfmt_script runs the interpreter with argv[0] the #! line's path: read it by that name, by the
-			// walked image's name and by its identity, as a direct image is read.
-			name := base(st.Path)
-			ix.addName(&b, name, ViaShebang, name, toks)
-			ix.addName(&b, st.Image, ViaShebang, name, toks)
-			if st.HasID {
-				if tool, ok := ix.ids[st.ID]; ok {
-					row := ix.rows.Lookup(tool)
-					stoks := toks
-					if row != nil {
-						stoks = ix.dispatchArgv0(row, name, toks)
-					}
-					b.add(tool, row, ViaShebang, stoks)
-					ix.addInvokedAs(&b, row, name, toks)
+	f.eachStage(argv1, func(st Stage, toks []string) {
+		b.nodeVersion = st.NodeVersion
+		b.scanArgv0 = st.Path
+		// binfmt_script runs the interpreter with argv[0] the #! line's path: read it by that name, by the
+		// walked image's name and by its identity, as a direct image is read.
+		name := base(st.Path)
+		ix.addName(&b, name, ViaShebang, name, toks)
+		ix.addName(&b, st.Image, ViaShebang, name, toks)
+		if st.HasID {
+			if tool, ok := ix.ids[st.ID]; ok {
+				row := ix.rows.Lookup(tool)
+				stoks := toks
+				if row != nil {
+					stoks = ix.dispatchArgv0(row, name, toks)
 				}
+				b.add(tool, row, ViaShebang, stoks)
+				ix.addInvokedAs(&b, row, name, toks)
 			}
-			next := []string{st.Path}
-			if st.hasArg() {
-				next = append(next, st.Arg)
-			}
-			chain = append(next, chain...)
 		}
-	}
+	})
 	// The program a directly-invoked loader runs is read as a direct image is, with the argv the loader gives it: no
 	// execve of its own follows (ADR 0048 (2)).
 	if f.Loaded != nil {
@@ -261,6 +249,12 @@ func (ix *Index) Interpretations(f *Facts) []Invocation {
 			b.add(inv.Tool, inv.Row, ViaLoader, inv.Tokens)
 		}
 	}
+	return ix.resolve(&b)
+}
+
+// resolve finishes a builder's interpretations: multicall and interpreter dispatch over them, the overflow sentinel,
+// and the readings of every ruled tool's invocation.
+func (ix *Index) resolve(b *builder) []Invocation {
 	// Multicall and interpreter dispatch, over what is found so far and what they add, to a bounded depth. A
 	// dispatcher the bounds stop this from fully resolving (a multicall binary that re-dispatches to itself, such
 	// as busybox's own `busybox` applet, nested past maxDispatch; or a fan-out that reaches maxInterpretations) could
@@ -295,7 +289,7 @@ func (ix *Index) Interpretations(f *Facts) []Invocation {
 				}
 			}
 		case inv.Row.Interp != nil:
-			ix.dispatchInterp(&b, inv)
+			ix.dispatchInterp(b, inv)
 		}
 		for j := n; j < len(b.out); j++ {
 			depth[j] = depth[i] + 1
@@ -312,6 +306,34 @@ func (ix *Index) Interpretations(f *Facts) []Invocation {
 		}
 	}
 	return b.out
+}
+
+// eachStage calls fn for each stage of a script's #! chain with the tokens binfmt_script gives its interpreter after
+// argv[0]: the line's argument when it has one, the chain of scripts it runs, then the exec's argv[1:]. A direct
+// image has no stage.
+func (f *Facts) eachStage(argv1 []string, fn func(st Stage, toks []string)) {
+	if f.Form != FormScript || len(f.Interp) == 0 {
+		return
+	}
+	script := f.Path
+	if script == "" {
+		script = f.Requested
+	}
+	chain := []string{script}
+	for _, st := range f.Interp {
+		toks := make([]string, 0, len(chain)+1+len(argv1))
+		if st.hasArg() {
+			toks = append(toks, st.Arg)
+		}
+		toks = append(toks, chain...)
+		toks = append(toks, argv1...)
+		fn(st, toks)
+		next := []string{st.Path}
+		if st.hasArg() {
+			next = append(next, st.Arg)
+		}
+		chain = append(next, chain...)
+	}
 }
 
 // addName adds the invocations one name yields (ADR 0048 (2)): the tool or row it names, read under argv0, a row

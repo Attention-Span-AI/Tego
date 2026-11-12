@@ -14,8 +14,10 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/attention-span-ai/tego/internal/rulefile"
+	"github.com/attention-span-ai/tego/internal/testutil/ledgertest"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // newProject makes an empty project folder beside the fixture's.
@@ -399,6 +401,33 @@ func TestNewFromRun(t *testing.T) {
 	}
 	if p, _ := f.s.PlanNew(context.Background(), NewReq{Dir: dir, FromRun: "r-zzzz-9999-none"}); len(p.Problems) == 0 {
 		t.Fatal("a missing run drafted something")
+	}
+}
+
+// TestNewFromRunSaysAddressesMayChange: a watched run's record holds addresses, not names, so the plan drafted from it
+// allows addresses, and its preview, which reads only the entries ("Can connect to 104.20.23.154 on port 443"), must
+// say what tego learn says: a later run can be refused, and how to allow the name instead (2026-11-10, Ubuntu guest).
+func TestNewFromRunSaysAddressesMayChange(t *testing.T) {
+	f := newFixture(t)
+	const run = "r-aaaaaaaa-0000000000001-learnx"
+	f.writeRun(t, run, "", 9, ledgertest.Event(t, record.KindNet, record.NetPayload{Proto: "tcp", Dst: "104.20.23.154:443"},
+		func(e *record.Event) {
+			e.Rule, e.Verdict, e.Authority = "unmatched", record.VerdictObserved, record.AuthorityRule
+			e.Attr = &record.Attribution{Confidence: "unattributed", Method: "none"}
+		}))
+	p, err := f.s.PlanNew(context.Background(), NewReq{Dir: f.newProject(t, "addr"), Name: "learned", FromRun: run})
+	if err != nil || len(p.Problems) > 0 {
+		t.Fatalf("plan = %+v, %v\n%s", p, err, p.Text)
+	}
+	if !strings.Contains(string(p.Text), `- "tcp://104.20.23.154:443"`) {
+		t.Fatalf("the draft does not allow the address:\n%s", p.Text)
+	}
+	var said bool
+	for _, n := range p.Notes {
+		said = said || strings.Contains(n, "net.allow has entries that are addresses, not host names") && strings.Contains(n, "can be refused a connection this run made")
+	}
+	if !said {
+		t.Errorf("the plan's notes do not say the addresses may change: %q", p.Notes)
 	}
 }
 

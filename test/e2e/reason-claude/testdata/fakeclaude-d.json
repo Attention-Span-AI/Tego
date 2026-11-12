@@ -2,5 +2,6 @@
  {"calls": [{"write": "@W@/work/warmup.txt", "content": "warm-up\n"}]},
  {"calls": [{"write": "@OUT@/leak.txt", "content": "written outside the workspace\n"},
             {"bash": "git push origin main; echo \"git exit=$?\"", "description": "Push the work to origin"}]},
- {"calls": [{"write": "@W@/work/after.txt", "content": "after\n"}]}
+ {"calls": [{"bash": "sleep 1; echo settled", "description": "Wait a second"},
+            {"write": "@W@/work/after.txt", "content": "after\n"}]}
 ]}

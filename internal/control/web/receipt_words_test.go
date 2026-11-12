@@ -129,7 +129,7 @@ func TestWatchedLeakRowsStandOut(t *testing.T) {
 	}
 	// The enforced run marks nothing, and its timeline keeps "Blocked only".
 	guard := get(t, s, c, "/runs/"+markGuardRun)
-	if strings.Contains(guard, "mk-leak") || !strings.Contains(guard, ">Blocked only<") {
+	if strings.Contains(guard, "mk-leak") || !strings.Contains(guard, ">Refused only<") {
 		t.Error("the enforced run's timeline is marked, or lost Blocked only")
 	}
 }
@@ -255,7 +255,7 @@ func TestCompareHeadline(t *testing.T) {
 	ce := login(t, empty)
 	none := get(t, empty, ce, "/compare")
 	if !strings.Contains(none, "Compare needs two runs") || !strings.Contains(none, "tego watch -- &lt;agent&gt;") ||
-		!strings.Contains(none, "tego run &lt;policy.yaml&gt; -- &lt;agent&gt;") || strings.Contains(none, `class="cmp-form"`) {
+		!strings.Contains(none, "tego run &lt;contract.yaml&gt; -- &lt;agent&gt;") || strings.Contains(none, `class="cmp-form"`) {
 		t.Error("an empty Compare does not say how to make two runs, or still shows the pickers")
 	}
 }

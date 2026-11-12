@@ -15,13 +15,16 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// unshareProbe tries to enter a new user and mount namespace, and writes "ok" or the errno's name.
-const unshareProbe = `import errno, os, sys
-try:
-    os.unshare(os.CLONE_NEWUSER | os.CLONE_NEWNS)
+// unshareProbe tries to enter a new user and mount namespace, and writes "ok" or the errno's name. It calls unshare(2)
+// through libc: os.unshare is Python 3.12's, and RHEL 9's python3 is 3.9 (AttributeError, so the probe wrote nothing).
+const unshareProbe = `import ctypes, errno, sys
+CLONE_NEWNS, CLONE_NEWUSER = 0x00020000, 0x10000000
+libc = ctypes.CDLL(None, use_errno=True)
+if libc.unshare(CLONE_NEWUSER | CLONE_NEWNS) == 0:
     r = "ok"
-except OSError as e:
-    r = errno.errorcode.get(e.errno, str(e.errno))
+else:
+    e = ctypes.get_errno()
+    r = errno.errorcode.get(e, str(e))
 open(sys.argv[1], "w").write(r)
 `
 

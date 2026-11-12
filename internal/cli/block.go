@@ -331,6 +331,10 @@ func liveCode(err error) string {
 		return codeOutsideFence
 	case errors.Is(err, liveblock.ErrNoKey):
 		return codeNoKey
+	case errors.Is(err, liveblock.ErrStarting):
+		return codeStarting
+	case errors.Is(err, liveblock.ErrStartUnreadable):
+		return codeStartUnreadable
 	}
 	return codeIO
 }
@@ -339,7 +343,7 @@ func liveCode(err error) string {
 // liveblock.CheckBlock and liveblock.CheckFence decide on, as runact's own does for the dashboard.
 func liveTarget(run string, held bool, f livestatus.Facts) liveblock.Target {
 	return liveblock.Target{Run: run, Running: held, Timed: f.Timed, NarrowKinds: f.NarrowKinds(), ReadsSeen: f.ReadsSeen,
-		Adjustable: f.Adjustable}
+		Adjustable: f.Adjustable, Starting: !f.Started, StartUnreadable: f.StartUnreadable}
 }
 
 // execReach is liveblock.ReachOf, what an exec block's value reaches on this machine; tests replace it.
@@ -352,7 +356,7 @@ func execWords(run, value string, r liveblock.ExecReach) string {
 	v, name := record.Printable(value), record.Printable(filepath.Base(value))
 	bare := ""
 	if cmd := blockCommand(run, liveblock.KindExec, filepath.Base(value)); cmd != "" {
-		bare = " A bare name is matched by name only: " + cmd
+		bare = " To refuse " + name + " alone, block it by name, which is matched by name only: " + cmd
 	}
 	switch {
 	case r.Missing && filepath.IsAbs(value):
@@ -365,8 +369,16 @@ func execWords(run, value string, r liveblock.ExecReach) string {
 		if r.File != value {
 			what = v + " leads to " + record.Printable(r.File) + ","
 		}
+		also := ""
+		if others := liveblock.OtherNames(r.File, 5); len(others) > 0 {
+			also = " It refuses " + record.Printable(strings.Join(others, ", "))
+			if uint64(len(others))+1 < r.Names {
+				also += " and the rest"
+			}
+			also += " too."
+		}
 		return fmt.Sprintf("Note: %s one file with %d names here (a multi-call program, as coreutils and busybox are); the "+
-			"block matches the file, so it refuses every one of those names, not %s alone.", what, r.Names, name) + bare
+			"block matches the file, so it refuses every one of those names, not %s alone.", what, r.Names, name) + also + bare
 	case r.Renamed:
 		return fmt.Sprintf("Note: %s leads to %s; the block matches that file, so it refuses it under every name that leads "+
 			"there, not %s alone.", v, record.Printable(r.File), name) + bare
@@ -554,11 +566,16 @@ func startFacts(dir string) livestatus.Facts {
 // liveFacts reads the run's ledger in dir for what livestatus needs: run_start's facts (watched or not, reads seen or
 // not) and, with confirmed, the highest overlay serial a launcher's gap line live-block-added or live-block-removed
 // carries. Only lines naming a live block are decoded past the first. A ledger that cannot be read gives no facts and
-// nothing confirmed, which every view reads as "waiting".
+// nothing confirmed, which every view reads as "waiting"; the facts say StartUnreadable unless that is only because
+// no first line is there yet (no events file, an empty one, or a first line still being written), which is a run
+// still starting (livestatus.Facts.StartUnreadable, the review's S1).
 func liveFacts(dir string, confirmed bool) (livestatus.Facts, uint64) {
 	rd, err := ledger.OpenReader(dir)
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
 		return livestatus.Facts{}, 0
+	}
+	if err != nil {
+		return livestatus.Facts{StartUnreadable: true}, 0
 	}
 	defer func() { _ = rd.Close() }() // read-only
 	var f livestatus.Facts
@@ -566,12 +583,14 @@ func liveFacts(dir string, confirmed bool) (livestatus.Facts, uint64) {
 	first := true
 	for line, err := range rd.Lines() {
 		if err != nil {
+			f.StartUnreadable = first || f.StartUnreadable
 			break
 		}
 		if first {
 			first = false
 			e, err := record.Decode(line)
 			if err != nil || e.Kind != record.KindRunStart {
+				f.StartUnreadable = true
 				break
 			}
 			f = livestatus.FromStartJSON(e.Payload)

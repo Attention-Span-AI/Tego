@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/doctor"
+	"github.com/attention-span-ai/tego/internal/guide"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/internal/runtime/capture/uprobe"
+	rtcgroup "github.com/attention-span-ai/tego/internal/runtime/cgroup"
 	cgroupenforce "github.com/attention-span-ai/tego/internal/runtime/enforce/cgroup"
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 	"github.com/attention-span-ai/tego/pkg/spec/config"
@@ -36,6 +38,9 @@ type doctorReport struct {
 	Rings *cgroupenforce.RingUse `json:"rings,omitempty"`
 	// Dashboard is whether the kernel can tell which run a dashboard connection comes from (doctordashboard.go).
 	Dashboard dashboardCheck `json:"dashboard"`
+	// Multicall is the file ls leads to when it is a possible multi-call program (doctormulticall.go); absent when it
+	// has one link and another name, or no ls is on PATH.
+	Multicall *multicallCheck `json:"multicall,omitempty"`
 }
 
 func init() { register(cmdDoctor) }
@@ -44,8 +49,8 @@ func init() { register(cmdDoctor) }
 // and R27's nine probes, a summary line (the tier and what each tier above it needs), the capability
 // matrix with this machine's values, the highest reachable tier, what the next tier is missing and the
 // one-line fix, then whether the dashboard can tell which run a connection comes from
-// (doctordashboard.go, never the exit). Exit 0 when a tier runs, 211 when --require named a tier this
-// machine cannot reach (R25).
+// (doctordashboard.go, never the exit). After it, on stderr, the Ready or Not ready line and the next step
+// (writeDoctorVerdict). Exit 0 when a tier runs, 211 when --require named a tier this machine cannot reach (R25).
 func cmdDoctor() Command {
 	var asJSON bool
 	var require string
@@ -96,12 +101,16 @@ func runDoctor(ctx context.Context, asJSON bool, require string, stdout, stderr 
 	builds := listBuilds(stderr, m)
 	rings := ringUse(builds, m)
 	dash := checkDashboard()
+	mc := checkMulticall()
 	if asJSON {
 		err = writeJSON(stdout, doctorReport{Version: buildInfo(debug.ReadBuildInfo), Report: rep, Ledger: lc, Builds: builds,
-			Rings: rings, Dashboard: dash})
+			Rings: rings, Dashboard: dash, Multicall: mc})
 	} else {
 		if _, err = fmt.Fprintln(stdout, buildInfo(debug.ReadBuildInfo).Line()); err == nil {
 			err = rep.WriteText(stdout)
+		}
+		if err == nil {
+			err = writeMulticallCheck(stdout, mc)
 		}
 		if err == nil {
 			err = writeDashboardCheck(stdout, dash)
@@ -117,8 +126,81 @@ func runDoctor(ctx context.Context, asJSON bool, require string, stdout, stderr 
 		message(stderr, "", 0, 0, "tego doctor: "+err.Error(), codeIO)
 		return identity.ExitError // R25: Tego's own error
 	}
+	if !asJSON {
+		writeDoctorVerdict(stderr, rep)
+	}
 	return rep.ExitCode()
 }
+
+// writeDoctorVerdict is what doctor says on stderr after its report, when the guidance lines are on: the Ready or
+// Not ready line (doctor.Report.Verdict), then the next step. A fresh guest's answer was on line 12 of 52 and nothing
+// said what to type next; the stdout report stays byte for byte as scripts read it. Ready leads to tego test (as root
+// for a root report, whose tier is a root run's). Not ready only because this shell is outside the user manager's
+// cgroup leads to the shell that is inside it (outsideHint). Otherwise not ready leads to what doctor printed to fix
+// it, then the check again, never by the command that printed it: acceptance B (2026-11-11) found doctor's next:
+// line was tego doctor itself, which printed the same answer again. The check again is tego setup, which runs the
+// same probes from here and stores them; a root tier --require'd without root is checked by sudo doctor --require;
+// a root report has no command of its own, and its sentence says to run the check again. A fix is a sentence, not
+// always a command, so the hint points at it rather than copying it.
+func writeDoctorVerdict(stderr io.Writer, rep *doctor.Report) {
+	if !hintsOn(stderr) {
+		return
+	}
+	line, fix := rep.Verdict()
+	_, _ = io.WriteString(stderr, "\n"+line+"\n")
+	text, command := "see Tego refuse four harmless actions on decoy files:", "tego test"
+	if rep.Root {
+		command = sudoTego("test")
+	}
+	if rep.ExitCode() != identity.ExitOK {
+		if rep.OutsideUserManager && (rep.Require == "" || rep.Require == backend.TierLandlock) {
+			outsideHint(stderr, "run tego setup there")
+			return
+		}
+		if rep.NoUserManager && (rep.Require == "" || rep.Require == backend.TierLandlock) {
+			// The fix: line names this command too; the block names it so the next step is never tego setup, which
+			// would name tego doctor again before anything changed (acceptance 2B, 2026-11-11).
+			uid, _ := config.InvokingUID()
+			if managerRefused(uid) != "" {
+				// systemd starts no user manager for this account's name, linger or not (acceptance 3, 2026-11-11): the
+				// fix: line says what to do, and no command would change anything.
+				_, _ = io.WriteString(stderr, hintBlock("systemd runs no user manager for this account's name; see the fix: line.", ""))
+				return
+			}
+			_, _ = io.WriteString(stderr, hintBlock(guide.NoManagerText, lingerCommand(uid)))
+			return
+		}
+		command = "tego setup"
+		switch {
+		case rep.Root:
+			command = ""
+		case rep.Require == backend.TierCgroup || rep.Require == backend.TierBPFLSM:
+			command = sudoTego("doctor --require " + string(rep.Require))
+		}
+		switch {
+		case rep.Fix != "":
+			text = "do what the fix: line above says, then check again:"
+		case fix != "":
+			text = "do what the failing check above says, then check again:"
+		default:
+			text, command = `the "missing for" lines above say what this machine lacks.`, ""
+		}
+		if command == "" && strings.HasSuffix(text, ", then check again:") {
+			text = strings.TrimSuffix(text, ", then check again:") + ", then run this check again."
+		}
+	}
+	_, _ = io.WriteString(stderr, hintBlock(text, command))
+}
+
+// lingerCommand is cgroup.LingerCommand; a variable so a test names its user.
+var lingerCommand = rtcgroup.LingerCommand
+
+// managerRefused is cgroup.ManagerRefused; a variable so a test names its user.
+var managerRefused = rtcgroup.ManagerRefused
+
+// sudoTego is a root command as a hint writes it: sudo resets PATH to its secure_path, which leaves out ~/.local/bin,
+// where the installer puts tego, so `sudo tego` is "command not found" on Ubuntu and Fedora (FIRST-TEN 5).
+func sudoTego(args string) string { return `sudo "$(command -v tego)" ` + args }
 
 // checkLedger is the ledger half of doctor: the runs in the ledger root no sweep on this host finishes. It reads
 // and writes nothing when the root cannot be resolved, and a check that fails is a warning, never doctor's exit.

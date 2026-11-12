@@ -34,7 +34,7 @@ func TestPayloadJSONNamesFrozen(t *testing.T) {
 		payload any
 		keys    string
 	}{
-		{RunStartPayload{}, "launcher_pid launcher_start_ns tego_version commit bpf_hash tier capture net_assurance net_guarantees kernel contract_hash parsers stop_grace command command_blob cwd limits capabilities stdio run_command_grant record_minor decision_plane best_effort ask_read_relaxes runtime_grants contract_source harness profiles host_sockets launcher_uid launcher_user sudo_uid sudo_user host parent_run labels role contract_revision fs_reads deployment secrets vault shares reads_notified live_mode live_fence"},
+		{RunStartPayload{}, "launcher_pid launcher_start_ns tego_version commit bpf_hash tier capture net_assurance net_guarantees kernel contract_hash parsers stop_grace command command_blob cwd limits capabilities stdio run_command_grant record_minor decision_plane best_effort ask_read_relaxes runtime_grants contract_source harness profiles host_sockets launcher_uid launcher_user sudo_uid sudo_user host parent_run labels role contract_revision fs_reads deployment secrets vault shares reads_notified live_mode live_fence deny_read_frozen"},
 		{DeploymentChange{}, "from_revision class"},
 		{SecretUse{}, "name version deliver env exposure"},
 		{VaultUse{}, "peer memory"},
@@ -282,7 +282,7 @@ func TestRecordMinorsHaveNoGap(t *testing.T) {
 	if minorIs != byValue[written] || Minor != written {
 		t.Fatalf("Minor = %s (%d), want the highest constant not declared ahead, %s (%d)", minorIs, Minor, byValue[written], written)
 	}
-	if highest > written && highest != 34 {
+	if highest > written && highest != 35 {
 		t.Fatalf("the highest constant is %d, above every reserved revision", highest)
 	}
 }

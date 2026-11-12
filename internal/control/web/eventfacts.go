@@ -254,7 +254,7 @@ func stepOf(p ledgerview.ProcRef, self bool) procStep {
 func decisionWords(e *ledgerview.Event) (verdict, by string) {
 	switch {
 	case e.Refused():
-		verdict = "Blocked"
+		verdict = "Refused"
 	case e.Verdict != "":
 		w, ok := linewords.Verdict(e.Verdict)
 		if !ok {
