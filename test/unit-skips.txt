@@ -78,6 +78,7 @@ internal/runtime/supervisor TestAnUnfollowedFinalDotIsWherePathLookupLands/lchow
 internal/control/ledgerview TestQueryBudget # opt-in: measures only a ledger directory named in TEGO_LOGS_BENCH_LEDGER (a 350,000-line copy no runner holds)
 internal/control/ledgerview TestProcessTreeBudget # opt-in: measures only a ledger directory named in TEGO_LOGS_BENCH_LEDGER (a 350,000-line copy no runner holds)
 internal/control/web TestLogsWarmBudget # opt-in: measures only a demo-shaped ledger directory named in TEGO_LOGS_BENCH_DEMO, which no runner holds
+pkg/policy/execmatch/rows TestStagedReadDifferential # opt-in: decides about 6.5 million staged prefixes only when TEGO_STAGED_DIFF is set (ADR 0048, 2026-11-11 amendment); TestPrefixFinalHoldsEveryRow holds the same property in every run
 internal/control/web TestTwinJSWritesOnlyChanges # runs static/twin.js under node; skips where node is not installed
 internal/control/web TestTwinJSQuotesAsGo # runs static/twin.js under node; skips where node is not installed
 internal/control/web TestTwinJSWritesWhatTheFormDoes # runs static/twin.js under node; skips where node is not installed

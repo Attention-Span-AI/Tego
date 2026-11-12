@@ -520,14 +520,16 @@ func (ix *Index) dispatchSettled(invs []Invocation) bool {
 // interpSettled reports whether an interpreter invocation's every reading found its module, script or code, as
 // dispatchInterp reads code (InterpSpec.runsCode): a prefix that ends at node's -p or -e has not read whether code
 // follows. Code with no script yet settles nothing on a row with CodeUnless options, which may still follow it (node
-// reads -i after -e's code, and then runs the script).
+// reads -i after -e's code, and then runs the script). A pending reading settles nothing either (Reading.Pending): a
+// prefix cut at python's -m has not read the module, and sh's -c read before its code still reads options, which can
+// fork the readings past MaxReadings, so that the whole vector is unresolved and refused.
 func (ix *Index) interpSettled(inv *Invocation) bool {
 	spec := inv.Row.Interp
 	if inv.Open && spec.ArgvRewrite != nil {
 		return false // a later token can load code even after the entry script
 	}
 	for _, r := range ix.normalizer(inv.Row).NormalizeOpen(inv.Tokens, inv.Open) {
-		if r.Unlocatable {
+		if r.Unlocatable || r.Pending {
 			return false
 		}
 		if r.Dispatch >= 0 || r.DispatchAfter >= 0 {
@@ -541,7 +543,8 @@ func (ix *Index) interpSettled(inv *Invocation) bool {
 }
 
 // settled reports whether a decision made on an argv prefix cannot change with more of it (ADR 0048 (3), staged
-// reads): dispatch is settled, every ruled reading has located its subcommand path, no deny or ask entry whose path
+// reads): dispatch is settled, every ruled reading has located its subcommand path and is not pending (Reading.Pending:
+// cargo's --config after the subcommand can still make it unlocatable), no deny or ask entry whose path
 // it matches names options or operands that later tokens could supply, and the admitting allow entry (if any) names
 // no options or operands. A generic tool's deny entries can always still match later tokens, and its allow entries
 // are settled once their words are read.
@@ -571,7 +574,7 @@ func (ix *Index) settled(invs []Invocation, allowed *Result) bool {
 		}
 		for j := range inv.Readings {
 			r := &inv.Readings[j]
-			if r.Unlocatable || !r.Located {
+			if r.Unlocatable || !r.Located || r.Pending {
 				return false
 			}
 			for _, ps := range [...][]*Pattern{tr.deny, tr.ask, tr.allow} {

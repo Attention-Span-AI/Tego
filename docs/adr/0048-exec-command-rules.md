@@ -600,6 +600,9 @@ Coverage notes come from the same rows and print on each entry's line (9). Examp
      subcommand path names options or operands, when the gate scores the exec, when a reading is ambiguous past the
      prefix, or for a script form. The supervisor stops as soon as the verdict cannot change. `git push ...` is
      refused on its prefix, and `git add <9k paths>` under `allow: [git add]` is allowed on its prefix.
+     *Amended 2026-11-11 (amendment "A staged prefix is final only when no later token can change a reading", at the
+     end):* also when a reading of the prefix is pending: the prefix ends at an option that waits for its value, or
+     the reading still reads options and a later one could fork it past the readings bound or make it unlocatable.
   3. **Batched.** Pointers are read up to 1024 per call, as one contiguous range. Strings are read with up to 1024
      iovecs per `process_vm_readv` (`IOV_MAX`), each covering up to 256 bytes. A second batch completes the longer
      strings. This replaces one call per string.
@@ -2989,3 +2992,68 @@ about a quarter of the case. The read now reads the word after a last batch that
 (`TestExecCommandReadsAVectorOfExactlyTheBound`: 8191 and 8192 operands decided, 8193 refused), and
 `TestExecCommandCostBudget` checks each case's answer before it measures it. The 8192-argument figures above were taken
 on that refusal; one later unit run read +451 µs of the thread's own time, inside the case's 2 ms Limit.
+
+## Amendment (2026-11-11): a staged prefix is final only when no later token can change a reading
+
+**What was wrong.** (3)'s staged read ends at the first stage (32 elements or 8 KiB) when the decision there is final,
+and a final decision that does not refuse continues the exec. `settled` and `interpSettled`, the two checks of a
+reading's finality, judged a prefix by its located path, its dispatch (module, script or code) and the words of the
+entries. Three ways later tokens change the decision were not read:
+
+1. **An option at the prefix's end that waits for its value.** python's `-m` is a Stop option: cut there, the
+   reading had `DispatchAfter` set and no module, so dispatch read as settled. `python3`, fifteen `-W ignore`
+   pairs, then `-m pip install x` under `deny: [pip install]`: the 32-element prefix ends at `-m`, was final none,
+   and the exec was continued (supervisor unit test with the fake kernel). A bare entry on the module was passed the
+   same way: under `deny: [pip]` the same exec was continued, since python runs pip and only the module after `-m`
+   names it. Under `allow: [pip list]` with python3 granted, the same exec is unlisted and was continued too.
+2. **Options read after an interpreter's code option.** sh's `-c`, perl's and ruby's `-e` settled dispatch as code,
+   but the shell and perl still read options up to the first operand, and each option the row does not list forks
+   the readings. Past `MaxReadings` the whole vector is unlocatable and refused `command-unresolved`, while its
+   prefix was final none. A fuzz found `sh` with argv `["", "+c0", "+0", "+0", "+0", "+0", "+0", ""]`;
+   `TestPrefixCodeBeforeItsEnd` shows the same on bash, dash, zsh, ksh, perl, ruby and `busybox sh -c`. What a real
+   shell would run there is not known; the matcher's own answer for the whole vector is a refusal.
+3. **A rewrite option after the subcommand.** cargo's `--config` and gcloud's `--flags-file` are persistent: they
+   are read after the subcommand too, and make the reading unlocatable (2). A prefix located at a subcommand was
+   final, so `cargo pub`, fifteen `--features f` pairs, then `--config alias.pub=publish` was continued under
+   `deny: [cargo publish]`, and `cargo build`, fifteen `--features f` pairs, then `--config alias.build=publish` was
+   allowed under `allow: [cargo build]`. cargo itself ignores an alias that shadows a built-in command such as
+   `build` (cargo's documentation, read, not run), so the first is the one that runs publish; the matcher refuses
+   both whole vectors, since it does not read which aliases cargo would take.
+
+**Change.** The normalizer marks a reading of a prefix `Pending` (`Reading.Pending`) when the prefix ends at an
+option that takes the next token as its value, or when the reading still reads options (no `--`, no Stop option, no
+operand on a level that does not permute) and a later option could fork it (`undecided`) or make it unlocatable (an
+`Opt.Rewrite` option at its level or persistent above it). `settled` and `interpSettled` treat a pending reading as
+not settled, so the decision is not final and the supervisor reads the rest of argv, within R16's budget as before.
+Nothing loosens: a decision that was not final stays not final, and a whole vector decides as it did.
+
+**Cost.** More execs read their tail: cargo and gcloud until `--`, an interpreter's code option until its first
+operand. Such an exec whose decision then depends on argv past R16's budget (8192 arguments, 128 KiB) is refused
+`args-unreadable`, where before it was decided on its prefix: `cargo build` with more than 8192 elements, `cargo`
+and `build` counted (8191 operands), under `deny: [cargo publish]` is one; with 8192 elements it is decided and
+continued (a supervisor test run for the fix's review with the fake kernel and the real staged reads, not kept).
+
+**Releases.** v0.1.1 has the same `settled`, `interpSettled` and staged read. v0.1.0 has the same `settled` and staged
+read, and its `interpSettled` lacks only the later check for node's `ArgvRewrite`, which this flaw does not touch. The
+new matcher tests and supervisor tests fail on a tree of each tag in the same way (`git archive`; unit tests, not run
+in a guest). The supervisor decides at every tier ((3) P1), so the exec was continued at every tier; this is read from
+the code, and shown only with the fake kernel (`TestExecCommandPrefixNotFinalPastTheFirstStage`), not in a guest. At a
+plane tier the pin binds argv[:k], the prefix the decision read, so it does not stop the tail from running; this is
+read from `exec_pin.go`, not run in a guest. The image floor decides before the command rules (1), so in a section
+whose images are restricted an exec of an image no `exec.allow` entry grants was refused as before.
+
+**Tests.** `pkg/policy/execmatch/rows/prefixholds_test.go`: `TestPrefixFinalHoldsEveryRow` holds the staged read's
+property (a final decision on a prefix that does not refuse is the whole vector's) for every built-in row and two
+tools with no row, under deny, ask and allow entries on the tool, its first subcommand and rm, at every prefix length,
+over a vocabulary of empty words, `-` and `--`, `+x` forms, combined short options, unknown long options and the row's
+own subcommands and options; `FuzzPrefixFinalHolds` does the same for any vector of that vocabulary.
+`TestPrefixCodeBeforeItsEnd`, `TestPrefixCutAtAValueOption` (`deny: [pip]` among its entries) and
+`TestPrefixRewriteAfterTheSubcommand` (`cargo pub` and `cargo build`) hold the three cases above.
+`TestStagedReadDifferential` (run with `TEGO_STAGED_DIFF` set) decides 6,490,026 prefixes of every row's vocabulary
+pairs and seeded vectors: 0 are final, do not refuse and differ from the whole vector; with the earlier code 2190
+were, each a none or allowed prefix of a refused vector; the whole-vector decisions hash the same before and after.
+`internal/runtime/supervisor`: `TestExecCommandPrefixNotFinalPastTheFirstStage` (python under `deny: [pip install]`
+and `deny: [pip]`, `cargo pub` under `deny: [cargo publish]`) and
+`TestExecCommandAllowEntryPrefixNotFinalPastTheFirstStage` (python's exec under `allow: [pip list]`, and `cargo build`
+... `--config alias.build=publish` under `allow: [cargo build]`, the tool granted) are refused; with the earlier
+`normalize.go`, `index.go` and `grammar.go` overlaid they were continued.

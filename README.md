@@ -12,7 +12,7 @@
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <a href="docs/INSTALL.md"><img alt="Go 1.27" src="https://img.shields.io/badge/go-1.27-00ADD8?logo=go&amp;logoColor=white"></a>
   <a href="docs/TIERS.md"><img alt="Platform: Linux" src="https://img.shields.io/badge/platform-Linux-FCC624?logo=linux&amp;logoColor=black"></a>
-  <a href="docs/CHANGELOG.md"><img alt="Release: v0.1.1" src="https://img.shields.io/badge/release-v0.1.1-F26327"></a>
+  <a href="docs/CHANGELOG.md"><img alt="Release: v0.1.2" src="https://img.shields.io/badge/release-v0.1.2-F26327"></a>
 </p>
 
 <p align="center">

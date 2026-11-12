@@ -56,7 +56,7 @@ control_sha256=<hash of your tego-control>
 ```
 
 The first lines are your version and commit. A build from a checkout with no release tag names its commit, as here; a
-release prints its tag, such as `tego=v0.1.1`. Put these lines at the top of any bug report.
+release prints its tag, such as `tego=v0.1.2`. Put these lines at the top of any bug report.
 
 ## 2. Check the machine
 

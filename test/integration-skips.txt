@@ -377,6 +377,7 @@ examples/demo TestContractsCompile/codex.yaml # codex is not on the runner's PAT
 internal/control/ledgerview TestQueryBudget # opt-in: measures only a ledger directory named in TEGO_LOGS_BENCH_LEDGER (a 350,000-line copy no runner holds)
 internal/control/ledgerview TestProcessTreeBudget # opt-in: measures only a ledger directory named in TEGO_LOGS_BENCH_LEDGER (a 350,000-line copy no runner holds)
 internal/control/web TestLogsWarmBudget # opt-in: measures only a demo-shaped ledger directory named in TEGO_LOGS_BENCH_DEMO, which no runner holds
+pkg/policy/execmatch/rows TestStagedReadDifferential # opt-in: decides about 6.5 million staged prefixes only when TEGO_STAGED_DIFF is set (ADR 0048, 2026-11-11 amendment); TestPrefixFinalHoldsEveryRow holds the same property in every run
 # D-ATTRIB: PRD R9's retriever run at the root tiers (capture-derive R42).
 internal/runtime TestRootRetrieverRunTiesActionsToReplies # needs root: a root launcher at tiers cgroup and bpflsm, the agent dropped to the invoking user
 internal/runtime/enforce/cgroup TestPlaneNameRowsFillAndClear # needs root: a decision-plane slot's name map filled by Prepare and cleared by Detach and the reaper (CAP_BPF)

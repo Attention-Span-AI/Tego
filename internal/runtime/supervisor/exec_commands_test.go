@@ -108,6 +108,83 @@ func TestExecCommandDeny(t *testing.T) {
 	}
 }
 
+// TestExecCommandPrefixNotFinalPastTheFirstStage: a first stage (32 elements) that ends where later argv can still
+// change the decision is not final, so the supervisor reads the rest and refuses. python's -m cut at element 32 has
+// not read its module, under an entry with words and under a bare entry on the module alike; cargo's --config after
+// the subcommand can still name an alias (`alias.pub=publish` makes `cargo pub` run publish). Before the fix, each
+// first stage settled on none and the exec was continued. (An allow entry's case is
+// TestExecCommandAllowEntryPrefixNotFinalPastTheFirstStage.)
+func TestExecCommandPrefixNotFinalPastTheFirstStage(t *testing.T) {
+	nr := nrFor(t, "execve")
+	python := []string{"python3"}
+	for range 15 {
+		python = append(python, "-W", "ignore")
+	}
+	python = append(python, "-m", "pip", "install", "x")
+	cargo := []string{"cargo", "pub"}
+	for range 15 {
+		cargo = append(cargo, "--features", "f")
+	}
+	cargo = append(cargo, "--config", "alias.pub=publish")
+	for _, c := range []struct {
+		entry, path, rule string
+		argv              []string
+	}{
+		{"deny: pip install", "/usr/bin/python3", "exec.deny[pip install]", python},
+		{"deny: pip", "/usr/bin/python3", "exec.deny[pip]", python},
+		{"deny: cargo publish", "/usr/bin/cargo", "exec.deny[cargo publish]", cargo},
+	} {
+		t.Run(c.entry, func(t *testing.T) {
+			f := newFake()
+			l, sink := newTestLoop(t, f, commandPolicy(t, c.entry))
+			execAt(l, f, nr, 42, 0, c.path, c.argv...)
+			wantExecAnswer(t, f, record.VerdictRefused)
+			if ev := sink.one(t); ev.Verdict != record.VerdictRefused || ev.Rule != c.rule {
+				t.Errorf("%s: %s %s, want refused %s", c.argv[0], ev.Verdict, ev.Rule, c.rule)
+			}
+		})
+	}
+}
+
+// TestExecCommandAllowEntryPrefixNotFinalPastTheFirstStage: the same first stages under an exec.allow entry with
+// words, whose tool's image the contract grants (an allow entry with words grants its tool and constrains it, ADR
+// 0048). The whole vector is unlisted (exec.args), and the first stage, which reads only an admitted invocation, is
+// not final: cargo build's later --config can name an alias, python's -m cut at element 32 has not read its module.
+// Before the fix the cargo stage was allowed under the entry and the python stage settled on none, and both execs
+// were continued.
+func TestExecCommandAllowEntryPrefixNotFinalPastTheFirstStage(t *testing.T) {
+	nr := nrFor(t, "execve")
+	python := []string{"python3"}
+	for range 15 {
+		python = append(python, "-W", "ignore")
+	}
+	python = append(python, "-m", "pip", "install", "x")
+	cargo := []string{"cargo", "build"}
+	for range 15 {
+		cargo = append(cargo, "--features", "f")
+	}
+	cargo = append(cargo, "--config", "alias.build=publish")
+	for _, c := range []struct {
+		entry, path, rule string
+		argv              []string
+	}{
+		{"allow: pip list", "/usr/bin/python3", "exec.args[pip]", python},
+		{"allow: cargo build", "/usr/bin/cargo", "exec.args[cargo]", cargo},
+	} {
+		t.Run(c.entry, func(t *testing.T) {
+			pol := commandPolicy(t, c.entry)
+			pol.Rules.Exec = append(pol.Rules.Exec, agent.ExecRule{Raw: path.Base(c.path), Path: c.path, Basename: path.Base(c.path), ByName: true, Source: agent.ExecSourceAllow, Verdict: agent.VerdictAllow})
+			f := newFake()
+			l, sink := newTestLoop(t, f, pol)
+			execAt(l, f, nr, 42, 0, c.path, c.argv...)
+			wantExecAnswer(t, f, record.VerdictRefused)
+			if ev := sink.one(t); ev.Verdict != record.VerdictRefused || ev.Rule != c.rule {
+				t.Errorf("%s: %s %s, want refused %s", c.argv[0], ev.Verdict, ev.Rule, c.rule)
+			}
+		})
+	}
+}
+
 // TestExecCommandAllowList: a constrained tool runs only as its allow entries say; an unlisted invocation is refused
 // under exec.args[<tool>], and an admitted one names the entry that admitted it.
 func TestExecCommandAllowList(t *testing.T) {
