@@ -386,6 +386,19 @@ func (lv *Level) long(name string) *Opt {
 	return nil
 }
 
+// rewrites reports whether an option read at this level (its own, or a persistent one above it) can make a reading
+// unlocatable (Opt.Rewrite); false for nil.
+func (lv *Level) rewrites() bool {
+	for l := lv; l != nil; l = l.parent {
+		for i := range l.Opts {
+			if o := &l.Opts[i]; o.Rewrite != nil && (l == lv || o.Persistent) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // shortOpt finds a short option at this level or a persistent one above it.
 func (lv *Level) shortOpt(c byte) *Opt {
 	if c >= 128 {

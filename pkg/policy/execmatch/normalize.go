@@ -46,6 +46,12 @@ type Reading struct {
 	Corrected bool
 	// Unlocatable is set by a visible rewrite trigger (cargo --config alias.*, gcloud --flags-file).
 	Unlocatable bool
+	// Pending is set, on a prefix only (NormalizeOpen with open true), when later tokens can still change the reading
+	// beyond adding options and operands to it (ADR 0048 (3), staged reads): an option at the prefix's end waits for its
+	// value (python's -m, whose value is the module it runs), or the reading still reads options and one of them could
+	// fork it (undecided: past MaxReadings the interpretation is unlocatable) or make it unlocatable (Opt.Rewrite,
+	// cargo's --config after the subcommand). A decision that reads a pending reading is not final.
+	Pending bool
 	// Dispatch is the token index of the first operand at the top level (an interpreter's script), -1 when none;
 	// DispatchAfter is the index of the first token after a Stop option's value (python -m's module arguments), -1
 	// when none.
@@ -59,7 +65,9 @@ type parseState struct {
 	i       int
 	afterDD bool
 	opsOnly bool
-	r       Reading
+	// wants is set when the tokens ended where an option takes the next token as its value (separate).
+	wants bool
+	r     Reading
 }
 
 // fork copies a state for a second reading; the copy shares nothing it could append to.
@@ -79,6 +87,18 @@ func (s *parseState) located() bool { return s.lv == nil || s.lv.Subs == nil }
 // option in front of it picks which token that is: a value reading there does not only remove words (ADR 0048 R4).
 func (nz *Normalizer) undecided(s *parseState) bool {
 	return !s.located() || nz.row.Interp != nil && s.r.Dispatch < 0 && s.r.DispatchAfter < 0
+}
+
+// pending reports whether more tokens can still change a reading whose tokens ended at s (Reading.Pending): an option
+// at the end waits for its value, or the reading still reads options and a later one could fork it or rewrite it.
+func (nz *Normalizer) pending(s *parseState) bool {
+	if s.wants {
+		return true
+	}
+	if s.afterDD || s.opsOnly {
+		return false
+	}
+	return nz.undecided(s) || s.lv.rewrites()
 }
 
 // Normalizer parses tokens with a row. It holds no state between calls and is safe for concurrent use.
@@ -119,6 +139,7 @@ func (nz *Normalizer) NormalizeOpen(tokens []string, open bool) []Reading {
 		if s.located() {
 			s.r.Located = true
 		}
+		s.r.Pending = open && nz.pending(&s)
 		out = append(out, s.r)
 	}
 	return out
@@ -356,6 +377,10 @@ func (nz *Normalizer) separate(s *parseState, toks []string, h Hit) (parseState,
 	next, has := "", s.i < len(toks)
 	if has {
 		next = toks[s.i]
+	} else if o.Arg != ArgNone && o.Arg != ArgOptional {
+		// The next token, past the end of a prefix, may be this option's value: python's `-m` cut there runs a module
+		// no token names yet (Reading.Pending).
+		s.wants = true
 	}
 	switch o.Arg {
 	case ArgRequired:

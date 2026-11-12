@@ -40,6 +40,13 @@ An unknown executable build/version uses the master Node row, including its boun
 plus the universal raw scans below. Unknown attached options retain the documented preload residual.
 `--trace_exit` is no such spelling: Node reads `_` as `-`, and so does the row.
 
+On a staged prefix of argv (ADR 0048 (3)) a decision is final only when no later token can change a reading. A
+reading is pending, and the decision reads on, while the prefix ends at an option that takes the next token as its
+value (python's `-m`, whose value is the module), or while the reading still reads options and a later one could fork
+it past 16 readings (sh's `-c`, perl's and ruby's `-e`, before the first operand) or make it unlocatable (cargo's
+`--config` and gcloud's `--flags-file`, read after the subcommand too). `--`, a value that ends the options (python's
+`-c` and `-m`) and an interpreter's script end that (amended 2026-11-11).
+
 ## The rows
 
 | Row | Source | Version | Names and forms | Before the subcommand | Subcommands | Not read (R3) |

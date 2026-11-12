@@ -7,6 +7,47 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ## Unreleased
 
+## v0.1.2 - 2026-11-11
+
+This patch fixes one flaw in how command rules read long command lines. It changes no other code.
+
+### Security
+
+- Command rules (`exec.deny`, `exec.ask`, and `exec.allow` entries with words after the program): Tego decides a long
+  command on its first part (32 arguments, or fewer when they pass 8 KiB) when the rest cannot change the answer. In
+  three forms the rest could still change it, and the command was decided on its first part anyway, so it ran though
+  its whole command line is refused:
+  - python's `-m` as the last argument of the first part, with the module after it: an entry on the module, such as
+    `deny: [pip install]` or a bare `deny: [pip]`, was not applied;
+  - cargo's `--config` or gcloud's `--flags-file` after the subcommand: `--config` can define an alias that runs
+    `cargo publish` under another name, and `deny: [cargo publish]` was not applied to it; under `allow: [cargo build]`
+    such a `cargo build` ran, which Tego refuses because it cannot tell which subcommand runs;
+  - options after the `-c` of sh, bash, dash, zsh or ksh, or after the `-e` of perl or ruby, enough of them that the
+    whole command line cannot be resolved (more than 16 ways to read it), which Tego refuses.
+
+  Present since v0.1.0: the new tests fail on trees of v0.1.0 and v0.1.1 (unit tests, not run in a guest). The file
+  and network rules, and which programs `exec.allow` lets run at all, were not affected. If you rely on command
+  entries in `exec.deny`, `exec.ask` or `exec.allow`, upgrade to v0.1.2. These commands are now read to their end,
+  or until no later argument can change the answer. A command that would have to be read past 8192 arguments or
+  128 KiB of argument text to be decided is refused (`args-unreadable`), where before it could be decided on its
+  first part.
+
+### Record `v`
+1 (`spec/record/v1`, record minor 29)
+
+### Contract schema
+0 (`spec/agent/v0`; the field set may change without notice before v0.2.0, `docs/VERSIONING.md` section 3)
+
+### Kernel minimums
+Linux 5.14 with Landlock ABI 2 or newer, which is Linux 5.19 or a backport such as RHEL 9's 5.14; tested from 6.1 and on
+RHEL 9 and 10, as AlmaLinux 9.8 and 10.2, with what ran where in `docs/TIERS.md` (tier 1: ABI 1 is unsupported,
+and features are gated per ABI, see `spec/backend/CAPABILITIES.md`;
+tier 2 needs root and cgroup v2; tier 3 needs root and `bpf` in the LSM list). A unix socket under an `fs.write` path is
+admitted without a `unix:` entry only with the kernel's socket diagnostics for `AF_UNIX` (`CONFIG_UNIX_DIAG`, built in
+or the loadable `unix_diag` module); without them such a socket is refused `unix-origin-unread`, and `tego doctor` says so.
+Syscall outcome hooks require readable tracefs event formats with an eight-byte `ret` at offset 16; unsupported
+or unverified layouts withhold root tiers. The kernel version minimum is unchanged.
+
 ## v0.1.1 - 2026-11-11
 
 This patch tightens the built-in refusals around an agent and checks the file identities and security labels

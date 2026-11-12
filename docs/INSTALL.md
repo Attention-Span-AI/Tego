@@ -38,7 +38,7 @@ profile.
 Settings are environment variables, given to `sh`:
 
 ```sh
-curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | TEGO_VERSION=v0.1.1 sh
+curl -fsSL https://github.com/Attention-Span-AI/Tego/releases/latest/download/install.sh | TEGO_VERSION=v0.1.2 sh
 ```
 
 `TEGO_VERSION` picks a tag (default: the latest release), `TEGO_PREFIX` the folder (default `$HOME/.local/bin`) and
@@ -132,7 +132,7 @@ repository's `release.yml` workflow at the tag; job names do not enter it. The v
 use the same workflow/tag identity as the binary installer.
 
 Releases from v0.1.1 on publish `ghcr.io/attention-span-ai/tego` for Linux amd64 and arm64; v0.1.0 has no image. A
-stable release such as `v0.1.1` has image tags `0.1.1`, `0.1` and `latest`; prereleases have only their full version tag,
+stable release such as `v0.1.2` has image tags `0.1.2`, `0.1` and `latest`; prereleases have only their full version tag,
 such as `0.1.1-rc.1`. The image contains the
 exact `tego` and `tego-control` binaries checked by the release's signed checksums and reproduction job.
 
@@ -141,7 +141,7 @@ using that release's exact tag identity (including the leading `v`). Docker sele
 from the signed multi-platform index. The digest pins the image even if a tag later moves.
 
 ```sh
-tag=v0.1.1
+tag=v0.1.2
 image=ghcr.io/attention-span-ai/tego
 digest='sha256:REPLACE_WITH_THE_RELEASE_NOTES_DIGEST'
 cosign verify \
@@ -219,7 +219,7 @@ control_sha256=<hash of your tego-control>
 ```
 
 A value in angle brackets is your own build's. A build from a checkout with no release tag names its commit, as here; a
-release prints its tag, such as `tego=v0.1.1`. The `control_sha256=` line is the hash built into `tego`, and
+release prints its tag, such as `tego=v0.1.2`. The `control_sha256=` line is the hash built into `tego`, and
 `tego-control version` prints the same hash as `sha256`.
 
 ## Running with sudo
@@ -300,7 +300,7 @@ The installer is a release asset, listed in the release's checksums file. That f
 script before it runs:
 
 ```sh
-tag=v0.1.1
+tag=v0.1.2
 sums=tego_${tag#v}_checksums.txt
 base=https://github.com/Attention-Span-AI/Tego/releases/download/$tag
 curl -fsSL -O "$base/install.sh" -O "$base/$sums" -O "$base/$sums.sigstore.json"
