@@ -50,12 +50,3 @@ func (d runDir) lstat() (unix.Stat_t, error) {
 	}
 	return st, d.at.Borrow(func(n int) error { return unix.Fstat(n, &st) })
 }
-
-// ownerUID is the uid that owns the directory, ok false when it cannot be read.
-func (d runDir) ownerUID() (int, bool) {
-	st, err := d.lstat()
-	if err != nil {
-		return 0, false
-	}
-	return int(st.Uid), true
-}

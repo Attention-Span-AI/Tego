@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/attention-span-ai/tego/pkg/spec/rfc3339"
 )
 
 // objectFields splits one JSON object into its fields with values kept as compact raw bytes, keys sorted
@@ -228,11 +230,12 @@ func parseInt(tok []byte) (int, error) {
 	return int(v), err
 }
 
-// parseTime parses a JSON string token holding an RFC 3339 timestamp.
+// parseTime parses a JSON string token holding an RFC 3339 timestamp, in the profile of spec/record/v1/CHAIN.md §3
+// (pkg/spec/rfc3339): time.Parse alone took comma fractions, one-digit hours and out-of-range numeric offsets (ADR 0146, "First finding").
 func parseTime(tok []byte) (time.Time, error) {
 	s, err := unquote(tok)
 	if err != nil {
 		return time.Time{}, err
 	}
-	return time.Parse(time.RFC3339Nano, s)
+	return rfc3339.Parse(s)
 }

@@ -329,7 +329,15 @@ func TestFollowerEndsAfterRunEndOnceLockFree(t *testing.T) {
 	case <-time.After(400 * time.Millisecond):
 	}
 	start := time.Now()
-	_ = lock.Close() // releases the flock and raises IN_CLOSE_WRITE
+	// The launcher lets the lock go as Writer.release does: LOCK_UN, then the close that raises IN_CLOSE_WRITE.
+	// A close alone is not that order: the kernel queues IN_CLOSE_WRITE before it drops the flock (__fput runs
+	// fsnotify_close before locks_remove_file), so a Follower that woke at once could find the lock still held
+	// and wait for its poll backstop, a second, with no event left to wake it. That made this test fail with
+	// "the end took 1.001s" under load.
+	if err := sys.Flock(lock, unix.LOCK_UN); err != nil {
+		t.Fatal(err)
+	}
+	_ = lock.Close()
 	got := <-ch
 	if got.err != nil || len(got.lines) != 3 {
 		t.Fatalf("follow: %d lines, %v; want 3 and a clean end", len(got.lines), got.err)

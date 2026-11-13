@@ -267,6 +267,14 @@ func TestIntegrationHeldCreateRespectsSELinux(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("root only: disposable SELinux policy guest")
 	}
+	// A boot without SELinux keeps no such task label: reading it fails there.
+	lsms, err := os.ReadFile("/sys/kernel/security/lsm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(","+strings.TrimSpace(string(lsms))+",", ",selinux,") {
+		t.Skip("needs the disposable SEC08 SELinux policy guest: SELinux is not active on this boot")
+	}
 	current, err := os.ReadFile("/proc/self/attr/current")
 	if err != nil {
 		t.Fatal(err)

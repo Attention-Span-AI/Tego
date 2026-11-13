@@ -227,8 +227,11 @@ func (ix *Index) multicallGuarded(f *Facts) bool {
 		}
 	}
 	if f.Loaded != nil {
-		lf := f.loadedFacts()
-		return ix.multicallGuarded(&lf)
+		for _, lf := range f.loadedReadings() {
+			if ix.multicallGuarded(&lf) {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -258,14 +261,15 @@ func (ix *Index) multicallInterpretations(f *Facts, have []Invocation) []Invocat
 		}
 	})
 	if f.Loaded != nil {
-		lf := f.loadedFacts()
-		for _, inv := range ix.multicallInterpretations(&lf, nil) {
-			if inv.Via == ViaOverflow {
-				b.overflow = true
-				continue
+		for _, lf := range f.loadedReadings() {
+			for _, inv := range ix.multicallInterpretations(&lf, nil) {
+				if inv.Via == ViaOverflow {
+					b.overflow = true
+					continue
+				}
+				b.nodeVersion, b.scanArgv0 = inv.NodeVersion, inv.scanArgv0
+				b.add(inv.Tool, inv.Row, ViaMulticall, inv.Tokens)
 			}
-			b.nodeVersion, b.scanArgv0 = inv.NodeVersion, inv.scanArgv0
-			b.add(inv.Tool, inv.Row, ViaMulticall, inv.Tokens)
 		}
 	}
 	// An invocation Interpretations already holds (rm read by its own name) was met by the deny and ask entries there,
@@ -304,15 +308,20 @@ func (ix *Index) denySettled(invs []Invocation) bool {
 			return false
 		}
 		tr := ix.tools[inv.Tool]
-		for j := range inv.Readings {
-			r := &inv.Readings[j]
-			if r.Unlocatable || !r.Located || r.Pending {
+		for _, readings := range [2][]Reading{inv.Readings, inv.releaseReadings} {
+			if len(readings) == 0 {
 				return false
 			}
-			for _, ps := range [...][]*Pattern{tr.deny, tr.ask} {
-				for _, p := range ps {
-					if !p.Bare && p.NamesArgs() && p.pathMatches(r) {
-						return false
+			for j := range readings {
+				r := &readings[j]
+				if r.Unlocatable || !r.Located || r.Pending {
+					return false
+				}
+				for _, ps := range [...][]*Pattern{tr.deny, tr.ask} {
+					for _, p := range ps {
+						if p.mayNeedTail(r) {
+							return false
+						}
 					}
 				}
 			}

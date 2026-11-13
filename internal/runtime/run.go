@@ -183,6 +183,8 @@ type Deps struct {
 	// Harness is the provisioner for a harness (agent-contract.md R27, ADR 0062), nil for one this build cannot
 	// provision; a nil Harness provisions nothing for any harness. internal/cli connects internal/adapters here.
 	Harness func(harness.Name) Provisioner
+	// hookHost replays the hook-grant scan's host in package tests; nil reads the launching host.
+	hookHost *hookHost
 }
 
 // AskPending is what Deps.AskPending is told of one held request: the run, the ask id `tego approve` takes and the
@@ -301,6 +303,12 @@ type runner struct {
 	// trackingOnce joins the recorder's prompt notification with the independent durable counter check.
 	trackingOnce   sync.Once
 	trackingFailed atomic.Bool
+	// skipState is the skip counters of the BPF programs the run's rules rely on (skips.go, ADR 0148), nil when the
+	// tier has none: set before the agent is released, read by the poll and by finalSkipCheck.
+	skipState *skipWatch
+	// treeOutlived: the run's cgroup did not empty even after the kill (awaitEmpty), so a task of the run outlives
+	// the final readings.
+	treeOutlived atomic.Bool
 	// planeFS is set when the tier's filter leaves fs mutations its decision plane decides unnotified
 	// (enforce.PlaneFilterer, TIER3-PLAN T16): the supervisor then keeps no walk cache (supervisor Options.PlaneFS).
 	planeFS bool

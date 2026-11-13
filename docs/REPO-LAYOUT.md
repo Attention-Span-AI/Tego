@@ -219,6 +219,7 @@ and a noun never spans both binaries (ADR 0100 (2)).
 - Another binary: add it under `cmd/`; it reuses `internal/` packages; still one module. (*Amended 2026-10-24, [ADR 0100](adr/0100-second-binary-and-handoff.md):* the second binary is `cmd/tego-control`, the dashboard, reached from `tego` only through a sealed hash-pinned handoff; see "The dashboard's packages" above.) (*Amended 2026-10-05, ADR 0042 (7)(a):* tegod is `tego __tegod` in the one binary, not `cmd/tegod`.)
 - A component with an incompatible dependency set or release cadence (a Python or TypeScript adapter package): give it its own directory and its own module, and add a `go.work` at the root. Split only when this pressure is real.
 - A Rust reimplementation of the low-level runtime: `runtime-rs/` at the root, conformant to `spec/`, tested by `test/e2e`; `cmd/tego` can exec it behind the same `enforce.Backend` interface.
+- A second, independent checker of the pure core in Rust (*added 2026-11-11, [ADR 0146](adr/0146-rust-second-implementation-of-the-pure-core.md), proposed*) is planned, not shipped. Go remains the only enforcer. This release extracts pure chain checking (`pkg/spec/record/chaincheck`) and publishes the shared chain spec and handwritten vectors under `spec/`. The Go module gains no dependency.
 
 ## If you think in models, repositories, services and middleware
 

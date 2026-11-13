@@ -1,0 +1,17 @@
+278 29 0:46 / /proc rw,relatime shared:345 - proc proc rw
+287 29 0:22 / /sys rw,nosuid,nodev,noexec,relatime master:7 - sysfs sysfs rw
+288 287 0:6 / /sys/kernel/security rw,nosuid,nodev,noexec,relatime master:8 - securityfs securityfs rw
+289 287 0:28 / /sys/fs/cgroup rw,nosuid,nodev,noexec,relatime master:9 - cgroup2 cgroup2 rw,nsdelegate,memory_recursiveprot
+290 287 0:29 / /sys/fs/pstore rw,nosuid,nodev,noexec,relatime master:10 - pstore pstore rw
+343 287 0:30 / /sys/fs/bpf rw,nosuid,nodev,noexec,relatime master:11 - bpf bpf rw,mode=700
+398 287 0:7 / /sys/kernel/debug rw,nosuid,nodev,noexec,relatime master:16 - debugfs debugfs rw
+399 287 0:12 / /sys/kernel/tracing rw,nosuid,nodev,noexec,relatime master:17 - tracefs tracefs rw
+400 287 0:33 / /sys/fs/fuse/connections rw,nosuid,nodev,noexec,relatime master:18 - fusectl fusectl rw
+401 287 0:21 / /sys/kernel/config rw,nosuid,nodev,noexec,relatime master:19 - configfs configfs rw
+474 29 0:5 / /dev rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+475 474 0:24 / /dev/pts rw,nosuid,noexec,relatime master:3 - devpts devpts rw,gid=5,mode=620,ptmxmode=000
+476 474 0:26 / /dev/shm rw,nosuid,nodev master:4 - tmpfs tmpfs rw,inode64
+477 474 0:32 / /dev/hugepages rw,nosuid,nodev,relatime master:14 - hugetlbfs hugetlbfs rw,pagesize=2M
+478 474 0:20 / /dev/mqueue rw,nosuid,nodev,noexec,relatime master:15 - mqueue mqueue rw
+519 29 0:47 / /tmp rw,relatime shared:466 - tmpfs tmpfs rw,inode64
+528 29 253:1 /home/runner/proj /home/runner/proj rw,relatime shared:1 - ext4 /dev/vda1 rw,discard,errors=remount-ro,commit=30

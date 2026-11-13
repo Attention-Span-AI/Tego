@@ -1,0 +1,21 @@
+377 350 0:45 / / rw,relatime - overlay overlay rw,lowerdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/1/fs,upperdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/3/fs,workdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/3/work,uuid=on,nouserxattr
+379 377 0:54 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+380 377 0:55 / /dev rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755,inode64
+381 380 0:56 / /dev/pts rw,nosuid,noexec,relatime - devpts devpts rw,gid=5,mode=620,ptmxmode=666
+382 380 0:57 / /dev/shm rw,nosuid,nodev,noexec,relatime - tmpfs shm rw,size=65536k,inode64
+383 380 0:52 / /dev/mqueue rw,nosuid,nodev,noexec,relatime - mqueue mqueue rw
+384 377 0:58 / /sys ro,nosuid,nodev,noexec,relatime - sysfs sysfs ro
+385 377 0:59 / /run rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755,inode64
+386 377 253:1 /work-out-host /work/out rw,relatime master:1 - ext4 /dev/vda1 rw,discard,errors=remount-ro,commit=30
+351 379 0:54 /bus /proc/bus ro,nosuid,nodev,noexec,relatime - proc proc rw
+352 379 0:54 /fs /proc/fs ro,nosuid,nodev,noexec,relatime - proc proc rw
+353 379 0:54 /irq /proc/irq ro,nosuid,nodev,noexec,relatime - proc proc rw
+354 379 0:54 /sys /proc/sys ro,nosuid,nodev,noexec,relatime - proc proc rw
+355 379 0:54 /sysrq-trigger /proc/sysrq-trigger ro,nosuid,nodev,noexec,relatime - proc proc rw
+356 379 0:60 / /proc/acpi ro,relatime - tmpfs tmpfs ro,inode64
+357 379 0:55 /null /proc/kcore rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755,inode64
+358 379 0:55 /null /proc/keys rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755,inode64
+359 379 0:55 /null /proc/latency_stats rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755,inode64
+360 379 0:55 /null /proc/timer_list rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755,inode64
+361 384 0:61 / /sys/firmware ro,relatime - tmpfs tmpfs ro,inode64
+362 379 0:62 / /proc/scsi ro,relatime - tmpfs tmpfs ro,inode64

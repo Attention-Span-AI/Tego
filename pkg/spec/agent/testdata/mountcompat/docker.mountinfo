@@ -1,0 +1,6 @@
+10 1 0:52 / / rw,relatime - overlay overlay rw,lowerdir=/image/lower,upperdir=/image/upper,workdir=/image/work
+11 10 8:2 /home/alice {{ROOT}}/home/alice rw,relatime - ext4 /dev/nvme0n1p2 rw
+12 10 8:2 /home/alice/project {{ROOT}}/work rw,relatime - ext4 /dev/nvme0n1p2 rw
+13 10 8:2 /var/lib/docker/containers/id/hosts {{ROOT}}/etc/hosts rw,relatime - ext4 /dev/nvme0n1p2 rw
+14 10 8:2 /var/lib/docker/containers/id/resolv.conf {{ROOT}}/etc/resolv.conf rw,relatime - ext4 /dev/nvme0n1p2 rw
+15 10 0:5 / {{ROOT}}/proc rw,nosuid,nodev,noexec - proc proc rw

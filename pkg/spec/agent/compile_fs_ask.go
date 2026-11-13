@@ -39,7 +39,7 @@ func (k *compiler) fsAsk() {
 	if k.m.LedgerRoot.Value != "" {
 		ledger = k.abs(k.m.LedgerRoot.Value)
 	}
-	mt, _ := loadMountTable(k.o.mountInfo) // fs already reports unavailable metadata
+	mt, _ := k.mountTable() // fs already reports unavailable metadata
 	b := &fsBuilder{k: &fork, mt: mt}
 	b.writes(fs.Write, ledger)
 	for _, d := range fork.ds.list {

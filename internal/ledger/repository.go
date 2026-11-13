@@ -187,24 +187,37 @@ func (r *fsRunRepository) agentOfContract(id string) string {
 
 // contractAgent is agentOfContract's answer from the contract copy f, opened with err: "" when it is not there.
 func contractAgent(f *os.File, err error) string {
+	agent, _ := contractAgentChecked(f, err)
+	return agent
+}
+
+// contractAgentChecked distinguishes a missing pre-start contract from one whose agent cannot be read. An
+// empty-run cleanup must keep its retry record on the latter instead of guessing that no scope was created.
+func contractAgentChecked(f *os.File, err error) (string, error) {
 	if err != nil {
-		return ""
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
 	}
 	defer func() { _ = f.Close() }()
-	b, err := io.ReadAll(io.LimitReader(f, 1<<20))
+	b, err := io.ReadAll(io.LimitReader(f, 1<<20+1))
 	if err != nil {
-		return ""
+		return "", err
+	}
+	if len(b) > 1<<20 {
+		return "", fmt.Errorf("ledger: contract copy exceeds 1 MiB")
 	}
 	for line := range strings.SplitSeq(string(b), "\n") {
 		if name, ok := strings.CutPrefix(line, "name: "); ok {
 			name = strings.Trim(strings.TrimSpace(name), `"'`)
 			if record.IsAgentID(name) {
-				return name
+				return name, nil
 			}
-			return ""
+			return "", fmt.Errorf("ledger: contract copy names no valid agent")
 		}
 	}
-	return ""
+	return "", fmt.Errorf("ledger: contract copy names no agent")
 }
 
 // agentOf reads the agent id from the first line; "" when the ledger is absent or empty.

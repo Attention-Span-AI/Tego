@@ -1,0 +1,3 @@
+# Synthetic compatibility spelling; real Podman uses fuse.fuse-overlayfs.
+1 0 0:73 / / rw,nosuid,nodev,relatime - fuse.overlayfs fuse-overlayfs rw,user_id=1000,group_id=1000,default_permissions,allow_other
+2 1 0:25 / /dev/shm rw - tmpfs tmpfs rw

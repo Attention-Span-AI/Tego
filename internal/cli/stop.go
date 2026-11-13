@@ -34,8 +34,9 @@ func init() { register(cmdStop) }
 // verified against the lock file (R22), and escalates to cgroup.kill if the run is still alive when
 // the grace expires. --grace is written into the marker, so it is the launcher's own stop_grace for
 // this stop — longer or shorter than the machine's — and not only how long this command waits
-// before its backstop kill; without it the machine's stop_grace applies to both. Exit 0 whatever the
-// run does, including "not running" (§6 case 11); 2 for a --grace that is not a positive duration.
+// before its backstop kill; without it the machine's stop_grace applies to both. Exit 0 after an accepted stop
+// request, including "not running" (§6 case 11); 2 for a --grace that is not a positive duration. A lost paused
+// run whose scope stays populated or cannot be read after the sweep exits 125.
 //
 // `tego stop --agent <name>` stops every live run whose agent is name, the contract's `name:`, which stays
 // the same across the runs a restarting unit starts while the run id changes with each: it prints one line per run
@@ -169,15 +170,26 @@ func runStop(ctx context.Context, ref string, requested time.Duration, stdout, s
 	if stopAdopted(runID) {
 		return releaseAdoption(ctx, "tego stop", runID, stdout, stderr)
 	}
+	// A lost run whose last recorded state was paused is read before the sweep ends it, with what its scope shows
+	// then, so the line below can say what was ended.
+	lostPaused := lostWhilePaused(ctx, root, runID)
+	var before scopeFact
+	if lostPaused {
+		before = readScope(dir, runID)
+	}
 	// The standing orphan pass, not a fallback for this run — it runs before the lock probe so
 	// a launcher that died is ended here rather than reported as "still running". Like run's, it
-	// sweeps the runs the live index names (sweepLive), not every run under the root.
+	// sweeps the runs the live index names (sweepLive), not every run under the root. It kills an orphan's tree
+	// with cgroup.kill and never thaws it, so a run lost while paused ends without running again.
 	if res, err := sweepLive(ctx, root, sweepOptions(m)...); err != nil {
 		logOwn("stop: sweep: " + err.Error())
 	} else {
 		for _, e := range res.Errs {
 			logOwn("stop: sweep: " + e.Error())
 		}
+	}
+	if lostPaused {
+		return stopLostPaused(ctx, root, runID, before, stdout, stderr)
 	}
 	held, info, err := runlock.ProbeLock(dir)
 	if err != nil {
@@ -443,4 +455,34 @@ func runAgent(dir string) (identity.AgentID, error) {
 		}
 	}
 	return "", fmt.Errorf("run has no agent id yet")
+}
+
+// stopLostPaused is what `tego stop` says of a lost run whose last recorded state was paused once its sweep has run
+// (ADR 0124, second amendment of 2026-11-11): what its scope showed before and after the sweep, and that its orphaned
+// record closed; an ended state does not prove a kill was needed or ran. Success requires a closed record and an
+// empty scope; remaining processes or an unreadable scope mean the stop did not complete.
+func stopLostPaused(ctx context.Context, root, runID string, before scopeFact, stdout, stderr io.Writer) int {
+	st, err := ledger.NewRunRepository(root).State(ctx, runID)
+	if err == nil && st == ledger.StateEnded {
+		after := readScope(filepath.Join(root, runID), runID)
+		fmt.Fprintf(stdout, "%s: lost; its launcher had died, and the last state it recorded was paused. Before the stop %s. "+
+			"After the stop %s. Tego closed its orphaned record (run_end orphaned).\n",
+			runID, before.now(), after.now())
+		if !after.Known || after.Populated {
+			why := "its scope still has processes"
+			if !after.Known {
+				why = "cannot tell whether its scope is empty"
+			}
+			message(stderr, "", 0, 0, fmt.Sprintf("tego stop: %s: stop did not complete: %s", runID, why), codeLostPaused)
+			return identity.ExitError
+		}
+		return identity.ExitOK
+	}
+	why := "the sweep did not end it"
+	if err != nil {
+		why = err.Error()
+	}
+	message(stderr, "", 0, 0, fmt.Sprintf("tego stop: %s is lost, its last recorded state paused, and what is left of it "+
+		"could not be ended yet (%s; tego's own log says why). tego stop or tego gc tries again.", runID, why), codeLostPaused)
+	return identity.ExitError
 }

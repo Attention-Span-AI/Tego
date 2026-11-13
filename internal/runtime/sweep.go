@@ -143,13 +143,9 @@ func sweepWith(ctx context.Context, root string, opts []SweepOption,
 			}
 			if err := killOrphan(ctx, o, lent(dir, ref), ref); err != nil {
 				o.log.Warn("sweep: kill orphan cgroup", "run", ref.ID, "err", err)
-				// A tree still running keeps the run lost, so the next pass meets it again: run_end
-				// over a live tree ended the one record that something ran unsupervised, and nothing
-				// revisited it (R20). Any other failure, a scope that
-				// cannot even be read, still ends the run, as before.
-				if errors.Is(err, errOrphanAlive) {
-					return err
-				}
+				// A failed kill or unreadable scope keeps the run lost, so the next pass meets it again.
+				// Ending it here would let retention remove its only retry record (R20, ADR 0124).
+				return err
 			}
 			return nil
 		}),
@@ -255,11 +251,11 @@ func reclaimHeld(ctx context.Context, o sweepOptions, dir runDir, ref record.Run
 	}
 }
 
-// endedListed is the ended hook of SweepLive (ledger.WithEndedHook): a run that ended while the live index still
-// lists it. Its launcher is still between Close and clearing the entry, or died there. A launcher that is
-// alive — the lock line's pid, with its start time — is left to finish: the entry stays,
+// endedListed is the ended hook of SweepLive and GC (ledger.WithEndedHook): a run that ended while the live index
+// still lists it, or is about to be collected. Its launcher is still between Close and clearing the entry, or died
+// there. A launcher that is alive, the lock line's pid with its start time, is left to finish: the entry stays,
 // and it clears the entry itself. One that is gone may have left its scope, since the launcher removes it after
-// Close (releaseKernelState): the scope is found as an orphan's is (orphanScope), killed if anything is left in
+// Close (releaseKernelState): the scope is found as an orphan's is (orphanScopeChecked), killed if anything is left in
 // it and removed, and that is logged. A tree that stays keeps the entry, as for a lost run.
 //
 // At tier 2 the dead launcher's Detach never ran either. Its cgroup links are pinned under the build's
@@ -268,8 +264,11 @@ func reclaimHeld(ctx context.Context, o sweepOptions, dir runDir, ref record.Run
 // when it outlives its launcher. If it was the last launcher of its build, the shared pins stay until the build's
 // timer, a reaper or gc removes them (ADR 0022). A run of another host is left alone (L5).
 func endedListed(ctx context.Context, o sweepOptions, dir runDir, ref record.RunRef) (bool, error) {
-	if foreignRun(ref.ID) || o.manager == nil {
+	if foreignRun(ref.ID) {
 		return true, nil
+	}
+	if o.manager == nil {
+		return false, fmt.Errorf("ended run %s: %w: no cgroup manager", ref.ID, errOrphanAlive)
 	}
 	if _, info, err := probeLock(dir); err == nil && info.PID != 0 {
 		target, err := openStopTarget(dir, info)
@@ -285,16 +284,16 @@ func endedListed(ctx context.Context, o sweepOptions, dir runDir, ref record.Run
 	if err != nil {
 		return false, fmt.Errorf("ended run %s: %w", ref.ID, err)
 	}
-	if _, ok := orphanScope(o.manager, o.marks, dir, ref, agentID); !ok {
+	if _, ok, err := orphanScopeChecked(o.manager, o.marks, dir, ref, agentID); err != nil {
+		return false, fmt.Errorf("ended run %s: %w: find scope: %w", ref.ID, errOrphanAlive, err)
+	} else if !ok {
 		return true, nil
 	}
 	o.log.Warn("sweep: removing the scope of an ended run whose launcher died before it cleaned up; "+
 		"at tier 2 its handle was never detached", "run", ref.ID)
 	if err := killOrphan(ctx, o, dir, ref); err != nil {
-		if errors.Is(err, errOrphanAlive) {
-			return false, err
-		}
 		o.log.Warn("sweep: remove an ended run's scope", "run", ref.ID, "err", err)
+		return false, err
 	}
 	return true, nil
 }
@@ -315,15 +314,15 @@ var foreignRun = func(id string) bool {
 // detectCgroups is cgroup.Detect; a test replaces it to make the sweeping process one that has no cgroup manager.
 var detectCgroups = cgroup.Detect
 
-// errOrphanAlive is a sweep that could not end an orphan's process tree: the kill was refused, or the tree
-// did not empty within sweepKillTimeout. The ledger's sweep then keeps the run lost (its hook failed), so the
-// next pass meets it again.
-var errOrphanAlive = errors.New("the orphan's process tree is still running")
+// errOrphanAlive is a sweep that could not confirm an orphan's process tree is gone: discovery or an events read
+// failed, the kill was refused, or the tree did not empty within sweepKillTimeout. The ledger's sweep then keeps
+// the run lost (its hook failed), so the next pass meets it again.
+var errOrphanAlive = errors.New("the orphan's process tree may still be running")
 
 // killOrphan ends the process tree a dead launcher left in a run's cgroup: cgroup.kill, wait for
 // cgroup.events to report populated 0, then remove the scope bottom-up. A cgroup that is already
-// gone or already empty is not an error; a scope that stays busy past sweepKillTimeout, or whose kill
-// is refused, is errOrphanAlive and left for the next pass (case 9). Nothing here writes the ledger —
+// gone or already empty is not an error; a scope that cannot be read, stays busy past sweepKillTimeout, or whose
+// kill is refused, is errOrphanAlive and left for the next pass (case 9). Nothing here writes the ledger;
 // ledger.GC's sweep does that after.
 func killOrphan(ctx context.Context, o sweepOptions, dir runDir, ref record.RunRef) error {
 	m, marks := o.manager, o.marks
@@ -338,14 +337,17 @@ func killOrphan(ctx context.Context, o sweepOptions, dir runDir, ref record.RunR
 	if err != nil {
 		return fmt.Errorf("orphan %s: %w", ref.ID, err)
 	}
-	c, ok := orphanScope(m, marks, dir, ref, agentID)
+	c, ok, err := orphanScopeChecked(m, marks, dir, ref, agentID)
+	if err != nil {
+		return fmt.Errorf("orphan %s: %w: find scope: %w", ref.ID, errOrphanAlive, err)
+	}
 	if !ok {
 		purgeOrphan(o, dir, ref, marks.launched(dir)) // no scope of the run's is left
 		return nil
 	}
 	populated, err := cgroup.Populated(c)
 	if err != nil {
-		return fmt.Errorf("orphan %s: read cgroup.events: %w", ref.ID, err)
+		return fmt.Errorf("orphan %s: %w: read cgroup.events: %w", ref.ID, errOrphanAlive, err)
 	}
 	if populated {
 		if err := m.Kill(c); err != nil {
@@ -413,7 +415,7 @@ func purgeOrphan(o sweepOptions, dir runDir, ref record.RunRef, rootLaunched boo
 // purgeRun is cgroupenforce.PurgeRun; a variable so the unit tests see what a sweep would purge.
 var purgeRun = cgroupenforce.PurgeRun
 
-// orphanScope finds the scope a lost run's launcher made: tego.slice/tego-<agent>.slice/run-<id>.scope
+// orphanScopeChecked finds the scope a lost run's launcher made: tego.slice/tego-<agent>.slice/run-<id>.scope
 // under the root of the manager that made it, which need not be the sweeper's. A root launcher makes it
 // under the cgroup2 mount root and an unprivileged one under its uid's user@<uid>.service, and a sweep by the
 // other kind looked under its own root alone, found nothing, killed nothing and ended the run (R20). Every
@@ -422,30 +424,52 @@ var purgeRun = cgroupenforce.PurgeRun
 // name made since is never touched; a ledger with no id (one that predates it, or a launcher that died
 // before run_start) takes the first candidate that exists — *amended 2026-09-24:* but a candidate under the
 // cgroup mount root only when root's record says root launched this very directory (markDir.launched).
-func orphanScope(m cgroup.Manager, marks markDir, dir runDir, ref record.RunRef, agentID identity.AgentID) (cgroup.Cgroup, bool) {
+//
+// It keeps why a candidate could not be judged: a candidate whose Lstat fails other than by its absence, or whose
+// cgroup id cannot be read. With no scope found, a nil error means none is there (absence confirmed at every candidate)
+// and a non-nil one that one could not be read, so a reader never calls it gone (tego status's scope_now, ADR 0124).
+func orphanScopeChecked(m cgroup.Manager, marks markDir, dir runDir, ref record.RunRef, agentID identity.AgentID) (cgroup.Cgroup, bool, error) {
 	rel := filepath.Join(identity.TopSlice, identity.AgentSlice(agentID), identity.RunScope(identity.RunID(ref.ID)))
-	want := runCgroupID(dir)
-	for _, base := range orphanRoots(m, marks, dir) {
+	start, err := runStartOfChecked(dir)
+	if err != nil {
+		return cgroup.Cgroup{}, false, fmt.Errorf("run %s: read run_start identity: %w", ref.ID, err)
+	}
+	want := start.cgroup
+	roots, unread := orphanRoots(m, marks, dir)
+	for _, base := range roots {
 		c := cgroup.Cgroup{Path: filepath.Join(base, rel)}
 		if _, err := os.Lstat(c.Path); err != nil {
+			if !errors.Is(err, os.ErrNotExist) && unread == nil {
+				unread = fmt.Errorf("run %s: scope %s: %w", ref.ID, c.Path, err)
+			}
 			continue
 		}
 		if want != 0 {
-			if id, err := m.ID(c); err != nil || id != want {
+			id, err := m.ID(c)
+			if err != nil && unread == nil {
+				unread = fmt.Errorf("run %s: scope %s: cgroup id: %w", ref.ID, c.Path, err)
+			}
+			if err != nil || id != want {
 				continue
 			}
-		} else if base == cgroup.Mount && !marks.launched(dir) {
+		} else if base == cgroup.Mount {
 			// With no cgroup id to check, a scope of that name under the mount root is as likely another run's
 			// as this one's: it is taken only on root's record that root launched this very directory.
-			continue
+			launched, err := marks.launchedChecked(dir)
+			if err != nil {
+				unread = errors.Join(unread, err)
+			}
+			if !launched {
+				continue
+			}
 		}
-		return c, true
+		return c, true, nil
 	}
-	return cgroup.Cgroup{}, false
+	return cgroup.Cgroup{}, false, unread
 }
 
 // RunScope finds the scope of run id, of agent, in the ledger root root the way a sweep finds an orphan's
-// (orphanScope): under every root the scope can be under, the manager's own first, and, when run_start
+// (orphanScopeChecked): under every root the scope can be under, the manager's own first, and, when run_start
 // recorded the scope's cgroup id, only a candidate with that id. ok is false when no scope of the run's is
 // left. `tego stop`'s backstop kill uses it: built under the stopper's own cgroup root with no id check, it
 // wrote cgroup.kill into whatever scope of that name was there — none of the run's when a root launcher made it
@@ -461,8 +485,11 @@ func RunScope(m cgroup.Manager, root, id, agent string, opts ...SweepOption) (cg
 	for _, opt := range opts {
 		opt(&o)
 	}
-	c, ok := orphanScope(m, o.marks, pathDir(filepath.Join(root, id)), record.RunRef{ID: id, Agent: agent}, agentID)
-	return c, ok, nil
+	c, ok, err := orphanScopeChecked(m, o.marks, pathDir(filepath.Join(root, id)), record.RunRef{ID: id, Agent: agent}, agentID)
+	if ok {
+		return c, true, nil
+	}
+	return cgroup.Cgroup{}, false, err
 }
 
 // orphanRoots are the roots a run's scope can be under, the sweeper's own first: the cgroup2 mount root, where
@@ -485,13 +512,19 @@ func RunScope(m cgroup.Manager, root, id, agent string, opts ...SweepOption) (cg
 // records its run, root's own included. On that record the manager's own root is searched too, as for any
 // run the sweeper launched: a root launcher made the scope there, which is the mount root unless root runs
 // inside a nested cgroup namespace (cgroup.Detect), and leaving it out lost a root stop's own run's scope.
-var orphanRoots = func(m cgroup.Manager, marks markDir, dir runDir) []string {
-	if uid, ok := dir.ownerUID(); !ok || uid != sweeperUID() || sweeperUID() == rootMarkOwner {
+var orphanRoots = func(m cgroup.Manager, marks markDir, dir runDir) ([]string, error) {
+	st, err := dir.lstat()
+	if err != nil {
+		return nil, fmt.Errorf("runtime: scope roots: stat run %s: %w", dir.path, err)
+	}
+	uid := int(st.Uid)
+	if uid != sweeperUID() || sweeperUID() == rootMarkOwner {
 		var roots []string
-		if ok && uid != 0 {
+		if uid != 0 {
 			roots = append(roots, cgroup.UserSubtree(uid))
 		}
-		if marks.launched(dir) {
+		launched, err := marks.launchedChecked(dir)
+		if launched {
 			if sweeperUID() == rootMarkOwner && !slices.Contains(roots, m.Root()) {
 				roots = append(roots, m.Root())
 			}
@@ -499,7 +532,7 @@ var orphanRoots = func(m cgroup.Manager, marks markDir, dir runDir) []string {
 				roots = append(roots, cgroup.Mount)
 			}
 		}
-		return roots
+		return roots, err
 	}
 	roots := []string{m.Root()}
 	add := func(r string) {
@@ -508,15 +541,11 @@ var orphanRoots = func(m cgroup.Manager, marks markDir, dir runDir) []string {
 		}
 	}
 	add(cgroup.Mount)
-	if uid, ok := dir.ownerUID(); ok && uid != 0 {
+	if uid != 0 {
 		add(cgroup.UserSubtree(uid))
 	}
-	return roots
+	return roots, nil
 }
-
-// runCgroupID is the cgroup id run_start recorded for the run in dir, 0 when it recorded none or cannot be
-// read.
-func runCgroupID(dir runDir) uint64 { return runStartOf(dir).cgroup }
 
 // runStart is what a sweep reads of a run's run_start: its cgroup id and the build its programs live in.
 type runStart struct {
@@ -526,21 +555,35 @@ type runStart struct {
 
 // runStartOf reads run_start of the run in dir; the zero value when it has none or cannot be read.
 func runStartOf(dir runDir) runStart {
+	start, _ := runStartOfChecked(dir)
+	return start
+}
+
+// runStartOfChecked distinguishes a missing or empty pre-start ledger from metadata that cannot be read.
+// Scope decisions require that distinction; purge's wrapper can conservatively leave kernel state alone.
+func runStartOfChecked(dir runDir) (runStart, error) {
 	rd, err := dir.reader()
 	if err != nil {
-		return runStart{}
+		if errors.Is(err, os.ErrNotExist) {
+			return runStart{}, nil
+		}
+		return runStart{}, err
 	}
 	defer func() { _ = rd.Close() }()
 	for e, err := range rd.Iter() {
-		if err != nil || e.Kind != record.KindRunStart {
-			return runStart{}
+		if err != nil {
+			return runStart{}, err
+		}
+		if e.Kind != record.KindRunStart {
+			return runStart{}, fmt.Errorf("runtime: first ledger event is %s, want run_start", e.Kind)
 		}
 		out := runStart{cgroup: e.Cgroup}
 		var p record.RunStartPayload
-		if err := e.DecodePayload(&p); err == nil {
-			out.hash = p.BPFHash
+		if err := e.DecodePayload(&p); err != nil {
+			return runStart{}, err
 		}
-		return out
+		out.hash = p.BPFHash
+		return out, nil
 	}
-	return runStart{}
+	return runStart{}, nil
 }

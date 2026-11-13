@@ -5,9 +5,11 @@
 # no kernel takes another errno from it, doctor's fanotify row). The ledger line is Tego's own answer, never the
 # listener's (ADR 0016): the supervisor and Tego's listener allowed the open, so their line reads allow; the plane
 # allowed it too, and where the kernel's recorder writes the line (tier cgroup and the plane) it follows the traced
-# open's return (ADR 0016 step 2): from 6.13 fsnotify's permission event runs after the traced security_file_open
-# returned 0, so the line reads allow; up to 6.12 the event runs inside it, the -EPERM is no Tego refusal, and the
-# line reads observed with by: other. The supervisor's line at tier landlock is its own allow on every kernel.
+# open's return (ADR 0016 step 2): where fsnotify's permission event runs after the traced security_file_open returned 0
+# (upstream 6.13 on, and Debian 13's 6.12.107), the line reads allow; where the event runs inside it (upstream up to
+# 6.12), the -EPERM is no Tego refusal, and the line reads observed with by: other. Which a kernel does is measured as
+# root (fanotify_in_chain, Machine.FanotifyInChain), never read off its version: a distribution's 6.12 can carry the
+# 6.13 order. The supervisor's line at tier landlock is its own allow on every kernel.
 version: 2
 name: thirdparty
 contract: |
@@ -36,7 +38,7 @@ cells:
     want:
       all: {verdict: refused, errno: EPERM, ledger: allow}
     want_where:
-      - kernel_max: "6.12"
+      - fanotify_in_chain: true
         want:
           root: {verdict: refused, errno: EPERM, ledger: observed}
     source: 'ADR 0016 (a verdict is the mechanism''s answer: a third party''s refusal is outside Tego''s chain); ADR 0017 space (6)'

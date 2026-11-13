@@ -26,9 +26,9 @@ func Builtin() *execmatch.Rows { return builtin() }
 var (
 	// gnu is getopt_long: clusters, attached short values, --name=v and --name v, unique long prefixes, permutation
 	// until `--`.
-	gnu = execmatch.Syntax{Clusters: true, ShortAttach: true, LongEquals: true, LongSep: true, LongPrefix: true, Permute: true}
+	gnu = execmatch.Syntax{NextOption: execmatch.NextOptionValue, Clusters: true, BundleValuesSettle: true, ShortAttach: true, LongEquals: true, LongSep: true, LongPrefix: true, Permute: true}
 	// parseOptions is git's parse-options: getopt_long's spellings plus --no-<name>.
-	parseOptions = execmatch.Syntax{Clusters: true, ShortAttach: true, LongEquals: true, LongSep: true, LongPrefix: true, Negatable: true, Permute: true}
+	parseOptions = execmatch.Syntax{NextOption: execmatch.NextOptionValue, Clusters: true, ShortAttach: true, LongEquals: true, LongSep: true, LongPrefix: true, Negatable: true, Permute: true}
 )
 
 // flag is an option without a value.

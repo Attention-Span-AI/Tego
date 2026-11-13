@@ -777,7 +777,9 @@ between them; `SweepLive` does not clear it after one tail read. Under the run's
 whose chain verifies is anchored at its own last id, in the anchor its launcher would have used, and that is logged
 (`record-ledger.md` §3 Live index). The runtime's ended hook (`ledger.WithEndedHook`) then reads the lock line: a
 launcher that is alive is left to clear its own entry; one that is gone had its scope found as an orphan's is and
-removed, anything left in it killed first, and a tree that stays keeps the entry. What no sweep recovers is the rest
+removed, anything left in it killed first, and a tree that stays or cannot be read keeps the entry. Before `gc`
+collects an ended run, it calls the same hook under the removal lock and lends the directory it locked; a failed
+lookup, cgroup-id read, events read or missing manager retains the record for retry (review round 3, ADR 0124). What no sweep recovers is the rest
 of that launcher's `releaseKernelState`: at tier 2 its `Detach` never ran, so its cgroup links went with its
 descriptors (`enforce-cgroup-observe.md` E38), its verdict rows wait for the slot's next `Prepare` scrub (E32), its
 `run_set` rows stay (E26), and, if it was the last launcher of its build, the shared pins stay until the next one

@@ -214,10 +214,12 @@ Conditions, stated rather than hidden:
    budget below its reserve (`ulimit -n 100`) is a cap of 0 (`enforce.PlaneFDCap`), not the negative `Cap` that
    `FitFDs` read as unknown and refused nothing at, so selection gives an auto run tier cgroup where Prepare's
    budget would refuse it; -1 is kept for a budget that cannot be read. An auto run of a table the
-   plane cannot hold, over the maps or the descriptors (the mounted-root rows of R12 counted in both) or with two fs
-   entries one file under two names (`cgroup.ErrPlaneSharedInode`), is given tier cgroup by `enforce.Select`, which
+   plane cannot hold, over the maps or the descriptors (the mounted-root rows of R12 counted in both), with two fs
+   entries one file under two names (`cgroup.ErrPlaneSharedInode`) or with a part of a `deny_read` tree bound outside
+   it (`cgroup.ErrPlaneDetachedPart`, §6 case 16, added 2026-11-11), is given tier cgroup by `enforce.Select`, which
    asks the one check Prepare makes (`holdablePlaneRows`), with a warning naming why, where the plane runs it if its
-   rows fit and the listener otherwise; a run pinned to bpflsm (`--tier bpflsm`, `tier: bpflsm`, the machine config)
+   rows fit and the listener otherwise only if it can hold the table; a detached-part fallback is refused at startup.
+   A run pinned to bpflsm (`--tier bpflsm`, `tier: bpflsm`, the machine config)
    keeps Prepare's refusal (`ErrPlaneCannotHold`, exit 125) (`TestSelectAutoFallsBelowAPlaneThatCannotHoldTheTable`,
    `TestSelectAutoFallsBelowWhatPrepareRefuses`, `TestSelectAutoAsksWhatPrepareAsks`,
    `TestPrepareHoldsThePlanToTheFDBudget`, `TestPlaneDiagnosticCountsTheDescriptorCap`; the boundary as root:
@@ -2149,6 +2151,25 @@ step the conformance work adds to the same job.
     `TestPlaneFillRefusesOneLinkTwice`, `TestPlaneStepAHooksDecide`'s second-link cell,
     `TestPlaneExecLinksHoldEachLinkItsEntryNames`, `TestPlaneExecRowsAreKeyedByTheLink`, `TestPlaneRunMulticallLinks`
     (tier cgroup in both modes and tier bpflsm, the ledger naming each link), ADR 0017's `exec-multicall-*` cells.
+16. **A part of a `deny_read` tree bound outside it (ADR 0025, corrected 2026-11-12).** The plane's dentry
+    walk holds whole-tree aliases on the same filesystem instance, including a bind of the entry's parent or
+    whole filesystem. A part mounted outside the denied tree has no climb through the entry's dentry. The
+    file-bind cell demonstrated that missing refusal on Debian 13's 6.12.107 at cgroup@fmod_ret, cgroup@lsm
+    and bpflsm before the holdability check was added (saved guest evidence). `PlaneHoldableAt` uses the
+    prepared mount-facts object shared by composition, the listener and the recorder, and checks
+    `agent.MountTable.DetachedParts` for every read-deny row. A detached part returns `ErrPlaneDetachedPart`:
+    bpflsm refuses before loading (`ErrPlaneCannotHold`, exit 125); cgroup falls back to the listener, which
+    now refuses other mount-table spellings on the same filesystem instance of a compiled `deny_read` path tree
+    or part of it (`ErrListenerAlias`, enforce-cgroup-observe §6 item 24). Auto selection therefore cannot make such a table
+    run safely by selecting cgroup. Whole-tree aliases on the same filesystem instance retain the plane's
+    existing handling when the selected plane holds the rest of the contract. Missing or invalid mount facts
+    refuse preparation too: acquisition is bounded and strict, lookup follows mount ancestry, and statx mount ids
+    must agree. A row at a detached bind's root is not built. A different filesystem instance showing the same data, such as a second network
+    mount of one export, FUSE mirror or loop image, is not recognised at any tier; deny the other path too, or
+    do not mount the same export twice where agents can read it. Name-entry scopes receive no alias check.
+    Later host mounts and ancestor renames are not tracked by these startup facts. Current preparation
+    boundaries are unit-tested (`TestListenerRefusesEveryAliasLayout`, `TestPrepareSharesOneMountSnapshot`);
+    the changed kernel expectations are owed in a guest on Debian 13's 6.12 and Fedora's 7.0, both boots.
 
 ## 7. Failure modes and handling
 
@@ -2225,10 +2246,20 @@ agent cannot reach `bpf(2)` (ADR 0033).
   decide there as `internal/bpf`'s tests load them.
 - A kernel program skipped by the trampoline's per-CPU recursion check (ADR 0024 (16)). fmod_ret mode is admitted only
   where doctor proves the kernel never preempts kernel code, read afresh at every run and adoption, and LSM programs
-  take no such check. Not covered by this (docs/GAPS.md C53): root changing a dynamic kernel's mode while a run lives
-  is not watched; recursion misses are not detected at run time; `cgroup_track`'s `cgroup_mkdir` and the recorder's
-  tracing programs are skipped the same way in every mode on a kernel that preempts kernel code, a recorder skip
-  dropping its record with no `tego_lost` count (enforce-cgroup-observe §7).
+  take no such check on a kernel from 6.2 (6.1.54 in the 6.1 series; LSM mode is held to the same rule on an older
+  one). Not covered by this (docs/GAPS.md C53): root changing a dynamic kernel's mode while a run lives
+  is not watched; the recorder's tracing programs are skipped the same way in every mode on a kernel that preempts
+  kernel code, a recorder skip dropping its record with no `tego_lost` count (enforce-cgroup-observe §7), which ADR
+  0016's shared-skip gap reports. *Amended 2026-11-11 (ADR 0148):* LSM programs take no such check only on kernels
+  from 6.2 (6.1.54 in the 6.1 series); doctor holds LSM mode to fmod_ret mode's preemption rule on an older kernel
+  (read from `/proc/kallsyms`), and withholds the exec pin claim on a kernel that preempts kernel code, since the exec
+  pin check is a tp_btf program a 7.0 kernel runs preemptibly. Recursion misses of the programs a run's rules rely on
+  are detected at run time: its mode's hooks, the exec pin check where the run claims it, the listener cleanup and
+  `cgroup_track`'s `cgroup_mkdir` (which runs with interrupts off, so no skip of it is reachable). A run reads their
+  counters before release, every 250 ms and after the drain, is ended when one moves (the last reading included), and
+  records `gap what=enforce` `bpf-decision-skip/shared-build` or `bpf-tracking-skip/shared-build`. Doctor discloses that
+  listener cleanup can be skipped where kernel code is preempted or its mode is unknown: skips are detected, and a
+  detected shared skip ends launched runs relying on it; an adoption reports without ending the agent (ADR 0148).
 - Host cost while a build is attached: a lookup per host open, exec, mmap and path operation (ADR 0024 measured
   +0.2 µs per open; LSM mode +25 to +72 ns more than `fmod_ret`).
 

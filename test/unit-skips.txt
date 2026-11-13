@@ -22,6 +22,7 @@ internal/testutil TestStdioChild # TestGuardedStdioLeakCheckMainFailsOnAClosedSt
 internal/runtime/enforce/cgroup TestBuildLockHelper # helper process for the build-lock tests
 internal/runtime/enforce/cgroup TestSlotHelper # helper process for the slot-table tests
 internal/cli TestStopLockHolderHelper # helper process that holds a run's lock as the stand-in launcher for the stop tests
+internal/runlock TestHoldLockHelper # helper process that holds a run's lock as the stand-in launcher for the launcher-identity tests (TestLauncherGone, TestLauncherOfUnknownAndExited)
 internal/runtime TestLockHolderHelper # helper process that holds a run's lock for the sweep reclaim test
 internal/control/web TestHelperLockHolder # helper process that holds a run's lock as the stand-in launcher for the dashboard Stop tests
 internal/control/ledgerview TestHelperLockHolder # helper process that holds a run's lock as the stand-in launcher for the live-state tests (a killed launcher's run reads lost)
@@ -82,6 +83,7 @@ pkg/policy/execmatch/rows TestStagedReadDifferential # opt-in: decides about 6.5
 internal/control/web TestTwinJSWritesOnlyChanges # runs static/twin.js under node; skips where node is not installed
 internal/control/web TestTwinJSQuotesAsGo # runs static/twin.js under node; skips where node is not installed
 internal/control/web TestTwinJSWritesWhatTheFormDoes # runs static/twin.js under node; skips where node is not installed
+internal/control/web TestLiveRegionsRetryQuietRevision # runs static/live.js under node; skips where node is not installed
 
 # The node row's differential tests run node itself and need one of the captured versions (v20.19.4 or v22.21.1).
 pkg/policy/execmatch/rows TestNodeRowCodeDifferential # compares the node row with node 20.19.4/22.21.1's own reading; skips without node, under -short, or for an unpinned version

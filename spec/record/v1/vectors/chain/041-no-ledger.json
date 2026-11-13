@@ -1,0 +1,11 @@
+{
+ "name": "no-ledger",
+ "rule": "§7: no events.jsonl and nothing anchors the run",
+ "dir": "r-3f9c2a1b-0dllq06ts7400-p3fl15",
+ "events": null,
+ "anchor": null,
+ "expect": {
+  "verdict": "cannot-check",
+  "reason": "no-ledger"
+ }
+}

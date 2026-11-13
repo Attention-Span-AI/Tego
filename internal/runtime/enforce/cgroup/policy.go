@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -62,6 +63,14 @@ type policy struct {
 	// names is the table's name entries (ADR 0043 D7's fallback), indexed by the decision core: an open the path
 	// entries allow is refused when one covers the opened file. Nil when the table has none.
 	names *decide.NameIndex
+	// aliasErr is a bind alias the listener cannot hold (ErrListenerAlias); Prepare refuses a run the listener decides.
+	aliasErr error
+	// listenerHeld says this listener decides a deny_read or a name entry. Such reads
+	// refuse a setuid: true run in this release (ErrListenerSetuid).
+	listenerHeld bool
+	// openDevs is the devices of the mounts marked for opens, read from the same mount table as the marks: the
+	// recorder's test of whether the listener saw a read (Handle.ListenerDevices). Nil where no device is known.
+	openDevs map[uint64]struct{}
 }
 
 // fsEntry is one filesystem rule reduced to what a path decision needs.
@@ -71,27 +80,38 @@ type fsEntry struct {
 	rule string
 }
 
-// newPolicy reduces a compiled rule table to the listener's decision inputs. It never fails on a rule it does
-// not understand: an entry it cannot classify simply takes part in no decision, which leaves the inherited
-// tier-1 enforcement in charge of it rather than inventing a verdict.
-func newPolicy(rt *agent.RuleTable, runCgroup string) *policy {
-	return newPolicyWith(rt, runCgroup, mountPointsUnderFrom(readMountinfo), mountKeyOf)
+// mountView is what a policy reads of the mount table: the mount points strictly beneath a directory (under), the
+// other places the table shows a directory's tree at (aliases), each with the error that leaves them unknown, and the
+// device of the mount a path reaches (device, nil where nothing is known of devices).
+type mountView struct {
+	under   func(string) ([]string, error)
+	aliases func(string) ([]string, error)
+	device  func(string) (uint64, bool)
 }
 
-// readMountinfo reads the mount table of the namespace the run's processes share with the launcher: the file
-// MountPoints reads, so a test that hands the plane a table of its own hands the listener the same one.
-func readMountinfo() ([]byte, error) { return os.ReadFile(mountInfoPath) }
+// view is the snapshot's answers as a policy reads them.
+func (s *mountSnapshot) view() mountView {
+	return mountView{under: s.under, aliases: s.aliases, device: s.device}
+}
 
-// newPolicyWith is newPolicy with the mount table passed in: under lists the mount points strictly beneath a
-// directory (or the error reading the table), and mountOf names the mount a path is on. A test gives both without
-// mount(2).
-func newPolicyWith(rt *agent.RuleTable, runCgroup string, under func(string) ([]string, error), mountOf func(string) (mountKey, error)) *policy {
+// Limit startup diagnostics, not the checks: scanned name matches can contribute
+// tens of thousands of path entries, each visible at many mounts.
+const aliasDiagnosticEntries = 8
+const aliasDiagnosticPlaces = 4
+
+// newPolicyAt builds the listener inputs from prepared mount facts and the mount lookup.
+// A test gives them without mount(2).
+func newPolicyAt(rt *agent.RuleTable, runCgroup string, view mountView, mountOf func(string) (mountKey, error)) *policy {
+	under, aliases := view.under, view.aliases
 	p := &policy{runCgroup: runCgroup}
 	if rt == nil {
 		return p
 	}
 	var marks []markPath
 	var denyRead, readable, execAllow []fsEntry
+	var aliasDiagnostics []error
+	aliasEntries := 0
+
 	for i := range rt.FS {
 		r := &rt.FS[i]
 		if r.Path == "" {
@@ -108,10 +128,12 @@ func newPolicyWith(rt *agent.RuleTable, runCgroup string, under func(string) ([]
 		// The kernel reports the file it opened by its canonical path (readlink of the event's descriptor),
 		// never by the symlinked name an author wrote, so each entry is also held under Resolved, the subtree
 		// it governs (agent.FSRule): a deny_read on a symlinked ~/.aws was otherwise never matched here.
+		var otherPlaces []string
 		for _, path := range r.Spellings() {
 			e := fsEntry{path: path, dir: true, rule: r.RuleName()}
 			switch r.Kind {
 			case agent.FSDenyRead:
+				p.listenerHeld = true
 				denyRead = append(denyRead, e)
 				// Only a deny_read entry can make this listener refuse an open, so only its mount is worth
 				// marking. A write entry takes part in a decision solely to reopen a path inside a denied tree,
@@ -134,6 +156,13 @@ func newPolicyWith(rt *agent.RuleTable, runCgroup string, under func(string) ([]
 				for _, mp := range mps {
 					marks = append(marks, markPath{path: mp, open: true})
 				}
+				// A path read back from an event cannot hold another name of this tree through
+				// mutations. Refuse such a run when the listener would decide it (ADR 0011).
+				als, err := aliases(e.path)
+				if err != nil && p.mountErr == nil {
+					p.mountErr = fmt.Errorf("%w: the other places of deny_read %s cannot be listed: %w", ErrMountTable, e.path, err)
+				}
+				otherPlaces = append(otherPlaces, als...)
 			case agent.FSWrite:
 				readable = append(readable, e)
 			default:
@@ -141,7 +170,24 @@ func newPolicyWith(rt *agent.RuleTable, runCgroup string, under func(string) ([]
 				// what is recorded and grants nothing (SEMANTICS §7), an implicit one is a write guard.
 			}
 		}
+		if len(otherPlaces) > 0 {
+			aliasEntries++
+			if len(aliasDiagnostics) >= aliasDiagnosticEntries {
+				continue
+			}
+			slices.Sort(otherPlaces)
+			otherPlaces = slices.Compact(otherPlaces)
+			places := strings.Join(otherPlaces[:min(len(otherPlaces), aliasDiagnosticPlaces)], ", ")
+			if extra := len(otherPlaces) - aliasDiagnosticPlaces; extra > 0 {
+				places += fmt.Sprintf(", and %d more places", extra)
+			}
+			aliasDiagnostics = append(aliasDiagnostics, fmt.Errorf("%w: deny_read %s is also visible at %s; this tier's fanotify listener matches paths and cannot hold the rule through another name; remove those mounts", ErrListenerAlias, r.Path, places))
+		}
 	}
+	if extra := aliasEntries - len(aliasDiagnostics); extra > 0 {
+		aliasDiagnostics = append(aliasDiagnostics, fmt.Errorf("and %d more deny_read entries with other names", extra))
+	}
+	p.aliasErr = errors.Join(aliasDiagnostics...)
 	p.execOpen = rt.ExecUnrestricted()
 	// Under execOpen no exec decision can refuse, so no exec entry needs a matcher row or a mark.
 	for i := range rt.Exec {
@@ -221,8 +267,30 @@ func newPolicyWith(rt *agent.RuleTable, runCgroup string, under func(string) ([]
 
 	p.denyRead, p.readable, p.execAllow = newPathSet(denyRead), newPathSet(readable), newPathSet(execAllow)
 	p.mounts, p.masks = markMasks(marks, p.denyRead, !p.execOpen, mountOf)
+	p.listenerHeld = p.listenerHeld || p.names != nil
+	// The devices of the mounts marked for opens, from the same table, for the recorder (Handle.ListenerDevices).
+	if view.device != nil {
+		p.openDevs = map[uint64]struct{}{}
+		for _, m := range p.mounts {
+			if p.masks[m]&unix.FAN_OPEN_PERM == 0 {
+				continue
+			}
+			if dev, ok := view.device(m); ok {
+				p.openDevs[dev] = struct{}{}
+			}
+		}
+	}
 	return p
 }
+
+// ErrListenerAlias is a run the listener would decide whose denied tree is also visible
+// elsewhere. Prepare refuses it; the listener stores no alias decisions.
+var ErrListenerAlias = errors.New("cgroup: fanotify cannot hold a deny_read tree visible under another name")
+
+// ErrListenerSetuid is a run the fanotify listener would decide, with a deny_read
+// entry or a name entry, under setuid: true: a setuid program the run starts can regain
+// CAP_SYS_ADMIN and clone a mount tree with open_tree(2), whose copy no mark asks about (fix round 1, finding 5).
+var ErrListenerSetuid = errors.New("cgroup: the fanotify listener cannot hold this contract's reads under setuid: true")
 
 // existingAncestor is p, or its nearest ancestor that exists: the mount a program created at p later would be on.
 // A deny_read entry names its mount through FSRule.Mount for the same reason; a fence entry carries no such field.
@@ -235,12 +303,13 @@ func existingAncestor(p string) string {
 }
 
 // mountPointsUnderFrom returns newPolicy's under: the mount points strictly beneath a directory, from the mount
-// table read reads. The table is read and parsed on the first call only. The built-in .env scan puts one
+// points read gives (the prepared snapshot's, MountSnapshot.Points: strict and parsed once). They are read on the
+// first call only. The built-in .env scan puts one
 // deny_read entry per .env file in the project tree (up to its 50,000-entry cap), and reading and parsing
 // mountinfo again for each entry's every spelling made Prepare cost entries x mount lines, seconds on a host
 // with many mounts. An unreadable table answers its read error on every call, never an empty list: no submount
 // is marked then, and newPolicy's caller must refuse the run rather than enforce it quieter than its contract (R8, I7).
-func mountPointsUnderFrom(read func() ([]byte, error)) func(dir string) ([]string, error) {
+func mountPointsUnderFrom(read func() ([]string, error)) func(dir string) ([]string, error) {
 	var (
 		sorted  []string
 		readErr error
@@ -249,11 +318,11 @@ func mountPointsUnderFrom(read func() ([]byte, error)) func(dir string) ([]strin
 	return func(dir string) ([]string, error) {
 		if !loaded {
 			loaded = true
-			b, err := read()
+			points, err := read()
 			if err != nil {
 				readErr = err
 			} else {
-				sorted = agent.MountPoints(b)
+				sorted = slices.Clone(points)
 				sort.Strings(sorted)
 			}
 		}

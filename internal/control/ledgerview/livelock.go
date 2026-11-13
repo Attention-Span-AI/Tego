@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/runlock"
 )
 
 // A run is running while its launcher holds the run's lock (<root>/<run>/lock), which the kernel releases when the
@@ -83,5 +84,17 @@ func (s *Store) probeLock(id string) bool {
 		return false
 	}
 	held, err := lockHeld(dir)
-	return held || err != nil
+	if err != nil {
+		return true
+	}
+	// A lock held by a process that is not the run's launcher (the launcher exited, or its pid is another process now,
+	// by start time) is a lost run's, as tego status reads it (runlock.LauncherOf, ADR 0124's second amendment of
+	// 2026-11-11). Only a launcher confirmed gone turns it lost; one whose identity cannot be read stays running.
+	return held && !launcherGone(dir)
+}
+
+// launcherGone is runlock.LauncherGone, a variable so a test can stand in for the process table; an error is not gone.
+var launcherGone = func(dir string) bool {
+	gone, err := runlock.LauncherGone(dir)
+	return err == nil && gone
 }

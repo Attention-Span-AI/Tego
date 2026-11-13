@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: Apache-2.0
+# A detached part beneath a parent whose write grant reaches the same directory through another bind. Root tiers
+# refuse startup before either mutation or read; the listener stores no alias path that a mutation could change.
+version: 2
+name: mounts-bindancestor
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./edit/"]
+    deny_read: ["./secret/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [secret/deep, view/a/alias, view/c/alias, view/d, edit]
+files:
+  secret/deep/key: fixture
+mounts:
+  - {kind: bind, at: edit, from: view}
+  - {kind: bind, at: view/a/alias, from: secret/deep}
+  - {kind: bind, at: view/c/alias, from: secret/deep}
+model:
+  write: [edit]
+  deny_read: [secret]
+  exec_allow: [bin/actor]
+  net_declared: true
+  plane_cannot_hold: true
+  listener_refuses: true
+cells:
+  - name: rename-parent-through-bind
+    op: rename
+    path: edit/a
+    dest: edit/b
+    want:
+      all: allow fs.write[./edit/]
+    no_compile: startup is decided from the mount topology, which compile --test does not make
+    source: 'ADR 0011 (listener startup refusal); ADR 0025 (detached parts)'
+  - name: read-after-rename-through-bind
+    op: read
+    path: view/b/alias/key
+    canon: secret/deep/key
+    want:
+      landlock: allow
+      root: refused fs.deny_read[./secret/]
+    no_compile: startup is decided from the mount topology, which compile --test does not make
+    exception: 'enforce-landlock E32 (ii): a bind beneath a readable sibling remains readable at tier landlock'
+    exception_at: landlock
+    source: 'ADR 0011 (listener startup refusal); ADR 0025 (detached parts); enforce-landlock E32 (ii)'
+  - name: exchange-parent-through-bind
+    op: exchange
+    path: edit/c
+    dest: edit/d
+    want:
+      all: allow fs.write[./edit/]
+    no_compile: startup is decided from the mount topology, which compile --test does not make
+    source: 'ADR 0011 (listener startup refusal); ADR 0025 (detached parts)'
+  - name: read-after-exchange-through-bind
+    op: read
+    path: view/d/alias/key
+    canon: secret/deep/key
+    want:
+      landlock: allow
+      root: refused fs.deny_read[./secret/]
+    no_compile: startup is decided from the mount topology, which compile --test does not make
+    exception: 'enforce-landlock E32 (ii): a bind beneath a readable sibling remains readable at tier landlock'
+    exception_at: landlock
+    source: 'ADR 0011 (listener startup refusal); ADR 0025 (detached parts); enforce-landlock E32 (ii)'

@@ -130,12 +130,13 @@ func TestScanConfigPreempt(t *testing.T) {
 
 // TestFmodRetNeedsAKernelThatDoesNotPreempt is ADR 0024 (16)'s precondition: fmod_ret mode is ruled out before any
 // load on a kernel not shown never to preempt kernel code, with the fix that would change it; a test build's waiver
-// lets it be probed; LSM mode is never ruled out by it.
+// lets it be probed; LSM mode is not ruled out by it on a kernel whose trampoline exempts LSM programs (ADR 0148), and
+// only there is it offered as the fix.
 func TestFmodRetNeedsAKernelThatDoesNotPreempt(t *testing.T) {
 	inactive := LSMState{Modules: []string{"capability", "landlock"}, Source: LSMSourceSyscall}
 	active := LSMState{Modules: []string{"capability", "landlock", "bpf"}, BPFActive: true, Source: LSMSourceSyscall}
 	for _, m := range []string{preemptFull, preemptLazy, preemptRT, preemptFullOrLazy, ""} {
-		env := PlaneEnv{Preempt: m, PreemptSource: debugfsPreemptPath}
+		env := PlaneEnv{Preempt: m, PreemptSource: debugfsPreemptPath, LSMRecursionExempt: true}
 		if m == "" {
 			env.PreemptSource = "a PREEMPT_DYNAMIC build, whose live mode only " + debugfsPreemptPath + " says, and it cannot be read"
 		}
@@ -171,8 +172,8 @@ func TestFmodRetNeedsAKernelThatDoesNotPreempt(t *testing.T) {
 
 // TestAdoptionRechecksPreemption: a pinned build's fmod_ret answer is not adopted on a kernel that does not prove it
 // (the build may have been pinned by a test build that waived it, or before root changed the mode in debugfs), so the
-// run probes and the probe says why; an LSM answer, or fmod_ret's under voluntary preemption, is adopted and carries
-// the reading.
+// run probes and the probe says why; an LSM answer on a kernel that exempts LSM programs, or fmod_ret's under voluntary
+// preemption, is adopted and carries the reading; an LSM answer on one that does not is held to fmod_ret's rule.
 func TestAdoptionRechecksPreemption(t *testing.T) {
 	adopted := func(m bpfobj.PlaneMode) *PlaneState {
 		return &PlaneState{Source: planeSourcePin, Modes: []PlaneModeResult{{Mode: m, OK: true, Tested: true}}}
@@ -186,8 +187,17 @@ func TestAdoptionRechecksPreemption(t *testing.T) {
 	if adoptStillAdmitted(adopted(bpfobj.PlaneFmodRet), unproven, lsm) {
 		t.Error("an fmod_ret answer adopted where debugfs cannot be read")
 	}
-	if st := adopted(bpfobj.PlaneLSM); !adoptStillAdmitted(st, lazy, lsm) || st.Env.Preempt != preemptLazy {
-		t.Errorf("an LSM answer under lazy preemption: %+v", st.Env)
+	exempt := lazy
+	exempt.LSMRecursionExempt = true
+	if st := adopted(bpfobj.PlaneLSM); !adoptStillAdmitted(st, exempt, lsm) || st.Env.Preempt != preemptLazy ||
+		!st.Env.LSMRecursionExempt {
+		t.Errorf("an LSM answer under lazy preemption on a kernel that exempts LSM programs: %+v", st.Env)
+	}
+	if adoptStillAdmitted(adopted(bpfobj.PlaneLSM), lazy, lsm) {
+		t.Error("an LSM answer adopted under lazy preemption on a kernel whose trampoline checks LSM programs")
+	}
+	if st := adopted(bpfobj.PlaneLSM); !adoptStillAdmitted(st, PlaneEnv{Preempt: preemptVoluntary}, lsm) {
+		t.Error("an LSM answer refused under voluntary preemption on a kernel whose trampoline checks LSM programs")
 	}
 	vol := PlaneEnv{Preempt: preemptVoluntary, PreemptSource: debugfsPreemptPath}
 	if st := adopted(bpfobj.PlaneFmodRet); !adoptStillAdmitted(st, vol, lsm) || st.Env.PreemptSource != vol.PreemptSource {

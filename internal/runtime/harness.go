@@ -121,7 +121,12 @@ func (r *runner) provisionHarness() error {
 	if len(inherited) > 0 {
 		r.log.Info("run: the harness provision replaces inherited variables", "harness", name, "names", inherited)
 	}
-	d := AdmitHook(r.rt, r.tier(), exe, prov.Hook)
+	var d HookDecision
+	if r.deps.hookHost == nil {
+		d = AdmitHook(r.rt, r.tier(), exe, prov.Hook)
+	} else {
+		d = admitHook(r.rt, r.tier(), exe, prov.Hook, *r.deps.hookHost)
+	}
 	if prov.Hook != nil {
 		r.harness.start.Hook = &record.HarnessHook{Argv: slices.Clone(prov.Hook.Argv), Granted: d.Granted}
 	}

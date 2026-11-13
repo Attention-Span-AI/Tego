@@ -100,6 +100,46 @@ for c in "untagged: the plain build has no objects|0" "the kernel lacks it|1"; d
 		fail=1
 	fi
 done
+# Row scoping adds metadata, never a bypass of the root registry's validation. A scoped test still has to exist,
+# remain unique, belong to a root package, and stay disjoint from must-pass (apart from untagged: as before).
+printf '# empty fixture list\n' >"$fixture/test/vm/root-must-pass.txt"
+for c in 'p TestBoth row=rhel-9 # the driver is absent|0|' \
+	'p TestBoth row= # missing row|1|malformed' \
+	'p TestBoth row=fedora-* # no wildcard|1|malformed' \
+	'p TestBoth rows=rhel-9 # unknown metadata|1|malformed' \
+	'p TestGone row=rhel-9 # a deleted test|1|no func TestGone'; do
+	rest=${c#*|} want=${rest%%|*} message=${rest#*|}
+	printf '%s\n' "${c%%|*}" >"$fixture/test/vm/root-skips.txt"
+	got=0
+	"$fixture/scripts/check-skiplists.sh" >"$tmp/scoped.out" 2>&1 || got=$?
+	if [ "$got" = "$want" ] && { [ -z "$message" ] || grep -qF "$message" "$tmp/scoped.out"; }; then
+		echo "ok   scoped registry validation: ${c%%|*}"
+	else
+		echo "FAIL scoped registry validation: exit $got, want $want: ${c%%|*}" >&2
+		sed 's/^/     /' "$tmp/scoped.out" >&2
+		fail=1
+	fi
+done
+printf 'p TestBoth row=rhel-9 # driver absent\np TestBoth row=fedora-7.2 # duplicate\n' >"$fixture/test/vm/root-skips.txt"
+got=0
+"$fixture/scripts/check-skiplists.sh" >"$tmp/scoped.out" 2>&1 || got=$?
+if [ "$got" = 1 ] && grep -q 'is listed twice' "$tmp/scoped.out"; then
+	echo 'ok   row metadata does not hide a duplicate registry entry'
+else
+	echo "FAIL scoped duplicate validation: exit $got" >&2
+	fail=1
+fi
+printf 'p TestBoth row=rhel-9 # driver absent\n' >"$fixture/test/vm/root-skips.txt"
+printf 'p TestBoth # must pass\n' >"$fixture/test/vm/root-must-pass.txt"
+got=0
+"$fixture/scripts/check-skiplists.sh" >"$tmp/scoped.out" 2>&1 || got=$?
+if [ "$got" = 1 ] && grep -q 'TestBoth is in both' "$tmp/scoped.out"; then
+	echo 'ok   row metadata does not hide a must-pass contradiction'
+else
+	echo "FAIL scoped must-pass validation: exit $got" >&2
+	fail=1
+fi
+printf '# empty fixture list\n' >"$fixture/test/vm/root-must-pass.txt"
 # The root lists name tests of the packages the root run starts (test/vm/suites.sh's PKGS): an entry for a package
 # outside it allows a skip, or requires a pass, that no root run reaches (ADR 0100 named a KVM gate for the peer
 # check while its package was missing from PKGS).

@@ -23,6 +23,10 @@ internal/platform/sys TestInheritedHelper # helper process for TestInheritedKind
 internal/platform/sys TestCloseInheritedFromHelper # helper process for TestCloseInheritedFrom
 internal/cli TestStopLockHolderHelper # helper process that holds a run's lock as the stand-in launcher for the stop tests
 internal/control/web TestHelperLockHolder # helper process that holds a run's lock as the stand-in launcher for the dashboard Stop tests
+internal/control/web TestTwinJSWritesOnlyChanges # runs static/twin.js under node; skips where node is not installed (a KVM guest of the kernel matrix has none)
+internal/control/web TestTwinJSQuotesAsGo # runs static/twin.js under node; skips where node is not installed (a KVM guest of the kernel matrix has none)
+internal/control/web TestTwinJSWritesWhatTheFormDoes # runs static/twin.js under node; skips where node is not installed (a KVM guest of the kernel matrix has none)
+internal/control/web TestLiveRegionsRetryQuietRevision # runs static/live.js under node; skips where node is not installed (a KVM guest of the kernel matrix has none)
 internal/runtime TestLockHolderHelper # helper process that holds a run's lock for the sweep reclaim test
 internal/runtime TestHeldFileHolderHelper # helper process that holds a file for the adoption held-file count's root test
 internal/runtime TestOutlivesLauncherHelper # helper process for TestIntegrationEnforcementOutlivesItsLauncher
@@ -74,6 +78,7 @@ internal/runtime TestHarnessProvisionRefusals # a root launcher makes no runtime
 internal/runtime TestHarnessHookAdmission # a root launcher makes no runtime directory, so it provisions no harness; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
 internal/runtime TestHookStateUnderAnExecDirectoryIsRefused # a root launcher makes no runtime directory, so it provisions no harness; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
 internal/runtime TestHarnessHookWritableIsNotGranted # a root launcher makes no runtime directory, so it provisions no harness and grants no hook; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
+internal/runtime TestHarnessUnplacedBackingDoesNotRefuseRun # a root launcher makes no runtime directory, so it provisions no harness and reaches no hook-grant scan; the unprivileged suites exercise both captured layouts
 internal/runtime TestIntegrationHarnessHookGrantIsTheExactArgv # a root launcher makes no runtime directory, so it provisions no harness and grants no hook; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
 internal/runtime TestIntegrationHarnessHookWritableRunsUnprovisioned # a root launcher makes no runtime directory, so it provisions no harness and grants no hook; TestIntegrationHarnessWithNoRuntimeDirectory covers the root run
 internal/runtime TestIntegrationKernelExecAssuranceRefusesAlikeWithAHook # a root launcher makes no runtime directory, so no provisioner is asked and both cases are one; TestExecAssuranceNeedsTheHandlesClaim covers the refusal
@@ -95,6 +100,14 @@ internal/cli TestIntegrationReceiptOfAScriptedRunAtTierLandlock # tego run of a 
 internal/cli TestIntegrationInitPresetInsideARun # tego init --preset as the agent of a run at tier landlock, the unprivileged launch: as root (sudo) the agent runs as the invoking user, who cannot reach the test's private directories; the unprivileged integration step runs it
 
 # Root reads what mode bits refuse, so a case that needs a refusal cannot be staged.
+internal/cli TestReadScopeKeepsUnreadableApart # root can search a mode-000 directory; the unprivileged suites exercise the real EACCES
+internal/runtime TestKillOrphanKeepsScopeReadErrors/scope-access # root can search a mode-000 directory; the unprivileged suites exercise the real EACCES
+internal/runtime TestSweepRetainsScopeReadErrorsForRetry/live/scope-access # root can search a mode-000 directory; the unprivileged suites exercise the real EACCES
+internal/runtime TestSweepRetainsScopeReadErrorsForRetry/retention/scope-access # root can search a mode-000 directory; the unprivileged suites exercise the real EACCES
+internal/runtime TestEndedListedRetainsScopeReadErrorsForRetry/scope-access # root can search a mode-000 directory; the unprivileged suites exercise the real EACCES
+internal/runtime TestSweepRetainsEndedScopeReadErrorsForRetry/scope-access # root can search a mode-000 directory; the unprivileged suites exercise the real EACCES
+internal/runtime TestSweepRetainsUnknownRootLaunchRecords/record_directory # sweeps as if root while owning the run directory itself, which needs a uid other than root; the unprivileged suites run it
+internal/runtime TestSweepRetainsUnknownRootLaunchRecords/record_file # sweeps as if root while owning the run directory itself, which needs a uid other than root; the unprivileged suites run it
 internal/runtime/enforce/cgroup TestPinsRemoveKeepsTheBuildUnderAPlaneItCannotRemove # root bypasses directory write mode bits, so the stuck-plane removal refusal cannot be staged; the unprivileged unit and integration suites exercise it
 internal/runtime/enforce/cgroup TestUnpinKeepsTheBuildUnderAPlaneItCannotRemove # root bypasses directory write mode bits, so the stuck-plane unpin refusal cannot be staged; the unprivileged unit and integration suites exercise it
 internal/cli TestInitReadOnlyParent # root bypasses directory write permission, which this test relies on
@@ -106,8 +119,8 @@ internal/cli TestRunLeavesALayerOthersCouldWriteToTheTrustCheck # a root launche
 internal/cli TestGCGivesTheLayerBackBeforeItReadsIt # root reads the config through any mode and gc as root restores none; the unprivileged unit run covers it
 internal/cli TestGCDryRunGivesNoModeBack # root reads a mode-0 layer, so there is no refusal to stage; the unprivileged unit run covers it
 internal/cli TestUnstatableRunIsIONotUsage # root searches a 0000 ledger root, so stat never fails; the unit run covers it
-internal/ledger TestGCExpiresARunWhoseStateCannotBeRead # root reads a 0000 file; this case needs an unprivileged uid
-internal/ledger TestGCReportsBothTheStateAndTheRemovalError # root reads a 0000 file; this case needs an unprivileged uid (the unit run covers it)
+internal/ledger TestGCKeepsARunWhoseStateCannotBeRead # root reads a 0000 file; this case needs an unprivileged uid
+internal/ledger TestGCRetainsUnknownStateBeforeRemoval # root reads a 0000 file; this case needs an unprivileged uid (the unit run covers it)
 internal/ledger TestGCKeepsAnUnreadableRunWhoseLockIsHeld # root reads a 0000 file; this case needs an unprivileged uid
 internal/ledger TestGCDoesNotSweepARunWhoseStateCannotBeRead # root reads a 0000 file; this case needs an unprivileged uid
 internal/ledger TestSweepLiveLeavesUnlistedRunsAlone # root reads a mode-0 file
@@ -236,6 +249,9 @@ internal/runtime/enforce/cgroup TestAttachNamesALegacyExclusiveProgramAbove # un
 internal/runtime/enforce/cgroup TestTier2DenyReadSecondNameRefused # untagged: needs the compiled objects
 internal/runtime/enforce/cgroup TestTier2RunEndToEnd # untagged: the end-to-end run belongs to the tegobpf suite
 internal/runtime/enforce/cgroup TestTier2ConcurrentRunsOfOneBuild # untagged: the end-to-end run belongs to the tegobpf suite
+internal/runtime/enforce/cgroup TestSkippedDecidingProgramEndsTheRun # skips where root, sudo caller IDs, BPF objects, python3, a built binary, tier cgroup or the plane's lsm mode is unavailable; on fedora-7.0 with bpf active any prerequisite skip fails the proof instead
+internal/runtime/enforce/cgroup TestSkippedDecidingProgramEndsTheRun/forced # skips only where no deciding skip was recorded during the run; outside counter movements alone do not prove a forced skip; on fedora-7.0 with bpf active it fails instead; on fedora-7.2 the hammer cannot force one (ADR 0148)
+internal/runtime/enforce/cgroup TestSkippedDecidingProgramEndsTheRun/ungoverned # as /forced: skips only where no deciding skip was recorded during the run; on fedora-7.0 with bpf active it fails instead; on fedora-7.2 the hammer cannot force one (ADR 0148)
 internal/runtime/enforce/cgroup TestACancelledTestRunLeavesNoRowOfItsBuild # untagged: the run needs the compiled objects
 internal/runtime/enforce/cgroup TestTier2UnixEndToEnd # untagged: the end-to-end run belongs to the tegobpf suite
 internal/runtime/enforce/cgroup TestTier2DatagramLineIsTheKernels # untagged: the end-to-end run belongs to the tegobpf suite, whose skip gate and no-failure rule hold it
@@ -297,6 +313,8 @@ internal/cli TestIntegrationAdoptKilledAdopterLeavesNothingAttached # untagged: 
 internal/cli TestIntegrationAdoptBusyAgentRecordsTheGap # untagged: an adoption records from tier 2's trace programs, which only the tegobpf build carries
 internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlane # untagged: a boundary adoption is held by the decision plane, which only the tegobpf build carries
 internal/cli TestIntegrationAdoptReleaseCommand # untagged: an adoption records from tier 2's trace programs, which only the tegobpf build carries
+internal/cli TestAdoptEnvCleanupEndsTheAgentsBackgroundJobs # untagged: the adoption tests' environment builds and uses the tegobpf tego binary, which only the tegobpf build carries
+internal/cli TestIntegrationAdoptSkipIsRecordedAtOnce # skips only without the tegobpf build or python3, where no fmod_ret plane decides an adoption, or where no skip could be made (a kernel that does not preempt kernel code); on fedora-7.0 and fedora-7.2 every one of those fails instead
 internal/cli TestIntegrationGuardAdoptsAnAgentAsItStarts # untagged: the guard's adoptions record from tier 2's trace programs, which only the tegobpf build carries
 internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlaneWatcher # untagged: a boundary adoption requires the embedded decision plane
 internal/cli TestIntegrationAdoptAppliesPidsAndCPUCeilings # untagged: a boundary adoption is held by the decision plane, which only the tegobpf build carries

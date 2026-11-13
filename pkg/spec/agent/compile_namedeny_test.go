@@ -690,8 +690,8 @@ func TestBindExposedScope(t *testing.T) {
 		}
 		mt.mounts = append(mt.mounts, m)
 	}
-	// lookup takes the longest mount point first, as loadMountTable sorts them.
-	mt.mounts = []mount{mt.mounts[3], mt.mounts[2], mt.mounts[1], mt.mounts[4], mt.mounts[0]}
+	// order indexes the rows as every reader does: lookup follows parent edges, not the rows' order.
+	mt.order()
 	for scope, want := range map[string]bool{"/home/u/p": true, "/home/u/p/sub": true, "/home/u/q": false, "/tmp/w": false, "/home/u/p/in": true} {
 		if got := mt.bindExposed(scope); got != want {
 			t.Errorf("bindExposed(%s) = %v, want %v", scope, got, want)

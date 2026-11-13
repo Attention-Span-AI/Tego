@@ -14,3 +14,11 @@ func WithoutMulticall(ix *Index) *Index {
 func IsMulticallImage(ix *Index, links uint64, image string) bool {
 	return ix.multicallImage(links, image)
 }
+
+// WithoutEarlyGuard applies the full decision for the guard's property tests.
+func WithoutEarlyGuard(ix *Index, f *Facts) Result {
+	if ix.Empty() {
+		return Result{K: len(f.Argv), Final: true}
+	}
+	return ix.decide(f)
+}

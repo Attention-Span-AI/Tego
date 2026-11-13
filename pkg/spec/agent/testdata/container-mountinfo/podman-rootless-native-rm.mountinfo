@@ -1,0 +1,31 @@
+440 378 0:46 / / rw,relatime - overlay overlay rw,lowerdir=/home/runner/.local/share/containers/storage/overlay/l/43SL2DY2ZWYM4P562LZSZEWQ63,upperdir=/home/runner/.local/share/containers/storage/overlay/2c4808ed5b8201d0d902524d99e0074897f5804e69679cd1532d6b79d73601e9/diff,workdir=/home/runner/.local/share/containers/storage/overlay/2c4808ed5b8201d0d902524d99e0074897f5804e69679cd1532d6b79d73601e9/work,redirect_dir=nofollow,uuid=on,fsync=volatile,userxattr
+442 440 0:55 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+443 440 0:56 / /dev rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755,uid=1000,gid=1000,inode64
+444 440 0:57 / /sys ro,nosuid,nodev,noexec,relatime - sysfs sysfs ro
+445 443 0:58 / /dev/pts rw,nosuid,noexec,relatime - devpts devpts rw,gid=100004,mode=620,ptmxmode=666
+446 443 0:53 / /dev/mqueue rw,nosuid,nodev,noexec,relatime - mqueue mqueue rw
+447 440 0:44 /containers/overlay-containers/36f8aa18703aa396c5a509cbd1d0dd50da9edd9fceffacbfc230818c2b14d78f/userdata/resolv.conf /etc/resolv.conf rw,nosuid,nodev,relatime - tmpfs tmpfs rw,size=304324k,nr_inodes=76081,mode=700,uid=1000,gid=1000,inode64
+448 440 0:44 /containers/overlay-containers/36f8aa18703aa396c5a509cbd1d0dd50da9edd9fceffacbfc230818c2b14d78f/userdata/hosts /etc/hosts rw,nosuid,nodev,relatime - tmpfs tmpfs rw,size=304324k,nr_inodes=76081,mode=700,uid=1000,gid=1000,inode64
+449 443 0:45 / /dev/shm rw,nosuid,nodev,noexec,relatime - tmpfs shm rw,size=64000k,uid=1000,gid=1000,inode64
+450 440 0:44 /containers/overlay-containers/36f8aa18703aa396c5a509cbd1d0dd50da9edd9fceffacbfc230818c2b14d78f/userdata/.containerenv /run/.containerenv rw,nosuid,nodev,relatime - tmpfs tmpfs rw,size=304324k,nr_inodes=76081,mode=700,uid=1000,gid=1000,inode64
+451 440 0:44 /containers/overlay-containers/36f8aa18703aa396c5a509cbd1d0dd50da9edd9fceffacbfc230818c2b14d78f/userdata/hostname /etc/hostname rw,nosuid,nodev,relatime - tmpfs tmpfs rw,size=304324k,nr_inodes=76081,mode=700,uid=1000,gid=1000,inode64
+452 444 0:28 / /sys/fs/cgroup ro,nosuid,nodev,noexec,relatime - cgroup2 cgroup rw,nsdelegate,memory_recursiveprot
+453 443 0:5 /null /dev/null rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+454 443 0:5 /random /dev/random rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+455 443 0:5 /full /dev/full rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+456 443 0:5 /tty /dev/tty rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+457 443 0:5 /zero /dev/zero rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+458 443 0:5 /urandom /dev/urandom rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+379 442 0:55 /bus /proc/bus ro,nosuid,nodev,noexec,relatime - proc proc rw
+380 442 0:55 /fs /proc/fs ro,nosuid,nodev,noexec,relatime - proc proc rw
+381 442 0:55 /irq /proc/irq ro,nosuid,nodev,noexec,relatime - proc proc rw
+382 442 0:55 /sys /proc/sys ro,nosuid,nodev,noexec,relatime - proc proc rw
+383 442 0:55 /sysrq-trigger /proc/sysrq-trigger ro,nosuid,nodev,noexec,relatime - proc proc rw
+384 442 0:59 / /proc/acpi ro,relatime - tmpfs tmpfs ro,uid=1000,gid=1000,inode64
+385 442 0:5 /null /proc/kcore rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+386 442 0:5 /null /proc/keys rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+387 442 0:5 /null /proc/latency_stats rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+388 442 0:5 /null /proc/timer_list rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+389 442 0:60 / /proc/scsi ro,relatime - tmpfs tmpfs ro,uid=1000,gid=1000,inode64
+390 444 0:61 / /sys/firmware ro,relatime - tmpfs tmpfs ro,uid=1000,gid=1000,inode64
+391 444 0:62 / /sys/dev/block ro,relatime - tmpfs tmpfs ro,uid=1000,gid=1000,inode64

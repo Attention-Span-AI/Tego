@@ -1,0 +1,99 @@
+[
+  {
+    "name": "desktop",
+    "home": "/home/alice",
+    "project": "/home/alice/project",
+    "assumption": "Ext4 root and a separate ext4 home, each visible once; ordinary proc, sysfs and runtime mounts.",
+    "want": {}
+  },
+  {
+    "name": "atomic",
+    "home": "/home/alice",
+    "homeTarget": "/var/home/alice",
+    "project": "/var/home/alice/project",
+    "assumption": "Btrfs deployment root, persistent /var and a readable /sysroot view of the same filesystem; /home/alice resolves to /var/home/alice.",
+    "want": {
+      "/var/home/alice/.ssh": [
+        "/sysroot/ostree/deploy/fedora/var/home/alice/.ssh"
+      ],
+      "/var/home/alice/.aws": [
+        "/sysroot/ostree/deploy/fedora/var/home/alice/.aws"
+      ],
+      "/var/home/alice/.netrc": [
+        "/sysroot/ostree/deploy/fedora/var/home/alice/.netrc"
+      ],
+      "/var/home/alice/.config/gh": [
+        "/sysroot/ostree/deploy/fedora/var/home/alice/.config/gh"
+      ],
+      "/var/home/alice/.mozilla/firefox": [
+        "/sysroot/ostree/deploy/fedora/var/home/alice/.mozilla/firefox"
+      ],
+      "/var/home/alice/snap/firefox/common/.mozilla": [
+        "/sysroot/ostree/deploy/fedora/var/home/alice/snap/firefox/common/.mozilla"
+      ],
+      "/var/home/alice/project/.env": [
+        "/sysroot/ostree/deploy/fedora/var/home/alice/project/.env"
+      ],
+      "/var/home/alice/.tego": [
+        "/sysroot/ostree/deploy/fedora/var/home/alice/.tego"
+      ]
+    }
+  },
+  {
+    "name": "snap-ubuntu",
+    "home": "/home/alice",
+    "project": "/home/alice/project",
+    "assumption": "Ext4 root with five squashfs snaps, each on its own loop device; no duplicate home or project mount.",
+    "want": {}
+  },
+  {
+    "name": "docker",
+    "home": "/home/alice",
+    "project": "/work",
+    "assumption": "Overlay container root; host home and its nested project bound at /home/alice and /work on the same ext4 device.",
+    "want": {
+      "/work/.env": [
+        "/home/alice/project/.env"
+      ]
+    }
+  },
+  {
+    "name": "toolbox",
+    "home": "/home/alice",
+    "project": "/home/alice/project",
+    "assumption": "Overlay container root, shared host home from /var/home and a readable full host filesystem at /run/host.",
+    "want": {
+      "/home/alice/.ssh": [
+        "/run/host/var/home/alice/.ssh"
+      ],
+      "/home/alice/.aws": [
+        "/run/host/var/home/alice/.aws"
+      ],
+      "/home/alice/.netrc": [
+        "/run/host/var/home/alice/.netrc"
+      ],
+      "/home/alice/.config/gh": [
+        "/run/host/var/home/alice/.config/gh"
+      ],
+      "/home/alice/.mozilla/firefox": [
+        "/run/host/var/home/alice/.mozilla/firefox"
+      ],
+      "/home/alice/snap/firefox/common/.mozilla": [
+        "/run/host/var/home/alice/snap/firefox/common/.mozilla"
+      ],
+      "/home/alice/project/.env": [
+        "/run/host/var/home/alice/project/.env"
+      ],
+      "/home/alice/.tego": [
+        "/run/host/var/home/alice/.tego"
+      ]
+    }
+  },
+  {
+    "name": "wsl2",
+    "home": "/home/alice",
+    "project": "/mnt/c/Users/Alice/project",
+    "assumption": "Ext4 Linux root and one 9p Windows drive at /mnt/c; project on that drive; no second view of either filesystem.",
+    "want": {}
+  }
+]

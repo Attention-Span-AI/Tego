@@ -24,6 +24,17 @@ func askHarness(t *testing.T, maxBody int, request func(context.Context, ask.Req
 	return askHarnessWithin(t, maxBody, time.Second, request, handler)
 }
 
+// askBudget is a hold timeout for a test whose subject is not the timeout: the rest of the test's deadline, or a
+// minute. askHarness's one second has to cover whatever the approval does, and an approval that writes a file
+// (modelroutes.Update, credvault.Update: a write, an fsync of the file and one of its directory) can take longer on a
+// busy disk; TestRouteMovedWhileHeldIsNotSent was answered "ask-timeout" that way under load (2026-11-11).
+func askBudget(t *testing.T) time.Duration {
+	if deadline, ok := t.Deadline(); ok {
+		return time.Until(deadline)
+	}
+	return time.Minute
+}
+
 func askHarnessWithin(t *testing.T, maxBody int, timeout time.Duration, request func(context.Context, ask.Request) (ask.Decision, error), handler http.HandlerFunc) (*Listener, *fakeSink) {
 	t.Helper()
 	up := httptest.NewTLSServer(handler)
@@ -60,11 +71,7 @@ func TestRequestAskActualTLSCoalescesRetriesAndSeparatesBodiesCredentials(t *tes
 	approve := make(chan struct{})
 	// Peer admission and instrumented TLS setup are not part of the coalescing contract. Use
 	// the test's deadline here; the separate deadline-refusal test keeps its one-second hold.
-	budget := time.Minute
-	if deadline, ok := t.Deadline(); ok {
-		budget = time.Until(deadline)
-	}
-	l, _ := askHarnessWithin(t, 4096, budget, func(ctx context.Context, r ask.Request) (ask.Decision, error) {
+	l, _ := askHarnessWithin(t, 4096, askBudget(t), func(ctx context.Context, r ask.Request) (ask.Decision, error) {
 		asks.Add(1)
 		queued <- r
 		select {

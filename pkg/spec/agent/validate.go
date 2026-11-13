@@ -175,7 +175,17 @@ func validateExec(ds *diags, c *Contract) {
 			total++
 			p, err := execmatch.Parse(e, l.list, rows.Builtin())
 			var se *execmatch.SyntaxError
+			warn := func(warnings []string) {
+				for _, w := range warnings {
+					fix := "correct the option spelling in this entry"
+					if strings.Contains(w, "$ or a backtick") {
+						fix = "drop the $ or backtick: no shell expands an entry"
+					}
+					ds.warnf(pos, CodeExecRule, "%s %q: %s", l.key, e, w).fix("%s", fix)
+				}
+			}
 			if errors.As(err, &se) {
+				warn(se.Warnings)
 				ds.errorf(pos, CodeExecRule, "%s %q: %s", l.key, e, se.Msg).fix("%s", fixOr(se.Fix, "see docs/spec/exec-command-rows.md for the pattern grammar"))
 				continue
 			}
@@ -183,9 +193,7 @@ func validateExec(ds *diags, c *Contract) {
 				ds.errorf(pos, CodeExecRule, "%s %q: %v", l.key, e, err)
 				continue
 			}
-			for _, w := range p.Warnings {
-				ds.warnf(pos, CodeExecRule, "%s %q: %s", l.key, e, w).fix("drop the $ or backtick: no shell expands an entry")
-			}
+			warn(p.Warnings)
 		}
 	}
 	if total > execmatch.MaxPatterns {

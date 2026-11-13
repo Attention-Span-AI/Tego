@@ -708,5 +708,21 @@
       "count": 1,
       "why": "Synthetic link counts and prepared directory identities exercise immutable refusal precedence; real socket aliases are covered by C40 integration."
     }
+  },
+  "internal/runtime/observe/bindalias_test.go": {
+    "TestRecorderUsesPreparedMountFacts": {
+      "count": 1,
+      "why": "Synthetic recorder input (ADR 0011 amendment): one deny_read row over a chosen submount device with a prepared or stale mount table, for which mount facts the recorder uses and which devices it treats as the listener's; no contract acceptance is asserted."
+    },
+    "TestRecorderUsesActualMarkedDevices": {
+      "count": 1,
+      "why": "Synthetic recorder input (ADR 0011 amendment): one deny_read row over a chosen submount device with a prepared or stale mount table, for which mount facts the recorder uses and which devices it treats as the listener's; no contract acceptance is asserted."
+    }
+  },
+  "internal/runtime/enforce/cgroup/bindalias_test.go": {
+    "TestPlaneDetachedPartFallsBackOrRefuses": {
+      "count": 1,
+      "why": "Synthetic holdability input (ADR 0025 amendment): one deny_read row over a modeled mount table with a part of its tree mounted outside it, for the plane's fallback or refusal; no contract acceptance is asserted."
+    }
   }
 }

@@ -23,11 +23,19 @@ import (
 
 func init() {
 	funcs["paused"] = runPaused
+	funcs["lostPaused"] = lostPaused
+	funcs["unknownRecovery"] = unknownRecovery
 	funcs["pausedBy"] = pausedBy
 }
 
 // pauseRun is the runact call the handler makes; tests replace it to see what reaches the overlay.
 var pauseRun = runact.Pause
+
+// launcherUnknown is runact.LauncherUnknown, which the run page asks of a running run; tests stand in for it.
+var launcherUnknown = runact.LauncherUnknown
+
+// unknownRecovery is what to do about a launcher that could not be judged, for the run page's words.
+func unknownRecovery() string { return runact.UnknownRecovery }
 
 // runPaused reports whether r is running and its launcher has recorded it paused: the Paused pill a Runs or Overview
 // row shows in place of Running. An ended run is never paused, and neither is anything that is not a run (the state
@@ -35,6 +43,14 @@ var pauseRun = runact.Pause
 func runPaused(v any) bool {
 	r, ok := v.(*ledgerview.Run)
 	return ok && r != nil && r.State() == "running" && ledgerview.LiveFactsOf(r).Paused
+}
+
+// lostPaused reports whether r is lost (no run_end, its launcher gone) and its launcher's last recorded pause line held
+// it paused. That is the last state recorded, not proof it stayed frozen; Tego never thaws it, and tego stop ends it
+// (ADR 0124, second amendment of 2026-11-11).
+func lostPaused(v any) bool {
+	r, ok := v.(*ledgerview.Run)
+	return ok && r != nil && r.State() == "lost" && ledgerview.LiveFactsOf(r).Paused
 }
 
 // pausedBy says who asked for a pause, from a change's by ("uid:<uid> pid:<pid> <via>"): "you, from the dashboard"

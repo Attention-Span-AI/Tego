@@ -133,7 +133,11 @@ cat >"$repo/scripts/tree-files.sh" <<'EOF'
 #!/bin/sh
 printf 'x\0'
 EOF
-printf '#!/bin/sh\nexit 0\n' >"$repo/scripts/skipgate.sh"
+cat >"$repo/scripts/skipgate.sh" <<'EOF'
+#!/bin/sh
+[ -z "${STUB_GATES:-}" ] || printf '%s\n' "$*" >>"$STUB_GATES"
+exit 0
+EOF
 : >"$repo/x"
 cat >"$repo/test/vm/kvm-run.sh" <<'EOF'
 #!/bin/sh
@@ -152,6 +156,15 @@ while [ $# -gt 0 ]; do
 	esac
 done
 echo "=== RUN   TestStandIn" >"$log"
+# STUB_LOST: the guest whose console path holds it is lost as the real one reports a qemu a signal from outside ended
+# (kvm-run.sh's guest_end): no end line, a GUEST-LOST line, status "lost signal 9", exit 98.
+case "$log" in
+*"${STUB_LOST:-//}"*)
+	echo "GUEST-LOST: qemu ended by signal 9 after 3s, before the command reported its exit code; this is not a test result" | tee -a "$log" >&2
+	echo "lost signal 9" >"$status"
+	exit 98
+	;;
+esac
 echo "--- PASS: TestStandIn (0.00s)" >>"$log"
 echo "guest 0" >"$status"
 exit 0
@@ -193,7 +206,8 @@ chmod +x "$tmp/stub/sudo"
 # run_stub runs the copy with the given variables and reports its boots in $tmp/boots.
 run_stub() {
 	: >"$tmp/boots"
-	env -i PATH="$tmp/stub:$PATH" HOME="$tmp" TMPDIR="$tmp" GO="$tmp/stub/go" VM_OUT="$tmp/stubout" VM_BPF=no STUB_BOOTS="$tmp/boots" "$@" \
+	: >"$tmp/gates"
+	env -i PATH="$tmp/stub:$PATH" HOME="$tmp" TMPDIR="$tmp" GO="$tmp/stub/go" VM_OUT="$tmp/stubout" VM_BPF=no STUB_BOOTS="$tmp/boots" STUB_GATES="$tmp/gates" "$@" \
 		"$repo/test/vm/root-suites.sh" internal/runtime/enforce/landlock >"$tmp/stub.log" 2>&1 || true
 	[ -s "$tmp/boots" ] || fail "the stand-in tree booted nothing: $(tail -5 "$tmp/stub.log")"
 }
@@ -240,6 +254,37 @@ run_stub VM_HOST=kvm TEGO_VM_ROW=host
 grep -F -- "--cwd /src/internal/runtime/enforce/landlock" "$tmp/boots" | grep -qF -- "$default_modules" ||
 	fail "the host row lost the default modules ($default_modules): $(cat "$tmp/boots")"
 
+# The skip gates get the row the run boots (TEGO_VM_ROW), so a row-scoped entry applies there and nowhere else.
+run_stub VM_HOST=kvm TEGO_VM_ROW=debian-13 TEGO_VM_KERNEL=matrix-debian-13
+grep -q -- '^--row debian-13 ' "$tmp/gates" ||
+	fail "the skip gates did not receive the row: $(cat "$tmp/gates")"
+
+# The must-pass gate on a run of named packages: on a row, it holds that row's own entries for the packages the run
+# ran, and gets the row; with no row, with VM_RUN, or with no such entry, it holds nothing. A run of every package
+# hands the gate the whole list with the row.
+cp "$repo/test/vm/root-must-pass.txt" "$tmp/must-pass.saved"
+cat >>"$repo/test/vm/root-must-pass.txt" <<'EOF2'
+internal/runtime/enforce/landlock TestStandIn row=fedora-7.2 # the stand-in proof of this row
+internal/bpf TestOther row=fedora-7.2 # a package the run did not run
+internal/runtime/enforce/landlock TestElse row=debian-13 # another row's entry
+EOF2
+run_stub VM_HOST=kvm TEGO_VM_ROW=fedora-7.2 TEGO_VM_KERNEL=matrix-fedora-7.2
+mustgate=$(grep -- '^--must-pass ' "$tmp/gates" || true)
+case "$mustgate" in
+"--must-pass --row fedora-7.2 "*) ;;
+*) fail "a named-package run on a row held no row must-pass gate: $(cat "$tmp/gates")" ;;
+esac
+mustlist=$(printf '%s\n' "$mustgate" | awk '{print $4}')
+if [ "$(grep -c . "$mustlist" 2>/dev/null)" != 1 ] || ! grep -q '^internal/runtime/enforce/landlock TestStandIn row=fedora-7.2 ' "$mustlist"; then
+	fail "the row's must-pass list is not exactly its entry for the package that ran: $(cat "$mustlist" 2>/dev/null)"
+fi
+for env in "TEGO_VM_ROW=debian-13 TEGO_VM_KERNEL=matrix-debian-13 VM_RUN=TestElse" "TEGO_VM_ROW=al2023 TEGO_VM_KERNEL=matrix-al2023" "VM_HOST=kvm"; do
+	# shellcheck disable=SC2086 # the words are the variables of each case
+	run_stub VM_HOST=kvm $env
+	if grep -q -- '^--must-pass' "$tmp/gates"; then fail "$env held a must-pass gate it has no entry for: $(cat "$tmp/gates")"; fi
+done
+cp "$tmp/must-pass.saved" "$repo/test/vm/root-must-pass.txt"
+
 # VM_BOOTS names one boot, or both: a CI job whose bound holds one boot's suites (vm-matrix's tier-3 parts) runs that boot
 # alone, with its results under VM_OUT/<boot> as with both. lsm-bpf adds bpf to the host's list, default-lsm leaves it out.
 # (sysfs reports the file's size as 0, so its content is what says the list is there.)
@@ -265,6 +310,30 @@ fi
 rc=0
 env -i PATH="$tmp/stub:$PATH" HOME="$tmp" VM_BOOTS=lsm "$repo/test/vm/root-suites.sh" >"$tmp/stub.log" 2>&1 || rc=$?
 [ "$rc" = 2 ] || fail "VM_BOOTS=lsm is no boot, and was not a usage error: $(tail -3 "$tmp/stub.log")"
+
+# 2c. A lost guest (kvm-run.sh's exit 98, status "lost signal <n>") is no test result: its suite's row says guest-lost,
+# a GUEST-LOST line names it, and the run exits 98, not a test failure's 1, on one boot and through VM_BOOTS=both; a run
+# whose guests all reported is not 98.
+lost_run() {
+	rm -rf "$tmp/stubout"
+	rc=0
+	env -i PATH="$tmp/stub:$PATH" HOME="$tmp" TMPDIR="$tmp" GO="$tmp/stub/go" VM_OUT="$tmp/stubout" VM_BPF=no STUB_BOOTS="$tmp/boots" VM_HOST=kvm "$@" \
+		"$repo/test/vm/root-suites.sh" internal/runtime/enforce/landlock >"$tmp/stub.log" 2>&1 || rc=$?
+}
+lost_run
+[ "$rc" != 98 ] || fail "a run whose guests all reported exited 98: $(tail -5 "$tmp/stub.log")"
+if grep -q GUEST-LOST "$tmp/stub.log"; then fail "a run whose guests all reported says GUEST-LOST: $(grep GUEST-LOST "$tmp/stub.log")"; fi
+lost_run STUB_LOST=internal_runtime_enforce_landlock.console
+[ "$rc" = 98 ] || fail "a run with a lost guest exited $rc, want 98: $(tail -8 "$tmp/stub.log")"
+grep -q '^GUEST-LOST: internal_runtime_enforce_landlock (lost signal 9): .*not a test result' "$tmp/stub.log" ||
+	fail "the run does not name its lost suite on a GUEST-LOST line: $(tail -8 "$tmp/stub.log")"
+grep -q '^internal_runtime_enforce_landlock  *guest-lost ' "$tmp/stub.log" || fail "the summary row of the lost suite does not say guest-lost: $(grep -F internal_runtime_enforce_landlock "$tmp/stub.log")"
+python3 -c 'import json,sys; print("\n".join(r["result"] for r in json.load(open(sys.argv[1])) if r["suite"] == "internal_runtime_enforce_landlock"))' "$tmp/stubout/summary.json" | grep -qx guest-lost ||
+	fail "summary.json does not say guest-lost: $(cat "$tmp/stubout/summary.json")"
+if [ -n "$host_lsm" ]; then
+	lost_run STUB_LOST=default-lsm/logs/internal_runtime_enforce_landlock.console VM_BOOTS=both
+	[ "$rc" = 98 ] || fail "VM_BOOTS=both with a guest lost on one boot exited $rc, want 98: $(tail -5 "$tmp/stub.log")"
+fi
 
 # 3. VM_HOST=sudo runs `tego doctor` as root on this host, not in a guest (identity-config.md R27). On a machine nobody
 # said is disposable it is the tegotesthooks build with a machine config, chain anchor and own-log home of the run's
@@ -373,7 +442,7 @@ mkgather() {
 		mkdir -p "$g/root-suites-$s/logs"
 		echo "$s 0" >"$g/root-suites-$s/shard.done"
 	done
-	grep -v '^#' "$here/root-must-pass.txt" | sed 's/[[:space:]]#.*//' | while read -r p t; do
+	grep -v '^#' "$here/root-must-pass.txt" | sed 's/[[:space:]]#.*//' | while read -r p t _; do
 		[ -n "$p" ] || continue
 		printf '{"Action":"pass","Package":"%s/%s","Test":"%s"}\n' "$module" "$p" "$t"
 	done >"$g/root-suites-rest/logs/all.json"
@@ -392,6 +461,15 @@ gather 1 "a shard did not finish" "FAIL cgroup-3: no shard.done"
 mkgather
 echo "runtime 1" >"$g/root-suites-runtime/shard.done"
 gather 1 "a shard failed" "FAIL runtime: exit 1"
+# A shard that lost a guest (root-suites.sh's exit 98) keeps that through the gather: GUEST-LOST, exit 98, even beside a
+# shard that failed or a must-pass test that a lost guest never ran; never a plain FAIL and exit 1.
+mkgather
+echo "cgroup-2 98" >"$g/root-suites-cgroup-2/shard.done"
+gather 98 "a shard lost a guest" "GUEST-LOST cgroup-2: a guest was lost (exit 98)"
+grep -q "^== root-suites: .*GUEST-LOST" "$tmp/gather.log" || fail "--gather (a shard lost a guest): the last line does not say GUEST-LOST: $(tail -1 "$tmp/gather.log")"
+echo "runtime 1" >"$g/root-suites-runtime/shard.done"
+sed -i '1s/"pass"/"skip"/' "$g/root-suites-rest/logs/all.json"
+gather 98 "a shard lost a guest beside a failed shard and a gate failure" "FAIL runtime: exit 1"
 mkgather
 mkdir -p "$g/again"
 echo "rest 0" >"$g/again/shard.done"

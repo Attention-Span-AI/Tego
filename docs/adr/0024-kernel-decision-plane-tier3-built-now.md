@@ -338,6 +338,16 @@ reads the mode again); recursion misses are not detected at run time; and the ti
 (ADR 0016) are tracing programs too, skipped the same way in both modes on a kernel that preempts kernel code, so they
 can drop records with no `tego_lost` count. Detection, with an adoption frozen rather than released when it fires, is
 a follow-up.
+*Note 2026-11-11 ([ADR 0148](0148-skipped-deciding-and-tracking-programs.md)):* "LSM programs take no such check, so LSM
+mode is not affected" holds only on kernels from 6.2 (6.1.54 in the 6.1 series), where `bpf_prog_check_recur` is false
+for LSM programs; before, `__bpf_prog_enter` checks every trampoline program, LSM ones included. Doctor now reads the
+running kernel's `/proc/kallsyms` for `__bpf_prog_enter_recur` and, where it is absent, admits LSM mode only where kernel
+code is not preempted, as fmod_ret mode. Nor does it hold for the exec pin check both modes attach as a tp_btf program
+on `sched_process_exec`: from 7.0 a tracepoint calls its probes under `srcu_fast` with only migration off, so where
+kernel code is preempted that program can be skipped, and doctor withholds the exec pin claim there. The detection this
+amendment left for a follow-up is ADR 0148's: a run reads the skip counters of the programs its rules rely on, is ended
+when one moves, and records it; an adoption first reports after run_start, then at most once a minute plus polling
+and scheduling delay, and is not ended or frozen.
 (15)'s arm64 residual: GitHub's arm64 runner's 7.0 kernel is built `SMP PREEMPT`, so fmod_ret mode is ruled out there
 and `build-test-arm64` checks doctor's refusal; of the 2026-10-06 amendment's plane run, the directory walk's stress
 cell still runs there in fmod_ret mode under the waiver, required, and the end-to-end and rename cells no longer do.

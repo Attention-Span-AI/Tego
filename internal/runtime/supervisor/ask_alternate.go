@@ -78,21 +78,11 @@ func alternateRefused(format string, args ...any) error {
 	return &errAlternate{why: fmt.Sprintf(format, args...)}
 }
 
-// pseudoFS are the kernel filesystems whose regular files are kernel interfaces, not stored data: a file on one is
-// never an alternate (procfs's /proc/<pid>/mem, environ and fd tables, sysfs and cgroupfs controls, bpffs pins,
-// securityfs and the like). Several have no constant in x/sys and are spelled as linux/magic.h does.
-var pseudoFS = map[int64]string{
-	unix.PROC_SUPER_MAGIC: "procfs", unix.SYSFS_MAGIC: "sysfs", unix.CGROUP_SUPER_MAGIC: "cgroupfs",
-	unix.CGROUP2_SUPER_MAGIC: "cgroup2", unix.BPF_FS_MAGIC: "bpffs", unix.DEBUGFS_MAGIC: "debugfs",
-	unix.TRACEFS_MAGIC: "tracefs", unix.SECURITYFS_MAGIC: "securityfs", unix.SELINUX_MAGIC: "selinuxfs",
-	unix.SMACK_MAGIC: "smackfs", unix.EFIVARFS_MAGIC: "efivarfs", unix.PSTOREFS_MAGIC: "pstore",
-	unix.BINFMTFS_MAGIC: "binfmt_misc", unix.DEVPTS_SUPER_MAGIC: "devpts", unix.RDTGROUP_SUPER_MAGIC: "resctrl",
-	unix.NSFS_MAGIC: "nsfs", unix.PID_FS_MAGIC: "pidfs", unix.ANON_INODE_FS_MAGIC: "anon_inodefs",
-	unix.SOCKFS_MAGIC: "sockfs", unix.PIPEFS_MAGIC: "pipefs", unix.SECRETMEM_MAGIC: "secretmem",
-	unix.DMA_BUF_MAGIC: "dmabuf", unix.BDEVFS_MAGIC: "bdev", unix.USBDEVICE_SUPER_MAGIC: "usbdevfs",
-	unix.BINDERFS_SUPER_MAGIC: "binderfs", unix.DEVMEM_MAGIC: "devmem", unix.AAFS_MAGIC: "apparmorfs",
-	0x62656570: "configfs", 0x65735543: "fusectl", 0x19800202: "mqueue",
-}
+// pseudoFS names the kernel filesystem with statfs magic m, "" for any other: one whose regular files are kernel
+// interfaces, not stored data, so a file on one is never an alternate (procfs's /proc/<pid>/mem, environ and fd tables,
+// sysfs and cgroupfs controls, bpffs pins, securityfs and the like). It is agent.KernelFilesystems, the one inventory
+// compile's write-grant refusal reads too.
+func pseudoFS(m int64) string { return agent.KernelFSName(m) }
 
 // alternateFlags is what an alternate for a held open of flags is reopened with: for a held read, read-only, and an
 // open with any write flag is no read (refused); for a held write, the agent's flags less O_CREAT, O_EXCL (the
@@ -185,7 +175,7 @@ func openAlternate(pin int, named string, reopen int, refuse func(string) string
 	if err := unix.Fstatfs(pin, &fs); err != nil {
 		return -1, "", err
 	}
-	if name, ok := pseudoFS[int64(fs.Type)]; ok {
+	if name := pseudoFS(int64(fs.Type)); name != "" {
 		return -1, "", alternateRefused("%s lies on %s, a kernel interface, not a stored file", named, name)
 	}
 	resolved, err := readlinkRaw("/proc/self/fd/" + strconv.Itoa(pin))

@@ -16,7 +16,7 @@ if ! ./scripts/tree-files.sh >"$listed"; then
 fi
 # grep's no-match status is valid; an unreadable list or failed producer is not.
 filtered=0
-grep -zE '\.(go|c|h|sh|py|css|js|cjs|tmpl)$' "$listed" >"$tmp" || filtered=$?
+grep -zE '\.(go|rs|c|h|sh|py|css|js|cjs|tmpl)$' "$listed" >"$tmp" || filtered=$?
 if [ "$filtered" -gt 1 ]; then
   echo "check-spdx: filtering the tree's files failed" >&2
   exit 2

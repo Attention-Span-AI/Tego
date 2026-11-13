@@ -42,7 +42,8 @@
 #                     the host chain; the matrix needs a usable user tier even on CI's undelegated service scopes
 #   --prepare         fetch and build everything that is cached, then exit without booting
 #   --status FILE     write one line saying where the exit code came from: "guest <code>" when the
-#                     guest ran the command, else "timeout", "no-report", "env" or "usage" (see below)
+#                     guest ran the command, else "lost signal <n>", "timeout", "no-report", "env" or
+#                     "usage" (see below)
 # When <command> is an existing host file named by a relative path (./x.test, bin/tego) or under
 # $HOME or /tmp, it is copied to /vm/<basename> and run from there, so `kvm-run.sh ./pkg.test -test.v`
 # just works; an absolute system path such as /bin/sh names the guest's own copy.
@@ -55,16 +56,20 @@
 # kernel args), TEGO_VM_QEMU (use this qemu-system-x86_64 instead of fetching one).
 #
 # Exit code: the inner command's own exit code when the guest ran it; 97 when this box cannot boot a
-# guest at all (no /dev/kvm access, a download failed), with a message naming what is missing; 124
-# when the guest ran past --timeout; 125 when the guest ended without reporting an exit code (kernel
-# panic, init died, a mount the guest needs failed); 2 on a usage error. tego's own exit codes include
-# 2, 124 and 125 (pkg/spec/identity/exit.go), so a caller that must tell the two apart reads --status.
+# guest at all (no /dev/kvm access, a download failed), with a message naming what is missing; 98 when
+# qemu was ended by a signal from outside this script before the command reported (the host's memory
+# guard or OOM killer, a kill by hand: a GUEST-LOST line says so, and nothing the guest printed is a
+# result); 124 when the guest ran past --timeout; 125 when the guest ended without reporting an exit
+# code (kernel panic, init died, a mount the guest needs failed: a GUEST-LOST line says so too); 2 on a
+# usage error. tego's own exit codes include 2, 124 and 125 (pkg/spec/identity/exit.go), so a caller
+# that must tell the two apart reads --status.
 set -euo pipefail
 # The guest's files are archived with the modes they have here, so this shell's umask (Ubuntu's 002)
 # must not leak into them as group-writable system directories that the host does not have.
 umask 022
 
 EXIT_ENV=97
+EXIT_LOST=98
 EXIT_USAGE=2
 EXIT_TIMEOUT=124
 EXIT_NOREPORT=125
@@ -536,7 +541,12 @@ flock -u 9
 P="$run_dir/payload"
 mkdir -p "$P/.vm" "$P/vm"
 
-sq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+# sq quotes one word for the guest's sh, whole. A pattern replacement, not a command substitution around sed, which
+# trimmed the word's trailing newlines (an --env value or an argument ending in one reached the guest without it).
+sq() {
+	local q="'\\''"
+	printf "'%s'" "${1//\'/$q}"
+}
 
 # The command's own argv0 comes along when it names a host file by a relative path (./x.test,
 # bin/tego) or one under $HOME or /tmp; /bin/sh and friends stay the guest's own.
@@ -689,33 +699,63 @@ integrity | confidentiality) lockdown_arg="lockdown=$lockdown" ;;
 esac
 append="console=ttyS0 panic=-1 quiet ${lsm:+lsm=$lsm} $lockdown_arg ${TEGO_VM_APPEND:-}"
 
+# guest_end CONSOLE QEMU_STATUS QEMU_STDERR ELAPSED says how the guest ended, writes it to --status, and returns this
+# script's exit code: the command's own when the guest printed its sentinel; else EXIT_TIMEOUT when this script's bound
+# ended qemu; else EXIT_LOST when something else ended qemu by a signal (the host's memory guard or OOM killer, a kill by
+# hand): QEMU_STATUS over 128 (timeout(1) and bounded-run.sh pass on 128+n for a command a signal killed), or qemu's own
+# "terminating on signal n" line for a TERM, INT or HUP it caught and then exited 0 on; else EXIT_NOREPORT, the guest
+# ended on its own without the sentinel. The two last print one GUEST-LOST line to stderr and append it to CONSOLE, so
+# a console log read alone says it too: on 2026-11-11 the memory guard SIGKILLed a guest's qemu, and its suite's lost
+# run was read for hours as a failure of the test it was running (and before this, kvm-run.sh reported such a kill,
+# exit 137, as "ran past the timeout").
+guest_end() {
+	local console="$1" qst="$2" qerr="$3" elapsed="$4" code sig line
+	code="$(tr -d '\r' <"$console" | grep -ao "TEGO-VM-EXIT:$nonce:[0-9]*" | tail -1 | cut -d: -f3 || true)"
+	if [ -n "$code" ]; then
+		status "guest $code"
+		return "$code"
+	fi
+	# Elapsed time, not only timeout(1)'s status: uutils' timeout (Ubuntu 25.10's default) exits 125, not
+	# 124, when the command it signalled (qemu catches SIGTERM) then exits on its own; and bounded-run.sh's
+	# own SIGKILL, BOUNDED_RUN_GRACE after the bound, is a 137 that only comes past it.
+	if [ "$qst" = 124 ] || [ "$elapsed" -ge "$TIMEOUT" ]; then
+		log "the guest ran past ${TIMEOUT}s and was killed"
+		status timeout
+		return "$EXIT_TIMEOUT"
+	fi
+	sig="$(sed -n 's/.*terminating on signal \([0-9][0-9]*\).*/\1/p' "$qerr" 2>/dev/null | tail -1)"
+	case "$qst" in
+	129 | 1[3-9][0-9] | 2[0-5][0-9]) [ -n "$sig" ] || sig=$((qst - 128)) ;;
+	esac
+	if [ -n "$sig" ]; then
+		line="GUEST-LOST: qemu ended by signal $sig after ${elapsed}s, before the command reported its exit code; this is not a test result (a signal from outside kvm-run.sh: the host's memory guard or OOM killer for signal 9, or a kill by hand)"
+		status "lost signal $sig"
+		code="$EXIT_LOST"
+	else
+		line="GUEST-LOST: the guest ended (qemu exit $qst) after ${elapsed}s without reporting the command's exit code: kernel panic, init died, a guest setup step failed (tego-vm: FATAL), or qemu failed; this is not a test result, see ${logfile:-the output above}"
+		status no-report
+		code="$EXIT_NOREPORT"
+	fi
+	echo "$line" >&2
+	echo "$line" >>"$console" 2>/dev/null || true
+	return "$code"
+}
+
 console="${logfile:-$run_dir/console.log}"
 mkdir -p "$(dirname "$console")"
 log "booting $KVER (${MEM} RAM, ${SMP} vCPUs, lsm=${lsm:-<the kernel default>}, lockdown=${lockdown:-none}): $*"
 set +e
 started=$SECONDS
+# qemu's stderr goes to a file, read for its "terminating on signal" line and then passed on: a process substitution
+# that copied it could still be writing when guest_end reads it.
 guarded_run "$console" "$run_dir/qemu.status" \
 	"$here/bounded-run.sh" "$TIMEOUT" env LD_LIBRARY_PATH="$QLIBS" "$QEMU" \
 	-L "$QROOT/usr/share/seabios" -L "$QROOT/usr/share/qemu" \
 	-enable-kvm -cpu host -m "$MEM" -smp "$SMP" -nographic -no-reboot -vga none -nic none \
 	-fw_cfg name=etc/sercon-port,string=0 \
 	-kernel "$VMLINUZ" -initrd "$run_dir/initrd" -append "$append" \
-	</dev/null 2> >(grep -v 'externally provided fw_cfg item names' >&2)
+	</dev/null 2>"$run_dir/qemu.stderr"
 qemu_status="$(cat "$run_dir/qemu.status" 2>/dev/null || echo 1)"
-set -e
-
-code="$(tr -d '\r' <"$console" | grep -ao "TEGO-VM-EXIT:$nonce:[0-9]*" | tail -1 | cut -d: -f3 || true)"
-if [ -n "$code" ]; then
-	status "guest $code"
-	exit "$code"
-fi
-# Elapsed time, not only timeout(1)'s status: uutils' timeout (Ubuntu 25.10's default) exits 125, not
-# 124, when the command it signalled (qemu catches SIGTERM) then exits on its own.
-if [ "$qemu_status" = 124 ] || [ "$qemu_status" = 137 ] || [ $((SECONDS - started)) -ge "$TIMEOUT" ]; then
-	log "the guest ran past ${TIMEOUT}s and was killed"
-	status timeout
-	exit "$EXIT_TIMEOUT"
-fi
-log "the guest ended (qemu exit $qemu_status) without reporting the command's exit code — kernel panic, init died, a guest setup step failed (tego-vm: FATAL), or qemu failed; see ${logfile:-the output above}"
-status no-report
-exit "$EXIT_NOREPORT"
+grep -v 'externally provided fw_cfg item names' "$run_dir/qemu.stderr" >&2
+guest_end "$console" "$qemu_status" "$run_dir/qemu.stderr" $((SECONDS - started))
+exit $?

@@ -81,10 +81,12 @@ func TestTierBPFLSMIsThePlaneInLSMMode(t *testing.T) {
 }
 
 // TestTierBPFLSMReadsNoMountTableForAListener: the fanotify policy, and the mount table its submount marks come
-// from, is the listener's alone (R8), and a tier-3 run never has a listener. A tier-3 run whose contract has a
-// deny_read entry and no deny_write target was refused ErrMountTable when mountinfo could not be read, though
-// nothing in it needs the table (enforce-plane R12). A tier-2 run over the same table is still refused. Not
-// parallel: it points the package's mount table at a missing file.
+// from, is the listener's alone (R8), and a tier-3 run never has a listener. A tier-3 run was refused ErrMountTable
+// when mountinfo could not be read though it built no listener; it builds none now either. The plane reads the table
+// for itself since 2026-11-11 (ErrPlaneDetachedPart): a deny_read entry's tree mounted in part elsewhere is a place
+// its walk never meets the entry, so a tier-3 run with a deny_read entry over a table it cannot read is refused, before
+// anything is loaded, as a tier-2 run is, and one with no deny_read entry still needs no table. Not parallel: it
+// points the package's mount table at a missing file.
 func TestTierBPFLSMReadsNoMountTableForAListener(t *testing.T) {
 	saved := mountInfoPath
 	mountInfoPath = filepath.Join(t.TempDir(), "absent")
@@ -95,10 +97,20 @@ func TestTierBPFLSMReadsNoMountTableForAListener(t *testing.T) {
 		t.Fatalf("tier cgroup over an unreadable mount table with a deny_read entry: %v; want ErrMountTable", err)
 	}
 
-	f, _ := tier3Fixture(t, ebpfbindings.PlaneLSM)
-	h, err := f.backend.Prepare(context.Background(), f.table, f.run)
+	f, plane := tier3Fixture(t, ebpfbindings.PlaneLSM)
+	if _, err := f.backend.Prepare(context.Background(), f.table, f.run); !errors.Is(err, ErrPlaneCannotHold) ||
+		!errors.Is(err, ErrPlaneDetachedPart) || !errors.Is(err, ErrMountTable) {
+		t.Fatalf("tier bpflsm with a deny_read entry over an unreadable mount table: %v; want ErrPlaneCannotHold for the table", err)
+	}
+	if len(plane.fills) != 0 {
+		t.Errorf("the refused run filled the plane: %v", plane.fills)
+	}
+
+	g, _ := tier3Fixture(t, ebpfbindings.PlaneLSM)
+	g.table.FS = slices.DeleteFunc(slices.Clone(g.table.FS), func(r agent.FSRule) bool { return r.Kind == agent.FSDenyRead })
+	h, err := g.backend.Prepare(context.Background(), g.table, g.run)
 	if err != nil {
-		t.Fatalf("tier bpflsm with a deny_read-only contract over an unreadable mount table: %v; want prepared", err)
+		t.Fatalf("tier bpflsm with no deny_read entry over an unreadable mount table: %v; want prepared", err)
 	}
 	defer h.Close()
 	if len(h.policy.mounts) != 0 || len(h.policy.denyRead.entries) != 0 {
@@ -154,6 +166,38 @@ func TestTierBPFLSMRefusesATableThePlaneCannotHold(t *testing.T) {
 				t.Error("slot 0 stays held after the refusal")
 			}
 		})
+	}
+}
+
+func TestTierBPFLSMBudgetAdviceNamesListenerAlias(t *testing.T) {
+	t.Parallel()
+	f, _ := tier3Fixture(t, ebpfbindings.PlaneLSM)
+	f.table.FS = []agent.FSRule{fsRule(agent.FSDenyRead, "/proj/secret", "", "./secret/")}
+	f.table.NameDeny = nil
+	f.run.Mounts = mountSnapshotOf("22 1 8:1 / / rw - ext4 /dev/root rw\n30 22 8:1 /proj/secret /view/secret rw - ext4 /dev/root rw\n")
+	rows, err := decide.CompilePlane(f.table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.run.PlaneErr = rows.FitFDs(0)
+	if f.run.PlaneErr == nil {
+		t.Fatal("fixture did not exceed the descriptor budget")
+	}
+	h, err := f.backend.Prepare(context.Background(), f.table, f.run)
+	if h != nil {
+		defer h.Close()
+	}
+	if !errors.Is(err, ErrPlaneCannotHold) {
+		t.Fatalf("Prepare = %v, want descriptor-budget refusal", err)
+	}
+	if !strings.Contains(err.Error(), "/view/secret") || !strings.Contains(err.Error(), "tier cgroup also refuses") {
+		t.Fatalf("refusal omits listener's alias limit: %v", err)
+	}
+	if strings.Contains(err.Error(), "or run it at tier cgroup") {
+		t.Fatalf("refusal recommends a tier that also refuses: %v", err)
+	}
+	if len(f.kernel.calls) != 0 {
+		t.Errorf("refusal touched kernel: %v", f.kernel.calls)
 	}
 }
 

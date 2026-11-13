@@ -1,0 +1,818 @@
+{
+  "allow": {
+    "$PYTHON3": [
+      "examples/demo/scenes/network.sh (heredoc)"
+    ],
+    "../tmp/": [
+      "docs/OPERATIONS.md"
+    ],
+    "./": [
+      "docs/OPERATIONS.md"
+    ],
+    "./.deps/": [
+      "examples/agents/claude-agent-sdk.yaml",
+      "test/fixtures/ledger/kt7-a-landlock/contract.yaml"
+    ],
+    "./agent.sh": [
+      "examples/live-modes-demo/contract.yaml"
+    ],
+    ".venv": [
+      "docs/adr/0027-prot-exec-mapping-policy.md"
+    ],
+    "/CHANGE/codex-code-mode-host": [
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml"
+    ],
+    "/bin": [
+      "docs/adr/0044-ask-before-a-command-runs.md",
+      "docs/p0/exec-ask-plan.md"
+    ],
+    "/bin/ls": [
+      "docs/adr/0048-exec-command-rules.md",
+      "docs/spec/exec-command-rows.md"
+    ],
+    "/bin/sh": [
+      "docs/p0/agent-contract.md",
+      "examples/live-modes-demo/contract.yaml"
+    ],
+    "/usr/bin": [
+      "docs/adr/0044-ask-before-a-command-runs.md",
+      "docs/p0/exec-ask-plan.md"
+    ],
+    "/usr/bin/git": [
+      "docs/adr/0044-ask-before-a-command-runs.md",
+      "docs/p0/exec-ask-plan.md"
+    ],
+    "/usr/bin/ls": [
+      "docs/adr/0044-ask-before-a-command-runs.md"
+    ],
+    "/usr/bin/python3": [
+      "docs/user/run-as-a-service.md"
+    ],
+    "/usr/bin/sleep": [
+      "docs/adr/0025-inode-identity-pinned-by-the-domain.md",
+      "docs/p0/enforce-landlock.md",
+      "docs/p0/supervisor.md"
+    ],
+    "/usr/local/share/tego/hello-agent.sh": [
+      "examples/container/hello.yaml"
+    ],
+    "<the git\non the run's PATH, by path>": [
+      "docs/p0/exec-ask-plan.md"
+    ],
+    "@@CODEXHOST@@/codex-code-mode-host": [
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml"
+    ],
+    "@@PYREAL@@": [
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml"
+    ],
+    "@CAT@": [
+      "examples/live-modes-demo/contract.yaml"
+    ],
+    "@SH@": [
+      "examples/live-modes-demo/contract.yaml"
+    ],
+    "@SLEEP@": [
+      "examples/live-modes-demo/contract.yaml"
+    ],
+    "a.js": [
+      "docs/spec/exec-command-rows.md (scalar example)"
+    ],
+    "bash": [
+      "examples/agents/claude-agent-sdk.yaml",
+      "examples/agents/claude-code-interactive.yaml",
+      "examples/agents/claude-code.yaml",
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml",
+      "examples/agents/custom-agent.yaml",
+      "examples/demo/README.md",
+      "examples/demo/contracts/claude-code.yaml",
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml",
+      "test/fixtures/init/demo-repo/agent.yaml",
+      "test/fixtures/ledger/kt1-identity-landlock/contract.yaml",
+      "test/fixtures/ledger/kt4-pip-landlock/contract.yaml",
+      "test/fixtures/ledger/kt7-a-cli-landlock/contract.yaml",
+      "test/fixtures/ledger/kt7-a-landlock/contract.yaml",
+      "test/fixtures/m2-env-attacks/agent.yaml"
+    ],
+    "bin/actor": [
+      "spec/policy/conformance/control-keyring.yaml",
+      "spec/policy/conformance/control.yaml",
+      "spec/policy/conformance/exec.yaml",
+      "spec/policy/conformance/execanon.yaml",
+      "spec/policy/conformance/execloader.yaml",
+      "spec/policy/conformance/execrules-allow.yaml",
+      "spec/policy/conformance/filesystem.yaml",
+      "spec/policy/conformance/mounts-bind.yaml",
+      "spec/policy/conformance/mounts.yaml",
+      "spec/policy/conformance/refer.yaml",
+      "spec/policy/conformance/thirdparty.yaml",
+      "test/conformance/selftest_integration_test.go"
+    ],
+    "bin/mc-a": [
+      "spec/policy/conformance/exec.yaml"
+    ],
+    "bin/mc-b": [
+      "spec/policy/conformance/exec.yaml"
+    ],
+    "bin/tool": [
+      "spec/policy/conformance/exec.yaml",
+      "test/conformance/conformance_test.go"
+    ],
+    "bin/tool2": [
+      "spec/policy/conformance/exec.yaml"
+    ],
+    "bin/tool4": [
+      "spec/policy/conformance/exec.yaml"
+    ],
+    "bin/tool5": [
+      "spec/policy/conformance/exec.yaml"
+    ],
+    "cargo build": [
+      "docs/CHANGELOG.md",
+      "docs/adr/0048-exec-command-rules.md",
+      "tools/oss/testdata/overlay/docs/CHANGELOG.md"
+    ],
+    "cat": [
+      "an unpublished working note (scalar example)",
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml",
+      "examples/demo/contracts/always-on.yaml",
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/demo/contracts/guarded.yaml",
+      "examples/demo/scenes/features.sh (heredoc)",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml",
+      "test/fixtures/m2-env-attacks/agent.yaml"
+    ],
+    "curl": [
+      "examples/demo/contracts/guarded.yaml",
+      "examples/demo/scenes/features.sh (heredoc)",
+      "examples/demo/scenes/network.sh (heredoc)"
+    ],
+    "date": [
+      "examples/container/hello.yaml",
+      "examples/demo/contracts/always-on.yaml"
+    ],
+    "dirname": [
+      "test/fixtures/ledger/kt4-pip-landlock/contract.yaml"
+    ],
+    "env": [
+      "examples/agents/retriever.yaml",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml"
+    ],
+    "find": [
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml",
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml"
+    ],
+    "git": [
+      "examples/agents/claude-agent-sdk.yaml",
+      "examples/agents/claude-code-interactive.yaml",
+      "examples/agents/claude-code.yaml",
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml",
+      "examples/demo/README.md",
+      "examples/demo/contracts/claude-code.yaml",
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml",
+      "test/fixtures/init/demo-repo/agent.yaml",
+      "test/fixtures/ledger/kt7-a-cli-landlock/contract.yaml",
+      "test/fixtures/ledger/kt7-a-landlock/contract.yaml"
+    ],
+    "git add": [
+      "docs/adr/0048-exec-command-rules.md",
+      "docs/p0/supervisor.md"
+    ],
+    "git blame": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git branch": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git cat-file": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git commit": [
+      "docs/adr/0048-exec-command-rules.md"
+    ],
+    "git config": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git describe": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git diff": [
+      "docs/adr/0048-exec-command-rules.md",
+      "examples/profiles/base/read-only-git.yaml",
+      "spec/policy/SEMANTICS.md"
+    ],
+    "git fetch": [
+      "docs/OPERATIONS.md",
+      "docs/adr/0048-exec-command-rules.md",
+      "docs/p0/exec-ask-plan.md"
+    ],
+    "git for-each-ref": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git gc": [
+      "docs/adr/0048-exec-command-rules.md"
+    ],
+    "git grep": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git help": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git log": [
+      "docs/adr/0044-ask-before-a-command-runs.md",
+      "docs/adr/0048-exec-command-rules.md",
+      "examples/profiles/base/read-only-git.yaml",
+      "spec/policy/SEMANTICS.md"
+    ],
+    "git log --oneline": [
+      "docs/adr/0048-exec-command-rules.md",
+      "spec/policy/conformance/execrules-allow.yaml",
+      "test/conformance/execrules_test.go"
+    ],
+    "git ls-files": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git ls-tree": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git merge-base": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git name-rev": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git push": [
+      "docs/adr/0048-exec-command-rules.md"
+    ],
+    "git push --dry-run": [
+      "docs/adr/0048-exec-command-rules.md",
+      "spec/policy/conformance/execrules-allow.yaml"
+    ],
+    "git reflog": [
+      "docs/spec/exec-command-rows.md",
+      "review regression control"
+    ],
+    "git remote": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git rev-list": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git rev-parse": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git shortlog": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git show": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git show-ref": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git stash push": [
+      "docs/adr/0048-exec-command-rules.md"
+    ],
+    "git status": [
+      "docs/adr/0044-ask-before-a-command-runs.md",
+      "docs/adr/0048-exec-command-rules.md",
+      "docs/p0/exec-ask-plan.md",
+      "examples/profiles/base/read-only-git.yaml",
+      "spec/policy/SEMANTICS.md",
+      "spec/policy/conformance/execrules-allow.yaml",
+      "test/conformance/execrules_test.go"
+    ],
+    "git version": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "go": [
+      "examples/agents/retriever.yaml"
+    ],
+    "grep": [
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml",
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/demo/scenes/features.sh (heredoc)",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml",
+      "test/fixtures/m2-env-attacks/agent.yaml"
+    ],
+    "head": [
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml",
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/demo/scenes/features.sh (heredoc)",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml"
+    ],
+    "id": [
+      "examples/demo/scenes/features.sh (heredoc)"
+    ],
+    "ls": [
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml",
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml"
+    ],
+    "make": [
+      "docs/adr/0048-exec-command-rules.md",
+      "examples/agents/retriever.yaml"
+    ],
+    "mkdir": [
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml",
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml",
+      "test/fixtures/ledger/kt4-pip-landlock/contract.yaml"
+    ],
+    "node --stack-trace-limit=5 a.js": [
+      "docs/CHANGELOG.md (scalar example)",
+      "docs/spec/exec-command-rows.md (scalar example)"
+    ],
+    "npm": [
+      "docs/adr/0044-ask-before-a-command-runs.md",
+      "docs/p0/exec-ask-plan.md"
+    ],
+    "out/bin": [
+      "spec/policy/conformance/refer.yaml"
+    ],
+    "out/el/bl": [
+      "spec/policy/conformance/refer.yaml"
+    ],
+    "out/h/i/tool": [
+      "spec/policy/conformance/refer.yaml"
+    ],
+    "out/p/xbin": [
+      "spec/policy/conformance/refer.yaml"
+    ],
+    "out/tool": [
+      "spec/policy/conformance/refer.yaml"
+    ],
+    "out/tool2": [
+      "spec/policy/conformance/refer.yaml"
+    ],
+    "out/xd": [
+      "spec/policy/conformance/refer.yaml"
+    ],
+    "ovl/merged/bin/tool": [
+      "spec/policy/conformance/mounts.yaml"
+    ],
+    "pip list": [
+      "docs/adr/0048-exec-command-rules.md"
+    ],
+    "python": [
+      "docs/GAPS.md"
+    ],
+    "python3": [
+      "docs/OPERATIONS.md",
+      "docs/p0/supervisor.md",
+      "examples/agents/custom-agent.yaml",
+      "examples/demo/contracts/guarded.yaml",
+      "examples/demo/scenes/features.sh (heredoc)",
+      "examples/profiles/base/python-dev.yaml",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml",
+      "test/fixtures/ledger/kt2-forwarder-landlock/contract.yaml",
+      "test/fixtures/ledger/kt4-pip-landlock/contract.yaml",
+      "test/fixtures/ledger/kt6-a-landlock/contract.yaml",
+      "test/fixtures/ledger/kt7-a-landlock/contract.yaml",
+      "test/fixtures/m2-env-attacks/agent.yaml"
+    ],
+    "python3 -m pytest": [
+      "docs/adr/0048-exec-command-rules.md"
+    ],
+    "rm": [
+      "examples/demo/contracts/guarded.yaml"
+    ],
+    "secrets/bin": [
+      "spec/policy/conformance/exec.yaml"
+    ],
+    "sed": [
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml",
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml"
+    ],
+    "seq": [
+      "test/fixtures/ledger/kt1-identity-landlock/contract.yaml"
+    ],
+    "sh": [
+      "docs/adr/0044-ask-before-a-command-runs.md",
+      "docs/p0/exec-ask-plan.md",
+      "examples/container/hello.yaml",
+      "examples/demo/contracts/always-on.yaml",
+      "examples/demo/contracts/guarded.yaml",
+      "examples/demo/scenes/features.sh (heredoc)",
+      "examples/demo/scenes/network.sh (heredoc)",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml",
+      "examples/tests/agent.yaml"
+    ],
+    "sleep": [
+      "examples/demo/contracts/always-on.yaml",
+      "examples/demo/contracts/guarded.yaml",
+      "test/fixtures/ledger/kt1-identity-landlock/contract.yaml"
+    ],
+    "sort": [
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml",
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml"
+    ],
+    "sudo": [
+      "examples/demo/scenes/features.sh (heredoc)"
+    ],
+    "t": [
+      "spec/policy/conformance/execrules-allow.yaml"
+    ],
+    "tail": [
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml",
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml"
+    ],
+    "tools": [
+      "docs/p0/agent-contract.md"
+    ],
+    "touch": [
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml",
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml"
+    ],
+    "tr": [
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml",
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/demo/scenes/features.sh (heredoc)",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml"
+    ],
+    "true": [
+      "examples/demo/scenes/features.sh (heredoc)"
+    ],
+    "uname": [
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml"
+    ],
+    "unshare": [
+      "examples/demo/scenes/features.sh (heredoc)"
+    ],
+    "wc": [
+      "examples/agents/codex-chatgpt.yaml",
+      "examples/agents/codex.yaml",
+      "examples/demo/contracts/codex-chatgpt.yaml",
+      "examples/demo/contracts/codex.yaml",
+      "examples/demo/contracts/guarded.yaml",
+      "examples/demo/scenes/features.sh (heredoc)",
+      "examples/supply-chain-demo/contracts/claude-code.yaml",
+      "examples/supply-chain-demo/contracts/codex-chatgpt.yaml"
+    ],
+    "{{LOADER}}": [
+      "spec/policy/conformance/execloader.yaml",
+      "spec/policy/conformance/execloader.yaml (contract)"
+    ],
+    "{{P}}/bin/actor": [
+      "spec/policy/conformance/capture.yaml (contract)",
+      "spec/policy/conformance/control-keyring.yaml (contract)",
+      "spec/policy/conformance/control.yaml (contract)",
+      "spec/policy/conformance/denywrite-alias.yaml (contract)",
+      "spec/policy/conformance/denywrite-ancestors.yaml (contract)",
+      "spec/policy/conformance/denywrite-mounted.yaml (contract)",
+      "spec/policy/conformance/denywrite.yaml (contract)",
+      "spec/policy/conformance/exec.yaml (contract)",
+      "spec/policy/conformance/execanon.yaml (contract)",
+      "spec/policy/conformance/execloader.yaml (contract)",
+      "spec/policy/conformance/execrules-allow.yaml (contract)",
+      "spec/policy/conformance/filesystem.yaml (contract)",
+      "spec/policy/conformance/fs.yaml (contract)",
+      "spec/policy/conformance/hostsock.yaml (contract)",
+      "spec/policy/conformance/link.yaml (contract)",
+      "spec/policy/conformance/mounts-bind.yaml (contract)",
+      "spec/policy/conformance/mounts-btrfs.yaml (contract)",
+      "spec/policy/conformance/mounts.yaml (contract)",
+      "spec/policy/conformance/names.yaml (contract)",
+      "spec/policy/conformance/net.yaml (contract)",
+      "spec/policy/conformance/refer.yaml (contract)",
+      "spec/policy/conformance/thirdparty.yaml (contract)",
+      "spec/policy/conformance/toctou.yaml (contract)",
+      "test/conformance/execcheck_integration_test.go (contract literal)",
+      "test/conformance/gen.go (contract literal)",
+      "test/conformance/selftest_integration_test.go (contract literal)"
+    ],
+    "{{P}}/bin/mc-a": [
+      "spec/policy/conformance/exec.yaml (contract)"
+    ],
+    "{{P}}/bin/mc-b": [
+      "spec/policy/conformance/exec.yaml (contract)"
+    ],
+    "{{P}}/bin/tool": [
+      "spec/policy/conformance/exec.yaml (contract)"
+    ],
+    "{{P}}/bin/tool2": [
+      "spec/policy/conformance/exec.yaml (contract)"
+    ],
+    "{{P}}/bin/tool4": [
+      "spec/policy/conformance/exec.yaml (contract)"
+    ],
+    "{{P}}/bin/tool5": [
+      "spec/policy/conformance/exec.yaml (contract)"
+    ],
+    "{{P}}/out/bin/": [
+      "spec/policy/conformance/refer.yaml (contract)"
+    ],
+    "{{P}}/out/el/bl/": [
+      "spec/policy/conformance/refer.yaml (contract)"
+    ],
+    "{{P}}/out/h/i/tool": [
+      "spec/policy/conformance/refer.yaml (contract)"
+    ],
+    "{{P}}/out/p/xbin/": [
+      "spec/policy/conformance/refer.yaml (contract)"
+    ],
+    "{{P}}/out/tool": [
+      "spec/policy/conformance/refer.yaml (contract)"
+    ],
+    "{{P}}/out/tool2": [
+      "spec/policy/conformance/refer.yaml (contract)"
+    ],
+    "{{P}}/out/xd/": [
+      "spec/policy/conformance/refer.yaml (contract)"
+    ],
+    "{{P}}/ovl/merged/bin/tool": [
+      "spec/policy/conformance/mounts.yaml (contract)"
+    ],
+    "{{P}}/secrets/bin/": [
+      "spec/policy/conformance/exec.yaml (contract)"
+    ],
+    "{{P}}/t/": [
+      "spec/policy/conformance/execrules-allow.yaml (contract)",
+      "test/conformance/selftest_integration_test.go (contract literal)"
+    ],
+    "{{P}}/t/a0/git log --oneline": [
+      "spec/policy/conformance/execrules-allow.yaml (contract)"
+    ],
+    "{{P}}/t/a0/git push --dry-run": [
+      "spec/policy/conformance/execrules-allow.yaml (contract)"
+    ],
+    "{{P}}/t/a0/git status": [
+      "spec/policy/conformance/execrules-allow.yaml (contract)"
+    ]
+  },
+  "ask": {
+    "*": [
+      "docs/adr/0044-ask-before-a-command-runs.md"
+    ],
+    "cargo publish": [
+      "docs/adr/0048-exec-command-rules.md"
+    ],
+    "git fetch": [
+      "docs/adr/0044-ask-before-a-command-runs.md",
+      "docs/p0/exec-ask-plan.md"
+    ],
+    "git push": [
+      "docs/adr/0044-ask-before-a-command-runs.md",
+      "docs/adr/0048-exec-command-rules.md",
+      "docs/p0/exec-ask-plan.md"
+    ],
+    "node --inspect": [
+      "docs/p0/exec-ask-plan.md"
+    ],
+    "npm install": [
+      "docs/adr/0044-ask-before-a-command-runs.md",
+      "docs/adr/0048-exec-command-rules.md",
+      "docs/p0/exec-ask-plan.md",
+      "spec/policy/conformance/execrules.yaml (contract)",
+      "test/conformance/README.md"
+    ],
+    "npm publish": [
+      "docs/adr/0044-ask-before-a-command-runs.md",
+      "docs/p0/exec-ask-plan.md"
+    ]
+  },
+  "deny": {
+    "./true push": [
+      "docs/adr/0048-exec-command-rules.md"
+    ],
+    "b.js": [
+      "docs/spec/exec-command-rows.md (scalar example)"
+    ],
+    "cargo publish": [
+      "docs/CHANGELOG.md",
+      "docs/OPERATIONS.md",
+      "docs/adr/0048-exec-command-rules.md",
+      "docs/adr/0048-exec-command-rules.md (scalar example)",
+      "tools/oss/testdata/overlay/docs/CHANGELOG.md"
+    ],
+    "cat": [
+      "docs/adr/0048-exec-command-rules.md",
+      "docs/spec/exec-command-rows.md"
+    ],
+    "git": [
+      "docs/adr/0048-exec-command-rules.md"
+    ],
+    "git branch --copy": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git branch --delete": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git branch --edit-description": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git branch --force": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git branch --move": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git branch --set-upstream-to": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git branch --unset-upstream": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git branch -C": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git branch -D": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git branch -M": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git config --add": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git config --edit": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git config --replace-all": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git config --unset": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git config --unset-all": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git config edit": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git config remove-section": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git config rename-section": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git config set": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git config unset": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git gc": [
+      "docs/adr/0044-ask-before-a-command-runs.md",
+      "docs/adr/0048-exec-command-rules.md",
+      "docs/p0/exec-ask-plan.md"
+    ],
+    "git push": [
+      "docs/OPERATIONS.md",
+      "docs/adr/0044-ask-before-a-command-runs.md",
+      "docs/adr/0048-exec-command-rules.md",
+      "examples/demo/contracts/claude-standin.yaml",
+      "spec/policy/SEMANTICS.md",
+      "spec/policy/conformance/execrules-allow.yaml",
+      "spec/policy/conformance/execrules-allow.yaml (contract)",
+      "spec/policy/conformance/execrules.yaml",
+      "spec/policy/conformance/execrules.yaml (contract)",
+      "test/conformance/README.md",
+      "test/conformance/execrules_test.go"
+    ],
+    "git reflog expire": [
+      "docs/adr/0048-exec-command-rules.md"
+    ],
+    "git remote add": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git remote prune": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git remote remove": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git remote rename": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git remote set-branches": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git remote set-head": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git remote set-url": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git remote update": [
+      "examples/profiles/base/read-only-git.yaml"
+    ],
+    "git stash drop": [
+      "docs/adr/0048-exec-command-rules.md"
+    ],
+    "go test -exec": [
+      "docs/CHANGELOG.md"
+    ],
+    "go test -race": [
+      "docs/CHANGELOG.md"
+    ],
+    "kubectl delete": [
+      "docs/adr/0048-exec-command-rules.md"
+    ],
+    "mytool -r": [
+      "docs/adr/0048-exec-command-rules.md",
+      "docs/spec/exec-command-rows.md"
+    ],
+    "node -e *": [
+      "docs/spec/exec-command-rows.md"
+    ],
+    "npm install": [
+      "spec/policy/conformance/execrules.yaml"
+    ],
+    "npm install --global": [
+      "docs/adr/0048-exec-command-rules.md"
+    ],
+    "npm publish": [
+      "docs/CHANGELOG.md",
+      "docs/OPERATIONS.md",
+      "docs/adr/0048-exec-command-rules.md"
+    ],
+    "pip": [
+      "docs/CHANGELOG.md",
+      "docs/adr/0048-exec-command-rules.md",
+      "tools/oss/testdata/overlay/docs/CHANGELOG.md"
+    ],
+    "pip install": [
+      "docs/adr/0048-exec-command-rules.md",
+      "tools/oss/testdata/overlay/docs/CHANGELOG.md"
+    ],
+    "pnpm publish": [
+      "docs/OPERATIONS.md"
+    ],
+    "rm -r": [
+      "docs/GAPS.md",
+      "docs/OPERATIONS.md",
+      "docs/adr/0048-exec-command-rules.md",
+      "docs/adr/0055-adopt-a-running-agent.md",
+      "docs/p0/supervisor.md",
+      "examples/demo/scenes/features.sh (heredoc)",
+      "spec/policy/conformance/execrules.yaml",
+      "spec/policy/conformance/execrules.yaml (contract)",
+      "test/conformance/README.md",
+      "test/conformance/execrules_test.go",
+      "tools/oss/testdata/overlay/docs/CHANGELOG.md"
+    ],
+    "tool --force": [
+      "test/conformance/execrules_test.go"
+    ],
+    "yarn npm publish": [
+      "docs/OPERATIONS.md"
+    ],
+    "yarn publish": [
+      "docs/OPERATIONS.md"
+    ]
+  }
+}

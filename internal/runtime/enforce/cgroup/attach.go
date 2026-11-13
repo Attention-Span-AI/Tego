@@ -711,6 +711,9 @@ func (h *Handle) Close() error {
 	if err := h.Detach(); err != nil {
 		errs = append(errs, err)
 	}
+	if err := h.closeSkips(); err != nil {
+		errs = append(errs, err)
+	}
 	if h.kern != nil {
 		if err := h.kern.close(); err != nil {
 			errs = append(errs, err)

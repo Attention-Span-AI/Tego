@@ -24,6 +24,7 @@ internal/testutil TestStdioChild # TestGuardedStdioLeakCheckMainFailsOnAClosedSt
 internal/runtime/enforce/cgroup TestBuildLockHelper # helper process for the build-lock tests
 internal/runtime/enforce/cgroup TestSlotHelper # helper process for the slot-table tests
 internal/cli TestStopLockHolderHelper # helper process that holds a run's lock as the stand-in launcher for the stop tests
+internal/runlock TestHoldLockHelper # helper process that holds a run's lock as the stand-in launcher for the launcher-identity tests (TestLauncherGone, TestLauncherOfUnknownAndExited)
 internal/control/web TestHelperLockHolder # helper process that holds a run's lock as the stand-in launcher for the dashboard Stop tests
 internal/control/ledgerview TestHelperLockHolder # helper process that holds a run's lock as the stand-in launcher for the live-state tests (it runs only when a test starts it)
 internal/runtime TestLockHolderHelper # helper process that holds a run's lock for the sweep reclaim test
@@ -60,10 +61,12 @@ internal/cli TestIntegrationExitWatchGivesTheStatusOfAProgramAThreadRan # needs 
 internal/cli TestIntegrationAdoptRecordsAScriptFromTheKernel # needs root: an adoption moves another process between cgroups and loads tier 2's programs
 internal/cli TestIntegrationAdoptKilledAdopterLeavesNothingAttached # needs root: an adoption moves another process between cgroups and loads tier 2's programs
 internal/cli TestIntegrationAdoptBusyAgentRecordsTheGap # needs root: an adoption moves another process between cgroups and loads tier 2's programs
+internal/cli TestIntegrationAdoptSkipIsRecordedAtOnce # needs root: an adoption moves another process between cgroups and loads tier 2's programs
 internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlane # needs root: an adoption moves another process between cgroups and loads tier 2's programs
 internal/cli TestIntegrationGuardAdoptsAnAgentAsItStarts # needs root: the guard listens to the proc connector (CAP_NET_ADMIN) and adopts
 internal/cli TestIntegrationAdoptBoundaryRefusesThroughThePlaneWatcher # needs root: the watcher adopts a live agent under the decision plane
 internal/cli TestIntegrationAdoptReleaseCommand # needs root: an adoption moves another process between cgroups and loads tier 2's programs
+internal/cli TestAdoptEnvCleanupEndsTheAgentsBackgroundJobs # needs root: the adoption tests' environment makes a cgroup for its agent and ends processes of another parent
 internal/cli TestIntegrationAdoptAppliesPidsAndCPUCeilings # needs root: an adoption moves another process between cgroups and loads tier 2's programs
 internal/cli TestIntegrationAdoptRefusesATreeOverItsPidsCeiling # needs root: an adoption moves another process between cgroups and loads tier 2's programs
 test/vm/cmd/permlistener TestIntegrationDenyRefusesOneFileAndNoOther # needs root: a fanotify permission group needs CAP_SYS_ADMIN, and the test mounts a tmpfs

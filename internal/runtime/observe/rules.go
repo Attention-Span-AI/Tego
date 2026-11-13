@@ -5,11 +5,8 @@ package observe
 import (
 	"fmt"
 	"net/netip"
-	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
-	"strings"
 
 	"golang.org/x/sys/unix"
 
@@ -52,8 +49,8 @@ type fsEntry struct {
 }
 
 // ruleIndex answers "which declared entry does this action belong to, and what verdict does that
-// entry imply" for the recorder. It is built once from the compiled RuleTable and never mutated, so
-// the single drain goroutine reads it without a lock.
+// entry imply" for the recorder. It captures rule identities at construction and applies prepared mount metadata
+// before Start drains events. The single drain goroutine then reads it without mutation or a lock.
 //
 // It is the recorder's *stamping* index, not an enforcement decision: the kernel already decided
 // (docs/p0/enforce-cgroup-observe.md §5 R3, R9). Exec is answered by decide.Evaluate, the one
@@ -72,9 +69,10 @@ type ruleIndex struct {
 	net    []agent.NetRule
 	dirs   map[devIno]int // (dev, ino) of each declared fs path -> index into fs
 	// unindexed are the declared paths left out of dirs because stat does not name them by their super
-	// block's device (newRuleIndexAt); the recorder reports them as the run's gap.
+	// block's device (applyMounts); the recorder reports them as the run's gap.
 	unindexed []string
-	// marked is the devices the fanotify listener marks for the unenforced deny_read entries (markedDevices);
+	mounts    map[devIno]uint64
+	// marked is the devices the fanotify listener marks for the unenforced deny_read entries (markedDevicesFrom);
 	// nil when there are none to compare with.
 	marked map[uint64]struct{}
 	// held is the inodes the exec entries named when the index was built, before the agent ran, with the rights the
@@ -83,11 +81,8 @@ type ruleIndex struct {
 	held decide.HeldExecGrants
 }
 
-// newRuleIndexAt builds the index. Building the (dev, ino) half opens every declared path O_PATH and
-// fstats it; a path that cannot be opened (missing write directory, a deny_read entry naming a file
-// that was deleted) is simply absent from dirs, which costs attribution and never correctness.
-func newRuleIndexAt(rt *agent.RuleTable, mountinfo string) *ruleIndex {
-	ri := &ruleIndex{dirs: map[devIno]int{}}
+func newRuleIndexFrom(rt *agent.RuleTable, rows []mountRow) *ruleIndex {
+	ri := &ruleIndex{dirs: map[devIno]int{}, mounts: map[devIno]uint64{}}
 	if rt == nil {
 		return ri
 	}
@@ -116,7 +111,6 @@ func newRuleIndexAt(rt *agent.RuleTable, mountinfo string) *ruleIndex {
 		}
 	}
 	ri.fx = decide.NewFSIndex(rt)
-	var mounts map[uint64]uint64 // read at the first entry that needs it
 	for i, e := range ri.fs {
 		// The directory index is keyed once per rule, under its canonical spelling, so the path matchDir
 		// rebuilds is spelled as bpf_d_path spells an open's.
@@ -133,21 +127,13 @@ func newRuleIndexAt(rt *agent.RuleTable, mountinfo string) *ruleIndex {
 		// 0025 rejects keying btrfs by (super block, inode) instead, since its subvolumes repeat inode numbers
 		// under one super block and a key could name a nearer entry than the true one, so no key is guessed:
 		// the entry is left out, and the run records that its operations there resolve through nothing.
-		if mnt != 0 {
-			if mounts == nil {
-				mounts = mountDevs(mountinfo)
-			}
-			if sb, found := mounts[mnt]; found && sb != di.Dev {
-				ri.unindexed = append(ri.unindexed, e.rule.Path)
-				continue
-			}
-		}
+
 		key := dirKey(di.Dev, di.Ino)
 		if _, taken := ri.dirs[key]; !taken { // nearest entry wins here too: the list is already sorted
+			ri.mounts[key] = mnt
 			ri.dirs[key] = i
 		}
 	}
-	ri.marked = markedDevices(rt, mountinfo)
 	ri.held = decide.HoldExecGrants(rt, func(p string) (decide.FileKey, error) {
 		var st unix.Stat_t
 		err := unix.Stat(p, &st)
@@ -155,6 +141,7 @@ func newRuleIndexAt(rt *agent.RuleTable, mountinfo string) *ruleIndex {
 	})
 	ri.rt = rt
 	ri.net = rt.Net
+	ri.applyMounts(rows)
 	return ri
 }
 
@@ -217,12 +204,9 @@ func statEntry(path string) (devIno, uint64, bool) {
 	return devIno{Dev: uint64(st.Dev), Ino: st.Ino}, mnt, true
 }
 
-// mountDevs reads a mountinfo table into mount id -> the device of the mount's super block, the s_dev every
-// kernel record carries (fs/proc_namespace.c prints MAJOR(sb->s_dev):MINOR(sb->s_dev)), in stat(2)'s encoding.
-// A table that cannot be read yields none, and no entry is left out for it.
-func mountDevs(path string) map[uint64]uint64 {
+func mountDevsFrom(rows []mountRow) map[uint64]uint64 {
 	out := map[uint64]uint64{}
-	for _, m := range readMounts(path) {
+	for _, m := range rows {
 		out[m.id] = m.dev
 	}
 	return out
@@ -236,69 +220,16 @@ type mountRow struct {
 	point string
 }
 
-// readMounts reads a mountinfo table; one that cannot be read has no rows.
+// readRecorderMounts is the acquisition boundary for recorders without prepared facts.
+var readRecorderMounts = agent.ReadMountSnapshot
+
+// readMounts is the bounded strict reader for recorders without prepared facts.
 func readMounts(path string) []mountRow {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	var out []mountRow
-	for line := range strings.SplitSeq(string(b), "\n") {
-		// Split on the one space mountinfo separates fields with, not strings.Fields: the kernel escapes only
-		// space, tab, newline and backslash in a field, so \v, \r or U+00A0 can sit unescaped in a mount point
-		// and Fields would split it, shifting the point's position (pkg/spec/agent/mountinfo.go).
-		f := strings.Split(line, " ")
-		if len(f) < 3 {
-			continue
-		}
-		id, err := strconv.ParseUint(f[0], 10, 64)
-		if err != nil {
-			continue
-		}
-		maj, min, ok := strings.Cut(f[2], ":")
-		if !ok {
-			continue
-		}
-		ma, err1 := strconv.ParseUint(maj, 10, 32)
-		mi, err2 := strconv.ParseUint(min, 10, 32)
-		if err1 != nil || err2 != nil {
-			continue
-		}
-		row := mountRow{id: id, dev: unix.Mkdev(uint32(ma), uint32(mi))}
-		if len(f) > 4 {
-			row.point = unescapeMount(f[4])
-		}
-		out = append(out, row)
-	}
-	return out
+	mt, _, _ := readRecorderMounts(path)
+	return rowsFrom(mt)
 }
 
-// unescapeMount undoes mountinfo's \ooo escapes (a space is \040, a newline \012, a backslash \134).
-func unescapeMount(s string) string {
-	if !strings.Contains(s, `\`) {
-		return s
-	}
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' && i+3 < len(s) {
-			if v, err := strconv.ParseUint(s[i+1:i+4], 8, 8); err == nil {
-				b.WriteByte(byte(v))
-				i += 3
-				continue
-			}
-		}
-		b.WriteByte(s[i])
-	}
-	return b.String()
-}
-
-// markedDevices is the set of super block devices the tier-2 fanotify listener marks for the deny_read entries
-// the Landlock ruleset leaves unenforced (those nested in a write entry, which the listener alone refuses) and for
-// the name entries' scopes: the mount each such entry or scope is on and every mount point beneath it, as
-// enforce/cgroup's policy marks them at
-// Prepare, which is before the recorder is built. nil when there is no such entry or no table to read, and
-// then every read under one is stamped as before.
-func markedDevices(rt *agent.RuleTable, mountinfo string) map[uint64]struct{} {
+func markedDevicesFrom(rt *agent.RuleTable, rows []mountRow) map[uint64]struct{} {
 	if rt.Tier != backend.TierCgroup {
 		return nil // only tier 2 leaves such an entry to a listener that marks mounts
 	}
@@ -317,7 +248,6 @@ func markedDevices(rt *agent.RuleTable, mountinfo string) map[uint64]struct{} {
 	if len(roots) == 0 {
 		return nil
 	}
-	rows := readMounts(mountinfo)
 	if len(rows) == 0 {
 		return nil
 	}
@@ -565,3 +495,31 @@ func (ri *ruleIndex) matchExec(path string) execMatch {
 
 // selfMountinfo is this process's mount table.
 const selfMountinfo = "/proc/self/mountinfo"
+
+// rowsFrom translates the immutable prepared mount facts without reading procfs.
+func rowsFrom(mt *agent.MountTable) []mountRow {
+	if mt == nil {
+		return nil
+	}
+	var rows []mountRow
+	for _, m := range mt.Records() {
+		rows = append(rows, mountRow{id: uint64(m.ID), point: m.Point, dev: unix.Mkdev(m.Major, m.Minor)})
+	}
+	return rows
+}
+
+// applyMounts enriches the index's launch-pinned identities with prepared mount facts.
+// It does not restat paths or replace the exec grants captured at construction.
+func (ri *ruleIndex) applyMounts(rows []mountRow) {
+	if ri.rt == nil {
+		return
+	}
+	devices := mountDevsFrom(rows)
+	for key, i := range ri.dirs {
+		if sb, ok := devices[ri.mounts[key]]; ok && sb != key.Dev {
+			ri.unindexed = append(ri.unindexed, ri.fs[i].rule.Path)
+			delete(ri.dirs, key)
+		}
+	}
+	ri.marked = markedDevicesFrom(ri.rt, rows)
+}

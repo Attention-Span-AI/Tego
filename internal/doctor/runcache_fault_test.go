@@ -64,7 +64,7 @@ func TestMemfdNoexecIsAPrecondition(t *testing.T) {
 	if d, _ := modePrecondition(bpfobj.PlaneFmodRet, env, LSMState{BPFActive: true}); d == "" {
 		t.Error("vm.memfd_noexec=2 leaves fmod_ret mode probeable")
 	}
-	if d, _ := modePrecondition(bpfobj.PlaneLSM, PlaneEnv{MemfdNoexec: 1}, LSMState{BPFActive: true}); d != "" {
+	if d, _ := modePrecondition(bpfobj.PlaneLSM, PlaneEnv{MemfdNoexec: 1, LSMRecursionExempt: true}, LSMState{BPFActive: true}); d != "" {
 		t.Errorf("vm.memfd_noexec=1 rules the mode out: %q", d)
 	}
 }

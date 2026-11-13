@@ -1,0 +1,15 @@
+{
+ "name": "no-ledger-anchored",
+ "rule": "§7: events.jsonl gone under an anchored run",
+ "dir": "r-3f9c2a1b-0dllq06ts7400-p3fl15",
+ "events": null,
+ "anchor": [
+  {
+   "text": "r-3f9c2a1b-0dllq06ts7400-p3fl15 927b02212b08b5208aaa84356574e258822c9b28b9d9230b57062a4f9fd5ecf0\n"
+  }
+ ],
+ "expect": {
+  "verdict": "mismatch",
+  "reason": "ledger-missing"
+ }
+}

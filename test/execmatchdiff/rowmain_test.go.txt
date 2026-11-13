@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+package rows
+
+import (
+	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
+	"os"
+	"testing"
+)
+
+func TestMain(m *testing.M) { rc := m.Run(); execmatch.TighteningReport(); os.Exit(rc) }

@@ -253,6 +253,7 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 	// includes the full round even on a cold build with no links before the first Prepare.
 	var counter *fileOpenCounter
 	var before, fileOpenSkips uint64
+	var skipsBefore map[string]uint64
 	counterErr := func() error {
 		ticker := time.NewTicker(25 * time.Millisecond)
 		defer ticker.Stop()
@@ -292,6 +293,7 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 		if err != nil {
 			return err
 		}
+		skipsBefore = skipSnapshot(t)
 		for _, r := range runs {
 			if err := os.WriteFile(filepath.Join(r.project, "out", "start"), nil, 0o644); err != nil {
 				return err
@@ -303,6 +305,19 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 		cancel()
 	}
 	wg.Wait()
+	// schedExecSkips is the round's skips of the recorder's tp_btf sched_process_exec program, which a kernel from 7.0
+	// can skip where it preempts kernel code (ADR 0148): a skipped one loses that exec's line.
+	var schedExecSkips uint64
+	if skipsBefore != nil {
+		skipsAfter := skipSnapshot(t)
+		logSkipDelta(t, fmt.Sprintf("%d runs", n), skipsBefore, skipsAfter)
+		if hash, err := bpfHash(); err == nil {
+			key := filepath.Join(hash, bpf.ProgSchedExec)
+			if a, b := skipsAfter[key], skipsBefore[key]; a > b {
+				schedExecSkips = a - b
+			}
+		}
+	}
 	if counter != nil {
 		if counterErr == nil {
 			var after uint64
@@ -332,6 +347,7 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 	}
 
 	openCounts := make([]watchedOpenCount, 0, n)
+	var execsLost uint64 // runs whose exec of true has no line
 	for i, r := range runs {
 		if r.err != nil {
 			t.Errorf("run %d: tego run: %v\nstdout:\n%s\nstderr:\n%s", i, r.err, r.stdout.String(), r.stderr.String())
@@ -374,7 +390,14 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 		// explicit shared-build count as well as the single round-wide file-open bound below. Without a
 		// skip, every open is still required, and duplicates or unaccounted loss always fail.
 		openCounts = append(openCounts, watchedOpenCount{opens, sharedMisses})
-		if opens > concurrentE2EOpens || opens+sharedMisses < concurrentE2EOpens || trues != 1 {
+		// The exec of true has one line, or none when the round's sched_process_exec program was skipped and the run's
+		// record says its shared programs were skipped; two lines are never right.
+		execLost := trues == 0 && schedExecSkips > 0 && sharedMisses > 0
+		if execLost {
+			execsLost++
+			t.Logf("run %d: its exec of true has no line; the round skipped sched_process_exec %d times", i, schedExecSkips)
+		}
+		if opens > concurrentE2EOpens || opens+sharedMisses < concurrentE2EOpens || trues != 1 && !execLost {
 			t.Errorf("run %d recorded %d opens and %d execs of true, with %d shared-build trampoline misses; want %d opens (or a covering miss bound) and 1 exec", i, opens, trues, sharedMisses, concurrentE2EOpens)
 		}
 		if opens != concurrentE2EOpens {
@@ -405,6 +428,12 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 		}
 	}
 	if counterErr == nil {
+		// One skipped sched_process_exec loses at most one exec's line: the round's missing exec lines are bounded by
+		// the program's own skips, as its missing opens are by tego_file_open's.
+		if execsLost > schedExecSkips {
+			t.Errorf("round missing %d exec lines of true, but its sched_process_exec program skipped only %d executions",
+				execsLost, schedExecSkips)
+		}
 		if err := watchedOpenCoverage(openCounts, fileOpenSkips); err != nil {
 			t.Error(err)
 		}

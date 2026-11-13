@@ -7,7 +7,9 @@
       "lto": "none",
       "lto_source": "/boot/config-7.0.0-test",
       "preempt": "lazy",
-      "preempt_source": "/sys/kernel/debug/sched/preempt"
+      "preempt_source": "/sys/kernel/debug/sched/preempt",
+      "lsm_recursion_exempt": true,
+      "lsm_recursion_source": "/proc/kallsyms names __bpf_prog_enter_recur"
     },
     "build": "decide_rd",
     "build_why": "bpf_rdonly_cast is in BTF",
@@ -25,7 +27,7 @@
         "ok": false,
         "tested": false,
         "detail": "this kernel preempts kernel code (preemption lazy, from /sys/kernel/debug/sched/preempt): the BPF trampoline skips an fmod_ret program on a CPU where a preempted task is still inside it, and the hook then proceeds undecided",
-        "fix": "add lsm=lockdown,capability,landlock,yama,apparmor,bpf to the kernel command line (GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub, then update-grub) and reboot, for LSM mode, whose programs the trampoline does not skip; or boot with preempt=voluntary where this kernel offers it (x86_64 and arm64 kernels from 7.0 offer only full and lazy)"
+        "fix": "add lsm=lockdown,capability,landlock,yama,apparmor,bpf to the kernel command line (GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub, then update-grub) and reboot, for LSM mode, whose programs this kernel's trampoline does not skip; or boot with preempt=voluntary where this kernel offers it (x86_64 and arm64 kernels from 7.0 offer only full and lazy)"
       }
     ],
     "pin": "auto",

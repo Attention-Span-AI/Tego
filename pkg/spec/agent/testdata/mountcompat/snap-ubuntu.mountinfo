@@ -1,0 +1,8 @@
+10 1 8:2 / / rw,relatime - ext4 /dev/nvme0n1p2 rw
+11 10 7:0 / {{ROOT}}/snap/core22/2133 ro,nodev,relatime - squashfs /dev/loop0 ro
+12 10 7:1 / {{ROOT}}/snap/firefox/6316 ro,nodev,relatime - squashfs /dev/loop1 ro
+13 10 7:2 / {{ROOT}}/snap/snapd/25577 ro,nodev,relatime - squashfs /dev/loop2 ro
+14 10 7:3 / {{ROOT}}/snap/gnome-42-2204/224 ro,nodev,relatime - squashfs /dev/loop3 ro
+15 10 7:4 / {{ROOT}}/snap/gtk-common-themes/1535 ro,nodev,relatime - squashfs /dev/loop4 ro
+16 10 0:5 / {{ROOT}}/proc rw,nosuid,nodev,noexec - proc proc rw
+17 10 0:7 / {{ROOT}}/run rw,nosuid,nodev - tmpfs tmpfs rw,size=2048000k

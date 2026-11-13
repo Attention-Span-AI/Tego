@@ -12,7 +12,7 @@
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
   <a href="docs/INSTALL.md"><img alt="Go 1.27" src="https://img.shields.io/badge/go-1.27-00ADD8?logo=go&amp;logoColor=white"></a>
   <a href="docs/TIERS.md"><img alt="Platform: Linux" src="https://img.shields.io/badge/platform-Linux-FCC624?logo=linux&amp;logoColor=black"></a>
-  <a href="docs/CHANGELOG.md"><img alt="Release: v0.1.2" src="https://img.shields.io/badge/release-v0.1.2-F26327"></a>
+  <a href="docs/CHANGELOG.md"><img alt="Release: v0.1.3" src="https://img.shields.io/badge/release-v0.1.3-F26327"></a>
 </p>
 
 <p align="center">
@@ -274,7 +274,8 @@ The full list, with what to do about each, is in **[docs/GAPS.md](docs/GAPS.md)*
   is still refused, but `tego run` can print `refused 0`, and `tego receipt` says that no recorded action was refused
   and that the run does not record refused reads: a clean receipt there says nothing about reads. `record: full`
   records reads and makes every open slower. Tiers 2 and 3 record them without it.
-- The record is tamper-evident against an agent held by a contract, not against the person who started the run. A
+- The record is tamper-evident against an agent held by a contract, within the mount and storage limits
+  [docs/GAPS.md](docs/GAPS.md) lists, not against the person who started the run. A
   record-only run (`tego watch` with no `--boundary`, `tego run --observe`) has no Landlock rules, so its agent, which
   runs as you, can rewrite its own record.
 - The MCP relay remains a preview feature (`--preview` lists its dashboard page). Its stdio gate pins the exact

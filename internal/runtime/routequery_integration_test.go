@@ -450,6 +450,42 @@ func TestRootRouteChangesRefused(t *testing.T) {
 		t.Run(tier, func(t *testing.T) {
 			probe, _ := newRouteScene(t, bin, tier, "net: {}\n")
 			testutil.RequireTier(t, probe.tego(t, "doctor", "--require", tier), tier)
+			if tier == "cgroup" {
+				// Always exercise the listener availability change, even on a kernel with a working plane.
+				t.Run("fanotify refuses setuid with built-in denied reads", func(t *testing.T) {
+					for _, netSection := range []string{"net: {}\n", ""} {
+						s, _ := newRouteScene(t, bin, tier, netSection)
+						s.env = append(s.env, "TEGO_TEST_PLANE=fanotify")
+						cmd := s.tego(t, "run", filepath.Join(s.f.dir, "agent.yaml"), "--", "/bin/sh", "agent.sh")
+						cmd.Dir = s.f.dir
+						out, err := cmd.CombinedOutput()
+						if code := exitCodeOf(t, err); code != 125 || !strings.Contains(string(out), "cannot hold this contract's reads under setuid: true") {
+							t.Fatalf("listener setuid run: exit %d, want 125 naming setuid refusal:\n%s", code, out)
+						}
+						if got := s.out("result.json"); got != "" {
+							t.Fatalf("refused agent ran: %s", got)
+						}
+					}
+				})
+				raw, err := probe.tego(t, "doctor", "--json").Output()
+				if err != nil {
+					t.Fatalf("doctor: %v", err)
+				}
+				var report struct {
+					Plane *struct {
+						Selected string `json:"selected"`
+					} `json:"plane"`
+				}
+				if err := json.Unmarshal(raw, &report); err != nil {
+					t.Fatal(err)
+				}
+				if report.Plane == nil {
+					t.Fatal("root doctor report has no plane answer")
+				}
+				if report.Plane.Selected == "fanotify" {
+					return
+				}
+			}
 			t.Run("net section", func(t *testing.T) {
 				got, evs, addrs := run(t, tier, "net: {}\n")
 				checkRouteProbe(t, got, routeQueriesWork, routeChangesRefused)

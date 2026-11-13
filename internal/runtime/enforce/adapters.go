@@ -116,18 +116,17 @@ func (a cgroupBackend) runOptions(run RunRef) cgroupenforce.Options {
 
 // planeMounts is the launcher's mountpoints the plane keys a row on below a deny_write target; a variable so a test
 // can hand selection and Prepare a mount table of its own, or make it unreadable.
-var planeMounts = cgroupenforce.MountPoints
+var planeMounts func() ([]string, error)
 
-// planeRows is the table's plane rows as a root-tier run is filled from them: CompilePlane's, with a row for each
-// mounted root below a deny_write target (enforce-plane R12), or why the plane cannot hold the table
-// (decide.ErrPlaneCap, decide.ErrPlaneExecVerdict, cgroupenforce.ErrMountTable for a table with a deny_write target
-// and a mount table that cannot be read).
-func planeRows(rt *agent.RuleTable) (*decide.PlaneRows, error) {
+func planeRowsAt(rt *agent.RuleTable, pointsOf func() ([]string, error)) (*decide.PlaneRows, error) {
 	rows, err := decide.CompilePlane(rt)
 	if err != nil || len(rt.DenyWrite) == 0 {
 		return rows, err
 	}
-	points, err := planeMounts()
+	if pointsOf == nil {
+		pointsOf = cgroupenforce.ReadMounts().Points
+	}
+	points, err := pointsOf()
 	if err != nil {
 		return nil, err
 	}
@@ -144,11 +143,20 @@ func planeRows(rt *agent.RuleTable) (*decide.PlaneRows, error) {
 // cannot hold a descriptor each for, which would meet EMFILE in the Landlock plan (enforce-plane §2.4 condition 7):
 // tier cgroup runs such a table on the listener, tier bpflsm refuses it, as over the maps.
 func holdablePlaneRows(rt *agent.RuleTable) (*decide.PlaneRows, error) {
-	rows, err := planeRows(rt)
+	mounts := cgroupenforce.ReadMounts()
+	points := planeMounts
+	if points == nil {
+		points = mounts.Points
+	}
+	return holdablePlaneRowsAt(rt, mounts, points)
+}
+
+func holdablePlaneRowsAt(rt *agent.RuleTable, mounts *cgroupenforce.MountSnapshot, pointsOf func() ([]string, error)) (*decide.PlaneRows, error) {
+	rows, err := planeRowsAt(rt, pointsOf)
 	if err != nil {
 		return nil, err
 	}
-	if err := cgroupenforce.PlaneHoldable(rows); err != nil {
+	if err := cgroupenforce.PlaneHoldableAt(rows, mounts); err != nil {
 		return nil, err
 	}
 	if err := rows.FitFDs(planeFDCap()); err != nil {
@@ -160,6 +168,7 @@ func holdablePlaneRows(rt *agent.RuleTable) (*decide.PlaneRows, error) {
 func (a cgroupBackend) Prepare(ctx context.Context, rt *agent.RuleTable, run RunRef) (api.Handle, error) {
 	opts := a.runOptions(run)
 	crun := cgroupRun(run)
+	crun.Mounts = cgroupenforce.ReadMounts()
 	// ADR 0048 (3) P2: a run whose execs a command rule or the exec gate decides asks for them to be pinned. Prepare
 	// pins the slot only when a plane decides the run and the kernel can hold and record a pin (Handle.ExecPins).
 	crun.ExecPin = rt.ExecFactsDecided()
@@ -169,7 +178,7 @@ func (a cgroupBackend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run
 		// the fanotify listener and says why at tier cgroup (choosePlane), and refuses it at tier bpflsm. The mounted
 		// roots below a deny_write target are keyed too (enforce-plane R12).
 		endCompile := startphase.Begin(opts.Phase, "plane.compile")
-		rows, err := holdablePlaneRows(rt)
+		rows, err := holdablePlaneRowsAt(rt, crun.Mounts, crun.Mounts.Points)
 		endCompile()
 		if err != nil {
 			crun.PlaneErr = err
@@ -185,9 +194,21 @@ func (a cgroupBackend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run
 		// falls back to the listener with both arms, as a table that failed the first check does. Once only: the
 		// second attempt hands no rows over, so choosePlane cannot answer it this way again.
 		crun.PlaneRows, crun.PlaneErr = nil, err
-		return a.prepareRun(ctx, rt, run, crun)
+		h, err = a.prepareRun(ctx, rt, run, crun)
 	}
-	return h, err
+	return h, listenerAliasRemedy(err, rt, crun.Mounts)
+}
+
+// listenerAliasRemedy suggests a plane only when it can hold the whole contract.
+// A detached part or another holdability failure must never recommend a tier that also refuses.
+func listenerAliasRemedy(err error, rt *agent.RuleTable, mounts *cgroupenforce.MountSnapshot) error {
+	if !errors.Is(err, cgroupenforce.ErrListenerAlias) {
+		return err
+	}
+	if _, why := holdablePlaneRowsAt(rt, mounts, mounts.Points); why != nil {
+		return err
+	}
+	return fmt.Errorf("%w; this contract can use a working decision-plane mode at tier cgroup or tier bpflsm on a kernel that provides it, which holds whole-tree aliases", err)
 }
 
 // prepareRun composes tier 1 for crun and prepares the run's tier-2 backend over it: one attempt of Prepare.
@@ -272,8 +293,9 @@ type cgroupHandle struct {
 // The tier-2 handle is what the runtime's DNS worker hands a TTL refresh to, bare or wrapped with the tier-1
 // state it composed, whose method set is promoted from the embedded handle.
 var (
-	_ NetRefresher = cgroupHandle{}
-	_ NetRefresher = (*cgroupenforce.Handle)(nil)
+	_ NetRefresher            = cgroupHandle{}
+	_ ListenerDevicesReporter = cgroupHandle{}
+	_ NetRefresher            = (*cgroupenforce.Handle)(nil)
 	// and the supervisor reads the kernel's decision on a relayed connect from it (KernelNetReader).
 	_ KernelNetReader = cgroupHandle{}
 	_ KernelNetReader = (*cgroupenforce.Handle)(nil)
@@ -297,7 +319,14 @@ var (
 	// and says which files its fs rows were written at (PlaneKeyedReporter), which an adoption asks.
 	_ PlaneKeyedReporter = cgroupHandle{}
 	_ PlaneKeyedReporter = (*cgroupenforce.Handle)(nil)
+	// and sums the skip counters of the shared programs the run's rules rely on (SkipCounter, ADR 0148).
+	_ SkipCounter = cgroupHandle{}
+	_ SkipCounter = (*cgroupenforce.Handle)(nil)
 )
+
+// ProgramSkips is one reading of the skip counters of the shared programs a run's rules rely on (SkipCounter); the
+// backend declares it, since that package may not import this one.
+type ProgramSkips = cgroupenforce.ProgramSkips
 
 // PlaneCount is one counter of a run's plane slot (PlaneCounterReporter): Why is its record.GapPlane* name, Count its
 // value. The plane's backend declares it, since that package may not import this one.

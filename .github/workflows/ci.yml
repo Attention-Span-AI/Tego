@@ -160,7 +160,7 @@ jobs:
       - name: release.sh push and tag refusals, bpf-toolchain.sh directory guard
         run: ./scripts/release_test.sh && ./scripts/check-control-pin_test.sh && ./scripts/bpf-toolchain_test.sh && ./scripts/tree-files_test.sh && ./scripts/precommit_test.sh && ./scripts/check-bpf-objects_test.sh
       - name: vm-matrix's KVM step waits for udev
-        run: ./test/vm/kvm-step_test.sh && ./test/vm/python-pkgs_test.sh && ./test/vm/fetch-kernel_test.sh && ./test/vm/guarded-run_test.sh && ./test/vm/bounded-run_test.sh && ./test/vm/fwd-run_test.sh && ./test/vm/kvm-modules_test.sh && ./test/vm/kvm-files_test.sh && ./test/vm/kvm-cleanup_test.sh && ./test/vm/tier2-pairs_test.sh && ./test/vm/pairs_test.sh && ./test/vm/doctor-refusal_test.sh && ./test/vm/doctor-facts_test.sh && ./test/vm/perf_test.sh && ./test/vm/kvm-run_test.sh
+        run: ./test/vm/kvm-step_test.sh && ./test/vm/python-pkgs_test.sh && ./test/vm/fetch-kernel_test.sh && ./test/vm/guarded-run_test.sh && ./test/vm/bounded-run_test.sh && ./test/vm/fwd-run_test.sh && ./test/vm/kvm-modules_test.sh && ./test/vm/kvm-files_test.sh && ./test/vm/kvm-cleanup_test.sh && ./test/vm/tier2-pairs_test.sh && ./test/vm/pairs_test.sh && ./test/vm/doctor-refusal_test.sh && ./test/vm/doctor-facts_test.sh && ./test/vm/perf_test.sh && ./test/vm/kvm-run_test.sh && ./test/vm/ssh-suite_test.sh
       # With kvm-step_test.sh above, this is make harness-test.
       - name: the kill tests' (kill test 2's request pairing included), overhead harness's and kernel matrix's own tests (kt_run's bound, kill test 4's timing, kill test 5's budget and contracts, kill test 3's cache, run.sh's ledgers and rows, matrix.sh, root-suites.sh's copy)
         run: >
@@ -598,8 +598,9 @@ jobs:
     # at before it (github.event.before), or HEAD^ when a force push left that commit out of the clone; a new
     # branch (before is all zeros) has nothing to compare with and the job says so and passes. scripts/
     # bench-gate.sh builds both trees' test binaries, runs them in ten rounds that alternate which side goes
-    # first, and fails on allocs/op leaving zero, B/op over +10% and sec/op over +25% at p<0.01, per benchmark;
-    # its header has the method and the report-only list. Nothing in the set needs a run cgroup, so no step here
+    # first, and fails on allocs/op leaving zero, B/op over +10% and sec/op over +25% at p<0.01, per benchmark,
+    # but for an accepted step (a B/op or sec/op cost a change adds on purpose, up to a ceiling, against the one
+    # base commit its entry names); its header has the method, the report-only list and the accepted steps. Nothing in the set needs a run cgroup, so no step here
     # runs in the user manager: BenchmarkSeccompNotifyRoundTrip needs only no_new_privs and pidfd_getfd of its
     # own child, which a plain step allows (it skips, naming why, where seccomp notification is unavailable).
     # Wall time, measured on a developer laptop: about 10 s of builds with a warm cache and 150 s

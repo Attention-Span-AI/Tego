@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: Apache-2.0
+# A detached part beneath an fs.ask scope. Root tiers refuse startup before an actor or allow-once request exists,
+# for both rename and exchange. Landlock keeps its normal timeout refusal; it has no listener startup check.
+version: 2
+name: mounts-bindask
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./w/"]
+    ask: ["./pub/"]
+    deny_read: ["./secret/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  ask:
+    timeout: 100ms
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [secret/deep, pub/a/alias, pub/c/alias, pub/d, w]
+files:
+  secret/deep/key: fixture
+mounts:
+  - {kind: bind, at: pub/a/alias, from: secret/deep}
+  - {kind: bind, at: pub/c/alias, from: secret/deep}
+model:
+  write: [w]
+  deny_read: [secret]
+  exec_allow: [bin/actor]
+  net_declared: true
+  plane_cannot_hold: true
+  listener_refuses: true
+cells:
+  - name: rename-parent-before-allow-once
+    op: rename
+    path: pub/a
+    dest: pub/b
+    want:
+      all: refused
+    no_compile: startup is decided from the mount topology, which compile --test does not make
+    source: 'ADR 0011 (listener startup refusal); ADR 0025 (detached parts); SEMANTICS §6 (ask timeout refuses)'
+  - name: exchange-parent-before-allow-once
+    op: exchange
+    path: pub/c
+    dest: pub/d
+    want:
+      all: refused
+    no_compile: startup is decided from the mount topology, which compile --test does not make
+    source: 'ADR 0011 (listener startup refusal); ADR 0025 (detached parts); SEMANTICS §6 (ask timeout refuses)'

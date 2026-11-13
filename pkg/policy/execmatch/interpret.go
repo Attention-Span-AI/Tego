@@ -146,13 +146,16 @@ func (v Via) String() string {
 type Invocation struct {
 	// scanArgv0 is the actual argv[0] for interpreter pre-scanners (including #!).
 	scanArgv0 string
+	// interpFinal caches two-reader settlement for an interpreter with no command rules.
+	interpFinal bool
 	// NodeVersion follows the image that supplied this invocation.
-	NodeVersion string
-	Tool        string
-	Row         *Row
-	Via         Via
-	Tokens      []string
-	Readings    []Reading
+	NodeVersion     string
+	Tool            string
+	Row             *Row
+	Via             Via
+	Tokens          []string
+	Readings        []Reading
+	releaseReadings []Reading
 	// Open says Tokens end where a staged read stopped, not where the vector ends (Facts.ArgvComplete false).
 	Open bool
 	// Argv0 is the exec's argv[0] as it was given, whole, on an interpretation of the exec's own image (by its name,
@@ -209,7 +212,8 @@ func (ix *Index) Interpretations(f *Facts) []Invocation {
 				toks = ix.dispatchArgv0(row, argv0, argv1)
 			}
 			b.add(tool, row, ViaIdentity, toks)
-			ix.addInvokedAs(&b, row, argv0, argv1)
+			ix.addInvokedAs(&b, row, ViaArgv0, argv0, argv1)
+			ix.addStrippedApplet(&b, row, argv0, argv1)
 		}
 	}
 	f.eachStage(argv1, func(st Stage, toks []string) {
@@ -228,25 +232,27 @@ func (ix *Index) Interpretations(f *Facts) []Invocation {
 					stoks = ix.dispatchArgv0(row, name, toks)
 				}
 				b.add(tool, row, ViaShebang, stoks)
-				ix.addInvokedAs(&b, row, name, toks)
+				ix.addInvokedAs(&b, row, ViaShebang, name, toks)
+				ix.addStrippedApplet(&b, row, name, toks)
 			}
 		}
 	})
 	// The program a directly-invoked loader runs is read as a direct image is, with the argv the loader gives it: no
 	// execve of its own follows (ADR 0048 (2)).
 	if f.Loaded != nil {
-		lf := f.loadedFacts()
-		b.nodeVersion = lf.NodeVersion
-		for _, inv := range ix.Interpretations(&lf) {
-			if inv.Via == ViaOverflow {
-				// The program's own reading overflowed: it is this exec's, and fails it closed too. Re-added as an
-				// invocation it would be dropped (it names no tool), and the exec read as if fully resolved.
-				b.overflow = true
-				continue
+		for _, lf := range f.loadedReadings() {
+			b.nodeVersion = lf.NodeVersion
+			for _, inv := range ix.Interpretations(&lf) {
+				if inv.Via == ViaOverflow {
+					// The program's own reading overflowed: it is this exec's, and fails it closed too. Re-added as an
+					// invocation it would be dropped (it names no tool), and the exec read as if fully resolved.
+					b.overflow = true
+					continue
+				}
+				b.nodeVersion = inv.NodeVersion
+				b.scanArgv0 = inv.scanArgv0
+				b.add(inv.Tool, inv.Row, ViaLoader, inv.Tokens)
 			}
-			b.nodeVersion = inv.NodeVersion
-			b.scanArgv0 = inv.scanArgv0
-			b.add(inv.Tool, inv.Row, ViaLoader, inv.Tokens)
 		}
 	}
 	return ix.resolve(&b)
@@ -264,6 +270,7 @@ func (ix *Index) resolve(b *builder) []Invocation {
 	depth := map[int]int{}
 	overflow := false
 	for i := 0; i < len(b.out); i++ {
+		ix.fillReadings(&b.out[i])
 		inv := b.out[i]
 		b.nodeVersion = inv.NodeVersion
 		b.scanArgv0 = inv.scanArgv0
@@ -301,11 +308,29 @@ func (ix *Index) resolve(b *builder) []Invocation {
 	}
 	for i := range b.out {
 		inv := &b.out[i]
-		if inv.Row != nil && ix.Ruled(inv.Tool) {
-			inv.Readings = ix.normalizer(inv.Row).NormalizeOpen(inv.Tokens, inv.Open)
+		ix.fillReadings(inv)
+		if inv.Row != nil && inv.Row.Interp != nil && !ix.Ruled(inv.Tool) {
+			inv.interpFinal = ix.interpSettled(inv)
+			// Public invocation readings belong to ruled tools. Unruled interpreter
+			// readings have finished dispatch; retain only their settlement result.
+			inv.Readings, inv.releaseReadings = nil, nil
 		}
 	}
 	return b.out
+}
+
+// fillReadings computes both readers once, before either dispatch or a decision.
+func (ix *Index) fillReadings(inv *Invocation) {
+	if inv.Row == nil || !(ix.Ruled(inv.Tool) || inv.Row.Interp != nil) {
+		return
+	}
+	nz := ix.normalizer(inv.Row)
+	if inv.Readings == nil {
+		inv.Readings = nz.NormalizeOpen(inv.Tokens, inv.Open)
+	}
+	if inv.releaseReadings == nil {
+		inv.releaseReadings = newReleaseNormalizer(inv.Row, nz.cand).NormalizeOpen(inv.Tokens, inv.Open)
+	}
 }
 
 // eachStage calls fn for each stage of a script's #! chain with the tokens binfmt_script gives its interpreter after
@@ -355,13 +380,12 @@ func (ix *Index) addName(b *builder, name string, via Via, argv0 string, argv1 [
 		b.add(r.Tool, r, via, prepend(sub, argv1))
 	}
 	if via != ViaArgv0 {
-		ix.addInvokedAs(b, row, argv0, argv1)
-	}
-	if row != nil && row.Multicall && row.Argv0Strip != "" && via != ViaArgv0 {
-		// The dispatcher is the file that runs: it reads its applet from argv[0] after dropping the prefix.
-		if applet, ok := strings.CutPrefix(argv0, row.Argv0Strip); ok && applet != "" {
-			b.add2(ix, applet, ViaArgv0, argv1)
+		origin := ViaArgv0
+		if via == ViaShebang {
+			origin = ViaShebang
 		}
+		ix.addInvokedAs(b, row, origin, argv0, argv1)
+		ix.addStrippedApplet(b, row, argv0, argv1)
 	}
 	if i := strings.IndexByte(name, '-'); i > 0 && i < len(name)-1 {
 		if r := ix.rows.Lookup(name[:i]); r != nil && r.Dashed {
@@ -388,14 +412,25 @@ func undashed(argv0 string) string {
 // addInvokedAs adds the subcommand a row runs when the file that runs is the row's and argv[0] contains one of the
 // row's Argv0Subs names (Row.Argv0Subs). The caller holds that the file is the row's, nil when it has none: a program
 // called asphalt is not halt, and systemctl called asphalt is.
-func (ix *Index) addInvokedAs(b *builder, row *Row, argv0 string, argv1 []string) {
+func (ix *Index) addInvokedAs(b *builder, row *Row, via Via, argv0 string, argv1 []string) {
 	if row == nil {
 		return
 	}
 	for _, name := range slices.Sorted(maps.Keys(row.Argv0Subs)) {
 		if strings.Contains(argv0, name) {
-			b.add(row.Tool, row, ViaArgv0, prepend(row.Argv0Subs[name], argv1))
+			b.add(row.Tool, row, via, prepend(row.Argv0Subs[name], argv1))
 		}
+	}
+}
+
+// addStrippedApplet reads a proven dispatcher's argv[0] applet. Its tokens
+// belong to dispatch, never to the exec's direct runtime exact-grant target.
+func (ix *Index) addStrippedApplet(b *builder, row *Row, argv0 string, argv1 []string) {
+	if row == nil || !row.Multicall || row.Argv0Strip == "" {
+		return
+	}
+	if applet, ok := strings.CutPrefix(argv0, row.Argv0Strip); ok && applet != "" {
+		b.add2(ix, applet, ViaMulticall, argv1)
 	}
 }
 
@@ -451,56 +486,62 @@ func (spec *InterpSpec) runsCode(r *Reading) bool {
 // (InterpSpec.runsCode).
 func (ix *Index) dispatchInterp(b *builder, inv Invocation) {
 	spec := inv.Row.Interp
-	for _, r := range ix.normalizer(inv.Row).NormalizeOpen(inv.Tokens, inv.Open) {
-		if r.Unlocatable {
-			// Past MaxReadings no reading names the script, and any of them could be the one a deny entry names: the
-			// exec fails closed rather than read as if it dispatched to nothing (ADR 0048 R4).
+	for _, readings := range [2][]Reading{inv.Readings, inv.releaseReadings} {
+		if len(readings) == 0 {
 			b.overflow = true
 			continue
 		}
-		code, module, after := spec.runsCode(&r), "", -1
-		for _, h := range r.Hits {
-			if h.Opt != nil && spec.Module != "" && h.Opt.Name == spec.Module && h.HasValue {
-				module, after = h.Value, r.DispatchAfter
+		for _, r := range readings {
+			if r.Unlocatable {
+				// Past MaxReadings no reading names the script, and any of them could be the one a deny entry names: the
+				// exec fails closed rather than read as if it dispatched to nothing (ADR 0048 R4).
+				b.overflow = true
+				continue
 			}
-		}
-		switch {
-		case code:
-		case module != "":
-			top, _, _ := strings.Cut(module, ".")
-			tool := top
-			if t, ok := spec.Modules[top]; ok {
-				tool = t
+			code, module, after := spec.runsCode(&r), "", -1
+			for _, h := range r.Hits {
+				if h.Opt != nil && spec.Module != "" && h.Opt.Name == spec.Module && h.HasValue {
+					module, after = h.Value, r.DispatchAfter
+				}
 			}
-			b.add2(ix, tool, ViaInterpreter, tail(inv.Tokens, after))
-		case r.Dispatch >= 0:
-			for _, tool := range spec.scriptTools(inv.Tokens[r.Dispatch]) {
-				b.add2(ix, tool, ViaInterpreter, tail(inv.Tokens, r.Dispatch+1))
-			}
-		}
-		// A preloaded module runs with the arguments past the first operand, a loader's with none. Where a loader is
-		// given, the loaders' thread runs the preloaded modules too, with no arguments (node runs -r's there, probed;
-		// --import's it does not, so that reading only refuses more).
-		var args []string
-		if r.Dispatch >= 0 {
-			args = tail(inv.Tokens, r.Dispatch+1)
-		}
-		loader := slices.ContainsFunc(r.Hits, func(h Hit) bool {
-			return h.Opt != nil && h.HasValue && !h.Neg && slices.Contains(spec.Loaders, h.Opt.Name)
-		})
-		for _, h := range r.Hits {
 			switch {
-			case h.Opt == nil || !h.HasValue || h.Neg:
-			case slices.Contains(spec.Preload, h.Opt.Name):
-				for _, tool := range spec.moduleTools(h.Value) {
-					b.add2(ix, tool, ViaInterpreter, args)
-					if loader {
+			case code:
+			case module != "":
+				top, _, _ := strings.Cut(module, ".")
+				tool := top
+				if t, ok := spec.Modules[top]; ok {
+					tool = t
+				}
+				b.add2(ix, tool, ViaInterpreter, tail(inv.Tokens, after))
+			case r.Dispatch >= 0:
+				for _, tool := range spec.scriptTools(inv.Tokens[r.Dispatch]) {
+					b.add2(ix, tool, ViaInterpreter, tail(inv.Tokens, r.Dispatch+1))
+				}
+			}
+			// A preloaded module runs with the arguments past the first operand, a loader's with none. Where a loader is
+			// given, the loaders' thread runs the preloaded modules too, with no arguments (node runs -r's there, probed;
+			// --import's it does not, so that reading only refuses more).
+			var args []string
+			if r.Dispatch >= 0 {
+				args = tail(inv.Tokens, r.Dispatch+1)
+			}
+			loader := slices.ContainsFunc(r.Hits, func(h Hit) bool {
+				return h.Opt != nil && h.HasValue && !h.Neg && slices.Contains(spec.Loaders, h.Opt.Name)
+			})
+			for _, h := range r.Hits {
+				switch {
+				case h.Opt == nil || !h.HasValue || h.Neg:
+				case slices.Contains(spec.Preload, h.Opt.Name):
+					for _, tool := range spec.moduleTools(h.Value) {
+						b.add2(ix, tool, ViaInterpreter, args)
+						if loader {
+							b.add2(ix, tool, ViaInterpreter, nil)
+						}
+					}
+				case slices.Contains(spec.Loaders, h.Opt.Name):
+					for _, tool := range spec.moduleTools(h.Value) {
 						b.add2(ix, tool, ViaInterpreter, nil)
 					}
-				}
-			case slices.Contains(spec.Loaders, h.Opt.Name):
-				for _, tool := range spec.moduleTools(h.Value) {
-					b.add2(ix, tool, ViaInterpreter, nil)
 				}
 			}
 		}

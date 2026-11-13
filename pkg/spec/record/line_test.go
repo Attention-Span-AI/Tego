@@ -360,7 +360,8 @@ func TestChain(t *testing.T) {
 	if c.Len() != 3 || c.Head() != prev {
 		t.Fatalf("Len %d Head %q", c.Len(), c.Head())
 	}
-	// A gap in seq and a wrong prev are both ErrCorruptChain; a tampered byte is ErrIDMismatch.
+	// A gap in seq and a wrong prev are both ErrCorruptChain. Malformed JSON precedes a stale digest;
+	// a changed payload that remains JSON is ErrIDMismatch.
 	e := base(KindGap, `{"what":"record","why":"x"}`)
 	e.Seq, e.Prev = 4, prev
 	if _, err := c.Add(mustLine(t, e)); !errors.Is(err, ErrCorruptChain) {
@@ -373,6 +374,10 @@ func TestChain(t *testing.T) {
 	e.Seq, e.Prev = 3, prev
 	line := mustLine(t, e)
 	line[len(line)-2] ^= 1
+	if _, err := c.Add(line); !errors.Is(err, ErrMalformedLine) {
+		t.Fatalf("malformed tamper: %v", err)
+	}
+	line = bytes.Replace(mustLine(t, e), []byte(`"why":"x"`), []byte(`"why":"y"`), 1)
 	if _, err := c.Add(line); !errors.Is(err, ErrIDMismatch) {
 		t.Fatalf("tamper: %v", err)
 	}

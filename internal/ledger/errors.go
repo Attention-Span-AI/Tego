@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/attention-span-ai/tego/pkg/spec/record"
+	"github.com/attention-span-ai/tego/pkg/spec/record/chaincheck"
 )
 
 // Sentinel errors (I10). Every error this package returns wraps one of them or an *os.PathError, so callers
@@ -32,7 +33,7 @@ var (
 	// could not be written (E29): the run's own data is intact.
 	ErrAnchorWrite = errors.New("ledger: chain anchor not written")
 	// ErrCorruptLedger is returned by the reader for a malformed line that is not the torn tail (§7).
-	ErrCorruptLedger = errors.New("ledger: corrupt line")
+	ErrCorruptLedger = chaincheck.ErrCorruptLedger
 	// ErrBadSHA is returned for a blob name that is not 64 lowercase hex characters.
 	ErrBadSHA = errors.New("ledger: blob name is not a sha256")
 	// ErrUnsupportedVersion is record.ErrUnsupportedVersion, re-exported so callers of the reader need one
@@ -44,26 +45,26 @@ var (
 	// that does not hash to its id, a broken seq or prev link, an invalid event, an anchored head the
 	// ledger does not end with, an anchor that is missing or malformed. An error without it is a read
 	// failure, which says nothing about the ledger's integrity.
-	ErrUnverified = errors.New("ledger: unverified")
+	ErrUnverified = chaincheck.ErrUnverified
 	// ErrAnchorMissing is what Verify reports, beside ErrUnverified, for an ended run that chain.log has
 	// no line for (E29). It is distinct from ErrCorruptChain: the run's own chain may be intact, but its
 	// head has nothing outside the run directory to be checked against. The live-index sweep (SweepLive,
 	// endListed) rebuilds the line only for an ended run the index still lists, under its lock and after the
 	// chain verifies; a run whose Close failed its anchor write (E29) is cleared from the index, and nothing
 	// rebuilds its line.
-	ErrAnchorMissing = errors.New("ledger: no chain anchor for this run")
+	ErrAnchorMissing = chaincheck.ErrAnchorMissing
 	// ErrRunClosing is what Verify reports for an ended run with no anchor line whose lock is still held after
 	// closeWait: the launcher is inside Close, which anchors last. It is not a finding and does not wrap
 	// ErrUnverified; a retry a moment later verifies.
-	ErrRunClosing = errors.New("ledger: run is closing, retry")
+	ErrRunClosing = chaincheck.ErrRunClosing
 	// ErrLedgerMissing is what VerifyRunDir reports, beside ErrUnverified, for a run chain.log anchors
 	// whose events.jsonl is gone: the anchor says the run was recorded, so its absence is a finding
 	// about the record, not a run that never existed.
-	ErrLedgerMissing = errors.New("ledger: the anchored run's ledger is missing")
+	ErrLedgerMissing = chaincheck.ErrLedgerMissing
 	// ErrRunMismatch is what Verify reports, beside ErrUnverified, for a line whose run id is not the
 	// run being verified: a ledger copied in from another run keeps an intact chain of its own, and
 	// only the id tells it from the run its directory names.
-	ErrRunMismatch = errors.New("ledger: a line belongs to another run")
+	ErrRunMismatch = chaincheck.ErrRunMismatch
 	// ErrLinkRefused is a symlink root would have had to follow in a directory that is not root's
 	// alone (handover.go): the directory's owner could have aimed it anywhere, so root refuses it.
 	ErrLinkRefused = errors.New("ledger: refusing to follow a symlink in a directory another user can change")

@@ -51,6 +51,12 @@ the compiled table (I4) that admits the tego binary with the hook's exact argv a
    allowed (limits-check-doctor-cli R25, amended 2026-10-25). A contract's own allow entries for the tool keep admitting what they admit beside it, and an unlisted refusal
    then names `exec.args[<tool>]` as before.
 
+   *Corrected 2026-11-12:* an applet derived by removing a dispatcher's argv[0] prefix has multicall provenance,
+   including through a supplied identity mapping or a shebang stage. It receives no direct argv[0] and cannot
+   satisfy an exact grant. A stage's invoked-as reading keeps shebang provenance too. Earlier code marked the
+   stripped applet as argv0 and could satisfy an already supplied exact grant. Matcher regression tests cover the
+   direct and staged forms; no live admission route was established. Live validation is owed in a guest.
+
 The grant is the exact full argv, so no question of trailing-argument matching arises, and the reason path is part of
 it: `tego hook claude-code --reason <another file>` is refused. `run_start` records it: `runtime_grants` lists
 `exec.harness-hook[<tego binary>]`, and `harness.hook` is `{argv, granted: true}`. A hook the contract's own rules
@@ -220,7 +226,7 @@ its own: the launcher cannot know that before Prepare, and the run fails closed,
 - 2026-10-25 (names beneath the filesystem): `MountAliases` skipped every mount of
   another device, so an overlay's layers (another device, and an overlay file reports one link) were never held to
   the entries: a tego binary on an overlay whose upper layer lay under a write entry was granted, and the agent could
-  rewrite through the layer what the grant runs. `agent.MountOf` (`FileMount`) replaces `MountAliases`: a mount's
+  rewrite through the layer what the grant runs. `agent.MountTable.Of` (`FileMount`, formerly `agent.MountOf`) replaces `MountAliases`: a mount's
   places (`Aliases`), the binds of a directory beneath a tree (`Beneath`), an overlay's layers parsed from its super
   options (`Layers`), and a stacking filesystem it cannot map (`Unmapped`), with the device and source. The runtime's
   `hookScan` holds each layer, the backing files of the loop devices beneath the filesystem's block device

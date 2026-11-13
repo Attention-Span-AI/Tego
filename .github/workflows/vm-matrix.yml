@@ -171,6 +171,16 @@ jobs:
         run: |
           TEGO_VM_ROW="$KERNEL" TEGO_VM_LOCKDOWN=none TEGO_VM_MEM=1536M VM_BPF=yes VM_OUT="$RUNNER_TEMP/peer" \
             test/vm/root-suites.sh internal/platform/peer internal/runscope
+      # ADR 0148's adoption proof on the row it was proven on: internal/cli whole, as root, on the lsm=...,bpf boot, so
+      # root-must-pass.txt's fedora-7.0 entry holds TestIntegrationAdoptSkipIsRecordedAtOnce to a pass (root-suites.sh
+      # checks a row's own entries for the packages a run of named packages ran). It skips elsewhere where no skip can
+      # be made, as root-skips.txt allows. A row job, not the tier 3 parts, whose 360 minutes are spoken for.
+      - name: the adoption skip proof (internal/cli) on ${{ matrix.kernel }}, as root
+        if: matrix.part == 'row' && matrix.kernel == 'fedora-7.0'
+        shell: bash
+        run: |
+          TEGO_VM_ROW="$KERNEL" TEGO_VM_LOCKDOWN=none TEGO_VM_MEM=3G VM_BOOTS=lsm-bpf VM_BPF=yes VM_OUT="$RUNNER_TEMP/adoptskip" \
+            test/vm/root-suites.sh '=internal/cli'
       # Coverage with the privileged suites' share, which only a root run can measure: scripts/coverage.sh
       # --vm runs the unit and integration suites here, then each suite of test/vm/root-suites.sh as root in its
       # own guest, and --kill-tests adds this row's kill tests run with a -cover tego (test/vm/matrix.sh with

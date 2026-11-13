@@ -92,6 +92,8 @@ type adoptEnv struct {
 	agentPID int
 	shell    *exec.Cmd
 	adopter  *adopter
+	// tegoEnv is added to every tego command's environment (a test's own pin, such as TEGO_TEST_PLANE).
+	tegoEnv []string
 }
 
 // requireAdoption skips unless this is root on a cgroup2 host with the BPF objects and a bpf filesystem.
@@ -315,6 +317,7 @@ func (e *adoptEnv) tegoCmd(args ...string) *exec.Cmd {
 	// Preserve the root suite's explicit waiver in this tegotesthooks binary too: a product build on a kernel
 	// that preempts kernel code offers no fmod_ret mode, so the boundary test would exercise no plane there.
 	cmd.Env = append(cmd.Env, "TEGO_TEST_PLANE_PREEMPT="+os.Getenv("TEGO_TEST_PLANE_PREEMPT"))
+	cmd.Env = append(cmd.Env, e.tegoEnv...)
 	return cmd
 }
 
@@ -474,12 +477,84 @@ func (e *adoptEnv) cleanup() {
 	if e.agentPID > 0 {
 		_ = syscall.Kill(e.agentPID, syscall.SIGKILL)
 	}
+	if left := e.killAgentTree(5 * time.Second); len(left) > 0 {
+		e.t.Errorf("the agent's processes %v outlived the test's cleanup", left)
+	}
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if os.Remove(e.term) == nil || errors.Is(os.Remove(e.term), os.ErrNotExist) {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// agentProcesses are the live processes whose command line names this test's agent script: the agent, and every
+// copy of it the script forked as a background job or a subshell, wherever they are now.
+func (e *adoptEnv) agentProcesses() []int {
+	script := filepath.Join(e.dir, "claude")
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, d := range entries {
+		pid, err := strconv.Atoi(d.Name())
+		if err != nil || pid == os.Getpid() {
+			continue
+		}
+		// A process that is gone or a zombie has no command line to read.
+		argv, err := os.ReadFile(filepath.Join("/proc", d.Name(), "cmdline"))
+		if err != nil {
+			continue
+		}
+		for _, arg := range strings.Split(string(argv), "\x00") {
+			if arg == script {
+				pids = append(pids, pid)
+				break
+			}
+		}
+	}
+	return pids
+}
+
+// killAgentTree kills agentProcesses until none is left or budget has passed, and returns those still there. The
+// kills of the shell and of the agent above leave the script's background jobs running with init as their parent,
+// and a test that ends before its release leaves them inside an adoption whose adopter the cleanup killed: they
+// then never read the file that tells them to stop, and every later test that looks for agents on this machine
+// finds them (the adoption skip test's eight readers, on a kernel that preempts no task inside a program).
+func (e *adoptEnv) killAgentTree(budget time.Duration) []int {
+	deadline := time.Now().Add(budget)
+	for {
+		pids := e.agentProcesses()
+		if len(pids) == 0 || !time.Now().Before(deadline) {
+			return pids
+		}
+		for _, pid := range pids {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestAdoptEnvCleanupEndsTheAgentsBackgroundJobs pins the cleanup every adoption test relies on: an agent script
+// whose background jobs never end by themselves leaves no process naming it once the cleanup has run.
+func TestAdoptEnvCleanupEndsTheAgentsBackgroundJobs(t *testing.T) {
+	e := newAdoptEnv(t)
+	e.startAgent("#!/bin/sh\nfor i in 1 2 3; do ( while :; do sleep 1; done ) & done\nwait\n")
+	waitFor(t, func() bool { return len(e.agentProcesses()) >= 4 })
+	// What the cleanup did before: the shell and the agent, by their pids. The jobs live on under init.
+	_ = e.shell.Process.Kill()
+	_, _ = e.shell.Process.Wait()
+	_ = syscall.Kill(e.agentPID, syscall.SIGKILL)
+	waitFor(t, func() bool { return syscall.Kill(e.agentPID, 0) != nil || len(e.agentProcesses()) == 3 })
+	if left := e.agentProcesses(); len(left) != 3 {
+		t.Fatalf("the agent's three background jobs after the kill of the shell and the agent: %v, want three", left)
+	}
+	e.shell = nil
+	e.cleanup()
+	if left := e.agentProcesses(); len(left) != 0 {
+		t.Fatalf("processes naming the agent script after the cleanup: %v", left)
 	}
 }
 

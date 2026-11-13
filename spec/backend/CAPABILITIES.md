@@ -4,6 +4,14 @@ At the root tiers, preemptible kernels can skip tracing callbacks before run mem
 `bpf-trampoline-miss/shared-build` counts skipped executions of the build's shared recorder programs during the run;
 it includes other runs and ungoverned tasks, and is not an exact per-run lost-record count. One skipped callback can
 suppress multiple records. Unreadable counters produce `bpf-trampoline-counter-unavailable` (GAPS C53).
+The same kernels can skip a program that decides a run's actions: fmod_ret hooks, LSM hooks on a kernel before 6.2
+(6.1.54 in the 6.1 series), the exec pin check (a tracepoint program, from 7.0) and the listener cleanup (syscall
+tracepoints, through bpf(2) callers); cgroup programs cannot be, and `cgroup_mkdir` runs where no skip is reachable.
+Doctor admits LSM mode on such an older kernel only where kernel code is not preempted, and withholds the exec pin
+claim (`exec.command_argv`, `exec.assurance: kernel`) on a kernel that preempts kernel code. A run reads the skip
+counters of the programs its rules rely on and is ended when one moves, with `gap what=enforce`
+`bpf-decision-skip/shared-build` or `bpf-tracking-skip/shared-build`; an adoption first reports at once after
+run_start, then at most once a minute plus polling and scheduling delay, and is not ended (ADR 0148).
 The 6.1 plane uses the probe reader without `bpf_rdonly_cast`; confidentiality lockdown requires the read-only reader
 and therefore that kfunc.
 

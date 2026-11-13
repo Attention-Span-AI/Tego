@@ -109,7 +109,7 @@ func TestASweepReclaimsALockItsLauncherNoLongerHolds(t *testing.T) {
 			m := &scopeCgroups{fakeCgroups: fakeCgroups{root: scopes}}
 			m.onKill = func() { _ = holder.Process.Kill(); _ = holder.Wait() }
 			prev := orphanRoots
-			orphanRoots = func(cgroup.Manager, markDir, runDir) []string { return []string{scopes} }
+			orphanRoots = func(cgroup.Manager, markDir, runDir) ([]string, error) { return []string{scopes}, nil }
 			t.Cleanup(func() { orphanRoots = prev })
 
 			if _, err := Sweep(context.Background(), root, KeepForever, WithSweepManager(m)); err != nil {

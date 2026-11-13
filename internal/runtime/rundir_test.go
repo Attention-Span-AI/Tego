@@ -14,6 +14,16 @@ import (
 	"github.com/attention-span-ai/tego/internal/testutil"
 )
 
+// ownerUID is the uid that owns the directory, ok false when it cannot be read.
+// Production scope decisions use lstat and preserve its error.
+func (d runDir) ownerUID() (int, bool) {
+	st, err := d.lstat()
+	if err != nil {
+		return 0, false
+	}
+	return int(st.Uid), true
+}
+
 // TestRunDirLooksUpUnderTheLentDirectory: a sweep hook is lent the run's directory (ledger.WithSweepHook), and the
 // orphan checks it runs read that directory, never what its path names by then. The run is moved away after the
 // directory was opened and a decoy put at its path: an empty directory with a FIFO for a lock. Through the lent

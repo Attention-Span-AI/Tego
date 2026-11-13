@@ -1774,28 +1774,51 @@ collapses them into one bucket. The rows those entries produce still merge by ke
     must not be evicted, its reads flushed as final, or the uprobe source and step tracker told it is gone while it
     goes on (nor on an `execve` from another thread). Two threads that end at one instant can both find the count at 0, so the recorder handles one process's exit once
     (`TestIntegrationExitIsTheThreadGroups`, `TestRecorderHandlesAProcessExitOnce`).
-24. A `write` rule directory bind-mounted elsewhere after `Prepare`: cannot occur — Landlock already refuses
-    `mount(2)` inside a run (SEMANTICS §10), so no new mount instance can appear mid-run to need a late mark.
-    **Condition:** this holds only because the filter refuses new mount and user namespaces (SEMANTICS §10):
-    `unshare(CLONE_NEWUSER|CLONE_NEWNS)` would make unmarked copies of every mount, where a `deny_read` fanotify
-    alone enforced is read (reproduced on 6.17).
-    The host can still mount beneath a `deny_read` entry after `Prepare` (autofs, a systemd automount), and that
-    mount is on no mark (§5 R8). A read there of an entry the Landlock ruleset leaves unenforced, which the listener
-    alone refuses, is made. So the recorder reads the mount table when it is built, after `Prepare`, and takes the
-    super block devices of each such entry's own mount and of every mount point beneath it, the mounts the listener
-    marked; a read under such an entry on another device is stamped `observed`
-    (`TestUnenforcedDenyReadOnAnUnmarkedMountIsObserved`). What it cannot tell apart: a record carries the device, not
-    the mount, so a later bind mount of an already-marked filesystem beneath the entry is still stamped `refused`
-    while unmarked, and a mount made between `Prepare` and the recorder's construction counts as marked.
-    *Amended 2026-10-19 (ADR 0017 space 5, a known fail-open disclosed until fixed):* a bind mount made
-    **before** the run, of a `deny_read` directory onto a name beneath a granted sibling (`pub/alias` bound from
-    `secret/`), is read through that name in the fanotify mode: the alias is a mount of its own beneath no `deny_read`
-    path, so no mark asks for its opens, and the kernel record says `allow unmatched` (what happened). Tier landlock
-    allows the same read as its recorded limitation (enforce-landlock E32 (ii)); the decision plane refuses it by inode.
-    `compile` warns on mount points; until the listener decides the open by the file's identity (ADR 0010, ADR 0025)
-    or marks every mount of a marked filesystem, a `deny_read` that must hold against such an alias needs a plane mode
-    or tier bpflsm. `test/conformance` `mounts-bind/read-bind-alias-nested` carries it as a `finding` at cgroup, failing
-    once fixed.
+24. **Mount aliases and the startup snapshot (ADR 0011 and ADR 0025, corrected 2026-11-12).** Wherever the
+    listener would decide a compiled `deny_read` path entry, a tree or part of it also visible at another
+    mount-table path on the same filesystem instance refuses `Prepare` (`ErrListenerAlias`). This includes
+    cgroup without a plane mode and the plane's fallback at cgroup. No flag overrides it. The error names the
+    first matching entries and places, why this mechanism cannot hold them there, and a remedy; omitted
+    entries and places are counted. Diagnostics are collected flat and joined once. The host owner can remove
+    the duplicate mount; a plane that holds the whole contract is an option for whole-tree aliases only. A
+    detached part outside the denied tree is refused at bpflsm and at the cgroup listener after fallback
+    (enforce-plane §6 case 16). The listener stores no alias deny spellings, marks no aliases, and makes no
+    movable-ancestor exception. One mount-facts object acquired for `Prepare` serves composition, listener
+    policy and marks, plane holdability, and recorder startup, including boundary adoption.
+    `agent.ReadMountSnapshot` bounds the input to 8 MiB and 32,768 records, validates complete records and the
+    mount graph, and requires two equal reads, with at most three attempts. Lookup follows mount and parent
+    ids and is checked against statx mount ids. Missing, malformed, changing or unverifiable facts refuse
+    preparation (`ErrMountTable`). This detects observed acquisition changes, not ABA changes or later host
+    changes. The runner hands the recorder the devices of the ordinary mounts the listener actually marked,
+    including submounts beneath ordinary entries. The recorder does not rebuild this set from a later
+    mount-table read and receives no alias decision. Device numbers still cannot distinguish mounts of the
+    same filesystem: an unmarked later mount of an already-marked filesystem can be stamped as if marked. An
+    unmarked new device's read is stamped `observed` (`TestUnenforcedDenyReadOnAnUnmarkedMountIsObserved`).
+    Under `setuid: true`, a contract with a `deny_read` or protected-name rule refuses wherever the listener
+    decides (`ErrListenerSetuid`), including the built-in secret list. Reasoned from kernel and filter
+    sources, not guest-tested: a setuid program can regain mount privileges and reach detached copied mounts
+    no listener mark covers. Refusing detached-mount creation syscalls in the filter would be narrower and
+    remains future work. Without `setuid: true` the run cannot create or enter another mount namespace:
+    Landlock refuses mount operations, and the filter refuses new mount and user namespaces and every `setns`
+    (SEMANTICS §10). Residuals: mounts the host makes after `Prepare` are not in the snapshot and receive no
+    late mark; host ancestor renames are not tracked by the listener's path checks. A different filesystem
+    instance showing the same data is not recognised at any tier: a second network mount of one export, a FUSE
+    mirror or a loop image is outside these facts. Deny the other path too, or avoid mounting the same export
+    twice where agents can read it. For recognised network mount types, the same source string on different
+    filesystem devices produces a warning, not a refusal. Hard links and overlay layers retain their stated
+    limits. Protected-name scopes (ADR 0043 D7) receive no alias check. Tier landlock's alias limitation
+    remains enforce-landlock E32 (ii). Evidence for the release limit is unit tests, including
+    `TestListenerRefusesEveryAliasLayout`, `TestListenerAliasDiagnosticOncePerEntry`,
+    `TestPrepareSharesOneMountSnapshot`, `TestRecorderUsesPreparedMountFacts`, and
+    `TestSetuidRefusesReadsOnlyTheListenerHolds`. Updated conformance expectations for `mounts-bind`,
+    `mounts-bindfile`, `mounts-bindmove`, `mounts-bindhidden`, `mounts-bindsub`, and the second-round rename
+    and approval fixtures are owed in a guest on Debian 13's 6.12 and Fedora's 7.0, both boots. Saved round-1
+    guest baselines show `mounts-bindmove` and `mounts-bindhidden` failing and `mounts-bindsub` passing; they
+    do not prove the new refusal rule. Source inspection shows that a built-in project name scope masked the
+    old cell's marked-device omission. `TestOrdinarySubmountListenerHandoffEmitsOneRefusal` now uses an
+    ordinary entry with a different-device submount outside all name-rule scopes and checks exactly one
+    refusal (unit proof).
+
 25. A 200-argument exec: `argv[512]` truncates with a trailing marker + `gap why=argv-truncated`; exec-allow
     matching depends only on `path`/`script` (read separately, bounded by `PATH_MAX`), never full argv.
     The buffer is `TEGO_ARGV_MAX`, 512 bytes. An argv the probe could not read is recorded empty and marked

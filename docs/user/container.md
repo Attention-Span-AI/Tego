@@ -132,6 +132,56 @@ On Docker's defaults (no capability added, `docker-default`), the entrypoint say
 says so, naming the outer seccomp profile (moby#42680). `--privileged` works around all of it and gives the container
 everything; it is not what this image asks for.
 
+### A warning about protected-file storage
+
+The image's binary may stay on overlay when its host layer folders are absent inside the container or named relative
+to a folder the mount table does not record. A binary on FUSE, eCryptfs, aufs or shiftfs has the same stated backing
+limit. These alone refuse no write or ask grant; Tego does not guess a relative layer's base folder. Absolute layers
+of the same overlay remain protected. When a FUSE or eCryptfs filesystem holds a protected regular file, its existing
+absolute source directory joins the protected closure with visible aliases; grants at, over or inside it refuse.
+Source text cannot establish backing identity and clears neither filesystem's backing warning. Mount and layer coverage follows the
+[compile-time mount boundary](../adr/0059-no-run-writes-what-a-later-run-loads.md#compile-time-mount-boundary);
+unreadable mapped candidate identity refuses the grants concerned. Root-owned merged paths give no assurance about
+hidden layers. With any of these backing limits, including a FUSE/eCryptfs mount holding another protected regular file, compile emits one
+`[overlay-backing-unknown]` warning per write or ask entry that meets a visible storage mount. Relative layers
+and unnamed backing exclude only their own filesystem device, so another binary's device does not hide a backing
+folder. These pre-existing backing classes exclude the shared inventory's kernel interfaces and memory directory storage; regular-file binds
+established by live checks can still warn on memory filesystems. The absent-only rule also excludes discovered binary overlay devices. Runtime storage or a backing folder on a memory filesystem
+also mounted at a writable directory gets no warning (GAPS C65). Unlinked protected backing also warns on its own
+device and on memory directory storage, excluding kernel interfaces. Unlinked directories remain uncertain and
+refuse reaching write and ask grants. A single-file mount is exempt only for absent
+or relative overlay backing, after live snapshot-bound mount ID, type and size checks and comparison
+with every affected protected regular file. A nonempty byte-identical alias refuses, executable or not. Two empty files
+prove neither identity nor difference and warn without a byte-alias refusal. FUSE/eCryptfs file binds keep the
+warning because their stored bytes can differ from visible bytes. Unreadable protected files and unidentified or
+changed mount points give no file-bind exemption. The captured Docker `/etc/hosts`, `/etc/hostname` and `/etc/resolv.conf`
+binds stay quiet in the overlay classes when live checks pass. In the captured Podman FUSE layout, ordinary
+project grants reach no file binds and stay quiet; a grant reaching a file bind warns once, including empty
+`/run/.containerenv`. The warning names the grant, mount and each protected file directly on unnamed backing, including
+a config layer or a contract on sshfs even when Tego is on ext4, because Tego
+cannot tell whether that mount shows the folders holding its protected files, and names the reason for relative layers or
+unnamed filesystem backing. Keep runtime storage and the whole host filesystem out of writable places. For unnamed
+backing, keep the folder storing encrypted or mirrored files out of every write grant. Ordinary workspace volumes still compile. Every active
+protected path and the directories its walk reads must still have mount identity, except that a walk across an
+unlinked-root mount has unplaced backing with the conditional warning above. A plain-folder chroot whose root is
+not a mount point has no `/` mount row, so every write and ask grant is refused. Compile and `tego doctor` explain
+that the kernel does not show the filesystem under that root; bind the folder onto itself before entering it or
+run Tego outside that root. The captured nspawn table keeps all 19 baseline contracts: its unlinked file mounts
+still undergo live type, inode and snapshot mount-ID checks on both the mounted and protected files before
+comparison by device and inode. Established absence or a nonregular protected target needs no comparison. An
+identity read error, failed holding-mount lookup, mount-ID mismatch or missing identity refuses reaching write
+and ask grants. Unlinked directories retain alias uncertainty for read-denial startup. Doctor names the mount
+and says it cannot tell whether the folder is visible under another name, while retaining known alias warnings.
+A former unlinked name is never used to infer a path alias. Nspawn and both chroot runtime checks are owed in a guest.
+The placed-root container fixture keeps all 19 baseline
+contracts; the workspace-volume fixture warns on exactly 11 of them. Without a storage mount meeting a grant
+there is no backing warning; an ordinary overlay grant can still print a separate mount advisory. Runtime
+tables replay 2026-11-12 captures from Docker 29.1.3 (overlay2 and its default containerd image store),
+containerd 2.2.1, and rootless Podman 4.9.3 with fuse-overlayfs 1.13 on kernel 6.8.0-147-generic.
+Containerd's relative lowers keep absolute upper/work; the real FUSE type is `fuse.fuse-overlayfs`.
+These are compilation checks; this branch's real container reruns are
+owed in a guest; GAPS C65 records this limit.
+
 ### A secret inside the work folder
 
 A `.env` (or another `deny_read` target) inside a folder the agent writes, such as `/work/.env` under

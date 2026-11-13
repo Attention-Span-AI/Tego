@@ -12,7 +12,10 @@
 # against the ones that skipped, with each skip's own reason, and the script fails when any suite
 # failed, did not build, or ran nothing at all; when a test skipped that test/vm/root-skips.txt does not
 # allow; and, on a run of every package with no VM_RUN, when a test test/vm/root-must-pass.txt names did
-# not pass. Each suite's go test -json stream is kept beside its console log (VM_OUT/logs/<suite>.json).
+# not pass (on a run of named packages on a row, the entries scoped to that row for the packages it ran). Each suite's go test -json stream is kept beside its console log (VM_OUT/logs/<suite>.json).
+# A guest that something outside this script ended (kvm-run.sh's exit 98, "lost signal <n>": the host's memory guard
+# or OOM killer, a kill by hand) is no result for its suite: the suite's row says guest-lost, a GUEST-LOST line names
+# it at the end, and the script exits 98 instead of 1, so a lost guest is never read as a failing test.
 #
 # Usage: test/vm/root-suites.sh [package-substring | =exact/package ...] (default: every package below)
 #        test/vm/root-suites.sh --gather DIR              (after the VM_SHARD runs: below)
@@ -135,6 +138,7 @@ shard_plan() {
 # summary.json and shard.done), one directory each, in any layout. Every shard of ROOT_SHARDS must have finished and
 # passed, none twice and no other, and then root-must-pass.txt is checked over the go test -json logs of all of them
 # together: a root-only test must have passed in some shard's build and failed in none, as one whole run checks it.
+# A shard that exited 98 lost a guest: it is GUEST-LOST, not FAIL, and the gather exits 98 whatever else failed.
 if [ "${1:-}" = --gather ]; then
 	[ $# = 2 ] && [ -d "$2" ] || { echo "usage: test/vm/root-suites.sh --gather DIR (the shards' VM_OUT directories)" >&2; exit 2; }
 	gdir="$(cd "$2" && pwd)"
@@ -142,6 +146,7 @@ if [ "${1:-}" = --gather ]; then
 	. "$here/suites.sh"
 	shard_plan || exit 2
 	status=0
+	lost=0 # a shard that lost a guest (exit 98): the gather is then no verdict either, and exits 98 whatever else failed
 	declare -A done_by=()
 	while IFS= read -r -d '' f; do
 		read -r gname gstatus <"$f" || true
@@ -160,7 +165,11 @@ if [ "${1:-}" = --gather ]; then
 			continue
 		fi
 		read -r _ gstatus <"${done_by[$gname]}" || true
-		if [ "$gstatus" = 0 ]; then echo "ok   $gname"; else echo "FAIL $gname: exit ${gstatus:-none}"; status=1; fi
+		case "$gstatus" in
+		0) echo "ok   $gname" ;;
+		98) echo "GUEST-LOST $gname: a guest was lost (exit 98): its suites have no result"; lost=1 ;;
+		*) echo "FAIL $gname: exit ${gstatus:-none}"; status=1 ;;
+		esac
 	done
 	jsons=()
 	for f in "${done_by[@]}"; do
@@ -169,11 +178,16 @@ if [ "${1:-}" = --gather ]; then
 	echo
 	if [ "${#jsons[@]}" = 0 ]; then
 		echo "root-suites: the shards left no go test -json log" >&2
+		[ "$lost" = 0 ] || exit 98
 		exit 1
 	fi
 	"$repo/scripts/skipgate.sh" --must-pass "$here/root-must-pass.txt" "${jsons[@]}" >"$gdir/skipgate-must-pass.log" 2>&1 || status=1
 	if grep -q '^== must pass' "$gdir/skipgate-must-pass.log"; then sed -n '/^== must pass/,$p' "$gdir/skipgate-must-pass.log"; else cat "$gdir/skipgate-must-pass.log"; fi
 	echo
+	if [ "$lost" = 1 ]; then
+		echo "== root-suites: ${#ROOT_SHARDS[@]} shards, ${#jsons[@]} suites' logs: GUEST-LOST (a shard lost a guest: no verdict for its suites, run it again)"
+		exit 98
+	fi
 	echo "== root-suites: ${#ROOT_SHARDS[@]} shards, ${#jsons[@]} suites' logs: $([ "$status" = 0 ] && echo pass || echo FAIL)"
 	exit "$status"
 fi
@@ -263,9 +277,13 @@ both | lsm-bpf | default-lsm)
 		lsm="$no_bpf,bpf"
 		[ "$boot" = lsm-bpf ] || lsm="$no_bpf"
 		echo "== root-suites: boot $boot (lsm=$lsm)"
-		VM_BOOTS="" VM_OUT="$OUT/$boot" TEGO_VM_LSM="$lsm" "$here/root-suites.sh" "$@" || overall=1
+		VM_BOOTS="" VM_OUT="$OUT/$boot" TEGO_VM_LSM="$lsm" "$here/root-suites.sh" "$@"
+		rc=$?
+		# A lost guest (98) on either boot makes the whole run 98: it has no result for that boot's lost suites.
+		if [ "$rc" = 98 ]; then overall=98; elif [ "$rc" != 0 ] && [ "$overall" = 0 ]; then overall=1; fi
 	done
-	echo "== root-suites: ${boots// / and }: $([ "$overall" = 0 ] && echo pass || echo FAIL) (per boot under $OUT/<boot>)"
+	case "$overall" in 0) verdict=pass ;; 98) verdict="GUEST-LOST (a guest was lost: no result for its suites)" ;; *) verdict=FAIL ;; esac
+	echo "== root-suites: ${boots// / and }: $verdict (per boot under $OUT/<boot>)"
 	exit "$overall"
 	;;
 *) echo "root-suites: VM_BOOTS must be empty, both, lsm-bpf or default-lsm, not $VM_BOOTS" >&2; exit 2 ;;
@@ -451,7 +469,7 @@ if [ -n "${VM_FIXTURE_ROOT:-}" ]; then
 fi
 
 # vm_code turns kvm-run.sh's exit code into the status column: the command's own code when the guest
-# ran it, else vm-<reason> (timeout, no-report, env, usage), because 2, 124 and 125 are codes both
+# ran it, else vm-<reason> (lost, timeout, no-report, env, usage), because 2, 124 and 125 are codes both
 # kvm-run.sh and the programs under test use.
 vm_code() {
 	local st
@@ -485,6 +503,7 @@ service_cgroup=()
 	(sleep 2147483647 &)
 	exec "$@"' root-suites-service)
 
+lost=() # the suites whose guest kvm-run.sh reported lost (vm-lost), each with its status line
 for s in "${suites[@]+"${suites[@]}"}"; do
 	IFS='|' read -r suite pkg tags bin <<<"$s"
 	# The default is the bare number; a "pkg=seconds" word overrides it for that package. The suite's own
@@ -541,6 +560,7 @@ for s in "${suites[@]+"${suites[@]}"}"; do
 			"${fixture_args[@]+"${fixture_args[@]}"}" \
 			-- "${service_cgroup[@]+"${service_cgroup[@]}"}" "/vm/$(basename "$bin")" -test.v -test.timeout=$go_timeout "${run_args[@]+"${run_args[@]}"}" "${part_args[@]+"${part_args[@]}"}"
 		code="$(vm_code $? "$OUT/logs/$suite.status")"
+		[ "$code" != vm-lost ] || lost+=("$suite ($(cat "$OUT/logs/$suite.status"))")
 	fi
 	tr -d '\r' <"$OUT/logs/$suite.console" | "$GO" tool test2json -p "$module/$pkg" >"$OUT/logs/$suite.json" 2>/dev/null
 	printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$suite" "$pkg" "$tags" "$code" "$OUT/logs/$suite.json" "$OUT/logs/$suite.console" >>"$results"
@@ -596,6 +616,7 @@ else
 	fwd_run "$here/kvm-run.sh" --sudo --timeout 300 --log "$OUT/logs/$doctor_suite.console" --status "$OUT/logs/$doctor_suite.status" \
 		--file "$doctor_bin:/vm/tego" -- "${service_cgroup[@]+"${service_cgroup[@]}"}" /bin/sh -c "$doctor_script" /vm/tego "$bpf_state"
 	code="$(vm_code $? "$OUT/logs/$doctor_suite.status")"
+	[ "$code" != vm-lost ] || lost+=("$doctor_suite ($(cat "$OUT/logs/$doctor_suite.status"))")
 fi
 printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$doctor_suite" "cmd/tego" "$([ "$bpf_state" = on ] && echo tegobpf || echo -)" "$code" "-" "$OUT/logs/$doctor_suite.console" >>"$results"
 
@@ -634,20 +655,51 @@ grep -v '[[:space:]]#[[:space:]]*untagged:' "$here/root-skips.txt" >"$OUT/root-s
 if [ "${#strict[@]}" -gt 0 ]; then
 	echo
 	echo "== skips of the tagged builds and the packages without objects (test/vm/root-skips.txt, untagged: entries left out)"
-	"$repo/scripts/skipgate.sh" "$OUT/root-skips.tagged.txt" "${strict[@]}" >"$OUT/logs/skipgate-strict.log" 2>&1 || status=1
+	"$repo/scripts/skipgate.sh" --row "$ROW" "$OUT/root-skips.tagged.txt" "${strict[@]}" >"$OUT/logs/skipgate-strict.log" 2>&1 || status=1
 	gate_report '^== skipped tests' "$OUT/logs/skipgate-strict.log"
 fi
 if [ "${#lenient[@]}" -gt 0 ]; then
 	echo
 	echo "== skips of the plain builds of the packages whose tests load the objects (test/vm/root-skips.txt)"
-	"$repo/scripts/skipgate.sh" "$here/root-skips.txt" "${lenient[@]}" >"$OUT/logs/skipgate-plain.log" 2>&1 || status=1
+	"$repo/scripts/skipgate.sh" --row "$ROW" "$here/root-skips.txt" "${lenient[@]}" >"$OUT/logs/skipgate-plain.log" 2>&1 || status=1
 	gate_report '^== skipped tests' "$OUT/logs/skipgate-plain.log"
 fi
-if [ $# -eq 0 ] && [ -z "${VM_RUN:-}" ] && [ -z "$SHARD" ] && [ "${#strict[@]}" -gt 0 ]; then
+# A run of every package holds the whole list, its row's entries included. A run of named packages on a row holds only
+# that row's own entries (row=ROW) for the packages it ran: a proof row's must-pass, such as vm-matrix's internal/cli run
+# on fedora-7.0 for TestIntegrationAdoptSkipIsRecordedAtOnce. Unscoped entries, other rows' entries and entries of
+# packages it did not run are left to the run that holds them; VM_RUN and a shard still hold none here.
+mustlist=""
+if [ -z "${VM_RUN:-}" ] && [ -z "$SHARD" ] && [ "${#strict[@]}" -gt 0 ]; then
+	if [ $# -eq 0 ]; then
+		mustlist="$here/root-must-pass.txt"
+	elif [ -n "$ROW" ]; then
+		ran=" "
+		for s in "${suites[@]}"; do
+			IFS='|' read -r _ pkg _ <<<"$s"
+			ran+="$pkg "
+		done
+		while IFS= read -r line || [ -n "$line" ]; do
+			case "$line" in "" | "#"*) continue ;; esac
+			read -r pkg _ scope _ <<<"${line%%[[:space:]]#*}" || true
+			[ "${scope:-}" = "row=$ROW" ] || continue
+			case "$ran" in *" $pkg "*) printf '%s\n' "$line" ;; esac
+		done <"$here/root-must-pass.txt" >"$OUT/root-must-pass.row.txt"
+		[ ! -s "$OUT/root-must-pass.row.txt" ] || mustlist="$OUT/root-must-pass.row.txt"
+	fi
+fi
+if [ -n "$mustlist" ]; then
 	echo
-	"$repo/scripts/skipgate.sh" --must-pass "$here/root-must-pass.txt" "${strict[@]}" "${lenient[@]+"${lenient[@]}"}" \
+	"$repo/scripts/skipgate.sh" --must-pass --row "$ROW" "$mustlist" "${strict[@]}" "${lenient[@]+"${lenient[@]}"}" \
 		>"$OUT/logs/skipgate-must-pass.log" 2>&1 || status=1
 	gate_report '^== must pass' "$OUT/logs/skipgate-must-pass.log"
+fi
+if [ "${#lost[@]}" -gt 0 ]; then
+	echo
+	for l in "${lost[@]}"; do
+		echo "GUEST-LOST: $l: qemu was ended from outside before the suite finished; this is not a test result"
+	done
+	echo "root-suites: ${#lost[@]} guest(s) lost; exit 98, not a test verdict (run those suites again; on a shared host read its memory guard's log)"
+	status=98
 fi
 [ -z "$SHARD" ] || echo "$SHARD $status" >"$OUT/shard.done"
 exit "$status"

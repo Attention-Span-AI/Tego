@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic, not a live capture; source is the lower/cipher directory.
+1 0 8:1 / / rw - ext4 disk rw
+2 1 0:80 / @HOME@ rw - ecryptfs @HOST@/ecryptfs/.Private rw,user_id=1000,group_id=1000

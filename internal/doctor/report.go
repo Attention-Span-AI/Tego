@@ -104,7 +104,9 @@ func Run(ctx context.Context, m *config.Machine, require backend.Tier) (*Report,
 	if ctx.Err() != nil {
 		return nil, fmt.Errorf("doctor: %w", ctx.Err())
 	}
-	return st.report(m, require), nil
+	r := st.report(m, require)
+	r.addMountWarnings(uid)
+	return r, nil
 }
 
 // report derives the Report from what the probes learned: pure, so a test can hand it a described machine

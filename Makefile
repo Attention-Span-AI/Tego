@@ -153,6 +153,7 @@ harness-test: ## the kill tests', overhead harness's and kernel matrix's own she
 	./test/vm/bounded-run_test.sh
 	./test/vm/fwd-run_test.sh
 	./test/vm/kvm-run_test.sh
+	./test/vm/ssh-suite_test.sh
 	./test/e2e/pydeps_test.sh
 	./test/vm/root-suites_test.sh
 	./test/vm/kvm-step_test.sh

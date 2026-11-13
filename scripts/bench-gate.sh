@@ -27,10 +27,13 @@
 # compared; a benchmark, or a whole package's results, the base has and the head does not fails the gate (a rename or a regex that no longer
 # matches would otherwise drop it from the gate unseen), unless it is one of the noisy ones. A head binary that does not build, or whose run fails, fails the gate: the benchmark itself is
 # broken. A base that does not build or run is reported, and what it did produce is still compared.
+# An accepted step (accepted below) makes one B/op or sec/op failure a note: a cost a change adds on purpose and
+# explains, accepted only against the one base commit its entry names and only up to its ceiling. allocs/op
+# leaving zero, and a B/op of 0 that becomes non-zero, are never accepted.
 #
 # Usage: scripts/bench-gate.sh [-n ROUNDS] [-t BENCHTIME] [-o DIR] [--head DIR] BASE_DIR
 #        scripts/bench-gate.sh compare BASE_RESULTS HEAD_RESULTS
-#   BASE_DIR     a checkout of the base commit (CI: a git worktree of it)
+#   BASE_DIR     a checkout of the base commit (CI: a git worktree of it); its HEAD is the base commit
 #   --head DIR   the checkout under test (default: the one holding this script)
 #   -n ROUNDS    rounds per side (default 10)
 #   -t BENCHTIME -test.benchtime of every run (default 100ms)
@@ -38,8 +41,10 @@
 #                existing DIR must be empty or one this script made
 #   compare      the decision alone, over two directories of <package>.txt results as the gate writes them
 # Environment: GO (default go), BENCHSTAT (default benchstat); BENCH_GATE_PACKAGES replaces the package list
-# (the self-test's fake packages).
-# Exit: 0 no gated regression; 1 a gated regression, or head's benchmarks failed to build or run; 2 usage.
+# (the self-test's fake packages); BENCH_GATE_ACCEPTED, when set (empty included), replaces the accepted-step list;
+# BENCH_GATE_BASE_COMMIT is the base commit in compare mode (unset or empty: no accepted step applies).
+# Exit: 0 no gated regression; 1 a gated regression, or head's benchmarks failed to build or run; 2 usage, or a
+# malformed accepted step.
 set -euo pipefail
 
 # The benchmarks the gate runs, one package per line: its directory, the -test.bench regex, and the build
@@ -76,6 +81,31 @@ internal/platform/sys                ^Benchmark(Borrow|Hold|OwnedOpenClose)$
 # IndexedEvaluator stays gated with absolute query budgets).
 noisy='Feed FeedExchange BuildRuleMaps SendMMsgTail IterFullRun SeccompNotifyRoundTrip SlotAcquireRelease Blob SplitBlobsStage OwnedOpenClose NearestFS'
 
+# Accepted steps: a B/op or sec/op increase a change makes on purpose, explained, and accepted against one base
+# commit only. One entry per line:
+#   BASE_COMMIT PACKAGE_DIR BENCHMARK UNIT CEILING_PERCENT REASON...
+# BASE_COMMIT is the full 40-hex commit compared with (CI: the pull request's base, or the push's before);
+# PACKAGE_DIR the package's directory as in default_packages, matched against the end of the results' module path
+# so either module path matches; BENCHMARK the name without Benchmark and without -<GOMAXPROCS>; UNIT B/op or
+# sec/op, never allocs/op (a zero-allocation path that starts allocating is never accepted); CEILING_PERCENT a
+# positive number; REASON why, printed with the finding. An entry applies only when the base commit is exactly
+# BASE_COMMIT (BASE_DIR's HEAD; in compare mode, BENCH_GATE_BASE_COMMIT), so it expires by itself: once its change
+# has merged, the next pull request's base is another commit and the thresholds above hold again. Where it applies,
+# a failure it matches at or below the ceiling is a note naming the entry, and one above the ceiling still fails,
+# the ceiling named. An entry that does not apply, or applies and matched no failure, is named in a note at the end
+# of the findings; it is removed once it no longer applies. A malformed entry stops the gate (exit 2) before
+# anything is built.
+# v0.1.3 (against public main f8efe5ca2ab8, before it): a guarded exec is decided with two readers of the command
+# rules (ADR 0048), and C8's guarded exec cases allocate more per op. The hosted runner measured B/op +10.5%
+# (script), +16.2% (16 arguments) and +17.4% (128 arguments), each at p=0.000 n=10, allocs/op 59 -> 66, 58 -> 67
+# and 239 -> 257, sec/op inside the gate, the unguarded exec and the floor's refusal unchanged. The ceiling, +25%,
+# leaves room for one hosted runner's spread against another's and is still a ceiling: a larger step fails.
+accepted='
+f8efe5ca2ab899598df2173c05119686b4c2cd57  internal/runtime/supervisor  ExecCommandCost/script   B/op  25  v0.1.3 decides a guarded exec with two readers of the command rules (ADR 0048)
+f8efe5ca2ab899598df2173c05119686b4c2cd57  internal/runtime/supervisor  ExecCommandCost/args16   B/op  25  v0.1.3 decides a guarded exec with two readers of the command rules (ADR 0048)
+f8efe5ca2ab899598df2173c05119686b4c2cd57  internal/runtime/supervisor  ExecCommandCost/args128  B/op  25  v0.1.3 decides a guarded exec with two readers of the command rules (ADR 0048)
+'
+
 GO=${GO:-go}
 BENCHSTAT=${BENCHSTAT:-benchstat}
 
@@ -86,6 +116,41 @@ usage() {
 
 # key names a package's files: its directory with the slashes made underscores.
 key() { printf '%s' "$1" | tr / _; }
+
+# check_steps reads the accepted-step list into steps, one entry each as COMMIT DIR BENCHMARK UNIT CEILING REASON
+# separated by tabs, and returns 1, naming every malformed line, when any is.
+steps=()
+check_steps() {
+	local line n=0 bad=0 c d b u p r why
+	while IFS= read -r line; do
+		n=$((n + 1))
+		if [[ $line =~ ^[[:space:]]*$ ]]; then continue; fi
+		c="" d="" b="" u="" p="" r=""
+		read -r c d b u p r <<<"$line"
+		why=""
+		if [ -z "$p" ]; then
+			why="wrong field count: want BASE_COMMIT PACKAGE_DIR BENCHMARK UNIT CEILING_PERCENT REASON"
+		elif [ -z "$r" ]; then
+			why="no reason"
+		elif ! [[ $c =~ ^[0-9a-f]{40}$ ]]; then
+			why="base commit $c is not a full commit id (40 lowercase hex digits)"
+		elif [ "$u" != B/op ] && [ "$u" != sec/op ]; then
+			why="unit $u is not B/op or sec/op (allocs/op is never accepted)"
+		elif ! [[ $p =~ ^[0-9]+([.][0-9]+)?$ ]] || [[ $p =~ ^0+([.]0+)?$ ]]; then
+			why="ceiling $p is not a positive number of percent"
+		fi
+		if [ -n "$why" ]; then
+			echo "bench-gate: malformed accepted step, line $n of the list: $why: $line" >&2
+			bad=1
+			continue
+		fi
+		steps+=("$c"$'\t'"$d"$'\t'"$b"$'\t'"$u"$'\t'"$p"$'\t'"${r//$'\t'/ }")
+	done <<<"${BENCH_GATE_ACCEPTED-$accepted}"
+	return $bad
+}
+
+# The base commit the accepted steps are held to, and why there is none when it is empty; set before compare runs.
+base_commit="" base_unknown=""
 
 # ADR 0028 S1 has an absolute query budget, including when the base lacks this
 # new benchmark. Every measured sample must be below 1us with no allocation.
@@ -118,10 +183,23 @@ absolute_queries() { # absolute_queries FILE
 }
 
 # decide reads benchstat's CSV for one package on stdin and prints one line per finding:
-# "FAIL <why>", "note <why>" (report-only or not compared).
-decide() { # decide PACKAGE
-	awk -F, -v pkg="$1" -v noisy="$noisy" '
-	BEGIN { n = split(noisy, l, " "); for (i = 1; i <= n; i++) quiet[l[i]] = 1 }
+# "FAIL <why>", "note <why>" (report-only, accepted, or not compared). The accepted steps that apply to this base
+# come in applicable (INDEX, then a steps entry's fields but the commit, tab-separated, one a line); the index of
+# each one a failure matched is appended to the file USED.
+decide() { # decide PACKAGE USED
+	bench_gate_applicable=$applicable awk -F, -v pkg="$1" -v used="$2" -v noisy="$noisy" -v base12="${base_commit:0:12}" '
+	BEGIN {
+		n = split(noisy, l, " "); for (i = 1; i <= n; i++) quiet[l[i]] = 1
+		na = split(ENVIRON["bench_gate_applicable"], al, "\n")
+		for (i = 1; i <= na; i++) {
+			if (split(al[i], f, "\t") < 6) continue
+			s_id[i] = f[1]; s_dir[i] = f[2]; s_bench[i] = f[3]; s_unit[i] = f[4]; s_ceil[i] = f[5]; s_reason[i] = f[6]
+		}
+	}
+	# inpkg: the results module path is the package directory, or ends in "/" and it.
+	function inpkg(path, dir) {
+		return path == dir || (length(path) > length(dir) && substr(path, length(path) - length(dir)) == "/" dir)
+	}
 	function finite(s) {
 		return s ~ /^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$/ &&
 			tolower(sprintf("%.17g", s + 0)) !~ /inf|nan/
@@ -175,18 +253,33 @@ decide() { # decide PACKAGE
 			next
 		}
 		base += 0; head += 0; pct += 0; p += 0
-		why = ""
+		why = ""; step = 0
 		if (unit == "allocs/op" && base == 0 && head > 0)
 			why = sprintf("allocs/op %g -> %g: a zero-allocation benchmark now allocates", base, head)
-		else if (unit == "B/op" && delta ~ /^\+/ && pct > 10)
-			why = sprintf("B/op %s (%s): over +10%%", delta, $NF)
-		else if (unit == "B/op" && delta == "?" && base == 0 && head > 0 && p < 0.05)
+		else if (unit == "B/op" && delta ~ /^\+/ && pct > 10) {
+			why = sprintf("B/op %s (%s): over +10%%", delta, $NF); step = 1
+		} else if (unit == "B/op" && delta == "?" && base == 0 && head > 0 && p < 0.05)
 			why = sprintf("B/op %g -> %g (%s): over +10%%", base, head, $NF)
-		else if (unit == "sec/op" && delta ~ /^\+/ && pct > 25 && p < 0.01)
-			why = sprintf("sec/op %s (%s): over +25%% at p<0.01", delta, $NF)
+		else if (unit == "sec/op" && delta ~ /^\+/ && pct > 25 && p < 0.01) {
+			why = sprintf("sec/op %s (%s): over +25%% at p<0.01", delta, $NF); step = 1
+		}
 		if (why == "") next
-		if (top in quiet) printf "note %s %s: %s (report-only)\n", pkg, name, why
-		else printf "FAIL %s %s: %s\n", pkg, name, why
+		if (top in quiet) { printf "note %s %s: %s (report-only)\n", pkg, name, why; next }
+		# Only a percentage increase of B/op or sec/op can be an accepted step, matched by package directory, name
+		# without its -<GOMAXPROCS> and unit.
+		bare = name; sub(/-[0-9]+$/, "", bare)
+		hit = 0
+		if (step) for (i = 1; i <= na; i++)
+			if ((i in s_dir) && s_unit[i] == unit && s_bench[i] == bare && inpkg(pkg, s_dir[i])) { hit = i; break }
+		if (hit) {
+			print s_id[hit] >>used
+			if (pct <= s_ceil[hit] + 0) {
+				printf "note %s %s: %s (accepted step against %s, ceiling +%s%%: %s)\n", pkg, name, why, base12, s_ceil[hit], s_reason[hit]
+				next
+			}
+			why = why sprintf("; over the accepted ceiling +%s%%", s_ceil[hit])
+		}
+		printf "FAIL %s %s: %s\n", pkg, name, why
 	}'
 }
 
@@ -195,8 +288,15 @@ decide() { # decide PACKAGE
 compare() { # compare BASE_RESULTS HEAD_RESULTS
 	local based=$1 headd=$2 status=0 f k pkg csv
 	command -v "$BENCHSTAT" >/dev/null || { echo "bench-gate: no benchstat ($BENCHSTAT)" >&2; return 1; }
-	local findings
+	local findings used applicable="" base12=${base_commit:0:12} i c d b u p r
 	findings=$(mktemp "${TMPDIR:-/tmp}/bench-gate.XXXXXX")
+	used=$(mktemp "${TMPDIR:-/tmp}/bench-gate.XXXXXX")
+	for i in "${!steps[@]}"; do
+		IFS=$'\t' read -r c d b u p r <<<"${steps[$i]}"
+		if [ -n "$base_commit" ] && [ "$c" = "$base_commit" ]; then
+			applicable+="$i"$'\t'"$d"$'\t'"$b"$'\t'"$u"$'\t'"$p"$'\t'"$r"$'\n'
+		fi
+	done
 	if [ -e "$headd/internal_policy_decide.txt" ]; then
 		absolute_queries "$headd/internal_policy_decide.txt" >>"$findings"
 	fi
@@ -218,7 +318,7 @@ compare() { # compare BASE_RESULTS HEAD_RESULTS
 			echo "FAIL $pkg: benchstat could not read the results" >>"$findings"
 			continue
 		fi
-		printf '%s\n' "$csv" | decide "$pkg" >>"$findings"
+		printf '%s\n' "$csv" | decide "$pkg" "$used" >>"$findings"
 	done
 	# A package the base has results for and the head has none: deleted, moved, or its regex matches nothing.
 	# Only a package whose every base benchmark is report-only may go missing quietly.
@@ -238,10 +338,22 @@ compare() { # compare BASE_RESULTS HEAD_RESULTS
 			echo "note $pkg: only the base has results (report-only benchmarks); not compared" >>"$findings"
 		fi
 	done
+	# Every accepted step this base did not use is named, so a stale entry is seen and removed.
+	if [ ${#steps[@]} -gt 0 ] && [ -z "$base_commit" ]; then
+		echo "note accepted steps: $base_unknown; none applies" >>"$findings"
+	fi
+	for i in "${!steps[@]}"; do
+		IFS=$'\t' read -r c d b u p r <<<"${steps[$i]}"
+		if [ -z "$base_commit" ] || [ "$c" != "$base_commit" ]; then
+			echo "note accepted step $d $b $u (against ${c:0:12}): does not apply to this base (${base12:-unknown}); remove it once it no longer applies" >>"$findings"
+		elif ! grep -qx "$i" "$used"; then
+			echo "note accepted step $d $b $u (against ${c:0:12}, ceiling +$p%): applies to this base and matched no failure; the step it accepts did not occur" >>"$findings"
+		fi
+	done
 	echo "== findings"
 	if [ -s "$findings" ]; then cat "$findings"; else echo "none"; fi
 	grep -q '^FAIL' "$findings" && status=1
-	rm -f "$findings"
+	rm -f "$findings" "$used"
 	return $status
 }
 
@@ -273,8 +385,12 @@ run() { # run SIDE SRC OUT PKG REGEX
 		-test.count 1 -test.benchmem -test.timeout 10m) >>"$out/$side/$k.txt" 2>>"$out/$side/$k.err"
 }
 
+check_steps || exit 2
+
 if [ "${1:-}" = compare ]; then
 	[ $# -eq 3 ] || usage
+	base_commit=${BENCH_GATE_BASE_COMMIT:-}
+	base_unknown="BENCH_GATE_BASE_COMMIT is not set"
 	compare "$2" "$3"
 	exit $?
 fi
@@ -294,6 +410,10 @@ done
 [ $# -eq 1 ] || usage
 case "$rounds" in '' | *[!0-9]* | 0) usage ;; esac
 base=$(CDPATH='' cd -- "$1" && pwd)
+# The base commit is BASE_DIR's HEAD, asked of BASE_DIR's own repository even when a hook's GIT_DIR is set.
+if ! base_commit=$(unset GIT_DIR GIT_WORK_TREE; git -C "$base" rev-parse HEAD 2>/dev/null); then
+	base_commit="" base_unknown="git rev-parse HEAD failed in $base"
+fi
 head=${head:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}
 head=$(CDPATH='' cd -- "$head" && pwd)
 packages=${BENCH_GATE_PACKAGES:-$default_packages}

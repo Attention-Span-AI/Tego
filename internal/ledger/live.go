@@ -347,8 +347,8 @@ func sweepListed(ctx context.Context, repo *fsRunRepository, rd *sys.FD, id stri
 // cut short (*amended 2026-09-24:* a cancelled context or EIO in Verify had cleared the entry
 // as a chain that does not verify) — keeps the entry, so the next sweep
 // tries again; only a chain that does not verify, or is not one whole run of its own, is left unanchored and its
-// entry cleared, since no later sweep would find it otherwise. GC's pass over every
-// run directory has no index and leaves an ended run alone.
+// entry cleared, since no later sweep would find it otherwise. GC's pass over every run directory checks an ended
+// run's cleanup hook before collecting it, but does not repair its anchor.
 //
 // The repair is a sweeper's word on a ledger it can read: it stands against a launcher killed in Close, not
 // against someone who can write the ledger root, who can write a whole chain that verifies and have a sweep

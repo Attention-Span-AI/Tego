@@ -101,7 +101,7 @@ func TestSweepFindsTheOrphansScopeWhereItsLauncherMadeIt(t *testing.T) {
 				m.ids[scopeUnder(t, own, id)] = 99
 			}
 			prev := orphanRoots
-			orphanRoots = func(cgroup.Manager, markDir, runDir) []string { return []string{own, other} }
+			orphanRoots = func(cgroup.Manager, markDir, runDir) ([]string, error) { return []string{own, other}, nil }
 			t.Cleanup(func() { orphanRoots = prev })
 
 			res, err := Sweep(context.Background(), root, KeepForever, WithSweepManager(m))
@@ -130,7 +130,7 @@ func TestSweepEndsARunWhoseScopeIsGone(t *testing.T) {
 	lostRunIn(t, root, id, 77)
 	m := &scopeCgroups{fakeCgroups: fakeCgroups{root: own}}
 	prev := orphanRoots
-	orphanRoots = func(cgroup.Manager, markDir, runDir) []string { return []string{own} }
+	orphanRoots = func(cgroup.Manager, markDir, runDir) ([]string, error) { return []string{own}, nil }
 	t.Cleanup(func() { orphanRoots = prev })
 	res, err := Sweep(context.Background(), root, KeepForever, WithSweepManager(m))
 	if err != nil || res.Orphaned != 1 || len(m.killed) != 0 {

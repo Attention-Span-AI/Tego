@@ -31,7 +31,7 @@ func TestSweepKeepsARunLostWhoseScopeWillNotBeRemoved(t *testing.T) {
 	m := &scopeCgroups{fakeCgroups: fakeCgroups{root: own}, ids: map[string]uint64{scope: 77},
 		removeErr: cgroup.ErrBusy}
 	prev := orphanRoots
-	orphanRoots = func(cgroup.Manager, markDir, runDir) []string { return []string{own} }
+	orphanRoots = func(cgroup.Manager, markDir, runDir) ([]string, error) { return []string{own}, nil }
 	t.Cleanup(func() { orphanRoots = prev })
 
 	if _, err := Sweep(context.Background(), root, KeepForever, WithSweepManager(m)); err != nil {

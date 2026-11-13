@@ -141,7 +141,16 @@ func TestHTTP2RefusalPreservesOneConnectionAndMeteredSiblings(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = cc.Close() })
-			client := &http.Client{Transport: cc, Timeout: 3 * time.Second}
+			// The first request on the connection waits for its admission, and a new listener's first admission searches the
+			// cgroup2 tree in lexical order for the run's cgroup directory by its id, stopping at the match (findCgroupDir,
+			// kept after); at worst it visits every cgroup on the host. That is the host's cost, not this test's: on a box of
+			// about 780 cgroups the search alone took 28 to 67 ms, and 268 to 750 ms under -race; the whole admission stage
+			// took up to 1.01 s under -race while the shared box was busy. The sibling's arrival upstream used to be given
+			// 1 s, and it failed "allowed sibling did not reach upstream" at that second in three loaded runs (2026-11-03 to
+			// 2026-11-11). A request is given as long as this client gives it, ample for the search; the refusal's own bound
+			// is below.
+			const requestWait = 10 * time.Second
+			client := &http.Client{Transport: cc, Timeout: requestWait}
 			perform := func(method, path string, body io.Reader, length int64, encoding string, want int) error {
 				req, err := http.NewRequest(method, base+path, body)
 				if err != nil {
@@ -168,7 +177,7 @@ func TestHTTP2RefusalPreservesOneConnectionAndMeteredSiblings(t *testing.T) {
 			go func() { sibling <- perform("POST", "/v1/messages", strings.NewReader("sibling"), -1, "", 200) }()
 			select {
 			case <-entered:
-			case <-time.After(time.Second):
+			case <-time.After(requestWait):
 				t.Fatal("allowed sibling did not reach upstream")
 			}
 			reader, writer := io.Pipe()

@@ -275,6 +275,8 @@ type Options struct {
 	// ringFault, when set, is what openRing answers for the run's slot in place of opening its ring: how a test has a
 	// recorder that found the run's row fail to open its ring, which a caller-supplied Reader never does. Nil opens it.
 	ringFault func(slot uint32) error
+	// listener is the prepared marked-device set, set before Start.
+	listener func(uint64) bool
 }
 
 // Recorder is the kernel record: it drains the run's own ring buffer, enriches each sample from the
@@ -288,8 +290,12 @@ type Recorder struct {
 	skip            atomic.Pointer[skipProcess]
 	trackingFailure sync.Once
 
-	opts     Options
-	rules    *ruleIndex
+	opts      Options
+	mounts    *agent.MountTable
+	mountsSet bool
+	rules     *ruleIndex
+	// listener tests devices marked by the prepared fanotify listener.
+	listener func(uint64) bool
 	reader   RingReader
 	closer   sync.Once
 	stopOnce sync.Once
@@ -381,12 +387,13 @@ var _ runtime.ActivityStamper = (*Recorder)(nil)
 // The recorder is a runtime.DecisionPlaneNamer: the runner names the plane's mode on it, or a plane refusal's line
 // carries no decision_plane.
 var _ runtime.DecisionPlaneNamer = (*Recorder)(nil)
+var _ runtime.ListenerDevicesSetter = (*Recorder)(nil)
 
 // New builds a Recorder. It opens no kernel object when Options.Reader is set, which is how the
 // unit tests drive the whole pipeline; otherwise it opens the named build's pinned run set, ring outer and lost
 // counter, from which Start opens the run's own ring by its slot.
 func New(opts Options) (*Recorder, error) {
-	r := &Recorder{opts: opts, rules: newRuleIndexAt(opts.Rules, cmp.Or(opts.mountinfo, selfMountinfo)),
+	r := &Recorder{opts: opts, listener: opts.listener, rules: newRuleIndexFrom(opts.Rules, nil),
 		gaps: map[string]int64{}, ownTTY: inheritedTTYIdentity()}
 	if opts.Rules != nil {
 		r.silent = opts.Rules.Record == agent.RecordOff
@@ -527,6 +534,12 @@ func (r *Recorder) Start(ctx context.Context, run source.RunRef, sink source.Sin
 	r.run, r.sink, r.procs, r.agg, r.done, r.startDone = run, sink, procs, agg, done, startDone
 	r.mu.Unlock()
 	defer close(startDone)
+
+	if r.mountsSet {
+		r.rules.applyMounts(rowsFrom(r.mounts))
+	} else {
+		r.rules.applyMounts(readMounts(cmp.Or(r.opts.mountinfo, selfMountinfo)))
+	}
 
 	// Scoped before the first read: the run's slot names its ring (ADR 0026 (1)). A recorder that cannot name
 	// this run's slot, or finds no ring at it, reads no record. That is the kernel record not running for this
@@ -1553,7 +1566,7 @@ func (r *Recorder) handleOpen(rec *Record) {
 			return record.VerdictRefused, decide.OpReason(record.FSOpen)
 		}
 		v, reason := r.rules.inferFS(record.FSOpen, write, m)
-		if v == record.VerdictRefused && listener && r.rules.unmarkedRead(rec.FS.Dev) {
+		if v == record.VerdictRefused && listener && r.unmarkedRead(rec.FS.Dev) {
 			// Only the fanotify listener refuses a read under this entry, and it marked no mount of this
 			// device at Prepare: one the host mounted beneath the entry since (E24). The read was made, so
 			// the line claims no refusal.
@@ -1615,7 +1628,7 @@ func (r *Recorder) listenerRefused(rec *Record, path string) bool {
 		rec.Verdict == KernelRefused {
 		return false
 	}
-	if !r.rules.listenerOpenRefused(path) || r.rules.unmarkedRead(rec.FS.Dev) {
+	if !r.rules.listenerOpenRefused(path) || r.unmarkedRead(rec.FS.Dev) {
 		return false
 	}
 	if rec.FS.RetOK {
@@ -1626,6 +1639,21 @@ func (r *Recorder) listenerRefused(rec *Record, path string) bool {
 		kind = agent.ActionFSWrite
 	}
 	return decide.LandlockRuleset(rt, agent.Action{Kind: kind, Path: path}).Verdict == agent.VerdictAllow
+}
+
+// SetMountTable supplies the immutable facts acquired during Prepare, before Start.
+// An unavailable snapshot leaves attribution conservative and never triggers a reread.
+func (r *Recorder) SetMountTable(mt *agent.MountTable, _ error) { r.mounts, r.mountsSet = mt, true }
+
+// SetListenerDevices supplies the devices the ordinary listener actually marked.
+func (r *Recorder) SetListenerDevices(marked func(dev uint64) bool) { r.listener = marked }
+
+// unmarkedRead compares a sample with the actual prepared marks, when supplied.
+func (r *Recorder) unmarkedRead(dev uint64) bool {
+	if r.listener != nil {
+		return dev != 0 && !r.listener(dev)
+	}
+	return r.rules.unmarkedRead(dev)
 }
 
 // grantName is the rule an allowed modification of path is named by: the entry whose grant the Landlock ruleset

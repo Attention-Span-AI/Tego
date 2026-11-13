@@ -15,7 +15,7 @@
 #
 # Usage: summarize.py <results.tsv> <summary.json>
 #   results.tsv rows: suite, package, tags, status (an exit code | build-failed | not-run | vm-<reason>
-#   when the guest itself failed: vm-timeout, vm-no-report, vm-env, vm-usage),
+#   when the guest itself failed: vm-lost, vm-timeout, vm-no-report, vm-env, vm-usage),
 #   test2json path (or -), and a log path or a note.
 import json
 import re
@@ -86,6 +86,13 @@ def summarize_suite(suite, pkg, tags, status, jpath, extra):
     if status == "not-run":
         rec["result"] = "not-run"
         rec["skip_reasons"] = [extra]
+        return rec
+    if status == "vm-lost":
+        # Something outside the harness ended qemu (kvm-run.sh's GUEST-LOST): no verdict at all, not even on the guest.
+        rec["result"] = "guest-lost"
+        lines = [l for l in tail(extra, 300) if l.strip()]
+        rec["failures"] = ["the guest was lost (qemu ended by a signal from outside) before the suite finished; this is "
+                           "not a test result. Last lines: %s" % " | ".join(lines[-4:])]
         return rec
     if status.startswith("vm-"):
         # The guest, not the suite, failed: nothing it printed is a verdict on the code under test.

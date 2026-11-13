@@ -30,11 +30,9 @@ func unreadableLedger(t *testing.T, dir string) {
 	}
 }
 
-// TestGCExpiresARunWhoseStateCannotBeRead: retention is the only bound on ledger_root's growth, so a run
-// directory that cannot be read must still age out (§4 gc: every run ends up untouched or fully removed). The
-// old behaviour aborted the run on the State error, which kept the directory and its blobs forever and
-// printed the same error on every later pass with no way for an operator to clear it.
-func TestGCExpiresARunWhoseStateCannotBeRead(t *testing.T) {
+// An unreadable state gives no evidence that an orphan's descendants were cleaned up. Keep its only retry
+// record even past retention, so restoring access allows a later sweep to check and clean up the run.
+func TestGCKeepsARunWhoseStateCannotBeRead(t *testing.T) {
 	root := t.TempDir()
 	now := fixedStart.Add(40 * 24 * time.Hour)
 	ref := makeRun(t, root, fixedStart, "u00001", StateEnded)
@@ -45,11 +43,11 @@ func TestGCExpiresARunWhoseStateCannotBeRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GC: %v", err)
 	}
-	if !sameSet(rep.Deleted, []string{ref.ID}) {
-		t.Fatalf("deleted = %v, want %v", rep.Deleted, []string{ref.ID})
+	if len(rep.Deleted) != 0 || !sameSet(rep.Kept, []string{ref.ID}) {
+		t.Fatalf("deleted = %v, kept = %v; want retained unknown state", rep.Deleted, rep.Kept)
 	}
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		t.Fatalf("run directory survived retention: %v", err)
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("run directory lost its cleanup retry record: %v", err)
 	}
 	if rep.Errors[ref.ID] == nil {
 		t.Fatal("the unreadable ledger must still be reported")
@@ -82,7 +80,7 @@ func TestGCKeepsAnUnreadableRunWhoseLockIsHeld(t *testing.T) {
 }
 
 // TestGCDoesNotSweepARunWhoseStateCannotBeRead: sweeping means appending run_end to a ledger, and a ledger
-// nothing can read is not one to write to. The run ages out instead, unswept.
+// nothing can read is not one to write to. The run stays for retry, unswept.
 func TestGCDoesNotSweepARunWhoseStateCannotBeRead(t *testing.T) {
 	root := t.TempDir()
 	ref := makeRun(t, root, fixedStart, "u00003", StateLost)

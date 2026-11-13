@@ -14,6 +14,16 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
+// strictPoints is the mount points of a table as Prepare reads them: agent.ParseMountTableStrict, then Points.
+func strictPoints(t *testing.T, table string) []string {
+	t.Helper()
+	mt, err := agent.ParseMountTableStrict([]byte(table))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return mt.Points()
+}
+
 // TestMountPointsUnder reads the mount points beneath a directory from a mountinfo table, octal escapes decoded,
 // the directory itself and its siblings left out.
 func TestMountPointsUnder(t *testing.T) {
@@ -24,9 +34,8 @@ func TestMountPointsUnder(t *testing.T) {
 		"32 22 0:32 / /work/out/secret\\040copy rw - tmpfs tmpfs rw",
 		"33 22 0:33 / /work/out/secretive rw - tmpfs tmpfs rw",
 		"34 30 0:34 / /work/out/secret/with\\040space rw - tmpfs tmpfs rw",
-		"garbage",
 	}, "\n")
-	under := mountPointsUnderFrom(func() ([]byte, error) { return []byte(table), nil })
+	under := mountPointsUnderFrom(func() ([]string, error) { return strictPoints(t, table), nil })
 	got, _ := under("/work/out/secret")
 	want := []string{"/work/out/secret/sub", "/work/out/secret/with space"}
 	if !slices.Equal(got, want) {
@@ -47,7 +56,7 @@ func TestMountPointsUnderSplitsOnSpacesAlone(t *testing.T) {
 		"33 22 8:1 /src\u00a0dir /data/c rw shared:1 - ext4 /dev/sda1 rw",
 		"34 22 8:1 /r\rx /data/d rw - ext4 /dev/sda1 rw",
 	}, "\n")
-	got, _ := mountPointsUnderFrom(func() ([]byte, error) { return []byte(table), nil })("/data")
+	got, _ := mountPointsUnderFrom(func() ([]string, error) { return strictPoints(t, table), nil })("/data")
 	want := []string{"/data/a\u00a0b", "/data/c", "/data/d", "/data/n\u0085l", "/data/v\vt"}
 	if !slices.Equal(got, want) {
 		t.Errorf("mount points under = %q, want %q", got, want)
@@ -103,7 +112,7 @@ func TestPolicyReadsTheMountTableOnce(t *testing.T) {
 		"33 22 0:33 / /proj/a/.env.dx rw - tmpfs tmpfs rw",
 	}, "\n")
 	reads := 0
-	under := mountPointsUnderFrom(func() ([]byte, error) { reads++; return []byte(table), nil })
+	under := mountPointsUnderFrom(func() ([]string, error) { reads++; return strictPoints(t, table), nil })
 	var asked, got []string
 	counting := func(dir string) ([]string, error) {
 		asked = append(asked, dir)
@@ -136,7 +145,7 @@ func TestPolicyReadsTheMountTableOnce(t *testing.T) {
 func TestAnUnreadableMountTableRefusesADenyReadPolicy(t *testing.T) {
 	t.Parallel()
 	reads := 0
-	under := mountPointsUnderFrom(func() ([]byte, error) { reads++; return nil, fs.ErrPermission })
+	under := mountPointsUnderFrom(func() ([]string, error) { reads++; return nil, fs.ErrPermission })
 	if got, err := under("/work"); !errors.Is(err, fs.ErrPermission) || got != nil {
 		t.Fatalf("under over an unreadable table = %q, %v; want no mount points and the read error", got, err)
 	}

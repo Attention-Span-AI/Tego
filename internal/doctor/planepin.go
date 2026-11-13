@@ -210,13 +210,21 @@ func adoptPinnedPlane(pin string) (*PlaneState, bool) {
 // adopted state then carries the preemption reading. An fmod_ret answer on a kernel that preempts kernel code is
 // not adopted: the run probes, and the probe rules the mode out with the reason.
 func adoptStillAdmitted(st *PlaneState, env PlaneEnv, lsm LSMState) bool {
-	for _, r := range st.Modes {
-		if r.Mode == bpfobj.PlaneFmodRet {
+	for i, r := range st.Modes {
+		switch r.Mode {
+		case bpfobj.PlaneFmodRet:
 			if why, _ := fmodRetPreemptRefusal(env, lsm); why != "" {
 				return false
 			}
+		case bpfobj.PlaneLSM:
+			if why, _ := lsmRecursionRefusal(env); why != "" {
+				return false
+			}
 		}
+		// The pinned answer's exec pin cell is held to this reading too (ADR 0148).
+		st.Modes[i].ExecPin = execPinWhereSkippable(r.ExecPin, env)
 	}
+	st.Env.LSMRecursionExempt, st.Env.LSMRecursionSource = env.LSMRecursionExempt, env.LSMRecursionSource
 	st.Env.Preempt, st.Env.PreemptSource, st.Env.PreemptWaived = env.Preempt, env.PreemptSource, env.PreemptWaived
 	return true
 }

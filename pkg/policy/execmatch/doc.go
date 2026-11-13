@@ -13,5 +13,9 @@
 // a constrained allow entry only when every reading does. A tool with no row is read by the generic fallback: an
 // exact token prefix for allow entries, an over-approximating subsequence for deny and ask entries.
 //
+// The decision layer also keeps the algorithm from before the separator correction over these rows: deny and
+// ask use the union of the two readers, and constrained allow uses their intersection. Pattern.Match and Normalizer
+// describe the corrected parser alone.
+//
 // The rows themselves are data in the rows subpackage, documented in docs/spec/exec-command-rows.md.
 package execmatch

@@ -104,6 +104,23 @@ linters:
               desc: thishost is the standard library only
             - pkg: github.com/attention-span-ai/tego/pkg/spec
               desc: thishost is the standard library only; the contract imports it, not the reverse
+        # spec/record/v1/CHAIN.md: the chain check is a pure function of the record's bytes (ADR 0146). internal/ledger
+        # opens the files, probes the lock and waits; this package decides. It is the Go side the Rust twin is held to.
+        chaincheck-is-pure:
+          files: ["**/pkg/spec/record/chaincheck/**", "!$test"]
+          deny:
+            - pkg: os
+              desc: the chain check makes no I/O; internal/ledger reads the files (ADR 0146)
+            - pkg: syscall
+              desc: the chain check makes no I/O (ADR 0146)
+            - pkg: golang.org/x/sys
+              desc: the chain check makes no I/O (ADR 0146)
+            - pkg: time
+              desc: the chain check reads no clock; a caller that waits for a closing run does (ADR 0146)
+            - pkg: sync
+              desc: the chain check runs no goroutines and holds no lock (ADR 0146)
+            - pkg: github.com/attention-span-ai/tego/internal
+              desc: pkg/spec never imports internal
         check-never-imports-runtime:
           files: ["**/internal/check/**", "**/internal/serve/**"]
           deny:
@@ -116,10 +133,10 @@ linters:
               desc: the engine never imports the read side
             - pkg: github.com/attention-span-ai/tego/internal/serve
               desc: the engine never imports the page
-        # identity-config.md I1: identity, config and backend are leaves of pkg/spec; agent, the compiler,
+        # identity-config.md I1: identity, config and backend are leaves of pkg/spec (rfc3339 too, ADR 0146); agent, the compiler,
         # is the one package that imports them.
         spec-leaves-import-no-spec:
-          files: ["**/pkg/spec/identity/**", "**/pkg/spec/config/**", "**/pkg/spec/backend/**", "!$test"]
+          files: ["**/pkg/spec/identity/**", "**/pkg/spec/config/**", "**/pkg/spec/backend/**", "**/pkg/spec/rfc3339/**", "!$test"]
           deny:
             - pkg: github.com/attention-span-ai/tego/pkg/spec
               desc: identity, config and backend import no other pkg/spec package (identity-config.md I1)

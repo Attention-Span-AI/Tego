@@ -64,6 +64,11 @@ type Machine struct {
 	// executable, with no run around it (execmodRefused, a probe): an LSM's policy, SELinux enforcing on AlmaLinux 9.8
 	// (selinuxuser_execmod off). A cell's want_where may name it (execmod_refused).
 	ExecmodRefused bool
+	// FanotifyInChain says another party's fanotify permission refusal is part of security_file_open's return, which
+	// tier cgroup's recorder reads at fexit (ADR 0016 (3)): upstream up to 6.12, not from 6.13, and not on Debian 13's
+	// 6.12.107. It is the kernel runner's, measured as root by fanotifyInChain (a probe, never the version), false
+	// elsewhere. A cell's want_where may name it (fanotify_in_chain), no baseline entry does.
+	FanotifyInChain bool
 }
 
 func (m Machine) String() string {

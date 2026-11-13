@@ -583,7 +583,7 @@ func matches(r compiledRule, a Action) bool {
 				if a.invs[i].Via == execmatch.ViaOverflow {
 					return true
 				}
-				if a.invs[i].Tool == r.cmd.Tool && r.cmd.Match(&a.invs[i]) != execmatch.MatchNone {
+				if a.invs[i].Tool == r.cmd.Tool && r.cmd.MatchDecision(&a.invs[i]) != execmatch.MatchNone {
 					return true
 				}
 			}

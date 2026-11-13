@@ -65,11 +65,11 @@ func WithForeignRun(fn func(id string) bool) GCOption {
 // isForeign reports whether WithForeignRun names run id.
 func (o *gcOptions) isForeign(id string) bool { return o.foreign != nil && o.foreign(id) }
 
-// WithEndedHook runs, in SweepLive alone, for an ended run the live index still lists: its launcher died after
-// run_end and before it cleared the entry, or is still between the two. internal/runtime uses it to remove the
-// scope such a launcher may have left. dir lends the run's directory, which hooks make their lookups under
-// (WithSweepHook). done=false keeps the entry for the next sweep without an error (a launcher still alive and
-// finishing); an error keeps it and is reported.
+// WithEndedHook runs for an ended run the live index still lists in SweepLive, and before GC collects an ended
+// run. Its launcher died after run_end and before it cleared the entry, or is still between the two.
+// internal/runtime uses it to remove the scope such a launcher may have left. dir lends the run's directory,
+// which hooks make their lookups under (WithSweepHook). done=false keeps the entry or directory for the next
+// sweep without an error (a launcher still alive and finishing); an error keeps it and is reported.
 func WithEndedHook(fn func(ctx context.Context, dir sys.Lender, run record.RunRef) (done bool, err error)) GCOption {
 	return func(o *gcOptions) { o.ended = fn }
 }
@@ -158,9 +158,10 @@ func (o *gcOptions) repository(label string, rd *sys.FD) *fsRunRepository {
 
 // GC applies retention over every run under root (§4 gc). A running run is always kept. A lost run is swept
 // first: the hook runs, then run_end{reason: orphaned} is appended and the run closed under its lock. Any
-// ended or empty run older than keep is removed whole; age comes from the run id's time36 (R16), then the
-// last event's ts, then the directory's mtime. A run whose state cannot be read at all is reported and still
-// aged out, unless its lock says a Writer may be live. With dryRun nothing is written or removed. One run's
+// ended or empty run older than keep is removed whole once its cleanup hook succeeds; age comes from the run
+// id's time36 (R16), then the last event's ts, then the directory's mtime. A run whose state cannot be read is
+// reported and retained for retry. With dryRun nothing is written or
+// removed. One run's
 // failure never stops the others; only an unreadable root is a returned error. Re-running GC at once is a
 // no-op.
 //
@@ -257,20 +258,10 @@ func gcRun(ctx context.Context, repo RunRepository, held *fsRunRepository, ref r
 	dryRun bool, o *gcOptions, rep *Report) error {
 	state, err := repo.State(ctx, ref.ID)
 	if err != nil {
-		// A state that cannot be read must not exempt the directory from retention: aborting here leaves it
-		// untouched and erroring on every later pass, with no command an operator can use to clear it, and
-		// retention is the product's only bound on ledger_root's growth (§4 gc, E22). The error is still
-		// reported. State is left "", which is neither running nor lost, so no sweep is attempted on a ledger
-		// nothing could read; the age below still comes from runTime, whose run-id time36 needs no ledger and
-		// whose mtime fallback covers a run id that does not parse.
-		rep.note(ref.ID, err)
-		// Liveness is the one thing retention may not guess at, and it does not depend on the ledger: a held
-		// lock means a live Writer whose directory must never be removed (§7, I7). Anything but a free lock,
-		// including a lock that cannot be probed, keeps the run.
-		if free, lerr := held.lockFree(ref.ID); lerr != nil || !free {
-			rep.Kept = append(rep.Kept, ref.ID)
-			return nil
-		}
+		// A free lock proves no launcher holds it, not that its descendants are gone. Without a readable
+		// state GC cannot choose the cleanup that must precede deleting the only retry record (ADR 0124).
+		rep.Kept = append(rep.Kept, ref.ID)
+		return err
 	}
 	foreign := o.isForeign(ref.ID)
 	if state == StateRunning && !dryRun && !foreign {
@@ -311,7 +302,7 @@ func gcRun(ctx context.Context, repo RunRepository, held *fsRunRepository, ref r
 			if err != nil {
 				// A hook that failed may have left the orphan's tree alive: keep the run. A sweep that failed on
 				// the ledger itself (a damaged line before an intact last one, which resume refuses) is
-				// reported, and the run still ages out below like one whose state cannot be read: returning
+				// reported, and the run still ages out below once its cleanup succeeds: returning
 				// here kept it forever and failed the same way on every pass (E22).
 				if errors.Is(err, errSweepHook) {
 					return err
@@ -337,7 +328,7 @@ func gcRun(ctx context.Context, repo RunRepository, held *fsRunRepository, ref r
 		// while gc holds that lock itself: a launcher that took it since State read the directory (a
 		// run between MakeRunDir and its first line reads empty) keeps its directory, and one that
 		// comes after fails its own flock or finds the directory gone, before run_start.
-		lk, err := held.lockForRemoval(ref.ID)
+		d, lk, err := held.lockForRemoval(ref.ID)
 		if errors.Is(err, os.ErrNotExist) {
 			// A concurrent gc removed the run between List and here: retention got its outcome.
 			rep.Deleted = append(rep.Deleted, ref.ID)
@@ -346,6 +337,7 @@ func gcRun(ctx context.Context, repo RunRepository, held *fsRunRepository, ref r
 		if err != nil {
 			return fmt.Errorf("ledger: lock run for removal: %w", err)
 		}
+		defer func() { _ = d.Close() }()
 		defer func() { _ = lk.Close() }()
 		if err := sys.Flock(lk, unix.LOCK_EX|unix.LOCK_NB); err != nil {
 			if errors.Is(err, unix.EWOULDBLOCK) {
@@ -353,6 +345,41 @@ func gcRun(ctx context.Context, repo RunRepository, held *fsRunRepository, ref r
 				return nil
 			}
 			return fmt.Errorf("ledger: lock run for removal: %w", err)
+		}
+		o.lockedRun(ref.ID)
+		lockedState, err := stateForRemoval(d, held.dir(ref.ID))
+		if err != nil {
+			rep.Kept = append(rep.Kept, ref.ID)
+			return err
+		}
+		if !foreign && lockedState == StateLost {
+			if err := sweepForRetention(ctx, d, held.dir(ref.ID), ref.ID, o); err != nil {
+				return err
+			}
+			if state != StateLost {
+				// This run started and lost its launcher after the earlier sample. Keep its record so the
+				// next ordinary sweep can append and anchor run_end under a Writer's lock.
+				rep.Kept = append(rep.Kept, ref.ID)
+				return nil
+			}
+		}
+		if lockedState == StateEmpty && !foreign {
+			if err := sweepEmptyAt(ctx, d, held.dir(ref.ID), ref, o); err != nil {
+				return err
+			}
+		}
+		if lockedState == StateEnded && !foreign && o.ended != nil {
+			done, err := endedForRetention(ctx, d, held.dir(ref.ID), ref.ID, o)
+			if err != nil {
+				return err
+			}
+			if !done {
+				rep.Kept = append(rep.Kept, ref.ID)
+				return nil
+			}
+		}
+		if err := sameRunForRemoval(held, ref.ID, d); err != nil {
+			return err
 		}
 		if err := removeAllAt(held.rootDir, ref.ID, held.dir(ref.ID)); err != nil {
 			return fmt.Errorf("ledger: remove run: %w", err)
@@ -362,25 +389,101 @@ func gcRun(ctx context.Context, repo RunRepository, held *fsRunRepository, ref r
 	return nil
 }
 
+// stateForRemoval classifies the locked directory itself. The pre-lock sample can already be obsolete even
+// when the lock is free now: a launcher may have started and died between the sample and the removal lock.
+func stateForRemoval(d *sys.FD, dir string) (RunState, error) {
+	rd, err := OpenReaderAt(d, dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return StateEmpty, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = rd.Close() }()
+	return rd.stateWithLockFree(true)
+}
+
+// sweepForRetention checks a lost run through the removal lock's directory, even when it became lost after
+// the earlier sweep opportunity. A failed cleanup retains the retry record without appending an end.
+func sweepForRetention(ctx context.Context, d *sys.FD, dir, id string, o *gcOptions) error {
+	if o.sweep == nil {
+		return nil
+	}
+	agent, err := firstAgent(OpenReaderAt(d, dir))
+	if agent == "" {
+		agent = contractAgent(openRegularAt(d, ContractFile, filepath.Join(dir, ContractFile)))
+	}
+	if agent == "" {
+		return errors.Join(fmt.Errorf("ledger: run %s: no agent to find its scope by", id), err)
+	}
+	if err := lendDir(d, dir, func(lent sys.Lender) error {
+		return o.sweep(ctx, lent, record.RunRef{ID: id, Agent: agent})
+	}); err != nil {
+		return fmt.Errorf("%w: %w", errSweepHook, err)
+	}
+	return nil
+}
+
+// endedForRetention checks the ended hook before retention removes the run's only retry record. The hook gets
+// the directory the pass locked, so a name swapped after the lock cannot lend it a decoy (ADR 0023 A11).
+func endedForRetention(ctx context.Context, d *sys.FD, dir, id string, o *gcOptions) (bool, error) {
+	agent, err := firstAgent(OpenReaderAt(d, dir))
+	if agent == "" {
+		agent = contractAgent(openRegularAt(d, ContractFile, filepath.Join(dir, ContractFile)))
+	}
+	if agent == "" {
+		return false, errors.Join(fmt.Errorf("ledger: run %s: no agent to find its scope by", id), err)
+	}
+	var done bool
+	if err := lendDir(d, dir, func(lent sys.Lender) error {
+		var err error
+		done, err = o.ended(ctx, lent, record.RunRef{ID: id, Agent: agent})
+		return err
+	}); err != nil {
+		return false, fmt.Errorf("%w: %w", errSweepHook, err)
+	}
+	return done, nil
+}
+
+// sameRunForRemoval refuses a replacement at the run's name after the pass locked and checked its directory.
+func sameRunForRemoval(repo *fsRunRepository, id string, held *sys.FD) error {
+	if err := sameRoot(repo.rootDir, repo.root); err != nil {
+		return err
+	}
+	var opened, named unix.Stat_t
+	if err := held.Fstat(&opened); err != nil {
+		return fmt.Errorf("ledger: stat run %s held for removal: %w", id, err)
+	}
+	if err := repo.rootDir.Fstatat(id, &named, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return fmt.Errorf("ledger: stat run %s before removal: %w", id, err)
+	}
+	if opened.Dev != named.Dev || opened.Ino != named.Ino {
+		return fmt.Errorf("ledger: run %s no longer names the directory gc locked; nothing removed", id)
+	}
+	return nil
+}
+
 // lockForRemoval opens run id's lock file for gc's removal, creating it when it is missing, with a link
-// refused at both steps; os.ErrNotExist when the run directory is gone.
-func (r *fsRunRepository) lockForRemoval(id string) (*os.File, error) {
+// refused at both steps; os.ErrNotExist when the run directory is gone. Both returned descriptors belong to
+// the caller, which holds the directory through cleanup and removal.
+func (r *fsRunRepository) lockForRemoval(id string) (*sys.FD, *os.File, error) {
 	d, err := r.openRun(id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	defer func() { _ = d.Close() }()
 	path := filepath.Join(r.dir(id), LockFile)
 	fd, err := d.Openat(LockFile, unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0o600)
 	if err != nil {
-		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+		_ = d.Close()
+		return nil, nil, &os.PathError{Op: "open", Path: path, Err: err}
 	}
 	f, err := fd.Release(path)
 	if err != nil {
 		_ = fd.Close()
-		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+		_ = d.Close()
+		return nil, nil, &os.PathError{Op: "open", Path: path, Err: err}
 	}
-	return f, nil
+	return d, f, nil
 }
 
 // removeAllAt removes name and everything under it from the directory open at at, as os.RemoveAll does, with
@@ -556,29 +659,38 @@ func sweepEmpty(ctx context.Context, fs *fsRunRepository, ref record.RunRef, o *
 	o.lockedRun(ref.ID)
 	// Under the lock, the run must still be empty: nobody has written a line since State read it.
 	// (State itself would read our own lock as a live Writer's.)
-	if rd, err := OpenReaderAt(d, dir); err == nil {
-		st, serr := rd.f.Stat()
-		present := false
-		if serr == nil {
-			_, present, serr = lastLine(rd.f, st.Size())
-		}
-		_ = rd.Close()
-		if serr != nil || present {
-			return false, nil
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return false, nil
+	state, err := stateForRemoval(d, dir)
+	if err != nil {
+		return true, err
+	}
+	if state != StateEmpty {
+		// SweepLive must preserve this entry for the next pass: its initial empty sample no longer says
+		// which cleanup to run. Retention makes its own fresh classification under the removal lock.
+		return true, nil
+	}
+	return false, sweepEmptyAt(ctx, d, dir, ref, o)
+}
+
+// sweepEmptyAt runs an empty run's cleanup under the caller's lock. Retention calls it after its own state
+// check as a launcher can create a contract and scope after sweepEmpty released its earlier lock.
+func sweepEmptyAt(ctx context.Context, d *sys.FD, dir string, ref record.RunRef, o *gcOptions) error {
+	if o.sweep == nil {
+		return nil
 	}
 	if ref.Agent == "" {
-		ref.Agent = contractAgent(openRegularAt(d, ContractFile, filepath.Join(dir, ContractFile)))
+		var err error
+		ref.Agent, err = contractAgentChecked(openRegularAt(d, ContractFile, filepath.Join(dir, ContractFile)))
+		if err != nil {
+			return fmt.Errorf("ledger: run %s: read cleanup agent: %w", ref.ID, err)
+		}
 	}
 	if ref.Agent == "" {
-		return false, nil
+		return nil
 	}
 	if err := lendDir(d, dir, func(lent sys.Lender) error { return o.sweep(ctx, lent, ref) }); err != nil {
-		return false, fmt.Errorf("%w: %w", errSweepHook, err)
+		return fmt.Errorf("%w: %w", errSweepHook, err)
 	}
-	return false, nil
+	return nil
 }
 
 // errSweepHook is a sweep whose hook failed: the orphan's tree may still be alive (its cgroup could not be

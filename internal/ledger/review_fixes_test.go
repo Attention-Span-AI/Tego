@@ -95,14 +95,14 @@ func TestLockDoesNotRecreateARemovedRunDir(t *testing.T) {
 	}
 }
 
-// TestGCReportsBothTheStateAndTheRemovalError: a run that fails twice keeps both messages in Report.Errors.
-func TestGCReportsBothTheStateAndTheRemovalError(t *testing.T) {
+// An unknown state refuses retention before any removal is attempted, whatever the directory permissions.
+func TestGCRetainsUnknownStateBeforeRemoval(t *testing.T) {
 	root := t.TempDir()
 	now := fixedStart.Add(40 * 24 * time.Hour)
 	ref := makeRun(t, root, fixedStart, "je0001", StateEnded)
 	dir := filepath.Join(root, ref.ID)
 	unreadableLedger(t, dir) // skips as root
-	// r-x on the run directory: its entries cannot be unlinked, so removal fails after State did.
+	// r-x on the run directory: removal would also fail if GC wrongly reached it.
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -113,8 +113,11 @@ func TestGCReportsBothTheStateAndTheRemovalError(t *testing.T) {
 		t.Fatalf("GC: %v", err)
 	}
 	got := rep.Errors[ref.ID]
-	if got == nil || !strings.Contains(got.Error(), "events") || !strings.Contains(got.Error(), "remove") {
-		t.Fatalf("Errors[%s] = %v, want the unreadable-ledger error and the removal error both", ref.ID, got)
+	if got == nil || !strings.Contains(got.Error(), "events") || strings.Contains(got.Error(), "remove") || len(rep.Deleted) != 0 {
+		t.Fatalf("unknown state: %+v; want the state error without an attempted removal", rep)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("unknown run removed: %v", err)
 	}
 }
 

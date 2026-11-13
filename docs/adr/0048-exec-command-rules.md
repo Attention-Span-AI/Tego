@@ -1,6 +1,6 @@
 # ADR 0048: exec rules name commands and subcommands; one argv matcher decides them, and at a decision plane the kernel holds every exec to the facts that were decided
 
-Status: **accepted 2026-10-06**. P1 implemented 2026-10-06, **P1 acceptance not met**: reviews found bypasses, all fixed since, and the ADR 0017 conformance cells are built, but no review of probes against a real run has yet found nothing on the fixed code. P2 partly built: K0, the kernel facts it rests on, verified 2026-10-19 on every matrix row; K1 to K5 built, so a run with command rules or an exec gate that can escalate is pinned at a plane tier where its plane mode passed doctor's exec pin cell (`plane.exec_pin`) and its slot is pinned; all sixteen K6 run tests pass in both boots on 6.17, 6.1 (AL2023), 6.8 (Ubuntu 24.04) and 6.12 (Debian 13), one skipping for binfmt_misc off 6.17, and on RHEL 9's 5.14 they skip for the disclosed fallback (pins off: its recorder has no exec outcomes), with 7.0 not yet read; K7's check (`execbench`, perfsuite's `exec`) is built and not yet measured in a guest; **P2 acceptance is not met**. Implementation notes at the end.
+Status: **accepted 2026-10-06**. P1 implemented 2026-10-06, **P1 acceptance not met**: reviews found bypasses; the fixes and remaining candidate-inventory limits are recorded below. The ADR 0017 conformance cells are built, but no review of probes against a real run has yet found nothing on the fixed code. P2 partly built: K0, the kernel facts it rests on, verified 2026-10-19 on every matrix row; K1 to K5 built, so a run with command rules or an exec gate that can escalate is pinned at a plane tier where its plane mode passed doctor's exec pin cell (`plane.exec_pin`) and its slot is pinned; all sixteen K6 run tests pass in both boots on 6.17, 6.1 (AL2023), 6.8 (Ubuntu 24.04) and 6.12 (Debian 13), one skipping for binfmt_misc off 6.17, and on RHEL 9's 5.14 they skip for the disclosed fallback (pins off: its recorder has no exec outcomes), with 7.0 not yet read; K7's check (`execbench`, perfsuite's `exec`) is built and not yet measured in a guest; **P2 acceptance is not met**. Implementation notes at the end.
 Amended in part by ADR 0044 (accepted 2026-10-16, not built): `exec.ask` is no longer reserved; in a restricted section an ask entry admits its tool at the launch-time floor and constrains it where it is what admits the tool (where a bare path or directory allow entry already grants the tool's file, and in a deny-list section, it only adds the ask step and grants no image, helper images included), an ask entry's helper closure is admitted only for the process tree an approval of it released (never statically, so R11 does not extend to ask entries), a match is held and asked and completed through the trace-gate, the precedence gains standing answers and passes at the ask step, and P2's `exec-traced` step spares a pin carrying the `trace_gate` flag.
 
 The aim is to deny whole commands and subcommands, not only programs. Two phases ship it: **P1** (contract, matcher, compiler, supervisor, ledger, `compile --test`, docs) and **P2** (the
@@ -165,6 +165,16 @@ exec:
   clusters), and `--namespace=prod*` or `-n=prod*` (an option and a glob over its value).
   - A pattern is parsed with the same row as an invocation, so `-n prod`, `-n=prod`, `-nprod` and
     `--namespace prod` are one option word wherever the tool accepts them.
+  - *Amended 2026-11-12:* unique negated long prefixes retain their negation. A long option loses exactly its
+    introducer, two dashes or one under `SingleDashLong`; further leading dashes belong to its name. A named
+    selector that `Skip` or `SkipPrefix` would discard makes an allow pattern invalid. Deny and ask patterns may
+    discard the selector to refuse the operation across variants. *Round 3 compatibility amendment, 2026-11-12:*
+    extra-dash deny and ask entries retain both the literal whole-pattern reading and the released matcher's
+    whole-pattern reading. Allow entries retain only the literal reading. Compile warns on an option with more
+    than two leading dashes or one dash before a long name where the tool does not accept that spelling, naming
+    the entry and its likely ordinary spelling. Tool-defined single-dash long options and short words do not warn;
+    tools without a known row retain literal single-dash option words.
+    A later minor version will make that warning a compile error.
   - Placement follows the row. Where a tool reads global options anywhere (pflag and cobra tools, aws, gcloud), a
     global option word matches anywhere. Where globals stand only before the subcommand (git, pip, cargo, go), an
     option word before the first subcommand word is a global option, and one after it belongs to that subcommand.
@@ -282,8 +292,11 @@ empty:
 compose them as SEMANTICS §3 says: deny and ask lists union, and an inner contract's allow constraints
 intersect the outer's, so an inner run can only narrow.
 
-**Bounds.** At most 512 command patterns across the three lists after `extends`. Each has at most 32 words of at
-most 256 bytes each and 1024 bytes in all, all valid UTF-8 with no NUL. Past a bound: `exec-rule` error.
+**Bounds.** At most 512 command patterns across the three lists after `extends`. Each has a command and at most 32
+further words, of at most 256 bytes each and 1024 bytes in all, all valid UTF-8 with no NUL. Past a bound: `exec-rule` error.
+*Amended 2026-11-12:* this records the released parser's existing bound (33 words in all). The bound is not a security
+property, and a defect fix must not reject an already accepted contract. `TestPatternTotalWordBoundary` pins 33
+accepted and 34 rejected.
 
 **Unresolved names.** A deny or ask command that is not on the run's `PATH` is no error. It is matched by name only,
 and compile notes it. An allow entry keeps today's `exec-not-on-path` error, since it grants a file.
@@ -456,28 +469,34 @@ every reading the tool could make. Each list takes the readings in its own fail-
   - Candidates that score 0 are counted first, then the candidates with the best non-zero score.
   - git autocorrects only when exactly one candidate is counted and its score is below `SIMILARITY_FLOOR` (7). Any
     prefix match of a common command, or any tie, means no correction (`pus` ties push and pull).
-  - The matcher assumes `help.autocorrect` is on, since it reads no config. A subcommand token that is not a built-in
-    and that the port corrects to built-in X also reads as X (ambiguous). So `deny: [git push]` refuses `git psh`,
+  - The matcher assumes `help.autocorrect` is on, since it reads no config. A token not resolved as a subcommand or
+    alias that the port corrects to X also reads as X (ambiguous). A corrected alias resolves to its canonical path;
+    a target absent from the subcommand and alias maps becomes an unknown leaf with inherited persistent options.
+    The literal reading remains too. So `deny: [git push]` refuses `git psh`,
     `git psuh`, `git pusg`, `git Push` and `git pυsh`, and leaves `git lfs`, `git gui`, `git ls` and `git sh` alone.
-  - **Candidate set.** git's own candidates are its exec-path commands, `git-*` on `PATH`, and aliases. The matcher
-    uses a set B that is a **subset** of git's:
+  - **Candidate set.** git's own candidates are its exec-path commands, `git-*` on `PATH`, and aliases. The matcher's
+    selected set B includes:
     - the `git-*` names compile finds in the resolved git's exec-path directory (the row's locations:
       `/usr/lib/git-core`, `/usr/libexec/git-core`, or the directory the resolved binary names). Compile lists a
-      directory and runs nothing;
-    - where that directory has no dashed built-ins (`SKIP_DASHED_BUILT_INS` builds), the row's built-in list. That
-      list, and the row's common-command group, are the intersection over every supported git version (2.39
-      through 2.51), so each is a subset of every supported git's own.
-  - **Why a subset is sound.** Suppose git, with its full set R ⊇ B, corrects a token to X. Then no candidate in R
-    scores 0, and X is R's unique best, so the same holds in B. The matcher therefore reaches every target git
-    reaches. Candidates outside B (aliases, externals, later built-ins) can only block or retarget a correction. The
-    matcher keeps the reading git would not make, so the over-approximation lives in the candidate set only.
+      directory and runs nothing. This includes executable external helpers absent from the row's maps;
+    - the row's built-in list, combined with the helper-directory listing when one is available. The row's common
+      group supplies the prefix scores. The selected inventory does not include every installation's aliases or
+      PATH-only external commands.
+  - **Candidate-dependent coverage.** Unique-best selection depends on the entire selected set. If a real git
+    corrects to a candidate absent from B, the matcher cannot reach that target by correction. Even when the target
+    is present, omitted candidates can change tie or prefix behavior. Keeping the literal reading does not prove
+    every correction of an installed git is covered. The earlier subset-completeness claim was incorrect.
+    In particular, a `SKIP_DASHED_BUILT_INS` build can supply no directory candidates for the later built-ins
+    `refs`, `replay`, `backfill` and `diff-pairs`, which are absent from the row's intersection inventory. A
+    correction to one of those in-process commands can miss a deny or ask entry. The matcher does not union
+    corrections across their 16 possible inventory subsets; this remains [GAPS C69](../GAPS.md).
   - **Bounded work.** A token longer than the longest candidate plus one cannot score below 7, because each surplus
-    byte is a deletion at 3. The dynamic program runs only for shorter tokens: at most |B| × 32 × 32 cells. It runs
-    only for a token that is not a built-in, and only under a deny or ask entry on git or a constrained git.
-  - **Drift is a fail-open regression**, not a coverage note. A differential test against the installed git (skipped
-    when absent) runs every single and double edit of every built-in and known external, plus random tokens. Any
-    target git reaches that the port misses fails the build. A freshness test fails when the installed git's
-    built-ins or common group are not a superset of the row's (R4).
+    byte is a deletion at 3. Tokens and candidate names are bounded at 63 bytes; the fixed-size dynamic program
+    allocates nothing. It runs only for a token not resolved directly, under a deny or ask entry on git or a
+    constrained git.
+  - **Drift can miss a refusal.** The installed-tool differential's retained corpus and candidate inventory can
+    reveal a mismatch, and a freshness test checks the listed built-ins and common group (R4). A passing finite
+    corpus is not a completeness proof for every token or installation.
 - **An unknown subcommand** outside git's reach is not ambiguous by itself. It is a plugin or an external command,
   which runs as its own exec, or an error.
 
@@ -572,12 +591,12 @@ and multicall), then the documented rows.
 | kubectl, oc | documented | `kubectl-<plugin>` | pflag globals anywhere: `-n`/`--namespace`, `--context`, `--cluster`, `--user`, `--kubeconfig`, `-s`/`--server`, `--token`, `--as`, `--as-group`, `--as-uid`, cert and key files, `--cache-dir`, `--request-timeout`, `--tls-server-name`, `-v` take a value | the cobra tree, three levels deep (`create secret generic`), built-in aliases | interspersed, no prefixes, bool clusters | `kuberc` aliases |
 | docker, podman | documented | `docker-<plugin>` with the name repeated in argv[1] | docker `--config`, `-c`/`--context`, `-H`/`--host`, `-l`, TLS files; podman `--connection`, `--url`, `--identity`, `--root`, `--runroot`, `--storage-driver`, `--storage-opt`, `--runtime`, `--log-level` and the rest of its globals | management commands; aliases folded (`rm` = `container rm` = `container remove`; `rmi` = `image rm`) | cobra; `run`, `create` and `exec` stop at the image or container | none |
 | pip | documented | `pip`, `pip3`, `pip3.N`, `python -m pip` | optparse globals before the command: `--python`, `--log`, `--proxy`, `--retries`, `--timeout`, `--exists-action`, `--trusted-host`, `--cert`, `--client-cert`, `--cache-dir`, `--use-feature`, `--use-deprecated`, `--keyring-provider` | command list | unique long prefixes; command options interspersed | none |
-| cargo | documented | `cargo-<ext>` with the name repeated in argv[1]; a leading `+toolchain` (rustup) skipped | `--config`, `-Z`, `-C`, `--color`, `--explain` take a value; `--config` naming a path or `alias.` is ambiguous | built-ins and aliases `b`, `c`, `d`, `t`, `r`, `rm` | clap: interspersed until `--` | `[alias]`, `CARGO_ALIAS_*` |
+| cargo | documented | `cargo-<ext>` with the name repeated in argv[1]; a leading `+toolchain` (rustup) skipped in invocations and deny/ask patterns, invalid in allow patterns | `--config`, `-Z`, `-C`, `--color`, `--explain` take a value; `--config` naming a path or `alias.` is ambiguous | built-ins and aliases `b`, `c`, `d`, `t`, `r`, `rm` | clap: interspersed until `--` | `[alias]`, `CARGO_ALIAS_*` |
 | gh | documented | `gh-<ext>` | (cobra) | the cobra tree (`repo delete`, `pr merge`, `release create`, `api`) | interspersed, bool clusters | `gh alias set` |
 | terraform, tofu | documented | `terraform`, `tofu` | `-chdir=DIR`, `-help`, `-version` | top level, `state <sub>`, `workspace <sub>` | Go `flag` | none; note: `apply -destroy` is a destroy |
 | helm | documented | plugins run commands from their own manifests (not mapped) | `--kube-context`, `--kubeconfig`, `-n`/`--namespace`, `--registry-config`, `--repository-cache`, `--repository-config`, `--burst-limit`, `--qps`, `--kube-*` take a value | cobra tree; `uninstall` = `un` = `delete` = `del` | interspersed | none |
 | aws | documented | `aws` | globals anywhere: `--region`, `--profile`, `--output`, `--endpoint-url`, `--query`, `--ca-bundle`, `--cli-*` take a value | `<service> <operation>`, s3's high-level commands | exact | `~/.aws/cli/alias` |
-| gcloud | documented | `gcloud` | globals anywhere: `--project`, `--account`, `--configuration`, `--verbosity`, `--format`, `--billing-project`, `--impersonate-service-account`, `--flatten`; `--flags-file` ambiguous | optional release track (`alpha`, `beta`, `preview`), then groups and a command | exact | none |
+| gcloud | documented | `gcloud` | globals anywhere: `--project`, `--account`, `--configuration`, `--verbosity`, `--format`, `--billing-project`, `--impersonate-service-account`, `--flatten`; `--flags-file` ambiguous | optional release track (`alpha`, `beta`, `preview`), skipped in invocations and deny/ask patterns, invalid in allow patterns; then groups and a command | exact | none |
 
 Coverage notes come from the same rows and print on each entry's line (9). Examples:
 
@@ -1222,8 +1241,8 @@ handle to it, as it does `KernelExecs`. `ExecNaming` gains `PinSeq`, `CommandRul
   and the record fold only turns `allow` into `refused` or `unproven`. A bug in pins costs availability, never a
   grant. The P2 source tests hold this, as for ADR 0044's claims.
 - **Interpretations only add.** argv[0] spoofing, dashed names, dispatch and autocorrect add readings, and the
-  strictest reading wins. The autocorrect port uses a subset of git's candidates, so it reaches every target git
-  reaches.
+  strictest reading wins. Autocorrect retains the literal reading alongside a unique correction selected from its
+  candidate set. A subset of an installed git's candidates does not prove that every target git reaches is read.
 - **Fail closed on ambiguity.** Unknown options keep both readings (*amended 2026-11-01:* also in front of an
   interpreter's script, which is its subcommand, so a row that is a leaf still forks there), and visible rewrite triggers make an
   interpretation unlocatable. Deny and ask entries match any reading; a constrained allow needs every reading.
@@ -1338,7 +1357,8 @@ handle to it, as it does `KernelExecs`. `ExecNaming` gains `PinSeq`, `CommandRul
   - At a plane tier, argv[0] of an unguarded exec of an image outside the dispatch-sensitive set is not protected
     after the check. Such an image is R2's copy.
 - **R3. Rewriting from outside argv.** cargo, gh and aws config aliases, kubectl `kuberc` aliases, and environment
-  variables that change parsing are not read. git aliases and git autocorrect are covered. Compile notes it on each
+  variables that change parsing are not read. Listed git aliases and autocorrection against the selected candidate
+  inventory are modeled; candidate drift can leave other targets unread. Compile notes it on each
   affected entry.
   **Node preload residual (C49 round 3):** the raw config/dotenv scans above apply to every build,
   but external `NODE_OPTIONS` preloads remain unread. Unknown Node builds also retain master's
@@ -1354,8 +1374,8 @@ handle to it, as it does `KernelExecs`. `ExecNaming` gains `PinSeq`, `CommandRul
     cover new in-process code-loading semantics such as Node's attached options in R3.
   - A new built-in alias of a denied subcommand is missed until the row lists it.
   - A new helper fails closed: an allowed operation is refused until the closure lists it.
-  - For git's autocorrect, drift in the candidate set or the scoring is a fail-open regression. The freshness and
-    differential tests fail the build on it.
+  - For git's autocorrect, drift in the candidate set or scoring can miss a refusal. Freshness tests check the
+    inventory and differential tests check their finite installed-tool corpus; neither proves every possible token.
   - Compile prints the row's version and source.
 - **R5. Tier 1 and the fanotify fallback.** An allow is a copied fact. Between the copy and the kernel's, a sibling
   thread, a `CLONE_VM` child or a vfork parent's other thread can rewrite argv, and any peer can swap a link on the
@@ -1495,8 +1515,9 @@ handle to it, as it does `KernelExecs`. `ExecNaming` gains `PinSeq`, `CommandRul
     only-narrowing argument. The key is reserved and refuses until an amendment to 0044 accepts a list floor.
 25. **Refuse every guarded exec past 8192 arguments or 128 KiB.** ARG_MAX is about 2 MiB, and `git add` of many
     paths is legitimate. Only a verdict that depends on the unread part refuses.
-26. **A distance-based autocorrect reach kept as a safety margin on top of the port.** The port with a subset
-    candidate set already reaches every target git reaches. The margin adds only collateral.
+26. **A distance-based autocorrect reach kept as a safety margin on top of the port.** The margin adds collateral
+    beyond the selected unique-best correction. The earlier claim that a subset candidate set reaches every target
+    git reaches was incorrect; unique-best selection depends on the whole candidate set.
 
 ## Implementation plan
 
@@ -1514,8 +1535,8 @@ handle to it, as it does `KernelExecs`. `ExecNaming` gains `PinSeq`, `CommandRul
     complete known option with its value, anywhere before `--` never turns a deny match into a miss. For allow
     entries that name no option, the same insertion never turns a miss into a match.
   - **Differential and freshness tests against installed tools**, skipped when absent:
-    - git autocorrect: every target git reaches is reached by the port, and the false positives against git's own
-      `--list-cmds` set are zero;
+    - git autocorrect: compare the port's answers with git over the retained token corpus and selected candidate
+      inventories; a passing finite differential does not prove coverage for every token or installation;
     - `--list-cmds` built-ins and the common group are a superset of the row's;
     - rm's option behavior;
     - each probed row's measured cases.
@@ -3050,7 +3071,7 @@ other five (What was measured, below).
   is Rust's `Path::file_stem` of its last component (`multicall.go`, `programStem`).
 - **Applets.** For each stem, every tool a deny or ask entry names that the stem ends with, unless a longer name of
   `Row.Applets` ends it too; a stem ending in `utils` reads none. `Row.Applets` is the intersection of Ubuntu 25.10's
-  rust-coreutils 0.2.2 links and upstream main's utility crates (104 names). As with git's autocorrect candidates (2), a
+  rust-coreutils 0.2.2 links and upstream main's utility crates (104 names). For this suffix-selection rule, a
   subset of a build's list is sound for that build: if it runs ruled tool T for a stem, no longer name in its list ends
   the stem, so none in the subset does. This holds for the two builds whose lists were read (0.2.2 and main, each
   packaged with every utility); uutils can be built with fewer utilities, and a build without `printenv` runs `env` for
@@ -3199,3 +3220,392 @@ for every row reached as argv[1] of a uutils image (`myutils ./tool`, `xbox tool
 among the three shapes (120 s and 1.7 million execs; no failure). `FuzzMulticallOnlyTightens` checks the property
 without the exemption it had for the sh case, runs under `deny: cargo publish` too, and is seeded with the sh and the
 multicall cargo vectors. These tests and seeds failed with the earlier `multicall.go` overlaid.
+
+
+### Amendment 2026-11-12: derived subcommands, the early guard and empty loader argv[0]
+
+Names produced by correction resolve through the same level's canonical-name and alias lookup as names typed
+directly. This includes alias chains and paths. The correction keeps the original reading and adds the resolved
+reading. Round 1 closed only the alias half of this class. Round 2 also retains a selected correction absent from
+both maps as an unknown leaf under the corrected name, with inherited persistent options. Compile's executable
+helper-directory candidates can include such external commands. `TestRound2CorrectedExternalTarget` covers the
+review's `widget` candidate and `widgte` token, with deny, ask and constrained allow entries. The inventory gap in
+[GAPS C69](../GAPS.md) remains; these fixes do not establish coverage of every installed git.
+Deny and reserved ask entries match either; a constrained allow must admit both. Abbreviations already
+used this lookup, tested at the root and nested levels. Defaults in the normalizer and pattern parser, and option
+`AsSub` targets, look up canonical names directly. Released rows have only canonical targets there; a retained test
+walks every level, wildcard, inherited persistent option and interpreter fallback to prove an alias cannot reach
+those lookups. New row data
+that violates that invariant must resolve aliases conservatively before it can be admitted.
+
+`Index.Guarded` reads the same effective argv[0] as `Interpretations`: when the explicit slot is empty, it uses
+`Argv[0]` if supplied, including the login-name reading. A missing redundant slot must not let the early guard
+skip a refusal or an unfinished full decision. A supplied shebang chain longer than the ordinary dispatch depth is
+also guarded conservatively: even unruled names can exhaust the interpretation count, which the full decision
+refuses. The retained bound test demonstrates this supplied-facts case, beyond the live kernel's short chain.
+The deterministic row-derived test and the corpus overlay check
+compare the early guard with the decision run without it. This corrects supplied-facts behavior; the checked live
+producer fills both slots, so no live route for this discrepancy has been found.
+
+`LoaderProgram` distinguishes an absent `--argv0` from an explicitly empty value, with a presence flag. glibc's
+loader passes the empty value to the program, confirmed with an ordinary loader/Python witness. The matcher now
+reads that actual vector and retains the former operand-as-argv[0] vector as an additional conservative reading.
+The union preserves refusals based on argv[0] dispatch, aliases or an interpreter's raw prescan. This may refuse
+more; it cannot use the corrected preparation to drop an old refusal. The same union is read by the guard and the separate multicall applet pass, including interpreter prescans reached
+through an applet.
+
+Unit tests and source overlays prove matcher behavior. A live run and its record at each enforcing tier are owed
+in a guest; no guest or Tego binary was run on the host for this amendment.
+
+### Amendment 2026-11-12, round 2: pattern spelling and derived provenance
+
+A unique abbreviation of a negated long option in a pattern resolves to that option with negation intact, as the
+invocation parser reads it. Unknown invocation options have unresolved polarity: deny and ask compare them
+against the negative long names and retain the pattern's written abbreviation as a possible raw spelling. Known
+positive options do not match a negative predicate. An allow pattern that names a selector discarded by `Skip` or `SkipPrefix` is invalid:
+silently removing that word would grant other selectors. Deny and reserved ask patterns may discard the selector
+and refuse the operation across variants. Option parsing removes exactly the introducer, two leading dashes for
+double-dash long options or one under `SingleDashLong`, preserving every further dash as a name byte. Thus an
+extra-dash name absent from the row makes an allow option invalid. Round 2 made a raw deny or ask option name
+only that literal spelling, removing released matches of ordinary known options and shorter raw prefixes. That
+loss of refusals was rejected for this release; the round 3 compatibility amendment below supersedes it. Resolving
+a negated abbreviation also makes a formerly invalid allow entry valid; this is accepted as described below.
+
+An applet derived from `Argv0Strip` is `ViaMulticall`, including when found through a shebang stage or a supplied
+dispatcher identity. It receives no direct argv[0], and cannot satisfy ADR 0064's runtime exact grant. A stage's
+invoked-as reading retains `ViaShebang`; a direct image retains its ordinary origin. Identity mappings apply the
+same base, invoked-as and stripped-applet readings. The live compiler excludes dispatcher identity mappings and
+already supplies canonical tools, so these supplied-facts tests establish no live admission route. The stage
+attribution correction does not establish that an exec was admitted.
+
+Two reviewed seams remain unchanged. A raw deny/ask long option matched against a known invocation option requires
+full name equality. The recommended specification amendment is to keep that direction exact: for example, a raw
+`git --forc push` entry does not acquire a refusal of `git push --force`. An identity binding's rule key remains the
+supplied tool string, even when the row lookup recognizes it as an alias. The recommended amendment requires the
+producer to supply the canonical row tool; supplying `pip3` alone does not make a `pip install` rule apply. These
+are proposed corrections to the private clauses, not a claim that the specification's author accepted them.
+
+The authored-entry inventory found no changed shipped example, built-in preset, conformance fixture or documented
+contract entry for the three pattern changes. Regression tests and source overlays check the matcher; the private
+comparison records changed refusals and parser validity separately. No live Tego or kernel check was run for round
+2. Validation of the live behavior and its record is owed in a guest.
+
+
+### Amendment 2026-11-12, round 3: preserve refusals when correcting option dashes
+
+A deny or ask entry with extra leading option dashes matches the union of two whole-pattern readings: the literal
+spelling, and everything the released matcher matched for that entry after removing leading dashes. Each reading
+retains the complete pattern, including option values, subcommands and operands. Correcting a spelling must not
+remove a refusal a working contract already imposed. An allow entry receives only the literal reading, so the
+compatibility union grants it no new command. An option absent from a known tool's row remains invalid in an
+allow entry.
+A staged prefix remains unfinished when either pattern reading can still acquire an option or operand that
+completes a refusal. The prefix-finality check must inspect both paths, including a path changed by value binding.
+The ordinary and multicall checks share that rule. Compile prints both readings and retains the released
+reading's coverage note, so its description does not hide the compatibility refusal.
+
+Compile warns on every entry containing an option name with more than two leading dashes or a single dash before
+a long name where the tool does not accept that spelling. Tool-defined single-dash long options (`SingleDashLong`)
+and short words (`ShortWords`) do not warn. Tools without a known row retain literal single-dash option words,
+including `find -name file` and `java -jar app.jar`. The warning names the entry and the ordinary spelling it
+probably meant. This release keeps these entries compatible; a later minor version will turn the warning into a
+compile error. Contracts should use the ordinary spelling now.
+
+P1-GO-14 is the accepted parser change. The eight comparison keys all use `exec.allow: [git add --no-f]`: argv ends
+in `--no-f`, `--no-force`, `--no-f=true` or `--no-force=true`, each as a complete vector and a staged prefix.
+The released parser rejects the entry as an unknown allow option, and contract validation reports that parse
+error as an `exec-rule` error. Such a contract failed to compile; it was not a working contract with an inert
+entry. The fixed parser resolves this unique abbreviation to the negated option. This spelling-fix comparison
+permits only those eight allow keys and no deny/ask loosening. The combined release bar below has the same
+eight-key limit and admits no other correction class. Both comparisons
+are finite audits of retained inputs, not completeness proofs over all invocations or candidate inventories.
+
+The omitted built-in candidate subsets remain [GAPS C69](../GAPS.md). Checks of live enforcement and the refusal
+record at each tier are owed in a guest.
+
+### Amendment 2026-11-12: terminators belong to each command level
+
+The row's account of "what `--` does" in (2) includes command selection, not only
+option scanning. Ending options must not erase a command the tool still selects.
+`Syntax.Terminator` has these meanings at a level with subcommands:
+
+- `TerminatorCommand`: the next word selects the command, with options still
+  ended (getopt/nopt, and pip's retained marker).
+- `TerminatorCommandFlags`: it selects the command, whose own parser starts
+  reading flags again (the Go root and AWS's service/operation parsers).
+- `TerminatorOperands`: the current/default command keeps the suffix as operands;
+  no child is selected (the verified Cobra Find roots).
+- `TerminatorUnknown`: the tool refuses that spelling. As required by (2), retain
+  both unknown-option arities: flag and next-token value. Git's global `--` had
+  recorded only the first; the verdict stays refused, but its match can now be
+  ambiguous. Go's raw nested command lookup uses this mode too.
+- The zero value, `TerminatorBoth`: behavior is not established. Keep the command
+  reading and the historical default-operand reading. Also retain the
+  unknown-option value reading, since Cobra Traverse can consume a token there.
+  A refusal in any reading refuses; an allow needs every reading admitted. The
+  existing reading bound still fails closed. This rule applies to new rows too.
+
+At a leaf the suffix remains operands. A staged prefix ending at a terminator
+cannot settle command selection before the word is read. Evidence and scope for
+every row and nested level are in [the row reference](../spec/exec-command-rows.md#option-terminators-and-command-dispatch-2026-11-12).
+No cross-tool guess establishes a row. No complete parser audit is claimed for
+the levels explicitly marked not established there.
+
+The same principle covers adjacent parser forms. An unknown option value leaves
+command search active. An unknown letter in a short bundle keeps its
+attached-value reading as well as its flag reading, since this can stop a later
+letter consuming the next command word. A lone `-` at command position retains
+its word reading and a skipped unknown reading. Existing shell `-`/`+` and
+Cargo +toolchain rules remain. npm's nopt also recognizes all-dash terminators
+longer than `--`; that spelling is recorded explicitly, not assumed for others.
+
+**Pattern compatibility (corrected in fix round 1):** a pattern separator has
+its invocation-side meaning for that row. A preceding required option uses its
+value type at that boundary: npm tag/cache cannot swallow the marker, while
+Git -C can. An argparse missing required value fails compilation. A known takes-command level names the
+command after it. A verified default dispatcher such as Git stash enters the
+default and reads later words as operands. Other levels retain bounded parser
+alternatives for deny and ask. An allow pattern whose retained meanings differ
+in command, option/value or operand predicates fails compilation: their union
+could grant an operation that another retained parser meaning does not name.
+Identical meanings are deduplicated. Write an explicit command and predicates
+without an uncertain separator to resolve the diagnostic.
+A generic pattern separator is optional at that position in the
+invocation and later pattern words are operands, including leading dashes. It
+cannot become an inert option predicate or grant another explicit child through
+an empty path. Generic allow entries skip one invocation marker only at the
+written boundary. For deny and ask, an invocation's first marker divides the
+predicate regions: preceding pattern words/options search before it, and later
+operand globs search only after it. Without an invocation marker both groups
+search the whole vector independently; no operand boundary is guessed from
+where a preceding predicate matched. Git's refused global marker and npm's longer all-dash pattern
+markers still produce an error. Row subcommand globs combined with separators
+require explicit command names, since a glob can span dispatchers with different
+defaults; operand globs and non-separated command globs keep their meaning. The
+repository's collected allow/deny/ask entries
+contain no literal pattern separator, so no shipped entry needs migration.
+
+The retained comparison in `test/execmatchdiff` now runs as a bounded in-tree
+test against an unchanged, import-rewritten released matcher. A longer script
+also observes the actual package tests. The generated matrix covers every row
+command name, plain and constrained entries, direct, argv0, loader and interpreter
+routes, and staged prefixes. Over the compared inputs the combined release loses no deny or ask
+refusal and gains no allow, except the eight contract-compilation keys named above. An entry that did not
+compile in the released matcher had no behavior. Parser-only certificates remain
+source-semantics controls; they cannot authorize a policy exception.
+
+That statement is about the inputs the comparison generates and the pinned regressions, not about every
+contract. The generators build one entry at a time against a default index. They do not generate:
+entries that contain a terminator, extra name dashes or an option word with an empty name (beyond the
+shipped catalog and the pinned npm, systemctl and git inputs); entries with two or more options, option
+values, globs or a trailing `*` (one glob is pinned); helper-closure admissions on rows other than the
+built-in ones (one supplied row is pinned); contracts with several entries, a bare entry lifting a
+constrained one, or implicit grants; multicall links, `#!` stages, identities and node's fallback row
+beyond the corpora and the observed package tests; and open prefixes on routes other than the direct one.
+The two defects found after the first combined comparison (an npm entry with extra name dashes, a helper
+closure on a supplied row) were in such classes; both are fixed at their cause and pinned, and their
+classes are still not generated ([GAPS C72](../GAPS.md)).
+
+Three differences from the released matcher are known and stay in this release:
+
+- An entry word that is an option with an empty name (two dashes directly followed by `=`, or a word of
+  three or more dashes only) is read as written by both readers. The released pattern parser resolved such
+  a word to a level's long option when the level had exactly one. A deny or ask entry written that way no
+  longer matches that option, and compile does not warn about it. No shipped example, preset or catalog
+  entry contains such a word. Write the option's name.
+- The reading that compile prints for an entry (text, JSON and gate descriptions) is the corrected
+  reader's. Where the two readers differ, the decision is the stricter one: the description can show an
+  allow that the retained reader does not grant (`tool a -- b` on a tool without a row prints the
+  terminator as optional, and `tool a b` is refused), and it can omit a refusal that the retained reader
+  adds. The decision is never looser than the description.
+- Compile builds the helper image grants and the helper note of an allow entry from the corrected
+  reader's first command word. Git is the only built-in row with a helper closure, and its root accepts
+  no terminator, so both readers agree there; a later row with a helper closure and a root terminator
+  must use the intersection of both readers' closures.
+
+At the decision layer, deny and ask use the union of both readers. Constrained
+allow uses their intersection, including helper closure, interpreter dispatch and
+staged-read settlement. There is no invocation-marker exception. An allow entry
+does not admit its command when the command line puts `--` before the subcommand;
+write the command without it. A retained-pattern compile error rejects an allow
+entry, naming the entry and advising explicit command/value spelling without the
+separator. Deny and ask may use the corrected reader alone when their retained
+pattern cannot compile, since that can only add refusals.
+
+The retained reader copies the normalizer and row-pattern algorithm at
+`40e853f5c`, immediately before the separator merge. It is not the v0.1.2 matcher.
+It includes the earlier alias, external-helper and literal-option fixes. It uses
+the merged rows and shared option-name helpers. Added terminator, vocabulary,
+value-type, assignment and shorthand fields are ignored by this reader; existing
+option arities, values, names and command tables are unchanged by this merge.
+Thus its algorithm and old-field inputs are retained, not an independent frozen
+release package. The frozen comparison against `70a9e8c56` proves the release bar
+for its measured inputs. The extra early fork-budget return always reaches the
+caller's over-budget check, which replaces the entire set with one unlocatable
+reading for both complete and open vectors.
+
+Both readers run once per invocation, before dispatch and matching. Missing
+readings fail closed; a pattern cannot rebuild them. Both retain the reading,
+argument and byte bounds. Pattern.Match and Normalizer continue to describe only
+the corrected parser, for the specification and the Rust twin. Conservative
+browser, assignment, commandless and pattern-region refusals remain at the policy
+layer. Retiring the reader requires the compatibility review and proof described
+in EXEC-RELEASE-FLOOR, not a parser-only certificate.
+
+A released refusal becoming a held answer on incomplete argv is recorded
+separately. It cannot authorize an exec: the staged reader continues, and refuses
+as args-unreadable if it cannot finish. The policy compatibility floor generally
+retains the earlier concrete refusal. No released pending answer may become a
+final non-refusal. Prefix properties
+continue to forbid a final non-refusal before a later refusal.
+
+An open prefix that passed a command-position terminator, or a newly recognized
+npm all-dash terminator, retains the old staged-read hold even after its new
+reading locates a command. Only the complete vector or a concrete refusal settles
+it. This preserves the comparison's pending-answer floor; it may read more argv
+than the tool's already established dispatch strictly needs.
+
+The adjacent command-search audit also amends default-command handling. An
+option before an explicit child does not necessarily choose the default:
+Git's notes parser accepts its ref option before get-ref (confirmed by harmless
+Git 2.51.0 probes). Keep the historical immediate-default reading and a reading
+that parses options at the parent before selecting a child. The original claim
+that only narrow allows could regress was wrong: a parent-unknown option also
+refused the plain `git reflog` allow. Fix round 1 reads a declared child-only
+option at the default. For an unlisted option, the parent alternative retains
+Unknown, while the immediate-default alternative and both option arities retain
+its possible paths. That alternative no longer marks an unknown as preceding the
+already named parent scope. Plain parent allows need every path to agree with
+that scope; option/operand-constrained allows still reject Unknown. The measured
+ordinary allow corpus restores both reflog regressions; no regression in that
+corpus remains.
+
+Cobra's command search also ignores empty words and lone `-`, so both retain an
+additional skipped unknown reading at command levels. A source-proven distinction
+is a known short bundle ending in a letter that takes a separate value. Cobra
+Find/Traverse can extract that value as the command *before* pflag parses it,
+rebinding later options, operands and nested commands. `BundleValuesSettle` is
+true for parsers whose own option scan selects the command (getopt, nopt, Go
+flag, optparse and clap). Otherwise the normalizer retains its ordinary reading
+and an unresolved reading for that bundle. A narrowed deny/ask still applies,
+and constrained allows fail closed. Exact modeling of that separate scanner and
+its later bindings is owed; no claim of an exact Cobra bundle interpretation is
+made. This uncertainty is reached only before a command is located, with a
+multi-letter bundle taking a separate value; ordinary leaf flags are unchanged.
+
+### Amendment 2026-11-12: parser vocabularies and option-looking values (fix round 1)
+
+Command selection after a separator does not re-enable the ended parser's
+options. `Syntax.TerminatorOptions` separately records ended, child-only or
+inherited vocabularies. Its zero mode retains all three. AWS's main parser alone
+knows globals such as profile/region; after its marker those names are unknown to
+the service and operation parsers and retain both unknown arities. Go restarts
+only the selected child's vocabulary. Unestablished levels keep the ended and
+child/inherited readings, subject to the existing fail-closed reading bound.
+
+`Syntax.NextOption` and a per-option override describe separate values that look
+like options. Established getopt, optparse, Git, Go flag and pflag value parsers
+consume them. Unknown parsers retain BOTH, including at leaves: option predicates
+can differ even when command selection is finished. AWS argparse separates
+known option names and assignments before its space fallback; unlisted spaced
+words retain value and unlocatable rejection readings because the row is
+incomplete. Negative numeric classification remains conservative. Npm's nopt
+uses different guards for exact String types and other types. A String `tag`
+leaves `--global` as an option, while numeric/path/union values can consume it;
+required values leave all-dash markers separate. The nullable Boolean/String
+union `browser` returns earlier: it consumes every next token except `/^-[^-]/`,
+even `--`. This audit resolves that option-looking boundary and preserves both
+readings for other browser values. Unestablished ArgMaybe alternatives remain at leaves.
+
+Nopt splits a known attached assignment before type binding, so the same rule
+applies to `--tag=--global`. A per-reading immutable token splice models this
+lazily, after a preceding option has had the chance to consume the assignment.
+Nopt also strips every leading dash before resolving an invocation's option
+name. `Syntax.TrimOptionDashes` records that npm-only rule, so `---tag=--global`
+still uses tag's String guard. Raw spelling is retained. The existing
+Pattern.optionWord retains the literal-name, negation and warning rules of the
+preceding amendment. Its independent nopt decoder measures parser bindings; the
+release decision floor above still applies.
+Nopt resolves exact short aliases and all-known short compounds before long
+abbreviations. The npm row expands audited one-to-one compounds lazily, preserving
+the emitted long words a preceding value can consume. Exact full option names
+win. Compounds involving the row's pseudo/multiword loglevel or negation aliases,
+and those aliases with multiple leading dashes, fail closed because their
+inserted words can become commands; their precise predicate representation
+remains open. Ordinary exact one-dash pseudo aliases retain their existing reading. Separated pattern compilation takes known option
+identities and polarity from row normalization and recovers unknown spelling
+through a syntax-only call to Pattern.optionWord. Known normalized hits also
+pass through its spelling policy. Temporary warnings and compatibility metadata
+propagate to the enclosing pattern; invocation lookup cannot widen a literal allow name.
+At most MaxReadings assignment splices or emitted shorthand words are expanded
+in one reading; more fail closed, including repeated independent assignments. A changed
+value binding or token splice retains the historical open-prefix hold, so earlier
+option termination cannot settle an old pending decision as a final non-refusal.
+Unknown assignments retain their existing attached-value reading. A located path
+also remains pending while later visible options can reject a required value or
+exhaust a value-reading/assignment budget. Ended ancestor vocabularies do not
+supply such triggers. Similar spelling syntax never establishes a parser's value
+rule: pnpm and yarn explicitly retain BOTH despite their pflag-like spelling. The
+separator work retains the preceding amendment's option-name policies,
+autocorrection fixes, image guard and loader argv[0] correction.
+The source/version table and retained sweeps describe what is established;
+unaudited rows remain conservative. Runtime enforcement for these round-1 changes
+is owed in a guest.
+
+### Amendment 2026-11-12: argparse space precedence (fix round 2)
+
+Argparse checks exact option names, known assignments and option prefixes before
+its space-containing-word fallback. A required AWS global followed by a known
+assignment containing a space is missing its value. That reading stays
+unlocatable; it cannot invent successful command dispatch, widen an allow or
+erase a conservative refusal. For a spaced word whose option classification is
+not established by the incomplete row, retain both the consuming value reading
+and the unlocatable rejection reading. CPython 3.13.0 `_parse_optional` and
+`_get_option_tuples` establish this order; the branch's isolated parser probe
+checks both assignments, unique/ambiguous prefixes and unlisted-word controls.
+These probes are parser evidence. Enforcement and records are owed in a guest.
+
+The compatibility inventory now includes contract heredocs in shell examples and
+YAML contracts under `test/fixtures`. It reads scripts as data without executing
+or expanding them. The fix-round-2 bounded corpus had 129 allow entries and 3,072 vectors:
+3,070 released admits, zero remaining refusals, two restored reflog forms, zero
+justified refusals. This supersedes the narrower round-1 coverage claim; it does
+not enumerate arbitrary valid invocations.
+
+### Amendment 2026-11-12: combined release verification and bounded tests
+
+The release bar combines both amendments against the byte-verified released
+matcher at 70a9e8c56. Ordinary tests keep a deterministic slice of both generators,
+all named defect regressions and all eight invalid-entry keys. Full comparisons,
+the complete value matrix and correction sweep require TEGO_EXECMATCH_LONG=1.
+No timeout or skip-list relaxation substitutes for completing the ordinary tests.
+The long runner retains both original generators and the actual package corpus.
+The combined ordinary inventory has 130 entries and 3,125 vectors, with 3,070
+released admits and zero new refusals of those admits. It separately records the
+restored negated-prefix entry and one entry invalid in both parsers. Exhaustive
+correction and prefix proofs use serial partitions under the existing package
+deadline; prefix partitions preserve both original RNG streams.
+Parser/version uncertainty, Git candidate inventory limits, loader exit-only modes
+and live enforcement/record evidence remain the stated limits of both amendments.
+
+### Amendment 2026-11-12: final decision review
+
+Retained-pattern failures cannot remove an allow floor. Generic settlement waits
+for the longer word requirement of both patterns, including at the supervisor's
+32-element read boundary. Interpreter dispatch unions both readings; settlement
+requires both to be resolved. Missing reader state cannot settle or admit an exec.
+`separatorLevel` validates every supplied depth before slicing. In enforcement
+mode a matcher panic reaches the supervisor's per-notification recovery and
+refuses that exec; the worker and sibling notifications continue. Observe mode
+continues refusals by its existing contract. No panic is required for safety here.
+
+The retained pattern builds its extra-dash compatibility alternative from its
+own spelling metadata. A corrected separator can turn an old option into an
+operand; it cannot erase the retained parser's legacy option predicate. The
+frozen released-source controls pin this boundary for deny and ask entries.
+
+Helper admission also uses each pattern's own closure. The corrected pattern's
+first command word cannot supply helper authority absent from the retained
+pattern. Both sets are compiled once with the index; each reader must satisfy
+its corresponding closure. A supplied-row regression compares this boundary
+with the frozen released matcher.

@@ -192,3 +192,17 @@ first watched open until that initial sample; a single shared skip cannot excuse
 Other hooks' skips cannot excuse file-open loss;
 duplicates, unexplained loss, ring/queue loss and missing metering still fail. Runs with no recorded misses retain
 the exact-count assertion. Deciding and cgroup-tracking program misses and per-run loss attribution remain open C53 work.
+
+*Note 2026-11-11 (a third party's refusal and the chain's return, measured rather than read off the version):* the
+[documented] line above ("v6.12's security_file_open returns fsnotify_open_perm(file) after call_int_hook; v6.13's is
+call_int_hook alone") holds for the upstream tags, not for every kernel that calls itself 6.12. Debian 13's 6.12.107
+runs the permission event after security_file_open returned, as 6.13 does: a probe in that guest (a fexit program on
+security_file_open keeping the return its own thread's open saw, beside a content-class fanotify group that answered
+that open FAN_DENY) read 0 while the open failed EPERM, and the conformance cell `thirdparty/read-refused-by-other`'s
+line read `allow` at every root axis, the record this ADR specifies for that order: the chain allowed, and the
+refusal came after it. The record was right; the cell held it to `observed` by `kernel_max: "6.12"`. The cell now
+follows the probe (`fanotify_in_chain`, `test/conformance` `Machine.FanotifyInChain`, measured as root on every root
+axis's machine): `observed` with `by: other` where the refusal is in the return, the chain's `allow` where it is not.
+Measured 2026-11-11, both boots each: false on Debian's 6.12.107 and Fedora's 7.0.14 (line `allow`), true on AL2023's
+6.1.188 (line `observed` at every root axis). No record change. Still open: a reader of such a line cannot tell from the ledger alone that another party refused
+the open; nothing in `run_start` says which order the kernel has.

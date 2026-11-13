@@ -154,3 +154,5 @@ github.com/attention-span-ai/tego/pkg/spec/agent.MCPToolNameOK	public-api	says w
 github.com/attention-span-ai/tego/pkg/spec/harness.Names	public-api	every value the harness key takes, for consumers of pkg/spec
 github.com/attention-span-ai/tego/pkg/spec/harness.Parse	public-api	reads a harness: value, for consumers of pkg/spec
 github.com/attention-span-ai/tego/pkg/spec/record.FieldCode	public-api	the code of the FieldError in an error chain, for consumers of pkg/spec
+github.com/attention-span-ai/tego/pkg/spec/record/chaincheck.Check	public-api	ADR 0146: the exported byte-input integrity checker; the CLI uses the streaming Walk adapter
+github.com/attention-span-ai/tego/pkg/spec/record/chaincheck.Reason	public-api	ADR 0146: the exported structured verdict and reason mapping for Check and Walk consumers

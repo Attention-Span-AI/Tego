@@ -45,8 +45,9 @@ func TestGCRemovalLockFollowsNoLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = rd.Close() }()
-	if f, err := pinnedRepository(root, rd).lockForRemoval(ref.ID); err == nil {
+	if d, f, err := pinnedRepository(root, rd).lockForRemoval(ref.ID); err == nil {
 		_ = f.Close()
+		_ = d.Close()
 		t.Error("lockForRemoval opened the lock through a link")
 	}
 	if _, err := os.Lstat(target); !os.IsNotExist(err) {

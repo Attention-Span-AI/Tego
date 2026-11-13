@@ -155,4 +155,58 @@ want=$(printf 'a pipe\nto stderr\n2000\nno newline\nstatus 3')
 [ "$took" -lt 10 ] || fail "console_pipe under $sh took ${took}s with a leftover writer; it waited on it"
 [ ! -e "$tmp/console.fifo" ] || fail "console_pipe left its pipe at $tmp/console.fifo"
 
+# 5. guest_end: how the guest ended, from the console, qemu's exit status (timeout(1)'s and bounded-run.sh's, 128+n for a
+# signal), qemu's stderr and the time it took. A qemu a signal from outside ended (2026-11-11: the host's memory guard
+# SIGKILLed a guest, which kvm-run.sh then called a timeout) is EXIT_LOST with a GUEST-LOST line in the console and on
+# stderr; only this script's own bound is a timeout; a guest that ended on its own without the sentinel is no-report.
+func guest_end >"$tmp/guest_end.sh"
+[ -s "$tmp/guest_end.sh" ] || fail "kvm-run.sh has no function guest_end"
+# shellcheck source=/dev/null
+. "$tmp/guest_end.sh"
+# shellcheck disable=SC2034 # read by the extracted function
+nonce=c0ffee TIMEOUT=1500 EXIT_LOST=98 EXIT_TIMEOUT=124 EXIT_NOREPORT=125 logfile=""
+statusfile="$tmp/status"
+status() { echo "$*" >"$statusfile"; }
+# end_case NAME CONSOLE-TEXT QEMU-STATUS QEMU-STDERR ELAPSED WANT-CODE WANT-STATUS WANT-LOST(0|1)
+end_case() {
+	local c="$tmp/end-$1" rc=0
+	printf '%s' "$2" >"$c.console"
+	printf '%s' "$4" >"$c.stderr"
+	: >"$statusfile"
+	guest_end "$c.console" "$3" "$c.stderr" "$5" 2>"$c.err" || rc=$?
+	[ "$rc" = "$6" ] || fail "guest_end $1: exit $rc, want $6"
+	[ "$(cat "$statusfile")" = "$7" ] || fail "guest_end $1: status '$(cat "$statusfile")', want '$7'"
+	if [ "$8" = 1 ]; then
+		grep -q '^GUEST-LOST: .*this is not a test result' "$c.err" || fail "guest_end $1: no GUEST-LOST line on stderr: $(cat "$c.err")"
+		grep -q '^GUEST-LOST: ' "$c.console" || fail "guest_end $1: the console log does not say GUEST-LOST"
+	elif grep -q GUEST-LOST "$c.err" "$c.console"; then
+		fail "guest_end $1: a GUEST-LOST line where the guest was not lost"
+	fi
+}
+end_case sentinel $'--- PASS: TestX\nTEGO-VM-EXIT:c0ffee:3\n' 0 "" 20 3 "guest 3" 0
+end_case sentinel-then-killed $'TEGO-VM-EXIT:c0ffee:0\n' 137 "" 20 0 "guest 0" 0
+end_case other-nonce $'TEGO-VM-EXIT:bad:0\n' 137 "" 20 98 "lost signal 9" 1
+end_case sigkill $'=== RUN   TestIntegrationStopAfterPidReuseSignalsNothing\n' 137 "" 611 98 "lost signal 9" 1
+end_case sigterm-caught $'=== RUN   TestX\n' 0 "qemu-system-x86_64: terminating on signal 15 from pid 4242 (kill)"$'\n' 30 98 "lost signal 15" 1
+end_case our-bound 'x' 124 "qemu-system-x86_64: terminating on signal 15 from pid 77 (timeout)" 1500 124 timeout 0
+end_case our-escalation 'x' 137 "" 1510 124 timeout 0
+end_case uutils-bound 'x' 125 "" 1500 124 timeout 0
+end_case panic $'Kernel panic - not syncing: Attempted to kill init!\n' 0 "" 5 125 no-report 1
+end_case qemu-failed '' 1 "qemu-system-x86_64: failed to initialize kvm" 0 125 no-report 1
+grep -q 'signal 9' "$tmp/end-sigkill.err" || fail "the GUEST-LOST line does not name the signal: $(cat "$tmp/end-sigkill.err")"
+
+# 6. sq quotes a word for the guest's sh whole: quotes, an empty word, and trailing newlines, which the old command
+# substitution around sed trimmed ("a\n\n" reached the guest as "a").
+func sq >"$tmp/sq.sh"
+[ -s "$tmp/sq.sh" ] || fail "kvm-run.sh has no function sq"
+# shellcheck source=/dev/null
+. "$tmp/sq.sh"
+nl2=$(printf 'a\n\nx') nl2=${nl2%x}
+nlonly=$(printf '\n\nx') nlonly=${nlonly%x}
+# shellcheck disable=SC2016,SC1003 # the last word is literal on purpose: what sh must not expand
+for w in "it's" "" "'" "a'b'c" "$nl2" "$nlonly" "two words" '$HOME `id` \'; do
+	got=$(sh -c "printf '%sx' $(sq "$w")")
+	[ "${got%x}" = "$w" ] || fail "sq $(printf '%q' "$w") reached sh as $(printf '%q' "${got%x}")"
+done
+
 echo "ok kvm-run_test.sh"

@@ -13,24 +13,6 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-func TestUnescapeMount(t *testing.T) {
-	for _, tc := range []struct{ in, want string }{
-		{`/plain`, `/plain`},
-		{`/a\040b`, "/a b"},
-		{`/a\011b`, "/a\tb"},
-		{`/a\134b`, `/a\b`},
-		{`/trail\012`, "/trail\n"}, // an escape that ends the field still decodes
-		{`/bad\400x`, `/bad\400x`}, // over one byte: left as written
-		{`/short\04`, `/short\04`}, // fewer than three digits: left as written
-		{`/nondigit\0zz`, `/nondigit\0zz`},
-		{`\040\040`, "  "},
-	} {
-		if got := unescapeMount(tc.in); got != tc.want {
-			t.Errorf("unescapeMount(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func writeMountinfo(t *testing.T, body string) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "mountinfo")
@@ -44,18 +26,11 @@ func TestReadMounts(t *testing.T) {
 	p := writeMountinfo(t, ""+
 		"1 0 0:1 / / rw - rootfs rootfs rw\n"+
 		"20 1 8:2 / /mnt/a\\040b rw,noatime shared:1 master:2 - ext4 /dev/sda2 rw\n"+ // spaces and optional fields
-		"21 1 8:3 / /mnt/nb sp\vx\r rw - ext4 /dev/sda3 rw\n"+ // bytes strings.Fields would split on
-		"garbage\n"+
-		"22 1\n"+ // short
-		"x 1 8:4 / /nope rw - ext4 /dev/sda4 rw\n"+ // bad id
-		"23 1 84 / /nope rw - ext4 /dev/sda4 rw\n"+ // no major:minor
-		"24 1 8:z / /nope rw - ext4 /dev/sda4 rw\n"+
-		"25 1 8:5\n") // no mount point field
+		"21 1 8:3 / /mnt/nb sp\vx\r rw - ext4 /dev/sda3 rw\n")
 	want := []mountRow{
 		{id: 1, dev: unix.Mkdev(0, 1), point: "/"},
 		{id: 20, dev: unix.Mkdev(8, 2), point: "/mnt/a b"},
 		{id: 21, dev: unix.Mkdev(8, 3), point: "/mnt/nb sp\vx\r"},
-		{id: 25, dev: unix.Mkdev(8, 5)},
 	}
 	got := readMounts(p)
 	if len(got) != len(want) {
@@ -65,6 +40,10 @@ func TestReadMounts(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("row %d = %+v, want %+v", i, got[i], want[i])
 		}
+	}
+	malformed := writeMountinfo(t, "1 0 0:1 / / rw - rootfs rootfs rw\ngarbage\n")
+	if rows := readMounts(malformed); rows != nil {
+		t.Errorf("partial facts accepted: %+v", rows)
 	}
 	if rows := readMounts(filepath.Join(t.TempDir(), "missing")); rows != nil {
 		t.Errorf("an unreadable table has rows: %+v", rows)

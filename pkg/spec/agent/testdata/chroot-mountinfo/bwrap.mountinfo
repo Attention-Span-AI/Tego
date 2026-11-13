@@ -1,0 +1,18 @@
+796 268 0:44 /newroot / rw,nosuid,nodev,relatime - tmpfs tmpfs rw,inode64
+797 796 253:1 /usr /usr ro,nosuid,nodev,relatime master:1 - ext4 /dev/vda1 rw,discard,errors=remount-ro,commit=30
+798 796 0:23 / /proc rw,nosuid,nodev,noexec,relatime master:12 - proc proc rw
+799 798 0:31 / /proc/sys/fs/binfmt_misc rw,relatime master:13 - autofs systemd-1 rw,fd=32,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=3295
+800 799 0:34 / /proc/sys/fs/binfmt_misc rw,nosuid,nodev,noexec,relatime master:48 - binfmt_misc binfmt_misc rw
+801 798 0:23 /sysrq-trigger /proc/sysrq-trigger ro,nosuid,nodev,noexec,relatime master:12 - proc proc rw
+802 798 0:23 /irq /proc/irq ro,nosuid,nodev,noexec,relatime master:12 - proc proc rw
+803 798 0:23 /bus /proc/bus ro,nosuid,nodev,noexec,relatime master:12 - proc proc rw
+804 796 0:46 / /dev rw,nosuid,nodev,relatime - tmpfs tmpfs rw,mode=755,inode64
+805 804 0:5 /null /dev/null rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+806 804 0:5 /zero /dev/zero rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+807 804 0:5 /full /dev/full rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+808 804 0:5 /random /dev/random rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+809 804 0:5 /urandom /dev/urandom rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+810 804 0:5 /tty /dev/tty rw,nosuid,relatime master:2 - devtmpfs udev rw,size=1502172k,nr_inodes=375543,mode=755,inode64
+811 804 0:47 / /dev/pts rw,nosuid,noexec,relatime - devpts devpts rw,mode=620,ptmxmode=666
+812 796 0:48 / /tmp rw,nosuid,nodev,relatime - tmpfs tmpfs rw,mode=755,inode64
+813 796 253:1 /home/runner/proj /home/runner/proj rw,nosuid,nodev,relatime master:1 - ext4 /dev/vda1 rw,discard,errors=remount-ro,commit=30

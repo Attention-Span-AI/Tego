@@ -390,6 +390,14 @@ type Model struct {
 	// FSAssuranceKernel is a contract with fs.assurance: kernel, which a tier no decision plane decides refuses
 	// before the actor starts when DenyWrite is not empty (ADR 0041 D1 (a), enforce-landlock R5a).
 	FSAssuranceKernel bool
+	// PlaneCannotHold is a fixture whose mount table the decision plane cannot hold (enforce/cgroup
+	// ErrPlaneDetachedPart: a part of a deny_read tree bound outside it): tier cgroup falls back to the listener,
+	// whose startup check also applies, and tier bpflsm refuses it before the actor starts (exit 125).
+	PlaneCannotHold bool `json:",omitempty"`
+	// ListenerRefuses is a fixture whose mount table the fanotify listener cannot hold either (enforce/cgroup
+	// ErrListenerAlias: a deny_read tree is also visible under another name), so tier cgroup refuses it before the
+	// actor starts (exit 125) when the listener would decide, including a plane pin that falls back to it.
+	ListenerRefuses bool `json:",omitempty"`
 	// ExecDeny is the contract's exec.deny and exec.ask entries, as written (ADR 0048 (1)): P1 refuses both at every
 	// tier, and the command-rule invariant reads them (invariants_exec.go).
 	ExecDeny []string
@@ -486,12 +494,15 @@ type CondWant struct {
 	UnixDiag *bool
 	// ExecmodRefused, when set, must equal Machine.ExecmodRefused.
 	ExecmodRefused *bool
-	Want           map[Key]Want
+	// FanotifyInChain, when set, must equal Machine.FanotifyInChain.
+	FanotifyInChain *bool
+	Want            map[Key]Want
 }
 
 // Matches reports whether the condition holds on m.
 func (cw CondWant) Matches(m Machine) bool {
 	return cw.Where.Matches(m) && (cw.MemfdNoexecSeal == nil || *cw.MemfdNoexecSeal == m.MemfdNoexecSeal) &&
 		(cw.PlaneFirst == nil || *cw.PlaneFirst == m.PlaneFirst) && (cw.SupervisorRoot == nil || *cw.SupervisorRoot == m.SupervisorRoot) &&
-		(cw.UnixDiag == nil || *cw.UnixDiag == m.UnixDiag) && (cw.ExecmodRefused == nil || *cw.ExecmodRefused == m.ExecmodRefused)
+		(cw.UnixDiag == nil || *cw.UnixDiag == m.UnixDiag) && (cw.ExecmodRefused == nil || *cw.ExecmodRefused == m.ExecmodRefused) &&
+		(cw.FanotifyInChain == nil || *cw.FanotifyInChain == m.FanotifyInChain)
 }

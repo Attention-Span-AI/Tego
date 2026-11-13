@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -21,9 +22,9 @@ import (
 // The limits of a boundary adoption on the real kernel, as root (ADR 0055, the 2026-11-11 limits amendment): a machine
 // config's limits.pids and limits.cpu ceilings are written into the adoption's cgroup before the move, so the adopted
 // agent's forks past pids.max fail with EAGAIN and cpu.max throttles it, as cpu.stat counts; a tree with more tasks
-// than the pids ceiling is refused before anything moves. A host whose cgroup root does not enable cpu (a stock RHEL 9)
-// refuses the cpu ceiling's adoption, naming the setup; on such a host that check skips here: it needs a guest whose
-// cgroup root lacks cpu (not run as of 2026-11-11).
+// than the pids ceiling is refused before anything moves. A host whose cgroup root does not enable cpu (a stock
+// AlmaLinux 9.8: systemd enables cpu at the root only once a unit asks for it) refuses the cpu ceiling's adoption,
+// naming the setup, and nothing moves: that is the test's check on such a host, where it used to skip.
 
 // adoptLimitsScript is the stand-in agent: commands from the fifo $AGENT_CMDS, each acknowledged in $AGENT_ACKS.
 // "forks" runs $AGENT_FORKS (python3), which forks sleeping children until a fork fails and writes "<children> <errno
@@ -104,7 +105,8 @@ func adoptLimitsEnv(t *testing.T, ceilings string) (e *adoptEnv, contract, ws st
 }
 
 // adoptBoundaryOrSkip adopts e's agent under contract, skipping when no plane mode decides tier cgroup on this boot
-// (no boundary holds then), or when the host's cgroup root does not enable a controller a ceiling needs.
+// (no boundary holds then). A ceiling's controller the cgroup root does not enable is the caller's to check first
+// (cgroupRootEnables): a refusal for it here fails the test.
 func adoptBoundaryOrSkip(t *testing.T, e *adoptEnv, contract string) (*adopter, string) {
 	t.Helper()
 	a, run, ok := e.tryAdopt("--uid", "65534", "--boundary", contract)
@@ -112,8 +114,6 @@ func adoptBoundaryOrSkip(t *testing.T, e *adoptEnv, contract string) (*adopter, 
 		return a, run
 	}
 	switch text := a.text(); {
-	case strings.Contains(text, "is not delegated"):
-		t.Skipf("the host's cgroup root does not enable a controller the ceilings need: %s", text)
 	case strings.Contains(text, "no decision plane decides") && os.Getenv("TEGO_TEST_PLANE_PREEMPT") != "waive":
 		t.Skipf("no plane mode decides tier cgroup on this boot: %s", text)
 	default:
@@ -127,8 +127,15 @@ func adoptBoundaryOrSkip(t *testing.T, e *adoptEnv, contract string) (*adopter, 
 // records; the adopted agent's forks fail with EAGAIN once its cgroup holds 6 tasks (the agent's shell and python
 // count 2 of them); a busy loop is throttled (cpu.stat nr_throttled grows); and the release moves it back, its cgroup
 // gone.
+//
+// Where the cgroup root does not enable cpu, the adoption is refused instead: exit 125 [adopt-refused], naming
+// limits.cpu and the setup that gives the root cpu, with the agent where it was and no adoption scope left.
 func TestIntegrationAdoptAppliesPidsAndCPUCeilings(t *testing.T) {
 	e, contract, ws := adoptLimitsEnv(t, "  pids: 6\n  cpu: 0.1\n")
+	if !cgroupRootEnables(t, "cpu") {
+		adoptRefusesCPUCeiling(t, e, contract)
+		return
+	}
 	a, run := adoptBoundaryOrSkip(t, e, contract)
 	if !strings.Contains(a.text(), "limits: cpu 0.1, pids 6, written to its cgroup before the move") {
 		t.Errorf("the notice does not say the limits: %s", a.text())
@@ -191,6 +198,47 @@ func TestIntegrationAdoptAppliesPidsAndCPUCeilings(t *testing.T) {
 	}
 	if end.Reason != record.RunEndStopped {
 		t.Errorf("run_end reason %s, want stopped", end.Reason)
+	}
+}
+
+// cgroupRootEnables reports whether the cgroup2 root's subtree_control enables controller c.
+func cgroupRootEnables(t *testing.T, c string) bool {
+	t.Helper()
+	b, err := os.ReadFile("/sys/fs/cgroup/cgroup.subtree_control")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return slices.Contains(strings.Fields(string(b)), c)
+}
+
+// adoptRefusesCPUCeiling is TestIntegrationAdoptAppliesPidsAndCPUCeilings on a cgroup root without cpu (AlmaLinux 9.8 as
+// it boots): limits.cpu cannot be applied there, so the adoption is refused before the agent moves, and says how to give
+// the root cpu.
+func adoptRefusesCPUCeiling(t *testing.T, e *adoptEnv, contract string) {
+	t.Helper()
+	scopes := func() int { m, _ := filepath.Glob("/sys/fs/cgroup/tego.slice/*/adopt-*.scope"); return len(m) }
+	before := scopes()
+	out, err := e.tegoCmd("adopt", "--pid", strconv.Itoa(e.agentPID), "--uid", "65534", "--boundary", contract).CombinedOutput()
+	if strings.Contains(string(out), "no decision plane decides") && os.Getenv("TEGO_TEST_PLANE_PREEMPT") != "waive" {
+		t.Skipf("no plane mode decides tier cgroup on this boot: %s", out)
+	}
+	for _, want := range []string{
+		`controller "cpu" is not delegated, so limits.cpu cannot be applied and the run is refused`,
+		`fix: add "+cpu" to cgroup.subtree_control of /sys/fs/cgroup`,
+		"[adopt-refused]",
+	} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("the refusal does not say %q", want)
+		}
+	}
+	if code := exitCode(err); code != 125 || t.Failed() {
+		t.Fatalf("adopting under limits.cpu on a cgroup root without cpu: exit %d, want 125 and the refusal: %s", code, out)
+	}
+	if got := cgroupOfPID(e.agentPID); got != e.termRel {
+		t.Errorf("the refused adoption moved the agent: it is in %s, not %s", got, e.termRel)
+	}
+	if after := scopes(); after != before {
+		t.Errorf("a refused adoption left a scope: %d adoption scopes, %d before", after, before)
 	}
 }
 

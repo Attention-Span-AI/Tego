@@ -17,6 +17,8 @@ import (
 // The import direction is enforce → this package, never the reverse, so the interface types stay out of here
 // and enforce adapts between the two (docs/REPO-LAYOUT.md).
 type Run struct {
+	// Mounts is the one snapshot shared by composition, the listener, plane and recorder.
+	Mounts   *MountSnapshot
 	ID       string
 	Agent    string
 	CgroupID uint64

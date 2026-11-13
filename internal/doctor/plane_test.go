@@ -128,7 +128,7 @@ func TestModePrecondition(t *testing.T) {
 		!strings.Contains(fix, "lsm=capability,landlock,bpf") {
 		t.Errorf("LSM mode without bpf: %q, fix %q", d, fix)
 	}
-	if d, _ := modePrecondition(bpfobj.PlaneLSM, PlaneEnv{LTO: ltoClang}, active); d != "" {
+	if d, _ := modePrecondition(bpfobj.PlaneLSM, PlaneEnv{LTO: ltoClang, LSMRecursionExempt: true}, active); d != "" {
 		t.Errorf("LTO rules LSM mode out: %q", d)
 	}
 	if d, fix := modePrecondition(bpfobj.PlaneFmodRet, PlaneEnv{LTO: ltoClang, LTOSource: "/proc/config.gz"}, active); !strings.Contains(d, "Clang LTO") ||
@@ -853,7 +853,8 @@ func TestPlaneDoctorGolden(t *testing.T) {
 	// (ADR 0024 (16)), so tier cgroup decides on the fanotify listener and doctor says why and what would change it.
 	boots["preempt-lazy-boot"] = noPlaneBoot(PlaneEnv{BPFLoop: true, RdonlyCast: true, Lockdown: "none", LTO: ltoNone,
 		LTOSource: "/boot/config-7.0.0-test", Preempt: preemptLazy,
-		PreemptSource: debugfsPreemptPath}, false)
+		PreemptSource: debugfsPreemptPath, LSMRecursionExempt: true,
+		LSMRecursionSource: "/proc/kallsyms names __bpf_prog_enter_recur"}, false)
 	for name, st := range boots {
 		text, js := goldenReport(t, st)
 		checkGolden(t, "plane-"+name+".txt.golden", text)

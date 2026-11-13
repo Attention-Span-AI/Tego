@@ -14,8 +14,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/attention-span-ai/tego/pkg/spec/rfc3339"
 )
 
 // This file validates the fields of the reserved record revisions (minors 31 to 35), and run_start.deny_read_frozen (30): their
@@ -727,6 +730,21 @@ func memberName(path, name string) (string, error) {
 	return "", nil
 }
 
+// The default json/v2 time decoder consults time.Local even for numeric offsets. Payload
+// validation shares its existing strict RFC 3339 profile but must not initialize host state.
+var fieldTimeDecoder = jsonv2.UnmarshalFunc(func(raw []byte, dst *time.Time) error {
+	var stamp string
+	if err := jsonv2.Unmarshal(raw, &stamp); err != nil {
+		return err
+	}
+	parsed, err := rfc3339.Parse(stamp)
+	if err != nil {
+		return err
+	}
+	*dst = parsed
+	return nil
+})
+
 // decodeField reads one reserved field's JSON exactly into v: names matched with their case (encoding/json/v2), and a
 // member whose name folds to a field of its block but is spelt otherwise [field-case], a repeated name, a null
 // anywhere, invalid UTF-8 or a value of the wrong type refused, each by the code of the key it is under.
@@ -784,7 +802,7 @@ func decodeField(field string, raw []byte, v any) error {
 			stack = append(stack, frame{path: path})
 		}
 	}
-	if err := jsonv2.Unmarshal(raw, v); err != nil {
+	if err := jsonv2.Unmarshal(raw, v, jsonv2.WithUnmarshalers(fieldTimeDecoder)); err != nil {
 		var se *jsonv2.SemanticError
 		ptr := ""
 		if errors.As(err, &se) {

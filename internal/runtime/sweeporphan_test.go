@@ -15,6 +15,10 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
+// runCgroupID is the cgroup id run_start recorded, or 0 when absent or unreadable.
+// Production scope decisions use runStartOfChecked and preserve its error.
+func runCgroupID(dir runDir) uint64 { return runStartOf(dir).cgroup }
+
 // orphanFixture is a lost run with a populated scope, and the fake manager over the scope's tree.
 func orphanFixture(t *testing.T, id string) (root string, m *scopeCgroups, scope string) {
 	t.Helper()
@@ -23,7 +27,7 @@ func orphanFixture(t *testing.T, id string) (root string, m *scopeCgroups, scope
 	scope = scopeUnder(t, own, id)
 	m = &scopeCgroups{fakeCgroups: fakeCgroups{root: own}, ids: map[string]uint64{scope: 77}}
 	prev := orphanRoots
-	orphanRoots = func(cgroup.Manager, markDir, runDir) []string { return []string{own} }
+	orphanRoots = func(cgroup.Manager, markDir, runDir) ([]string, error) { return []string{own}, nil }
 	t.Cleanup(func() { orphanRoots = prev })
 	return root, m, scope
 }
@@ -93,12 +97,12 @@ func TestOrphanScopeIgnoresAScopeWithAnotherCgroupID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := orphanScope(m, rootMarkDir, pathDir(filepath.Join(root, id)), record.RunRef{ID: id, Agent: "tester"}, agent); ok {
+	if _, ok, err := orphanScopeChecked(m, rootMarkDir, pathDir(filepath.Join(root, id)), record.RunRef{ID: id, Agent: "tester"}, agent); ok || err != nil {
 		t.Fatal("a scope whose id is not the recorded one must never be taken as the run's")
 	}
 	m.ids[scope] = 77
-	c, ok := orphanScope(m, rootMarkDir, pathDir(filepath.Join(root, id)), record.RunRef{ID: id, Agent: "tester"}, agent)
-	if !ok || c.Path != scope {
+	c, ok, err := orphanScopeChecked(m, rootMarkDir, pathDir(filepath.Join(root, id)), record.RunRef{ID: id, Agent: "tester"}, agent)
+	if !ok || err != nil || c.Path != scope {
 		t.Fatalf("got %v, %v; want the run's own scope", c, ok)
 	}
 }
@@ -108,8 +112,8 @@ func TestEndedListedLeavesWhatItCannotJudge(t *testing.T) {
 	root, m, _ := orphanFixture(t, id)
 	ref := record.RunRef{ID: id, Agent: "tester"}
 
-	if done, err := endedListed(context.Background(), testSweepOptions(nil), pathDir(filepath.Join(root, ref.ID)), ref); !done || err != nil {
-		t.Errorf("no manager: %v, %v; want the entry cleared without acting", done, err)
+	if done, err := endedListed(context.Background(), testSweepOptions(nil), pathDir(filepath.Join(root, ref.ID)), ref); done || !errors.Is(err, errOrphanAlive) {
+		t.Errorf("no manager: %v, %v; want the entry kept for cleanup", done, err)
 	}
 	if done, err := endedListed(context.Background(), testSweepOptions(m), pathDir(filepath.Join(root, "r-deadbeef-000000000000a-other0")),
 		record.RunRef{ID: "r-deadbeef-000000000000a-other0", Agent: "tester"}); !done || err != nil || len(m.killed) != 0 {

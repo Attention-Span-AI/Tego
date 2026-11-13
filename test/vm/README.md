@@ -633,8 +633,10 @@ Every run, in a guest or through sudo, ends with two gates over the suites' `go 
 (`VM_OUT/logs/<suite>.json`), through `scripts/skipgate.sh`: each skip must be one `test/vm/root-skips.txt`
 allows, with its reason (an entry whose reason starts `untagged:` only in the plain build of a package whose
 tests load the objects), and, on a run of every package with no `VM_RUN` and no `VM_SHARD`, each test
-`root-must-pass.txt` names must have passed in some build and failed in none. `scripts/check-skiplists.sh` checks
-that both lists name tests that exist.
+`root-must-pass.txt` names must have passed in some build and failed in none. An entry with `row=ROW` applies on
+that row only (`TEGO_VM_ROW`), and on a run of named packages there too, for the packages the run ran: vm-matrix's
+row job runs `internal/cli` on fedora-7.0 so that `TestIntegrationAdoptSkipIsRecordedAtOnce`, which may skip
+elsewhere, must pass there. `scripts/check-skiplists.sh` checks that both lists name tests that exist.
 
 ### CI's shards: `VM_SHARD` and `--gather`
 
@@ -653,7 +655,8 @@ shard judges its skips as the whole run would) and the doctor check, and writes 
 The must-pass gate needs every shard's logs together: CI's `root-suites` job, the check the ruleset requires,
 downloads every shard's logs and runs `test/vm/root-suites.sh --gather DIR`, which fails unless every shard of the
 plan wrote its `shard.done` with status 0 (none missing, twice or unknown), then runs
-`scripts/skipgate.sh --must-pass` over all their `go test -json` logs. A shard is a fresh runner: a suite no longer
+`scripts/skipgate.sh --must-pass` over all their `go test -json` logs. A shard that exited 98 lost a guest: the gather prints it as `GUEST-LOST`, not `FAIL`, and
+exits 98 whatever else failed, so a lost guest is never read as a test verdict. A shard is a fresh runner: a suite no longer
 finds what the suites before it in one job left on the host (the cgroup suite's `/run/tego`, a lingering build),
 which is how each guest has always run them. To run the shards here, one after another:
 
@@ -798,14 +801,37 @@ Exit codes:
 |---|---|
 | the command's own | the guest ran the command |
 | 97 | this box cannot boot a guest; the message names what is missing |
+| 98 | qemu was ended by a signal from outside kvm-run.sh before the command reported (the host's memory guard or OOM killer, a kill by hand); a `GUEST-LOST:` line says so on stderr and at the end of the console log |
 | 124 | the guest ran past `--timeout` |
-| 125 | the guest ended without reporting a code (panic, init died, or `tego-vm: FATAL`) |
+| 125 | the guest ended without reporting a code (panic, init died, or `tego-vm: FATAL`); a `GUEST-LOST:` line says so too |
 | 2 | usage error |
 
 tego itself exits 2, 124 and 125 as well (`pkg/spec/identity/exit.go`). When the difference matters, pass
-`--status FILE`: kvm-run.sh writes `guest <code>` there when the guest ran the command, and `timeout`,
-`no-report`, `env` or `usage` otherwise. `root-suites.sh` uses it, and reports a suite whose guest failed as
-`vm-error`, never as a test result.
+`--status FILE`: kvm-run.sh writes `guest <code>` there when the guest ran the command, and `lost signal <n>`,
+`timeout`, `no-report`, `env` or `usage` otherwise. `root-suites.sh` uses it, and reports a suite whose guest failed as
+`vm-error`, never as a test result; a suite whose guest was lost is `guest-lost`, a `GUEST-LOST:` line names it at the
+end, and the run exits 98 rather than a failure's 1 (*2026-11-11*: the box's memory guard SIGKILLed a guest's qemu, and
+kvm-run.sh, which then read qemu's 137 as its own bound, called it a timeout; only kvm-run.sh's own bound is one now).
+qemu's own `terminating on signal <n>` line, which it prints before it exits 0 on a TERM, INT or HUP, is read as that
+signal too.
+
+The command in these guests runs under the guest's own `/init` and reports over the serial console, so no connection
+can end it early. A full distribution reached over SSH is another matter: `ssh-suite.sh` runs one long command there
+(a root suite on AlmaLinux 9.8, a release kit's guest) under a supervisor of its own in the guest. The start writes the
+run's files into a 0700 state directory, reads each back (cksum) before anything runs, and is found again by its nonce if
+its answer is lost, so it never runs twice. The supervisor (`setsid`, `nohup`) records the guest's boot id, its pid and
+that pid's start time, runs the command in a process group of its own from another directory, ends that group past
+`--timeout` (SIGTERM, then SIGKILL `--grace` seconds later, until none of it is left), and writes its result, with the
+run's nonce, last. Each poll is a fresh SSH call, ended by `bounded-run.sh` at `--call-timeout`, that fetches the log's
+new bytes; the run is over only when the supervisor, by boot id, pid and start time, is gone and its result carries the
+nonce, so a file the command writes, a reboot or a reused pid ends nothing. When a call fails it asks qemu
+(`--qemu-pid`, and `--qemu-status`, the `signal <n>` or `exit <n>` line the guest's starter writes when qemu ends): a
+qemu that ended, a guest silent past `--unreachable` while qemu runs, a supervisor gone without its result and a
+reboot are each a `GUEST-LOST:` line and exit 98 (the `--status` word, `lost ...` against `guest 98`, tells it from a
+command that exits 98). `--sudo` runs the supervisor as root, so it can end a root suite's whole group.
+`ssh-suite_test.sh` holds all of this to stand-ins (an SSH wrapper that ends each session with a SIGHUP, as sshd does,
+and markers that fail a call as a dropped connection does, hang ignoring SIGTERM, lose an answer after the call ran,
+drop an answer's payload, or find a cksum that disagrees), each fault injected only once the run has said it started.
 
 ## Trusted kernel digests
 

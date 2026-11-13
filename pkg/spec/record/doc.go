@@ -16,6 +16,7 @@
 //
 // The package does no I/O and decides nothing: it carries the verdict a caller already reached.
 //
-// Imports: standard library and pkg/spec/backend for typed run-end network counters.
+// Imports: standard library, pkg/spec/backend for typed run-end network counters, and pkg/spec/rfc3339 for the
+// timestamp profile of spec/record/v1/CHAIN.md §3.
 // Must not import: anything under internal/, yaml.
 package record

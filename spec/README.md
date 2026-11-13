@@ -5,7 +5,7 @@ Language-neutral, versioned, published. `pkg/spec` in Go mirrors these files. Te
 | Dir | What | Version |
 |---|---|---|
 | `agent/v0/` | the agent contract: JSON Schema for `agent.yaml`, examples | v0 |
-| `record/v1/` | the run record: the field list in prose (`README.md`) and fixture ledgers; no JSON Schema yet | v1 |
+| `record/v1/` | the run record: the field list in prose (`README.md`) and fixture ledgers; no JSON Schema yet; the chain check (`CHAIN.md`) and its handwritten vectors (`vectors/chain`), held to `pkg/spec/record/chaincheck` by `TestSharedChainVectors`; Go remains the only enforcer, and a second, independent checker is planned, not shipped | v1 |
 | `identity/` | run identity: env vars, cgroup path, id formats, exit codes | doc |
 | `reason/` | the reason channel: errno, reason record, file/socket, hook payload | doc |
 | `backend/` | backend capability matrix (`CAPABILITIES.md`); the conformance suite is `test/conformance`, ADR 0017 | doc |

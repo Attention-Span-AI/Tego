@@ -22,17 +22,19 @@ func more() []*execmatch.Row {
 var (
 	// goFlag is Go's flag package: -name and --name alike, =value or a separate value, no clusters, stop at the
 	// first operand.
-	goFlag = execmatch.Syntax{SingleDashLong: true, LongEquals: true, LongSep: true}
+	goFlag = execmatch.Syntax{NextOption: execmatch.NextOptionValue, BundleValuesSettle: true, SingleDashLong: true, LongEquals: true, LongSep: true}
 	// pflag is spf13/pflag under cobra: bool clusters, -n=v and -nv, --name=v and --name v, no prefixes,
 	// interspersed options.
-	pflag = execmatch.Syntax{Clusters: true, ShortAttach: true, ShortEquals: true, LongEquals: true, LongSep: true, Permute: true}
+	pflag = execmatch.Syntax{NextOption: execmatch.NextOptionValue, Clusters: true, ShortAttach: true, ShortEquals: true, LongEquals: true, LongSep: true, Permute: true}
+	// findRoot is cobra Find at the verified built-in root: stripFlags stops command search at --.
+	findRoot = execmatch.Syntax{NextOption: execmatch.NextOptionValue, Clusters: true, ShortAttach: true, ShortEquals: true, LongEquals: true, LongSep: true, Permute: true, Terminator: execmatch.TerminatorOperands}
 	// nopt is npm's option parser: options anywhere, read by their declared types, unique long prefixes, shorthand
 	// words (-ws), a flag may take true or false.
-	nopt = execmatch.Syntax{Clusters: true, ShortAttach: true, LongEquals: true, LongSep: true, LongPrefix: true, Permute: true, ShortWords: true, BoolValues: true}
+	nopt = execmatch.Syntax{NextOption: execmatch.NextOptionNoptValue, Clusters: true, BundleValuesSettle: true, ShortAttach: true, LongEquals: true, LongSep: true, LongPrefix: true, Permute: true, ShortWords: true, BoolValues: true, Terminator: execmatch.TerminatorCommand, AllDashTerminator: true, SplitEquals: true, TrimOptionDashes: true, NoptShorthands: true}
 	// clap is clap 4 (cargo): --name=v and --name v, -nv, bool clusters, options interspersed until `--`.
-	clap = execmatch.Syntax{Clusters: true, ShortAttach: true, LongEquals: true, LongSep: true, Permute: true}
+	clap = execmatch.Syntax{Clusters: true, BundleValuesSettle: true, ShortAttach: true, LongEquals: true, LongSep: true, Permute: true}
 	// optparse is Python's optparse (pip): getopt_long's spellings with unique prefixes, interspersed.
-	optparse = execmatch.Syntax{Clusters: true, ShortAttach: true, LongEquals: true, LongSep: true, LongPrefix: true, Permute: true}
+	optparse = execmatch.Syntax{NextOption: execmatch.NextOptionValue, Clusters: true, BundleValuesSettle: true, ShortAttach: true, LongEquals: true, LongSep: true, LongPrefix: true, Permute: true}
 )
 
 // persistent marks options read at every level below the one that declares them.
@@ -71,6 +73,18 @@ package-lock-only parseable prefer-offline prefer-online production progress rea
 save-dev save-exact save-optional save-peer save-prod shrinkwrap sign-git-commit sign-git-tag strict-peer-deps
 strict-ssl timing unicode update-notifier usage version versions workspaces workspaces-update yes`)
 
+// npmString lists exact String types in npm 9.2.0 config definitions, including
+// singleton [String] types; [null, String] is deliberately absent (nopt 5.0.0).
+func npmString(name string) bool {
+	switch name {
+	case "call", "diff-dst-prefix", "diff-src-prefix", "editor", "git", "heading", "init-author-email", "init-author-name", "init-license",
+		"init.author.email", "init.author.name", "init.license", "message", "pack-destination", "preid", "save-prefix", "scope",
+		"searchexclude", "searchopts", "shell", "tag", "tag-version-prefix", "user-agent", "viewer":
+		return true
+	}
+	return false
+}
+
 // npmCommands and npmAliases are npm 9.2.0's lib/utils/cmd-list.js.
 var npmCommands = strings.Fields(`access adduser audit bugs cache ci completion config dedupe deprecate diff dist-tag docs
 doctor edit exec explain explore find-dupes fund get help help-search hook init install install-ci-test install-test
@@ -100,6 +114,11 @@ func npmOpts() []execmatch.Opt {
 		"save-optional": "O", "save-prod": "P", "usage": "?Hh", "version": "v", "workspace": "w", "yes": "y"}
 	for _, n := range npmVals {
 		o := val(n, short[n])
+		// nopt unwraps only a singleton String type before applying its dash
+		// guard. Numeric, path and union types still consume option names.
+		if npmString(n) {
+			o.NextOption = execmatch.NextOptionNopt
+		}
 		opts = append(opts, o)
 	}
 	for _, n := range npmFlags {
@@ -114,6 +133,13 @@ func npmOpts() []execmatch.Opt {
 		flag("description-short", "", "desc"), flag("parseable-short", "", "porcelain"), flag("read-only-short", "", "readonly"),
 		flag("no-global", "", "local"), flag("no-yes", "n", "no"), val("before-short", "", "enjoy-by"), flag("usage-short", "", "help"),
 	)
+	for i := range opts {
+		if opts[i].Name == "browser" {
+			// npm 9.2.0: [null, Boolean, String]. nopt's Boolean union
+			// branch returns before the required-value all-dash guard.
+			opts[i].NextOption = execmatch.NextOptionNoptMaybe
+		}
+	}
 	return persistent(opts...)
 }
 
@@ -138,6 +164,9 @@ func kebab(s string) string {
 // option the row does not list is read both ways, as npm 9.2 reads it as a flag and another version may not);
 // commands and aliases from cmd-list.js, unique prefixes of either, camelCase read as kebab-case. A token that is a
 // prefix of several names reads as each of them. npm runs scripts through a shell exec, which the rules see.
+// Terminator evidence: npm/cli v9.2.0 lib/cli.js shifts npm.argv; lib/npm.js takes nopt's
+// argv.remain. nopt v5.0.0 lib/nopt.js parse accepts /^-{2,}$/ and appends all later
+// words to remain. The first still selects the command; later options stay operands.
 func Npm() *execmatch.Row {
 	root := &execmatch.Level{Syntax: nopt, Opts: npmOpts(), Subs: subs(nopt, npmCommands...), Alias: npmAliases, SubPrefix: true, Fold: kebab}
 	return &execmatch.Row{
@@ -152,16 +181,26 @@ func Npm() *execmatch.Row {
 
 // Npx is the npx row (npm 9.2.0's npx-cli.js): npm's options, then the package to run and its arguments.
 func Npx() *execmatch.Row {
+	opts := append(npmOpts(), val("package", ""), flag("no-install", ""), flag("ignore-existing", ""), flag("quiet-npx", "q"))
+	for i := range opts {
+		// npx rewrites the argv handed to npm; do not infer its complete
+		// value binding from npm's type table alone.
+		opts[i].NextOption = execmatch.NextOptionBoth
+	}
 	return &execmatch.Row{
 		Tool: "npx", Names: []string{"npx-cli.js"}, Version: "9.2.0", Docs: "npx(1)", Source: execmatch.SourceProbed,
 		Root: &execmatch.Level{Syntax: execmatch.Syntax{Clusters: true, ShortAttach: true, LongEquals: true, LongSep: true, LongPrefix: true, ShortWords: true, BoolValues: true},
-			Opts: append(npmOpts(), val("package", ""), flag("no-install", ""), flag("ignore-existing", ""), flag("quiet-npx", "q"))},
+			Opts: opts},
 	}
 }
 
 // Go is the go command's row, probed against go 1.27.1: `go <command>`, each command's flags with Go's flag
 // package, which stops at the first operand, except go test, whose own parser reads known flags before and after the
 // package list (cmd/go/internal/test/testflag.go) up to -args. mod, work and telemetry have a second level.
+// Terminator evidence: cmd/go/main.go (go1.25.0, also probed go1.27.1) calls flag.Parse
+// before lookupCmd. Go flag removes --; lookupCmd takes the next word as the command,
+// whose invoke parses its own flags. Nested mod/work/telemetry lookup is raw, with no
+// flag.Parse, and refuses --. The refused spelling retains flag and value readings.
 func Go() *execmatch.Row {
 	build := []execmatch.Opt{
 		val("C", ""), val("o", ""), val("p", ""), val("asmflags", ""), val("buildmode", ""), val("buildvcs", ""),
@@ -188,7 +227,12 @@ func Go() *execmatch.Row {
 	goTest.Permute = true
 	lv := func(opts []execmatch.Opt) *execmatch.Level { return leaf(goFlag, opts...) }
 	plain := func(names ...string) map[string]*execmatch.Level { return subs(goFlag, names...) }
-	root := &execmatch.Level{Syntax: goFlag, Opts: []execmatch.Opt{flag("help", "", "h", "help"), val("C", "", "C")}, Subs: map[string]*execmatch.Level{
+	rootFlags := goFlag
+	rootFlags.Terminator = execmatch.TerminatorCommandFlags
+	rootFlags.TerminatorOptions = execmatch.TerminatorOptionsChild
+	nested := goFlag
+	nested.Terminator = execmatch.TerminatorUnknown
+	root := &execmatch.Level{Syntax: rootFlags, Opts: []execmatch.Opt{flag("help", "", "h", "help"), val("C", "", "C")}, Subs: map[string]*execmatch.Level{
 		"build": lv(build), "install": lv(build), "run": lv(build), "test": leaf(goTest, append(test, endTestFlags)...), "vet": lv(build), "list": lv(append(append([]execmatch.Opt{}, build...), val("f", "", "f"), flag("m", "", "m"), flag("u", "", "u"), flag("e", "", "e"), flag("deps", ""), flag("find", ""), flag("export", ""), flag("compiled", ""), flag("retracted", ""), flag("reuse", ""))),
 		"get":      lv(append(append([]execmatch.Opt{}, build...), flag("t", "", "t"), flag("u", "", "u"), flag("d", "", "d"))),
 		"generate": lv(append(append([]execmatch.Opt{}, build...), val("run", ""), val("skip", ""))),
@@ -198,13 +242,13 @@ func Go() *execmatch.Row {
 		"doc":      lv(nil), "fix": lv(nil), "bug": lv(nil), "version": lv([]execmatch.Opt{flag("m", "", "m"), flag("v", "", "v")}),
 		"tool": lv([]execmatch.Opt{flag("n", "", "n"), val("modfile", "")}),
 		"help": lv(nil),
-		"mod": {Syntax: goFlag, Subs: map[string]*execmatch.Level{
+		"mod": {Syntax: nested, Subs: map[string]*execmatch.Level{
 			"download": lv([]execmatch.Opt{flag("json", ""), flag("x", "", "x"), flag("reuse", "")}), "edit": lv(nil), "graph": lv(nil),
 			"init": lv(nil), "tidy": lv([]execmatch.Opt{flag("v", "", "v"), val("go", ""), val("compat", ""), flag("e", "", "e"), flag("diff", "")}),
 			"vendor": lv([]execmatch.Opt{flag("v", "", "v"), flag("e", "", "e"), val("o", "", "o")}), "verify": lv(nil), "why": lv(nil),
 		}},
-		"work":      {Syntax: goFlag, Subs: plain("edit", "init", "sync", "use", "vendor")},
-		"telemetry": {Syntax: goFlag, Subs: plain("on", "off", "local")},
+		"work":      {Syntax: nested, Subs: plain("edit", "init", "sync", "use", "vendor")},
+		"telemetry": {Syntax: nested, Subs: plain("on", "off", "local")},
 	}}
 	return &execmatch.Row{Tool: "go", Version: "go1.27.1", Docs: "go help", Source: execmatch.SourceProbed, Root: root,
 		Residual: "GOFLAGS adds flags from the environment, which the row does not read"}
@@ -222,6 +266,10 @@ suspend-then-hibernate`)
 
 // Systemctl is the systemctl row, probed against systemd 257: getopt_long options anywhere around the verb, which is
 // the first operand; called as reboot, poweroff or halt it runs that verb.
+// Terminator evidence: systemd v257 src/systemctl/systemctl.c parse_argv uses
+// getopt_long; dispatch uses argv[optind] (dispatch_verb in src/shared/verbs.c).
+// getopt(3) ends option scanning at --; optind still names the verb. Options remain
+// ended after that verb. No system-changing probe is needed for this parser fact.
 func Systemctl() *execmatch.Row {
 	opts := persistent(
 		val("type", "t"), val("state", ""), val("property", "p"), val("P", "P"), val("host", "H"), val("machine", "M"),
@@ -236,7 +284,9 @@ func Systemctl() *execmatch.Row {
 		flag("plain", ""), flag("no-pager", ""), flag("no-legend", ""), flag("firmware-setup", ""), flag("show-transaction", "T"),
 		flag("mkdir", ""), flag("marked", ""), flag("read-only", ""), flag("help", "h"), flag("version", ""),
 	)
-	root := &execmatch.Level{Syntax: gnu, Opts: opts, Subs: subs(gnu, systemctlVerbs...),
+	syn := gnu
+	syn.Terminator = execmatch.TerminatorCommand
+	root := &execmatch.Level{Syntax: syn, Opts: opts, Subs: subs(gnu, systemctlVerbs...),
 		Alias: map[string]string{"force-reload": "try-reload-or-restart", "condrestart": "try-restart", "condreload": "try-reload-or-restart", "reload-or-try-restart": "try-reload-or-restart", "condstop": "stop"}}
 	return &execmatch.Row{Tool: "systemctl", Version: "systemd 257", Docs: "systemctl(1)", Source: execmatch.SourceProbed, Root: root,
 		Argv0Subs: map[string]string{"reboot": "reboot", "poweroff": "poweroff", "halt": "halt"},
@@ -244,14 +294,20 @@ func Systemctl() *execmatch.Row {
 }
 
 // pnpm is the pnpm row, documented from pnpm 9's manual.
+// Terminator evidence: pnpm v9.0.0 cli/parse-cli-args/src/index.ts selects the command
+// from @pnpm/nopt's argv.remain. Its fork, escapeArgs paths and recursive dispatch
+// were not fully established here. Keep both command and default-operand readings.
 func pnpm() *execmatch.Row {
+	syn := pflag
+	syn.NextOption = execmatch.NextOptionBoth // similar spelling does not establish this parser
+
 	opts := persistent(val("dir", "C"), val("filter", "F"), flag("recursive", "r"), flag("workspace-root", "w"), flag("global", "g"),
 		val("reporter", ""), flag("silent", "s"), val("loglevel", ""), flag("help", "h"), flag("version", "v"), flag("aggregate-output", ""),
 		opt("color", ""), flag("no-color", ""), flag("stream", ""), flag("use-stderr", ""), flag("dev", "D"), flag("prod", "P"),
 		flag("save-dev", "D"), flag("save-exact", "E"), flag("save-optional", "O"), flag("frozen-lockfile", ""), flag("force", "f"),
 		flag("dry-run", ""), val("tag", ""), val("access", ""), val("otp", ""), flag("no-git-checks", ""))
 	return &execmatch.Row{Tool: "pnpm", Names: []string{"pnpm.cjs", "pnpm.js", "pn"}, Version: "9", Docs: "pnpm.io/cli", Source: execmatch.SourceDocumented,
-		Root: &execmatch.Level{Syntax: pflag, Opts: opts, Subs: subs(pflag, strings.Fields(`add install update remove link unlink import rebuild
+		Root: &execmatch.Level{Syntax: syn, Opts: opts, Subs: subs(syn, strings.Fields(`add install update remove link unlink import rebuild
 prune fetch install-test patch patch-commit patch-remove audit list outdated why licenses run test exec dlx create start
 publish pack recursive server store root bin setup init deploy doctor config env cat-file cat-index find-hash self-update`)...),
 			Alias: map[string]string{"i": "install", "up": "update", "upgrade": "update", "rm": "remove", "uninstall": "remove", "un": "remove",
@@ -260,12 +316,18 @@ publish pack recursive server store root bin setup init deploy doctor config env
 
 // yarn is the yarn row, documented for classic (1.x) and berry (2+): classic's publish and berry's npm publish are
 // both listed.
+// Terminator evidence: classic v1.22.22 src/cli/index.js splits argv at -- before
+// command selection (commander); Berry uses Clipanion and nested plugin commands.
+// The cross-version/nested behavior was not established. Keep both readings.
 func yarn() *execmatch.Row {
+	syn := pflag
+	syn.NextOption = execmatch.NextOptionBoth // similar spelling does not establish this parser
+
 	opts := persistent(val("cwd", ""), flag("verbose", ""), flag("offline", ""), flag("silent", "s"), flag("help", "h"), flag("version", "v"),
 		flag("non-interactive", ""), flag("frozen-lockfile", ""), flag("immutable", ""), flag("dev", "D"), flag("exact", "E"),
 		flag("peer", "P"), flag("optional", ""), val("tag", ""), val("access", ""), val("otp", ""), flag("json", ""))
-	npm := &execmatch.Level{Syntax: pflag, Subs: subs(pflag, "publish", "login", "logout", "info", "whoami", "audit", "tag")}
-	root := &execmatch.Level{Syntax: pflag, Opts: opts, Subs: subs(pflag, strings.Fields(`add remove install publish run exec dlx
+	npm := &execmatch.Level{Syntax: syn, Subs: subs(syn, "publish", "login", "logout", "info", "whoami", "audit", "tag")}
+	root := &execmatch.Level{Syntax: syn, Opts: opts, Subs: subs(syn, strings.Fields(`add remove install publish run exec dlx
 workspace workspaces up upgrade cache config info init link unlink pack why version global login logout outdated
 owner tag team unplug patch patch-commit constraints dedupe explain set plugin rebuild node bin stage`)...)}
 	root.Subs["npm"] = npm
@@ -275,6 +337,11 @@ owner tag team unplug patch patch-commit constraints dedupe explain set plugin r
 
 // kubectl is the kubectl row (and oc's, which shares its grammar), documented from kubectl 1.33: pflag globals
 // anywhere, the cobra command tree three levels deep, kubectl-<plugin> dashed names.
+// Terminator evidence: kubectl v0.33.0 pkg/cmd/cmd.go and oc release-4.19
+// pkg/cli/cli.go use cobra Find at the built-in root. Cobra v1.9.1 command.go
+// stripFlags stops command search at --: the root does not select the next word.
+// Nested command overrides and plugin dispatch were not established; both readings
+// remain at every nested level (the zero Terminator), for kubectl and oc separately.
 func kubectl(tool string) *execmatch.Row {
 	globals := persistent(val("namespace", "n"), val("context", ""), val("cluster", ""), val("user", ""), val("kubeconfig", ""),
 		val("server", "s"), val("token", ""), val("as", ""), val("as-group", ""), val("as-uid", ""), val("certificate-authority", ""),
@@ -309,12 +376,16 @@ completion alpha api-resources api-versions version`) {
 		tree[n] = leaf(pflag)
 	}
 	return &execmatch.Row{Tool: tool, Version: "1.33", Docs: "kubectl(1), kubectl --help", Source: execmatch.SourceDocumented, Dashed: true,
-		Root: &execmatch.Level{Syntax: pflag, Opts: globals, Subs: tree}, Residual: "kuberc aliases (alpha from 1.33) are not read"}
+		Root: &execmatch.Level{Syntax: findRoot, Opts: globals, Subs: tree}, Residual: "kuberc aliases (alpha from 1.33) are not read"}
 }
 
 // docker is the docker row, documented from docker 28: globals before the command, management commands, top-level
 // shortcuts folded onto them (rm is container rm, rmi is image rm), run, create and exec stopping at the image or
 // container, docker-<plugin> names with the plugin repeated in argv[1].
+// Terminator evidence: docker/cli v28.0.0 cmd/docker/docker.go enables cobra
+// TraverseChildren and calls Traverse, unlike Find's stripFlags. Traverse can scan
+// -- as a flag taking a value. Plugin/management levels were not all established;
+// keep the command, default-operand and unknown-value readings at every level.
 func docker() *execmatch.Row {
 	globals := []execmatch.Opt{val("config", ""), val("context", "c"), flag("debug", "D"), val("host", "H"), val("log-level", "l"),
 		flag("tls", ""), val("tlscacert", ""), val("tlscert", ""), val("tlskey", ""), flag("tlsverify", ""), flag("help", ""), flag("version", "v")}
@@ -323,6 +394,9 @@ func docker() *execmatch.Row {
 }
 
 // podman is the podman row, documented from podman 5: the same tree with its globals read anywhere.
+// Terminator evidence: podman v5.0.0 cmd/podman/root.go enables cobra
+// TraverseChildren. The complete nested tree was not established; as for docker,
+// retain command, default-operand and unknown-value readings at every level.
 func podman() *execmatch.Row {
 	globals := persistent(val("connection", "c"), val("url", ""), val("identity", ""), val("root", ""), val("runroot", ""),
 		val("storage-driver", ""), val("storage-opt", ""), val("runtime", ""), val("log-level", ""), val("cgroup-manager", ""),
@@ -387,7 +461,13 @@ func containerTree(globals []execmatch.Opt) *execmatch.Level {
 
 // pip is the pip row, documented from pip 25: optparse globals before the command, unique long prefixes, command
 // options interspersed. python -m pip reaches it through the interpreter row's module table.
+// Terminator evidence: pip 25.0 _internal/cli/main_parser.py parse_command uses
+// optparse with disable_interspersed_args; parse_args removes -- and args_else[0]
+// selects the command. It then removes that word from the ORIGINAL argv, retaining
+// -- for the command parser. Thus options after the selected command stay operands.
 func pip() *execmatch.Row {
+	rootSyn := optparse
+	rootSyn.Terminator = execmatch.TerminatorCommand
 	globals := persistent(val("python", ""), val("log", ""), val("proxy", ""), val("retries", ""), val("timeout", ""),
 		val("exists-action", ""), val("trusted-host", ""), val("cert", ""), val("client-cert", ""), val("cache-dir", ""),
 		val("use-feature", ""), val("use-deprecated", ""), val("keyring-provider", ""), val("root-user-action", ""),
@@ -403,12 +483,16 @@ hash completion debug help lock`)...)
 	tree["install"] = install
 	tree["uninstall"] = leaf(optparse, flag("yes", "y"), val("requirement", "r"), flag("break-system-packages", ""))
 	return &execmatch.Row{Tool: "pip", Names: []string{"pip3", "pip3.10", "pip3.11", "pip3.12", "pip3.13", "pip3.14", "pip2"},
-		Version: "25", Docs: "pip.pypa.io/en/stable/cli", Source: execmatch.SourceDocumented, Root: &execmatch.Level{Syntax: optparse, Opts: globals, Subs: tree},
+		Version: "25", Docs: "pip.pypa.io/en/stable/cli", Source: execmatch.SourceDocumented, Root: &execmatch.Level{Syntax: rootSyn, Opts: globals, Subs: tree},
 		Residual: "PIP_* environment variables and pip.conf are not read"}
 }
 
 // cargo is the cargo row, documented from cargo 1.90: clap, built-in aliases, cargo-<ext> with the name repeated, a
 // leading +toolchain (rustup) skipped. --config naming a file or an alias makes the command unlocatable.
+// Terminator evidence: cargo 0.91.0 (Rust 1.90) src/bin/cargo/cli.rs uses clap and
+// external subcommands, then expands aliases and maps back to built-ins. The full
+// trailing-argument behavior was not established; keep both readings, including
+// default operands. Rustup's +toolchain is already dropped by SkipPrefix.
 func cargo() *execmatch.Row {
 	config := val("config", "")
 	config.Persistent = true
@@ -428,6 +512,10 @@ login logout metadata owner package pkgid read-manifest report rustc rustdoc tre
 }
 
 // gh is the GitHub CLI's row, documented from gh 2.7x: the cobra tree, gh-<ext> dashed names.
+// Terminator evidence: cli/cli v2.74.0 pkg/cmd/root/root.go uses cobra Find.
+// command.go stripFlags stops at --. Harmless gh 2.103.3 probes refused dispatch
+// after root/nested -- and ran version after lone -. Only the built-in root is
+// asserted here; all nested levels retain both readings pending a full tree audit.
 func gh() *execmatch.Row {
 	l := func(names ...string) *execmatch.Level {
 		return &execmatch.Level{Syntax: pflag, Subs: subs(pflag, names...)}
@@ -460,12 +548,16 @@ func gh() *execmatch.Row {
 	}
 	opts := persistent(val("repo", "R"), val("hostname", ""), flag("help", "h"), val("jq", "q"), val("template", "t"), val("json", ""), flag("yes", "y"), flag("web", "w"))
 	return &execmatch.Row{Tool: "gh", Version: "2.7x", Docs: "cli.github.com/manual", Source: execmatch.SourceDocumented, Dashed: true,
-		Root:     &execmatch.Level{Syntax: pflag, Opts: opts, Subs: tree, Alias: map[string]string{"cs": "codespace", "ext": "extension", "extensions": "extension", "rs": "ruleset"}},
+		Root:     &execmatch.Level{Syntax: findRoot, Opts: opts, Subs: tree, Alias: map[string]string{"cs": "codespace", "ext": "extension", "extensions": "extension", "rs": "ruleset"}},
 		Residual: "aliases set with gh alias set are not read"}
 }
 
 // terraform is the terraform row (and OpenTofu's), documented from terraform 1.13: -chdir, -help and -version before
 // the command, Go flag options after it, state and workspace with a second level.
+// Terminator evidence: mitchellh/cli v1.1.5 cli.go processArgs stops at -- before
+// choosing a command; leaf options use Go flag. Terraform/OpenTofu dispatcher forks
+// and their nested state/workspace/providers paths were not fully established.
+// Both readings remain at every level, separately for terraform and tofu.
 func terraform(tool string) *execmatch.Row {
 	tf := []execmatch.Opt{val("var", ""), val("var-file", ""), val("target", ""), val("replace", ""), val("lock", ""), val("lock-timeout", ""),
 		val("input", ""), val("parallelism", ""), val("refresh", ""), val("state", ""), val("state-out", ""), val("backup", ""), val("out", ""),
@@ -481,12 +573,17 @@ metadata output refresh show taint test untaint version`)...)
 	tree["state"] = l("list", "mv", "pull", "push", "replace-provider", "rm", "show", "identities")
 	tree["workspace"] = l("delete", "list", "new", "select", "show")
 	tree["providers"] = l("lock", "mirror", "schema")
+	rootSyntax := goFlag
+	rootSyntax.NextOption = execmatch.NextOptionBoth
 	return &execmatch.Row{Tool: tool, Version: "1.13", Docs: tool + " -help", Source: execmatch.SourceDocumented,
-		Root:     &execmatch.Level{Syntax: goFlag, Opts: []execmatch.Opt{val("chdir", ""), flag("help", "", "help", "h"), flag("version", "", "version", "v")}, Subs: tree},
+		Root:     &execmatch.Level{Syntax: rootSyntax, Opts: []execmatch.Opt{val("chdir", ""), flag("help", "", "help", "h"), flag("version", "", "version", "v")}, Subs: tree},
 		Coverage: map[string]string{tool + " destroy": "does not cover " + tool + " apply -destroy, which is a destroy"}}
 }
 
 // helm is the helm row, documented from helm 3.18: pflag globals anywhere, the cobra tree, uninstall's aliases.
+// Terminator evidence: helm v3.18.0 cmd/helm/root.go uses cobra Find; cobra v1.9.1
+// stripFlags stops command search at --. The built-in root leaves the word as an
+// operand. Nested/plugin behavior was not established; both readings remain there.
 func helm() *execmatch.Row {
 	globals := persistent(val("kube-context", ""), val("kubeconfig", ""), val("namespace", "n"), val("registry-config", ""),
 		val("repository-cache", ""), val("repository-config", ""), val("burst-limit", ""), val("qps", ""), val("kube-apiserver", ""),
@@ -505,23 +602,34 @@ template test uninstall upgrade verify version`)...)
 	tree["search"] = l("hub", "repo")
 	tree["show"] = l("all", "chart", "crds", "readme", "values")
 	return &execmatch.Row{Tool: "helm", Version: "3.18", Docs: "helm.sh/docs/helm", Source: execmatch.SourceDocumented,
-		Root: &execmatch.Level{Syntax: pflag, Opts: globals, Subs: tree, Alias: map[string]string{"un": "uninstall", "delete": "uninstall",
+		Root: &execmatch.Level{Syntax: findRoot, Opts: globals, Subs: tree, Alias: map[string]string{"un": "uninstall", "delete": "uninstall",
 			"del": "uninstall", "hist": "history", "ls": "list", "fetch": "pull", "inspect": "show", "dep": "dependency", "dependencies": "dependency"}},
 		Residual: "plugins run commands from their own manifests, which are not mapped"}
 }
 
-// aws is the AWS CLI's row, documented from aws-cli 2: globals anywhere, then a service and an operation (s3's
+// aws is the AWS CLI's row, documented from aws-cli 2: root globals, then a service and an operation (s3's
 // high-level commands are operations too).
+// Terminator evidence: aws-cli 2.27.0 awscli/argparser.py MainArgParser declares
+// positional command, ServiceArgParser positional operation, using argparse.
+// argparse -- ends option parsing and leaves these positional choices available;
+// each parser consumes its own marker. Only the main parser declares globals;
+// after its marker they are unknown to the service and operation parsers.
 func aws() *execmatch.Row {
 	globals := persistent(val("region", ""), val("profile", ""), val("output", ""), val("endpoint-url", ""), val("query", ""),
 		val("ca-bundle", ""), val("cli-read-timeout", ""), val("cli-connect-timeout", ""), val("cli-binary-format", ""),
 		val("color", ""), flag("debug", ""), flag("no-verify-ssl", ""), flag("no-paginate", ""), flag("no-sign-request", ""),
 		flag("cli-auto-prompt", ""), flag("no-cli-auto-prompt", ""), flag("no-cli-pager", ""), flag("version", ""),
 		flag("recursive", ""), flag("dryrun", ""), flag("force", ""))
-	op := &execmatch.Level{Syntax: gnuExact}
-	svc := &execmatch.Level{Syntax: gnuExact, Subs: map[string]*execmatch.Level{}, Wild: op}
+	opSyn := gnuExact
+	opSyn.NextOption = execmatch.NextOptionArgparse
+	op := &execmatch.Level{Syntax: opSyn}
+	dispatch := gnuExact
+	dispatch.Terminator = execmatch.TerminatorCommandFlags
+	dispatch.TerminatorOptions = execmatch.TerminatorOptionsChild
+	dispatch.NextOption = execmatch.NextOptionArgparse
+	svc := &execmatch.Level{Syntax: dispatch, Subs: map[string]*execmatch.Level{}, Wild: op}
 	return &execmatch.Row{Tool: "aws", Version: "2", Docs: "docs.aws.amazon.com/cli", Source: execmatch.SourceDocumented,
-		Root:     &execmatch.Level{Syntax: gnuExact, Opts: globals, Subs: map[string]*execmatch.Level{}, Wild: svc},
+		Root:     &execmatch.Level{Syntax: dispatch, Opts: globals, Subs: map[string]*execmatch.Level{}, Wild: svc},
 		Residual: "aliases in ~/.aws/cli/alias are not read"}
 }
 
@@ -531,6 +639,9 @@ var gnuExact = execmatch.Syntax{LongEquals: true, LongSep: true, Permute: true}
 // gcloud is the Google Cloud CLI's row, documented from gcloud 5xx: globals anywhere, an optional release track
 // (alpha, beta, preview) dropped from the path, then groups and a command; --flags-file makes the command
 // unlocatable.
+// Terminator evidence: the gcloud reference documents gcloud-wide flags and
+// --flags-file, but the full Calliope/argparse group dispatcher was not established
+// from an authoritative versioned source. Retain both readings at all four levels.
 func gcloud() *execmatch.Row {
 	flagsFile := val("flags-file", "")
 	flagsFile.Persistent = true

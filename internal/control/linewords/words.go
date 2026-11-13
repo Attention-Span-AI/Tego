@@ -438,6 +438,10 @@ func GapWhat(w string) (string, bool) {
 var gapWhys = map[string]string{
 	"bpf-trampoline-miss/shared-build":   "recording coverage is uncertain: shared tracing programs skipped executions that may belong to other runs or ungoverned tasks",
 	"bpf-trampoline-counter-unavailable": "recording coverage is uncertain: active shared tracing program counters could not be established or read",
+	"bpf-decision-skip/shared-build":     "the rules may not have held: the kernel skipped shared programs that decide this run's actions; the skips may belong to other runs or ungoverned tasks",
+	"bpf-tracking-skip/shared-build":     "the rules may not have held: the kernel skipped the shared program that adds a run's child cgroups to it; the skips may belong to other runs or ungoverned tasks",
+	"bpf-skip-counter-unavailable":       "the rules may not have held: the skip counters of the programs the run's rules rely on could not be read",
+	"bpf-skip-counter-restored":          "the skip counters of the programs the run's rules rely on could be read again after failed readings; the rules may not have held while they could not",
 	"no-price-table":                     "no price table for this model, so cost is not counted",
 	"no-models":                          "no model capture for this agent",
 	"argv-truncated":                     "a command line too long to record whole",

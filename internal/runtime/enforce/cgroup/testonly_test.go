@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	"github.com/attention-span-ai/tego/internal/bpf"
+	"github.com/attention-span-ai/tego/internal/policy/decide"
 	"github.com/attention-span-ai/tego/internal/runtime/hoststate"
+	"github.com/attention-span-ai/tego/pkg/spec/agent"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
@@ -113,3 +115,38 @@ func distinctMountsBy(paths []string, mountOfPath func(string) (mountKey, error)
 	sort.Strings(out)
 	return out
 }
+
+// newPolicy reduces a compiled rule table to the listener's decision inputs. It never fails on a rule it does
+// not understand: an entry it cannot classify simply takes part in no decision, which leaves the inherited
+// tier-1 enforcement in charge of it rather than inventing a verdict.
+func newPolicy(rt *agent.RuleTable, runCgroup string) *policy {
+	return newPolicyAt(rt, runCgroup, readMountSnapshot(mountInfoPath).view(), mountKeyOf)
+}
+
+// noTreeAliases is newPolicyWith's aliases: a table with no bind of any entry elsewhere.
+func noTreeAliases(string) ([]string, error) { return nil, nil }
+
+// newPolicyWith is newPolicyAt for a mount table that shows no deny_read entry under another name.
+func newPolicyWith(rt *agent.RuleTable, runCgroup string, under func(string) ([]string, error), mountOf func(string) (mountKey, error)) *policy {
+	return newPolicyAt(rt, runCgroup, mountView{under: under, aliases: noTreeAliases}, mountOf)
+}
+
+// mountSnapshotOf is a snapshot of a table given as bytes, parsed strictly, with no check against the system: a test's.
+func mountSnapshotOf(table string) *mountSnapshot {
+	mt, err := agent.ParseMountTableStrict([]byte(table))
+	return newMountSnapshot(mt, []byte(table), err, nil)
+}
+
+// PlaneHoldable is the check choosePlane and tier3Plane make of compiled rows beyond their cap: no two fs rows are
+// one file under two names now (ErrPlaneSharedInode), and no part of a tree a row refuses reads in is mounted
+// outside it (ErrPlaneDetachedPart). cgroupBackend.Prepare makes it before it hands the rows to tier 1's composition,
+// since a filter composed for a plane that then falls back to the listener would keep the plane-only relaxations
+// (io_uring, the memfd arm) on a run no plane decides.
+func PlaneHoldable(rows *decide.PlaneRows) error { return PlaneHoldableAt(rows, ReadMounts()) }
+
+// MountPoints lists the mountpoints of this process's mount namespace, as /proc/self/mountinfo prints them
+// (resolved, absolute), or ErrMountTable when the table cannot be read: keying no mount row would let an attribute
+// change on a filesystem mounted below a deny_write target walk to that filesystem's root and pass. The table is
+// read through the prepared snapshot (agent.ReadMountSnapshot, then MountTable.Points): fields split on single spaces,
+// since a mount point may hold \v, \r or U+00A0 unescaped.
+func MountPoints() ([]string, error) { return ReadMounts().Points() }

@@ -224,9 +224,25 @@ func TestPlaneRunExecPinned(t *testing.T) {
 					t.Errorf("an unproven exec line: %v", e)
 				}
 			}
-			requireExecPinClaim(t, events)
+			if execPinCheckSkippable(t, bin) {
+				requireNoExecPinClaim(t, events)
+			} else {
+				requireExecPinClaim(t, events)
+			}
 		})
 	}
+}
+
+// execPinCheckSkippable reports whether doctor withholds the exec pin claim on this kernel (ADR 0148): the check
+// after an exec is a tracepoint program a kernel that preempts kernel code can skip, so a product build makes no claim
+// there and a test build's waiver keeps it. Doctor's own report says which, in its exec pin cell's words.
+func execPinCheckSkippable(t *testing.T, bin string) bool {
+	t.Helper()
+	out, err := isolatedTego(t, bin, "doctor", "--json").Output()
+	if err != nil && len(out) == 0 {
+		t.Fatalf("tego doctor --json: %v", err)
+	}
+	return strings.Contains(string(out), "tracepoint program this kernel can skip")
 }
 
 // requireExecPinClaim checks the claim of ADR 0048 (6) and (9) on a pinned run's run_start: the plane's mode passed
@@ -244,6 +260,27 @@ func requireExecPinClaim(t *testing.T, events []map[string]any) {
 		}
 		if s := string(b); !strings.Contains(s, `"exec.command_argv":true`) || strings.Contains(s, `"exec.rules/argv"`) {
 			t.Errorf("a pinned run's run_start claims no exec pins: %.1500s", s)
+		}
+		return
+	}
+	t.Error("no run_start line")
+}
+
+// requireNoExecPinClaim is the run_start of a pinned run where doctor withheld the claim (ADR 0148): the pins still
+// applied (each exec's line says kernel_pinned), but the capabilities do not say exec.command_argv and best_effort
+// keeps exec.rules/argv.
+func requireNoExecPinClaim(t *testing.T, events []map[string]any) {
+	t.Helper()
+	for _, e := range events {
+		if e["kind"] != "run_start" {
+			continue
+		}
+		b, err := json.Marshal(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := string(b); strings.Contains(s, `"exec.command_argv":true`) || !strings.Contains(s, `"exec.rules/argv"`) {
+			t.Errorf("a pinned run claims exec pins on a kernel whose exec pin check can be skipped: %.1500s", s)
 		}
 		return
 	}
@@ -319,10 +356,12 @@ record: full
 			defer cancel()
 			var out bytes.Buffer
 			started := time.Now()
+			skipsBefore := skipSnapshot(t)
 			if err := p.runAt(ctx, bin, tier, "agent.yaml", mode, &out).Run(); err != nil {
 				t.Fatalf("run: %v\n%s", err, out.String())
 			}
 			took := time.Since(started)
+			logSkipDelta(t, cell, skipsBefore, skipSnapshot(t))
 			requirePinsOn(t, p)
 			rep, err := os.ReadFile(filepath.Join(p.project, "out", "report"))
 			if err != nil {

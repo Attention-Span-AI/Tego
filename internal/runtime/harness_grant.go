@@ -46,7 +46,7 @@ type HookDecision struct {
 //   - the binary, or its ELF loader, lies at or below a write entry or an fs.ask scope by any name the launcher can see
 //     (record.HarnessWhyHookWritable): the agent could rewrite what the grant admits, or the Landlock builder refuses
 //     the loader and with it the run. Its names are the hook's spelling, where it resolves, and every place the mount
-//     table shows it (agent.MountOf: a bind mount of a directory above it). What lies beneath its filesystem is held
+//     table shows it (agent.MountTable.Of: a bind mount of a directory above it). What lies beneath its filesystem is held
 //     to the same entries, by covering or by lying beneath one (hookBeneath): an overlay's layers, a loop device's
 //     backing file, an image the filesystem is mounted from. A file with more than one link, a mount table that cannot
 //     be read or shows no mount holding the file, a stacking filesystem whose layers no option names (FUSE), and block
@@ -61,7 +61,10 @@ type HookDecision struct {
 //
 // rt is never mutated.
 func AdmitHook(rt *agent.RuleTable, tier backend.Tier, tegoExe string, hook *harness.Hook) HookDecision {
-	return admitHook(rt, tier, tegoExe, hook, hookHost{mounts: func() ([]byte, error) { return os.ReadFile(mountInfoPath) }, block: sysBlockPath})
+	return admitHook(rt, tier, tegoExe, hook, hookHost{mounts: func() ([]byte, error) {
+		_, raw, err := agent.ReadMountSnapshot(mountInfoPath)
+		return raw, err
+	}, block: sysBlockPath})
 }
 
 // mountInfoPath is the mount table AdmitHook reads for the names a bind mount gives the hook's binary and its loader.
@@ -149,7 +152,7 @@ func hookRuled(rt *agent.RuleTable, tier backend.Tier, hook *harness.Hook) (why,
 }
 
 // names is every name the launcher can see of the hook's binary exe and of its ELF loader: the spelling the hook
-// names, where it resolves, and every other place the mount table shows the resolved file (agent.MountOf, a bind mount
+// names, where it resolves, and every other place the mount table shows the resolved file (agent.MountTable.Of, a bind mount
 // of a directory above it). A file's names are what Landlock's path-based rights reach it by, so a grant is held to the
 // entries by each. beneath is what lies beneath their filesystems, whose content those show (hookScan.under). unseen
 // is "" when those are all; else it says why the launcher cannot see them all: a resolved file with more than one link
@@ -173,13 +176,17 @@ func (h hookHost) names(exe string) (names []string, beneath []beneathName, unse
 		s.links(f)
 	}
 	table, err := h.mounts()
+	var mt *agent.MountTable
+	if err == nil {
+		mt, err = agent.ParseMountTableStrict(table)
+	}
 	if err != nil {
 		s.see(fmt.Sprintf("the mount table %s cannot be read (%v), so the names a bind mount gives a file are unknown", mountInfoPath, err))
 		return names, nil, s.unseen
 	}
-	s.table = table
+	s.table = mt
 	for _, f := range resolved {
-		fm := agent.MountOf(table, f)
+		fm := mt.Of(f)
 		if !fm.Held {
 			s.see(fmt.Sprintf("the mount table %s shows no mount holding %s, so the names a bind mount gives it are unknown", mountInfoPath, f))
 			continue
@@ -197,7 +204,7 @@ type beneathName struct{ path, of string }
 // hookScan gathers what lies beneath the filesystems holding the hook's binary and its loader (hookHost.names).
 type hookScan struct {
 	h       hookHost
-	table   []byte
+	table   *agent.MountTable
 	beneath []beneathName
 	visited map[string]bool
 	unseen  string
@@ -295,7 +302,7 @@ func (s *hookScan) add(p, of string, depth int) {
 	if fi, err := os.Lstat(p); err == nil && fi.Mode().IsRegular() {
 		s.links(p)
 	}
-	fm := agent.MountOf(s.table, p)
+	fm := s.table.Of(p)
 	if !fm.Held {
 		s.see(fmt.Sprintf("the mount table %s shows no mount holding %s, beneath the filesystem holding %s", mountInfoPath, p, of))
 		return
