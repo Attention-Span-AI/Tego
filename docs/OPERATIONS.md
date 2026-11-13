@@ -844,8 +844,10 @@ goes, and exits 0 at `run_end`; a launcher killed mid-run is exit 125 `[run-lost
 ends.
 
 **In the morning.** `tego receipt <run>` (what it did on one screen: files written, refusals by rule, asks, tokens and
-cost, and what the ledger could not cover, which `--json` names by a code a script can match, such as `capture-off` or
-`missed-actions`; `--verify` checks the chain too), `tego status <run>` (state, how it ended,
+cost, and what the ledger could not cover, which `--json` names by a code a script can match, such as `capture-off`,
+`missed-actions` or `rules-uncertain`, which says a program the run's rules rely on was skipped or its skip counter
+could not be read (ADR 0148);
+`--verify` checks the chain too), `tego status <run>` (state, how it ended,
 events, `gaps:` and `live changes:` as the record spells them, `in words:` for what they mean, the same reading as the
 receipt: whether actions may be missing, what is short if not, and what a person changed, and on a lost run that its
 record may stop short; the run's resources), `tego events
@@ -1432,6 +1434,14 @@ fact it does not read — a `#!` interpreter that is missing or unreadable, an e
 program given by a bare name or reached through a symlink, a second `#!` stage, or the file-identity interpretation
 (a renamed or hard-linked tool). `compile` never refuses what the run allows.
 
+Compile warns when a command entry uses more than two leading option dashes or one dash before a long option
+name where the tool does not accept that spelling. Tool-defined single-dash long options and short words do not
+warn, including `go build -race` and `go test -run Test`. Tools without a known row retain literal option words,
+including `find -name file` and `java -jar app.jar`. The warning names the entry and the ordinary spelling it
+probably meant. Use that spelling now; a later minor version will reject warned entries. For compatibility, an
+extra-dash deny or ask entry keeps every match of the released build and also matches its literal spelling. An
+allow entry uses only the literal spelling, and an unknown allow option is invalid for a tool with a known row.
+
 | Recipe | Contract | What it does not cover |
 |---|---|---|
 | Never push | `exec: {deny: [git push]}` | `git send-pack`, `git http-push`, a git library in the agent's own code, `curl` to the server: bound those with `net` rules to the remote |
@@ -1454,12 +1464,54 @@ through its descriptor runs fileless, as a memfd copy does (R2 below). Under an 
 the harness hook a provision names with its exact argv and nothing else (added 2026-10-25, ADR 0064):
 `exec.harness-hook[<tego binary>]` in `run_start.runtime_grants`; any other `tego` command the agent runs is refused
 under that rule, exit 126. Compile refuses an `fs.write` entry or `fs.ask` scope at or over the tego binary, the
-`tego-control` beside it, or the ones PATH finds (agent-contract R10). Keep the binary outside them by its other names too (no
+`tego-control` beside it, the ones PATH finds, and any `tego` or `tego-control` in `~/.local/bin`, `/usr/local/bin`,
+`/usr/bin` or `/opt/tego/bin`. Alias and overlay layer comparisons follow exactly the
+[compile-time mount boundary](adr/0059-no-run-writes-what-a-later-run-loads.md#compile-time-mount-boundary), including
+its refusal of grants affected by ambiguous visibility, unreadable identity or an unplaced protected place. The
+message names the mount point or path. Same-point stacking uses parent relationships and supported live checks,
+never printed row order. A malformed, unreadable or over-bound mount table refuses every write and ask grant.
+A tego binary with a second hard link refuses every write entry on its filesystem, unless only root may write the
+file and the agent is not root; install a fresh copy with one name outside every write entry and run that one.
+Identified kernel interface filesystems (cgroup, bpf, proc, sysfs, mqueue, resctrl and the others ADR 0059 lists;
+devpts allowed only at `/dev/pts`) refuse grants that reach them. Unreadable running, PATH or standard-install binary
+candidates also refuse, with their cause. Closure bounds refuse grants.
+Absent binary layers (ENOENT or ENOTDIR), relative overlay layers and unnamed FUSE, eCryptfs, aufs or shiftfs backing
+alone refuse no grant. Tego never guesses the base folder of a relative layer; absolute layers of the same overlay
+and every visible binary name remain protected. When a FUSE or eCryptfs filesystem holds any protected regular
+file, its existing absolute source directory joins the protected closure with visible aliases; entries at, over or
+inside it refuse. Relative, missing or non-directory sources remain unplaced. Source text does not clear FUSE or
+eCryptfs warnings: FUSE's mounter chooses it, and live eCryptfs lower-directory identity is not established.
+Merged root ownership gives no exemption or assurance. With any of these backing limits, compile emits one
+`overlay-backing-unknown` warning per write or ask entry that covers, or lies
+under, another visible storage mount. The new unplaced classes exclude only their own filesystem device; another
+protected filesystem's device can still hold their backing folders. All cases exclude kernel interfaces and memory
+directory storage; regular-file binds established by live checks can still warn on memory filesystems;
+the absent-only rule also excludes discovered binary overlay devices. Runtime storage or a backing folder on a
+memory filesystem also mounted at a writable directory gives no warning (GAPS C65). A single-file mount is exempt
+only for absent or relative overlay backing, after live snapshot-bound mount ID, type and size checks and
+comparison with every affected protected regular file. A nonempty byte-identical alias refuses, executable or not.
+Two empty files prove neither identity nor difference and warn without a byte-alias refusal. FUSE/eCryptfs file binds
+never get this exemption: their stored bytes can differ from the visible bytes. Unreadable protected files and
+unidentified or changed mount points give no file-bind exemption. The warning names the grant, mount and any protected
+file itself directly on unnamed backing. This includes a contract on sshfs or a config layer, even with Tego on ext4. Keep runtime
+storage and the whole host filesystem out of writable places. For unnamed backing, keep the folder storing
+encrypted or mirrored files out of every write grant: Tego cannot tell whether such a mount shows protected storage.
+The warning explains the missing relative base or names the filesystem whose backing folder is unknown. With no
+storage mount meeting a grant there is no backing warning; a separate mount advisory may still print.
+Runtime tables now replay 2026-11-12 Docker 29.1.3, containerd 2.2.1 and rootless Podman 4.9.3 captures
+(kernel 6.8.0-147-generic); current-head container execution checks are
+owed in a guest. See "Why compile now refuses my grant" in
+`docs/user/built-in-refusals.md`. A tego installed anywhere else is held only when it is the
+one running (`tego run` checks again with its own file). Keep the binary outside them by its other names too (no
 bind mount of its directory into one), and give it one link, or the run drops the provision (`harness-hook-writable`)
 and the agent learns of refusals through `TEGO_REASON` only. Keep it off a filesystem whose layers, image or device
 lie under such an entry too: an overlay's layers, a loop device's backing file and an image the filesystem is mounted
-from are checked, and a FUSE mount drops the provision (ADR 0064 D2, amended 2026-10-25); a layer reached only by
-another spelling than the overlay's options give (container storage bind-mounted in elsewhere), a second mount of one
+from are checked, and unplaced backing drops the provision (ADR 0064 D2, amended 2026-10-25).
+This warns and the ordinary run continues; the hook scan does not share contract compile's backing-warning guarantee.
+The real `Run` test reaches that scan through the product provisioner for Claude Code and auto on captured
+relative-overlay and FUSE-root tables. Other product harness kinds have no hook provision and skip that scan.
+Kernel execution is owed in a guest.
+A layer reached only by another spelling than the overlay's options give (container storage bind-mounted in elsewhere), a second mount of one
 network export, and a host share's other names are not seen, so do not place the binary there. A multicall binary that re-dispatches to itself past
 the matcher's depth bound (`busybox busybox busybox busybox busybox rm -r`) is refused `command-unresolved` rather
 than allowed, since the applet it finally runs could be a denied one; so is an exec whose reading yields more
@@ -1983,6 +2035,33 @@ the run instead.
 
 An agent that keeps a request waiting all the time (it asks again as soon as each answer comes) cannot be paused,
 since a waiting request cannot be frozen. Deny it for the run, or stop the run.
+
+If the launcher dies while the run is paused (it is killed, crashes or runs out of memory), the run is lost, and Tego
+never thaws it: with no launcher, nothing would decide its held actions or record what it does (ADR 0124, second
+amendment of 2026-11-11). At tier cgroup and bpflsm the run's reaper ends it at once with `cgroup.kill`, which ends
+frozen processes without letting them run, and records `run_end reason=orphaned`. At tier landlock what is left waits
+for a sweep. The last pause line is the last state recorded, not proof the run stayed frozen: `tego stop` thaws a run
+before it signals and writes no line for that, so a launcher killed during a stop's grace leaves a record that says
+paused over processes that run. So `tego status` says the last recorded state and reads the run's scope for what is
+true now: STATE `lost, frozen` only when the scope is frozen, `lost` otherwise, with a line under the table that says
+which (frozen, NOT frozen, empty, or unreadable) and names `tego stop <run>`; exit 1; `--json` adds
+`"launcher_gone": true` and `scope_now`. `tego pause` and `tego resume` are refused (`[lost-paused]`, exit 1), and the
+dashboard shows Lost, last recorded paused, and points to `tego status` for the scope. `tego stop <run>` asks its sweep to end what is
+left with `cgroup.kill` when needed and close the record (`run_end orphaned`, after a `launcher-lost` gap, as for any orphan), reads
+the scope again and says what is left. Stop exits 0 only when the record is closed and that final read confirms
+no processes remain (scope absent or empty). Remaining processes, frozen or running, give `[lost-paused]`, exit
+125. An unreadable final scope says "cannot tell whether its scope is empty" and uses the same status. Record
+closure alone is not a successful stop. `tego gc` and the next `tego run` use the same cleanup. Tego reads a launcher as gone when the run's
+lock is free, or when the process its lock line names is gone, has exited, or is another process by its start time,
+never by the pid alone; a launcher whose identity cannot be read (a restricted `/proc`) is never taken for gone:
+`tego status` shows it `(launcher unknown)` with the check that failed and the fix (make `/proc/<pid>/stat` readable,
+or run the command in the launcher's pid namespace), and the run page says so. A scope `tego status` cannot look at is
+reported unknown, not empty. Sweep retains an unreadable scope for retry, including a failed cgroup-id or
+`cgroup.events` read; it neither ends nor collects the record on that uncertainty. A
+same-uid process outside every run can still thaw the scope by writing its `cgroup.freeze` (ADR 0123). Compile checks
+write grants reaching cgroup mounts within ADR 0059's
+[compile-time mount boundary](adr/0059-no-run-writes-what-a-later-run-loads.md#compile-time-mount-boundary).
+Earlier releases admitted write grants covering these cgroup bind mounts.
 
 ## Precommit modes (2026-10-28)
 

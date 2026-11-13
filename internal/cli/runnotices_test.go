@@ -47,7 +47,7 @@ func TestRunNoticesLeaveOutInformationalNotes(t *testing.T) {
 // The notice the owner saw above Codex: a write entry that is a mount point (/dev/pts) is a note, so a quiet start
 // leaves it out and -v prints it; a mount warning that says a rule covers less (an overlay) is not a note.
 func TestRunNoticesAMountPointIsANote(t *testing.T) {
-	c, _, err := agent.LoadBytes("c.yaml", []byte("version: 0\nname: n\ncommand: [\"/bin/true\"]\nfs:\n  write: [\"/proc/\"]\n"), nil)
+	c, _, err := agent.LoadBytes("c.yaml", []byte("version: 0\nname: n\ncommand: [\"/bin/true\"]\nfs:\n  write: [\"/dev/shm/\"]\n"), nil)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestRunNoticesAMountPointIsANote(t *testing.T) {
 		}
 	}
 	if mounts == 0 {
-		t.Fatalf("compile gave no mount-point note for /proc/: %+v", ds)
+		t.Fatalf("compile gave no mount-point note for /dev/shm/: %+v", ds)
 	}
 	for _, d := range runNotices(ds, false) {
 		if strings.Contains(d.Message, "is a mount point") {

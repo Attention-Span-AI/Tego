@@ -28,7 +28,7 @@ func interpreters() []*execmatch.Row {
 		py = append(py, "python3."+strconv.Itoa(i))
 	}
 	py = append(py, "python3", "python2", "python2.7", "pypy3", "pypy")
-	pythonSyn := execmatch.Syntax{Clusters: true, ShortAttach: true, LongEquals: true, LongSep: true}
+	pythonSyn := execmatch.Syntax{NextOption: execmatch.NextOptionValue, Clusters: true, ShortAttach: true, LongEquals: true, LongSep: true}
 	stop := func(o execmatch.Opt) execmatch.Opt { o.Stop = true; return o }
 	python := &execmatch.Row{
 		Tool: "python", Names: py, Version: "3.13.7", Docs: "python(1), Python/getopt.c", Source: execmatch.SourceProbed,

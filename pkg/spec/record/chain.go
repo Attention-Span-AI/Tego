@@ -26,18 +26,21 @@ func ChainAfter(seq uint64, id string) Chain { return Chain{next: seq + 1, head:
 // Add verifies line as the next link and returns its decoded event. On error the chain is unchanged, so the
 // caller can report the line number (Len) at which verification failed.
 func (c *Chain) Add(line []byte) (*Event, error) {
+	e, derr := Decode(line)
+	if errors.Is(derr, errMalformedObject) || errors.Is(derr, ErrMalformedTimestamp) {
+		return nil, fmt.Errorf("line %d: %w", c.next, derr)
+	}
 	id, err := VerifyLine(line)
 	if err != nil {
 		// A newer version's line has another prefix: say so (ErrNewerVersion), so the caller can take it to
 		// AddNewer rather than report it malformed.
-		if _, derr := Decode(line); errors.Is(derr, ErrNewerVersion) {
+		if errors.Is(derr, ErrNewerVersion) {
 			return nil, fmt.Errorf("line %d: %w", c.next, derr)
 		}
 		return nil, fmt.Errorf("line %d: %w", c.next, err)
 	}
-	e, err := Decode(line)
-	if err != nil {
-		return nil, fmt.Errorf("line %d: %w", c.next, err)
+	if derr != nil {
+		return nil, fmt.Errorf("line %d: %w", c.next, derr)
 	}
 	if e.Seq != c.next {
 		return nil, fmt.Errorf("line %d: %w: seq %d, want %d", c.next, ErrCorruptChain, e.Seq, c.next)

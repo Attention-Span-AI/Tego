@@ -128,6 +128,10 @@ type table struct {
 		Reads string
 		// Names: Model.Names.
 		Names []NameEntry
+		// PlaneCannotHold: Model.PlaneCannotHold.
+		PlaneCannotHold bool `yaml:"plane_cannot_hold"`
+		// ListenerRefuses: Model.ListenerRefuses.
+		ListenerRefuses bool `yaml:"listener_refuses"`
 	}
 	Variants []string
 	Cells    []struct {
@@ -196,7 +200,7 @@ func parseTable(data []byte) (Fixture, []string, []DeferredCell, error) {
 		Model: Model{Write: m.Write, DenyRead: m.DenyRead, ExecAllow: m.ExecAllow, NetDeclared: m.NetDeclared,
 			NetAllow: m.NetAllow, NetRuntime: m.NetRuntime, DenyWrite: m.DenyWrite, DenyWriteDeclared: m.DenyWriteDeclared, ExecDeny: m.ExecDeny, ExecAnonymous: m.ExecAnonymous,
 			ExecAllowCommands: m.ExecAllowCommands, Keyring: m.Keyring, HostSockets: m.HostSockets,
-			Reads: m.Reads}, Later: doc.Later}
+			Reads: m.Reads, PlaneCannotHold: m.PlaneCannotHold, ListenerRefuses: m.ListenerRefuses}, Later: doc.Later}
 	for i, mt := range doc.Mounts {
 		where := fmt.Sprintf("mounts[%d]", i)
 		ok := mt.At != ""
@@ -339,19 +343,20 @@ type tableCond struct {
 	SupervisorRoot  *bool  `yaml:"supervisor_root"`
 	UnixDiag        *bool  `yaml:"unix_diag"`
 	ExecmodRefused  *bool  `yaml:"execmod_refused"`
+	FanotifyInChain *bool  `yaml:"fanotify_in_chain"`
 	Want            map[string]tableWant
 }
 
 func (tc tableCond) cond() (CondWant, error) {
 	cw := CondWant{Where: Where{KernelMin: tc.KernelMin, KernelMax: tc.KernelMax, ABIMin: tc.ABIMin, ABIMax: tc.ABIMax, BPFLSM: tc.BPFLSM}, MemfdNoexecSeal: tc.MemfdNoexecSeal,
 		PlaneFirst: tc.PlaneFirst, SupervisorRoot: tc.SupervisorRoot, UnixDiag: tc.UnixDiag, ExecmodRefused: tc.ExecmodRefused,
-		Want: map[Key]Want{}}
+		FanotifyInChain: tc.FanotifyInChain, Want: map[Key]Want{}}
 	switch err := cw.Where.Validate(); {
 	case err != nil:
 		return CondWant{}, err
 	case tc.KernelMin == "" && tc.KernelMax == "" && tc.ABIMin == 0 && tc.ABIMax == 0 && tc.BPFLSM == nil && tc.MemfdNoexecSeal == nil && tc.PlaneFirst == nil && tc.SupervisorRoot == nil &&
-		tc.UnixDiag == nil && tc.ExecmodRefused == nil:
-		return CondWant{}, fmt.Errorf("names no condition (kernel_min, kernel_max, abi_min, abi_max, bpf_lsm, memfd_noexec_seal, plane_first, supervisor_root, unix_diag, execmod_refused)")
+		tc.UnixDiag == nil && tc.ExecmodRefused == nil && tc.FanotifyInChain == nil:
+		return CondWant{}, fmt.Errorf("names no condition (kernel_min, kernel_max, abi_min, abi_max, bpf_lsm, memfd_noexec_seal, plane_first, supervisor_root, unix_diag, execmod_refused, fanotify_in_chain)")
 	case len(tc.Want) == 0:
 		return CondWant{}, fmt.Errorf("no want")
 	}

@@ -1,0 +1,5 @@
+10 1 0:39 /ostree/deploy/fedora/deploy/abc.0 / rw,relatime - btrfs /dev/nvme0n1p3 rw,subvolid=256
+11 10 0:39 / {{ROOT}}/sysroot rw,relatime - btrfs /dev/nvme0n1p3 rw,subvolid=5
+12 10 0:39 /ostree/deploy/fedora/var {{ROOT}}/var rw,relatime - btrfs /dev/nvme0n1p3 rw,subvolid=256
+13 10 0:5 / {{ROOT}}/proc rw,nosuid,nodev,noexec - proc proc rw
+14 10 0:7 / {{ROOT}}/run rw,nosuid,nodev - tmpfs tmpfs rw,size=2048000k

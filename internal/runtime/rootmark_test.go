@@ -46,16 +46,16 @@ func TestOrphanRootsSearchesTheMountRootOnlyForARootLaunchedRun(t *testing.T) {
 		}
 	}
 
-	if got, want := orphanRoots(m, rootMarkDir, pathDir(planted)), []string{cgroup.UserSubtree(me)}; !slices.Equal(got, want) {
+	if got, want := mustOrphanRoots(t, m, rootMarkDir, pathDir(planted)), []string{cgroup.UserSubtree(me)}; !slices.Equal(got, want) {
 		t.Fatalf("a run directory of another uid with no record: roots %v, want only its owner's subtree %v", got, want)
 	}
 	if err := writeRootMark(launched, id); err != nil {
 		t.Fatal(err)
 	}
-	if got := orphanRoots(m, rootMarkDir, pathDir(launched)); !slices.Contains(got, cgroup.Mount) || slices.Contains(got, m.Root()) {
+	if got := mustOrphanRoots(t, m, rootMarkDir, pathDir(launched)); !slices.Contains(got, cgroup.Mount) || slices.Contains(got, m.Root()) {
 		t.Fatalf("the directory root's record names: roots %v, want the mount root and not the sweeper's own", got)
 	}
-	if got := orphanRoots(m, rootMarkDir, pathDir(planted)); slices.Contains(got, cgroup.Mount) {
+	if got := mustOrphanRoots(t, m, rootMarkDir, pathDir(planted)); slices.Contains(got, cgroup.Mount) {
 		t.Fatalf("a planted directory of the recorded run's id: roots %v, want no mount root", got)
 	}
 	if err := writeRootMark(launched, id); err == nil {
@@ -81,7 +81,7 @@ func TestOrphanRootsSearchesTheMountRootOnlyForARootLaunchedRun(t *testing.T) {
 	// a mount-root candidate with no cgroup id to check only on a record).
 	sweeperUID = os.Geteuid
 	rootMarkOwner = 0
-	if got := orphanRoots(m, rootMarkDir, pathDir(planted)); len(got) < 2 || got[0] != m.Root() || !slices.Contains(got, cgroup.Mount) {
+	if got := mustOrphanRoots(t, m, rootMarkDir, pathDir(planted)); len(got) < 2 || got[0] != m.Root() || !slices.Contains(got, cgroup.Mount) {
 		t.Fatalf("the sweeper's own run directory: roots %v, want its own root first and the mount root", got)
 	}
 }
@@ -103,14 +103,14 @@ func TestOrphanRootsOfARootSweeperNeedARecordForItsOwnRunDirectory(t *testing.T)
 	if err := writeRootMark(killed, "own-killed-run"); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(orphanRoots(m, rootMarkDir, pathDir(killed)), cgroup.Mount) {
+	if !slices.Contains(mustOrphanRoots(t, m, rootMarkDir, pathDir(killed)), cgroup.Mount) {
 		t.Fatal("root's own recorded run directory: want the mount root among its roots")
 	}
 	// A root launcher in a nested cgroup namespace made the scope under its manager's root, not the mount root;
 	// a root stop of that recorded run searched the mount root alone and found nothing to kill (root-suites,
 	// TestStopEscalatesOnlyTheRunsOwnScope, 2026-09-24).
 	nested := &fakeCgroups{root: filepath.Join(cgroup.Mount, "nested.slice")}
-	if got := orphanRoots(nested, rootMarkDir, pathDir(killed)); !slices.Contains(got, nested.root) {
+	if got := mustOrphanRoots(t, nested, rootMarkDir, pathDir(killed)); !slices.Contains(got, nested.root) {
 		t.Fatalf("root's own recorded run directory: roots %v, want the manager's own root among them", got)
 	}
 	victim := filepath.Join(t.TempDir(), id)
@@ -124,10 +124,20 @@ func TestOrphanRootsOfARootSweeperNeedARecordForItsOwnRunDirectory(t *testing.T)
 	if err := os.Rename(killed, renamed); err != nil {
 		t.Fatal(err)
 	}
-	if got := orphanRoots(m, rootMarkDir, pathDir(renamed)); slices.Contains(got, cgroup.Mount) {
+	if got := mustOrphanRoots(t, m, rootMarkDir, pathDir(renamed)); slices.Contains(got, cgroup.Mount) {
 		t.Fatalf("root's own run directory renamed to another recorded run's id: roots %v, want no mount root", got)
 	}
-	if got := orphanRoots(nested, rootMarkDir, pathDir(renamed)); slices.Contains(got, nested.root) {
+	if got := mustOrphanRoots(t, nested, rootMarkDir, pathDir(renamed)); slices.Contains(got, nested.root) {
 		t.Fatalf("root's own run directory renamed to another recorded run's id: roots %v, want not the manager's root", got)
 	}
+}
+
+// mustOrphanRoots preserves the exact authority-layout assertions while requiring a readable decision.
+func mustOrphanRoots(t *testing.T, m cgroup.Manager, marks markDir, dir runDir) []string {
+	t.Helper()
+	roots, err := orphanRoots(m, marks, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return roots
 }

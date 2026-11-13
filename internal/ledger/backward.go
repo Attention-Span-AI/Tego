@@ -19,7 +19,8 @@ const backBlock = 16 << 10
 // Backward yields the ledger's complete lines from the last to the first, each with its decoded event, reading the
 // file from its end: a caller that stops at the newest line it wants reads only the lines after it, not the ledger
 // (tego events --last). The lines are Lines' and the decoding is Entries': every terminated line, and an
-// unterminated last line only when it decodes; a torn tail is passed over, unless the line before it is run_end,
+// unterminated final chunk once its first top-level value closes, including any suffix. A torn tail is passed over,
+// unless the line before it is run_end,
 // which is ErrCorruptLedger naming the tail's offset; a line that does not decode is ErrCorruptLedger naming its line
 // number and offset, except a newer version's line once SkipNewerVersions is set, which is skipped and counted. A
 // line longer than MaxLineBytes is ErrCorruptLedger. The line number in an error is counted from byte 0 when the

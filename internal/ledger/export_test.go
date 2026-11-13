@@ -3,6 +3,7 @@
 package ledger
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -58,4 +59,10 @@ func PlaceNewFile(dir, name string, b []byte) error {
 // WithWriterOptions passes options to the Writers the sweep opens (clock, anchor, logger).
 func WithWriterOptions(opts ...Option) GCOption {
 	return func(o *gcOptions) { o.writer = append(o.writer, opts...) }
+}
+
+// VerifyRunDirChain is the disk-vector bridge to the integrity scope. Production verifies schemas too;
+// the twin's disk runner uses this bridge so both file adapters share the same opens, rescan and anchor rules.
+func VerifyRunDirChain(ctx context.Context, dir string, anchor ChainAnchor) (VerifyReport, error) {
+	return verifyRunDir(ctx, dir, anchor, false)
 }

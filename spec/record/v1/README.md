@@ -1,11 +1,13 @@
 # Run record v1
 
-One `events.jsonl` per run, one JSON object per line, written with one `write(2)` on `O_APPEND`. Readers ignore an
-unterminated last line. Bodies live in `blobs/` and are referenced by hash: `blob` names the file `blobs/<blob>` that
+One `events.jsonl` per run, one JSON object per line, written with one `write(2)` on `O_APPEND`. An unterminated
+final chunk is a record line once its first top-level JSON value closes, including any suffix. Non-whitespace
+after that value is malformed; JSON whitespace is permitted and remains hashed. Readers ignore a torn tail only
+when no top-level value has closed ([CHAIN.md](CHAIN.md) §2, amended 2026-11-12). Bodies live in `blobs/` and are referenced by hash: `blob` names the file `blobs/<blob>` that
 holds a body whole (unless the event carries `truncated`, below), and a request body stored by its conversation's elements has no `blob` (see `ssl_request`). `v: 1` is
 frozen at M0 as this field list; within v1 only optional fields may be added and readers ignore unknown fields (`docs/VERSIONING.md`).
 
-Every event: `v`, `seq`, `id` (sha256 of the line bytes as written), `prev` (id of the previous line), `ts`,
+Every event: `v`, `seq`, `id` (sha256 of the line bytes as written, with the id's own 64 characters zeroed in place: [CHAIN.md](CHAIN.md) §4), `prev` (id of the previous line, `""` on line 0), `ts`,
 `mono_ns`, `run`, `agent`, `pid`, `tid`, `cgroup`, `kind`, `source`
 (`kernel|landlock|seccomp|fanotify|ssl|forwarder|hook|python|node|supervisor|proxy`).
 *Amended 2026-09-24:* a `tid` of `0` means the producer could not know the thread. The forwarder's `ssl_request`,
@@ -791,6 +793,24 @@ program references across its samples; it does not infer the executing instance 
 Views and receipts keep recording coverage incomplete and describe these as reported shared skipped executions,
 not lost events or proof of loss in this run. Aggregating overlapping run windows may count the same skip again.
 Neither gap attributes a verdict to a missing callback (ADR 0016, GAPS C53).
+At the root tiers (added 2026-11-11, [ADR 0148](../../../docs/adr/0148-skipped-deciding-and-tracking-programs.md)), a run
+also reads the skip counters of the shared programs its rules rely on: its plane mode's hooks, the exec pin check when
+it is pinned and the run claims the kernel holds its execs, the listener cleanup when it has listener policy, and `cgroup_mkdir`. After its last task is gone it
+writes `what=enforce why=bpf-decision-skip/shared-build` when the deciding programs gained skips since the reading
+before the agent was released (`count` those skips, `decision_plane` the run's mode),
+`why=bpf-tracking-skip/shared-build` when `cgroup_mkdir` did (`count` those skips), and
+`why=bpf-skip-counter-unavailable` (no `count`) when a reading after that one failed. A skipped deciding program lets
+the action it decides go on undecided; a skipped `cgroup_mkdir` leaves a child cgroup of the run out of the run set.
+The programs serve every run of the build and every task that reaches their hooks, so a count may belong to other
+runs or ungoverned tasks: each line says the run's rules may not have held, never that they did not. A run that
+writes one is ended (`run_end` `reason` `error`, `detail` starting `kernel skips:`), whether its poll saw the skip
+while the agent ran or only its last reading did; an adoption is not ended, and reports new skips while the agent
+still runs: the first as soon as its `run_start` is written, then at most once a minute plus polling and scheduling
+delay. Each class advances after its line is written, including when a later line fails; retries retain only unwritten lines. An adoption's failed reading is one
+`why=bpf-skip-counter-unavailable` line per observed outage, closed by `why=bpf-skip-counter-restored` (`count` the
+readings that failed). Both transitions are retained in order until written, even across several outages between
+reports. These are new `why` values of this line, not fields:
+no `record_minor` names them, and a ledger written before them has none. Absence alone establishes neither that the programs were monitored nor that none was skipped.
 An adopted run (ADR 0055, additive within v1, 2026-10-06) writes, after `run_start`, one `exec` line per process it moved
 with `by: adoption` (the process was already running and its exec was not seen; its `exec_id` carries its start time), and
 `gap what=record` lines with `why` `adoption-pre-attach` (`binary` the agent, `count` the processes adopted: what each did

@@ -18,12 +18,13 @@
 # the list allows it. A test's failure is reported, not judged: the exit status of `go test` is the verdict on
 # failures, and this script's is the verdict on skips.
 #
-# Usage: scripts/skipgate.sh [--must-pass] LIST [JSON...]   (the streams are read from stdin when no JSON is
-#   named). LIST holds one test per line, "<package> <test> # <reason>", where the package is the import
+# Usage: scripts/skipgate.sh [--must-pass] [--row ROW] LIST [JSON...]   (the streams are read from stdin when no JSON is
+#   named). LIST holds one test per line, "<package> <test> [row=ROW] # <reason>", where the package is the import
 #   path or its path within the module, and the test is its full name as `go test -json` reports it, a
 #   subtest's included (TestX/case); in an allowlist, TestX/* allows every subtest of TestX. Blank lines and
 #   lines starting with # are comments. Every entry must carry its reason: an entry without one is a usage
-#   error.
+#   error. An optional row=ROW field restricts that entry to the exact --row name; without --row it applies nowhere.
+#   Row names use lower-case letters, digits, dots and hyphens. Entries without row= apply on every row.
 # Exit: 0 when every skip is listed (with --must-pass: when every listed test passed); 1 when one is not;
 #   2 on a usage error, an entry with no reason included, or a stream that holds no test at all.
 # Needs: jq.
@@ -34,10 +35,20 @@ usage() {
 	exit 2
 }
 must=0
-if [ "${1:-}" = --must-pass ]; then
-	must=1
-	shift
-fi
+row=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--must-pass) must=1; shift ;;
+	--row)
+		[ $# -ge 2 ] || usage
+		row=$2
+		[ -z "$row" ] || [[ "$row" =~ ^[a-z0-9][a-z0-9.-]*$ ]] || usage
+		shift 2
+		;;
+	--) shift; break ;;
+	*) break ;;
+	esac
+done
 [ $# -ge 1 ] || usage
 list=$1
 shift
@@ -60,9 +71,10 @@ while IFS= read -r line || [ -n "$line" ]; do
 	entry="${line%%[[:space:]]#*}"
 	reason="${line#"$entry"}"
 	reason="${reason#*#}"
-	read -r pkg test extra <<<"$entry" || true
-	if [ -z "${pkg:-}" ] || [ -z "${test:-}" ] || [ -n "${extra:-}" ]; then
-		echo "skipgate: $list:$lineno: want \"<package> <test> # <reason>\", got: $line" >&2
+	read -r pkg test scope extra <<<"$entry" || true
+	if [ -z "${pkg:-}" ] || [ -z "${test:-}" ] || [ -n "${extra:-}" ] ||
+		{ [ -n "${scope:-}" ] && ! [[ "$scope" =~ ^row=[a-z0-9][a-z0-9.-]*$ ]]; }; then
+		echo "skipgate: $list:$lineno: want \"<package> <test> [row=ROW] # <reason>\", got: $line" >&2
 		bad=1
 		continue
 	fi
@@ -71,6 +83,8 @@ while IFS= read -r line || [ -n "$line" ]; do
 		bad=1
 		continue
 	fi
+	# Validate every entry even on other rows. A missing row never turns a scoped entry into a global allowance.
+	[ -z "${scope:-}" ] || [ "${scope#row=}" = "$row" ] || continue
 	case "$pkg" in "$module" | "$module"/*) ;; *) pkg="$module/$pkg" ;; esac
 	printf '%s %s\n' "$pkg" "$test" >>"$tmp/list"
 done <"$list"

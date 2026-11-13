@@ -95,7 +95,7 @@ var (
 // that is not an option is the program, which runs with argv[0] that word, or --argv0's value, and the words after it.
 // i is the program operand's index in argv.
 func LoaderProgram(argv []string) (i int, progArgv []string, out LoaderOutcome) {
-	argv0 := ""
+	argv0, hasArgv0 := "", false
 	for i = 1; i < len(argv); i++ {
 		w := argv[i]
 		if !strings.HasPrefix(w, "--") {
@@ -113,7 +113,7 @@ func LoaderProgram(argv []string) (i int, progArgv []string, out LoaderOutcome) 
 		case loaderFlagOptions[opt]:
 		case loaderValueOptions[name] && hasVal:
 			if name == "argv0" {
-				argv0 = val
+				argv0, hasArgv0 = val, true
 			}
 		case loaderValueOptions[opt]:
 			if i+1 >= len(argv) {
@@ -121,7 +121,7 @@ func LoaderProgram(argv []string) (i int, progArgv []string, out LoaderOutcome) 
 			}
 			i++
 			if opt == "argv0" {
-				argv0 = argv[i]
+				argv0, hasArgv0 = argv[i], true
 			}
 		default:
 			return 0, nil, LoaderUnknown
@@ -130,7 +130,7 @@ func LoaderProgram(argv []string) (i int, progArgv []string, out LoaderOutcome) 
 	if i >= len(argv) {
 		return 0, nil, LoaderExits
 	}
-	if argv0 == "" {
+	if !hasArgv0 {
 		argv0 = argv[i]
 	}
 	progArgv = make([]string, 0, len(argv)-i)
@@ -151,6 +151,22 @@ func (f *Facts) loadedFacts() Facts {
 		lf.Argv0 = l.Argv[0]
 	}
 	return lf
+}
+
+// loadedReadings keeps the actual vector and, for an empty argv[0], the former
+// operand-as-argv[0] reading. Correcting the loader facts must not remove a
+// refusal that depended on argv[0] dispatch or a raw interpreter prescan
+// (ADR 0048 (2), amendment 2026-11-12).
+func (f *Facts) loadedReadings() []Facts {
+	lf := f.loadedFacts()
+	out := []Facts{lf}
+	if len(lf.Argv) > 0 && lf.Argv[0] == "" {
+		legacy := lf
+		legacy.Argv0 = f.Loaded.Path
+		legacy.Argv = prepend(f.Loaded.Path, lf.Argv[1:])
+		out = append(out, legacy)
+	}
+	return out
 }
 
 // ScriptArgv is the vector binfmt_script gives the last interpreter of a script's #! chain, the program the kernel

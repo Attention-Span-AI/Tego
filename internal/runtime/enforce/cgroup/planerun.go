@@ -51,7 +51,7 @@ func (h *Handle) choosePlane(rt *agent.RuleTable) error {
 		}
 	}
 	if err == nil {
-		err = sharedInode(rows)
+		err = PlaneHoldableAt(rows, h.run.Mounts)
 	}
 	if err != nil {
 		if h.opts.tier3() || rt.DenyWriteNeedsPlane() {
@@ -114,12 +114,50 @@ func sharedInode(rows *decide.PlaneRows) error {
 	return nil
 }
 
-// PlaneHoldable is the check choosePlane and tier3Plane make of compiled rows beyond their cap: no two fs rows are
-// one file under two names now (ErrPlaneSharedInode). cgroupBackend.Prepare makes it before it hands the rows to tier
-// 1's composition, since a filter composed for a plane that then falls back to the listener would keep the
-// plane-only relaxations (io_uring, the memfd arm) on a run no plane decides.
-func PlaneHoldable(rows *decide.PlaneRows) error {
-	return sharedInode(rows)
+// PlaneHoldableAt checks rows against the snapshot acquired for this Prepare.
+func PlaneHoldableAt(rows *decide.PlaneRows, mounts *MountSnapshot) error {
+	if err := sharedInode(rows); err != nil {
+		return err
+	}
+	return detachedParts(rows, func() *mountSnapshot {
+		if mounts == nil {
+			return ReadMounts()
+		}
+		return mounts
+	})
+}
+
+// ErrPlaneDetachedPart is a table with a row that refuses reads in a tree a part of which the launcher's mount table
+// shows outside it: a bind mount of a directory or of one file inside a deny_read directory, elsewhere. The plane's
+// walk crosses mounts (ADR 0025), so from a file there it meets the bind's root and then its mount point, never the
+// entry's row, and beneath a granted sibling it allowed the read (conformance mounts-bind/read-bind-alias-file, every
+// plane axis, 2026-11-11). The plane cannot hold such a table: tier cgroup falls back to the listener, which refuses the run at Prepare, and tier bpflsm refuses it before the run
+// starts. A bind of the entry itself, of its parent or of its whole filesystem is no such part: the walk from a file
+// beneath it passes the entry's own directory.
+var ErrPlaneDetachedPart = errors.New("a bind mount shows part of a deny_read tree outside it, where the decision plane's walk never meets the entry")
+
+// detachedParts reports the first row that refuses reads whose tree has a part mounted outside it in the mount table
+// snapshot reads (mountSnapshot.detached, agent.MountTable.DetachedParts), read once, at the first such row. A table
+// that cannot be read, disagrees with the system, or holds no mount of such a row cannot show that none is, and fails
+// the same way (fail closed).
+func detachedParts(rows *decide.PlaneRows, snapshot func() *mountSnapshot) error {
+	var snap *mountSnapshot
+	for _, r := range rows.FS {
+		if r.Kind&decide.PlaneReadDeny == 0 || r.Path == "" {
+			continue
+		}
+		if snap == nil {
+			snap = snapshot()
+		}
+		parts, err := snap.detached(r.Path)
+		switch {
+		case err != nil:
+			return fmt.Errorf("%w: %w: the parts of %s mounted elsewhere cannot be listed: %w", ErrPlaneDetachedPart, ErrMountTable, r.Path, err)
+		case len(parts) > 0:
+			return fmt.Errorf("%w: %s shows a part of %s", ErrPlaneDetachedPart, parts[0], r.Path)
+		}
+	}
+	return nil
 }
 
 // tier3Plane is tier bpflsm's precondition, checked at the top of Prepare: the plane handed over is in LSM mode, and
@@ -147,12 +185,22 @@ func tier3Plane(p PlaneSetup, rt *agent.RuleTable, run *Run) error {
 		rows, err = decide.CompilePlane(rt)
 	}
 	if err == nil {
-		err = sharedInode(rows)
+		err = PlaneHoldableAt(rows, run.Mounts)
 	}
 	if err != nil {
-		return fmt.Errorf("%w: %w; narrow the fs, deny_read and exec.allow entries, or run it at tier cgroup "+
-			"(--tier cgroup, or tier: cgroup in the contract), where the fanotify listener decides what the plane cannot hold",
-			ErrPlaneCannotHold, err)
+		if errors.Is(err, ErrPlaneDetachedPart) {
+			return fmt.Errorf("%w: %w; remove the mounts showing denied content elsewhere; tier cgroup also refuses this layout", ErrPlaneCannotHold, err)
+		}
+		// A row or descriptor budget failure can mask a whole-tree alias that the
+		// plane would hold. Switching to the listener would then refuse too.
+		if run.Mounts == nil {
+			run.Mounts = ReadMounts()
+		}
+		listener := newPolicyAt(rt, run.CgroupPath, run.Mounts.view(), mountKeyOf)
+		if listener.aliasErr != nil {
+			return fmt.Errorf("%w: %w; tier cgroup also refuses this layout: %w", ErrPlaneCannotHold, err, listener.aliasErr)
+		}
+		return fmt.Errorf("%w: %w; narrow the fs, deny_read and exec.allow entries; tier cgroup (--tier cgroup, or tier: cgroup in the contract) is an option only if its listener can hold the complete contract", ErrPlaneCannotHold, err)
 	}
 	run.PlaneRows = rows
 	return nil
@@ -374,3 +422,12 @@ func (h *Handle) UsePlaneFilter() (dropped []string) {
 
 // PlaneMode is the run's plane mode, "" for the fanotify fallback.
 func (h *Handle) PlaneMode() ebpfbindings.PlaneMode { return h.planeMode }
+
+// ListenerDevices returns the devices the listener actually marked for opens.
+// No alias policy is handed over: alias layouts are refused before a listener runs.
+func (h *Handle) ListenerDevices() (marked func(dev uint64) bool, ok bool) {
+	if h == nil || h.planeMode != "" || h.opts.tier3() || h.policy == nil {
+		return nil, false
+	}
+	return func(dev uint64) bool { _, in := h.policy.openDevs[dev]; return in }, true
+}

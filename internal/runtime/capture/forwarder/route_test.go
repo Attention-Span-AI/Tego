@@ -329,7 +329,8 @@ func TestRouteMovedWhileHeldIsNotSent(t *testing.T) {
 	var l *Listener
 	var sink *fakeSink
 	var targets []string
-	l, sink = askHarness(t, 4096, func(ctx context.Context, q ask.Request) (ask.Decision, error) {
+	// The approval moves the route by writing its file, which a busy disk can make take longer than askHarness's 1 s.
+	l, sink = askHarnessWithin(t, 4096, askBudget(t), func(ctx context.Context, q ask.Request) (ask.Decision, error) {
 		targets = append(targets, q.Target)
 		if _, err := modelroutes.Update(ctx, dir, testRun.ID, func(o *modelroutes.Overlay) (bool, error) {
 			return o.Set(l.authority(), "alt", "uid:1 pid:2 cli", time.Now())
@@ -638,7 +639,8 @@ func TestRouteCoalescedRetryAfterASwitchGetsItsOwnApproval(t *testing.T) {
 	dir := t.TempDir()
 	asked := make(chan string, 4)
 	release := make(chan struct{})
-	l, _ := askHarness(t, 4096, func(ctx context.Context, q ask.Request) (ask.Decision, error) {
+	// The first request stays held while the test moves the route (a file write) and a second request is asked.
+	l, _ := askHarnessWithin(t, 4096, askBudget(t), func(ctx context.Context, q ask.Request) (ask.Decision, error) {
 		asked <- q.Target
 		select {
 		case <-release:

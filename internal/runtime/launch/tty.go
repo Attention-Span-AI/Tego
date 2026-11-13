@@ -13,9 +13,11 @@ import (
 )
 
 // TTYRuleset builds ADR 0113's additional Landlock layer. Intersecting it with
-// the ordinary contract prevents even a write grant on /dev from admitting
-// another terminal. No directory grant covers /dev/pts or numeric consoles;
-// terminals made after this snapshot therefore receive no right either.
+// the ordinary contract keeps a grant on canonical /dev/pts from admitting
+// another terminal. No directory grant covers /dev/pts or numeric consoles.
+// Ordinary directories are granted recursively, so compile separately refuses
+// write grants reaching devpts mounts at other paths. New slaves beneath the
+// canonical /dev/pts receive no right from this snapshot either.
 func ttyRuleset() (*sys.FD, error) {
 	rights := uint64(unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_WRITE_FILE)
 	abi, err := sys.LandlockABI()

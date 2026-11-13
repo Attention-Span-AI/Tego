@@ -60,6 +60,10 @@ type compileOptions struct {
 	// ownBinaries says WithOwnBinaries was given, and ownExe is the running tego it named, "" for none.
 	ownBinaries bool
 	ownExe      string
+	// installDirs are where ownBinaries looks for an installed tego beside the running one and PATH's
+	// (defaultInstallDirs when installDirsSet is false); a test names its own.
+	installDirs    []string
+	installDirsSet bool
 	// runtimeParents are tego's runtime parents, <XDG_RUNTIME_DIR>/tego for each base WithRuntimeDir named, cleaned
 	// and without duplicates; none when none was given.
 	runtimeParents []string
@@ -216,6 +220,8 @@ func WithTiers(tiers ...backend.Tier) CompileOption {
 
 // compiler holds one Compile call's state; nothing outlives the call.
 type compiler struct {
+	// mt is the mount table, read once per compile and shared by every check that reads it (mountTable).
+	mt   *mountTable
 	c    *Contract
 	m    *config.Machine
 	o    compileOptions

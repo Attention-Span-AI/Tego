@@ -9,12 +9,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
+	"github.com/attention-span-ai/tego/pkg/spec/record/chaincheck"
 )
 
 // ChainAnchor records each run's final event id outside its run directory (§3 chain anchor), so a run's chain
@@ -149,12 +149,9 @@ func (a *fileChainAnchor) Head(run string) (string, bool, error) {
 	return h.Head, h.OK, h.Err
 }
 
-// AnchorHead is what a chain anchor's Head returns for one run.
-type AnchorHead struct {
-	Head string
-	OK   bool
-	Err  error
-}
+// AnchorHead is what chain.log says of one run (chaincheck.AnchorHead): the head it anchors (OK), no line for it, or
+// Err, which wraps ErrCorruptLedger when the file is not an anchor.
+type AnchorHead = chaincheck.AnchorHead
 
 // AnchorHeads is Head for many runs from one read of the chain anchor at path: for each of runs, what
 // NewFileChainAnchor(path).Head(run) returns, read from the same bytes and opened the same way. fi is the
@@ -182,47 +179,9 @@ func AnchorHeads(path string, runs []string) (heads map[string]AnchorHead, fi os
 	return anchorHeads(f, runs), fi
 }
 
-// anchorHeads reads the anchor lines of f once and answers, for each of runs, as Head does: the head
-// the run's line names, ok false when no line names it, and an error for two of its lines naming two
-// heads. A terminated line that is not "<run> <head>" fails every run, and so does a read error, each
-// answer keeping an error it already had: Head returns at the first error in the file's order. A
-// trailing line without "\n" ends the read, never an error (E28).
+// anchorHeads reads chain.log for each of runs (chaincheck.AnchorHeads, CHAIN.md §7).
 func anchorHeads(f io.ReaderAt, runs []string) map[string]AnchorHead {
-	out := make(map[string]AnchorHead, len(runs))
-	for _, r := range runs {
-		out[r] = AnchorHead{}
-	}
-	failAll := func(err error) {
-		for r, h := range out {
-			if h.Err == nil {
-				out[r] = AnchorHead{Err: err}
-			}
-		}
-	}
-	for l, err := range scanLines(f) {
-		if err != nil {
-			failAll(fmt.Errorf("ledger: read anchor: %w", err))
-			break
-		}
-		if !l.terminated {
-			break
-		}
-		r, h, found := bytes.Cut(l.data, []byte{' '})
-		if !found || !IsRunID(string(r)) || !record.IsID(string(h)) {
-			failAll(fmt.Errorf("%w: anchor line %q", ErrCorruptLedger, strings.TrimSpace(string(l.data))))
-			break
-		}
-		cur, asked := out[string(r)]
-		switch {
-		case !asked || cur.Err != nil:
-		case cur.OK && cur.Head != string(h):
-			out[string(r)] = AnchorHead{Err: fmt.Errorf("%w: chain.log holds two heads for %s, %s and %s",
-				ErrCorruptLedger, r, cur.Head, h)}
-		default:
-			out[string(r)] = AnchorHead{Head: string(h), OK: true}
-		}
-	}
-	return out
+	return chaincheck.AnchorHeads(f, runs)
 }
 
 // openAnchor opens name in dir with flags, never following a symlink at name and never blocking on a FIFO

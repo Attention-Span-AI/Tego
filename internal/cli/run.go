@@ -635,6 +635,9 @@ func makeOwnDirs(m *config.Machine) {
 	}
 }
 
+// compileRunContract lets tests supply a mount snapshot to the run-start compiler.
+var compileRunContract = agent.Compile
+
 // compileForRun loads and compiles the contract for this run (§4.1 step 1). A contract that does not
 // compile never reaches the runtime. The findings that hold in one tier alone (agent.Diagnostic.Tier) are
 // returned rather than printed: the run learns its tier only at selection, and an auto contract that lands
@@ -703,7 +706,7 @@ func compileForRun(ctx context.Context, o runOptions, m *config.Machine, stderr 
 		opts = append(opts, agent.WithTierFlag(t))
 	}
 	endCompile := startphase.Begin(nil, "compile")
-	rt, ds, err := agent.Compile(c, m, opts...)
+	rt, ds, err := compileRunContract(c, m, opts...)
 	endCompile()
 	if interruptedBeforeStart(ctx, o, stderr) {
 		return nil, nil, nil, identity.ExitLauncher

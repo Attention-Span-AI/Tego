@@ -5,6 +5,7 @@ package runtime
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -109,37 +110,65 @@ func (d markDir) write(runDir, id string) error {
 // after the run id in d, the file and the directory owned by root and writable by nobody else, whose
 // device and inode are run's own (the lent directory's when a sweep hook was lent it).
 func (d markDir) launched(run runDir) bool {
+	launched, _ := d.launchedChecked(run)
+	return launched
+}
+
+// launchedChecked keeps unavailable authority distinct from an absent or nonmatching record. Scope discovery
+// must retain the run when it cannot establish all relevant candidate roots; purge's boolean wrapper only
+// withholds removal of kernel state, which is safe on uncertainty.
+func (d markDir) launchedChecked(run runDir) (bool, error) {
 	dfd, err := d.open()
 	if err != nil {
-		return false
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
 	}
 	defer func() { _ = dfd.Close() }()
 	fd, err := dfd.Openat(run.id(), unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return false
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("runtime: root launch record: %w", err)
 	}
 	var st unix.Stat_t
-	if err := fd.Fstat(&st); err != nil || st.Mode&unix.S_IFMT != unix.S_IFREG || !rootOnly(st) {
+	if err := fd.Fstat(&st); err != nil {
 		_ = fd.Close()
-		return false
+		return false, fmt.Errorf("runtime: root launch record: stat: %w", err)
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFREG || !rootOnly(st) {
+		_ = fd.Close()
+		return false, fmt.Errorf("runtime: root launch record %s is not a regular file root alone can write", run.id())
 	}
 	f, err := fd.Release(filepath.Join(string(d), run.id()))
 	if err != nil {
 		_ = fd.Close()
-		return false
+		return false, fmt.Errorf("runtime: root launch record: open: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-	b := make([]byte, 64)
-	n, _ := f.Read(b)
-	dev, ino, ok := strings.Cut(strings.TrimSpace(string(b[:n])), " ")
-	if !ok {
-		return false
+	b, err := io.ReadAll(io.LimitReader(f, 65))
+	if err != nil {
+		return false, fmt.Errorf("runtime: root launch record: read: %w", err)
+	}
+	fields := strings.Fields(string(b))
+	if len(b) > 64 || len(fields) != 2 {
+		return false, fmt.Errorf("runtime: root launch record %s has no device and inode", run.id())
+	}
+	dev, devErr := strconv.ParseUint(fields[0], 10, 64)
+	ino, inoErr := strconv.ParseUint(fields[1], 10, 64)
+	if devErr != nil || inoErr != nil {
+		return false, fmt.Errorf("runtime: root launch record %s: %w", run.id(), errors.Join(devErr, inoErr))
 	}
 	dir, err := run.lstat()
-	if err != nil || dir.Mode&unix.S_IFMT != unix.S_IFDIR {
-		return false
+	if err != nil {
+		return false, fmt.Errorf("runtime: root launch record: stat run: %w", err)
 	}
-	return dev == strconv.FormatUint(dir.Dev, 10) && ino == strconv.FormatUint(dir.Ino, 10)
+	if dir.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return false, fmt.Errorf("runtime: root launch record: run %s is not a directory", run.id())
+	}
+	return dev == dir.Dev && ino == dir.Ino, nil
 }
 
 // removeRootMark removes run id's record from the host's records, if there is one.
@@ -162,7 +191,11 @@ func (d markDir) open() (*sys.FD, error) {
 		return nil, fmt.Errorf("runtime: root launch records: %w", &os.PathError{Op: "open", Path: string(d), Err: err})
 	}
 	var st unix.Stat_t
-	if err := dfd.Fstat(&st); err != nil || !rootOnly(st) {
+	if err := dfd.Fstat(&st); err != nil {
+		_ = dfd.Close()
+		return nil, fmt.Errorf("runtime: root launch records: stat %s: %w", string(d), err)
+	}
+	if !rootOnly(st) {
 		_ = dfd.Close()
 		return nil, fmt.Errorf("runtime: root launch records: %s is not root's alone", string(d))
 	}

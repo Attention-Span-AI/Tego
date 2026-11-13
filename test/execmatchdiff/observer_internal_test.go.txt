@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package execmatch
+
+import (
+	"errors"
+	"reflect"
+	"testing"
+
+	old "github.com/attention-span-ai/tego/execmatchbaseline"
+)
+
+func TestObserverGeneratedCompileRejectIsNotSkipped(t *testing.T) {
+	for _, list := range []List{ListAllow, ListDeny, ListAsk} {
+		if err := TighteningGeneratedCompileError("go run", list, errors.New("injected compiler rejection")); err == nil {
+			t.Errorf("%s silently skipped a released-valid entry", list)
+		}
+		if err := TighteningGeneratedCompileError("", list, errors.New("empty pattern")); err != nil {
+			t.Errorf("%s rejected an entry invalid in both grammars: %v", list, err)
+		}
+		if err := TighteningGeneratedCompileError("go run", list, nil); err != nil {
+			t.Errorf("%s rejected an admitted generated entry: %v", list, err)
+		}
+	}
+}
+
+func TestPatternCorrectionPreservesWholeIndex(t *testing.T) {
+	rs := NewRows(&Row{Tool: "systemctl", Root: &Level{
+		Subs:   map[string]*Level{"start": nil, "reboot": nil},
+		Syntax: Syntax{Permute: true, Terminator: TerminatorCommand, TerminatorOptions: TerminatorOptionsNone},
+	}})
+	for _, extra := range []string{"", "allow", "deny", "ask"} {
+		p, err := Parse("systemctl -- reboot", ListDeny, rs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pp := []*Pattern{p}
+		if extra != "" {
+			list := ListAllow
+			if extra == "deny" {
+				list = ListDeny
+			}
+			if extra == "ask" {
+				list = ListAsk
+			}
+			q, err := Parse("systemctl start", list, rs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pp = append(pp, q)
+		}
+		ix := NewIndex(rs, pp, IndexOptions{})
+		f := Facts{Requested: "systemctl", Image: "systemctl", Argv0: "systemctl", Argv: []string{"systemctl", "start", "reboot"}, ArgvComplete: true}
+		a := ix.Decide(&f)
+		tighteningState.Lock()
+		bix := tighteningBase(ix)
+		var bf old.Facts
+		copyExported(reflect.ValueOf(&bf).Elem(), reflect.ValueOf(f))
+		b := bix.Decide(&bf)
+		got := tighteningPatternCorrection(ix, bix, &f, a, b)
+		if extra == "deny" {
+			if got != "" {
+				t.Errorf("retained %s was dropped: %s", extra, got)
+			}
+			if bad := tighteningPatternCorrection(ix, bix, &f, Result{Outcome: OutcomeNone, Final: true}, b); bad != "" {
+				t.Errorf("whole index %s falsely certified: %s", extra, bad)
+			}
+		} else if got != "" {
+			t.Errorf("released pattern refusal certified with %s", extra)
+		}
+		if extra == "ask" && tighteningPatternCorrection(ix, bix, &f, Result{Outcome: OutcomeNone, Final: true}, b) != "" {
+			t.Error("retained ask was dropped")
+		}
+		f.ArgvComplete = false
+		if got := tighteningPatternCorrection(ix, bix, &f, Result{Outcome: OutcomeNone, Final: true}, b); got != "" {
+			t.Error("prefix correction certified")
+		}
+		tighteningState.Unlock()
+	}
+}
+
+func TestGenericPatternCorrectionPreservesWholeIndex(t *testing.T) {
+	rs := NewRows()
+	for _, extra := range []string{"", "deny", "ask"} {
+		p, err := Parse("tool -- --force", ListDeny, rs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pp := []*Pattern{p}
+		if extra != "" {
+			list := ListDeny
+			if extra == "ask" {
+				list = ListAsk
+			}
+			q, err := Parse("tool --=x", list, rs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pp = append(pp, q)
+		}
+		ix := NewIndex(rs, pp, IndexOptions{})
+		f := Facts{Requested: "tool", Image: "tool", Argv0: "tool", Argv: []string{"tool", "--=x"}, ArgvComplete: true}
+		a := ix.Decide(&f)
+		tighteningState.Lock()
+		bix := tighteningBase(ix)
+		var bf old.Facts
+		copyExported(reflect.ValueOf(&bf).Elem(), reflect.ValueOf(f))
+		b := bix.Decide(&bf)
+		if b.Outcome != old.OutcomeRefused || b.Pattern.Entry != "tool -- --force" {
+			t.Fatalf("lost released false-predicate witness: %+v", b)
+		}
+		got := tighteningPatternCorrection(ix, bix, &f, a, b)
+		if extra == "deny" {
+			if got != "" {
+				t.Error("another deny was removed")
+			}
+		} else if got != "" {
+			t.Errorf("released generic refusal certified: %s", extra)
+		}
+		if extra != "" && tighteningPatternCorrection(ix, bix, &f, Result{Outcome: OutcomeNone, Final: true}, b) != "" {
+			t.Errorf("another %s was removed", extra)
+		}
+		f.ArgvComplete = false
+		if tighteningPatternCorrection(ix, bix, &f, Result{Outcome: OutcomeNone, Final: true}, b) != "" {
+			t.Error("incomplete vector certified")
+		}
+		tighteningState.Unlock()
+	}
+}

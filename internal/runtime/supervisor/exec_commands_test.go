@@ -910,3 +910,57 @@ func TestExecCommandRulesLeaveTheFloorsDecisionAlone(t *testing.T) {
 		}
 	}
 }
+
+// The real fact producer and record projection keep the corrected alias's
+// refusal, including the reserved ask marker. Kernel delivery is owed in a guest.
+func TestExecCommandCorrectedAlias(t *testing.T) {
+	for _, list := range []string{"deny", "ask"} {
+		t.Run(list, func(t *testing.T) {
+			f := newFake()
+			l, sink := newTestLoop(t, f, commandPolicy(t, list+": git add"))
+			execAt(l, f, nrFor(t, "execve"), 42, 0, "/usr/bin/git", "git", "-c", "help.autocorrect=immediate", "staeg", "-h")
+			wantExecAnswer(t, f, record.VerdictRefused)
+			ev := sink.one(t)
+			p := execPayloadOf(t, ev)
+			if ev.Verdict != record.VerdictRefused || ev.Rule != "exec."+list+"[git add]" || ev.Reason != record.ReasonExecNotAllowed || p.CommandList != list || p.CommandMatch != "ambiguous" || p.CommandVia != "name" || p.ArgvFacts != record.ArgvFactsCopied || p.CompletionUnsupported != (list == "ask") {
+				t.Fatalf("event=%+v payload=%+v", ev, p)
+			}
+		})
+	}
+}
+
+// A retained generic separator is still required after the first 32-element read.
+func TestExecGenericRetainedSeparatorPastFirstStage(t *testing.T) {
+	argv := []string{"tool"}
+	for range 31 {
+		argv = append(argv, "a")
+	}
+	entry := "allow: tool " + strings.Join(argv[1:], " ") + " --"
+	argv = append(argv, "--")
+	f := newFake()
+	pol := commandPolicy(t, entry)
+	pol.Rules.Exec = append(pol.Rules.Exec, agent.ExecRule{Raw: "tool", Path: "/usr/bin/tool", Basename: "tool", ByName: true, Source: agent.ExecSourceAllow, Verdict: agent.VerdictAllow})
+	l, sink := newTestLoop(t, f, pol)
+	execAt(l, f, nrFor(t, "execve"), 42, 0, "/usr/bin/tool", argv...)
+	wantExecAnswer(t, f, record.VerdictAllow)
+	if ev := sink.one(t); ev.Verdict != record.VerdictAllow {
+		t.Errorf("retained separator read stopped too soon: %+v", ev)
+	}
+}
+
+func TestMatcherPanicRefusesOnlyThatExec(t *testing.T) {
+	row := &execmatch.Row{Tool: "rm", Root: &execmatch.Level{Opts: []execmatch.Opt{{Name: "boom", Long: []string{"boom"}, Arg: execmatch.ArgRequired, Rewrite: func(string) bool { panic("matcher panic") }}}, Syntax: execmatch.Syntax{LongSep: true}}}
+	rs := execmatch.NewRows(row)
+	p, err := execmatch.Parse("rm x", execmatch.ListDeny, rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol := commandPolicy(t, "deny: rm x")
+	pol.Rules.ExecCommands.Index = execmatch.NewIndex(rs, []*execmatch.Pattern{p}, execmatch.IndexOptions{})
+	f := newFake()
+	l, _ := newTestLoop(t, f, pol)
+	execAt(l, f, nrFor(t, "execve"), 42, 0, "/usr/bin/rm", "rm", "--boom", "value")
+	wantExecAnswer(t, f, record.VerdictRefused)
+	execAt(l, f, nrFor(t, "execve"), 42, 1, "/usr/bin/ls", "ls")
+	wantExecAnswer(t, f, record.VerdictAllow)
+}

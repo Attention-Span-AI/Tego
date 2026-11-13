@@ -69,7 +69,18 @@ of this run's lost records; one skipped callback can suppress multiple records. 
 program instances from their active links, rather than independent program pins. Missing, changed or unreadable
 attachments/counters produce `bpf-trampoline-counter-unavailable`. Receipts and views keep coverage incomplete
 and describe shared skipped executions, never “N events lost” or proof of loss in this run. Overlapping runs may
-report the same skip. See [GAPS C53](GAPS.md).
+report the same skip. A skip of a program that decides a run's actions (the listener cleanup on any preemptible
+kernel) is detected and ends the launched runs that rely on it, with a `bpf-decision-skip/shared-build` gap; their
+receipts say the rules may not have held. The LSM hooks of tier 3 and the plane's lsm mode cannot be skipped on a kernel from 6.2 (6.1.54 in the 6.1 series); on an
+older one, `tego doctor` offers them only where the kernel does not preempt kernel code. On a kernel that preempts
+kernel code (every 7.0 kernel), the check that holds each exec to the decided command line can be skipped, so doctor
+says exec rules on argv are best effort there and `exec.assurance: kernel` is refused. Doctor reads this from the
+running kernel's own symbols, not its version. Measured in the test kernels: the symbol it reads is present on RHEL 9's
+5.14.0-687, Amazon Linux 2023's 6.1.188, Debian 12's 6.1.176, Ubuntu 24.04's 6.8, Debian 13's 6.12, Ubuntu 25.10's
+6.17 and Fedora's 7.0 and 7.2, and absent on Ubuntu 22.04's 5.15; doctor ran on Amazon Linux 2023, Debian 12 and
+Fedora 7.0. Other vendor kernels, and older point releases of these, are not measured: run `sudo tego doctor` there.
+Doctor states this listener-cleanup exposure where kernel code can be preempted or its preemption mode is unknown;
+an adoption reports detected skips without ending the agent. See [GAPS C53](GAPS.md).
 
 ## Platforms checked for v0.1.1
 
@@ -275,6 +286,55 @@ denies/REFER still have their existing limits. See [OPERATIONS.md](OPERATIONS.md
 Landlock has no name-mutation floor: held reads retain launch-pinned objects, but future name-only matches
 outside watched launch targets can be renamed, exchanged or hard-linked out of coverage before they are pinned
 ([GAPS.md](GAPS.md) A11). Keep secrets outside writable folders; changing tier does not erase other stated limits.
+
+## Bind mounts and the root tiers
+
+A bind mount on the same filesystem instance can show a compiled denied path entry, or part of it, under
+another name. At tier cgroup without a decision-plane mode, Tego refuses to start such a run. It makes the
+same refusal if a plane cannot hold the rule and falls back to the listener. The message names the first
+affected paths and places, counts the rest, and gives the host owner's remedies. No flag overrides it. This is
+a fail-closed limit for this release; the listener does not hold other names by their paths.
+
+A selected decision plane still holds a whole-folder alias on the same filesystem instance. A part mounted
+outside the denied folder is refused at tier bpflsm and at cgroup after plane fallback. Switching to cgroup is
+no remedy for that case. Remove the duplicate mount, or use a tier and kernel with a decision plane only where
+it holds the whole contract. `tego doctor` says which plane modes the machine offers. When it can see a second
+place for home or another built-in protected target, it names both places and says which mechanisms refuse or
+hold that layout. The run still checks its whole contract at startup. The no-root tier, landlock, retains its
+documented alias limit for another name beneath a folder it lets the agent read.
+
+At tier cgroup without a plane mode, a `setuid: true` contract with a `deny_read` or protected-name rule is also
+refused. The built-in secret list adds these rules, so ordinary contracts using it are refused in this combination.
+An allowed setuid program can regain mount privileges and reach copied mounts outside the listener's marks.
+Remove `setuid: true`, or use a decision plane only where it holds the whole contract.
+
+Mount-table unit fixtures show the cost for common layouts below. Each model has eight built-in denied
+targets: six home secret targets, a project `.env`, and the run's own records in `~/.tego`. These are modeled layouts, not captures from installations;
+real contracts depend on which targets exist and where the host exposes them. The table tests this alias startup
+check, not whether the machine offers a tier.
+
+| Modeled layout | Listener startup with only the built-in list | What the host owner can do |
+|---|---|---|
+| Desktop, root and separate home each visible once | No alias refusal, 0 of 8 entries duplicated | No alias change needed in this model. |
+| Fedora Atomic, `/var/home` also readable through a deployment view under `/sysroot` | Refused, all 8 entries duplicated in that view | Use a plane that holds the contract, or remove the duplicate view from the launch namespace. |
+| Ubuntu with five snaps on separate loop devices | No alias refusal, 0 of 8 duplicated | Snap mounts alone do not duplicate this model's secret targets. |
+| Docker, home and its nested project mounted independently | Refused, the project's `.env` also visible beneath home | Avoid mounting the same project twice, or use a plane that holds the contract. |
+| Toolbox or Distrobox, shared home and readable host view at `/run/host` | Refused, all 8 entries duplicated through the host view | Use a plane that holds the contract, or remove the duplicate host view from the launch namespace. |
+| WSL2, Linux root and one Windows-drive view | No alias refusal, 0 of 8 duplicated | No alias change needed in this model. |
+
+All duplicates in these fixtures expose whole entries. Their plane handling is unchanged; the plane must still hold
+the rest of the contract. A part mounted outside its denied folder has the refusal described above.
+
+Tego identifies other places of a denied folder by the identity of the filesystem instance. A different
+filesystem instance showing the same data, such as a second network mount of one export, a FUSE mirror or a
+loop image, is not recognised at any tier. Deny the other path too, or do not mount the same export twice
+where agents can read it. Known network mount types with the same source string on different filesystem
+devices produce a warning, not a refusal. Name-entry scopes receive no alias check.
+
+During root-tier preparation, Tego shares one mount-table snapshot across composition, listener checks, plane
+checks and recorder startup. Compilation, tier selection and harness hook admission can read separate snapshots.
+Later mounts made by the host after a run starts are not seen, and host ancestor renames are not tracked.
+Hard links and overlay layers retain their separate limits. Details: [GAPS.md](GAPS.md) C68.
 
 ## What the tiers do not change
 

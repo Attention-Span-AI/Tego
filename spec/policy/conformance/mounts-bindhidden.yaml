@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+# mounts-bindhidden: ADR 0017 space 5, a mount the path no longer reaches (ADR 0011's amendments of 2026-11-11). A tmpfs
+# is mounted at p/secret, then src is bound over p, which hides that tmpfs, then p/secret/deep, which is now src's, is
+# bound at pub/part. The deny_read entry ./p/secret/ is src's directory: a lookup by the longest mount point text picks
+# the hidden tmpfs and misses pub/part. The visible mount is resolved by the table's mount and parent ids and checked
+# against the live system. The decision plane cannot hold the table (a part of the tree outside it), so the plane axes
+# fall back to the listener, which also refuses startup because the entry has another name; bpflsm refuses the
+# detached part. compile --test answers names and sees no mount.
+version: 2
+name: mounts-bindhidden
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./w/"]
+    deny_read: ["./p/secret/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [p/secret, src/secret/deep, pub/part, w]
+files:
+  src/secret/deep/key: the secret
+mounts:
+  - {kind: tmpfs, at: p/secret}
+  - {kind: bind, at: p, from: src}
+  - {kind: bind, at: pub/part, from: p/secret/deep}
+model:
+  write: [w]
+  deny_read: [p/secret]
+  exec_allow: [bin/actor]
+  net_declared: true
+  plane_cannot_hold: true
+  listener_refuses: true
+cells:
+  - name: read-bind-behind-hidden-mount
+    op: read
+    path: pub/part/key
+    canon: p/secret/deep/key
+    want:
+      landlock: allow
+      root: refused fs.deny_read[./p/secret/]
+    no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
+    exception: 'enforce-landlock E32 (ii): a deny_read target''s content reached through a bind mount beneath a granted sibling is readable through that name at tier landlock (recorded limitation; compile warns on mount points)'
+    exception_at: landlock
+    source: 'ADR 0025 (identity is the inode); ADR 0011 (2026-11-11 amendments); enforce-landlock E32 (ii)'

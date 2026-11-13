@@ -259,11 +259,22 @@ func (l *Loop) builtinTTYOpen(n *notif, r *reader, p string, q pathQuery, flags 
 	if n.gone {
 		return true
 	}
-	if err != nil || !agent.OtherTTY(at) {
+	if err != nil {
 		return false
 	}
 	var st unix.Stat_t
-	if unix.Stat(at, &st) == nil && c.ownTTY != 0 && st.Rdev == c.ownTTY {
+	statErr := unix.Stat(at, &st)
+	named := agent.OtherTTY(at)
+	// A bind mount retains the slave's device numbers but need not have any
+	// name beneath /dev. Recognize the character-device class before deciding
+	// whether the inherited-terminal exception can apply (ADR 0113).
+	terminal := statErr == nil && otherTTYDevice(st)
+	if !named && !terminal {
+		return false
+	}
+	// Keep arbitrary aliases refused even when their rdev matches: another
+	// devpts instance can reuse the inherited terminal's major/minor pair.
+	if named && statErr == nil && c.ownTTY != 0 && st.Rdev == c.ownTTY {
 		return false
 	}
 	reason := record.ReasonReadDenied
@@ -274,6 +285,17 @@ func (l *Loop) builtinTTYOpen(n *notif, r *reader, p string, q pathQuery, flags 
 	l.respond(n, respErrno(refusalErrno))
 	l.emitFS(n, r, record.FSOpen, at, "", flags, d)
 	return true
+}
+
+// otherTTYDevice recognizes pseudo-terminal slaves and virtual consoles even
+// through a mount alias. Major 4's serial devices start at minor 64 and retain
+// their existing ordinary device policy (ADR 0113).
+func otherTTYDevice(st unix.Stat_t) bool {
+	if st.Mode&unix.S_IFMT != unix.S_IFCHR {
+		return false
+	}
+	major, minor := unix.Major(st.Rdev), unix.Minor(st.Rdev)
+	return major >= ptsFirst && major <= ptsLast || major == ttyMajor && minor < 64
 }
 
 // DeliverPty lends an owned peer only for the atomic ADDFD/SEND operation.

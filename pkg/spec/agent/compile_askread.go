@@ -118,7 +118,7 @@ func (k *compiler) fsAskRead() {
 		}
 		return
 	}
-	mt, _ := loadMountTable(k.o.mountInfo) // fs already reports unavailable metadata
+	mt, _ := k.mountTable() // fs already reports unavailable metadata
 	b := &fsBuilder{k: k, mt: mt}
 	drop := map[int]bool{}
 	seen := map[string]bool{}

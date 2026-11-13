@@ -129,6 +129,14 @@ type statusJSON struct {
 	// the same shape, absent when there is none.
 	Paused       bool   `json:"paused,omitempty"`
 	PausePending string `json:"pause_pending,omitempty"`
+	// LauncherGone is a run whose launcher is gone, with no run_end, whose last recorded state was paused (ADR 0124,
+	// second amendment of 2026-11-11): state reads lost and paused true (the last state recorded, not proof it stayed
+	// frozen). ScopeNow is what its scope shows now: frozen, running, empty or unknown. Tego never thaws it; tego stop
+	// ends what is left and closes its record with run_end orphaned. Both absent otherwise.
+	LauncherGone bool   `json:"launcher_gone,omitempty"`
+	ScopeNow     string `json:"scope_now,omitempty"`
+	// LauncherUnknown is why a held lock's launcher could not be confirmed alive or gone; absent when it was judged.
+	LauncherUnknown string `json:"launcher_unknown,omitempty"`
 }
 
 // gapJSON is one entry of the gap line: the gap events of one what and why.
@@ -374,6 +382,9 @@ func joinedErrors(err error) []error {
 // stall is not one while the pause lasts.
 func statusExit(snaps []*status.Snapshot, pauses map[string]pauseFact) int {
 	for _, s := range snaps {
+		if pauses[s.Run].LauncherGone {
+			return identity.ExitFinding // lost while paused, whatever its derived state
+		}
 		if s.St == status.Stalled && pauses[s.Run].Paused {
 			continue
 		}
@@ -408,6 +419,12 @@ func writeStatus(w io.Writer, snaps []*status.Snapshot, pauses map[string]pauseF
 			s.Idle.Round(time.Second), s.Step, s.Events, exit)
 	}
 	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if err := writeLostPaused(w, snaps, pauses); err != nil {
+		return err
+	}
+	if err := writeLauncherUnknown(w, snaps, pauses); err != nil {
 		return err
 	}
 	if err := writeStatusGaps(w, snaps, list); err != nil {
@@ -475,7 +492,7 @@ func gapWords(s *status.Snapshot) string { return gaps.Words(s.Gaps, s.St == sta
 // pause_pending and leaves state as derived.
 func statusObject(s *status.Snapshot, p pauseFact) statusJSON {
 	o := statusJSON{
-		Paused: p.Paused, PausePending: p.Pending,
+		Paused: p.Paused, PausePending: p.Pending, LauncherGone: p.LauncherGone, LauncherUnknown: p.LauncherUnknown,
 		Run: s.Run, Agent: s.Agent, State: string(s.St), SinceMonoNS: s.SinceMonoNS,
 		IdleS: s.Idle.Seconds(), IdleClock: s.IdleClock, IdleFrom: s.IdleFrom, StallAfterS: s.StallAfter.Seconds(),
 		StallAfterSource: s.StallAfterSource, Step: s.Step, Events: s.Events, PendingApprovals: s.PendingApprovals,
@@ -483,6 +500,10 @@ func statusObject(s *status.Snapshot, p pauseFact) statusJSON {
 		Gaps: gapObjects(s.Gaps), GapWords: gapWords(s), Tier: s.Tier, Capabilities: s.Capabilities, TegoVersion: s.TegoVersion, Resources: s.ResourcesRecorded,
 		RunCommandGrant: s.RunCommandGrant, BestEffort: s.BestEffort, LedgerAnomalies: s.Anomalies(),
 		LedgerBytes: s.LedgerBytes, LedgerCeilingBytes: s.LedgerCeiling,
+	}
+	if p.LauncherGone {
+		o.State = string(status.Lost) // a lock held by a process that is not its launcher reads lost too
+		o.ScopeNow = p.Scope.json()
 	}
 	if s.ExitReason != "" {
 		code := s.ExitCode

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"maps"
 	"math/rand/v2"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -154,29 +156,54 @@ var prefixShapes = []struct {
 	{"xbox tool", func(tool, _ string, toks []string) execmatch.Facts { return muxFacts("xbox", tool, toks) }},
 }
 
+// prefixSweepSelected partitions only the explicit exhaustive proof. Generate
+// every vector before filtering so each shard retains the original RNG stream.
+func prefixSweepSelected(t testing.TB, index int) bool {
+	t.Helper()
+	raw := os.Getenv("TEGO_EXECMATCH_PREFIX_SHARD")
+	if raw == "" {
+		return true
+	}
+	a, b, ok := strings.Cut(raw, "/")
+	part, e1 := strconv.Atoi(a)
+	total, e2 := strconv.Atoi(b)
+	if os.Getenv("TEGO_EXECMATCH_LONG") != "1" || !ok || e1 != nil || e2 != nil || total < 1 || part < 0 || part >= total {
+		t.Fatalf("invalid exhaustive prefix shard %q", raw)
+	}
+	return index%total == part
+}
+
 // TestPrefixFinalHoldsEveryRow is prefixHolds for every built-in row under every contract prefixRows gives it, at
 // every prefix length: each vector of up to two tokens of its vocabulary with argv[0] the tool's name, and 250 seeded
-// vectors of up to 10 tokens, every other one with argv[0] empty. -short leaves the pairs out.
+// vectors of up to 10 tokens, every other one with argv[0] empty. TEGO_EXECMATCH_LONG=1 runs all pairs and 250 generated vectors; ordinary runs
+// retain every single token, an 8-by-8 pair slice and 32 generated vectors.
 func TestPrefixFinalHoldsEveryRow(t *testing.T) {
 	prs := prefixRows(t)
 	rng := rand.New(rand.NewPCG(48, 3))
 	checked := 0
-	for _, pr := range prs {
+	for rowIndex, pr := range prs {
 		type vec struct {
 			argv0 string
 			toks  []string
 		}
 		var vecs []vec
-		for _, a := range pr.vocab {
+		for ai, a := range pr.vocab {
 			vecs = append(vecs, vec{pr.tool, []string{a}})
 			if testing.Short() {
 				continue
 			}
-			for _, b := range pr.vocab {
+			for bi, b := range pr.vocab {
+				if os.Getenv("TEGO_EXECMATCH_LONG") != "1" && (ai >= 8 || bi >= 8) {
+					continue
+				}
 				vecs = append(vecs, vec{pr.tool, []string{a, b}})
 			}
 		}
-		for n := range 250 {
+		generated := 32
+		if os.Getenv("TEGO_EXECMATCH_LONG") == "1" {
+			generated = 250
+		}
+		for n := range generated {
 			v := vec{pr.tool, make([]string, 1+rng.IntN(10))}
 			if n%2 == 1 {
 				v.argv0 = ""
@@ -185,6 +212,9 @@ func TestPrefixFinalHoldsEveryRow(t *testing.T) {
 				v.toks[i] = pr.vocab[rng.IntN(len(pr.vocab))]
 			}
 			vecs = append(vecs, v)
+		}
+		if !prefixSweepSelected(t, rowIndex) {
+			continue
 		}
 	contracts:
 		for i, ix := range pr.ixs {
@@ -205,24 +235,28 @@ func TestPrefixFinalHoldsEveryRow(t *testing.T) {
 // TestPrefixFinalHoldsMulticall is prefixHolds for every built-in row reached through a multicall image's readings
 // (prefixShapes after the first), under every contract prefixRows gives it, at every prefix length: each vector of
 // one token of its vocabulary, each of the row's first subcommand and two tokens, and 250 seeded vectors of up to 10
-// tokens. -short leaves the subcommand triples out.
+// tokens. TEGO_EXECMATCH_LONG=1 runs all triples and 250 generated vectors; ordinary runs
+// retain every single token, an 8-by-8 triple slice and 32 generated vectors.
 func TestPrefixFinalHoldsMulticall(t *testing.T) {
 	prs := prefixRows(t)
 	rng := rand.New(rand.NewPCG(48, 4))
 	checked := 0
-	for _, shape := range prefixShapes[1:] {
-		for _, pr := range prs {
+	for shapeIndex, shape := range prefixShapes[1:] {
+		for rowIndex, pr := range prs {
 			var vecs [][]string
 			sub := ""
 			if pr.row != nil && pr.row.Root != nil && len(pr.row.Root.Subs) > 0 {
 				sub = slices.Sorted(maps.Keys(pr.row.Root.Subs))[0]
 			}
-			for _, a := range pr.vocab {
+			for ai, a := range pr.vocab {
 				vecs = append(vecs, []string{a})
 				if testing.Short() {
 					continue
 				}
-				for _, b := range pr.vocab {
+				for bi, b := range pr.vocab {
+					if os.Getenv("TEGO_EXECMATCH_LONG") != "1" && (ai >= 8 || bi >= 8) {
+						continue
+					}
 					if sub != "" {
 						vecs = append(vecs, []string{sub, a, b})
 					} else {
@@ -230,12 +264,19 @@ func TestPrefixFinalHoldsMulticall(t *testing.T) {
 					}
 				}
 			}
-			for range 250 {
+			generated := 32
+			if os.Getenv("TEGO_EXECMATCH_LONG") == "1" {
+				generated = 250
+			}
+			for range generated {
 				v := make([]string, 1+rng.IntN(10))
 				for i := range v {
 					v[i] = pr.vocab[rng.IntN(len(pr.vocab))]
 				}
 				vecs = append(vecs, v)
+			}
+			if !prefixSweepSelected(t, shapeIndex*len(prs)+rowIndex) {
+				continue
 			}
 		contracts:
 			for i, ix := range pr.ixs {

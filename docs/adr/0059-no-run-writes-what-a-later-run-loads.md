@@ -1,4 +1,4 @@
-# ADR 0059: no run writes what a later run loads: R10 protects every name a policy file is read by, and the loaders read none it cannot see
+# ADR 0059: protect later policy loads by path walks, mount identity and loader checks
 
 Status: **accepted 2026-10-20**; implemented 2026-10-20; record files' link counts checked for every euid since 2026-11-03 (amendment below).
 Amends agent-contract.md R10 and R26,
@@ -36,8 +36,9 @@ open; each round enumerated one more kind. The list of targets could not be comp
 
 ## Decision
 
-One invariant, kept from both sides: **every name a policy file is loaded by is a name R10 keeps every write entry
-off.** R10 enumerates the names of a closed walk, and the loaders refuse any file that has a name outside it.
+The intended invariant is that a run cannot write a later policy load. R10 checks the path walk; loaders constrain
+directory escapes and hard links. Mount comparisons have exactly the [compile-time mount boundary](#compile-time-mount-boundary)
+defined in the second amendment below.
 
 1. **What R10 protects is a place tego reads, by the whole walk that reaches it** (*amended 2026-10-20*). A target is either a file tego reads (the contract file, the price table, each machine config layer
    file, the chain anchor) or a directory tego reads files from or writes into (the user registry's `agents/` and
@@ -112,9 +113,8 @@ off.** R10 enumerates the names of a closed walk, and the loaders refuse any fil
    from replacing a contract the user did not choose is R26's refusal of a name both registries hold (F1): a planted
    project entry can add a name the user registry does not hold, or block one it does, never stand in for it.
 
-Together, (1) to (3) close the walk: every directory the walk to a policy file reads a name in is one R10 protects,
-every file read from a protected directory stays inside it, and the file has no name besides the one walked; (4) keeps
-it closed for the run.
+Together, (1) to (3) constrain the declared path walk and hard-link names, and (4) prevents the run creating a new
+hard link from an ungranted source. Mount comparisons follow the [compile-time mount boundary](#compile-time-mount-boundary).
 
 ## Rejected options
 
@@ -149,10 +149,10 @@ it closed for the run.
   `events.jsonl`, `lock`, `chain.log`, the publication lock) now refuse a file with a second link for every euid.
   Still by name only: the read side (`Reader`'s `openRegular` of `events.jsonl`, blob reads), files made fresh with
   `O_EXCL` (the activity sidecar, the live index entry, blobs) once made, and gc's removal lock.
-- **A bind mount is a name a link count does not show.** One the administrator makes of a policy file or of a
-  protected directory, onto a path a write entry reaches, is not seen; a run cannot make one, since a Landlock domain
-  refuses `mount(2)` and every other change of the filesystem topology (the kernel's Landlock documentation), and
-  `TestIntegrationLandlock`'s `bwrap` cell shows a mount namespace refused before it mounts.
+- **A bind mount is a name a link count does not show.** The 2026-11-11 amendments compare aliases within the
+  [compile-time mount boundary](#compile-time-mount-boundary). A run cannot make
+  one, since a Landlock domain refuses `mount(2)` and every other change of the filesystem topology (the kernel's
+  Landlock documentation), and `TestIntegrationLandlock`'s `bwrap` cell shows a mount namespace refused before it mounts.
 - **Another agent's contract in a directory a run may write.** A contract given by its path, or a project entry, is
   protected from its own run and from no other (5): a personal agent with `fs.write: ["./"]` run in a project can
   rewrite that project's `agent.yaml`, as it can any file there that the user later runs (a git hook, a Makefile).
@@ -335,3 +335,510 @@ an flock and writes nothing. Verified 2026-11-03: `TestLedgerRefusesHardLinkedFi
 copy of master (`accepted a ledger with a writable hard-link alias`, `accepted an anchor ...`) and passes on the
 branch, as an ordinary user; as root it passes on both (root was already held to one link), in the KVM guest of
 ADR 0069's 2026-11-03 verification.
+
+## Amendment 2026-11-11: tego's own binaries by more of their names
+
+*Status: accepted 2026-11-11; built (compile).* Narrows GAPS C45; what it does not close stays there as a limit.
+
+**Context.** Since 2026-11-01 R10 keeps every write entry off tego's own binaries (agent-contract R10, `WithOwnBinaries`):
+the running tego, the `tego-control` beside it, and the first `tego` and `tego-control` on the launcher's PATH, each
+with the `tego-control` beside the file its link leads to. They are what a later run, or `sudo "$(command -v tego)"`,
+runs outside any contract, so they belong to this record: no run writes what a later run loads. Read in the code on
+2026-11-11, R10 compared names only, and four kinds of name were outside it:
+
+- a tego this compile neither runs from nor finds on PATH: a systemd unit's `ExecStart` on another path, a second
+  install (the installer's `~/.local/bin` beside a package's `/usr/local/bin`). The dashboard's rule checks name no
+  running file at all (tego-control runs from a sealed copy) and search the service's PATH;
+- a bind mount that shows the binary, or a directory above it, at another place;
+- the layer directories of an overlay holding the binary, whose files the overlay shows;
+- a second hard link, which no table lists.
+
+What each tier enforces about a write to the binary: a write entry is a grant, and Landlock unions grants over a whole
+subtree; it cannot subtract a file from one (SEMANTICS §2). So a name of the binary under a write entry is writable at
+tier landlock, and the root tiers start from the same Landlock ruleset. The decision plane keys rows by inode
+(ADR 0025) and could refuse a write to the binary's inode under any name, but only for an inode a row names; the
+supervisor's best-effort checks see copied pathnames, not other names. A run cannot make a new name itself: Landlock
+refuses `link(2)` from a directory with no `REFER` grant into a write entry and every `mount(2)` (Residuals above), so
+the names that matter are the ones that exist when compile runs.
+
+**Decision.**
+
+1. **Known install places are targets.** Beside the running file and PATH's, compile looks in the installer's default
+   prefix under the compile's home (`~/.local/bin`, `scripts/install.sh`), `/usr/local/bin`, `/usr/bin` and
+   `/opt/tego/bin` (`defaultInstallDirs`), and holds every `tego` and `tego-control` there, with the `tego-control`
+   beside each `tego`, as R10 holds PATH's. A unit or a second shell runs one of these far more often than any other
+   place; the dashboard's checks get them too, though they name no running file.
+2. **Other places established within the mount boundary are targets.** The
+   [compile-time mount boundary](#compile-time-mount-boundary) governs alias identification and uncertainty.
+   Each identified alias is walked as R10 walks a target; review round 1 extended this to every R10 target, the ledger
+   root, the anchor and the policy files included (`aliasTargets`). Binary stacking layers are followed as a closure
+   (`layerClosure`, review round 1): each named layer directory, its identified aliases and exposed subtrees within
+   the mount boundary, and the layers of a stacking filesystem holding a layer, at most 64
+   places and 4 filesystems deep; an entry may be neither at, over nor inside any of them. A layer no path of this
+   mount namespace reaches (ENOENT or ENOTDIR: a container's, named in its host's terms) is a stated limit, not a
+   reason to refuse a grant (review round 4, below). Mapping a host layer spelling through a mount root supplies a
+   conservative candidate, whose identity and visibility must satisfy the mount boundary before it can be discarded.
+   Ownership of the merged paths gives no exemption and no assurance about hidden
+   backing directories. Relative layers and unnamed backing trees have the stated limit below. A present place that
+   cannot be examined, a place the table shows no mount holding, or a closure past its bounds still refuses every
+   write grant.
+3. **Names compile cannot list fail closed.** A tego binary with more than one hard link refuses every write entry that
+   reaches its filesystem (the entry lies on its device, or a mount of that device lies at or beneath the entry): the
+   other names could be anywhere there, and a write through one rewrites what the next run runs. The fix installs a
+   fresh copy with one name outside every write entry and runs that one, leaving the other names (a backup's, a
+   store's) as they are. A file only root may write (owned by root, no group or other write bit) is exempt while the agent is not
+   root and cannot become root (the uid it is dropped to is not 0, and the contract has no `setuid: true`): a grant
+   does not override the file's mode, so no name of it is writable by the agent (a package's or a Nix store's hard
+   links). A mount table that cannot be read or shows no mount holding a binary refuses every write entry, as an
+   unplaced target already did. So does a table larger than compile reads (8 MiB or 32768 mounts, review round 1).
+   A binary on FUSE, eCryptfs, aufs or shiftfs has the stated backing limit below, while its visible paths remain
+   protected. `WithMountInfo("")` turns the mount probe off for a caller that asks (test fixtures).
+4. **`tego run` checks again with the file it runs from.** Its compile names the running binary
+   (`os.Executable`, obtained from `/proc/self/exe`), so the unit's own tego is held at run time even where another tego
+   compiled the contract. Tego never looks its own helpers up on PATH: the reaper, the linger timer, the child stage,
+   the MCP relay, the harness hook and the hand-off to `tego-control` all run the running file or the `tego-control`
+   beside it (read in the code: `os.Executable` and `/proc/self/exe` at every such start). The one place a `tego` is
+   found through PATH is Maze's engine check, which runs outside every run and already refuses a `tego` inside the
+   project.
+5. **`path-shadow` stays a warning.** A write entry over a PATH directory searched before tego (an activated
+   `.venv/bin`, `node_modules/.bin`) holds nothing of tego's, and refusing it would break the commonest Python and Node
+   setups. Tego itself never resolves its own name through PATH (4), so the run stays as it is; what the warning
+   names is the person's next `tego` in that shell.
+
+**Rejected.** A plane row keyed on the binary's inode at the root tiers: with (1) to (3), no name compile can see lies
+under a write entry, so the row would refuse nothing compile knows of, and at tier landlock nothing could hold the
+same inode. A walk of every write entry for a file with the binary's device and inode: its cost grows with the
+entries' trees (a home directory), and a search a limit cuts would be (3)'s refusal anyway. Refusing `path-shadow`:
+(5).
+
+**What this does not cover.** Mount analysis has exactly the [compile-time mount boundary](#compile-time-mount-boundary).
+A tego installed elsewhere than (1)'s places and neither run nor found on PATH by the compile (a unit's
+`ExecStart=/srv/tools/tego`, checked by another tego) is unknown to that compile; `tego run` under that unit holds
+its own binary (4). The person's own shell may resolve `tego` through a directory a run wrote (5). The harness
+hook's launcher check separately reads block-device backing through sysfs (ADR 0064); compile does not.
+
+**Tests.** `TestCompileRefusesWritesOverTegosOtherNames` (`pkg/spec/agent`): a unit's `ExecStart` at a usual install
+place, a second install in the installer's prefix, a bind mount of the install directory and of the file alone, an
+overlay layer, a hard link, and a mount table that cannot be read. The earlier `TestCompileRefusesWritesOverTegosBinaries`,
+`TestCompileRefusesWritesOverALinkToTego`, `TestCompileKeepsWritesBesideTegosBinaries` and
+`TestCompileWarnsAboutPATHBeforeTego` are unchanged. `TestPairsContractsCompile` holds the pairs harness's contracts,
+whose write entry holds a hard link of the launcher, to (3): refused where its agent could rewrite the launcher, and
+compiled where the launcher is root's and the agent the sudo user, as `make vm-pairs` runs them (read, not run).
+
+**Guest check, 2026-11-11** (KVM, this box's kernel 6.17.0-41-generic, 3 GB, 4 vCPUs; `tego run`, which compiles with
+the file it runs from, at tier landlock as the sudo user and at tier cgroup as root, the running tego a root-owned
+copy in `/opt/t1`): a bind mount of `/opt/t1` inside the write entry, a bind mount of the binary alone there, a second
+install in the user's `~/.local/bin` under an entry over `~/.local`, and a user-owned tego with a second hard link on
+the entry's filesystem were each refused before the agent started (exit 125, `contradiction` naming the other name);
+the same contract with each name removed ran (exit 0), at both tiers.
+
+## Amendment 2026-11-11 (second): kernel control filesystems by what they are, not where they usually are
+
+*Status: accepted 2026-11-11 (review round 1 of r14/pausecompile); built (compile).*
+
+**Context.** R10 kept every write grant off `/sys/fs/cgroup` and `/sys/fs/bpf` (agent-contract R9's kernel implicits)
+and off `/run/tego` by their paths. Landlock grants a write through every mount beneath a granted directory, so a
+bind mount of the cgroup tree, or a second `cgroup2` (or `proc`, `sysfs`, `bpf`) mount, inside a write entry was a
+grant on the same files under another name. Read in the code, and run in a KVM guest (below): at tier landlock the
+user's delegated cgroup subtree holds every landlock run of the user, owned by the user, so a governed agent granted
+a folder holding such a mount could write another run's `cgroup.freeze` (thaw a paused run, also after its launcher
+died), `cgroup.procs`, its limits and `cgroup.kill`, and its own. A run cannot make such a mount (Landlock refuses
+`mount(2)`); a person or an administrator does. Every release from v0.1.0 to v0.1.2 compiles such a grant.
+
+What R10 protects by pathname only, before this amendment: `/sys/fs/cgroup`, `/sys/fs/bpf`, `/run/tego`, and the
+targets of the earlier amendments and this record (the ledger root, the run directory, the contract, the chain anchor,
+the machine config's layers, prices, profiles and registry directories, tego's runtime parents, tego's binaries).
+
+### Compile-time mount boundary
+
+Compile reads one bounded, strictly parsed snapshot of the mount table in the namespace where it runs. It identifies
+other places of a protected file or folder only through mounts of the same filesystem instance whose position and
+visibility it can establish unambiguously from mount IDs, parent IDs and live identity checks where the kernel
+supports them. Printed row order is not evidence of which mount is on top.
+
+Amended 2026-11-12 (fix round 7): rows split only at newline. Every other byte, including a carriage return
+at the end of an overlay option, remains part of the value. The 8 MiB snapshot bound counts input bytes,
+including delimiters; acquisition reads at most one byte beyond it to detect overflow. Compile and a root tier's
+run start share this reader (`MountOf` is gone since the one-reader amendment). Path fields decode mountinfo octal escapes once in `unescapeMount`. Super options stay
+encoded until values are separated, then use that same decoder once. Legacy `lowerdir` additionally applies
+its own backslash/colon list grammar. Comparisons use decoded pathnames, with no whitespace trimming, case
+folding or Unicode normalization. Mountpoint fields and ordinary root fields must be clean absolute paths;
+the unlinked-root rule below and namespace handles on nsfs are exceptions for root fields. Layer paths use
+lexical path cleaning before the existing path walk. A decoded layer with a `..` component refuses every
+write or ask grant instead of cleaning away a symlink before the walk. A decoded `upperdir` or `workdir`
+containing a backslash also refuses: legacy string options quote the following byte, but FD-based options
+print a literal path, and mountinfo has no origin marker to choose between them. Use absolute layer paths
+without parent components or ambiguous upper/work quoting, or install the binary on a plain filesystem.
+Neither condition establishes an unrelated backing tree. These additional byte-audit cases are covered by
+`TestCompileRefusesAmbiguousLayerSpellings` and `TestMountReadersRefuseAmbiguousLayerSpellings`.
+`TestMountSnapshotPreservesPathBytes`, `TestMountSnapshotCountsInputBytes` and
+`TestCompileRefusesCarriageReturnLayerAlias` cover this correction. Kernel execution remains owed in a guest.
+
+Amended 2026-11-12 (one reader): compile and a root tier's run start (ADR 0011, ADR 0025) read the mount table
+through one reader in `pkg/spec/agent/mountinfo.go`. Fix round 14 restores the earlier read-denial reader's stricter
+rule for ambiguous siblings: more than one top candidate at a mount point remains unknown before live selection,
+even if statx identifies one candidate. This rule applies to supplied and live tables, alongside the stricter
+record, graph and alias checks below. The snapshot is read twice and compared, up to three times, so a table that
+changes while it is read refuses. Besides the byte rules above, a row may not hold a NUL or a tab, a row of 1 MiB or more refuses, ids
+and device numbers must be canonical decimal (a device spelled `08:01` refuses the table rather than being
+normalised), and the rows must form one graph: unique ids, exactly one root mount at `/`, every other parent listed
+and mounted at or above its child, no cycle. A table that fails any of these refuses all write and ask grants.
+The parent-edge visibility index and its live identity checks are the one holding-mount lookup for both sides.
+`TestMountAmbiguousSiblingsRemainUnknown` pins the three-row sibling table in supplied and live forms, including
+unknown alias results and an unrelated path that remains placeable. All 51 raw fixture tables and all 56
+compatibility layouts have no siblings with the same parent and point; replay preserves all 56 layouts' accepted
+contract counts.
+These measurements are unit evidence. Execution of the merged enforcement path remains owed in a guest.
+For linked roots, the other places a path is shown at (`MountTable.Of`) consider every linked-root row of the device,
+a hidden row or one of unknown visibility included, and keep an alias whose own name resolves elsewhere:
+an alias that is not reachable only refuses more. An unlinked former name never enters this path-alias index;
+`Of` for a path held by an unlinked-root mount reports its holding mount, device and source with unplaced backing,
+and infers no path aliases from that old name. Compile separately checks reached unlinked regular-file roots by
+live file identity, as specified below. No lenient table reader remains.
+`TestCompileRefusesUnplacedProtectedIdentity` and the cycle case of
+`TestCompileRefusesAmbiguousMountVisibility` hold the whole-table refusal; round 13 improves the missing-root words.
+Measured on tables captured in a guest (`TestCompileCapturedChrootMountTables`, 2026-11-12): among these layouts,
+the kernel lists no row at `/` where the process's root is not a mount's root (a chroot into a plain folder).
+There the per-path analysis this amendment replaced refused the same 17 of the 19 baseline contracts, since `/` itself has no row and
+every walk starts there; the one reader refuses the same 17. A chroot whose root is a mount point, `pivot_root` and
+bubblewrap list their root at `/` and accept all 19 under both.
+
+Amended 2026-11-12 (fix rounds 13 and 15): a final `//deleted` root marker is valid only after a clean absolute prefix.
+The marker establishes that the name is unlinked, not that a directory is empty or dead. An unlinked directory
+remains an uncertain alias candidate: write and ask grants reaching it refuse, and read-denial startup retains
+uncertainty when the directory could show part of the denied tree. There is no directory harmlessness exception.
+For an unlinked regular-file root, live nofollow statx must establish type, inode and the snapshot mount ID before
+comparison with each placed protected regular file's device and inode. The protected identity is also read under
+its snapshot mount ID. Established absence or a nonregular protected target needs no file comparison; an identity
+read error, failed holding-mount lookup, mount-ID mismatch or missing identity refuses the reaching grant.
+A protected walk across an unlinked root has unplaced backing with C65's conditional warning on the same or
+another device.
+A table with no row at `/` still refuses all write and ask grants, and compile and `tego doctor` explain that
+Tego's root is not a mount point, the kernel hides its filesystem and the remedy is to bind the root folder onto
+itself before entering it or run Tego outside that root.
+The final double slash distinguishes the kernel marker from a canonical path merely containing `deleted`;
+a noncanonical prefix or a marker elsewhere remains invalid, as does every other malformed row.
+The captured `systemd-nspawn` table now admits all 19 baseline contracts; its unlinked file mounts remain subject
+to protected-file identity and kernel-filesystem checks; the pre-existing backing classes retain their byte
+comparisons and warning rules.
+These are compilation checks on captured tables; running this branch in nspawn, a plain-folder chroot and a
+self-bound chroot is owed in a guest.
+`TestMountUnlinkedRootSpelling`, `TestCompileUnlinkedFileIdentity`, `TestCompileUnlinkedDirectoryAndUnknownType`
+and `TestCompileUnlinkedProtectedBackingWarns` pin the marker, real hard-link identity, directory and uncertainty
+rules, and backing warning; `TestCompileCapturedNspawnProtectedGrants` retains the protected-folder and bind-alias
+refusals, and `TestDoctorExplainsPlainFolderChroot` pins doctor's words. Fix round 15 adds
+`TestCompileUnlinkedPopulatedDirectory` for reaching write and ask grants, `TestUnlinkedProtectedIdentity` for
+protected-side read and mount failures with absence and nonregular controls, and
+`TestMountUnlinkedDirectoryUncertainty` for alias-query and scope uncertainty.
+
+Amended 2026-11-12 (fix round 16): doctor says when it cannot tell whether home or a built-in protected folder
+is visible under another name, names the unlinked-directory mount or unclassifiable root, and retains
+established alias warnings without claiming the plane can hold the uncertain tree.
+The known aliases and uncertainty reason come from one query; a later type read cannot erase the mount name.
+`TestDoctorUncertainMountAliases` pins the uncertain text to a golden and covers detached and
+whole-tree aliases, unreadable roots, regular-file roots and different-device controls.
+This is diagnostic unit evidence; the enforcement refusals and alias certainty rules are unchanged.
+
+If it cannot establish that position or visibility, it refuses the write or ask grants the uncertainty could affect.
+Ambiguous stacking, an identity it cannot read and a protected place it cannot place are uncertainty, never evidence
+that a mount is harmless or absent; the backing limits stated here have their own warning rule. The refusal names the mount point or path. A malformed, unreadable or over-bound
+table refuses all write and ask grants.
+
+Amended 2026-11-12 (fix rounds 9 and 12): two kinds of backing are unplaced stated limits, like an absent binary layer.
+An overlay layer named relative to a folder the table does not record is never resolved against a guessed folder.
+Absolute layers of the same overlay are still placed and protected. FUSE (including `fuse.overlayfs` and
+`fuse.fuse-overlayfs`) and eCryptfs backing remains unplaced for every protected regular file, including a binary,
+a config layer or a contract. Unnamed aufs and shiftfs backing is tracked for binaries and their layers.
+For example, a contract on `fuse.sshfs user@server:/p` can warn for a grant on another disk even when Tego itself
+is on ext4. The warning names that contract and its path, as well as the filesystem type. Visible protected names and mount aliases remain protected. A `..` layer component,
+ambiguous upper/work quoting, an unreadable existing layer, unknown grant identity and every other uncertainty
+refusal above remain refusals. The rule is: "cannot tell where a grant lands" refuses; "cannot tell what stores a
+protected file's filesystem" is a stated limit with a warning. Compile and run start use the same rule.
+
+Amended 2026-11-12 (fix round 10): the runtime fixtures now replay complete container tables captured on
+Ubuntu 24.04, kernel `6.8.0-147-generic`, with Docker 29.1.3, containerd 2.2.1, Podman 4.9.3 and
+fuse-overlayfs 1.13. Docker overlay2's long layout has relative `l/` lowers and relative upper/work; Docker's
+default containerd store and `ctr` have relative `NNN/fs` lowers with absolute upper/work. The absolute paths
+in that mixed layout remain protected without assigning the relative lowers a guessed base. Optional fields
+such as `master:1` and `shared:291`, nontrivial mount IDs, masked proc/sys paths and the captured option tails
+do not change the rule. The tails include `nouserxattr`, `uuid=on`, `redirect_dir=nofollow`, `userxattr` and
+`fsync=volatile`, with no `index=off`. The real FUSE type is `fuse.fuse-overlayfs`; the alternative
+`fuse.overlayfs` and escaped-space cases remain labelled synthetic.
+
+Amended 2026-11-12 (fix round 12): a single-file mount is excluded from the backing warning only for absent or
+relative overlay layers, whose stored bytes match their visible bytes. No file-bind comparison clears a warning
+when any affected backing is FUSE or eCryptfs: encrypted storage can contain different bytes for the same file.
+For overlay classes, live `statx` with `AT_SYMLINK_NOFOLLOW` and `STATX_MNT_ID|STATX_TYPE|STATX_SIZE` must identify
+a regular file on the snapshot row's mount ID, and comparison must establish a difference from every affected
+protected regular file. Different sizes prove difference, including when one file is empty. Equal nonzero sizes
+require bounded byte reads, both files opened `O_NOFOLLOW|O_NONBLOCK`, capped at the protected file's size. Two
+empty files prove neither identity nor difference: no refusal by bytes and no file-bind exemption. A nonempty
+byte-identical protected-file alias refuses every reaching write or ask entry, naming the protected file and
+mount, executable or not.
+Unreadable protected files and failed comparisons give no file-bind exemption. Unidentified or changed mount
+points give no exemption either; the memory-filesystem storage limit still applies without live file identity.
+Agent fixtures replay `statx` IDs for the captured Docker `/etc/resolv.conf`, `/etc/hosts` and `/etc/hostname`
+binds and keep them quiet in the overlay classes; their live runtime silence is owed in a guest. Podman's FUSE
+capture places its tmpfs file binds outside an ordinary project grant, so that grant reaches none and stays quiet.
+A grant reaching one of those file binds gets one backing warning, including the empty `/run/.containerenv` bind.
+Memory directory mounts retain the silent storage limit below; regular-file binds established by live checks
+can keep the warning.
+On a container host, an unrelated runtime-storage folder is not protected by its name: R10 still compares
+the grant with the installed binaries and other protected places.
+
+Amended 2026-11-12 (fix round 11): when a protected file lies on FUSE or eCryptfs and its mount source is an
+absolute path naming an existing directory in this namespace, that directory joins the protected layer closure,
+including its visible aliases. Write and ask entries at, over or inside it refuse. A missing, non-directory or
+relative source remains unplaced. Source text never clears a FUSE backing warning: its mounter chooses `fsname`.
+This branch also keeps the eCryptfs warning because it has not established a kernel-supported identity check
+proving that the source directory is the live lower directory. Linux 6.8's
+[`ecryptfs_inode_set`](https://github.com/torvalds/linux/blob/v6.8/fs/ecryptfs/inode.c#L42-L49) copies the lower
+inode's number. Equal inode numbers on different devices do not prove that the source path still names the original
+lower directory: a replacement or overmount can reuse that number. The proposed inode-number check is therefore
+insufficient, and the warning stays. A source can add refusals without removing warnings.
+A visible absolute layer that itself lies on unplaced backing stays protected, and its backing gets the warning.
+Directory storage on memory filesystems (`tmpfs`, `ramfs`, `hugetlbfs` and `devtmpfs`) gets no backing warning in
+either backing class. Regular-file binds established by live checks keep the warning without a difference
+exemption, including empty files on tmpfs. Unverified memory mounts retain the storage limit.
+When the runtime's storage or the backing folder itself lives on a memory filesystem and that same filesystem
+is also mounted at a directory a contract may write, Tego gives no warning. This is GAPS C65's stated limit.
+`TestCompileAbsentPlusFuseBinaryGrantOnFuse`, `TestCompileRelativeLayerFileBind`,
+`TestCompileProtectsEncryptedBackingSource` and `TestCompileAbsentLayersStorageOnTmpfs` pin these cases.
+The separate harness-hook scan can omit its automatic exact-argv grant and provisioning on unplaced backing;
+it warns and the ordinary run continues. `TestHarnessUnplacedBackingDoesNotRefuseRun` now uses the product
+provisioner registry in `Run` for every harness kind, on captured relative-layer Docker and FUSE-root Podman tables.
+Claude Code and auto resolving to Claude Code reach the needed-grant scan, decline the provision with
+`harness-hook-refused`, and reach enforcement. The other harness kinds have no product hook provision and skip
+that scan. This does not share the contract compiler's backing-warning guarantee; execution is owed in a guest.
+
+The capture runs used older head `69541c0706dd39125a004cc60f7ec046898e63be`, before fix round 9.
+Small Docker overlay2 passed recipe 6 there with one `[mount]` advisory per phase without a volume and one
+backing warning per phase with it. The volume mount advisory prints at compile and is informational at run
+start, where it prints only with `-v`. The capture script repeats compile lines in its final grep output. Relative-layer and FUSE ordinary grants refused on that
+older head. Replaying captures verifies compilation against those bytes; this branch's runtime reruns are
+owed in a guest.
+
+This analysis does not see mounts made after compile, a different filesystem instance showing the same data, or what
+another process of the same user does outside the run. Absent layers, relative overlay layers and the unnamed
+backing of FUSE, eCryptfs, aufs and shiftfs are also outside the guarantee: these alone refuse no grant, and the
+conditional warning in decision (4) discloses a granted storage mount whose relationship to that backing is unknown.
+The overlay-layer closure follows binaries, not arbitrary policy or ledger backing trees on an overlay.
+FUSE and eCryptfs source-directory protection also applies to existing R10 regular-file targets.
+Host owners must keep these unseen sources of protected data out of writable grants.
+
+**Decision.**
+
+1. **A write grant that reaches an identified kernel interface filesystem is a contradiction.** For every
+   `fs.write` entry and `fs.ask` scope, compile looks the entry up in the mount table: if the mount holding it, or any
+   mount at or beneath it, is of a type `agent.KernelFilesystems` marks refused, the entry is refused
+   (`mountTable.controlFS`), within the [compile-time mount boundary](#compile-time-mount-boundary). Unknown visibility
+   refuses the grants it could affect. The type is what the kernel reports for the mount, so a bind mount of part of
+   the cgroup tree is `cgroup2` too. `tego run` compiles at run start, so this holds at run start as well. `KernelFilesystems` is
+   the one inventory of these filesystems (review round 2): the supervisor's alternate-file refusal reads it by
+   statfs magic. The policy for each type, not a claim that every kernel interface is covered:
+
+   | Type | Write grant | Reason, and what else holds there |
+   |---|---|---|
+   | `proc`, `sysfs`, `cgroup`, `cgroup2`, `bpf`, `resctrl` | refused | process, sysctl, cgroup and BPF state of other processes and runs; `resctrl` groups' resource controls and tasks. procfs was a `kernel-fs-write` warning by path before |
+   | `securityfs`, `apparmorfs`, `selinuxfs`, `smackfs` | refused | security module policy |
+   | `debugfs`, `tracefs`, `configfs`, `efivarfs`, `pstore`, `binfmt_misc`, `fusectl`, `nsfs` | refused | kernel debug and tracing, configfs items, EFI variables, crash records, binary format handlers, FUSE connections, namespace handles |
+   | `mqueue` | refused | POSIX message queues of other processes (create, unlink); `mq_open(2)` itself does not use the path and Landlock does not govern it |
+   | `binder`, `usbfs`, `rpc_pipefs`, `xenfs`, `functionfs` | refused | IPC and device control endpoints |
+   | `devpts` | only the mount at `/dev/pts` is allowed | other mount points, including binds of a slave, refuse write and ask grants that reach them; canonical `/dev/pts` lets an agent open its own pseudo-terminals. ADR 0113's open check also identifies slave character devices by device major outside `/dev`; aliases are refused even when their device number matches the inherited terminal. `TIOCSTI` and `TIOCLINUX` are refused by seccomp |
+   | `devtmpfs` and character devices | not refused | a device file is reached by its own entry (`/dev/null`); a grant on `/dev` itself is a `kernel-fs-write` warning, and on a systemd host is refused for the `mqueue` mount beneath it; what a device node allows is its mode and the seccomp filter's ioctl set |
+   | `hugetlbfs` | not refused | memory-backed data files, not an interface to other processes |
+   | `tmpfs`, `ramfs` | not refused by type | memory filesystems; directory storage excluded from the backing warning in both classes, as are `hugetlbfs` and `devtmpfs`; regular-file binds established by live checks can still warn. Kernel interface filesystems above are excluded; memory-backed directory storage at a writable place is C65's silent limit |
+   | `overlay`, FUSE, disk filesystems | not refused by type | the [compile-time mount boundary](#compile-time-mount-boundary) defines alias and layer coverage and its limits. A FUSE type alone adds a mount advisory; identified protected source places and aliases still refuse |
+2. **R10 places are compared within the mount boundary** (the first amendment's (2), extended; review round 2).
+   The [compile-time mount boundary](#compile-time-mount-boundary) governs placement and uncertainty. A grant and
+   each protected place are placed on the mount table by device and place within the filesystem
+   (`mountTable.reaches`), and a mount beneath the grant is followed, so a grant at or over another mount of a target
+   is refused as the target is, and a grant inside another mount of a directory whose inside R10 refuses (the anchor's
+   directory, the owner's tego directory, the ledger root's run directories, the profiles and registry folders, tego's
+   runtime parents, a layer, `/run/tego`, `/sys/fs/cgroup`), or over a mount showing part of one, is refused as one
+   inside it is (`insideByPlace`, `inRunDirByPlace`). The run directory rule compared the ledger root's parent, so it
+   refused nothing for a ledger root outside the anchor's directory; it compares the root (found in review round 2).
+   Every directory the target's walk reads a name in is compared through mount identity too, including directories
+   visited before `..` and directories holding registry symlinks. An absent host layer path alone refuses no grant.
+   Candidates found conservatively through mount roots retain unreadable or ambiguous identities as uncertainty,
+   regardless of merged ownership.
+3. **Fail closed.** A mount table compile cannot read whole and parse strictly (malformed, unreadable, or past 8 MiB
+   or 32768 mounts) refuses every write and ask grant, as the mount boundary requires. The table is read and parsed
+   once per compile and shared by every check (`compiler.mountTable`). Its reader: `loadMountTable(path string)
+   (*mountTable, error)`, a bounded scan (`io.LimitReader` at 8 MiB + 1, at most 32768 rows, lines up to 1 MiB); a
+   malformed row is an error. Past either bound, on a malformed row or on a read error, it returns an empty table
+   with `err` set, which every write and ask grant is refused on.
+4. **Unplaced protected-file backing is disclosed where a storage mount matters** (review rounds 4, 9 to 13 and 15, 2026-11-12).
+   If a binary overlay layer is absent (ENOENT or ENOTDIR) or relative, a binary has unnamed aufs/shiftfs backing,
+   any protected regular file has unnamed FUSE/eCryptfs backing, or a protected walk crosses an unlinked-root mount,
+   compile emits one `overlay-backing-unknown` warning per write or ask entry that covers, or lies under, a visible
+   storage mount. All cases exclude kernel interface filesystems from the shared inventory; absent and unnamed
+   stacking backing also exclude memory directory storage. Regular-file binds established by live checks can
+   keep the warning on memory filesystems.
+   The absent-only rule also excludes discovered binary overlay devices. For relative layers and unnamed backing,
+   each affected protected filesystem excludes only its own device: a different binary's device can still hold its backing
+   folders on a storage filesystem. Unlinked protected backing also warns on its own device and on memory
+   directory storage, retaining the kernel interface exclusion. Unlinked directories remain uncertain and refuse
+   reaching grants. The warning names the grant and mount and says Tego cannot tell whether it shows the folders
+   holding protected files.
+   When a protected file itself lies on unnamed backing, the warning names it and that filesystem, such as the
+   contract on sshfs, a config layer or a binary. Nested layer reasons do not name an originating protected file.
+   FUSE and eCryptfs backing warnings also apply to existing R10 regular-file targets beyond the binaries.
+   For a relative layer it explains that the mount table does not record the folder the
+   layer names are relative to; for unnamed
+   backing it names the filesystem type and says Tego cannot prove which folder holds the files it shows. For absent
+   or relative layers, keep the runtime's storage and the whole host filesystem out of places a contract may write.
+   For unnamed backing, keep the folder that stores the encrypted or mirrored files out of every write grant.
+   A character-device grant such as `/dev/null` gets no backing-storage warning. A single-file mount gets the
+   exception only for overlay backing after the snapshot-bound type, mount ID, size and protected-file
+   comparison described above. Two empty files keep the warning; FUSE/eCryptfs file binds get no exemption.
+   Nonempty byte-identical aliases still refuse in every backing class. Without such a grant and storage mount
+   there is no backing warning. Ordinary overlay
+   grants can still produce a separate `[mount]` advisory. Root-owned merged
+   paths give no special treatment. Other refusal conditions in (1) to (3) still apply.
+
+**What this does not cover.** The [compile-time mount boundary](#compile-time-mount-boundary) states the mount and
+backing limits. Hard links of other protected files are outside this compile comparison; policy loaders and ledger
+opens have their separate checks (SEC07). A write grant is not the only way to a control filesystem: a socket or a
+process another run can reach is the supervisor's and the plane's (R19, ADR 0113).
+
+**Tests.** `TestCompileRefusesWritesReachingAControlFilesystem` (a bind of the cgroup tree, a second `cgroup2` mount,
+a `proc` mount, a `resctrl` group, an `mqueue` mount, an entry inside one; `fs.write` and `fs.ask`; the canonical `/dev/pts` mount
+and an entry beside a control mount compile; aliases of devpts are refused; a table past the bound), `TestCompileHoldsProtectedDirectoriesThroughMounts`,
+`TestCompileAllowsUnplacedLayers`, `TestCompileUnplacedLayersIgnoreMergedOwnership`,
+`TestCompileWarnsAboutUnplacedOverlayBacking`, `TestCompileMountLayoutsCompatibility` (the count below),
+`TestCompileHoldsTheLayerClosure` (a bind of an overlay's upper layer; unnamed stacking backing),
+`TestCompileContainerRuntimeMountTables` (ordinary write/ask acceptance, exact warnings, protected grants and both
+Podman FUSE type spellings), `TestCompileEncryptedHomeMountTables`, `TestCompileMixedRelativeLayers`,
+`TestCompileRelativeLayersKeepMalformedRefusals`, `TestCompileUnplacedBackingOnAnotherBinaryFilesystem` and
+`TestCompileNestedUnplacedBacking`. Run-start compilation is checked by `TestRunStartContainerRuntimeMountTables`,
+`TestRunStartEncryptedHomeMountTables`, `TestRunStartUnplacedLayersKeepVisibleAndMalformedRefusals` and
+`TestRunStartUnplacedBackingExcludesOnlyItsOwnDevice`. The compile and run-start memory-filesystem and null-device
+regressions also check that storage warnings reach real backing candidates without treating character devices as folders.
+The earlier control-filesystem and placeable-layer alias regressions fail with their corresponding checks removed.
+Guest, 2026-11-11 (KVM, 6.17.0-41-generic): existing mount aliases could bring another run's controls within
+reach of a write grant in v0.1.0 to v0.1.2. v0.1.3 refuses grants that reach them, within the documented mount
+boundary. The v0.1.2 exposure and fixed refusal (exit 125) were measured at tier landlock and cgroup, including
+when the other run's launcher had died; the paused run stayed frozen with the fix (ADR 0124 holds the results).
+procfs, which a write entry
+only got a `kernel-fs-write` warning for, is now refused with the rest (`TestSharedWritableExecAndKernelFSWriteWarn`);
+`TestRunNoticesAMountPointIsANote` now uses `/dev/shm`.
+
+**Compatibility (review round 4, `TestCompileMountLayoutsCompatibility`).** The test asserts all 40 inputs by name
+and their expected baseline result, then each layout's exact refusal set. Nineteen compile with probing off. The 21
+exclusions are five non-contract YAML files, three unfilled templates, eleven missing-path cases and two
+contract/write-directory contradictions. On an ordinary systemd host all 19 compile. A private proc under `/tmp`
+refuses only the `/tmp/` grant; a rootless container root with proc under home refuses only `~/.local/share/`; a
+chroot's proc under the project refuses `examples/agents/custom-agent.yaml` and `./work/`. The CI container fixture
+actually mounts overlay at `/`, with host layer names absent in the container: the same 19 contracts compile, with
+no `overlay-backing-unknown` warning when no granted path meets a storage volume. They are
+`examples__agents__anthropic-sdk-python.yaml`, `examples__agents__claude-code.yaml`,
+`examples__agents__custom-agent.yaml`, `examples__tests__agent.yaml`, `internal__cli__agent.starter.yaml`,
+`testdata__good__bom-crlf.yaml`, `testdata__good__minimal.yaml`, `preset__no-prod`, `preset__no-secrets`,
+`preset__repo-only-writes`, `variant__bpflsm-open`, `variant__cgroup-all`, `variant__deny-list-exec`,
+`variant__landlock-unix`, `variant__reads-direct`, `variant__grant-devshm`, `variant__grant-home`,
+`variant__grant-project` and `variant__grant-tmp`. The layout with all discovered binary directories on a plain mount
+also admits 19/19. With storage volumes at each contract's `out/` and `work/`, all 19 still compile. Exactly 11 warn:
+`examples__agents__anthropic-sdk-python.yaml`, `examples__agents__claude-code.yaml`,
+`examples__agents__custom-agent.yaml`, `examples__tests__agent.yaml`, `internal__cli__agent.starter.yaml`,
+`variant__bpflsm-open`, `variant__cgroup-all`, `variant__deny-list-exec`, `variant__landlock-unix`,
+`variant__reads-direct` and `variant__grant-project`. The other eight have no such warning:
+`testdata__good__bom-crlf.yaml`, `testdata__good__minimal.yaml`, `preset__no-prod`, `preset__no-secrets`,
+`preset__repo-only-writes`, `variant__grant-devshm`, `variant__grant-home` and `variant__grant-tmp`.
+This checks compilation against synthetic tables. This branch's actual container compile/run reruns, with and
+without a granted volume, are owed in a guest: numbered guest checks.
+
+The shipped image installs tego under `/usr/local/bin`. That binary can remain on the container's overlay when its
+host layer paths are absent. Its mount analysis follows the [compile-time mount boundary](#compile-time-mount-boundary).
+An external storage mount meeting a write or ask grant produces the warning in (4), subject to its exclusions,
+since its relationship to hidden host layers is unknown. Keep runtime storage and the whole host filesystem out
+of those grants.
+
+### Review round 3 (2026-11-12)
+
+The walk-name alias regression is `TestCompileHoldsWalkDirectoriesThroughMounts` (write and ask, registry symlink
+and names before `..`). Review round 3 removed the unsound merged-mode exemption; review round 4 keeps ownership out
+of the layer decision and replaces blanket absence refusals with the stated limit above.
+`TestCompileWarnsAboutVisibleFUSEMounts` demonstrates the different-filesystem limit and the warning.
+`TestCompileRefusesDevptsAliases` covers write and ask at, over and inside alias mounts, including a slave bind.
+These are unit proofs. The devpts kernel proof and this branch's container reruns are owed in a guest.
+
+### Review round 4 (2026-11-12)
+
+The round-3 absence refusal reduced the overlay-root fixture from 19 compiling contracts to two. It is reversed:
+ENOENT and ENOTDIR for a binary overlay layer alone refuse no grant. The root-owned merged-path exemption stays
+removed. `TestCompileUnplacedLayersIgnoreMergedOwnership` covers that rule and the refusal of a visible writable
+layer alias despite root-owned merged paths. `TestCompileWarnsAboutUnplacedOverlayBacking` covers one warning per
+reaching entry, write and ask, external mounts, and the absent-only exclusions for binary, kernel and memory
+filesystems.
+Present unreadable layers, unknown mount identity and closure bounds still fail closed. Fix round 9 extends the
+stated limit to relative layers and unnamed FUSE, eCryptfs, aufs and shiftfs backing. The remaining risk is
+GAPS C65; the kernel checks and this branch's container reruns are owed in a guest.
+
+The absent-layer candidate search and backing warning use the common lookup governed by the
+[compile-time mount boundary](#compile-time-mount-boundary). A verified covering mount can exclude a mapped layer
+candidate; a failed identity read cannot. Candidate collection stops one past the 64-place closure bound.
+`TestMountVisibility`, `TestCompileAllowsUnplacedLayers` and `TestCompileLayerCandidatesAreBounded` cover these
+checks without privileged mounts.
+
+### Review round 5: one holding-mount lookup (2026-11-12)
+
+Mount placement checks share one holding-mount lookup. Its guarantees and uncertainty refusals are exactly the
+[compile-time mount boundary](#compile-time-mount-boundary), corrected in round 6 below. Missing target paths use
+the first existing ancestor. Synthetic placement skips the host ID comparison. The single-file backing-warning
+exception still requires `statx`; agent fixture tests supply replayed mount IDs through its test seam.
+
+`TestCompileHoldsProfilesWithHiddenMountRows` covers protected and granted sides, with write and ask scopes.
+`TestMountLookupVerifiesLiveIdentity` compares the ordinary live table with the kernel and refuses a stale ID.
+Privileged overmount execution is owed in a guest.
+
+### Review round 5: unknown protected identity (2026-11-12)
+
+Before any write or ask comparison, compile requires a mount device and filesystem-relative place for every
+active R10 target and every directory its walk reads. The owner's existing Tego directory is included. These
+places are relevant to every grant: without identity, even a separately named visible bind cannot be proved to
+reach different data. The grant also needs identity. An empty configuration path declares no target. Absent
+binary overlay backing never enters this target set and remains C65; different-filesystem mirrors remain outside
+this comparison. No ownership exemption applies.
+
+An unknown place refuses the grants and names the place and remedy: use a namespace whose root is a mount point
+and whose table includes its filesystem, bind-mount the chroot root onto itself before entering it, or compile
+and run outside the chroot. `TestCompileRefusesUnplacedProtectedIdentity` covers a partial chroot with visible
+binary and workspace binds; since the one-reader amendment above, such a table is refused whole.
+`TestCompileMountLayoutsCompatibility` also asserts accepted counts explicitly: ordinary host, overlay-root
+CI and workspace-volume container stay at 19, with exactly the existing 11 volume warnings. Project chroot stays
+at 17, refusing only `examples__agents__custom-agent.yaml` and `variant__grant-project` for its proc mount. The
+partial-root chroot keeps only the two read-only baseline contracts and refuses the other 17, all asserted by name.
+Privileged partial-chroot execution is owed in a guest.
+
+### Review round 5: binary inspection errors (2026-11-12)
+
+Discovery preserves inspection errors for running, PATH, standard-install and beside-launcher helper candidates.
+Only ENOENT and ENOTDIR establish an absent candidate. Other errors refuse write and ask grants and name the
+candidate and cause; they cannot become a claim that no binary is installed. ENOENT/ENOTDIR absence still compiles.
+`TestCompileRefusesUnknownBinaryDiscovery` covers every discovery source, and
+`TestCompileRefusesUnsearchableInstall` covers a user-owned directory whose search permission is removed.
+
+Post-discovery binary identity errors and failures placing a hard-link grant's filesystem also refuse with their
+cause (`TestCompileRefusesUnknownBinaryIdentity`, `TestCompileRefusesUnknownHardLinkGrantFilesystem`). An alternate
+chain anchor cannot disable the owner's Tego directory check: unknown directory lookup refuses grants, and an
+existing directory alias of the filesystem root keeps its at/inside write refusal
+(`TestCompileKeepsOwnerDirectoryProtectionWithAnotherAnchor`).
+
+### Review round 6: uncertainty is a refusal (2026-11-12)
+
+The [compile-time mount boundary](#compile-time-mount-boundary) replaces the earlier blanket claims about stacking
+and visible aliases. A moved mount can appear before the mount it covers in mountinfo. Same-point stacking therefore
+uses parent relationships, with live candidate verification where supported; unresolved visibility refuses the grants
+it could affect and names the mount point. An unreadable mapped layer candidate remains uncertainty and reaches the
+closure's refusal path. Only a verified covering mount establishes that the candidate is hidden. Parsing rejects a
+malformed row rather than treating a partial table as complete. Privileged moved-mount and permission checks are
+owed in a guest.
+
+The boundary audit also keeps unrelated omitted parent IDs unknown (since the one-reader amendment above, a table
+with an omitted parent other than the root's is refused whole before this analysis) and includes the mount point
+in a protected-side ambiguity refusal. `TestMountStackUsesParentsBeforeRowOrder`, `TestCompileRefusesMovedControlMount`,
+`TestLayerClosureKeepsUnreadableLiveCandidate`, `TestCompileRefusesAmbiguousMountVisibility`,
+`TestCompileNamesAmbiguousProtectedMount` and `TestMountVisibilityKeepsUnrelatedOmittedParentsUnknown` pin these
+cases. The shared bounded parser is also used by `MountTable.Of`; namespace-handle roots retain their kernel type but
+supply no filesystem-relative place. These unit checks do not establish privileged mount execution.

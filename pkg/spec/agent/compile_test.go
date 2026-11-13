@@ -60,7 +60,164 @@ type fixture struct {
 
 func newFixture(t testing.TB) *fixture {
 	t.Helper()
-	return newFixtureIn(t, t.TempDir())
+	return newFixtureIn(t, fixtureTempDir(t))
+}
+
+// sharedTempDirs are the directories a fixture must not live under: /tmp, /var/tmp and /dev/shm, which the compiler
+// treats as written by every user (sharedWritable) and which fixture contracts grant whole (mountCompatVariants),
+// and /run; the fixtures' mount tables mount /tmp, /dev/shm and /run as file systems of their own (hostMounts).
+var sharedTempDirs = append([]string{"/run"}, sharedWritable...)
+
+// fixtureTempDir is t.TempDir for a fixture: its home, its binary and its contract files. With TMPDIR unset the
+// test's directory is under /tmp, and there the compiler rightly answers about the fixture itself instead of the
+// case under test: a contract granting /tmp/ holds the fixture's chain anchor and its own file (a contradiction),
+// and a mount table with /tmp on a file system of its own puts the fixture's binary on that file system, so a
+// line written as an alias of the binary's file system no longer is one. Where t.TempDir lies under one of
+// sharedTempDirs the fixture's root is a new directory under the user's cache directory, removed when the test ends;
+// anywhere else it is t.TempDir's own, unchanged. Like t.TempDir's, the root has a parent of its own that the test
+// alone uses and that is removed with it: tests make siblings of the fixture's root there.
+func fixtureTempDir(t testing.TB) string {
+	t.Helper()
+	var bases []string
+	if cache, err := os.UserCacheDir(); err == nil {
+		bases = append(bases, filepath.Join(cache, "tego-test-fixtures"))
+	}
+	dir, remove, err := fixtureTempDirFor(t.TempDir(), bases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remove != "" {
+		t.Cleanup(func() {
+			if err := os.RemoveAll(remove); err != nil {
+				t.Errorf("fixtureTempDir cleanup: %v", err)
+			}
+		})
+	}
+	return dir
+}
+
+// fixtureTempDirFor is fixtureTempDir's choice: tmp itself where it is outside sharedTempDirs (remove is then
+// empty), otherwise <base>/fx<random>/001 under the first of bases that is outside them, shaped and moded as
+// t.TempDir makes its own; the caller removes remove, the root's parent. A base is created when it does not exist
+// and is left in place, empty, so two tests ending together cannot remove it under each other.
+func fixtureTempDirFor(tmp string, bases []string) (dir, remove string, err error) {
+	if !underSharedTemp(tmp) {
+		return tmp, "", nil
+	}
+	var tried []string
+	for _, base := range bases {
+		if underSharedTemp(base) {
+			tried = append(tried, base+" (under a shared temporary directory too)")
+			continue
+		}
+		if err := os.MkdirAll(base, 0o700); err != nil {
+			tried = append(tried, fmt.Sprintf("%s (%v)", base, err))
+			continue
+		}
+		// The check again on the directory as made: a symlink in base may lead back under one of them.
+		if underSharedTemp(base) {
+			tried = append(tried, base+" (resolves under a shared temporary directory)")
+			continue
+		}
+		parent, err := os.MkdirTemp(base, "fx")
+		if err != nil {
+			tried = append(tried, fmt.Sprintf("%s (%v)", base, err))
+			continue
+		}
+		root := filepath.Join(parent, "001")
+		if err := os.Mkdir(root, 0o777); err != nil {
+			_ = os.RemoveAll(parent)
+			tried = append(tried, fmt.Sprintf("%s (%v)", base, err))
+			continue
+		}
+		return root, parent, nil
+	}
+	if len(tried) == 0 {
+		tried = []string{"no user cache directory"}
+	}
+	return "", "", fmt.Errorf("the test's temporary directory %s is under one of %s, where a fixture cannot live (see fixtureTempDir), and no other place for it could be used: %s: run with TMPDIR set to a directory outside them",
+		tmp, strings.Join(sharedTempDirs, ", "), strings.Join(tried, "; "))
+}
+
+// TestFixtureTempDirStaysOutOfSharedDirs pins fixtureTempDir's choice. It makes nothing under a shared directory:
+// the temporary directory "under /tmp" is only a spelling here.
+func TestFixtureTempDirStaysOutOfSharedDirs(t *testing.T) {
+	for path, want := range map[string]bool{
+		"/tmp": true, "/tmp/TestX123/001": true, "/var/tmp/a": true, "/dev/shm": true, "/dev/shm/x/y": true,
+		"/run/user/1000/t": true, "/": false, "/tmpx": false, "/var/tmpfoo/a": false, "/dev/shmem": false,
+		"/running/t": false, "/home/a/.cache/tego-test-fixtures/fx1": false,
+	} {
+		if got := underSharedTemp(path); got != want {
+			t.Errorf("underSharedTemp(%q) = %v, want %v", path, got, want)
+		}
+	}
+	outside := fixtureTempDir(t)
+	if underSharedTemp(outside) {
+		t.Fatalf("fixtureTempDir returned %s, under a shared temporary directory", outside)
+	}
+	if dir, remove, err := fixtureTempDirFor(outside, nil); err != nil || remove != "" || dir != outside {
+		t.Errorf("a directory outside the shared ones: got %q remove=%q err=%v, want it unchanged", dir, remove, err)
+	}
+	base := filepath.Join(outside, "cache", "tego-test-fixtures")
+	dir, remove, err := fixtureTempDirFor("/tmp/TestX123/001", []string{"/dev/shm/tego-never-made", base})
+	if err != nil || remove == "" {
+		t.Fatalf("a directory under /tmp with a usable base: remove=%q err=%v", remove, err)
+	}
+	// The root's parent is the test's alone, as t.TempDir's is: tests make siblings of the root.
+	if filepath.Dir(remove) != base || filepath.Dir(dir) != remove || underSharedTemp(dir) {
+		t.Errorf("got %s (remove %s), want <new directory under %s>/001", dir, remove, base)
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		t.Errorf("the new directory: %v", err)
+	}
+	if entries, err := os.ReadDir(base); err != nil || len(entries) != 1 {
+		t.Errorf("the base holds %d entries (%v), want the one new parent", len(entries), err)
+	}
+	if _, err := os.Lstat("/dev/shm/tego-never-made"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a base under a shared directory was touched: %v", err)
+	}
+	for _, bases := range [][]string{nil, {"/tmp/tego-never-made", "/dev/shm/tego-never-made"}} {
+		dir, remove, err := fixtureTempDirFor("/tmp/TestX123/001", bases)
+		if err == nil || remove != "" || dir != "" {
+			t.Errorf("bases %q: got %q remove=%q err=%v, want an error and nothing made", bases, dir, remove, err)
+		} else if !strings.Contains(err.Error(), "TMPDIR") {
+			t.Errorf("bases %q: the error does not say what to do: %v", bases, err)
+		}
+	}
+	if _, err := os.Lstat("/tmp/tego-never-made"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a base under /tmp was touched: %v", err)
+	}
+}
+
+// underSharedTemp reports whether path is one of sharedTempDirs or below one, by its spelling and by what it
+// resolves to (the nearest existing ancestor resolved, for a path not made yet); the shared directories are
+// compared resolved as well.
+func underSharedTemp(path string) bool {
+	spellings := []string{filepath.Clean(path)}
+	for p := filepath.Clean(path); ; p = filepath.Dir(p) {
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			rel, _ := filepath.Rel(p, filepath.Clean(path))
+			spellings = append(spellings, filepath.Join(r, rel))
+			break
+		}
+		if p == filepath.Dir(p) {
+			break
+		}
+	}
+	for _, shared := range sharedTempDirs {
+		roots := []string{shared}
+		if r, err := filepath.EvalSymlinks(shared); err == nil && r != shared {
+			roots = append(roots, r)
+		}
+		for _, root := range roots {
+			for _, s := range spellings {
+				if s == root || strings.HasPrefix(s, root+string(filepath.Separator)) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // newSocketFixture is newFixture for a test whose contract or test rows name unix socket paths in the fixture, tail
@@ -214,7 +371,7 @@ func (f *fixture) opts(extra ...CompileOption) []CompileOption {
 	// The host-socket probe (R19) is rooted in the fixture, where no daemon socket exists unless a test
 	// makes one, so no fixture's diagnostics depend on what runs on the machine the tests run on.
 	base := []CompileOption{WithResolver(f.resolver), WithPATH(f.bin), WithCwd(f.project), WithHome(f.home), WithClock(func() time.Time { return time.Unix(1_700_000_000, 0) }),
-		withHostSocketProbe(f.root, 4242)}
+		withHostSocketProbe(f.root, 4242), withInstallDirs(filepath.Join(f.home, ".local", "bin"))}
 	return append(base, extra...)
 }
 
@@ -931,7 +1088,8 @@ func TestCompileTierAndCapture(t *testing.T) {
 // TestSharedWritableExecAndKernelFSWriteWarn: exec.allow of a directory every user can write (/tmp), or of
 // one holding such a directory (/), makes whatever anyone drops there executable, and fs.write on /proc or
 // /dev writes to the kernel, other processes and devices; all four compiled without a word. A single device
-// file and /dev/shm are not warned about.
+// file and /dev/shm are not warned about. /proc, a warning here at first, is refused since ADR 0059's second amendment
+// of 2026-11-11 (a kernel control filesystem, by the mount table's type).
 func TestSharedWritableExecAndKernelFSWriteWarn(t *testing.T) {
 	f := newFixture(t)
 	shared := filepath.Join(f.root, "shared")
@@ -945,13 +1103,17 @@ func TestSharedWritableExecAndKernelFSWriteWarn(t *testing.T) {
 	if err := os.Mkdir(private, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	c := f.load(fmt.Sprintf("version: 0\nname: t\ncommand: [\"python\"]\nexec:\n  allow: [%q, %q]\nfs:\n  write: [\"/proc/self/oom_score_adj\", \"/dev\", \"/dev/null\"]\n", shared, private))
-	_, ds := f.compile(c)
+	if _, ds, err := Compile(f.load("version: 0\nname: t\ncommand: [\"python\"]\nfs:\n  write: [\"/proc/self/oom_score_adj\"]\n"), f.machine, f.opts()...); err == nil ||
+		!strings.Contains(render(ds), "the proc filesystem mounted at /proc, a kernel control filesystem") {
+		t.Errorf("fs.write on /proc compiled, or was refused for another reason:\n%s", render(ds))
+	}
+	c := f.load(fmt.Sprintf("version: 0\nname: t\ncommand: [\"python\"]\nexec:\n  allow: [%q, %q]\nfs:\n  write: [\"/dev\", \"/dev/null\"]\n", shared, private))
+	// With the mount probe off: on a host with /dev/mqueue mounted (systemd's), a grant on /dev reaches that mqueue mount
+	// and is refused since ADR 0059's second amendment of 2026-11-11; the /dev warning is about the path alone.
+	_, ds := f.compile(c, WithMountInfo(""))
 	got := render(ds)
 	for _, want := range []string{
 		"exec.allow " + shared + " is writable by every user: anything any process drops there is executable",
-		"fs.write \"/proc/self/oom_score_adj\"",
-		"reaches procfs",
 		"fs.write \"/dev\" grants writes to every device node this uid can open",
 	} {
 		if !strings.Contains(got, want) {

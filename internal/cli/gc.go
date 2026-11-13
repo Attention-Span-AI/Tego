@@ -34,14 +34,15 @@ func init() { register(cmdGC) }
 // lock yet when the pass reads it, and reads as empty, so the pass takes the run's lock itself before it
 // removes anything: a launcher that locked first keeps its directory, and one that comes after fails its
 // flock or finds the directory gone, before run_start. gc reads no live index, so an ended run whose
-// launcher died before its anchor line or its scope's removal is repaired by run's and stop's sweep alone
-// (record-ledger.md §3 Live index).
+// launcher died before its anchor line is repaired by run's and stop's sweep alone. Before collection,
+// gc also checks an ended run's scope cleanup under the removal lock; unknown or failed cleanup retains the run
+// (record-ledger.md §3 Live index; ADR 0124 review round 3).
 //
 // As root it also sweeps the tier-2 builds lingering on the bpf filesystem (ADR 0022): one no launcher holds,
 // whose run set names no live cgroup and that has been idle for the machine's bpf.linger is removed, and
 // --builds removes such a build whatever its idle time.
 //
-// --keep 0s keeps nothing: every run that is not running is removed, which is the "gc --keep 0 sweep"
+// --keep 0s removes every eligible run once its scope cleanup is confirmed, which is the "gc --keep 0 sweep"
 // record-ledger.md names. It used to be read as "no --keep" and silently became the machine's 30-day
 // retention (R29).
 //

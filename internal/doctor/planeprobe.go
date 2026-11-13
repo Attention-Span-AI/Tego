@@ -248,7 +248,7 @@ func probePlaneMode(m bpfobj.PlaneMode, spec *btf.Spec, env PlaneEnv, lsm LSMSta
 			"is not shown never to preempt kernel code (preemption " + env.Preempt + ", from " + env.PreemptSource +
 			"), so a run in this mode can meet a skipped program, whose hook then proceeds undecided"
 	}
-	v.ExecPin = run.execPin
+	v.ExecPin = execPinWhereSkippable(run.execPin, env)
 	v.KnownTook, v.KnownPhases = run.knownTook.Total, run.knownTook.Phases
 	return v, rows
 }

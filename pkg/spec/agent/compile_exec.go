@@ -380,7 +380,7 @@ func (b *execBuilder) add(raw, source string, pos Pos, implicit bool) {
 // lustre or gpfs, which fstatfs does not give), else by its magic.
 func (k *compiler) fsTypeOf(p string, magic uint32) string {
 	byMagic := "the file system of magic 0x" + strconv.FormatUint(uint64(magic), 16)
-	mt, err := loadMountTable(k.o.mountInfo)
+	mt, err := k.mountTable()
 	if err != nil {
 		return byMagic
 	}

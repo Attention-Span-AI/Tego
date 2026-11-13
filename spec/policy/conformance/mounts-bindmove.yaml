@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: Apache-2.0
+# mounts-bindmove: ADR 0017 space 5, a detached part of a denied tree beneath a writable parent. A root tier refuses
+# to start: the plane cannot hold detached parts and the listener cannot hold another name of a denied tree. The
+# rename and read cells must never run at those tiers. compile --test answers names and sees no mount.
+version: 2
+name: mounts-bindmove
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./pub/"]
+    deny_read: ["./secret/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [secret/deep, pub/a/alias]
+files:
+  secret/deep/key: the secret
+mounts:
+  - {kind: bind, at: pub/a/alias, from: secret/deep}
+model:
+  write: [pub]
+  deny_read: [secret]
+  exec_allow: [bin/actor]
+  net_declared: true
+  plane_cannot_hold: true
+  listener_refuses: true
+cells:
+  - name: rename-alias-parent
+    op: rename
+    path: pub/a
+    dest: pub/b
+    want:
+      all: allow fs.write[./pub/]
+    no_compile: compile --test answers names and sees no mount
+    source: 'ADR 0011 (2026-11-11 amendments); enforce-cgroup-observe §6 item 24'
+  - name: read-moved-alias
+    op: read
+    path: pub/b/alias/key
+    canon: secret/deep/key
+    want:
+      landlock: allow
+      root: refused fs.deny_read[./secret/]
+    no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
+    exception: 'enforce-landlock E32 (ii): a deny_read target''s content reached through a bind mount beneath a granted sibling is readable through that name at tier landlock (recorded limitation; compile warns on mount points)'
+    exception_at: landlock
+    source: 'ADR 0025 (identity is the inode); ADR 0011 (2026-11-11 amendments); enforce-landlock E32 (ii)'

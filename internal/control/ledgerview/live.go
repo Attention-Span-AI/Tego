@@ -35,7 +35,11 @@ type LiveFacts struct {
 	// launcher applied it (the line's ts), PauseSeq the line's seq and PauseSerial the overlay serial it records. A
 	// view says "Paused by you at 12:03" only from these: a pause the launcher has not confirmed is not shown as one
 	// (a request it has not answered yet has a serial above PauseSerial).
-	Paused      bool
+	Paused bool
+	// EndedPaused is a run whose run_end came while its last pause line held it paused. A stop thaws the run first and
+	// writes no line, and lines queued when a launcher dies are lost, so it is the last state recorded, not proof the
+	// run stayed frozen to its end (ADR 0124, second amendment of 2026-11-11).
+	EndedPaused bool
 	Pause       string
 	PausedBy    string
 	PausedAt    time.Time
@@ -60,6 +64,7 @@ func LiveFactsOf(r *Run) LiveFacts {
 	f := m.facts
 	f.Ended = r.Ended
 	if f.Ended {
+		f.EndedPaused = f.Paused
 		f.Paused = false // run_end ends a pause: its processes were thawed or killed
 	}
 	return f

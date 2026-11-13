@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic sshfs home, not a live capture; SOURCE is not a directory path.
+1 0 8:1 / / rw - ext4 disk rw
+2 1 0:80 / @HOME@ rw - fuse.sshfs user@server:/home rw,user_id=1000,group_id=1000

@@ -43,8 +43,13 @@ remote-https request-pull sh-i18n--envsubst shell submodule subtree web--browse 
 // parse-options. git autocorrects an unknown first word in process (the help_unknown_cmd port), runs <cmd> when
 // argv[0] is git-<cmd> whatever file it is, and re-executes itself for helpers (the closure, measured with strace -f
 // against a local bare repository).
+// Terminator evidence: git.c handle_options rejects a global -- (git 2.51.0
+// harmless `git -- version` probe). It must retain both unknown-option arities.
+// Nested parse-options dispatchers vary (default commands and --end-of-options);
+// no uniform nested behavior is established. Their zero Terminator retains both
+// command and default-operand readings, rather than assuming the global behavior.
 func Git() *execmatch.Row {
-	globalSyn := execmatch.Syntax{LongEquals: true, LongSep: true, DashDashUnknown: true}
+	globalSyn := execmatch.Syntax{NextOption: execmatch.NextOptionValue, LongEquals: true, LongSep: true, DashDashUnknown: true}
 	sepOnly := func(o execmatch.Opt) execmatch.Opt { o.SepOnly = true; return o }
 	asSub := func(o execmatch.Opt, sub string) execmatch.Opt { o.AsSub = sub; return o }
 	root := &execmatch.Level{
@@ -82,6 +87,11 @@ func Git() *execmatch.Row {
 		root.Subs[n] = leaf(ps)
 	}
 	for name, lv := range gitLevels(ps) {
+		// These optional-subcommand parsers stop at -- before selecting a child.
+		// stash falls back to push, reflog to show, notes to list (Git 2.51).
+		if name == "stash" || name == "reflog" || name == "notes" {
+			lv.Syntax.Terminator = execmatch.TerminatorOperands
+		}
 		root.Subs[name] = lv
 	}
 	return &execmatch.Row{

@@ -149,6 +149,16 @@ type DecisionPlaneReporter interface {
 	DecisionPlane() (mode string, execs bool)
 }
 
+// ListenerDevicesReporter returns the devices actually marked by the prepared listener.
+type ListenerDevicesReporter interface {
+	ListenerDevices() (marked func(dev uint64) bool, ok bool)
+}
+
+// MountTableReporter gives the recorder the same immutable facts used during Prepare.
+type MountTableReporter interface {
+	MountTable() (*agent.MountTable, error)
+}
+
 // ExecOutcomeReporter reports complete kernel coverage for failed execve and
 // execveat attempts, in addition to successful sched_process_exec records.
 // Without it the supervisor keeps exec policy decisions and refusal records.
@@ -181,6 +191,13 @@ type PlaneKeyedReporter interface {
 // An unreadable counter is an enforcement failure, never a known zero.
 type TrackingFailureCounter interface {
 	TrackingFailures() (uint64, error)
+}
+
+// SkipCounter exposes ProgramSkips (adapters.go; ADR 0148, GAPS C53). The runtime reads it before releasing the child, polls it, and reads it again
+// once the run's last task is gone; a counter that moved means a rule may not have held. An unreadable counter is
+// never a known zero.
+type SkipCounter interface {
+	ProgramSkips() (ProgramSkips, error)
 }
 
 // PlaneFilterer is the optional Handle extension a tier implements when its decision plane decides in the kernel

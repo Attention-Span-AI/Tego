@@ -1,0 +1,24 @@
+344 343 253:1 /srv/d / rw,relatime shared:298 - ext4 /dev/vda1 rw,discard,errors=remount-ro,commit=30
+345 344 0:44 / /tmp rw,nosuid,nodev shared:307 - tmpfs tmpfs rw,size=304328k,nr_inodes=409600,inode64
+346 344 0:22 / /sys ro,nosuid,nodev,noexec,relatime shared:308 - sysfs sysfs rw
+347 344 0:46 / /dev rw,nosuid shared:309 - tmpfs tmpfs rw,size=4096k,nr_inodes=65536,mode=755,inode64
+348 347 0:47 / /dev/shm rw,nosuid,nodev shared:310 - tmpfs tmpfs rw,size=304328k,nr_inodes=409600,inode64
+349 347 0:49 / /dev/pts rw,nosuid,noexec,relatime shared:311 - devpts devpts rw,gid=5,mode=620,ptmxmode=666
+350 344 0:48 / /run rw,nosuid,nodev shared:312 - tmpfs tmpfs rw,size=608652k,nr_inodes=819200,mode=755,inode64
+351 350 0:48 /host /run/host ro,nosuid,nodev,noexec shared:313 - tmpfs tmpfs rw,size=608652k,nr_inodes=819200,mode=755,inode64
+352 351 253:1 /usr/lib/os-release /run/host/os-release ro,nosuid,nodev,noexec,relatime shared:615 - ext4 /dev/vda1 rw,discard,errors=remount-ro,commit=30
+353 351 0:25 /systemd/nspawn/propagate/d /run/host/incoming ro,relatime master:5 - tmpfs tmpfs rw,size=304328k,mode=755,inode64
+354 344 253:1 /home/runner/proj /home/runner/proj rw,relatime shared:715 master:1 - ext4 /dev/vda1 rw,discard,errors=remount-ro,commit=30
+363 344 253:1 /usr/share/zoneinfo/Etc/UTC /etc/localtime ro,nosuid,nodev,relatime shared:716 master:1 - ext4 /dev/vda1 rw,discard,errors=remount-ro,commit=30
+365 344 0:51 / /proc rw,nosuid,nodev,noexec,relatime shared:714 - proc proc rw
+367 365 0:51 /sys /proc/sys ro,nosuid,nodev,noexec,relatime shared:714 - proc proc rw
+268 365 0:51 /acpi /proc/acpi ro,nosuid,nodev,noexec,relatime shared:714 - proc proc rw
+366 365 0:51 /bus /proc/bus ro,nosuid,nodev,noexec,relatime shared:714 - proc proc rw
+739 365 0:51 /fs /proc/fs ro,nosuid,nodev,noexec,relatime shared:714 - proc proc rw
+740 365 0:51 /irq /proc/irq ro,nosuid,nodev,noexec,relatime shared:714 - proc proc rw
+741 365 0:51 /scsi /proc/scsi ro,nosuid,nodev,noexec,relatime shared:714 - proc proc rw
+742 347 0:50 / /dev/mqueue rw,nosuid,nodev,noexec,relatime shared:717 - mqueue mqueue rw
+743 346 0:28 / /sys/fs/cgroup rw,nosuid,nodev,noexec,relatime shared:718 - cgroup2 cgroup rw,nsdelegate,memory_recursiveprot
+779 367 0:48 /.#proc-sys-kernel-random-boot-id8e22d60fbff374e8//deleted /proc/sys/kernel/random/boot_id ro,nosuid,nodev,noexec shared:312 - tmpfs tmpfs rw,size=608652k,nr_inodes=819200,mode=755,inode64
+780 365 0:48 /.#proc-sys-kernel-random-boot-id8e22d60fbff374e8//deleted /proc/sys/kernel/random/boot_id rw,nosuid,nodev shared:312 - tmpfs tmpfs rw,size=608652k,nr_inodes=819200,mode=755,inode64
+781 365 0:48 /.#proc-kmsg482b5614e93078ca//deleted /proc/kmsg rw,nosuid,nodev shared:312 - tmpfs tmpfs rw,size=608652k,nr_inodes=819200,mode=755,inode64

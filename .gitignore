@@ -28,3 +28,6 @@ examples/demo/stage/
 # The lint configs scripts/lint-untagged.sh and scripts/check-fd_test.sh write in the root while they run.
 /.golangci-untagged.yml
 /.golangci-fdtest.yml
+
+# The Rust workspace's default build directory (rust-check.sh builds there unless CARGO_TARGET_DIR is set).
+/rust/target/

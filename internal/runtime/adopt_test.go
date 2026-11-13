@@ -374,7 +374,8 @@ type adoptBackend struct {
 	keyed   []enforce.PlaneKeyed
 	keyedOK bool
 	// onArm, when set, is called by the handle's Arm, before it arms.
-	onArm func()
+	onArm  func()
+	mounts func() (*agent.MountTable, error)
 }
 
 func (b *adoptBackend) Tier() backend.Tier        { return backend.TierCgroup }
@@ -389,6 +390,9 @@ func (b *adoptBackend) Prepare(_ context.Context, rt *agent.RuleTable, ref enfor
 	}
 	b.handle = &adoptHandle{plane: b.plane, ref: ref, keyed: b.keyed, keyedOK: b.keyedOK, onArm: b.onArm,
 		attachErr: b.attachErr, armErr: b.armErr}
+	if b.mounts != nil {
+		b.handle.mounts, b.handle.mountErr = b.mounts()
+	}
 	if b.noArmer {
 		return struct {
 			api.Handle
@@ -407,7 +411,11 @@ type adoptHandle struct {
 	keyedOK                           bool
 	onArm                             func()
 	attachErr, armErr                 error
+	mounts                            *agent.MountTable
+	mountErr                          error
 }
+
+func (h *adoptHandle) MountTable() (*agent.MountTable, error) { return h.mounts, h.mountErr }
 
 func (h *adoptHandle) PlaneKeyed() ([]enforce.PlaneKeyed, bool) { return h.keyed, h.keyedOK }
 
@@ -436,15 +444,25 @@ func (h *adoptHandle) Capabilities() backend.Set     { return backend.Matrix(bac
 
 // fakeRecorder is the kernel recorder: on Start it records one exec of pid as the kernel would, then nothing.
 type fakeRecorder struct {
-	pid      int
-	supExecs *bool
-	plane    string
-	stopped  bool
+	pid        int
+	supExecs   *bool
+	plane      string
+	stopped    bool
+	mounts     *agent.MountTable
+	mountsSet  bool
+	readMounts func() (*agent.MountTable, error)
 }
 
 func (f *fakeRecorder) Name() string { return "fake-kernel-record" }
 
 func (f *fakeRecorder) Start(_ context.Context, run source.RunRef, sink source.Sink) error {
+	if !f.mountsSet && f.readMounts != nil {
+		var err error
+		f.mounts, err = f.readMounts()
+		if err != nil {
+			return err
+		}
+	}
 	ev := &record.Event{Kind: record.KindExec, Source: record.SourceKernel, PID: f.pid, Run: run.ID,
 		Rule: UnmatchedRule, Verdict: record.VerdictObserved, Authority: record.AuthorityRule}
 	_ = ev.SetPayload(record.ExecPayload{Path: "/usr/bin/git", Argv: []string{"git", "status"}, ExecID: run.ID + "/1/1"})
@@ -452,10 +470,11 @@ func (f *fakeRecorder) Start(_ context.Context, run source.RunRef, sink source.S
 	return nil
 }
 
-func (f *fakeRecorder) Stop() error                  { f.stopped = true; return nil }
-func (f *fakeRecorder) Gaps() []source.Gap           { return nil }
-func (f *fakeRecorder) SetSupervisorExecs(on bool)   { f.supExecs = &on }
-func (f *fakeRecorder) SetDecisionPlane(mode string) { f.plane = mode }
+func (f *fakeRecorder) Stop() error                                 { f.stopped = true; return nil }
+func (f *fakeRecorder) Gaps() []source.Gap                          { return nil }
+func (f *fakeRecorder) SetSupervisorExecs(on bool)                  { f.supExecs = &on }
+func (f *fakeRecorder) SetDecisionPlane(mode string)                { f.plane = mode }
+func (f *fakeRecorder) SetMountTable(mt *agent.MountTable, _ error) { f.mounts, f.mountsSet = mt, true }
 
 const adoptSession = "/user.slice/user-1000.slice/session-2.scope"
 
@@ -555,6 +574,41 @@ func waitResult(t *testing.T, done <-chan Result) Result {
 		t.Fatal("the adoption did not end")
 	}
 	return Result{}
+}
+
+func TestAdoptionSharesPreparedMountSnapshot(t *testing.T) {
+	for _, boundary := range []bool{false, true} {
+		t.Run(fmt.Sprintf("boundary=%t", boundary), func(t *testing.T) {
+			f := newAdoptFixture(t)
+			prepared, err := agent.ParseMountTableStrict([]byte("22 1 8:1 / / rw - ext4 /dev/root rw\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			reads := 0
+			acquire := func() (*agent.MountTable, error) {
+				reads++
+				if reads > 1 {
+					return nil, errors.New("second mount snapshot acquisition")
+				}
+				return prepared, nil
+			}
+			f.backend.mounts, f.rec.readMounts = acquire, acquire
+			f.backend.plane = "lsm"
+			spec := f.spec(t)
+			spec.Boundary = boundary
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			s, done := f.adoptRunning(t, ctx, spec)
+			f.host.end(f.host.rel(s.Scope))
+			res := waitResult(t, done)
+			if res.RecordErr != nil || res.ExitCode != 0 {
+				t.Fatalf("adoption result: %+v", res)
+			}
+			if reads != 1 || f.rec.mounts != prepared || !f.rec.mountsSet {
+				t.Fatalf("snapshot acquisitions=%d, recorder facts=%p prepared=%p, set=%t", reads, f.rec.mounts, prepared, f.rec.mountsSet)
+			}
+		})
+	}
 }
 
 func TestAdoptRecordsTheAdoptedTreeAndEndsWithIt(t *testing.T) {

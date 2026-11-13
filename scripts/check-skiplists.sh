@@ -11,7 +11,7 @@
 #
 # It checks, for test/unit-skips.txt, test/integration-skips.txt, test/vm/root-skips.txt and
 # test/vm/root-must-pass.txt:
-#   - every entry is "<package> <test> # <reason>", the package a directory of this module and the test's top-level
+#   - every entry is "<package> <test> [row=ROW] # <reason>", the package a directory of this module and the test's top-level
 #     name a `func TestX(` in one of that directory's _test.go files (TestX/* and TestX/case name its subtests);
 #   - no list names one test twice, and no test is both in root-skips.txt and root-must-pass.txt;
 #   - every integration-skips.txt entry whose reason says root is in root-must-pass.txt or root-skips.txt;
@@ -47,15 +47,16 @@ fail() {
 
 # entries LIST: "<lineno> <package> <test> <reason...>" per entry, the package without the module prefix.
 entries() {
-	local n=0 line entry reason pkg test extra
+	local n=0 line entry reason pkg test scope extra
 	while IFS= read -r line || [ -n "$line" ]; do
 		n=$((n + 1))
 		case "$line" in "" | "#"*) continue ;; esac
 		entry="${line%%[[:space:]]#*}"
 		reason="${line#"$entry"}"
 		reason="${reason#*#}"
-		read -r pkg test extra <<<"$entry" || true
-		if [ -z "${pkg:-}" ] || [ -z "${test:-}" ] || [ -n "${extra:-}" ] || [ -z "${reason// /}" ]; then
+		read -r pkg test scope extra <<<"$entry" || true
+		if [ -z "${pkg:-}" ] || [ -z "${test:-}" ] || [ -n "${extra:-}" ] || [ -z "${reason// /}" ] ||
+			{ [ -n "${scope:-}" ] && ! [[ "$scope" =~ ^row=[a-z0-9][a-z0-9.-]*$ ]]; }; then
 			echo "$n - - malformed: $line"
 			continue
 		fi
@@ -68,7 +69,7 @@ for l in "${lists[@]}"; do
 	declare -A seen=()
 	while read -r n pkg test reason; do
 		if [ "$pkg" = - ]; then
-			fail "$l:$n: want \"<package> <test> # <reason>\", got: ${reason#malformed: }"
+			fail "$l:$n: malformed entry: want \"<package> <test> [row=ROW] # <reason>\", got: ${reason#malformed: }"
 			continue
 		fi
 		top="${test%%/*}"
@@ -101,7 +102,10 @@ done
 # "file 1 is not in sorted order" on lists that sort -c accepts, and set -e ended the script with no finding.
 skips=$(mktemp) musts=$(mktemp)
 entries test/vm/root-skips.txt | awk '$2 != "-" && $4 != "untagged:" {print $2, $3}' | LC_ALL=C sort -u >"$skips"
-entries test/vm/root-must-pass.txt | awk '$2 != "-" {print $2, $3}' | LC_ALL=C sort -u >"$musts"
+# A row-scoped must-pass entry beside an unscoped skip is the other pairing on purpose: the test may skip where
+# root-skips.txt says, and must pass on that one row. Only unscoped must-pass entries take part in this check.
+entries <(grep -Ev '^[^#]*[[:space:]]row=[a-z0-9][a-z0-9.-]*[[:space:]]+#' test/vm/root-must-pass.txt) |
+	awk '$2 != "-" {print $2, $3}' | LC_ALL=C sort -u >"$musts"
 both=$(LC_ALL=C comm -12 "$skips" "$musts")
 rm -f "$skips" "$musts"
 while read -r pkg test; do

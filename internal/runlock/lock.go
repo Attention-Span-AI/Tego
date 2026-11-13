@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -31,6 +32,10 @@ var (
 	// in another pid namespace. Nothing is signalled, and it is not ErrStale, so no caller reads it as "the
 	// launcher is gone" (R22).
 	ErrNotLockHolder = errors.New("runtime: the pid the lock file names does not hold the run's lock")
+	// ErrUnverified is a lock line whose process exists but whose identity cannot be read: its /proc stat line is
+	// unreadable (a restricted procfs, EACCES) or does not parse. It is neither the launcher proved nor ErrStale, so
+	// no caller reads it as "the launcher is gone": nothing is signalled, killed or reclaimed on it.
+	ErrUnverified = errors.New("runtime: the lock holder's identity cannot be read")
 )
 
 // LockInfo is the advisory content of <ledger_root>/<run>/lock: who holds it and when that process
@@ -374,16 +379,55 @@ func openPidfdTarget(pid int, wantStartBootNS uint64) (*StopTarget, error) {
 		}
 		return nil, fmt.Errorf("runtime: pidfd_open(%d): %w", pid, err)
 	}
-	got, err := StartBootNS(pid)
+	got, err := startBootNS(pid)
 	if err != nil {
 		_ = fd.Close()
-		return nil, fmt.Errorf("%w: pid %d: %w", ErrStale, pid, err)
+		// Only a stat line that is not there says the process is gone (it exited and was reaped after pidfd_open).
+		// An unreadable or malformed one, or one of a task released while it was read, says nothing of who the pid
+		// is: the identity is unknown, never stale.
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ESRCH) {
+			return nil, fmt.Errorf("%w: pid %d: %w", ErrStale, pid, err)
+		}
+		return nil, fmt.Errorf("%w: pid %d: %w", ErrUnverified, pid, err)
 	}
 	if got != wantStartBootNS {
 		_ = fd.Close()
 		return nil, fmt.Errorf("%w: pid %d started at %d, lock says %d", ErrStale, pid, got, wantStartBootNS)
 	}
+	// The process the lock line names, but it may have exited and not been reaped yet: a zombie keeps its pid and its
+	// stat line, holds no descriptor and so no lock. Its pidfd is readable once it has exited (pidfd_open(2)).
+	if exited, perr := pidfdExited(fd); perr != nil {
+		_ = fd.Close()
+		return nil, fmt.Errorf("%w: pid %d: poll its pidfd: %w", ErrUnverified, pid, perr)
+	} else if exited {
+		_ = fd.Close()
+		return nil, fmt.Errorf("%w: pid %d has exited (not yet reaped)", ErrStale, pid)
+	}
 	return &StopTarget{fd: fd, pid: pid}, nil
+}
+
+// startBootNS is StartBootNS, as openPidfdTarget reads it; a test makes it fail as a restricted procfs does.
+var startBootNS = StartBootNS
+
+// pidfdExited reports whether the process behind a process pidfd has exited: the pidfd polls readable then, reaped or
+// not. It does not wait.
+func pidfdExited(fd *sys.FD) (bool, error) {
+	var exited bool
+	err := fd.Borrow(func(n int) error {
+		pfd := []unix.PollFd{{Fd: int32(n), Events: unix.POLLIN}}
+		for {
+			_, err := unix.Poll(pfd, 0)
+			if errors.Is(err, unix.EINTR) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			exited = pfd[0].Revents&(unix.POLLIN|unix.POLLHUP) != 0
+			return nil
+		}
+	})
+	return exited, err
 }
 
 // PID is the process the target refers to.

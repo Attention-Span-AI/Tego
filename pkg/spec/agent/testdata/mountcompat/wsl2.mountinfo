@@ -1,0 +1,5 @@
+10 1 8:0 / / rw,relatime - ext4 /dev/sdc rw
+11 10 0:41 / {{ROOT}}/mnt/c rw,relatime - 9p C:\134 rw,aname=drvfs
+12 10 0:42 / {{ROOT}}/mnt/wsl rw,nosuid,nodev - tmpfs tmpfs rw
+13 10 0:5 / {{ROOT}}/proc rw,nosuid,nodev,noexec - proc proc rw
+14 10 0:7 / {{ROOT}}/run rw,nosuid,nodev - tmpfs tmpfs rw,size=2048000k

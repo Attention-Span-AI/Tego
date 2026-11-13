@@ -240,6 +240,9 @@ func (r *runner) awaitEmpty(ctx context.Context, killed bool) {
 	defer cancel()
 	if err := r.cgm.WaitEmpty(kctx, r.cg); err != nil {
 		r.log.Warn("run: the cgroup did not empty after the kill; samples after the final drain are not read", "err", err)
+		// A task of the run can still reach a hook after the final skip reading, so that reading does not cover
+		// the run (finalSkipCheck).
+		r.treeOutlived.Store(true)
 		// A recorder that reads nothing has said so already (kernel-record-unavailable): there is no drain
 		// for a late sample to miss.
 		if r.kernelRecord != nil && !kernelRecordInert(r.kernelRecord) {
@@ -314,6 +317,7 @@ func (r *runner) shutdown(ctx context.Context) Result {
 	}
 	r.finalLimitCheck()
 	r.finalTrackingCheck()
+	r.finalSkipCheck()
 	reason, code, sig, escalated := r.ending()
 	var recordErr error
 	if r.writer != nil {

@@ -126,6 +126,27 @@ run "a blank reason is no reason" 2 "$tmp/blankreason" "$tmp/listed.json"
 run "a stream with no test is a usage error" 2 "$tmp/allow" "$tmp/empty.json"
 run "a missing list is a usage error" 2 "$tmp/nosuchlist" "$tmp/listed.json"
 
+# A row-scoped entry is never a global allowance, including when the caller did not name a row.
+printf 'internal/cli TestRootOnly row=rhel-9 # the row has no driver\n' >"$tmp/rowallow"
+ev skip internal/cli TestRootOnly >"$tmp/row.json"
+run "a scoped skip is allowed on its own row" 0 --row rhel-9 "$tmp/rowallow" "$tmp/row.json"
+has "the row's skip is accepted" '^allowed    internal/cli TestRootOnly'
+run "a scoped skip is rejected on another row" 1 --row fedora-7.2 "$tmp/rowallow" "$tmp/row.json"
+has "another row's skip is rejected" '^UNLISTED   internal/cli TestRootOnly'
+run "a scoped skip is rejected without a row" 1 "$tmp/rowallow" "$tmp/row.json"
+run "a scoped skip is rejected with an empty row" 1 --row "" "$tmp/rowallow" "$tmp/row.json"
+run "global skips still apply with a row" 0 --row fedora-7.2 "$tmp/allow" "$tmp/listed.json"
+printf 'internal/cli TestRootOnly row= # missing row\n' >"$tmp/badrow"
+run "an empty scope is a usage error" 2 "$tmp/badrow" "$tmp/row.json"
+printf 'internal/cli TestRootOnly row=fedora-* # no wildcard scopes\n' >"$tmp/badrow"
+run "a wildcard scope is a usage error" 2 "$tmp/badrow" "$tmp/row.json"
+printf 'internal/cli TestRootOnly rows=rhel-9 # misspelled metadata\n' >"$tmp/badrow"
+run "unknown scope metadata is a usage error" 2 "$tmp/badrow" "$tmp/row.json"
+run "a malformed row argument is a usage error" 2 --row 'rhel-9 fedora-7.2' "$tmp/allow" "$tmp/listed.json"
+run "a missing row argument is a usage error" 2 --row
+run "must-pass accepts row before the mode" 0 --row rhel-9 --must-pass "$tmp/must" "$tmp/listed.json"
+run "must-pass accepts row after the mode" 0 --must-pass --row rhel-9 "$tmp/must" "$tmp/listed.json"
+
 run "a failed test is printed with its output, and failures are go test's to judge" 0 "$tmp/allow" "$tmp/failed.json"
 has "a failed test is printed" "^--- FAIL: TestA (internal/cli)"
 has "a failed test's output is printed" "got 1, want 2"

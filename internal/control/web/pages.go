@@ -352,6 +352,9 @@ func endWhy(r *ledgerview.Run) string {
 	case "exec-failed":
 		return "The agent's program could not be started."
 	case "orphaned":
+		if ledgerview.LiveFactsOf(r).EndedPaused {
+			return "The run's launcher died, and the last state it recorded was paused, with no resume after it. Tego closed the orphaned record; its last lines may be missing."
+		}
 		return "The run's supervisor was gone; Tego closed the run afterwards, and the record's last lines may be missing."
 	case "error":
 		return "Tego ended the run on an internal error."
@@ -960,6 +963,7 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 	if run.State() == "running" {
 		d.Live.Facts = ledgerview.LiveFactsOf(run)
 		d.Live.Pause = pauseAskOf(runact.PauseRequest(s.cfg.Ledger, id), d.Live.Facts)
+		d.Live.LauncherUnknown = launcherUnknown(s.cfg.Ledger, id)
 	}
 	if lb, err := runact.Live(s.cfg.Ledger, id); err != nil {
 		d.BlockErr = rulesview.LiveErrWords(err)

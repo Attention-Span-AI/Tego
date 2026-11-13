@@ -1,0 +1,15 @@
+{
+ "name": "empty-ledger",
+ "rule": "§6: no run_start is no run to check",
+ "dir": "r-3f9c2a1b-0dllq06ts7400-p3fl15",
+ "events": [
+  {
+   "text": ""
+  }
+ ],
+ "anchor": null,
+ "expect": {
+  "verdict": "cannot-check",
+  "reason": "no-run-start"
+ }
+}

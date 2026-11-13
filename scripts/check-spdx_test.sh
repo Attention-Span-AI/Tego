@@ -39,7 +39,7 @@ check "successful listing checks valid source with a space" 0 "$tmp/valid/script
 printf 'package x\n' >"$tmp/valid/missing.go"
 check "a listed source without a header fails" 1 "$tmp/valid/scripts/check-spdx.sh"
 rm "$tmp/valid/missing.go"
-for f in plain.css plain.js plain.cjs plain.tmpl; do
+for f in plain.css plain.js plain.cjs plain.tmpl plain.rs; do
 	printf 'x\n' >"$tmp/valid/$f"
 	check "$f without a header fails" 1 "$tmp/valid/scripts/check-spdx.sh"
 	rm "$tmp/valid/$f"

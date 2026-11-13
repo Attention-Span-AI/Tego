@@ -759,6 +759,20 @@ floor's refusal both times, the script once), and the unmodified tree against it
 to a quarter of an op, or one that creeps in over several commits each under it, passes the comparison; budget mode on
 the reference box (`make budgets`) holds the figures as written.
 
+**Accepted steps (2026-11-13).** A change that costs more on purpose, and says why, is entered in `bench-gate.sh`'s
+accepted-step list: the base commit it is compared with, the package directory, the benchmark, the unit (B/op or
+sec/op; allocs/op leaving zero, or a B/op of 0 that becomes non-zero, is never accepted), a ceiling in percent and the
+reason. Against that base commit alone (a base checkout's HEAD; `BENCH_GATE_BASE_COMMIT` for `compare`), a failure the
+entry matches is a note while it is at or below the ceiling, and still fails above it. So an entry expires by itself:
+once its change has merged, the next pull request's base is another commit and the thresholds hold again. The gate
+names, at the end of its findings, every entry that does not apply to the base it compared or that matched no failure,
+and such an entry is removed. The first entries are v0.1.3's: a guarded exec is decided with two readers of the command
+rules (ADR 0048), and against public main before it (f8efe5ca2ab8) the hosted runner measured `ExecCommandCost`'s B/op
+at +10.53% for the script (4.008 to 4.430 KiB), +16.16% for 16 arguments (3.868 to 4.493 KiB) and +17.42% for 128
+arguments (32.29 to 37.92 KiB), each at p=0.000 n=10, with allocs/op 59 to 66, 58 to 67 and 239 to 257 and sec/op
+inside the gate (+3.70%, no difference, +11.18%); the unguarded exec and the floor's refusal were unchanged. Their
+ceiling, +25%, leaves room for the spread between hosted runners and still fails a larger step.
+
 **What it costs.** The unit gate no longer catches a regression of less than several times a budget, whether it works or
 waits: the 8,000-round copy, about 1.2 to 1.5 times the unguarded Limit, passes it under the busy loops, as do a 20 µs
 sleep in every command-rule decision and a 60,000-round loop in the flood's handler, and on a busy machine a wait of up

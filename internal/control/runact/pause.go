@@ -53,11 +53,14 @@ func Pause(ctx context.Context, root, run string, on bool) (Paused, error) {
 	if in, _ := SelfGoverned(); in { // fails closed: a cgroup it cannot judge refuses too
 		return Paused{}, fmt.Errorf("%w (run %s)", ErrGoverned, run)
 	}
-	held, _, err := runlock.ProbeLock(dir)
+	// The launcher must be there to apply it: a free lock, or one held by a process that is not the run's launcher
+	// (runlock.LauncherGone, by pid and start time), has none. A run paused when its launcher died is never resumed
+	// (ADR 0124, amendment 2026-11-11): nothing would decide or record what it does; tego stop ends it.
+	gone, err := runlock.LauncherGone(dir)
 	if err != nil {
 		return Paused{}, err
 	}
-	if !held {
+	if gone {
 		return Paused{}, ErrPauseNotRunning
 	}
 	if !liveblock.TakesControl(dir) {
@@ -110,4 +113,21 @@ func PauseRequest(root, run string) PauseAsk {
 		}
 	}
 	return a
+}
+
+// UnknownRecovery is what a person can do about a launcher that could not be judged (runlock.UnknownRecovery).
+const UnknownRecovery = runlock.UnknownRecovery
+
+// LauncherUnknown is why run's launcher could not be confirmed alive or gone (runlock.LauncherCheck's cause), "" when it
+// was judged or the lock cannot be read. The dashboard shows a run so as running, and says so.
+func LauncherUnknown(root, run string) string {
+	dir, err := runDir(root, run)
+	if err != nil {
+		return ""
+	}
+	l, cause, err := runlock.LauncherCheck(dir)
+	if err != nil || l != runlock.Unknown || cause == nil {
+		return ""
+	}
+	return cause.Error()
 }

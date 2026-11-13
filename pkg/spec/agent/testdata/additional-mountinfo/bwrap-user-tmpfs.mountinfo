@@ -1,0 +1,15 @@
+6139 1787 0:125 /newroot / rw,nosuid,nodev,relatime - tmpfs tmpfs rw,uid=1000,gid=1000,inode64
+6140 6139 259:2 /usr /usr ro,nosuid,nodev,relatime master:1 - ext4 /dev/nvme0n1p2 rw
+6141 6139 0:24 / /proc rw,nosuid,nodev,noexec,relatime master:12 - proc proc rw
+6142 6141 0:33 / /proc/sys/fs/binfmt_misc rw,relatime master:14 - autofs systemd-1 rw,fd=35,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=390
+6143 6142 0:48 / /proc/sys/fs/binfmt_misc rw,nosuid,nodev,noexec,relatime master:253 - binfmt_misc binfmt_misc rw
+6144 6139 0:126 / /dev rw,nosuid,nodev,relatime - tmpfs tmpfs rw,mode=755,uid=1000,gid=1000,inode64
+6145 6144 0:6 /null /dev/null rw,nosuid master:2 - devtmpfs devtmpfs rw,size=7816076k,nr_inodes=1954019,mode=755,inode64
+6146 6144 0:6 /zero /dev/zero rw,nosuid master:2 - devtmpfs devtmpfs rw,size=7816076k,nr_inodes=1954019,mode=755,inode64
+6147 6144 0:6 /full /dev/full rw,nosuid master:2 - devtmpfs devtmpfs rw,size=7816076k,nr_inodes=1954019,mode=755,inode64
+6148 6144 0:6 /random /dev/random rw,nosuid master:2 - devtmpfs devtmpfs rw,size=7816076k,nr_inodes=1954019,mode=755,inode64
+6149 6144 0:6 /urandom /dev/urandom rw,nosuid master:2 - devtmpfs devtmpfs rw,size=7816076k,nr_inodes=1954019,mode=755,inode64
+6150 6144 0:6 /tty /dev/tty rw,nosuid master:2 - devtmpfs devtmpfs rw,size=7816076k,nr_inodes=1954019,mode=755,inode64
+6151 6144 0:127 / /dev/pts rw,nosuid,noexec,relatime - devpts devpts rw,mode=620,ptmxmode=666
+6152 6139 0:128 / /tmp rw,nosuid,nodev,relatime - tmpfs tmpfs rw,mode=755,uid=1000,gid=1000,inode64
+6153 6139 259:2 /home/runner/proj /home/runner/proj rw,nosuid,nodev,relatime master:1 - ext4 /dev/nvme0n1p2 rw

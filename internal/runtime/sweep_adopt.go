@@ -44,7 +44,10 @@ func sweepAdoption(ctx context.Context, o sweepOptions, dir runDir, ref record.R
 			return true, releaseSwept(ctx, o, store, rec, dir)
 		}
 	}
-	scope, ok := adoptScopeOf(o.manager, dir, ref)
+	scope, ok, err := adoptScopeOf(o.manager, dir, ref)
+	if err != nil {
+		return true, fmt.Errorf("adoption %s: %w: find scope: %w", ref.ID, errOrphanAlive, err)
+	}
 	if !ok {
 		return false, nil
 	}
@@ -140,30 +143,42 @@ func sameDirectory(a string, b runDir) bool {
 // under the cgroup2 mount root (where a root adopter makes it) or the sweeper's manager's root, with the cgroup id
 // run_start recorded when it recorded one. It decides only whether the run is kept lost, never what is moved, so a
 // directory planted under another run's id can at most keep itself lost.
-func adoptScopeOf(m cgroup.Manager, dir runDir, ref record.RunRef) (string, bool) {
+func adoptScopeOf(m cgroup.Manager, dir runDir, ref record.RunRef) (string, bool, error) {
 	agentID, err := identity.ParseAgentID(ref.Agent)
 	if err != nil {
-		return "", false
+		return "", false, err
 	}
 	rel := filepath.Join(identity.TopSlice, identity.AgentSlice(agentID), adopt.ScopeName(ref.ID))
 	bases := []string{cgroup.Mount}
 	if m != nil && m.Root() != cgroup.Mount {
 		bases = append(bases, m.Root())
 	}
-	want := runCgroupID(dir)
+	start, err := runStartOfChecked(dir)
+	if err != nil {
+		return "", false, err
+	}
+	want := start.cgroup
+	var unread error
 	for _, base := range adoptScopeBases(bases) {
 		c := cgroup.Cgroup{Path: filepath.Join(base, rel)}
 		if _, err := os.Lstat(c.Path); err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				unread = errors.Join(unread, err)
+			}
 			continue
 		}
 		if want != 0 && m != nil {
-			if id, err := m.ID(c); err != nil || id != want {
+			id, err := m.ID(c)
+			if err != nil {
+				unread = errors.Join(unread, err)
+			}
+			if err != nil || id != want {
 				continue
 			}
 		}
-		return c.Path, true
+		return c.Path, true, nil
 	}
-	return "", false
+	return "", false, unread
 }
 
 // adoptScopeBases is the roots adoptScopeOf searches; a variable so a test can root them in a temporary tree.

@@ -7,6 +7,83 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ## Unreleased
 
+## v0.1.3 - 2026-11-13
+
+This security release fixes file and command rules, record verification, and the handling of skipped kernel checks.
+If you use Tego v0.1.0, v0.1.1 or v0.1.2, upgrade and restart your runs.
+The v0.1.1-rc.1 prerelease is affected too.
+
+### Security
+
+- Denied reads at tiers cgroup and bpflsm: a host could already show a denied folder, or part of it, at another
+  readable place on the same filesystem. A read through that place could miss the denial. This affects v0.1.0
+  through v0.1.2. The fixed build refuses to start where the selected mechanism cannot hold the denial through
+  those names. A decision plane still handles whole-folder names on the same filesystem where supported.
+  Different filesystem instances that show the same data remain a limit. So do later host mounts, ancestor
+  renames and rules that protect names rather than existing paths. Tier landlock keeps its stated alias limit.
+  Hosts that already show a home or project folder at a second place, such as Fedora Atomic, toolbox and
+  distrobox hosts, can meet this refusal where the selected mechanism cannot hold that second place;
+  `tego doctor` names the places it found.
+- Protected writes: in v0.1.0 through v0.1.2, a write or ask grant could reach kernel control files or Tego's own
+  files through another existing mount. A user-writable Tego binary with another hard link was also exposed.
+  An agent could change another run's controls or a binary used by a later run. Compile and run start now refuse
+  grants that reach these protected places within the mount analysis's stated limits. Mount changes after compilation, separate
+  filesystem instances and backing storage whose identity is not known remain limits. Keep that storage outside
+  every write and ask grant. Processes outside Tego still have their ordinary rights.
+- Command rules in v0.1.0 through v0.1.2 could miss some subcommand entries in `exec.deny` and `exec.ask` for
+  systemctl, go, npm, pip and aws. It matters when the program may run and the contract relies on a subcommand
+  entry. These command forms now match; some other tools refuse more commands where their parsing is
+  uncertain. Whole-program refusals, file rules, network rules and ordinary OS privileges applied throughout.
+  `exec.ask` is still reserved and refuses; it does not ask a person.
+- Option-specific npm refusals could be missed, and some npm argument combinations could be admitted under
+  an allow entry for another command. Command rules now check the command and options npm reads, including
+  value assignments, option spellings and shorthands. Existing conservative refusals remain in place.
+- AWS options written as assignments remain options when a preceding option needs a value. Missing values
+  refuse constrained command rules; uncertain spellings retain conservative readings.
+- Command entries containing an option terminator follow the tool's command, default command and argument
+  boundaries. Unknown tools keep literal argument regions. Unestablished allow meanings and unsupported
+  separator spellings fail to compile. Refusals of the compared inputs remain (the known limits below name
+  one exception), and allow entries retain their prior limits.
+  An allow entry does not admit its command when the command line puts `--` before the subcommand; write the command without it.
+- This release decides command rules with two readings of each entry and command line: the corrected reading
+  and a retained earlier reading kept as a floor. A deny or ask entry applies when either reading matches. An
+  allow entry for a constrained program admits a command only when both readings do, and an allow entry the
+  retained reading cannot interpret fails to compile, naming the entry. So some commands that an allow entry
+  would admit under the corrected reading alone stay refused in this release.
+- Known limits of command rules in this release. The reading that `tego compile` prints for a command entry
+  is one of the two readings the decision uses; where they differ the decision is the stricter one, so
+  the printed reading can show more than is allowed or less than is refused. An entry whose option word
+  has an empty name is read as written; earlier versions could read it as a command's only long option, so a
+  deny or ask entry written that way no longer matches that option, and compile does not warn:
+  write the option's name. The comparison with the released matcher covers generated single-entry
+  contracts and pinned cases, not every contract ([GAPS C72](GAPS.md)).
+- Since v0.1.0, some Git command entries could miss a built-in run under one of Git's alternative names.
+  Deny or ask entries naming `add`, `init`, `fsck` or `blame` were affected, as were entries for commands found in
+  Git's helper directory but absent from Tego's command table. The fixed build applies those entries to the
+  affected names in Tego's table and helper list. If you rely on these Git command rules, upgrade.
+- Ledger roots outside `~/.tego`: versions v0.1.0 through v0.1.2 (including v0.1.1-rc.1) checked the ledger root's
+  parent when deciding whether a write grant was inside a run's folder. With such a configured `ledger_root`, a
+  grant inside an existing run's folder was not refused and could change that run's record and control files.
+  Compile now checks the ledger root itself and refuses these grants, including through another mount of the same
+  filesystem within the [compile-time mount boundary](adr/0059-no-run-writes-what-a-later-run-loads.md#compile-time-mount-boundary).
+  This defect alone did not let the agent write its own newly created run folder: run start separately
+  refuses a direct grant covering that folder. Upgrade if you use a ledger root outside `~/.tego`, and review write
+  grants that reach existing run folders.
+- Record verification in v0.1.0 through v0.1.2 could accept a record only as far as the line before an altered
+  final line. This required write access to the record and no populated anchor entry for that run. Verification
+  now checks a closed final JSON value and rejects malformed trailing content. An intact populated anchor
+  remains necessary to detect a removed tail. An integrity check does not prove who made a record or that the
+  actions in it were allowed.
+- Kernel checks at root tiers: in v0.1.0 through v0.1.2, some preempting kernels could skip a program that should
+  decide an action, without recording that loss. LSM checks were exposed before Linux 6.2, or before 6.1.54 in
+  the 6.1 series, when kernel code could be preempted. The measured distribution defaults did not expose that
+  older case. Exec pins were exposed on measured Linux 7.0 configurations. Listener cleanup could skip on
+  preempting kernels. A run now reads the relevant skip counters. A detected
+  decision skip ends a governed run with reason `error` and a gap saying its rules may not have held. An adoption
+  reports the gap without ending the agent. Doctor withholds unsafe LSM modes and kernel exec assurance on the
+  affected configurations. Exec pins and listener cleanup can still be skipped. Detection does not undo an
+  action. Shared counters can end an unrelated run, and unmeasured vendor kernels remain a limit.
+
 ### Added
 
 - In a terminal, `tego doctor`, `test`, `watch`, `learn`, `run`, `adopt` and `agents` end with a `next:` line on
@@ -84,6 +161,53 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ### Changed
 
+- Compile and a root tier's run start now read the mount table through one strict reader. Compile reads the table
+  twice and refuses one that changes while it is read, and it refuses a table whose mounts do not form one graph
+  with a single root mount at `/`, as in a chroot whose root is not a mount point: every write and ask grant is then
+  refused. Compile and `tego doctor` explain that the kernel does not show the filesystem under that root and give
+  the remedy: bind the folder onto itself before entering it, or run Tego outside that root. A chroot whose root
+  is a mount point, `pivot_root` containers, bubblewrap and `systemd-nspawn` retain ordinary grants. The kernel's
+  unlinked-root marker is accepted only with a clean absolute prefix. Unlinked directory mounts remain uncertain:
+  reaching write and ask grants refuse, and read-denial startup retains their alias uncertainty. Unlinked file
+  mounts retain live protected-file identity checks under both files' snapshot mount IDs. An identity read error,
+  failed holding-mount lookup, mount-ID mismatch or missing identity refuses reaching grants; established absence
+  or a nonregular protected target needs no file comparison. An unplaced protected target keeps the backing warning.
+  Several top candidates at the same mount point remain unknown before live selection, including mounts with the
+  same parent and point, so affected grants and listener-decided denied reads retain their refusals.
+  All captured and modelled tables in the compatibility inventory lack such siblings and keep their contract
+  counts under replay; execution of the merged enforcement path remains owed in a guest.
+  At run start, mount lookups are checked against the kernel's own mount ids, and overlay layers with a `..`
+  component or an ambiguous `upperdir` or `workdir` spelling are not named there either.
+- Record timestamps now follow the documented RFC 3339 profile. Newly refused forms are a comma fraction,
+  a one-digit hour, offset hour 24 and offset minute 60. Every released Tego writer uses UTC with `Z` and an optional `.`
+  fraction, so its records remain readable. A final chunk whose first top-level JSON value has closed is checked
+  in full, including its suffix: non-whitespace suffixes are `line-malformed`; permitted JSON whitespace is
+  complete and remains covered by the digest, so appended whitespace with a stale id fails. A refused timestamp
+  is `line-malformed`, even without the final newline or with a stale digest; a suffix cannot hide it. Reader
+  iteration, event views and receipt construction stop with a malformed-record error; receipt checking fails its
+  chain step. The dashboard cache counts a terminated malformed line in `Bad` and continues. Its unterminated
+  last bytes remain pending until a newline arrives, for valid and invalid timestamps alike.
+- Tego v0.1.0 through v0.1.2 share a final-record framing flaw: a record whose last line was altered can verify
+  only as far as the preceding line when no populated anchor for the run exists. An intact anchor entry detects
+  the resulting head mismatch. Verification now checks a final chunk once its top-level JSON value has closed
+  and rejects malformed trailing content.
+- At tier cgroup without a decision-plane mode, a `setuid: true` contract with a `deny_read` or protected-name rule
+  is now refused before the agent starts. The built-in secret list adds these rules, so ordinary contracts using it
+  are refused in this combination. A setuid program can regain mount privileges and reach copied mounts outside
+  the listener's marks. Remove `setuid: true`, or use a decision plane only where it holds the whole contract.
+- Command patterns preserve option-name dashes beyond the usual one or two. Deny and ask entries keep the
+  matches they had in the released build, except for an option word with an empty name (the known limits
+  under Security), and also match the literal spelling; allow entries use only the literal
+  spelling. Compile warns on more than two leading dashes or one dash before a long option name where the tool
+  does not accept that spelling. Tool-defined single-dash long options and short words do not warn, including
+  `go build -race` and `go test -run Test`. Tools without a known row keep literal single-dash option words,
+  including `find -name file` and `java -jar app.jar`. The warning shows the entry and the ordinary spelling it
+  probably meant. Use that spelling now; a later minor version will reject warned entries.
+- Allow patterns cannot name selectors the command table discards, such as a Cargo toolchain or a gcloud release
+  track. Remove the selector only when every variant may run. Deny and ask entries still cover every variant.
+- Unique negated long-option abbreviations now keep their negation. The allow entry `git add --no-f` is now valid;
+  a contract containing it previously failed to compile. No shipped example or preset uses these spellings.
+
 - `tego learn`'s proposal opens with a `# WARNING:` line when it allows addresses, since a later run can be
   refused a connection this run made, and writes an entry by host name where the run's record holds the name an
   entry allowed. YAML keys are unchanged.
@@ -120,15 +244,12 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
   default, refuse a target under a writable parent, and that `fs.reads: direct` leaves it unenforced. It said
   only "unenforced under a writable parent", which held reads made untrue before v0.1.0. What a run does is
   unchanged.
-- `exec.deny` and `exec.ask` command entries now also match a multicall program (one file under many names, such as
-  uutils coreutils on Ubuntu 25.10 and 26.04) by the names it can pick its behaviour from. On a file of more than
-  one link whose name is one uutils links its file under (such as `ls` or `rm`), or a file named `coreutils`, a name
-  that ends with the tool's name (`xrm`, `uu-rm`, `rm.x`), and a name that ends with `utils` or `box` followed by
-  the tool as the next word (`myutils rm -r`), are read as that tool. The longest utility name wins, so `readlink`
-  is never read as `link`. This reads the requested path, the file's own name and argv[0], also for a `#!`
-  interpreter and a program run through the dynamic loader. Before, `deny: [rm -r]` let 7 of 9 such forms through.
-  On Ubuntu 26.04.1 the patched uutils ran none of them as rm (measured); upstream uutils, read from its source, runs
-  them as rm. `exec.allow` does not read these names. A deny entry still wins over an allow entry, so a contract
+- Released command rules missed some name interpretations of a multicall program (one file under many names,
+  such as uutils coreutils on Ubuntu 25.10 and 26.04). v0.1.3 expands `exec.deny` and `exec.ask` matching to the
+  names such a program can pick its behaviour from; `docs/spec/exec-command-rows.md` ("Multicall applets by
+  name") states what the matcher reads. Build-specific limits remain: Ubuntu 26.04.1's patched uutils
+  refused the affected interpretations (measured); upstream uutils, read from its source, supports them.
+  `exec.allow` does not read these names. A deny entry still wins over an allow entry, so a contract
   that denies a utility name may now refuse an exec that an allow entry admits, when one of the exec's names reads
   as that utility.
 - A Locked run (the default, and the only mode at tier landlock) is no longer loosened by a live MCP tool switch
@@ -141,9 +262,120 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
   Locked: it keeps to its contract while it runs, so nothing loosens until its next run"; it named the kernel,
   which holds neither a tool switch nor a route. The dashboard's preview of a refused change says "Not done: ",
   as its flash does, and links back to the page.
+- In large Docker images and rootless Podman with FUSE, the optional Claude Code refusal hook may not be set up.
+  The run continues with a `harness-hook-refused` warning. Refusals remain available through the reason file.
+- A command rule's decision uses more memory. An exec of a program that command entries name is now read by two
+  readers, the corrected one and the one earlier releases used (see Security above). Against v0.1.2's code on a
+  hosted CI runner, the bytes allocated per decision rose by 10.5% for a script, 16.2% for a command with 16
+  arguments and 17.4% for one with 128. An exec of a program no command entry names is unchanged, and a decision's
+  time stays inside its documented budgets ([BENCHMARKS](BENCHMARKS.md)).
 
 ### Fixed
 
+- Refuse root-tier runs whose compiled `deny_read` path entries have an existing mount alias on the same
+  filesystem instance that the tier cannot hold. At tier cgroup where the fanotify listener would decide reads, a run
+  now refuses to start when a denied folder, or part of it, is visible under such another name. No flag
+  overrides this. A selected decision plane still holds whole-folder aliases on that same instance; a part
+  mounted outside its denied folder refuses at bpflsm and at cgroup after fallback. The error names the first
+  matching paths and places, counts the rest, and gives remedies. Doctor names visible second places for home
+  or other built-in protected targets and the affected mechanisms. When an unlinked directory or unclassifiable
+  root prevents a complete alias answer, doctor names the mount and says it cannot tell whether the folder is
+  visible under another name. Known alias warnings remain, without assurance for the uncertain tree.
+  A different filesystem instance showing the same data, such as a second network mount of one export, a FUSE
+  mirror or a loop image, is not recognised at any tier. Deny the other path too, or avoid mounting the
+  same export twice where agents can read it. For
+  recognised network mount types, the same source string on different filesystem devices produces a warning,
+  not a refusal. Name-entry scopes receive no alias check. Later host mounts and ancestor renames are not
+  tracked (docs/GAPS.md C68).
+
+- Compile and run start preserve carriage returns at the end of overlay layer options. The previous reader
+  silently changed those names and could admit write or ask grants through a backing alias when a decoy path
+  without the carriage return also existed. The snapshot size bound now counts actual input bytes.
+  Binary overlay layers with a parent (`..`) component or ambiguous backslash quoting in `upperdir`/`workdir`
+  now refuse write and ask grants, rather than compare a changed path. Use absolute layer paths without those
+  ambiguities or install Tego on a plain filesystem. These kernel layouts are owed in a guest.
+
+- Compile's mount analysis now follows the precise [compile-time mount boundary](adr/0059-no-run-writes-what-a-later-run-loads.md#compile-time-mount-boundary).
+  Same-point stacks use parent relationships and supported live checks, including when a mount moved onto another
+  appears earlier in mountinfo. Ambiguous visibility refuses affected write and ask grants and names the mount point.
+  An unreadable mapped overlay layer candidate refuses rather than disappearing. Malformed mount rows refuse the
+  table. Unknown protected or grant identity and binary candidate inspection errors also refuse with a named remedy.
+  Ordinary host, CI overlay and workspace-volume fixtures each retain 19 accepted contracts, with exactly 11 volume
+  warnings; project-with-chroot retains 17. Privileged moved-mount checks are owed in a guest.
+
+- Compile now holds any `tego` or `tego-control` in `~/.local/bin`, `/usr/local/bin`, `/usr/bin` and `/opt/tego/bin`,
+  beside the running and PATH binaries. Alias and binary overlay layer coverage is exactly the
+  [compile-time mount boundary](adr/0059-no-run-writes-what-a-later-run-loads.md#compile-time-mount-boundary).
+  A binary with a second hard link refuses every write entry on its filesystem, unless only root may write it and
+  the agent is not root. Install a fresh copy with one name outside every write entry and run that one. An absent
+  host layer alone refuses no grant, regardless of merged ownership. Relative overlay layers and unnamed FUSE,
+  eCryptfs, aufs or shiftfs backing have the same stated limit; closure bounds still refuse grants. A write entry over
+  a PATH folder searched before tego stays a `path-shadow` warning.
+- A paused run whose launcher died (killed, crashed, out of memory) read as plain `lost`. `tego status` now says its
+  last recorded state was paused and reads its scope for what is true now: STATE `lost, frozen` only when the scope is
+  frozen, and the line under the table says when it is not (a stop thaws a run before it signals, so a launcher killed
+  during a stop's grace leaves a run whose record says paused and whose processes run). `--json` adds
+  `launcher_gone` and `scope_now`. `tego pause` and `tego resume` refuse such a run (`[lost-paused]`), and Tego never
+  thaws it. `tego stop` attempts cleanup with `cgroup.kill`, reads the scope again and says what is left. For this
+  lost-paused case it succeeds (0) only after record closure and a final scope read confirming absent or empty.
+  Remaining frozen/running processes give `[lost-paused]`, 125; an unreadable final scope says "cannot tell" and
+  uses the same status. The dashboard shows "Lost,
+  last recorded paused". At tier cgroup and bpflsm the run's reaper already ends such a run at once. A launcher is
+  judged gone by its lock and its pid's start time, never by the pid alone; one whose identity cannot be read is no
+  longer taken for gone by `tego stop` and the sweep, and an exited launcher not yet reaped is. Sweep also keeps an
+  unreadable scope, failed cgroup-id read or failed events read unknown, retaining its record and retry entry until
+  cleanup can be confirmed. Retention reclassifies each run through its locked directory before choosing cleanup,
+  including a run that started and lost its launcher after an empty sample. Unknown ledger state also keeps the
+  record for retry even with a free lock; restore access or repair the record, then repeat GC.
+- **Behaviour change:** compile now reads the mount table, and refuses a write entry or ask scope that reaches a
+  kernel interface filesystem (proc, sysfs, cgroup, bpf, mqueue, resctrl and the others the docs list; devpts allowed
+  only at `/dev/pts`)
+  by its mount type, or an alias of one of Tego's own places or a directory read on its path walk, including names
+  before `..`, within the [compile-time mount boundary](adr/0059-no-run-writes-what-a-later-run-loads.md#compile-time-mount-boundary).
+  Terminal opens through aliases outside `/dev` are also refused by device identity. It read only the usual mount points by name, so a bind
+  mount or a second mount of the cgroup filesystem inside a write entry let a run change other runs' cgroups, a
+  paused one's freezer included. Ordinary triggers: a container's or chroot's root with its own `/proc` inside the
+  granted folder, and a grant on `/dev` itself (`/dev/mqueue` is mounted there). A mount table compile cannot read
+  whole and parse strictly refuses every write and ask grant. A FUSE type alone adds a mount advisory;
+  identified protected source places and aliases still refuse.
+  An absent host layer path (ENOENT or ENOTDIR), a relative overlay layer, or unnamed FUSE, eCryptfs, aufs or shiftfs
+  backing alone refuses no write or ask grant. Ordinary grants compile in large Docker image, Podman FUSE and
+  encrypted-home layouts. Tego never guesses where a relative layer lives; visible absolute layers and binary names
+  remain protected. When a FUSE or eCryptfs filesystem holds a protected regular file, its existing absolute source
+  directory joins the protected closure with its visible aliases: grants at, over or inside it refuse. Source text
+  cannot establish FUSE backing identity; eCryptfs also keeps its backing warning because live lower-directory identity is not established.
+  `..` and ambiguous upper/work quoting still refuse. With any of these backing limits, compile
+  emits one `overlay-backing-unknown` warning per write or ask entry that reaches another visible storage mount. For
+  relative layers and unnamed backing, another binary's device can still hold the backing folders; only the affected
+  filesystem's own device is excluded. All cases exclude the shared inventory's kernel interfaces and memory
+  directory storage; regular-file binds established by live checks can still warn on memory filesystems. The absent-only rule also
+  excludes discovered binary overlay devices. Runtime storage on a memory filesystem mounted at a writable
+  directory gives no warning (GAPS C65). A single-file mount is exempt only for absent or relative overlay backing,
+  after live snapshot-bound mount ID, type, size and protected-file difference checks. FUSE/eCryptfs binds never get
+  this exemption: stored bytes can differ from visible bytes. Nonempty byte-identical protected-file aliases still
+  refuse, executable or not. Two empty files prove neither identity nor difference and warn without a byte-alias
+  refusal. Agent fixtures keep Docker's `/etc/resolv.conf`, `/etc/hosts` and `/etc/hostname` binds quiet in the overlay
+  classes with replayed `statx` IDs; runtime silence is owed in a guest. Captured Podman FUSE project grants reach
+  no file bind; grants reaching one warn once, including empty `/run/.containerenv`. Unreadable protected files and
+  unknown or changed mount points get no file-bind exemption. The warning names the grant, mount and each
+  protected file directly on unnamed backing, including a config layer or a contract on sshfs even when Tego
+  itself is on ext4: Tego cannot
+  tell whether that mount shows the folders holding protected files, with the relative-base or filesystem reason. Keep
+  runtime storage and the whole host filesystem out of writable places. For unnamed backing, keep the folder that
+  stores the encrypted or mirrored files out of every write grant. No such grant and mount
+  means no backing warning; a separate mount advisory may still print. A differently spelled alias may remain
+  uncorrelated. Runtime fixtures now replay 2026-11-12 captures from Docker 29.1.3, containerd 2.2.1 and rootless
+  Podman 4.9.3 with fuse-overlayfs 1.13 on Ubuntu 24.04, kernel 6.8.0-147-generic. They cover mixed relative lowers
+  and absolute upper/work, real option tails and `fuse.fuse-overlayfs`. The alternative `fuse.overlayfs` remains
+  synthetic. Capture runs used older head `69541c0706dd39125a004cc60f7ec046898e63be`; this branch's container
+  reruns are owed in a guest.
+  The dashboard describes historical paused orphan ends as record closure; those ledger lines alone do not prove
+  which cleanup method ran. Stop output also reports record closure without claiming a kill, then reads the scope
+  again and says what it shows after the sweep. Record closure alone does not make a lost-paused stop successful:
+  processes remaining or an unreadable final scope give `[lost-paused]`, 125.
+  "Why compile now refuses my grant" in `docs/user/built-in-refusals.md` explains the warnings and refusals.
+  A run whose launcher cannot be judged now reads `(launcher unknown)` in `tego status`, with what
+  to do, instead of plain running or paused.
 - `tego doctor`, and a run's tier check where it probes the decision plane, could now and then fail a plane mode's
   known answers with "hold /proc/<pid>/root/.../x/xd: no such file or directory" and so not offer that mode. The
   probe's child makes its own mounts on the thread its main is locked to, and doctor sees them through
@@ -284,9 +516,32 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
   which is blocked". Runs started by an older tego keep the old block until they end; restart them to get the new
   one. A tego older than this release cannot read such a block's file (overlay version 5): its `tego block` and
   dashboard say the file is invalid and change nothing on that run.
+- At the root tiers a run now ends with reason `error`, a `bpf-decision-skip/shared-build` gap and a receipt that says
+  its rules may not have held (`rules-uncertain`) when the kernel skips a program that decides its actions, which
+  before went unnoticed; a run with no skip is unchanged. An adoption first reports after run_start, then at most
+  once a minute plus polling and scheduling delay, without ending. Partial report retries keep only unwritten
+  lines, and observed outage openings and recoveries are retained in order, even between reports.
+  `tego doctor` no longer offers the plane's LSM mode (tier 3) on a kernel before 6.2 (6.1.54 in the 6.1 series) that
+  preempts kernel code, whose BPF trampoline can skip LSM programs too, and on a kernel that preempts kernel code
+  (every 7.0 kernel) it says exec rules on argv are best effort, so `exec.assurance: kernel` is refused there
+  ([GAPS C53](GAPS.md)). It also warns that listener cleanup can still be skipped on affected or unproven kernels:
+  skips are detected, and a detected shared skip ends launched runs relying on it; adoptions report without ending.
 
 ### Record `v`
 1 (`spec/record/v1`, record minor 30)
+
+### Contract schema
+0 (`spec/agent/v0`; the field set may change without notice before v0.2.0, `docs/VERSIONING.md` section 3)
+
+### Kernel minimums
+Linux 5.14 with Landlock ABI 2 or newer, which is Linux 5.19 or a backport such as RHEL 9's 5.14; tested from 6.1 and on
+RHEL 9 and 10, as AlmaLinux 9.8 and 10.2, with what ran where in `docs/TIERS.md` (tier 1: ABI 1 is unsupported,
+and features are gated per ABI, see `spec/backend/CAPABILITIES.md`;
+tier 2 needs root and cgroup v2; tier 3 needs root and `bpf` in the LSM list). A unix socket under an `fs.write` path is
+admitted without a `unix:` entry only with the kernel's socket diagnostics for `AF_UNIX` (`CONFIG_UNIX_DIAG`, built in
+or the loadable `unix_diag` module); without them such a socket is refused `unix-origin-unread`, and `tego doctor` says so.
+Syscall outcome hooks require readable tracefs event formats with an eight-byte `ret` at offset 16; unsupported
+or unverified layouts withhold root tiers. The kernel version minimum is unchanged.
 
 ## v0.1.2 - 2026-11-11
 

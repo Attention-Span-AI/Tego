@@ -71,6 +71,11 @@ type PlaneEnv struct {
 	PreemptSource string `json:"preempt_source,omitempty"`
 	// PreemptWaived is a test build's waiver of that precondition (planePreemptWaived), never set in a product build.
 	PreemptWaived bool `json:"preempt_waived,omitempty"`
+	// LSMRecursionExempt is the kernel's trampoline entering LSM programs with no recursion check (lsmrecursion.go),
+	// true only where /proc/kallsyms shows it; LSMRecursionSource says what was read. LSM mode on a kernel without it
+	// is held to fmod_ret mode's preemption rule (lsmRecursionRefusal).
+	LSMRecursionExempt bool   `json:"lsm_recursion_exempt,omitempty"`
+	LSMRecursionSource string `json:"lsm_recursion_source,omitempty"`
 }
 
 // PlaneModeResult is one mode's answer.
@@ -343,6 +348,7 @@ func readPlaneEnv(spec *btf.Spec, release string) PlaneEnv {
 	}
 	env.Preempt, env.PreemptSource = readPreempt(release)
 	env.PreemptWaived = planePreemptWaived && preemptsKernelCode(env.Preempt)
+	env.LSMRecursionExempt, env.LSMRecursionSource = lsmRecursionNow()
 	return env
 }
 
@@ -351,6 +357,11 @@ func readPlaneEnv(spec *btf.Spec, release string) PlaneEnv {
 // CI runner whose kernel offers no other mode (7.0 on x86_64 offers full and lazy only), and doctor says so in the
 // mode's line. A product build never sets it.
 var planePreemptWaived bool
+
+// PlanePreemptWaived reports that this is a test build whose TEGO_TEST_PLANE_PREEMPT=waive is in force: fmod_ret mode
+// may run where kernel code is preempted, and its programs' skips are expected there. The runtime then records a
+// skipped deciding program of a fmod_ret run without ending the run (ADR 0148). Always false in a product build.
+func PlanePreemptWaived() bool { return planePreemptWaived }
 
 // parseLockdown returns the bracketed mode of /sys/kernel/security/lockdown ("none [integrity] confidentiality").
 func parseLockdown(s string) string {
@@ -469,8 +480,9 @@ func choosePlaneBuild(env PlaneEnv, have func(bpfobj.Object) bool) (bpfobj.Objec
 }
 
 // modePrecondition is what rules mode m out before any load: LSM mode needs bpf in the active LSM list (a BPF LSM
-// program attaches and never runs otherwise), fmod_ret mode a kernel without Clang LTO whose preemption model never
-// preempts kernel code (fmodRetPreemptRefusal). It returns "" when nothing does, else the detail and the fix.
+// program attaches and never runs otherwise) and, on a kernel whose trampoline still checks LSM programs for recursion,
+// a preemption model that never preempts kernel code (lsmRecursionRefusal); fmod_ret mode a kernel without Clang LTO
+// whose preemption model never preempts kernel code (fmodRetPreemptRefusal). It returns "" when nothing does, else the detail and the fix.
 func modePrecondition(m bpfobj.PlaneMode, env PlaneEnv, lsm LSMState) (string, string) {
 	if env.MemfdNoexec == 2 {
 		return "vm.memfd_noexec=2 forbids the executable memfd the probe's child execs, so this mode cannot be " +
@@ -479,6 +491,9 @@ func modePrecondition(m bpfobj.PlaneMode, env PlaneEnv, lsm LSMState) (string, s
 	switch m {
 	case bpfobj.PlaneLSM:
 		if why, fix := lsm.bpfInactive(); why != "" {
+			return why, fix
+		}
+		if why, fix := lsmRecursionRefusal(env); why != "" {
 			return why, fix
 		}
 	case bpfobj.PlaneFmodRet:
@@ -695,7 +710,13 @@ func planeSummary(st *PlaneState, bpfActive bool) string {
 		out += " [from the " + st.Source + "]"
 	}
 	if st.Selected == PlaneFanotify {
+		out += "; tier cgroup without a plane refuses setuid: true contracts with deny_read (the built-in list adds these): a privileged program can create unmarked mount copies; it also refuses compiled deny_read paths visible under another name on the same filesystem instance; name-entry scopes receive no alias check, and different filesystem instances showing the same data are not recognised at any tier; later host mounts and ancestor renames are not seen"
 		out += "; the fanotify fallback does not scale past a few concurrent runs: every open on a marked mount waits on a listener"
+	}
+	if preemptsKernelCode(st.Env.Preempt) {
+		// ADR 0148 (6): LSM's exemption does not protect the listener cleanup or remove the shared-run cost.
+		out += "; listener cleanup can be skipped; skips are detected, and a detected shared skip ends launched runs " +
+			"that rely on it; an adoption reports the skip without ending the agent"
 	}
 	return out
 }

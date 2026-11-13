@@ -284,11 +284,11 @@ func (s *follow) take(data []byte, terminated bool) (FollowEntry, bool, error) {
 	} else {
 		s.pos += int64(len(data))
 	}
-	if s.check.ended {
+	if s.check.Ended {
 		return FollowEntry{}, false, fmt.Errorf("%w %d: at byte offset %d: a line follows run_end", ErrCorruptLedger,
 			s.n, off)
 	}
-	e, newer, err := s.check.add(data)
+	e, newer, err := s.check.Add(data)
 	if err != nil {
 		return FollowEntry{}, false, fmt.Errorf("%w %d: at byte offset %d: %w", ErrCorruptLedger, s.n, off, err)
 	}
@@ -302,7 +302,7 @@ func (s *follow) take(data []byte, terminated bool) (FollowEntry, bool, error) {
 	}
 	return FollowEntry{
 		Entry:  Entry{Line: data, Event: e},
-		Cursor: Cursor{Offset: off, Seq: e.Seq, ID: s.check.chain.Head()},
+		Cursor: Cursor{Offset: off, Seq: e.Seq, ID: s.check.Chain.Head()},
 	}, true, nil
 }
 
@@ -315,7 +315,7 @@ func (s *follow) finish() (FollowEntry, bool, error) {
 	)
 	if tail := s.buf[s.start:s.end]; len(tail) > 0 {
 		if !wholeLine(tail) {
-			if s.check.ended {
+			if s.check.Ended {
 				return en, false, fmt.Errorf("%w %d: %d bytes at byte offset %d after run_end are not a record",
 					ErrCorruptLedger, s.n+1, len(tail), s.pos)
 			}
@@ -328,7 +328,7 @@ func (s *follow) finish() (FollowEntry, bool, error) {
 			return en, false, err
 		}
 	}
-	if !s.check.ended {
+	if !s.check.Ended {
 		return en, deliver, fmt.Errorf("%w: %s", ErrRunLost, s.fl.dir)
 	}
 	return en, deliver, nil
@@ -341,7 +341,7 @@ func (s *follow) finish() (FollowEntry, bool, error) {
 // while a writer holds the lock is waited for.
 func (s *follow) resume(ctx context.Context, lock string) (atEnd bool, err error) {
 	if want := runDirName(s.fl.dir); IsRunID(want) {
-		s.check.run = want // every line must carry the run directory's id, as Verify holds it
+		s.check.Run = want // every line must carry the run directory's id, as Verify holds it
 	}
 	from := s.fl.from
 	if from == (Cursor{}) {
@@ -403,16 +403,16 @@ func (s *follow) resume(ctx context.Context, lock string) (atEnd bool, err error
 		return false, mismatch(fmt.Sprintf("is seq %d id %s, the cursor says seq %d id %s", link.Seq, link.ID,
 			from.Seq, from.ID))
 	}
-	if s.check.run == "" {
-		s.check.run = link.Run
+	if s.check.Run == "" {
+		s.check.Run = link.Run
 	}
-	if link.Run != s.check.run {
+	if link.Run != s.check.Run {
 		return false, fmt.Errorf("%w %d: at byte offset %d: %w: line is run %q, following %q", ErrCorruptLedger,
-			from.Seq+1, from.Offset, ErrRunMismatch, link.Run, s.check.run)
+			from.Seq+1, from.Offset, ErrRunMismatch, link.Run, s.check.Run)
 	}
-	s.check.chain = record.ChainAfter(from.Seq, from.ID)
-	s.check.started = true
-	s.check.ended = record.Kind(link.Kind) == record.KindRunEnd
+	s.check.Chain = record.ChainAfter(from.Seq, from.ID)
+	s.check.Started = true
+	s.check.Ended = record.Kind(link.Kind) == record.KindRunEnd
 	s.n = int(from.Seq) + 1
 	s.pos += int64(len(data))
 	if !atEnd {

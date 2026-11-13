@@ -69,3 +69,46 @@ func TestPlaneSummaryDisclosesExecPinsOff(t *testing.T) {
 		t.Errorf("summary %q", got)
 	}
 }
+
+// TestPlaneSummaryDisclosesListenerCleanupSkips: LSM's exemption does not protect the listener cleanup. On a
+// preempting kernel its shared skips are detected and end launched runs that rely on it (ADR 0148 (6)).
+func TestPlaneSummaryDisclosesListenerCleanupSkips(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		preempt string
+		warn    bool
+	}{
+		{"none", preemptNone, false},
+		{"voluntary", preemptVoluntary, false},
+		{"full", preemptFull, true},
+		{"lazy", preemptLazy, true},
+		{"rt", preemptRT, true},
+		{"full or lazy", preemptFullOrLazy, true},
+		{"unknown", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, mode := range []string{string(bpfobj.PlaneLSM), string(bpfobj.PlaneFmodRet), PlaneFanotify} {
+				st := &PlaneState{Selected: mode, Source: planeSourceProbed,
+					Env: PlaneEnv{Preempt: tc.preempt, LSMRecursionExempt: true}}
+				got := planeSummary(st, true)
+				for _, clause := range []string{
+					"listener cleanup can be skipped",
+					"skips are detected",
+					"a detected shared skip ends launched runs that rely on it",
+					"an adoption reports the skip without ending the agent",
+				} {
+					if strings.Contains(got, clause) != tc.warn {
+						t.Errorf("mode %s: summary %q contains %q = %t, want %t", mode, got, clause,
+							strings.Contains(got, clause), tc.warn)
+					}
+				}
+			}
+		})
+	}
+	for _, st := range []*PlaneState{nil, {Skipped: true}} {
+		if got := planeSummary(st, true); strings.Contains(got, "listener cleanup") {
+			t.Errorf("unprobed plane carries the listener warning: %q", got)
+		}
+	}
+}

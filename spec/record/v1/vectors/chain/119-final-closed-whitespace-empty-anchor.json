@@ -1,0 +1,23 @@
+{
+ "name": "final-closed-whitespace-empty-anchor",
+ "rule": "§2, §3, §4: after a value closes, its entire unterminated chunk is checked; JSON whitespace is allowed but hashed",
+ "dir": "r-3f9c2a1b-0dllq06ts7400-p3fl15",
+ "events": [
+  {
+   "text": "{\"v\":1,\"seq\":0,\"id\":\"dd567328bed4abccac52e57c1cd4aa7d418ff07a2bbdf96dffdb197c36ff4e29\",\"prev\":\"\",\"ts\":\"2026-09-22T09:00:00.001Z\",\"mono_ns\":812346000000,\"run\":\"r-3f9c2a1b-0dllq06ts7400-p3fl15\",\"agent\":\"retriever\",\"pid\":48211,\"tid\":48211,\"cgroup\":0,\"kind\":\"run_start\",\"source\":\"supervisor\",\"bpf_hash\":\"\",\"capture\":\"forwarder\",\"command\":[\"python3\",\"agent.py\",\"--query\",\"summarize the repo\"],\"commit\":\"5330a30\",\"contract_hash\":\"7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a\",\"cwd\":\"/srv/proj\",\"kernel\":\"6.17.0-41-generic\",\"launcher_pid\":48211,\"launcher_start_ns\":4990000000,\"limits\":{\"tokens\":60000,\"cost_usd\":2,\"wall\":\"10m\",\"stall_after\":\"120s\",\"repeats\":3},\"parsers\":{\"anthropic\":\"1\",\"mcp\":\"1\",\"openai\":\"0\"},\"profiles\":[{\"name\":\"tego/python\",\"source\":\"builtin\",\"sha256\":\"152bc935f8243e4c4acdb7955b3d7eb25f09e82a04be1102b0cc88d5d3e07c02\"},{\"name\":\"base\",\"source\":\"dir\",\"sha256\":\"cae662172fd450bb0cd710a769079c05bfc5d8e35efa6576edc7d0377afdd4a2\"},{\"name\":\"team\",\"source\":\"dir\",\"sha256\":\"ca8b22d0db83a22db163b560b3e4e51527e533d31d067b614a0c33c4d2df8432\"}],\"record_minor\":15,\"stop_grace\":\"10s\",\"tego_version\":\"0.1.0-dev\",\"tier\":\"landlock\"}\n{\"v\":1,\"seq\":1,\"id\":\"26574e4e2efa4f73a10678fca5232af16cfa2915c36ad7297aba856b6982a101\",\"prev\":\"dd567328bed4abccac52e57c1cd4aa7d418ff07a2bbdf96dffdb197c36ff4e29\",\"ts\":\"2026-09-22T09:00:00.002Z\",\"mono_ns\":812347000000,\"run\":\"r-3f9c2a1b-0dllq06ts7400-p3fl15\",\"agent\":\"retriever\",\"pid\":48212,\"tid\":48212,\"cgroup\":44821,\"kind\":\"fs\",\"source\":\"landlock\",\"rule\":\"fs.write[./out]\",\"verdict\":\"allow\",\"authority\":\"rule\",\"attribution\":{\"thread\":\"t1\",\"step\":1,\"confidence\":\"likely\",\"method\":\"time\"},\"flags\":577,\"op\":\"open\",\"path\":\"/srv/proj/out/a.md\"}\n{\"v\":1,\"seq\":2,\"id\":\"927b02212b08b5208aaa84356574e258822c9b28b9d9230b57062a4f9fd5ecf0\",\"prev\":\"26574e4e2efa4f73a10678fca5232af16cfa2915c36ad7297aba856b6982a101\",\"ts\":\"2026-09-22T09:00:00.003Z\",\"mono_ns\":812348000000,\"run\":\"r-3f9c2a1b-0dllq06ts7400-p3fl15\",\"agent\":\"retriever\",\"pid\":48211,\"tid\":48211,\"cgroup\":0,\"kind\":\"run_end\",\"source\":\"supervisor\",\"reason\":\"exit\",\"supervisor\":{\"notifications\":0,\"held_ms\":0}} \t\r"
+  }
+ ],
+ "anchor": [
+  {
+   "text": ""
+  }
+ ],
+ "expect": {
+  "verdict": "mismatch",
+  "reason": "id-mismatch",
+  "line": 2,
+  "lines": 2,
+  "head_line": 1,
+  "torn_bytes": 0
+ }
+}

@@ -330,7 +330,7 @@ func TestPrepareMarksEachMountForTheEventsItCanRefuse(t *testing.T) {
 	// root job, not for a user on a dev box). One mark each, and no other; counting the fixture's entry alone
 	// failed as root (amended 2026-10-05, v73 review R4).
 	want := map[mountKey]string{}
-	under := mountPointsUnderFrom(readMountinfo)
+	under := mountPointsUnderFrom(func() ([]string, error) { return readMountSnapshot(mountInfoPath).Points() })
 	for i := range table.FS {
 		r := &table.FS[i]
 		if r.Kind != agent.FSDenyRead {

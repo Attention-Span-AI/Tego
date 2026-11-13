@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: Apache-2.0
+# mounts-bindfile: ADR 0017 space 5, a bind mount of a part of a deny_read directory outside it (ADR 0025: identity is
+# the inode, not a name; ADR 0011's amendment of 2026-11-11). One file and one directory of the denied directory are
+# bound beneath a granted sibling (pub/keyfile from secret/key, pub/part from secret/deep) in the run's own mount namespace, made by the root runner before the
+# run starts (Fixture.Mounts). Landlock reaches the file through the granted sibling (enforce-landlock E32 (ii)). The
+# decision plane's walk cannot hold the detached parts, so bpflsm refuses to start. Tier cgroup falls back to the
+# listener, which also refuses to start because a denied tree is visible elsewhere. compile --test sees names and
+# makes no mounts, so the cells have no compile row.
+version: 2
+name: mounts-bindfile
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./w/"]
+    deny_read: ["./secret/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [secret/deep, pub/part, w]
+files:
+  secret/key: the secret
+  secret/deep/key2: the secret too
+  pub/keyfile: a mount point
+mounts:
+  - {kind: bind, at: pub/keyfile, from: secret/key}
+  - {kind: bind, at: pub/part, from: secret/deep}
+model:
+  write: [w]
+  deny_read: [secret]
+  exec_allow: [bin/actor]
+  net_declared: true
+  plane_cannot_hold: true
+  listener_refuses: true
+cells:
+  - name: read-bind-alias-file
+    op: read
+    path: pub/keyfile
+    canon: secret/key
+    want:
+      landlock: allow
+      root: refused fs.deny_read[./secret/]
+    no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
+    exception: 'enforce-landlock E32 (ii): a deny_read target''s content reached through a bind mount beneath a granted sibling is readable through that name at tier landlock (recorded limitation; compile warns on mount points)'
+    exception_at: landlock
+    source: 'ADR 0025 (identity is the inode); ADR 0011 (2026-11-11 amendment); enforce-landlock E32 (ii); enforce-cgroup-observe §6 item 24; enforce/cgroup ErrPlaneDetachedPart'
+  - name: read-bind-alias-dir
+    op: read
+    path: pub/part/key2
+    canon: secret/deep/key2
+    want:
+      landlock: allow
+      root: refused fs.deny_read[./secret/]
+    no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
+    exception: 'enforce-landlock E32 (ii): a deny_read target''s content reached through a bind mount beneath a granted sibling is readable through that name at tier landlock (recorded limitation; compile warns on mount points)'
+    exception_at: landlock
+    source: 'ADR 0025 (identity is the inode); ADR 0011 (2026-11-11 amendment); enforce-landlock E32 (ii); enforce/cgroup ErrPlaneDetachedPart'

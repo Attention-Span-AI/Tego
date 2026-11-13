@@ -35,7 +35,8 @@ var canonicalHead = regexp.MustCompile(`^\{"v":1,"seq":([0-9]+),"id":"([0-9a-f]{
 // evidence itself, checked by a second implementation of R2, I3 and I4 over encoding/json rather than through
 // record.Chain: when Verify reports no error, every line it counted re-hashes to its own id with the id
 // zeroed, carries its position as seq and the previous line's id as prev, and names the run Verify reports;
-// the head is the last line's id, an unterminated tail is either a decodable line or exactly TornBytes long,
+// the head is the last line's id, an unterminated chunk with a lexically closed top-level value is checked in full,
+// and only a chunk with no closed value can be exactly TornBytes long,
 // an anchored run's head is the anchor's, and Iter yields exactly the lines Verify counted. A failure is
 // ErrUnverified from Verify, since reading a regular file cannot fail, and ErrCorruptLedger from Iter.
 //
@@ -159,7 +160,8 @@ func recheckChain(t *testing.T, events []byte, rep VerifyReport) []string {
 			rest = rest[i+1:]
 			continue
 		}
-		// An unterminated last line is a line when it decodes and torn otherwise (§4, E6).
+		// Verify succeeded: a retained chunk with a lexically closed top-level value must decode,
+		// including its suffix; otherwise only a chunk with no closed value may be torn (§4, E6).
 		if _, err := record.Decode(rest); err == nil {
 			lines = append(lines, rest)
 		} else if rep.TornBytes != len(rest) {

@@ -501,9 +501,40 @@ and argv[0] forms, multicall binaries, interpreter entry points and git's autoco
 sure how the tool reads a token, every reading is kept: a deny or ask entry matches when any reading matches, a
 constrained allow entry only when every reading does.
 
+*Amended 2026-11-12 (ADR 0048, release compatibility):* the decision uses the
+corrected parser and a retained pre-separator algorithm over the merged rows.
+Deny and ask use their union; constrained allow uses their intersection. A
+retained-pattern compile error rejects an allow entry with a diagnostic; deny and
+ask can still refuse using the corrected reader alone. There is no invocation
+exception. An allow entry does not admit its command when the command line puts
+`--` before the subcommand; write the command without it. The only measured allow
+gains are the eight keys named in ADR 0048 for an entry that failed to compile in
+the released matcher. Pattern.Match and Normalizer still specify the corrected
+parser. Both readers participate in dispatch and final settlement.
+
+*Amended 2026-11-12:* a selected git correction resolves through the ordinary subcommand/alias lookup, or becomes
+an unknown leaf with inherited persistent options when compile's helper-directory candidate is absent from both
+maps. The literal reading is retained too. Unique-best selection depends on the candidate inventory and does not
+prove coverage of every target an installed git reaches. Omitted later built-ins on
+`SKIP_DASHED_BUILT_INS` installations remain [GAPS C69](../../docs/GAPS.md).
+
 - **Option words** in an allow entry are required (not a whitelist); in a deny entry each must be present anywhere
   the tool could read it. Options a pattern does not name are free. **Operand words** in an allow entry equal the
   operands in number and order (a trailing `*` allows more); in a deny entry they are an ordered subsequence.
+  *Amended 2026-11-12:* a unique negated long-option abbreviation in a pattern keeps its negation, including
+  conservative deny/ask matches against unresolved raw negative invocation prefixes. Parsing removes
+  exactly the option introducer and preserves any further leading dash as a name byte. *Round 3 compatibility
+  rule:* an extra-dash deny or ask entry matches the union of its literal whole-pattern reading and every match
+  of the released matcher for that entry. An allow entry keeps only the literal reading; an option absent from a
+  known tool's row is invalid in an allow entry. Compile warns on an option name with more than two leading
+  dashes or a single dash before a long name where the tool does not accept that spelling, naming the entry and
+  its likely ordinary spelling. Tool-defined single-dash long options and short words do not warn; tools without
+  a known row retain literal single-dash option words. A later minor version will make the unusual-spelling warning
+  a compile error.
+  An allow entry naming a selector the row would discard is invalid; deny and ask entries may discard it to cover
+  the operation across variants. The round 2 audit found no pre-existing shipped or documented contract entry
+  using these affected spellings. The accepted allow entry `git add --no-f` resolves uniquely to the negated option; the
+  released parser rejected it and a contract holding it failed to compile.
 - **Precedence** (§3): the image floor, then deny, then ask (refused, reserved), then a constrained tool's unlisted
   invocation, then the gate.
 - **Constrained tool**: one an allow entry names with words, unless a bare name entry or an implicit grant (the
@@ -541,6 +572,10 @@ constrained allow entry only when every reading does.
   vector equals it, argv[0] included, read to its end, with no glob and no trailing token, and only on the exec's own
   image. Every other vector of the binary is refused `exec-not-allowed` under `exec.harness-hook[<tego binary>]`. At
   tier landlock the vector is the supervisor's copy, as every command rule's is (best effort, `exec.rules/argv`).
+  *Corrected 2026-11-12:* a dispatcher-derived applet has multicall provenance, including a stripped argv[0] name
+  obtained through a supplied dispatcher identity or a shebang stage, and cannot satisfy this exact grant. A stage's
+  invoked-as reading retains shebang provenance. The compiler excludes dispatcher identity bindings; no live
+  admission route was established by these supplied-facts cases. Live validation is owed in a guest.
 - **A deny-list run's own `CODEX_HOME` is not a place to run from** (*added 2026-10-16*, agent-contract.md R10a).
   The run grants the directory for writing on its own authority; an exec whose image, or whose directly-invoked
   loader's program, lies there is refused `codex-home-exec`, since a copy of a denied program under another name is

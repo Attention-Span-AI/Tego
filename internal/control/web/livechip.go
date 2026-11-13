@@ -37,6 +37,9 @@ type liveView struct {
 	Serial  uint64
 	// Pause is the pause or resume the run's overlay asks that its launcher has not answered yet (pause.go).
 	Pause pauseAsk
+	// LauncherUnknown is why the run's launcher could not be confirmed alive or gone (runlock.LauncherCheck), "" when
+	// it was judged: the run then reads as running, and the page says the check failed and what to do.
+	LauncherUnknown string
 	// Now is the instant a block's time limit is judged at (ADR 0125 decision 4); zero is time.Now.
 	Now time.Time
 }

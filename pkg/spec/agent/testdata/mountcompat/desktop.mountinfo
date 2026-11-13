@@ -1,0 +1,5 @@
+10 1 8:2 / / rw,relatime - ext4 /dev/nvme0n1p2 rw
+11 10 8:3 / {{ROOT}}/home rw,relatime - ext4 /dev/nvme0n1p3 rw
+12 10 0:5 / {{ROOT}}/proc rw,nosuid,nodev,noexec - proc proc rw
+13 10 0:6 / {{ROOT}}/sys rw,nosuid,nodev,noexec - sysfs sysfs rw
+14 10 0:7 / {{ROOT}}/run rw,nosuid,nodev - tmpfs tmpfs rw,size=2048000k

@@ -22,12 +22,12 @@ func TestMountPointsReadsMountinfo(t *testing.T) {
 	if points, err := MountPoints(); err != nil || points == nil {
 		t.Errorf("this process's own mount table read as %q, %v", points, err)
 	}
-	info := "22 1 0:21 / /proc rw,nosuid shared:5 - proc proc rw\n" +
+	info := "25 1 8:1 / / rw - ext4 /dev/root rw\n" +
+		"22 25 0:21 / /proc rw,nosuid shared:5 - proc proc rw\n" +
 		"36 25 0:32 / /w/.git/my\\040tmp rw - tmpfs tmpfs rw\n" +
 		"37 25 8:1 /src /w/.git/bind rw - ext4 /dev/sda1 rw\n" +
 		"38 25 98:0 / /w/a\u00a0b rw - ext4 /dev/x rw\n" +
-		"39 25 98:1 / /w/c\vd\re rw - ext4 /dev/y rw\n" +
-		"broken line\n"
+		"39 25 98:1 / /w/c\vd\re rw - ext4 /dev/y rw\n"
 	path := filepath.Join(t.TempDir(), "mountinfo")
 	if err := os.WriteFile(path, []byte(info), 0o600); err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestMountPointsReadsMountinfo(t *testing.T) {
 	mountInfoPath = path
 	t.Cleanup(func() { mountInfoPath = saved })
 	got, err := MountPoints()
-	want := []string{"/proc", "/w/.git/my tmp", "/w/.git/bind", "/w/a\u00a0b", "/w/c\vd\re"}
+	want := []string{"/", "/proc", "/w/.git/my tmp", "/w/.git/bind", "/w/a\u00a0b", "/w/c\vd\re"}
 	if err != nil || !slices.Equal(got, want) {
 		t.Errorf("mount points %q, %v; want %q", got, err, want)
 	}

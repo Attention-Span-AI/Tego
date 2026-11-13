@@ -5,8 +5,10 @@ package web
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/control/runact"
 	"github.com/attention-span-ai/tego/internal/liveblock"
+	"github.com/attention-span-ai/tego/internal/runlock"
 )
 
 // appendLines adds ledger lines to run's events file in root.
@@ -240,5 +243,95 @@ func TestPausedBy(t *testing.T) {
 		if got := pausedBy(by); got != want {
 			t.Errorf("pausedBy(%q) = %q, want %q", by, got, want)
 		}
+	}
+}
+
+// TestLostPausedRunWords: a run whose launcher died with its last recorded state paused reads "Lost, last recorded
+// paused", not Paused or a bare Lost, and its page says that is the last state recorded, that whether its processes
+// are still frozen is not known here, and names tego status and tego stop, with no Pause or Resume to offer. A lock
+// still held by a process that is not the run's launcher reads the same (launcherGone). Once a sweep ends it, its
+// orphaned end says the last recorded state was paused and the record was closed. Those lines do not record how
+// cleanup ran or prove the processes stayed frozen. A run lost while running keeps the plain Lost words.
+func TestLostPausedRunWords(t *testing.T) {
+	check := func(t *testing.T, s *Server, c *http.Cookie) {
+		t.Helper()
+		body := do(s, "GET", "/runs/"+harmRun, "127.0.0.1:8484", c).Body.String()
+		for _, want := range []string{
+			">Lost, last recorded paused</span>",
+			"<strong>Lost, last recorded paused.</strong> This run's launcher died, and the last state it recorded was paused, with no resume after it.",
+			"Whether its processes are still frozen is not known here",
+			`<span class="mono">tego status ` + harmRun + `</span> reads its scope`,
+			`<span class="mono">tego stop ` + harmRun + `</span> ends what is left`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("the page of a lost run last recorded paused lacks %q", want)
+			}
+		}
+		if strings.Contains(body, `/resume"`) || strings.Contains(body, `/pause"`) || strings.Contains(body, "Paused by") {
+			t.Error("the page offers Resume or Pause, or says it is paused")
+		}
+		if runs := do(s, "GET", "/runs", "127.0.0.1:8484", c).Body.String(); !strings.Contains(runs, ">Lost, last recorded paused</span>") {
+			t.Error("the Runs list does not say Lost, last recorded paused")
+		}
+	}
+	root := pauseFixture(t)
+	answerAsk7(t, root, 7)
+	appendLines(t, root, harmRun, pauseLine(8, time.Date(2026, 10, 25, 12, 1, 8, 0, time.UTC), "run-paused", "pause"))
+
+	t.Run("a lock another process holds", func(t *testing.T) {
+		// The lock stays held (markLive's, in this process), but the process its line names is gone.
+		gone := exec.Command("/bin/true")
+		if err := gone.Run(); err != nil {
+			t.Skipf("no /bin/true: %v", err)
+		}
+		line := runlock.LockInfo{PID: gone.Process.Pid, StartBootNS: 1}.String()
+		if err := os.WriteFile(filepath.Join(root, harmRun, "lock"), []byte(line), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		s := newServer(t, root)
+		check(t, s, login(t, s))
+	})
+
+	letGo(filepath.Join(root, harmRun)) // the launcher's death
+	s := newServer(t, root)
+	c := login(t, s)
+	check(t, s, c)
+
+	// These historical lines carry no cleanup-method field. An older sweep could close this record after a
+	// scope-read error, so the page cannot infer that cgroup.kill ran from the orphaned end alone.
+	appendLines(t, root, harmRun,
+		line(harmRun, "demo-harm", 9, time.Date(2026, 10, 25, 12, 2, 0, 0, time.UTC), "gap", `"what":"record","why":"launcher-lost"`),
+		line(harmRun, "demo-harm", 10, time.Date(2026, 10, 25, 12, 2, 0, 0, time.UTC), "run_end", `"reason":"orphaned","exit_code":125`))
+	body := do(s, "GET", "/runs/"+harmRun, "127.0.0.1:8484", c).Body.String()
+	if !strings.Contains(body, "The run&#39;s launcher died, and the last state it recorded was paused, with no resume after it. Tego closed the orphaned record; its last lines may be missing.") ||
+		strings.Contains(body, "cgroup.kill") || strings.Contains(body, "Lost, last recorded paused") || strings.Contains(body, "without letting them run again") {
+		t.Error("an orphaned end of a run last recorded paused does not say what is known, or still reads lost")
+	}
+
+	// Lost while running: the plain words.
+	root2 := fixture(t)
+	answerAsk7(t, root2, 7)
+	letGo(filepath.Join(root2, harmRun))
+	s2 := newServer(t, root2)
+	body = do(s2, "GET", "/runs/"+harmRun, "127.0.0.1:8484", login(t, s2)).Body.String()
+	if !strings.Contains(body, ">Lost</span>") || strings.Contains(body, "last recorded paused") {
+		t.Error("a run lost while running reads otherwise than Lost")
+	}
+}
+
+// TestRunPageSaysTheLauncherIsUnknown: a running run whose launcher could not be judged says so, with the failed check
+// and the fix, and is still shown running (nothing is ended on it).
+func TestRunPageSaysTheLauncherIsUnknown(t *testing.T) {
+	old := launcherUnknown
+	launcherUnknown = func(string, string) string {
+		return "runtime: the lock holder's identity cannot be read: permission denied"
+	}
+	t.Cleanup(func() { launcherUnknown = old })
+	root := pauseFixture(t)
+	s := newServer(t, root)
+	body := do(s, "GET", "/runs/"+harmRun, "127.0.0.1:8484", login(t, s)).Body.String()
+	if !strings.Contains(body, "<strong>Launcher not confirmed.</strong>") || !strings.Contains(body, "permission denied") ||
+		!strings.Contains(body, "pid namespace") || !strings.Contains(body, "Stop run") {
+		t.Error("the run page does not say its launcher could not be confirmed, or no longer offers Stop")
 	}
 }

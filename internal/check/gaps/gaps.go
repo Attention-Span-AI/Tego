@@ -49,8 +49,9 @@ type Count struct {
 	// processes the source could not cover, not dropped events, and adds to Processes instead.
 	// Shared tracing skips add to SharedSkipped; unavailable-counter occurrences add to neither.
 	Lost int
-	// SharedSkipped is the reported sum of skipped shared tracing program executions. Overlapping runs may
-	// report the same execution; these are neither unique skips nor this run's lost events.
+	// SharedSkipped is the reported sum of skipped executions of shared programs: the recorder's tracing programs
+	// (Uncertain) or the programs the run's rules rely on (RulesUncertain). Overlapping runs may report the same
+	// execution; these are neither unique skips nor this run's lost events.
 	SharedSkipped int
 	// Processes is the sum of the count fields of gaps that name a binary.
 	Processes int
@@ -85,9 +86,11 @@ func (t *Tally) Add(e *record.Event) {
 	lost, procs, skipped := 0, 0, 0
 	var bins []string
 	switch {
-	case p.What == record.GapRecord && p.Why == SharedTracingSkip:
+	case p.What == record.GapRecord && p.Why == SharedTracingSkip,
+		p.What == record.GapEnforce && (p.Why == record.GapDecidingSkip || p.Why == record.GapTrackingSkip):
 		skipped = max(p.Count, 0)
-	case p.What == record.GapRecord && p.Why == SharedTracingUnavailable:
+	case p.What == record.GapRecord && p.Why == SharedTracingUnavailable,
+		p.What == record.GapEnforce && (p.Why == record.GapSkipCounterUnavailable || p.Why == record.GapSkipCounterRestored):
 		// Count names counter failures, not lost events.
 	case p.Count > 0 && p.Binary != "":
 		procs = p.Count
@@ -178,8 +181,13 @@ func Line(cs []Count) string {
 		var b strings.Builder
 		fmt.Fprintf(&b, "%s/%s x%d", record.Printable(c.What), record.Printable(c.Why), c.Events)
 		var detail []string
-		if Classify(c.What, c.Why) == Uncertain {
+		switch Classify(c.What, c.Why) {
+		case Uncertain:
 			detail = append(detail, SharedTracingWords(c.SharedSkipped, c.Why == SharedTracingUnavailable))
+		case RulesUncertain:
+			detail = append(detail, skipWordsOf([]Count{c}))
+		case Missed, Live, Capture, Price, Restored:
+			// no words beyond the counts below
 		}
 		if c.Lost > 0 {
 			detail = append(detail, strconv.Itoa(c.Lost)+" events lost")
@@ -256,6 +264,10 @@ const (
 	Restored
 	// Uncertain is shared tracing counter evidence that cannot establish whether this run lost actions.
 	Uncertain
+	// RulesUncertain is a skip of a shared program the run's rules rely on (ADR 0148): the kernel skipped a program
+	// that decides the run's actions or adds its child cgroups to the run set, or the counters could not be read, so
+	// the run cannot say every rule held. The skip may have been another run's or an ungoverned task's.
+	RulesUncertain
 )
 
 // priceWhys are the whys of a gap what=record that leave only the cost unestimated.
@@ -268,6 +280,9 @@ func Classify(what, why string) Class {
 		return Live
 	case what == record.GapRecord && (why == SharedTracingSkip || why == SharedTracingUnavailable):
 		return Uncertain
+	case what == record.GapEnforce && (why == record.GapDecidingSkip || why == record.GapTrackingSkip ||
+		why == record.GapSkipCounterUnavailable || why == record.GapSkipCounterRestored):
+		return RulesUncertain
 	case what == record.GapCapture:
 		return Capture
 	case what == record.GapRecord && priceWhys[why]:
@@ -289,6 +304,48 @@ func SharedTracingWords(skipped int, unavailable bool) string {
 		words += "; active shared tracing program counters could not be established or read"
 	}
 	return words + "; this run may have unrecorded actions"
+}
+
+// SkippedProgramWords says what skips of the programs a run's rules rely on mean (RulesUncertain), in the words the
+// receipt and tego status use: deciding and tracking are the reported skips of each class, unavailable that a reading
+// failed. The programs are shared, so the words never say the skips were this run's.
+func SkippedProgramWords(deciding, tracking int, unavailable bool) string {
+	var parts []string
+	if deciding > 0 {
+		parts = append(parts, fmt.Sprintf("the kernel skipped %d executions of shared programs that decide this run's "+
+			"actions, so an action the rules refuse may have gone on unrefused", deciding))
+	}
+	if tracking > 0 {
+		parts = append(parts, fmt.Sprintf("the kernel skipped %d executions of the shared program that adds a run's "+
+			"child cgroups to the run set, so tasks of a child cgroup may have gone ungoverned and unrecorded", tracking))
+	}
+	if unavailable {
+		parts = append(parts, "the skip counters of the programs the run's rules rely on could not be read")
+	}
+	if len(parts) == 0 {
+		parts = append(parts, "the kernel skipped programs that the run's rules rely on")
+	}
+	return "the rules may not have held: " + strings.Join(parts, "; ") +
+		"; the skips may belong to other runs or ungoverned tasks"
+}
+
+// skipWordsOf is SkippedProgramWords over the RulesUncertain entries of cs.
+func skipWordsOf(cs []Count) string {
+	var deciding, tracking int
+	var unavailable bool
+	for _, c := range cs {
+		switch {
+		case c.What != record.GapEnforce:
+		case c.Why == record.GapDecidingSkip:
+			deciding = addCount(deciding, c.SharedSkipped)
+		case c.Why == record.GapTrackingSkip:
+			tracking = addCount(tracking, c.SharedSkipped)
+		case c.Why == record.GapSkipCounterUnavailable, c.Why == record.GapSkipCounterRestored:
+			// A restored line closes an outage: the counters could not be read for a while.
+			unavailable = true
+		}
+	}
+	return SkippedProgramWords(deciding, tracking, unavailable)
 }
 
 // RestoredWords says how many of tego's own files had their owner's rights given back (Restored), in the words the
@@ -336,6 +393,7 @@ func Words(cs []Count, cutOff bool) string {
 	}
 	var missed, lost, capture, price, restored, skipped int
 	var uncertain, unavailable bool
+	var rules []Count
 	var live []string
 	for _, c := range cs {
 		switch Classify(c.What, c.Why) {
@@ -343,6 +401,8 @@ func Words(cs []Count, cutOff bool) string {
 			uncertain = true
 			skipped = addCount(skipped, c.SharedSkipped)
 			unavailable = unavailable || c.Why == SharedTracingUnavailable
+		case RulesUncertain:
+			rules = append(rules, c)
 		case Missed:
 			missed = addCount(missed, c.Events)
 			lost = addCount(lost, c.Lost)
@@ -364,12 +424,18 @@ func Words(cs []Count, cutOff bool) string {
 		}
 	}
 	var parts []string
+	if len(rules) > 0 {
+		// First: it says what the run's rules may not have done, the gravest thing a gap can say.
+		parts = append(parts, skipWordsOf(rules))
+	}
 	switch {
 	case missed > 0 && lost > 0:
 		parts = append(parts, fmt.Sprintf("%s in the record (counts are a minimum, %d events lost)", plural(missed, "gap"), lost))
 	case missed > 0:
 		parts = append(parts, plural(missed, "gap")+" in the record (counts are a minimum)")
-	case !cutOff && !uncertain:
+	case !cutOff && !uncertain && len(rules) == 0:
+		// A skipped tracking program leaves a child cgroup's tasks unrecorded too, so with rules uncertain nothing
+		// says no action is missing.
 		parts = append(parts, "no action known to be missing")
 	}
 	if uncertain {

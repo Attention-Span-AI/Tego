@@ -1,0 +1,4 @@
+795 277 253:1 /srv/c / rw,relatime - ext4 /dev/vda1 rw,discard,errors=remount-ro,commit=30
+796 795 0:45 / /proc rw,relatime - proc proc rw
+797 795 0:46 / /tmp rw,relatime - tmpfs tmpfs rw,inode64
+798 795 253:1 /home/runner/proj /home/runner/proj rw,relatime - ext4 /dev/vda1 rw,discard,errors=remount-ro,commit=30

@@ -35,6 +35,7 @@ model:
   deny_read: [secret]
   exec_allow: [bin/actor]
   net_declared: true
+  listener_refuses: true
 cells:
   # A bind alias of the deny_read directory at a level the launcher enumerates is its inode: Landlock keeps the node's
   # rights on it (enforce-landlock E32 (b)), the plane refuses by inode. The lines name the alias (baselined).
@@ -47,7 +48,8 @@ cells:
     no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
     source: 'ADR 0025 (identity is the inode); enforce-landlock E32 (b); enforce-plane R8'
   # Beneath a granted sibling the alias is readable at tier landlock through that name alone (E32 (ii), a recorded
-  # limitation); the plane refuses it by inode; tier cgroup's listener allows it, a fail-open, reported as this cell's finding.
+  # limitation); the plane refuses it by inode. Where the listener would decide the run, Prepare refuses to start
+  # because the denied tree has another name (ADR 0011).
   - name: read-bind-alias-nested
     op: read
     path: pub/alias/key
@@ -58,9 +60,7 @@ cells:
     no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
     exception: 'enforce-landlock E32 (ii): a deny_read target''s content reached through a bind mount beneath a granted sibling is readable through that name at tier landlock (recorded limitation; compile warns on mount points)'
     exception_at: landlock
-    finding: 'tier cgroup''s fanotify listener allows the read (kernel allow, line allow unmatched) where the oracle holds it to every deny_read; fix in the listener (decide the open by the file''s identity, ADR 0010, ADR 0025), not baselined'
-    finding_at: cgroup
-    source: 'ADR 0025 (identity is the inode); enforce-landlock E32 (ii); enforce-cgroup-observe R8; enforce-plane R8'
+    source: 'ADR 0025 (identity is the inode); ADR 0011 (2026-11-11 amendment); enforce-landlock E32 (ii); enforce-cgroup-observe R8, §6 item 24; enforce-plane R8'
   # A bind alias of a write entry is the entry's inode: Landlock keys the entry's rights by inode, and so does the
   # plane. Tier cgroup's listener refuses it by the name (fail closed) and the supervisor's line at tier landlock says
   # refused (baselined).

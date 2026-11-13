@@ -18,6 +18,9 @@ import (
 // Sentinel errors of the codec. Every error returned by this package wraps one of them (%w), so callers test
 // with errors.Is through any further wrapping.
 var (
+	// errMalformedObject distinguishes the JSON/object/unique-key gate from field validation so a malformed
+	// suffix is reported before a stale digest, without parsing the same object twice in Chain.Add.
+	errMalformedObject = errors.New("record: malformed JSON object")
 	// ErrInvalidEvent is returned when an Event violates the v1 rules (docs/p0/record-ledger.md §2.1).
 	ErrInvalidEvent = errors.New("record: invalid event")
 	// ErrUnsupportedVersion is returned by Decode when v is missing or not 1 (R5).
@@ -30,6 +33,9 @@ var (
 	ErrPayloadFieldCollision = errors.New("record: payload field collides with a common field")
 	// ErrMalformedLine is returned by Decode and VerifyLine when the bytes are not one JSON object.
 	ErrMalformedLine = errors.New("record: malformed line")
+	// ErrMalformedTimestamp identifies a timestamp refused by the record profile. Chain checks report this
+	// malformed record before a stale digest, and framing must never discard it as a torn tail.
+	ErrMalformedTimestamp = errors.New("record: malformed timestamp")
 	// ErrIDMismatch is returned by VerifyLine when the id does not equal the digest of the line (R2).
 	ErrIDMismatch = errors.New("record: id does not match line bytes")
 	// ErrCorruptChain is returned by Chain when seq is not gapless or prev does not name the previous id (I3, I4).
@@ -367,7 +373,7 @@ func Decode(line []byte) (*Event, error) {
 	line = bytes.TrimSuffix(line, []byte{'\n'})
 	fields, err := objectFields(line)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrMalformedLine, err)
+		return nil, fmt.Errorf("%w: %w: %w", ErrMalformedLine, errMalformedObject, err)
 	}
 	e := &Event{}
 	vi := slices.IndexFunc(fields, func(f field) bool { return f.key == "v" })
@@ -392,6 +398,16 @@ func Decode(line []byte) (*Event, error) {
 // each value must have its declared type.
 func (e *Event) decodeCommon(fields []field) error {
 	const alwaysPresent = 12
+	// A refused timestamp keeps its malformed-line reason even when the digest or another field is bad.
+	for _, f := range fields {
+		if f.key == "ts" {
+			var err error
+			e.TS, err = parseTime(f.val)
+			if err != nil {
+				return fmt.Errorf("%w: ts: %w: %w", ErrMalformedLine, ErrMalformedTimestamp, err)
+			}
+		}
+	}
 	present := 0
 	for _, f := range fields {
 		var err error
@@ -405,7 +421,7 @@ func (e *Event) decodeCommon(fields []field) error {
 		case "prev":
 			e.Prev, err = unquote(f.val)
 		case "ts":
-			e.TS, err = parseTime(f.val)
+			// Already checked above, before other fields.
 		case "mono_ns":
 			e.MonoNS, err = parseUint(f.val)
 		case "run":

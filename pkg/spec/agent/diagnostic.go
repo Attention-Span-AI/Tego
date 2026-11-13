@@ -94,6 +94,9 @@ const (
 	// runs in tego's place the next time a person types its name (WithOwnBinaries). A warning: the directory is often
 	// the project's own, an activated .venv/bin, and holds nothing of tego's.
 	CodePathShadow = "path-shadow"
+	// CodeOverlayBackingUnknown warns per entry when absent or unplaced protected-file
+	// backing cannot be compared with a storage mount reached by a write or ask grant.
+	CodeOverlayBackingUnknown = "overlay-backing-unknown"
 	// CodeExecMulticall is the note on an allowed exec entry whose file has more than one hard link or is named
 	// busybox, toybox or coreutils, once per file: the names that lead to it, its link count, and what tier landlock
 	// and a multi-call program that reads argv[0] admit through a listed name (SEMANTICS §4, docs/GAPS.md). A note:

@@ -95,6 +95,37 @@ where the kernel's recorder writes it (tier cgroup on the listener and the plane
 `by: other` up to 6.12, as ADR 0016 step 2 predicted. Measured: 6.17 both boots (allow on every axis) and AL2023's 6.1
 both boots (allow at tier landlock, observed on the others). Deferred loses fs/third-party-fanotify-refusal.
 
+*Amended 2026-11-11, corrected 2026-11-12 (space 6's measured order and space 5's startup refusals):* the
+thirdparty cell's `observed` want follows `fanotify_in_chain`, measured as root by `fanotifyInChain`, rather than the
+kernel version. Debian 13's 6.12.107 runs fsnotify's permission event after security_file_open and its chain-return
+line is `allow`, as ADR 0016 specifies. That ordering was measured in the earlier Debian and Fedora guests. The
+probe now cancels on its outer deadline and joins its worker before removing its files; its responder closes the
+group on cancellation. `TestFanotifyProbeCancellationJoinsWorker` and `TestFanotifyProbeCancellationClosesGroup`
+exercise cancellation without root or kernel resources. BPF loading and attachment are synchronous calls without a
+context interface: cancellation waits for an in-flight call to return and cleans up its result. Thirty seconds is
+the cancellation deadline, not a guarantee that every kernel call returns by then. The changed cancellation path
+has unit proof; its fanotify and attachment behavior is owed in a guest.
+
+Space 5 follows the release limit in ADR 0011: wherever the listener would decide a compiled `deny_read` path
+entry, a mount-table alias on the same filesystem instance of the tree or part of it refuses before the actor
+starts. This now includes `mounts-bind`'s nested alias, `mounts-bindfile`'s file and directory aliases,
+`mounts-bindmove`, `mounts-bindhidden`, and `mounts-bindsub`. The additional ancestor-through-another-bind and
+approval-scope fixtures have the same startup expectation. A selected plane continues holding whole-tree
+aliases on the same filesystem instance; a detached part falls back at cgroup, whose listener refuses it, and
+refuses at bpflsm. These checks do not recognise a different filesystem instance showing the same data and do
+not check protected-name scopes for aliases (GAPS C68). These changed expectations are compiled and
+unit-tested; running them is owed in a guest on Debian 13's 6.12 and Fedora's 7.0, both boots. They are not
+new guest results.
+
+Saved guest evidence from fix round 1 shows `mounts-bindmove` and `mounts-bindhidden` failing before that fix, but
+`mounts-bindsub` passing before and after. Source inspection shows that its different-device case was already covered
+by the built-in project name scope and did not expose the recorder's omission.
+`TestOrdinarySubmountListenerHandoffEmitsOneRefusal` uses an ordinary denied entry with a different-device submount
+outside every name-rule scope, and checks exactly one refusal through the actual listener's marked-device handoff.
+It has unit proof; this replacement is not a new kernel measurement. The `setuid`
+mount route and the new second-round topologies were reasoned from sources; their changed startup behavior is
+unit-tested, with guest acceptance still owed.
+
 *Amended 2026-10-19 (spaces 4 and 5: deny_write ancestors, the TOCTOU harness, mounts):* space (4) is
 denywrite-ancestors.yaml, toctou.yaml and denywrite-mounted.yaml, on ops the actor gains (`chown`, `setxattr`,
 `setfacl` as the `system.posix_acl_access` xattr of a minimal ACL, `mknod`'s FIFO, `race-symlink-read`,

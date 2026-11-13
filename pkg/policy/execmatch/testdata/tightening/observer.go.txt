@@ -1,0 +1,230 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package execmatch
+
+import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"os"
+	"reflect"
+	"runtime"
+	"sort"
+	"sync"
+	"unicode/utf8"
+)
+
+// This test-only overlay journals actual decisions from the existing tests and
+// fuzz seeds. The baseline keeps the original matcher, apart from observation
+// and a copy of Decide with only its early guard removed for the guard property.
+var tighteningJournal struct {
+	sync.Mutex
+	file    *os.File
+	indexes map[*Index]string
+	checked map[string]bool
+}
+
+func (ix *Index) Decide(f *Facts) Result {
+	r := ix.decideObserved(f)
+	ix.observeTightening(f, r)
+	return r
+}
+
+func tighteningValue(v reflect.Value) any { return tighteningValueBytes(v, nil) }
+
+func tighteningValueBytes(v reflect.Value, invalid *bool) any {
+	if !v.IsValid() {
+		return nil
+	}
+	switch v.Kind() {
+	case reflect.Interface, reflect.Pointer:
+		if v.IsNil() {
+			return nil
+		}
+		return tighteningValueBytes(v.Elem(), invalid)
+	case reflect.Struct:
+		out := map[string]any{}
+		for i := 0; i < v.NumField(); i++ {
+			field := v.Type().Field(i)
+			if field.IsExported() {
+				out[field.Name] = tighteningValueBytes(v.Field(i), invalid)
+			}
+		}
+		return out
+	case reflect.Slice, reflect.Array:
+		out := make([]any, v.Len())
+		for i := range out {
+			out[i] = tighteningValueBytes(v.Index(i), invalid)
+		}
+		return out
+	case reflect.Map:
+		// IDs are struct keys. Encode each key independently, then sort, so Go map
+		// iteration and the seed corpus order cannot affect the comparison key.
+		type entry struct {
+			Key   string
+			Value any
+		}
+		out := make([]entry, 0, v.Len())
+		it := v.MapRange()
+		for it.Next() {
+			k, e := json.Marshal(tighteningValueBytes(it.Key(), invalid))
+			if e != nil {
+				panic(e)
+			}
+			out = append(out, entry{string(k), tighteningValueBytes(it.Value(), invalid)})
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+		return out
+	case reflect.String:
+		s := v.String()
+		if !utf8.ValidString(s) {
+			if invalid != nil {
+				*invalid = true
+			}
+			// encoding/json replaces invalid UTF-8. A byte marker keeps such
+			// inputs distinct, including future checked-in fuzz seeds.
+			return struct{ Bytes []byte }{[]byte(s)}
+		}
+		return s
+	case reflect.Func:
+		if v.IsNil() {
+			return nil
+		}
+		return runtime.FuncForPC(v.Pointer()).Name()
+	default:
+		return v.Interface()
+	}
+}
+
+func tighteningDigest(v any) string {
+	b, e := json.Marshal(v)
+	if e != nil {
+		panic(e)
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(b))
+}
+
+// A pattern's source is the comparison input. Its parsed options, path and
+// operands are outputs of the implementation being compared, so hashing those
+// would hide a changed reading behind different old and new input keys.
+func tighteningPatternInputs(patterns []*Pattern) []any {
+	var inputs []any
+	for _, p := range patterns {
+		if p.Runtime == "" {
+			inputs = append(inputs, tighteningValue(reflect.ValueOf(struct {
+				Entry string
+				List  List
+			}{p.Entry, p.List})))
+			continue
+		}
+		inputs = append(inputs, tighteningValue(reflect.ValueOf(struct {
+			Entry, Runtime, Tool, Argv0 string
+			List                        List
+			Words                       []string
+		}{p.Entry, p.Runtime, p.Tool, p.Argv0, p.List, p.Words})))
+	}
+	return inputs
+}
+
+func (ix *Index) observeTightening(f *Facts, r Result) {
+	dir := os.Getenv("TEGO_EXECMATCH_JOURNAL")
+	if dir == "" {
+		return
+	}
+	tighteningJournal.Lock()
+	defer tighteningJournal.Unlock()
+	if tighteningJournal.file == nil {
+		file, e := os.OpenFile(fmt.Sprintf("%s/%d.jsonl", dir, os.Getpid()), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		if e != nil {
+			panic(e)
+		}
+		tighteningJournal.file = file
+		tighteningJournal.indexes = map[*Index]string{}
+		tighteningJournal.checked = map[string]bool{}
+	}
+	sig, ok := tighteningJournal.indexes[ix]
+	if !ok {
+		if ix == nil {
+			sig = "nil"
+		} else {
+			sig = tighteningDigest([]any{tighteningValue(reflect.ValueOf(ix.rows.All())), tighteningPatternInputs(ix.order), tighteningValue(reflect.ValueOf(ix.ids)), tighteningValue(reflect.ValueOf(ix.lds)), tighteningValue(reflect.ValueOf(ix.tools)), ix.mc != nil, ix.mcNames})
+			// toolRules is private, so explicitly retain whether an implicit grant
+			// lifted each tool's constraints. Pattern contents stay source inputs.
+			var constraints []string
+			for name, tr := range ix.tools {
+				constraints = append(constraints, fmt.Sprintf("%s:%v", name, tr.constrained))
+			}
+			sort.Strings(constraints)
+			var candidates []any
+			for row, nz := range ix.nz {
+				if nz.cand != nil {
+					candidates = append(candidates, []any{row.Tool, nz.cand.names, tighteningValue(reflect.ValueOf(nz.cand.common))})
+				}
+			}
+			sort.Slice(candidates, func(i, j int) bool { return tighteningDigest(candidates[i]) < tighteningDigest(candidates[j]) })
+			sig = tighteningDigest([]any{sig, constraints, candidates})
+		}
+		tighteningJournal.indexes[ix] = sig
+	}
+	keyFacts := *f
+	// Only preparation of the explicit-empty loader vector differs between the
+	// runs. Key it by the same raw loader input; the program's value is observed
+	// in the decision and the regression test checks the actual empty element.
+	if f.Loaded != nil && len(f.Argv) > 1 && len(f.Loaded.Argv) > 0 {
+		empty := false
+		for i, w := range f.Argv[1:] {
+			if w == "--argv0=" || w == "--argv0" && i+2 < len(f.Argv) && f.Argv[i+2] == "" {
+				empty = true
+			}
+		}
+		if empty {
+			loaded := *f.Loaded
+			loaded.Argv = prepend(loaded.Path, loaded.Argv[1:])
+			keyFacts.Loaded = &loaded
+		}
+	}
+	invalid := false
+	keyValue := tighteningValueBytes(reflect.ValueOf(keyFacts), &invalid)
+	key := tighteningDigest([]any{sig, keyValue})
+	var rawKeyFacts any
+	if invalid {
+		rawKeyFacts = keyValue
+	}
+	if os.Getenv("TEGO_EXECMATCH_SIDE") == "new" && !tighteningJournal.checked[key] {
+		full := Result{Final: true, K: len(f.Argv)}
+		if !ix.Empty() {
+			full = ix.decide(f)
+		}
+		if (full.Outcome == OutcomeRefused || !full.Final) && !ix.Guarded(f) {
+			panic(fmt.Sprintf("guard skipped full decision: %+v: %+v", f, full))
+		}
+		// Immutable indexes and identical facts have the same full decision.
+		// Bound this acceleration cache; every result is still journaled and
+		// duplicate-result consistency is independently checked by the driver.
+		if len(tighteningJournal.checked) == 65536 {
+			clear(tighteningJournal.checked)
+		}
+		tighteningJournal.checked[key] = true
+	}
+
+	var patterns []string
+	if ix != nil {
+		for _, p := range ix.order {
+			patterns = append(patterns, p.Rule())
+		}
+	}
+	entry := struct {
+		Key, IndexSignature                string
+		Outcome                            Outcome
+		List                               List
+		Final, Unlisted, Overflow, Guarded bool
+		K                                  int
+		Rule, Tool, Via, Match             string
+		Facts                              *Facts
+		Patterns                           []string
+		RawKeyFacts                        any `json:"RawKeyFacts,omitempty"`
+	}{key, sig, r.Outcome, r.List, r.Final, r.Unlisted, r.Overflow, r.Guarded, r.K, r.Rule(), r.Tool, r.Via.String(), r.Match.String(), f, patterns, rawKeyFacts}
+	if e := json.NewEncoder(tighteningJournal.file).Encode(entry); e != nil {
+		panic(e)
+	}
+}

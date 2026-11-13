@@ -59,6 +59,19 @@ type axis struct {
 	label     Tier
 	// decisionPlane is the mode a plane-decided ledger line names in decision_plane ("" where no plane decides).
 	decisionPlane string
+	// fallback is a plane pin whose run the plane cannot hold (Model.PlaneCannotHold), so tier cgroup's listener
+	// decides it: its run_start names fanotify, and the listener's column and invariants answer it.
+	fallback bool
+}
+
+// onListener is ax for a fixture the plane cannot hold: at tier cgroup under a plane pin the run falls back to the
+// fanotify listener (enforce/cgroup choosePlane), which answers the listener's column under the axis' own label.
+func (ax axis) onListener() axis {
+	if ax.tier != TierCgroup || ax.decisionPlane == "" {
+		return ax
+	}
+	ax.want, ax.invariant, ax.decisionPlane, ax.fallback = Key{TierCgroup, ModeFanotify}, TierCgroup, "", true
+	return ax
 }
 
 // planeAxis is tier cgroup in a plane mode: the plane column.
@@ -70,7 +83,10 @@ func planeAxis(m Mode) axis {
 // runPlane is the decision_plane the axis' run_start line must name: the plane mode it pins, "fanotify" for tier
 // cgroup on the listener, none at tier landlock.
 func (ax axis) runPlane() string {
-	if ax.decisionPlane != "" {
+	switch {
+	case ax.fallback:
+		return string(ModeFanotify)
+	case ax.decisionPlane != "":
 		return ax.decisionPlane
 	}
 	return ax.pin
@@ -218,6 +234,12 @@ func TestConformanceKernel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The thirdparty cell's line follows whether another party's refusal is in security_file_open's return here
+	// (Machine.FanotifyInChain): measured, never read off the version.
+	if machine.FanotifyInChain, err = fanotifyInChain(); err != nil {
+		t.Fatalf("fanotify in the chain's return: %v", err)
+	}
+	t.Logf("another party's fanotify refusal is in security_file_open's return: %t", machine.FanotifyInChain)
 	var report io.Writer
 	reportPrefix := ""
 	if path := os.Getenv(ReportEnv); path == "-" {
@@ -327,6 +349,9 @@ func fixtureReport(t *testing.T, fr *AxisReport) *AxisReport {
 // A generated fixture's compile --test answers, every tier's, come in gen (generatedColumns): its cells have no want,
 // and the axis' column, ax.want's tier, is what the kernel's answer is held to.
 func runFixture(t *testing.T, bin, actor string, uid, gid int, fx *Fixture, ax axis, machine Machine, gen map[string]compileCell) *AxisReport {
+	if fx.Model.PlaneCannotHold {
+		ax = ax.onListener()
+	}
 	tier := ax.tier
 	machine.PlaneFirst = ax.planeFirst()
 	rep := NewAxisReport(ax.label)
@@ -500,6 +525,31 @@ func runFixture(t *testing.T, bin, actor string, uid, gid int, fx *Fixture, ax a
 			ax.label, fx.Name)
 		return rep
 	}
+	// A table the plane cannot hold is refused at tier bpflsm before its actor performs any action (ErrPlaneCannotHold,
+	// ErrPlaneDetachedPart), and one the listener cannot hold either at tier cgroup (ErrListenerAlias); the tree is as
+	// the run found it.
+	wantStderr := mountStartupRefusal(fx, ax)
+	if wantStderr != nil {
+		why := wantStderr[len(wantStderr)-1]
+		said := true
+		for _, w := range wantStderr {
+			said = said && strings.Contains(stderr.String(), w)
+		}
+		var exit *exec.ExitError
+		if !errors.As(runErr, &exit) || exit.ExitCode() != 125 || len(results) != 0 || !said {
+			t.Fatalf("a table the plane cannot hold at %s: %v, %d actions\nstdout:\n%s\nstderr:\n%s",
+				ax.label, runErr, len(results), stdout.String(), stderr.String())
+		}
+		if !maps.Equal(before, after) {
+			rep.FailOpens = append(rep.FailOpens, fmt.Sprintf("%s at %s: the project tree changed although the run was refused before its actor started",
+				fx.Name, ax.label))
+		}
+		t.Logf("STARTUP %s/%s refused before actor actions: %s", ax.label, fx.Name, why)
+		for j := range fx.Cells { // judged by the refusal: none of its cells ran here
+			rep.Ran[NotRunKey(fx.ID(&fx.Cells[j]), string(ax.label))] = true
+		}
+		return rep
+	}
 	if len(results) != len(fx.Cells) {
 		t.Fatalf("tego run --tier %s: %v, %d of %d actions reported\nstdout:\n%s\nstderr:\n%s", tier, runErr, len(results), len(fx.Cells),
 			stdout.String(), stderr.String())
@@ -608,6 +658,19 @@ func runFixture(t *testing.T, bin, actor string, uid, gid int, fx *Fixture, ax a
 		}
 	}
 	return rep
+}
+
+// mountStartupRefusal is the startup decision expected from a fixture's mount topology, after the axis has
+// applied its plane fallback. Whole-tree aliases remain holdable by a plane, so only listener axes refuse them.
+func mountStartupRefusal(fx *Fixture, ax axis) []string {
+	switch {
+	case fx.Model.PlaneCannotHold && ax.tier == TierBPFLSM:
+		return []string{"cannot hold this contract in the decision plane", "where the decision plane's walk never meets the entry"}
+	case fx.Model.ListenerRefuses && ax.tier == TierCgroup && ax.decisionPlane == "":
+		return []string{"fanotify cannot hold a deny_read tree visible under another name"}
+	default:
+		return nil
+	}
 }
 
 func verdictOrErr(v string, ok bool) string {

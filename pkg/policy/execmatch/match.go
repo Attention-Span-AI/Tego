@@ -31,8 +31,53 @@ func (m Match) String() string {
 	return "unknown"
 }
 
+func (ix *Index) matchPattern(p *Pattern, inv *Invocation) Match { return p.MatchDecision(inv) }
+
+// MatchDecision combines both readers for command and gate decisions. inv must
+// come from Index.Interpretations. Missing reader state fails closed. Match alone
+// continues to describe the corrected parser for specification comparisons.
+func (p *Pattern) MatchDecision(inv *Invocation) Match {
+	if inv == nil || inv.Tool != p.Tool {
+		return MatchNone
+	}
+	if inv != nil && inv.Row != nil && !p.Bare && p.Runtime == "" && (len(inv.Readings) == 0 || len(inv.releaseReadings) == 0) {
+		if p.List == ListAllow {
+			return MatchNone
+		}
+		return MatchAmbiguous
+	}
+	current := p.Match(inv)
+	if inv == nil || p.Bare || p.Runtime != "" {
+		return current
+	}
+	if p.released == nil {
+		if p.List == ListAllow {
+			return MatchNone
+		}
+		return current
+	}
+	before := *inv
+	if inv.Row != nil {
+		before.Readings = inv.releaseReadings
+	}
+	previous := p.released.Match(&before)
+	if p.List != ListAllow {
+		if current == MatchNone {
+			return previous
+		}
+		if previous == MatchNone || current != previous {
+			return MatchAmbiguous
+		}
+		return current
+	}
+	if current == MatchDefinite && previous == MatchDefinite {
+		return MatchDefinite
+	}
+	return MatchNone
+}
+
 // Match reports how p matches inv (ADR 0048 (1), (2)). A deny or ask pattern matches when any reading matches, and
-// an unlocatable reading matches every one; a constrained allow pattern matches only when every reading matches, and
+// an unlocatable reading matches every one; a constrained allow pattern matches only when every reading does, and
 // never an unlocatable one. A bare pattern matches every invocation of its tool. It allocates nothing.
 func (p *Pattern) Match(inv *Invocation) Match {
 	if inv == nil || inv.Tool != p.Tool {
@@ -79,7 +124,7 @@ func (p *Pattern) Match(inv *Invocation) Match {
 			if deny {
 				m++
 			}
-		case deny && p.denyReading(r):
+		case deny && (p.denyReading(r) || p.compat != nil && p.compat.denyReading(r)):
 			m++
 		case !deny && p.allowReading(r):
 			m++
@@ -98,7 +143,19 @@ func (p *Pattern) Match(inv *Invocation) Match {
 
 // pathMatches reports whether a reading's subcommand path starts with the pattern's.
 func (p *Pattern) pathMatches(r *Reading) bool {
-	if len(r.Path) < len(p.Path) {
+	if p.singlePathMatches(r) {
+		return true
+	}
+	for _, q := range p.separated {
+		if q.singlePathMatches(r) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Pattern) singlePathMatches(r *Reading) bool {
+	if len(r.Path) < len(p.Path) || p.pathExact && len(r.Path) != len(p.Path) {
 		return false
 	}
 	for i, w := range p.Path {
@@ -109,12 +166,31 @@ func (p *Pattern) pathMatches(r *Reading) bool {
 	return true
 }
 
+// mayNeedTail keeps both finality checks open for arguments that either pattern
+// reading could acquire. Value binding can give the compatibility parse a
+// different subcommand path from the literal parse (ADR 0048, round 3).
+func (p *Pattern) mayNeedTail(r *Reading) bool {
+	return !p.Bare && p.NamesArgs() && p.pathMatches(r) || p.compat != nil && p.compat.mayNeedTail(r) || p.released != nil && p.released.mayNeedTail(r)
+}
+
 // allowReading is a constrained allow pattern against one reading: the path starts with the pattern's, every named
 // option is present where the tool reads it as one, and the operands equal the named ones (a trailing * allows
 // more). An option the row does not list before the subcommand, or anywhere when the pattern names options or
 // operands, means no match: either reading could change what they bind.
 func (p *Pattern) allowReading(r *Reading) bool {
-	if r.UnknownBefore || !p.pathMatches(r) {
+	if p.allowMeaning(r) {
+		return true
+	}
+	for _, q := range p.separated {
+		if q.allowMeaning(r) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Pattern) allowMeaning(r *Reading) bool {
+	if r.UnknownBefore || !p.singlePathMatches(r) {
 		return false
 	}
 	if (len(p.Opts) > 0 || len(p.Operands) > 0) && r.Unknown {
@@ -158,7 +234,19 @@ func (p *Pattern) allowReading(r *Reading) bool {
 // present anywhere the tool could read it as one (an option the row does not list counts by its spelling: the same
 // long name or an abbreviation of it, the same letter), and the named operands are an ordered subsequence.
 func (p *Pattern) denyReading(r *Reading) bool {
-	if !p.pathMatches(r) {
+	if p.denyMeaning(r) {
+		return true
+	}
+	for _, q := range p.separated {
+		if q.denyMeaning(r) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Pattern) denyMeaning(r *Reading) bool {
+	if !p.singlePathMatches(r) {
 		return false
 	}
 	for i := range p.Opts {
@@ -179,7 +267,9 @@ func (p *Pattern) denyReading(r *Reading) bool {
 func (p *Pattern) optPresent(po *PatOpt, r *Reading) bool {
 	for j := range r.Hits {
 		h := &r.Hits[j]
-		if h.Neg != po.Neg {
+		// An unknown invocation option has unresolved polarity. A known
+		// negative predicate must still consider its raw negative spellings.
+		if h.Neg != po.Neg && !(h.Opt == nil && po.Opt != nil && po.Neg) {
 			continue
 		}
 		var same bool
@@ -189,7 +279,11 @@ func (p *Pattern) optPresent(po *PatOpt, r *Reading) bool {
 		case h.Opt != nil:
 			same = optSpells(h.Opt, po.Long, po.Short)
 		case po.Opt != nil:
-			same = rawCouldBe(h.Raw, po.Opt.Long, po.Opt.Short, "", 0)
+			if po.Neg {
+				same = rawCouldBeNegated(h.Raw, po.Opt.Long, po.Long)
+			} else {
+				same = rawCouldBe(h.Raw, po.Opt.Long, po.Opt.Short, "", 0)
+			}
 		default:
 			same = rawCouldBe(h.Raw, nil, "", po.Long, po.Short)
 		}
@@ -243,23 +337,54 @@ func rawCouldBe(raw string, longs []string, shorts, long string, short byte) boo
 	return false
 }
 
-// genericAllow is the generic fallback for an allow pattern: an exact token prefix (Codex's prefix_rule), each word a
-// glob over one token. An option before the pattern's words means no match.
-func (p *Pattern) genericAllow(toks []string) bool {
-	if len(toks) < len(p.Words) {
+// rawCouldBeNegated compares an unknown spelling with virtual no-<long>
+// names without allocating. The written abbreviation is kept too: a raw
+// single-dash -no-f matched the formerly unresolved pattern --no-f exactly.
+func rawCouldBeNegated(raw string, longs []string, written string) bool {
+	prefix := strings.HasPrefix(raw, "--")
+	var name string
+	switch {
+	case prefix && len(raw) > 2:
+		name = raw[2:]
+	case !prefix && len(raw) > 1 && raw[0] == '-':
+		name = raw[1:]
+	default:
 		return false
 	}
+	couldBe := func(long string) bool {
+		return long != "" && (prefix && (name == "n" || name == "no" || name == "no-") ||
+			strings.HasPrefix(name, "no-") && (name[3:] == long || prefix && strings.HasPrefix(long, name[3:])))
+	}
+	for _, long := range longs {
+		if couldBe(long) {
+			return true
+		}
+	}
+	return couldBe(written)
+}
+
+// genericAllow is the generic fallback for an allow pattern: an exact token prefix (Codex's prefix_rule), each word a
+// glob over one token. A written separator is optional at its position. An option
+// before the pattern's words means no match.
+func (p *Pattern) genericAllow(toks []string) bool {
+	j := 0
 	for i, w := range p.Words {
-		if !Glob(w, toks[i]) {
+		if i == p.genSeparator && j < len(toks) && toks[j] == "--" {
+			j++
+		}
+		if j >= len(toks) || !Glob(w, toks[j]) {
 			return false
 		}
+		j++
 	}
 	return true
 }
 
-// genericDeny is the generic fallback for a deny or ask pattern, before the first `--`: its non-option words as an
-// ordered subsequence of the tokens, a long option as an equal token, one starting with it and "=", or an
-// abbreviation of it; a one-letter short option as -x, -x<value>, or a single-dash token of letters holding x. It
+// genericDeny matches a separated pattern's preceding predicates before the
+// invocation's first -- and its operands after it. Without an invocation marker,
+// both groups inspect the whole vector independently: an unknown parser supplies
+// no operand boundary. Without a pattern separator all predicates stay before --.
+// Options match equal names, long abbreviations or short letters in clusters. This
 // over-matches by design: `mytool -r` refuses `mytool -prefix`.
 func (p *Pattern) genericDeny(toks []string) bool {
 	end := len(toks)
@@ -269,9 +394,9 @@ func (p *Pattern) genericDeny(toks []string) bool {
 			break
 		}
 	}
-	toks = toks[:end]
+	before := toks[:end]
 	j := 0
-	for _, t := range toks {
+	for _, t := range before {
 		if j < len(p.genWords) && Glob(p.genWords[j], t) {
 			j++
 		}
@@ -280,11 +405,24 @@ func (p *Pattern) genericDeny(toks []string) bool {
 		return false
 	}
 	for _, w := range p.genOpts {
-		if !genericOptPresent(w, toks) {
+		if !genericOptPresent(w, before) {
 			return false
 		}
 	}
-	return true
+	if p.genSeparator < 0 {
+		return true
+	}
+	operands := toks
+	if end < len(toks) {
+		operands = toks[end+1:]
+	}
+	j = 0
+	for _, tok := range operands {
+		if j < len(p.genOperands) && Glob(p.genOperands[j], tok) {
+			j++
+		}
+	}
+	return j == len(p.genOperands)
 }
 
 // isOptionWord reports whether a pattern word is an option word.

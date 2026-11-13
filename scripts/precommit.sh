@@ -151,7 +151,7 @@ script_tests() {
 		test/e2e/lib_test.sh test/e2e/pydeps_test.sh test/e2e/kt4_test.sh test/e2e/kt5_test.sh test/e2e/kt2_pairs_test.sh test/e2e/m0_demo_test.sh test/e2e/overhead/kt3_test.sh test/e2e/overhead/bench_test.sh test/e2e/overhead/run_test.sh \
 		test/vm/matrix_test.sh test/vm/root-suites_test.sh test/vm/doctor-refusal_test.sh test/vm/doctor-facts_test.sh test/vm/perf_test.sh \
 		test/vm/guarded-run_test.sh test/vm/bounded-run_test.sh test/vm/fwd-run_test.sh test/vm/kvm-modules_test.sh test/vm/kvm-files_test.sh test/vm/kvm-cleanup_test.sh test/vm/tier2-pairs_test.sh test/vm/pairs_test.sh \
-		test/vm/kvm-run_test.sh; do
+		test/vm/kvm-run_test.sh test/vm/ssh-suite_test.sh; do
 		"./$t" >"$tmp/script-test.out" 2>&1 || { echo "$t failed:"; cat "$tmp/script-test.out"; st=1; }
 	done
 	return "$st"

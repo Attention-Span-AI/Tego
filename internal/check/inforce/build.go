@@ -695,6 +695,19 @@ func (f *facts) limit(k string) (v string, ok bool) {
 	return "", false
 }
 
+// keyAndCovers is a built-in rule's ledger key, the first of keys, and its Covers, the rest: nil, never an empty list,
+// when there is no other, since Covers is omitempty and the view the dashboard and `tego rules --json` serve must read
+// back as the view it was (a home with one of the usual secret files, or one hooks folder beneath a write entry).
+func keyAndCovers(keys []string) (string, []string) {
+	switch len(keys) {
+	case 0:
+		return "", nil
+	case 1:
+		return keys[0], nil
+	}
+	return keys[0], keys[1:]
+}
+
 // buildAlwaysOn fills the always-on group: the protections no contract line writes.
 func buildAlwaysOn(v *View, d decl, f *facts, add func(string, Rule), src func(agent.Pos) Source) {
 	at := func(c claim) (bool, string) { return f.at(c) }
@@ -710,9 +723,7 @@ func buildAlwaysOn(v *View, d decl, f *facts, add func(string, Rule), src func(a
 			Key: "built-in.deny_read", Sentence: "Can never read the usual secret files: SSH and cloud keys, browser profiles, .env files and similar",
 			Effect: EffectDeny, Enforced: ok, EnforcedText: text,
 		}
-		if len(keys) > 0 {
-			r.RuleKey, r.Covers = keys[0], keys[1:]
-		}
+		r.RuleKey, r.Covers = keyAndCovers(keys)
 		add(GroupAlwaysOn, r)
 	}
 	// The built-in deny_write set holds only the files of its kinds a compile finds beneath the write entries (R20): a
@@ -726,9 +737,7 @@ func buildAlwaysOn(v *View, d decl, f *facts, add func(string, Rule), src func(a
 		if f == nil {
 			r.Sentence += ", where a run finds any in the folders it can change"
 		}
-		if len(keys) > 0 {
-			r.RuleKey, r.Covers = keys[0], keys[1:]
-		}
+		r.RuleKey, r.Covers = keyAndCovers(keys)
 		add(GroupAlwaysOn, r)
 	}
 	if f == nil || f.rt.Builtins != nil {

@@ -28,3 +28,9 @@ func (rt *RuleTable) canonical(path string) string { return core().Canonical(rt,
 
 // action is build (whose doc is the contract) with each path cleaned.
 func (r TestRow) action(cwd, home string) Action { return r.build(cwd, home, false) }
+
+// withInstallDirs names the directories ownBinaries looks for an installed tego in, so a test decides which installs
+// exist instead of inheriting the machine's.
+func withInstallDirs(dirs ...string) CompileOption {
+	return func(o *compileOptions) { o.installDirs, o.installDirsSet = dirs, true }
+}

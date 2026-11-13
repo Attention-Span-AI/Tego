@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/attention-span-ai/tego/pkg/spec/config"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
@@ -73,10 +74,20 @@ func TestPairsContractsCompile(t *testing.T) {
 		t.Fatalf("the self-deny run's link: %v", err)
 	}
 
+	// The link gives the launcher's file a second name, which compile cannot list, so a write entry on its filesystem
+	// is refused unless only root may write the file and the agent is not root (ADR 0059, amendment 2026-11-11 (3)).
+	// That is the guest's case: `make vm-pairs` runs a root-owned /usr/local/bin/tego under sudo, and the agent is the
+	// sudo user. A test that is not root has a stand-in it owns, which its agent could rewrite through the link: there
+	// both contracts are refused, and the guest's own run shows they compile.
+	uid, _ := config.InvokingUID()
+	exempt := os.Geteuid() == 0 && uid != 0
 	for _, name := range []string{"agent.yaml", "self.yaml"} {
 		code, _, errs := run(t, "compile", filepath.Join(w, name), "--offline")
-		if code != identity.ExitOK {
+		switch {
+		case exempt && code != identity.ExitOK:
 			t.Errorf("tego compile %s: exit %d:\n%s", name, code, errs)
+		case !exempt && (code == identity.ExitOK || !strings.Contains(errs, "has 2 hard links, whose other names compile cannot list")):
+			t.Errorf("tego compile %s with a launcher its agent could rewrite through a second link: exit %d:\n%s", name, code, errs)
 		}
 	}
 	text, err := os.ReadFile(filepath.Join(w, "self.yaml"))

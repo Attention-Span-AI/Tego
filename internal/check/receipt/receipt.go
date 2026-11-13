@@ -375,6 +375,9 @@ const (
 	CodeMissedActions = "missed-actions"
 	// CodeRecordUncertain: shared tracing counters cannot establish this run's recording coverage (record).
 	CodeRecordUncertain = "recording-uncertain"
+	// CodeRulesUncertain: the kernel skipped a shared program the run's rules rely on, or its counters could not be
+	// read, so the receipt cannot say every rule held (refusals; ADR 0148).
+	CodeRulesUncertain = "rules-uncertain"
 	// CodeNoRunEnd: the run has no run_end line yet (time_taken).
 	CodeNoRunEnd = "no-run-end"
 )
@@ -447,6 +450,7 @@ type builder struct {
 	prices      measure.Prices
 	gapLines    int        // gap lines that may have lost actions: the record's counts are a floor
 	sharedGaps  gaps.Tally // shared tracing uncertainty, with its own count semantics
+	ruleGaps    gaps.Tally // skips of shared programs the run's rules rely on (gaps.RulesUncertain)
 	captureGaps int        // gap what=capture lines: model traffic tego could not read
 	restored    int        // gap lines of a mode tego gave back to the owner of one of its own files: no action lost
 	noPrice     bool       // a gap said the run had no usable price table
@@ -965,6 +969,8 @@ func (b *builder) gap(e *record.Event) {
 	switch gaps.Classify(g.What, g.Why) {
 	case gaps.Uncertain:
 		b.sharedGaps.Add(e)
+	case gaps.RulesUncertain:
+		b.ruleGaps.Add(e)
 	case gaps.Live:
 	case gaps.Price:
 		// An unpriced model is no missing table: the receipt prices each response itself, and its
@@ -991,6 +997,10 @@ func (b *builder) coverage() {
 	rc := b.rc
 	g := []CoverageGap{}
 	add := func(field, code, why string) { g = append(g, CoverageGap{Field: field, Code: code, Why: why}) }
+	if cs := b.ruleGaps.Counts(); len(cs) > 0 {
+		// First: the refusals the receipt lists may not be every refusal the rules called for.
+		add("refusals", CodeRulesUncertain, gaps.Words(cs, false))
+	}
 	if !rc.Files.Recorded || rc.Files.Note != "" {
 		// finish notes files only for a ledger with no capabilities line or a tier that records refused writes only.
 		code := CodeRecordOff

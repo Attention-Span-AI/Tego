@@ -182,3 +182,52 @@ build only, so a skip fails every root run of the tegobpf suite, which holds the
 sys.FD" are not yet: they are the Landlock set's bare O_PATH numbers, which R16's check verifies after the fact. It
 becomes true at ADR 0023 C11b, when the fill takes one lease per planned descriptor before the iterator runs, so a
 close of the set in that window is deferred rather than landed; R16's check stays, as A5's re-verification.
+
+*Amended 2026-11-11, corrected 2026-11-12 (mount aliases and the listener's release limit):* the plane's walk
+holds a compiled path entry under a whole-tree alias on the same filesystem instance, including a bind of its
+parent or whole filesystem, because the climb meets the entry's own dentry. A part of the tree mounted outside
+it has no such climb. The file-bind conformance cell `mounts-bindfile/read-bind-alias-file` demonstrated the
+missing refusal on Debian 13's 6.12.107 at cgroup@fmod_ret, cgroup@lsm and bpflsm before the holdability check
+was added. That is saved guest evidence for the original defect, not evidence for fix round 2's changed
+startup expectations.
+
+Decision: `agent.MountTable.DetachedParts` of every read-deny row is part of the plane's holdability check
+before loading (`ErrPlaneDetachedPart`, enforce-plane §6 case 16). Tier bpflsm refuses such a table
+(`ErrPlaneCannotHold`, exit 125). Tier cgroup falls back to the listener, which now refuses other mount-table
+spellings on the same filesystem instance of a compiled denied path tree or part of it
+(`ErrListenerAlias`, ADR 0011). The run therefore never starts on that fallback. Auto selection cannot make a
+detached part safe by selecting cgroup. Whole-tree aliases on the same filesystem instance retain the plane's
+existing handling when the selected plane holds the rest of the contract.
+
+Each `Prepare` shares one prepared mount-facts object with mounted-root composition, plane holdability,
+listener policy and marks, and recorder initialization. Ordinary starts and record-only or boundary adoption
+pass that object to the recorder before it starts; neither recorder reacquires the snapshot. Acquisition validates whole
+mountinfo records and their graph, is bounded, and requires equal reads (`agent.ReadMountSnapshot`). Lookup
+follows mount ancestry and is checked against statx mount ids. An unreadable, malformed, changing or
+unverifiable table refuses a run whose rules need those facts. The ordinary listener hands the recorder only
+its actual marked devices; detected aliases on the same filesystem instance need no decision handoff because
+the listener refuses to start with them. Unit tests cover these preparation boundaries, including
+`TestPrepareSharesOneMountSnapshot`, `TestRecorderUsesPreparedMountFacts` and
+`TestAdoptionSharesPreparedMountSnapshot`. The updated kernel expectations are owed in a guest on Debian 13's
+6.12 and Fedora's 7.0, both boots.
+
+A plane row at each detached bind's root is not built. Such a design would also need to pin those objects and
+prove that its neutral Landlock rules do not widen the domain. The startup snapshot does not track later host
+mounts or host ancestor renames. Alias checks compare the filesystem instance, not the data it exposes: a
+separate network mount of one export, a FUSE mirror or a loop image can show the same data without being
+recognised at any tier. Deny the other path too, or avoid mounting the same export twice where agents can read
+it. Known network mount types with the same source string on different filesystem devices produce a warning,
+not a refusal. Protected-name scopes receive no alias check. Hard links and overlay layers retain their stated
+limits. At tier cgroup without a plane, `setuid: true` with a `deny_read` or protected-name rule remains
+refused, including the built-in secret list; a narrower filter refusal of detached-mount creation is future
+work (ADR 0011).
+
+### what a later design must do
+
+A later listener must decide the identity of the opened file within the denied tree, anchored at mounts the
+listener holds, rather than compare a path read back from the event descriptor. Its identity and ownership model
+must survive ancestor renames and approved filesystem operations and support an agreeing recorder. Candidate kernel
+interfaces to evaluate, **not evaluated for this release**, are `FAN_REPORT_FID`, `FAN_REPORT_DFID_NAME`,
+`FAN_REPORT_MNT`, `name_to_handle_at(2)`, `open_by_handle_at(2)`, and `statx(2)` mount ids (`STATX_MNT_ID`). Their
+availability, portability and sufficiency are not established here. Refusing listener-decided aliases at startup is
+a fail-closed release limit, not an implementation of that later design.

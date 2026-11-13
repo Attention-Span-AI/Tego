@@ -4,10 +4,6 @@ package cgroup
 
 import (
 	"errors"
-	"fmt"
-	"os"
-
-	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
 // The plane's mounted-root rows (docs/p0/enforce-plane.md R12; ADR 0024 (5)): the attribute hooks get a dentry and
@@ -24,19 +20,6 @@ var mountInfoPath = "/proc/self/mountinfo"
 // points beneath a deny_read entry (enforce-cgroup-observe R8), so Prepare refuses a table that has one. Either way
 // never a run quieter than its contract (I7).
 var ErrMountTable = errors.New("the mount table cannot be read")
-
-// MountPoints lists the mountpoints of this process's mount namespace, as /proc/self/mountinfo prints them
-// (resolved, absolute), or ErrMountTable when the table cannot be read: keying no mount row would let an attribute
-// change on a filesystem mounted below a deny_write target walk to that filesystem's root and pass. The table is
-// read by agent.MountPoints, the one mountinfo parser: fields split on spaces alone, since a mount point may hold
-// \v, \r or U+00A0 unescaped.
-func MountPoints() ([]string, error) {
-	b, err := os.ReadFile(mountInfoPath)
-	if err != nil {
-		return nil, fmt.Errorf("%w, so the plane cannot key the mounted roots below a deny_write target: %w", ErrMountTable, err)
-	}
-	return agent.MountPoints(b), nil
-}
 
 // IOUringDecided reports whether a run of this tier whose opens, execs, fs mutations and sockets a plane mode
 // decides also has every other io_uring submission decided in the kernel, so that the inherited filter may admit

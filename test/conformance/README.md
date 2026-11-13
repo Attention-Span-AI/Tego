@@ -88,15 +88,40 @@ mounts every kernel has are `mounts-bind.yaml`'s, apart from the overlay (`mount
 (`mounts-btrfs.yaml`) a row may lack, and run on every root row; `TestModuleMountsStandAlone` fails a fixture that
 mixes the two.
 
+The bind fixtures follow the startup limit in ADR 0011 and ADR 0025. Wherever tier cgroup's listener would decide a
+compiled `deny_read` path entry, an alias on the same filesystem instance of its tree or part of it refuses before
+the actor starts (`listener_refuses`), including after a plane falls back. This applies to `mounts-bind.yaml`'s nested read and the existing `mounts-bindmove.yaml`,
+`mounts-bindhidden.yaml` and `mounts-bindsub.yaml` fixtures. `mounts-bindfile.yaml`'s file and directory aliases are
+detached parts (`plane_cannot_hold`): tier bpflsm refuses before the actor starts, and tier cgroup falls back and
+refuses at the listener. Selected planes retain their whole-tree handling on the same filesystem instance,
+including the whole-tree fixtures that have no detached part. The second-round `mounts-bindancestor.yaml` and `mounts-bindask.yaml` fixtures cover another
+ancestor route and an approval scope with the same startup refusal. These expectations check exit 125 and an
+unchanged tree instead of trying an action after a refused start.
+
+Different filesystem instances showing the same data are not recognised at any tier, and name-entry scopes receive
+no alias check (GAPS C68).
+
+The changed expectations compile and have unit checks; they are owed in a guest on Debian 13's 6.12 and Fedora's
+7.0, both boots. Saved fix-round-1 guest baselines show `mounts-bindmove` and `mounts-bindhidden` failing before that
+fix, while `mounts-bindsub` passed before and after. Source inspection shows that a built-in project name scope
+masked its extra-device case. `TestOrdinarySubmountListenerHandoffEmitsOneRefusal` uses an ordinary denied entry and
+a different-device submount outside every name scope, and asserts exactly one refusal through the actual listener's
+marked-device handoff. That is unit evidence, not a new kernel result.
+
 ### A third party's refusal (ADR 0017 space 6)
 
 `thirdparty.yaml` names a file in `third_party_deny`: the root runner starts `test/vm/cmd/permlistener -mode deny -path
 <file>` (a HELPERS binary in the guest) before the run and stops it after, and a listener that refused no open is a
 problem of the run. The kernel's answer is that listener's `EPERM` on every axis, while the ledger line is Tego's own
 answer (ADR 0016), which the cell's want states with `ledger:`: `allow` from the supervisor at tier landlock, and where
-the kernel's recorder writes the line (tier cgroup, the plane), `allow` from 6.13 and `observed` (`by: other`) up to 6.12
-(`want_where: kernel_max`), measured on 6.17 and AL2023's 6.1. Without root the fixture is logged `THIRD-PARTY ... not
-run`, since a fanotify listener needs `CAP_SYS_ADMIN`.
+the kernel's recorder writes the line (tier cgroup, the plane), `observed` (`by: other`) where the listener's refusal is
+in security_file_open's return and the chain's `allow` where the event runs after it (`want_where: fanotify_in_chain`,
+which the root runner measures before the axes run, `fanotifyInChain`: upstream up to 6.12 and 6.13 on, but Debian 13's
+6.12.107 has 6.13's order; it read `kernel_max` until 2026-11-11), measured on 6.17, AL2023's 6.1 and Debian's 6.12.107. Without root the fixture is logged `THIRD-PARTY ... not
+run`, since a fanotify listener needs `CAP_SYS_ADMIN`. The probe cancels on its outer deadline and joins its worker
+before removing its files. Root-free unit tests cover cancellation, joining and group closure. Synchronous BPF load
+and attachment calls must return before cleanup can finish, so the 30-second cancellation deadline is not a hard
+completion bound; actual kernel cancellation is owed in a guest.
 
 ### Process and control calls (FEATURES E54)
 

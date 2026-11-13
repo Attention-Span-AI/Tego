@@ -64,7 +64,7 @@ func TestSweepLiveRemovesTheScopeAnEndedRunsLauncherLeft(t *testing.T) {
 			scope := scopeUnder(t, scopes, id)
 			m := &scopeCgroups{fakeCgroups: fakeCgroups{root: scopes}, ids: map[string]uint64{scope: 77}}
 			prev := orphanRoots
-			orphanRoots = func(cgroup.Manager, markDir, runDir) []string { return []string{scopes} }
+			orphanRoots = func(cgroup.Manager, markDir, runDir) ([]string, error) { return []string{scopes}, nil }
 			t.Cleanup(func() { orphanRoots = prev })
 
 			res, err := SweepLive(context.Background(), root, WithSweepManager(m))
@@ -113,7 +113,7 @@ func TestASweepLeavesAnotherHostsRun(t *testing.T) {
 	scopeUnder(t, scopes, lost)
 	m := &scopeCgroups{fakeCgroups: fakeCgroups{root: scopes}}
 	prev := orphanRoots
-	orphanRoots = func(cgroup.Manager, markDir, runDir) []string { return []string{scopes} }
+	orphanRoots = func(cgroup.Manager, markDir, runDir) ([]string, error) { return []string{scopes}, nil }
 	t.Cleanup(func() { orphanRoots = prev })
 
 	if _, err := Sweep(context.Background(), root, KeepForever, WithSweepManager(m)); err != nil {
@@ -142,7 +142,7 @@ func TestRunScopeFindsTheScopeWhereItsLauncherMadeIt(t *testing.T) {
 	decoy := scopeUnder(t, own, id)
 	m := &scopeCgroups{fakeCgroups: fakeCgroups{root: own}, ids: map[string]uint64{scope: 77, decoy: 99}}
 	prev := orphanRoots
-	orphanRoots = func(cgroup.Manager, markDir, runDir) []string { return []string{own, other} }
+	orphanRoots = func(cgroup.Manager, markDir, runDir) ([]string, error) { return []string{own, other}, nil }
 	t.Cleanup(func() { orphanRoots = prev })
 
 	c, ok, err := RunScope(m, root, id, "tester")

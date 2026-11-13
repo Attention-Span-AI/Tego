@@ -12,7 +12,7 @@ type toolRules struct {
 	deny, ask, allow []*Pattern
 	// constrained: some allow entry names the tool with words, and no bare name entry or implicit grant lifts it.
 	constrained bool
-	// closure maps each constraining allow pattern to the subcommand paths its helper closure admits.
+	// closure maps each allow pattern and its retained pattern to their own helper paths.
 	closure map[*Pattern][][]string
 	// grant is the first runtime grant's pattern (ExactPattern) of a tool no contract allow entry constrains: an
 	// unlisted invocation of it is refused under that grant's rule, which is the one that constrains it.
@@ -89,15 +89,17 @@ func NewIndex(rows *Rows, patterns []*Pattern, opts IndexOptions) *Index {
 		tr.grant = runtimeOnly(tr.allow)
 		tr.closure = map[*Pattern][][]string{}
 		for _, p := range tr.allow {
-			if p.Row == nil || len(p.Path) == 0 {
-				continue
+			for _, pattern := range [...]*Pattern{p, p.released} {
+				if pattern == nil || pattern.Row == nil || len(pattern.Path) == 0 {
+					continue
+				}
+				var paths [][]string
+				for e := range Closure(pattern.Row, pattern.Path[0]) {
+					paths = append(paths, strings.Fields(e))
+				}
+				sort.Slice(paths, func(i, j int) bool { return strings.Join(paths[i], " ") < strings.Join(paths[j], " ") })
+				tr.closure[pattern] = paths
 			}
-			var paths [][]string
-			for e := range Closure(p.Row, p.Path[0]) {
-				paths = append(paths, strings.Fields(e))
-			}
-			sort.Slice(paths, func(i, j int) bool { return strings.Join(paths[i], " ") < strings.Join(paths[j], " ") })
-			tr.closure[p] = paths
 		}
 	}
 	for _, r := range rows.All() {
@@ -220,7 +222,11 @@ func (ix *Index) Guarded(f *Facts) bool {
 	if ix.Empty() {
 		return false
 	}
-	names := [...]string{base(f.Requested), base(f.Image), base(f.Argv0), undashed(base(f.Argv0))}
+	argv0 := base(f.Argv0)
+	if argv0 == "" && len(f.Argv) > 0 {
+		argv0 = base(f.Argv[0])
+	}
+	names := [...]string{base(f.Requested), base(f.Image), argv0, undashed(argv0)}
 	for _, n := range names {
 		if n == "" {
 			continue
@@ -235,6 +241,12 @@ func (ix *Index) Guarded(f *Facts) bool {
 		}
 	}
 	if f.Form == FormScript {
+		// A long supplied chain can exhaust the interpretation bound even when
+		// none of its names is ruled. The full decision then refuses overflow.
+		// Guard conservatively beyond the ordinary short kernel chain.
+		if len(f.Interp) > maxDispatch {
+			return true
+		}
 		for _, st := range f.Interp {
 			// A stage is read by its #! path, by the walked interpreter's name and by its identity: an interpreter
 			// reached through a symlink is the file the link names.
@@ -249,9 +261,10 @@ func (ix *Index) Guarded(f *Facts) bool {
 		}
 	}
 	if f.Loaded != nil {
-		lf := f.loadedFacts()
-		if ix.Guarded(&lf) {
-			return true
+		for _, lf := range f.loadedReadings() {
+			if ix.Guarded(&lf) {
+				return true
+			}
 		}
 	}
 	return f.Form == FormUnknown || ix.multicallGuarded(f)
@@ -391,6 +404,13 @@ func (ix *Index) Decide(f *Facts) Result {
 		// per name, and nothing to normalize (ADR 0048 C8).
 		return res
 	}
+	return ix.decide(f)
+}
+
+// decide applies the full interpretation without the early name guard. Keeping
+// this separate lets the guard's conservatism be checked against the decision.
+func (ix *Index) decide(f *Facts) Result {
+	res := Result{K: len(f.Argv), Final: true}
 	invs := ix.Interpretations(f)
 	overflow := false
 	for i := range invs {
@@ -488,7 +508,7 @@ func (ix *Index) firstMatch(invs []Invocation, list List) (Result, bool) {
 			ps = tr.ask
 		}
 		for _, p := range ps {
-			switch m := p.Match(inv); m {
+			switch m := ix.matchPattern(p, inv); m {
 			case MatchDefinite:
 				return Result{Outcome: OutcomeRefused, Pattern: p, List: list, Tool: inv.Tool, Via: inv.Via, Match: m}, true
 			case MatchAmbiguous:
@@ -508,22 +528,30 @@ func (ix *Index) firstMatch(invs []Invocation, list List) (Result, bool) {
 // allowedBy finds the allow entry, or the helper closure of one, that admits a constrained tool's invocation.
 func (ix *Index) allowedBy(tr *toolRules, inv *Invocation) (Result, bool) {
 	for _, p := range tr.allow {
-		if p.Match(inv) == MatchDefinite {
+		if ix.matchPattern(p, inv) == MatchDefinite {
 			return Result{Outcome: OutcomeAllowed, Pattern: p, List: ListAllow, Tool: inv.Tool, Via: inv.Via, Match: MatchDefinite}, true
 		}
 	}
-	if len(inv.Readings) == 0 {
+	if len(inv.Readings) == 0 || inv.Row != nil && len(inv.releaseReadings) == 0 {
 		return Result{}, false
 	}
 	for _, p := range tr.allow {
 		set := tr.closure[p]
-		if len(set) == 0 {
+		retained := tr.closure[p.released]
+		if len(set) == 0 || len(retained) == 0 {
 			continue
 		}
 		all := true
 		for i := range inv.Readings {
 			r := &inv.Readings[i]
 			if r.Unlocatable || r.UnknownBefore || !inClosure(set, r) {
+				all = false
+				break
+			}
+		}
+		for j := range inv.releaseReadings {
+			r := &inv.releaseReadings[j]
+			if r.Unlocatable || r.UnknownBefore || !inClosure(retained, r) {
 				all = false
 				break
 			}
@@ -546,8 +574,14 @@ func (ix *Index) dispatchSettled(invs []Invocation) bool {
 		if inv.Row.Multicall && len(inv.Tokens) == 0 {
 			return false
 		}
-		if inv.Row.Interp != nil && !ix.interpSettled(inv) {
-			return false
+		if inv.Row.Interp != nil {
+			if !ix.Ruled(inv.Tool) {
+				if !inv.interpFinal {
+					return false
+				}
+			} else if !ix.interpSettled(inv) {
+				return false
+			}
 		}
 	}
 	return true
@@ -564,15 +598,20 @@ func (ix *Index) interpSettled(inv *Invocation) bool {
 	if inv.Open && spec.ArgvRewrite != nil {
 		return false // a later token can load code even after the entry script
 	}
-	for _, r := range ix.normalizer(inv.Row).NormalizeOpen(inv.Tokens, inv.Open) {
-		if r.Unlocatable || r.Pending {
+	for _, readings := range [2][]Reading{inv.Readings, inv.releaseReadings} {
+		if len(readings) == 0 {
 			return false
 		}
-		if r.Dispatch >= 0 || r.DispatchAfter >= 0 {
-			continue
-		}
-		if len(spec.CodeUnless) > 0 || !spec.runsCode(&r) {
-			return false
+		for _, r := range readings {
+			if r.Unlocatable || r.Pending {
+				return false
+			}
+			if r.Dispatch >= 0 || r.DispatchAfter >= 0 {
+				continue
+			}
+			if len(spec.CodeUnless) > 0 || !spec.runsCode(&r) {
+				return false
+			}
 		}
 	}
 	return true
@@ -588,7 +627,7 @@ func (ix *Index) settled(invs []Invocation, allowed *Result) bool {
 	if !ix.dispatchSettled(invs) {
 		return false
 	}
-	if allowed != nil && allowed.Pattern != nil && allowed.Pattern.Row != nil && allowed.Pattern.NamesArgs() {
+	if allowed != nil && allowed.Pattern != nil && allowed.Pattern.Row != nil && (allowed.Pattern.NamesArgs() || allowed.Pattern.released != nil && allowed.Pattern.released.NamesArgs()) {
 		return false
 	}
 	for i := range invs {
@@ -602,21 +641,26 @@ func (ix *Index) settled(invs []Invocation, allowed *Result) bool {
 				return false
 			}
 			for _, p := range tr.allow {
-				if len(inv.Tokens) < len(p.Words) {
+				if len(inv.Tokens) < len(p.Words) || p.released != nil && len(inv.Tokens) < len(p.released.Words) {
 					return false
 				}
 			}
 			continue
 		}
-		for j := range inv.Readings {
-			r := &inv.Readings[j]
-			if r.Unlocatable || !r.Located || r.Pending {
+		for _, readings := range [2][]Reading{inv.Readings, inv.releaseReadings} {
+			if len(readings) == 0 {
 				return false
 			}
-			for _, ps := range [...][]*Pattern{tr.deny, tr.ask, tr.allow} {
-				for _, p := range ps {
-					if !p.Bare && p.NamesArgs() && p.pathMatches(r) {
-						return false
+			for j := range readings {
+				r := &readings[j]
+				if r.Unlocatable || !r.Located || r.Pending {
+					return false
+				}
+				for _, ps := range [...][]*Pattern{tr.deny, tr.ask, tr.allow} {
+					for _, p := range ps {
+						if p.mayNeedTail(r) {
+							return false
+						}
 					}
 				}
 			}

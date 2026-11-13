@@ -19,6 +19,7 @@ import (
 
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/pkg/spec/record"
+	"github.com/attention-span-ai/tego/pkg/spec/record/chaincheck"
 )
 
 // Reader reads one run directory without taking its lock; any number may open a run concurrently with its
@@ -163,40 +164,21 @@ type rawLine struct {
 	terminated bool
 }
 
-// MaxLineBytes bounds one line of events.jsonl as a reader takes it. The Writer never writes a line past a few
-// hundred KiB (R10 splits every field over BlobThreshold into a blob), and events.jsonl is bytes a tamperer
-// can write (E16): read whole, a line the size of the file cost that much heap, twice over, in State, which
-// runs on every retained run before each `tego run`. A longer line is a corrupt ledger.
-const MaxLineBytes = 2 << 20
+// MaxLineBytes bounds one line of events.jsonl as a reader takes it (chaincheck.MaxLineBytes, CHAIN.md §2): a
+// longer line is a corrupt ledger.
+const MaxLineBytes = chaincheck.MaxLineBytes
 
-// scanLines yields every line of f from byte 0 using positional reads, so concurrent iterations over one
-// descriptor never interfere. The final line is yielded with terminated=false when it lacks "\n"; the caller
-// applies the torn-line rule. Read errors, and a line past MaxLineBytes, are yielded once and end the sequence.
+// scanLines yields every line of f from byte 0 (chaincheck.ScanLines, the framing the chain check reads), as this
+// package's rawLine. The final line is yielded with terminated=false when it lacks "\n"; the caller applies the
+// torn-line rule. Read errors, and a line past MaxLineBytes, are yielded once and end the sequence.
 func scanLines(f io.ReaderAt) iter.Seq2[rawLine, error] { return scanLinesSized(f, 64<<10) }
 
 // scanLinesSized is scanLines with a read buffer of size bytes; a caller that wants a line or two asks for a
 // small one (a line longer than the buffer is still read whole).
 func scanLinesSized(f io.ReaderAt, size int) iter.Seq2[rawLine, error] {
 	return func(yield func(rawLine, error) bool) {
-		br := bufio.NewReaderSize(io.NewSectionReader(f, 0, math.MaxInt64), size)
-		for n := 1; ; n++ {
-			data, err := readLine(br)
-			if errors.Is(err, errLineTooLong) {
-				yield(rawLine{}, fmt.Errorf("%w %d: longer than %d bytes", ErrCorruptLedger, n, MaxLineBytes))
-				return
-			}
-			if err != nil && !errors.Is(err, io.EOF) {
-				yield(rawLine{}, fmt.Errorf("ledger: read events: %w", err))
-				return
-			}
-			if len(data) == 0 {
-				return
-			}
-			terminated := data[len(data)-1] == '\n'
-			if terminated {
-				data = data[:len(data)-1]
-			}
-			if !yield(rawLine{data: data, terminated: terminated}, nil) || !terminated {
+		for l, err := range chaincheck.ScanLinesSized(f, size) {
+			if !yield(rawLine{data: l.Data, terminated: l.Terminated}, err) {
 				return
 			}
 		}
@@ -211,28 +193,17 @@ func (r *Reader) scan() iter.Seq2[rawLine, error] {
 }
 
 // errLineTooLong is readLine's refusal of a line past MaxLineBytes.
-var errLineTooLong = errors.New("ledger: line too long")
+var errLineTooLong = chaincheck.ErrLineTooLong
 
-// readLine is bufio.Reader.ReadBytes('\n') that gives up past MaxLineBytes instead of growing without bound.
-func readLine(br *bufio.Reader) ([]byte, error) {
-	var line []byte
-	for {
-		chunk, err := br.ReadSlice('\n')
-		if len(line)+len(chunk) > MaxLineBytes {
-			return nil, errLineTooLong
-		}
-		line = append(line, chunk...)
-		if errors.Is(err, bufio.ErrBufferFull) {
-			continue
-		}
-		return line, err
-	}
-}
+// readLine is bufio.Reader.ReadBytes('\n') that gives up past MaxLineBytes instead of growing without bound
+// (chaincheck.ReadLine).
+func readLine(br *bufio.Reader) ([]byte, error) { return chaincheck.ReadLine(br) }
 
 // Lines yields the stored bytes of every complete line, without the terminator, in order: what `tego events
-// --json` prints verbatim. An unterminated last line is yielded only when it decodes; otherwise it is torn and
-// iteration ends cleanly (§4, E6, E8) — unless the line before it is run_end. A torn tail is what a writer that
-// died mid-write(2) leaves, and a writer that wrote run_end is not that writer, so bytes after it are
+// --json` prints verbatim. Once the first top-level JSON value lexically closes, the entire final chunk is
+// yielded, including any suffix. Only a chunk with no closed value is torn and ends iteration cleanly (§4, E6, E8),
+// unless the line before it is run_end. A torn tail is what a writer that died mid-write(2) leaves, and a writer
+// that wrote run_end is not that writer, so bytes after it are
 // ErrCorruptLedger naming their offset, as Verify reports them: a tail of NUL bytes after run_end was read as
 // a clean end by events, drift and measure while `events --verify` refused it, and a `garbage\n` line in the
 // same place already failed all four. Each call rescans from byte 0; there is no follow mode.
@@ -315,22 +286,10 @@ func (r *Reader) LinesFrom(off int64) iter.Seq2[[]byte, error] {
 	}
 }
 
-// wholeLine reports whether an unterminated final line is a whole line that lost only its "\n" (E8) rather
-// than a torn tail: it decodes, or a newer binary wrote it (ErrNewerVersion) and its chain fields read and its
-// id is the digest of its bytes. A newer line whose link does not continue the chain still counts as whole:
-// the chain check then refuses it, where dropping it would read a damaged ledger as a shorter, healthy one.
-func wholeLine(data []byte) bool {
-	_, err := record.Decode(data)
-	if err == nil {
-		return true
-	}
-	if !errors.Is(err, record.ErrNewerVersion) {
-		return false
-	}
-	var c record.Chain
-	_, aerr := c.AddNewer(data)
-	return aerr == nil || errors.Is(aerr, record.ErrCorruptChain)
-}
+// wholeLine reports whether a top-level JSON value has lexically closed in the final chunk (E8).
+// The entire chunk remains a record line, including any suffix; validation belongs to the caller
+// (chaincheck.WholeLine).
+func wholeLine(data []byte) bool { return chaincheck.WholeLine(data) }
 
 // afterRunEnd reports whether line is a run_end record.
 func afterRunEnd(line []byte) bool {
@@ -404,36 +363,11 @@ func (r *Reader) Entries() iter.Seq2[Entry, error] {
 	}
 }
 
-// VerifyReport is what Verify found.
-type VerifyReport struct {
-	// Run is the run being verified: the run directory's name when that is a run id, as it is for every
-	// directory a ledger root holds, else the id the ledger's first line names. The name is the one the path
-	// that reached the directory gives it (RunDirPath): the last component of the path made absolute ("."
-	// being the working directory as $PWD names it) when that is a run id, even a link to another run's
-	// directory; else, for a link such as ~/latest, the first run id its link chain names.
-	Run string
-	// Lines is the number of complete lines the chain held through, whether or not Verify failed: on a failure
-	// it is the count before the line that broke it (a line that chains but fails validation is counted).
-	Lines uint64
-	// Head is the id of the last of those lines.
-	Head string
-	// Started and Ended report whether run_start opened and run_end closed the ledger.
-	Started, Ended bool
-	// TornBytes is the size of an unterminated, undecodable tail that was ignored.
-	TornBytes int
-	// Anchored is true when an anchor was consulted and its head equals Head.
-	Anchored bool
-	// Newer is how many lines were of a newer record version: linked into the chain and counted in Lines, their
-	// content not validated.
-	Newer int
-	// AtLine is set when Verify failed on a line of its own, and BrokenLine is then that line's number (its seq;
-	// run_start is line 0): a line that does not hash to its id, does not chain to the line before, fails validation,
-	// belongs to another run, follows run_end or is longer than a line may be. Lines may count that line (one that
-	// chains but fails validation does); BrokenLine is the line itself. A failure found once every line was read (the
-	// anchor, bytes after run_end) or with no ledger to read (VerifyRunDir: gone or replaced) leaves both unset.
-	AtLine     bool
-	BrokenLine uint64
-}
+// VerifyReport is what Verify found (chaincheck.Report). Its Run is the name the path that reached the
+// directory gives it (RunDirPath): the last component of the path made absolute ("." being the working directory
+// as $PWD names it) when that is a run id, even a link to another run's directory; else, for a link such as
+// ~/latest, the first run id its link chain names; else the id the ledger's first line names.
+type VerifyReport = chaincheck.Report
 
 // Verify walks the run's chain (I3, I4, R2) and validates every event (record.Validate). With a non-nil
 // anchor it also checks the ledger against chain.log. ctx is checked per line so a large ledger can be
@@ -458,122 +392,55 @@ type VerifyReport struct {
 // `cd <run> && tego events . --verify` named no run by its last component, ".", and fell back to the id
 // the swapped ledger claimed.
 func (r *Reader) Verify(ctx context.Context, anchor ChainAnchor) (VerifyReport, error) {
-	return r.verify(ctx, anchor, false)
+	return r.verify(ctx, anchor, false, true)
 }
 
-// verify is Verify; rescanned is set on the one rescan a mismatch against a run still being written earns.
-func (r *Reader) verify(ctx context.Context, anchor ChainAnchor, rescanned bool) (rep VerifyReport, _ error) {
-	check := runCheck{validate: true}
-	chain := &check.chain
-	// Whatever fails, Lines and Head say how far the chain held. A rescan's report is the result whole: this
-	// scan's stale chain must not overwrite its Lines and Head.
-	rescan := false
-	defer func() {
-		if !rescan {
-			rep.Lines, rep.Head = chain.Len(), chain.Head()
-		}
-	}()
-	if want := runDirName(r.dir); IsRunID(want) {
-		check.run = want
-	}
-	// The run a failed check reports is the one the check had settled on.
-	defer func() {
-		if rep.Run == "" {
-			rep.Run = check.run
-		}
-	}()
-	offset := int64(0) // where the line in hand starts
-	for l, err := range scanLines(r.f) {
-		if err != nil {
-			if errors.Is(err, ErrCorruptLedger) {
-				// A line past the bound is the ledger's content, not a read failure.
-				err = fmt.Errorf("%w: %w", ErrUnverified, err)
-				rep.AtLine, rep.BrokenLine = true, chain.Len()
-			}
-			return rep, err
-		}
-		if err := ctx.Err(); err != nil {
-			return rep, fmt.Errorf("ledger: verify: %w", err)
-		}
-		if !l.terminated {
-			if !wholeLine(l.data) {
-				rep.TornBytes = len(l.data)
-				break
+// verify is Verify; rescanned is set on the one rescan a mismatch against a run still being written earns, and
+// validate holds each line to its schema. The check is chaincheck.Walk's: this method frames the file, reads the
+// anchor and waits for a launcher inside Close, the parts that touch the host.
+func (r *Reader) verify(ctx context.Context, anchor ChainAnchor, rescanned, validate bool) (VerifyReport, error) {
+	w := chaincheck.NewWalk(runDirName(r.dir), validate)
+	for l, err := range chaincheck.ScanLines(r.f) {
+		if err == nil {
+			if cerr := ctx.Err(); cerr != nil {
+				return w.Report(), fmt.Errorf("ledger: verify: %w", cerr)
 			}
 		}
-		if check.ended {
-			rep.AtLine, rep.BrokenLine = true, chain.Len()
-			return rep, fmt.Errorf("%w: line %d follows run_end at byte offset %d", ErrUnverified, chain.Len(), offset)
-		}
-		// The shared check (runCheck): the chain, the run id, run_start first and only first, and each line of
-		// this version validated; a line a newer binary wrote has its link checked and is counted in Newer.
-		line := chain.Len() // the number of the line in hand, which add may count before it refuses it
-		_, newer, err := check.add(l.data)
+		stop, err := w.Step(l, err)
 		if err != nil {
-			rep.AtLine, rep.BrokenLine = true, line
-			return rep, fmt.Errorf("%w: %w", ErrUnverified, err)
+			return w.Report(), err
 		}
-		if newer {
-			rep.Newer++
+		if stop {
+			break
 		}
-		rep.Started, rep.Ended = check.started, check.ended
-		offset += int64(len(l.data)) + 1
 	}
-	rep.Run = check.run
-	rep.Lines, rep.Head = chain.Len(), chain.Head() // the checks below read them; the defer covers the returns above
-	if rep.Ended && rep.TornBytes > 0 {
-		// A torn tail is what a writer that died mid-write(2) leaves (E6), and a writer that wrote
-		// run_end is not that writer: Close appends run_end last and fsyncs. Bytes after it are
-		// bytes somebody else put there.
-		return rep, fmt.Errorf("%w: %d bytes at byte offset %d after run_end", ErrUnverified, rep.TornBytes, offset)
-	}
-	if rep.Run == "" {
-		rep.Run = runDirName(r.dir)
+	if err := w.Finish(); err != nil {
+		return w.Report(), err
 	}
 	if anchor == nil {
-		return rep, nil
+		return w.Report(), nil
 	}
-	if !IsRunID(rep.Run) {
-		return rep, fmt.Errorf("%w: run id %q cannot be looked up in the anchor", ErrUnverified, rep.Run)
-	}
-	head, ok, err := anchor.Head(rep.Run)
+	run, err := w.AnchorRun()
 	if err != nil {
-		if errors.Is(err, ErrCorruptLedger) {
-			return rep, fmt.Errorf("%w: %w", ErrUnverified, err)
-		}
-		return rep, err
+		return w.Report(), err
 	}
+	head, ok, err := anchor.Head(run)
+	next, err := w.Anchor(chaincheck.AnchorHead{Head: head, OK: ok, Err: err}, rescanned)
 	switch {
-	case ok && head != rep.Head && !rescanned && (!rep.Ended || rep.TornBytes > 0):
-		// The scan stopped short of a run_end (or inside one) and the anchor already holds a head: a launcher
-		// inside Close wrote run_end, fsynced and anchored between the scan and this read. Close fsyncs before
-		// it anchors, so one rescan sees what the anchor vouches for; a mismatch that survives it is a finding.
-		rescan = true
-		return r.verify(ctx, anchor, true)
-	case ok && head != rep.Head:
-		return rep, fmt.Errorf("%w: %w: anchored head %q, ledger head %q", ErrUnverified, ErrCorruptChain, head, rep.Head)
-	case ok:
-		rep.Anchored = true
-	case rep.Ended:
-		// A held lock on an ended run is a launcher still inside Close: it appends run_end, fsyncs, and
-		// anchors last, lock held throughout. That run is not missing its anchor yet.
-		head, ok, err = r.awaitAnchor(ctx, anchor, rep.Run)
-		switch {
-		case err != nil:
-			if errors.Is(err, ErrCorruptLedger) {
-				return rep, fmt.Errorf("%w: %w", ErrUnverified, err)
-			}
-			return rep, err
-		case ok && head != rep.Head:
-			return rep, fmt.Errorf("%w: %w: anchored head %q, ledger head %q", ErrUnverified, ErrCorruptChain, head,
-				rep.Head)
-		case ok:
-			rep.Anchored = true
-		default:
-			return rep, fmt.Errorf("%w: %w: %s", ErrUnverified, ErrAnchorMissing, rep.Run)
-		}
+	case err != nil:
+		return w.Report(), err
+	case next == chaincheck.AnchorRescan:
+		return r.verify(ctx, anchor, true, validate)
+	case next == chaincheck.AnchorAwait:
+		// A held lock on an ended run is a launcher still inside Close: it appends run_end, fsyncs, and anchors
+		// last, lock held throughout. That run is not missing its anchor yet.
+		// awaitAnchor's ErrRunClosing, a cancelled context or a read error is returned as it is (AnchorAfterWait
+		// makes only a malformed chain.log a finding).
+		head, ok, err = r.awaitAnchor(ctx, anchor, run)
+		err = w.AnchorAfterWait(chaincheck.AnchorHead{Head: head, OK: ok, Err: err})
+		return w.Report(), err
 	}
-	return rep, nil
+	return w.Report(), nil
 }
 
 // closeWait bounds how long Verify waits for a launcher still inside Close to write the anchor line.
@@ -610,10 +477,14 @@ func (r *Reader) awaitAnchor(ctx context.Context, anchor ChainAnchor, run string
 // deleted ledger, or a deleted run directory, is the record's loss, not a run that never existed. Without
 // an anchor line the not-exist error is returned as it is: nothing vouches that the run was ever recorded.
 func VerifyRunDir(ctx context.Context, dir string, anchor ChainAnchor) (VerifyReport, error) {
+	return verifyRunDir(ctx, dir, anchor, true)
+}
+
+func verifyRunDir(ctx context.Context, dir string, anchor ChainAnchor, validate bool) (VerifyReport, error) {
 	r, err := OpenReader(dir)
 	if err == nil {
 		defer func() { _ = r.Close() }()
-		return r.Verify(ctx, anchor)
+		return r.verify(ctx, anchor, false, validate)
 	}
 	run := runDirName(dir)
 	missing := errors.Is(err, os.ErrNotExist)
@@ -623,21 +494,9 @@ func VerifyRunDir(ctx context.Context, dir string, anchor ChainAnchor) (VerifyRe
 	if !(missing || swapped) || anchor == nil || !IsRunID(run) {
 		return VerifyReport{}, err
 	}
-	rep := VerifyReport{Run: run}
 	head, ok, aerr := anchor.Head(run)
-	switch {
-	case aerr != nil && errors.Is(aerr, ErrCorruptLedger):
-		return rep, fmt.Errorf("%w: %w", ErrUnverified, aerr)
-	case aerr != nil:
-		return rep, aerr
-	case !ok:
-		return rep, err
-	case swapped:
-		return rep, fmt.Errorf("%w: chain.log anchors %s at head %s, and %s is not the regular file the writer made: %w",
-			ErrUnverified, run, head, filepath.Join(dir, EventsFile), err)
-	}
-	return rep, fmt.Errorf("%w: %w: chain.log anchors %s at head %s, and %s does not exist", ErrUnverified,
-		ErrLedgerMissing, run, head, filepath.Join(dir, EventsFile))
+	return chaincheck.MissingLedger(run, filepath.Join(dir, EventsFile), chaincheck.AnchorHead{Head: head, OK: ok, Err: aerr},
+		true, swapped, err)
 }
 
 // maxRunDirLinks bounds the links RunDirPath follows looking for a run id, as the kernel bounds the links
@@ -717,6 +576,12 @@ func (r *Reader) State() (RunState, error) {
 	if err != nil {
 		return "", err
 	}
+	return r.stateWithLockFree(free)
+}
+
+// stateWithLockFree reads the ledger after the caller established the lock's state. GC passes true while it
+// owns the removal lock: probing that lock again would mistake GC itself for a live Writer.
+func (r *Reader) stateWithLockFree(free bool) (RunState, error) {
 	st, err := r.f.Stat()
 	if err != nil {
 		return "", fmt.Errorf("ledger: stat events: %w", err)
@@ -757,10 +622,10 @@ const tailWindow = 4 << 10
 const maxTailWindow = MaxLineBytes + 1
 
 // lastLine returns the bytes of the last complete line of an events.jsonl of size bytes, reading only the end
-// of the file. "Complete" is Lines' rule (§4, E6, E8): every terminated line, plus an unterminated final one
-// that decodes; an unterminated final line that does not decode is torn and was never a line. present is false
-// when the file holds no complete line at all. The window doubles until it holds a line boundary or covers the
-// whole file, so a line longer than tailWindow is found rather than missed.
+// of the file. "Complete" is Lines' rule (§4, E6, E8): every terminated line, plus the entire unterminated final
+// chunk once its first top-level JSON value lexically closes, including any suffix. A chunk with no closed value
+// is torn and was never a line. present is false when the file holds no complete line at all. The window doubles
+// until it holds a line boundary or covers the whole file, so a line longer than tailWindow is found rather than missed.
 func lastLine(f io.ReaderAt, size int64) (line []byte, present bool, err error) {
 	if size <= 0 {
 		return nil, false, nil

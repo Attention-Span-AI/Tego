@@ -52,9 +52,9 @@ var errPassStopped = errors.New("the pass stopped before the end of the record")
 // Bind returns a Binder that the next pass of Lines over r feeds, and only that pass: a later pass does not change
 // what it bound. The run every line must name is the run directory's name when that is a run id, as Verify takes it.
 func (r *Reader) Bind() *Binder {
-	b := &Binder{check: runCheck{validate: true}, sum: sha256.New()}
+	b := &Binder{check: runCheck{Validate: true}, sum: sha256.New()}
 	if want := runDirName(r.dir); IsRunID(want) {
-		b.check.run = want
+		b.check.Run = want
 	}
 	r.binder = b
 	return b
@@ -76,11 +76,11 @@ func (b *Binder) line(l rawLine) {
 	if b.err != nil {
 		return
 	}
-	if b.check.ended {
-		b.err = fmt.Errorf("line %d follows run_end", b.check.chain.Len())
+	if b.check.Ended {
+		b.err = fmt.Errorf("line %d follows run_end", b.check.Chain.Len())
 		return
 	}
-	_, newer, err := b.check.add(l.data)
+	_, newer, err := b.check.Add(l.data)
 	if err != nil {
 		b.err = err
 		return
@@ -98,7 +98,7 @@ func (b *Binder) tornTail(data []byte) {
 	}
 	b.write(data, false)
 	b.torn = len(data)
-	if b.err == nil && b.check.ended {
+	if b.err == nil && b.check.Ended {
 		b.err = fmt.Errorf("%d bytes after run_end", len(data))
 	}
 }
@@ -131,12 +131,12 @@ func (b *Binder) write(data []byte, terminated bool) {
 func (b *Binder) Bound() Bound {
 	switch {
 	case b.err != nil:
-		return Bound{Run: b.check.run, Err: b.err}
+		return Bound{Run: b.check.Run, Err: b.err}
 	case !b.done:
-		return Bound{Run: b.check.run, Err: errPassStopped}
+		return Bound{Run: b.check.Run, Err: errPassStopped}
 	}
 	return Bound{
-		Run: b.check.run, Lines: b.check.chain.Len(), Head: b.check.chain.Head(), Ended: b.check.ended,
+		Run: b.check.Run, Lines: b.check.Chain.Len(), Head: b.check.Chain.Head(), Ended: b.check.Ended,
 		Bytes: b.bytes, SHA256: hex.EncodeToString(b.sum.Sum(nil)), TornBytes: b.torn, Newer: b.newer,
 	}
 }

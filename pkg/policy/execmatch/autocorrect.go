@@ -14,8 +14,9 @@ const similarityFloor = 7
 // shorter.
 const maxCandidate = 63
 
-// Candidates is the candidate set of git's help_unknown_cmd that the matcher uses: a subset of every supported git's
-// own (ADR 0048 (2)). Built once; read concurrently.
+// Candidates is the selected command inventory used by the help_unknown_cmd port
+// (ADR 0048 (2)). Unique-best selection depends on that inventory; a subset does
+// not prove coverage of every installed command. Built once; read concurrently.
 type Candidates struct {
 	names  []string
 	common map[string]bool
@@ -54,7 +55,8 @@ func (c *Candidates) Has(name string) bool {
 }
 
 // Autocorrect is a pure-function port of git 2.51.0's help.c help_unknown_cmd under help.autocorrect=immediate: the
-// command git runs for a token that names no command, and ok false when it runs none.
+// unique target in the supplied candidate inventory for a token that names no command,
+// and ok false when that inventory selects none.
 //
 //   - A candidate in the common group that starts with the token scores 0; any other scores
 //     levenshtein(token, candidate; swap 0, substitution 2, insertion 1, deletion 3) + 1.

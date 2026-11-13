@@ -102,9 +102,12 @@ func (k *compiler) fs() {
 	if k.c.FS != nil && k.c.FS.Assurance != "" {
 		k.rt.FSAssurance = k.c.FS.Assurance
 	}
-	mt, err := loadMountTable(k.o.mountInfo)
+	mt, err := k.mountTable()
 	if err != nil {
 		k.ds.warnf(k.cpos, CodeMountWarning, "mount metadata unavailable: %v", err)
+	}
+	for _, warning := range mt.networkMountWarnings() {
+		k.ds.warnf(k.cpos, CodeMountWarning, "%s", warning)
 	}
 	b := &fsBuilder{k: k, mt: mt}
 	ledger := k.abs(k.m.LedgerRoot.Value)
@@ -379,8 +382,15 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 		}
 	}
 	// tego's own binaries (WithOwnBinaries): an entry over one lets the agent replace what runs outside its contract next.
-	ownBinaries, pathShadows := k.ownBinaries()
+	ownBinaries, pathShadows, own := k.ownBinaries(b.mt)
 	targets = append(targets, ownBinaries...)
+	k.backingFiles(b.mt, &own, targets)
+	// An overlay's layer beneath one of them shows its content: an entry at, over or inside the layer rewrites it.
+	for _, l := range own.layers {
+		t := k.r10Target(l.name, l.path, "name the folders the agent needs instead: an agent that can write here can replace tego, and the next run would run its code")
+		ownDirs = append(ownDirs, struct{ name, path string }{t.name, t.path})
+		targets = append(targets, t)
+	}
 	// A target is reached by the kernel's walk of its declared path, which looks a name up in every directory it passes,
 	// its last name's included, so a write over any of those directories is one as well: it lets the agent make that
 	// name a symlink, a directory or a file of its own, and so choose where the next walk lands. That is the directory
@@ -393,6 +403,20 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 	// A target no walk places (a loop of links on its path, a directory on the way this process cannot search) is
 	// compared with no entry: its spelling is not where the kernel's walk of it lands, so no comparison would show an
 	// entry stays off it. With any write entry declared, the contract is refused instead.
+	// Every target's other places on the mount table are targets too (ADR 0059, amendment 2026-11-11).
+	targets = k.aliasTargets(b.mt, targets)
+	if len(entries) > 0 && b.mt.probed && b.mt.err != nil {
+		// Fail closed: without the whole table no comparison shows an entry stays off a target's other mounts, or off
+		// a kernel control filesystem mounted beneath it.
+		k.ds.errorf(k.pos("fs.write.0"), CodeContradiction, "fs.write: the mount table cannot be read whole (%v), so no write entry can be shown to stay off tego's own files by another mount, or off a kernel control filesystem (R10)", b.mt.err).
+			fix("retry where /proc/self/mountinfo is readable, holds at most %d mounts, stays the same while it is read and has one root "+
+				"mount at / (the namespace root is a mount point: bind-mount a chroot's root onto itself before entering it), or remove "+
+				"the write entries", maxMountRows)
+	} else if len(entries) > 0 && own.unseen != "" {
+		// Fail closed: where compile cannot see every name of tego's binaries, no comparison shows an entry stays off them.
+		k.ds.errorf(k.pos("fs.write.0"), CodeContradiction, "fs.write: %s, so no write entry can be shown to stay off tego's binaries (R10)", own.unseen).
+			fix("make the named binary candidate inspectable (fix inaccessible folders or broken links), install tego on a plain filesystem this compile can see, or remove the write or ask grants")
+	}
 	if len(entries) > 0 {
 		for _, t := range targets {
 			if t.declared != "" && !t.placed {
@@ -407,10 +431,10 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 	// the chain anchor (~/.tego) it writes the machine config, the price table and the profiles future runs
 	// load. The ledger root itself can be a large shared directory (/tmp in a test, a data disk) that holds
 	// projects too, so only a path inside one of its run directories counts there.
-	ledgerRoot := ""
-	if l := k.resolve(ledger); l != "" {
-		ledgerRoot = filepath.Dir(l)
-	}
+	// ledger is the ledger root itself (fs: k.m.LedgerRoot), so its run directories are directly under it. This took
+	// its parent, from when the value was a run's own directory, so the rule refused nothing for a ledger root outside
+	// the anchor's directory (found in review round 2, 2026-11-11; TestCompileHoldsProtectedDirectoriesThroughMounts).
+	ledgerRoot := k.resolve(ledger)
 	tegoDir := ""
 	if k.o.chainAnchor != "" {
 		tegoDir = filepath.Dir(k.resolve(k.asWalked(k.o.chainAnchor))) // a relative test hook's where the run opens it
@@ -424,11 +448,26 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 	// as tegoOwn denies only one: an adoption makes it before it compiles.
 	ownerDir := ""
 	if k.o.home != "" {
-		if d := k.resolve(filepath.Join(k.o.home, ".tego")); d != "" && d != "/" && d != tegoDir {
-			if fi, err := os.Stat(d); err == nil && fi.IsDir() {
-				ownerDir = d
+		p := filepath.Join(k.o.home, ".tego")
+		d := k.resolve(p)
+		unknown := func(why string) {
+			if len(entries) > 0 {
+				k.ds.errorf(k.pos("fs.write.0"), CodeContradiction, "fs.write: compile cannot examine the agent owner's tego directory %s (%s), so no write entry can be shown to stay off it (R10)", p, why).
+					fix("restore access to %s or repair its links, or remove the write or ask grants", p)
 			}
 		}
+		if d == "" {
+			unknown("its path walk cannot be placed")
+		} else if d != tegoDir {
+			if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+				ownerDir = d
+			} else if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, unix.ENOTDIR) {
+				unknown(err.Error())
+			}
+		}
+	}
+	if len(entries) > 0 {
+		b.requireProtectedIdentity(k.pos("fs.write.0"), targets, ownerDir)
 	}
 	for i, raw := range entries {
 		key := "fs.write." + strconv.Itoa(i)
@@ -467,6 +506,34 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 			k.ds.errorf(pos, CodePathMissing, "fs.write %q: %v", raw, err)
 			continue
 		}
+		if why := b.mt.grantUncertainty(r.Resolved); why != "" {
+			k.ds.errorf(pos, CodeContradiction, "fs.write %q: %s, so compile cannot show this grant stays off protected files (R10)", raw, why).
+				fix("make the named mount's position and visibility unambiguous, then compile again, or remove the write or ask grant")
+		}
+		if b.mt.probed && b.mt.err == nil {
+			if _, _, ok := b.mt.placeOf(r.Resolved); !ok && !b.mt.unlinkedAt(r.Resolved) {
+				k.ds.errorf(pos, CodeContradiction, "fs.write %q: compile cannot place the grant %s by mount identity, so it cannot show the grant stays off protected files (R10)", raw, r.Resolved).
+					fix("compile and run where the namespace root is a mount point and /proc/self/mountinfo includes the grant's filesystem, or remove the write or ask grant")
+			}
+		}
+		if where := b.mt.controlFS(r.Resolved); where != "" { // R10 by mount identity: a kernel control filesystem
+			d := k.ds.errorf(pos, CodeContradiction, "fs.write %q%s reaches %s, a kernel control filesystem, whatever path names it: the agent could change other runs and itself through it",
+				raw, resolvedNote(p, r.Resolved), where)
+			d.fix("name the folders the agent needs instead, none of which may hold or be a mount of cgroup, bpf, proc, sysfs or another kernel filesystem")
+			d.overlap = true
+		}
+		k.checkUnlinkedMounts(b.mt, targets, pos, raw, r.Resolved)
+		k.warnOverlayBacking(b.mt, own, pos, raw, r.Resolved)
+		if at := b.mt.fuseMount(r.Resolved); at != "" {
+			k.ds.warnf(pos, CodeMountWarning, "fs.write %q reaches FUSE mount %s: compile cannot tell whether a different filesystem exposes protected data here", raw, at).
+				fix("do not expose tego's protected files through a mirror inside a write or ask grant")
+		}
+		if why := refusedFS(own.linked, r.Resolved); why != "" { // R10 by file identity: names no table lists
+			d := k.ds.errorf(pos, CodeContradiction, "fs.write %q%s: %s; a write through one of its other names would replace what the next run runs",
+				raw, resolvedNote(p, r.Resolved), why)
+			d.fix("install a fresh copy of tego with one name, outside every write entry (a copy is a new file; the installer, or cp, makes one), and run that one, leaving the other names, a backup's or a store's, as they are; or keep the write entries off that filesystem. A file only root may write is not refused while the agent is not root")
+			d.overlap = true
+		}
 		for _, target := range targets {
 			if target.path != "" && isAncestorOrSelf(r.Resolved, target.path) { // R10
 				d := k.ds.errorf(pos, CodeContradiction, "fs.write %q%s contains %s %s%s; Landlock cannot deny beneath an allow",
@@ -475,7 +542,18 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 				d.overlap = true
 				continue
 			}
-			if name, link := target.nameHeldBy(r.Resolved); link {
+			if target.path != "" && target.placed {
+				// By file identity: a bind mount or another mount of the target's filesystem at or beneath the entry
+				// shows the target, or a directory above it, under another name (ADR 0059, amendments of 2026-11-11).
+				if over, _ := b.mt.reaches(r.Resolved, target.path); over {
+					d := k.ds.errorf(pos, CodeContradiction, "fs.write %q%s reaches %s %s through another mount of its filesystem; Landlock grants a write through every mount beneath an entry",
+						raw, resolvedNote(p, r.Resolved), target.name, target.declared)
+					d.fix("%s", target.fix)
+					d.overlap = true
+					continue
+				}
+			}
+			if name, link := target.nameHeldBy(r.Resolved, b.mt); link {
 				d := k.ds.errorf(pos, CodeContradiction, "fs.write %q%s holds the symlink %s on the way to %s %s%s: the agent could point it elsewhere",
 					raw, resolvedNote(p, r.Resolved), name, target.name, target.declared, resolvedNote(target.declared, target.path))
 				d.fix("%s", target.fix)
@@ -511,6 +589,10 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 					break
 				}
 			}
+		}
+		if inside == "" {
+			inside = b.insideByPlace(r.Resolved, insidePlaces{tegoDir: tegoDir, ownerDir: ownerDir, ledgerRoot: ledgerRoot,
+				ownDirs: ownDirs, runtimeParents: runtimeParents})
 		}
 		if inside != "" {
 			d := k.ds.errorf(pos, CodeContradiction, "fs.write %q%s lies inside %s", raw, resolvedNote(p, r.Resolved), inside)
@@ -548,23 +630,133 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 	return resolved
 }
 
-// kernelFSWrite warns about a write entry on procfs or on /dev itself: their files write to the kernel,
-// to this uid's other processes and to devices, not to storage. A grant on /proc reaches /proc/<pid>/mem,
-// oom_score_adj and attr of every process the uid owns; one on /dev every device node the uid can open, the
-// terminals of its other sessions among them. Both compiled without a word (E38). A single
-// device file (/dev/null, which the starter grants) or /dev/shm is not /dev and is not warned about; /sys is
-// left to the implicit-entry contradiction.
+// Every active R10 target and directory its walk reads is relevant: without a
+// device/place identity no comparison can establish separation from any grant.
+// Absent binary overlay layers and known mounts with unlinked roots retain their separate backing limit.
+func (b *fsBuilder) requireProtectedIdentity(pos Pos, targets []writeTarget, ownerDir string) {
+	if !b.mt.probed || b.mt.err != nil {
+		return
+	}
+	seen := make(map[string]bool)
+	check := func(p, what string) {
+		if p == "" || seen[p] {
+			return
+		}
+		seen[p] = true
+		if _, _, ok := b.mt.placeOf(p); !ok && !b.mt.unlinkedAt(p) {
+			if why := b.mt.uncertaintyAt(p); why != "" {
+				what += " (" + why + ")"
+			}
+			b.k.ds.errorf(pos, CodeContradiction, "fs.write: compile cannot place %s by mount identity in this namespace, so no write entry can be shown to stay off it (R10)", what).
+				fix("compile and run where the namespace root is a mount point and /proc/self/mountinfo includes the filesystem holding %s (bind-mount a chroot root onto itself before entering it, or run outside the chroot), or remove the write or ask grants", p)
+		}
+	}
+	for _, t := range targets {
+		if t.declared == "" || !t.placed {
+			continue // path-walk uncertainty has its own refusal above
+		}
+		check(t.path, t.name+" "+t.path)
+		for _, h := range t.held {
+			check(h.dir, "directory "+h.dir+" read on the way to "+t.name+" "+t.declared)
+		}
+	}
+	check(ownerDir, "the agent owner's tego directory "+ownerDir)
+}
+
+// kernelFSWrite warns about a write entry on /dev itself: one on /dev grants every device node the uid can open, the
+// terminals of its other sessions among them (E38). A single device file (/dev/null, which the starter grants) or
+// /dev/shm is not /dev and is not warned about. procfs, which this warned about too, is a kernel control filesystem a
+// write entry may not reach by any path since ADR 0059's second amendment of 2026-11-11 (mountTable.controlFS), and
+// /sys is one as well.
 func kernelFSWrite(k *compiler, pos Pos, raw, p, resolved string) {
-	switch {
-	case resolved == "/proc" || strings.HasPrefix(resolved, "/proc/"):
-		k.ds.warnf(pos, CodeKernelFSWrite, "fs.write %q%s reaches procfs, whose files write to the kernel and to this uid's other processes (/proc/<pid>/mem, oom_score_adj), not to storage",
-			raw, resolvedNote(p, resolved)).
-			fix("remove the entry")
-	case resolved == "/dev":
+	if resolved == "/dev" {
 		k.ds.warnf(pos, CodeKernelFSWrite, "fs.write %q%s grants writes to every device node this uid can open, the terminals of its other sessions among them, not to storage",
 			raw, resolvedNote(p, resolved)).
 			fix("name the device files the agent needs instead, such as /dev/null or /dev/shm")
 	}
+}
+
+// insidePlaces are the directories R10 refuses a write entry inside of (writes), for insideByPlace.
+type insidePlaces struct {
+	tegoDir, ownerDir, ledgerRoot string
+	ownDirs                       []struct{ name, path string }
+	runtimeParents                []string
+}
+
+// insideByPlace is the inside rules of writes compared by file identity (mountTable.reaches): an entry that lies inside
+// one of tego's own directories, or a run directory under the ledger root, through another mount of that directory's
+// filesystem, or that holds a mount showing part of one's tree (a bind of the profiles directory with a grant on one of
+// its folders, a bind of a run directory). Unknown identities are refused before
+// these comparisons by requireProtectedIdentity and the grant's place check.
+func (b *fsBuilder) insideByPlace(entry string, pl insidePlaces) string {
+	mt := b.mt
+	inside := func(d string) bool {
+		if d == "" || d == "/" {
+			return false
+		}
+		_, in := mt.reaches(entry, d)
+		return in
+	}
+	switch {
+	case inside(pl.tegoDir):
+		return "tego's own directory " + pl.tegoDir + ", through another mount of it"
+	case pl.ownerDir != "" && ownerReached(mt, entry, pl.ownerDir):
+		return "(or is) the agent owner's tego directory " + pl.ownerDir + ", through another mount of it"
+	case inRunDirByPlace(mt, entry, pl.ledgerRoot):
+		return "a run directory under the ledger root " + pl.ledgerRoot + ", through another mount of it"
+	}
+	for _, d := range pl.ownDirs {
+		if inside(d.path) {
+			return d.name + " " + d.path + ", through another mount of it"
+		}
+	}
+	for _, d := range pl.runtimeParents {
+		if inside(d) {
+			return "tego's runtime directory " + d + ", where every run keeps its private directory, through another mount of it"
+		}
+	}
+	for _, p := range append(slices.Clone(implicitPaths), hostStateDir) {
+		if rp := b.k.resolve(p); rp != "" && inside(rp) {
+			return "tego's kernel or host state " + p + ", through another mount of it"
+		}
+	}
+	return ""
+}
+
+// ownerReached reports whether a write entry reaches the owner's tego directory through another mount: at or inside
+// it by file identity, or over it through a mount beneath the entry. An entry over its own spelling keeps R6a's nested
+// deny (marked unenforced at tier landlock); one over another name of it does not even carry that, so it is refused.
+func ownerReached(mt *mountTable, entry, ownerDir string) bool {
+	over, in := mt.reaches(entry, ownerDir)
+	return in || placeIs(mt, entry, ownerDir) || over && !isAncestorOrSelf(entry, ownerDir)
+}
+
+// placeIs reports whether a and b are the same place by file identity.
+func placeIs(mt *mountTable, a, b string) bool {
+	da, pa, ok1 := mt.placeOf(a)
+	db, pb, ok2 := mt.placeOf(b)
+	return ok1 && ok2 && da == db && pa == pb
+}
+
+// inRunDirByPlace is inRunDir by file identity: the entry, or a mount beneath it, lies in (or is) a run directory
+// directly under the ledger root, as the root's filesystem places them.
+func inRunDirByPlace(mt *mountTable, entry, root string) bool {
+	if root == "" {
+		return false
+	}
+	devL, placeL, ok := mt.placeOf(root)
+	if !ok {
+		return false
+	}
+	if devE, placeE, ok := mt.placeOf(entry); ok && devE == devL && inRunDir(placeL, placeE) {
+		return true
+	}
+	for _, m := range mt.mounts {
+		if !m.unlinkedRoot() && mt.visible(m) && m.dev == devL && m.point != entry && isAncestorOrSelf(entry, m.point) && inRunDir(placeL, m.root) {
+			return true
+		}
+	}
+	return false
 }
 
 // insideAny is the first of dirs that path lies strictly beneath, "" when none (a dir of "" or "/" never counts).
@@ -1019,13 +1211,14 @@ func (k *compiler) r10Target(name, declared, fix string) writeTarget {
 	return t
 }
 
-// nameHeldBy is a name the target's walk reads in a directory at or beneath the write entry entry (resolved), and
-// whether it is a symlink the walk follows: a name the agent could replace there, and with it where the walk lands. A
+// nameHeldBy is a name the target's walk reads in a directory reached by the write entry (resolved), by path or
+// through another mount of that directory, and whether it is a symlink the walk follows: a name the agent could replace there, and with it where the walk lands. A
 // symlink is named first, since the walk follows its text as well; else the first such name in walk order. "" when
 // the entry holds none of them.
-func (t writeTarget) nameHeldBy(entry string) (string, bool) {
+func (t writeTarget) nameHeldBy(entry string, mt *mountTable) (string, bool) {
 	for _, h := range t.held {
-		if isAncestorOrSelf(entry, h.dir) {
+		over, _ := mt.reaches(entry, h.dir)
+		if isAncestorOrSelf(entry, h.dir) || over {
 			return h.name, h.link
 		}
 	}

@@ -53,7 +53,8 @@ without being root of the initial user namespace, is refused at start with exit 
 `[privileged-path-unsupported]`; incidental inherited capabilities are cleared. `/run/tego` is root 0700 only.
 
 **The ledger's boundary.** The hash-chained ledger and its anchor (`~/.tego/chain.log`) are tamper-evident against
-an agent held by a contract, not against the user who launched the run, who can write both (`docs/GAPS.md` C9). A
+an agent held by a contract, within the mount and storage limits [docs/GAPS.md](docs/GAPS.md) lists, not against
+the user who launched the run, who can write both (`docs/GAPS.md` C9). A
 record-only run (`tego watch` with no `--boundary`, `tego run --observe`) has no Landlock ruleset, so its agent, which
 runs as that user, can write both too.
 

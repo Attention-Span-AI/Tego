@@ -105,3 +105,20 @@ func TestExecMatchesFailsClosedOnOverflow(t *testing.T) {
 		t.Errorf("a glob rule on an overflowed reading: %+v, want allow", d)
 	}
 }
+
+func TestExecMatchesRetainsEitherReader(t *testing.T) {
+	for _, score := range []int{60, 95} {
+		p, err := New([]Rule{{ExecMatches, "npm access --all", score}}, 50, 80)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := p.Evaluate(Allow, Action{Kind: Exec, Complete: true, Executable: "/usr/bin/npm", Invocation: "/usr/bin/npm", Args: strings.Fields("npm --browser --all access operand")})
+		want := Ask
+		if score == 95 {
+			want = Refused
+		}
+		if d.Verdict != want || d.Score != score {
+			t.Errorf("score %d lost retained refusal: %+v", score, d)
+		}
+	}
+}

@@ -156,10 +156,10 @@ func TestHarnessHookOtherNamesAreNotGranted(t *testing.T) {
 	// into the write entry, is not recognised: the launcher cannot see every name, and does not grant.
 	unheld := onTable(block, "2 1 8:2 "+bin+" "+ws+"/bin rw - ext4 /dev/sda2 rw\n")
 	writable("a table without the mount holding it", admitHook(rt, backend.TierLandlock, exe, hook(exe), unheld),
-		"exec."+agent.HarnessHookGrant, "shows no mount holding "+exe)
+		"exec."+agent.HarnessHookGrant, "mount table")
 	empty := onTable(block, "")
 	writable("an empty mount table", admitHook(rt, backend.TierLandlock, exe, hook(exe), empty),
-		"exec."+agent.HarnessHookGrant, "shows no mount holding "+exe)
+		"exec."+agent.HarnessHookGrant, "mount table")
 	unreadable := hookHost{mounts: func() ([]byte, error) { return nil, os.ErrPermission }, block: block}
 	writable("an unreadable mount table", admitHook(rt, backend.TierLandlock, exe, hook(exe), unreadable),
 		"exec."+agent.HarnessHookGrant, "mount table")
@@ -184,6 +184,29 @@ func TestHarnessHookOtherNamesAreNotGranted(t *testing.T) {
 	}
 	writable("a loader with a hard link", admitHook(rt, backend.TierLandlock, dyn, hook(dyn), noMounts),
 		"exec."+agent.HarnessHookGrant, ld+" has 2 links")
+}
+
+func TestHarnessHookRejectsIncompleteMountFacts(t *testing.T) {
+	exe := filepath.Join(t.TempDir(), "tego")
+	copyFile(t, testExe(t), exe)
+	rt := compileTable(t, harnessContract(harness.ClaudeCode, &agent.ExecSection{Allow: []string{"/bin/sh"}}))
+	hook := &harness.Hook{Argv: []string{exe, "hook", "claude-code", "--reason", "/run/r/last-refusal.json"}}
+	block := fakeBlock(t)
+	if d := admitHook(rt, backend.TierLandlock, exe, hook, onTable(block, rootMount)); !d.Granted {
+		t.Fatalf("complete facts: %+v, want the grant", d)
+	}
+	for name, table := range map[string]string{
+		"truncated record": rootMount + "3 1 8:2 /secret /alias rw - ext4\n",
+		"invalid device":   rootMount + "3 1 disk:one /secret /alias rw - ext4 /dev/sda2 rw\n",
+		"duplicate id":     rootMount + "1 1 8:2 /secret /alias rw - ext4 /dev/sda2 rw\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := admitHook(rt, backend.TierLandlock, exe, hook, onTable(block, table))
+			if d.Granted || d.Table != rt || d.Why != record.HarnessWhyHookWritable || !strings.Contains(d.Detail, "mount table") {
+				t.Fatalf("%+v, want the grant refused because mount facts are incomplete", d)
+			}
+		})
+	}
 }
 
 // TestHarnessHookStackedNamesAreNotGranted (ADR 0064 D2): a filesystem can show
@@ -236,7 +259,7 @@ func TestHarnessHookStackedNamesAreNotGranted(t *testing.T) {
 	partBound := onTable(block, rootMount+"3 1 0:50 / "+merged+" rw - overlay overlay rw,lowerdir="+lower+"\n"+
 		"4 1 8:2 "+lower+"/sub "+ws+"/s rw - ext4 /dev/sda2 rw\n")
 	writable("a bind of part of the lower layer into the write entry", admit(partBound), "fs.write["+ws+"]", ws+"/s")
-	writable("an overlay naming a relative layer", admit(overlay("lowerdir=l1")), "exec."+agent.HarnessHookGrant, "cannot place")
+	writable("an overlay naming a relative layer", admit(overlay("lowerdir=l1")), "exec."+agent.HarnessHookGrant, "layers named relative to a folder the mount table does not record")
 	writable("an overlay naming no lower layer", admit(overlay("xino=off")), "exec."+agent.HarnessHookGrant, "no lower layer")
 	writable("a FUSE mirror", admit(on("3 1 0:51 / "+merged+" rw - fuse.bindfs "+ws+" rw,user_id=1000")),
 		"exec."+agent.HarnessHookGrant, "fuse.bindfs")

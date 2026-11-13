@@ -109,6 +109,9 @@ func (r *runner) startWorkers(ctx context.Context) error {
 	if err := r.startTracking(ctx); err != nil {
 		return err
 	}
+	if err := r.startSkipWatch(ctx); err != nil {
+		return err
+	}
 	started = true
 	return nil
 }

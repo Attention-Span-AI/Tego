@@ -1,0 +1,668 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package execmatch
+
+import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	old "github.com/attention-span-ai/tego/execmatchbaseline"
+	oldrows "github.com/attention-span-ai/tego/execmatchbaseline/rows"
+	compare "github.com/attention-span-ai/tego/test/execmatchdiff"
+	"os"
+	"reflect"
+	"slices"
+	"sort"
+	"strings"
+	"sync"
+)
+
+var tighteningState = struct {
+	sync.Mutex
+	indices     map[*Index]*old.Index
+	rows        map[*Row]*old.Row
+	counts      map[string]int
+	invalid     map[*Index]bool
+	alignedKeys map[[32]byte]bool
+	allowKeys   map[string]bool
+}{indices: make(map[*Index]*old.Index), rows: make(map[*Row]*old.Row), counts: make(map[string]int), invalid: make(map[*Index]bool), allowKeys: make(map[string]bool), alignedKeys: make(map[[32]byte]bool)}
+
+// copyExported converts the identically named public grammar/fact fields. Function
+// fields have identical stdlib-only signatures. New syntax fields do not exist in
+// the baseline and are deliberately ignored; private lookup indices are rebuilt.
+func copyExported(dst, src reflect.Value) {
+	switch dst.Kind() {
+	case reflect.Pointer:
+		if !src.IsNil() {
+			dst.Set(reflect.New(dst.Type().Elem()))
+			copyExported(dst.Elem(), src.Elem())
+		}
+	case reflect.Struct:
+		for i := 0; i < dst.NumField(); i++ {
+			if !dst.Type().Field(i).IsExported() {
+				continue
+			}
+			s := src.FieldByName(dst.Type().Field(i).Name)
+			if s.IsValid() {
+				copyExported(dst.Field(i), s)
+			}
+		}
+	case reflect.Slice:
+		if src.IsNil() {
+			return
+		}
+		dst.Set(reflect.MakeSlice(dst.Type(), src.Len(), src.Len()))
+		for i := 0; i < src.Len(); i++ {
+			copyExported(dst.Index(i), src.Index(i))
+		}
+	case reflect.Map:
+		if src.IsNil() {
+			return
+		}
+		dst.Set(reflect.MakeMap(dst.Type()))
+		it := src.MapRange()
+		for it.Next() {
+			k, v := reflect.New(dst.Type().Key()).Elem(), reflect.New(dst.Type().Elem()).Elem()
+			copyExported(k, it.Key())
+			copyExported(v, it.Value())
+			dst.SetMapIndex(k, v)
+		}
+	default:
+		dst.Set(src.Convert(dst.Type()))
+	}
+}
+
+// A generated entry rejected by both grammars is outside the shared corpus. A
+// newly rejected released-valid entry must fail instead of losing its vectors.
+func TighteningGeneratedCompileError(entry string, list List, currentErr error) error {
+	if currentErr == nil {
+		return nil
+	}
+	if _, err := old.Parse(entry, old.List(list), oldrows.Builtin()); err != nil {
+		return nil
+	}
+	return fmt.Errorf("generated %s entry %q compiled in the release but is now rejected: %w", list, entry, currentErr)
+}
+
+func tighteningBase(ix *Index) *old.Index {
+	if b := tighteningState.indices[ix]; b != nil {
+		return b
+	}
+	var rr []*old.Row
+	for _, r := range ix.rows.All() {
+		b := tighteningState.rows[r]
+		if b == nil {
+			b = new(old.Row)
+			copyExported(reflect.ValueOf(b).Elem(), reflect.ValueOf(r).Elem())
+			tighteningState.rows[r] = b
+		}
+		rr = append(rr, b)
+	}
+	rs := old.NewRows(rr...)
+	var pp []*old.Pattern
+	for _, p := range ix.order {
+		if p.Runtime != "" {
+			pp = append(pp, old.ExactPattern(p.Runtime, p.Tool, append([]string{p.Argv0}, p.Words...)))
+			continue
+		}
+		b, err := old.Parse(p.Entry, old.List(p.List), rs)
+		if err != nil {
+			if p.List != ListAllow {
+				panic(fmt.Sprintf("base did not parse %q: %v", p.Entry, err))
+			}
+			tighteningState.invalid[ix] = true
+			b, err = old.Parse(p.Tool+" __release_invalid_entry__", old.ListAllow, rs)
+			if err != nil {
+				panic(err)
+			}
+		}
+		pp = append(pp, b)
+	}
+	opts := tighteningOptions(ix)
+	b := old.NewIndex(rs, pp, opts)
+	if ix.mc == nil {
+		b = old.WithoutMulticall(b)
+	}
+	tighteningState.indices[ix] = b
+	return b
+}
+
+func tighteningOptions(ix *Index) old.IndexOptions {
+	opts := old.IndexOptions{Unconstrained: make(map[string]bool)}
+	for tool, tr := range ix.tools {
+		if !tr.constrained {
+			opts.Unconstrained[tool] = true
+		}
+	}
+	copyExported(reflect.ValueOf(&opts.Identities).Elem(), reflect.ValueOf(ix.ids))
+	copyExported(reflect.ValueOf(&opts.Loaders).Elem(), reflect.ValueOf(ix.lds))
+	for _, nz := range ix.nz {
+		if nz.row.Autocorrect && nz.cand != nil {
+			var common []string
+			for n := range nz.cand.common {
+				common = append(common, n)
+			}
+			opts.Candidates = old.NewCandidates(nz.cand.names, common)
+		}
+	}
+	return opts
+}
+
+// A spelling exception must preserve the entry's named verb and bindings under
+// the independent, frozen-parser oracle; deleting a marker alone is insufficient.
+func tighteningException(ix *Index, bix *old.Index, f *Facts, a Result, b old.Result) string {
+	if b.List == old.ListDeny || b.List == old.ListAsk {
+		return ""
+	}
+	if a.Outcome != OutcomeAllowed || a.Pattern == nil || a.Pattern.List != ListAllow {
+		return ""
+	}
+	if tighteningState.invalid[ix] {
+		if len(ix.order) == 1 && a.Pattern.Entry == "git add --no-f" && len(f.Argv) == 3 && f.Argv[0] == "git" && f.Argv[1] == "add" && slices.Contains([]string{"--no-f", "--no-force", "--no-f=true", "--no-force=true"}, f.Argv[2]) {
+			key := fmt.Sprintf("%s/%v", f.Argv[2], f.ArgvComplete)
+			tighteningState.allowKeys[key] = true
+			return "allow-invalid/negated-prefix"
+		}
+		return ""
+	}
+	return ""
+}
+
+func tighteningAllInterpretations(ix *Index, f *Facts) []Invocation {
+	invs := ix.Interpretations(f)
+	return append(invs, ix.multicallInterpretations(f, invs)...)
+}
+
+// A retained root marker makes every following token opaque. Certify every
+// relevant old matching invocation, then preserve the complete original index.
+func tighteningNpmEndedRoot(ix *Index, bix *old.Index, f *Facts, a Result, b old.Result) string {
+	if !f.ArgvComplete || !a.Final || b.Outcome != old.OutcomeRefused || b.Pattern == nil || b.Tool != "npm" || (b.List != old.ListDeny && b.List != old.ListAsk) || a.Outcome == OutcomeRefused && !(b.List == old.ListDeny && a.List == ListAsk) {
+		return ""
+	}
+	var bf old.Facts
+	copyExported(reflect.ValueOf(&bf).Elem(), reflect.ValueOf(*f))
+	current := tighteningAllInterpretations(ix, f)
+	skip := map[*old.Pattern]bool{}
+	for _, p := range bix.Patterns() {
+		if p.Tool != "npm" || (p.List != old.ListDeny && p.List != old.ListAsk) {
+			continue
+		}
+		found, certified := false, true
+		for _, inv := range bix.AllInterpretationsForComparison(&bf) {
+			if p.Match(&inv) == old.MatchNone {
+				continue
+			}
+			found = true
+			for _, r := range inv.Readings {
+				if r.Unlocatable {
+					certified = false
+				}
+			}
+			matched := false
+			for _, now := range current {
+				if now.Tool == "npm" && reflect.DeepEqual(now.Tokens, inv.Tokens) && compare.NpmEndedRootDoesNotMatch(p.Entry, inv.Tokens, now.Readings) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				certified = false
+				break
+			}
+		}
+		if found && certified {
+			skip[p] = true
+		}
+	}
+	if !skip[b.Pattern] {
+		return ""
+	}
+	expected := tighteningOmitPredicates(ix, bix, skip).Decide(&bf)
+	if expected.Outcome != old.Outcome(a.Outcome) || expected.Rule() != a.Rule() || expected.Final != a.Final {
+		return ""
+	}
+	return "released-overrefusal/npm-ended-options"
+}
+
+// A complete source-confirmed nopt commandless argv cannot meet a literal
+// command-naming npm predicate. Even an old parser overflow is certified only
+// here: independently no command remains, and all current readings agree.
+func tighteningNpmCommandless(ix *Index, bix *old.Index, f *Facts, a Result, b old.Result) string {
+	if !f.ArgvComplete || !a.Final || b.Outcome != old.OutcomeRefused || b.Pattern == nil || b.Tool != "npm" || (b.List != old.ListDeny && b.List != old.ListAsk) || a.Outcome == OutcomeRefused && !(b.List == old.ListDeny && a.List == ListAsk) {
+		return ""
+	}
+	var bf old.Facts
+	copyExported(reflect.ValueOf(&bf).Elem(), reflect.ValueOf(*f))
+	before := bix.AllInterpretationsForComparison(&bf)
+	current := tighteningAllInterpretations(ix, f)
+	skip := map[*old.Pattern]bool{}
+	for _, p := range bix.Patterns() {
+		if p.Tool != "npm" || (p.List != old.ListDeny && p.List != old.ListAsk) || len(p.Path) == 0 {
+			continue
+		}
+		literal := true
+		for _, name := range p.Path {
+			if name == "" || strings.ContainsAny(name, "*?[") {
+				literal = false
+			}
+		}
+		if !literal {
+			continue
+		}
+		found, certified := false, true
+		for _, inv := range before {
+			if p.Match(&inv) == old.MatchNone {
+				continue
+			}
+			found = true
+			matched := false
+			for _, now := range current {
+				if now.Tool == "npm" && reflect.DeepEqual(now.Tokens, inv.Tokens) && compare.NpmCommandless(inv.Tokens, now.Readings) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				certified = false
+				break
+			}
+		}
+		if found && certified {
+			skip[p] = true
+		}
+	}
+	if !skip[b.Pattern] {
+		return ""
+	}
+	corrected := tighteningOmitPredicates(ix, bix, skip)
+	expected := corrected.Decide(&bf)
+	if expected.Outcome != old.Outcome(a.Outcome) || expected.Rule() != a.Rule() || expected.Final != a.Final {
+		return ""
+	}
+	return "released-overrefusal/npm-commandless"
+}
+
+func tighteningOmitPredicates(ix *Index, bix *old.Index, skip map[*old.Pattern]bool) *old.Index {
+	var rr []*old.Row
+	for _, r := range ix.rows.All() {
+		rr = append(rr, tighteningState.rows[r])
+	}
+	var pp []*old.Pattern
+	for _, p := range bix.Patterns() {
+		if !skip[p] {
+			pp = append(pp, p)
+		}
+	}
+	corrected := old.NewIndex(old.NewRows(rr...), pp, tighteningOptions(ix))
+	if ix.mc == nil {
+		corrected = old.WithoutMulticall(corrected)
+	}
+	return corrected
+}
+
+// A complete separator-pattern false refusal may be removed only after every
+// relevant invocation independently fails the corrected predicate. Rebuild the
+// entire released index, omitting only those predicates proved false for these
+// exact facts; preserve every other rule, option, and loader/interpreter fact.
+func tighteningPatternCorrection(ix *Index, bix *old.Index, f *Facts, a Result, b old.Result) string {
+	if !f.ArgvComplete || !a.Final || b.Outcome != old.OutcomeRefused || b.Pattern == nil || (b.List != old.ListDeny && b.List != old.ListAsk) || a.Outcome == OutcomeRefused && !(b.List == old.ListDeny && a.List == ListAsk) {
+		return ""
+	}
+	var bf old.Facts
+	copyExported(reflect.ValueOf(&bf).Elem(), reflect.ValueOf(*f))
+	before := bix.AllInterpretationsForComparison(&bf)
+	current := tighteningAllInterpretations(ix, f)
+	skip := map[*old.Pattern]bool{}
+	for _, p := range bix.Patterns() {
+		if p.List != old.ListDeny && p.List != old.ListAsk {
+			continue
+		}
+		found, certified := false, true
+		for _, inv := range before {
+			if p.Match(&inv) == old.MatchNone {
+				continue
+			}
+			found = true
+			for _, r := range inv.Readings {
+				if r.Unlocatable {
+					return ""
+				}
+			}
+			matched := false
+			for _, now := range current {
+				if now.Tool == inv.Tool && reflect.DeepEqual(now.Tokens, inv.Tokens) && compare.SeparatorPatternDoesNotMatch(p.Entry, inv.Tool, inv.Tokens, now.Readings) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				certified = false
+				break
+			}
+		}
+		if found && certified {
+			skip[p] = true
+		}
+	}
+	if !skip[b.Pattern] {
+		return ""
+	}
+	corrected := tighteningOmitPredicates(ix, bix, skip)
+	expected := corrected.Decide(&bf)
+	if expected.Outcome != old.Outcome(a.Outcome) || expected.Rule() != a.Rule() || expected.Final != a.Final {
+		return ""
+	}
+	return "released-overrefusal/pattern-separator/" + b.Tool
+}
+
+// An ordinary browser value retains both conservative arities. Certify their
+// exact frozen union, then remove only predicates false for every old matching
+// authority; the full original remaining index must reproduce the decision.
+func tighteningNpmOptionalCorrection(ix *Index, bix *old.Index, f *Facts, a Result, b old.Result) string {
+	if !f.ArgvComplete || !a.Final || b.Overflow || b.Tool != "npm" || b.Outcome != old.OutcomeRefused || b.Pattern == nil || (b.List != old.ListDeny && b.List != old.ListAsk) || a.Outcome == OutcomeRefused && !(b.List == old.ListDeny && a.List == ListAsk) {
+		return ""
+	}
+	var bf old.Facts
+	copyExported(reflect.ValueOf(&bf).Elem(), reflect.ValueOf(*f))
+	before := bix.AllInterpretationsForComparison(&bf)
+	current := tighteningAllInterpretations(ix, f)
+	skip := map[*old.Pattern]bool{}
+	for _, p := range bix.Patterns() {
+		if p.Tool != "npm" || p.List != old.ListDeny && p.List != old.ListAsk {
+			continue
+		}
+		found, certified := false, true
+		for _, inv := range before {
+			if p.Match(&inv) == old.MatchNone {
+				continue
+			}
+			found = true
+			for _, r := range inv.Readings {
+				if r.Unlocatable {
+					return ""
+				}
+			}
+			matched := false
+			for _, now := range current {
+				if now.Tool == inv.Tool && reflect.DeepEqual(now.Tokens, inv.Tokens) && compare.NpmOptionalDoesNotMatch(p.Entry, p.List.String(), inv.Tokens, now.Readings) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				certified = false
+				break
+			}
+		}
+		if found && certified {
+			skip[p] = true
+		}
+	}
+	if !skip[b.Pattern] {
+		return ""
+	}
+	corrected := tighteningOmitPredicates(ix, bix, skip)
+	expected := corrected.Decide(&bf)
+	if expected.Outcome != old.Outcome(a.Outcome) || expected.Rule() != a.Rule() || expected.Final != a.Final {
+		return ""
+	}
+	return "released-overrefusal/npm-optional-value-binding"
+}
+
+// A complete-vector nopt type or token correction can remove a false refusal. Every
+// invocation matched by the old entry is independently certified, then the
+// ENTIRE original base index is re-evaluated with all other facts preserved.
+func tighteningNpmOverrefusal(ix *Index, bix *old.Index, f *Facts, a Result, b old.Result) string {
+	if !f.ArgvComplete || !a.Final || b.Outcome != old.OutcomeRefused || b.Pattern == nil || b.Tool != "npm" || (b.List != old.ListDeny && b.List != old.ListAsk) || a.Outcome == OutcomeRefused {
+		return ""
+	}
+	var bf old.Facts
+	copyExported(reflect.ValueOf(&bf).Elem(), reflect.ValueOf(*f))
+	corrected := bf
+	if bf.Loaded != nil {
+		loaded := *bf.Loaded
+		corrected.Loaded = &loaded
+	}
+	current := tighteningAllInterpretations(ix, f)
+	count := 0
+	classes := map[string]bool{}
+	for _, before := range bix.AllInterpretationsForComparison(&bf) {
+		if before.Tool != "npm" || b.Pattern.Match(&before) == old.MatchNone {
+			continue
+		}
+		for _, r := range before.Readings {
+			if r.Unlocatable {
+				return ""
+			}
+		}
+		found := false
+		for _, inv := range current {
+			if inv.Tool != "npm" || !reflect.DeepEqual(inv.Tokens, before.Tokens) {
+				continue
+			}
+			class := compare.NpmRefusalCorrectionClass(b.Pattern.Entry, b.List.String(), inv.Tokens, inv.Readings, "none", "")
+			if class == "" {
+				continue
+			}
+			classes[class] = true
+			canonical, ok := compare.NpmTransform(inv.Tokens, inv.Readings)
+			if !ok {
+				return ""
+			}
+			replaced := false
+			if argv, ok := compare.ReplaceSuffix(bf.Argv, inv.Tokens, canonical); ok {
+				if !reflect.DeepEqual(corrected.Argv, bf.Argv) && !reflect.DeepEqual(corrected.Argv, argv) {
+					return ""
+				}
+				corrected.Argv = argv
+				replaced = true
+			}
+			if bf.Loaded != nil {
+				if argv, ok := compare.ReplaceSuffix(bf.Loaded.Argv, inv.Tokens, canonical); ok {
+					if !reflect.DeepEqual(corrected.Loaded.Argv, bf.Loaded.Argv) && !reflect.DeepEqual(corrected.Loaded.Argv, argv) {
+						return ""
+					}
+					corrected.Loaded.Argv = argv
+					replaced = true
+				}
+			}
+			if !replaced {
+				return ""
+			}
+			found = true
+			break
+		}
+		if !found {
+			return ""
+		}
+		count++
+	}
+	if count == 0 {
+		return ""
+	}
+	expected := bix.Decide(&corrected)
+	if expected.Outcome != old.Outcome(a.Outcome) || expected.Rule() != a.Rule() || expected.Final != a.Final {
+		return ""
+	}
+	keys := make([]string, 0, len(classes))
+	for class := range classes {
+		keys = append(keys, class)
+	}
+	sort.Strings(keys)
+	return "released-overrefusal/" + strings.Join(keys, "+")
+}
+
+func tighteningObserve(ix *Index, f *Facts, a Result) {
+	tighteningState.Lock()
+	defer tighteningState.Unlock()
+	if ix == nil {
+		return
+	}
+	bix := tighteningBase(ix)
+	var bf old.Facts
+	copyExported(reflect.ValueOf(&bf).Elem(), reflect.ValueOf(*f))
+	b := bix.Decide(&bf)
+	if tighteningState.invalid[ix] {
+		b = old.Result{Outcome: old.OutcomeRefused, List: old.ListAllow, Unlisted: true, Final: true}
+	}
+	tighteningState.counts["decisions"]++
+	raw, err := json.Marshal(f)
+	if err != nil {
+		panic(err)
+	}
+	tighteningState.alignedKeys[sha256.Sum256([]byte(fmt.Sprintf("%p/%s", ix, raw)))] = true
+	if !b.Final {
+		tighteningState.counts["base-pending"]++
+	}
+	if b.Outcome == old.OutcomeRefused {
+		tighteningState.counts["base-refused"]++
+	}
+	if b.List == old.ListAsk {
+		tighteningState.counts["base-ask"]++
+	}
+	before := compare.DecisionState{Outcome: b.Outcome.String(), List: b.List.String(), Final: b.Final}
+	after := compare.DecisionState{Outcome: a.Outcome.String(), List: a.List.String(), Final: a.Final}
+
+	loosens := compare.PotentialLoosening(before, after)
+	if loosens {
+		if class := tighteningException(ix, bix, f, a, b); class != "" {
+			tighteningState.counts[class]++
+			return
+		}
+		var entries []string
+		for _, p := range ix.order {
+			entries = append(entries, p.List.String()+": "+p.Entry)
+		}
+		panic(fmt.Sprintf("loosening rules=%q facts=%+v old=%+v new=%+v", entries, *f, b, a))
+	}
+	if a.Outcome != Outcome(b.Outcome) || a.Rule() != b.Rule() {
+		tighteningState.counts["changed/"+a.Tool+"/"+a.ListName()]++
+	} else if a.Final != b.Final {
+		tighteningState.counts["changed/finality"]++
+	} else if a.Match != Match(b.Match) {
+		tighteningState.counts["changed/match-label"]++
+	}
+}
+
+// TighteningReport is present only in this disposable test overlay.
+func TighteningReport() {
+	tighteningState.Lock()
+	defer tighteningState.Unlock()
+	keys := make([]string, 0, len(tighteningState.counts))
+	for k := range tighteningState.counts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	fmt.Fprintf(os.Stdout, "aligned-index-facts-keys=%d\n", len(tighteningState.alignedKeys))
+	fmt.Fprintf(os.Stdout, "named-invalid-allow-keys=%d\n", len(tighteningState.allowKeys))
+	fmt.Fprintln(os.Stdout, "BASE COMPARISON (all Decide calls in this test binary):")
+	for _, k := range keys {
+		fmt.Fprintf(os.Stdout, "%s=%d\n", k, tighteningState.counts[k])
+	}
+}
+
+// TighteningRowsMatchBase proves that converting the current built-in grammar
+// supplies the actual base's pre-existing data, not a changed arity inventory.
+// Function bodies were not changed by this patch; their nil/non-nil shape is
+// checked here, while private prepared indices are intentionally ignored.
+func TighteningRowsMatchBase(rr []*Row) error {
+	for _, r := range rr {
+		converted := new(old.Row)
+		copyExported(reflect.ValueOf(converted).Elem(), reflect.ValueOf(r).Elem())
+		before := oldrows.Builtin().Lookup(r.Tool)
+		if before == nil || !samePublicGrammar(reflect.ValueOf(converted), reflect.ValueOf(before)) {
+			return fmt.Errorf("pre-existing built-in grammar data differs for %s", r.Tool)
+		}
+	}
+	return nil
+}
+
+func samePublicGrammar(a, b reflect.Value) bool {
+	if a.Type() != b.Type() {
+		return false
+	}
+	switch a.Kind() {
+	case reflect.Pointer:
+		if a.IsNil() || b.IsNil() {
+			return a.IsNil() == b.IsNil()
+		}
+		return samePublicGrammar(a.Elem(), b.Elem())
+	case reflect.Struct:
+		for i := 0; i < a.NumField(); i++ {
+			if a.Type().Field(i).IsExported() && !samePublicGrammar(a.Field(i), b.Field(i)) {
+				return false
+			}
+		}
+		return true
+	case reflect.Slice:
+		if a.IsNil() != b.IsNil() || a.Len() != b.Len() {
+			return false
+		}
+		for i := 0; i < a.Len(); i++ {
+			if !samePublicGrammar(a.Index(i), b.Index(i)) {
+				return false
+			}
+		}
+		return true
+	case reflect.Map:
+		if a.IsNil() != b.IsNil() || a.Len() != b.Len() {
+			return false
+		}
+		it := a.MapRange()
+		for it.Next() {
+			v := b.MapIndex(it.Key())
+			if !v.IsValid() || !samePublicGrammar(it.Value(), v) {
+				return false
+			}
+		}
+		return true
+	case reflect.Func:
+		return a.IsNil() == b.IsNil()
+	default:
+		return reflect.DeepEqual(a.Interface(), b.Interface())
+	}
+}
+
+// TighteningCommandlessForTest checks the complete original index, including
+// private multicall readings, against a proposed result in the overlay tests.
+func TighteningCommandlessForTest(ix *Index, f *Facts, proposed Result) string {
+	tighteningState.Lock()
+	defer tighteningState.Unlock()
+	bix := tighteningBase(ix)
+	var bf old.Facts
+	copyExported(reflect.ValueOf(&bf).Elem(), reflect.ValueOf(*f))
+	return tighteningException(ix, bix, f, proposed, bix.Decide(&bf))
+}
+
+// TighteningEndedRootForTest checks the complete original index for a retained
+// npm root marker, including every private deny-only multicall interpretation.
+func TighteningEndedRootForTest(ix *Index, f *Facts, proposed Result) string {
+	tighteningState.Lock()
+	defer tighteningState.Unlock()
+	bix := tighteningBase(ix)
+	var bf old.Facts
+	copyExported(reflect.ValueOf(&bf).Elem(), reflect.ValueOf(*f))
+	return tighteningException(ix, bix, f, proposed, bix.Decide(&bf))
+}
+
+// TighteningAllowForTest probes all authority interpretations against a proposed
+// admission, without requiring a product regression to exercise the oracle.
+func TighteningAllowForTest(ix *Index, f *Facts, proposed Result) string {
+	tighteningState.Lock()
+	defer tighteningState.Unlock()
+	bix := tighteningBase(ix)
+	var bf old.Facts
+	copyExported(reflect.ValueOf(&bf).Elem(), reflect.ValueOf(*f))
+	return tighteningException(ix, bix, f, proposed, bix.Decide(&bf))
+}
+
+// TighteningOptionalForTest probes the bounded optional-value predicate proof
+// against the entire original rule index, including proposed bad decisions.
+func TighteningOptionalForTest(ix *Index, f *Facts, proposed Result) string {
+	tighteningState.Lock()
+	defer tighteningState.Unlock()
+	bix := tighteningBase(ix)
+	var bf old.Facts
+	copyExported(reflect.ValueOf(&bf).Elem(), reflect.ValueOf(*f))
+	return tighteningException(ix, bix, f, proposed, bix.Decide(&bf))
+}

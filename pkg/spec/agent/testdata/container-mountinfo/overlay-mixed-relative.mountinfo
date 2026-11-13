@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: Apache-2.0
+# Synthetic mixed placement; not a live capture.
+1 0 0:73 / / rw - overlay overlay rw,lowerdir=relative/lower:@HOST@/visible,upperdir=relative/upper,workdir=relative/work

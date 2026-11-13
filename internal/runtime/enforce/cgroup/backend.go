@@ -233,6 +233,9 @@ func (b *Backend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run) (_ 
 	if rt.Tier != b.Tier() {
 		return nil, fmt.Errorf("%w: table says %q, this backend is tier %s", ErrTier, rt.Tier, b.Tier())
 	}
+	if run.Mounts == nil {
+		run.Mounts = ReadMounts()
+	}
 	if b.opts.tier3() {
 		// Tier 3 is the plane in LSM mode and nothing else: settled before anything exists, so a refusal leaves
 		// no kernel state and no held slot behind (enforce-plane R19, §6 E13).
@@ -253,12 +256,12 @@ func (b *Backend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run) (_ 
 	// on a tmpfs mounted beneath the denied tree readable with no event, so the run is refused (R8, I7). The
 	// policy is the fanotify listener's alone, and a tier-3 run never has a listener: the plane decides its opens
 	// and execs in the kernel with no fallback (tier3Plane refuses a table it cannot hold), so it builds none, and
-	// an unreadable table refuses it only where a deny_write target needs mount rows (enforce-plane R12). A
+	// an unreadable table refuses its denied reads and deny_write mount rows (enforce-plane R12). A
 	// tier-2 run builds the policy even with a plane mode set, since prepare-plane may still fall back to the
 	// listener.
 	pol := &policy{}
 	if !b.opts.tier3() {
-		pol = newPolicy(rt, run.CgroupPath)
+		pol = newPolicyAt(rt, run.CgroupPath, run.Mounts.view(), mountKeyOf)
 		if pol.mountErr != nil {
 			return nil, pol.mountErr
 		}
@@ -338,6 +341,18 @@ func (b *Backend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run) (_ 
 	// (BuildRuleMaps, unixPlane).
 	if err = h.choosePlane(rt); err != nil {
 		return nil, err
+	}
+	// The listener decides this run: a bind alias it cannot hold, or reads only it holds that setuid: true can reach
+	// past, refuse the run before anything is armed (ErrListenerAlias, ErrListenerSetuid; fix round 1, findings 1, 5).
+	if h.planeMode == "" && !b.opts.tier3() {
+		if h.policy.aliasErr != nil {
+			return nil, h.policy.aliasErr
+		}
+		if h.policy.listenerHeld && rt.Contract != nil && rt.Contract.Setuid {
+			return nil, fmt.Errorf("%w: a setuid program the run starts can regain CAP_SYS_ADMIN and clone a mount tree "+
+				"(open_tree(2)) no fanotify mark asks about; run where a decision plane decides (tier cgroup with a plane "+
+				"mode, tier bpflsm) if the plane holds the contract, or remove setuid: true", ErrListenerSetuid)
+		}
 	}
 	if h.rules, err = BuildRuleMaps(rt, h.slot, run.Resolvers, h.unixPlane()); err != nil {
 		return nil, err
@@ -495,6 +510,10 @@ type Handle struct {
 	planeFilter    []bpf.RawInstruction
 	planeDropped   []string
 	usePlaneFilter bool
+	// skips is the skip counters of the programs the run's rules rely on (skips.go, ADR 0148), resolved at the first
+	// ProgramSkips; skipMu guards it, since the runtime polls it from a worker.
+	skipMu sync.Mutex
+	skips  *skipWatch
 
 	prepared bool
 	detached bool

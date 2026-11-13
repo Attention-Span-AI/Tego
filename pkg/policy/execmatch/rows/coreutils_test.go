@@ -28,7 +28,7 @@ func TestCoreutilsSingleBinaryDispatch(t *testing.T) {
 		{"--coreutils-prog=/bin/rm", facts("/usr/bin/coreutils", "coreutils", "coreutils", "--coreutils-prog=/bin/rm", "-fr", "x"), "exec.deny[rm -r]", execmatch.ViaMulticall},
 		{"#! --coreutils-prog-shebang=rm", script("--coreutils-prog-shebang=rm -r", "./s", "x"), "", 0},
 		{"#! --coreutils-prog-shebang=rm, -r from argv", script("--coreutils-prog-shebang=rm", "./s", "-r", "out/tree"), "exec.deny[rm -r]", execmatch.ViaMulticall},
-		{"argv0 lt-rm", facts("/usr/bin/coreutils", "coreutils", "lt-rm", "-r", "x"), "exec.deny[rm -r]", execmatch.ViaArgv0},
+		{"argv0 lt-rm", facts("/usr/bin/coreutils", "coreutils", "lt-rm", "-r", "x"), "exec.deny[rm -r]", execmatch.ViaMulticall},
 		{"empty program", facts("/usr/bin/coreutils", "coreutils", "coreutils", "--coreutils-prog=", "-r", "x"), "", 0},
 		{"--coreutils-prog=rm without -r", facts("/usr/bin/coreutils", "coreutils", "coreutils", "--coreutils-prog=rm", "x"), "", 0},
 		{"busybox has no such option", facts("/usr/bin/busybox", "busybox", "busybox", "--coreutils-prog=rm", "-r", "x"), "", 0},

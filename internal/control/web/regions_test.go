@@ -247,9 +247,16 @@ func readEvent(t *testing.T, br *bufio.Reader, d time.Duration) string {
 // run writes a line, sends heartbeats while nothing changes, and outlives the server's read and write timeouts.
 func TestEventsStream(t *testing.T) {
 	root := fixture(t)
+	// The refusals are asked of a server with the timeouts the other live tests use: they are not what the short
+	// timeouts below test. Under those, each refusal had to be written within 300 ms of its request being read, or the
+	// server closed the connection unanswered. The test failed once with "Get .../events: EOF" in a -race run of five
+	// packages; its raw log is gone, so which request failed is not known, and a late refusal write is the inferred
+	// cause. Injected, a refusal write held back 350 ms gives that error every time.
+	gate, gateAddr, gateCookie := liveServer(t, root, 10*time.Second, 30*time.Second)
+	// The stream's own server keeps read and write timeouts the stream must outlive.
 	s, addr, c := liveServer(t, root, 300*time.Millisecond, 300*time.Millisecond)
-	get := func(host string, cookie *http.Cookie) *http.Response {
-		req, _ := http.NewRequest("GET", "http://"+addr+"/events", nil)
+	get := func(at, host string, cookie *http.Cookie) *http.Response {
+		req, _ := http.NewRequest("GET", "http://"+at+"/events", nil)
 		req.Host = host
 		if cookie != nil {
 			req.AddCookie(cookie)
@@ -264,14 +271,14 @@ func TestEventsStream(t *testing.T) {
 		host   string
 		cookie *http.Cookie
 		code   int
-	}{{addr, nil, http.StatusUnauthorized}, {"evil.example", c, http.StatusMisdirectedRequest}, {addr, &http.Cookie{Name: s.cookie, Value: "nope"}, http.StatusUnauthorized}} {
-		resp := get(tc.host, tc.cookie)
+	}{{gateAddr, nil, http.StatusUnauthorized}, {"evil.example", gateCookie, http.StatusMisdirectedRequest}, {gateAddr, &http.Cookie{Name: gate.cookie, Value: "nope"}, http.StatusUnauthorized}} {
+		resp := get(gateAddr, tc.host, tc.cookie)
 		_ = resp.Body.Close()
 		if resp.StatusCode != tc.code {
 			t.Errorf("host %s cookie %v: %d, want %d", tc.host, tc.cookie, resp.StatusCode, tc.code)
 		}
 	}
-	resp := get(addr, c)
+	resp := get(addr, addr, c)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "text/event-stream" || resp.Header.Get("Content-Security-Policy") == "" {
 		t.Fatalf("stream: %d %q", resp.StatusCode, resp.Header.Get("Content-Type"))

@@ -996,7 +996,15 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     plain `FAN_MARK_INODE` mark only the object named, and events for the immediate children of a marked
     directory require `FAN_EVENT_ON_CHILD` **in the mask**. Marking the file is preferred over that flag because
     a directory marked `FAN_OPEN_PERM` would raise a permission event for the probe's own creation of the file,
-    before any reader exists to answer it.
+    before any reader exists to answer it. The D8 detail also carries check-time mount warnings from the shared
+    snapshot reader. If an unlinked directory on the queried filesystem makes an alias answer uncertain, doctor
+    says it cannot tell whether the folder is visible under another name and names the mount point. A root whose
+    type cannot be established is also named as uncertainty. Known aliases still warn; the uncertain answer
+    never claims that the decision plane can hold the tree (`TestDoctorUncertainMountAliases`, text golden).
+    A table with no root row at `/` reports: "Tego is running inside a root that is not a mount
+    point, so the kernel does not show the filesystem under it; make the root a mount point, for example bind the
+    folder onto itself before entering it, or run Tego outside that root". This advisory appears before a contract
+    is compiled and does not change tier selection; compile still refuses every write and ask grant there.
   - **D9 swap** (added 2026-09-24, ADR 0038's note): whether a run's memory cap holds swap too. It asks the nearest
     cgroup of this process's own, from its cgroup up, that has the memory controller (`memory.max`), and fails
     when that cgroup has no `memory.swap.max` (the kernel accounts no swap to cgroups: `swapaccount=0`,
@@ -1680,7 +1688,11 @@ func Main(argv []string, stdout, stderr io.Writer) int // dispatches argv[1], or
     stopped as `stop <run>` stops it, one after the other, each printing its line; none prints `<name>: no live
     run`; 0 either way, the first failing stop's code otherwise; a run id beside `--agent`, or a name that is no
     agent id, is a usage error, 2.
-  - `stop <run> [--grace <d>]` (SIGTERM then `cgroup.kill` after `stop_grace`, 0). `--grace`, a positive
+  - `stop <run> [--grace <d>]` (SIGTERM then `cgroup.kill` after `stop_grace`; successful stop, 0).
+    A lost run whose last recorded state was paused exits 0 only after its orphaned record is closed and a fresh
+    scope read confirms no processes remain. Frozen or running processes after the sweep give `[lost-paused]`,
+    125. An unreadable final scope says "cannot tell whether its scope is empty" and also exits 125. This is the
+    existing error status, not a new exit code. `--grace`, a positive
     duration, is written into the stop marker and is the launcher's own stop_grace for this stop, longer or
     shorter than the machine's — `runtime-launch.md` R9 — as well as how long `stop` waits before its own
     backstop `cgroup.kill`; without it both use the machine's `stop_grace`. A second `stop` keeps the first one's

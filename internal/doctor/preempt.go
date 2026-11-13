@@ -21,8 +21,9 @@ import (
 // 2026-11-02 with one tier-cgroup run opening a deny_read file: on 6.17 booted preempt=full, 87,075 of 320,000
 // opens succeeded; under lazy preemption (Fedora's 7.0 default, and 6.17 booted preempt=lazy) eight processes
 // opening it beside eight spawning /usr/bin/true opened it 2,809 and 2,313 times in 20 s; under 6.17's default
-// voluntary preemption no open succeeded in either workload. LSM programs take no such check, so LSM mode is not
-// affected. A kernel that does not preempt kernel code (none, voluntary) never preempts a non-sleepable program,
+// voluntary preemption no open succeeded in either workload. LSM programs take no such check on a kernel from 6.2 (6.1.54
+// in the 6.1 series), so LSM mode is not affected there; on an older one they do, and LSM mode is held to the same rule
+// (lsmrecursion.go). A kernel that does not preempt kernel code (none, voluntary) never preempts a non-sleepable program,
 // and no plane hook is called from interrupt context, so there the check never skips a plane program.
 //
 // The mode is admitted on proof alone, and any doubt refuses it (2026-11-03, after a review found a build default, a
@@ -263,10 +264,12 @@ func fmodRetPreemptRefusal(env PlaneEnv, lsm LSMState) (string, string) {
 			"mode can be read; or " + fix
 	}
 	switch {
+	case !env.LSMRecursionExempt:
+		// This kernel's trampoline checks LSM programs too: LSM mode is no way out of the skip (lsmRecursionRefusal).
 	case lsm.BPFActive:
-		fix = "use LSM mode (bpf.plane: auto or lsm), whose programs the trampoline does not skip; or " + fix
+		fix = "use LSM mode (bpf.plane: auto or lsm), whose programs this kernel's trampoline does not skip; or " + fix
 	case lsm.Source != LSMSourceNone:
-		fix = lsm.GRUBFix() + ", for LSM mode, whose programs the trampoline does not skip; or " + fix
+		fix = lsm.GRUBFix() + ", for LSM mode, whose programs this kernel's trampoline does not skip; or " + fix
 	}
 	return why, fix
 }
@@ -278,6 +281,11 @@ func fmodRetAdmittedNow(release string, lsm LSMState) (PlaneEnv, string) {
 	var env PlaneEnv
 	env.Preempt, env.PreemptSource = readPreempt(release)
 	env.PreemptWaived = planePreemptWaived && preemptsKernelCode(env.Preempt)
+	if preemptsKernelCode(env.Preempt) {
+		// Only a kernel that preempts kernel code needs the LSM answer (lsmRecursionRefusal, execPinWhereSkippable),
+		// and only it pays for reading kallsyms, once per process.
+		env.LSMRecursionExempt, env.LSMRecursionSource = lsmRecursionNow()
+	}
 	why, _ := fmodRetPreemptRefusal(env, lsm)
 	return env, why
 }

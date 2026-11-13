@@ -12,12 +12,20 @@
 # one side has; the sides alternate which runs first from round to round, each binary runs from its own tree's
 # package directory, and a package's build tags reach go test -c; a head that does not build or whose run
 # fails fails the gate, while a base that does not is reported and the gate goes on; and an output directory the
-# gate did not make is refused, not emptied.
+# gate did not make is refused, not emptied. An accepted step turns a B/op or sec/op failure into a note only
+# against its own base commit (a base checkout's HEAD, or BENCH_GATE_BASE_COMMIT in compare mode), only at or below
+# its ceiling, and only for the package, name and unit it names; an entry that does not apply or matched nothing is
+# named; a malformed one stops the gate before anything is built. The list's own v0.1.3 entries are held to the
+# figures the hosted runner measured for them.
 #
 # benchstat is the pinned one when BENCHSTAT names it (CI's bench job does); otherwise a stand-in replays the
 # CSV the pinned version, golang.org/x/perf v0.0.0-20260908200009-22c9c6c9d4da, printed for these inputs, so
 # the decision is tested everywhere and its reading of benchstat's format wherever benchstat is installed.
 set -eu
+# A git hook's repository is not the fake base's (the precommit hook runs this test).
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+# The cases below name their accepted steps and base commits; none comes from the caller.
+unset BENCH_GATE_ACCEPTED BENCH_GATE_BASE_COMMIT
 
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 gate="${here}/bench-gate.sh"
@@ -428,5 +436,215 @@ for scenario in valid exponent zero-p negative-delta bad-base bad-head negative-
 	BENCHSTAT="$tmp/benchstat" "$gate" compare "$tmp/numeric-base" "$tmp/numeric-head" >"$tmp/out" 2>&1 || rc=$?
 	check "CSV numeric validation: $scenario" "$want" "$rc"
 done
+
+# Accepted steps. exec stands for C8's exec cases as CI's hosted runner measured them for v0.1.3 against public main
+# f8efe5ca2ab8 (n=10): B/op +10.53%, +16.16% and +17.42%, sec/op +3.70%, ~ and +11.18%, allocs/op 59 -> 66,
+# 58 -> 67 and 239 -> 257 (script, 16 and 128 arguments), the unguarded exec and the floor's refusal unchanged (their
+# values here are stand-ins). Ten equal rounds a side, which the pinned benchstat reads to those same figures.
+cat >"$tmp/csv/exec.csv" <<'EOF'
+goos: linux
+goarch: amd64
+cpu: fake
+fixture: exec
+,base,,head,,,
+,sec/op,CI,sec/op,CI,vs base,P
+ExecCommandCost/unguarded-4,1.5e-05,0%,1.5e-05,0%,~,p=1.000 n=10
+ExecCommandCost/script-4,1e-05,0%,1.037e-05,0%,+3.70%,p=0.000 n=10
+ExecCommandCost/args16-4,1.2e-05,0%,1.2e-05,0%,~,p=1.000 n=10
+ExecCommandCost/args128-4,4e-05,0%,4.4472000000000004e-05,0%,+11.18%,p=0.000 n=10
+ExecCommandCost/floor_refused8-4,9e-06,0%,9e-06,0%,~,p=1.000 n=10
+geomean,1.4531652409004686e-05,,1.4951201217773073e-05,,+2.89%,
+
+,base,,head,,,
+,B/op,CI,B/op,CI,vs base,P
+ExecCommandCost/unguarded-4,2048,0%,2048,0%,~,p=1.000 n=10
+ExecCommandCost/script-4,4104,0%,4536,0%,+10.53%,p=0.000 n=10
+ExecCommandCost/args16-4,3961,0%,4601,0%,+16.16%,p=0.000 n=10
+ExecCommandCost/args128-4,33065,0%,38825,0%,+17.42%,p=0.000 n=10
+ExecCommandCost/floor_refused8-4,1024,0%,1024,0%,~,p=1.000 n=10
+geomean,4077.5765793204373,,4426.427246717607,,+8.56%,
+
+,base,,head,,,
+,allocs/op,CI,allocs/op,CI,vs base,P
+ExecCommandCost/unguarded-4,30,0%,30,0%,~,p=1.000 n=10
+ExecCommandCost/script-4,59,0%,66,0%,+11.86%,p=0.000 n=10
+ExecCommandCost/args16-4,58,0%,67,0%,+15.52%,p=0.000 n=10
+ExecCommandCost/args128-4,239,0%,257,0%,+7.53%,p=0.000 n=10
+ExecCommandCost/floor_refused8-4,12,0%,12,0%,~,p=1.000 n=10
+geomean,49.40786428453554,,52.768028978893646,,+6.80%,
+EOF
+exec_results() { # exec_results MODULE: $tmp/exec/{base,head}, the supervisor's results under that module path
+	rm -rf "$tmp/exec"
+	mkdir -p "$tmp/exec/base" "$tmp/exec/head"
+	for _ in 1 2 3 4 5 6 7 8 9 10; do
+		bench "$tmp/round" exec ExecCommandCost/unguarded 15000 2048 30 ExecCommandCost/script 10000 4104 59 \
+			ExecCommandCost/args16 12000 3961 58 ExecCommandCost/args128 40000 33065 239 ExecCommandCost/floor_refused8 9000 1024 12
+		sed "s|^pkg: .*|pkg: $1/internal/runtime/supervisor|" "$tmp/round" >>"$tmp/exec/base/internal_runtime_supervisor.txt"
+		bench "$tmp/round" exec ExecCommandCost/unguarded 15000 2048 30 ExecCommandCost/script 10370 4536 66 \
+			ExecCommandCost/args16 12000 4601 67 ExecCommandCost/args128 44472 38825 257 ExecCommandCost/floor_refused8 9000 1024 12
+		sed "s|^pkg: .*|pkg: $1/internal/runtime/supervisor|" "$tmp/round" >>"$tmp/exec/head/internal_runtime_supervisor.txt"
+	done
+}
+v013=f8efe5ca2ab899598df2173c05119686b4c2cd57
+other=0123456789abcdef0123456789abcdef01234567
+why='v0.1.3 decides a guarded exec with two readers of the command rules (ADR 0048)'
+
+# The list's own entries accept the measured step against their base, the name's -4 stripped, under any module path
+# that ends in the package's directory: this tree's (the cases below keep its results) and another.
+for module in example.com/fork/tego github.com/attention-span-ai/tego; do
+	exec_results "$module"
+	rc=0
+	BENCH_GATE_BASE_COMMIT=$v013 "$gate" compare "$tmp/exec/base" "$tmp/exec/head" >"$tmp/out" 2>&1 || rc=$?
+	check "accepted steps: v0.1.3's measured step passes against its base ($module)" 0 "$rc"
+	refuse "accepted steps: nothing fails ($module)" '^FAIL' "$tmp/out"
+	for c in 'script-4: B/op +10.53%' 'args16-4: B/op +16.16%' 'args128-4: B/op +17.42%'; do
+		expect "accepted steps: $c is a note ($module)" "^note $module/internal/runtime/supervisor ExecCommandCost/$c (p=0.000 n=10): over +10% (accepted step against f8efe5ca2ab8, ceiling +25%: $why)\$" "$tmp/out"
+	done
+	refuse "accepted steps: every entry applied ($module)" 'does not apply\|did not occur' "$tmp/out"
+done
+
+# Above its ceiling a step still fails, the ceiling named; at it, it is accepted.
+rc=0
+BENCH_GATE_BASE_COMMIT=$other BENCH_GATE_ACCEPTED="
+$other  internal/runtime/supervisor  ExecCommandCost/script   B/op  10.53  at the ceiling
+$other  internal/runtime/supervisor  ExecCommandCost/args16   B/op  12     under the step
+$other  internal/runtime/supervisor  ExecCommandCost/args128  B/op  12     under the step
+" "$gate" compare "$tmp/exec/base" "$tmp/exec/head" >"$tmp/out" 2>&1 || rc=$?
+check "accepted steps: a step over its ceiling fails" 1 "$rc"
+expect "accepted steps: at the ceiling is accepted" '^note github.com/attention-span-ai/tego/internal/runtime/supervisor ExecCommandCost/script-4: B/op +10.53% .*(accepted step against 0123456789ab, ceiling +10.53%: at the ceiling)$' "$tmp/out"
+expect "accepted steps: over the ceiling names it" '^FAIL github.com/attention-span-ai/tego/internal/runtime/supervisor ExecCommandCost/args16-4: B/op +16.16% (p=0.000 n=10): over +10%; over the accepted ceiling +12%$' "$tmp/out"
+expect "accepted steps: over the ceiling names it (128)" '^FAIL github.com/attention-span-ai/tego/internal/runtime/supervisor ExecCommandCost/args128-4: B/op +17.42% (p=0.000 n=10): over +10%; over the accepted ceiling +12%$' "$tmp/out"
+refuse "accepted steps: a step that failed was matched" 'did not occur' "$tmp/out"
+
+# Against another base the list's entries do not apply: the ordinary failures, and a note for each entry.
+rc=0
+BENCH_GATE_BASE_COMMIT=$other "$gate" compare "$tmp/exec/base" "$tmp/exec/head" >"$tmp/out" 2>&1 || rc=$?
+check "accepted steps: another base fails as before" 1 "$rc"
+for b in script-4 args16-4 args128-4; do
+	expect "accepted steps: another base, $b fails" "^FAIL github.com/attention-span-ai/tego/internal/runtime/supervisor ExecCommandCost/$b: B/op +[0-9.]*% (p=0.000 n=10): over +10%\$" "$tmp/out"
+	expect "accepted steps: another base, $b's entry is named" "^note accepted step internal/runtime/supervisor ExecCommandCost/${b%-4} B/op (against f8efe5ca2ab8): does not apply to this base (0123456789ab)" "$tmp/out"
+done
+refuse "accepted steps: another base accepts nothing" 'accepted step against\|accepted ceiling' "$tmp/out"
+
+# compare mode without BENCH_GATE_BASE_COMMIT, unset or empty: no entry applies.
+for set in unset empty; do
+	rc=0
+	if [ "$set" = unset ]; then
+		"$gate" compare "$tmp/exec/base" "$tmp/exec/head" >"$tmp/out" 2>&1 || rc=$?
+	else
+		BENCH_GATE_BASE_COMMIT='' "$gate" compare "$tmp/exec/base" "$tmp/exec/head" >"$tmp/out" 2>&1 || rc=$?
+	fi
+	check "accepted steps: compare with BENCH_GATE_BASE_COMMIT $set fails as before" 1 "$rc"
+	expect "accepted steps: compare, base $set, is said" '^note accepted steps: BENCH_GATE_BASE_COMMIT is not set; none applies$' "$tmp/out"
+	expect "accepted steps: compare, base $set, entries named" 'ExecCommandCost/args16 B/op (against f8efe5ca2ab8): does not apply to this base (unknown)' "$tmp/out"
+	refuse "accepted steps: compare, base $set, accepts nothing" 'accepted step against' "$tmp/out"
+done
+
+# An applicable entry that matched no failure is named; so is one whose package, name or unit is not the finding's
+# (a directory matches whole path elements only, and the name is without Benchmark and -<GOMAXPROCS>).
+rc=0
+BENCH_GATE_BASE_COMMIT=$other BENCH_GATE_ACCEPTED="
+$other  internal/runtime/supervisor  ExecCommandCost/script     B/op    25  r
+$other  internal/runtime/supervisor  ExecCommandCost/args16     B/op    25  r
+$other  internal/runtime/supervisor  ExecCommandCost/args128    B/op    25  r
+$other  internal/runtime/supervisor  ExecCommandCost/unguarded  B/op    25  nothing grew
+$other  internal/runtime/supervisor  ExecCommandCost/args128    sec/op  25  under the threshold
+" "$gate" compare "$tmp/exec/base" "$tmp/exec/head" >"$tmp/out" 2>&1 || rc=$?
+check "accepted steps: an entry that matched nothing passes" 0 "$rc"
+expect "accepted steps: an unmatched entry is named" '^note accepted step internal/runtime/supervisor ExecCommandCost/unguarded B/op (against 0123456789ab, ceiling +25%): applies to this base and matched no failure' "$tmp/out"
+expect "accepted steps: an entry under the threshold is named" '^note accepted step internal/runtime/supervisor ExecCommandCost/args128 sec/op (against 0123456789ab, ceiling +25%): applies to this base and matched no failure' "$tmp/out"
+rc=0
+BENCH_GATE_BASE_COMMIT=$other BENCH_GATE_ACCEPTED="
+$other  untime/supervisor            ExecCommandCost/script            B/op    25  r
+$other  internal/runtime             ExecCommandCost/script            B/op    25  r
+$other  internal/runtime/supervisor  ExecCommandCost/args16-4          B/op    25  r
+$other  internal/runtime/supervisor  BenchmarkExecCommandCost/args128  B/op    25  r
+$other  internal/runtime/supervisor  ExecCommandCost/args128           sec/op  25  r
+" "$gate" compare "$tmp/exec/base" "$tmp/exec/head" >"$tmp/out" 2>&1 || rc=$?
+check "accepted steps: another package, name or unit accepts nothing" 1 "$rc"
+grep -c '^FAIL' "$tmp/out" >"$tmp/count" || true
+[ "$(cat "$tmp/count")" = 3 ] || { echo "FAIL accepted steps: want 3 FAIL lines, got $(cat "$tmp/count")" >&2; sed 's/^/     /' "$tmp/out" >&2; fail=1; }
+[ "$(grep -c 'matched no failure' "$tmp/out")" = 5 ] || { echo "FAIL accepted steps: want 5 unmatched entries named" >&2; sed 's/^/     /' "$tmp/out" >&2; fail=1; }
+refuse "accepted steps: no near match is accepted" 'accepted step against\|accepted ceiling' "$tmp/out"
+
+# A base checkout's HEAD is the base commit: the steps it names become notes, B/op from zero and allocs/op from
+# zero still fail, and the rest of the gate is as before.
+trees regress
+(
+	export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+	cd "$tmp/base"
+	git init -q .
+	git add -A
+	git -c user.name=bench-gate-test -c user.email=bench-gate-test@example.invalid -c commit.gpgsign=false \
+		commit -q --no-verify -m base
+)
+head_commit=$(git -C "$tmp/base" rev-parse HEAD)
+short=$(printf '%.12s' "$head_commit")
+rc=0
+BENCH_GATE_ACCEPTED="
+$head_commit  fake/a  BytesGrew  B/op    25    more bytes on purpose
+$head_commit  fake/a  Slower     sec/op  50    slower on purpose
+$head_commit  fake/a  ZeroGrew   B/op    1000  never accepted from zero
+" "$gate" -o "$tmp/res" --head "$tmp/head" "$tmp/base" >"$tmp/out" 2>&1 || rc=$?
+check "accepted steps: a base checkout's HEAD selects its entries" 1 "$rc"
+grep '^FAIL' "$tmp/out" | sed 's/:.*//' | sort >"$tmp/fails"
+sort >"$tmp/want" <<'EOF'
+FAIL example.com/fake/a EntryCount/refused/20-4
+FAIL example.com/fake/a EntryCount/refused/20-4
+FAIL example.com/fake/a OnlyBase-4
+FAIL example.com/fake/a ZeroGrew-4
+FAIL example.com/fake/a ZeroGrew-4
+EOF
+if ! cmp -s "$tmp/fails" "$tmp/want"; then
+	echo "FAIL accepted steps: the failing benchmarks: got" >&2
+	sed 's/^/     /' "$tmp/fails" >&2
+	sed 's/^/     /' "$tmp/out" >&2
+	fail=1
+fi
+expect "accepted steps: B/op accepted in a run" "^note example.com/fake/a BytesGrew-4: B/op +20.00% (p=0.000 n=10): over +10% (accepted step against $short, ceiling +25%: more bytes on purpose)\$" "$tmp/out"
+expect "accepted steps: sec/op accepted in a run" "^note example.com/fake/a Slower-4: sec/op +40.00% (p=0.000 n=10): over +25% at p<0.01 (accepted step against $short, ceiling +50%: slower on purpose)\$" "$tmp/out"
+expect "accepted steps: B/op from zero is never accepted" '^FAIL example.com/fake/a ZeroGrew-4: B/op 0 -> 8 (p=0.000 n=10): over +10%$' "$tmp/out"
+expect "accepted steps: B/op from zero leaves its entry unmatched" "^note accepted step fake/a ZeroGrew B/op (against $short, ceiling +1000%): applies to this base and matched no failure" "$tmp/out"
+
+# A base that is no git checkout has no commit: no entry applies, and the gate says why.
+trees same
+rc=0
+GIT_CEILING_DIRECTORIES=$tmp "$gate" -n 2 -o "$tmp/res" --head "$tmp/head" "$tmp/base" >"$tmp/out" 2>&1 || rc=$?
+check "accepted steps: a base with no commit passes as before" 0 "$rc"
+expect "accepted steps: a base with no commit is said" "^note accepted steps: git rev-parse HEAD failed in $tmp/base; none applies\$" "$tmp/out"
+expect "accepted steps: the list's entries are named" 'ExecCommandCost/script B/op (against f8efe5ca2ab8): does not apply to this base (unknown)' "$tmp/out"
+
+# A malformed entry stops the gate, naming its line, before anything is built; allocs/op is never a unit here, even
+# for an allocs/op-from-zero finding the entry names.
+trees regress
+for entry in \
+	"$v013 internal/runtime/supervisor ExecCommandCost/script|wrong field count" \
+	"$v013 internal/runtime/supervisor ExecCommandCost/script B/op 25|no reason" \
+	"f8efe5ca2ab8 internal/runtime/supervisor ExecCommandCost/script B/op 25 r|base commit f8efe5ca2ab8 is not a full commit id" \
+	"F8EFE5CA2AB899598DF2173C05119686B4C2CD57 internal/runtime/supervisor ExecCommandCost/script B/op 25 r|base commit F8EFE5CA2AB899598DF2173C05119686B4C2CD57 is not a full commit id" \
+	"$v013 fake/a ZeroGrew allocs/op 25 r|unit allocs/op is not B/op or sec/op" \
+	"$v013 internal/runtime/supervisor ExecCommandCost/script ns/op 25 r|unit ns/op is not" \
+	"$v013 internal/runtime/supervisor ExecCommandCost/script B/op x r|ceiling x is not a positive number" \
+	"$v013 internal/runtime/supervisor ExecCommandCost/script B/op 25% r|ceiling 25% is not" \
+	"$v013 internal/runtime/supervisor ExecCommandCost/script B/op 0 r|ceiling 0 is not" \
+	"$v013 internal/runtime/supervisor ExecCommandCost/script B/op 0.0 r|ceiling 0.0 is not" \
+	"$v013 internal/runtime/supervisor ExecCommandCost/script B/op -5 r|ceiling -5 is not"; do
+	want=${entry#*|}
+	entry=${entry%%|*}
+	: >"$tmp/log"
+	rc=0
+	BENCH_GATE_ACCEPTED="
+$entry
+" "$gate" -n 2 -o "$tmp/res" --head "$tmp/head" "$tmp/base" >"$tmp/out" 2>&1 || rc=$?
+	check "accepted steps: malformed, $want" 2 "$rc"
+	expect "accepted steps: malformed, $want, line named" "malformed accepted step, line 2 of the list: $want" "$tmp/out"
+	[ ! -s "$tmp/log" ] || { echo "FAIL accepted steps: malformed, $want: something was built or run" >&2; fail=1; }
+done
+rc=0
+BENCH_GATE_BASE_COMMIT=$v013 BENCH_GATE_ACCEPTED="
+$v013 internal/runtime/supervisor ExecCommandCost/script allocs/op 25 r
+" "$gate" compare "$tmp/exec/base" "$tmp/exec/head" >"$tmp/out" 2>&1 || rc=$?
+check "accepted steps: malformed in compare mode" 2 "$rc"
+refuse "accepted steps: malformed in compare mode compares nothing" '^== findings' "$tmp/out"
 
 exit $fail

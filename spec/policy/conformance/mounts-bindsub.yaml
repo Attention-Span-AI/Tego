@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: Apache-2.0
+# mounts-bindsub: ADR 0017 space 5, a filesystem mounted inside a whole-tree bind alias. The plane holds this layout
+# by walking through the alias to the denied entry. Where the listener would decide, Prepare refuses the other name
+# before the actor starts. This cell preserves the mount topology; ordinary-entry submount recording has its own
+# unit regression. compile --test answers names and sees no mount.
+version: 2
+name: mounts-bindsub
+contract: |
+  version: 0
+  name: conformance
+  command: ["{{P}}/bin/actor", "run", "{{P}}/script.json"]
+  fs:
+    write: ["./work/"]
+    deny_read: ["./work/secret/"]
+  exec:
+    allow: ["{{P}}/bin/actor"]
+  net:
+    allow: []
+  env:
+    pass: ["PATH"]
+  record: full
+dirs: [work/secret/tmp, pub/alias]
+files:
+  work/secret/key: the secret
+mounts:
+  - {kind: bind, at: pub/alias, from: work/secret}
+  - kind: tmpfs
+    at: pub/alias/tmp
+    files: {x: on a tmpfs inside the alias}
+model:
+  write: [work]
+  deny_read: [work/secret]
+  exec_allow: [bin/actor]
+  net_declared: true
+  listener_refuses: true
+cells:
+  - name: read-alias-submount
+    op: read
+    path: pub/alias/tmp/x
+    canon: work/secret/tmp/x
+    want:
+      landlock: allow
+      root: refused fs.deny_read[./work/secret/]
+    no_compile: compile --test answers names and sees no mount; the alias is the deny_read's inode only in the run's namespace
+    exception: 'enforce-landlock E32 (ii): a deny_read target''s content reached through a bind mount beneath a granted sibling is readable through that name at tier landlock (recorded limitation; compile warns on mount points)'
+    exception_at: landlock
+    source: 'ADR 0011 (2026-11-11 amendments); enforce-cgroup-observe §6 item 24; spec/record/v1 (one line per action)'

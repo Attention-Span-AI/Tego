@@ -5,6 +5,7 @@ package execmatch
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -82,9 +83,9 @@ type Pattern struct {
 	Operands []string
 	// Rest is a trailing lone `*`: any further tokens.
 	Rest bool
-	// Words are the generic fallback's words after the command word (Rest's `*` excluded).
+	// Words are the generic fallback's words after the command word (the separator and Rest's `*` excluded).
 	Words []string
-	// Warnings are lint findings that do not refuse the entry ($ or a backtick in a word, matched literally).
+	// Warnings are lint findings, including literal shell characters and unusual option dashes.
 	Warnings []string
 	// Runtime names the grant of a pattern the runtime made on its own authority (ExactPattern), "" for a contract's
 	// entry. Such a pattern matches exactly: Argv0 is the argv[0] it admits, and Words every element after it.
@@ -93,7 +94,21 @@ type Pattern struct {
 	// fallback is this entry parsed against the interpreter compatibility row.
 	fallback *Pattern
 
+	// legacyDashes keeps the released whole-pattern reading for deny/ask entries
+	// with extra name dashes. It must retain value and subcommand binding too.
+	compat                    *Pattern
+	legacyDashes, extraDashes bool
+	released                  *Pattern
+
 	genWords, genOpts []string // the generic fallback's non-option and option words
+	genOperands       []string // operands after a generic pattern separator
+	genSeparator      int      // its offset in Words, -1 when absent
+
+	// separated holds the other meanings of an unestablished command-position separator.
+	// pathExact prevents a separator that leaves dispatch at this level from naming its children.
+	separated []*Pattern
+	pathExact bool
+	separator bool
 }
 
 // Rule is the pattern's rule name in the ledger: exec.deny[git push], or exec.<kind>[<argv[0]>] for a runtime grant
@@ -114,12 +129,22 @@ func (p *Pattern) NamesArgs() bool {
 	if p.Row == nil {
 		return len(p.Words) > 0
 	}
-	return len(p.Opts) > 0 || len(p.Operands) > 0
+	if len(p.Opts) > 0 || len(p.Operands) > 0 {
+		return true
+	}
+	for _, q := range p.separated {
+		if len(q.Opts) > 0 || len(q.Operands) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // SyntaxError is a pattern the contract cannot hold; Fix says what to write instead.
 type SyntaxError struct {
 	Entry, Msg, Fix string
+	// Warnings remain actionable even when another part of the entry is invalid.
+	Warnings []string
 }
 
 func (e *SyntaxError) Error() string {
@@ -225,7 +250,7 @@ func Parse(entry string, list List, rows *Rows) (*Pattern, error) {
 	if len(words) > MaxWords+1 {
 		return bad(fmt.Sprintf("an entry holds at most %d words after its command", MaxWords), "")
 	}
-	p := &Pattern{Entry: entry, List: list, Command: words[0]}
+	p := &Pattern{Entry: entry, List: list, Command: words[0], genSeparator: -1}
 	for i, w := range words {
 		if len(w) > MaxWordBytes {
 			return bad(fmt.Sprintf("word %d holds more than %d bytes", i+1, MaxWordBytes), "")
@@ -275,23 +300,51 @@ func Parse(entry string, list List, rows *Rows) (*Pattern, error) {
 		rest = rest[:len(rest)-1]
 	}
 	if p.Row == nil {
-		p.Words = append([]string(nil), rest...)
+		if err := p.keepReleasePattern(rest); err != nil {
+			return nil, err
+		}
 		for _, w := range rest {
-			if isOptionWord(w) {
+			if w == "--" && p.genSeparator < 0 {
+				p.separator = true
+				p.genSeparator = len(p.Words)
+				continue
+			}
+			p.Words = append(p.Words, w)
+			switch {
+			case p.genSeparator >= 0:
+				p.genOperands = append(p.genOperands, w)
+			case isOptionWord(w):
+				p.warnOptionSpelling(w, nil)
 				p.genOpts = append(p.genOpts, w)
-			} else {
+			default:
 				p.genWords = append(p.genWords, w)
 			}
 		}
 		return p, nil
 	}
 	if err := p.parseRow(rest); err != nil {
+		if se, ok := err.(*SyntaxError); ok {
+			se.Warnings = p.Warnings
+		}
+		return nil, err
+	}
+	if p.extraDashes && list != ListAllow {
+		q := &Pattern{Entry: entry, List: list, Command: p.Command, Tool: p.Tool, Row: p.Row, Rest: p.Rest, legacyDashes: true}
+		if err := q.parseRow(rest); err != nil {
+			return nil, err
+		}
+		p.compat = q
+	}
+	if err := p.keepReleasePattern(rest); err != nil {
 		return nil, err
 	}
 	if spec := p.Row.Interp; spec != nil && spec.Fallback != nil {
 		fallback, err := Parse(entry, list, NewRows(spec.Fallback))
 		if err == nil {
 			p.fallback = fallback
+			if p.released != nil {
+				p.released.fallback = fallback.released
+			}
 		}
 		// An inventory-only allow option may be unknown to the compatibility
 		// row. Match fails closed there rather than falling back to token matching.
@@ -321,6 +374,9 @@ func (p *Pattern) parseRow(words []string) error {
 		case opsOnly || w == "-" || len(w) < 2 || w[0] != '-' && !(w[0] == '+' && lv.Syntax.PlusOptions):
 			if !opsOnly && lv.Subs != nil {
 				if lv.skip(w) {
+					if p.List == ListAllow {
+						return &SyntaxError{Entry: p.Entry, Msg: fmt.Sprintf("row %s discards selector %q and cannot enforce it in an allow entry", p.Row.Tool, w), Fix: "remove the selector to admit the operation across variants"}
+					}
 					continue
 				}
 				if path, child, ok := lv.sub(w); ok {
@@ -346,8 +402,10 @@ func (p *Pattern) parseRow(words []string) error {
 			if !lv.Syntax.Permute {
 				opsOnly = true
 			}
+		case lv.Syntax.AllDashTerminator && len(w) > 2 && strings.Trim(w, "-") == "":
+			return &SyntaxError{Entry: p.Entry, Msg: "an all-dash terminator has no stable pattern meaning", Fix: "write -- before operands"}
 		case w == "--":
-			opsOnly = true
+			return p.parseSeparatedRow(words)
 		default:
 			if lv.Subs != nil && lv.Default != "" {
 				p.Path = append(p.Path, lv.Default)
@@ -356,6 +414,20 @@ func (p *Pattern) parseRow(words []string) error {
 			n, err := p.optionWord(lv, depth, words, i)
 			if err != nil {
 				return err
+			}
+			if n == 1 && words[i+1] == "--" && len(p.Opts) > 0 {
+				o := p.Opts[len(p.Opts)-1].Opt
+				if o != nil && o.Arg == ArgRequired {
+					mode := lv.Syntax.NextOption
+					if o.NextOption != NextOptionDefault {
+						mode = o.NextOption
+					}
+					if mode != NextOptionValue {
+						// The value reader may leave this word as the separator.
+						// Reuse its typed readings instead of making the entry inert.
+						return p.parseSeparatedRow(words)
+					}
+				}
 			}
 			i += n
 			if k := len(p.Opts); k > 0 && p.Opts[k-1].Opt != nil && p.Opts[k-1].Opt.ends(p.Opts[k-1].HasValue, p.Opts[k-1].Value) {
@@ -366,13 +438,193 @@ func (p *Pattern) parseRow(words []string) error {
 	return nil
 }
 
+// parseSeparatedRow uses the invocation parser for a pattern with a separator. In
+// particular, a default command is selected before operands, and only a child's
+// established option vocabulary restarts after command dispatch. Rejected-marker
+// readings are not separator meanings and cannot become empty broad predicates.
+func (p *Pattern) parseSeparatedRow(words []string) error {
+	// Pattern command words remain literal. Autocorrection is an invocation
+	// reading, so do not supply its candidate set while compiling an entry.
+	nz := &Normalizer{row: p.Row.ready()}
+	var meanings []*Pattern
+readings:
+	for _, r := range nz.Normalize(words) {
+		if r.Unlocatable {
+			return &SyntaxError{Entry: p.Entry, Msg: "separator pattern has too many or unlocatable meanings", Fix: "name the subcommand and its operands without the separator"}
+		}
+		for _, word := range r.Path {
+			if strings.ContainsAny(word, "*?[") {
+				// A literal unknown token looks like a leaf to Normalize, but a
+				// glob can also name a group with different separator/default rules.
+				return &SyntaxError{Entry: p.Entry,
+					Msg: fmt.Sprintf("subcommand glob %q cannot establish separator dispatch", word),
+					Fix: "name each subcommand explicitly when using --"}
+			}
+		}
+		q := &Pattern{Row: p.Row, List: p.List, Path: r.Path, Operands: r.Operands, Rest: p.Rest, pathExact: !r.Located}
+		for _, h := range r.Hits {
+			if h.Opt == nil && h.Raw == "--" {
+				continue readings
+			}
+			if h.Opt == nil && p.List == ListAllow {
+				return p.unknownOptErr(h.Raw)
+			}
+			if h.Opt == nil {
+				spelled, err := p.separatorUnknownOptions(&r, h)
+				if err != nil {
+					return err
+				}
+				q.Opts = append(q.Opts, spelled...)
+				continue
+			}
+			// Name spelling remains the pattern parser's policy even when
+			// invocation normalization already knows the option identity.
+			lv := p.separatorLevel(&r, h.Depth)
+			if lv == nil {
+				return &SyntaxError{Entry: p.Entry, Msg: "separator option has an invalid command depth", Fix: "name the command before --"}
+			}
+			names := &Pattern{Entry: p.Entry, List: p.List, Row: p.Row, legacyDashes: p.legacyDashes}
+			if _, err := names.optionWord(lv, h.Depth, []string{h.Raw}, 0); err != nil {
+				p.Warnings = append(p.Warnings, names.Warnings...)
+				return err
+			}
+			p.Warnings = append(p.Warnings, names.Warnings...)
+			p.extraDashes = p.extraDashes || names.extraDashes
+			for _, po := range names.Opts {
+				po.Value, po.HasValue, po.Neg, po.Depth = h.Value, h.HasValue, h.Neg, h.Depth
+				q.Opts = append(q.Opts, po)
+			}
+		}
+		if p.List == ListAllow && r.UnknownBefore {
+			return &SyntaxError{Entry: p.Entry, Msg: "separator pattern cannot locate its command", Fix: "name the subcommand before the separator"}
+		}
+		if !slices.ContainsFunc(meanings, func(other *Pattern) bool { return sameSeparatorMeaning(other, q) }) {
+			meanings = append(meanings, q)
+		}
+	}
+	if len(meanings) == 0 {
+		return &SyntaxError{Entry: p.Entry, Msg: "the row does not accept -- as a separator here", Fix: "name the subcommand before the separator"}
+	}
+	if p.List == ListAllow && len(meanings) > 1 {
+		// An invocation grant requires every parser reading. Choosing one of
+		// several pattern meanings could instead grant a different operation
+		// or discard a required argument predicate (ADR 0048 (2)).
+		return &SyntaxError{Entry: p.Entry, Msg: "separator allow pattern has more than one command or argument meaning", Fix: "name the command before -- and spell required option values explicitly"}
+	}
+	first := meanings[0]
+	p.Path, p.Opts, p.Operands, p.pathExact = first.Path, first.Opts, first.Operands, first.pathExact
+	p.separated = meanings[1:]
+	p.separator = true
+	return nil
+}
+
+// separatorUnknownOptions recovers spelling through the existing pattern name
+// parser, with only the original level's syntax. No ancestor vocabulary may turn
+// an ended parser's unknown spelling into a known or negated option. Values and
+// arities remain those of the normalized reading, not the spelling parser.
+func (p *Pattern) separatorUnknownOptions(r *Reading, h Hit) ([]PatOpt, error) {
+	bad := func() ([]PatOpt, error) {
+		return nil, &SyntaxError{Entry: p.Entry, Msg: fmt.Sprintf("separator option %q has no stable pattern spelling", h.Raw), Fix: "name the command before the separator"}
+	}
+	if h.Depth < 0 || h.Depth > len(r.Path) {
+		return bad()
+	}
+	lv := p.separatorLevel(r, h.Depth)
+	if lv == nil {
+		return bad()
+	}
+	names := &Pattern{Entry: p.Entry, List: p.List, Row: p.Row, legacyDashes: p.legacyDashes}
+	if _, err := names.optionWord(&Level{Syntax: lv.Syntax}, h.Depth, []string{h.Raw}, 0); err != nil {
+		return nil, err
+	}
+	p.Warnings = append(p.Warnings, names.Warnings...)
+	p.extraDashes = p.extraDashes || names.extraDashes
+	if len(names.Opts) == 0 {
+		return bad()
+	}
+	for i := range names.Opts {
+		o := &names.Opts[i]
+		if o.Long == "" && o.Short == 0 {
+			return bad()
+		}
+		o.Value, o.HasValue, o.Neg, o.Depth = h.Value, h.HasValue, h.Neg, h.Depth
+	}
+	return names.Opts, nil
+}
+
+func (p *Pattern) separatorLevel(r *Reading, depth int) *Level {
+	if r == nil || p.Row == nil || p.Row.Root == nil || depth < 0 || depth > len(r.Path) {
+		return nil
+	}
+	lv := p.Row.Root
+	for _, name := range r.Path[:depth] {
+		if lv == nil {
+			return &Level{}
+		}
+		child, known := lv.Subs[name]
+		if !known {
+			child = lv.Wild
+		}
+		if child == nil {
+			child = &Level{parent: lv, Syntax: lv.Syntax}
+		}
+		lv = child
+	}
+	return lv
+}
+
+// sameSeparatorMeaning compares matching predicates, ignoring spelling, option
+// order and duplicate requirements. Parser forks with the same predicates do not
+// make an otherwise established allow entry ambiguous.
+func sameSeparatorMeaning(a, b *Pattern) bool {
+	if a.pathExact != b.pathExact || a.Rest != b.Rest || !slices.Equal(a.Path, b.Path) || !slices.Equal(a.Operands, b.Operands) {
+		return false
+	}
+	contains := func(haystack []PatOpt, needle PatOpt) bool {
+		return slices.ContainsFunc(haystack, func(o PatOpt) bool {
+			if o.Neg != needle.Neg || o.HasValue != needle.HasValue || o.HasValue && o.Value != needle.Value {
+				return false
+			}
+			if o.Opt == nil || needle.Opt == nil {
+				return o.Opt == needle.Opt && o.Long == needle.Long && o.Short == needle.Short
+			}
+			if o.Opt.Name != needle.Opt.Name {
+				return false
+			}
+			return a.List != ListAllow || o.Opt.Persistent == needle.Opt.Persistent && (o.Opt.Persistent || o.Depth == needle.Depth)
+		})
+	}
+	for _, o := range a.Opts {
+		if !contains(b.Opts, o) {
+			return false
+		}
+	}
+	for _, o := range b.Opts {
+		if !contains(a.Opts, o) {
+			return false
+		}
+	}
+	return true
+}
+
 // optionWord reads the option word at words[i] (and its value word, when the option takes one) and returns how many
 // further words it consumed.
 func (p *Pattern) optionWord(lv *Level, depth int, words []string, i int) (int, error) {
 	w := words[i]
+	if !p.legacyDashes {
+		p.warnOptionSpelling(w, lv)
+	}
 	long := strings.HasPrefix(w, "--") || lv.Syntax.SingleDashLong
 	if long {
-		body := strings.TrimLeft(w, "-")
+		body := w
+		switch {
+		case p.legacyDashes:
+			body = strings.TrimLeft(w, "-")
+		case strings.HasPrefix(w, "--"):
+			body = w[2:]
+		case strings.HasPrefix(w, "-"):
+			body = w[1:]
+		}
 		name, value, hasEq := strings.Cut(body, "=")
 		if lv.Syntax.Underscores {
 			name = strings.ReplaceAll(name, "_", "-") // as the normalizer reads the tool's argv (Syntax.Underscores)
@@ -384,9 +636,13 @@ func (p *Pattern) optionWord(lv *Level, depth int, words []string, i int) (int, 
 				neg = true
 			}
 		}
-		if o == nil && lv.Syntax.LongPrefix {
+		if o == nil && lv.Syntax.LongPrefix && name != "" {
 			if c, ok := lv.longPrefix(name); ok {
 				o = c
+			} else if !p.legacyDashes && lv.Syntax.Negatable && strings.HasPrefix(name, "no-") {
+				if c, ok := lv.longPrefix(name[3:]); ok {
+					o, neg = c, true
+				}
 			}
 		}
 		raw := w
@@ -460,6 +716,35 @@ func (p *Pattern) optionWord(lv *Level, depth int, words []string, i int) (int, 
 		return used, nil
 	}
 	return 0, nil
+}
+
+// warnOptionSpelling names likely contract typos before they become errors in a
+// later minor release. Invocation parsing remains independent of this lint.
+func (p *Pattern) warnOptionSpelling(w string, lv *Level) {
+	name, _, _ := strings.Cut(w, "=")
+	ordinary := strings.TrimLeft(name, "-")
+	extra := strings.HasPrefix(name, "---") && ordinary != ""
+	single := false
+	if len(name) > 2 && name[0] == '-' && name[1] != '-' && lv != nil {
+		long := name[1:]
+		// These rows explicitly accept the tool's single-dash spelling.
+		if lv.Syntax.SingleDashLong || lv.Syntax.ShortWords && lv.long(w[1:]) != nil {
+			return
+		}
+		single = lv.long(long) != nil
+		if !single && lv.Syntax.Negatable && strings.HasPrefix(long, "no-") {
+			long = long[3:]
+			single = lv.long(long) != nil
+		}
+		if !single && long != "" && lv.Syntax.LongPrefix {
+			_, single = lv.longPrefix(long)
+		}
+	}
+	if !extra && !single {
+		return
+	}
+	p.extraDashes = p.extraDashes || extra
+	p.Warnings = append(p.Warnings, fmt.Sprintf("option %q has unusual leading dashes; the ordinary spelling is probably %q; correct the entry before a later minor release makes this an error", name, "--"+ordinary))
 }
 
 // takesNext reports whether a pattern's option word takes the next word as its value: a value-taking option does, an

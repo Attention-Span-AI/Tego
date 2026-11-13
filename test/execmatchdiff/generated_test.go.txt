@@ -1,0 +1,403 @@
+// SPDX-License-Identifier: Apache-2.0
+package execmatch_test
+
+import (
+	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
+	"github.com/attention-span-ai/tego/pkg/policy/execmatch/rows"
+	"math/rand/v2"
+	"os"
+	"sort"
+	"strings"
+	"testing"
+)
+
+func TestMain(m *testing.M) { rc := m.Run(); execmatch.TighteningReport(); os.Exit(rc) }
+
+// TestTerminatorOnlyTightens compares every generated Decide call through the
+// observer with the frozen base, in addition to the real tests and fuzz seeds
+// run in both package test binaries. No test corpus extraction approximates facts.
+func TestTerminatorOnlyTightens(t *testing.T) {
+	type scenario struct {
+		tool        string
+		path, vocab []string
+		ix          []*execmatch.Index
+	}
+	var ss []scenario
+	for _, r := range rows.Builtin().All() {
+		var walk func(*execmatch.Level, []string)
+		walk = func(lv *execmatch.Level, path []string) {
+			if lv == nil || lv.Subs == nil {
+				return
+			}
+			names := make([]string, 0, len(lv.Subs))
+			for n := range lv.Subs {
+				names = append(names, n)
+			}
+			sort.Strings(names)
+			if lv.Wild != nil {
+				names = append(names, "service", "operation")
+			}
+			if len(names) == 0 {
+				return
+			}
+			target := append(append([]string(nil), path...), names[0])
+			vocab := append([]string{"", "--", "---", "-", "+nightly", "--future", "-zC", "x", "true", "false"}, names...)
+			for n := range lv.Alias {
+				vocab = append(vocab, n)
+			}
+			sort.Strings(vocab)
+			for _, o := range lv.Opts {
+				for _, n := range o.Long {
+					vocab = append(vocab, "--"+n, "--"+n+"=x")
+				}
+				for _, c := range o.Short {
+					vocab = append(vocab, "-"+string(c))
+				}
+			}
+			var flagLetter, valueLetter string
+			for _, o := range lv.Opts {
+				if o.Short == "" {
+					continue
+				}
+				if o.Arg == execmatch.ArgNone && flagLetter == "" {
+					flagLetter = o.Short[:1]
+				}
+				if o.Arg == execmatch.ArgRequired && valueLetter == "" {
+					valueLetter = o.Short[:1]
+				}
+			}
+			if flagLetter != "" && valueLetter != "" {
+				vocab = append(vocab, "-"+flagLetter+valueLetter)
+			}
+			for _, name := range names {
+				target = append(append([]string(nil), path...), name)
+				s := scenario{tool: r.Tool, path: target, vocab: vocab}
+				entry := r.Tool + " " + strings.Join(target, " ")
+				entries := []string{entry, entry + " operand"}
+				child := lv.Subs[name]
+				var options []execmatch.Opt
+				if child != nil {
+					options = append(options, child.Opts...)
+				}
+				for _, o := range r.Root.Opts {
+					if o.Persistent {
+						options = append(options, o)
+					}
+				}
+				if len(options) > 0 {
+					o := options[0]
+					// A flag constrains an entry without adding an operand value;
+					// npm leaves the common globals on its parent level.
+					for _, candidate := range options {
+						if candidate.Arg == execmatch.ArgNone {
+							o = candidate
+							break
+						}
+					}
+
+					spelling := ""
+					if len(o.Long) > 0 {
+						spelling = "--" + o.Long[0]
+					} else if len(o.Short) > 0 {
+						spelling = "-" + o.Short[:1]
+					}
+					if spelling != "" {
+						if o.Arg == execmatch.ArgRequired || o.Arg == execmatch.ArgMaybe || o.Arg == execmatch.ArgNextWord {
+							spelling += " x"
+						}
+						entries = append(entries, entry+" "+spelling)
+					}
+				}
+				for _, e := range entries {
+					for _, list := range []execmatch.List{execmatch.ListDeny, execmatch.ListAsk, execmatch.ListAllow} {
+						p, err := execmatch.Parse(e, list, rows.Builtin())
+						if err != nil {
+							if regression := execmatch.TighteningGeneratedCompileError(e, list, err); regression != nil {
+								t.Fatal(regression)
+							}
+							continue
+						}
+						s.ix = append(s.ix, execmatch.NewIndex(rows.Builtin(), []*execmatch.Pattern{p}, execmatch.IndexOptions{}))
+					}
+				}
+				ss = append(ss, s)
+			}
+			for _, n := range names {
+				if child := lv.Subs[n]; child != nil {
+					walk(child, append(append([]string(nil), path...), n))
+				}
+			}
+			if lv.Wild != nil {
+				walk(lv.Wild, append(append([]string(nil), path...), "service"))
+			}
+		}
+		walk(r.Root, nil)
+	}
+	rng := rand.New(rand.NewPCG(0x0048, 0x20261112))
+	generated := 0
+	iterations := len(ss)
+	if os.Getenv("TEGO_EXECMATCH_LONG") == "1" {
+		iterations = 25000
+	}
+	for iteration := 0; iteration < iterations; iteration++ {
+		s := ss[iteration%len(ss)]
+		toks := append([]string(nil), s.path...)
+		for len(toks) < 8 {
+			toks = append(toks, s.vocab[rng.IntN(len(s.vocab))])
+		}
+		if iteration%2 == 1 {
+			rng.Shuffle(len(toks), func(i, j int) { toks[i], toks[j] = toks[j], toks[i] })
+		}
+		// Every boundary, including before the first and after the last argument.
+		for at := 0; at <= len(toks); at++ {
+			argv := append([]string{s.tool}, toks[:at]...)
+			argv = append(argv, "--")
+			argv = append(argv, toks[at:]...)
+			for _, ix := range s.ix {
+				f := execmatch.Facts{Requested: s.tool, Image: s.tool, Argv0: s.tool, Argv: argv, ArgvComplete: true}
+				switch iteration % 4 {
+				case 1:
+					f.Requested, f.Image = "other-image", "other-image"
+				case 2:
+					f.Requested, f.Image, f.Argv0 = "ld-linux-x86-64.so.2", "ld-linux-x86-64.so.2", "ld-linux-x86-64.so.2"
+					f.Argv = append([]string{f.Argv0, "/usr/bin/" + s.tool}, argv[1:]...)
+					f.Loaded = &execmatch.Loaded{Path: "/usr/bin/" + s.tool, Image: s.tool, Argv: argv}
+				case 3:
+					f.Requested, f.Image, f.Argv0 = "python3", "python3", "python3"
+					f.Argv = append([]string{"python3", "/scripts/" + s.tool}, argv[1:]...)
+				}
+				ix.Decide(&f)
+				f.ArgvComplete = false
+				ix.Decide(&f)
+			}
+			generated++
+		}
+	}
+	if generated != iterations*9 {
+		t.Fatal(generated)
+	}
+	t.Logf("generated=%d, scenarios=%d, deterministic PCG seed=0x0048/0x20261112; every -- position, all three lists, complete and open vectors", generated, len(ss))
+}
+
+func TestTerminatorBaselineGrammar(t *testing.T) {
+	if err := execmatch.TighteningRowsMatchBase(rows.Builtin().All()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNpmCommandlessCorrectionPreservesWholeIndex(t *testing.T) {
+	for _, multicall := range []bool{false, true} {
+		for _, extra := range []string{"", "deny-bare", "deny-option", "ask-option"} {
+			rs := rows.Builtin()
+			p, err := execmatch.Parse("npm x", execmatch.ListDeny, rs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pp := []*execmatch.Pattern{p}
+			if extra != "" {
+				entry, list := "npm --call", execmatch.ListDeny
+				if extra == "deny-bare" {
+					entry = "npm"
+				}
+				if extra == "ask-option" {
+					list = execmatch.ListAsk
+				}
+				q, err := execmatch.Parse(entry, list, rs)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pp = append(pp, q)
+			}
+			ix := execmatch.NewIndex(rs, pp, execmatch.IndexOptions{})
+			tokens := []string{"-abc", "-c", "", "-0", "-c"}
+			f := execmatch.Facts{Requested: "npm", Image: "npm", Argv0: "npm", Argv: append([]string{"npm"}, tokens...), ArgvComplete: true}
+			if multicall {
+				f.Requested = "3"
+				f.Image = "ls"
+				f.Argv0 = "xbox"
+				f.Path = "/proc/self/fd/3"
+				f.Links = 116
+				f.Argv = append([]string{"xbox", "npm"}, tokens...)
+			}
+			a := ix.Decide(&f)
+			got := execmatch.TighteningCommandlessForTest(ix, &f, a)
+			if got != "" {
+				t.Errorf("released commandless refusal received exception: %s", got)
+			}
+			if extra != "" && execmatch.TighteningCommandlessForTest(ix, &f, execmatch.Result{Outcome: execmatch.OutcomeNone, Final: true}) != "" {
+				t.Error("another deny/ask was removed")
+			}
+			f.Argv = append(f.Argv, "--", "x")
+			if execmatch.TighteningCommandlessForTest(ix, &f, execmatch.Result{Outcome: execmatch.OutcomeNone, Final: true}) != "" {
+				t.Error("actual command certified")
+			}
+			f.ArgvComplete = false
+			if execmatch.TighteningCommandlessForTest(ix, &f, execmatch.Result{Outcome: execmatch.OutcomeNone, Final: true}) != "" {
+				t.Error("open prefix certified")
+			}
+		}
+	}
+}
+
+func TestEndedRootCorrectionPreservesWholeIndex(t *testing.T) {
+	for route := 0; route < 4; route++ {
+		for _, extra := range []string{"", "deny-bare", "deny-option", "ask-option"} {
+			rs := rows.Builtin()
+			p, err := execmatch.Parse("npm audit", execmatch.ListDeny, rs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pp := []*execmatch.Pattern{p}
+			if extra != "" {
+				entry, list := "npm --all", execmatch.ListDeny
+				if extra == "deny-bare" {
+					entry = "npm"
+				}
+				if extra == "ask-option" {
+					list = execmatch.ListAsk
+				}
+				q, err := execmatch.Parse(entry, list, rs)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pp = append(pp, q)
+			}
+			ix := execmatch.NewIndex(rs, pp, execmatch.IndexOptions{})
+			tokens := []string{"--searchexclude=x", "-a", "--ci-name=x", "--searchexclude", "--", "--init-author-url=x", "audit", "--audit=x", "--install-strategy=x"}
+			argv := append([]string{"npm"}, tokens...)
+			f := execmatch.Facts{Requested: "npm", Image: "npm", Argv0: "npm", Argv: argv, ArgvComplete: true}
+			switch route {
+			case 1:
+				f.Requested, f.Image = "other-image", "other-image"
+			case 2:
+				f.Requested, f.Image, f.Argv0 = "ld-linux-x86-64.so.2", "ld-linux-x86-64.so.2", "ld-linux-x86-64.so.2"
+				f.Argv = append([]string{f.Argv0, "/usr/bin/npm"}, tokens...)
+				f.Loaded = &execmatch.Loaded{Path: "/usr/bin/npm", Image: "npm", Argv: argv}
+			case 3:
+				f.Requested, f.Image, f.Argv0 = "python3", "python3", "python3"
+				f.Argv = append([]string{"python3", "/scripts/npm"}, tokens...)
+			}
+			a := ix.Decide(&f)
+			got := execmatch.TighteningEndedRootForTest(ix, &f, a)
+			if extra == "deny-bare" || extra == "deny-option" {
+				if got != "" {
+					t.Errorf("route%d retained deny certified: %s", route, extra)
+				}
+			} else if got != "" {
+				t.Errorf("route%d released refusal incorrectly certified: %s", route, extra)
+			}
+			if extra != "" && execmatch.TighteningEndedRootForTest(ix, &f, execmatch.Result{Outcome: execmatch.OutcomeNone, Final: true}) != "" {
+				t.Errorf("retained rule dropped: %s", extra)
+			}
+			f.ArgvComplete = false
+			if execmatch.TighteningEndedRootForTest(ix, &f, execmatch.Result{Outcome: execmatch.OutcomeNone, Final: true}) != "" {
+				t.Error("open prefix certified")
+			}
+		}
+	}
+}
+
+func TestAllowExceptionChecksAllAuthorities(t *testing.T) {
+	rs := rows.Builtin()
+	p, err := execmatch.Parse("go version", execmatch.ListAllow, rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err := execmatch.Parse("git status", execmatch.ListAllow, rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ix := execmatch.NewIndex(rs, []*execmatch.Pattern{p, q}, execmatch.IndexOptions{})
+	proposed := execmatch.Result{Outcome: execmatch.OutcomeAllowed, Pattern: p, List: execmatch.ListAllow, Tool: "go", Match: execmatch.MatchDefinite, Final: true}
+	for _, f := range []execmatch.Facts{
+		{Requested: "go", Image: "go", Argv0: "go", Argv: []string{"go", "--", "version"}, ArgvComplete: true, Loaded: &execmatch.Loaded{Image: "go", Path: "/usr/bin/go", Argv: []string{"go", "--", "run"}}},
+		{Requested: "go", Image: "go", Argv0: "git", Argv: []string{"git", "--", "version"}, ArgvComplete: true},
+	} {
+		if got := ix.Decide(&f); got.Outcome != execmatch.OutcomeRefused {
+			t.Fatalf("negative control no longer refuses: %+v", got)
+		}
+		if execmatch.TighteningAllowForTest(ix, &f, proposed) != "" {
+			t.Errorf("another unlisted authority was dropped: %+v", f)
+		}
+	}
+	f := execmatch.Facts{Requested: "go", Image: "go", Argv0: "go", Argv: []string{"go", "--", "version"}, ArgvComplete: true, Loaded: &execmatch.Loaded{Image: "go", Path: "/usr/bin/go", Argv: []string{"go", "--", "version"}}}
+	if got := ix.Decide(&f); got.Outcome != execmatch.OutcomeRefused {
+		t.Fatalf("marker spelling must retain released refusal: %+v", got)
+	}
+	if execmatch.TighteningAllowForTest(ix, &f, proposed) != "" {
+		t.Error("matching authorities cannot certify an invocation allow exception")
+	}
+}
+
+func TestOpenValueAllowancePreservesStagedHold(t *testing.T) {
+	rs := rows.Builtin()
+	p, err := execmatch.Parse("npm audit", execmatch.ListAllow, rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ix := execmatch.NewIndex(rs, []*execmatch.Pattern{p}, execmatch.IndexOptions{})
+	tokens := []string{"--searchexclude=x", "-a", "--ci-name=x", "--searchexclude", "--init-author-url=x", "--", "audit", "--audit=x", "--install-strategy=x"}
+	f := execmatch.Facts{Requested: "python3", Image: "python3", Argv0: "python3", Argv: append([]string{"python3", "/scripts/npm"}, tokens...)}
+	a := ix.Decide(&f)
+	if a.Outcome != execmatch.OutcomeRefused || a.Final {
+		t.Fatalf("expected staged conservative refusal: %+v", a)
+	}
+	if got := execmatch.TighteningAllowForTest(ix, &f, a); got != "" {
+		t.Errorf("held source certificate=%q", got)
+	}
+	a.Final = true
+	if got := execmatch.TighteningAllowForTest(ix, &f, a); got != "" {
+		t.Errorf("incomplete final admission certified: %s", got)
+	}
+	f.ArgvComplete = true
+	if got := execmatch.TighteningAllowForTest(ix, &f, ix.Decide(&f)); got != "" {
+		t.Errorf("complete source certificate=%q", got)
+	}
+}
+
+func TestNpmOptionalCorrectionPreservesWholeIndex(t *testing.T) {
+	rs := rows.Builtin()
+	tokens := []string{"explain", "init", "--browser=x", "--if-present=x", "--fetch-retry-mintimeout", "--", "-q", "exec", "--all=x"}
+	for _, extra := range []string{"", "allow", "deny", "ask", "other-authority"} {
+		p, err := execmatch.Parse("npm explain --all", execmatch.ListDeny, rs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pp := []*execmatch.Pattern{p}
+		if extra != "" {
+			entry, list := "npm explain", execmatch.ListAllow
+			if extra == "deny" {
+				entry, list = "npm explain --browser", execmatch.ListDeny
+			}
+			if extra == "ask" {
+				entry, list = "npm explain --browser", execmatch.ListAsk
+			}
+			q, err := execmatch.Parse(entry, list, rs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pp = append(pp, q)
+		}
+		ix := execmatch.NewIndex(rs, pp, execmatch.IndexOptions{})
+		f := execmatch.Facts{Requested: "npm", Image: "npm", Argv0: "npm", Argv: append([]string{"npm"}, tokens...), ArgvComplete: true}
+		if extra == "other-authority" {
+			f.Loaded = &execmatch.Loaded{Path: "/usr/bin/npm", Image: "npm", Argv: []string{"npm", "explain", "--all"}}
+		}
+		a := ix.Decide(&f)
+		got := execmatch.TighteningOptionalForTest(ix, &f, a)
+		if extra == "deny" || extra == "other-authority" {
+			if got != "" {
+				t.Errorf("retained %s certified as removed: %s", extra, got)
+			}
+		} else if got != "" {
+			t.Errorf("released optional-value refusal certified with %s: %+v", extra, a)
+		}
+		if extra != "" && execmatch.TighteningOptionalForTest(ix, &f, execmatch.Result{Outcome: execmatch.OutcomeNone, Final: true}) != "" {
+			t.Errorf("retained %s omitted", extra)
+		}
+		f.ArgvComplete = false
+		if execmatch.TighteningOptionalForTest(ix, &f, execmatch.Result{Outcome: execmatch.OutcomeNone, Final: true}) != "" {
+			t.Error("incomplete argv certified")
+		}
+	}
+}

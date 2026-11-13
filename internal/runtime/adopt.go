@@ -384,6 +384,11 @@ func (a *adoption) prepare(ctx context.Context) error {
 	if err := a.prepareEnforcement(ctx); err != nil {
 		return err
 	}
+	// The skip counters' base, before the agent is moved in: one that cannot be read refuses the adoption with the
+	// agent untouched (skips.go, ADR 0148).
+	if err := r.readSkipBase(true); err != nil {
+		return err
+	}
 	if err := a.move(ctx); err != nil {
 		return err
 	}
@@ -588,6 +593,7 @@ func (a *adoption) startWorkers(ctx context.Context) error {
 		runStamp{PID: os.Getpid(), TID: syscall.Gettid(), Cgroup: r.cg.ID}, nil, nil, r.log)
 	r.pipe.onLedgerFail = a.ledgerFailed
 	r.runPipeline(ctx)
+	r.pollSkips(ctx)
 	kr, ok := r.handle.(enforce.KernelRecorder)
 	if !ok {
 		return nil
@@ -613,6 +619,7 @@ func (a *adoption) startWorkers(ctx context.Context) error {
 	if t, ok := src.(TrackingFailureReporter); ok {
 		t.SetTrackingFailure(func(err error) { r.trackingFailed.Store(true) })
 	}
+	handPreparedMounts(r.handle, src)
 	if err := src.Start(ctx, r.ref(), q.Lane(LaneKernel)); err != nil {
 		return fmt.Errorf("runtime: start source %s: %w", src.Name(), err)
 	}
@@ -809,6 +816,7 @@ func (a *adoption) shutdown(ctx context.Context) Result {
 		if r.trackingFailed.Load() {
 			r.emitGapNow(source.Gap{What: record.GapRecord, Why: GapCgroupTrackingFailed, Count: 1})
 		}
+		r.finalSkipCheck()
 		if a.release != nil && len(a.release.Left) > 0 {
 			r.emitGapNow(source.Gap{What: record.GapRecord, Why: GapAdoptionLeft, Count: int64(len(a.release.Left))})
 		}

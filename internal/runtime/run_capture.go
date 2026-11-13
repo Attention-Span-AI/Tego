@@ -200,6 +200,7 @@ func (r *runner) startKernelRecord(h api.Handle) {
 		return
 	}
 	r.kernelRecord = src
+	handPreparedMounts(h, src)
 	if tracker, ok := src.(TrackingFailureReporter); ok {
 		tracker.SetTrackingFailure(r.failTracking)
 	}
@@ -336,6 +337,7 @@ func (r *runner) kernelExecHandoff(ctx context.Context) func() bool {
 // unless the kernel decision plane decides the run's execs, and it names the plane's mode. Called once the loop
 // exists and before any source starts.
 func (r *runner) superviseKernelRecord(fn func(tid int, op, name, name2 string, at uint64) (supervisor.FSNaming, bool)) {
+	r.handListenerToKernelRecord()
 	n, ok := r.kernelRecord.(ContinuedFSNamer)
 	if !ok {
 		return
@@ -556,4 +558,33 @@ func gapEvent(g source.Gap) *record.Event {
 		return nil
 	}
 	return ev
+}
+
+// ListenerDevicesSetter receives the devices actually marked for ordinary entries.
+type ListenerDevicesSetter interface{ SetListenerDevices(func(dev uint64) bool) }
+
+// handPreparedMounts keeps recorder attribution on the facts used by Prepare,
+// including adoption, whose sources start without the ordinary launch path.
+func handPreparedMounts(h api.Handle, src source.Source) {
+	if mounts, ok := h.(enforce.MountTableReporter); ok {
+		if dst, ok := src.(interface {
+			SetMountTable(*agent.MountTable, error)
+		}); ok {
+			dst.SetMountTable(mounts.MountTable())
+		}
+	}
+}
+
+func (r *runner) handListenerToKernelRecord() {
+	s, ok := r.kernelRecord.(ListenerDevicesSetter)
+	if !ok {
+		return
+	}
+	rep, ok := r.handle.(enforce.ListenerDevicesReporter)
+	if !ok {
+		return
+	}
+	if marked, ok := rep.ListenerDevices(); ok {
+		s.SetListenerDevices(marked)
+	}
 }

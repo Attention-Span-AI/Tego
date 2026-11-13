@@ -1,0 +1,6 @@
+Frozen test-only matcher from released base 70a9e8c56.
+Source: pkg/policy/execmatch/**/*.go, excluding tests.
+Only change: import prefix github.com/attention-span-ai/tego/pkg/policy/execmatch
+becomes github.com/attention-span-ai/tego/test/execmatchdiff/internal/baseline.
+Verify every byte with: python3 test/execmatchdiff/prepare.py --verify
+Do not update this baseline to make a comparison pass.

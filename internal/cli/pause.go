@@ -29,6 +29,12 @@ func init() {
 // codeNoPause is the diagnostic of a pause or a resume asked of a run whose launcher does not read one.
 const codeNoPause = "no-pause"
 
+// codeLostPaused is the diagnostic of a pause or a resume asked of a run lost while paused (lostWhilePaused).
+const codeLostPaused = "lost-paused"
+
+// codeLauncherUnknown is the warning of a pause or a resume asked of a run whose launcher could not be judged.
+const codeLauncherUnknown = "launcher-unknown"
+
 // pauseConfirmWait bounds how long `tego pause` and `tego resume` wait for the launcher's line confirming the change.
 // The launcher polls every half second and a freeze takes milliseconds, so two seconds is plenty when it works.
 var pauseConfirmWait = 2 * time.Second
@@ -78,12 +84,28 @@ func pauseChange(ctx context.Context, name string, on bool, fs *flag.FlagSet, st
 	if code != identity.ExitOK {
 		return code
 	}
-	held, _, err := runlock.ProbeLock(dir)
+	// The launcher must be there: a lock nobody holds, or one held by a process that is not the run's launcher
+	// (runlock.LauncherGone, never a bare pid), has no one to apply the change. No command resumes a run lost
+	// while last recorded paused: nothing would decide or record what it does (ADR 0124, amendment 2026-11-11).
+	// The recorded pause does not prove its current frozen state; tego stop attempts to end what remains.
+	launcher, cause, err := runlock.LauncherCheck(dir)
 	if err != nil {
 		message(stderr, "", 0, 0, "tego "+name+": "+err.Error(), codeIO)
 		return identity.ExitError
 	}
-	if !held {
+	if launcher == runlock.Unknown {
+		// Not judged gone, so the request is written: a live launcher answers it. Said, since none may.
+		message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s's launcher could not be confirmed (%v); the request is written and "+
+			"only a live launcher answers it. To fix: %s", name, run, cause, runlock.UnknownRecovery), codeLauncherUnknown)
+	}
+	if launcher == runlock.Gone {
+		if lostWhilePaused(ctx, filepath.Dir(dir), run) {
+			message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s is lost: its launcher died, and the last state it recorded "+
+				"was paused. Tego never resumes a run with no launcher, since nothing would decide or record what it does; "+
+				"tego status %s says what its scope shows now, and tego stop %s ends what is left and closes its record",
+				name, run, run, run), codeLostPaused)
+			return identity.ExitFinding
+		}
 		message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s is not running, so there is nothing to %s", name, run, name), codeNotRunning)
 		return identity.ExitFinding
 	}

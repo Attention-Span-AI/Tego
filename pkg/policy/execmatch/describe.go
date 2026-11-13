@@ -4,6 +4,7 @@ package execmatch
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -30,6 +31,14 @@ func (po *PatOpt) optSpelling() string {
 // Reading is the pattern's exact reading, as compile prints it on the entry's line (ADR 0048 (9)): "subcommand push;
 // any options and operands", "subcommand log; requires --oneline; every other option free".
 func (p *Pattern) Reading() string {
+	reading := p.reading()
+	if p.compat != nil {
+		reading += "; also retains released reading: " + p.compat.reading()
+	}
+	return reading
+}
+
+func (p *Pattern) reading() string {
 	if p.Runtime != "" {
 		return "runtime grant: argv is exactly " + strings.Join(append([]string{p.Argv0}, p.Words...), " ") + ", every element and no other"
 	}
@@ -39,21 +48,41 @@ func (p *Pattern) Reading() string {
 		}
 		return "every invocation"
 	}
+	if len(p.separated) > 0 {
+		first := *p
+		first.separated = nil
+		meanings := []string{first.Reading()}
+		for _, q := range p.separated {
+			meanings = append(meanings, q.Reading())
+		}
+		return "separator readings: " + strings.Join(meanings, " or ")
+	}
 	deny := p.List != ListAllow
 	if p.Row == nil {
 		if deny {
-			return "generic: " + strings.Join(p.genWords, " ") + " as an ordered subsequence before --, options " + strings.Join(p.genOpts, " ") + " anywhere"
+			s := "generic: " + strings.Join(p.genWords, " ") + " as an ordered subsequence before --, options " + strings.Join(p.genOpts, " ") + " anywhere"
+			if p.separator {
+				s += "; optional separator, then operands holding " + strings.Join(p.genOperands, " ") + " in order"
+			}
+			return s
 		}
 		s := "generic: argv starts " + strings.Join(p.Words, " ")
 		if p.Rest {
 			s += " *"
 		}
+		if p.separator {
+			s += "; -- optional at word " + strconv.Itoa(p.genSeparator+1) + ", later words are operands"
+		}
 		return s
 	}
 	var parts []string
 	switch {
+	case len(p.Path) > 0 && p.pathExact:
+		parts = append(parts, "subcommand path exactly "+strings.Join(p.Path, " "))
 	case len(p.Path) > 0:
 		parts = append(parts, "subcommand "+strings.Join(p.Path, " "))
+	case p.pathExact:
+		parts = append(parts, "no subcommand")
 	case p.Row.Root != nil && (p.Row.Root.Subs != nil || p.Row.Root.Wild != nil):
 		parts = append(parts, "any subcommand")
 	}
@@ -84,9 +113,15 @@ func (p *Pattern) Reading() string {
 	return strings.Join(parts, "; ")
 }
 
-// Canonical is the pattern's spelling with every option by its canonical name, sorted: `rm -fr` and `rm -r -f` are
-// both "rm --force --recursive". Coverage notes are looked up by it.
+// Canonical is the literal pattern reading with each option's canonical name,
+// sorted: `rm -fr` and `rm -r -f` are both "rm --force --recursive".
+// Coverage notes use it for each retained reading.
+// Separator patterns retain their written spelling to preserve operand and command boundaries.
 func (p *Pattern) Canonical() string {
+	if p.separator {
+		// Reprinting an operand without its marker could name an option or child.
+		return p.Entry
+	}
 	if p.Row == nil {
 		return strings.TrimSpace(p.Tool + " " + strings.Join(p.Words, " "))
 	}
@@ -110,9 +145,17 @@ func (p *Pattern) Coverage(rows *Rows) string {
 		return ""
 	}
 	want := p.Canonical()
+	compat := ""
+	if p.compat != nil {
+		compat = p.compat.Canonical()
+	}
 	for k, note := range p.Row.Coverage {
 		q, err := Parse(k, p.List, rows)
-		if err == nil && q.Canonical() == want {
+		if err != nil {
+			continue
+		}
+		canonical := q.Canonical()
+		if canonical == want || compat != "" && canonical == compat {
 			return note
 		}
 	}

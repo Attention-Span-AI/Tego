@@ -42,12 +42,13 @@ type Arg uint8
 const (
 	// ArgNone is a flag.
 	ArgNone Arg = iota
-	// ArgRequired takes a value, attached (`--name=v`, `-nv`, as the level's Syntax allows) or as the next token.
+	// ArgRequired takes a value, attached (`--name=v`, `-nv`, as Syntax allows)
+	// or as the next token subject to the parser's NextOption rule.
 	ArgRequired
 	// ArgOptional takes a value only when it is attached (`--name=v`, `-nv`).
 	ArgOptional
 	// ArgMaybe may take the next token as its value: when Opt.Values lists the values it takes, a next token among
-	// them; otherwise either reading, as for an option the row does not list (npm's --browser).
+	// them; otherwise either reading unless NextOption establishes an option-looking value binding.
 	ArgMaybe
 	// ArgNextWord takes the next token as its value when that token is a word, not empty and not starting with '-',
 	// and takes no other value: node's -p and --print, whose alias `--print <arg>` reads a word after them as -e's
@@ -67,6 +68,9 @@ type Opt struct {
 	Short string
 	// Arg is how the option takes a value.
 	Arg Arg
+	// NextOption overrides the level's separate-value rule for this option's type.
+	// Zero inherits Syntax.NextOption (npm distinguishes String from other types).
+	NextOption NextOption
 	// Values are the separate values an ArgMaybe option takes (npm's --color takes always, true and false).
 	Values []string
 	// WordTo names the option at this level whose value an ArgNextWord option's word is as well: node expands
@@ -108,10 +112,70 @@ func (o *Opt) ends(hasValue bool, value string) bool {
 	return o.Ends || o.EndsAttached && hasValue && value != ""
 }
 
+// Terminator says whether a level still selects a subcommand after its option terminator.
+// The zero value retains both readings until the tool's dispatcher has been established.
+type Terminator uint8
+
+const (
+	// TerminatorBoth keeps the word as a subcommand and as an operand of the default.
+	TerminatorBoth Terminator = iota
+	// TerminatorCommand selects the command but keeps options ended (getopt, nopt).
+	TerminatorCommand
+	// TerminatorCommandFlags selects the command, whose own parser reads options anew (go).
+	TerminatorCommandFlags
+	// TerminatorOperands leaves the word to the current level or its default, not a child command.
+	TerminatorOperands
+	// TerminatorUnknown reads a refused terminator as an unknown flag or value-taking option.
+	TerminatorUnknown
+)
+
+// TerminatorOptions describes the option vocabulary a child parser has after its
+// parent's separator. It is independent of whether that separator selects a child.
+type TerminatorOptions uint8
+
+const (
+	// TerminatorOptionsBoth retains ended, child-only and inherited option readings.
+	TerminatorOptionsBoth TerminatorOptions = iota
+	// TerminatorOptionsNone keeps options ended below the separator.
+	TerminatorOptionsNone
+	// TerminatorOptionsChild excludes options declared at or above the ended parser.
+	TerminatorOptionsChild
+	// TerminatorOptionsInherit restarts the ordinary inherited vocabulary.
+	TerminatorOptionsInherit
+)
+
+// NextOption describes a separate value that looks like an option. Unknown
+// parsers retain both bindings even at a leaf: a later option predicate can differ.
+type NextOption uint8
+
+const (
+	// NextOptionDefault inherits at an option, and means both at a syntax.
+	NextOptionDefault NextOption = iota
+	// NextOptionBoth retains both option and value bindings.
+	NextOptionBoth
+	// NextOptionValue consumes it (getopt, optparse, Go flag, pflag, git parse-options).
+	NextOptionValue
+	// NextOptionNopt applies nopt's option-name and all-dash guards.
+	NextOptionNopt
+	// NextOptionNoptValue consumes option names, but leaves all-dash markers alone.
+	NextOptionNoptValue
+	// NextOptionArgparse rejects option names, retaining both for negative numbers
+	// whose classification depends on the parser's declared numeric options.
+	NextOptionArgparse
+	// NextOptionNoptMaybe is nopt's nullable Boolean/String union for option-looking
+	// tokens: only /^-[^-]/ stays an option. Even -- is a value. Other words keep both.
+	NextOptionNoptMaybe
+)
+
 // Syntax is how one level of a tool spells its options.
 type Syntax struct {
 	// Clusters reads -rf as -r -f.
 	Clusters bool
+	// BundleValuesSettle says the option parser itself selects the command, so a
+	// bundled value-taking letter consumes its separate value before command search.
+	// False retains an unresolved command-search reading: Cobra Find/Traverse can
+	// extract that value as a command, then rebind the remaining flags and operands.
+	BundleValuesSettle bool
 	// ClusterWords permits only these exact clusters on a non-clustering row:
 	// Node's -pe alias is --print --eval; -ep and -peCODE remain unknown.
 	ClusterWords []string
@@ -132,6 +196,26 @@ type Syntax struct {
 	// Permute keeps reading options after an operand (getopt, pflag, git parse-options); without it the first
 	// operand ends option parsing (Go's flag package, python, docker run's image).
 	Permute bool
+	// Terminator describes `--` at a level with subcommands. At a leaf `--` always ends options.
+	Terminator Terminator
+	// TerminatorOptions is the child vocabulary when command dispatch restarts flags.
+	TerminatorOptions TerminatorOptions
+	// NextOption is how required separate values bind an option-looking next token.
+	NextOption NextOption
+	// AllDashTerminator accepts every all-dash token of length >= 2 (npm's nopt).
+	AllDashTerminator bool
+	// SplitEquals re-enters a known option's attached value into the token stream
+	// before type-based binding, as nopt does even when the value names an option.
+	// It is used only on rows without interpreter script token-index dispatch.
+	SplitEquals bool
+	// TrimOptionDashes strips extra leading dashes before invocation long-option
+	// lookup (nopt). Hit.Raw retains the original spelling; pattern option names
+	// keep their separate contract syntax.
+	TrimOptionDashes bool
+	// NoptShorthands expands source-established one-to-one short aliases before
+	// reading their values. Exact long names win. Pseudo-option compounds whose
+	// inserted words the row cannot represent become unlocatable.
+	NoptShorthands bool
 	// DashDashUnknown means the tool refuses `--` here (git's global options), which the normalizer reads as an
 	// unknown option rather than assuming the refusal.
 	DashDashUnknown bool

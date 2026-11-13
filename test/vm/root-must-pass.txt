@@ -348,3 +348,11 @@ internal/runtime TestIntegrationAdoptFreezesTopologyAtMigration # the runtime ar
 internal/runtime TestRootBuiltinRefusals # ADR 0113: immutable IPC, control and tty refusals at cgroup and bpflsm
 internal/runtime/enforce/cgroup TestPlaneRunIOUringListenerOutcomes # ADR 0113: root ring opt-in refuses startup
 internal/runtime/enforce/cgroup TestRootBuiltinRefusalsPeer # ADR 0113: the native peer closes explicitly allowed hard-link and symlink datagram aliases
+
+# Row-scoped entries (row=ROW) hold a test to a pass on that row only: root-suites.sh checks them on a run of every
+# package on the row, and on a run of named packages on the row for the packages it ran. Elsewhere the test keeps the
+# skips root-skips.txt allows it.
+internal/cli TestIntegrationAdoptSkipIsRecordedAtOnce row=fedora-7.0 # ADR 0148's adoption proof: fedora-7.0's 7.0 kernel preempts kernel code, so with the tegobpf build and python3 an adoption's skip is made and must be recorded at once (passed there on both boots, 2026-11-12); vm-matrix's row job runs internal/cli there for it
+# The bindalias acceptance probe must release an actual unanswered kernel permission open and join its owner.
+test/conformance TestFanotifyProbeCancellationClosesGroup/pending_permission/debian-13 row=debian-13 # real pending fanotify cancellation, all four orders 200 times, with thread/fd/goroutine and independent second-opener checks
+test/conformance TestFanotifyProbeCancellationClosesGroup/pending_permission/fedora-7.0 row=fedora-7.0 # same kernel-lifetime proof on Fedora's preemptible kernel, on both boots

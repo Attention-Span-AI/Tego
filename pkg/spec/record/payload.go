@@ -902,6 +902,24 @@ const (
 	GapPlaneCountersUnread = "plane-counters-unread"
 )
 
+// The why of a gap what=enforce a root-tier run writes after its last task is gone when the kernel skipped a program
+// its rules rely on while it lived (ADR 0148, GAPS C53): count the skips the programs' counters gained between the
+// reading before the agent was released and the last one. The programs are the build's and run for every run of it
+// and every task that reaches their hooks, so a count may be another run's or an ungoverned task's; it says a rule may
+// not have held for this run, never that it did not. GapDecidingSkip counts the programs that decide (the plane's
+// hooks, its exec pin check) or clear decision state (the listener cleanup), GapTrackingSkip the one that adds the
+// run's child cgroups to the run set. GapSkipCounterUnavailable, with no count, is a reading that failed, so a reading
+// never had is never read as none. An adoption, which reports while it lives, closes such an outage with
+// GapSkipCounterRestored, count the readings that failed, once its counters can be read again; the skips of the outage
+// are in the next deciding or tracking line, since the counters only grow. No field is added: absent, the run met no
+// skip, or was written before 2026-11-11.
+const (
+	GapDecidingSkip           = "bpf-decision-skip/shared-build"
+	GapTrackingSkip           = "bpf-tracking-skip/shared-build"
+	GapSkipCounterUnavailable = "bpf-skip-counter-unavailable"
+	GapSkipCounterRestored    = "bpf-skip-counter-restored"
+)
+
 // GapPayload is the gap payload.
 type GapPayload struct {
 	What   string `json:"what"` // capture|record|enforce|limits
