@@ -18,7 +18,7 @@
 {{define "secchip"}}{{if .Text}}<span class="b {{.Class}}" title="{{.Title}}">{{template "i" .Icon}}{{.Text}}</span>{{else}}<span class="zero" title="No secret read or protected was recorded">—</span>{{end}}{{end}}
 {{/* firstrun is the empty Overview's and the empty Runs page's one next step, for any agent: tego watch, which the
      installer puts on the machine, records the command the person gives and blocks nothing; its run then shows here,
-     and New policy's From a run turns it into a policy (rules_new.go). No file the installer does not install is
+     and New contract's From a run turns it into a contract (rules_new.go). No file the installer does not install is
      named. overview_test.go holds both pages to it. */}}
 {{define "firstrun"}}<p>Next: start your agent under Tego, in a terminal, from your project:</p>
 {{template "firstrun-step"}}{{end}}

@@ -15,7 +15,7 @@ type glossaryTerm struct {
 // glossaryTerms are the dashboard's words, one per idea, in the order a person meets them.
 var glossaryTerms = []glossaryTerm{
 	{"agent", "Agent", "Any program Tego governs: an AI agent such as Claude Code or Codex, a script, any command. Tego does not make agents.", "/runs", ""},
-	{"contract", "Contract", "What an agent may read, change, run and connect to: one file, reused across runs, the file tego run takes. This dashboard called it a policy before.", "/rules", "policy"},
+	{"contract", "Contract", "What an agent may read, change, run and connect to: one file, reused across runs, the file tego run takes.", "/rules", "policy"},
 	{"preset", "Preset", "A ready-made part of a contract you tick, such as Keep secrets out. Change it anytime.", "/rules/new", ""},
 	{"run", "Run", "One session of an agent under tego, from start to exit.", "/runs", ""},
 	{"project", "Project", "The folder a run works in.", "", ""},

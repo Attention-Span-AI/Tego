@@ -90,7 +90,6 @@ func TestPagesSayContractAndRefused(t *testing.T) {
 		// them (TestGlossary holds it to that).
 		shown := preText.ReplaceAllString(body, "<pre></pre>")
 		if p == "/glossary" {
-			shown = strings.ReplaceAll(shown, "called it a policy before", "")
 			shown = strings.ReplaceAll(shown, "said blocked before", "")
 		}
 		if m := oldWord.FindString(shown); m != "" {
