@@ -1,4 +1,4 @@
-# test/fixtures/init — a project for `maze init` to scan
+# test/fixtures/init — a project for `compile --test` to check
 
 `demo-repo/` is a throwaway project: a fake `.env` (`DATABASE_URL` with a made-up password), the Claude Code
 contract from `examples/agents/claude-code.yaml` as `agent.yaml`, and `verdicts.yaml`, one row per rule init must

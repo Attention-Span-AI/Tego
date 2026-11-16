@@ -22,7 +22,7 @@ cancelled.
 | `bench-gate` | The hot paths' benchmarks against the base commit's (`scripts/bench-gate.sh`), plus the absolute timing budgets (`scripts/timing-budgets.sh`) |
 | `root-suites` | Every privileged test suite, as root on the runner through `sudo` (`test/vm/root-suites.sh`), in the seven parallel `root-suites-shard` jobs; `root-suites` passes only when every shard passed and the root-only tests of `test/vm/root-must-pass.txt` passed in them |
 | `race` | The unit and unprivileged integration tests under the race detector, in shuffled order |
-| `reproducible` | The release target built twice, at two paths with two build caches; the bytes of `tego`, `tego-control` and `maze` for linux/amd64 must match |
+| `reproducible` | The release target built twice, at two paths with two build caches; the bytes of `tego` and `tego-control` for linux/amd64 must match |
 | `coverage` | Per-package coverage, uploaded as an artifact (report only) |
 | `deadcode-report` | Every function the shipped binaries cannot reach is classified in `tools/deadcode-allow.txt`; an unclassified one or a stale entry fails the job |
 

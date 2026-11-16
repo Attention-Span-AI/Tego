@@ -171,7 +171,7 @@ mkdir -p "$rd/bin" "$rd/src/scripts"
 cat >"$rd/bin/goreleaser" <<'STUB'
 #!/bin/sh
 # The bytes depend on the directory only for the binary named by REPRO_DIFFERS; REPRO_MISSING is never written.
-for b in tego tego-control maze; do
+for b in tego tego-control; do
 	[ "$b" = "${REPRO_MISSING:-}" ] && continue
 	mkdir -p "dist/${b}_linux_amd64_v1"
 	if [ "$b" = "${REPRO_DIFFERS:-}" ]; then pwd; else echo same; fi >"dist/${b}_linux_amd64_v1/$b"
@@ -194,7 +194,7 @@ if ! repro_run "" ""; then
 elif [ "$(wc -l <"$rd/runs")" -ne 2 ]; then
 	echo "FAIL: $ci's reproducible step did not build twice"; fail=1
 fi
-for b in tego tego-control maze; do
+for b in tego tego-control; do
 	repro_run "$b" "" && { echo "FAIL: $ci's reproducible step passed with two different $b binaries"; fail=1; }
 	repro_run "" "$b" && { echo "FAIL: $ci's reproducible step passed with no $b binary"; fail=1; }
 done
@@ -221,12 +221,12 @@ if sed -n '/^preset-freeze:/,/^[^[:space:]]/p' Makefile | grep -q '\$(VERSION)';
 	echo "FAIL: the Makefile's preset-freeze pastes \$(VERSION) into its recipe"; fail=1
 fi
 
-# 24. both installers and the Lima template are release assets (the one-line installs fetch them from
+# 24. the installer and the Lima template are release assets (the one-line installs fetch them from
 #     releases/latest/download) and are in the checksums file, so the signature over it and the attestations of what it
 #     lists cover them; release.extra_files alone uploads them and adds nothing to it.
 sums="$(sed -n '/^checksum:/,/^[a-z#]/p' .goreleaser.yaml)"
 assets="$(sed -n '/^release:/,/^[a-z#]/p' .goreleaser.yaml)"
-for f in scripts/install.sh scripts/install-maze.sh examples/lima/tego.yaml; do
+for f in scripts/install.sh examples/lima/tego.yaml; do
 	grep -qE "^ +- glob: \./$f\$" <<<"$sums" || { echo "FAIL: .goreleaser.yaml's checksum section does not list $f"; fail=1; }
 	grep -qE "^ +- glob: \./$f\$" <<<"$assets" || { echo "FAIL: .goreleaser.yaml's release section does not ship $f"; fail=1; }
 done
@@ -255,24 +255,12 @@ for pkg in $(grep -rl --include='*_test.go' 'go:build.*tegotesthooks' internal |
 	done
 done
 
-# 16. the maze Homebrew cask is never uploaded while its tap is unnamed: release.yml's token writes this
-#     repository alone, so an upload fails the release; and no GitHub namespace but
-#     the repository's own owner is named as an owner or a homepage.
-cask="$(sed -n '/^homebrew_casks:/,/^[a-z]/p' .goreleaser.yaml)"
-if [[ "$cask" == *"owner: attention-span-ai"* ]] && [[ "$cask" != *"skip_upload: 'true'"* ]]; then
-	echo "FAIL: .goreleaser.yaml's maze cask uploads to a tap no one has named"; fail=1
-fi
+# 16. no GitHub namespace but the repository's own owner is named as an owner or a homepage.
 while IFS= read -r line; do
 	echo "FAIL: .goreleaser.yaml names a GitHub namespace other than attention-span-ai: $line"; fail=1
 done < <(grep -nE '^ *(owner: |homepage: https://github\.com/)' .goreleaser.yaml | grep -v 'attention-span-ai')
 
-# 17. maze's release artifacts are held as tego's are: reproduce compares its binaries and govulncheck scans them,
-#     and the release job checks that install-maze.sh names the repository, like install.sh.
 rp="$(sed -n '/^  reproduce:/,/^  container:/p' .github/workflows/release.yml)"
-[[ "$rp" == *maze-binaries.sha256* ]] || { echo "FAIL: release.yml's reproduce job does not compare the maze binaries"; fail=1; }
-[[ "$rp" == *"dist/maze_*/maze"* ]] || { echo "FAIL: release.yml's govulncheck does not scan the maze binaries"; fail=1; }
-grep -q 'INSTALLER=scripts/install-maze.sh scripts/check-installer-repo.sh' .github/workflows/release.yml ||
-	{ echo "FAIL: release.yml does not check that install-maze.sh names the repository"; fail=1; }
 
 # 18. the checksums artifact downloads flat, where reproduce looks: upload-artifact roots several paths at their
 #     common ancestor, so every path it is handed must sit directly in dist/, beside the checksums file (one in

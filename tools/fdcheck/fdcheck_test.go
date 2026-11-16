@@ -799,7 +799,7 @@ func TestCoverage(t *testing.T) {
 }
 
 // TestDarwinTermios: the macOS build judges ioctls as the Linux ones do, and admits macOS's termios requests
-// (TIOCGETA and TIOCSETA, the maze setup tool's TCGETS and TCSETS), while a request it cannot name stays a finding.
+// (TIOCGETA and TIOCSETA, macOS's TCGETS and TCSETS), while a request it cannot name stays a finding.
 func TestDarwinTermios(t *testing.T) {
 	files := map[string]string{
 		"internal/zzfdcheck/mac/term_darwin.go": "package mac\n\nimport \"golang.org/x/sys/unix\"\n\n" +

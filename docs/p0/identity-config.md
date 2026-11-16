@@ -596,7 +596,7 @@ the schema of:
   (rt6) a snapshot and check in the shell harnesses themselves, like the Go guard: each script would carry its own
   copy of the sweep's lock test in shell, and the helpers' value is checked directly (lib_test.sh) at less cost;
   (rt7) SH-7 on every subcommand, as SH-5: only a launch makes the parent and sweeps it, and a doctor-only script
-  (`test/vm/root-suites.sh`'s, `scripts/maze-verify.sh`'s compile) would carry a variable nothing reads; (rt8) the
+  (`test/vm/root-suites.sh`'s) would carry a variable nothing reads; (rt8) the
   guard reporting only what the sweep would remove for an entry made too: a test's lock-less directory or file left
   in the developer's parent would pass.
   *Rejected:* (a) static checks alone, which cannot see

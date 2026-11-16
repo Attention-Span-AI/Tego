@@ -397,9 +397,7 @@ the names that matter are the ones that exist when compile runs.
    (`os.Executable`, obtained from `/proc/self/exe`), so the unit's own tego is held at run time even where another tego
    compiled the contract. Tego never looks its own helpers up on PATH: the reaper, the linger timer, the child stage,
    the MCP relay, the harness hook and the hand-off to `tego-control` all run the running file or the `tego-control`
-   beside it (read in the code: `os.Executable` and `/proc/self/exe` at every such start). The one place a `tego` is
-   found through PATH is Maze's engine check, which runs outside every run and already refuses a `tego` inside the
-   project.
+   beside it (read in the code: `os.Executable` and `/proc/self/exe` at every such start).
 5. **`path-shadow` stays a warning.** A write entry over a PATH directory searched before tego (an activated
    `.venv/bin`, `node_modules/.bin`) holds nothing of tego's, and refusing it would break the commonest Python and Node
    setups. Tego itself never resolves its own name through PATH (4), so the run stays as it is; what the warning

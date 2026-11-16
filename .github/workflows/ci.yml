@@ -115,9 +115,6 @@ jobs:
       # ADR 0100 (1d): the edge's socket ban against its one-report-per-primitive fixture, inside the edge's packages.
       - name: the edge opens no socket (ADR 0100 (1d))
         run: ./scripts/check-edgelint_test.sh
-      # The maze setup tool ships for darwin too, and no other step compiles its _darwin.go files.
-      - name: maze vets for macOS
-        run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go vet ./cmd/maze ./internal/maze/...
       # ADR 0030's first step: every spec's rule IDs are unique in it, and no reference in docs/ or spec/ names a
       # rule, edge case or lettered part its document does not have. Untested rules are listed, not failed.
       - name: rulecheck (rule IDs and references in the specs)
@@ -133,8 +130,6 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -tags tegobpf ./...
       - name: install.sh verification paths
         run: ./scripts/install_test.sh
-      - name: install-maze.sh verification paths
-        run: ./scripts/install-maze_test.sh
       - name: coverage.sh arguments and guest harvest
         run: ./scripts/coverage_test.sh
       - name: bench-gate.sh's decision and runs (stand-ins for go and benchstat)
@@ -940,7 +935,7 @@ jobs:
           goreleaser build --snapshot --clean --single-target
           (cd "$other" && GOCACHE="$RUNNER_TEMP/elsewhere/cache" \
             goreleaser build --snapshot --clean --single-target)
-          for bin in tego tego-control maze; do
+          for bin in tego tego-control; do
             sha256sum dist/"$bin"_linux_amd64*/"$bin" "$other"/dist/"$bin"_linux_amd64*/"$bin"
             if ! cmp dist/"$bin"_linux_amd64*/"$bin" "$other"/dist/"$bin"_linux_amd64*/"$bin"; then
               echo "::error::two builds of $bin at $(git rev-parse --short HEAD) by .goreleaser.yaml differ"

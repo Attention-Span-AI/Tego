@@ -1,5 +1,5 @@
-Operator scripts: `install.sh`, `install-maze.sh`, `release.sh`. Plain POSIX sh, reviewed like code. `install.sh` and
-`install-maze.sh` are also release assets (`.goreleaser.yaml`). Turning on BPF LSM at boot is the machine owner's step;
+Operator scripts: `install.sh`, `release.sh`. Plain POSIX sh, reviewed like code. `install.sh` is
+also a release asset (`.goreleaser.yaml`). Turning on BPF LSM at boot is the machine owner's step;
 `tego doctor` says whether it is on. `install-wsl.ps1` is the Windows route: PowerShell that installs Ubuntu 24.04 in
 WSL2 when it is missing and runs `install.sh` inside it. It has not been run on Windows (its header says so).
 

@@ -6,8 +6,7 @@
 # directory chain below its module's root (klauspost/compress's zstd/internal/xxhash) must be in
 # THIRD_PARTY_NOTICES.txt, as the module root's is; a package outside its module's directory, or an empty module
 # directory, must end the script with a failure (a refusal inside a pipeline once went on to "verified"); and a
-# release directory's archive must hold every licence file and be covered by the checksums, and each maze archive
-# the notices; a file a binary embeds must carry an SPDX header or a line in the notices, each icon of a sprite by
+# release directory's archive must hold every licence file and be covered by the checksums; a file a binary embeds must carry an SPDX header or a line in the notices, each icon of a sprite by
 # name; and the licence files the binaries embed must be exactly the licence files the script lists (docs/GAPS.md
 # B12), none left out and none it does not list.
 set -eu
@@ -172,7 +171,7 @@ printf 'Permission is granted, other terms.\n' >"$tmp/unlisted/LICENSES/Other.tx
 check "an embedded licence text the script does not list fails" 1 "$tmp/unlisted/scripts/check-licenses.sh"
 grep -q 'embed LICENSES/Other.txt' "$tmp/out" || { echo "FAIL the refusal does not name the unlisted text" >&2; fail=1; }
 
-# A release directory: the licence archive with every file, each maze archive, and checksums covering them.
+# A release directory: the licence archive with every file, and checksums covering it.
 dist() { # dist NAME [FILE-TO-LEAVE-OUT]
 	d="$tmp/$1"
 	mkdir -p "$d"
@@ -184,10 +183,6 @@ dist() { # dist NAME [FILE-TO-LEAVE-OUT]
 			[ "$f" = "$leave" ] || set -- "$@" "$f"
 		done
 		tar -czf "$d/tego_0.0.0_licenses.tar.gz" "$@"
-		case "$leave" in
-		maze-*) tar -czf "$d/maze_0.0.0_linux_amd64.tar.gz" LICENSE NOTICE ;;
-		*) tar -czf "$d/maze_0.0.0_linux_amd64.tar.gz" LICENSE NOTICE THIRD_PARTY_NOTICES.txt ;;
-		esac
 	)
 	(cd "$d" && sha256sum tego_0.0.0_licenses.tar.gz >tego_0.0.0_checksums.txt)
 }
@@ -200,12 +195,6 @@ echo "0000000000000000000000000000000000000000000000000000000000000000  tego_0.0
 check "an archive the checksums do not cover fails" 1 "$tmp/good/scripts/check-licenses.sh" "$tmp/dist-badsum"
 dist dist-nolucide LICENSES/Lucide.txt
 check "an archive without the icons' licence fails" 1 "$tmp/good/scripts/check-licenses.sh" "$tmp/dist-nolucide"
-dist dist-mazebare maze-notices
-check "a maze archive without the notices fails" 1 "$tmp/good/scripts/check-licenses.sh" "$tmp/dist-mazebare"
-grep -q 'maze_0.0.0_linux_amd64.tar.gz lacks THIRD_PARTY_NOTICES.txt' "$tmp/out" || { echo "FAIL the refusal does not name the maze archive" >&2; fail=1; }
-dist dist-nomaze
-rm "$tmp/dist-nomaze"/maze_*.tar.gz
-check "a release directory with no maze archive fails" 1 "$tmp/good/scripts/check-licenses.sh" "$tmp/dist-nomaze"
 mkdir -p "$tmp/dist-empty"
 check "a release directory with no archive fails" 1 "$tmp/good/scripts/check-licenses.sh" "$tmp/dist-empty"
 

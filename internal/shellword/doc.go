@@ -9,8 +9,7 @@
 // in it written outside them, so the quoted text holds nothing one of those shells reads specially.
 //
 // The run page's Block now panel writes its twin in the browser (internal/control/web, static/twin.js) by the same
-// rule; TestTwinJSRules there holds the script's copy of it to Quote. The maze setup tool quotes the commands it
-// suggests with its own copy (internal/maze/cli), since maze stays separable from the engine, and tego setup quotes
+// rule; TestTwinJSRules there holds the script's copy of it to Quote. tego setup quotes
 // the words of a generated contract's sh -c command with its own (internal/setup), for sh, not for a person.
 //
 // It is pure: no I/O, no state.

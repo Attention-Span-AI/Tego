@@ -57,7 +57,7 @@ var mainConfigs = []buildConfig{
 
 // extraConfigs check only the packages that hold a file no main configuration builds: the cgo build (os/user's
 // libc lookup, pkg/spec/config's passwd_libc.go), a big-endian architecture (bpf2go's _bpfeb.go objects) and
-// macOS (the maze setup tool's _darwin.go files: it ships for darwin, and a macOS file is held to the same rules
+// macOS (_darwin.go files: a macOS file is held to the same rules
 // as a Linux one, ADR 0023's 2026-10-24 F6 note). A file none of these builds either is a problem: fdcheck cannot
 // judge it (uncovered).
 var extraConfigs = []buildConfig{

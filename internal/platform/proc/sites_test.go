@@ -219,16 +219,6 @@ var startSites = []startSite{
 			"refuses it with ErrArmed while the process holds marks",
 	},
 	{
-		file: "internal/maze/cli/save.go", fn: "saveLocked", call: "cli.verifyEngine", n: 1, rel: beforeArm,
-		when: "maze's check of a saved contract (`tego compile --test --offline`), run once the rules are saved, in the maze " +
-			"CLI's own process, which holds no group: nothing it links calls Arm",
-	},
-	{
-		file: "internal/maze/cli/save.go", fn: "verifyEngine", call: "proc.Start", n: 1, rel: guarded,
-		when: "maze's one start, of the engine's compile check: saveLocked is its one caller, and its row says when; Start refuses " +
-			"it with ErrArmed while the process holds marks, which maze's never does",
-	},
-	{
 		file: "internal/selftest/checks.go", fn: "checks", call: "selftest.runUnlisted", n: 1, rel: beforeArm,
 		when: "tego test's exec check (ADR 0074), run by the hidden __check verb, a process of its own that links no Arm: " +
 			"directly, and as the agent of a self-test run, which holds no group",
