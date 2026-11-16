@@ -186,7 +186,7 @@ type denyTarget struct {
 // denyWrite compiles the built-in deny_write set (R20) into RuleTable.DenyWrite and warns once per target
 // (warnDenyWrite). Every rule is Unenforced: it lies beneath a write entry by construction, which Landlock
 // cannot deny beneath (SEMANTICS §2), so only a kernel decision plane (cgroup with lsm/fmod_ret, or bpflsm)
-// refuses a write to one race-free. Without a plane the supervisor refuses it best effort (supervisor R15c), or,
+// refuses a write to one race-free. Without a plane the supervisor refuses it best effort, or,
 // under fs.assurance: kernel, the run is refused (ADR 0041 D1 (a)).
 //
 // A declared write entry at a target's own path is the author granting it on purpose: the target leaves the
@@ -345,8 +345,8 @@ type denyNowhere struct {
 // config) gets none; an auto one does, whatever this build's reach, since the machine it runs on decides.
 //
 // By default (fs.assurance best-effort) it is a warning that the supervisor refuses a write to the target there
-// best effort (supervisor R15c) and that run_start records the cell (BestEffortDenyWrite). Under fs.assurance:
-// kernel such a run is refused before its child starts (enforce-landlock R5a): at a tier landlock the contract
+// best effort and that run_start records the cell (BestEffortDenyWrite). Under fs.assurance:
+// kernel such a run is refused before its child starts: at a tier landlock the contract
 // pins or the machine config holds (not one a landlock-only build caps auto to) every run is, so compile says so
 // as an error, as it does for setuid: true there, and compile and run agree (ADR 0041 D8);
 // elsewhere the machine decides whether a plane loads, and it stays a warning.

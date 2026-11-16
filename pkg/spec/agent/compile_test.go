@@ -538,7 +538,7 @@ func TestCompileHappyPath(t *testing.T) {
 	}
 }
 
-// agent-contract.md R9: no fs: still yields the four implicit entries and no write entry.
+// No fs: still yields the four implicit entries and no write entry.
 func TestCompileFSDefaults(t *testing.T) {
 	f := newFixture(t)
 	tests := []struct {
@@ -653,7 +653,7 @@ func TestCompilePathRules(t *testing.T) {
 	}
 }
 
-// agent-contract.md E12 (a same-named directory earlier on PATH is skipped) and E14 (a truncated ELF warns malformed-elf).
+// A same-named directory earlier on PATH is skipped, and a truncated ELF warns malformed-elf.
 func TestCompileExecResolution(t *testing.T) {
 	f := newFixture(t)
 	shadow := filepath.Join(f.root, "shadow")
@@ -818,7 +818,7 @@ func TestCompileExecRelativePATHElement(t *testing.T) {
 	}
 }
 
-// agent-contract.md E17 (a bare IP literal is Static, no DNS), E18 (host-unresolvable: error, warning with Offline) and E19 (a TTL below MinDNSTTL is floored).
+// A bare IP literal is Static, no DNS; host-unresolvable is an error, a warning with Offline; a TTL below MinDNSTTL is floored.
 func TestCompileNet(t *testing.T) {
 	f := newFixture(t)
 	c := f.load("version: 0\nname: a\ncommand: [python]\nnet:\n  allow: [\"nope.invalid:443\", \"mcp.internal:80\"]\n")
@@ -995,7 +995,7 @@ func TestCeilingsBelowARunsStart(t *testing.T) {
 	}
 }
 
-// agent-contract.md R11 (ceiling precedence) and I2 (Limits never exceed the machine ceiling).
+// Ceiling precedence: Limits never exceed the machine ceiling.
 func TestCompileLimitsCeilings(t *testing.T) {
 	f := newFixture(t)
 	tests := []struct {
@@ -1041,7 +1041,7 @@ func TestCompileLimitsCeilings(t *testing.T) {
 	}
 }
 
-// agent-contract.md R14: auto/"" resolve to the highest ceiling value.
+// Auto/"" resolve to the highest ceiling value.
 func TestCompileTierAndCapture(t *testing.T) {
 	f := newFixture(t)
 	tests := []struct {
@@ -1088,8 +1088,8 @@ func TestCompileTierAndCapture(t *testing.T) {
 // TestSharedWritableExecAndKernelFSWriteWarn: exec.allow of a directory every user can write (/tmp), or of
 // one holding such a directory (/), makes whatever anyone drops there executable, and fs.write on /proc or
 // /dev writes to the kernel, other processes and devices; all four compiled without a word. A single device
-// file and /dev/shm are not warned about. /proc, a warning here at first, is refused since ADR 0059's second amendment
-// of 2026-11-11 (a kernel control filesystem, by the mount table's type).
+// file and /dev/shm are not warned about. /proc, a warning here at first, is refused under ADR 0059
+// (a kernel control filesystem, by the mount table's type).
 func TestSharedWritableExecAndKernelFSWriteWarn(t *testing.T) {
 	f := newFixture(t)
 	shared := filepath.Join(f.root, "shared")
@@ -1109,7 +1109,7 @@ func TestSharedWritableExecAndKernelFSWriteWarn(t *testing.T) {
 	}
 	c := f.load(fmt.Sprintf("version: 0\nname: t\ncommand: [\"python\"]\nexec:\n  allow: [%q, %q]\nfs:\n  write: [\"/dev\", \"/dev/null\"]\n", shared, private))
 	// With the mount probe off: on a host with /dev/mqueue mounted (systemd's), a grant on /dev reaches that mqueue mount
-	// and is refused since ADR 0059's second amendment of 2026-11-11; the /dev warning is about the path alone.
+	// and is refused under ADR 0059; the /dev warning is about the path alone.
 	_, ds := f.compile(c, WithMountInfo(""))
 	got := render(ds)
 	for _, want := range []string{

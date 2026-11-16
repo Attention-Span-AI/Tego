@@ -28,7 +28,7 @@ func ModelPortRule(m ModelEndpoint) string {
 // Known model addresses and their local aliases stay refused even under explicit net.allow. Under a net:
 // section, named model ports additionally refuse unknown destinations unless net.allow explicitly admits
 // them: a remote service cannot be identified reliably from an IP address that differs from this process's
-// DNS answer. With no net: section they do not (SEMANTICS §1, amended 2026-10-05).
+// DNS answer. With no net: section they do not (SEMANTICS §1).
 //
 // It is empty unless the table's capture mode is forwarder. Under uprobe the uprobes record a direct
 // connection's TLS themselves: under auto the forwarder runs beside them, and under a pinned capture: uprobe
@@ -39,7 +39,7 @@ func ModelPortRule(m ModelEndpoint) string {
 // failed to start at run time (a capture ring the host's budget had no room for) leaves the mode uprobe: a
 // direct connection is then neither captured nor refused, and the source's mechanism-unavailable gap is what
 // says the run's model traffic went uncaptured; a run with a token, cost or repeats budget is refused instead,
-// the forwarder beside the probes running or not (runtime refuseUnmeteredBudget, limits-check-doctor-cli.md R32).
+// the forwarder beside the probes running or not (runtime refuseUnmeteredBudget).
 // Under record: off the probes place none by design, so Compile gives an auto contract the forwarder mode there
 // (recordOffCapture), and its endpoints are guarded.
 func (rt *RuleTable) GuardedModels() []ModelEndpoint {
@@ -89,7 +89,7 @@ func (rt *RuleTable) GuardedModels() []ModelEndpoint {
 // This host's other addresses (a LAN or bridge address) reach a model server bound to all interfaces as its
 // loopback does, and a pure predicate cannot tell which addresses are this host's: the run's guard counts
 // them from a fresh snapshot of the host's own addresses, its interfaces' and every one of a `local` route in
-// its local routing table, an AnyIP range among them (docs/p0/supervisor.md R7, "Local endpoints"), and
+// its local routing table, an AnyIP range among them ("Local endpoints"), and
 // Evaluate answers such a destination refused, rule unresolved (evalGuard).
 func GuardAddrMatches(dst, ep netip.Addr) bool {
 	dst, ep = dst.Unmap().WithZone(""), ep.Unmap().WithZone("")

@@ -55,7 +55,7 @@ func TestLoaderProgram(t *testing.T) {
 }
 
 // TestLoadedProgramIsDecided: a directly-invoked loader runs its program in-process, with no execve of the program's
-// own, so the program is decided as the exec's image (the reviewer's repro). `ld-linux /usr/bin/rm -rf tree` under
+// own, so the program is decided as the exec's image. `ld-linux /usr/bin/rm -rf tree` under
 // deny: [rm -r] was allowed unmatched while `rm -rf tree` was refused; it is refused via loader now, by the operand's
 // name, by the walked file's name (a symlink x to rm) and by its identity, and under an allow list a constrained
 // tool's unlisted invocation through the loader is refused unlisted.

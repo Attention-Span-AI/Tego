@@ -318,7 +318,7 @@ func heldReadsLine(rt *RuleTable) string {
 		}
 		return strings.Join(names, ", ")
 	}
-	// What holding costs beyond the time (ADR 0041 D2, enforce-landlock R10): the deputy is a process of the run's
+	// What holding costs beyond the time (ADR 0041 D2): the deputy is a process of the run's
 	// domain, so no process of the run makes a domain of its own, and where the domain handles EXECUTE the deputy's
 	// start takes the runtime exec grant on tego's own binary.
 	held := "; the open deputy, a process of the run, completes each read open and the floor refuses one on the object it " +

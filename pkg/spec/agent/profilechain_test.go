@@ -79,7 +79,7 @@ func TestExtendsListMergesInOrder(t *testing.T) {
 
 // TestExtendsConflictBetweenParents: a contract-wins key two parents set to different values is extends-conflict at
 // both parents' lines, unless the contract sets it, which then decides; two parents agreeing on a value are no
-// conflict, and the merged key keeps the first parent's origin (ADR 0065 D4 as amended).
+// conflict, and the merged key keeps the first parent's origin (ADR 0065 D4).
 func TestExtendsConflictBetweenParents(t *testing.T) {
 	src := mapSource{
 		"a": "command: [a-cmd]\nlimits:\n  wall: 60s\n  pids: 5\nrecord: full\n",

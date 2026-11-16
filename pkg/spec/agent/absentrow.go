@@ -22,7 +22,7 @@ type AbsentRow struct {
 	// at compile, directly beneath the nearest directory that did. It is Resolved itself, or an ancestor of it
 	// (~/.codex for ~/.codex/auth.json when ~/.codex is missing too), and everything later made at or beneath it is
 	// refused a read. The Landlock builder holds At's directory and leaves At out, or holds At and denies it where it
-	// exists by then, and refuses to build a ruleset that would leave out anything else (enforce-landlock E9), so this
+	// exists by then, and refuses to build a ruleset that would leave out anything else, so this
 	// is what the tier models answer from.
 	At string
 }

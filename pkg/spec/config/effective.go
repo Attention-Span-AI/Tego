@@ -81,7 +81,7 @@ func (m *Machine) Effective() []Value {
 }
 
 // LimitCeilings lists the limits.* ceilings some layer set, each with its file and line: the limits every run gets
-// whatever its contract says (agent-contract.md R11). Pure; nil for a nil m.
+// whatever its contract says. Pure; nil for a nil m.
 func (m *Machine) LimitCeilings() []Value {
 	if m == nil {
 		return nil

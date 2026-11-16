@@ -17,18 +17,18 @@ const maxProcHops = 40
 // that did: a path under /proc, a link whose target is one (/dev/fd is /proc/self/fd, /dev/stdin /proc/self/fd/0), or
 // a directory on a procfs mounted elsewhere. Such a path names a file relative to the process that opens it
 // (/proc/self/exe is that process's executable, /proc/self/cwd its working directory, /proc/<pid>/root that process's
-// root), so what one process resolves it to is not what another reaches. Compile refuses an exec entry that does
-// (agent-contract.md R8a), tego learn proposes none, and the Load refuses a layer or a path setting that does
-// (identity-config.md R14). A component that cannot be read stops the walk with false, leaving the
+// root), so what one process resolves it to is not what another reaches. Compile refuses an exec entry that does,
+// tego learn proposes none, and the Load refuses a layer or a path setting that does.
+// A component that cannot be read stops the walk with false, leaving the
 // missing path to the caller's own refusal.
 //
 // The walk resolves the way the kernel's path lookup does, one component at a time over Lstat and Readlink: a
 // symlink's target is put in front of the components still to walk, as written, and ".." drops the last component
 // of the prefix already resolved, which holds no symlink. Every resolved prefix is tested, so a magic link is judged
-// by its name, never followed into the file it stands for. Until 2026-10-16 the walk joined and cleaned a link's
-// target lexically, which is not the kernel's reading: with s/b -> / and s/a -> b/../proc, s/a/self/exe cleaned to
-// s/proc/self/exe, which does not exist, while the kernel follows b to / first and reaches /proc/self/exe
-// (agent-contract.md R8a). It lives in this leaf package so that the Load and the compiler share one walk.
+// by its name, never followed into the file it stands for. Joining and cleaning a link's
+// target lexically would not be the kernel's reading: with s/b -> / and s/a -> b/../proc, s/a/self/exe cleaned to
+// s/proc/self/exe, which does not exist, while the kernel follows b to / first and reaches /proc/self/exe.
+// It lives in this leaf package so that the Load and the compiler share one walk.
 func ThroughProc(p string) (string, bool) {
 	pending := strings.Split(p, "/")
 	resolved := "/"

@@ -12,7 +12,7 @@ import (
 
 // TestStartedByAnotherReadsTheLoginAndTheProcessTree: whether the person who reads tego's next: line is another user
 // than the one tego runs as, from the login uid and the real uids of the process's ancestors, never the environment.
-// The trees are the guests' (acceptance 3, 2026-11-11): uid 1000 the administrator, 1002 the service account.
+// The trees are the guests': uid 1000 the administrator, 1002 the service account.
 func TestStartedByAnotherReadsTheLoginAndTheProcessTree(t *testing.T) {
 	type proc struct{ pid, ppid, uid int }
 	const unset = 4294967295

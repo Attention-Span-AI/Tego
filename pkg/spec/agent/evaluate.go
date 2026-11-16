@@ -31,7 +31,7 @@ const (
 	// ActionFSLink is a hard link (link(2), linkat(2)): Path the existing file, DestPath the new name. Landlock decides
 	// it at both ends' directories (MAKE_REG on the new name's, REFER on both across directories) and by REFER's no-gain
 	// rule over the file rights its ruleset grants (hook_path_link), the root tiers' walk at the ends themselves first,
-	// and a built-in deny_write target at either end refuses it (supervisor R15c, R17).
+	// and a built-in deny_write target at either end refuses it.
 	ActionFSLink ActionKind = "fs_link"
 	// ActionFSAttr is an attribute change of the file at Path: a mode (chmod), an owner (chown) or an extended
 	// attribute, a POSIX ACL included. No Landlock ABI governs one, so it is allowed at every tier except beneath a
@@ -42,7 +42,7 @@ const (
 	// allowlist under a net: section, nothing refused without one, and IPPROTO_MPTCP refused everywhere (E30).
 	ActionNetSocket ActionKind = "net_socket"
 	// ActionNetSend is an unconnected datagram send (sendto(2), sendmsg(2) with an address): to Host:Port over UDP,
-	// or to the unix socket Path names. It is decided as the connect to that destination (supervisor R13b).
+	// or to the unix socket Path names. It is decided as the connect to that destination.
 	ActionNetSend ActionKind = "net_send"
 	// ActionExecAnon is an exec of an anonymous image, a memfd or a file unlinked since it was opened (SEMANTICS §4):
 	// refused, rule exec-anon, unless the run's images are unrestricted or the contract set exec.anonymous.
@@ -52,8 +52,8 @@ const (
 // ExecAnonRule is the rule an anonymous image's refused exec carries (SEMANTICS §4: `rule: exec-anon`).
 const ExecAnonRule = "exec-anon"
 
-// The rules the run refuses a unix pathname with on what the walk of it met rather than on a socket an entry names
-// (supervisor.md R11a): the supervisor's own names for them are these.
+// The rules the run refuses a unix pathname with on what the walk of it met rather than on a socket an entry names:
+// the supervisor's own names for them are these.
 const (
 	// PathUnreliableRule: the walk met what the run cannot place in its own view (a magic link, a symlink loop, procfs,
 	// another mount tree), or failed where a datagram or a bind needs a place.
@@ -63,8 +63,8 @@ const (
 	// UnixForeignRule: what the name reaches under a write entry is no socket a process of the run bound, a directory
 	// or a file that is not a socket included, so the write entry's implicit admit does not hold (R11a).
 	UnixForeignRule = "unix-foreign"
-	// UnixAskScopeRule: what the name reaches is a net.ask unix: scope's place and no person was asked about it there
-	// (supervisor.md R11c): a datagram, which is never asked, or a connect a declared entry's spelling admitted whose
+	// UnixAskScopeRule: what the name reaches is a net.ask unix: scope's place and no person was asked about it there:
+	// a datagram, which is never asked, or a connect a declared entry's spelling admitted whose
 	// walk reached the scope's place. Neither the write entry around it nor the run having bound the socket admits it.
 	UnixAskScopeRule = "unix-ask-scope"
 	// HostSocketsRule: a run with no net: section that did not set host_sockets: true reached for a unix socket no
@@ -76,8 +76,8 @@ const (
 
 // UnixWalk is what the run's walk of a unix pathname met (the supervisor's unixWalk: one openat2(2) beneath the task's
 // root with RESOLVE_NO_MAGICLINKS, then, where that lookup fails, a walk a component at a time that refuses every magic
-// link), beyond the socket it reached (Action.Walk). The run decides a connect and a datagram on it (supervisor.md R11,
-// R11a), and so does Evaluate.
+// link), beyond the socket it reached (Action.Walk). The run decides a connect and a datagram on it,
+// and so does Evaluate.
 type UnixWalk uint8
 
 const (
@@ -103,7 +103,7 @@ const unixPathMax = 108
 
 // UnixCanonical reports whether an absolute unix pathname is spelled the way the run's kernel programs admit one:
 // bpf/include/common.h's tego_unix_canonical, which connect_unix, sendmsg_unix and the plane's step-D hooks apply to
-// the kernel's own copy of the name before they look it up (enforce-cgroup-observe §5 R7, enforce-plane §2.11). No
+// the kernel's own copy of the name before they look it up. No
 // component is empty, "." or "..", and the name does not end in "/" save the root itself. The name ends at its first
 // NUL or after sun_path's 108 bytes, as the supervisor's parseSockaddr and the programs both read it. A name the
 // programs refuse here is one the supervisor's name decision cleans and may admit (R11), so this says whether the
@@ -149,7 +149,7 @@ type Action struct {
 	DestPath string // rename/link target, for the REFER check
 	// Landed is, for a net.connect or net.send to a unix pathname, the socket the run's walk of that name reaches
 	// (TestTable.RunResolved lands it with Landers.Unix, following a final symlink as connect(2) and sendto(2) do): the
-	// run decides the name Path passes and then this socket (supervisor R11, R11a; SEMANTICS §5), and Evaluate does the
+	// run decides the name Path passes and then this socket (SEMANTICS §5), and Evaluate does the
 	// same. "" when the name was not landed; Walk then says why, and with Walk zero it is decided on its spelling alone.
 	Landed string
 	// NoSocket says Landed is no socket when the agent calls (ADR 0019's design note): a directory, one already there
@@ -165,7 +165,7 @@ type Action struct {
 	Walk UnixWalk
 	// Uncanonical says a net.send's unix pathname is absolute as the agent passes it and not spelled canonically
 	// (UnixCanonical): the run's own kernel programs refuse such a datagram where they decide unix names, at tiers
-	// cgroup and bpflsm (supervisor.md R13b, enforce-cgroup-observe R7).
+	// cgroup and bpflsm.
 	Uncanonical bool
 	// Dir says the filesystem action's object is a directory (a rename's source, an opendir, an rmdir); the zero
 	// value is a file. ADR 0043's name entries never decide a directory, and a directory rename is asked D5's
@@ -216,7 +216,7 @@ const (
 	UnresolvedRule = "unresolved"
 	// ResolverRule is the rule of traffic the runtime allows on its own authority rather than the
 	// contract's: a query to a configured resolver, permitted ungated by net.allow so that a contract
-	// naming hosts does not also have to name the machine's nameservers (docs/p0/supervisor.md R14).
+	// naming hosts does not also have to name the machine's nameservers.
 	ResolverRule = "net.resolver"
 	// CaptureGrant is NetRule.Runtime for the loopback listener a capture source bound: the agent has
 	// to reach it, and no contract can declare it because the port does not exist until the listener
@@ -225,17 +225,17 @@ const (
 	// DNSBrokerGrant admits only the run-owned cooperating DNS Unix socket.
 	DNSBrokerGrant = "dns-broker"
 	// CodexHomeGrant is FSRule.Runtime for the write grant on the run's own CODEX_HOME,
-	// $XDG_RUNTIME_DIR/tego/<run id>/codex (capture-derive.md R19b, agent-contract.md R10a): Codex keeps its state
+	// $XDG_RUNTIME_DIR/tego/<run id>/codex: Codex keeps its state
 	// there, and no contract can name the directory because its path holds the run id. Its rule name is
 	// "fs.codex_home[<path>]".
 	CodexHomeGrant = "codex_home"
 	// HarnessStateGrant is FSRule.Runtime for the write grant on the run's hook-state directory,
-	// $XDG_RUNTIME_DIR/tego/<run id>/hook-state (agent-contract.md R10a, R27; ADR 0062): the harness hook keeps its
+	// $XDG_RUNTIME_DIR/tego/<run id>/hook-state (ADR 0062): the harness hook keeps its
 	// cursor there, and it is the one place in the run's runtime directory the agent may write. The launcher makes it
 	// only when it provisions a harness. Its rule name is "fs.harness-state[<path>]".
 	HarnessStateGrant = "harness-state"
 	// HarnessHookGrant is ExecRule.Runtime, and the kind of the exact command rule beside it, of the harness hook's
-	// exec grant (ADR 0064, agent-contract.md R27): under an allow-list contract the launcher admits the tego binary
+	// exec grant (ADR 0064): under an allow-list contract the launcher admits the tego binary
 	// with the hook's exact argv and no other. Its rule name is "exec.harness-hook[<tego binary>]".
 	HarnessHookGrant = "harness-hook"
 	// MCPStageGrant names the process-bound allowance for the relay's private stage (ADR 0126). It adds no

@@ -180,7 +180,7 @@ func (k *compiler) warnAsked(r NetRule, a *NetRule) {
 // naming r's host (asksName: whatever its own lookup kept, it asks for what a later answer brings that name, which
 // a derived r would admit first), or holding one of the addresses compile resolved r to (asks), kept or dropped
 // under R18. A dropped
-// one counts because the run refuses it by r's name (net.denied_resolved[...], supervisor R7) before any ask is
+// one counts because the run refuses it by r's name (net.denied_resolved[...]) before any ask is
 // reached, so a derived r would turn an asked connect into a refusal. The addresses compared are compile's: one a
 // later answer brings to either name is not (R16a says so).
 func askingEntry(as []NetRule, r NetRule) *NetRule {

@@ -29,14 +29,14 @@ func TestGateConfigStrictClosedDSLAndBounds(t *testing.T) {
 		"null", "[]", "{unknown: true}", "{rules: null}", "{thresholds: null}",
 		"{rules: [], rules: []}", "{thresholds: {allow: 5, allow: 6}}", "{thresholds: {deny: 90}}",
 		"{thresholds: {allow: 80, ask: 50}}", "{thresholds: {allow: '50'}}", "{thresholds: {ask: null}}",
-		// Below allow allows, so allow 0 would ask every unmatched action (gate R1, ADR 0007).
+		// Below allow allows, so allow 0 would ask every unmatched action (ADR 0007).
 		"{thresholds: {allow: 0, ask: 80}}", "{thresholds: {allow: 0}}",
 		"{rules: [{shell expression x: 90}]}", "{rules: [{fs.write outside worktree: true}]}",
 		"{rules: [{fs.write outside worktree: -1}]}", "{rules: [{fs.write outside worktree: 101}]}",
 		"{rules: [{fs.write outside worktree: 10, net to undeclared host: 20}]}",
 		"{rules: [{'exec matches **': 90}]}", "{rules: [{'net to udp://host:443': 90}]}",
 		"{rules: [{'net to 10.0.0.0/8:443': 90}]}", "{rules: ['exec matches rm']}",
-		// A pathname first word never matches (gate R2): accepted, it never fired.
+		// A pathname first word never matches: accepted, it never fired.
 		"{rules: [{'exec matches \"/usr/bin/curl *\"': 90}]}", "{rules: [{'exec matches /bin/rm -rf': 90}]}",
 	} {
 		if _, err := CompileGateConfig(gateContract(t, src)); err == nil {
@@ -265,7 +265,7 @@ func TestNetGateWithoutNetSectionWarns(t *testing.T) {
 
 // TestGateRowReadsThisHostAsTheRunDoes: a table row's destination is scored as the run scores it, so a `net to` rule on
 // this host answers every spelling an address gives of itself, and a group or broadcast row. What only the running host
-// can tell, that a LAN address is its own, compile --test cannot: gate.md R3 states that row's answer.
+// can tell, that a LAN address is its own, compile --test cannot, so that row's answer is stated.
 func TestGateRowReadsThisHostAsTheRunDoes(t *testing.T) {
 	p, e := CompileGateConfig(gateContract(t, "rules:\n - net to 127.0.0.1:5000: 100\n - 'net to [::1]:5001': 100\n"))
 	if e != nil {

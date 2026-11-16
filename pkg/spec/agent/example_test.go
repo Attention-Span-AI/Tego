@@ -64,7 +64,7 @@ func TestSpecExampleSchema(t *testing.T) {
 
 // TestNotYetSupportedTable crosses every schema-only field with absent,
 // explicitly empty and non-empty values (R2, R17).
-// agent-contract.md R17: env.mask is schema-only, rejected while non-empty, with no runtime behavior to test until it ships.
+// Env.mask is schema-only, rejected while non-empty, with no runtime behavior to test until it ships.
 func TestNotYetSupportedTable(t *testing.T) {
 	base := "version: 0\nname: a\ncommand: [x]\n"
 	tests := []struct {
@@ -145,7 +145,7 @@ func loadSchemaJSON(t *testing.T) (json.RawMessage, func(string, json.RawMessage
 // at every depth (I1): the same keys in every mapping, a list where the other has a list, a free map where the
 // other has one, and the same required keys. It compared only the top level and the first level of five $defs,
 // so ask, gate, net.dns, net.proxy, net.limits, net.ingress and net.http (30 keys) went unchecked, and a key
-// renamed or added in one of them in schema.go alone passed (2026-10-05). The top level's
+// renamed or added in one of them in schema.go alone passed. The top level's
 // required keys are the one exception: Load checks them after the profile merge, not in the walk (R1).
 func TestSchemaJSONMatchesGo(t *testing.T) {
 	raw, decode := loadSchemaJSON(t)
@@ -236,7 +236,7 @@ func TestSchemaJSONMatchesGo(t *testing.T) {
 // Go schema walk's check refuses and accepts what it accepts. The patterns took a zero size or duration that
 // checkByteSize and checkDuration refuse, a bare host:port in net.ask that checkAskEndpoint refuses (tcp:// only,
 // R22), and a glob in fs.ask that checkAskPath refuses, so an editor validating against the file accepted
-// contracts Load refuses (2026-10-05).
+// contracts Load refuses.
 func TestSchemaJSONValuesMatchGo(t *testing.T) {
 	raw, decode := loadSchemaJSON(t)
 	for _, tc := range []struct {
@@ -251,7 +251,7 @@ func TestSchemaJSONValuesMatchGo(t *testing.T) {
 		{"net.proxy.tunnel_wall", "0m", "10m"},
 		{"limits.wall", "0s", "1h"},
 		{"limits.stall_after", "0ms", "500ms"},
-		// net.ask (R22 as amended 2026-10-19, ASK-UNIX and ASK-UDP): tcp://, udp://, a bare host:port and unix:, each
+		// net.ask (R22, ASK-UNIX and ASK-UDP): tcp://, udp://, a bare host:port and unix:, each
 		// IP one with a port in 1..65535; another transport, a missing port and port 0 are refused.
 		{"net.ask[]", "host.example", "tcp://host.example:443"},
 		{"net.ask[]", "host.example:0", "host.example:443"},
@@ -262,7 +262,7 @@ func TestSchemaJSONValuesMatchGo(t *testing.T) {
 		{"net.ask[]", "udp://host.example", "unix:@bus"},
 		{"fs.ask[]", "/work/*.env", "/work/out"},
 		{"fs.ask_read[]", "~/.aws/cred?", "~/.aws/credentials"},
-		// revision (agent-contract.md R28).
+		// revision.
 		{"revision", "", "2026.10.25+1"},
 		{"revision", "-1", "v1.2.3-rc_1"},
 		{"revision", "A" + strings.Repeat("b", 64), "A" + strings.Repeat("b", 63)},

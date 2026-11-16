@@ -226,7 +226,7 @@ func TestTreeAliases(t *testing.T) {
 	}
 }
 
-// TestMountTableFollowsTheMountTree is the review's topology (fix round 1): a tmpfs at /p/secret, then /src bound over
+// TestMountTableFollowsTheMountTree: a tmpfs at /p/secret, then /src bound over
 // /p, which hides that tmpfs, then /p/secret/deep, which is /src's by then, bound at /pub/part. The longest mount point
 // text picked the hidden tmpfs for /p/secret and missed /pub/part; the mount tree picks the bind over /p, and
 // /pub/part is a detached part of /p/secret. A mount stacked on a point is the child of the one it covers.

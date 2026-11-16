@@ -393,7 +393,7 @@ func mkfifo(t *testing.T, p string) {
 // Go's poller on its EAGAIN, waited for the next kernel message, so the next compile hung, having consumed the
 // unread kernel log. Such an entry is now refused before anything reads it, as an exec entry leading through
 // /proc (R8a, exec-proc), and compile returns at once. It needs root to fail, and runs as root in the KVM guest
-// (test/vm/kvm-run.sh), after the unread log is drained, as docs/p0/agent-contract.md section 10 says; as any
+// (test/vm/kvm-run.sh), after the unread log is drained; as any
 // other user it pins the prompt return. The bounded reader's refusal of a file system not known to store data,
 // which this test held before R8a, is held by TestExecNonDataFileLinks.
 func TestExecKernelFileLinks(t *testing.T) {
@@ -618,8 +618,8 @@ func TestEnvScanPlantedLinks(t *testing.T) {
 			n++
 		}
 	}
-	// On a loaded machine the scan can reach envScanMaxTime first (398 of 1000 with the load average at 45,
-	// 2026-09-24). That cut is the designed answer only when it is said: the [unenforced] warning naming the
+	// On a loaded machine the scan can reach envScanMaxTime first (398 of 1000 with the load average at 45).
+	// That cut is the designed answer only when it is said: the [unenforced] warning naming the
 	// scan's time limit. Silence with fewer than all of them is the failure.
 	if n != 1000 && !(n > 0 && hasEnvScanCut(ds)) {
 		t.Errorf("%d of the 1000 planted .env links are deny_read entries resolved to where they lead, and no warning says the scan was cut\n%s", n, render(ds))
@@ -963,7 +963,7 @@ func TestDenyWriteFixedTargetsFirst(t *testing.T) {
 // hooks and config, not only the repositories beneath it. The first entry links nothing into the chain, so its
 // fixed pass runs in time however slow the machine is: with its root names linked too, its 15 probes cost 15
 // walks of the chain, which a loaded machine slows past the entry's own 2 s (a walk of 120 ms in a KVM guest
-// with four busy loops a CPU, 2026-10-17), and the check that its fixed pass is not said to be cut then failed
+// with four busy loops a CPU), and the check that its fixed pass is not said to be cut then failed
 // for the machine's sake.
 func TestDenyWriteFixedPassCut(t *testing.T) {
 	f := newFixture(t)

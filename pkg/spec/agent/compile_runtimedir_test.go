@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestCompileRefusesWritesOverTegosRuntimeDir is R10a (Codex POC F2): a forwarder-routed Codex keeps its state in
+// TestCompileRefusesWritesOverTegosRuntimeDir: a forwarder-routed Codex keeps its state in
 // $XDG_RUNTIME_DIR/tego/<run id>/codex, which no entry can name, so contracts granted $XDG_RUNTIME_DIR/tego/,
 // and that grant reached every other run's private directory. The run grants its own CODEX_HOME itself; a write
 // or ask entry at, over or inside tego's runtime parent is a contradiction. An entry beside it under

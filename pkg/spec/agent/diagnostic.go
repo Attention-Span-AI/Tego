@@ -64,16 +64,16 @@ const (
 	CodeStallReadsUnseen = "stall-reads-unseen"
 	// CodeExecProc is an exec entry (command, mcp command, exec.allow) that is or leads through a /proc path, which
 	// names a file relative to the process that opens it: /proc/self/exe resolves at compile to tego's own
-	// executable (agent-contract.md R8a). An error.
+	// executable. An error.
 	CodeExecProc = "exec-proc"
 	// CodeProfileCannotLoosen warns at a profile's line that writes a value a stricter key marks loosening: only
-	// the top-level contract may loosen it, so the profile's value is ignored (agent-contract R5, ADR 0065).
+	// the top-level contract may loosen it, so the profile's value is ignored (ADR 0065).
 	CodeProfileCannotLoosen = "profile-cannot-loosen"
 	// CodeHeldReads says a run's read opens are held (fs.reads, ADR 0069): which deny_read target inside a write
 	// entry made them so, the cost per read open, and what held reads do not refuse.
 	CodeHeldReads = "held-reads"
 	// CodeExtendsConflict is a contract-wins key two parents of one extends list set to different values, which the
-	// file naming the list does not set: an error at both parents' lines (agent-contract R5, ADR 0065 D4, ADR 0066).
+	// file naming the list does not set: an error at both parents' lines (ADR 0065 D4, ADR 0066).
 	CodeExtendsConflict = "extends-conflict"
 	// CodeShadowedBuiltin is a profiles-directory file under the reserved tego/ namespace that an extends name
 	// would have read: names there resolve only to built-in profiles, so the file is never read, and the extends

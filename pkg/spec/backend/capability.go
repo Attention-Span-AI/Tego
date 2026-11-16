@@ -16,7 +16,7 @@ type Capability string
 const (
 	CapFileWriteDeny Capability = "fs.deny_write"
 	// CapFileDeleteRename's name predates the chmod row and is kept, since ledgers carry it: the row is delete,
-	// rename, mkdir and mknod, which Landlock denies; chmod is CapChmodDeny (agent-contract E35).
+	// rename, mkdir and mknod, which Landlock denies; chmod is CapChmodDeny.
 	CapFileDeleteRename  Capability = "fs.deny_delete_rename_mkdir_chmod_mknod"
 	CapReadDeny          Capability = "fs.deny_read"
 	CapExecDeny          Capability = "exec.deny"
@@ -32,15 +32,15 @@ const (
 	CapAdoptedContainers Capability = "containers.adopted"
 	CapNetHTTPRules      Capability = "net.http_rules"
 	CapNamespaceSandbox  Capability = "containers.namespace_sandbox"
-	// CapUnixAbstractScope is Landlock's abstract-socket scope (ABI 6, Linux 6.12; enforce-landlock R7): an
+	// CapUnixAbstractScope is Landlock's abstract-socket scope (ABI 6, Linux 6.12): an
 	// abstract unix name bound outside the run's domain is refused to the agent whatever its contract says.
 	// It is the last row, not beside net.unix, so that no earlier row's index moves (R23): below ABI 6 a
-	// contract with no net: section reaches every abstract socket on the host (agent-contract R19), and this
+	// contract with no net: section reaches every abstract socket on the host, and this
 	// row is how the run's record says so.
 	CapUnixAbstractScope Capability = "net.unix_abstract_scope"
 	// CapChmodDeny is a chmod refused under the contract's write rules. Only tier 3's path_chmod hook can: no
 	// Landlock ABI has a chmod right, tier 1's filter does not notify chmod and fanotify has no permission
-	// event for it (agent-contract E35). Last, so no earlier row's index moves (R23).
+	// event for it. Last, so no earlier row's index moves (R23).
 	CapChmodDeny Capability = "fs.deny_chmod"
 	// Appended destination admission rows preserve earlier ledger indices.
 	CapTCPDestinationKernel  Capability = "net.tcp_destination_kernel"
@@ -68,7 +68,7 @@ const (
 	// duplicate socket with the address it scored (ADR 0041 D6): every tier, on IP-domain sockets; addressed unix
 	// datagrams stay (D); enforcing Unix stream connects use the held-inode relay (ADR 0113).
 	CapGateNetCompletion Capability = "gate.net_completion"
-	// CapProtectedWriteTargets is the deny_write set refused race-free, the built-in targets (agent-contract R20) and a
+	// CapProtectedWriteTargets is the deny_write set refused race-free, the built-in targets and a
 	// contract's fs.deny_write entries (ADR 0071) alike, since both are RuleTable.DenyWrite: only a kernel decision
 	// plane, deciding by inode. It is not CapFileWriteDeny, which concerns declared grants and must not flip with the
 	// plane a run gets (ADR 0041 D7).
@@ -85,7 +85,7 @@ const (
 	CapSocketFamilies Capability = "net.socket_families"
 	// CapHostSocketsRefused: a run whose contract has no net: section and no host_sockets: true reaches only its own
 	// unix sockets and Tego's endpoints; every other unix destination is refused, rule host-sockets (ADR 0070). Tier 1
-	// holds it by the supervisor's relay of every connect and of the datagrams it can reproduce (supervisor R7b), the
+	// holds it by the supervisor's relay of every connect and of the datagrams it can reproduce, the
 	// rest best effort below Landlock ABI 9 (host_sockets/datagram); the root tiers hold it by the same relay and
 	// Landlock, with no kernel program of the run deciding it, so they have it false until their unix
 	// programs are attached (ADR 0070 (5)). A run sets it from its contract and its supervisor

@@ -170,7 +170,7 @@ func TestCanonicalExpandsAliasesInSchemaOnlyNodes(t *testing.T) {
 	}
 }
 
-// TestCanonicalAliasedGatesHashApart is the review's collision: the two contracts' third rule is an alias of a
+// TestCanonicalAliasedGatesHashApart: the two contracts' third rule is an alias of a
 // different rule, so their gates score `exec matches a` and `exec matches b` differently, and gate scores add up.
 // With the alias kept and its anchor cleared, both wrote the same canonical bytes and the same contract_hash.
 func TestCanonicalAliasedGatesHashApart(t *testing.T) {

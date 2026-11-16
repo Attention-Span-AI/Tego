@@ -49,7 +49,7 @@ func TestMarshalLineRejectsKeysCollidingAfterSanitization(t *testing.T) {
 // field and an attribution field. Sanitization has to be a fixed point of the codec, or a decoded event
 // re-serializes to different bytes and therefore to a different id.
 //
-// Also pins record-ledger.md E18: invalid UTF-8 is replaced, never corrupting the line.
+// Also pins: invalid UTF-8 is replaced, never corrupting the line.
 func TestLineRoundTripsInvalidUTF8(t *testing.T) {
 	refused := func(rule string) *Event {
 		e := base(KindRefused, `{"op":"open","target":"/x"}`)

@@ -24,7 +24,7 @@ const (
 	// ExitStoppedTerm is 128+SIGTERM: tego stop or a forwarded SIGTERM ended the run in time.
 	ExitStoppedTerm = 143
 	// ExitConfig is the exit code for an untrusted or invalid machine config. It equals ExitLauncher:
-	// the normative resolution of 2026-09-22 folded the former 213 into 125 [config-untrusted].
+	// the former 213 is folded into 125 [config-untrusted].
 	ExitConfig = ExitLauncher
 )
 

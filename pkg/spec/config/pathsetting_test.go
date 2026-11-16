@@ -68,7 +68,7 @@ func TestCostNegativeZeroRefused(t *testing.T) {
 	}
 }
 
-// The user registry (docs/p0/agent-contract.md R26) is ~/.config/tego by default, outside tego's own directory
+// The user registry is ~/.config/tego by default, outside tego's own directory
 // ~/.tego that every run read-denies (R6a), expanded against the passwd home, and a
 // layer may move it, or turn it off with "".
 func TestRegistryDefaultsToTheTegoHomeAndALayerMovesIt(t *testing.T) {

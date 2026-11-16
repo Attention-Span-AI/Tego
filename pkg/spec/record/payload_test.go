@@ -27,7 +27,7 @@ func jsonNames(v any) []string {
 	return names
 }
 
-// TestPayloadJSONNamesFrozen pins the exact key names of docs/P0-DESIGN.md §3.2 and spec/record/v1/README.md.
+// TestPayloadJSONNamesFrozen pins the exact key names of spec/record/v1/README.md.
 // Changing a name here is a schema change (docs/VERSIONING.md §2): only additions are allowed within v1.
 func TestPayloadJSONNamesFrozen(t *testing.T) {
 	tests := []struct {
@@ -137,7 +137,7 @@ func TestClosedSets(t *testing.T) {
 
 // ADR 0057 D5: the record gained held reads and alternates (an ask's op read, an answer's alternate, alternate_dev
 // and alternate_ino, an fs line's alternate_for), so the writer's revision says so: a reader of a ledger at 9 or later
-// knows an answer without alternate gave none, and one below 9 may come from the POC that wrote alternate alone.
+// knows an answer without alternate gave none, and one below 9 may come from an early build that wrote alternate alone.
 func TestRecordMinorCoversHeldReadsAndAlternates(t *testing.T) {
 	if MinorHeldObject != 10 || Minor < MinorHeldObject || MinorHeldObject <= MinorAskRead {
 		t.Fatalf("Minor %d, MinorHeldObject %d: held_object gate facts are 10, after held reads at 9", Minor, MinorHeldObject)
@@ -147,7 +147,7 @@ func TestRecordMinorCoversHeldReadsAndAlternates(t *testing.T) {
 	}
 }
 
-// agent-contract.md R10a and supervisor.md R23a: runtime_grants and order_lost came after held_object, so a reader of
+// Runtime_grants and order_lost came after held_object, so a reader of
 // a ledger at 11 or later knows an absent runtime_grants means the run made no grant, and one below 11 cannot tell.
 // Their lane chose 8; exec_missing (8), held reads (9) and held_object (10) took it first when the branches were merged.
 func TestRecordMinorCoversRuntimeGrantsAndOrderLost(t *testing.T) {
@@ -156,7 +156,7 @@ func TestRecordMinorCoversRuntimeGrantsAndOrderLost(t *testing.T) {
 	}
 }
 
-// agent-contract.md R26: contract_source came after the exec pins, so a reader of a ledger at 13 or later knows an
+// Contract_source came after the exec pins, so a reader of a ledger at 13 or later knows an
 // absent contract_source means the run's contract was one tego generated (a watch or an adoption with no boundary),
 // and one below 13 cannot tell.
 func TestRecordMinorCoversTheContractSource(t *testing.T) {
@@ -296,7 +296,7 @@ func TestRecordMinorCoversFSMutationAsks(t *testing.T) {
 	}
 }
 
-// capture-derive R40, R42: attribution by the reply's tool_use id (method tool_id, attribution.tool_use_id), by tid,
+// Attribution by the reply's tool_use id (method tool_id, attribution.tool_use_id), by tid,
 // and ssl_request's side and tool_results came after the fs mutation asks, so a reader of a ledger below 29 knows its
 // actions were attributed by time alone.
 func TestRecordMinorCoversAttribution(t *testing.T) {

@@ -19,7 +19,7 @@ func reasonContract(extra string) string {
 	return "version: 0\nname: reason\ncommand: [python]\ntier: landlock\nfs:\n  write: [\"out/\"]\n  deny_read: [\"secrets/\"]\n" + extra
 }
 
-// TestReasonReadsWhenAndWhy holds ADR 0077's rule (agent-contract.md R29): reason.reads: auto is the measured default,
+// TestReasonReadsWhenAndWhy holds ADR 0077's rule: reason.reads: auto is the default,
 // off; on notifies every read open at tier landlock where nothing else does (held, an ask_read entry, a read gate,
 // record: full), whatever the harness, never at a root tier, whose kernel record carries the refusal, nor in a run
 // that enforces nothing.

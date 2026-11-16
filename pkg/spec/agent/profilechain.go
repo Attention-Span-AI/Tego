@@ -14,7 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// MaxExtendsList bounds the names one extends: list may hold (agent-contract R5, ADR 0066).
+// MaxExtendsList bounds the names one extends: list may hold (ADR 0066).
 const MaxExtendsList = 8
 
 // BuiltinPrefix opens the reserved namespace of built-in profiles: a name beginning with it resolves only through
@@ -231,7 +231,7 @@ func combine(parents []*Contract, scalars bool) (*Contract, []extendsConflict) {
 }
 
 // sameValue reports whether two written values of one key would give the merged contract the same canonical form
-// (ADR 0065 D4 as amended): compared by the YAML Canonical writes for each, so a spelling or a comment never
+// (ADR 0065 D4): compared by the YAML Canonical writes for each, so a spelling or a comment never
 // differs and an order or a length always does.
 func sameValue(a, b reflect.Value) bool {
 	if reflect.DeepEqual(a.Interface(), b.Interface()) {

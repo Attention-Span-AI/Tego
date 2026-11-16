@@ -141,7 +141,7 @@ type Action struct {
 	Reads bool
 	Path  string
 	// Dest is the other end of a rename or hard link (an FSWrite action): one call, one line and one verdict, so one
-	// action over both ends, every rule that matches an end it scores counted once (ADR 0007, 2026-10-20). The write
+	// action over both ends, every rule that matches an end it scores counted once (ADR 0007). The write
 	// predicates score both ends; the read ones score Path when Reads and Dest when
 	// DestReads (the destination of a RENAME_EXCHANGE, which leaves its name too). Complete covers both ends.
 	Dest      string
@@ -353,7 +353,7 @@ func reachesThisHost(host string, h thishost.Addrs) bool {
 // address or an IPv6 anycast address the host joined reaches such a server too, and a rule on one of those names no
 // host. It costs at most another local server on the rule's port, or a group send on it. Whether a rule's literal is
 // one of the host's own (an interface's, or in an AnyIP range its local routing table sends here) only the running host
-// can tell, so `compile --test` answers that row by the literal alone (gate.md R3).
+// can tell, so `compile --test` answers that row by the literal alone.
 func (r *compiledRule) namesThisHost(h thishost.Addrs) bool {
 	return r.local || r.addr.IsValid() && thishost.Names(r.addr, h)
 }

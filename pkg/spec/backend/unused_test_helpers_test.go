@@ -47,7 +47,7 @@ func WriteMatrix(w io.Writer) error {
 }
 
 // decisionPlane is CAPABILITIES.md's "decision plane" row, the mechanism that decides file and exec actions in each
-// tier (ADR 0024, docs/p0/enforce-plane.md R18) and what the ledger's `decision_plane` field names. It is prose,
+// tier (ADR 0024) and what the ledger's `decision_plane` field names. It is prose,
 // not a capability, so no run_start row carries it. Tier 3 is one plane, so one value there. Hand-kept identical to
 // the markdown cell, like the matrix (TestMatrixGolden).
 var decisionPlane = map[Tier]string{

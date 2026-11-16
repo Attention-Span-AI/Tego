@@ -297,7 +297,7 @@ func TestPrefixFinalHoldsMulticall(t *testing.T) {
 // TestPrefixCodeBeforeItsEnd: an interpreter that has read its code option still reads options until its first
 // operand, and each option it does not list forks the readings; past MaxReadings the whole vector is refused
 // command-unresolved. So a prefix that has read the code option is not final until no option can follow. The first
-// vector is the one a staged-read fuzz found (2026-11-11): sh with argv[0] "", +c0, five +0 and a last empty word.
+// vector is the one a staged-read fuzz found: sh with argv[0] "", +c0, five +0 and a last empty word.
 func TestPrefixCodeBeforeItsEnd(t *testing.T) {
 	ix := rules(t, "deny: rm -r")
 	sh := []string{"", "+c0", "+0", "+0", "+0", "+0", "+0", ""}

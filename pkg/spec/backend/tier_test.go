@@ -8,7 +8,7 @@ import (
 )
 
 // Full pairwise AtOrBelow including TierObserve (I6, R17).
-// identity-config.md I6: Rank is a total order with no ties among defined values, TierObserve excluded from AtOrBelow.
+// Rank is a total order with no ties among defined values, TierObserve excluded from AtOrBelow.
 func TestTierAtOrBelow(t *testing.T) {
 	all := []Tier{TierObserve, TierLandlock, TierCgroup, TierBPFLSM, TierAuto, Tier("quantum")}
 	for _, a := range all {
@@ -64,7 +64,7 @@ func TestParseTier(t *testing.T) {
 }
 
 // Capture is symmetric with Tier (R25).
-// identity-config.md R25 (Valid/ParseCapture symmetric with Tier) and I6 (Capture rank order).
+// Valid/ParseCapture are symmetric with Tier, and Capture keeps its rank order.
 func TestCapture(t *testing.T) {
 	order := []Capture{CaptureOff, CaptureForwarder, CaptureUprobe}
 	for i, a := range order {

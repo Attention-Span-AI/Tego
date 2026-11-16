@@ -116,7 +116,7 @@ func TestCanonicalSchemaOnlyNormalized(t *testing.T) {
 	}
 }
 
-// agent-contract.md E25: a contract over 1MiB is refused before parse.
+// A contract over 1MiB is refused before parse.
 func TestLoadFileErrors(t *testing.T) {
 	if _, ds, err := Load(filepath.Join(t.TempDir(), "missing.yaml"), nil); !errors.Is(err, os.ErrNotExist) || ds != nil {
 		t.Errorf("missing file: %v %v", err, ds)

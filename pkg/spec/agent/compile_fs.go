@@ -179,7 +179,7 @@ func (k *compiler) fs() {
 // like any nested deny, and an entry at or inside it is a contradiction.
 //
 // The price table and the profiles directory are tego's own wherever the machine config's prices: and
-// profiles: put them (limits-check-doctor-cli.md §3): each is denied by its resolved path, the price table as
+// profiles: put them: each is denied by its resolved path, the price table as
 // the file it is, when it is not under a directory already denied.
 //
 // A deny attaches to a path that exists; `tego run` makes the ledger root and the anchor's directory
@@ -318,7 +318,7 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 	//
 	// The chain anchor is the third: every run's head is checked against it, so an agent that can
 	// rewrite it can make a truncated ledger verify. It sat beside the ledger root until the anchor
-	// moved to ~/.tego (P0-DESIGN §3.3), and an entry covering it then covered the ledger root too;
+	// moved to ~/.tego, and an entry covering it then covered the ledger root too;
 	// with any other ledger_root, `fs.write: ["~"]` would otherwise hand the agent chain.log.
 	const moveOut = "move the contract and ledger_root outside every write entry, or narrow the entry"
 	// The contract is the file the next run reads (ADR 0059): an entry at or over it as declared or where its path
@@ -332,7 +332,7 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 		k.r10Target("the chain anchor", k.o.chainAnchor, "narrow the entry: the chain anchor must stay out of the agent's reach"),
 	}
 	// tego's runtime parent, $XDG_RUNTIME_DIR/tego, holds every run's private directory: a write entry over it
-	// reached every other run's CODEX_HOME and last-refusal mirror (Codex POC F2). The run's own CODEX_HOME is
+	// reached every other run's CODEX_HOME and last-refusal mirror. The run's own CODEX_HOME is
 	// granted by the run itself, never by an entry (R10a).
 	runtimeParents := make([]string, 0, len(k.o.runtimeParents))
 	for _, declared := range k.o.runtimeParents {
@@ -355,8 +355,8 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 	// profiles, the prices and the ledger root of the runs after it ($TEGO_CONFIG names a file anywhere, and
 	// ~/.tego/config.yaml may be a link into a dotfiles tree; ADR 0059), one that rewrites the price table prices
 	// every model at $0 for the runs after it, one that rewrites the profiles widens every contract that extends a
-	// profile (limits-check-doctor-cli.md §3), and one that rewrites the registry chooses the contract of every later
-	// `tego run <name>` the user registry answers (agent-contract.md R26). The registry directory itself is not one:
+	// profile, and one that rewrites the registry chooses the contract of every later
+	// `tego run <name>` the user registry answers. The registry directory itself is not one:
 	// only agents/ and skills/ are read, and a registry: set wide (~) would otherwise refuse every entry beneath it.
 	var ownDirs []struct{ name, path string } // an entry strictly inside one of these is refused too
 	if k.m != nil {
@@ -403,7 +403,7 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 	// A target no walk places (a loop of links on its path, a directory on the way this process cannot search) is
 	// compared with no entry: its spelling is not where the kernel's walk of it lands, so no comparison would show an
 	// entry stays off it. With any write entry declared, the contract is refused instead.
-	// Every target's other places on the mount table are targets too (ADR 0059, amendment 2026-11-11).
+	// Every target's other places on the mount table are targets too (ADR 0059).
 	targets = k.aliasTargets(b.mt, targets)
 	if len(entries) > 0 && b.mt.probed && b.mt.err != nil {
 		// Fail closed: without the whole table no comparison shows an entry stays off a target's other mounts, or off
@@ -433,7 +433,7 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 	// projects too, so only a path inside one of its run directories counts there.
 	// ledger is the ledger root itself (fs: k.m.LedgerRoot), so its run directories are directly under it. This took
 	// its parent, from when the value was a run's own directory, so the rule refused nothing for a ledger root outside
-	// the anchor's directory (found in review round 2, 2026-11-11; TestCompileHoldsProtectedDirectoriesThroughMounts).
+	// the anchor's directory (TestCompileHoldsProtectedDirectoriesThroughMounts).
 	ledgerRoot := k.resolve(ledger)
 	tegoDir := ""
 	if k.o.chainAnchor != "" {
@@ -544,7 +544,7 @@ func (b *fsBuilder) writes(entries []string, ledger string) []writePath {
 			}
 			if target.path != "" && target.placed {
 				// By file identity: a bind mount or another mount of the target's filesystem at or beneath the entry
-				// shows the target, or a directory above it, under another name (ADR 0059, amendments of 2026-11-11).
+				// shows the target, or a directory above it, under another name (ADR 0059).
 				if over, _ := b.mt.reaches(r.Resolved, target.path); over {
 					d := k.ds.errorf(pos, CodeContradiction, "fs.write %q%s reaches %s %s through another mount of its filesystem; Landlock grants a write through every mount beneath an entry",
 						raw, resolvedNote(p, r.Resolved), target.name, target.declared)
@@ -666,7 +666,7 @@ func (b *fsBuilder) requireProtectedIdentity(pos Pos, targets []writeTarget, own
 // kernelFSWrite warns about a write entry on /dev itself: one on /dev grants every device node the uid can open, the
 // terminals of its other sessions among them (E38). A single device file (/dev/null, which the starter grants) or
 // /dev/shm is not /dev and is not warned about. procfs, which this warned about too, is a kernel control filesystem a
-// write entry may not reach by any path since ADR 0059's second amendment of 2026-11-11 (mountTable.controlFS), and
+// write entry may not reach by any path under ADR 0059 (mountTable.controlFS), and
 // /sys is one as well.
 func kernelFSWrite(k *compiler, pos Pos, raw, p, resolved string) {
 	if resolved == "/dev" {
@@ -915,7 +915,7 @@ func (b *fsBuilder) globCut(pos Pos, key, raw string, kind FSKind, stop globStop
 
 func (b *fsBuilder) addDeclared(p, raw string, pos Pos, kind FSKind, writes []writePath) {
 	r := FSRule{Path: p, Kind: kind, Raw: raw, Pos: pos, Resolved: b.k.resolve(p)}
-	// enforce-landlock.md E5: a deny of / has no parent to enumerate, and would deny the run everything. Judged
+	// A deny of / has no parent to enumerate, and would deny the run everything. Judged
 	// on the resolved path, so a symlink to / is refused as / is; the Landlock backstop fails closed on the same.
 	if kind == FSDenyRead && filepath.Clean(r.Resolved) == "/" {
 		b.k.ds.errorf(pos, CodeSchema, "fs.deny_read %q%s denies the whole filesystem, which no tier can enforce and no run could start under", raw, resolvedNote(p, r.Resolved)).
@@ -1431,7 +1431,7 @@ func (k *compiler) execResolved() {
 }
 
 // execInsideDenyRead warns about an exec grant that lies strictly inside a deny_read target the Landlock tier
-// enforces. The grant keeps an fd of its own with READ_FILE (enforce-landlock R5, I11 (1)), so at tier 1 the
+// enforces. The grant keeps an fd of its own with READ_FILE (I11 (1)), so at tier 1 the
 // file, or a directory entry's whole subtree, stays readable through the deny_read; the root tiers and tier 2's
 // listener refuse those reads. Evaluate answers the same (execReadGrant; R15). A grant
 // enclosing the target is denyReadUnderExecDirs' case, and one at the target itself fails Prepare (E32 (c)).

@@ -162,7 +162,7 @@ func related(a, b string) bool { return isAncestorOrSelf(a, b) || isAncestorOrSe
 
 // relatedAny reports whether either spelling of a path, as declared (made absolute) or resolved, is at, beneath or
 // above v. Every containment question a fence entry asks is asked of both: a write entry spelled through a link onto
-// the fenced path's parent is the same write entry as one spelled directly (agent-contract E8).
+// the fenced path's parent is the same write entry as one spelled directly.
 func (k *compiler) relatedAny(declared, v string) bool {
 	return related(declared, v) || related(k.resolve(declared), v)
 }

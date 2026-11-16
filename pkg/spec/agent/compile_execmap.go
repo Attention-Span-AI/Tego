@@ -13,7 +13,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// Native code a decision plane refuses to map (ADR 0027; agent-contract.md E39; enforce-plane R26). At tiers 2 and 3
+// Native code a decision plane refuses to map (ADR 0027). At tiers 2 and 3
 // with a plane, a PROT_EXEC map of a file under a write entry that no exec.allow entry covers is refused, so an
 // interpreter's import of a native module the agent installed or built there, or a dlopen of it, fails at run time.
 // execMapNative says so at compile, with the exec.allow line that keeps it working.

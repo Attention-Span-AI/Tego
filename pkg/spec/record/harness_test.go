@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// agent-contract.md R27, ADR 0062: run_start.harness came after contract_source, so a reader of a ledger at 14 or later
+// ADR 0062: run_start.harness came after contract_source, so a reader of a ledger at 14 or later
 // knows an absent harness means a run provisioned for no harness, and one below 14 cannot tell.
 func TestRecordMinorCoversTheHarness(t *testing.T) {
 	if MinorHarness != 14 || Minor < MinorHarness || MinorHarness <= MinorContractSource {

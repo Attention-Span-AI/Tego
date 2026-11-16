@@ -13,7 +13,7 @@ import (
 // ErrUnverified; an error without it says the record could not be read, never anything about its integrity.
 var (
 	// ErrCorruptLedger is a line that is not a record line and not a torn tail, or a chain.log line that is not an
-	// anchor line (record-ledger.md §7).
+	// anchor line.
 	ErrCorruptLedger = errors.New("ledger: corrupt line")
 	// ErrUnverified wraps every finding: the record is not what its writer wrote, or not anchored as it must be.
 	ErrUnverified = errors.New("ledger: unverified")

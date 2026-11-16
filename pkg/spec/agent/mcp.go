@@ -26,7 +26,7 @@ type MCPEndpoint struct {
 // String is the endpoint as a net.allow entry spells it, host:port.
 func (e MCPEndpoint) String() string { return net.JoinHostPort(e.Host, strconv.Itoa(e.Port)) }
 
-// ParseMCPURL reads an mcp[].url (agent-contract.md R16a). It is an absolute http or https URL with a host. It
+// ParseMCPURL reads an mcp[].url. It is an absolute http or https URL with a host. It
 // carries no user information, which would put a credential in the contract, its hash and every printed table, and
 // no query or fragment: a key in a query is a credential too, and neither names anything a rule could govern.
 func ParseMCPURL(raw string) (MCPEndpoint, error) {

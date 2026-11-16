@@ -4,7 +4,7 @@
 // canonical JSON-lines codec.
 //
 // It owns Kind, Verdict, Authority, Source, Reason, Attribution, RunRef and Event, one payload struct per kind
-// with the exact JSON names of docs/P0-DESIGN.md §3.2, and one deterministic encode/decode pair:
+// with the exact JSON names of spec/record/v1/README.md, and one deterministic encode/decode pair:
 //
 //   - MarshalLine writes the common fields in the fixed order v seq id prev ts mono_ns run agent pid tid cgroup
 //     kind source rule verdict authority reason attribution, then the payload keys sorted (R1, R3), and sets

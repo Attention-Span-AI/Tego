@@ -13,14 +13,14 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// Payload field names are frozen by docs/P0-DESIGN.md §3.2 and spec/record/v1/README.md. Each struct below
+// Payload field names are frozen by spec/record/v1/README.md. Each struct below
 // serializes to the exact JSON keys of its kind; MarshalLine re-sorts them (R3), so declaration order here is
 // documentation, not wire order.
 
 // Limits carries the compiled budget values on run_start so views never re-run the compiler.
 //
 // A key is present exactly when the run had a budget on that dimension, and its value is that budget. An
-// explicit 0 is the tightest budget there is, not the absence of one (docs/p0/limits-check-doctor-cli.md E16),
+// explicit 0 is the tightest budget there is, not the absence of one,
 // so it has to survive the encoding: the three numbers are pointers because a plain number under omitempty
 // drops a 0 and a reader would see no budget at all where the run enforced the strictest. The two durations
 // need no pointer, since "0s" is already distinct from an absent "".
@@ -31,7 +31,7 @@ type Limits struct {
 	StallAfter string   `json:"stall_after,omitempty"` // duration
 	Repeats    *int     `json:"repeats,omitempty"`
 	// LedgerBytes is the machine's record.max_run_bytes the run was started under (MinorLedgerCap): its
-	// events.jsonl and blobs together (blobs from 2026-11-01, at the same minor) end the run as a limit,
+	// events.jsonl and blobs together (blobs counted by later builds, at the same minor) end the run as a limit,
 	// which=ledger_bytes, once they hold that many bytes.
 	LedgerBytes *int64 `json:"ledger_bytes,omitempty"`
 }
@@ -60,8 +60,8 @@ type RunStartPayload struct {
 	// pkg/spec/backend names the row, true when this run could do it. It starts from the tier's own row as
 	// the enforcement handle narrowed it, and the rows only the run can answer are then set from the run:
 	// capture from the same reading as Capture, the record rows from the record mode and from what records
-	// the run, and the rows no contract this binary loads can ask for as false (docs/p0/record-ledger.md
-	// §2.2). A reader learns what was absent without knowing the machine. A false is a statement, never a
+	// the run, and the rows no contract this binary loads can ask for as false.
+	// A reader learns what was absent without knowing the machine. A false is a statement, never a
 	// default: every row is written, and a key a reader does not know is a row a newer binary added. Absent in
 	// a ledger written before the line existed, which a view shows as unknown rather than as nothing provided.
 	Capabilities map[string]bool `json:"capabilities,omitempty"`
@@ -74,18 +74,18 @@ type RunStartPayload struct {
 	// RunCommandGrant is the absolute path of the exec rule the command given on tego run's command line
 	// (after `--`) added for this run (agent.WithRunCommand): it is admitted for every exec of that file in the
 	// run, as the contract's own command is, with its loader and a script's #! interpreter. The contract hash
-	// does not include it, so this is where drift, events and every later reader learn of it (agent-contract.md R8). Absent
+	// does not include it, so this is where drift, events and every later reader learn of it. Absent
 	// when the run execs the contract's command, when a declared entry already covered the one
 	// given, and in a ledger written before the field existed.
 	RunCommandGrant string `json:"run_command_grant,omitempty"`
 	// RecordMinor is the revision of v1's optional fields the writer implements (Minor). Absent, 0, in a ledger
 	// written before the field existed: such a ledger may lack run_command_grant although its run had one.
 	RecordMinor int `json:"record_minor,omitempty"`
-	// DecisionPlane is what decided the run's fs actions and execs in the kernel (enforce-plane R18, R19, I7):
+	// DecisionPlane is what decided the run's fs actions and execs in the kernel:
 	// DecisionPlaneLSM or DecisionPlaneFmodRet where a plane mode decided, DecisionPlaneFanotify where tier cgroup ran
 	// on the listener, and absent for a tier with no plane (landlock, observe). It is written from the tier's own
 	// handle, so a run a reader expected on the plane and that ran on the fallback says so even when it refused
-	// nothing. Additive within v1 (2026-09-30, record_minor 2); absent in a ledger written before it.
+	// nothing. Additive within v1 (record_minor 2); absent in a ledger written before it.
 	DecisionPlane string `json:"decision_plane,omitempty"`
 	// BestEffort lists the stable ids of the run's disclosed best-effort cells (ADR 0041 D1, D7): a gate rule and
 	// action whose supervisor decision is taken on copied syscall facts and continued when it does not refuse,
@@ -99,24 +99,24 @@ type RunStartPayload struct {
 	// before the field (record_minor below 9).
 	AskReadRelaxes []AskReadRelax `json:"ask_read_relaxes,omitempty"`
 	// RuntimeGrants lists the rule name of every entry the run added to its table on its own authority rather than
-	// read from the contract (docs/p0/agent-contract.md R10a): a capture listener (net.capture[<addr>]), the DNS
+	// read from the contract: a capture listener (net.capture[<addr>]), the DNS
 	// broker's socket (net.dns-broker[unix:<path>]) and the run's own generated CODEX_HOME (fs.codex_home[<path>]).
 	// The contract hash does not cover them. net.resolver, the run's own allowance of a query to a configured
-	// resolver (supervisor.md R14), is a decision rather than an entry and is not listed: its lines carry the rule
+	// resolver, is a decision rather than an entry and is not listed: its lines carry the rule
 	// net.resolver. Absent when there is none: at record_minor 11 or later that says the run added
 	// no such entry, and absent in a ledger written before the field.
 	RuntimeGrants []string `json:"runtime_grants,omitempty"`
 	// ContractSource is the contract file the launching user named, by its path or by a registry name, and the file
-	// whose bytes the run compiled (agent-contract.md R26): contract_hash says what the contract was, this says where
+	// whose bytes the run compiled: contract_hash says what the contract was, this says where
 	// it came from. Absent for a contract tego generated (a watch or an adoption with no boundary): at record_minor
 	// 12 or later that says no file was named, and absent in a ledger written before the field.
 	ContractSource *ContractSource `json:"contract_source,omitempty"`
-	// Harness is the agent harness the launcher provisioned for (agent-contract.md R27, ADR 0062): its name and
+	// Harness is the agent harness the launcher provisioned for (ADR 0062): its name and
 	// whether its provision was made, and if not why. Absent for a run whose contract says harness: none: at
 	// record_minor 14 (MinorHarness) or later that says the run was provisioned for no harness, and absent in a
 	// ledger written before the field.
 	Harness *HarnessStart `json:"harness,omitempty"`
-	// Profiles are the profiles the run's contract merged through extends (agent-contract.md R5, ADR 0066 D6), in
+	// Profiles are the profiles the run's contract merged through extends (ADR 0066 D6), in
 	// merge order (deepest first, a list left to right), each once: contract_hash covers what the merged contract
 	// says, and these say which profiles gave it, so a reader can tell which version of a built-in profile a run
 	// merged. Absent when the contract extends none: at record_minor 15 or later that says so, and absent in a
@@ -151,7 +151,7 @@ type RunStartPayload struct {
 	Labels map[string]string `json:"labels,omitempty"`
 	// Role is what the run is for (identity.Role): check for a run tego check started; absent for the agent's own run.
 	Role string `json:"role,omitempty"`
-	// ContractRevision is the contract's revision key (agent-contract.md R28); absent when the contract has none.
+	// ContractRevision is the contract's revision key; absent when the contract has none.
 	ContractRevision string `json:"contract_revision,omitempty"`
 	// FSReads says whether the run held its read opens (fs.reads, ADR 0069) and why: held, the open deputy completed
 	// every read-capable open and refused one on the object it reached, so a deny_read inside a write entry held at
@@ -178,7 +178,7 @@ type RunStartPayload struct {
 	// it, and an action allowed only because it is lifted, carries.
 	LiveFence *LiveFence `json:"live_fence,omitempty"`
 	// DenyReadFrozen names the directories the run's Landlock ruleset listed once at launch to build its deny_read
-	// entries (MinorDenyReadFrozen, enforce-landlock R3): a file or directory made directly in one of them after the
+	// entries (MinorDenyReadFrozen): a file or directory made directly in one of them after the
 	// run started is unreadable to the agent until the run ends, and everything beneath it too (GAPS A12). Absent at
 	// MinorDenyReadFrozen or later when the ruleset listed none.
 	DenyReadFrozen *DenyReadFrozen `json:"deny_read_frozen,omitempty"`
@@ -296,7 +296,7 @@ const (
 	ReadsNotifiedWhyHeld    = "held"        // the run held its reads (fs_reads held)
 	// ReadsNotifiedWhyReason: reason.reads at tier landlock, so a read Landlock refuses under deny_read is recorded.
 	ReadsNotifiedWhyReason       = "reason"
-	ReadsNotifiedWhyReasonOff    = "reason-off"    // reason.reads: off, or auto (ADR 0077's measured default)
+	ReadsNotifiedWhyReasonOff    = "reason-off"    // reason.reads: off, or auto (ADR 0077's default)
 	ReadsNotifiedWhyKernel       = "kernel"        // a root tier, whose kernel record carries a refused read
 	ReadsNotifiedWhyRecordsOnly  = "records-only"  // a run that enforces nothing (tego watch, --observe)
 	ReadsNotifiedWhyNoSupervisor = "no-supervisor" // no started supervisor answered the run's notifications
@@ -557,7 +557,7 @@ const (
 
 // ExecPayload is the exec payload.
 //
-// Mechanism, DecisionPlane and PlaneReason are optional, additive within v1 (2026-09-29, TIER3-PLAN T9), and
+// Mechanism, DecisionPlane and PlaneReason are optional, additive within v1, and
 // written on a line whose verdict the kernel decision plane gave (MechanismPlane).
 type ExecPayload struct {
 	Path          string   `json:"path"`
@@ -622,14 +622,14 @@ const (
 // SignalKill is an exec line's signal when the plane killed it (ADR 0048 (8)).
 const SignalKill = "SIGKILL"
 
-// A line whose verdict the kernel decision plane gave (ADR 0024, docs/p0/enforce-plane.md R24) carries, beside its
+// A line whose verdict the kernel decision plane gave (ADR 0024) carries, beside its
 // closed-set reason, mechanism MechanismPlane, decision_plane the mode the plane ran in (DecisionPlaneLSM or
 // DecisionPlaneFmodRet) and, on a refusal whose cause the closed set has no code for, plane_reason
 // (PlaneReasonRefer, PlaneReasonDenyWriteAncestor, PlaneReasonIdentityMismatch; the line's reason is then
 // rename-outside-contract, write-outside-contract or path-unresolved). A new reason code would not be additive: a
 // v1 reader validates reason against the closed set (spec/reason/REASON-CHANNEL.md).
 //
-// MechanismCgroup (additive within v1, 2026-10-05, ADR 0018 PR 2) is a refused line whose refusal a tier-2 cgroup
+// MechanismCgroup (additive within v1, ADR 0018 PR 2) is a refused line whose refusal a tier-2 cgroup
 // program made: cgroup/sock_create's refusal of an inet socket outside ADR 0018's allowlist, on a path the seccomp
 // filter did not decide. It carries no decision_plane, since no plane decided it.
 //
@@ -670,24 +670,24 @@ const (
 	FSLink     = "link"
 	FSTruncate = "truncate"
 	FSChmod    = "chmod"
-	// FSChown and FSXattr are the kernel decision plane's attribute refusals (TIER3-PLAN T13, enforce-plane R12),
-	// additive within v1 (2026-09-29): a chown of, and an xattr set or removal on, a file beneath a deny_write
-	// target. The plane writes an ACL set or removal as FSChmod: it rewrites the file's permissions. Since
-	// 2026-10-16 the supervisor writes them too, for a chown or an xattr set or removal an fs.write gate scores
-	// (supervisor R17); it names the syscall's family, so its ACL set is FSXattr, the attribute's name unread.
+	// FSChown and FSXattr are the kernel decision plane's attribute refusals,
+	// additive within v1: a chown of, and an xattr set or removal on, a file beneath a deny_write
+	// target. The plane writes an ACL set or removal as FSChmod: it rewrites the file's permissions. The
+	// supervisor writes them too, for a chown or an xattr set or removal an fs.write gate scores;
+	// it names the syscall's family, so its ACL set is FSXattr, the attribute's name unread.
 	FSChown = "chown"
 	FSXattr = "xattr"
 )
 
 // FSPayload is the fs payload.
 //
-// Created, Errno, By and VerdictFrom are optional, additive within v1 (2026-09-29, ADR 0016 step 2), and written
+// Created, Errno, By and VerdictFrom are optional, additive within v1 (ADR 0016 step 2), and written
 // by the tier-2 kernel record only: VerdictFrom says what the line's verdict is, FSVerdictChain for the return of
 // the kernel's LSM chain read at fexit and FSVerdictModel for the tier model's prediction on a kernel whose record
 // carries no return; By is FSByOther, with the Errno the chain returned, on an observed line whose refusal no
 // Tego mechanism explains (another LSM's or a third-party listener's, never a reason from REASON-CHANNEL's set);
 // Created marks an open that created its file. Mechanism, DecisionPlane and PlaneReason are optional, additive
-// within v1 (2026-09-29, TIER3-PLAN T9): a refusal the kernel decision plane made (MechanismPlane).
+// within v1: a refusal the kernel decision plane made (MechanismPlane).
 type FSPayload struct {
 	Op            string `json:"op"` // open|unlink|rename|mkdir|symlink|link|truncate|chmod|chown|xattr
 	Path          string `json:"path"`
@@ -703,7 +703,7 @@ type FSPayload struct {
 	PlaneReason   string `json:"plane_reason,omitempty"`
 	// AlternateFor is, on the line of an open a person's alternate completed (authority human, verdict allow), the
 	// path the agent asked for, which it did not get: Path is the file delivered in its place (ADR 0057 D1;
-	// record_minor 9, written by the 2026-10-06 POC before it).
+	// record_minor 9, written by an early build before it).
 	AlternateFor string `json:"alternate_for,omitempty"`
 }
 
@@ -763,7 +763,7 @@ type MCPPayload struct {
 }
 
 // SSLRequestPayload is the ssl_request payload. Headers is optional and holds only what the redaction stage
-// lets through (docs/p0/record-ledger.md R9); credentials never reach disk.
+// lets through; credentials never reach disk.
 type SSLRequestPayload struct {
 	Endpoint     string            `json:"endpoint"`
 	Method       string            `json:"method"`
@@ -778,7 +778,7 @@ type SSLRequestPayload struct {
 	RetryOf      string            `json:"retry_of,omitempty"`
 	Headers      map[string]string `json:"headers,omitempty"`
 	// BodySHA256, Frame and Messages are set together, and Blob is then unset, when the body was stored
-	// by its conversation's elements rather than whole (docs/p0/record-ledger.md R11). No blob holds such a
+	// by its conversation's elements rather than whole. No blob holds such a
 	// body whole, and Blob keeps its v1 meaning, the name of the one that does, so the body's sha256 is
 	// BodySHA256; Frame is the blob that rebuilds the body, and Messages is the last link of the chain of
 	// its conversation array's element groups, which requests whose histories begin the same way share up
@@ -796,12 +796,12 @@ type SSLRequestPayload struct {
 	// routes (ADR 0127, MinorModelRoutes); absent otherwise.
 	Route *RouteTaken `json:"route,omitempty"`
 	// Side marks an exchange on a declared model host that is not a model turn: telemetry, token counting, a model
-	// listing, a health check (the parser's silent paths). It opens no step (capture-derive.md R40, record_minor 29).
+	// listing, a health check (the parser's silent paths). It opens no step (record_minor 29).
 	Side bool `json:"side,omitempty"`
 	// ToolResults are the tool_use ids whose results the request's last message reports, in wire order: nil when
 	// derive did not read the request (no parser reads its path, its body was cut, coded or unreadable), an empty
 	// list when it read it and found none. A model request closes the tool windows it names, or leaves every window
-	// of the run of unknown state when it was not read (capture-derive.md R42, record_minor 29).
+	// of the run of unknown state when it was not read (record_minor 29).
 	ToolResults *[]string `json:"tool_results,omitempty"`
 }
 
@@ -813,22 +813,22 @@ type Usage struct {
 	CacheWrite int `json:"cache_write"`
 	// OutputBound says Output is not what the model reported but the request's max_tokens: an event stream
 	// that ended before its final message_delta, which is where the output count is carried, is charged the
-	// most it could have spent (docs/adr/0036-cut-stream-charges-max-tokens.md). Optional within v1, added
-	// 2026-09-24; absent means Output is the reported count.
+	// most it could have spent (docs/adr/0036-cut-stream-charges-max-tokens.md). Optional within v1;
+	// absent means Output is the reported count.
 	OutputBound bool `json:"output_bound,omitempty"`
 	// CacheWrite1h is the part of CacheWrite written with the 1-hour cache lifetime, which the upstream bills
 	// at its own rate (the Messages API's usage.cache_creation.ephemeral_1h_input_tokens); the rest of
-	// CacheWrite is the 5-minute kind. Optional within v1, added 2026-09-24 (capture-derive.md R29); absent means
+	// CacheWrite is the 5-minute kind. Optional within v1; absent means
 	// none, or a ledger that predates the field.
 	CacheWrite1h int `json:"cache_write_1h,omitempty"`
 	// ServerTool counts the server-side tool requests the upstream billed per request, keyed by the name the
 	// response reported them under (the Messages API's usage.server_tool_use, e.g. "web_search_requests"). Only
-	// positive counts are kept. Optional within v1, added 2026-09-24 (capture-derive.md R29).
+	// positive counts are kept. Optional within v1.
 	ServerTool map[string]int `json:"server_tool,omitempty"`
 	// Modified says the response was billed under a modifier the token counters do not show: a speed,
 	// service_tier or inference_geo other than the plain one, or extra iterations (compaction, a refusal
 	// fallback) the top-level counts leave out. A price table cannot price it, so a cost budget charges it at
-	// its upper bound. Optional within v1, added 2026-09-30 (capture-derive.md R29); absent means none.
+	// its upper bound. Optional within v1; absent means none.
 	Modified bool `json:"modified,omitempty"`
 }
 
@@ -871,25 +871,25 @@ const (
 	GapCapture = "capture"
 	GapRecord  = "record"
 	GapEnforce = "enforce"
-	// GapLimits is a limit the contract asked for that the run's cgroup cannot hold as asked (added within v1,
-	// 2026-09-24): why=memory-swap-uncapped for a memory cap on a kernel that accounts no swap to cgroups while
-	// swap is on (runtime-launch.md R10).
+	// GapLimits is a limit the contract asked for that the run's cgroup cannot hold as asked (added within v1):
+	// why=memory-swap-uncapped for a memory cap on a kernel that accounts no swap to cgroups while
+	// swap is on.
 	GapLimits = "limits"
 )
 
-// GapLauncherLost is the why of the gap what=record every orphaned run carries just before its run_end
-// (record-ledger.md R6): the process that held the run's record died, so its last lines may be missing. Lines are
+// GapLauncherLost is the why of the gap what=record every orphaned run carries just before its run_end:
+// the process that held the run's record died, so its last lines may be missing. Lines are
 // not fsynced before Close and the event queue is the launcher's memory, so how many, if any, is unknown and the
 // line has no count.
 const GapLauncherLost = "launcher-lost"
 
 // GapOwnStateModeRestored is the why of the gap what=record a run writes for each of tego's own files and directories
-// whose owner's rights it found taken and gave back (record-ledger.md §3, "Modes taken from the owner"), binary naming
+// whose owner's rights it found taken and gave back ("Modes taken from the owner"), binary naming
 // its path. No Landlock ABI has a chmod right, so an agent can change the mode of the files its user owns; their
 // contents and the record are unchanged by it, so the line loses no event and has no count.
 const GapOwnStateModeRestored = "own-state-mode-restored"
 
-// The why of a gap what=enforce the kernel decision plane's counters give at run end (enforce-plane §2.8, ADR 0025
+// The why of a gap what=enforce the kernel decision plane's counters give at run end (ADR 0025
 // (4)): one line per counter of the run's slot that is not zero, count the number of refusals the plane made for that
 // cause, decision_plane the mode. Every one is a refusal already made (fail closed); the line says the plane met a
 // state it could not decide on its rows. GapPlaneCountersUnread is the slot that could not be read at run end, with no
@@ -912,7 +912,7 @@ const (
 // never had is never read as none. An adoption, which reports while it lives, closes such an outage with
 // GapSkipCounterRestored, count the readings that failed, once its counters can be read again; the skips of the outage
 // are in the next deciding or tracking line, since the counters only grow. No field is added: absent, the run met no
-// skip, or was written before 2026-11-11.
+// skip, or was written by a build without these counters.
 const (
 	GapDecidingSkip           = "bpf-decision-skip/shared-build"
 	GapTrackingSkip           = "bpf-tracking-skip/shared-build"
@@ -926,7 +926,7 @@ type GapPayload struct {
 	Why    string `json:"why"`
 	Binary string `json:"binary,omitempty"`
 	Count  int    `json:"count,omitempty"`
-	// DecisionPlane is the plane's mode on a gap its counters gave (GapPlane*). Additive within v1 (2026-09-30).
+	// DecisionPlane is the plane's mode on a gap its counters gave (GapPlane*). Additive within v1.
 	DecisionPlane string `json:"decision_plane,omitempty"`
 	// LiveBlock is the live block a why live-block-added or live-block-removed line records (MinorLiveBlock); absent
 	// from every other gap.
@@ -1094,7 +1094,7 @@ const (
 	LimitWall       = "wall"
 	LimitStallAfter = "stall_after"
 	LimitRepeats    = "repeats"
-	// LimitLedgerBytes is the run's events.jsonl and blobs together (blobs from 2026-11-01, at the same minor)
+	// LimitLedgerBytes is the run's events.jsonl and blobs together (blobs counted by later builds, at the same minor)
 	// reaching the machine's record.max_run_bytes (MinorLedgerCap). Its limit line carries no reason: the closed
 	// reason set (spec/reason/REASON-CHANNEL.md) has no code for it.
 	LimitLedgerBytes = "ledger_bytes"
@@ -1115,9 +1115,9 @@ type RefusedPayload struct {
 	Target string `json:"target"`
 	Reason Reason `json:"reason"`
 	Rule   string `json:"rule"`
-	// Mechanism and DecisionPlane are optional, additive within v1 (2026-09-29, TIER3-PLAN T13): a refusal the
+	// Mechanism and DecisionPlane are optional, additive within v1: a refusal the
 	// kernel decision plane made (MechanismPlane), such as a socket its socket_create refused, or, with no
-	// DecisionPlane, one cgroup/sock_create made (MechanismCgroup, 2026-10-05).
+	// DecisionPlane, one cgroup/sock_create made (MechanismCgroup).
 	Mechanism     string `json:"mechanism,omitempty"`
 	DecisionPlane string `json:"decision_plane,omitempty"`
 	// CommandRule and CommandMatch name an exec command rule's refusal (ADR 0048 (8)), optional at record_minor 7.
@@ -1161,7 +1161,7 @@ type Supervisor struct {
 	HeldMS        int64 `json:"held_ms"`
 	Anomalies     int64 `json:"anomalies,omitempty"`
 	// Orphaned counts syscalls the loop performed on the agent's behalf whose notification the agent
-	// abandoned before the answer arrived (docs/p0/supervisor.md E35): each is a side effect the kernel is
+	// abandoned before the answer arrived: each is a side effect the kernel is
 	// about to repeat when it restarts the call. Under record: summary or full each also has its own net line
 	// with result_unknown and this is their total; under record: off no allowed net line is written, so this
 	// total is the only trace of them in the record.
@@ -1171,8 +1171,8 @@ type Supervisor struct {
 	// that relay returned. Nothing else in the ledger records it.
 	Starved int64 `json:"starved,omitempty"`
 	// OrderLost counts the notifications whose lines were written without waiting for the previous notification of
-	// the same thread, because it was still writing after the supervisor's one-second bound (docs/p0/supervisor.md
-	// R23a): each such line may precede, along seq, a line of an earlier syscall of its thread. Additive at
+	// the same thread, because it was still writing after the supervisor's one-second bound:
+	// each such line may precede, along seq, a line of an earlier syscall of its thread. Additive at
 	// record_minor 11 (MinorRuntimeGrants); absent when zero, and in a ledger written before the field.
 	OrderLost int64 `json:"order_lost,omitempty"`
 	// ExecRules counts what the exec command rules refused (ADR 0048 (8)); nil for a run without command rules.

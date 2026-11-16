@@ -15,7 +15,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestRunResolvedAsksTheWalkOfEachPath pins what RunResolved asks its Lander (ADR 0019's 2026-10-17 design note): each
+// TestRunResolvedAsksTheWalkOfEachPath pins what RunResolved asks its Lander (ADR 0019): each
 // path of a row as the agent's syscall would spell it from the table's cwd, uncleaned, so "lk/.." is the walk's to
 // take physically, and with the lookup that syscall makes of it (ActionKind.Lookups): a final symlink followed where
 // the syscall follows one (an open, an exec and its #! interpreter, an attribute change, a unix connect or datagram),

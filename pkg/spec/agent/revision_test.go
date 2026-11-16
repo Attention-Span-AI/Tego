@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestRevisionIsTheContractsOwn is agent-contract.md R28: revision is an optional
+// TestRevisionIsTheContractsOwn: revision is an optional
 // ^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$ the loaded contract keeps, refused when empty, too long or with another character.
 func TestRevisionIsTheContractsOwn(t *testing.T) {
 	const head = "version: 0\nname: a\ncommand: [x]\n"
@@ -34,7 +34,7 @@ func TestRevisionIsTheContractsOwn(t *testing.T) {
 	}
 }
 
-// TestRevisionIsAYAMLString is agent-contract.md R28's spellings: revision is a YAML string in Go as in
+// TestRevisionIsAYAMLString: revision is a YAML string in Go as in
 // agent.schema.json ({"type": "string"}), so an unquoted value YAML reads as a number or a boolean is a [schema] error
 // with the fix to quote it, and a null one (the key with nothing after it, ~ or null) is a [schema] error, never read
 // as no revision. A plain spelling YAML reads as a string (1.4.0, v1, 2026.10.25) loads as written.
@@ -72,7 +72,7 @@ func quoteYAML(s string) string {
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
 }
 
-// TestRevisionIsRefusedInAProfile is agent-contract.md R28 and R5's refused-in-profile class: a profile reached by
+// TestRevisionIsRefusedInAProfile: a profile reached by
 // extends that sets revision is a [schema] error at its line, fix "set revision in the top-level contract", and the
 // top-level contract's own revision is kept beside a profile's other keys.
 func TestRevisionIsRefusedInAProfile(t *testing.T) {
@@ -98,7 +98,7 @@ func TestRevisionIsRefusedInAProfile(t *testing.T) {
 	}
 }
 
-// TestRevisionIsInTheCanonicalBytes is agent-contract.md R28 and R13: revision is part of the canonical bytes, so two
+// TestRevisionIsInTheCanonicalBytes: revision is part of the canonical bytes, so two
 // contracts that differ only in it hash differently, and a contract without one writes no revision key.
 func TestRevisionIsInTheCanonicalBytes(t *testing.T) {
 	const head = "version: 0\nname: a\ncommand: [x]\n"

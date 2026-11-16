@@ -124,7 +124,7 @@ func TestMarshalLineOmitsZeroOptionalFields(t *testing.T) {
 	}
 }
 
-// Also pins record-ledger.md R3, E25: a payload is spliced sorted after attribution; a payload field named
+// Also pins: a payload is spliced sorted after attribution; a payload field named
 // like a common field is ErrPayloadFieldCollision.
 func TestMarshalLinePayloadRules(t *testing.T) {
 	tests := []struct {
@@ -386,7 +386,7 @@ func TestChain(t *testing.T) {
 	}
 }
 
-// TestValidateRules also pins record-ledger.md R8, the presence half: attribution is required of an action
+// TestValidateRules also pins the presence half of attribution: attribution is required of an action
 // event and refused on any other kind.
 func TestValidateRules(t *testing.T) {
 	tests := []struct {

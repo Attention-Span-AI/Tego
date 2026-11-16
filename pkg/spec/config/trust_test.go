@@ -59,7 +59,7 @@ func mkdirMode(t *testing.T, dir, name string, mode os.FileMode) string {
 }
 
 // The trust rule over fixtures (R20, E10, E13, E26).
-// identity-config.md R20, E10 (a symlink is judged by its target and directory), E13 (a directory is untrusted, not skipped), E26 (a FIFO with no writer neither hangs nor loads). E27: the MaxLayerSize case (the doc still calls the size cap undefined, Q4).
+// A symlink is judged by its target and directory, a directory is untrusted, not skipped, a FIFO with no writer neither hangs nor loads, and the MaxLayerSize case.
 func TestReadTrusted(t *testing.T) {
 	uid := os.Getuid()
 	cases := []struct {
@@ -185,7 +185,7 @@ func TestReadTrusted(t *testing.T) {
 
 // T-config-trust-2 / I11: both trust modes run through the one helper; abort stops before the
 // next layer, warn skips the layer whole.
-// identity-config.md I11: abort and warn-and-skip both go through the one trust helper.
+// Abort and warn-and-skip both go through the one trust helper.
 func TestLoadSourcesTrustModes(t *testing.T) {
 	dir := trustedDir(t)
 	etc := writeFile(t, dir, "etc.yaml", "stop_grace: 3s\nlimits:\n  pids: 10\n", 0o664) // untrusted
@@ -299,7 +299,7 @@ func TestReadTrustedInPlaceMutationVisible(t *testing.T) {
 // second walk. Rename the parent away and leave a trusted-looking impostor at the vacated name, and the
 // check must still report the real (renamed, now world-writable) parent. The companion case — a directory
 // that passes the rule but is not the one holding the file at all — is TestCheckDirectoryRejectsReplacedFile.
-// identity-config.md E33 (the rename half): the directory judged is the one holding the descriptor.
+// The rename half: the directory judged is the one holding the descriptor.
 func TestCheckDirectoryAcrossRename(t *testing.T) {
 	uid := os.Getuid()
 	real := trustedDir(t)
@@ -342,7 +342,7 @@ func TestCheckDirectoryAcrossRename(t *testing.T) {
 // swap is the one below (the path is repointed at another file, so the inode behind f no longer has a
 // containing directory at all). Before the bind check, the trusted 0700 directory still passed and the
 // layer was honoured; now the mismatch is caught and the layer refused, fail-closed.
-// identity-config.md E33: a directory that does not hold the open inode is refused, fail-closed.
+// A directory that does not hold the open inode is refused, fail-closed.
 func TestCheckDirectoryRejectsReplacedFile(t *testing.T) {
 	dir := trustedDir(t)
 	path := writeFile(t, dir, "c.yaml", "trusted\n", 0o600)
@@ -393,7 +393,7 @@ func TestProcFDDotDotOnFileIsENOTDIR(t *testing.T) {
 	}
 }
 
-// identity-config.md E13: a $TEGO_CONFIG path that does not exist is refused under run and warned
+// A $TEGO_CONFIG path that does not exist is refused under run and warned
 // under compile/doctor, never skipped silently; an absent etc layer stays optional.
 func TestLoadSourcesMissingEnvFile(t *testing.T) {
 	dir := trustedDir(t)

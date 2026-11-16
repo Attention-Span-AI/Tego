@@ -9,7 +9,7 @@ import (
 // Loaded is the program a directly-invoked dynamic loader runs (`ld-linux-x86-64.so.2 /usr/bin/rm -rf tree`): the
 // loader opens the program, maps it and jumps to it inside the same process, so the program's own invocation makes no
 // execve anyone sees. The decision reads it as the exec's image, by its operand's name, by the walked file's name and
-// by its identity, with the argv the loader gives it (ADR 0048 (2), as amended).
+// by its identity, with the argv the loader gives it (ADR 0048 (2)).
 type Loaded struct {
 	// NodeVersion is attested from the loaded program image, not the loader.
 	NodeVersion string
@@ -156,7 +156,7 @@ func (f *Facts) loadedFacts() Facts {
 // loadedReadings keeps the actual vector and, for an empty argv[0], the former
 // operand-as-argv[0] reading. Correcting the loader facts must not remove a
 // refusal that depended on argv[0] dispatch or a raw interpreter prescan
-// (ADR 0048 (2), amendment 2026-11-12).
+// (ADR 0048 (2)).
 func (f *Facts) loadedReadings() []Facts {
 	lf := f.loadedFacts()
 	out := []Facts{lf}

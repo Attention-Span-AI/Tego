@@ -14,7 +14,7 @@ import (
 // ownState sets RuleTable.OwnState: tego's own state by resolved path, R6a's list (tegoOwn) taken whole, whether
 // or not each could be denied: the chain anchor and its directory, ~/.tego under the compile's home, the ledger root,
 // the host state (/run/tego), the machine config's price table and profiles directory. And RuleTable.OwnReadable:
-// the user registry's agents/ and skills/ (agent-contract.md R26) and the machine config's layer files (ADR 0059),
+// the user registry's agents/ and skills/ and the machine config's layer files (ADR 0059),
 // which a run may read, so an fs.ask_read entry and a held read beneath them are no different from anywhere else, but
 // which no held write's alternate reaches. A path that resolves to "/" is left out (it would hold everything; R10
 // already refuses a write entry over
@@ -46,7 +46,7 @@ func (k *compiler) ownState() {
 		paths = append(paths, k.asWalked(p))
 	}
 	k.rt.OwnState = k.spellings(k.rt.OwnState, paths)
-	if r := k.m.Registry.Value; r != "" { // what other runs resolve an agent's name to (agent-contract.md R26)
+	if r := k.m.Registry.Value; r != "" { // what other runs resolve an agent's name to
 		k.rt.OwnReadable = k.spellings(k.rt.OwnReadable, []string{k.registryDir(r, "agents"), k.registryDir(r, "skills")})
 	}
 	// The machine config's layer files, R10 targets wherever they are (ADR 0059): one outside ~/.tego is not
@@ -82,7 +82,7 @@ func (k *compiler) spellings(list, paths []string) []string {
 	return list
 }
 
-// fsAskRead compiles fs.ask_read (POC 2026-10-06, SEMANTICS §6): each entry becomes a deny_read entry marked
+// fsAskRead compiles fs.ask_read (SEMANTICS §6): each entry becomes a deny_read entry marked
 // AskRead, so the Landlock ruleset withholds its reads, Evaluate refuses them and the root tiers' models would
 // refuse them, and only tier 1's supervisor, which reads the marker, holds a read-open beneath it for a person.
 //

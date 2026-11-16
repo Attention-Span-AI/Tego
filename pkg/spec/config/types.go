@@ -80,7 +80,7 @@ type Setting[T any] struct {
 }
 
 // TierSetting is the shape of the tier ceiling: "auto" (unbounded) or a tier name, which the parser
-// has checked against its own rank of landlock, cgroup and bpflsm (R24 as amended 2026-09-24).
+// has checked against its own rank of landlock, cgroup and bpflsm (R24).
 type TierSetting struct {
 	Auto bool
 	Tier string
@@ -157,8 +157,8 @@ type RecordConfig struct {
 	// Ringbuf is the size of each run's record ring, and of its capture ring when it captures with uprobes; a
 	// power of two and a page multiple. Honoured only from /etc/tego/config.yaml (ADR 0026 (2)).
 	Ringbuf Setting[ByteSize]
-	// MaxRunBytes is a ceiling on one run's ledger, its events.jsonl and its blobs together (blobs count from
-	// 2026-11-01, under the same record.MinorLedgerCap): a run whose ledger holds this many bytes is ended as a limit,
+	// MaxRunBytes is a ceiling on one run's ledger, its events.jsonl and its blobs together (blobs counted by later
+	// builds, under the same record.MinorLedgerCap): a run whose ledger holds this many bytes is ended as a limit,
 	// which=ledger_bytes, so an agent under a restarting unit starts a new ledger instead of growing one without
 	// bound. Unbounded by default; every layer may lower it, none raise it (R15).
 	MaxRunBytes Ceiling[ByteSize]
@@ -173,7 +173,7 @@ type BPFConfig struct {
 	// RingBudget caps the memlock of every live run ring on the host, all builds together; a Prepare that would
 	// pass it fails (ADR 0026 (2)). Honoured only from /etc/tego/config.yaml, like Linger.
 	RingBudget Setting[ByteSize]
-	// Plane pins the decision plane's attach mode (ADR 0024 (2); docs/p0/enforce-plane.md R18): auto (the
+	// Plane pins the decision plane's attach mode (ADR 0024 (2)): auto (the
 	// default) takes LSM mode where the mode probe passes it, else fmod_ret mode, else the fanotify fallback; lsm
 	// or fmod_ret offers that mode only. Honoured only from /etc/tego/config.yaml, like Linger: which programs
 	// decide every host process's opens is the administrator's to say.
@@ -230,7 +230,7 @@ type Machine struct {
 	// walks it. A relative layer or one through procfs names another file in every working directory, so the Load
 	// refuses it unread and does not list it (layerPathProblem, RS9-1, RS10-1). A listed layer is there whether a file
 	// was there or not and whether it was applied or skipped (TrustWarn): each is a place a later Load reads.
-	// R10 keeps every write entry off each one, by every name its walk reads (agent-contract.md R10, ADR 0059): a run
+	// R10 keeps every write entry off each one, by every name its walk reads (ADR 0059): a run
 	// that wrote one would choose the registry, the profiles, the prices and the ledger root of the runs after it.
 	Layers []string
 	// Home is the invoking user's home directory from the passwd database, "" when unknown (E9);
@@ -242,7 +242,7 @@ type Machine struct {
 	LedgerRoot       Setting[string]
 	Prices           Setting[string]
 	Profiles         Setting[string]
-	Registry         Setting[string] // the user registry's directory, "" for none (agent-contract.md R26)
+	Registry         Setting[string] // the user registry's directory, "" for none
 	Retention        Setting[time.Duration]
 	GCInterval       Setting[time.Duration] // how often a run start applies retention, for at most retentionBudget (internal/cli); 0 never
 	StopGrace        Setting[time.Duration]

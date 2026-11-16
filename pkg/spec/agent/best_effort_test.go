@@ -42,7 +42,7 @@ func TestBestEffortCellsAreDisclosedAtCompile(t *testing.T) {
 		// open cells leave the list; an fs.read gate's O_PATH opens, which ADDFD cannot deliver, stay copied.
 		{"held read and write gates", "gate:\n  completion: held\n  rules:\n    - 'fs.read matches \"*.env\"': 90\n    - fs.write outside worktree: 90\n",
 			[]string{BestEffortGateFSReadOPath, BestEffortGateFSReadMove, BestEffortGateFSWriteMutation}},
-		// A read-write open and a move's source are scored by both fs kinds, their scores summed (ADR 0007, 2026-10-20):
+		// A read-write open and a move's source are scored by both fs kinds, their scores summed (ADR 0007):
 		// read 30 and write 30 escalate only together, so the cells of the actions
 		// both kinds score open (a read-write open is a write-open), and no read-only open's.
 		{"read and write gates that escalate only together", "gate:\n  rules:\n    - 'fs.read matches \"*.env\"': 30\n    - fs.write outside worktree: 30\n",

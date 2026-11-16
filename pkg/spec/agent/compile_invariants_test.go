@@ -101,7 +101,6 @@ func TestCompileSurvivesContractFileDeletedAfterLoad(t *testing.T) {
 // mcp[].name so a contract with several MCP servers doesn't need
 // per-entry guessing." A bare exec-not-on-path code is not enough on its
 // own to prove the message actually names the server.
-// agent-contract.md E37.
 func TestCompileExecNotOnPathNamesMCPServer(t *testing.T) {
 	f := newFixture(t)
 	c := f.load("version: 0\nname: a\ncommand: [python]\nmcp:\n  - name: ghost\n    command: [mcp-ghost]\n")

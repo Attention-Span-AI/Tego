@@ -160,7 +160,7 @@ func WithHome(dir string) CompileOption { return func(o *compileOptions) { o.hom
 
 // WithChainAnchor names the chain.log the run will anchor its head in (the
 // launcher's AnchorPath), which R10 keeps out of every write entry; default
-// ~/.tego/chain.log under the compile's home (P0-DESIGN §3.3).
+// ~/.tego/chain.log under the compile's home.
 func WithChainAnchor(path string) CompileOption {
 	return func(o *compileOptions) { o.chainAnchor = path }
 }
@@ -590,7 +590,7 @@ func (k *compiler) limits() {
 }
 
 // The least a run's own start takes in the run's cgroup, before the agent exists: the child stage is a Go process and
-// is under the limits from its first instruction. Measured on 2026-11-01 at tier landlock: pids 5 fails every time and
+// is under the limits from its first instruction. At tier landlock: pids 5 fails every time and
 // 6 passes, memory 4 MiB fails and 6 MiB passes. A pids limit below it never starts, so it is an error. How much memory
 // is charged depends on what the page cache holds, so a memory limit below it is a warning; memory_high is the same
 // floor, where the stage is throttled and the start never ends. These hold what the contract writes: a machine ceiling
@@ -789,8 +789,8 @@ func (k *compiler) limitSource(key string) string {
 //
 // Under auto with WithTiers, the ceiling is also capped at the highest tier the binary builds, so a table is
 // never compiled for a tier its own run cannot get (ADR 0019): an auto contract compiled at bpflsm, a tier no
-// build contains, and compile --test certified that tier's refusals while the run at landlock allowed them
-// (limits-check-doctor-cli.md R28). A machine config naming a concrete tier pins it, as enforce.Select reads it.
+// build contains, and compile --test certified that tier's refusals while the run at landlock allowed them.
+// A machine config naming a concrete tier pins it, as enforce.Select reads it.
 func (k *compiler) tierAndCapture() {
 	ceiling := backend.Tier(k.m.Tier.Value.String())
 	machinePin := k.m.Tier.Bounded && ceiling != "" && ceiling != backend.TierAuto
@@ -871,7 +871,7 @@ func (k *compiler) tierAndCapture() {
 // file, connection or other action the contract allowed, so what tego receipt, tego drift and the dashboard show of
 // the run is its refusals. It is what the author wrote and weakens no rule, so it is a note (Informational): `tego
 // compile` prints it, and a run only under -v, since a run's start speaks only when the person must act or the run
-// enforces less than the contract wrote; the run's end says "record off" (limits-check-doctor-cli.md R29, "A quiet
+// enforces less than the contract wrote; the run's end says "record off" ("A quiet
 // start"). A record mode the run gives (WithRecord, `tego run --record`) is the launching user's choice: --record off
 // has R29's own warning, and a --record that raises the record leaves the contract's off unused.
 func (k *compiler) recordOffNote() {
@@ -928,7 +928,7 @@ func (k *compiler) modelBudgets() (declared, imposed []string) {
 // budgetsUnseenUnderRecordOff reports that record: off with capture: uprobe leaves the model-traffic budgets
 // nothing to count. The uprobe source captures nothing under record: off (it places the probes only for a stall
 // budget's activity stamp), since the capture programs keep nothing of the run's calls, so no ssl_response reaches
-// the watcher (limits-check-doctor-cli.md R32). Only a contract that pins capture: uprobe gets here: an auto
+// the watcher. Only a contract that pins capture: uprobe gets here: an auto
 // contract is compiled to the forwarder under record: off (recordOffCapture), which records the exchanges it relays
 // whatever the record mode and is budgetsUnmetered's when it has no models: endpoint to listen for. A pinned
 // capture: uprobe runs no forwarder, so its declared budget is reported [budget-unmetered], as the run is refused
@@ -984,7 +984,7 @@ func (k *compiler) budgetsUnseenUnderRecordOff() {
 // there), or the contract declares no models: endpoint where the run captures with the forwarder, which
 // binds a listener only for a declared endpoint and so never starts (capture.Select, gap why=no-models), which
 // includes an auto contract under record: off at every tier (recordOffCapture). Such a
-// run is refused at launch, 125 [budget-unmetered] (runtime.ErrBudgetUnmetered, limits-check-doctor-cli.md R32);
+// run is refused at launch, 125 [budget-unmetered] (runtime.ErrBudgetUnmetered);
 // it used to exit 0 with only a gap and this warning tagged [unenforced], a limit that silently did nothing. The
 // finding is [budget-unmetered] and a warning, as compile reports a pinned tier the build lacks
 // [tier-unavailable]: compile answers for the contract on this machine, while the refusal is the run's, decided
@@ -1040,12 +1040,12 @@ func (k *compiler) budgetsUnmetered() {
 // (quietRead).
 //
 // At tier landlock, and in an --observe run, which installs the same filter (WithObserve), under record: summary or
-// off a read-open never reaches the supervisor (SEMANTICS §7), so a read is neither a line nor activity (custom-agent
-// POC, item 4: 14 s of reads ended at 6 s of stall_after: 5s, while record: full ran it to its own end).
+// off a read-open never reaches the supervisor (SEMANTICS §7), so a read is neither a line nor activity (14 s
+// of reads ended at 6 s of stall_after: 5s, while record: full ran it to its own end).
 //
 // At a root tier under record: off nothing is warned: trace_proc writes no sample for an allowed open, path change,
 // regular-file create or connect under off, and for a run a stall_after bounds it stamps the run's slot of
-// tego_activity instead, which the stall check pulls once a tick (limits-check-doctor-cli.md R4), so a
+// tego_activity instead, which the stall check pulls once a tick, so a
 // read, and a write-open or path change the decision plane decides in the kernel, is activity at once there. Before
 // the stamp they were none, and that was warned at the root tiers; the landlock warning under off now offers a root
 // tier as it is, where it offered one only with
@@ -1169,7 +1169,7 @@ func (k *compiler) rootTiersPinnable() []backend.Tier {
 
 // pinnedNotBuilt warns that the tier the table was compiled for is pinned, by the contract or by the machine
 // config, and this binary does not build it (WithTiers): every run of it is refused [tier-unavailable], and
-// compile said nothing while its table and compile --test answered in that tier (limits-check-doctor-cli.md R32). An
+// compile said nothing while its table and compile --test answered in that tier. An
 // auto contract left to the machine is never compiled for a tier the binary lacks (highestBuilt).
 func (k *compiler) pinnedNotBuilt(auto, machinePin bool) {
 	if !k.o.tiersSet || k.built(k.rt.Tier) || (auto && !machinePin) {

@@ -15,8 +15,8 @@ import (
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
 )
 
-// Review 1: Node's config and env-file scanners do not stop at the entry
-// script. These are the reviewer's exact vectors under allow A / deny B.
+// Node's config and env-file scanners do not stop at the entry
+// script. These vectors run under allow A / deny B.
 func TestNodeReviewPrescans(t *testing.T) {
 	ix := rules(t, "allow: a.js *", "deny: b.js")
 	for _, argv := range [][]string{
@@ -69,7 +69,7 @@ func TestNodeReviewDifferential(t *testing.T) {
 		}
 		version := strings.TrimSpace(string(v))
 		attested := nodeAttestedBuild(t, nodePath)
-		// Predict execution only on the exact measured review runtimes.
+		// Predict execution only on the exact runtimes these vectors were run on.
 		// Other versions may reject these options. Raw scans refuse on every
 		// build; unknown attached code-loading options retain master's residual.
 		configRuntime := version == "v22.21.1" || version == "v24.22.2" || version == "v25.9.0"
