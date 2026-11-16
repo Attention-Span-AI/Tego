@@ -300,7 +300,7 @@ func TestAnEntryWhoseNameIsNotItsFileNameIsRefused(t *testing.T) {
 	}
 }
 
-// The fix an entry refusal gives writes the name quoted: name is a YAML string (agent-contract R3), so
+// The fix an entry refusal gives writes the name quoted: name is a YAML string, so
 // following `write name: 2024` would leave a contract agent.Load refuses as "got integer".
 func TestAnEntryRefusalsFixQuotesTheName(t *testing.T) {
 	for _, tc := range []struct{ what, body string }{

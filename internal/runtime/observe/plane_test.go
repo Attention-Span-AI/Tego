@@ -74,7 +74,7 @@ func execSamplePlane(h sample, path string, named uint8) []byte {
 	return wire(&e)
 }
 
-// TestRecorderNamesPlaneRefusals is TIER3-PLAN T9 in the recorder: a refusal the plane made is the fs line's
+// TestRecorderNamesPlaneRefusals: a refusal the plane made is the fs line's
 // verdict with the plane's reason, the rule its rule_idx names through the plane's rows, mechanism plane and the
 // plane's mode, and the plane's own cause where the closed reason set has no code for it; an exec the plane
 // refused in bprm_check is one exec line from its own sample; an exec it allowed by an exec.allow directory (the
@@ -263,7 +263,7 @@ func hookNumber(t *testing.T, name string) uint16 {
 	return 0
 }
 
-// TestRecorderNamesPlaneAttrAndSocketRefusals is TIER3-PLAN T13 in the recorder (enforce-plane R12, R14, R23): the
+// TestRecorderNamesPlaneAttrAndSocketRefusals: the
 // plane's own sample of a refused attribute change is one fs line, its file named through the directory index as a
 // file operation's is, its operation by the hook (chmod and an ACL are chmod, chown is chown, an xattr is xattr),
 // its rule the deny_write target its row names, mechanism plane; a refused socket is one refused line naming the
@@ -355,7 +355,7 @@ func TestDecodePlaneAttrAndSocket(t *testing.T) {
 }
 
 // TestPlaneTruncatedNameCountsOnlyPathTruncated: a plane sample of a name the kernel did not read whole (path_ok 0)
-// is one path-truncated gap, never also a dir-unresolved directory-index miss that did not happen (enforce-plane R9).
+// is one path-truncated gap, never also a dir-unresolved directory-index miss that did not happen.
 func TestPlaneTruncatedNameCountsOnlyPathTruncated(t *testing.T) {
 	f := newFixture(t)
 	rt, rows := planeTable(f)

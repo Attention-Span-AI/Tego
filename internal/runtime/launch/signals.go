@@ -41,7 +41,7 @@ type SignalPolicy struct {
 	// signal arrives so the run ends with reason=stopped instead of reason=signal. nil means never.
 	StopRequested func() bool
 	// RequestedGrace returns the grace `tego stop --grace` wrote into that marker, or 0 when it wrote
-	// none or the marker holds no valid positive duration (R9, limits-check-doctor-cli.md R29). nil
+	// none or the marker holds no valid positive duration (R9). nil
 	// means never. See Handle for when it replaces StopGrace.
 	RequestedGrace func() time.Duration
 	// Now is the clock; nil means time.Now.

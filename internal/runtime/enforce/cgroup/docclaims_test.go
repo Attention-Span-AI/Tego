@@ -11,9 +11,8 @@ import (
 // TestPackageDocNamesTheFallbackMutationRefusal holds the package doc (doc.go) and the policy type's comment
 // (policy.go) to what decides a mutation in a tier-2 run. They said write denial, delete, rename and mkdir are
 // Landlock's and that trace_proc only records them. At tier cgroup with no plane mode the supervisor refuses, by
-// the root walk, a mutation beneath a deny_read nested in a write entry (supervisor fallbackMutation, supervisor
-// R15's 2026-10-17 amendment, ADR 0021 (5)), and where a plane mode runs the plane decides it (the class fixed in
-// supervisor R15 and agent-contract R15).
+// the root walk, a mutation beneath a deny_read nested in a write entry (supervisor fallbackMutation,
+// ADR 0021 (5)), and where a plane mode runs the plane decides it.
 func TestPackageDocNamesTheFallbackMutationRefusal(t *testing.T) {
 	for _, file := range []string{"doc.go", "policy.go"} {
 		b, err := os.ReadFile(file)

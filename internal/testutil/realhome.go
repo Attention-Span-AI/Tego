@@ -137,8 +137,7 @@ func snapshotTego(dirs, files []string) map[string]entryState {
 // returned (a subprocess a test started and never waited for, or one reparented when its parent exited); and, in
 // a binary that runs its tests in its own process (one not started as go test starts it, see GuardedMain), a
 // write by tests that then end the process from inside m.Run: a panic, the -test.timeout alarm, an os.Exit or a
-// fatal signal, after which no check runs. The test build's refusal of the real ~/.tego (identity-config.md
-// R27) is what keeps such a process of tego out.
+// fatal signal, after which no check runs. The test build's refusal of the real ~/.tego is what keeps such a process of tego out.
 //
 // It records the runtime parents (RealRuntimeDirs) too, where a run keeps its CODEX_HOME and last-refusal mirror
 // and where every launch sweeps the directories of runs whose launcher is gone: a test run that inherited the
@@ -146,7 +145,7 @@ func snapshotTego(dirs, files []string) map[string]entryState {
 // made, removed or replaced, a directory made there whose run's lock is not held at the check, and a directory
 // whose run's lock was free at the snapshot (a crashed run's) gone at the check: what a sweep removes. A directory
 // whose lock is held is a live run, the developer's, and is never reported, nor is the parent's own mtime, which
-// each of their runs changes (identity-config.md R27 clause b4).
+// each of their runs changes.
 //
 // A tego the developer runs by hand while the tests run changes the same files and is reported as well, and
 // so does a shell of theirs that saves its history meanwhile; the message says to rerun.
@@ -276,7 +275,7 @@ func guardedRun(run func() int, stderr io.Writer) int {
 
 // guardPaths names the directories and files GuardRealTego watches: RealTegoDirs and RealShellHistories. Only
 // this package's own tests replace it, to show the guard reads what it names (never an environment variable, which a
-// harness could set by mistake: identity-config.md R27 (b3)).
+// harness could set by mistake).
 var guardPaths = func() (dirs, files []string) { return RealTegoDirs(), RealShellHistories() }
 
 // guardTego is GuardRealTego over the given ~/.tego directories and history files.

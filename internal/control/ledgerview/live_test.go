@@ -133,7 +133,7 @@ func TestLiveFactsFollowAppends(t *testing.T) {
 
 // TestLiveFactsSayAnUnreadableStart: lines with no run_start this build reads (another kind first, or a run_start
 // whose payload does not decode) are StartUnreadable, so the lift page never tells such a run to try again; no line
-// at all is a run still starting (the review's S1).
+// at all is a run still starting.
 func TestLiveFactsSayAnUnreadableStart(t *testing.T) {
 	for name, c := range map[string]struct {
 		evs        []Event

@@ -22,7 +22,7 @@ func (forwarderStandin) Gaps() []source.Gap                                     
 
 // TestAnInertUprobeIsNotCapture is the real uprobe source on the path the tier-2 build takes when its capture
 // object cannot be loaded: Kernel mode with no kernel record to follow. Start returns nil there — a mechanism
-// that cannot run is a gap, never a failed run (capture-derive.md §4) — so run_start.capture has to learn
+// that cannot run is a gap, never a failed run — so run_start.capture has to learn
 // from the source that nothing runs, or it records uprobe for a run no uprobe saw. The runtime unit tests
 // pin the rule with a stand-in; this pins that the real source says what the rule reads.
 func TestAnInertUprobeIsNotCapture(t *testing.T) {

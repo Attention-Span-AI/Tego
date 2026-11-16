@@ -12,7 +12,7 @@ import (
 	"github.com/cilium/ebpf/btf"
 )
 
-// Reader is how a build of an object reads kernel memory (ADR 0024's 2026-09-29 tier-2 note). Tier 2's
+// Reader is how a build of an object reads kernel memory (ADR 0024 tier-2 note). Tier 2's
 // trace_proc is compiled once per reader, as the plane is (plane.go), and Load hands out the build this kernel
 // takes; the other tier-2 objects are one build that makes no bpf_probe_read_kernel call, so they have no reader.
 type Reader string

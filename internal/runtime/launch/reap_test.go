@@ -47,7 +47,7 @@ func TestReapOrphansInASubCgroup(t *testing.T) {
 
 // TestReapOrphansKeepsTheDeputy pins that the child named by KeepUnreaped (the run's open deputy, ADR 0041 D2) is left
 // a zombie while the other adopted zombies are reaped: its zombie holds its pid, so the kernel cannot give that pid to
-// a later process of the run while the kernel recorder drops the deputy's records (supervisor.md R7a). The agent can
+// a later process of the run while the kernel recorder drops the deputy's records. The agent can
 // end the deputy; the run's closeDeputy reaps it at the end.
 func TestReapOrphansKeepsTheDeputy(t *testing.T) {
 	if err := sys.SetChildSubreaper(true); err != nil {

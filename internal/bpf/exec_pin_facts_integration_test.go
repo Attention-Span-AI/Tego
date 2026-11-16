@@ -441,7 +441,7 @@ func (f *pinFacts) argvArea(t *testing.T) {
 	}
 }
 
-// execpinMaxLen is bpf/include/exec_pin.h's TEGO_PIN_MAX_LEN, supervisor.md R16's DefaultMaxArgv.
+// execpinMaxLen is bpf/include/exec_pin.h's TEGO_PIN_MAX_LEN, the supervisor's DefaultMaxArgv.
 const execpinMaxLen = 128 << 10
 
 func (f *pinFacts) stages(t *testing.T) {

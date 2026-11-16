@@ -162,7 +162,7 @@ func replayRetriever(t *testing.T, viaForwarder bool) ([]*record.Event, []captur
 	return out, from
 }
 
-// TestRetrieverRunTiesEachActionToItsReply (capture-derive R42): the retriever run
+// TestRetrieverRunTiesEachActionToItsReply: the retriever run
 // replayed from its captured traffic gives each action the reply that asked for it. Step 1's reply asked
 // for db_query (toolu_8812): the connection to the warehouse, the MCP call, the gzip the tool ran and the summary it
 // wrote are that reply's. Step 2's reply asked for publish_summary (toolu_8813): the approved connection to the queue

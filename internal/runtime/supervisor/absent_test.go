@@ -432,7 +432,7 @@ func TestExecWithNoExecSection(t *testing.T) {
 	}
 }
 
-// TestWriteWithNoFSSection pins SEMANTICS §1's "no fs:" row as amended: no write entry is compiled, so a
+// TestWriteWithNoFSSection pins SEMANTICS §1's "no fs:" row: no write entry is compiled, so a
 // write-open anywhere is refused against unmatched, exactly as under fs: {}, and reads are allowed.
 func TestWriteWithNoFSSection(t *testing.T) {
 	nr := nrFor(t, "openat")
@@ -458,8 +458,8 @@ func TestWriteWithNoFSSection(t *testing.T) {
 	}
 }
 
-// TestMountFamilyIsRefusedAsLandlockTopology is supervisor.md R31 (mount) and GAPS A9: a Landlock domain refuses mount,
-// umount, move_mount and pivot_root, so a sandbox the agent starts cannot run in either P0 tier. The
+// TestMountFamilyIsRefusedAsLandlockTopology is GAPS A9: a Landlock domain refuses mount,
+// umount, move_mount and pivot_root, so a sandbox the agent starts cannot run at tier 1 or 2. The
 // refusal now reaches the ledger: a refused line with reason landlock-topology for each refusal, and gap
 // what=enforce why=landlock-topology once per binary. An observe run has no domain and refuses nothing.
 func TestMountFamilyIsRefusedAsLandlockTopology(t *testing.T) {
@@ -518,7 +518,7 @@ func TestMountFamilyIsRefusedAsLandlockTopology(t *testing.T) {
 	}
 }
 
-// TestLandlockTopologyGapIsCappedPerRun pins supervisor.md R31's bound: the landlock-topology gap is written
+// TestLandlockTopologyGapIsCappedPerRun pins the bound: the landlock-topology gap is written
 // once for each of at most maxTopologyBinaries binaries a run, while every refusal past the cap still gets
 // EPERM and its refused line. The test above covers one binary only, so an off-by-one or a missing cap
 // passed the suite.
@@ -573,7 +573,7 @@ func TestLandlockTopologyGapIsCappedPerRun(t *testing.T) {
 	}
 }
 
-// TestTopologyFamilyRefusesUmountPivotRootAndMoveMount is supervisor.md R31 for the other three syscalls of
+// TestTopologyFamilyRefusesUmountPivotRootAndMoveMount covers the other three syscalls of
 // the mount family: umount2 and pivot_root each read their first argument as the target, move_mount its
 // destination through the dirfd, and each is refused with EPERM as a landlock-topology refused line.
 func TestTopologyFamilyRefusesUmountPivotRootAndMoveMount(t *testing.T) {
@@ -699,7 +699,7 @@ func TestKeyringUseIsVisibleWhenContinued(t *testing.T) {
 	}
 }
 
-// TestExecOfADeclaredMCPServerEmitsMCP is the P0 minimum of an mcp producer (P0-DESIGN §2.2): an exec
+// TestExecOfADeclaredMCPServerEmitsMCP is the minimum of an mcp producer: an exec
 // matching a declared mcp[].command records the server's start. Several servers share one runner, so the
 // declared arguments decide which one started, and the agent's own use of the runner starts none.
 func TestExecOfADeclaredMCPServerEmitsMCP(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// A boundary adoption's limits (ADR 0055, the 2026-11-11 limits amendment). Its table's cpu, cpu_weight and pids, a
+// A boundary adoption's limits (ADR 0055). Its table's cpu, cpu_weight and pids, a
 // machine ceiling's or the contract's, are written into the adoption's scope while it is empty, before the arm and the
 // move, by the same writer as a launched run's (cgroup.Manager.SetLimits): from its move on each process of the tree is
 // throttled (cpu.max, cpu.weight), or refused a fork or a thread past pids.max (EAGAIN); the kernel ends none for them,

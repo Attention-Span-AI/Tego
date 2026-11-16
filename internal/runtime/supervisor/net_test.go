@@ -455,12 +455,10 @@ func TestUnixSocketUnderWriteDirIsAllowed(t *testing.T) {
 	}
 }
 
-// TestSendToRefusedDatagramIsRefused is R13b as amended 2026-10-16: an unconnected datagram whose
+// TestSendToRefusedDatagramIsRefused is R13b: an unconnected datagram whose
 // destination the policy refuses is refused with R10's errno, its line is the refusal with no best_effort, and
 // nothing is sent. Before, it was continued — the data left the kernel under a refused line marked
 // best_effort — which is how net.dns.mode: off let a lookup from an unconnected socket reach the resolver.
-//
-// Spec: docs/p0/supervisor.md R13b; docs/p0/enforce-landlock.md R14.
 func TestSendToRefusedDatagramIsRefused(t *testing.T) {
 	f := newFake()
 	f.sockType = unix.SOCK_DGRAM

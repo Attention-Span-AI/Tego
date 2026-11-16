@@ -4,7 +4,7 @@ package bpf
 
 import "structs"
 
-// Capacities and widths mirrored from bpf/include/events.h (docs/p0/enforce-cgroup-observe.md §3, §6 E11, E12).
+// Capacities and widths mirrored from bpf/include/events.h.
 const (
 	// MaxSlots bounds the dense per-host run_idx space; allocation beyond it is ErrSlotsExhausted (§6 E12).
 	MaxSlots = 4096
@@ -66,18 +66,18 @@ const (
 	KindSymlink  Kind = 17
 	KindTruncate Kind = 18
 	// KindPlaneExec is the decision plane's own refusal sample (PlaneEvent) on bprm_check, the one hook the
-	// plane decides at that no recorder fexit wraps (docs/p0/enforce-plane.md R23, TIER3-PLAN T9).
+	// plane decides at that no recorder fexit wraps.
 	KindPlaneExec Kind = 19
 	// KindPlaneAttr and KindPlaneSocket are the plane's own refusal samples (PlaneEvent) on step B's hooks no
-	// recorder fexit wraps (TIER3-PLAN T13): an attribute change (chmod, chown, xattr, ACL) named by its
+	// recorder fexit wraps: an attribute change (chmod, chown, xattr, ACL) named by its
 	// directory's (Dev, DirIno) and final component, and a socket named by its family, type and protocol.
 	KindPlaneAttr   Kind = 20
 	KindPlaneSocket Kind = 21
-	// KindPlaneMap is the plane's own refusal sample (PlaneEvent) on step C's mmap_file and file_mprotect
-	// (TIER3-PLAN T14): an executable mapping named as KindPlaneAttr names a file, or with no name.
+	// KindPlaneMap is the plane's own refusal sample (PlaneEvent) on step C's mmap_file and file_mprotect:
+	// an executable mapping named as KindPlaneAttr names a file, or with no name.
 	KindPlaneMap Kind = 22
 	// KindPlaneFS is the plane's own refusal sample (PlaneEvent) on a hook a recorder fexit wraps whose fexit the
-	// build did not attach (MapPlaneRecorded; docs/p0/enforce-plane.md §7, R23, TIER3-PLAN T9b): file_open or a
+	// build did not attach (MapPlaneRecorded): file_open or a
 	// file operation, named by its directory's (Dev, DirIno) and final component, with file_open's f_flags.
 	KindPlaneFS Kind = 23
 	// KindExecResult is the terminal negative return of execve or execveat, after all refusal fragments.
@@ -86,7 +86,7 @@ const (
 	KindBindResult   Kind = 26
 	KindListenResult Kind = 27
 	// KindSockCreate is cgroup/sock_create's own refusal (SockEvent) of an inet socket outside ADR 0018's
-	// allowlist (docs/p0/enforce-cgroup-observe.md §5 R4, R5): the one line of a socket no other mechanism saw.
+	// allowlist: the one line of a socket no other mechanism saw.
 	KindSockCreate Kind = 28
 	// KindSockopt is cgroup/setsockopt's own refusal (SockoptEvent) of setsockopt(SOL_TCP, TCP_ULP) on a path the
 	// seccomp filter does not see (ADR 0018 (7)): the one line of an upper-layer protocol no other mechanism saw.
@@ -220,7 +220,7 @@ const (
 	// ReasonRefer, ReasonDenyWriteAncestor and ReasonIdentityMismatch are the decision plane's own
 	// (bpf/decide.bpf.c): a REFER refusal, a rename of a deny_write target or one of its ancestors, and a row whose
 	// key inode no longer carries the row's identity. The ledger keeps its reason in the closed set and names these
-	// in plane_reason (internal/runtime/observe planeReason, TIER3-PLAN T9).
+	// in plane_reason (internal/runtime/observe planeReason).
 	ReasonRefer             ReasonCode = 10
 	ReasonDenyWriteAncestor ReasonCode = 11
 	ReasonIdentityMismatch  ReasonCode = 12
@@ -319,10 +319,10 @@ type Run struct {
 	// Record is the run's RecordMode.
 	Record uint8
 	// Plane is the decision plane's mode that decides the run (RunPlane*, enum tego_run_plane): a plane program
-	// of another mode, or any for RunPlaneNone, returns 0 for the run (docs/p0/enforce-plane.md R18, R22).
+	// of another mode, or any for RunPlaneNone, returns 0 for the run.
 	Plane uint8
 	// Gen is the run's generation, stamped on every record its programs write (Header.Gen): the slot's rings are
-	// reused by its next run, whose reader drops a record of another generation (ADR 0026 (6) as amended). The
+	// reused by its next run, whose reader drops a record of another generation (ADR 0026 (6)). The
 	// backend sets it to the slot's epoch (slotTable.acquireGen, ADR 0025 (1)): kept per slot, never 0, and
 	// repeated only after 2^31-1 acquires of that slot. It is not taken from the cgroup id, whose low half is a
 	// kernfs ino that repeats once the idr wraps.
@@ -344,7 +344,7 @@ type NetOwner struct {
 	// Flags are NetOwner* bits: what the run's contract asks of socket creation (cgroup/sock_create, §5 R4).
 	Flags uint32
 	// RelayCgroupID is the launcher's own cgroup: connect_unix admits a /proc/self/fd/<n> name, the shape
-	// the supervisor relays a resolved unix connect under, only from a caller in it (§5 R7, supervisor.md
+	// the supervisor relays a resolved unix connect under, only from a caller in it (§5 R7,
 	// R11). Zero admits it from no one.
 	RelayCgroupID uint64
 	// Gen is the run's Run.Gen, which cgroup/sock_create stamps on its own refusal record (Header.Gen): it reads
@@ -417,7 +417,7 @@ type UnixKey struct {
 const UnixApprovalsMax = 4096
 
 // UnixApprovalKey is MapUnixApprovals' key, struct tego_unix_approval_key: one approved abstract-name connect of
-// the socket whose cookie is Cookie, in the run of slot RunIdx at Gen (supervisor R11c).
+// the socket whose cookie is Cookie, in the run of slot RunIdx at Gen.
 type UnixApprovalKey struct {
 	_      structs.HostLayout
 	RunIdx uint32
@@ -530,7 +530,7 @@ type ExecEvent struct {
 	// PathTruncated is 1 when Path did not fit (§6 E4).
 	PathTruncated uint8
 	// Plane is a PlaneNamed* value: whether the decision plane's bprm_check allowed this exec, and what
-	// Hdr.RuleIdx then names (TIER3-PLAN T9).
+	// Hdr.RuleIdx then names.
 	Plane uint8
 	// Interpreted is 1 when binfmt replaced bprm->interp from its original bprm->filename alias. The mapped
 	// argv may then have an interpreter prefix instead of the invocation's original argv[0].
@@ -709,8 +709,8 @@ type NetEvent struct {
 	Pad  uint32
 }
 
-// SockEvent is struct tego_ev_sock: cgroup/sock_create's refusal of an inet socket outside ADR 0018's allowlist
-// (docs/p0/enforce-cgroup-observe.md §5 R4, R5). Hdr.CgroupID is the run's own cgroup (the attachment's), Hdr.Gen
+// SockEvent is struct tego_ev_sock: cgroup/sock_create's refusal of an inet socket outside ADR 0018's allowlist.
+// Hdr.CgroupID is the run's own cgroup (the attachment's), Hdr.Gen
 // the owner's gen, Hdr.PPID 0. Type is sk_type, with no SOCK_NONBLOCK or SOCK_CLOEXEC; Protocol is the whole
 // number, MPTCP's 262 included.
 type SockEvent struct {

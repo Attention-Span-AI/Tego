@@ -85,9 +85,9 @@ record: summary
 }
 
 // beats is how many beats the agent's heartbeat wrote: the lines of out/n, each appended whole by one echo, so a count
-// read while the agent writes never goes back. The heartbeat rewrote its number in place (echo $i > out/n) until
-// 2026-11-06, and a read between the shell's truncate and its write found the file empty and read 0: CI's build-test
-// failed "the agent wrote -39 beats in 1 s after the resume" so (run 42184797264). That loop, read as beats read it,
+// read while the agent writes never goes back. The heartbeat rewrote its number in place (echo $i > out/n),
+// and a read between the shell's truncate and its write found the file empty and read 0: CI's build-test
+// failed "the agent wrote -39 beats in 1 s after the resume" so. That loop, read as beats read it,
 // went back on 14 of 34,711 reads on the reference box at load 6; appended lines, on none of 33,814.
 func (s *askReadScene) beats() int { return strings.Count(s.out("n"), "\n") }
 
@@ -187,7 +187,7 @@ func TestIntegrationPauseWaitsForAnAnsweredAsk(t *testing.T) {
 
 // TestIntegrationPauseBusyHeldReads: an agent that reads five files in a loop with fs.reads: held, so that nearly
 // every moment has a read in flight through the open deputy, which lives in the frozen cgroup, is paused and
-// resumed twenty times. A single 1 s attempt missed 2 of 15 on 2026-10-27; the retried attempts make a miss rare,
+// resumed twenty times. A single 1 s attempt missed 2 of 15; the retried attempts make a miss rare,
 // not impossible (the deputy still shares the frozen cgroup), so one pause-failed in the twenty is allowed when the
 // launcher's retry then confirms the pause. TEGO_TEST_PAUSE_STRICT=1 asks for twenty confirmed at once, as on the
 // box the attempts were tuned on.

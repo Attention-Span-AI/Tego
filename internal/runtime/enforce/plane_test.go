@@ -18,7 +18,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestPlaneSelectionReachesTheTierTwoBackend is TIER3-PLAN T6's wiring: Select's Plane option (doctor's
+// TestPlaneSelectionReachesTheTierTwoBackend is the wiring: Select's Plane option (doctor's
 // Report.PlaneFor for tier cgroup) becomes the tier-2 backend's Options.Plane, and a run of it compiles the table's
 // plane rows once and hands them to tier 1's composition on the run (cgroup.Run.PlaneRows), so the Landlock plan
 // holds the keyed paths the plane is filled from. Without the option neither happens.
@@ -63,7 +63,7 @@ func TestPlaneSelectionReachesTheTierTwoBackend(t *testing.T) {
 	}
 }
 
-// TestLSMPlaneReachesTheTierThreeBackend is TIER3-PLAN T7's wiring (enforce-plane R19): Select's LSMPlane option
+// TestLSMPlaneReachesTheTierThreeBackend is the wiring: Select's LSMPlane option
 // (doctor's Report.PlaneFor for tier bpflsm) constructs tier bpflsm as the tier-2 backend with that plane and
 // Options.Tier set, and a run of a table compiled for tier bpflsm composes tier 1 with the plane rows, as tier cgroup's
 // plane-mode run does. Handed doctor's refusal instead, `--tier bpflsm` is refused with it as the fix, and an auto run
@@ -122,7 +122,7 @@ func TestLSMPlaneReachesTheTierThreeBackend(t *testing.T) {
 	}
 }
 
-// TestInheritedRunDropsTheMemfdArmOnlyWithAPlane is enforce-plane R27's memfd half at the seam (TIER3-PLAN T14):
+// TestInheritedRunDropsTheMemfdArmOnlyWithAPlane is the memfd half at the seam:
 // tier 1's composition for a tier-2 or tier-3 run carries PlaneMaps exactly when the run carries plane rows, which
 // cgroupBackend.Prepare compiles only for a mode doctor's probe selected, and the plane's hooks include step C's. A
 // run on the fanotify listener keeps the refusing arm.
@@ -259,7 +259,7 @@ func TestLateSharedInodeRecomposesTierOne(t *testing.T) {
 	}
 }
 
-// TestPlaneRowsRefuseAnUnreadableMountTable is enforce-plane R12 when the launcher's mount table cannot be read: a
+// TestPlaneRowsRefuseAnUnreadableMountTable: when the launcher's mount table cannot be read, a
 // table with a deny_write target cannot have its mounted roots keyed, so its rows are refused with
 // cgroupenforce.ErrMountTable (tier cgroup then runs it on the listener, tier bpflsm refuses it) rather than
 // compiled with no mount row, which let an attribute change below the target pass. A table with no deny_write target

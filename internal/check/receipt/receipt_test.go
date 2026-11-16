@@ -553,7 +553,7 @@ func TestUpperLayerProtocolRefusalsAreCountedButWorded(t *testing.T) {
 }
 
 // TestBuiltInKindNamesEachListedULPRefusal: the dashboard's Receipt tab names a listed refusal by BuiltInKind, as tego
-// run's summary does; review 1 S1 found the tab calling the kernel-TLS refusal "Not in policy".
+// run's summary does, never calling the kernel-TLS refusal "Not in policy".
 func TestBuiltInKindNamesEachListedULPRefusal(t *testing.T) {
 	ulp := func(name string) line {
 		return line{kind: record.KindRefused, at: time.Second, rule: "unmatched", reason: record.ReasonNetNotAllowed,

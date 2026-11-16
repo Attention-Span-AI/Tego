@@ -10,7 +10,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestAnEntryTextedUnmatchedNeverJoinsTheUnmatchedBucket is limits-check-doctor-cli.md E12. A rule is named
+// TestAnEntryTextedUnmatchedNeverJoinsTheUnmatchedBucket. A rule is named
 // after its section and the author's text (fs.write[unmatched]), and only the sentinel is the bare word, so an
 // author who writes `unmatched` as a path gets its own declared bucket beside the unmatched one, and each
 // counts its own events, rather than the two merging into one that hides an undeclared action.

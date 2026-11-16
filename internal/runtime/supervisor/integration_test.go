@@ -153,15 +153,15 @@ func targetMain() int {
 		build = func() ([]bpf.Instruction, error) { return landlock.BuildFilterWriteGate(landlock.NativeArch(), false) }
 	}
 	if mode == modeGateReadWrite {
-		// The filter of a run whose gate scores fs.read only, under record: summary (gate.md R1).
+		// The filter of a run whose gate scores fs.read only, under record: summary.
 		build = func() ([]bpf.Instruction, error) { return landlock.BuildFilterReadGate(landlock.NativeArch(), false) }
 	}
 	if mode == modeSourceRoute {
-		// The filter of a run with a net: section, with its source-route arm (enforce-landlock R11b).
+		// The filter of a run with a net: section, with its source-route arm.
 		build = func() ([]bpf.Instruction, error) { return landlock.BuildFilterSourceRoute(landlock.NativeArch()) }
 	}
 	if mode == modeWatch {
-		// An enforcing run's filter with its watch arm (enforce-landlock R11e).
+		// An enforcing run's filter with its watch arm.
 		build = func() ([]bpf.Instruction, error) { return landlock.BuildFilterWatch(landlock.NativeArch()) }
 	}
 	insts, err := build()
@@ -465,7 +465,7 @@ func targetChecks() []checkResult {
 	}
 	add("resolver_udp_sendto", err, 0, "")
 
-	// An undeclared datagram send: refused before the data leaves (R13b as amended 2026-10-16).
+	// An undeclared datagram send: refused before the data leaves (R13b).
 	fd, err = unix.Socket(unix.AF_INET, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
 	if err == nil {
 		err = unix.Sendto(fd, []byte("x"), 0, &unix.SockaddrInet4{Port: 9, Addr: [4]byte{203, 0, 113, 9}})
@@ -531,8 +531,8 @@ func targetChecks() []checkResult {
 
 	// A connected UDP socket's batch whose only address lies past the 64th message: the kernel sends the
 	// unaddressed messages to the peer and the addressed one to its own msg_name, a host nothing declares.
-	// The first 64 carry nothing to record, and that host refuses the whole batch (R13b as amended
-	// 2026-10-16). Out carries that host's port.
+	// The first 64 carry nothing to record, and that host refuses the whole batch (R13b).
+	// Out carries that host's port.
 	sent, peer, other, otherPort, err := sendMMsgConnectedTail(ports[0])
 	add("tail_udp_sendmmsg", err, sent, strconv.Itoa(otherPort))
 	add("tail_udp_sendmmsg_peer", nil, peer, "")
@@ -606,7 +606,7 @@ func targetChecks() []checkResult {
 	}
 
 	// A write-open outside every declared entry: this tier records it refused and continues it; Landlock,
-	// not the supervisor, is what would stop it in a real run (R15, P0-DESIGN §4.3).
+	// not the supervisor, is what would stop it in a real run (R15).
 	wfd, err = unix.Open(filepath.Join(dir, "..", "outside.txt"), unix.O_WRONLY|unix.O_CREAT|unix.O_CLOEXEC, 0o600)
 	if err == nil {
 		_ = unix.Close(wfd)
@@ -693,7 +693,7 @@ type harness struct {
 }
 
 // startHarness installs the filter in a target process, duplicates its listener into this one and runs a
-// real Loop over it, exactly as runtime.Run does at step 7 of docs/p0/runtime-launch.md.
+// real Loop over it, exactly as runtime.Run does.
 func startHarness(t *testing.T, loops int) *harness {
 	t.Helper()
 	return startHarnessMode(t, loops, "", nil)
@@ -720,7 +720,7 @@ type harnessOpts struct {
 	// mountNS starts the target in a mount namespace of its own (root only); helperBinds then names the
 	// bind mounts it makes there before it installs the filter.
 	mountNS bool
-	// gate is the scored gate the loop's contract carries (gate.md), nil for none.
+	// gate is the scored gate the loop's contract carries, nil for none.
 	gate *gate.Policy
 	// live is the loop's Options.LiveBlocks, nil for none.
 	live func() *liveblock.Set
@@ -895,7 +895,7 @@ func startHarnessWith(t testing.TB, o harnessOpts) *harness {
 		_ = allowed.Close()
 	})
 
-	// The fd number arrives the way the child stage publishes it (runtime-launch R6), then pidfd_getfd
+	// The fd number arrives the way the child stage publishes it, then pidfd_getfd
 	// lifts the listener into this process: the agent never holds the supervisor's descriptor.
 	if err := handoffR.SetReadDeadline(time.Now().Add(20 * time.Second)); err != nil {
 		t.Fatal(err)
@@ -993,7 +993,7 @@ func startHarnessWith(t testing.TB, o harnessOpts) *harness {
 		rt.Tier = o.tier
 	}
 	if o.gate != nil && rt.Workdir == "" {
-		rt.Workdir = dir // a gate scores the worktree the contract compiled in (gate.md)
+		rt.Workdir = dir // a gate scores the worktree the contract compiled in
 	}
 	if o.record != "" {
 		rt.Record = o.record
@@ -1190,7 +1190,7 @@ func TestIntegrationSupervisor(t *testing.T) {
 	})
 
 	t.Run("undeclared datagram is refused", func(t *testing.T) {
-		// R13b as amended 2026-10-16: a refusal needs no race, so the supervisor answers R10's
+		// R13b: a refusal needs no race, so the supervisor answers R10's
 		// errno and nothing leaves. Continued, as before, the send was the kernel's to answer and the line said
 		// refused with best_effort while the datagram went out.
 		if c := h.check(t, "undeclared_udp_sendto"); !isErrno(c.Err, unix.EACCES) {
@@ -1464,11 +1464,11 @@ func TestIntegrationSupervisor(t *testing.T) {
 }
 
 // TestIntegrationFastPath measures the real round trip of the record-and-continue path against
-// P0-DESIGN §9's under-10 µs budget. The assertion is against the soft ceiling rather than the budget so
+// its under-10 µs budget. The assertion is against the soft ceiling rather than the budget so
 // a loaded CI box does not fail the suite; the measured figure is logged either way.
 //
 // The figure is the best of up to three runs: a mean over 2000 operations absorbs every scheduling stall of
-// a loaded box (211 µs against the 200 µs ceiling with the load average near 40, 2026-09-29), while the path's
+// a loaded box (211 µs against the 200 µs ceiling with the load average near 40), while the path's
 // own cost is what the best run shows. The ceiling is the soft ceiling or, on a box whose scheduler alone
 // costs more, noiseFactor times the median pipe ping-pong measured in the same run (noiseGauge). That is
 // the budget-mode assertion. The unit/race gate uses the shared timing framework's ceiling: a pipe
@@ -1508,9 +1508,9 @@ func TestIntegrationFastPath(t *testing.T) {
 // listener hangs up, every notified syscall would fail ENOSYS on its own, and Run returns on its own with
 // no cancellation at all.
 //
-// It is also the evidence behind this package's one deviation from the spec: docs/p0/supervisor.md E24
-// says closing the notify fd unblocks every pending NOTIF_RECV. It does not — the ioctl sleeps in
-// down_interruptible on a semaphore that a close does not post (measured on 6.17: a RECV blocked before
+// It is also the evidence behind the loop's design: closing the notify fd does not
+// unblock a pending NOTIF_RECV. The ioctl sleeps in
+// down_interruptible on a semaphore that a close does not post (on 6.17 a RECV blocked before
 // the close was still blocked two seconds after it). The loop therefore polls first and calls RECV only
 // with a notification already pending, which is what makes this test finish.
 func TestIntegrationListenerHangup(t *testing.T) {

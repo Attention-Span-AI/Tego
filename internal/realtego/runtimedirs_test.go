@@ -12,7 +12,7 @@ import (
 
 // TestRuntimeDirs: the runtime parents are the logind directory's tego/ for each uid (SUDO_UID's added under
 // sudo), and <XDG_RUNTIME_DIR>/tego when the variable is absolute, by its resolved path, each once; a relative or
-// empty XDG_RUNTIME_DIR adds nothing (identity-config.md R27 clause b4).
+// empty XDG_RUNTIME_DIR adds nothing.
 func TestRuntimeDirs(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "run", "user")

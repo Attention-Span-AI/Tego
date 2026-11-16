@@ -33,7 +33,7 @@ func Compose(terminal func(*record.Event), stages ...Stage) func(*record.Event) 
 }
 
 // Queue is the bounded event channel between producers and the pipeline goroutine. A full lane drops the
-// event and counts it; the count becomes a gap event (P0-DESIGN §6).
+// event and counts it; the count becomes a gap event.
 //
 // It is split into lanes, one per class of producer, each with its own capacity, and the pipeline reads them
 // fairly (a select picks uniformly among the ready ones). With one shared channel the agent chose which of
@@ -55,8 +55,8 @@ func Compose(terminal func(*record.Event), stages ...Stage) func(*record.Event) 
 // before any lane's backlog: the run's limit event.
 type Queue struct {
 	lanes [numLanes]chan *record.Event
-	// limit holds the run's limit event. One slot is enough because a run has at most one
-	// (limits-check-doctor-cli.md I1), and it cannot be taken by anything else, so the one line
+	// limit holds the run's limit event. One slot is enough because a run has at most one,
+	// and it cannot be taken by anything else, so the one line
 	// that says why the run was killed never depends on how far behind the pipeline is.
 	limit   chan *record.Event
 	dropped [numLanes]atomic.Int64
@@ -94,7 +94,7 @@ const (
 // laneWait is each lane's wait for room.
 var laneWait = [numLanes]time.Duration{LaneSupervisor: supervisorBacklogWait, LaneCapture: captureBacklogWait}
 
-// NewQueue makes a queue whose every lane holds capacity events (P0 default 4096).
+// NewQueue makes a queue whose every lane holds capacity events (default 4096).
 func NewQueue(capacity int) *Queue {
 	q := &Queue{limit: make(chan *record.Event, 1), closing: make(chan struct{})}
 	for i := range q.lanes {
@@ -206,7 +206,7 @@ type runStamp struct {
 	Cgroup   uint64
 }
 
-// stampRule is the first pipeline stage (P0-DESIGN §4.1 step 4): it completes the decision fields
+// stampRule is the first pipeline stage: it completes the decision fields
 // of an action event. The producer that saw the syscall owns the verdict (the backend's kernel
 // decision, or the compiled table's evaluation); this stage only fills what was left blank, so an
 // event can never reach the ledger with an empty rule that views would silently bucket as "no
@@ -241,8 +241,8 @@ func stampRule(s runStamp) Stage {
 // attribute is the second pipeline stage (E28a) for a run with no model traffic to derive turns from:
 // it records every action as unattributed with method none, which says no attribution was attempted
 // rather than that one was attempted and found nothing. A run that does capture model traffic gets
-// derive.Steps.Stage here instead, which is the M2 half of P0-DESIGN §5's "Attribution: none (M1) →
-// time (M2)". A producer that already attributed an event is left alone.
+// derive.Steps.Stage here instead, which attributes by time rather
+// than none. A producer that already attributed an event is left alone.
 func attribute(method string) Stage {
 	return func(next func(*record.Event)) func(*record.Event) {
 		return func(ev *record.Event) {
@@ -254,8 +254,8 @@ func attribute(method string) Stage {
 	}
 }
 
-// budgets is the run's limits.Watcher as one pipeline stage (limits-check-doctor-cli.md §4:
-// "Observe ... called once per event, pipeline order, before ledger.Writer.Append"). The watcher
+// budgets is the run's limits.Watcher as one pipeline stage
+// (Observe is called once per event, in pipeline order, before ledger.Writer.Append). The watcher
 // passes every event on unchanged and can only ever drop the run, never an event.
 //
 // It fills in mono_ns first when the producer left it blank, as supervisor.Loop does (it stamps ts
@@ -263,7 +263,7 @@ func attribute(method string) Stage {
 // fill it at write time, after every stage, so without this the watcher would read those events as
 // time zero, its LastEventMonoNS would never move, and the two ceilings only the clock can cross,
 // wall (R3) and the stall gap (R4), could never fire. The value is the run's own clock, the one
-// Append would have read a few microseconds later, and Append keeps it (record-ledger.md §4: a
+// Append would have read a few microseconds later, and Append keeps it (a
 // non-zero mono_ns is the producer's capture reading), so what the watcher measured is what the
 // ledger says. A producer that took its own reading, the kernel recorder or the forwarder, keeps it.
 func budgets(w *limits.Watcher, clk Clock) Stage {
@@ -295,7 +295,7 @@ func ledgerStage(s ledger.Stage, onErr func(*record.Event, error)) Stage {
 	}
 }
 
-// pipeline drains the run's queue into the ledger through the stage chain of P0-DESIGN §4.1 step 4:
+// pipeline drains the run's queue into the ledger through the stage chain:
 // stampRule → attribute → redact → splitBlobs → Append. One goroutine owns it, so the ledger has
 // exactly one writer (§6), and it starts writing only once run_start is on disk: the queue buffers
 // whatever the sources produce before that (ledger.Append refuses any event before run_start).
@@ -311,7 +311,7 @@ type pipeline struct {
 	// written counts events appended, for the run's own diagnostics.
 	written atomic.Int64
 	// onLedgerFail is told, once, that the terminal refused a line: a record that cannot be written is
-	// the run's end (record-ledger.md §7), not a count. nil in tests that do not care.
+	// the run's end, not a count. nil in tests that do not care.
 	onLedgerFail func(error)
 	// onCaptureLost is told how many capture events the queue dropped, each time some were: the runner ends a
 	// run with a token or cost budget, which can no longer be enforced.
@@ -509,8 +509,8 @@ func (p *pipeline) buffered() (*record.Event, bool) {
 	return nil, false
 }
 
-// reportDrops turns the queue's drop counter into one gap event (P0-DESIGN §2.4: "the producer
-// increments a drop counter that becomes a gap event with count at the next opportunity"). The gap
+// reportDrops turns the queue's drop counter into one gap event (the producer
+// increments a drop counter that becomes a gap event with count at the next opportunity). The gap
 // goes straight through the stage chain rather than back onto the queue, which may be full — that
 // is what is being reported.
 func (p *pipeline) reportDrops() {
@@ -537,7 +537,7 @@ func (p *pipeline) reportDrops() {
 }
 
 // reportRefused turns the count of events a stage or Append refused into one gap event, which is the
-// same treatment P0-DESIGN §2.4 gives a queue-full drop and what this counter's own contract promises.
+// same treatment a queue-full drop gets and what this counter's own contract promises.
 //
 // Without it the run's two loss channels differ in the one way that matters to a reader: a queue-full
 // drop leaves a `gap what=record why=channel-full count=N` line, while an event the pipeline itself
@@ -580,7 +580,7 @@ const (
 	GapSourceStopTimeout = "source-stop-timeout"
 	// GapBudgetUnmetered is a tokens, cost_usd or repeats budget with no model traffic to meter: the run
 	// captures nothing (capture off, or the forwarder alone with no models: endpoint, so it never started).
-	// The binary field names the budget; it never trips (limits-check-doctor-cli.md R32).
+	// The binary field names the budget; it never trips.
 	GapBudgetUnmetered = "budget-unmetered"
 	// GapUnmeteredAfterExit is model exchanges capture could not count, reported under a token or cost budget
 	// once the run had quiesced (its cgroup empty, or tego's teardown begun): the count says how many. They no

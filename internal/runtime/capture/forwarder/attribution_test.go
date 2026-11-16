@@ -14,7 +14,7 @@ import (
 )
 
 // TestRequestLineCarriesWhatDeriveReadOffIt: the forwarder stamps an ssl_request with what derive reads off the
-// request alone (capture-derive R40, R42): a model turn's tool results, an empty list for a turn that reports none,
+// request alone: a model turn's tool results, an empty list for a turn that reports none,
 // and side on the model host's telemetry, before the round trip, so the attribute stage has them when the line
 // reaches it.
 func TestRequestLineCarriesWhatDeriveReadOffIt(t *testing.T) {

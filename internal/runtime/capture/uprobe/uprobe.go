@@ -183,7 +183,7 @@ type Options struct {
 	// decision events after it (see emitResponse). Nil records every exchange underived.
 	Deriver Deriver
 	// OpenBlobs builds the body store for a run when Blobs is nil, from the run directory Start is
-	// given: the store is per run (record-ledger R11), and the run directory does not exist when the
+	// given: the store is per run, and the run directory does not exist when the
 	// capture sources are built.
 	OpenBlobs func(run source.RunRef) BlobStore
 	// Proc reads /proc. Nil means the system's.
@@ -281,7 +281,7 @@ type Uprobe struct {
 	// runSet names the run's slot (Options.RunSet); runSetOwned is the pinned map this source opened for it,
 	// closed with the rest of the kernel side at Stop. scoped, slot and gen are Start's reading of this run's
 	// row, under mu: once scoped, a chunk is this run's only when it carries slot and gen, the generation that
-	// keeps a chunk the slot's previous run left in the ring this run reuses out (ADR 0026 (6) as amended).
+	// keeps a chunk the slot's previous run left in the ring this run reuses out (ADR 0026 (6)).
 	runSet      RunSet
 	runSetOwned io.Closer
 	scoped      bool
@@ -384,14 +384,14 @@ type Deriver interface {
 }
 
 // requestDeriver is a Deriver that also reads what a request says alone as it is captured
-// (derive.Dispatcher.HandleRequest): a declared HTTP MCP server's tool calls (capture-derive R41).
+// (derive.Dispatcher.HandleRequest): a declared HTTP MCP server's tool calls.
 type requestDeriver interface {
 	HandleRequest(req *derive.Message, meta derive.Meta) (derive.Result, bool)
 }
 
 // requestReader is a Deriver that also reads what a request says alone (derive.Dispatcher.ReadRequest): whether it
 // is a model host's side traffic, and the tool results a model turn reports, which the request line carries for
-// the attribute stage (capture-derive R40, R42).
+// the attribute stage.
 type requestReader interface {
 	ReadRequest(req *derive.Message, meta derive.Meta) derive.RequestReading
 }
@@ -785,7 +785,7 @@ func (u *Uprobe) Stop() error {
 	return errors.Join(u.err, u.syncErr)
 }
 
-// syncBlobs makes the bodies this source stored durable before the run can end. It is record-ledger R6's one
+// syncBlobs makes the bodies this source stored durable before the run can end. It is the ledger's one
 // barrier, blobs before events, met for a store the ledger writer does not own: the source writes bodies
 // through its own handle on the run's blob directory (Options.OpenBlobs), and the writer's Close syncs only
 // the blobs it stored itself before it syncs events.jsonl. Unsynced, a crash inside that Close would leave a
@@ -1029,7 +1029,7 @@ func (u *Uprobe) OnOpen(pid int, cgroupID uint64, path string) {
 // live reports whether a hook call can be acted on: Start has opened the kernel side and decided to capture
 // (ready, and not inert), and Stop has not swept. The run starts the kernel record before this source (runtime.recorderFirst), so the
 // recorder's drain can call a hook before Start; what it can see then is the launcher's own child stage,
-// because the agent is released only after every source has started (runtime-launch.md §4.1 step 8), and the
+// because the agent is released only after every source has started, and the
 // stage's exec is already held back from this source (runtime.stageFilter).
 //
 // A run under record: off is never live (capturesNothing) unless it is activity-only (stampsActivity). The
@@ -1646,7 +1646,7 @@ func (u *Uprobe) handle(raw []byte) {
 			return
 		}
 		// A sequence hole or a framing error: the connection's waiting requests lost their responses,
-		// and a run with a token or cost budget can no longer count what they spent (limits-check-doctor-cli.md R1 (f)).
+		// and a run with a token or cost budget can no longer count what they spent.
 		u.loseConn(key, "a connection's exchanges were lost to a capture hole or a framing error")
 	}
 }
@@ -1774,7 +1774,7 @@ func (u *Uprobe) handleClose(raw []byte) {
 }
 
 // closePending ends what a connection that closed, started afresh or outlived the source still held: requests
-// whose responses capture never saw (limits-check-doctor-cli.md R1 (e)). Those whose host may have been a
+// whose responses capture never saw. Those whose host may have been a
 // model's (meteredHost) are reported unmetered, which ends a run with a token or cost budget, since their
 // spend reached no budget. A connection with none waiting ended cleanly, and nothing is reported for it,
 // unlike one capture lost (loseConn).

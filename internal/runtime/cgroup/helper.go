@@ -90,7 +90,7 @@ func startHelperIn(mount string, root bool, procCgroup []byte, pid int, build fu
 
 // reapHelper waits for a started helper in a goroutine of its own, so the caller does not wait and the helper, once
 // it exits, leaves no zombie child of the caller: a launcher starts another build's linger timer from Prepare, at
-// the start of a run that can last hours (ADR 0022, note 2026-10-17), and a helper released instead stayed a zombie
+// the start of a run that can last hours (ADR 0022), and a helper released instead stayed a zombie
 // of `tego run` until the run ended. A caller that exits first leaves the helper to init, as before.
 func reapHelper(cmd *proc.Cmd) {
 	go func() { _ = cmd.Wait() }()

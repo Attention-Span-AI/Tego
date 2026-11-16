@@ -106,7 +106,7 @@ func TestBuildRuleMapsProtocolNarrowing(t *testing.T) {
 	}
 }
 
-// TestBuildRuleMapsAskCompilesRefused pins enforce-cgroup-observe.md §5 R3: P0 has no gate, so an ask entry is a refusal in the kernel.
+// TestBuildRuleMapsAskCompilesRefused: the kernel has no gate, so an ask entry is a refusal in the kernel.
 func TestBuildRuleMapsAskCompilesRefused(t *testing.T) {
 	t.Parallel()
 	for _, v := range []agent.Verdict{agent.VerdictAsk, agent.VerdictRefused} {
@@ -178,7 +178,7 @@ func TestBuildRuleMapsCIDR(t *testing.T) {
 	}
 }
 
-// TestBuildRuleMapsOverlappingExactAndCIDRKeepBothTablesInAnyOrder is enforce-cgroup-observe.md §5 R3 and §6 E8:
+// TestBuildRuleMapsOverlappingExactAndCIDRKeepBothTablesInAnyOrder:
 // an exact host:port and a CIDR that covers the same address land in different tables, and the kernel consults
 // the exact one first, so the exact row carries the composition of every entry covering its address (SEMANTICS
 // §5): the refusing prefix decides it whichever was declared first, as Evaluate decides it. The CIDR row is

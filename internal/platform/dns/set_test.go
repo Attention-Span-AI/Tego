@@ -370,7 +370,7 @@ func TestResolverAddrsSnapshot(t *testing.T) {
 // TestRefreshedFollowsTheLiveSet: Refreshed hands a second enforcer of the same entries the addresses the set
 // admits now. Tier 2's kernel rows decide every connect the supervisor relays, so rows left at the addresses of
 // run start refused, with EPERM, each connect to an address a host rotated to while the supervisor and the
-// ledger said allowed (enforce-cgroup-observe §6 E7). A literal address, a cidr and a unix entry are never
+// ledger said allowed. A literal address, a cidr and a unix entry are never
 // re-resolved and come back as given; so does an entry that is not where NewSet found it; base is not touched.
 func TestRefreshedFollowsTheLiveSet(t *testing.T) {
 	lk := newLookup()
@@ -466,8 +466,7 @@ func TestMatchRefusesAnUnspecifiedDestination(t *testing.T) {
 	}
 }
 
-// TestCompiledTTLExpiryIndependentOfRefreshFloor covers agent-contract.md E19
-// and network-controls.md R5: lookup pacing never extends compiled authority.
+// TestCompiledTTLExpiryIndependentOfRefreshFloor: lookup pacing never extends compiled authority.
 func TestCompiledTTLExpiryIndependentOfRefreshFloor(t *testing.T) {
 	for _, ttl := range []time.Duration{agent.MinDNSTTL, agent.DefaultDNSTTL} {
 		t.Run(ttl.String(), func(t *testing.T) {

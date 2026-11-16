@@ -115,7 +115,7 @@ func runOneModelCall(t *testing.T, f *fixture, agentBin, caFile string, at time.
 	return exitCodeOf(t, err), string(out), events(t, dirs[0]), took
 }
 
-// TestIntegrationAStreamingModelResponseIsNotAStall is limits-check-doctor-cli.md R4's relay half at tier landlock:
+// TestIntegrationAStreamingModelResponseIsNotAStall is the relay half at tier landlock:
 // a model response that streams an event every 0.5 s for 6 s, three times the run's stall_after of 2 s, is the
 // agent waiting on its model, not a stalled agent. The record carries one line at each end of the exchange (in
 // summary) or none of the stream (off), and the Go agent makes no syscall the supervisor is notified of while it

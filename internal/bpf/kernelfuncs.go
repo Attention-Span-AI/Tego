@@ -10,7 +10,7 @@ import (
 	"github.com/cilium/ebpf/btf"
 )
 
-// What a run asks of the kernel's BTF, and how it is answered without parsing it (enforce-plane §2.18).
+// What a run asks of the kernel's BTF, and how it is answered without parsing it.
 //
 // A root run that adopts its build's pinned programs loads nothing, yet it asked the kernel's BTF which functions
 // exist: the reader (ReaderKfuncs), the optional tracing program (OptionalTracePrograms) and the plane's optional

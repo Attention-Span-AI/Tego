@@ -20,7 +20,7 @@ import (
 )
 
 // TestViewsReadHarnessFixture: every view reads spec/record/v1/fixtures/harness.jsonl, a run at record_minor 14 with
-// run_start.harness (agent-contract.md R27, ADR 0062). The hook-state write its fs.harness-state grant allowed is a
+// run_start.harness (ADR 0062). The hook-state write its fs.harness-state grant allowed is a
 // runtime grant, never an undeclared entry to drift and learn; the refused write to the settings file is a refusal.
 func TestViewsReadHarnessFixture(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "spec", "record", "v1", "fixtures", "harness.jsonl"))

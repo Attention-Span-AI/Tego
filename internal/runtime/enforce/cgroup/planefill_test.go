@@ -68,7 +68,7 @@ func heldOf(m map[string]int) heldFD {
 	return func(p string) (int, bool) { fd, ok := m[p]; return fd, ok }
 }
 
-// TestPlanPlaneFillTemplates covers enforce-plane R16's plan: one entry per fs row and exec row at its held
+// TestPlanPlaneFillTemplates covers the fill's plan: one entry per fs row and exec row at its held
 // descriptor, an fs row's rule_idx its position in PlaneRows.FS and its kind the row's, an exec row's rule_idx its
 // entry with the final name, the identity recorded, and the plan ordered by (what, descriptor), which is the order
 // the wanted-row keys take.
@@ -139,7 +139,7 @@ func TestPlaneKeyedIsWhereTheFsRowsAreWritten(t *testing.T) {
 }
 
 // TestPlanPlaneFillRefuses covers what the plan refuses before any row is written: a table over the slot's maps,
-// gen 0, a keyed path nothing holds, two exec entries on one descriptor (TIER3-PLAN T5's condition 4: two exec
+// gen 0, a keyed path nothing holds, two exec entries on one descriptor (two exec
 // entries naming one inode refuse Prepare) and two fs rows on one, a name longer than a row holds, and a
 // descriptor that no longer names its path (a number reused before the plan). An fs row and an exec row may
 // share a descriptor: they go to two maps.
@@ -217,11 +217,11 @@ func okResults(plan *planeFillPlan) []ebpfbindings.PlaneFillRow {
 	return got
 }
 
-// TestCheckPlaneFill covers enforce-plane R16's check: a fill passes only when every row is written, at the
+// TestCheckPlaneFill covers the fill's check: a fill passes only when every row is written, at the
 // identity the plan recorded, as the kernel reported it at the pass. A descriptor number reused between the plan
 // and the fill (the kernel saw another inode there) fails, as does a row the kernel could not write, one it never
 // saw, an exec file whose directory changed, and a second row on one inode, which names the first. A number reused
-// after the pass is not asked about: its row was written at the planned inode (§2.6, 2026-09-30).
+// after the pass is not asked about: its row was written at the planned inode (§2.6).
 func TestCheckPlaneFill(t *testing.T) {
 	rows, held, id := fillFixture()
 	plan, err := planPlaneFill(rows, 0, 9, heldOf(held), id)

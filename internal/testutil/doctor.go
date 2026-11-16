@@ -35,9 +35,8 @@ func DoctorOffers(cmd *exec.Cmd) (bool, []byte, error) {
 
 // RequireTier skips the test when cmd, a `tego doctor --require <tier>`, answers that this machine does not offer
 // tier, and fails it when doctor gives no answer at all (DoctorOffers): a harness fault is not a machine without the
-// tier. Until 2026-10-16 the root tests skipped on any failure of that command, and a test build's refusal of the
-// invoking user's own ~/.tego (exit 125) then hid some forty tier-2 end-to-end tests in the KVM root suites as
-// "this machine offers no tier cgroup".
+// tier. Skipping on any failure of that command would let a test build's refusal of the invoking user's own ~/.tego
+// (exit 125) hide tier-2 end-to-end tests in the KVM root suites as "this machine offers no tier cgroup".
 func RequireTier(t testing.TB, cmd *exec.Cmd, tier string) {
 	t.Helper()
 	offered, out, err := DoctorOffers(cmd)

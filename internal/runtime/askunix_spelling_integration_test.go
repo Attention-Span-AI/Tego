@@ -112,7 +112,7 @@ connect("scope", "out/f.sock")
 `
 
 // TestIntegrationAskUnixScopeSpellings is R11c at tier landlock for a scope whose path is spelled another way than the
-// names the run passes (ADR 0008's note of 2026-10-19).
+// names the run passes (ADR 0008).
 func TestIntegrationAskUnixScopeSpellings(t *testing.T) {
 	runAskUnixSpellings(t, tegoBinary(t), "landlock")
 }
@@ -274,7 +274,7 @@ func runAskUnixSpellings(t *testing.T, bin, tier string) {
 		// through the same directories to 600 that do not exist. They are made before the run, as a previous run of
 		// the agent could have made them: the plane refuses the agent an fs path deeper than 64 below its nearest
 		// entry (enforce-plane), and the placement is the supervisor's at every tier. A filesystem that stores no
-		// symlink target that long (xfs: 1024 bytes, against these 2.5 KB; AlmaLinux 9.8's /tmp, 2026-11-10) gets 200
+		// symlink target that long (xfs: 1024 bytes, against these 2.5 KB; AlmaLinux 9.8's /tmp) gets 200
 		// directories and 300: each target then fits in 1,013 bytes, and the chain still takes about 2,500 names,
 		// twice what the supervisor walks (agent.ResolveUnixPlace).
 		s := spellingScene(t, bin, tier, project, scope, "2s", spellingChainProbe, func(string) {

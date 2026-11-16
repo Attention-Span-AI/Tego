@@ -932,8 +932,8 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	d := runData{Run: run, Tab: tab, Now: s.cfg.Now(), Refusals: ledgerview.RunRefusals(run), Verdict: r.URL.Query().Get("verdict"),
 		Chain: ledgerview.VerifyRun(r.Context(), s.cfg.Ledger, id, s.cfg.Anchor, run)}
-	// Every tab's head links "Make a contract" straight to New contract from this run where it is served (acceptance B,
-	// 2026-11-11); the Tighten tab offers it too.
+	// Every tab's head links "Make a contract" straight to New contract from this run where it is served; the
+	// Tighten tab offers it too.
 	d.CanSetUp = s.cfg.Setup != nil && !run.Live
 	d.BlockKinds = liveblock.Kinds
 	if k, err := liveblock.ParseKind(r.URL.Query().Get("block")); err == nil {

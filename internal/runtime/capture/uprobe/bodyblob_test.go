@@ -39,7 +39,7 @@ func (b *bodyTap) Handle(req, resp *derive.Message, meta derive.Meta) (derive.Re
 	return b.next.Handle(req, resp, meta)
 }
 
-// TestDeriveReadsTheBytesTheBlobHolds is capture-derive.md I10 on the uprobe path: the Message.Body derive
+// TestDeriveReadsTheBytesTheBlobHolds, on the uprobe path: the Message.Body derive
 // parsed is byte for byte what blob(sha) holds on disk, for both halves of the exchange, and the blob's own
 // content hashes to the name the event records. The response is chunked, so derive's copy is the decoded
 // body, never the wire's framing, and so must the blob be (R15). The store is the ledger's real one.

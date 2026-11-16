@@ -30,7 +30,7 @@ const (
 	kindAgentCommand                  // the agent command: EXECUTE|READ_FILE (R5)
 	kindUnixSocket                    // net.allow unix:<path>: RESOLVE_UNIX, ABI 9+ (R21)
 	kindImplicitDeny                  // run dir, contract, /sys/fs/cgroup, /sys/fs/bpf: Access 0 (R8)
-	kindPlaneKey                      // a path the decision plane keys: its neutral read rights, or identity only (enforce-plane R16, R17)
+	kindPlaneKey                      // a path the decision plane keys: its neutral read rights, or identity only
 	kindDeputy                        // tego's own binary, the open deputy's exec: EXECUTE|READ_FILE (ADR 0041 D2)
 )
 
@@ -159,7 +159,7 @@ func (s *fdSet) add(fd int, path string, kind entryKind, access accessFS, st *un
 }
 
 // link takes ownership of fd, a descriptor held at one hard link of an inode entry i already holds under another
-// name, for the decision plane's fill alone (enforce-plane R16, §6 E15): an exec row is keyed by the link an entry
+// name, for the decision plane's fill alone: an exec row is keyed by the link an entry
 // names, which the fill reads from the descriptor's own dentry, so each exec row's path needs a descriptor opened at
 // that path. The entry is identity only (Access 0, no rule: Landlock's rule is on the inode, which entry i carries),
 // is not an E7 dedupe target (ids keeps pointing at i), and is released and checked (owns) like every other.

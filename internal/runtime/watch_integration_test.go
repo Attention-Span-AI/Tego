@@ -20,7 +20,7 @@ import (
 // enforces is refused EACCES, and so is a dnotify watch (fcntl F_NOTIFY) of a descriptor of it, opened to list on the
 // READ_DIR the ruleset leaves it, and a fanotify mark of it where the kernel offers unprivileged fanotify, while a
 // watch of its write directory is made (watchHelper's exit 0). Each refusal is a refused line in events.jsonl, op the
-// syscall, target the directory, reason read-denied, rule the entry (supervisor R36, enforce-landlock R11e). Before,
+// syscall, target the directory, reason read-denied, rule the entry. Before,
 // no watch call was notified and no hook of the tier saw one: the watch was made, and reported which of the target's
 // files were opened and changed (watchHelper exits watchExitTargetWatched, and with the inotify and fanotify arms
 // alone, watchExitDnotifyWatched).

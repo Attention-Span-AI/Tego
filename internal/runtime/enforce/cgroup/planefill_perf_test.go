@@ -16,7 +16,7 @@ import (
 )
 
 // planFillBudget1000 is the ceiling on the plan half of Prepare's fill at 1000 real rows on the host's own
-// filesystem (enforce-plane §10; the guest perf suite budgets the whole phase, `fill.rows1000.ms`). The plan is the
+// filesystem (the guest perf suite budgets the whole phase, `fill.rows1000.ms`). The plan is the
 // part that grows with the rows: one fstat, one lstat and one fdinfo read each.
 const planFillBudget1000 = 200 * time.Millisecond
 
@@ -44,7 +44,7 @@ func fillRows(tb testing.TB, n int) (*decide.PlaneRows, heldFD) {
 }
 
 // TestPlanPlaneFillStaysUnderItsBudgetAt1000Rows fails when the plan's cost per row grows past the budget: the
-// 0.5 ms a row qa-perf measured for the whole fill (3,800 rows: 2.3 s) would fail it; the plan alone is 20 to 30 us a row.
+// 0.5 ms a row of the whole fill (3,800 rows: 2.3 s) would fail it; the plan alone is 20 to 30 us a row.
 // In budget mode (testutil.BudgetsEnv, set by scripts/timing-budgets.sh) the figure is one plan on the wall clock,
 // held to the budget; in the unit gate it is the fastest of five plans in the thread's own time
 // (testutil.MinOfThread: the plan runs on the calling goroutine), held to testutil.CeilingFactor times it, its wall

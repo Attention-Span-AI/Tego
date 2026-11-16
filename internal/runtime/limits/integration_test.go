@@ -110,7 +110,7 @@ func TestIntegrationCostCeilingKillsTheRun(t *testing.T) {
 	}
 }
 
-// TestIntegrationRepeatsKillsTheRun is acceptance §12.4's other half against a real cgroup: the
+// TestIntegrationRepeatsKillsTheRun, against a real cgroup: the
 // repeat detector stops a looping agent.
 func TestIntegrationRepeatsKillsTheRun(t *testing.T) {
 	fs, c := scopeOrSkip(t)

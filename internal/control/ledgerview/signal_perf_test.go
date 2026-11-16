@@ -97,7 +97,7 @@ func liveBig(tb testing.TB, n int) (s *Store, root, id string, rng *rand.Rand) {
 var benchSens = Sensitive{Entries: []string{"/home/u/.ssh/", "./confidential/"}, Cwd: "/home/u/proj"}
 
 // BenchmarkSignalLiveAppend is a live update of a 24/7 agent's run page: a 100k-line live run gains 10 lines, and its
-// Signal is read on the new version (PF-1's acceptance: under 15 ms; the full pass took about 150 ms).
+// Signal is read on the new version (target: under 15 ms; a full pass takes about 150 ms).
 func BenchmarkSignalLiveAppend(b *testing.B) {
 	s, root, id, rng := liveBig(b, 100_000)
 	r, err := s.Run(id)
@@ -135,7 +135,7 @@ func BenchmarkSignalFull(b *testing.B) {
 }
 
 // BenchmarkCompareWarm is Compare of a 5k-line watched run against the 100k-line run with both Signals cached, as a
-// second look at /compare reads it (PF-1's acceptance: under 40 ms; 196-309 ms before).
+// second look at /compare reads it (target: under 40 ms).
 func BenchmarkCompareWarm(b *testing.B) {
 	s, root, id, rng := liveBig(b, 100_000)
 	w := "r-aaaa-0008-watchx"

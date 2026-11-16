@@ -116,8 +116,8 @@ func (t target) stream() bool {
 //
 // A contract with no net: section decides nothing, and there a connect is answered CONTINUE (R7,
 // compiled.netOpen). Relaying it would perform it from this process, which has no Landlock domain and, at
-// tier 2, runs as root: the agent would reach an abstract name its domain's scope refuses (enforce-landlock
-// R7) and a root-only socket its own uid cannot open, with the listener reading this process's
+// tier 2, runs as root: the agent would reach an abstract name its domain's scope refuses
+// and a root-only socket its own uid cannot open, with the listener reading this process's
 // credentials. With no entry to hold to, the relay protects no decision, so the kernel runs the agent's
 // own connect as the agent. Its line is this loop's best-effort one unless the run's kernel recorder records
 // the connect itself (kernelRecords), in which case the kernel's is the only one. The exception is a contract that guards a models[] endpoint (decideGuarded):
@@ -248,8 +248,8 @@ func handleConnect(l *Loop, n *notif) {
 }
 
 // kernelDecided is the line of an allowed IP connect this loop relayed, once its real result is known. At tier
-// 2 the run's connect4/6 decides the relayed connect as well, on the agent's socket (enforce-cgroup-observe §5
-// R1, R5), and a refusal there fails it with EPERM: the line is then the kernel's refusal, with the rule and
+// 2 the run's connect4/6 decides the relayed connect as well, on the agent's socket,
+// and a refusal there fails it with EPERM: the line is then the kernel's refusal, with the rule and
 // reason its breadcrumb names, or `observed` when no fresh breadcrumb names this destination (§6 E5), since
 // this loop's allow would say the run let through a connect that did not happen. A breadcrumb saying the
 // kernel allowed it leaves the EPERM to something outside tego, and this loop's allow stands.
@@ -346,7 +346,7 @@ const relayGrace = 2 * time.Millisecond
 // supervisor's job: "when the supervisor wishes to emulate a blocking system call, it must do so in such
 // a way that it gets informed if the target's system call is interrupted by a signal handler ... it could
 // employ a separate thread that uses the SECCOMP_IOCTL_NOTIF_ID_VALID operation to check if the target is
-// still blocked". 20 ms is an unsourced P0 default: two ioctls a second per outstanding relay, against a
+// still blocked". 20 ms is an unsourced default: two ioctls a second per outstanding relay, against a
 // window that is otherwise the kernel's whole SYN retry schedule.
 const relayPoll = 20 * time.Millisecond
 
@@ -626,7 +626,7 @@ func (l *Loop) resolveSocket(n *notif, c *compiled, sockfd int) (t target, why s
 //
 // The read is a snapshot of a socket every thread of the agent shares, so on its own it is check-then-act: a
 // sibling's setsockopt between it and the relayed call would add a route. The filter closes that: under a net
-// gate or a net: section it refuses every setsockopt that sets one (enforce-landlock R11b, sourceRouteTest), on
+// gate or a net: section it refuses every setsockopt that sets one (sourceRouteTest), on
 // scalar arguments. What the read still catches is a socket that carried a route before the filter applied, one
 // the agent inherited or received over a unix socket, and one a ring set under io_uring: true.
 func (l *Loop) sourceRouted(c *compiled, t *target) bool {
@@ -735,8 +735,8 @@ func (l *Loop) emitNet(n *notif, c *compiled, d dest, proto string, dec verdictO
 	l.emitFor(n, ev, payload)
 }
 
-// hostSocketWhat is what the socket a refusal of rule host-sockets names gives an agent that reaches it (agent-contract
-// R19, ADR 0070 (4)), or "" for one R19's list does not name: looked up on the name the decision was made on
+// hostSocketWhat is what the socket a refusal of rule host-sockets names gives an agent that reaches it
+// (ADR 0070 (4)), or "" for one the list does not name: looked up on the name the decision was made on
 // (dec.sockPath, cleaned and resolved against the task's cwd), else on the cleaned absolute name the address spells,
 // with the list's %U the invoking user's runtime directory (runtimeDirs), the one compile names.
 func (l *Loop) hostSocketWhat(dec verdictOf, d dest) string {
@@ -883,7 +883,7 @@ func continuedOf(dec verdictOf) verdictOf {
 // ok is false when this loop would not continue one: the contract has a net: section, or guards a
 // models[] endpoint (decideGuarded), so the connect is relayed or refused and the agent's own task never
 // makes it. It is the one lookup the tier-2 kernel recorder names such a connect with, whose line is then
-// the connect's only one (R7, kernelRecords; enforce-cgroup-observe R5): the resolver exception, the
+// the connect's only one (R7, kernelRecords): the resolver exception, the
 // entries with their live addresses, the resolved-address check and the entries the runtime adds (the
 // capture listener) are this loop's, never a second matcher's. proto is "tcp", "udp" or "raw". Safe for
 // any number of goroutines.
@@ -909,8 +909,8 @@ func (l *Loop) decideInet(c *compiled, ap netip.AddrPort, proto string) verdictO
 // named model ports require an explicit, safely resolved net.allow entry. Other ports follow net: normally.
 // Every admitted IP operation is relayed, holding the address against a sibling-thread rewrite (R7).
 // With no net: section (netOpen) the contract itself admits every destination, so the port reservation
-// does not apply there and only the model's own addresses and local aliases are refused (SEMANTICS §1,
-// amended 2026-10-05): from 2026-10-01 such a run refused every HTTPS host on a named model's port.
+// does not apply there and only the model's own addresses and local aliases are refused (SEMANTICS §1),
+// so such a run does not refuse every HTTPS host on a named model's port.
 func (l *Loop) decideGuarded(c *compiled, d dest, proto string, connectOp bool) verdictOf {
 	switch {
 	case d.isInet():

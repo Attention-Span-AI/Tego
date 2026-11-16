@@ -14,7 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// One model for every unix pathname the run passes (R11, R11a; ADR 0041's 2026-10-16 note): a connect's, an addressed
+// One model for every unix pathname the run passes (R11, R11a; ADR 0041): a connect's, an addressed
 // datagram's and a bind's name is resolved in the task's own view — from /proc/<tid>/root, beneath it, for an absolute
 // name and from /proc/<tid>/cwd for a relative one, with openat2's RESOLVE_NO_MAGICLINKS — to what the task's own lookup
 // reaches, and the decision is made on the identity of that inode (unixPlace), never on the name's spelling. A connect

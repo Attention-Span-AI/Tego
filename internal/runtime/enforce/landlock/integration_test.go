@@ -200,7 +200,7 @@ func realPrepare(t *testing.T, rt *agent.RuleTable) *Handle {
 // exec via the loader, REFER renames, unlisted exec, mount refusal and TCP with net.allow empty, at
 // whatever ABI this kernel has.
 //
-// Spec: docs/p0/enforce-landlock.md E10 (a file created after restrict_self is unreadable).
+// A file created after restrict_self is unreadable.
 func TestIntegrationLandlock(t *testing.T) {
 	root := tempDir(t)
 	h := realPrepare(t, integrationTable(t, root))

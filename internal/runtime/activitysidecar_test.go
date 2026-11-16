@@ -13,7 +13,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestTheWatcherPublishesToTheRunsSidecar is limits-check-doctor-cli.md R9's runtime half: the activity the
+// TestTheWatcherPublishesToTheRunsSidecar is the runtime half: the activity the
 // budget watcher counts without a line (here a supervisor Touch under record: off) reaches <run>/activity from
 // the watcher's own loop, so `status` reads the idle the watcher kills on; the sidecar's descriptor is closed once
 // the workers have stopped, and a second close is nothing.

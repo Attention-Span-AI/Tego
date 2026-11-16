@@ -21,7 +21,7 @@ import (
 
 var update = flag.Bool("update", false, "rewrite the golden proposals from the fixtures")
 
-// The fixtures are the ledgers of two real observe-only runs of `tego watch` on 2026-10-06, the interactive Claude
+// The fixtures are the ledgers of two real observe-only runs of `tego watch`, the interactive Claude
 // Code 2.1.290 and Codex 0.159.2 start-up screens (no credentials, so each stopped at its first-run screen), with
 // the home directory /home/<user> written /home/user, the machine's host name and its tag in the run id replaced, and
 // the names that were hashes of something on the machine, and the contract hash of a contract not kept here, set to
@@ -324,7 +324,7 @@ func TestFixturesHaveNoHomeOfTheirAuthor(t *testing.T) {
 }
 
 // TestTheHeaderSaysContract: the header every saved contract carries, from tego learn and the dashboard's preview
-// alike, uses the product's word: contract, never policy (acceptance B, 2026-11-11). A path that holds the word
+// alike, uses the product's word: contract, never policy. A path that holds the word
 // (/etc/crypto-policies) is a fact and may stay.
 func TestTheHeaderSaysContract(t *testing.T) {
 	for _, fx := range []string{claudeFixture, codexFixture} {

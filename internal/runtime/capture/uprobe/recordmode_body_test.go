@@ -18,7 +18,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestRecordModeGatesBodyStorageNotEvents is record-ledger.md R12's summary and full halves on the capture
+// TestRecordModeGatesBodyStorageNotEvents covers record modes summary and full on the capture
 // path: under `record: summary` the exchange still reaches the ledger as an ssl_request and an ssl_response
 // event, but neither names a blob and the run's blob directory stays empty (so R10 never fires); under
 // `record: full` the same exchange names both blobs. The mode gates body storage, never event storage.

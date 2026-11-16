@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// sysRuns writes two runs shaped like what a real Codex or curl leaves under Tego (the UX lane's ledgers, 2026-10-27):
+// sysRuns writes two runs shaped like what a real Codex or curl leaves under Tego (the UX lane's ledgers):
 // each reads a secret, asks nscd for a name over its unix socket right after (the C library's getaddrinfo), reads a
 // second secret and then connects to the attacker's sink at 127.0.0.1:48802. The nscd lookups sit closer to the
 // secret reads than the sink does. W is tego watch (everything observed); E is enforced: both reads, the four nscd

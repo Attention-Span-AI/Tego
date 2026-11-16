@@ -25,8 +25,6 @@ import (
 // verdict taken on out/sub read allow for an end Landlock refuses at
 // ro (EACCES). A dangling out/dl, which the walk could not follow, was decided on the name already. Real walks of a
 // real tree, as a run makes them.
-//
-// Spec: docs/p0/supervisor.md R15b.
 func TestANameEndEndingInSlashIsDecidedOnTheName(t *testing.T) {
 	const pathAddr, srcAddr = 0x10000, 0x20000
 	for _, tc := range []struct {

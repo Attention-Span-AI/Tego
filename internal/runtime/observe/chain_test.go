@@ -126,7 +126,7 @@ func TestRecorderVerdictIsTheChainsReturn(t *testing.T) {
 	}
 }
 
-// TestRecorderChainAllowsWhatTheModelWouldRefuse is the case ADR 0016 was measured on: the model predicted a
+// TestRecorderChainAllowsWhatTheModelWouldRefuse is the case behind ADR 0016: the model predicted a
 // refusal for an action the kernel let through (66 of 768 tier-2 actions in the 6.17 guest). The line is allow.
 func TestRecorderChainAllowsWhatTheModelWouldRefuse(t *testing.T) {
 	f := newFixture(t)
@@ -152,7 +152,7 @@ func TestRecorderChainAllowsWhatTheModelWouldRefuse(t *testing.T) {
 // TestRecorderListenerReadKeepsTheModel: a read under an unenforced deny_read entry is the fanotify listener's
 // to answer, and the listener's answer is in the chain's return only up to 6.12. Where the listener refused it
 // (a mount it marked, the chain's 0 from 6.13 or the listener's EPERM up to 6.12) its own line is the action's and
-// the recorder writes none (supervisor R7a); where the recorder writes the line (Landlock's EACCES came first, or a
+// the recorder writes none; where the recorder writes the line (Landlock's EACCES came first, or a
 // mount made beneath the entry after Prepare, which the listener never marked, E24), the line keeps the model's
 // verdict on every kernel, and says the model produced it.
 //

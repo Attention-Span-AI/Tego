@@ -17,7 +17,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/bpf"
 )
 
-// PinDir is where a build pins its maps, one directory per bpf_hash (docs/p0/enforce-cgroup-observe.md §3).
+// PinDir is where a build pins its maps, one directory per bpf_hash.
 const PinDir = "/sys/fs/bpf/tego"
 
 // Pinned names of the capture ring buffer and its lost counter inside a build's map directory. The
@@ -37,8 +37,8 @@ const (
 )
 
 // ErrNoPinDir is LoadCollection over a build whose pin directory does not exist. The directory is the tier-2
-// backend's to create at Prepare and to remove when its last launcher leaves (docs/p0/enforce-cgroup-observe.md
-// §5 R14); a capture object pinned into one this package made would outlive every run with nothing to
+// backend's to create at Prepare and to remove when its last launcher leaves;
+// a capture object pinned into one this package made would outlive every run with nothing to
 // remove it.
 var ErrNoPinDir = errors.New("uprobe: the build has no pin directory")
 

@@ -74,7 +74,7 @@ func TestALastLauncherOutRidesOutAProbesMomentaryHold(t *testing.T) {
 // asked lastOut while the other still held its shared lock, and each took its own shared hold back after
 // failing, so both answered false and nobody unpinned the build. Exactly one of them must be last.
 //
-// Also pins runtime-launch.md I6: with two holders exactly one departure sees itself last.
+// Also pins: with two holders exactly one departure sees itself last.
 func TestTwoDeparturesExactlyOneIsLast(t *testing.T) {
 	dir := t.TempDir()
 	a, err := acquireBuildLock(dir, "h")

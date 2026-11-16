@@ -44,7 +44,7 @@ func TestAliasRemedyRequiresHoldableContract(t *testing.T) {
 }
 
 // planeRows is the table's plane rows as a root-tier run is filled from them: CompilePlane's, with a row for each
-// mounted root below a deny_write target (enforce-plane R12), or why the plane cannot hold the table
+// mounted root below a deny_write target, or why the plane cannot hold the table
 // (decide.ErrPlaneCap, decide.ErrPlaneExecVerdict, cgroupenforce.ErrMountTable for a table with a deny_write target
 // and a mount table that cannot be read).
 func planeRows(rt *agent.RuleTable) (*decide.PlaneRows, error) { return planeRowsAt(rt, planeMounts) }

@@ -179,8 +179,7 @@ func TestProbeRulesetAnswersOnTheKernel(t *testing.T) {
 	checkProbeAnswers(t, sc, fd)
 }
 
-// TestRulesetNumberReopenedBeforeAnAddOnTheKernel is the reviewer's reproduction of the ruleset's half of
-// The ruleset number is closed by another owner and reopened just before a sibling's rule, on a
+// TestRulesetNumberReopenedBeforeAnAddOnTheKernel: the ruleset number is closed by another owner and reopened just before a sibling's rule, on a
 // pipe, for which the kernel answers the add EBADFD, and on an O_PATH file, the kind of open that took a
 // freed number in the original trace, for which it answers EBADF, as for a closed number. Prepare's cleanup
 // must leave either file at the number.

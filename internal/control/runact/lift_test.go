@@ -200,7 +200,7 @@ func TestGovernedBlockCannotShorten(t *testing.T) {
 }
 
 // TestCheckLoosening: a running Locked run and one whose run_start is below the modes are refused ErrLocked in the words
-// a Locked lift gets; one with no ledger to read yet is refused ErrStarting, never ErrLocked (acceptance 2B); a running Adjustable run is not; a run no launcher holds, Locked
+// a Locked lift gets; one with no ledger to read yet is refused ErrStarting, never ErrLocked; a running Adjustable run is not; a run no launcher holds, Locked
 // or Adjustable, is refused ErrNotRunning, so no caller can take a free lock for a go-ahead.
 func TestCheckLoosening(t *testing.T) {
 	lift := liveblock.CheckFence(liveblock.Target{Run: liveRun, Running: true, Timed: true}, liveblock.KindRead, "/srv/x", time.Time{})
@@ -226,7 +226,7 @@ func TestCheckLoosening(t *testing.T) {
 		t.Fatalf("a run with no ledger: %v, want ErrStarting", err)
 	}
 	// A first line that is there and is no run_start this tego reads: ErrStartUnreadable, never ErrStarting, whose
-	// words say to try again (the review's S1); an empty file is still starting.
+	// words say to try again; an empty file is still starting.
 	for text, want := range map[string]error{"{\n": ErrStartUnreadable, "": ErrStarting, `{"v":1`: ErrStarting} {
 		if err := os.WriteFile(filepath.Join(dir, ledger.EventsFile), []byte(text), 0o600); err != nil {
 			t.Fatal(err)

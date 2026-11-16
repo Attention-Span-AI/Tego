@@ -24,7 +24,7 @@ import (
 // never reported the failure it was aborting for. No unprivileged test can put a process in D state, so the
 // stand-in is a live child that abortKill waits on without signalling, which is exactly what the reap sees.
 //
-// Also pins runtime-launch.md R13: a child that outlives the bound is ErrChildNotReaped.
+// Also pins: a child that outlives the bound is ErrChildNotReaped.
 func TestAbortBoundsTheReapOfAStuckChild(t *testing.T) {
 	testutil.NoFDLeak(t) // abort closes the pidfd and the pipes it was given (ADR 0023 C6)
 	requireExecutable(t, "/bin/sleep")
@@ -73,7 +73,7 @@ func TestAbortBoundsTheReapOfAStuckChild(t *testing.T) {
 // TestAbortReapsADeadChildQuietly is the ordinary abort: the child dies on SIGKILL, the reap finishes well
 // inside the bound, and the error is the cause alone.
 //
-// Also pins runtime-launch.md R13: a failed Start kills and reaps its child.
+// Also pins: a failed Start kills and reaps its child.
 func TestAbortReapsADeadChildQuietly(t *testing.T) {
 	testutil.NoFDLeak(t) // abort closes the pidfd and the pipes it was given (ADR 0023 C6)
 	requireExecutable(t, "/bin/sleep")
@@ -184,7 +184,7 @@ func TestAbortNamesHowADeadChildEnded(t *testing.T) {
 // TestWaitNotifyFDNamesAStageThatDiedBeforeGetfd: the stage wrote its fd message and then died (an OOM kill,
 // a runtime crash under a low pids.max) before the parent's pidfd_getfd. The kernel answers EBADF while the
 // stage is an unreaped zombie and ESRCH once it is reaped; both are a death before the handoff, so the error
-// must be ErrChildDied carrying the wait status, like every other such death (runtime-launch.md case 3).
+// must be ErrChildDied carrying the wait status, like every other such death.
 func TestWaitNotifyFDNamesAStageThatDiedBeforeGetfd(t *testing.T) {
 	testutil.NoFDLeak(t) // abort closes the pidfd and the pipes it was given (ADR 0023 C6)
 	requireExecutable(t, "/bin/sh")

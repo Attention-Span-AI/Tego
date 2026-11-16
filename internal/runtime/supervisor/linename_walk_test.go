@@ -26,8 +26,6 @@ import (
 // by any walk but the decision's names the other file. Each end a syscall follows is covered: an open, an attribute
 // change, and a link's source with AT_SYMLINK_FOLLOW, from each side of the flip, and the kernel recorder's naming of a
 // continued open. Real walks of a real tree, as a run makes them.
-//
-// Spec: docs/p0/supervisor.md R15b.
 func TestFSLineNameIsTheDecisionsWalk(t *testing.T) {
 	const pathAddr, path2Addr = 0x10000, 0x11000
 	for _, tc := range []struct {
@@ -141,8 +139,6 @@ func TestFSLineNameIsTheDecisionsWalk(t *testing.T) {
 // renames a name (pathQuery.parent), which it refuses before a lookup of its own. FSTarget and ExecImage both answer
 // it, from their own walk. Real walks of a real tree, as this
 // process.
-//
-// Spec: docs/p0/supervisor.md R15b, R16b.
 func TestTheWalkNamesADotDotSpelling(t *testing.T) {
 	w, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {

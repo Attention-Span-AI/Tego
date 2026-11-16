@@ -10,7 +10,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// TestResponseForAnOpenerThatIsGoneIsSwallowed is docs/p0/enforce-cgroup-observe.md §6 E10 against a real
+// TestResponseForAnOpenerThatIsGoneIsSwallowed against a real
 // fanotify group: when a pids cap kills the cgroup while a decision is in flight, the kernel's teardown of the
 // opener drops the pending permission event, and the listener's answer then names a descriptor the group no longer
 // holds. The kernel refuses that write (ENOENT, or ESRCH from the process side), which is the opener already

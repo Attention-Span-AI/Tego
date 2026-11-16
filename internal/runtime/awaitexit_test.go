@@ -57,7 +57,7 @@ func sleepingChild(t *testing.T) (*launch.Child, int) {
 // TestAwaitExitWaitsForTheTreeOnCancel is step 12 on the cancellation branch, through awaitExit itself: the run's
 // context has ended, so the child's Wait returns its error, awaitExit kills the tree and reaps the child, and it
 // must then return only once the cgroup has emptied, so the final drains that follow read every sample of the
-// run (enforce-cgroup-observe.md §4 Stop). A tree that never empties is bounded by killWait and said with gap
+// run. A tree that never empties is bounded by killWait and said with gap
 // what=record why=ringbuf-undrained. awaitExit used to wait on the run's own, already cancelled, context there,
 // which returned at once with the tree still exiting and said nothing; TestAwaitEmptyOutlivesTheRunContext
 // covers awaitEmpty alone, and nothing covered the call.
@@ -112,7 +112,7 @@ func TestAwaitExitWaitsForTheTreeOnCancel(t *testing.T) {
 	})
 }
 
-// TestAwaitExitEndsWhatTheMainProcessLeftRunning (runtime-launch.md case 24): once the
+// TestAwaitExitEndsWhatTheMainProcessLeftRunning: once the
 // agent's main process has exited, what it left running in the run's cgroup gets stop_grace to exit, then the tree
 // is killed, the run_end detail names the processes the kill ended, and the main process's own status stands. With
 // keep_descendants: true the run waits for the tree as before, and no kill is written.

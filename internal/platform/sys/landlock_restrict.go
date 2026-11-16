@@ -25,7 +25,7 @@ const (
 // refuse, so a launcher can record exactly which it asked for and could not have (an audit flag on a kernel
 // below ABI 7 is a record the run will not get). LANDLOCK_RESTRICT_SELF_TSYNC and any bit this package does
 // not name are always refused: TSYNC would put the domain on the launcher's own threads, which seccomp's
-// NEW_LISTENER excludes (enforce-landlock R13).
+// NEW_LISTENER excludes.
 func LandlockRestrictFlags(requested uint32, abi int) (applied, dropped uint32) {
 	var known uint32
 	if abi >= 7 {
@@ -52,7 +52,7 @@ func RestrictSelf(rulesetFD int, flags uint32) error {
 // refuses fails the stage rather than vanish: the run asked for it, and a silent retry with 0 is how an audit
 // flag used to be dropped on ABI 7 to 10 with nothing to say so. An ABI that cannot be read leaves the flags
 // as asked, and the kernel's answer decides. A call the kernel accepted with LandlockNoNewPrivs is cross-checked
-// with PR_GET_NO_NEW_PRIVS (nnp), and a bit left unset, or unreadable, fails the stage (enforce-landlock I8): the
+// with PR_GET_NO_NEW_PRIVS (nnp), and a bit left unset, or unreadable, fails the stage: the
 // flag is then the only thing that set it, and the answer is never assumed. restrict, abi and nnp are the
 // syscall seams (sys.LandlockRestrictSelf, sys.LandlockABI and sys.NoNewPrivs in production), so the degrade paths are tested with faked responses in landlock_restrict_test.go
 // without a matching kernel. It is the one landlock_restrict_self wrapper in the tree (enforce-landlock

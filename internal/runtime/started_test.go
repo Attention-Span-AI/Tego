@@ -29,7 +29,7 @@ func (g orderGate) Kill(context.Context) error {
 	return nil
 }
 
-// TestReleaseAgentRunsStartedBeforeTheGroupCheckAndTheAck is ADR 0073 D4 and runtime-launch.md §4.1 steps 9a and 10
+// TestReleaseAgentRunsStartedBeforeTheGroupCheckAndTheAck is ADR 0073 D4
 // on the runtime's fakes: Started is called exactly once, with the run's id and directory, before the group check and
 // before the child's Ack. Its error, or a worker that failed before it, means the agent is never released: no Ack,
 // the child killed, run_end reason error with a detail naming the step. A nil Started changes nothing.
@@ -94,7 +94,7 @@ func TestReleaseAgentRunsStartedBeforeTheGroupCheckAndTheAck(t *testing.T) {
 	}
 }
 
-// TestReleaseAgentLeavesAStartedPanicUnrecovered is ADR 0073 D4's panic rule (runtime-launch R14): a panic in the
+// TestReleaseAgentLeavesAStartedPanicUnrecovered is ADR 0073 D4's panic rule: a panic in the
 // hook is not recovered into a run_end; it leaves releaseAgent before the Ack, so the child stage never execs the agent.
 func TestReleaseAgentLeavesAStartedPanicUnrecovered(t *testing.T) {
 	var order []string

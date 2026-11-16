@@ -23,9 +23,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// TIER3-PLAN T15's root cells: step D's socket_connect and socket_sendmsg (enforce-plane R14), in each build and
+// Step D's root cells: socket_connect and socket_sendmsg, in each build and
 // mode this kernel offers, decide a run's unix names as cgroup/connect_unix and sendmsg_unix do on 6.7+ (the same
-// rows, the same rule, enforce-cgroup-observe §5 R7), refusing with EACCES. The agent is planeUnixHelper, this test
+// rows, the same rule), refusing with EACCES. The agent is planeUnixHelper, this test
 // binary re-executed into a child cgroup, whose sockets are the run's; the supervisor's relay is this process,
 // connecting a pidfd_getfd duplicate of one of them.
 
@@ -88,7 +88,7 @@ func planeUnixOp(verb, arg string) error {
 	return fmt.Errorf("unknown op %q", verb)
 }
 
-// TestPlaneUnixHooksDecide is enforce-plane R14 on a real kernel: below 6.7, where tier 2 has no unix hook, the
+// TestPlaneUnixHooksDecide on a real kernel: below 6.7, where tier 2 has no unix hook, the
 // plane's socket_connect and socket_sendmsg refuse a run's connect or datagram to a name no unix: or write entry
 // admits, allow a listed one, admit the relay's /proc/self/fd/<n> from the launcher's cgroup only, and refuse every
 // name of a run whose slot holds no unix policy of its gen (counted as norows); a policy that decides nothing, and
@@ -243,7 +243,7 @@ func planeUnixCells(t *testing.T, o Object, mode PlaneMode) {
 	if err := coll.Maps[MapPlaneCounters].Put(uint32(runIdx), PlaneCounts{}); err != nil {
 		t.Fatal(err)
 	}
-	// The slot's header (enforce-plane R6): this run's gen, and the plane decides its unix names.
+	// The slot's header: this run's gen, and the plane decides its unix names.
 	setSlot := func(gen, flags uint32) {
 		t.Helper()
 		if err := coll.Maps[MapPlaneSlots].Put(uint32(runIdx), PlaneSlot{Gen: gen, Flags: flags}); err != nil {

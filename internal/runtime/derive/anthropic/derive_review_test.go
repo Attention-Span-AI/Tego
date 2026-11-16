@@ -98,7 +98,7 @@ func TestUsageBillingModifiers(t *testing.T) {
 
 // TestCutStreamWithServerToolsIsUnmetered: server-tool counts and the input the tool loop grows are reported only in
 // the message_delta a cut stream lost, so max_tokens as output bounds nothing and the exchange stays unmetered
-// (ADR 0036 note 2026-09-30). A request with custom tools only is bounded as before.
+// (ADR 0036). A request with custom tools only is bounded as before.
 func TestCutStreamWithServerToolsIsUnmetered(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

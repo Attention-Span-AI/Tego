@@ -17,7 +17,7 @@ import (
 // TestDeriveStates (status_test.go) does not already exercise: R7's dependence on the caller's own
 // lock probe rather than run_end alone (E4), R9's precedence over R11 (not just R10, which
 // "stall wins over waiting model" already covers) and over R10 when both are simultaneously true,
-// and the inclusive ">=" at R9's own boundary (docs/p0/limits-check-doctor-cli.md §5, §8 I3).
+// and the inclusive ">=" at R9's own boundary.
 func TestDeriveStateMachinePrecedence(t *testing.T) {
 	tests := []struct {
 		name  string

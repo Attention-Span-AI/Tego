@@ -23,8 +23,6 @@ import (
 // writes none for an open the fanotify listener refused after Landlock let it through, whose own line is the
 // action's (a Landlock refusal, the chain's EACCES, keeps the recorder's); and it names an allowed modification
 // by the entry that granted it, as compile --test does, not by a deny_read entry nearer to the path.
-//
-// Spec: docs/p0/supervisor.md R7a; docs/p0/enforce-cgroup-observe.md R9.
 func TestOneLinePerActionWithTheSupervisor(t *testing.T) {
 	f := newFixture(t)
 	nested := filepath.Join(f.out, "keys")

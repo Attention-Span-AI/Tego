@@ -116,7 +116,7 @@ func routeOf(t *testing.T, ev *record.Event) *record.RouteTaken {
 }
 
 // delivered returns once every line l has queued so far has reached its sink. A handler queues its lines and answers
-// the client without waiting for the ledger (capture-derive.md I1), so a client can hold its answer while the lines
+// the client without waiting for the ledger, so a client can hold its answer while the lines
 // its request wrote are still in the queue: a check of the sink after a response waits for the queue, not a clock.
 func delivered(l *Listener) { l.emitq.flush(5 * time.Second) }
 

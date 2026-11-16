@@ -40,8 +40,6 @@ const netlinkSockDiag, netlinkAudit, netlinkGeneric = 4, 9, 16
 // socketpair(2) are admitted only as what the network rules govern, and every other triple is notified to a
 // supervisor handler that can only refuse it: SCTP reached any address through SCTP_SOCKOPT_CONNECTX and a peerless
 // send() with no ledger line. Without a net: section nothing changes.
-//
-// Spec: docs/p0/enforce-landlock.md E30.
 func TestFilterSocketAllowlist(t *testing.T) {
 	const (
 		nonblockCloexec = 0x800 | 0x80000
@@ -111,8 +109,7 @@ func TestFilterSocketAllowlist(t *testing.T) {
 // internal/bpf SocketAllowed admits, the Go spelling of bpf/include/socket_allow.h, which the plane's socket_create
 // and cgroup/sock_create run in the kernel. Every other triple is refused: notified to the supervisor's handler, or
 // MPTCP's silent EPROTONOSUPPORT. So no socket the filter admits is refused by a kernel layer behind it, and no
-// socket a kernel layer would refuse gets past the filter on socket(2) (enforce-landlock E30, enforce-cgroup-observe
-// §5 R4).
+// socket a kernel layer would refuse gets past the filter on socket(2).
 //
 // The one cell where they differ is the MPTCP arm, which stays first and silent (ADR 0018's PR 1 condition): protocol
 // 262 is answered EPROTONOSUPPORT in every family, AF_UNIX included, which the allowlist admits with any protocol. The

@@ -64,7 +64,7 @@ func (bd *builder) writeEntry(r agent.FSRule) error {
 	return err
 }
 
-// sameRuntimeDir refuses a runtime grant (the run's own CODEX_HOME, agent-contract.md R10a) whose held descriptor is
+// sameRuntimeDir refuses a runtime grant (the run's own CODEX_HOME) whose held descriptor is
 // not the directory the runtime made: hold opens the path following links, so a link swapped in for it, or for a
 // directory above it, after the runtime checked it would otherwise move the grant where it pointed.
 // The comparison reads the descriptor that is granted, so nothing can be swapped in after it.
@@ -105,7 +105,7 @@ var mkdirAs = func(path string, uid, gid int) error {
 // (R2, ABI-5 row), and RESOLVE_UNIX whenever the ruleset handles it — ABI ≥ 9 under a net: section
 // (newBuilder) — because a socket the run binds under a write path is allowed implicitly (SEMANTICS §5). Landlock
 // cannot tell who bound a socket, so this grant is a name-level backstop: the supervisor, deciding first, refuses a
-// socket there the run did not bind (supervisor R11a, R21). fitAccess then masks by ABI and by file-ness.
+// socket there the run did not bind. fitAccess then masks by ABI and by file-ness.
 func (bd *builder) writeMask(r agent.FSRule) accessFS {
 	a := accessFS(r.Access) | readSet
 	if bd.execUnrestricted {

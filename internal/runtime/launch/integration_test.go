@@ -233,7 +233,7 @@ func waitSigIgnored(t testing.TB, pid int, sig syscall.Signal) {
 	t.Fatalf("pid %d never ignored %v", pid, sig)
 }
 
-// Also pins runtime-launch.md E5: the child is dumpable at the pidfd_getfd call site.
+// Also pins: the child is dumpable at the pidfd_getfd call site.
 func TestExecveIsFirstNotification(t *testing.T) {
 	cgDir, cgFD := testCgroup(t)
 	ctx := context.Background()
@@ -336,7 +336,7 @@ func TestChildBlocksUntilAck(t *testing.T) {
 	waitComm(t, child.PID, "sleep")
 }
 
-// Also pins runtime-launch.md E8, E18, E27: a failed execve, E2BIG included, is an ordinary post-ack exec
+// Also pins: a failed execve, E2BIG included, is an ordinary post-ack exec
 // failure.
 func TestExecFailures(t *testing.T) {
 	tests := []struct {
@@ -350,7 +350,7 @@ func TestExecFailures(t *testing.T) {
 		{"/etc/passwd", nil, syscall.EACCES, identity.ExitNoExec, identity.ReasonExecFailed},
 		// One argument past the kernel's per-string ceiling (MAX_ARG_STRLEN, 128 KiB): execve says E2BIG, and
 		// that is an ordinary post-ack execve failure like the two above, not a preparatory-step error
-		// (runtime-launch.md E18; E27's large env is the same call refused for the same reason).
+		// (E27's large env is the same call refused for the same reason).
 		{"/bin/true", []string{strings.Repeat("a", 200_000)}, syscall.E2BIG, identity.ExitNoExec, identity.ReasonExecFailed},
 	}
 	for _, tc := range tests {
@@ -507,7 +507,7 @@ func TestLandlockConfinesWrites(t *testing.T) {
 // asserts the half the running credentials make observable rather than assuming one of them: an
 // unprivileged `go test` and a root run in the KVM guest (test/vm, `make vm-root-test`) each pin a side.
 //
-// Also pins runtime-launch.md E25: Landlock and seccomp survive the credential drop.
+// Also pins: Landlock and seccomp survive the credential drop.
 func TestPrivilegedOrderingSwap(t *testing.T) {
 	eff, _, _, err := sys.Capabilities()
 	if err != nil {
@@ -717,7 +717,7 @@ func TestParentDeathKillsAgent(t *testing.T) {
 // [0 1 142 145 2] in TestSignalTermForwarded; here the leaked descriptors are planted, so the test fails
 // wherever the stage leaves them open, not only where a runner happens to leak some.
 //
-// Also pins runtime-launch.md E42: descriptors the launcher inherited without FD_CLOEXEC do not reach the agent.
+// Also pins: descriptors the launcher inherited without FD_CLOEXEC do not reach the agent.
 func TestAgentInheritsNothingTheLauncherInherited(t *testing.T) {
 	var p [2]int
 	if err := unix.Pipe2(p[:], 0); err != nil { // no O_CLOEXEC, as a leaked descriptor arrives
@@ -750,7 +750,7 @@ func TestAgentInheritsNothingTheLauncherInherited(t *testing.T) {
 	}
 }
 
-// TestNonUTF8BytesReachExecve: runtime-launch.md E17 through the real stage. The agent writes back the argv
+// TestNonUTF8BytesReachExecve, through the real stage: the agent writes back the argv
 // byte, the env value and its working directory it was given; each must be the launcher's bytes exactly.
 func TestNonUTF8BytesReachExecve(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "d\x80ir")
@@ -941,7 +941,7 @@ func TestStopGraceEscalatesThroughCgroupKill(t *testing.T) {
 	}
 }
 
-// Also pins runtime-launch.md E3: a child that dies before the handshake is ErrChildDied.
+// Also pins: a child that dies before the handshake is ErrChildDied.
 func TestChildDiesBeforeHandoff(t *testing.T) {
 	ctx := context.Background()
 	child, err := (&Launcher{Exe: "/bin/false", Args: []string{}}).Start(ctx, validSpec(), nil)
@@ -961,7 +961,7 @@ func TestChildDiesBeforeHandoff(t *testing.T) {
 	}
 }
 
-// Also pins runtime-launch.md E4: a landlock_restrict_self failure reaches the parent as ErrChildLandlock wrapping the errno.
+// Also pins: a landlock_restrict_self failure reaches the parent as ErrChildLandlock wrapping the errno.
 func TestChildStepFailureIsDecoded(t *testing.T) {
 	// A ruleset fd that is not a ruleset: landlock_restrict_self fails EBADFD, reported as StepLandlock.
 	f, err := os.Open("/dev/null")

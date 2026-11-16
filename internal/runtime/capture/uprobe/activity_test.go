@@ -13,12 +13,12 @@ import (
 )
 
 // stallBounded is a record: off table whose limits bound stall_after: the probes' only use for its run is the
-// activity stamp (limits R4, capture-derive R4).
+// activity stamp (limits R4).
 func stallBounded(mode agent.RecordMode) *agent.RuleTable {
 	return &agent.RuleTable{Record: mode, Limits: agent.ResolvedLimits{StallAfter: 3 * time.Second, Set: agent.BudgetStallAfter}}
 }
 
-// TestRecordOffWithAStallBudgetAttachesForActivity is capture-derive R4's activity-only source: a record: off run
+// TestRecordOffWithAStallBudgetAttachesForActivity is the activity-only source: a record: off run
 // whose stall_after is bounded, following the tier's kernel record, places the probes the build's runs share, at
 // Start on the host's libssl and at an exec, so its TLS calls stamp its slot of tego_activity (A-REC-3, A-REC-4).
 // It reads no ring and captures nothing: the gaps are the mechanism's own alone, as for any record: off run, so

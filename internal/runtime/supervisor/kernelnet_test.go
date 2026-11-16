@@ -13,7 +13,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestRelayedConnectCarriesTheKernelsRefusal is enforce-cgroup-observe.md R5, E5 and R15 (a breadcrumb that is
+// TestRelayedConnectCarriesTheKernelsRefusal, E5 and R15 (a breadcrumb that is
 // gone, as after Detach, is `observed`, never a failure) from the supervisor's
 // side: at tier 2 the run's connect4/6 decides a connect this loop relays on the agent's socket, and when it
 // refuses one this loop allowed, the relay returns EPERM. The line then says what the kernel did and why,

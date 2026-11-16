@@ -92,7 +92,7 @@ func TestSweepLiveRemovesTheScopeAnEndedRunsLauncherLeft(t *testing.T) {
 // lock is only a lock on this machine, so its launcher may be alive on its own host, and run_end{orphaned} would end a
 // live run.
 //
-// Also pins runtime-launch.md E28: a sweep never acts on another host's run in a shared ledger root.
+// Also pins: a sweep never acts on another host's run in a shared ledger root.
 func TestASweepLeavesAnotherHostsRun(t *testing.T) {
 	const (
 		held = "r-deadbeef-000000000000a-held00"

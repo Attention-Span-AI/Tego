@@ -336,7 +336,7 @@ func TestMinOfRotatesAndKeepsTheFastest(t *testing.T) {
 // TestMinOfTakesOutTheClocksCost: an empty function measures far less than one read of the thread CPU clock, a
 // system call of hundreds of nanoseconds that, left in, would read a ratio of two samples closer to 1. The read's
 // cost is measured here, on the same thread, as the fastest of many back-to-back pairs; with MinOf's subtraction
-// removed the empty function reads it whole (686 ns under load, 2026-10-16). MinOfThread takes each figure's cost out
+// removed the empty function reads it whole (686 ns under load). MinOfThread takes each figure's cost out
 // of that figure: its CPU time brackets the wall clock's and the run-queue delay's reads too, and its own time the
 // two reads of /proc/thread-self/schedstat.
 func TestMinOfTakesOutTheClocksCost(t *testing.T) {
@@ -386,8 +386,8 @@ func TestThreadCPULeavesOutWaits(t *testing.T) {
 // another goroutine holds and a wait for a reply from another goroutine each read at least as long as they last on
 // the wall clock, while the CPU time reads almost nothing, and a budget whose wall-clock ceiling they pass fails
 // whatever the own time says (on a busy machine a wait hides from the own time where another process's work fills
-// it and the thread never blocks, and the fastest sample can be one where it did). Before 2026-10-17 the unit gate
-// read CPU time alone, and a copy of ADR 0048 C8's path that slept 20 ms in every command-rule decision passed it.
+// it and the thread never blocks, and the fastest sample can be one where it did). A gate that read CPU time alone
+// would pass a copy of ADR 0048 C8's path that slept 20 ms in every command-rule decision.
 func TestTheUnitGateSeesTheWaitsCPUTimeLeavesOut(t *testing.T) {
 	const d = 5 * time.Millisecond
 	var mu sync.Mutex
@@ -492,7 +492,7 @@ func TestOwnTimeLeavesOutRunQueueWaits(t *testing.T) {
 // nanosecond. The sample reads a schedstat stand-in whose delay the measured function moves by 100 µs after 200 µs of
 // work, and writing it must not block the thread: the stand-in is a memfd (schedStandIn) rewritten in place with
 // pwrite, where a file on disk rewritten with os.WriteFile blocked the thread in all five tries in 53 runs of 200
-// while small fsync'd writes kept the filesystem's journal committing (2026-10-17). A try counts where the other
+// while small fsync'd writes kept the filesystem's journal committing. A try counts where the other
 // threads had under half the delay's CPU time, so the delay visibly comes out.
 func TestOwnTimeTakesOutTheRunQueueDelay(t *testing.T) {
 	runtime.LockOSThread()
@@ -591,8 +591,8 @@ func schedStandIn(t *testing.T) int {
 // a CPU included, so that none of a wait the code makes can hide among them. The sample reads the schedstat stand-in
 // (schedStandIn), and the measured function moves its run-queue delay by 1 ms before it blocks, so a measure that took
 // the delay out of a sample that blocked would read the own time 1 ms under the wall clock on any machine: the real
-// delay across a 2 ms receive often reads 0, and such a measure passed 99 runs of 100 against the real schedstat
-// (2026-10-17). The thread blocks all but for certain: the goroutine that releases it waits until the measured
+// delay across a 2 ms receive often reads 0, and such a measure passed 99 runs of 100 against the real schedstat.
+// The thread blocks all but for certain: the goroutine that releases it waits until the measured
 // function has started its receive and the kernel reports the thread asleep (/proc/thread-self/task/<tid>/stat's
 // state S), then waits 2 ms more; a try in which it still did not (preempted as it parked) is logged and retried.
 func TestASampleThatBlocksCountsWhole(t *testing.T) {

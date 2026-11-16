@@ -9,8 +9,8 @@ import (
 	"unsafe"
 )
 
-// ObjectUprobeSSL is bpf/uprobe_ssl.bpf.c: the plaintext capture probes of docs/p0/capture-derive.md §5
-// R1-R9. It is the only object that carries the capture maps; the three tier-2 objects compile without them.
+// ObjectUprobeSSL is bpf/uprobe_ssl.bpf.c: the plaintext capture probes.
+// It is the only object that carries the capture maps; the three tier-2 objects compile without them.
 const ObjectUprobeSSL Object = "uprobe_ssl"
 
 // Capture map names, pinned by name beside the shared maps under /sys/fs/bpf/tego/<bpf_hash>/maps (§3). The

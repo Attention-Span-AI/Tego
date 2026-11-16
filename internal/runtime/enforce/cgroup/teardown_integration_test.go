@@ -29,8 +29,8 @@ import (
 // still there is a link whose release had not run yet. Before C3 the removal left the last reference of every link to
 // the bpf filesystem's release of its pin, which the kernel does from a workqueue on 6.x and after an RCU grace
 // period on RHEL 9's 5.14: `gc --builds`, the linger sweep and a reaper's ReapBuild returned while the kernel still
-// released 27 to 37 trampolines, and the next run's load waited for them in bpf_trampoline_get (enforce-plane §10.1,
-// gate G-H2). This test found 17 of the build's programs (43 with an LSM plane) still held on 6.17 then, and on 5.14
+// released 27 to 37 trampolines, and the next run's load waited for them in bpf_trampoline_get.
+// This test found 17 of the build's programs (43 with an LSM plane) still held on 6.17 then, and on 5.14
 // every link as well.
 //
 // The three ways: the sweep's removal itself (pins.remove, which `gc --builds`, the linger timer and Prepare's

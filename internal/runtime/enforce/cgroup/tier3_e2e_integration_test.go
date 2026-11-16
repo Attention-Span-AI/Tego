@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-// TestTierBPFLSMRunEndToEnd is TIER3-PLAN T7's acceptance (enforce-plane R19, §6 case 12): on a boot where LSM mode
+// TestTierBPFLSMRunEndToEnd: on a boot where LSM mode
 // passes doctor's probe (the guest's lsm=...,bpf boot), `tego run --tier bpflsm` runs, decided by the plane in LSM
 // mode exactly as TestPlaneRunEndToEnd's lsm cell is at tier cgroup, and its run_start names tier bpflsm; an auto run
 // as root gets tier bpflsm too (auto prefers it). On a boot where it does not (bpf not in the LSM list), `--tier

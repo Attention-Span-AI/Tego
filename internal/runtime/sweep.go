@@ -25,7 +25,7 @@ import (
 )
 
 // KeepForever is the retention of a Sweep that ends orphans but never deletes a run directory, which
-// is `gc`'s job alone (docs/p0/runtime-launch.md §5 R20). `run` and `stop` call SweepLive, which never
+// is `gc`'s job alone. `run` and `stop` call SweepLive, which never
 // deletes one either.
 const KeepForever = time.Duration(math.MaxInt64)
 
@@ -70,8 +70,8 @@ func WithSweepLogger(l *slog.Logger) SweepOption { return func(o *sweepOptions) 
 // WithSweepDryRun reports what the pass would do without writing or removing anything.
 func WithSweepDryRun(dry bool) SweepOption { return func(o *sweepOptions) { o.dryRun = dry } }
 
-// Sweep ends every orphaned run under root and applies retention keep (P0-DESIGN §4.6,
-// docs/p0/runtime-launch.md §5 R12, R20). It is `gc`'s pass over every run directory, and the one
+// Sweep ends every orphaned run under root and applies retention keep.
+// It is `gc`'s pass over every run directory, and the one
 // recovery path for a launcher that died without writing run_end that does not depend on the live
 // index: `run` and `stop` call SweepLive, and all three run with no coordination between them — the
 // per-run flock(LOCK_EX|LOCK_NB) probe inside ledger.GC is the entire serialization mechanism, and it
@@ -79,7 +79,7 @@ func WithSweepDryRun(dry bool) SweepOption { return func(o *sweepOptions) { o.dr
 // cases 10-11).
 //
 // A lost run is killed first (its cgroup may still hold a process tree the dead launcher left
-// behind, P0-DESIGN §4.6) and then closed with run_end reason=orphaned by the ledger's sweep hook.
+// behind) and then closed with run_end reason=orphaned by the ledger's sweep hook.
 // Pass KeepForever as keep to sweep without deleting anything.
 func Sweep(ctx context.Context, root string, keep time.Duration, opts ...SweepOption) (SweepResult, error) {
 	return sweepWith(ctx, root, opts, func(o sweepOptions, gc []ledger.GCOption) (ledger.Report, error) {
@@ -361,8 +361,8 @@ func killOrphan(ctx context.Context, o sweepOptions, dir runDir, ref record.RunR
 	}
 	if err := m.Remove(ctx, c); err != nil {
 		if errors.Is(err, cgroup.ErrBusy) {
-			// The tree is gone but the scope will not go: left for the next pass, with the run still lost
-			// (runtime-launch.md case 9), not ended with its scope leaked and nothing listing it again.
+			// The tree is gone but the scope will not go: left for the next pass, with the run still lost,
+			// not ended with its scope leaked and nothing listing it again.
 			return fmt.Errorf("orphan %s: %w: remove cgroup: %w", ref.ID, errOrphanAlive, err)
 		}
 		return fmt.Errorf("orphan %s: remove cgroup: %w", ref.ID, err)
@@ -422,7 +422,7 @@ var purgeRun = cgroupenforce.PurgeRun
 // root the scope can be under is tried (orphanRoots). When run_start
 // recorded the scope's cgroup id, a candidate is the run's only if its id is that one, so a scope of the same
 // name made since is never touched; a ledger with no id (one that predates it, or a launcher that died
-// before run_start) takes the first candidate that exists — *amended 2026-09-24:* but a candidate under the
+// before run_start) takes the first candidate that exists — but a candidate under the
 // cgroup mount root only when root's record says root launched this very directory (markDir.launched).
 //
 // It keeps why a candidate could not be judged: a candidate whose Lstat fails other than by its absence, or whose
@@ -473,7 +473,7 @@ func orphanScopeChecked(m cgroup.Manager, marks markDir, dir runDir, ref record.
 // recorded the scope's cgroup id, only a candidate with that id. ok is false when no scope of the run's is
 // left. `tego stop`'s backstop kill uses it: built under the stopper's own cgroup root with no id check, it
 // wrote cgroup.kill into whatever scope of that name was there — none of the run's when a root launcher made it
-// and the user stops it, and another run's when one of that name was made since (limits-check-doctor-cli.md R29).
+// and the user stops it, and another run's when one of that name was made since.
 //
 // Of the sweep options only WithSweepRootMarks applies: the root launch records the search consults.
 func RunScope(m cgroup.Manager, root, id, agent string, opts ...SweepOption) (cgroup.Cgroup, bool, error) {
@@ -503,7 +503,7 @@ func RunScope(m cgroup.Manager, root, id, agent string, opts ...SweepOption) (cg
 // in its owner's subtree alone. `sudo tego run` over a planted run directory named after another user's
 // root-launched run, its run_start naming that run's scope, wrote cgroup.kill into it (R20).
 //
-// *Amended 2026-09-24:* nor, for a root sweeper, a run directory it owns. A root launcher killed between
+// nor, for a root sweeper, a run directory it owns. A root launcher killed between
 // MakeRunDir and run_start leaves a root-owned directory in a ledger root its user owns; the user
 // can rename it (a write on the ledger root, not on the directory) to another user's live root-launched run id,
 // and with no run_start there is no cgroup id to check, so a root sweep took the first scope of that name under

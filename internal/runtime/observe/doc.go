@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package observe is the kernel record (docs/p0/enforce-cgroup-observe.md §2.4, §5 R8-R13): it
+// Package observe is the kernel record: it
 // drains the ring buffer the tracing programs write to. Each run has its own ring at its slot, opened by slot
 // from the run's run-set row, and its recorder is the only reader of it; the run_idx and gen check on a
 // sample is a guard, and concurrent runs of one build are supported (§2 "Run scope (as built)"). It decodes every sample through

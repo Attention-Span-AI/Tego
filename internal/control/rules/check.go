@@ -78,8 +78,8 @@ func (s *Service) compile(ctx context.Context, cc CheckContext, text []byte) (*a
 
 // nextrunContext is cc as nextrun.Compile takes it, with what the dashboard knows of the machine filled in. Tiers stays
 // empty: tego-control links no backend, so an auto contract whose run tier is unknown resolves to the machine ceiling.
-// The runtime directories are config.RuntimeDirBases, the list `tego rule` compiles with and the launcher checks
-// (agent-contract.md R10a), not a copy of it: tego-control may not link internal/runtime.
+// The runtime directories are config.RuntimeDirBases, the list `tego rule` compiles with and the launcher checks,
+// not a copy of it: tego-control may not link internal/runtime.
 func (s *Service) nextrunContext(cc CheckContext) nextrun.Context {
 	return nextrun.Context{Contract: cc.Contract, Cwd: cc.Cwd, Tier: cc.Tier, RunCommandGrant: cc.RunCommandGrant,
 		PATH: s.path(), ExecDirs: cc.ExecDirs, RunDir: cc.runDir, Home: s.Machine.Home, Anchor: s.Anchor,

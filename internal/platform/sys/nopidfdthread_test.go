@@ -39,7 +39,7 @@ const noPidfdThreadEnv = "TEGO_SYS_NO_PIDFD_THREAD_HELPER"
 // below), so that every test of that run runs on a thread that is not its thread group's leader, as the supervisor
 // does for a notification an agent's worker thread raised. Below 6.9 only a leader's tid opens with the plain form,
 // so a test that opens its own tid there fails on every run, not only when the scheduler happens to place it off the
-// main thread (TestPidfdOwnerForms did, on a loaded machine, 2026-10-16).
+// main thread (TestPidfdOwnerForms did, on a loaded machine).
 const offLeaderEnv = "TEGO_SYS_TESTS_OFF_LEADER"
 
 // init holds the main thread for the main goroutine under offLeaderEnv. It must be an init: only there is the main

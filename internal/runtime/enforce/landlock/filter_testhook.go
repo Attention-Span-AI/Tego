@@ -19,8 +19,7 @@ import (
 const EnvTestFilterOmit = "TEGO_TEST_FILTER_OMIT"
 
 func init() {
-	// Never under AT_SECURE, where no environment variable may steer the capability-bearing binary
-	// (identity-config.md R21).
+	// Never under AT_SECURE, where no environment variable may steer the capability-bearing binary.
 	if secure, err := config.DetectSecureExec(); err != nil || secure {
 		return
 	}

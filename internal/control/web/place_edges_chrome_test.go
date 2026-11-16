@@ -4,7 +4,7 @@
 
 package web
 
-// The edges of keeping the reader's place (static/place.js), each found by a night review, in
+// The edges of keeping the reader's place (static/place.js), in
 // headless Chrome on its own profile: a reload and a Back from another page come back at their scroll from the first
 // frames (no top-then-jump); Runs' Older runs gives the focus to the list it paged, in the window; a view fetch that
 // stalls loads the page after STALL; a run's Older rows says the rows' range; Logs keeps its Filters panel open and the

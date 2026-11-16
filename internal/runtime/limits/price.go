@@ -86,8 +86,8 @@ func deref(p *float64) float64 {
 }
 
 // PriceTable is the versioned price list of spec/config/v0's `prices` setting: a flat map from the
-// exact `ssl_response.model` string to that model's per-million-token prices. P0 implements
-// load-and-apply only; the richer override semantics of FEATURES E62 stay P2 (§11).
+// exact `ssl_response.model` string to that model's per-million-token prices. It implements
+// load-and-apply only; the richer override semantics of FEATURES E62 are not built.
 //
 // The zero value and a nil *PriceTable price nothing, which is a supported state: cost estimates
 // read 0 and no cost breach can fire (E15).
@@ -199,8 +199,7 @@ func parse(path string, b []byte) (*PriceTable, error) {
 // FromMachine loads the table named by the machine config's `prices` setting — the machine-config
 // override of the built-in ~/.tego/prices.yaml, already home-expanded by config.Load. Unlike Load, it
 // reads the file under the machine config's trust rule (config.ReadTrusted), wherever the setting puts it:
-// whoever can rewrite the table can price every model at $0 and so turn every cost budget off
-// (limits-check-doctor-cli.md §3).
+// whoever can rewrite the table can price every model at $0 and so turn every cost budget off.
 //
 // It never fails: a missing, unreadable, unparsable or wrong-version table, or one that lists no model,
 // yields a nil table and a
@@ -334,7 +333,7 @@ func (t *PriceTable) PricesAnyModel() bool {
 // or at the highest fee the table names when it names none for that tool (R2). It reports false for
 // a table that prices nothing, where no cost ceiling can be enforced at all (E15), and for a usage reporting
 // server-tool requests to a table that names no fee at all (UnfeedServerTool): nothing bounds what those cost,
-// and $0 is no bound (ADR 0037 amendment 2026-09-24). Entries with no input or no output price take no part:
+// and $0 is no bound (ADR 0037). Entries with no input or no output price take no part:
 // a table of nothing else prices nothing.
 func (t *PriceTable) MaxCost(u ledger.TokenUsage) (float64, bool) {
 	if t == nil || len(t.Models) == 0 || t.UnfeedServerTool(u) {
@@ -414,8 +413,8 @@ const modifiedFactor = 2
 
 // UnfeedServerTool reports that u counts server-tool requests (web searches, code executions) while the table,
 // which prices models, names no server_tool_per_request fee at all: their cost has no bound in the table, so a
-// cost budget cannot see it. The budget watcher treats such a response as unmetered (ADR 0037 amendment
-// 2026-09-24), and `tego compile` warns about the table beforehand.
+// cost budget cannot see it. The budget watcher treats such a response as unmetered (ADR 0037),
+// and `tego compile` warns about the table beforehand.
 func (t *PriceTable) UnfeedServerTool(u ledger.TokenUsage) bool {
 	if t == nil || len(t.Models) == 0 || len(t.ServerToolPerRequest) > 0 {
 		return false

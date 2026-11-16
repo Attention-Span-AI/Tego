@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// The fold of a pinned run's execs (ADR 0048 (8), P2; docs/p0/enforce-plane.md §2.22 "The line"). At a decision plane
+// The fold of a pinned run's execs (ADR 0048 (8), P2). At a decision plane
 // whose run is pinned, the plane's sched_process_exec program checks every exec the plane let through bprm_check
 // against its pin and reports the outcome in one sample: a held sample when the mapped argument area is the one the
 // pin covers, a kill sample (SIGKILL already pending) when it is not, cannot be read, or no pin was armed. The

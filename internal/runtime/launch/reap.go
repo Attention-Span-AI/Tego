@@ -170,7 +170,7 @@ func (c *Child) ReapOrphans() int {
 // KeepUnreaped names a child of this process in the run cgroup that ReapOrphans leaves to its own owner: the run's
 // open deputy (ADR 0041 D2), a child of this process (CLONE_PARENT) that the agent can end. Its zombie then holds its
 // pid until the run reaps it (runtime's closeDeputy), so no later process of the run is given the pid by which the
-// kernel recorder drops the deputy's records (supervisor.md R7a). The zombie counts against limits.pids, one task.
+// kernel recorder drops the deputy's records. The zombie counts against limits.pids, one task.
 func (c *Child) KeepUnreaped(pid int) { c.keep.Store(int64(pid)) }
 
 // RunReaper calls ReapOrphans on every SIGCHLD and on a timer until ctx ends, with one last sweep then.

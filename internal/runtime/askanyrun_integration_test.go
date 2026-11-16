@@ -24,7 +24,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// A run's asks are answered by the person and never by an agent (ADR 0008, amended 2026-10-25; ADR 0100 (7)):
+// A run's asks are answered by the person and never by an agent (ADR 0008; ADR 0100 (7)):
 // the broker refuses a peer inside any run's or adoption's scope, or a look-alike of one, and a
 // peer in another cgroup namespace, as unauthorized, and the ask stays pending for the person. Run A holds a connect
 // for a person; another process tries to approve it with the broker's own protocol and no client of tego's (no lock

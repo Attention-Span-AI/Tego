@@ -19,10 +19,10 @@ import (
 )
 
 // TestIntegrationDenyReadSnapshotIsRecordedRefused at tier landlock through the real binary: Landlock is an
-// allow-list, so a deny_read is built by granting every sibling of each of its ancestors as they stood at launch
-// (enforce-landlock R3). A directory made beside an ancestor after the run started, and a file made there, are no
-// sibling the ruleset grants: the kernel refuses a read of the file all run. Its line said allow (8 such lines in the
-// 2026-10-25 always-on audit); it must say refused, read-denied, under the deny-read-snapshot rule, on both open paths:
+// allow-list, so a deny_read is built by granting every sibling of each of its ancestors as they stood at launch.
+// A directory made beside an ancestor after the run started, and a file made there, are no
+// sibling the ruleset grants: the kernel refuses a read of the file all run. Its line once said allow;
+// it must say refused, read-denied, under the deny-read-snapshot rule, on both open paths:
 // one this loop continues (record: full, reads direct) and one the open deputy completes (fs.reads: held), and under
 // record: summary with reason.reads: on (ADR 0077), whose every-open arm brings the same opens to this loop, which keeps
 // the snapshot rule for them and adds mechanism landlock only to the deny_read entry's own refusal. A new file inside a

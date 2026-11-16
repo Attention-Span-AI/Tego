@@ -661,7 +661,7 @@ func TestIntegrationPreattachCapturesTheFirstRequest(t *testing.T) {
 // TestIntegrationARunWithoutACaptureRingDoesNotCapture: a run the tier-2 backend gave no capture ring (the host's
 // bpf.ring_budget had no room for it) has nothing to read. Its Kernel-mode source loads nothing and attaches
 // nothing, says mechanism-unavailable, and names the budget in its cause, which the runtime's refusal of a
-// budgeted run carries (limits-check-doctor-cli R32).
+// budgeted run carries.
 func TestIntegrationARunWithoutACaptureRingDoesNotCapture(t *testing.T) {
 	requireObjects(t)
 	requireRoot(t)

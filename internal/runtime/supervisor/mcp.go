@@ -51,12 +51,12 @@ func mcpServers(rt *agent.RuleTable) map[string][]mcpServer {
 }
 
 // mcpServerOf names the declared MCP server an exec starts, or "" when it starts none. A stdio server's
-// messages pass through pipes no capture source reads (capture-derive.md R41), so the one start it can see is
+// messages pass through pipes no capture source reads, so the one start it can see is
 // an exec matching a declared mcp[].command: the resolved command[0] as the path, and the declared arguments after it as
 // argv[1:], exactly. Matching the path alone would name a server for every other use of a shared runner
 // (the agent's own `npx prettier` is not the `npx @modelcontextprotocol/server-x` the contract declared),
-// and an event naming a server that never started is worse for drift than none: limits-check-doctor-cli
-// R15 counts one run's mcp events per declared name, and an invented one hides a server that never ran.
+// and an event naming a server that never started is worse for drift than none: drift
+// counts one run's mcp events per declared name, and an invented one hides a server that never ran.
 //
 // Where the exec's walk reached its image in this process's view, the image itself is matched first: a command[0]'s
 // file by identity, its inode and its symlink-resolved path both, as an exec entry's grant matches an image (mcpIDs,
@@ -106,8 +106,8 @@ func equalArgs(a, b []string) bool {
 	return true
 }
 
-// emitMCP records the start of a declared MCP server, which P0 derives from the exec that launched it
-// (P0-DESIGN §2.2: P0 writers emit mcp). It rides on the exec it came from: same notification, same
+// emitMCP records the start of a declared MCP server, which is derived from the exec that launched it.
+// It rides on the exec it came from: same notification, same
 // verdict, and the rule is the server as drift registers it, "mcp[<name>]". Only an allowed exec starts
 // a server; a refused one started nothing, and its exec line already says so.
 func (l *Loop) emitMCP(n *notif, pid int, name string, argv []string) {

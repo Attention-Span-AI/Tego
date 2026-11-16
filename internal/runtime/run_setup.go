@@ -43,7 +43,7 @@ func (r *runner) createCgroup() error {
 		}
 		// Detect's subtree can be one this process may manage and still not place the agent in (a login
 		// over ssh, a service): refused here, before anything is made, rather than by clone3 once the
-		// scope exists (runtime-launch.md case 41).
+		// scope exists.
 		if err := m.CanPlace(); err != nil {
 			return fmt.Errorf("runtime: cgroup: %w", err)
 		}
@@ -93,7 +93,7 @@ func (r *runner) prepareEnforcement(ctx context.Context) error {
 		// the pipeline runs; what it holds waits for run_start, as every producer's events do.
 		Events: r.runQueue().Lane(LaneListener),
 		// Tier 2 decides every connect the supervisor relays, so its port-53 rows have to name the servers
-		// the supervisor's exception names: the same list, read once (enforce-cgroup-observe §5 R5).
+		// the supervisor's exception names: the same list, read once.
 		Resolvers: r.runResolvers(),
 		// The binary the launcher execs as the child stage: tier 2 execs it again for its detached helpers
 		// (linger, ring trim). The stage's own exec is never the tier's to decide: the tier arms after it
@@ -149,12 +149,12 @@ func (r *runner) prepareEnforcement(ctx context.Context) error {
 }
 
 // usePlaneFilter tells a tier whose decision plane decides fs mutations in the kernel that the run's kernel recorder
-// will write their lines, so its filter may stop notifying them (enforce.PlaneFilterer; enforce-plane R27, ADR 0024
+// will write their lines, so its filter may stop notifying them (enforce.PlaneFilterer, ADR 0024
 // (14): the producer table live). The recorder must also name such an action by its path on its own
 // (PathHookNamer): without the supervisor's naming a path hook's record in a directory its index does not hold is
-// named dev:ino/name under no rule (enforce-plane §2.13's condition 1), so a recorder that does not say so keeps
+// named dev:ino/name under no rule, so a recorder that does not say so keeps
 // every notification, and the supervisor names and refuses as before. observe.Recorder says so from the kernel's
-// directory walk (enforce-plane §2.15). Called after startKernelRecord and before the child stage takes the
+// directory walk. Called after startKernelRecord and before the child stage takes the
 // filter.
 //
 // An Adjustable run keeps the full filter (ADR 0125 decision 6): its live layer refuses fence entries the kernel
@@ -175,14 +175,14 @@ func (r *runner) usePlaneFilter(h api.Handle) {
 // PathHookNamer is a kernel recorder that names every path-hook record (unlink, rmdir, mkdir, mknod, symlink, link,
 // rename, truncate, an O_CREAT create) by its full path on its own, with no naming handed over by the supervisor.
 // Only then may the filter leave those actions unnotified (usePlaneFilter). observe.Recorder does, for a run a plane
-// mode decides, by the parent directory's path the trace object walks in the kernel (enforce-plane §2.15).
+// mode decides, by the parent directory's path the trace object walks in the kernel.
 type PathHookNamer interface {
 	NamesPathHooks() bool
 }
 
 // DeputySkipper is a kernel recorder that drops the records of the run's open deputy (ADR 0041 D2), named by its pid
-// and its start time as /proc reads it (0 for unknown): the supervisor writes the line of every open the deputy makes
-// (supervisor.md R7a). observe.Recorder is one.
+// and its start time as /proc reads it (0 for unknown): the supervisor writes the line of every open the deputy makes.
+// Observe.Recorder is one.
 type DeputySkipper interface {
 	SetSkipProcess(pid uint32, startNS uint64)
 }
@@ -239,16 +239,16 @@ func splitCgroupPath(abs string) (mount, rel string) {
 }
 
 // createRuntimeDir makes the run's tmpfs directory (§4.1 step 3, before Prepare; §3): the run's own CODEX_HOME when
-// the forwarder has an openai listener (writeCodexHome, capture-derive.md R19b). No socket lives here in
+// the forwarder has an openai listener (writeCodexHome). No socket lives here in
 // this build: the forwarder listens on loopback TCP and the ask broker binds ask.SocketName in the
 // ledger run directory. It is removed by the shutdown sequence, or, when the launcher died before it, by the next
 // launch under the same parent (sweepRuntimeParent). It runs before Prepare, since the CODEX_HOME
-// is a write grant every backend builds with (grantCodexHome, agent-contract.md R10a).
+// is a write grant every backend builds with (grantCodexHome).
 //
 // A machine with no XDG_RUNTIME_DIR (or a relative one) gets no directory. That is no error for a run with no
 // openai listener; for one with a listener, where Codex is to be routed through the forwarder, it is refused
 // (ErrNoRuntimeDir, exit 125, naming the fix): the run used to go on with Codex unrouted and say nothing, and
-// Codex then failed for want of a state directory it could write (Codex POC F2).
+// Codex then failed for want of a state directory it could write.
 //
 // A table that lets the agent write tego's runtime parent, or inside another run's directory there, is refused
 // before anything is made (checkRuntimeParent), as compile refuses it (R10a): compile may have been given another
@@ -268,7 +268,7 @@ func splitCgroupPath(abs string) (mount, rel string) {
 // the same path, which is root writing and deleting where a user points it: the pattern the ledger root's walk (ledger/handover.go) and the doctor cache exist to
 // avoid. Nothing needs the directory under root: CODEX_HOME is never written for a root run
 // (writeCodexHome), and the ask socket is <ledger run dir>/ask.sock, mode 0600 and chowned to the
-// invoking UID under a root launcher (ADR 0008, amended 2026-10-05; this said /run/tego).
+// invoking UID under a root launcher (ADR 0008; this said /run/tego).
 func (r *runner) createRuntimeDir() error {
 	for _, b := range runtimeDirBases() {
 		if err := checkRuntimeParent(r.rt, filepath.Join(b, agent.RuntimeDirName)); err != nil {
@@ -330,7 +330,7 @@ func (r *runner) createRuntimeDir() error {
 		r.rt = &rt
 	}
 	// The run's last refusal is mirrored here, where the agent can read it, since the ledger root is
-	// read-denied to it (agent-contract.md R6a); TEGO_REASON names the file (REASON-CHANNEL §2). A mirror
+	// read-denied to it; TEGO_REASON names the file (REASON-CHANNEL §2). A mirror
 	// that cannot be set up costs the harness that channel, not the run.
 	if r.writer != nil {
 		if err := r.writer.MirrorLastRefusal(dir); err != nil {
@@ -349,17 +349,17 @@ func (r *runner) createRuntimeDir() error {
 // with no absolute XDG_RUNTIME_DIR, where its CODEX_HOME would live: refused before run_start, exit 125.
 var ErrNoRuntimeDir = errors.New("runtime: no runtime directory for the run's CODEX_HOME")
 
-// ErrRuntimeDirWritable is a table whose write or ask entry covers tego's runtime parent or lies inside it
-// (agent-contract.md R10a): refused before run_start, exit 125.
+// ErrRuntimeDirWritable is a table whose write or ask entry covers tego's runtime parent or lies inside it:
+// refused before run_start, exit 125.
 var ErrRuntimeDirWritable = errors.New("runtime: tego's runtime directory is inside a write entry")
 
 // ErrCodexHomeExecutable is a run whose CODEX_HOME grant would land inside an exec directory entry, so the agent
-// could run what it writes there (agent-contract.md R10a, E38): refused before run_start, exit 125.
+// could run what it writes there: refused before run_start, exit 125.
 var ErrCodexHomeExecutable = errors.New("runtime: the run's CODEX_HOME is inside an exec directory entry")
 
 // ErrRuntimeDirUnsafe is a runtime directory another user could swap: $XDG_RUNTIME_DIR writable by group or others
 // without the sticky bit, or $XDG_RUNTIME_DIR/tego or the run's directory under it not a directory of this user's
-// that only it can write (agent-contract.md R10a): refused before run_start, exit 125.
+// that only it can write: refused before run_start, exit 125.
 var ErrRuntimeDirUnsafe = errors.New("runtime: the runtime directory is not private to this user")
 
 // privateRuntimeDirs refuses a runtime directory whose path another user could change before Prepare opens the
@@ -415,7 +415,7 @@ func unsetOr(v string) string {
 
 // checkRuntimeParent refuses a table whose write or ask entry is tego's runtime parent, holds it, or lies inside
 // it, where every run keeps its private directory: a grant there reached every other run's CODEX_HOME and
-// last-refusal mirror (Codex POC F2). Compile refuses the same entries (agent-contract.md R10a); this is the
+// last-refusal mirror. Compile refuses the same entries; this is the
 // launcher's own check, on the parent this run really uses, by declared and resolved spellings on both sides.
 func checkRuntimeParent(rt *agent.RuleTable, parent string) error {
 	if rt == nil {
@@ -498,13 +498,13 @@ func rawOr(raw, p string) string {
 // (agent.CodexHomeGrant, rule fs.codex_home[<path>]), the way a capture listener is admitted (admitLoopback): Codex
 // keeps its state there (sqlite databases, sessions, its tmp/arg0 links), and no contract can name the directory,
 // whose path holds the run id. Exactly that directory, never its parent: a contract that granted
-// $XDG_RUNTIME_DIR/tego/ instead reached every other run's (Codex POC F2, agent-contract.md R10a). The compiled
+// $XDG_RUNTIME_DIR/tego/ instead reached every other run's. The compiled
 // table is never mutated (agent.RuleTable I4): a new one is built, before Prepare, so every backend and the
 // supervisor build with it. run_start lists it in runtime_grants. A no-op when no CODEX_HOME was written.
 //
 // The agent can rewrite the config.toml there, tego's openai_base_url included; that routes nothing around the
 // forwarder, since under capture: forwarder the models[] guard refuses a model's own addresses whatever net.allow
-// says (agent-contract.md E27, capture-derive.md R38).
+// says.
 //
 // The path is granted only while it, and its resolved spelling, still name the directory writeCodexHome made (no
 // link, the same device and inode): a process able to swap it for a link between the two would otherwise have the

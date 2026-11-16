@@ -52,7 +52,7 @@ func response(body []byte, contentType string) *derive.Message {
 }
 
 // A non-streaming response yields model, id, stop reason, usage and one decision per
-// tool_use block, in wire order, with no decision for the text block (capture-derive.md R28, R30).
+// tool_use block, in wire order, with no decision for the text block.
 func TestParseNonStreaming(t *testing.T) {
 	p := New()
 	facts, err := p.Parse(request(read(t, "messages-request.json")), response(read(t, "messages-response.json"), "application/json"))
@@ -281,7 +281,7 @@ func TestParseErrorBody(t *testing.T) {
 	}
 }
 
-// Input_hash is byte identity, not JSON equality (capture-derive.md R31): the same object written two ways
+// Input_hash is byte identity, not JSON equality: the same object written two ways
 // hashes differently, so limits.repeats only ever matches a true repeat.
 func TestInputHashByteIdentity(t *testing.T) {
 	a := InputHash([]byte(`{"a":1,"b":2}`))

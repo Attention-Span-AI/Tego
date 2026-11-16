@@ -6,7 +6,7 @@
 // Imports: standard library, internal/runtime/derive (the Message, Facts and Parser contract)
 // Must not import: other providers
 //
-// The docs/p0/capture-derive.md §1 import line for this package reads "standard library", written when
+// The design's import line for this package read "standard library", written when
 // the Message type was expected to live in capture/httpstream; the same §1 forbids derive from importing
 // capture at all, so the contract the parsers implement lives in the parent derive package and this
 // package depends on it alone.

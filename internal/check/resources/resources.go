@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package resources renders run_end.resources, what the run's cgroup said the run used, for the two views
-// that show it: `tego measure` as rows of its table and `tego status` as one line under its table
-// (docs/p0/limits-check-doctor-cli.md R-res). The peaks are what an operator sizes limits.memory and
-// limits.pids from (docs/p0/record-ledger.md §2.2), and they are in the record only to be read.
+// that show it: `tego measure` as rows of its table and `tego status` as one line under its table.
+// The peaks are what an operator sizes limits.memory and
+// limits.pids from, and they are in the record only to be read.
 //
 // A key run_end did not carry is rendered Unknown, never 0: the runtime writes a key exactly when its file
 // and key existed on the run's kernel and controllers, so its absence says the kernel did not tell, and a 0
@@ -30,7 +30,7 @@ import (
 const Unknown = "unknown"
 
 // Pending is what a view shows for the resources of a run whose run_end is not on disk yet: they are read
-// once, at shutdown (runtime-launch.md §4.1 step 13), so a live run has none to show, and a bare Unknown would
+// once, at shutdown, so a live run has none to show, and a bare Unknown would
 // read as a kernel that told nothing.
 const Pending = Unknown + " until the run ends"
 

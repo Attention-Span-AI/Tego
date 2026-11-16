@@ -17,7 +17,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
-// ChildMain is the `tego __child` stage (docs/p0/runtime-launch.md §4, ARCHITECTURE.md §5, ADR 0006). It
+// ChildMain is the `tego __child` stage (ARCHITECTURE.md §5, ADR 0006). It
 // runs on one locked OS thread, reads its ChildSpec from fd 3, applies in order: cwd, then (R4 unprivileged
 // order) capability clear, PR_SET_DUMPABLE=1, PR_SET_PDEATHSIG=SIGKILL with the getppid
 // re-check, PR_SET_NO_NEW_PRIVS, landlock_restrict_self, seccomp(SET_MODE_FILTER, NEW_LISTENER); writes
@@ -253,7 +253,7 @@ func (s *stage) privilegedOrder() error {
 func (s *stage) dropCredentials() error {
 	// Per thread, not x/sys/unix's all-threads Setresuid: that path tgkills every other thread from this
 	// one, which already carries the filter, and below Landlock ABI 6 the filter hands tgkill to a supervisor
-	// that starts only once this stage reports, so the stage hung (docs/p0/enforce-landlock.md R7). This
+	// that starts only once this stage reports, so the stage hung. This
 	// thread is the
 	// one that execs, and execve ends the others, so the agent gets exactly these credentials.
 	if err := sys.DropThreadCreds(s.spec.UID, s.spec.GID); err != nil {

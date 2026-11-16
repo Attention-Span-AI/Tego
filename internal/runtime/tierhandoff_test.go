@@ -42,7 +42,7 @@ func handoffRunner(b *handoffBackend, build Build) *runner {
 	return r
 }
 
-// TestPrepareHandsTheTierTheRunsQueue is the facade half of docs/p0/enforce-cgroup-observe.md §7: the
+// TestPrepareHandsTheTierTheRunsQueue is the facade half: the
 // tier is prepared with a live event sink, and it is the queue the pipeline drains. The queue used to be
 // made in startWorkers, after Prepare, so every tier-2 backend was built with Events nil and its fanotify
 // listener's refusals and gaps went to a counter nothing reads.

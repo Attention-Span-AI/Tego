@@ -24,8 +24,6 @@ import (
 // every write entry; with a plane deciding the run, R15c's refusal of a deny_write target reached so was skipped, and the
 // loop's allow was the action's one line while the plane's hook refused it. Real walks of a real tree, as a run
 // makes them.
-//
-// Spec: docs/p0/supervisor.md R15b, R15c.
 func TestAnUnfollowedFinalDotIsWherePathLookupLands(t *testing.T) {
 	const pathAddr, nameAddr = 0x10000, 0x20000
 	nofollow := uint64(unix.AT_SYMLINK_NOFOLLOW)

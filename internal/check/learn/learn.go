@@ -49,7 +49,7 @@ type Options struct {
 	// Executable reports whether path is, on this machine, a program an exec could have started: a regular file
 	// with an execute bit, reached by following its links. Nil is the real file system (executable). An exec.allow
 	// entry is proposed only when it holds: tego compile refuses a path that does not exist (path-missing), and a
-	// PATH search's misses are paths that do not (agent-contract.md R8, docs/OPERATIONS.md "tego learn").
+	// PATH search's misses are paths that do not (docs/OPERATIONS.md "tego learn").
 	Executable func(path string) bool
 	// LeaveLeaksToCaller turns the leak rule (leak.go) off: every address the run reached is proposed, and the caller
 	// judges them. The dashboard does, with its own verdict, which knows the run's pair and its contract
@@ -163,7 +163,7 @@ type Proposal struct {
 	// path.
 	RuntimeGranted int
 	// HarnessStateGranted counts fs actions the run's grant of its harness's hook-state directory allowed
-	// (fs.harness-state[...], agent-contract.md R10a (4)), the same kind of grant, made for a provisioned harness.
+	// (fs.harness-state[...]), the same kind of grant, made for a provisioned harness.
 	HarnessStateGranted int
 	// HarnessHookGranted counts the execs the run's grant of its harness hook's exact argv allowed
 	// (exec.harness-hook[...], ADR 0064): an entry naming the tego binary would admit every argv of it, and every
@@ -358,8 +358,8 @@ const maxChain = 64
 
 // commitChain settles one process's run of identical command lines: the attempt that started a program is the one
 // whose path is a program on this machine (Options.Executable), not under /proc. execvp stops at the first attempt
-// that succeeds, so a search has one; the record's order alone cannot say which, because a record taken before
-// supervisor.md R23a could hold a later attempt before an earlier one, and the last attempt was then a miss
+// that succeeds, so a search has one; the record's order alone cannot say which, because a record taken by an
+// older supervisor could hold a later attempt before an earlier one, and the last attempt was then a miss
 // (/usr/sbin/bash after the /usr/bin/bash that ran). Where several qualify (an attempt refused for another reason,
 // a noexec mount) the last of them is taken, and where none does, the last attempt, which proposeExecs then leaves
 // out as a path that does not exist.
@@ -385,7 +385,7 @@ func (l *Learner) executable(p string) bool {
 }
 
 // isProc is whether an exec path is a /proc path, or reaches one through its links: compile refuses such an entry
-// (agent-contract.md R8a, exec-proc), since /proc/self/exe names the executable of whichever process opens it.
+// (exec-proc), since /proc/self/exe names the executable of whichever process opens it.
 func isProc(p string) bool {
 	if !path.IsAbs(p) {
 		return false
@@ -1014,8 +1014,8 @@ const resolverKeptNote = "the machine's resolver when this run was recorded; kep
 // R6, R22). A lookup the decision allows as net.resolver over TCP, or on a UDP socket it connects, is made by the
 // supervisor on a duplicate of the socket, outside the run's Landlock domain (supervisor handleConnect, R7), so no ABI
 // refuses it; guests at ABI 4 (Ubuntu 24.04) and ABI 6 (AlmaLinux 9.8) looked names up over TCP and UDP with an empty
-// net.allow. An addressed UDP send the decision allows is continued, and the kernel checks it in the run's own domain
-// (enforce-landlock R14): from ABI 10 (Linux 7.2), which handles UDP, it may be refused with no port 53 rule. That
+// net.allow. An addressed UDP send the decision allows is continued, and the kernel checks it in the run's own domain:
+// from ABI 10 (Linux 7.2), which handles UDP, it may be refused with no port 53 rule. That
 // case is read from the code, not measured: no kernel here has ABI 10. The entry is kept for it.
 func (p *Proposal) keepResolvers(count map[string]int) {
 	p.resolvers = slices.DeleteFunc(p.resolvers, func(r string) bool {

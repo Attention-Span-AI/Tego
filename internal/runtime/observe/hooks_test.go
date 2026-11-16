@@ -60,7 +60,7 @@ func hookSamples() [][]byte {
 	}
 }
 
-// TestRecorderFeedsProcessHooks is the recorder's half of the uprobe wiring (capture-derive.md §4): every
+// TestRecorderFeedsProcessHooks is the recorder's half of the uprobe wiring: every
 // exec, open and exit it drains reaches a hook added before Start, in the order the kernel wrote them and
 // with the pid and cgroup the sample carries, and an exec with the path the process exec'd, which is all
 // that names a process gone before its hook ran. An open whose path was truncated names no file and is not

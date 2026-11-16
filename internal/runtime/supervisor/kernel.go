@@ -22,7 +22,7 @@ import (
 )
 
 // kernel is every syscall the loop makes, behind one seam so the dispatch, the readers and the decisions
-// are unit-tested against a fake target without a kernel (docs/p0/supervisor.md §10). The production
+// are unit-tested against a fake target without a kernel. The production
 // implementation is sysKernel; it holds the listener fd and an immutable authority option.
 type kernel interface {
 	// Wait blocks until the listener has a notification pending, wake becomes readable, or timeoutMS
@@ -253,7 +253,7 @@ func pollListener(fd, wake, timeoutMS int) (waitState, error) {
 		// since 5.0): the Go runtime signals its threads all the time, and the lock is contended by every RECV,
 		// SEND, ADDFD and notifying task. Read as a hangup it ended each worker it reached as if the run were
 		// over, the loop closed the listener under a live agent, and the agent's every notified syscall failed
-		// ENOSYS with no line and no error (2026-10-16). It is a wait that took nothing: the worker polls again.
+		// ENOSYS with no line and no error. It is a wait that took nothing: the worker polls again.
 		return waitTimeout, nil
 	}
 }

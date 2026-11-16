@@ -252,7 +252,7 @@ func prepareTimerFixture(t *testing.T, linger time.Duration, now time.Time, star
 	return f, plant
 }
 
-// TestPrepareRearmsTheTimerOfABuildWhoseTimerDied is ADR 0022 (4) as its 2026-10-06 note restores it: a build's timer
+// TestPrepareRearmsTheTimerOfABuildWhoseTimerDied is ADR 0022 (4): a build's timer
 // can be killed (with its launcher's cgroup, by an operator, by the OOM killer), and Prepare makes up for it once it
 // holds its own build's lock. It no longer removes the build itself, which put 2.8 to 3.7 s on the run's start on
 // 6.1 and 5.14, where an unpin detaches synchronously: it starts that build's timer again, once, and leaves the pins
@@ -282,7 +282,7 @@ func TestPrepareRearmsTheTimerOfABuildWhoseTimerDied(t *testing.T) {
 // TestPrepareLeavesAnExpiredBuildToItsLiveTimer is ADR 0022 (4) and the plan's D3: a timer sleeps a second past its
 // build's deadline, so for that second every other build's Prepare found the build expired and removed it on its own
 // start path, though no helper had died. A build whose timer lives gets no second timer and keeps its pins. Liveness
-// is read from the pid the timer wrote into its timer file (note 2026-10-16), never by taking the lock (a probe that
+// is read from the pid the timer wrote into its timer file, never by taking the lock (a probe that
 // took the timer lock for a moment would make a timer starting in that moment exit, as a probe of the build lock did
 // to a last launcher out), and not from the kernel's lock table, whose read waits for an RCU grace
 // period on the run's start path. A build a launcher holds that shows no timer gets one, which waits for its launcher;
@@ -483,10 +483,10 @@ func dirIno(t *testing.T, dir string) uint64 {
 // the directory appeared, misses it too. The directory appears right after the first listing of the mount
 // (cgroupIDs, as runSetLiveIn lists it) returns, and the scrub must wait runSetSettle before the second, as
 // runSetLiveIn does: the test holds the gap between the two listings to at least that, a bound a busy machine can
-// only lengthen, so a scrub that lists again at once fails it (with the wait removed it did, 2026-10-17). The
+// only lengthen, so a scrub that lists again at once fails it (with the wait removed it did). The
 // activation used to be a goroutine that slept 5 ms after the key walk, which had to run within the 50 ms settle: in
 // a 4-vCPU KVM guest with four busy loops a CPU it once did not, and the test failed for the machine's sake (one run
-// of 28 of the package, 2026-10-17; with the goroutine woken 60 ms late it fails every run).
+// of 28 of the package; with the goroutine woken 60 ms late it fails every run).
 func TestRunSetLiveKeepsARowWhoseCgroupIsNotVisibleYet(t *testing.T) {
 	t.Parallel()
 	mount := t.TempDir()
@@ -541,7 +541,7 @@ func TestRunSetLiveKeepsARowWhoseCgroupIsNotVisibleYet(t *testing.T) {
 // cgroup that is really gone is deleted. It calls runSetLiveIn, the wrapper PurgeRun's runSetLive runs, with a key
 // missing from the first listing, so the scrub lists the cgroups again before it deletes that row: the call must
 // take at least runSetSettle, the wait the wrapper passes, a bound a busy machine can only lengthen. With the
-// wrapper passing 0 the test failed every run (2026-10-17). TestRunSetLiveKeepsARowWhoseCgroupIsNotVisibleYet
+// wrapper passing 0 the test failed every run. TestRunSetLiveKeepsARowWhoseCgroupIsNotVisibleYet
 // checks that scrubRunSet waits the settle it is given between the two listings.
 func TestRunSetLiveKeepsARowWhoseCgroupWasMadeDuringTheWalk(t *testing.T) {
 	t.Parallel()

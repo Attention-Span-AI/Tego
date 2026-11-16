@@ -14,7 +14,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestRunStartNamesTheDecisionPlane is enforce-plane R19 and I7 made auditable (record_minor 2): run_start's
+// TestRunStartNamesTheDecisionPlane makes the plane mode auditable (record_minor 2): run_start's
 // decision_plane is the mode the run's kernel decision plane decided in, fanotify for a tier-2 run on the listener
 // (a handle with the plane seam and no mode), and absent for a tier with no plane seam (tier 1).
 func TestRunStartNamesTheDecisionPlane(t *testing.T) {
@@ -49,7 +49,7 @@ type countingPlane struct {
 
 func (h countingPlane) PlaneCounters() ([]enforce.PlaneCount, error) { return h.counts, h.err }
 
-// TestPlaneCountersBecomeGaps is enforce-plane §2.8's counters half: at run end every non-zero counter of the run's
+// TestPlaneCountersBecomeGaps is the plane counters' half: at run end every non-zero counter of the run's
 // slot is one gap what=enforce line, why the counter's name, count its value, decision_plane the mode; a zero
 // counter writes nothing, and a slot that cannot be read is one gap with no count, never silence.
 func TestPlaneCountersBecomeGaps(t *testing.T) {

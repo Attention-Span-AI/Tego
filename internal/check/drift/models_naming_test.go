@@ -12,9 +12,8 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// The shape these tests read is a real run's: kill test 2's forwarder half as the P0 acceptance run of
-// 2026-09-23 recorded it (test/fixtures/ledger/kt2-forwarder-landlock for the lines that did not change since). The
-// contract declares one models[] entry, the stand-in model server
+// The shape these tests read is a real run's: kill test 2's forwarder half
+// (test/fixtures/ledger/kt2-forwarder-landlock for the lines that did not change since). The contract declares one models[] entry, the stand-in model server
 // on a loopback port, under capture: forwarder and with no net: section. The agent's connects to the forwarder's
 // listener are a runtime grant (net.capture[...]), every model request is an ssl_request whose endpoint is the
 // entry's provider, and the one direct connection to the model's own host:port is refused under the rule
@@ -98,7 +97,7 @@ func anthropicAt(port int) agent.ModelEndpoint {
 	return agent.ModelEndpoint{Provider: "anthropic", Host: modelHost, Port: port}
 }
 
-// TestRefusedDirectConnectCountsAgainstItsModelsEntry is finding 5 of the 2026-09-23 acceptance run: drift listed
+// TestRefusedDirectConnectCountsAgainstItsModelsEntry: drift must not list
 // the refused direct connect under models[127.0.0.1:36683], DECLARED no, and the contract's models[anthropic]
 // entry as declared and never used, although the refusal is that entry's (agent.ModelRule names it). One entry,
 // one row: the refusal counts against models[anthropic], nothing under the host:port name is left undeclared,

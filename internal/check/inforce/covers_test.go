@@ -18,7 +18,7 @@ import (
 // an empty list: Covers is omitempty, so the view the dashboard and `tego rules --json` serve reads back with nil, and an
 // empty list made the in-process view differ from its own JSON. It did on a machine whose home holds one of the usual
 // secret files and no other (internal/control/cli's TestRulesUsesDashboardView in the KVM guest, whose home is empty
-// but for the run's own records, 2026-11-11); a home with several, as a CI runner's, hid it.
+// but for the run's own records); a home with several, as a CI runner's, hid it.
 func TestABuiltInRuleWithOneKeyReadsBackFromItsJSON(t *testing.T) {
 	root := t.TempDir()
 	f := fixture{root: root, home: filepath.Join(root, "home"), proj: filepath.Join(root, "proj"), bin: filepath.Join(root, "bin")}

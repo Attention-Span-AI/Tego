@@ -349,7 +349,7 @@ func fillSlot(t *testing.T, plane bpf.Object, coll *ebpf.Collection, slot, gen u
 			t.Fatalf("fill of descriptor %d: %v %s", uint32(k), err, got.Status)
 		}
 	}
-	// The slot's header, last, as Prepare writes it (enforce-plane R6): the run's gen and an exec: section.
+	// The slot's header, last, as Prepare writes it: the run's gen and an exec: section.
 	if err := coll.Maps[bpf.MapPlaneSlots].Put(slot, bpf.PlaneSlot{Gen: gen, Flags: bpf.PlaneSlotExecDecides}); err != nil {
 		t.Fatal(err)
 	}
@@ -391,8 +391,8 @@ func corruptRow(t *testing.T, coll *ebpf.Collection, slot uint32, rows *decide.P
 	}
 }
 
-// TestIntegrationPlaneRefusalIsOneLine is TIER3-PLAN T9 on a real kernel (enforce-plane.md R23 and I8: at most one
-// verdict line per action; I9: each line carries what compile --test's bpflsm column gives the same action), in each plane mode this kernel offers
+// TestIntegrationPlaneRefusalIsOneLine runs on a real kernel (at most one
+// verdict line per action; each line carries what compile --test's bpflsm column gives the same action), in each plane mode this kernel offers
 // (lsm where bpf is an active LSM, fmod_ret everywhere): the plane's refusal of a read, a rename, `mv .git`, an
 // unlink, a write-open and an unlisted exec, and its allow of an exec by an exec.allow directory (the bit-16 rule)
 // and by a file entry, are each exactly one ledger line, the fs ones the recorder fexit's own with the plane's
@@ -807,7 +807,7 @@ func loadPlaneBeside(t *testing.T, maps string, mode bpf.PlaneMode, recorded uin
 	return plane, coll
 }
 
-// TestIntegrationPlaneFallbackIsOneLine is TIER3-PLAN T9b on a real kernel (enforce-plane §7, R23 and I8: exactly one
+// TestIntegrationPlaneFallbackIsOneLine runs on a real kernel (exactly one
 // verdict line per action, never none, never two), in each plane mode this kernel offers and under record: full and
 // off: with trace_proc loaded but none of its fexit programs attached (the recorder detached from every hook it
 // wraps, sched_process_exec and exit still attached), and the plane's mask saying so, a refusal on each hook a
@@ -1012,7 +1012,7 @@ func planeFallback(t *testing.T, trace *ebpf.Collection, root, maps, hash string
 	}
 }
 
-// planeHooksHere is bpf.PlaneHooksFor this kernel's BTF: an optional hook it lacks is not loaded (enforce-plane R3).
+// planeHooksHere is bpf.PlaneHooksFor this kernel's BTF: an optional hook it lacks is not loaded.
 func planeHooksHere(mode bpf.PlaneMode) []bpf.PlaneHook {
 	spec, err := btf.LoadKernelSpec()
 	if err != nil {

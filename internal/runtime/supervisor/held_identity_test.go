@@ -527,7 +527,7 @@ func TestHeldReadPinsRemovedDeniedDirectory(t *testing.T) {
 	}
 }
 
-// A protected replacement moved through a chain of names before the next held read (review round 2, finding 1):
+// A protected replacement moved through a chain of names before the next held read (finding 1):
 // the protected name's replacement renamed to an unprotected name in a watched directory, renamed again, and the
 // intermediate name made again with a harmless file or a symlink. Following only the first move pinned the harmless
 // file and left the replacement readable at its last name. A chain is followed to its end; a name made again after
@@ -572,7 +572,7 @@ func TestHeldReadPinsFollowAMoveChain(t *testing.T) {
 
 // The filesystem list holds the protected objects and the directories whose entries are protected (a target's
 // parent, a denied directory) to local filesystems with stable identities; a directory above a target's parent may
-// also be overlayfs, a container's / above a local work volume (review round 2, finding 4). Its targets stay
+// also be overlayfs, a container's / above a local work volume (finding 4). Its targets stay
 // protected; an overlay parent, or a remote, FUSE or unknown ancestor, refuses launch.
 func TestHeldReadPinsAcceptAnOverlayAncestor(t *testing.T) {
 	for _, tc := range []struct {
@@ -644,7 +644,7 @@ func TestHeldReadPinsAcceptAnOverlayAncestor(t *testing.T) {
 	}
 }
 
-// A followed destination stays under verification (review round 3, finding 1): the drain sees fresh -> .env -> mid,
+// A followed destination stays under verification (finding 1): the drain sees fresh ->.env -> mid,
 // then, between the drain and the pin's open of mid, mid moves on to last and mid is made again with a harmless file
 // (or, the must-stay row, is left empty). The pin opens the harmless file; the round that verifies it used to drop
 // mid's and last's events as beside the watched entries, and certain answered true with the replacement readable at
@@ -697,7 +697,7 @@ func TestHeldReadPinsVerifyAFollowedDestination(t *testing.T) {
 	}
 }
 
-// A certified replacement survives unrelated mount activity (review round 4, finding 2): .env replaced atomically
+// A certified replacement survives unrelated mount activity (finding 2):.env replaced atomically
 // is pinned in turn and benign reads go on; a mount made elsewhere afterwards (a container starting, a snap) makes the
 // mount table change, and the target's place is checked for its placement, not for the inode the replacement
 // changed. Before, it was compared with the launch inode and every later held read was refused.

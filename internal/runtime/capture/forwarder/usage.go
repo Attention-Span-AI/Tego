@@ -101,7 +101,7 @@ func mergeUsage(derived, scanned *record.Usage, final bool) *record.Usage {
 // boundPlaceholder is what a stream's usage becomes when its output count is message_start's placeholder, read
 // off the wire with no message_delta after it and not bounded by derive: charged the request's max_tokens as
 // output, marked a bound, when max_tokens is known; otherwise unmetered (reported true), never charged the
-// placeholder as if it were the message's count (R27, limits-check-doctor-cli.md R1 (m), (c)). The caller asks
+// placeholder as if it were the message's count (R27, (c)). The caller asks
 // only for a successful answer.
 func boundPlaceholder(u *record.Usage, maxTokens int, ok bool) (*record.Usage, bool) {
 	if u == nil || !ok || maxTokens <= 0 {

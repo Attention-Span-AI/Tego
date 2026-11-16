@@ -571,8 +571,7 @@ func bigRun(tb testing.TB, n int) *fixture {
 }
 
 // inForceBudget55k is the budget of one InForce over a 55k-line run read from disk (no read model, so the whole
-// ledger is scanned): the Rules page renders on every refresh. Measured about 60 ms on the reference
-// box, 70 ms on 2026-10-27.
+// ledger is scanned): the Rules page renders on every refresh. Measured about 60 to 70 ms on the reference box.
 const inForceBudget55k = 150 * time.Millisecond
 
 // TestInForceLongRunIsFast: a 55k-line run reads in under 150 ms. In budget mode (testutil.BudgetsEnv, set by
@@ -582,7 +581,7 @@ const inForceBudget55k = 150 * time.Millisecond
 // testutil.CeilingFactor times the budget and its wall clock to testutil.WallCeilingFactor times it
 // (docs/BENCHMARKS.md, "Timing budgets in the test suites"). The wall clock alone failed there: beside the integration
 // suites the box has more runnable threads than CPUs, and the fastest of three reads still waited for a CPU and ran on
-// a busy core (213 and 228 ms on 2026-10-27, 70 ms alone). A scan that grew with the run's size squared, or a read
+// a busy core (213 and 228 ms, 70 ms alone). A scan that grew with the run's size squared, or a read
 // that waited on anything, still fails the ceiling. The race detector's slowdown skips it.
 func TestInForceLongRunIsFast(t *testing.T) {
 	if raceEnabled || testing.Short() {

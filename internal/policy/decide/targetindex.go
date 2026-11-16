@@ -11,7 +11,7 @@ import (
 )
 
 // targetIndex is one of the move-reach predicates on an index: agent.RuleTable.DenyWriteTarget over the
-// built-in deny_write targets (supervisor.md R15c), or agent.RuleTable.DenyReadMoveTarget over the deny_read
+// built-in deny_write targets, or agent.RuleTable.DenyReadMoveTarget over the deny_read
 // entries the Landlock ruleset leaves unenforced (R15d). The supervisor asks the first for each end of every
 // notified modification and the second for every link and rename at tier 2, at each end and again where each
 // end lands; by scan a miss walked every entry, 12–15 ms against the 50,000 the .env scan can plant, and the

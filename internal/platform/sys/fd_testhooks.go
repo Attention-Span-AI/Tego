@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// The tegotesthooks build's second line behind ADR 0023's static rules (the 2026-10-05 note, A8): a binary
+// The tegotesthooks build's second line behind ADR 0023's static rules (A8): a binary
 // built with the tag, which the KVM suites run, counts owners that leaked an open number, refuses a fresh
 // number without FD_CLOEXEC, names who holds a leased FD, and records each deferred close. A product build
 // does not contain this file, and none of it closes anything.

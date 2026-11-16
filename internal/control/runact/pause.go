@@ -55,7 +55,7 @@ func Pause(ctx context.Context, root, run string, on bool) (Paused, error) {
 	}
 	// The launcher must be there to apply it: a free lock, or one held by a process that is not the run's launcher
 	// (runlock.LauncherGone, by pid and start time), has none. A run paused when its launcher died is never resumed
-	// (ADR 0124, amendment 2026-11-11): nothing would decide or record what it does; tego stop ends it.
+	// (ADR 0124): nothing would decide or record what it does; tego stop ends it.
 	gone, err := runlock.LauncherGone(dir)
 	if err != nil {
 		return Paused{}, err

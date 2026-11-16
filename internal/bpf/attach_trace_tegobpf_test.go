@@ -15,7 +15,7 @@ import (
 // type of its own: the kernel reads the hook from the program's load-time target.
 var tracingHooks = []ebpf.AttachType{ebpf.AttachTraceRawTp, ebpf.AttachTraceFEntry, ebpf.AttachTraceFExit}
 
-// TestTraceProgramsAttachByTheirProgramType is the type half of the v73 review's root R8, which needs the objects:
+// TestTraceProgramsAttachByTheirProgramType is the type half of the attach-kind check, which needs the objects:
 // every program the backend attaches host-wide, in both builds of trace_proc and in cgroup_track, has the attach
 // kind its compiled type calls for. AttachTrace picks link.Tracepoint or link.AttachTracing by the kind, and a
 // program of the other type fails the attach ("invalid program type TracePoint, expected Tracing") only where

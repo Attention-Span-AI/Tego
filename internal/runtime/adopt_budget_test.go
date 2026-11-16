@@ -12,9 +12,9 @@ import (
 )
 
 // TestAdoptionRecordsAnUnmeteredBudget: an adoption captures no model traffic (run_start.capture is off), so a tokens,
-// cost_usd or repeats budget in its table, which a machine ceiling imposes on every contract (agent-contract R11),
-// never trips. A tego run records that as gap what=record why=budget-unmetered right after run_start
-// (limits-check-doctor-cli.md R32); an adoption said nothing in its record. It now records the same gap, one per
+// cost_usd or repeats budget in its table, which a machine ceiling imposes on every contract,
+// never trips. A tego run records that as gap what=record why=budget-unmetered right after run_start;
+// an adoption said nothing in its record. It now records the same gap, one per
 // such budget, and none where its table has no budget.
 func TestAdoptionRecordsAnUnmeteredBudget(t *testing.T) {
 	unmetered := func(rt func(*agent.RuleTable)) []string {

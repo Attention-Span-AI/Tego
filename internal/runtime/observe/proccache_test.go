@@ -81,7 +81,7 @@ func TestProcCacheKeepsNoCommandLine(t *testing.T) {
 	}
 }
 
-// TestProcCacheRebuildsFromProc is docs/p0/enforce-cgroup-observe.md §6 E13: a recorder restarted mid-run has lost its
+// TestProcCacheRebuildsFromProc: a recorder restarted mid-run has lost its
 // process cache, and the next event for an uncached pid rebuilds the entry from /proc.
 func TestProcCacheRebuildsFromProc(t *testing.T) {
 	root := t.TempDir()

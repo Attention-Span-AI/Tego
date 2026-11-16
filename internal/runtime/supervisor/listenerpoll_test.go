@@ -18,7 +18,7 @@ import (
 // the worker polls again. Read as the listener's hangup, every worker it reached returned as if the run were over,
 // the loop closed the listener under a live agent, and every notified syscall of the agent failed ENOSYS with no line
 // and no error (TestIntegrationApprovedOpensSurviveASignalStorm, 6 of 60 runs with the KVM guest throttled, 2 of 12
-// at moderate host load, 2026-10-16). POLLHUP is the hangup: no task carries the filter any more. A pipe's write end
+// at moderate host load). POLLHUP is the hangup: no task carries the filter any more. A pipe's write end
 // whose reader is gone polls POLLERR alone, and a pipe's empty read end whose writer is gone POLLHUP alone.
 func TestListenerPollErrIsNoHangup(t *testing.T) {
 	// pipe's ends are closed once each: the one a case closes is not closed again at cleanup, where its number

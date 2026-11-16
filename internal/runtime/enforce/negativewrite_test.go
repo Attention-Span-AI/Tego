@@ -57,7 +57,7 @@ func TestSelectProtectedWritesRequiresActualPlane(t *testing.T) {
 
 // TestSelectProtectedWritesBestEffortByDefault is R5a's default (fs.assurance best-effort, ADR 0041 D1 (a)): the
 // same table is selected at tier landlock and at tier cgroup with no plane mode, where the supervisor refuses its
-// targets best effort (supervisor R15c). From 82a723b3 to ADR 0041 D1 both selections were refused.
+// targets best effort. From 82a723b3 to ADR 0041 D1 both selections were refused.
 func TestSelectProtectedWritesBestEffortByDefault(t *testing.T) {
 	if _, err := landlock.ProbeABI(); err != nil {
 		t.Skipf("no Landlock on this kernel: %v", err)

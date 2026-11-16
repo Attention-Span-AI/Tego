@@ -30,7 +30,7 @@ import (
 //     launcher's cgroup, and connect_unix must admit that name from there (Attach's relay cgroup), or every
 //     declared unix socket would be refused at tier 2;
 //   - an addressed datagram to a socket the contract does not name is refused in the kernel on 6.7+, where the
-//     supervisor only records it and continues (supervisor.md R13b), and leaves on an older kernel, where the
+//     supervisor only records it and continues, and leaves on an older kernel, where the
 //     programs are not loaded (§6 E1); a datagram to a declared socket, and to one the run bound beneath its
 //     write entry (SEMANTICS §5), leaves either way.
 func TestTier2UnixEndToEnd(t *testing.T) {
@@ -134,14 +134,14 @@ func TestTier2UnixEndToEnd(t *testing.T) {
 
 	want := map[string]string{
 		"stream-listed":   "ok",
-		"stream-unlisted": "refused errno=13", // the supervisor's refusal (supervisor.md R10)
+		"stream-unlisted": "refused errno=13", // the supervisor's refusal
 		"dgram-listed":    "ok",
 		"dgram-own":       "ok",
 		"dgram-unlisted":  "ok",
 	}
-	// Below 6.7 a plane mode decides unix names in socket_sendmsg (step D, T15, enforce-plane §2.11): EACCES in the
-	// kernel. Only the fanotify fallback leaves an unlisted datagram name undecided there (found on RHEL 9's 5.14 by
-	// TIER3-PLAN T11, where the plane runs in LSM mode).
+	// Below 6.7 a plane mode decides unix names in socket_sendmsg (step D, T15): EACCES in the
+	// kernel. Only the fanotify fallback leaves an unlisted datagram name undecided there (found on RHEL 9's 5.14,
+	// where the plane runs in LSM mode).
 	stepD := false
 	if !unixHooks {
 		switch planeSelected(t, bin, "") {

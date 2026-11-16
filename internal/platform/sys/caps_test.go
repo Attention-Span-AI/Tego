@@ -42,7 +42,7 @@ func TestClearCapabilities(t *testing.T) {
 	}
 	// ClearCapabilities leaves whether execve can gain capabilities to its caller's ordering: the bounding
 	// set stays as it was, and no_new_privs stays wherever the caller put it, because the privileged order
-	// (runtime-launch.md R4) calls this without that bit on purpose and a setuid binary must still work there.
+	// calls this without that bit on purpose and a setuid binary must still work there.
 	if bnd := threadCapSet(t, "CapBnd"); bnd != bndBefore {
 		t.Fatalf("bounding set after clear = %#x, want it untouched at %#x", bnd, bndBefore)
 	}
@@ -127,8 +127,8 @@ func TestExecveGainHelper(t *testing.T) {
 // permitted set does not keep execve from granting capabilities up to the bounding set, and no_new_privs set
 // after the call and before execve, as the unprivileged order does, leaves nothing to grant. The helper runs
 // as uid 0 of a user namespace of its own, where the root-exec rule (capabilities(7)) grants every execve
-// the bounding set: the grant a setuid-root binary gets on the privileged order, which skips no_new_privs
-// (runtime-launch.md R4a), measured here without needing a setuid binary or a file capability.
+// the bounding set: the grant a setuid-root binary gets on the privileged order, which skips no_new_privs,
+// measured here without needing a setuid binary or a file capability.
 //
 // The plain case needs an execve without no_new_privs, which a test process that inherited the bit can
 // never make; its helper checks the bit on the thread that would exec and the subtest skips when it is set.

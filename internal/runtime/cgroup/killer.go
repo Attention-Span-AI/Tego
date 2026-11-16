@@ -8,7 +8,7 @@ import (
 )
 
 // Killer is the production launch.Killer: one write of "1" to the run cgroup's cgroup.kill through the
-// Manager, the escalation target of stop_grace (runtime-launch.md R9). Delivery is asynchronous; the caller
+// Manager, the escalation target of stop_grace. Delivery is asynchronous; the caller
 // observes completion through the child's wait or cgroup.events. It lives here rather than in launch so that
 // launch, which starts the agent's first process, links no cgroup manager and no policy type (ADR 0031 (a)).
 type Killer struct {

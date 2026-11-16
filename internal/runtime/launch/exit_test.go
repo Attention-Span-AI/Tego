@@ -14,7 +14,7 @@ func killed(sig syscall.Signal) syscall.WaitStatus {
 	return syscall.WaitStatus(sig)
 }
 
-// Also pins runtime-launch.md I9: one terminal reason per wait result.
+// Also pins: one terminal reason per wait result.
 func TestEnded(t *testing.T) {
 	tests := []struct {
 		name   string

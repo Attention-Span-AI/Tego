@@ -19,12 +19,12 @@ func failedAuxv() (bool, error) { return false, errors.New("open /proc/self/auxv
 
 // TestLedgerRootIgnoresHomeUnderATSecure is spec/config/v0's Trust rule applied where it was missing:
 // "when the process runs with AT_SECURE set (the file-capability copy), $TEGO_CONFIG and $HOME are
-// ignored" (identity-config.md R21). Machine.Home is empty exactly in E9 — a containerized or
+// ignored". Machine.Home is empty exactly in E9 — a containerized or
 // directory-backed uid with no passwd entry — and the built-in ledger_root is still "~/.tego/runs",
 // so before this the capability-bearing launcher would let $HOME choose where the hash-chained audit
 // ledger is written and where `gc` later deletes.
 //
-// Also pins runtime-launch.md E37: a ~/ ledger_root under AT_SECURE is an error, not $HOME.
+// Also pins: a ~/ ledger_root under AT_SECURE is an error, not $HOME.
 func TestLedgerRootIgnoresHomeUnderATSecure(t *testing.T) {
 	m := config.Builtin()
 	m.Home = "" // E9: getpwuid found nothing

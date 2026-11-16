@@ -14,12 +14,11 @@ import (
 
 // EnvTestPlaneFillReuse makes a binary built with -tags tegotesthooks reuse the first descriptor number its plane
 // fill holds: after the plan is made and before the fill runs, another file is dup3'd over it, as a descriptor
-// closed and taken by another open would be (enforce-plane §7, R16).
+// closed and taken by another open would be.
 const EnvTestPlaneFillReuse = "TEGO_TEST_PLANE_FILL_REUSE"
 
 func init() {
-	// Never under AT_SECURE, where no environment variable may steer the capability-bearing binary
-	// (identity-config.md R21).
+	// Never under AT_SECURE, where no environment variable may steer the capability-bearing binary.
 	if secure, err := config.DetectSecureExec(); err != nil || secure || os.Getenv(EnvTestPlaneFillReuse) == "" {
 		return
 	}

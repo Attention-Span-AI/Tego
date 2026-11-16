@@ -9,10 +9,10 @@ import (
 	"syscall"
 )
 
-// StateDir is the per-user directory under a home that holds chain.log: ~/.tego (P0-DESIGN §3.3).
+// StateDir is the per-user directory under a home that holds chain.log: ~/.tego.
 const StateDir = ".tego"
 
-// AnchorPath is where an account's runs append their heads (P0-DESIGN §3.3, spec/record/v1, record-ledger.md §3):
+// AnchorPath is where an account's runs append their heads (spec/record/v1):
 // ~/.tego/chain.log under home, the account's passwd home, whatever ledger_root says, and for an account with no home
 // (no passwd entry, or a passwd home that does not exist, like the /nonexistent of a service account) the chain.log
 // beside its ledger root, which root resolves and is called for only then. It is the one rule: tego's launcher and its

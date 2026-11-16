@@ -14,7 +14,7 @@ import (
 )
 
 // TestDenyWriteRefusedBySupervisor: beneath a write entry, a modification that reaches a built-in
-// deny_write target (agent-contract R20) is refused by this loop itself — R10's errno, not CONTINUE, since
+// deny_write target is refused by this loop itself — R10's errno, not CONTINUE, since
 // Landlock grants the write entry's rights over the whole subtree and would let it through — and recorded
 // refused under the target's rule. Every notified modification is covered: a write-open, a creat, an
 // unlink, a mkdir, a mknod (a regular file or a FIFO), a symlink and a hard link inside a target, a hard link that gives a file inside one a

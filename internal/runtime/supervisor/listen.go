@@ -37,7 +37,7 @@ func (sysKernel) ListenRaw(fd, backlog int) error { return unix.Listen(fd, backl
 // The operation runs on the duplicated socket, never a later fd-number lookup.
 //
 // Under a net: section with no listener policy a TCP listen is refused whatever
-// port the socket shows (enforce-landlock R6). Landlock withholds BIND_TCP there,
+// port the socket shows. Landlock withholds BIND_TCP there,
 // but listen() on an unbound socket takes its port through the kernel's autobind,
 // which never reaches security_socket_bind, so this is the only refusal. It is not
 // keyed on port zero: a connect a sibling has in flight gives the socket a port its

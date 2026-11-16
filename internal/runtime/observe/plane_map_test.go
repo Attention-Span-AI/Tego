@@ -12,7 +12,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestRecorderNamesPlaneMapRefusals is TIER3-PLAN T14 in the recorder (enforce-plane R23, R26): the plane's own
+// TestRecorderNamesPlaneMapRefusals: the plane's own
 // sample of a refused executable mapping is one refused line, op mmap or mprotect by the hook, its file named through
 // the directory index as a file operation's is ("anonymous" for a file no path names), rule exec-map, mechanism
 // plane; a fail-closed refusal reads path-unresolved. Both are kept under record: off, since they are refusals.

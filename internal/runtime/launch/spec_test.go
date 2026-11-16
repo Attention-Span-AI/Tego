@@ -93,7 +93,7 @@ func TestWireRoundTrip(t *testing.T) {
 				Seccomp: prog},
 		},
 		{
-			// runtime-launch.md E17: Command and Dir pass through as raw UTF-8 bytes, unmodified.
+			// Command and Dir pass through as raw UTF-8 bytes, unmodified.
 			name: "non-ASCII command and dir stay as given",
 			spec: func() ChildSpec {
 				s := validSpec()
@@ -129,7 +129,7 @@ func TestWireRoundTrip(t *testing.T) {
 	}
 }
 
-// TestWireKeepsNonUTF8Bytes: runtime-launch.md E17. The stage execs and chdirs from the wire spec, so an argv,
+// TestWireKeepsNonUTF8Bytes: the stage execs and chdirs from the wire spec, so an argv,
 // env or dir byte that is not UTF-8 must cross the pipe as itself, not as U+FFFD.
 func TestWireKeepsNonUTF8Bytes(t *testing.T) {
 	s := validSpec()
@@ -259,7 +259,7 @@ func BenchmarkWireRoundTrip(b *testing.B) {
 // the child stage in the spec, which resets them before it execs the agent (E40); a spec without them
 // carries no key, so an older stage reads nothing new.
 //
-// Also pins runtime-launch.md R9a: wireSpec.reset_signals carries the ignored job-control stops to the stage.
+// Also pins: wireSpec.reset_signals carries the ignored job-control stops to the stage.
 func TestResetSignalsCrossTheWire(t *testing.T) {
 	w := validSpec().toWire(42, false, false)
 	w.ResetSignals = []int{int(syscall.SIGTSTP), int(syscall.SIGTTIN), int(syscall.SIGTTOU)}

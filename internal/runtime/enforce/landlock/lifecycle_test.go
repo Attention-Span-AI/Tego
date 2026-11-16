@@ -16,7 +16,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// TestHeldIdentityIsFixedAtOpenTime is docs/p0/enforce-landlock.md E12 (ADR 0010): a write entry declared
+// TestHeldIdentityIsFixedAtOpenTime is ADR 0010: a write entry declared
 // through a symlink is whatever the link named when Prepare opened it. Retargeting the link afterwards
 // does not move the held fd, so the rule stays on the inode Prepare saw and nothing here re-validates it.
 func TestHeldIdentityIsFixedAtOpenTime(t *testing.T) {
@@ -60,7 +60,7 @@ func TestHeldIdentityIsFixedAtOpenTime(t *testing.T) {
 	}
 }
 
-// TestConcurrentPreparesShareNothing is docs/p0/enforce-landlock.md E15: two runs whose deny_read targets sit
+// TestConcurrentPreparesShareNothing: two runs whose deny_read targets sit
 // under one parent build fully independent fd sets and rulesets. No number is shared, and closing one
 // handle leaves the other's descriptors, ruleset included, open.
 func TestConcurrentPreparesShareNothing(t *testing.T) {
@@ -102,7 +102,7 @@ func TestConcurrentPreparesShareNothing(t *testing.T) {
 	}
 }
 
-// TestPackageReadsNoClockAndKeepsNoPIDState is docs/p0/enforce-landlock.md E19 and E23: the ruleset and the
+// TestPackageReadsNoClockAndKeepsNoPIDState: the ruleset and the
 // filter are static, so nothing in this package reads wall-clock time, and it holds no PID-keyed state.
 // The check is over the package's own non-test source: a call that reads the clock or asks for a process
 // or thread id.

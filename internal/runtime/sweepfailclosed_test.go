@@ -22,7 +22,7 @@ func runState(t *testing.T, root, id string) ledger.RunState {
 
 // TestSweepKeepsARunLostWhoseScopeWillNotBeRemoved: the tree is gone (populated 0) but rmdir stays busy after
 // the retries. The run used to be ended, its live entry cleared and its empty scope leaked with nothing
-// listing it again. runtime-launch.md case 9: "log, leave for next sweep".
+// listing it again. The rule is "log, leave for next sweep".
 func TestSweepKeepsARunLostWhoseScopeWillNotBeRemoved(t *testing.T) {
 	const id = "r-00000000-000000000000a-orphan"
 	root, own := t.TempDir(), t.TempDir()

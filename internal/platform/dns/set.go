@@ -16,7 +16,7 @@ import (
 )
 
 // Match is the compiled net.allow entry that admits a destination: what the supervisor needs for the
-// event's rule and host fields (docs/p0/supervisor.md R7). A nil *Match means no entry admits it.
+// event's rule and host fields. A nil *Match means no entry admits it.
 type Match struct {
 	// Proto is the declared transport; inet is the legacy wildcard.
 	Proto string
@@ -28,7 +28,7 @@ type Match struct {
 	Host string
 	// Raw is the entry as declared, e.g. "api.anthropic.com:443".
 	Raw string
-	// Verdict is the entry's compiled verdict; P0 compiles net.allow to allow only.
+	// Verdict is the entry's compiled verdict; net.allow compiles to allow only.
 	Verdict agent.Verdict
 }
 
@@ -47,7 +47,7 @@ type Options struct {
 	// RefreshEvery is how often the caller calls Refresh (Run's interval, the runtime's tick); <= 0 means
 	// DefaultInterval. With MaxStale set, a host entry falls due this long plus Timeout before its grant's
 	// deadline, so the poll that finds it due has finished its lookup before the grant lapses: a same-answer
-	// renewal leaves no refused window (amended 2026-10-05). MinTTL still floors that.
+	// renewal leaves no refused window. MinTTL still floors that.
 	RefreshEvery time.Duration
 	// Now is the clock a test injects; nil means time.Now.
 	Now func() time.Time
@@ -216,7 +216,7 @@ func NewSet(rules []agent.NetRule, resolvers []netip.AddrPort, opts Options) *Se
 //
 // Match does not apply Options.ResolvedDenied: an address a host entry's name resolved to is matched to that
 // entry whether or not the entry may admit it, because the supervisor's resolved-address check refuses it
-// under the entry's name, net.denied_resolved[<entry>] (docs/p0/supervisor.md R7), which a miss here would
+// under the entry's name, net.denied_resolved[<entry>], which a miss here would
 // turn into unmatched. Refreshed, which kernel rows follow, is where the filter applies.
 //
 // Match is safe for any number of goroutines and never blocks.
@@ -325,17 +325,17 @@ func (s *Set) ResolverAddrs() []netip.AddrPort { return s.resolvers }
 
 // Refreshed returns base, the entries NewSet was given, with each host entry's addresses and resolution time
 // replaced by the live ones. It is how a second enforcer of the same entries follows the refreshes: tier 2's
-// kernel rows decide every connect the supervisor relays, so they must admit the addresses this set admits now
-// (docs/p0/enforce-cgroup-observe.md §6 E7). A literal-address or cidr entry is never re-resolved, and a unix
+// kernel rows decide every connect the supervisor relays, so they must admit the addresses this set admits now.
+// A literal-address or cidr entry is never re-resolved, and a unix
 // entry carries no address, so those are returned as given. base is not modified; an entry that no longer
 // sits where NewSet found it (another slice, or one reordered) is returned as given rather than guessed at.
 //
 // With Options.ResolvedDenied set, a host entry's live address that the check refuses for that entry is left
-// out of its IPs and added to its Denied, as Compile does with the first answer (agent-contract R18): the
+// out of its IPs and added to its Denied, as Compile does with the first answer: the
 // metadata endpoint, loopback, one of this host's own addresses (with the runtime's check) or, after a public
 // first answer, a private address that a name is rebound to is never among the addresses Refreshed gives tier
 // 2's rows. The supervisor refuses every connect and send it sees to any of these; the row is what decides a
-// datagram whose address a sibling thread rewrote after the supervisor read it (supervisor R13b).
+// datagram whose address a sibling thread rewrote after the supervisor read it.
 func (s *Set) Refreshed(base []agent.NetRule) []agent.NetRule {
 	out := append([]agent.NetRule(nil), base...)
 	snap := s.snap.Load()

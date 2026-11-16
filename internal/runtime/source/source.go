@@ -12,7 +12,7 @@ import (
 )
 
 // Sink receives events from producers. Implementations must never block a producer for long: the pipeline
-// buffers and counts drops (P0-DESIGN §2.4, §6).
+// buffers and counts drops.
 type Sink interface {
 	Emit(ev *record.Event)
 }
@@ -29,7 +29,7 @@ type Source interface {
 
 // LoopbackSource is a capture source the agent reaches over loopback instead of being observed through:
 // the forwarder, whose listeners bind at construction so both facts below exist before the run is even
-// started (docs/p0/capture-derive.md §3 "Forwarder listeners", R19).
+// started.
 //
 // The run asks the source for them rather than taking a copy from its caller. An ephemeral port is the
 // source's own fact, and the two places that need it — the agent's environment and the enforcement tier's
@@ -74,8 +74,7 @@ type Gap struct {
 
 // ProcessHook is fed a run's process lifecycle as the tier's kernel record sees it: every exec, every open
 // and every exit in the run's cgroups. It is how the uprobe capture source learns which processes to attach
-// to and when to let go of them (docs/p0/capture-derive.md §4 "onExec driven by observe's exec stream", R4,
-// R8). A hook is called on the recorder's drain goroutine, so it must return promptly; a capture source that
+// to and when to let go of them. A hook is called on the recorder's drain goroutine, so it must return promptly; a capture source that
 // follows the record is fed through a hookQueue, which calls it on a goroutine of its own.
 type ProcessHook interface {
 	// OnExec is one successful execve of pid in cgroup cgroupID. path is the file name the process passed
@@ -118,8 +117,8 @@ func NewPair() uint64 { return pairs.Add(1) }
 // MeteredSink is a Sink a capture source can also tell that model traffic went past it uncounted: an exchange
 // on a model endpoint whose token spend capture could not read. The run's capture lane is one; a source asks
 // for it through ReportUnmetered and never needs to know whether the run has a budget. What counts as
-// uncounted is the source's call, listed in docs/p0/limits-check-doctor-cli.md
-// R1: a successful answer whose usage could not be read (derive.Facts.Unmetered), the creation of a message
+// uncounted is the source's call, for example
+// a successful answer whose usage could not be read (derive.Facts.Unmetered), the creation of a message
 // batch, a response body capture lost before any usage was read, and an exchange lost with its connection.
 type MeteredSink interface {
 	Sink

@@ -84,7 +84,7 @@ func mcpLines(t *testing.T, events []*record.Event) []record.MCPPayload {
 	return out
 }
 
-// TestDispatcherDerivesMCPToolCalls (capture-derive.md R41): a real client's HTTP exchanges with a declared server,
+// TestDispatcherDerivesMCPToolCalls: a real client's HTTP exchanges with a declared server,
 // both HTTP transports, derive the connection and each tools/call, in wire order, as mcp lines; the ssl_response
 // carries parser_version mcp/1; nothing is a decision and nothing is unmetered.
 func TestDispatcherDerivesMCPToolCalls(t *testing.T) {
@@ -216,7 +216,7 @@ func TestMCPEventsStdio(t *testing.T) {
 
 // TestStdioToolCallsFallIntoSteps: the bytes a real client wrote to a stdio server (derive/mcp's recorded fixture),
 // read by mcp.Stdio, derive one mcp line per tools/call, transport stdio, each numbered into the open step by time,
-// as the reader will once provisioning relays a server's stdin (capture-derive.md R41).
+// as the reader will once provisioning relays a server's stdin.
 func TestStdioToolCallsFallIntoSteps(t *testing.T) {
 	wire, err := os.ReadFile(filepath.Join("mcp", "testdata", "stdio-client.jsonl"))
 	if err != nil {

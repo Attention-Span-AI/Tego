@@ -17,7 +17,7 @@ import (
 
 // fixedClock always reports the same instant: paired with a fixed Rand source it makes
 // identity.NewRunID deterministic, which is what lets this file plant something at the exact path
-// mintRun is about to create (docs/p0/runtime-launch.md §6 case 1).
+// mintRun is about to create.
 type fixedClock struct{ at time.Time }
 
 func (c fixedClock) Now() time.Time { return c.at }
@@ -38,7 +38,7 @@ func (c fixedClock) MonoNS() uint64 { return 1 }
 // touches nothing at the occupied path, rather than e.g. falling back to some other mkdir call that
 // would follow the link or clear the directory first.
 //
-// Also pins runtime-launch.md E1, E16, E35: an occupied run path, a symlink included, is refused; the id is
+// Also pins: an occupied run path, a symlink included, is refused; the id is
 // never trusted for uniqueness.
 func TestMintRunNeverReusesAnOccupiedPath(t *testing.T) {
 	clk := fixedClock{at: time.Unix(1_700_000_000, 0)}
@@ -143,12 +143,12 @@ func TestMintRunNeverReusesAnOccupiedPath(t *testing.T) {
 	}
 }
 
-// TestMintRunRetriesATakenPath pins identity-config.md R2b: when mkdir(runs/<id>) finds the path taken
+// TestMintRunRetriesATakenPath: when mkdir(runs/<id>) finds the path taken
 // (EEXIST), mintRun mints another id from a fresh read of the random source, up to three retries, and fails
 // with the EEXIST error only when all four ids are taken. The taken paths are left as they were, and the
 // random source is read no further than the attempt that succeeded or the last one.
 //
-// Also pins runtime-launch.md E1: a taken path mints a fresh id, up to the retry bound.
+// Also pins: a taken path mints a fresh id, up to the retry bound.
 func TestMintRunRetriesATakenPath(t *testing.T) {
 	clk := fixedClock{at: time.Unix(1_700_000_000, 0)}
 	machineID := []byte("mintrun-retry-machine")

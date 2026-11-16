@@ -60,7 +60,7 @@ type Peer struct {
 // ask.hold, which places network asks only (connect, first_write, request), says (ask-4).
 const HoldOpen = "open"
 
-// OpRead is the op of a held read-open under fs.ask_read (POC 2026-10-06): the open is held, as HoldOpen says, and
+// OpRead is the op of a held read-open under fs.ask_read: the open is held, as HoldOpen says, and
 // the op tells the person, and the standing key, that what is asked for is a read. An fs.ask write-open and a
 // gate-raised open keep op open.
 const OpRead = "read"
@@ -791,7 +791,7 @@ type Summary struct {
 
 // shown is req as the socket shows it to every client, list and detail alike: its target in the ledger form the ask
 // line records (askclient.LedgerTarget), never the raw target the supervisor holds, whose request path and query may
-// carry a credential (record-ledger R9a). Only an http_request target differs.
+// carry a credential. Only an http_request target differs.
 func shown(req Request) Request {
 	req.Target = askclient.LedgerTarget(req.Op, req.Target)
 	return req

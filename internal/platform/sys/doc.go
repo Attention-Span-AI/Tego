@@ -13,7 +13,7 @@
 //
 // RunAs is the exception to the rule below: it is several syscalls and a thread of its own, because
 // credentials are per thread in Linux and the supervisor needs one relayed unix connect judged as the
-// agent's (docs/p0/supervisor.md R11). The thread takes the credentials with raw setgroups/setresgid/
+// agent's. The thread takes the credentials with raw setgroups/setresgid/
 // setresuid, which change the calling thread only, reads them back before running anything, and is never
 // returned to the Go scheduler; the process's own credentials never change.
 //
@@ -40,7 +40,7 @@
 // costs one syscall once per run and makes the child stage's empty-ambient guarantee explicit rather than
 // inferred.
 //
-// FD is the owned descriptor of ADR 0023 (as amended 2026-10-05): one close-once owner per number, lent only
+// FD is the owned descriptor of ADR 0023: one close-once owner per number, lent only
 // through a counted lease (Borrow, Hold) whose Close is deferred to the last Return, given away only through
 // Release or ReleaseNumber, forgotten without a close only through Abandon, and never closed by the garbage
 // collector. It is born where its number is (Own, OwnSyscall, Adopt, Inherited, Stdio); fd.go, fd_lease.go,

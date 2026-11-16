@@ -325,7 +325,7 @@ const execPinRaceAttempts = 5000
 // (exec.pin, argv-changed, SIGKILL), and each kill's line carries the kernel's vector and the decided one, which differ;
 // every git exec that ran is one line (observed, unmatched: deny-list mode) whose vector is not push and which says
 // kernel_pinned; run_end counts the kills. The race must be run: a cell with
-// no kill fails on a machine with more than one CPU, where C6 measured the race won about 400 times in 3000.
+// no kill fails on a machine with more than one CPU, where the race is won about 400 times in 3000.
 func TestPlaneRunExecPinRace(t *testing.T) {
 	bin, uid, gid, modes := planePreconditions(t)
 	racerELF := buildExecRacer(t)

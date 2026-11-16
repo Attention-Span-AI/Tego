@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestTwoRunEndsKeepTheFirst is limits-check-doctor-cli.md §6 case 5 (E5): a ledger with two run_end lines, which
+// TestTwoRunEndsKeepTheFirst: a ledger with two run_end lines, which
 // a healthy writer never produces, is read by its first by chain order, as status reads it, and the anomaly is
 // reported rather than silently resolved: the report counts it and --json names it. measure kept the last.
 func TestTwoRunEndsKeepTheFirst(t *testing.T) {

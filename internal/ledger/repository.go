@@ -19,14 +19,14 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// runIDPattern is the run id shape r-<host8>-<time36>-<rand6> (docs/p0/identity-config.md R2).
+// runIDPattern is the run id shape r-<host8>-<time36>-<rand6>.
 var runIDPattern = regexp.MustCompile(`^r-[0-9a-f]{8}-[0-9a-z]{13}-[0-9a-z]{6}$`)
 
 // IsRunID reports whether s has the run id shape.
 func IsRunID(s string) bool { return runIDPattern.MatchString(s) }
 
 // CompareRunIDs orders run ids by mint time: time36 then rand6, the host8 prefix only as the last tie-break.
-// The whole id sorts by mint time within one host alone (identity-config.md R1), and a ledger root may hold
+// The whole id sorts by mint time within one host alone, and a ledger root may hold
 // several host prefixes (a machine-id change, a shared home). A string that is not a run id sorts by its
 // whole text, before every run id.
 func CompareRunIDs(a, b string) int {

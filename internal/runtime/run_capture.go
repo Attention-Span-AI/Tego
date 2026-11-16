@@ -19,8 +19,8 @@ import (
 // admitLoopback is the table this run enforces: the compiled one plus one net.allow entry per bound
 // loopback capture listener.
 //
-// The compiler could not have written these entries. A forwarder listener takes an ephemeral port
-// (capture-derive.md R19), so the port exists only once the socket is bound, which happens when the
+// The compiler could not have written these entries. A forwarder listener takes an ephemeral port,
+// so the port exists only once the socket is bound, which happens when the
 // caller constructs the source — before Run. Without the entries the forwarder is unreachable: the
 // supervisor refuses every destination no rule names, and Landlock's ABI-4 rules are one port each off
 // this same table. R38 is what the pair buys: the loopback port is the route to the model, and a harness
@@ -66,7 +66,7 @@ func admitLoopback(rt *agent.RuleTable, sources []source.Source) *agent.RuleTabl
 
 // emitCaptureGaps records what the caller's capture selection already knows it cannot cover
 // (capture.Select's second return), as the first gaps of the run. A mechanism this binary does not carry
-// is one gap event, never a silence (capture-derive.md §8 I4); what each source could not cover while it
+// is one gap event, never a silence; what each source could not cover while it
 // ran is a separate report, written by emitSourceGaps at the other end of the run.
 //
 // The fallback is for a caller that wired neither a source nor a gap while the contract asked for
@@ -108,7 +108,7 @@ func (r *runner) emitPriceGap() {
 // emitBudgetUnmeteredGaps records, right after run_start, each tokens, cost_usd or repeats budget that no
 // capture source meters: run_start.capture is off (captureMode), because the contract or the machine turned
 // capture off, or the forwarder had no models: endpoint to listen for and the uprobe source did not run. Such
-// a budget never trips, and the run said so only through a capture gap that names no budget (limits-check-doctor-cli.md R32).
+// a budget never trips, and the run said so only through a capture gap that names no budget.
 // A budget the contract declares never gets here: refuseUncountedBudget refused the run before run_start, so the
 // gap is for a budget a machine ceiling alone imposes.
 func (r *runner) emitBudgetUnmeteredGaps() {
@@ -176,7 +176,7 @@ func (r *runner) ref() source.RunRef {
 //
 // A tier that writes no ring buffer, or a build with no factory, leaves it nil and the run records a
 // gap instead: a run whose kernel record is absent must say so, because a silence reads the same as a
-// run where nothing happened (P0-DESIGN §6). A factory that fails is the same case — the tier is still
+// run where nothing happened. A factory that fails is the same case — the tier is still
 // enforcing, and losing its record is not a reason to fail the run.
 func (r *runner) startKernelRecord(h api.Handle) {
 	kr, ok := h.(enforce.KernelRecorder)
@@ -284,8 +284,8 @@ type ContinuedNetNamer interface {
 // nameKernelConnects hands the run's kernel recorder the supervisor's lookup for a connect it continues
 // (supervisor.Loop.ContinuedNet). The supervisor writes no line for such a connect while the recorder reads
 // (kernelConnects), so the recorder's is the connect's only line and must name it as the supervisor's would
-// have: net.resolver for a DNS query, the capture listener's grant, the resolved-address check's refusals
-// (supervisor.md R7, enforce-cgroup-observe §5 R5). Called once the loop exists and before any source starts.
+// have: net.resolver for a DNS query, the capture listener's grant, the resolved-address check's refusals.
+// Called once the loop exists and before any source starts.
 func (r *runner) nameKernelConnects(fn func(ap netip.AddrPort, proto string) (rule, host string, v record.Verdict, ok bool)) {
 	if n, ok := r.kernelRecord.(ContinuedNetNamer); ok {
 		n.SetContinuedNet(fn)
@@ -333,7 +333,7 @@ func (r *runner) kernelExecHandoff(ctx context.Context) func() bool {
 }
 
 // superviseKernelRecord hands the run's kernel recorder the supervisor's naming of the fs actions it leaves to
-// the recorder's line, and tells it whether the supervisor writes every exec's line (supervisor.md R7a): it does
+// the recorder's line, and tells it whether the supervisor writes every exec's line: it does
 // unless the kernel decision plane decides the run's execs, and it names the plane's mode. Called once the loop
 // exists and before any source starts.
 func (r *runner) superviseKernelRecord(fn func(tid int, op, name, name2 string, at uint64) (supervisor.FSNaming, bool)) {
@@ -366,7 +366,7 @@ type DecisionPlaneNamer interface {
 	SetDecisionPlane(mode string)
 }
 
-// decisionPlane is run_start's decision_plane (enforce-plane R19, I7): the mode a tier with the plane seam decides
+// decisionPlane is run_start's decision_plane: the mode a tier with the plane seam decides
 // in, record.DecisionPlaneFanotify for one on the listener (tier cgroup's fallback), "" for a tier with no plane.
 func (r *runner) decisionPlane() string {
 	dp, ok := r.handle.(enforce.DecisionPlaneReporter)
@@ -391,7 +391,7 @@ func (r *runner) planeDecides() bool {
 }
 
 // planeExecs reports whether the run's kernel decision plane decides its execs (enforce.DecisionPlaneReporter):
-// then the kernel writes each continued exec's one line and the supervisor none (supervisor.md R7a).
+// then the kernel writes each continued exec's one line and the supervisor none.
 func (r *runner) planeExecs() bool {
 	dp, ok := r.handle.(enforce.DecisionPlaneReporter)
 	if !ok {
@@ -426,8 +426,8 @@ type StreamActivityReporter interface {
 // this run can see the model's turn structure at all.
 //
 // With a capture source running, derive.Steps folds each ssl_request and ssl_response into a per-thread
-// step and attributes every action to the turn it fell in (R33-R36): the M2 half of P0-DESIGN §5's
-// "Attribution: none (M1) → time (M2)". It is the honest method precisely because it refuses to guess
+// step and attributes every action to the turn it fell in (R33-R36), by time rather than none.
+// It is the honest method precisely because it refuses to guess
 // between two concurrent turns and says unattributed instead.
 //
 // With no capture there is nothing to derive from. Running the time method anyway would label every
@@ -466,7 +466,7 @@ func modelHosts(rt *agent.RuleTable) []string {
 // the mode the contract compiled to. The two differ in the ordinary case: rt.Capture is resolved against
 // the machine's ceiling, not against the tier that ran, so an auto contract on an unbounded machine
 // compiles to uprobe and then runs at tier 1 with the forwarder alone. A started uprobe source is capture:
-// uprobe (the forwarder beside it belongs to that mode, capture-derive.md §4), the forwarder alone is
+// uprobe (the forwarder beside it belongs to that mode), the forwarder alone is
 // capture: forwarder, and nothing started is off. What the contract wanted and did not get is a selection
 // gap, written right after run_start, so a reader never has to guess why the two disagree.
 //
@@ -502,7 +502,7 @@ func (r *runner) emitSourceGaps() {
 	}
 }
 
-// emitPlaneGaps records the kernel decision plane's fail-closed counters of the run's slot (enforce-plane §2.8): one
+// emitPlaneGaps records the kernel decision plane's fail-closed counters of the run's slot: one
 // gap what=enforce line per counter that is not zero, naming the plane's mode, as the last lines before run_end. It
 // runs once the run's cgroup has emptied, so no process of the run can still count, and before the handle's Detach,
 // which runs after run_end and whose next Prepare of the slot zeroes them. A slot it cannot read is one

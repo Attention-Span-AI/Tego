@@ -36,7 +36,7 @@ func fastOpenPolicy() *Policy {
 // verdict, recording the unmatched destination as `refused best_effort=true` while the kernel then ran the
 // real syscall: on a SOCK_STREAM socket with MSG_FASTOPEN that is tcp_sendmsg_fastopen opening the
 // connection and the payload leaving for an undeclared host. The comment justifying it named Landlock's
-// per-port rule as the backstop, which cannot see the host at all (enforce-landlock R6) — and the same
+// per-port rule as the backstop, which cannot see the host at all — and the same
 // call made through sendmsg was refused with EACCES, so the rule was evadable by picking the other entry
 // point for the identical operation. R12 and I2 apply to the batch form too.
 func TestSendMMsgStreamIsDecidedNotContinued(t *testing.T) {
@@ -331,7 +331,7 @@ func TestSendMMsgReadsTheBatchAsFarAsTheKernelSends(t *testing.T) {
 		{
 			// Measured on 6.17: a connected UDP socket sends the NULL-name messages to its peer and the
 			// addressed one to its own msg_name, and sendmmsg returns 65. That one is a destination the policy
-			// refuses, so the batch is refused whole (R13b as amended 2026-10-16).
+			// refuses, so the batch is refused whole (R13b).
 			name: "a connected datagram socket, 64 messages with no address and an undeclared one", vlen: mmsgMessages + 1,
 			connected: true, odd: undeclared, msg: oddAt(mmsgMessages, none),
 			want: want{refused: true, odd: "203.0.113.9:4444", dup: true},

@@ -47,7 +47,7 @@ func runPaused(v any) bool {
 
 // lostPaused reports whether r is lost (no run_end, its launcher gone) and its launcher's last recorded pause line held
 // it paused. That is the last state recorded, not proof it stayed frozen; Tego never thaws it, and tego stop ends it
-// (ADR 0124, second amendment of 2026-11-11).
+// (ADR 0124).
 func lostPaused(v any) bool {
 	r, ok := v.(*ledgerview.Run)
 	return ok && r != nil && r.State() == "lost" && ledgerview.LiveFactsOf(r).Paused

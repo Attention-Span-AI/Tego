@@ -13,7 +13,7 @@ import (
 
 // TestKernelFuncNamesAreEveryQuestionARunAsks: the names a cache keeps answers for are the reader's functions, the
 // optional tracing program's function and every optional plane hook's target in both modes, sorted and once each; a
-// name missing here would be parsed for on every run (enforce-plane §2.18).
+// name missing here would be parsed for on every run.
 func TestKernelFuncNamesAreEveryQuestionARunAsks(t *testing.T) {
 	names := KernelFuncNames()
 	if !slices.IsSorted(names) || len(slices.Compact(slices.Clone(names))) != len(names) {
@@ -89,7 +89,7 @@ func TestSeededReaderIsTheParsedOne(t *testing.T) {
 }
 
 // BenchmarkKernelHasFuncSeeded is what an adopting run pays for every question it asks the kernel's BTF once doctor
-// seeded the answers (enforce-plane §2.18): a map read under a lock, against the 50-100 ms of CPU a parse took in the
+// seeded the answers: a map read under a lock, against the 50-100 ms of CPU a parse took in the
 // KVM guests. It allocates nothing; bench-gate holds it there.
 func BenchmarkKernelHasFuncSeeded(b *testing.B) {
 	names := KernelFuncNames()

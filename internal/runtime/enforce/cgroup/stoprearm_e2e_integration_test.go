@@ -25,7 +25,7 @@ import (
 // left lingering past its linger whose timer died stays attached host-wide until a reaper, `tego stop` or gc acts
 // for it. A root `tego stop` of another run (here one that is not running) starts the build's timer again, and the
 // timer removes the build within 3 s; stop itself removes nothing, so its latency stays an exec rather than a
-// removal's 1.7 to 3.7 s (limits-check-doctor-cli.md R29).
+// removal's 1.7 to 3.7 s.
 func TestIntegrationStopRearmsABuildWhoseTimerDied(t *testing.T) {
 	requireRealPrepare(t)
 	base, err := os.MkdirTemp("", "tego-stop-rearm-")

@@ -49,7 +49,6 @@ func runFilter(t *testing.T, arch Arch, full bool, data []byte) uint32 {
 	return uint32(ret)
 }
 
-// TestFilterDecisions asserts docs/p0/enforce-landlock.md R11.
 func TestFilterDecisions(t *testing.T) {
 	const (
 		x86Read   = 0
@@ -162,8 +161,6 @@ func FuzzWriteFlag(f *testing.F) {
 
 // TestFilterGuardOrder is I6: the arch guard is the first thing evaluated and the x32 check follows
 // it on x86_64 before any syscall-number comparison; arm64 has no x32 check at all.
-//
-// Spec: docs/p0/enforce-landlock.md R9.
 func TestFilterGuardOrder(t *testing.T) {
 	x86, err := BuildFilter(ArchX86_64, false, false)
 	if err != nil {
@@ -241,8 +238,6 @@ func TestFilterAssembleRoundTrip(t *testing.T) {
 }
 
 // TestFilterGolden keeps a human-readable dump per arch and record mode under testdata/ (§10).
-//
-// Spec: docs/p0/enforce-landlock.md R9, R11, R16.
 func TestFilterGolden(t *testing.T) {
 	cases := []struct {
 		file string
@@ -284,7 +279,6 @@ func TestFilterGolden(t *testing.T) {
 	}
 }
 
-// TestNativeArch asserts docs/p0/enforce-landlock.md R9.
 func TestNativeArch(t *testing.T) {
 	a := NativeArch()
 	if a != ArchX86_64 && a != ArchARM64 {

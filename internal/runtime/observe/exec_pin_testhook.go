@@ -18,8 +18,7 @@ import (
 const EnvTestExecPinKillErr = "TEGO_TEST_EXEC_PIN_KILL_ERR"
 
 func init() {
-	// Never under AT_SECURE, where no environment variable may steer the capability-bearing binary
-	// (identity-config.md R21).
+	// Never under AT_SECURE, where no environment variable may steer the capability-bearing binary.
 	v := os.Getenv(EnvTestExecPinKillErr)
 	if secure, err := config.DetectSecureExec(); err != nil || secure || v == "" {
 		return

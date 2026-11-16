@@ -168,7 +168,7 @@ func TestTier2ConnectHasOneLine(t *testing.T) {
 const connectOnceCount = 3
 
 // connectOnceResolver is the run's one resolver (the machine config's resolver list): the agent's UDP
-// connects to it on port 53 fall under the resolver exception (supervisor.md R14). A UDP connect sends
+// connects to it on port 53 fall under the resolver exception. A UDP connect sends
 // nothing, so no server has to answer there.
 const connectOnceResolver = "127.0.0.2"
 

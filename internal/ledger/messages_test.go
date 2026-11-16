@@ -77,7 +77,7 @@ func blobsBytes(t *testing.T, dir string) int64 {
 	return n
 }
 
-// A growing conversation is stored once (P0-DESIGN §2.10, R11). Every
+// A growing conversation is stored once. Every
 // request re-sends the whole history, so storing each body whole puts the conversation on disk once per
 // request, O(n²) in its length. Stored as splices, a turn is on disk once its group has closed, whichever
 // requests carried it, and a few times before that while it is in the last group; the system prompt and tools
@@ -387,7 +387,7 @@ func storeRequest(t *testing.T, w *Writer, dir string, body string) record.SSLRe
 // keeps a body of n bytes at 4n/BlobThreshold + 3 files at most, the worst case being elements over the
 // threshold each after a tiny one, each costing its own blob, its link, the tiny one's group and its link.
 //
-// Also pins record-ledger.md R15: the files a request body adds are bounded by its size.
+// Also pins: the files a request body adds are bounded by its size.
 func TestTheFilesOneBodyAddsAreBounded(t *testing.T) {
 	distinct := func(i, n int) string { return fmt.Sprintf("%0*d", n, i) }
 	var ones, tiny, alternating []string

@@ -52,7 +52,7 @@ func Raw(o Object) ([]byte, error) {
 }
 
 // PlaneHooksHere is PlaneHooksFor this kernel's BTF: an optional hook whose target it lacks (file_truncate below
-// 6.2, the ACL hooks below 6.2) is left out, as the backend and doctor's probe leave it out (enforce-plane R3).
+// 6.2, the ACL hooks below 6.2) is left out, as the backend and doctor's probe leave it out.
 func PlaneHooksHere(m PlaneMode) []PlaneHook {
 	spec, err := btf.LoadKernelSpec()
 	if err != nil {

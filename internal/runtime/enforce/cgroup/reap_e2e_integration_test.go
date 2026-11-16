@@ -166,7 +166,7 @@ type orphanRun struct {
 // budget: the launcher of a test's fresh binary has no run-probe cache entry (doctor.runCacheKey holds the binary's
 // inode), so before its agent starts it probes the decision plane in each mode the boot offers, attaching and then
 // closing every plane link, and each close of a trampoline link waits for an RCU-tasks grace period under ftrace's
-// locks (ADR 0022). Measured in the KVM guests on 2026-10-16: over 30 s on both boots with the host at load 27-44 (the
+// locks (ADR 0022). In the KVM guests: over 30 s on both boots with the host at load 27-44 (the
 // launcher's threads in synchronize_rcu_tasks under runPlaneProbe's planeRig.close), and 15-28 s with it at load 5-9.
 // A launcher that exits is reported at once instead.
 const launchWait = 3 * time.Minute

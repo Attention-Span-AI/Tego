@@ -568,7 +568,7 @@ func TestGlossary(t *testing.T) {
 	g := get(t, s, c, "/glossary")
 	// Contract and Refused are the command line's words (docs/DASHBOARD.md, Contract and refused); each keeps the anchor of its older word, so a
 	// /glossary#policy or #blocked link still lands on it. Agent says any program first, since Tego holds every kind of
-	// agent (decided 2026-11-10).
+	// agent.
 	for _, want := range []string{"<dt>High</dt>", `<div class="gl-row" id="contract"><dt><span id="policy"></span>Contract</dt>`,
 		`<div class="gl-row" id="refused"><dt><span id="blocked"></span>Refused</dt>`, "<dt>Protection level</dt>",
 		"<dt>Agent</dt><dd>Any program Tego governs"} {

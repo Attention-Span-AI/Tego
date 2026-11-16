@@ -149,7 +149,7 @@ func outlivesItsLastLauncher(t *testing.T, cell reapEnv) {
 			purged := time.Since(released)
 			// The timer sleeps to the lock's mtime, which the reaper stamps, plus the linger and a second; the
 			// removal then takes the kernel's teardown, waited for up to teardownWait (on 6.1 7 to 10.5 s for the
-			// whole build, 2026-10-20).
+			// whole build).
 			waitBuildGone(t, a.hash, linger+time.Second+teardownWait+10*time.Second)
 			gone := time.Since(released)
 			t.Logf("released A's reaper: A purged after %v, the build gone after %v", purged.Round(time.Millisecond),

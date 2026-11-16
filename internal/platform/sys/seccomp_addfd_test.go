@@ -33,7 +33,7 @@ func sigurgPending() bool {
 	return set.Val[0]&(1<<(uint(unix.SIGURG)-1)) != 0
 }
 
-// TestAddfdSendBlocksSignalsInsideTheIoctl reproduces the custom-agent POC's spurious EBADF through the ioctl seam,
+// TestAddfdSendBlocksSignalsInsideTheIoctl reproduces a spurious EBADF through the ioctl seam,
 // deterministically: the stand-in for the kernel sends the calling thread a signal from inside the ioctl, the moment
 // the kernel race needs, and answers as the kernel then does. A signal that is delivered at once (not blocked)
 // interrupts the wait, the kernel has the notification answered with no descriptor, and the restarted ioctl meets

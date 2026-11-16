@@ -15,7 +15,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/testutil"
 )
 
-// The lease budget (ADR 0023's 2026-10-05 note, P1–P3 and P9). bench-gate.sh runs Borrow, Hold and
+// The lease budget (ADR 0023, P1–P3 and P9). bench-gate.sh runs Borrow, Hold and
 // OwnedOpenClose against the base commit; the pins below hold what it cannot: the allocation counts on every
 // runner, and Borrow's cost as a ratio to two atomic adds measured in the same process, which travels between quiet
 // machines where a nanosecond figure does not (a busy one moves it too: TestBorrowCostRatio).

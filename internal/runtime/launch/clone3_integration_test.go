@@ -31,7 +31,7 @@ const (
 	blockedClone3Marker = "tego-clone3-blocked: "
 )
 
-// TestStartUnderOuterSeccompProfileNamesTheFilter is moby#42680 (berrange, 2021-07-27) run against Start:
+// TestStartUnderOuterSeccompProfileNamesTheFilter is moby#42680 (berrange) run against Start:
 // a container runtime's default profile answers an unlisted clone3 with EPERM on a perfectly modern kernel,
 // which is how curl and docker build broke on Fedora 35. Case 20 only ever framed a failing clone3 as an
 // old kernel, so the operator of a containerized tego was told to check a kernel version that is fine.
@@ -41,7 +41,7 @@ const (
 // Behind the integration tag because it installs a process-wide seccomp filter. It needs no root: seccomp
 // with no_new_privs is unprivileged.
 //
-// Also pins runtime-launch.md E20: an outer seccomp profile is named as the cause.
+// Also pins: an outer seccomp profile is named as the cause.
 func TestStartUnderOuterSeccompProfileNamesTheFilter(t *testing.T) {
 	arch := auditArch(t) // both roles check this first, so the child never has to report an arch skip
 	if os.Getenv(blockedClone3Env) == "1" {

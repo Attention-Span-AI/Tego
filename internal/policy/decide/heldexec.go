@@ -12,7 +12,7 @@ import (
 type FileKey struct{ Dev, Ino uint64 }
 
 // HeldExecGrants is the rights the run's Landlock ruleset binds to each inode an exec.allow entry named when the run
-// started (the builder's execGrants, enforce-landlock R5): EXECUTE and READ_FILE, and READ_DIR for a directory entry.
+// started (the builder's execGrants): EXECUTE and READ_FILE, and READ_DIR for a directory entry.
 // A Landlock rule is on the inode the builder held, not on the name: an exec.allow directory renamed inside a write
 // entry takes its EXECUTE to its new name, and a fresh directory made at the declared name has none. The table alone
 // cannot see that; a producer that can stat the run's files holds the inodes before the agent

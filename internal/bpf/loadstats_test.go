@@ -13,7 +13,7 @@ import (
 
 // TestParseVerifierStatsReadsEveryKernelsFormat: the statistics lines at BPF_LOG_STATS, as each matrix kernel prints
 // them (testdata/verifierstats/<row>-<kernel>.log, the largest program's log TestLoadStatsMatchKernel printed in each
-// row's guest on 2026-10-19: 5.14, 6.1, 6.8, 6.12, 6.17 and 7.0; enforce-plane §10.1's cold attribution). Every one
+// row's guest: 5.14, 6.1, 6.8, 6.12, 6.17 and 7.0). Every one
 // prints mark_read after peak_states; a kernel that drops it, or appends a field, still parses (TestParseVerifierStats).
 func TestParseVerifierStatsReadsEveryKernelsFormat(t *testing.T) {
 	t.Parallel()

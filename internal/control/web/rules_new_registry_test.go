@@ -61,7 +61,7 @@ func TestMakeAContractFromThisRunSavesWhereLearnSaves(t *testing.T) {
 		t.Fatalf("the Tighten tab has no Make a contract from this run link")
 	}
 	// A watched run's own "Make a contract", in the head of every tab, goes there in one click, not to the Tighten tab
-	// first (acceptance B, 2026-11-11).
+	// first.
 	const watched = "r-aaaaaaaa-0000000000034-watchd"
 	dir := filepath.Join(f.root, watched)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -311,7 +311,7 @@ const fsImmutableFL = 0x00000010
 
 // unwritableFolder makes dir refuse a new file to this process, and returns the cause the file system gives, as its
 // errno's text. As a user the folder's mode refuses it (0500: permission denied). Root writes past a mode
-// (CAP_DAC_OVERRIDE; acceptance 2C, 2026-11-11, where the test skipped as root), so as root the folder is made
+// (CAP_DAC_OVERRIDE, where the test skipped as root), so as root the folder is made
 // immutable instead (FS_IMMUTABLE_FL, which root's CAP_LINUX_IMMUTABLE sets and no capability writes past: operation
 // not permitted). A file system that does not keep the flag skips the test. The cause is read from a create this
 // function tries first, so it is what this machine says.

@@ -18,7 +18,7 @@ const modeBench = "bench"
 // BenchmarkNotificationRoundTrip fakes: the target's mkdirat blocks in the kernel, a real Loop receives the
 // notification, reads the path out of the target, decides it against the contract, records it and answers
 // CONTINUE, and the kernel runs the syscall (EEXIST: the directory is made before the target starts). That
-// is the record-and-continue fast path P0-DESIGN §9 budgets at under 10 µs, whose soft ceiling
+// is the record-and-continue fast path, budgeted at under 10 µs, whose soft ceiling
 // TestIntegrationFastPath asserts.
 //
 // The loop runs in the target process, b.N calls of it per target: the timer runs from the ack that releases

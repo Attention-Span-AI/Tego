@@ -187,7 +187,7 @@ func TestLookupInOneResolvesFromTheTasksRoot(t *testing.T) {
 			// As in TestLookupInOneIsTheComponentWalks: the decline is lookupInOne's fault only where the two lookups
 			// it makes, asked here with their flags spelt out, both reach the file now. On RHEL 9.8's 5.14 a
 			// RESOLVE_CACHED lookup through a symlink answered EAGAIN on xfs and on strictatime tmpfs, and reached the
-			// file on relatime and noatime tmpfs (2026-11-10), so where it answers EAGAIN /abs and /up are the
+			// file on relatime and noatime tmpfs, so where it answers EAGAIN /abs and /up are the
 			// component walk's; its answer was held to the file above.
 			if rcuErr, xdevErr := rawInOne(t, tid, p); rcuErr == nil && xdevErr == nil {
 				t.Errorf("%s from a root at %s: lookupInOne declined a path both its lookups reach", p, jail)

@@ -501,7 +501,7 @@ func (q mutationQuery) dirObject() bool {
 	return q.op == record.FSMkdir || (q.op == record.FSUnlink && q.args.flags&unix.AT_REMOVEDIR != 0)
 }
 
-// mutationNameRefused is ADR 0043's interface 2 (supervisor R15f) for a held mutation, as heldNameRefused is for a held
+// mutationNameRefused is ADR 0043's interface 2 for a held mutation, as heldNameRefused is for a held
 // open: the completion is made by this process, outside any plane, so at the tiers whose mechanisms decide name entries
 // (cgroup and bpflsm, D7) an approval would otherwise make, remove or move a file at a name an entry covers, or move a
 // directory so that files beneath it leave an entry's coverage, which the plane, or tier 2's fallback (fallbackMutation,

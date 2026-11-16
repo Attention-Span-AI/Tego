@@ -9,12 +9,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// The launcher's descriptor budget (enforce-landlock E11; enforce-plane §2.4 condition 7). Every held path costs
+// The launcher's descriptor budget. Every held path costs
 // this process one O_PATH descriptor for the length of the run: each fs entry, each exec grant and its loader,
 // every plane key, and every sibling and ancestor a deny_read target's enumeration holds (R3), which in a wide
 // directory is most of them; a target R4 leaves out holds none (snapshotTarget). The cap on them is RLIMIT_NOFILE,
-// not the plane's 4096 rows: measured as root in the
-// KVM guest (soft = hard = 4096 there), a table of about 3,800 to 4,000 keyed paths ran out at Prepare with EMFILE.
+// not the plane's 4096 rows: as root with
+// soft = hard = 4096, a table of about 3,800 to 4,000 keyed paths ran out at Prepare with EMFILE.
 // A plan is therefore held against a budget read before its first open, and a table that needs more is refused
 // naming the cap, never left to fail on whichever open happens to meet the limit.
 

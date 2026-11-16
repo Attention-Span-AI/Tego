@@ -135,7 +135,6 @@ func TestEnumerateDepth10(t *testing.T) {
 	assertAncestorOnly(t, h, "/", []string{name})
 }
 
-// TestEnumerateSiblingCounts asserts docs/p0/enforce-landlock.md E6.
 func TestEnumerateSiblingCounts(t *testing.T) {
 	for _, n := range []int{0, 1000} {
 		t.Run(fmt.Sprint(n), func(t *testing.T) {
@@ -157,8 +156,6 @@ func TestEnumerateSiblingCounts(t *testing.T) {
 }
 
 // TestEnumerateOverlap is E7: two targets under one parent enumerate it once and exclude both.
-//
-// Spec: docs/p0/enforce-landlock.md E7.
 func TestEnumerateOverlap(t *testing.T) {
 	root := tempDir(t)
 	mkTree(t, root, "home/.ssh/id", "home/.aws/creds", "home/work/a", "home/note")
@@ -222,8 +219,6 @@ func TestEnumerateSiblingSymlinkNotFollowed(t *testing.T) {
 }
 
 // TestEnumerateVanishedTarget is E9: a target deleted since compile still drives enumeration.
-//
-// Spec: docs/p0/enforce-landlock.md E9.
 func TestEnumerateVanishedTarget(t *testing.T) {
 	root := tempDir(t)
 	mkTree(t, root, "d/sib")
@@ -286,8 +281,6 @@ func TestEnumerateRootTargetByResolvedPath(t *testing.T) {
 
 // TestEnumerateNonUTF8Sibling is LL-E13: a sibling whose name is not UTF-8 is granted under its exact bytes,
 // so the level stays complete (R3) and the target's own name is not the only one missing a grant.
-//
-// Spec: docs/p0/enforce-landlock.md E13.
 func TestEnumerateNonUTF8Sibling(t *testing.T) {
 	root := tempDir(t)
 	mkTree(t, root, "d/secret")
@@ -305,8 +298,6 @@ func TestEnumerateNonUTF8Sibling(t *testing.T) {
 
 // TestUnenforcedPositions is R4 across every relative position of a write entry and a target,
 // with the I5 cross-check against compile's flag.
-//
-// Spec: docs/p0/enforce-landlock.md E8, E26.
 func TestUnenforcedPositions(t *testing.T) {
 	root := tempDir(t)
 	mkTree(t, root, "w/secret/k", "w/other/", "elsewhere/", "w/secret/sub/")
@@ -581,8 +572,6 @@ func TestOutermostMatchesPairwise(t *testing.T) {
 // milliseconds and the pairwise one took over a minute; the bound sits far from both, so a loaded machine
 // does not fail it and a quadratic filter cannot pass it. The filter runs on its own goroutine so a
 // regression fails at the bound rather than after the minute.
-//
-// Spec: docs/p0/enforce-landlock.md E22 (the deny_read half).
 func TestOutermostScalesLinearly(t *testing.T) {
 	in := make([]string, 50000)
 	for i := range in {

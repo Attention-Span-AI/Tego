@@ -76,7 +76,7 @@ func (c Cgroup) Dir() sys.Lender {
 	return c.dir
 }
 
-// Manager creates and controls run cgroups (docs/p0/runtime-launch.md §2, §4). FS is the one
+// Manager creates and controls run cgroups. FS is the one
 // implementation; the interface exists so the runtime facade can be tested against a fake.
 type Manager interface {
 	// Root returns the base under which tego.slice is created: the delegated user subtree of an

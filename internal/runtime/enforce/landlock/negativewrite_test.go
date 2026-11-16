@@ -54,7 +54,7 @@ func TestProtectedWritesRequirePlaneBeforeAnyRuleIsBuilt(t *testing.T) {
 }
 
 // TestProtectedWritesBestEffortByDefault is R5a's default (fs.assurance best-effort, ADR 0041 D1 (a)): with no
-// plane rows the same table is prepared, the supervisor refusing its targets best effort (supervisor R15c). From
+// plane rows the same table is prepared, the supervisor refusing its targets best effort. From
 // 82a723b3 to ADR 0041 D1 this Prepare failed with ErrNegativeWriteNeedsPlane.
 func TestProtectedWritesBestEffortByDefault(t *testing.T) {
 	prepareAndClose(t, "best effort without a plane", protectedWriteTable(t), Run{})

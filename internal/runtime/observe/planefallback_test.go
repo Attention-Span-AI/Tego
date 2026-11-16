@@ -31,7 +31,7 @@ func planeFSSample(h sample, hook uint16, rule uint32, dev, dirIno uint64, name 
 	return wire(&e)
 }
 
-// TestRecorderNamesPlaneFallbackSamples is TIER3-PLAN T9b in the recorder (enforce-plane §7, R23): where the build's
+// TestRecorderNamesPlaneFallbackSamples: where the build's
 // recorder fexit on a hook is not attached, the plane's own sample of the refusal (KindPlaneFS) is the action's one
 // fs line, named as that fexit's line would have been: the operation its hook stands for (an rmdir the unlink, a
 // mknod the open with O_CREAT, both truncate hooks the truncate), the file through the directory index, the rule

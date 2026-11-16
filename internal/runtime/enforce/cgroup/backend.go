@@ -50,16 +50,16 @@ type Options struct {
 	// reports none, which leaves file and exec enforcement to fanotify and the kernel maps alone.
 	Inherit func(ctx context.Context, rt *agent.RuleTable, run Run) (Inherited, error)
 	// Plane is the decision plane's mode doctor selected for tier cgroup (Report.PlaneFor): with a mode, a run's
-	// opens, execs and fs mutations are decided by the plane and no fanotify mark is placed (plane.go,
-	// docs/p0/enforce-plane.md R18, R22); the zero value is the fanotify fallback.
+	// opens, execs and fs mutations are decided by the plane and no fanotify mark is placed (plane.go);
+	// the zero value is the fanotify fallback.
 	Plane PlaneSetup
 	// Tier is the tier this backend is: zero or TierCgroup for tier 2; TierBPFLSM for tier 3, which
-	// internal/runtime/enforce/bpflsm sets (enforce-plane R19, TIER3-PLAN T7). Tier 3 is this backend with the plane
+	// internal/runtime/enforce/bpflsm sets. Tier 3 is this backend with the plane
 	// required in LSM mode: Prepare refuses another mode and a table the plane cannot hold, where tier 2 runs such a
 	// table on the fanotify listener, since tier 3 has no listener to fall to (§6 E13, I7).
 	Tier backend.Tier
 	// Phase receives the duration of each step of Prepare and of Arm ("prepare.load", "arm", ...), for the
-	// start-latency budget (enforce-plane §10). Nil means startphase.Default, which is nil in a product build.
+	// start-latency budget. Nil means startphase.Default, which is nil in a product build.
 	Phase startphase.Sink
 	// Hash overrides the build identity; empty means the hash of the embedded objects. Tests set it to
 	// exercise the pin and lock protocol without loading anything.
@@ -227,8 +227,8 @@ func (b *Backend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run) (_ 
 	defer startphase.Begin(b.opts.Phase, "prepare")()
 	// The table must describe a tier-2 run, because Evaluate and every reader of rt.Tier answer in that
 	// tier's semantics. Compile resolves tier: auto to the machine's ceiling, so an auto contract arrives
-	// here only because the runtime restamps the table with the tier Select chose (agent.RuleTable.AtTier,
-	// agent-contract.md R14); a table naming another tier is a caller that skipped that, refused rather
+	// here only because the runtime restamps the table with the tier Select chose (agent.RuleTable.AtTier);
+	// a table naming another tier is a caller that skipped that, refused rather
 	// than enforced in the wrong tier's terms.
 	if rt.Tier != b.Tier() {
 		return nil, fmt.Errorf("%w: table says %q, this backend is tier %s", ErrTier, rt.Tier, b.Tier())
@@ -238,7 +238,7 @@ func (b *Backend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run) (_ 
 	}
 	if b.opts.tier3() {
 		// Tier 3 is the plane in LSM mode and nothing else: settled before anything exists, so a refusal leaves
-		// no kernel state and no held slot behind (enforce-plane R19, §6 E13).
+		// no kernel state and no held slot behind.
 		if err := tier3Plane(b.opts.Plane, rt, &run); err != nil {
 			return nil, err
 		}
@@ -256,7 +256,7 @@ func (b *Backend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run) (_ 
 	// on a tmpfs mounted beneath the denied tree readable with no event, so the run is refused (R8, I7). The
 	// policy is the fanotify listener's alone, and a tier-3 run never has a listener: the plane decides its opens
 	// and execs in the kernel with no fallback (tier3Plane refuses a table it cannot hold), so it builds none, and
-	// an unreadable table refuses its denied reads and deny_write mount rows (enforce-plane R12). A
+	// an unreadable table refuses its denied reads and deny_write mount rows. A
 	// tier-2 run builds the policy even with a plane mode set, since prepare-plane may still fall back to the
 	// listener.
 	pol := &policy{}
@@ -274,7 +274,7 @@ func (b *Backend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run) (_ 
 		ringBudget: b.ringBudget(),
 		// A capture ring only for a run whose capture is uprobe: the probes shared by the build's runs emit only
 		// into a ring that exists, so a capture: off or forwarder run's TLS plaintext is written nowhere, and
-		// record: off places no probe (ADR 0026 (3), capture-derive R4).
+		// record: off places no probe (ADR 0026 (3)).
 		wantCapture: rt.Capture == agent.CaptureUprobe && rt.Record != agent.RecordOff,
 		policy:      pol,
 		recordMode:  recordModeOf(rt.Record),
@@ -613,7 +613,7 @@ func (h *Handle) LandlockRuleset() (int, bool) {
 // by reading this tier's reason breadcrumb instead of re-deriving a verdict (§5 R5).
 //
 // With the decision plane loaded and the runtime's recorder reading the run (UsePlaneFilter), it is that filter less
-// the notifications the plane's loaded hooks decide in the kernel (enforce-plane R27, TIER3-PLAN T16).
+// the notifications the plane's loaded hooks decide in the kernel.
 func (h *Handle) SeccompFilter() ([]bpf.RawInstruction, bool) {
 	if h.inherited == nil {
 		return nil, false
@@ -627,12 +627,11 @@ func (h *Handle) SeccompFilter() ([]bpf.RawInstruction, bool) {
 // Capabilities is this run's capability set: the tier's static column, narrowed by what this run could not
 // provide: read and exec denial when it has neither a fanotify listener nor a decision plane. net.unix stays: a unix: entry is decided by
 // connect_unix and sendmsg_unix on 6.7+ and by the inherited tier-1 path on every kernel (§5 R7), so no
-// kernel leaves one undecided. *Amended:* the row used to be cleared for every run with a unix: entry, while
-// the inherited path enforced it.
+// kernel leaves one undecided.
 //
 // net.unix_abstract_scope is the inherited ruleset's own answer, not the static column's: no program of this
-// tier refuses an abstract name, the Landlock scope the child applies does, and only from ABI 6 on
-// (enforce-landlock R7). A handle with no inherited ruleset, or one that does not say, has no scope.
+// tier refuses an abstract name, the Landlock scope the child applies does, and only from ABI 6 on.
+// A handle with no inherited ruleset, or one that does not say, has no scope.
 //
 // fs.protected_write_targets is the plane's (ADR 0041 D7): a plane mode decides the built-in deny_write targets by
 // inode, chmod included, and the fanotify listener leaves them to the supervisor's copied pathnames, best effort.
@@ -646,7 +645,7 @@ func (h *Handle) Capabilities() backend.Set {
 	if h.opts.tier3() {
 		// Tier 3's run decides through the same mechanisms as a tier-2 run in LSM mode, so its set is that run's,
 		// kept within tier 3's column: a row the column promises and no loaded hook decides yet (chmod, step B)
-		// is not claimed (enforce-plane R3).
+		// is not claimed.
 		col := backend.Matrix(backend.TierBPFLSM)
 		for c := range set {
 			if !col.Has(c) {

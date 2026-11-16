@@ -12,7 +12,7 @@ import (
 // TestCutResponseIsReportedUnmetered: a 2xx answer on a model host whose body ends early because its
 // connection's count restarted at 1 mid-body (as an SSL_free or a stop also end it) is emitted Truncated and
 // paired with its own request. Its spend is not counted from it: derive cannot read usage from a JSON body cut
-// short, however little is missing, so the exchange is reported unmetered (limits-check-doctor-cli.md R1 (a)),
+// short, however little is missing, so the exchange is reported unmetered,
 // which ends a budgeted run. The whole answer reports nothing.
 func TestCutResponseIsReportedUnmetered(t *testing.T) {
 	req, resp := messagesExchange("length")

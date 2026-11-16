@@ -76,7 +76,7 @@ func blobOf(t *testing.T, store ledger.BlobRepository, ev *record.Event) []byte 
 	return onDisk
 }
 
-// TestDeriveReadsTheBytesTheBlobHolds is capture-derive.md I10 on the forwarder path: the Message.Body derive
+// TestDeriveReadsTheBytesTheBlobHolds, on the forwarder path: the Message.Body derive
 // parsed is byte for byte what blob(sha) holds, for both halves, a plain answer and a gzip one alike (the
 // blob holds decoded content, R15). The bodies are over the ledger's blob threshold, so each really is
 // stored as a blob rather than inline.

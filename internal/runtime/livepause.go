@@ -60,7 +60,7 @@ var (
 // The shape of one freeze and of its retries.
 const (
 	// freezeAttempt is how long one attempt waits for cgroup.events to say frozen: a freeze takes milliseconds
-	// (8.6 ms measured on a looping agent, under 100 ms on a busy one), so one that has not completed by then is
+	// (8.6 ms on a looping agent, under 100 ms on a busy one), so one that has not completed by then is
 	// held by an in-flight notification, and a thaw and a fresh attempt does better than waiting.
 	freezeAttempt = 100 * time.Millisecond
 	// freezeGap is the thaw between two attempts: long enough for the deputy to answer the read it was holding.

@@ -300,9 +300,8 @@ func readReceipt(path string) ([]byte, error) {
 
 // madeBy is the made_by check: whether this tego is the exact build that made the receipt. A receipt that names no
 // build, or one that is no exact build, cannot be checked by any tego, so its words name what it lacks rather than a
-// tego to rerun with: review 4 S1 printed "made by tego  (commit ) ... rerun the check with tego " for a receipt_by
-// that was missing, null or empty. A field of only spaces names nothing either (review 1 S3 printed "made by tego   ...
-// rerun the check with tego  " for one). Each is still could-not-check, never a pass.
+// tego to rerun with (never "made by tego  (commit ) ... rerun the check with tego " for a receipt_by that is
+// missing, null or empty). A field of only spaces names nothing either. Each is still could-not-check, never a pass.
 func (k *checker) madeBy() bool {
 	by, mine := k.rc.Binding.ReceiptBy, k.in.By
 	var missing []string

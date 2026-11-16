@@ -133,7 +133,7 @@ func (l *Loop) recordExec(n *notif, dirfd int32, pathAddr, argvAddr uint64, flag
 		return
 	}
 	fileless := ierr == nil && img.fileless()
-	// dropped is one fact of the exec (supervisor R16b), judged once on each image the walk reached for it: its own here, and
+	// dropped is one fact of the exec, judged once on each image the walk reached for it: its own here, and
 	// below what a run with command rules walks beyond it (execCommand.dropped). Every owner of the exec's line copies
 	// this one value: this loop's line, the naming a kernel recorder's line takes, the fast handover's naming.
 	dropped := ierr == nil && l.droppedImage(c, img)
@@ -407,7 +407,7 @@ func (l *Loop) recordExec(n *notif, dirfd int32, pathAddr, argvAddr uint64, flag
 	}
 	if kernelOwned {
 		// The plane decides this exec in bprm_check, race-free on the image the kernel loads, and the kernel writes
-		// its one line: the plane's refusal, or the exec record named by the plane's rule (R7a, TIER3-PLAN T9).
+		// its one line: the plane's refusal, or the exec record named by the plane's rule (R7a).
 		// This loop's allow is a prediction the plane may overturn, so it writes none.
 		if !terminalOwned {
 			// A terminal handoff's naming carries the MCP server (MCPName), and the recorder writes its start line
@@ -605,13 +605,13 @@ func unwalkedExec(d execDecision, err error) execDecision {
 }
 
 // listenerExec is the verdict of an exec this loop continues at tier 2, where the fanotify listener decides the
-// exec's open of its image as it decides every open (enforce-cgroup-observe R8): an image under a deny_read
+// exec's open of its image as it decides every open: an image under a deny_read
 // no longer write entry reopens is refused there, EPERM, whatever the exec entries and Landlock grant (an
 // exec.allow directory inside a deny_read, a contract with no exec: section). The line then says refused,
 // read-denied, under that deny_read (decide.ListenerOpenRefused, on where the image lies), and the loop
 // still continues the exec: the refusal is the listener's, and so reports listener, and this line is the exec's
 // one (the listener asks ExecLine and writes none). Tier bpflsm's plane refuses the same open, so its line is the
-// same (TIER3-PLAN T11: it read allow there while the kernel refused). At tier 1 nothing refuses such an open.
+// same (else it would read allow while the kernel refused). At tier 1 nothing refuses such an open.
 func (c *compiled) listenerExec(d execDecision, img execImage) (_ execDecision, listener bool) {
 	if d.verdict != record.VerdictAllow || !c.rootTier() || !img.here || img.fileless() {
 		return d, false
@@ -647,7 +647,7 @@ func (c *compiled) listenerExec(d execDecision, img execImage) (_ execDecision, 
 //   - With no exec: section, an exec under a deny_read tier 1 enforces is refused read-denied, as the
 //     kernel refuses its exec open (execOpenRefused in decide.Evaluate), judged where the kernel spells the
 //     image (imageWhere), so through a descriptor too. In a deny-list run, an image in the
-//     run's own CODEX_HOME is refused codex-home-exec (inCodexHome, agent-contract.md R10a): a copy linked
+//     run's own CODEX_HOME is refused codex-home-exec (inCodexHome): a copy linked
 //     there, judged where the kernel spells it (imageWhere), run by its path or through a descriptor. A copy
 //     there opened, unlinked and run through its descriptor is fileless and takes the
 //     fileless arm above, allowed in a deny-list run as a memfd copy is (R10a's stated residual; compile's
@@ -886,7 +886,7 @@ func (c *compiled) fenceExecRule(rule, name string, img execImage) string {
 // the contract grants (SEMANTICS; tier 2 matches exec by path for the same reason). On Ubuntu 25.10
 // /usr/bin/sleep, ls, dd, env, ln, mv and the rest are hard links of one uutils multi-call binary, and an
 // inode match alone let exec.allow: [/usr/bin/sleep] run /usr/bin/ls. Landlock's EXECUTE is bound to the
-// inode (enforce-landlock R3) and still allows every hard link of it; this refusal, answered by the loop
+// inode and still allows every hard link of it; this refusal, answered by the loop
 // and never continued, is tier 1's guard. The inode is kept alongside the path: a path alone would admit
 // a file swapped in at the entry's resolved path after the loop was built.
 //
@@ -991,8 +991,8 @@ func (l *Loop) execGrants(c *compiled) decide.ExecGrants {
 	})
 }
 
-// droppedImage reports whether an exec's image was written during the run under one of its write entries
-// (supervisor R16b): a linked file whose place lies under a write entry, at its resolved path, and whose inode changed
+// droppedImage reports whether an exec's image was written during the run under one of its write entries:
+// a linked file whose place lies under a write entry, at its resolved path, and whose inode changed
 // after the loop was built, which is before the agent ran. The place is where the kernel spells the image
 // (imageWhere), whether or not this process could walk that spelling back to the same inode: the flag only
 // adds to what a line says, and the agent shares this process's mount view. Judged only on a confirmed

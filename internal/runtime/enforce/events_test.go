@@ -19,7 +19,7 @@ type sink struct{ got []*record.Event }
 
 func (s *sink) Emit(ev *record.Event) { s.got = append(s.got, ev) }
 
-// TestCgroupPrepareCarriesTheRunsEventSink is the wiring behind docs/p0/enforce-cgroup-observe.md §7:
+// TestCgroupPrepareCarriesTheRunsEventSink is the wiring behind tier 2's ledger rows:
 // a tier-2 refusal (FAN_DENY on a deny_read path, an exec the table does not allow) and each of that
 // table's gaps — fanotify-timeout, -overflow, -path-unresolved, -malformed-record, -response-failed —
 // are ledger rows of the run, and the listener reaches the ledger only through the backend's Emitter.

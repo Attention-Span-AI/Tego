@@ -48,7 +48,7 @@ func exchangeOf(cg uint64, pid uint32, slot uint32) [][]byte {
 	}
 }
 
-// TestSourceKeepsToItsSlot is capture-derive.md E26 (two concurrent runs of one build): a chunk is this run's when it carries this run's slot, whichever of the run's
+// TestSourceKeepsToItsSlot, with two concurrent runs of one build: a chunk is this run's when it carries this run's slot, whichever of the run's
 // cgroups the process is in (55, a cgroup the agent made and cgroup_track gave the run's row). The run's capture
 // ring is its own (ADR 0026 (1)), so a chunk of another slot should never be on it; were one there, it never
 // reaches this run's sink.
@@ -68,8 +68,8 @@ func TestSourceKeepsToItsSlot(t *testing.T) {
 	}
 }
 
-// TestSourceDropsTheSlotsPreviousRun is capture-derive.md E26 (a leftover never reaches a new run's ring): the slot's capture ring is reused by its next run (ADR 0026 (6) as
-// amended), so an exchange the slot's previous run left in it carries this run's slot. It carries that run's
+// TestSourceDropsTheSlotsPreviousRun: a leftover never reaches a new run's ring. The slot's capture ring is reused by its next run (ADR 0026 (6)),
+// so an exchange the slot's previous run left in it carries this run's slot. It carries that run's
 // generation, though, and never reaches this run's sink.
 func TestSourceDropsTheSlotsPreviousRun(t *testing.T) {
 	var records [][]byte
@@ -99,7 +99,7 @@ func inGen(rec []byte, gen uint32) []byte {
 	return rec
 }
 
-// TestHookSampleAdoptsNoCgroup is the probe the review ran: an exec of another run's process fed to this
+// TestHookSampleAdoptsNoCgroup: an exec of another run's process fed to this
 // source (cgroup 999, not this run's 41), then that process's chunk. With nothing but the cgroup set to
 // filter on, an adoption from the hook would put the other run's plaintext into this run's ledger; the hook
 // adopts nothing, so the chunk is dropped.
@@ -111,7 +111,7 @@ func TestHookSampleAdoptsNoCgroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The empty fake ring ends the drain at once, so the chunks below are handed over after the hooks ran,
-	// in the order the review's probe used, by the only goroutine left touching the drain's state.
+	// in that order, by the only goroutine left touching the drain's state.
 	<-u.done
 	u.OnExec(60, 999, "")
 	u.OnOpen(60, 999, "/usr/lib/x86_64-linux-gnu/libssl.so.3")
@@ -240,7 +240,7 @@ func (s *syncBlobs) Sync() error {
 	return s.syncFail
 }
 
-// TestStopSyncsTheBodiesItStored is record-ledger R6's barrier for a store the ledger writer does not own.
+// TestStopSyncsTheBodiesItStored is the blobs-before-events barrier for a store the ledger writer does not own.
 // The source stores bodies through its own handle on the run's blob directory, and the writer syncs only
 // the store it wrote through itself before events.jsonl, so without this a crash inside the writer's Close
 // could leave a ledger that ends cleanly and names bodies that were never durable. Stop runs before the

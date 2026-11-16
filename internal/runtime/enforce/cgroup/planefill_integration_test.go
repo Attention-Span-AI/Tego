@@ -187,7 +187,7 @@ func raiseNoFile(t *testing.T, n uint64) {
 	// back to every child it execs, until a Setrlimit call clears that memory. Without this, a holder this test starts
 	// gets the original low limit (1024 on CI), its inherited descriptors fill every slot, and its dynamic loader
 	// fails with EMFILE, so the fill sees none of them. Earlier tests in the package hid this: each calls Setrlimit,
-	// and the root suites' shards ran this test without them (2026-11-03, PR 21's cgroup-2 shard).
+	// and the root suites' shards ran this test without them (PR 21's cgroup-2 shard).
 	old := r
 	r.Cur = max(r.Cur, n)
 	if r.Max < n {
@@ -199,7 +199,7 @@ func raiseNoFile(t *testing.T, n uint64) {
 	t.Cleanup(func() { _ = unix.Setrlimit(unix.RLIMIT_NOFILE, &old) })
 }
 
-// TestPlaneFillWritesTheContractsRows covers enforce-plane R16 as root: a slot filled for a table holds exactly
+// TestPlaneFillWritesTheContractsRows runs as root: a slot filled for a table holds exactly
 // its rows, each with the run's gen, its rule_idx and kind, at the inode its path names (i_ino read back), and the
 // exec row carries its directory, name and entry; the iteration is task-scoped on 6.1+ (every descriptor it showed
 // was this process's).
@@ -259,7 +259,7 @@ func TestPlaneFillWritesTheContractsRows(t *testing.T) {
 	}
 }
 
-// TestPlaneFillFailsOnAReusedDescriptor covers enforce-plane R16's reuse case: a descriptor number the plan
+// TestPlaneFillFailsOnAReusedDescriptor covers the fill's reuse case: a descriptor number the plan
 // recorded for one file that names another by the fill (closed and taken by another open, here dup3'd over)
 // fails the fill, naming the reuse, whatever row the kernel wrote at the other inode.
 func TestPlaneFillFailsOnAReusedDescriptor(t *testing.T) {
@@ -290,8 +290,8 @@ func TestPlaneFillFailsOnAReusedDescriptor(t *testing.T) {
 	}
 }
 
-// TestPlaneFillKeysEachHardLinkOfOneInode covers enforce-plane R16 for a multi-call binary (enforce-plane §6 E15; ADR 0025's
-// 2026-09-30 note) as root: three exec entries naming three hard links of one inode (uutils' ls and cat, busybox's
+// TestPlaneFillKeysEachHardLinkOfOneInode covers a multi-call binary (ADR 0025)
+// as root: three exec entries naming three hard links of one inode (uutils' ls and cat, busybox's
 // applets), two in one directory and one under the first's name in another, each held at its own descriptor, get
 // one row each, under that link's directory and name and that entry's rule_idx. Before the note the fill refused
 // the second as a duplicate and Prepare failed.
@@ -353,7 +353,7 @@ func TestPlaneFillKeysEachHardLinkOfOneInode(t *testing.T) {
 	}
 }
 
-// TestPlaneFillRefusesOneLinkTwice covers enforce-plane R16's duplicate as root: two exec entries whose paths are
+// TestPlaneFillRefusesOneLinkTwice covers the fill's duplicate as root: two exec entries whose paths are
 // two spellings of one link (one directory entry reached twice), held at two descriptors, key one row; the fill
 // refuses the second (the first's row of this gen is at its key) instead of one row silently keeping one rule.
 func TestPlaneFillRefusesOneLinkTwice(t *testing.T) {
@@ -377,7 +377,7 @@ func TestPlaneFillRefusesOneLinkTwice(t *testing.T) {
 	}
 }
 
-// TestPlaneFillSlotReuseLeavesStaleRowsAbsent covers enforce-plane R6 and ADR 0026 (6) as amended: a slot reused
+// TestPlaneFillSlotReuseLeavesStaleRowsAbsent covers ADR 0026 (6): a slot reused
 // by a second run keeps the first run's rows under their own gen (nothing deleted on the run's path); the second
 // run's rows are exactly its table, a key both runs name is rewritten with the new gen, and the kernel clear
 // removes only the stale rows. A map too full of stale rows to take the new run's makes the fill clear them and
@@ -468,8 +468,8 @@ func TestPlaneFillSlotReuseLeavesStaleRowsAbsent(t *testing.T) {
 }
 
 // TestPlaneFillTiming records what a fill costs at 100, 1000 and 4096 rows (a slot's cap), scoped and unscoped,
-// with the filler's one-time load apart from each fill's templates, passes and fdinfo check
-// (docs/p0/enforce-plane.md §2.6 keeps the figures). Unscoped is what a kernel before 6.1 (RHEL 9's 5.14) pays:
+// with the filler's one-time load apart from each fill's templates, passes and fdinfo check.
+// Unscoped is what a kernel before 6.1 (RHEL 9's 5.14) pays:
 // every task's descriptors are shown to the program. The slot is cleared between fills, off the timed path, and
 // the clear is timed too.
 func TestPlaneFillTiming(t *testing.T) {

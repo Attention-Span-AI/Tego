@@ -71,14 +71,14 @@ func runDgram(t *testing.T, c dgramCase, pol *Policy, form string) (sysResp, []*
 	return r, sink.all(), f
 }
 
-// TestKernelDecidedDatagramIsRefusedHere is DGRAM-VERDICT (R13b, enforce-cgroup-observe §5 R7, ADR 0016): where a
+// TestKernelDecidedDatagramIsRefusedHere is DGRAM-VERDICT (R13b, ADR 0016): where a
 // kernel program of the run decides an addressed datagram's destination on the kernel's own copy of the address
 // (Options.KernelDatagrams), a datagram that program refuses is refused by this loop, with that program's errno,
 // and its one line is that refusal, with no best_effort. Continued, the line said refused with best_effort of a
 // refusal the kernel enforced, and allow of a non-canonical unix name the kernel refused. A destination the policy
 // refuses that no program decides — a relative unix name, an address the protocol's own checks fail first, a
-// family or protocol no program of the run is attached for — is refused with R10's errno (R13b as amended
-// 2026-10-16), and only an admitted destination is continued, with a best_effort line.
+// family or protocol no program of the run is attached for — is refused with R10's errno (R13b),
+// and only an admitted destination is continued, with a best_effort line.
 func TestKernelDecidedDatagramIsRefusedHere(t *testing.T) {
 	cgroup := KernelDatagrams{Unix: unix.EPERM, UDP: unix.EPERM}
 	plane := KernelDatagrams{Unix: unix.EACCES}

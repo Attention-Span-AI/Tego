@@ -51,7 +51,7 @@ func TestParseLockInfo(t *testing.T) {
 	}
 }
 
-// Also pins runtime-launch.md E21: the lock file's format is frozen, so either binary's stop reads either
+// Also pins: the lock file's format is frozen, so either binary's stop reads either
 // run's lock.
 func TestLockInfoStringRoundTrip(t *testing.T) {
 	want := LockInfo{PID: 12345, StartBootNS: 987654321000}
@@ -103,7 +103,7 @@ type nopAnchor struct{}
 func (nopAnchor) Append(string, string) error       { return nil }
 func (nopAnchor) Head(string) (string, bool, error) { return "", false, nil }
 
-// Also pins runtime-launch.md I1: "live" is defined only as the lock being held.
+// Also pins: "live" is defined only as the lock being held.
 func TestProbeLockHeldAndFree(t *testing.T) {
 	root := t.TempDir()
 	id := "r-00000000-000000000000a-aaaaaa"

@@ -15,7 +15,7 @@ import (
 )
 
 // ProbeRows is a plane build's four row maps with the real fill over them, unpinned and this process's own: what
-// doctor's mode probe fills its known-answer slots through (docs/p0/enforce-plane.md R21, §2.5). A fill through it
+// doctor's mode probe fills its known-answer slots through. A fill through it
 // is a run's Prepare's (planPlaneFill, the fill build's pass over this process's descriptors, checkPlaneFill, then
 // the bare-name rows and last the slot's header), over maps that no run reads. doctor imports this package's importer, so the fill
 // crosses into doctor here rather than being written twice.
@@ -23,7 +23,7 @@ type ProbeRows struct {
 	// Rows, ExecRows, ListenRows and NameRows are the row outers: the probe loads its programs
 	// over them (a collection's MapReplacements) and reads its slots' rows back through them.
 	Rows, ExecRows, ListenRows, NameRows *ebpf.Map
-	// Slots is tego_plane_slots, the slot headers (enforce-plane R6), replaced into the probe's collections as the
+	// Slots is tego_plane_slots, the slot headers, replaced into the probe's collections as the
 	// outers are: a known-answer slot is decided only once Fill has written its header.
 	Slots *ebpf.Map
 	// ExecPins and PinKeys are the exec pin maps (bpf.MapPlaneExecPins, MapPlanePinKeys; ADR 0048 (7)), replaced into

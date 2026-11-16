@@ -14,8 +14,8 @@ import (
 
 // TestSSLUserReadSizeIsClampedAtTheCall holds the compiled shape the verifiers of 6.1 and 6.8 need from every
 // bpf_probe_read_user in the capture object: its size is a constant, or a register the instructions right before
-// the call clamp to a size class with nothing in between that could lose the bound. The kernel matrix of
-// 2026-09-29 found clang had dropped the source's clamp as dead (the caller's class branches already proved it) and
+// the call clamp to a size class with nothing in between that could lose the bound. The kernel matrix
+// found clang had dropped the source's clamp as dead (the caller's class branches already proved it) and
 // passed a copy of the length from another stack slot than the one the branches tested; 6.12+ carries the bound
 // across the two slots, 5.14 happened to pass, and 6.1 and 6.8 refused tego_ssl_write, tego_ssl_write_ex
 // ("R2 unbounded memory access") and tego_ssl_read_return ("invalid access to memory, mem_size=592 off=80

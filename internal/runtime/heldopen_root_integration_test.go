@@ -184,7 +184,7 @@ func heldAtRootTier(t *testing.T, c *crossOwner, tier string) {
 	if b, err := os.ReadFile(filepath.Join(out, "answer")); err != nil || string(b) != "asked-bytes" {
 		t.Fatalf("the approved read at tier %s gave %q, %v\n%s", tier, b, err, output(run))
 	}
-	// One line per action at a root tier (supervisor R7a): the benign read's is the supervisor's held_object line,
+	// One line per action at a root tier: the benign read's is the supervisor's held_object line,
 	// the approved read's the person's, and the kernel recorder writes none for the deputy's opens of them.
 	held, approved, benignLines, askedLines := false, false, 0, 0
 	for _, ev := range events(t, dir) {

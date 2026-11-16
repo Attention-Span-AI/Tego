@@ -32,7 +32,7 @@ type pendingReq struct {
 	// counted here, in the place the refused requests took (conn.owed).
 	owedAfter int
 	// headless is a request capture saw only the tail of (conn.skipRequest): its head was written before
-	// the probes were placed (docs/p0/capture-derive.md R4). The entry holds that request's place, so its
+	// the probes were placed. The entry holds that request's place, so its
 	// response is passed over rather than handed to the next request; the exchange was counted when its
 	// tail was passed over, so the response costs no second count.
 	headless bool
@@ -567,7 +567,7 @@ func (c *conn) stepStart(h *half, ch Chunk) error {
 
 // requestResyncable reports whether bytes at the request half's message boundary can be the tail of a
 // request whose head capture never saw: a probe placed between the SSL_write that carried a request's head
-// and the one that carried its body (docs/p0/capture-derive.md R4, edge case 2; httpx writes the two
+// and the one that carried its body (edge case 2; httpx writes the two
 // apart). That can only be the first request capture sees on the connection, so the request half has
 // completed nothing, and so has queued nothing and had nothing refused (R11); a tail already passed over
 // holds its own place, but this is not asked while the half is still passing it over (skipping). The
@@ -707,7 +707,7 @@ func (c *conn) unanswered() bool {
 // skip passes over response bytes that begin no status line while nothing is waiting for an answer
 // (unanswered): the rest of a response whose head capture never saw. A uprobe placed while the process
 // was already inside the SSL_read that carried a response's head misses that read and sees the ones that
-// follow (docs/p0/capture-derive.md R4, edge case 2). Nothing in a body says where it ends, so the half
+// follow (edge case 2). Nothing in a body says where it ends, so the half
 // passes over whole chunks, none of which holds bytes of two calls, until a chunk starts a status line
 // again. The exchange is one gap, counted at its first chunk; before this, those bytes were a malformed
 // status line and the connection's every later exchange was lost with them. A response R11's refusal
@@ -1181,8 +1181,8 @@ func (f *feedAllowance) end() {
 // refused is owed (conn.owed) and was counted with its request. One whose request's tail was passed over
 // pops that request's headless entry and was counted with the tail (skipRequest). One decided at its first
 // byte to answer no request (half.noRequest) is counted here: a probe placed after the process's SSL_write
-// and before its SSL_read (docs/p0/capture-derive.md R4, edge case 2) sees exactly that, and on a
-// keep-alive connection the rest of the connection pairs as before. Until 2026-09-23 that response
+// and before its SSL_read (edge case 2) sees exactly that, and on a
+// keep-alive connection the rest of the connection pairs as before. Before, that response
 // abandoned the connection and every later exchange on it under one gap that counted one, which kill test
 // 2 met as 0 of 20 pairs.
 //

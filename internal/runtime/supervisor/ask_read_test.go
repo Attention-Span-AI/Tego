@@ -792,7 +792,7 @@ func TestAskWriteAlternateWritesIntoTheStandIn(t *testing.T) {
 	}
 }
 
-// tego's own files a run may read (RuleTable.OwnReadable: the user registry's agents/ and skills/, agent-contract.md
+// tego's own files a run may read (RuleTable.OwnReadable: the user registry's agents/ and skills/,
 // R26) are held for a person like any file under an fs.ask_read entry, and the approval completes the read: a plain
 // read of them is allowed, so a held one is not refused read-denied. They are never a write
 // alternate, even beneath a write entry, and are a read alternate like any readable file.

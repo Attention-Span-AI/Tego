@@ -170,7 +170,7 @@ func TestBlockWord(t *testing.T) {
 // TestCheckStarting: a running run whose run_start cannot be read yet (Target.Starting) is refused, as ErrStarting and
 // never as ErrLocked or as an older launcher, every change that decides on a fact it does not know: a loosening, a lift,
 // a grant, a restore, a time limit, a read or write block. A plain block needs none and is taken; a run that is not
-// running is still ErrNotRunning (acceptance 2B, 2026-11-11: an Adjustable run read as Locked while it started).
+// running is still ErrNotRunning (an Adjustable run read as Locked while it started).
 func TestCheckStarting(t *testing.T) {
 	soon := time.Now().Add(time.Hour)
 	st := Target{Run: checkRun, Running: true, Starting: true}
@@ -206,7 +206,7 @@ func TestCheckStarting(t *testing.T) {
 
 // TestCheckStartUnreadable: a running run whose first record line is there and is not a run_start this tego reads
 // (Target.StartUnreadable) is refused what TestCheckStarting refuses, as ErrStartUnreadable alone: never ErrStarting,
-// whose words promise the line soon ("try again in a few seconds"), which waiting never makes true (the review's S1),
+// whose words promise the line soon ("try again in a few seconds"), which waiting never makes true,
 // and never Locked or an older launcher. A plain block is still taken.
 func TestCheckStartUnreadable(t *testing.T) {
 	soon := time.Now().Add(time.Hour)

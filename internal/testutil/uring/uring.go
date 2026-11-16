@@ -4,8 +4,8 @@
 
 // Package uring is the smallest io_uring client the tests need: one ring, one submission, one completion, over raw
 // syscalls. It exists to make the kernel paths a seccomp filter cannot see (io_uring's IORING_OP_SOCKET, BIND and
-// LISTEN) from a test or a workload, so the decision plane's socket_create (ADR 0018 (5), TIER3-PLAN T13) and its
-// listener hooks and their records (enforce-plane §2.20) can be checked on them. It is not tego's; nothing in tego
+// LISTEN) from a test or a workload, so the decision plane's socket_create (ADR 0018 (5)) and its
+// listener hooks and their records can be checked on them. It is not tego's; nothing in tego
 // submits to a ring.
 package uring
 

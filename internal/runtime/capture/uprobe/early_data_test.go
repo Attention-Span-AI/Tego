@@ -4,7 +4,7 @@ package uprobe
 
 import "testing"
 
-// TestEarlyDataEntryPointsAreNotHooked pins capture-derive.md E32 as the stated P0 limitation it is: TLS 1.3
+// TestEarlyDataEntryPointsAreNotHooked pins a stated limitation: TLS 1.3
 // early data goes through SSL_read_early_data and SSL_write_early_data, which no probe covers, so a library that
 // exports them attaches only at the entry points R1 to R3 name. The limitation is stated in the spec; a probe
 // added for them without a rule (and a test of its own) would change what capture records without saying so.

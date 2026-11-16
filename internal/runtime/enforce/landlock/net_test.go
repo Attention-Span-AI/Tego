@@ -31,8 +31,6 @@ func itoa(i int) string {
 
 // TestNetRulesBands is R6/R22 across the ABI bands (LL-E4: below ABI 4 no port rule and no handled net right), port dedup, the resolver port, port 0,
 // the ephemeral UDP bind at ABI 10 and the two ways a contract can leave net unrestricted.
-//
-// Spec: docs/p0/enforce-landlock.md E4.
 func TestNetRulesBands(t *testing.T) {
 	entries := []agent.NetRule{inet(443), inet(8080), inet(443), inet(0), {Raw: "unix:@x", Proto: agent.ProtoUnix, UnixPath: "x", Abstract: true}}
 	tcp := uint64(accessNetConnectTCP)
@@ -126,8 +124,6 @@ func TestLearnedLookupContractGetsPort53(t *testing.T) {
 
 // TestUnixEntries: abstract names carry no fd at any ABI; pathname entries are held with
 // RESOLVE_UNIX at ABI ≥ 9 only, and a write entry gains RESOLVE_UNIX there too.
-//
-// Spec: docs/p0/enforce-landlock.md R21.
 func TestUnixEntries(t *testing.T) {
 	root := tempDir(t)
 	sock := filepath.Join(root, "daemon.sock")

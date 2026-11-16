@@ -13,12 +13,12 @@ import (
 	"github.com/attention-span-ai/tego/internal/runtime/launch"
 )
 
-// TestRunIsListedWhileItHoldsItsLock is the launcher's half of the live index's completeness
-// (record-ledger.md §3): the run is listed while it holds its lock and before run_start, so any run that can
+// TestRunIsListedWhileItHoldsItsLock is the launcher's half of the live index's completeness:
+// the run is listed while it holds its lock and before run_start, so any run that can
 // be lost is in the index `run` and `stop` sweep; and a run that never started takes its entry away with its
 // directory.
 //
-// Also pins runtime-launch.md R20: the launcher lists its run after taking the lock and before run_start.
+// Also pins: the launcher lists its run after taking the lock and before run_start.
 func TestRunIsListedWhileItHoldsItsLock(t *testing.T) {
 	m, rt, root := startupFixture(t)
 	type seen struct {

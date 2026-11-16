@@ -205,7 +205,7 @@ func agentOutput(t *testing.T) Stdio {
 
 // requireLandlock skips when the machine cannot run a tier-1 run at all, or when this process cannot place
 // one: it runs outside its delegated subtree (a login over ssh, a service such as a CI runner's steps), where
-// every run is refused before it starts (runtime-launch.md case 41).
+// every run is refused before it starts.
 func requireLandlock(t *testing.T) {
 	t.Helper()
 	fs, err := cgroup.Detect(os.Geteuid())
@@ -863,7 +863,7 @@ func TestIntegrationLedgerIsReadableAsLines(t *testing.T) {
 	}
 }
 
-// usageSource is a capture source that feeds the run one ssl_response per tick. P0 wires no real
+// usageSource is a capture source that feeds the run one ssl_response per tick. Nothing wires real
 // capture into internal/cli yet, so this stands in for the producer whose events R1 and R2 are
 // computed from: it is the only way to cross a token or cost ceiling in a real run today.
 type usageSource struct {
@@ -1126,7 +1126,7 @@ func sslPairs(t *testing.T, evs []*record.Event) (reqs []record.SSLRequestPayloa
 // real CLI: `tego run` selects the forwarder, the run admits its loopback port and names it in the
 // agent's environment, the agent calls the model through it, and the ledger gains the
 // ssl_request/ssl_response pair the uprobe path would have produced for the same call — with the usage
-// object measure's token columns read (docs/p0/capture-derive.md §4, R19, R38, spec/identity R7).
+// object measure's token columns read (spec/identity R7).
 func TestIntegrationForwarderCapturesTheModelCall(t *testing.T) {
 	bin := tegoBinary(t)
 	agentBin := modelAgentBinary(t)
@@ -1196,7 +1196,7 @@ func TestIntegrationForwarderCapturesTheModelCall(t *testing.T) {
 	}
 
 	// A run that captures model traffic derives turns from it and attributes actions to them
-	// (P0-DESIGN §5's M1 to M2 step). Walking the ledger in order is what makes the assertion exact:
+	// by time. Walking the ledger in order is what makes the assertion exact:
 	// an action recorded before the first request cannot belong to a turn and must carry step 0,
 	// and one recorded after must carry the step that was open when it happened. This workload
 	// front-loads its actions, so step 0 on them is the correct answer rather than a missing one;
@@ -1233,7 +1233,7 @@ func TestIntegrationForwarderCapturesTheModelCall(t *testing.T) {
 
 // TestIntegrationTokenCeilingEndsARealModelRun is the acceptance on real model traffic rather than a
 // synthetic producer: the tokens come from responses the forwarder captured and derive read, so R1's
-// ceiling trips on the run's own record (limits-check-doctor-cli.md §4 trip, R11 of the exit table).
+// ceiling trips on the run's own record.
 func TestIntegrationTokenCeilingEndsARealModelRun(t *testing.T) {
 	bin := tegoBinary(t)
 	agentBin := modelAgentBinary(t)
@@ -1282,7 +1282,7 @@ func (s *listenerDiesSource) Stop() error        { return nil }
 func (s *listenerDiesSource) Gaps() []source.Gap { return nil }
 
 // A worker that dies while the sources start cancels the group; the agent must not be released, and the run must
-// fail before run_start (runtime-launch.md §7: exit 125, no ledger), not exec the agent and end reason=error.
+// fail before run_start (exit 125, no ledger), not exec the agent and end reason=error.
 func TestIntegrationWorkerDyingDuringSourceStartNeverReleasesTheAgent(t *testing.T) {
 	f := newFixture(t, contractFor("iworkerdies", []string{"/bin/sleep"}, []string{"/bin/sleep"}))
 	marker := filepath.Join(t.TempDir(), "ran")

@@ -20,7 +20,7 @@ import (
 // TestIntegrationUnmeteredBudgetIsAGap: on a real run, a tokens budget a machine ceiling alone imposes, under
 // capture: off, never trips; the run said nothing of it. The ledger carries gap what=record why=budget-unmetered
 // binary=tokens, and the run still exits 0: the ceiling bounds every contract on the machine, most of which talk to
-// no model, so its run is not refused (limits-check-doctor-cli.md R32).
+// no model, so its run is not refused.
 func TestIntegrationUnmeteredBudgetIsAGap(t *testing.T) {
 	contract := contractFor("iunmetered", []string{"/bin/true"}, []string{"/bin/true"}) + "capture: off\n"
 	f := newFixture(t, contract)
@@ -57,9 +57,9 @@ func TestIntegrationUnmeteredBudgetIsAGap(t *testing.T) {
 }
 
 // TestIntegrationADeclaredBudgetNothingCountsIsRefused: a real run whose contract declares a tokens budget under
-// capture: off ran to its end with a limit that never tripped (the custom-agent POC, item 1). It is now refused
+// capture: off ran to its end with a limit that never tripped. It is now refused
 // before run_start with ErrBudgetUnmetered naming the budget, the cause and the fix, leaving no run directory, and
-// the agent never runs (limits-check-doctor-cli.md R32).
+// the agent never runs.
 func TestIntegrationADeclaredBudgetNothingCountsIsRefused(t *testing.T) {
 	contract := contractFor("iuncounted", []string{"/bin/touch"}, []string{"/bin/touch"})
 	contract = strings.Replace(contract, "  pids: 128\n", "  pids: 128\n  tokens: 1000\n", 1) + "capture: off\n"
@@ -80,7 +80,7 @@ func TestIntegrationADeclaredBudgetNothingCountsIsRefused(t *testing.T) {
 
 // TestIntegrationABudgetWhoseCaptureCannotStartIsRefused: a real run with a tokens budget whose capture source
 // started inert (its mechanism-unavailable gap) is refused before run_start with ErrCaptureUnavailable, leaving
-// no run directory, rather than running the agent unmetered (limits-check-doctor-cli.md R32).
+// no run directory, rather than running the agent unmetered.
 func TestIntegrationABudgetWhoseCaptureCannotStartIsRefused(t *testing.T) {
 	contract := contractFor("icaptureunavail", []string{"/bin/true"}, []string{"/bin/true"})
 	contract = strings.Replace(contract, "  pids: 128\n", "  pids: 128\n  tokens: 1000\n", 1)

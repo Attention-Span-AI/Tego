@@ -17,13 +17,13 @@ import (
 )
 
 // A pathname unix socket under a write entry is admitted implicitly only when a process of the run bound
-// it. The filter notifies bind(2) under a net: section (enforce-landlock R11c), and handleBind records the socket
+// it. The filter notifies bind(2) under a net: section, and handleBind records the socket
 // object a run task is about to bind — its sockfs inode and its SO_COOKIE, which no other socket of this boot
 // carries — and when the bind was answered, before it answers. Nothing about the bind's name is recorded or
 // trusted: which bind of a socket took, by which bytes and from which directory, is the run's to race (an address a
 // sibling rewrites, a descriptor swapped after it was duplicated, a symlink changed before the kernel's lookup), and
 // none of it changes whose socket object it is. The socket is the run's because a task of the run held it, bound to
-// nothing, and called bind on it (ADR 0041's note of 2026-10-17).
+// nothing, and called bind on it (ADR 0041).
 //
 // Deciding a connect or a datagram, the loop has the socket file the name reaches in the task's own view, pinned
 // (unixWalk), and asks whether it is the file one of those socket objects is bound to, by identity. The kernel's

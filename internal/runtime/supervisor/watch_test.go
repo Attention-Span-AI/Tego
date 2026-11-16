@@ -345,8 +345,7 @@ func TestWatchDecidesAsTheRunWithholdsReads(t *testing.T) {
 }
 
 // TestWatchFollowsEveryReadRefusal is R36's "a watch is refused where a read-open of its object is" past the read
-// verdict's deny_read entries (review of 2026-11-02: the first version asked only fsVerdict, and only for read-denied,
-// and the held-read floor's (a) and (c)). Each case is a refusal a read of the object meets, and its watch was
+// verdict's deny_read entries. Each case is a refusal a read of the object meets, and its watch was
 // continued: a file a name entry covers at tier bpflsm, whose plane refuses its read by name as tier cgroup's listener
 // does (ADR 0043 D7; not at tier landlock, whose reads no name entry reaches, nor a directory of that name); a name
 // entry's climb that cannot decide within agent.MaxWalk, which the read is refused for path-unresolved under unmatched

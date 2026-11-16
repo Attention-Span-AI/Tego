@@ -15,7 +15,7 @@ import (
 )
 
 // fixtureReader opens the frozen v1 fixture ledger as a run directory. The fixture is the contract every
-// view is built against (docs/P0-DESIGN.md §10), so the views can be written and tested before the runtime
+// view is built against, so the views can be written and tested before the runtime
 // emits a single real event.
 func fixtureReader(t *testing.T) *ledger.Reader {
 	t.Helper()
@@ -220,7 +220,7 @@ func TestSummarySaysHeldReadsAndAlternates(t *testing.T) {
 	}
 }
 
-// An mcp line says which server and, for a tool call, which tool (capture-derive.md R41): "mcp call
+// An mcp line says which server and, for a tool call, which tool: "mcp call
 // db_query".
 func TestSummarySaysMCPCalls(t *testing.T) {
 	for payload, want := range map[string]string{

@@ -20,7 +20,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/testutil/uring"
 )
 
-// ADR 0018 PR 2's kernel cells for cgroup/sock_create (docs/p0/enforce-cgroup-observe.md §5 R4, R5): the program,
+// ADR 0018 PR 2's kernel cells for cgroup/sock_create: the program,
 // attached to a scratch cgroup with its owner storage written as Attach writes it, decides every socket a process
 // there creates, with no seccomp filter in front of it, which stands for any path the filter misses. The agent is
 // planeHelper (plane_decide_integration_test.go), this test binary re-executed into the cgroup.

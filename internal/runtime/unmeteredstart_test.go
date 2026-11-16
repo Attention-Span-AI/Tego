@@ -28,7 +28,7 @@ func (s *causedInert) Gaps() []source.Gap {
 }
 func (s *causedInert) UnavailableCause() string { return s.cause }
 
-// TestABudgetWhoseCaptureCannotStartIsRefused is limits-check-doctor-cli.md R32's fail-closed half: a run with
+// TestABudgetWhoseCaptureCannotStartIsRefused is the fail-closed half: a run with
 // a tokens, cost_usd or repeats budget whose capture mechanism was given to it and could not start is refused
 // before run_start with ErrCaptureUnavailable naming the budgets, the cause and the fix. A run without such a
 // budget, one whose capture runs, one whose capture is off by the contract, a forwarder with no models:, and a

@@ -13,7 +13,6 @@ import (
 
 // TestDeriveReadsTheCapabilityLine is R-cap's read half: the snapshot carries run_start's tier and capability
 // line exactly as recorded, so a view never recomputes what a tier could do from the machine it runs on.
-// (limits-check-doctor-cli.md R-cap.)
 func TestDeriveReadsTheCapabilityLine(t *testing.T) {
 	line := map[string]bool{}
 	for _, c := range backend.AllCapabilities() {
@@ -42,7 +41,6 @@ func TestDeriveReadsTheCapabilityLine(t *testing.T) {
 
 // TestCapabilityLine is the rendering: absent rows by name in CAPABILITIES.md order, a newer writer's rows
 // kept rather than dropped, and an older writer's missing line never shown as a run that could do nothing.
-// (limits-check-doctor-cli.md R-cap.)
 func TestCapabilityLine(t *testing.T) {
 	cases := []struct {
 		name string

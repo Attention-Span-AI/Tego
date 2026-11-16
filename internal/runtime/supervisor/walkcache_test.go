@@ -419,7 +419,7 @@ func TestWalkCacheSeesASymlinkTheRunPlants(t *testing.T) {
 }
 
 // TestWalkCacheIsOffWhenThePlaneTakesMutations: a run whose filter no longer notifies the fs mutations the decision
-// plane decides (Options.PlaneFS, TIER3-PLAN T16) keeps no directory, since nothing would invalidate it: every
+// plane decides (Options.PlaneFS) keeps no directory, since nothing would invalidate it: every
 // notified path is walked, as the kernel will resolve it.
 func TestWalkCacheIsOffWhenThePlaneTakesMutations(t *testing.T) {
 	f := newFake()

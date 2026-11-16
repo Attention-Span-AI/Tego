@@ -65,7 +65,7 @@ type Options struct {
 type Run struct {
 	Dir string // the run directory, an implicit deny node (R8)
 	// Plane is the decision plane's rows when the run's tier decides through a plane mode (tier cgroup's lsm or
-	// fmod_ret, docs/p0/enforce-plane.md R16, R17), nil otherwise. Prepare then holds an O_PATH descriptor for every
+	// fmod_ret), nil otherwise. Prepare then holds an O_PATH descriptor for every
 	// path the plane keys (PlaneRows.Keyed), which the plane's fill reads the inodes from (Handle.PlaneHeld), and
 	// adds each one's neutral rule (PlaneRows.Neutral), so the run's domain pins every keyed inode and grants
 	// nothing it did not grant already (ADR 0025 (3)).
@@ -73,7 +73,7 @@ type Run struct {
 	// PlaneMaps is set when the plane mode that decides this run has step C's hooks loaded and probed
 	// (bpf.PlaneDecidesMappings with a mode doctor's probe selected): its bprm_check and mmap_file refuse an anonymous
 	// image's exec and its PROT_EXEC mapping race-free, so the filter carries no arm refusing every memfd_create on a
-	// kernel without MFD_NOEXEC_SEAL (enforce-plane R27, R11a). The sealing arm stays where the kernel has the flag.
+	// kernel without MFD_NOEXEC_SEAL. The sealing arm stays where the kernel has the flag.
 	PlaneMaps bool
 	// Drop is set for a root launch whose child drops to DropUID and DropGID (launch.ChildSpec's TargetUID and
 	// TargetGID). A write directory Prepare creates for the run (writeEntry) is then made with those
@@ -215,7 +215,7 @@ type builder struct {
 	netRestricted    bool // net: present ⇒ TCP/UDP handled and gated by port rules (R6)
 	// unixRestricted says the run decides unix destinations: a net: section, or the unix-only state of a contract
 	// with none (agent.RuleTable.HostSocketsRefused, ADR 0070). RESOLVE_UNIX is handled then, and bind(2) is notified
-	// so the supervisor records the run's own sockets (R11c, supervisor R11a).
+	// so the supervisor records the run's own sockets (R11c).
 	unixRestricted bool
 	unenforced     []string
 	net            []netRule
@@ -269,7 +269,7 @@ func (bd *builder) build() (*Handle, error) {
 		// Held reads notify every open too (ADR 0069 D2), and so do reason reads (ADR 0077), never part of hasAsk.
 		askRead:   bd.rt.HasAskRead() || bd.rt.ReadsHeld() || bd.rt.ReasonReadsNotified(),
 		gateWrite: bd.rt.Gate.Has(gate.FSWrite),
-		// R11e: every enforcing filter, since a watch reads no file and only the supervisor refuses one (supervisor R36).
+		// R11e: every enforcing filter, since a watch reads no file and only the supervisor refuses one.
 		watches: true,
 		// R11b: no thread of a run whose net: section or net gate decides destinations may route around them.
 		sourceRoute: bd.netRestricted || bd.rt.Gate.Has(gate.Net),
@@ -280,7 +280,7 @@ func (bd *builder) build() (*Handle, error) {
 		heldOpens:     bd.rt.NeedsOpenDeputy(), // no domain of the run's own beneath the deputy's (ADR 0041 D2)
 		strictNet:     bd.rt.NetworkAssurance() == agent.NetAssuranceKernel,
 		listenControl: bd.rt.Listen != nil || bd.netRestricted, listenersAllowed: len(bd.rt.Listen) > 0,
-		unixBinds: bd.unixRestricted, // R11c: the supervisor's record of the run's own unix sockets (supervisor R11a)
+		unixBinds: bd.unixRestricted, // R11c: the supervisor's record of the run's own unix sockets
 		ingress:   bd.rt.Ingress != nil,
 		rootTier:  bd.rt.Tier == backend.TierCgroup || bd.rt.Tier == backend.TierBPFLSM,
 		builtin:   bd.rt.Builtins != nil,
@@ -349,7 +349,7 @@ func (bd *builder) planeKeys() error {
 			return err
 		}
 	}
-	// A row keyed at the path's own inode (a deny_write target declared through a symlink, enforce-plane R11) is
+	// A row keyed at the path's own inode (a deny_write target declared through a symlink) is
 	// held without following it, for identity alone: no rule is added through it.
 	for _, p := range rows.NoFollow {
 		if err := bd.tick(); err != nil {
@@ -411,7 +411,7 @@ func (bd *builder) planeListenParents() error {
 	return nil
 }
 
-// planeExecLinks gives each exec row a descriptor held at the link its entry names (enforce-plane R16, §6 E15). The
+// planeExecLinks gives each exec row a descriptor held at the link its entry names. The
 // fill keys an exec row by the descriptor's own dentry (its inode, its directory and its name), and the E7 dedupe
 // holds every name of one inode under the first name that reached it: the hard links of a multi-call binary (uutils'
 // ls and cat, busybox's applets) that two entries name would share one descriptor, whose dentry is one of them. An
@@ -457,7 +457,7 @@ func (bd *builder) planeExecLinks() error {
 // race-free closure. sealSupported is the probe, a parameter so both kernels' answers are testable on one
 // box. planeMaps is Run.PlaneMaps: where a plane mode with step C decides the run, its bprm_check and mmap_file
 // close the anonymous image race-free in the kernel, so a kernel without the flag gets no arm rather than the
-// refusing one (enforce-plane R27); the sealing arm stays as defense in depth.
+// refusing one; the sealing arm stays as defense in depth.
 func memfdArmFor(c *agent.Contract, sealSupported func() bool, planeMaps bool) MemfdArm {
 	if c == nil || c.ExecUnrestricted() || c.ExecAnonymous() {
 		return MemfdOpen

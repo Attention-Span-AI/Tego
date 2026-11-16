@@ -19,16 +19,16 @@ import (
 // ErrAnchorHome is a chain anchor with nowhere to live: the invoking user has no home to hold
 // ~/.tego/chain.log, and the ledger root it would otherwise sit beside cannot be resolved either — a
 // "~/" ledger_root with no passwd home under AT_SECURE, the same condition that refuses the ledger root
-// itself (runtime-launch.md case 37). Only home resolution is decided here; whether the file can be
+// itself. Only home resolution is decided here; whether the file can be
 // opened is ledger.ProbeAnchor's question.
 var ErrAnchorHome = errors.New("runtime: the chain anchor needs a home the passwd database does not name")
 
-// StateDir is the per-user directory under the invoking user's home that holds chain.log: ~/.tego
-// (P0-DESIGN §3.3), ledger.StateDir.
+// StateDir is the per-user directory under the invoking user's home that holds chain.log: ~/.tego,
+// ledger.StateDir.
 const StateDir = ledger.StateDir
 
-// AnchorPath is where this machine's runs append their heads (P0-DESIGN §3.3, spec/record/v1,
-// docs/p0/record-ledger.md §3): ledger.AnchorPath, the one rule tego and the dashboard share, over the
+// AnchorPath is where this machine's runs append their heads (spec/record/v1):
+// ledger.AnchorPath, the one rule tego and the dashboard share, over the
 // invoking user's passwd home and the machine's ledger root. That is ~/.tego/chain.log of the invoking
 // user, whatever ledger_root says, and for an account with no home — no passwd entry, or a passwd home
 // that does not exist, like the /nonexistent of a service account — the chain.log beside the ledger root.
@@ -37,9 +37,9 @@ const StateDir = ledger.StateDir
 // the ledger root, so the file-capability launcher, the plain binary and `events --verify` name the
 // same file for one account. The one case AT_SECURE decides is whether there is a file: with no passwd
 // home and a "~/" ledger_root, the ledger root itself comes from $HOME for the plain binary, which then
-// anchors beside it, while the AT_SECURE copy, which never reads $HOME, gets ErrAnchorHome
-// (runtime-launch.md case 37). The home is the passwd entry of the invoking uid, never $HOME
-// (identity-config.md R21); the ledger root is resolved exactly as LedgerRoot resolves it.
+// anchors beside it, while the AT_SECURE copy, which never reads $HOME, gets ErrAnchorHome.
+// The home is the passwd entry of the invoking uid, never $HOME;
+// the ledger root is resolved exactly as LedgerRoot resolves it.
 func AnchorPath(m *config.Machine) (string, error) {
 	return anchorPath(m, config.DetectSecureExec, os.UserHomeDir, ledger.HomeExists)
 }

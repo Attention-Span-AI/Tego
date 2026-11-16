@@ -40,8 +40,8 @@ func receiptAndTab(t *testing.T, run string, lines ...string) (page, text string
 }
 
 // TestReceiptTabCountsRoutineSockets: tego receipt counts an AF_UNSPEC reset and the netlink socket apart, as routine
-// socket calls that name no place, and the Receipt tab showed only its places and system lookups: a run with nothing
-// else said "None recorded." there and "None, besides 1 routine socket call ..." in the terminal (review 1 S1).
+// socket calls that name no place, and the Receipt tab must not show only its places and system lookups: a run with
+// nothing else would say "None recorded." there and "None, besides 1 routine socket call ..." in the terminal.
 func TestReceiptTabCountsRoutineSockets(t *testing.T) {
 	const run = "r-aaaaaaaa-0000000000061-rtsock"
 	t0 := time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC)
@@ -77,8 +77,8 @@ func TestReceiptTabCountsRoutineSockets(t *testing.T) {
 }
 
 // TestReceiptTabNamesTheKernelTLSRefusalBuiltIn: tego receipt and tego run's summary name tego's built-in refusal of
-// setsockopt(TCP_ULP, "tls") apart from the default deny, and the Receipt tab's bars and refused list still called it
-// by the rule the record files it under, "Not in policy" (review 1 S1). The tab now names it "built in: kernel TLS" in
+// setsockopt(TCP_ULP, "tls") apart from the default deny, and the Receipt tab's bars and refused list must not call it
+// by the rule the record files it under, "Not in policy". The tab names it "built in: kernel TLS" in
 // both places, gives it a bar of its own, and keeps the default deny's words for a real connect.
 func TestReceiptTabNamesTheKernelTLSRefusalBuiltIn(t *testing.T) {
 	const run = "r-aaaaaaaa-0000000000063-ktlsxx"
@@ -115,8 +115,8 @@ func TestReceiptTabNamesTheKernelTLSRefusalBuiltIn(t *testing.T) {
 }
 
 // TestReceiptTabSaysWhatARunDoesNotRecord: a tier-landlock run with reason.reads off leaves no line for a read its
-// deny_read refuses, and tego receipt says so where it counts refusals; the Receipt tab still said "Nothing was
-// refused." for the same record (review 1 S1). It now says what tego receipt says, with and without a refusal, and a
+// deny_read refuses, and tego receipt says so where it counts refusals; the Receipt tab must not say "Nothing was
+// refused." for the same record. It says what tego receipt says, with and without a refusal, and a
 // run that records its refused reads keeps "Nothing was refused.".
 func TestReceiptTabSaysWhatARunDoesNotRecord(t *testing.T) {
 	t0 := time.Date(2026, 11, 11, 9, 0, 0, 0, time.UTC)

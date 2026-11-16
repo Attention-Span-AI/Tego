@@ -27,7 +27,7 @@ const stressEnv = "TEGO_STRESS"
 // TestPipelineFlood floods every lane at once, two producers each, into a real ledger Writer: the supervisor
 // lane with nothing but refusals (each a refused line and a last-refusal.json rewrite), the capture lane with
 // 8 KiB request bodies, the rest with fs lines. Every emitted event must be a line or counted in a gap, and
-// the pipeline must stop when cancelled. The log line is the review's measure: before last-refusal.json was
+// the pipeline must stop when cancelled. The log line is the measure: before last-refusal.json was
 // written off Append's path (M2), a refusal flood held the ledger to 140k lines in 10 s where 515k were
 // written without it.
 func TestPipelineFlood(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 )
 
 // ErrClaudeSocketDir refuses a Claude runtime path before the client can fall back
-// to a shared /tmp socket directory (ADR 0113, agent-contract R12).
+// to a shared /tmp socket directory (ADR 0113).
 var ErrClaudeSocketDir = errors.New("runtime: Claude session socket directory")
 
 // configureClaudeSockets resolves env.set.XDG_RUNTIME_DIR: "%R" to the existing

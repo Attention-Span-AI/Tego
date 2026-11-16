@@ -221,7 +221,7 @@ func gateRaceRun(t *testing.T, kind string) (h *harness, gatedTCPs, gatedUDPs, b
 // gate scored Allow (a benign copy, or a unix-spelled one on the IP socket) was answered CONTINUE, the kernel
 // read the address again, and about one in five reached the gated listener. Now every connect, Fast-Open send
 // and addressed datagram on an IP-domain socket under a net gate is performed on the duplicate with the copy
-// the gate scored (gate.md R4, D6), so none does: the benign copy reaches the benign port, the unix-spelled
+// the gate scored (D6), so none does: the benign copy reaches the benign port, the unix-spelled
 // one gets the kernel's own EAFNOSUPPORT, and the gated one is refused.
 func TestGateConnectRelayedRaceFree(t *testing.T) {
 	h, gatedTCP, _, benignTCP, _ := gateRaceRun(t, "connect")

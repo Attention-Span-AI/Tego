@@ -61,7 +61,7 @@ func runCgroup(t *testing.T, name string) (string, uint64) {
 // TestSecondLauncherAdoptsTheBuildsPinnedObjects: a launcher that starts while another of its build holds the
 // pins runs the pinned programs rather than loading and verifying its own copies (adoptObject), which it then
 // left unused for every host-wide hook, since it adopts the first launcher's links. Before, every Prepare
-// loaded all three objects, 90–130 ms in the KVM guest (docs/p0/enforce-cgroup-observe.md §9). The program
+// loaded all three objects, 90–130 ms in the KVM guest. The program
 // ids say which copy a handle runs: the second handle's must be the first's. The last one out still removes
 // the build (§5 R14).
 func TestSecondLauncherAdoptsTheBuildsPinnedObjects(t *testing.T) {
@@ -253,7 +253,7 @@ func TestMovedHelper(t *testing.T) {
 // mark on / it freezes every open on the machine, and the suite's own -test.timeout cannot fire. It hung
 // TestHeldCloseEndsTheListenerBeforeTheDescriptorLimit on AlmaLinux 9.8, whose /tmp and test binary share the
 // root xfs: the test thread in clone3's vfork wait, the helper in fanotify_get_response from execve, the loop's
-// goroutine stopping the world (2026-11-10). The copy is on no mount this process marks, so its execve raises no
+// goroutine stopping the world. The copy is on no mount this process marks, so its execve raises no
 // event; the helper's own open, after the execve, is what the test asks the group about. Call it before the
 // marks exist: reading the binary is itself an open on its mount.
 func unmarkedSelf(t *testing.T, marked []string) string {

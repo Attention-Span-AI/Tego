@@ -36,7 +36,7 @@ func makeSkewedRun(t *testing.T, root string, idAt, tsAt time.Time, rand6 string
 	return ref
 }
 
-// TestGCAgeFromRunIDNotTS is record-ledger.md R16 and E30: gc's retention age comes from the run id's time36,
+// TestGCAgeFromRunIDNotTS: gc's retention age comes from the run id's time36,
 // never from a stored ts, so a run whose events carry a skewed ts is judged by its id. A run minted long ago
 // whose ts says "just now" (a clock stepped back) is still deleted; a run minted just now whose ts says "long
 // ago" (a clock stepped forward then corrected) is still kept.
@@ -66,7 +66,7 @@ func TestGCAgeFromRunIDNotTS(t *testing.T) {
 	}
 }
 
-// TestStoppedHolderStaysRunning is record-ledger.md E15: a run whose lock holder is SIGSTOPped keeps its flock,
+// TestStoppedHolderStaysRunning: a run whose lock holder is SIGSTOPped keeps its flock,
 // so RunState reads running for as long as it is stopped (indistinguishable from alive-but-slow by design) and
 // gc neither sweeps nor deletes it, even with a retention of zero; once continued and ended it reads ended.
 func TestStoppedHolderStaysRunning(t *testing.T) {
@@ -118,7 +118,7 @@ func TestStoppedHolderStaysRunning(t *testing.T) {
 	}
 }
 
-// TestExportedErrorsAreSentinelsWrappedWithW is record-ledger.md I10: every exported error the package offers
+// TestExportedErrorsAreSentinelsWrappedWithW: every exported error the package offers
 // is a sentinel `var Err…` built once with errors.New (or fmt.Errorf), and no fmt.Errorf in the package
 // takes an error operand without a %w verb, which would cut the chain errors.Is walks.
 func TestExportedErrorsAreSentinelsWrappedWithW(t *testing.T) {

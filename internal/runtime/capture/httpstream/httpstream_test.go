@@ -99,7 +99,7 @@ func TestGoldenChunked(t *testing.T) {
 	}
 }
 
-// TestGoldenSSE covers capture-derive.md R16 and E19: a streamed text/event-stream response is one Message
+// TestGoldenSSE: a streamed text/event-stream response is one Message
 // carrying the decoded body intact. The provider parser owns its framing and ignores comments and retry.
 func TestGoldenSSE(t *testing.T) {
 	frames := []string{
@@ -134,7 +134,7 @@ func TestGoldenSSE(t *testing.T) {
 	checkGolden(t, "sse", render(msgs, gaps))
 }
 
-// TestRequestEventStreamKeepsBody covers capture-derive.md R16: a request the agent labels text/event-stream
+// TestRequestEventStreamKeepsBody: a request the agent labels text/event-stream
 // keeps its exact body and remains a request rather than a stream response, as the forwarder records it.
 func TestRequestEventStreamKeepsBody(t *testing.T) {
 	head := "POST /v1/messages HTTP/1.1\r\nHost: api.anthropic.com\r\nContent-Type: text/event-stream\r\n" +
@@ -179,7 +179,7 @@ func TestGoldenKeepAlive(t *testing.T) {
 	checkGolden(t, "keepalive", render(msgs, gaps))
 }
 
-// TestGoldenContinue covers capture-derive.md R12 and capture-derive.md E16 (edge case #16): the interim 100 is consumed and never emitted, and a
+// TestGoldenContinue: the interim 100 is consumed and never emitted, and a
 // server that skips it needs no separate path.
 func TestGoldenContinue(t *testing.T) {
 	head := "POST /v1/messages HTTP/1.1\r\nHost: api.anthropic.com\r\nExpect: 100-continue\r\n" +
@@ -244,7 +244,7 @@ func TestPipelineOverflow(t *testing.T) {
 	}
 }
 
-// TestMalformed is R18's table, capture-derive.md E21's Content-Length plus Transfer-Encoding row among them: every one of these is a gap and none of them panics or disturbs another
+// TestMalformed is R18's table, the Content-Length plus Transfer-Encoding row among them: every one of these is a gap and none of them panics or disturbs another
 // connection. It doubles as the fuzz corpus seed.
 func TestMalformed(t *testing.T) {
 	cases := []struct {
@@ -298,7 +298,7 @@ func TestMalformed(t *testing.T) {
 	}
 }
 
-// TestHeaderCaps covers capture-derive.md R13: a header block over either cap gaps the connection once.
+// TestHeaderCaps: a header block over either cap gaps the connection once.
 func TestHeaderCaps(t *testing.T) {
 	t.Run("bytes", func(t *testing.T) {
 		big := "GET / HTTP/1.1\r\nX-Big: " + strings.Repeat("a", 2048) + "\r\n\r\n"
@@ -598,7 +598,7 @@ func TestUnsupportedEncodingIsAGap(t *testing.T) {
 	}
 }
 
-// TestBigBody covers the acceptance line "32 MB body handled": capture-derive.md R14 sets no total cap, so a body far past
+// TestBigBody covers the acceptance line "32 MB body handled": there is no total cap, so a body far past
 // any chunk size reassembles whole.
 func TestBigBody(t *testing.T) {
 	if testing.Short() {
@@ -679,7 +679,7 @@ func TestMaxConns(t *testing.T) {
 	}
 }
 
-// TestTimestamps checks that a message carries the first and last chunk's clocks (capture-derive.md E25 (edge case #25)).
+// TestTimestamps checks that a message carries the first and last chunk's clocks.
 func TestTimestamps(t *testing.T) {
 	a := NewAssembler(Options{})
 	ts := time.Unix(1700000000, 0).UTC()

@@ -123,8 +123,8 @@ func bestEffortOf(t *testing.T, e *record.Event) bool {
 	return p.BestEffort
 }
 
-// TestRefusedDatagramIsNotSent is finding F1 of the interactive-codex POC on the real kernel at tier landlock
-// (supervisor R13b as amended 2026-10-16): a datagram whose destination the contract does not admit is refused
+// TestRefusedDatagramIsNotSent runs on the real kernel at tier landlock
+// (supervisor R13b): a datagram whose destination the contract does not admit is refused
 // with EACCES, whether its socket is connected or the address rides on sendto, sendmsg or sendmmsg, and a local
 // UDP responder receives nothing. Before, the three unconnected forms were continued under a refused line marked
 // best_effort and the responder got every one. The control admits the responder, which then gets the datagrams,

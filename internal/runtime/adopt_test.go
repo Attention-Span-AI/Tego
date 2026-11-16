@@ -1152,7 +1152,7 @@ func TestAdoptBoundaryNamesThePlaneAndItsRows(t *testing.T) {
 	// The built-in deny_write targets beneath the write entry: the plane refuses a fresh write-open of either.
 	f.rt.DenyWrite = []agent.FSRule{{Path: "/home/u/project/.git/config", Kind: agent.FSDenyWrite, BuiltIn: true},
 		{Path: "/home/u/project/.git/hooks", Kind: agent.FSDenyWrite, BuiltIn: true}}
-	// The boundary's file, as the caller resolved it (agent-contract.md R26), is on run_start.
+	// The boundary's file, as the caller resolved it, is on run_start.
 	f.deps.ContractSource = &record.ContractSource{Path: "/home/u/.config/tego/agents/coder.yaml", Name: "coder", Registry: "user"}
 	s, done := f.adoptRunning(t, context.Background(), spec)
 	if s.DecisionPlane != record.DecisionPlaneFmodRet || f.rec.plane != record.DecisionPlaneFmodRet {

@@ -93,13 +93,13 @@ func (u *unixFixture) table() *agent.RuleTable {
 
 // TestUnixVerdictOnRealKernel runs connect_unix and sendmsg_unix in the running kernel (§5 R7): from inside the
 // run, the agent's own connects and datagrams, and from the launcher's cgroup, the supervisor's relay, which
-// connects a duplicate of the agent's socket to the inode it resolved, named /proc/self/fd/<n>
-// (supervisor.md R11). Every refusal it asserts is one the kernel made before the path lookup: before these
+// connects a duplicate of the agent's socket to the inode it resolved, named /proc/self/fd/<n>.
+// Every refusal it asserts is one the kernel made before the path lookup: before these
 // programs, every unix destination below was reachable at tier 2 whatever the contract said, and an
-// addressed datagram, which the supervisor records and continues (supervisor.md R13b), left for an unlisted
+// addressed datagram, which the supervisor records and continues, left for an unlisted
 // socket. Below 6.7 the programs are not loaded, and a run of tier cgroup without a plane mode decides no unix
-// name in the kernel: the test asserts that, and skips. With a plane mode the plane decides them there
-// (enforce-plane R14), which TestPlaneUnixVerdictOnRealKernel holds to these same cells.
+// name in the kernel: the test asserts that, and skips. With a plane mode the plane decides them there,
+// which TestPlaneUnixVerdictOnRealKernel holds to these same cells.
 func TestUnixVerdictOnRealKernel(t *testing.T) {
 	u := newUnixFixture(t, "cg")
 	h, dir, _ := realRun(t, "unix", u.table())
@@ -140,7 +140,7 @@ func TestUnixVerdictOnRealKernel(t *testing.T) {
 
 // unixKernelCells are the unix names' cells for the run in the cgroup dir names, whichever program decides them:
 // connect_unix and sendmsg_unix refuse with EPERM (6.7+), the plane's socket_connect and socket_sendmsg with EACCES
-// (below 6.7, enforce-plane R14).
+// (below 6.7).
 func unixKernelCells(t *testing.T, dir *os.File, u *unixFixture, refused syscall.Errno) {
 	t.Run("the agent's own connects and datagrams", func(t *testing.T) {
 		cases := []struct {
@@ -206,7 +206,7 @@ func unixKernelCells(t *testing.T, dir *os.File, u *unixFixture, refused syscall
 			defer unix.Close(pfd)
 			return unix.Connect(dup, &unix.SockaddrUnix{Name: "/proc/self/fd/" + strconv.Itoa(pfd)})
 		}
-		// The relay admitted the socket it resolved, whatever its name (supervisor.md R11); the kernel admits
+		// The relay admitted the socket it resolved, whatever its name; the kernel admits
 		// the name it relays under from this cgroup, and only that name.
 		if err := relay(u.unlisted, true); err != nil {
 			t.Errorf("relayed connect through /proc/self/fd from the launcher's cgroup: %v, want success", err)

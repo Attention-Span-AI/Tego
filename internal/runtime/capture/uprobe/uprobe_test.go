@@ -292,7 +292,7 @@ func TestDrainEmitsPair(t *testing.T) {
 	}
 }
 
-// TestCredentialsNeverReachAPayload is capture-derive.md I5: the header allow-list is what guarantees it, so the assertion
+// TestCredentialsNeverReachAPayload: the header allow-list is what guarantees it, so the assertion
 // is over the raw payload bytes rather than over a struct field.
 func TestCredentialsNeverReachAPayload(t *testing.T) {
 	records := [][]byte{
@@ -619,7 +619,7 @@ func TestDiscoverCandidates(t *testing.T) {
 }
 
 // TestDiscoverNoCandidates covers a process whose maps cannot be read at all, which is R37's
-// no-openssl bucket and, per capture-derive.md E31, also where a ptrace-denied read lands.
+// no-openssl bucket and also where a ptrace-denied read lands.
 func TestDiscoverNoCandidates(t *testing.T) {
 	tree := newProcTree(t)
 	d := &discoverer{fs: proc.NewAt(tree.root)}
@@ -703,7 +703,7 @@ func TestOnExecAttachesOnceAndDetaches(t *testing.T) {
 	}
 }
 
-// TestOnExecNoSymbolsGaps covers capture-derive.md E5 (a fresh exec of a stripped copy has no symbols) and R37's static-tls-no-symbols: a real binary with no OpenSSL in it.
+// TestOnExecNoSymbolsGaps covers a fresh exec of a stripped copy having no symbols and R37's static-tls-no-symbols: a real binary with no OpenSSL in it.
 func TestOnExecNoSymbolsGaps(t *testing.T) {
 	tree := newProcTree(t)
 	so := writeELF(t, elfOptions{Dynamic: map[string]uint64{"malloc": 0x1100}})
@@ -781,7 +781,7 @@ func TestAttachFailureGapsAndDoesNotRetry(t *testing.T) {
 	}
 }
 
-// TestAttachBudget covers §4's 50 ms ceiling on discovery and attach together (capture-derive.md E1 (edge case #1)).
+// TestAttachBudget covers §4's 50 ms ceiling on discovery and attach together.
 func TestAttachBudget(t *testing.T) {
 	tree := newProcTree(t)
 	so := writeELF(t, elfOptions{Dynamic: map[string]uint64{SymWrite: 0x1100}})

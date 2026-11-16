@@ -23,8 +23,8 @@ func (s *fsNamingRecorder) SetContinuedFS(fn func(tid int, op, name, name2 strin
 func (s *fsNamingRecorder) SetSupervisorExecs(on bool) { s.execs = on }
 
 // TestKernelRecorderTakesTheSupervisorsFSNaming: the kernel recorder is handed the supervisor's naming of the fs
-// actions the supervisor leaves to the recorder's line, and told the supervisor writes every exec's line
-// (supervisor.md R7a); a recorder that cannot take them, or no recorder, is left alone.
+// actions the supervisor leaves to the recorder's line, and told the supervisor writes every exec's line;
+// a recorder that cannot take them, or no recorder, is left alone.
 func TestKernelRecorderTakesTheSupervisorsFSNaming(t *testing.T) {
 	lookup := func(tid int, op, name, name2 string, at uint64) (supervisor.FSNaming, bool) {
 		return supervisor.FSNaming{Path: "/p/" + name, Rule: "unmatched", Verdict: record.VerdictRefused}, tid == 7 && at == 9
@@ -62,7 +62,7 @@ type planeNamingRecorder struct {
 
 func (s *planeNamingRecorder) SetDecisionPlane(mode string) { s.mode = mode }
 
-// TestKernelRecorderOwnsExecsUnderThePlane is supervisor.md R7a at tier 3 (TIER3-PLAN T9): when the run's decision
+// TestKernelRecorderOwnsExecsUnderThePlane, at tier 3: when the run's decision
 // plane decides its execs, the kernel writes each continued exec's one line, so the recorder is told the supervisor
 // does not, and it names the plane's mode; a plane that decides no exec (no exec: section) leaves the execs to the
 // supervisor.
@@ -107,7 +107,7 @@ type namingSource struct {
 
 func (s *namingSource) NamesPathHooks() bool { return s.names }
 
-// TestPlaneFilterIsUsedOnlyWithARecorder is ADR 0024 (14)'s condition (TIER3-PLAN T16): the tier's filter stops
+// TestPlaneFilterIsUsedOnlyWithARecorder is ADR 0024 (14)'s condition: the tier's filter stops
 // notifying what its plane decides only when the run's kernel recorder will write those actions' lines and name
 // them by path on its own (observe.Recorder does, by the kernel's directory walk); without one, or with one that
 // cannot name them, every notification stays. With mutations left out the supervisor keeps no walk cache (planeFS).

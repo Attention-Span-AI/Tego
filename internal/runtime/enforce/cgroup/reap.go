@@ -31,7 +31,7 @@ import (
 //     the slot's next Prepare would otherwise scrub (purgeSlot), so a dead run's allow rows stop counting
 //     against every other run's budget at once; the slot is claimed for the purge, so no launcher can be handed
 //     it meanwhile, and freed after;
-//   - the rings above the build's pool that no run holds (ADR 0026 (6) as amended): the pool's stay at their
+//   - the rings above the build's pool that no run holds (ADR 0026 (6)): the pool's stay at their
 //     slot for its next run, drained and generation-checked there, as a run that ended normally leaves them.
 //
 // A run whose cgroup cannot be removed keeps all of it: its links, its rows (carried, so its slot stays held)
@@ -60,8 +60,8 @@ func (h *Handle) ReapTarget() ReapTarget {
 		Slot: h.slot, PlaneMode: string(h.planeMode)}
 }
 
-// ReadPlaneCounters reads the plane counters of t's slot from the build's pinned map of t's mode (enforce-plane
-// §2.8), named as Handle.PlaneCounters names them. The reaper calls it for an orphaned run once the run's cgroup has
+// ReadPlaneCounters reads the plane counters of t's slot from the build's pinned map of t's mode,
+// named as Handle.PlaneCounters names them. The reaper calls it for an orphaned run once the run's cgroup has
 // emptied and before it removes it: the run-set rows still carry the slot then, so no launcher has been handed it and
 // no Prepare has zeroed it. A target with no plane mode has no counters.
 func ReadPlaneCounters(t ReapTarget) ([]PlaneCount, error) {
@@ -241,7 +241,7 @@ func purgeDeadSlots(d *hoststate.Dir, pins pinLayout, hash string, runSet *ebpf.
 	}()
 	var loadErrs []error
 	// The build's decision planes, each mode's row maps and pinned clear (plane.go): purgeSlot clears the slot's
-	// plane rows too (enforce-plane R6, ADR 0020 (3)).
+	// plane rows too (ADR 0020 (3)).
 	planes, planeErr := openPinnedPlanes(pins.Base, hash, d)
 	k.pinnedPlanes = planes
 	// Every pinned map purgeSlot purges: the verdict rows, the net timeline, the slot counters and the network

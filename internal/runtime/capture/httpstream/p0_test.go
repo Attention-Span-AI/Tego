@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestMaxBodyTruncatesDecodedBody covers the assembler-level half of R14 and capture-derive.md E24: Options.MaxBody is the one
+// TestMaxBodyTruncatesDecodedBody covers the assembler-level half of R14: Options.MaxBody is the one
 // caller-supplied override to R14's "no total cap" default ("a positive value marks a body that reaches it
 // Truncated instead", assembler.go). Every other body-size test in this package (TestBigBody, TestDecode,
 // TestDecodeMaxBody) either leaves MaxBody at its zero default or exercises the bare decode() helper
@@ -45,7 +45,7 @@ func TestMaxBodyTruncatesDecodedBody(t *testing.T) {
 	}
 }
 
-// TestPipelineOverflowPreservesFIFOOrder covers capture-derive.md E15 (response N pairs to request N, first in first out) and the part of R11 that TestPipelineOverflow (gap on the 9th
+// TestPipelineOverflowPreservesFIFOOrder covers FIFO pairing (response N pairs to request N, first in first out) and the part of R11 that TestPipelineOverflow (gap on the 9th
 // request) and TestGoldenPipeline (no overflow at all) do not: what happens to pairing once the queue is
 // full. Pairing a response to the wrong request is a silent data-integrity failure this package must never
 // produce: R11 says the connection "otherwise continues," not "otherwise desyncs quietly."

@@ -8,7 +8,6 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// TestProfileFor asserts docs/p0/enforce-landlock.md R2, E3, E25.
 func TestProfileFor(t *testing.T) {
 	base := accessFSv1
 	cases := []struct {
@@ -66,7 +65,6 @@ func TestAccessBitsMatchTheCompiler(t *testing.T) {
 	}
 }
 
-// TestMaskByABI asserts docs/p0/enforce-landlock.md R2, E3.
 func TestMaskByABI(t *testing.T) {
 	all := accessFS(agent.AccessAll)
 	for abi := 1; abi <= maxKnownABI; abi++ {

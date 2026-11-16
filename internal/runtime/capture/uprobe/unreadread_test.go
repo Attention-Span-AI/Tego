@@ -23,7 +23,7 @@ func unreadRecord(cgroup uint64, pid, tid uint32, ssl uint64, monoNS uint64, len
 	return rec[:head]
 }
 
-// TestUnreadReadIsAGapNotAMispairing is capture-derive.md E3 (edge case #3) and R5 at the source. A read whose return came more than
+// TestUnreadReadIsAGapNotAMispairing, at the source: a read whose return came more than
 // bpf.SSLMaxCallNS after the entry probe its scratch row came from, or whose scratch row the LRU evicted before
 // it returned, used to be dropped by the kernel with no number and no record, so the next response on a
 // keep-alive connection paired with the request before its own (a 62 s first byte, under the old 60 s bound,

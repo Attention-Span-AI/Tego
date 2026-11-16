@@ -18,7 +18,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/execpin"
 )
 
-// Exec pins (ADR 0048 (3) P2, enforce-plane §2.22). A run Prepare is asked to pin (Run.ExecPin) gets, in its slot, a
+// Exec pins (ADR 0048 (3) P2). A run Prepare is asked to pin (Run.ExecPin) gets, in its slot, a
 // pin map (the slot's inner hash of bpf.MapPlaneExecPins, created once per slot and kept like the row maps), the run's
 // MAC key with its gen (bpf.MapPlanePinKeys), and a header that names the launcher's pid namespace and carries
 // PlaneSlotExecPin. The supervisor then writes each continued exec's pin through the Handle (PinExec), and the plane

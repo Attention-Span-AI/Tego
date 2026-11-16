@@ -77,8 +77,8 @@ func oracleCompilePlane(rt *agent.RuleTable) (*PlaneRows, error) {
 			paths[rt.FS[i].Canonical()] = true
 		}
 	}
-	// A deny_write target and every directory above it up to the outermost write entry that encloses it
-	// (enforce-plane R11): renaming any of them carries the target out of its place. Above that entry no write
+	// A deny_write target and every directory above it up to the outermost write entry that encloses it:
+	// renaming any of them carries the target out of its place. Above that entry no write
 	// entry covers the path, so every modification there is refused already.
 	for j := range rt.DenyWrite {
 		t := denyWritePath(rt.DenyWrite[j])

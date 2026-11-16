@@ -417,7 +417,7 @@ func TestLinePageA11y(t *testing.T) {
 }
 
 // lineRenderBudget is the line page's budget for a warm render of one line of a 12,000-line run
-// (docs/BENCHMARKS.md). The reference box read 0.9 to 2.2 ms on 2026-11-06, and 8.3 to 11 ms under the race detector.
+// (docs/BENCHMARKS.md). The reference box reads 0.9 to 2.2 ms, and 8.3 to 11 ms under the race detector.
 const lineRenderBudget = 25 * time.Millisecond
 
 // TestLinePageRenderBudget renders a line page of a 12,000-line run, warm, against its 25 ms budget, and checks that
@@ -426,7 +426,7 @@ const lineRenderBudget = 25 * time.Millisecond
 // the unit gate it is the fastest of five in the thread's own time (testutil.MinOfThread: the handler runs on the
 // calling goroutine), held to testutil.CeilingFactor times the budget and its wall clock to testutil.WallCeilingFactor
 // times it (docs/BENCHMARKS.md, "Timing budgets in the test suites"). The wall clock held to 25 ms in every run failed
-// on CI's race job beside three other packages' tests, 26.9 ms on 2026-11-06 (run 42184797264): the detector makes the
+// on CI's race job beside three other packages' tests (26.9 ms): the detector makes the
 // render about seven times slower, and a shared runner's fastest of five still waits for a CPU. Under -race the page is
 // still rendered and checked, but its time is not judged: that figure is the detector's, not the page's.
 func TestLinePageRenderBudget(t *testing.T) {

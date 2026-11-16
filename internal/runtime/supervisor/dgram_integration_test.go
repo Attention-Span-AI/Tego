@@ -77,10 +77,10 @@ func targetDgramLoop() (int, int64) {
 //   - kernel-refused: an undeclared destination where the run's cgroup/sendmsg4 decides UDP
 //     (Options.KernelDatagrams): refused here with its EPERM, one line, nothing sent from here;
 //   - refused: an undeclared destination no kernel program decides (tier landlock): refused here with R10's errno,
-//     one line, nothing sent (R13b as amended 2026-10-16; before, it was continued under a best-effort refused line);
+//     one line, nothing sent (R13b; before, it was continued under a best-effort refused line);
 //   - relay: an admitted destination under the models[] guard, sent on the duplicate (relayDatagram): the path
 //     proposed for every datagram a kernel program decides, measured for the record of why it was
-//     not taken (ADR 0016's 2026-10-05 note).
+//     not taken (ADR 0016).
 //
 // Like BenchmarkSeccompNotifyRoundTrip it needs no privilege, and the timer runs only across the target's loop.
 func BenchmarkRelayDatagram(b *testing.B) {
@@ -159,7 +159,7 @@ func TestIntegrationUDPFlood(t *testing.T) {
 	// takes a fatal signal, so a line more than datagrams is the supervisor's own duplicate. Without the flag (5.19;
 	// RHEL 9.8's 5.14 answers it EINVAL) a non-fatal signal to the target that lands as the answer is sent restarts
 	// the sendto, and nothing here can tell that pair apart (E35). The Go target's own SIGURG does that: on AlmaLinux
-	// 9.8 under load, 100048 notifications and 4 lines more than datagrams (2026-11-10). Only there may the lines
+	// 9.8 under load, 100048 notifications and 4 lines more than datagrams. Only there may the lines
 	// exceed the datagrams, and by no more than the notifications past one a datagram.
 	extra := len(allowed) + len(denied) - total
 	allowance := 0

@@ -146,8 +146,8 @@ func TestHTTP2RefusalPreservesOneConnectionAndMeteredSiblings(t *testing.T) {
 			// kept after); at worst it visits every cgroup on the host. That is the host's cost, not this test's: on a box of
 			// about 780 cgroups the search alone took 28 to 67 ms, and 268 to 750 ms under -race; the whole admission stage
 			// took up to 1.01 s under -race while the shared box was busy. The sibling's arrival upstream used to be given
-			// 1 s, and it failed "allowed sibling did not reach upstream" at that second in three loaded runs (2026-11-03 to
-			// 2026-11-11). A request is given as long as this client gives it, ample for the search; the refusal's own bound
+			// 1 s, and it failed "allowed sibling did not reach upstream" at that second in three loaded runs.
+			// A request is given as long as this client gives it, ample for the search; the refusal's own bound
 			// is below.
 			const requestWait = 10 * time.Second
 			client := &http.Client{Transport: cc, Timeout: requestWait}
@@ -213,7 +213,7 @@ func TestHTTP2RefusalPreservesOneConnectionAndMeteredSiblings(t *testing.T) {
 				wantCalls++
 				wantBytes += 4097
 				// Under load the 504 reached the client before the upstream handler's read of the failed upload
-				// returned, and the count below read one call (19 runs of 20 under 16 busy loops, 2026-10-16).
+				// returned, and the count below read one call (19 runs of 20 under 16 busy loops).
 				select {
 				case <-streamed:
 				case <-time.After(10 * time.Second):

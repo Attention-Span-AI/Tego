@@ -15,7 +15,7 @@ import (
 )
 
 // A deny_read over the user's codex config keeps the launcher from copying it into the run's own, which the
-// agent reads (capture-derive.md R19b).
+// agent reads.
 func TestCodexConfigUnderDenyReadIsNotCopied(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("a root launcher writes no CODEX_HOME")

@@ -90,7 +90,7 @@ func (l *Loop) askConnect(n *notif, c *compiled, t *target, d dest, raw []byte) 
 // performAskConnect holds an IP connect while a person decides and relays it once approved. scoped says the
 // connect reached a net.ask scope (askConnect): then a UDP socket's connect is held too (R13d), whose approval is the
 // socket's exchange with that peer; one a gate's ask range raised on an admitted destination is a TCP connect's
-// alone (gate.md R4).
+// alone.
 func (l *Loop) performAskConnect(n *notif, c *compiled, t *target, d dest, raw []byte, rule, host string, scoped bool) bool {
 	if !d.isInet() || !d.ok {
 		if t.dec.gate != nil {

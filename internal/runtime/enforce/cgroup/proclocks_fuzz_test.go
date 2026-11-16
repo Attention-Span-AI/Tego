@@ -9,7 +9,7 @@ import (
 )
 
 // FuzzProcLocks feeds the /proc/locks parser arbitrary bytes: kernel text that a re-arm pass reads to tell whether a
-// build's timer lives (ADR 0022, note 2026-10-06). It must never panic, never return more locks than the input has
+// build's timer lives (ADR 0022). It must never panic, never return more locks than the input has
 // lines, and every lock it returns must be what its own line, printed back as the kernel prints a held flock, parses
 // to.
 func FuzzProcLocks(f *testing.F) {

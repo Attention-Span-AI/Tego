@@ -22,7 +22,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// TestPlaneUnixVerdictOnRealKernel is enforce-plane R14 through the backend (TIER3-PLAN T15): a tier-cgroup run in a
+// TestPlaneUnixVerdictOnRealKernel is enforce-plane R14 through the backend: a tier-cgroup run in a
 // plane mode on a kernel without cgroup/connect_unix (below 6.7) has its unix names decided by the plane's
 // socket_connect and socket_sendmsg, from the rows and by the rule connect_unix uses on 6.7+, so
 // TestUnixVerdictOnRealKernel's cells hold with EACCES where they hold with EPERM there: the agent's own connects and

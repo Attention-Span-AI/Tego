@@ -620,7 +620,7 @@ var heldMatrixFlags = []struct {
 }
 
 // heldDenyWrite is the held harness's deny_write target, its worktree's .git/config, built in and unenforced by the
-// kernel at tier landlock, as a run compiles it: the loop refuses it (supervisor R15c), on the copied path's walk and,
+// kernel at tier landlock, as a run compiles it: the loop refuses it, on the copied path's walk and,
 // held, on the pinned object.
 func heldDenyWrite(dir string) []agent.FSRule {
 	p := filepath.Join(dir, ".git", "config")
@@ -845,7 +845,7 @@ func TestHeldOpenCannotReachTheDeputysOwnProc(t *testing.T) {
 			t.Errorf("%s: held open of the deputy thread's own /proc directory = %q, want it delivered", name, c.Out)
 		}
 	}
-	// The refusal is the kernel's own answer, not a tego held-* line (supervisor R7a): no held-unavailable or
+	// The refusal is the kernel's own answer, not a tego held-* line: no held-unavailable or
 	// held-unsupported for these.
 	for _, ev := range h.sink.all() {
 		if ev.Kind == record.KindFS && strings.Contains(ev.Rule, "held-") {
@@ -1002,8 +1002,7 @@ func TestHeldOpenDifferentialAcrossMounts(t *testing.T) {
 	}
 	// The closest this suite comes to a container (docker is not part of it): an overlayfs mounted as the container's
 	// root, a local directory bind-mounted into it as the work folder, a .env nested in the project there. Held reads
-	// start and keep the target by identity; a project on the overlay itself is refused at launch (review round 2,
-	// finding 4).
+	// start and keep the target by identity; a project on the overlay itself is refused at launch.
 	t.Run("held-read-container-workspace", func(t *testing.T) {
 		if !overlayMounts(t) {
 			t.Skip("this kernel mounts no overlayfs (ENODEV; a matrix row's guest loads no module): no container root to put the work folder under")
@@ -1075,7 +1074,7 @@ func TestHeldOpenDifferentialAcrossMounts(t *testing.T) {
 			})
 		}
 	})
-	// The mount topology under the protected places (review round 3, finding 4): the container layout above, then the
+	// The mount topology under the protected places (finding 4): the container layout above, then the
 	// work volume detached lazily while a descriptor keeps it alive (no IN_UNMOUNT), or a tmpfs mounted over the
 	// project (no inotify event at all). An outside process puts a new .env at the canonical path and the agent
 	// renames it: the mount table's change is seen and every held read is refused.
@@ -1124,7 +1123,7 @@ func TestHeldOpenDifferentialAcrossMounts(t *testing.T) {
 				defer kept.Close()
 				if how == "unrelated-mount-after-a-certified-replacement" {
 					// An ordinary atomic replacement of the .env, certified by a held read, then a mount elsewhere:
-					// benign reads go on, and the replacement stays refused under another name (review round 4).
+					// benign reads go on, and the replacement stays refused under another name.
 					benign, fresh := filepath.Join(proj, "a.txt"), filepath.Join(proj, "fresh")
 					for p, body := range map[string]string{benign: "benign", fresh: "ROTATED"} {
 						if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
@@ -1184,8 +1183,8 @@ func TestHeldOpenDifferentialAcrossMounts(t *testing.T) {
 			})
 		}
 	})
-	// Two private bind aliases of one directory inside a denied directory share one inotify watch (review round 4,
-	// finding 1). Each view is a place of its own: detaching the alias the watch was not taken through, writing a
+	// Two private bind aliases of one directory inside a denied directory share one inotify watch.
+	// Each view is a place of its own: detaching the alias the watch was not taken through, writing a
 	// secret into the directory it exposed and renaming it out of the denied tree is refused.
 	t.Run("held-read-bind-alias-detached", func(t *testing.T) {
 		x, _ := heldReadsFixture(t, agent.RecordFull)
@@ -1887,8 +1886,7 @@ func BenchmarkHeldOpen(b *testing.B) {
 	heldOpenBudget(b, heldBenchAt{as: as}, "BenchmarkHeldOpen")
 }
 
-// BenchmarkHeldOpenRootTier is BenchmarkHeldOpen on a root tier's path (ADR 0041 §Performance: "the root-tier path is
-// measured in KVM"): the loop runs as root over a tier cgroup table, so a held read-open is pinned, checked and only
+// BenchmarkHeldOpenRootTier is BenchmarkHeldOpen on a root tier's path (ADR 0041 §Performance): the loop runs as root over a tier cgroup table, so a held read-open is pinned, checked and only
 // then opened (no read-only open ahead of the checks, heldOpen), and the target and its deputy run as the invoking
 // user, as a root run drops its agent. The same budget terms are printed and asserted. Root only, with SUDO_UID naming
 // the user (test/vm/kvm-run.sh --sudo gives both).

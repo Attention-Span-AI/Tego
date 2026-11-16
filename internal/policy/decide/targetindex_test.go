@@ -72,7 +72,7 @@ func TestDenyReadMoveTargetMatchesScan(t *testing.T) {
 }
 
 // TestDenyReadMoveTargetCostDoesNotGrowWithEntries: the supervisor asks this for every link and rename at tier
-// 2 (supervisor.md R15d). By scan a miss cost 12–15 ms against the 50,000 entries the .env scan can plant; on
+// 2. By scan a miss cost 12–15 ms against the 50,000 entries the.env scan can plant; on
 // the index it costs about the same at 47 entries and at 50,047, and allocates nothing.
 func TestDenyReadMoveTargetCostDoesNotGrowWithEntries(t *testing.T) {
 	queries := []string{benchRead, benchDenied, benchNested, benchOutside, "/home/u/proj/gen", "/home/u/proj/other/deep/file.o"}
@@ -178,7 +178,7 @@ func TestTargetIndexMatchesScan(t *testing.T) {
 }
 
 // denyWritePadded is realisticTable with n built-in deny_write targets, as the repository search plants one
-// set per repository it finds beneath a write entry (agent-contract R20).
+// set per repository it finds beneath a write entry.
 func denyWritePadded(n int) *agent.RuleTable {
 	rt := realisticTable(backend.TierCgroup)
 	for i := range n {
@@ -189,7 +189,7 @@ func denyWritePadded(n int) *agent.RuleTable {
 }
 
 // TestDenyWriteTargetCostDoesNotGrowWithEntries: the supervisor asks DenyWriteTarget for each end of every
-// notified modification while the deny_write set is not empty (supervisor.md R15c), and a rename with ancestors.
+// notified modification while the deny_write set is not empty, and a rename with ancestors.
 // By scan a miss walked every target; on the index it costs about the same against 50,000 as against 40, and
 // allocates nothing.
 func TestDenyWriteTargetCostDoesNotGrowWithEntries(t *testing.T) {

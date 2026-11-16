@@ -1067,7 +1067,7 @@ func exclusionFileInTree(path string) bool {
 // shrinking list exempts each unmigrated package from them alone), and the blanket exemption is itself scoped to
 // "ADR 0021", which must match every ADR 0021 message.
 //
-// Verified 2026-10-17 (ADR 0023 C3): the exemption without its text, an ADR 0023 exclusion whose text was "ADR 0021"
+// Verified (ADR 0023 C3): the exemption without its text, an ADR 0023 exclusion whose text was "ADR 0021"
 // or "ADR 00", and the exemption's text narrowed to "ADR 0021 \(3\)" each failed this test; each edit was reverted.
 //
 // Verified: an exclusion removed from .golangci.yml, one added for a file the list does not hold, the proc.Start

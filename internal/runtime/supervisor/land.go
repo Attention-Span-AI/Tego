@@ -16,7 +16,7 @@ import (
 )
 
 // Land is where the kernel's walk of the absolute pathname p leads for a syscall end looked up as how says
-// (agent.Lookup), in this process's own view: compile --test's question of a row's path (ADR 0019's 2026-10-17 design
+// (agent.Lookup), in this process's own view: compile --test's question of a row's path (ADR 0019 design
 // note), asked with the Lookup of the syscall the row stands for (agent.ActionKind.Lookups). It is FSTarget's walk, the
 // one every run's fs line is decided on (R15b), of the query the run's own handler of that syscall builds (pathQuery.as),
 // so compile --test and the run land a path with one resolver asked one question (the design note). p is walked as

@@ -9,7 +9,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// The producer contract, spelled here as docs/p0/capture-derive.md §2 spells it. They are aliases rather
+// The producer contract. They are aliases rather
 // than new types: internal/runtime owns the contract every source of a run satisfies (the eBPF recorder,
 // this component's two sources), and a second definition of the same four shapes would mean a capture
 // Source could not be handed to runtime.Deps.Capture at all.
@@ -86,15 +86,14 @@ type Deps struct {
 // forwarder would take the agent's model traffic away from them by setting its base-URL variable (FEATURES
 // kill test 7 (b)). Where the tier cannot run uprobes, a pinned uprobe tops out at the forwarder, as Compile
 // and agent.AtTier lower it, and `tego run` warns for each of the contract's variables the forwarder's then
-// override (agent-contract R12). When both run they never see the same request: the forwarder only sees loopback
-// traffic its own base-URL variable routed to it, uprobe only real upstream TLS (P0-DESIGN §2.9, amended
-// 2026-09-23 for the pinned case).
+// override. When both run they never see the same request: the forwarder only sees loopback
+// traffic its own base-URL variable routed to it, uprobe only real upstream TLS.
 //
 // A mechanism that cannot run is one gap naming it in binary, and the why says which of two things is
 // true. no-models: the contract declares no models[] endpoint, so the forwarder has nothing to listen for
 // and is never constructed. mechanism-unavailable: this binary does not carry the mechanism, or its
 // constructor failed. Both used to be filed under no-openssl, which is R4's finding about a process's
-// libraries and is false of a forwarder and of a uprobe source that never started (R37, amended).
+// libraries and is false of a forwarder and of a uprobe source that never started (R37).
 //
 // A table with no contract attached (a caller that compiled nothing it could name) is not judged on
 // models[]: the forwarder factory decides for itself whether it can be built.

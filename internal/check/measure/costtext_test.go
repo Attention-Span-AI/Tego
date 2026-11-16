@@ -9,9 +9,9 @@ import (
 	"testing"
 )
 
-// TestCostTextShowsSmallCosts: a run that ended at its cost_usd limit of $0.002 by spending $0.002127 read
-// "cost $0.00 est." in measure, as if it had been free, while its limit event said 0.002127 (the custom-agent
-// POC, item 7). Below ten cents the amount now keeps two significant digits, down to a micro-dollar; from ten
+// TestCostTextShowsSmallCosts: a run that ended at its cost_usd limit of $0.002 by spending $0.002127 must not read
+// "cost $0.00 est." in measure, as if it had been free, while its limit event said 0.002127. Below ten cents the
+// amount keeps two significant digits, down to a micro-dollar; from ten
 // cents up it stays to the cent, so a large cost carries no noise.
 func TestCostTextShowsSmallCosts(t *testing.T) {
 	for _, tc := range []struct {

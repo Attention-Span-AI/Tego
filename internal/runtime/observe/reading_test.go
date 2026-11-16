@@ -12,7 +12,7 @@ import (
 )
 
 // TestRecorderReadingIsWhetherItRecordsTheRun: the supervisor leaves a continued IP connect to this recorder
-// only while Reading holds (supervisor.md R7), so it must hold exactly while connects reach the run's record:
+// only while Reading holds, so it must hold exactly while connects reach the run's record:
 // not before Start, not for a recorder that found no row of its run, and not once the drain has failed.
 func TestRecorderReadingIsWhetherItRecordsTheRun(t *testing.T) {
 	start := func(t *testing.T, ring *fakeRing, rs RunSet, cg uint64) *Recorder {

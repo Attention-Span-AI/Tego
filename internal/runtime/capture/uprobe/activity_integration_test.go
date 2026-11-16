@@ -26,7 +26,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// The TLS probes' activity stamp on a real kernel (limits R4, capture-derive R4 and R9, A-REC-1, A-REC-3, A-REC-5):
+// The TLS probes' activity stamp on a real kernel (limits R4, A-REC-1, A-REC-3, A-REC-5):
 // a record: off run with a stall budget has the shared probes placed for it, and its client's TLS calls stamp its
 // slot of tego_activity and nothing else of it is read or written: no chunk, no scratch row, no chunk number, no
 // miss. A recording run's calls stamp its own slot too, beside its capture.

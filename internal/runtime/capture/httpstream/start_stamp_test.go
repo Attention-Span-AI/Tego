@@ -8,7 +8,7 @@ import (
 )
 
 // TestStartStampAcrossSplitLines covers the first-byte clocks consumed by the
-// uprobe response's request-to-response latency (capture-derive.md E25).
+// uprobe response's request-to-response latency.
 func TestStartStampAcrossSplitLines(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

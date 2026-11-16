@@ -52,12 +52,12 @@ type heldReadPlace struct {
 	path          string
 	mnt, dev, ino uint64
 	// file is a target file's place: its placement (the mount and device it lies on) is checked, never its inode, which
-	// a certified replacement changes; the pins keep the identities (review round 4).
+	// a certified replacement changes; the pins keep the identities.
 	file bool
 }
 
 // addPlace records path's place, read from fd, once per canonical path: every view of a directory that bind mounts
-// share is a place of its own, though inotify gives them one watch (review round 4).
+// share is a place of its own, though inotify gives them one watch.
 func (p *heldReadPins) addPlace(path string, fd *sys.FD, file bool) error {
 	if p.placed[path] {
 		return nil
@@ -498,7 +498,7 @@ func (p *heldReadPins) events(buf []byte) {
 		if !w.all && !w.names[name] && !w.ancestors[name] && !p.round[key] && !p.pending[key] {
 			// An entry beside the watched ones that neither this round tracks nor the last one pinned. A name the last
 			// round pinned stays relevant through its verification however unprotected it is: an install there means
-			// the pin's open may have met another object (review round 3).
+			// the pin's open may have met another object.
 			continue
 		}
 		switch {

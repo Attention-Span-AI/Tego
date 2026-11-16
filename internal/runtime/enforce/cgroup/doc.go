@@ -3,7 +3,7 @@
 // Package cgroup is the tier-2 enforcement backend: the eight CGROUP_SOCK_ADDR programs that decide a run's
 // network destinations and unix socket names in-kernel per cgroup (the two unix ones on 6.7+), the two
 // cgroup-lifecycle programs that materialize the run's own descendant cgroups, and the fanotify listener that
-// refuses reads of denied paths and execs of unlisted binaries with a reason (docs/p0/enforce-cgroup-observe.md).
+// refuses reads of denied paths and execs of unlisted binaries with a reason.
 //
 // What it builds. Prepare validates the ring-buffer size the machine config asks for (R16), takes a shared
 // build lock, allocates the run's dense host-wide run_idx slot (R12), loads and pins the objects under
@@ -35,8 +35,8 @@
 // a write open, and this package's listener decides no write: the inherited Landlock ruleset refuses one outside
 // every write entry, by inode. Beneath a deny_read nested in a write entry, which Landlock's union grants, the
 // seccomp supervisor refuses a write-open, a create and every other mutation by the root walk with EACCES before
-// the kernel acts, at tier cgroup with no plane mode (supervisor fallbackMutation, supervisor R15's 2026-10-17
-// amendment, ADR 0021 (5)); where a decision plane mode runs, the plane decides them. fanotify adds what
+// the kernel acts, at tier cgroup with no plane mode (supervisor fallbackMutation,
+// ADR 0021 (5)); where a decision plane mode runs, the plane decides them. fanotify adds what
 // Landlock cannot express precisely: deny_read paths under a writable parent, and exec of a binary outside the allow-list,
 // each refused with the reason the ledger records. The kernel names the opened file by its canonical path, so
 // every entry is matched as compiled and with its symlinks followed; a contract with no exec: section refuses

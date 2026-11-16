@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package registry resolves an agent's name to its contract file, which makes
-// `tego run retriever` and `tego compile retriever` mean the contract of the agent named retriever
-// (docs/p0/agent-contract.md R26).
+// `tego run retriever` and `tego compile retriever` mean the contract of the agent named retriever.
 //
 // There are two registries, read in this order:
 //
@@ -26,8 +25,8 @@
 // `tego run <name>` will.
 //
 // A registry is also the home of skills: <registry>/skills/<name>/ in either registry is where a skill a contract
-// declares will be found when skills are provisioned (FEATURES.md I6c). Until then `skills:` does not compile
-// (agent-contract.md R23), and nothing here reads that directory.
+// declares will be found when skills are provisioned (FEATURES.md I6c). Until then `skills:` does not compile,
+// and nothing here reads that directory.
 package registry
 
 import (
@@ -87,7 +86,7 @@ type Places struct {
 	User string
 	// UID is the invoking user, whose files (and root's) are trusted.
 	UID int
-	// Own are tego's own paths, which every run read-denies (agent-contract.md R6a): its own directory, the ledger
+	// Own are tego's own paths, which every run read-denies: its own directory, the ledger
 	// root, the profiles directory. A contract's directory is one a run needs, and Compile lifts that deny from a
 	// directory that holds one, so an entry inside any of them is refused rather than resolved, unless the working
 	// directory is inside it too: the run needs the working directory as well, which lifts the deny whatever
@@ -140,8 +139,8 @@ func IsName(arg string) bool {
 }
 
 // Resolve finds the contract of the agent named name in the one registry that holds it: the project registry is looked
-// in first, then the user registry, and a name both hold (as two files) is agent-ambiguous, never the project's
-// (agent-contract.md R26), as is a name the project holds twice or a file of that name in the working
+// in first, then the user registry, and a name both hold (as two files) is agent-ambiguous, never the project's,
+// as is a name the project holds twice or a file of that name in the working
 // directory.
 func (p Places) Resolve(name string) (*Entry, error) {
 	if !IsName(name) {

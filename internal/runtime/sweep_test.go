@@ -48,7 +48,7 @@ func truncateRunEnd(t *testing.T, dir string) {
 	writeFile(t, path, b[:last])
 }
 
-// Also pins runtime-launch.md E13: a run left with no run_end is ended as orphaned.
+// Also pins: a run left with no run_end is ended as orphaned.
 func TestSweepEndsOnlyTheOrphans(t *testing.T) {
 	root := t.TempDir()
 	const (
@@ -140,7 +140,7 @@ func TestSweepRetentionDeletesEndedRuns(t *testing.T) {
 }
 
 // BenchmarkSweepNRuns measures one pass over a ledger root of ended runs: what `tego run` pays at
-// startup before it launches anything (docs/p0/runtime-launch.md §9 "Benchmarks").
+// startup before it launches anything.
 func BenchmarkSweepNRuns(b *testing.B) {
 	for _, n := range []int{10, 100} {
 		b.Run(fmt.Sprint(n), func(b *testing.B) {
@@ -212,7 +212,7 @@ func BenchmarkSweepLiveNRuns(b *testing.B) {
 // is killed first and ended, an orphan the index does not name is left for gc's full pass, and nothing
 // is deleted.
 //
-// Also pins runtime-launch.md R20: run and stop sweep only the live index; gc alone passes over every run.
+// Also pins: run and stop sweep only the live index; gc alone passes over every run.
 func TestSweepLiveEndsOnlyListedOrphans(t *testing.T) {
 	root := t.TempDir()
 	const (
@@ -250,7 +250,7 @@ type benchAnchor struct{}
 func (benchAnchor) Append(string, string) error       { return nil }
 func (benchAnchor) Head(string) (string, bool, error) { return "", false, nil }
 
-// TestAnOrphanedStopMarkerIsSweptWithItsRun is runtime-launch.md E12: `tego stop` made stop.request and the
+// TestAnOrphanedStopMarkerIsSweptWithItsRun: `tego stop` made stop.request and the
 // launcher was kill -9'd before it read it. The marker means nothing to the record: the sweep ends the run as
 // orphaned like any other, leaves the marker where it is (it is no schema, and no part of what the sweep
 // judges), and gc removes it with the whole run directory at retention.

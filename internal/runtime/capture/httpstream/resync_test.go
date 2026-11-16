@@ -64,8 +64,8 @@ func checkPaired(t *testing.T, msgs []*Message, n int) {
 }
 
 // TestResponseWithNoRequestIsPassedOver is kill test 2's uprobe failure, reduced to its bytes: the probes
-// were placed after the process's first SSL_write and before its SSL_read (docs/p0/capture-derive.md R4,
-// edge case 2), so the connection's first chunk is a whole response whose request capture never saw, and
+// were placed after the process's first SSL_write and before its SSL_read,
+// so the connection's first chunk is a whole response whose request capture never saw, and
 // the 19 exchanges after it are complete. The response is passed over as one counted gap and the 19 pair.
 // Before, that response abandoned the connection: 0 of 20 pairs and one gap that counted one.
 // h2Preface is the connection preface of HTTP/2 (RFC 9113 section 3.4); checkPreface matches its
@@ -255,8 +255,8 @@ func feedAll(a *Assembler, key ConnKey, ws ...wire) ([]*Message, error) {
 }
 
 // TestRequestTailWithNoHeadIsPassedOver is the attach race on the request half: httpx writes a request's
-// head and its body in separate SSL_writes, and the probes were placed between them (docs/p0/capture-derive.md
-// R4, edge case 2), so the connection's first bytes are the body, in two writes, and then the response. The
+// head and its body in separate SSL_writes, and the probes were placed between them,
+// so the connection's first bytes are the body, in two writes, and then the response. The
 // exchange is passed over as one counted gap, its response with it and not counted again, and the 19
 // exchanges after it pair. Before, the body was a malformed request line and the connection was lost whole.
 func TestRequestTailWithNoHeadIsPassedOver(t *testing.T) {

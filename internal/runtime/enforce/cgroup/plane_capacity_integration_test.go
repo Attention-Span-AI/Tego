@@ -20,7 +20,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/runtime/enforce/landlock"
 )
 
-// TestPlaneCapBoundaryNeverEMFILE is enforce-plane §2.4 condition 7 as root (TIER3-PLAN's P4 capacity): a contract
+// TestPlaneCapBoundaryNeverEMFILE is the plane's capacity bound, as root: a contract
 // of N deny_read files in one directory, each held at a descriptor with every sibling, run at N = the launcher's
 // descriptor cap less one, the cap and one more, either runs or is refused before run_start naming the cap, and is
 // never an EMFILE; half the cap runs. The cap is this test process's budget, which the root launcher it starts

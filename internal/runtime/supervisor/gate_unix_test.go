@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// TestGateNeverRelaysUnixDatagrams keeps a network gate an escalation only (ADR 0007, gate.md R4) for an
+// TestGateNeverRelaysUnixDatagrams keeps a network gate an escalation only (ADR 0007) for an
 // AF_UNIX datagram. The copied-address relay that closes the rewrite race for a gated UDP sendto/sendmsg
 // was taken for every allowed datagram, so under any `net` gate rule this process sent the agent's unix
 // datagram itself (relayDatagram): a relative name resolved against this process's cwd, an abstract name
@@ -40,7 +40,7 @@ func TestGateNeverRelaysUnixDatagrams(t *testing.T) {
 						f.sockType = unix.SOCK_DGRAM
 						f.sockDomain = unix.AF_UNIX
 						// The relative name resolves against the task's cwd, as decideUnix reads it: a name this
-						// loop cannot place is refused (R13b as amended 2026-10-16), and the baseline is a send
+						// loop cannot place is refused (R13b), and the baseline is a send
 						// the policy admits.
 						f.links["/proc/42/cwd"] = "/work"
 						sa := sockaddrUn(dst)

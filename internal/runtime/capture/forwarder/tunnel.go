@@ -118,7 +118,7 @@ func (l *Listener) serveExtraProtocol(w http.ResponseWriter, r *http.Request, pi
 		// No net.proxy grant, so no tunnel: what follows answers as before net.proxy existed. Under
 		// net.http, httpDecision refuses CONNECT and Upgrade (SEMANTICS §5); a capture-only listener
 		// refuses CONNECT and declines an upgrade offer, h2c's included, by stripping Upgrade and
-		// Connection and forwarding the request as HTTP/1.1 (capture-derive.md R20, amended 2026-10-05).
+		// Connection and forwarding the request as HTTP/1.1.
 		return false
 	}
 	if contract := l.runRef().Contract; contract != nil {

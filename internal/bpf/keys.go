@@ -210,8 +210,8 @@ func UnixPathKey(runIdx uint32, path string, subtree bool) (UnixKey, error) {
 }
 
 // UnixAbstractKey builds the row for one abstract name: the NUL that marks it abstract, then its bytes, with
-// the whole sun_path length in the header so that only a name of exactly this length matches (supervisor.md
-// E5: an abstract name is never NUL-scanned).
+// the whole sun_path length in the header so that only a name of exactly this length matches
+// (an abstract name is never NUL-scanned).
 func UnixAbstractKey(runIdx uint32, name []byte) (UnixKey, error) {
 	if len(name) == 0 || len(name)+1 > UnixNameMax {
 		return UnixKey{}, fmt.Errorf("%w: abstract name of %d bytes", ErrUnixName, len(name))

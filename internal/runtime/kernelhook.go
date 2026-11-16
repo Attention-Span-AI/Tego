@@ -76,7 +76,7 @@ func (h exitsTo) OnExit(pid int)           { h.steps.Exit(pid) }
 // with every follower withdrawn when the recorder's Start leaves it reading nothing.
 //
 // The recorder and a follower each decide at their own Start, from their own walk of the build's run set,
-// whether this run may read (enforce-cgroup-observe.md §2 "Run scope", capture-derive.md edge case #26), and
+// whether this run may read, and
 // the walks are not one instant: another run's row can appear between them, or one walk alone can fail. A
 // follower that decided to read beside a recorder that did not would capture nothing, because nothing feeds
 // it an exec or an open, while run_start named it as the run's capture. Withdrawn, the follower starts with
@@ -105,8 +105,8 @@ func (s recorderFirst) Start(ctx context.Context, run source.RunRef, sink source
 
 // stageFilter keeps the launcher's child stage from a follower. The run's first process is this launcher's
 // clone, which execs the launcher's own binary (launch.Launcher.Exe, /proc/self/exe by default) as `tego
-// __child` inside the run's cgroup and only then execs the agent in place (docs/p0/runtime-launch.md §4.1
-// steps 5-7). Since ADR 0021 the tier's run-set row is inserted after that exec (arm), so the kernel record
+// __child` inside the run's cgroup and only then execs the agent in place.
+// Since ADR 0021 the tier's run-set row is inserted after that exec (arm), so the kernel record
 // no longer sees it; the filter stays as the second line, for a record that ever does. When the record saw it
 // like any other, a follower handed it took the launcher's binary for an agent process: the uprobe source held a static-tls-no-symbols verdict for it and
 // settled it into the ledger when the agent's exec replaced the image, a gap line naming tego in every
@@ -309,8 +309,8 @@ func (q *hookQueue) take() (hookCall, bool) {
 }
 
 // followedOpen reports whether a follower acts on an open of path: the uprobe source, the one there is, attaches
-// only at an absolute path whose final component is named like a libssl (capture-derive R4's
-// libssl\.so(\.\d+)*, uprobe.OnOpen). Every other open was queued behind it too, and a burst of them filled
+// only at an absolute path whose final component is named like a libssl
+// (libssl\.so(\.\d+)*, uprobe.OnOpen). Every other open was queued behind it too, and a burst of them filled
 // the queue while the source was slow in one call.
 func followedOpen(path string) bool {
 	if !filepath.IsAbs(path) {

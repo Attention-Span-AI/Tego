@@ -24,7 +24,7 @@ func mapTable(restricted bool) *agent.RuleTable {
 	return rt
 }
 
-// TestEvaluateExecMapSplitsByTier is compile --test's exec.map row (ADR 0027, enforce-plane R26): only the decision
+// TestEvaluateExecMapSplitsByTier is compile --test's exec.map row (ADR 0027): only the decision
 // plane decides a PROT_EXEC map, so tier landlock (no mmap hook, SEMANTICS §4) and tier cgroup as the fanotify listener allow
 // what bpflsm refuses: a file under a write entry no exec entry covers, rule exec-map. A covered file, a file under
 // no write entry and a contract with no exec: section map at every tier; the plane's column answers the same.

@@ -19,10 +19,8 @@ import (
 // from ABI 3: allowed in a write entry, refused outside one, and refused by this loop when it reaches a
 // deny_write target (R15c), as an O_TRUNC open is. A mode change is governed by nothing this build loads, so it
 // reads allow, named by the entry a modification there is named by; fchmod names the file its descriptor
-// holds. That holds at tier bpflsm too until its path_chmod hook is built (enforce-plane step B, TIER3-PLAN T13):
+// holds. That holds at tier bpflsm too until its path_chmod hook is built:
 // a refused line there would record a refusal the kernel never made.
-//
-// Spec: docs/p0/supervisor.md R17.
 func TestTruncateAndChmodLeaveOneLine(t *testing.T) {
 	const work = "/work/proj"
 	fs := []agent.FSRule{{Path: work, Kind: agent.FSWrite, Raw: "./proj/"}}
@@ -109,12 +107,10 @@ func TestTruncateAndChmodLeaveOneLine(t *testing.T) {
 	}
 }
 
-// TestChmodUnderThePlaneRefusesADenyWriteTarget is PlaneAttrs (enforce-plane R12, I8): with a decision plane
+// TestChmodUnderThePlaneRefusesADenyWriteTarget is PlaneAttrs: with a decision plane
 // deciding the run, the kernel's path_chmod refuses a mode change beneath a deny_write target, so this loop refuses
 // such a chmod it is notified of itself, by R15c's predicate, and writes that refusal as the action's one line; a
 // chmod elsewhere is continued as allowed, as the plane lets it by. Without a plane nothing changes.
-//
-// Spec: docs/p0/supervisor.md R17, docs/p0/enforce-plane.md R12.
 func TestChmodUnderThePlaneRefusesADenyWriteTarget(t *testing.T) {
 	const work = "/work/proj"
 	fs := []agent.FSRule{{Path: work, Kind: agent.FSWrite, Raw: "./proj/"}}

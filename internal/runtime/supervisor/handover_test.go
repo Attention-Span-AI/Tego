@@ -22,8 +22,6 @@ import (
 // thread and the record's stamp, checked by the operation and each end's final component where it lands). A refusal this loop answers itself never
 // reaches the kernel, and a mode change reaches no hook of the recorder: both keep this loop's line, and so does
 // every action when no recorder reads. ADR 0017's tier-cgroup cells held two or three lines for one action.
-//
-// Spec: docs/p0/supervisor.md R7a.
 func TestKernelRecordOwnsTheContinuedFSLine(t *testing.T) {
 	const work = "/work/proj"
 	fs := []agent.FSRule{{Path: work, Kind: agent.FSWrite, Raw: "./proj/", Access: agent.AccessWriteSet}}
@@ -100,8 +98,6 @@ func TestKernelRecordOwnsTheContinuedFSLine(t *testing.T) {
 // record's stamp — not by the thread's most recent one. A record older than every action of its thread, one
 // whose action went unnamed (its path unread), and one whose operation or name is not that action's are named
 // by nothing.
-//
-// Spec: docs/p0/supervisor.md R7a.
 func TestContinuedFSIsKeyedByTheRecordsStamp(t *testing.T) {
 	const work = "/work/proj"
 	f := newFake()

@@ -12,7 +12,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// TestRefreshedDropsWhatTheTableRefuses is agent-contract R18 for the kernel copy of the set: a refresh that
+// TestRefreshedDropsWhatTheTableRefuses is the resolved-address check for the kernel copy of the set: a refresh that
 // rebinds a host name to the metadata endpoint, loopback, a machine-denied range or (after a public first
 // answer) a private address must not hand that address to tier 2's rows, which admit whatever Refreshed
 // holds. The refused address moves to the entry's Denied, as Compile does with the first answer. Match still

@@ -241,7 +241,7 @@ func TestEvaluateRenameAsLandlockDecidesIt(t *testing.T) {
 // TestEvaluateAttr: an attribute change is allowed at every tier (no Landlock ABI has a chmod, chown or xattr
 // right), named as the supervisor's recordAttr names it: the write entry that covers it, else the nearest entry,
 // else unmatched. Where a decision plane decides (the bpflsm column), path_chmod and the attribute hooks refuse it
-// at or beneath a deny_write target (enforce-plane R12); at tiers 1 and 2 nothing refuses that one (CAPABILITIES).
+// at or beneath a deny_write target; at tiers 1 and 2 nothing refuses that one (CAPABILITIES).
 func TestEvaluateAttr(t *testing.T) {
 	rt := actionsTable(&agent.ExecSection{})
 	attr := func(p string) agent.Action { return agent.Action{Kind: agent.ActionFSAttr, Path: p} }
@@ -316,7 +316,7 @@ func TestEvaluateSocket(t *testing.T) {
 }
 
 // TestEvaluateSend: an unconnected datagram send is answered as the connect to its destination over UDP, or to its
-// unix socket (supervisor R13b: sendDecisionCtl decides it with the connect's own decision); the resolver
+// unix socket (sendDecisionCtl decides it with the connect's own decision); the resolver
 // exception applies to a UDP send to a resolver on port 53 (EvaluateIn, R14).
 func TestEvaluateSend(t *testing.T) {
 	rt := actionsTable(&agent.ExecSection{})

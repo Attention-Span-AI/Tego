@@ -47,7 +47,7 @@ func (s *gateSink) all() []*record.Event {
 	return slices.Clone(s.events)
 }
 
-// TestOneThreadsLinesKeepTheOrderOfItsSyscalls is R23a, the custom-agent POC's finding: a thread's second exec,
+// TestOneThreadsLinesKeepTheOrderOfItsSyscalls is R23a: a thread's second exec,
 // received on another worker while the first one's line was still on its way to the sink, was recorded before the
 // first, with a mono_ns after the line it preceded. The second notification's line now waits for the first's, and
 // both carry the mono_ns of their receipt.

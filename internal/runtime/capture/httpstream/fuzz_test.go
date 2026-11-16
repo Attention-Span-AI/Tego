@@ -11,7 +11,7 @@ import (
 )
 
 // FuzzFeed drives the whole reassembler over network-controlled bytes: the start line, the header block,
-// both body framings and the content-coding decoders (P0-DESIGN §7, §9 "every reader of network-controlled
+// both body framings and the content-coding decoders (§9 "every reader of network-controlled
 // bytes gets one").
 //
 // The property is R18's: no input panics, and whatever comes back is either a message or a gap — never a

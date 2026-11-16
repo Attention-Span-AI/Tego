@@ -16,7 +16,7 @@ import (
 const harnessFixtureRuntime = "/run/user/1000/tego/" + "01J0000000000000000000000A"
 
 // generateHarness writes spec/record/v1/fixtures/harness.jsonl through the real Writer: a run at record_minor 14
-// (MinorHarness) whose launcher provisioned Claude Code (agent-contract.md R27, ADR 0062): run_start's harness and its
+// (MinorHarness) whose launcher provisioned Claude Code (ADR 0062): run_start's harness and its
 // fs.harness-state grant, a write the grant allowed in hook-state, a write to the provisioned settings file the
 // kernel refused, and run_end.
 func generateHarness(t *testing.T, dir string, anchor ChainAnchor) {

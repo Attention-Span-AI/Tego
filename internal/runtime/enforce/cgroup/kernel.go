@@ -41,7 +41,7 @@ type kernel interface {
 	removeRules(rules RuleMaps) error
 	// purgeSlot deletes every verdict row keyed by a run_idx and zeroes its counters, so a slot reclaimed from a
 	// launcher that died without tearing down is clean before this run's rows are written (§5 R12, §8 I5, ADR
-	// 0026 (4)). The slot's rings are placeRings' to reuse or replace (ADR 0026 (6) as amended).
+	// 0026 (4)). The slot's rings are placeRings' to reuse or replace (ADR 0026 (6)).
 	purgeSlot(runIdx uint32) error
 	// placeRing creates a ring of kind (ebpfbindings.RingRecord, RingCapture) and size bytes and inserts it into its
 	// outer at slot, unless its memlock is more than room: then nothing is inserted and placed is false. memlock
@@ -201,7 +201,7 @@ func newBPFKernel(ctx context.Context, h *Handle) (kernel, error) {
 			// launcher of the build can pin the same name between the two, and this pin then fails with EEXIST.
 			// The name is pinned by then, so the next attempt opens it (ebpfbindings.PinAttempts bounds how many
 			// it can take). A timed test build attributes the load to the object's maps and to each program
-			// (load.obj.<obj>.maps, load.prog.<obj>.<prog>.*; enforce-plane §10.1); a product build's
+			// (load.obj.<obj>.maps, load.prog.<obj>.<prog>.*); a product build's
 			// LoadOptions are the zero options and its trace is nil.
 			var err error
 			trace := ebpfbindings.BeginLoad(h.opts.Phase, "load.obj."+fmt.Sprint(obj)+".maps", "load.prog."+fmt.Sprint(obj))
@@ -288,7 +288,7 @@ func newBPFKernel(ctx context.Context, h *Handle) (kernel, error) {
 	endShared()
 	// The decision plane in doctor's mode, over the maps just loaded or adopted (plane.go). Its failure fails the
 	// run, as a program of the build's own does: doctor's probe passed the mode, so a load that fails here is a
-	// fault to report, never a quieter run (enforce-plane I7).
+	// fault to report, never a quieter run.
 	if h.planeMode != "" {
 		var state *hoststate.Dir
 		if h.slots != nil {
@@ -470,7 +470,7 @@ func adoptObjectInWithPrograms(pins pinLayout, spec *ebpf.CollectionSpec, links 
 			// Task storage the programs keep for themselves (the plane's tego_plane_path_buf: created for a sample
 			// and deleted after it, never read by userspace) needs no handle here, so it is matched by shape like a
 			// global-variable section, as is every map bpf.KernelOnlyMaps names. Refused, it made every run load and
-			// verify the plane's six programs again, about 100 ms a run (TIER3-PLAN T11, kill test 4's go kind).
+			// verify the plane's six programs again, about 100 ms a run (kill test 4's go kind).
 			if !strings.HasPrefix(name, ".") && ms.Type != ebpf.TaskStorage && !ebpfbindings.KernelOnlyMaps[name] {
 				return fail("own-map") // a map of the object's own that this launcher would need a handle to
 			}
@@ -633,7 +633,7 @@ func pinProgram(p *ebpf.Program, path string) error {
 // integration fixtures that load trace_proc use too, so no second copy of the choice can go stale (§5 R14).
 //
 // A pinned link is adopted only when its program reads this launcher's maps (owns), as a plane link is
-// (attachPlaneLink, enforce-plane R20). A link pinned over maps since re-created (a removal killed or failing
+// (attachPlaneLink). A link pinned over maps since re-created (a removal killed or failing
 // between the map pins and the link pins) runs a program over a run set that names no run: adopted, it recorded
 // nothing for the run, and its exec-result and listener links still set ExecOutcomes, BindOutcomes and
 // ListenOutcomes, so the supervisor handed failed execs to a kernel that never reported them. It is unpinned and
@@ -754,7 +754,7 @@ func isUnixProgram(name string) bool {
 // The run the deciding programs enforce is written into the cgroup's tego_net_owners storage right after the
 // first of them is attached: the kernel creates that value, zeroed, at the attach, and a program that finds it
 // zeroed refuses every connect, so the order is fail-closed whatever runs in between. Nothing does at this
-// point in a real run — Attach precedes the agent's creation (docs/p0/runtime-launch.md §4.1). The update
+// point in a real run — Attach precedes the agent's creation. The update
 // asks for an existing value (BPF_EXIST), so a storage the kernel did not create for this attachment is an
 // error, never a new row.
 func (k *bpfKernel) attachCgroup(path string, owner ebpfbindings.NetOwner) error {
@@ -954,7 +954,7 @@ func (k *bpfKernel) populate(rules RuleMaps) error {
 
 // purgeSlot deletes every exact, CIDR and unix name row keyed by runIdx and zeroes the slot's counters (ADR 0026
 // (4)): a dead launcher's drops would otherwise be counted as this run's. Its rings are placeRings' to reuse,
-// drained, or replace (ADR 0026 (6) as amended). All three maps are LIBBPF_PIN_BY_NAME
+// drained, or replace (ADR 0026 (6)). All three maps are LIBBPF_PIN_BY_NAME
 // (bpf/include/maps.h), so they outlive the launcher that wrote them: one killed with SIGKILL never reaches
 // removeRules, and the slot table then hands its run_idx to the next run (slots.go's dead-owner reclaim).
 // Without this the new run would inherit the dead one's allow rows — tego_net_match hits on

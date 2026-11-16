@@ -35,7 +35,7 @@ func (s *stalledSink) Emit(ev *record.Event) {
 	s.meteredSink.Emit(ev)
 }
 
-// I1 (capture-derive.md): the client's request path never waits on the ledger. With the sink stalled, every
+// I1: the client's request path never waits on the ledger. With the sink stalled, every
 // request is still forwarded and answered at once; the events reach the sink, in order, once it reads again.
 func TestStalledSinkDoesNotDelayTheClient(t *testing.T) {
 	h := newHarness(t, func(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +77,7 @@ func TestStalledSinkDoesNotDelayTheClient(t *testing.T) {
 
 // I1: past its bound the listener's emit queue drops rather than grow or wait; each drop is counted in the
 // run's gap report (gap what=capture why=emit-queue-full) and the first is reported unmetered, which ends a
-// run with a token or cost budget (limits-check-doctor-cli.md R1 (s)).
+// run with a token or cost budget.
 func TestEmitQueueOverflowIsAGapAndUnmetered(t *testing.T) {
 	orig := emitQueueSize
 	emitQueueSize = 2

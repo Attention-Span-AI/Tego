@@ -439,7 +439,7 @@ func grantDatagramFD(t *testing.T, h *Handle, fd int, dst netip.AddrPort) (Revok
 	return h.GrantDatagram(nil, cookie, domain, dst)
 }
 
-// TestDatagramApprovalOnRealKernel: an approved UDP destination (supervisor R13d) is admitted by the run's sendmsg4/6
+// TestDatagramApprovalOnRealKernel: an approved UDP destination is admitted by the run's sendmsg4/6
 // once, on the granted socket alone and to that destination alone, for an AF_INET socket, an AF_INET6 one and an
 // IPv4 destination of an AF_INET6 socket in its mapped spelling, which sendmsg4 decides (udpv6_sendmsg); a UDP
 // connect's grant is taken by connect4/6. A credit the kernel took is gone; one it did not is gone once revoked.

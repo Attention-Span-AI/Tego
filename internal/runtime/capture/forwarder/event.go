@@ -25,7 +25,7 @@ type exchange struct {
 	method string
 	// path is the request target as sent (requestTarget), query included: drift and the retry key compare it. A
 	// query may carry a credential; the ledger's RedactStage rewrites it through ledger.RedactTarget before the
-	// ssl_request line reaches disk (R9a of docs/p0/record-ledger.md), not this package.
+	// ssl_request line reaches disk, not this package.
 	path      string
 	header    http.Header
 	body      []byte
@@ -120,7 +120,7 @@ func (l *Listener) requestEvent(x *exchange) *record.Event {
 		rr.ReadRequest(x.requestMessage(), derive.Meta{Provider: l.model.Provider, Host: l.model.Host}).Apply(&payload)
 	}
 	// A body capture kept as a prefix says so on its line, with the length the client sent, so its blob does
-	// not read as the whole body (record-ledger §2.2). The request is replayed upstream as the client's bytes,
+	// not read as the whole body. The request is replayed upstream as the client's bytes,
 	// never decoded, so that length is the wire's.
 	l.setPayload(ev, &payload, x.body, x.truncated, x.truncated, func() {
 		payload.Truncated, payload.WireSize = true, int(x.sentSize())
@@ -149,7 +149,7 @@ func (l *Listener) responseEvent(x *exchange, r *upstreamResult, facts derive.Fa
 }
 
 // setPayload attaches a payload and, when the run records bodies, the body itself under the key the
-// ledger's blob stage turns into blob (R10 of docs/p0/record-ledger.md). truncated says the body is a
+// ledger's blob stage turns into blob. truncated says the body is a
 // prefix, for any reason, so a rune the cut left unfinished at its end is dropped and the prefix kept.
 // sizeCut says capture's own bound kept the body short, which is counted as a gap why=size-cap; a body cut
 // short otherwise (the client left, the upstream failed, a decode broke) had its gap counted where that

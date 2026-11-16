@@ -25,7 +25,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestIntegrationEnforcementOutlivesItsLauncher is runtime-launch.md I7: Landlock and the cgroup limits stay
+// TestIntegrationEnforcementOutlivesItsLauncher: Landlock and the cgroup limits stay
 // enforced on the agent's tree after the launcher is SIGKILLed, because they live in the kernel (the
 // process's Landlock domain, the cgroup's control files) and not in a userspace loop. The ENOSYS half, a
 // notified syscall with its listener gone, is TestIntegrationADaemonOutlivingItsLauncherGetsENOSYS; this
@@ -34,7 +34,7 @@ import (
 //
 //   - a unix bind(2) at a path outside fs.write, which the filter never notifies: Landlock refuses the socket
 //     inode it would make with EACCES (LANDLOCK_ACCESS_FS_MAKE_SOCK, every ABI). A write-open, a mknod(2) of a
-//     FIFO and a truncate(2) beside it, which the filter does notify (mknod from 2026-09-29, for R15c; truncate
+//     FIFO and a truncate(2) beside it, which the filter does notify (mknod for R15c; truncate
 //     from ABI 3, so the supervisor records it; below ABI 3 the filter refuses it with EPERM), are ENOSYS: the
 //     two layers answer side by side;
 //   - fork(2) past the contract's pids: the cgroup's pids.max refuses it, pids.events' max counter moves, and
@@ -140,13 +140,13 @@ exec /bin/sleep 120
 	release(t, goTrunc)
 	waitForLine(t, outFile, errFile, "helper done")
 	// bind(2) is notified too: the contract has no net: section, so the run is in ADR 0070's unix-only state and the
-	// filter notifies every bind for the supervisor's record of the run's own sockets (enforce-landlock R11c). With the
+	// filter notifies every bind for the supervisor's record of the run's own sockets. With the
 	// supervisor gone the notification answers ENOSYS before Landlock's MAKE_SOCK check is reached; no socket is
 	// made either way (checked below).
 	want := map[string]syscall.Errno{"truncate": syscall.ENOSYS, "mknod": syscall.ENOSYS, "open-write": syscall.ENOSYS,
 		"bind": syscall.ENOSYS}
 	if abi, err := sys.LandlockABI(); err == nil && abi < 3 {
-		want["truncate"] = syscall.EPERM // below ABI 3 the filter refuses truncate(2) itself (enforce-landlock R2)
+		want["truncate"] = syscall.EPERM // below ABI 3 the filter refuses truncate(2) itself
 	}
 	for op, errno := range want {
 		line := waitForLine(t, outFile, errFile, "helper "+op+" ")

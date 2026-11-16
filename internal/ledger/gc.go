@@ -55,7 +55,7 @@ type gcOptions struct {
 // no reclaim, no hook, no run_end{orphaned}, no anchor repair, and its live-index entry stays — since its lock
 // is only a lock on this machine, its launcher may be alive on its own, and its anchor is its own host's.
 // GC still ages out one that reads ended or empty; one that reads running is kept.
-// *Amended 2026-09-24:* one that reads lost is not swept but ages out past retention too,
+// one that reads lost is not swept but ages out past retention too,
 // with no run_end written, and SweepLive clears its entry once its directory is gone: a machine id that changed
 // made every run of this host foreign, and kept for its own host to end, they were never removed.
 func WithForeignRun(fn func(id string) bool) GCOption {
@@ -77,7 +77,7 @@ func WithEndedHook(fn func(ctx context.Context, dir sys.Lender, run record.RunRe
 // WithReclaimHook runs for a run whose lock is held, before the run is kept as running. It reports whether it
 // freed the lock, and the run's state is then read again: internal/runtime uses it for a lock whose launcher
 // is gone, which only a process of the run itself can hold (it opened the lock file and flocked it), and which
-// kept its dead launcher's run from ever being swept (runtime-launch.md R20). It kills the run's cgroup and
+// kept its dead launcher's run from ever being swept. It kills the run's cgroup and
 // waits for the lock to come free; a lock held by a live launcher it leaves alone.
 // dir lends the run's directory, which hooks make their lookups under (WithSweepHook); a directory that cannot
 // be opened frees nothing.
@@ -553,8 +553,8 @@ func sameRoot(held *sys.FD, root string) error {
 // this pass ended the run.
 //
 // The lock comes before the hook, so of sweepers racing for one orphan exactly one kills its tree and ends it:
-// the others fail the lock, read the run as not theirs to end, and move on without killing or counting it
-// (runtime-launch.md §6 case 10, R12). With the hook first, every racer killed the tree, and every racer that
+// the others fail the lock, read the run as not theirs to end, and move on without killing or counting it.
+// With the hook first, every racer killed the tree, and every racer that
 // lost the lock afterwards still reported the run as swept.
 //
 // A run whose agent its first line does not give (a line that does not decode) takes the agent its contract

@@ -267,8 +267,8 @@ type fanotifyListener struct {
 	marks map[string]uint64
 
 	// execLine, once the supervisor exists (Handle.SetSupervisorExecLines), says whether a refused open is an
-	// exec's open of its image whose line the supervisor writes (supervisor.Loop.ExecLine): the exec's one line
-	// (supervisor R7a), which this listener then leaves unwritten. Nil asks nothing.
+	// exec's open of its image whose line the supervisor writes (supervisor.Loop.ExecLine): the exec's one line,
+	// which this listener then leaves unwritten. Nil asks nothing.
 	execLine atomic.Pointer[func(tid int, dev, ino uint64) bool]
 	// fileID is the device and inode an event's descriptor holds (fstat); a field so a test needs no group.
 	fileID func(fd int) (dev, ino uint64, ok bool)
@@ -1279,7 +1279,7 @@ func (f *fanotifyListener) logGone(fd int32, err error) {
 }
 
 // execLineOwner returns the question whether a refused open is an exec's open of its image that the supervisor
-// recorded as this listener's refusal and wrote the exec's line for (supervisor R7a): the exec's one line, so
+// recorded as this listener's refusal and wrote the exec's line for: the exec's one line, so
 // this listener writes none. An execve's open of its image is reported as FAN_OPEN_EXEC_PERM and then, allowed,
 // as FAN_OPEN_PERM, and it is the latter a deny_read refuses; the supervisor matches it by the opener's thread
 // and the image's identity, and answers each exec once. Nil means the answer is no whatever the verdict.

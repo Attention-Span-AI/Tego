@@ -184,7 +184,7 @@ func TestHeldReadIdentityHoldsUnderAnOwnPinAsk(t *testing.T) {
 }
 
 // An approval on this loop's own pin is checked again on the descriptor CompleteAskOpen actually reopened, after the
-// post-answer check and before ADDFD|SEND (review round 2, finding 2): the approved file put at a protected name
+// post-answer check and before ADDFD|SEND (finding 2): the approved file put at a protected name
 // during the completion is pinned there and refused, and a protected name's history made uncertain then refuses;
 // either way the descriptor is not delivered and the line says the open completed.
 func TestHeldReadOwnPinAskChecksTheReopenedDescriptor(t *testing.T) {

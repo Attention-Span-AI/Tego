@@ -148,8 +148,8 @@ func (h *Handle) NetworkGuarantees() backend.NetworkGuarantees {
 }
 
 // PlaneFilter is SeccompFilter less the notifications the run's decision plane decides in the kernel, for a tier
-// whose plane loaded and attached hooks, named as bpf.PlaneHook.Name names them (enforce-plane R22, R27;
-// TIER3-PLAN T16): an fs mutation whose every form a loaded hook decides, the open family's write arm when
+// whose plane loaded and attached hooks, named as bpf.PlaneHook.Name names them:
+// an fs mutation whose every form a loaded hook decides, the open family's write arm when
 // file_open and path_mknod are loaded, and truncate(2) when path_truncate is. dropped names what was left out
 // (the table's syscall names, with "open-write" and "truncate" for the two arms), empty when nothing was, and
 // then prog is SeccompFilter's own. Nothing is left out with an fs ask entry, and under record: full the open
@@ -214,7 +214,7 @@ func (h *Handle) Close() error {
 func (h *Handle) Capabilities() backend.Set { return h.caps.Clone() }
 
 // PlaneHeld is the held O_PATH descriptor of a path Prepare held under that name (Run.Plane's keyed paths among
-// them): the decision plane's fill reads each keyed inode from it (enforce-plane R16). The handle keeps owning it;
+// them): the decision plane's fill reads each keyed inode from it. The handle keeps owning it;
 // ok is false for a path it holds no descriptor for, one that did not exist included, and after Close.
 func (h *Handle) PlaneHeld(path string) (int, bool) {
 	if h.fds == nil {

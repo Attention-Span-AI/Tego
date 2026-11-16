@@ -28,7 +28,7 @@ const MaxRelays = 256
 // max (ask.max_pending) bounds the unanswered relays only, from reservation
 // until approved delivery: an established relay is no longer pending, and
 // counting it let long-lived approved connections refuse every later ask
-// before a human saw it (agent-contract R22). maxRelays bounds them all.
+// before a human saw it. maxRelays bounds them all.
 type RelayPool struct {
 	mu          sync.Mutex
 	closed      bool

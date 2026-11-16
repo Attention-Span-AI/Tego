@@ -11,7 +11,7 @@
 // mount family a Landlock domain refuses (recorded as landlock-topology) and a watch (inotify_add_watch,
 // fanotify_mark, dnotify's fcntl F_NOTIFY) of a deny_read target, which no Landlock or decision-plane hook sees
 // (R36), and answers every
-// notification exactly once with CONTINUE, an errno or a relayed result (docs/p0/supervisor.md §4, §5 R1-R36).
+// notification exactly once with CONTINUE, an errno or a relayed result (§5 R1-R36).
 //
 // It is authoritative for connects, and for the mount family, whose answer is the domain's own EPERM.
 // Write-opens, execs and the other mutating operations are enforced by Landlock on the continued syscall;

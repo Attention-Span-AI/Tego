@@ -138,7 +138,7 @@ func payload(t testing.TB, name string) []byte {
 	return b
 }
 
-// payloadNames is every documented shape the tests replay (Claude Code 2.1.310, hooks reference, read 2026-10-24;
+// payloadNames is every documented shape the tests replay (Claude Code 2.1.310, hooks reference;
 // the same shapes test/e2e/reason-claude/fakeclaude sends), by its event.
 var payloadNames = map[string]string{
 	"session-start":              EventSessionStart,

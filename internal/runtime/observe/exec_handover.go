@@ -124,8 +124,8 @@ func (h *execFragments) discard(rec *Record, tid int) {
 
 // joinExec takes the supervisor's naming of the attempt a kernel exec record ends. With the outcome links attached
 // (ExecResults) every attempt ends in a record. Without them the plane may still decide the run's execs, and the
-// recorder's sched_process_exec record is the line of each one it allowed (supervisor.md R7a): that line joins the
-// naming too, so an anonymous image reads fileless and a dropped one dropped (supervisor R16b). Either way the attempt a
+// recorder's sched_process_exec record is the line of each one it allowed: that line joins the
+// naming too, so an anonymous image reads fileless and a dropped one dropped. Either way the attempt a
 // record joins is that exec's own (the hand-over gives the tid's latest attempt, and every trapped exec puts one
 // before it is answered), so a supervisor-owned naming means the supervisor wrote the exec's line and the caller
 // drops the kernel's (without the links a final drain after a recorder failure wrote it twice).

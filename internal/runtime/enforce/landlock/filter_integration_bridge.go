@@ -16,27 +16,27 @@ func BuildFilterMemfd(arch Arch, full bool, m MemfdArm) ([]bpf.Instruction, erro
 
 // BuildFilterWriteGate is the filter Prepare assembles for a run whose gate scores fs.write (filterOpts.gateWrite),
 // exposed only to the integration harness: the plain filter of BuildFilterMemfd with no memfd arm, plus the chmod
-// family notified at every record level (enforce-landlock R11, ADR 0041 Step 2).
+// family notified at every record level (ADR 0041 Step 2).
 func BuildFilterWriteGate(arch Arch, full bool) ([]bpf.Instruction, error) {
 	return buildFilter(arch, filterOpts{full: full, abi: minTruncateABI, unixBinds: true, gateWrite: true})
 }
 
 // BuildFilterReadGate is the filter Prepare assembles for a run whose gate scores fs.read only (filterOpts.gateRead),
 // exposed only to the integration harness: the plain filter of BuildFilterMemfd with no memfd arm, with every open
-// notified at every record level, a read-only one included (enforce-landlock R12).
+// notified at every record level, a read-only one included.
 func BuildFilterReadGate(arch Arch, full bool) ([]bpf.Instruction, error) {
 	return buildFilter(arch, filterOpts{full: full, abi: minTruncateABI, unixBinds: true, gateRead: true})
 }
 
 // BuildFilterSourceRoute is the plain filter of BuildFilterMemfd with no memfd arm, plus the source-route arm
 // (filterOpts.sourceRoute) Prepare installs for a run whose contract has a net: section or whose gate scores net
-// actions (enforce-landlock R11b), exposed only to the integration harness.
+// actions, exposed only to the integration harness.
 func BuildFilterSourceRoute(arch Arch) ([]bpf.Instruction, error) {
 	return buildFilter(arch, filterOpts{abi: minTruncateABI, unixBinds: true, sourceRoute: true})
 }
 
 // BuildFilterWatch is the plain filter of BuildFilterMemfd with no memfd arm, plus the watch arm (filterOpts.watches)
-// Prepare installs in every enforcing run (enforce-landlock R11e), exposed only to the integration harness.
+// Prepare installs in every enforcing run, exposed only to the integration harness.
 func BuildFilterWatch(arch Arch) ([]bpf.Instruction, error) {
 	return buildFilter(arch, filterOpts{abi: minTruncateABI, unixBinds: true, watches: true})
 }

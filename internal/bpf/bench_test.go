@@ -9,8 +9,8 @@ import (
 	"unsafe"
 )
 
-// BenchmarkDecodeHeader measures the per-record cost of the ring-buffer drain path, which docs/P0-DESIGN.md
-// §9 budgets by throughput: every record pays this once before dispatch.
+// BenchmarkDecodeHeader measures the per-record cost of the ring-buffer drain path, which is budgeted
+// by throughput: every record pays this once before dispatch.
 func BenchmarkDecodeHeader(b *testing.B) {
 	rec, err := binary.Append(nil, binary.NativeEndian,
 		ExecEvent{Hdr: Header{Version: EventsVersion, Kind: uint16(KindExec), Size: uint32(unsafe.Sizeof(ExecEvent{}))}})

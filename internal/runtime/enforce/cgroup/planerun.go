@@ -28,13 +28,13 @@ const PlaneFanotify = "fanotify"
 // (Run.PlaneRows, or compiled here). A table the plane cannot hold (more rows than a slot's maps, decide.ErrPlaneCap;
 // an exec entry that does not allow, decide.ErrPlaneExecVerdict) runs on the fanotify listener instead, which
 // decides it whole, and says so (DecisionPlane, the run's log): a plane that left rows out would enforce less
-// than the contract, the quieter run enforce-plane I7 forbids. Rows the caller handed over (Run.PlaneRows) that
+// than the contract, a quieter run that is never allowed. Rows the caller handed over (Run.PlaneRows) that
 // no longer hold are ErrPlaneRowsChanged, never the fallback: tier 1 was composed from them. The fallback is tier 2's alone: at tier bpflsm the
 // same failure (a hard link made between tier3Plane's check and this one, say) is an error wrapping
 // ErrPlaneCannotHold, which Prepare returns and unwinds on, never a tier-3 run on the listener (R19, §6 E13). So
 // is a table with built-in deny_write targets whose contract says fs.assurance: kernel, with no plane mode or one
-// that cannot hold it: the listener's supervisor refuses those targets only best effort (enforce-landlock R5a,
-// ADR 0041 D1 (a)); by default such a table takes the listener like any other.
+// that cannot hold it: the listener's supervisor refuses those targets only best effort
+// (ADR 0041 D1 (a)); by default such a table takes the listener like any other.
 func (h *Handle) choosePlane(rt *agent.RuleTable) error {
 	if h.opts.Plane.Mode == "" {
 		if rt.DenyWriteNeedsPlane() {
@@ -78,14 +78,14 @@ func (h *Handle) choosePlane(rt *agent.RuleTable) error {
 }
 
 // ErrPlaneSharedInode is a table two of whose fs rows are one file under two names (hard links of a file two
-// entries name, a deny_read and a write entry, say). The plane keys one fs row per inode (enforce-plane §2.4 condition
-// 4), and the fill refuses the second, failing every run of the table with exit 125; found here, before anything is
-// loaded, tier cgroup runs such a table on the listener and tier bpflsm refuses it with the reason (TIER3-PLAN T11).
+// entries name, a deny_read and a write entry, say). The plane keys one fs row per inode,
+// and the fill refuses the second, failing every run of the table with exit 125; found here, before anything is
+// loaded, tier cgroup runs such a table on the listener and tier bpflsm refuses it with the reason.
 // Exec entries on one inode are not a clash: each listed link has its own row (§6 E15).
 var ErrPlaneSharedInode = errors.New("two fs entries the plane keys are one file under two names")
 
 // sharedInode reports the first two fs rows of rows naming one inode now. Each row is stated as the plane keys it: a
-// NoFollow row (a deny_write target declared through a symlink, enforce-plane R11) at the link's own inode, the rest
+// NoFollow row (a deny_write target declared through a symlink) at the link's own inode, the rest
 // following a final symlink, so a link and its target are two rows, not one file under two names. A path that cannot
 // be stated is left to the fill, which skips an absent one and refuses the rest; a file linked or unlinked after this
 // check is the fill's to catch, and it fails closed.
@@ -131,7 +131,7 @@ func PlaneHoldableAt(rows *decide.PlaneRows, mounts *MountSnapshot) error {
 // shows outside it: a bind mount of a directory or of one file inside a deny_read directory, elsewhere. The plane's
 // walk crosses mounts (ADR 0025), so from a file there it meets the bind's root and then its mount point, never the
 // entry's row, and beneath a granted sibling it allowed the read (conformance mounts-bind/read-bind-alias-file, every
-// plane axis, 2026-11-11). The plane cannot hold such a table: tier cgroup falls back to the listener, which refuses the run at Prepare, and tier bpflsm refuses it before the run
+// plane axis). The plane cannot hold such a table: tier cgroup falls back to the listener, which refuses the run at Prepare, and tier bpflsm refuses it before the run
 // starts. A bind of the entry itself, of its parent or of its whole filesystem is no such part: the walk from a file
 // beneath it passes the entry's own directory.
 var ErrPlaneDetachedPart = errors.New("a bind mount shows part of a deny_read tree outside it, where the decision plane's walk never meets the entry")
@@ -163,7 +163,7 @@ func detachedParts(rows *decide.PlaneRows, snapshot func() *mountSnapshot) error
 // tier3Plane is tier bpflsm's precondition, checked at the top of Prepare: the plane handed over is in LSM mode, and
 // the table's rows fit it, compiled here when the caller did not (run.PlaneRows is set to them, so choosePlane uses
 // the same rows). A caller whose compile failed (run.PlaneErr) is refused with its error, never compiled again. choosePlane's fallback to the listener is tier 2's alone: a tier-3 run has no listener, and a
-// plane that left rows out would enforce less than the contract (enforce-plane R19, §6 E13, I7), so both refuse.
+// plane that left rows out would enforce less than the contract, so both refuse.
 func tier3Plane(p PlaneSetup, rt *agent.RuleTable, run *Run) error {
 	if p.Mode != ebpfbindings.PlaneLSM {
 		got := string(p.Mode)
@@ -293,7 +293,7 @@ func (h *Handle) unixPlane() *decide.PlaneRows {
 	return h.planeRows
 }
 
-// planeUnixPolicy is the run's unix policy for the plane's step D hooks (enforce-plane R14): where the plane decides
+// planeUnixPolicy is the run's unix policy for the plane's step D hooks: where the plane decides
 // unix names (below 6.7, where cgroup/connect_unix is not loaded) and the contract has a net: section, the plane
 // decides them as connect_unix would, admitting the supervisor's /proc/self/fd/<n> relay from this launcher's cgroup
 // (relayCgroup, which Attach writes into the network programs' owner on 6.7+). With no net: section nothing is
@@ -311,7 +311,7 @@ func (h *Handle) planeUnixPolicy() (planeUnixPolicy, error) {
 
 // PlaneChoice names what decides this run's opens, execs and fs mutations: lsm or fmod_ret, the plane's mode, or
 // fanotify, the listener; why is the reason a run asked for a plane mode got fanotify instead, nil otherwise. It is
-// what the run's log and the conformance runner read (enforce-plane §4, R24).
+// what the run's log and the conformance runner read.
 func (h *Handle) PlaneChoice() (plane string, why error) {
 	if h.planeMode != "" {
 		return string(h.planeMode), nil
@@ -379,7 +379,7 @@ func planeCounts(c ebpfbindings.PlaneCounts) []PlaneCount {
 }
 
 // preparePlaneFilter assembles, once the plane is loaded and filled, the inherited filter less what the plane's
-// attached hooks decide (landlock.Handle.PlaneFilter, enforce-plane R27). Nothing is assembled without a plane or
+// attached hooks decide (landlock.Handle.PlaneFilter). Nothing is assembled without a plane or
 // an inherited filter that can say, and SeccompFilter hands the result out only once UsePlaneFilter is called:
 // every notification is kept until then (fail closed).
 func (h *Handle) preparePlaneFilter() error {

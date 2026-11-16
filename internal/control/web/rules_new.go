@@ -17,7 +17,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// "Set up a new agent" (GET and POST /rules/new,): a form for a project folder, an agent
+// "Set up a new agent" (GET and POST /rules/new): a form for a project folder, an agent
 // name, the presets, and optional folders it may write, hosts it may reach and its command, or a finished run to start
 // from. Preview (a GET, which writes nothing) shows the contract's rules in sentences, what compile says and the YAML;
 // Create (a POST through postAllowed) writes <dir>/agent.yaml through the rule service, never over a file, and is

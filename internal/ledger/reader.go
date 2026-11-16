@@ -42,8 +42,7 @@ type Reader struct {
 
 // SkipNewerVersions makes Iter and Entries pass over a line whose record version is newer than this binary
 // reads (record.ErrNewerVersion) instead of stopping at it as corrupt, and count it (SkippedNewer). The views
-// (events, drift, measure, status) ask for it and warn once with the count (limits-check-doctor-cli.md §6
-// case 20); v 0, a missing or non-integer v and a malformed line still stop iteration as ErrCorruptLedger.
+// (events, drift, measure, status) ask for it and warn once with the count; v 0, a missing or non-integer v and a malformed line still stop iteration as ErrCorruptLedger.
 // Verify is unaffected: it checks such a line's link in the chain (record.Chain.AddNewer).
 func (r *Reader) SkipNewerVersions() { r.skipNewer = true }
 
@@ -503,8 +502,8 @@ func verifyRunDir(ctx context.Context, dir string, anchor ChainAnchor, validate 
 // one path may cross (MAXSYMLINKS).
 const maxRunDirLinks = 40
 
-// RunDirPath is the path that names the run directory dir, whose last component is the run R29 verifies
-// (record-ledger.md §4): dir made absolute and lexically cleaned, as OpenReader joins it, and returned as
+// RunDirPath is the path that names the run directory dir, whose last component is the run R29 verifies:
+// dir made absolute and lexically cleaned, as OpenReader joins it, and returned as
 // it is whenever that last component is a run id. A relative dir is taken from the working directory as
 // os.Getwd names it — $PWD when $PWD is that directory, so after a shell's cd through a link, "." ends in
 // the link's name. The link a run id names is never resolved: a run directory replaced by a link to

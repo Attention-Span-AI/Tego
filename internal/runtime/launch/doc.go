@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package launch starts the agent's main process under enforcement and drives its lifetime
-// (docs/p0/runtime-launch.md §4–§6, ARCHITECTURE.md §5–§6, ADR 0006 as amended).
+// (ARCHITECTURE.md §5–§6, ADR 0006).
 //
 // The child stage, ChildMain, is what `tego __child` runs: on one locked OS thread it reads a framed
 // ChildSpec from fd 3, applies the working directory, drops capabilities and restores
@@ -27,7 +27,7 @@
 // handler's Outcome to the run_end reason and the exit code of tego run per RUN-IDENTITY.md. A launcher
 // whose handle owns a listener the host waits on (tier 2's fanotify group) ignores the job-control stops
 // SIGTSTP, SIGTTIN and SIGTTOU (HoldJobControl), and its child stage resets them to the default before it
-// execs the agent, so Ctrl-Z stops the agent and never the launcher (enforce-cgroup-observe.md E40).
+// execs the agent, so Ctrl-Z stops the agent and never the launcher.
 //
 // Imports: internal/runtime/enforce/api, internal/runtime/deputy, internal/platform/{proc,sys}, pkg/spec/identity
 // Must not import: internal/check, internal/serve, internal/cli, internal/runtime/enforce or any backend under it,

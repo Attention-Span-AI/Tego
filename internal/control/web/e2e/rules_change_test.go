@@ -168,7 +168,7 @@ func TestRulesChangeJourney(t *testing.T) {
 		t.Errorf("/bin/sleep, which the new rules allow, exited %q after the change applied now (%s)", out("rc3"), out("err3.txt"))
 	}
 	// Waited for, not read once: the supervisor answers a refused exec before the pipeline writes its line
-	// (supervisor.md R23, "what a reader may rely on"), so the line can land after the agent saw the refusal and
+	// ("what a reader may rely on"), so the line can land after the agent saw the refusal and
 	// wrote rc2. In a gate run under load one read made as soon as rc2 appeared found no refused line, and the run's
 	// ledger held it when the test ended (the second ls, refused 40 ms after the block landed).
 	until(t, "an exec line refused by the live block", 20*time.Second, func() bool {

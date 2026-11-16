@@ -161,7 +161,7 @@ func (c *collector) fold(pid int32, g *procconn.Group, n int) int {
 }
 
 // TestIntegrationAProcessEndsAtItsEventsWithAStatusWaitAgrees: procconn.Group over the real kernel's events, for each
-// shape of end the reviews found, many times: the
+// shape of end, many times: the
 // process is listed after the listener was subscribed, its events are folded from there, and the end is reached;
 // a status Group knows is the one wait(2) reports, and the shapes whose compared codes always agree give one. A failed
 // exec's (badexec) is known only when the zapped main thread's exit names the leader's pid: one filled after de_thread

@@ -143,7 +143,7 @@ func (k *orderingKiller) Kill(cgroup.Cgroup) error {
 // TestTripOrdersEventCallbackThenKill proves the order TestKillFailureIsReported's counts alone
 // cannot: that the limit event and the onBreach callback both precede the Kill call, not merely that
 // all three eventually happen.
-// (limits-check-doctor-cli.md E25: a breach racing an operator stop still has its limit event appended before the kill, so run_end's reason precedence can consult it.)
+// (A breach racing an operator stop still has its limit event appended before the kill, so run_end's reason precedence can consult it.)
 func TestTripOrdersEventCallbackThenKill(t *testing.T) {
 	sink, clk := &fakeSink{}, &fakeClock{}
 	var breached bool

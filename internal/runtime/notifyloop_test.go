@@ -21,7 +21,7 @@ import (
 // number startNotifyLoop is given; the write end is closed when the test ends.
 //
 // Raw on purpose. startNotifyLoop hands the number to supervisor.New, and from there "Run closes it
-// once, as its shutdown step" (supervisor.md §3) — so nothing else in this process may own it. An
+// once, as its shutdown step" — so nothing else in this process may own it. An
 // *os.File would: os.File.Fd's own documentation says "do not close the returned descriptor", because
 // the File closes it again from its finalizer at whatever moment the collector next runs. That second
 // close is a double close, and it does not land on the pipe — by then the number has been handed back out, so

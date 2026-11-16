@@ -12,7 +12,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestTheRunsOwnCodexHomeIsNotProposed is agent-contract.md R10a's learn half: writes the run's own CODEX_HOME grant
+// TestTheRunsOwnCodexHomeIsNotProposed: writes the run's own CODEX_HOME grant
 // allowed (fs.codex_home[...]) are granted by every run itself, under a path holding the run id, so they are neither
 // proposed nor listed as writes outside the workspace; the header counts them.
 func TestTheRunsOwnCodexHomeIsNotProposed(t *testing.T) {
@@ -31,8 +31,8 @@ func TestTheRunsOwnCodexHomeIsNotProposed(t *testing.T) {
 	}
 }
 
-// TestAPathSearchProposesTheProgramThatExists : a record taken before supervisor.md
-// R23a held one bash search with attempts out of order, /usr/sbin/bash recorded after the /usr/bin/bash that ran,
+// TestAPathSearchProposesTheProgramThatExists: a record taken by an older supervisor
+// held one bash search with attempts out of order, /usr/sbin/bash recorded after the /usr/bin/bash that ran,
 // and learn took the last attempt, which tego compile refuses (path-missing). The attempt that started a program is
 // the one that is a program on this machine.
 func TestAPathSearchProposesTheProgramThatExists(t *testing.T) {

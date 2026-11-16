@@ -22,7 +22,7 @@ func addrs(ss ...string) []netip.Addr {
 	return out
 }
 
-// exampleCom is what example.com resolved to in the guest on 2026-11-10: the four addresses its lookup returned,
+// exampleCom is what example.com resolved to in the guest: the four addresses its lookup returned,
 // which the run's address-sorting UDP connects (#139 to #144) show.
 var exampleCom = HostAnswer{Host: "example.com", Addrs: addrs("104.20.23.154", "172.66.147.243", "2606:4700:10::6814:179a", "2606:4700:10::ac42:93f3")}
 
@@ -265,7 +265,7 @@ func TestAllowHostRecordNames(t *testing.T) {
 }
 
 // TestAllowHostDoesNotNameTheMachinesResolver: a name whose answer holds the machine's resolver does not stand for it
-// (review S1 of 2026-11-11). Covering it alone, the name covers nothing, and the problem says the run reached that
+// Covering it alone, the name covers nothing, and the problem says the run reached that
 // address only as the resolver; beside another address it reached, the name covers that one only, and the resolver
 // is left out as before.
 func TestAllowHostDoesNotNameTheMachinesResolver(t *testing.T) {

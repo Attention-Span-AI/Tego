@@ -14,7 +14,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/ledger"
 )
 
-// TestComputeStreamsAHugeLedger is limits-check-doctor-cli.md E10 (§6 case 10) for drift.Compute: over a ledger
+// TestComputeStreamsAHugeLedger, for drift.Compute: over a ledger
 // of tens of thousands of events the live heap stays O(1) beyond the running aggregates, because the events are
 // streamed through ledger.Reader.Iter and never held. The ledger here is 60k exec lines (well over 20 MB on
 // disk); the heap is sampled while Compute runs, and its peak growth over the pre-run baseline must stay a

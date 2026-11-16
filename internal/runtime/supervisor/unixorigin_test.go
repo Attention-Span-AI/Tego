@@ -472,7 +472,7 @@ func BenchmarkUnixDump(b *testing.B) {
 // unixPassUnboundMax of the run's sockets bound, in a set full of sockets bound to nothing with bindRecsMax binds each,
 // all under runSockets.mu. A socket is settled by keeping its binding and the moment it was seen (boundLocked) and
 // asked about by its binds' times (runSock.birth), so the pass does no work per remembered socket beyond its sweep;
-// the cross-socket scan the review measured at about 58 ms per pass is gone.
+// no cross-socket scan (about 58 ms per pass) is made.
 func BenchmarkR11aSweepSettles(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {

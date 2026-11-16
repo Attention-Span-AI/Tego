@@ -62,7 +62,7 @@ except OSError as e:
 //   - a deny_read over tego is decided like any other file: the agent's read of it is refused, by the group with
 //     EPERM and a source=fanotify line naming the entry where the run decides through fanotify, by the decision
 //     plane with EACCES and a source=kernel read-denied line naming it where doctor selected a plane mode
-//     (TIER3-PLAN T6; the plane's rows exist before the run-set row that arms them, as the marks did); either line
+//     (the plane's rows exist before the run-set row that arms them, as the marks did); either line
 //     names the file by the denied link the agent opened, not by the name tego runs from.
 //
 // It runs as root with SUDO_UID set. It needs the objects in the tego it builds, not in this test binary, so

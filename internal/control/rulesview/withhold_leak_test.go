@@ -229,7 +229,7 @@ func TestWithholdKeepsTheAddressWordTrue(t *testing.T) {
 
 // TestWithholdPutsTheResolverBack: learn leaves the machine's resolver out beside a TCP or UDP entry, since Landlock
 // grants port 53 beside one (learn keepResolvers). When Withhold comments out the last such entry, the resolver goes
-// back in as learn would have kept it; while one is left, it stays out (review M1 of 2026-11-11).
+// back in as learn would have kept it; while one is left, it stays out.
 func TestWithholdPutsTheResolverBack(t *testing.T) {
 	const sink, api, resolver = "203.0.113.66:443", "203.0.113.9:443", "udp://10.0.2.3:53"
 	text := func(dsts ...string) string {

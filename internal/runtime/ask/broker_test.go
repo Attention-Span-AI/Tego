@@ -448,7 +448,7 @@ func TestValidRequestPairsTheOpenHoldWithAnOpen(t *testing.T) {
 // TestBrokerAnswerIsRepliedWhenTheRunEndsOnIt is the person's side of a run that ends on its answer: the held
 // operation gets the decision, the agent exits, and the run closes the broker at once, before the handler that took
 // the answer wrote its reply. The person's `tego deny` must still be told the decision it made, not EOF on a closed
-// socket (the flake TestIntegrationTegoInsideADenyListRun showed under load on 2026-10-25), nor the server's
+// socket (a flake TestIntegrationTegoInsideADenyListRun showed under load), nor the server's
 // cancellation when the decision was already taken.
 func TestBrokerAnswerIsRepliedWhenTheRunEndsOnIt(t *testing.T) {
 	for i := range 50 {

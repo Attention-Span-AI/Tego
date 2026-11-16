@@ -12,10 +12,10 @@ import (
 )
 
 // TestNoUserManagerIsItsOwnCause: a user whose user manager is not running (an account with a nologin or false shell
-// reached through sudo -u or su -s, which never logged in, acceptance 2B, 2026-11-11) has no user@<uid>.service
+// reached through sudo -u or su -s, which never logged in) has no user@<uid>.service
 // cgroup at all. Detect refused it with the delegation fix ("enable systemd user delegation"), which changes nothing:
 // delegation was on. It is now ErrNoUserManager, whose fix starts that user's manager without a login (sudo loginctl
-// enable-linger <name>, the name from the passwd entry, measured on Fedora 44), and still ErrNotDelegated. A
+// enable-linger <name>, the name from the passwd entry, as on Fedora 44), and still ErrNotDelegated. A
 // candidate that exists but is not writable keeps the delegation fix, and so does a mount with no user.slice (no
 // systemd layout to start a manager in).
 func TestNoUserManagerIsItsOwnCause(t *testing.T) {
@@ -49,8 +49,7 @@ func TestNoUserManagerIsItsOwnCause(t *testing.T) {
 	if got := LingerCommand(1003); got != "sudo loginctl enable-linger 1003" {
 		t.Errorf("a uid with no passwd entry: %q", got)
 	}
-	// A name loginctl would read as an option (a leading '-') or as a uid (all digits), quoted or not: the uid
-	// (the review's S4).
+	// A name loginctl would read as an option (a leading '-') or as a uid (all digits), quoted or not: the uid.
 	for uid, want := range map[int]string{1004: "sudo loginctl enable-linger 1004", 1005: "sudo loginctl enable-linger 1005"} {
 		if got := LingerCommand(uid); got != want {
 			t.Errorf("uid %d: %q, want %q", uid, got, want)
@@ -75,7 +74,7 @@ func TestNoUserManagerIsItsOwnCause(t *testing.T) {
 // TestTheNoManagerFixOpensTheShellAsThatUser: after linger, the shell in the user's manager is opened as that user. The
 // fix said "opened with XDG_RUNTIME_DIR=/run/user/1001 systemd-run --user --scope bash", which the administrator who
 // reads it typed in their own shell: on Ubuntu 24.04 and AlmaLinux 9.8 that opened the administrator's own scope, and on
-// Fedora 44 it failed (acceptance 3, 2026-11-11). The fix now names sudo -u and the user's name from the passwd entry,
+// Fedora 44 it failed. The fix now names sudo -u and the user's name from the passwd entry,
 // or '#<uid>' when sudo would not read the name as itself, and says whose shell it opens.
 func TestTheNoManagerFixOpensTheShellAsThatUser(t *testing.T) {
 	prev := lookupName
@@ -101,7 +100,7 @@ func TestTheNoManagerFixOpensTheShellAsThatUser(t *testing.T) {
 }
 
 // TestANameSystemdRefusesHasNoLingerFix: for an account whose name systemd refuses (digits only: the user 4242 on
-// Ubuntu 24.04, acceptance 3, 2026-11-11), loginctl enable-linger exits 0 and no user manager starts, so tego setup
+// Ubuntu 24.04), loginctl enable-linger exits 0 and no user manager starts, so tego setup
 // named the same command again. ManagerRefused says so from the passwd entry, and the fix names no linger command
 // and no scope: it says what an administrator can do instead.
 func TestANameSystemdRefusesHasNoLingerFix(t *testing.T) {
@@ -135,8 +134,8 @@ func TestANameSystemdRefusesHasNoLingerFix(t *testing.T) {
 
 // TestThePlacementFixOpensTheShellAsThatUserForAnotherReader: after linger, sudo -u svc tego doctor printed on stdout,
 // and tego run, watch and test in their error line, the fix "open one with systemd-run --user --scope bash", which the
-// administrator who reads it typed in their own shell, where it opens the administrator's own scope (acceptance 3,
-// 2026-11-11, Ubuntu 24.04 12:05:42; the review's M1), beside a next: line that named sudo -u. CanPlace's refusal now
+// administrator who reads it typed in their own shell, where it opens the administrator's own scope
+// (Ubuntu 24.04), beside a next: line that named sudo -u. CanPlace's refusal now
 // names the sudo -u command when the reader is another user (config.ReadByAnother), and the bare command, as before,
 // when the reader is the user.
 func TestThePlacementFixOpensTheShellAsThatUserForAnotherReader(t *testing.T) {
@@ -174,7 +173,7 @@ func TestThePlacementFixOpensTheShellAsThatUserForAnotherReader(t *testing.T) {
 			}
 		}
 	}
-	// A name sudo would read as a uid ('#0' is uid 0) or that NSS marks ('+'): the uid, never the name (the review's S3).
+	// A name sudo would read as a uid ('#0' is uid 0) or that NSS marks ('+'): the uid, never the name.
 	for uid, want := range map[int]string{1002: "sudo -u svc ", 1003: "sudo -u '#1003' ", 1004: "sudo -u '#1004' "} {
 		if got := PlacementFix(uid, true); !strings.Contains(got, want) {
 			t.Errorf("uid %d: %q, want %q", uid, got, want)

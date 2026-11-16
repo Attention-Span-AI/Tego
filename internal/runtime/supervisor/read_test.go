@@ -76,7 +76,7 @@ func TestCStringBounds(t *testing.T) {
 }
 
 // TestResolveDirfd covers R6's three shapes and E8's unlinked directory.
-// supervisor.md E12: a /proc/<pid>/{cwd,fd/N} link is read once and never followed again (the "loop" case below).
+// A /proc/<pid>/{cwd,fd/N} link is read once and never followed again (the "loop" case below).
 func TestResolveDirfd(t *testing.T) {
 	tests := []struct {
 		name       string

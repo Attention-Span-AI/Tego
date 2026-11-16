@@ -40,7 +40,7 @@ const (
 // Options bound one Assembler. The zero value is the defaults above, which is what every caller but a
 // test wants.
 //
-// docs/p0/capture-derive.md §4 sketches NewAssembler(maxHeader, maxChunk int); the two ints are not enough
+// The design sketched NewAssembler(maxHeader, maxChunk int); the two ints are not enough
 // for the five bounds R11, R13 and R14 actually name, so they are a struct here and the body window is not
 // a cap at all (R14: bodies stream, only chunks are capped, and only in the kernel).
 type Options struct {

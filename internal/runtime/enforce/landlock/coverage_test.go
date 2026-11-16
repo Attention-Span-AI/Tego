@@ -37,8 +37,6 @@ func (p *probeCounter) CreateRuleset(attr *unix.LandlockRulesetAttr, flags int) 
 // circuits sync.Once before it ever runs — they cannot see a repeated *probe*). This calls ABI() and
 // Capabilities() several times, then Prepare (which reads ABI() again internally), and requires
 // exactly one landlock_create_ruleset(NULL, VERSION) call total.
-//
-// Spec: docs/p0/enforce-landlock.md R1.
 func TestBackendABIProbedOnce(t *testing.T) {
 	root := tempDir(t)
 	mkTree(t, root, "out/")
@@ -72,8 +70,6 @@ func TestBackendABIProbedOnce(t *testing.T) {
 // bd.profile.Scope and always declared both scopes (a plausible copy/paste of the ABI-6-and-up value)
 // would pass every existing test yet leak SCOPE_SIGNAL/SCOPE_ABSTRACT_UNIX_SOCKET into a ruleset built
 // for a pre-ABI-6 kernel, where the kernel header does not define those scope bits at all.
-//
-// Spec: docs/p0/enforce-landlock.md R2.
 func TestCreateRulesetScopeByABI(t *testing.T) {
 	cases := []struct {
 		abi  int
@@ -105,8 +101,6 @@ func TestCreateRulesetScopeByABI(t *testing.T) {
 // — the one-line wiring in builder.build() (`bd.rt.Record == agent.RecordFull`) has no test of its
 // own. A build() that always requested the summary variant (or always the full one) would pass every
 // filter_test.go case yet silently ignore the contract's record: full setting in production.
-//
-// Spec: docs/p0/enforce-landlock.md R16.
 func TestPrepareRecordFull(t *testing.T) {
 	// A table with no contract is net-restricted (agent.RuleTable.NetUnrestricted), so both carry the socket
 	// arm (ADR 0018), R11d's pending-frame arms (it decides datagrams) and R11b's source-route arm; and every
@@ -149,8 +143,6 @@ func TestPrepareRecordFull(t *testing.T) {
 // through enumerate()'s kindDenyTarget hold, a different function with different error handling
 // (enumerate() tolerates ErrPathVanished; the plain hold() path used elsewhere does not) — nothing
 // calls sibling() itself with an absent name.
-//
-// Spec: docs/p0/enforce-landlock.md E28.
 func TestSiblingVanishedMidWalk(t *testing.T) {
 	root := tempDir(t)
 	mkTree(t, root, "d/stays")

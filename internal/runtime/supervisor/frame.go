@@ -13,7 +13,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// Pending frames (R13, ADR 0008's design note of 2026-10-20). A UDP, UDP-Lite or raw IP socket can hold a pending
+// Pending frames (R13, ADR 0008). A UDP, UDP-Lite or raw IP socket can hold a pending
 // frame: a send carrying MSG_MORE, a sendfile or splice whose last write carried it, or UDP_CORK set, leaves the
 // frame's bytes queued on the socket, and every later send on it joins that frame before the protocol reads the send's
 // own address (udp_sendmsg and udpv6_sendmsg append before they read msg_name, and before the run's sendmsg4/6 runs;
@@ -109,7 +109,7 @@ func (l *Loop) frameFree(t *target, flags int) bool {
 }
 
 // refuseCork answers the setsockopt(SOL_UDP or SOL_UDPLITE, UDP_CORK) the filter notifies in a run that decides
-// datagrams (enforce-landlock R11): refused with R10's errno, recorded refused, op setsockopt, rule datagram-corked,
+// datagrams: refused with R10's errno, recorded refused, op setsockopt, rule datagram-corked,
 // whatever the value and whatever the socket. Setting the cork would make every later datagram of the socket join one
 // frame; the value is in the agent's memory, where a decision on it would race a sibling thread, and the level and
 // option are the scalars the filter matched. An uncork is refused with it: the run can cork no socket, so one it

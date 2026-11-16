@@ -18,8 +18,8 @@ const MaxToolResults = 256
 // MaxToolUseIDLen bounds one tool_use id; a longer one makes the message unread. The API's own ids are about 30 bytes.
 const MaxToolUseIDLen = 256
 
-// ToolResults reads the tool_use ids a Messages API turn's last message reports results for (derive.RequestReader,
-// capture-derive R42). Only a POST to the Messages endpoint whose body capture kept whole, and decoded when it was
+// ToolResults reads the tool_use ids a Messages API turn's last message reports results for (derive.RequestReader).
+// Only a POST to the Messages endpoint whose body capture kept whole, and decoded when it was
 // coded, is read; every other request is not read and says so.
 func (p *Parser) ToolResults(req *derive.Message) ([]string, bool) {
 	if req == nil || req.Method != http.MethodPost || req.Truncated ||

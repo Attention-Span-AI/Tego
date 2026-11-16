@@ -346,7 +346,7 @@ func TestPlaneCORERelocationsResolve(t *testing.T) {
 // TestAdoptedObjectsPinEveryMapByName: a later launcher of a build adopts an object's pinned programs only when every
 // map the object declares, but its global-variable sections, is pinned by name (enforce/cgroup adoptObjectIn), or it
 // loads and verifies the whole object again. The plane's unpinned tego_plane_path_buf did that to every run of a
-// plane mode, 0.6 s of each start in the 6.17 guest (enforce-plane §2.18), and no test noticed: each still ran.
+// plane mode, 0.6 s of each start in the 6.17 guest, and no test noticed: each still ran.
 func TestAdoptedObjectsPinEveryMapByName(t *testing.T) {
 	type build struct {
 		obj    Object

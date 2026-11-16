@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestPrepareAndArmReportTheirStartPhases: the start-latency budget (enforce-plane §10) is read from these
+// TestPrepareAndArmReportTheirStartPhases: the start-latency budget is read from these
 // phases, so each step of Prepare's order and Arm names itself once, in order, on Options.Phase.
 func TestPrepareAndArmReportTheirStartPhases(t *testing.T) {
 	t.Parallel()

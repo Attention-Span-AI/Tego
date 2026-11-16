@@ -18,7 +18,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// Codex routing (docs/p0/capture-derive.md R19b, spec/identity/RUN-IDENTITY.md's CODEX_HOME row). Codex
+// Codex routing (spec/identity/RUN-IDENTITY.md's CODEX_HOME row). Codex
 // ignores OPENAI_BASE_URL and reads openai_base_url only from the config.toml under CODEX_HOME, so a run
 // whose forwarder has an openai listener gives Codex a CODEX_HOME of its own: a directory in the run's
 // runtime directory holding identity.CodexConfig's file, tego's key first and the user's own config.toml
@@ -111,7 +111,7 @@ func (r *runner) writeCodexHome() error {
 type fileID struct{ dev, ino uint64 }
 
 // GapCodexUnrouted is gap what=capture why=codex-unrouted binary=codex: a run with an openai listener that wrote no
-// CODEX_HOME, which only a root launcher does (agent-contract.md R10a (3)), so a Codex in it is not routed through
+// CODEX_HOME, which only a root launcher does, so a Codex in it is not routed through
 // the forwarder; the models[] guard refuses its own calls to the model (E27), so it fails closed, and the record says
 // why.
 const GapCodexUnrouted = "codex-unrouted"

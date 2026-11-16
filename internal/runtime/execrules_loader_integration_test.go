@@ -188,7 +188,7 @@ func TestIntegrationExecRuleStaticPieRestricted(t *testing.T) {
 }
 
 // TestIntegrationExecRuleDispatchDepth: a multicall binary that re-dispatches to itself (busybox has a `busybox`
-// applet) must not let a denied applet slip past the matcher's dispatch-depth bound (2026-10-06).
+// applet) must not let a denied applet slip past the matcher's dispatch-depth bound.
 // Under deny: [rm -r], `busybox rm -r out/tree` is refused via multicall, and so is `busybox`x5 + `rm -r out/deep`,
 // which before the fix was allowed unmatched and deleted the tree in-process (one execve of busybox, no execve of
 // rm); the exec is refused command-unresolved (fail closed). A nested busybox that runs a non-denied applet

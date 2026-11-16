@@ -403,8 +403,8 @@ func (fs *FS) WaitEmpty(ctx context.Context, c Cgroup) error {
 // Events emits the populated flag: the state at subscription first, then every transition, until
 // ctx ends, when the channel is closed. The goroutine it starts is owned by the returned channel's
 // lifetime and exits on ctx; a read error ends the stream the same way. runtime.Run does not call it: it
-// is kept because P0-DESIGN.md §2.5 freezes Manager with it, and Run waits on WaitEmpty and polls
-// ReadLimitEvents instead (docs/p0/runtime-launch.md §4).
+// is kept because the Manager interface is frozen with it, and Run waits on WaitEmpty and polls
+// ReadLimitEvents instead.
 func (fs *FS) Events(ctx context.Context, c Cgroup) (<-chan bool, error) {
 	last, err := Populated(c)
 	if err != nil {

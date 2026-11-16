@@ -72,7 +72,7 @@ func ParseResponse(status int, body []byte) (*Response, error) {
 	}
 	if !resp.Usage.present {
 		// A message that reports no usage object spent what nothing here can read: counting it as zero let
-		// a budget pass it unseen (limits-check-doctor-cli.md R1 (a)). It is unparsed, and the Dispatcher
+		// a budget pass it unseen. It is unparsed, and the Dispatcher
 		// reports a successful one unmetered.
 		return nil, fmt.Errorf("%w: message response carries no usage (status %d)", ErrSchema, status)
 	}

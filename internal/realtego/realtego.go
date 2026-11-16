@@ -3,8 +3,7 @@
 // Package realtego names the ~/.tego directories of the accounts a process could reach through the passwd
 // database (and through $HOME for an account it names no home for), and the runtime parents
 // (<XDG_RUNTIME_DIR>/tego) where those accounts' runs keep their private directories. It is for the code that keeps a test or a test
-// build away from them: internal/testutil's guards and the tegotesthooks build of internal/cli (identity-config.md
-// R27). A product build imports nothing of it.
+// build away from them: internal/testutil's guards and the tegotesthooks build of internal/cli. A product build imports nothing of it.
 package realtego
 
 import (

@@ -19,8 +19,8 @@ import (
 // TestReleaseKernelStateDoesNotCloseTheSupervisorsListener pins the notify fd's single owner.
 //
 // supervisor.New takes the listener ("Run closes it once, as its shutdown step"), Loop.Run closes it
-// on every return path it has, and docs/p0/runtime-launch.md §9 requires that every fd this package
-// holds is "closed exactly once, on exactly one code path" — so releaseKernelState must not close
+// on every return path it has, and every fd this package
+// holds must be closed exactly once, on exactly one code path — so releaseKernelState must not close
 // that number again. The second close is not benign: it lands after the drain and the ledger's Close
 // have opened and closed files, so the kernel's lowest-free-fd rule can have handed the number to an
 // unrelated, still-open descriptor. This test stands exactly such a descriptor at the number the

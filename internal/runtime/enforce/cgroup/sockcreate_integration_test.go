@@ -26,7 +26,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// ADR 0018 PR 2's attach cells (docs/p0/enforce-cgroup-observe.md §5 R4, R5; v73 roadmap SOCK-ATTACH): a tier-2 run's
+// ADR 0018 PR 2's attach cells: a tier-2 run's
 // Attach puts cgroup/sock_create on the run's cgroup beside the CGROUP_SOCK_ADDR programs, pins it with them, and
 // writes the owner storage it reads its run from (the ping flag and the generation). The helpers are this test binary
 // re-executed into the run's cgroup with no seccomp filter, which stands for any path to inet_create the filter

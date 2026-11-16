@@ -8,12 +8,11 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// This file is the root model reduced to what tier 3's decision plane keys by inode (ADR 0024, ADR 0025 (1);
-// docs/p0/TIER3-PLAN.md §3): one row per path an entry names, each carrying the answer the nearest-wins walk
-// takes when it stops there. The plane's row compiler (ADR 0028 S4, TIER3-PLAN T5; planerows.go) completes these
+// This file is the root model reduced to what tier 3's decision plane keys by inode (ADR 0024, ADR 0025 (1)): one row per path an entry names, each carrying the answer the nearest-wins walk
+// takes when it stops there. The plane's row compiler (ADR 0028 S4; planerows.go) completes these
 // rows into the ones the kernel walks. What is here is the reference the rows are checked against: RootIndex.Walk is the walk bpf/decide.bpf.c makes, over the rows alone, and
 // TestRootWalkMatchesEvaluate holds it, through the test oracle in rootoracle_test.go, to Evaluate's bpflsm column, so the plane and compile --test cannot
-// disagree about the contract (TIER3-PLAN §5).
+// disagree about the contract.
 
 // RootCell is one question's answer at one row: the entry that decides it there, and its verdict.
 type RootCell struct {
@@ -71,7 +70,7 @@ func NewRootIndex(rows []RootRow) RootIndex {
 	return x
 }
 
-// Walk is the root model's walk over the rows alone, as the plane makes it (TIER3-PLAN §3): from path, a
+// Walk is the root model's walk over the rows alone, as the plane makes it: from path, a
 // clean absolute canonical path, through each parent to "/", at most agent.MaxWalk steps, the first row whose
 // cell for the question decides answers it. A walk that meets no deciding cell is unmatched: a read is
 // allowed and a modification refused. One that meets no row at all within the bound, on a path deeper than

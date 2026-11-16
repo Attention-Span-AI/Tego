@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestAPathThatDoesNotDecodeIsCorruptionNotASpecialCase is limits-check-doctor-cli.md E11. The writer
+// TestAPathThatDoesNotDecodeIsCorruptionNotASpecialCase. The writer
 // escapes a kernel path's non-UTF-8 bytes into valid JSON, so a path this view cannot decode is a damaged
 // line and takes case 3's road: a hard error naming ErrCorruptLedger, with no report guessed from the lines
 // around it. A path that decodes, escapes included, is only a path.

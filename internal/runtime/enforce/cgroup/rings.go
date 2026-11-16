@@ -24,7 +24,7 @@ import (
 // create a ring counts what every live ring charges now, under one host-wide lock, and a run whose record ring
 // does not fit is refused with ErrRingBudget.
 //
-// A slot keeps its rings after its run (ADR 0026 (6) as amended). Every update or delete of a map-in-map outer
+// A slot keeps its rings after its run (ADR 0026 (6)). Every update or delete of a map-in-map outer
 // waits for an RCU grace period in the kernel (maybe_wait_bpf_programs), 7-15 ms each on 6.17 in the KVM guest,
 // and a run that placed two rings and removed them paid four: about 30 ms of kill test 4's go build. So the rings
 // of a build's slots below ringPoolSlots stay in the outers when the run ends, still counted in the budget, and
@@ -75,8 +75,7 @@ func (h *Handle) wantRings() map[string]uint32 {
 // every build's live rings charge and places what is missing, reclaiming every ring no run holds when the room
 // is short. A record ring that does not fit the budget refuses the run (ErrRingBudget). A capture ring that does
 // not fit is left out, and the run goes on without one: its uprobe source then finds no ring and says why, and
-// the runtime refuses the run only when a token, cost or repeats budget needed that capture
-// (limits-check-doctor-cli R32).
+// the runtime refuses the run only when a token, cost or repeats budget needed that capture.
 func (h *Handle) placeRings() error {
 	want := h.wantRings()
 	unlock, err := h.lockRings(unix.LOCK_SH)

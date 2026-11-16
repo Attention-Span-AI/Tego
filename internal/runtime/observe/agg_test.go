@@ -87,7 +87,7 @@ func TestAggTableWindowSurvivesOutOfOrderSamples(t *testing.T) {
 // TestAggTableFlushExecTouchesOnlyThatProcess is the indexing guarantee: an exit flushes one process's
 // buckets and leaves every other process's alone, without reading them.
 //
-// Also pins record-ledger.md E2: the aggregation window of an (exec, rule) closes when that exec ends.
+// Also pins: the aggregation window of an (exec, rule) closes when that exec ends.
 func TestAggTableFlushExecTouchesOnlyThatProcess(t *testing.T) {
 	tab := newAggTable(0)
 	tab.add(aggKey{ExecID: "a", Rule: "fs.read[.]"}, aggEntry{LastNS: 1})

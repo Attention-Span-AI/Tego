@@ -45,7 +45,7 @@ func (f *fanotifyListener) stats() (answered, refused, timeouts, dropped int64) 
 // in the state directory, and for a build under DefaultBPFFS the one in hoststate.Path is the lock every tego
 // process on the machine takes: a launcher's Prepare and its last-out removal, a reaper's build duties, the build's
 // linger timer, gc's sweep. A test with a state directory of its own held a lock no other process saw while it
-// shared their pins: on 2026-10-16 the linger timer an earlier end-to-end test's run had left (bpf.linger 5m) swept
+// shared their pins: once the linger timer an earlier end-to-end test's run had left (bpf.linger 5m) swept
 // the build, idle by the only lock it read, while TestNetworkReservationRowsAreBoundedOnRealKernel's Prepare was
 // pinning it, and the pin failed ENOENT. openState now refuses that pairing (TestHostPinsLockOnlyInTheHostStateDir).
 // A test whose pins lie under another root (a temporary directory, a bpffs mount of its own) keeps a directory of

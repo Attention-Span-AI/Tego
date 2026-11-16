@@ -56,7 +56,7 @@ type Clock interface {
 	MonoNS() uint64
 }
 
-// Deps are the injected components of one run (P0-DESIGN §2.4). Nil optional members disable that source.
+// Deps are the injected components of one run. Nil optional members disable that source.
 type Deps struct {
 	Config  *config.Machine
 	Cgroups cgroup.Manager
@@ -89,7 +89,7 @@ type Deps struct {
 	// CaptureGaps are the shortfalls the caller's own capture selection already implies —
 	// capture.Select's second return, a mechanism this binary does not carry or could not build.
 	// They are written to the ledger right after run_start, because a capture shortfall is always a
-	// gap event and never a silence (docs/p0/capture-derive.md §8 I4).
+	// gap event and never a silence.
 	CaptureGaps []source.Gap
 
 	// Build is what run_start records about this binary; internal/cli fills it from its own
@@ -126,7 +126,7 @@ type Deps struct {
 	// agent's own run. A role identity.Role.Valid does not know is ErrDeps.
 	Role identity.Role
 	// Started is called once per run, after run_start is durable and the gaps that follow it are queued, and before
-	// the agent is released (runtime-launch.md §4.1 step 9a, ADR 0073): the one point where the run id and its
+	// the agent is released (ADR 0073): the one point where the run id and its
 	// directory exist and the agent has not run. The agent waits for it to return. An error ends the run before the
 	// agent execs: run_end reason error with a detail naming the hook, exit 125. A panic is not recovered (R14). nil
 	// calls nothing.
@@ -140,7 +140,7 @@ type Deps struct {
 	// Cwd is the agent's working directory; "" means the launcher's own.
 	Cwd string
 	// ContractSource is the contract file the launching user named, by path or by registry name, which run_start
-	// records (agent-contract.md R26); nil for a contract tego generated.
+	// records; nil for a contract tego generated.
 	ContractSource *record.ContractSource
 	// RunStartExtras are the reserved run_start blocks (record minors 32 to 34). Run copies them,
 	// checks the copy at record.Minor (record.RunStartPayload.ValidateFields) and writes it into run_start as given; a
@@ -162,7 +162,7 @@ type Deps struct {
 
 	// Prices is the machine's price table, loaded once by the caller: the check happens at `run`
 	// startup so the one warning a missing or refused table produces is printed where the user can
-	// see it (limits-check-doctor-cli.md §7), which a run's own logger cannot do. A nil table
+	// see it, which a run's own logger cannot do. A nil table
 	// prices nothing, so only the cost ceiling (R2) is disabled; tokens, wall, stall and repeats
 	// still hold.
 	Prices *limits.PriceTable
@@ -180,7 +180,7 @@ type Deps struct {
 	// cost_usd (refuseUncountedBudget, R32); any other run goes on with cost not estimated, and the gap is how the
 	// ledger says the cost column of this run is not comparable with another's.
 	PriceGap string
-	// Harness is the provisioner for a harness (agent-contract.md R27, ADR 0062), nil for one this build cannot
+	// Harness is the provisioner for a harness (ADR 0062), nil for one this build cannot
 	// provision; a nil Harness provisions nothing for any harness. internal/cli connects internal/adapters here.
 	Harness func(harness.Name) Provisioner
 	// hookHost replays the hook-grant scan's host in package tests; nil reads the launching host.
@@ -211,7 +211,7 @@ type Build struct {
 	// BPFHash is the build's own bpf_hash, "" for a build without the objects. run_start does not
 	// record it as given: prepareEnforcement replaces it with the prepared tier's own hash, the pin
 	// directory the run's programs really live in, and with "" at a tier that loads no BPF programs
-	// (record-ledger.md §2.2: "empty in tier 1").
+	// ("empty in tier 1").
 	BPFHash string
 	Kernel  string
 	Parsers map[string]string
@@ -229,19 +229,17 @@ type Result struct {
 	Reason   string // exit | signal | stopped | oom | pids | limit | exec-failed | error
 	// RecordErr is the ledger's Close error, nil when run_end, the fsyncs and the chain anchor all landed.
 	// It is not the agent's outcome, and the caller reports it apart: a run whose record is incomplete, or
-	// is complete but unanchored (ledger.ErrAnchorWrite), is never reported as a plain exit
-	// (record-ledger.md §7).
+	// is complete but unanchored (ledger.ErrAnchorWrite), is never reported as a plain exit.
 	RecordErr error
 }
 
-// QueueCapacity is the events channel's depth (P0-DESIGN §2.4): producers never block the agent, a
+// QueueCapacity is the events channel's depth: producers never block the agent, a
 // full queue drops and counts instead.
 const QueueCapacity = 4096
 
 // limitPollInterval is how often the cgroup watcher diffs memory.events and pids.events against its
 // baseline. cgroup.events wakes on the populated transition only, so oom_kill and pids max — the two
-// counters R10/R11 turn into a terminal reason — are polled (docs/p0/runtime-launch.md §11 notes the
-// same split).
+// counters R10/R11 turn into a terminal reason — are polled.
 const limitPollInterval = 200 * time.Millisecond
 
 // maxLimitReadFailures is how many consecutive unreadable polls of memory.events/pids.events the
@@ -252,7 +250,7 @@ const maxLimitReadFailures = 5
 const killTimeout = 10 * time.Second
 
 // Run executes cmd under the compiled contract with the given dependencies and blocks until the run
-// ends (docs/p0/runtime-launch.md §4, P0-DESIGN §4.1).
+// ends.
 //
 // Pre: rt is compiled against deps.Config, which passed its trust checks, and deps.Enforce is the
 // tier internal/cli already selected — tier selection and machine-config failures are the CLI's own
@@ -310,7 +308,7 @@ type runner struct {
 	// the final readings.
 	treeOutlived atomic.Bool
 	// planeFS is set when the tier's filter leaves fs mutations its decision plane decides unnotified
-	// (enforce.PlaneFilterer, TIER3-PLAN T16): the supervisor then keeps no walk cache (supervisor Options.PlaneFS).
+	// (enforce.PlaneFilterer): the supervisor then keeps no walk cache (supervisor Options.PlaneFS).
 	planeFS bool
 	// steps derives the run's model turns and attributes actions to them; nil when nothing captures. Only the
 	// attribute stage uses it in the run; the tests read the run's own instance through it.
@@ -416,7 +414,7 @@ type runner struct {
 	wait launch.WaitResult
 	// terminal is a reason this package decided itself rather than read off the agent's wait
 	// status: oom and pids from the cgroup watcher (R10, R11), limit from the budget watcher
-	// (limits-check-doctor-cli.md §4 trip), error when the agent never got to run at all. Three
+	// trip, error when the agent never got to run at all. Three
 	// workers can decide one, so termMu guards it and the first decision stands: the reason that
 	// stopped the run is the one that got there first, and a later one is the consequence.
 	termMu   sync.Mutex
@@ -477,7 +475,7 @@ func (r *runner) noteDetail(detail string) {
 
 // ledgerFailed is the pipeline's report that the ledger refused a line (a full disk, a quota, EIO). The
 // record can no longer say what the agent does, so the run ends here: reason error, the cause in detail, and
-// the tree killed, as record-ledger.md §7 says. The events already queued are drained and the run_end is
+// the tree killed. The events already queued are drained and the run_end is
 // written if the file takes it; if it does not, Close's error reaches the caller (Result.RecordErr).
 func (r *runner) ledgerFailed(err error) {
 	r.endRun(identity.ReasonError, "ledger: "+err.Error(), "run: the ledger refused a line; ending the run",
@@ -587,7 +585,7 @@ func (r *runner) run(ctx context.Context) (Result, error) {
 	if err := r.prepare(gctx); err != nil {
 		r.unwind(ctx)
 		// A worker that failed before run_start cancelled gctx, and the prepare step that noticed returned the bare
-		// cancellation; the worker's own error is the cause the operator needs (runtime-launch.md §7).
+		// cancellation; the worker's own error is the cause the operator needs.
 		if gerr := r.group.Err(); gerr != nil && !errors.Is(err, gerr) {
 			err = fmt.Errorf("%w (worker failed: %v)", err, gerr)
 		}
@@ -732,7 +730,7 @@ func (r *runner) prepare(ctx context.Context) error {
 		return err
 	}
 	// Before Prepare: the run's CODEX_HOME is a write grant the backend must build its ruleset or maps with, and
-	// Landlock pins a path that exists (capture-derive.md R19b, agent-contract.md R10a).
+	// Landlock pins a path that exists.
 	if err := r.createRuntimeDir(); err != nil {
 		return err
 	}

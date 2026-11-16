@@ -439,7 +439,7 @@ func TestRecorderResolvesARelativeExec(t *testing.T) {
 // counted as the first one's, whose exec id a child's exec then named as its parent. Every record carries its
 // process's start time, and the cache answers for a pid only the process that time names.
 //
-// Also pins record-ledger.md E19: a reused pid gets its own exec_id.
+// Also pins: a reused pid gets its own exec_id.
 func TestRecorderAReusedPidIsNotTheOldProcess(t *testing.T) {
 	f := newFixture(t) // /proc has pid 50 started at tick 900: the pid's second process
 	first, second := uint64(100*proc.NanosPerTick), uint64(900*proc.NanosPerTick)
@@ -474,7 +474,7 @@ func TestRecorderAReusedPidIsNotTheOldProcess(t *testing.T) {
 
 // TestRecorderNeverAggregatesWatchedOrDeniedPaths is R13's exception list.
 //
-// Also pins record-ledger.md E1: reads under a watched or denied path are individual events.
+// Also pins: reads under a watched or denied path are individual events.
 func TestRecorderNeverAggregatesWatchedOrDeniedPaths(t *testing.T) {
 	f := newFixture(t)
 	var samples [][]byte
@@ -656,7 +656,7 @@ func TestRecorderMalformedSamplesAreGapsNotCrashes(t *testing.T) {
 	}
 }
 
-// TestRecorderTruncationIsRecordedAndCounted is enforce-cgroup-observe.md §6 E4, E19 (a path longer than its 256-byte buffer
+// TestRecorderTruncationIsRecordedAndCounted, E19 (a path longer than its 256-byte buffer
 // truncates with path_ok clear) and E25 (argv-truncated).
 func TestRecorderTruncationIsRecordedAndCounted(t *testing.T) {
 	f := newFixture(t)
@@ -1093,7 +1093,7 @@ func (s *nullSink) Emit(*record.Event) { s.n++ }
 
 // BenchmarkDrain measures the whole per-sample path — decode, process-cache lookup, rule stamping,
 // aggregation and payload marshal — against the mix a real run produces: mostly reads, some execs
-// and connects (docs/P0-DESIGN.md §9's ring-buffer drain budget).
+// and connects, against the ring-buffer drain budget.
 func BenchmarkDrain(b *testing.B) {
 	dir := b.TempDir()
 	out := filepath.Join(dir, "out")
@@ -1346,7 +1346,7 @@ func TestRecorderAggregateOverflowFlushesEarlyAndResets(t *testing.T) {
 // TestRecorderNeverAggregatesAKernelRefusedRead pins R13's third exception. Watched files and deny_read files
 // are the two *named* exceptions R13 lists, but a read the kernel itself marked refused must never be folded
 // into a bucket either, because emitAggregates always stamps a flushed bucket VerdictAllow. On an fs record the
-// one kernel refusal on the header is the decision plane's, stamped by the fexit that read it (TIER3-PLAN T9):
+// one kernel refusal on the header is the decision plane's, stamped by the fexit that read it:
 // a path no declared entry names, which matchFS answers neither Watched nor DenyRead, is still its own refused
 // line, named as the plane named it.
 func TestRecorderNeverAggregatesAKernelRefusedRead(t *testing.T) {

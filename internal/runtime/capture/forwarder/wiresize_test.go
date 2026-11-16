@@ -31,7 +31,7 @@ func bodyMember(t *testing.T, ev *record.Event) (int, bool) {
 }
 
 // A body cut at MaxBody was recorded as a prefix whose ssl_request and ssl_response lines read as a whole body:
-// truncated and wire_size were never set on the forwarder, the only capture at tier 1, while record-ledger §2.2
+// truncated and wire_size were never set on the forwarder, the only capture at tier 1, while the record
 // says a blob holding only a prefix is marked so, with the body's length on the wire.
 func TestABodyCutAtMaxBodyIsMarkedOnItsLines(t *testing.T) {
 	const (

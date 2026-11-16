@@ -16,7 +16,7 @@ import (
 
 // TestWatchArmNotifiesTheWatchCalls is R11e on both architectures' tables: with the arm, inotify_add_watch and
 // fanotify_mark are notified whatever their arguments, a removal and a whole-mount mark included, so the supervisor
-// decides every watch (supervisor R36); without it they are allowed, as they were before (GAPS A10). The calls beside
+// decides every watch; without it they are allowed, as they were before (GAPS A10). The calls beside
 // them that place no watch (inotify_init1, inotify_rm_watch, fanotify_init) are allowed either way, and the arms after
 // this one still see their own syscall: the arm reads no argument, so A keeps the number.
 func TestWatchArmNotifiesTheWatchCalls(t *testing.T) {
@@ -73,7 +73,7 @@ func TestWatchArmNotifiesTheWatchCalls(t *testing.T) {
 
 // TestWatchArmNotifiesDnotify is R11e's third watch API on both architectures' tables: with the arm, fcntl(2)'s
 // F_NOTIFY, dnotify, is notified whatever its descriptor and mask, a removal included, so the supervisor decides every
-// dnotify watch (supervisor R36); without it, it is allowed, as it was before, when a descriptor of a deny_read
+// dnotify watch; without it, it is allowed, as it was before, when a descriptor of a deny_read
 // directory, opened to list, watched every access inside it (GAPS A10). Only the command is tested, as the kernel
 // reads it, an unsigned int: junk above its low half is still F_NOTIFY, and every other command is allowed with no
 // notification. Below Landlock ABI 6 the signal arm sees fcntl first: its F_SETOWN pair is notified as before, and

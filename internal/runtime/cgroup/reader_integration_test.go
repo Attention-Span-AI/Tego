@@ -29,12 +29,12 @@ const (
 	svcUID   = 4242
 )
 
-// TestIntegrationThePlacementFixReadByAnotherUserNamesSudo is the review's M1 through the real path, with no stub:
+// TestIntegrationThePlacementFixReadByAnotherUserNamesSudo goes through the real path, with no stub:
 // a process of uid 4242 whose parent is a process of uid 4243 (the shell an administrator typed sudo -u in) is refused
 // by canPlace with the remedy CanPlace gives it, placementRemedy, which asks config.ReadByAnother over the real /proc.
 // The remedy, which tego doctor prints after "fix: " and tego run, watch and test print at the end of their error line,
 // names the command that opens the shell as 4242 (ScopeAsCommand), never the bare one, which typed in the
-// administrator's shell opens the administrator's own scope (acceptance 3, 2026-11-11). Root only: it starts the two
+// administrator's shell opens the administrator's own scope. Root only: it starts the two
 // processes with their uids. The unit tests stub the reader (TestThePlacementFixOpensTheShellAsThatUserForAnotherReader)
 // or feed /proc trees (config's TestStartedByAnotherReadsTheLoginAndTheProcessTree); this one runs the real chain.
 func TestIntegrationThePlacementFixReadByAnotherUserNamesSudo(t *testing.T) {

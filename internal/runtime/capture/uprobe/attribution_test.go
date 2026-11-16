@@ -17,7 +17,7 @@ import (
 )
 
 // TestRequestLineCarriesWhatDeriveReadOffIt: the uprobe source stamps an ssl_request with what derive reads off the
-// request alone as it is captured (capture-derive R40, R42), as the forwarder does: the tool results a model turn
+// request alone as it is captured, as the forwarder does: the tool results a model turn
 // reports, and side on the model host's telemetry.
 func TestRequestLineCarriesWhatDeriveReadOffIt(t *testing.T) {
 	post := func(path, body string) []byte {

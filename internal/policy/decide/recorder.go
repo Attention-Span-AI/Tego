@@ -12,8 +12,8 @@ import (
 )
 
 // This file is the model tier 2's recorder (internal/runtime/observe) stamps a record-only sample with: the
-// entry that names an action and the verdict the contract implies for it. The kernel already decided
-// (enforce-cgroup-observe §5 R3, R9); these answers attribute a line, they enforce nothing (ADR 0016). Where the
+// entry that names an action and the verdict the contract implies for it. The kernel already decided;
+// these answers attribute a line, they enforce nothing (ADR 0016). Where the
 // sample carries the LSM chain's own return, read by an fexit program, ChainFS makes that return the verdict and
 // asks InferFS only which of Tego's refusals explains it; InferFS alone decides a sample that carries none.
 
@@ -64,7 +64,7 @@ func inferFS(rt *agent.RuleTable, op string, write bool, m FSMatch, ix *FSIndex)
 		// The inherited Landlock ruleset checks an unlink's REMOVE_* and a rename's REFER on the parent
 		// directory, so an unlink of a write entry itself (write: [./out], then rm -rf out) is refused by
 		// what grants the directory above it, which the entry does not, and the model must say so to explain the
-		// chain's refusal (ChainFS). Evaluate answers the same (docs/p0/supervisor.md R15). Tier 3's hooks decide on the path.
+		// chain's refusal (ChainFS). Evaluate answers the same. Tier 3's hooks decide on the path.
 		if ix != nil {
 			d, _ = ix.FSDecider(filepath.Dir(m.Path), false)
 		} else {
@@ -80,7 +80,7 @@ func inferFS(rt *agent.RuleTable, op string, write bool, m FSMatch, ix *FSIndex)
 		// A deny_read nested in a write entry: the inherited Landlock ruleset unions the write entry's
 		// rights over it, so the write happened (a link or rename out of the entry the supervisor refuses
 		// never reaches the kernel's hook). Refused was a line for an action that succeeded
-		// (docs/p0/supervisor.md R15d, ADR 0016); the entry names the path, not a grant, so the line claims no
+		// (ADR 0016); the entry names the path, not a grant, so the line claims no
 		// verdict.
 		return record.VerdictObserved, ""
 	default:
@@ -151,7 +151,7 @@ func PortAdmits(declared int, observed uint16, proto string) bool {
 }
 
 // MatchNetLPM finds the net entry of rules that tier 2's kernel rows name for an address and port. The rows
-// are composed by the entries covering them (enforce/cgroup BuildRuleMaps, enforce-cgroup-observe §5 R3): a
+// are composed by the entries covering them (enforce/cgroup BuildRuleMaps): a
 // refusing covering entry decides whatever the declaration order, and otherwise the first declared one, so a
 // /8 declared before a /16 names the /8 for an address inside both, as Evaluate's matcher (matchNet) does. It
 // matches addresses only (a host entry by the addresses it resolved to), as the rows do, and returns the
