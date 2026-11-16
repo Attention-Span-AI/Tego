@@ -35,17 +35,17 @@ import (
 // it skips only on a machine whose doctor offers no tier landlock). test/vm/root-suites.sh runs every axis in a KVM
 // guest and root-must-pass.txt holds it to passing there.
 //
-// The mode axis (ADR 0017, TIER3-PLAN §5, T6): tier cgroup runs once on the fanotify listener and once per decision
+// The mode axis (ADR 0017): tier cgroup runs once on the fanotify listener and once per decision
 // plane mode this machine passes (fmod_ret wherever doctor's probe admits it, lsm where bpf is an active LSM),
 // each pinned by the test build's TEGO_TEST_PLANE as bpf.plane would pin it. The plane modes answer the one plane
-// column (ADR 0019 as amended: tier cgroup with a plane and tier bpflsm share it, Key{bpflsm, lsm}) and the
+// column (ADR 0019: tier cgroup with a plane and tier bpflsm share it, Key{bpflsm, lsm}) and the
 // invariants of the tier that column is (bpflsm), and each reports its failures under its own name, cgroup@<mode>.
 //
 // Tier bpflsm (T7, T11) is an axis of its own where doctor offers it (bpf an active LSM and LSM mode passing): `tego
 // run --tier bpflsm`, answering the plane column. A machine where bpf is an active LSM and tier bpflsm is not offered,
 // or the lsm mode is not selected under its pin, fails the test rather than dropping the axis, and so does an axis
 // TEGO_CONFORMANCE_REQUIRE names (cgroup, fmod_ret, lsm, bpflsm; root-suites.sh sets it per boot). On that axis the kernel is also checked against compile --test's
-// bpflsm column directly, cell by cell (enforce-plane I9, R25's kernel cells): runner "parity", baselined like the
+// bpflsm column directly, cell by cell (R25's kernel cells): runner "parity", baselined like the
 // others where the run's effective verdict is not the plane's own (the Landlock floor under it, a hook of a later
 // step).
 
@@ -223,7 +223,7 @@ func TestConformanceKernel(t *testing.T) {
 			}
 		}
 	}
-	// Below Landlock ABI 3 tier 1's filter refuses every truncate(2) (enforce-landlock E31): the truncate cells want
+	// Below Landlock ABI 3 tier 1's filter refuses every truncate(2): the truncate cells want
 	// that floor here (Cell.WantOn).
 	abi, err := sys.LandlockABI()
 	if err != nil {
@@ -625,8 +625,8 @@ func runFixture(t *testing.T, bin, actor string, uid, gid int, fx *Fixture, ax a
 			rep.Problems = append(rep.Problems, fmt.Sprintf("%s at %s: compile --test's %s column has no row for the cell", id, label, colTier))
 		}
 		// The kernel against the cell, and against compile --test's column itself (I9); the ledger line against the
-		// cell, and a judged cell's rule against the column's, but for the known naming classes (naming.go, ADR 0017's
-		// 2026-10-19 note), which are counted, not baselined (judgeAnswers, judge_answers_test.go).
+		// cell, and a judged cell's rule against the column's, but for the known naming classes (naming.go, ADR 0017),
+		// which are counted, not baselined (judgeAnswers, judge_answers_test.go).
 		ev := cellEvidence{fx: fx, cell: c, axis: NamingAxis{Tier: tier, Plane: ax.decisionPlane}, colTier: colTier, want: w,
 			floor: floor, judged: judged, finding: finding, outcome: o, lines: lines}
 		ev.want.Rule = strings.ReplaceAll(e.subst(w.Rule), "{{PEER}}", o.Value)
@@ -721,7 +721,7 @@ func ledgerLines(e *env, c *Cell, peer string, events []map[string]any) (out []m
 			val = real
 		}
 	case OpMemfdCreate:
-		return nil // nothing ran: the arm's refusal and a created memfd write no line (enforce-landlock R11a)
+		return nil // nothing ran: the arm's refusal and a created memfd write no line
 	case OpMemfdExec:
 		// An anonymous image's exec is recorded fileless: under the memfd's name by the supervisor, under the
 		// descriptor the exec spelled (/proc/self/fd/N) by the plane's kernel line. The cell is its fixture's one.
@@ -734,7 +734,7 @@ func ledgerLines(e *env, c *Cell, peer string, events []map[string]any) (out []m
 	case OpMemfdMapExec, OpMapExecRIE, OpMprotectExec, OpMprotectRIE, OpExecmod, OpExecmem:
 		return refusedMapLines(events, func(target string) bool {
 			if c.Op == OpMemfdMapExec {
-				return target == "anonymous" // the plane names an anonymous image's map so (AL2023's 6.1, 2026-10-19)
+				return target == "anonymous" // the plane names an anonymous image's map so (AL2023's 6.1)
 			}
 			return target == val || target == spelled || devInoName(target, filepath.Base(val))
 		})

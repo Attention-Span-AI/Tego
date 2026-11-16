@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 /* ADR 0018 (1)'s socket allowlist, the one C spelling of it: the decision plane's socket_create (bpf/decide_stepb.h,
- * enforce-plane R14) and the cgroup/sock_create program (bpf/cgroup_net.bpf.c, enforce-cgroup-observe §5 R4) both
+ * enforce-plane R14) and the cgroup/sock_create program (bpf/cgroup_net.bpf.c) both
  * call tego_socket_allowed, so the two kernel layers that refuse a socket cannot disagree on one. The seccomp
  * filter's socketAllowTest (internal/runtime/enforce/landlock filter.go) is the same table for socket(2), and
  * internal/bpf SocketAllowed is its Go mirror, which a unit test holds to the filter and a root test to this

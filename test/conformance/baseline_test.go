@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// The baseline's own tests (ADR 0017, amended 2026-10-05): the machine predicate of an entry, the canonical form
+// The baseline's own tests (ADR 0017): the machine predicate of an entry, the canonical form
 // of the file, the `-conformance.update=<space>` flag and the refusals that keep a fail-open out of the file.
 // None needs privilege or a kernel feature: they run on synthetic baselines and synthetic runs. The two runners
 // (TestConformanceCompile, TestConformanceKernel) end in settleBaseline, which is where the flag takes effect.

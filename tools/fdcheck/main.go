@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Command fdcheck holds ADR 0023's descriptor rules where forbidigo cannot (its 2026-10-05 note, A9 and A10,
+// Command fdcheck holds ADR 0023's descriptor rules where forbidigo cannot (A9 and A10,
 // F1–F11), on type-checked packages (the standard library's go/types, over the export data `go list -export`
 // builds; gopkg.in/yaml.v3 reads .golangci.yml):
 //
@@ -609,7 +609,7 @@ func untar(r io.Reader, dir string) ([]string, error) {
 			// The reader stops at the end-of-archive marker, and git archive pads its stream past it to a whole
 			// 10240-byte record, 8704 bytes after a small tree's marker. Left unread they block git once its pipe
 			// is smaller, as a user's new pipes are (8192 bytes) when the user is over fs.pipe-user-pages-soft, and
-			// extractAt's Wait never returned: TestTotalCheck hung for its whole 10-minute timeout (2026-11-06).
+			// extractAt's Wait never returned: TestTotalCheck hung for its whole 10-minute timeout.
 			if _, err := io.Copy(io.Discard, r); err != nil {
 				return nil, err
 			}

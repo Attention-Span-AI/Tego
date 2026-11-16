@@ -7,11 +7,11 @@ import (
 	"testing"
 )
 
-// The edge cases of docs/p0/capture-derive.md §6 that are a property of bpf/uprobe_ssl.bpf.c alone. Like the
+// The capture edge cases that are a property of bpf/uprobe_ssl.bpf.c alone. Like the
 // rest of this directory they read the source: the file needs clang to build and root to load, so what they
 // pin is the shape of the code the spec's reasoning depends on.
 
-// TestReadExReturnReadsAZeroedSlot is capture-derive.md E13: OpenSSL may return 1 from SSL_read_ex without
+// TestReadExReturnReadsAZeroedSlot: OpenSSL may return 1 from SSL_read_ex without
 // ever writing *readbytes, so the return probe reads it into a slot it zeroed first. An unwritten value is "no
 // data", never stack garbage read as a length.
 func TestReadExReturnReadsAZeroedSlot(t *testing.T) {
@@ -51,7 +51,7 @@ func TestUnreadableReadExLengthIsAHole(t *testing.T) {
 	}
 }
 
-// TestNothingIsEmittedForAZeroLengthCall is capture-derive.md E14: renegotiation and KeyUpdate make
+// TestNothingIsEmittedForAZeroLengthCall: renegotiation and KeyUpdate make
 // zero-length application-data calls, and no chunk leaves the kernel for one, so httpstream never sees it. A
 // write of no bytes returns before the capture, a read that moved none does too, and the split itself emits
 // nothing for a call of length 0.
@@ -69,7 +69,7 @@ func TestNothingIsEmittedForAZeroLengthCall(t *testing.T) {
 	}
 }
 
-// TestCaptureIsKeyedByThreadAndFilteredByCgroup is capture-derive.md E10: a child that forks after SSL_new and
+// TestCaptureIsKeyedByThreadAndFilteredByCgroup: a child that forks after SSL_new and
 // writes on the inherited SSL* is a new pid_tgid, correctly attributed while it stays in the run's cgroup and
 // filtered once it does not. The write probe decides by the cgroup's row in the run set and by nothing about
 // process ancestry, and its scratch rows are keyed by pid_tgid.
@@ -91,7 +91,7 @@ func TestCaptureIsKeyedByThreadAndFilteredByCgroup(t *testing.T) {
 	}
 }
 
-// TestWriteLengthIsKnownAtEntry is the write half of capture-derive.md E12 (a SIGKILL between an SSL_write's
+// TestWriteLengthIsKnownAtEntry is the write half of the rule that a SIGKILL between an SSL_write's
 // entry and return loses nothing, because the length is the call's argument): the write probes capture from
 // their entry, and only the read path waits for its return, where its length is known.
 func TestWriteLengthIsKnownAtEntry(t *testing.T) {

@@ -22,7 +22,7 @@
 /* The frame's length in bytes: the domain byte and the 4-byte length. The data's words are split at it. */
 #define TEGO_PIN_FRAME 5
 
-/* The chunk the plane reads the argument area in, and the largest area a pin covers (supervisor.md R16's
+/* The chunk the plane reads the argument area in, and the largest area a pin covers (the supervisor's
  * DefaultMaxArgv, 128 KiB). */
 #define TEGO_PIN_CHUNK 256
 #define TEGO_PIN_MAX_LEN (128 * 1024)

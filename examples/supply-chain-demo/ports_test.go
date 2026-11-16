@@ -29,7 +29,7 @@ var handed = struct {
 // these tests), and its check calls a port busy when a connect to it succeeds. A port 0 bind closed at once left the
 // port in that range, where the integration step's other packages, run side by side and many binding port 0, could
 // be handed it in between: TestCheckNamesEachFailure then found "something already listens on the dashboard address
-// 127.0.0.1:44311" (gate, 2026-11-10). Outside the range only a bind that names the port can take it.
+// 127.0.0.1:44311". Outside the range only a bind that names the port can take it.
 func freePort(t testing.TB) int {
 	t.Helper()
 	lo, hi, err := ephemeralRange()

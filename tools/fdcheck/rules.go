@@ -136,7 +136,7 @@ var producerTraps = map[string]bool{
 	// recvmsg and recvmmsg install the descriptors an SCM_RIGHTS message carries, with flags behind a pointer F9
 	// cannot read; unix.Recvmsg's are read (recvRules).
 	"SYS_RECVMSG": true, "SYS_RECVMMSG": true,
-	// macOS's (the maze setup tool's darwin build, ADR 0023's 2026-10-24 F6 note): kqueue, the _nocancel, guarded,
+	// macOS's (the maze setup tool's darwin build, ADR 0023 F6 note): kqueue, the _nocancel, guarded,
 	// data-protection and by-id opens, socket_delegate, peeloff, fileport_makefd, the POSIX shared memory and
 	// semaphore opens (each a descriptor in xnu), the NECP and Skywalk opens, and the receives that install
 	// SCM_RIGHTS descriptors. Under a darwin build any other raw trap is a finding too (syscall in check.go).

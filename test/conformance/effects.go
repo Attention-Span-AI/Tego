@@ -21,7 +21,7 @@ import (
 // before and after a fixture's run, and each cell's side effect is read off the two. A refusal that left its effect
 // behind is a fail-open, on every axis, never baselined: the agent got what the result says it did not. Tier cgroup's
 // fanotify listener on its own answers a permission event for an O_CREAT open after the kernel has created the inode,
-// so a create it alone refuses leaves an empty file (docs/p0/enforce-cgroup-observe.md, the refused-O_CREAT residue).
+// so a create it alone refuses leaves an empty file (the refused-O_CREAT residue).
 // A run on that axis is not the listener alone: the supervisor refuses a create, a creat or any other mutation the
 // contract refuses before the kernel acts (ADR 0021 (5), fallbackMutation), so no refused create may leave even an
 // empty file there, and the judge grants no axis a residue. A success that left no effect is an effect failure of

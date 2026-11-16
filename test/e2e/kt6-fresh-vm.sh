@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# kt6-fresh-vm.sh — kill test 6 (P0-DESIGN §10 "6 fresh VM in three halves (R16 as revised)"; §12
-# acceptance items 1 and 2; docs/FEATURES.md "R16 / kill test 6": "one static binary; `doctor` prints
+# kt6-fresh-vm.sh — kill test 6 (a fresh VM, in three halves;
+# docs/FEATURES.md "R16 / kill test 6": "one static binary; `doctor` prints
 # the capability matrix with the machine's values, the highest tier it allows, what the next tier is
 # missing, and the exact one-line fix; exit 0 when any tier runs, 211 when a requested tier cannot.
 # Acceptance on a fresh Ubuntu 24.04 LTS image ... and only the binary: (a) as the invoking user,
@@ -21,11 +21,11 @@
 # the declared and the undeclared host the same port, so only a rule that tells hosts apart refuses one
 # and admits the other.
 #
-# The errno of a refused connect is EACCES in every tier (spec/policy/SEMANTICS.md §5, docs/p0/supervisor.md
-# R10). At tier cgroup the supervisor that tier 2 inherits decides a connect first and never relays one it
+# The errno of a refused connect is EACCES in every tier (spec/policy/SEMANTICS.md §5).
+# At tier cgroup the supervisor that tier 2 inherits decides a connect first and never relays one it
 # refuses, so the agent's refusal of the undeclared host is the supervisor's, and an EACCES alone shows
 # nothing of tier 2's own program. Half (b) therefore also asks for its verdicts: tier 2's connect4 program
-# writes each decision to a reason breadcrumb keyed by the run's cgroup (docs/p0/enforce-cgroup-observe.md R5),
+# writes each decision to a reason breadcrumb keyed by the run's cgroup,
 # and this script reads it from the pinned map while the agent waits after its connects. The breadcrumb must
 # show the agent's relayed connect to the declared host decided in the kernel; then a connect made from the
 # run's cgroup by a process the supervisor does not see must be refused by the kernel for the undeclared
@@ -133,8 +133,8 @@ r4_r5_agent() {
 # and exits 1. It reads the breadcrumb through bpf(2) itself, so it needs nothing the kill test does not
 # already need; the layout it decodes is bpf/include/events.h's struct tego_reason and its enum values.
 #
-# The breadcrumb is keyed by the run's cgroup id, the inode of the cgroup the agent was cloned into
-# (docs/p0/runtime-launch.md), and it is the last decision only, so each check reads it right after the
+# The breadcrumb is keyed by the run's cgroup id, the inode of the cgroup the agent was cloned into,
+# and it is the last decision only, so each check reads it right after the
 # connect it is about. The probe's own connects are made from that cgroup, which is what makes the run's
 # program decide them (a socket belongs to the cgroup it was created in), and outside the supervisor, since
 # this process carries no seccomp filter: a connect the supervisor refused would never reach the kernel's
@@ -142,7 +142,7 @@ r4_r5_agent() {
 # run's cgroup, where tier 2's fanotify listener would decide its opens by the agent's contract, and it moves
 # back out before it exits, so the run ends when its agent does. It is in the cgroup for one connect at a time
 # and reads each breadcrumb after it has moved back out: the decision plane refuses every bpf(2) command of a
-# governed task (docs/p0/enforce-plane.md §2.20, the `bpf` hook of E54), a map lookup included, and the agent,
+# governed task (the `bpf` hook of E54), a map lookup included, and the agent,
 # which holds, decides nothing in the cgroup between a connect and its read. While it is in the cgroup the
 # run's recorder sees its two connects, so the ledger half (b) saves carries them as net lines from source
 # kernel with the probe's pid, beside the agent's own.
@@ -457,8 +457,8 @@ half_c() {
 	port="$(listen_two "$(kt_workdir)")"
 	[ -n "$port" ] || { result c FAIL "could not listen on 127.0.0.1 and 127.0.0.2"; return; }
 	# R16 (c) asks for R5 "with the in-kernel reason". Tier bpflsm is tier cgroup's backend with the decision plane in
-	# LSM mode (enforce-plane §2.10): its connects are decided by the same connect4 program, so the in-kernel reason
-	# is half (b)'s breadcrumb, read the same way, from a run pinned at tier bpflsm (TIER3-PLAN T11).
+	# LSM mode: its connects are decided by the same connect4 program, so the in-kernel reason
+	# is half (b)'s breadcrumb, read the same way, from a run pinned at tier bpflsm.
 	work="$(run_r4_r5 c bpflsm "$port" probe)"
 	[ -z "$(kt_rundir "$work")" ] || kt_save_fixture "kt6-c-bpflsm" "$(kt_rundir "$work")"
 	if [ "$(cat "$work/exit")" != 0 ]; then

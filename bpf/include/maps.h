@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
-/* Map definitions shared by the Tego BPF programs (docs/p0/enforce-cgroup-observe.md §3).
+/* Map definitions shared by the Tego BPF programs.
  *
  * Every map here is LIBBPF_PIN_BY_NAME: the loader supplies /sys/fs/bpf/tego/<bpf_hash>/maps as the pin
  * directory, so the three objects of one build (cgroup_net, cgroup_track, trace_proc) share one instance of
@@ -168,7 +168,7 @@ struct {
  * cgroup runs for every socket of that cgroup and its descendants. The storage it is handed belongs to the
  * cgroup the program was attached to, which is the run's own cgroup. bpf_get_current_cgroup_id() instead
  * names whoever made the call: the seccomp supervisor relays every allowed connect from its own process on a
- * pidfd_getfd duplicate of the agent's socket (docs/p0/supervisor.md R9, I2), so a lookup keyed by the caller
+ * pidfd_getfd duplicate of the agent's socket, so a lookup keyed by the caller
  * missed, took the neutral branch, and no connect of the agent was ever decided in the kernel. */
 struct {
     __uint(type, BPF_MAP_TYPE_CGROUP_STORAGE);
@@ -182,7 +182,7 @@ struct {
 /* Unix socket names, keyed by run_idx like the verdict maps: a run's declared unix: entries and the
  * filesystem entries that admit or refuse a pathname socket beneath them (§5 R7, struct tego_unix_key). Read
  * by connect_unix and sendmsg_unix (6.7+), and below 6.7 by the plane's socket_connect and socket_sendmsg
- * (bpf/decide.bpf.c, enforce-plane R14), which the loader hands the build's own instance; written by Prepare,
+ * (bpf/decide.bpf.c), which the loader hands the build's own instance; written by Prepare,
  * removed at Detach, and purged by slot when a slot is reclaimed from a dead launcher, exactly as tego_net_exact
  * is (§5 R12). The plane's fill has no use for it. */
 #if defined(TEGO_NET_MAPS) || (defined(TEGO_PLANE_MAPS) && !defined(TEGO_PLANE_FILL_MAPS))
@@ -195,7 +195,7 @@ struct {
     __type(value, struct tego_net_verdict);
 } tego_unix_names SEC(".maps");
 
-/* One-connect grants for an approved abstract name (supervisor R11c): the relay connects the agent's own socket with
+/* One-connect grants for an approved abstract name: the relay connects the agent's own socket with
  * the agent's bytes, which no unix: row admits, so the supervisor grants that socket (by cookie) that one name for
  * that run's gen, for a second at most, and revokes the grant when the relay returns. Read by connect_unix (6.7+)
  * and the plane's socket_connect (below 6.7) beside tego_unix_names; purged by slot at Detach and by the reaper, and
@@ -287,7 +287,7 @@ struct {
 
 #endif /* TEGO_TRACE_MAPS */
 
-/* Capture's own maps (docs/p0/capture-derive.md §3). They are compiled only into bpf/uprobe_ssl.bpf.c, which
+/* Capture's own maps. They are compiled only into bpf/uprobe_ssl.bpf.c, which
  * defines TEGO_CAPTURE_MAPS before including this header: the three tier-2 objects have no use for them. The
  * definitions still live here, because include/maps.h is the single place a map may be declared (§9). Capture's
  * rings and counters are above, with the record's. */
@@ -336,7 +336,7 @@ struct {
 
 /* Each task's last plane decision and its walk arguments (struct tego_plane_decision). TASK_STORAGE needs
  * NO_PREALLOC and max_entries 0; the kernel frees a task's value with the task. The plane writes it and the
- * recorder's fexit programs read it (ADR 0024 (11), TIER3-PLAN T9), so both objects declare it, pinned by name
+ * recorder's fexit programs read it (ADR 0024 (11)), so both objects declare it, pinned by name
  * beside each other's maps: whichever loads first creates it and the other reuses the pin. */
 #if defined(TEGO_TRACE_MAPS) || defined(TEGO_PLANE_MAPS)
 struct {
@@ -362,7 +362,7 @@ struct {
 } tego_plane_exec_armed SEC(".maps");
 #endif
 
-/* The decision plane's own maps (ADRs 0024, 0025; docs/p0/TIER3-PLAN.md §3). Compiled only into bpf/decide.bpf.c,
+/* The decision plane's own maps (ADRs 0024, 0025). Compiled only into bpf/decide.bpf.c,
  * which defines TEGO_PLANE_MAPS; the plane shares tego_run_set and the rings above with tier 2. These are the
  * only maps keyed by a kernel object's address, which ADR 0025 supersedes ADR 0010 to allow, and only here: the key
  * never reaches userspace (bpf/tests TestNoInodeKeyedKernelMap). */
@@ -407,7 +407,7 @@ struct {
     __array(values, struct tego_plane_listen_inner);
 } tego_plane_listen_rows SEC(".maps");
 
-/* Each slot's rows map, at its run_idx, like its rings (ADR 0025 (1) as T0 amended it): a slot keeps its map across
+/* Each slot's rows map, at its run_idx, like its rings (ADR 0025 (1)): a slot keeps its map across
  * runs, because an outer insert or delete waits an RCU grace period (12-80 ms a run); every row carries the gen of
  * the run it was filled for, and a row of another gen counts as absent. A run-set hit whose slot has no map
  * refuses (TEGO_WALK_NOROWS). */
@@ -500,7 +500,7 @@ struct {
  * run's) path on this run's line. Created for the sample and deleted after it. Never read by userspace, and pinned
  * by name all the same: a later launcher adopts the plane's pinned programs only when every map they use is pinned
  * (cgroup adoptObjectIn), and an unpinned map here made every run load and verify the mode's programs again,
- * 0.6 s of each run's start in the 6.17 guest (enforce-plane §2.18). */
+ * 0.6 s of each run's start in the 6.17 guest. */
 #ifndef TEGO_PLANE_FILL_MAPS
 struct {
     __uint(type, BPF_MAP_TYPE_TASK_STORAGE);
@@ -523,7 +523,7 @@ struct {
 
 /* Each slot's header (struct tego_plane_slot), by run_idx: the gen of the run whose rows the slot holds and what its
  * contract decides, written last by Prepare and zeroed first by every clear. Every decided hook reads it after its
- * run-set hit and refuses on a header of another gen (enforce-plane R6). The fill has no use for it. */
+ * run-set hit and refuses on a header of another gen. The fill has no use for it. */
 #ifndef TEGO_PLANE_FILL_MAPS
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
@@ -548,7 +548,7 @@ struct {
 #endif
 
 /* The build's recorder fexit programs that are attached, as a mask of 1 << enum tego_plane_hook, at key 0
- * (enforce-plane §7, R23; TIER3-PLAN T9b). A hook whose bit is set has the recorder's fexit on the same security_
+ * A hook whose bit is set has the recorder's fexit on the same security_
  * function, which takes the plane's decision and writes the action's one line; on a hook whose bit is clear the
  * plane writes its own sample of every refusal (TEGO_EV_PLANE_FS) instead. The backend writes it from the tracing
  * links it holds before it attaches the plane's programs, and every launcher of the build writes the same value.

@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// TestKT5HarnessMeasuresWhatFeaturesR7Says pins docs/FEATURES.md's "Kill test 5 (R7)" (docs/p0/supervisor.md
-// §10 "E2E") to the harness that measures it: test/e2e/kt5-ask.sh declares one fs.ask and one net.ask entry the
+// TestKT5HarnessMeasuresWhatFeaturesR7Says pins docs/FEATURES.md's "Kill test 5 (R7)"
+// to the harness that measures it: test/e2e/kt5-ask.sh declares one fs.ask and one net.ask entry the
 // workload never touches, compares the run with the same contract without them on the 20-step agent and on the
 // build workload (kill test 2's agent and kill test 4's pip kind), judges the median of ten runs of each against
 // the larger of 1% of the base run's wall time and one second, reads run_end's supervisor block, and prints a miss as

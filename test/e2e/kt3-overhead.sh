@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# kt3-overhead.sh — kill test 3 (P0-DESIGN §10 "3 overhead"; §9's budget "whole run, enforce-only /
-# summary / full: < 1% / < 3% / < 5% on test/workloads/build"; §12 acceptance item 6).
+# kt3-overhead.sh — kill test 3 (overhead; the budget for a whole run, enforce-only /
+# summary / full: < 1% / < 3% / < 5% on test/workloads/build).
 #
 # What it attacks: the claim that watching a run costs almost nothing next to running it. The
 # measurement lives in test/e2e/overhead/ — four workloads, shuffled cell order, two passes, and a

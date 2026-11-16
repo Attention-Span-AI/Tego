@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package bpftests holds the userspace checks over the C sources under bpf/ that need neither clang nor a
-// kernel: the static invariants docs/p0/enforce-cgroup-observe.md §8 says are "checked by a static grep over
-// bpf/*.bpf.c" (I1, I3, I9) plus the licence and header conventions of §9 and bpf/README.md.
+// kernel: the static invariants checked by a grep over
+// bpf/*.bpf.c, plus the licence and header conventions of bpf/README.md.
 //
 // They run in every build, including CI runners without an LLVM toolchain, and they fail loudly when someone
 // adds a hook that walks ancestors, a cgroup program that returns something other than 0 or 1, a bpf_d_path

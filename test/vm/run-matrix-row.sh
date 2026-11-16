@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# run-matrix-row.sh — one kernel-matrix row's body, run as root inside the row's guest (P0-DESIGN §10 "Kernel
-# matrix", §12 "P0 is complete when, on the kernel matrix: ..."). test/vm/matrix.sh
+# run-matrix-row.sh — one kernel-matrix row's body, run as root inside the row's guest. test/vm/matrix.sh
 # boots the row's own kernel with test/vm/kvm-run.sh --sudo --delegate-user, so this script is root the way `sudo` makes
 # a user root: SUDO_UID names the user, and a root `tego run` drops the agent to that user.
 #
@@ -18,7 +17,7 @@
 #   kt7 as root (half (a) as the user at tier landlock, when matrix.sh carried the Claude Agent SDK, and
 #   half (b) at tier cgroup); smoke-exec-rules (ADR 0048 C6: exec.deny refuses rm -r and git push at their
 #   execve) as the user at tier landlock and as root at tier cgroup; where bpf is an active LSM, doctor-bpflsm and kill tests 1 and 7 (b) at tier
-#   bpflsm (kt4 and kt5 include it among their tiers; TIER3-PLAN T11); kt3 only when VM_KT3=1, since a two-vCPU guest shared with other guests is
+#   bpflsm (kt4 and kt5 include it among their tiers); kt3 only when VM_KT3=1, since a two-vCPU guest shared with other guests is
 #   not the quiet machine §9's budgets are measured on (matrix.sh then carries its noop and cpu workloads
 #   prebuilt, as TEGO_BENCH_BIN, because the guest has no go to build them; without them it is a named skip).
 # `--only doctor-refusal` is the whole body of a doctor-only row (fetch-kernel.py's DOCTOR_ONLY: Ubuntu 22.04's 5.15,
@@ -72,7 +71,7 @@ case "$only" in "" | kt6c | kt4 | kt5 | smoke | doctor-refusal) ;; *) usage ;; e
 [ -x "$tego" ] || { echo "run-matrix-row: $tego is not an executable file" >&2; exit 1; }
 export TEGO_BIN="$tego"
 # This runs in a guest, a disposable machine, whose home is its own: the kill tests may use the product binary the row
-# was given, which test/e2e/lib.sh's kt_require_testhooks refuses anywhere else (identity-config.md R27).
+# was given, which test/e2e/lib.sh's kt_require_testhooks refuses anywhere else.
 export TEGO_DISPOSABLE_HOST="${TEGO_DISPOSABLE_HOST:-kvm}"
 TEST_TIMEOUT="${VM_TEST_TIMEOUT:-1500}"
 
@@ -86,7 +85,7 @@ as_user() {
 # The doctor and compile calls this script makes itself run with an isolation of their own, and so does every kill test (each
 # sources test/e2e/lib.sh, which gives its run one): a binary built with -tags tegotesthooks (VM_TESTHOOKS=1) refuses a
 # machine config whose ledger_root is the built-in ~/.tego/runs, which is what no TEGO_CONFIG gives it, and a product
-# build would anchor in the guest user's ~/.tego (identity-config.md R27). iso_make DIR UID writes a machine config naming
+# build would anchor in the guest user's ~/.tego. iso_make DIR UID writes a machine config naming
 # a ledger_root of its own in DIR, handed to UID; with_iso <user|root> CMD... runs CMD as that identity with the
 # variables.
 iso_make() {
@@ -205,7 +204,7 @@ kt() {
 	rm -f "$log"
 }
 
-# tier3 runs kill tests 1, 4, 5 and 7 (b) at tier bpflsm (TIER3-PLAN T11, enforce-plane R28) where bpf is an active LSM:
+# tier3 runs kill tests 1, 4, 5 and 7 (b) at tier bpflsm where bpf is an active LSM:
 # first doctor as root must offer the tier (R28's "bpflsm yes"), then each kill test at it, whose skip fails the row as
 # any kill test's does. Kill tests 4 and 5 run here only when asked (their full runs already add bpflsm to their
 # default tiers).

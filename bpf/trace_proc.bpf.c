@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 /* The eBPF record: two scheduler tracepoints, ten fexit programs on the security_ functions where the run's
  * inherited Landlock domain can refuse, and one fentry program on security_socket_connect. They describe what a
- * run did, without deciding anything (docs/p0/enforce-cgroup-observe.md §1, §5 R8, R9, R10; ADR 0016).
+ * run did, without deciding anything (ADR 0016).
  *
  * Every program is host-wide — tracepoints, fentry and fexit are global attach points, not per-cgroup — so the
  * whole of the filtering is one tego_run_set lookup keyed by the current cgroup id (§5 R2, §8 I1). A miss
@@ -45,7 +45,7 @@
  * cache and the uprobe source's attach at exec are built from them, and behind a quiet record the kernel's
  * default would not wake it, since that default wakes only a reader that has consumed every record before.
  *
- * Two builds, one source (internal/bpf/gen.go; ADR 0024's 2026-09-29 tier-2 note). TEGO_TRACE_RDONLY=0, `trace`,
+ * Two builds, one source (internal/bpf/gen.go; ADR 0024 tier-2 note). TEGO_TRACE_RDONLY=0, `trace`,
  * reads kernel objects through CO-RE bpf_probe_read_kernel and loads on every supported kernel without lockdown.
  * TEGO_TRACE_RDONLY=1, `tracerd`, makes no bpf_probe_read_kernel* call at all, since lockdown=confidentiality
  * refuses that helper at load on every kernel, 6.17 included: it reads an object's fields by direct loads off the
@@ -168,7 +168,7 @@ static __always_inline __u64 tego_quiet(void *ring, int wake)
 }
 
 /* tego_libssl_named reports an open of a file whose name begins "libssl.so": the open the uprobe source
- * attaches a library at (capture-derive R4, Uprobe.OnOpen), where a record left for the reader's timer would be
+ * attaches a library at (Uprobe.OnOpen), where a record left for the reader's timer would be
  * an attach late by up to that long, and a request the process makes meanwhile missed. Only the dentry's own
  * name is read, never the path: its first nine bytes, which the read reports as ten (the nine and the NUL it
  * ends them with) exactly when the name is nine bytes or longer. */
@@ -208,8 +208,7 @@ static __always_inline __u64 tego_task_start(void)
 }
 
 /* f_mode and f_flags bits the open program reads. The f_mode values are the same on every kernel from 5.14
- * through 7.0 (include/linux/fs.h at v5.14, v6.1, v6.5, v6.6, v6.8, v6.12, v6.13, v6.14, v6.17 and v7.0, checked
- * 2026-09-29): FMODE_CREATED is 0x100000 (1 << 20) and FMODE_NOACCOUNT 0x20000000 (1 << 29) on all of them, while
+ * through 7.0 (include/linux/fs.h at v5.14, v6.1, v6.5, v6.6, v6.8, v6.12, v6.13, v6.14, v6.17 and v7.0): FMODE_CREATED is 0x100000 (1 << 20) and FMODE_NOACCOUNT 0x20000000 (1 << 29) on all of them, while
  * FMODE_BACKING moved from bit 25 to bit 24 in 6.14, which is why the skip below tests FMODE_NOACCOUNT: every
  * backing file carries both (alloc_empty_backing_file, 6.5+), and below 6.5 the overlay real file
  * open_with_fake_path opens carries FMODE_NOACCOUNT alone. The other files with it are kernel_file_open's, which no
@@ -291,7 +290,7 @@ static __always_inline void tego_exit_status(int exit_code, __s32 *code, __u32 *
     *signal = (__u32)(exit_code & 0x7f);
 }
 
-/* ---- The decision plane's word on this call (ADR 0024 (11), ADR 0016 (3); TIER3-PLAN T9) ----
+/* ---- The decision plane's word on this call (ADR 0024 (11), ADR 0016 (3)) ----
  *
  * The plane (bpf/decide.bpf.c) leaves each decision in the task's tego_plane_scratch value, {rule_idx, hook,
  * verdict, reason, obj}. The fexit on the same security_ function runs after it in both modes (an LSM program inside
@@ -659,7 +658,7 @@ static __always_inline int tego_held_names(const struct tego_held *h, struct fil
 
 /* A mount no path of the agent's reaches: a private clone the kernel made for a stacking filesystem
  * (clone_private_mount, overlayfs' layers), whose mnt_ns is fs/mount.h's MNT_NS_INTERNAL, ERR_PTR(-EINVAL); the
- * plane's tego_internal_mount, which skips the same opens (enforce-plane §2.7's condition 1). Every name the agent
+ * plane's tego_internal_mount, which skips the same opens. Every name the agent
  * opens resolves through the mounts of its own namespace, so no open of its own is skipped here; a detached mount
  * (mnt_ns NULL) is not. */
 #define TEGO_MNT_NS_INTERNAL ((__u64)-22)
@@ -770,7 +769,7 @@ int BPF_PROG(tego_file_open, struct file *file, int ret)
     return 0;
 }
 
-/* ---- The directory walk (docs/p0/enforce-plane.md §2.15; ADR 0016's 2026-09-30 note) ----
+/* ---- The directory walk (ADR 0016) ----
  *
  * Where a plane mode decides a run, T16 leaves the mutations the plane decides unnotified, so the fsop record is the
  * action's one line and must name it by its path on its own: no supervisor naming is left to hand over. bpf_d_path
@@ -1467,8 +1466,8 @@ int tego_listen_result(struct syscall_trace_exit *ctx)
  * __sys_bind_socket and __sys_listen_socket, inside io_uring_enter or in an io-wq worker of the run, with no bind or
  * listen syscall exit. The op's own fexit is then the terminal producer: it writes the marked operation's line with
  * the op's result (the completion's res; a negative return is a failure before the socket call) and clears the
- * marker, which would otherwise outlive the op and make the task's next mknod(S_IFSOCK) a listener bind
- * (enforce-plane §2.20). Both programs are optional: a kernel without the functions has no such opcodes. */
+ * marker, which would otherwise outlive the op and make the task's next mknod(S_IFSOCK) a listener bind.
+ * Both programs are optional: a kernel without the functions has no such opcodes. */
 SEC("fexit/io_bind")
 int BPF_PROG(tego_uring_bind_result, struct io_kiocb *req, unsigned int issue_flags, int ret)
 {
@@ -1633,7 +1632,7 @@ int BPF_PROG(tego_file_truncate, struct file *file, int ret)
 
 /* security_socket_connect: the record of every connect a run attempts, including the socket types
  * cgroup/connect4 and /connect6 do not see — ICMP and raw sockets are recorded here and refused nowhere, a
- * stated P0 gap (§5 R4). The address is the kernel's own copy, already validated by the syscall.
+ * stated gap. The address is the kernel's own copy, already validated by the syscall.
  *
  * 6.1 prototype: int security_socket_connect(struct socket *sock, struct sockaddr *address, int addrlen).
  * addrlen bounds every read: move_addr_to_kernel copied only the caller's addrlen bytes into an uninitialized
@@ -1674,7 +1673,7 @@ int BPF_PROG(tego_socket_connect, struct socket *sock, struct sockaddr *address,
      * an uninitialized sockaddr_storage, nothing past them was the caller's, and the call fails EINVAL in the
      * protocol's own length check (tcp_v4_connect, ip4_datagram_connect: sizeof(struct sockaddr_in);
      * tcp_v6_connect, ip6_datagram_connect: SIN6_LEN_RFC2133). Recorded, it was a line naming 0.0.0.0:0. The
-     * supervisor keeps its own line for it (supervisor R7, kernelRecords), so the connect is not left with none. */
+     * supervisor keeps its own line for it (kernelRecords), so the connect is not left with none. */
     if (family == TEGO_AF_INET && addrlen < (int)sizeof(struct sockaddr_in))
         return 0;
     if (family == TEGO_AF_INET6 && addrlen < 24 /* SIN6_LEN_RFC2133 */)

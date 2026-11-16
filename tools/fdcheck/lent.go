@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// A lent number (ADR 0023 A1, F2, and the 2026-10-19 design-round note) is a descriptor number valid only while
+// A lent number (ADR 0023 A1, F2) is a descriptor number valid only while
 // a lease is out: the parameter of a lender's callback, which the lender's return ends, or a (*sys.Lease).Num()
 // in the function that holds the lease. fdcheck does not try to prove that such a number cannot escape, which
 // is a question that kept finding new answers. It admits a closed set of uses, and every

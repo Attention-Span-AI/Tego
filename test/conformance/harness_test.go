@@ -321,7 +321,7 @@ func outsideRun(t *testing.T, e *env, a script) (Outcome, error) {
 const unprivBPF = "/proc/sys/kernel/unprivileged_bpf_disabled"
 
 // disposableHost names the throwaway machine this process runs on, or is "" on any other (runtime's helper of the
-// name, ADR 0042's 2026-10-06 note): test/vm/root-suites.sh sets TEGO_DISPOSABLE_HOST in its KVM guests and, under
+// name, ADR 0042): test/vm/root-suites.sh sets TEGO_DISPOSABLE_HOST in its KVM guests and, under
 // VM_HOST=sudo, on a GitHub Actions runner or where its caller set it; GitHub Actions sets GITHUB_ACTIONS=true.
 func disposableHost() string {
 	if v := os.Getenv("TEGO_DISPOSABLE_HOST"); v != "" {
@@ -470,7 +470,7 @@ func bpfCheck(path, disposable string, outside func() (Outcome, error)) (restore
 
 // memfdControl is the anonymous-image cells' control. vm.memfd_noexec 1 seals every memfd created without MFD_EXEC
 // against exec, and 2 refuses its creation, each with EACCES and no line: the memfd cells' own want where the run's
-// filter refuses them (enforce-landlock R11a), so a cell asked on such a machine could not fail. Each memfd op the
+// filter refuses them, so a cell asked on such a machine could not fail. Each memfd op the
 // fixture asks is performed first as the agent outside every run, and must succeed, or the fixture fails.
 func memfdControl(t *testing.T, e *env, fx *Fixture) {
 	t.Helper()
@@ -613,7 +613,7 @@ func compileAction(c *Cell) (string, bool) {
 }
 
 // noCompileAction is every op compile --test has no row for, with the reason. A cell that takes one carries a
-// NoCompile marker; ADR 0017's 2026-10-16 note names each.
+// NoCompile marker; ADR 0017 names each.
 var noCompileAction = map[string]string{
 	OpExchange: "a rename row has no RENAME_EXCHANGE",
 	// A memfd has no path a row can name; execmod and execmem are decided on the mapping (its copied pages, its prot

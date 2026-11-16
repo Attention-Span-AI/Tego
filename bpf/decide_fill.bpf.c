@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
-/* The decision plane's fill and clear (ADR 0025 (1), (2); docs/p0/TIER3-PLAN.md T4; docs/p0/enforce-plane.md R6, R16).
+/* The decision plane's fill and clear (ADR 0025 (1), (2)).
  *
  * The plane's rows are keyed by a struct inode *, which userspace never sees (ADR 0025): the launcher holds one
  * O_PATH descriptor per keyed path, hands this program the wanted descriptor numbers with their row templates
@@ -18,7 +18,7 @@
  * counts what it was shown (tego_plane_fill_cfg.visited) for the unscoped cost.
  *
  * tego_plane_clear, a BPF_PROG_TYPE_SYSCALL program run by BPF_PROG_TEST_RUN, deletes a slot's rows of every gen
- * but one, in the kernel (ADR 0025 (1) as T0 amended it): stale rows count as absent to the walk without it, so it
+ * but one, in the kernel (ADR 0025 (1)): stale rows count as absent to the walk without it, so it
  * runs only off the run's path, or when a fill found the slot's map full of a previous run's rows.
  *
  * Two builds, like decide.bpf.c and for the same reason (ADR 0024 (9)): the mount id is read from struct mount,
@@ -91,7 +91,7 @@ static __always_inline void *tego_slot_rows(void *outer, __u32 run_idx)
 
 /* Writes one wanted descriptor's row. An fs row's key is the dentry's inode pointer, the one the walk looks up; an
  * exec row's is the link's (tego_exec_link_key over the inode, the dentry's directory's inode and the dentry's own
- * name, read as bprm_check reads it), so hard links of one inode that two entries name get a row each (enforce-plane §6 E15). A row
+ * name, read as bprm_check reads it), so hard links of one inode that two entries name get a row each. A row
  * of this run's gen already at the key is a second entry on one fs inode, or on one exec link, which fails (a
  * duplicate must refuse Prepare, not keep one); a row of another gen is a previous run's and is replaced. */
 static __always_inline void tego_fill_one(struct tego_plane_fill_cfg *cfg, struct tego_plane_fill_row *w,
@@ -251,7 +251,7 @@ static __always_inline void tego_fill_one(struct tego_plane_fill_cfg *cfg, struc
 
 /* The fill: shown each descriptor of each task the link's scope admits, it keeps the wanted ones of the launcher
  * reading the iterator, the task the program runs in: each launcher filling at once has its own config and
- * templates (enforce-plane §2.6), and a template of another gen (a dead launcher's, whose tgid this one has now) is
+ * templates, and a template of another gen (a dead launcher's, whose tgid this one has now) is
  * not applied. */
 SEC("iter/task_file")
 int tego_plane_fill(struct bpf_iter__task_file *ctx)

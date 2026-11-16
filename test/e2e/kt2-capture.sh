@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# kt2-capture.sh — kill test 2 (P0-DESIGN §10 "2 capture (95% of pairs, gaps explained)"; §12
-# acceptance item 1; docs/FEATURES.md "R8 / kill test 2": "uprobe path (system Python + OpenSSL,
+# kt2-capture.sh — kill test 2 (95% of pairs captured, gaps explained;
+# docs/FEATURES.md "R8 / kill test 2": "uprobe path (system Python + OpenSSL,
 # HTTP/1.1): on a 20-step run at least 95% of model request/response pairs are
 # `ssl_request`/`ssl_response` events whose response parsed, and every missing pair is explained by
 # a `gap what=capture` event or the `count` of a `gap what=record`. Forwarder path (Claude Code,

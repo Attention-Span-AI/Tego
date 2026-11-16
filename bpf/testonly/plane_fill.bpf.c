@@ -2,7 +2,7 @@
 /* A test-only fill of the decision plane's rows (internal/bpf plane_decide_integration_test.go), compiled into a
  * binding that builds with -tags integration,tegobpf only and that no tego binary embeds.
  *
- * The plane's rows are keyed by struct inode *, which userspace never learns (ADR 0025 (2)); TIER3-PLAN T4's
+ * The plane's rows are keyed by struct inode *, which userspace never learns (ADR 0025 (2));
  * bpf/decide_fill.bpf.c fills them for a run from the launcher's held O_PATH descriptors and checks the result
  * against fdinfo. T3's root tests need rows before T4 exists, so this iter/task_file program does the smallest part
  * of that job: for each descriptor of the test process named in tego_test_fill_tmpl, it writes the template's row

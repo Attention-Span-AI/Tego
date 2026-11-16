@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# kt7-two-agents.sh — kill test 7 (P0-DESIGN §10 "7 two agents (Claude Agent SDK via forwarder; a
-# system-Python agent via uprobes)"; §12 acceptance item 1; docs/FEATURES.md "Kill test 7": "two
+# kt7-two-agents.sh — kill test 7 (two agents: Claude Agent SDK via forwarder, a
+# system-Python agent via uprobes; docs/FEATURES.md "Kill test 7": "two
 # agents complete a real local task under `examples/agents/*.yaml`, each with at least one `refused`
 # event and no code change: (a) a Claude Agent SDK (Python) agent with `capture: forwarder` and
 # `env.set: {CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"}`; every model request is `ssl_request
@@ -27,7 +27,7 @@
 # finish; then the agent connects straight to the model host, which must fail in the agent and be a
 # refused event (R38). Every request the stand-in answered must be an ssl_request with source=forwarder
 # and a parsed ssl_response. Part a-cli runs the same Claude Code as `claude -p` under
-# examples/agents/claude-code.yaml (P0-DESIGN §12.3's `claude -p` agent): the example's own command must
+# examples/agents/claude-code.yaml (the `claude -p` agent): the example's own command must
 # complete the task, and a write the task asks for outside the contract must be refused. Part a-gap looks
 # for FEATURES' gap line, "capture: uprobe unavailable (static BoringSSL, no symbols); forwarder active":
 # tego does not print it yet, and until it does the part is a named skip with that condition, never a
@@ -35,7 +35,7 @@
 # matrix yet, which half (b) reports on its own.
 #
 # (b) needs root under sudo, for tier $KT7_TIER (default cgroup; the kernel matrix runs it at bpflsm as well
-# where bpf is an active LSM, TIER3-PLAN T11). The agent is test/workloads/python-anthropic, the SDK's own
+# where bpf is an active LSM). The agent is test/workloads/python-anthropic, the SDK's own
 # tool-use loop, on this machine's python3 with the Anthropic SDK test/e2e/pydeps.sh installed (KT_PYDEPS).
 # Its contract is examples/agents/anthropic-sdk-python.yaml; the stand-in's certificate is trusted through
 # SSL_CERT_FILE. The task: list ./in, write ./out/summary.md, then ask for a write outside the contract,
@@ -96,7 +96,7 @@ a_contract() {
 # 2 with the tool named when the example names a tool this machine lacks (exec-not-on-path: the kernel-matrix
 # guest's base image has no git of its own), which is the machine's gap and not the example's, and 1
 # otherwise, with compile's first error on stdout. Tego's own state (machine config, ledger, chain anchor) is in
-# $1.tego, beside the work directory and not in it: the chain anchor's directory is tego's own (agent-contract R10),
+# $1.tego, beside the work directory and not in it: the chain anchor's directory is tego's own,
 # so the example's write entry ./out/ inside it would be a contradiction and the example would not compile.
 a_compiles() {
 	local w="$1" path="$2" out

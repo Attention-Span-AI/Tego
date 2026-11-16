@@ -39,11 +39,11 @@ capture: off
 // Environment the traced child reads.
 const envWork = "TEGO_AUDIT_WORK"
 
-// forbidden are the syscalls agent-contract.md I6 names besides the file mutations: ptrace, bpf(2), mount,
+// forbidden are the mutating syscalls besides the file mutations: ptrace, bpf(2), mount,
 // and the namespace calls that would put the process somewhere else.
 var forbidden = map[uint64]string{101: "ptrace", 321: "bpf", 165: "mount", 166: "umount2", 272: "unshare", 308: "setns"}
 
-// TestCompileMakesNoMutatingSyscall is agent-contract.md I6, syscall-audited: LoadBytes and Compile over a
+// TestCompileMakesNoMutatingSyscall, syscall-audited: LoadBytes and Compile over a
 // contract that uses every filesystem-touching part of the compiler make no write-flagged open, no unlink,
 // rename, mkdir, chmod, chown, link or truncate, no write through a descriptor that is a file, and no ptrace,
 // bpf or mount. Unprivileged: the test binary traces its own child.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# matrix.sh — `make vm-matrix`: the kernel matrix of P0-DESIGN §10 in one command, without root and without
+# matrix.sh — `make vm-matrix`: the kernel matrix in one command, without root and without
 # virtme-ng. For each row it fetches the distro's own kernel (test/vm/fetch-kernel.py), boots it in
 # a KVM guest the way a fresh install boots — the kernel's own lsm= list, no lockdown — with
 # test/vm/kvm-run.sh --sudo --delegate-user, and runs test/vm/run-matrix-row.sh there: `tego doctor` as the user and as

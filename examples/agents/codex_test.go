@@ -115,7 +115,7 @@ func TestCodexExample(t *testing.T) {
 		}
 	}
 	// No write entry reaches tego's runtime parent: the run grants its own CODEX_HOME there by itself, and an entry
-	// over or inside <runtime>/tego is a contradiction (agent-contract.md R10a). place moves /run/user/<uid>/ into the
+	// over or inside <runtime>/tego is a contradiction. place moves /run/user/<uid>/ into the
 	// stand-in machine's runtime directory, which machine names in XDG_RUNTIME_DIR, so compile has already refused such
 	// an entry; this reads the compiled table too, in case that check stops running here. The table compile --json
 	// prints holds the write entries and the deny sets, not the fs.ask scopes, so an ask entry is covered by compile's
@@ -209,8 +209,8 @@ func TestCodexRealKeyContractsSayHowTheyDiffer(t *testing.T) {
 	}
 }
 
-// TestCodexRuntimeParentGrantIsRefused is the other half of TestCodexExample's runtime-parent check (agent-contract.md
-// R10a): a copy of the example that grants tego's runtime parent, as the example did before the
+// TestCodexRuntimeParentGrantIsRefused is the other half of TestCodexExample's runtime-parent check:
+// a copy of the example that grants tego's runtime parent, as the example did before the
 // run granted its own CODEX_HOME, is refused by compile on the stand-in machine as on a real one, so the examples here
 // are compiled with that check running. The grants are spelt as the example used to (/run/user/1000/...), which place
 // moves into the stand-in runtime directory: the parent itself, a run's directory inside it, and the base above it,

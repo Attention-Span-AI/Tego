@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # run.sh — the overhead benchmark: what does running a workload under `tego run` cost against
-# running it bare, per enforcement tier and record mode. docs/P0-DESIGN.md §9 sets the budget this
+# running it bare, per enforcement tier and record mode. The budget this
 # checks (< 1% / < 3% / < 5% enforce-only / summary / full on test/workloads/build); this script is
 # the thing that measures it and docs/BENCHMARKS.md is where the numbers get published.
 #
@@ -35,7 +35,7 @@
 # bpflsm cells here yet.
 #
 # As root, which tier cgroup needs: run it with sudo from a user account. A root `tego run` drops
-# its agent to SUDO_UID and refuses to start without one (docs/p0/runtime-launch.md), so a bare
+# its agent to SUDO_UID and refuses to start without one, so a bare
 # baseline run as root would time a different user's process from the one tego runs. Every bare
 # cell then runs as that user too (setpriv, as kill test 4's baseline does), the directories the
 # agent writes are that user's, and the wheel and npm caches are copied into the work directory,
@@ -159,7 +159,7 @@ if [ -z "$work" ]; then
   [ "$keep" = 1 ] || trap 'rm -rf "$work"' EXIT
 fi
 mkdir -p "$work" "$cache"
-# The machine config refuses a relative $TEGO_CONFIG layer (identity-config R14), so the directory is made absolute.
+# The machine config refuses a relative $TEGO_CONFIG layer, so the directory is made absolute.
 work="$(cd "$work" && pwd)" || fail "cannot enter $work"
 chmod 755 "$work" # config.Load refuses a layer directory anyone but its owner may write
 
@@ -173,7 +173,7 @@ if [ -z "$tego" ]; then
   # doctor called tier cgroup "not built into this binary" even as root, and its skip rows named that instead of
   # what the machine lacks), plus tegotesthooks: the product anchors every run in the invoking user's own
   # ~/.tego/chain.log, which no setting redirects, so a benchmark of thousands of runs would fill the developer's
-  # anchor with lines whose ledgers are removed as the benchmark goes (identity-config.md R27). The hooks build
+  # anchor with lines whose ledgers are removed as the benchmark goes. The hooks build
   # adds descriptor-ownership checks (internal/platform/sys/fd_testhooks.go); test/vm/perf.sh measures the same build.
   note "building tego"
   ( cd "$repo_root" && CGO_ENABLED=0 go build -buildmode=exe -tags tegobpf,tegotesthooks -trimpath -ldflags '-s -w' -o "$work/tego" ./cmd/tego )
@@ -294,7 +294,7 @@ workload_binary() { # workload_binary NAME
 # marginal, per-syscall term — a short workload's percentage is almost entirely this fixed cost, and
 # without separating them a reader cannot tell whether a large percentage is "slow to start" or
 # "slow per syscall it made," which matters for a comparison with other tools (a workload lasting seconds
-# amortizes the fixed cost away; the budget in P0-DESIGN §9 is stated against the whole build).
+# amortizes the fixed cost away; the budget is stated against the whole build).
 run_noop() {
   note "workload noop: build"
   workload_binary noop

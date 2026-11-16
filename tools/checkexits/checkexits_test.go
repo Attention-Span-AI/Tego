@@ -50,7 +50,7 @@ func cited() int {
 }
 `
 
-// TestCheckExitsFindsPlantedViolations is limits-check-doctor-cli.md I6 and I9: it plants each form a grep missed
+// TestCheckExitsFindsPlantedViolations: it plants each form a grep missed
 // or could miss and asserts every one is found (I6: os.Exit, syscall.Exit and unix.Exit under any import name, called
 // or taken as a value; I9: a bare non-zero integer return in internal/cli); the clean tree and the exempt paths
 // beside them yield nothing.

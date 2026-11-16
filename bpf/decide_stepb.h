@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
-/* Step B of the decision plane (TIER3-PLAN T13; docs/p0/enforce-plane.md R12, R13, R14), included by decide.bpf.c
+/* Step B of the decision plane, included by decide.bpf.c
  * after Step A's bodies, whose macro, walk, readers and records it uses. Three groups:
  *
  * - The create and truncate hooks (R13): path_mknod (called from may_o_create, before an O_CREAT open makes the
@@ -20,7 +20,7 @@
  *   (kern != 0) passes. Its own sample too.
  */
 
-/* path_mknod's socket node (enforce-plane §2.20), after the filesystem floor decided it: a standalone mknod socket is
+/* path_mknod's socket node, after the filesystem floor decided it: a standalone mknod socket is
  * an ordinary filesystem operation, and only a live bind attempt in this task transfers terminal ownership, with the
  * bind's evidence and the listener's own rule. A subprogram of its own, so that path_mknod's frame, on which the name
  * entries' check stacks (decide_names.h), does not carry the bind's name copy. The floor is read from the task's

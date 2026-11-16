@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 /* Descendant materialization: the run set is a flat map of cgroup ids, so a cgroup created inside a run must
- * be inserted before any task can join it (docs/p0/enforce-cgroup-observe.md §5 R2, R11, §8 I6).
+ * be inserted before any task can join it.
  *
  * cgroup_mkdir fires before kernfs_activate(), so the row always exists by the time the new directory is
  * reachable — the ordering that makes R2's "no ancestor walk at hook time" safe. The program reads the new

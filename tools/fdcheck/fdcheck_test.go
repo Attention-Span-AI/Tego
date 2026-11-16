@@ -395,7 +395,7 @@ func TestUnclassifiedIoctlWrapper(t *testing.T) {
 	}
 }
 
-// TestLentNumber is F2's lent-number rules (lent.go; ADR 0023's 2026-10-19 design-round note): the number a
+// TestLentNumber is F2's lent-number rules (lent.go; ADR 0023 design-round note): the number a
 // lender lends (RawConn's Control, Read and Write, Borrow, sys.FileDo, and every function that passes its own
 // callback the number) and a Lease's Num are used only in the ways the rules admit; every other use is a lease
 // site. Each form found so far is a
@@ -751,7 +751,7 @@ func TestFdcheckExemptions(t *testing.T) {
 
 // TestCoverage is F6: every in-scope file is type-checked under a configuration that builds it, the arm64 and
 // untagged builds, and the cgo, big-endian and macOS builds for the files the main ones do not build (a macOS
-// file is judged like a Linux one, ADR 0023's 2026-10-24 note); a file no configuration builds is reported,
+// file is judged like a Linux one, ADR 0023); a file no configuration builds is reported,
 // never skipped.
 func TestCoverage(t *testing.T) {
 	file := func(constraint, fn string) string {

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// The slot header (enforce-plane R6; bpf/include/events.h struct tego_plane_slot): what a slot says of the run whose
+// The slot header (bpf/include/events.h struct tego_plane_slot): what a slot says of the run whose
 // rows it holds. These tests hold every plane body to reading it, and the plane to failing closed where a row or a
 // header is missing.
 
@@ -101,7 +101,7 @@ func TestPlaneEveryHookReadsTheSlotHeader(t *testing.T) {
 	}
 }
 
-// TestPlaneOpenSkipKeysOnThePrivateClone is enforce-plane R8: file_open and file_truncate skip a backing open by its
+// TestPlaneOpenSkipKeysOnThePrivateClone: file_open and file_truncate skip a backing open by its
 // mount alone, a private clone (tego_internal_mount), which no open of the agent's own resolves through; no
 // FMODE_BACKING bit is read there, so no bit misread from BTF can change their verdict. Step C still reads the bit,
 // to start its walk at a backing file's user_path.

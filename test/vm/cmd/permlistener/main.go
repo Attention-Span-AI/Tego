@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Command permlistener is a third-party fanotify permission listener, for the runs that have to show Tego's own
-// fanotify group (tier cgroup's fallback, enforce-cgroup-observe §6 E34) coexists with someone else's. It is a
+// fanotify group (tier cgroup's fallback) coexists with someone else's. It is a
 // test tool: nothing in the engine imports it, and it is built for the KVM guests (test/vm/README.md).
 //
 //	permlistener [-mode allow-touch] [-mark PATH]... [-workers N] [-touch FILE]... [-stat PATH]...

@@ -287,14 +287,14 @@ func TestSectionNames(t *testing.T) {
 	}
 }
 
-// TestRunSetLookupFirst covers docs/p0/enforce-cgroup-observe.md I1: every hook consults the run set before anything else, through the shared
+// TestRunSetLookupFirst: every hook consults the run set before anything else, through the shared
 // helper, and no hook ever walks a cgroup ancestry at hook time (§5 R2). cgroup_net.bpf.c's packet, sockops and
 // sock_release programs live in its headers and are scanned too; they never read the run set (their run is the
 // attachment's cgroup storage, as the sock_addr programs' is) and read the run's network-control maps by that
 // run_idx in their own bodies, so the direct-lookup rule alone is not theirs.
 //
 // One named exception to "run set before the reserve": cgroup_net.bpf.c's tego_cg_sock_create and
-// tego_cg_setsockopt, the two network programs that record (§5 R5 as amended, ADR 0018 PR 2 and (7)). Their run is
+// tego_cg_setsockopt, the two network programs that record (ADR 0018 PR 2 and (7)). Their run is
 // their attachment's owner storage, which TestNetDecisionReadsTheAttachmentNotTheCaller forbids them to take from a
 // run-set lookup, so I1's intent (the record's run is decided before anything is reserved) is held by the storage
 // read and its configured guard coming first.
@@ -456,7 +456,7 @@ func TestCgroupProgramsReturnOnlyZeroOrOne(t *testing.T) {
 // TestNetDecisionReadsTheAttachmentNotTheCaller covers the fix for a tier-2 network verdict that never
 // happened. The kernel picks a CGROUP_SOCK_ADDR program array by the socket's cgroup, so the run's connect4/6
 // runs for every connect on the agent's sockets; but the seccomp supervisor makes each allowed connect itself,
-// from its own process, on a pidfd_getfd duplicate (docs/p0/supervisor.md R9, I2). A decision keyed by
+// from its own process, on a pidfd_getfd duplicate. A decision keyed by
 // bpf_get_current_cgroup_id() therefore looked up the supervisor's cgroup, missed the run set, took R1's
 // neutral branch and allowed, and wrote no breadcrumb. The run is now the one the attachment belongs to, read
 // from the attach point's cgroup storage, and an attachment whose storage is still zero refuses.
@@ -595,7 +595,7 @@ func TestDPathOnlyWhereAllowed(t *testing.T) {
 	}
 }
 
-// TestNoInodeKeyedKernelMap covers docs/p0/enforce-cgroup-observe.md I9: ADR 0010's inode storage stays tier-3-only, and no map this component
+// TestNoInodeKeyedKernelMap: ADR 0010's inode storage stays tier-3-only, and no map this component
 // defines is keyed by a (device, inode) pair. The only (dev, inode) structure here is userspace's dirIndex.
 //
 // The decision plane's rows (ADR 0025, which supersedes 0010) are keyed by a struct inode * and are the one
@@ -837,7 +837,7 @@ func TestRecorderSkipsPrivateCloneOpens(t *testing.T) {
 	}
 }
 
-// TestExecArgvReadFailureIsMarked covers enforce-cgroup-observe.md §6 E25: when the exec probe's read of argv
+// TestExecArgvReadFailureIsMarked: when the exec probe's read of argv
 // fails, the record is marked truncated, so the recorder raises the argv-truncated gap instead of writing an exec
 // line that reads as one with no arguments.
 func TestExecArgvReadFailureIsMarked(t *testing.T) {

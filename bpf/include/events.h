@@ -2,8 +2,7 @@
 /* Shared event and map key structs between the BPF programs and Go (bpf2go copies these types). Keep every
  * struct explicitly padded and fixed-size; the Go side mirrors them in internal/bpf.
  *
- * Normative source: docs/p0/enforce-cgroup-observe.md §2.2 (map keys), §2.3 (ring-buffer events), §3 (map
- * sizing). Layout rules: no implicit padding anywhere (every hole is a named pad field), every struct is a
+ * Layout rules: no implicit padding anywhere (every hole is a named pad field), every struct is a
  * multiple of its own alignment, and no field is wider than the 6.1 kernel exposes for it (ARCHITECTURE §11.1).
  */
 #ifndef TEGO_EVENTS_H
@@ -26,7 +25,7 @@
 #define TEGO_CGROUP_MAX 4096     /* reason-breadcrumb rows: one per live run, keyed by its cgroup id */
 #define TEGO_MAX_RULES 65535     /* rule_idx space */
 
-/* Capture sizing (docs/p0/capture-derive.md §5 R5, R6). One chunk carries at most TEGO_SSL_CHUNK_MAX bytes
+/* Capture sizing. One chunk carries at most TEGO_SSL_CHUNK_MAX bytes
  * — headroom over the 16 KiB TLSPlaintext fragment RFC 8446 §5.1 fixes, plus verifier-friendly fixed sizing
  * — and one SSL_write/SSL_read moving more is split into at most TEGO_SSL_CHUNKS_MAX of them; past that the
  * remainder is dropped and the last chunk says so. The scratch map holds one row per in-flight SSL_read,
@@ -79,19 +78,19 @@ enum tego_kind {
     TEGO_EV_SYMLINK = 17,
     TEGO_EV_TRUNCATE = 18,
     /* The decision plane's own refusal sample (bpf/decide.bpf.c, struct tego_ev_plane), on a hook no recorder
-     * fexit wraps: bprm_check (docs/p0/enforce-plane.md R23, TIER3-PLAN T9). */
+     * fexit wraps: bprm_check. */
     TEGO_EV_PLANE_EXEC = 19,
-    /* The plane's own refusal samples on step B's hooks no recorder fexit wraps (TIER3-PLAN T13, R23), the same
+    /* The plane's own refusal samples on step B's hooks no recorder fexit wraps, the same
      * struct tego_ev_plane: an attribute change (path_chmod, path_chown, the xattr and ACL hooks), named by its
      * directory's (dev, ino) and final component as an fsop record is, and a socket (socket_create), named by its
      * family, type and protocol. */
     TEGO_EV_PLANE_ATTR = 20,
     TEGO_EV_PLANE_SOCKET = 21,
-    /* The plane's own refusal of an executable mapping (TIER3-PLAN T14, R23, R26; bpf/decide_stepc.h), named as
+    /* The plane's own refusal of an executable mapping (bpf/decide_stepc.h), named as
      * TEGO_EV_PLANE_ATTR names a file, or with no name for a file no path names. */
     TEGO_EV_PLANE_MAP = 22,
     /* The plane's own refusal sample on a hook a recorder fexit wraps whose fexit is not attached (the build's
-     * tego_plane_recorded mask says which; enforce-plane §7, R23, TIER3-PLAN T9b): file_open and the file
+     * tego_plane_recorded mask says which): file_open and the file
      * operations, named as an fsop record is, by the object's directory (dev, ino) and final component, with
      * file_open's f_flags. The hook says which action it was. */
     TEGO_EV_PLANE_FS = 23,
@@ -102,7 +101,7 @@ enum tego_kind {
     TEGO_EV_BIND_RESULT = 26,
     TEGO_EV_LISTEN_RESULT = 27,
     /* cgroup/sock_create's own refusal of an inet socket outside ADR 0018's allowlist (bpf/cgroup_net.bpf.c, struct
-     * tego_ev_sock; enforce-cgroup-observe §5 R4, R5): the one line of a socket no other Tego mechanism saw. */
+     * tego_ev_sock): the one line of a socket no other Tego mechanism saw. */
     TEGO_EV_SOCK_CREATE = 28,
     /* cgroup/setsockopt's own refusal of setsockopt(SOL_TCP, TCP_ULP) (bpf/cgroup_net.bpf.c, struct tego_ev_sockopt;
      * ADR 0018 (7)): the one line of an upper-layer protocol a submission the seccomp filter never sees asked for. */
@@ -145,7 +144,7 @@ enum tego_reason_code {
     TEGO_R_EXEC_NOT_ALLOWED = 7,
     TEGO_R_NET_NOT_ALLOWED = 8,
     TEGO_R_NET_HTTP = 9,
-    /* The decision plane's own three (TIER3-PLAN §5): a REFER refusal, a rename of a deny_write target or one of
+    /* The decision plane's own three: a REFER refusal, a rename of a deny_write target or one of
      * its ancestors, and a row whose key inode no longer carries the row's identity (ADR 0025 (4)). The ledger
      * keeps its reason in the closed set and names these in plane_reason (T9, spec/record/v1). */
     TEGO_R_REFER = 10,
@@ -177,7 +176,7 @@ enum tego_fsop {
     TEGO_FSOP_TRUNCATE = 7,
 };
 
-/* The decision plane's mode that decides a run (tego_run.plane; docs/p0/enforce-plane.md R18, R22). A plane
+/* The decision plane's mode that decides a run (tego_run.plane). A plane
  * program of another mode, or any plane program for a run of the fanotify fallback, returns 0 at once: one build's
  * run set holds every run of the build, whichever mode it was prepared in, and a build's two modes can be attached
  * at once (bpf.plane changed while the build lingers). Without it a mode would decide a run whose rows it does not
@@ -213,7 +212,7 @@ struct tego_run {
     __u8  plane;        /* enum tego_run_plane: the one plane mode that decides this run, or none */
     __u32 gen;          /* the run's generation: every record the run's programs write carries it (tego_hdr.gen),
                          * so a ring reused by the slot's next run never hands that run a record of this one
-                         * (ADR 0026 (6) as amended) */
+                         * (ADR 0026 (6)) */
     __u8 flags;         /* immutable prepared capabilities; propagated with the whole run row */
     __u8 pad[3];
 };
@@ -223,8 +222,8 @@ struct tego_run {
  * never 0 once userspace has configured the attachment, so 0 means "attached, not configured yet", which the
  * programs refuse. The breadcrumb is keyed by cgroup_id.
  *
- * relay_cgroup_id is the cgroup of the launcher whose seccomp supervisor relays the run's unix connects
- * (docs/p0/supervisor.md R11). The relay names the socket it resolved through /proc/self/fd/<n>, a name only
+ * relay_cgroup_id is the cgroup of the launcher whose seccomp supervisor relays the run's unix connects.
+ * The relay names the socket it resolved through /proc/self/fd/<n>, a name only
  * the supervisor's own descriptor table gives a meaning to, so connect_unix admits that one name shape only
  * when the caller is in this cgroup (§5 R7). 0 admits it from no one.
  *
@@ -247,13 +246,13 @@ struct tego_net_owner {
 #define TEGO_OWNER_NET_ICMP 0x1
 
 /* Unix socket name key (§5 R7): one trie holds a run's declared unix: entries and the filesystem entries a
- * pathname socket is implicitly admitted or refused by (SEMANTICS §5, supervisor.md R11's name check).
+ * pathname socket is implicitly admitted or refused by (SEMANTICS §5, the supervisor's name check).
  * prefixlen counts bits over everything after it, so the run_idx/kind/len header is always matched whole:
  *   - a declared pathname entry is exact: its bytes plus the terminating NUL, len 0;
  *   - a filesystem entry is two rows: its bytes plus "/" (the subtree beneath it, matched only at a component
  *     boundary) and its bytes plus NUL (the entry itself); the longest match is the nearest entry;
  *   - an abstract name keeps its length in the header, so only a name of exactly that many bytes matches,
- *     NUL bytes included (supervisor.md E5).
+ *     NUL bytes included.
  * A lookup always asks for TEGO_UNIX_MAX_BITS with every byte past the name zero. */
 #define TEGO_UNIX_NAME_MAX 108     /* sizeof(((struct sockaddr_un *)0)->sun_path) */
 #define TEGO_UNIX_HDR_BITS 48      /* run_idx(32) + kind(8) + len(8) */
@@ -273,7 +272,7 @@ struct tego_unix_key {
     __u8  name[TEGO_UNIX_NAME_MAX];    /* pathname bytes up to its NUL, or the abstract name after its NUL */
 } __attribute__((packed));
 
-/* One approved abstract-name connect (supervisor R11c, ADR 0008's note of 2026-10-19): the run's slot and gen and the
+/* One approved abstract-name connect (ADR 0008): the run's slot and gen and the
  * cookie of the agent's socket the relay connects. A socket holds at most one grant at a time; the value names the
  * approved name. */
 #define TEGO_UNIX_APPROVALS_MAX 4096
@@ -379,7 +378,7 @@ struct tego_ev_exec {
     __u8  argv_truncated;   /* §6 E25 */
     __u8  path_truncated;   /* §6 E4 */
     __u8  plane;            /* enum tego_plane_named: whether the plane's bprm_check allowed this exec and what
-                             * hdr.rule_idx then names (TIER3-PLAN T9) */
+                             * hdr.rule_idx then names */
     __u8  interpreted;      /* binfmt replaced bprm->interp, and may have rewritten the mapped argv */
     char  path[TEGO_PATH_MAX];
     char  argv[TEGO_ARGV_MAX]; /* NUL-separated */
@@ -429,7 +428,7 @@ struct tego_ev_fs {
 };
 
 /* What an fsop record's dir (or dir2) holds: the parent directory's path, walked in the kernel for a run a plane
- * mode decides (trace_proc tego_dir_walk; docs/p0/enforce-plane.md §2.15, ADR 0016's 2026-09-30 note). Anything but
+ * mode decides (trace_proc tego_dir_walk, ADR 0016). Anything but
  * OK leaves dir empty, and userspace names the side from dirIndex as before, or marks it unresolved: never a path
  * the walk could not prove. */
 enum tego_dir_state {
@@ -506,7 +505,7 @@ struct tego_ev_net {
     __u32 pad;
 };
 
-/* cgroup/sock_create's own refusal record (bpf/cgroup_net.bpf.c; enforce-cgroup-observe §5 R4, R5): an inet socket
+/* cgroup/sock_create's own refusal record (bpf/cgroup_net.bpf.c): an inet socket
  * outside ADR 0018's allowlist, named by the family, type and protocol the program read from struct bpf_sock (type
  * is sk_type, which carries no SOCK_NONBLOCK or SOCK_CLOEXEC; protocol is the whole number, MPTCP's 262 included).
  * hdr.verdict is TEGO_V_REFUSED, hdr.reason TEGO_R_NET_NOT_ALLOWED, hdr.cgroup_id the run's own cgroup (the
@@ -524,7 +523,7 @@ struct tego_ev_sock {
  * less its NUL (net/ipv4/tcp.c do_tcp_setsockopt). */
 #define TEGO_ULP_NAME_MAX 15
 
-/* cgroup/setsockopt's own refusal record (bpf/cgroup_net.bpf.c; ADR 0018 (7), enforce-cgroup-observe §5 R4, R5): a
+/* cgroup/setsockopt's own refusal record (bpf/cgroup_net.bpf.c; ADR 0018 (7)): a
  * setsockopt(SOL_TCP, TCP_ULP) of the run's, on whatever path reached the protocol's setsockopt (io_uring's
  * SOCKET_URING_OP_SETSOCKOPT, which no seccomp filter sees). level and optname are the option's, optlen the caller's
  * value length, and name the first TEGO_ULP_NAME_MAX bytes of the kernel's own copy of the value, zero-padded; cut
@@ -631,7 +630,7 @@ struct tego_ev_ssl_close {
     __u64 ssl_ptr;
 };
 
-/* Tier 3's kernel decision plane (ADRs 0024, 0025; docs/p0/TIER3-PLAN.md §3). bpf/decide.bpf.c decides opens,
+/* Tier 3's kernel decision plane (ADRs 0024, 0025). bpf/decide.bpf.c decides opens,
  * execs and fs mutations of a governed run on the object the kernel resolved, from rows keyed by the struct
  * inode * the run's own Landlock domain pins. Userspace never reads a key (a kernel address): rows are filled and
  * cleared in the kernel, so the only structs Go mirrors here are the values and the counters. */
@@ -662,8 +661,8 @@ struct tego_ev_ssl_close {
 #define TEGO_PLANE_NAME_DEPS 8
 #define TEGO_PLANE_NAME_DEP_LEN 16
 
-/* The hook a decision was made at: tego_plane_decision.hook, for the recorder's fexit (ADR 0024 (11)). Step A of
- * TIER3-PLAN §2; steps B-D add theirs after these. 0 means no decision recorded yet. */
+/* The hook a decision was made at: tego_plane_decision.hook, for the recorder's fexit (ADR 0024 (11)). Step A's hooks
+ * first; steps B-D add theirs after these. 0 means no decision recorded yet. */
 enum tego_plane_hook {
     TEGO_HOOK_NONE = 0,
     TEGO_HOOK_FILE_OPEN = 1,
@@ -674,7 +673,7 @@ enum tego_plane_hook {
     TEGO_HOOK_PATH_RMDIR = 6,
     TEGO_HOOK_SOCKET_CONNECT = 7,  /* step D: unix names below 6.7 */
     TEGO_HOOK_SOCKET_SENDMSG = 8,
-    /* Step B (TIER3-PLAN T13; bpf/decide_stepb.h). file_truncate and the ACL hooks are absent from some kernels'
+    /* Step B (bpf/decide_stepb.h). file_truncate and the ACL hooks are absent from some kernels'
      * BTF (internal/bpf PlaneHook.Optional); their values stay, so every hook keeps its number on every kernel. */
     TEGO_HOOK_PATH_MKNOD = 9,
     TEGO_HOOK_PATH_MKDIR = 10,
@@ -688,7 +687,7 @@ enum tego_plane_hook {
     TEGO_HOOK_INODE_SET_ACL = 18,
     TEGO_HOOK_INODE_REMOVE_ACL = 19,
     TEGO_HOOK_SOCKET_CREATE = 20,
-    TEGO_HOOK_MMAP_FILE = 21,      /* step C (TIER3-PLAN T14; bpf/decide_stepc.h): PROT_EXEC mappings */
+    TEGO_HOOK_MMAP_FILE = 21,      /* step C (bpf/decide_stepc.h): PROT_EXEC mappings */
     TEGO_HOOK_FILE_MPROTECT = 22,
     TEGO_HOOK_SOCKET_BIND = 23,    /* no sample: its terminal line is the bind producer's (decide_socket.h) */
     TEGO_HOOK_PTRACE_ACCESS_CHECK = 24,
@@ -700,7 +699,7 @@ enum tego_plane_hook {
     TEGO_HOOK_UNIX_MAY_SEND = 30,
 };
 
-/* A slot's unix policy for the plane's step D hooks (socket_connect, socket_sendmsg; enforce-plane R14), in
+/* A slot's unix policy for the plane's step D hooks (socket_connect, socket_sendmsg), in
  * tego_plane_unix_policy at run_idx, written with the run's gen by Prepare's fill. The two hooks are loaded only where
  * cgroup/connect_unix is absent (below 6.7) and decide a run's unix names exactly as connect_unix and sendmsg_unix
  * do on 6.7+, from the same tego_unix_names rows. Whether they decide is the slot header's TEGO_SLOT_UNIX_DECIDES
@@ -736,7 +735,7 @@ enum tego_plane_slot_flag {
     TEGO_SLOT_BUILTIN_TTY = 0x200, /* ADR 0113: the inherited Landlock tty layer decides terminal opens */
 };
 
-/* A slot's header, in tego_plane_slots at run_idx (enforce-plane R6): the gen of the run whose rows the slot holds
+/* A slot's header, in tego_plane_slots at run_idx: the gen of the run whose rows the slot holds
  * and what that run's contract decides. Prepare writes it last, after the fill and its check and before Arm inserts
  * the run-set row, and every clear of the slot zeroes it first. Every decided hook reads it after its run-set hit,
  * and a header of another gen (0 when cleared; a slot's epoch is never 0) refuses and counts norows: a missing row
@@ -775,7 +774,7 @@ struct tego_plane_slot {
 #define TEGO_BIND_MARKED 8U
 #define TEGO_BIND_CHAIN_REFUSED 16U
 #define TEGO_BIND_DECIDED 32U
-#define TEGO_BIND_URING 64U /* written by an io_uring op's producer, not a syscall exit (enforce-plane §2.20) */
+#define TEGO_BIND_URING 64U /* written by an io_uring op's producer, not a syscall exit */
 
 /* Immutable kernel bind evidence, separate from the task's last generic hook. */
 struct tego_plane_bind {
@@ -804,7 +803,7 @@ enum tego_plane_walk_result {
 };
 
 /* tego_plane_row.kind: the row compiler's decide.PlaneKind, bit for bit (internal/bpf
- * TestPlaneCapsMatchRowCompiler). Every row is complete (TIER3-PLAN T5): it carries the root model's answer at its
+ * TestPlaneCapsMatchRowCompiler). Every row is complete: it carries the root model's answer at its
  * own path for every question, so the walk stops at the first current row it meets. A row with no bit set allows a
  * read and refuses a modification, as a walk that meets no row does. */
 enum tego_plane_row_kind {
@@ -832,7 +831,7 @@ enum tego_plane_row_kind {
 
 /* The rule_idx bprm_check records for a match by an exec.allow directory: the fs row's position with this bit set,
  * since the fs row, not an exec entry, is what the kernel holds there; the ledger names the row's exec.allow entry
- * (decide.PlaneRows.ExecRuleAt, TIER3-PLAN T9). */
+ * (decide.PlaneRows.ExecRuleAt). */
 #define TEGO_PLANE_RULE_FS_ROW 0x10000
 #define TEGO_PLANE_RULE_LISTEN 0x20000
 #define TEGO_PLANE_RULE_BUILTIN_HOST 0x40000
@@ -843,7 +842,7 @@ enum tego_plane_row_kind {
  * this bit before it reads rule_idx as a row; TEGO_PLANE_RULE_NONE has every bit set and is never read as a tag. */
 #define TEGO_PLANE_RULE_NAME 0x8000
 
-/* One row of a slot's rows map, keyed by the entry's struct inode * (ADR 0025 (1), amended by T0): kind is the
+/* One row of a slot's rows map, keyed by the entry's struct inode * (ADR 0025 (1)): kind is the
  * row's answer (enum tego_plane_row_kind) and rule_idx the row's position in the row compiler's rows, which the
  * ledger resolves by the hook's question (decide.PlaneRows.RuleAt); i_ino, i_generation and s_dev are compared with
  * the key inode on every hit (a recycled pointer refuses); gen is the run's tego_run.gen, and a row of another gen
@@ -868,7 +867,7 @@ struct tego_plane_row {
  * - A link key (plane_name.h's tego_exec_link_key over the executable's struct inode *, its directory's struct
  *   inode * and its name key; top bit set): the file may be executed under this name in this directory, so a hard
  *   link under another name or elsewhere is refused (ADR 0025 (1), SEMANTICS §4), and each link of one inode an
- *   entry names has its own row (a multi-call binary, ADR 0025's 2026-09-30 note, enforce-plane §6 E15). inode and
+ *   entry names has its own row (a multi-call binary, ADR 0025). inode and
  *   parent are the pointers the key was built from, compared on a hit, never trusted from the key; parent is checked
  *   with its own identity where the domain cannot pin it (ADR 0025 (3)).
  * - A name key (plane_name.h's tego_name_key, internal/bpf.PlaneNameKey; top bit clear, never 0): an entry the
@@ -1004,7 +1003,7 @@ struct tego_ev_bind_result {
     char name[108];
 };
 
-/* tego_ev_exec.plane: what the plane's bprm_check said of an exec that went ahead (TIER3-PLAN T9). The rule an
+/* tego_ev_exec.plane: what the plane's bprm_check said of an exec that went ahead. The rule an
  * exec.allow directory matched is its fs row's position (TEGO_PLANE_RULE_FS_ROW), which the u16
  * rule_idx cannot carry with its bit 16, so the bit travels here. */
 enum tego_plane_named {
@@ -1019,7 +1018,7 @@ struct tego_plane_path {
 };
 
 /* The plane's own refusal sample, on a hook no recorder fexit wraps (bprm_check, and step B's attribute and socket
- * hooks; enforce-plane R23), or on one whose fexit is not attached (TEGO_EV_PLANE_FS, T9b): the ledger's one line
+ * hooks), or on one whose fexit is not attached (TEGO_EV_PLANE_FS, T9b): the ledger's one line
  * of the refused action. hdr.verdict is TEGO_V_REFUSED and
  * hdr.reason the plane's; rule_idx is the decision's whole rule, bit 16 included (an exec.allow directory's fs row),
  * where hdr.rule_idx keeps its low 16 bits. hdr.kind says which: TEGO_EV_PLANE_EXEC's path is bprm->filename, the
@@ -1181,7 +1180,7 @@ struct tego_ev_exec_held {
     __u32 seq;              /* the seq of the pin the check held the exec to, which is the task's cur_seq */
 };
 
-/* The plane's fill (bpf/decide_fill.bpf.c, ADR 0025 (2); TIER3-PLAN T4): userspace names each wanted descriptor
+/* The plane's fill (bpf/decide_fill.bpf.c, ADR 0025 (2)): userspace names each wanted descriptor
  * with its row template, the fill writes the row at the descriptor's inode and reports what it saw there. */
 /* Descriptors one fill may name: a slot's fs rows plus its exec rows. */
 #define TEGO_PLANE_FILL_MAX (TEGO_PLANE_ROWS_MAX + TEGO_PLANE_EXEC_ROWS_MAX + TEGO_PLANE_LISTEN_ROWS_MAX)
@@ -1213,7 +1212,7 @@ enum tego_plane_fill_status {
 };
 
 /* One launcher's fill: its parameters, its counts and its scratch, keyed by its tgid in tego_plane_fill_config, so
- * launchers of one build fill at once without a lock (enforce-plane §2.6): the program looks up the config of the task
+ * launchers of one build fill at once without a lock: the program looks up the config of the task
  * reading the iterator (bpf_get_current_pid_tgid), which is the launcher filling. */
 struct tego_plane_fill_cfg {
     __u32 tgid;     /* the launcher's: only its descriptors are read */
@@ -1231,7 +1230,7 @@ struct tego_plane_fill_cfg {
  * (TEGO_PLANE_FILL_KEY): the row template in, the kernel's view out.
  * For an exec row the name is the template's (the compiler's final component), which the fill compares with the
  * dentry's byte for byte; the parent is the dentry's d_parent at the fill, and the row's key the link's
- * (tego_exec_link_key), so the descriptor must be held at the link the entry names (enforce-landlock's plane link
+ * (tego_exec_link_key), so the descriptor must be held at the link the entry names (the Landlock backend's plane link
  * descriptors), not at another name of its inode. */
 struct tego_plane_fill_row {
     __u8  what;         /* enum tego_plane_fill_what */

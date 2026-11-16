@@ -21,7 +21,7 @@ import (
 // flag is clear and no name check runs. A set run's agent prints its readiness, the suite then makes a .env.local at
 // two depths (a name entry's file created after compile, which only the name check refuses) and releases it.
 //
-// The check runs only when asked (-checks name): its first guest run (6.17, 2026-10-20, ADR 0043's notes) put the
+// The check runs only when asked (-checks name): its first guest run (6.17, ADR 0043's notes) put the
 // set and clear contracts' medians several hundred ns apart in either direction from one plane mode to the next, so
 // a 30 ns or 300 ns figure is below what two runs of different contracts resolve; its limits stand and it fails
 // over them.

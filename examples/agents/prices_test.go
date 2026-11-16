@@ -15,8 +15,7 @@ import (
 )
 
 // samplePrices is the price table the examples' headers tell a reader to install before a contract that declares
-// limits.cost_usd can run: without a table that loads, its run is refused [budget-unmetered] (limits-check-doctor-cli.md
-// R32).
+// limits.cost_usd can run: without a table that loads, its run is refused [budget-unmetered].
 var samplePrices = filepath.Join(filepath.Dir(pkgDir), "prices.example.yaml")
 
 // samplePriceKeys are the five prices of a model entry. An entry that leaves one out loads, and leaves unpriced every

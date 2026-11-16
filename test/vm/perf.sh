@@ -13,8 +13,7 @@
 # fallback (cgroup/sock_create's and cgroup/setsockopt's cost, ADR 0018 PR 2 and (7)), an exec loop per mode with and
 # without command rules (test/perf/cmd/execbench: the exec pins' cost, ADR 0048 P2's K7) and 2, 8 and 32 concurrent
 # runs with landlock alone as the control. It fails when a
-# budget of test/perf is over its limit, and prints TARGET-MISS for a figure over the spec's own target
-# (docs/p0/enforce-plane.md §10 records both, with the kernel and mode).
+# budget of test/perf is over its limit, and prints TARGET-MISS for a figure over its own target.
 #
 # Usage: test/vm/perf.sh [perfsuite flags]      e.g.  test/vm/perf.sh -checks start,fill
 #                                                     test/vm/perf.sh -budget start.warm.landlock.p50_ms=1   (must fail)

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
-/* The kernel decision plane (ADRs 0024, 0025; docs/p0/TIER3-PLAN.md §2, §3). Tier bpflsm decides a governed run's
+/* The kernel decision plane (ADRs 0024, 0025). Tier bpflsm decides a governed run's
  * opens, execs and fs mutations here, on the object the kernel resolved, and tier cgroup does the same through the
  * same bodies where bpf is not an active LSM.
  *
@@ -16,7 +16,7 @@
  * the probe's, never a fallback inside one object (ADR 0024's T0 note).
  *
  * T2 put the maps, the macro and the walk here; T3 wrote Step A's bodies (file_open, bprm_check, path_rename,
- * path_link, path_unlink, path_rmdir: docs/p0/enforce-plane.md R7-R11). The rows they read are filled by T4 and
+ * path_link, path_unlink, path_rmdir). The rows they read are filled by T4 and
  * compiled by T5. T15 wrote step D's (socket_connect,
  * socket_sendmsg: unix names below 6.7, R14), which a backend loads only where cgroup/connect_unix is absent.
  * T13 wrote Step B's bodies in decide_stepb.h (R12-R14):
@@ -243,7 +243,7 @@ static long tego_walk_step(__u32 i, struct tego_walk_state *s)
 /* tego_plane_walk walks from dentry (a struct dentry *) on vfsmount (its struct vfsmount *) for the run at run_idx
  * of generation gen, and returns an enum tego_plane_walk_result; on TEGO_WALK_HIT, *hit is the nearest row. Every
  * result but ROOT and HIT is a refusal the caller must make, and is counted at the slot. The walk stops at the first
- * current row: every row is complete (decide.PlaneRows, TIER3-PLAN T5), so the nearest row answers every question.
+ * current row: every row is complete (decide.PlaneRows), so the nearest row answers every question.
  * vfsmount 0 walks inside the dentry's superblock (the attribute hooks, which get no mount, R12): d_parent to the
  * superblock's root, which ends it as ROOT, meeting the mounted-root rows on the way.
  * Global: verified once per program however many times it is called (rename and link walk both ends). */
@@ -332,7 +332,7 @@ static __always_inline int tego_plane_walk_path(struct tego_plane_decision *sc, 
 #endif
 #include "plane_name.h"
 
-/* ---- Step A hooks (TIER3-PLAN §2; enforce-plane R8-R11) ----
+/* ---- Step A hooks ----
  *
  * Every body starts with the run-set lookup and returns 0 on a miss (R1). A decision is recorded in the task's
  * tego_plane_scratch value, {rule_idx, hook, verdict, reason}, for the recorder's fexit (ADR 0024 (11)), and every
@@ -393,7 +393,7 @@ static __always_inline int tego_no_path(struct dentry *dentry, struct vfsmount *
  * value the 6.17 guest's overlayfs gives its clones: TestPlaneStepAHooksDecide's overlay cells). overlayfs' copy-up
  * opens the new upper file there with a plain dentry_open (no FMODE_BACKING), in the agent's task, after the agent's
  * own open of the merged file was decided; decided again on the upper path, where no row lies, it refused the copy-up
- * of every lower file under a write entry (enforce-plane §2.7's condition 1). Every name the agent opens resolves
+ * of every lower file under a write entry. Every name the agent opens resolves
  * through the mounts of its own namespace, never a private clone, so the agent cannot put an open of its own there;
  * a detached mount (mnt_ns NULL) is not skipped. */
 #define TEGO_MNT_NS_INTERNAL ((__u64)-22)
@@ -516,7 +516,7 @@ static __always_inline __u8 tego_rename_end(__u8 kind, __u32 depth)
     return (kind & TEGO_ROW_MODIFY_ALLOW) ? 0 : TEGO_R_RENAME_OUTSIDE_CONTRACT;
 }
 
-/* ---- The plane's own samples (enforce-plane R23, §7; TIER3-PLAN T9, T13, T9b) ----
+/* ---- The plane's own samples (T9b) ----
  *
  * A refusal no recorder fexit writes a line for is written by the plane itself, to the run's own ring, under
  * record: off too: an attribute change and a socket (step B's hooks, which no fexit wraps), and a refusal on a hook
@@ -558,7 +558,7 @@ static __always_inline int tego_recorder_wraps(__u16 hook)
     return mask && hook < 32 && (*mask & (1U << hook));
 }
 
-/* The record fallback (enforce-plane §7, R23; TIER3-PLAN T9b): a refusal on a hook a recorder fexit wraps, where
+/* The record fallback: a refusal on a hook a recorder fexit wraps, where
  * the build's fexit is not attached, writes the plane's own sample of the object at dentry (TEGO_EV_PLANE_FS), so
  * the action still has exactly one line: the sample where no fexit runs, the fexit's where one does. Called on the
  * refusal path only, before its return -EACCES. The sample's arguments are built in a function of their own
@@ -603,7 +603,7 @@ static __always_inline void tego_plane_fallback(const struct tego_run *run, __u1
                                 (__u64)flags | (__u64)dentry->d_sb->s_dev << 32);
 }
 
-/* The slot header of run (enforce-plane R6), or NULL, counted norows, when the slot holds none of the run's gen: a
+/* The slot header of run, or NULL, counted norows, when the slot holds none of the run's gen: a
  * cleared slot (gen 0, which no epoch is), a previous run's, or one whose Prepare never finished. Every decided hook
  * reads it after its run-set hit and its no-decision skips (an object no path names, a private clone), before its
  * first decision, and refuses on NULL: a run-set row whose slot says nothing of it is decided by nothing, never
@@ -728,7 +728,7 @@ static __always_inline int tego_is_anonymous(struct dentry *dentry)
     return (__u64)dentry->d_parent == (__u64)dentry || !dentry->d_hash.pprev;
 }
 
-/* ---- The plane's own refusal sample (enforce-plane R23, TIER3-PLAN T9) ----
+/* ---- The plane's own refusal sample ----
  *
  * bprm_check has no recorder fexit (ADR 0016 (3) lists none: Landlock decides nothing there), so the plane writes
  * the line of an exec it refuses itself, to the run's own ring, under record: off too. The name is bprm->filename,
@@ -888,7 +888,7 @@ static __always_inline void tego_exec_candidate(__u32 *entry, __u32 *best, __u8 
 /* The file arm, one function for bprm_check and step C's mappings (tego_map_exec_row), so the key they look up is
  * the one the fill writes: the row of this link, keyed by the file's inode, its directory's inode and its name's key
  * (tego_exec_link_key: one row per hard link an entry names, so every listed link of a multi-call binary has its
- * own and an unlisted one none, enforce-plane §6 E15). The key is not trusted alone: the row's inode, directory and
+ * own and an unlisted one none). The key is not trusted alone: the row's inode, directory and
  * name are compared with the file's. A file whose directory has no inode cannot be identified and matches no row.
  * Returns 1 with the row's entry in *rule for a match, 0 for none, and -1 with *rule for a row whose inode no longer
  * carries its identity (counted). */
@@ -1185,8 +1185,7 @@ TEGO_PLANE_HOOK(path_link, path_link, security_path_link,
     }
     /* The new name is a creation in its directory (new_dentry is negative, so its walk starts there), and a creation
      * at a covered name is refused as one (ADR 0043 D1); REFER then holds the source's nearest row to be no stricter
-     * than the destination's: a second name for a file under a deny_read or a deny_write target outside it (R10,
-     * supervisor.md R15c) is refused, and a covered source is as strict as a deny_read (D1, strictness 2). A
+     * than the destination's: a second name for a file under a deny_read or a deny_write target outside it is refused, and a covered source is as strict as a deny_read (D1, strictness 2). A
      * directory is never linked, and a name entry decides none. */
     file = tego_plane_unknown(sc, !tego_is_dir(old_dentry->d_inode)) & 1; /* read back, as path_rename's kinds are */
     if ((reason = tego_walk_failed(tego_nearest(sc, old_dentry, new_dir->mnt, run, &skind, &srule, &sdepth))) ||
@@ -1314,11 +1313,11 @@ TEGO_PLANE_HOOK(path_rmdir, path_rmdir, security_path_rmdir, (const struct path 
     return 0;
 }
 
-/* ---- Step D hooks: unix names below 6.7 (TIER3-PLAN §2; enforce-plane R14) ----
+/* ---- Step D hooks: unix names below 6.7 ----
  *
  * Below 6.7 there is no cgroup/connect_unix or sendmsg_unix, so tier 2 decides no unix name in the kernel. These two
  * hooks decide them where a plane mode runs, by the rule and from the rows connect_unix and sendmsg_unix use on 6.7+
- * (cgroup_net.bpf.c tego_unix_decide, enforce-cgroup-observe §5 R7): the name the caller passed, in the kernel's own
+ * (cgroup_net.bpf.c tego_unix_decide): the name the caller passed, in the kernel's own
  * copy of its sockaddr_un (move_addr_to_kernel's, or ____sys_sendmsg's copy of msg_name), which no thread of the
  * caller can rewrite after the hook reads it, looked up in tego_unix_names, which Prepare fills on every kernel. The
  * loader loads them only where cgroup/connect_unix is absent (bpf.PlaneHook.Unix), so no name is decided twice.
@@ -1329,13 +1328,12 @@ TEGO_PLANE_HOOK(path_rmdir, path_rmdir, security_path_rmdir, (const struct path 
  * protocol's connect and security_socket_sendmsg before unix_dgram_sendmsg, so each sees what the cgroup hook sees.
  *
  * The run is the socket's, not the caller's: the supervisor relays every unix connect of the agent from the
- * launcher's cgroup on a pidfd_getfd duplicate of the agent's socket (supervisor.md R11), which cgroup/connect_unix
+ * launcher's cgroup on a pidfd_getfd duplicate of the agent's socket, which cgroup/connect_unix
  * reaches through the attachment on the socket's cgroup; here the socket's cgroup is looked up in the run set. The
  * caller's cgroup is read only to recognise the relay's /proc/self/fd/<n> name, as tego_unix_relayed does.
  *
  * Each decision is recorded in the task's scratch value like every plane decision (ADR 0024 (11)); no sample is
- * written, as cgroup_net's unix programs write none: a connect's or datagram's one ledger line is the supervisor's
- * (enforce-cgroup-observe §5 R7, supervisor R13b). */
+ * written, as cgroup_net's unix programs write none: a connect's or datagram's one ledger line is the supervisor's. */
 
 /* The run of the unix socket sock, by the cgroup the socket was created in (sk_cgrp_data, fixed at creation), or
  * NULL for a socket of another family or of no run. */
@@ -1463,13 +1461,13 @@ static __always_inline int tego_plane_unix_canonical(__u64 addr, __u32 alen, con
 /* tego_unix_decide's decision on the address at addr: 0 to allow or TEGO_R_NET_NOT_ALLOWED, and in *rule the
  * matching row's rule_idx (TEGO_PLANE_RULE_NONE for none):
  *   - an abstract name is admitted when a unix: entry names exactly its bytes;
- *   - a relative name resolves against a cwd no program can read: a datagram's is left to tier 1, which records it
- *     (supervisor R13b), and a connect's is refused, since the supervisor relays every connect by the inode it
+ *   - a relative name resolves against a cwd no program can read: a datagram's is left to tier 1, which records it,
+ * and a connect's is refused, since the supervisor relays every connect by the inode it
  *     resolved and never passes a relative name on;
  *   - /proc/self/fd/<n> is admitted on a connect from the launcher's cgroup (pol->relay_cgroup_id), the relay's;
  *   - any other absolute name is admitted when spelled canonically and a unix: entry or a write entry admits it;
  *   - an abstract name no entry admits is admitted on a connect that consumes the one-connect grant of a person's
- *     approval for the socket whose cookie is cookie (supervisor R11c, tego_unix_approved; 0 for a datagram). */
+ *     approval for the socket whose cookie is cookie (tego_unix_approved; 0 for a datagram). */
 static __always_inline __u8 tego_plane_unix_reason(const struct tego_run *run, const struct tego_plane_unix *pol,
                                                     __u64 addr, __u32 alen, __u8 op, __u64 cookie, __u16 *rule)
 {
@@ -1603,11 +1601,11 @@ TEGO_PLANE_HOOK(socket_sendmsg, socket_sendmsg, security_socket_sendmsg, (struct
     return 0;
 }
 
-/* Step B (TIER3-PLAN T13): the create, truncate, attribute and socket hooks, in their own file. */
+/* Step B: the create, truncate, attribute and socket hooks, in their own file. */
 #include "decide_socket.h"
 #include "decide_stepb.h"
 
-/* Step C (TIER3-PLAN T14): the PROT_EXEC mapping hooks, in their own file. */
+/* Step C: the PROT_EXEC mapping hooks, in their own file. */
 #include "decide_stepc.h"
 
 #include "decide_control.h"
