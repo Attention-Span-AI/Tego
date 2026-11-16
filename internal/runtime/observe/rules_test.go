@@ -242,7 +242,7 @@ func TestDirIndexLeavesOutAnEntryStatDoesNotNameBySuperBlock(t *testing.T) {
 	}
 }
 
-// (docs/p0/enforce-cgroup-observe.md §5 R3 and §6 E8: the recorder names the entry the kernel's exact-then-longest-prefix
+// (The recorder names the entry the kernel's exact-then-longest-prefix
 // lookup decided by, whose rows carry the first declared covering entry when none refuses, SEMANTICS §5.)
 func TestMatchNetExactBeforeCIDR(t *testing.T) {
 	ip := netip.MustParseAddr("93.184.216.34")
@@ -385,7 +385,7 @@ func TestMatchExec(t *testing.T) {
 	}
 }
 
-// TestRuleNames (docs/p0/enforce-cgroup-observe.md §5 R17) pins that this package stamps the names agent.*.RuleName spells and no others: the
+// TestRuleNames pins that this package stamps the names agent.*.RuleName spells and no others: the
 // recorder had its own renderers, and a second spelling of the `rule` field is what made every run
 // look like drift (spec/record/v1/README.md).
 func TestRuleNames(t *testing.T) {

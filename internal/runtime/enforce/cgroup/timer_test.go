@@ -220,7 +220,7 @@ func TestTheTimerBacksOffALingerWithASecondsFloorAndProbesOnlyItsOwnBuild(t *tes
 func TestTheTimerTakesItsBuildBackWhenItIsMadeAgainAsItExits(t *testing.T) {
 	// Not parallel: a sibling test that forks while this one's sweep holds a build's flock keeps the descriptor until
 	// its exec (the race this file's header describes), and the fake clock then runs through dozens of busy retries in
-	// no real time (CI, 2026-11-03: 57 extra one-minute backoffs).
+	// no real time (CI: 57 extra one-minute backoffs).
 	bpffs, state := t.TempDir(), t.TempDir()
 	c := &fakeTimerClock{at: time.Unix(1_700_000_000, 0)}
 	timerBuild(t, bpffs, state, "tb3", c.at.Add(-2*time.Hour))

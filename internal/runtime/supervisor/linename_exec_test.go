@@ -23,8 +23,6 @@ import (
 // python3 it runs. The name is the image walk's own (execImage.name), made
 // before the answer: the fake reads an answered notification gone, as the kernel does. A spelling with no ".." keeps
 // its spelling, as before.
-//
-// Spec: docs/p0/supervisor.md R15b, R16b.
 func TestExecLineNamesWhereADotDotSpellingLands(t *testing.T) {
 	for _, tc := range []struct {
 		name, spelled, image string
@@ -78,8 +76,6 @@ func TestExecLineNamesWhereADotDotSpellingLands(t *testing.T) {
 // then, so not pinned: execPinned) is matched by name; /grant/lk/../x cleans to the entry's /grant/x while the kernel
 // runs /elsewhere/x, and the line read "allow /elsewhere/x, rule exec[/grant/x]", a rule that never covered the file
 // it names. The entry's own spelling still matches it.
-//
-// Spec: docs/p0/supervisor.md R15b, R16b.
 func TestExecIsDecidedWhereItIsNamed(t *testing.T) {
 	for _, tc := range []struct {
 		name, spelled, image string
@@ -122,8 +118,6 @@ func TestExecIsDecidedWhereItIsNamed(t *testing.T) {
 // The link's target itself, run directly, is the same file by identity (inode and resolved path, as the exec grant
 // matches it: mcpIDs). Other arguments, or another file, start no server, and neither does another name of the same
 // inode (a hard link, another mount of the filesystem): the identity is the inode and its resolved path both.
-//
-// Spec: docs/p0/supervisor.md R16b; P0-DESIGN §2.2.
 func TestExecOfADeclaredMCPServerByAnotherSpellingEmitsMCP(t *testing.T) {
 	const npx, cli, hardLink = "/usr/bin/npx", "/usr/lib/node_modules/npm/bin/npx-cli.js", "/usr/local/bin/npx-copy"
 	c := &agent.Contract{MCP: []agent.MCPServer{{Name: "fs", Command: []string{"npx", "-y", "@mcp/server-fs"}}}}
@@ -199,8 +193,6 @@ func TestExecOfADeclaredMCPServerByAnotherSpellingEmitsMCP(t *testing.T) {
 // its line read "exec allow rule=exec[/w/evil/npx] path=/usr/bin/npx", with an mcp[fs] line for a declared server that
 // never started. The fake's image walk lands /w/lk/.. on /w/evil, and its fs walk,
 // which no exec may ask, answers /usr/bin/npx.
-//
-// Spec: docs/p0/supervisor.md R16b.
 func TestExecLineNameIsTheImagesWalk(t *testing.T) {
 	const npx, evil = "/usr/bin/npx", "/w/evil/npx"
 	c := &agent.Contract{MCP: []agent.MCPServer{{Name: "fs", Command: []string{"npx", "-y", "@mcp/server-fs"}}}}

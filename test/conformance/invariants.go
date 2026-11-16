@@ -18,7 +18,7 @@ type Outcome struct {
 
 // Refusal reports whether the kernel refused: EACCES, EPERM, EXDEV (Landlock's REFER refusal of a link or a rename
 // across trees) or ENOSYS (the filter's answer where it refuses a syscall as absent: the memfd arm on a kernel without
-// MFD_NOEXEC_SEAL, enforce-landlock R11a, and R10). Any other failure (ENOENT, ECONNREFUSED) is no refusal by Tego,
+// MFD_NOEXEC_SEAL, and R10). Any other failure (ENOENT, ECONNREFUSED) is no refusal by Tego,
 // and a cell that meets one has a broken fixture.
 func (o Outcome) Refusal() bool {
 	return !o.OK && (o.Errno == 13 || o.Errno == 1 || o.Errno == 18 || o.Errno == 38)
@@ -108,8 +108,8 @@ func denyReadRulesetEnforced(m Model, t Tier, entry string) bool {
 }
 
 // denyWriteEnforced says whether a tier enforces the contract's deny_write targets (the built-in set beneath its
-// write entries, agent-contract R20): only where a kernel decision plane decides (the plane axes, tier bpflsm).
-// Tier landlock and tier cgroup's listener refuse them through the supervisor, best effort (supervisor R15c, ADR
+// write entries): only where a kernel decision plane decides (the plane axes, tier bpflsm).
+// Tier landlock and tier cgroup's listener refuse them through the supervisor, best effort (ADR
 // 0041 D1 (a)), and under fs.assurance: kernel do not start such a run at all.
 func denyWriteEnforced(m Model, t Tier) bool { return t == TierBPFLSM && len(m.DenyWrite) > 0 }
 
@@ -122,7 +122,7 @@ func Invariant(m Model, c *Cell, t Tier, o Outcome) string {
 	}
 	switch c.Op {
 	// Not a chmod, a chown, an xattr or an ACL (space 4's attribute ops alike): ADR 0017 (c) holds "a write, create,
-	// delete, rename or mkdir" outside the write entries, and no tier claims fs.deny_chmod (agent-contract E35, CAPABILITIES: Landlock has no chmod right, fanotify no event, and the
+	// delete, rename or mkdir" outside the write entries, and no tier claims fs.deny_chmod (CAPABILITIES: Landlock has no chmod right, fanotify no event, and the
 	// plane's path_chmod refuses beneath the deny_write targets only, which the deny_write invariant below holds). A
 	// tier that comes to claim it adds its case here, beside its capability line.
 	case OpWriteOpen, OpCreate, OpCreat, OpOpenTrunc, OpTruncate, OpUnlink, OpRmdir, OpMkdir, OpMknod, OpRaceSymlinkWrite:
@@ -144,8 +144,8 @@ func Invariant(m Model, c *Cell, t Tier, o Outcome) string {
 	}
 	// Inside the write entries, the nearest entry decides a mutation too: a deny_read nested in a write entry, where
 	// the tier enforces it, refuses every modification beneath it (ADR 0021 (5)), and a rename or hard link that takes
-	// a name out of it (supervisor R15d). chmod is not held to it: no tier below the plane decides a chmod, and the
-	// plane's chmod hook protects the deny_write targets (agent-contract E35, enforce-plane R12).
+	// a name out of it. chmod is not held to it: no tier below the plane decides a chmod, and the
+	// plane's chmod hook protects the deny_write targets.
 	for _, p := range mutated(c) {
 		if e, deny, ok := governing(m, p); ok && deny && denyReadRulesetEnforced(m, t, e) {
 			return "a mutation succeeded under a deny_read nearer than every write entry, which the tier enforces"

@@ -98,7 +98,7 @@ func TestModelEndpointIsRefusedWithNoNetSection(t *testing.T) {
 				// The kernel sends a connect to the unspecified address to loopback (ip_route_connect,
 				// tcp_v6_connect): 0.0.0.0:8443 reached a server on 127.0.0.1:8443 around the guard, recorded
 				// allow/unmatched, which a copy of kt2 whose agent connected to 0.0.0.0:$port showed (the shipped
-				// kt2 connects to 127.0.0.1:$port; supervisor.md's corrections name the copy).
+				// kt2 connects to 127.0.0.1:$port).
 				{"the unspecified address", sockaddrIn4("0.0.0.0", 8443), "0.0.0.0:8443", true, "models[127.0.0.1:8443]", "127.0.0.1"},
 				{"the unspecified address, v4-mapped", sockaddrIn6("::ffff:0.0.0.0", 8443), "0.0.0.0:8443", true, "models[127.0.0.1:8443]", "127.0.0.1"},
 				{"the IPv6 unspecified address", sockaddrIn6("::", 9443), "[::]:9443", true, "models[[::1]:9443]", "::1"},
@@ -560,7 +560,7 @@ func gatherShapes() []gatherShape {
 // TestModelEndpointByName is the guard for a models[] host given by name: its addresses are resolved when the
 // loop is built and refused. Another address on its port is refused too, rule models.port, under a net: section
 // unless a net.allow entry names it (ADR 0040 (2)); with no net: section, as guardPolicy has, the port is not
-// reserved and that connect is allowed unmatched (SEMANTICS §1, amended 2026-10-05), though the
+// reserved and that connect is allowed unmatched (SEMANTICS §1), though the
 // guard's own match still names the reservation. A name that has not resolved refuses every address on its
 // port, rule unresolved, because any of them could be it — never admits them.
 func TestModelEndpointByName(t *testing.T) {
@@ -583,8 +583,8 @@ func TestModelEndpointByName(t *testing.T) {
 	if len(resolved.asked) == 0 || resolved.asked[0] != "api.anthropic.com" {
 		t.Errorf("lookups = %q, want the model host resolved when the loop was built", resolved.asked)
 	}
-	// guardPolicy has no net: section, which reserves no port (SEMANTICS §1, amended 2026-10-05): from
-	// 2026-10-01 to then this connect, any HTTPS host's, was refused models.port[api.anthropic.com:443].
+	// guardPolicy has no net: section, which reserves no port (SEMANTICS §1), so this
+	// connect, any HTTPS host's, is not refused models.port[api.anthropic.com:443].
 	if ev := connect(t, resolved, "203.0.113.9", 443); ev.Verdict != record.VerdictAllow || ev.Rule != ruleUnmatched {
 		t.Errorf("another address on the model's port = %s/%s, want allow/unmatched", ev.Verdict, ev.Rule)
 	}

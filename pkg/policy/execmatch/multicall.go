@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// The applet a multicall image runs by its program name (ADR 0048 (2) 4, amended 2026-11-11).
+// The applet a multicall image runs by its program name (ADR 0048 (2) 4).
 //
 // A multicall binary is one file under many names, and it picks what it does from a name. Interpretations already
 // reads every exec by its exact names and by busybox's and toybox's argv[0] forms. Upstream uutils picks more widely

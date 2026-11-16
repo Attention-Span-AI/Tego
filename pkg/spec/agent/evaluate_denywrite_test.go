@@ -11,7 +11,7 @@ import (
 
 // TestEvaluateDenyWrite is R20 (b) in compile --test: a modification that reaches a built-in deny_write
 // target is refused, named after the target, in every enforcing tier — tiers 1 and 2 refuse it in the
-// seccomp supervisor (supervisor R15c), which asks the same DenyWriteTarget — while an ordinary write in the
+// seccomp supervisor, which asks the same DenyWriteTarget — while an ordinary write in the
 // same worktree, git's own writes beside the targets and a read of a target stay allowed, and an observe run
 // allows everything. A target is matched at its resolved path too, and a rename of a directory above one is
 // refused at either end.

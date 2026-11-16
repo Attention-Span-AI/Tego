@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package tree follows the processes of a recognised agent (docs/poc/agent-watcher.md, M2). A session starts
+// Package tree follows the processes of a recognised agent (M2). A session starts
 // when the caller recognises an agent process, grows as that process and its descendants fork, and ends when its
 // processes have exited. It is pure: it reads nothing, and it never touches a process. The caller feeds it what
 // the proc connector reported and, to repair a gap, a snapshot of /proc.

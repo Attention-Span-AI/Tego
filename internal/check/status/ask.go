@@ -84,7 +84,7 @@ func (p *pendingApprovals) add(e *record.Event) error {
 		delete(*p, id)
 		return nil
 	}
-	// "open" is a held file open's (added within v1 2026-10-05, ask-4; such asks said "connect" before), "mutation" a
+	// "open" is a held file open's (added within v1; older asks said "connect"), "mutation" a
 	// held fs mutation's in an fs.ask scope (ADR 0047, record_minor 13).
 	if hold != "connect" && hold != "first_write" && hold != "request" && hold != "open" && hold != "mutation" {
 		return errors.New("approval hold is unsupported")

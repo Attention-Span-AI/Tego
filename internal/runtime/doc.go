@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package runtime is the engine facade: Run(ctx, rt, cmd, deps) wires launch, enforce, supervisor,
-// observe, capture, limits and the ledger writer into one supervised run (docs/p0/runtime-launch.md
-// §4, P0-DESIGN.md §4.1).
+// observe, capture, limits and the ledger writer into one supervised run.
 //
 // Run owns one sequence and one shutdown order. It mints the run id, creates the run directory
 // under the ledger root (never inside a declared write entry, so the agent cannot rewrite its own
@@ -11,7 +10,7 @@
 // starts the child stage with clone3(CLONE_PIDFD|CLONE_INTO_CGROUP), takes the seccomp listener over
 // pidfd_getfd, starts the notification loop and every source, writes run_start, and only then
 // releases the child with the ack byte. From there events flow through one bounded queue into the
-// pipeline of P0-DESIGN §4.1 step 4 — stampRule, attribute, redact, splitBlobs, Append — and the run
+// pipeline — stampRule, attribute, redact, splitBlobs, Append — and the run
 // ends when the cgroup empties, a signal arrives, or the kernel reports an OOM or a refused fork.
 // Shutdown always runs in full: cancel, join the workers, drain the queue, run_end, detach the
 // backend, remove the cgroup, release the lock (R8, R18).

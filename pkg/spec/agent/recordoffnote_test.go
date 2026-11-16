@@ -11,7 +11,7 @@ import (
 // TestRecordOffIsNotedWhereTheContractSetsIt: a contract's own record: off cuts its runs' ledgers to their refusals,
 // and no finding named it (R29 warns of the --record off flag alone). It is what the author wrote and weakens no rule,
 // so it is a note: compile prints it at the record: key that set it, a profile's when the contract extends it, and a
-// run only under -v (limits-check-doctor-cli.md, "A quiet start"). A record mode the run gives (WithRecord) is the
+// run only under -v ("A quiet start"). A record mode the run gives (WithRecord) is the
 // launching user's: --record off has its own warning, and a --record that raises the record leaves the contract's off
 // unused, so neither is noted; nor is a contract that records.
 func TestRecordOffIsNotedWhereTheContractSetsIt(t *testing.T) {

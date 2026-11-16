@@ -17,7 +17,7 @@ import (
 
 // TestIntegrationRunEndCarriesResourcePeaks runs a workload that holds 64 MiB and twenty processes at once and
 // asserts run_end.resources says so, value for value what the cgroup's own files said when they were read,
-// after the tree emptied and before the cgroup was removed (runtime-launch.md §4.1 step 13). Before, run_end
+// after the tree emptied and before the cgroup was removed. Before, run_end
 // said nothing of what a run used, and an operator had nothing to size limits.memory or limits.pids from. The
 // reader is wrapped to keep what it returned, so the comparison is with the files at that moment; a file this
 // kernel lacks must be an absent key.

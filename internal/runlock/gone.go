@@ -23,8 +23,7 @@ const (
 
 // LauncherOf says whether the launcher of the run in runDir is alive, gone or unknown, and never by a bare pid:
 // a lock line's pid is proved by its start time and its pidfd, through OpenStopTargetFor, the check `tego stop` and
-// the sweep make (R22). It is the one judgement of "an orphaned run" for a paused run (ADR 0124, second amendment of
-// 2026-11-11): `tego status`, `tego pause`, `tego resume`, `tego stop` and the dashboard read a paused run as lost on
+// the sweep make (R22). It is the one judgement of "an orphaned run" for a paused run (ADR 0124): `tego status`, `tego pause`, `tego resume`, `tego stop` and the dashboard read a paused run as lost on
 // Gone only. err is set only when the lock itself cannot be probed.
 func LauncherOf(runDir string) (Launcher, error) {
 	l, _, err := LauncherCheck(runDir)

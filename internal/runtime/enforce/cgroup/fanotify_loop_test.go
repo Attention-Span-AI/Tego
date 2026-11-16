@@ -122,7 +122,7 @@ func TestListenerLoopReadsDispatchesAndStopsOnCancel(t *testing.T) {
 
 // TestACancelledLoopDoesNotWaitOutItsPoll: the run's teardown waits for the listener's loop, and the loop used to
 // notice its context only when its poll timed out, so every tier-2 run whose last open came just before its end
-// ended up to fanPollTimeoutMS late: about 100 ms of each short run, measured with strace in the KVM guest, and
+// ended up to fanPollTimeoutMS late: about 100 ms of each short run under strace, and
 // the whole of kill test 4's go-kind margin (test/vm/README.md). The poll timeout here is a minute, so only the
 // wake can end the poll within the bound.
 func TestACancelledLoopDoesNotWaitOutItsPoll(t *testing.T) {

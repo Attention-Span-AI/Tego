@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package cli implements the tego command line (docs/p0/limits-check-doctor-cli.md §4 cli.Main,
-// R25, R26, R29, R30): one Command per subcommand with its own flag.FlagSet, Main's dispatch of
+// Package cli implements the tego command line: one Command per subcommand with its own flag.FlagSet, Main's dispatch of
 // argv[1] (or the hidden __child stage), the one-line message format of RUN-IDENTITY.md
 // (`<file>:<line>[:<col>]: <what> [<code>]`), the exit codes of pkg/spec/identity, and a
 // top-level recover that turns a panic into `tego: internal error: <msg> [bug]` and exit 125 so

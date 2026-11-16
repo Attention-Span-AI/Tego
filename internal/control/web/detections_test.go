@@ -568,7 +568,7 @@ func TestGlossary(t *testing.T) {
 	g := get(t, s, c, "/glossary")
 	// Contract and Refused are the command line's words (docs/DASHBOARD.md, Contract and refused); each keeps the anchor of its older word, so a
 	// /glossary#policy or #blocked link still lands on it. Agent says any program first, since Tego holds every kind of
-	// agent (decided 2026-11-10).
+	// agent.
 	for _, want := range []string{"<dt>High</dt>", `<div class="gl-row" id="contract"><dt><span id="policy"></span>Contract</dt>`,
 		`<div class="gl-row" id="refused"><dt><span id="blocked"></span>Refused</dt>`, "<dt>Protection level</dt>",
 		"<dt>Agent</dt><dd>Any program Tego governs"} {
@@ -581,8 +581,8 @@ func TestGlossary(t *testing.T) {
 			t.Errorf("Glossary still has %s", gone)
 		}
 	}
-	// The dashboard says Basic, Strong and Strongest; the terminal, the docs and policy files say tier.
-	for _, want := range []string{"Basic (no admin rights), Strong or Strongest (root)", "tier 1 (landlock), tier 2 (cgroup) and tier 3 (bpflsm)"} {
+	// The dashboard says Basic, Plus and Max; the terminal, the docs and contract files say tier.
+	for _, want := range []string{"Basic (no admin rights), Plus or Max (root)", "tier 1 (landlock), tier 2 (cgroup) and tier 3 (bpflsm)"} {
 		if !strings.Contains(g, want) {
 			t.Errorf("Glossary's Protection level does not connect the names: lacks %q", want)
 		}

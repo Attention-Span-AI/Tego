@@ -14,7 +14,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestSelectNamesWhyAMechanismDidNotRun is R37 as amended: a mechanism that never ran is a gap whose why says
+// TestSelectNamesWhyAMechanismDidNotRun: a mechanism that never ran is a gap whose why says
 // which of two facts is true, and neither is no-openssl, which is R4's finding about a process's libraries.
 // A contract with no models[] is the ordinary case of the first (a build script, a Go tool) and must not
 // read as a binary with no OpenSSL; the forwarder factory is not even consulted, because there is nothing

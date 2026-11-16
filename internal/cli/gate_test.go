@@ -95,7 +95,7 @@ func TestCompileTestGateBoundariesAndSum(t *testing.T) {
 
 // TestCompileTestGateSumsReadAndWriteOfAMoveSource through compile --test: a rename's
 // source leaves its name, so the read and the write predicates score it as one action and their scores sum (ADR
-// 0007, 2026-10-20). Under `fs.read matches "*.env": 30` and `fs.write outside worktree: 30` with {allow: 50, ask:
+// 0007). Under `fs.read matches "*.env": 30` and `fs.write outside worktree: 30` with {allow: 50, ask:
 // 80}, renaming out/prod.env away (both ends outside the worktree) scores 30+30 = 60 and asks, which a rename cannot
 // complete, so it is refused; the stronger of the two kinds alone (30) allowed it. A rename is one action over both
 // its ends, each rule counted once: renaming work/prod.env out of the worktree sums the

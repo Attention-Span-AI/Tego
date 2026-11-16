@@ -14,7 +14,7 @@ import (
 // lockdown=confidentiality refuses on every kernel, so under it the library decided the helper was missing and
 // turned the user reads that lockdown allows — argv at exec, capture's TLS buffers — into bpf_probe_read, which
 // lockdown refuses too: trace_proc's rdonly build and uprobe_ssl then failed to load with "cannot use helper
-// bpf_probe_read#4" (ADR 0024's tier-2 note, measured on 6.17 in the KVM guest, 2026-09-29). Every kernel this
+// bpf_probe_read#4" (ADR 0024's tier-2 note, seen on 6.17). Every kernel this
 // project supports (5.14+) has bpf_probe_read_kernel, so the answer is fixed here: the helpers are loaded as
 // written, and a kernel read lockdown refuses is refused under its own name.
 //

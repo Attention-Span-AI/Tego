@@ -91,8 +91,8 @@ func FuzzParseKernelRelease(f *testing.F) {
 // TestMechanismsListOnlyWhatThisBinaryUses: D1 tells an older kernel what it lacks, so a row for a
 // feature nothing here uses is a false finding. FAN_DENY_ERRNO was such a row ("6.13, a tier-2
 // refusal is a coarse EPERM"): the kernel takes a reply errno only from a FAN_CLASS_PRE_CONTENT group
-// and never EACCES, and tier 2's FAN_CLASS_CONTENT listener sends the bare FAN_DENY on every kernel
-// (docs/p0/enforce-cgroup-observe.md §6 E2), so no release gains or loses anything by it.
+// and never EACCES, and tier 2's FAN_CLASS_CONTENT listener sends the bare FAN_DENY on every kernel,
+// so no release gains or loses anything by it.
 func TestMechanismsListOnlyWhatThisBinaryUses(t *testing.T) {
 	for _, m := range missingMechanisms(Version{5, 14, 0}, kernelProbe{}) {
 		if strings.Contains(m.Name, "FAN_DENY_ERRNO") {

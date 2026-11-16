@@ -20,7 +20,7 @@ import (
 
 const (
 	// modeNoNet runs the target in a Landlock domain scoped for abstract unix sockets, the scope the
-	// tier-1 ruleset always carries at ABI ≥ 6 (enforce-landlock R7), under a contract with no net:.
+	// tier-1 ruleset always carries at ABI ≥ 6, under a contract with no net:.
 	modeNoNet = "nonet"
 	// helperAbstract names the abstract socket the parent listens on, outside the target's domain.
 	helperAbstract = "TEGO_SUPERVISOR_ABSTRACT"

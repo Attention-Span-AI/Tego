@@ -101,7 +101,7 @@ func TestMain(m *testing.M) {
 	}
 	// A run keeps its CODEX_HOME in $XDG_RUNTIME_DIR/tego/<run id> and sweeps the directories its parent holds of
 	// runs whose launcher is gone: under the developer's /run/user/<uid> the unit tests' runs made that parent and
-	// swept their crashed runs' directories (identity-config.md R27 clause b4). The tego binaries the integration
+	// swept their crashed runs' directories. The tego binaries the integration
 	// tests start inherit it.
 	if err := testutil.PrivateRuntimeDir(parent); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)

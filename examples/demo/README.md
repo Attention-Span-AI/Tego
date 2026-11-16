@@ -232,7 +232,7 @@ stage, marker and unrelated siblings; the named generated children may be
 regenerated, so keep personal files outside them. Old unmarked stages are
 refused: move them aside manually or choose a fresh `DEMO_STAGE` and run setup.
 These shell checks do not protect against a concurrent same-user process
-replacing path components; [the script spec](../../docs/p0/demo-scripts.md)
+replacing path components; the script spec
 states that limit.
 
 ## What the commands are

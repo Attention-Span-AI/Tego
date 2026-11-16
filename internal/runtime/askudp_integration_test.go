@@ -78,7 +78,7 @@ func listenUDP(t *testing.T) (*net.UDPConn, *atomic.Int32) {
 }
 
 // newAskUDPScene is a run whose agent, a Python probe, sends datagrams to dst, which only the contract's net.ask
-// entry scope names, at tier with the tego binary bin: each is held for a person (supervisor R13d, ADR 0008).
+// entry scope names, at tier with the tego binary bin: each is held for a person (ADR 0008).
 func newAskUDPScene(t *testing.T, bin, tier, timeout, scope, dst string, sends int, how string) *askReadScene {
 	t.Helper()
 	python, err := exec.LookPath("python3")
@@ -155,7 +155,7 @@ var askUDPCases = []askUDPCase{
 	{name: "refuse_always on timeout", timeout: "2s\n  on_timeout: refuse_always", how: "fresh", sends: 2, asks: 2, rc: "EACCES", reason: "ask-timeout", by: "timeout always"},
 }
 
-// The net.ask UDP scope end to end at tier landlock (ASK-UDP, supervisor R13d): the real tego binary runs a contract
+// The net.ask UDP scope end to end at tier landlock (ASK-UDP): the real tego binary runs a contract
 // whose agent sends datagrams to a loopback port only that scope names; a person answers from separate tego
 // processes over the run's real broker socket, or nobody answers. An approval sends the held datagram, and the
 // socket's later datagrams to that port go unasked; a UDP connect is held the same way; a denial or a timeout refuses
@@ -421,7 +421,7 @@ rc.write("%s %s %d" % (first, copy(d2), d2.fileno()))
 `
 
 // TestIntegrationNonDumpableFileCopy end to end at tier landlock. In a run that decides datagrams
-// the filter notifies every sendfile (enforce-landlock R11d), and the supervisor reads the output descriptor's kind on a
+// the filter notifies every sendfile, and the supervisor reads the output descriptor's kind on a
 // pidfd_getfd duplicate, which an unprivileged tier 1 is refused (EPERM) for a process that made itself non-dumpable.
 // Such a copy may be into a UDP socket, so it is refused, fail-closed, as the failure table's row says; but the line
 // is what happened: a refused line, op sendfile, target the descriptor, rule fd-unreadable, never a net line claiming a
@@ -504,7 +504,7 @@ var nssSockets = map[string]bool{"unix:/var/run/nscd/socket": true, "unix:/var/l
 // netLinesBesideNSS is the run's net lines but its connects to an NSS daemon's socket, which it logs. Where /bin/sh is
 // bash (the RHEL family), the agent's shell looks its user up at start, and on a host whose nsswitch.conf names sss
 // that lookup connects to nscd's and sssd's sockets, which the contract does not allow: the run refuses and records
-// them, true lines of the shell's (AlmaLinux 9.8: two to nscd's socket, one to sssd's, 2026-11-10). They are no
+// them, true lines of the shell's (AlmaLinux 9.8: two to nscd's socket, one to sssd's). They are no
 // line about the copy, whose descriptor is a file; every other net line still is.
 func netLinesBesideNSS(t *testing.T, evs []*record.Event) []map[string]any {
 	t.Helper()
@@ -548,10 +548,10 @@ rc.write("%s %s" % (copy(), copy()))
 
 // TestIntegrationObserveRecordsEachNonDumpableProcess end to end at tier
 // landlock: an observe run continues a sendfile whose output descriptor it could not read and records it gap
-// what=record why=fd-unreadable-sendfile once per binary (supervisor R30). A non-dumpable process hides its binary
+// what=record why=fd-unreadable-sendfile once per binary. A non-dumpable process hides its binary
 // behind the same ptrace check that refuses its pidfd_getfd, so the line names none; keyed by that empty name, the run
 // wrote one line for its first such process and none for the second. Each process now gets its own line, carrying its
-// pid, and its repeat shares it (supervisor R31). Under a root launcher the supervisor reads the descriptors (it keeps
+// pid, and its repeat shares it. Under a root launcher the supervisor reads the descriptors (it keeps
 // CAP_SYS_PTRACE), so there is nothing unread to record.
 func TestIntegrationObserveRecordsEachNonDumpableProcess(t *testing.T) {
 	python, err := exec.LookPath("python3")
@@ -650,9 +650,9 @@ with open("out/rc", "w") as f:
 `
 
 // TestIntegrationObserveRecordsPendingFrames end to end: an observe run of a contract that decides
-// datagrams installs enforce-landlock R11d's pending-frame arms, as an enforcing run does, so its record holds a line for
+// datagrams installs the pending-frame arms, as an enforcing run does, so its record holds a line for
 // each operation the enforcing run would refuse datagram-corked, the unaddressed ones included, and the kernel performs
-// each (supervisor R30). Before, the observe filter carried no such arm: the unaddressed send with MSG_MORE, the cork and
+// each. Before, the observe filter carried no such arm: the unaddressed send with MSG_MORE, the cork and
 // the sendfile went unrecorded, and the record under-reported what enforcement would refuse. The cork, which no net line
 // can name, is a gap what=record why=datagram-corked-setsockopt, never a refused line.
 func TestIntegrationObserveRecordsPendingFrames(t *testing.T) {

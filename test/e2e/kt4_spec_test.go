@@ -17,7 +17,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestKT4HarnessMeasuresWhatRuntimeLaunchR24Says pins docs/p0/runtime-launch.md R24 (kill test 4)
+// TestKT4HarnessMeasuresWhatRuntimeLaunchR24Says pins kill test 4
 // to the harness that measures it: test/e2e/kt4-ordinary.sh runs the pip, npm and go kinds by default, twenty
 // runs each under a contract that extends base/python-dev, passes at nineteen of twenty, times the baseline as
 // the median of five runs outside tego and calls a run broken past twice that median, and reads a run's

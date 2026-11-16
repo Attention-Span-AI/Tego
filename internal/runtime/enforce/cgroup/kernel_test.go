@@ -97,7 +97,7 @@ func TestUnixProgramsAreDroppedBelowTheirKernel(t *testing.T) {
 }
 
 // TestOptionalTraceProgramsAreDroppedWhereTheKernelLacksThem covers ADR 0016 (3)'s security_file_truncate (6.2+),
-// and io_bind and io_listen (6.11+, enforce-plane §2.20): the loader resolves an fexit program's target at load, so
+// and io_bind and io_listen (6.11+): the loader resolves an fexit program's target at load, so
 // below those kernels the object would not load whole with them. It
 // leaves the spec there, and only there, and the links the adopt check expects follow the spec, so an object
 // loaded without it is still adopted by the next launcher.
@@ -143,7 +143,7 @@ func TestOptionalTraceProgramsAreDroppedWhereTheKernelLacksThem(t *testing.T) {
 	}
 }
 
-// TestAttachErrorNamesTheHierarchyConflict covers enforce-cgroup-observe.md §6 E36: the one cgroup-attach failure whose errno says
+// TestAttachErrorNamesTheHierarchyConflict: the one cgroup-attach failure whose errno says
 // nothing about its cause. kernel/bpf/cgroup.c's __cgroup_bpf_attach refuses with -EPERM when
 // hierarchy_allows_attach() finds an ancestor cgroup already holding a program for the same attach type that
 // was attached the legacy way with no flags — `bpftool cgroup attach /sys/fs/cgroup connect4 ...` is exactly
@@ -204,9 +204,9 @@ func (l *orderedLink) Unpin() error { return os.Remove(l.pin) }
 // TestUnpinRemovesEachSharedLinksPinBeforeClosingIt: the last launcher out of a build that does not linger removes
 // a shared link's pin while its own descriptor still holds the link, and only then closes the descriptor, so its
 // close(2) drops the last reference and the kernel detaches the link in this process before unpin returns
-// (perf-cold C3). Closing first (the order of §9's 2026-09 change (4), amended 2026-10-19) left the last reference to
+// (perf-cold C3). Closing first (the order of §9's 2026-09 change (4)) left the last reference to
 // the pin's removal, which 6.8 and later hand to a worker: the launcher left sooner, and the next run's load waited
-// in bpf_trampoline_get for the detach it had left behind (enforce-plane §10.1, gate G-H2).
+// in bpf_trampoline_get for the detach it had left behind (gate G-H2).
 func TestUnpinRemovesEachSharedLinksPinBeforeClosingIt(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -268,7 +268,7 @@ func stuckPlane(t *testing.T, pins pinLayout) {
 	t.Cleanup(func() { _ = os.Chmod(lay.Links, 0o700) })
 }
 
-// TestPinsRemoveKeepsTheBuildUnderAPlaneItCannotRemove is enforce-plane R20: a plane directory the removal cannot
+// TestPinsRemoveKeepsTheBuildUnderAPlaneItCannotRemove: a plane directory the removal cannot
 // take keeps the build's maps pinned. Unpinned under it, the next launcher re-creates the run set, and the pinned
 // plane, adopted by its links, reads the dead one: it finds no run and allows everything.
 func TestPinsRemoveKeepsTheBuildUnderAPlaneItCannotRemove(t *testing.T) {

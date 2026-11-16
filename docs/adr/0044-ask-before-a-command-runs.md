@@ -1,6 +1,6 @@
 # ADR 0044: ask before a command runs: hold the exec, let the kernel build it, and run it only when the kernel's own facts are the ones a person approved
 
-Status: **accepted 2026-10-16**; design only, not built: the work packages are in [docs/p0/exec-ask-plan.md](../p0/exec-ask-plan.md), and WP0's evidence gates the rest.
+Status: **accepted 2026-10-16**; design only, not built; WP0's evidence gates the rest.
 
 Supersedes, before either was accepted, the 2026-10-05 draft of this number (exec approval at the plane tiers by
 refuse-and-retry under a kernel claim) and the POC draft numbered 0056; [ADR 0056](0056-exec-approval-poc-draft.md) is now only a pointer here. Amends in part ADR

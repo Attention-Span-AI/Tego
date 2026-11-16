@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-// commands returns the name of every directory under cmd/: each is a binary a user may run (cmd/tego, cmd/maze),
+// commands returns the name of every directory under cmd/: each is a binary a user may run (cmd/tego, cmd/tego-control),
 // and a command added later is held to the same rule the day it appears.
 func commands(t *testing.T) []string {
 	t.Helper()
@@ -30,13 +30,13 @@ func commands(t *testing.T) []string {
 		}
 	}
 	if len(names) < 2 {
-		t.Fatalf("found the commands %v under cmd/, want at least tego and maze", names)
+		t.Fatalf("found the commands %v under cmd/, want at least tego and tego-control", names)
 	}
 	return names
 }
 
 // TestValidatorNotInBinary: the validator module is a test dependency. No package of the link closure of any
-// command under cmd/ (tego and maze), on either architecture and with and without the tegobpf tag, comes from
+// command under cmd/ (tego and tego-control), on either architecture and with and without the tegobpf tag, comes from
 // github.com/santhosh-tekuri/jsonschema (or is this test-support package), so the module needs no entry in
 // THIRD_PARTY_NOTICES.txt and scripts/check-licenses.sh, which inventories the linked modules, stays complete.
 func TestValidatorNotInBinary(t *testing.T) {

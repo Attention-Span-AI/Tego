@@ -36,15 +36,14 @@ func init() { register(cmdGC) }
 // flock or finds the directory gone, before run_start. gc reads no live index, so an ended run whose
 // launcher died before its anchor line is repaired by run's and stop's sweep alone. Before collection,
 // gc also checks an ended run's scope cleanup under the removal lock; unknown or failed cleanup retains the run
-// (record-ledger.md §3 Live index; ADR 0124 review round 3).
+// (ADR 0124).
 //
 // As root it also sweeps the tier-2 builds lingering on the bpf filesystem (ADR 0022): one no launcher holds,
 // whose run set names no live cgroup and that has been idle for the machine's bpf.linger is removed, and
 // --builds removes such a build whatever its idle time.
 //
-// --keep 0s removes every eligible run once its scope cleanup is confirmed, which is the "gc --keep 0 sweep"
-// record-ledger.md names. It used to be read as "no --keep" and silently became the machine's 30-day
-// retention (R29).
+// --keep 0s removes every eligible run once its scope cleanup is confirmed: an explicit 0 is never read as
+// "no --keep", which would silently be the machine's 30-day retention (R29).
 //
 // The same retention prunes the ledger root's rule-change journal (.rule-changes, pruneRuleChanges) once the runs
 // are swept: its lines older than it that no reader needs (rulefile.Prune: a run still in the root keeps the lines
@@ -120,7 +119,7 @@ type gcJSON struct {
 	Deleted  int     `json:"deleted"`
 	// BuildsRemoved counts the idle tier-2 builds a root gc removed (ADR 0022).
 	BuildsRemoved int `json:"builds_removed,omitempty"`
-	// RingsReclaimed counts the run rings no run held that gc --builds removed (ADR 0026 (6) as amended).
+	// RingsReclaimed counts the run rings no run held that gc --builds removed (ADR 0026 (6)).
 	RingsReclaimed int `json:"rings_reclaimed,omitempty"`
 	// JournalLines, JournalBlobs and JournalLocks count what the rule-change journal's prune removed, or with
 	// dry_run would remove: lines, blobs no line left names, and lock files (rulefile.Pruned).

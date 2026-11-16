@@ -60,7 +60,7 @@ func setBTFPath(t *testing.T, path string) {
 	btfPath = path
 }
 
-// TestBTFProbeNamesAMissingField is enforce-cgroup-observe.md E31: D2 parses the kernel's BTF and checks every
+// TestBTFProbeNamesAMissingField: D2 parses the kernel's BTF and checks every
 // type, member and enum value the embedded objects read through CO-RE, so a kernel that lacks one fails D2
 // with the member named, ahead of any program load. A member reached through an anonymous union, an array
 // element and an enum value are found as the loader finds them.

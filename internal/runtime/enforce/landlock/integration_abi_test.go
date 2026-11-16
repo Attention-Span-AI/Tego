@@ -110,8 +110,6 @@ func wantRefused(t *testing.T, r report, name string, refused bool) {
 // rule (EACCES), while the declared socket, which Prepare held with RESOLVE_UNIX, and a socket inside a write entry, which
 // gains the right, connect. Below ABI 9 Landlock has no unix right at all, so every one of the four connects goes through
 // and the supervisor is the only decider: the refusal this test expects there is its absence.
-//
-// Spec: docs/p0/enforce-landlock.md R21.
 func TestIntegrationUnixConnect(t *testing.T) {
 	root := shortTempDir(t)
 	mkTree(t, root, "socks/", "other/")
@@ -144,8 +142,6 @@ func TestIntegrationUnixConnect(t *testing.T) {
 // not declared (EACCES, and nothing arrives), a bind to a fixed port (BIND_UDP is granted on port 0 only), and lets the
 // declared port and an ephemeral bind through. Below ABI 10 UDP has no Landlock right: the send arrives and the connect
 // succeeds, and a fixed bind may fail for a taken port but never with EACCES.
-//
-// Spec: docs/p0/enforce-landlock.md R22.
 func TestIntegrationUDPPorts(t *testing.T) {
 	root := tempDir(t)
 	declared, declaredPort := listenUDP(t)

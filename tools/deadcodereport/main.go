@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Command deadcodereport formats the raw, configuration-specific deadcode report and applies the
-// classification ratchet (ADR 0029 (4) as amended 2026-10-19): every function deadcode finds unreachable
+// classification ratchet (ADR 0029 (4)): every function deadcode finds unreachable
 // from ./cmd/tego in any analyzed build profile must be classified by exact function in
 // tools/deadcode-allow.txt, every classification must still match a finding, and a profile the tool could
 // not analyze is a failure, never zero findings. The number of findings is not gated: a classified

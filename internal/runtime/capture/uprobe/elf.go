@@ -27,7 +27,7 @@ const maxSymbolSection = 8 << 20
 // Symbols, so it may be larger: the official unstripped Node has a 10 MiB .strtab and an 8 MiB .dynstr.
 const maxStringSection = 32 << 20
 
-// The OpenSSL entry points this package may hook (docs/p0/capture-derive.md §5 R1-R3).
+// The OpenSSL entry points this package may hook.
 const (
 	// SymWrite is the universal write entry point Node, libcurl and CPython 3.9 call.
 	SymWrite = "SSL_write"
@@ -48,7 +48,7 @@ const (
 var Symbols = []string{SymWrite, SymWriteEx2, SymWriteEx, SymRead, SymReadEx, SymFree}
 
 // SymSendfile is OpenSSL 3.0+'s other way out of a connection and a deliberate non-hook, named here so its
-// absence from Symbols is a recorded decision rather than an oversight (docs/p0/capture-derive.md R1).
+// absence from Symbols is a recorded decision rather than an oversight.
 //
 // SSL_write(3ssl) declares `ossl_ssize_t SSL_sendfile(SSL *s, int fd, off_t offset, size_t size, int
 // flags)` beside SSL_write and SSL_write_ex, "available only when Kernel TLS is enabled"; it hands a file
@@ -82,7 +82,7 @@ var ErrSymbolTableTooLarge = errors.New("uprobe: symbol table too large to read"
 // its other symbols would be attached, and a candidate left with SSL_write and no read would capture requests
 // and never a response with no gap to say so (I4). It is not soft (softErr), so unless another of the process's
 // candidates attaches, the process is a no-openssl gap whose detail names the symbol, as for a candidate the
-// host refused to probe (capture-derive R37).
+// host refused to probe.
 var ErrSymbolOutsideFile = errors.New("uprobe: an OpenSSL symbol has no byte of the file behind it")
 
 // errUnmapped is fileOffset's answer for an address no executable segment maps: a symbol with nothing in
@@ -599,7 +599,7 @@ func align4(n int) int { return (n + 3) &^ 3 }
 // recorded, in both cases with no probe of its own and no gap to show for it (I4).
 //
 // A binary carrying no build id keys on the pair alone, which is the residual limitation recorded in
-// docs/p0/capture-derive.md R7: nothing in the file distinguishes it from another file that reaches the
+// Nothing in the file distinguishes it from another file that reaches the
 // same pair.
 type identity struct {
 	Dev     uint64

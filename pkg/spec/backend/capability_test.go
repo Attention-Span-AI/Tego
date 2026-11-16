@@ -12,7 +12,7 @@ import (
 
 // Report never reorders and always has 28 lines (R23; ADR 0048 appended the 21st, ADR 0041 D7 the
 // 22nd to 26th, ADR 0018 PR 2 the 27th, ADR 0070 the 28th).
-// identity-config.md R23 (never reorders, index-comparable) and R26 (the ask row is reported like any other).
+// Never reorders, index-comparable, and the ask row is reported like any other.
 func TestSetReport(t *testing.T) {
 	var nilSet Set
 	lines := nilSet.Report()
@@ -96,7 +96,7 @@ func TestFormatReport(t *testing.T) {
 		t.Errorf("namespace sandbox row %q", table[16])
 	}
 	// The abstract-scope row is ABI-gated in every column, so the static matrix claims it nowhere; a run
-	// records it from the Landlock ABI it had (agent-contract R19, enforce-landlock R19).
+	// records it from the Landlock ABI it had.
 	if !strings.HasPrefix(table[17], "abstract unix names bound outside the run refused") ||
 		!strings.HasSuffix(table[17], "no        no        no") {
 		t.Errorf("abstract-scope row %q", table[17])
@@ -209,9 +209,9 @@ func TestNameEntryRowOfADR0043(t *testing.T) {
 	}
 }
 
-// agent-contract.md E35: no Landlock ABI has a chmod right, tier 1's filter does not notify chmod and tier 2
+// No Landlock ABI has a chmod right, tier 1's filter does not notify chmod and tier 2
 // has no permission event for it, so no row tiers 1 and 2 provide may claim to deny chmod. Tier 3's path_chmod
-// hook refuses a mode change beneath a deny_write target only (enforce-plane R12, TIER3-PLAN T13), not under the
+// hook refuses a mode change beneath a deny_write target only, not under the
 // contract's write rules, so it claims no chmod deny either, and its cell says what it does.
 func TestChmodDeniedOnlyAtTier3(t *testing.T) {
 	deniesChmod := func(tier Tier) bool {
@@ -250,7 +250,7 @@ func TestWriteErrors(t *testing.T) {
 
 // The in-binary matrix equals a fresh parse of spec/backend/CAPABILITIES.md,
 // cell for cell (R22, I9).
-// identity-config.md R22 and I9 (the in-binary matrix equals a fresh parse of CAPABILITIES.md, cell for cell; the doc's tools/gen-capmatrix generator does not exist, so there is no generator-output leg).
+// The in-binary matrix equals a fresh parse of CAPABILITIES.md, cell for cell; there is no generator, so no generator-output leg.
 func TestMatrixGolden(t *testing.T) {
 	rows := readMatrixRows(t, filepath.Join("..", "..", "..", "spec", "backend", "CAPABILITIES.md"))
 	if len(rows) != len(allCapabilities) {

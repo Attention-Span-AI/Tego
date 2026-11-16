@@ -28,7 +28,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/testutil/uring"
 )
 
-// TIER3-PLAN T3's root cells: every Step A hook of both plane builds, in each mode this kernel offers, refuses inside
+// Step A's root cells: every Step A hook of both plane builds, in each mode this kernel offers, refuses inside
 // a run and allows outside it, against rows the test writes into a scratch slot. T4's fill does not exist yet, so a
 // test-only iter/task_file program (bpf/testonly/plane_fill.bpf.c) writes the inode-keyed rows from the test's own
 // O_PATH descriptors, and the policy and name rows, which no inode keys, are written from here.
@@ -36,7 +36,7 @@ import (
 // The agent is planeHelper: this test binary re-executed with TEGO_PLANE_HELPER=1 into a child cgroup, which runs
 // its commands in init on the main thread (so the task storage the plane records into is the thread group
 // leader's, which a pidfd names) and never reaches the tests. Its run-set row is written after its exec, as a
-// real run's is (enforce-plane R15).
+// real run's is.
 
 const planeHelperEnv = "TEGO_PLANE_HELPER"
 
@@ -284,7 +284,7 @@ type planeTree struct {
 	// keeper, when set, is the test whose end closes the holds, in place of the test that took them: the one that
 	// armed the slot. A cell run as a subtest writes its rows at that test's gen, and they stay in the slot after the
 	// subtest ends; a hold closed then frees the inode a row of the live gen is keyed by, and the next inode the
-	// allocator puts at that address meets the row and is refused identity-mismatch (enforce-plane §6 E3), whatever
+	// allocator puts at that address meets the row and is refused identity-mismatch, whatever
 	// the later cell asserts. A run's domain holds every keyed inode while its gen is live (R17), and so do the cells.
 	keeper *testing.T
 }
@@ -397,7 +397,7 @@ func buildPlaneTree(t *testing.T, gen uint32) *planeTree {
 		mustWrite(t, filepath.Join(root, f), bin, 0o755)
 	}
 	// t2 and t8 are hard links of t1, a multi-call binary's shape (uutils, busybox): t1 and t8 each have an exec row,
-	// t2 none (ADR 0025's 2026-09-30 note).
+	// t2 none (ADR 0025).
 	for _, l := range []string{"t2", "t8"} {
 		if err := os.Link(filepath.Join(p.e, "t1"), filepath.Join(p.e, l)); err != nil {
 			t.Fatal(err)
@@ -493,8 +493,8 @@ type planeCell struct {
 
 const eacces = "13"
 
-// TestPlaneStepAHooksDecide is TIER3-PLAN §9's per-hook cells for step A (T3), enforce-plane R1, R7, R8, R9, R10
-// and R11 on a real kernel, with enforce-plane.md §6 E2 (a reused slot) and E3 (a recycled pointer): in each build and mode this kernel
+// TestPlaneStepAHooksDecide is the per-hook cells for step A on a real kernel, with a reused slot
+// and a recycled pointer: in each build and mode this kernel
 // offers, file_open, bprm_check, path_rename, path_link, path_unlink and path_rmdir refuse inside a run by the rows
 // of its slot and allow the same action outside it; a stale row counts as absent, a row whose identity no longer
 // matches refuses and counts, and each decision is recorded in the task's scratch value. It logs each program's
@@ -523,7 +523,7 @@ func TestPlaneStepAHooksDecide(t *testing.T) {
 	}
 }
 
-// TestPlaneStepBHooksDecide is TIER3-PLAN T13's per-hook cells (enforce-plane R12, R13, R14; §6 E5, E8, E14), on
+// TestPlaneStepBHooksDecide is step B's per-hook cells, on
 // the tree and slot TestPlaneStepAHooksDecide's cells use, in each build and mode this kernel offers: path_mknod,
 // path_mkdir and path_symlink refuse a create under a row that refuses modifications and leave no file, path_truncate
 // and file_truncate refuse a deny_write target's file, the attribute hooks (chmod, chown, the xattr hooks, setfacl)
@@ -602,7 +602,7 @@ func planeCells(t *testing.T, o Object, mode PlaneMode, stepB bool) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = execInner.Close() })
-	// The slot's header, written last, as Prepare does (enforce-plane R6): this run's gen and an exec: section.
+	// The slot's header, written last, as Prepare does: this run's gen and an exec: section.
 	setSlot := func(gen, flags uint32) {
 		t.Helper()
 		if err := coll.Maps[MapPlaneSlots].Put(uint32(runIdx), PlaneSlot{Gen: gen, Flags: flags}); err != nil {
@@ -833,7 +833,7 @@ func planeCells(t *testing.T, o Object, mode PlaneMode, stepB bool) {
 	planeClearedHeaderCells(t, coll, runIdx, gen, helper, tree, setSlot, scratch)
 }
 
-// planeClearedHeaderCells is enforce-plane R6's header, fail closed: a run-set row still live over a slot whose
+// planeClearedHeaderCells is the slot header, fail closed: a run-set row still live over a slot whose
 // header was cleared (Detach's or the reaper's clear, which zeroes the header first) or names another run is decided
 // by nothing the slot holds. The run's rows are all still there, at its gen, yet every decided hook refuses, an exec
 // and a read under a nested deny_read included, and each refusal counts norows. Before the header, bprm_check read
@@ -920,7 +920,7 @@ func planeChain(t *testing.T, base string, n int) string {
 	return p
 }
 
-// planeDeepCells is enforce-plane R7's bound on a real kernel. Under a write row, a file TEGO_PLANE_WALK_MAX levels
+// planeDeepCells is the walk's bound on a real kernel. Under a write row, a file TEGO_PLANE_WALK_MAX levels
 // below it is decided by the row, and one a level deeper is refused path-unresolved and counted bound for every
 // hook: the read too, which a walk that met no row would allow, so an exhausted walk that fell through to ROOT
 // fails here. A mount crossing costs the walk no level (decide.PlaneRows.Find counts path components only), so a
@@ -1003,7 +1003,7 @@ func (p *planeTree) holdLink(t *testing.T, path string, tmpl planeFillTmpl) {
 	p.tmpls[uint32(fd)] = tmpl
 }
 
-// planeSymlinkCells is enforce-plane R11's symlinked deny_write target on a real kernel: .git/hooks is a symlink to
+// planeSymlinkCells is a symlinked deny_write target on a real kernel: .git/hooks is a symlink to
 // a directory elsewhere, and the rows decide.CompilePlane writes for it are the link's own inode (RenameRefused and
 // Protected, held O_PATH|O_NOFOLLOW), the directory above it (.git, a rename-refused ancestor) and the resolved
 // target (Protected, keyed following). Rename of the link (or of .git), a rename over it, and its unlink are
@@ -1068,8 +1068,8 @@ func planeSymlinkCells(t *testing.T, coll *ebpf.Collection, runIdx, gen uint32, 
 // planeOverlayCell writes to overlayfs files whose layers lie where no row is: the user's open is decided on the
 // merged file (a write row), and the kernel's own opens are skipped: the backing open of an upper file
 // (FMODE_BACKING, 6.6+, R8), and the copy-up's plain open of the new upper file and of the lower one on overlayfs'
-// private clones of the layers' mounts (mnt_ns MNT_NS_INTERNAL; enforce-plane §2.7's condition 1, settled at T13),
-// which before T13 refused every write to a lower file under a write row as an unmatched modification. keeper, the
+// private clones of the layers' mounts (mnt_ns MNT_NS_INTERNAL),
+// which otherwise refused every write to a lower file under a write row as an unmatched modification. keeper, the
 // test whose gen the rows are written at, keeps the holds, so the merged root they key outlives this subtest.
 func planeOverlayCell(t, keeper *testing.T, coll *ebpf.Collection, runIdx, gen uint32, helper *planeHelper) {
 	t.Helper()
@@ -1108,7 +1108,7 @@ func planeOverlayCell(t, keeper *testing.T, coll *ebpf.Collection, runIdx, gen u
 	}
 }
 
-// planeDisconnectedCell is enforce-plane R7's disconnected root on a real kernel: a file opened by handle
+// planeDisconnectedCell is the walk's disconnected root on a real kernel: a file opened by handle
 // (open_by_handle_at) after the dentry cache was dropped gets a dentry no path reaches (DCACHE_DISCONNECTED: it is its
 // own parent and not its mount's root), so the walk climbs no row and refuses path-unresolved and counts it, where a
 // walk that took "no row" for "allowed" would let the read through; the same file by its path is the row's. It needs
@@ -1369,7 +1369,7 @@ func planeHelperStepB(f []string) (string, bool) {
 	return "", false
 }
 
-// planeStepBCells is TIER3-PLAN T13's cells (enforce-plane R12, R13, R14) on the tree and slot planeCells filled:
+// planeStepBCells is step B's cells on the tree and slot planeCells filled:
 // every create hook refuses under a row that refuses modifications and leaves no file, and passes in a write
 // entry; truncate by path and by a descriptor opened before the run refuses on a deny_write target; chmod, chown,
 // the xattr hooks and setfacl refuse beneath the deny_write target only (a write entry, no entry and a deny_read

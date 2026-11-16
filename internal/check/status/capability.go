@@ -11,8 +11,8 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// CapabilityLine renders a run's capability line, run_start.capabilities, as one line of text
-// (docs/p0/limits-check-doctor-cli.md R-cap): the tier, how many rows of the matrix the run had out of how
+// CapabilityLine renders a run's capability line, run_start.capabilities, as one line of text:
+// the tier, how many rows of the matrix the run had out of how
 // many were recorded, and then every row it did not have, by name — what was absent is the part a reader acts
 // on (spec/backend/CAPABILITIES.md: "the gap report lists what was absent").
 //

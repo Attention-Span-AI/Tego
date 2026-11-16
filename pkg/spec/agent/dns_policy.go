@@ -52,11 +52,11 @@ func CompileDNSPolicy(c *Contract) (DNSPolicy, *dnspolicy.Policy, error) {
 	return p, queries, err
 }
 
-// SystemResolvers reports whether a run under s keeps R14's implicit resolver exception (supervisor R14,
-// SEMANTICS §5): mode system, or unset, does; off and broker remove the agent's implicit transport to the
-// machine resolvers (network-controls.md, "Cooperating DNS broker"). The run's resolver list
+// SystemResolvers reports whether a run under s keeps the implicit resolver exception
+// (SEMANTICS §5): mode system, or unset, does; off and broker remove the agent's implicit transport to the
+// machine resolvers ("Cooperating DNS broker"). The run's resolver list
 // (runtime runResolvers) and compile --test's (cli testEnv) both read it here, so a port-53 row cannot be
-// answered net.resolver where the run refuses it (2026-10-05).
+// answered net.resolver where the run refuses it.
 func (s DNSPolicy) SystemResolvers() bool {
 	return s.Mode != "off" && s.Mode != "broker"
 }

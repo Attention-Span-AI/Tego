@@ -548,8 +548,8 @@ func namesIsolation(n ast.Node) bool {
 // to a call or the name gets another command (envAfter); or the command is passed straight to a call (a helper such
 // as privpathCase.exec that sets the environment; GO-5 does not follow it). A command run straight from the call
 // (exec.Command(bin, "doctor").Run()), returned, made in an if's or a for's header, or never given an Env of its
-// own is flagged: in a test build it meets the refusal of the invoking user's built-in ~/.tego/runs
-// (identity-config.md R27), and in a product build it reads and writes the real ~/.tego.
+// own is flagged: in a test build it meets the refusal of the invoking user's built-in ~/.tego/runs,
+// and in a product build it reads and writes the real ~/.tego.
 func inheritedTegoEnv(body *ast.BlockStmt, fset *token.FileSet, rel string) []finding {
 	var out []finding
 	var stack []ast.Node

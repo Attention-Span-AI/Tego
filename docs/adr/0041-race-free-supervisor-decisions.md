@@ -26,7 +26,7 @@ opened on the **held** inode. An approved connect is performed on a `pidfd_getfd
 socket. A later series of commits added two new kinds of supervisor decision on copied arguments that
 are answered `CONTINUE`:
 
-- **Scored gate rules** (docs/p0/gate.md, ADR 0007). `gateFS` scores a copied or walked pathname, and `answerFS`
+- **Scored gate rules** (ADR 0007). `gateFS` scores a copied or walked pathname, and `answerFS`
   answers `CONTINUE` whenever the gate does not refuse. `gateNet` and `handleConnect` score a copied `sockaddr`
   and answer `CONTINUE` for a `continued` destination (a contract with no `net:` section). A Fast-Open stream
   send does the same (`send.go`). `gateOpen` takes ADR 0008's held path, for read-opens and write-opens alike
@@ -38,7 +38,7 @@ are answered `CONTINUE`:
     name or destination.
   - `gateFS` scores the lexical spelling as **complete** facts when the
     supervisor's own walk failed with a non-lookup errno (EMFILE, ENFILE, ENOMEM, EIO, EXDEV). This contradicts
-    gate.md R1 ("missing relevant facts refuse as unreadable").
+    the gate's rule that "missing relevant facts refuse as unreadable".
   - The chmod family is not notified under a write gate at `record: summary/off`.
   - `fs.read matches` is bypassed **deterministically** through
     `link`/`rename`: `gateFS` scores `FSRename`/`FSLink` with `fs.write` predicates only.
@@ -147,7 +147,7 @@ Notes that make the table exact:
 - **Name, not inode.** `fs.read matches` and `fs.write outside worktree` are **name** predicates. A second name
   for the scored file is scored under *that* name: a hard link made before the run, a rename made earlier
   (itself a (D) mutation), or a case-fold alias. (A) closes the **swap** race, because the kernel acts on the
-  inode that was scored. It does not make a name glob a boundary. gate.md states this as a predicate residual,
+  inode that was scored. It does not make a name glob a boundary. The gate spec states this as a predicate residual,
   not a TOCTOU.
 - **Non-open mutations are (D) at every tier, gates included.** The plane decides the contract floor and the
   `deny_write`/`deny_read` rows on the resolved object. It never decides a gate predicate (ADR 0007; rejected
@@ -225,8 +225,7 @@ The order of checks for an open on the (A) path:
    - for a write-open, `DenyWriteTarget` and `AskDenyWriteTarget`;
    - for a scoped `fs.ask`, `askScopeValid`.
 
-   The open is delivered only when the floor allows. A gate score can never grant what the floor refuses
-   (gate.md R1).
+   The open is delivered only when the floor allows. A gate score can never grant what the floor refuses.
 4. **The gate, scored on `h.resolved`.** The verdict is the larger of the copied and the held scores, as
    `gateOpen` does today, so a symlink spelling cannot lower a score.
    - Up to `allow`: the deputy opens.
@@ -291,7 +290,7 @@ with a non-lookup errno, is **incomplete** (`gate.unreadable`).
   - A held allow up to `allow` is the **ordinary** fs action line: authority `rule`, path = `h.resolved`, gate
     fields with a new `gate_facts: held_object`. It is never the ask-style `emitApprovedGateAskOpen` line.
     `gate_facts: copied_syscall` is false once the held inode was scored (gate.go:27, compile.go:715,
-    agent-contract R22a, gate.md R5, record README). The new value needs a record_minor bump and README text.
+    agent-contract R22a, record README). The new value needs a record_minor bump and README text.
   - Human approvals keep `AuthorityHuman`. Gate refusals keep authority `gate`.
   - R7a and ADR 0016 (4): the supervisor writes the line for what it answers. At tier 2 the kernel recorder and
     the plane's record skip the deputy's tgid, so one action makes one line.
@@ -328,7 +327,7 @@ fake kernel: an inet copy was relayed, and a unix-spelled copy still got `CONTIN
 - **Prerequisite.** Supervisor-3 lands first: `RES_OPTIONS=single-request` for any net gate, not only for a
   guarded run. Otherwise any net gate breaks glibc `getaddrinfo` on the unaddressed batch on a connected UDP
   socket.
-- **Blast radius**, stated in gate.md:
+- **Blast radius**:
   - The run's whole IP egress moves into the relay regime: `relayCeiling` = Workers + 64 = 68 outstanding,
     beyond which a connect is `EACCES relay-limit`.
   - Non-local connects take the slow path (backfill, `ID_VALID` every 20 ms).
@@ -432,7 +431,7 @@ Stage B ships.
 xattr) under a gate, and timestamps, which no gate scores; exec (image
 and argv); unix datagrams; unix connects with no `net:` section under `net undeclared`; the hard-link alias for
 `deny_write` below the plane; MAC-LSM mediation of relays under tego's label; the deputy's fail-closed
-divergences (D4). Each is listed in run_start, compile and gate.md.
+divergences (D4). Each is listed in run_start and compile.
 
 **TCB.**
 - Today's ADR 0008 completion is a supervisor thread with tego's context. Its file carries no Landlock
@@ -478,9 +477,9 @@ its harness did not run `PrepareAskOpen`.
   - The ceiling with 4 workers is about 8k opens/s.
 - **Consequence.** That path, generalised, misses E17 (4–8 µs per notification;
   30k in 0.15–0.25 s) by 10–40× and exceeds R22's 200 µs soft ceiling on every open. It is not a candidate.
-  *Amended 2026-10-06 (kill test 5, supervisor.md E17):* E17's 4–8 µs and 0.15–0.25 s for 30k were the design
+  *Amended 2026-10-06 (kill test 5):* E17's 4–8 µs and 0.15–0.25 s for 30k were the design
   baseline's estimate, not a measurement, and E17 now gives the measured figures: 45–52 µs for the round trip of an
-  fs open in the 6.17 guest on a quiet host (supervisor.md R15b), and 60–280 µs of run time for each
+  fs open in the 6.17 guest on a quiet host, and 60–280 µs of run time for each
   notification an `fs.ask` entry keeps, end to end in kill test 5's 2-vCPU guests on a shared host. The multiple above
   was taken against the estimate. The conclusion does not rest on it: 270–680 µs exceeds R22's 200 µs soft ceiling on
   every open.
@@ -498,8 +497,8 @@ its harness did not run `PrepareAskOpen`.
   follow-up. The default cells stay (D) and are disclosed. The root-tier path is measured in KVM.
 - **Step 2.** Notifying the chmod family under a write gate adds one round trip per `fchmodat`/`fchmod`
   (~15–60 µs; `fchmod` also reads `/proc/<pid>/fd`). Step 2 measures a 10k-file `tar x` with and without a
-  write gate and records the figure in gate.md.
-  *Measured 2026-10-16 (Step 2's note below; gate.md R4):* GNU tar 1.35 extracting 10,000 files under tier 1 at
+  write gate and records the figure.
+  *Measured 2026-10-16 (Step 2's note below):* GNU tar 1.35 extracting 10,000 files under tier 1 at
   `record: summary`, with and without `fs.write outside worktree: 90`. A plain `tar xf` makes no mode change, and
   the gate added a median 46 ms (paired, within noise). `tar xpf` of an archive whose modes carry a setuid bit makes
   10,000 `fchmod` and 101 `fchmodat2` calls, and the gate added a median 586 ms to it (1,193 → 1,805 ms; bare tar
@@ -675,21 +674,10 @@ change, with the default assertions moved under `assurance: kernel`:
   - `Amended by 0041` on 0007 and 0008.
   - Dated notes on 0016 and 0024 for the stale "supervisor decides `deny_write` as a tier-1/2 producer" lines
     (0016 lines 8 and 72), worded per D1.
-- **docs/p0/gate.md.**
-  - R1: the `errOtherView` split.
-  - R3/R4: the D1 table, D4 classes, the name-not-inode residual and the D6 blast radius.
-  - R4: "Allow score → ordinary operation path" becomes the (A)/(D) cells.
-  - R5: `gate_facts: held_object`.
-- **docs/p0/supervisor.md.** R7, R7a (deputy tgid), R9, R13b, R15, R15c, R15d, R16b; R21 (held-open backfill);
-  R22 and E17 restated with the Stage B budget.
-- **docs/p0/agent-contract.md.** R20 per D1 (and `assurance` only under (a)); R22a (completion matrix,
-  `held_object`).
-- **docs/p0/enforce-landlock.md.** R5a per D1, and the runtime exec grant (Stage B).
-- **docs/p0/enforce-plane.md.** The deputy is an in-run opener; its exec row (Stage B).
 - **spec/policy/SEMANTICS.md.** §2 (`deny_write`: the plane is the race-free closure; the default per D1) and §3
   (gate completion).
-- **Record and capabilities.** `spec/backend/CAPABILITIES.md` appended rows; `spec/record/v1/README.md` and the
-  record-ledger doc for `best_effort` and `held_object`.
+- **Record and capabilities.** `spec/backend/CAPABILITIES.md` appended rows; `spec/record/v1/README.md` for `best_effort` and
+  `held_object`.
 - **CHANGELOG.**
 
 ## The D1 question
@@ -773,7 +761,7 @@ built; the 2026-10-05 note near the end says why.
   modes become 0777 and 0755.
 - The golden filter dumps gain the write-gate form on both architectures (`filter_x86_64_gate_write.txt`,
   `filter_arm64_gate_write.txt`, `TestWriteGateFilterGolden`): the plain filter plus the chmod family's notify arm.
-- The `tar x` measurement is in §Performance and gate.md R4.
+- The `tar x` measurement is in §Performance.
 - Departure: the plan named the test `TestWriteGateNotifiesChmod` at `record: summary` and `off` for the filter; the
   filter half already had its own tests, so the name went to the end-to-end test, which shows the step's effect on what
   the agent can do.
@@ -833,7 +821,7 @@ built; the 2026-10-05 note near the end says why.
   with no `fs.write` predicate continued it unscored, so `exec 3<>a.env` read a secret the read-only open was refused,
   every time, with no race: a name predicate must catch every way to read the file, Step 4's reason. Such an open is
   now scored with the read predicates as well, the stronger verdict kept, in `gateOpen`, `gateFS`, both held-open
-  paths and R5's fail-closed answer (`decide.OpenReads`; gate.md R1, amended). `compile --test` keeps one direction
+  paths and R5's fail-closed answer (`decide.OpenReads`, amended). `compile --test` keeps one direction
   per row (an `fs.write` row is the conformance actor's `O_WRONLY` open), so a run's answer for an open that does both
   is the stronger of its two rows; scoring an `fs.write` row with the read predicates was rejected, since it would
   refuse an `O_WRONLY` write the run allows. Departure from the first idea, which asked for `EvaluateGateRow` to
@@ -1152,7 +1140,7 @@ built; the 2026-10-05 note near the end says why.
   profile or a SELinux domain confines more tightly (an agent binary with a profile of its own, or a tool it execs into
   one: AppArmor lets an unconfined task enter a profile under no_new_privs) is not held to that confinement for its
   held opens. This contradicts the enforce-plane amendment's "a held open is never more permissive than the agent's
-  own" for such a process; it is a residual, disclosed here, in gate.md R4's held note and in supervisor R7a, and a run
+  own" for such a process; it is a residual, disclosed here and in the supervisor's rules, and a run
   that starts its deputy on a host whose active LSMs (`/sys/kernel/security/lsm`) include AppArmor, SELinux or Smack
   warns once that the check is not built (`heldLabelWarning`, `TestHeldLabelWarning`; on a host whose list cannot be
   read it warns too). Why not built yet: a sound check needs the task's label at the moment of each open. A
@@ -1286,7 +1274,7 @@ built; the 2026-10-05 note near the end says why.
   `protected_regular_creat` and `protected_fifo_creat`, with the same opens without `O_CREAT` and one of the agent's own
   file still opened).
 - **A claimed gap, refuted.** D2 compares a later credential change at a root tier per object class, and no held code reads the
-  task's credentials. None can happen in a held run: a gate needs `setuid` disabled (gate.md, `gate requires an
+  task's credentials. None can happen in a held run: a gate needs `setuid` disabled (`gate requires an
   enforcing tier with io_uring and setuid disabled`), so every task of the run has no_new_privs and no capability, and
   its credentials stay the ones the deputy was exec'd with (setresuid to its own ids changes nothing; setgroups needs a
   capability). `TestGateCompletionKey` now asserts that `setuid: true` with a held gate does not load.
@@ -1371,8 +1359,8 @@ built; the 2026-10-05 note near the end says why.
   (`follow_automount`), never for a bare `O_PATH` one: a held open of the automount point itself without
   `O_DIRECTORY` (`open("/mnt/auto", O_RDONLY)`) opens the autofs directory, empty, where the task's own open mounts it
   and opens its root, and the walk (taken for procfs spellings, magic links and links the kernel refuses to follow)
-  crosses such a point mid-path without mounting it and answers `ENOENT` beneath it, as supervisor.md R16b says of the
-  exec walk. An `opendir` passes `O_DIRECTORY`, which the pin's lookup now takes (the bullet above), so it mounts the
+  crosses such a point mid-path without mounting it and answers `ENOENT` beneath it, as the
+  exec walk does. An `opendir` passes `O_DIRECTORY`, which the pin's lookup now takes (the bullet above), so it mounts the
   point as the task's own open would, by the kernel's rule; no test exercises it, since no guest of the suites has an
   automount daemon. Nothing beneath the contract is reached either way.
 - **This loop's copy of a held open's descriptor is closed before the open's line.** It was closed when `openHeld`

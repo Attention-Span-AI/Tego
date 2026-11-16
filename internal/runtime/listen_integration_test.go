@@ -60,7 +60,7 @@ attempt("unix", unixserver)
 json.dump(res, open(out, "w"))
 `
 
-// TestIntegrationListenerAdmission is enforce-landlock R6 on the real kernel. Under a net: section with no net.listen
+// TestIntegrationListenerAdmission runs on the real kernel. Under a net: section with no net.listen
 // no TCP listener comes up, autobind included, each attempt a refused line, and a unix server still works, on the
 // duplicate. Without a net: section nothing changes. A port-zero declaration admits the autobind it names.
 func TestIntegrationListenerAdmission(t *testing.T) {

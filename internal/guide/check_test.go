@@ -61,8 +61,8 @@ func TestDecodeChecksIsStrict(t *testing.T) {
 }
 
 // TestCheckCauseRoundTrips: a shell entry that starts no run only because it is outside the user manager's cgroup
-// keeps that cause through the file, and a file an older build wrote, with no cause key, still decodes (acceptance B,
-// 2026-11-11: the cause decides the next step, on the dashboard too).
+// keeps that cause through the file, and a file an older build wrote, with no cause key, still decodes (the cause
+// decides the next step, on the dashboard too).
 func TestCheckCauseRoundTrips(t *testing.T) {
 	c := sample
 	c.Tier, c.FirstFix, c.Cause = "", "start tego from a shell in your user manager's cgroup", CauseOutsideUserManager
@@ -325,7 +325,7 @@ func TestPlaceAndUserManager(t *testing.T) {
 // TestOpenScopeNamesOnlyACommandThatCanWork: the command that opens a shell in the user manager's cgroup is named only
 // when systemd-run is on PATH and a socket of the user's own manager is under XDG_RUNTIME_DIR, which systemd-run --user
 // connects through; it uses $SHELL's name when that shell is one of a fixed list and on PATH, else bash; otherwise it is "" with the reason
-// (acceptance B, 2026-11-11: never a command that fails).
+// (never a command that fails).
 func TestOpenScopeNamesOnlyACommandThatCanWork(t *testing.T) {
 	bin, rt := t.TempDir(), t.TempDir()
 	for _, p := range []string{"systemd-run", "bash", "zsh", "nologin", "false", "python3", "evil-tool"} {
@@ -377,7 +377,7 @@ func TestOpenScopeNamesOnlyACommandThatCanWork(t *testing.T) {
 		{"bash", map[string]string{"PATH": bin, "XDG_RUNTIME_DIR": rt, "SHELL": "/bin/bash"}, uid, none, "systemd-run --user --scope bash", ""},
 		{"the login shell", map[string]string{"PATH": bin, "XDG_RUNTIME_DIR": rt, "SHELL": "/usr/bin/zsh"}, uid, none, "systemd-run --user --scope zsh", ""},
 		{"a shell not on PATH", map[string]string{"PATH": bin, "XDG_RUNTIME_DIR": rt, "SHELL": "/opt/fish"}, uid, none, "systemd-run --user --scope bash", ""},
-		// $SHELL names a program that is no shell of the list, even one on PATH: bash (the review's S1).
+		// $SHELL names a program that is no shell of the list, even one on PATH: bash.
 		{"nologin", map[string]string{"PATH": bin, "XDG_RUNTIME_DIR": rt, "SHELL": "/usr/sbin/nologin"}, uid, none, "systemd-run --user --scope bash", ""},
 		{"false", map[string]string{"PATH": bin, "XDG_RUNTIME_DIR": rt, "SHELL": "/bin/false"}, uid, none, "systemd-run --user --scope bash", ""},
 		{"python3", map[string]string{"PATH": bin, "XDG_RUNTIME_DIR": rt, "SHELL": "/usr/bin/python3"}, uid, none, "systemd-run --user --scope bash", ""},
@@ -386,7 +386,7 @@ func TestOpenScopeNamesOnlyACommandThatCanWork(t *testing.T) {
 		{"no runtime dir", map[string]string{"PATH": bin}, uid, none, "", "XDG_RUNTIME_DIR is not set"},
 		{"another user's manager", map[string]string{"PATH": bin, "XDG_RUNTIME_DIR": rt}, uid + 1, none, "", "socket is not under"},
 		// After su or sudo -u (XDG_RUNTIME_DIR unset, or another user's), the uid's own logind folder holding its
-		// manager's socket: the command names that folder, a number and fixed words (the review's S5).
+		// manager's socket: the command names that folder, a number and fixed words.
 		{"no runtime dir, a manager in the logind folder", map[string]string{"PATH": bin, "SHELL": "/usr/sbin/nologin"}, uid, lr, viaLogind, ""},
 		{"a runtime dir with no socket, a manager in the logind folder", map[string]string{"PATH": bin, "XDG_RUNTIME_DIR": empty}, uid, lr, viaLogind, ""},
 		{"no runtime dir, another uid's logind folder", map[string]string{"PATH": bin}, uid + 1, lr, "", "XDG_RUNTIME_DIR is not set"},
@@ -401,7 +401,7 @@ func TestOpenScopeNamesOnlyACommandThatCanWork(t *testing.T) {
 		})
 	}
 
-	// Started from another user's shell through sudo or su (acceptance 3, 2026-11-11): the person types the command in
+	// Started from another user's shell through sudo or su: the person types the command in
 	// their own shell, so it opens the shell as this user, with sudo -u and the name from the passwd entry, and always
 	// through the user's logind folder, whatever this process's XDG_RUNTIME_DIR holds. Typed without sudo -u it opened
 	// the reader's own scope on Ubuntu 24.04 and AlmaLinux 9.8, and failed on Fedora 44.

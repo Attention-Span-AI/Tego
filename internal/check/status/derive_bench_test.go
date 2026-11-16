@@ -16,7 +16,7 @@ import (
 // BenchmarkDerive is what `tego status` pays for one run, on ledgers of 9,800 and 137,200 events. It reads the whole
 // ledger, so its time grows with it: the event count, the step, the gap line and the pending asks it prints are
 // totals over every line, and the ledger is the only store (ADR 0004), so no line can be skipped
-// (limits-check-doctor-cli.md R7-R12, "What reads the whole ledger").
+// (R7-R12).
 func BenchmarkDerive(b *testing.B) {
 	src, err := os.ReadFile(filepath.Join("..", "..", "..", "spec", "record", "v1", "fixtures", "run-fixture.jsonl"))
 	if err != nil {

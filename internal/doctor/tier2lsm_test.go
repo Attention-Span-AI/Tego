@@ -9,7 +9,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestTierTwoDoesNotDependOnTheBPFLSM is enforce-cgroup-observe.md §6 E3: bpf being an active LSM on a tier-2
+// TestTierTwoDoesNotDependOnTheBPFLSM: bpf being an active LSM on a tier-2
 // host has no effect, since fentry is BPF_TRACE_FENTRY, orthogonal to LSM registration. Tier 2's tracing
 // hooks are all fentry, raw tracepoint, cgroup or uprobe programs and none is an LSM program, and the
 // derivation of tier cgroup gives the same answer whether or not the active LSM list carries bpf.

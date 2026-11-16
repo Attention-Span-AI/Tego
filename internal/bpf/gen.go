@@ -31,7 +31,7 @@ package bpf
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall -Werror" -target bpfel,bpfeb -type tego_ev_sock -type tego_ev_sockopt -type tego_net_owner cgroupnet ../../bpf/cgroup_net.bpf.c -- -I../../bpf/include
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall -Werror" -target bpfel,bpfeb -type tego_hdr -type tego_ev_cgroup cgrouptrack ../../bpf/cgroup_track.bpf.c -- -I../../bpf/include
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall -Werror" -target bpfel,bpfeb -type tego_hdr -type tego_ev_exec -type tego_ev_exec_result -type tego_ev_exit -type tego_ev_fs -type tego_ev_fsop -type tego_ev_net -type tego_ev_bind_result trace ../../bpf/trace_proc.bpf.c -- -I../../bpf/include
-// trace_proc is compiled twice as well, once per reader of kernel memory (ADR 0024's 2026-09-29 tier-2 note): trace
+// trace_proc is compiled twice as well, once per reader of kernel memory (ADR 0024 tier-2 note): trace
 // reads through CO-RE bpf_probe_read_kernel, and tracerd (TEGO_TRACE_RDONLY=1) by direct BTF loads and
 // bpf_rdonly_cast with no bpf_probe_read_kernel* call, the only one lockdown=confidentiality lets load. Both are one
 // tier-2 object, ObjectTraceProc; TraceObject picks the build by the kernel's BTF. tracerd emits no -type: its
@@ -47,7 +47,7 @@ package bpf
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall -Werror -DTEGO_PLANE_RDONLY=1" -target bpfel,bpfeb -type tego_plane_row -type tego_plane_exec_row -type tego_plane_decision -type tego_plane_counts -type tego_ev_plane -type tego_plane_unix -type tego_plane_slot -type tego_plane_bind -type tego_plane_listen_key -type tego_plane_listen_row -type tego_plane_name_row -type tego_plane_name_cfg -type tego_exec_pin -type tego_pin_key -type tego_pin_keyval -type tego_exec_armed -type tego_ev_exec_kill -type tego_ev_exec_held planerd ../../bpf/decide.bpf.c -- -I../../bpf/include
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -cflags "-O2 -g -Wall -Werror -DTEGO_PLANE_RDONLY=0" -target bpfel,bpfeb planepr ../../bpf/decide.bpf.c -- -I../../bpf/include
 
-// The plane's fill and clear (bpf/decide_fill.bpf.c, ADR 0025 (2); TIER3-PLAN T4): an iter/task_file program that
+// The plane's fill and clear (bpf/decide_fill.bpf.c, ADR 0025 (2)): an iter/task_file program that
 // writes a slot's rows at the inodes of the launcher's held descriptors, and a syscall program that deletes a slot's
 // stale rows. Built twice for the same reason as the plane (the mount id is read through a cast), and registered
 // apart from both the tier-2 objects and the plane builds (objects_planefill_gen.go).

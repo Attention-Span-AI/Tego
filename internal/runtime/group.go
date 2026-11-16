@@ -9,8 +9,8 @@ import (
 )
 
 // group is the worker set of one run: every goroutine Run starts is started here and joined by Wait,
-// none is fire-and-forget (docs/p0/runtime-launch.md §9 "Goroutine ownership"). It implements the
-// errgroup.WithContext contract the design names (P0-DESIGN §2.4, §6) over the standard library, so
+// none is fire-and-forget. It implements the
+// errgroup.WithContext contract the design names over the standard library, so
 // internal/runtime adds no module dependency: the first member to fail records its error, cancels the
 // group's context and so stops every other member, and Wait reports that first error.
 type group struct {

@@ -70,7 +70,7 @@ func evalLink(rt *agent.RuleTable, a agent.Action, tier backend.Tier) agent.Eval
 // so it is allowed, named as the supervisor's recordAttr names its line: the write entry that covers the path, else
 // the nearest entry, else unmatched. Where a decision plane decides (the bpflsm column: tier bpflsm, and tier cgroup
 // in a plane mode), path_chmod, path_chown and the xattr and ACL hooks refuse it at or beneath a built-in deny_write
-// target, and their walk refuses what it cannot finish (enforce-plane R12, R7).
+// target, and their walk refuses what it cannot finish.
 func evalAttr(rt *agent.RuleTable, a agent.Action, tier backend.Tier) agent.EvalResult {
 	if a.Path == "" {
 		return invalidAction()
@@ -103,7 +103,7 @@ func attrName(rt *agent.RuleTable, p string) string {
 // pkg/policy/socketpolicy's.
 const (
 	afUnix = 1
-	// ipprotoMPTCP is refused by every run's seccomp filter, whatever the contract (enforce-landlock E30).
+	// ipprotoMPTCP is refused by every run's seccomp filter, whatever the contract.
 	ipprotoMPTCP = 262
 )
 

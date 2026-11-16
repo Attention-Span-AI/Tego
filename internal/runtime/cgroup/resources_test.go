@@ -29,7 +29,7 @@ func valueOf(p *uint64) any {
 }
 
 // TestReadResourcesTakesWhatTheKernelWrote pins run_end's resource line to the files a 6.17 cgroup with the
-// cpu, memory and pids controllers has (record-ledger.md run_end.resources). Before, nothing read a peak or a
+// cpu, memory and pids controllers has. Before, nothing read a peak or a
 // usage file at all, so a run said nothing about what it used.
 func TestReadResourcesTakesWhatTheKernelWrote(t *testing.T) {
 	t.Parallel()

@@ -28,7 +28,7 @@ func missPATH(out string) string {
 // every refusal of a file that exists keep their lines. Three `git status` starts, a `git push` refused unlisted and a
 // command that exists nowhere: the ledger holds exec lines only for files that exist, run_end counts the misses in
 // exec_missing, and drift reads git as three allowed starts and no observation. Before, each miss was a refused line
-// (the custom-agent POC: seven tries of git push made 133 refused exec events).
+// (seven tries of git push made 133 refused exec events).
 func TestIntegrationExecMissWritesNoLine(t *testing.T) {
 	git := needGit(t)
 	for _, mode := range []string{"summary", "full", "off"} {

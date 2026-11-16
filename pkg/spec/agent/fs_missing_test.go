@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestFirstMissingNamesFirstGap pins agent-contract.md E9: "Multi-segment missing parent chain
+// TestFirstMissingNamesFirstGap: "Multi-segment missing parent chain
 // (/work/out/deep/nested) -> path-missing names the *first* missing segment
 // (only the leaf write dir is created by run)." Compile's own table test
 // (TestCompilePathRules "write-parent-missing") only asserts the code, not

@@ -19,7 +19,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestTheRunsDNSWorkerNeverHandsTheTierARefusedAddress is agent-contract R18 at tier 2: the worker
+// TestTheRunsDNSWorkerNeverHandsTheTierARefusedAddress, at tier 2: the worker
 // startNotifyLoop starts builds its set with the run's own resolved-address check, so a refresh that rebinds a
 // host name to the cloud metadata endpoint moves the tier's rows to the public address alone. Without the check
 // the rows followed every answer, and a kernel row admitted 169.254.169.254 for the name while the supervisor
@@ -104,11 +104,11 @@ func handedUntil(t *testing.T, h *refreshingHandle, want ...string) *agent.RuleT
 	}
 }
 
-// TestTheRunsDNSWorkerKeepsThisHostsAddressesOutOfTheTiersRows is agent-contract R18's last class at tier 2: a
+// TestTheRunsDNSWorkerKeepsThisHostsAddressesOutOfTheTiersRows is the resolved-address check's this-host class at tier 2: a
 // host name that resolves, or is rebound, to one of this host's own interface addresses never becomes a kernel
 // row admitting it, in each way the address can reach the rows. Without refreshDenied's snapshot the set's filter
 // knew only the table's classes, so the host's LAN address stayed a row that decided a datagram a sibling thread
-// rewrote after the supervisor read it (supervisor R13b), while the supervisor refused every connect it saw there.
+// rewrote after the supervisor read it, while the supervisor refused every connect it saw there.
 func TestTheRunsDNSWorkerKeepsThisHostsAddressesOutOfTheTiersRows(t *testing.T) {
 	start := func(t *testing.T, host *fakeHost, answers ...[]netip.Addr) (*refreshingHandle, *runner) {
 		t.Helper()
@@ -183,8 +183,8 @@ func TestTheRunsDNSWorkerKeepsThisHostsAddressesOutOfTheTiersRows(t *testing.T) 
 // check reads it: an address of an AnyIP range the local routing table sends here (`ip route add local
 // 198.51.100.0/24 dev lo`) is this host's own, so a host entry's compile-time answer in the range is no row, and a
 // refresh that rebinds the name into it is not handed to the tier. Read from the interfaces alone, the row admitted
-// what the supervisor refuses, and decided a datagram a sibling thread rewrote after the supervisor read it
-// (supervisor R13b). A localhost name keeps it, and the run's own snapshot reads the real table: 127.0.0.2 is no
+// what the supervisor refuses, and decided a datagram a sibling thread rewrote after the supervisor read it.
+// A localhost name keeps it, and the run's own snapshot reads the real table: 127.0.0.2 is no
 // interface's address and is this host's by the `local 127.0.0.0/8` route the kernel keeps for loopback.
 func TestTheTiersRowsReadTheLocalTable(t *testing.T) {
 	a := netip.MustParseAddr

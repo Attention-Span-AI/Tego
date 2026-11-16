@@ -321,8 +321,8 @@ grep '  install\.sh$' "$sums" | sha256sum -c -
 TEGO_VERSION=$tag sh install.sh
 ```
 
-If `cosign` fails, or `sha256sum` does not print `install.sh: OK`, do not run the script. `install-maze.sh` and the macOS
-template `tego.yaml` are checked the same way: download them from `$base` and give their names to the `grep`.
+If `cosign` fails, or `sha256sum` does not print `install.sh: OK`, do not run the script. The macOS
+template `tego.yaml` is checked the same way: download it from `$base` and give its name to the `grep`.
 
 Set `tag` to the release you install (the releases page names the latest). The identity names that tag, because the
 release workflow signs as itself, run for that tag.
@@ -333,13 +333,9 @@ you run:
 - Piping a script into `sh` skips it. Nothing can read a checksum before a piped script runs, so someone who replaces the
   asset replaces the checks inside it too.
 - It says who built the file, not that the tagged code is good. Anyone who can push a `v*` tag can run the release workflow.
-- `install-maze.sh` holds the `maze` archive to a sha256 from the same release, and checks no signature, so checking the
-  script does not extend to what it downloads. `install.sh` does check who published the binaries, when `cosign` or `gh`
-  is present.
 
 When you pass a release binary on, keep `tego_<version>_licenses.tar.gz` with it: it holds the licence texts and the
-third-party notices that `NOTICE` refers to. `install.sh` prints where that archive is. Each maze archive holds the
-same notices. The `tego` and `tego-control` binaries carry the same texts, and `tego licenses` and
+third-party notices that `NOTICE` refers to. `install.sh` prints where that archive is. The `tego` and `tego-control` binaries carry the same texts, and `tego licenses` and
 `tego-control licenses` print them.
 
 ## Uninstall

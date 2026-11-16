@@ -80,7 +80,7 @@ var (
 // no other goroutine can ever be scheduled onto a thread that still carries the probe's filter, and
 // seccompRoundTrip returns only once that thread has ended, or fails D5 when it has not ended within
 // seccompSelfTestTimeout, so after a D5 that passed no thread of this process carries the filter or the
-// no_new_privs set for it (limits-check-doctor-cli.md §4 ForRun: no kernel object is left behind).
+// no_new_privs set for it: no kernel object is left behind.
 //
 // D5's question has two halves: the round trip above, and Yama's ptrace_scope, which decides
 // whether the supervisor that filter feeds may read the agent at all. seccompVerdictOn folds them into
@@ -437,7 +437,7 @@ func seccompNotifAddfd(listener int, a *seccompAddfd) unix.Errno {
 
 // notifyOneSyscall assembles the throwaway filter: guard the architecture, notify exactly one
 // syscall number, allow everything else. The architecture guard is the same first instruction every
-// production filter starts with (docs/p0/enforce-landlock.md R13): a filter without it would decide
+// production filter starts with: a filter without it would decide
 // on a syscall number from a different ABI.
 func notifyOneSyscall(nr uintptr) ([]bpf.RawInstruction, error) {
 	const (

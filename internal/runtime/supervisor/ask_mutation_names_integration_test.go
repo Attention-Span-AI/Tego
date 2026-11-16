@@ -19,7 +19,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestAskMutationRefusesNameMatchedFile is ADR 0043's interface 2 (supervisor R15f) for an fs.ask mutation (ADR
+// TestAskMutationRefusesNameMatchedFile is ADR 0043's interface 2 for an fs.ask mutation (ADR
 // 0047): the approved mutation is made by this process, outside any plane, so at tiers cgroup and bpflsm a file made,
 // removed or moved at a name an entry covers (a temporary file renamed to .env.local, a symlink or a link made there,
 // an unlink of one) is refused before any person is asked, named by the entry, and nothing changes. A directory of

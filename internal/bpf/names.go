@@ -3,7 +3,7 @@
 package bpf
 
 // Object names one compiled C file each. They are the keys of Load and the names the pin directory and the
-// build hash are computed over (docs/p0/enforce-cgroup-observe.md §2.1, §3).
+// build hash are computed over.
 const (
 	// ObjectCgroupNet is bpf/cgroup_net.bpf.c: the eight CGROUP_SOCK_ADDR programs of tier 2.
 	ObjectCgroupNet Object = "cgroup_net"
@@ -75,7 +75,7 @@ const MapNetOwners = "tego_net_owners"
 // holding NetVerdict values (§5 R7). Only ObjectCgroupNet defines it; it is pinned by name beside SharedMaps.
 const MapUnixNames = "tego_unix_names"
 
-// MapUnixApprovals holds the one-connect grants of approved abstract names (supervisor R11c), keyed by
+// MapUnixApprovals holds the one-connect grants of approved abstract names, keyed by
 // UnixApprovalKey and holding UnixCredit values; connect_unix and the plane's socket_connect read it beside
 // MapUnixNames. Only ObjectCgroupNet and the plane define it; it is pinned by name beside SharedMaps.
 const MapUnixApprovals = "tego_unix_approvals"
@@ -105,8 +105,8 @@ const (
 )
 
 // ProgSockCreate is ObjectCgroupNet's cgroup/sock_create program (BPF_PROG_TYPE_CGROUP_SOCK): it refuses an inet
-// socket outside ADR 0018's allowlist on any path to inet_create and records its own refusal (KindSockCreate;
-// docs/p0/enforce-cgroup-observe.md §5 R4, R5). It reads the attachment's NetOwner, as the CGROUP_SOCK_ADDR programs
+// socket outside ADR 0018's allowlist on any path to inet_create and records its own refusal (KindSockCreate).
+// It reads the attachment's NetOwner, as the CGROUP_SOCK_ADDR programs
 // do, and is not one of them: it attaches with AttachCGroupInetSockCreate, so it is not in CgroupPrograms.
 const ProgSockCreate = "tego_cg_sock_create"
 
@@ -146,8 +146,8 @@ const (
 	ProgBindResult   = "tego_bind_result"
 	ProgListenResult = "tego_listen_result"
 	// ProgURingBindResult and ProgURingListenResult are the same producers for IORING_OP_BIND and
-	// IORING_OP_LISTEN (6.11+), which exit no bind or listen syscall: fexit programs on io_bind and io_listen
-	// (enforce-plane §2.20). Both are among OptionalTracePrograms.
+	// IORING_OP_LISTEN (6.11+), which exit no bind or listen syscall: fexit programs on io_bind and io_listen.
+	// Both are among OptionalTracePrograms.
 	ProgURingBindResult   = "tego_uring_bind_result"
 	ProgURingListenResult = "tego_uring_listen_result"
 	ProgExecatResult      = "tego_execat_result"
@@ -221,7 +221,7 @@ var OptionalTracePrograms = map[string]string{ProgFileTruncate: "security_file_t
 const MapTaskScratch = "tego_task_scratch"
 
 // TraceMaps lists the maps ObjectTraceProc defines beyond SharedMaps, in pin order: its own task storage, and the
-// plane's decision scratch (MapPlaneScratch), which the plane writes and the fexit programs read (TIER3-PLAN T9), and
+// plane's decision scratch (MapPlaneScratch), which the plane writes and the fexit programs read, and
 // the plane's exec-pin state (MapPlaneExecArmed), whose pin seq the exec record carries (ADR 0048 (8)).
 // Both objects declare the scratch and pin it by name beside SharedMaps, so whichever loads second reuses it.
 var TraceMaps = []string{MapTaskScratch, MapPlaneScratch, MapPlaneExecArmed}

@@ -52,8 +52,8 @@ type fsEntry struct {
 // entry imply" for the recorder. It captures rule identities at construction and applies prepared mount metadata
 // before Start drains events. The single drain goroutine then reads it without mutation or a lock.
 //
-// It is the recorder's *stamping* index, not an enforcement decision: the kernel already decided
-// (docs/p0/enforce-cgroup-observe.md §5 R3, R9). Exec is answered by decide.Evaluate, the one
+// It is the recorder's *stamping* index, not an enforcement decision: the kernel already decided.
+// Exec is answered by decide.Evaluate, the one
 // implementation `compile --test` uses too. Net keeps the kernel's exact-before-LPM precedence, which
 // Evaluate's first-match does not have, with the port and address rules the enforcing sides use. fs keeps
 // the nearest-entry walk that names an event plus the (dev, ino) index R9 needs, which no other component
@@ -163,7 +163,7 @@ func (ri *ruleIndex) execGrants() decide.ExecGrants {
 // for a directory, execIDs for a file). An end the grants cannot stat, or a table with nothing held, keeps the
 // declared names' answer. The inodes are lstat'ed when the sample is processed, not when the syscall ran: a tree
 // changed back before then (the old inode moved back under the name) leaves the line at the declared names' answer,
-// observed by another mechanism (enforce-cgroup-observe R9).
+// observed by another mechanism.
 func (ri *ruleIndex) execUngranted(rule, path string) bool {
 	if ri == nil || ri.rt == nil || ri.rt.Tier == backend.TierObserve {
 		return false

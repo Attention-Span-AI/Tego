@@ -12,7 +12,7 @@ import (
 // TestAbstractScopeRowFollowsTheABI is R7 on the capability line: the abstract-socket scope is created with
 // every ruleset from ABI 6 on, so the backend and every handle it prepares report
 // net.unix_abstract_scope exactly there, and a run below ABI 6, where nothing refuses an abstract name bound
-// outside the run, records it absent (agent-contract R19). The static column claims it on no ABI.
+// outside the run, records it absent. The static column claims it on no ABI.
 func TestAbstractScopeRowFollowsTheABI(t *testing.T) {
 	for abi := 1; abi <= 11; abi++ {
 		want := abi >= 6

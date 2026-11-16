@@ -273,7 +273,7 @@ func (s *Service) DescribeNew(ctx context.Context, ref string) (*NewPlan, error)
 // refused without asking: that fails closed, but the field does not do what it says.
 const (
 	askReadBasic      = "Ask before reading runs this whole contract at Basic protection: only there can a read wait for you"
-	askReadAdjustable = "Adjustable runs at Strong or Strongest, where a read cannot wait: these reads are refused without asking you"
+	askReadAdjustable = "Adjustable runs at Plus or Max, where a read cannot wait: these reads are refused without asking you"
 )
 
 // planNew is PlanNew with what CreateNew needs besides: the setup result and the compile environment (nil when a test

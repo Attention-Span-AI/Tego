@@ -18,7 +18,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// The live index (record-ledger.md §3) is <ledger_root>/.live: one empty entry, named by its run id, for each
+// The live index is <ledger_root>/.live: one empty entry, named by its run id, for each
 // run whose launcher has taken the run's lock and has not yet seen it end. `tego run` and `tego stop` sweep
 // only the runs it names (SweepLive), so what they pay before acting is the runs alive or lost, not every run
 // retention has kept: GC's pass over the whole root cost `tego run` about 73 µs per stored run, some 2 s at
@@ -207,7 +207,7 @@ func sweepLive(ctx context.Context, root string, rd *sys.FD, repo *fsRunReposito
 
 // LiveEntries returns the run ids the live index of the ledger root at root lists, reading nothing but the
 // index's names; a root with no index lists none. `tego doctor` uses it to name the runs no sweep has been able
-// to finish (limits-check-doctor-cli.md R27).
+// to finish.
 func LiveEntries(root string) ([]string, error) {
 	rd, err := openDir(root, false)
 	if err != nil {
@@ -344,7 +344,7 @@ func sweepListed(ctx context.Context, repo *fsRunRepository, rd *sys.FD, id stri
 // run is left for `events --verify` to report. The entry itself goes as it would with
 // the lock free, since the next sweep would find the lock missing again. A repair that failed for a reason that
 // may pass — the anchor could not be read, or its line could not be written, or the ledger's read failed or was
-// cut short (*amended 2026-09-24:* a cancelled context or EIO in Verify had cleared the entry
+// cut short (a cancelled context or EIO in Verify had cleared the entry
 // as a chain that does not verify) — keeps the entry, so the next sweep
 // tries again; only a chain that does not verify, or is not one whole run of its own, is left unanchored and its
 // entry cleared, since no later sweep would find it otherwise. GC's pass over every run directory checks an ended

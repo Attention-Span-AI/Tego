@@ -265,7 +265,7 @@ func (ix *Index) resolve(b *builder) []Invocation {
 	// dispatcher the bounds stop this from fully resolving (a multicall binary that re-dispatches to itself, such
 	// as busybox's own `busybox` applet, nested past maxDispatch; or a fan-out that reaches maxInterpretations) could
 	// still reach a ruled tool, so the loop fails closed: it leaves a ViaOverflow sentinel that Decide refuses under
-	// command-unresolved, rather than dropping the interpretation and reading the exec as unmatched (2026-10-06; it
+	// command-unresolved, rather than dropping the interpretation and reading the exec as unmatched (it
 	// mirrors NormalizeOpen's Unlocatable, and R7's bound on argv).
 	depth := map[int]int{}
 	overflow := false

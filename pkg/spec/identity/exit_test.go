@@ -14,7 +14,7 @@ func exited(n int) syscall.WaitStatus { return syscall.WaitStatus(n << 8) }
 func killed(sig syscall.Signal) syscall.WaitStatus { return syscall.WaitStatus(sig) }
 
 // T-exit-1/2/3: the exit-code table (R10–R13, I7).
-// identity-config.md R10, R11, R12, R13 (the table), I7 (no code in 200-254 from these reasons), E23 (a status neither exited nor signaled).
+// Covers the table, no code in 200-254 from these reasons, and a status neither exited nor signaled.
 func TestExitCode(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -96,7 +96,7 @@ func TestSignalTables(t *testing.T) {
 	}
 }
 
-// TestExitCodesLeaveTheLSBBand asserts agent-contract.md E36: the R10 contradiction and the machine-config
+// TestExitCodesLeaveTheLSBBand: the runtime-directory contradiction and the machine-config
 // code are exit 125 (no 210, no 213), and the one code left in the 200-254 band is doctor --require's 211.
 func TestExitCodesLeaveTheLSBBand(t *testing.T) {
 	if ExitConfig != ExitLauncher || ExitLauncher != 125 {

@@ -23,7 +23,7 @@ import (
 )
 
 // TestRunRefusesABudgetWhoseCaptureCannotStart: the runtime's refusal of a budgeted run whose capture could not
-// start (runtime.ErrCaptureUnavailable, limits-check-doctor-cli.md R32) is exit 125 [capture-unavailable] with
+// start (runtime.ErrCaptureUnavailable) is exit 125 [capture-unavailable] with
 // the runtime's cause and fix, and it keeps the cached probe answer, which it says nothing against.
 func TestRunRefusesABudgetWhoseCaptureCannotStart(t *testing.T) {
 	code, out, dropped := runRefusedBy(t, fmt.Errorf("%w: the tokens budget cannot be metered: the uprobe capture did "+

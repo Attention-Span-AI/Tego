@@ -164,8 +164,7 @@ func guardUnaddressedChecks() []checkResult {
 // 0.0.0.0 and its v4-mapped form, which ip_route_connect sends to loopback, and 127.0.0.2, which a server
 // bound to all interfaces answers — and so is a datagram to it. Before the loopback aliasing, 0.0.0.0 was
 // relayed and reached the stand-in, recorded allow/unmatched with dst 0.0.0.0, which is how a copy of kt2 whose
-// agent connected to 0.0.0.0:$port went around the forwarder (the shipped kt2 connects to 127.0.0.1:$port;
-// supervisor.md's corrections name the copy). Another port through 0.0.0.0 is admitted and relayed, and
+// agent connected to 0.0.0.0:$port went around the forwarder (the shipped kt2 connects to 127.0.0.1:$port). Another port through 0.0.0.0 is admitted and relayed, and
 // reaches its server.
 func TestIntegrationModelGuard(t *testing.T) {
 	h := startHarnessMode(t, 0, modeGuard, nil)

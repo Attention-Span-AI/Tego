@@ -290,7 +290,7 @@ const fuzzBodyHugeWork = 1 << 24
 //   - a body that is returned is at most size bytes, hashes to the event's body_sha256, and is what a
 //     plain recursive expansion of the same files rebuilds.
 //
-// The seeds include the fan-out the R11 amendment of 2026-09-22 records (one splice naming, forty times,
+// The seeds include the fan-out R11 bounds (one splice naming, forty times,
 // a splice padded with whitespace), whose reads the byte budget exists to stop.
 //
 // In blob mode (the event names one file as the whole body) the same properties take their one-file form:
@@ -406,7 +406,7 @@ func FuzzBody(f *testing.F) {
 			}
 			return
 		}
-		// R11's bounds as record-ledger.md states them, computed here rather than through spliceOpens and
+		// R11's bounds, computed here rather than through spliceOpens and
 		// spliceBytes, so that loosening those cannot loosen the check along with them.
 		opens := 5*limit/(4<<10) + 8
 		spliceRead := 3*limit + 256*opens + 64<<10

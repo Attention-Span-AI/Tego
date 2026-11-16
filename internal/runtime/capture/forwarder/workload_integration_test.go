@@ -26,7 +26,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// workloadAgent is the system-Python agent of docs/FEATURES.md I1 and P0-DESIGN §12 item 3.
+// workloadAgent is the system-Python agent of docs/FEATURES.md I1.
 const workloadAgent = "../../../../test/workloads/python-httpx/agent.py"
 
 // TestIntegrationSystemPythonAgentIsCapturedThroughTheForwarder runs test/workloads/python-httpx unchanged

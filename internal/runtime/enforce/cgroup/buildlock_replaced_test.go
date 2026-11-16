@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestReplacedBuildLockPathIsAnAcceptedGap is runtime-launch.md E34: when the lock path is replaced by a new
+// TestReplacedBuildLockPathIsAnAcceptedGap: when the lock path is replaced by a new
 // inode (not merely deleted) while a first-generation launcher still holds the old one, the two generations
 // lock different inodes, so both are told they are the only holder and both are last out. The spec accepts this
 // as operator interference, a doctor finding, not auto-healed: this pins that behaviour, so a change that

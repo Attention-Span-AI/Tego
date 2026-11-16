@@ -139,7 +139,7 @@ func attachedPaths(c *cache) []string {
 
 // TestAttachUsesTheLivePathNotACachedProcEntry pins that the offset cache contributes offsets and a build
 // id across processes (R7) but never a path: every candidate is spelled through the observed process's own
-// /proc entry (capture-derive.md R39), which the kernel removes when that process exits. A second process mapping the same
+// /proc entry, which the kernel removes when that process exits. A second process mapping the same
 // libssl must be attached through its own entry, not through the first process's vanished one.
 func TestAttachUsesTheLivePathNotACachedProcEntry(t *testing.T) {
 	tree := newProcTree(t)

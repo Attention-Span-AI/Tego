@@ -13,13 +13,13 @@ import (
 
 // GapMemorySwapUncapped is the why of the what=limits gap a run with a memory cap records when its cgroup has
 // no memory.swap.max while swap is on: the kernel accounts no swap to cgroups (swapaccount=0 or
-// cgroup.memory=noswap), so the agent can exceed its memory cap into swap (runtime-launch.md R10, ADR 0038).
+// cgroup.memory=noswap), so the agent can exceed its memory cap into swap (ADR 0038).
 const GapMemorySwapUncapped = "memory-swap-uncapped"
 
 // Diagnostic codes of the warnings a run prints through Deps.Warn, which the CLI prints in brackets after the text: a
 // consumer keyed on the code tells them apart (every runtime warning was printed as swap-uncapped).
 const (
-	// WarnSwapUncapped: a memory cap the swap can exceed (runtime-launch.md R10).
+	// WarnSwapUncapped: a memory cap the swap can exceed.
 	WarnSwapUncapped = "swap-uncapped"
 	// WarnHeldUnavailable: gate.completion: held whose open deputy did not start, so the open cells are best effort for
 	// the run (ADR 0041, the launch probe's degrade).

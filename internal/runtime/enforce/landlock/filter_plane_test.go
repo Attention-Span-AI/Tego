@@ -102,13 +102,11 @@ var (
 	stepBHooks = []string{HookPathMknod, HookPathMkdir, HookPathSymlink, HookPathTruncate}
 )
 
-// TestPlaneFilterDropsOnlyWhatLoadedHooksDecide is enforce-plane R27's notification half (TIER3-PLAN T16): with a
+// TestPlaneFilterDropsOnlyWhatLoadedHooksDecide is the notification half: with a
 // plane's hooks loaded, the filter stops notifying each fs mutation whose every form a loaded hook decides, and
 // nothing else. Step A's hooks alone take unlink, rmdir, rename and link, and leave write-opens (a refused O_CREAT
 // needs path_mknod), mkdir, mknod, symlink and truncate notified; step B's add those. Execs, connects and the
 // mount family stay notified at every step, and no hook set means every notification (fail closed).
-//
-// Spec: docs/p0/enforce-plane.md R22, R27.
 func TestPlaneFilterDropsOnlyWhatLoadedHooksDecide(t *testing.T) {
 	const (
 		x86Open, x86OpenAt, x86Creat, x86Truncate                 = 2, 257, 85, 76
@@ -214,7 +212,7 @@ func callNames(cs []planeCall) []string {
 // on a read-only open refused, truncate(2) refused) and every errno arm stay as they are, since they decide
 // without a round trip and hold with no listener.
 //
-// Spec: docs/p0/enforce-plane.md R22 (the Landlock domain and the filter are not weakened, I3).
+// The Landlock domain and the filter are not weakened.
 func TestPlaneFilterKeepsTheErrnoArms(t *testing.T) {
 	all := planeSkips(hookSet(append(append([]string(nil), stepAHooks...), stepBHooks...)...), false, false)
 	o := filterOpts{abi: 2, plane: all}

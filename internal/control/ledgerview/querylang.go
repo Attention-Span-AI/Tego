@@ -23,7 +23,7 @@ import (
 // process was running (program.go). path is a path and what is under it, whole names only: path:/a/b holds /a/b/c,
 // not /a/bc (Filter.PathPrefix). A key the language does not know stays a word,
 // so text such as unix:/run/x or http://host is searched as written. since and until take a duration back from now
-// (30s, 15m, 2h, 7d) or a local time (2026-10-27, 2026-10-27T01:00, 01:00 today, or RFC 3339).
+// (30s, 15m, 2h, 7d) or a local time (2026-10-27T01:00, 01:00 today, or RFC 3339).
 
 // Token is one term of a query: Key is "" for a word.
 type Token struct {

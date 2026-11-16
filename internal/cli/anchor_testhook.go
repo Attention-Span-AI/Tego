@@ -17,14 +17,14 @@ import (
 // ~/.tego/chain.log, which no setting redirects, so without this every test run would append to the
 // developer's own anchor, and fail wherever that home is not writable. A product build does not
 // contain this file, so the variable means nothing to it; and even a test build ignores it under
-// AT_SECURE, where no environment variable may choose a path the capability-bearing launcher writes
-// (identity-config.md R21), should such a build ever be given file capabilities.
+// AT_SECURE, where no environment variable may choose a path the capability-bearing launcher writes,
+// should such a build ever be given file capabilities.
 //
 // A test build fails closed on it. With the variable unset (or empty) it names no anchor at all, so every
 // command that anchors (`run`, `watch`, `events --verify`) refuses with ErrTestAnchorUnset instead of falling
 // back to the product's ~/.tego/chain.log: a harness that forgot the variable, or took its environment
 // before it was set, fails the test it belongs to rather than appending test runs to the developer's own
-// anchor, where nothing says afterwards which lines are theirs (2026-10-06: 61 lines of runs whose ledgers
+// anchor, where nothing says afterwards which lines are theirs (61 lines of runs whose ledgers
 // were temporary directories). Only the AT_SECURE case keeps the product's anchor, as above.
 const EnvTestChainAnchor = "TEGO_TEST_CHAIN_ANCHOR"
 

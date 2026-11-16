@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// Name is a contract's harness: value, the agent harness the launcher provisions for (agent-contract.md R27).
+// Name is a contract's harness: value, the agent harness the launcher provisions for.
 type Name string
 
 const (
@@ -69,7 +69,7 @@ const (
 	// Runtime is the run's runtime directory, $XDG_RUNTIME_DIR/tego/<run id>: the file is made 0444, and the agent
 	// cannot write there.
 	Runtime Dir = iota
-	// CodexHome is the run's own CODEX_HOME, which the launcher made (agent-contract.md R10a): the file is made 0600,
+	// CodexHome is the run's own CODEX_HOME, which the launcher made: the file is made 0600,
 	// and only when the run has that directory.
 	CodexHome
 )

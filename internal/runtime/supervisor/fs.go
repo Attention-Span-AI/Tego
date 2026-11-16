@@ -19,15 +19,15 @@ import (
 )
 
 // isWriteOpen reports whether open flags make an open a write (decide.IsWriteOpen): what the filter notifies
-// on (R15, and enforce-landlock R12).
+// on (R15).
 func isWriteOpen(flags int) bool { return decide.IsWriteOpen(flags) }
 
 // creatFlags are the flags creat(2) implies; the syscall carries a mode, not a flags argument.
 const creatFlags = unix.O_WRONLY | unix.O_CREAT | unix.O_TRUNC
 
 // handleOpenAt records a write-open reached through a dirfd and continues it (R15). Landlock decides the
-// continued syscall; the verdict here is advisory, which is exactly what source: seccomp says
-// (P0-DESIGN §4.3), save a write that reaches a built-in deny_write target, which this loop refuses itself
+// continued syscall; the verdict here is advisory, which is exactly what source: seccomp says,
+// save a write that reaches a built-in deny_write target, which this loop refuses itself
 // (R15c). Under record: full the filter also notifies read-opens, and those are recorded the same way with
 // their own flags.
 func handleOpenAt(l *Loop, n *notif) {
@@ -75,7 +75,7 @@ func handleUnlink(l *Loop, n *notif) {
 
 // handleRmdir records a legacy rmdir (x86-64 only), which glibc's rmdir(3), Python's os.rmdir and
 // coreutils' rmdir all reach on x86-64 instead of unlinkat(AT_REMOVEDIR). record v1 has no rmdir op
-// (record-ledger.md: open|unlink|rename|mkdir|symlink|truncate), so it is recorded exactly as that
+// (open|unlink|rename|mkdir|symlink|truncate), so it is recorded exactly as that
 // unlinkat is: op unlink, the directory's path, no flags.
 func handleRmdir(l *Loop, n *notif) {
 	l.recordPath(n, record.FSUnlink, atFDCWD, n.args[0], 0, true, mutationArgs{flags: unix.AT_REMOVEDIR})
@@ -134,7 +134,7 @@ func handleLink(l *Loop, n *notif) {
 }
 
 // handleTruncate records a truncate(2), which follows a final symlink, and continues it: Landlock's TRUNCATE
-// right decides it from ABI 3, below which the filter refuses it and nothing is notified (enforce-landlock R2).
+// right decides it from ABI 3, below which the filter refuses it and nothing is notified.
 // A truncate that reaches a deny_write target is refused here (R15c), as a write-open with O_TRUNC is.
 func handleTruncate(l *Loop, n *notif) {
 	r := l.newReader(n)
@@ -169,7 +169,7 @@ func handleFchmodAt2(l *Loop, n *notif) {
 }
 
 // handleSetxattr records a setxattr(2) or removexattr(2), which follow a final symlink: an attribute change, which
-// reaches this loop under an fs.write gate only (enforce-landlock R11).
+// reaches this loop under an fs.write gate only.
 func handleSetxattr(l *Loop, n *notif) {
 	l.recordAttr(n, record.FSXattr, atFDCWD, n.args[0], 0, false, false)
 }
@@ -221,7 +221,7 @@ func (l *Loop) recordChmod(n *notif, dirfd int32, addr uint64, flags int, byFD b
 // recordAttr records one attribute change: a mode change (op chmod), an extended attribute set or removed (op xattr;
 // a POSIX ACL is one, system.posix_acl_access, and rewrites the mode bits as a chmod does) or an owner change (op
 // chown). A chmod is notified under record: full or an fs.write gate, the xattr and chown families under an fs.write
-// gate only (R17, enforce-landlock R11). Each is continued unless that gate refuses it (settleFS's gateFS scores it as
+// gate only (R17). Each is continued unless that gate refuses it (settleFS's gateFS scores it as
 // a write on the file it lands on). The attribute's name is never read: a sibling thread could rewrite it between this
 // loop's read and the kernel's, so every name is scored as the write it may be. No Landlock ABI has a chmod, chown or
 // xattr right and no tier-1 or tier-2 mechanism refuses one (CAPABILITIES fs.deny_chmod), so the model's line reads
@@ -251,8 +251,8 @@ func (l *Loop) recordAttr(n *notif, op string, dirfd int32, addr uint64, flags i
 		return
 	}
 	// With a plane deciding the run (tier bpflsm, and tier cgroup in a plane mode), its path_chmod, path_chown and
-	// xattr and ACL hooks refuse an attribute change beneath a deny_write target in the kernel (enforce-plane R12,
-	// TIER3-PLAN T13): refused here first by the same predicate (R15c's), the kernel never sees it, and the action's
+	// xattr and ACL hooks refuse an attribute change beneath a deny_write target in the kernel:
+	// refused here first by the same predicate (R15c's), the kernel never sees it, and the action's
 	// one line is this refusal rather than an allow the kernel then overturns. Nothing refuses any other attribute
 	// change at any tier (no Landlock ABI governs one, and the plane protects deny_write targets only), so the model's
 	// other refusals read allow.
@@ -658,7 +658,7 @@ func (l *Loop) settleFS(n *notif, r *reader, op string, e, e2 fsEnd, flags int, 
 // listenerRefuses reports whether this open is one tier 2's fanotify listener refuses after the Landlock ruleset
 // let it through: a read under a deny_read the ruleset leaves unenforced or an exec grant reopens, a write-open
 // under a deny_read nested in a write entry (R15). The listener writes that refusal's line itself, the
-// mechanism's own answer, so this loop writes none and the open has one line (R7a; enforce-cgroup-observe R8).
+// mechanism's own answer, so this loop writes none and the open has one line (R7a).
 // A refusal Landlock makes first never reaches the listener and keeps this loop's line, and so does an O_PATH open,
 // for which fanotify sends no permission event.
 func (l *Loop) listenerRefuses(n *notif, e fsEnd, flags int, d fsDecided) bool {
@@ -682,8 +682,8 @@ type fsEnd struct {
 	q pathQuery
 }
 
-// denyWrite: a modification that reaches a built-in deny_write target (agent.RuleTable.DenyWrite,
-// agent-contract R20) is refused by this loop, since Landlock unions the enclosing write entry's rights over
+// denyWrite: a modification that reaches a built-in deny_write target (agent.RuleTable.DenyWrite)
+// is refused by this loop, since Landlock unions the enclosing write entry's rights over
 // the whole subtree and would allow it. Each end is matched as spelled and, when the spelling does not
 // match, again where the task's own lookup lands (FSTarget: a symlink into a target, a /proc/<pid>/fd magic
 // link, a dangling link an O_CREAT open follows), by the one predicate Evaluate asks
@@ -713,7 +713,7 @@ type fsEnd struct {
 // bind(2) creates is not refused; and a chmod, chown or xattr write is refused here only where a decision plane
 // decides the run (Options.PlaneAttrs, recordAttr, R17), never at tiers 1 and 2, where a chmod is recorded under
 // record: full and an fs.write gate scores all three. Tier 3's nearest-wins walk decides on the inode and is the race-free enforcement
-// (SEMANTICS §2, agent-contract R20), also available at tier cgroup through lsm/fmod_ret.
+// (SEMANTICS §2), also available at tier cgroup through lsm/fmod_ret.
 func (l *Loop) denyWrite(n *notif, r *reader, d fsDecided, op string, flags int, ends ...fsEnd) fsDecided {
 	c := l.table.Load()
 	rt := c.pol.Rules
@@ -797,7 +797,7 @@ func (l *Loop) movedKind(n *notif, e fsEnd) (dir, unknown bool) {
 // (RENAME_EXCHANGE). The ends are asked where the task's lookups land; one whose walk failed other than as the task's
 // lookup fails is refused path-unreliable, as R15d refuses it. Asked after denyWrite and before denyReadMove, so the
 // line names what Evaluate's tier-2 rename names first. Best effort, as R15d is: the kernel looks the names up again
-// after this loop answers, and a plane mode's path_rename decides D5 on the dentries (enforce-plane). Its refusal is a
+// after this loop answers, and a plane mode's path_rename decides D5 on the dentries. Its refusal is a
 // floor, as R15d's is: no person's answer lifts it (askMutation, ADR 0047).
 func (l *Loop) nameMove(n *notif, d fsDecided, from, to fsEnd, fromDir, toDir bool) fsDecided {
 	c := l.table.Load()
@@ -891,7 +891,7 @@ func makesName(op string, flags int) bool {
 // where the walk got that far, never R6's lexical clean of a ".." spelling. One that cannot say where the path lands (another mount view) keeps a refusal, and
 // turns anything else into observed under path-unreliable, since the kernel may have decided either way; it
 // never reaches fallbackMutation, so its syscall is continued at every tier (a nameless object's write-open
-// must run; R15's 2026-10-17 amendment, TestFallbackMutationWalkFailures).
+// must run; TestFallbackMutationWalkFailures).
 func (l *Loop) decideFS(n *notif, op, p string, q pathQuery, flags int, dir bool) fsDecided {
 	c := l.table.Load()
 	rule, v, reason := c.fsVerdict(p, op, flags, dir)
@@ -1032,7 +1032,7 @@ func lookupFailure(err error) bool {
 // decided where it lands (decideFS), as the moved object (dir: a directory, which no name entry decides). At tier 3
 // as at tier 2: the plane does not refuse a rename whose destination no write entry covers (the Landlock floor does,
 // and its line was the recorder's "observed"), so this loop refuses it with the line tier cgroup's plane runs get
-// (TIER3-PLAN T11, conformance fs/rename-out-of-write-entry).
+// (conformance fs/rename-out-of-write-entry).
 func (l *Loop) decideMoveDest(n *notif, d fsDecided, op string, from, to fsEnd, exchange, dir bool) fsDecided {
 	if d.verdict != record.VerdictAllow || to.p == "" {
 		return d
@@ -1089,7 +1089,7 @@ func (l *Loop) referRefuses(gained agent.AccessSet, p string) bool {
 // answers the spelling for an end that does not land there: an errno the task's own lookup would not have
 // failed with (this process's EMFILE, ENFILE, ENOMEM, EIO, a procfs it cannot translate: EXDEV), or a linked
 // file whose path this process cannot see (errLinkedElsewhere). A gate has no facts for such an end, and refuses
-// it as gate.unreadable rather than score the spelling and continue (gate.md R1, ADR 0041 D4, finding
+// it as gate.unreadable rather than score the spelling and continue (ADR 0041 D4, finding
 // failopen-3). A lookup failure fails the task's syscall the same way, and a nameless object (errOtherView: a
 // pipe, a socket, an unlinked file) has no name a predicate could match, so both leave the facts complete.
 func (l *Loop) walkIncomplete(n *notif, ends ...fsEnd) bool {
@@ -1111,8 +1111,8 @@ func (l *Loop) walkIncomplete(n *notif, ends ...fsEnd) bool {
 // whose walk reached a regular file with no name left on a filesystem with names (errUnlinkedFile). Such a file had a
 // name an fs.read predicate may have matched, and lost it: a read gate scores neither a write-only open nor an
 // unlink, so a file the gate refuses by name could be opened write-only, unlinked, and reopened for reading through
-// /proc/self/fd, scored on the descriptor's procfs spelling. Its read is gate.unreadable
-// (gate.md R1). A write-only reopen keeps its facts: a write gate scored the unlink that removed the name.
+// /proc/self/fd, scored on the descriptor's procfs spelling. Its read is gate.unreadable.
+// A write-only reopen keeps its facts: a write gate scored the unlink that removed the name.
 func (l *Loop) gateFactsIncomplete(n *notif, op string, e, e2 fsEnd, flags int) bool {
 	if l.walkIncomplete(n, e, e2) {
 		return true

@@ -447,8 +447,8 @@ func TestRoutineSocketsAreNotPlaces(t *testing.T) {
 // TestARefusedCallThatNamesNoPlaceIsNoRoutineSocket: the supervisor refuses a sendto, sendmsg or sendmmsg whose
 // address is AF_UNSPEC (R4: udp_sendmsg sends to the sockaddr_in behind the family word) and writes it dst unspec, rule
 // unmatched, verdict refused, with no op; ADR 0128 refuses a netlink send that is no route query as a refused
-// family(16) line. Neither is a routine disconnect: review 1 measured both printed as "routine socket calls that name
-// no place (disconnects with AF_UNSPEC, ...)", and past the refused list's cap that was the only line naming the send.
+// family(16) line. Neither is a routine disconnect: printed as "routine socket calls that name no place (disconnects
+// with AF_UNSPEC, ...)", past the refused list's cap that would be the only line naming the send.
 // A refused one is a refusal: it counts in Refusals as before and, as the dashboard's verdict folds it, is no place
 // and no routine socket call either. The allowed reset beside it is still counted.
 func TestARefusedCallThatNamesNoPlaceIsNoRoutineSocket(t *testing.T) {

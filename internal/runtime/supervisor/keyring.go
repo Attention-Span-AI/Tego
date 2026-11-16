@@ -23,7 +23,7 @@ const gapWhyKeyring = "keyring-"
 
 // handleAddKey, handleRequestKey and handleKeyctl answer the three kernel-keyring syscalls (SEMANTICS §1). The
 // kernel keyring is a non-namespaced, same-uid credential store — on a RHEL/IPA host its default
-// KEYRING:persistent ccache holds live Kerberos tickets — that no fs or net rule can see and no P0 tier's
+// KEYRING:persistent ccache holds live Kerberos tickets — that no fs or net rule can see and no tier's
 // hooks reach: Landlock has no keyring right, and the planned BPF-LSM hook set has no security_key_*
 // hook. Left to run unseen, add_key/request_key/keyctl are a credential-exfil channel the ledger never
 // records. This loop is the only place in tiers 1 and 2 that sees them (SEMANTICS §1).

@@ -158,7 +158,7 @@ type Message struct {
 	Truncated bool
 	// SizeCut says the byte budget, or the allowance of the call that completed the message, is what cut its
 	// body or its decoded form short (one gap why=size-cap), rather than the kernel, a close or MaxBody. A
-	// caller that meters spend from the body treats it as lost capture (limits-check-doctor-cli.md R1 (d)).
+	// caller that meters spend from the body treats it as lost capture.
 	SizeCut bool
 	// WireBytes is the length of the body as the wire carried it, before any content coding was undone
 	// and whatever of it Body kept.
@@ -186,11 +186,11 @@ type Message struct {
 }
 
 // BodyReader returns a reader over the decoded body. It is a fresh reader each call and never nil, so a
-// caller that wants the io.ReadCloser shape of docs/p0/capture-derive.md §2 has one without copying Body.
+// caller that wants the io.ReadCloser shape has one without copying Body.
 func (m *Message) BodyReader() io.ReadCloser { return io.NopCloser(bytes.NewReader(m.Body)) }
 
 // LatencyMS is the message's own wall span in milliseconds, from its first chunk to its last, measured on
-// the monotonic clock NTP never steps (edge case #25).
+// the monotonic clock NTP never steps.
 func (m *Message) LatencyMS() int64 {
 	if m.EndNS <= m.StartNS {
 		return 0

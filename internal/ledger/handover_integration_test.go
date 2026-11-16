@@ -3,8 +3,8 @@
 //go:build integration
 
 // The hand-over rule needs root: only root can create a file and give it to another uid. These tests
-// skip for anyone else and run as root in the KVM guest (test/vm/kvm-run.sh), where they are the
-// SUDO-LEDGER-OWNERSHIP acceptance: what a root launcher writes into a user's directory ends up that
+// skip for anyone else and run as root in the KVM guest (test/vm/kvm-run.sh), where they check that what a root
+// launcher writes into a user's directory ends up that
 // user's, and nothing a user plants there can turn root's writes or chowns onto another file.
 package ledger
 
@@ -195,7 +195,7 @@ func TestIntegrationPlantedLinksAreNotFollowed(t *testing.T) {
 	})
 }
 
-// TestIntegrationRootRefusesASymlinkedStateDir is the review's reproduction as root: with ~/.tego
+// TestIntegrationRootRefusesASymlinkedStateDir, as root: with ~/.tego
 // replaced by a symlink to a directory root owns, fileChainAnchor.Append created a root-owned
 // <victim>/chain.log holding the run's line, and a later `sudo tego run` would write wherever the link
 // named. The walk refuses the link in the user's home, so the anchor, the up-front probe and the ledger
@@ -358,7 +358,7 @@ func TestIntegrationASweepHandsOverOnlyWhatItCreates(t *testing.T) {
 	wantOwner(t, filepath.Join(dir, EventsFile), nobody)
 }
 
-// TestIntegrationALiveRootRunIgnoresASwappedLedgerRoot is the review's reproduction as root: after
+// TestIntegrationALiveRootRunIgnoresASwappedLedgerRoot, as root: after
 // MakeRunDir and Open, the user moves ~/.tego/runs aside and links ~/.tego/runs to a tree of their own
 // in which the run's blobs/ is a link to a directory root owns. By path, the writer's next blob was a
 // root-owned file holding agent-chosen bytes in that directory — /etc/cron.d as readily as any. The

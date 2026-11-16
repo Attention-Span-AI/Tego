@@ -18,7 +18,7 @@ import (
 	"github.com/attention-span-ai/tego/test/perf"
 )
 
-// The exec check (ADR 0048 P2's K7; docs/p0/enforce-plane.md §10). Each round runs, in every mode, execbench's loop
+// The exec check (ADR 0048 P2's K7). Each round runs, in every mode, execbench's loop
 // under four contracts, the modes rotated and the contracts alternated: 512 bytes of argv and 128 KiB, each without
 // command rules and with one (deny: ["./true push"], a tool no row knows, so the generic fallback reads the whole
 // vector and the exec is pinned whole at a plane mode). Each figure is the best round (Min-of-N), as in the open check.

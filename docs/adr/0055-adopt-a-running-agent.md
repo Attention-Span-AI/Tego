@@ -535,7 +535,7 @@ release the same write outside the workspace succeeded again.
    `--uid 0`); `--adopt` without `--uid` is refused, since any local user can name a program `claude`. Each agent is
    considered once (never retried), one identity is never adopted twice (an in-memory registry here, the host-wide
    identity lock and the cgroup check across processes), at most 32 adoptions at once, a refusal or failure is one
-   line. ADR 0042 holds: no daemon; `docs/poc/tego-guard.service.example` runs the foreground command under systemd.
+   line. ADR 0042 holds: no daemon; systemd can run the foreground command.
 8. **Scope boundary.** Only the agent's own tree is touched, only to move it between cgroups. Root can see
    and remove all of it: the scopes under `tego.slice`, the records in `/run/tego/adopted/` (root's alone), the pins
    under `/sys/fs/bpf/tego/`. Nothing is pinned to hide, nothing resists root.
@@ -922,13 +922,13 @@ waiver and its disclosed skipped-program limit are unchanged.
 
 ### Machine ceilings amendment (2026-11-10): kernel and time limits refuse a boundary, budgets do not
 
-A `limits.*` ceiling in the machine config is part of every compiled table (agent-contract.md R11), and an
+A `limits.*` ceiling in the machine config is part of every compiled table, and an
 adoption applies none of it. A boundary adoption under a kernel limit ceiling (`cpu`, `cpu_weight`, `memory`,
 `memory_high`, `pids`) or a time limit ceiling (`wall`, `stall_after`) is refused before anything moves, each
 ceiling named at its file and line, as (5) refuses the contract's own `limits`: an adoption cannot apply or
 enforce it, and a boundary adoption claims to hold its rules. A budget ceiling (`tokens`, `cost_usd`, `repeats`)
 does not refuse it, because `tego run` already goes on under a budget that only a machine ceiling imposes and
-nothing meters (limits-check-doctor-cli.md R32); an adoption, which captures nothing, does the same: it warns
+nothing meters; an adoption, which captures nothing, does the same: it warns
 `[unenforced]` at the ceiling's file and line and records `gap what=record why=budget-unmetered`. A record-only
 adoption holds nothing, so no ceiling refuses it; it warns of each one (GAPS C56).
 
@@ -941,13 +941,13 @@ started, adoption is how they come under rules, and a machine-wide pids cap is c
 closed the main way to govern them.
 
 **What is applied.** A boundary adoption's table holds the contract's `cpu`, `cpu_weight` and `pids`, each clamped to
-its machine ceiling, or the ceiling alone (agent-contract.md R11). The runtime writes them as `cpu.max`, `cpu.weight`
+its machine ceiling, or the ceiling alone. The runtime writes them as `cpu.max`, `cpu.weight`
 and `pids.max` into the adoption's scope while it is empty, right after it is made and before tier 2 is prepared,
 attached and armed and before anything moves, through the writer a launched run uses (`cgroup.Manager.SetLimits`). From
 its move on, each process of the tree is throttled by `cpu.max` and weighted by `cpu.weight`, and a fork or a new thread
 past `pids.max` fails with `EAGAIN`. The kernel ends no process for them, which is why an adoption can hold them: tego
 never ends the agent. A program may still end itself when it cannot start a thread: Go's runtime aborts then, as tego's
-own Go stage does under a pids limit below 6 (agent-contract.md R11), and Node may too (read, not run for this
+own Go stage does under a pids limit below 6, and Node may too (read, not run for this
 amendment). That is why the pids refusal below keeps room for at least one more task when the tree moves. The notice
 `tego adopt` prints says them (`limits: cpu 2, pids 512, written to its cgroup before the move`). A record-only adoption
 holds no rule and writes no limit, as before (5).
@@ -988,7 +988,7 @@ record (the reaper's, `tego adopt --release --pid`, a root sweep) does it again.
 refuses is said in a refused adoption's error, and in run_end's detail of a run that ended (*amended 2026-11-11 after
 review*: the ended run's was only in tego's own log); a later release's is part of that release's error.
 
-**What the record says.** run_start's `limits` block carries budgets only (record-ledger.md), and has no key for
+**What the record says.** run_start's `limits` block carries budgets only, and has no key for
 `cpu`, `cpu_weight` or `pids`, for a launched run either; this change adds no field, so an adoption's record does not
 say which of them it applied. `run_end.resources` carries what the scope counted (`pids_peak`, `cpu_nr_throttled`,
 `cpu_throttled_usec`), as a launched run's does. Saying the applied values in the record needs a run_start field and

@@ -5,8 +5,8 @@ package cgroup
 import "errors"
 
 // Sentinel errors of the tier-2 backend. Every one of them is wrapped with %w and carries the context a
-// launcher prints as `<file>:<line>: <message> [<code>]`; the table of docs/p0/enforce-cgroup-observe.md §7
-// says which exit status each produces (125 for every Prepare failure).
+// launcher prints as `<file>:<line>: <message> [<code>]`; every Prepare failure
+// exits 125.
 var (
 	// ErrNoTable is returned by Prepare for a nil rule table.
 	ErrNoTable = errors.New("cgroup: nil rule table")
@@ -14,7 +14,7 @@ var (
 	// backend Options.Tier makes tier bpflsm).
 	ErrTier = errors.New("cgroup: rule table is not compiled for this backend's tier")
 	// ErrNeedsLSMMode is returned by tier bpflsm's Prepare when the plane it was handed is not in LSM mode: tier 3
-	// is the plane in LSM mode, never another mode or the listener (enforce-plane R19).
+	// is the plane in LSM mode, never another mode or the listener.
 	ErrNeedsLSMMode = errors.New("cgroup: tier bpflsm needs the decision plane in LSM mode")
 	// ErrPlaneCannotHold is returned by tier bpflsm's Prepare for a table the plane cannot express (over a slot's
 	// rows, decide.ErrPlaneCap; an exec entry that does not allow, decide.ErrPlaneExecVerdict). Tier 2 runs such a
@@ -23,8 +23,8 @@ var (
 	// ErrPlaneRowsChanged is returned by tier cgroup's Prepare when the plane rows the caller handed over
 	// (Run.PlaneRows), which it checked the plane could hold before composing tier 1 from them, no longer hold (two
 	// fs rows became one file under two names in between). The caller composes tier 1 again without them and
-	// prepares again, so the run falls back to the listener with a filter composed for the listener (enforce-plane
-	// I7); it is never a run on the listener with the plane-only relaxations.
+	// prepares again, so the run falls back to the listener with a filter composed for the listener;
+	// it is never a run on the listener with the plane-only relaxations.
 	ErrPlaneRowsChanged = errors.New("cgroup: the plane rows tier 1 was composed from no longer hold")
 	// ErrSlotsExhausted is returned when all run_idx slots are taken (§6 E12).
 	ErrSlotsExhausted = errors.New("cgroup: no free run slot on this host")

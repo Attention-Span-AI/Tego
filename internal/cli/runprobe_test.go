@@ -42,7 +42,7 @@ func pinnedTable(tier string) *agent.RuleTable {
 // landlock — by --tier, by the contract or by the machine config — selects from a report whose D2, D6, D7 and
 // D8 were never run, so it loads no BPF program and makes no fanotify group. Every root run used to take the
 // whole of doctor.Run first, 228 bpf(2) calls and about 3 s for `--tier landlock -- true` on Ubuntu 24.04's
-// 6.8 in the KVM guest, which failed kill test 4 at tier landlock as root (the acceptance run of 2026-09-23).
+// 6.8 in the KVM guest, which failed kill test 4 at tier landlock as root.
 func TestRunAtTierLandlockLoadsNoProgram(t *testing.T) {
 	requireLandlockABI(t)
 	for name, c := range map[string]struct {
@@ -93,7 +93,7 @@ func TestRunProbesTheReachOfItsSelection(t *testing.T) {
 	switch {
 	case os.Geteuid() != 0:
 	case enforce.Buildable(backend.TierBPFLSM) == nil:
-		auto = backend.TierBPFLSM // tier bpflsm is built with the objects (TIER3-PLAN T7)
+		auto = backend.TierBPFLSM // tier bpflsm is built with the objects
 	case enforce.Buildable(backend.TierCgroup) == nil:
 		auto = backend.TierCgroup
 	}

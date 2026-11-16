@@ -24,7 +24,7 @@ import (
 )
 
 // TestParseProcLocksReadsHeldFlocksOnly is the lock-table parser a re-arm pass reads a timer's liveness with (ADR
-// 0022, note 2026-10-06), on the lines the kernel prints from 5.14 to 7.x: a held flock is read with its kind, pid,
+// 0022), on the lines the kernel prints from 5.14 to 7.x: a held flock is read with its kind, pid,
 // device and inode; a waiter's line ("->", indented by its depth since 5.15), a POSIX or OFD lock, a lease and a lock
 // with no inode are not.
 func TestParseProcLocksReadsHeldFlocksOnly(t *testing.T) {
@@ -103,7 +103,7 @@ func TestTheLockTableShowsAHeldFlock(t *testing.T) {
 // throughout is shown held, in every pass of a second's worth. /proc/locks prints a page of the host's list of locks
 // per read(2) and goes on at a position in the list as it stands at the next read, so a lock let go between two
 // reads ahead of a held one moves it past that position, unprinted. The pass read the table with io.ReadAll, whose
-// first reads ask for 512 bytes, and on GitHub's runners (build-test and root-suites, 2026-11-02) it left out the
+// first reads ask for 512 bytes, and on GitHub's runners (build-test and root-suites) it left out the
 // build lock TestRearmTimersStartsTheTimerOfEveryBuildWithout held, and started that build's timer. Not parallel:
 // the locks it churns would be seams in the tables the parallel lock-table tests read.
 func TestTheLockTableShowsEveryFlockHeldThroughChurn(t *testing.T) {
@@ -338,7 +338,7 @@ func newRearmHost(t *testing.T) rearmHost {
 // file names a live timer gets none; for the rest the kernel's lock table is read, and a build a launcher holds,
 // and one whose timer lock is held by a timer that wrote no pid (an older tego's), get none. Nothing is removed.
 //
-// Prepare's form (note 2026-10-16) re-arms only builds idle past the linger (the gone one, whose lock no launcher
+// Prepare's form re-arms only builds idle past the linger (the gone one, whose lock no launcher
 // stamped, counts as expired) and reads no lock table, whose read waits for an RCU grace period: it goes by the pid
 // alone, so the held build and the one with an older tego's timer get a timer too, which waits for its launcher or
 // exits on the timer lock.
@@ -426,7 +426,7 @@ func TestRearmTimersStartsATimerWhenTheLockTableCannotBeRead(t *testing.T) {
 	}
 }
 
-// TestIsTimerProcessReadsUidsAndCommandLine is the pid reading Prepare uses for a timer's liveness (note 2026-10-16):
+// TestIsTimerProcessReadsUidsAndCommandLine is the pid reading Prepare uses for a timer's liveness:
 // a process is build hash's timer only when its command line is <exe> __bpf-linger hash and all four of its uids are
 // root's. A user's process can carry any command line, and one that made itself undumpable has a /proc directory
 // owned by root, but its uids in status are its own. A pid with no directory, a command line for another build or

@@ -129,8 +129,7 @@ func (s Stat) Gone() bool { return s.State == 'X' || s.State == 'Z' && !s.Leader
 
 // SameProcess reports whether two start-times, at least one of which came from /proc, describe the
 // same process. /proc rounds down to a whole USER_HZ tick while the kernel's own timestamp is exact,
-// so anything inside one tick is the same process and anything beyond it is a reused pid
-// (docs/p0/enforce-cgroup-observe.md §6 E14).
+// so anything inside one tick is the same process and anything beyond it is a reused pid.
 func SameProcess(a, b uint64) bool {
 	if a > b {
 		a, b = b, a

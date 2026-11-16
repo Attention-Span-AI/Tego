@@ -250,7 +250,7 @@ func TestKilledListenerReleasesTheMount(t *testing.T) {
 	}
 }
 
-// TestStoppedListenerHoldsItsMountUntilContinued is enforce-cgroup-observe.md §6 E40, the hazard a stopped launcher is at tier cgroup: a
+// TestStoppedListenerHoldsItsMountUntilContinued, the hazard a stopped launcher is at tier cgroup: a
 // listener whose process is stopped (SIGSTOP here; a terminal's SIGTSTP when the launcher leaves it at its
 // default, a debugger, or the cgroup freezer stop it the same way) keeps its marks and reads nothing, so an
 // open on its marked mount waits for as long as the process stays stopped, however long its deadline (E16),
@@ -354,7 +354,7 @@ func TestFreezeHelper(t *testing.T) {
 	deadline := DefaultFanotifyDeadline
 	// stop: the open queued while the listener is stopped is decided after SIGCONT, and a slow runner's first decision
 	// after the resume can take longer than the 500 ms default, which allows it (E40's timeout) and is not what that
-	// test is about (GitHub's arm64 runner, 2026-11-02). With an hour, an allow there could only be a real bug.
+	// test is about (GitHub's arm64 runner). With an hour, an allow there could only be a real bug.
 	if mode == "hold" || mode == "stop" {
 		deadline = time.Hour
 	}

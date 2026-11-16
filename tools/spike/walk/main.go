@@ -2,7 +2,7 @@
 
 //go:build tegospike
 
-// Command spike is the TIER3-PLAN T0 spike's loader. SPIKE: it is built only with -tags tegospike by
+// Command spike is the tier-3 walk spike's loader. SPIKE: it is built only with -tags tegospike by
 // tools/spike/walk/build.sh, never by make build, and nothing in tego imports it. It runs as root inside a
 // test/vm KVM guest (never on a host, never against ~/.tego) and prints tab-separated result lines:
 //

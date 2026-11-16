@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
-// TestCompileAndRunRefuseAWriteEntryOverTegosRuntimeDir is agent-contract.md R10a through the CLI:
+// TestCompileAndRunRefuseAWriteEntryOverTegosRuntimeDir, through the CLI:
 // `tego compile` and `tego run` name the user's runtime directories to the compiler (anchorCompileOptions), so a
 // contract whose fs.write covers $XDG_RUNTIME_DIR/tego, where every run keeps its private directory, is a compile
 // error (exit 1) and a refused run (exit 125), each with a contradiction naming tego's runtime directory, before any

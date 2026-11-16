@@ -398,7 +398,7 @@ func statusLines(status []byte, names ...string) string {
 
 // TestNotifyOneSyscallProgram checks the throwaway filter's shape: an architecture guard first, then
 // the syscall test, then the two returns. A filter without the arch guard would decide on a syscall
-// number from another ABI (docs/p0/enforce-landlock.md R13).
+// number from another ABI.
 func TestNotifyOneSyscallProgram(t *testing.T) {
 	raw, err := notifyOneSyscall(probeSyscall)
 	if err != nil {
@@ -444,7 +444,7 @@ func TestSeccompErrorsAreWrapped(t *testing.T) {
 // CONFIG_SECCOMP_FILTER — whose seccomp(SET_MODE_FILTER) is the kernel's EINVAL stub on any release —
 // or a probe with a malformed flag, was told to upgrade to a kernel older than itself. The release
 // decides the remedy; an unreadable one names both causes.
-// supervisor.md E27: the seccomp self-test (NEW_LISTENER, SEND+CONTINUE, pidfd_getfd) gates tier 1 before the supervisor runs.
+// The seccomp self-test (NEW_LISTENER, SEND+CONTINUE, pidfd_getfd) gates tier 1 before the supervisor runs.
 func TestSeccompEINVALRemedyFollowsTheRelease(t *testing.T) {
 	einval := fmt.Errorf("%w: %w", ErrSeccompSelfTest, unix.EINVAL)
 	fine := PtraceState{Scope: yamaRelational, Detail: "yama ptrace_scope=1"}

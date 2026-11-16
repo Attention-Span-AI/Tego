@@ -150,8 +150,8 @@ func (p *Proposal) Contract() string {
 const nameNote = "the name of the net.allow entry that allowed it in that run"
 
 // AddressWarning is what a proposal that allows a TCP or UDP address says first, on stderr and in its header, and what
-// the dashboard's plan made from the run says: on 2026-11-10 the run after a watched one picked the other address its
-// lookup returned and was refused, under a file whose only word on it was the comment above net.allow.
+// the dashboard's plan made from the run says: the next run can pick another address its lookup returns and be
+// refused, under a file whose only word on it would otherwise be the comment above net.allow.
 const AddressWarning = "net.allow has entries that are addresses, not host names: the record holds the address this run connected to, not the name it looked up." +
 	" One name often has several addresses, a program may pick another one on its next run, and a service's addresses change," +
 	" so a later run under this file can be refused a connection this run made. Before you use it, write the name the agent" +
@@ -185,7 +185,7 @@ func ResolverItem(line string) (string, bool) {
 }
 
 // AddressEntries are the net.allow entries that name a TCP or UDP address, not a host. The machine's resolver is never
-// one: proposeNet leaves it out of net.allow (AlmaLinux 9.8, whose NetworkManager resolver is 10.0.2.3, 2026-11-10),
+// one: proposeNet leaves it out of net.allow (AlmaLinux 9.8, whose NetworkManager resolver is 10.0.2.3),
 // and where it keeps it (keepResolvers) no host name stands for it.
 func (p *Proposal) AddressEntries() []string {
 	var out []string
@@ -208,7 +208,7 @@ func (p *Proposal) AddressEntries() []string {
 // addresses by address (AddressEntries), and the leak rule found no destination the run's secrets may have gone to
 // (Leaks). With such a destination learn refuses a name whose answer holds a withheld address, and a suggestion never
 // asks a person to name a host a secret may have gone to: the plain form, which allows the addresses learn kept and
-// names --allow-host itself for them, is the step then (acceptance B, 2026-11-11). tego watch's next: line, tego
+// names --allow-host itself for them, is the step then. tego watch's next: line, tego
 // learn's own and tego setup's guide all decide by it, so the three agree.
 func (p *Proposal) SuggestHosts() bool {
 	return len(p.AddressEntries()) > 0 && len(p.Leaks) == 0

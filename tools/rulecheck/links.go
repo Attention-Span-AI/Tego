@@ -17,8 +17,7 @@ import (
 // The link check: every relative Markdown link in the repository's documentation names a file or directory that
 // exists, and a link's #anchor into a Markdown file names one of its headings (GitHub's slug) or an explicit
 // id/name anchor. A link with a scheme (https:, mailto:) is not checked. Links inside fenced code blocks and code
-// spans are text, not links. Added 2026-10-05 after two broken links (ADR 0035 to a CAPABILITIES.md that never
-// existed in docs/, gate.md to an anchor agent-contract.md does not have) passed every gate.
+// spans are text, not links.
 
 // linkSkipDirs are the directories the check does not read: tool and build state, test data, the agents'
 // working notes, which are not project documentation, and archive/, where retired docs keep

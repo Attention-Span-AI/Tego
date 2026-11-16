@@ -17,7 +17,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestIntegrationANestedRunFailsAtStartAndLeavesTheOuterRunAlone is supervisor.md R20/E16 end to end: a
+// TestIntegrationANestedRunFailsAtStartAndLeavesTheOuterRunAlone, end to end: a
 // `tego run` started by the agent of a run exits 125 at startup, before its own agent runs, and the outer
 // run's supervisor goes on deciding the outer agent's syscalls as before — a write inside fs.write, an exec
 // the contract allows, and a write outside it refused and recorded — to the outer run's own exit 0.

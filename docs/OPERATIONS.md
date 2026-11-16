@@ -6,7 +6,7 @@ Normative: `spec/config/v0/README.md` (layers, ceilings vs settings, trust rules
 
 ## Agents by name: the registry (2026-10-20)
 `tego rules check retriever` and `tego run retriever -- <cmd>` find the contract of the agent named
-`retriever` (docs/p0/agent-contract.md R26):
+`retriever`:
 
 1. the working directory's `agent.yaml`, when its `name:` is `retriever` (what `tego rules create` writes), or its
    `.tego/agents/retriever.yaml`; then
@@ -90,7 +90,7 @@ both from a release (VERSIONING.md §5), and refuses a pair whose pin does not m
   already root-equivalent, on an ephemeral or dedicated runner VM.
 - **Run the agent as a dedicated account with no sudo rights** once `--run-as` lands; until then `sudo tego run`
   drops the agent to the invoking user with that user's primary group alone, and with that user's `HOME`, `USER` and
-  `LOGNAME` where sudo left root's (identity-config.md R3a).
+  `LOGNAME` where sudo left root's.
 - **Capability or setuid copies of tego are refused.** A launcher that gained privilege without being root (a
   `setcap` or setuid copy, a unit that grants it a privileged capability) exits 125
   `[privileged-path-unsupported]` for every command but `version`. A unit's incidental ambient capabilities
@@ -150,7 +150,7 @@ clocks keep counting.
 for itself and the agent, as nohup intends. Without nohup, a hangup starts `stop_grace` as SIGTERM does.
 
 A boundary's `fs.ask` and `net.ask` scopes hold the operation (the agent waits) until a person answers from a second
-terminal: `tego ask <run>` lists what is held, `tego approve <run> <ask_id>` and `tego deny <run> <ask_id>` answer
+terminal: `tego ask <run>` lists what is held, `tego approve [run] <ask_id>` and `tego deny [run] <ask_id>` answer
 it. That terminal is the person's own, as the run's user (or root, for a run launched with sudo): the run refuses an
 answer from inside any run or adoption, a shell under `tego watch` included, and from another cgroup namespace (a
 container's), and the request stays held. A record-only `tego watch` agent is not a cage, though: it can first move
@@ -340,11 +340,11 @@ source=forwarder`, and no address but the forwarder's loopback listener allowed.
 4. **The model goes through the forwarder by a `CODEX_HOME` of the run's own.** Codex ignores `OPENAI_BASE_URL`; with
    a `models` entry of provider `openai` and `capture: forwarder` the launcher writes `$XDG_RUNTIME_DIR/tego/<run
    id>/codex/config.toml` with `openai_base_url` for the listener, then the `config.toml` that the contract's
-   `CODEX_HOME` names, and gives Codex that directory (capture-derive.md R19b). Three consequences: the run grants
+   `CODEX_HOME` names, and gives Codex that directory. Three consequences: the run grants
    Codex write on that one directory itself (`fs.codex_home[<path>]`, listed in `run_start.runtime_grants`), so the
    contract names no entry for it, and `compile` and the launcher refuse an entry over or inside
    `$XDG_RUNTIME_DIR/tego` (`contradiction`), which would reach the private directory of every other run of the same
-   user (agent-contract.md R10a; until 2026-10-16 a contract had to grant that parent); the user's `auth.json` is
+   user (until 2026-10-16 a contract had to grant that parent); the user's `auth.json` is
    hidden, so the interactive interface shows its login screen on every run (choose "Provide your own API key"; Codex
    stores it in the run's `CODEX_HOME`, which the run removes at its end, or, when its launcher was killed first, the
    next run you launch under the same `XDG_RUNTIME_DIR` does (`rm -r $XDG_RUNTIME_DIR/tego/<run id>` by hand), and
@@ -356,7 +356,7 @@ source=forwarder`, and no address but the forwarder's loopback listener allowed.
    **That directory is closed to other users and to the writes of every enforcing run, not to other runs' reads.** No
    enforcing run can write it but its own, and no contract may grant it (above), but while the run lasts (and after
    a killed launcher, until the next launch removes it) an agent of any other governed run of the same user can read
-   it, `auth.json` with the key you typed and Codex's `sessions/` included: nothing denies reads of `$XDG_RUNTIME_DIR/tego` by default (agent-contract.md R10a, an open condition).
+   it, `auth.json` with the key you typed and Codex's `sessions/` included: nothing denies reads of `$XDG_RUNTIME_DIR/tego` by default (an open condition).
    A `tego run --observe` run enforces no file-system rule, so its agent can read *and write* it, `config.toml`,
    `auth.json` and the last-refusal mirror included, and so can any process of yours outside Tego, as with any of
    your files. Until it is closed, while a real key is typed run no other agent of yours, under Tego (observe runs
@@ -372,8 +372,7 @@ source=forwarder`, and no address but the forwarder's loopback listener allowed.
    `/proc/self/exe --codex-run-as-process-setup` before every command, and `apply_patch` as a shell command is a
    symlink to it: the `command` entry covers both. When this ran, a `/proc/self/exe` entry compiled to Tego's own
    executable (a contract with only that entry let the agent run `tego`), and `tego rules learn` proposed it; since
-   2026-10-16 `compile` refuses an entry that is or leads through a `/proc` path (`exec-proc`, agent-contract.md
-   R8a), and `tego rules learn` lists it as observed, not allowed (the learn section below). Codex's installation is
+   2026-10-16 `compile` refuses an entry that is or leads through a `/proc` path (`exec-proc`), and `tego rules learn` lists it as observed, not allowed (the learn section below). Codex's installation is
    `~/.codex/packages`, next to `auth.json`, its history and its sessions, so `fs.deny_read` names the files that
    exist, not the directory.
 6. **`net.dns.mode: off` was a record, not a block, for some lookups at tier `landlock` when this ran.** A lookup sent
@@ -419,9 +418,9 @@ When the agent opens a file under one of them for reading, its thread waits, and
 `q-... open read /home/me/.aws/credentials`. Answer it from a second terminal:
 
 ```sh
-tego approve <run> <ask_id>                      # the agent reads the real file (read-only)
-tego deny <run> <ask_id>                         # the read is refused (ask-denied)
-tego alternate <run> <ask_id> --file fake.txt    # the agent reads fake.txt in its place
+tego approve [run] <ask_id>                      # the agent reads the real file (read-only)
+tego deny [run] <ask_id>                         # the read is refused (ask-denied)
+tego alternate [run] <ask_id> --file fake.txt    # the agent reads fake.txt in its place
 ```
 
 Add `--always` to any of the three and the answer also stands for the rest of the run, for a read of the same file
@@ -707,11 +706,11 @@ which `tego rules learn` turns into a suggestion (twice the peak for memory, fou
 ran for wall).
 
 **Decide in the contract; keep `ask` for the few that need a person.** A write under an `fs.ask` directory holds the
-agent until `tego approve|deny <run> <id>` or `ask.timeout` (5 minutes by default, 1 hour at most), then is refused,
+agent until `tego approve|deny [run] <ask_id>` or `ask.timeout` (5 minutes by default, 1 hour at most), then is refused,
 recorded `ask-timeout`. Nothing remembers a timeout: the next try at the same file is held for the whole timeout again
 (measured: 5 tries, 5 holds of 3.00 s, 15.2 s of a 16 s run), so an agent that retries spends the night held. Either
 do not list the directory (the write is refused at once, like any write outside `fs.write`), or keep `ask.timeout`
-short, and answer the first request of each kind with `--always`: `tego approve <run> <id> --always` or `deny
+short, and answer the first request of each kind with `--always`: `tego approve [run] <ask_id> --always` or `deny
 --always` stands for the rest of that run, for that operation, rule and exact target and no other (measured: 2 human
 answers, 31 repeats answered at once as `standing:<ask id>`, the slowest in under 1 ms), and every automatic answer is
 its own `ask` and `answer` pair in the ledger. A held ask is not a stall. Approvals are for file writes and TCP
@@ -949,7 +948,7 @@ out, as the agent ran on); so an agent whose worker threads exited on their own 
 end is printed with its status unknown (ADR 0055 (e), the amendment of 2026-10-20); a main thread that exited first
 with 0 and a thread that ended the process with 3 could mean either (`exit_group(3)` gives 3, the thread's own `exit(3)`
 gives 0), and the line says the status is unknown. `argv` is printed as the process has it, up to
-4 KiB: a key given on a command line would show. The design, the limits and what was tested: docs/poc/agent-watcher.md.
+4 KiB: a key given on a command line would show.
 
 ## Adopting an agent that is already running (2026-10-06; ADR 0055)
 
@@ -1036,7 +1035,7 @@ only what it allocates after the move and would end it when reached, and a time 
 never does), and every exec command rule: `exec.deny`, `exec.ask` and an `exec.allow` entry with argument words
 are decided on argv by the supervisor, which an adopted process does not have (the plane decides which program runs,
 never its arguments). A budget ceiling (`limits.tokens`, `cost_usd` or `repeats`) does not refuse an adoption, as it
-does not refuse a `tego run` where nothing meters it (limits-check-doctor-cli.md R32): an adoption captures no model
+does not refuse a `tego run` where nothing meters it: an adoption captures no model
 traffic, so it warns `[unenforced]` at the ceiling's file and line, and its run records
 `gap what=record why=budget-unmetered`. A record-only adoption is refused for no ceiling and warns of each one.
 A `cpu`, `cpu_weight` or `pids` limit (the contract's, clamped to its machine ceiling, or the ceiling alone) is applied
@@ -1109,8 +1108,8 @@ only with `--uid 0`; any other agent is reported (`adoption_refused`, with the r
 and `adoption_ended` (the run's reason). Each agent is
 considered once and never retried; one process is never adopted twice; at most 32 adoptions at once, past which an
 agent is refused and said so. Stopping the guard (Ctrl-C, SIGTERM, `systemctl stop`) releases every agent it adopted
-before it exits. It is a foreground command (ADR 0042: no daemon); `docs/poc/tego-guard.service.example` runs it under
-systemd.
+before it exits. It is a foreground command (ADR 0042: no daemon); run it under
+systemd to keep it running.
 
 If the adopter dies. Its reaper, `tego __adopt-reap` in tego's `helpers.scope`, releases the agent, writes run_end
 `orphaned` and removes the scope and the run's kernel state: killing the adopter leaves nothing attached and does not
@@ -1189,8 +1188,8 @@ machine config's `prices:` path (or a table there that lists no model, or prices
 an output price). `tego rules check` reports the same contract
 with a `[budget-unmetered]` warning that says the run is refused. Until 2026-10-16 such a run went ahead with only an `[unenforced]` compile warning and a
 `budget-unmetered` gap, so an unattended night ran with a limit that did nothing. A budget a machine `limits:` ceiling
-alone imposes is not refused: the run records `gap what=record why=budget-unmetered binary=<budget>`
-(limits-check-doctor-cli.md R32). For an unattended run, declare the model endpoint under `models:` and install a
+alone imposes is not refused: the run records `gap what=record why=budget-unmetered binary=<budget>`.
+For an unattended run, declare the model endpoint under `models:` and install a
 price table before relying on `cost_usd` (next section).
 
 Under `record: off` the uprobes place no probe, so an `auto` contract captures with the forwarder at every tier, and
@@ -1208,7 +1207,7 @@ installed for you. `examples/prices.example.yaml` is one to start from: the Clau
 Anthropic serves to all accounts, dated by its `updated:` line. Check them against the provider's pricing page and install
 it where tego reads it, readable and writable by you alone. Only Anthropic responses are priced in this build: a model of
 another provider (OpenAI's, for `codex.yaml`) is unmetered whatever the table says, and a run that calls one under a
-`tokens` or `cost_usd` budget is ended (docs/p0/capture-derive.md), so leave the budget out of such a contract:
+`tokens` or `cost_usd` budget is ended, so leave the budget out of such a contract:
 
 ```sh
 mkdir -p -m 700 ~/.tego
@@ -1237,7 +1236,7 @@ the request used. Nothing the table leaves out is charged at $0. A key the forma
 unreadable, which reads as no table at all, so a misspelt price cannot read as $0. A response the table cannot price (a model it does not name, an entry
 without the cache price the response needs, a server tool with no fee, a premium such as fast mode or US-only
 inference) is charged at the table's dearest rate for each counter, twice that for a premium, and the run records
-`gap why=unpriced-model` once per model (limits-check-doctor-cli.md R2). A table whose prices are below the provider's
+`gap why=unpriced-model` once per model. A table whose prices are below the provider's
 lets a run spend past its budget; one above ends it early. The table follows the machine config's trust rule: owned by
 you or root, not group- or other-writable, in a directory that is not either, and with one name (no hard link);
 `tego rules check` warns about one it does not read, and a run of a contract that declares `cost_usd` is then refused.
@@ -1302,7 +1301,7 @@ you or root, not group- or other-writable, in a directory that is not either, an
   `BPF_F_ALLOW_MULTI`. systemd attaches its own programs that way, so they do not conflict.
 
 ## Tier 3 and the decision plane
-Tier 3 (`bpflsm`) is the kernel decision plane in LSM mode, on top of tier 2 (`docs/p0/enforce-plane.md`, ADR 0024).
+Tier 3 (`bpflsm`) is the kernel decision plane in LSM mode, on top of tier 2 (ADR 0024).
 The same programs also load as `fmod_ret` hooks, which is how tier 2 decides opens, execs and file mutations in the
 kernel where `bpf` is not an active LSM. `sudo tego machine check` says which it is:
 `decision plane: fmod_ret (tier 2 decides opens in the kernel; tier 3 needs bpf in lsm=); build 1a2b3c4d, ...`. The
@@ -1457,8 +1456,8 @@ would search library paths for, is refused `loader-unresolved`, and in a run who
 must be granted like any image (`loader-program-unmatched`). In a deny-list run, a linked file in the run's own
 generated `CODEX_HOME`, run by its path or through a descriptor, directly or through the loader, is refused
 `codex-home-exec`: the run grants that directory for writing, and a copy of a denied program written there would
-otherwise run under another name. The run's `hook-state` directory, which a harness provision adds (agent-contract.md
-R27), is held the same way, refused `harness-state-exec` (added 2026-10-24). It is judged where the kernel says the file lies, so a directory there that the
+otherwise run under another name. The run's `hook-state` directory, which a harness provision adds,
+is held the same way, refused `harness-state-exec` (added 2026-10-24). It is judged where the kernel says the file lies, so a directory there that the
 agent makes unsearchable does not hide one (amended 2026-10-17). A copy there that the agent opens, unlinks and runs
 through its descriptor runs fileless, as a memfd copy does (R2 below). Under an allow-list contract the run admits
 the harness hook a provision names with its exact argv and nothing else (added 2026-10-25, ADR 0064):
@@ -2153,7 +2152,7 @@ Go test runs by a computed name) is why merges keep the full gate.
 See `docs/VERSIONING.md`. Installs replace by rename; a live run keeps its inode and the child stage execs
 `/proc/self/exe`. Pins are keyed by `bpf_hash`, so two builds coexist during an upgrade window. Ledgers are never
 rewritten; `compile --upgrade` rewrites contracts once contract version 1 exists, and until then refuses with exit 2
-and says so (`limits-check-doctor-cli.md` R29).
+and says so.
 
 ## Logs of tego itself
 `~/.tego/tego.log` (tegod instances, when a trigger builds them, log to the journal; ADR 0042), rotated at 10 MB, 5 files, `0600`, one structured
@@ -2185,7 +2184,7 @@ Where: `<ledger_root>/<run>/`, a `0700` directory with `0600` files, on local di
 What is stored: with `record: full`, every event plus the bodies of model requests and responses as content-addressed
 blobs: prompts, tool outputs, and whatever the agent put in them (code, personal data, customer data). With
 `record: summary` (the default), the same events without bodies; file paths, argv, hostnames and ports are still
-stored. With `record: off`, `run_start`, `run_end` and every refusal (its path, host:port or argv included); advisory allow and observed events are dropped (docs/p0/record-ledger.md R12).
+stored. With `record: off`, `run_start`, `run_end` and every refusal (its path, host:port or argv included); advisory allow and observed events are dropped.
 Never stored: `x-api-key`, `authorization`, `cookie` and other credential headers (header allow-list). `env.mask`
 is not built (P2): `compile` refuses a non-empty one, so nothing is masked, and a secret passed to the agent in its
 environment is recorded wherever the agent puts it (in a request body under `record: full`, in argv).
@@ -2208,5 +2207,5 @@ exfiltrations of this shape left through `github.com:443` rather than an attacke
 not hide the machine: the process sees it, and reads are not prevented unless a path is in `deny_read`. At tier 1,
 under the default `record: summary`, a read leaves no line unless the supervisor is told of reads: held reads (the
 default `fs.reads: auto` turns them on when a `deny_read` target lies inside a write entry), `reason.reads: on`,
-`fs.ask_read` or a read gate. Then a refused read leaves one line (`docs/p0/enforce-landlock.md`, the `deny_read`
+`fs.ask_read` or a read gate. Then a refused read leaves one line (the `deny_read`
 row). It never calls a model and never rewrites what the agent does; it refuses, explains and records.

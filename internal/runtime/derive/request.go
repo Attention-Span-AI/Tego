@@ -5,7 +5,7 @@ package derive
 import "github.com/attention-span-ai/tego/pkg/spec/record"
 
 // RequestReader is a Parser that can read, off a model request alone, the tool_use ids whose results the request
-// reports (capture-derive R42). ok is false when it could not read them with certainty; ids is then nil.
+// reports. ok is false when it could not read them with certainty; ids is then nil.
 type RequestReader interface {
 	ToolResults(req *Message) (ids []string, ok bool)
 }

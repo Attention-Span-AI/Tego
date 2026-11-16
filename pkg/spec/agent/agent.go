@@ -31,12 +31,12 @@ import (
 type Contract struct {
 	Version int    `yaml:"version"`
 	Name    string `yaml:"name"`
-	// Revision is the contract author's name for this version of the file (agent-contract.md R28, ADR 0073):
+	// Revision is the contract author's name for this version of the file (ADR 0073):
 	// ^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$, "" for none. The top-level contract's own (a profile that sets it is a
 	// [schema] error), part of the canonical bytes, and written as run_start.contract_revision.
 	Revision string `yaml:"revision,omitempty"`
 	// Extends names the profiles this file is laid over, one name or a list of 1 to MaxExtendsList, merged in
-	// order (agent-contract R5, ADR 0066). The merged contract keeps the top file's own list.
+	// order (ADR 0066). The merged contract keeps the top file's own list.
 	Extends ExtendsList `yaml:"extends,omitempty"`
 	Command []string    `yaml:"command"`
 
@@ -63,17 +63,17 @@ type Contract struct {
 	// no_new_privs unset (ADR 0033). Refused at tier landlock, where no_new_privs is mandatory; warned at the
 	// root tiers, where the agent can then become root.
 	Setuid bool `yaml:"setuid,omitempty"`
-	// Harness is the agent harness the launcher provisions for (agent-contract.md R27, ADR 0062): read-only files in
+	// Harness is the agent harness the launcher provisions for (ADR 0062): read-only files in
 	// the run's runtime directory, an argv and TEGO_ environment additions, and a hook-state directory. "" reads as
 	// auto, detected from the run's command.
 	Harness harness.Name `yaml:"harness,omitempty"`
 	// HostSockets lets a run with no net: section reach every unix socket on the host its uid can open, as before
 	// ADR 0070: without it such a run reaches only the unix sockets it bound itself and tego's own endpoints
 	// (SEMANTICS §1, §5). A net: section decides unix destinations by its own entries and ignores it. Across
-	// extends the stricter value wins, so only the top-level contract can open them (agent-contract R19).
+	// extends the stricter value wins, so only the top-level contract can open them.
 	HostSockets bool `yaml:"host_sockets,omitempty"`
 	// KeepDescendants keeps a run going after the agent's main process exits for as long as any process the agent
-	// started lives, as every run did before 2026-10-26 (runtime-launch.md case 24): for a main that is a launcher
+	// started lives, as runs without it once did: for a main that is a launcher
 	// daemonizing on purpose. Without it the run gives what is left stop_grace to exit, then kills it and ends
 	// with the main process's status. Across extends false is the stricter value, so only the top-level
 	// contract can keep descendants.
@@ -81,7 +81,7 @@ type Contract struct {
 	// Reason is the reason channel's own keys (ADR 0077): reads says whether a read the Landlock ruleset refuses under
 	// deny_read is recorded at tier landlock where the record mode keeps no read.
 	Reason *ReasonSection `yaml:"reason,omitempty"`
-	// Credentials is the credentials: section, which Compile refuses (agent-contract.md R30).
+	// Credentials is the credentials: section, which Compile refuses.
 	Credentials []Credential `yaml:"credentials,omitempty"`
 	// Live is live: (ADR 0125): Locked (absent, or mode: locked) or Adjustable with its fence. The top-level
 	// contract's alone; compileLive turns an Adjustable fence into allow entries before the fs, net and exec tables.
@@ -130,9 +130,9 @@ func (c *Contract) Pos(key string) (p Pos, ok bool) {
 // list only when no file in the chain declares an entry.
 type FSSection struct {
 	Write    []string `yaml:"write,omitempty"`
-	Ask      []string `yaml:"ask,omitempty"`       // approval scopes (agent-contract R22), never ordinary grants
+	Ask      []string `yaml:"ask,omitempty"`       // approval scopes, never ordinary grants
 	DenyRead []string `yaml:"deny_read,omitempty"` // nil = built-in list; []string{} = disabled (warns); populated = entries plus the built-in list
-	// AskRead is fs.ask_read (POC 2026-10-06, SEMANTICS §6): literal files or directories whose reads are held
+	// AskRead is fs.ask_read (SEMANTICS §6): literal files or directories whose reads are held
 	// for a person, at tier landlock only. Each compiles as a deny_read entry marked FSRule.AskRead, so every
 	// mechanism that does not hold a read refuses it as it refuses any deny_read.
 	AskRead []string `yaml:"ask_read,omitempty"`
@@ -142,7 +142,7 @@ type FSSection struct {
 	// RuleTable.DenyWrite with BuiltIn false. A union across extends; nil and [] both add nothing, and neither
 	// removes the built-in set.
 	DenyWrite []string `yaml:"deny_write,omitempty"`
-	// Assurance is fs.assurance (agent-contract R20, ADR 0041 D1 (a)): how the built-in deny_write set must be
+	// Assurance is fs.assurance (ADR 0041 D1 (a)): how the built-in deny_write set must be
 	// enforced where no kernel decision plane decides the run. "" reads as best-effort.
 	Assurance FSAssurance `yaml:"assurance,omitempty"`
 	// Reads is fs.reads (ADR 0069): whether the open deputy completes the run's read opens so that a deny_read
@@ -412,7 +412,7 @@ type MCPServer struct {
 	Name    string   `yaml:"name"`
 	Command []string `yaml:"command,omitempty"`
 	URL     string   `yaml:"url,omitempty"`
-	// Tools puts the server behind Tego's MCP relay with per-tool rules (agent-contract.md R16b, ADR 0126); nil is
+	// Tools puts the server behind Tego's MCP relay with per-tool rules (ADR 0126); nil is
 	// today's behaviour, no relay.
 	Tools *MCPTools `yaml:"tools,omitempty"`
 }
@@ -600,16 +600,16 @@ type RuleTable struct {
 	// ReasonReads is reason.reads as compiled (ADR 0077): the effective value, never "" after Compile. ReasonReadsAt
 	// says where it notifies every read open.
 	ReasonReads ReasonReadsMode
-	// OwnState is tego's own state as compile resolved it (POC 2026-10-06): the ledger root, the chain anchor and its
-	// directory (the anchor itself added 2026-10-20, review RS7-1: a link leads out of the directory), ~/.tego, the
-	// host state (/run/tego), tego's runtime parent ($XDG_RUNTIME_DIR/tego, WithRuntimeDir, added 2026-10-16), the
+	// OwnState is tego's own state as compile resolved it: the ledger root, the chain anchor and its
+	// directory (the anchor itself too: a link leads out of the directory), ~/.tego, the
+	// host state (/run/tego), tego's runtime parent ($XDG_RUNTIME_DIR/tego, WithRuntimeDir), the
 	// machine config's price table and profiles directory, and the contract file's directory, each as written and
 	// where its walk lands (a final link leading nowhere yet followed), whether or not R6a could deny it. No
 	// fs.ask_read entry may lie at or beneath one, a held read never completes on a file beneath one, and an
 	// alternate a person names for a held open is refused there. Compile output, not contract input.
 	OwnState []string
-	// OwnReadable is tego's own state a run may read but never write (added 2026-10-20): the user
-	// registry's agents/ and skills/ (agent-contract.md R26) and the machine config's layer files (config.Machine.Layers,
+	// OwnReadable is tego's own state a run may read but never write: the user
+	// registry's agents/ and skills/ and the machine config's layer files (config.Machine.Layers,
 	// ADR 0059), as written and resolved. They are not read-denied, so an
 	// fs.ask_read entry beneath them compiles and a held read there is asked like any other; R10 keeps every write
 	// entry and fs.ask scope off them, and a person's alternate for a held write is refused there. Compile output,
@@ -697,7 +697,7 @@ type FSKind string
 // FS rule kinds.
 const (
 	FSWrite    FSKind = "write"
-	FSAsk      FSKind = "ask" // an fs.ask scope, in RuleTable.FSAsk only (agent-contract R22)
+	FSAsk      FSKind = "ask" // an fs.ask scope, in RuleTable.FSAsk only
 	FSDenyRead FSKind = "deny_read"
 	FSWatch    FSKind = "watch"
 	FSImplicit FSKind = "implicit"
@@ -743,7 +743,7 @@ type FSRule struct {
 	Unenforced bool
 	// BuiltIn marks an entry of the built-in deny_read list or deny_write set.
 	BuiltIn bool
-	// AskRead marks a deny_read entry compiled from fs.ask_read (POC 2026-10-06, SEMANTICS §6). It is a deny_read
+	// AskRead marks a deny_read entry compiled from fs.ask_read (SEMANTICS §6). It is a deny_read
 	// in every respect (the Landlock ruleset withholds its read rights, Evaluate refuses a read beneath it), and its
 	// rule is named fs.ask_read[...]; only tier 1's supervisor reads the marker, to hold a read-open of a regular
 	// file it decides for a person instead of letting the kernel refuse it.
@@ -760,13 +760,13 @@ type FSRule struct {
 	DirCaseExact   bool
 
 	// Runtime names the kind of grant when the runtime added this entry on its own authority rather than reading it
-	// from a contract: CodexHomeGrant for the run's own generated CODEX_HOME (capture-derive.md R19b), or
-	// HarnessStateGrant for a provisioned harness's hook-state directory (agent-contract.md R10a (4)), which no
+	// from a contract: CodexHomeGrant for the run's own generated CODEX_HOME, or
+	// HarnessStateGrant for a provisioned harness's hook-state directory, which no
 	// entry can name because its path holds the run id. It changes the rule name (RuleName) and is what
 	// IsRuntimeRule recognises. "" is the ordinary case.
 	Runtime string
-	// RuntimeDev and RuntimeIno are, for a Runtime grant, the device and inode of the directory the runtime made
-	// (agent-contract.md R10a): a backend that opens Path to grant it must reach exactly that directory or refuse,
+	// RuntimeDev and RuntimeIno are, for a Runtime grant, the device and inode of the directory the runtime made:
+	// a backend that opens Path to grant it must reach exactly that directory or refuse,
 	// so a link swapped in for it, or for a directory above it, between the grant and Prepare moves nothing. Both 0
 	// for an entry with no such identity.
 	RuntimeDev, RuntimeIno uint64
@@ -791,7 +791,7 @@ type NetRule struct {
 	// lexically, as every contract path is) resolved at compile by ResolveUnixPlace, the resolution the run makes of
 	// it too: walked one name at a time, every symlink followed, one whose target the run makes later included, the
 	// names that do not exist yet kept, a ".." in a link's target applied after the symlink before it as the kernel's
-	// lookup applies it (supervisor R11, R11c); UnixPath itself when it cannot be placed. It is the socket a landed
+	// lookup applies it; UnixPath itself when it cannot be placed. It is the socket a landed
 	// pathname is matched against (Action.Landed; the supervisor's decideResolved) and the place a net.ask unix:
 	// scope is asked at. "" for an abstract name, an entry not resolved and in a hand-built table, where UnixPath
 	// stands for it.
@@ -810,7 +810,7 @@ type NetRule struct {
 	// It changes the rule name (RuleName) so the ledger says where the destination came from, and it
 	// is what IsRuntimeRule recognises. "" is the ordinary case, a declared entry.
 	Runtime string
-	// MCP names the mcp[] HTTP server whose URL this entry was derived from (agent-contract.md R16a), "" for every
+	// MCP names the mcp[] HTTP server whose URL this entry was derived from, "" for every
 	// other entry. The rule then carries the server's name, mcp[<name>], the name the record gives that
 	// declaration (RuleName).
 	MCP string
@@ -900,7 +900,7 @@ const (
 // records which dimensions a budget was actually asked for, by the contract or
 // by a machine ceiling: without it a resolved 0 is indistinguishable from "no
 // one asked", and every consumer reads the tightest possible budget as no
-// budget at all (limits-check-doctor-cli.md E16). Ask Bounded, never the value.
+// budget at all. Ask Bounded, never the value.
 type ResolvedLimits struct {
 	CPU        string
 	CPUWeight  int

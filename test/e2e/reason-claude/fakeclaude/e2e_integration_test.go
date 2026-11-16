@@ -35,7 +35,7 @@ const (
 // stand-in that moves the next request away from what Claude Code 2.1.310 sent fails here, on every CI run. On top,
 // every refusal of the run is in the next request, or in the one after it, as reason.Text renders it from the ledger
 // line. The one after it is allowed because a refused line may land in the record after the agent saw the refusal
-// (supervisor.md R23, "What a reader may rely on"), and a hook tells only what the reason file lists: such a refusal is
+// ("What a reader may rely on"), and a hook tells only what the reason file lists: such a refusal is
 // told by the first hook that runs once the file lists it, which the scenarios' one-second wait after the refused
 // turn provides, and report.py holds the stand-in's hook runs (--result: their times and the reason file's seq before
 // each began) to that.

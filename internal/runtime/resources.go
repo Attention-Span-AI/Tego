@@ -11,7 +11,7 @@ import (
 var readResources = cgroup.ReadResources
 
 // runResources is run_end's resource line: the run cgroup's peaks and counters, read in step 13 before the
-// cgroup is removed (runtime-launch.md §4.1). Step 12 normally leaves the tree empty by then, so every task
+// cgroup is removed. Step 12 normally leaves the tree empty by then, so every task
 // the run had is counted and none still adds to them. It is not guaranteed: awaitEmpty returns with the tree
 // still populated when its wait fails while ctx has not ended (cgroup.events or its inotify watch could not
 // be read), which kills the tree and notes it in run_end.detail, and when the wait after the kill ends without seeing it empty (a task in

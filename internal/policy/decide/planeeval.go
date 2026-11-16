@@ -14,7 +14,7 @@ import (
 // compile for the plane (ErrPlaneCap, ErrPlaneExecVerdict): the run Prepare refuses answers nothing.
 const PlaneUnbuildableRule = "plane-unbuildable"
 
-// PlaneEvaluator is compile --test's bpflsm column (TIER3-PLAN T10, ADR 0019's 2026-09-29 note, enforce-plane
+// PlaneEvaluator is compile --test's bpflsm column (ADR 0019, enforce-plane
 // R25): every fs and exec answer is read out of the plane's own rows, CompilePlane's output walked as the kernel
 // walks them (PlaneRows.Decide, ExecMatch), so the column is what the loaded programs decide and not a second
 // model of it. Evaluate at bpflsm stays the independent root model the rows are property-tested against
@@ -122,7 +122,7 @@ func (p *PlaneEvaluator) Evaluate(a agent.Action, env Env) agent.EvalResult {
 			return p.unbuildable(a.Kind)
 		}
 		// path_chmod, path_chown and the xattr and ACL hooks: refused only where the walk meets a protected row or
-		// fails (enforce-plane R12, R7); an allowed change is named as the root model names it, the run's line.
+		// fails; an allowed change is named as the root model names it, the run's line.
 		if v := p.rows.Decide(Canonical(p.rt, cleanPath(a.Path)), PlaneProtect); !v.Allow {
 			return p.answer(v, a.Kind)
 		}
@@ -139,7 +139,7 @@ func (p *PlaneEvaluator) unbuildable(k agent.ActionKind) agent.EvalResult {
 	return agent.EvalResult{Verdict: agent.VerdictRefused, Rule: PlaneUnbuildableRule, Reason: reason}
 }
 
-// PlaneRefusal is the rule and reason the ledger line of a refusal by the plane carries (enforce-plane §4): the
+// PlaneRefusal is the rule and reason the ledger line of a refusal by the plane carries: the
 // deciding entry, else the row's nearest entry, else unmatched; an exhausted walk is path-unresolved.
 func PlaneRefusal(rt *agent.RuleTable, v PlaneVerdict, kind agent.ActionKind) (string, record.Reason) {
 	if v.Unresolved {
@@ -193,7 +193,7 @@ func (p *PlaneEvaluator) answer(v PlaneVerdict, kind agent.ActionKind) agent.Eva
 }
 
 // rename is path_rename and REFER on two canonical ends: each end decides as a rename of itself (a file's name
-// check included), then the source's row may not be stricter than the destination's (enforce-plane R10, R11), then a
+// check included), then the source's row may not be stricter than the destination's, then a
 // directory may not take covered files out of coverage (ADR 0043 D5, ScopeMoveRefused), then the Landlock floor's
 // no-gain rule (RenameGainedBy, ReferRefuses). Where an end lies above
 // every write entry and above a deny_write target, the plane names the row's nearest entry where the root model
@@ -243,7 +243,7 @@ func (p *PlaneEvaluator) delete(path string, dir bool) agent.EvalResult {
 	return r
 }
 
-// link is path_link on two canonical ends (enforce-plane R10, bpf/decide.bpf.c), in the hook's order: a walk of
+// link is path_link on two canonical ends (bpf/decide.bpf.c), in the hook's order: a walk of
 // either end that cannot finish refuses first (the source's, then the new name's), then the new name is a creation in
 // its directory, a modification there (a file the name entries cover included, ADR 0043 D7), and then REFER holds the
 // source's nearest row to be no stricter than the destination's, so a second name for a file under a deny_read or a

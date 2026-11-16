@@ -15,7 +15,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// admitResolved is R7's resolved-address check (agent-contract R18) on an IP destination the resolver
+// admitResolved is R7's resolved-address check on an IP destination the resolver
 // matched, or failed to match. A net.allow host name admits what the name resolves to, and the Resolver
 // re-resolves it on TTL through whatever DNS answers, so a name the author allowed can come to resolve to
 // the cloud metadata endpoint, loopback or a link-local address between two lookups (DNS rebinding) —
@@ -80,7 +80,7 @@ func (c *compiled) admitResolved(ap netip.AddrPort, proto string, m *NetMatch) v
 
 // resolvedDenied is RuleTable.ResolvedDenied for a host entry r and a destination a it resolved to, with
 // this host's own addresses in the loopback class: refused unless r is a localhost name, which keeps the
-// loopback class (agent-contract R18), and refused as well while the host's addresses cannot be known.
+// loopback class, and refused as well while the host's addresses cannot be known.
 func resolvedDenied(rt *agent.RuleTable, r agent.NetRule, a netip.Addr) bool {
 	if _, denied := rt.ResolvedDenied(r, a); denied {
 		return true

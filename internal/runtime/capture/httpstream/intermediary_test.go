@@ -4,7 +4,7 @@ package httpstream
 
 import "testing"
 
-// TestH1BytesStayH1WhateverAnIntermediaryNegotiated is capture-derive.md E20: h2 is decided by the traced
+// TestH1BytesStayH1WhateverAnIntermediaryNegotiated: h2 is decided by the traced
 // process's own bytes (R17's preface), so a process that speaks h1 stays h1 however a front end upstream of it
 // negotiated the connection. Capture never sees that negotiation, and an h1 exchange raises no h2 gap and is
 // reassembled whole.

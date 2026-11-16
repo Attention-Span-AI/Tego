@@ -1,4 +1,4 @@
-# Kill tests (P0-DESIGN §10, §12)
+# Kill tests
 
 | Script | Kill test | Halves and what each needs |
 |---|---|---|

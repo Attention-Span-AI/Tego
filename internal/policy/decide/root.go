@@ -19,8 +19,7 @@ import (
 // aggregated or emitted individually, and no tier refuses anything because of
 // one — Landlock holds the watch path with access 0 and the enclosing write
 // rule's mask still grants the mutation, and tier 2's listener gives them no part
-// in any decision (a watch entry once reopened a deny_read there,
-// enforce-cgroup-observe R8). Letting it decide made `write: [/work]`
+// in any decision (a watch entry would reopen a deny_read there). Letting it decide made `write: [/work]`
 // plus `watch: [/work/logs]` refuse every write under /work/logs in the root
 // tiers and allow it in tier 1: one contract, two opposite verdicts, and the
 // author punished for asking for finer recording.

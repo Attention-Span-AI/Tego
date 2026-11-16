@@ -207,7 +207,7 @@ func (s *Steps) Apply(ev *record.Event) {
 	}
 }
 
-// Stage is the pipeline's attribute stage (P0-DESIGN §4.1 step 4) in the shape runtime.Compose takes.
+// Stage is the pipeline's attribute stage in the shape runtime.Compose takes.
 func (s *Steps) Stage(next func(*record.Event)) func(*record.Event) {
 	return func(ev *record.Event) {
 		s.Apply(ev)

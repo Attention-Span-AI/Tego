@@ -40,7 +40,7 @@ func namedMsgHdr(nameAddr uint64, namelen uint32) []byte {
 // true of a send. udp_sendmsg and raw_sendmsg accept sin_family AF_UNSPEC as a spelling of AF_INET and
 // send the datagram to the address that follows it, and rawv6_sendmsg reads a sockaddr_in6 there. Only
 // TCP turns it away itself: tcp_sendmsg_fastopen answers an AF_UNSPEC address with EOPNOTSUPP before any
-// connect (measured on 6.17), and without MSG_FASTOPEN a TCP send ignores the address.
+// connect (on 6.17), and without MSG_FASTOPEN a TCP send ignores the address.
 //
 // The first scoping of the carve-out recorded these as `refused / unmatched` and still answered a
 // datagram CONTINUE, as R13b does for a destination it has matched — so the datagram left for
@@ -406,7 +406,7 @@ func TestRelayPanicIsContainedPerNotification(t *testing.T) {
 // through getpeername; CONTINUE hands the syscall back, and a sibling thread's connect(fd, {AF_UNSPEC}),
 // which R4 allows, can dissolve the association before the kernel runs it. With MSG_FASTOPEN
 // tcp_sendmsg_fastopen then connects the now peerless socket to the send's own address, a host nothing
-// decided (measured on 6.17: connect, connect AF_UNSPEC, sendto(MSG_FASTOPEN) to a second listener
+// decided (on 6.17: connect, connect AF_UNSPEC, sendto(MSG_FASTOPEN) to a second listener
 // delivers there). With MSG_FASTOPEN the send is now decided as R12 even on a connected socket. Nothing
 // legitimate is lost: on a socket that keeps its peer the kernel answers such a send with EISCONN, which
 // the relay passes through for a declared destination, and a refusal replaces it with R10's errno.

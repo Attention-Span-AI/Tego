@@ -170,7 +170,7 @@ func TestGCHookFailureKeepsRun(t *testing.T) {
 // only partly removed (events.jsonl and lock already gone, a leftover empty blobs/ dir still present) must not
 // make the next gc pass error out -- it is "treated as already-gone-enough" and finished off.
 //
-// Also pins record-ledger.md E22: a partly removed run directory is finished by the next gc.
+// Also pins: a partly removed run directory is finished by the next gc.
 func TestGCFinishesPartiallyRemovedRun(t *testing.T) {
 	root := t.TempDir()
 	old := makeRun(t, root, fixedStart, "e00001", StateEnded)
@@ -204,7 +204,7 @@ func TestGCFinishesPartiallyRemovedRun(t *testing.T) {
 // byte-identical to before." A run gc decides to keep (too young to reap) must come out of the sweep with
 // every byte exactly as it was -- gc only ever deletes a whole directory, never edits one in place.
 //
-// Also pins record-ledger.md I6: gc never opens a surviving run's ledger for writing.
+// Also pins: gc never opens a surviving run's ledger for writing.
 func TestGCLeavesKeptRunBytesUnchanged(t *testing.T) {
 	root := t.TempDir()
 	now := fixedStart.Add(time.Hour)
@@ -242,7 +242,7 @@ func TestGCRootErrors(t *testing.T) {
 	}
 }
 
-// Also pins record-ledger.md E10: cross-run ordering and retention use the run id's time36 before any ts.
+// Also pins: cross-run ordering and retention use the run id's time36 before any ts.
 func TestRunTimeSources(t *testing.T) {
 	if got, ok := timeFromRunID(testRef.ID); !ok || !got.Equal(fixedStart) {
 		t.Fatalf("time36: %v %v", got, ok)
@@ -269,7 +269,7 @@ func TestRunTimeSources(t *testing.T) {
 	}
 }
 
-// Also pins record-ledger.md I7: a run's state is read from the directory, with no registry.
+// Also pins: a run's state is read from the directory, with no registry.
 func TestRepository(t *testing.T) {
 	root := t.TempDir()
 	ended := makeRun(t, root, fixedStart, "d00001", StateEnded)

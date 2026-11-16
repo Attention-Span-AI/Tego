@@ -75,7 +75,7 @@ attempt("move-within", lambda: os.rename("work/sub2", "work/sub3"))
 // of the project (D5), while a plain read and a move within the project go ahead; the read and the move each have one
 // ledger line, from the plane, named by the built-in entry's label (ADR 0043 D8), and no file the refusals named
 // exists. On the fanotify fallback the listener refuses the read (EPERM, one listener line) and its supervisor the
-// creation, the renames, the link and the move out (R10's EACCES, supervisor R15f), the move with one line of its own.
+// creation, the renames, the link and the move out (R10's EACCES), the move with one line of its own.
 func TestPlaneNameEntriesRunEndToEnd(t *testing.T) {
 	bin, uid, gid, modes := planePreconditions(t)
 	for _, mode := range modes {

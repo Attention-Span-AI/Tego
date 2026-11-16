@@ -30,10 +30,10 @@ type Run struct {
 	// Dir is the run directory and Contract the compiled contract copy, both implicit deny nodes in tier 1.
 	Dir      string
 	Contract string
-	// Resolvers are the endpoints the supervisor's port-53 exception covers for this run (supervisor R14):
+	// Resolvers are the endpoints the supervisor's port-53 exception covers for this run:
 	// the list the runtime gives the supervisor's resolver set, so the kernel's rows and the supervisor's
 	// exception name the same servers (BuildRuleMaps). Empty means no exception, and a query then needs a
-	// declared entry, which is what the supervisor does with an empty list (supervisor E32).
+	// declared entry, which is what the supervisor does with an empty list.
 	Resolvers []netip.AddrPort
 	// StageExe is the binary the launcher execs as the child stage; empty means /proc/self/exe, the
 	// launcher's own image, which is what `tego run` execs. The tier execs it again for its detached helpers
@@ -46,7 +46,7 @@ type Run struct {
 	// PlaneRows is the table's rows for the decision plane (decide.CompilePlane), compiled once by the caller when
 	// Options.Plane names a mode, so the inherited Landlock plan holds the keyed paths and adds their neutral rules
 	// (landlock.Run.Plane) and the plane is filled from the same rows. Nil with a mode makes Prepare compile them.
-	// The caller adds the mounted-root rows (PlaneRows.WithMounts over MountPoints, enforce-plane R12).
+	// The caller adds the mounted-root rows (PlaneRows.WithMounts over MountPoints).
 	PlaneRows *decide.PlaneRows
 	// ExecPin asks for the run's execs to be pinned (ADR 0048 (3) P2): its table has command rules, or an exec gate that
 	// may escalate, and its supervisor writes a pin for every exec it continues (Handle.PinExec). Prepare pins the

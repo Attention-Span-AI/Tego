@@ -18,12 +18,12 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestGateReadScoresAnOpenThatReads is gate.md R1's 2026-10-16 amendment: an
+// TestGateReadScoresAnOpenThatReads: an
 // open whose access mode is not O_WRONLY reads the file it opens, whatever write bit it also carries. gateOpen and
 // gateFS took any open with a write bit (O_RDWR, O_CREAT, O_TRUNC) as a write and scored it with the fs.write
 // predicates only, returning early when the gate had none, so under `fs.read matches "*.env"` alone
 // `exec 3<>a.env; cat <&3` read the secret the plain read-open of the same file was refused: a deterministic
-// bypass, no race needed. Such an open is now scored with the read predicates as well (since 2026-10-20 the two
+// bypass, no race needed. Such an open is now scored with the read predicates as well (the two
 // kinds' scores summed, ADR 0007); an O_WRONLY open reads nothing and stays the write it is.
 func TestGateReadScoresAnOpenThatReads(t *testing.T) {
 	const pathAddr = 0x10000
@@ -111,7 +111,7 @@ func TestGateReadLeavesAMknodToTheWritePredicates(t *testing.T) {
 			}
 		})
 	}
-	// gateFS itself, as the review's probe called it: a mknod's decision carries the mark recordOpen sets.
+	// gateFS itself: a mknod's decision carries the mark recordOpen sets.
 	pol := testPolicy(nil, fs, nil)
 	pol.Rules.Workdir = "/work"
 	pol.Rules.Gate = testGate(t, gate.ReadMatches, "*.env", 95)

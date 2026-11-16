@@ -23,7 +23,7 @@ import (
 // append, so the next line starts on a line boundary. Glued onto the fragment, it made a malformed line
 // that failed Head for every run in the file, earlier ones included (E28).
 //
-// Also pins record-ledger.md E28: an append to a chain.log with a torn tail repairs it.
+// Also pins: an append to a chain.log with a torn tail repairs it.
 func TestAnchorAppendRepairsATornTail(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".tego", ChainLogFile)
 	a := NewFileChainAnchor(path)

@@ -13,7 +13,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// TestPlaneKeysAreHeldWithTheirNeutralRules is enforce-plane R16 and R17 in the Landlock plan (TIER3-PLAN T6): with
+// TestPlaneKeysAreHeldWithTheirNeutralRules: in the Landlock plan, with
 // Run.Plane, every keyed path is held, under its own name for the plane's fill (PlaneHeld), a path an entry holds
 // already by that entry's descriptor; each gets its neutral rule's read rights, onto a sealed deny_read target too
 // (§2.4's condition 5), and nothing else; a keyed path that does not exist is skipped, and Close ends every lookup.
@@ -76,8 +76,8 @@ func TestPlaneKeysAreHeldWithTheirNeutralRules(t *testing.T) {
 	}
 }
 
-// TestPlaneNoFollowKeysHoldTheLinkItself: a NoFollow row (a deny_write target declared through a symlink,
-// enforce-plane R11) is held at the link's own inode, not its target's, for identity alone, so the fill keys the
+// TestPlaneNoFollowKeysHoldTheLinkItself: a NoFollow row (a deny_write target declared through a symlink)
+// is held at the link's own inode, not its target's, for identity alone, so the fill keys the
 // row the kernel's walk from the link's dentry meets; one that does not exist is skipped.
 func TestPlaneNoFollowKeysHoldTheLinkItself(t *testing.T) {
 	root := tempDir(t)

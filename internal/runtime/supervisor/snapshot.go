@@ -18,7 +18,7 @@ const ruleDenyReadSnapshot = "deny-read-snapshot"
 // snapshotRead is the refusal of a read-capable open the decision core allows and the run's Landlock ruleset
 // refuses: this loop refuses it itself, with the EACCES the kernel would answer, so its line says refused under
 // ruleDenyReadSnapshot instead of the allow the contract's paths alone give. Continued, the kernel refused it all
-// the same and the line said allow (the 2026-10-25 always-on audit's 8 lines). The snapshot answers true only where
+// the same and the line said allow. The snapshot answers true only where
 // it knows the kernel refuses (landlock.Snapshot.Refuses), so this refuses nothing the kernel would allow, and it
 // never widens a deny_read: it adds a refusal and changes no allow of a path the ruleset grants. at is where the open
 // lands (landed): the ruleset decides on that object's chain, not on the copied spelling.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package procconn is the agent watcher's eyes on process starts (POC, docs/poc/agent-watcher.md). It
+// Package procconn is the agent watcher's eyes on process starts. It
 // listens on the Linux proc connector (NETLINK_CONNECTOR, the kernel's own fork/exec/exit notifications)
 // and decodes each message into a typed Event. The decode is pure and tested without privilege; opening the
 // listener needs CAP_NET_ADMIN, because the proc connector is a multicast netlink group.

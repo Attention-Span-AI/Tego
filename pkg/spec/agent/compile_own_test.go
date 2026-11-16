@@ -206,7 +206,7 @@ func fakeMountInfo(f *fixture, extra ...string) CompileOption {
 }
 
 // TestCompileRefusesWritesOverTegosOtherNames: R10 holds tego's binaries by what the kernel knows them by, not only by
-// the running file's and PATH's names (ADR 0059, amendment 2026-11-11). A tego installed in a usual place that this
+// the running file's and PATH's names (ADR 0059). A tego installed in a usual place that this
 // compile neither runs from nor finds on PATH (a systemd unit's ExecStart, a second install), a bind mount that shows
 // the install directory at another place, and an overlay layer that holds its content are each refused; a file with a
 // second hard link, whose other name no table lists, refuses every entry that reaches its filesystem; and a mount
@@ -441,7 +441,7 @@ func TestCompileHoldsProtectedDirectoriesThroughMounts(t *testing.T) {
 		}
 		m := machine
 		m.LedgerRoot = config.Setting[string]{Value: ledger}
-		// By its own path first: this compiled before review round 2 (the rule compared the ledger root's parent).
+		// By its own path first: a rule that compared the ledger root's parent would compile this.
 		direct := filepath.Join(ledger, filepath.Base(run), "y")
 		if err := os.MkdirAll(direct, 0o755); err != nil {
 			t.Fatal(err)

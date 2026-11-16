@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package gaps summarises a run's gap events into the one line `tego status` and `tego drift`
-// print beside their verdicts (docs/FEATURES.md C8; docs/p0/limits-check-doctor-cli.md
+// print beside their verdicts (docs/FEATURES.md C8,
 // R34). A view that reports "running" or "no drift" over a run whose producers dropped events, or
 // never saw a binary's model traffic, is stating less than it appears to, and the gap line is where
 // it says so. A person's live changes to a run (a block, a lift, a pause) are recorded on gap lines too; Split sets
@@ -60,8 +60,7 @@ type Count struct {
 }
 
 // Tally accumulates gap events in one pass over a ledger. Its memory is one entry per distinct
-// (what, why, binary), never one per event, so a view that streams stays O(1) per event
-// (limits-check-doctor-cli.md §6 case 10).
+// (what, why, binary), never one per event, so a view that streams stays O(1) per event.
 type Tally struct {
 	counts map[[2]string]*Count
 	seen   map[[3]string]bool

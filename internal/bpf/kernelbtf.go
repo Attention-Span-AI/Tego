@@ -15,7 +15,7 @@ var sharedKernelBTF = sync.OnceValues(btf.LoadKernelSpec)
 // of the whole spec on every call (18 ms on a distro kernel, about twice that in a guest), and each of its name
 // lookups builds an index over that copy (10 ms) before the first answer, so a run that asked from D2, from the
 // reader choice and from Prepare's optional-hook lookups paid three copies and three indexes: 100 ms or more of a
-// start at tier cgroup and bpflsm (enforce-plane §10, the perf suite's probe.btf and plane.hooks phases).
+// start at tier cgroup and bpflsm (the perf suite's probe.btf and plane.hooks phases).
 //
 // The spec is shared, so it is read, never changed, and used by one goroutine at a time: a run's probes and its
 // Prepare are sequential, and lookups build the index lazily without a lock. A caller that needs to change or hand

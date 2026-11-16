@@ -19,7 +19,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// modeWatch runs the target under an enforcing run's filter with its watch arm (enforce-landlock R11e), and a table
+// modeWatch runs the target under an enforcing run's filter with its watch arm, and a table
 // whose one entry is a deny_read the Landlock ruleset enforces (R36).
 const modeWatch = "watch"
 

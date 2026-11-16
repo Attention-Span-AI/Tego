@@ -15,8 +15,6 @@ import (
 // for every number that can come back USER_NOTIF. The supervisor answers an undispatched notification ENOSYS
 // (ADR 0018), so a missing or misnumbered entry fails closed; this makes it fail loud, before a release, instead
 // of refusing a syscall every agent needs.
-//
-// Spec: docs/p0/enforce-landlock.md R11.
 func TestEveryNotifiedSyscallHasAHandler(t *testing.T) {
 	argShapes := [][]uint64{
 		{},

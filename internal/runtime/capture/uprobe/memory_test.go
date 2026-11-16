@@ -44,7 +44,7 @@ func (nopDeriver) Handle(*derive.Message, *derive.Message, derive.Meta) (derive.
 // TestBodiesHeldAreBudgeted: at the source, 64 connections, each sending a 4 MiB request that is
 // either never answered (its body kept for derive until Stop) or never finished (its body in flight in the
 // reassembler). Before the budget, the first held 64 × 4 MiB of launcher heap and the second pinned the same in
-// the connections' arrays; the review measured 1.5 GiB for 24 connections of 48 MiB. Both now stay inside the
+// the connections' arrays: 1.5 GiB for 24 connections of 48 MiB. Both now stay inside the
 // one budget the reassembler and the source share, and what did not fit is counted as gap why=size-cap.
 func TestBodiesHeldAreBudgeted(t *testing.T) {
 	const (

@@ -17,7 +17,7 @@ import (
 // every producer instead of the capture list installed derive.Steps on a run with `capture: off`,
 // whose states map then stayed empty and stamped `method=time` on every action — the exact false
 // claim ("unattributed by time" on a run with no model-turn signal) the method-none branch exists to
-// avoid (P0-DESIGN §5).
+// avoid.
 func TestAttributeStageIgnoresTheKernelRecorder(t *testing.T) {
 	t.Run("a tier-2 kernel recorder is not capture", func(t *testing.T) {
 		r := newTestRunner(Deps{})
@@ -53,7 +53,7 @@ func TestAttributeStageIgnoresTheKernelRecorder(t *testing.T) {
 // worse of the two: a contract that asked for capture, a tier that wired only its kernel recorder and
 // no capture source, and therefore no ssl event in the ledger — with the "capture was asked for and
 // nothing provides it" gap suppressed because allSources() was not empty. A capture shortfall is
-// always a gap event and never a silence (capture-derive.md §8 I4).
+// always a gap event and never a silence.
 func TestEmitCaptureGapsIgnoresTheKernelRecorder(t *testing.T) {
 	r := &runner{rt: &agent.RuleTable{Capture: agent.CaptureForwarder}, queue: NewQueue(8)}
 	r.kernelRecord = &plainSource{name: "observe"}

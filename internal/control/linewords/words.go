@@ -507,8 +507,8 @@ func FSReadsWhy(w string) (string, bool) { return lookup(fsReadsWhys, w) }
 // Tier is an enforcement tier in words.
 func Tier(t string) (string, bool) {
 	return lookup(map[string]string{
-		"landlock": "Basic (tier 1): Landlock and a system-call supervisor, no root", "cgroup": "Strong (tier 2): kernel filters with root",
-		"bpflsm": "Strongest (tier 3): a kernel security module", "observe": "watch only: nothing enforced", "watch": "watch only: nothing enforced",
+		"landlock": "Basic (tier 1): Landlock and a system-call supervisor, no root", "cgroup": "Plus (tier 2): kernel filters with root",
+		"bpflsm": "Max (tier 3): a kernel security module", "observe": "watch only: nothing enforced", "watch": "watch only: nothing enforced",
 	}, t)
 }
 

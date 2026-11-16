@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# kt1-identity.sh — kill test 1 (P0-DESIGN §10 "1 identity (two concurrent runs, 100%
-# attribution)"; §12 acceptance item 1; docs/p0/supervisor.md "kill test 1 (two concurrent runs, no
-# cross-`Loop` leakage, E15, 100% attribution)"; docs/FEATURES.md E3 "concurrent runs... 100%
+# kt1-identity.sh — kill test 1 (two concurrent runs, no cross-`Loop` leakage, 100% attribution;
+# docs/FEATURES.md E3 "concurrent runs... 100%
 # attribution. Kill test 1.").
 #
 # What it attacks: that every event a run's ledger carries is attributed to that run and to no

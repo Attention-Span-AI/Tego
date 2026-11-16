@@ -251,7 +251,7 @@ func TestAReaperOwesTheBuildItsDutiesAfterAPartialPurge(t *testing.T) {
 	}
 }
 
-// TestTheReaperInheritsExactlyTwoDescriptors is ADR 0020 (2)'s descriptor set as amended: the reaper's exec
+// TestTheReaperInheritsExactlyTwoDescriptors is ADR 0020 (2)'s descriptor set: the reaper's exec
 // passes the launcher's pidfd at 3 and the run directory at 4, and nothing else beyond its standard streams, and
 // it runs in a session of its own. The reaper's command is run with this test binary in its place, running
 // ReapMain itself (reapMainHelper), with two stray descriptors right above the run directory (5 and 6, as a parent
@@ -334,7 +334,7 @@ func TestWatchCgroupRecordsTheGiveUp(t *testing.T) {
 	}
 }
 
-// TestTheReaperRecordsThePlaneCounters is enforce-plane §2.8's counters half for an orphaned run: the reaper, once
+// TestTheReaperRecordsThePlaneCounters is the plane counters' half for an orphaned run: the reaper, once
 // the run's tree is killed and before its run_end, reads the slot its launcher held in the mode it decided in and
 // writes one gap what=enforce line per non-zero counter, naming the mode; a slot it cannot read is one
 // plane-counters-unread line; a run with no plane mode reads nothing.

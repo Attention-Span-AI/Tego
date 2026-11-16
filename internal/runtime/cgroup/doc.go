@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package cgroup is the cgroup v2 manager of a run (docs/p0/runtime-launch.md §2, §4, §5): it finds
+// Package cgroup is the cgroup v2 manager of a run: it finds
 // the subtree this process may write (the systemd user delegation under
 // /sys/fs/cgroup/user.slice/user-<uid>.slice/user@<uid>.service for an unprivileged launcher, the
 // cgroup2 mount root for a privileged one), creates tego.slice/tego-<agent>.slice/run-<id>.scope
@@ -12,8 +12,7 @@
 //
 // Two things about that root are spec, not accident. A privileged launcher's subtree sits directly
 // under the cgroup2 mount point, which systemd's delegation contract forbids on a systemd host; §6
-// case 38 records the cost and why P0 pays it, and §11 holds the decision about doing it the
-// sanctioned way. An unprivileged launcher's subtree is derived from /proc/self/cgroup, whose path
+// case 38 records the cost and why it is paid, and the sanctioned way stays an open decision. An unprivileged launcher's subtree is derived from /proc/self/cgroup, whose path
 // is relative to the reading process's cgroup namespace, so Detect only trusts the cgroup2 mount
 // once it has shown it holds the cgroup that file names (§6 case 39) rather than splicing a
 // namespace-relative name onto a fixed mount. That verdict covers the canonical

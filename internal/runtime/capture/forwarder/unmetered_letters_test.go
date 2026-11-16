@@ -42,7 +42,7 @@ func cutStream() string {
 	return b.String()
 }
 
-// TestEveryR1LetterOnTheForwarder is limits-check-doctor-cli.md R1's two lists on the forwarder, one row per
+// TestEveryR1LetterOnTheForwarder is the two unmetered lists on the forwarder, one row per
 // letter the forwarder can meet: every "Reported as unmetered" case is reported to the run, which ends a run
 // with a token or cost budget at the first report (runtime.TestUnmeteredSpendEndsABudgetedRun); every "Not
 // reported" case is not, and a budgeted run goes on. The letters that belong to the uprobe path alone (f-j, n,

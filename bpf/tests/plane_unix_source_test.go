@@ -10,7 +10,7 @@ import (
 	ebpfbindings "github.com/attention-span-ai/tego/internal/bpf"
 )
 
-// TestPlaneUnixHooksDecideAsConnectUnixDoes is enforce-plane R14's step D in the source (TIER3-PLAN T15): below 6.7,
+// TestPlaneUnixHooksDecideAsConnectUnixDoes is enforce-plane R14's step D in the source: below 6.7,
 // where cgroup/connect_unix and sendmsg_unix do not exist, the plane's socket_connect and socket_sendmsg decide a
 // run's unix names by the same rule and the same rows. Each finds its run by the socket's cgroup (the relay
 // connects the agent's socket from the launcher's cgroup), decides an AF_UNIX connect or an addressed datagram

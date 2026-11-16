@@ -10,8 +10,8 @@ import (
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
 )
 
-// uutilsLinks is the link count of Ubuntu 26.04.1's uutils file (rust-coreutils 0.10.0-1ubuntu2~26.04.1, measured on
-// the guest of 2026-11-11: /usr/bin/ls -> ../lib/cargo/bin/coreutils/ls, 116 links).
+// uutilsLinks is the link count of Ubuntu 26.04.1's uutils file (rust-coreutils 0.10.0-1ubuntu2~26.04.1:
+// /usr/bin/ls -> ../lib/cargo/bin/coreutils/ls, 116 links).
 const uutilsLinks = 116
 
 // multicallFacts are an exec's facts on a file of links links whose walk ended at the link named image: requested
@@ -22,8 +22,8 @@ func multicallFacts(links uint64, requested, image string, argv ...string) execm
 	return f
 }
 
-// nameForms are nine name forms measured against the matcher on 2026-11-11 (deny: [rm -r], Ubuntu 25.10's uutils file;
-// ADR 0048's amendment of that date, What was measured), each an exec that upstream uutils (main a4b65e12 and
+// nameForms are nine name forms measured against the matcher (deny: [rm -r], Ubuntu 25.10's uutils file;
+// ADR 0048, What was measured), each an exec that upstream uutils (main a4b65e12 and
 // 0.12.0, src/bin/coreutils.rs and src/common/validation.rs, read, not run) runs as rm -r: the program name is
 // AT_EXECFN's file stem, or argv[0]'s when the exec path starts with /proc/ or /dev/fd/ (or on musl), and the applet is
 // the longest utility name it ends with; a stem ending in utils or box runs the applet argv[1] names.
@@ -46,8 +46,8 @@ var nameForms = []struct {
 }
 
 // TestMulticallNameFormsMeetDenyRules: on a multicall image every form of nameForms is refused by deny: [rm -r], as
-// upstream uutils would run each as rm -r; the image of /usr/bin/coreutils is named coreutils. Before 2026-11-11 seven
-// of the nine gave none (each form's before field; on the Ubuntu 26.04.1 guest of that day, with deny: ["rm -r"], 7 of
+// upstream uutils would run each as rm -r; the image of /usr/bin/coreutils is named coreutils. Without the multicall reading seven
+// of the nine gave none (each form's before field; on Ubuntu 26.04.1, with deny: ["rm -r"], 7 of
 // 11 forms on the ls file were recorded exec[/bin/ls] allow: docs/GAPS.md C63).
 func TestMulticallNameFormsMeetDenyRules(t *testing.T) {
 	ix := rules(t, "deny: rm -r")
@@ -190,7 +190,7 @@ func TestMulticallScriptAndLoader(t *testing.T) {
 // TestMulticallArgv1PrefixIsNotFinal: a name that dispatches on argv[1] (xbox, myutils) decided on an argv prefix that
 // ends before argv[1] has not read its applet, so the decision is not Final and the supervisor's staged read goes on
 // to argv[1]. An argv[0] of 8191 bytes or more fills the first stage (32 entries, 8 KiB), and a Final none there let
-// `xbox rm -r` run unread (found in review on 2026-11-11). The whole argv is refused.
+// `xbox rm -r` run unread. The whole argv is refused.
 func TestMulticallArgv1PrefixIsNotFinal(t *testing.T) {
 	ix := rules(t, "deny: rm -r")
 	long := strings.Repeat("A", 8191)
@@ -218,7 +218,7 @@ func TestMulticallArgv1PrefixIsNotFinal(t *testing.T) {
 // TestMulticallScriptReadByItsOwnName: for a #! exec uutils takes argv[0] (the #! path) only when it can open the
 // script and read #!; an execute-only script (mode 0111) it cannot open, and then it takes AT_EXECFN, the script's own
 // pathname (validation.rs binary_path, main a4b65e12 and 0.12.0, read). So a script ./xrm whose interpreter is a
-// multicall file runs rm, and is read by its requested name too (found in review on 2026-11-11).
+// multicall file runs rm, and is read by its requested name too.
 func TestMulticallScriptReadByItsOwnName(t *testing.T) {
 	ix := rules(t, "deny: rm -r")
 	for _, links := range []uint64{1, uutilsLinks} {
@@ -241,7 +241,7 @@ func TestMulticallScriptReadByItsOwnName(t *testing.T) {
 // TestMulticallGateNeedsAUtilityName: the link count gates a file only when its walked name is one a uutils build
 // links its file under: a name ending with a listed utility (ls, xrm, uu-rm), one ending in utils or box, or one of the
 // build's other link names ([, relpath). A hard-linked program that is none of these (unzip and zipinfo, perl and
-// perl5.40.1 on Ubuntu 25.10, 2 links each) is read as before (found in review on 2026-11-11).
+// perl5.40.1 on Ubuntu 25.10, 2 links each) is read as a plain program.
 func TestMulticallGateNeedsAUtilityName(t *testing.T) {
 	for _, entries := range [][]string{{"deny: zip"}, {"allow: unzip", "deny: zip"}, {"deny: zip -r"}} {
 		ix := rules(t, entries...)
@@ -273,7 +273,7 @@ func TestMulticallGateNeedsAUtilityName(t *testing.T) {
 }
 
 // TestMulticallDenyBeforeAsk: a deny entry an exec's multicall reading meets wins over an ask entry its plain reading
-// meets, as ADR 0048 (1) orders deny before ask over every interpretation (found in review on 2026-11-11). Approving ls must never run
+// meets, as ADR 0048 (1) orders deny before ask over every interpretation. Approving ls must never run
 // rm.
 func TestMulticallDenyBeforeAsk(t *testing.T) {
 	ix := rules(t, "ask: ls", "deny: rm -r")

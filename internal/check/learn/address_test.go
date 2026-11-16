@@ -18,7 +18,7 @@ func (r *run) netLine(at time.Time, proto, dst, rule, host string, verdict recor
 	e.TS, e.Rule, e.Source = at, rule, record.SourceSupervisor
 }
 
-// u2404Watch is run r-cde3e540-0dmrq34zi1yp6-kah821 of 2026-11-10 (Ubuntu 24.04 guest, `tego watch -- python3
+// u2404Watch is run r-cde3e540-0dmrq34zi1yp6-kah821 (Ubuntu 24.04 guest, `tego watch -- python3
 // agent.py` in /home/tego/myagent, an agent that fetches https://example.com): its network lines #130 to #145 in
 // order, with their times, protocols and destinations as the dashboard's Logs page and `tego learn` showed them, plus
 // the writes and the git start that make the rest of its proposal. The guest's ledger itself is gone, so the lines are
@@ -50,8 +50,8 @@ func u2404Watch(t *testing.T) *run {
 }
 
 // TestLearnedAddressesSayTheyMayBreak: the record of a watched run holds the address the agent connected to, never the
-// name it looked up, so the proposal can only name addresses. On 2026-11-10 the next run under such a proposal picked
-// the other address its lookup returned, 172.66.147.243, and was refused. The proposal must say so where a person
+// name it looked up, so the proposal can only name addresses. The next run under such a proposal can pick the other
+// address its lookup returns, 172.66.147.243, and be refused. The proposal must say so where a person
 // reads it (stderr, the file's first lines), and the UDP lines that are the C library probing the lookup's other
 // answers must say that a later run may use those over TCP.
 func TestLearnedAddressesSayTheyMayBreak(t *testing.T) {
@@ -137,8 +137,8 @@ func TestNamedEntrySaysWhatItAllows(t *testing.T) {
 	if c := r.propose(Options{}).Contract(); strings.Contains(c, noMore) || !strings.Contains(flat(c), names) {
 		t.Errorf("a proposal with a name entry says it allows no more than the run did:\n%s", c)
 	}
-	// A localhost entry resolves to loopback (agent-contract.md R18), so the header must not say a name entry never
-	// allows a loopback address: on 2026-11-10 it said so directly above tcp://localhost:11434.
+	// A localhost entry resolves to loopback, so the header must not say a name entry never
+	// allows a loopback address directly above tcp://localhost:11434.
 	r = newRun(t, ws)
 	r.netLine(r.t0, "tcp", "127.0.0.1:11434", "net[tcp://localhost:11434]", "localhost", record.VerdictAllow)
 	if c := flat(r.propose(Options{}).Contract()); strings.Contains(c, "loopback") || !strings.Contains(c, "never admits some addresses by name") {
@@ -156,7 +156,7 @@ func flat(c string) string {
 	return strings.Join(strings.Fields(strings.ReplaceAll(c, "\n# ", "\n")), " ")
 }
 
-// alma98Watch is the AlmaLinux 9.8 guest's case of 2026-11-10: NetworkManager's resolv.conf names 10.0.2.3, a
+// alma98Watch is the AlmaLinux 9.8 guest's case: NetworkManager's resolv.conf names 10.0.2.3, a
 // resolver that is not on loopback, and the watched run's two queries to it carry the engine's net.resolver, then the
 // run reached pypi.org at two of its addresses over TCP and probed them over UDP.
 func alma98Watch(t *testing.T) *run {
@@ -226,9 +226,9 @@ func resolverComment(entry string) string {
 	return "  # left out: " + entry + ", the machine's resolver when this run was recorded; tego allows the run's resolver itself, so it needs no entry\n"
 }
 
-// TestTheMachinesResolverIsKeptWhenNoOtherAddressIs: Landlock grants port 53 only beside a TCP or UDP entry
-// (enforce-landlock R6, R22), so with none an addressed UDP lookup, which the supervisor continues into the run's own
-// domain, may be refused from ABI 10 while the decision allows it as net.resolver (review M1 of 2026-11-11; TCP and
+// TestTheMachinesResolverIsKeptWhenNoOtherAddressIs: Landlock grants port 53 only beside a TCP or UDP entry,
+// so with none an addressed UDP lookup, which the supervisor continues into the run's own
+// domain, may be refused from ABI 10 while the decision allows it as net.resolver (TCP and
 // connected UDP lookups are made by the supervisor, outside the domain, at every ABI: keepResolvers). Then the
 // resolver stays the address it is, with a note that says why, and is still nothing to name; any other TCP or UDP
 // entry, a name entry included, and it is left out.
@@ -289,7 +289,7 @@ func TestTheMachinesResolverIsKeptWhenNoOtherAddressIs(t *testing.T) {
 
 // TestTheMachinesResolverIsOneEntry: two spellings of one resolver (an AF_INET6 socket's IPv4-mapped one and the
 // plain one) are one comment line, and a resolver entry that another address's line proposes anyway is not called
-// left out (review S3 of 2026-11-11).
+// left out.
 func TestTheMachinesResolverIsOneEntry(t *testing.T) {
 	r := newRun(t, ws)
 	r.netLine(r.t0, "tcp", "203.0.113.9:443", "unmatched", "", record.VerdictObserved)
@@ -313,8 +313,7 @@ func TestTheMachinesResolverIsOneEntry(t *testing.T) {
 }
 
 // TestNetResolverOffPort53IsAConnect: the engine names a resolver query on port 53 only (decide.IsResolver), so a
-// line that says net.resolver on another port is a connect like any other: proposed, and an address to name (review
-// N1 of 2026-11-11).
+// line that says net.resolver on another port is a connect like any other: proposed, and an address to name.
 func TestNetResolverOffPort53IsAConnect(t *testing.T) {
 	r := newRun(t, ws)
 	r.netLine(r.t0, "tcp", "203.0.113.7:443", "net.resolver", "203.0.113.7", record.VerdictObserved)
@@ -333,8 +332,8 @@ func TestNetResolverOffPort53IsAConnect(t *testing.T) {
 
 // TestTheKeptResolversNoteClaimsOnlyWhatHolds: the note and the summary line of a kept resolver say only what holds.
 // An allowed TCP lookup is made by the supervisor outside the run's Landlock domain, so no ABI refuses it (guests at
-// ABI 4 and 6 looked names up over TCP with an empty net.allow, a guest acceptance run of 2026-11-11); what Landlock may
-// refuse is an addressed UDP lookup from ABI 10 (Linux 7.2), read from the code, not measured.
+// ABI 4 and 6 looked names up over TCP with an empty net.allow); what Landlock may refuse is an addressed UDP lookup
+// from ABI 10 (Linux 7.2).
 func TestTheKeptResolversNoteClaimsOnlyWhatHolds(t *testing.T) {
 	r := newRun(t, ws)
 	r.netLine(r.t0, "udp", "10.0.2.3:53", "net.resolver", "10.0.2.3", record.VerdictObserved)

@@ -138,8 +138,8 @@ func TestExecCommandMulticallLinks(t *testing.T) {
 
 // TestExecCommandMulticallArgv1PastTheFirstStage: a symlink named xbox to a file of 116 links runs the applet argv[1]
 // names (upstream uutils), and an argv[0] long enough that the first staged read (32 entries, 8 KiB) holds no argv[1]
-// does not settle the decision there: the read goes on and argv[1] is met (found in review on 2026-11-11: 8191 bytes or more of
-// argv[0] was allowed unmatched).
+// does not settle the decision there: the read goes on and argv[1] is met (otherwise 8191 bytes or more of
+// argv[0] would be allowed unmatched).
 func TestExecCommandMulticallArgv1PastTheFirstStage(t *testing.T) {
 	nr := nrFor(t, "execve")
 	const uu = "/usr/lib/cargo/bin/coreutils/ls"
@@ -875,7 +875,7 @@ func TestExecCommandObserveDoesNotCount(t *testing.T) {
 }
 
 // TestExecCommandRulesLeaveTheFloorsDecisionAlone: in a run with command rules, an exec the image floor refuses
-// (or, in an observe run, would refuse and runs) is still walked for what it loads, for its dropped flag (supervisor R16b),
+// (or, in an observe run, would refuse and runs) is still walked for what it loads, for its dropped flag,
 // but the command rules never decide it: its line keeps the floor's rule and carries no command
 // rule, list, match, route or argv facts, and run_end's exec_rules counts nothing. Under deny: [rm -r] and an
 // allow-list that grants only /usr/bin/rm, /opt/bin/rm -r x is the floor's refusal, not the deny entry's, and so is

@@ -29,7 +29,7 @@ type execPayload struct {
 	// SEMANTICS §4). Such an image has no path Landlock's exec check governs, so this loop refuses it
 	// (rule=exec-anon) unless the contract has no exec: section (R16b); the flag lets a reader tell a
 	// fileless exec apart from an ordinary one either way, and tego drift lists the images it and Dropped
-	// flag (limits-check-doctor-cli.md R17a). Record v1 optional addition (VERSIONING §2).
+	// flag. Record v1 optional addition (VERSIONING §2).
 	Fileless bool `json:"fileless,omitempty"`
 	// Dropped marks an exec whose image lies under a write entry and changed after the run started: a
 	// binary the run itself wrote and then executed (drop-and-execute, Falco's proc.is_exe_upper_layer
@@ -50,7 +50,7 @@ type netPayload struct {
 	record.NetPayload
 	GateFields
 	// BestEffort marks a line for a syscall this loop answered CONTINUE: what the line names is this loop's
-	// copy, and the kernel's may differ. A refused line never carries it (R13b as amended 2026-10-16): every
+	// copy, and the kernel's may differ. A refused line never carries it (R13b): every
 	// refusal this loop records is one it enforced, and until then an unconnected datagram's refusal was
 	// recorded with this mark while the datagram left.
 	BestEffort bool `json:"best_effort,omitempty"`
@@ -198,6 +198,6 @@ func (l *Loop) emitGap(n *notif, what, why string) {
 }
 
 // recording reports whether the advisory record-only events are wanted: record: off keeps the ledger to
-// refusals and decisions, and this package's fs events are advisory by construction (P0-DESIGN §4.3).
+// refusals and decisions, and this package's fs events are advisory by construction.
 // A refusal is never suppressed by it.
 func (c *compiled) recording() bool { return c.record != agent.RecordOff }

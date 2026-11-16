@@ -10,7 +10,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// mixedTable declares a stdio server, two HTTPS servers and a plain http:// one (agent-contract.md R16a).
+// mixedTable declares a stdio server, two HTTPS servers and a plain http:// one.
 func mixedTable() *agent.RuleTable {
 	return &agent.RuleTable{Contract: &agent.Contract{
 		Name: "tester",
@@ -29,11 +29,11 @@ func httpMCPEvent(t *testing.T, name, tool string) *record.Event {
 	return e
 }
 
-// TestMCPProducerCoversItsTransport (limits-check-doctor-cli.md R15, amended 2026-10-19): a producer observes the
+// TestMCPProducerCoversItsTransport: a producer observes the
 // servers of its own transport only. The exec producer sees a stdio server start and never an HTTP server's
 // connection, so under parsers mcp=exec an idle HTTP server is unobservable, not unused; the HTTP reader (mcp/1)
 // covers HTTPS servers; an mcp line of one transport proves that transport's producer ran. A plain http:// server's
-// exchanges pass no TLS library, so no producer covers it (capture-derive R41): it is unobservable under every one.
+// exchanges pass no TLS library, so no producer covers it: it is unobservable under every one.
 func TestMCPProducerCoversItsTransport(t *testing.T) {
 	for _, c := range []struct {
 		name          string
@@ -65,7 +65,7 @@ func TestMCPProducerCoversItsTransport(t *testing.T) {
 	}
 }
 
-// TestDerivedNetRuleIsNoAuthorsEntry: the net rule an HTTP server's url derives (agent-contract R16a, NetRule.MCP) is
+// TestDerivedNetRuleIsNoAuthorsEntry: the net rule an HTTP server's url derives (NetRule.MCP) is
 // the server's, reported idle under mcp alone; it is never listed as a net entry the author declared and never used.
 func TestDerivedNetRuleIsNoAuthorsEntry(t *testing.T) {
 	rt := &agent.RuleTable{

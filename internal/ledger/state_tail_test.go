@@ -145,7 +145,7 @@ func TestStateIgnoresDamageBeforeTheLastLine(t *testing.T) {
 // TestStateLineLongerThanWindow covers the widening loop: neither the decisive line nor a torn tail is
 // bounded by tailWindow, and missing a line boundary would report the wrong state.
 //
-// Also pins record-ledger.md E12: State's backward search gives up past the same bound.
+// Also pins: State's backward search gives up past the same bound.
 func TestStateLineLongerThanWindow(t *testing.T) {
 	t.Run("run_end larger than the window", func(t *testing.T) {
 		w, dir, _ := openTestWriter(t)

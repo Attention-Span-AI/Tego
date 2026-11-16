@@ -9,7 +9,7 @@ import (
 	"syscall"
 )
 
-// ChildStep names the child-stage step a control message reports on (docs/p0/runtime-launch.md §5, case 4).
+// ChildStep names the child-stage step a control message reports on.
 type ChildStep uint8
 
 // Child-stage steps in execution order for the unprivileged case; the privileged case (R4) runs Landlock and

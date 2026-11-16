@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestProbeSwap is D9 (ADR 0038's 2026-09-24 note): a cgroup with the memory controller and no memory.swap.max,
+// TestProbeSwap is D9 (ADR 0038): a cgroup with the memory controller and no memory.swap.max,
 // on a host with swap on, fails with the swap-accounting fix; swap accounted, or no swap, passes; a process
 // with no memory-controlled cgroup to ask passes and says so. The cgroup directories and /proc/swaps are fakes.
 func TestProbeSwap(t *testing.T) {

@@ -9,8 +9,8 @@ import (
 	"unicode/utf8"
 )
 
-// readPattern is an `fs.read matches` pattern read as the clean paths it can match (ADR 0007, fourth 2026-10-20
-// note). A pattern with no '/' outside a character class matches a base name.
+// readPattern is an `fs.read matches` pattern read as the clean paths it can match (ADR 0007).
+// A pattern with no '/' outside a character class matches a base name.
 // One with such a '/' is a path pattern: a sequence of component globs separated by '/', each a filepath.Match
 // pattern that matches exactly one name, absolute when it starts with '/' and otherwise matched against the path from
 // the worktree. A path matches it when the two have as many components and each name matches its glob; a move's end

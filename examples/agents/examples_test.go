@@ -95,7 +95,7 @@ func bareMachine(t *testing.T) standIn {
 		t.Fatal(err)
 	}
 	// XDG_RUNTIME_DIR names the stand-in runtime directory, as a login session names /run/user/<uid>: compile protects
-	// tego's runtime parent under it (agent-contract.md R10a, agent.WithRuntimeDir through config.RuntimeDirBases), so an
+	// tego's runtime parent under it (agent.WithRuntimeDir through config.RuntimeDirBases), so an
 	// example that grants <runtime>/tego, which place moves a /run/user/<uid>/ grant into, is refused here as it is
 	// on a real machine. Without it the check ran only on /run/user/<test uid>, which no rewritten example names, and
 	// an example the real compile refuses passed.
@@ -265,8 +265,8 @@ func TestEveryExampleCompiles(t *testing.T) {
 	}
 }
 
-// TestClaudeCodeExample pins what lets examples/agents/claude-code.yaml, `claude -p` (docs/FEATURES.md I3,
-// P0-DESIGN §12.3), complete its own task under tego, which test/e2e/kt7-two-agents.sh runs: capture through
+// TestClaudeCodeExample pins what lets examples/agents/claude-code.yaml, `claude -p` (docs/FEATURES.md I3),
+// complete its own task under tego, which test/e2e/kt7-two-agents.sh runs: capture through
 // the forwarder with Claude Code's nonessential traffic off; a permission mode, without which print mode
 // refuses every edit the prompt asks for; /dev/null writable, which the Bash tool redirects into; Claude
 // Code's scratch directory moved into the project instead of a grant of all of /tmp, which would contain any
@@ -360,7 +360,7 @@ func TestPythonSDKExampleIsKillTestSevenB(t *testing.T) {
 }
 
 // TestNoExampleSaysADeclaredBudgetNeverTrips: a tokens, cost_usd or repeats budget a contract
-// declares with nothing to count it is refused at launch, 125 [budget-unmetered] (limits-check-doctor-cli.md R32), so
+// declares with nothing to count it is refused at launch, 125 [budget-unmetered], so
 // a starting point's comment that such a budget "never trips" tells an operator the run goes ahead when it is
 // refused. Nor may the operator's guide for unattended runs say a budget with nothing to count is not an error.
 func TestNoExampleSaysADeclaredBudgetNeverTrips(t *testing.T) {

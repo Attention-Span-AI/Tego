@@ -114,7 +114,7 @@ const decodeChunk = 32 << 10
 //
 // limit bounds the decoded output, which the cap on the captured input does not: DEFLATE expands by up to
 // 1032:1, so a captured body of MaxBody bytes decodes to gigabytes of launcher heap — and only the child
-// is cloned into the run's cgroup (docs/p0/runtime-launch.md §6 step 6, CLONE_INTO_CGROUP), so
+// is cloned into the run's cgroup (CLONE_INTO_CGROUP), so
 // limits.memory never covers the process holding it. A decode stopped at the limit keeps its prefix and
 // reports truncated, the shape any capped body already has: derive parses the prefix and says decision:
 // unparsed why=schema (R14, R29), instead of the process dying and the run losing its run_end.

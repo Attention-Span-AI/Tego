@@ -13,7 +13,7 @@ import (
 )
 
 // ActivityFile is a live run's activity sidecar (§3): the CLOCK_MONOTONIC reading of the newest activity the
-// run's stall check counted without a ledger line (limits-check-doctor-cli.md R4: a supervisor answer or a
+// run's stall check counted without a ledger line (a supervisor answer or a
 // kernel stamp under record: off, a relayed model chunk in any mode), so `status` measures the same idle the
 // watcher kills on (R9). It is not part of the record: no hash, no fsync, nothing reads it once the run's lock
 // is free.

@@ -177,7 +177,7 @@ func agreeingMount(t *testing.T, own string) string {
 // ErrNotDelegated naming case 39 for every way of falling short of that — including the two where
 // there is nothing to compare, since an unverified mount is the one case 39 is about.
 //
-// Also pins runtime-launch.md E39: a mount that does not hold this process's cgroup is refused.
+// Also pins: a mount that does not hold this process's cgroup is refused.
 func TestRequireMountAgreement(t *testing.T) {
 	const own = "/user.slice/user-1000.slice/session-3.scope"
 	mount := agreeingMount(t, own)
@@ -360,7 +360,7 @@ func TestCommonAncestor(t *testing.T) {
 // there, and one outside it only when it may write the cgroup.procs of the two cgroups' common ancestor,
 // which systemd leaves to root for a login's session-<n>.scope and a service alike.
 //
-// Also pins runtime-launch.md E41: an unprivileged launcher outside its delegated subtree is refused with ErrOutsideSubtree, and root is not.
+// Also pins: an unprivileged launcher outside its delegated subtree is refused with ErrOutsideSubtree, and root is not.
 func TestCanPlace(t *testing.T) {
 	mount := t.TempDir()
 	const user = "/user.slice/user-1000.slice"
@@ -397,7 +397,7 @@ func TestCanPlace(t *testing.T) {
 			t.Errorf("the diagnosis does not name %q: %s", want, de.Diagnosis)
 		}
 	}
-	// The remedy names the shell to open, never the cgroup's path as the instruction (acceptance B, 2026-11-11), and has no
+	// The remedy names the shell to open, never the cgroup's path as the instruction, and has no
 	// placeholder outside angle brackets.
 	if !strings.Contains(de.Remedy, "systemd-run --user --scope bash") || strings.Contains(de.Remedy, root) ||
 		strings.Contains(de.Remedy, "...") {
@@ -418,7 +418,7 @@ func TestCanPlace(t *testing.T) {
 // TestEveryDetectRefusalNamesItsRemedy pins the contract doctor's D3 reads: every refusal Detect can
 // return is a *DetectError whose Remedy is the one fix for that cause, and whose Error() is
 // "<diagnosis>; fix: <remedy>" with the remedy said once. D3 prints Remedy as its fix line
-// (docs/p0/limits-check-doctor-cli.md R27 D3). It used to split the message on the last "; fix: "
+// (D3). It used to split the message on the last "; fix: "
 // instead, which nothing here pinned: a reworded separator would have sent case 39's refusal back to
 // the Delegate= fix, which cannot help there, with every test still passing.
 func TestEveryDetectRefusalNamesItsRemedy(t *testing.T) {
@@ -511,7 +511,7 @@ func TestEveryDetectRefusalNamesItsRemedy(t *testing.T) {
 // limit files in the host's root cgroup before clone3 failed. It needs no privilege: privilegedRoot
 // only reads, and NewAt only stats.
 //
-// Also pins runtime-launch.md E38: a privileged launcher roots at the cgroup2 mount itself, after the case-39 agreement question.
+// Also pins: a privileged launcher roots at the cgroup2 mount itself, after the case-39 agreement question.
 func TestPrivilegedRootAsksCase39(t *testing.T) {
 	if err := checkCgroup2(Mount); err != nil {
 		t.Skipf("no cgroup2 mount here: %v", err)

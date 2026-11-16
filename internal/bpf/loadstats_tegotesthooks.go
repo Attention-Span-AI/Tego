@@ -16,11 +16,11 @@ import (
 	"github.com/attention-span-ai/tego/internal/platform/startphase"
 )
 
-// A test build's cold-start attribution (enforce-plane §10.1, perf-cold C1), on only while TEGO_TEST_PHASE_TIMING
+// A test build's cold-start attribution (perf-cold C1), on only while TEGO_TEST_PHASE_TIMING
 // times the phases and TEGO_TEST_LOAD_STATS asks for it (startphase.Attributing). It never changes what is loaded or
 // in what order: a collection is still one cilium/ebpf load, and the per-program split is read afterwards from each
 // program's load_time, so an attributed load is the product's load with only the verifier's statistics added to it
-// (what that adds is measured: enforce-plane §10.1, "Cold attribution").
+// (what that adds is measured).
 
 var (
 	// readTaskStack reads a thread's kernel stack (root only: /proc/<pid>/task/<tid>/stack needs CAP_SYS_ADMIN); a

@@ -21,8 +21,6 @@ import (
 // the enclosing write entry. A walk that fails as the task's lookup fails (ENOENT) keeps the verdict, as does
 // one that reached a file with no path here (errOtherView: a pipe behind /dev/stdout). R15d's link and rename
 // check at tier 2 fails the same way, once the table has an entry for it to protect.
-//
-// Spec: docs/p0/supervisor.md R15c, R15d.
 func TestDenyWriteRefusesAPathItCannotWalk(t *testing.T) {
 	const pathAddr, path2Addr = 0x10000, 0x11000
 	for _, tc := range []struct {

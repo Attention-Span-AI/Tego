@@ -27,7 +27,7 @@ type liveRecorder struct {
 
 func (s *liveRecorder) Reading() bool { return s.reading }
 
-// TestKernelConnectsFollowsTheRecorder is the runtime's half of supervisor.md R7's one line per connect:
+// TestKernelConnectsFollowsTheRecorder is the runtime's half of one line per connect:
 // the supervisor leaves a continued IP connect to the kernel recorder only while that recorder reads this
 // run's ring. The answer waits for the recorder's start (the supervisor's loop runs first), and is false
 // for a recorder that read nothing, one whose drain has failed, a run whose sources did not all start,
@@ -118,7 +118,7 @@ func (s *namingRecorder) SetContinuedNet(fn func(ap netip.AddrPort, proto string
 }
 
 // TestKernelRecorderNamesConnectsAsTheSupervisor: the kernel recorder is handed the supervisor's lookup for a
-// connect the supervisor continues, whose line the recorder's then replaces (supervisor.md R7); a recorder
+// connect the supervisor continues, whose line the recorder's then replaces; a recorder
 // that cannot take it, or no recorder, is left alone.
 func TestKernelRecorderNamesConnectsAsTheSupervisor(t *testing.T) {
 	lookup := func(netip.AddrPort, string) (string, string, record.Verdict, bool) {

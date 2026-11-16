@@ -16,10 +16,10 @@ import (
 const MCPProducerExec = "exec"
 
 // runParsers is run_start.parsers: the body parsers this build links, plus "mcp" naming the run's MCP producers,
-// "+"-joined (limits-check-doctor-cli.md R15): MCPProducerExec when the supervisor answers this run's execve
+// "+"-joined: MCPProducerExec when the supervisor answers this run's execve
 // notifications — every tier that installs the tier-1 seccomp filter, tier 2 included — and mcp.Version when the
-// uprobe source is the run's capture (capture names it), which reads the declared HTTP MCP servers' exchanges
-// (capture-derive.md R41). Either needs a record mode that keeps allowed actions: record: off drops an allowed
+// uprobe source is the run's capture (capture names it), which reads the declared HTTP MCP servers' exchanges.
+// Either needs a record mode that keeps allowed actions: record: off drops an allowed
 // exec, and the mcp event riding on it, and under it the uprobe source captures nothing. drift reads a declared
 // server with no mcp event as unused only when a producer of its transport is named, so the key says exactly what
 // could have written one.

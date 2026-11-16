@@ -13,7 +13,7 @@ import (
 )
 
 // A request to a path that spends nothing (telemetry outside /v1, model listing, count_tokens) that the upstream
-// drops unanswered is not reported unmetered, so it cannot end a budgeted run (ADR 0037 amendment 2026-09-24).
+// drops unanswered is not reported unmetered, so it cannot end a budgeted run (ADR 0037).
 func TestUnansweredSilentPathIsNotReported(t *testing.T) {
 	for _, p := range []string{"/api/event_logging/batch", "/v1/messages/count_tokens", "/"} {
 		t.Run(p, func(t *testing.T) {

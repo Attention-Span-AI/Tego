@@ -20,7 +20,7 @@ import (
 // product's, as in the conformance suite's self-test (test/conformance), so no decision is forced open anywhere.
 //
 // A product build does not contain this file, so its tego test always runs the embedded contract. A test build
-// ignores the variable under AT_SECURE, like every TEGO_TEST_ variable (identity-config.md R27). A template that
+// ignores the variable under AT_SECURE, like every TEGO_TEST_ variable. A template that
 // cannot be read or filled fails tego test (exit 125), never falls back to the embedded contract.
 const EnvTestContract = "TEGO_TEST_SELFTEST_CONTRACT"
 

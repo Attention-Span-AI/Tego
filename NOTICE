@@ -29,8 +29,7 @@ Feather (LICENSES/Lucide.txt).
 THIRD_PARTY_NOTICES.txt preserves the license texts and attribution notices for
 the Go runtime, linked Go modules, vendored libbpf headers and the Lucide icons.
 
-Raw binary releases are accompanied by tego_<version>_licenses.tar.gz, and the
-maze archives hold the same notices. The release checksums and provenance cover
-those archives too. The tego and tego-control binaries carry the same files, and
+Raw binary releases are accompanied by tego_<version>_licenses.tar.gz. The release
+checksums and provenance cover that archive too. The tego and tego-control binaries carry the same files, and
 tego licenses and tego-control licenses print them. Distribute the licenses
 archive with the executable when passing a binary on to another recipient.

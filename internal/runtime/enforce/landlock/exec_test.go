@@ -31,7 +31,6 @@ func execRule(path, source string) agent.ExecRule {
 	return agent.ExecRule{Raw: filepath.Base(path), Path: path, Basename: filepath.Base(path), Source: source, Verdict: agent.VerdictAllow}
 }
 
-// TestExecGrants asserts docs/p0/enforce-landlock.md E18.
 func TestExecGrants(t *testing.T) {
 	loader := shLoader(t)
 	root := tempDir(t)
@@ -90,8 +89,6 @@ func TestExecGrants(t *testing.T) {
 }
 
 // TestExecInterpreterMissing is R5/E14: a script whose #! is not granted fails closed, naming both.
-//
-// Spec: docs/p0/enforce-landlock.md E14.
 func TestExecInterpreterMissing(t *testing.T) {
 	root := tempDir(t)
 	script := filepath.Join(root, "run.py")
@@ -213,8 +210,6 @@ func TestExecCoversResolved(t *testing.T) {
 
 // TestExecShadowedBasename is E16/E17: two same-named binaries at different inodes are two grants; a
 // symlink to one of them is the same inode and adds nothing.
-//
-// Spec: docs/p0/enforce-landlock.md E16, E17.
 func TestExecShadowedBasename(t *testing.T) {
 	root := tempDir(t)
 	mkTree(t, root, "venv/bin/", "shim/")
@@ -250,8 +245,6 @@ func TestExecVanished(t *testing.T) {
 // TestExecAllowOnAFIFOOrDeviceFailsTheBuild is LL-E21: an exec.allow entry naming a FIFO or a device node is
 // no binary; Prepare fails with ErrRulesetBuild rather than granting EXECUTE on it (or blocking on the FIFO's
 // open while it reads the entry's ELF header).
-//
-// Spec: docs/p0/enforce-landlock.md E21.
 func TestExecAllowOnAFIFOOrDeviceFailsTheBuild(t *testing.T) {
 	fifo := filepath.Join(tempDir(t), "pipe")
 	if err := unix.Mkfifo(fifo, 0o755); err != nil {
@@ -336,7 +329,7 @@ func TestExecLoaderRefused(t *testing.T) {
 		{"loader under a write entry of /", filepath.Join(root, "lib", "ld.so"), []agent.FSRule{fsRule(agent.FSWrite, "/")}, ErrLoaderRefused},
 		{"loader under an ask entry of /", filepath.Join(root, "lib", "ld.so"), []agent.FSRule{fsRule(agent.FSAsk, "/")}, ErrLoaderRefused},
 		{"ordinary loader", filepath.Join(root, "lib", "ld.so"), []agent.FSRule{fsRule(agent.FSDenyRead, secrets)}, nil},
-		// Opened here, /proc/self/exe is tego's own executable (agent-contract.md R8a).
+		// Opened here, /proc/self/exe is tego's own executable.
 		{"loader is /proc/self/exe", "/proc/self/exe", nil, ErrLoaderRefused},
 		{"loader leads through /proc", filepath.Join(root, "selfexe"), nil, ErrLoaderRefused},
 	}

@@ -451,7 +451,7 @@ func TestSweepLiveKeepsWhatItCannotFinish(t *testing.T) {
 
 	// Another sweeper holds the lost run's lock while it ends it: this sweep cannot, and keeps the entry
 	// until the ledger says the run is over. It does not kill the run's tree either: the lock comes before the
-	// hook, so only the sweeper that holds it kills (runtime-launch.md §6 case 10).
+	// hook, so only the sweeper that holds it kills.
 	w, busy := openLive(t, root, fixedStart, "busy01")
 	if err := MarkLive(root, busy.ID); err != nil {
 		t.Fatal(err)

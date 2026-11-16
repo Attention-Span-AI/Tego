@@ -13,7 +13,7 @@ const LogindRuntimeRoot = "/run/user"
 
 // RuntimeDirBases is every XDG_RUNTIME_DIR under which a run of the invoking user may keep its private directory, in
 // order: the user's logind directory, /run/user/<uid> (uid InvokingUID, SUDO_UID under sudo), whatever this
-// process's environment says, then $XDG_RUNTIME_DIR when it is absolute and names another. agent-contract.md R10a
+// process's environment says, then $XDG_RUNTIME_DIR when it is absolute and names another. A contract
 // keeps every write and ask entry off <base>/tego for each (agent.WithRuntimeDir at compile, the launcher's own check
 // before it makes anything): a launcher whose environment lacks the variable (plain sudo resets it, cron and ssh
 // without pam_systemd never set it) still protects the directory where the same user's runs from a login session keep

@@ -362,15 +362,15 @@ func endWhy(r *ledgerview.Run) string {
 	return ""
 }
 
-// tierWord is a protection level's name: Basic, Strong, Strongest (tier 1 to 3), or Watched only.
+// tierWord is a protection level's name: Basic, Plus, Max (tier 1 to 3), or Watched only.
 func tierWord(t string) string {
 	switch t {
 	case "1", "tier1", "tier-1", "landlock":
 		return "Basic"
 	case "2", "tier2", "tier-2", "cgroup":
-		return "Strong"
+		return "Plus"
 	case "3", "tier3", "tier-3", "bpflsm":
-		return "Strongest"
+		return "Max"
 	case "observe":
 		return "Watched only"
 	case "":
@@ -932,8 +932,8 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	d := runData{Run: run, Tab: tab, Now: s.cfg.Now(), Refusals: ledgerview.RunRefusals(run), Verdict: r.URL.Query().Get("verdict"),
 		Chain: ledgerview.VerifyRun(r.Context(), s.cfg.Ledger, id, s.cfg.Anchor, run)}
-	// Every tab's head links "Make a contract" straight to New contract from this run where it is served (acceptance B,
-	// 2026-11-11); the Tighten tab offers it too.
+	// Every tab's head links "Make a contract" straight to New contract from this run where it is served; the
+	// Tighten tab offers it too.
 	d.CanSetUp = s.cfg.Setup != nil && !run.Live
 	d.BlockKinds = liveblock.Kinds
 	if k, err := liveblock.ParseKind(r.URL.Query().Get("block")); err == nil {

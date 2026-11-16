@@ -45,7 +45,7 @@ func (a *swappingAttacher) Attach(path string, _ Probe) (io.Closer, error) {
 	return &fakeLink{mu: &a.mu}, nil
 }
 
-// TestAttachPlacesProbesOnTheFileItParsed covers capture-derive.md R7: the path a traced process named is
+// TestAttachPlacesProbesOnTheFileItParsed: the path a traced process named is
 // resolved once, and every probe lands on the inode that was identified and parsed. The process renames a
 // symlink to a host library over its crafted libssl after the parse; were the attach to resolve the path
 // again, the probes would be placed at the crafted file's offsets in the host library, which the launcher,

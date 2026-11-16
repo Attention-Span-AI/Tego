@@ -1,6 +1,6 @@
 # ADR 0036: a stream cut before its final message_delta is charged max_tokens
 
-Status: accepted 2026-09-24; implemented in internal/runtime/derive/anthropic (parser.go, stream.go), pkg/spec/record (Usage.OutputBound) and internal/runtime/capture/forwarder (usage.go, listener.go). Amends capture-derive.md R29 and limits-check-doctor-cli.md R1.
+Status: accepted 2026-09-24; implemented in internal/runtime/derive/anthropic (parser.go, stream.go), pkg/spec/record (Usage.OutputBound) and internal/runtime/capture/forwarder (usage.go, listener.go).
 
 Decision: (1) An Anthropic Messages API event stream that ends without a `message_delta` carrying usage (the client left, the upstream closed, a cap or an error event cut it) is charged the request's `max_tokens` as its output tokens, or the output it reported if that is larger. The usage is written with `output_bound: true`, an optional field of `usage` within record v1, so the ledger says the output count is a bound and not the model's report. (2) When the request's `max_tokens` is not known (the request body was not captured, did not parse, or carried none), there is no bound, and the exchange is unmetered (`derive.Facts.Unmetered`): a run with a token or cost budget ends there (R1). (3) On the forwarder, a `message_delta` its wire scanner read replaces the bound with the reported count. A scanner that saw only `message_start` does not clear derive's unmetered verdict.
 

@@ -58,7 +58,7 @@ func TestNewAt(t *testing.T) {
 	}
 }
 
-// Also pins runtime-launch.md E33: a cgroup path is never reused (ErrCgroupExists).
+// Also pins: a cgroup path is never reused (ErrCgroupExists).
 func TestCreate(t *testing.T) {
 	fs := newTestFS(t)
 	c, err := fs.Create("retriever", "r-abc")
@@ -110,7 +110,7 @@ func TestCreateBadNames(t *testing.T) {
 		{"a", "x/y"},
 		{"a", ".."},
 		{"a", "a\x00b"},
-		// runtime-launch.md E17: no non-ASCII reaches a cgroup path, whatever the caller passes as an agent (the run id is minted ASCII by identity.NewRunID).
+		// No non-ASCII reaches a cgroup path, whatever the caller passes as an agent (the run id is minted ASCII by identity.NewRunID).
 		{"agent-é", "r-1"},
 	}
 	for _, tc := range tests {
@@ -120,7 +120,7 @@ func TestCreateBadNames(t *testing.T) {
 	}
 }
 
-// Also pins runtime-launch.md E31: a missing control file is its own missing-controller error.
+// Also pins: a missing control file is its own missing-controller error.
 func TestSetLimitsMissingController(t *testing.T) {
 	fs := newTestFS(t)
 	c, err := fs.Create("a", "r-1")
@@ -146,7 +146,7 @@ func TestSetLimitsMissingController(t *testing.T) {
 	}
 }
 
-// Also pins runtime-launch.md E33: a partial SetLimits failure stops at the first missing file.
+// Also pins: a partial SetLimits failure stops at the first missing file.
 func TestSetLimitsWrites(t *testing.T) {
 	fs := newTestFS(t)
 	c, err := fs.Create("a", "r-1")
@@ -338,7 +338,7 @@ func TestEvents(t *testing.T) {
 	}
 }
 
-// Also pins runtime-launch.md I8, E9, E40: a non-empty cgroup is retried and then ErrBusy, never forced; the
+// Also pins: a non-empty cgroup is retried and then ErrBusy, never forced; the
 // agent slice stays.
 func TestRemove(t *testing.T) {
 	fs := newTestFS(t)
@@ -551,7 +551,7 @@ func grabFD(t *testing.T, want int, open func() (int, error)) int {
 // rooted at the cgroup2 mount point has no unit to set it on and must not be sent to a
 // user@.service.d/ drop-in that cannot affect its run.
 //
-// Also pins runtime-launch.md E31: the missing-controller fix names the delegation for the root in use.
+// Also pins: the missing-controller fix names the delegation for the root in use.
 func TestMissingControllerFixPerRoot(t *testing.T) {
 	for _, priv := range []bool{false, true} {
 		fs := newTestFS(t)
@@ -693,7 +693,7 @@ func TestKillNamesWhyItFailed(t *testing.T) {
 	}
 }
 
-// TestSetLimitsWritesAMemoryHighAboveMax is runtime-launch.md E23: the package does no cross-field validation, so a
+// TestSetLimitsWritesAMemoryHighAboveMax: the package does no cross-field validation, so a
 // memory.high above memory.max is written as given (the kernel accepts it; memory.max's OOM comes first).
 func TestSetLimitsWritesAMemoryHighAboveMax(t *testing.T) {
 	fs := newTestFS(t)

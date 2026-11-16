@@ -25,8 +25,7 @@ const maxFileSize = 1 << 20
 
 // ErrGone is a pid that no longer exists, or that exited between two of the reads one Process needs.
 // It is the expected outcome of racing a short-lived process, not a failure: callers record the
-// event with a degraded attribution rather than failing the run
-// (docs/p0/enforce-cgroup-observe.md §7).
+// event with a degraded attribution rather than failing the run.
 var ErrGone = errors.New("proc: process is gone")
 
 // FS reads one mounted proc filesystem. The zero value is unusable; use New or NewAt. It holds no
@@ -194,7 +193,7 @@ func (f *FS) Tasks(pid int) ([]int, error) {
 }
 
 // Libraries lists the distinct file-backed shared objects a process has mapped, sorted. It is how
-// capture/uprobe finds the libssl a process actually loaded (docs/p0/capture-derive.md §5); an
+// capture/uprobe finds the libssl a process actually loaded; an
 // anonymous, special ([heap], [stack]) or deleted mapping is skipped.
 func (f *FS) Libraries(pid int) ([]string, error) {
 	b, err := f.read(pid, "maps")

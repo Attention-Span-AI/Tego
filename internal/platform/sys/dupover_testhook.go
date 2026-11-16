@@ -11,7 +11,7 @@ import (
 )
 
 // DupOverForTest dup3s src's file onto the number dst, closing whatever dst named: the plane fill's reuse
-// cell (TEGO_TEST_PLANE_FILL_REUSE, enforce-plane R16) stages a held number that names another file this way.
+// cell (TEGO_TEST_PLANE_FILL_REUSE) stages a held number that names another file this way.
 // Only a tegotesthooks build has it; dst is a number another owner holds, which is the fault the cell
 // stages, so nothing else may do this (ADR 0023 A7).
 func DupOverForTest(src *FD, dst int) error {

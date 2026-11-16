@@ -15,8 +15,8 @@ import (
 // second rather than one per chunk.
 const activityGrain = 100 * time.Millisecond
 
-// activityMeter reports the model traffic a relay carries as activity the ledger has no line for (limits R4,
-// capture-derive.md R21): a response that streams for longer than stall_after is a run waiting on its model,
+// activityMeter reports the model traffic a relay carries as activity the ledger has no line for:
+// a response that streams for longer than stall_after is a run waiting on its model,
 // not a stalled one, whatever the record mode, and its ssl_request and ssl_response lines are only its two
 // ends. One meter serves a run's whole forwarder; a nil meter is a run with no stall budget and does nothing.
 type activityMeter struct {

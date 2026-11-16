@@ -67,7 +67,7 @@ func TestServerToolUse(t *testing.T) {
 	}
 }
 
-// TestServerToolMergePastTheCapLosesNoCount covers capture-derive.md R29's "no count is lost" across two reports:
+// TestServerToolMergePastTheCapLosesNoCount covers "no count is lost" across two reports:
 // message_start names b..i once each, and message_delta's cumulative report adds a (5) and raises i to 7, which
 // its own decode folds into other_requests as the ninth name. Folded one name at a time by max, the merge kept
 // {b..h:1, i:1, other_requests:7}, 15 requests where 19 were reported, and a cost budget charged the difference

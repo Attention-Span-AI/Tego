@@ -536,7 +536,7 @@ func TestExecResultCapabilityGateAndLegacyRefusals(t *testing.T) {
 // TestPlaneExecWithoutOutcomeLinksJoinsNaming: on a kernel whose exec outcome links do not attach (5.14), the plane
 // still decides the run's execs and the recorder's sched_process_exec record is the allowed exec's one line. That
 // line takes the supervisor's naming of the attempt as the outcome-linked line does: an anonymous image is recorded
-// fileless and a dropped one dropped (supervisor.md R7a, R16b; the line named
+// fileless and a dropped one dropped (the line named
 // /proc/self/fd/4 with neither flag, so it read as an exec of an ordinary file by descriptor). A supervisor-owned
 // attempt drops the kernel's line as on the outcome-linked path, with no gap: the attempt a success record joins is
 // always that exec's own, and its marker says this loop wrote the exec's line (a recorder failure before the final

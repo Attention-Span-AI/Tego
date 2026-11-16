@@ -414,3 +414,13 @@ internal/runtime/enforce/cgroup TestRootBuiltinRefusalsPeer # needs root: actual
 
 internal/runtime/observe TestMissCountersFollowAttachedPrograms # needs root, bpffs and the compiled objects; exercised in the tegobpf KVM root suite
 internal/runtime/observe TestMissingActiveMissInstanceIsUncertain # needs root, bpffs and the compiled objects; exercised in the tegobpf KVM root suite
+# These read the design notes (docs/p0, the plan) that the public tree does not ship; they run in the private tree.
+tools/deadcodereport TestNoSpecNamesATestOnlyFunction # no docs/p0 in the public tree
+tools/rulecheck TestSpecsDoNotNameSymbolsThatNeverExisted # no docs/p0 in the public tree
+tools/rulecheck TestADRNotBuiltClaimsAgreeWithTier3Plan # no docs/p0 in the public tree
+tools/rulecheck TestNoRuleDefinedAfterChangesList # no docs/p0 in the public tree
+tools/rulecheck TestRepositoryLinksResolve # no docs/p0 in the public tree
+tools/rulecheck TestRepositoryCitesOnlyMarkdownFilesItHolds # no docs/p0 in the public tree
+tools/rulecheck TestRepositoryPasses # no docs/p0 in the public tree
+tools/rulecheck TestTicketStatusOnTheTree # no docs/p0 in the public tree
+pkg/spec/agent TestR5ListsEveryMergeClassRow # no docs/p0 in the public tree

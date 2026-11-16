@@ -44,7 +44,7 @@ func newStagingFixture(t *testing.T) *stagingFixture {
 		"profiles/b.yaml":                       "profile b",
 		"dist/tego_linux_amd64_v1/tego":         "engine",
 		"dist/tego-control_linux_amd64_v1/tc":   "control",
-		"dist/maze_1.0.0_linux_amd64.tar.gz":    "archive",
+		"dist/tego_1.0.0_licenses.tar.gz":       "archive",
 		"dist/tego_1.0.0_linux_amd64.sbom.json": "sbom",
 	} {
 		f.write(path, data)
@@ -54,7 +54,7 @@ func newStagingFixture(t *testing.T) *stagingFixture {
 		{"tego_1.0.0_linux_amd64", "dist/tego_linux_amd64_v1/tego", "Binary"},
 		{"tego-control", "dist/tego-control_linux_amd64_v1/tc", "Binary"},
 		{"tego-control_1.0.0_linux_amd64", "dist/tego-control_linux_amd64_v1/tc", "Binary"},
-		{"maze_1.0.0_linux_amd64.tar.gz", "dist/maze_1.0.0_linux_amd64.tar.gz", "Archive"},
+		{"tego_1.0.0_licenses.tar.gz", "dist/tego_1.0.0_licenses.tar.gz", "Archive"},
 		{"tego_1.0.0_linux_amd64.sbom.json", "dist/tego_1.0.0_linux_amd64.sbom.json", "SBOM"},
 		{"tego_1.0.0_checksums.txt", "dist/tego_1.0.0_checksums.txt", "Checksum"},
 		{"metadata.json", "dist/metadata.json", "Metadata"},
@@ -62,7 +62,7 @@ func newStagingFixture(t *testing.T) *stagingFixture {
 		f.artifacts = append(f.artifacts, map[string]string{"name": a[0], "path": a[1], "type": a[2]})
 	}
 	f.sums = []string{"install.sh", "a.yaml", "b.yaml", "tego_1.0.0_linux_amd64", "tego-control_1.0.0_linux_amd64",
-		"maze_1.0.0_linux_amd64.tar.gz", "tego_1.0.0_linux_amd64.sbom.json"}
+		"tego_1.0.0_licenses.tar.gz", "tego_1.0.0_linux_amd64.sbom.json"}
 	return f
 }
 
@@ -204,8 +204,8 @@ func TestReleaseAssetStaging(t *testing.T) {
 			f.artifacts = slices.DeleteFunc(f.artifacts, func(a map[string]string) bool { return strings.HasPrefix(a["name"], "tego-control") })
 		}},
 		{"missing-file", "does not exist", func(f *stagingFixture) {
-			f.sums[5] = "maze_1.0.0_linux_amd64.tar.gz=archive"
-			if err := os.Remove(filepath.Join(f.root, "dist/maze_1.0.0_linux_amd64.tar.gz")); err != nil {
+			f.sums[5] = "tego_1.0.0_licenses.tar.gz=archive"
+			if err := os.Remove(filepath.Join(f.root, "dist/tego_1.0.0_licenses.tar.gz")); err != nil {
 				f.t.Fatal(err)
 			}
 		}},

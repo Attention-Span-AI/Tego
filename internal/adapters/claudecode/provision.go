@@ -37,7 +37,7 @@ const fixBare = "drop --bare and CLAUDE_CODE_SIMPLE, or set harness: none"
 // errProvision is a run the provisioner cannot provision.
 var errProvision = errors.New("claude-code provision")
 
-// Provisioner is the Claude Code harness's provisioner (agent-contract.md R27, ADR 0062, ADR 0063): it installs
+// Provisioner is the Claude Code harness's provisioner (ADR 0062, ADR 0063): it installs
 // `tego hook claude-code` in the run through a per-run settings file and nothing else. Claude Code's own files
 // (~/.claude, CLAUDE_CONFIG_DIR, a project's .claude/) are never written: a hook there would outlive the run and be
 // loaded by every later session, governed or not.

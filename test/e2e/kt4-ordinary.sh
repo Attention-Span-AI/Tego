@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# kt4-ordinary.sh — kill test 4 (P0-DESIGN §10 "4 ordinary work (19/20)"; §12 acceptance item 1;
+# kt4-ordinary.sh — kill test 4 (ordinary work, 19 of 20 runs;
 # docs/FEATURES.md "R18 / kill test 4": "ordinary work (`pip install` + `pytest`, `npm install`,
 # `go build`) unbroken under `examples/profiles/base/python-dev` with `record: summary` in every tier
 # the machine allows: nineteen of twenty runs exit 0 and emit no `refused` event whose target the
@@ -105,11 +105,11 @@ prepare_pip() {
 	# pip builds each package under its TMPDIR (tmp/) and then renames the tree into target/. A rename that gains a
 	# right the destination alone grants is refused (Landlock's REFER rule, which tier 3's plane keeps: SEMANTICS
 	# §2), and target/'s exec.allow is such a right, so tmp/ is named in exec.allow too: without it every package's
-	# move was refused rename-outside-contract (pip then copies), and each run counted as broken (2026-10-24). Both are kept between runs, only emptied, for the same reason.
+	# move was refused rename-outside-contract (pip then copies), and each run counted as broken. Both are kept between runs, only emptied, for the same reason.
 	mkdir -p "$pip_target" "$W/tmp"
 	reset="find '$pip_target' '$W/tmp' -mindepth 1 -delete"
 	# dirname and mkdir are named as they are, hard links of one multi-call binary on a uutils host (Ubuntu 25.10)
-	# included: the plane keys an exec row per link (enforce-plane §6 E15), so each listed link runs.
+	# included: the plane keys an exec row per link, so each listed link runs.
 	execs="\"bash\", \"dirname\", \"mkdir\", \"$pip_target/\", \"$W/tmp/\""
 	envset=""
 }

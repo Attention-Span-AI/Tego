@@ -38,7 +38,7 @@ func killedWithin(k *fakeKiller, d time.Duration) bool {
 // machine's stop_grace is the launcher's own grace for that stop. The launcher used to arm its timer
 // with stop_grace alone, so it killed the run before the requested grace was up.
 //
-// Also pins runtime-launch.md R9: a `tego stop --grace` SIGTERM runs the timer for the requested grace.
+// Also pins: a `tego stop --grace` SIGTERM runs the timer for the requested grace.
 func TestRequestedGraceOutlastsStopGrace(t *testing.T) {
 	h, k := graceHandler(t, 20*time.Millisecond, 400*time.Millisecond, true)
 	start := time.Now()
@@ -67,7 +67,7 @@ func TestRequestedGraceCanBeShorter(t *testing.T) {
 // sends. Without a marker, with a marker that asks for nothing, or armed by SIGINT or SIGHUP, the
 // timer runs for the machine's stop_grace.
 //
-// Also pins runtime-launch.md R9: only SIGTERM carries the requested grace.
+// Also pins: only SIGTERM carries the requested grace.
 func TestRequestedGraceNeedsTheStopsOwnSIGTERM(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -95,7 +95,7 @@ func TestRequestedGraceNeedsTheStopsOwnSIGTERM(t *testing.T) {
 // later stop signal, whatever grace that one's marker asks for — a process that can signal the
 // launcher must not be able to postpone the escalation.
 //
-// Also pins runtime-launch.md R9: a later trigger never extends the timer.
+// Also pins: a later trigger never extends the timer.
 func TestLaterTriggerNeverExtendsTheTimer(t *testing.T) {
 	marker := false
 	k := newFakeKiller()

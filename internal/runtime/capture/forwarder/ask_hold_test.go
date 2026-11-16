@@ -27,7 +27,7 @@ func askHarness(t *testing.T, maxBody int, request func(context.Context, ask.Req
 // askBudget is a hold timeout for a test whose subject is not the timeout: the rest of the test's deadline, or a
 // minute. askHarness's one second has to cover whatever the approval does, and an approval that writes a file
 // (modelroutes.Update, credvault.Update: a write, an fsync of the file and one of its directory) can take longer on a
-// busy disk; TestRouteMovedWhileHeldIsNotSent was answered "ask-timeout" that way under load (2026-11-11).
+// busy disk; TestRouteMovedWhileHeldIsNotSent was answered "ask-timeout" that way under load.
 func askBudget(t *testing.T) time.Duration {
 	if deadline, ok := t.Deadline(); ok {
 		return time.Until(deadline)

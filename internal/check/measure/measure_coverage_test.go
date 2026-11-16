@@ -100,18 +100,16 @@ func decision(mono uint64, step int, tool, hash string) *record.Event {
 	return e
 }
 
-// TestComputeStepsFromAttribution pins R18's actual formula: "Steps = max(attribution.step)". P0
-// writers do not populate Attr.Step yet (measure.go's own doc comment: "Attribution carries it only
-// from M2 on, so in P0 this is the only [decision.Step] source R18's column can have") — but the read
+// TestComputeStepsFromAttribution pins R18's actual formula: "Steps = max(attribution.step)". Today's
+// writers do not populate Attr.Step yet (decision.Step is the only source R18's column has) — but the read
 // side already implements the general formula (measure.go lines checking `e.Attr != nil && e.Attr.Step
 // > rep.Steps`), and every other test in this package drives Steps through decision.Step alone. A
 // hand-built or future-writer ledger that does carry attribution must still be measured correctly, and
 // nothing else here would notice if that branch were ever deleted as apparently-dead code.
-// limits-check-doctor-cli.md R18 is the rule this pins: Steps is the maximum attribution.step.
 func TestComputeStepsFromAttribution(t *testing.T) {
 	events := []*record.Event{
 		runStart(1e9),
-		decision(2e9, 3, "bash", "a"),                    // decision.Step=3: the smaller, P0-realistic source
+		decision(2e9, 3, "bash", "a"),                    // decision.Step=3: the smaller, realistic source
 		fsAction(3e9, record.AttributedByTime("t1", 7)),  // attribution.Step=7: must win, it's larger
 		fsAction(4e9, record.AttributedByTime("t1", 4)),  // smaller than the running max: must not lower it
 		fsAction(5e9, record.AttributedByTime("t1", 10)), // new max: running max, not first-wins

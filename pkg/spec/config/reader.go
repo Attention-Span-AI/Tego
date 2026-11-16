@@ -17,8 +17,8 @@ const maxAncestors = 16
 const overflowUID = 65534
 
 // StartedByAnother reports whether the process pid, which runs as uid, was started from the shell of another user,
-// through sudo, su or the like, so the person who reads a command it prints types it as that other user (acceptance 3,
-// 2026-11-11: an administrator typed sudo -u svc tego setup, then the printed scope command in their own shell). proc
+// through sudo, su or the like, so the person who reads a command it prints types it as that other user
+// (an administrator types sudo -u svc tego setup, then the printed scope command in their own shell). proc
 // is the procfs root, /proc outside tests. Two facts say so, and neither comes from the environment: the process's
 // login uid (<proc>/<pid>/loginuid, which pam_loginuid sets at an SSH, console or desktop login and sudo and su keep)
 // is set and is not uid; or, walking its ancestors (<proc>/<pid>/status, at most maxAncestors steps, up to pid 1), the

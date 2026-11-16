@@ -37,9 +37,9 @@ import (
 func init() { register(cmdRun) }
 
 // cmdRun is `tego run <agent.yaml | name> [-v] [--tier T] [--record M] [--observe] [-- <cmd> [args]]` (R29); with no
-// <cmd> it runs the contract's own command: (commandFor). A name is resolved in the registries (agent-contract.md R26).
-// It owns step 1 of P0-DESIGN §4.1 — load the machine config, load and compile the contract, select
-// the tier — and hands step 2 onward to runtime.Run. Its exit code is the agent's own, or one of
+// <cmd> it runs the contract's own command: (commandFor). A name is resolved in the registries.
+// It owns the first step of a run — load the machine config, load and compile the contract, select
+// the tier — and hands the rest to runtime.Run. Its exit code is the agent's own, or one of
 // tego's (124, 125, 126, 127, 137, 143) as spec/identity/RUN-IDENTITY.md assigns them.
 func cmdRun() Command {
 	var (
@@ -99,7 +99,7 @@ type runOptions struct {
 	// It is passed down, not rewritten into the lines afterwards: watch's rewrite of every "tego run: " also changed
 	// a path or a program's name that held the words, and would have missed a line written in two pieces.
 	cmd string
-	// contract is the contract's path, or an agent's name the registries resolve (agent-contract.md R26).
+	// contract is the contract's path, or an agent's name the registries resolve.
 	contract string
 	// generated says tego wrote the contract itself (watch's or adopt's with no --boundary): it is a path, and the
 	// run records no contract_source, since no one named a file.
@@ -150,7 +150,7 @@ func (o runOptions) cmdName() string {
 }
 
 // runRun is the in-process body of run. Every failure before runtime.Run is exit 125 with a
-// diagnostic code (the 2026-09-22 resolution folded the former 210/211/213 into 125).
+// diagnostic code.
 func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	// The capture probes this run was the last to hold are removed once the run is over, off its path and with
 	// no fanotify mark of this process left (uprobe.StartDetaches, ADR 0026 (7)).
@@ -214,7 +214,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	retainBeforeRun(ctx, m, o.cmdName(), cds, stderr)
 
 	// The run directory keeps the contract as compiled, not as written: its sha256 is contract_hash
-	// and it needs no profile to reload (contractCopy, agent-contract.md R13).
+	// and it needs no profile to reload (contractCopy).
 	yaml, err := contractCopy(rt)
 	if err != nil {
 		message(stderr, o.contract, 0, 0, o.cmdName()+": contract copy: "+err.Error(), codeIO)
@@ -236,11 +236,10 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	prices, priceGap := runPrices(m, rt, o.cmdName(), stderr)
 	// The capture sources are built before the run so the forwarder's sockets are already bound: the
 	// run admits their ports through the enforcement tier it prepares and names their base URLs in the
-	// environment the child execs into, both of which happen before the agent runs (capture-derive.md
-	// §3, R19, R38).
+	// environment the child execs into, both of which happen before the agent runs.
 	sources, captureGaps := captureFor(rt, m, b)
 	// What the forwarder that did start overrides of the contract's own environment, when Compile could not
-	// know it would start (agent-contract.md R12).
+	// know it would start.
 	warnForwarderEnv(stderr, rt, compiledCapture, b.Tier(), sources)
 	// The MCP relay (ADR 0126 §4), bound now for the same reason: only for a contract with a relayed server.
 	extra, code := mcpRelayFor(rt, ownLogger(m), o.cmdName(), stderr)
@@ -300,9 +299,9 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		// runtime tags every line with the run id and hands the logger to the supervisor, the
 		// ledger writer and the budget watcher.
 		Logger: ownLogger(m),
-		// The file the user named, by path or by name, which run_start records (agent-contract.md R26).
+		// The file the user named, by path or by name, which run_start records.
 		ContractSource: src,
-		// The provisioner of the run's harness (agent-contract.md R27, ADR 0062), from Layer 3's registry.
+		// The provisioner of the run's harness (ADR 0062), from Layer 3's registry.
 		Harness: harnessProvisioner,
 		// The modes restoreUserState and restoreOwnState restored before the config's load and the compile, which the
 		// run records after run_start.
@@ -311,7 +310,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		// is not left for the commands after it, which pass over a layer they cannot read.
 		UserState: userState(),
 		// A condition the run records (a gap, or run_start's best_effort) and the user should hear of before the
-		// agent runs, under its own code: a memory cap the swap can bypass (runtime-launch.md R10, swap-uncapped), a
+		// agent runs, under its own code: a memory cap the swap can bypass (swap-uncapped), a
 		// held completion whose deputy did not start (held-unavailable), a boundary not held (unenforced).
 		Warn: func(code, what string) {
 			// The held-label disclosure is a note, not a warning: it says how held opens are decided on this host, and the
@@ -329,13 +328,13 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	})
 	if errors.Is(err, tegoruntime.ErrCaptureUnavailable) {
 		// A budget capture was to meter and could not: the machine still does what the cached answer vouched
-		// for, so the answer is kept (limits-check-doctor-cli.md R32).
+		// for, so the answer is kept.
 		message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), identity.CodeCaptureUnavailable)
 		return identity.ExitLauncher
 	}
 	if errors.Is(err, tegoruntime.ErrBudgetUnmetered) {
 		// A declared budget nothing counts: the contract (or the machine's capture ceiling or price table) is the
-		// cause, not the machine's probe answer, which is kept (limits-check-doctor-cli.md R32).
+		// cause, not the machine's probe answer, which is kept.
 		message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), identity.CodeBudgetUnmetered)
 		return identity.ExitLauncher
 	}
@@ -347,7 +346,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 		startFailed(rep)
 		message(stderr, "", 0, 0, o.cmdName()+": "+err.Error(), codeRun)
 		if errors.Is(err, rtcgroup.ErrBesideSubtree) {
-			// tego watch places its run where tego run does, and is refused from the same shell (acceptance B, 2026-11-11).
+			// tego watch places its run where tego run does, and is refused from the same shell.
 			outsideHint(stderr, "run this again there")
 		}
 		return identity.ExitLauncher // R2: every pre-run_start failure is 125
@@ -385,7 +384,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 // runNotices is the compile findings a run prints before its agent starts. A run prints a notice only when it needs
 // the person's action (an error) or when this run enforces less than the contract wrote (a warning about a rule);
 // a note that only says how a rule applies (Diagnostic.Informational) is left to `tego compile` and `tego doctor`,
-// unless the run is verbose (-v), which prints every one (docs/p0/limits-check-doctor-cli.md, "A quiet start").
+// unless the run is verbose (-v), which prints every one ("A quiet start").
 func runNotices(ds []agent.Diagnostic, verbose bool) []agent.Diagnostic {
 	if verbose {
 		return ds
@@ -493,7 +492,7 @@ func warnUsersIgnored(stderr io.Writer, cmd string, m *config.Machine) {
 
 // runExitCode is the code a run exits with, its line naming cmd (tego run or tego watch). The agent's own code,
 // unless the run's record could not be completed: that failure is tego's, and 125 says so rather than letting a run
-// whose ledger is incomplete, or complete but unanchored, read as the agent's exit (record-ledger.md §7). The summary
+// whose ledger is incomplete, or complete but unanchored, read as the agent's exit. The summary
 // above it still says what the agent did.
 func runExitCode(stderr io.Writer, cmd string, res tegoruntime.Result) int {
 	if res.RecordErr == nil {
@@ -529,7 +528,7 @@ func interruptedBeforeStart(ctx context.Context, o runOptions, stderr io.Writer)
 // codeRun is the diagnostic code of a launcher failure before the agent ever ran.
 const codeRun = "run"
 
-// codeLedger is the diagnostic code of a run whose record could not be completed (record-ledger §7).
+// codeLedger is the diagnostic code of a run whose record could not be completed.
 const codeLedger = "ledger"
 
 // The three consumers of the run's table, as variables so a test can see the table each is handed without
@@ -588,7 +587,7 @@ const codeOwnStateMode = "own-state-mode"
 // machine config: with ~/.tego or the layer taken, the read failed, so the run was refused [config-untrusted] before
 // restoreOwnState ran, and so was every run after it, whoever took them (a root launcher's agent, which no root
 // launcher restores; an agent whose launcher died; another run's), and gc, which skipped the layer, deleted by the
-// built-in retention. The trust check (identity-config.md R20) still judges what it restored: it adds only the owner's
+// built-in retention. The trust check still judges what it restored: it adds only the owner's
 // bits, so a layer or a ~/.tego that group or others can write is still refused.
 func restoreUserState(cmd string, stderr io.Writer) []tegoruntime.ModeRestored {
 	return restoreState(cmd, userState(), stderr)
@@ -610,7 +609,7 @@ func userState() tegoruntime.OwnState {
 // restoreOwnState gives the owner back the rights something took from the rest of tego's own state: chain.log, the
 // directory that holds it, the ledger root and its live index, and the runtime parent, $XDG_RUNTIME_DIR/tego
 // (tegoruntime.RestoreOwnState). No Landlock ABI has a chmod right, so an earlier run's agent can chmod them, and with
-// no rights on them the compile cannot place the anchor (agent-contract.md R10), and the run cannot make its runtime
+// no rights on them the compile cannot place the anchor, and the run cannot make its runtime
 // directory, create its run directory or append its anchor. It runs before makeOwnDirs and the compile.
 func restoreOwnState(m *config.Machine, stderr io.Writer) []tegoruntime.ModeRestored {
 	anchor, _ := anchorPath(m) // with none, the anchor probe below refuses the run and says why
@@ -635,8 +634,8 @@ func restoreState(cmd string, s tegoruntime.OwnState, stderr io.Writer) []tegoru
 }
 
 // makeOwnDirs makes the ledger root and the chain anchor's directory before the contract is compiled:
-// the read denies that keep tego's own files from the agent attach to directories that exist
-// (agent-contract.md R6a), and a machine's first run is when neither does yet. Made as MakeDirs makes
+// the read denies that keep tego's own files from the agent attach to directories that exist,
+// and a machine's first run is when neither does yet. Made as MakeDirs makes
 // them, a root launcher's handed to the user they belong to; a failure is left to the step that needs
 // the directory (the sweep, the anchor probe, the run), which reports it.
 func makeOwnDirs(m *config.Machine) {
@@ -655,7 +654,7 @@ var compileRunContract = agent.Compile
 // compile never reaches the runtime. The findings that hold in one tier alone (agent.Diagnostic.Tier) are
 // returned rather than printed: the run learns its tier only at selection, and an auto contract that lands
 // at cgroup is not to be told what Landlock cannot enforce (ADR 0019); printTierFindings prints them then.
-// A contract given by name is resolved first (agent-contract.md R26), and a refused name is exit 125, as a missing
+// A contract given by name is resolved first, and a refused name is exit 125, as a missing
 // contract file is; "-", standard input, is a usage error (exit 2): it is compile's alone. src is the contract's source
 // for run_start, nil for a generated contract.
 func compileForRun(ctx context.Context, o runOptions, m *config.Machine, stderr io.Writer) (*agent.RuleTable, []agent.Diagnostic, *record.ContractSource, int) {
@@ -794,7 +793,7 @@ func loadRunContract(o runOptions, m *config.Machine, stderr io.Writer) (*loaded
 
 // refuseStdinContract is the usage error (exit 2) for "-" as a run's or an adoption's contract. Standard input is
 // compile's alone: a run's is the agent's, and a contract read from it names no file for run_start's contract_source,
-// whose absence says tego generated the contract (agent-contract.md R26).
+// whose absence says tego generated the contract.
 func refuseStdinContract(stderr io.Writer) int {
 	message(stderr, "", 0, 0, "tego: \"-\" (standard input) is no contract for a run; give the contract's path "+
 		"(./- for a file named -) or an agent's name", codeUsage)
@@ -812,10 +811,10 @@ func parseRecordMode(s string) (agent.RecordMode, error) {
 
 // selectBackend runs §4.1 step 1's tier selection: the machine ceiling, the contract's pin and what
 // this machine and this binary offer. A nil backend is exit 125 [tier-unavailable], decided here and
-// never inside runtime.Run (docs/p0/runtime-launch.md R2, invariant 10).
+// never inside runtime.Run (invariant 10).
 //
 // It returns the table the run enforces with the backend: rt at the tier the run got, not the one Compile
-// resolved auto to (agent-contract.md R14). Every reader of the table answers in its tier's semantics —
+// resolved auto to. Every reader of the table answers in its tier's semantics —
 // the kernel recorder judges each exec with Evaluate at rt.Tier, so an auto contract left at bpflsm would
 // have its tier-2 execs judged by basename with tier 3's unlisted-script rule (R15) — and the tier-2
 // backend refuses a table naming another tier. Returning the stamped table, rather than leaving the stamp
@@ -861,7 +860,7 @@ func selectBackend(ctx context.Context, o runOptions, m *config.Machine, rt *age
 	}
 	if b == nil {
 		if rep.OutsideUserManager && landlockWillDo(rt, only) {
-			// The refusal names the cgroup; the shell that is inside it is what this one lacks (acceptance B, 2026-11-11).
+			// The refusal names the cgroup; the shell that is inside it is what this one lacks.
 			outsideHint(stderr, "run this again there")
 		}
 		return nil, nil, nil, identity.ExitLauncher // 125 [tier-unavailable]
@@ -887,12 +886,9 @@ func landlockWillDo(rt *agent.RuleTable, only backend.Tier) bool {
 // run's selection can reach (doctor.Reach: the tier --tier, the contract or the machine config names, else the
 // highest one root and this build allow under the ceiling): D1, D3, D4 and both halves of D5 for tier
 // landlock, root, D2, D7's tier-2 rows and D8 for tier cgroup, and D6's LSM list and the plane's LSM mode for tier
-// bpflsm (doctor.ForRun), with whether this binary can construct each tier at all (enforce.Buildable). Every root run used to take the whole of doctor.Run first, tier 3's and
-// capture's program loads included, whatever tier it asked for: about 3 s on Ubuntu 24.04's 6.8 in the KVM
-// guest for a run of `true` at tier landlock, which failed kill test 4 there (the acceptance run of 2026-09-23). Run
-// used to keep a gate of its own before that, tier 1 only, so a root machine never ran at
-// tier cgroup and `--tier cgroup` was always exit 125, while doctor on the same machine reported the tier. The
-// machine config is passed so the report is the one `tego doctor` prints under the same
+// bpflsm (doctor.ForRun), with whether this binary can construct each tier at all (enforce.Buildable). The whole of doctor.Run, tier 3's and
+// capture's program loads included, would cost a root run about 3 s on Ubuntu 24.04's 6.8 in a KVM guest whatever
+// tier it asked for, enough for a run of `true` at tier landlock to fail its kill test. The machine config is passed so the report is the one `tego doctor` prints under the same
 // config; Report.Probe is taken before any ceiling, which enforce.Select applies together with the
 // contract's pin. The whole report is kept, not only its probe, so a refused tier is explained in doctor's
 // words (Report.Select): at and below reach, the report's Probe and WhyNot are doctor.Run's. A variable so

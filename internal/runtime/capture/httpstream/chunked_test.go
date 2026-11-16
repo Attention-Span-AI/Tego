@@ -56,7 +56,7 @@ func TestChunkedReader(t *testing.T) {
 	}
 }
 
-// TestChunkedSplitEverywhere is capture-derive.md E17 (edge case #17) exhaustively: the same body fed with a break at every single
+// TestChunkedSplitEverywhere, exhaustively: the same body fed with a break at every single
 // offset must decode identically, because the parser's state lives on the connection.
 func TestChunkedSplitEverywhere(t *testing.T) {
 	const in = "1a;x=1\r\nabcdefghijklmnopqrstuvwxyz\r\n5\r\n01234\r\n0\r\nX-T: v\r\n\r\n"

@@ -11,7 +11,7 @@ import (
 )
 
 // TestAResponseBeforeItsRequestCostsOneExchange is kill test 2's uprobe failure at the source: the probes
-// were placed after the agent's first SSL_write and before its SSL_read (R4, capture-derive.md E2 (edge case #2)), so the ring's
+// were placed after the agent's first SSL_write and before its SSL_read , so the ring's
 // first chunk on the connection is a whole response, and the agent's 19 later exchanges on the same
 // keep-alive connection are all there. They are 19 ssl_request/ssl_response pairs and the lost one is one
 // gap what=capture why=malformed with count 1. Before, the response abandoned the connection: no pair at

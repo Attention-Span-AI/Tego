@@ -26,7 +26,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// The decision plane's process controls in a real `tego run` (enforce-plane §2.20; FEATURES E54):
+// The decision plane's process controls in a real `tego run` (FEATURES E54):
 // ptrace_access_check and ptrace_traceme keep a trace inside the run and its generation, key_permission refuses the
 // kernel keyring unless the contract says `keyring: true`, and bpf refuses every bpf(2) command of a governed task.
 // Doctor's known-answer probes and observe's decode tests covered each hook in isolation; these cells are the
@@ -125,7 +125,7 @@ func controlSummary(events []map[string]any) string {
 }
 
 // expectControlLines fails the test unless the plane's control lines in events are exactly want, in any order: one
-// line for each refused action or, for key_permission, each refused check (enforce-plane I8), from the kernel with
+// line for each refused action or, for key_permission, each refused check, from the kernel with
 // the plane as its mechanism and the mode as its decision_plane, written for the agent's own pid, and nothing else
 // with the plane's control ops.
 func expectControlLines(t *testing.T, events []map[string]any, mode string, agentPID int, want []wantControl) {
@@ -375,7 +375,7 @@ func controlScratchCgroup(t *testing.T, kill func()) string {
 	return dir
 }
 
-// controlOutsideIsNotDecided is TIER3-PLAN §9's "allows outside the run" for the process controls, asked while runs
+// controlOutsideIsNotDecided is "allows outside the run" for the process controls, asked while runs
 // are live: the test is a process of no run, and attaches to a process, uses the kernel keyring and makes a BPF map,
 // none of which the plane's hooks answer, since each looks the run up first and returns 0 on a miss (R1). The
 // attach, its wait and its detach are on one thread, which is the tracer, and so is the keyring: a process keyring
@@ -419,7 +419,7 @@ func controlOutsideIsNotDecided(t *testing.T, victim int) {
 	_ = m.Close()
 }
 
-// TestPlaneRunControlPtraceIsRunScoped is enforce-plane §2.20's ptrace_access_check (ATTACH mode) and ptrace_traceme
+// TestPlaneRunControlPtraceIsRunScoped checks the plane's ptrace_access_check (ATTACH mode) and ptrace_traceme
 // in a real run. Run A's agent, in a run of its own, attaches to: a process of its uid outside every
 // run; the agent of a second run B; a descendant of its own that root has moved out of the run's cgroup, and one
 // root has moved into B's cgroup, both still in its Landlock domain so that only the plane can refuse them; and its
@@ -429,8 +429,6 @@ func controlOutsideIsNotDecided(t *testing.T, victim int) {
 // and the parent in the run, with no line. The first two attaches are answered by Landlock's scope, or by Yama's
 // ptrace_scope, before the plane where the LSM order puts either first (planeAnswersFirst, planeAttachRefusers): EPERM
 // and no line, which the cell expects exactly then. The two moved descendants are admitted by both.
-//
-// Spec: docs/p0/enforce-plane.md R1, R3, R22, R23.
 func TestPlaneRunControlPtraceIsRunScoped(t *testing.T) {
 	bin, uid, gid, modes := planePreconditions(t)
 	for _, mode := range modes {
@@ -622,7 +620,7 @@ for step in sys.argv[1:]:
         call(step, REQUEST_KEY, b"user", b"tego-e54", 0, 0)
 `
 
-// TestPlaneRunControlKeyringIsTheContractsOptIn is enforce-plane §2.20's key_permission in a real run.
+// TestPlaneRunControlKeyringIsTheContractsOptIn checks the plane's key_permission in a real run.
 // The documented behaviour is the contract's `keyring: true` and nothing finer: the hook admits every key
 // permission check of a run whose slot carries the flag, and refuses every one of a run that does not (read-denied).
 //   - Without the opt-in the supervisor refuses the three syscalls first, EPERM, with its own refused line (rule
@@ -634,8 +632,6 @@ for step in sys.argv[1:]:
 //     check, and no supervisor line. The hook is per check, not per syscall: keyctl(GET_KEYRING_ID) asks to search the
 //     keyring and add_key to write it, one check each and so one line each, where keyctl(DESCRIBE) makes three (the
 //     view, then two searches for an authorisation token) and would leave three lines for its one refusal.
-//
-// Spec: docs/p0/enforce-plane.md R3, R23.
 func TestPlaneRunControlKeyringIsTheContractsOptIn(t *testing.T) {
 	bin, uid, gid, modes := planePreconditions(t)
 	for _, mode := range modes {
@@ -792,15 +788,13 @@ func controlMapServer(t *testing.T) (path string, m *ebpf.Map) {
 	return path, m
 }
 
-// TestPlaneRunControlBPFIsRefused is enforce-plane §2.20's bpf hook in a real run. The agent holds a
+// TestPlaneRunControlBPFIsRefused checks the plane's bpf hook in a real run. The agent holds a
 // map descriptor the test passed in over SCM_RIGHTS and runs three bpf(2) commands on it.
 //   - With the filter as a product has it, the root-tier arm answers each with EPERM before the kernel is asked
 //     (ADR 0033) and the plane writes nothing: the hook is a second layer a run cannot reach.
 //   - With the arm left out, security_bpf is reached and the plane refuses each command with EACCES, one `bpf` line
 //     each naming the command, and the map is as the test left it (the update did not happen). BPF_MAP_CREATE is not a
 //     cell: kernel.unprivileged_bpf_disabled refuses it with EPERM ahead of the hook, where the sysctl is set.
-//
-// Spec: docs/p0/enforce-plane.md R3, R23.
 func TestPlaneRunControlBPFIsRefused(t *testing.T) {
 	bin, uid, gid, modes := planePreconditions(t)
 	for _, mode := range modes {

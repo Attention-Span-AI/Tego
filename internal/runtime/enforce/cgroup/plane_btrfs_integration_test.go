@@ -75,7 +75,7 @@ tests:
 
 // btrfsImage is an empty 16 MiB btrfs, gzipped, so the fixture needs no btrfs-progs: only root, mount's loop
 // option and the kernel's btrfs, which root-suites.sh's guests load by default (VM_MODULES) and a runner's mount
-// loads on demand. Amended 2026-10-05: the test used to skip without mkfs.btrfs and btrfs on PATH, which no
+// loads on demand. the test used to skip without mkfs.btrfs and btrfs on PATH, which no
 // root gate provided, and root-skips.txt allowed that skip, so it never ran (gates-1). Made with btrfs-progs 6.16:
 //
 //	truncate -s 16M btrfs.img

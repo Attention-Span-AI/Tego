@@ -22,8 +22,8 @@ func asRoot(t *testing.T) {
 	t.Cleanup(func() { actingAsRoot = prev })
 }
 
-// plantedHome is a home whose ~/.tego is a symlink to victim, the shape the review reproduced as
-// root: root's append then created <victim>/chain.log holding the run's line.
+// plantedHome is a home whose ~/.tego is a symlink to victim: as root, an append that followed it would create
+// <victim>/chain.log holding the run's line.
 func plantedHome(t *testing.T) (home, victim string) {
 	t.Helper()
 	base := t.TempDir()
@@ -94,7 +94,7 @@ func TestUnprivilegedFollowsItsOwnLinks(t *testing.T) {
 // TestMakeRunDirNeverReuses: a run directory that exists is an error (os.ErrExist), and a name that is
 // not one path component is refused before anything is made.
 //
-// Also pins record-ledger.md E24: a taken run directory is never reused.
+// Also pins: a taken run directory is never reused.
 func TestMakeRunDirNeverReuses(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "runs")
 	if err := MakeRunDir(root, testRef.ID); err != nil {

@@ -161,8 +161,7 @@ func TestIntegrationAsRoot(t *testing.T) {
 	// FAN_MARK_INODE mark covers only the object named (fanotify_mark(2); child opens need
 	// FAN_EVENT_ON_CHILD in the mask), so no permission event was ever generated and D8 never reached
 	// its reply. A root run must complete the FAN_DENY round trip, and the FAN_DENY must refuse the
-	// open: that refusal is what tier 2's listener sends on every kernel (enforce-cgroup-observe.md
-	// §6 E2).
+	// open: that refusal is what tier 2's listener sends on every kernel.
 	if strings.Contains(fan.Detail, "could not be tested") {
 		t.Errorf("D8 did not reach its FAN_DENY reply at all: %s", fan.Detail)
 	}

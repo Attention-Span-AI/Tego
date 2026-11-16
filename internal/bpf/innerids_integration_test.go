@@ -14,7 +14,7 @@ import (
 )
 
 // TestInnerIDsReadTheOuterByBatch: on this kernel a HASH_OF_MAPS outer is read by one batch lookup, never by the
-// per-key lookups that end in synchronize_rcu below 6.7 (enforce-plane §2.18), and the batch reads what they read:
+// per-key lookups that end in synchronize_rcu below 6.7, and the batch reads what they read:
 // each key's inner map id, and no key the outer does not hold. OpenInner opens the map a key holds and says none for
 // a key it does not. The timings are logged: on AL2023's 6.1 a lookup of the outer waits a grace period.
 func TestInnerIDsReadTheOuterByBatch(t *testing.T) {

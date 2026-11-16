@@ -186,7 +186,7 @@ enforced thing is `tools/call`; a server that offers the same capability under a
 - `run_start.record_minor` rises on every run (the only change on the option-off path); a contract without
   `mcp[].tools` runs exactly as before: no relay, no gate, no new lines.
 - `tego` and `tego-control` are rebuilt together; runs started by an older `tego` do not relay.
-- `docs/adr/README.md`, `docs/p0/agent-contract.md` (R16b `mcp[].tools`), `spec/record/v1`,
+- `docs/adr/README.md`, `spec/record/v1`,
   `spec/reason/REASON-CHANNEL.md`, `docs/DASHBOARD.md` and `docs/user/mcp-tools.md` describe it.
 
 ## Amendment 2026-11-01: the nav

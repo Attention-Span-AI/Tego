@@ -14,7 +14,7 @@ import (
 )
 
 // LedgerCheck is what `tego doctor` reports about a ledger root: the runs no sweep on this host finishes, said
-// once when asked rather than on every sweep (limits-check-doctor-cli.md R27).
+// once when asked rather than on every sweep.
 type LedgerCheck struct {
 	// Root is the ledger root checked.
 	Root string `json:"root"`

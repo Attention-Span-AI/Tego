@@ -2,13 +2,13 @@
 
 // Command isocheck checks that no test harness in the tree can write the invoking user's own ~/.tego.
 //
-// tego resolves its home from the passwd database, and from $HOME only for an account that has no passwd home
-// (identity-config.md R21), so a harness that sets HOME isolates nothing: the chain anchor (~/.tego/chain.log), the own log (~/.tego/tego.log) and the
+// tego resolves its home from the passwd database, and from $HOME only for an account that has no passwd home,
+// so a harness that sets HOME isolates nothing: the chain anchor (~/.tego/chain.log), the own log (~/.tego/tego.log) and the
 // built-in ledger root are the developer's own unless the harness points them elsewhere. The one way to do that
 // is a binary built with -tags tegotesthooks started with TEGO_CONFIG naming a ledger_root, TEGO_TEST_CHAIN_ANCHOR
-// and TEGO_TEST_OWN_LOG_HOME (internal/cli/anchor_testhook.go, ownlog_testhook.go; identity-config.md R27). On
-// 2026-10-06, 61 lines of runs whose ledgers were temporary directories were found in the developer's chain.log: an
-// integration test took os.Environ() before the call that set those variables. This check holds the harness code to
+// and TEGO_TEST_OWN_LOG_HOME (internal/cli/anchor_testhook.go, ownlog_testhook.go). An
+// integration test that took os.Environ() before the call that set those variables once left 61 lines of runs whose
+// ledgers were temporary directories in the developer's chain.log. This check holds the harness code to
 // the rules that keep that from happening again; the test hooks build refuses to run without the variables, which
 // holds the rest.
 //
@@ -89,7 +89,7 @@
 //	      by a check that refuses /run/user/<uid>) or calls kt_config or lib_init, and never assigns it the inherited
 //	      value ($XDG_RUNTIME_DIR, os.environ, os.getenv) or a path under /run/user/, directly or copied through
 //	      other names: a launch makes <XDG_RUNTIME_DIR>/tego and removes the directories the invoking user's crashed
-//	      runs left there (identity-config.md R27 clause b4).
+//	      runs left there.
 //
 // Usage: go run ./tools/isocheck [root]   (root defaults to the working directory)
 // Exit: 0 when every rule holds; 1 when one does not; 2 on a read or parse error.

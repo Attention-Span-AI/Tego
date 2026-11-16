@@ -13,7 +13,7 @@ import (
 )
 
 // TestCompileHarness: harness: resolves auto from the contract's own command, keeps a named harness, keeps auto for a
-// table whose contract has no command (the launcher resolves it), and prints the result (agent-contract.md R27, ADR 0062).
+// table whose contract has no command (the launcher resolves it), and prints the result (ADR 0062).
 func TestCompileHarness(t *testing.T) {
 	cases := []struct {
 		yaml  string

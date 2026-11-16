@@ -12,8 +12,8 @@ import (
 // LineCheck is the check of one run's lines, one line at a time, that Walk, internal/ledger's Binder and its
 // Follower share: each line's id is the digest of its bytes, seq is gapless and prev names the line before
 // (record.Chain, I3, I4); every line carries the run's id (ErrRunMismatch); and run_start is line 0 and only line 0
-// (runtime-launch.md §8, ErrRunShape). A line a newer record version wrote has its link checked, never its schema
-// (limits-check-doctor-cli.md §6 case 20). None of its callers lets a line follow run_end; each says so in its own
+// (ErrRunShape). A line a newer record version wrote has its link checked, never its schema.
+// None of its callers lets a line follow run_end; each says so in its own
 // terms, from Ended.
 //
 // It holds no line: a chain's head and length, the run id, its revision and two flags, whatever the run's length.

@@ -22,7 +22,7 @@ const MaxHostBytes = 255
 // noUID is (uid_t)-1, which names no account (setresuid's "leave unchanged"), so a SUDO_UID spelling it is no uid.
 const noUID = 1<<32 - 1
 
-// Launcher is who launched a run and where, as run_start records it (ADR 0073, record-ledger.md §2.2): the launcher's
+// Launcher is who launched a run and where, as run_start records it (ADR 0073): the launcher's
 // real uid and its passwd name, the account sudo says invoked a root launcher, and the host's kernel nodename. Every
 // field is what the launcher's own process could read when the run started: none is a verified fact about a person.
 type Launcher struct {
@@ -124,7 +124,7 @@ func lookupEnv(environ []string, key string) (string, bool) {
 	return val, found
 }
 
-// parseUID is s as a uid, read as identity-config.md E8 reads SUDO_UID and as the launcher's drop to the invoking
+// parseUID is s as a uid, read as SUDO_UID is read and as the launcher's drop to the invoking
 // account reads it: an unsigned 32-bit decimal (no sign or blank space) other than (uid_t)-1.
 func parseUID(s string) (uint32, bool) {
 	v, err := strconv.ParseUint(s, 10, 32)

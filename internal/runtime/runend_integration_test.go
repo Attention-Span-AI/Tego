@@ -111,7 +111,7 @@ exit 0`
 // TestLedgerWriteFailureEndsTheRun: once the ledger refuses a line (here RLIMIT_FSIZE, standing in for a full
 // disk; the kernel accepts part of a line and refuses the rest), the run cannot record what the agent does, so
 // it ends: reason error with the cause in detail, the tree killed, and a run_end the cut-back ledger still
-// takes, never an agent that runs on unrecorded to its own exit 0 (record-ledger.md §7).
+// takes, never an agent that runs on unrecorded to its own exit 0.
 //
 // RLIMIT_FSIZE is the process's: lowered here it would refuse every file this test binary writes
 // meanwhile, the testing package's own testlog.txt among them (CI run #27). So the test re-runs itself
@@ -168,7 +168,7 @@ func TestLedgerWriteFailureEndsTheRun(t *testing.T) {
 const fsizeChildEnv = "TEGO_TEST_FSIZE_CHILD"
 
 // failingListenerBackend wraps the tier-1 backend so its handle owns a loop that dies mid-run, the shape of
-// tier 2's fanotify listener meeting a fatal error (enforce-cgroup-observe.md §6 E15).
+// tier 2's fanotify listener meeting a fatal error.
 type failingListenerBackend struct{ enforce.Backend }
 
 func (b failingListenerBackend) Prepare(ctx context.Context, rt *agent.RuleTable, run enforce.RunRef) (api.Handle, error) {

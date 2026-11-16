@@ -1,7 +1,6 @@
 # ADR 0129: Demo command output and ownership of generated directories
 
 Status: **accepted 2026-11-03**; implemented in the demo scripts and developer cleanup tools.
-Current rules: [demo-scripts.md](../p0/demo-scripts.md).
 
 ## Decision
 

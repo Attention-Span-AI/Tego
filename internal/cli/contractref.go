@@ -16,7 +16,7 @@ import (
 )
 
 // contractRef is the contract a command was given (compile's and run's argument, watch's and adopt's --boundary): a
-// file named by its path, or an agent's name, which the registry resolved to its file (agent-contract.md R26).
+// file named by its path, or an agent's name, which the registry resolved to its file.
 type contractRef struct {
 	// arg is the argument as given: a path, "-" for standard input (compile only), or a name.
 	arg string

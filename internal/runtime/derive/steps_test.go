@@ -44,7 +44,7 @@ func action(tid int) *record.Event {
 	return ev(record.KindFS, tid, record.FSPayload{Op: record.FSOpen, Path: "/work/proj/a"})
 }
 
-// The capture-derive.md R33–R36 table; R34 is its rows for one open step (likely), none and several (never guessed).
+// The R33–R36 table; R34 is its rows for one open step (likely), none and several (never guessed).
 func TestStepsByTime(t *testing.T) {
 	cases := []struct {
 		name string
@@ -157,7 +157,7 @@ func TestStepsByTime(t *testing.T) {
 	}
 }
 
-// A richer method is never lowered, and the P0 placeholder always is (capture-derive.md R35).
+// A richer method is never lowered, and the placeholder always is.
 func TestStepsNeverLowersARicherMethod(t *testing.T) {
 	s := derive.NewSteps()
 	s.Apply(sslRequest(48212, "api.anthropic.com", ""))

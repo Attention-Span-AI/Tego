@@ -108,7 +108,7 @@ func TestOrphanRootsOfARootSweeperNeedARecordForItsOwnRunDirectory(t *testing.T)
 	}
 	// A root launcher in a nested cgroup namespace made the scope under its manager's root, not the mount root;
 	// a root stop of that recorded run searched the mount root alone and found nothing to kill (root-suites,
-	// TestStopEscalatesOnlyTheRunsOwnScope, 2026-09-24).
+	// TestStopEscalatesOnlyTheRunsOwnScope).
 	nested := &fakeCgroups{root: filepath.Join(cgroup.Mount, "nested.slice")}
 	if got := mustOrphanRoots(t, nested, rootMarkDir, pathDir(killed)); !slices.Contains(got, nested.root) {
 		t.Fatalf("root's own recorded run directory: roots %v, want the manager's own root among them", got)

@@ -102,7 +102,7 @@ func TestStartLargeSpecWriteHonoursContext(t *testing.T) {
 // (Seccomp: 2) and something else entirely when it is not (Seccomp: 0). Case 20 previously attributed both
 // to kernel age, which is the one explanation that cannot be true when /proc says a filter is in force.
 //
-// Also pins runtime-launch.md E20: only the causes it can prove are named.
+// Also pins: only the causes it can prove are named.
 func TestCloneHintSeparatesFilteredClone3FromOldKernel(t *testing.T) {
 	// os/exec hands Start a *os.PathError, not a bare Errno; the hint must survive that wrapping.
 	forkExec := func(e syscall.Errno) error {
@@ -146,7 +146,7 @@ func TestCloneHintSeparatesFilteredClone3FromOldKernel(t *testing.T) {
 // TestCloneFailureKeepsErrCloneAndErrno pins the wrapping the callers depend on: runtime.Run tests errors.Is
 // against ErrClone for its exit-125 path (§7) and the operator needs the errno itself in the one stderr line.
 //
-// Also pins runtime-launch.md E20: a refused clone3 is ErrClone with the errno.
+// Also pins: a refused clone3 is ErrClone with the errno.
 func TestCloneFailureKeepsErrCloneAndErrno(t *testing.T) {
 	err := cloneFailure(&os.PathError{Op: "fork/exec", Path: "/proc/self/exe", Err: syscall.EPERM}, true)
 	if !errors.Is(err, ErrClone) {

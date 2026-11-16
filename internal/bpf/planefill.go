@@ -4,7 +4,7 @@ package bpf
 
 import "structs"
 
-// The plane's fill and clear, bpf/decide_fill.bpf.c (ADR 0025 (1), (2); docs/p0/TIER3-PLAN.md T4). The fill is an
+// The plane's fill and clear, bpf/decide_fill.bpf.c (ADR 0025 (1), (2)). The fill is an
 // iter/task_file program that writes a slot's rows at the inodes of the launcher's held O_PATH descriptors, so
 // userspace names a descriptor number and never an inode pointer; the clear is a syscall program that deletes a
 // slot's rows of every gen but one, in the kernel. Like the plane it is built twice, once per reader of struct

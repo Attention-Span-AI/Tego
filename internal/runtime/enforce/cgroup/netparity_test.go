@@ -104,7 +104,7 @@ func TestAttachUnrestrictedAttachesUnixBuiltinPrograms(t *testing.T) {
 	}
 }
 
-// hostTable is a restricted table with one host entry, the kind a TTL refresh re-resolves (supervisor R8).
+// hostTable is a restricted table with one host entry, the kind a TTL refresh re-resolves.
 func hostTable(f *fixture, ips ...string) *agent.RuleTable {
 	rt := *f.table
 	r := agent.NetRule{Raw: "api.example:443", Host: "api.example", Port: 443, Proto: agent.ProtoInet,
@@ -116,8 +116,8 @@ func hostTable(f *fixture, ips ...string) *agent.RuleTable {
 	return &rt
 }
 
-// TestRefreshNetFollowsARotatedHost is §6 E7 as amended. The supervisor re-resolves a host entry on its TTL
-// and admits the new addresses (supervisor R8); rows left at Prepare's addresses would refuse every relayed
+// TestRefreshNetFollowsARotatedHost: the supervisor re-resolves a host entry on its TTL
+// and admits the new addresses; rows left at Prepare's addresses would refuse every relayed
 // connect to an address the host rotated to. A refresh moves the rows, never removes the row of an address
 // both resolutions share, and leaves nothing behind at Close.
 func TestRefreshNetFollowsARotatedHost(t *testing.T) {
@@ -254,7 +254,7 @@ func TestRefreshNetAfterDetachWritesNothing(t *testing.T) {
 // TestRefreshNetKeepsTheResolverRows: the resolver rows are part of the table every refresh rebuilds, so a
 // refresh of a run prepared with resolvers must write them again rather than delete them as stale. Rebuilt
 // without the run's resolvers, the first TTL refresh would take DNS away from the run for the rest of its
-// life, while the supervisor went on admitting and recording every query (supervisor R14).
+// life, while the supervisor went on admitting and recording every query.
 func TestRefreshNetKeepsTheResolverRows(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)

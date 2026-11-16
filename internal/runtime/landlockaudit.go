@@ -41,7 +41,7 @@ const GapKernelAuditOff = "kernel-audit-off"
 // AUDIT_GET refused this process (an unprivileged run, a file-capability copy, or a launcher outside the initial
 // user and pid namespaces). Such a kernel with no audit=1 and no daemon that turned it on has audit off and drops
 // every record, and nothing an unprivileged process can read tells it apart from one that logs, so the run
-// records that its audit was asked for and not confirmed rather than reading as audited (enforce-landlock §4).
+// records that its audit was asked for and not confirmed rather than reading as audited.
 const GapKernelAuditUnknown = "kernel-audit-unknown"
 
 // auditState is what readKernelAudit learned about the kernel's audit subsystem.
@@ -183,7 +183,7 @@ var landlockABI = sys.LandlockABI
 // (spec/config/v0 landlock.audit) and the run applies a Landlock ruleset, which every tier but an observe run
 // does, and 0 otherwise. Without the flag the kernel audits a Landlock refusal only in the process that called
 // landlock_restrict_self, until it execs, so the agent's refusals after the child stage's execve reach no audit
-// record (enforce-landlock §4 RestrictSelf). It sets r.landlockAuditGap to the gap emitLandlockAuditGap writes:
+// record. It sets r.landlockAuditGap to the gap emitLandlockAuditGap writes:
 // why=landlock-audit-unavailable when this kernel's ABI drops the flag, and otherwise the audit state
 // readKernelAudit finds unless it is on, since only a state known to be on gets the records the flag asks for.
 // An ABI that cannot be read asks for nothing: the child stage would then pass the flag as asked, and a kernel
@@ -219,7 +219,7 @@ func (r *runner) landlockFlags() uint32 {
 // emitLandlockAuditGap writes the gap landlockFlags chose, what=record, so a run that opted into the kernel's
 // audit and did not get it, or could not confirm it, says so: why=landlock-audit-unavailable when the ABI dropped
 // the flag, why=kernel-audit-off when the kernel's audit is known to log nothing, and why=kernel-audit-unknown
-// when the run could not read it (enforce-landlock §4). A run with the audit confirmed on writes nothing.
+// when the run could not read it. A run with the audit confirmed on writes nothing.
 func (r *runner) emitLandlockAuditGap() {
 	if r.landlockAuditGap != "" {
 		r.emitGap(source.Gap{What: record.GapRecord, Why: r.landlockAuditGap})

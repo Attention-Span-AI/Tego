@@ -186,7 +186,7 @@ func TestWatchStopLineIsGuidance(t *testing.T) {
 }
 
 // After doctor exit 211, the hint's command checks the tier --require asked for again, never by the command that
-// printed it (acceptance B, 2026-11-11): sudo doctor --require for a root tier a person's report lacked, tego setup for tier
+// printed it: sudo doctor --require for a root tier a person's report lacked, tego setup for tier
 // landlock, and for a root report, which a sudo doctor printed, the sentence alone.
 func TestDoctorRequireHintKeepsTheTier(t *testing.T) {
 	hintsAt(t, false, "on")

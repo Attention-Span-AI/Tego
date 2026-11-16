@@ -13,7 +13,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestRedundantWriteEntryWarnsAndKeepsBoth is agent-contract.md E10: two fs.write entries, one an ancestor of
+// TestRedundantWriteEntryWarnsAndKeepsBoth: two fs.write entries, one an ancestor of
 // the other, are not an error: the subsumed one draws a redundant-rule warning and both stay in the table.
 func TestRedundantWriteEntryWarnsAndKeepsBoth(t *testing.T) {
 	f := newFixture(t)
@@ -36,7 +36,7 @@ func TestRedundantWriteEntryWarnsAndKeepsBoth(t *testing.T) {
 	}
 }
 
-// TestUnicodePathsAreComparedByRawBytes is agent-contract.md E4: a path stored NFC on disk and written NFD in
+// TestUnicodePathsAreComparedByRawBytes: a path stored NFC on disk and written NFD in
 // the contract is not normalised into a match, so it reports path-missing. A documented limitation.
 func TestUnicodePathsAreComparedByRawBytes(t *testing.T) {
 	f := newFixture(t)
@@ -83,7 +83,7 @@ func snapshot(t *testing.T, root string) map[string]string {
 	return out
 }
 
-// TestCompileChangesNoFileOfTheAgents is agent-contract.md R24 for this package: compiling a
+// TestCompileChangesNoFileOfTheAgents: compiling a
 // contract and answering rows against the table touch no file of the agent's, its project or its binaries:
 // same names, modes, times and bytes afterwards.
 func TestCompileChangesNoFileOfTheAgents(t *testing.T) {
@@ -105,7 +105,7 @@ func TestCompileChangesNoFileOfTheAgents(t *testing.T) {
 	}
 }
 
-// TestExecEntryIsAdvisoryAtCompile is agent-contract.md E13: a binary replaced after Compile (a pyenv shim
+// TestExecEntryIsAdvisoryAtCompile: a binary replaced after Compile (a pyenv shim
 // rewrite) is accepted. The table keeps what Compile read (the path and the loader it recorded) and nothing
 // re-reads the file, so only the next Compile sees the new one.
 func TestExecEntryIsAdvisoryAtCompile(t *testing.T) {
@@ -126,7 +126,7 @@ func TestExecEntryIsAdvisoryAtCompile(t *testing.T) {
 	}
 }
 
-// TestResolvedAtIsMonotonicAndOutsideTheHash is agent-contract.md E23: NetRule.ResolvedAt is stamped from
+// TestResolvedAtIsMonotonicAndOutsideTheHash: NetRule.ResolvedAt is stamped from
 // time.Now, so it carries a monotonic reading that survives a wall-clock step, and it is kept in memory only:
 // two Compiles at different clocks hash alike.
 func TestResolvedAtIsMonotonicAndOutsideTheHash(t *testing.T) {

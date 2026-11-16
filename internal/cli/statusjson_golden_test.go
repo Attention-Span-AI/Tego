@@ -25,7 +25,7 @@ var statusVolatile = []struct {
 	{regexp.MustCompile(`"ledger_bytes":[0-9]+`), `"ledger_bytes":<bytes>`},
 }
 
-// TestStatusJSONGolden pins status --json's object for an ended run, and in it limits-check-doctor-cli.md §6 case 9 (E9)'s field:
+// TestStatusJSONGolden pins status --json's object for an ended run, and in it this field:
 // tego_version is the run's own, from run_start ("test" in the fixture), never this binary's version.
 func TestStatusJSONGolden(t *testing.T) {
 	root := gcRoot(t)

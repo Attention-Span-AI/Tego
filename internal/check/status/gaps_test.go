@@ -13,7 +13,6 @@ import (
 
 // TestDeriveCarriesTheGapLine is R34 for status: every gap event the run recorded reaches the
 // snapshot, grouped by what and why, and the state is decided exactly as it would be without them.
-// (limits-check-doctor-cli.md R34.)
 func TestDeriveCarriesTheGapLine(t *testing.T) {
 	dir := write(t, false, func(w *ledger.Writer) {
 		runStart("")(w)

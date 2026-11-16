@@ -15,7 +15,7 @@ import (
 // again only when every map the object holds is pinned by name, a global-variable section, or named in
 // KernelOnlyMaps (cgroup adoptObjectIn). A map that is none of them makes every later run of the build load and
 // verify the whole object again and leave it unattached: 400 to 900 ms of a warm start at tier bpflsm
-// (enforce-plane §10, the perf suite's plane.objects.new phase), with nothing failing. tego_plane_path_buf was
+// (the perf suite's plane.objects.new phase), with nothing failing. tego_plane_path_buf was
 // added unpinned and unlisted and did exactly that.
 func TestEveryUnpinnedMapIsKernelOnly(t *testing.T) {
 	// The fill objects are not adopted through adoptObjectIn: adoptPlaneFiller opens their pins one by one.

@@ -111,10 +111,10 @@ var scopeOpener = guide.OpenScope
 // shell inside it, then do there what then says ("run tego setup there", "run this again there"). Its command never
 // starts a run, and is never the command that printed it. tego run, watch and test say it on exit 125 too: the one
 // exception to exit 125's rule of no hint, since their error line names the cgroup but not the command that opens a
-// shell in it, which acceptance B (2026-11-11) found a newcomer cannot guess. Where no command opens one from
+// shell in it, which a newcomer cannot guess. Where no command opens one from
 // here (guide.OpenScope's reason), a guidance line says why and the block has no command. Where tego was started from
 // another user's shell through sudo or su (guide.Opening.As), a guidance line says whose shell the command opens and
-// that it is typed in the person's own shell, and the block says so too (acceptance 3, 2026-11-11).
+// that it is typed in the person's own shell, and the block says so too.
 func outsideHint(stderr io.Writer, then string) {
 	o := scopeOpener()
 	text := "open a shell in your user manager's cgroup, then " + then + ":"
@@ -163,7 +163,7 @@ func rootBeside(uid int, chain [][]byte, managed bool) bool {
 // moves no process into another cgroup, unless that is a session of root's own (/user.slice/user-0.slice/...). Where
 // the caller has no logind session (a systemd-run --user scope, a desktop terminal), sudo's PAM stack (pam_systemd,
 // included through system-auth on Fedora 44) opens one for root and moves sudo into it, so the process says nothing
-// of the shell (acceptance 2B, 2026-11-11: session-c3.scope, from inside the scope, sent the person to open the scope
+// of the shell (session-c3.scope, from inside the scope, sent the person to open the scope
 // they were in). Then it is the nearest ancestor's outside root's slice: the shell, or the sudo that shell started.
 // nil when none can be read.
 func typedIn(chain [][]byte) []byte {
@@ -241,8 +241,8 @@ func isDir(path string) bool {
 
 // runHint writes the next: block of text and command, a step whose command may start a run (guide.StartsRun). From a
 // shell beside the user manager's cgroup (besideUserManager), where that command exits 125, a guidance line says the
-// command and the block opens a shell inside the cgroup instead (outsideHint): tego learn --save named tego run there,
-// which failed (acceptance B, 2026-11-11, and its review). Its command is never one that starts a run, and never
+// command and the block opens a shell inside the cgroup instead (outsideHint), never tego run, which fails there. Its
+// command is never one that starts a run, and never
 // the command that printed it. Root's block names guide.DefaultScope, which the person types as themselves: this
 // process's environment is root's, not the shell's the person returns to.
 func runHint(stderr io.Writer, text, command string) {

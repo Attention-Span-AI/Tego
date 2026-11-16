@@ -16,8 +16,8 @@ type panicReader struct{ fakeParser }
 
 func (panicReader) ToolResults(*derive.Message) ([]string, bool) { panic("reader bug") }
 
-// TestReadRequestLabelsWhatARequestSaysAlone is what a capture source stamps on an ssl_request before any answer
-// (capture-derive R40, R42): a model host's silent path is side traffic and is not read for results; a model turn
+// TestReadRequestLabelsWhatARequestSaysAlone is what a capture source stamps on an ssl_request before any answer:
+// a model host's silent path is side traffic and is not read for results; a model turn
 // is read for the tool results its last message reports; a host no parser claims, a turn the parser cannot read,
 // and a reader that panics leave tool_results unset, which the attribute stage reads as "not read".
 func TestReadRequestLabelsWhatARequestSaysAlone(t *testing.T) {

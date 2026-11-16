@@ -117,8 +117,8 @@ or who bound a name, and say `allow` there; whether the run had the scope is on 
 refusing a pathname socket outside a write entry that this row allows; it is the pathname-socket half of `net:`
 and is no longer handled without one, save in the unix-only state above. One address form is refused even here, in the unprivileged tier: an
 `AF_UNSPEC` address in a send, which a UDP or raw socket sends to as the `sockaddr_in` behind the family word
-and which that tier cannot place — a `NULL` address or `AF_INET` spells the same send
-(`docs/p0/supervisor.md` R4, R7); it refuses a spelling, not a destination. An exec is still a read of the program (§4), so an undeclared binary under a
+and which that tier cannot place — a `NULL` address or `AF_INET` spells the same send;
+it refuses a spelling, not a destination. An exec is still a read of the program (§4), so an undeclared binary under a
 `deny_read` the tier enforces is refused as `read-denied`. Tier 2's fanotify exec check reads the same absent-exec
 policy through `decide.ListenerExec`: an undeclared binary is not refused merely because no `exec:` section
 was declared (`internal/runtime/enforce/cgroup`, `decideExec`).
@@ -211,7 +211,7 @@ hide a secret's name or its activity, not only its bytes, keeps it outside every
 
 ## 2. Filesystem rules
 
-*Note 2026-09-29 (ADR 0024/0025/0028, accepted; steps A to D built, at tier 2 and as tier `bpflsm` (T7, T13, T14; corrected 2026-09-30); [enforce-plane](../../docs/p0/enforce-plane.md) R5 to R11, R25):* at tier 2 where a plane mode is selected (and at tier 3, tier `bpflsm`) the nearest-wins walk below is decided in the kernel by the plane on the object the kernel resolved, for opens, execs, renames, links, unlinks and rmdirs (and, from step B, mkdir, mknod, symlink, truncate, chmod, chown and the xattr/ACL protection hooks), and "Identity" below is amended: rows are keyed by the kernel inode pointer in per-run maps pinned by the run's Landlock domain, not by BPF inode storage (ADR 0010, superseded by ADR 0025). Each tier's statement of the rule comes from one core, `internal/policy/decide` (ADR 0028; `decide.CompilePlane`, `PlaneEvaluator`, `TestPlaneRowsMatchEvaluate`). The text below stays as the rule's statement; the plane implements it.
+*Note 2026-09-29 (ADR 0024/0025/0028, accepted; steps A to D built, at tier 2 and as tier `bpflsm` (T7, T13, T14; corrected 2026-09-30); enforce-plane R5 to R11, R25):* at tier 2 where a plane mode is selected (and at tier 3, tier `bpflsm`) the nearest-wins walk below is decided in the kernel by the plane on the object the kernel resolved, for opens, execs, renames, links, unlinks and rmdirs (and, from step B, mkdir, mknod, symlink, truncate, chmod, chown and the xattr/ACL protection hooks), and "Identity" below is amended: rows are keyed by the kernel inode pointer in per-run maps pinned by the run's Landlock domain, not by BPF inode storage (ADR 0010, superseded by ADR 0025). Each tier's statement of the rule comes from one core, `internal/policy/decide` (ADR 0028; `decide.CompilePlane`, `PlaneEvaluator`, `TestPlaneRowsMatchEvaluate`). The text below stays as the rule's statement; the plane implements it.
 
 **Identity.** Every `fs` entry names an existing directory or file. `compile` (unprivileged) checks existence and
 prints each entry's mount, filesystem type and device, warning on mount points, overlay layers and btrfs; `run`
@@ -239,13 +239,13 @@ this run** decides; ancestors carrying only other runs' entries are skipped. A w
   which is Landlock's `REFER` rule, so both tiers behave the same. *Amended 2026-09-24:* a `deny_read` nested in a
   write entry is the exception Landlock's `REFER` cannot see (the write entry's rights are equal on both ends), and
   at tier 2 the fanotify listener enforcing it matches paths, so a link or rename out of it was an escape; the
-  supervisor refuses such a link or rename at tier 2, best effort (docs/p0/supervisor.md R15d). At tier 1 the entry
+  supervisor refuses such a link or rename at tier 2, best effort. At tier 1 the entry
   refuses no read (compile warns `unenforced`); tier 3 decides on the inode. *Amended 2026-10-17:* Landlock's `REFER`,
   which every tier keeps under its own decision, also compares the rights its ruleset grants rather than the entries'
   kinds: a file moved or hard-linked into an `exec.allow` directory inside a write entry gains `EXECUTE` there and is
   refused (`EXDEV`), and a hard link needs `REFER` on the source's directory, which a write entry naming a single file
   does not grant, so such a file gets no second name in another directory. The ledger and `compile --test` say so at
-  every tier (docs/p0/supervisor.md R17). *Amended 2026-10-17:* the comparison is the
+  every tier. *Amended 2026-10-17:* the comparison is the
   kernel's: a rename or link within one directory compares nothing; across directories the rights at the new name's
   directory are compared with the moved object's own, never with a rule on the name it replaces, so replacing an
   `exec.allow` file entry inside a write entry (`mv out/tool.new out/tool`) is allowed; and only the file rights count
@@ -464,11 +464,11 @@ Kernel decision first, gate second, gate only escalates.
    lowers a verdict. Predicates are a closed set: `fs.write outside worktree`, `fs.read matches <glob>`,
    `exec matches <argv pattern>`, `net to undeclared host`, `net to <host:port>`. No expressions.
    *Amended 2026-11-01:* `net to <host:port>` on this host is on the destination, not a spelling of it: it scores every
-   loopback address, each of the host's own, and a group or broadcast datagram on its port (gate.md R3).
+   loopback address, each of the host's own, and a group or broadcast datagram on its port.
    *Amended 2026-11-02:* what the kernel's routing tables send here (their `local`, `broadcast` and `anycast` routes in
    tables local, main and default) is this host as well: an address of an AnyIP range counts as one of the host's own,
    and a datagram to a broadcast address set by hand or to an IPv6 anycast address the host joined as a broadcast or
-   group datagram (gate.md R3).
+   group datagram.
    *Amended 2026-10-06 (ADR 0048 (1)):* exec command rules are lists and decide before the gate, after the image
    floor: any `exec.deny` match refuses, any `exec.ask` match refuses (reserved), and a constrained tool's unlisted
    invocation is refused; specificity never changes the order, and no exception syntax exists.
@@ -481,7 +481,7 @@ The bounded implementation is specified in agent-contract R22a. Scores sum to at
 
 ## 4. Exec
 
-*Note 2026-09-29 (ADR 0024 (4), 0027, accepted; R9 built for step A at tier 2, R26 built at T14 (§4's tiers 2 and 3 note on mapped code); [enforce-plane](../../docs/p0/enforce-plane.md) R9, R26):* below, the tier-3 sentence "allowed when its interpreter is allowed" is withdrawn, because tier 3 also installs Landlock, whose EXECUTE rule refuses an unlisted script; tiers 2 (where a plane mode is selected) and 3 decide exec only in `bprm_check_security`, by inode, parent inode and name (`TestPlaneExecComparesTheWholeName`). ADR 0027's tiers 2 and 3 rule for the dynamic loader and PROT_EXEC mmap follows that paragraph.
+*Note 2026-09-29 (ADR 0024 (4), 0027, accepted; R9 built for step A at tier 2, R26 built at T14 (§4's tiers 2 and 3 note on mapped code)):* below, the tier-3 sentence "allowed when its interpreter is allowed" is withdrawn, because tier 3 also installs Landlock, whose EXECUTE rule refuses an unlisted script; tiers 2 (where a plane mode is selected) and 3 decide exec only in `bprm_check_security`, by inode, parent inode and name (`TestPlaneExecComparesTheWholeName`). ADR 0027's tiers 2 and 3 rule for the dynamic loader and PROT_EXEC mmap follows that paragraph.
 
 `exec.allow` entries are resolved paths or basenames; a basename matches the final component of the file's dentry
 after symlink resolution, and `compile` prints the resolved candidates on `PATH`.
@@ -489,7 +489,7 @@ after symlink resolution, and `compile` prints the resolved candidates on `PATH`
 An exec entry (the command, an MCP server's command, an `exec.allow` entry or a pattern's command word) that is a
 `/proc` path, or reaches one by its symlinks or its `PATH` directory, is refused by `compile` (`exec-proc`, *added
 2026-10-16*): `/proc/self/exe` names the executable of whichever process opens it, so `compile` resolved it to tego's
-own binary and the run granted that (docs/p0/agent-contract.md R8a).
+own binary and the run granted that.
 
 ### Command rules (added 2026-10-06, ADR 0048)
 
@@ -541,7 +541,7 @@ prove coverage of every target an installed git reaches. Omitted later built-ins
   agent command, an MCP server's command, their `#!` interpreters, `tego run`'s command) names it.
 - **Enforcement.** At every tier the supervisor decides on copied argv and refuses before the syscall runs (R). An
   allow is a copied fact (D), disclosed as the cell `exec.rules/argv`; ADR 0048's P2 pins the decided facts in the
-  kernel at plane tiers. *Amended 2026-10-19 (ADR 0048 P2, built; [enforce-plane](../../docs/p0/enforce-plane.md)
+  kernel at plane tiers. *Amended 2026-10-19 (ADR 0048 P2, built; enforce-plane
   §2.22):* at tier `cgroup` with a plane mode and at tier `bpflsm`, where doctor's exec pin cell (`plane.exec_pin`)
   passed in the run's mode, the kernel holds each exec the supervisor continued to the facts it decided:
   `bprm_check` refuses another image or interpreter (`pin-mismatch`; in a run with an exec gate alone, also a
@@ -566,8 +566,8 @@ prove coverage of every target an installed git reaches. Omitted later built-ins
   never by its ELF type, which a static-pie program shares. A program the supervisor cannot read as the loader will
   is refused `loader-unresolved`, and in a run whose images are restricted one no `exec.allow` entry grants is
   refused `loader-program-unmatched`.
-- **The harness hook's grant is one exact vector** (*added 2026-10-25*, [ADR 0064](../../docs/adr/0064-harness-hook-exec-grant.md),
-  agent-contract.md R10a (5)). Under an allow-list contract whose rules do not admit a provisioned hook, the run admits
+- **The harness hook's grant is one exact vector** (*added 2026-10-25*, [ADR 0064](../../docs/adr/0064-harness-hook-exec-grant.md)).
+  Under an allow-list contract whose rules do not admit a provisioned hook, the run admits
   the tego binary with the hook's argv only: a runtime command rule no contract can write, which matches when the whole
   vector equals it, argv[0] included, read to its end, with no glob and no trailing token, and only on the exec's own
   image. Every other vector of the binary is refused `exec-not-allowed` under `exec.harness-hook[<tego binary>]`. At
@@ -576,13 +576,13 @@ prove coverage of every target an installed git reaches. Omitted later built-ins
   obtained through a supplied dispatcher identity or a shebang stage, and cannot satisfy this exact grant. A stage's
   invoked-as reading retains shebang provenance. The compiler excludes dispatcher identity bindings; no live
   admission route was established by these supplied-facts cases. Live validation is owed in a guest.
-- **A deny-list run's own `CODEX_HOME` is not a place to run from** (*added 2026-10-16*, agent-contract.md R10a).
+- **A deny-list run's own `CODEX_HOME` is not a place to run from** (*added 2026-10-16*).
   The run grants the directory for writing on its own authority; an exec whose image, or whose directly-invoked
   loader's program, lies there is refused `codex-home-exec`, since a copy of a denied program under another name is
   not that program to the command rules. A symlink there to a program elsewhere is that program. Where an image lies
   is the kernel's spelling of it, even where the supervisor cannot walk that spelling back to the file (*amended
   2026-10-17*: a copy in a directory the agent made unsearchable, run through its descriptor, ran).
-  The run's `hook-state` directory, the write grant a harness provision makes (agent-contract.md R10a (4), R27, ADR
+  The run's `hook-state` directory, the write grant a harness provision makes (ADR
   0062), is held the same way under the rule `harness-state-exec` (*added 2026-10-24*).
   The refusal holds a copy linked there only (*amended 2026-10-16*): a deny-list leaves
   images unrestricted, so in every deny-list run a copy in a memfd (with or without a write entry) or in a file the
@@ -754,7 +754,7 @@ contract entry can name a runtime-created anonymous inode, so such an image is n
 loses the race above (a memfd is exactly the image a peer can swap in). `memfd_create`'s number and flags are
 scalars in registers, immutable once the syscall traps, so tier 1's seccomp filter — which tier 2 inherits — refuses
 at *creation* any `memfd_create` that would yield an image the kernel can exec, and no executable anonymous image
-ever exists inside the run (`docs/p0/enforce-landlock.md` R11a). Where the kernel honours `MFD_NOEXEC_SEAL` (6.3
+ever exists inside the run. Where the kernel honours `MFD_NOEXEC_SEAL` (6.3
 and later, or a backport such as RHEL 9.8's 5.14; a probe decides, never the version) that is a `memfd_create`
 without the flag (`-EACCES`): the flag clears a memfd's execute bits and seals them, so a memfd made with it cannot
 be exec'd (`mm/memfd.c`; verified on 6.17), while a data memfd that sets it — shared memory an ordinary workload
@@ -769,7 +769,7 @@ supervisor's best-effort walk alone; a sealed hugetlb memfd passed the 6.3+ arm)
 run restricts exec; a contract may opt out with `exec: {anonymous: true}`, which drops the arm, allows the anonymous
 exec and still records it `fileless` — the opt-out is on record in the run's contract copy, its `contract_hash`, a
 compile warning and the run's capability line, which reports `exec.deny` `false` at tier 1 (tier 2's handle does
-once it reads the inherited tier-1 row, `docs/p0/enforce-landlock.md` R11a), since `exec.allow` then no longer
+once it reads the inherited tier-1 row), since `exec.allow` then no longer
 bounds what runs. The supervisor's own refusal of an anonymous image (table above) is **kept as the record and the
 best-effort backstop** for images that arrive by another route — a descriptor received over `SCM_RIGHTS` or
 inherited at launch, a file unlinked after opening — deciding anonymity on the inode it reached (no link count, or
@@ -802,7 +802,7 @@ that is libc, not Tego: musl and pre-2.42 glibc (RHEL, Debian, Alpine) have no s
   hook refuses a `PROT_EXEC` map of a non-granted inode (and `bprm_check_security` closes the raced loader exec),
   buildable once BPF LSM is in the boot `lsm=` list (`docs/GAPS.md` B1, C31). The same residual holds on non-Ubuntu targets without it.
 
-*Tiers 2 and 3 with a plane mode (built 2026-09-30, ADR 0027, [enforce-plane](../../docs/p0/enforce-plane.md) R26,
+*Tiers 2 and 3 with a plane mode (built 2026-09-30, ADR 0027,
 §2.14).* With an `exec:` section, the plane's `mmap_file` and `file_mprotect` decide on the prot the kernel maps with
 (READ_IMPLIES_EXEC included) and refuse `EACCES`: a `PROT_EXEC` map of a file under a write entry that no `exec.allow`
 entry covers (an `exec.allow` directory above it, its own entry under its name, or a bare-name entry, as for an
@@ -816,7 +816,7 @@ keeps the paragraph above.
 
 ## 5. Network
 
-*Note 2026-09-29 (ADR 0024 (7), accepted; built for step A, `TestPlaneReturnsOnlyZeroOrEACCES`; `socket_create`'s allowlist built, T13; [enforce-plane](../../docs/p0/enforce-plane.md) R2):* a plane decision returns 0 or -EACCES and nothing else, and refusals read EACCES in every tier once a plane mode is selected; fanotify's EPERM exception and tier 3's designed EPERM for exec end. Network verdicts stay on the per-run cgroup programs; `socket_create` adds the family allowlist (R14).
+*Note 2026-09-29 (ADR 0024 (7), accepted; built for step A, `TestPlaneReturnsOnlyZeroOrEACCES`; `socket_create`'s allowlist built, T13):* a plane decision returns 0 or -EACCES and nothing else, and refusals read EACCES in every tier once a plane mode is selected; fanotify's EPERM exception and tier 3's designed EPERM for exec end. Network verdicts stay on the per-run cgroup programs; `socket_create` adds the family allowlist (R14).
 
 *Amended 2026-09-24 (ADR 0018):* a `net:` section also bounds which sockets exist. `socket(2)` and `socketpair(2)`
 are admitted only as what the network rules govern — unix, netlink, and TCP, UDP and (with an ICMP entry) ping
@@ -882,7 +882,7 @@ resolved against `/proc/<pid>/cwd`.
 
 **The errno of a refusal.** A connect, Fast-Open send or unix connect the run refuses fails with `EACCES` in every
 tier, and so does a datagram the supervisor refuses, so a refusal reads the same however it was reached. The
-supervisor answers `-EACCES` (docs/p0/supervisor.md R10), and Landlock's own backstop, which the runtime cannot
+supervisor answers `-EACCES`, and Landlock's own backstop, which the runtime cannot
 change, answers `EACCES` too. Tier 2 inherits the supervisor, which decides a connect first and never relays one it
 refuses, so the agent meets `EACCES` there as well. Tier 2's `cgroup/connect4,6`, `sendmsg4,6` and unix programs then
 decide again what the supervisor let through: a connect it relayed, and an unconnected datagram it admitted and
@@ -893,7 +893,7 @@ return only `0` or `1` (enforce-cgroup-observe I3), and a `CGROUP_SOCK_ADDR` pro
 an unconnected datagram to a destination the contract does not admit, and for a connect only where the kernel's rows
 and the supervisor disagree. *Amended 2026-10-05:* the supervisor answers such a datagram itself,
 with the program's errno (`EPERM`, or `EACCES` where the decision plane decides unix names below 6.7), so the agent's
-errno is unchanged and the datagram's one ledger line is that refusal (docs/p0/supervisor.md R13b). *Amended
+errno is unchanged and the datagram's one ledger line is that refusal. *Amended
 2026-10-16 (R13b):* a refused datagram of a shape the supervisor leaves to the kernel's own
 checks — an IPv4 or v4-mapped destination on an `AF_INET6` socket, UDP port 0, a datagram that is not UDP (an ICMP
 ping socket's), a relative unix name — is no longer continued to the program, which refused it with `EPERM` (or
@@ -904,7 +904,7 @@ in every tier (supervisor R11a, `unix-absent`). Tier 3's `socket_connect` progra
 return `-EACCES` (P1). `ECONNREFUSED` is never used for a refusal: it is what a real peer answers, and a relayed
 `ECONNREFUSED` is returned as it came and recorded `allow` (supervisor R9, I3), so the two must stay apart.
 *Settled 2026-09-23:* ARCHITECTURE §7 said `-ECONNREFUSED`, REASON-CHANNEL §1 said `-EPERM`, and
-docs/p0/supervisor.md §11 carried the three values as an open conflict. This section, P0-DESIGN §4.2 and R10 said
+the supervisor's spec carried the three values as an open conflict. This section said
 `-EACCES`, which is what the supervisor has always returned, and every document now says the same.
 
 **UDP.** A connected datagram socket is decided at connect (glibc's resolver connects and then sends with no address,
@@ -923,14 +923,14 @@ the CVE-2026-53249 restriction) is sent first to the route's first hop,
 which the contract need not admit, in every tier: the decision and the root tiers' programs see only the destination.
 *Amended 2026-11-02 (GAPS C34):* under a `net:` section, as under a net gate before, a run cannot route around its
 destinations, save for the residuals below. The filter refuses `setsockopt` of `IP_OPTIONS`, `IPV6_RTHDR`,
-`IPV6_2292RTHDR` and `IPV6_2292PKTOPTIONS` with `EPERM`, race-free on the scalar level and option, in every tier
-(docs/p0/enforce-landlock.md R11b), so no process of the run puts a route on a socket through `setsockopt(2)`; what
+`IPV6_2292RTHDR` and `IPV6_2292PKTOPTIONS` with `EPERM`, race-free on the scalar level and option, in every tier,
+so no process of the run puts a route on a socket through `setsockopt(2)`; what
 that costs is a tool that sets IP options, such as `ping -R`. The supervisor reads a socket's route before every connect, Fast-Open send
 or approved datagram it performs, and refuses a routed one `relay-source-routed`, for a socket that carried a route
 before the filter applied. It reads each `sendmsg` and `sendmmsg` message's control buffer and refuses, with `EACCES`
 and the same rule, a datagram on an IP socket whose `IP_RETOPTS`, `IP_OPTIONS`, `IPV6_RTHDR` or `IPV6_2292RTHDR`
-message would route it, connected or not, and one whose buffer is longer than the 4 KiB it reads
-(docs/p0/supervisor.md R9, R13b). Residuals: (1) that control-buffer read is best effort in every tier: the buffer
+message would route it, connected or not, and one whose buffer is longer than the 4 KiB it reads.
+Residuals: (1) that control-buffer read is best effort in every tier: the buffer
 stays in the agent's memory until the kernel copies it, and a sibling thread can write a route into it after the
 read, which no tier's kernel program sees; (2) an admitted datagram the supervisor continues on a socket that carried
 a route before the filter applied (inherited, or received over a unix socket) is sent with it, since a socket's
@@ -942,8 +942,8 @@ messages route, and the supervisor's read before a relay is a snapshot such a ri
 can still take a connect or datagram to the blocked host first. The resolver is read from `/etc/resolv.conf` at run start (127.0.0.53 under systemd-resolved) and
 allowed on UDP and TCP 53 in every tier (glibc falls back to TCP on truncation); DNS is recorded as `net proto=udp|tcp`.
 On Landlock ABI 10+ (Linux 7.2) the port rule is also applied in-kernel; the address check stays in the supervisor.
-Explicit listener declarations and their distinct per-tier address/port guarantees are implemented; see
-`docs/p0/network-controls.md`. They supersede the original assumption that the schema declared no listen ports.
+Explicit listener declarations and their distinct per-tier address/port guarantees are implemented.
+They supersede the original assumption that the schema declared no listen ports.
 An omitted listener list adds no new listener restriction, and a `net:` section alone admits no TCP listener: an
 explicit bind fails on the withheld `BIND_TCP` and, *amended 2026-11-01*, a `listen()` with no bind, which that right
 never sees, is refused by the supervisor and recorded. *Amended 2026-11-02:* a ring's `IORING_OP_LISTEN` under
@@ -984,7 +984,7 @@ so symlinked paths and daemon restarts keep matching; abstract names match by by
 supervisor decides the name a connect passes and then the socket it resolves to, walked as the agent, and makes
 the connect with the agent's credentials: a symlink the agent makes under a write entry admits only a socket that
 itself lies under one, and the listener's DAC check and `SO_PEERCRED` uid and gid are the agent's, not the
-supervisor's (`docs/p0/supervisor.md` R11, amended 2026-09-22). A datagram send there is decided on the name it
+supervisor's (amended 2026-09-22). A datagram send there is decided on the name it
 carries and then, as a connect is, on the socket that name reaches when the agent's own lookup resolves it: refused
 with `EACCES` when either refuses, and an admitted one sent by the agent's own syscall (the stated UDP limit above).
 *Amended 2026-10-16 (ADR 0041's note of that date):* every unix pathname — a connect's, a
@@ -994,8 +994,7 @@ datagram's, a bind's — is resolved in the agent's own view (its root, cwd and 
 otherwise cannot be resolved there, is refused (`rule: path-unreliable`). A datagram was decided on its lexically
 cleaned spelling, so a symlink the agent put at a name a `unix:` entry declares, a `..` after a symlink, or a
 `/proc/self/cwd` link sent it to a socket outside every entry under an `allow` line. Stream and seqpacket are decided
-once at connect, datagram at connect and at every send. **A socket the run bound** (rule `docs/p0/supervisor.md`
-R11a, decided 2026-10-16): a pathname socket under a declared `fs.write` path is allowed implicitly only when a
+once at connect, datagram at connect and at every send. **A socket the run bound** (decided 2026-10-16): a pathname socket under a declared `fs.write` path is allowed implicitly only when a
 process of the run bound it — `multiprocessing`, Ray, local MCP servers the agent starts. Any other socket there, one
 that existed before the run or that a process outside it made, is refused (`rule: unix-foreign`) unless a `unix:`
 entry names it: what the program behind it runs is outside the run, and the premise "the run created it" is false
@@ -1103,7 +1102,7 @@ before reading its body or contacting the fixed, TLS-verified upstream. Unmatche
 400. Declared HTTP/2 streams receive the same per-request policy. CONNECT can target only the listener's declared
 model authority, and WebSocket routes require validated GET upgrades. Their bounded opaque tunnels cannot
 enforce model token, cost or repeat limits; any such declared or machine-inherited limit prevents release.
-See [proxy protocol bounds](../../docs/p0/proxy-protocols.md). The request's Host cannot choose a new
+See proxy protocol bounds. The request's Host cannot choose a new
 upstream, redirects are not followed, and refused requests create no model response or usage charge. A required
 policy listener that cannot start prevents agent release. Record modes retain policy refusals; URL targets use
 the same redaction as capture targets, and query strings are never stored in the policy path field.
@@ -1126,7 +1125,7 @@ ingress filtering, packet inspection, established-connection revocation or conte
 Allowed DNS resolvers, helpers, pipes and destination services can relay data; they remain part of the trust scope.
 
 Explicit listener, ingress, resource and DNS declarations add separate controls. Their tier requirements,
-packet accounting and helper boundaries are specified in [Network controls](../../docs/p0/network-controls.md).
+packet accounting and helper boundaries are specified in Network controls.
 
 **Docker — roadmap, not accepted contract support.** The loader rejects nonempty `docker:` and container
 configuration. The following describes the proposed proxy behavior. Requests through the run's proxy socket are decided by the `docker:` section: an item absent from
@@ -1134,7 +1133,7 @@ configuration. The following describes the proposed proxy behavior. Requests thr
 paths readable by the invoking uid outside `deny_read` (ro); container ids are resolved and rewritten before
 forwarding (ARCHITECTURE §9).
 
-**HTTP MCP servers.** *Added 2026-10-19 ([agent-contract](../../docs/p0/agent-contract.md) R16a; FEATURES I5):* an
+**HTTP MCP servers.** *Added 2026-10-19 (FEATURES I5):* an
 `mcp:` entry with a `url:` (an HTTP server the agent connects to) admits that URL's host and port under a `net:`
 section, as one more allow entry after the author's, decided and resolved like any `tcp://host:port` entry (TCP
 only: a UDP datagram to the port is refused), and its net lines carry `rule: mcp[<name>]`. An endpoint `net.allow`
@@ -1508,7 +1507,7 @@ longest stretch without an exec, a connect or a refusal". Rejected: naming at co
 pipe, socket, eventfd and terminal reads alike, so an idle event loop's periodic wakeups would keep a hung agent alive
 for good, and which a non-dumpable process hides; and notifying read-opens only to count them, which is the cost of
 `record: full` without its record and leaves `tego status`, which reads idle from the ledger, disagreeing with the
-check. *Amended 2026-10-19 (limits-check-doctor-cli.md R4):* the rejection above of a per-run activity stamp the kernel writes is reversed, and with
+check. *Amended 2026-10-19:* the rejection above of a per-run activity stamp the kernel writes is reversed, and with
 it the root-tier `off` warning. Under `off` a root tier's kernel recorder writes no sample for an allowed open, path
 change, regular-file create or connect, so before the stamp a pure reader at tier `cgroup` or `bpflsm`, and a pure
 writer where the plane decides writes, was ended as stalled, and `compile` warned it. Each such action of a run with a

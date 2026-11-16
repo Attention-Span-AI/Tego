@@ -183,8 +183,8 @@ func TestMulticallDenyWinsOverAnAllowedReading(t *testing.T) {
 }
 
 // FuzzMulticallOnlyTightens is onlyTightens over any names, link count and argv, seeded with the nine name forms of
-// rows/multicall_test.go's nameForms (2026-11-11), the forms the Ubuntu 26.04.1 guest ran (ADR 0048's amendment of
-// 2026-11-11, What was measured), and two vectors whose prefixes settled where the whole vector is refused.
+// rows/multicall_test.go's nameForms, the forms the Ubuntu 26.04.1 guest ran (ADR 0048,
+// What was measured), and two vectors whose prefixes settled where the whole vector is refused.
 func FuzzMulticallOnlyTightens(f *testing.F) {
 	for _, s := range []struct {
 		req, image, argv string
@@ -267,7 +267,7 @@ func TestMulticallPrefixFinalHolds(t *testing.T) {
 // while one of its readings is pending (Reading.Pending), as the matcher's own readings are not (settled). Under the
 // argv[1] dispatch of a uutils image (stem myutils or xbox), `./cargo build`, fifteen `--features f` pairs, then
 // `--config alias.build=publish` is refused under deny: cargo publish and ask: cargo publish, and no prefix of it is a
-// final none (review of 2026-11-11: the 32-element prefix was).
+// final none (the 32-element prefix could be).
 func TestMulticallPrefixPendingReading(t *testing.T) {
 	tail := []string{"./cargo", "build"}
 	for range 15 {

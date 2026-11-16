@@ -22,7 +22,7 @@ type LockInfo = runlock.LockInfo
 // StopTarget is a launcher held by a verified pidfd (runlock.StopTarget).
 type StopTarget = runlock.StopTarget
 
-// Lock and stop-marker errors, one per failure class (docs/p0/runtime-launch.md §9 "Naming").
+// Lock and stop-marker errors, one per failure class.
 var (
 	// ErrStale is runlock.ErrStale: the pid the lock names is now another process (R22, case 15).
 	ErrStale = runlock.ErrStale
@@ -36,7 +36,7 @@ var (
 
 // StopRequestFile is the marker `tego stop` drops in a run directory before signalling the
 // launcher, so the launcher's signal handler can tell a requested stop (run_end reason=stopped)
-// from an arbitrary SIGTERM (reason=signal) — docs/p0/runtime-launch.md §3, R9.
+// from an arbitrary SIGTERM (reason=signal).
 const StopRequestFile = ledger.StopRequestFile
 
 // ParseLockInfo is runlock.ParseLockInfo.
@@ -71,7 +71,7 @@ func openLockFile(path string) (*os.File, error) { return ledger.OpenRegular(pat
 // writeLockInfo records who holds the run's lock, through the descriptor ledger.Writer holds the flock
 // on (R1): writing there never disturbs the lock, and the file is never reopened by name. A root
 // launcher reopening <run>/lock by path — O_TRUNC included — would follow whatever a user who owns the
-// ledger root had renamed into place since the run directory was made (record-ledger.md §3).
+// ledger root had renamed into place since the run directory was made.
 func writeLockInfo(w *ledger.Writer, info LockInfo) error {
 	if err := w.WriteLockInfo([]byte(info.String())); err != nil {
 		return fmt.Errorf("runtime: write lock file: %w", err)

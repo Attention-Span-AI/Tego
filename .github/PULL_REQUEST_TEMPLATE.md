@@ -11,5 +11,5 @@
 - [ ] Tests added or updated; an integration test too if the change touches the kernel
 - [ ] `make lint` is clean, and the tests of the packages I touched pass with `-count=1`
 - [ ] New source files have an SPDX header
-- [ ] The spec (`docs/p0/` or `spec/`) is updated if behaviour or a field changed
+- [ ] The spec (`spec/`) is updated if behaviour or a field changed
 - [ ] Commits are signed off (`git commit -s`)

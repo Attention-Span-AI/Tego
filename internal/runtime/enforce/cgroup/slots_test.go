@@ -288,7 +288,7 @@ func TestSlotOwnersNeedTheInitialPidNamespace(t *testing.T) {
 	}
 }
 
-// TestSlotExhaustion covers enforce-cgroup-observe.md §6 E12: when every slot is held by a live launcher, allocation fails with the
+// TestSlotExhaustion: when every slot is held by a live launcher, allocation fails with the
 // error the launcher turns into exit 125, and leaves nothing behind.
 func TestSlotExhaustion(t *testing.T) {
 	t.Parallel()
@@ -339,7 +339,7 @@ func TestSlotConcurrentGoroutines(t *testing.T) {
 	}
 }
 
-// TestSlotConcurrentProcesses is the case enforce-cgroup-observe.md §6 E21 names and a Go mutex cannot cover: two launcher processes
+// TestSlotConcurrentProcesses is the case a Go mutex cannot cover: two launcher processes
 // allocating at the same instant. It re-executes this test binary as helpers that take slots, report them and
 // then hold them until the parent lets them exit, so what is asserted is disjointness between *live* holders;
 // reclaiming a dead holder's slots is TestSlotProcessDeathReclaims below.
@@ -477,7 +477,7 @@ func TestSlotHelper(t *testing.T) {
 }
 
 // TestSlotTableIsPerBuild asserts two build hashes have disjoint slot spaces, which is what keeps an upgrade
-// mid-run from handing one run's index to another build's run (enforce-cgroup-observe.md §6 E22).
+// mid-run from handing one run's index to another build's run.
 func TestSlotTableIsPerBuild(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

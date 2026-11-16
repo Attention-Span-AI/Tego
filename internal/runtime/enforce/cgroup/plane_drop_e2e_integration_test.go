@@ -20,7 +20,7 @@ import (
 
 // dropContract is planeContract under record: summary, kill test 4's and the default, where the filter leaves the
 // plane every mutation its loaded hooks decide, write-opens and creat included (record: full keeps the open family
-// notified, TIER3-PLAN T16).
+// notified).
 var dropContract = strings.Replace(planeContract, "record: full", "record: summary", 1)
 
 // dropAgent makes one mutation of each kind the narrowed filter no longer notifies, each in a directory no entry is
@@ -55,7 +55,7 @@ attempt("mv-git", lambda: os.rename("out/repo/.git", "out/repo/.git.old"))
 attempt("mkdir-outside", lambda: os.mkdir("outside"))
 `
 
-// TestPlaneRunDropsAndNamesByPath is enforce-plane §2.13's condition 1 lifted (§2.15; TIER3-PLAN T16): in each plane
+// TestPlaneRunDropsAndNamesByPath: in each plane
 // mode this machine passes, a record: summary run at tier cgroup has its filter narrowed (the launcher logs what it
 // no longer notifies), so the kernel recorder's line is each mutation's only line, and it names the mutation by its
 // full path and the contract's rule on its own: an allowed unlink, rmdir, mkdir, rename (within a directory and
@@ -121,8 +121,8 @@ func planeDropCell(t *testing.T, bin string, uid, gid int, mode string) {
 		t.Fatalf("the filter was not narrowed: the launcher's log has no drop line:\n%s", own)
 	}
 	res := agentResults(t, out.String())
-	// Below Landlock ABI 3 (6.2) the filter's errno arm refuses truncate(2) with EPERM before any hook runs
-	// (enforce-landlock R2, E31): no hook, no line, on AL2023's 6.1. The kernel's ABI says which applies, never the
+	// Below Landlock ABI 3 (6.2) the filter's errno arm refuses truncate(2) with EPERM before any hook runs:
+	// no hook, no line, on AL2023's 6.1. The kernel's ABI says which applies, never the
 	// result, so an EPERM from ABI 3 fails the cell rather than skipping it.
 	abi, err := sys.LandlockABI()
 	if err != nil {

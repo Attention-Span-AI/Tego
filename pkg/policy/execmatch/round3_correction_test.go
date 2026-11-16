@@ -12,7 +12,7 @@ import (
 )
 
 // round3Edits enumerates one unit insertion, deletion, substitution or adjacent
-// transposition over the reviewer's command-name alphabet. Autocorrect below
+// transposition over the command-name alphabet. Autocorrect below
 // applies Git's different costs (swap 0, substitute 2, insert 1, delete 3), its
 // threshold, common-prefix exclusions and unique-best requirement afterwards.
 func round3Edits(s string, emit func(string)) {

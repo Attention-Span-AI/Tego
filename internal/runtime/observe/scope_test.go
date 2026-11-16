@@ -116,7 +116,7 @@ func TestRecorderKeepsToItsOwnRun(t *testing.T) {
 	}
 }
 
-// TestRecorderDropsTheSlotsPreviousRun: a slot's rings are reused by its next run (ADR 0026 (6) as amended), so
+// TestRecorderDropsTheSlotsPreviousRun: a slot's rings are reused by its next run (ADR 0026 (6)), so
 // a record the previous run of the slot left in the ring, stamped with that run's slot and its generation, may
 // be there when this run starts reading. It is not this run's: only a record of this run's own generation is
 // recorded or handed to a hook.

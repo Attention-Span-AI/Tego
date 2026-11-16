@@ -28,8 +28,7 @@ var sudoVars = []string{"SUDO_UID", "SUDO_GID", "SUDO_USER", "SUDO_COMMAND"}
 // ownShell makes this test's environment a person's own shell, not a sudo: it removes sudoVars until the test ends.
 // The test binary inherits them under `sudo go test` (CI's root-suites job, test/vm/root-suites.sh's guests), and as
 // root config.InvokingUID then names sudo's caller, so tego setup and tego learn --save refuse as root for another
-// user (125 [privilege]): a test of a person's own setup or save tested the refusal instead (acceptance 2C,
-// 2026-11-11, 26 tests). As root it is root's own shell (root logged in, or su -), which those commands serve; as a
+// user (125 [privilege]): a test of a person's own setup or save would test the refusal instead. As root it is root's own shell (root logged in, or su -), which those commands serve; as a
 // user it changes nothing, since InvokingUID reads SUDO_UID only for uid 0. A test of the refusal sets SUDO_UID
 // itself (TestSetupExitCodes, TestLearnSaveRefusesSudo).
 func ownShell(t *testing.T) {
@@ -44,7 +43,7 @@ func ownShell(t *testing.T) {
 
 // danaUID is the fixture user's uid, which setup -v prints (testdata/setup-finished-v.golden). It was the test
 // process's own uid, so the golden held only where the test ran as uid 1000: as root it printed uid 0 (the 7.0 guest's
-// root suite, 2026-11-11), and as GitHub's runner user uid 1001.
+// root suite), and as GitHub's runner user uid 1001.
 const danaUID = 1000
 
 // onFixture points every machine read of this test at fixture f, as `tego setup` run by its user from its agent's

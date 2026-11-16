@@ -136,7 +136,7 @@ var producerTraps = map[string]bool{
 	// recvmsg and recvmmsg install the descriptors an SCM_RIGHTS message carries, with flags behind a pointer F9
 	// cannot read; unix.Recvmsg's are read (recvRules).
 	"SYS_RECVMSG": true, "SYS_RECVMMSG": true,
-	// macOS's (the maze setup tool's darwin build, ADR 0023's 2026-10-24 F6 note): kqueue, the _nocancel, guarded,
+	// macOS's (a darwin build, ADR 0023 F6 note): kqueue, the _nocancel, guarded,
 	// data-protection and by-id opens, socket_delegate, peeloff, fileport_makefd, the POSIX shared memory and
 	// semaphore opens (each a descriptor in xnu), the NECP and Skywalk opens, and the receives that install
 	// SCM_RIGHTS descriptors. Under a darwin build any other raw trap is a finding too (syscall in check.go).
@@ -158,8 +158,8 @@ var recvRules = map[string]recvRule{"Recvmsg": {2, 3}, "RecvmsgBuffers": {2, 3}}
 // ioctlAllowed are the ioctl requests a raw SYS_IOCTL or an x/sys wrapper that takes one may name (A10 F5): none answers a
 // descriptor of this process. Others do (TIOCGPTPEER, NS_GET_USERNS, NS_GET_PARENT, KVM_CREATE_VM, ...), so a
 // request outside the list, or not a named constant, is a finding. SECCOMP_IOCTL_NOTIF_ADDFD answers the number
-// it installed in the target's table, not one of ours. TIOCGETA and TIOCSETA are macOS's TCGETS and TCSETS (the
-// maze setup tool's darwin build): they read and set a termios and answer nothing else.
+// it installed in the target's table, not one of ours. TIOCGETA and TIOCSETA are macOS's TCGETS and TCSETS:
+// they read and set a termios and answer nothing else.
 var ioctlAllowed = map[string]bool{
 	"SECCOMP_IOCTL_NOTIF_RECV": true, "SECCOMP_IOCTL_NOTIF_SEND": true, "SECCOMP_IOCTL_NOTIF_ID_VALID": true,
 	"SECCOMP_IOCTL_NOTIF_SET_FLAGS": true, "SECCOMP_IOCTL_NOTIF_ADDFD": true,

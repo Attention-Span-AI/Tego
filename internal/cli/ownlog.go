@@ -19,7 +19,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
-// The own log's shape (docs/OPERATIONS.md "Logs of tego itself", limits-check-doctor-cli.md §3, P0-DESIGN
+// The own log's shape (docs/OPERATIONS.md "Logs of tego itself",
 // §3.3): ~/.tego/tego.log, 0600, rotated at 10 MB keeping 5 files, one appender per process.
 const (
 	ownLogDir   = ".tego"
@@ -336,7 +336,7 @@ var (
 // the tegotesthooks tag (ownlog_testhook.go), for the tests that drive tego as a subprocess: without
 // them one run of the suites appended two dozen ERROR lines and a panic stack to the developer's own
 // ~/.tego/tego.log. Nothing in a product build reassigns it, and no environment
-// variable can: under sudo, root appends to the file this names (identity-config.md R21).
+// variable can: under sudo, root appends to the file this names.
 var ownLogHomeOf = func(uid int) string {
 	return ownLogHome(uid, config.DetectSecureExec, os.UserHomeDir, lookupHome)
 }
@@ -366,7 +366,7 @@ func processOwnLog() *ownLog {
 func ownLogger(m *config.Machine) *slog.Logger { return newOwnLogger(processOwnLog(), m) }
 
 // ownLogHome is where tego.log lives: the invoking user's home from the passwd database, never $HOME
-// for a process started with AT_SECURE (spec/config/v0 "Trust", identity-config.md R21) or under sudo,
+// for a process started with AT_SECURE (spec/config/v0 "Trust") or under sudo,
 // where $HOME may still be the caller's or already root's depending on sudo's own configuration. $HOME
 // stands in only for an ordinary unprivileged process whose uid has no passwd entry, the same rule
 // runtime.LedgerRoot applies to ledger_root. "" means no log.

@@ -36,7 +36,7 @@ type limitFile struct {
 //
 // A memory cap bounds the agent's memory, not only the RAM it holds: memory.max alone lets the kernel reclaim
 // the agent's anonymous pages to swap instead of OOM-killing it, so on a host with swap a 64 MiB agent grew to
-// the size of the swap space (runtime-launch.md R10, ADR 0038). memory.swap.max goes to 0 with it.
+// the size of the swap space (ADR 0038). memory.swap.max goes to 0 with it.
 func limitFiles(l Limits) []limitFile {
 	var out []limitFile
 	if l.CPUMax != "" {
@@ -62,7 +62,7 @@ func limitFiles(l Limits) []limitFile {
 // liftFiles lists the writes that put every file limitFiles can write back to the kernel's default, which is no
 // limit: "max" (cpu.max keeps its period), and cpu.weight's 100. LiftLimits writes them on a scope that keeps
 // processes tego no longer governs, so that none of them keeps a limit tego wrote (an adoption's release that left
-// processes there: ADR 0055, the 2026-11-11 limits amendment). Pure.
+// processes there: ADR 0055). Pure.
 func liftFiles() []limitFile {
 	return []limitFile{
 		{Name: "cpu.max", Value: fmt.Sprintf("max %d", cpuPeriod), Controller: ControllerCPU},
@@ -78,7 +78,7 @@ func liftFiles() []limitFile {
 // (CONFIG_SWAP and CONFIG_MEMCG, and no cgroup.memory=noswap or swapaccount=0 on the boot line). Its absence
 // does not mean the cgroup cannot swap: with swap accounting off and a swap area active, the kernel still
 // reclaims the cgroup's anonymous pages to swap, uncapped and unaccounted, so memory.max alone is exceeded
-// into swap. A run with a memory cap records that as a limits gap (UncappedSwap, ADR 0038's 2026-09-24 note).
+// into swap. A run with a memory cap records that as a limits gap (UncappedSwap, ADR 0038).
 const fileSwapMax = "memory.swap.max"
 
 // FormatCPUMax renders a core count as the cpu.max line "<round(cores*100000)> 100000"; "" is

@@ -27,10 +27,9 @@ const capabilityVersion3 = 0x20080522
 // ordering, not here; this function neither reads nor sets no_new_privs. The child stage's unprivileged
 // order (internal/runtime/launch, ARCHITECTURE.md §5 steps 2–4) sets no_new_privs after this call and
 // before execve, and under that bit execve ignores setuid bits and caps the new permitted set at the old
-// one, which this call emptied, so nothing is gained. The privileged order (runtime-launch.md R4) skips
+// one, which this call emptied, so nothing is gained. The privileged order skips
 // no_new_privs, so there a setuid-root or file-capability binary regains capabilities up to the untouched
-// bounding set, as ARCHITECTURE.md §5 ("setuid binaries work inside the run") and runtime-launch.md R4a
-// describe.
+// bounding set, as ARCHITECTURE.md §5 ("setuid binaries work inside the run") describes.
 //
 // The kernel clears the dumpable flag and the pending parent-death signal in commit_creds when the
 // credentials change in a way that matters: a euid/egid/fsuid/fsgid change, or a capability set that is

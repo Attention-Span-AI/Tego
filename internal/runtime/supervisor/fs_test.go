@@ -314,7 +314,7 @@ func TestFSUnreadablePathStillContinues(t *testing.T) {
 	}
 }
 
-// TestRecordOffKeepsRefusalsOnly is record-ledger.md R12 (the off half) on the supervisor. It checks what
+// TestRecordOffKeepsRefusalsOnly is record: off on the supervisor. It checks what
 // record: off does and does not suppress: the advisory record
 // of an allowed operation goes, every refusal stays. A refusal with no ledger line would break the reason
 // channel's second guarantee (REASON-CHANNEL §1), and this package is the only producer of the

@@ -42,7 +42,7 @@ func overCapTable(pin string) *agent.RuleTable {
 	return rt
 }
 
-// TestSelectAutoFallsBelowAPlaneThatCannotHoldTheTable is enforce-plane §2.4 condition 7 and §2.10 condition 2: an
+// TestSelectAutoFallsBelowAPlaneThatCannotHoldTheTable: an
 // auto run of a table the plane cannot hold (over a slot's rows, or over this launcher's descriptor cap) is given
 // tier cgroup, not tier bpflsm, whose Prepare refuses it, and the run's warning says why, naming the cap. A run that
 // pinned tier bpflsm (--tier bpflsm, or tier: bpflsm in the contract) keeps tier bpflsm and its refusal at Prepare
@@ -134,7 +134,7 @@ func TestSelectAutoFallsBelowAPlaneThatCannotHoldTheTable(t *testing.T) {
 	}
 }
 
-// TestPlaneFDCapBelowTheReserveIsZero is enforce-plane §2.4 condition 6: a budget whose descriptors in use and
+// TestPlaneFDCapBelowTheReserveIsZero: a budget whose descriptors in use and
 // reserve exceed its limit (Cap < 0) is a cap of 0, which selection refuses a keyed table at, as Prepare's budget
 // does; -1, which PlaneRows.FitFDs reads as unknown and refuses nothing at, is kept for a budget that cannot be read.
 // PlaneFDCap returned the negative Cap unchanged, so an auto run was given tier bpflsm with no warning.
@@ -182,7 +182,7 @@ func withPlaneMounts(t *testing.T, points []string) {
 	t.Cleanup(func() { planeMounts = prev })
 }
 
-// TestSelectAutoFallsBelowWhatPrepareRefuses is enforce-plane §2.4 condition 7 and §2.10 condition 2 for the checks
+// TestSelectAutoFallsBelowWhatPrepareRefuses covers the checks
 // Prepare makes beyond CompilePlane: an auto run is given tier cgroup, with the warning, for a table whose fs entries
 // are one file under two names (cgroup.ErrPlaneSharedInode), whose mounted-root rows below a deny_write target take it
 // over a slot's rows, or whose mounted roots take its keys over the descriptor cap. Selection asked CompilePlane and
@@ -266,7 +266,7 @@ func TestSelectAutoFallsBelowWhatPrepareRefuses(t *testing.T) {
 	wantCgroup("mounted roots over the descriptor cap", mounted, "descriptor cap is "+strconv.Itoa(rows.Held()))
 }
 
-// TestSelectAutoAsksWhatPrepareAsks is enforce-plane §2.4 condition 7 and §2.10 condition 2 for the checks Prepare
+// TestSelectAutoAsksWhatPrepareAsks covers the checks Prepare
 // makes after CompilePlane: an auto table naming one file under two names (a hard link), or one whose mounted-root
 // rows below a deny_write target take the fs map past a slot's rows, is given tier cgroup with the warning, not tier
 // bpflsm that Prepare then refuses with ErrPlaneCannotHold; under fs.assurance: kernel the deny_write table is

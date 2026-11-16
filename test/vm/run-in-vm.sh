@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # run-in-vm.sh — run one command as root in a KVM guest booted from one kernel-matrix row's own distro
-# kernel (P0-DESIGN §10 "Kernel matrix (`test/vm`): Ubuntu 24.04 6.8, Debian 13 6.12, RHEL 9 5.14, AL2023 6.1 and
-# 6.12, Fedora 7.0", and its 2026-10-05 amendment: Ubuntu 25.10 6.17 and Fedora 7.2), returning
+# kernel (Ubuntu 24.04 6.8, Debian 13 6.12, RHEL 9 5.14, AL2023 6.1 and 6.12, Fedora 7.0, Ubuntu 25.10 6.17
+# and Fedora 7.2), returning
 # that command's own exit code.
 #
 # It is the matrix's boot step on its own, for looking at one kernel by hand: test/vm/fetch-kernel.py

@@ -38,7 +38,7 @@ A file is split at each `\n` (0x0A); a line is the bytes before it. Only the las
   line, permitted by §3. Its bytes remain covered by the digest (§4); appending whitespace without updating the id
   gives `id-mismatch`. A refused v1 timestamp in such a line gives `line-malformed` even with a stale digest.
 - A torn tail is only a final chunk in which no top-level value has closed: not a line, its size reported, and the
-  check goes on without it (record-ledger.md E6, E8). `README.md` points to this rule.
+  check goes on without it. `README.md` points to this rule.
 - An empty line (`\n\n`) is a line, and is malformed.
 
 ## 3. A v1 line's structure
@@ -81,7 +81,7 @@ A line that breaks any of these is `line-malformed`.
 ## 4. The digest
 
 `id` is `hex(sha256(line))`, lower-case, where `line` is the line's bytes without its `\n` and with the id's 64
-characters replaced by 64 `0` characters in place (`fixtures/README.md`; record-ledger.md R2). *(written down
+characters replaced by 64 `0` characters in place (`fixtures/README.md`). *(written down
 2026-11-11)*: a reader finds the id where the canonical writer puts it and nowhere else: the line starts with exactly
 `{"v":1,"seq":` (no white space), then one or more digits, then exactly `,"id":"`, then 64 characters of
 `0-9a-f`, then `"`. A line not of that shape is `line-malformed`; one whose id is not the digest is `id-mismatch`.
@@ -96,7 +96,7 @@ gate precedes the timestamp check; a newer version's timestamp is not interprete
 Line *n* (from 0) has `seq` *n* and `prev` the id of line *n*-1; line 0's `prev` is the empty string `""` (written,
 not absent) *(written down 2026-11-11)*. A line that breaks either is `chain-broken`.
 
-A line whose `v` is an integer from 2 to 2^63-1 was written by a newer binary (limits-check-doctor-cli.md §6 case 20). Its
+A line whose `v` is an integer from 2 to 2^63-1 was written by a newer binary. Its
 content is not read; its link is: it is one JSON object with unique top-level keys, its bytes start with exactly
 `{"v":<v as written>,"seq":`, its id is the digest of its bytes (§4, from that prefix), `seq` is an integer 0 to
 2^64-1 and `prev` is present and a string. Its `run` and `kind` are read when they are strings (else they are empty).
@@ -104,7 +104,7 @@ It then links as any line does and counts in `newer`.
 
 ## 6. The run
 
-*(written down 2026-11-11; record-ledger.md §4)*
+*(written down 2026-11-11)*
 
 - The run checked is the run directory's name: the last component of the path given, made absolute (from `$PWD` when
   it names the working directory) and lexically cleaned, when that is a run id (`r-` + 8 of `[0-9a-f]` + `-` + 13 of
@@ -120,7 +120,7 @@ It then links as any line does and counts in `newer`.
 
 ## 7. The anchor
 
-*(written down 2026-11-11; record-ledger.md §4, E28, E29)*
+*(written down 2026-11-11)*
 
 - `chain.log` holds one line per closed run, `<run id> <event id>\n`: the run id, one space, the 64-character head,
   nothing else (no other space, no `\r`). An unterminated last line is a torn append and is skipped.

@@ -166,7 +166,7 @@ func TestAttributeChangeIsNotScoredWithoutAWriteGate(t *testing.T) {
 }
 
 // TestAttributeChangeUnderThePlaneRefusesADenyWriteTarget: with a decision plane deciding the run (Options.PlaneAttrs),
-// the kernel's path_chown and xattr hooks refuse an attribute change beneath a deny_write target (enforce-plane R12),
+// the kernel's path_chown and xattr hooks refuse an attribute change beneath a deny_write target,
 // so this loop refuses one it is notified of itself, by R15c's predicate, as it refuses a chmod
 // (TestChmodUnderThePlaneRefusesADenyWriteTarget): the action's one line is that refusal, not an allow the kernel then
 // overturns. A write gate is what notifies these families; the target is inside the worktree, so the gate allows it.

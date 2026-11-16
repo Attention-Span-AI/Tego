@@ -528,12 +528,12 @@ func (s *Server) restorePost(w http.ResponseWriter, r *http.Request, id string) 
 const lockedWords = "this run is Locked: loosening applies from its next run."
 
 // startingWords is the page's words for a change refused because the run's run_start cannot be read yet
-// (runact.ErrStarting): its mode is not known, which is never said as Locked (acceptance 2B, 2026-11-11).
+// (runact.ErrStarting): its mode is not known, which is never said as Locked.
 const startingWords = "this run is still starting, so what it takes while it runs is not known yet: try again in a few seconds."
 
 // unreadableStartWords is the page's words for a change refused because the run's first record line is not a
 // run_start this tego can read (runact.ErrStartUnreadable): waiting does not change that, so they never say to try
-// again (the review's S1).
+// again.
 const unreadableStartWords = "this run's first record line is not one this tego can read, so what it takes while it runs is not known."
 
 // liftErr is why a lift or a restore was not asked, in plain words.

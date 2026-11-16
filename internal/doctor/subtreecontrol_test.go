@@ -42,7 +42,7 @@ func TestControllersResultReportsAnUnreadableSubtreeControl(t *testing.T) {
 // TestControllersResultMissingControllerKeepsTierOne: a fresh login on AlmaLinux 9.8 (systemd 252) gets a user
 // manager that enables memory and pids but not cpu (GAPS B15). D3 failed there, so the machine had no tier at all
 // and every enforced run was refused, a contract with no limit included. A controller a run's limits do not use
-// is not needed: a run whose limits do use it is refused at start by SetLimits (runtime-launch.md case 31). So D3
+// is not needed: a run whose limits do use it is refused at start by SetLimits. So D3
 // passes, tier 1 stays, and the line names the limits refused here and the fix that allows them, never the user@
 // drop-in alone, which did not enable cpu there.
 func TestControllersResultMissingControllerKeepsTierOne(t *testing.T) {
@@ -110,7 +110,7 @@ func TestControllersResultMissingControllerKeepsTierOne(t *testing.T) {
 
 // TestControllersResultNamesACeilingOnAMissingController: on a stock RHEL 9 host cpu is not enabled, and a limits.cpu
 // ceiling in the machine config is every run's limit, so every tego run was refused at start (exit 125) while doctor
-// said nothing of it (GAPS B15, measured 2026-11-10). D3 now names the ceiling, its file and line, that every run is
+// said nothing of it (GAPS B15). D3 now names the ceiling, its file and line, that every run is
 // refused, and the fix; it still passes, so the tier is unchanged. A ceiling whose controller is enabled, or one no
 // controller applies (wall), is not named.
 func TestControllersResultNamesACeilingOnAMissingController(t *testing.T) {

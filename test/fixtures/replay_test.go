@@ -84,7 +84,7 @@ func recorded(t *testing.T) []fixture {
 	return out
 }
 
-// TestEveryKillTestHasAFixture is P0-DESIGN §10's "every kill test adds a recorded fixture": a kill test
+// TestEveryKillTestHasAFixture: every kill test adds a recorded fixture, since a kill test
 // whose runs were never recorded is a shape of ledger no view has been shown.
 func TestEveryKillTestHasAFixture(t *testing.T) {
 	fs := recorded(t)
@@ -145,7 +145,7 @@ func TestFixturesVerify(t *testing.T) {
 			}
 			defer r.Close()
 			// Without the anchor line a ledger cut short after its writer closed it still walks as an intact
-			// chain (record-ledger.md E29), so a fixture carries its run's line of chain.log.
+			// chain, so a fixture carries its run's line of chain.log.
 			if _, err := os.Stat(filepath.Join(f.dir, ledger.ChainLogFile)); err != nil {
 				t.Fatalf("no %s beside the ledger: %v", ledger.ChainLogFile, err)
 			}
@@ -181,7 +181,7 @@ var views = map[string]view{
 }
 
 // TestFixturesRenderInEveryView replays each fixture through status, drift, measure and events, the four
-// views P0-DESIGN §12.5 names, through the CLI a user types them into. A view that exits with an error, or
+// views, through the CLI a user types them into. A view that exits with an error, or
 // writes nothing, on a ledger a real run wrote has broken on real data.
 func TestFixturesRenderInEveryView(t *testing.T) {
 	for _, f := range recorded(t) {

@@ -12,7 +12,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
-// Credential is one entry of the contract's credentials: section (agent-contract.md R30). Load checks its shape, and
+// Credential is one entry of the contract's credentials: section. Load checks its shape, and
 // Compile refuses the section.
 type Credential struct {
 	Name       string   `yaml:"name"`
@@ -58,7 +58,7 @@ func (m ModelEndpoint) ModelAuthority() string {
 	return net.JoinHostPort(CanonicalHost(m.Host), strconv.Itoa(m.Port))
 }
 
-// validateCredentials checks the credentials: section (agent-contract.md R30). Every refusal names the entry and the fix.
+// validateCredentials checks the credentials: section. Every refusal names the entry and the fix.
 func validateCredentials(ds *diags, c *Contract) {
 	if len(c.Credentials) == 0 {
 		return

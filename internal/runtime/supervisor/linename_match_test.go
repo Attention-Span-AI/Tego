@@ -28,8 +28,6 @@ import (
 // spelled the same way; a walk-named spelling now takes this loop's walk before the pin. A target the walk reaches is
 // refused under its own rule, and a walk that fails past the final component's directory decides where it names the
 // end, not on the clean. Real walks of a real tree, as a run makes them.
-//
-// Spec: docs/p0/supervisor.md R15b, R15c.
 func TestADotDotEndIsDecidedWhereItIsNamed(t *testing.T) {
 	const pathAddr = 0x10000
 	for _, tc := range []struct {

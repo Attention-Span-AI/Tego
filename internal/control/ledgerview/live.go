@@ -38,7 +38,7 @@ type LiveFacts struct {
 	Paused bool
 	// EndedPaused is a run whose run_end came while its last pause line held it paused. A stop thaws the run first and
 	// writes no line, and lines queued when a launcher dies are lost, so it is the last state recorded, not proof the
-	// run stayed frozen to its end (ADR 0124, second amendment of 2026-11-11).
+	// run stayed frozen to its end (ADR 0124).
 	EndedPaused bool
 	Pause       string
 	PausedBy    string
@@ -104,7 +104,7 @@ func liveFactsOf(evs []Event) LiveFacts {
 		}
 	}
 	if !f.Started && len(evs) > 0 {
-		// Lines are there and none is a run_start this build reads: not a run still starting (the review's S1).
+		// Lines are there and none is a run_start this build reads: not a run still starting.
 		f.StartUnreadable = true
 	}
 	return f

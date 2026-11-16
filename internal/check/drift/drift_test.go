@@ -20,7 +20,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// fixturePath is the frozen run every view is built against (docs/P0-DESIGN.md §10).
+// fixturePath is the frozen run every view is built against.
 var fixturePath = filepath.Join("..", "..", "..", "spec", "record", "v1", "fixtures", "run-fixture.jsonl")
 
 // fixtureReader opens the frozen fixture as a run directory.
@@ -100,7 +100,7 @@ func find(counts []RuleCount, rule string) (RuleCount, bool) {
 	return RuleCount{}, false
 }
 
-// TestComputeFixture is limits-check-doctor-cli.md R13, R14, R15 and R16 against the frozen run: every rule the run
+// TestComputeFixture, R15 and R16 against the frozen run: every rule the run
 // recorded is counted in its own bucket, every declared entry appears even
 // with no events, and the contract hash matches what run_start recorded.
 func TestComputeFixture(t *testing.T) {
@@ -169,7 +169,7 @@ func TestComputeFixture(t *testing.T) {
 	}
 }
 
-// TestComputePartitionsTheLedger is limits-check-doctor-cli.md I4 (and R13): the buckets partition the run's action
+// TestComputePartitionsTheLedger is R13: the buckets partition the run's action
 // events exactly — nothing counted twice (the refused event mirrors the fs
 // event that already carried verdict=refused, R13), nothing dropped.
 func TestComputePartitionsTheLedger(t *testing.T) {
@@ -235,7 +235,6 @@ func TestComputeHashChanged(t *testing.T) {
 // TestComputeWithoutContract is §6 case 23: the run directory's contract.yaml
 // copy is missing, so every observed rule is undeclared, CurrentHash is empty
 // and nothing panics.
-// (limits-check-doctor-cli.md E23.)
 func TestComputeWithoutContract(t *testing.T) {
 	for _, rt := range []*agent.RuleTable{nil, {}} {
 		rep, err := Compute(fixtureReader(t), rt)
@@ -290,7 +289,7 @@ func TestComputeEmptyAndTorn(t *testing.T) {
 	}
 }
 
-// TestAggregate is limits-check-doctor-cli.md R17: counts sum, Undone and UnusedMCP come from the sum, and the
+// TestAggregate: counts sum, Undone and UnusedMCP come from the sum, and the
 // distinct contract hashes are listed with their run counts.
 func TestAggregate(t *testing.T) {
 	first, err := Compute(fixtureReader(t), fixtureTable())
@@ -442,7 +441,7 @@ func execLine(seq int, rule, verdict, path string, search bool) string {
 
 // TestPathSearchCountsNoRefusal. The supervisor records
 // every directory a PATH search walks before the granted binary as `observed`
-// against the entry it was searching for (docs/p0/supervisor.md R28), so drift
+// against the entry it was searching for, so drift
 // counts them without ever calling the run refused. The two sides share no
 // code — the engine never imports the read side — so this test is where the
 // agreement is written down on this side: `observed` is a non-decision, and

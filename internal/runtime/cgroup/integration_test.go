@@ -63,7 +63,7 @@ func newRunID(t testing.TB) string {
 // TestIntegrationLifecycle: create under user@<uid>.service, spawn a child
 // with clone3(CLONE_INTO_CGROUP), limits written, cgroup.kill, populated 0 observed, remove.
 //
-// Also pins runtime-launch.md I3: the child is placed by clone3(CLONE_INTO_CGROUP), with no cgroup.procs write.
+// Also pins: the child is placed by clone3(CLONE_INTO_CGROUP), with no cgroup.procs write.
 func TestIntegrationLifecycle(t *testing.T) {
 	fs := placeOrSkip(t)
 	t.Logf("root %s privileged=%v", fs.Root(), fs.Privileged())
@@ -263,7 +263,7 @@ func rootSubtreeHas(t *testing.T, controller string) bool {
 // from a disk filesystem, memhog's own text pages are page cache the kernel can reclaim and read back: on AlmaLinux
 // 9.8's 5.14 from xfs, in a scope with memory.max 16 MiB and swap.max 0, memhog thrashed on them (memory.events max
 // 666918, oom 0, workingset_refault_file 18396986) and was not OOM-killed in 25 s, while the same binary from tmpfs
-// was killed in 0.03 s (2026-11-10). A tmpfs page with no swap cannot be reclaimed, so the kill comes when the
+// was killed in 0.03 s. A tmpfs page with no swap cannot be reclaimed, so the kill comes when the
 // limit is reached, as swap.max 0 makes it for the anonymous pages.
 func onTmpfs(t *testing.T, bin string) string {
 	t.Helper()
@@ -373,7 +373,7 @@ func TestIntegrationOOM(t *testing.T) {
 // refused") would fail the pids.max content check below and, independently, would refuse the
 // probe child outright.
 //
-// Also pins runtime-launch.md E30: an omitted limit leaves the kernel's default.
+// Also pins: an omitted limit leaves the kernel's default.
 func TestIntegrationZeroLimitsStayAtKernelDefault(t *testing.T) {
 	fs := placeOrSkip(t)
 	c, err := fs.Create("itest-zero", newRunID(t))
@@ -409,7 +409,7 @@ func TestIntegrationZeroLimitsStayAtKernelDefault(t *testing.T) {
 // asked for. The kernel has to accept the literal "0" for a ceiling of 0 to mean anything,
 // and the cap has to actually bite — a pids.max of 0 refuses the run's own first process, which is
 // exactly the consequence case 30 names and, when the operator wrote the 0 on purpose, exactly what
-// they asked for (limits-check-doctor-cli.md E16).
+// they asked for.
 func TestIntegrationExplicitZeroCapIsWritten(t *testing.T) {
 	fs := placeOrSkip(t)
 	c, err := fs.Create("itest-zerocap", newRunID(t))
@@ -457,7 +457,7 @@ func TestIntegrationDetect(t *testing.T) {
 // which run beside it, CanPlace refuses and the clone3 fails with EACCES, where Detect alone found the
 // subtree usable.
 //
-// Also pins runtime-launch.md E41: CanPlace agrees with the kernel's clone3 answer.
+// Also pins: CanPlace agrees with the kernel's clone3 answer.
 func TestIntegrationCanPlaceIsTheKernelsAnswer(t *testing.T) {
 	fs := detectOrSkip(t)
 	placeErr := fs.CanPlace()

@@ -119,8 +119,8 @@ func landlockRow(t *testing.T, abi int) string {
 
 // TestKernelLineListsEveryLandlockRowWhereTheKernelHasNone: a kernel that answers landlock_create_ruleset with
 // EOPNOTSUPP (Landlock left out of lsm=) or ENOSYS has no Landlock whatever its release says, and D4 then prints
-// "tier landlock unavailable". D1 used to fall back to the release there, so a 6.8 kernel listed only ABI 5 to 7
-// as missing under D4's FAIL line (review of DOCTOR-RHEL9, S2). Any other error is still no answer.
+// "tier landlock unavailable". Falling back to the release there, D1 would list only ABI 5 to 7 of a 6.8 kernel
+// as missing under D4's FAIL line. Any other error is still no answer.
 func TestKernelLineListsEveryLandlockRowWhereTheKernelHasNone(t *testing.T) {
 	r, _ := kernelResult("6.8.0-147-generic", kernelProbe{asked: true, landlockOff: true})
 	if !r.OK || r.Fix != "" {
@@ -141,7 +141,7 @@ func TestKernelLineListsEveryLandlockRowWhereTheKernelHasNone(t *testing.T) {
 
 // TestKernelLineTakesConnectUnixFromD7: D7 loads cgroup/connect_unix as root, by the backend's own probe of the
 // attach type. Where it answered, D1's connect_unix row follows it, in both directions, as the Landlock rows follow
-// D4; where it did not, the release decides (review of DOCTOR-RHEL9, S2).
+// D4; where it did not, the release decides.
 func TestKernelLineTakesConnectUnixFromD7(t *testing.T) {
 	yes, no := true, false
 	const row = "cgroup connect_unix (6.7.0,"

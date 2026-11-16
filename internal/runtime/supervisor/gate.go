@@ -15,7 +15,7 @@ import (
 
 // openReads reports whether a write open also reads the file it opens: its access mode is not O_WRONLY (O_RDWR, or
 // O_RDONLY with O_CREAT or O_TRUNC; decide.OpenReads), so the descriptor hands the agent the file's bytes. The gate
-// scores such an open with the read predicates as well as the write ones (gate.md R1: under `fs.read matches
+// scores such an open with the read predicates as well as the write ones (under `fs.read matches
 // "*.pem"` an O_RDWR open of out/x.pem, beneath a write
 // entry, read what the same O_RDONLY open was refused). A mknod is recorded with such flags but opens nothing; gateFS
 // leaves it out, and gateOpen and the held-open paths never see one.
@@ -46,7 +46,7 @@ func openMayEscalate(p *gate.Policy, flags int) bool {
 
 // scoreOpen is the gate's decision at floor on an open of path, which the kernel names, with flags: the read
 // predicates for a read open, the write ones for a write open and, when it reads too (openReads), the read and the
-// write ones together, their scores summed as one action's are (ADR 0007, 2026-10-20). It is how the agent's own
+// write ones together, their scores summed as one action's are (ADR 0007). It is how the agent's own
 // open of path is scored (gateFS), so a held target and an alternate are scored alike.
 func scoreOpen(p *gate.Policy, floor gate.Verdict, path string, flags int, worktree string) gate.Decision {
 	a := gate.Action{Kind: gate.FSWrite, Reads: openReads(flags), Complete: true, Path: path, Worktree: worktree}
@@ -80,7 +80,7 @@ func (c *compiled) gateFS(op, p, p2 string, flags int, d fsDecided, complete boo
 	policy := c.pol.Rules.Gate
 	move := op == record.FSRename || op == record.FSLink
 	// A write-open whose access mode is not O_WRONLY (O_RDWR; O_RDONLY with O_CREAT or O_TRUNC) reads the file
-	// too, so the read predicates score it as well as the write ones (gate.md R1, amended 2026-10-16). A mknod is
+	// too, so the read predicates score it as well as the write ones. A mknod is
 	// recorded as an O_CREAT|O_EXCL open whose access mode reads O_RDONLY, but it opens and reads nothing.
 	reads := op == record.FSOpen && !d.mknod && openReads(flags)
 	// A refusal the floor made stands, and the gate adds nothing to it: unless it is one this loop does not enforce (an
@@ -99,7 +99,7 @@ func (c *compiled) gateFS(op, p, p2 string, flags int, d fsDecided, complete boo
 	// so the source, and the destination too under RENAME_EXCHANGE, is scored by the read predicates as well (ADR
 	// 0041 Step 4); a destination that only receives a name reads nothing. A move or hard link is one call, one line
 	// and one verdict, so it is one action over both its ends: every rule that matches an end it scores counts once and
-	// the scores sum (gate.Action.Reads and Dest; ADR 0007, 2026-10-20).
+	// the scores sum (gate.Action.Reads and Dest; ADR 0007).
 	a := gate.Action{Kind: kind, Reads: reads || move, Complete: complete && filepath.IsAbs(p), Path: p, Worktree: c.pol.Rules.Workdir}
 	if move {
 		a.Dest, a.DestReads = p2, d.exchange
@@ -226,7 +226,7 @@ func (l *Loop) gateExec(c *compiled, d execDecision, p, invocation string, argv 
 func (l *Loop) gateOpen(n *notif, r *reader, q pathQuery, flags int, d fsDecided) (bool, fsDecided) {
 	c := l.table.Load()
 	// An open decideFS could not place (observed under path-unreliable: its walk failed) is gated too, as
-	// settleFS gates it, so a walk that left no facts refuses as gate.unreadable (walkIncomplete, gate.md R1).
+	// settleFS gates it, so a walk that left no facts refuses as gate.unreadable (walkIncomplete).
 	unplaced := d.verdict == record.VerdictObserved && d.rule == rulePathUnreliable
 	if !openGated(c.pol.Rules.Gate, flags) || (d.verdict != record.VerdictAllow && !unplaced) {
 		return false, d

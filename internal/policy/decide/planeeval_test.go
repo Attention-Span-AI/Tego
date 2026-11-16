@@ -63,7 +63,7 @@ func checkPlaneEvaluator(desc string, rt *agent.RuleTable, probes, dests []strin
 			}
 			if !dir {
 				// An attribute change: path_chmod and the attribute hooks against the root model's deny_write
-				// refusal, verdict, rule and reason (enforce-plane R12).
+				// refusal, verdict, rule and reason.
 				a := agent.Action{Kind: agent.ActionFSAttr, Path: p}
 				if got, want := pe.Evaluate(a, Env{}), Evaluate(rt, a, backend.TierBPFLSM); got != want {
 					fail("%s attr %s: plane %+v, Evaluate %+v", desc, p, got, want)
@@ -71,7 +71,7 @@ func checkPlaneEvaluator(desc string, rt *agent.RuleTable, probes, dests []strin
 				// A hard link: path_link (the new name a modification, then REFER) against the root model's two ends
 				// and no-gain rule. Verdict and reason always agree; the rule may differ where the root model names a
 				// deny_write target first, as for a rename, or where REFER refuses a source the root model refuses at
-				// itself (the plane names the source's nearest entry, enforce-plane R10).
+				// itself (the plane names the source's nearest entry).
 				for _, dst := range dests {
 					a := agent.Action{Kind: agent.ActionFSLink, Path: p, DestPath: dst}
 					got, want := pe.Evaluate(a, Env{}), Evaluate(rt, a, backend.TierBPFLSM)
@@ -184,7 +184,7 @@ func TestPlaneEvaluatorUnbuildable(t *testing.T) {
 // TestPlaneEvaluatorScriptMeetsTheLandlockFloor: the bpflsm column is the plane intersected with the Landlock domain
 // the child stage installs (ADR 0019's one column, ADR 0028), so a #! script with no exec grant of its own is
 // refused, unmatched, although the plane passes its stage and would allow the interpreter (Landlock's EXECUTE on
-// the script, enforce-plane R9's composition, SEMANTICS §4's 2026-09-29 note). A script an entry grants by path or
+// the script, SEMANTICS §4). A script an entry grants by path or
 // by directory runs, named by its interpreter's entry. A script matched by name alone is not granted: Landlock
 // cannot match by name. The root model at bpflsm answers the same.
 func TestPlaneEvaluatorScriptMeetsTheLandlockFloor(t *testing.T) {

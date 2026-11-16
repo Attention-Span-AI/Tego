@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestNewNeedsLSMMode is the constructor (TIER3-PLAN T7, enforce-plane R19): tier bpflsm is the tier-2 backend with
+// TestNewNeedsLSMMode is the constructor: tier bpflsm is the tier-2 backend with
 // the plane in LSM mode, reporting itself as tier bpflsm with tier 3's column; fmod_ret or no plane is refused.
 func TestNewNeedsLSMMode(t *testing.T) {
 	b, err := New(cgroupenforce.Options{Plane: cgroupenforce.PlaneSetup{Mode: ebpfbindings.PlaneLSM, Build: ebpfbindings.ObjectPlaneRdonly}})

@@ -62,7 +62,7 @@ type RuleMaps struct {
 	Skipped []SkippedRule
 	// Unrestricted is a contract with no net: section, which SEMANTICS §1 reads as "deny nothing" and the
 	// supervisor admits every destination under. Both ask agent.RuleTable.NetUnrestricted, the one predicate
-	// for that bit (agent-contract R15). No row is built for it, and Attach attaches no network program to its
+	// for that bit. No row is built for it, and Attach attaches no network program to its
 	// cgroup (§5 R1), because a deciding program with no row to match refuses, and the kernel would then
 	// refuse every connect the supervisor relays.
 	Unrestricted bool
@@ -130,7 +130,7 @@ const (
 // under an earlier refusing prefix is refused, and an exact entry under an earlier allowing prefix is named by
 // the prefix. Two entries that produce the same key are the case of this where both cover the same row.
 //
-// resolvers are the endpoints the supervisor's port-53 exception covers (supervisor R14, SEMANTICS §5), which
+// resolvers are the endpoints the supervisor's port-53 exception covers (SEMANTICS §5), which
 // the runtime admits on its own authority, contract or no contract. The supervisor relays an allowed connect
 // on the agent's own socket, so the run's connect4/6 decides it too (§5 R1, R5), and a resolver without a row
 // here would have its UDP and TCP queries refused with EPERM while the supervisor records them allowed. Each
@@ -331,7 +331,7 @@ func BuildRuleMaps(rt *agent.RuleTable, runIdx uint32, resolvers []netip.AddrPor
 }
 
 // unixEntryKey is the row one unix: entry becomes: an abstract name by its bytes, a pathname by its cleaned
-// absolute form, which is what the supervisor matches a name against (supervisor.md R11: "matched as a
+// absolute form, which is what the supervisor matches a name against ("matched as a
 // cleaned absolute string").
 func unixEntryKey(runIdx uint32, r *agent.NetRule) (bpf.UnixKey, error) {
 	if r.Abstract {
@@ -341,11 +341,11 @@ func unixEntryKey(runIdx uint32, r *agent.NetRule) (bpf.UnixKey, error) {
 }
 
 // fsUnixRows adds the rows through which the filesystem entries decide a pathname socket that no unix: entry
-// names, mirroring the supervisor's name check (supervisor.md R11, SEMANTICS §5): the nearest entry at or
+// names, mirroring the supervisor's name check (SEMANTICS §5): the nearest entry at or
 // above the name admits it when it is a write entry (multiprocessing, Ray, local MCP servers) and refuses it when it
 // is any other entry, or when there is none. The row admits any name under a write entry: the programs cannot see
 // which process bound a socket, so the supervisor, which decides first, holds the implicit admit to the sockets
-// the run bound (supervisor R11a) and these rows are its wider backstop. Each entry is two
+// the run bound and these rows are its wider backstop. Each entry is two
 // rows, the entry itself and its subtree, and the trie's longest match is the nearest entry.
 //
 // The rows mirror the supervisor's table exactly: every entry but a watch entry (which carries no rights, and

@@ -105,8 +105,8 @@ func TestDispatchRouting(t *testing.T) {
 	}
 }
 
-// The first registration wins a contested provider or host — the stated P0 limit for two
-// declared models sharing one upstream (capture-derive.md E33 (edge case #33)).
+// The first registration wins a contested provider or host — the stated limit for two
+// declared models sharing one upstream.
 func TestDispatchFirstRegistrationWins(t *testing.T) {
 	first := &fakeParser{provider: "anthropic", hosts: []string{"shared.example"}, facts: derive.Facts{Model: "first"}}
 	second := &fakeParser{provider: "anthropic", hosts: []string{"shared.example"}, facts: derive.Facts{Model: "second"}}
@@ -175,7 +175,7 @@ func TestHandleRecoversPanic(t *testing.T) {
 }
 
 // Facts.Apply fills an ssl_response without clearing what capture already knew, and never
-// leaves parser_version empty (capture-derive.md I6, R32).
+// leaves parser_version empty.
 func TestFactsApply(t *testing.T) {
 	usage := record.Usage{Input: 10, Output: 2}
 	p := record.SSLResponsePayload{Status: 200, LatencyMS: 42, RequestID: "fx-1", ContentEncoding: "gzip"}

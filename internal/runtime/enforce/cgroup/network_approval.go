@@ -30,7 +30,7 @@ var ErrGrantBusy = errors.New("another approved operation holds the kernel credi
 // Revoke withdraws one credit a grant wrote, once the relay it admitted has returned, whatever came of it, and lets
 // the next grant of that row write its own. untaken reports that the credit was still in the map, so the run's hook
 // never took it: a relay the kernel answered with success then did not pass connect4/6, sendmsg4/6 or connect_unix as
-// the operation the credit names (an approved datagram's caller reads it, supervisor R13d). Calls after the first
+// the operation the credit names (an approved datagram's caller reads it). Calls after the first
 // return the first's result.
 type Revoke = func() (untaken bool, err error)
 
@@ -107,7 +107,7 @@ func (c *creditRows) hold(done <-chan struct{}, key any, wait time.Duration) (re
 }
 
 // GrantConnect authorizes one refused connect on the exact duplicated agent socket: a TCP connect (proto tcp, an
-// ordinary TCP socket) or a UDP one (proto udp, a UDP socket; supervisor R13d). The caller revokes it on every relay
+// ordinary TCP socket) or a UDP one (proto udp, a UDP socket). The caller revokes it on every relay
 // outcome. Socket cookies prevent fd-number reuse; slot generations prevent dead-run aliasing. A grant waits while
 // another of the same row is held (creditRows), at most grantWait and never past done.
 func (h *Handle) GrantConnect(done <-chan struct{}, fd int, dst netip.AddrPort, proto string) (Revoke, error) {
@@ -137,7 +137,7 @@ func (h *Handle) GrantConnect(done <-chan struct{}, fd int, dst netip.AddrPort, 
 	return h.grantCredit(done, cookie, domain, dst, proto, false)
 }
 
-// GrantDatagram authorizes one refused addressed UDP datagram to dst, which a person approved (supervisor R13d), on
+// GrantDatagram authorizes one refused addressed UDP datagram to dst, which a person approved, on
 // the agent's UDP socket whose SO_COOKIE is cookie and whose SO_DOMAIN is domain: the run's sendmsg4/6 admits the
 // first datagram of that socket to dst within connectApprovalLifetime, once. The caller reads both from its duplicate
 // of the socket, having checked that it is a UDP socket: the API takes the socket's identity, never its descriptor
@@ -181,7 +181,7 @@ func (h *Handle) grantCredit(done <-chan struct{}, cookie uint64, domain int, ds
 }
 
 // GrantUnix authorizes one connect of the agent's unix socket whose SO_COOKIE is cookie to the abstract name name,
-// which a person approved (supervisor R11c): connect_unix (6.7+) and the plane's socket_connect (below 6.7) admit it
+// which a person approved: connect_unix (6.7+) and the plane's socket_connect (below 6.7) admit it
 // once, for this run's gen, within connectApprovalLifetime, and only on that socket. The caller reads the cookie from
 // its duplicate of the socket, having checked that the socket is AF_UNIX: the API takes the socket's identity, never
 // its descriptor number (ADR 0023 F8). The caller revokes the grant when the relay returns, whatever came of it. A

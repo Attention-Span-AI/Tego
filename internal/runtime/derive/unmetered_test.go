@@ -10,7 +10,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/runtime/derive/anthropic"
 )
 
-// TestUnmeteredExchanges (capture-derive.md R40's labeling by shape on a model host): an exchange on a model endpoint whose spend the facts cannot count says so
+// TestUnmeteredExchanges (labeling by shape on a model host): an exchange on a model endpoint whose spend the facts cannot count says so
 // (Facts.Unmetered), with one unparsed decision, and one that spends nothing stays silent.
 func TestUnmeteredExchanges(t *testing.T) {
 	d := derive.NewDispatcher([]derive.Parser{anthropic.New()})
@@ -27,7 +27,7 @@ func TestUnmeteredExchanges(t *testing.T) {
 			`{"id":"c1","model":"claude-opus-5","usage":{"prompt_tokens":150000,"completion_tokens":5000}}`, false, 0, 150000},
 		{"a chat completion with no usage is unmetered", "anthropic", "POST", "/v1/chat/completions", 200,
 			`{"id":"c1","model":"claude-opus-5"}`, true, 1, 0},
-		// limits-check-doctor-cli.md R1 (a): a 2xx message that reports no usage object spent what nothing read.
+		// A 2xx message that reports no usage object spent what nothing read.
 		// It was charged zero tokens, so a budget passed it unseen.
 		{"a message with no usage is unmetered", "anthropic", "POST", "/v1/messages", 200,
 			`{"id":"msg_1","type":"message","model":"claude-opus-5","content":[]}`, true, 1, 0},

@@ -24,9 +24,9 @@ import (
 // TestTier2DatagramLineIsTheKernels is §5 R7's record half for an addressed datagram, through the whole of `tego
 // run --tier cgroup` as root under sudo: a datagram a kernel program of the run decides by destination has exactly
 // one ledger line, and that line is the kernel's verdict, never the supervisor's best effort beside it (ADR 0016;
-// supervisor.md R13b, Options.KernelDatagrams).
+// Options.KernelDatagrams).
 //
-//   - cgroup/sendmsg_unix (6.7+) and, below 6.7, the decision plane's socket_sendmsg (step D, enforce-plane §2.11)
+//   - cgroup/sendmsg_unix (6.7+) and, below 6.7, the decision plane's socket_sendmsg (step D)
 //     refuse a unix name no entry admits, and a name spelled other than canonically (`<write entry>/./x.dg`), which the
 //     supervisor's own check cleans and admits. Each such datagram's line is refused, with the errno the kernel
 //     program fails it with (EPERM, or EACCES for the plane), and carries no best_effort; before, the first was
@@ -35,8 +35,8 @@ import (
 //   - An admitted datagram leaves, and its one line is allow.
 //
 // On the fanotify fallback below 6.7 no program decides a unix name (§6 E1): the supervisor decides it as at tier 1,
-// so the unlisted unix datagram is refused there with EACCES and no best_effort (supervisor R13b as amended
-// 2026-10-16), and the non-canonical one, which its cleaned match admits, leaves under a best-effort allow line. The
+// so the unlisted unix datagram is refused there with EACCES and no best_effort,
+// and the non-canonical one, which its cleaned match admits, leaves under a best-effort allow line. The
 // test records which case it ran.
 func TestTier2DatagramLineIsTheKernels(t *testing.T) {
 	if os.Geteuid() != 0 {

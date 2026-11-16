@@ -20,8 +20,8 @@ import (
 // modelGuard keeps declared models behind the forwarder, under both open and explicit network policies.
 // Exact endpoint addresses and local aliases are always refused. Under a net: section an ordinary named
 // model also reserves its port: an unknown address there could be a divergent DNS answer, so only an
-// explicit net.allow entry may admit it. With no net: section nothing reserves the port (SEMANTICS §1,
-// amended 2026-10-05), and such an answer is admitted unmatched, supervisor R7's Limit (a). Such entries are deliberate trust grants, not proof of remote service identity; known model
+// explicit net.allow entry may admit it. With no net: section nothing reserves the port (SEMANTICS §1),
+// and such an answer is admitted unmatched, supervisor R7's Limit (a). Such entries are deliberate trust grants, not proof of remote service identity; known model
 // endpoints still refuse. The runtime's synthetic forwarder listener grant is handled before this guard.
 //
 // DNS answers accumulate during the run. Each locality decision uses a fresh enumeration of this host's own

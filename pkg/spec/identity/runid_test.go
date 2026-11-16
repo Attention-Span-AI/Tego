@@ -71,8 +71,8 @@ func TestNewRunIDRand6(t *testing.T) {
 }
 
 // Errors from rnd are wrapped, never a partial id (E1); pre-epoch time is refused.
-// identity-config.md E32: a pre-epoch now is the named error and no id, after reading rnd.
-// identity-config.md E1: a failed or short rnd read is the wrapped error and no id, never a short or zero-padded one.
+// A pre-epoch now is the named error and no id, after reading rnd.
+// A failed or short rnd read is the wrapped error and no id, never a short or zero-padded one.
 func TestNewRunIDErrors(t *testing.T) {
 	short := bytes.NewReader([]byte{1, 2})
 	if id, err := NewRunID(testHost, time.Unix(1, 0), short); err == nil || id != "" {
@@ -97,7 +97,7 @@ type failingReader struct{ err error }
 func (f failingReader) Read([]byte) (int, error) { return 0, f.err }
 
 // I2 / E24: ids are unique and sort by mint time on one host.
-// identity-config.md I2: every generated id satisfies Valid (E24 uniqueness at scale).
+// Every generated id satisfies Valid (E24 uniqueness at scale).
 func TestNewRunIDUniqueAndSortable(t *testing.T) {
 	n := 1_000_000
 	if testing.Short() {
@@ -125,7 +125,7 @@ func TestNewRunIDUniqueAndSortable(t *testing.T) {
 	}
 }
 
-// identity-config.md R2: Valid matches the run-id pattern exactly.
+// Valid matches the run-id pattern exactly.
 func TestRunIDValid(t *testing.T) {
 	cases := []struct {
 		id   RunID
@@ -149,7 +149,7 @@ func TestRunIDValid(t *testing.T) {
 }
 
 // T-slug-1.
-// identity-config.md R2: RunSlug strips every dash.
+// RunSlug strips every dash.
 func TestRunSlug(t *testing.T) {
 	if got := RunSlug("r-aa-bb-cc"); got != "raabbcc" {
 		t.Errorf("RunSlug = %q", got)
@@ -169,7 +169,7 @@ func TestHostID(t *testing.T) {
 }
 
 // Pid reuse yields distinct exec ids (E30 within one pid namespace).
-// identity-config.md E30: the exec id keys on run, pid and start time within one pid namespace only.
+// The exec id keys on run, pid and start time within one pid namespace only.
 func TestNewExecID(t *testing.T) {
 	run := RunID("r-0123abcd-0000000000000-abcdef")
 	cases := []struct {
@@ -230,7 +230,7 @@ func BenchmarkNewRunID(b *testing.B) {
 	}
 }
 
-// TestNewRunIDSharedMachineIDCollidesOnHost8Only is identity-config.md E3: two hosts cloned from one image
+// TestNewRunIDSharedMachineIDCollidesOnHost8Only: two hosts cloned from one image
 // hash the same machine-id, so their host8 is the same, and only rand6 (and the clock) tells their ids apart.
 func TestNewRunIDSharedMachineIDCollidesOnHost8Only(t *testing.T) {
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)

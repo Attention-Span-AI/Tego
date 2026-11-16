@@ -259,7 +259,7 @@ var nodeFlags = []string{
 // nodeValues are node's options that take the next token as their value: the string, list and number options of its
 // options binding. Node refuses one followed by a token that starts with '-' ("requires an argument"). Node runs none
 // of these values as a module or a script: those it does are listed above, -r, --import, --loader and --test-reporter
-// read as modules node runs and --build-snapshot-config and --experimental-sea-config refused (reviewed 2026-11-02
+// read as modules node runs and --build-snapshot-config and --experimental-sea-config refused (read
 // over every option node 20.19.4's internal modules read with getOptionValue, and the files its snapshot and
 // single-executable builders read). A snapshot file can still change what node runs, outside
 // argv. Env files are separately refused by the pre-scan, even in script arguments.
@@ -325,7 +325,7 @@ func nodeArgvRewrite(args []string) bool {
 
 // uutilsApplets are the utility names of uutils' multicall binary that both builds read for the coreutils row have:
 // the 114 names Ubuntu 25.10's rust-coreutils 0.2.2-0ubuntu2.1 links in /usr/lib/cargo/bin/coreutils (listed on the
-// test machine, 2026-11-11), and upstream main a4b65e12's Cargo.toml utility crates (workspace version 0.13.0, read).
+// test machine), and upstream main a4b65e12's Cargo.toml utility crates (workspace version 0.13.0, read).
 // A subset of the list of each build read, which is what the suffix applet needs (execmatch.Row.Applets): a name
 // such a build lists picks no applet the build does not, and only refuses more where the build lists a longer one.
 // uutils can be built with fewer utilities; such a build may run a shorter listed applet than the one read

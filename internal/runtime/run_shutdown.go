@@ -62,8 +62,8 @@ func (r *runner) awaitExit(ctx context.Context) {
 	r.awaitEmpty(ctx, killed)
 }
 
-// endWithMain is the rule for a main process that has exited while processes it started still run (runtime-launch.md
-// case 24 as amended 2026-10-26): they get stop_grace to exit on their own, and what is left then
+// endWithMain is the rule for a main process that has exited while processes it started still run:
+// they get stop_grace to exit on their own, and what is left then
 // is killed with cgroup.kill, run_end's detail naming each process the kill ended. The run's reason and exit code
 // stay the main process's own, so a supervisor sees the agent's exit (a crash a unit restarts) and not a run that
 // never ends because a `setsid` or `&`-started child lives on. It reports whether it killed the tree. A contract
@@ -204,8 +204,8 @@ func onlyProcess(dir, pid string) bool {
 
 // awaitEmpty is step 12's wait for the whole cgroup to empty, which step 13 relies on beyond the reap: the
 // kernel recorder's and the capture source's final drains read the bytes their ring holds when Stop begins,
-// and those hold every sample of the run only once no process of the run is left to produce one
-// (enforce-cgroup-observe.md §4 Stop, capture-derive.md edge case #28). ctx can end first, when a worker
+// and those hold every sample of the run only once no process of the run is left to produce one.
+// ctx can end first, when a worker
 // failed or the caller cancelled, and cgroup.kill delivers SIGKILL asynchronously, so descendants can still
 // be exiting then: their exit samples reached the ring after the drain had measured it, and the ring was
 // closed on them with no gap. So once ctx has ended with the tree still populated, the tree is killed (unless
@@ -290,7 +290,7 @@ func (r *runner) shutdown(ctx context.Context) Result {
 		}
 	}
 	// A tier-2 listener may have returned before its workers, which still answer what they hold and record
-	// a line for each (enforce-cgroup-observe §6 E35). Waiting here puts those lines ahead of the drain, and
+	// a line for each. Waiting here puts those lines ahead of the drain, and
 	// with the pump still running they reach a lane that is being read: the default lane never waits, so a
 	// full one would drop them. The wait is bounded by killTimeout, well past E16's three deadlines, and
 	// runs even when ctx is already cancelled, because a stopped run is exactly when a listener's leftover
@@ -361,7 +361,7 @@ func (r *runner) stopPipeline() {
 // pumpWhileStopping keeps the queue read while the sources stop, and returns the call that ends it. Step 13
 // cancels the workers first, which ends the pipeline goroutine, and only then stops each source, whose Stop
 // is where a recorder or a capture source drains what its ring still holds: a run's last exits, opens and
-// exchanges (capture-derive.md edge case #28, enforce-cgroup-observe.md §4). With nothing reading the queue,
+// exchanges. With nothing reading the queue,
 // all but QueueCapacity of them became channel-full, however far within its StopDrain a drain was. The pump
 // starts once the pipeline goroutine has returned and is ended before the queue's final drain, so the ledger
 // still has one writer at a time (§9). The queue is still bounded: a drain that outruns the ledger past the
@@ -518,8 +518,8 @@ func (r *runner) releaseKernelState(ctx context.Context, after func(released boo
 		cancel()
 	}
 	// Only the paths that never reached supervisor.New hold the listener here: startNotifyLoop moves it into
-	// New, which owns it from then on, and Loop.Run is the sole closer after that (supervisor.md §3 "closed
-	// by Loop.Run shutdown (E24), never reopened").
+	// New, which owns it from then on, and Loop.Run is the sole closer after that
+	// (closed by Loop.Run shutdown, never reopened).
 	if r.notifyFD != nil {
 		if err := r.notifyFD.Close(); err != nil {
 			r.log.Warn("run: close notify fd", "err", err)

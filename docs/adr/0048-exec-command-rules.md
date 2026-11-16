@@ -34,7 +34,7 @@ a completion.
 - **`Canonical` is a yaml.v3 encode of the struct, and `ExecSection.Allow` is `omitempty`** (`agent.go`). It drops
   `allow: []`. `FSSection.MarshalYAML` (`deny_read: []`) and `EnvSection.MarshalYAML` (`pass: []`) exist because
   dropping an empty list once flipped a section's meaning across a recompile (agent-contract R13).
-- **The only argv control is the gate's `exec matches "<glob>"`** (gate.md R2, `pkg/policy/gate/gate.go`).
+- **The only argv control is the gate's `exec matches "<glob>"`** (`pkg/policy/gate/gate.go`).
   - `Evaluate` builds up to three strings, one per copied name (requested pathname basename, resolved image
     basename, argv[0] basename), each followed by argv[1:] joined with single spaces.
   - A pattern without glob characters matches when a string equals it or starts with it plus a space. A pattern
@@ -631,7 +631,7 @@ Coverage notes come from the same rows and print on each entry's line (9). Examp
      strings. This replaces one call per string.
 
   The decision records `k`, the number of argv elements it read. P2's pin covers exactly those (below).
-  supervisor.md R16 and `TestExecQuietReadsNoArgv` are amended to "reads no argv beyond what a command rule or a
+  The supervisor's rule and `TestExecQuietReadsNoArgv` are amended to "reads no argv beyond what a command rule or a
   gate needs".
 - **Bounds.** The tail read keeps R16's budget: 8192 arguments and `DefaultMaxArgv` (128 KiB). An exec whose
   verdict depends on a part of the tail past that budget is refused under `args-unreadable` (reason
@@ -689,7 +689,7 @@ Coverage notes come from the same rows and print on each entry's line (9). Examp
   `exec.rules/argv` (D7: compile warning per tier, `run_start.best_effort`, status, drift).
 - **Ask.** An `exec.ask` match is refused (5).
 - **Cost.** P1's acceptance holds per-exec budgets (P1 below). A guarded exec of more than 128 arguments can exceed
-  supervisor.md R22's 200 µs soft ceiling while it holds one of the default workers (R21). R22 is amended to name
+  the supervisor's 200 µs soft ceiling while it holds one of the default workers. The ceiling is amended to name
   that case, and such decisions are counted in status.
 
 **P2: at a plane tier the kernel holds the exec to the decided facts (exec pins).** The matcher is not re-implemented
@@ -894,7 +894,7 @@ with no command rules and no exec gate gets a `redundant-rule` warning.
 - **The gate's `exec matches "<p>"`.** It matches when the legacy glob matches, as today, **or** when `p` parses as a
   command pattern whose command word has no glob and that pattern matches under (2)'s deny semantics. That is the
   union, so no gate rule matches less than before. `exec matches "rm -rf": 95` now also scores `rm -fr`,
-  `rm --recursive --force` and `busybox rm -rf`. The gate still only escalates. gate.md R2 is amended.
+  `rm --recursive --force` and `busybox rm -rf`. The gate still only escalates.
   - **Upgrade visibility.** Existing gate rules start matching more (`rm -fr`, `npm i`, `git -C . push`, autocorrect
     reach). That fails closed, but it is a behavior change. The CHANGELOG says so. Compile lists each existing gate
     rule whose reading broadened, with example near-misses.
@@ -1093,10 +1093,7 @@ REASON-CHANNEL, the record README and supervisor R29 list them. `run_end` gains 
   kernel-pinned at C+ and B once P2 runs, from the arming point".
 - **Specs.**
   - SEMANTICS §1 (deny-list mode and the mode table), §3 (precedence), and §4 (a new subsection, "Command rules").
-  - agent-contract: R2's consumed set gains `exec.deny`, `exec.ask` and P2's `exec.assurance`. R8 gains (1)'s
-    classification. A new rule covers the matcher.
-  - gate.md R2. supervisor.md R16, R16b and R22. enforce-plane: a new §2.21 and rules. record-ledger. The record
-    README. CAPABILITIES. REPO-LAYOUT.
+  - The record README. CAPABILITIES. REPO-LAYOUT.
   - The new reference doc `docs/spec/exec-command-rows.md`.
   - FEATURES: S1's field list, and a new E-row "exec command rules".
 
@@ -1564,7 +1561,7 @@ handle to it, as it does `KernelExecs`. `ExecNaming` gains `PinSeq`, `CommandRul
   - The run's own `command` and `mcp[].command` checked against the rules.
   - Gate rules whose reading broadened are listed.
 - **C4, the decision core and `compile --test`**. `decide.ExecCommand`; `script_arg:`; the `--exec`
-  one-liner; cell fields; the gate's union reading and first-word index (gate.md R2); goldens.
+  one-liner; cell fields; the gate's union reading and first-word index; goldens.
 - **C5, the supervisor**.
   - Guarded detection; the staged, batched argv read (prefix, then tail only when needed; iovec batches);
     `record: off` reads only what a rule needs.
@@ -1602,7 +1599,7 @@ handle to it, as it does `KernelExecs`. `ExecNaming` gains `PinSeq`, `CommandRul
   - A P1 smoke cell (deny `git push`, allow `git status`) in every `make vm-matrix` row. RHEL's 5.14 has git 2.43 to
     2.47 and `/usr/libexec/git-core`.
 - **C7, docs and examples**.
-  - gate.md R2; supervisor R16, R16b and R22; record-ledger and the record README; REASON-CHANNEL (rule names, no new
+  - The record README; REASON-CHANNEL (rule names, no new
     codes); CAPABILITIES; REPO-LAYOUT; CHANGELOG (gate union, path-with-spaces, helper images).
   - The operator README section on residuals R1–R12, with the "use fs and net rules for effects" guidance and the
     git layout differences (`/usr/lib/git-core` on Debian, `/usr/libexec/git-core` on RHEL, and git re-execing a
@@ -1841,8 +1838,7 @@ What differs from the plan above, and what is still open:
     vm-matrix` and on the host's kernel. `VM_ONLY=smoke` runs only this cell on each row.
   - The ADR 0017 conformance cells for the command-rule grid are built (2026-10-06, below).
 - **C7.** As planned. The recipes, residuals and git layouts are in docs/OPERATIONS.md, the profile is
-  `examples/profiles/base/read-only-git.yaml` (`TestReadOnlyGitProfile`), and the field list is in
-  docs/p0/record-ledger.md.
+  `examples/profiles/base/read-only-git.yaml` (`TestReadOnlyGitProfile`),.
 - **C8.** `TestExecCommandCostBudget` measures on real `process_vm_readv` reads of the test process, interleaved
   A/B, Min-of-N. Measured on the test machine:
 
@@ -1952,10 +1948,9 @@ without its fix:
    `exec_rules`, its exec row `closure_of`, and (8)'s field list `argv_read`.
 6. **ENAMETOOLONG.** A pathname with no NUL in PATH_MAX bytes was answered `EFAULT` in a run with command rules,
    where the kernel's `getname` answers `ENAMETOOLONG`. A cut that read PATH_MAX bytes is now `ENAMETOOLONG`, and a
-   read that faults stays `EFAULT` (`TestExecCommandNeverContinuesUnwalked`; supervisor.md as amended). The change
+   read that faults stays `EFAULT` (`TestExecCommandNeverContinuesUnwalked`). The change
    holds for every run with an `exec:` section, with or without command rules, since recordExec sets the errno
-   before either is asked (`TestExecPathnamePastPathMaxEveryRun`, and supervisor.md's failure
-   table, which still said `EFAULT`).
+   before either is asked (`TestExecPathnamePastPathMaxEveryRun`).
 7. **A conformance cell claimed more than it covers.** `execrules/fifo-image-unreadable` cited the final review's
    second finding, but it passed before that fix too: the FIFO was opened, `fstat` found it not regular, and the
    exec was refused `image-unreadable` with `EACCES` all the same. Its Source now says what it covers, and

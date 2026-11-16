@@ -85,12 +85,12 @@ if sys.argv[2] == 'orphan':
 // its plane probes every program (probe.programs) and may load the build's objects cold; the cache holds one
 // plane mode's answer, so every switch of TEGO_TEST_PLANE here (fmod_ret, then lsm) misses it, and the first
 // BPF run after a guest boots misses both. Measured in the 6.17 KVM guest (4 vCPUs, a loaded host;
-// TEGO_TEST_PHASE_TIMING, 2026-10-05), that first run took 15.8-29.6 s over ten boots, probe.programs up to
+// TEGO_TEST_PHASE_TIMING), that first run took 15.8-29.6 s over ten boots, probe.programs up to
 // 23.3 s and the cold load up to 7.0 s; other BPF runs took 0.8-24.4 s; and the 30 s this used to be expired
 // in three runs (R6). Product starts keep their machine's one plane mode, which the cache answers after the first run.
 // It is no budget, only the point past which a start that never reports fails: the launcher's own exit fails the
-// subtest at once, and the launcher's start phases (TEGO_TEST_PHASE_TIMING) are in the log printed then. On
-// 2026-10-16, with the KVM host at load ~80, the cgroup subtest's first start passed the 120 s this was, and the
+// subtest at once, and the launcher's start phases (TEGO_TEST_PHASE_TIMING) are in the log printed then. Once,
+// with the KVM host at load ~80, the cgroup subtest's first start passed the 120 s this was, and the
 // bpflsm subtest's start, one plane mode's probe, took 94.6 s against 0.7-1.1 s on a quiet host, while the same
 // guest's tagged cgroup suite ran past its 45 minutes: the guest was starved, the start was not stuck.
 const dnsCLIReportWait = 5 * time.Minute

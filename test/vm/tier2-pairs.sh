@@ -7,7 +7,7 @@
 # progress. test/vm/pairs.sh (`make vm-pairs`) boots the guests and runs it per variant.
 #
 # Why a watchdog of its own: each tier-2 run on the fanotify fallback marks the mount of `/` with FAN_OPEN_PERM and
-# FAN_OPEN_EXEC_PERM (docs/p0/enforce-cgroup-observe.md §6 E34), so a group whose listener stops answering
+# FAN_OPEN_EXEC_PERM, so a group whose listener stops answering
 # blocks every open and every execve on the guest's root, this script's included. The watchdog is a
 # subshell forked before the first run, and from then on it uses bash builtins only: `read -t` on a fifo to
 # sleep, `read` to print a file, `kill` to signal. It opens nothing on `/`: its fifo, the heartbeat and the
@@ -30,7 +30,7 @@
 # from its exit status, whether kill mode's SIGKILL targeted it, its own run and its output, and no other
 # combination than the table's passes: complete (exited 0, the run whole with one refusal and run_end reason exit,
 # the agent saying its read was refused), killed-early, killed-in-run or killed-read (the target, exited 137), or
-# failed (any other exit, which fails the pair). killed-read is E15's window (enforce-cgroup-observe §6 E15, a
+# failed (any other exit, which fails the pair). killed-read is E15's window (a
 # stated P0 limit): on the fallback the agent of a SIGKILLed launcher runs undecided by fanotify until the reaper
 # kills it, so its read may go through; it passes only where the run shows exactly that (no refusal of SECRET, a
 # run_end reason orphaned) and is counted and printed as "PAIRS-KILLED-READ pair=<i> launcher=<a|b> plane=fanotify".
@@ -60,8 +60,8 @@
 #   COLD_STALL   the same for the invocation's first run (the self-deny run, else pair 1), at least STALL (default
 #                120): the first run of each binary in a boot probes the plane modes cold (doctor's run-probe cache
 #                is keyed by the binary, so COPY_B's copy and the PIE pay it too). A boot's first run measured
-#                13.6-17.8 s on 6.17 (docs/p0/enforce-plane.md §10.1, cold.bootfirst.ms), and over 20 s in the
-#                2-CPU pairs guests on a loaded host (2026-10-19), which STALL took for a freeze
+#                13.6-17.8 s on 6.17 (cold.bootfirst.ms), and over 20 s in the
+#                2-CPU pairs guests on a loaded host, which STALL took for a freeze
 #   MODE         plain: two launchers, each waited for;
 #                timeout: each launcher under `timeout -s QUIT -k 5 40`, as the original report ran
 #                (uutils coreutils 0.2.2's timeout, Ubuntu 25.10's, never sends the -k SIGKILL);
@@ -72,7 +72,7 @@
 #                losing a launcher fails the phase ("PAIRS-KILLS-SHORT", exit 1): a kill that lands after both
 #                launchers exited tests nothing
 #   KILL_MIN     MODE=kill's least share of pairs, in percent, whose kill must land (default 50). The share is a
-#                sample: at the low end of the 70-96 % landing rate seen on 6.17 (2026-10-19), 50 pairs miss 50 % once
+#                sample: at the low end of the 70-96 % landing rate seen on 6.17, 50 pairs miss 50 % once
 #                in about 1,000 phases, 20 pairs once in 60 and 10 pairs once in 20: a short kill phase can fail by
 #                chance (the binomial tail), so a kill phase is meant to run 50 pairs or more
 #   PLANE        fanotify (default), lsm, fmod_ret or auto: the decision plane every run must report (auto: the one
@@ -166,7 +166,7 @@ echo 1 >/proc/sys/kernel/softlockup_all_cpu_backtrace 2>/dev/null
 echo 1 >/proc/sys/kernel/sysrq 2>/dev/null
 
 mkdir -p "$w"/runs "$w"/out || exit 2
-# The machine config refuses a relative $TEGO_CONFIG layer (identity-config R14), so the directory is made absolute.
+# The machine config refuses a relative $TEGO_CONFIG layer, so the directory is made absolute.
 w="$(cd "$w" && pwd)" || exit 2
 # The secret sits on `/`, not on the tmpfs /tmp: a run's deny_read marks the mount it is on, and the original report's shape is
 # a mark on the root mount every open and exec of the guest goes through. Readable by the agent's own uid, so only
@@ -521,7 +521,7 @@ by_mechanism() {
 # there), f_plane (its decision_plane), f_lpid (its launcher_pid), f_end (1 when run_end is), f_reason (run_end's
 # reason), f_refused (the refused fs lines that name $2), f_by (those by_mechanism admits), f_other (the fs lines that
 # name $2 with any other verdict: a mechanism that let the read through or only saw it) and f_stage (exec lines for
-# TEGO, TEGO_B or /proc/self/exe). A line is one event in canonical form (record-ledger R1): base fields first,
+# TEGO, TEGO_B or /proc/self/exe). A line is one event in canonical form: base fields first,
 # then the payload's, so run_end's last "reason" is its payload's.
 ledger_facts() {
 	local line p
@@ -607,8 +607,8 @@ settle() {
 }
 
 # judge gives one launcher of a pair its verdict from all of its evidence at once: whether kill mode's SIGKILL
-# targeted it, its exit status, its own run (by run_start's launcher_pid) and its output (ADR 0021's 2026-10-19
-# 2026-10-19 note holds the same table). $1 the pair, $2 the denied path, $3 the launcher's name, $4 its exit
+# targeted it, its exit status, its own run (by run_start's launcher_pid) and its output (ADR 0021
+# holds the same table). $1 the pair, $2 the denied path, $3 the launcher's name, $4 its exit
 # status, $5 its started run ("" for none), $6 its output. assert_pair has already held every started run to the
 # plane, to at most one refusal of the path and that by the plane's mechanism, to no other verdict on the path and
 # to no exec of the stage. It sets verdict to one of
@@ -619,8 +619,8 @@ settle() {
 #   killed-in-run  kill mode's target, exited 137 with its run started, and that run closed: by the launcher before
 #                  the kill landed (reason exit), when it must be as whole as a complete one's, or by its reaper
 #                  (reason orphaned); its agent's read went nowhere;
-#   killed-read    as killed-in-run, but its agent's read went through: E15's window (enforce-cgroup-observe §6 E15,
-#                  ADR 0020), which only the fallback has (a plane outlives its launcher), only a read the run never
+#   killed-read    as killed-in-run, but its agent's read went through: E15's window
+#                  (ADR 0020), which only the fallback has (a plane outlives its launcher), only a read the run never
 #                  refused can be (the listener records a refusal after its FAN_DENY), and only in a run its reaper
 #                  closed (reason orphaned: the launcher died with the run open);
 #   failed         it exited any other way, a 137 of a launcher the kill did not target included (tego's own exit

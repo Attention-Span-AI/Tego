@@ -10,7 +10,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// The decision plane's lines (ADR 0024, docs/p0/enforce-plane.md R23, R24; TIER3-PLAN T9).
+// The decision plane's lines (ADR 0024).
 //
 // The plane decides a governed run's opens, execs and fs mutations in the kernel and leaves each decision, with the
 // kernel's rule_idx, in the task's tego_plane_scratch value. On the hooks a recorder fexit wraps (file_open,
@@ -172,7 +172,7 @@ func pinPlaneReason(code bpf.ReasonCode) string {
 
 // handlePlaneExec records the plane's own refusal of an exec (KindPlaneExec): the exec's one line, since the
 // kernel refused it in bprm_check after every other producer let it through (the supervisor continues such an exec
-// and writes no line for it when the plane decides execs, supervisor.md R7a). It names the spelling the task passed
+// and writes no line for it when the plane decides execs). It names the spelling the task passed
 // and the process as it stands, whose image the refusal left unchanged; argv never reached a mapped stack.
 func (r *Recorder) handlePlaneExec(rec *Record) {
 	entry, _ := r.procs.lookup(int(rec.PID), rec.StartNS)
@@ -221,7 +221,7 @@ func planeAttrOp(hook uint16) (string, bool) {
 }
 
 // handlePlaneAttr records the plane's own refusal of an attribute change (KindPlaneAttr: path_chmod, path_chown, the
-// xattr and ACL hooks; enforce-plane R12, R23): the action's one line, since no recorder fexit wraps these hooks. The
+// xattr and ACL hooks): the action's one line, since no recorder fexit wraps these hooks. The
 // file is named as a file operation's is, by its directory's (dev, ino) and final component through the rule table's
 // directory index, and the rule by the kernel's row (PlaneRows.RowName for PlaneProtect: the deny_write target).
 func (r *Recorder) handlePlaneAttr(rec *Record) {
@@ -275,7 +275,7 @@ func planeFSKind(hook uint16) (Kind, bool) {
 }
 
 // handlePlaneFS records the plane's own refusal on a hook whose recorder fexit the build did not attach
-// (KindPlaneFS; enforce-plane §7, R23, TIER3-PLAN T9b): the action's one line, which that fexit would have written
+// (KindPlaneFS): the action's one line, which that fexit would have written
 // with the plane's refusal stamped on it. It is named as the fexit's line is, by the operation the hook stands for
 // (an rmdir the unlink, a mknod the open with O_CREAT, as handleFSOp names them) and the plane's rule and reason
 // (planeFS); the object as a file operation's, by its directory's (dev, ino) and final component through the rule
@@ -343,12 +343,12 @@ func (r *Recorder) handlePlaneSocket(rec *Record) {
 	r.emit(ev)
 }
 
-// PlaneMapRule is the rule a refused executable mapping names (enforce-plane R26: rule exec-map): ADR 0027's
+// PlaneMapRule is the rule a refused executable mapping names (rule exec-map): ADR 0027's
 // policy, which no single contract entry states.
 const PlaneMapRule = "exec-map"
 
-// handlePlaneMap records the plane's own refusal of an executable mapping (KindPlaneMap: mmap_file, file_mprotect;
-// enforce-plane R23, R26): the action's one line, since no recorder fexit wraps these hooks. A mapping is no action
+// handlePlaneMap records the plane's own refusal of an executable mapping (KindPlaneMap: mmap_file, file_mprotect):
+// the action's one line, since no recorder fexit wraps these hooks. A mapping is no action
 // the record's kinds name, so it is a refused line, as a refused socket is: op mmap or mprotect by the hook, the target
 // the file named as a file operation's is, through the directory index, or "anonymous" for a file no path names (a
 // memfd, an unlinked file, an overlay's backing file), rule exec-map; a fail-closed refusal reads path-unresolved.

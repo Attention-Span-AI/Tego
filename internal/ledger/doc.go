@@ -18,7 +18,7 @@
 // by path for every blob, refusing links the same way, so after the user replaces their ledger root, or
 // renames run directories inside it, during a live root run, that store's blobs land in whatever real
 // directory the user's tree then names (one the user owns, or a root-owned run directory already in it),
-// never through a link (record-ledger.md §3, residual). Only what a call itself creates is handed to
+// never through a link (residual). Only what a call itself creates is handed to
 // another uid.
 // Reopening a run directory that a dead process left behind resumes the chain, discarding a torn tail and
 // recording a gap for it, so gc's orphan sweep can end the run.

@@ -355,8 +355,8 @@ func TestStatusOrdersRunsByMintTimeAcrossHosts(t *testing.T) {
 	}
 }
 
-// TestCompileJSONEnvListsAreNeverNull is agent-contract R12's --json shape: with no env: section env_deny is
-// [] and env_set {}, as every other list is, where both were null; env_pass stays null, meaning the agent
+// TestCompileJSONEnvListsAreNeverNull is the env lists' --json shape: with no env: section env_deny is
+// [] and env_set {}, as every other list is, never null; env_pass stays null, meaning the agent
 // inherits the environment, and [] is a contract that passes nothing.
 func TestCompileJSONEnvListsAreNeverNull(t *testing.T) {
 	code, out, errs := run(t, "compile", filepath.Join("testdata", "minimal.yaml"), "--json", "--offline")

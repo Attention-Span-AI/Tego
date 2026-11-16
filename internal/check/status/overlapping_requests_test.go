@@ -15,7 +15,7 @@ import (
 // background call alongside its main completion.
 //
 // R10 reads "∃ ssl_request with no ssl_response sharing its request_id, newer than the last
-// response" (docs/p0/limits-check-doctor-cli.md §5). Both halves qualify the same request, and
+// response". Both halves qualify the same request, and
 // together they are exactly "the newest ssl_* event is a request": a response is always recorded
 // after the request it answers, so a request newer than the last response is by construction one
 // that has not been answered, and one older than the last response cannot be shown to be still

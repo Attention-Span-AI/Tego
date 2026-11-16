@@ -32,7 +32,7 @@ func trustedCopy(t *testing.T, name string) string {
 }
 
 // TestFromMachineTrustRule: the price table a machine config names outside ~/.tego follows the config trust
-// rule (limits-check-doctor-cli.md §3), as the layers do: a table others may rewrite is not read, since whoever
+// rule, as the layers do: a table others may rewrite is not read, since whoever
 // can edit it can price every model at $0 and turn every cost budget off. It is refused like an unreadable
 // table, a warning and no prices, never a failed run.
 func TestFromMachineTrustRule(t *testing.T) {

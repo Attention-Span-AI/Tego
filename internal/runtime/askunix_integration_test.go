@@ -209,7 +209,7 @@ connect("extmoved")
 os.rename("out/extmoved", "out/ext.sock")
 `
 
-// TestIntegrationAskUnixScopeIsAPlace is R11c's model end to end at tier landlock (ADR 0008's note of 2026-10-19): a
+// TestIntegrationAskUnixScopeIsAPlace is R11c's model end to end at tier landlock (ADR 0008): a
 // net.ask unix: scope is a place. A connect whose name reaches it — here through a
 // symlink the agent made — is asked, whoever bound the socket there: the run (out/app.sock) or a process outside it
 // (out/ext.sock); nobody answers, so each is refused ask-timeout. Under any other name — a hard link, the name the

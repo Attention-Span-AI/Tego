@@ -67,7 +67,6 @@ func zeroPad(s string, width int) string {
 // TestNewRunIDZeroHostID pins E4: a zero-value [32]byte hostID (a caller bug, per I8, not
 // identity's to detect) must not be special-cased — NewRunID must still mint a normally-shaped,
 // Valid id rather than erroring or panicking on it.
-// identity-config.md E4.
 func TestNewRunIDZeroHostID(t *testing.T) {
 	var zero [32]byte
 	id, err := NewRunID(zero, time.Unix(1, 0), bytes.NewReader([]byte{1, 2, 3, 4}))
@@ -86,7 +85,6 @@ func TestNewRunIDZeroHostID(t *testing.T) {
 // correction) must not error — ids stay unique and Valid, they are simply not required to sort by
 // time in that case. Nothing else in this suite mints two ids with a later time followed by an
 // earlier one.
-// identity-config.md E2.
 func TestNewRunIDClockStepsBackward(t *testing.T) {
 	later := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	earlier := later.Add(-time.Hour)
@@ -113,7 +111,6 @@ func TestNewRunIDClockStepsBackward(t *testing.T) {
 // exactly the property a future change (e.g. a reused scratch buffer) could silently break, and
 // nothing else in this suite calls NewRunID from more than one goroutine. Meaningful under
 // `go test -race`, which is how CI runs the suite.
-// identity-config.md E24.
 func TestNewRunIDConcurrentSameTick(t *testing.T) {
 	const n = 64
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) // identical tick for every goroutine

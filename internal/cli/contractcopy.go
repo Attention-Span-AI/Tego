@@ -18,8 +18,7 @@ import (
 )
 
 // contractCopy is what a run leaves in its directory as contract.yaml: the canonical bytes of the
-// merged contract, whose sha256 is the run's contract_hash (agent-contract.md R13, P0-DESIGN §3.3
-// "copy as compiled (hash = contract_hash)"). The file the user wrote is not that: its comments and
+// merged contract, whose sha256 is the run's contract_hash. The file the user wrote is not that: its comments and
 // layout never hashed, and an `extends:` in it names a profile that may change or vanish after the
 // run, so a copy of those bytes could neither be checked against contract_hash nor recompiled into
 // the table the run enforced.
@@ -52,7 +51,7 @@ type runOrigin struct {
 	cwd          string
 	// runCommand is run_start.run_command_grant, the absolute path the run granted; a ledger written before
 	// that field existed falls back to run_start.command[0], which compiles to the same grant, or to none
-	// when a declared entry covers it (the contract's own command included) (agent-contract.md R8).
+	// when a declared entry covers it (the contract's own command included).
 	runCommand string
 }
 
@@ -100,7 +99,7 @@ func loadContractCopy(path, recordedHash string, profiles agent.ProfileSource) (
 }
 
 // readCopy reads contract.yaml under the same size cap the loader applies to any contract, so a
-// run directory's copy is never a way past it (agent-contract.md E25). Tego wrote the copy as a
+// run directory's copy is never a way past it. Tego wrote the copy as a
 // regular file, so anything else there (a FIFO would block drift forever) is refused.
 func readCopy(path string) ([]byte, error) {
 	f, err := os.OpenFile(filepath.Clean(path), agent.OpenFlags|syscall.O_NOFOLLOW, 0)

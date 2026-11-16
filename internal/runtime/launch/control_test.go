@@ -50,7 +50,7 @@ func TestChildStepString(t *testing.T) {
 	}
 }
 
-// Also pins runtime-launch.md E4: a landlock_restrict_self failure is ErrChildLandlock wrapping the errno, not a bare ErrChildDied.
+// Also pins: a landlock_restrict_self failure is ErrChildLandlock wrapping the errno, not a bare ErrChildDied.
 func TestStepFailureClasses(t *testing.T) {
 	tests := []struct {
 		step ChildStep
@@ -69,7 +69,7 @@ func TestStepFailureClasses(t *testing.T) {
 	}
 }
 
-// FuzzControlPipeDecode is docs/p0/runtime-launch.md §9's fuzz target: the decoder never panics and every
+// FuzzControlPipeDecode: the decoder never panics and every
 // accepted message re-encodes to the same bytes.
 func FuzzControlPipeDecode(f *testing.F) {
 	f.Add(encodeFD(3))

@@ -146,7 +146,7 @@ func TestRenameIsDecidedAtBothEnds(t *testing.T) {
 	}
 }
 
-// TestPathBytesAreMatchedRaw is enforce-cgroup-observe.md §6 E18: the kernel decided on a path's raw bytes, and the recorder matched after cstring had
+// TestPathBytesAreMatchedRaw: the kernel decided on a path's raw bytes, and the recorder matched after cstring had
 // replaced a byte that is not UTF-8 with U+FFFD, so a read under a deny_read entry spelled with such a byte named
 // no entry and was recorded allow. The line itself stays valid UTF-8.
 func TestPathBytesAreMatchedRaw(t *testing.T) {
@@ -164,11 +164,11 @@ func TestPathBytesAreMatchedRaw(t *testing.T) {
 	}
 }
 
-// TestUnenforcedDenyReadOnAnUnmarkedMountIsObserved is enforce-cgroup-observe.md §6 E24's
+// TestUnenforcedDenyReadOnAnUnmarkedMountIsObserved is the
 // recorder half: a deny_read entry nested in a write entry is refused by tier 2's fanotify listener alone, which marks the mounts under it at Prepare. A mount the host makes beneath
 // it later is on no mark, so a read there is made, and the line said refused (E24). The recorder compares the
 // open's device with the devices of the mounts the listener marked. A read on a marked mount is the listener's
-// refusal, whose own line is the one kept (supervisor R7a): the recorder writes none.
+// refusal, whose own line is the one kept: the recorder writes none.
 func TestUnenforcedDenyReadOnAnUnmarkedMountIsObserved(t *testing.T) {
 	f := newFixture(t)
 	di, ok := statDevIno(f.secrets)

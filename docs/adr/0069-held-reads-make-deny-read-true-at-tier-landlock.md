@@ -5,7 +5,7 @@ Status: **accepted 2026-10-24**; implemented 2026-10-24: D1 to D6, verified
 D5's created-then-moved residual were not built initially; the 2026-11-03 amendment below implements launch
 identities and fails closed on replacement uncertainty (GAPS A11). Amends ADR 0041 D4's one re-pin
 (the 2026-10-25 note). Builds on ADR 0041 Stage B (held completion) and ADR 0043 (name entries); refines
-SEMANTICS §1, §2 and §7, supervisor.md R15 and R22, enforce-landlock R10 and R16, agent-contract R5 and R6,
+SEMANTICS §1, §2 and §7,
 CAPABILITIES (three rows) and spec/record/v1 (record_minor 18).
 
 ## Context

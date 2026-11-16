@@ -41,7 +41,7 @@ var doctorBuildRows = []cgroupenforce.BuildInfo{
 		KeptCause: "lock the build: permission denied", MemlockBytes: 1_200_128, Path: "/sys/fs/bpf/tego/jjjj"},
 }
 
-// TestDoctorBuildsGolden is limits-check-doctor-cli.md R27's builds section, byte for byte in text and --json
+// TestDoctorBuildsGolden is doctor's builds section, byte for byte in text and --json
 // (testdata/doctor-builds.golden, doctor-builds-json.golden): one line per tier-2 build, a held one as in use, an
 // idle one with its idle time, whether its timer runs (with its pid) and so when it goes, a build kept past its
 // linger with why and that `tego gc --builds` does not remove it, what it holds and the memory its programs and maps

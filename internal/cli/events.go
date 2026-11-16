@@ -25,7 +25,7 @@ func init() { register(cmdEvents) }
 
 // cmdEvents is `tego events <run> [--json] [--kind K] ... ` (R29): the run's record, as a table or as the
 // stored lines byte for byte. It is the escape hatch for when a derived view looks wrong, so it never
-// re-encodes what it prints. `--verify` instead checks the record itself (record-ledger.md I3, I4, E29):
+// re-encodes what it prints. `--verify` instead checks the record itself:
 // every line against its id, the seq and prev links, and the head against chain.log. `--follow` prints the
 // same rows as the run's Writer appends them, checking the chain as each line arrives, and exits at run_end.
 func cmdEvents() Command {
@@ -136,7 +136,7 @@ func runEvents(ctx context.Context, ref string, f events.Filter, last, asJSON bo
 		// §3: --last answers with the last refusal, gap or limit, not with all of them. The
 		// answer is read from the ledger rather than from last-refusal.json: that file is
 		// advisory, holds no gap or limit, and carries none of the event identity a row (or I8's
-		// byte-exact --json line) is made of. See docs/p0/limits-check-doctor-cli.md §3.
+		// byte-exact --json line) is made of.
 		en, found, err := lastMatch(ctx, r, f)
 		if err != nil {
 			return readFailed(stderr, "events", err)
@@ -168,8 +168,7 @@ func runEvents(ctx context.Context, ref string, f events.Filter, last, asJSON bo
 }
 
 // runFollow is `events --follow`: the rows events prints, for the lines the run holds and then for each line its
-// Writer appends, read by one ledger.Follower that checks the chain as each line arrives (record-ledger.md §4
-// Follow). It exits 0 at run_end once the launcher has released the lock; a break in the chain is 125
+// Writer appends, read by one ledger.Follower that checks the chain as each line arrives. It exits 0 at run_end once the launcher has released the lock; a break in the chain is 125
 // [ledger-corrupt] after the rows before it, and a run whose launcher is gone without run_end is 125 [run-lost].
 func runFollow(ctx context.Context, ref string, f events.Filter, asJSON bool, stdout, stderr io.Writer) int {
 	dir, err := resolveRunDir("events", ref, true, &machineOnce{stderr: stderr})
@@ -213,7 +212,7 @@ func runFollow(ctx context.Context, ref string, f events.Filter, asJSON bool, st
 
 // lastMatch is the newest event f matches, read from the end of the ledger (ledger.Reader.Backward): the lines
 // after it are all --last reads, so its cost is the distance from the end to the answer, not the ledger's length
-// (the custom-agent POC, item 8). It answers with that one event, which is what --last promises (§3), even when an
+// It answers with that one event, which is what --last promises (§3), even when an
 // older event is stamped at the same nanosecond. found is false when nothing matches; the renderer then prints no row and
 // the note below says so. A line it does not reach is not decoded, so damage before the answer is left to a full
 // read or --verify, as ledger.Reader.State leaves it.
@@ -415,14 +414,14 @@ func runRefUsage(err error) bool {
 // under the ledger root has it (expandRunAbbrev); two or more are a usage error that names them.
 const minRunAbbrev = 4
 
-// runHostLen is the length of r-<host8>-, the start every run id minted on one host shares (identity-config.md R2).
+// runHostLen is the length of r-<host8>-, the start every run id minted on one host shares.
 const runHostLen = len("r-00000000-")
 
 // maxRunMatches is how many of the runs an ambiguous abbreviation matches its error names.
 const maxRunMatches = 5
 
-// runIDTemplate is a run id each of whose characters is one every run id may have at that place (identity-config.md
-// R2): the shape runIDEnds lays text over.
+// runIDTemplate is a run id each of whose characters is one every run id may have at that place: the shape
+// runIDEnds lays text over.
 const runIDTemplate = "r-00000000-0000000000000-000000"
 
 // runAbbrevHint is what a run argument too short to abbreviate a run id by either end (abbrevEnds) is told to give.
@@ -541,8 +540,7 @@ func needRunRecord(r *ledger.Reader, dir string) error {
 }
 
 // readCode is the diagnostic code of a failure to read a run's ledger: [ledger-corrupt] for a line that
-// does not decode, the code limits-check-doctor-cli §7 documents for it, and [io] for anything else. Every
-// read failure was [io], so a corrupt ledger read as a disk error.
+// does not decode, and [io] for anything else, so a corrupt ledger never reads as a disk error.
 func readCode(err error) string {
 	if errors.Is(err, ledger.ErrCorruptLedger) {
 		return codeUnverified

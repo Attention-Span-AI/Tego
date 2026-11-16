@@ -49,10 +49,10 @@ end reasons and signal rules of exit.go (which imports only syscall), and throug
 names `identity.ExecID`, `NewExecID` and `RunID` from runid.go. The ChildSpec frame's encoding/json adds 12.
 Measured: with an identity that linked neither crypto/sha256 nor regexp, launch would link 89; with the JSON frame
 also gone, 77. Neither step needs a public-API break or an external format change. Identity's exit and id types can
-move to standard-library-only leaves that identity re-exports by alias, which amends identity-config.md I1 and
+move to standard-library-only leaves that identity re-exports by alias, which amends identity's spec invariant and
 identity's own standard-library-only import test (both forbid identity importing another `pkg/spec` package); or
 `HostID` and the two patterns can leave runid.go. The frame is private between the launcher and its own child stage,
-which run one binary, so a hand-written encoding needs runtime-launch.md case 17's amendment and a fuzzed
+which run one binary, so a hand-written encoding needs a spec amendment and a fuzzed
 round-trip, not a compatibility story. Each changes a spec invariant or the decoder the child stage runs before
 Landlock and seccomp, not an import line, so neither is part of (a)'s mechanical move. `TestLaunchLinksNoBackend` holds launch's non-standard closure to that allowlist on amd64 and
 arm64, with and without tegobpf; the depguard rule `launch-links-no-backend` refuses the direct imports.

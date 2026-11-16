@@ -13,7 +13,7 @@ const ruleSysVIPC = "sysv-ipc"
 const gapWhySysVIPC = "sysv-ipc-"
 
 // answerSysVIPC answers one System V IPC syscall: shmget, shmat, shmctl, semget, semop, semtimedop, semctl,
-// msgget, msgsnd, msgrcv or msgctl (enforce-landlock R11). The IPC namespace is the host's at tiers 1 and 2,
+// msgget, msgsnd, msgrcv or msgctl. The IPC namespace is the host's at tiers 1 and 2,
 // its ids are small integers anyone can guess, and a segment or queue another process made is reached by id
 // alone: no fs, net or exec rule sees it and Landlock has no right for it. A segment made outside the run was
 // attached read-write inside it with no line in the ledger (R34). By default the syscall is

@@ -139,7 +139,7 @@ func TestOpenRejectsBadRef(t *testing.T) {
 	}
 }
 
-// Also pins record-ledger.md E24: a second Open of the same run is ErrRunLocked.
+// Also pins: a second Open of the same run is ErrRunLocked.
 func TestOpenTwiceIsRunLocked(t *testing.T) {
 	w, dir, _ := openTestWriter(t)
 	defer w.Close(record.RunEndPayload{Reason: record.RunEndExit})
@@ -152,7 +152,7 @@ func TestOpenTwiceIsRunLocked(t *testing.T) {
 	}
 }
 
-// Also pins record-ledger.md R13: run_end carries no head of its own; the chain anchor gets the run's final
+// Also pins: run_end carries no head of its own; the chain anchor gets the run's final
 // event id.
 func TestAppendStampsAndChains(t *testing.T) {
 	w, dir, anchor := openTestWriter(t)
@@ -195,7 +195,7 @@ func TestAppendStampsAndChains(t *testing.T) {
 	}
 }
 
-// Also pins record-ledger.md E3, E26: a non-existent Kind errors before a byte is written; Blob after Close
+// Also pins: a non-existent Kind errors before a byte is written; Blob after Close
 // is ErrClosed.
 func TestAppendOrderingRules(t *testing.T) {
 	w, _, _ := openTestWriter(t)
@@ -278,7 +278,7 @@ func (p partialWriter) Write(b []byte) (int, error) {
 // starts on a line boundary and the run's record goes on to run_end (E6). Only when that cut fails is the
 // Writer torn for the rest of the run, and the run then reads as lost.
 //
-// Also pins record-ledger.md E5, E7: a short write with no error is ErrShortWrite; ENOSPC leaves the prior
+// Also pins: a short write with no error is ErrShortWrite; ENOSPC leaves the prior
 // line intact.
 func TestAppendWriteFailures(t *testing.T) {
 	tests := []struct {
@@ -358,7 +358,7 @@ func TestCloseAnchorFailureIsDistinct(t *testing.T) {
 	}
 }
 
-// Also pins record-ledger.md R17: the refused line and last-refusal.json are how a refusal's reason is
+// Also pins: the refused line and last-refusal.json are how a refusal's reason is
 // recorded. The file's top level is the refusal as it was before v1 (op, target, reason, rule), and v1 adds the
 // line's seq, ts and pid, the run, the sentence, the count and the recent list (ADR 0061).
 func TestRefusedWritesLastRefusal(t *testing.T) {
@@ -569,7 +569,7 @@ func (c *backwardClock) Mono() uint64 { return c.mono }
 // TestAppendAcceptsNonMonotonicWallClock pins R7: a run must not fail, and seq must stay the sole, gapless
 // ordering key (I4), even when the injected wall clock itself goes backward mid-run.
 //
-// Also pins record-ledger.md and runtime-launch.md E9 and E19: a wall clock stepped backward does not
+// Also pins: a wall clock stepped backward does not
 // misorder events or stop mono_ns.
 func TestAppendAcceptsNonMonotonicWallClock(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), testRef.ID)
@@ -612,7 +612,7 @@ func (c *countingWriter) Write(b []byte) (int, error) {
 // TestAppendIssuesExactlyOneWriteCall pins R4/I5: Append builds the whole line in one buffer and issues one
 // write(2) -- the property the torn-line-tolerant reader depends on for its atomicity argument.
 //
-// Also pins record-ledger.md I5: one write(2) per Append.
+// Also pins: one write(2) per Append.
 func TestAppendIssuesExactlyOneWriteCall(t *testing.T) {
 	w, dir, _ := openTestWriter(t)
 	startRun(t, w, 0)

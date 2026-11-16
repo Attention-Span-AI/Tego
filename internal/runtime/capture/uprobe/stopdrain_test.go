@@ -157,7 +157,7 @@ func exchangeChunks(pid uint32, ssl uint64, mono uint64) [][]byte {
 	}
 }
 
-// TestStopDrainsTheCaptureRing is capture-derive.md E28 (edge case #28), the one final ring-buffer drain: a run's last response is on the
+// TestStopDrainsTheCaptureRing is the one final ring-buffer drain: a run's last response is on the
 // ring when the run ends. Stop used to close the reader first, which dropped it and turned the request it
 // answered into a malformed gap, and a request still on the ring vanished with no gap at all.
 func TestStopDrainsTheCaptureRing(t *testing.T) {

@@ -32,7 +32,7 @@ func factory(name string) Factory {
 	return func() (Source, error) { return &fakeSource{name: name}, nil }
 }
 
-// TestSelect covers §4's mode selection and the concurrency the 2026-09-22 resolution settled: under
+// TestSelect covers §4's mode selection and its concurrency: under
 // auto both mechanisms run, and so they do for uprobe reached through auto; under forwarder only one does,
 // and off starts nothing and gaps nothing. A contract that pins uprobe itself is TestSelectPinnedUprobe.
 func TestSelect(t *testing.T) {

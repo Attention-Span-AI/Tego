@@ -18,8 +18,8 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestADeclaredBudgetNothingCountsIsRefused is limits-check-doctor-cli.md R32's refusal of a budget the contract
-// declares and nothing counts (the custom-agent POC, item 1): a tokens, cost_usd or repeats budget under capture:
+// TestADeclaredBudgetNothingCountsIsRefused: a budget the contract
+// declares and nothing counts is refused. A tokens, cost_usd or repeats budget under capture:
 // off, a machine capture ceiling of off, a forwarder with no models: endpoint or record: off under uprobe capture,
 // and a cost_usd budget with no price table, each ran with only a compile warning and a gap why=budget-unmetered,
 // exiting as the agent did. Each is now refused with ErrBudgetUnmetered naming the budget, the cause and the fix. A

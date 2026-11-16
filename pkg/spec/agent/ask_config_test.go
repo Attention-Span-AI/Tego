@@ -78,7 +78,7 @@ func TestAskScopeShapeAndUnsafeModesAreRejected(t *testing.T) {
 
 // A udp:// approval scope, and a bare host:port, which names TCP and UDP (SEMANTICS §5; the contract writes
 // `ask: ["queue.internal:5672"]`), compile into NetAsk rules: a datagram or a UDP connect to one is held while a person
-// decides (supervisor R13d, ASK-UDP). UDP is held at the syscall, so such a scope needs ask.hold: connect: first_write
+// decides (ASK-UDP). UDP is held at the syscall, so such a scope needs ask.hold: connect: first_write
 // holds TCP bytes and request an HTTP request, which a datagram is neither. A destination without a port is no ask
 // scope: port 0 is ICMP's, and an approval names one port.
 func TestAskUDPScopesAreHeldAtTheDatagram(t *testing.T) {
@@ -112,7 +112,7 @@ func TestAskUDPScopesAreHeldAtTheDatagram(t *testing.T) {
 }
 
 // A unix: approval scope names a socket the way a net.allow unix: entry does, pathname or abstract, and is held at the
-// connect: the supervisor relays it as the task once a person approves (supervisor R11, ADR 0008). first_write and
+// connect: the supervisor relays it as the task once a person approves (ADR 0008). first_write and
 // request holds are for a TCP byte stream and an inspected HTTP request, which a unix connect is neither.
 func TestAskUnixScopesAreHeldAtTheConnect(t *testing.T) {
 	f := newFixture(t)
@@ -138,7 +138,7 @@ func TestAskUnixScopesAreHeldAtTheConnect(t *testing.T) {
 
 // A pathname unix: scope keeps the place it resolves to at compile, as an fs entry does (NetRule.UnixResolved), and
 // Evaluate refuses a connect there under the scope's rule, inside the write entry around it, as P0 compiles an ask: the
-// run asks a person about a connect that reaches that place (supervisor R11c), where compile --test answered allow.
+// run asks a person about a connect that reaches that place, where compile --test answered allow.
 func TestAskUnixScopeIsMatchedByItsResolvedSpelling(t *testing.T) {
 	f := newFixture(t)
 	// Not under the fixture's root: a socket path there is past sun_path's 107 bytes.

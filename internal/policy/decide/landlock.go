@@ -22,9 +22,9 @@ import (
 // A read under an enforced deny_read is still allowed through a write entry nested beneath the target
 // that covers the path: the builder gives a write entry's mask the read set, and Landlock unions it with
 // the target's access 0, so the kernel lets the read through and the root tiers' nearest-wins walk
-// agrees (R15; it was answered refused, agent-contract §11's over-refusal). A declared exec
+// agrees (R15; answering refused would over-refuse). A declared exec
 // entry strictly beneath the target reopens reads the same way at this tier alone: its grant holds an fd of
-// its own with READ_FILE, on the file or on the whole directory (enforce-landlock R5, I11 (1)), which no
+// its own with READ_FILE, on the file or on the whole directory (I11 (1)), which no
 // deny_read above it withdraws (execReadGrant).
 //
 // A delete or rename is checked on the path's parent directory, which is where Landlock asks for
@@ -187,7 +187,7 @@ func grantKind(op string) agent.ActionKind {
 
 // ExecGrants is what the exec.allow grants of the run's Landlock ruleset give at the end p, through p itself and its
 // ancestors: EXECUTE and READ_FILE (READ_DIR beneath a directory grant). The builder binds each grant to the inode it
-// held at Prepare (enforce-landlock R5), and the rule moves with that inode: an exec.allow directory renamed within a
+// held at Prepare, and the rule moves with that inode: an exec.allow directory renamed within a
 // write entry takes its EXECUTE to its new name and leaves none at the declared one. nil is the
 // table's answer (ExecGrantAt), all a table alone can give; the supervisor answers by the identity of the
 // inodes the builder held, which it took before the agent ran.
@@ -477,7 +477,7 @@ func symlinkName(r *agent.FSRule, p string) bool {
 }
 
 // landlockFileRights are the rights REFER's no-gain rule compares for a regular file: ACCESS_FILE in
-// security/landlock/fs.c, the builder's fileRights (enforce-landlock R3). A directory right means nothing on a file.
+// security/landlock/fs.c, the builder's fileRights. A directory right means nothing on a file.
 const landlockFileRights = agent.AccessExecute | agent.AccessWriteFile | agent.AccessReadFile | agent.AccessTruncate |
 	agent.AccessIoctlDev | agent.AccessResolveUnix
 
@@ -519,11 +519,11 @@ func landlockGrant(rt *agent.RuleTable, r *agent.FSRule) agent.AccessSet {
 	return a
 }
 
-// landlockExecGrant is what the exec entries covering the end p grant by the table (the builder's execGrants,
-// enforce-landlock R5): EXECUTE and READ_FILE, and READ_DIR for a directory entry, which covers its whole subtree; a
+// landlockExecGrant is what the exec entries covering the end p grant by the table (the builder's execGrants):
+// EXECUTE and READ_FILE, and READ_DIR for a directory entry, which covers its whole subtree; a
 // file entry covers itself. An entry is compared where the builder's grant is, at its Resolved (the kernel's walk of
 // the declared name), never at a declared spelling that resolves elsewhere: that name is a symlink, or, in a landed
-// end, a directory the agent put in the link's place, and neither holds the grant (ADR 0019's 2026-10-17 design
+// end, a directory the agent put in the link's place, and neither holds the grant (ADR 0019 design
 // note). Compared there as well, the spelling granted EXECUTE beneath a replaced link, and at the
 // link itself only its own name was spared.
 func landlockExecGrant(rt *agent.RuleTable, p string) agent.AccessSet {

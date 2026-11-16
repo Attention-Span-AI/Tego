@@ -51,7 +51,7 @@ func openDeep(t *testing.T, dir string) int {
 }
 
 // TestDecideEventRefusesAnUnresolvedPathForTheRun is SEMANTICS §2's "a path that cannot be resolved is refused"
-// at the listener (enforce-cgroup-observe.md §5 R8): a file beneath a deny_read entry whose canonical path is
+// at the listener: a file beneath a deny_read entry whose canonical path is
 // longer than PATH_MAX cannot be read back through its descriptor, and the run's own open of it was allowed with
 // only a fanotify-path-unresolved gap. It is refused path-unresolved for the run's opener and one whose
 // membership went unread, and allowed for an opener outside the run and where no entry could refuse the event.

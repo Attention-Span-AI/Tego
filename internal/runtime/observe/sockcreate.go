@@ -10,7 +10,7 @@ import (
 )
 
 // handleSockCreate records cgroup/sock_create's own refusal of an inet socket outside ADR 0018's allowlist
-// (KindSockCreate; enforce-cgroup-observe §5 R4, R5): the one line of a socket that reached inet_create on a path the
+// (KindSockCreate): the one line of a socket that reached inet_create on a path the
 // seccomp filter did not decide, io_uring's IORING_OP_SOCKET or any other. It is spelled as the supervisor's and the
 // plane's socket refusals are (supervisor socket.go, handlePlaneSocket): a refused line naming the family, type and
 // protocol, reason net-not-allowed and rule unmatched, since no entry of the contract can name a socket family, with

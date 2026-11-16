@@ -39,7 +39,7 @@ func validateAskRequest(rt *agent.RuleTable, deps Deps) error {
 		return nil
 	}
 	cfg := rt.AskConfig
-	// Only tier 1's supervisor holds a read (POC 2026-10-06): a table that would land elsewhere, compile refuses
+	// Only tier 1's supervisor holds a read: a table that would land elsewhere, compile refuses
 	// already; one that reached here anyway (an --observe run, a hand-built table, a backend chosen after the
 	// compile) does not run with its asks turned into plain refusals, nor into reads nothing holds. Asked first, so
 	// the refusal names what refused it.
@@ -63,7 +63,7 @@ func validateAskRequest(rt *agent.RuleTable, deps Deps) error {
 	for _, rule := range rt.NetAsk {
 		switch {
 		case rule.Proto == agent.ProtoUnix && rule.UnixPath != "":
-			// Held at the connect and relayed as the task once approved (supervisor R11): no other hold carries one.
+			// Held at the connect and relayed as the task once approved: no other hold carries one.
 			if cfg.Hold != agent.AskHoldConnect {
 				return fmt.Errorf("%w: unix ask destinations are held at the connect, not by ask.hold %s", ask.ErrUnavailable, cfg.Hold)
 			}
@@ -71,7 +71,7 @@ func validateAskRequest(rt *agent.RuleTable, deps Deps) error {
 			return fmt.Errorf("%w: only TCP, UDP or unix ask destinations with a port are supported", ask.ErrUnavailable)
 		case rule.Proto != agent.ProtoTCP && cfg.Hold != agent.AskHoldConnect:
 			// A udp:// or bare host:port entry names UDP, whose datagram or connect is held at the syscall and relayed
-			// once approved (supervisor R13d): no other hold carries one.
+			// once approved: no other hold carries one.
 			return fmt.Errorf("%w: UDP ask destinations are held at the datagram or connect, not by ask.hold %s", ask.ErrUnavailable, cfg.Hold)
 		}
 	}
@@ -104,7 +104,7 @@ func inAskCgroup(run, task string) bool {
 	return run != "" && run != "/" && (task == run || strings.HasPrefix(task, strings.TrimSuffix(run, "/")+"/"))
 }
 
-// askPeerAuthorize is whom ask.sock serves (ADR 0008, amended 2026-10-25; ADR 0100 (7)): the person, never an
+// askPeerAuthorize is whom ask.sock serves (ADR 0008; ADR 0100 (7)): the person, never an
 // agent. The broker has taken the uid first (the invoking user's or root's), and the socket read p's cgroup and
 // cgroup namespace by peer.Identify, at the connect and again at the packet. Unauthorized, with every ask left
 // pending: a peer in this run's cgroup or below it, and every peer peer.Refuse refuses, which is one inside any

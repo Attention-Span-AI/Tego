@@ -57,7 +57,7 @@ var forwarderVarNames = [...]string{
 // ForwarderVarNames is every variable the capture forwarder may set in a run (R7): each provider's base-URL
 // variables (ProviderBaseURLVars) and CODEX_HOME, which routes Codex through a generated config.toml. It is the
 // fixed set recognized by ForwarderVar; Compile warns on a contract that sets or passes one of them wherever
-// the forwarder runs (agent-contract R12). ProviderBaseURLVars supplies each provider's routing names.
+// the forwarder runs. ProviderBaseURLVars supplies each provider's routing names.
 // It is a listing copy; editing it does not change which variables are runtime-owned.
 var ForwarderVarNames = forwarderVarNames
 

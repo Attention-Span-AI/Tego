@@ -92,7 +92,7 @@ func TestKernelRecordTier2StartsTheRecorder(t *testing.T) {
 
 // TestKernelRecordGapsWhenItCannotRun covers both ways the recorder can be absent on a tier that has
 // one. Either way the run must say so: a kernel record that was never drained reads exactly like a run
-// where nothing happened, and P0-DESIGN §6 forbids that silence.
+// where nothing happened, and that silence is not allowed.
 func TestKernelRecordGapsWhenItCannotRun(t *testing.T) {
 	cases := []struct {
 		name string

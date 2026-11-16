@@ -19,7 +19,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// State is the run state a reader derives (P0-DESIGN §5, docs/p0/limits-check-doctor-cli.md R7-R12).
+// State is the run state a reader derives (R7-R12).
 type State string
 
 // The states, in the order Derive checks them; the first match wins.
@@ -54,7 +54,7 @@ const askAnswerBound = time.Hour
 // run_start carries no stall_after at all (R12); a declared "0s" is a budget, not an absence.
 const DefaultStallAfter = time.Hour
 
-// Snapshot is one run's state and the facts behind it (docs/p0/limits-check-doctor-cli.md §2).
+// Snapshot is one run's state and the facts behind it.
 type Snapshot struct {
 	Run, Agent string
 	// St is the derived state.
@@ -94,18 +94,18 @@ type Snapshot struct {
 	// qualifies the state above rather than changing it — a run that lost events is still running
 	// or done — so it never enters state().
 	Gaps []gaps.Count
-	// Tier and Capabilities are run_start's tier and capability line (record-ledger.md §2.2), which
+	// Tier and Capabilities are run_start's tier and capability line, which
 	// CapabilityLine renders (R-cap). Capabilities is nil for a ledger written before the line existed.
 	Tier         string
 	Capabilities map[string]bool
 	// SkippedNewer is how many lines of a newer record version the reader skipped (ledger.Reader.
 	// SkipNewerVersions), for the caller's one warning; never part of the state.
 	SkippedNewer int
-	// TegoVersion is run_start's tego_version: the binary that ran the run, never the one reading it
-	// (limits-check-doctor-cli.md §6 case 9). "" before run_start.
+	// TegoVersion is run_start's tego_version: the binary that ran the run, never the one reading it.
+	// "" before run_start.
 	TegoVersion string
 	// RunCommandGrant is run_start's run_command_grant: the file the command given on tego run's command
-	// line was granted as for the whole run, "" when none was (agent-contract.md R8).
+	// line was granted as for the whole run, "" when none was.
 	RunCommandGrant string
 	// BestEffort is run_start's best_effort: the run's disclosed best-effort cells (ADR 0041 D1, D7), nil
 	// when it had none or its ledger predates the field.
@@ -171,7 +171,7 @@ type options struct {
 }
 
 // ctxEvery is how many ledger lines Derive reads between looks at its context, the cadence events and
-// measure use (limits-check-doctor-cli.md R29).
+// measure use.
 const ctxEvery = 1024
 
 // WithContext makes Derive give up with the context's error, checked every ctxEvery lines, so a signal
@@ -227,7 +227,7 @@ func Derive(r *ledger.Reader, lockHeld bool, now time.Time, stallAfter time.Dura
 		// activity is the largest mono_ns of a non-gap line and when it was stamped: R4's "last event" as
 		// limits.Watcher reads it, which skips gap lines (they record tego's own losses, not the agent's
 		// activity) and takes the largest reading, since lines are not in mono_ns order along seq
-		// (record-ledger.md §4 Append). Taken from the last line, idle disagreed with the watcher's stall
+		// (a producer's line keeps its capture-time reading). Taken from the last line, idle would disagree with the watcher's stall
 		// check in both directions.
 		activityMono uint64
 		activityTS   time.Time
@@ -348,7 +348,7 @@ func Derive(r *ledger.Reader, lockHeld bool, now time.Time, stallAfter time.Dura
 	return s, nil
 }
 
-// ResourcesLine renders the snapshot's resource peaks as one line (docs/p0/limits-check-doctor-cli.md R-res):
+// ResourcesLine renders the snapshot's resource peaks as one line:
 // what the run's cgroup said the run used, read from its run_end, each key the record lacks "unknown" and
 // never 0. A run with no run_end yet says it has none until it ends, because the runtime reads them once, at
 // shutdown. Like CapabilityLine it is read from the record, never measured now: the cgroup is gone by then.

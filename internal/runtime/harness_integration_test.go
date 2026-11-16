@@ -32,7 +32,7 @@ func harnessRunStart(t *testing.T, evs []*record.Event) (*record.HarnessStart, i
 	return p.Harness, gap
 }
 
-// TestIntegrationHarnessFilesAreReadOnlyAndHookStateWritable is agent-contract.md R27's acceptance (4) at tier
+// TestIntegrationHarnessFilesAreReadOnlyAndHookStateWritable is the harness acceptance at tier
 // landlock through the real runner.run: a fake provisioner gives the run a settings file and names it and hook-state/
 // to the agent; the shell agent writes hook-state/x, and its writes to the settings file and to last-refusal.json fail
 // EACCES (Landlock: neither lies under a write grant). run_start says what was provisioned, with the grant.

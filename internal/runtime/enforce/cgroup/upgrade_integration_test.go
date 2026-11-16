@@ -23,7 +23,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestTwoBuildsCoexistWithoutInterference is §6 E22 and E29 (and capture-derive.md E27, whose capture code only
+// TestTwoBuildsCoexistWithoutInterference (capture code only
 // ever sees its own bpf_hash's pins, so an upgrade mid-run leaves both builds' runs whole) against the running kernel: a binary upgrade leaves a
 // run of the old build live while a run of the new one starts, so two bpf_hash builds' objects are pinned, their
 // tracing programs attached host-wide, and their cgroup programs attached to their own runs' cgroups, side by side.

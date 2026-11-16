@@ -11,8 +11,8 @@ import (
 )
 
 // TestPlaneSummaryWarnsThatTheFanotifyFallbackDoesNotScale: every open and exec on a marked mount waits on the run's
-// listener, so concurrent tier-cgroup runs on the fallback slow each other's opens (the perf suite's conc check,
-// enforce-plane §10). The clause says so where the fallback is selected, and only there.
+// listener, so concurrent tier-cgroup runs on the fallback slow each other's opens (the perf suite's conc check).
+// The clause says so where the fallback is selected, and only there.
 func TestPlaneSummaryWarnsThatTheFanotifyFallbackDoesNotScale(t *testing.T) {
 	t.Parallel()
 	fallback := planeSummary(&PlaneState{Selected: PlaneFanotify, SelectedWhy: "no plane mode passed the probe"}, false)

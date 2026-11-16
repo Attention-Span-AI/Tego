@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestFilterProcScopeArm is enforce-landlock R7's process scope (supervisor R35): no Landlock ABI governs
+// TestFilterProcScopeArm is the filter's process scope: no Landlock ABI governs
 // prlimit64, setpriority, the sched_set* calls or ioprio_set, and at tier 1 the agent shares its launcher's uid,
 // so prlimit64(launcher, RLIMIT_CPU, {1, 1}) had the kernel SIGKILL the launcher even inside an ABI-6 signal scope.
 // The arm hands a call on another task to the supervisor and allows one on the caller itself (and a prlimit64

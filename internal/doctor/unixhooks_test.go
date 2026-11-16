@@ -9,7 +9,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// unixHooks are the two tier-2 hooks the backend leaves out below 6.7 (enforce-cgroup-observe.md §5 R7).
+// unixHooks are the two tier-2 hooks the backend leaves out below 6.7.
 var unixHooks = []string{"cgroup/connect_unix", "cgroup/sendmsg_unix"}
 
 // TestUnixHooksAreOptionalBelowTheirKernel pins the derivation to what the tier-2 backend does below 6.7: it

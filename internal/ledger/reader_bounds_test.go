@@ -21,7 +21,7 @@ import (
 // KiB (R10 splits every field over BlobThreshold), and State runs on every retained run before each `tego
 // run`, so a line the size of the file cost that much heap, twice over, before the agent was even launched.
 //
-// Also pins record-ledger.md E12: a reader refuses a line past MaxLineBytes as corruption.
+// Also pins: a reader refuses a line past MaxLineBytes as corruption.
 func TestReaderBoundsLineLength(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), testRef.ID)
 	if err := os.Mkdir(dir, 0o700); err != nil {

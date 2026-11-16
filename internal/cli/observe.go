@@ -12,7 +12,7 @@ import (
 )
 
 // observeFactory builds the tier's kernel recorder, the thing that drains the ring buffer the tracing
-// programs write to and turns each sample into a ledger event (docs/p0/enforce-cgroup-observe.md §2.4).
+// programs write to and turns each sample into a ledger event.
 //
 // It is handed to runtime.Deps as a factory rather than as a built source because the ring buffer is
 // named by a build hash the enforcement handle computes at Prepare time, inside the run. A forwarder can

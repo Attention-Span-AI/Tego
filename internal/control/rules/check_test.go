@@ -91,7 +91,7 @@ func TestCompileParity(t *testing.T) {
 
 // TestTheRuleServiceNamesTheLaunchersRuntimeDirs: the dashboard compiles a change of a run's contract, and a new
 // contract, with config.RuntimeDirBases, the runtime directories `tego rule` compiles with and the launcher checks
-// before it makes anything (agent-contract.md R10a), whatever the environment says. The service kept its own copy of
+// before it makes anything, whatever the environment says. The service kept its own copy of
 // the launcher's list, which tego-control may not link; had the two drifted, the dashboard would have refused a
 // change tego runs, or written a contract the next run refuses.
 func TestTheRuleServiceNamesTheLaunchersRuntimeDirs(t *testing.T) {

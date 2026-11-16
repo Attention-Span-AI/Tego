@@ -156,7 +156,7 @@ func TestRunTierRefusalIsDoctorsAccount(t *testing.T) {
 
 // TestRunRefusesWhatDoctorDoesNotOffer: a tier the derivation leaves out is exit 125 before anything is
 // created, and --tier never widens the probe.
-// identity-config.md R18: a pinned tier the machine does not offer is exit 125 [tier-unavailable] (ExitLauncher), never 211.
+// A pinned tier the machine does not offer is exit 125 [tier-unavailable] (ExitLauncher), never 211.
 func TestRunRefusesWhatDoctorDoesNotOffer(t *testing.T) {
 	requireLandlockABI(t)
 	machineProbe(t, backend.Probe{backend.TierLandlock: true})
@@ -194,7 +194,7 @@ func TestRunAsksDoctorWithTheMachineConfig(t *testing.T) {
 // runtime.Run — must each be handed it at the tier the run got. The recorder's is the one that matters most
 // and the one nothing else checks: it judges every exec the tier-2 programs record with Evaluate at its
 // table's tier, and the runtime's own restamp never reaches the table its closure holds, so a table left at
-// bpflsm judged tier-2 execs by basename with tier 3's unlisted-script rule (agent-contract.md R15) and could
+// bpflsm judged tier-2 execs by basename with tier 3's unlisted-script rule and could
 // record an allow for an exec tier 2 refused. Removing the stamp from selectBackend fails this test.
 func TestRunHandsEveryConsumerTheSelectedTier(t *testing.T) {
 	requireLandlockABI(t)

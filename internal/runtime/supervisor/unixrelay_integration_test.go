@@ -193,7 +193,7 @@ func TestIntegrationUnixRelaySymlink(t *testing.T) {
 }
 
 // TestIntegrationUnixRelayAsTask is the tier-2 shape: this process is root and the target runs as
-// uid 1000, as a root launcher drops it (runtime-launch R4). A declared connect used to be relayed by this
+// uid 1000, as a root launcher drops it. A declared connect used to be relayed by this
 // process as root: the uid-1000 target reached a 0600 socket in a 0700 root directory, and the listener
 // read uid 0 in SO_PEERCRED. Relayed as the task, the kernel refuses the first exactly as it refuses the
 // target's own connect, and the second reads uid 1000.

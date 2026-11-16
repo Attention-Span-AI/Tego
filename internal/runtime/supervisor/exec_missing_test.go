@@ -186,7 +186,7 @@ func TestExecAutofsFailureIsContinuedWhereItWas(t *testing.T) {
 	}
 }
 
-// TestExecUnsureWalkPerRunShape pins what an unsure walk's EACCES costs in each run shape (supervisor R16b, the walk).
+// TestExecUnsureWalkPerRunShape pins what an unsure walk's EACCES costs in each run shape (the walk).
 // At tiers cgroup and bpflsm a walk that failed through a directory whose
 // search answer for the task is not sure (a filesystem that decides by the caller, an access ACL) is answered EACCES,
 // which is no miss (execMissing), so the exec is decided as any failed walk is. Only a run whose execs the supervisor

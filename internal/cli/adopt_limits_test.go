@@ -17,7 +17,7 @@ import (
 // TestBoundaryAdoptionAppliesCPUAndPidsCeilings: on a machine whose config sets limits.cpu, limits.cpu_weight or
 // limits.pids, every boundary `tego adopt` was refused (exit 125, [adopt-refused]), though unattended agents are often
 // services and a machine-wide pids cap is common hardening: the main way to govern them was closed. Those three are
-// now written into the adoption's cgroup before the move (ADR 0055, the 2026-11-11 limits amendment), so the boundary
+// now written into the adoption's cgroup before the move (ADR 0055), so the boundary
 // goes on with them in its table, and the notice says them. A memory ceiling beside them still refuses it, named.
 func TestBoundaryAdoptionAppliesCPUAndPidsCeilings(t *testing.T) {
 	contract := ceilingBoundary(t)
@@ -71,7 +71,7 @@ func TestBoundaryAdoptionAppliesCPUAndPidsCeilings(t *testing.T) {
 // ceilingWarnings are the [unenforced] lines of errs that name a machine ceiling (limits.<key>). The other warnings
 // of the adoption's compile are about its contract, not its ceilings: at a root tier a contract with no net: section
 // always carries the host_sockets/root-tier one (ADR 0070), which a check of every [unenforced] line took for a ceiling
-// warned of (acceptance 2C, 2026-11-11: the tegobpf build as root).
+// warned of (the tegobpf build as root).
 func ceilingWarnings(errs string) []string {
 	var out []string
 	for line := range strings.SplitSeq(errs, "\n") {

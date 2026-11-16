@@ -26,7 +26,7 @@ func tier3Fixture(t *testing.T, mode ebpfbindings.PlaneMode, opts ...func(*Optio
 	return f, p
 }
 
-// TestTierBPFLSMIsThePlaneInLSMMode is tier bpflsm's run (enforce-plane R19; TIER3-PLAN T7): the tier-2 backend with
+// TestTierBPFLSMIsThePlaneInLSMMode is tier bpflsm's run: the tier-2 backend with
 // the plane in LSM mode, reporting itself as tier bpflsm, taking a table compiled for tier bpflsm (and no other), its
 // run-set row carrying tier 3, its capability set within tier 3's column and without what the plane does not decide
 // yet (chmod is step B).
@@ -83,7 +83,7 @@ func TestTierBPFLSMIsThePlaneInLSMMode(t *testing.T) {
 // TestTierBPFLSMReadsNoMountTableForAListener: the fanotify policy, and the mount table its submount marks come
 // from, is the listener's alone (R8), and a tier-3 run never has a listener. A tier-3 run was refused ErrMountTable
 // when mountinfo could not be read though it built no listener; it builds none now either. The plane reads the table
-// for itself since 2026-11-11 (ErrPlaneDetachedPart): a deny_read entry's tree mounted in part elsewhere is a place
+// for itself (ErrPlaneDetachedPart): a deny_read entry's tree mounted in part elsewhere is a place
 // its walk never meets the entry, so a tier-3 run with a deny_read entry over a table it cannot read is refused, before
 // anything is loaded, as a tier-2 run is, and one with no deny_read entry still needs no table. Not parallel: it
 // points the package's mount table at a missing file.
@@ -121,7 +121,7 @@ func TestTierBPFLSMReadsNoMountTableForAListener(t *testing.T) {
 
 // TestTierBPFLSMRefusesATableThePlaneCannotHold: where tier cgroup runs such a table on the fanotify listener
 // (TestPlaneFallsBackToTheListenerForATableItCannotHold), tier bpflsm has no listener to fall to, and refuses it at
-// Prepare, fail closed, with the reason and the way out (enforce-plane §6 E13, I7): nothing is loaded and the slot
+// Prepare, fail closed, with the reason and the way out: nothing is loaded and the slot
 // is released.
 func TestTierBPFLSMRefusesATableThePlaneCannotHold(t *testing.T) {
 	t.Parallel()
@@ -204,7 +204,7 @@ func TestTierBPFLSMBudgetAdviceNamesListenerAlias(t *testing.T) {
 // TestTierBPFLSMRefusesALateSharedInode: two fs entries made one file under two names after tier3Plane's check (a
 // hard link made during the build lock and the slot acquire) are refused by choosePlane's second look with
 // ErrPlaneCannotHold, and Prepare unwinds: never the tier-2 fallback, a tier-3 run on the fanotify listener with an
-// empty plane mode (enforce-plane R19, §6 E13, I7).
+// empty plane mode.
 func TestTierBPFLSMRefusesALateSharedInode(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

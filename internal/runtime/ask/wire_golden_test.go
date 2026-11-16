@@ -32,7 +32,7 @@ import (
 // answerer's uid and pid, the hold's elapsed seconds, the alternate's directory and its device and inode. This file
 // uses the package's exported API only, so it compiled unchanged against e47e1ba4 to record the fixture
 // (TEGO_ASK_WIRE_RECORD=<path>). One amendment since, by hand: the list-truncated phase's listed request, whose rule
-// is cut at askproto.MaxSummaryRule, carries "rule_truncated":true after "target_truncated" (G11, 2026-10-26); every
+// is cut at askproto.MaxSummaryRule, carries "rule_truncated":true after "target_truncated" (G11); every
 // other frame is as recorded.
 
 const wireFixture = "testdata/wire-e47e1ba4.json"

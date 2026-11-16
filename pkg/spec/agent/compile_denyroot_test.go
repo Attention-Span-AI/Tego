@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestDenyReadRootIsACompileError is enforce-landlock.md E5: `deny_read: ["/"]` has no parent to enumerate, and
+// TestDenyReadRootIsACompileError: `deny_read: ["/"]` has no parent to enumerate, and
 // compile must reject it rather than leave the run to fail at Prepare. It is judged on the resolved path, so a
 // symlink to / is refused too.
 func TestDenyReadRootIsACompileError(t *testing.T) {

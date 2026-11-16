@@ -284,16 +284,6 @@ var startSites = []startSite{
 			"refuses it with ErrArmed while the process holds marks",
 	},
 	{
-		file: "internal/maze/cli/save.go", fn: "saveLocked", call: "cli.verifyEngine", n: 1, rel: beforeArm,
-		when: "maze's check of a saved contract (`tego rules check --test --offline`), run once the rules are saved, in the maze " +
-			"CLI's own process, which holds no group: nothing it links calls Arm",
-	},
-	{
-		file: "internal/maze/cli/save.go", fn: "verifyEngine", call: "proc.Start", n: 1, rel: guarded,
-		when: "maze's one start, of the engine's compile check: saveLocked is its one caller, and its row says when; Start refuses " +
-			"it with ErrArmed while the process holds marks, which maze's never does",
-	},
-	{
 		file: "internal/selftest/checks.go", fn: "checks", call: "selftest.runUnlisted", n: 1, rel: beforeArm,
 		when: "tego machine test's exec check (ADR 0074), run by the hidden __check verb, a process of its own that links no Arm: " +
 			"directly, and as the agent of a self-test run, which holds no group",
@@ -1132,7 +1122,7 @@ func exclusionFileInTree(path string) bool {
 // shrinking list exempts each unmigrated package from them alone), and the blanket exemption is itself scoped to
 // "ADR 0021", which must match every ADR 0021 message.
 //
-// Verified 2026-10-17 (ADR 0023 C3): the exemption without its text, an ADR 0023 exclusion whose text was "ADR 0021"
+// Verified (ADR 0023 C3): the exemption without its text, an ADR 0023 exclusion whose text was "ADR 0021"
 // or "ADR 00", and the exemption's text narrowed to "ADR 0021 \(3\)" each failed this test; each edit was reverted.
 //
 // Verified: an exclusion removed from .golangci.yml, one added for a file the list does not hold, the proc.Start

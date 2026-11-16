@@ -89,7 +89,7 @@ func TestLostChunkGapsTheConnection(t *testing.T) {
 // dropped tail. The kernel recorded the tail's length nowhere, so the request's Content-Length still counted it: the
 // request never completed, its response became one with no request in flight, the connection was abandoned, and every
 // later exchange on it was lost under one malformed count. The last chunk now says how many bytes it dropped, and all
-// six exchanges are recorded, the first request as its truncated prefix (capture-derive.md E8 (edge case #8)).
+// six exchanges are recorded, the first request as its truncated prefix.
 func TestCallOver128KiBKeepsTheConnection(t *testing.T) {
 	const ssl = 0x6100
 	mono := uint64(1_000_000)

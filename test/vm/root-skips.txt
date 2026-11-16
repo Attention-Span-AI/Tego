@@ -111,6 +111,7 @@ internal/runtime TestSweepRetainsUnknownRootLaunchRecords/record_file # sweeps a
 internal/runtime/enforce/cgroup TestPinsRemoveKeepsTheBuildUnderAPlaneItCannotRemove # root bypasses directory write mode bits, so the stuck-plane removal refusal cannot be staged; the unprivileged unit and integration suites exercise it
 internal/runtime/enforce/cgroup TestUnpinKeepsTheBuildUnderAPlaneItCannotRemove # root bypasses directory write mode bits, so the stuck-plane unpin refusal cannot be staged; the unprivileged unit and integration suites exercise it
 internal/cli TestInitReadOnlyParent # root bypasses directory write permission, which this test relies on
+internal/cli TestInitReadOnlyFolderSaysWhereToGo # root writes a mode-0555 directory, which this test relies on
 internal/cli TestCompileOfAContractItMayNotOpenIsAnIOFailure # root opens a file of mode 000, so the unreadable contract cannot be staged
 internal/runtime/enforce/landlock TestPrepareSaysAWriteEntryItCouldNotCreate # root bypasses directory write permission, which this test relies on
 internal/cli TestStatusEACCESIsNotAnEmptyReport # root reads every directory; EACCES cannot be provoked

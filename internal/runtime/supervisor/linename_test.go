@@ -27,8 +27,6 @@ import (
 // walked, is named where it lands too. Any other end keeps its spelling, and a symlink's target
 // is never walked. The names are walked before the answer: the fake reads an answered notification gone, as the kernel
 // does, so a walk made after it fails. Real walks of a real tree, as a run makes them.
-//
-// Spec: docs/p0/supervisor.md R15b.
 func TestFSLineNamesWhereADotDotSpellingLands(t *testing.T) {
 	const pathAddr, path2Addr = 0x10000, 0x11000
 	w, err := filepath.EvalSymlinks(t.TempDir())
@@ -120,8 +118,6 @@ func TestFSLineNamesWhereADotDotSpellingLands(t *testing.T) {
 // TestKernelRecorderNamingOfADotDotSpelling: at tier 2, where the kernel recorder writes a continued fs action's line
 // with this loop's naming (R7a, ContinuedFS), an end spelled with a ".." after a symlink is named where its walk landed
 // it, as this loop's own line names it: an unlink's path, and a rename's new name, its path2 (2c6-2).
-//
-// Spec: docs/p0/supervisor.md R7a, R15b.
 func TestKernelRecorderNamingOfADotDotSpelling(t *testing.T) {
 	const pathAddr, path2Addr = 0x10000, 0x11000
 	w, err := filepath.EvalSymlinks(t.TempDir())

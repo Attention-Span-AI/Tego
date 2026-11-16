@@ -22,7 +22,7 @@ import (
 // among identity/config/backend/other pkg/spec/*". Verified: temporarily adding an import of
 // pkg/spec/backend to paths.go made this test fail with that exact import path named, while
 // `go vet` and the rest of the suite stayed green; reverted before finishing.
-// identity-config.md I1 (no cross-imports among the spec leaves).
+// No cross-imports among the spec leaves.
 func TestPackageImportsStandardLibraryOnly(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {

@@ -42,7 +42,7 @@ func BuiltInWords(e Event) string { return receipt.BuiltInWords(e.Op, e.Target, 
 // logsRule is the rule Logs counts, groups and queries line e by: its built-in kind (BuiltInRefusal, "built in: kernel
 // TLS") for tego's built-in refusal, which the record files under the default deny ("unmatched") and the receipt counts
 // apart from it; else its rule key. The Rule facet, By rule and a rule: token all read it, so "Not in contract" counts
-// and lists only what the contract's default decided, as the receipt's by-rule table does (acceptance 2B, 2026-11-11).
+// and lists only what the contract's default decided, as the receipt's by-rule table does.
 func logsRule(e *Event) string {
 	if k := BuiltInRefusal(*e); k != "" {
 		return k

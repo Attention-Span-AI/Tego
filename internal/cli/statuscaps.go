@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// writeStatusCapabilities prints the capability line under the table (limits-check-doctor-cli.md R-cap) for a
+// writeStatusCapabilities prints the capability line under the table for a
 // single run: what the run could do, and by name what it could not. A listing leaves it out, because it is
 // one long line per run and a table of runs is read for their states; `status <run>` and --json carry it.
 func writeStatusCapabilities(w io.Writer, snaps []*status.Snapshot, list bool) error {
@@ -22,7 +22,7 @@ func writeStatusCapabilities(w io.Writer, snaps []*status.Snapshot, list bool) e
 		return err
 	}
 	// The command given after `--` is granted for the whole run beyond what the contract hash covers, so a
-	// run that had one says so under its capabilities (agent-contract.md R8).
+	// run that had one says so under its capabilities.
 	if g := snaps[0].RunCommandGrant; g != "" {
 		if _, err := fmt.Fprintf(w, "run command grant: %s (given on the command line, admitted for every exec of it in the run)\n", record.Printable(g)); err != nil {
 			return err
@@ -38,8 +38,7 @@ func writeStatusCapabilities(w io.Writer, snaps []*status.Snapshot, list bool) e
 	return nil
 }
 
-// writeStatusResources prints the resources line under the capability line (limits-check-doctor-cli.md
-// R-res) for a single run, on the same terms: what the run's cgroup said the run used, read from run_end,
+// writeStatusResources prints the resources line under the capability line for a single run, on the same terms: what the run's cgroup said the run used, read from run_end,
 // each key the record lacks "unknown". A listing leaves it out for the reason it leaves the capabilities out.
 func writeStatusResources(w io.Writer, snaps []*status.Snapshot, list bool) error {
 	if list && len(snaps) != 1 {

@@ -112,8 +112,8 @@ func etcAt(line int) config.Provenance {
 }
 
 // TestBoundaryAdoptionGoesOnUnderABudgetCeiling: a tokens, cost_usd or repeats budget that only a machine ceiling
-// imposes is not refused at tego run where nothing meters it; the run records gap why=budget-unmetered
-// (limits-check-doctor-cli.md R32). A boundary adoption refused every one of them, so a machine that copied the example
+// imposes is not refused at tego run where nothing meters it; the run records gap why=budget-unmetered.
+// A boundary adoption refused every one of them, so a machine that copied the example
 // config could use no boundary adoption at all. It now goes on, says at the ceiling's file and line that the budget is
 // not metered, and keeps the budget in its table, where the adoption records the gap. A kernel limit beside it is
 // still refused, and the budget is not counted among the refused ceilings.

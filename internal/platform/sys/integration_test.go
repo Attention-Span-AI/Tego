@@ -209,7 +209,7 @@ func TestSeccompNotifSetFlagsSyncWakeUp(t *testing.T) {
 // TestSeccompListenerIsWaitKillable proves the listener carries WAIT_KILLABLE_RECV on a kernel that has it
 // (5.19+). Once the supervisor has received a notification, a non-fatal signal to the target must not
 // withdraw it: that withdrawal is what made the kernel restart a connect or send the supervisor had already
-// performed (docs/p0/supervisor.md E35). SIGURG is non-fatal here because the Go runtime handles it. Without
+// performed. SIGURG is non-fatal here because the Go runtime handles it. Without
 // the flag the signal cancels the notification (ID_VALID false) and the restarted syscall notifies again,
 // which the server below answers too, so the test fails rather than hangs.
 func TestSeccompListenerIsWaitKillable(t *testing.T) {

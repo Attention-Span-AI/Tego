@@ -12,8 +12,7 @@ Every event: `v`, `seq`, `id` (sha256 of the line bytes as written, with the id'
 (`kernel|landlock|seccomp|fanotify|ssl|forwarder|hook|python|node|supervisor|proxy`).
 *Amended 2026-09-24:* a `tid` of `0` means the producer could not know the thread. The forwarder's `ssl_request`,
 `ssl_response` and `decision` lines carry the `pid` of the run's process that held the connection and `tid` `0`,
-since a socket belongs to a process (they carried the launcher's own `pid` and `tid` before;
-`docs/p0/capture-derive.md` R34). A tier 2 fanotify refusal (`source: fanotify`) carries the opener's `tid`,
+since a socket belongs to a process (they carried the launcher's own `pid` and `tid` before). A tier 2 fanotify refusal (`source: fanotify`) carries the opener's `tid`,
 reported by `FAN_REPORT_TID`, and its separately resolved thread-group `pid` (zero if attribution is no longer
 available). Exec deduplication uses the thread identity, so a sibling's refused read keeps its own line.
 No field changes.
@@ -23,14 +22,14 @@ Kinds: `run_start run_end exec fs net mcp ssl_request ssl_response decision ask 
 and an observe run: the supervisor (`source: seccomp`, `supervisor` for net) for every notified action. Tier 2 while
 its kernel recorder reads the run: the recorder (`source: kernel`) for every fs action its hooks see and for a
 continued IP connect; the supervisor for its own refusals, mode changes, every exec, and relayed connects and sends;
-the fanotify listener (`source: fanotify`) for an open it refuses after Landlock let it through
-(`docs/p0/supervisor.md` R7a). A tier-2 run whose recorder does not read is recorded as tier 1 is.
+the fanotify listener (`source: fanotify`) for an open it refuses after Landlock let it through.
+A tier-2 run whose recorder does not read is recorded as tier 1 is.
 *Added 2026-09-29 (TIER3-PLAN T9):* where the kernel decision plane runs (tier bpflsm, and tier cgroup with a plane
 mode) and the recorder reads the run, a refusal the plane makes on a hook the recorder's fexit wraps (an open,
 rename, link, unlink or rmdir) is that fs line itself, never a second one; an exec the plane refuses in `bprm_check`
 is the plane's own line (`source: kernel`), and, when the plane decides the run's execs, an exec the supervisor
 continues is the kernel's line too, allowed from `sched_process_exec` named by the plane's rule; the supervisor keeps
-the execs it refuses itself (`docs/p0/enforce-plane.md` §2.8).
+the execs it refuses itself.
 
 `run_start` carries `launcher_pid`, `launcher_start_ns`, `tego_version` (named so since ADR 0060, with no version move), `commit`, `bpf_hash` (empty in the
 unprivileged tier), `tier`, `capture` (the mechanism that runs: `off|forwarder|uprobe`, never the contract's wish, and never a source that
@@ -55,7 +54,7 @@ paragraphs below say; `8` (2026-10-16, ADR 0057 D5): held reads and alternates, 
 in ledgers that predate it, whose missing `run_command_grant` says nothing; additive within v1, 2026-09-24), and the
 optional `decision_plane` (`lsm|fmod_ret` where the kernel decision plane decided the run's fs actions and execs in
 that mode, `fanotify` where tier `cgroup` ran on the listener; absent for a tier with no plane, and in ledgers that
-predate it; `docs/p0/enforce-plane.md` R19, I7; additive within v1, 2026-09-30, `record_minor` 2), and the optional
+predate it; additive within v1, 2026-09-30, `record_minor` 2), and the optional
 `ask_read_relaxes` (one `{rule, builtin, how}` per built-in `deny_read` entry an `fs.ask_read` entry of the top-level
 contract relaxes, a refused read becoming one held for a person: `rule` the `fs.ask_read[...]` entry, `builtin` the
 built-in entry's path, `how` `replaces` (at its path) or `inside` (beneath it, the rest still refused); absent when
@@ -70,7 +69,7 @@ Action events (`exec fs net mcp`) carry `rule` (the declared entry or `unmatched
 "attribution": {"thread": "t1", "step": 3, "tool_use_id": "toolu_8812", "confidence": "exact|likely|unattributed", "method": "tool_id|tid|time|none"}
 ```
 
-`method` says which rule tied the action to a step (`docs/p0/capture-derive.md` R34, R42): `tool_id` = the action
+`method` says which rule tied the action to a step: `tool_id` = the action
 fell inside exactly one reply's tool window (the reply asked for the `tool_use` and no request had reported its
 result yet), and `tool_use_id` names it; `tid` = the action's thread is the one that made the step's model call, as
 the uprobe source named it by its tid; `time` = a single open step by time; `none` = no derivation has run.
@@ -83,8 +82,7 @@ step at all. Views never present `unattributed` as fact. `tool_use_id` is option
 `exec` carries `argv`, `path`, `script` (when a `#!` stage preceded), `stage` on a refusal, and, from the seccomp
 supervisor, the optional flags `argv_truncated` (argv cut at its byte budget), `path_search` (a `PATH`-search
 candidate, nothing ran), `fileless` (an anonymous image: a memfd, an `anon_inode:`, an unlinked file; `path` is the
-kernel's raw spelling) and `dropped` (an image under a write entry changed during the run); each is additive within v1
-(`docs/p0/record-ledger.md` §2.2).
+kernel's raw spelling) and `dropped` (an image under a write entry changed during the run); each is additive within v1.
 At `record_minor` 3 (2026-10-04), terminal kernel exec failures also carry the
 actual negative `syscall_ret`; a failure outside a policy hook, such as `ENOEXEC`,
 `ETXTBSY` or `ENOENT`, is `observed` rather than an invented policy refusal.
@@ -112,7 +110,7 @@ followed, when that walk succeeded, since a `..` after a symlink cleans lexicall
 not `out/e` when `out/lk` is a symlink). The rule holds whatever the line's verdict, a refused rename's new name
 included. An `exec` line's `path` follows the same rule. The name is taken from the walk the line's verdict and rule
 were taken on (for an `exec` line, the walk that reached the image; once an ask holds an open, the walk that pinned
-it), never from a second walk. Amended 2026-10-19 (`docs/p0/supervisor.md` R15b, R16b); earlier ledgers carry the
+it), never from a second walk. Amended 2026-10-19; earlier ledgers carry the
 cleaned spelling, ledgers written between the first two amendments of that date name such an end where its fully
 followed walk landed (a final symlink's target), and ledgers written before the third can name an end the syscall
 follows by a second walk, apart from its verdict's. The verdict and rule of such an end are taken where it is named
@@ -180,7 +178,7 @@ when the verdict depended on argv past it or no argv[0] could be read, `interpre
 `loader-unresolved` when a dynamic loader run as a command names a program the supervisor cannot read as the loader
 will, or `loader-program-unmatched` when no `exec.allow` entry of a restricted run grants that program, or
 `codex-home-exec` when, in a deny-list run, the image or a loader's program lies in the run's own `CODEX_HOME`
-(added 2026-10-16, agent-contract.md R10a), or
+(added 2026-10-16), or
 `command-unresolved` when a dispatcher re-dispatches deeper than the matcher resolves, or an exec's reading yields
 more interpretations than the matcher keeps, and the exec could still reach a ruled tool (fail closed, `command_via:
 overflow`); `reason`'s closed set is unchanged. `refused` payloads may carry
@@ -223,14 +221,14 @@ Each is decided as before revision 8, and its line is that decision's:
 refused (observed for a `PATH` candidate or under command rules) where the supervisor decides the run's execs,
 `allow` and continued for a granted spelling or under a contract with no `exec:` section, the kernel recorder's
 where a decision plane takes the exec (2026-10-16, supervisor R16b (0) and *the walk*).
-At `record_minor` 13 (2026-10-20, [agent-contract.md](../../../docs/p0/agent-contract.md) R26), `run_start` also
+At `record_minor` 13 (2026-10-20), `run_start` also
 carries the optional `contract_source`: the contract file the launching user named, `{"path": <absolute path>}` (the
 file read: a `..` after a link in the path given is taken from the link's target, as the open took it), with
 `"name"` and `"registry"` (`project` or `user`) when it was resolved from an agent name (`tego run retriever`). It
 is the file whose bytes the run compiled: `contract_hash` says what the contract was, `contract_source` where it came
 from. Absent at revision 13 or later, tego generated the contract (`watch` or `adopt` with no `--boundary`); absent
 in ledgers that predate it.
-At `record_minor` 14 (2026-10-24, [agent-contract.md](../../../docs/p0/agent-contract.md) R27,
+At `record_minor` 14 (2026-10-24,
 [ADR 0062](../../../docs/adr/0062-harness-provisioning-point.md)), `run_start` also carries the optional `harness`:
 `{"name", "provisioned", "why", "files", "reason_file", "state_dir"}`. `name` is the harness the run was provisioned
 for, resolved (`claude-code`, `codex` or `generic`; `auto` is resolved from the command's basename before the run
@@ -244,8 +242,8 @@ which granted no hook below revision 20; from it, a hook no exact grant can admi
 `last-refusal.json` the agent's `TEGO_REASON` names, and `state_dir` the run's `hook-state` directory, the one place in its runtime directory the agent may write, listed in
 `runtime_grants` as `fs.harness-state[<path>]` (absent when nothing was provisioned). Absent at revision 14 or later,
 the contract says `harness: none` or the run was adopted; absent in ledgers that predate it.
-At `record_minor` 15 (2026-10-24, [ADR 0066](../../../docs/adr/0066-extends-list-and-built-in-profiles.md) D6,
-[agent-contract.md](../../../docs/p0/agent-contract.md) R5), `run_start` also carries the optional `profiles`: every
+At `record_minor` 15 (2026-10-24, [ADR 0066](../../../docs/adr/0066-extends-list-and-built-in-profiles.md) D6),
+`run_start` also carries the optional `profiles`: every
 profile the run's contract merged through `extends`, in merge order (a profile's own parents before it, a list left to
 right), each once, as `{"name": <the extends name>, "source": "builtin" | "dir", "sha256": <hex of the bytes read>}`;
 `builtin` is a profile built into tego (a name under `tego/`), `dir` a file of the machine config's profiles
@@ -294,8 +292,8 @@ verified fact about a person:
 - `role` (string): reserved: `check` marks a run a checking command started, and no shipped command sets it; absent
   for the agent's own run. A reader treats a role it
   does not know as a run that is not the agent's own.
-- `contract_revision` (string): the contract's `revision` ([agent-contract.md](../../../docs/p0/agent-contract.md)
-  R28); absent when the contract has none.
+- `contract_revision` (string): the contract's `revision`;
+  absent when the contract has none.
 
 At `MinorRunIdentity` or later an absent optional field among these means the run had none.
 Fixture: `fixtures/run-identity.jsonl`.
@@ -338,8 +336,8 @@ refused it and `kernel` with `mechanism: plane` where the decision plane did. `r
 cgroup on the fanotify listener): blocked for ordinary commands; not race-free at the no-root tier. Below revision 19
 every `fs.deny_write[...]` rule names a built-in target.
 Fixture: `fixtures/user-deny-write.jsonl`.
-At `record_minor` 20 (`MinorHarnessHook`; 2026-10-25, [ADR 0064](../../../docs/adr/0064-harness-hook-exec-grant.md),
-agent-contract.md R27), `run_start`'s `harness.hook` is `{"argv", "granted"}` for every provision that names a hook: `argv` is the hook's exact argv, the tego binary and every
+At `record_minor` 20 (`MinorHarnessHook`; 2026-10-25, [ADR 0064](../../../docs/adr/0064-harness-hook-exec-grant.md)),
+`run_start`'s `harness.hook` is `{"argv", "granted"}` for every provision that names a hook: `argv` is the hook's exact argv, the tego binary and every
 argument, and `granted` says the launcher granted it on its own authority, which an allow-list contract whose own exec
 rules do not admit the hook gets: `runtime_grants` then lists `exec.harness-hook[<tego binary>]`, the rule of both the
 binary's image grant and the command rule that admits that argv and no other. An exec of the binary with the hook's
@@ -513,7 +511,7 @@ are never moved to a blob. Fixtures: `fixtures/live` (`live-block-*-until`, `*-e
 `live-lift-*`, `run-start-adjustable*`, `refused-fence-rule`, and an invalid document for each rule).
 
 At `record_minor` 27 (`MinorModelRoutes`; 2026-10-27, [ADR 0127](../../../docs/adr/0127-model-routes.md)), a person
-may send a `models[]` endpoint's requests to one of the backends its `routes:` declares (agent-contract.md R32), and
+may send a `models[]` endpoint's requests to one of the backends its `routes:` declares, and
 back, while the run lives.
 - Every `ssl_request` of an endpoint that declares routes carries `route {name, authority}`: the route the forwarder
   sent it by (`direct` for the endpoint itself) and that backend's `host:port`. `host` and `endpoint` stay the
@@ -552,8 +550,8 @@ person: its `ask` line carries hold `mutation` and, for a rename, a link or a sy
 and no other gate field. Nothing at this revision is written on every run; below it, every such mutation was refused
 unasked.
 
-At `record_minor` 30 (`MinorDenyReadFrozen`; 2026-11-11, [enforce-landlock.md](../../../docs/p0/enforce-landlock.md)
-R3, E10; [GAPS](../../../docs/GAPS.md) A12), `run_start` carries `deny_read_frozen` on every run whose Landlock ruleset
+At `record_minor` 30 (`MinorDenyReadFrozen`; 2026-11-11;
+[GAPS](../../../docs/GAPS.md) A12), `run_start` carries `deny_read_frozen` on every run whose Landlock ruleset
 listed a directory to build its `deny_read` entries: `{"dirs": [...], "omitted": n}`. A `deny_read` is built by
 granting every name one listing, at launch, found in each directory above the target, so a file or directory made
 directly in one of those directories after the run started is unreadable to the agent until the run ends, and so is
@@ -572,7 +570,7 @@ before this field took it.
 Record minors 31 to 35 are reserved. Their fields are declared and validated ahead of any writer (`Event.ValidateAt`) and
 refused in a ledger below their revision; nothing writes `record_minor` 31 or more, and a launcher refuses to start a run whose `run_start` would carry one.
 
-At `record_minor` 11 (2026-10-16, [agent-contract.md](../../../docs/p0/agent-contract.md) R10a), `run_start` also
+At `record_minor` 11 (2026-10-16), `run_start` also
 carries the optional `runtime_grants`: the rule name of every grant the run makes on its own authority
 rather than read from the contract, in table order — each capture listener (`net.capture[<addr>]`), the DNS broker's
 socket (`net.dns-broker[unix:<path>]`) and the run's own generated `CODEX_HOME` (`fs.codex_home[<path>]`, a write grant
@@ -583,8 +581,8 @@ follow-up (2026-11-03, ADR 0126), a relayed stdio server also lists `exec.mcp-st
 allowance for the admitted shim's exact fresh-socket child, authenticated and pidfd-pinned at its held stage exec.
 This adds no general command pattern to the table; its presence records the available runtime authority, while
 an exec line with that rule records its use. Explicit denies and asks still hold. The contract hash does not cover them; lines those grants decide
-carry the same rule names. `net.resolver`, the run's own allowance of a query to a configured resolver on port 53
-(docs/p0/supervisor.md R14), is a decision the supervisor makes, not an entry, and is not listed here; its lines carry
+carry the same rule names. `net.resolver`, the run's own allowance of a query to a configured resolver on port 53,
+is a decision the supervisor makes, not an entry, and is not listed here; its lines carry
 the rule `net.resolver`. Absent at revision 11 or later, the run added no such entry; absent in ledgers that predate
 it.
 With no revision of its own (2026-10-27, [ADR 0043](../../../docs/adr/0043-name-entries-for-deny-read.md) D8), `deny_read` name entries decide files created after compile at tiers `cgroup` and `bpflsm`,
@@ -623,10 +621,10 @@ A supervisor `net` line may carry the optional `best_effort: true` (an addition 
 supervisor answered the syscall `CONTINUE`, so the destination the line names is the copy it read and decided,
 and the kernel acted on its own copy, which a sibling thread of the agent can have rewritten in between; for a unix
 pathname the kernel also looks the name up again, so a rename or a symlink swap by any process of the run in between
-can lead the datagram to another socket than the one the supervisor checked (docs/p0/supervisor.md R11a). It marks
+can lead the datagram to another socket than the one the supervisor checked. It marks
 an admitted unconnected datagram (`allow`), a connect or datagram under a contract with no `net:` section, which
 decides nothing (`allow`), and one whose address or socket could not be read there (`observed`). A `refused` net
-line never carries it: every refusal the supervisor records is one it enforced (docs/p0/supervisor.md R13b).
+line never carries it: every refusal the supervisor records is one it enforced.
 *Amended 2026-10-16:* an unconnected datagram to a destination the contract
 does not admit was continued and recorded `refused` with `best_effort: true` while it left the kernel; it is
 refused now, and its line carries no mark. A reader of an older ledger reads `refused` with `best_effort: true` as
@@ -657,7 +655,7 @@ Kernel process-scope, BPF-command and keyring refusals use the existing
 `mcp` carries `name` (the declared server), `transport` (`stdio|http`), `command` on a stdio server's start (the
 supervisor's line riding on the allowed exec that started it, `verdict: allow`), and `tool` on a tool call. From
 2026-10-19 (no `record_minor` revision: the fields are v1's, only their use is new;
-[capture-derive](../../../docs/p0/capture-derive.md) R41) an HTTP server's exchanges captured by the uprobe source
+capture-derive R41) an HTTP server's exchanges captured by the uprobe source
 also derive `mcp` lines, `source: ssl`, after the request's `ssl_request`, stamped with its time and thread (the
 exchange's `ssl_response`, if one comes, has `parser_version` `mcp/1`):
 one with no `tool` for the client's `initialize` (its connection) and one with `tool` per `tools/call`, both
@@ -665,7 +663,7 @@ one with no `tool` for the client's `initialize` (its connection) and one with `
 connections an HTTP server's URL admits carry the same rule (agent-contract R16a). `run_start.parsers["mcp"]` is
 then the `+`-joined list of the run's MCP producers: `exec` and `mcp/1`.
 
-At `record_minor` 29 (`MinorAttribution`; 2026-10-20, `docs/p0/capture-derive.md` R40, R42), `ssl_request` carries `side: true` when it
+At `record_minor` 29 (`MinorAttribution`; 2026-10-20), `ssl_request` carries `side: true` when it
 is a model host's side traffic (a path the parser calls silent: telemetry, token counting, a model listing, a health
 check), which opens no step, and `tool_results`, the `tool_use` ids whose results the request's last message reports,
 in wire order: an empty list when derive read the request and found none, absent when it did not read it (no parser
@@ -676,8 +674,8 @@ reads the path, the body was cut or stayed coded, or its reading was not certain
 `frame` and `messages` (all sha256, set together; added within v1 on 2026-09-22) mean the body was stored by the
 elements of its conversation array (`messages[]`, `input[]` or `contents[]`), in groups stored once per run by hash,
 rather than whole: `body_sha256` is the whole body's sha256, `frame` names the blob that rebuilds it and `messages` the
-last link of its chain of groups. Such an event has no `blob`, since no file holds the body whole
-(`docs/p0/record-ledger.md` R11); a reader that does not know the three fields sees a body that was not stored. `ssl_request` and `ssl_response` carry the optional `truncated: true` and `wire_size` (added within v1 on 2026-09-30) when capture cut the body (the kernel's 128 KiB cap or the body cap) and `blob` holds only its prefix; `wire_size` is the body's length on the wire.
+last link of its chain of groups. Such an event has no `blob`, since no file holds the body whole;
+a reader that does not know the three fields sees a body that was not stored. `ssl_request` and `ssl_response` carry the optional `truncated: true` and `wire_size` (added within v1 on 2026-09-30) when capture cut the body (the kernel's 128 KiB cap or the body cap) and `blob` holds only its prefix; `wire_size` is the body's length on the wire.
 `ssl_response` carries `model`, `response_id`, `stop_reason`, `usage{input,output,cache_read,cache_write}` (with the
 optional `output_bound`, true when `output` is the request's `max_tokens` charged for a stream cut before its final
 usage report, ADR 0036; additive within v1, 2026-09-24, absent in ledgers that predate it; and, additive within v1
@@ -755,7 +753,7 @@ Minor 5 approval records add `op`, `target`, and `ask_rule`; answers also carry
 `approved` and optional `answer_reason`. `target` is what the approver was shown: an
 `open`'s exact path and a `connect`'s exact `ip:port`, as the action line records them; an
 `http_request`'s `authority METHOD path` has only its path projected onto the public routes
-(docs/p0/record-ledger.md R9a; amended 2026-10-05: every target was stored as `/redacted`). These are coordination records, without action
+(amended 2026-10-05: every target was stored as `/redacted`). These are coordination records, without action
 `verdict` or `authority`. An approved answer authorizes an attempt; it does not establish
 that an operation or upstream delivery succeeded.
 
@@ -782,8 +780,8 @@ omitted under record off; a failed one is kept.
 the optional `decision_plane` on a gap the kernel decision plane's counters give (additive within v1, 2026-09-30):
 at run end, one `what=enforce` line per counter of the run's slot that is not zero, `why` one of
 `plane-identity-mismatch`, `plane-path-unresolved`, `plane-walk-bound`, `plane-no-rows`, `count` the refusals the
-plane made for that cause, and `why=plane-counters-unread` with no count when the slot could not be read
-(`docs/p0/enforce-plane.md` §2.8). Each counts refusals already made; none is an action allowed.
+plane made for that cause, and `why=plane-counters-unread` with no count when the slot could not be read.
+Each counts refusals already made; none is an action allowed.
 At the root tiers, `what=record why=bpf-trampoline-miss/shared-build` counts skipped executions of the build's
 shared recorder programs between the recorder's start and final drain. The kernel can skip them before checking
 run membership, so `count` includes other runs and ungoverned tasks; it is not this run's lost-record count.
@@ -870,13 +868,12 @@ that `run_end` is the sweep's own (no `detail`) and is written only once the tre
 release it (not root, or a process stays in the scope) writes nothing and the run stays lost (amended 2026-10-16).
 `what=capture why=codex-unrouted binary=codex` (additive within v1, 2026-10-16) is written once, right after
 `run_start`, by a run whose forwarder has an openai listener and that wrote no `CODEX_HOME`, which only a root launcher
-does: a Codex in it is not routed through the forwarder, and the `models[]` guard refuses its own calls to the model
-([agent-contract.md](../../../docs/p0/agent-contract.md) R10a (3)).
+does: a Codex in it is not routed through the forwarder, and the `models[]` guard refuses its own calls to the model.
 `what=record why=reason-unavailable` (additive at `record_minor` 14) is written once, right after `run_start`, by a
 run whose harness is anything but `none` (the default `auto` included) and that has no readable reason file: no
 absolute `XDG_RUNTIME_DIR`, or a root launcher. The agent has no `TEGO_REASON`, nothing was provisioned for its
 harness (`run_start.harness.why` is `reason-unavailable`), and it learns why an action was refused only from the
-error the call returned ([agent-contract.md](../../../docs/p0/agent-contract.md) R27, ADR 0062).
+error the call returned (ADR 0062).
 `what=record why=own-state-mode-restored binary=<path>` (additive within v1, 2026-11-02), no `count`, is one of tego's
 own files or directories whose owner's rights had been taken, which tego gave back: `~/.tego`, the config layer or
 `tego.log` in it, `chain.log` or the directory that holds it, the ledger root or its live index, tego's runtime parent
@@ -884,11 +881,11 @@ own files or directories whose owner's rights had been taken, which tego gave ba
 Landlock ABI has a chmod right, so an agent can chmod the files its user owns: their contents and the record are not
 changed by it, but tego could not have used them. Only the owner's bits are added; the mode's other bits are as they
 were. One line each, right after `run_start` for what the launcher restored before the run, and as the last lines
-before `run_end` for what the run restored at its end ([record-ledger.md](../../../docs/p0/record-ledger.md) §3,
+before `run_end` for what the run restored at its end (
 "Modes taken from the owner"). No action was lost: a reader does not count the line among the gaps that make the run's
 counts a minimum.
 `what=limits` (additive within v1, 2026-09-24) is a limit the run's cgroup cannot hold as asked: `why=memory-swap-uncapped`,
-a memory cap on a kernel that accounts no swap to cgroups while swap is on (`docs/p0/runtime-launch.md` §4 `SetLimits`).
+a memory cap on a kernel that accounts no swap to cgroups while swap is on.
 `limit` records a budget hit (`which`, `value`, `ceiling`).
 `run_end` carries `reason` (`exit|signal|stopped|oom|pids|limit|exec-failed|orphaned|error`), `exit_code`, `signal`
 and `escalated` for `signal`, `detail` for `error` (at most `MaxDetailBytes`, 4096 bytes: a longer one is cut at a

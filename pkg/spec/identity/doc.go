@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package identity holds the run identity contract of Tego (spec/identity/RUN-IDENTITY.md,
-// docs/p0/identity-config.md): the run, agent and exec id formats, the identity+propagation
+// Package identity holds the run identity contract of Tego (spec/identity/RUN-IDENTITY.md):
+// the run, agent and exec id formats, the identity+propagation
 // environment set and its precedence over a contract's env.pass/deny/set, the launcher identity,
 // labels and role run_start records (ADR 0073), the run-directory and cgroup path conventions,
 // the closed set of exit codes of `tego run`, the signal-forwarding table, and the

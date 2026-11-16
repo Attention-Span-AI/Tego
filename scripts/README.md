@@ -1,5 +1,5 @@
-Operator scripts: `install.sh`, `install-maze.sh`, `release.sh`. Plain POSIX sh, reviewed like code. `install.sh` and
-`install-maze.sh` are also release assets (`.goreleaser.yaml`). Turning on BPF LSM at boot is the machine owner's step;
+Operator scripts: `install.sh`, `release.sh`. Plain POSIX sh, reviewed like code. `install.sh` is
+also a release asset (`.goreleaser.yaml`). Turning on BPF LSM at boot is the machine owner's step;
 `tego doctor` says whether it is on. `install-wsl.ps1` is the Windows route: PowerShell that installs Ubuntu 24.04 in
 WSL2 when it is missing and runs `install.sh` inside it. It has not been run on Windows (its header says so).
 
@@ -40,7 +40,7 @@ on a listed test that did not pass, as CI's unit step and root-suites job use it
 left unfinished when it timed out or crashed, with its panic and goroutine dump; bash and jq) with `skipgate_test.sh` (`make
 skipgate-test`), `check-skiplists.sh` (the skip and must-pass lists name tests that exist, once each, and every
 root-only skip the integration step allows is in the root run's lists; CI's build-test), `check-exits.sh`
-(`os.Exit` only in `cmd/`, no bare exit code in `internal/cli`: limits-check-doctor-cli.md I6, I9, checked by
+(`os.Exit` only in `cmd/`, no bare exit code in `internal/cli`, checked by
 `tools/checkexits` on the syntax tree; CI's build-test), `check-fd.sh` (ADR 0023's descriptor ownership:
 `tools/fdcheck`'s birth rule, leases, listed sites, close-on-exec and per-package ratchet; `--base REV` holds the
 baseline's per-kind totals and the F4 lists' to REV's, and each package's count of each kind, which rises only by

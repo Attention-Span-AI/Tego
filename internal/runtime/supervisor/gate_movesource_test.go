@@ -13,13 +13,13 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestGateReadMatchesScoresRenameAndLinkSource is ADR 0041 Step 4 (the review's S8): `fs.read matches` is a
+// TestGateReadMatchesScoresRenameAndLinkSource is ADR 0041 Step 4: `fs.read matches` is a
 // name predicate, and a rename or a hard link gives the matched file a name it does not match. gateFS scored
 // FSRename and FSLink with fs.write predicates only, and returned early when the gate had none, so
 // link("secrets/.env", "notes.txt") or rename to the same was allowed and continued, and a later read-open of
 // notes.txt read the secret under a name the gate scores 0: a deterministic bypass, no race needed. The end
 // that leaves its name (the source, and the destination too under RENAME_EXCHANGE) is now scored with the read
-// predicates as well, the two kinds' scores summed (ADR 0007, 2026-10-20). A destination that only receives a name is not a read of
+// predicates as well, the two kinds' scores summed (ADR 0007). A destination that only receives a name is not a read of
 // anything, so an atomic `rename(tmp, x.env)` save stays allowed. A move of a directory renames every file beneath
 // it, so under a pattern holding a separator (`secrets/*`) the move of a directory it could match a path beneath is
 // scored too: `mv secrets public` was continued at score 0, and a read of public/key then

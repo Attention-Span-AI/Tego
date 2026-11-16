@@ -22,8 +22,6 @@ import (
 // makes in its directory, which refuses one before a lookup; compile then evaluated out/lk/. at the symlink out/lk and
 // answered allow for a link the run records refused and the kernel refuses EXDEV (-3c4-2). An exec.map row has no
 // pathname walk in the run (mmap(2) of a descriptor).
-//
-// Spec: docs/p0/supervisor.md R15b; docs/p0/limits-check-doctor-cli.md R28.
 func TestEveryRowEndIsWalkedAsItsSyscall(t *testing.T) {
 	const pathAddr, destAddr, sockAddr = 0x10000, 0x20000, 0x30000
 	type rowCase = struct {
@@ -106,8 +104,6 @@ func (q pathQuery) lookup() agent.Lookup {
 
 // TestLookupBitsRoundTrip: pathQuery.as sets every lookup bit from one agent.Lookup and lookup reads it back, so a
 // query's lookup is the one it was built with whatever it held before.
-//
-// Spec: docs/p0/supervisor.md R15b.
 func TestLookupBitsRoundTrip(t *testing.T) {
 	for _, how := range []agent.Lookup{agent.LookupFollow, agent.LookupCreate, agent.LookupNoFollow, agent.LookupParent} {
 		for _, start := range []pathQuery{{}, {nofollow: true, create: true, parent: true}} {

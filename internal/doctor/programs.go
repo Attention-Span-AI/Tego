@@ -66,7 +66,7 @@ type hook struct {
 	since Version
 	// optional marks a hook its tier runs without on a kernel older than since: the backend leaves the
 	// hook's program out of the load there, and what it would decide stays with the inherited tier-1
-	// path (enforce-cgroup-observe.md §5 R7). On a kernel that has the attach point an optional hook
+	// path. On a kernel that has the attach point an optional hook
 	// gates its tier like any other, because the backend loads its program there and a refusal fails
 	// the run's Prepare.
 	optional bool
@@ -81,17 +81,15 @@ type hook struct {
 	object  bpfobj.Object
 	program string
 	// symbols are a capture row's candidate library symbols, tried in order: the first the library
-	// exports is the one capture itself would hook (capture-derive.md R2: SSL_write_ex2, else
-	// SSL_write_ex).
+	// exports is the one capture itself would hook (SSL_write_ex2, else SSL_write_ex).
 	symbols []string
 }
 
 // hooks lists every tier-2 attach point, in the order doctor reports them: every program of the three tier-2
 // objects — trace_proc's record path, cgroup_track's descendant tracking and cgroup_net's eight socket-address
-// hooks (docs/p0/enforce-cgroup-observe.md §2.1, §5 R1) — so a program a run loads is a program D7 has loaded.
+// hooks — so a program a run loads is a program D7 has loaded.
 // Tier 3's rows are the decision plane's, one per decide.bpf.c hook per mode, which the plane probe loads and
-// exercises as one set (plane.go, planeprobe.go; docs/p0/enforce-plane.md R21). *Amended (T8):* the six
-// hand-listed lsm/* rows, tested with a minimal program because no object carried them, are gone.
+// exercises as one set (plane.go, planeprobe.go).
 var hooks = []hook{
 	{Name: "fexit/security_file_open", Tier: backend.TierCgroup, kind: hookFExit,
 		attachTo: "security_file_open", btfName: "security_file_open", attachType: ebpf.AttachTraceFExit,
@@ -195,7 +193,7 @@ var hooks = []hook{
 }
 
 // captureHooks are capture's rows (R27 D7): every program of uprobe_ssl, the object capture attaches
-// to an agent's libssl (docs/p0/capture-derive.md R1-R3). They are not in hooks and carry no tier, so
+// to an agent's libssl. They are not in hooks and carry no tier, so
 // no tier derivation reads them (derive.go keeps a tier's own rows only). SSL_read's return probe is
 // tested on SSL_read; in production the same program also sits on SSL_read_ex's return.
 var captureHooks = []hook{
@@ -260,7 +258,7 @@ type HookResult struct {
 	Lockdown bool   `json:"lockdown,omitempty"`
 	Detail   string `json:"detail,omitempty"`
 
-	// The fields below are a plane row's (docs/p0/enforce-plane.md R21): one decide.bpf.c hook in one mode.
+	// The fields below are a plane row's: one decide.bpf.c hook in one mode.
 	// Plane is the mode; a plane row has no Tier, because the plane gates tiers through PlaneState, not D7.
 	Plane bpfobj.PlaneMode `json:"plane,omitempty"`
 	// Function is the kernel function the program attaches to (bpf_lsm_<hook> or security_<fn>), and Arity its
@@ -286,7 +284,7 @@ func (h HookResult) OK() bool {
 	}
 	if h.Plane != "" {
 		if h.Absent {
-			return true // an optional hook this kernel predates: its rule is another hook's here (enforce-plane R3)
+			return true // an optional hook this kernel predates: its rule is another hook's here
 		}
 		want := planePassed
 		if h.Decides {
@@ -599,7 +597,7 @@ func testHookWith(h hook, spec *btf.Spec, cg *scratchCgroup, cgErr error, kernel
 	}
 
 	// A timed test build reports the hook's load, attach and detach as probe.hook.<hook>.* and the program's verifier
-	// statistics (enforce-plane §10.1's cold attribution); a product build times nothing.
+	// statistics (cold attribution); a product build times nothing.
 	phase := "probe.hook." + h.Name
 	endLoad := startphase.Begin(nil, phase+".load")
 	prog, standIn, err := loadHookProgram(h, spec, load)
@@ -737,8 +735,8 @@ func testCaptureHook(h hook, kernelBTF *btf.Spec, lib libTarget, load objectLoad
 // length of the probe; doctor maps no libssl, so scoped to itself it places none.
 func captureUprobeOptions() *link.UprobeOptions { return &link.UprobeOptions{PID: os.Getpid()} }
 
-// libsslName is the SONAME shape capture's library discovery matches (capture-derive.md R4;
-// internal/runtime/capture/uprobe's libsslName): libssl.so, libssl.so.3, libssl.so.1.1.
+// libsslName is the SONAME shape capture's library discovery matches
+// (internal/runtime/capture/uprobe's libsslName): libssl.so, libssl.so.3, libssl.so.1.1.
 var libsslName = regexp.MustCompile(`^libssl\.so(\.[0-9]+)*$`)
 
 // multiarchTriplet is the Debian multiarch directory name of this binary's architecture, "" where
@@ -862,7 +860,7 @@ func loadOneProgram(spec *ebpf.CollectionSpec, name string, opts *ebpf.Collectio
 
 // minimalProgram is the stand-in D7 loads at a hook with no program to load: it returns the hook type's
 // neutral value — 0 (allow) for tracing and LSM, and 1 for the CGROUP_SOCK_ADDR family, whose
-// neutral value is 1 (docs/p0/enforce-cgroup-observe.md R1).
+// neutral value is 1.
 func minimalProgram(h hook) *ebpf.ProgramSpec {
 	ret := int32(0)
 	if h.kind == hookCgroupAddr || h.kind == hookCgroupSKB || h.kind == hookCgroupSock || h.kind == hookCgroupSockopt {

@@ -63,7 +63,7 @@ func (r *reuse) exchanges(n int, number bool) {
 	}
 }
 
-// TestSSLFreeEndsTheConnection (capture-derive.md R3a, E9): over a chunked response, an aborted stream on one SSL*, then a new connection whose
+// TestSSLFreeEndsTheConnection: over a chunked response, an aborted stream on one SSL*, then a new connection whose
 // SSL* lands at the same address. With no SSL_free probe the reassembler never learned the first connection ended:
 // the new response went into the old chunked body, the key gapped once, and every later exchange on it was dropped
 // with no further count. SSL_free's record (from another thread of the process, as a garbage collector frees it) now
@@ -88,7 +88,7 @@ func TestSSLFreeEndsTheConnection(t *testing.T) {
 	}
 }
 
-// TestSSLFreeRevivesAGappedKey is the review's own bytes, whose chunk-size line is wrong for its data: the first
+// TestSSLFreeRevivesAGappedKey feeds bytes whose chunk-size line is wrong for its data: the first
 // connection gaps on its response, and a gapped key dropped every later chunk until it was evicted. The close
 // record closes a gapped connection too, so the pointer's next connection is captured whole.
 func TestSSLFreeRevivesAGappedKey(t *testing.T) {

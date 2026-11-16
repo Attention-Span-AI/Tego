@@ -19,7 +19,7 @@ import (
 
 // TestPlaneRemovalReleasesLinksBeforeReturn is TestBuildRemovalReleasesLinksBeforeReturn for a build with its
 // decision plane, in the mode this kernel runs: the plane's links are on trampolines too (fmod_ret or lsm, 27 or 37
-// functions a mode on 6.17, enforce-plane §10.1), and the build's removal takes the plane's directory first
+// functions a mode on 6.17), and the build's removal takes the plane's directory first
 // (removePlaneDirs, R20). Right after pins.remove returns, none of the build's or the plane's links and programs is
 // still enumerable.
 func TestPlaneRemovalReleasesLinksBeforeReturn(t *testing.T) {

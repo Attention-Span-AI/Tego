@@ -6,7 +6,7 @@ package supervisor
 
 import "testing"
 
-// TestLoopDispatchTableIsPrivateAndInMemory is supervisor.md E26 as far as it is testable without replacing the
+// TestLoopDispatchTableIsPrivateAndInMemory holds as far as it is testable without replacing the
 // running binary: a Loop dispatches from a table it built once in New and holds in memory, so nothing on disk (a
 // rename-installed upgrade included) can reach it, and a second Loop, which is what a new run is, builds its own
 // table and is independent of the first.

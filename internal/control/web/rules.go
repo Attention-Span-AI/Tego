@@ -562,9 +562,9 @@ func tierPhrase(t string) string {
 	case "landlock":
 		return "Basic (Landlock)"
 	case "cgroup":
-		return "Strong (cgroup BPF)"
+		return "Plus (cgroup BPF)"
 	case "bpflsm":
-		return "Strongest (BPF LSM)"
+		return "Max (BPF LSM)"
 	case "observe":
 		return "Watched only"
 	case "":

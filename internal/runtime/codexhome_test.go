@@ -17,7 +17,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
-// TestCodexIsRoutedThroughItsOwnCodexHome is E22's Codex half (capture-derive.md R19b): Codex ignores
+// TestCodexIsRoutedThroughItsOwnCodexHome is E22's Codex half: Codex ignores
 // OPENAI_BASE_URL and reads openai_base_url only from the config.toml under CODEX_HOME, so a run whose
 // forwarder has an openai listener writes that file into its runtime directory — tego's key first, the
 // user's own config.toml after it — and points CODEX_HOME at it. No run wrote it before, so Codex under
@@ -129,7 +129,7 @@ func TestCodexIsRoutedThroughItsOwnCodexHome(t *testing.T) {
 		}
 	})
 
-	// R19b's refusal (Codex POC F2): with no runtime directory the launcher made none and routed nothing, and said
+	// R19b's refusal: with no runtime directory the launcher made none and routed nothing, and said
 	// nothing; Codex then failed for want of a state directory it could write. The launch is refused, naming the fix.
 	for _, xdg := range []string{"", "relative/dir"} {
 		t.Run("no runtime directory "+xdg, func(t *testing.T) {
@@ -153,7 +153,7 @@ func TestCodexIsRoutedThroughItsOwnCodexHome(t *testing.T) {
 	})
 }
 
-// TestTheRunGrantsItsOwnCodexHome is agent-contract.md R10a (Codex POC F2): the run's CODEX_HOME,
+// TestTheRunGrantsItsOwnCodexHome: the run's CODEX_HOME,
 // $XDG_RUNTIME_DIR/tego/<run id>/codex, which no contract can name, is a write grant the run makes on its own
 // authority for exactly that directory, named fs.codex_home[<path>], listed in run_start's runtime_grants, and
 // recognised as a runtime rule (drift does not count it). The compiled table is not mutated.

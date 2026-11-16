@@ -54,7 +54,7 @@ func (r *recordingTransport) seen() http.Header {
 }
 
 // Every coding R15 names reaches the record decoded, and derive reads the usage out of it
-// (capture-derive.md R15, and E22 for the forwarder). Before the forwarder shared capture/httpstream's decoders it undid gzip and deflate only, so a
+// (and E22 for the forwarder). Before the forwarder shared capture/httpstream's decoders it undid gzip and deflate only, so a
 // br or zstd answer was recorded as compressed bytes, derive said unparsed why=encoding, the ssl_response
 // carried no usage, and a run's token and cost budgets never counted the call. The deflate rows pin both
 // forms a server sends: the zlib wrapper RFC 9110 §8.4.1.2 defines, and the bare stream many send instead.

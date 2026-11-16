@@ -50,7 +50,7 @@ func TestRestrictSelfFallbackAndNoNewPrivs(t *testing.T) {
 			errs: []error{unix.EINVAL}, wantCalls: []uint32{0}, wantErr: unix.EINVAL},
 		{name: "an unreadable ABI leaves the flags as asked", abi: 0, flags: nnp | logOn,
 			errs: []error{nil}, wantCalls: []uint32{nnp | logOn}},
-		// enforce-landlock I8, ported from the deleted landlock.RestrictSelf: a flagged success is cross-checked.
+		// A flagged success is cross-checked.
 		{name: "I8: accepted with NO_NEW_PRIVS and the bit unset fails", abi: 11, flags: nnp,
 			errs: []error{nil}, wantCalls: []uint32{nnp}, nnpUnset: true, wantErr: errAny},
 		{name: "I8: accepted with NO_NEW_PRIVS and the bit unreadable fails", abi: 11, flags: nnp,

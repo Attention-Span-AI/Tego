@@ -22,7 +22,7 @@ import (
 // which is every destination of such a contract, until it stopped attaching them for one
 // (internal/runtime/enforce/cgroup RuleMaps.Unrestricted). A TCP and a UDP connect of a contract with no
 // net: then both succeeded as root in the KVM guest, and this is the answer that matches.
-// agent-contract.md R21: an empty policy denies no connect.
+// An empty policy denies no connect.
 func TestEvaluateNetWithNoNetSection(t *testing.T) {
 	f := newFixture(t)
 	rt, _ := f.compile(f.load("version: 0\nname: a\ncommand: [python]\n"))
@@ -95,12 +95,12 @@ func TestEvaluateNetWithNoNetSection(t *testing.T) {
 	}
 }
 
-// TestEvaluateWritesWithNoFSSection pins SEMANTICS §1's "no `fs:`" row as amended: no write entry is
+// TestEvaluateWritesWithNoFSSection pins SEMANTICS §1's "no `fs:`" row: no write entry is
 // compiled, so every mutation is refused in every enforcing tier exactly as under `fs: {}`, while
 // reads stay allowed and the built-in deny_read list stays in force. The unrestricted reading could
 // not be built without giving up the implicit entries (Landlock is allow-only and cannot deny the
 // run directory beneath an allow), so the spec now says what all three components do.
-// agent-contract.md R21: with no fs: section every write is refused.
+// With no fs: section every write is refused.
 func TestEvaluateWritesWithNoFSSection(t *testing.T) {
 	f := newFixture(t)
 	noFS, _ := f.compile(f.load("version: 0\nname: a\ncommand: [python]\n"))
@@ -135,7 +135,7 @@ func TestEvaluateWritesWithNoFSSection(t *testing.T) {
 
 // TestExecOfADeclaredFileThatIsADenyReadTarget: Landlock gives a declared file an fd of its own, but
 // when that file is itself an enforced deny_read target the builder has already sealed its inode
-// and fails Prepare rather than grant it (enforce-landlock E32 (c)); the root tiers' walk refuses the
+// and fails Prepare rather than grant it; the root tiers' walk refuses the
 // read in any case. Evaluate reported landlock allow for a run that never starts. A declared file
 // *inside* a directory target, a target nested in another target, and an unenforced target are each
 // a different case the builder grants, and stay allowed.

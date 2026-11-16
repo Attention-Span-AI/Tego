@@ -26,7 +26,7 @@ const (
 	codeRunLost       = "run-lost"
 )
 
-// warnAnomalies is limits-check-doctor-cli.md §6 case 5's report: each ledger anomaly a view met (two run_end
+// warnAnomalies reports each ledger anomaly a view met (two run_end
 // lines, the first kept) is one warning line and one tego.log entry, never resolved silently.
 func warnAnomalies(w io.Writer, cmd, dir string, anomalies []string) {
 	for _, a := range anomalies {
@@ -36,7 +36,7 @@ func warnAnomalies(w io.Writer, cmd, dir string, anomalies []string) {
 	}
 }
 
-// warnNewer is limits-check-doctor-cli.md §6 case 20's one warning: a view skipped n lines of a record version
+// warnNewer is the one warning for a view that skipped n lines of a record version
 // newer than this binary reads (ledger.Reader.SkipNewerVersions), and says how many, never silently.
 func warnNewer(w io.Writer, cmd, dir string, n int) {
 	if n <= 0 {

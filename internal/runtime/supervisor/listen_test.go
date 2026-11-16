@@ -80,7 +80,7 @@ func TestListenUsesSuccessfulEphemeralBindProof(t *testing.T) {
 	}
 }
 
-// TestListenUnderANetSectionWithNoListenerPolicy is enforce-landlock R6: such a contract grants no TCP listener, and
+// TestListenUnderANetSectionWithNoListenerPolicy: such a contract grants no TCP listener, and
 // BIND_TCP stops only an explicit bind, so a listen is refused here and recorded. The socket's port is no reason to
 // let one through: "a connect's port" is a sibling's connect in flight, whose failure takes the port back between
 // getsockname and ListenRaw, and the listen then autobinds. A unix listener and a UDP socket's kernel answer stay, with

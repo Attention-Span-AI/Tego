@@ -11,7 +11,7 @@ import (
 	"github.com/cilium/ebpf"
 )
 
-// TestAttachKindOfNamesEveryHostWideTracingProgram is the name half of the v73 review's root R8: every program
+// TestAttachKindOfNamesEveryHostWideTracingProgram is the name half of the attach-kind check: every program
 // the backend attaches host-wide (TrackPrograms and TracePrograms) has an attach kind, the programs of
 // ListenerTracepoints and ExecResultTracepoints are exactly the tracepoint ones and carry the event those maps
 // name, and no other name has a kind. The type half, that each kind is the type the object's SEC() compiles to,

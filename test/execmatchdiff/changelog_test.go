@@ -31,7 +31,7 @@ func securityNotes(t *testing.T) string {
 }
 
 // TestUnreleasedCommandRuleNotes keeps the affected rules and tools visible in
-// the public notice, and prevents the review's opaque wording from returning.
+// the public notice, and keeps opaque wording from returning.
 func TestUnreleasedCommandRuleNotes(t *testing.T) {
 	notes := securityNotes(t)
 	for _, rule := range []string{"exec.deny", "exec.ask"} {

@@ -445,8 +445,8 @@ func (m *Manager) Endpoints() []netip.AddrPort {
 // Codex is the gap: RUN-IDENTITY.md routes it through a generated config.toml under CODEX_HOME rather
 // than a variable, and codex-cli 0.155.1 does ignore OPENAI_BASE_URL. identity.CodexConfig renders that
 // file from the OPENAI_BASE_URL value Vars carries; writing it under the run's runtime directory, pointing
-// CODEX_HOME at it and granting Codex write access there belong to the launcher and the enforcement tier
-// (docs/p0/capture-derive.md R19b), so this table names only what a variable can carry. The table is
+// CODEX_HOME at it and granting Codex write access there belong to the launcher and the enforcement tier,
+// so this table names only what a variable can carry. The table is
 // identity's (ProviderBaseURLVars), the one Compile's env-runtime-reserved warning reads too.
 func ProviderVars(provider string) []string { return identity.ProviderBaseURLVars(provider) }
 

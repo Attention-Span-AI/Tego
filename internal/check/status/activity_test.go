@@ -37,7 +37,7 @@ func steps(fns ...func(*ledger.Writer)) func(*ledger.Writer) {
 	}
 }
 
-// TestASidecarNewerThanTheLedgerIsActivity is limits-check-doctor-cli.md R9 with the activity sidecar: a run whose
+// TestASidecarNewerThanTheLedgerIsActivity is R9 with the activity sidecar: a run whose
 // last line is 10 s old but whose watcher counted activity 1 s ago (a record: off run busy with allowed work, a
 // streamed model response) is idle 1 s, as the watcher measures it, not stalled; idle_from says which source the
 // idle was measured from, and Since is that reading on the wall clock.

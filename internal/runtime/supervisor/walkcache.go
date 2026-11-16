@@ -24,10 +24,10 @@ import (
 // (fsTargetIsSpelling). Asked of the kernel each time, that costs a lookup of the whole path and a stat of the
 // final name per notification, the largest share of the fast path's round trip. What it asks changes only
 // when a directory entry on the way changes, and the run's own tasks change one only by a syscall the filter
-// notifies (rename, unlink, rmdir, symlink and link, and their *at forms: enforce-landlock R11), so a
+// notifies (rename, unlink, rmdir, symlink and link, and their *at forms), so a
 // directory's answer is kept, and every such notification invalidates the whole cache before it is answered.
-// A run whose filter leaves some of those mutations to the kernel decision plane unnotified (Options.PlaneFS,
-// TIER3-PLAN T16) keeps no directory at all.
+// A run whose filter leaves some of those mutations to the kernel decision plane unnotified (Options.PlaneFS)
+// keeps no directory at all.
 //
 // A directory is kept as scanned (Kernel.ScanDir): reached with no symlink (RESOLVE_NO_SYMLINKS), not on
 // procfs, and the names of the symlinks in it. A path in it then lands on its spelling unless its final name

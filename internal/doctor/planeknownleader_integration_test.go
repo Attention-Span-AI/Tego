@@ -19,7 +19,7 @@ import (
 // paths through /proc/<pid>/root, which shows the thread-group leader's namespace. When the scheduler had moved the
 // child's main goroutine off the leader before it locked, the leader's view had no tmpfs at x, doctor's hold of x/xd
 // failed ENOENT, and the plane mode was not offered: TestPlaneExecCommandRulesEndToEnd failed once that way in the 7.0
-// guest's cgroup-1 shard (acceptance 2C, 2026-11-11). The child's main is now kept on the leader (onLeader), and a
+// guest's cgroup-1 shard. The child's main is now kept on the leader (onLeader), and a
 // child on another thread refuses to start rather than answer from a namespace doctor cannot see. Each try starts the
 // child beside busy loops and finds its files through /proc/<pid>/root.
 func TestIntegrationKnownAnswerChildIsSeenThroughProcRoot(t *testing.T) {

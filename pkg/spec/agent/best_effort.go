@@ -47,12 +47,12 @@ const (
 	// BestEffortGateNetUnixConnect: a unix connect a `net to undeclared host` gate scores under a contract
 	// with no net: section, which has no relay as the agent to hold it to.
 	BestEffortGateNetUnixConnect = "gate.net/unix-connect"
-	// BestEffortDenyWrite: a write to a built-in deny_write target (agent-contract R20) at a tier no kernel
+	// BestEffortDenyWrite: a write to a built-in deny_write target at a tier no kernel
 	// decision plane decides (tier landlock, tier cgroup on the fanotify listener), refused by the supervisor on
-	// its copied pathname (supervisor R15c) and continued otherwise: fs.assurance's default (ADR 0041 D1 (a)).
+	// its copied pathname and continued otherwise: fs.assurance's default (ADR 0041 D1 (a)).
 	BestEffortDenyWrite = "deny_write/default"
 	// BestEffortUserDenyWrite: a modification at or beneath an fs.deny_write entry (ADR 0071) at a tier no kernel
-	// decision plane decides, refused by the supervisor on its copied pathname (supervisor R15c) as BestEffortDenyWrite's
+	// decision plane decides, refused by the supervisor on its copied pathname as BestEffortDenyWrite's
 	// targets are, and listed apart from them, since the entries are the contract's own. Blocked for ordinary commands;
 	// not race-free at the no-root tier.
 	BestEffortUserDenyWrite = "fs.deny_write"
@@ -66,7 +66,7 @@ const (
 	// destination for it yet: the cgroup unix programs and the decision plane's unix hooks hold no row for such a
 	// contract. A plane leaves connect, sendto and sendmsg notified (it narrows only the fs notifications, enforce-plane
 	// R22, R27), so the state rests on what carries it at tier landlock: the supervisor's relay of every connect and of
-	// the addressed datagrams it can reproduce (supervisor R7b), the abstract scope from Landlock ABI 6 and
+	// the addressed datagrams it can reproduce, the abstract scope from Landlock ABI 6 and
 	// RESOLVE_UNIX from ABI 9, and the datagram residual BestEffortHostSocketsDatagram names. Listed at the root tiers
 	// in that cell's place on every unix connect and send; immutable name programs do not remove its alias residual (ADR 0113).
 	BestEffortHostSocketsRoot = "host_sockets/root-tier"

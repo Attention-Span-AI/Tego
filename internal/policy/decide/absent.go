@@ -15,7 +15,7 @@ import (
 // installs no ruleset, so it refuses nothing here. The callers ask
 // it only where their own answer would be allow: compile leaves out a row any write or exec.allow directory entry
 // covers, which is the only grant that could reach beneath the name, and the Landlock builder refuses to leave out
-// any other name than the one asked about here (enforce-landlock E9). p is the path as the kernel names it.
+// any other name than the one asked about here. p is the path as the kernel names it.
 func AbsentRead(rt *agent.RuleTable, tier backend.Tier, p string) (string, bool) {
 	if rt == nil || len(rt.AbsentDenyRead) == 0 {
 		return "", false

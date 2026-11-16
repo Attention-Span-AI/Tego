@@ -23,7 +23,7 @@ var _ runtime.DeputySkipper = (*Recorder)(nil)
 
 // The run's open deputy (ADR 0041 D2) opens for the supervisor, which writes each held open's one line: the recorder
 // drops every record of the deputy (SetSkipProcess), the decision plane's refusal of one of its opens included, which the
-// supervisor attributes with the tier's model as this recorder would (supervisor.md R7a). Every other process's
+// supervisor attributes with the tier's model as this recorder would. Every other process's
 // records are recorded as before, the plane's refusal of the agent's own open among them.
 func TestRecorderDropsEveryRecordOfTheDeputy(t *testing.T) {
 	f := newFixture(t)
@@ -89,8 +89,8 @@ func TestRecorderDropsEveryRecordOfTheDeputy(t *testing.T) {
 }
 
 // The deputy is named by its pid and its start time (SetSkipProcess): once it is gone, a later process the kernel gives
-// the same pid is another process, and every record of it is the run's, kept as any other process's is
-// (supervisor.md R7a). The deputy's own records, stamped with its start within /proc's one-tick rounding, are
+// the same pid is another process, and every record of it is the run's, kept as any other process's is.
+// The deputy's own records, stamped with its start within /proc's one-tick rounding, are
 // dropped; a record stamped with a start a tick or more later is a reused pid's and is recorded, an fs open and the
 // plane's refusal alike; a record that carries no start (a socket record) names no process apart from its pid and is
 // kept. With no start known (the /proc read failed) the pid alone names the deputy, whose zombie the launcher keeps

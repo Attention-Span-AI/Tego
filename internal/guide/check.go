@@ -60,8 +60,8 @@ const (
 const CauseOutsideUserManager = "outside-user-manager"
 
 // CauseNoUserManager is Check.Cause for a place that starts no run only because no user manager runs for the user
-// (doctor.Report.NoUserManager): an account reached through su or sudo -u that never logged in and has no linger
-// (acceptance 2B, 2026-11-11). The next step starts that manager (Inputs.Linger), never tego doctor and tego setup in
+// (doctor.Report.NoUserManager): an account reached through su or sudo -u that never logged in and has no linger.
+// The next step starts that manager (Inputs.Linger), never tego doctor and tego setup in
 // turn with a delegation fix that changes nothing.
 const CauseNoUserManager = "no-user-manager"
 

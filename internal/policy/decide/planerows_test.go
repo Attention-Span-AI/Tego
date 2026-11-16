@@ -71,7 +71,7 @@ func genPlaneTables(fn func(desc string, rt *agent.RuleTable)) int {
 	return n
 }
 
-// TestPlaneRowsMatchEvaluate is TIER3-PLAN T5's parity property (enforce-plane R25): for every generated table (with and without
+// TestPlaneRowsMatchEvaluate is the plane rows' parity property: for every generated table (with and without
 // deny_write targets), the compiled rows, walked as the kernel walks them (first row met decides), answer every fs
 // action on every probe path as Evaluate's bpflsm column does: the verdict, and for a refusal the rule and reason
 // the ledger line carries. Where the rows have a RootRow form, RootIndex.Walk over them answers as the rows' walk.
@@ -165,7 +165,7 @@ func checkPlaneRows(t *testing.T, desc string, rt *agent.RuleTable, probes, dest
 }
 
 // checkPlaneRename holds a rename to Evaluate's: each end refused as a rename of itself (a deny_write target or a
-// directory above one refuses at depth 0, enforce-plane R11) or as a modification, then REFER. The one difference
+// directory above one refuses at depth 0) or as a modification, then REFER. The one difference
 // is the rule named for an end that lies above every write entry and above a deny_write target: Evaluate names the
 // target, the plane (which keys no row there) names the nearest entry. Both refuse, for the same reason: no write
 // entry covers that end, so the modification is refused before the target is asked.
@@ -222,7 +222,7 @@ func underWrite(rt *agent.RuleTable, p string) bool {
 
 // TestPlaneRowsDenyWriteAncestors: a deny_write target is a row refusing every modification beneath it, and each
 // directory from it up to the outermost write entry refuses a rename of itself while still allowing what the write
-// entry allows beneath it (enforce-plane R11: `mv .git .git.old` is refused, `touch .git/x` is not).
+// entry allows beneath it (`mv .git .git.old` is refused, `touch .git/x` is not).
 func TestPlaneRowsDenyWriteAncestors(t *testing.T) {
 	rt := &agent.RuleTable{Tier: backend.TierBPFLSM,
 		FS: []agent.FSRule{
@@ -274,7 +274,7 @@ func TestPlaneRowsDenyWriteAncestors(t *testing.T) {
 
 // TestPlaneRowsKeyALinkedTargetAtItsOwnInode: a deny_write target declared through a symlink (.git/hooks ->
 // real-hooks) keys the link itself and its directories up to the write entry, unfollowed (PlaneRows.NoFollow), so
-// unlinking or renaming the link is refused in the kernel as the model refuses it (enforce-plane R11).
+// unlinking or renaming the link is refused in the kernel as the model refuses it.
 func TestPlaneRowsKeyALinkedTargetAtItsOwnInode(t *testing.T) {
 	rt := &agent.RuleTable{Tier: backend.TierBPFLSM,
 		FS:        []agent.FSRule{{Kind: agent.FSWrite, Path: "/h", Raw: "/h", Resolved: "/h", Access: agent.AccessWriteSet}},
@@ -306,8 +306,8 @@ func TestPlaneRowsKeyALinkedTargetAtItsOwnInode(t *testing.T) {
 	}
 }
 
-// TestPlaneKindStrictness: REFER's order (enforce-plane R10), and that a move to a stricter row passes where one to a looser row does
-// not (enforce-plane R10).
+// TestPlaneKindStrictness: REFER's order, and that a move to a stricter row passes where one to a looser row does
+// not.
 func TestPlaneKindStrictness(t *testing.T) {
 	write, read, deny := PlaneModifyAllow, PlaneKind(0), PlaneReadDeny
 	for _, tc := range []struct {
@@ -402,8 +402,8 @@ type llRule struct {
 	access agent.AccessSet
 }
 
-// landlockPlanModel is the tier-1/2 Landlock plan written out as rules, independently of the core's grant model
-// (enforce-landlock R3, R5): write entries with the read set and their rights, exec entries with READ_FILE and
+// landlockPlanModel is the tier-1/2 Landlock plan written out as rules, independently of the core's grant model:
+// write entries with the read set and their rights, exec entries with READ_FILE and
 // EXECUTE (and READ_DIR on a directory), and either the read set on "/" or the enumeration of the enforced deny_read
 // targets: READ_DIR on each ancestor level and the read set on each sibling of names, which stands for a directory
 // listing.
@@ -505,7 +505,7 @@ func llGrant(rules []llRule, p string) agent.AccessSet {
 	return a
 }
 
-// TestNeutralRulesKeepTheUnion is ADR 0025 (3)'s property (enforce-plane R17): for every generated table, with and
+// TestNeutralRulesKeepTheUnion is ADR 0025 (3)'s property: for every generated table, with and
 // without exec entries, adding the compiled neutral rules to the Landlock plan changes no grant at any probe path,
 // keyed path or path beneath one, so no Landlock verdict changes. Each neutral rule carries read rights only and is
 // non-empty; a keyed path without one is where the domain grants no read right. The plan model is first held to the
@@ -592,7 +592,7 @@ func TestNeutralRulesKeepTheUnion(t *testing.T) {
 	}
 }
 
-// TestPlaneCap (enforce-plane E13): a table over either map's capacity is ErrPlaneCap, never a truncated row set; at the capacity it
+// TestPlaneCap: a table over either map's capacity is ErrPlaneCap, never a truncated row set; at the capacity it
 // compiles. A non-allow exec entry is ErrPlaneExecVerdict. The fs rows are exec.allow directories here, which key
 // rows as fs entries do, so the table at the cap compiles in a fraction of a second.
 func TestPlaneCap(t *testing.T) {
@@ -654,7 +654,7 @@ func TestPlaneCap(t *testing.T) {
 	}
 }
 
-// TestPlaneDiagnostic (enforce-plane E13, §2.4 condition 7): compile reports a table over the cap as an error when
+// TestPlaneDiagnostic (§2.4 condition 7): compile reports a table over the cap as an error when
 // bpflsm is the only tier it can run at (pinned), a warning naming bpflsm and saying an auto run gets tier cgroup when
 // an auto run may land there (compiled to bpflsm or not), and nothing when bpflsm is out of reach or the table fits.
 func TestPlaneDiagnostic(t *testing.T) {
@@ -695,7 +695,7 @@ func TestPlaneDiagnostic(t *testing.T) {
 	}
 }
 
-// TestPlaneDiagnosticCountsTheDescriptorCap (enforce-plane §2.4 condition 7): rows inside the maps' caps whose keyed
+// TestPlaneDiagnosticCountsTheDescriptorCap: rows inside the maps' caps whose keyed
 // paths pass the launcher's descriptor budget are reported, naming the count and that cap, never left to EMFILE at
 // Prepare; at the budget they fit, and an unknown budget (negative) refuses nothing.
 func TestPlaneDiagnosticCountsTheDescriptorCap(t *testing.T) {
@@ -795,10 +795,10 @@ func BenchmarkCompilePlane(b *testing.B) {
 	}
 }
 
-// TestPlaneRuleIndexNames is TIER3-PLAN T9's resolution of the kernel's rule_idx into the rule a ledger line names:
+// TestPlaneRuleIndexNames is the resolution of the kernel's rule_idx into the rule a ledger line names:
 // an fs row by the hook's question (RowName), a REFER refusal by the row's nearest entry (NamedAt), an exec
 // entry's own position, and an exec.allow directory's fs row, which bprm_check records with PlaneRuleFSRow set
-// (enforce-plane §2.7's condition 2), by that row's exec.allow entry.
+// by that row's exec.allow entry.
 func TestPlaneRuleIndexNames(t *testing.T) {
 	rt := &agent.RuleTable{Tier: backend.TierBPFLSM,
 		FS: []agent.FSRule{

@@ -13,9 +13,9 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// This file is the plane's row compiler (ADR 0028 S4, docs/p0/TIER3-PLAN.md T5, enforce-plane R5, R11, R17): it
+// This file is the plane's row compiler (ADR 0028 S4): it
 // turns a compiled RuleTable into the rows bpf/decide.bpf.c walks, as an abstract list keyed by canonical path.
-// The fill (TIER3-PLAN T4) opens each path O_PATH and keys its row by the inode the kernel resolves; nothing here
+// The fill opens each path O_PATH and keys its row by the inode the kernel resolves; nothing here
 // knows an inode. The rows come from the root model (rootrows.go), so the plane and compile --test's bpflsm column
 // cannot disagree (TestPlaneRowsMatchEvaluate).
 //
@@ -27,7 +27,7 @@ import (
 
 // Plane capacities, mirrored from bpf/include/events.h (TEGO_PLANE_ROWS_MAX, TEGO_PLANE_EXEC_ROWS_MAX) and held
 // to it by internal/bpf TestPlaneCapsMatchRowCompiler. A slot's maps hold no more, and the compiler never
-// truncates: a table over either cap is ErrPlaneCap (enforce-plane §6 E13).
+// truncates: a table over either cap is ErrPlaneCap.
 const (
 	PlaneRowsMax       = 4096
 	PlaneExecRowsMax   = 1024
@@ -45,13 +45,13 @@ const (
 	// PlaneModifyAllow: a modification (write-open, create, delete, rename, mkdir, link) here is allowed.
 	PlaneModifyAllow PlaneKind = 1 << 1
 	// PlaneRenameRefused: renaming this inode itself (the walk's depth 0) is refused, because it is a deny_write
-	// target or a directory above one up to the outermost write entry enclosing it (enforce-plane R11). It says
+	// target or a directory above one up to the outermost write entry enclosing it. It says
 	// nothing of the paths beneath this row, which PlaneModifyAllow decides.
 	PlaneRenameRefused PlaneKind = 1 << 2
 	// PlaneExecDir: an exec.allow directory covers this inode (PlaneRow.Exec names the lowest such entry).
 	PlaneExecDir PlaneKind = 1 << 3
 	// PlaneProtected: a deny_write target lies at or above this inode, so the attribute hooks (chmod, chown, xattr,
-	// ACL) refuse here and beneath (enforce-plane R12). Landlock governs none of those calls, and the plane decides
+	// ACL) refuse here and beneath. Landlock governs none of those calls, and the plane decides
 	// them for the targets' protection only: no other row refuses one.
 	PlaneProtected PlaneKind = 1 << 4
 	// PlaneMountOnly marks a kernel row keyed at a mounted root below a deny_write target (PlaneRows.Mounts), which
@@ -66,7 +66,7 @@ const (
 	PlaneBuiltinIPC PlaneKind = 1 << 7
 )
 
-// Strictness orders kinds for REFER (enforce-plane R10): 2 for a row that refuses reads, 1 for one that allows
+// Strictness orders kinds for REFER: 2 for a row that refuses reads, 1 for one that allows
 // reads and refuses modifications, 0 for one that allows both. The root model never pairs a refused read with an
 // allowed modification: the entry deciding a modification is the nearest non-watch entry, and a deny_read at
 // least as near would decide it refused.
@@ -151,7 +151,7 @@ type PlaneRow struct {
 }
 
 // PlaneExecRow is one exec row: the executable the fill keys by its inode, and the directory and final name the
-// kernel compares with the dentry (ADR 0025 (1) as T2 amended it). Path is the entry's resolved spelling, the one
+// kernel compares with the dentry (ADR 0025 (1)). Path is the entry's resolved spelling, the one
 // bprm->file's dentry carries.
 type PlaneExecRow struct {
 	Path, Parent, Name string
@@ -161,7 +161,7 @@ type PlaneExecRow struct {
 
 // PlaneExecName is an exec entry the author wrote as a bare command name (SEMANTICS §4, ExecRule.ByName): it matches
 // by the final component wherever the file lies, so it keys no inode: its exec row is keyed by
-// internal/bpf.PlaneNameKey(Name), and bprm_check compares the name's bytes (docs/p0/enforce-plane.md §2.7).
+// internal/bpf.PlaneNameKey(Name), and bprm_check compares the name's bytes.
 type PlaneExecName struct {
 	Name string
 	Rule int
@@ -204,8 +204,8 @@ type PlaneRows struct {
 	Keyed []string
 	// NoFollow is the fs rows keyed at the path's own inode, a final symlink not followed, sorted: the declared
 	// spelling of a deny_write target whose resolved path differs (a .git/hooks that is a symlink), and each
-	// directory above it up to the outermost write entry enclosing it, where no row of Keyed is keyed already
-	// (enforce-plane R11). Unlinking, renaming or replacing the link itself walks from the link's own dentry, which
+	// directory above it up to the outermost write entry enclosing it, where no row of Keyed is keyed already.
+	// Unlinking, renaming or replacing the link itself walks from the link's own dentry, which
 	// the resolved target's row does not reach. They carry no neutral rule: Landlock holds them for identity alone.
 	NoFollow []string
 	// Neutral is one pin per keyed inode that the domain grants a read right at, in Keyed order.
@@ -244,7 +244,7 @@ type PlaneRows struct {
 
 // ExecMapEntries is what the slot's exec-rows map holds for the run: an exec row per executable, and, with an exec:
 // section, a row per bare-name entry, all in one inner map of PlaneExecRowsMax entries. Whether exec is decided is the
-// slot header's (enforce-plane R6), which takes no entry here.
+// slot header's, which takes no entry here.
 func (s *PlaneRows) ExecMapEntries() int {
 	if !s.ExecPolicy {
 		return len(s.Exec)
@@ -253,8 +253,8 @@ func (s *PlaneRows) ExecMapEntries() int {
 }
 
 // FSMapEntries is what the slot's fs rows map holds for the run: an fs row per keyed inode and a row per mounted
-// root (WithMounts), all in one inner map of PlaneRowsMax entries. Whether net is decided is the slot header's
-// (enforce-plane R6), which takes no entry here.
+// root (WithMounts), all in one inner map of PlaneRowsMax entries. Whether net is decided is the slot header's,
+// which takes no entry here.
 func (s *PlaneRows) FSMapEntries() int {
 	return len(s.FS) + len(s.Mounts)
 }
@@ -262,7 +262,7 @@ func (s *PlaneRows) FSMapEntries() int {
 // ErrPlaneCap is a table the plane cannot hold: more fs map entries (PlaneRows.FSMapEntries) or exec map entries
 // (PlaneRows.ExecMapEntries) than a slot's maps, or more keyed paths than the launcher can hold a descriptor each
 // for (FDCap, PlaneRows.FitFDs). At tier bpflsm pinned it is a compile error and refuses Prepare, never a truncated
-// row set (enforce-plane §6 E13): a row left out is a rule the kernel does not apply, and a quieter run is the silent
+// row set: a row left out is a rule the kernel does not apply, and a quieter run is the silent
 // fallback I7 forbids. An auto run is given tier cgroup instead (§2.4 condition 7).
 type ErrPlaneCap struct {
 	FSRows, ExecRows int
@@ -311,7 +311,7 @@ func (s *PlaneRows) CompactedAt(path string) bool {
 }
 
 // FitFDs refuses rows whose keyed paths pass fdCap, the launcher's descriptor budget (landlock.FDBudget.Cap), with
-// ErrPlaneCap naming both: the plan would meet EMFILE at Prepare (enforce-plane §2.4 condition 7). A negative fdCap is
+// ErrPlaneCap naming both: the plan would meet EMFILE at Prepare. A negative fdCap is
 // a budget that could not be read, which refuses nothing here; Prepare's own budget still holds the plan.
 func (s *PlaneRows) FitFDs(fdCap int) error {
 	if fdCap < 0 || s.Held() <= fdCap {
@@ -321,7 +321,7 @@ func (s *PlaneRows) FitFDs(fdCap int) error {
 }
 
 // ErrPlaneExecVerdict is an exec entry whose verdict is not allow: an exec row carries no verdict (the kernel's
-// row is the one name the file may run under), and P0's compile produces no other (an ask entry is P1).
+// row is the one name the file may run under), and the compile produces no other.
 type ErrPlaneExecVerdict struct{ Rule int }
 
 func (e *ErrPlaneExecVerdict) Error() string {
@@ -330,7 +330,7 @@ func (e *ErrPlaneExecVerdict) Error() string {
 
 // PlaneDiagnostic is compile's report of a table the plane cannot hold (ErrPlaneCap, ErrPlaneExecVerdict), when the
 // table can land at tier bpflsm (RuleTable.Tier or Reach, ADR 0019): an error when bpflsm is the only tier it can run
-// at (pinned), since Prepare would refuse it (enforce-plane §6 E13), and a warning naming bpflsm otherwise, where an
+// at (pinned), since Prepare would refuse it, and a warning naming bpflsm otherwise, where an
 // auto run is given tier cgroup instead (§2.4 condition 7). fdCap is the launcher's descriptor budget
 // (landlock.FDBudget.Cap), negative when unknown. ok is false when the table fits or cannot reach bpflsm.
 func PlaneDiagnostic(rt *agent.RuleTable, file string, fdCap int) (d agent.Diagnostic, ok bool) {
@@ -423,8 +423,8 @@ func CompilePlane(rt *agent.RuleTable) (*PlaneRows, error) {
 			s.Protected = append(s.Protected, PlaneListenRow{Path: "builtin-own:" + own, Parent: parent, Name: filepath.Base(own), Rule: 0x4000})
 		}
 	}
-	// A deny_write target and every directory above it up to the outermost write entry that encloses it
-	// (enforce-plane R11): renaming any of them carries the target out of its place. Above that entry no write
+	// A deny_write target and every directory above it up to the outermost write entry that encloses it:
+	// renaming any of them carries the target out of its place. Above that entry no write
 	// entry covers the path, so every modification there is refused already.
 	px := newPlaneIndex(rt)
 	for j := range rt.DenyWrite {
@@ -775,7 +775,7 @@ const (
 	// PlaneRename: path_rename of the path itself (either end).
 	PlaneRename
 	// PlaneProtect: an attribute change at the path (path_chmod, path_chown, the xattr and ACL hooks), refused only
-	// beneath a deny_write target (enforce-plane R12).
+	// beneath a deny_write target.
 	PlaneProtect
 )
 
@@ -795,7 +795,7 @@ type PlaneVerdict struct {
 // Find is the kernel's walk over the rows (tego_plane_walk): from path, a clean absolute canonical path, through
 // each parent to "/", the first row met, and its depth. It meets none (row -1) when it reaches "/" first, and is
 // unresolved when agent.MaxWalk steps pass without a row or the root. A step is a path component: the kernel's walk
-// crosses a mount without one (enforce-plane R7), so no mount table is needed here.
+// crosses a mount without one, so no mount table is needed here.
 func (s *PlaneRows) Find(path string) (row, depth int, unresolved bool) {
 	cur := path
 	for step := 0; step <= agent.MaxWalk; step++ {
@@ -862,7 +862,7 @@ func (s *PlaneRows) RuleAt(row int, q PlaneQuestion, depth int) PlaneRule {
 	return r.Modify
 }
 
-// RowName is the rule a plane refusal's ledger line names from the kernel's rule_idx for q (TIER3-PLAN T9): the
+// RowName is the rule a plane refusal's ledger line names from the kernel's rule_idx for q: the
 // entry RuleAt names, else the row's nearest entry of any kind, else unmatched. It is PlaneRefusal's naming, read
 // from the row the kernel stopped at rather than from a path. depth 0 is a rename of the row's own inode.
 func (s *PlaneRows) RowName(rt *agent.RuleTable, row int, q PlaneQuestion, depth int) string {
@@ -898,8 +898,7 @@ const PlaneRuleFSRow uint32 = 1 << 16
 
 // ExecRuleAt resolves bprm_check's rule to an exec entry's position in RuleTable.Exec, -1 for none: an entry's own
 // position, or, with PlaneRuleFSRow set, the fs row's exec.allow entry (PlaneRow.Exec). The kernel records the
-// row's position there because the row, not an entry, is what it holds (docs/p0/enforce-plane.md §2.7's condition
-// 2, resolved at T9).
+// row's position there because the row, not an entry, is what it holds.
 func (s *PlaneRows) ExecRuleAt(rt *agent.RuleTable, idx uint32) int {
 	if idx&PlaneRuleFSRow != 0 {
 		row := int(idx &^ PlaneRuleFSRow)
@@ -934,7 +933,7 @@ func (s *PlaneRows) ExecMatch(path string) (rule int, ok bool) {
 }
 
 // PlaneMountRow is a mounted root at or below a deny_write target, keyed at Prepare from the launcher's mountinfo
-// (enforce-plane R12, ADR 0024 (5)): the attribute hooks get a dentry and no mount, so their walk stays inside the
+// (ADR 0024 (5)): the attribute hooks get a dentry and no mount, so their walk stays inside the
 // superblock, and a filesystem mounted below a target (a tmpfs at .git/x) would otherwise walk to its own root and
 // meet no row. The kernel row at the mounted root carries Row's kind with PlaneMountOnly and Row as its rule_idx: the
 // answer the path model gives there, since Row is the nearest row above the mountpoint and no entry lies between.
@@ -1041,7 +1040,7 @@ func (s *PlaneRows) RootRows() (rows []RootRow, ok bool) {
 	return rows, true
 }
 
-// landlockGrants is the pure half of what the run's Landlock domain grants at a path (enforce-landlock R3, R5), the
+// landlockGrants is the pure half of what the run's Landlock domain grants at a path, the
 // rights a neutral rule may carry: the rules the builder certainly adds on the path's ancestors or on it. Write
 // entries grant the read set with their write rights; exec entries READ_FILE (and READ_DIR on a directory); with no
 // enforced deny_read "/" gets the read set; otherwise every enumerated level READ_DIR and every sibling beside the

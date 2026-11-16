@@ -73,10 +73,10 @@ func (fs *FS) CanPlace() error {
 // `systemd-run --user --scope bash` opens one from any shell of the same user whose user manager it can reach, since
 // the user manager has the system manager move the caller into a new scope of its own subtree. The fix names the
 // shell to open, not the cgroup's path: a new user read the path as the instruction, and the old "tego ..." was a
-// placeholder outside angle brackets (acceptance B, 2026-11-11). The path stays in the diagnosis. When the person who
+// placeholder outside angle brackets. The path stays in the diagnosis. When the person who
 // reads it is another user, who started tego as uid through sudo or su (other, config.StartedByAnother), the shell is
 // opened as uid from that person's own shell (ScopeAsCommand): typed there, the bare command opens the reader's own
-// scope, the silent wrong-user result the next: line no longer gives (acceptance 3, 2026-11-11; the review's M1: the
+// scope, the silent wrong-user result the next: line no longer gives (the
 // fix: line of doctor and the error of run, watch and test still said the bare command after linger).
 func PlacementFix(uid int, other bool) string {
 	if other {
@@ -167,7 +167,7 @@ func detectDelegated(mount string, procCgroup []byte, uid, pid int) (*FS, error)
 // firstWritableIn is firstWritable under mount, with one cause told apart (ErrNoUserManager): the only candidate is
 // the canonical user@<uid>.service, it does not exist, and mount holds systemd's user.slice. Then no user manager runs
 // for uid, as for an account with a nologin or false shell reached through su or sudo -u that never logged in and has
-// no linger (acceptance 2B, 2026-11-11, Ubuntu 24.04, AlmaLinux 9.8, Fedora 44). The delegation fix changes nothing
+// no linger (Ubuntu 24.04, AlmaLinux 9.8, Fedora 44). The delegation fix changes nothing
 // there; starting that user's manager does. Anything else keeps firstWritable's refusal.
 func firstWritableIn(mount string, uid int, candidates []string) (*FS, error) {
 	fs, err := firstWritable(uid, candidates)
@@ -193,7 +193,7 @@ func firstWritableIn(mount string, uid int, candidates []string) (*FS, error) {
 // it runs without a login (LingerCommand), then opens a shell in it as that user (ScopeAsCommand) and runs tego there.
 // The administrator types both in their own shell: the scope command written without sudo -u opened the
 // administrator's own scope on Ubuntu 24.04 and AlmaLinux 9.8, where tego setup then said ready for the wrong user,
-// and failed on Fedora 44 (acceptance 3, 2026-11-11); with it, it was ready at tier 1 on all three. When systemd
+// and failed on Fedora 44; with it, it was ready at tier 1 on all three. When systemd
 // refuses the account's name (ManagerRefused), linger starts no manager, so the remedy names neither command and says
 // what can be done instead. Every word is fixed or comes from uid and its passwd entry, never from the environment.
 func NoManagerFix(uid int) string {
@@ -229,7 +229,7 @@ func ManagerRefused(uid int) string {
 // loginctl enable-linger and the user's name from the passwd entry (config.LookupPasswd, never $USER), as one quoted
 // word, or the uid itself, which loginctl takes too, when there is no entry, the name holds a character that does not
 // print, or loginctl would not read the name as a name: one that starts with '-' is an option to it, quoted or not,
-// and one of digits only is a uid (the review's S4; config.PlainUserName).
+// and one of digits only is a uid (config.PlainUserName).
 func LingerCommand(uid int) string {
 	word := strconv.Itoa(uid)
 	if name, ok := lookupName(uid); ok && config.PlainUserName(name) {
@@ -242,8 +242,8 @@ func LingerCommand(uid int) string {
 // that user, typed by another user who may use sudo: sudo -u, the user's name from the passwd entry as one quoted word
 // ('#<uid>' when there is none or sudo would not read it as itself, config.PlainUserName), then
 // XDG_RUNTIME_DIR=/run/user/<uid>, where logind keeps that manager's sockets, since sudo -u leaves it unset and
-// systemd-run --user connects through it. Measured on Ubuntu 24.04, AlmaLinux 9.8 and Fedora 44 (acceptance 3,
-// 2026-11-11, GUEST-CHECK row 7b): a shell in that user's manager, where tego setup was ready at tier 1.
+// systemd-run --user connects through it. On Ubuntu 24.04, AlmaLinux 9.8 and Fedora 44 that gives
+// a shell in that user's manager, where tego setup was ready at tier 1.
 func ScopeAsCommand(uid int, shell string) string {
 	word := "'#" + strconv.Itoa(uid) + "'"
 	if name, ok := lookupName(uid); ok && config.PlainUserName(name) {

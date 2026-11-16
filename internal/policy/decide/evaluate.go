@@ -139,7 +139,7 @@ func cleanPath(p string) string { return filepath.Clean(p) }
 //
 // Unlike net: and exec:, an absent fs: section has no unrestricted reading
 // here: it compiles no write entry (R6), so a mutation is refused in every
-// enforcing tier exactly as under fs: {}. That is SEMANTICS §1 as amended —
+// enforcing tier exactly as under fs: {}. That is SEMANTICS §1 —
 // Landlock cannot leave writes open while keeping the implicit entries (the
 // run directory, the contract file) unwritable, and the root tiers' walk
 // refuses what no entry covers.
@@ -275,7 +275,7 @@ func nameMoveRefusal(n *NameIndex, m NameMatch) agent.EvalResult {
 // evalDenyWrite is Evaluate's answer for a modification that reaches a deny_write target in an enforcing
 // tier: refused, named after the target. Landlock cannot enforce the target beneath a writable parent, so a
 // decision plane decides the actual resolved syscall arguments where one runs; at tier landlock and on tier
-// cgroup's listener the supervisor refuses the copied pathname best effort (supervisor R15c), which this
+// cgroup's listener the supervisor refuses the copied pathname best effort, which this
 // answer models, or, under fs.assurance: kernel, the run is refused before launch (ADR 0041 D1 (a)). A read of
 // a target is not a modification and is not decided here.
 func evalDenyWrite(rt *agent.RuleTable, kind agent.ActionKind, path string) (agent.EvalResult, bool) {

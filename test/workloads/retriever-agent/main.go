@@ -4,7 +4,7 @@
 // through whatever ANTHROPIC_BASE_URL the run injected (the forwarder's loopback listener) and runs the tools each
 // reply asks for, reporting their results in its next request as the API requires, until a reply asks for none.
 // Its tools act in the agent's own process, so their actions are the ones attribution must tie to the reply that
-// asked for them (capture-derive R42):
+// asked for them:
 //
 //	db_query         connects to $DB_ADDR, reads one line, and writes $OUT/summary.md
 //	publish_summary  connects to $QUEUE_ADDR, then tries to write $NETRC, a path the contract does not let it write

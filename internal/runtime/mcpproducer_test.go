@@ -10,10 +10,10 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// TestRunParsersNamesTheMCPProducer is limits-check-doctor-cli.md R15's producer half: run_start.parsers
+// TestRunParsersNamesTheMCPProducer: run_start.parsers
 // carries "mcp" naming exactly the producers that could have recorded a declared server — "exec" for a stdio
 // server's start when a notify loop answers this run's execve, "mcp/1" for an HTTP server's exchanges when the
-// uprobe source is the run's capture (capture-derive.md R41) — and neither under a record mode that drops allowed
+// uprobe source is the run's capture — and neither under a record mode that drops allowed
 // actions. Without a producer of a server's transport, drift reads that server with no mcp event as not observable
 // and never as unused, so a run the producer did watch could never report an unused server.
 func TestRunParsersNamesTheMCPProducer(t *testing.T) {

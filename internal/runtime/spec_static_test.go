@@ -12,8 +12,8 @@ import (
 	"testing"
 )
 
-// launchFamilyFiles parses the non-test Go files of the runtime, launch and cgroup packages: the three
-// directories runtime-launch.md specifies. Sub-packages (supervisor, enforce, derive, ...) have their own specs.
+// launchFamilyFiles parses the non-test Go files of the runtime, launch and cgroup packages: the launch
+// family. Sub-packages (supervisor, enforce, derive, ...) are not in it.
 func launchFamilyFiles(t *testing.T) map[string]*ast.File {
 	t.Helper()
 	out := map[string]*ast.File{}
@@ -40,7 +40,7 @@ func launchFamilyFiles(t *testing.T) map[string]*ast.File {
 	return out
 }
 
-// TestRunInstallsNoRecover is runtime-launch.md R14: none of this package family's code calls the builtin
+// TestRunInstallsNoRecover: none of this package family's code calls the builtin
 // recover(), so a worker panic propagates and crashes the process; the sweep is the recovery path.
 func TestRunInstallsNoRecover(t *testing.T) {
 	for p, f := range launchFamilyFiles(t) {
@@ -55,7 +55,7 @@ func TestRunInstallsNoRecover(t *testing.T) {
 	}
 }
 
-// TestRunNeverSelfElevates is runtime-launch.md R3: the launcher never re-execs itself through sudo (or another
+// TestRunNeverSelfElevates: the launcher never re-execs itself through sudo (or another
 // privilege broker) and never reads a privileged_binary; a ceiling above the current credentials is a doctor
 // gap. No call in the family passes such a program to os/exec or exec(2), and no string literal names one.
 func TestRunNeverSelfElevates(t *testing.T) {
@@ -78,7 +78,7 @@ func TestRunNeverSelfElevates(t *testing.T) {
 	}
 }
 
-// TestRunProducesNeitherTierUnavailableNor213 is runtime-launch.md I10 (invariant 10), the static half: no code in the
+// TestRunProducesNeitherTierUnavailableNor213, the static half: no code in the
 // family names exit 213 or the tier-unavailable reason; those belong to cli.run's pre-Run steps. (The other half,
 // that this package's own pre-run_start failures are exit 125, is asserted by TestRunUnwindsAfterAFailedPrepare.)
 func TestRunProducesNeitherTierUnavailableNor213(t *testing.T) {
@@ -99,7 +99,7 @@ func TestRunProducesNeitherTierUnavailableNor213(t *testing.T) {
 	}
 }
 
-// TestNothingWritesCgroupProcs is runtime-launch.md I3 (invariant 3), the static half: a child is placed by
+// TestNothingWritesCgroupProcs, the static half: a child is placed by
 // clone3(CLONE_INTO_CGROUP) and never by a later cgroup.procs write, so no code in the family opens or writes a
 // cgroup.procs file (it is read, and access(2)-checked for delegation). The dynamic half is
 // TestIntegrationLifecycle's clone3 into the run's cgroup.

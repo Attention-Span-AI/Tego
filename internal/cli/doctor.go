@@ -137,8 +137,8 @@ func runDoctor(ctx context.Context, asJSON bool, require string, stdout, stderr 
 // said what to type next; the stdout report stays byte for byte as scripts read it. Ready leads to tego test (as root
 // for a root report, whose tier is a root run's). Not ready only because this shell is outside the user manager's
 // cgroup leads to the shell that is inside it (outsideHint). Otherwise not ready leads to what doctor printed to fix
-// it, then the check again, never by the command that printed it: acceptance B (2026-11-11) found doctor's next:
-// line was tego doctor itself, which printed the same answer again. The check again is tego setup, which runs the
+// it, then the check again, never by the command that printed it: a next: line of tego doctor itself would print
+// the same answer again. The check again is tego setup, which runs the
 // same probes from here and stores them; a root tier --require'd without root is checked by sudo doctor --require;
 // a root report has no command of its own, and its sentence says to run the check again. A fix is a sentence, not
 // always a command, so the hint points at it rather than copying it.
@@ -159,10 +159,10 @@ func writeDoctorVerdict(stderr io.Writer, rep *doctor.Report) {
 		}
 		if rep.NoUserManager && (rep.Require == "" || rep.Require == backend.TierLandlock) {
 			// The fix: line names this command too; the block names it so the next step is never tego setup, which
-			// would name tego doctor again before anything changed (acceptance 2B, 2026-11-11).
+			// would name tego doctor again before anything changed.
 			uid, _ := config.InvokingUID()
 			if managerRefused(uid) != "" {
-				// systemd starts no user manager for this account's name, linger or not (acceptance 3, 2026-11-11): the
+				// systemd starts no user manager for this account's name, linger or not: the
 				// fix: line says what to do, and no command would change anything.
 				_, _ = io.WriteString(stderr, hintBlock("systemd runs no user manager for this account's name; see the fix: line.", ""))
 				return

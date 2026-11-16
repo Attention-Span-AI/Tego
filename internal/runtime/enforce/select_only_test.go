@@ -41,8 +41,8 @@ func refusal(t *testing.T, b Backend, ds []Diagnostic) Diagnostic {
 // TestOnlyNamesTheTierItWasAskedFor: `tego run --tier cgroup` on a machine that offers tier landlock alone
 // is refused as a pin of tier cgroup, with the reasons for tier cgroup, not "no enforcement tier available on
 // this machine". That sentence is false there, and it is what run printed while it narrowed the probe to an
-// empty set and left Select to choose from nothing (identity-config.md §7: "tier <name> pinned but not
-// available: <fix>").
+// empty set and left Select to choose from nothing; the message is "tier <name> pinned but not
+// available: <fix>".
 func TestOnlyNamesTheTierItWasAskedFor(t *testing.T) {
 	withObjects(t, true)
 	w := &why{}

@@ -6,7 +6,7 @@ without its subpackages; this keeps a targeted `VM_RUN` from producing empty sui
 
 | Harness | What it is for | Needs on the host |
 |---|---|---|
-| `matrix.sh` + `run-matrix-row.sh` (`make vm-matrix`, `make vm-test`) | the kernel matrix (P0-DESIGN §10): `tego doctor` as the user and as root, and kill tests 1, 2, 4, 5, 6 and 7 with their root halves, on each row's own distro kernel | `/dev/kvm` read-write, network once per row to fetch its kernel, `jq`, `python3`, `xz`, `zstd` |
+| `matrix.sh` + `run-matrix-row.sh` (`make vm-matrix`, `make vm-test`) | the kernel matrix: `tego doctor` as the user and as root, and kill tests 1, 2, 4, 5, 6 and 7 with their root halves, on each row's own distro kernel | `/dev/kvm` read-write, network once per row to fetch its kernel, `jq`, `python3`, `xz`, `zstd` |
 | `kvm-run.sh` + `root-suites.sh` (`make vm-root-test`) | the privileged Go suites, as root, on this box's own kernel with `bpf` in `lsm=` | `/dev/kvm` read-write, `apt-get download`, `dpkg-deb`, a static busybox. No root, no qemu, no clang |
 
 `VM_MODULES` (space-separated) has each `root-suites.sh` guest load those kernel modules before its suite, through
@@ -48,7 +48,7 @@ fails over a limit in `test/perf/perf.go` and prints `TARGET-MISS` over a spec's
 kernel (below) instead of this box's, fetched as `matrix.sh` fetches it, with the console log in `perf-<row>-<boot>.console`; a
 name that is not a row, a doctor-only row (no tier is offered there) and a kernel that cannot be fetched stop it before the
 build (exit 2, 2 and 97). The budgets are the 6.17 guest's, so on another row an exit of 1 is a figure to record, not a gate.
-`perf_test.sh` holds this to stand-ins. Results and open conditions: docs/p0/enforce-plane.md §10.1.
+`perf_test.sh` holds this to stand-ins.
 
 ## ADR 0021's pairs runs: `make vm-pairs`
 
@@ -589,8 +589,8 @@ checkout, with `go-shim.sh` first on `PATH`. It is CI's `root-suites` job (.gith
 GitHub-hosted runner has passwordless sudo. The doctor check there is the product build, run as a root user would
 run it, only where `TEGO_DISPOSABLE_HOST` says the machine is disposable (a GitHub Actions runner sets it by itself);
 anywhere else it is the `tegotesthooks` build of the same tags with a machine config, chain anchor and own-log home
-of the run's own in `VM_OUT/doctor-iso`, since the product build under sudo logs to your own `~/.tego/tego.log`
-(identity-config.md R27). There, each suite starts in the runner's service cgroup rather
+of the run's own in `VM_OUT/doctor-iso`, since the product build under sudo logs to your own `~/.tego/tego.log`.
+There, each suite starts in the runner's service cgroup rather
 than in a user's delegated subtree, and the kernel's lsm= list has no `bpf`. The suites also share one host, where
 each guest's suite has a kernel of its own: a tier-2 run leaves its build pinned under `/sys/fs/bpf/tego` for
 `bpf.linger` (five minutes) after it ends (ADR 0022), so a suite can start with an earlier suite's build still

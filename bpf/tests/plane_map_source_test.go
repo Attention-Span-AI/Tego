@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Step C of the decision plane (ADR 0027; TIER3-PLAN T14; docs/p0/enforce-plane.md R26): mmap_file and file_mprotect
+// Step C of the decision plane (ADR 0027): mmap_file and file_mprotect
 // in bpf/decide_stepc.h.
 
 // planeMapHooks are step C's hooks, whose bodies return 0 before the run-set lookup for no file or no PROT_EXEC.
@@ -22,7 +22,7 @@ var stepCPath = filepath.Join(sourceDir, "decide_stepc.h")
 // comments and leaves their white space behind).
 func squash(s string) string { return strings.Join(strings.Fields(s), " ") }
 
-// TestPlaneMapHooksReturnBeforeTheRunLookup is ADR 0027's host cost and enforce-plane R26: both bodies return 0
+// TestPlaneMapHooksReturnBeforeTheRunLookup is ADR 0027's host cost: both bodies return 0
 // before the run-set lookup when there is no file or no PROT_EXEC, so an anonymous or non-executable map on the
 // host pays a branch, and nothing before the lookup can refuse. mmap_file's only call there is tego_mmap_prot,
 // fmod_ret mode's effective prot.
@@ -58,7 +58,7 @@ func TestPlaneMapHooksReturnBeforeTheRunLookup(t *testing.T) {
 	}
 }
 
-// TestPlaneMapDecidesOnTheEffectiveProt is ADR 0024 (8), ADR 0027 and its 2026-09-29 amendment: both hooks decide on
+// TestPlaneMapDecidesOnTheEffectiveProt is ADR 0024 (8), ADR 0027 and its amendment: both hooks decide on
 // the prot the kernel maps with, not the one the task asked for. bpf_lsm_mmap_file's third argument is
 // mmap_prot(file, reqprot); security_mmap_file, which fmod_ret mode attaches to ahead of that computation, is handed
 // reqprot, so the fmod_ret program computes it as the kernel does (READ_IMPLIES_EXEC adds PROT_EXEC to a PROT_READ
@@ -98,7 +98,7 @@ func TestPlaneMapDecidesOnTheEffectiveProt(t *testing.T) {
 	}
 }
 
-// TestPlaneMapPolicy is enforce-plane R26's decision in tego_map_decide: a slot with no header of the run's gen
+// TestPlaneMapPolicy is the decision in tego_map_decide: a slot with no header of the run's gen
 // refuses; a header without the exec flag (no exec: section) decides nothing; anonymous memory (an S_PRIVATE inode)
 // is not a file; no scratch value or no exec-rows map refuses and counts; execmem and execmod refuse; an anonymous
 // file follows exec.anonymous; a file's nearest write row

@@ -1413,7 +1413,7 @@ func TestGuardRecompilesATableWhoseOwnersRecordsChanged(t *testing.T) {
 
 // TestGuardSelectsAgainWhenFmodRetLapses: the guard prepares each uid's boundary backend once and adopts many agents
 // under it, so a backend selected with the plane in fmod_ret mode would keep the mode after root changed the kernel's
-// preemption mode (a 2026-11-03 review). Before each adoption the guard reads the mode again (ADR 0024 (16)): a
+// preemption mode. Before each adoption the guard reads the mode again (ADR 0024 (16)): a
 // backend whose fmod_ret mode the kernel no longer admits is prepared again, which selects again, and an adoption is
 // never made under it; one that cannot be prepared again fails the adoption.
 func TestGuardSelectsAgainWhenFmodRetLapses(t *testing.T) {

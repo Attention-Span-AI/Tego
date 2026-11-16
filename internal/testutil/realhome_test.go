@@ -333,8 +333,8 @@ func TestGuardedRunFailsTheBinaryOnAChangedHome(t *testing.T) {
 // homes and never instead of them, and TestGuardChild makes that history in write mode. <dir> is the child's only
 // when guardChildDir accepts it: a directory inside the temporary directory, holding the marker the parent wrote,
 // that is no real home. The child only makes the history (O_EXCL), never opens one that exists. So the variable set
-// by mistake fails this package, weakens no guard and changes no file (identity-config.md R27 (b3):
-// a write:<home> used to truncate that home's history before the guard reported it).
+// by mistake fails this package, weakens no guard and changes no file (a write:<home> would truncate that home's
+// history before the guard reported it).
 const guardChildEnv = "TEGO_TESTUTIL_GUARD_CHILD"
 
 // guardChildMarker is the file TestGuardedMainsFailTheBinary writes in each directory it hands the child.

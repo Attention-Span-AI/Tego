@@ -35,7 +35,7 @@ var budgetEpoch = time.Now()
 // One body is bounded by MaxBody, but how many are in flight at once is not: net/http serves every
 // accepted connection in its own goroutine, and R38 makes this listener the agent's only route to the
 // model, so the agent chooses both multiplicands of that product. Only the child is cloned into the run's
-// cgroup (docs/p0/runtime-launch.md §6 step 6), so limits.memory bounds the agent and never the launcher
+// cgroup, so limits.memory bounds the agent and never the launcher
 // holding these buffers: without a bound here an agent stays comfortably inside its own memory ceiling
 // while the process that owns the supervisor's notify loop and the ledger writer is OOM-killed, which
 // takes enforcement and the record down with it.

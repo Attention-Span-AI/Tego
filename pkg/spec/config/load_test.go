@@ -73,8 +73,8 @@ func mustLoad(t *testing.T, src Sources, home string) (*Machine, []Diagnostic) {
 }
 
 // Layer combinations with provenance per key (R14–R16).
-// identity-config.md E11: an equal (not raised) ceiling in a later layer moves Provenance and warns nothing.
-// identity-config.md R26: machine ask settings retain their values and provenance;
+// An equal (not raised) ceiling in a later layer moves Provenance and warns nothing.
+// Machine ask settings retain their values and provenance;
 // an ask.notify webhook entry warns CodeIgnored because that adapter is not built (cli and desktop are, ADR 0122).
 func TestLoadLayers(t *testing.T) {
 	cases := []struct {
@@ -229,7 +229,7 @@ func countCode(diags []Diagnostic, code string) int {
 }
 
 // A raise across three layers is refused transitively, auto never raises.
-// identity-config.md I4: every ceiling's effective value is <= every layer's attempted value, transitively across the chain.
+// Every ceiling's effective value is <= every layer's attempted value, transitively across the chain.
 func TestCeilingChain(t *testing.T) {
 	src := layers(t, trustedDir(t),
 		"limits:\n  tokens: 100\ntier: landlock\n",
@@ -263,7 +263,7 @@ func TestCeilingChain(t *testing.T) {
 // An illegal tier or capture name is an error at
 // its own file and line. It used to load, and then compile printed `tier quantum`, doctor reported tier
 // none naming no file, the run exited 125, and an illegal capture name ran with capture off.
-// observe is a run mode, never a ceiling (identity-config R17), so it is illegal here too.
+// observe is a run mode, never a ceiling, so it is illegal here too.
 func TestCeilingBadName(t *testing.T) {
 	src := layers(t, trustedDir(t), "tier: quantum\ncapture: tap\n", "", "")
 	_, diags, err := LoadSources(src, "", os.Getuid(), TrustAbort)
@@ -322,7 +322,7 @@ func TestNonUTF8LayerNamesItsLine(t *testing.T) {
 
 // TestLimitEdges: the bounds of cpu.max load, and a 0 memory or pids ceiling, the tightest budget E16 keeps,
 // loads with a warning at its line saying what it does to a run.
-// identity-config.md E12: limits.memory: 0 is valid and Load keeps the zero ceiling (Compile's refusal is agent's).
+// Limits.memory: 0 is valid and Load keeps the zero ceiling (Compile's refusal is agent's).
 func TestLimitEdges(t *testing.T) {
 	for _, cpu := range []string{"0.01", "175921860"} {
 		src := layers(t, trustedDir(t), "limits:\n  cpu: \""+cpu+"\"\n", "", "")
@@ -377,7 +377,7 @@ func TestCeilingsBelowARunsStartWarn(t *testing.T) {
 }
 
 // T-config-version-1 (E14, E15) and other parse-time rules.
-// identity-config.md E20: a negative limits value is rejected at parse (E20 negative pids case).
+// A negative limits value is rejected at parse (E20 negative pids case).
 func TestLoadInvalid(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -465,7 +465,7 @@ func TestLoadInvalid(t *testing.T) {
 	}
 }
 
-// identity-config.md E17: stop_grace: 0s loads with one advisory and no error (E17 case).
+// Stop_grace: 0s loads with one advisory and no error (E17 case).
 func TestLoadValid(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -674,8 +674,8 @@ func TestRingSizesAreTheAdministrators(t *testing.T) {
 	}
 }
 
-// TestPlaneIsTheAdministrators: bpf.plane picks which programs decide every host process's opens (ADR 0024 (2),
-// enforce-plane.md R18), so it is honoured from /etc/tego/config.yaml only, an invoking user's layer that sets it
+// TestPlaneIsTheAdministrators: bpf.plane picks which programs decide every host process's opens (ADR 0024 (2)),
+// so it is honoured from /etc/tego/config.yaml only, an invoking user's layer that sets it
 // is ignored with a warning, the default is auto, and a value other than auto, lsm or fmod_ret is refused.
 func TestPlaneIsTheAdministrators(t *testing.T) {
 	m, diags := mustLoad(t, layers(t, trustedDir(t), "bpf:\n  plane: fmod_ret\n", "bpf:\n  plane: lsm\n", ""), "")
@@ -737,7 +737,7 @@ func TestLoadNeverAccessesPrivilegedBinaryTarget(t *testing.T) {
 // a disk edit never affects an in-flight run") and E18 ("each run keeps the *Machine from its own
 // Load() call for its whole lifetime — no cache, no file-watch; concurrent runs may legitimately
 // see different ceilings"). Neither number is cited by any test in this package, nor mapped to one
-// in docs/p0/identity-config.md §10's own test table, even though every other rule/edge/invariant
+// in the component's test table, even though every other rule/edge/invariant
 // this component owns is: every existing LoadSources-based test here calls it exactly once per
 // fixture, so a path-keyed cache accidentally added to readTrusted (a plausible "avoid re-reading
 // the same file" optimization) would pass the whole suite today. This drives LoadSources twice
@@ -972,7 +972,7 @@ func TestDeniedResolvedUnion(t *testing.T) {
 	}
 }
 
-// TestLayerPathIsAnOpaqueByteString is identity-config.md E21: a $TEGO_CONFIG path with non-ASCII and
+// TestLayerPathIsAnOpaqueByteString: a $TEGO_CONFIG path with non-ASCII and
 // right-to-left override bytes is neither normalized nor rejected, so the layer is the file the kernel
 // resolves those exact bytes to, and Provenance names it byte for byte.
 func TestLayerPathIsAnOpaqueByteString(t *testing.T) {

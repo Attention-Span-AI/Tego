@@ -14,8 +14,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// swapLedgerRoot is what a user who owns the ledger root's parent can do to a live run (record-ledger.md
-// §3): move the ledger root aside and put a link in its place to a tree of their own, where the run's
+// swapLedgerRoot is what a user who owns the ledger root's parent can do to a live run: move the ledger root aside and put a link in its place to a tree of their own, where the run's
 // name holds blobs/ as a link to victim. It returns where the run's own directory went.
 func swapLedgerRoot(t *testing.T, runDir, victim string) (moved string) {
 	t.Helper()

@@ -26,7 +26,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// The harness provisioning point (agent-contract.md R27, ADR 0062). A provisioner (internal/adapters/*, connected by
+// The harness provisioning point (ADR 0062). A provisioner (internal/adapters/*, connected by
 // internal/cli) is told about the run (harness.Run) and returns what the harness needs (harness.Provision): files by
 // name and bytes, a new argv, TEGO_ environment additions and the hook it will exec. The launcher creates every file
 // itself, by directory descriptor, because it alone owns the run's runtime directory: so the files are read-only to
@@ -45,7 +45,7 @@ type Provisioner interface {
 var ErrHarnessProvision = errors.New("runtime: harness provision refused")
 
 // ErrHookStateExecutable is a run whose hook-state grant would land inside an exec directory entry, so the agent could
-// run what it writes there (agent-contract.md R10a, as ErrCodexHomeExecutable): refused before run_start, exit 125.
+// run what it writes there (as ErrCodexHomeExecutable): refused before run_start, exit 125.
 var ErrHookStateExecutable = errors.New("runtime: an exec directory entry covers the run's hook-state directory")
 
 // hookStateName is the agent-writable directory beside last-refusal.json in the run's runtime directory.

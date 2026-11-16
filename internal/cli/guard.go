@@ -21,7 +21,7 @@ import (
 
 // guard is `tego agents --follow --adopt --uid <uid>...` (ADR 0055): the detector, adopting each agent
 // it reports outside every governed run, as long as the agent's owner is a listed uid. It is a foreground command (ADR
-// 0042: no daemon until a named trigger fires); docs/poc/tego-guard.service.example runs it under systemd.
+// 0042: no daemon until a named trigger fires), which a systemd unit can run.
 //
 // What it never does: adopt a process inside a governed run (the watcher says so, and adopt.Check reads the cgroup
 // again), adopt one identity twice (adopt.Registry here, the host-wide lock in the run), adopt a process whose real,

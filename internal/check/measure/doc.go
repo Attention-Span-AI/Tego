@@ -5,7 +5,7 @@
 // ComputeAt streams one run's ledger and returns a Report: steps, refused, tokens in and out, cache
 // read and write, estimated cost, wall, idle max and repeats (R18-R23), and the resource peaks the
 // run's run_end recorded, each unknown where it recorded none (R-res), rendered as an aligned table
-// or as one JSON object (R31). The ask columns of P0-DESIGN — asked, answered, wait, replanned — are not in
+// or as one JSON object (R31). The ask columns — asked, answered, wait, replanned — are not in
 // this table; the receipt (internal/check/receipt) reports a run's asks.
 //
 // Everything comes from the ledger: the report is identical for a finished run, a still-growing one

@@ -15,7 +15,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/bpf"
 )
 
-// TestWriteSymbolChoice is capture-derive.md R1, R2 and E7 (an unhooked _ex call still reaches the hooked
+// TestWriteSymbolChoice, R2 and E7 (an unhooked _ex call still reaches the hooked
 // SSL_write_ex2 by tail-call) as a table across the OpenSSL releases this component meets:
 // SSL_write is hooked whenever it exists, exactly one _ex variant joins it, and SSL_write_ex2 wins where
 // both exist because SSL_write_ex tail-calls it and hooking both double-counts every write.
@@ -354,7 +354,7 @@ func writeELF(t testing.TB, opts elfOptions) string {
 	return path
 }
 
-// TestReadBinary covers capture-derive.md E6 (both .dynsym and .symtab are read, so musl and glibc binaries
+// TestReadBinary covers symbol tables (both .dynsym and .symtab are read, so musl and glibc binaries
 // attach alike) and the ELF reader against real bytes: exported and local symbol tables, the file
 // offset a uprobe attaches at, the build id, and every shape that is not something to attach to.
 func TestReadBinary(t *testing.T) {
@@ -490,7 +490,7 @@ func FuzzParseBuildIDNote(f *testing.F) {
 	})
 }
 
-// TestStatIdentity covers the (device, inode) key, including capture-derive.md E4 (edge case #4): two names for one file are one
+// TestStatIdentity covers the (device, inode) key, including two names for one file being one
 // cache entry.
 func TestStatIdentity(t *testing.T) {
 	t.Parallel()

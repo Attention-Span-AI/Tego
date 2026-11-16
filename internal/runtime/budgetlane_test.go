@@ -87,7 +87,7 @@ func TestUnmeteredSpendEndsABudgetedRun(t *testing.T) {
 
 // A response reporting server-tool requests to a price table that names no fee for any ends a run with a cost
 // budget, reason error, as an exchange capture could not read does: charging them $0 let the budget pass spend
-// it could not bound (ADR 0037 amendment 2026-09-24).
+// it could not bound (ADR 0037).
 func TestUnfeedServerToolEndsACostBudgetedRun(t *testing.T) {
 	prices := &limits.PriceTable{Version: limits.PriceVersion,
 		Models: map[string]limits.ModelPrice{"claude-sonnet-4-5-20250929": {InputPerMTok: 3, OutputPerMTok: 15}}}

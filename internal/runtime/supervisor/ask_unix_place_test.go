@@ -65,7 +65,7 @@ func newPlaceFake() *fakeKernel {
 	return f
 }
 
-// TestAskUnixScopeIsThePlaceTheNameReaches is R11c's model (ADR 0008's note of 2026-10-19): a net.ask unix: scope is
+// TestAskUnixScopeIsThePlaceTheNameReaches is R11c's model (ADR 0008): a net.ask unix: scope is
 // the place its path resolved to, and a connect is the scope's when the name it
 // passes reaches that place in the task's view — by the scope's own spelling, a relative one, a symlink or a symlinked
 // directory — whoever bound the socket there, the run included: it is asked, never admitted by the write entry around

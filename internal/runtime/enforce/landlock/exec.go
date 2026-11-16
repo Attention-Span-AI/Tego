@@ -93,7 +93,7 @@ func (bd *builder) loaderOrInterpreter(r agent.ExecRule) error {
 // other choice fails closed naming the binary and the loader, the posture the #! path already takes.
 func (bd *builder) loaderGrant(r agent.ExecRule, interp string) error {
 	// A loader that is or leads through a /proc path would be opened here, in tego's own process: /proc/self/exe is
-	// tego's executable. Compile refuses such a PT_INTERP (agent-contract.md R8a); Prepare reads the
+	// tego's executable. Compile refuses such a PT_INTERP; Prepare reads the
 	// ELF again, so a file rewritten since is refused here too.
 	if filepath.IsAbs(interp) {
 		if via, ok := config.ThroughProc(interp); ok {

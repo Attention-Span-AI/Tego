@@ -62,7 +62,7 @@ func (c monoClock) Now() time.Time         { return time.Now() }
 func (c monoClock) MonoNS() uint64         { return uint64(time.Since(c.start)) + 1 }
 func (monoClock) Kill(cgroup.Cgroup) error { return nil }
 
-// TestForwardedExchangeIsEmittedOnceWithBothSourcesRunning is capture-derive.md I11: at capture: auto a
+// TestForwardedExchangeIsEmittedOnceWithBothSourcesRunning: at capture: auto a
 // run carries both producers (capture.Select), and one model exchange must reach the ledger once, so its
 // usage and cost are counted once. The agent talks plaintext HTTP to the forwarder's loopback port, which
 // no uprobe sees; the forwarder's own upstream leg is TLS written by tego, a process outside the run's

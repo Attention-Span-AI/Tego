@@ -15,8 +15,8 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestGateFSWalkFailureRefusesUnreadable is gate.md R1's "missing relevant facts refuse as unreadable" for the
-// supervisor's own walk (ADR 0041 Step 1, finding failopen-3): a walk that failed with an errno the task's own
+// TestGateFSWalkFailureRefusesUnreadable is "missing relevant facts refuse as unreadable" for the
+// supervisor's own walk (ADR 0041 Step 1): a walk that failed with an errno the task's own
 // lookup would not have failed with (this process's fd table, memory or I/O), or that reached a linked file
 // whose path this process cannot see, left the gate with the lexical spelling only. That spelling ("notes.txt")
 // is not where the kernel lands (a symlink to secrets/.env, or out of the worktree), so it is no fact the gate

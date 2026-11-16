@@ -334,7 +334,7 @@ func TestARunWithAnUnroutedCodexSaysSo(t *testing.T) {
 }
 
 // TestRunStartCarriesTheRuntimeGrants: run_start lists every grant the run
-// made on its own authority (agent-contract.md R10a) at record_minor 11 (MinorRuntimeGrants), from the real writeRunStart.
+// made on its own authority at record_minor 11 (MinorRuntimeGrants), from the real writeRunStart.
 func TestRunStartCarriesTheRuntimeGrants(t *testing.T) {
 	const id = "r-00000000-000000000000a-grants"
 	dir := filepath.Join(t.TempDir(), id)
@@ -376,7 +376,7 @@ func TestRunStartCarriesTheRuntimeGrants(t *testing.T) {
 }
 
 // TestRunStartCarriesTheContractSource: run_start names the contract file the launching user named, by path or by
-// a registry name (agent-contract.md R26), at record_minor 13 (MinorContractSource), from the real writeRunStart; a
+// a registry name, at record_minor 13 (MinorContractSource), from the real writeRunStart; a
 // run with no source (a generated contract) writes none.
 func TestRunStartCarriesTheContractSource(t *testing.T) {
 	for _, src := range []*record.ContractSource{

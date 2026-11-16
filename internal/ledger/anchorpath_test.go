@@ -10,7 +10,7 @@ import (
 )
 
 // TestAnchorPathIsTheHomesWhateverTheLedgerRoot: an account whose passwd home exists anchors in its ~/.tego/chain.log,
-// and its ledger root is never resolved for it (CHAIN-ANCHOR-PATH, P0-DESIGN §3.3).
+// and its ledger root is never resolved for it (CHAIN-ANCHOR-PATH).
 func TestAnchorPathIsTheHomesWhateverTheLedgerRoot(t *testing.T) {
 	home := t.TempDir()
 	got, err := AnchorPath(home, func() (string, error) { return "", errors.New("the ledger root must not be resolved") })

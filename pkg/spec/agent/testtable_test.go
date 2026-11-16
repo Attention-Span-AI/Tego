@@ -170,7 +170,7 @@ tests:
 	}
 }
 
-// agent-contract.md E35: a fs.chmod action is an unknown kind, never answered with a refusal.
+// A fs.chmod action is an unknown kind, never answered with a refusal.
 func TestLoadTestTableErrors(t *testing.T) {
 	cases := []struct {
 		name string

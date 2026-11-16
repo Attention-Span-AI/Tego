@@ -15,7 +15,7 @@ import (
 )
 
 // TestRunExitCodeReportsAnIncompleteRecord: a run whose ledger could not be closed exits 125 with a line that
-// says which failure it was, never the agent's own code alone (record-ledger.md §7).
+// says which failure it was, never the agent's own code alone.
 func TestRunExitCodeReportsAnIncompleteRecord(t *testing.T) {
 	for _, tc := range []struct {
 		name string

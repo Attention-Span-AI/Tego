@@ -10,7 +10,7 @@ import (
 
 // TokenUsage is one model response's token accounting, as a budget counts it.
 type TokenUsage struct {
-	// Model is ssl_response.model, the key of the price table (limits-check-doctor-cli.md R2).
+	// Model is ssl_response.model, the key of the price table.
 	Model string
 	// In, Out, CacheRead and CacheWrite are usage{input, output, cache_read, cache_write}, with a
 	// negative count read as 0.
@@ -26,7 +26,7 @@ type TokenUsage struct {
 	Modified bool
 }
 
-// Usage is the token accounting of e (limits-check-doctor-cli.md §4 ledger.Usage): ok is true exactly
+// Usage is the token accounting of e: ok is true exactly
 // when e is an ssl_response whose payload decodes and carries a usage object. It is the one decode the
 // live budget (limits.Watcher.Observe, R1/R2) and the after-the-fact view (measure.ComputeAt, R20) share,
 // so the two can never read a response differently (I5); each still runs its own totals, since the

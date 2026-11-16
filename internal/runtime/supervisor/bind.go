@@ -37,7 +37,7 @@ func (sysKernel) BindRaw(fd int, sa []byte) error {
 // Every pathname unix bind of the run is also recorded, by the identity of the socket it names, before it is
 // answered (R11a, recordRunSocket): the implicit admit of a socket under a write entry holds only for a socket a
 // process of the run bound. Under a net: section with no listener policy the filter notifies bind for that record
-// alone (enforce-landlock R11c), and the bind is continued as before, with no line: the kernel decides it, as it
+// alone, and the bind is continued as before, with no line: the kernel decides it, as it
 // did when bind was not notified. An observe run's filter carries the same arm, and its binds are continued the
 // same way, listener policy or not: before it, an observe run's filter did not notify bind at all.
 func handleBind(l *Loop, n *notif) {

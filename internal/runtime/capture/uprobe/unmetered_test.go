@@ -55,7 +55,7 @@ func runMetered(t *testing.T, u *Uprobe, run source.RunRef) *meteredSink {
 	return sink
 }
 
-// R2-H2, capture-derive.md R7a: requests that never get a response are held in u.pending with their whole header map, outside the
+// Requests that never get a response are held in u.pending with their whole header map, outside the
 // byte budget; R11's refused requests too, since the message is still returned and emitted.
 func TestPendingRequestsHoldHeadersUnbounded(t *testing.T) {
 	pad := strings.Repeat("a", 30<<10)
@@ -177,7 +177,7 @@ func TestBudgetCutResponseIsReportedUnmetered(t *testing.T) {
 	}
 }
 
-// M2 (capture-derive.md E11): an SSL* whose one exchange is split across two threads — the request written on one, the response read
+// M2: an SSL* whose one exchange is split across two threads — the request written on one, the response read
 // on the other — is given up with a gap, never paired with a later exchange's response, and its loss is
 // reported.
 func TestSplitAcrossThreadsFailsClosed(t *testing.T) {
@@ -490,7 +490,7 @@ func (s *abandonSink) Abandoned(pair uint64) {
 }
 
 // A request whose connection was lost is reported abandoned by its pair, so derive.Steps does not keep the
-// thread in flight (capture-derive.md R33).
+// thread in flight.
 func TestLostConnectionAbandonsItsRequest(t *testing.T) {
 	const ssl = 0x5100
 	records := [][]byte{

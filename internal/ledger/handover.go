@@ -16,12 +16,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// A root launcher (`sudo tego run`, docs/P0-DESIGN.md §7) writes the ledger of a run it makes for the
+// A root launcher (`sudo tego run`) writes the ledger of a run it makes for the
 // invoking user, and by default into that user's home: ~/.tego/runs and ~/.tego/chain.log. Everything
 // it creates there would otherwise be root's, 0700 and 0600, and the user could then neither read the run
 // with `tego status`, `events` or `drift`, nor start an unprivileged run of their own: mkdir in a
 // root-owned ~/.tego/runs and the append to a root-owned chain.log both fail (docs/OPERATIONS.md: "the
-// files a root run creates for it are handed to that user"; record-ledger.md §3).
+// files a root run creates for it are handed to that user").
 //
 // The rule is decided by the filesystem, not by SUDO_UID: what root creates inside a directory some other
 // uid owns is handed to that uid and the directory's group. Only what a call itself created is handed
@@ -43,8 +43,7 @@ import (
 // whatever real directory the user's tree then names, never through a link: one the user owns, or a
 // root-owned run directory already in it, since renames inside a directory the user owns need no write on
 // the root-owned directories moved (mv runs/X runs/X.aside; mv runs/Y runs/X sends X's blobs to Y's
-// blobs/). The bytes are the user's own agent traffic, and they cannot leave the user's tree (record-ledger.md
-// §3, residual). A link in a directory
+// blobs/). The bytes are the user's own agent traffic, and they cannot leave the user's tree. A link in a directory
 // only root can change is followed, as the kernel follows it: root put it there. A run directory is handed
 // over only once its writer is done with it (Writer.Close). While the run is live the directory stays
 // root's 0700, so the user cannot plant a link under a name root is about to create; the price is that a

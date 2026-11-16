@@ -15,8 +15,8 @@ import (
 // TestHostPinsLockOnlyInTheHostStateDir: a build pinned under the host's bpf filesystem takes its build lock, slot
 // table and rings lock in the verified /run/tego and nowhere else. Every tego process on the machine (a launcher's
 // Prepare and last-out removal, a reaper's build duties, the linger timer, gc) reads that one; a caller that named
-// another directory for the same pins held a lock none of them saw, and on 2026-10-16 a linger timer swept a build
-// under a test's Prepare that way (base finding 9). Each entry point refuses the pairing before it locks or removes
+// another directory for the same pins held a lock none of them saw, and a linger timer could sweep a build
+// under a test's Prepare that way. Each entry point refuses the pairing before it locks or removes
 // anything; pins under another root keep a state directory of their own (the timer tests, the fake-kernel suites).
 func TestHostPinsLockOnlyInTheHostStateDir(t *testing.T) {
 	for _, bpffs := range []string{"", DefaultBPFFS, DefaultBPFFS + "/"} {

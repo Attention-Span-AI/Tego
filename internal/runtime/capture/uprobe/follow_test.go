@@ -26,8 +26,8 @@ func debugLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
-// TestConcurrentOnExecAttachesOnce is the concurrent-onExec unit test §8 capture-derive.md I8 promises: many processes that
-// map one libssl, exec'd at once, attach it exactly once, and once the source stops no link survives (capture-derive.md I9).
+// TestConcurrentOnExecAttachesOnce: many processes that
+// map one libssl, exec'd at once, attach it exactly once, and once the source stops no link survives.
 // Run it under -race: the already-attached path used to read the binary's reference count outside the
 // cache's lock while another OnExec added a reference under it.
 func TestConcurrentOnExecAttachesOnce(t *testing.T) {
@@ -224,8 +224,8 @@ func TestHookBeforeStartIsIgnored(t *testing.T) {
 // TestAMappedNonELFIsNothingToAttachTo is the ld.so.cache case the KVM guest found: every dynamically linked
 // process maps /etc/ld.so.cache, which is not an ELF, and reading it as one fails with a format error. That
 // is the ordinary "nothing here" of R4's scan, not an attach the host refused. So `ls`, whose candidates all
-// read and none exports R1-R3, is static-tls-no-symbols against its own executable, the reason R37 (as
-// amended) gives every process whose readable candidates export nothing: without E71's signature scan a
+// read and none exports R1-R3, is static-tls-no-symbols against its own executable, the reason R37
+// gives every process whose readable candidates export nothing: without E71's signature scan a
 // static TLS stack with no symbols (Bun, rustls, Go) cannot be told from no TLS stack at all. no-openssl is
 // R37's for a discovery that could read nothing, which a format error on one mapping is not.
 func TestAMappedNonELFIsNothingToAttachTo(t *testing.T) {

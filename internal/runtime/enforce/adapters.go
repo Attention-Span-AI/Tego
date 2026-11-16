@@ -21,7 +21,7 @@ import (
 )
 
 // The tier packages expose concrete types and never import this package (the import direction is
-// enforce → tier, docs/p0/enforce-landlock.md §1); these adapters present them as Backend. A tier's
+// enforce → tier); these adapters present them as Backend. A tier's
 // Handle already carries the Handle and Reporter method sets, so it is returned as is.
 
 // landlockBackend adapts *landlock.Backend.
@@ -176,7 +176,7 @@ func (a cgroupBackend) Prepare(ctx context.Context, rt *agent.RuleTable, run Run
 		// Compiled once for both halves: the inherited Landlock plan holds and pins the keyed paths, and the plane
 		// is filled from the same rows. A table the plane cannot hold is left to cgroup.Prepare, which runs it on
 		// the fanotify listener and says why at tier cgroup (choosePlane), and refuses it at tier bpflsm. The mounted
-		// roots below a deny_write target are keyed too (enforce-plane R12).
+		// roots below a deny_write target are keyed too.
 		endCompile := startphase.Begin(opts.Phase, "plane.compile")
 		rows, err := holdablePlaneRowsAt(rt, crun.Mounts, crun.Mounts.Points)
 		endCompile()
@@ -308,7 +308,7 @@ var (
 	// and its listener leaves the line of an exec's refused open to the supervisor (SupervisorExecLines).
 	_ SupervisorExecLines = cgroupHandle{}
 	_ SupervisorExecLines = (*cgroupenforce.Handle)(nil)
-	// and names the decision plane that decides it (DecisionPlaneReporter, TIER3-PLAN T9 and T13).
+	// and names the decision plane that decides it (DecisionPlaneReporter).
 	_ DecisionPlaneReporter = cgroupHandle{}
 	_ DecisionPlaneReporter = (*cgroupenforce.Handle)(nil)
 	_ PlaneFilterer         = cgroupHandle{}
@@ -336,7 +336,7 @@ type PlaneCount = cgroupenforce.PlaneCount
 type PlaneKeyed = cgroupenforce.PlaneKeyed
 
 // DenyReadFrozen is the directories the inherited tier-1 ruleset listed once at launch for its deny_read entries
-// (landlock.Handle.DenyReadFrozen): a root tier installs that ruleset as composed (enforce-cgroup-observe §5 R1), so
+// (landlock.Handle.DenyReadFrozen): a root tier installs that ruleset as composed, so
 // run_start names them at every tier that builds one (GAPS A12). nil when the inherited state lists none.
 func (h cgroupHandle) DenyReadFrozen() []string {
 	if f, ok := h.inherited.(interface{ DenyReadFrozen() []string }); ok {

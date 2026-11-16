@@ -129,8 +129,8 @@ Changes:
   through an undeclared link (`out/u/sub/`) had answered `allow` before this note. Rejected: comparing the declared
   spelling again for compile's rows (the previous note's (b)), which would still miss the undeclared link. Compile's
   own entry resolution (`resolvePath`) and the Landlock builder's (`resolveTarget`) keep the one missing level they
-  resolve: a write entry is created only as a leaf, and one whose parent is missing too is `path-missing` (E9 of
-  `docs/p0/agent-contract.md`) and refused at run start, so no entry is deeper. Pinned by rows 08 to 11 of
+  resolve: a write entry is created only as a leaf, and one whose parent is missing too is `path-missing`
+  and refused at run start, so no entry is deeper. Pinned by rows 08 to 11 of
   `TestCompileTestSymlinkedNewNameDirectoryGolden` and by `TestResolveActionFollowsAsTheKernel` with and without
   `/proc`, which fail without the change. (`walkExisting` stopped at a dangling link, which `realpath -m` follows, and
   the row was cleaned before it was walked; both withdrawn by the next note.)
@@ -420,8 +420,8 @@ Changes:
 name, a `unix:` entry by `NetRule.Resolved`, is against `NetRule.UnixResolved`: the unix ask work gave pathname unix entries
 and `net.ask` scopes that place (`agent.ResolveUnixPlace`, which the run's `resolveUnixDeclared` also asks), so one
 field holds the place compile and the run both match, and `NetRule.Resolved` is gone. With both merged, a name whose
-walk lands at a scope's place is answered as the run answers it, `unix-ask-scope` or the scope's own refusal
-(agent-contract R15, limits-check-doctor-cli.md R28); before, compile --test admitted it through the write entry
+walk lands at a scope's place is answered as the run answers it, `unix-ask-scope` or the scope's own refusal;
+before, compile --test admitted it through the write entry
 around the scope (`TestEvaluateUnixLandedAtAnAskScope`). No other decision changes.
 
 *Amended 2026-10-20 (ADR 0029 (4)):* the Landlock floor's rename rule the
@@ -432,7 +432,7 @@ column changed.
 
 *Amended 2026-11-02 (implementation note, (3)'s header):* since 2026-10-26 the set of an `auto` contract is
 `doctor.AutoTiers`, which reads besides the build whether this process is root and whether bpf is in the active LSM
-list (limits-check-doctor-cli.md R28, agent-contract.md R14), so the 2026-09-24 note's "computed from the build alone"
+list, so the 2026-09-24 note's "computed from the build alone"
 no longer holds. The header kept saying `tier auto: every tier this tego builds`, and a normal user of a tegobpf build
 read `tiers landlock (tier auto: every tier this tego builds)`, a landlock-only build. It now names each tier the
 build constructs and the set leaves out, with the precondition it lacks: `tiers landlock (tier auto: every tier this

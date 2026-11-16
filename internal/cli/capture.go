@@ -23,7 +23,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
-// selectCapture is `run`'s half of docs/p0/capture-derive.md §4: it supplies the mechanisms this binary
+// selectCapture is `run`'s half of capture selection: it supplies the mechanisms this binary
 // carries and lets capture.Select decide which of them the compiled contract and the selected tier want.
 // It never fails the run — an unavailable mechanism is a gap on the ledger, not an error (§4) — so it
 // returns the sources to start and the gaps the choice already implies, both of which go into
@@ -50,8 +50,8 @@ func selectCapture(rt *agent.RuleTable, m *config.Machine, b enforce.Backend) ([
 // --observe, or its tier's capability set can lack model capture. There a pinned uprobe tops out at the
 // forwarder (agent.AtTier, capture.Select), and identity.Env.Apply writes the forwarder's base URL over the
 // contract's value (RUN-IDENTITY R7), so the agent's model traffic goes through the forwarder to models[]
-// instead of to the endpoint the variable named, a gateway for one. It used to happen with nothing said
-// (agent-contract R12). The reason given is the one that lowered capture here, since each has its own fix.
+// instead of to the endpoint the variable named, a gateway for one. It used to happen with nothing said.
+// The reason given is the one that lowered capture here, since each has its own fix.
 //
 // Nothing is said when Compile resolved anything but uprobe: it lowered a pinned uprobe to the forwarder itself
 // (a contract that pins tier: landlock, or a machine capture or tier ceiling) and has printed
@@ -135,9 +135,9 @@ func uprobeFactory(rt *agent.RuleTable, m *config.Machine) capture.Factory {
 			// The same dispatch the forwarder runs (R25), so an exchange derives alike whichever mechanism
 			// captured it: the ssl_response carries the model, the usage `limits` counts and the
 			// parser_version, and its decisions follow it. The uprobes see every TLS peer of the run, so they
-			// alone also read the declared HTTP MCP servers' exchanges for their tool calls (capture-derive.md R41).
+			// alone also read the declared HTTP MCP servers' exchanges for their tool calls.
 			Deriver: derive.NewDispatcher(linkedParsers(models), derive.WithMCP(servers), derive.WithLogger(ownLogger(m))),
-			// Bodies go to the run's own content-addressed store (record-ledger R11), which exists
+			// Bodies go to the run's own content-addressed store, which exists
 			// only once the run directory does.
 			OpenBlobs: uprobeBlobs,
 			Logger:    ownLogger(m),
@@ -147,7 +147,7 @@ func uprobeFactory(rt *agent.RuleTable, m *config.Machine) capture.Factory {
 
 // uprobeBlobs is the body store a uprobe source writes through: its own handle on the run's blob directory,
 // beside the ledger writer's. The writer's Close syncs only the store it wrote through itself before it syncs
-// events.jsonl (record-ledger R6), so this one must be a store the source's Stop can sync, which runs before
+// events.jsonl, so this one must be a store the source's Stop can sync, which runs before
 // run_end is written; ledger's blob store is (it has Sync), and uprobe.Stop syncs whatever store has one.
 func uprobeBlobs(run source.RunRef) uprobe.BlobStore {
 	if run.BlobBytes == nil {
@@ -182,7 +182,7 @@ func forwarderFactory(rt *agent.RuleTable, m *config.Machine) capture.Factory {
 			// default is 127.0.0.1:0, which is what R19 asks for and what a listener would
 			// have chosen anyway. An operator who pins a port and declares more than one
 			// model gets the pinned port for the first entry and an ephemeral port on the
-			// same host for each later one (NewManager, capture-derive R19), with a warning.
+			// same host for each later one (NewManager), with a warning.
 			Listen: m.Forwarder.Listen.Value,
 			// Dispatch is by the declared provider and the upstream host, never by sniffing
 			// the body. The declared hosts join the parser's own so a models[] entry pointing at

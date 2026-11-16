@@ -9,8 +9,7 @@ import (
 	"testing"
 )
 
-// TestNetMatchIsExactThenLongestPrefixThenRefused is docs/p0/enforce-cgroup-observe.md §5 R3 and §6 E8 in
-// the source: the exact table is consulted first and CIDR is consulted only on a miss, so no CIDR row can outrank it and
+// TestNetMatchIsExactThenLongestPrefixThenRefused: in the source, the exact table is consulted first and CIDR is consulted only on a miss, so no CIDR row can outrank it and
 // neither the order the rows were inserted in nor the width of an overlapping prefix matters; the CIDR
 // table is looked up only after, at the full key width so the trie itself picks the longest prefix; and a
 // destination neither names leaves the verdict at its refused, net-not-allowed default.
@@ -131,11 +130,11 @@ func funcBody(t *testing.T, src, name string) string {
 	return ""
 }
 
-// TestConnectRecordNeedsTheFamilysAddress is docs/p0/enforce-cgroup-observe.md R5's "the connect record reads
-// only what the caller passed": security_socket_connect runs before the protocol's own length check, so an
+// TestConnectRecordNeedsTheFamilysAddress pins that the connect record reads
+// only what the caller passed: security_socket_connect runs before the protocol's own length check, so an
 // AF_INET address shorter than sockaddr_in, or an AF_INET6 one shorter than SIN6_LEN_RFC2133, reached it with
 // addrlen >= 2 and was recorded zeroed, a line naming 0.0.0.0:0 for a call that fails EINVAL. The program must
-// return before it reserves a record for either (the supervisor keeps its line for them, supervisor R7).
+// return before it reserves a record for either (the supervisor keeps its line for them).
 func TestConnectRecordNeedsTheFamilysAddress(t *testing.T) {
 	t.Parallel()
 	var body string
@@ -161,7 +160,7 @@ func TestConnectRecordNeedsTheFamilysAddress(t *testing.T) {
 	}
 }
 
-// TestSockCreateIsTheAllowlistOnTheAttachmentsRun is ADR 0018 PR 2 (enforce-cgroup-observe §5 R4, R5) in the
+// TestSockCreateIsTheAllowlistOnTheAttachmentsRun is ADR 0018 PR 2 in the
 // source. cgroup/sock_create takes its run from the attachment's owner storage and refuses before anything else
 // while that storage is unconfigured (R1); it decides with the one allowlist the plane's socket_create uses
 // (include/socket_allow.h, ADR 0018 (1)), ping sockets as the owner's flag says, on the whole protocol number (a

@@ -267,8 +267,8 @@ func (r *runner) closeDeputy() {
 // ErrStagePidsCap is a child stage that died before its handoff while the run cgroup's pids.events max
 // rose above createCgroup's baseline. The stage is a Go process cloned into the run cgroup after pids.max
 // is written, so its runtime's threads count against limits.pids, and a cap below what it needs to start
-// (about 6 tasks) kills it with the Go runtime's "failed to create new OS thread" (runtime-launch.md
-// §5 case 3). The run still fails before run_start, as any launch failure does.
+// (about 6 tasks) kills it with the Go runtime's "failed to create new OS thread".
+// The run still fails before run_start, as any launch failure does.
 var ErrStagePidsCap = errors.New("runtime: limits.pids is below what the launcher's child stage needs to start")
 
 // stagePidsCap names a pids cap that killed the child stage before its handoff: err is ErrChildDied and
@@ -380,7 +380,7 @@ func dropsNetAdmin(rt *agent.RuleTable) bool {
 // to the invoking uid/gid if the parent was privileged"; R4).
 //
 // It deliberately does not reuse config.InvokingUID's fallback value. That helper answers a *config
-// trust* question (identity-config.md R19/E8) and is documented to return the real uid — 0 — whenever
+// trust* question and is documented to return the real uid — 0 — whenever
 // SUDO_UID is absent or corrupt. For a credential drop, 0 is the one answer that must never be
 // accepted: no_new_privs prevents privilege gains at exec, but does not turn an existing root
 // identity into an unprivileged one. It is set by default, and only an explicit setuid opt-out
@@ -408,7 +408,7 @@ func privilegedTarget(uid int, viaSudo bool, sudoGID string, primaryGID func(int
 	return uid, gid, nil
 }
 
-// parseID parses one SUDO_* id the way identity-config.md E8 reads SUDO_UID: an unsigned 32-bit
+// parseID parses one SUDO_* id as SUDO_UID is read: an unsigned 32-bit
 // value, with the (uid_t)-1 "no owner" sentinel and anything unparsable counted as unset.
 func parseID(s string) (int, bool) {
 	if s == "" {

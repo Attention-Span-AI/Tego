@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// demoRuns writes the supply-chain demo's two runs as the QA lane recorded them (2026-10-26), in small: LEFT is tego
+// demoRuns writes the supply-chain demo's two runs as the QA lane recorded them, in small: LEFT is tego
 // watch (tier observe), robbed by a poisoned dependency that connects to its sink, reads the SSH key and the
 // telemetry token and sends; it then reaches the project's own API and DNS. RIGHT is tego run under the filled
 // contract, with its own sink port: the sends are refused, the key read is refused, and the token read asked a

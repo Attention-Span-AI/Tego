@@ -13,7 +13,7 @@ import (
 
 // DefaultProcCacheSize bounds the process cache. A run's process tree is small; the cap exists so a
 // fork bomb inside the cgroup cannot grow userspace memory without limit while the pids controller
-// is still deciding (docs/p0/enforce-cgroup-observe.md §6 E23's "bound memory" requirement).
+// is still deciding.
 const DefaultProcCacheSize = 8192
 
 // ExecIDUnknown is the exec id of an action whose process could not be identified: the pid had

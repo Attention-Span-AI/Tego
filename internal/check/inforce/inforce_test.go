@@ -995,8 +995,8 @@ func TestGateRows(t *testing.T) {
 	}
 }
 
-// TestDatagramResidual: at tier landlock tego lets the agent's own call send a datagram it does not refuse
-// (supervisor R13b), so with a net: section the network names that residual as a best-effort refusal for every run,
+// TestDatagramResidual: at tier landlock tego lets the agent's own call send a datagram it does not refuse,
+// so with a net: section the network names that residual as a best-effort refusal for every run,
 // whatever its entries admit: every such run may open a UDP or local datagram socket, and a send that names no address
 // is continued undecided for a racing thread to address. That includes the runs whose table admits no datagram: TCP
 // alone with the resolver off, where a socket the run binds beneath a write entry (R11a) or the DNS broker's socket,

@@ -27,7 +27,7 @@ import (
 	ebpfbindings "github.com/attention-span-ai/tego/internal/bpf"
 )
 
-// The decision plane in a real `tego run` at tier cgroup (TIER3-PLAN T6; docs/p0/enforce-plane.md R16 to R22):
+// The decision plane in a real `tego run` at tier cgroup:
 // a tego built with the objects and the test hooks (TEGO_TEST_PLANE pins the mode doctor selects, as bpf.plane
 // in /etc/tego/config.yaml would) runs a contract once per plane mode this machine passes, fmod_ret on every
 // kernel the probe admits and lsm where bpf is an active LSM (the guest's lsm=...,bpf boot), and once on the
@@ -51,7 +51,7 @@ func buildPlaneTego(t *testing.T, dir string) string {
 // doctorWait bounds planeSelected's `doctor --json`. It is no budget: doctor takes seconds, a minute or two in a loaded
 // guest, where its plane probe attaches and closes every plane link of each mode (each close waits for an RCU-tasks
 // grace period). It is the point past which a doctor that never answers is described rather than left to the suite's
-// own timeout, which says only that the test was still running (2026-10-16, default-lsm boot: 24m50s in this call).
+// own timeout, which says only that the test was still running (default-lsm boot: 24m50s in this call).
 const doctorWait = 5 * time.Minute
 
 // planeSelected is the plane doctor selects for tier cgroup under TEGO_TEST_PLANE=pin: lsm, fmod_ret or fanotify.
@@ -97,7 +97,7 @@ func (a planeDoctorAnswer) mode(m string) (planeModeAnswer, bool) {
 }
 
 // planeDoctor is doctor --json's plane under TEGO_TEST_PLANE=pin. A pinned mode doctor did not select is logged with
-// everything doctor said of it: one such answer on GitHub's arm64 runner (2026-11-02) said no more than "doctor
+// everything doctor said of it: one such answer on GitHub's arm64 runner said no more than "doctor
 // selects fanotify".
 func planeDoctor(t *testing.T, bin, pin string) planeDoctorAnswer {
 	t.Helper()
@@ -391,7 +391,7 @@ func planeRowCount(t *testing.T, mode string) (rows int, slots int) {
 }
 
 // planeLiveHeaders counts the build's slot headers in mode that name a run (gen not 0), and how many of those say
-// the run's contract decides exec (enforce-plane R6).
+// the run's contract decides exec.
 func planeLiveHeaders(t *testing.T, mode string) (live, execs int) {
 	t.Helper()
 	hash, err := ebpfbindings.Hash()
@@ -425,8 +425,8 @@ func planeLiveHeaders(t *testing.T, mode string) (live, execs int) {
 
 // planeContract is the end-to-end contract: a write directory with a deny_read entry and a git repository in it,
 // one binary of the project's own beside python3, and no network, under record: full: the filter leaves the plane
-// every mutation it decides but the open family, which record: full keeps notified (TIER3-PLAN T16; enforce-plane
-// §2.15). TestPlaneRunDropsAndNamesByPath runs it under record: summary.
+// every mutation it decides but the open family, which record: full keeps notified.
+// TestPlaneRunDropsAndNamesByPath runs it under record: summary.
 const planeContract = `version: 0
 name: plane-e2e
 command: ["python3", "./agent.py"]
@@ -510,7 +510,7 @@ func planeFiles(t *testing.T) (map[string]string, []string, map[string]string) {
 		map[string]string{"out/alias": "bin/tool"}
 }
 
-// TestPlaneRunEndToEnd is TIER3-PLAN T6's acceptance: in each plane mode this machine passes, an ordinary run at
+// TestPlaneRunEndToEnd: in each plane mode this machine passes, an ordinary run at
 // tier cgroup is decided by the plane: a deny_read under a write entry refused with EACCES, a write outside every
 // entry refused, an exec that is not allowed refused, and so is one of an allowed binary's hard link under another
 // name; a rename or a hard link that carries a deny_read file out of its tree refused (REFER), and `mv .git
@@ -627,7 +627,7 @@ func planeRunCellAt(t *testing.T, bin string, uid, gid int, mode, tier, want str
 	refused("exec-unlisted")
 	refused("mv-git")
 	events := runEvents(t, p.ledger)
-	// run_start names what decided (enforce-plane R19, I7): the plane's mode, or fanotify on the listener.
+	// run_start names what decided: the plane's mode, or fanotify on the listener.
 	start := findEvent(events, func(e map[string]any) bool { return e["kind"] == "run_start" })
 	if start == nil || start["tier"] != want || start["decision_plane"] != mode {
 		t.Errorf("run_start %v, want tier %s decision_plane %s", start, want, mode)
@@ -719,7 +719,7 @@ func planeRunCellAt(t *testing.T, bin string, uid, gid int, mode, tier, want str
 	if findEvent(events, func(e map[string]any) bool { return e["source"] == "fanotify" }) != nil {
 		t.Error("a source=fanotify line in a plane run")
 	}
-	// One line per action (enforce-plane R22, R27; TIER3-PLAN T16), named by its path: the repository's rename and the
+	// One line per action, named by its path: the repository's rename and the
 	// unlisted and hard-linked execs are refused once each. T16 uses terminal kernel outcomes when complete
 	// persistent coverage exists, and otherwise retains supervisor ownership.
 	var refusedLines []map[string]any
@@ -809,7 +809,7 @@ func planeRefusalLines(t *testing.T, p *planeProject, events []map[string]any, m
 		forbidden.mechanism = "plane"
 	}
 	// A rename or a link out of the deny_read tree is the plane's at both tiers: step E's fs half hands the filter's
-	// notification of a path hook the plane decides to the plane (enforce-plane R27, §2.13).
+	// notification of a path hook the plane decides to the plane.
 	rename := kernel("rename", "/out/secret/key2", 1, deny, "rename-outside-contract", "")
 	link := kernel("link", "/out/secret/key3", 1, deny, "write-outside-contract", "refer")
 	want := []refusedWant{
@@ -875,7 +875,7 @@ func planeRefusalLines(t *testing.T, p *planeProject, events []map[string]any, m
 	}
 }
 
-// planeStepBRunCells is TIER3-PLAN T13's acceptance in a real run (enforce-plane R12, R13): a mkdir and a create
+// planeStepBRunCells is step B in a real run: a mkdir and a create
 // under the deny_read nested in the write entry are refused and leave nothing; a chmod and a setfacl of the built-in
 // deny_write target .git are refused and change nothing, while a chmod beside it in the repository goes ahead; and
 // each refusal is one ledger line: the plane's (source kernel, mechanism plane) for the mkdir and the setfacl, and
@@ -911,7 +911,7 @@ func planeStepBRunCells(t *testing.T, p *planeProject, res map[string]string, ev
 	config := filepath.Join(p.project, "out", "repo", ".git", "config")
 	// The plane names the file by its directory's (dev, ino) and final component, which the recorder resolves
 	// through the rule table's directory index; .git is no fs entry's directory, so the line may carry the raw
-	// identifier ending in the name (enforce-plane §2.10). Below 6.2 (AL2023's 6.1) an ACL is an xattr write, which
+	// identifier ending in the name. Below 6.2 (AL2023's 6.1) an ACL is an xattr write, which
 	// inode_setxattr refuses (op xattr); from 6.2 inode_set_acl does (op chmod, §2.12).
 	if findEvent(events, func(e map[string]any) bool {
 		return e["kind"] == "fs" && e["verdict"] == "refused" && (e["op"] == "chmod" || e["op"] == "xattr") &&
@@ -1081,7 +1081,7 @@ func planeAnswer(t *testing.T, out *lockedBuffer, step string) string {
 	return ""
 }
 
-// TestPlaneConcurrentRunsOfOneBuildAreIsolated is enforce-plane §6 E1: two runs of one build live at once, one whose
+// TestPlaneConcurrentRunsOfOneBuildAreIsolated: two runs of one build live at once, one whose
 // contract denies data/ and one whose contract does not, on the same files. Each sees only its own rows (the outer
 // maps are keyed by run_idx), before and after the other started.
 func TestPlaneConcurrentRunsOfOneBuildAreIsolated(t *testing.T) {
@@ -1169,8 +1169,8 @@ func planePreconditions(t *testing.T) (string, int, int, []string) {
 	return bin, uid, gid, modes
 }
 
-// TestPlaneLauncherKillLeavesTheRunDecidedAndTheReaperPurges is ADR 0020 with the plane (enforce-plane §6 E11,
-// R20; TIER3-PLAN §9's "SIGKILL of the launcher with drop_caches still refuses"): SIGKILL of the launcher changes
+// TestPlaneLauncherKillLeavesTheRunDecidedAndTheReaperPurges is ADR 0020 with the plane
+// (a SIGKILL of the launcher with drop_caches still refuses): SIGKILL of the launcher changes
 // nothing the plane decides, since the rows, the run-set row and the links are pinned and the run's Landlock domain
 // holds every keyed inode (a deny_read read by the orphaned agent after the kill and a drop of the dentry and inode
 // caches is still refused), and the run's reaper, held meanwhile by the test hook, then ends the orphan and purges
@@ -1229,7 +1229,7 @@ func TestPlaneLauncherKillLeavesTheRunDecidedAndTheReaperPurges(t *testing.T) {
 	}
 }
 
-// TestPlaneSecondRunAdoptsThePlane is enforce-plane R18's adopt half, found missing by TIER3-PLAN T11's kill test 4:
+// TestPlaneSecondRunAdoptsThePlane is the plane's adopt half, as kill test 4 runs it:
 // a run after another of its build, while the build lingers, runs the plane's pinned programs rather than loading
 // and verifying its own copies. The plane's unpinned task storage (tego_plane_path_buf) made adoption refuse, so
 // every run loaded the six programs again, about 100 ms of a root run's 200 in the 6.12 guest. The pinned programs

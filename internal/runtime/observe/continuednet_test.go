@@ -21,7 +21,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestRecorderNamesAContinuedConnectAsTheSupervisor is supervisor.md R7's cross-check. With no net:
+// TestRecorderNamesAContinuedConnectAsTheSupervisor is the supervisor's cross-check. With no net:
 // section the supervisor continues each of the agent's IP connects, and at tier 2 writes no line for one
 // the kernel recorder reads, so the recorder's line is the connect's only one. The recorder named it from
 // its own matcher over the contract's entries, which knows neither the resolver exception nor the
@@ -114,7 +114,7 @@ func TestRecorderNamesAContinuedConnectAsTheSupervisor(t *testing.T) {
 // SO_PROTOCOL (supervisor.ProtoOfSocket), so a continued connect's line says the same whichever writes it. A
 // ping socket and SCTP are raw on both sides, and MPTCP is tcp: the hook reads its sk_protocol (262) truncated to
 // a byte, TCP's number. A SOCK_RAW socket opened with IPPROTO_TCP or IPPROTO_UDP is the stated exception: the
-// supervisor names it raw, the kernel by its protocol (supervisor.md R7).
+// supervisor names it raw, the kernel by its protocol.
 func TestRecorderNamesAProtocolAsTheSupervisor(t *testing.T) {
 	for _, s := range []struct{ typ, proto int }{
 		{unix.SOCK_STREAM, unix.IPPROTO_TCP},

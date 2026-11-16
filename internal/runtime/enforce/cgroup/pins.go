@@ -18,7 +18,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/runtime/hoststate"
 )
 
-// Pin and lock layout (docs/p0/enforce-cgroup-observe.md §3, §5 R14). One bpf_hash names one directory of
+// Pin and lock layout. One bpf_hash names one directory of
 // pins and one lock file; every launcher of that build shares them, and two builds never meet:
 //
 //	/sys/fs/bpf/tego/<bpf_hash>/{maps,progs,links}/<name>
@@ -122,7 +122,7 @@ func removeRunLinks(dir string, td *teardown) error {
 // defers there), after an RCU grace period on RHEL 9's 5.14 (bpffs frees its inodes from an RCU callback). A build's
 // removal returned while the kernel still released its 17 to 43 links, each fentry, fexit, fmod_ret or lsm one
 // holding its trampoline's mutex through the RCU Tasks waits of ftrace's unregistration, and the next run's load
-// waited for them in bpf_trampoline_get, 1.4 to 3.3 s of a cold start on 6.17 (enforce-plane §10.1, gate G-H2).
+// waited for them in bpf_trampoline_get, 1.4 to 3.3 s of a cold start on 6.17 (gate G-H2).
 //
 // So unpinLink opens each link before it removes the pin and closes that descriptor after, which makes its close(2)
 // the last reference where the pin's release is immediate (6.17: bpf_link_release frees the link in the closing
@@ -135,8 +135,8 @@ type teardown struct {
 
 // unpinLink removes the link pinned at path, holding a descriptor of it across the removal (teardown). A pin this
 // process cannot open as a link (gone, not a link, refused) is removed alone, as before C3, and logs nothing: its
-// only effect is the release timing every removal had before, and the removals that reach it have no run log
-// (enforce-cgroup-observe R14). The error is the removal's, os.ErrNotExist included, or else the close's. td may be
+// only effect is the release timing every removal had before, and the removals that reach it have no run log.
+// The error is the removal's, os.ErrNotExist included, or else the close's. td may be
 // nil: nothing is recorded then.
 func (td *teardown) unpinLink(path string) error {
 	l, lerr := link.LoadPinnedLink(path, nil)
@@ -246,7 +246,7 @@ func (p pinLayout) removeAll(td *teardown) error {
 	// The build's decision planes first, beside it as <hash>-<mode> (plane.go): their links detach with their pins,
 	// and a plane pinned without the build it was loaded over reads maps that are gone. A plane that could not be
 	// removed keeps the build's maps too: unpinned under it, the next launcher's run set would be a new map its
-	// pinned programs never read (enforce-plane R20).
+	// pinned programs never read.
 	if err := removePlaneDirs(p.Base, filepath.Base(p.Root), td); err != nil {
 		return err
 	}
@@ -264,7 +264,7 @@ func (p pinLayout) removeAll(td *teardown) error {
 	// The links first, then the programs, then the maps, and a link that cannot be unpinned keeps the programs and
 	// maps it runs over: a removal killed or failing part way then leaves links over maps still pinned, which the
 	// next launcher adopts whole. Maps first left links over maps no launcher holds any more, which the next one,
-	// re-creating the maps, adopted (attachShared now refuses them; v73 review plane-2).
+	// re-creating the maps, adopted (attachShared now refuses them).
 	if err := p.unpinLinks(td); err != nil {
 		return errors.Join(append(errs, err)...)
 	}

@@ -23,7 +23,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/policy/decide"
 )
 
-// The plane's fill (docs/p0/enforce-plane.md R16; ADR 0025 (2); TIER3-PLAN T4). A slot's rows are keyed by the
+// The plane's fill (ADR 0025 (2)). A slot's rows are keyed by the
 // inode pointer of each keyed path, which userspace never sees: Prepare holds one O_PATH descriptor per keyed path,
 // hands bpf/decide_fill.bpf.c the descriptor numbers with their row templates, and an iter/task_file pass over this
 // process's own descriptor table writes each row in the kernel with the run's gen. The fill reports the (mnt_id,
@@ -33,7 +33,7 @@ import (
 // written at the inode the kernel reported, the one planned. The config and the templates are keyed by the
 // launcher's tgid, so launchers of one build fill at once.
 //
-// A slot keeps its row maps across runs (ADR 0025 (1) as T0 amended it, ADR 0026 (6)): the previous run's rows stay
+// A slot keeps its row maps across runs (ADR 0025 (1), ADR 0026 (6)): the previous run's rows stay
 // in the map with their own gen, and the walk counts them absent. The fill replaces them where a key repeats and
 // deletes nothing on the run's path; only when a map is too full of them to take this run's rows does it clear the
 // stale ones (tego_plane_clear, in the kernel, keeping this gen) and fill once more.
@@ -148,7 +148,7 @@ type heldFD func(path string) (fd int, ok bool)
 // the descriptor held for its path. It refuses a table over the slot's maps (decide.ErrPlaneCap), a path nothing
 // holds, one descriptor for two rows of one kind (two fs entries on one inode, which the Landlock set's E7 dedupe
 // folds into one number, where one row would lose; two exec entries on one link, which the set holds at one
-// descriptor: hard links of one inode each have their own, enforce-landlock's plane link descriptors, enforce-plane §6 E15), a name
+// descriptor: hard links of one inode each have their own, the Landlock backend's plane link descriptors), a name
 // longer than a row holds, and a descriptor that does not name its path now.
 func planPlaneFill(rows *decide.PlaneRows, runIdx, gen uint32, held heldFD, id fdIdentity) (*planeFillPlan, error) {
 	if rows.FSMapEntries() > decide.PlaneRowsMax || rows.ExecMapEntries() > decide.PlaneExecRowsMax {
@@ -168,7 +168,7 @@ func planPlaneFill(rows *decide.PlaneRows, runIdx, gen uint32, held heldFD, id f
 		if !ok {
 			if _, _, err := id.path(e.Path); errors.Is(err, os.ErrNotExist) {
 				// A keyed path that does not exist (an implicit entry not made yet, a deny target gone since compile)
-				// has no inode to key, and keys no row, as the Landlock plan skips it (enforce-landlock E9).
+				// has no inode to key, and keys no row, as the Landlock plan skips it.
 				plan.Absent = append(plan.Absent, e.Path)
 				return nil
 			}
@@ -198,7 +198,7 @@ func planPlaneFill(rows *decide.PlaneRows, runIdx, gen uint32, held heldFD, id f
 			return nil, err
 		}
 	}
-	// A mounted root below a deny_write target (enforce-plane R12): the nearest row's answer, for the attribute hooks'
+	// A mounted root below a deny_write target: the nearest row's answer, for the attribute hooks'
 	// walk inside the superblock only. A mounted root that is an fs row's inode already (a bind mount of a keyed
 	// directory, which the Landlock set's E7 dedupe holds under one descriptor) keeps that row, which decides the
 	// same there.
@@ -387,7 +387,7 @@ type planeFillOptions struct {
 // planeFiller is a fill build loaded over one plane's row maps: the fill and clear programs and the fill's two
 // maps, which newPlaneFiller creates for this process and the plane pins per build and mode (pinPlaneFiller), so
 // every launcher of the build adopts them (adoptPlaneFiller). Loading it costs 60-220 ms in the guests, most of a
-// fill's time (enforce-plane §2.6), so a process loads it once and fills every run's slot through it. The config and
+// fill's time, so a process loads it once and fills every run's slot through it. The config and
 // the templates are keyed by the launcher's tgid, so launchers fill at once, with no lock between them; one process's
 // fills are serialized (mu), since they share its tgid.
 type planeFiller struct {
@@ -554,7 +554,7 @@ func (p *planeFillPlan) keyed() []PlaneKeyed {
 }
 
 // fillRoomWait is how long a fill waits for room in the build's fill maps, which hold PlaneFillLaunchers whole fills
-// at once: the other fills take milliseconds (enforce-plane §2.6), so running out of it means the maps are held by
+// at once: the other fills take milliseconds, so running out of it means the maps are held by
 // something else, and the fill fails (Prepare with it) rather than wait on.
 var fillRoomWait = 10 * time.Second
 

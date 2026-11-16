@@ -7,7 +7,7 @@ import "github.com/attention-span-ai/tego/pkg/spec/backend"
 // AtTier returns the table a run at tier t enforces (R14). Compile resolves tier: auto to the machine's
 // ceiling without probing the machine, and enforce.Select may then give the run a lower tier; every
 // reader of the run's table has to see the tier that really runs. The tier-2 backend refuses a table
-// that names any other tier (docs/p0/enforce-cgroup-observe.md §4, Prepare's precondition), and
+// that names any other tier (Prepare's precondition), and
 // Evaluate answers in rt.Tier's semantics when no tier is passed, so a table left at its compiled
 // tier would make an auto contract fail at Prepare or be judged in another tier's semantics.
 //

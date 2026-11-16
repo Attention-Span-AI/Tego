@@ -21,7 +21,7 @@ import (
 // forwarderVars are the base-URL variables every loopback capture source contributes, merged into the
 // one map identity.Env installs last, immediately before execve (R7).
 //
-// The ordering this depends on is §4.1's, and it already holds: the listeners are bound by the caller,
+// The ordering this depends on already holds: the listeners are bound by the caller,
 // before Run, so the URLs exist by step 6 where this is read; the child created in step 7 blocks on its
 // ack; step 8 starts the sources, which is when the listeners begin accepting; and only then does
 // run_start land and the ack release the child into execve. The agent therefore never sees a base URL
@@ -41,8 +41,8 @@ func (r *runner) forwarderVars() map[string]string {
 		}
 	}
 	if r.codexHome != "" && out != nil {
-		// Codex takes its base URL from the config.toml under CODEX_HOME, not from a variable
-		// (capture-derive.md R19b); the run's own holds the openai listener's URL.
+		// Codex takes its base URL from the config.toml under CODEX_HOME, not from a variable;
+		// the run's own holds the openai listener's URL.
 		out[identity.EnvCodexHome] = r.codexHome
 	}
 	return out
@@ -68,7 +68,7 @@ func buildEnv(rt *agent.RuleTable, environ []string) []string {
 		name, _, ok := strings.Cut(kv, "=")
 		if !ok {
 			// An entry with no '=' is not a variable and has no name to match a rule against; it
-			// is carried through an inherited environment untouched (identity-config.md E6) and
+			// is carried through an inherited environment untouched and
 			// dropped by an explicit pass-list, which names variables only.
 			if pass == nil {
 				out = append(out, kv)
@@ -113,7 +113,7 @@ func (r *runner) agentBaseEnv() []string {
 }
 
 // rootAccountEnv rewrites what names root's own account in a root launcher's environment to the account the agent
-// runs as (identity-config.md R3a). sudo resets HOME, USER and LOGNAME to root's and tego drops the agent to the
+// runs as. sudo resets HOME, USER and LOGNAME to root's and tego drops the agent to the
 // invoking user, so the agent was told a home it cannot enter, beside a contract whose ~ is that user's. A value that
 // does not name root is the caller's choice and stays, and a name the launcher does not have stays absent. env.pass,
 // env.deny and env.set apply afterwards, as to any launcher's environment.
@@ -135,10 +135,10 @@ func rootAccountEnv(environ []string, root, target *user.User) []string {
 }
 
 // guardedResolverEnv keeps glibc's paired A/AAAA lookups on individual sends when the model guard or a
-// network gate refuses mutable IP datagram batches (ENOSYS, supervisor R13b, gate.md R4). Modern glibc need
+// network gate refuses mutable IP datagram batches (ENOSYS). Modern glibc need
 // not fall back from sendmmsg on ENOSYS. single-request is a resolver scheduling option, not a network grant:
 // every send still passes the guard and the gate. Existing resolver options survive, including
-// single-request-reopen; a run with neither, and observe, retain their environment. Amended 2026-10-05: a
+// single-request-reopen; a run with neither, and observe, retain their environment. a
 // gate's batches are refused whatever the capture mode, so a gated run with capture uprobe or off, or with
 // no models[], had every getaddrinfo(AF_UNSPEC) fail (TestGatedResolverEnvIsSingleRequest).
 func guardedResolverEnv(rt *agent.RuleTable, tier backend.Tier, env []string) []string {
@@ -184,8 +184,7 @@ func setEnv(env []string, name, value string) []string {
 }
 
 // resolveCommand turns a bare command name into the path that will be execve'd: execve performs no
-// PATH search, so the launcher must do it (docs/p0/runtime-launch.md §2 "Command[0] pre-resolved
-// against PATH"). The compiled table is consulted first, so the binary that runs is the one the
+// PATH search, so the launcher must do it. The compiled table is consulted first, so the binary that runs is the one the
 // contract's exec entry resolved to and the tier granted; only then the run's effective PATH. A name
 // that resolves nowhere is passed through unchanged, which makes the kernel's own ENOENT the
 // verdict and ends the run with reason=exec-failed and exit 127 (§6 case 8) instead of a launcher

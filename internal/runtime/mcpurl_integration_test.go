@@ -16,7 +16,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestIntegrationMCPURLAdmitsItsEndpoint is agent-contract.md R16a end to end at tier 1: a contract whose net:
+// TestIntegrationMCPURLAdmitsItsEndpoint, end to end at tier 1: a contract whose net:
 // section lists nothing declares an HTTP MCP server by url, and the agent's connect to that URL's port is admitted
 // and recorded under the server's rule, mcp[local], while a connect to another port of the same host is refused, and
 // so is a UDP datagram to the URL's own port: both HTTP transports are TCP, and the derived rule admits TCP only.

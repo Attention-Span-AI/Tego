@@ -31,7 +31,7 @@ import (
 // made to a hash chain that is authenticated as to ordering and not as to origin, and can hold the run's
 // whole capture budget (§3) so that the agent's own exchanges record truncated.
 //
-// docs/p0/capture-derive.md §11 resolves the listener to TCP only, so the peer is identified after the
+// The listener is TCP only, so the peer is identified after the
 // fact rather than by a unix socket's SO_PEERCRED. Three kernel interfaces answer it, and all three are
 // readable by an unprivileged process for its own descendants:
 //
@@ -40,7 +40,7 @@ import (
 //   - /proc/<pid>/fd holds a "socket:[<inode>]" symlink for every socket a process owns (proc(5));
 //   - /proc/<pid>/cgroup names the unified-hierarchy cgroup of a process (cgroups(7)).
 //
-// The agent is cloned directly into the run's cgroup (CLONE_INTO_CGROUP, docs/p0/runtime-launch.md §6)
+// The agent is cloned directly into the run's cgroup (CLONE_INTO_CGROUP)
 // and has no write access to the cgroup tree, so it cannot leave it: "holds this socket and is in the
 // run's cgroup subtree" is exactly "belongs to this run".
 //
@@ -111,7 +111,7 @@ func (l *Listener) resolveAddrs(remote string, la net.Addr) (int, error) {
 	run := l.runRef()
 	if run.CgroupID == 0 {
 		// Nothing can be placed in a cgroup the run does not know the id of. createCgroup fails the
-		// run when the cgroup itself cannot be made (docs/p0/runtime-launch.md §4.1 step 2), so this
+		// run when the cgroup itself cannot be made, so this
 		// is the narrow case of a run whose cgroup exists but whose id could not be read — and a
 		// listener that cannot authenticate is one that serves nobody, never one that serves anyone.
 		return 0, fmt.Errorf("%w: the run has no cgroup id to place a peer in", ErrPeer)
@@ -134,7 +134,7 @@ func unmapped(ap netip.AddrPort) netip.AddrPort {
 // for "a process outside the run was turned away at the forwarder" in spec/record/v1: `gap why` is closed
 // to R37's six values and `refused` is the supervisor's own shape, whose reason set and last-refusal.json
 // both describe the agent. So the refusal is counted and logged here, and the missing record shape is
-// written down as a limitation in docs/p0/capture-derive.md §11 rather than borrowed from a value that
+// left as a known limitation rather than borrowed from a value that
 // would misdescribe it.
 //
 // Only the first refusal of a listener is logged at warn level: the port is reachable by anything on the

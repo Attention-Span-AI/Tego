@@ -134,7 +134,7 @@ func TestLockHeldAcrossProcesses(t *testing.T) {
 // TestCrashMidWrite: kill -9 mid-write leaves a torn last line the reader
 // ignores; the chain verifies; the run reads as lost, and gc's sweep ends it with an anchor line.
 //
-// Also pins record-ledger.md E8: only a torn in-flight write leaves a partial last line.
+// Also pins: only a torn in-flight write leaves a partial last line.
 func TestCrashMidWrite(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, testRef.ID)

@@ -20,7 +20,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// The harness hook's exec grant (ADR 0064, agent-contract.md R27). Under an allow-list contract no exec rule the user
+// The harness hook's exec grant (ADR 0064). Under an allow-list contract no exec rule the user
 // wrote names the tego binary, so the hook a provision names (`tego hook claude-code --reason <path> ...`) would be a
 // refused exec on every tool call. The launcher grants it on its own authority, as it grants the hook-state directory:
 // the tego binary with the hook's exact argv and no other vector (agent.WithHarnessHook). It never grants a binary

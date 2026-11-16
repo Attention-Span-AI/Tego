@@ -25,7 +25,7 @@ import (
 // is an open the plane's file_open program decides. It starts them only when the test writes a line to the FIFO
 // $AGENT_GO, after the adoption is recorded: the adoption's own start-up probe asks the plane a known answer, and
 // under the waiver a probe that meets a skipped hook rejects the mode, so readers already running could make the
-// adoption refuse to start (seen once in six runs on Fedora 7.2.9; ADR 0148, review of 2026-11-13).
+// adoption refuse to start (seen once in six runs on Fedora 7.2.9; ADR 0148).
 const adoptSkipStormScript = `#!/bin/sh
 read -r _ <"$AGENT_GO"
 for i in 1 2 3 4 5 6 7 8; do

@@ -37,8 +37,8 @@ func (i planeInherited) PlaneFilter(hooks map[string]bool) ([]bpf.RawInstruction
 	return planeNarrow, i.dropped, nil
 }
 
-// TestPlaneFilterIsTheLoadedHooksAndOnlyOnceUsed is enforce-plane R22/R27's notification half at the tier
-// (TIER3-PLAN T16): Prepare asks the inherited filter to leave out what the loaded plane's attached hooks decide,
+// TestPlaneFilterIsTheLoadedHooksAndOnlyOnceUsed is enforce-plane R22/R27's notification half at the tier:
+// Prepare asks the inherited filter to leave out what the loaded plane's attached hooks decide,
 // by the set the plane reports and no other; SeccompFilter keeps the full filter until the runtime says a recorder
 // reads the run (UsePlaneFilter), which returns what is left out; a run on the fanotify listener, and a plane whose
 // hooks decide nothing notified, never narrow the filter. DecisionPlane names the mode and whether the plane decides

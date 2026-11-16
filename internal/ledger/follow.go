@@ -17,7 +17,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// The Follower (record-ledger.md §4 Follow) is the one tail of a live run in the lowest
+// The Follower is the one tail of a live run in the lowest
 // layer: `tego events --follow` reads it, and any other reader of a run's ledger is to use it rather than keep a follower
 // of its own. A Reader rescans from byte 0 on every pass; the Follower reads each byte once, from where it
 // stopped, and checks the chain as it goes.

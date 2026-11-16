@@ -21,7 +21,7 @@ import (
 // exit won the race — the tier-2 enforce listener died a moment after the agent exited — run_end said
 // reason=exit over a run whose enforcement had failed. shutdown now reads the group's error after joining it.
 //
-// Also pins runtime-launch.md R2: after run_start a failure becomes Result.Reason and run_end, never an error from Run.
+// Also pins: after run_start a failure becomes Result.Reason and run_end, never an error from Run.
 func TestShutdownEndsWithErrorWhenAWorkerFailedAfterTheAgentExited(t *testing.T) {
 	const runID = "r-00000000-000000000000c-lsnr00"
 	runDir := filepath.Join(t.TempDir(), runID)

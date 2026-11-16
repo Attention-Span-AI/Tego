@@ -216,7 +216,7 @@ func establishRelay(t *testing.T, pool *RelayPool, dst netip.AddrPort) net.Conn 
 	return c
 }
 
-// ask.max_pending bounds unanswered asks (agent-contract R22). An approved,
+// ask.max_pending bounds unanswered asks. An approved,
 // established relay is no longer pending: a keep-alive connection must not hold
 // a max_pending slot for its whole life and refuse every later first_write
 // connect before a human sees it.

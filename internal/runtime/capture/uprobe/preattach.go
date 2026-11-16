@@ -42,7 +42,7 @@ const maxLdCache = 16 << 20
 // library, the probes are late by the kernel record's drain of that open plus the attach, and a client that
 // writes its first request straight after `import ssl` writes it before they are in place. On the 6.1 and
 // 6.12 kernels of the matrix that was every run of kill test 2's agent. Placed here, they are there before
-// the agent execs: Start runs before the run's ack releases the child (runtime-launch.md §4.1 step 8).
+// the agent execs: Start runs before the run's ack releases the child.
 //
 // A library found only when a process opens it is still attached then (OnOpen), and that one is still late:
 // a private copy loaded from a path this list does not name (a venv's or a bundled OpenSSL, LD_LIBRARY_PATH),

@@ -21,7 +21,7 @@ type swapCgroups struct {
 
 func (s *swapCgroups) UncappedSwap(cgroup.Cgroup) []string { return s.areas }
 
-// TestMemoryCapIntoSwapIsALimitsGap is ADR 0038's 2026-09-24 note (runtime-launch.md R10): on a kernel that
+// TestMemoryCapIntoSwapIsALimitsGap is ADR 0038: on a kernel that
 // accounts no swap to cgroups, memory.swap.max is absent and SetLimits skips it, so with swap on the agent can
 // exceed its memory cap into swap. A run with a memory cap then records one what=limits gap naming it and
 // prints one warning; with swap accounted, with no swap, or with no memory cap it records and prints nothing.

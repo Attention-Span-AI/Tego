@@ -11,7 +11,7 @@ import (
 // TestCgroupRunCarriesWhatOnlyTier2Reads: the adapter is the one place a RunRef becomes the tier-2
 // backend's Run, and the two fields only tier 2 reads go wrong, silently, when dropped there. Without the
 // resolvers the kernel had no port-53 row, so every DNS query the supervisor admitted and relayed was refused
-// with EPERM while the ledger recorded it allowed (enforce-cgroup-observe §5 R5); without the stage binary a
+// with EPERM while the ledger recorded it allowed; without the stage binary a
 // launcher whose stage is not its own image would have the tier's detached helpers exec the wrong file.
 func TestCgroupRunCarriesWhatOnlyTier2Reads(t *testing.T) {
 	ref := RunRef{

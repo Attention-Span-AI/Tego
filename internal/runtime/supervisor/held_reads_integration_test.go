@@ -68,7 +68,7 @@ func BenchmarkHeldReadOpen(b *testing.B) {
 
 // TestHeldReadsSixtyFourThreads: 64 threads of a run that holds its reads open regular files at once, and none is
 // refused held-limit: the outstanding held opens are bounded by the loop's workers and standby, never by the
-// agent's thread count (ADR 0069 D2, supervisor R21).
+// agent's thread count (ADR 0069 D2).
 func TestHeldReadsSixtyFourThreads(t *testing.T) {
 	as, _ := heldAgent(t)
 	h := startHarnessWith(t, harnessOpts{as: as, loops: 10, mode: modeBenchHeld, filterGate: "r", deputy: true,

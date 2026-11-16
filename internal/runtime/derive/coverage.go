@@ -52,7 +52,7 @@ var (
 // #31 also covers a /proc read the kernel's ptrace check refused and an attach the host refused, because
 // the closed why set (R37) has no value of its own for either. Then static-tls-no-symbols, for a candidate
 // that was read and exports none of the entry points: Bun's BoringSSL, a rustls binary, and, without E71's
-// signature scan, a Go binary or a process with no TLS stack at all (R37 as amended).
+// signature scan, a Go binary or a process with no TLS stack at all (R37).
 func Classify(p Process) (why string, gap bool) {
 	if p.Library == "" {
 		return GapNoOpenSSL, true

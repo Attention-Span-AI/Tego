@@ -25,8 +25,6 @@ import (
 // test passing (the mutation sweep of the design).
 // Each subtest fails with its site reverted. The tree: out/lk -> ../b/sub, so
 // out/lk/../f reaches b/f while R6's lexical clean says out/f; out is the worktree.
-//
-// Spec: docs/p0/supervisor.md R15b, R15c; docs/p0/gate.md R1.
 func TestEverySiteTakesTheEndWhereItsWalkPutsIt(t *testing.T) {
 	const pathAddr, path2Addr = 0x10000, 0x11000
 	tree := func(t *testing.T, w string) {

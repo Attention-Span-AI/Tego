@@ -142,7 +142,7 @@ func TestAskCgroupBoundaryAndAdministrativeMembership(t *testing.T) {
 
 // The ask and answer lines are the audit record of a human grant, so they keep the
 // target the human was shown: a filesystem path or connect destination exactly, as
-// the following fs/net action records it (record-ledger R9a). Only an HTTP request
+// the following fs/net action records it. Only an HTTP request
 // target's path is projected onto the public routes, because a path segment can
 // carry a credential; its fixed authority and method stay. The first_write refusal
 // mirror and last-refusal.json keep the exact destination as every refusal does.
@@ -274,7 +274,7 @@ func TestPendingApprovalHoldsTheStallClock(t *testing.T) {
 	}
 }
 
-// A net.ask unix: entry is held at the connect (supervisor R11c): the launcher starts a table that holds one there,
+// A net.ask unix: entry is held at the connect: the launcher starts a table that holds one there,
 // and refuses one whose ask.hold is first_write, which holds TCP bytes, rather than leave its asks to refuse.
 func TestAskUnixScopeIsHeldAtTheConnectOnly(t *testing.T) {
 	table := func(hold agent.AskHold) *agent.RuleTable {
@@ -294,7 +294,7 @@ func TestAskUnixScopeIsHeldAtTheConnectOnly(t *testing.T) {
 	}
 }
 
-// A net.ask udp:// or bare host:port entry is held at the datagram or the UDP connect (supervisor R13d): the launcher
+// A net.ask udp:// or bare host:port entry is held at the datagram or the UDP connect: the launcher
 // starts a table that holds one under ask.hold: connect and refuses one under first_write, which holds TCP bytes, as it
 // refuses a unix: entry there; a tcp:// entry under first_write still starts. An entry without a port starts nothing.
 func TestAskUDPScopeIsHeldAtTheSyscallOnly(t *testing.T) {

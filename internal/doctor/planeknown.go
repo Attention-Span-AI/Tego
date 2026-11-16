@@ -23,7 +23,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// The plane probe's known answers (docs/p0/enforce-plane.md R21, §2.5). The probe row alone exercises one answer
+// The plane probe's known answers. The probe row alone exercises one answer
 // per hook, the fail-closed NOROWS refusal; a verifier before 6.8 verifies a bpf_loop callback once, from its first
 // call's state, and has twice hard-wired a walk branch away (the BOUND check, the unix name check) while every hook
 // still refused NOROWS. So once the probe row has passed, each mode fills a scratch slot of the probe's own row

@@ -106,7 +106,7 @@ the 100 ms the design asks. Also as root:
 for `runs/<id>` never followed, an ended run left alone, and `watchCgroup`'s gap (`internal/runtime/reap_test.go`).
 
 *Amended 2026-10-05:* a run with an owned DNS broker endpoint
-(`net.dns.mode: broker`, [network controls](../p0/network-controls.md) R8) gets a reaper at every tier, `landlock`
+(`net.dns.mode: broker`, network controls R8) gets a reaper at every tier, `landlock`
 and `observe` included, to remove that endpoint once the run tree is gone. The reaper's mechanism, its one-run
 scope and its descriptor discipline are unchanged; what it is handed and when it exists grow, and (2) to (4) read
 so for such a run:

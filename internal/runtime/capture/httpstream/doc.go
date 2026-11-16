@@ -4,8 +4,8 @@
 // deflate, brotli and zstd, server-sent events; hands complete messages to derive.
 //
 // One Assembler serves a whole run. State is per ConnKey — an uprobe connection is (cgroup, pid_tgid,
-// SSL*), a forwarder connection is its ConnID — so a malformed or h2 connection never disturbs another
-// (docs/p0/capture-derive.md §5 R10, R18). Nothing here is decided, written or timed: Feed is pure with
+// SSL*), a forwarder connection is its ConnID — so a malformed or h2 connection never disturbs another.
+// Nothing here is decided, written or timed: Feed is pure with
 // respect to the clock, the caller owns idle timeouts and calls Close, and every shortfall leaves a Gap
 // instead of a silent absence (R37, §8 I4).
 //

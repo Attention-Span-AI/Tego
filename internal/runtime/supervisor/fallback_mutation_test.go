@@ -238,7 +238,7 @@ func TestFallbackMutationLeavesOthersAlone(t *testing.T) {
 	}
 }
 
-// TestFallbackMutationWalkFailures holds decideFS's failed-walk arms to R15's 2026-10-17 amendment at tier cgroup
+// TestFallbackMutationWalkFailures holds decideFS's failed-walk arms at tier cgroup
 // with no plane mode. A walk that failed other than as the task's own lookup
 // fails (EMFILE, EIO, EXDEV) is refused here under path-unreliable, with R10's errno, since the table has a
 // deny_read. One that reached an object with no path in this process's view (errOtherView: a pipe behind

@@ -6,7 +6,7 @@ import "golang.org/x/sys/unix"
 
 // KernelFS is a kernel filesystem whose files are interfaces to the kernel or to other processes, not stored data:
 // its statfs magic, the type /proc/self/mountinfo gives its mounts ("" for one the kernel never mounts by name), and
-// whether R10 refuses a write grant that reaches it (ADR 0059, second amendment of 2026-11-11).
+// whether R10 refuses a write grant that reaches it (ADR 0059).
 type KernelFS struct {
 	Magic int64
 	Type  string

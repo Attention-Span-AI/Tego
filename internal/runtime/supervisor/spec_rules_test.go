@@ -17,7 +17,7 @@ import (
 // archAndTag is a build line that requires one tag and the supervisor's architectures.
 var archAndTag = regexp.MustCompile(`\n//go:build [a-z0-9_]+ && \(amd64 \|\| arm64\)\n`)
 
-// TestEverySourceFileCarriesTheArchitectureTag is supervisor.md R26: the dispatch tables exist for amd64 and
+// TestEverySourceFileCarriesTheArchitectureTag: the dispatch tables exist for amd64 and
 // arm64 only. Architecture-neutral naming values are shared with the
 // observer; every implementation file must retain the architecture constraint.
 func TestEverySourceFileCarriesTheArchitectureTag(t *testing.T) {
@@ -49,7 +49,7 @@ func TestEverySourceFileCarriesTheArchitectureTag(t *testing.T) {
 	}
 }
 
-// TestNonUTF8PathIsRecordedLossily is supervisor.md E13: a path with bytes that are not UTF-8 is recorded
+// TestNonUTF8PathIsRecordedLossily: a path with bytes that are not UTF-8 is recorded
 // with U+FFFD in their place, silently and without an error: a known gap, pinned so a change to it is a
 // decision.
 func TestNonUTF8PathIsRecordedLossily(t *testing.T) {

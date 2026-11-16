@@ -23,7 +23,7 @@ import (
 // The kernel is taken to exempt LSM programs only when /proc/kallsyms names __bpf_prog_enter_recur (or a compiler's
 // copy of it, name.suffix); a kernel without the symbol, or one whose kallsyms cannot be read, is taken not to, and LSM
 // mode is then held to fmod_ret mode's rule: admitted only where the kernel is shown never to preempt kernel code
-// (lsmRecursionRefusal). Measured 2026-11-11 on the kit's rows: the symbol is in RHEL 9's 5.14.0-687, Amazon Linux
+// (lsmRecursionRefusal). On the test kit's kernels the symbol is in RHEL 9's 5.14.0-687, Amazon Linux
 // 2023's 6.1.188, Ubuntu 24.04's 6.8, Debian 13's 6.12, Ubuntu 25.10's 6.17 and Fedora's 7.0 and 7.2, and not in
 // Ubuntu 22.04's 5.15 (which does not preempt kernel code and has no bpf in its LSM list).
 

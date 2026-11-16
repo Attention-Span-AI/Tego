@@ -61,7 +61,7 @@ t.join()
 print("RESULT ops", n, "mkdirs", mkdirs, "renames", renames, flush=True)
 `
 
-// TestPlaneRunNamesTrueUnderRenamesAndMountMoves is enforce-plane §2.15's "never a wrong path" under the two races the
+// TestPlaneRunNamesTrueUnderRenamesAndMountMoves checks "never a wrong path" under the two races the
 // kernel's directory walk guards against: an ancestor renamed while it is walked (each level's d_seq, compared on a
 // second pass) and a mount moved while it is crossed (each crossing's parent mount and mountpoint, compared on the
 // second pass). In each plane mode, every mkdir and rmdir line of the agent's loop names one of the paths the

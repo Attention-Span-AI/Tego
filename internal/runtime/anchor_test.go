@@ -31,7 +31,7 @@ func dirs(existing ...string) func(string) bool {
 }
 
 // TestAnchorPathIsTheUsersNotTheLedgerRoots is CHAIN-ANCHOR-PATH: the anchor is ~/.tego/chain.log of
-// the invoking user (P0-DESIGN §3.3) whatever ledger_root says. It used to be <ledger_root>/../chain.log,
+// the invoking user whatever ledger_root says. It used to be <ledger_root>/../chain.log,
 // which on the documented server setting put every user's anchor in one shared /var/lib/tego/chain.log.
 func TestAnchorPathIsTheUsersNotTheLedgerRoots(t *testing.T) {
 	m := config.Builtin()
@@ -70,7 +70,7 @@ func TestAnchorPathWithoutAHome(t *testing.T) {
 // root that $HOME expands — only when not AT_SECURE; a secure process refuses rather than let $HOME
 // choose where it appends (R21), which is the same condition that refuses the ledger root (case 37).
 //
-// Also pins runtime-launch.md E37: no passwd home and a ~/ ledger_root: ErrAnchorHome under AT_SECURE only.
+// Also pins: no passwd home and a ~/ ledger_root: ErrAnchorHome under AT_SECURE only.
 func TestAnchorPathHomeRules(t *testing.T) {
 	m := config.Builtin()
 	m.Home = ""

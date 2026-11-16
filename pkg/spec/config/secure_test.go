@@ -60,8 +60,8 @@ func TestDetectSecureExec(t *testing.T) {
 
 // TestSecureFromPairs is DetectSecureExec's reading of the runtime's own copy of the auxiliary vector. It cannot
 // read /proc/self/auxv in exactly the case it exists for: a file-capability or setuid exec leaves the process
-// non-dumpable, and /proc/self/auxv then refuses its own process (EACCES; measured in the 6.17 KVM guest by
-// TestFileCapabilityCopyIsRefused, 2026-10-05).
+// non-dumpable, and /proc/self/auxv then refuses its own process (EACCES; see
+// TestFileCapabilityCopyIsRefused).
 func TestSecureFromPairs(t *testing.T) {
 	for _, tc := range []struct {
 		pairs [][2]uintptr
@@ -87,7 +87,7 @@ func TestSecureFromPairs(t *testing.T) {
 // ints and must preserve the entire valid range. Supplemental 32-bit tests skip only positive
 // expectations their int cannot represent; keeping the table's expectations as uint64 makes
 // those tests build without pretending the production API supports high UIDs on a 32-bit int.
-// identity-config.md E8: a corrupted SUDO_UID (abc, -1, out of range) is treated as unset and falls back to the real uid, never another uid.
+// A corrupted SUDO_UID (abc, -1, out of range) is treated as unset and falls back to the real uid, never another uid.
 func TestInvokingUID(t *testing.T) {
 	cases := []struct {
 		real    int

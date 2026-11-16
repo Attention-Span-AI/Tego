@@ -182,7 +182,7 @@ func wantReadDenied(t *testing.T, rt *RuleTable, a Action, rule, why string) {
 }
 
 // wantLandlockAllow checks the same row in tier 1, where a declared file keeps an fd of its own with
-// READ_FILE|EXECUTE (enforce-landlock R5) that the deny_read target's Access 0 does not withdraw.
+// READ_FILE|EXECUTE that the deny_read target's Access 0 does not withdraw.
 func wantLandlockAllow(t *testing.T, rt *RuleTable, a Action, rule, why string) {
 	t.Helper()
 	got := rt.Evaluate(a, backend.TierLandlock)
@@ -261,7 +261,7 @@ func TestExecRestrictedScriptFilesAreReads(t *testing.T) {
 // TestExecLoaderUnderADenyRead: binfmt_elf opens the PT_INTERP loader of the ELF an exec ends in
 // O_RDONLY|__FMODE_EXEC too (SEMANTICS §4), so a loader under a deny_read refuses the exec in the root
 // tiers' file_open walk. In tier 1 Prepare refuses to grant a loader at or below any deny_read target
-// and the run never starts (enforce-landlock E29), and tier 2 inherits that Prepare. Compile records
+// and the run never starts, and tier 2 inherits that Prepare. Compile records
 // the loader of every declared ELF entry (ExecRule.Interp), which is the only loader this package can
 // name, and warns about it (loader-refused): no other row of such a contract can pass honestly in
 // those two tiers, because the run exits 125 before any action.

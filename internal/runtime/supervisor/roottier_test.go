@@ -13,7 +13,7 @@ import (
 // TestListenerExecAtTierBPFLSM: an exec of an image under a deny_read that an exec.allow directory inside it grants
 // is refused by the kernel's open of the image at tier cgroup (the listener or the plane) and at tier bpflsm (the
 // plane over the same backend), so the exec's one line says refused under the deny_read at both. At tier bpflsm it
-// said allow while the kernel refused (TIER3-PLAN T11, conformance exec/exec-entry-directory-inside-deny-read). At
+// said allow while the kernel refused (conformance exec/exec-entry-directory-inside-deny-read). At
 // tier landlock nothing refuses that open and the grant stands.
 func TestListenerExecAtTierBPFLSM(t *testing.T) {
 	const secrets, bin = "/p/secrets", "/p/secrets/bin/tool"

@@ -17,7 +17,7 @@
 // bytes has a fuzz target). Nothing in this package keeps a goroutine or holds an fd past a call;
 // nothing blocks but Start's fork and Arm's wait for a start in flight; and no function panics on
 // malformed input: a short, truncated or re-raced file is an error, never a crash. A pid that disappears mid-read is ErrGone, the expected outcome of racing a process
-// that exited (docs/p0/enforce-cgroup-observe.md §7 "/proc read races an exited pid").
+// that exited.
 //
 // ExecID is the one constructor of an exec id for every producer (the seccomp supervisor from /proc, the
 // tier-2 recorder from the kernel's exact start), so both name one process the same way.

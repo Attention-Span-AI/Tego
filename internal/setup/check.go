@@ -343,7 +343,7 @@ func openIn(dir *sys.FD, name string) (*sys.FD, error) {
 }
 
 // refusedOpenat2 reports whether err says openat2 is not answered here: ENOSYS from a kernel before 5.6 or from a
-// seccomp filter, as tego's own run filter answers it at every tier (enforce-landlock R10), so `tego init --preset`
+// seccomp filter, as tego's own run filter answers it at every tier, so `tego init --preset`
 // run inside a run meets it; EPERM from a container's seccomp profile that predates it. pkg/spec/agent's
 // ReadPlaceLink falls back on the same two.
 func refusedOpenat2(err error) bool { return errors.Is(err, unix.ENOSYS) || errors.Is(err, unix.EPERM) }

@@ -24,8 +24,6 @@ import (
 // leads); compile's Land then followed a dangling out/dl/ to the target it takes as made later while the run's walk
 // fell back to out/dl, and both decided out/lk/ on the link's target, out/ write entry or not. The kernel's own
 // answers are asserted first: they are the reason.
-//
-// Spec: docs/p0/supervisor.md R15b; docs/p0/limits-check-doctor-cli.md R28.
 func TestNameEndEndingInSlashIsTheNameInItsDirectory(t *testing.T) {
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {

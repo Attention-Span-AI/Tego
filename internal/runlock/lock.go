@@ -20,7 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Lock and stop-marker errors, one per failure class (docs/p0/runtime-launch.md §9 "Naming").
+// Lock and stop-marker errors, one per failure class.
 var (
 	// ErrStale is returned by OpenStopTargetFor when the pid recorded in a run's lock file is now a
 	// different process: its start time no longer matches (R22, case 15).

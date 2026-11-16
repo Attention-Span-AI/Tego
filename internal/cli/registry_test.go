@@ -27,7 +27,7 @@ import (
 )
 
 // registryWorld is a project directory (the working directory) and a user registry, under a machine config naming
-// that registry and a ledger root of its own (agent-contract.md R26).
+// that registry and a ledger root of its own.
 type registryWorld struct {
 	project, user, runs string
 }
@@ -123,7 +123,7 @@ func TestCompileByNameTheUserRegistryAnswersAndBothAreAmbiguous(t *testing.T) {
 	}
 }
 
-// F1 of the D-REGISTRY review: a user-registry agent whose contract writes its working directory plants
+// TestARunCannotPlantTheProjectEntryItsNextRunLoads: a user-registry agent whose contract writes its working directory plants
 // .tego/agents/<name>.yaml there during its run; the next `tego run <name>` in that directory refuses, before
 // anything runs, rather than running the planted contract.
 func TestARunCannotPlantTheProjectEntryItsNextRunLoads(t *testing.T) {
@@ -353,7 +353,7 @@ func TestAContractPathWithDotDotAfterALinkIsTheFileRead(t *testing.T) {
 	}
 }
 
-// F3 of the D-REGISTRY review: "-" is compile's standard input and nothing else's. run, watch --boundary and adopt
+// TestStandardInputIsNoContractForARun: "-" is compile's standard input and nothing else's. run, watch --boundary and adopt
 // --boundary refuse it as a usage error before anything runs: read as standard input it would consume the agent's
 // stdin and record no contract_source, which says tego generated the contract.
 func TestStandardInputIsNoContractForARun(t *testing.T) {
@@ -399,7 +399,7 @@ func TestStandardInputIsNoContractForARun(t *testing.T) {
 
 // A boundary adoption makes the owner's ~/.tego before it compiles (makeOwnRecords), so the deny of the owner's own
 // records attaches; a boundary that cannot load is refused before that, with nothing made, as "-" is (the root suites
-// of 2026-10-27 found /root/.tego made before the refusal). The refusal of a name is tego adopt's: it said tego run,
+// once found /root/.tego made before the refusal). The refusal of a name is tego adopt's: it said tego run,
 // the name run's loader gave it. The owner's home and the machine's ledger root are the test's (newRegistryWorld's
 // ledger_root, TestMain's isolated machine), never the invoking user's ~/.tego.
 func TestAdoptRefusesABoundaryThatCannotLoadBeforeMakingTheOwnersRecords(t *testing.T) {
@@ -509,7 +509,7 @@ func TestGuardBoundaryRefusalNamesTegoAdopt(t *testing.T) {
 	}
 }
 
-// RD1 of the D-REGISTRY review: watch and adopt hand run_start the contract's source through their own wiring, which
+// Watch and adopt hand run_start the contract's source through their own wiring, which
 // TestCompileForRunReturnsTheContractSource does not reach. A watch with no boundary, whose contract tego wrote to a
 // temporary file, records none; with a boundary, by name or by path, it records the file. adopt's compile keeps the
 // boundary's source for run_start (preparedAdoption.source) and has none for its own record-only contract.

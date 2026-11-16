@@ -15,8 +15,8 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
-// The plane's answer in a build's pin directory (ADR 0024 (3); docs/p0/enforce-plane.md R21): the mode and build
-// the probe selected, which the backend that loads the build (TIER3-PLAN T6) pins beside its programs, so that a
+// The plane's answer in a build's pin directory (ADR 0024 (3)): the mode and build
+// the probe selected, which the backend that loads the build pins beside its programs, so that a
 // run adopting the pinned build probes nothing. bpffs holds no regular file, so the answer is a one-entry array
 // map, pinned by name. doctor itself never pins it (I7): PinPlaneAnswer is the backend's, adoptPinnedPlane the
 // run's.

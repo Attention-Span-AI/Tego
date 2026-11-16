@@ -15,82 +15,81 @@ const Version = 1
 // added it, the field was not needed; absent from an older one, the writer did not know it. A ledger with no
 // record_minor is revision 0.
 //
-//	1  run_command_grant is written for every run whose command line added an exec rule (2026-09-24)
-//	2  decision_plane is written on the run_start of every run whose tier has a decision plane (2026-09-30)
-//	3  kernel exec outcomes carry syscall_ret and argv provenance (2026-10-04)
-//	4  forwarder HTTP decisions and requested/actual network assurance (2026-10-04)
-//	5  explicit listener/control policies, kernel bind/listen outcomes, final network counters and copied gate decision metadata (2026-10-04)
-//	6  run_start's best_effort lists the run's disclosed best-effort gate cells (ADR 0041 D7, 2026-10-05)
-//	7  exec lines carry the command-rule fields, and run_end's supervisor block exec_rules (ADR 0048 (8), 2026-10-06)
-//	8  an exec whose pathname names nothing writes no line, and run_end's supervisor block counts it as exec_missing (2026-10-16)
+//	1  run_command_grant is written for every run whose command line added an exec rule
+//	2  decision_plane is written on the run_start of every run whose tier has a decision plane
+//	3  kernel exec outcomes carry syscall_ret and argv provenance
+//	4  forwarder HTTP decisions and requested/actual network assurance
+//	5  explicit listener/control policies, kernel bind/listen outcomes, final network counters and copied gate decision metadata
+//	6  run_start's best_effort lists the run's disclosed best-effort gate cells (ADR 0041 D7)
+//	7  exec lines carry the command-rule fields, and run_end's supervisor block exec_rules (ADR 0048 (8))
+//	8  an exec whose pathname names nothing writes no line, and run_end's supervisor block counts it as exec_missing
 //	9  held reads and alternates: an fs.ask_read hold's ask carries op read, an answer that gave an alternate carries
 //	   alternate, alternate_dev and alternate_ino, the open it completed carries alternate_for, and run_start's
-//	   ask_read_relaxes names every built-in deny_read entry an fs.ask_read entry relaxes (ADR 0057 D1, D4, D5,
-//	   2026-10-16; ADR 0057 chose 8, which exec_missing took first when the two were merged)
+//	   ask_read_relaxes names every built-in deny_read entry an fs.ask_read entry relaxes (ADR 0057 D1, D4, D5;
+//	   ADR 0057 chose 8, which exec_missing took first when the two were merged)
 //	10 a gate decision taken on the object the open deputy pinned and the open completed through it carries gate_facts
-//	   held_object (ADR 0041 D5, gate.completion: held, 2026-10-16)
+//	   held_object (ADR 0041 D5, gate.completion: held)
 //	11 run_start's runtime_grants lists the grants the run made on its own authority, and run_end's supervisor block
-//	   counts order_lost (agent-contract.md R10a, supervisor.md R23a, 2026-10-16)
+//	   counts order_lost
 //	12 an exec of a pinned run may be refused rule exec.pin with pin_unavailable, or killed (argv_decided, signal,
 //	   kill_failed, detected_bypass); argv_facts says kernel_pinned or unproven; run_end's exec_rules counts killed,
-//	   kill_failed and pin_refused (ADR 0048 (8), P2, 2026-10-19)
+//	   kill_failed and pin_refused (ADR 0048 (8), P2)
 //	13 run_start's contract_source names the contract file the launching user named, by path or by a registry
-//	   name (agent-contract.md R26, 2026-10-20)
+//	   name
 //	14 run_start's harness names the harness the launcher provisioned for, whether it did and why not, its files,
-//	   reason file and hook-state directory; runtime_grants may list fs.harness-state[<path>] (agent-contract.md
-//	   R27, ADR 0062, 2026-10-24)
+//	   reason file and hook-state directory; runtime_grants may list fs.harness-state[<path>]
+//	   (ADR 0062)
 //	15 run_start's profiles lists the profiles the run's contract merged, in merge order, each with its source and
-//	   sha256 (ADR 0066 D6, agent-contract.md R5, 2026-10-24)
+//	   sha256 (ADR 0066 D6)
 //	16 a run with no net: section refuses a unix socket it did not bind, rule host-sockets, and run_start's
-//	   host_sockets says such a run opted out (host_sockets: true) (ADR 0070, 2026-10-24)
+//	   host_sockets says such a run opted out (host_sockets: true) (ADR 0070)
 //	17 run_start's launcher_uid is written on every run, with launcher_user, sudo_uid, sudo_user, host, parent_run,
-//	   labels, role and contract_revision when the run has them (ADR 0073, 2026-10-25)
+//	   labels, role and contract_revision when the run has them (ADR 0073)
 //	18 run_start's fs_reads says whether the run held its read opens and why, and the nested deny_read targets; a
-//	   held read's fs line names the object the open deputy reached (ADR 0069 D4, 2026-10-24)
+//	   held read's fs line names the object the open deputy reached (ADR 0069 D4)
 //	19 an fs line may be refused under a contract's fs.deny_write entry, rule fs.deny_write[<entry as declared>],
-//	   and run_start's best_effort may list fs.deny_write (ADR 0071, 2026-10-25)
+//	   and run_start's best_effort may list fs.deny_write (ADR 0071)
 //	20 an allow-list contract's run grants its harness hook's exact argv, exec.harness-hook[<tego binary>] in
 //	   runtime_grants, and run_start's harness carries the hook {argv, granted} and may say why
-//	   harness-hook-writable (ADR 0064, agent-contract.md R27, 2026-10-25)
+//	   harness-hook-writable (ADR 0064)
 //	21 a run's live blocks (tego block, the dashboard's Block now): every add and remove is a gap what=enforce line,
 //	   why live-block-added or live-block-removed, with live_block {op, kind, value, rule, by, serial, at}; an
 //	   overlay the launcher could not read is why live-block-unreadable; and an action a live block refused carries
-//	   the rule live.block[<kind>:<value>] (ADR 0100 implementation notes, 2026-10-25)
+//	   the rule live.block[<kind>:<value>] (ADR 0100 implementation notes)
 //	22 a run whose events.jsonl reached the machine's record.max_run_bytes ends with a limit line which=ledger_bytes
 //	   (value and ceiling in bytes, no reason: the closed reason set has no code for it) and run_end reason limit,
-//	   and run_start's limits carries ledger_bytes, the ceiling the run was started under (2026-10-26); from
-//	   2026-11-01 the run's blobs count with events.jsonl, at the same minor
+//	   and run_start's limits carries ledger_bytes, the ceiling the run was started under; later
+//	   builds count the run's blobs with events.jsonl, at the same minor
 //	23 run_start's reads_notified says whether every read open reached the supervisor and why; a read the Landlock
 //	   ruleset refuses under deny_read at tier landlock is a refused line with mechanism landlock under every record
-//	   mode when it did (ADR 0077, 2026-10-26)
+//	   mode when it did (ADR 0077)
 //	24 the live controls: a person's pause and resume of a running run (tego pause, tego resume, the dashboard's
 //	   Pause) are gap what=enforce lines, why run-paused, run-resumed, pause-failed or resume-failed, with
 //	   live_control {op, by, serial, at}; and a live block may be of kind read or write beside exec, net and path,
-//	   refused under the rule live.block[read:<path>] or live.block[write:<path>] (2026-10-27)
+//	   refused under the rule live.block[read:<path>] or live.block[write:<path>]
 //	25 credentials the agent never holds and per-tool MCP rules: a net line may carry credential {name, version} under
 //	   the rule credential[<name>], refused credential-not-allowed, credential-revoked or credential-unavailable; an mcp
 //	   line of source proxy may be refused mcp-tool-denied under mcp[<s>].tools.*, mcp[<s>].live[...] or
-//	   mcp[<s>].relay; a gap why mcp-tool-changed carries mcp_tool (ADR 0126 D1, 2026-10-27)
+//	   mcp[<s>].relay; a gap why mcp-tool-changed carries mcp_tool (ADR 0126 D1)
 //	26 the live modes (ADR 0125): a live block's, an unblock's and a lift's time limit (live_block.until) and its end
 //	   (why live-block-expired, live-unblock-expired, live-lift-expired, op expire); an Adjustable run's run_start
 //	   live_mode and live_fence, its lifts and restores (why live-rule-lifted, live-rule-restored, op lift or
 //	   restore), a lift it refused (why live-lift-refused, live_block.refused), and the rule live.fence[<kind>:<value>]
-//	   (2026-10-27)
 //	27 model routes (ADR 0127): an ssl_request of a models[] endpoint that declares routes, and a credential's net line
 //	   for it, carries route {name, authority}, the backend the request went to; a person's route change is a gap
 //	   what=enforce why model-route-changed with model_route {model, route, authority, by, serial, at}; a request held
 //	   for approval and not sent because its route moved is a refused net line, reason model-route-changed, rule
-//	   models[<host:port>].routes (2026-10-27)
+//	   models[<host:port>].routes
 //	28 a mutation in an fs.ask scope is held for a person: its ask line carries hold mutation and target2, its answer
 //	   line target2, and the mutation the supervisor made on the pinned names writes an fs line with authority human,
 //	   operation_completed, syscall_ret and result_unknown; a rename or link across entries is refused with
-//	   completion_unsupported and no gate fields (ADR 0047, 2026-10-20)
+//	   completion_unsupported and no gate fields (ADR 0047)
 //	29 an action's attribution can be method tool_id, naming the reply's tool_use_id, or method tid; an ssl_request
 //	   carries side when it is a model host's side traffic and tool_results when derive read the tool results it
-//	   reports (capture-derive.md R40, R42, 2026-10-20)
+//	   reports
 //	30 run_start's deny_read_frozen names the directories a deny_read's enumeration listed once at launch, in whose
-//	   listing a name made later is no sibling the Landlock ruleset grants (enforce-landlock R3, GAPS A12,
-//	   2026-11-11; it took 30, and run_end.stopped_by moved from 30 to 35)
+//	   listing a name made later is no sibling the Landlock ruleset grants (GAPS A12;
+//	   it took 30, and run_end.stopped_by moved from 30 to 35)
 //
 // A revision is the next free number in the build that merges it, whatever number a plan expected, so a build writes
 // 1 to Minor and every one of them (TestRecordMinorsAreContiguous, spec/record/v1/README.md "Revisions").
@@ -100,7 +99,7 @@ const Version = 1
 const Minor = MinorDenyReadFrozen
 
 // MinorDenyReadFrozen is the first revision whose run_start writes deny_read_frozen for every run whose Landlock
-// ruleset enumerated a deny_read target's ancestors (enforce-landlock R3, E28): the directories listed once at launch,
+// ruleset enumerated a deny_read target's ancestors: the directories listed once at launch,
 // in which a name made during the run is unreadable to it until it ends (GAPS A12). Absent at this revision or later,
 // the run's ruleset listed no directory (nothing denied, every target unenforced, or a records-only run); below it,
 // the writer did not say.
@@ -108,7 +107,7 @@ const MinorDenyReadFrozen = 30
 
 // MinorAttribution is the first revision whose attribute stage ties an action to the reply that asked for it by
 // that reply's tool_use id (method tool_id, attribution.tool_use_id) or to its own thread's step (method tid), and
-// whose ssl_request lines carry side and tool_results (capture-derive.md R40, R42). Below it every action is
+// whose ssl_request lines carry side and tool_results. Below it every action is
 // method time or none, and a model host's side traffic opened a step like a model turn.
 const MinorAttribution = 29
 
@@ -159,8 +158,8 @@ const MinorLiveControl = 24
 const MinorReasonReads = 23
 
 // MinorLedgerCap is the first revision whose launcher ends a run at the machine's record.max_run_bytes: a limit line
-// which=ledger_bytes (value, the bytes events.jsonl and the run's blobs held at the check, blobs counted from
-// 2026-11-01 and events.jsonl alone before; ceiling, the setting), then run_end reason limit, and
+// which=ledger_bytes (value, the bytes events.jsonl and the run's blobs held at the check, blobs counted by
+// later builds and events.jsonl alone before; ceiling, the setting), then run_end reason limit, and
 // run_start.limits.ledger_bytes is the ceiling the run was started under. Absent at it or later, the run had no
 // ceiling.
 const MinorLedgerCap = 22
@@ -197,7 +196,7 @@ const MinorHeldReads = 18
 //	32 run_start.deployment
 //	33 run_start.secrets, run_start.vault and every line's redactions
 //	34 run_start.shares
-//	35 run_end.stopped_by (declared at 30 until 2026-11-11, when MinorDenyReadFrozen took 30)
+//	35 run_end.stopped_by (declared at 30 until MinorDenyReadFrozen took 30)
 const (
 	// MinorStoppedBy is the first revision whose run_end may carry stopped_by.
 	MinorStoppedBy = 35
@@ -246,7 +245,7 @@ const MinorContractSource = 13
 const MinorHeldObject = 10
 
 // MinorRuntimeGrants is the first revision whose run_start writes runtime_grants for every run with one (absent at
-// this revision or later, the run made none), and whose run_end.supervisor counts order_lost (supervisor.md R23a).
+// this revision or later, the run made none), and whose run_end.supervisor counts order_lost.
 const MinorRuntimeGrants = 11
 
 // MinorAskRead is the first revision whose writer holds reads (fs.ask_read) and takes alternates, and records them
@@ -254,7 +253,7 @@ const MinorRuntimeGrants = 11
 // alternate_dev and alternate_ino with approved false and no answer_reason; and the fs line of the open it completed
 // carries alternate_for; and run_start carries ask_read_relaxes whenever an fs.ask_read entry relaxes a built-in
 // deny_read entry. Absent from a ledger at this revision or later, an answer gave no alternate and the run relaxed
-// no built-in entry; below it, the writer may have been the 2026-10-06 POC, whose alternate answer carried alternate
+// no built-in entry; below it, the writer may have been an early build whose alternate answer carried alternate
 // alone and whose run_start never named a relaxed entry.
 const MinorAskRead = 9
 
@@ -412,7 +411,7 @@ const (
 
 // Attribution ties an action to a model step. Present only on exec, fs, net and mcp events (R8). A writer
 // produces {unattributed, none}, {likely, time, step N}, {likely, tid, step N} or {likely, tool_id, step N,
-// tool_use_id} (capture-derive.md R34, R42); exact is never written by this one.
+// tool_use_id}; exact is never written by this one.
 type Attribution struct {
 	Thread string `json:"thread,omitempty"`
 	Step   int    `json:"step,omitempty"`
@@ -460,7 +459,7 @@ type Event struct {
 	Pair uint64 `json:"-"`
 	// Lane is an in-process token a capture source that knows a line's process but not its thread puts on
 	// it instead of a tid: the forwarder numbers the model turns one process has in flight at once, so two
-	// concurrent turns are two threads to derive's step attribution (docs/p0/capture-derive.md R34) and
+	// concurrent turns are two threads to derive's step attribution and
 	// sequential turns one. It is never written; the attribution derive stamps from it is.
 	Lane uint64 `json:"-"`
 }

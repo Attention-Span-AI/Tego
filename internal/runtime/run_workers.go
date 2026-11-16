@@ -121,7 +121,7 @@ func (r *runner) startWorkers(ctx context.Context) error {
 const dnsRefreshTick = 5 * time.Second
 
 // unixGranter is a tier-2 or tier-3 handle that can grant the run's kernel one connect of an approved abstract unix
-// name (cgroup's Handle.GrantUnix, supervisor R11c), by the socket's cookie. A handle without it leaves
+// name (cgroup's Handle.GrantUnix), by the socket's cookie. A handle without it leaves
 // supervisor.Options.GrantUnix nil, and the supervisor then refuses such a name ask-unavailable at a root tier.
 type unixGranter interface {
 	GrantUnix(done <-chan struct{}, cookie uint64, name []byte) (supervisor.Revoke, error)
@@ -134,14 +134,14 @@ type denyReadSnapshotter interface {
 }
 
 // connectGranter is a tier-2 or tier-3 handle that can grant the run's kernel one connect of an approved TCP or UDP
-// destination (cgroup's Handle.GrantConnect, supervisor R13d). A handle without it leaves supervisor.Options.GrantConnect
+// destination (cgroup's Handle.GrantConnect). A handle without it leaves supervisor.Options.GrantConnect
 // nil, and the supervisor then refuses such a connect ask-unavailable at a root tier.
 type connectGranter interface {
 	GrantConnect(done <-chan struct{}, fd int, dst netip.AddrPort, proto string) (supervisor.Revoke, error)
 }
 
 // datagramGranter is a tier-2 or tier-3 handle that can grant the run's kernel one addressed UDP datagram of an
-// approved destination (cgroup's Handle.GrantDatagram, supervisor R13d). A handle without it leaves
+// approved destination (cgroup's Handle.GrantDatagram). A handle without it leaves
 // supervisor.Options.GrantDatagram nil, and the supervisor then refuses such a datagram ask-unavailable at a root
 // tier before anyone is asked.
 type datagramGranter interface {
@@ -165,7 +165,7 @@ func (r *runner) startNotifyLoop(ctx context.Context) error {
 	// in the background, keeping the previous addresses when a lookup fails, so a transient DNS outage
 	// does not revoke grants under the default unlimited-stale policy; explicit max_stale expires them. The set is given the run's resolved-address check (refreshDenied: the
 	// table's, with the machine's ranges, and this host's own addresses), so what it hands a tier's kernel
-	// rows (refreshDNS) holds no address the contract refuses for the name in any agent-contract R18 class.
+	// rows (refreshDNS) holds no address the contract refuses for the name in any resolved-address class.
 	// The supervisor applies the same check, with its own snapshot of this host's addresses, to every
 	// destination it matches.
 	opts := r.dnsOptions
@@ -236,7 +236,7 @@ func (r *runner) startNotifyLoop(ctx context.Context) error {
 		budget, clock := r.budget, r.deps.Clock
 		supOpts.Activity = func() { budget.Touch(clock.MonoNS()) }
 	}
-	// A line's mono_ns is its notification's receipt (supervisor.md R23a), so a syscall the supervisor relayed for a
+	// A line's mono_ns is its notification's receipt, so a syscall the supervisor relayed for a
 	// long time, which ends when its line is written, would count as activity at its start: a 50 s relay followed by
 	// 10 s idle tripped stall_after 60s. A notification finished past the soft ceiling touches the watcher at its
 	// finish (supervisor.Options.Late).
@@ -245,17 +245,17 @@ func (r *runner) startNotifyLoop(ctx context.Context) error {
 	}
 	// A connect the supervisor continues is the agent's own, and the tier's kernel recorder records it too
 	// (security_socket_connect): one line per connect is the recorder's whenever it reads this run, and the
-	// supervisor's otherwise (supervisor.md R7). Under record: off neither keeps an allowed connect.
+	// supervisor's otherwise. Under record: off neither keeps an allowed connect.
 	if r.kernelRecord != nil && r.rt.Record != agent.RecordOff {
 		supOpts.KernelConnects = r.kernelConnects(ctx)
 	}
 	// A filesystem action the recorder's hooks see is the recorder's line, with the LSM chain's verdict, whenever
-	// it reads this run, under record: off too, where it keeps the refusals (supervisor.md R7a).
+	// it reads this run, under record: off too, where it keeps the refusals.
 	if r.kernelRecord != nil {
 		supOpts.KernelFS = r.kernelConnects(ctx)
 	}
 	// With the kernel decision plane deciding execs, a continued exec's one line is the kernel's: the plane's
-	// refusal or the exec record named by the plane's rule (supervisor.md R7a, TIER3-PLAN T9).
+	// refusal or the exec record named by the plane's rule.
 	if r.kernelRecord != nil && r.planeExecs() {
 		supOpts.KernelExecs = r.kernelConnects(ctx)
 	}
@@ -298,22 +298,21 @@ func (r *runner) startNotifyLoop(ctx context.Context) error {
 	supOpts.KernelBindHandoff = r.kernelBindHandoff(ctx)
 	supOpts.KernelListenHandoff = r.kernelListenHandoff(ctx)
 	// At tier 2 the run's connect4/6 decides the connects the supervisor relays too, and a refusal of its own
-	// fails one with EPERM: the supervisor reads why from the tier, so the line is the kernel's refusal
-	// (enforce-cgroup-observe.md R5).
+	// fails one with EPERM: the supervisor reads why from the tier, so the line is the kernel's refusal.
 	if kn, ok := r.handle.(enforce.KernelNetReader); ok {
 		supOpts.KernelNet = kn.KernelNet
 	}
 	// The run's own programs decide an addressed datagram's destination on the kernel's copy of its address, and
 	// refuse one with their own errno: the supervisor refuses such a datagram itself, with that errno, so its one
-	// line is the refusal rather than a best-effort line beside the kernel's (supervisor.md R13b,
-	// enforce-cgroup-observe.md R7). The attachments are fixed by now: Prepare and Attach ran in setup.
+	// line is the refusal rather than a best-effort line beside the kernel's.
+	// The attachments are fixed by now: Prepare and Attach ran in setup.
 	if kd, ok := r.handle.(enforce.KernelDatagramReader); ok {
 		u, d := kd.KernelDatagrams()
 		supOpts.KernelDatagrams = supervisor.KernelDatagrams{Unix: u, UDP: d}
 	}
 	// The listener moves into supervisor.New, which owns it on every path from the call on: Run closes it
 	// once, as its shutdown step, and New closes it itself when it fails (ADR 0023 C7). The field is cleared
-	// before the call, so the move is a value move and runtime-launch.md §9's "every fd is closed exactly
+	// before the call, so the move is a value move and "every fd is closed exactly
 	// once, on exactly one code path" holds by construction: releaseKernelState closes the listener only on
 	// the paths that never reached this line. A second closer could not reach another file anyway, since an
 	// owner closes its number once, but this one never tries.
@@ -327,7 +326,7 @@ func (r *runner) startNotifyLoop(ctx context.Context) error {
 	r.nameKernelConnects(loop.ContinuedNet)
 	r.superviseKernelRecord(loop.ContinuedFS)
 	// The open deputy's own opens are the supervisor's held opens, whose lines it writes: the recorder drops the
-	// deputy's records, named by its pid and start time (supervisor.md R7a, keepDeputy).
+	// deputy's records, named by its pid and start time (keepDeputy).
 	if r.deputy != nil {
 		if s, ok := r.kernelRecord.(DeputySkipper); ok {
 			s.SetSkipProcess(uint32(r.deputy.PID()), r.deputyStart)
@@ -335,7 +334,7 @@ func (r *runner) startNotifyLoop(ctx context.Context) error {
 	}
 	r.superviseKernelExec(loop.ContinuedExec)
 	r.superviseKernelListeners(loop)
-	// An exec whose image's open tier 2's listener refuses is the supervisor's line (supervisor.md R7a).
+	// An exec whose image's open tier 2's listener refuses is the supervisor's line.
 	if s, ok := r.handle.(enforce.SupervisorExecLines); ok {
 		s.SetSupervisorExecLines(loop.ExecLine)
 	}
@@ -426,7 +425,7 @@ func fenceInForce(b *liveBlocks) error {
 // against the table Prepare wrote the rows from (rowsTable), so a host address that
 // changed in between moves them at once. Tier 2's connect4/6 decides every connect the supervisor relays, so
 // rows left at run start's addresses refused with EPERM each connect to an address a host rotated to, while the
-// supervisor admitted it and the ledger recorded it allowed (enforce-cgroup-observe §6 E7). A refresh the tier
+// supervisor admitted it and the ledger recorded it allowed. A refresh the tier
 // fails is retried on the next tick; meanwhile its rows refuse the new addresses, which is the fail-closed side,
 // and lookup failures retain addresses only until an explicitly bounded stale lifetime expires, as the
 // supervisor's set does (R8a).
@@ -488,7 +487,7 @@ func sameNetRows(a, b []agent.NetRule) bool {
 
 // resolverEndpoints is the set R14's port-53 exception covers: the machine config's `resolver` list
 // when it names servers, and /etc/resolv.conf's nameservers, read now, only for `resolver: auto`
-// (spec/config/v0; identity-config.md E28). An explicit list replaces the file rather than adding to
+// (spec/config/v0). An explicit list replaces the file rather than adding to
 // it, because the operator who wrote one chose where this run's DNS may go; reading resolv.conf anyway
 // would admit UDP/53 to hosts the configuration never named. An explicit empty list is a machine with
 // no resolver exception at all, which falls through to ordinary net.allow matching (E32).
@@ -513,7 +512,7 @@ func (r *runner) resolverEndpoints() []netip.AddrPort {
 	return servers
 }
 
-// newBudget builds this run's budget watcher (limits-check-doctor-cli.md §2, R1-R6). It is created
+// newBudget builds this run's budget watcher (R1-R6). It is created
 // before the pipeline because it is one of the pipeline's stages, and it is created for every run:
 // a contract with no budgets leaves every dimension unasked (ResolvedLimits.Bounded is false), which the
 // watcher reads as unbounded, so the wiring has one shape and the contract alone decides whether anything
@@ -549,8 +548,8 @@ func (r *runner) ledgerCeiling() int64 {
 	return 0
 }
 
-// openActivity makes the run directory's activity sidecar and returns what the watcher publishes to it
-// (limits-check-doctor-cli.md R9): the activity its stall check counted without a ledger line — a supervisor
+// openActivity makes the run directory's activity sidecar and returns what the watcher publishes to it:
+// the activity its stall check counted without a ledger line — a supervisor
 // answer or a kernel sample under record: off, a relayed model chunk in any mode — which `status` reads beside the
 // ledger so that it measures the idle the watcher kills on. A sidecar that cannot be made is logged and the run
 // goes on: status then reads the ledger alone, as it did before the sidecar existed. A publish that fails is
@@ -587,7 +586,7 @@ func (r *runner) closeActivity() {
 }
 
 // wireStreamActivity hands each capture source that relays model traffic the watcher's Touch, before any source
-// starts (limits-check-doctor-cli.md R4): a response that streams for longer than stall_after has a line at its two
+// starts: a response that streams for longer than stall_after has a line at its two
 // ends and none between, so the run was killed for stalling while its model was still answering, in every record
 // mode. A run with no stall budget wires nothing, since no stall check reads it.
 func (r *runner) wireStreamActivity() {
@@ -601,7 +600,7 @@ func (r *runner) wireStreamActivity() {
 	}
 }
 
-// wireKernelActivity has the watcher pull the run's activity stamp at each Tick (limits-check-doctor-cli.md R4): the
+// wireKernelActivity has the watcher pull the run's activity stamp at each Tick: the
 // stamp the BPF programs keep at the run's slot for what the record keeps no line or sample of, an allowed open, file
 // operation or connect under record: off and a TLS call that moved bytes in any mode (tego_activity). The backend
 // stamps a run only when stall_after bounds it (bpf.RunActivity), so nothing is wired otherwise. A recorder that has

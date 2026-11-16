@@ -12,9 +12,9 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestPlaneRowsProtectDenyWriteTargets is enforce-plane R12 on the rows: for every generated table, with and
+// TestPlaneRowsProtectDenyWriteTargets, on the rows: for every generated table, with and
 // without deny_write targets, the attribute question (PlaneProtect: chmod, chown, xattr, ACL) is refused on exactly
-// the paths a deny_write target covers (agent.RuleTable.DenyWriteTarget, the predicate supervisor R15c and Evaluate
+// the paths a deny_write target covers (agent.RuleTable.DenyWriteTarget, the predicate the supervisor and Evaluate
 // ask), named by that target, and allowed everywhere else, whatever the fs entries say: Landlock governs none of
 // these calls, and the plane protects the targets only.
 func TestPlaneRowsProtectDenyWriteTargets(t *testing.T) {
@@ -62,7 +62,7 @@ func TestPlaneRowsProtectDenyWriteTargets(t *testing.T) {
 	}
 }
 
-// TestPlaneRowsWithMounts is enforce-plane R12's mounted-root rows: WithMounts keys a mountpoint strictly below a
+// TestPlaneRowsWithMounts is the mounted-root rows: WithMounts keys a mountpoint strictly below a
 // deny_write target at the nearest row above it (no entry lies between, so that row's answer is the path model's
 // there), leaves out a mountpoint elsewhere, at a target, at a row's path or relative, keys and pins each one with
 // the Landlock grant the domain already has there, leaves CompilePlane's rows and positions as they were, and counts

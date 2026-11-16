@@ -2,7 +2,7 @@
 
 // Package limits enforces per-run budgets from the record: tokens, estimated cost, wall time, stall_after, repeat detection; triggers stop through cgroup.
 //
-// Watcher is the whole subsystem (docs/p0/limits-check-doctor-cli.md §2, R1-R6). Observe — or the
+// Watcher is the whole subsystem (R1-R6). Observe — or the
 // equivalent Stage, which the facade's pipeline composes — accumulates tokens and estimated cost
 // from every ssl_response and the repeat streak from every tool-calling decision; Run is the one
 // goroutine, ticking at 1 Hz over the monotonic clock for the two ceilings no event announces: wall
@@ -28,7 +28,7 @@
 // contract declares a cost_usd budget: nothing could count it, so the run is refused before
 // run_start, [budget-unmetered] (E15, R32). Every rendered cost carries the literal "est." (GAPS.md C17).
 //
-// Imports: internal/ledger (Usage, the one token decode measure shares, limits-check-doctor-cli.md
+// Imports: internal/ledger (Usage, the one token decode measure shares,
 // §4), internal/runtime/cgroup, pkg/spec
 // Must not import: cilium/ebpf
 package limits

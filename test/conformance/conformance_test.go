@@ -93,7 +93,7 @@ func TestCellTableIsWellFormed(t *testing.T) {
 				}
 			}
 			// T10: every cell states what tier bpflsm's plane (mode lsm) gives it. The compile runner asks it, and the
-			// kernel runner's tier cgroup in each plane mode the machine passes answers it too (TIER3-PLAN T6).
+			// kernel runner's tier cgroup in each plane mode the machine passes answers it too.
 			if _, ok := c.Want[Key{TierBPFLSM, ModeLSM}]; !ok {
 				t.Errorf("%s lacks its bpflsm/lsm expectation", id)
 			}
@@ -308,8 +308,8 @@ func TestInvariantReadIsDecidedByTheNearestEntry(t *testing.T) {
 
 // TestInvariantNearestEntryDecidesEveryAction: the nearest-wins walk of SEMANTICS §2 decides a mutation as it
 // decides a read. Where the tier enforces it, a deny_read nested in a write entry refuses every modification beneath
-// it (ADR 0021 (5) at tier cgroup's listener, the plane by inode), a rename or a hard link out of it included
-// (supervisor R15d), and a write entry nested in that deny_read grants them again. At tier landlock the ruleset
+// it (ADR 0021 (5) at tier cgroup's listener, the plane by inode), a rename or a hard link out of it included,
+// and a write entry nested in that deny_read grants them again. At tier landlock the ruleset
 // leaves such a deny_read unenforced (parent writable): under fs.reads: direct nothing beneath it is held to it, and
 // under auto, the default, the run holds its reads, so its reads are refused and its modifications are not (ADR
 // 0069). The order the contract declares its entries in decides nothing, and neither does the spelling (a symlink

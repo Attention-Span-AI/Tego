@@ -2,7 +2,7 @@
 
 // Command openbench is the perf suite's raw open(2)+close(2) loop: no interpreter, no allocation in the loop, one
 // OS thread pinned to one CPU, so the per-open cost it prints is the kernel's (LSM hooks included) and not a
-// runtime's. It replaces the python probe that measured fmod_ret about 2 µs slower than lsm (qa-perf, P7).
+// runtime's. It replaces the python probe that measured fmod_ret about 2 µs slower than lsm.
 //
 //	openbench [-n 200000] [-nref 2000] [-reps 3] [-cpu 1] [-gate FILE] [-up] [-rename A:B] PATH...
 //	openbench [-n 200000] [-reps 3] [-cpu 1] [-up] [-socket] [-setsockopt]

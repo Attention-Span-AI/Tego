@@ -23,10 +23,10 @@ func envWithout(env []string, name string) []string {
 	return out
 }
 
-// TestIntegrationTestBuildFailsClosedWithoutAnAnchor is identity-config.md R27: the binary this package builds
+// TestIntegrationTestBuildFailsClosedWithoutAnAnchor: the binary this package builds
 // (-tags tegotesthooks) anchors where TEGO_TEST_CHAIN_ANCHOR says and, given none, anchors nowhere: `events
 // --verify` and `run` refuse, naming the variable, instead of reading and extending the invoking user's own
-// ~/.tego/chain.log. 2026-10-06: an integration test took os.Environ() before the call that set the variable, and
+// ~/.tego/chain.log. Once an integration test took os.Environ() before the call that set the variable, and
 // 61 test runs were appended to the developer's anchor with their ledgers in directories since removed.
 func TestIntegrationTestBuildFailsClosedWithoutAnAnchor(t *testing.T) {
 	bin := tegoBinary(t)
@@ -69,7 +69,7 @@ func TestIntegrationTestBuildFailsClosedWithoutAnAnchor(t *testing.T) {
 	}
 }
 
-// TestIntegrationTestBuildRefusesTheRealLedgerRoot is identity-config.md R27's ledger half: the binary this package
+// TestIntegrationTestBuildRefusesTheRealLedgerRoot is the ledger half: the binary this package
 // builds refuses a machine config whose ledger_root is inside the invoking user's own ~/.tego, before `run` sweeps
 // or `gc` expires anything there, so a harness without a ledger_root of its own, or with the built-in one, never
 // ends or anchors a run of the developer's. Both commands get the anchor and own-log variables here, so the

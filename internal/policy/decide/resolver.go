@@ -10,8 +10,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// ResolverPort is the port the resolver exception covers on UDP and TCP alike (docs/p0/supervisor.md R14,
-// SEMANTICS §5).
+// ResolverPort is the port the resolver exception covers on UDP and TCP alike (SEMANTICS §5).
 const ResolverPort = 53
 
 // Env is what a run decides with besides its table: the machine's resolver endpoints, snapshotted at run
@@ -33,7 +32,7 @@ func EvaluateIn(rt *agent.RuleTable, a agent.Action, tier backend.Tier, env Env)
 }
 
 func resolverAction(a agent.Action, env Env) bool {
-	// An unconnected send is decided as the connect to its destination (supervisor R13b), the resolver included.
+	// An unconnected send is decided as the connect to its destination, the resolver included.
 	if (a.Kind == agent.ActionNetConnect || a.Kind == agent.ActionNetSend) && len(env.Resolvers) > 0 {
 		if addr, err := netip.ParseAddr(a.Host); err == nil && a.Port >= 0 && a.Port <= 0xffff {
 			proto := strings.ToLower(a.Proto)

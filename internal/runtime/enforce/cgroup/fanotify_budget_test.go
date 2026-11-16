@@ -60,7 +60,7 @@ func (h fakeHost) build(t *testing.T) (procRoot, cgroupRoot string) {
 // at 15% of min(pid_max, threads-max), about 1,229 tasks per GiB of RAM. A 2 GiB host allows about 2,458.
 // The fixed ceiling of 1,024, checked only between 64 KiB reads, let the count reach 1,024 + 2,730 + 32 =
 // 3,786 blocked threads, so on that host the abort E34 calls prevented still happened, with no teardown
-// (E15, E38). The ceiling is now sized from the nearest measured limit, and ceiling plus overshoot must stay
+// The ceiling is now sized from the nearest measured limit, and ceiling plus overshoot must stay
 // inside half of it on every host the listener agrees to start on.
 func TestOverdueCeilingFitsTheMeasuredBudget(t *testing.T) {
 	t.Parallel()

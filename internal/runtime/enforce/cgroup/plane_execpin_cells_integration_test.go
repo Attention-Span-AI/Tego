@@ -237,7 +237,7 @@ record: full
 
 // TestPlaneRunExecPinNonLeader is ADR 0048 P2's K6 non-leader cell: an exec from a thread that is not its process's
 // leader runs pinned. The pin is keyed by the exec's own thread; the kernel's de_thread hands the leader's pid to it
-// before sched_process_exec, which K0 measured on every row, 5.14 and 6.1 included.
+// before sched_process_exec, which ADR 0048's K0 probe confirmed on every row, 5.14 and 6.1 included.
 func TestPlaneRunExecPinNonLeader(t *testing.T) {
 	bin, uid, gid, modes := planePreconditions(t)
 	for _, cell := range execPinCells(modes) {

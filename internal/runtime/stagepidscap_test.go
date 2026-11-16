@@ -13,7 +13,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/runtime/launch"
 )
 
-// TestStagePidsCapNamesTheCap is runtime-launch.md §5 case 3: a child stage that dies before its handoff
+// TestStagePidsCapNamesTheCap: a child stage that dies before its handoff
 // while the run cgroup's pids.events max rose above the baseline is reported as ErrStagePidsCap, still
 // wrapping ErrChildDied; a stage death with no rise, or any other error, is left as it is.
 func TestStagePidsCapNamesTheCap(t *testing.T) {

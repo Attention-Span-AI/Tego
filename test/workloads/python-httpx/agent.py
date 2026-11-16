@@ -2,8 +2,8 @@
 """A minimal agent on system Python + httpx: one model call, one file write, one tool exec, one refused write.
 
 Run under `tego run` with examples contracts. The model call goes to TEGO_TEST_MODEL_URL when it is set, else to
-ANTHROPIC_BASE_URL + /v1/messages, which is the forwarder's listener when the run captures through it
-(docs/p0/capture-derive.md R19b), else to api.anthropic.com. It uses httpx, the client the zero-adapter path is
+ANTHROPIC_BASE_URL + /v1/messages, which is the forwarder's listener when the run captures through it,
+else to api.anthropic.com. It uses httpx, the client the zero-adapter path is
 about (docs/FEATURES.md I1), when the interpreter has it, and the standard library's urllib when it does not, so the
 workload still runs on a system Python with nothing installed; the first line it prints names the client, so a run
 can tell which one it exercised. httpx offers compressed answers (gzip, and br or zstd when their modules are

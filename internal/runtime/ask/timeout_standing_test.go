@@ -83,7 +83,7 @@ func TestTimeoutDoesNotStandForWhatCannotBeRemembered(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			// 300 ms, not 50: the second request is visible to waitAsk only until it times out, and a raced poll on a
-			// busy runner missed a 50 ms window (GitHub's race job, 2026-11-02).
+			// busy runner missed a 50 ms window (GitHub's race job).
 			b, dir := testBroker(t, func(o *Options) { o.Timeout = 300 * time.Millisecond; o.TimeoutStands = true })
 			req := testRequest()
 			mutate(&req)

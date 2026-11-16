@@ -19,7 +19,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// The process and control ops (FEATURES E54, enforce-plane §2.20; test/conformance cells.go names each): the
+// The process and control ops (FEATURES E54; test/conformance cells.go names each): the
 // agent's own ptrace, keyring and bpf(2) calls. A ptrace op reports, as its result's value, the pid its hook names:
 // the tracee an attach asked for, the tracer a TRACEME asked for.
 

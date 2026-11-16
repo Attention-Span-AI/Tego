@@ -45,7 +45,7 @@ type manualMono struct{ mono atomic.Uint64 }
 func (c *manualMono) Now() time.Time { return time.Unix(0, int64(c.mono.Load())) }
 func (c *manualMono) Mono() uint64   { return c.mono.Load() }
 
-// TestActivityMeterIsCoalesced is capture-derive.md R21's activity half (limits R4): a relay reports at most one
+// TestActivityMeterIsCoalesced: a relay reports at most one
 // chunk per activityGrain, whatever the chunk rate and however many relays share the meter, the first chunk is
 // reported at once, a clock that reads 0 (unknown, E20) reports nothing, and a meter with no callback is nil
 // and costs nothing.

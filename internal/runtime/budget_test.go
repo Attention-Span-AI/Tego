@@ -323,7 +323,7 @@ func stopHandler(t *testing.T) *launch.SignalHandler {
 	return h
 }
 
-// TestALimitTripAndAnOperatorStopAreIndependentDecisions is limits-check-doctor-cli.md E25: the breach and
+// TestALimitTripAndAnOperatorStopAreIndependentDecisions: the breach and
 // the stop are separate booleans (the runner's terminal reason and the signal handler's outcome), neither
 // consulting the other, and run_end reads the breach first, so a run both stopped and over budget ends
 // as limit (exit 124) in whichever order the two arrived.

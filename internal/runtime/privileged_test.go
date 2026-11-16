@@ -14,7 +14,7 @@ import (
 // root-exec rule restores the whole capability bounding set across the agent's execve — the escape the
 // refusal exists to prevent (capabilities(7); ARCHITECTURE.md §5 step 2).
 //
-// Also pins runtime-launch.md E36: a root launcher with no unprivileged account to drop to refuses the run.
+// Also pins: a root launcher with no unprivileged account to drop to refuses the run.
 func TestPrivilegedTargetRefusesRoot(t *testing.T) {
 	noPasswd := func(int) (int, error) { return 0, errors.New("no passwd entry") }
 	cases := []struct {

@@ -67,8 +67,7 @@ contract alone does not link the core, and external modules cannot import `inter
 - `.goreleaser.yaml`: `CGO_ENABLED=0`, `-trimpath`, `-tags tegobpf`, `-buildmode=exe` (static and not PIE, a
   release choice for portability: since ADR 0021 (4) tier 2 runs a dynamically linked or PIE build too, and the guest
   run of a PIE build is that ADR's open condition), `tego` and `tego-control` for `linux` only, `amd64` and
-  `arm64`, sha256 checksums, raw binaries, one SPDX SBOM per binary. `maze` ships beside them as a `.tar.gz` for macOS
-  and Linux, `amd64` and `arm64`, which `scripts/install-maze.sh` unpacks on Linux. `make release` stays the snapshot build (no SBOM, nothing
+  `arm64`, sha256 checksums, raw binaries, one SPDX SBOM per binary. `make release` stays the snapshot build (no SBOM, nothing
   signed or published); `.github/workflows/release.yml` runs on `v*` tags only.
 - Every release also includes `tego_<version>_licenses.tar.gz`, covered by those checksums and the release
   attestation. It contains `LICENSE`, `NOTICE`, `LICENSES/`, and `THIRD_PARTY_NOTICES.txt`. Distribute it with
@@ -87,8 +86,8 @@ contract alone does not link the core, and external modules cannot import `inter
   `release.yml` at that tag; the bundle is published as `<checksums>.sigstore.json`), attests every checksummed
   file's build provenance (`actions/attest-build-provenance`), and only then publishes. Its `reproduce` job builds
   the tag again on a fresh runner and compares with the published checksums, and CI's `reproducible` job builds
-  every commit twice, at two paths with two build caches, and requires identical bytes of `tego`, `tego-control` and
-  `maze` for linux/amd64, the runner's target: the build embeds the
+  every commit twice, at two paths with two build caches, and requires identical bytes of `tego` and `tego-control`
+  for linux/amd64, the runner's target: the build embeds the
   commit's own date, `-trimpath` and `CGO_ENABLED=0` remove paths and cgo, and the pinned toolchain (§1) removes
   the compiler. Attestations need the repository public or on GitHub Enterprise Cloud.
 - The release body comes from `scripts/release.sh notes "$TAG"`, passed as `--release-notes`. Keep GoReleaser's
@@ -131,10 +130,10 @@ contract alone does not link the core, and external modules cannot import `inter
   that matches nothing or that it cannot read as GoReleaser does, and an extra file the checksums file does not list,
   and it checks every byte it copies against the checksums file. `TestReleaseAssetStaging` covers those refusals and
   this checkout's own extra files; CI's `reproducible` job runs the release job's staging step on a full snapshot.
-- `install.sh` and `install-maze.sh` are release assets, and both are in the checksums file (`checksum.extra_files` in
-  `.goreleaser.yaml`), so the signature and the attestations cover them. That helps someone who downloads, verifies and
-  only then runs them (docs/INSTALL.md). It does nothing for a script piped into `sh`, which runs before anything can
-  check it (docs/GAPS.md B11); `reproduce` does not compare them, since they are the tag's own files and no build makes them.
+- `install.sh` is a release asset, and is in the checksums file (`checksum.extra_files` in
+  `.goreleaser.yaml`), so the signature and the attestations cover it. That helps someone who downloads, verifies and
+  only then runs it (docs/INSTALL.md). It does nothing for a script piped into `sh`, which runs before anything can
+  check it (docs/GAPS.md B11); `reproduce` does not compare it, since it is the tag's own file and no build makes it.
 - `scripts/install.sh` downloads one tag (`TEGO_VERSION=v0.y.z` to pin), checks who published it when it can
   (`TEGO_VERIFY`: cosign against the signature bundle, or `gh attestation verify` against the provenance; with
   neither on the machine it says that the checksum alone proves integrity, not authenticity), verifies the
@@ -153,8 +152,7 @@ contract alone does not link the core, and external modules cannot import `inter
   write-beside-then-`mv`, tego-control first, and does not run it (it refuses euid 0, and an install under sudo is
   one); a release that lists none installs tego alone and says that `tego serve` and every command `tego help` marks `(tego-control)` need it, and a pinned tego
   whose release lists none is an incomplete release (exit 7). Condition (amended 2026-11-01): `install.sh` installs the
-  executable only and prints where the release's `tego_<version>_licenses.tar.gz` is; `install-maze.sh` copies
-  `LICENSE`, `NOTICE` and `THIRD_PARTY_NOTICES.txt` from the maze archive to `share/doc/maze` beside its prefix. The
+  executable only and prints where the release's `tego_<version>_licenses.tar.gz` is. The
   installed binaries carry the same files themselves and print them with `licenses` (amended 2026-11-02, above).
 - Dependencies: `.github/dependabot.yml` proposes Go module and GitHub Actions updates weekly; every action is
   pinned by commit SHA, and CI runs `govulncheck` on every push.

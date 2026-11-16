@@ -130,7 +130,7 @@ func derive(t *testing.T, dir string, held bool, now time.Time, stall time.Durat
 	return s
 }
 
-// TestDeriveStates is limits-check-doctor-cli.md R7 to R11 as a table; its "lost" case is R8 (no lock, run_start
+// TestDeriveStates is R7 to R11 as a table; its "lost" case is R8 (no lock, run_start
 // but no run_end reads Lost, not Done).
 func TestDeriveStates(t *testing.T) {
 	tests := []struct {

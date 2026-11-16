@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package doctor checks the machine and reports in plain sentences
-// (docs/p0/limits-check-doctor-cli.md §5 R27). It runs the nine probes in their fixed order —
+// Package doctor checks the machine and reports in plain sentences.
+// It runs the nine probes in their fixed order —
 // D1 kernel version by uname(2) against the per-mechanism minimums of docs/ARCHITECTURE.md §14, its Landlock rows
 // judged by the landlock_create_ruleset(VERSION) answer and its connect_unix row by D7's answer where D7 gave one,
 // D2 BTF by opening and parsing /sys/kernel/btf/vmlinux and finding in it, by name, every kernel type and
@@ -18,8 +18,8 @@
 // counting BPF LSM program behind it when root because activation is silent (§10), D7 a fresh load
 // and link into doctor's own fds, at every tier-2 hook, of the embedded program that runs
 // there (a minimal stand-in, said so, where this binary has none), then the decision plane's mode probe,
-// one row per decide.bpf.c hook per mode, exercised in a scratch cgroup (plane.go, planeprobe.go;
-// docs/p0/enforce-plane.md R21), then capture's uprobe_ssl programs
+// one row per decide.bpf.c hook per mode, exercised in a scratch cgroup (plane.go, planeprobe.go),
+// then capture's uprobe_ssl programs
 // at the system libssl, which gate no tier, and D8 fanotify's permission marks
 // and a FAN_DENY that must refuse the probe's own open — then derives the highest reachable tier, what each tier above it is
 // missing, and the one line that would fix it, built from the machine's own values.
@@ -45,8 +45,8 @@
 // What the probes establish is capability, never soundness. A kernel with a fixed hole in a
 // mechanism Tego enforces with — CVE-2026-46150 in fanotify's permission path is the worked
 // example — passes every probe here and still lets an open through, and no userspace code can
-// close that; the limitation is recorded in docs/p0/limits-check-doctor-cli.md R27 D8 rather than
-// turned into a kernel-version check, which would fail every distribution that backports.
+// close that; the limitation is left to D8's documentation rather than turned into a kernel-version
+// check, which would fail every distribution that backports.
 //
 // Imports: standard library, golang.org/x/{sys/unix,net/bpf}, github.com/cilium/ebpf (D7's own
 // program loads), internal/bpf (the embedded objects D7 loads, and bpf_hash for the run-probe cache's key),

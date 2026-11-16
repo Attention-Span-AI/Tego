@@ -60,7 +60,7 @@ func TestWaitFrozen(t *testing.T) {
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		// Overwritten in place, not by os.WriteFile: its truncate wakes the watcher on an empty file, which reads
-		// as "no frozen line" (a gate flake on 2026-10-27). The kernel's cgroup.events is never seen half written.
+		// as "no frozen line" (a gate flake). The kernel's cgroup.events is never seen half written.
 		f, err := os.OpenFile(filepath.Join(c.Path, fileEvents), os.O_WRONLY, 0)
 		if err != nil {
 			return

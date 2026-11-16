@@ -22,8 +22,8 @@ const planeVerifiedBudget = 20000
 
 // planeListenVerifiedBudget is socket_listen's own budget. That hook walks no path, so form d's figures say
 // nothing about it: its body is decide_listen.h's bound-address and autobind checks, which the verifier walked
-// 16,945 to 18,295 times on 6.17 and 43,850 to 44,096 times on 7.0 (GitHub's runners, 7.0.0-1017-azure,
-// 2026-11-02), the program unchanged. A loop form would still show as a jump far past this; the kernel's own
+// 16,945 to 18,295 times on 6.17 and 43,850 to 44,096 times on 7.0 (GitHub's runners, 7.0.0-1017-azure),
+// the program unchanged. A loop form would still show as a jump far past this; the kernel's own
 // limit is a million. Linux 6.19.4 did not move it (16,768 on 6.19.3 and on 6.19.4 to 6.19.14), so it does not scale.
 const planeListenVerifiedBudget = 64000
 
@@ -41,8 +41,8 @@ type planeCharge struct {
 // planeVerifiedBudget, with the counts that set each one's scale.
 //
 // Linux 6.19.4 to 6.19.y. Mainline 6.19.3 verifies the plane's largest programs in 14,562 (rd) and 11,582 (pr), and
-// 6.19.4 in 63,939 and 28,681, measured again on 6.19.10, 6.19.14 and Fedora 44's 6.19.10-300.fc44 (guests,
-// 2026-11-10). 6.19.4 took the stable backport de2f14d97bda of f597664454bd ("bpf: bpf_scc_visit instance and
+// 6.19.4 in 63,939 and 28,681, measured again on 6.19.10, 6.19.14 and Fedora 44's 6.19.10-300.fc44
+// (guests). 6.19.4 took the stable backport de2f14d97bda of f597664454bd ("bpf: bpf_scc_visit instance and
 // backedges accumulation for bpf_loop()"), the one bpf_loop-specific verifier change between them, after which every
 // bpf_loop callback is verified as a loop: T0's spike moved in its bpf_loop forms only (d-rd 1,032 to 3,789) and
 // not in its plain-loop forms (a-rd 248,374 on both). 7.0 carries f597664454bd too and verifies the plane in at most
@@ -136,7 +136,7 @@ func planeBudget(t *testing.T, o Object, hook string) uint32 {
 }
 
 // TestPlaneBudgetFollowsTheKernelsChargeForTheSameBytes holds the plane's verified-instruction budget per kernel
-// family to the counts the guests measured (2026-11-10; one test binary, the same object bytes on
+// family to the counts the guests measured (one test binary, the same object bytes on
 // every kernel). It needs no root: it runs wherever the integration and tegobpf tags build.
 func TestPlaneBudgetFollowsTheKernelsChargeForTheSameBytes(t *testing.T) {
 	for _, c := range []struct {

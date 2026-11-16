@@ -7,11 +7,11 @@ Why it is shaped this way: the guarantee is about what crosses the process's own
 the standard library's http.client over the ssl module (CPython's _ssl, which calls SSL_write_ex and
 SSL_read_ex), with nothing bundled. Every step is one POST /v1/messages carrying the conversation so far,
 on one keep-alive connection, which is how SDK clients reuse a connection and what capture reassembles
-per connection (docs/p0/capture-derive.md R10). The certificate is trusted through SSL_CERT_FILE, the
+per connection. The certificate is trusted through SSL_CERT_FILE, the
 variable OpenSSL's default verify paths read, so the agent needs no flag that a real agent would not have.
 
 The base URL defaults to ANTHROPIC_BASE_URL, which is the forwarder's plaintext loopback listener when the
-run captures through it (docs/p0/capture-derive.md R19b), so the same agent serves both capture paths of
+run captures through it, so the same agent serves both capture paths of
 kill test 2. When DIRECT names a host:port, the agent finishes by connecting to it directly, the bypass
 R8 says must be refused while the forwarder is the model's only route, and prints what happened.
 

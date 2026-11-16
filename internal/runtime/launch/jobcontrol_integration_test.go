@@ -102,7 +102,7 @@ func ignores(t *testing.T, pid int, sig syscall.Signal) bool {
 // otherwise reach the agent. A launcher without a listener (tier 1) is left as it was: it stops with its
 // agent, which is what lets the shell's job control take the terminal back and `fg` the run.
 //
-// Also pins runtime-launch.md R9a: a tier-2 launcher ignores the job-control stops and the agent still stops (root/kernel; unverified where not run as root).
+// Also pins: a tier-2 launcher ignores the job-control stops and the agent still stops (root/kernel; unverified where not run as root).
 func TestJobControlStopsTheAgentNotATier2Launcher(t *testing.T) {
 	for _, tc := range []struct {
 		name          string

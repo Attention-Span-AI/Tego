@@ -12,7 +12,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// This file is the one tier derivation (docs/p0/limits-check-doctor-cli.md R27 Output). `tego
+// This file is the one tier derivation. `tego
 // doctor` reports it and `tego run` selects from it: internal/cli selects through Report.Select, which
 // offers enforce.Select this report's Probe and explains a refused tier with this report's own lines
 // (whyNot), never through a gate of its own, so the two cannot drift apart again. A run's report (ForRun) is
@@ -42,8 +42,8 @@ func (st probeState) probe() backend.Probe {
 // probe exercises (pidfd_getfd, seccomp CONTINUE, clone3 into a cgroup); a release below the floor, or one
 // D1 cannot parse, is outside what the launcher supports, so the derivation fails closed on it rather than
 // promise a run the launch may not complete. Every one of these is also a tier-2 and tier-3 blocker,
-// because tier 2 installs tier 1's Landlock ruleset and seccomp filter and inherits its supervisor
-// (enforce-cgroup-observe.md §5 R1): ADR 0011 gives delete, rename and mkdir at tier 2 to "Landlock inside
+// because tier 2 installs tier 1's Landlock ruleset and seccomp filter and inherits its supervisor:
+// ADR 0011 gives delete, rename and mkdir at tier 2 to "Landlock inside
 // the run", so a machine without Landlock has no tier 2 either.
 func (st probeState) missingFor(t backend.Tier) []string {
 	return st.missingAs(t, t)
@@ -100,7 +100,7 @@ func (st probeState) missingAs(t, asked backend.Tier) []string {
 		if st.lsm.BPFActive && st.lsm.Functional != "" && !strings.HasPrefix(st.lsm.Functional, "confirmed") {
 			add("lsm: %s", st.lsm.Functional)
 		}
-		// Tier 3's rows are the plane's: tier bpflsm is the plane in LSM mode (docs/p0/enforce-plane.md R19).
+		// Tier 3's rows are the plane's: tier bpflsm is the plane in LSM mode.
 		out = append(out, st.planeMissing()...)
 	// Observe asks nothing of the machine; auto is resolved before a tier is derived.
 	case backend.TierObserve, backend.TierAuto:
@@ -156,7 +156,7 @@ func (st probeState) buildable(t backend.Tier) error {
 // blocksEveryTier lists the D5 answers that stand between this machine and every enforcement tier
 // at once, Yama's first. Every tier installs the tier-1 seccomp filter and hands its listener to the
 // supervisor — tier 2 installs the same Landlock ruleset and filter as tier 1 and inherits its
-// supervisor (internal/runtime/enforce/select.go construct, enforce-cgroup-observe.md §5 R1), and
+// supervisor (internal/runtime/enforce/select.go construct), and
 // tier 3 is tier 2 plus BPF LSM — so D5 failing in either half leaves no tier a run could get:
 //
 //   - Yama: the supervisor reads the agent's sockaddrs and argv with process_vm_readv and takes the
@@ -224,10 +224,9 @@ func (st probeState) testedHooks(t backend.Tier) bool {
 // missingHooks lists the D7 hooks of one tier that did not load and attach. A run of D7 that never
 // happened (no root) contributes nothing here: the root line above already says why. An optional hook
 // this kernel predates is not missing: the tier runs without it (cgroup/connect_unix and
-// cgroup/sendmsg_unix below 6.7, enforce-cgroup-observe.md §5 R7), and the capability matrix's note says
-// what then decides what it would have. *Amended:* connect_unix used to be required here, so below 6.7
-// doctor, and `tego run`, which selects from this derivation, offered no tier cgroup although the backend
-// runs there without it.
+// cgroup/sendmsg_unix below 6.7), and the capability matrix's note says
+// what then decides what it would have. Requiring connect_unix here would leave doctor, and `tego run`, which
+// selects from this derivation, offering no tier cgroup below 6.7 although the backend runs there without it.
 func (st probeState) missingHooks(t backend.Tier) []string {
 	var out []string
 	for _, h := range st.hooks {

@@ -9,9 +9,8 @@ import (
 	"testing"
 )
 
-// This file pins the R/E/I numbers of docs/p0/record-ledger.md §2.1 that a careful reading of line_test.go,
-// payload_test.go and fixture_test.go found genuinely unpinned. Everything else in that section's R1-R8,
-// I3/I4/I9/I10 is already exercised (canonical order, id computation and tamper detection, payload splicing,
+// This file pins the ledger line rules that a careful reading of line_test.go,
+// payload_test.go and fixture_test.go found genuinely unpinned. Everything else is already exercised (canonical order, id computation and tamper detection, payload splicing,
 // unknown-field tolerance, the version gate's existence, attribution presence, the hash chain, the closed
 // sets) by the existing tests; duplicating those here would not catch anything a break of the same code
 // wouldn't already be caught by.
@@ -96,7 +95,7 @@ func TestDecodeResortsNonCanonicalPayloadKeys(t *testing.T) {
 	}
 }
 
-// TestAttributionByKindAndP0Writers pins record-ledger.md R8. Attr is populated for exactly the four action
+// TestAttributionByKindAndP0Writers. Attr is populated for exactly the four action
 // kinds (exec, fs, net, mcp) and refused on every other kind. A P0 writer's constructors give only
 // {unattributed,none} or {likely,time,Step:N}; the P1 forms (exact, tool_id, tid) are never produced by them,
 // though Decode accepts a line that carries one.

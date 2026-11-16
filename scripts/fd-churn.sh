@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # fd-churn.sh — a package's tests raced and repeated beside a descriptor and filesystem churn in another
-# process: the gate each ADR 0023 package migration runs (the 2026-10-05 note, C4 and "Each package migration
+# process: the gate each ADR 0023 package migration runs (C4 and "Each package migration
 # also"), and the TMPDIR churn script the fd closer was proved under.
 #
 # Why it exists: a number closed twice, or closed under a borrower, fails only when something else has taken

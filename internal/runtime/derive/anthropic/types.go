@@ -98,7 +98,7 @@ type Usage struct {
 	// A later cumulative output count cannot recover those attempts, so it is sticky across merges.
 	unboundedIterations bool
 	// present says the body carried a usage object: a message with none reported no spend, which is not the
-	// same as reporting zero (limits-check-doctor-cli.md R1 (a)).
+	// same as reporting zero.
 	present bool
 	// hasOutput says the object carried output_tokens: only such a usage is a message's final count (a
 	// message_delta with "usage":{} carries none, ADR 0036).

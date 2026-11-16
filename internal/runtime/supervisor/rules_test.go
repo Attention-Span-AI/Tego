@@ -54,7 +54,7 @@ func (s emitOrderSink) Emit(*record.Event) {
 }
 
 // TestEmitAfterRespond is R23/I5: the order is always decide -> respond (NOTIF_SEND) -> emit, and Sink.Emit
-// is fire-and-forget (P0-DESIGN §2.4) precisely because nothing here ever waits on it. That guarantee only
+// is fire-and-forget precisely because nothing here ever waits on it. That guarantee only
 // holds if the response has already gone out by the time Emit runs; if a handler ever emitted first, a slow
 // consumer downstream of Sink would delay the very response this package promises never to delay. No
 // existing test observes the two calls' relative order (each only checks that a response happened and that

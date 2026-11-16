@@ -304,7 +304,7 @@ func TestPlaneModeVerdict(t *testing.T) {
 	if v := planeModeVerdict(bpfobj.PlaneLSM, rows, scoped, passingKnown()); !v.OK || !strings.HasPrefix(v.Detail, all) {
 		t.Errorf("passing rows: %+v", v)
 	}
-	// An optional hook this kernel predates (enforce-plane R3, §6 E14) is no failure: the mode is selected without
+	// An optional hook this kernel predates is no failure: the mode is selected without
 	// it, and the line names it apart.
 	absent := slices.Clone(rows)
 	for i, h := range bpfobj.PlaneHooks {
@@ -424,7 +424,7 @@ func TestPlanePrototypesResolveHere(t *testing.T) {
 		rows, ok := planeStaticRows(m, spec)
 		for i, r := range rows {
 			if r.Absent {
-				// An optional hook this kernel predates (enforce-plane R3): the row names the hook that decides
+				// An optional hook this kernel predates: the row names the hook that decides
 				// its rule here, and the mode is checked without it.
 				t.Logf("%s: %s", r.Hook, r.Detail)
 				continue
@@ -459,7 +459,7 @@ func TestPlanePrototypesResolveHere(t *testing.T) {
 	}
 }
 
-// TestBPFLSMNeedsLSMMode is enforce-plane.md R19: tier bpflsm is the plane in LSM mode, so it is missing wherever LSM mode did not
+// TestBPFLSMNeedsLSMMode: tier bpflsm is the plane in LSM mode, so it is missing wherever LSM mode did not
 // pass, with LSM mode's own fix; where bpf is not active, the lsm line and the GRUB fix say it once.
 func TestBPFLSMNeedsLSMMode(t *testing.T) {
 	ok := state(func(st *probeState) { st.plane = passingPlane("") })
@@ -688,7 +688,7 @@ func TestAdoptingRunProbesNoPlane(t *testing.T) {
 
 // TestACachedAnswerOfOneModeDoesNotAnswerAPinOfTheOther: an answer adopted from a pinned build knows the one mode
 // that build was loaded in, and the run-probe cache keeps it; a later run whose bpf.plane pins the other mode probes
-// rather than read "not passed" from it and run on the listener (TIER3-PLAN T6). Under auto, or the same pin, the
+// rather than read "not passed" from it and run on the listener. Under auto, or the same pin, the
 // cache answers.
 func TestACachedAnswerOfOneModeDoesNotAnswerAPinOfTheOther(t *testing.T) {
 	var n int
@@ -808,7 +808,7 @@ func checkGolden(t *testing.T, name, got string) {
 func TestPlaneDoctorGolden(t *testing.T) {
 	// The goldens are a Debian machine's: the lsm check's fix is GRUBFixFor(bootDebian), and a plane mode's
 	// precondition fix (modePrecondition) is GRUBFix, which reads the boot family from os-release. Read from the
-	// host, it said grubby on every RHEL-family host and the goldens differed there (AlmaLinux 9.8, 2026-11-10).
+	// host, it said grubby on every RHEL-family host and the goldens differed there (AlmaLinux 9.8).
 	debian := filepath.Join(t.TempDir(), "os-release")
 	if err := os.WriteFile(debian, []byte("ID=debian\n"), 0o644); err != nil {
 		t.Fatal(err)

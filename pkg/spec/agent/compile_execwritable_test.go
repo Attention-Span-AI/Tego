@@ -21,7 +21,7 @@ import (
 // The assertion is that compile says so. Before this warning existed the contract compiled with no
 // finding at all, while `deny_read` under the same directory, a redundant write entry, a mount
 // point and a models[] host in net.allow all warned — the strictly weaker analogues.
-// agent-contract.md E38: an exec entry inside a write entry warns exec-writable in every tier.
+// An exec entry inside a write entry warns exec-writable in every tier.
 func TestExecAllowDirInsideWriteEntryWarns(t *testing.T) {
 	for _, tier := range []string{"landlock", "cgroup", "bpflsm"} {
 		t.Run(tier, func(t *testing.T) {

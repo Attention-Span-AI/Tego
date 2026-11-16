@@ -10,7 +10,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// Also pins runtime-launch.md E30: an omitted limit writes nothing, an explicit 0 is written.
+// Also pins: an omitted limit writes nothing, an explicit 0 is written.
 func TestLimitFiles(t *testing.T) {
 	tests := []struct {
 		name string

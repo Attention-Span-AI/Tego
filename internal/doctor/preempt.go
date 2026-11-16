@@ -13,12 +13,12 @@ import (
 )
 
 // The kernel's preemption model, which fmod_ret mode needs to be one shown never to preempt kernel code (ADR 0024
-// (16); docs/p0/enforce-plane.md R21). In fmod_ret mode the plane's programs are BPF tracing programs, which the
+// (16)). In fmod_ret mode the plane's programs are BPF tracing programs, which the
 // kernel's trampoline runs under a per-CPU recursion check (bpf_prog_check_recur, __bpf_prog_enter_recur): a program
 // that is already active on a CPU is skipped there, its miss counted, and the hooked call goes ahead as if it had
 // returned 0. Where the kernel preempts kernel code, a task preempted inside a plane program leaves it active on its
 // CPU, and every other task that reaches the same hook on that CPU before it resumes is not decided at all. Measured
-// 2026-11-02 with one tier-cgroup run opening a deny_read file: on 6.17 booted preempt=full, 87,075 of 320,000
+// with one tier-cgroup run opening a deny_read file: on 6.17 booted preempt=full, 87,075 of 320,000
 // opens succeeded; under lazy preemption (Fedora's 7.0 default, and 6.17 booted preempt=lazy) eight processes
 // opening it beside eight spawning /usr/bin/true opened it 2,809 and 2,313 times in 20 s; under 6.17's default
 // voluntary preemption no open succeeded in either workload. LSM programs take no such check on a kernel from 6.2 (6.1.54
@@ -26,8 +26,8 @@ import (
 // (lsmrecursion.go). A kernel that does not preempt kernel code (none, voluntary) never preempts a non-sleepable program,
 // and no plane hook is called from interrupt context, so there the check never skips a plane program.
 //
-// The mode is admitted on proof alone, and any doubt refuses it (2026-11-03, after a review found a build default, a
-// kernel log line and a boot line each standing in for a live mode they do not prove):
+// The mode is admitted on proof alone, and any doubt refuses it (a build default, a kernel log line and a boot line
+// can each stand in for a live mode they do not prove):
 //   - a build that is not PREEMPT_DYNAMIC has its model fixed by its build: its config must set CONFIG_PREEMPT_NONE or
 //     CONFIG_PREEMPT_VOLUNTARY and none of CONFIG_PREEMPT, CONFIG_PREEMPT_LAZY, CONFIG_PREEMPT_RT and
 //     CONFIG_PREEMPT_DYNAMIC, and uname -v must carry no PREEMPT flag; an unreadable config is no proof;

@@ -185,7 +185,7 @@ func moveReaches(r *FSRule, p string, ancestors bool) bool {
 // is set (a rename moves a directory's whole subtree), one beneath p. At tier 2 such an entry is enforced by
 // the fanotify listener, which matches the path of each open, so a hard link or a rename gave the file a
 // name no entry denies and it was read with no refusal; SEMANTICS §2 says "hard links and renames cannot
-// move a file out of a rule". The supervisor refuses the move there (supervisor.md R15d), asking it through
+// move a file out of a rule". The supervisor refuses the move there, asking it through
 // decide.FSIndex: this scan walks every fs entry, up to envScanMaxEntries of them.
 func (rt *RuleTable) DenyReadMoveTarget(p string, ancestors bool) (FSRule, bool) {
 	if rt == nil || p == "" {

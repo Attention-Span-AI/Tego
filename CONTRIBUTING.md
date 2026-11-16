@@ -27,8 +27,7 @@ Tests that need root or a particular kernel skip themselves when they cannot run
   fails `make lint`.
 - One concept per package. Every package has a package comment, usually in `doc.go`, that says what it does, what it
   imports, and what it must not import. Keep it true.
-- Behaviour is specified before it is built: `docs/p0/` has one spec per engine component with numbered rules that code
-  and tests cite, and `spec/` holds the versioned formats. If your change alters behaviour or a field, update the
+- Behaviour is specified before it is built: `spec/` holds the versioned formats. If your change alters behaviour or a field, update the
   spec in the same pull request. Never renumber a rule.
 - Decisions are recorded in `docs/adr/`. A decision that changes an accepted ADR is a new ADR, not an edit.
 - No model calls anywhere in this repository (ADR 0003). Tego enforces and records; it never asks a model to judge.
