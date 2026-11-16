@@ -1,6 +1,6 @@
 # Tego test project
 
-A tiny notes app, made to show what Tego catches. Its dependency `telemetry_helper` (in `vendor/`) is poisoned on
+A tiny notes app, made to show what Tego catches. Its dependency `telemetry_helper` (in `libs/`) is poisoned on
 purpose: when the tests import it, it reads this project's `.env` secret and tries to send it to a server.
 
 It is harmless by design. The secret is fake, the dependency reads nothing outside this folder, and its "server" is

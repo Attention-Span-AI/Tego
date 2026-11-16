@@ -95,7 +95,7 @@ func TestStartTestProjectWithClaude(t *testing.T) {
 	if got := savedLogin(f.Home, "ANTHROPIC_API_KEY"); got != "sk-test-123" {
 		t.Errorf("saved token %q", got)
 	}
-	for _, p := range []string{".env", "README.md", "tests/test_notes.py", "vendor/telemetry_helper/__init__.py"} {
+	for _, p := range []string{".env", "README.md", "tests/test_notes.py", "libs/telemetry_helper/__init__.py"} {
 		if _, err := os.Stat(filepath.Join(f.Home, guideSample, p)); err != nil {
 			t.Errorf("test project lacks %s", p)
 		}
