@@ -241,11 +241,12 @@ if [ "\${1:-}" = shell ]; then
 	echo "In Tego's Linux VM. Type exit to go back to your Mac." >&2
 	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet bash -l'
 fi
-# tego start (and tego setup) leaves the person in the VM, where the projects it sets up live and its commands work as printed.
+# tego start (and tego setup) leaves the person in the VM, where the projects it sets up live and its commands work as
+# printed; when it fails, the person is back on the Mac with its error, never in a shell with no next step.
 if { [ "\${1:-}" = start ] || [ "\${1:-}" = setup ]; } && [ \$# -eq 1 ]; then
 	echo "In Tego's Linux VM. Type exit to go back to your Mac." >&2
 	sub=\$1 # start or setup: a fixed word, put into the VM's command line here
-	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet bash -c "TEGO_ON_MAC=1 \$HOME/.local/bin/tego '"\$sub"'; exec bash -l"'
+	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet bash -c "TEGO_ON_MAC=1 \$HOME/.local/bin/tego '"\$sub"' && exec bash -l"'
 fi
 # tego dashboard: the dashboard runs in the VM and opens in the Mac's browser, through an SSH tunnel on 8484 (the
 # dashboard answers only the address it printed, so the port stays the same on both sides).
