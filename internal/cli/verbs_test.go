@@ -215,7 +215,7 @@ func TestDescribeAndEditAgent(t *testing.T) {
 	}
 }
 
-func TestDeleteAgent(t *testing.T) {
+func TestRemoveAgent(t *testing.T) {
 	w := newRegistryWorld(t)
 	saved := filepath.Join(w.user, "agents", "helper.yaml")
 	save := func() {
@@ -232,11 +232,11 @@ func TestDeleteAgent(t *testing.T) {
 	}
 	save()
 	answer(false, "")
-	if code, _, errs := run(t, "delete", "agent", "helper"); code != identity.ExitUsage || !strings.Contains(errs, "--yes") {
+	if code, _, errs := run(t, "remove", "agent", "helper"); code != identity.ExitUsage || !strings.Contains(errs, "--yes") {
 		t.Fatalf("delete without a terminal: exit %d\nstderr %s", code, errs)
 	}
 	answer(true, "n\n")
-	if code, out, _ := run(t, "delete", "agent", "helper"); code != identity.ExitFinding ||
+	if code, out, _ := run(t, "remove", "agent", "helper"); code != identity.ExitFinding ||
 		!strings.HasPrefix(out, "Remove agent helper ("+saved+")? [y/N] ") {
 		t.Fatalf("delete answered no: exit %d\nstdout %s", code, out)
 	}
@@ -244,18 +244,18 @@ func TestDeleteAgent(t *testing.T) {
 		t.Fatal("a no removed the agent")
 	}
 	answer(true, "y\n")
-	if code, out, _ := run(t, "delete", "agent", "helper"); code != identity.ExitOK || !strings.HasSuffix(out, "✓ Agent helper removed\n") {
+	if code, out, _ := run(t, "remove", "agent", "helper"); code != identity.ExitOK || !strings.HasSuffix(out, "✓ Agent helper removed\n") {
 		t.Fatalf("delete answered yes: exit %d\nstdout %s", code, out)
 	}
 	save()
 	answer(false, "")
-	if code, out, _ := run(t, "delete", "agent", "helper", "--yes"); code != identity.ExitOK || out != "✓ Agent helper removed\n" {
+	if code, out, _ := run(t, "remove", "agent", "helper", "--yes"); code != identity.ExitOK || out != "✓ Agent helper removed\n" {
 		t.Fatalf("delete --yes: exit %d\nstdout %s", code, out)
 	}
 	if _, err := os.Stat(saved); err == nil {
 		t.Fatal("delete --yes left the file")
 	}
-	if code, _, _ := run(t, "delete", "agent", "helper", "--yes"); code != identity.ExitUsage {
+	if code, _, _ := run(t, "remove", "agent", "helper", "--yes"); code != identity.ExitUsage {
 		t.Fatalf("delete of no agent: exit %d", code)
 	}
 }
@@ -281,5 +281,30 @@ func TestAllowIsApprove(t *testing.T) {
 	}
 	if code, _, errs := run(t, "allow", "r-1", "q-0123456789abcdef0123456789abcdef"); code != identity.ExitUsage || !strings.Contains(errs, "is not a run id") {
 		t.Fatalf("allow a malformed run: exit %d stderr %s", code, errs)
+	}
+}
+
+// TestAddAgent: tego add agent writes an agent's rules file from a preset, through the same code as tego start, and
+// refuses an agent name already taken, an unknown preset and a missing project.
+func TestAddAgent(t *testing.T) {
+	f := onFixture(t, "fresh")
+	noLogins(t)
+	fakeProgram(t, "claude")
+	app := filepath.Join(f.Home, "app")
+	if err := os.MkdirAll(app, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs := run(t, "add", "agent", "--project", app, "--preset", "read-only-review")
+	if code != identity.ExitOK || !strings.Contains(out, "✓ Agent app added: ~/") || !strings.Contains(out, "cd ~/app && tego run app") {
+		t.Fatalf("add: exit %d\n%s\n%s", code, out, errs)
+	}
+	if code, out, _ := run(t, "add", "agent", "--project", app); code != identity.ExitFinding || !strings.Contains(out, "✗ Agent app already exists") {
+		t.Errorf("a taken name: exit %d\n%s", code, out)
+	}
+	if code, _, errs := run(t, "add", "agent", "--project", app, "--preset", "strict"); code != identity.ExitUsage || !strings.Contains(errs, "base-development") {
+		t.Errorf("an unknown preset: exit %d\n%s", code, errs)
+	}
+	if code, _, errs := run(t, "add", "agent", "other", "--project", filepath.Join(f.Home, "nope")); code != identity.ExitUsage || !strings.Contains(errs, "doesn't exist") {
+		t.Errorf("a missing project: exit %d\n%s", code, errs)
 	}
 }

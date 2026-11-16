@@ -656,7 +656,7 @@ var (
 	// `test` starts tego runs of its own; `route` writes a running run's model-routes.json under ledger_root.
 	// `rules` reads a run's ledger, anchor and contract for the terminal rules view. `setup` reads the ledger and the
 	// chain anchor to verify the runs it names, reads the agent registries, and writes ~/.tego/state/check.json.
-	subcommands = `(?:run|watch|gc|stop|events|status|ask|approve|deny|alternate|doctor|drift|learn|adopt|agents|measure|receipt|detect|compile|rule|rules|block|unblock|pause|resume|lift|grant|restore|test|dns|init|serve|control|inbox|people|role|access|whoami|alert|mcp|vault|route|setup|start)`
+	subcommands = `(?:run|watch|gc|stop|events|status|ask|approve|deny|alternate|doctor|drift|learn|adopt|agents|measure|receipt|detect|compile|rule|rules|block|unblock|pause|resume|lift|grant|restore|test|dns|init|serve|control|inbox|people|role|access|whoami|alert|mcp|vault|route|setup|start|add|dashboard|get|describe|logs|allow|apply|edit|remove)`
 	// launches are the subcommands that start a run (agents with --adopt): each launch makes <XDG_RUNTIME_DIR>/tego
 	// and first removes the directories there whose launcher's lock is free (SH-7).
 	launches = `(?:run|watch|adopt|agents)`

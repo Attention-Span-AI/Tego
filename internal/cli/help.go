@@ -12,12 +12,12 @@ Get started
   doctor         Check what this computer supports
 
 Agents
-  create agent   Create an agent: its program, project and rules
+  add agent      Add an agent for Tego to supervise
   apply -f FILE  Add or update an agent from a rules file
   get agents     List your agents
   describe agent Show an agent's rules in plain words
   edit agent     Edit an agent's rules file
-  delete agent   Remove an agent
+  remove agent   Stop supervising an agent
 
 Sessions
   run AGENT      Start a supervised session

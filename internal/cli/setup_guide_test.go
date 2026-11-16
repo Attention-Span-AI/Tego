@@ -49,14 +49,14 @@ func wantAll(t *testing.T, label, out string, wants ...string) {
 	}
 }
 
-// savedRules reads the rules file the guide named in its "Agent … created:" line.
+// savedRules reads the rules file the guide named in its "Agent … added:" line.
 func savedRules(t *testing.T, out, home string) string {
 	t.Helper()
-	i := strings.Index(out, "created: ")
+	i := strings.Index(out, "added: ")
 	if i < 0 {
 		t.Fatalf("no rules file named:\n%s", out)
 	}
-	path := strings.Replace(strings.SplitN(out[i+len("created: "):], "\n", 2)[0], "~", home, 1)
+	path := strings.Replace(strings.SplitN(out[i+len("added: "):], "\n", 2)[0], "~", home, 1)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestStartTestProjectWithClaude(t *testing.T) {
 		"How do you sign in to Claude Code?", "✓ Signed in to Claude Code",
 		"Which project should Claude Code work in?", "✓ Project: ~/tego-sample", "See its files: "+sampleURL,
 		"Which rules should Claude Code follow?", "Read more about rules and presets: "+presetsDocURL,
-		"✓ Rules: Base development", "✓ Agent tego-sample created: ~/",
+		"✓ Rules: Base development", "✓ Agent tego-sample added: ~/",
 		"cd ~/tego-sample && tego run tego-sample", "its own approval prompts off", `ask Claude Code to "run the tests"`,
 		"tego get sessions", "tego describe session --last", "tego dashboard")
 	if strings.Contains(out, "sk-test-123") {
@@ -159,7 +159,7 @@ func TestStartOwnProjectOnMac(t *testing.T) {
 	}
 	wantAll(t, "own project", out, "What command starts it?", "✓ python3 is installed",
 		"Path to the project, inside Tego's VM", "~/nope isn't in Tego's VM", "✓ Project: ~/app",
-		"Pick each rule", "✓ Rules: your own", "✓ Agent app created:", "cd ~/app && tego run app",
+		"Pick each rule", "✓ Rules: your own", "✓ Agent app added:", "cd ~/app && tego run app",
 		"Run tego dashboard on your Mac")
 	if strings.Contains(out, "How do you sign in") || strings.Contains(out, "approval prompts off") {
 		t.Errorf("another program was asked to sign in, or had approvals switched off:\n%s", out)
@@ -219,7 +219,7 @@ func TestStartInstallsTheAgent(t *testing.T) {
 	if code != identity.ExitOK || !installed {
 		t.Fatalf("yes: exit %d installed %v\n%s\n%s", code, installed, out, errs)
 	}
-	wantAll(t, "yes", out, "Installing Claude Code...", "✓ Claude Code installed", "✓ Agent tego-sample created:")
+	wantAll(t, "yes", out, "Installing Claude Code...", "✓ Claude Code installed", "✓ Agent tego-sample added:")
 }
 
 // TestStartNeedsATerminal: tego start asks questions, so outside a terminal it says what to use instead.

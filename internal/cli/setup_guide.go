@@ -684,7 +684,7 @@ func (g *walk) saveAgent(ctx context.Context, m *config.Machine, a guideAgent, c
 	if code != identity.ExitOK {
 		return "", code, nil
 	}
-	g.ok("Agent " + name + " created: " + tildeHome(path, m.Home))
+	g.ok("Agent " + name + " added: " + tildeHome(path, m.Home))
 	return path, identity.ExitOK, nil
 }
 
