@@ -46,7 +46,7 @@ func TestSetupGuideClaudeCode(t *testing.T) {
 	}
 	for _, want := range []string{
 		"✓ This computer can protect your agents (Basic level, no admin needed)",
-		"Connect your agent", "1. Claude Code", "2. Codex", "3. Another program",
+		"Welcome to Tego.", "Step 1 of 4 · Connect your agent", "Step 2 of 4 · Your first project", "Step 3 of 4 · Its rules", "Step 4 of 4 · Run it", "1. Claude Code", "2. Codex", "3. Another program",
 		"✓ Claude Code is installed",
 		"✓ Sample project ready to try Tego on: ~/tego-sample",
 		"✓ Rules written to ~/",
@@ -54,7 +54,7 @@ func TestSetupGuideClaudeCode(t *testing.T) {
 		"never reads   ~/.ssh, ~/.aws, .env files and other secrets",
 		"may connect   api.anthropic.com",
 		"cd ~/tego-sample && tego run tego-sample",
-		"For one of your own projects, run tego setup from inside it.",
+		"For one of your own projects, run tego start from inside it.",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("stdout lacks %q\n%s", want, out)

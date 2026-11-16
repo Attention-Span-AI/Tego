@@ -89,13 +89,13 @@ latest="https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.
 run fresh TEGO_YES=1
 check "fresh Mac: installs Lima, sets up the VM, adds tego" 0 "✗ Lima isn't installed" "brew install lima" \
 	"limactl start --tty=false --name=tego $latest" "✓ Lima 2.3.0" "✓ Tego's VM is ready" "✓ tego command added" \
-	"Next, open a new terminal window and run:" "tego setup"
+	"Next, open a new terminal window and run:" "tego start"
 [ -x "$tmp/.local/bin/tego" ] || { echo "FAIL fresh Mac: no tego command in ~/.local/bin"; fails=$((fails + 1)); }
 grep -q 'added by the Tego installer' "$tmp/.zshrc" 2>/dev/null || { echo "FAIL fresh Mac: PATH line not added to ~/.zshrc"; fails=$((fails + 1)); }
 absent "fresh Mac: hides Lima's own output" "INFO["
 
 run again LIMA=1 FAKE_VM=Running TEGO_YES=1
-check "second run: nothing to redo" 0 "✓ Lima 2.3.0" "✓ Tego's VM is running" "✓ tego command is set up" "Next, run:"
+check "second run: nothing to redo" 0 "✓ Lima 2.3.0" "✓ Tego's VM is running" "✓ tego command is up to date" "tego start"
 [ "$(grep -c 'added by the Tego installer' "$tmp/.zshrc")" = 1 ] || { echo "FAIL second run: PATH line added twice"; fails=$((fails + 1)); }
 absent "second run: nothing to redo" "limactl start"
 absent "second run: nothing to redo" "brew "

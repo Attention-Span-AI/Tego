@@ -206,11 +206,18 @@ mac_setup() {
 	bin="$HOME/.local/bin"
 	shim="$bin/tego"
 	reopen=0
+	# A tego command this installer wrote before is rewritten without asking, so an update reaches it.
+	had=0
 	if [ -x "$shim" ] && grep -q "Tego's installer" "$shim" 2>/dev/null; then
-		ok "tego command is set up"
-	else
-		todo "The tego command isn't in your terminal yet"
-		ask "Add it?" && rc=0 || rc=$?
+		had=1
+	fi
+	{
+		if [ "$had" = 1 ]; then
+			rc=0
+		else
+			todo "The tego command isn't in your terminal yet"
+			ask "Add it?" && rc=0 || rc=$?
+		fi
 		if [ "$rc" = 0 ]; then
 			mkdir -p "$bin"
 			cat >"$shim" <<EOF
@@ -234,10 +241,11 @@ if [ "\${1:-}" = shell ]; then
 	echo "In Tego's Linux VM. Type exit to go back to your Mac." >&2
 	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet bash -l'
 fi
-# tego setup leaves the person in the VM, where the projects it sets up live and its commands work as printed.
-if [ "\${1:-}" = setup ] && [ \$# -eq 1 ]; then
+# tego start (and tego setup) leaves the person in the VM, where the projects it sets up live and its commands work as printed.
+if { [ "\${1:-}" = start ] || [ "\${1:-}" = setup ]; } && [ \$# -eq 1 ]; then
 	echo "In Tego's Linux VM. Type exit to go back to your Mac." >&2
-	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet bash -c "\$HOME/.local/bin/tego setup; exec bash -l"'
+	sub=\$1 # start or setup: a fixed word, put into the VM's command line here
+	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet bash -c "\$HOME/.local/bin/tego '"\$sub"'; exec bash -l"'
 fi
 exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet "\$HOME/.local/bin/tego" "\$@"' tego "\$@"
 EOF
@@ -257,12 +265,12 @@ EOF
 					reopen=1
 					;;
 			esac
-			done_ "tego command added"
+			if [ "$had" = 1 ]; then ok "tego command is up to date"; else done_ "tego command added"; fi
 		else
 			shim=""
 			note "Skipped. You can still use Tego with: limactl shell ${vm}"
 		fi
-	fi
+	}
 
 	# The installer ends here, with the one step that comes next: tego setup walks through the rest.
 	restore_term
@@ -273,7 +281,7 @@ EOF
 		echo "  Next, run:"
 	fi
 	echo ""
-	printf '      %stego setup%s\n' "$bold" "$off"
+	printf '      %stego start%s\n' "$bold" "$off"
 	echo ""
 	note "It connects your agent and walks you through a first protected run."
 	echo ""

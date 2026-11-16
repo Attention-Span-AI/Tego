@@ -164,6 +164,9 @@ func runSetupGuide(ctx context.Context, in io.Reader, stdout, stderr io.Writer, 
 	}
 
 	g.line("")
+	g.line("  %sWelcome to Tego.%s", g.bold, g.offEsc)
+	g.line("  Let's set up your first protected agent, one step at a time.")
+	g.line("")
 	pa, err := setupProbe(ctx, m)
 	switch {
 	case err != nil:
@@ -187,7 +190,7 @@ func runSetupGuide(ctx context.Context, in io.Reader, stdout, stderr io.Writer, 
 	g.ok(fmt.Sprintf("This computer can protect your agents (%s level, no admin needed)", levelName(pa.tier)))
 
 	// Connect your agent.
-	g.title("Connect your agent")
+	g.title("Step 1 of 4 · Connect your agent")
 	labels := make([]string, len(guideAgents))
 	for i, a := range guideAgents {
 		labels[i] = a.label
@@ -241,7 +244,7 @@ func runSetupGuide(ctx context.Context, in io.Reader, stdout, stderr io.Writer, 
 
 	// Your first project: the folder tego setup was started in when it is a project, else a sample made for trying
 	// Tego, with a fake secret for the first run to be refused. No question either way.
-	g.title("Your first project")
+	g.title("Step 2 of 4 · Your first project")
 	home := m.Home
 	abs := ""
 	if wd, err := os.Getwd(); err == nil && wd != home && wd != "/" && !strings.HasPrefix(home, wd+"/") && unixWritable(wd) {
@@ -258,7 +261,7 @@ func runSetupGuide(ctx context.Context, in io.Reader, stdout, stderr io.Writer, 
 	}
 
 	// Its rules: the person picks which of the shipped presets apply, all on to start.
-	g.title("Its rules")
+	g.title("Step 3 of 4 · Its rules")
 	rules := []guideRule{
 		{preset: "no-secrets", on: true, label: "Keep secrets away", detail: "~/.ssh, ~/.aws, .env files and other secrets"},
 		{preset: "no-prod", on: true, label: "Reach only the hosts named", detail: "its model's API and nothing else"},
@@ -292,10 +295,10 @@ func runSetupGuide(ctx context.Context, in io.Reader, stdout, stderr io.Writer, 
 		g.note("may connect   nowhere yet (add hosts to the rules file)")
 	}
 
-	g.title("Run it")
+	g.title("Step 4 of 4 · Run it")
 	g.cmd("cd " + tildeHome(abs, home) + " && tego run " + name)
 	if abs == filepath.Join(home, guideSample) {
-		g.note("For one of your own projects, run tego setup from inside it.")
+		g.note("For one of your own projects, run tego start from inside it.")
 	}
 	if a.harness == "claude-code" && os.Getenv("CLAUDE_CODE_OAUTH_TOKEN") == "" && os.Getenv("ANTHROPIC_API_KEY") == "" {
 		g.note("Claude Code needs a login under Tego: run claude setup-token, then")
