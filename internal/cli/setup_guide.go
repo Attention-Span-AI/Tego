@@ -277,18 +277,21 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 
 	// Its sign-in.
 	if len(a.logins) > 0 {
+		g.line("")
 		if code, err := g.signIn(ctx, a, home); code != identity.ExitOK || err != nil {
 			return code, err
 		}
 	}
 
 	// Its project.
+	g.line("")
 	abs, test, err := g.project(name, home, onMac)
 	if err != nil {
 		return 0, err
 	}
 
 	// Its rules.
+	g.line("")
 	rc, err := g.rules(name, a)
 	if err != nil {
 		return 0, err
