@@ -50,6 +50,10 @@ func cmdSetup() Command {
 			if refuseSetup(stderr) {
 				return identity.ExitError
 			}
+			// A person at a terminal is walked through; scripts, --json and -v get the checklist.
+			if !asJSON && !verbose && guideInteractive(stdout) {
+				return runSetupGuide(ctx, os.Stdin, stdout, stderr, true)
+			}
 			return runSetup(ctx, asJSON, verbose, stdout, stderr)
 		},
 	}

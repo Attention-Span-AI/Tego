@@ -124,8 +124,11 @@ func dispatch(ctx context.Context, argv []string, stdout, stderr io.Writer, cmds
 	}
 	name := argv[1]
 	switch name {
-	case "help", "-h", "--help":
-		writeUsage(stdout, cmds)
+	case "help":
+		writeUsage(stdout, cmds) // tego help (and tego help advanced): every command, one per line
+		return identity.ExitOK, false
+	case "-h", "--help":
+		_, _ = io.WriteString(stdout, groupedHelp)
 		return identity.ExitOK, false
 	}
 	cmd, ok := find(cmds, name)

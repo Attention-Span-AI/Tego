@@ -254,6 +254,9 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	warnStdio(stderr, o.cmdName(), rt, stdio)
 	started, askPending, stopNotice := askNoticesFor(rt, m, b.Tier(), o.cmdName(), stderr)
 	defer stopNotice()
+	if o.cmd == "" { // tego run names its session; watch and adopt keep their lines
+		started = sessionStarted(rt, stderr, started)
+	}
 	// A SIGINT or SIGTERM that landed after compileForRun's check (during the probe, the sweep, the capture
 	// sources' construction) cancelled a context nothing before this point reads again, and the runtime
 	// subscribes to signals of its own only once it prepares the run: without this check the user's

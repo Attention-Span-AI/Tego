@@ -7,6 +7,9 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ## Unreleased
 
+- `tego start` walks a first-time user through connecting an agent (Claude Code, Codex or another program), its sign-in, a project (a test project with a harmlessly poisoned dependency, or their own) and its rules (Base development, Read-only review or their own), and ends with the command that starts the first session. On a Mac, the one-line installer sets up Lima and Tego's VM, and `tego start` and `tego dashboard` work from the Mac's terminal.
+- New commands for agents and sessions: `tego add agent`, `tego apply -f`, `tego get agents|sessions|presets|approvals`, `tego describe agent|session|preset`, `tego edit agent`, `tego remove agent`, `tego logs`, `tego allow` and `tego dashboard`. Sessions have names (`tego-sample-dzfa`) that `stop`, `pause`, `resume`, `describe` and `logs` accept. Every existing command is unchanged.
+
 ## v0.1.3 - 2026-11-13
 
 This security release fixes file and command rules, record verification, and the handling of skipped kernel checks.
