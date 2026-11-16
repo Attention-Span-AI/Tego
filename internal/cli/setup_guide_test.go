@@ -25,6 +25,14 @@ func fakeProgram(t *testing.T, name string) {
 	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
 }
 
+// noLogins clears the sign-in variables for this test, and restores them after (the guide sets the one it is given).
+func noLogins(t *testing.T) {
+	for _, v := range []string{"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "CODEX_API_KEY", "TEGO_ON_MAC"} {
+		t.Setenv(v, "")
+	}
+}
+
+// runGuide runs tego start's guide on answers, one per line, through Huh's plain prompts.
 func runGuide(t *testing.T, answers string) (int, string, string) {
 	t.Helper()
 	var out, errs bytes.Buffer
@@ -32,85 +40,157 @@ func runGuide(t *testing.T, answers string) (int, string, string) {
 	return code, out.String(), errs.String()
 }
 
-// TestSetupGuideClaudeCode: started from home, the guide makes a sample project without asking, writes Claude Code's
-// rules file outside it, says what it allows in plain words, and how to run it.
-func TestSetupGuideClaudeCode(t *testing.T) {
-	f := onFixture(t, "fresh")
-	fakeProgram(t, "claude")
-	t.Chdir(f.Home)
-	sample := filepath.Join(f.Home, "tego-sample")
+func wantAll(t *testing.T, label, out string, wants ...string) {
+	t.Helper()
+	for _, w := range wants {
+		if !strings.Contains(out, w) {
+			t.Errorf("%s: output lacks %q\n%s", label, w, out)
+		}
+	}
+}
 
-	code, out, errs := runGuide(t, "1\n")
-	if code != identity.ExitOK {
-		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", code, out, errs)
+// savedRules reads the rules file the guide named in its "Agent … created:" line.
+func savedRules(t *testing.T, out, home string) string {
+	t.Helper()
+	i := strings.Index(out, "created: ")
+	if i < 0 {
+		t.Fatalf("no rules file named:\n%s", out)
 	}
-	for _, want := range []string{
-		"✓ This computer can protect your agents (Basic level, no admin needed)",
-		"Welcome to Tego.", "Step 1 of 4 · Connect your agent", "Step 2 of 4 · Your first project", "Step 3 of 4 · Its rules", "Step 4 of 4 · Run it", "1. Claude Code", "2. Codex", "3. Another program",
-		"✓ Claude Code is installed",
-		"✓ Sample project ready to try Tego on: ~/tego-sample",
-		"✓ Rules written to ~/",
-		"may change    ~/tego-sample",
-		"never reads   ~/.ssh, ~/.aws, .env files and other secrets",
-		"may connect   api.anthropic.com",
-		"cd ~/tego-sample && tego run tego-sample",
-		"For one of your own projects, run tego start from inside it.",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("stdout lacks %q\n%s", want, out)
-		}
-	}
-	if strings.Contains(out, "[Y/n]") || strings.Contains(out, "Which folder") {
-		t.Errorf("the project step asked a question:\n%s", out)
-	}
-	for name := range sampleFiles {
-		if _, err := os.Stat(filepath.Join(sample, name)); err != nil {
-			t.Errorf("sample project lacks %s: %v", name, err)
-		}
-	}
-	line := out[strings.Index(out, "Rules written to ")+len("Rules written to "):]
-	saved := strings.Replace(strings.SplitN(line, "\n", 2)[0], "~", f.Home, 1)
-	if strings.HasPrefix(saved, sample+"/") {
-		t.Errorf("rules file %s is inside the project the agent may change", saved)
-	}
-	text, err := os.ReadFile(saved)
+	path := strings.Replace(strings.SplitN(out[i+len("created: "):], "\n", 2)[0], "~", home, 1)
+	b, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("rules file: %v", err)
-	}
-	if !strings.Contains(string(text), `- "./"`) || !strings.Contains(string(text), "harness: claude-code") {
-		t.Errorf("rules file does not let Claude Code change the project it runs in:\n%s", text)
-	}
-
-	// A second run reuses the sample and its rules file, and keeps a file the person changed.
-	if err := os.WriteFile(filepath.Join(sample, "hello.py"), []byte("print(1)\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	code, out, errs = runGuide(t, "1\n")
-	if code != identity.ExitOK || !strings.Contains(out, "✓ Rules written to") {
-		t.Fatalf("second run: exit %d\n%s\n%s", code, out, errs)
-	}
-	if b, _ := os.ReadFile(filepath.Join(sample, "hello.py")); string(b) != "print(1)\n" {
-		t.Errorf("second run replaced the person's hello.py: %q", b)
-	}
+	return string(b)
 }
 
-// TestSetupGuideUsesThisProject: started inside a project folder, the guide uses that folder, without asking.
-func TestSetupGuideUsesThisProject(t *testing.T) {
-	f := onFixture(t, "fresh") // the fixture's working folder is its project
+// TestStartTestProjectWithClaude: Claude Code, signed in with an API key that is saved, on the test project with the
+// Base development rules. The guide says what to start, never starts it, saves the token where only the person can
+// read it, and makes the test project's Claude run with its own approvals off.
+func TestStartTestProjectWithClaude(t *testing.T) {
+	f := onFixture(t, "fresh")
+	noLogins(t)
 	fakeProgram(t, "claude")
-	code, out, errs := runGuide(t, "1\n")
-	if code != identity.ExitOK || !strings.Contains(out, "✓ Using this folder: "+tildeHome(f.Project, f.Home)) {
+	t.Chdir(f.Home)
+
+	code, out, errs := runGuide(t, "1\n2\nsk-test-123\ny\n1\n1\n")
+	if code != identity.ExitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errs)
 	}
-	if strings.Contains(out, "tego-sample") {
-		t.Errorf("made a sample project inside a project:\n%s", out)
+	wantAll(t, "first run", out,
+		"Welcome to Tego.", "Which agent do you want to supervise?", "✓ Claude Code is installed",
+		"How do you sign in to Claude Code?", "✓ Signed in to Claude Code",
+		"Which project should Claude Code work in?", "✓ Project: ~/tego-sample", "See its files: "+sampleURL,
+		"Which rules should Claude Code follow?", "Read more about rules and presets: "+presetsDocURL,
+		"✓ Rules: Base development", "✓ Agent tego-sample created: ~/",
+		"cd ~/tego-sample && tego run tego-sample", "its own approval prompts off", `ask Claude Code to "run the tests"`,
+		"tego get sessions", "tego describe session --last", "tego dashboard")
+	if strings.Contains(out, "sk-test-123") {
+		t.Errorf("the token was printed:\n%s", out)
+	}
+	env := filepath.Join(f.Home, agentEnvRel)
+	if fi, err := os.Stat(env); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("saved sign-in: %v %v", fi, err)
+	}
+	if got := savedLogin(f.Home, "ANTHROPIC_API_KEY"); got != "sk-test-123" {
+		t.Errorf("saved token %q", got)
+	}
+	for _, p := range []string{".env", "README.md", "tests/test_notes.py", "vendor/telemetry_helper/__init__.py"} {
+		if _, err := os.Stat(filepath.Join(f.Home, guideSample, p)); err != nil {
+			t.Errorf("test project lacks %s", p)
+		}
+	}
+	rules := savedRules(t, out, f.Home)
+	wantAll(t, "rules file", rules, `command: ["claude", "--dangerously-skip-permissions"]`, `- "./"`, "tego/no-secrets", "tego/no-prod")
+
+	// Again: the saved sign-in is used, and the existing agent is kept unless the person replaces it.
+	code, out, errs = runGuide(t, "1\n1\n1\n\n")
+	if code != identity.ExitOK {
+		t.Fatalf("second run: exit %d\n%s\n%s", code, out, errs)
+	}
+	wantAll(t, "second run", out, "✓ Signed in to Claude Code", "Agent tego-sample already exists. Replace its rules?", "✓ Agent tego-sample kept:")
+	b, _ := os.ReadFile(filepath.Join(f.Home, ".bashrc"))
+	if strings.Count(string(b), bashrcLine) != 1 {
+		t.Errorf(".bashrc holds the loading line %d times", strings.Count(string(b), bashrcLine))
 	}
 }
 
-// TestSetupGuideAgentMissing: an agent that is not installed is offered for install. "n" shows the line that
-// installs it and stops; "y" runs it and the guide carries on.
-func TestSetupGuideAgentMissing(t *testing.T) {
+// TestStartSubscriptionNotSaved: the subscription sign-in starts Claude's own browser sign-in, the token is used but not
+// saved, and Read-only review leaves the project unwritable.
+func TestStartSubscriptionNotSaved(t *testing.T) {
 	f := onFixture(t, "fresh")
+	noLogins(t)
+	fakeProgram(t, "claude")
+	t.Chdir(f.Home)
+	prev := guideSetupToken
+	t.Cleanup(func() { guideSetupToken = prev })
+	ran := ""
+	guideSetupToken = func(_ context.Context, program string) error { ran = program; return nil }
+
+	code, out, errs := runGuide(t, "1\n1\ntok-abc\nn\n1\n2\n")
+	if code != identity.ExitOK || ran != "claude" {
+		t.Fatalf("exit %d, setup-token ran %q\n%s\n%s", code, ran, out, errs)
+	}
+	wantAll(t, "subscription", out, "prints a link", "Paste the token", "export CLAUDE_CODE_OAUTH_TOKEN=<your token>", "✓ Rules: Read-only review")
+	if _, err := os.Stat(filepath.Join(f.Home, agentEnvRel)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a sign-in the person did not save was saved: %v", err)
+	}
+	if rules := savedRules(t, out, f.Home); strings.Contains(rules, `- "./"`) || !strings.Contains(rules, ".tego/") {
+		t.Errorf("Read-only review: the agent may change the project, or has no folder of its own:\n%s", rules)
+	}
+}
+
+// TestStartOwnProjectOnMac: another program, on one of the person's projects given by path. A path that is not in the
+// VM gets the one-line reason and the question again; the person's own rules name an extra host.
+func TestStartOwnProjectOnMac(t *testing.T) {
+	f := onFixture(t, "fresh")
+	noLogins(t)
+	t.Setenv("TEGO_ON_MAC", "1")
+	fakeProgram(t, "python3")
+	t.Chdir(f.Home)
+	app := filepath.Join(f.Home, "app")
+	if err := os.MkdirAll(app, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out, errs := runGuide(t, "3\npython3 bot.py\n2\n~/nope\n~/app\n3\n0\napi.github.com\n")
+	if code != identity.ExitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errs)
+	}
+	wantAll(t, "own project", out, "What command starts it?", "✓ python3 is installed",
+		"Path to the project, inside Tego's VM", "~/nope isn't in Tego's VM", "✓ Project: ~/app",
+		"Pick each rule", "✓ Rules: your own", "✓ Agent app created:", "cd ~/app && tego run app",
+		"Run tego dashboard on your Mac")
+	if strings.Contains(out, "How do you sign in") || strings.Contains(out, "approval prompts off") {
+		t.Errorf("another program was asked to sign in, or had approvals switched off:\n%s", out)
+	}
+	wantAll(t, "rules file", savedRules(t, out, f.Home), "python3", "bot.py", "api.github.com")
+}
+
+// TestStartInsideAProject: started inside a project, with the sign-in already in the shell, the guide offers this folder
+// first and keeps Claude's own approval prompts.
+func TestStartInsideAProject(t *testing.T) {
+	f := onFixture(t, "fresh") // the fixture's working folder is its project
+	noLogins(t)
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "from-the-shell")
+	fakeProgram(t, "claude")
+	code, out, errs := runGuide(t, "1\n1\n1\n")
+	if code != identity.ExitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errs)
+	}
+	wantAll(t, "inside a project", out, "This folder: "+tildeHome(f.Project, f.Home), "✓ Project: "+tildeHome(f.Project, f.Home), "opens as usual")
+	if strings.Contains(out, "tego-sample") || strings.Contains(savedRules(t, out, f.Home), "dangerously") {
+		t.Errorf("a real project got the test project or approvals off:\n%s", out)
+	}
+}
+
+// TestStartInstallsTheAgent: an agent that is not installed is offered for install; "no" shows the line and stops,
+// "yes" installs it and the guide goes on.
+func TestStartInstallsTheAgent(t *testing.T) {
+	f := onFixture(t, "fresh")
+	noLogins(t)
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "x")
+	t.Chdir(f.Home)
 	bin := filepath.Join(f.Home, ".local", "bin")
 	prevLook, prevInstall := guideLookPath, guideInstall
 	t.Cleanup(func() { guideLookPath, guideInstall = prevLook, prevInstall })
@@ -121,58 +201,31 @@ func TestSetupGuideAgentMissing(t *testing.T) {
 		}
 		return "", errors.New("not found")
 	}
-	ran := ""
-	guideInstall = func(_ context.Context, line string, _ io.Writer) error {
-		ran, installed = line, true
-		// What Anthropic's installer leaves: claude in ~/.local/bin.
+	guideInstall = func(_ context.Context, _ string, _ io.Writer) error {
+		installed = true
 		if err := os.MkdirAll(bin, 0o755); err != nil {
 			return err
 		}
-		return os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
+		return os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\n"), 0o755)
 	}
 
 	code, out, _ := runGuide(t, "1\nn\n")
-	if code != identity.ExitFinding || ran != "" {
-		t.Fatalf("no: exit %d, ran %q\n%s", code, ran, out)
+	if code != identity.ExitFinding || installed {
+		t.Fatalf("no: exit %d installed %v\n%s", code, installed, out)
 	}
-	for _, want := range []string{"✗ Claude Code isn't installed here", "Install it now? [Y/n]", "curl -fsSL https://claude.ai/install.sh | bash"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("no: stdout lacks %q\n%s", want, out)
-		}
-	}
+	wantAll(t, "no", out, "✗ Claude Code isn't installed", "Install Claude Code now?", "curl -fsSL https://claude.ai/install.sh | bash")
 
-	code, out, errs := runGuide(t, "1\ny\n")
-	if code != identity.ExitOK || ran != "curl -fsSL https://claude.ai/install.sh | bash" {
-		t.Fatalf("yes: exit %d, ran %q\n%s\n%s", code, ran, out, errs)
+	code, out, errs := runGuide(t, "1\ny\n1\n1\n")
+	if code != identity.ExitOK || !installed {
+		t.Fatalf("yes: exit %d installed %v\n%s\n%s", code, installed, out, errs)
 	}
-	for _, want := range []string{"Installing...", "✓ Claude Code installed", "✓ Rules written to"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("yes: stdout lacks %q\n%s", want, out)
-		}
-	}
+	wantAll(t, "yes", out, "Installing Claude Code...", "✓ Claude Code installed", "✓ Agent tego-sample created:")
 }
 
-// TestSetupGuideRulesArePicked: the person switches a rule off; the rules file leaves that preset out and the summary
-// says what that allows.
-func TestSetupGuideRulesArePicked(t *testing.T) {
-	f := onFixture(t, "fresh")
-	fakeProgram(t, "claude")
-	t.Chdir(f.Home)
-	code, out, errs := runGuide(t, "1\n2\n\n")
-	if code != identity.ExitOK {
-		t.Fatalf("exit %d\n%s\n%s", code, out, errs)
-	}
-	for _, want := range []string{"1. [x] Keep secrets away", "2. [ ] Reach only the hosts named", "may connect   anywhere"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("stdout lacks %q\n%s", want, out)
-		}
-	}
-	line := out[strings.Index(out, "Rules written to ")+len("Rules written to "):]
-	text, err := os.ReadFile(strings.Replace(strings.SplitN(line, "\n", 2)[0], "~", f.Home, 1))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(text), "no-prod") || !strings.Contains(string(text), "tego/no-secrets") {
-		t.Errorf("rules file presets do not match the switches:\n%s", text)
+// TestStartNeedsATerminal: tego start asks questions, so outside a terminal it says what to use instead.
+func TestStartNeedsATerminal(t *testing.T) {
+	code, _, errs := run(t, "start")
+	if code != identity.ExitUsage || !strings.Contains(errs, "runs in a terminal") {
+		t.Fatalf("exit %d\n%s", code, errs)
 	}
 }
