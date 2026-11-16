@@ -138,6 +138,8 @@ func resetTerminal() {
 	if _, err := proc.Start(c); err == nil {
 		_ = c.Wait()
 	}
+	// What was typed for the sign-in (the Enter after the pasted code) must not answer the guide's next question.
+	_ = unix.IoctlSetInt(int(os.Stdin.Fd()), unix.TCFLSH, unix.TCIFLUSH)
 }
 
 // claudeToken is a Claude setup-token token as Claude prints it.
@@ -390,19 +392,25 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 	g.cmd("cd " + tildeHome(abs, home) + " && tego run " + agentName)
 	switch {
 	case test && a.harness != "":
-		g.note(name + " opens with its own approval prompts off, so every block you see comes from Tego.")
-		g.note(`Try this: ask ` + name + ` to "run the tests". Tego blocks the secret read and the upload.`)
+		g.note(`Try this: ask ` + name + ` to "run the tests", and let it run them. The tests' dependency then tries to`)
+		g.note("read the project's secret and send it out, which " + name + "'s own prompts can't see. Tego blocks both.")
 	case a.harness != "":
 		g.note(name + " opens as usual, with Tego supervising it.")
 	}
 	g.line("")
-	g.line("Then:")
+	g.line("Then, from any terminal:")
 	g.line("    %-30s %s", "tego get sessions", "your sessions")
 	g.line("    %-30s %s", "tego describe session --last", "what "+name+" did and what Tego blocked")
 	g.line("    %-30s %s", "tego dashboard", "the same, in your browser")
 	if onMac {
-		g.note("Run tego dashboard on your Mac: type exit to get back to it.")
+		g.line("    %-30s %s", "tego shell", "back into Tego's VM, in "+tildeHome(abs, home))
 	}
+	if test {
+		g.line("")
+		g.line("For one of your own projects: run tego start again and pick it, or")
+		g.cmd("tego add agent --project <folder> --program " + firstNonEmpty(a.harness, "\""+command+"\""))
+	}
+	rememberProject(home, abs)
 	g.line("")
 	return identity.ExitOK, nil
 }
@@ -516,6 +524,7 @@ func (g *walk) signIn(ctx context.Context, a guideAgent, home string) (int, erro
 		}
 	}
 	save := true
+	g.note("Saved, it stays only on this machine, readable only by you, and later sessions don't ask again.")
 	if err := g.ask(huh.NewConfirm().Title("Save the sign-in for later sessions?").Value(&save)); err != nil {
 		return 0, err
 	}
@@ -781,7 +790,7 @@ func agentFile(m *config.Machine, name string) (string, error) {
 }
 
 // guideSaveRules composes an agent's rules file from rc, the way tego init --agent does, with the agent's own
-// interactive program (its approval prompts off in the test project), and saves it in the user registry, outside the
+// interactive program (its own approval prompts kept), and saves it in the user registry, outside the
 // project, where tego run <name> finds it. replace removes an existing file of that name first.
 func guideSaveRules(_ context.Context, m *config.Machine, a guideAgent, command, name, abs string, rc rulesChoice, test, replace bool, stderr io.Writer) (string, int) {
 	dir, err := filepath.EvalSymlinks(abs)
@@ -797,7 +806,7 @@ func guideSaveRules(_ context.Context, m *config.Machine, a guideAgent, command,
 	if a.harness == "" {
 		po.Command = command
 	} else {
-		po.Interactive, po.SkipApprovals = true, test
+		po.Interactive = true
 	}
 	env, code := initCheckEnv(stderr)
 	if code != identity.ExitOK {
@@ -850,6 +859,24 @@ func tildeHome(p, home string) string {
 		return "~" + strings.TrimPrefix(p, home)
 	}
 	return p
+}
+
+// lastProjectRel is where tego start keeps the project it set up last, under home: the Mac's tego shell opens there.
+const lastProjectRel = ".config/tego/last-project"
+
+// rememberProject records dir as the last project; a failure only means tego shell opens in home.
+func rememberProject(home, dir string) {
+	p := filepath.Join(home, lastProjectRel)
+	if os.MkdirAll(filepath.Dir(p), 0o700) == nil {
+		_ = os.WriteFile(p, []byte(dir+"\n"), 0o600)
+	}
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 // guideSample is the test project's folder, under home.

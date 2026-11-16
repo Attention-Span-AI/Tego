@@ -30,10 +30,9 @@ type Options struct {
 	Command string
 	// Agent selects a shipped harness descriptor; Prompt is passed as one literal argument.
 	Agent, Prompt string
-	// Interactive starts the agent's own interactive program instead of one task in print mode, reaching its model
-	// directly (Harness.InteractiveArgv); a Prompt is refused with it. SkipApprovals also switches the agent's own
-	// approval prompts off, for a test project where every block should come from Tego.
-	Interactive, SkipApprovals bool
+	// Interactive starts the agent's own interactive program, with its own default settings, instead of one task in
+	// print mode, reaching its model directly (Harness.InteractiveArgv); a Prompt is refused with it.
+	Interactive bool
 	// Name is the agent id, already checked by the caller.
 	Name string
 	// Dir is the project directory, absolute, with its symlinks resolved (filepath.EvalSymlinks): Create opens it with
@@ -157,14 +156,11 @@ func Compose(o Options) (*Result, error) {
 	if o.Prompt != "" && desc == nil {
 		return nil, usagef("--prompt needs --agent claude-code or --agent codex")
 	}
-	if (o.Interactive || o.SkipApprovals) && desc == nil {
+	if o.Interactive && desc == nil {
 		return nil, usagef("an interactive agent needs --agent claude-code or --agent codex")
 	}
 	if o.Interactive && o.Prompt != "" {
 		return nil, usagef("an interactive agent takes no --prompt: you type the task in its own window")
-	}
-	if o.SkipApprovals && !o.Interactive {
-		return nil, usagef("switching the agent's approvals off needs an interactive agent")
 	}
 	if desc != nil {
 		if o.Command != "" {
@@ -284,9 +280,6 @@ func Compose(o Options) (*Result, error) {
 	argv := commandArgv(command)
 	if desc != nil && o.Interactive {
 		argv = append([]string(nil), desc.InteractiveArgv...)
-		if o.SkipApprovals {
-			argv = append(argv, desc.SkipApprovals...)
-		}
 		hosts = appendEntry(hosts, entry{desc.InteractiveHost, "the model's API, reached directly by the interactive program"})
 	} else if desc != nil {
 		argv = append([]string(nil), desc.Argv...)

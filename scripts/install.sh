@@ -223,7 +223,7 @@ mac_setup() {
 			cat >"$shim" <<EOF
 #!/bin/sh
 # tego on a Mac, written by Tego's installer: runs tego inside Tego's Linux VM (the Lima instance "${vm}").
-# "tego shell" opens a shell in the VM. To remove: delete this file.
+# "tego shell" opens a shell in the VM, in the project tego start set up last. To remove: delete this file.
 vm=${vm}
 case "\$(limactl list --format '{{.Status}}' "\$vm" 2>/dev/null)" in
 	Running) ;;
@@ -239,7 +239,7 @@ case "\$(limactl list --format '{{.Status}}' "\$vm" 2>/dev/null)" in
 esac
 if [ "\${1:-}" = shell ]; then
 	echo "In Tego's Linux VM. Type exit to go back to your Mac." >&2
-	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet bash -l'
+	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME"; d=\$(cat "\$HOME/.config/tego/last-project" 2>/dev/null); [ -d "\$d" ] && cd "\$d"; exec systemd-run --user --scope --quiet bash -l'
 fi
 # tego start (and tego setup) leaves the person in the VM, where the projects it sets up live and its commands work as
 # printed; when it fails, the person is back on the Mac with its error, never in a shell with no next step.

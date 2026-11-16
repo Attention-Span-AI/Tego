@@ -66,7 +66,7 @@ func savedRules(t *testing.T, out, home string) string {
 
 // TestStartTestProjectWithClaude: Claude Code, signed in with an API key that is saved, on the test project with the
 // Base development rules. The guide says what to start, never starts it, saves the token where only the person can
-// read it, and makes the test project's Claude run with its own approvals off.
+// read it, and keeps Claude's own approval prompts.
 func TestStartTestProjectWithClaude(t *testing.T) {
 	f := onFixture(t, "fresh")
 	noLogins(t)
@@ -83,7 +83,7 @@ func TestStartTestProjectWithClaude(t *testing.T) {
 		"Which project should Claude Code work in?", "✓ Project: ~/tego-sample", "See its files: "+sampleURL,
 		"Which rules should Claude Code follow?", "Read more about rules and presets: "+presetsDocURL,
 		"✓ Rules: Base development", "✓ Agent tego-sample added: ~/",
-		"cd ~/tego-sample && tego run tego-sample", "its own approval prompts off", `ask Claude Code to "run the tests"`,
+		"cd ~/tego-sample && tego run tego-sample", `ask Claude Code to "run the tests"`, "Tego blocks both.",
 		"tego get sessions", "tego describe session --last", "tego dashboard")
 	if strings.Contains(out, "sk-test-123") {
 		t.Errorf("the token was printed:\n%s", out)
@@ -100,8 +100,15 @@ func TestStartTestProjectWithClaude(t *testing.T) {
 			t.Errorf("test project lacks %s", p)
 		}
 	}
+	wantAll(t, "first run", out, "For one of your own projects", "tego add agent --project <folder> --program claude-code")
+	if b, _ := os.ReadFile(filepath.Join(f.Home, lastProjectRel)); strings.TrimSpace(string(b)) != filepath.Join(f.Home, guideSample) {
+		t.Errorf("last project %q", b)
+	}
 	rules := savedRules(t, out, f.Home)
-	wantAll(t, "rules file", rules, `command: ["claude", "--dangerously-skip-permissions"]`, `- "./"`, "tego/no-secrets", "tego/no-prod")
+	wantAll(t, "rules file", rules, `command: ["claude"]`, `- "./"`, "tego/no-secrets", "tego/no-prod")
+	if strings.Contains(rules, "dangerously") {
+		t.Errorf("the test project switched Claude's own approval prompts off:\n%s", rules)
+	}
 
 	// Again: the saved sign-in is used, and the existing agent is kept unless the person replaces it.
 	code, out, errs = runGuide(t, "1\n1\n1\n\n")
@@ -178,9 +185,9 @@ func TestStartOwnProjectOnMac(t *testing.T) {
 	wantAll(t, "own project", out, "What command starts it?", "✓ python3 is installed",
 		"Path to the project, inside Tego's VM", "~/nope isn't in Tego's VM", "✓ Project: ~/app",
 		"Pick each rule", "✓ Rules: your own", "✓ Agent app added:", "cd ~/app && tego run app",
-		"Run tego dashboard on your Mac")
-	if strings.Contains(out, "How do you sign in") || strings.Contains(out, "approval prompts off") {
-		t.Errorf("another program was asked to sign in, or had approvals switched off:\n%s", out)
+		"tego shell", "back into Tego's VM, in ~/app")
+	if strings.Contains(out, "How do you sign in") {
+		t.Errorf("another program was asked to sign in:\n%s", out)
 	}
 	wantAll(t, "rules file", savedRules(t, out, f.Home), "python3", "bot.py", "api.github.com")
 }
