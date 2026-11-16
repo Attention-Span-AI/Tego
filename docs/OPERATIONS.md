@@ -150,7 +150,7 @@ clocks keep counting.
 for itself and the agent, as nohup intends. Without nohup, a hangup starts `stop_grace` as SIGTERM does.
 
 A boundary's `fs.ask` and `net.ask` scopes hold the operation (the agent waits) until a person answers from a second
-terminal: `tego ask <run>` lists what is held, `tego approve <run> <ask_id>` and `tego deny <run> <ask_id>` answer
+terminal: `tego ask <run>` lists what is held, `tego approve [run] <ask_id>` and `tego deny [run] <ask_id>` answer
 it. That terminal is the person's own, as the run's user (or root, for a run launched with sudo): the run refuses an
 answer from inside any run or adoption, a shell under `tego watch` included, and from another cgroup namespace (a
 container's), and the request stays held. A record-only `tego watch` agent is not a cage, though: it can first move
@@ -419,9 +419,9 @@ When the agent opens a file under one of them for reading, its thread waits, and
 `q-... open read /home/me/.aws/credentials`. Answer it from a second terminal:
 
 ```sh
-tego approve <run> <ask_id>                      # the agent reads the real file (read-only)
-tego deny <run> <ask_id>                         # the read is refused (ask-denied)
-tego alternate <run> <ask_id> --file fake.txt    # the agent reads fake.txt in its place
+tego approve [run] <ask_id>                      # the agent reads the real file (read-only)
+tego deny [run] <ask_id>                         # the read is refused (ask-denied)
+tego alternate [run] <ask_id> --file fake.txt    # the agent reads fake.txt in its place
 ```
 
 Add `--always` to any of the three and the answer also stands for the rest of the run, for a read of the same file
@@ -707,11 +707,11 @@ which `tego learn` turns into a suggestion (twice the peak for memory, four time
 ran for wall).
 
 **Decide in the contract; keep `ask` for the few that need a person.** A write under an `fs.ask` directory holds the
-agent until `tego approve|deny <run> <id>` or `ask.timeout` (5 minutes by default, 1 hour at most), then is refused,
+agent until `tego approve|deny [run] <ask_id>` or `ask.timeout` (5 minutes by default, 1 hour at most), then is refused,
 recorded `ask-timeout`. Nothing remembers a timeout: the next try at the same file is held for the whole timeout again
 (measured: 5 tries, 5 holds of 3.00 s, 15.2 s of a 16 s run), so an agent that retries spends the night held. Either
 do not list the directory (the write is refused at once, like any write outside `fs.write`), or keep `ask.timeout`
-short, and answer the first request of each kind with `--always`: `tego approve <run> <id> --always` or `deny
+short, and answer the first request of each kind with `--always`: `tego approve [run] <ask_id> --always` or `deny
 --always` stands for the rest of that run, for that operation, rule and exact target and no other (measured: 2 human
 answers, 31 repeats answered at once as `standing:<ask id>`, the slowest in under 1 ms), and every automatic answer is
 its own `ask` and `answer` pair in the ledger. A held ask is not a stall. Approvals are for file writes and TCP
