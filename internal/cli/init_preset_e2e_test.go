@@ -109,7 +109,7 @@ func TestIntegrationInitPresetRunsAtTierLandlock(t *testing.T) {
 
 // TestIntegrationInitPresetInsideARun: `tego init --preset repo-only-writes --write src/new <dir>` run as the agent of
 // a run at tier landlock sets the project up as it does outside one: src/new/ and .tego/tmp/ are made, agent.yaml is
-// written and init exits 0. The run's filter answers openat2 with ENOSYS (enforce-landlock R10), and init's folders
+// written and init exits 0. The run's filter answers openat2 with ENOSYS, and init's folders
 // were made with openat2 alone, so init failed there with "function not implemented" (125), leaving .tego/ behind.
 func TestIntegrationInitPresetInsideARun(t *testing.T) {
 	if os.Geteuid() == 0 {

@@ -245,7 +245,7 @@ while IFS= read -r target; do
 	case "$phony" in *" $target "*) ;; *) echo "FAIL: Makefile target $target is not in a .PHONY line"; fail=1 ;; esac
 done < <(sed -n 's/^\([A-Za-z0-9_-]*\):.*##.*/\1/p' Makefile)
 
-# 15. the unit tests only a -tags tegotesthooks build compiles (identity-config.md R27) run in precommit and in CI's
+# 15. the unit tests only a -tags tegotesthooks build compiles run in precommit and in CI's
 #     build-test over the same packages: every package with a test file behind that tag is named by both, as a whole
 #     word: ./internal/runtime/enforce/landlock/ does not name ./internal/runtime/enforce/ (it once passed for it).
 for pkg in $(grep -rl --include='*_test.go' 'go:build.*tegotesthooks' internal | xargs -n1 dirname | sort -u); do

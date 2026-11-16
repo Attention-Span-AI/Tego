@@ -442,8 +442,7 @@ func TestLearnSaveRefusesItsOwnWriteEntry(t *testing.T) {
 }
 
 // After tego test passed: record your own agent. Doctor's verdict: Ready leads to tego test (as root for a root
-// report), not ready to doctor's own fix and the check again by tego setup, never tego doctor itself (acceptance B,
-// 2026-11-11); a root report's sentence says to run the check again. Neither with TEGO_HINTS=off.
+// report), not ready to doctor's own fix and the check again by tego setup, never tego doctor itself; a root report's sentence says to run the check again. Neither with TEGO_HINTS=off.
 func TestDoctorAndTestHints(t *testing.T) {
 	hintsAt(t, false, "on")
 	var b bytes.Buffer
@@ -544,7 +543,7 @@ func lastHint(t *testing.T, stderr string) string {
 // the agent's own contract enforced, typing only the commands the next: lines print. The recording is a watch's
 // record of python3 bot.py in ~/bot; the runs' records stand in for the agent's (refused 0 with reads not recorded,
 // then refused 1 with every read recorded). The real run, Ctrl-C and doctor's Ready line need an agent and a guest,
-// which no test here has. A guest walk of these next: lines (2026-11-11, Ubuntu 24.04.5 and AlmaLinux 9.8, over SSH,
+// which no test here has. A guest walk of these next: lines (Ubuntu 24.04.5 and AlmaLinux 9.8, over SSH,
 // a build of that morning) reached an enforced run and doctor's Ready line only from a shell in the user manager's
 // cgroup, a shell no next: line then named; Ctrl-C was not part of that walk.
 func TestFollowingTheNextLinesFromARecordToAnEnforcedRun(t *testing.T) {

@@ -43,7 +43,7 @@ var launchEnviron = os.Environ
 // evaluated against a table of hypothetical actions instead of printed (R28). Exit 0 with only
 // warnings, 1 on any error diagnostic or failing row (R25), 2 on usage or a malformed table. A contract
 // argument of "-" reads the contract from standard input (loadContract), and an agent's name the contract the
-// registries resolve it to (agent-contract.md R26), whose source the print names.
+// registries resolve it to, whose source the print names.
 //
 // --merged prints the merged contract (agent.Contract.Canonical: every profile of its extends laid in, a preset's
 // included) in place of the rule table, once it has compiled: the one rule file a run records as contract.yaml, whose
@@ -202,7 +202,7 @@ func runCompile(ctx context.Context, path string, req compileRequest, stdout, st
 	if m.Home != "" {
 		opts = append(opts, agent.WithHome(m.Home))
 	}
-	// The same chain anchor `run` guards, so compile and run agree on R10 (agent-contract.md).
+	// The same chain anchor `run` guards, so compile and run agree on R10.
 	opts = append(opts, anchorCompileOptions(m)...)
 	if offline {
 		opts = append(opts, agent.Offline())
@@ -217,7 +217,7 @@ func runCompile(ctx context.Context, path string, req compileRequest, stdout, st
 		return loadFailed(stderr, label, ds, err)
 	}
 	warnCostUnpriced(stderr, label, rt, m)
-	// The decision plane's keyed-inode cap (TIER3-PLAN T5, enforce-plane §6 E13) and this launcher's descriptor cap
+	// The decision plane's keyed-inode cap and this launcher's descriptor cap
 	// (§2.4 condition 7): a table over either is refused at a pinned bpflsm, never truncated, and an auto run of it is
 	// given tier cgroup.
 	if d, ok := decide.PlaneDiagnostic(rt, label, enforce.PlaneFDCap()); ok {
@@ -284,7 +284,7 @@ func printMerged(stdout, stderr io.Writer, c *agent.Contract) int {
 // said nothing (R32). A budget the contract declares is reported [budget-unmetered], since its run is then refused;
 // one a machine ceiling alone imposes stays [unenforced]. A table that loads but names no server_tool_per_request fee is warned
 // about too: a run ends at the first response reporting server-tool requests, whose cost the table cannot bound
-// (ADR 0037 amendment 2026-09-24), and one whose every entry lacks an input or output price: a budget the contract
+// (ADR 0037), and one whose every entry lacks an input or output price: a budget the contract
 // declares is then [budget-unmetered], its run refused as under no table, and one a machine ceiling
 // alone imposes [unenforced], a run ending at its first response (R2). The table is read as run reads it, and never
 // fails the compile.
@@ -357,8 +357,8 @@ func runCompileTest(rt *agent.RuleTable, m *config.Machine, path string, tiers [
 	}
 	cwd := rowCwd()
 	env := testEnv(rt, m)
-	// The bpflsm column is the plane's own rows walked as the kernel walks them, compiled once (TIER3-PLAN T10,
-	// ADR 0019's 2026-09-29 note); every other column is the root model's.
+	// The bpflsm column is the plane's own rows walked as the kernel walks them, compiled once (ADR 0019); every
+	// other column is the root model's.
 	var plane *decide.PlaneEvaluator
 	if slices.Contains(tiers, backend.TierBPFLSM) {
 		plane = decide.NewPlaneEvaluator(rt)
@@ -575,7 +575,7 @@ type TestReportRow struct {
 }
 
 // TestReportCell is one row's answer in one tier. Mechanism and DecisionPlane are set only for the bpflsm
-// column's FS, exec and executable-map answers, which walk the plane's rows (ADR 0019's 2026-09-29 note).
+// column's FS, exec and executable-map answers, which walk the plane's rows (ADR 0019).
 // Network answers use the policy model and carry neither field. These are test-column provenance, not
 // measurements of an attached runtime mechanism.
 type TestReportCell struct {
@@ -606,7 +606,7 @@ type TestReportCell struct {
 }
 
 // PlaneColumnNote is the line compile --test prints under the tiers line when the bpflsm column is answered:
-// what the column is and the decision plane it answers for (enforce-plane R25). The fs and exec answers compose the
+// what the column is and the decision plane it answers for. The fs and exec answers compose the
 // Landlock floor tier 3 keeps under the plane (a #! script's EXECUTE, a link's or a rename's REFER); exec.anonymous
 // and the network rows (net.connect, net.bind, net.http, net.send, net.socket) are the policy model's, with no
 // plane provenance in --json (correctness F3).
@@ -714,13 +714,13 @@ func loadCode(err error) string {
 	case errors.Is(err, os.ErrPermission):
 		return codeIO // the file is not the reader's to open: nothing about its schema is known
 	case errors.Is(err, config.ErrUntrusted):
-		return config.CodeUntrusted // a contract file with a second name (agent-contract.md R10, ADR 0059)
+		return config.CodeUntrusted // a contract file with a second name (ADR 0059)
 	}
 	return agent.CodeSchema
 }
 
 // printFrozen writes one note naming the directories a run of rt will list once at launch to build its deny_read
-// entries (decide.FrozenLevels; enforce-landlock R3, GAPS A12), in which a name made during the run is unreadable to it.
+// entries (decide.FrozenLevels, GAPS A12), in which a name made during the run is unreadable to it.
 // Every contract tier builds that ruleset (a root tier composes tier 1's); nothing is printed when none is listed. A run
 // names the directories it did list in run_start.deny_read_frozen and prints the same sentence; an --observe run
 // builds no ruleset and lists none.
@@ -799,9 +799,9 @@ type Table struct {
 	Gate         *TableGate `json:"gate,omitempty"`
 	Name         string     `json:"name"`
 	ContractHash string     `json:"contract_hash"`
-	// Revision is the contract's revision (agent-contract.md R28); absent when it has none.
+	// Revision is the contract's revision; absent when it has none.
 	Revision string `json:"revision,omitempty"`
-	// Source is the contract file, and the name and registry it was resolved from (agent-contract.md R26); absent
+	// Source is the contract file, and the name and registry it was resolved from; absent
 	// for standard input.
 	Source *TableSource `json:"source,omitempty"`
 	Tier   string       `json:"tier"`
@@ -829,13 +829,13 @@ type Table struct {
 	// refused, rule host-sockets. False under a net: section, which decides every destination, and under the opt-out.
 	HostSocketsRefused bool `json:"host_sockets_refused"`
 	// EnvPass is null for a contract with no env.pass, whose agent inherits the environment, and [] for one
-	// that passes nothing (agent-contract R12). EnvDeny and EnvSet are [] and {} when empty, never null.
+	// that passes nothing. EnvDeny and EnvSet are [] and {} when empty, never null.
 	EnvPass []string          `json:"env_pass"`
 	EnvDeny []string          `json:"env_deny"`
 	EnvSet  map[string]string `json:"env_set"`
 	// Machine is every effective machine config value with its source.
 	Machine []TableMachineValue `json:"machine"`
-	// Harness is the harness a run of the table is provisioned for (agent-contract.md R27): auto resolved from the
+	// Harness is the harness a run of the table is provisioned for: auto resolved from the
 	// contract's own command, or auto when it has none.
 	Harness string `json:"harness"`
 }
@@ -918,7 +918,7 @@ type TableFS struct {
 	MountPoint bool `json:"mount_point,omitempty"`
 	Overlay    bool `json:"overlay,omitempty"`
 	Btrfs      bool `json:"btrfs,omitempty"`
-	// AskRead marks a deny_read entry declared in fs.ask_read (POC 2026-10-06): kind stays deny_read, which is what
+	// AskRead marks a deny_read entry declared in fs.ask_read: kind stays deny_read, which is what
 	// every mechanism but tier 1's supervisor applies; tier 1 holds a read beneath it for a person. Added key.
 	AskRead bool `json:"ask_read,omitempty"`
 	// Unenforced is a deny_read Landlock cannot hold beneath a writable parent. A deny_write entry beneath one

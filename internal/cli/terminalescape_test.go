@@ -24,7 +24,7 @@ import (
 )
 
 // TestVerifiedLineEscapesTheAnchor: the anchor path verifiedLine names is escaped like the run id beside it
-// (limits-check-doctor-cli.md: every human-readable view escapes ledger text with record.Printable).
+// (every human-readable view escapes ledger text with record.Printable).
 func TestVerifiedLineEscapesTheAnchor(t *testing.T) {
 	const evil = "R\x1b[2J\x1b]0;pwned\a\r"
 	line := verifiedLine(ledger.VerifyReport{Run: "r", Lines: 2, Anchored: true}, "/x/"+evil)

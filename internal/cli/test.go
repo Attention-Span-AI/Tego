@@ -82,7 +82,7 @@ func cmdTest() Command {
 			case code == identity.ExitError && rep.Refused == 0 && (tier == "" || tier == "auto" || tier == "landlock") &&
 				hintsOn(stderr):
 				// No run under Tego started. When that is only because this shell is outside the user manager's cgroup,
-				// the next step is the shell that is inside it (acceptance B, 2026-11-11): the check of doctor's D3 that
+				// the next step is the shell that is inside it: the check of doctor's D3 that
 				// tego setup makes, which is what refused the runs.
 				if m, _, err := loadMachine(config.TrustWarn); err == nil {
 					if pa, err := testProbe(ctx, m); err == nil && pa.outside {

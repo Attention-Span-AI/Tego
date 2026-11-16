@@ -14,7 +14,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
-// TestServeWithoutControlSaysNotInstalled is limits-check-doctor-cli.md R35 as amended for ADR 0100: `tego serve`
+// TestServeWithoutControlSaysNotInstalled is ADR 0100's `tego serve`: it
 // hands off to tego-control, and with no tego-control beside this binary (the test binary's directory has none) it
 // says [control-not-installed] on one line, exits with that code's pkg/spec/identity exit and runs nothing. Every
 // other handed-off noun says the same. The usage text lists each of them as "(tego-control)".

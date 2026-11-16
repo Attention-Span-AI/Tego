@@ -296,7 +296,7 @@ func (f *facts) check() {
 		return
 	}
 	// After a reboot, tego setup checks its own place only; a place checked before it started is said, not dropped
-	// in silence (acceptance B, 2026-11-11).
+	// in silence.
 	var stale string
 	for _, w := range places {
 		if slices.ContainsFunc(before, func(c Check) bool { return c.Where == w }) &&
@@ -363,7 +363,7 @@ func (f *facts) check() {
 		f.hereCannot = true
 	}
 	if ready.Where == WhereRoot {
-		// A root check holds a run started as root (sudo), never one started as you (acceptance B, 2026-11-11).
+		// A root check holds a run started as root (sudo), never one started as you.
 		fact += "; root's check holds only a run started as root, with sudo"
 	}
 	f.ready = ready
@@ -514,7 +514,7 @@ func (f *facts) contract() {
 // newest ended run under a contract ran (run_start.contract_source.path), taken only when that run's record checks out
 // against the chain anchor; else the one named after the folder of the run the record step took, whose record checks
 // out too (the name learn --save proposes); else the first in name order. With several contracts the step used to name
-// the first in name order while the run used another (acceptance B, 2026-11-11). nil when none compiles.
+// the first in name order while the run used another. nil when none compiles.
 func (f *facts) preferred() (*contract, string) {
 	cs := f.contracts
 	if cs == nil {

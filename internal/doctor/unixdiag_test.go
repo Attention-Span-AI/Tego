@@ -11,7 +11,7 @@ import (
 )
 
 // TestUnixDiagNoteOnEveryTier: on a kernel with no sock_diag for AF_UNIX every tier's unix sockets row says that a
-// socket under an fs.write path is refused unix-origin-unread (supervisor R11a), after the row's own
+// socket under an fs.write path is refused unix-origin-unread, after the row's own
 // note where it has one; a kernel that answers, or a state where nobody asked, adds nothing.
 func TestUnixDiagNoteOnEveryTier(t *testing.T) {
 	no, yes := false, true

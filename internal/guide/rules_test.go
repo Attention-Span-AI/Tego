@@ -460,8 +460,8 @@ func TestMoreNamesThanTheGuideCompilesSaysSo(t *testing.T) {
 
 // TestFromAShellThatCannotEnforceTheNextStepOpensOne: over SSH (place shell, no tier from here) with a stored check
 // from the user manager's cgroup that is ready, the step that would start a run (tego run, tego watch) is never named
-// from here, where it exits 125: the next step opens a shell in the user manager's cgroup and runs tego setup there
-// (acceptance B, 2026-11-11). With only root's check ready and a shell that fails for another cause, the words say that
+// from here, where it exits 125: the next step opens a shell in the user manager's cgroup and runs tego setup there.
+// With only root's check ready and a shell that fails for another cause, the words say that
 // check holds a run started with sudo, and the command is tego doctor, never tego run (F9).
 func TestFromAShellThatCannotEnforceTheNextStepOpensOne(t *testing.T) {
 	for _, name := range []string{guidetest.Fresh, guidetest.ContractMade} {
@@ -521,7 +521,7 @@ func TestFromAShellThatCannotEnforceTheNextStepOpensOne(t *testing.T) {
 		}
 	})
 	// The ready check is a shell entry, not root's: the words never say root's check is ready when there is none
-	// (the review's S3; it needs an unusual or forged check.json). The command is still tego doctor.
+	// (it needs an unusual or forged check.json). The command is still tego doctor.
 	t.Run("another place", func(t *testing.T) {
 		f := guidetest.Make(t, guidetest.ContractMade)
 		shell := f.Probe
@@ -545,7 +545,7 @@ func TestFromAShellThatCannotEnforceTheNextStepOpensOne(t *testing.T) {
 
 // TestAfterARebootThePlacesNotCheckedAreSaid: a check of another place from before this machine last started is not
 // used, and the check step says that place is not checked since this machine started, beside the place checked now,
-// on both surfaces (acceptance B, 2026-11-11).
+// on both surfaces.
 func TestAfterARebootThePlacesNotCheckedAreSaid(t *testing.T) {
 	f := guidetest.Make(t, guidetest.Fresh)
 	old := f.Probe // the user manager's check, ready, of the last boot
@@ -576,7 +576,7 @@ func TestAfterARebootThePlacesNotCheckedAreSaid(t *testing.T) {
 
 // TestTheContractStepNamesTheContractTheRunUsed: with several contracts that compile, the contract step names the one
 // the newest ended run under a contract ran when that run's record checks out, else the one named after the recorded
-// run's folder, never simply the first in name order (acceptance B, 2026-11-11). A run whose record does not check out
+// run's folder, never simply the first in name order. A run whose record does not check out
 // chooses nothing.
 func TestTheContractStepNamesTheContractTheRunUsed(t *testing.T) {
 	other := "version: 0\nname: aaa\ncommand: [\"sh\"]\ntier: landlock\nexec:\n  allow: [sh]\n"
@@ -613,7 +613,7 @@ func TestTheContractStepNamesTheContractTheRunUsed(t *testing.T) {
 
 // TestTheLearnStepReadsTheRunWithinABudget: the learn step's --allow-host <host> rests on a read of the whole recorded
 // run (SuggestHosts), which the dashboard's Overview makes on each load; past its budget the step is the plain form,
-// which names no host (the review's S4). A run that reached addresses and read no secret names --allow-host within it.
+// which names no host. A run that reached addresses and read no secret names --allow-host within it.
 func TestTheLearnStepReadsTheRunWithinABudget(t *testing.T) {
 	f := guidetest.Make(t, guidetest.Fresh)
 	rid, err := identity.NewRunID(identity.HostID([]byte("fixture")), guidetest.CheckTime, bytes.NewReader([]byte{1, 2, 3, 4}))
@@ -656,7 +656,7 @@ func TestTheLearnStepReadsTheRunWithinABudget(t *testing.T) {
 }
 
 // TestNoUserManagerNamesTheCommandThatStartsOne: a check that found no user manager running for the user
-// (CauseNoUserManager, acceptance 2B, 2026-11-11: a nologin service account reached through sudo -u) keeps its cause
+// (CauseNoUserManager: a nologin service account reached through sudo -u) keeps its cause
 // through the file, says why in step 2, and its next step is the command that starts that manager (Inputs.Linger, built
 // by the caller from the passwd entry), never tego setup; where the caller cannot build it (the dashboard), tego
 // doctor, which names it. The stored cause chooses among these fixed commands only, never a word of one.
@@ -699,8 +699,8 @@ func TestNoUserManagerNamesTheCommandThatStartsOne(t *testing.T) {
 // TestTheScopeLineSaysWhoseShellItOpens: after linger, tego setup started as a service account from an administrator's
 // shell (sudo -u svc) named XDG_RUNTIME_DIR=/run/user/1002 systemd-run --user --scope bash with "open a shell in your
 // user manager's cgroup": the administrator typed it in their own shell, which opened their own scope on Ubuntu 24.04
-// and AlmaLinux 9.8 (where tego setup then said ready, for the wrong user) and failed on Fedora 44 (acceptance 3,
-// 2026-11-11). With As.ScopeAs the step's words say to type it in your own shell and that it opens a shell as this
+// and AlmaLinux 9.8 (where tego setup then said ready, for the wrong user) and failed on Fedora 44.
+// With As.ScopeAs the step's words say to type it in your own shell and that it opens a shell as this
 // user, and step 2 names that user; the command is the invoker's (OpenScope's sudo -u form). The reader who is the
 // user keeps the words as they were.
 func TestTheScopeLineSaysWhoseShellItOpens(t *testing.T) {
@@ -723,8 +723,8 @@ func TestTheScopeLineSaysWhoseShellItOpens(t *testing.T) {
 			if fact := *step(s, guide.StepCheck).Fact; !strings.Contains(fact, "it opens a shell as svc in svc's user manager's cgroup, not in yours") {
 				t.Errorf("step 2 does not say whose shell: %q", fact)
 			}
-			// Read in a shell sudo su -s opened as svc, "your own shell" was that shell, where sudo -u svc fails (the
-			// review's S4): the words say which shell.
+			// Read in a shell sudo su -s opened as svc, "your own shell" would be that shell, where sudo -u svc fails:
+			// the words say which shell.
 			if fact := *step(s, guide.StepCheck).Fact; !strings.Contains(fact, "in your own login shell, not in one sudo or su opened") {
 				t.Errorf("step 2 does not say to leave a shell sudo or su opened: %q", fact)
 			}
@@ -738,7 +738,7 @@ func TestTheScopeLineSaysWhoseShellItOpens(t *testing.T) {
 }
 
 // TestANameSystemdRefusesNamesNoCommand: for an account whose name systemd refuses (Inputs.ManagerRefused: digits
-// only, the user 4242 on Ubuntu 24.04, acceptance 3, 2026-11-11), linger starts no user manager, and tego setup named
+// only, the user 4242 on Ubuntu 24.04), linger starts no user manager, and tego setup named
 // sudo loginctl enable-linger 1004 again after it ran. Step 2 now says why, and the next step names no command:
 // neither linger nor tego doctor nor tego setup.
 func TestANameSystemdRefusesNamesNoCommand(t *testing.T) {

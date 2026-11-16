@@ -35,7 +35,7 @@ func TestDriftAggregateExcusesAnEmptyLedger(t *testing.T) {
 
 // TestCompileTestEscapesTheTableText: compile --test prints a row's name, its resolved paths and the failure
 // text to a terminal, and a test table from a cloned repository chooses them, so they are escaped like every
-// other human-readable view (limits-check-doctor-cli.md: record.Printable). --json is the byte-exact form.
+// other human-readable view (record.Printable). --json is the byte-exact form.
 func TestCompileTestEscapesTheTableText(t *testing.T) {
 	table := filepath.Join(t.TempDir(), "table.yaml")
 	body := "version: 0\ntests:\n  - name: \"evil \\e[2J\\e[Hforged\"\n    action: fs.write\n    path: out/x\n    expect: refused\n"

@@ -30,7 +30,7 @@ type agreeKiller struct{ kills int }
 
 func (k *agreeKiller) Kill(cgroup.Cgroup) error { k.kills++; return nil }
 
-// TestMeasureAndTheWatcherAgreeOnSpend is limits-check-doctor-cli.md I5: measure.Compute and a limits.Watcher fed
+// TestMeasureAndTheWatcherAgreeOnSpend: measure.Compute and a limits.Watcher fed
 // the same completed ledger agree on tokens and cost to the cent. The ledger covers every counter either side
 // prices: two models at different rates, 5-minute and 1-hour cache writes (the 1-hour ones on the model the
 // table gives a 1-hour rate), cache reads, a priced server-tool fee, a cut stream charged its max_tokens bound

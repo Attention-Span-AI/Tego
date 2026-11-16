@@ -160,7 +160,7 @@ func runSetup(ctx context.Context, asJSON, verbose bool, stdout, stderr io.Write
 	}
 	in.Fresh = &fresh
 	// The object is computed before the check is stored: storing drops the other places' checks of an earlier boot,
-	// which the check step names as not checked since this machine started (acceptance B, 2026-11-11).
+	// which the check step names as not checked since this machine started.
 	s := guide.Compute(ctx, in)
 	var notStored string
 	switch {

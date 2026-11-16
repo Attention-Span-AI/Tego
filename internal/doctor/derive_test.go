@@ -45,7 +45,7 @@ func fixFor(t backend.Tier) string {
 // `tego doctor` and exit 125 [tier-unavailable] from `tego run` (the open question R27 and §11 carried).
 // The probes that need root answer "requires root to test" for an ordinary user, and tier 1 needs none
 // of them.
-// supervisor.md E27: a kernel below the floor (D1) blocks tier 1 before the supervisor runs. The floor in code is 5.14.0, not the 6.1 the rule states.
+// A kernel below the floor (D1) blocks tier 1 before the supervisor runs. The floor in code is 5.14.0, not the 6.1 the rule states.
 func TestTierOneNeedsD1D3D4D5(t *testing.T) {
 	user := func(edit func(*probeState)) probeState {
 		return state(func(st *probeState) {
@@ -162,7 +162,7 @@ func TestTheBuildIsHalfTheDerivation(t *testing.T) {
 
 // TestTheDerivationReadsThisBuild ties the seam to the binary: with built left nil, doctor asks
 // enforce.Buildable, so an untagged test binary reports neither tier cgroup nor tier bpflsm, and a binary with the
-// objects reports both where the machine gives them (bpflsm is the plane in LSM mode over tier cgroup, TIER3-PLAN T7).
+// objects reports both where the machine gives them (bpflsm is the plane in LSM mode over tier cgroup).
 func TestTheDerivationReadsThisBuild(t *testing.T) {
 	st := state(func(st *probeState) { st.built = nil })
 	p := st.probe()

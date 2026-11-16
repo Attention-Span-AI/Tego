@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestTestBuildAnchorFailsClosed is identity-config.md R27: a binary built with tegotesthooks resolves the
+// TestTestBuildAnchorFailsClosed: a binary built with tegotesthooks resolves the
 // anchor it is told and, told none, resolves none, so a command that anchors refuses instead of writing the
 // invoking user's own ~/.tego/chain.log.
 func TestTestBuildAnchorFailsClosed(t *testing.T) {

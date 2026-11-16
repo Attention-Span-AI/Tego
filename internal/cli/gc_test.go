@@ -146,9 +146,8 @@ func TestGCKeepOverridesTheMachine(t *testing.T) {
 	}
 }
 
-// TestGCKeepZeroKeepsNothing: an explicit --keep 0s removes every run that is not running (record-ledger.md's "gc
-// --keep 0" sweep). It used to be read as "no --keep" and silently became the machine's 30-day retention, keeping the
-// runs it was asked to remove.
+// TestGCKeepZeroKeepsNothing: an explicit --keep 0s removes every run that is not running; read as "no --keep" it
+// would silently be the machine's 30-day retention, keeping the runs it was asked to remove.
 func TestGCKeepZeroKeepsNothing(t *testing.T) {
 	root := gcRoot(t)
 	fresh := endedRun(t, root, time.Now().Add(-time.Minute))
@@ -405,8 +404,8 @@ func TestGCPrunesTheRuleChangeJournal(t *testing.T) {
 }
 
 // TestGCJournalNotPrunedWhenALayerWasSkipped: a machine config layer gc cannot read whole may set the retention and the
-// ledger root, so gc refuses with 125 and removes nothing, runs or journal, with or without --keep (GAPS C52's rule,
-// identity-config.md R20); the rule-change journal keeps both lines.
+// ledger root, so gc refuses with 125 and removes nothing, runs or journal, with or without --keep (GAPS C52's rule);
+// the rule-change journal keeps both lines.
 func TestGCJournalNotPrunedWhenALayerWasSkipped(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o700); err != nil {

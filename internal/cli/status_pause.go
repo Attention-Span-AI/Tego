@@ -34,7 +34,7 @@ type pauseFact struct {
 	Pending string
 	// LauncherGone is a run whose launcher is gone (runlock.LauncherGone: its lock is free, or the process its lock
 	// line names has exited or is another process) with no run_end, and whose last recorded pause line held it paused
-	// (ADR 0124, second amendment of 2026-11-11). That is the last state recorded, not proof the run stayed frozen: a
+	// (ADR 0124). That is the last state recorded, not proof the run stayed frozen: a
 	// stop thaws without a line, and lines queued when the launcher died are lost. Scope says what its scope shows now.
 	// Tego never thaws it; tego stop ends what is left of it and closes its record.
 	LauncherGone bool

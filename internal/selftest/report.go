@@ -218,7 +218,7 @@ func (r Report) WriteText(w io.Writer) error {
 			"unrecorded was stopped without a record. Run tego doctor and report it.\n")
 	case r.judged() == 0:
 		// Not one run under Tego started (from a shell outside the user manager's cgroup, every one exits 125): nothing
-		// was judged, so "nothing got through" would claim what was never tried (acceptance B, 2026-11-11).
+		// was judged, so "nothing got through" would claim what was never tried.
 		b.WriteString("No action could be judged: no run under Tego started (see the rows), so this says nothing\n" +
 			"about what Tego refuses here.\n")
 	default:

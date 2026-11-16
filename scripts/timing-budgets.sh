@@ -4,7 +4,7 @@
 # timing-budgets.sh — the tree's absolute timing budgets, asserted as their specs write them (docs/BENCHMARKS.md,
 # "Timing budgets in the test suites").
 #
-# Why it exists: ADR 0048 C8's exec costs, enforce-plane §10's plan fill, DGRAM-VERDICT's flood, the Rules page's
+# Why it exists: ADR 0048 C8's exec costs, the decision plane's plan fill, DGRAM-VERDICT's flood, the Rules page's
 # 55k-line read, the line page's warm render of a 12k-line run and ADR 0023 P1's Borrow ratio (to a fixed workload, two
 # atomic adds) are figures on the reference box (a developer laptop) with a Limit, most with a Target. A busy machine
 # slows the code by a lower clock and a busy sibling hyperthread through the whole measurement, which no fastest-of-N

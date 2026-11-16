@@ -27,7 +27,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// exampleComAnswer is what example.com resolved to in the guest on 2026-11-10 (internal/check/learn's exampleCom).
+// exampleComAnswer is what example.com resolved to in the guest (internal/check/learn's exampleCom).
 var exampleComAnswer = []netip.Addr{netip.MustParseAddr("104.20.23.154"), netip.MustParseAddr("172.66.147.243"),
 	netip.MustParseAddr("2606:4700:10::6814:179a"), netip.MustParseAddr("2606:4700:10::ac42:93f3")}
 
@@ -57,7 +57,7 @@ func withLearnResolver(t *testing.T, r agent.Resolver) {
 	t.Cleanup(func() { learnResolver = prev })
 }
 
-// u2404Run writes into root the network lines of the guest's watched run of 2026-11-10 (internal/check/learn's
+// u2404Run writes into root the network lines of a guest's watched run (internal/check/learn's
 // u2404Watch, its lines #130 to #145: the nscd socket, the resolver, the netlink socket, the address-sorting UDP
 // connects to the four addresses example.com resolved to, and the one TCP connect, to 104.20.23.154) as a run in
 // project, and returns its id.
@@ -103,7 +103,7 @@ func compileSaved(t *testing.T, path string, r agent.Resolver) *agent.RuleTable 
 }
 
 // admits reports whether a rule of rt allows a connect to ap over proto, by the rule's own semantics: its protocol and
-// port, the addresses compile resolved its name to, and the resolved-address check (agent-contract R18) the
+// port, the addresses compile resolved its name to, and the resolved-address check the
 // supervisor makes of an address a name stands for (RuleTable.ResolvedDenied).
 func admits(rt *agent.RuleTable, proto string, ap netip.AddrPort) (string, bool) {
 	for _, r := range rt.Net {
@@ -170,7 +170,7 @@ func TestLearnAllowHostNextRunAllowsTheOtherAddress(t *testing.T) {
 	}
 }
 
-// alma98Run writes into root the AlmaLinux 9.8 guest's watched run of 2026-11-10 (internal/check/learn's
+// alma98Run writes into root the AlmaLinux 9.8 guest's watched run (internal/check/learn's
 // alma98Watch): two queries to NetworkManager's resolver 10.0.2.3, which the engine named net.resolver, then pypi.org
 // reached at two of its addresses over TCP and probed over UDP; with lookupOnly, the queries alone (getent hosts).
 func alma98Run(t *testing.T, root, project string, lookupOnly bool) string {
@@ -202,7 +202,7 @@ func alma98Run(t *testing.T, root, project string, lookupOnly bool) string {
 // only looked a name up. The run on the host it was learned on still reaches its resolver: the contract compiled,
 // decided as a run decides it (decide.EvaluateIn, in the env compile --test reads as a run reads it at start), allows
 // the query as net.resolver, and the contract keeps a TCP or UDP entry, beside which Landlock grants port 53
-// (enforce-landlock R6, TestLearnedLookupContractGetsPort53). A run whose resolver is another one, or whose contract
+// (TestLearnedLookupContractGetsPort53). A run whose resolver is another one, or whose contract
 // sets net.dns.mode off, is refused that address, which the entry learn used to keep admitted. The run that only
 // looked a name up has no other TCP or UDP entry, so its contract keeps the resolver as the address it is.
 func TestLearnDoesNotAskToNameTheMachinesResolver(t *testing.T) {
@@ -393,7 +393,7 @@ func TestLearnAllowHostRefusesWritingNothing(t *testing.T) {
 			if code != identity.ExitFinding || stdout != "" || !strings.Contains(errs, tc.want) {
 				t.Errorf("%q: exit %d, stdout %q, stderr:\n%s\nwant exit 1, no stdout, and %q", args, code, stdout, errs, tc.want)
 			}
-			// The next: line is the command that works: the same, without the name refused (acceptance B, 2026-11-11).
+			// The next: line is the command that works: the same, without the name refused.
 			if got := lastHint(t, errs); !strings.HasPrefix(got, "tego learn ") || !strings.HasSuffix(got, strings.Join(mode, " ")+" --allow-host example.com") ||
 				strings.Contains(got, tc.host) {
 				t.Errorf("%q: next %q, want tego learn <run> %s --allow-host example.com", args, got, strings.Join(mode, " "))
@@ -592,7 +592,7 @@ func TestWatchNextReadsTheRecordOnlyForItsHint(t *testing.T) {
 	}
 }
 
-// TestLearnSaveRecordsRefusedReads (the project lead's decision of 2026-11-10): a contract --save writes records each
+// TestLearnSaveRecordsRefusedReads: a contract --save writes records each
 // read it refuses (reason: {reads: on}), and one stderr line says what that costs; --reads off leaves it out. The
 // printed proposal and --out keep today's default unless --reads on is given.
 func TestLearnSaveRecordsRefusedReads(t *testing.T) {

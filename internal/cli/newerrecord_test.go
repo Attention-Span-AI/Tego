@@ -55,7 +55,7 @@ func spliceVersionLineAt1(t *testing.T, root, id, v string) {
 	}
 }
 
-// TestViewsSkipANewerRecordVersionWithOneWarning pins limits-check-doctor-cli.md §6 case 20 end to end: events
+// TestViewsSkipANewerRecordVersionWithOneWarning, end to end: events
 // (table and --json), status, drift and measure read past a line of a newer record version, each with one
 // warning naming the count, and exit as they would without it.
 func TestViewsSkipANewerRecordVersionWithOneWarning(t *testing.T) {

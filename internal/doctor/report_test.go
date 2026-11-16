@@ -324,7 +324,7 @@ func TestWriteTextAndJSON(t *testing.T) {
 }
 
 // outsideSubtree reports whether this process runs outside the delegated subtree Detect finds for its uid,
-// where no run can be placed (runtime-launch.md case 41): a login over ssh, or a service such as a CI
+// where no run can be placed: a login over ssh, or a service such as a CI
 // runner's step. doctor then offers no tier, and says why in D3.
 func outsideSubtree() bool {
 	fs, err := cgroup.Detect(os.Getuid())
@@ -442,7 +442,7 @@ func TestPinnedMachineTierIsReportedAsARunWouldGetIt(t *testing.T) {
 	}
 	if rep.Tiers[backend.TierBPFLSM] {
 		// A machine that reaches tier 3 (root with the objects where bpf is an active LSM: the guest's lsm=...,bpf
-		// boot since TIER3-PLAN T7) gets the pinned tier itself, the answer a run would get there too.
+		// boot) gets the pinned tier itself, the answer a run would get there too.
 		if rep.Tier != backend.TierBPFLSM {
 			t.Errorf("tier %q on a machine that reaches the pinned tier bpflsm", rep.Tier)
 		}
@@ -495,8 +495,7 @@ func TestUnavailablePinNamesItsLine(t *testing.T) {
 }
 
 // TestSummaryComesBeforeTheMatrix: doctor's answer, the tier line, came after the capability matrix's rows, so a
-// reader met the probes, then the matrix, and learned which tier the machine gets only at the end
-// (limits-check-doctor-cli.md R27 Output, amended 2026-11-02).
+// reader met the probes, then the matrix, and learned which tier the machine gets only at the end.
 // One summary line now follows the probes, before the matrix: the tier, or why there is none, a machine config that
 // caps it, and what each tier above it needs, by the names its missing line gives. The tier line after the matrix is
 // unchanged and is still the one line that starts with "tier: " (test/vm/run-matrix-row.sh reads the first,

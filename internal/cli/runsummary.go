@@ -37,7 +37,7 @@ import (
 // "chain not checked (<why>)". A run whose record was off (its contract's record: off, a profile's, or --record off)
 // says "record off: refusals only" before the chain clause: its ledger keeps no exec or allowed action, so nothing it
 // wrote is counted. That is where a contract's own record: off is said: it is what the contract wrote and weakens no
-// rule, so the run's start does not say it (limits-check-doctor-cli.md R29, "A quiet start"). --no-summary turns the
+// rule, so the run's start does not say it ("A quiet start"). --no-summary turns the
 // summary off. It is printed after the agent's process tree is gone, never while it runs.
 
 // summaryBudget bounds the summary's read of the ledger and its chain check, so a huge ledger never holds tego's exit

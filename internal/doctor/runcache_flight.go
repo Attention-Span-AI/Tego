@@ -215,9 +215,8 @@ func (c *runCache) createFlight(ctx context.Context, dir int, name string) (int,
 // reclaimFlights unlinks up to want lock files that no caller holds, and returns how many it unlinked. It runs
 // under the admission lock. Each is unlinked while this caller holds its lock and its name still leads to it,
 // so a caller waiting on it takes the lock only after the unlink, finds the name gone, and opens it again
-// (acquireFlight); a held one is never touched. Amended 2026-10-05 (v73 review races-4): lock files were
-// never unlinked, and the key holds the run's cgroup and binary, so after 128 session scopes, units or builds
-// in one boot no new key coordinated at all.
+// (acquireFlight); a held one is never touched. The key holds the run's cgroup and binary, so without this,
+// after 128 session scopes, units or builds in one boot no new key would coordinate at all.
 func (c *runCache) reclaimFlights(dir int, entries []os.DirEntry, want int) int {
 	n := 0
 	for _, e := range entries {

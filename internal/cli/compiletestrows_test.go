@@ -15,7 +15,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
-// TestCompileTestRowsAreNeverProbedAgainstThisMachine is limits-check-doctor-cli.md E19: a write row under
+// TestCompileTestRowsAreNeverProbedAgainstThisMachine: a write row under
 // a directory that does not exist yet passes on the table as declared, since compile computes no inode, and
 // a connect to an address that only a host entry, which this offline compile cannot resolve, could admit
 // fails as "could not resolve <host>", a different line from a verdict mismatch, and with the finding exit.
@@ -81,7 +81,7 @@ func bpflsmTable(t *testing.T) string {
 	return string(data)
 }
 
-// TestCompileTestBPFLSMColumnGolden is TIER3-PLAN T10: the bpflsm column, answered from the plane's rows, in the
+// TestCompileTestBPFLSMColumnGolden: the bpflsm column, answered from the plane's rows, in the
 // text form. A row with no tier: must hold in every column, so the root tiers
 // both fail the mutation rows that Landlock allows. The header names the
 // bpflsm column's source and its decision plane. The rows that pass
@@ -150,7 +150,7 @@ func TestCompileTestConformanceActionsGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	copyExampleTests(t, string(table))
-	// A git directory's config beneath the write entry: a built-in deny_write target (agent-contract R20).
+	// A git directory's config beneath the write entry: a built-in deny_write target.
 	if err := os.MkdirAll(filepath.Join("out", ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -505,7 +505,7 @@ func TestCompileTestColumnProvenance(t *testing.T) {
 }
 
 // TestCompileTestResolverRowsFollowDNSMode: net.dns.mode off and broker take away R14's implicit resolver
-// exception from the run (network-controls.md "Cooperating DNS broker"; runtime runResolvers), so a direct
+// exception from the run (runtime runResolvers), so a direct
 // query to a machine resolver falls through to net.allow and is refused. compile --test answered it from the
 // machine config alone, allow via net.resolver in every mode, so an `expect: refused` row proving direct DNS is
 // blocked failed and an `expect: allow` row certified a connect the run refuses.

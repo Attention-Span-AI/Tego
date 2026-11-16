@@ -73,7 +73,7 @@ func controlPin() string {
 }
 
 // buildBPFHash is R30's bpf_hash: the hash over the BPF objects this binary embeds, the name of the pin
-// directory and build lock its tier-2 runs share (enforce-cgroup-observe.md §3), or "none" for a build
+// directory and build lock its tier-2 runs share, or "none" for a build
 // without them. It was hard-coded "none", so a tegobpf build reported the same as an untagged one and
 // a bug report could not tell which programs a tier-2 run had loaded.
 func buildBPFHash() string {

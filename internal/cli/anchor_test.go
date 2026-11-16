@@ -57,7 +57,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	// A `run` keeps its runtime directory under $XDG_RUNTIME_DIR/tego and sweeps that parent, which under the
-	// developer's /run/user/<uid> holds their own runs' (identity-config.md R27 clause b4).
+	// developer's /run/user/<uid> holds their own runs'.
 	if err := testutil.PrivateRuntimeDir(dir); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
@@ -490,7 +490,7 @@ func TestRunRefusesAnAnchorItCannotOpen(t *testing.T) {
 	}
 }
 
-// TestRunRefusedForContractOverlapExits125 is agent-contract E36 end to end: a contract whose fs.write entry
+// TestRunRefusedForContractOverlapExits125, end to end: a contract whose fs.write entry
 // is the directory holding the contract file is R10's contradiction, and `tego run` refuses it with exit 125
 // (identity.ExitLauncher) and the diagnostic code [contradiction], never the 210 it once had, before the
 // agent starts.

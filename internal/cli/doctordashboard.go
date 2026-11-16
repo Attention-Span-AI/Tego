@@ -15,7 +15,7 @@ import (
 // dashboardCheck is doctor's answer to whether the kernel can tell which run a dashboard connection comes from:
 // tego-control asks sock_diag for every request's client socket (peer.TCPSocketCgroup) and refuses any request it
 // cannot attribute (docs/DASHBOARD.md, docs/adr/0123-dashboard-threat-model.md). Without the inet_diag and tcp_diag
-// modules every sign-in and POST is refused, and the 403 was the first sign of it (Root-suite fixes, 2026-10-27).
+// modules every sign-in and POST is refused, and a 403 is the first sign of it.
 // It is a dashboard dependency, not a tier's: a failing check is a warning, never doctor's exit.
 type dashboardCheck struct {
 	// OK is true when the lookup answered for the probe's own loopback connection.

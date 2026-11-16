@@ -30,7 +30,7 @@ func stubStopRearm(t *testing.T, root bool, err error) *int {
 	return &calls
 }
 
-// TestStopRearmsTheBuildTimersAsRoot is ADR 0022 (4) and (8) in `tego stop` (limits-check-doctor-cli.md R29): a
+// TestStopRearmsTheBuildTimersAsRoot is ADR 0022 (4) and (8) in `tego stop`: a
 // root stop, once the run has ended or is not running, starts the timer of every tier-2 build whose timer died, so
 // a build left lingering with none is removed within its linger rather than at the next gc. It is one pass, after
 // the stop, and it removes nothing on stop's own path.

@@ -135,8 +135,8 @@ if [ "${#filters[@]}" -gt 0 ]; then
 	[ "${#pkgs[@]}" -gt 0 ] || { echo "coverage: no privileged package matches ${filters[*]}" >&2; exit 2; }
 fi
 # The kernel modules each guest loads before its suite (kvm-run.sh --module): VM_MODULES, space-separated, by default
-# suites.sh's GUEST_MODULES, the ones root-suites.sh's guests load, which says what needs each. These guests loaded
-# none until 2026-11-02, and without tcp_diag internal/control/web's and internal/control/cli's suites failed in them:
+# suites.sh's GUEST_MODULES, the ones root-suites.sh's guests load, which says what needs each. Without tcp_diag
+# internal/control/web's and internal/control/cli's suites fail in a guest:
 # the dashboard refuses every sign-in it cannot look up. kvm-run.sh asks apt for a kernel's module package, and a
 # kernel-matrix row's kernel (TEGO_VM_KERNEL=matrix-<row>) has none, so there the default is none, as in
 # root-suites.sh's row runs: VM_MODULES names the row's own after `test/vm/fetch-kernel.py --modules <row>` has

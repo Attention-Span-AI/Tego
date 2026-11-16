@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
-// TestMeasureRendersAFixtureRun is the P0 column set over the frozen fixture (R18-R23, R31).
+// TestMeasureRendersAFixtureRun is the column set over the frozen fixture.
 func TestMeasureRendersAFixtureRun(t *testing.T) {
 	dir := fixtureRun(t)
 	code, out, errs := run(t, "measure", dir)

@@ -30,7 +30,7 @@ env:
   pass: [PATH, ANTHROPIC_BASE_URL]
 `
 
-// TestPinnedUprobeLoweredToTheForwarderSaysSo is the run half of agent-contract R12 for a contract that pins
+// TestPinnedUprobeLoweredToTheForwarderSaysSo is the run half for a contract that pins
 // capture: uprobe. Compile resolves its unpinned tier to the machine's ceiling without probing the machine,
 // sees uprobes, and lets the contract keep ANTHROPIC_BASE_URL. The run then gets tier landlock, as every
 // unprivileged run does: the table tops out at the forwarder (agent.AtTier), the forwarder starts, and its base
@@ -119,7 +119,7 @@ func TestForwarderEnvWarningFollowsWhatRuns(t *testing.T) {
 		return rt
 	}
 	// compiledLowered is the table Compile gives a pinned uprobe it lowered to the forwarder itself: it warned,
-	// took the variable out of the pass list and kept env.set's value (agent-contract R12).
+	// took the variable out of the pass list and kept env.set's value.
 	compiledLowered := func(tier backend.Tier) *agent.RuleTable {
 		rt := table(agent.CaptureForwarder, agent.CaptureUprobe)
 		rt.Tier = tier

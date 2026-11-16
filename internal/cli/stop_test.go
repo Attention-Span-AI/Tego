@@ -29,7 +29,7 @@ import (
 // "not running" is not a failure. Nothing in this package exercised `stop` past its usage-error
 // argument checks before this (main_test.go only ever fed it a malformed run id).
 //
-// Also pins runtime-launch.md E11: stop on a free lock says not running, sends no signal and does no full
+// Also pins: stop on a free lock says not running, sends no signal and does no full
 // sweep.
 func TestStopNotRunning(t *testing.T) {
 	root := gcRoot(t)

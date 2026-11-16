@@ -23,7 +23,6 @@ import (
 // statusExit's translation of status.Snapshot.St, which nothing in this package exercised end to
 // end through Main before this (main_test.go only ever fed status a malformed run id). endedRun
 // and lostRun are gc_test.go's fixtures for exactly these two ledger shapes.
-// (limits-check-doctor-cli.md R25.)
 func TestStatusExitCode(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -324,7 +323,7 @@ func TestCorruptLedgerIsLedgerCorrupt(t *testing.T) {
 // per-run errors DeriveAll collects were dropped into tego.log, so a ledger root whose every run was
 // unreadable printed "no runs" on stdout and exited 0 — the same answer a machine that has never run
 // anything gives. An unreadable run is reported as itself (§7: a ledger check/* could not read).
-// (limits-check-doctor-cli.md E8: one run's error never aborts the listing, and is not swallowed either.)
+// One run's error never aborts the listing, and is not swallowed either.
 func TestStatusReportsRunsItCouldNotRead(t *testing.T) {
 	root := gcRoot(t)
 	bad := corruptRun(t, root, time.Now())
@@ -364,7 +363,6 @@ func TestStatusAllStillListsTheRunsItCouldRead(t *testing.T) {
 // TestStatusEACCESIsNotAnEmptyReport is E26 in the shape an operator meets it: runs recorded under
 // sudo leave root-owned 0700 directories in a user-owned ledger root, and reading them as the user
 // fails with EACCES. That must read as "permission denied", never as "no runs".
-// (limits-check-doctor-cli.md E26.)
 func TestStatusEACCESIsNotAnEmptyReport(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root reads every directory; EACCES cannot be provoked")
@@ -486,7 +484,7 @@ func TestStatusBareDoesNotHideAnUnreadableNewestRun(t *testing.T) {
 
 // TestStatusAllGapLines pins R34 for the listing: `status --all` prints `gaps <run>: <line>` for each run
 // that recorded a gap and nothing for a run that recorded none, under the table.
-// TestStatusAllGapLines is limits-check-doctor-cli.md R34's `status --all` half: a gappy run prints its own gap line and a quiet one prints none.
+// TestStatusAllGapLines is R34's `status --all` half: a gappy run prints its own gap line and a quiet one prints none.
 func TestStatusAllGapLines(t *testing.T) {
 	root := gcRoot(t)
 	quiet := endedRun(t, root, time.Now().Add(-time.Hour))

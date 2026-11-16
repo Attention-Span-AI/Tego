@@ -115,13 +115,13 @@ type statusJSON struct {
 	LedgerBytes        int64 `json:"ledger_bytes,omitempty"`
 	LedgerCeilingBytes int64 `json:"ledger_ceiling_bytes,omitempty"`
 	// RunCommandGrant is run_start's run_command_grant: the file the command given after `--` was granted
-	// as for the whole run, absent when none was (agent-contract.md R8).
+	// as for the whole run, absent when none was.
 	RunCommandGrant string `json:"run_command_grant,omitempty"`
 	// BestEffort is run_start's best_effort: the run's disclosed best-effort cells, decided on copied
 	// syscall facts and never counted as enforced (ADR 0041 D1, D7); absent when there were none.
 	BestEffort []string `json:"best_effort,omitempty"`
 	// LedgerAnomalies names each anomaly the ledger holds (two run_end lines, the first kept), absent for a
-	// healthy one (limits-check-doctor-cli.md §6 case 5).
+	// healthy one.
 	LedgerAnomalies []string `json:"ledger_anomalies,omitempty"`
 	// Paused is a live run its launcher holds frozen, as its last pause line records it (tego pause, the
 	// dashboard's Pause): the table's STATE says "paused" while state keeps the derived one. PausePending is
@@ -129,8 +129,8 @@ type statusJSON struct {
 	// the same shape, absent when there is none.
 	Paused       bool   `json:"paused,omitempty"`
 	PausePending string `json:"pause_pending,omitempty"`
-	// LauncherGone is a run whose launcher is gone, with no run_end, whose last recorded state was paused (ADR 0124,
-	// second amendment of 2026-11-11): state reads lost and paused true (the last state recorded, not proof it stayed
+	// LauncherGone is a run whose launcher is gone, with no run_end, whose last recorded state was paused (ADR 0124):
+	// state reads lost and paused true (the last state recorded, not proof it stayed
 	// frozen). ScopeNow is what its scope shows now: frozen, running, empty or unknown. Tego never thaws it; tego stop
 	// ends what is left and closes its record with run_end orphaned. Both absent otherwise.
 	LauncherGone bool   `json:"launcher_gone,omitempty"`

@@ -15,7 +15,7 @@ import (
 // (TestedFloor): docs/ARCHITECTURE.md §14's "Tested floor" and every tier cell of
 // spec/backend/CAPABILITIES.md's minimum-kernel row, which names it as the upstream tested floor and calls
 // no older kernel a floor. RHEL 9's 5.14 was called a second "tested floor" there while doctor reported
-// it "below the tested floor 6.1.0" on that machine (CAPABILITIES' 2026-10-16 amendment).
+// it "below the tested floor 6.1.0" on that machine.
 func TestTestedFloorMatchesDocs(t *testing.T) {
 	floor := fmt.Sprintf("%d.%d", TestedFloor.Major, TestedFloor.Minor)
 

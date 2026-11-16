@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# check-exits.sh — the two exit-code rules limits-check-doctor-cli.md states as CI checks, I6 (nothing but cmd/
+# check-exits.sh — the two exit-code rules kept as CI checks, I6 (nothing but cmd/
 # ends the process) and I9 (internal/cli returns no bare non-zero integer). The checks are tools/checkexits's,
 # on the Go syntax tree: the grep this script held missed an aliased os.Exit and a call split across lines, and
 # its exclude pathspec listed no file at all on git 2.51, so I9 checked nothing.

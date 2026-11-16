@@ -18,7 +18,7 @@ import (
 )
 
 // longRun writes the record fixture copies times over into a run directory: 98 lines a copy, so 1,400 copies is
-// the 137,200 events of the custom-agent POC's soak run that `events --last` took seconds to read. Each copy is
+// 137,200 events, a soak run's size, at which reading the whole ledger took seconds. Each copy is
 // stamped an hour after the one before, so no two copies share an instant, as no two events of a run do.
 func longRun(tb testing.TB, copies int) string {
 	tb.Helper()
@@ -51,8 +51,8 @@ func longRun(tb testing.TB, copies int) string {
 }
 
 // BenchmarkEventsLast is `tego events <run> --last` (table, and --json) on ledgers of 9,800 and 137,200 events.
-// It read the whole ledger twice, so its time grew with the ledger; read from the end it is the same at both sizes
-// (limits-check-doctor-cli.md R29 `events --last`). The nomatch case is a filter nothing matches, the most --last
+// Reading the whole ledger twice, its time would grow with the ledger; read from the end it is the same at both
+// sizes. The nomatch case is a filter nothing matches, the most --last
 // can now read: the whole ledger once, from the end.
 func BenchmarkEventsLast(b *testing.B) {
 	for _, copies := range []int{100, 1400} {

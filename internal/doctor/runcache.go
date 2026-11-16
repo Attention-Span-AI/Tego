@@ -125,7 +125,7 @@ type runCacheEntry struct {
 	Key      runCacheKey  `json:"key"`
 	Programs Result       `json:"programs"`
 	Hooks    []HookResult `json:"hooks"`
-	// Plane and PlaneRows are the decision plane's mode probe and its rows (docs/p0/enforce-plane.md R21), kept
+	// Plane and PlaneRows are the decision plane's mode probe and its rows, kept
 	// whatever it found except a skipped probe or one in which a mode faulted: tier cgroup falls back to fanotify
 	// without a plane mode, so no other plane answer stops the entry vouching. A faulted answer's cause may pass,
 	// so record keeps the entry's tier-2 half alone, Plane and PlaneRows nil, and a run that reads such an entry
@@ -137,8 +137,8 @@ type runCacheEntry struct {
 	FanotifyState FanotifyState `json:"fanotify_state"`
 	// BTF is D2's answer, and KernelFuncs whether the kernel's BTF has each of bpf.KernelFuncNames
 	// (bpf.KernelFuncFacts). Both read the kernel's BTF alone, which a boot never changes and the key's boot, kernel
-	// and binary pin, so a run that reads the entry parses no BTF: 50-100 ms of CPU in the KVM guests
-	// (enforce-plane §2.18). Either is nil where the run that kept the entry had none to keep; that part is then
+	// and binary pin, so a run that reads the entry parses no BTF: 50-100 ms of CPU in the KVM guests.
+	// Either is nil where the run that kept the entry had none to keep; that part is then
 	// probed or parsed as before. BTF is kept only when D2 passed: a failed D2 is probed again.
 	BTF         *Result         `json:"btf,omitempty"`
 	KernelFuncs map[string]bool `json:"kernel_funcs,omitempty"`
@@ -179,8 +179,8 @@ type cachedAnswer struct {
 	id    entryID // the file it was read from
 }
 
-// defaultRunCache is /run/tego, the directory the tier-2 backend keeps its build lock and slot table in
-// (enforce-cgroup-observe.md §3), owned by root.
+// defaultRunCache is /run/tego, the directory the tier-2 backend keeps its build lock and slot table in,
+// owned by root.
 func defaultRunCache() *runCache {
 	return &runCache{base: "/", dir: []string{"run", "tego"}, owner: 0, key: machineRunCacheKey}
 }
@@ -559,7 +559,7 @@ func (c *runCache) dropIf(k runCacheKey, id *entryID) {
 // order, each loaded and attached or an optional hook this kernel predates. It is the only answer the cache
 // keeps, and a loaded entry is held to it again, so an entry can never hold a failure a run would then miss.
 // A capability-only network row is kept as it was probed, failed or not: it gates no tier (programsVerdict,
-// missingHooks), so a run reading it misses nothing a probe would have refused. Amended 2026-10-05: such a row
+// missingHooks), so a run reading it misses nothing a probe would have refused. such a row
 // that failed used to fail the vouch, so one kernel without syscall tracepoints kept every root run probing.
 func vouches(programs Result, rows []HookResult, fan Result, fanState FanotifyState) bool {
 	if programs.ID != CheckPrograms || !programs.OK || fan.ID != CheckFanotify || !fan.OK || !fanState.Refuses {

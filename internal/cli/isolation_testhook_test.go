@@ -13,7 +13,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
-// TestTestBuildRefusesTheRealTegoDirectory is identity-config.md R27's ledger half: a test build whose machine
+// TestTestBuildRefusesTheRealTegoDirectory: a test build whose machine
 // config puts the ledger root inside the invoking user's ~/.tego (the built-in default included, which is what a
 // harness without a ledger_root gets), or whose anchor or own-log variable does, is refused, so `run`, `gc`,
 // `stop` and the sweeps they start never end or anchor a run in the developer's own ledger.

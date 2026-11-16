@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # in-user-manager.sh — runs a command inside the invoking user's systemd user manager, in a scope of its own
-# under user@<uid>.service: the place an unprivileged tego run can put its agent in its run cgroup
-# (docs/p0/runtime-launch.md case 41).
+# under user@<uid>.service: the place an unprivileged tego run can put its agent in its run cgroup.
 #
 # Why it exists: a process outside that subtree finds it delegated, writable and usable for everything but
 # placing a process in it. The kernel moves a process into a cgroup only for a writer of the cgroup.procs of

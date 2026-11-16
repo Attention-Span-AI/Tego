@@ -165,7 +165,7 @@ func TestTextSaysARefusalMatchedByReason(t *testing.T) {
 
 // TestNothingJudgedSaysSo: when no run under Tego started (every under-Tego half an error, as from a shell outside the
 // user manager's cgroup), the report never says "Nothing got through", which would claim what was never tried; one
-// error among refusals keeps the old words (acceptance B, 2026-11-11).
+// error among refusals keeps the old words.
 func TestNothingJudgedSaysSo(t *testing.T) {
 	r := fixedReport()
 	for i := range r.Checks {

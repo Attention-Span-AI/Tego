@@ -76,7 +76,7 @@ func loadBTF(path string) (*btf.Spec, error) {
 	return btf.LoadSpec(path)
 }
 
-// cgroupKillFile is cgroup v2's atomic kill (Linux 5.14, docs/p0/limits-check-doctor-cli.md R27 D1).
+// cgroupKillFile is cgroup v2's atomic kill (Linux 5.14, D1).
 // It is write-only (mode 0200) and exists only below the cgroup root, so W_OK on a freshly created
 // cgroup is the whole test; R_OK would fail on a kernel that has it.
 const cgroupKillFile = "cgroup.kill"
@@ -121,7 +121,7 @@ var landlockVersion = sys.LandlockABI
 // kernelResult is D1 on release, on a kernel that answered p. Above MinKernel D1 is ok and its detail is advice:
 // the upstream tested floor clause comes from the release alone, and the "without:" list from missingMechanisms,
 // whose Landlock and connect_unix rows follow the kernel's answers where it gave them. Neither D1's OK nor its Fix
-// reads p. *Amended 2026-11-11:* the clause said "the tested floor", while RHEL 9's 5.14 is a tested matrix row
+// reads p. the clause said "the tested floor", while RHEL 9's 5.14 is a tested matrix row
 // below the upstream floor (spec/backend/CAPABILITIES.md's minimum-kernel row), and every row followed the release.
 func kernelResult(release string, p kernelProbe) (Result, Version) {
 	v, err := ParseKernelRelease(release)
@@ -148,8 +148,7 @@ func kernelResult(release string, p kernelProbe) (Result, Version) {
 }
 
 // probeBTF is D2: the kernel exposes its BTF, the precondition of every tier-2/3 program load, and that BTF
-// carries every type, member and enum value the embedded objects read through CO-RE
-// (enforce-cgroup-observe.md E31).
+// carries every type, member and enum value the embedded objects read through CO-RE.
 func probeBTF() Result { return probeBTFWith(objectCORENeeds) }
 
 // probeBTFWith is probeBTF with the objects' needs supplied, so a test can check a fake BTF against
@@ -198,7 +197,7 @@ const delegateFix = "enable systemd user delegation: Delegate=cpu memory pids in
 // probeCgroup is D3. It fails when any one of these does not hold, and each can be the sole reason:
 // cgroup.Detect finds a cgroup2fs root this uid may use (for every uid that includes case 39's refusal
 // of a mount that does not hold this process's own cgroup); this process can place a process in that
-// root (FS.CanPlace, runtime-launch.md case 41: a login over ssh or a service runs outside its
+// root (FS.CanPlace: a login over ssh or a service runs outside its
 // user@<uid>.service and cannot, although everything below can be shown there); that root's cgroup.procs
 // and cgroup.subtree_control are writable; a scratch cgroup can be made one level below and removed
 // again; that scratch cgroup has a writable cgroup.kill, asked between the mkdir and the rmdir since
@@ -235,8 +234,8 @@ func probeCgroupWith(uid int, ceilings []config.Value, detect func(uid int) (*cg
 	// Ask the cgroup the kernel just made whether it exposes cgroup.kill, rather than inferring it
 	// from the release: D1's own table says a distribution that backports into an older release
 	// (RHEL 9's "5.14") is reported as missing what it has. cgroup.kill (5.14) is the only way to
-	// empty a cgroup atomically — runtime-launch.md §502: "there is no mechanism to force-empty a
-	// cgroup other than cgroup.kill + wait" — and without it stop and every limit breach fall back
+	// empty a cgroup atomically (there is no other mechanism to force-empty a cgroup than cgroup.kill and a
+	// wait), and without it stop and every limit breach fall back
 	// to the freeze/enumerate/SIGKILL loop that runc opencontainers/runc#3135 and crun
 	// containers/crun#724 both abandoned for racing forks. It is the one exact, cheap check, and
 	// only a non-root cgroup has the file, so the scratch cgroup is the only place to ask.
@@ -258,7 +257,7 @@ func probeCgroupWith(uid int, ceilings []config.Value, detect func(uid int) (*cg
 // controllersResult is D3's last step: which of cpu, memory and pids root's cgroup.subtree_control enables.
 // One that is missing does not fail D3, so it does not take tier 1 away: a run needs a controller only for a
 // limit that uses it, and a run with such a limit is refused at start, before its agent exists, when the
-// controller is missing (FS.SetLimits, runtime-launch.md case 31, exit 125). The detail names the limits that
+// controller is missing (FS.SetLimits, exit 125). The detail names the limits that
 // are refused here and the fix that allows them, the same fix that refusal prints (cgroup.EnableFix). Failing D3
 // instead left a fresh RHEL 9 login, whose user manager enables memory and pids but not cpu, with no tier at all,
 // even for a contract with no limits (GAPS B15). A read that fails is reported with its errno and fails D3: an

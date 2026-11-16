@@ -75,7 +75,7 @@ func TestPairsContractsCompile(t *testing.T) {
 	}
 
 	// The link gives the launcher's file a second name, which compile cannot list, so a write entry on its filesystem
-	// is refused unless only root may write the file and the agent is not root (ADR 0059, amendment 2026-11-11 (3)).
+	// is refused unless only root may write the file and the agent is not root (ADR 0059 (3)).
 	// That is the guest's case: `make vm-pairs` runs a root-owned /usr/local/bin/tego under sudo, and the agent is the
 	// sudo user. A test that is not root has a stand-in it owns, which its agent could rewrite through the link: there
 	// both contracts are refused, and the guest's own run shows they compile.

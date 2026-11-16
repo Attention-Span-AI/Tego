@@ -49,7 +49,7 @@ func main() {
 		os.Exit(uprobe.DetachMain(os.Args[2:]))
 	}
 	// And the removal of a run's rings above its build's ring pool, which the run hands off once its slot is
-	// free, so the kernel's grace periods are not on its path (ADR 0026 (6) as amended).
+	// free, so the kernel's grace periods are not on its path (ADR 0026 (6)).
 	if len(os.Args) > 1 && os.Args[1] == cgroupenforce.RingTrimCommand {
 		os.Exit(cgroupenforce.RingTrimMain(os.Args[2:]))
 	}
@@ -63,8 +63,7 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == runtime.AdoptReapCommand {
 		os.Exit(runtime.AdoptReapMain(os.Args[2:]))
 	}
-	// And doctor's plane probe child, whose syscalls in its scratch cgroup must be the probe's own (docs/p0/
-	// enforce-plane.md R21).
+	// And doctor's plane probe child, whose syscalls in its scratch cgroup must be the probe's own.
 	if len(os.Args) > 1 && os.Args[1] == doctor.PlaneProbeCommand {
 		os.Exit(doctor.PlaneProbeMain(os.Args[2:]))
 	}

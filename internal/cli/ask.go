@@ -458,7 +458,7 @@ func askAt(ctx context.Context, name, runID, dir, id string, approve, always, as
 		case errors.Is(err, ask.ErrNoAlternate):
 			err = fmt.Errorf("%w (only a held file open takes one); it is still pending: approve or deny it", err)
 		case errors.Is(err, ask.ErrUnauthorized):
-			// Either end refused the other: the broker serves a person only (ADR 0008, amended 2026-10-25), and this
+			// Either end refused the other: the broker serves a person only (ADR 0008), and this
 			// client the run's own broker only (askclient.Call). Neither changes what the run holds.
 			err = fmt.Errorf("%w: the run's broker serves only its owner or root, from outside every run and adoption and in "+
 				"its own cgroup namespace (not from inside a run, a watched or adopted agent, or a container), and this "+

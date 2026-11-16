@@ -81,13 +81,13 @@ func TestIntegrationForRunAsRoot(t *testing.T) {
 	path := filepath.Join("/run/tego", c.name(key))
 	c.drop(key)
 	// With no answer kept, a run adopts the plane's answer from this build's pin directory when the map there records
-	// the mode bpf.plane would select, and only else probes (enforce-plane R21). A tier-2 run leaves its build pinned
+	// the mode bpf.plane would select, and only else probes. A tier-2 run leaves its build pinned
 	// for bpf.linger after it ends (ADR 0022), so which of the two the first run after the drop gives is the
 	// machine's: a fresh KVM guest has no build pinned, but where the root suites run one after another on one host
 	// (CI's root-suites job, VM_HOST=sudo) internal/runtime's tegobpf suite has just left this one pinned. The pin is
 	// read here as the run reads it, before the run and after it; a build its timer swept, or a run pinned, in between
-	// leaves either answer right. Until 2026-11-02 this test wanted a probe on every machine, and the runner's
-	// adoption failed every root-suites job.
+	// leaves either answer right. Wanting a probe on every machine would fail the runner's adoption in every
+	// root-suites job.
 	pinnedPlane, pinned := adoptPinnedPlane(planePin(nil))
 	start = time.Now()
 	first, err := ForRun(ctx, nil, backend.TierCgroup)
@@ -109,7 +109,7 @@ func TestIntegrationForRunAsRoot(t *testing.T) {
 		took, source, pinned, stillPinned, time.Since(start), second.FromCache())
 	same("reach cgroup, probed", first, backend.TierCgroup)
 	same("reach cgroup, second", second, backend.TierCgroup)
-	// The plane's rows are read at reach cgroup: they select tier cgroup's plane mode (enforce-plane R19).
+	// The plane's rows are read at reach cgroup: they select tier cgroup's plane mode.
 	var tierRows []HookResult
 	for _, r := range first.Programs {
 		if r.Plane != "" {
@@ -221,7 +221,7 @@ func TestIntegrationForRunAsRoot(t *testing.T) {
 // answer the full-root run had kept, was offered tier cgroup, and stopped at Prepare with "load program: operation not
 // permitted", exit 125, every time a full-root run had kept the answer again. Each process's own privilege is in the
 // key now: the full-root runs run at the machine's highest tier (bpflsm where LSM mode passes, else cgroup: an auto
-// run as root reaches tier bpflsm since TIER3-PLAN T7, and its scope keeps the answer as reach cgroup's does), the
+// run as root reaches tier bpflsm, and its scope keeps the answer as reach cgroup's does), the
 // second from the answer the first kept, and the restricted runs run at tier landlock with exit 0 and leave that
 // answer in place.
 func TestIntegrationRestrictedRootRunAfterFullRoot(t *testing.T) {
@@ -371,7 +371,7 @@ func TestIntegrationRestrictedRootRunAfterFullRoot(t *testing.T) {
 // machine config of its own (doctor, asked which tier this machine offers). It gets the isolation the test's runs get,
 // in a directory of its own: a machine config naming a ledger root there, and testutil.TegoEnv's chain anchor and
 // own-log home beside it. A test build refuses a machine config whose ledger root lies inside the invoking user's own
-// ~/.tego, the built-in ~/.tego/runs included (identity-config.md R27), and under sudo that user is the sudo caller:
+// ~/.tego, the built-in ~/.tego/runs included, and under sudo that user is the sudo caller:
 // given no machine config, doctor exited 125, the test skipped as though the machine offered no tier cgroup, and
 // `--require bpflsm` would have read as no tier bpflsm.
 func isolatedTego(t *testing.T, bin string, args ...string) *exec.Cmd {

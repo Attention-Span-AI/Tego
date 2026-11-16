@@ -299,7 +299,7 @@ func TestRunConnectsTheHarnessProvisioners(t *testing.T) {
 		}
 	}
 	// auto is the harness of the command the run executes: `tego run c.yaml -- claude` for a contract whose own
-	// command is sh is a claude-code run, and the contract's own command a generic one (agent-contract.md R27).
+	// command is sh is a claude-code run, and the contract's own command a generic one.
 	claude := filepath.Join(base, "claude")
 	if err := os.WriteFile(claude, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)

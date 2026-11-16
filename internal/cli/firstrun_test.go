@@ -27,7 +27,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// The new user's walk of acceptance B (2026-11-11, ADR 0142's amendment), as tests: a guest's
+// A new user's first walk (ADR 0142's amendment), as tests: a guest's
 // SSH and console logins run beside the user manager's cgroup, where tego starts no run; a systemd-run --user --scope
 // shell runs inside it. The next: lines looped there (tego setup -> tego doctor -> tego doctor) and sent the SSH shell
 // to tego watch and tego run, which exit 125 from it.
@@ -133,7 +133,7 @@ func TestTheNextLinesNeverLoopFromAnyPlace(t *testing.T) {
 					_, _, errs := run(t, "setup")
 					outs := []struct{ printed, stderr string }{{"tego setup", errs}, {"tego doctor", doctorAt(p)}}
 					// The hop after setup's step, typed where setup printed it: tego learn --save named tego run from
-					// SSH, which exits 125 there (the review's M1).
+					// SSH, which exits 125 there.
 					if cmd, _ := nextCommand(errs); followable(cmd) {
 						_, _, hop := run(t, strings.Fields(cmd)[1:]...)
 						outs = append(outs, struct{ printed, stderr string }{cmd, hop})
@@ -160,7 +160,7 @@ func TestTheNextLinesNeverLoopFromAnyPlace(t *testing.T) {
 	}
 }
 
-// sidePaths is the table's two side places of acceptance 2B (2026-11-11), each failing on the base:
+// sidePaths is the table's two side places, each failing on the base:
 //   - `sudo tego agents` (its next: step starts a run, so runHint decides by rootBeside), on the three guests' measured
 //     cgroups: from an SSH login the step opens the scope; from inside a systemd-run --user scope it is the step
 //     itself, typed without sudo. On Fedora 44 sudo opened a root session there, and the step sent the person to open
@@ -242,7 +242,7 @@ func sidePaths(t *testing.T) {
 	}
 
 	// After linger the user manager runs, and sudo -u still leaves XDG_RUNTIME_DIR unset: the cause is the placement
-	// (outside its cgroup), and guide.OpenScope names the logind folder (the review's S5; its test is
+	// (outside its cgroup), and guide.OpenScope names the logind folder (its test is
 	// TestOpenScopeNamesOnlyACommandThatCanWork). tego setup and tego doctor both name that command: a change of place,
 	// never each other, never themselves and never no command.
 	const viaLogind = "XDG_RUNTIME_DIR=/run/user/1001 systemd-run --user --scope bash"
@@ -266,7 +266,7 @@ func sidePaths(t *testing.T) {
 	}
 }
 
-// sidePathsAcc3 is the table's two places of acceptance 3 (2026-11-11), each failing on the base:
+// sidePathsAcc3 is the table's two places of a service account's setup, each failing on the base:
 //   - after linger, tego setup started as the service account from an administrator's shell (sudo -u svc): the next:
 //     command was XDG_RUNTIME_DIR=/run/user/1002 systemd-run --user --scope bash, which the administrator typed in their
 //     own shell, where it opened their own scope (Ubuntu 24.04, AlmaLinux 9.8; tego setup there said ready for the
@@ -288,7 +288,7 @@ func sidePathsAcc3(t *testing.T) {
 			_, out, errs := run(t, "setup")
 			// Doctor's report as D3 makes it there: CanPlace's refusal, whose remedy (cgroup.PlacementFix) is read by
 			// the administrator, so stdout's fix: line names the sudo -u command too, never the bare one, which opens
-			// the administrator's own scope (the review's M1: it did, beside a next: line that named sudo -u).
+			// the administrator's own scope (it did, beside a next: line that named sudo -u).
 			rep := outsideReport()
 			fix := rtcgroup.PlacementFix(1002, true)
 			rep.Fix, rep.Results[0].Fix = fix, fix
@@ -402,7 +402,7 @@ const noXDG = "XDG_RUNTIME_DIR is not set in this shell (as after su or sudo -u)
 const noManagerFix = "start a user manager for this user that runs without a login: an administrator runs sudo loginctl " +
 	"enable-linger svc; then run tego from a shell in it, opened with XDG_RUNTIME_DIR=/run/user/1001 systemd-run --user --scope bash"
 
-// noManagerReport is doctor's report as uid 1001 with no user manager running (Ubuntu 24.04, acceptance 2B): D3's
+// noManagerReport is doctor's report as uid 1001 with no user manager running (Ubuntu 24.04): D3's
 // ErrNoUserManager, and nothing else missing for tier landlock.
 func noManagerReport() *doctor.Report {
 	detail := "cgroup: no delegated cgroup v2 subtree for uid 1001: no user manager runs for uid 1001: " +
@@ -477,7 +477,7 @@ func TestFirstRunGolden(t *testing.T) {
 // the user manager's cgroup, and then ends with the next: block that opens a shell inside it (never itself, never a
 // command that starts a run), not with "Nothing got through": tego run when its probe finds tier landlock missing only
 // for that (doctor.Report.OutsideUserManager), tego watch when its run's cgroup cannot be placed
-// (cgroup.ErrBesideSubtree), tego test when no run under it started and the probe says the same (acceptance B, 2026-11-11). A run pinned above tier landlock gets no such line: that shell would not cure it.
+// (cgroup.ErrBesideSubtree), tego test when no run under it started and the probe says the same. A run pinned above tier landlock gets no such line: that shell would not cure it.
 func TestEveryRunCommandRefusesBesideTheUserManager(t *testing.T) {
 	prevOpener := scopeOpener
 	scopeOpener = func() guide.Opening { return guide.Opening{Command: guide.DefaultScope} }
@@ -550,7 +550,7 @@ func TestEveryRunCommandRefusesBesideTheUserManager(t *testing.T) {
 	}
 }
 
-// leakRun is the walk's agent's record (acceptance B, 2026-11-11): one connect early on, then it read an SSH key file and
+// leakRun is the walk's agent's record: one connect early on, then it read an SSH key file and
 // connected to the addresses example.com resolved to; the leak rule withholds those, and the early one stays an
 // address the proposal allows.
 func leakRun(t *testing.T, root, project string) string {
@@ -588,7 +588,7 @@ func leakRun(t *testing.T, root, project string) string {
 // TestTheLearnStepNeverNamesAHostASecretMayHaveGoneTo: for a run whose secrets may have gone to the addresses it
 // reached, tego watch's next: line, tego learn's own and tego setup's guide all name the plain learn step, never
 // --allow-host <host>, which learn refuses for a host it withheld; and learn's refusal of such a host ends with that
-// plain step (acceptance B, 2026-11-11). For a run with no leak, all three name --allow-host alike.
+// plain step. For a run with no leak, all three name --allow-host alike.
 func TestTheLearnStepNeverNamesAHostASecretMayHaveGoneTo(t *testing.T) {
 	root, _, _ := saveHarness(t, "")
 	project := filepath.Join(resolvedTemp(t), "myagent")
@@ -627,7 +627,7 @@ func TestTheLearnStepNeverNamesAHostASecretMayHaveGoneTo(t *testing.T) {
 
 // TestLearnsWarningForAWithheldHostNamesOnlyWhatWorks: for a run that read a secret and then connected out, learn
 // withholds the destination, and its warnings said "Name each with --allow-host <host>" for the addresses it kept, a
-// flag learn then refuses for the withheld host (acceptance 2B, 2026-11-11: on AlmaLinux the contract then blocked the
+// flag learn then refuses for the withheld host (on AlmaLinux the contract then blocked the
 // agent's own fetch). The warnings now name no --allow-host; they say which destination was withheld and why, and
 // what works: add it by hand to the saved file, or tego rule on the line of a later run that refused it. Both are
 // typed here: the hand-written name compiles, and tego rule writes the entry, exit 0. Nothing names it again by itself.
@@ -701,7 +701,7 @@ func TestLearnsWarningForAWithheldHostNamesOnlyWhatWorks(t *testing.T) {
 }
 
 // TestALinkAtTheCheckIsSaidAndReplaced: a link at check.json is said as not known by the tego setup that finds it, and
-// that same tego setup replaces it with a regular 0600 file, never writing through it (acceptance B, 2026-11-11: the link
+// that same tego setup replaces it with a regular 0600 file, never writing through it (the link
 // used to be replaced in silence; the docs said "reported as not known and replaced on the next tego setup").
 func TestALinkAtTheCheckIsSaidAndReplaced(t *testing.T) {
 	f := onFixture(t, guidetest.Fresh)
@@ -730,7 +730,7 @@ func TestALinkAtTheCheckIsSaidAndReplaced(t *testing.T) {
 }
 
 // TestAfterARebootSetupSaysWhatIsNotChecked: tego setup after a reboot checks its own place and says the other place's
-// check, from before this machine started, is not used (acceptance B, 2026-11-11), before it stores its own and drops that one.
+// check, from before this machine started, is not used, before it stores its own and drops that one.
 func TestAfterARebootSetupSaysWhatIsNotChecked(t *testing.T) {
 	f := onPlace(t, guidetest.Fresh, places[0], false)
 	old := guide.Check{Where: guide.WhereUserManager, Build: guidetest.Build, BootID: "00000000-0000-4000-8000-000000000000",
@@ -750,7 +750,7 @@ func TestAfterARebootSetupSaysWhatIsNotChecked(t *testing.T) {
 
 // TestARunHintFromBesideTheUserManagerOpensTheShell: a next: step whose command starts a run (tego learn --save's tego
 // run, tego agents' tego watch) is said in a guidance line from a shell beside the user manager's cgroup, and the
-// block opens a shell inside it instead, never the command that exits 125 there (the review's M1). A step that starts
+// block opens a shell inside it instead, never the command that exits 125 there. A step that starts
 // no run, and any step from inside, is the step itself. Root asks for the invoking user (rootBeside).
 func TestARunHintFromBesideTheUserManagerOpensTheShell(t *testing.T) {
 	prevOpener, prevBeside := scopeOpener, besideUserManager
@@ -819,7 +819,7 @@ func TestARunHintFromBesideTheUserManagerOpensTheShell(t *testing.T) {
 	}
 }
 
-// The /proc/<pid>/cgroup files of `sudo tego agents` as the three guests showed them (acceptance 2B, 2026-11-11), this
+// The /proc/<pid>/cgroup files of `sudo tego agents` as the three guests showed them, this
 // process first, then its ancestors: from an SSH login sudo keeps the login's session scope (Ubuntu 24.04, AlmaLinux
 // 9.8 and Fedora 44 alike); from a systemd-run --user scope Ubuntu and AlmaLinux keep the scope, and Fedora 44's sudo
 // opens a session of root's own (pam_systemd through system-auth) and moves sudo into it, with the shell in the scope.

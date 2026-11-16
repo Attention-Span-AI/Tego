@@ -31,12 +31,12 @@ var ErrFanotify = errors.New("doctor: fanotify probe failed")
 // FanotifyState is what D8 learned.
 type FanotifyState struct {
 	// ReportFID says whether FAN_CLASS_CONTENT and FAN_REPORT_FID combine on this kernel — the
-	// open question docs/p0/enforce-cgroup-observe.md §11 asks a functional probe to settle.
+	// question only a functional probe settles.
 	ReportFID bool `json:"report_fid"`
 	// PermissionMarks says whether FAN_OPEN_PERM|FAN_OPEN_EXEC_PERM was accepted on a mark.
 	PermissionMarks bool `json:"permission_marks"`
 	// Refuses says whether answering a permission event with FAN_DENY refused the probe's own open,
-	// the one thing tier 2's listener needs of a reply (docs/p0/enforce-cgroup-observe.md §6 E2).
+	// the one thing tier 2's listener needs of a reply.
 	Refuses bool `json:"refuses"`
 	// DenyErrno says whether a FAN_DENY reply carrying EACCES, from a group of the listener's class
 	// (FAN_CLASS_CONTENT), reached the opener as EACCES rather than EPERM. No kernel so far takes it:
@@ -227,7 +227,7 @@ func markProbeTarget(fd int, mask uint64, dir string) (string, error) {
 // FAN_DENY, the reply tier 2's listener sends. Either way the opener's own error is the answer.
 //
 // Every path out of this function answers the event it received, so no opener is ever left blocked
-// (the invariant docs/p0/enforce-cgroup-observe.md I8 states for the production listener).
+// (the invariant the production listener holds too).
 func fanotifyRefusal(fd int, target string) (fanotifyReply, error) {
 	opened := make(chan openResult, 1)
 	go func() {

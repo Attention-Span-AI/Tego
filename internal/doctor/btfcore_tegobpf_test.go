@@ -15,7 +15,7 @@ import (
 	bpfobj "github.com/attention-span-ai/tego/internal/bpf"
 )
 
-// TestCORENeedsOfTheObjects is enforce-cgroup-observe.md E31's derivation: D2's list of what the objects read is
+// TestCORENeedsOfTheObjects: D2's list of what the objects read is
 // taken from their CO-RE relocations, and it names the members the C sources read. It also fails when a
 // cilium/ebpf upgrade changes how a relocation prints (coreReloString), which the list is read from.
 func TestCORENeedsOfTheObjects(t *testing.T) {

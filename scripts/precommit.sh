@@ -8,10 +8,10 @@
 # -tags integration, with -tags tegobpf, and with both as CI vets them; golangci-lint with .golangci.yml, then
 # again with its build-tags line emptied and unused off (the files the tags leave out, as CI's second lint run);
 # the SPDX check; shellcheck over the tracked scripts when it is installed; scripts/check-skiplists.sh;
-# scripts/check-exits.sh (limits-check-doctor-cli.md I6, I9); scripts/check-fd.sh (ADR 0023's descriptor rules and
+# scripts/check-exits.sh; scripts/check-fd.sh (ADR 0023's descriptor rules and
 # ratchet, with the total held to the merge base with main when there is one); tools/rulecheck (ADR 0030: rule IDs unique in each
 # spec, no dangling reference; then its -strict count, report only); tools/isocheck (no test harness can write the
-# invoking user's ~/.tego or ~/.bash_history: identity-config.md R27); the unit
+# invoking user's ~/.tego or ~/.bash_history); the unit
 # tests and the unprivileged integration tests, each as JSON through scripts/skipgate.sh with its list. go test's
 # own exit status is checked beside the gate's, since skipgate.sh judges skips and exits 0 over a failed test.
 # Every go test step, in either mode, runs with -count=1 (gated-test.sh adds it too): go test's cache rechecks only

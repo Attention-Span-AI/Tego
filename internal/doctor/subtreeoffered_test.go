@@ -40,10 +40,9 @@ func TestControllersResultLeadsWithTheRootStepsWhenCPUIsNotOffered(t *testing.T)
 	}
 }
 
-// TestControllersResultSaysWhenTheControllersFileCouldNotBeRead: D3 used to read an unreadable cgroup.controllers
-// as "offers nothing" and print "<root>/cgroup.controllers does not offer cpu", a statement about the kernel it had
-// not read (review of DOCTOR-RHEL9, S1). It now says the file could not be read, and still leads with the
-// administrator's steps.
+// TestControllersResultSaysWhenTheControllersFileCouldNotBeRead: D3 never reads an unreadable cgroup.controllers
+// as "offers nothing" ("<root>/cgroup.controllers does not offer cpu" would be a statement about a kernel it had
+// not read). It says the file could not be read, and still leads with the administrator's steps.
 func TestControllersResultSaysWhenTheControllersFileCouldNotBeRead(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "cgroup.subtree_control"), []byte("memory pids\n"), 0o644); err != nil {

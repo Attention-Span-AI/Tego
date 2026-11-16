@@ -442,7 +442,6 @@ func errUnwrap(err error) error {
 
 // TestCompileTestTable: the shipped table under
 // examples/tests passes, row for row, with exit 0 (R25, R28).
-// (limits-check-doctor-cli.md R28.)
 func TestCompileTestTable(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("the example contract names sh, not on PATH")
@@ -473,7 +472,6 @@ func TestCompileTestTable(t *testing.T) {
 
 // TestCompileTestFailingRow pins the FAIL line and the finding exit code: the
 // same table evaluated with one row's expectation inverted (R25, R28).
-// (limits-check-doctor-cli.md R25 and R28.)
 func TestCompileTestFailingRow(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("the example contract names sh, not on PATH")
@@ -595,7 +593,7 @@ tests:
 // it answered in bpflsm, the tier auto compiled to and no build contains, while the real run at landlock read the
 // file. It now answers in every tier a run of the contract can get and fails, naming landlock's answer; --tier
 // narrows the answer to the machine it will run on.
-// (limits-check-doctor-cli.md E29 and R33: the answer is per tier a run can get, computed from the build alone.)
+// The answer is per tier a run can get, computed from the build alone.
 func TestCompileTestAnswersInEveryTierARunCanGet(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("the example contract names sh, not on PATH")

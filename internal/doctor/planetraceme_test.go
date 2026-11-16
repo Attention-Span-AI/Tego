@@ -14,7 +14,7 @@ import (
 // __WALL; until then the leader is never reported, so os/exec's Wait (waitid on the leader's pidfd) and the SIGKILL
 // planeChild.wait sends after planeProbeTimeout both wait forever. The helper locked its goroutine to whatever thread
 // it was on, which is the leader only while the Go scheduler has not moved the main goroutine since the process's
-// inits: in the KVM root suites (default-lsm boot, 2026-10-16, host load ~20) doctor.Run waited in that Wait for 11
+// inits: in the KVM root suites (default-lsm boot, host load ~20) doctor.Run waited in that Wait for 11
 // minutes and `tego doctor --json` for 24. And a traced thread stops at the delivery of any signal, the Go runtime's
 // SIGURG among them, which Wait then reports as "stop signal: urgent I/O condition" (17 of 120 tries, 12 copies of
 // this test at once at GOMAXPROCS=1 beside busy loops), failing the cell and the plane mode. The helper's main now

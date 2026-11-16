@@ -19,8 +19,8 @@ import (
 
 func init() { register(cmdWatch) }
 
-// cmdWatch is `tego watch [--boundary <agent.yaml | name>] [--tier T] [--record M] [--offline] -- <command> [args]`
-// (docs/poc/agent-watcher.md, M1): run any command, an agent whose own name tego never needs to know, as a black
+// cmdWatch is `tego watch [--boundary <agent.yaml | name>] [--tier T] [--record M] [--offline] -- <command> [args]`:
+// run any command, an agent whose own name tego never needs to know, as a black
 // box. With no --boundary the command runs under a generic contract in record-only mode: every program it
 // starts, every file it opens and every connection it makes is recorded to the ledger (at the --record level, full
 // by default), and no rule refuses anything. The fixed syscall guards of every run still apply (watchNotice says

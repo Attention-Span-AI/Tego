@@ -54,7 +54,7 @@ func stopAll(t *testing.T, sources []source.Source) {
 
 // TestSelectCaptureBindsTheForwarder is the wire `tego run` now carries: a contract with models[] gets a
 // forwarder whose listeners are already bound, with a base-URL variable per declared provider and an
-// endpoint the run can admit — all before runtime.Run is called (capture-derive.md §3, R19).
+// endpoint the run can admit — all before runtime.Run is called.
 func TestSelectCaptureBindsTheForwarder(t *testing.T) {
 	t.Parallel()
 	m := config.Builtin()

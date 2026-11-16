@@ -15,7 +15,7 @@ import (
 )
 
 // TestCompileTestUnixWalkAsTheRunGolden: a net.connect or net.send row to a unix pathname is landed with the run's own
-// unix walk (supervisor.md R11, R11a: one lookup with every magic link refused, a landing on procfs refused), and a
+// unix walk (R11a: one lookup with every magic link refused, a landing on procfs refused), and a
 // name that walk cannot land is answered as the run answers it. compile landed such
 // names with the filesystem walk, which follows a magic link as compile itself, so a datagram and a connect through a
 // link to /proc/self/cwd (rows 01, 02) or to /proc/self/root (03) read allow where the run refuses them
@@ -50,8 +50,6 @@ import (
 // that is not a directory), so L1p answered for a run that cannot exist. Its listener is now out/b.sock, a directory's
 // name, and L1, L1c and L1p ask the bind beneath the file that no entry declares, the shape the run's half
 // (TestPlaneRunBindLookupFailureIsTheKernels) binds: every column describes a run that starts.
-//
-// Spec: docs/p0/limits-check-doctor-cli.md R28.
 func TestCompileTestUnixWalkAsTheRunGolden(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("the contract names sh, not on PATH")
@@ -194,12 +192,9 @@ func sunPathDir(t *testing.T, prefix string, tail int) string {
 }
 
 // TestCompileTestUnixJoinsThePhysicalCwd: a relative unix row is joined to compile's working directory as getcwd(2)
-// reports it, every symlink resolved, as the run joins a relative sun_path to readlink /proc/<pid>/cwd (supervisor.md
-// R6, R11); the name step then matches unix: entries by their declared spelling, the run's and compile's alike. From a
+// reports it, every symlink resolved, as the run joins a relative sun_path to readlink /proc/<pid>/cwd; the name step then matches unix: entries by their declared spelling, the run's and compile's alike. From a
 // directory reached through a symlink, compile joined $PWD's spelling, so a relative datagram or connect matched an
 // entry spelled through that symlink and read allow where the run refuses it, rule unmatched.
-//
-// Spec: docs/p0/limits-check-doctor-cli.md R28.
 func TestCompileTestUnixJoinsThePhysicalCwd(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("the contract names sh, not on PATH")

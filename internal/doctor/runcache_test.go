@@ -63,7 +63,7 @@ func vouchingAnswer() (Result, []HookResult, Result, FanotifyState) {
 		FanotifyState{PermissionMarks: true, Refuses: true}
 }
 
-// TestRunCacheReadsOnlyTheAnswerItKeptForThisKey (enforce-cgroup-observe.md E27: a probe taken on one kernel is
+// TestRunCacheReadsOnlyTheAnswerItKeptForThisKey (a probe taken on one kernel is
 // never the answer for a Prepare on another): an answer is read back only under the key it was kept
 // with. A change in any part of the key is a machine or a process the answer says nothing about: the format,
 // the boot, the kernel, the LSM list, lockdown, the programs, the binary, or the asking process's effective
@@ -140,7 +140,7 @@ func TestRunCacheReadsOnlyTheAnswerItKeptForThisKey(t *testing.T) {
 	}
 	// Two binaries of one build (a copy at another inode, ADR 0021's two-inode condition, or two installs) keep
 	// an answer each: under one file, each one's run read the other's entry as a miss, probed cold and replaced
-	// it, so on a host running both every run paid the cold probe (test/vm/pairs.sh two-inodes, 2026-10-19).
+	// it, so on a host running both every run paid the cold probe (test/vm/pairs.sh two-inodes).
 	other = testKey()
 	other.Binary = "2049:1235:13496480:1758650001.000000001"
 	if c.name(other) == c.name(k) {
@@ -319,7 +319,7 @@ func TestRunAtReachCgroupReadsTheCacheAsRoot(t *testing.T) {
 	if second.n[CheckPrograms] != 0 || second.n[CheckFanotify] != 0 || b.cached == nil {
 		t.Fatalf("the second run probed D7 or D8 again (%v) or does not say it read the cache", second.n)
 	}
-	// D2 and the kernel's functions read the kernel's BTF alone, which the key pins (enforce-plane §2.18): the
+	// D2 and the kernel's functions read the kernel's BTF alone, which the key pins: the
 	// cached run parses none, takes D2's answer as the first run gave it, and seeds its loaders with the functions.
 	if second.n[CheckBTF] != 0 || second.funcs != 0 || first.funcs != 1 {
 		t.Errorf("BTF: the first run parsed its functions %d times, the cached run probed D2 %d times and parsed "+
@@ -579,7 +579,7 @@ func seccompLine(status []byte) string {
 	return ""
 }
 
-// TestDiscardCacheLeavesAnotherRunsFreshEntry (enforce-cgroup-observe.md: DiscardCache removes the entry the report
+// TestDiscardCacheLeavesAnotherRunsFreshEntry (DiscardCache removes the entry the report
 // came from): a run that adopted an entry and then failed at Prepare drops that file, not a newer answer another
 // run renamed over the same name meanwhile.
 func TestDiscardCacheLeavesAnotherRunsFreshEntry(t *testing.T) {

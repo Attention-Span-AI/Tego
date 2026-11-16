@@ -5,7 +5,7 @@
 # (ADR 0028 S1: "CI runs benchstat against the parent commit with a threshold wider than measured noise").
 #
 # Why it exists: the decision paths the kernel waits on (fanotify's decideOpen, the supervisor's notified
-# syscall, the pipeline's queue) have a budget per event (P0-DESIGN §9), and several allocate nothing today.
+# syscall, the pipeline's queue) have a budget per event, and several allocate nothing today.
 # A benchmark only reports; nothing failed when a change slowed one down or made it allocate. The five that
 # must stay at zero are pinned by AllocsPerRun unit tests as well; this gate covers every benchmark listed
 # below, against the base, on the same machine and in the same job.
@@ -76,7 +76,7 @@ internal/platform/sys                ^Benchmark(Borrow|Hold|OwnedOpenClose)$
 # op on a shared runner), SlotAcquireRelease (a file and its lock per op), Blob and SplitBlobsStage (a blob file
 # created and renamed per op), OwnedOpenClose (an open and a close of /dev/null per op; ADR 0023's P9 records it
 # beside its raw twin, while Borrow and Hold, the lease itself, are gated), NearestFS (a ~50 ns lookup whose code
-# and benchmark were unchanged when, on 2026-11-03 for PR 20, it read +30.4% and +30.5% against the base on two
+# and benchmark were unchanged when it read +30.4% and +30.5% against the base on two
 # AMD EPYC 7763 runners and +3.5% on an Intel Xeon 8370C: two builds' code layout, not the lookup; decide's
 # IndexedEvaluator stays gated with absolute query budgets).
 noisy='Feed FeedExchange BuildRuleMaps SendMMsgTail IterFullRun SeccompNotifyRoundTrip SlotAcquireRelease Blob SplitBlobsStage OwnedOpenClose NearestFS'

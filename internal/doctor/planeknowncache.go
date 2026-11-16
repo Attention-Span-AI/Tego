@@ -12,7 +12,7 @@ import (
 	bpfobj "github.com/attention-span-ai/tego/internal/bpf"
 )
 
-// The known answers' cache (docs/p0/enforce-plane.md R21, §2.5). The known answers ask the kernel's verifier and the
+// The known answers' cache. The known answers ask the kernel's verifier and the
 // plane's programs questions whose answer depends on the kernel, its boot and the programs, never on a run: so a
 // mode's answers, once every cell matched, are kept in the run-probe cache's directory under the run-probe cache's
 // key (the boot, the kernel, the LSM list, lockdown, the build's hash, this binary and the asking process), one file
@@ -42,7 +42,7 @@ type planeKnownCache struct {
 }
 
 // newPlaneKnownCache is the machine's known-answers cache for the probe of release by uid, or none (nothing kept or
-// read) when keep is false: doctor's own scope measures every cell afresh (limits-check-doctor-cli R27).
+// read) when keep is false: doctor's own scope measures every cell afresh.
 func newPlaneKnownCache(release string, uid int, keep bool) planeKnownCache {
 	if !keep {
 		return planeKnownCache{}

@@ -17,14 +17,14 @@ import (
 // there instead of the probe's child reaches that test again and says so.
 const planeChildCheckEnv = "TEGO_TEST_PLANE_CHILD_CHECK"
 
-// TestTestBinaryIsThePlaneProbesChild: doctor's decision-plane probe (D7, enforce-plane R21), which `doctor` and a
+// TestTestBinaryIsThePlaneProbesChild: doctor's decision-plane probe (D7), which `doctor` and a
 // run's tier check (probeMachine) run in this process as root with the plane's objects, starts
 // /proc/self/exe __doctor-plane-probe as its child and waits for it to say ready; it also execs a copy of the
 // binary with __doctor-plane-probe noop. cmd/tego answers that argument first, and so must this package's test
 // binary: it ran its whole suite instead, so the child never said ready within planeProbeTimeout, doctor.Run's
 // fresh probe answered LSM mode "the probe child did not start", and TestProbeMachineIsDoctorsProbe compared that
 // with a run's answer adopted from a build an earlier test left pinned (KVM root suites of integration/wave-a,
-// internal_cli.tegobpf, 2026-10-16).
+// internal_cli.tegobpf).
 func TestTestBinaryIsThePlaneProbesChild(t *testing.T) {
 	if os.Getenv(planeChildCheckEnv) != "" {
 		_, _ = os.Stdout.WriteString("the test binary ran its suite as the plane probe's child\n")

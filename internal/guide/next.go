@@ -33,8 +33,8 @@ const (
 	// the user (Check.Cause CauseNoUserManager): an administrator starts one that runs without a login (Inputs.Linger).
 	RuleCheckNoManager = "check-no-manager"
 	// RuleCheckNoManagerName: as RuleCheckNoManager, but systemd refuses the user's name (Inputs.ManagerRefused), so it
-	// starts no user manager for it, linger or not: the step says so and names no command (acceptance 3, 2026-11-11:
-	// the user 4242 on Ubuntu 24.04, where the linger command came back after it ran).
+	// starts no user manager for it, linger or not: the step says so and names no command (the user 4242 on
+	// Ubuntu 24.04, where the linger command came back after it ran).
 	RuleCheckNoManagerName = "check-no-manager-name"
 	// RuleCheckBlocked: no place checked can enforce, for another cause; tego doctor names the fix.
 	RuleCheckBlocked = "check-blocked"
@@ -184,7 +184,7 @@ func (f *facts) openScope(step, rule string) Next {
 }
 
 // fromHere is n, the step after a ready check, as the invoker's place can take it: when n starts a run (StartsRun) and
-// the invoker's own check says no tier runs from it, the run would only exit 125 there (acceptance B, 2026-11-11). Then
+// the invoker's own check says no tier runs from it, the run would only exit 125 there. Then
 // the step opens a shell in the user manager's cgroup when that place's check is ready or the invoker's place fails
 // only for being outside it; else, when only root's check is ready, it says that check holds a run started with sudo,
 // never one started as the person (F9), and names tego doctor, which says why this shell cannot; and when the ready
@@ -200,7 +200,7 @@ func (f *facts) fromHere(n Next) Next {
 		return Next{Step: n.Step, Rule: RuleHereRootOnly, Text: "only root's check is ready, for runs started with sudo; see why not here:",
 			Command: "tego doctor"}
 	}
-	// Another place's check (step 2 names it): the words never name root when no root check exists (the review's S3).
+	// Another place's check (step 2 names it): the words never name root when no root check exists.
 	return Next{Step: n.Step, Rule: RuleHereElsewhere, Text: "only another place's check is ready (step 2); see why not here:",
 		Command: "tego doctor"}
 }
@@ -237,7 +237,7 @@ func (f *facts) learnFrom() Next {
 	ctx, cancel := context.WithTimeout(f.ctx, suggestBudget)
 	defer cancel()
 	if SuggestHosts(ctx, r.dir) {
-		// tego watch's next: line decides the same way (acceptance B, 2026-11-11).
+		// tego watch's next: line decides the same way.
 		n.Text, n.Command, n.Placeholder = learnNameText, n.Command+" --allow-host "+hostPlaceholder, true
 	}
 	return n
@@ -248,7 +248,7 @@ const learnNameText = "make a contract from what it did, with the host name of i
 
 // suggestBudget bounds the learn step's read of the recorded run (SuggestHosts), which the dashboard's Overview makes
 // on each load: tego watch bounds the same read by its summary budget, 5 s. Past it the step is the plain form, which
-// learn accepts for any run it can read and which names no host (the review's S4). A variable so a test can run out.
+// learn accepts for any run it can read and which names no host. A variable so a test can run out.
 var suggestBudget = 5 * time.Second
 
 // hostPlaceholder is the host name only the person knows: the record holds addresses, never the name looked up.

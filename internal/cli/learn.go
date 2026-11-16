@@ -69,9 +69,7 @@ func cmdLearn() Command {
 				message(stderr, "", 0, 0, "tego learn: exactly one run id or run directory", codeUsage)
 				return identity.ExitUsage // R25: usage error
 			}
-			// --save records refused reads by default (the project lead's decision of 2026-11-10;
-			// docs/OPERATIONS.md, `tego learn`'s amendment of that date):
-			// a newcomer then sees the read the contract refused on every run. The printed proposal and --out keep the
+			// --save records refused reads by default (docs/OPERATIONS.md, `tego learn`): a newcomer then sees the read the contract refused on every run. The printed proposal and --out keep the
 			// contract's default unless --reads on.
 			o := learnOptions{out: out, save: save, reads: reads, reasonReads: reads == "on" || (save != "" && reads == "")}
 			switch {
@@ -251,8 +249,8 @@ func lookupAllowHosts(ctx context.Context, hosts []learn.HostAnswer, stderr io.W
 }
 
 // hostsRefusedHint is the next: line after learn refused --allow-host names (exit 1, nothing written): the same command
-// without the names refused (refused, indexes into o.hosts), so the step that works is one line, never a guess
-// (acceptance B, 2026-11-11). A name refused because the run's secrets may have gone to its addresses is not
+// without the names refused (refused, indexes into o.hosts), so the step that works is one line, never a guess.
+// A name refused because the run's secrets may have gone to its addresses is not
 // suggested again: the addresses learn kept stay allowed by address, and learn names --allow-host for them itself.
 func hostsRefusedHint(stderr io.Writer, dir string, m *config.Machine, o learnOptions, refused []int) {
 	if len(refused) == 0 {
@@ -484,7 +482,7 @@ func runLearn(ctx context.Context, ref string, o learnOptions, stdout, stderr io
 		}
 		// --allow-host is named only where learn takes a name the person gives (learn.Proposal.SuggestHosts): with a
 		// withheld destination it refuses a name that also stands for one, so the warning never names a flag learn may
-		// then refuse (acceptance 2B, 2026-11-11).
+		// then refuse.
 		fix := "Name each with --allow-host " + hostPlaceholder + ", or a later run can be refused."
 		if len(p.Leaks) > 0 {
 			fix = "A later run can be refused another address of the same service: write the host's name in their place " +

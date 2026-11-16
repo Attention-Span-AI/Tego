@@ -130,7 +130,7 @@ type nopAnchor struct{}
 func (nopAnchor) Append(string, string) error       { return nil }
 func (nopAnchor) Head(string) (string, bool, error) { return "", false, nil }
 
-// TestContractCopyIsTheCompiledContract is agent-contract.md R13 / P0-DESIGN §3.3: the bytes a run
+// TestContractCopyIsTheCompiledContract: the bytes a run
 // keeps as contract.yaml hash to its contract_hash, and they need no profile to reload into the
 // same contract.
 func TestContractCopyIsTheCompiledContract(t *testing.T) {
@@ -197,7 +197,6 @@ func TestDriftRecompilesTheRunsContract(t *testing.T) {
 // TestDriftSaysUnobservableAndPrintsGaps is R34 through the CLI: a contract declaring an
 // MCP server, on a run whose record names no MCP producer, prints the server as not observable and
 // exits by the rest of the report; the gap line is printed either way.
-// (limits-check-doctor-cli.md R34.)
 func TestDriftSaysUnobservableAndPrintsGaps(t *testing.T) {
 	root := gcRoot(t)
 	var host [32]byte
@@ -253,7 +252,6 @@ func TestDriftSaysUnobservableAndPrintsGaps(t *testing.T) {
 }
 
 // TestStatusJSONCarriesGaps is R34 for status --json: the gap line as data, [] when there is none.
-// (limits-check-doctor-cli.md R34.)
 func TestStatusJSONCarriesGaps(t *testing.T) {
 	root := gcRoot(t)
 	id := endedRun(t, root, time.Now())

@@ -136,7 +136,7 @@ fi
 
 # A test binary that ends while tests of it run (go test's -timeout panic, a crash, an os.Exit) gives them no result
 # at all: test2json ends the stream with the package's own fail, and the package line reads FAIL with no failed test
-# under it (internal/runtime's integration suite at 600 s on GitHub's runner, 2026-11-02, said nothing more). Each
+# under it (internal/runtime's integration suite at 600 s on GitHub's runner, said nothing more). Each
 # such test is named, and how its package's binary ended is printed: from its panic on (go test's timeout panic where
 # there is one, else the last panic or fatal error the binary printed, since a child process sharing its output can
 # print one of its own earlier), its list of the tests that were running and its goroutine dump, up to dumplines

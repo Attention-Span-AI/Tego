@@ -24,5 +24,5 @@ func sealedSources() agent.ProfileSource {
 }
 
 // dirProfiles is the profiles directory's source, profilesrc.Dir (moved there so tego-control links it): <Root>/<name>.yaml
-// and never outside Root (agent-contract.md E7), read through os.Root under the machine config's trust rule.
+// and never outside Root, read through os.Root under the machine config's trust rule.
 type dirProfiles = profilesrc.Dir

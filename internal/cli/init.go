@@ -26,7 +26,7 @@ import (
 )
 
 // starter is the agent.yaml tego init writes; __NAME__ becomes the agent id. The starter quotes it,
-// since name is a YAML string (agent-contract R3) and an id such as 2024, true or null is not one
+// since name is a YAML string and an id such as 2024, true or null is not one
 // when plain; an agent id ([a-z0-9-]) never needs an escape inside the double quotes.
 //
 //go:embed agent.starter.yaml
