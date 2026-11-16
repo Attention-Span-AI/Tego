@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Command rulecheck reads the rule IDs of the P0 component specs (docs/p0/*.md) and checks the references to
-// them: the first step of ADR 0030's tools/rulecheck, before its rename to prefixed IDs.
+// Command rulecheck reads the rule IDs of the component specs (docs/p0/*.md, kept in the private tree) and checks
+// the references to them: the first step of ADR 0030's tools/rulecheck, before its rename to prefixed IDs. Without
+// docs/p0 it runs the link and bare-name checks only.
 //
 // A document defines its rules in three sections: business rules (R) in §5, edge cases (E) in §6 and invariants
 // (I) in §8. A definition is a bold ID at the start of a line (`**R15 — ...**`, `- **R36.**`, `1. **E1**`,
 // `**R-cap**`), a bold ID opening a run-in rule (`**R8a**: ...`), an ID opening a sentence in a run-on paragraph
-// (`I6. ...`, agent-contract.md's form), or, in §6 and §8, a numbered item (`20. ...`), which is E20 or I20. A
+// (`I6. ...`), or, in §6 and §8, a numbered item (`20. ...`), which is E20 or I20. A
 // rule's body runs to the next definition or the section's end; its lettered parts are the `(a)`, `(b)`, ... in
 // it, other rules' parts it cites left out.
 //
@@ -59,8 +60,8 @@ type Rule struct {
 	Body string
 	// Parts are the lettered parts the body holds, "a" for (a).
 	Parts map[string]bool
-	// Withdrawn is set when the definition's first line carries the marker "(withdrawn)" (`33. *(withdrawn)
-	// 2026-09-24.*`, `**E33 (withdrawn).**`). A withdrawn rule stays defined, so references to it still
+	// Withdrawn is set when the definition's first line carries the marker "(withdrawn)" (`33. *(withdrawn).*`,
+	// `**E33 (withdrawn).**`). A withdrawn rule stays defined, so references to it still
 	// resolve, but no coverage count includes it.
 	Withdrawn bool
 }
@@ -81,7 +82,7 @@ func (d *Doc) Live() int {
 
 // Doc is one spec document's rules.
 type Doc struct {
-	Name  string // file name, "runtime-launch.md"
+	Name  string // file name, "runtime-launch" plus ".md"
 	Base  string // "runtime-launch"
 	Rules map[string]*Rule
 	// Dups are the IDs defined more than once, with the lines of every definition.
@@ -231,7 +232,7 @@ func Check(docs map[string]*Doc, extra map[string]string) []Finding {
 }
 
 // CheckRefs returns the references in sources (name to text) to lettered parts or IDs that do not exist. A
-// source named like a document (runtime-launch.md) is that document, whose bare lettered references are checked
+// source named like a document is that document, whose bare lettered references are checked
 // against its own rules as well.
 func CheckRefs(docs map[string]*Doc, sources map[string]string) []Finding {
 	var out []Finding
@@ -241,14 +242,14 @@ func CheckRefs(docs map[string]*Doc, sources map[string]string) []Finding {
 	}
 	sort.Strings(names)
 	// A named reference: a P0 document, optionally its section, then an ID or "case N", optionally a part.
-	// The name may be a Markdown link's target, `[x](supervisor.md#anchor) R1`, or in backquotes.
+	// The name may be a Markdown link's target, `[x] R1`, or in backquotes.
 	crossRe := regexp.MustCompile(`\b(` + strings.Join(names, "|") + `)(?:\.md)?(?:#[\w.-]*)?(?:\)|` + "`" + `)?(?:'s)?,? ` +
 		`(?:§\s?(\d+)(?:\.\d+)?,? )?` +
 		`(?:case (\d+)|(` + idForm + `))\b(?: ?\(([a-z])\))?`)
 	// A bare reference with a part, in the document that defines the ID.
 	localRe := regexp.MustCompile(`(^|[^\w.-])(` + idForm + `) ?\(([a-z])\)`)
 	// otherRe ends in an ID named with a source: a document (FEATURES.md, a P0 name, SEMANTICS), maybe as a link
-	// or in backquotes, its section, then a run of IDs (FEATURES.md E13, E50, E51; supervisor E10/E11).
+	// or in backquotes, its section, then a run of IDs (FEATURES.md E13, E50, E51).
 	otherRe := regexp.MustCompile(`(?:[\w-]+\.md(?:#[\w.-]*)?|\b[A-Z][A-Z0-9-]{2,}|\b(?:` + strings.Join(names, "|") + `))` +
 		"[`)]?(?:'s)?,? (?:§\\s?\\d+(?:\\.\\d+)*,? )?(?:(?:" + idForm + `)(?: ?\([a-z0-9]\))?(?:,|/| and| or|;)?\s+)*` +
 		`(?:` + idForm + `)$`)
@@ -673,8 +674,11 @@ func run(root string, verbose, strict bool, w *os.File) int {
 		return 2
 	}
 	if len(docs) == 0 {
-		fmt.Fprintf(w, "rulecheck: no spec documents (docs/p0/*.md with a \"## 5. \" section) under %s\n", root)
-		return 2
+		// The specs live only in the private tree; without docs/p0 the link and name checks still run.
+		if _, err := os.Stat(filepath.Join(root, "docs", "p0")); err == nil {
+			fmt.Fprintf(w, "rulecheck: no spec documents (docs/p0/*.md with a \"## 5. \" section) under %s\n", root)
+			return 2
+		}
 	}
 	untested := Untested(docs, tests)
 	names := make([]string, 0, len(docs))

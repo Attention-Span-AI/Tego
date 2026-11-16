@@ -2,8 +2,8 @@
 
 Status: **accepted 2026-10-24**.
 Implemented 2026-10-24: `pkg/spec/reason`, `spec/reason/v1/reason-file.schema.json`, and the ledger Writer's
-`lastRefusal` (internal/ledger/writer.go). Amends the reason channel's channel 2 (spec/reason/REASON-CHANNEL.md §2)
-and the Last refusal row of docs/p0/record-ledger.md §3. Removes the `internal/runtime/reason` placeholder.
+`lastRefusal` (internal/ledger/writer.go). Amends the reason channel's channel 2 (spec/reason/REASON-CHANNEL.md §2).
+Removes the `internal/runtime/reason` placeholder.
 
 ## Context
 

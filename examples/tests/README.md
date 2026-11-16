@@ -1,7 +1,7 @@
 # examples/tests
 
 A contract and the verdict table that tests it, the shipped example of
-`tego compile --test` (docs/p0/limits-check-doctor-cli.md §5 R28).
+`tego compile --test`.
 
 ```sh
 cd examples/tests
@@ -10,7 +10,7 @@ tego compile agent.yaml --test verdicts.yaml    # 21 rows: 21 passed, 0 failed
 
 Run it from this directory: the contract's `fs` and `exec` entries are
 relative and resolve against the working directory, like every other relative
-entry (docs/p0/agent-contract.md §6 E28).
+entry.
 
 | File | What |
 |---|---|

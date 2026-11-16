@@ -8,7 +8,7 @@ decision plane's two files once per reader of kernel memory, and the plane's hoo
 |---|---|---|
 | `decide.bpf.c` | `lsm/` and `fmod_ret/security_` (one mode loaded, never both): the filesystem and exec hooks in this file and `decide_stepb.h`, `mmap_file`/`file_mprotect` in `decide_stepc.h`, ptrace/BPF/key hooks in `decide_control.h`, the immutable Unix peer hook `unix_may_send` (ADR 0113), and `socket_bind`/`socket_listen` in `decide_socket.h`/`decide_listen.h`; ADR 0043's name entries (the prefilter, the global name check and climb, D5) in `decide_names.h` | tier 3's decision plane: a governed run's resolved objects, process authority and requested listeners, 0 or `-EACCES` (ADRs 0024, 0025, 0043; built as `planerd` and `planepr`; `internal/bpf/plane.go` lists all 30 hooks) |
 | `decide_fill.bpf.c` | `iter/task_file`, `syscall` | the plane's fill of its inode-keyed rows from the launcher's held descriptors, and the clear of a slot's stale rows (ADR 0025; built as `planefillrd` and `planefillpr`) |
-| `cgroup_net.bpf.c` | `cgroup/connect4,6`, `sendmsg4,6`, `bind4,6`, `post_bind4,6`, `connect_unix`, `sendmsg_unix` (the two unix ones 6.7+), `cgroup/sock_create`, `cgroup/setsockopt`; `cgroup_skb/ingress,egress` from `net_packet.h`, `sockops` and `cgroup/sock_release` from `net_budget.h` | scoped destination and listener admission, ingress/reply state, network budgets and one-shot connect approvals; requested controls determine required attachments (`internal/runtime/enforce/cgroup/network_control.go`, `docs/p0/network-controls.md`), no BPF LSM needed for these cgroup hooks. `cgroup/sock_create` refuses an inet socket outside ADR 0018's allowlist (`include/socket_allow.h`, the plane's `socket_create` shares it) on any path to `inet_create`, and records its own refusal on the run's ring (`TEGO_EV_SOCK_CREATE`); `cgroup/setsockopt` refuses `SOL_TCP`'s `TCP_ULP`, whatever the name, on any path to the protocol's setsockopt (io_uring's `SOCKET_URING_OP_SETSOCKOPT` included) and records its own refusal (`TEGO_EV_SOCKOPT`; ADR 0018 (7)); both loaded with the object and attached and pinned with the run's links wherever they attach (`enforce/cgroup` `attachSocketPrograms`, ADR 0018 PR 2) |
+| `cgroup_net.bpf.c` | `cgroup/connect4,6`, `sendmsg4,6`, `bind4,6`, `post_bind4,6`, `connect_unix`, `sendmsg_unix` (the two unix ones 6.7+), `cgroup/sock_create`, `cgroup/setsockopt`; `cgroup_skb/ingress,egress` from `net_packet.h`, `sockops` and `cgroup/sock_release` from `net_budget.h` | scoped destination and listener admission, ingress/reply state, network budgets and one-shot connect approvals; requested controls determine required attachments (`internal/runtime/enforce/cgroup/network_control.go`), no BPF LSM needed for these cgroup hooks. `cgroup/sock_create` refuses an inet socket outside ADR 0018's allowlist (`include/socket_allow.h`, the plane's `socket_create` shares it) on any path to `inet_create`, and records its own refusal on the run's ring (`TEGO_EV_SOCK_CREATE`); `cgroup/setsockopt` refuses `SOL_TCP`'s `TCP_ULP`, whatever the name, on any path to the protocol's setsockopt (io_uring's `SOCKET_URING_OP_SETSOCKOPT` included) and records its own refusal (`TEGO_EV_SOCKOPT`; ADR 0018 (7)); both loaded with the object and attached and pinned with the run's links wherever they attach (`enforce/cgroup` `attachSocketPrograms`, ADR 0018 PR 2) |
 | `cgroup_track.bpf.c` | `tp_btf/cgroup_mkdir`, `tp_btf/cgroup_rmdir` | materializes descendant cgroups into the run set |
 | `trace_proc.bpf.c` | `tp_btf/sched_process_exec`, `tp_btf/sched_process_exit`; fexit on `security_file_open`, `security_path_unlink/rename/mkdir/mknod/rmdir/link/symlink/truncate` and `security_file_truncate` (6.2+), fentry on `security_socket_connect`; syscall-exit tracepoints for `execve`, `execveat`, `bind` and `listen`; fexit on `io_bind` and `io_listen` (6.11+) | the record, with the LSM chain's return (ADR 0016), plus actual exec and listener terminal outcomes, io_uring's bind and listen included; requested listener handoff requires bind/listen result attachment even with recording off |
 | `uprobe_ssl.bpf.c` | individual uprobes/uretprobes on `SSL_*_ex`, `SSL_write`, `SSL_read`, and `SSL_free`'s entry, or an optional shared `uprobe.multi`/`uretprobe.multi` pair | plaintext capture keyed by SSL pointer, filtered by run and its capture ring; measured multi-link support and compatible pins select the pair, otherwise individual links remain the fallback (`internal/runtime/capture/uprobe/multi.go`) |
@@ -22,7 +22,7 @@ Rules:
 - A tracing or uprobe program looks the current task's cgroup id up in `tego_run_set` first, and does nothing when
   it is not there. A network program never asks who the caller is: it reads the run from `tego_net_owners`, the
   cgroup storage of the cgroup it was attached to, because the caller of a relayed connect is the seccomp
-  supervisor, not the run (docs/p0/enforce-cgroup-observe.md §5 R1). The one exception is
+  supervisor, not the run. The one exception is
   `connect_unix`'s recognition of the supervisor's relay name, `/proc/self/fd/<n>`, which it admits only from the
   launcher's cgroup that `Attach` wrote into the owner; it selects no run and no row (§5 R7).
 - No map may share its name with a struct: bpf2go's `-type` lookup sees both and stops (`bpf/tests`).
@@ -195,9 +195,9 @@ What each of those tests asserts, so a manual run can be judged without reading 
 | `TestNetRefreshOnRealKernel` | a host entry whose address rotated is refused until `RefreshNet` moves the run's rows, then allowed at the new address and refused at the old one (§6 E7) |
 | `TestFanotifyGroupOpens`, `TestFanotifyMarkAndUnmark` | the group this backend asks for is one the kernel grants, and a mount can be marked once and removed cleanly |
 | `TestFanotifyRefusesDeniedRead` | a process in the run's cgroup opening a `deny_read` path is refused in the kernel with `EPERM` (the bare `FAN_DENY`; no kernel lets this group send `EACCES`, §6 E2), the refusal event names the rule and the file, and an unruled file opens normally |
-| `TestFanotifyAllowedOpensKeepTheListener` | 60,000 allowed opens from the test's own goroutine with GOMAXPROCS 2, as fast as the listener answers, leave the listener running and the `deny_read` file refused: at the closer's cap the loop waits for a closer that had no processor instead of taking it for a held close (docs/p0/enforce-cgroup-observe.md §6 E35) |
+| `TestFanotifyAllowedOpensKeepTheListener` | 60,000 allowed opens from the test's own goroutine with GOMAXPROCS 2, as fast as the listener answers, leave the listener running and the `deny_read` file refused: at the closer's cap the loop waits for a closer that had no processor instead of taking it for a held close |
 | `TestFanotifyListenerDeathFailsOpen` | closing the group releases openers rather than blocking them — the documented default that makes a dead listener fatal to the run |
-| `BenchmarkFanotifyRoundTrip` | one open on the marked mount against the same open unmarked, allowed on the path and refused after the membership read; P0-DESIGN §9 budgets the round trip at under 30 µs, and the first measurement, in the 2-vCPU KVM guest, was ~44 µs over an unmarked open (docs/p0/enforce-cgroup-observe.md §9) |
+| `BenchmarkFanotifyRoundTrip` | one open on the marked mount against the same open unmarked, allowed on the path and refused after the membership read; the budget for the round trip is under 30 µs, and the first measurement, in the 2-vCPU KVM guest, was ~44 µs over an unmarked open |
 
 Everything else in those two packages runs unprivileged and is covered by `go test ./...`.
 
@@ -225,12 +225,11 @@ Loading every program on its own as root, first on a 6.17 kernel in the KVM gues
   the supervisor in `internal/runtime/run_workers.go`. That worker refreshes the DNS set and calls the
   handle's `RefreshNet` when its resolved rows or expiry change; `internal/runtime/enforce/cgroup/attach.go`
   validates the table shape and replaces the scoped rows. Resolver admission and hostname refresh therefore
-  share the runtime's address-refusal checks and compiled expiry policy
-  (docs/p0/enforce-cgroup-observe.md §5 R5, §6 E7; docs/p0/network-controls.md §5 R5).
+  share the runtime's address-refusal checks and compiled expiry policy.
 
 ## What this kernel's BTF settled
 
-Two questions `docs/p0/enforce-cgroup-observe.md` §11 left open were answered by reading the running kernel's
+Two open questions were answered by reading the running kernel's
 BTF while implementing, and the code follows the answers:
 
 - **`connect_unix` decides by name (corrected 2026-09-23).** This bullet used to say it could not: `struct
@@ -239,11 +238,11 @@ BTF while implementing, and the code follows the answers:
   not the whole context, though: `bpf_cast_to_kern_ctx` (6.2) gives the kernel's `struct bpf_sock_addr_kern`,
   whose `uaddr` is the kernel's copy of the caller's `sockaddr_un`, read through `bpf_rdonly_cast`, as the
   upstream selftest `connect_unix_prog.c` does. `connect_unix` and the new `sendmsg_unix` now decide a unix
-  destination by that name on 6.7+ (docs/p0/enforce-cgroup-observe.md §5 R7), narrowing what the inherited tier-1
+  destination by that name on 6.7+, narrowing what the inherited tier-1
   Landlock ruleset and seccomp supervisor decide, which stay the only decision below 6.7. What the name cannot
   say, the socket it resolves to, stays the supervisor's for a connect. For a datagram, which the agent sends
   itself under the inherited Landlock domain, it is checked by that domain's `RESOLVE_UNIX` backstop at Landlock
-  ABI 9 (Linux 7.1) and above (docs/p0/enforce-landlock.md R21), and by nothing below ABI 9.
+  ABI 9 (Linux 7.1) and above, and by nothing below ABI 9.
 - **The five fentry attach points exist with the prototypes the spec assumes** (argument counts from
   `/sys/kernel/btf/vmlinux`): `security_file_open(file)`, `security_path_unlink(dir, dentry)`,
   `security_path_mkdir(dir, dentry, mode)`, `security_path_rename(old_dir, old_dentry, new_dir, new_dentry,

@@ -148,7 +148,7 @@ Every scenario starts with a warm-up `Write` inside the workspace (turn 0): the 
 Code's start-up made tego refuse. After the refused turn, a, c and d wait a second (a `Bash` `sleep 1; echo settled`;
 in d beside the `Write` of `after.txt`), so that a hook runs well after every refused line of that turn has landed
 (*added 2026-11-11*; `RESULTS.md` was captured before this turn existed). A refused call's line can be written
-after the call returned (docs/p0/supervisor.md R23), and a hook tells only what the reason file lists, so
+after the call returned, and a hook tells only what the reason file lists, so
 `report.py e2e` takes a refusal from the next request or, told one hook later, from the request after it: it must be
 told exactly once, with its rule, and the next request's golden holds the refusals of both. Given the stand-in's
 summary (`--result`, whose hook runs carry when each began and the reason file's seq the stand-in read just before

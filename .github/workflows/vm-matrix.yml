@@ -96,15 +96,15 @@ jobs:
           esac
           echo "body=$body" >>"$GITHUB_OUTPUT"
       # Where bpf is an active LSM (the row's own list, or the second boot with the lsm= line doctor printed), the row
-      # also runs doctor --require bpflsm and kill tests 1, 4, 5 and 7 (b) at tier bpflsm (TIER3-PLAN T11). A doctor-only
+      # also runs doctor --require bpflsm and kill tests 1, 4, 5 and 7 (b) at tier bpflsm. A doctor-only
       # row runs the refusal check (test/vm/doctor-refusal.sh) in this step and in no other.
       - name: kernel-matrix row (doctor, kill tests 1, 2, 4, 5, 6, 7; 1, 4, 5, 7 at bpflsm; a doctor-only row, the refusal) on ${{ matrix.kernel }}
         if: matrix.part == 'row'
         run: test/vm/run-in-vm.sh "$KERNEL" -- test/vm/run-matrix-row.sh
-      # Tier 3 on the row's kernel, both boots (TIER3-PLAN §9, T11), one per job (part): the plane's own suites and ADR
+      # Tier 3 on the row's kernel, both boots, one per job (part): the plane's own suites and ADR
       # 0017's conformance runner, whose tier bpflsm axis and parity cells run on the lsm=...,bpf boot and whose fmod_ret
       # axis runs on the boot without bpf. Every row that offers a tier, rhel-9 included: RHEL 9's 5.14 carries bpf LSM
-      # and the plane (enforce-plane R28). A row's name reaches the guests as TEGO_VM_ROW, and root-suites.sh fetches
+      # and the plane. A row's name reaches the guests as TEGO_VM_ROW, and root-suites.sh fetches
       # its kernel. TEGO_TEST_PLANE_PREEMPT=waive keeps the fmod_ret axis on the rows whose kernel preempts kernel code
       # (fedora-7.0 and fedora-7.2: lazy preemption), where a product build rules that mode out (ADR 0024 (16)); it changes
       # nothing on a row whose kernel does not.
@@ -115,7 +115,7 @@ jobs:
           TEGO_TEST_PLANE_PREEMPT=waive TEGO_VM_ROW="$KERNEL" TEGO_VM_LOCKDOWN=none TEGO_VM_MEM=1536M \
             VM_BOOTS="$PART" VM_BPF=yes VM_SUITE_MEM=internal/runtime/enforce/cgroup=2560M VM_SUITE_TIMEOUT="1500 internal/runtime/enforce/cgroup=6000" VM_OUT="$RUNNER_TEMP/tier3" \
             test/vm/root-suites.sh internal/runtime/enforce/cgroup internal/bpf test/conformance
-      # Landlock alone on a kernel that has ABI 9 and 10 (enforce-landlock R21, R22): the one row whose kernel does is
+      # Landlock alone on a kernel that has ABI 9 and 10: the one row whose kernel does is
       # fedora-7.2, so the unix connect and UDP port tests run there, with the row's name in their guest (TEGO_VM_ROW),
       # which holds the row to its ABI. Every other row's kernel is below ABI 9, and the same tests run on the host kernel
       # in `make vm-root-test`, where they assert that Landlock leaves both to the supervisor.
@@ -132,8 +132,8 @@ jobs:
           CGO_ENABLED=0 go test -c -tags 'integration tegobpf' -o "$RUNNER_TEMP/cgroup.test" ./internal/runtime/enforce/cgroup/
       # The root load test on each row: every program of every committed object, loaded on its own, through
       # the verifier of that row's kernel, with its CO-RE relocations resolved against that kernel's BTF. rhel-9's
-      # 5.14 is below tier 2's 6.1 tested floor and is not a target for these objects
-      # (docs/p0/enforce-cgroup-observe.md §10). The test skips without privilege, so a skip fails the step.
+      # 5.14 is below tier 2's 6.1 tested floor and is not a target for these objects.
+      # The test skips without privilege, so a skip fails the step.
       - name: every BPF program passes the verifier on ${{ matrix.kernel }}, as root
         if: matrix.part == 'row' && steps.body.outputs.body != 'doctor-only' && matrix.kernel != 'rhel-9'
         shell: bash

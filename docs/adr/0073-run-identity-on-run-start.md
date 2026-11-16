@@ -1,8 +1,7 @@
 # ADR 0073: run_start records who launched the run, on which host, and the identity its caller gave it; a Started hook runs before the agent is released
 
 Status: **accepted 2026-10-25**; implemented 2026-10-25: D1 to D5. Refines
-spec/record/v1 (record_minor 17, `MinorRunIdentity`), record-ledger.md §2.2, runtime-launch.md §4.1 (steps 9 and
-9a), agent-contract.md R5 and R28 (new), spec/identity/RUN-IDENTITY.md.
+spec/record/v1 (record_minor 17, `MinorRunIdentity`) and spec/identity/RUN-IDENTITY.md.
 
 ## Context
 
@@ -74,7 +73,7 @@ parent, as RUN-IDENTITY.md has it.
 **D4. The Started hook.** `Deps.Started func(StartedRun{ID, Dir}) error` is called exactly once per run, in `run()`,
 after `run_start` is durable and after `emitPostStartGaps` has queued every post-`run_start` gap (one ordered list,
 `postStartGaps`, so a gap a package adds is a row there and still precedes the hook), and before the group check and
-the child's `Ack` (runtime-launch.md §4.1 step 9a). It is the one point where the run id and its directory exist and
+the child's `Ack`. It is the one point where the run id and its directory exist and
 the agent has not run. Fail closed: an error ends the run as a failed ack does: the child is killed before it execs,
 `run_end reason=error` with `detail` `started hook: <error>` (cut to `record.MaxDetailBytes`, ending
 ` [cut N bytes]`, so the hook's error cannot make `run_end` longer than a ledger line), exit 125. A panic is not

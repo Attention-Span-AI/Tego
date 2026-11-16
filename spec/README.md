@@ -13,6 +13,6 @@ Language-neutral, versioned, published. `pkg/spec` in Go mirrors these files. Te
 | `policy/` | policy semantics: defaults, precedence, matching, gate predicates | doc |
 | `policy/conformance/` | the filesystem conformance table, embedded as a Go package and run by `test/conformance` | doc |
 
-**spec/ vs docs/.** spec/ holds what other programs and people rely on as a format or a guarantee (a contract, a record, a code set, a capability per tier). Design, plans and component behaviour live in docs/: docs/p0 for each engine component, docs/adr for decisions. docs/spec/exec-command-rows.md is a design table that `tego` prints to users, so it stays in docs/. When spec/ and a docs/p0 spec disagree about a format, spec/ wins; about engine behaviour, check the code (docs/README.md, "When two docs disagree").
+**spec/ vs docs/.** spec/ holds what other programs and people rely on as a format or a guarantee (a contract, a record, a code set, a capability per tier). Design and decisions live in docs/: docs/adr for decisions. docs/spec/exec-command-rows.md is a design table that `tego` prints to users, so it stays in docs/. When spec/ and another document disagree about a format, spec/ wins; about engine behaviour, check the code (docs/README.md, "When two docs disagree").
 
 A change here is a breaking change until the version bumps. Fixtures in `record/v1/fixtures/` are the contract that `internal/check` is built against.

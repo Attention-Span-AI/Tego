@@ -85,7 +85,7 @@ Inside internal/platform/sys, three int-returning producers also need owner form
 **Accepted ADRs and specs already describe this ADR as built.**
 - ADR 0020 (2): the reaper's descriptors are "each a sys.FD released into ExtraFiles".
 - ADR 0024: "Prerequisites on master: … 0023". Tier 3 was built on R16's check alone.
-- ADR 0025 (2), and enforce-plane.md near lines 1011 and 1182: the fill reads descriptors "owned by a sys.FD".
+- ADR 0025 (2): the fill reads descriptors "owned by a sys.FD".
 - ADR 0034 (2): `hoststate.Open()` returns "a verified sys.FD".
 
 None of these is true today. C0 adds a dated note to each.
@@ -623,7 +623,7 @@ texts each migrating commit pins. Nothing here is a model or a judgment (ADR 000
 | P5 | new BenchmarkResolveSocketReal (integration tag, real kernel, joins the gate regex): socketpair; then per op pidfd_open(self), pidfd_getfd, SO_TYPE, SO_PROTOCOL and SO_DOMAIN under one Borrow, and two closes, through `sysKernel` | ≤ +2 allocs/op and ≤ +100 ns median against the same sequence on the commit before C8 | acceptance (C8), gate |
 | P6 | enforce/cgroup `BenchmarkListenerHandle` | ≤ 23 allocs/op (22 today; +1 for the event's Adopt). groupMu's removal saves an RWMutex round trip per event | pin, plus acceptance median ≤ +2% (C11a) |
 | P6 | enforce/cgroup `BenchmarkDecideEventOffTheRun` | allocs unchanged (4 and 13) | pin |
-| P7 | ledger `BenchmarkAppend` | < 20 µs absolute (record-ledger.md; 4.5 µs today). 14 allocs unchanged | pin (allocs), acceptance (time, C10) |
+| P7 | ledger `BenchmarkAppend` | < 20 µs absolute (4.5 µs today). 14 allocs unchanged | pin (allocs), acceptance (time, C10) |
 | P8 | landlock `BenchmarkPrepare` (2.4 ms) and `BenchmarkEnumerate1000` (5.8 ms), which join the gate with ReportAllocs | at most 1 more alloc per held descriptor (pinned over a 100-path Prepare); median ≤ +5% | pin, gate, acceptance (C5) |
 | P8 | `make vm-perf` warm start and fill | existing budgets hold (landlock 250 ms; cgroup and bpflsm 1000 ms); the fill row unchanged within the suite's noise; the reservation's RCU saving re-measured after C11b | acceptance |
 | P9 | `BenchmarkOwnedOpenClose` against `BenchmarkRawOpenClose` | median delta ≤ 50 ns; ≤ 1 more alloc (24 B) when the owner escapes, none when it does not | recorded |
@@ -881,7 +881,6 @@ internal/ledger gains a dependency on internal/platform/sys.
 - **C0, docs.** This ADR's own text, plus:
   - correction-of-fact notes, each "not yet true; becomes true at Cn": ADR 0020 (C9), ADR 0024 (C5, C11b), ADR 0025
     (C11b) and ADR 0034 (C12);
-  - Changes entries in enforce-plane.md near lines 1011 and 1182 (C11b), and in TIER3-PLAN T4;
   - ADR 0031's note: (a) does not wait on this ADR, because C5 edits enforce/api after the TCB API work;
   - CONTRIBUTING: the ownership rule in a few lines, and how to read an "ADR 0023" lint message.
   - Test: `go run ./tools/rulecheck` and adrindex_test.
@@ -1044,7 +1043,6 @@ internal/ledger gains a dependency on internal/platform/sys.
     - TestRunListenerCloseDeferredUntilWorkersLeave (integration, a real listener): a strict Close from
       another goroutine mid-run gets `ErrLeased`; notifications are still answered; the number is closed once
       (sentinel).
-  - Docs: supervisor.md's §1 "Notify fd" row is amended, with a Changes entry.
   - Gates: P5's time rows on the reference machine; supervisor root suite GUEST both.
 - **C9, the rest of internal/runtime.**
   - The changes:

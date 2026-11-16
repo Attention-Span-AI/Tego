@@ -6,8 +6,8 @@ system-Python agent through uprobes).
 Why it exists: capture is judged on what crosses the agent's own TLS library, so the stand-in has to be a
 real HTTPS endpoint the agent trusts the ordinary way (SSL_CERT_FILE), speaking HTTP/1.1 with keep-alive,
 and answering with the response shapes derive/anthropic parses. It runs outside the run, so its own
-TLS calls are in a different cgroup from the agent's and the in-kernel per-cgroup filter drops them
-(docs/p0/capture-derive.md R9); only the agent's side of each exchange is ever captured.
+TLS calls are in a different cgroup from the agent's and the in-kernel per-cgroup filter drops them;
+only the agent's side of each exchange is ever captured.
 
 What it answers is decided by the request alone, so it keeps no state between connections: turn N of a
 conversation is the number of assistant messages the request already carries, and the reply is the

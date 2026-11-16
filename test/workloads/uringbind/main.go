@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Command uringbind is a workload for the decision plane's listener hooks on io_uring (enforce-plane §2.20):
+// Command uringbind is a workload for the decision plane's listener hooks on io_uring:
 // IORING_OP_BIND and IORING_OP_LISTEN (6.11+) reach security_socket_bind and security_socket_listen with no bind or
 // listen syscall, so no syscall-exit producer sees them. On one OS thread, as one task, it binds an undeclared
 // abstract name and an undeclared pathname, makes a socket node with a plain mknod(2) (a filesystem operation, not a

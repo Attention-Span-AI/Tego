@@ -22,7 +22,7 @@ import (
 // (export_test.go; decide's oracles into rootoracle_test.go). A production comment or a spec that still names
 // the moved function describes an API the binary no longer has, and when the moved function carried the only
 // description of its production sibling, the sibling is left with none. These
-// tests hold both: production code and the docs/p0 specs name the function the binary calls, and a mention of
+// tests hold both: production code and the specs, where present, name the function the binary calls, and a mention of
 // the test-only wrapper says it is the tests'.
 
 // repoRoot is the module root, two directories up from this package.
@@ -239,7 +239,7 @@ func TestNoProductionCommentNamesATestOnlyFunction(t *testing.T) {
 // changesEntry matches the first line of a dated Changes entry, whose history keeps the names of its day.
 var changesEntry = regexp.MustCompile(`^- \d{4}-\d{2}-\d{2}`)
 
-// TestNoSpecNamesATestOnlyFunction: outside their dated Changes entries, the docs/p0 specs never name a
+// TestNoSpecNamesATestOnlyFunction: outside their dated Changes entries, the rule specs never name a
 // test-only function as "<package>.<name>" (or "<receiver type>.<name>" for a method), nor an exported one as
 // "`Name`", "`Name(" or "func Name(" when no production package declares that name, unless the line says it
 // is the tests'.
@@ -267,8 +267,11 @@ func TestNoSpecNamesATestOnlyFunction(t *testing.T) {
 		}
 	}
 	specs, err := filepath.Glob(filepath.Join(repoRoot, "docs", "p0", "*.md"))
-	if err != nil || len(specs) == 0 {
-		t.Fatalf("no specs under docs/p0: %v", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(specs) == 0 {
+		t.Skip("no docs/p0 here")
 	}
 	var bad []string
 	for _, spec := range specs {

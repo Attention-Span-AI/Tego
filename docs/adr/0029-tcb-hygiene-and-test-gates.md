@@ -64,7 +64,7 @@ Docs: ADR 0029; runtime-launch §5 and I8 name sys.RestrictSelf as the one wrapp
   synthetic inputs, classified per function, for those purposes only); it is not decided here. Until it is, (5)
   and step 5 stay open against the acceptance as written.
 
-*Amended 2026-10-05:* a fixture can also diverge from production by keeping its own copy of a choice production makes. The observe integration fixtures attached `trace_proc`'s programs with a private copy of the backend's attach choice, written when the exec-result programs were the only syscall tracepoints, and attached the listener programs as tracing programs, so fifteen tests of the tegobpf observe suite failed on each boot as root in the KVM guest ("invalid program type TracePoint, expected Tracing"). `bpf.AttachTrace` is now the one place a host-wide tracing program is attached, called by the backend and by those fixtures, and `TestTraceProgramsAttachByTheirProgramType` holds each program's attach kind to the type its `SEC()` compiles to (enforce-cgroup-observe.md R14).
+*Amended 2026-10-05:* a fixture can also diverge from production by keeping its own copy of a choice production makes. The observe integration fixtures attached `trace_proc`'s programs with a private copy of the backend's attach choice, written when the exec-result programs were the only syscall tracepoints, and attached the listener programs as tracing programs, so fifteen tests of the tegobpf observe suite failed on each boot as root in the KVM guest ("invalid program type TracePoint, expected Tracing"). `bpf.AttachTrace` is now the one place a host-wide tracing program is attached, called by the backend and by those fixtures, and `TestTraceProgramsAttachByTheirProgramType` holds each program's attach kind to the type its `SEC` compiles to.
 
 *Amended 2026-10-05 (plane fixtures):* behind that failure the same suite's two plane tests (`TestIntegrationPlaneRefusalIsOneLine`, `TestIntegrationPlaneFallbackIsOneLine`) failed in their own loader of the plane fill build, with "pin by name: missing MapOptions.PinPath": `fillSlot` named two of the three row outers the fill declares, and the third, the Unix listener rows (`tego_plane_listen_rows`), is pinned by name. It now gives the slot an inner map in each of the three and names each as a replacement, as `newPlaneFiller` does, and both tests pass in the guest.
 
@@ -132,7 +132,7 @@ moves: the same scan found no vulnerability in a required module. Step 1's rule 
 internal/runtime/reason and internal/adapters. internal/runtime/reason is removed: the reason file it was kept for is
 `pkg/spec/reason`, live code. The other two stay placeholders.
 *Amended 2026-10-24 (step list):* the gates these steps build are joined by the test-isolation gate's
-runtime-parent clause (identity-config.md R27 clause b4), as step 1b: no test, and no tego a test starts, makes or
+runtime-parent clause, as step 1b: no test, and no tego a test starts, makes or
 writes the developer's `$XDG_RUNTIME_DIR/tego` or `/run/user/<uid>/tego`, where each run keeps its CODEX_HOME and
 each launch sweeps the directories of runs whose launcher is gone. A reproduction with the guard extended and no
 prevention made that parent from `internal/runtime`'s unit tests (in-process runs) and its and `test/conformance`'s
@@ -158,7 +158,7 @@ its report of an entry made stays stricter, any entry not held.
 
 *Amended 2026-10-24 (step 1b):* SH-7 also refuses a launch handed `/run/user/<uid>` by a
 literal path or the inherited value copied through another name, and a quoted Python mention no longer counts as
-giving tego a directory unless the script also refuses the login session's. identity-config.md R27 clause b4 states
+giving tego a directory unless the script also refuses the login session's. The isolation rule states
 SH-7's limit (it reads a script and does not evaluate it) and the guard's two reports a developer's own launch or
 killed run during the tests causes.
 

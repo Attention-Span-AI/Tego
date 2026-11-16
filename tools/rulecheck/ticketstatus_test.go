@@ -53,7 +53,7 @@ func TestCheckTicketStatusFlagsAPlantedMismatch(t *testing.T) {
 	}
 }
 
-// TestTicketStatusOnTheTree holds FEATURES.md and CAPABILITIES.md to TIER3-PLAN §10's marks.
+// TestTicketStatusOnTheTree holds FEATURES.md and CAPABILITIES.md to the tier-3 plan's marks.
 func TestTicketStatusOnTheTree(t *testing.T) {
 	plan, notes := loadTicketStatus(filepath.Join("..", ".."))
 	if plan == "" {

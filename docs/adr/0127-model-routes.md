@@ -21,7 +21,7 @@ endpoint elsewhere must be told that a key the agent holds itself goes there too
 
 ## Decision
 
-### 1. Contract: `models[].routes` (agent-contract.md R32)
+### 1. Contract: `models[].routes`
 
 ```yaml
 capture: forwarder
@@ -195,7 +195,7 @@ loopback servers (under a `net:` section a guarded port refuses unknown destinat
 - `run_start.record_minor` rises to 27 on every run (the only change on the option-off path); a contract without
   routes runs exactly as before: no router, no new field, no new line.
 - `tego` and `tego-control` are rebuilt together; a run started by an older `tego` ignores the overlay.
-- `docs/p0/agent-contract.md` (R32), `spec/record/v1/README.md` (revision 27),
+- `spec/record/v1/README.md` (revision 27),
   `spec/agent/v0/agent.schema.json`, `docs/DASHBOARD.md` (Model routes), `docs/user/model-routes.md` describe it.
 
 ## Implementation notes

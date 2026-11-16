@@ -7,7 +7,7 @@
 # (docs/FEATURES.md R18: "`pip install` + `pytest`, `npm install`, `go build` unbroken under
 # examples/profiles/base/python-dev with `record: summary`").
 #
-# A profile is merged underneath the contract (docs/p0/agent-contract.md R5): its lists come first and the
+# A profile is merged underneath the contract: its lists come first and the
 # contract's are added to them, its scalars hold only where the contract sets none, and its deny_read
 # entries are never dropped. So it declares only what every such project needs on any machine, and
 # nothing that names a place: the project's own write directory, its tool caches and its model endpoint

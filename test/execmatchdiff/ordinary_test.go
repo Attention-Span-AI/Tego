@@ -379,7 +379,7 @@ func ordinaryVectors(t *testing.T, entry string) [][]string {
 	add(append(slices.Clone(words), "operand"))
 	add(append(slices.Clone(words), "operand", "second"))
 	// The row does not enumerate the git-log options accepted by reflog show.
-	// Keep the review's actual ordinary spellings in the measured catalog too.
+	// Keep the actual ordinary spellings in the measured catalog too.
 	if entry == "git reflog" {
 		add([]string{"git", "reflog", "-n", "5"})
 		add([]string{"git", "reflog", "--date=iso"})
@@ -526,6 +526,9 @@ func TestOrdinaryCatalogIncludesProseAndShippedDocs(t *testing.T) {
 		}
 		checks[1].source = "historical source: docs/CHANGELOG.md (scalar example)"
 		checks[2].source = "docs/CHANGELOG.md"
+	}
+	if _, err := os.Stat(filepath.Join("../..", "docs/p0")); os.IsNotExist(err) {
+		checks[4].source = "historical source: docs/p0/exec-ask-plan.md" // the specs stay in the private tree
 	}
 	for _, tc := range checks {
 		found := false

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Command uringsock is a workload for the decision plane's socket_create (ADR 0018 (5), TIER3-PLAN T13) and for
+// Command uringsock is a workload for the decision plane's socket_create (ADR 0018 (5)) and for
 // cgroup/sock_create (ADR 0018 PR 2): it makes one socket through io_uring's IORING_OP_SOCKET, which no seccomp filter
 // sees, for the family, type and protocol its arguments name, and prints "RESULT <name> ok", "RESULT <name> refused
 // errno=<n>", or "RESULT <name> unavailable <why>" when this process has no io_uring (the filter's ENOSYS, or a kernel

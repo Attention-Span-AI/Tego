@@ -147,7 +147,7 @@ refusing a gate `ask` too (the person answering is the ask).
 scoring the agent's own `O_RDWR` open as a write alone, and that was the gate's own hole, recorded nowhere but here:
 under `fs.read matches "*.pem": 90` the agent's `open("out/x.pem")` was refused `fs-gate` while `os.open("out/x.pem",
 O_RDWR)` beneath a write entry read the bytes. The gate now scores a write open that also reads (`O_RDWR`, or
-`O_RDONLY` with `O_CREAT` or `O_TRUNC`) with the read predicates as well, the stronger verdict kept (gate.md R1,
+`O_RDONLY` with `O_CREAT` or `O_TRUNC`) with the read predicates as well, the stronger verdict kept (
 `scoreOpen` in `internal/runtime/supervisor`), for the agent's own open, a held `fs.ask` write's target and a write
 alternate alike, so a held `O_RDWR` write answered with `out/x.pem` is refused at answer time and at delivery. The
 clause is withdrawn: the alternate is scored exactly as the agent's own open of it, which is what D2 asks. Tests:

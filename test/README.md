@@ -6,7 +6,7 @@
 | `fixtures/init/` | a throwaway project (fake `.env`, the Claude Code contract, a verdict table) for `maze init` to scan and `compile --test` to check; README says how to run it from a Mac | anywhere (Linux, or a container on a Mac) |
 | `workloads/` | the agents and helpers the kill tests run: `python-steps/` (20 model steps over the system libssl), `python-anthropic/` (a tool-use agent on the Anthropic SDK), `model-stub/` (a local HTTPS stand-in for the Messages API), `python-httpx/`, `model-agent/`, `npm-agent/`, `go-agent/`, and `build/`, the §9 build workload, and `read-opener/`, the timed open loop `bench/read-notify` runs | host or VM |
 | `integration/` | root-required tests of launch, enforce, ask, observe (`//go:build integration`) | VM or a box with sudo |
-| `e2e/` | the kill tests of docs/P0-DESIGN.md as scripts, one per criterion | host (their unprivileged halves) and the VM matrix |
+| `e2e/` | the kill tests as scripts, one per criterion | host (their unprivileged halves) and the VM matrix |
 | `bench/` | measurements that decide a default: `read-notify/` (ADR 0077) times a read open told to the supervisor against one the filter lets pass, and the offline Claude Code workload, `reason.reads: on` against `off`; it labels a run started at load 2 or more `LOADED` and prints `TARGET-MISS` past the rule (docs/BENCHMARKS.md) | host, no root, through the capped slice |
 | `vm/` | `kvm-run.sh`, a root KVM guest without host root, and the kernel matrix on it: Ubuntu 24.04 6.8, Debian 13 6.12, RHEL 9 5.14, AL2023 6.1 and 6.12, Fedora 7.0 (`make vm-matrix`). WSL 6.18 and the macOS Lima job are P2 and not built: WSL's kernel ships only inside its Windows installer | host with `/dev/kvm`, and CI |
 
@@ -14,7 +14,7 @@ Unit tests stay next to the code as `_test.go`. Nothing here is imported by the 
 
 ## Keeping the developer's own ~/.tego out of it
 
-tego finds its home through the passwd database, never `$HOME` (identity-config.md R21), so a harness that sets
+tego finds its home through the passwd database, never `$HOME`, so a harness that sets
 `HOME` isolates nothing: the chain anchor (`~/.tego/chain.log`), the own log (`~/.tego/tego.log`) and the built-in
 ledger root are the developer's own. A harness that runs tego builds it with `-tags tegotesthooks`, writes a machine
 config whose `ledger_root` is its own, and starts it with `TEGO_CONFIG`, `TEGO_TEST_CHAIN_ANCHOR` and
@@ -34,4 +34,4 @@ the tego binary ends its `TestMain` with `os.Exit(testutil.GuardedMain(m))` (or 
 that reached the real `~/.tego` or `~/.bash_history` anyway fails the run it does. Under
 `go test` the tests run in a re-executed child that the guard checks after, so a panic or the test timeout does not
 skip the check; a binary run directly (as `vm/root-suites.sh` runs its suites) checks in its own process, which a
-panic or the timeout ends first (identity-config.md R27).
+panic or the timeout ends first.

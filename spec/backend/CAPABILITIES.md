@@ -20,7 +20,7 @@ row below — this table's column for that tier as the run's own enforcement nar
 kernel's Landlock ABI), with the rows only the run can answer set from the run: capture from the sources that really
 run, the record rows from the record mode (an observe run records what tier 1 records), reads its filter does not see,
 and `false` for the rows whose contract fields this binary refuses as not yet supported (both
-container rows); `docs/p0/record-ledger.md` §2.2. This table describes the tier and keeps those rows. `status <run>`
+container rows). This table describes the tier and keeps those rows. `status <run>`
 prints the run's line with the absent rows by name; the gap report lists what was absent.
 The container rows describe the backend design, not accepted contract features. The ask row is true only when
 the run starts its authenticated broker and notification supervisor. Safe regular-file open, ordinary TCP and unix
@@ -243,12 +243,12 @@ was attributed by its bind's name, and an ordering the run controls admitted a f
 A content-selected ELF loader with multiple hardlinks is refused when an enforced `deny_read` directory exists,
 because another link could name its unenumerated contents. Use a dedicated single-link loader outside write and
 deny paths; this can require de-duplicating an optimized Nix loader. Ordinary single-link loaders and multiple-link
-loaders with no ambiguous directory denials still work. Explicit grants and general filesystem aliases retain the
-separate boundaries in `docs/p0/enforce-landlock.md` I11; a loader grant no longer silently bypasses this check.
+loaders with no ambiguous directory denials still work. Explicit grants and general filesystem aliases retain their
+separate boundaries; a loader grant no longer silently bypasses this check.
 
 Egress enforcement is destination-based. Declared `net.listen`, `net.ingress` and `net.limits` additionally
 provide listener admission, root-tier ingress filtering and run-scoped kernel budgets when their required
-measured hooks attach; see [network controls](../../docs/p0/network-controls.md) for the distinct tier guarantees.
+measured hooks attach; see network controls for the distinct tier guarantees.
 System DNS mode retains explicit machine-resolver exceptions on UDP and TCP port 53 without query-content
 validation. The cooperating DNS broker is separately authenticated and applies declared name/type policy.
 Allowed UDP can carry QUIC. With `net.dns.max_stale`, failed refresh expires last-good address admission at the
@@ -257,7 +257,7 @@ tracking have separate lifetimes; address expiry does not promise their revocati
 
 Tier 3 is built through step E. A run gets it (`tego run --tier bpflsm`, or auto as root) where
 `bpf` is an active LSM and the decision plane's LSM mode passes doctor's probe: the tier-2 backend with the plane in LSM
-mode (docs/p0/enforce-plane.md §2.10). Steps A to D's hooks decide (§2.7, §2.12, §2.14, §2.11: `file_open`,
+mode. Steps A to D's hooks decide (§2.7, §2.12, §2.14, §2.11: `file_open`,
 `bprm_check_security`, `path_rename` with REFER, `path_link`, `path_unlink`, `path_rmdir`, the create and truncate
 hooks, `path_chmod` and the attribute hooks for `deny_write` targets, `socket_create`, `mmap_file` and
 `file_mprotect`, and below 6.7 `socket_connect` and `socket_sendmsg` for unix names). Step E delegates filesystem decisions
@@ -275,7 +275,7 @@ actions, `net.socket` and `net.send` among them, and `exec.anonymous` are policy
 the plane's slot header carries and omit plane provenance; this command does not attach hooks or run the actor.
 The `decision plane` row reports the filesystem enforcement mode. Root-tier `run_start` records carry the actual
 mode, including the fanotify fallback, from record minor 2 onward. Refusals carry their mode in `decision_plane`
-too (`lsm`, `fmod_ret` or `fanotify`; docs/p0/enforce-plane.md §5).
+too (`lsm`, `fmod_ret` or `fanotify`).
 In both plane modes, at tier `cgroup` and tier `bpflsm`, the plane also carries controls that are not rows of
 this table (FEATURES E54's 2026-10-05 note; `bpf/decide_control.h`, `decide_socket.h`, `decide_listen.h`):
 `ptrace_access_check` in ATTACH mode and `ptrace_traceme` refuse a peer task outside the run and its generation;

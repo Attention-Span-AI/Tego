@@ -4,7 +4,7 @@
 > laptop, at tier landlock only; the engine has changed a great deal since and the root tiers were never measured.
 > The "Timing budgets in the test suites" part is current.
 
-The claim P0-DESIGN §9 makes is that enforcement costs little: whole-run overhead under 1% at the
+The design claims that enforcement costs little: whole-run overhead under 1% at the
 enforce-only budget, 3% for `record: summary`, 5% for `record: full`, measured on
 `test/workloads/build`. This page is that measurement, not a restatement of the claim. The harness
 lives in `test/e2e/overhead/` (`test/e2e/kt3-overhead.sh` is the kill-test entry point;
@@ -89,7 +89,7 @@ matters for reading the results: at measurement time, `free -h` showed ~9 of 14 
 entire 4 GiB swap partition committed (a desktop session and other jobs), even though CPU load average was low (0.3–0.4) throughout both
 attempts. A 400ms–1s workload cannot be held steady across two independently-timed passes on a
 machine in that state; the noisy-row count below is that fact showing up in the data, not a defect
-in the harness. `test/vm`'s kernel-matrix CI job (P0-DESIGN §10) runs on a machine with nothing else
+in the harness. `test/vm`'s kernel-matrix CI job runs on a machine with nothing else
 on it, and is where the rows this run could not hold steady should get a clean number.
 
 ## Results
@@ -137,7 +137,7 @@ installed no listener and the runtime started no supervisor). Those runs paid fo
 cgroup and the ledger, and for nothing per syscall. They stay in the table as measured, but they are
 the cost of an unfiltered launch, not of observe mode, and their `full`/`off` difference (6.9%
 against 1.9%) is two samples of the same unfiltered path: noise, not a record-mode effect. Observe
-now installs tier 1's filter and runs the supervisor record-only (docs/p0/supervisor.md R30), so its
+now installs tier 1's filter and runs the supervisor record-only, so its
 per-syscall cost should sit near `landlock`'s at the same record mode, less Landlock's own checks.
 Neither `observe` figure should be quoted until `test/e2e/overhead/run.sh` has measured the rows again
 on a build with that fix.
@@ -223,7 +223,7 @@ path in `off`" stays ruled out as the mechanism; the discarded run's backwards o
 ## The activity stamp's cost on an open
 
 A run with a `stall_after` has each allowed open, file operation and connect under `record: off` stamp its slot of
-`tego_activity` (limits-check-doctor-cli.md R4). The record-off plan's budget for it is +25 ns an open on 6.17 and
+`tego_activity`. The record-off plan's budget for it is +25 ns an open on 6.17 and
 +40 ns on 6.1. `TestActivityStampCost` (`internal/bpf`, root, KVM) measures what it adds to `tego_file_open`
 itself, from the kernel's BPF run-time statistics (`kernel.bpf_stats_enabled`): a record: off run's row with the
 flag against the same row without it, the two alternated over 9 rounds of 200,000 opens by a process of the run,
@@ -542,7 +542,7 @@ yardstick models the machine, and the code under test is not the model.
     too, an idle goroutine's spinning thread among them, and so loosens the bound by an amount nothing caps). The
     harness lets the flood's target run for 170 s, the pace's ceiling and its own 60 s, and judges a target still
     sending when it is killed on the time it had run, so a flood too slow for its ceiling fails on the pace budget's
-    message (supervisor.md's 2026-10-17 entry); with the harness's plain 60 s a flood slower than that failed only on
+    message; with the harness's plain 60 s a flood slower than that failed only on
     the report the kill cut off. The test process's CPU time per datagram was rejected as the flood's measure: it read
     67 to 70 µs with the host as found and 77 µs under the loops, mostly the Go scheduler's own polling, so it measures
     the runtime, not the loop. **Open** (2026-10-17): the flood's unit-gate pace is not robust by
@@ -619,7 +619,7 @@ the same for each of its figures.
 | `TestExtendsMergeCostIsLinear` | best wall time of 3, small then large | the least process CPU time of 5, interleaved |
 
 `TestIntegrationFastPath` and `TestIntegrationFastPathOps` use the same split since 2026-11-04: budget mode
-keeps their best of three against max(200 µs, 12 × a pipe ping-pong measured in the run), supervisor.md R22;
+keeps their best of three against max(200 µs, 12 × a pipe ping-pong measured in the run);
 the unit/race gate holds that wall-clock round trip to `CeilingFactor` times 200 µs. A pipe ping-pong does
 not measure the handler's instrumented CPU work: a loaded tagged race run measured 276–411 µs for the common
 operations while its gauge stayed at 11–19 µs. Both tests are now in `scripts/timing-budgets.sh`, whose
@@ -807,5 +807,5 @@ Borrow's ratio 1.74 to 2.00.
 ## Start latency and the cold start (guest perf suite)
 
 This page measures whole-run overhead. A run's start, warm and cold, is measured by the tier-3 guest perf suite
-(`make vm-perf`, `test/perf`) and recorded with its budgets in docs/p0/enforce-plane.md §10.1, which since 2026-10-19
+(`make vm-perf`, `test/perf`) with its budgets, and it
 also attributes the cold start per program, map, D7 hook and plane-probe mode ("Cold attribution").

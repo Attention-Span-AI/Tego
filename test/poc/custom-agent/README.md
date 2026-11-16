@@ -149,10 +149,10 @@ and 300 observed for 25 spawns; count actions from the agent's own log and the `
 | `cpu` | the run's cgroup, `cpu.max`: throttles, never kills | yes (g3) | the same, `cpu` |
 
 Every run, tier 1 included, lives in a delegated user cgroup (`tego doctor`: `cgroupv2: ... delegated, ...
-controllers: cpu memory pids`; docs/p0/limits-check-doctor-cli.md says tier `landlock` needs it "because every run is
+controllers: cpu memory pids`; tier `landlock` needs it "because every run is
 created in the delegated cgroup it checks and is stopped through that cgroup's `cgroup.kill`"). So the three resource
 limits do not need root. Where the controller is not delegated the run is refused, naming it
-(docs/p0/runtime-launch.md case 31; not reproducible here). What a root tier adds is not another limit but another way
+(not reproducible here). What a root tier adds is not another limit but another way
 to count: `capture: uprobe` reads the model traffic of an agent that speaks TLS straight to its provider on the system
 OpenSSL, which tier 1 cannot, so `tokens`, `cost_usd` and `repeats` there need an agent that can be pointed at the
 forwarder (documented; no root tier was run here: this box has no BPF LSM at boot and the run was unprivileged).

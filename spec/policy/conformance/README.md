@@ -63,5 +63,5 @@ Below Landlock ABI 3 every truncate cell takes tier 1's floor, a refusal with EP
 ## Citing a source
 
 Name the section and the rule, then what of it the cell exercises in parentheses, for example
-`SEMANTICS §2 (a write entry grants modifications beneath it)` or `supervisor.md R15d`. Until ADR 0030 numbers
+`SEMANTICS §2 (a write entry grants modifications beneath it)`. Until ADR 0030 numbers
 SEMANTICS' rules, a section and a phrase is the citation.

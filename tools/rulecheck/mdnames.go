@@ -16,9 +16,7 @@ import (
 // The bare-name check: a Markdown file named by its bare name (a file name with no directory before it), in a
 // document the link check reads or in a Go comment, names a file the repository holds somewhere. The link check sees only
 // Markdown links, so a bare name in prose, in a code span or in a comment passed it even when the file was a
-// working note that never entered the tree. Added 2026-11-11 after ADR 0048's amendment and the multicall test
-// comments cited a working report by its file name, a report that was never in the repository; a reader of the
-// repository (or of the public tree) cannot follow such a citation.
+// working note that never entered the tree; a reader of the repository cannot follow such a citation.
 //
 // A name with a directory in front of it (`docs/GAPS.md`, `out/report.md`) is a path, not a bare name: the link
 // check holds the links among them, and an example path in a test is not a citation. Fenced code blocks are left

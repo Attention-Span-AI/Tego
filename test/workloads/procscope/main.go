@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Command procscope is a workload for the process scope (supervisor R35): it rewrites, to the values they already
+// Command procscope is a workload for the process scope: it rewrites, to the values they already
 // hold, the RLIMIT_NOFILE and nice value of the process argv[2] names (outside the run) and of a child it starts
 // from argv[1] with "30" (inside it), and prints one word per call: "ok" or the errno. Writing a value back
 // unchanged is the permission check without the harm, so a filter that let it through changes nothing.

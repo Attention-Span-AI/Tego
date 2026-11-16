@@ -13,7 +13,7 @@ import (
 )
 
 // DocsVersion is the Claude Code release whose documentation this program is dated against (hooks reference, CLI
-// reference and headless page as read on 2026-10-24). A payload or exit-code rule that changes in a later release is
+// reference and headless page). A payload or exit-code rule that changes in a later release is
 // a change here, with its golden, and nowhere else.
 const DocsVersion = "2.1.310"
 

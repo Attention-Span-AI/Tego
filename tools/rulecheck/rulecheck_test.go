@@ -133,7 +133,7 @@ func TestRepositoryPasses(t *testing.T) {
 
 // TestCheckUnnamedAndQuotedRefs: a bare ID in a document is that document's own rule, and a document named as a
 // Markdown link or in backquotes still names the ID after it; each fails when the rule does not exist. An ID
-// named with another source (FEATURES.md E13, supervisor R1) and history in a Changes list are not checked here.
+// named with another source (FEATURES.md E13) and history in a Changes list are not checked here.
 func TestCheckUnnamedAndQuotedRefs(t *testing.T) {
 	sup := ParseDoc("supervisor.md", "# s\n## 5. Business rules\n\n**R1 —** a rule.\n")
 	a := ParseDoc("a.md", `# a

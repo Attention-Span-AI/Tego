@@ -39,7 +39,7 @@ on a listed test that did not pass, as CI's unit step and root-suites job use it
 left unfinished when it timed out or crashed, with its panic and goroutine dump; bash and jq) with `skipgate_test.sh` (`make
 skipgate-test`), `check-skiplists.sh` (the skip and must-pass lists name tests that exist, once each, and every
 root-only skip the integration step allows is in the root run's lists; CI's build-test), `check-exits.sh`
-(`os.Exit` only in `cmd/`, no bare exit code in `internal/cli`: limits-check-doctor-cli.md I6, I9, checked by
+(`os.Exit` only in `cmd/`, no bare exit code in `internal/cli`, checked by
 `tools/checkexits` on the syntax tree; CI's build-test), `check-fd.sh` (ADR 0023's descriptor ownership:
 `tools/fdcheck`'s birth rule, leases, listed sites, close-on-exec and per-package ratchet; `--base REV` holds the
 baseline's per-kind totals and the F4 lists' to REV's, and each package's count of each kind, which rises only by

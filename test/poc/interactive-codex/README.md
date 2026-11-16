@@ -44,7 +44,7 @@ starts a plaintext listener on 127.0.0.1 for that entry. Codex takes no base-URL
 `OPENAI_BASE_URL`: with the variable set it went for `api.openai.com`, which the contract refused), so for an `openai`
 entry the launcher makes a `CODEX_HOME` of its own for the run, in `$XDG_RUNTIME_DIR/tego/<run id>/codex`, whose
 `config.toml` holds `openai_base_url` for the listener, then the `config.toml` that the contract's `CODEX_HOME` names
-(capture-derive.md R19b; this is the first time that route met a real Codex). The listener speaks TLS to the stand-in,
+(this is the first time that route met a real Codex). The listener speaks TLS to the stand-in,
 trusting its self-made certificate through `SSL_CERT_FILE` in tego's own environment (Codex is not given it). Every
 request is recorded as `ssl_request source=forwarder`. `net.allow` has only the name-service socket, so a direct
 connection around the forwarder is refused.
@@ -102,7 +102,7 @@ Codex asks for no login and makes no WebSocket offers, and the run is otherwise 
   closed: it could not write its state, exit 1). Since 2026-10-16 the run grants Codex write on its own `CODEX_HOME`
   itself (`fs.codex_home[<path>]`, listed in `run_start.runtime_grants`), a contract entry over or inside
   `$XDG_RUNTIME_DIR/tego` is refused by `compile` and by the launcher, and a run that routes Codex with no
-  `XDG_RUNTIME_DIR` is refused, exit 125, naming the fix (agent-contract.md R10a). The contracts here grant no such
+  `XDG_RUNTIME_DIR` is refused, exit 125, naming the fix. The contracts here grant no such
   entry any more; the session has not been run again since. The directory is closed to the writes of other enforcing
   runs, not to their reads: while a run lasts (and after a killed launcher, until the next run removes it), an
   agent of any other tego run of the same user can read its
@@ -112,7 +112,7 @@ Codex asks for no login and makes no WebSocket offers, and the run is otherwise 
 - **Codex starts itself.** Before every command it runs `/proc/self/exe --codex-run-as-process-setup`, and
   `apply_patch` as a shell command is a symlink to it in `CODEX_HOME/tmp/arg0/`. Both are the command's own binary and
   need no `exec.allow` entry. A `/proc/self/exe` entry compiled to the tego binary, not to Codex, when this ran, and
-  `tego learn` proposed it; since 2026-10-16 `compile` refuses it (`exec-proc`, agent-contract.md R8a) and `tego
+  `tego learn` proposed it; since 2026-10-16 `compile` refuses it (`exec-proc`) and `tego
   learn` lists it as observed, not allowed.
 - **A login shell prints one refused line.** Codex runs each command as `bash -lc`, which sources `/etc/profile`,
   which runs `run-parts`; refused by `exec.allow`, it prints `/etc/profile: line 21: /usr/bin/run-parts: Permission
