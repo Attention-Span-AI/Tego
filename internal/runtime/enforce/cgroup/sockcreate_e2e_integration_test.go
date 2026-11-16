@@ -106,7 +106,7 @@ func isolatedPlaneSelected(t *testing.T, bin string, p *planeProject, pin string
 		} `json:"plane"`
 	}
 	if err := json.Unmarshal(out, &rep); err != nil || rep.Plane == nil {
-		t.Fatalf("tego doctor --json under TEGO_TEST_PLANE=%s: %v\n%s", pin, err, out)
+		t.Fatalf("tego machine check --json under TEGO_TEST_PLANE=%s: %v\n%s", pin, err, out)
 	}
 	return rep.Plane.Selected
 }

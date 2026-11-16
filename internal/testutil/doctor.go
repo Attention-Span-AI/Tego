@@ -43,8 +43,8 @@ func RequireTier(t testing.TB, cmd *exec.Cmd, tier string) {
 	offered, out, err := DoctorOffers(cmd)
 	switch {
 	case err != nil:
-		t.Fatalf("tego doctor --require %s gave no answer about this machine: %v\n%s", tier, err, out)
+		t.Fatalf("tego machine check --require %s gave no answer about this machine: %v\n%s", tier, err, out)
 	case !offered:
-		t.Skipf("this machine offers no tier %s (tego doctor --require %s):\n%s", tier, tier, out)
+		t.Skipf("this machine offers no tier %s (tego machine check --require %s):\n%s", tier, tier, out)
 	}
 }

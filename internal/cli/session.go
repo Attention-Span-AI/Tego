@@ -7,14 +7,20 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/attention-span-ai/tego/internal/ledger"
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/registry"
 	tegoruntime "github.com/attention-span-ai/tego/internal/runtime"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
+	"github.com/attention-span-ai/tego/pkg/spec/config"
+	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
 // sessionName is how a session is named to a person: its agent, a dash and the last four characters of its run id
@@ -87,19 +93,86 @@ func sessionRunIn(ref string, mc *machineOnce) (string, bool) {
 	return filepath.Join(root, id), true
 }
 
-// sessionStarted prints the session's name once the run has started, then tells next, if any.
-func sessionStarted(rt *agent.RuleTable, stderr io.Writer, next func(tegoruntime.StartedRun) error) func(tegoruntime.StartedRun) error {
+// sessionStarted prints the session's name once the run has started, then tells next, if any. In a terminal (quiet)
+// it is the start of the two lines a person reads around their agent: the session, its rules file and where to watch
+// it live (the dashboard's run page, which a browser that opened the dashboard is signed in to).
+func sessionStarted(rt *agent.RuleTable, stderr io.Writer, quiet *runTerminal, next func(tegoruntime.StartedRun) error) func(tegoruntime.StartedRun) error {
 	name := ""
 	if rt != nil && rt.Contract != nil {
 		name = rt.Contract.Name
 	}
 	return func(s tegoruntime.StartedRun) error {
-		fmt.Fprintf(stderr, "✓ Session %s started\n", sessionName(name, string(s.ID))) // a line that cannot be written does not end the run
+		// a line that cannot be written does not end the run
+		if quiet != nil {
+			fmt.Fprintf(stderr, "\n  ✓ Started session %s%s\n      Watch it live: http://127.0.0.1:%d/runs/%s\n\n",
+				sessionName(name, string(s.ID)), quiet.rules, quiet.port, s.ID)
+		} else {
+			fmt.Fprintf(stderr, "✓ Session %s started\n", sessionName(name, string(s.ID)))
+		}
 		if next != nil {
 			return next(s)
 		}
 		return nil
 	}
+}
+
+// runTerminal is a tego run whose stderr is a terminal and that was not asked for -v: it prints a person's two lines
+// (started, ended) in place of the notes and the summary a script reads.
+type runTerminal struct {
+	rules string // " · rules ~/.config/tego/agents/x.yaml", or ""
+	port  int    // the dashboard's port
+}
+
+// quietRun is the runTerminal of a run, nil when it prints what it always has.
+func quietRun(o runOptions, m *config.Machine, src *record.ContractSource, stderr io.Writer) *runTerminal {
+	if ow, ok := stderr.(*outputWriter); !ok || ow.dst != os.Stderr {
+		return nil // a test's buffer, or a command run inside another
+	}
+	if o.cmd != "" || o.verbose || !stderrIsTerminal() {
+		return nil
+	}
+	q := &runTerminal{port: 8484}
+	if m.ServePort.Source.Layer != config.LayerBuiltin && m.ServePort.Value != 0 {
+		q.port = m.ServePort.Value
+	}
+	if src != nil && src.Path != "" {
+		q.rules = " · rules " + record.Printable(tildeHome(src.Path, m.Home))
+		if b, err := os.ReadFile(src.Path); err == nil {
+			if l := chosenRulesLine.FindSubmatch(b); l != nil {
+				q.rules = " · " + record.Printable(string(l[1]))
+			}
+		}
+	}
+	return q
+}
+
+// chosenRulesLine is the line tego start writes into the rules files it makes (withRulesLine).
+var chosenRulesLine = regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(rulesLinePrefix) + `(.+)$`)
+
+// ended is the end line: the session, how many actions Tego blocked, and the command that shows the rest.
+func (q *runTerminal) ended(stderr io.Writer, name string, sum *endSummary) {
+	session := sessionName(name, sum.run)
+	what := "ended"
+	if sum.how != "" {
+		what = "ended: " + sum.how
+	}
+	blocked := ""
+	if sum.rc != nil {
+		n := sum.rc.Refusals.Total
+		blocked = fmt.Sprintf(" · %d action%s blocked", n, map[bool]string{true: "", false: "s"}[n == 1])
+	}
+	fmt.Fprintf(stderr, "\n  ✓ Session %s %s%s\n      Details: tego session show %s\n", record.Printable(session), what, blocked, record.Printable(session))
+}
+
+// stderrIsTerminal reports whether standard error is a terminal; tests replace it.
+var stderrIsTerminal = func() bool {
+	tty := false
+	_ = sys.FileDo(os.Stderr, func(fd int) error {
+		_, err := unix.IoctlGetTermios(fd, unix.TCGETS)
+		tty = err == nil
+		return nil
+	})
+	return tty
 }
 
 // runMinted is when run id was minted: its time36 field, the UnixNano in base 36; zero when id is no run id.

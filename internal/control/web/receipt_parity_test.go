@@ -85,7 +85,7 @@ func TestReceiptWordsOneRecordBothSurfaces(t *testing.T) {
 					continue
 				}
 				if !strings.Contains(text, "  "+w+"\n") {
-					t.Errorf("tego receipt does not print %q:\n%s", w, text)
+					t.Errorf("tego session show does not print %q:\n%s", w, text)
 				}
 				if !strings.Contains(page, ">"+html.EscapeString(w)+"</p>") {
 					t.Errorf("the Receipt tab does not show %q", w)
@@ -193,7 +193,7 @@ func TestLogsSaysTheKernelTLSRefusalAsTheReceiptDoes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(text.String(), words) {
-		t.Fatalf("tego receipt does not print %q:\n%s", words, text.String())
+		t.Fatalf("tego session show does not print %q:\n%s", words, text.String())
 	}
 	s := newServer(t, root)
 	c := login(t, s)
@@ -296,7 +296,7 @@ func TestRefusalsTabSaysWhatTheReceiptSays(t *testing.T) {
 				lineOf(run, 0, t0, "run_start", `"tier":"landlock","command":["cat","secret.txt"],"cwd":"/w"`+c.start),
 				lineOf(run, 1, t0.Add(time.Second), "run_end", `"reason":"exit","exit_code":1`))
 			if rc.RefusedWords() != c.want {
-				t.Fatalf("tego receipt says %q, the test wants %q", rc.RefusedWords(), c.want)
+				t.Fatalf("tego session show says %q, the test wants %q", rc.RefusedWords(), c.want)
 			}
 			root := t.TempDir()
 			if err := os.MkdirAll(filepath.Join(root, run), 0o755); err != nil {

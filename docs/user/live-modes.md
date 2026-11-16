@@ -56,11 +56,11 @@ live:
     exec: [/usr/bin/psql]
 ```
 
-`tego init --live-mode adjustable` writes a new `agent.yaml` with an empty fence to fill in, and a comment that says
-what each mode does; `--live-mode locked`, the default, writes the file `tego init` always wrote. It works with
+`tego rules create --live-mode adjustable` writes a new `agent.yaml` with an empty fence to fill in, and a comment that says
+what each mode does; `--live-mode locked`, the default, writes the file `tego rules create` always wrote. It works with
 `--preset` too.
 
-`tego compile agent.yaml` prints the mode, the fence with its digest, and what each entry is refused by at start.
+`tego rules check agent.yaml` prints the mode, the fence with its digest, and what each entry is refused by at start.
 
 ## What a fence entry can be
 
@@ -82,7 +82,7 @@ There are three kinds, each one Tego can refuse without a race, or says plainly 
   program's name and file, so a copy of the program under another name runs wherever the agent can write and run
   files. If your contract's `exec.deny` names the program, the fence takes that refusal out. `exec.deny` refuses a
   name, every program called that wherever it is, so taking it out lets every one of them past the kernel: Tego's live
-  layer then refuses every program of that name until you lift the entry (`tego compile` says "refused by name"),
+  layer then refuses every program of that name until you lift the entry (`tego rules check` says "refused by name"),
   and the lift allows them all. Under an `exec.allow` list the program is added to it. The path may not be a link:
   name the program it leads to. Some programs run a second copy of themselves from another place: git runs
   `/usr/lib/git-core/git` and helpers such as `git-remote-https`. Those files are fenced with the entry: Tego refuses
@@ -90,7 +90,7 @@ There are three kinds, each one Tego can refuse without a race, or says plainly 
 
 There is no write kind: a file change other than an open cannot be held back without a race yet.
 
-`tego compile` refuses a fence entry that:
+`tego rules check` refuses a fence entry that:
 - the contract already allows (to refuse something for a while, block it with a time limit instead);
 - is a read entry at, inside or around a write or ask folder (a file could be renamed out from under it);
 - is a read entry inside or around a `deny_read` entry other than the one it names, or at, inside or around a
@@ -176,7 +176,7 @@ it still holds open and connections it already made stay. A limit stops new acce
 ## Tiers
 
 Adjustable runs at tier cgroup or bpflsm, which need root.
-`tego compile` refuses it when the contract or the machine pins tier landlock, and `tego run` refuses a run whose
+`tego rules check` refuses it when the contract or the machine pins tier landlock, and `tego run` refuses a run whose
 `tier: auto` lands at landlock. This is a policy choice: at cgroup and bpflsm the live refusals can move into kernel
 checks Tego already runs there, so one mode keeps one promise. Locked runs at every tier.
 
@@ -185,7 +185,7 @@ checks Tego already runs there, so one mode keeps one promise. Locked runs at ev
 An Adjustable run needs root (tier cgroup or bpflsm), and so does what follows.
 - **At start.** Tego refuses every fence entry before the agent's first instruction. It refuses to start the run
   (exit 125, naming why) with `--observe`, at tier landlock, when no supervisor would serve it, with `io_uring: true`
-  (a ring's connects and opens never reach the supervisor; `tego compile` refuses the pair too), when a decision
+  (a ring's connects and opens never reach the supervisor; `tego rules check` refuses the pair too), when a decision
   plane would decide opens where Tego cannot see them, when the fence has read entries and the run does not hold its
   read opens, or when the run's folder under the ledger root is readable to the run (the ledger root holds the
   project, HOME or a write entry, compile's `ledger-readable` warning): the agent could then read the run's key. `tego adopt` never adopts an agent under Adjustable: the agent started before Tego could refuse

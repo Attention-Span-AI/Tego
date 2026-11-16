@@ -82,7 +82,7 @@ func cmdRules() Command {
 			id, err := rulesRunID(root, ref, *last)
 			if err != nil {
 				if errors.Is(err, errRulesNoRuns) {
-					diag(stderr, "tego rules: there are no runs yet", codeNotFound, "run tego init --preset no-secrets,repo-only-writes --write ./out, then tego run agent.yaml")
+					diag(stderr, "tego rules: there are no runs yet", codeNotFound, "run tego rules create --preset no-secrets,repo-only-writes --write ./out, then tego run agent.yaml")
 					return identity.ExitError
 				}
 				code := identity.ExitError
@@ -225,9 +225,9 @@ func writeRules(w io.Writer, v *rulesview.InForceView) error {
 		} else {
 			b.WriteString("\nThe rules file differs from this run.\n")
 		}
-		fmt.Fprintf(&b, "Check it with tego compile %s\n", shellArg(p(v.Source)))
+		fmt.Fprintf(&b, "Check it with tego rules check %s\n", shellArg(p(v.Source)))
 	}
-	fmt.Fprintf(&b, "\nNext: tego receipt %s\n", p(v.Run))
+	fmt.Fprintf(&b, "\nNext: tego session show %s\n", p(v.Run))
 	_, err := io.WriteString(w, b.String())
 	return err
 }

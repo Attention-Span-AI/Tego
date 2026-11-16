@@ -30,7 +30,7 @@
   <h3>No contracts yet</h3>
   {{if .CanSetUp}}<a class="btn btn-primary" href="/rules/new">{{template "i" "i-shield"}}New contract</a>{{end}}
   <p>Make one from presets or from a finished run{{if .CanSetUp}} with New contract{{end}}.</p>
-  <details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>mkdir -p ~/contracts &amp;&amp; tego learn &lt;run&gt; --out ~/contracts/&lt;name&gt;.yaml</code></div></details>
+  <details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>mkdir -p ~/contracts &amp;&amp; tego rules learn &lt;run&gt; --out ~/contracts/&lt;name&gt;.yaml</code></div></details>
 </div></section>
 {{else}}{{$r := .Run}}{{$v := .V}}
 <div class="head"><div><h1>Contract{{if .Agent}} · {{.Agent}}{{end}}</h1>

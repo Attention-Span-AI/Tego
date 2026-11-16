@@ -20,7 +20,7 @@ compose plugin:
 ```sh
 export TEGO_UID=$(id -u) TEGO_GID=$(id -g)   # the dashboard answers only your own uid; see "The dashboard"
 docker compose build
-docker compose run --rm agent tego doctor     # what this host gives the container
+docker compose run --rm agent tego machine check     # what this host gives the container
 docker compose up agent                       # one run of the example agent
 docker compose up -d control                  # the dashboard
 docker compose logs control                   # its link: http://127.0.0.1:8484/?t=...
@@ -83,7 +83,7 @@ namespace and then gives everything up:
    capabilities, and `no_new_privs`. Neither `tego` nor the agent holds any capability the container was given.
 
 `TEGO_DELEGATE=auto` (the default) says why when step 1, 2 or 3 cannot be done and starts the command anyway, so
-`tego doctor` can show what the host gave; `yes` stops the container instead; `no` skips the cgroup steps. Started as
+`tego machine check` can show what the host gave; `yes` stops the container instead; `no` skips the cgroup steps. Started as
 any user other than root (`docker run --user`, compose's `user:`), the entrypoint does nothing and runs the command
 as given; the dashboard service starts that way.
 
@@ -99,7 +99,7 @@ need and that no run has shown it working.
 
 | Tier | Host | Container | State |
 | ---- | ---- | --------- | ----- |
-| landlock (1) | Linux 5.14 or later (`cgroup.kill`), Landlock in the LSM list (ABI 2 or later), cgroup v2, Yama `ptrace_scope` 0 or 1 | compose.yaml's agent service: private cgroup namespace; `SYS_ADMIN`, `SYS_PTRACE`, `CHOWN`, `SETUID`, `SETGID`, `SETPCAP` for the entrypoint; `apparmor=unconfined` where AppArmor runs; `no-new-privileges` | CI runs `tego doctor --require landlock`, `tego test` and a hello run in it |
+| landlock (1) | Linux 5.14 or later (`cgroup.kill`), Landlock in the LSM list (ABI 2 or later), cgroup v2, Yama `ptrace_scope` 0 or 1 | compose.yaml's agent service: private cgroup namespace; `SYS_ADMIN`, `SYS_PTRACE`, `CHOWN`, `SETUID`, `SETGID`, `SETPCAP` for the entrypoint; `apparmor=unconfined` where AppArmor runs; `no-new-privileges` | CI runs `tego machine check --require landlock`, `tego machine test` and a hello run in it |
 | cgroup (2) | The same, plus BPF (`CONFIG_BPF_SYSCALL`, BTF) and fanotify | `tego` itself as root with `CAP_BPF`, `CAP_NET_ADMIN` and `CAP_SYS_ADMIN`, and a seccomp profile and AppArmor that let `bpf(2)` and `fanotify_init(2)` through: in practice a privileged container | Not shown to work. The entrypoint's `TEGO_LAUNCHER=root` is an experiment CI runs, report-only |
 | bpflsm (3) | `bpf` in the kernel's active LSM list, which only the host's boot line sets | Everything tier 2 needs. BPF LSM programs attach to the whole kernel and pick their runs by cgroup, so a container allowed to load them has power over the host | Not shown to work; same experiment |
 
@@ -164,7 +164,7 @@ unnamed filesystem backing. Keep runtime storage and the whole host filesystem o
 backing, keep the folder storing encrypted or mirrored files out of every write grant. Ordinary workspace volumes still compile. Every active
 protected path and the directories its walk reads must still have mount identity, except that a walk across an
 unlinked-root mount has unplaced backing with the conditional warning above. A plain-folder chroot whose root is
-not a mount point has no `/` mount row, so every write and ask grant is refused. Compile and `tego doctor` explain
+not a mount point has no `/` mount row, so every write and ask grant is refused. Compile and `tego machine check` explain
 that the kernel does not show the filesystem under that root; bind the folder onto itself before entering it or
 run Tego outside that root. The captured nspawn table keeps all 19 baseline contracts: its unlinked file mounts
 still undergo live type, inode and snapshot mount-ID checks on both the mounted and protected files before
@@ -210,7 +210,7 @@ host) with `CAP_BPF`, `CAP_NET_ADMIN` and `CAP_SYS_ADMIN`, and attach BPF progra
 container. A container that can run them can change the host, so treat it as the host. `TEGO_LAUNCHER=root` makes
 the entrypoint keep `tego` root with the container's capabilities, empty the namespace root into `/init` with its
 controllers on (a root `tego` makes `tego.slice` there), and name the `tego` user in `SUDO_UID` so the agent runs as
-that user. CI tries it in a `--privileged` container with `tego doctor --require cgroup` and a hello run at each root
+that user. CI tries it in a `--privileged` container with `tego machine check --require cgroup` and a hello run at each root
 tier, report-only. Until such a run has passed, run the root tiers on the host itself (`sudo tego run`), not in a
 container.
 
@@ -271,7 +271,7 @@ What the dashboard service can and cannot do in its container:
 ## Podman and Kubernetes
 
 Not tried. Podman reads compose.yaml (`podman compose`); its default seccomp profile, its cgroup mount and its
-`--cgroupns` default may differ from Docker's, and `tego doctor` in the container says what is missing. On
+`--cgroupns` default may differ from Docker's, and `tego machine check` in the container says what is missing. On
 Kubernetes the agent container needs what compose.yaml's agent service has: a private cgroup namespace (the default
 with cgroup v2 and containerd), the six capabilities, a seccomp profile that allows `clone3` and `pidfd_getfd`, and
 AppArmor that allows the remount, with a `securityContext` that starts the entrypoint as root.
@@ -282,16 +282,16 @@ Verified without a container runtime:
 
 - The Dockerfile's build stage, run as written against a copy of the repository with the image's ignore file
   applied: the pair builds, `check-control-pin.sh` passes, both binaries are static and print one version.
-- The hello contract and `smoke.sh` with the same binaries outside a container: `tego doctor`, `tego test`, and a
+- The hello contract and `smoke.sh` with the same binaries outside a container: `tego machine check`, `tego machine test`, and a
   run with one write allowed, one refused, and its chain verified against the anchor.
 - The entrypoint's cgroup steps on a real cgroup v2 tree, as an unprivileged user inside a delegated systemd scope
   standing for a container's namespace root: processes moved, controllers enabled down the path, the subtree's files
   handed over, itself moved, and the later join.
 - `examples/container`'s tests: the entrypoint over a stand-in tree (every refusal included), the compose settings,
-  the Dockerfile's digests and Go version, and the hello contract's verdicts through `tego compile --test`.
+  the Dockerfile's digests and Go version, and the hello contract's verdicts through `tego rules check --test`.
 - `shellcheck` over the scripts and `actionlint` over the workflow.
 
-What CI's `container` workflow checks first, on GitHub's ubuntu-24.04 runner: the image builds; `tego doctor
+What CI's `container` workflow checks first, on GitHub's ubuntu-24.04 runner: the image builds; `tego machine check
 --require landlock` and `smoke.sh` pass with compose.yaml's settings; `docker compose up agent` exits 0; the
 dashboard answers the runner's own curl on the host's loopback, lists the hello runs, and refuses a request from
 another uid with 403. Report-only, it records `docker exec` through the entrypoint, the image on Docker's defaults,
@@ -314,8 +314,8 @@ running tego as root in a container (`TEGO_LAUNCHER=root`).
 | `... this container shares a cgroup namespace` | `--cgroupns=host` | `cgroup: private` (`--cgroupns=private`) |
 | `... is not a cgroup v2 hierarchy` | A cgroup v1 or hybrid host | Boot the host with cgroup v2 (`systemd.unified_cgroup_hierarchy=1`) |
 | `tego run: ... clone3 is being filtered` | The seccomp profile refuses `clone3` | `CAP_SYS_ADMIN` in the container, or a profile that allows it |
-| `tego doctor`: `FAIL landlock` | The host kernel has no Landlock in its LSM list | Add `landlock` to the host's `lsm=` boot line |
-| `tego doctor`: `yama ptrace_scope=2 without CAP_SYS_PTRACE` | The host's Yama setting | Set the host's `kernel.yama.ptrace_scope` to 1 |
+| `tego machine check`: `FAIL landlock` | The host kernel has no Landlock in its LSM list | Add `landlock` to the host's `lsm=` boot line |
+| `tego machine check`: `yama ptrace_scope=2 without CAP_SYS_PTRACE` | The host's Yama setting | Set the host's `kernel.yama.ptrace_scope` to 1 |
 | `held-read stable identities/replacement events unavailable on filesystem 0x794c7630` | A secret the agent's write entry holds (a `.env` in the project) lies on the container's own layer (overlayfs, `0x794c7630`) or another unsupported filesystem | Put the project on a named volume or a bind mount of a local folder ([A secret inside the work folder](#a-secret-inside-the-work-folder)) |
 | The dashboard says 403 to your browser | The image's `tego` uid is not yours | Build with `TEGO_UID=$(id -u) TEGO_GID=$(id -g)` |
-| `tego doctor`: `warn dashboard: the kernel answers no TCP socket lookup` | The host has not loaded `inet_diag` and `tcp_diag`; tego-control refuses every dashboard action until it is loaded | On the host: `sudo modprobe tcp_diag` (and add it to /etc/modules-load.d) |
+| `tego machine check`: `warn dashboard: the kernel answers no TCP socket lookup` | The host has not loaded `inet_diag` and `tcp_diag`; tego-control refuses every dashboard action until it is loaded | On the host: `sudo modprobe tcp_diag` (and add it to /etc/modules-load.d) |

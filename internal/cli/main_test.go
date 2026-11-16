@@ -45,8 +45,8 @@ func TestDispatchExitCodes(t *testing.T) {
 		{"unknown command", []string{"bogus"}, identity.ExitUsage, "", `unknown command "bogus"`},
 		{"unknown flag", []string{"version", "--bogus"}, identity.ExitUsage, "", "flag provided but not defined"},
 		{"extra argument", []string{"version", "x"}, identity.ExitUsage, "", "[usage]"},
-		{"help", []string{"help"}, identity.ExitOK, "commands:", ""},
-		{"dash h", []string{"-h"}, identity.ExitOK, "compile", ""},
+		{"help", []string{"help"}, identity.ExitOK, "These are common Tego commands", ""},
+		{"dash h", []string{"-h"}, identity.ExitOK, "rules create", ""},
 		{"command help", []string{"compile", "-h"}, identity.ExitOK, "", "usage: tego compile"},
 		// The usage lines left out run's --offline and doctor's --require values, and doctor's refusal of a bad
 		// --require did not say which tiers it takes.
@@ -156,7 +156,7 @@ func TestUnstatableRunIsIONotUsage(t *testing.T) {
 }
 
 func TestHiddenChildNotInUsage(t *testing.T) {
-	_, out, _ := run(t, "help")
+	_, out, _ := run(t, "help", "-a")
 	if strings.Contains(out, "__child") {
 		t.Fatal("__child is hidden")
 	}
@@ -170,7 +170,7 @@ func TestHiddenChildNotInUsage(t *testing.T) {
 // TestUsageMarksTheRootCommands (H18): the commands that refuse to run without root ([privilege]) are marked (root) in
 // the usage, so a reader learns it before running one, and no other command is.
 func TestUsageMarksTheRootCommands(t *testing.T) {
-	_, out, _ := run(t, "help")
+	_, out, _ := run(t, "help", "-a")
 	var marked []string
 	for _, l := range strings.Split(out, "\n") {
 		if f := strings.Fields(l); strings.HasPrefix(l, "  ") && len(f) > 1 && f[1] == "(root)" {

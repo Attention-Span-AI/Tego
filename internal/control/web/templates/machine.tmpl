@@ -2,7 +2,7 @@
 {{/* machine: This machine (insights.go machine): the protection levels the runs here used, then what the newest run recorded; the raw capability ids folded for auditors. Labels, not sentences. */}}
 {{define "content"}}{{with .Data}}{{$now := .Now}}
 <div class="head"><div><h1>This machine</h1>{{if .Run}}<p class="lede">{{with .Best}}Up to <strong>{{tier .Name}}</strong> <span class="soft">({{.Word}})</span>{{else}}Watched only so far{{end}}</p>{{end}}</div></div>
-{{if not .Run}}<section class="panel"><div class="empty"><div class="glyph">{{template "i" "i-terminal"}}</div><h3>No runs yet</h3><details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>tego doctor</code></div></details></div></section>
+{{if not .Run}}<section class="panel"><div class="empty"><div class="glyph">{{template "i" "i-terminal"}}</div><h3>No runs yet</h3><details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>tego machine check</code></div></details></div></section>
 {{else}}
 {{if .Err}}<div class="banner banner-danger" role="alert">{{template "i" "i-triangle-alert"}}<div class="grow" title="{{.Err}}">Newest run unreadable</div></div>{{end}}
 <section class="panel" aria-labelledby="h-tiers"><div class="panel-head"><h2 id="h-tiers">Protection levels</h2></div>
@@ -21,6 +21,6 @@
 <dt>Unavailable</dt><dd>{{if .NoCaps}}{{range $i, $c := .NoCaps}}{{if $i}}, {{end}}<span class="mono">{{$c}}</span>{{end}}{{else}}<span class="muted">None</span>{{end}}</dd>
 <dt>Best effort</dt><dd>{{if .BestEffort}}{{range $i, $c := .BestEffort}}{{if $i}}, {{end}}<span class="mono">{{$c}}</span>{{end}}{{else}}<span class="muted">None</span>{{end}}</dd>
 </dl></details>
-<details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>tego doctor</code></div></details></div></section>
+<details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>tego machine check</code></div></details></div></section>
 {{end}}
 {{end}}{{end}}

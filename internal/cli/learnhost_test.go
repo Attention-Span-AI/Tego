@@ -394,9 +394,9 @@ func TestLearnAllowHostRefusesWritingNothing(t *testing.T) {
 				t.Errorf("%q: exit %d, stdout %q, stderr:\n%s\nwant exit 1, no stdout, and %q", args, code, stdout, errs, tc.want)
 			}
 			// The next: line is the command that works: the same, without the name refused (acceptance B, 2026-11-11).
-			if got := lastHint(t, errs); !strings.HasPrefix(got, "tego learn ") || !strings.HasSuffix(got, strings.Join(mode, " ")+" --allow-host example.com") ||
+			if got := lastHint(t, errs); !strings.HasPrefix(got, "tego rules learn ") || !strings.HasSuffix(got, strings.Join(mode, " ")+" --allow-host example.com") ||
 				strings.Contains(got, tc.host) {
-				t.Errorf("%q: next %q, want tego learn <run> %s --allow-host example.com", args, got, strings.Join(mode, " "))
+				t.Errorf("%q: next %q, want tego rules learn <run> %s --allow-host example.com", args, got, strings.Join(mode, " "))
 			}
 			// One refusal, the one the case is about: a name that did not resolve stops learn there, and is not judged
 			// again as a name that covers nothing.
@@ -519,7 +519,7 @@ func TestLearnNamesAllowHostWhereAddressesRemain(t *testing.T) {
 	for _, want := range []string{
 		"tego learn: warning: 5 addresses the run reached are allowed by address, not by name: tcp 104.20.23.154:443, udp 104.20.23.154:443, " +
 			"udp 172.66.147.243:443, udp [2606:4700:10::6814:179a]:443 and 1 more. Name each with --allow-host <host>, or a later run can be refused.\n",
-		"\nnext: " + learnNameHint + "\n  tego learn " + short + " --save myagent --allow-host <host>\n",
+		"\nnext: " + learnNameHint + "\n  tego rules learn " + short + " --save myagent --allow-host <host>\n",
 	} {
 		if !strings.Contains(errs, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, errs)
@@ -529,13 +529,13 @@ func TestLearnNamesAllowHostWhereAddressesRemain(t *testing.T) {
 	code, _, errs = run(t, "learn", short, "--allow-host", "one.example:443")
 	if code != identity.ExitOK || !strings.Contains(errs, "tego learn: warning: 3 addresses the run reached are still allowed by address, not by name: "+
 		"udp 172.66.147.243:443, udp [2606:4700:10::6814:179a]:443, udp [2606:4700:10::ac42:93f3]:443.") ||
-		!strings.HasSuffix(errs, "  tego learn "+short+" --save myagent --allow-host one.example:443 --allow-host <host>\n") {
+		!strings.HasSuffix(errs, "  tego rules learn "+short+" --save myagent --allow-host one.example:443 --allow-host <host>\n") {
 		t.Errorf("one name of several: exit %d\n%s", code, errs)
 	}
 
 	sum := &endSummary{root: root, machine: hintMachine(t)}
 	text, command := watchHint(tegoruntime.Result{RunID: id}, sum, "", project, true)
-	if text != watchNameHint || command != "tego learn "+short+" --save myagent --allow-host <host>" {
+	if text != watchNameHint || command != "tego rules learn "+short+" --save myagent --allow-host <host>" {
 		t.Errorf("watch hint for a run that reached addresses: %q %q", text, command)
 	}
 	if !runAddresses(t.Context(), sum, tegoruntime.Result{RunID: id}) {
@@ -611,7 +611,7 @@ func TestLearnSaveRecordsRefusedReads(t *testing.T) {
 	if code != identity.ExitOK || strings.Contains(printed, reason) {
 		t.Fatalf("the printed proposal changed: exit %d\n%s\n%s", code, printed, errs)
 	}
-	if !strings.HasSuffix(errs, "\nnext: "+learnSaveHint+"\n  tego learn "+shortOf(id)+" --save bot\n") {
+	if !strings.HasSuffix(errs, "\nnext: "+learnSaveHint+"\n  tego rules learn "+shortOf(id)+" --save bot\n") {
 		t.Errorf("the hint does not say a saved contract records refused reads:\n%s", errs)
 	}
 	code, withReads, _ := run(t, "learn", id, "--reads", "on")
@@ -634,7 +634,7 @@ func TestLearnSaveRecordsRefusedReads(t *testing.T) {
 		t.Errorf("--reads off: exit %d\n%s\nstderr:\n%s", code, saved, errs)
 	}
 	code, _, errs = run(t, "learn", id, "--reads", "off") // bot is taken now, so the hint proposes <name>
-	if code != identity.ExitOK || !strings.HasSuffix(errs, "\nnext: save it as a contract:\n  tego learn "+shortOf(id)+" --save <name> --reads off\n") {
+	if code != identity.ExitOK || !strings.HasSuffix(errs, "\nnext: save it as a contract:\n  tego rules learn "+shortOf(id)+" --save <name> --reads off\n") {
 		t.Errorf("--reads off printed: its hint does not keep it:\n%s", errs)
 	}
 

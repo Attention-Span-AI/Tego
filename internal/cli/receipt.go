@@ -57,7 +57,7 @@ func cmdReceipt() Command {
 			if checking {
 				if check == "" || fs.NArg() != 1 || fs.Arg(0) == "" || verify || last {
 					message(stderr, "", 0, 0, "tego receipt: --check takes a receipt file and one run folder (or its "+
-						"events.jsonl), and no --verify or --last: tego receipt --check receipt.json <run folder>", codeUsage)
+						"events.jsonl), and no --verify or --last: tego session show --check receipt.json <run folder>", codeUsage)
 					return identity.ExitUsage
 				}
 				return runReceiptCheck(ctx, check, fs.Arg(0), asJSON, stdout, stderr)
@@ -83,7 +83,7 @@ func runReceipt(ctx context.Context, ref string, asJSON, verify bool, stdout, st
 	if ref == "" {
 		dir, err = newestRunDir(mc)
 		if err != nil {
-			message(stderr, "", 0, 0, "tego receipt: "+err.Error()+"; run tego init --preset no-secrets,repo-only-writes --write ./out, then tego run agent.yaml", codeNotFound)
+			message(stderr, "", 0, 0, "tego receipt: "+err.Error()+"; run tego rules create --preset no-secrets,repo-only-writes --write ./out, then tego run agent.yaml", codeNotFound)
 			return identity.ExitError
 		}
 	} else if dir, err = resolveRunDir("receipt", ref, true, mc); err != nil {

@@ -99,7 +99,7 @@ func TestSelftestTierLandlockEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(left) != 0 {
-		t.Errorf("tego test left %d entries in TMPDIR, the first %s", len(left), left[0].Name())
+		t.Errorf("tego machine test left %d entries in TMPDIR, the first %s", len(left), left[0].Name())
 	}
 }
 
@@ -173,7 +173,7 @@ func TestSelftestExitsOneOnAWeakenedContract(t *testing.T) {
 
 			out, code := runSelftest(t, bin, env, "--json")
 			if code != identity.ExitFinding {
-				t.Fatalf("tego test --json: exit %d, want %d: %s", code, identity.ExitFinding, out)
+				t.Fatalf("tego machine test --json: exit %d, want %d: %s", code, identity.ExitFinding, out)
 			}
 			var rep Report
 			if err := json.Unmarshal(out, &rep); err != nil {
@@ -222,7 +222,7 @@ func TestSelftestExitsOneOnAWeakenedContract(t *testing.T) {
 				t.Errorf("the screen does not say Tego did not refuse every action:\n%s", text)
 			}
 			if left, _ := os.ReadDir(tmp); len(left) != 0 {
-				t.Errorf("tego test left %d entries in TMPDIR, the first %s", len(left), left[0].Name())
+				t.Errorf("tego machine test left %d entries in TMPDIR, the first %s", len(left), left[0].Name())
 			}
 		})
 	}
@@ -247,7 +247,7 @@ func TestSelftestExitsOneOnAWeakenedContract(t *testing.T) {
 				t.Errorf("tego test: %v, want exit %d saying %s: %s", err, identity.ExitError, bad.says, out)
 			}
 			if left, _ := os.ReadDir(tmp); len(left) != 0 {
-				t.Errorf("tego test left %d entries in TMPDIR, the first %s", len(left), left[0].Name())
+				t.Errorf("tego machine test left %d entries in TMPDIR, the first %s", len(left), left[0].Name())
 			}
 		})
 	}

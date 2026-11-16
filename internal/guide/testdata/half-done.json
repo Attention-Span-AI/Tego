@@ -61,7 +61,7 @@
     "step": "contract",
     "rule": "record-done",
     "text": "make a contract from what it did, and read it before you use it:",
-    "command": "tego learn b883rx --save bot",
+    "command": "tego rules learn b883rx --save bot",
     "needs_root": false,
     "placeholder": false
   },

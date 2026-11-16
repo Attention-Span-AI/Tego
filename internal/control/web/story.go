@@ -621,7 +621,7 @@ func readGap(r *ledgerview.Run) string {
 		return ""
 	case r.RefusedReadsUnseen:
 		return "File reads were not recorded, refused ones included, so a secret the agent tried to read is not listed."
-	case r.RefusedReadsUnknown: // tego receipt's words for the same record (receipt.readsNote)
+	case r.RefusedReadsUnknown: // tego session show's words for the same record (receipt.readsNote)
 		return "Allowed file reads were not recorded, so a secret the agent read is not listed; a refused read may be missing too."
 	}
 	return "Allowed file reads were not recorded, so a secret the agent read is not listed."

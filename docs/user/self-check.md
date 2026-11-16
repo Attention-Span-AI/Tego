@@ -1,10 +1,10 @@
-# Check that Tego works on this machine: `tego test`
+# Check that Tego works on this machine: `tego machine test`
 
-`tego test` shows, in about a second, that Tego refuses what it should on this machine. It needs no root and no
+`tego machine test` shows, in about a second, that Tego refuses what it should on this machine. It needs no root and no
 setup, and it touches nothing of yours.
 
 ```
-$ tego test
+$ tego machine test
 Tego self-check: 4 actions, 4 refused at tier landlock
 
   ACTION                                               WITHOUT TEGO  UNDER TEGO  REFUSAL
@@ -33,16 +33,16 @@ The first time each action runs directly, without Tego: it must work, or a refus
 second time it runs as the agent of `tego run` under a built-in contract: it must be refused, and the run's record
 must hold the refusal. The REFUSAL column is that record's reason and rule. `<tmp>` stands for the temporary folder.
 
-The folder is removed when `tego test` ends, and the four runs are recorded inside it, so they never appear in
+The folder is removed when `tego machine test` ends, and the four runs are recorded inside it, so they never appear in
 `tego events`, the dashboard or your ledger.
 
-The folder is made in `$TMPDIR` (or `/tmp`). No contract may let a run write over the tego binary, and `tego test`
+The folder is made in `$TMPDIR` (or `/tmp`). No contract may let a run write over the tego binary, and `tego machine test`
 keeps its folder away from it: when `$TMPDIR` lies inside the folder holding the binary (a binary downloaded to `/tmp`
-and run from there), `tego test` makes its folder in `$XDG_RUNTIME_DIR` or your cache folder instead, and with neither
+and run from there), `tego machine test` makes its folder in `$XDG_RUNTIME_DIR` or your cache folder instead, and with neither
 usable it stops and asks you to set `TMPDIR` elsewhere.
 
 The four runs read your own `$TEGO_CONFIG` layer, with its `ledger_root` replaced by the temporary folder's. A layer
-`tego run` would refuse (writable by others, a relative path, missing) makes `tego test` refuse it too, with exit 125
+`tego run` would refuse (writable by others, a relative path, missing) makes `tego machine test` refuse it too, with exit 125
 and the same `[config-untrusted]` message, before any action runs.
 
 ## Exit codes
@@ -52,7 +52,7 @@ and the same `[config-untrusted]` message, before any action runs.
 | 0 | every action worked without Tego and was refused, and recorded, under Tego |
 | 1 | an action took effect under Tego (`allowed`), or was stopped without a record (`unrecorded`) |
 | 2 | a usage error |
-| 125 | an action could not be judged (it failed without Tego too, or a run did not start), `tego test` could not run, or your `$TEGO_CONFIG` layer is one `tego run` refuses (`[config-untrusted]`) |
+| 125 | an action could not be judged (it failed without Tego too, or a run did not start), `tego machine test` could not run, or your `$TEGO_CONFIG` layer is one `tego run` refuses (`[config-untrusted]`) |
 
 ## Options
 

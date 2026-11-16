@@ -163,8 +163,8 @@ func TestEmptyPagesGiveANextStep(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("%s lacks its next step %q", path, want)
 		}
-		if strings.Contains(body, "tego init &amp;&amp; tego run") || strings.Contains(body, "examples/agents/") {
-			t.Errorf("%s still points at tego init's starter or an example file", path)
+		if strings.Contains(body, "tego rules create &amp;&amp; tego run") || strings.Contains(body, "examples/agents/") {
+			t.Errorf("%s still points at tego rules create's starter or an example file", path)
 		}
 	}
 }

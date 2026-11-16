@@ -137,7 +137,7 @@ func TestUnshareRootIsNotRoot(t *testing.T) {
 
 	code, out = c.exec(t, exec.Command(unshare, "-r", "--", bin, "doctor"), sudo)
 	if !strings.Contains(out, rootLine) {
-		t.Errorf("unshare -r tego doctor (exit %d) reports root reach; want %q:\n%s", code, rootLine, out)
+		t.Errorf("unshare -r tego machine check (exit %d) reports root reach; want %q:\n%s", code, rootLine, out)
 	}
 
 	// A run with no tier named: uid 0 there must still drop, and SUDO_UID names no target, so it is refused and its

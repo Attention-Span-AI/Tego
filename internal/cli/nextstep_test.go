@@ -43,7 +43,7 @@ func TestRuleOnAWatchedRunPointsToLearn(t *testing.T) {
 	}
 	code, out, errs := run(t, "rule", dir, "1", "--block")
 	if code != identity.ExitFinding || out != "" || !strings.Contains(errs, "names no contract file") ||
-		!strings.Contains(errs, "tego learn r-watched --out agent.yaml") || !strings.Contains(errs, "[usage]") {
+		!strings.Contains(errs, "tego rules learn r-watched --out agent.yaml") || !strings.Contains(errs, "[usage]") {
 		t.Errorf("exit %d\nstdout %s\nstderr %s", code, out, errs)
 	}
 }
@@ -61,7 +61,7 @@ func TestInitSaysToSetTheCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	if code, out, errs := run(t, "init", dir); code != identity.ExitOK || errs != "" ||
-		!strings.Contains(out, "next: tego compile agent.yaml; tego run agent.yaml (it runs python3 agent.py)") {
+		!strings.Contains(out, "next: tego rules check agent.yaml; tego run agent.yaml (it runs python3 agent.py)") {
 		t.Errorf("with agent.py: exit %d\nstdout %s\nstderr %s", code, out, errs)
 	}
 }

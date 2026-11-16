@@ -155,7 +155,7 @@ func TestRunEndSummary(t *testing.T) {
 			t.Errorf("summary lacks %q:\n%s", want, summary)
 		}
 	}
-	if !strings.HasSuffix(out, "\n  more: tego receipt "+id+"\n") {
+	if !strings.HasSuffix(out, "\n  more: tego session show "+id+"\n") {
 		t.Errorf("the summary's hint is not the last stderr output:\n%s", out)
 	}
 	if strings.Count(summary, "\n") != 2 {
@@ -167,7 +167,7 @@ func TestRunEndSummary(t *testing.T) {
 	if code := mainWith(t.Context(), argv, io.Discard, &stderr, []Command{cmdRun()}); code != identity.ExitOK {
 		t.Fatalf("--no-summary: exit %d:\n%s", code, stderr.String())
 	}
-	if out := stderr.String(); strings.Contains(out, " ended (") || strings.Contains(out, "more: tego receipt") {
+	if out := stderr.String(); strings.Contains(out, " ended (") || strings.Contains(out, "more: tego session show") {
 		t.Errorf("--no-summary printed a summary:\n%s", out)
 	}
 }
@@ -231,7 +231,7 @@ func TestWatchFooterCounts(t *testing.T) {
 	got := watchFooter(res, sum)
 	for _, want := range []string{"tego watch: recorded as run " + id + ": ended (exited with code 0) · refused 2",
 		"\n  seen: 4 connections to 2 places (most: 127.0.0.1:9823) · 2 sensitive files read (first: ~/.config/telemetry/token)\n",
-		"\n  more: tego receipt " + id + "    tego events " + id} {
+		"\n  more: tego session show " + id + "    tego events " + id} {
 		if !strings.Contains(got, want) {
 			t.Errorf("footer lacks %q:\n%s", want, got)
 		}
@@ -373,7 +373,7 @@ func TestRecordOffRunSaysSoAtItsEnd(t *testing.T) {
 		t.Fatalf("no receipt for the run: %+v", off)
 	}
 	if got, want := off.text(), "tego run: "+id+" ended (exited with code 0) · tier landlock · refused 1 (not allowed by any rule 1) · asked 0 · "+
-		"record off: refusals only · chain verified\n  more: tego receipt "+id+"\n"; got != want {
+		"record off: refusals only · chain verified\n  more: tego session show "+id+"\n"; got != want {
 		t.Errorf("the summary of a record: off run:\n got %q\nwant %q", got, want)
 	}
 	footer := watchFooter(res, off)

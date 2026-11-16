@@ -19,7 +19,7 @@ Not known:
   - a contract in no registry (a file given by its path) that no run used
 
 next: make a contract from what it did, and read it before you use it:
-  tego learn b883rx --save bot
+  tego rules learn b883rx --save bot
 ```
 
 Run it again after each step. The `next:` lines are on stderr, after the list, and follow the same rule as every
@@ -35,7 +35,7 @@ machine (`TestTheNextLinesNeverLoopFromAnyPlace`). A place outside that list is 
 
 Tego starts every run, one that only records included, in your user manager's cgroup
 (`user@<uid>.service`). A login over SSH or on a console starts beside it, in a session scope, so from that shell
-`tego run`, `tego watch` and `tego test` exit 125. `tego setup` says so, and its `next:` line opens a shell inside that
+`tego run`, `tego watch` and `tego machine test` exit 125. `tego setup` says so, and its `next:` line opens a shell inside that
 cgroup (`internal/cli/testdata/firstrun-fresh-ssh.golden`):
 
 ```
@@ -61,9 +61,9 @@ from another user's shell through `sudo` or `su`, it puts `sudo -u <user>` in fr
 says, and says to type the line in your own login shell (see "A user with no user manager" below). When
 `systemd-run --user` cannot reach your user manager from your shell even so (`systemd-run` is not on `PATH`, or no
 such socket is there), step 2 says why and the `next:` line names no command: log in as yourself over SSH or on the
-console, or open a terminal on your desktop, which is in that cgroup already. `tego doctor` says the same from such a
-shell, and `tego run`, `tego watch` and `tego test` end their exit 125 with the same `next:` line, "then run this
-again there". Where `tego learn --save` (or `tego agents`) would name `tego run` (or `tego watch`), it says that
+console, or open a terminal on your desktop, which is in that cgroup already. `tego machine check` says the same from such a
+shell, and `tego run`, `tego watch` and `tego machine test` end their exit 125 with the same `next:` line, "then run this
+again there". Where `tego rules learn --save` (or `tego agents`) would name `tego run` (or `tego watch`), it says that
 command in a line of its own, to type in the new shell, and its `next:` line opens the shell.
 
 `sudo tego agents` decides that by the shell you typed `sudo` in, not by its own process: on Fedora 44, sudo from a
@@ -112,8 +112,8 @@ name the uid instead (`'#1002'` for `sudo -u`). `XDG_RUNTIME_DIR` is given becau
 **your own** user manager, where `tego setup` says ready for you, not for `svc` (Ubuntu 24.04, AlmaLinux 9.8), or
 fails (Fedora 44). Measured in guests on 2026-11-11: with `sudo -u svc` in front, and with `tego setup` in place of
 the interactive `bash` (or `bash -c` and a line that ran it), it ran `tego setup` in `svc`'s user manager, ready at
-tier 1, on all three. The interactive `bash` form was not run. After linger, `tego doctor`'s `fix:` line and the
-error line of `tego run`, `tego watch` and `tego test` name the same `sudo -u` command there.
+tier 1, on all three. The interactive `bash` form was not run. After linger, `tego machine check`'s `fix:` line and the
+error line of `tego run`, `tego watch` and `tego machine test` name the same `sudo -u` command there.
 
 Tego decides that you are another user from two facts, neither read from the environment: the login uid the kernel
 keeps for the session (`/proc/self/loginuid`, set at your SSH, console or desktop login and kept by `sudo` and `su`),
@@ -133,7 +133,7 @@ name of digits only (`4242`, which it reads as a uid), a `-` and digits only, `.
 control character, one that is not UTF-8, and one that starts or ends with white space. For `4242` on Ubuntu 24.04,
 `sudo loginctl enable-linger` exited 0 and wrote `/var/lib/systemd/linger/4242`, but started no user manager
 (measured). That the other refused names get no user manager either is read from those rules, not run. For all of
-them `tego setup` and `tego doctor` say that systemd starts no user manager for the account, name no `next:` command,
+them `tego setup` and `tego machine check` say that systemd starts no user manager for the account, name no `next:` command,
 and say what to do: run the agent as an account whose name starts with a letter and holds only letters, digits, `_`
 and `-`. Ubuntu's `useradd` refused `4242` unless given `--badname`, and Fedora's refused it even then (measured on
 those two; AlmaLinux was not tried). Unit tests check these lines; only the digits-only case was run in a guest,
@@ -165,7 +165,7 @@ none. It never writes the command you start your agent with: before anything is 
 
 ## The check it stores
 
-`tego setup` runs the no-root checks of `tego doctor` (the kernel, the cgroup your shell can place a run in, Landlock
+`tego setup` runs the no-root checks of `tego machine check` (the kernel, the cgroup your shell can place a run in, Landlock
 and seccomp) from your shell, with your shell's privilege. It loads no BPF program. It stores the answer in
 `~/.tego/state/check.json` (mode 0600, the folder 0700), one entry per place it was run from: a shell outside your user
 manager's cgroup (an SSH login), a shell inside it (a desktop terminal, or `systemd-run --user --scope bash`), or root.
@@ -177,7 +177,7 @@ An entry from a shell outside your user manager's cgroup that starts no run only
 dashboard cannot build the `loginctl` command (it does not link the engine), so for that cause its next step is `tego
 doctor`, which prints it.
 
-`tego doctor` does not write it: doctor stays a read-only check. A file at `check.json` that is not one `tego setup`
+`tego machine check` does not write it: doctor stays a read-only check. A file at `check.json` that is not one `tego setup`
 wrote (another shape, a link, a FIFO) is reported as not known by the `tego setup` that finds it, and that same
 `tego setup` replaces it with its own regular file, never writing through a link. A folder there is reported as not
 known and left as it is. If the check cannot be stored (a folder at `check.json`, a link at
@@ -192,20 +192,20 @@ When you run `tego setup` from a shell that cannot enforce (an SSH login, say) a
 says it can, step 2 is done and its fact says "not from ..., where you are now". A next step that would start a run
 (`tego watch`, `tego run`) is then the step that opens a shell in your user manager's cgroup, as above, never the
 command that exits 125 from here. When the only check that can enforce is root's, step 2 says root's check holds only
-a run started as root, with sudo, and the next step is `tego doctor`, which says why this shell cannot. No stored
+a run started as root, with sudo, and the next step is `tego machine check`, which says why this shell cannot. No stored
 check chooses a command.
 
 The learn step names `--allow-host <host>` only when the proposal from that run would still allow addresses and Tego
-found no destination the run's secrets may have gone to; `tego watch` and `tego learn` decide the same way, from the
-same record. Otherwise it is `tego learn <run> --save <name>`, and `tego learn` names `--allow-host` for the addresses
+found no destination the run's secrets may have gone to; `tego watch` and `tego rules learn` decide the same way, from the
+same record. Otherwise it is `tego rules learn <run> --save <name>`, and `tego rules learn` names `--allow-host` for the addresses
 it kept.
 
 Any program you run outside Tego runs as you and can change this file, as it can change your shell's startup files.
 The worst it does to `tego setup` is make the guide show a wrong step or a wrong sentence in a fact. A next command
 is built only from fixed words, a run id, an agent name and one folder Tego quotes: the working folder of a recorded
-run whose record checks out against `~/.tego/chain.log`. The run `tego learn` is pointed at checks out too. A run
+run whose record checks out against `~/.tego/chain.log`. The run `tego rules learn` is pointed at checks out too. A run
 folder such a program writes without its line in `chain.log` is blocked, never used. A program that also rewrites
-`chain.log` can choose that folder, as it can make `tego receipt --verify` pass (ADR 0142). No other text from a file
+`chain.log` can choose that folder, as it can make `tego session show --verify` pass (ADR 0142). No other text from a file
 or the record goes into a command. `tego run` checks the machine again when it starts. An agent held by Tego cannot
 write `~/.tego` at all.
 
@@ -220,7 +220,7 @@ write `~/.tego` at all.
 | Code | Means |
 | ---- | ----- |
 | 0 | printed, and a run started from here can enforce at tier 1 |
-| 1 | printed, and no tier enforces a run started from here (the check's finding). From a shell outside your user manager's cgroup no run starts at all, not even `tego watch`; the `next:` line opens a shell inside it. Otherwise `tego doctor` names the fix |
+| 1 | printed, and no tier enforces a run started from here (the check's finding). From a shell outside your user manager's cgroup no run starts at all, not even `tego watch`; the `next:` line opens a shell inside it. Otherwise `tego machine check` names the fix |
 | 2 | a usage error |
 | 125 | the machine config, the record or a registry could not be read, or a recorded run could not be checked against the chain anchor (the list is printed first, with `[?]`); or it ran inside a tego run (`[governed]`); or it ran under sudo for another user (`[privilege]`): run it without sudo |
 
@@ -271,7 +271,7 @@ the fixture's folder):
      "link": "the newest ended run under a contract, checked against <root>/home/.tego/chain.log"}
   ],
   "next": {"step": "", "rule": "enforce-done", "text": "every step is done; see what the last enforced run did:",
-           "command": "tego receipt b88krx", "needs_root": false, "placeholder": false},
+           "command": "tego session show b88krx", "needs_root": false, "placeholder": false},
   "not_known": [
     "agents Tego never recorded: nothing here looks for them yet",
     "a contract in no registry (a file given by its path) that no run used"

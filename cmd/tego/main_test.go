@@ -89,9 +89,9 @@ func TestHookIsDispatchedBeforeTheCLI(t *testing.T) {
 	}
 }
 
-// TestHelpDoesNotListHook: the hook is a harness-facing verb, not a user's.
+// TestHelpDoesNotListHook: the hook is a harness-facing verb, not a user's: not even tego help -a lists it.
 func TestHelpDoesNotListHook(t *testing.T) {
-	o, e, _ := tego(t, testutil.TegoEnv(t, t.TempDir()), "", "-h")
+	o, e, _ := tego(t, testutil.TegoEnv(t, t.TempDir()), "", "help", "-a")
 	verbs := map[string]bool{}
 	for _, line := range strings.Split(o+e, "\n") {
 		if f := strings.Fields(line); len(f) > 0 {
@@ -99,9 +99,9 @@ func TestHelpDoesNotListHook(t *testing.T) {
 		}
 	}
 	if !verbs["run"] || !verbs["compile"] {
-		t.Fatalf("tego -h lists no verbs to compare with:\n%s%s", o, e)
+		t.Fatalf("tego help -a lists no verbs to compare with:\n%s%s", o, e)
 	}
 	if verbs[claudecode.Verb] {
-		t.Errorf("tego -h lists the hook:\n%s%s", o, e)
+		t.Errorf("tego help -a lists the hook:\n%s%s", o, e)
 	}
 }

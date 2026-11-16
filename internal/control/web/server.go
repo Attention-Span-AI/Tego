@@ -456,7 +456,7 @@ func (s *Server) refuse(w http.ResponseWriter, r *http.Request, why signedOutWhy
 	}
 	h.Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusUnauthorized)
-	line := "tego-control serve: this dashboard needs the link tego serve (or tego-control serve) printed (it carries ?t=<token>)."
+	line := "tego-control serve: this dashboard needs the link it printed when it started (it carries ?t=<token>); tego dashboard opens it."
 	if why == signedOutCode {
 		line = "tego-control serve: " + codeUsedWords + "."
 	}
@@ -464,7 +464,7 @@ func (s *Server) refuse(w http.ResponseWriter, r *http.Request, why signedOutWhy
 }
 
 // codeUsedWords is what a used or expired one-time open code is told (opencode.go).
-const codeUsedWords = "This one-time open link was used or expired; open the link tego serve (or tego-control serve) printed (?t=…)"
+const codeUsedWords = "This one-time open link was used or expired; run tego dashboard to open a new one"
 
 // signedOutStyle is the sign-in page's only style, inline so the page needs no file the missing session would
 // refuse. Its colours are tokens.css's (light, and dark under prefers-color-scheme).
@@ -488,14 +488,14 @@ const (
 <meta name="color-scheme" content="light dark"><title>Sign in · Tego</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml"><style>` + signedOutStyle + `</style></head>
 <body><main role="main"><div class="brand"><img src="/static/favicon.svg" alt="">tego</div>
-<h1>Open the dashboard from the link in your terminal</h1>
+<h1>Open the dashboard from your terminal</h1>
 `
-	signedOutLead = `<p>When <b>tego serve</b> (or <b>tego-control serve</b>) starts it prints a link with <b>?t=</b>; opening it signs this browser in. ` +
-		`If the dashboard was restarted, its new link is the one that works.</p>
+	signedOutLead = `<p>This browser isn't signed in to this dashboard. The link the dashboard printed when it started (with <b>?t=</b>) signs it in. ` +
+		`If the dashboard was restarted, only its new link works.</p>
 `
-	signedOutTail = `<span class="lbl">Not running any more? Start it again and it opens the dashboard for you (one click selects the command):</span>
-<code>tego serve --open</code>
-<p>Nothing was changed. Each start of the dashboard prints a new link, and the old one stops working.</p>
+	signedOutTail = `<span class="lbl">In a terminal on this computer, run this; it opens the dashboard here, signed in (one click selects the command):</span>
+<code>tego dashboard</code>
+<p>Nothing was changed.</p>
 </main></body></html>
 `
 )

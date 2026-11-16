@@ -167,6 +167,7 @@ var ioctlAllowed = map[string]bool{
 	"TIOCINQ": true, "TIOCOUTQ": true, "FIONREAD": true, "FIONBIO": true, "TIOCSCTTY": true, "TIOCNOTTY": true,
 	"TIOCGPGRP": true, "TIOCSPGRP": true, "NS_GET_NSTYPE": true, "FS_IOC_GETFLAGS": true, "FS_IOC_SETFLAGS": true,
 	"TIOCGETA": true, "TIOCSETA": true, "TIOCGDEV": true, "TIOCGPTN": true,
+	"TCFLSH": true, // discards a terminal's unread input (tego start, after the agent's own login)
 }
 
 // ioctlReqWrappers are the x/sys ioctl wrappers whose second argument is the request. Each one throws ioctl's

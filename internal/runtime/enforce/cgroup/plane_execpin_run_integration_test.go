@@ -240,7 +240,7 @@ func execPinCheckSkippable(t *testing.T, bin string) bool {
 	t.Helper()
 	out, err := isolatedTego(t, bin, "doctor", "--json").Output()
 	if err != nil && len(out) == 0 {
-		t.Fatalf("tego doctor --json: %v", err)
+		t.Fatalf("tego machine check --json: %v", err)
 	}
 	return strings.Contains(string(out), "tracepoint program this kernel can skip")
 }

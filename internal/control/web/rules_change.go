@@ -356,7 +356,7 @@ func (s *Server) changePage(w http.ResponseWriter, r *http.Request, svc ChangeSe
 
 // fillChange reads d.C's text, lists and history into d; false when it has answered.
 func (s *Server) fillChange(w http.ResponseWriter, svc ChangeService, d *changeData) bool {
-	d.Hint = "tego compile " + shellWord(d.C.Path)
+	d.Hint = "tego rules check " + shellWord(d.C.Path)
 	if !d.C.Writable {
 		d.NotWritable = d.C.Why
 		return true
@@ -494,7 +494,7 @@ func changeCLI(path string, e rules.Edit, now []rules.NowOption) (string, []stri
 	default:
 		what = "remove " + strconv.Quote(e.Entry) + " from " + e.Key + " (and refuse it instead)"
 	}
-	out := []string{"tego compile " + shellWord(path)}
+	out := []string{"tego rules check " + shellWord(path)}
 	for _, o := range now {
 		if o.OK {
 			out = append(out, "tego block "+o.Run+" "+changeWords(o.Kind, o.Value, ""))
@@ -566,7 +566,7 @@ func (s *Server) rulesChangePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d := savedData{Ref: a.Plan.Ref, Contract: a.Plan.Contract, Agent: a.Plan.Agent, Applied: a, UndoID: a.ID, Warn: a.Warn,
-		CLI: []string{"tego compile " + shellWord(a.Plan.Contract)}}
+		CLI: []string{"tego rules check " + shellWord(a.Plan.Contract)}}
 	d.UndoAck, d.UndoWords = a.Plan.Direction != widens, beforeWords(a.Plan.Sentences)
 	s.savedAnswer(w, r, d, appliedLine(a))
 }
@@ -850,7 +850,7 @@ func (s *Server) rulesRevert(w http.ResponseWriter, r *http.Request) {
 			d.Agent = cs[i].Agent
 		}
 	}
-	d.CLI = []string{"tego compile " + shellWord(rv.Contract)}
+	d.CLI = []string{"tego rules check " + shellWord(rv.Contract)}
 	line := "Undone: from its next run, " + filepath.Base(rv.Contract) + " has the rules it had before that change."
 	if d.UndoLive != "" {
 		line += " " + d.UndoLive
@@ -897,7 +897,7 @@ func (s *Server) rawPost(w http.ResponseWriter, r *http.Request, svc ChangeServi
 		a, err := svc.ApplyRaw(r.Context(), req)
 		if err == nil {
 			sd := savedData{Ref: a.Plan.Ref, Contract: a.Plan.Contract, Agent: a.Plan.Agent, Applied: a, UndoID: a.ID, Warn: a.Warn,
-				UndoAck: true, CLI: []string{"tego compile " + shellWord(a.Plan.Contract)}}
+				UndoAck: true, CLI: []string{"tego rules check " + shellWord(a.Plan.Contract)}}
 			s.savedAnswer(w, r, sd, appliedLine(a))
 			return
 		}

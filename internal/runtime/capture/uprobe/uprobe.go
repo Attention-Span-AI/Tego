@@ -559,7 +559,7 @@ func (u *Uprobe) openRing() error {
 	}
 	if !ok {
 		return fmt.Errorf("uprobe: this run has no capture ring at its slot %d: the host's bpf.ring_budget had no "+
-			"room for it (`tego doctor` shows the rings in use; raise bpf.ring_budget in /etc/tego/config.yaml or "+
+			"room for it (`tego machine check` shows the rings in use; raise bpf.ring_budget in /etc/tego/config.yaml or "+
 			"wait for other runs to end)", slot)
 	}
 	reader, err := ringbuf.NewReader(ring)

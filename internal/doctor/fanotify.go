@@ -151,7 +151,7 @@ func fanotifyVerdict(state FanotifyState, reply fanotifyReply, err error) (Resul
 // opener did not return within the probe's timeout, or the answer could not be written. A loaded host
 // can cause the first two once. An open that failed before the event arrived is not this: it is the
 // host's policy (fanotifyHostPolicyFix), and it fails every run the same way.
-const fanotifyRetryFix = "re-run tego doctor; if D8 fails the same way again, report it as a tego bug"
+const fanotifyRetryFix = "re-run tego machine check; if D8 fails the same way again, report it as a tego bug"
 
 // fanotifyFixtureFix is D8's remedy for a fixture directory or file it could not make: the fixtures live under
 // /run/tego (fixtures.go), and $TMPDIR only where that directory cannot be made.

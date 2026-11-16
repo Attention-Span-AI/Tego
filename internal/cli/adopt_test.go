@@ -730,10 +730,10 @@ func TestStopReleasesAnAdoptionWithoutSignallingItsAdopter(t *testing.T) {
 	escalateRun = func(string, string, io.Writer) { escalated = true }
 	code, out, errs := run(t, "stop", id, "--grace", "1s")
 	if code != identity.ExitOK || !strings.Contains(out, id+": released by its adopter (pid 4242)") {
-		t.Fatalf("tego stop of an adoption: exit %d stdout %q stderr %q", code, out, errs)
+		t.Fatalf("tego session stop of an adoption: exit %d stdout %q stderr %q", code, out, errs)
 	}
 	if signalled || escalated {
-		t.Fatalf("tego stop signalled (%v) or killed (%v) an adoption's adopter", signalled, escalated)
+		t.Fatalf("tego session stop signalled (%v) or killed (%v) an adoption's adopter", signalled, escalated)
 	}
 	if len(asked) != 1 || !strings.Contains(asked[0], id+" by tego stop (pid ") {
 		t.Errorf("release requests %q", asked)
@@ -744,7 +744,7 @@ func TestStopReleasesAnAdoptionWithoutSignallingItsAdopter(t *testing.T) {
 	}
 	if code, out, errs := run(t, "stop", id); code != identity.ExitOK ||
 		!strings.Contains(out, id+": the run had ended with process(es) left in its scope; they are released now") {
-		t.Fatalf("tego stop of an ended adoption's leftovers: exit %d stdout %q stderr %q", code, out, errs)
+		t.Fatalf("tego session stop of an ended adoption's leftovers: exit %d stdout %q stderr %q", code, out, errs)
 	}
 	// An adoption that failed before it recorded, leaving processes in its scope: no run had ended, and it says so.
 	adoptRelease = func(_ context.Context, _ string, run, _ string, _ *slog.Logger) (tegoruntime.ReleaseReport, error) {
@@ -752,7 +752,7 @@ func TestStopReleasesAnAdoptionWithoutSignallingItsAdopter(t *testing.T) {
 	}
 	if code, out, errs := run(t, "stop", id); code != identity.ExitOK ||
 		!strings.Contains(out, id+": the adoption had failed before it recorded, leaving process(es) in its scope") {
-		t.Fatalf("tego stop of a failed adoption's leftovers: exit %d stdout %q stderr %q", code, out, errs)
+		t.Fatalf("tego session stop of a failed adoption's leftovers: exit %d stdout %q stderr %q", code, out, errs)
 	}
 	// A live adopter whose release left processes in the scope: an error, never "released".
 	adoptRelease = func(_ context.Context, _ string, run, _ string, _ *slog.Logger) (tegoruntime.ReleaseReport, error) {
@@ -761,7 +761,7 @@ func TestStopReleasesAnAdoptionWithoutSignallingItsAdopter(t *testing.T) {
 	}
 	if code, out, errs := run(t, "stop", id); code != identity.ExitError || strings.Contains(out, "released") ||
 		!strings.Contains(errs, "2 process(es) stay in") {
-		t.Fatalf("tego stop whose release left processes: exit %d stdout %q stderr %q", code, out, errs)
+		t.Fatalf("tego session stop whose release left processes: exit %d stdout %q stderr %q", code, out, errs)
 	}
 }
 

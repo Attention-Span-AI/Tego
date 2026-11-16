@@ -36,7 +36,7 @@ mcp:
   needs no additional grant: Tego grants only the exact child the admitted shim starts. A direct stage attempt
   or another tego subcommand receives no permission from that runtime grant. Explicit denies and asks still apply.
 - For a `url` server, give the contract a `net:` section (`net: {allow: []}` is enough): the relay is then the
-  agent's only route to the server, since its URL is no longer admitted to the run. `tego compile` warns otherwise.
+  agent's only route to the server, since its URL is no longer admitted to the run. `tego rules check` warns otherwise.
 
 ## Pointing the agent's MCP client at the relay
 

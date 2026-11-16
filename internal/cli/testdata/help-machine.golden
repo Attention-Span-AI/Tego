@@ -1,0 +1,7 @@
+usage: tego machine check [--json]
+   or: tego machine test [--json]
+
+   check            Check what this machine can enforce
+   test             Run Tego's self-check
+
+See 'tego help machine <command>' to read about a specific command.

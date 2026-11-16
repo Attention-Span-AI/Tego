@@ -164,14 +164,14 @@ func TestRunEndsWithTheReadsLineAndTheNextStep(t *testing.T) {
 				" --record full -- true\n"
 		}},
 		{"a refusal", "on", nil, &record.ReadsNotified{Notified: true, Why: record.ReadsNotifiedWhyFull}, true, "", func(s string) string {
-			return "\nnext: see what it refused, under which rule:\n  tego receipt " + s + "\n"
+			return "\nnext: see what it refused, under which rule:\n  tego session show " + s + "\n"
 		}},
 		{"a refusal, reads not recorded", "on", nil, reasonOff, true, readsLineReasonOff, func(s string) string {
-			return "\nnext: see what it refused, under which rule:\n  tego receipt " + s + "\n"
+			return "\nnext: see what it refused, under which rule:\n  tego session show " + s + "\n"
 		}},
 		{"nothing refused, reads recorded", "on", nil, &record.ReadsNotified{Notified: true, Why: record.ReadsNotifiedWhyReason}, false, "",
 			func(s string) string {
-				return "\nnext: check its record against the chain anchor:\n  tego receipt " + s + " --verify\n"
+				return "\nnext: check its record against the chain anchor:\n  tego session show " + s + " --verify\n"
 			}},
 		{"an old record", "on", nil, nil, false, readsLineUnknown, func(string) string {
 			return "\nnext: to see a read the contract refuses, run it again recording every read:\n  tego run " + contract +
@@ -199,7 +199,7 @@ func TestRunEndsWithTheReadsLineAndTheNextStep(t *testing.T) {
 			lines := strings.SplitAfter(out[i:], "\n")
 			id := strings.Fields(lines[0])[2]
 			if !strings.HasPrefix(lines[0], "tego run: "+id+" ended (exited with code 0) · tier landlock · refused ") ||
-				lines[1] != "  more: tego receipt "+id+"\n" {
+				lines[1] != "  more: tego session show "+id+"\n" {
 				t.Fatalf("the summary's two lines changed:\n%s", out)
 			}
 			want := lines[0] + lines[1] + tc.reads + tc.next(id[strings.LastIndexByte(id, '-')+1:])
@@ -271,7 +271,7 @@ func TestWatchSaysHowToStopAndWhatIsNext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	learn := "\nnext: make a contract from what it did, and read it before you use it:\n  tego learn r-test-run --save " +
+	learn := "\nnext: make a contract from what it did, and read it before you use it:\n  tego rules learn r-test-run --save " +
 		nameFromFolder(wd) + "\n"
 	for _, tc := range []struct {
 		env   string
@@ -344,7 +344,7 @@ func TestLearnSaveWritesTheRegistryEntry(t *testing.T) {
 	hintsAt(t, false, "on")
 
 	code, _, errs := run(t, "learn", short)
-	if code != identity.ExitOK || !strings.HasSuffix(errs, "\nnext: "+learnSaveHint+"\n  tego learn "+short+" --save bot\n") {
+	if code != identity.ExitOK || !strings.HasSuffix(errs, "\nnext: "+learnSaveHint+"\n  tego rules learn "+short+" --save bot\n") {
 		t.Fatalf("learn with no flag: exit %d, stderr %q", code, errs)
 	}
 	// --save records refused reads unless --reads off (TestLearnSaveRecordsRefusedReads): what it writes is the
@@ -384,7 +384,7 @@ func TestLearnSaveWritesTheRegistryEntry(t *testing.T) {
 		}
 	}
 	if code, _, errs := run(t, "compile", "bot"); code != identity.ExitOK {
-		t.Errorf("tego compile bot does not find and compile the saved entry: exit %d\n%s", code, errs)
+		t.Errorf("tego rules check bot does not find and compile the saved entry: exit %d\n%s", code, errs)
 	}
 
 	// T3: a second save of the same name writes nothing and leaves the first file as it was.
@@ -448,7 +448,7 @@ func TestDoctorAndTestHints(t *testing.T) {
 	hintsAt(t, false, "on")
 	var b bytes.Buffer
 	writeDoctorVerdict(&b, &doctor.Report{Tier: backend.TierLandlock})
-	if want := "\nReady: this shell can enforce at tier 1 (landlock), no root needed.\n\nnext: see Tego refuse four harmless actions on decoy files:\n  tego test\n"; b.String() != want {
+	if want := "\nReady: this shell can enforce at tier 1 (landlock), no root needed.\n\nnext: see Tego refuse four harmless actions on decoy files:\n  tego machine test\n"; b.String() != want {
 		t.Errorf("ready: %q, want %q", b.String(), want)
 	}
 	b.Reset()
@@ -473,7 +473,7 @@ func TestDoctorAndTestHints(t *testing.T) {
 		t.Errorf("TEGO_HINTS=off: %q", b.String())
 	}
 	if n := len("next: " + testNext); n > 80 {
-		t.Errorf("tego test's hint is %d columns", n)
+		t.Errorf("tego machine test's hint is %d columns", n)
 	}
 }
 
@@ -524,7 +524,7 @@ func TestAdoptEndsWithTheLearnStep(t *testing.T) {
 	hintsAt(t, false, "on")
 	code, _, errs := runAdoptCmd(t, t.Context(), "--pid", "500")
 	const want = "  tego status r-0a1b2c3d-0123456789abc-xyz500    tego events r-0a1b2c3d-0123456789abc-xyz500    tego drift r-0a1b2c3d-0123456789abc-xyz500\n" +
-		"\nnext: make a contract from what it did:\n  tego learn r-0a1b2c3d-0123456789abc-xyz500 --save <name>\n"
+		"\nnext: make a contract from what it did:\n  tego rules learn r-0a1b2c3d-0123456789abc-xyz500 --save <name>\n"
 	if code != identity.ExitOK || !strings.HasSuffix(errs, want) {
 		t.Errorf("exit %d, want the end line then the learn step:\n%s", code, errs)
 	}
@@ -559,7 +559,7 @@ func TestFollowingTheNextLinesFromARecordToAnEnforcedRun(t *testing.T) {
 	// The watch's hint, as watchHint writes it for this run in ~/bot.
 	_, learnCmd := watchHint(tegoruntime.Result{RunID: watched}, &endSummary{root: root, machine: hintMachine(t)}, "", project, false)
 	short := watched[strings.LastIndexByte(watched, '-')+1:]
-	if learnCmd != "tego learn "+short+" --save bot" {
+	if learnCmd != "tego rules learn "+short+" --save bot" {
 		t.Fatalf("watch's next command %q", learnCmd)
 	}
 	code, _, errs := run(t, strings.Fields(learnCmd)[1:]...)
@@ -604,7 +604,7 @@ func TestFollowingTheNextLinesFromARecordToAnEnforcedRun(t *testing.T) {
 	if !strings.Contains(out, " · refused 1 (") || !strings.Contains(out, "chain verified") || strings.Contains(out, "  reads: ") {
 		t.Fatalf("the run with every read recorded:\n%s", out)
 	}
-	if got := lastHint(t, out); !strings.HasPrefix(got, "tego receipt ") || len(strings.Fields(got)[2]) != 6 {
-		t.Errorf("the last next command %q, want tego receipt <6 characters>", got)
+	if got := lastHint(t, out); !strings.HasPrefix(got, "tego session show ") || len(strings.Fields(got)[3]) != 6 {
+		t.Errorf("the last next command %q, want tego session show <6 characters>", got)
 	}
 }

@@ -1,44 +1,27 @@
-Tego supervises AI agents: it blocks what your rules don't allow and records everything they do.
+usage: tego [-h | --help] <command> [<args>]
 
-Get started
-  start          Set up Tego and your first agent, step by step
-  doctor         Check what this computer supports
+These are common Tego commands used in various situations:
 
-Agents
-  add agent      Add an agent for Tego to supervise
-  apply -f FILE  Add or update an agent from a rules file
-  get agents     List your agents
-  describe agent Show an agent's rules in plain words
-  edit agent     Edit an agent's rules file
-  remove agent   Stop supervising an agent
+get started
+   start            Set up Tego and connect your first agent
+   dashboard        Open the dashboard in your browser
 
-Sessions
-  run AGENT      Start a supervised session
-  get sessions   List sessions
-  describe session  What a session did and what Tego blocked
-  logs SESSION   Show a session's events
-  stop | pause | resume SESSION
+supervise an agent
+   run              Run an agent under its rules
+   session list     List sessions
+   session show     Show what a session did and what Tego blocked
+   session stop     Stop a running session
 
-Approvals
-  get approvals  Actions waiting for your answer
-  allow | deny APPROVAL
+write the rules (see also: tego help rules)
+   rules create     Create a rules file in a project
+   rules edit       Edit a rules file, then check it
+   rules check      Check a rules file and show what it enforces
+   rules learn      Create a rules file from what a session did
 
-Presets
-  get presets    List the presets
-  describe preset  What a preset allows and blocks
+check this machine
+   machine check    Check what this machine can enforce
+   machine test     Run Tego's self-check
 
-Dashboard
-  dashboard      Open the dashboard in your browser
-
-More commands
-  Check rules       compile  test     drift    measure
-  Record            watch    adopt    agents   learn
-  Live control      block    unblock  rule     lift     grant    alternate
-  Approvals         ask      approve
-  Network           dns
-  Tools for agents  mcp      route
-  Records           status   receipt  events   gc       restore  rules
-  Setup             init     setup    serve    version  licenses
-
-More: tego help advanced (compile, learn, drift, watch, adopt, mcp, route, gc, test)
-Read more: https://github.com/Attention-Span-AI/Tego/blob/main/docs/user/README.md
+'tego help -a' lists every command, including approvals and live rule changes.
+See 'tego help <command>' to read about a specific command.
+Manual: https://github.com/Attention-Span-AI/Tego/blob/main/docs/user/commands.md

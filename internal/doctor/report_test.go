@@ -507,7 +507,7 @@ func TestSummaryComesBeforeTheMatrix(t *testing.T) {
 		for i := range st.results {
 			if st.results[i].ID == CheckFanotify {
 				st.results[i] = Result{ID: CheckFanotify, Detail: "requires root to test (fanotify_init needs CAP_SYS_ADMIN)",
-					Fix: "re-run as root: sudo tego doctor", Skipped: true}
+					Fix: "re-run as root: sudo tego machine check", Skipped: true}
 				st.byID[CheckFanotify] = st.results[i]
 			}
 		}

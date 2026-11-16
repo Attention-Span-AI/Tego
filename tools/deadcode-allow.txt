@@ -124,8 +124,6 @@ github.com/attention-span-ai/tego/internal/runtime/supervisor.Dispatches	test-ap
 github.com/attention-span-ai/tego/internal/runtime/supervisor.ProtoOfSocket	test-api	internal/runtime/observe's continuednet_test reads a socket's protocol as the supervisor does
 
 # internal/setup
-github.com/attention-span-ai/tego/internal/setup.Create	control-only	internal/control/rules' Set up a new agent makes the plan's folders with it; tego init --preset goes through Apply
-github.com/attention-span-ai/tego/internal/setup.Remove	control-only	internal/control/rules takes back the folders Create made when the write fails
 
 # internal/watch
 github.com/attention-span-ai/tego/internal/watch/tree.Tree.PIDs	test-api	internal/watch/watcher tests count the watched processes with it (Watcher.Processes)

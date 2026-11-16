@@ -30,7 +30,7 @@ check.
 | [built-in-refusals.md](built-in-refusals.md) | Which host, Tego and terminal surfaces does every enforcing run refuse? |
 | [commands.md](commands.md) | Which command does what? Agents, sessions, approvals, presets and the dashboard, and the older commands. |
 | [setup.md](setup.md) | Which step is this machine on, and what do I type next? (`tego setup`) |
-| [self-check.md](self-check.md) | Does Tego refuse what it should on this machine? (`tego test`) |
+| [self-check.md](self-check.md) | Does Tego refuse what it should on this machine? (`tego machine test`) |
 | [reason-channel.md](reason-channel.md) | Why was my agent refused, and how does the agent learn why? (a draft) |
 | [mcp-tools.md](mcp-tools.md) | How do I allow, hold for approval or deny single tools of an MCP server, and change that live? |
 | [container.md](container.md) | How do I run an agent under Tego in a container on a server, which tiers work there, and where do the record and its anchor live? |

@@ -157,7 +157,7 @@ func tierFacts(runs []*ledgerview.Run) []tierFact {
 		}
 		switch ts[i].Name {
 		case "landlock":
-			ts[i].Missing = "Check with tego doctor"
+			ts[i].Missing = "Check with tego machine check"
 		case "cgroup":
 			ts[i].Missing = "Run with sudo"
 		case "bpflsm":

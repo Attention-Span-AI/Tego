@@ -200,7 +200,7 @@ func runFollow(ctx context.Context, ref string, f events.Filter, asJSON bool, st
 	n, err := render(ctx, stdout, fl, f)
 	switch {
 	case errors.Is(err, ledger.ErrRunLost):
-		message(stderr, "", 0, 0, "tego events: "+err.Error()+"; the next tego run, tego stop or tego gc ends it as orphaned",
+		message(stderr, "", 0, 0, "tego events: "+err.Error()+"; the next tego run, tego session stop or tego gc ends it as orphaned",
 			codeRunLost)
 		return identity.ExitError
 	case err != nil:

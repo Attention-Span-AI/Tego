@@ -443,7 +443,7 @@ func (s *Server) fillRules(d *rulesData) {
 	}
 	d.Text, d.Table = v.Contract.Shown()
 	if v.Source != "" {
-		d.Hint = "tego compile " + shellWord(v.Source)
+		d.Hint = "tego rules check " + shellWord(v.Source)
 		if cwd := v.Contract.Cwd; cwd != "" {
 			d.Hint = "cd " + shellWord(cwd) + " && " + d.Hint
 		}

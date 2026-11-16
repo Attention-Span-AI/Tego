@@ -288,7 +288,7 @@ func runAdopt(ctx context.Context, o adoptOptions, stdout, stderr io.Writer) int
 	} else if res.RunID != "" && a.rt.Record != agent.RecordOff {
 		// What the adoption recorded is a run like any other: tego learn makes a contract from it.
 		root, _ := ledgerRootOf(m)
-		writeHint(stderr, "make a contract from what it did:", "tego learn "+shortRun(root, res.RunID)+" --save <name>")
+		writeHint(stderr, "make a contract from what it did:", "tego rules learn "+shortRun(root, res.RunID)+" --save <name>")
 	}
 	return res.ExitCode
 }
@@ -1010,7 +1010,7 @@ func adoptNotice(t adopt.Process, bounded bool, rec agent.RecordMode) string {
 %s  never: what it did before the attach (a gap says so); a seccomp filter, Landlock, a new environment or the model
   forwarder (none can be added to a running process); reads, writes or sends through descriptors or memory
   mappings it already held.
-  Ctrl-C, SIGTERM or tego stop releases it: its tree goes back where it came from. It is never killed.
+  Ctrl-C, SIGTERM or tego session stop releases it: its tree goes back where it came from. It is never killed.
 `, t.PID, printableExe(t), recorded, held)
 }
 

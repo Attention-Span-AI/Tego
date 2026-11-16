@@ -36,8 +36,8 @@ func TestUnauthorizedPage(t *testing.T) {
 	if res.StatusCode != http.StatusUnauthorized || !strings.HasPrefix(res.Header.Get("Content-Type"), "text/html") {
 		t.Fatalf("browser 401: %d %q", res.StatusCode, res.Header.Get("Content-Type"))
 	}
-	for _, want := range []string{"<title>Sign in · Tego</title>", "Open the dashboard from the link in your terminal",
-		"tego serve --open", `rel="icon"`, `name="viewport"`, `name="color-scheme" content="light dark"`} {
+	for _, want := range []string{"<title>Sign in · Tego</title>", "Open the dashboard from your terminal",
+		"tego dashboard", `rel="icon"`, `name="viewport"`, `name="color-scheme" content="light dark"`} {
 		if !strings.Contains(strings.ToLower(page), strings.ToLower(want)) {
 			t.Errorf("401 page lacks %q", want)
 		}
@@ -49,7 +49,7 @@ func TestUnauthorizedPage(t *testing.T) {
 	}
 	for _, accept := range []string{"", "*/*", "text/event-stream", "application/json"} {
 		res := get("/status.json", accept)
-		if b := respBody(t, res); res.StatusCode != http.StatusUnauthorized || !strings.HasPrefix(res.Header.Get("Content-Type"), "text/plain") || !strings.Contains(b, "needs the link tego serve (or tego-control serve) printed") {
+		if b := respBody(t, res); res.StatusCode != http.StatusUnauthorized || !strings.HasPrefix(res.Header.Get("Content-Type"), "text/plain") || !strings.Contains(b, "needs the link it printed when it started") {
 			t.Errorf("Accept %q: %d %q %q", accept, res.StatusCode, res.Header.Get("Content-Type"), b)
 		}
 	}

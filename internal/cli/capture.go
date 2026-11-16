@@ -81,7 +81,7 @@ func warnForwarderEnv(w io.Writer, rt *agent.RuleTable, compiled agent.CaptureMo
 		fix = "drop --observe and run at tier cgroup or above to keep %[1]s, or set capture: forwarder and remove it"
 	case backend.TierCgroup.AtOrBelow(tier):
 		why = fmt.Sprintf("capture: uprobe cannot run at tier %s on this machine, whose tier reports no model capture", tier)
-		fix = "run where `tego doctor` reports capture.model_traffic at tier cgroup to keep %[1]s, or set " +
+		fix = "run where `tego machine check` reports capture.model_traffic at tier cgroup to keep %[1]s, or set " +
 			"capture: forwarder and remove it"
 	}
 	var ds []agent.Diagnostic

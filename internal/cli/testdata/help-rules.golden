@@ -1,0 +1,12 @@
+usage: tego rules create [--name <agent>] [--agent <program>] [--preset <list>] [--write <dir>]... [<dir>]
+   or: tego rules edit <agent | file>
+   or: tego rules check <agent | file> [--json]
+   or: tego rules learn <session> [--save <name> | --out <file>]
+   or: tego rules <session> | --last [--json]
+
+   create           Create a rules file in a project
+   edit             Edit a rules file, then check it
+   check            Check a rules file and show what it enforces
+   learn            Create a rules file from what a session did
+
+See 'tego help rules <command>' to read about a specific command.

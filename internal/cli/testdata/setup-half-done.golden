@@ -12,4 +12,4 @@ Not known:
 --- stderr
 
 next: make a contract from what it did, and read it before you use it:
-  tego learn b883rx --save bot
+  tego rules learn b883rx --save bot

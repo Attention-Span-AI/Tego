@@ -182,7 +182,7 @@ func runCompile(ctx context.Context, path string, req compileRequest, stdout, st
 	}
 	ref, rerr := resolveContract(path, false, m)
 	if rerr != nil {
-		printRefusedName(stderr, "tego compile", rerr)
+		printRefusedName(stderr, "tego rules check", rerr)
 		return identity.ExitFinding // R25: a finding, as a missing contract file is
 	}
 	c, ds, err := ref.load(profileSources(m))

@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"path/filepath"
+	"strings"
 
 	"github.com/attention-span-ai/tego/internal/handoff"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
@@ -33,7 +35,16 @@ func handOffCommand(n handoff.Noun) func() Command {
 			Hidden:  !n.Built,
 			Summary: "(" + handoff.Name + ") " + n.Summary,
 			Usage:   "... (" + handoff.Name + " " + n.Name + " -h lists its flags)",
-			Raw: func(_ context.Context, args []string, _, stderr io.Writer) int {
+			Raw: func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+				if t, ok := treeOf(n.Name); ok && isTreeVerb(t, args) {
+					return runNoun(ctx, t, args, stdout, stderr) // tego rules create|edit|check|learn are the engine's
+				}
+				if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+					// A session's name (tego-sample-7f3a), which tego-control does not know, is handed on as its run id.
+					if dir, ok := sessionRunIn(args[0], &machineOnce{stderr: io.Discard}); ok {
+						args = append([]string{filepath.Base(dir)}, args[1:]...)
+					}
+				}
 				return handOff(n.Name, args, stderr)
 			},
 		}

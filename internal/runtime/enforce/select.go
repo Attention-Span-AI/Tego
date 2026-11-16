@@ -234,7 +234,7 @@ func LSMPlane(p PlaneSetup, err error) SelectOption {
 }
 
 // errNoLSMPlane is lsmPlane's answer when the caller handed Select no plane for tier bpflsm at all.
-var errNoLSMPlane = errors.New("the decision plane in LSM mode was not handed to the selection (run tego doctor)")
+var errNoLSMPlane = errors.New("the decision plane in LSM mode was not handed to the selection (run tego machine check)")
 
 // lsmPlane is nil when Select holds a plane in LSM mode for tier bpflsm, else why it holds none.
 func (o selectOptions) lsmPlane() error {

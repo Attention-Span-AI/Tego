@@ -887,10 +887,10 @@ func (l *Learner) proposeExecs(p *Proposal, first string) {
 				Why: "not an absolute plain path (a relative name, or a control or pattern character in it)", Count: l.execs[e].n})
 		case isProc(e):
 			p.Left = append(p.Left, Excluded{Section: "exec", What: record.Printable(e), Count: l.execs[e].n,
-				Why: "a /proc path names the executable of whichever process opens it (tego compile refuses it, exec-proc): a program that re-executes itself this way is already admitted by its own entry"})
+				Why: "a /proc path names the executable of whichever process opens it (tego rules check refuses it, exec-proc): a program that re-executes itself this way is already admitted by its own entry"})
 		case !l.executable(e):
 			p.Left = append(p.Left, Excluded{Section: "exec", What: record.Printable(e), Count: l.execs[e].n,
-				Why: "not a program on this machine now (tego compile would refuse it, path-missing): a PATH search's miss, or a file the run removed"})
+				Why: "not a program on this machine now (tego rules check would refuse it, path-missing): a PATH search's miss, or a file the run removed"})
 		default:
 			p.Exec = append(p.Exec, Item{Value: path.Clean(e), Count: l.execs[e].n})
 		}

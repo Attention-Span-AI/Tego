@@ -12,11 +12,11 @@ Not known:
 --- tego setup: stderr
 
 next: every step is done; see what the last enforced run did:
-  tego receipt b88krx
+  tego session show b88krx
 --- tego doctor: stderr after its table
 
 Ready: this shell can enforce at tier 1 (landlock), no root needed.
 
 next: see Tego refuse four harmless actions on decoy files:
-  tego test
---- tego receipt b88krx: stderr
+  tego machine test
+--- tego session show b88krx: stderr

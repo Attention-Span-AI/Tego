@@ -53,14 +53,14 @@ func TestWriteResults(t *testing.T) {
 		{ID: CheckLandlock, Detail: "ENOSYS", Fix: "boot a newer kernel"},
 		// A probe that could not run is not a machine that cannot do the thing: it prints skip, and
 		// still carries its fix, because the fix is how the operator turns the unknown into an answer.
-		{ID: CheckPrograms, Skipped: true, Detail: "requires root to test", Fix: "sudo tego doctor"},
+		{ID: CheckPrograms, Skipped: true, Detail: "requires root to test", Fix: "sudo tego machine check"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := "ok   kernel: 6.17.0 (>= 5.14.0)\n" +
 		"FAIL landlock: ENOSYS; fix: boot a newer kernel\n" +
-		"skip programs: requires root to test; fix: sudo tego doctor\n"
+		"skip programs: requires root to test; fix: sudo tego machine check\n"
 	if buf.String() != want {
 		t.Fatalf("got %q want %q", buf.String(), want)
 	}
@@ -104,7 +104,7 @@ func TestSudoFixNamesThisBinary(t *testing.T) {
 		t.Errorf("sudoDoctor() = %q", got)
 	}
 	executable = func() (string, error) { return "", os.ErrNotExist }
-	if got := sudoDoctor(); got != "sudo tego doctor" {
+	if got := sudoDoctor(); got != "sudo tego machine check" {
 		t.Errorf("sudoDoctor() = %q", got)
 	}
 }

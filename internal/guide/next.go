@@ -130,10 +130,10 @@ func (f *facts) next() Next {
 			return Next{Step: StepCheck, Rule: RuleCheckNoManager, Text: NoManagerText, Command: f.in.Linger, NeedsRoot: true}
 		}
 		return Next{Step: StepCheck, Rule: RuleCheckNoManager,
-			Text: "no user manager runs for you; tego doctor names how to start one:", Command: "tego doctor"}
+			Text: "no user manager runs for you; tego machine check names how to start one:", Command: "tego machine check"}
 	case st(StepCheck) == Blocked:
 		return Next{Step: StepCheck, Rule: RuleCheckBlocked,
-			Text: "no place checked can enforce; tego doctor names the one fix:", Command: "tego doctor"}
+			Text: "no place checked can enforce; tego machine check names the one fix:", Command: "tego machine check"}
 	case st(StepFind) == NotKnown || st(StepRecord) == NotKnown || st(StepContract) == NotKnown:
 		return Next{Rule: RuleRecordUnreadable, Text: "Tego could not read its record or a registry; see the not known lines."}
 	case st(StepEnforce) == Blocked:
@@ -142,7 +142,7 @@ func (f *facts) next() Next {
 			Command: "tego events " + f.runs.short(run) + " --verify"}
 	case st(StepEnforce) == Done:
 		return Next{Rule: RuleEnforceDone, Text: "every step is done; see what the last enforced run did:",
-			Command: "tego receipt " + f.runs.short(f.steps[StepEnforce].Run)}
+			Command: "tego session show " + f.runs.short(f.steps[StepEnforce].Run)}
 	case st(StepEnforce) == Waiting:
 		return Next{Step: StepEnforce, Rule: RuleEnforceWaiting, Text: "a run under a contract is still going; follow it:",
 			Command: "tego status " + f.runs.short(f.steps[StepEnforce].Run)}
@@ -151,7 +151,7 @@ func (f *facts) next() Next {
 	case st(StepContract) == Blocked:
 		arg, placeholder := contractArg(f.contracts.all[0])
 		return Next{Step: StepContract, Rule: RuleContractBlocked, Text: "fix what the compile says, then check it again:",
-			Command: "tego compile " + arg, Placeholder: placeholder}
+			Command: "tego rules check " + arg, Placeholder: placeholder}
 	case st(StepRecord) == Blocked:
 		return Next{Step: StepRecord, Rule: RuleRecordUnverified, Text: "a recorded run's record does not check out; see where:",
 			Command: "tego events " + f.runs.short(f.steps[StepRecord].Run) + " --verify"}
@@ -198,11 +198,11 @@ func (f *facts) fromHere(n Next) Next {
 	}
 	if f.ready.Where == WhereRoot {
 		return Next{Step: n.Step, Rule: RuleHereRootOnly, Text: "only root's check is ready, for runs started with sudo; see why not here:",
-			Command: "tego doctor"}
+			Command: "tego machine check"}
 	}
 	// Another place's check (step 2 names it): the words never name root when no root check exists (the review's S3).
 	return Next{Step: n.Step, Rule: RuleHereElsewhere, Text: "only another place's check is ready (step 2); see why not here:",
-		Command: "tego doctor"}
+		Command: "tego machine check"}
 }
 
 // runUnder is the step after a contract that compiles: run the agent under it, from the folder of the recorded run
@@ -233,7 +233,7 @@ func (f *facts) learnFrom() Next {
 	r := f.runs.newest(func(r *run) bool { return r.id == id })
 	name := f.freeName(r.start.Cwd)
 	n := Next{Step: StepContract, Rule: RuleRecordDone, Text: "make a contract from what it did, and read it before you use it:",
-		Command: "tego learn " + f.runs.short(r.id) + " --save " + name, Placeholder: name == namePlaceholder}
+		Command: "tego rules learn " + f.runs.short(r.id) + " --save " + name, Placeholder: name == namePlaceholder}
 	ctx, cancel := context.WithTimeout(f.ctx, suggestBudget)
 	defer cancel()
 	if SuggestHosts(ctx, r.dir) {

@@ -27,12 +27,12 @@ func cmdStart() Command {
 				message(stderr, "", 0, 0, "tego start: takes no arguments", codeUsage)
 				return identity.ExitUsage
 			}
-			if refuseSetup(stderr) {
-				return identity.ExitError
-			}
 			if !guideInteractive(stdout) {
 				message(stderr, "", 0, 0, "tego start: asks you questions, so it runs in a terminal; for a script, tego setup --json says where this machine is", codeUsage)
 				return identity.ExitUsage
+			}
+			if refuseSetup(stderr) {
+				return identity.ExitError
 			}
 			return runSetupGuide(ctx, os.Stdin, stdout, stderr, true)
 		},

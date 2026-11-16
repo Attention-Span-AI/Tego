@@ -62,7 +62,7 @@
     "step": "",
     "rule": "enforce-done",
     "text": "every step is done; see what the last enforced run did:",
-    "command": "tego receipt b88krx",
+    "command": "tego session show b88krx",
     "needs_root": false,
     "placeholder": false
   },

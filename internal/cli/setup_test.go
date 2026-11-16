@@ -203,7 +203,7 @@ func TestSetupStoresTheCheckDoctorDoesNot(t *testing.T) {
 	run(t, "doctor")
 	run(t, "doctor", "--json")
 	if _, err := os.Stat(guide.CheckPath(f.Home)); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("tego doctor wrote the check: %v", err)
+		t.Errorf("tego machine check wrote the check: %v", err)
 	}
 }
 
@@ -264,7 +264,7 @@ func TestSetupHintsFollowTEGO_HINTS(t *testing.T) {
 	if on != off {
 		t.Errorf("stdout depends on TEGO_HINTS:\n%s\n%s", on, off)
 	}
-	if !regexp.MustCompile(`(?m)^next: .+\n  tego learn [0-9a-z]+ --save bot\n\z`).MatchString(errsOn) {
+	if !regexp.MustCompile(`(?m)^next: .+\n  tego rules learn [0-9a-z]+ --save bot\n\z`).MatchString(errsOn) {
 		t.Errorf("TEGO_HINTS=on: stderr %q", errsOn)
 	}
 	if strings.Contains(errsOff, "next:") {
@@ -331,12 +331,12 @@ func TestSetupRealProbeAgreesWithDoctor(t *testing.T) {
 	}
 }
 
-// TestHelpListsSetup: scripts/install.sh names tego setup as the next step only when `tego help` prints a line that
-// starts with two spaces and "setup " on stdout (its grep '^  setup '); a help regrouping that drops it would send the
+// TestHelpListsSetup: scripts/install.sh names tego setup as the next step only when `tego help -a` prints a line that
+// starts with spaces and "setup " on stdout (its grep '^ {2,3}setup ', which older releases' flat list also matches); a help regrouping that drops it would send the
 // installer back to tego doctor without a word.
 func TestHelpListsSetup(t *testing.T) {
-	code, out, _ := run(t, "help")
-	if code != identity.ExitOK || !regexp.MustCompile(`(?m)^  setup `).MatchString(out) {
-		t.Errorf("tego help exited %d and has no line starting \"  setup \" on stdout:\n%s", code, out)
+	code, out, _ := run(t, "help", "-a")
+	if code != identity.ExitOK || !regexp.MustCompile(`(?m)^ {2,3}setup `).MatchString(out) {
+		t.Errorf("tego help -a exited %d and has no line starting \"   setup \" on stdout:\n%s", code, out)
 	}
 }

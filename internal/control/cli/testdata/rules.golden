@@ -40,4 +40,4 @@ Always on
   Cannot gain root through sudo or other setuid programs [Enforced by the operating system] (hits: 0; built in)
   Writes every refusal and question to a record that cannot be changed unnoticed, and a summary of the rest (hits: 0; built in)
 
-Next: tego receipt r-12345678-0000000000000-abcdef
+Next: tego session show r-12345678-0000000000000-abcdef

@@ -163,7 +163,7 @@ func TestInitForeignContract(t *testing.T) {
 	if code != identity.ExitFinding { // R25: a finding, the file is not ours
 		t.Fatalf("exit %d stderr %q", code, errs)
 	}
-	if !strings.Contains(errs, "agent.yaml: tego init: exists and was not written by tego init") || !strings.Contains(errs, "[exists]") {
+	if !strings.Contains(errs, "agent.yaml: tego init: exists and was not written by tego rules create") || !strings.Contains(errs, "[exists]") {
 		t.Fatalf("stderr %q", errs)
 	}
 	if got, _ := os.ReadFile(filepath.Join(dir, "agent.yaml")); string(got) != foreign {

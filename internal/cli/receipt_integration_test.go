@@ -283,10 +283,10 @@ func TestIntegrationReceiptOfAScriptedRunAtTierLandlock(t *testing.T) {
 	asJSON := tego("receipt", "--json")
 	asJSON.Stdout, asJSON.Stderr = &js, &errs
 	if err := asJSON.Run(); err != nil {
-		t.Fatalf("tego receipt --json: %v\n%s", err, errs.String())
+		t.Fatalf("tego session show --json: %v\n%s", err, errs.String())
 	}
 	if err := json.Unmarshal(js.Bytes(), &rc); err != nil {
-		t.Fatalf("tego receipt --json: %v\n%s", err, js.String())
+		t.Fatalf("tego session show --json: %v\n%s", err, js.String())
 	}
 	if rc.V != 1 || rc.Run != runID || rc.Agent != "ireceipt" || rc.Tier != "landlock" || !rc.Ended || rc.ExitCode == nil ||
 		*rc.ExitCode != 0 {
@@ -325,7 +325,7 @@ func TestIntegrationReceiptOfAScriptedRunAtTierLandlock(t *testing.T) {
 	for _, want := range []string{
 		fmt.Sprintf("tego run: %s ended (exited with code 0) · tier landlock · refused 1 (", runID),
 		fmt.Sprintf(" · asked 1 (1 approved, 0 denied) · wrote %d files · chain verified\n", len(written)),
-		"  more: tego receipt " + runID + "\n",
+		"  more: tego session show " + runID + "\n",
 	} {
 		if !strings.Contains(said.String(), want) {
 			t.Errorf("tego run's end summary has no %q", want)
@@ -334,7 +334,7 @@ func TestIntegrationReceiptOfAScriptedRunAtTierLandlock(t *testing.T) {
 	verify, err := tego("receipt", runID, "--verify").CombinedOutput()
 	if err != nil || !strings.Contains(string(verify), "Chain: "+runID+": verified") ||
 		!strings.Contains(string(verify), "anchored in "+anchor) {
-		t.Errorf("tego receipt %s --verify: %v\n%s", runID, err, verify)
+		t.Errorf("tego session show %s --verify: %v\n%s", runID, err, verify)
 	}
 }
 

@@ -12,11 +12,11 @@ Not known:
 --- tego setup: stderr
 
 next: every step is done; see what the last enforced run did:
-  tego receipt b88krx
+  tego session show b88krx
 --- tego doctor: stderr after its table
 
 Not ready: this shell is outside your user manager's cgroup, so tego starts no run from it, not even tego watch.
 
 next: open a shell in your user manager's cgroup, then run tego setup there:
   systemd-run --user --scope bash
---- tego receipt b88krx: stderr
+--- tego session show b88krx: stderr

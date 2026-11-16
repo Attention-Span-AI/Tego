@@ -52,7 +52,7 @@ func killCells(t *testing.T, e reapEnv) []killCell {
 	}
 	switch offered, out, err := testutil.DoctorOffers(isolatedTego(t, e.bin, "doctor", "--require", "bpflsm")); {
 	case err != nil:
-		t.Fatalf("tego doctor --require bpflsm gave no answer about this machine: %v\n%s", err, out)
+		t.Fatalf("tego machine check --require bpflsm gave no answer about this machine: %v\n%s", err, out)
 	case offered:
 		cells = append(cells, killCell{name: "bpflsm", tier: "bpflsm"})
 	default:
@@ -216,7 +216,7 @@ func killedTimerLeavesTheBuild(t *testing.T, e reapEnv) {
 		t.Fatalf("tego stop: %v\n%s", err, out)
 	}
 	waitBuildGone(t, hash, time.Second+teardownWait+10*time.Second)
-	t.Logf("the timer tego stop started removed the build %v after stop returned", time.Since(stopped).Round(time.Millisecond))
+	t.Logf("the timer tego session stop started removed the build %v after stop returned", time.Since(stopped).Round(time.Millisecond))
 }
 
 // runQuick runs reapAgent's quick form to its end at e.tier with e.env, as a second launcher of the build.

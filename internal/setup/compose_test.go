@@ -334,10 +334,10 @@ func TestAgentNeeds(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := string(res.Contract); strings.Contains(got, "CLAUDE_CONFIG_DIR") || strings.Contains(got, "api.anthropic.com") {
-		t.Errorf("tego init's contract got Claude's needs:\n%s", got)
+		t.Errorf("tego rules create's contract got Claude's needs:\n%s", got)
 	}
 	if res.Grants != nil {
-		t.Errorf("tego init's contract names grants: %v", res.Grants)
+		t.Errorf("tego rules create's contract names grants: %v", res.Grants)
 	}
 }
 

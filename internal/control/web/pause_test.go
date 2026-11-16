@@ -261,7 +261,7 @@ func TestLostPausedRunWords(t *testing.T) {
 			"<strong>Lost, last recorded paused.</strong> This run's launcher died, and the last state it recorded was paused, with no resume after it.",
 			"Whether its processes are still frozen is not known here",
 			`<span class="mono">tego status ` + harmRun + `</span> reads its scope`,
-			`<span class="mono">tego stop ` + harmRun + `</span> ends what is left`,
+			`<span class="mono">tego session stop ` + harmRun + `</span> ends what is left`,
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("the page of a lost run last recorded paused lacks %q", want)

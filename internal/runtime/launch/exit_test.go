@@ -32,8 +32,8 @@ func TestEnded(t *testing.T) {
 		{"SIGTERM forwarded, agent exited by it", WaitResult{Status: killed(syscall.SIGTERM)}, Outcome{Signal: syscall.SIGTERM}, identity.ReasonSignal, 143},
 		{"SIGINT, agent exited 0 in time", WaitResult{Status: exited(0)}, Outcome{Signal: syscall.SIGINT}, identity.ReasonSignal, 0},
 		{"SIGTERM escalated to cgroup.kill", WaitResult{Status: killed(syscall.SIGKILL)}, Outcome{Signal: syscall.SIGTERM, Escalated: true}, identity.ReasonSignal, 137},
-		{"tego stop in time", WaitResult{Status: killed(syscall.SIGTERM)}, Outcome{Signal: syscall.SIGTERM, Stopped: true}, identity.ReasonStopped, 143},
-		{"tego stop escalated", WaitResult{Status: killed(syscall.SIGKILL)}, Outcome{Signal: syscall.SIGTERM, Stopped: true, Escalated: true}, identity.ReasonStopped, 137},
+		{"tego session stop in time", WaitResult{Status: killed(syscall.SIGTERM)}, Outcome{Signal: syscall.SIGTERM, Stopped: true}, identity.ReasonStopped, 143},
+		{"tego session stop escalated", WaitResult{Status: killed(syscall.SIGKILL)}, Outcome{Signal: syscall.SIGTERM, Stopped: true, Escalated: true}, identity.ReasonStopped, 137},
 		{"exec failure wins over signal", WaitResult{Status: exited(127), ExecErr: syscall.ENOENT}, Outcome{Signal: syscall.SIGTERM}, identity.ReasonExecFailed, 127},
 	}
 	for _, tc := range tests {

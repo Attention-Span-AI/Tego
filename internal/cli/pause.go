@@ -49,7 +49,7 @@ var pauseConfirmWait = 2 * time.Second
 func cmdPause() Command {
 	return Command{
 		Name:    "pause",
-		Summary: "freeze a running run where it stands, until tego resume",
+		Summary: "freeze a running run where it stands, until tego session resume",
 		Usage:   "<run>",
 		Run: func(ctx context.Context, fs *flag.FlagSet, stdout, stderr io.Writer) int {
 			return pauseChange(ctx, "pause", true, fs, stdout, stderr)
@@ -102,7 +102,7 @@ func pauseChange(ctx context.Context, name string, on bool, fs *flag.FlagSet, st
 		if lostWhilePaused(ctx, filepath.Dir(dir), run) {
 			message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s is lost: its launcher died, and the last state it recorded "+
 				"was paused. Tego never resumes a run with no launcher, since nothing would decide or record what it does; "+
-				"tego status %s says what its scope shows now, and tego stop %s ends what is left and closes its record",
+				"tego status %s says what its scope shows now, and tego session stop %s ends what is left and closes its record",
 				name, run, run, run), codeLostPaused)
 			return identity.ExitFinding
 		}
@@ -114,7 +114,7 @@ func pauseChange(ctx context.Context, name string, on bool, fs *flag.FlagSet, st
 	// block of the run would stay waiting. Nothing is written for it.
 	if !liveblock.TakesControl(dir) {
 		message(stderr, "", 0, 0, fmt.Sprintf("tego %s: %s cannot be paused: an older Tego started it, it was adopted, "+
-			"or it has no cgroup of its own; tego stop %s ends it", name, run, run), codeNoPause)
+			"or it has no cgroup of its own; tego session stop %s ends it", name, run, run), codeNoPause)
 		return identity.ExitFinding
 	}
 	by := liveblock.By("cli")
@@ -140,17 +140,17 @@ func pauseChange(ctx context.Context, name string, on bool, fs *flag.FlagSet, st
 	why, seq := awaitControl(ctx, dir, o.Serial, from, pauseConfirmWait)
 	switch why {
 	case record.GapRunPaused:
-		fmt.Fprintf(stdout, "%s: paused (line #%d). Its processes are frozen where they stood; tego resume %s lets it carry on.\n", run, seq, run)
+		fmt.Fprintf(stdout, "%s: paused (line #%d). Its processes are frozen where they stood; tego session resume %s lets it carry on.\n", run, seq, run)
 	case record.GapRunResumed:
 		fmt.Fprintf(stdout, "%s: resumed (line #%d). It carries on from where it stood.\n", run, seq)
 	case record.GapPauseFailed:
 		fmt.Fprintf(stdout, "%s: pause asked, but the launcher could not freeze the run yet (line #%d), so it keeps running. "+
 			"If the agent waits on a request, it freezes once that is answered; otherwise the launcher tries again "+
-			"in a few seconds. tego resume %s withdraws the pause.\n", run, seq, run)
+			"in a few seconds. tego session resume %s withdraws the pause.\n", run, seq, run)
 		return identity.ExitFinding
 	case record.GapResumeFailed:
 		fmt.Fprintf(stdout, "%s: resume asked, but the launcher could not thaw the run (line #%d), so it stays frozen; "+
-			"the launcher tries again every half second, and tego stop %s still ends it.\n", run, seq, run)
+			"the launcher tries again every half second, and tego session stop %s still ends it.\n", run, seq, run)
 		return identity.ExitFinding
 	default:
 		fmt.Fprintf(stdout, "%s: %s asked; the run's launcher has not confirmed it yet (it reads the request about every half second)\n",

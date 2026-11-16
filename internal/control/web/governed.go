@@ -262,5 +262,5 @@ func (s *Server) governedRefused(w http.ResponseWriter, err error) {
 		return
 	}
 	_, _ = fmt.Fprintf(w, "tego-control serve: nothing was changed: %v.\n"+
-		"Open the dashboard from a terminal outside any tego run, or make the change in a terminal (tego approve, tego deny, tego stop).\n", err)
+		"Open the dashboard from a terminal outside any tego run, or make the change in a terminal (tego approve, tego deny, tego session stop).\n", err)
 }

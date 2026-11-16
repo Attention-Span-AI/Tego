@@ -94,13 +94,13 @@ func TestIntegrationABuildWhoseRunSetCannotBeReadIsKeptAndShown(t *testing.T) {
 	doctor := isolatedTego(t, exe, "doctor", "--json")
 	out, err := doctor.Output()
 	if err != nil && doctor.ProcessState.ExitCode() != 0 && doctor.ProcessState.ExitCode() != 1 {
-		t.Fatalf("tego doctor --json: %v\n%s", err, out)
+		t.Fatalf("tego machine check --json: %v\n%s", err, out)
 	}
 	var rep struct {
 		Builds []BuildInfo `json:"builds"`
 	}
 	if err := json.Unmarshal(out, &rep); err != nil {
-		t.Fatalf("tego doctor --json: %v\n%s", err, out)
+		t.Fatalf("tego machine check --json: %v\n%s", err, out)
 	}
 	for _, b := range rep.Builds {
 		if b.Hash != hash {
@@ -112,7 +112,7 @@ func TestIntegrationABuildWhoseRunSetCannotBeReadIsKeptAndShown(t *testing.T) {
 		t.Logf("doctor's row: kept %q: %s", b.Kept, b.KeptCause)
 		return
 	}
-	t.Fatalf("tego doctor --json lists no build %s: %s", hash, out)
+	t.Fatalf("tego machine check --json lists no build %s: %s", hash, out)
 }
 
 // TestIntegrationBuildMemlockIsBpftoolsSum is ADR 0022 (8)'s memlock row, as root: a real lingering build's

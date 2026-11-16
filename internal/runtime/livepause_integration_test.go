@@ -149,7 +149,7 @@ func TestIntegrationPauseWaitsForAnAnsweredAsk(t *testing.T) {
 
 	out, code := s.try(t, "pause", id)
 	if code != 1 || !strings.Contains(out, "could not freeze the run yet") {
-		t.Fatalf("tego pause while an ask waits: exit %d\n%s", code, out)
+		t.Fatalf("tego session pause while an ask waits: exit %d\n%s", code, out)
 	}
 	if w := controlWhys(t, dir); !slices.Equal(w, []string{record.GapPauseFailed}) {
 		t.Fatalf("pause lines %v, want one pause-failed", w)
@@ -236,7 +236,7 @@ func TestIntegrationPauseBusyHeldReads(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Logf("%d pauses confirmed (%d after a retry); the slowest tego pause confirmed at once took %s", rounds, misses, slowest)
+	t.Logf("%d pauses confirmed (%d after a retry); the slowest tego session pause confirmed at once took %s", rounds, misses, slowest)
 	if err := os.WriteFile(filepath.Join(s.f.out, "stop"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}

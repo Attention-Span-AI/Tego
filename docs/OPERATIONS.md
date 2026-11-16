@@ -5,10 +5,10 @@ Normative: `spec/config/v0/README.md` (layers, ceilings vs settings, trust rules
 `tego run` with exit 125 `[config-untrusted]`, which replaced 213). Example there.
 
 ## Agents by name: the registry (2026-10-20)
-`tego compile retriever` and `tego run retriever -- <cmd>` find the contract of the agent named
+`tego rules check retriever` and `tego run retriever -- <cmd>` find the contract of the agent named
 `retriever` (docs/p0/agent-contract.md R26):
 
-1. the working directory's `agent.yaml`, when its `name:` is `retriever` (what `tego init` writes), or its
+1. the working directory's `agent.yaml`, when its `name:` is `retriever` (what `tego rules create` writes), or its
    `.tego/agents/retriever.yaml`; then
 2. the user registry, `~/.config/tego/agents/retriever.yaml` (the machine config's `registry:` moves it; `""`
    turns it off).
@@ -16,7 +16,7 @@ Normative: `spec/config/v0/README.md` (layers, ceilings vs settings, trust rules
 A path still works (`tego run ./agent.yaml`); any argument with a `/` or a `.` is a path. The project is the working
 directory only, not its parents: run from the project's root. A name both registries hold (two files) is refused, never
 answered by the project's file: an agent you run from your user registry may write the directory you run it in, and
-would otherwise choose the contract of your next run. `tego compile <name>` prints which file and registry answered;
+would otherwise choose the contract of your next run. `tego rules check <name>` prints which file and registry answered;
 every run records the file in `run_start.contract_source`.
 A refusal names its fix: `agent-not-found` (the files to create, the names there are), `agent-ambiguous` (both
 registries hold the name, or the project holds it twice: give the path of the one you mean; or a file in the
@@ -70,7 +70,7 @@ both from a release (VERSIONING.md §5), and refuses a pair whose pin does not m
   | `control-mismatch` | the file's hash is not the pin: another build or release, or a changed file | install the pair from one release or one `make build` |
   | `control-untrusted` | a symbolic link, not a regular file, another user's file, a group- or world-writable one, one you may not execute, or one on a `noexec` mount | `chmod go-w`; `chmod a+x` if it is meant to run; install on a mount that allows exec; or reinstall the file |
   | `control-as-root` | `tego <noun>` under sudo, or `tego-control` at euid 0 or with a capability | run it as yourself; `tego-control` never runs as root |
-  | `memfd-noexec` | the kernel refuses an executable memfd: `vm.memfd_noexec=2`, or a security module's policy | `cat /proc/sys/vm/memfd_noexec` shows the setting as any user (`tego doctor` reads it only as root); as root, `sysctl vm.memfd_noexec=1` (or 0) |
+  | `memfd-noexec` | the kernel refuses an executable memfd: `vm.memfd_noexec=2`, or a security module's policy | `cat /proc/sys/vm/memfd_noexec` shows the setting as any user (`tego machine check` reads it only as root); as root, `sysctl vm.memfd_noexec=1` (or 0) |
   | `not-built` | `tego-control <noun>` for a service this build does not have yet (help names these on its "planned, not in this build" line, never as commands) | use `tego status`, `tego events`, `tego approve` and `tego deny` |
 
 - **Process names.** A handed-off tego-control runs from a sealed memfd: `/proc/<pid>/exe` reads
@@ -131,7 +131,7 @@ A full-screen agent (Codex, Claude Code) that is killed or crashes leaves nothin
 and the shell does not repair them either, because its job, tego, exits normally with 128+n. So when the agent's
 stdin, stdout or stderr is a terminal, `run` saves the terminal's modes (termios) before the agent starts and puts them
 back once the agent's processes are gone, if they changed. When the agent died by a signal (its own crash, a limit,
-the stop_grace kill after Ctrl-C, SIGTERM, SIGHUP or `tego stop`) or left the terminal in raw mode, it also writes a
+the stop_grace kill after Ctrl-C, SIGTERM, SIGHUP or `tego session stop`) or left the terminal in raw mode, it also writes a
 short reset to that terminal, never to a pipe or a file: leave the alternate screen, show the cursor, turn the mouse,
 bracketed paste and focus reports off, and pop kitty keyboard flags. A tego running in the background, or whose
 terminal hung up, leaves it alone. A tego that is itself SIGKILLed repairs nothing: the shell then restores the modes
@@ -178,7 +178,7 @@ when you see them so that a retrying agent is not held again. When nobody may be
 refuse_always` does the second for you: an ask that times out also refuses the same operation, rule and target at once
 for the rest of the run (`by: standing:<ask_id>` of the timed-out ask, reason `ask-timeout`), so an agent that retries
 is held once, not once per try (the default, `refuse`, holds every retry for the whole timeout). It is a refusal no
-person can lift during the run, and `tego compile` prints it on the `ask` line. A run keeps at most 256 such refusals,
+person can lift during the run, and `tego rules check` prints it on the `ask` line. A run keeps at most 256 such refusals,
 apart from the 256 standing answers people give, so an agent asking about many paths nobody answers never uses up your
 `--always`; past 256 a timeout refuses once again.
 
@@ -200,7 +200,7 @@ refusal are. A read gate (`fs.read matches`), an `fs.ask_read` entry or `reason.
 every read-open answered by the supervisor, so under `off` a read is activity then, and under `summary` a read gate
 gives each read a line. Otherwise an agent
 that does nothing but read for `stall_after` (a long scan of a repository, say) is ended as stalled, and
-`tego compile` and `tego run` warn `[stall-reads-unseen]` (a `tego run --observe` too, and `tego run --record`
+`tego rules check` and `tego run` warn `[stall-reads-unseen]` (a `tego run --observe` too, and `tego run --record`
 is what the warning reads, not the contract's `record:`). Choose `record: full`, which records every read (and costs
 the disk that saves), a root tier (not an `--observe` run, which uses tier `landlock`'s filter whatever tier you pin),
 or a `stall_after` longer than the agent's longest stretch of reading. At a root tier under `record: off` each allowed
@@ -235,7 +235,7 @@ excepted, so give it a credential through its environment and its state in the p
 `ANTHROPIC_API_KEY`, or with a Pro, Max, Team or Enterprise subscription run `claude setup-token` once and pass the
 token it prints as `CLAUDE_CODE_OAUTH_TOKEN`, and set `CLAUDE_CONFIG_DIR` to a project directory
 (`examples/agents/claude-code.yaml`); a plain `claude` under tego otherwise starts as not logged in. For `codex exec`,
-pass `CODEX_API_KEY`. `tego compile` warns `secret-env` when a contract with no `env.pass` hands the agent variables
+pass `CODEX_API_KEY`. `tego rules check` warns `secret-env` when a contract with no `env.pass` hands the agent variables
 whose names look like credentials; add `env.pass` to choose what passes. A contract that wrote the harness's home
 state directly no longer works as it did: `fs.write: ["~/.claude.json"]` is now the error `contradiction`, and
 `fs.write: ["~/.claude/"]` leaves the login file to the held reads at tier landlock (ADR 0069), with a warning, and a
@@ -262,7 +262,7 @@ control socket in its `CODEX_HOME`, and a server an earlier, ungoverned session 
 outside the run. Start the agent so that it serves itself (Codex: `--no-daemon`), or declare the socket with
 `net.allow: ["unix:<path>"]` to reach it on purpose, knowing what the program behind it can do. A line `rule:
 unix-origin-unread` means tego cannot tell whose socket it is and refuses: the kernel's socket diagnostics for
-`AF_UNIX` (`CONFIG_UNIX_DIAG`, the `unix_diag` module) are missing (`tego doctor` says so on its unix sockets row,
+`AF_UNIX` (`CONFIG_UNIX_DIAG`, the `unix_diag` module) are missing (`tego machine check` says so on its unix sockets row,
 and the run warns at start), the socket's file has an inode number wider than 32 bits (XFS `inode64` on a large
 filesystem, tmpfs mounted `inode64`), or the run holds more than 256 unix sockets on which it called `bind` without
 the bind taking (tego asks the kernel about at most that many per syscall). On btrfs or overlayfs, where two
@@ -371,9 +371,9 @@ source=forwarder`, and no address but the forwarder's loopback listener allowed.
 5. **Do not list `/proc/self/exe` in `exec.allow`, and do not deny `~/.codex` as a whole.** Codex starts itself as
    `/proc/self/exe --codex-run-as-process-setup` before every command, and `apply_patch` as a shell command is a
    symlink to it: the `command` entry covers both. When this ran, a `/proc/self/exe` entry compiled to Tego's own
-   executable (a contract with only that entry let the agent run `tego`), and `tego learn` proposed it; since
+   executable (a contract with only that entry let the agent run `tego`), and `tego rules learn` proposed it; since
    2026-10-16 `compile` refuses an entry that is or leads through a `/proc` path (`exec-proc`, agent-contract.md
-   R8a), and `tego learn` lists it as observed, not allowed (the learn section below). Codex's installation is
+   R8a), and `tego rules learn` lists it as observed, not allowed (the learn section below). Codex's installation is
    `~/.codex/packages`, next to `auth.json`, its history and its sessions, so `fs.deny_read` names the files that
    exist, not the directory.
 6. **`net.dns.mode: off` was a record, not a block, for some lookups at tier `landlock` when this ran.** A lookup sent
@@ -393,7 +393,7 @@ source=forwarder`, and no address but the forwarder's loopback listener allowed.
    grant that covers `held/` decides before the `fs.ask` for it does), and test/poc/interactive-codex/codex-real-forwarder.yaml and
    codex-real-direct.yaml are two more, compiled and not run, and wider: no `fs.ask` (no `held/` gate), a write
    grant of `./`, and `git`, `ls` and `mkdir` allowed.
-9. **`tego learn` over a record-only run** of the same session proposed a contract that holds what Codex did and
+9. **`tego rules learn` over a record-only run** of the same session proposed a contract that holds what Codex did and
    flagged the D-Bus session bus as observed, not allowed. When this ran, two kinds of entry in it needed review by
    hand: `/proc/self/exe` (item 5) and two programs that do not exist (`/usr/sbin/cat`, `/usr/sbin/lsb_release`, which
    a failed search of `PATH` left), so it did not compile as proposed. Since 2026-10-16 learn lists both kinds as
@@ -480,7 +480,7 @@ given>`, its `alternate_dev` and `alternate_ino`, and `by` naming you; the open 
 with `authority: human`, naming the file delivered, with `alternate_for: <the requested file>` for an alternate. Read
 them with `tego events <run>`, which writes such an answer as `alternate <file> (not the file asked for) by uid:...`.
 `tego measure` counts them as `alternates`, `tego drift` in the rule's `ALTERNATE` column (never as an allow of the
-rule), and `tego learn` proposes nothing from them.
+rule), and `tego rules learn` proposes nothing from them.
 
 Verified 2026-10-06 on the test machine (Linux 6.17, Landlock ABI 7, unprivileged): `internal/runtime`'s
 `TestIntegrationAskRead*` and `TestIntegrationAskWriteAlternateWritesIntoTheStandIn` run the real binary on a real
@@ -488,12 +488,12 @@ contract and answer from separate `tego` processes (alternate, approve, deny, ti
 with `--always`; `tego run --observe` of such a contract is refused, exit 125). The same five tests pass as root in a
 KVM guest on the test machine's kernel (`test/vm/root-suites.sh`, the agent dropped to the invoking user).
 
-## Learning a first contract from a run (`tego learn`, 2026-10-06)
+## Learning a first contract from a run (`tego rules learn`, 2026-10-06)
 
-`tego learn <run> [--save <name> | --out <file>] [--allow-host <host>[:<port>]]... [--reads on|off] [--workspace <dir>]` (FEATURES C9, E65) reads a finished run's ledger, an observe-only
+`tego rules learn <run> [--save <name> | --out <file>] [--allow-host <host>[:<port>]]... [--reads on|off] [--workspace <dir>]` (FEATURES C9, E65) reads a finished run's ledger, an observe-only
 `tego watch -- <agent>` run for instance, and prints a boundary contract PROPOSED from what the run did: it allows that
 and no more. It is deterministic over the record and calls no model. It only ever proposes: you read it, you edit it,
-`tego compile` it, and only then run the agent under it (`tego watch --boundary <file> -- <agent>`). Without `--out`
+`tego rules check` it, and only then run the agent under it (`tego watch --boundary <file> -- <agent>`). Without `--out`
 the proposal is printed; `--out <file>` writes a new file, mode 0600, and refuses to replace one (exit 1 `[exists]`).
 Keep the file outside the agent's workspace: tego refuses a contract the agent could rewrite, and `learn` warns when
 `--out` is inside one of the proposal's own `fs.write` entries.
@@ -513,7 +513,7 @@ project lead's decision):* `--save` writes `reason: {reads: on}` by default, so 
 the contract refused; one stderr line after the save says what it costs (each read open about 17 µs more, the offline
 Claude Code workload 19 % slower), and `--reads off` leaves it out. The printed proposal and `--out` keep the
 contract's default unless `--reads on` is given, and a contract already saved does not change. The `next:` line of
-`tego learn <run>` repeats `--workspace` (as a full path), each `--allow-host` and `--reads` when they were given, and
+`tego rules learn <run>` repeats `--workspace` (as a full path), each `--allow-host` and `--reads` when they were given, and
 says that the saved contract records refused reads, so its `--save` writes the proposal printed with that one
 `reason:` block added; after `--out <file>` it names a file with no `/` as `./<file>`, which `tego run` reads as a
 path, never as an agent's name.
@@ -551,7 +551,7 @@ even when the answer holds it. With `--allow-host`, a machine config that does n
 (`[config-untrusted]`): those ranges are then unknown. An address, a pattern, a URL, port 0 or a ninth name is a usage
 error (2).
 When the proposal still allows addresses and learn's leak rule found no destination the run's secrets may have gone
-to (`learn.Proposal.SuggestHosts`), the `next:` line after `tego watch` and after `tego learn <run>`, and `tego
+to (`learn.Proposal.SuggestHosts`), the `next:` line after `tego watch` and after `tego rules learn <run>`, and `tego
 setup`'s learn step, add `--allow-host <host>`: the host is in angle brackets because only you know it. For a run
 whose secrets may have gone somewhere they name the plain form: a name whose answer holds an address learn withheld
 is refused, and a suggestion never asks you to name it (*2026-11-11*, a guest walk of ADR 0142's amendment). When learn refuses a name
@@ -577,9 +577,9 @@ not output: `TEGO_HINTS=off` turns it off, `TEGO_HINTS=on` turns it on where std
 printed with `--json`, `--no-summary`, inside a governed run or after a usage or tego error. The `reads:` line after a
 run's summary is a fact, printed whatever `TEGO_HINTS` says: it is decided from the run's `run_start.reads_notified`
 alone and says when a read the contract refused left no line (`reason-off`, `no-supervisor`) or when the record does
-not say (a record older than the field). `tego receipt --json` carries that field as `reads_notified`. `tego setup`
+not say (a record older than the field). `tego session show --json` carries that field as `reads_notified`. `tego setup`
 (2026-11-11, ADR 0142, `docs/user/setup.md`) lists the six steps from install to an enforced run, each with the fact that
-decided it, and names the next one; it stores its machine check in `~/.tego/state/check.json`, which `tego doctor`
+decided it, and names the next one; it stores its machine check in `~/.tego/state/check.json`, which `tego machine check`
 never writes.
 
 What it proposes, and what it never does:
@@ -593,11 +593,11 @@ What it proposes, and what it never does:
   `supervisor.exec_missing` counts them), except at tiers cgroup and bpflsm for a directory whose search permission
   the supervisor cannot read for the agent (on NFS, FUSE, ZFS or another filesystem outside supervisor R16b's closed
   list, or behind an access ACL), whose misses keep their lines; of the rest, only the one that ran is listed: the
-  attempt whose path is a program on this machine (a regular file with an execute bit, links followed, as `tego compile` checks a path
+  attempt whose path is a program on this machine (a regular file with an execute bit, links followed, as `tego rules check` checks a path
   entry), not the last one recorded, since a record taken before 2026-10-16 could hold a search's attempts out of order
   (`/usr/sbin/bash` after the `/usr/bin/bash` that ran) and has a line for each miss. A program that is not on this
   machine when you learn (a search's miss in such a record, a file the run removed) and a `/proc` path
-  (`/proc/self/exe`, which `tego compile` refuses, `exec-proc`; a program that re-executes itself that way is admitted
+  (`/proc/self/exe`, which `tego rules check` refuses, `exec-proc`; a program that re-executes itself that way is admitted
   by its own entry) are listed, not allowed, so the proposal compiles. A program that makes a mount namespace (`bwrap`,
   `unshare`, `podman`, `runc`, `crun`, `buildah`) is listed, not allowed: it fails inside a Landlock domain, and an
   agent's own sandbox probes it at start-up. *Amended 2026-10-16.*
@@ -647,7 +647,7 @@ What it proposes, and what it never does:
 
 The proposal is only as good as the run was representative, and everything the agent did while it was watched is in
 it: read every entry. It is built from the agent's own recorded behaviour, so a name with a control character or a
-pattern in it is reported, never copied into a list. The file is YAML `tego compile` reads; paths are as recorded,
+pattern in it is reported, never copied into a list. The file is YAML `tego rules check` reads; paths are as recorded,
 and tego follows symlinks when it compiles. Verified 2026-10-06 against the real Claude Code 2.1.290 and Codex 0.159.2
 start-up ledgers (internal/check/learn/testdata), and by running a script under its own proposal at tier 1: nothing
 refused.
@@ -663,9 +663,9 @@ learn <run> --out <file>` drafts a contract from it. The draft allows what the r
 have done what you do not want (the custom agent's draft allowed its `git push` and its connection to a port nobody
 should reach, because the record-only run made both): read every entry and delete the ones you did not mean to grant.
 It can also list a `PATH`-search miss as a program that ran (`/usr/sbin/bash`, which does not exist; in five of eight
-drafts here), which `tego compile` rejects as `[path-missing]`: delete the line. It never writes `models`, `capture`,
+drafts here), which `tego rules check` rejects as `[path-missing]`: delete the line. It never writes `models`, `capture`,
 `limits`, `ask`, `record` or `env`, and it adds nothing to `fs.deny_read` beyond the built-in list, so the secrets in
-reach are yours to name. Then `tego compile <contract>` and `tego compile <contract> --test <table>` (one row per
+reach are yours to name. Then `tego rules check <contract>` and `tego rules check <contract> --test <table>` (one row per
 action the boundary must refuse or allow; nothing runs): put both in the launch script and refuse to start the night
 if either fails.
 
@@ -674,7 +674,7 @@ under `models:`, set `capture: forwarder`, leave the model host out of `net.allo
 provider's base-URL variable (`ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`): tego then records every call (`ssl_request`,
 `ssl_response`, a `decision` per tool call the model asks for) and counts them, and a connection straight to the
 declared host is refused, so the agent cannot spend unseen, only fail. A budget the contract declares with nothing to
-count it is refused: `tego compile` reports it `[budget-unmetered]`, and `tego run` exits 125 `[budget-unmetered]`
+count it is refused: `tego rules check` reports it `[budget-unmetered]`, and `tego run` exits 125 `[budget-unmetered]`
 before the agent starts, naming the cause and the fix (see "Model budgets need something to count them" below).
 `cost_usd` also needs the machine config's price table (`prices:`) with at least one model priced; without one a
 declared `cost_usd` budget is refused the same way, and a model the table does not name is charged at the dearest
@@ -703,7 +703,7 @@ not an event: an agent that is busy but only reads (a long search, a compile tha
 stalled after `stall_after` (measured: a reader was ended at 6.0 s of `stall_after: 5s` under summary, and ran its 14
 s to the end under full). Use `record: full`, or a `stall_after` longer than twice the longest quiet phase. And a
 limit set too low is a surprise at three in the morning: the agent's own peaks are in `tego status` (`resources:`),
-which `tego learn` turns into a suggestion (twice the peak for memory, four times for pids, three times how long it
+which `tego rules learn` turns into a suggestion (twice the peak for memory, four times for pids, three times how long it
 ran for wall).
 
 **Decide in the contract; keep `ask` for the few that need a person.** A write under an `fs.ask` directory holds the
@@ -742,7 +742,7 @@ so its time is the distance from the end to the answer, not the ledger's length.
 - the launcher is killed (`kill -9`): the agent dies with it, the run reads `lost` until the next `tego run`, `stop`
   or `gc` sweeps it and ends it `orphaned`, exit 125; its ledger verifies, and a `gap what=record why=launcher-lost`
   says its last lines may be missing, as lines not yet on disk or still in the launcher's queue go with it;
-- you stop it: `tego stop <run>` (or `tego stop --agent <name>`, every live run of that agent) from another terminal
+- you stop it: `tego session stop <run>` (or `tego session stop --agent <name>`, every live run of that agent) from another terminal
   ends it at once, `run_end reason=stopped`, exit 143;
 - the agent exits while something it started still runs (a `setsid` child, a disowned `npm run dev &`): the run ends
   `stop_grace` after the agent's exit, the rest killed and named in run_end's `detail`, with the agent's own exit
@@ -760,13 +760,13 @@ live separately under `user@UID.service/tego.slice`, which then inherits those c
 delegating cpu to user@ alone did not activate it for that slice; the service request also matters (GAPS B15).
 Its exit-status keys follow `tego run`'s exit
 codes, checked against `pkg/spec/identity` by `TestUnitTemplateExitStatuses`: a crash, a limit (124) or a kill by memory or pids (137) is
-restarted (`Restart=on-failure`, 10 s apart, at most 12 times in 30 minutes); `tego stop --agent retriever` ends the run
+restarted (`Restart=on-failure`, 10 s apart, at most 12 times in 30 minutes); `tego session stop --agent retriever` ends the run
 143, which `RestartPreventExitStatus=143 125` keeps from restarting and `SuccessExitStatus=143` leaves inactive, not
 failed; `systemctl --user stop` sends SIGTERM to tego alone (`KillMode=mixed`), which forwards it and keeps
 `stop_grace`, so an agent that dies of it is 143 too; a run tego refused to start or could not record (125) is not
 retried. Checked by hand on the user manager with these keys: a stop by name left the unit `inactive`,
 `Result=success`, with no restart; `systemctl --user stop` the same; an agent exiting 7 with two sleeps left behind was
-restarted every `stop_grace` + `RestartSec`. The template now uses `tego run --service`: an intentional `tego stop` exits 143 even when
+restarted every `stop_grace` + `RestartSec`. The template now uses `tego run --service`: an intentional `tego session stop` exits 143 even when
 `stop_grace` expires and the agent is killed. Its ledger still records exit 137 and escalation; a memory or pids kill
 still exits 137 and restarts. Without `--service`, the normal exit codes remain. A `systemctl stop` is an explicit
 stop job and systemd does not restart it. A failed record or chain anchor still exits 125. The user manager runs only while you are logged in unless linger is on (`loginctl
@@ -776,11 +776,11 @@ enable-linger $USER`).
 `tego-agent-restart@.service` at midnight, which runs `systemctl --user try-restart tego-agent@<name>`: the agent's unit
 is stopped as `systemctl --user stop` stops it (SIGTERM to tego, which forwards it and keeps `stop_grace`) and started
 again, so the agent goes on as a new run with a new ledger, and its budgets and standing answers start over. So do its
-live controls: the new run starts from its contract alone, so a `tego pause` is undone and every live block (`tego
+live controls: the new run starts from its contract alone, so a `tego session pause` is undone and every live block (`tego
 block`, the dashboard's Block now) is dropped, and what was refused live is allowed again wherever the contract allows
 it. A block that must outlast the restart belongs in the contract; with a person steering the run live, leave the timer
 off.
-`try-restart` leaves an agent that is not running as it is, so a `tego stop --agent` stays a stop and a failed unit
+`try-restart` leaves an agent that is not running as it is, so a `tego session stop --agent` stays a stop and a failed unit
 stays failed; a restart missed while the user manager was not running is not made up when it starts. Enable it per
 agent, `systemctl --user enable --now tego-agent-restart@retriever.timer`; to move it, a drop-in empties `OnCalendar=`
 and sets another (a second `OnCalendar=` alone adds a restart). Checked on the user manager (systemd 257) with the
@@ -843,7 +843,7 @@ ledger root it removes by may be set in that layer; it gives a layer's mode back
 goes, and exits 0 at `run_end`; a launcher killed mid-run is exit 125 `[run-lost]` rather than a wait that never
 ends.
 
-**In the morning.** `tego receipt <run>` (what it did on one screen: files written, refusals by rule, asks, tokens and
+**In the morning.** `tego session show <run>` (what it did on one screen: files written, refusals by rule, asks, tokens and
 cost, and what the ledger could not cover, which `--json` names by a code a script can match, such as `capture-off`,
 `missed-actions` or `rules-uncertain`, which says a program the run's rules rely on was skipped or its skip counter
 could not be read (ADR 0148);
@@ -858,8 +858,8 @@ binary a loader ran, listed by the exec's own path), each with whether it was al
 `tego measure <run>` (steps, tokens, estimated cost, wall), `tego events <run>
 --verify`. In these and every other command that takes a run (`stop`, `ask`, `approve`, `deny`, `block`, `pause` and
 the rest), `<run>` can be four or more characters from the end of the run id that no other run under the ledger root
-has (`tego receipt 28t5cy`), or its start up to four or more characters past `r-<host8>-`, which every run of this
-machine begins with (`tego receipt r-1a2b3c4d-0dmk`). Like a whole id, they are never read as a directory of that
+has (`tego session show 28t5cy`), or its start up to four or more characters past `r-<host8>-`, which every run of this
+machine begins with (`tego session show r-1a2b3c4d-0dmk`). Like a whole id, they are never read as a directory of that
 name in the current directory; `./28t5cy` names that directory, and when there is one, a command that also takes a
 run directory prints a note on stderr naming both. A refused `git push` is one refusal per directory of `PATH` that
 the agent's own search tried (133 for 7 pushes here), and an exec by name is one event per directory tried: count
@@ -886,10 +886,10 @@ not record refused reads", and with refusals it adds that a read it refused is n
 
 **Keeping a receipt and checking it later.** `--verify` checks a run against `~/.tego/chain.log`, so it works only
 on the machine and account that ran it; in CI that file goes with the runner. To check a run anywhere later, keep two
-files together: `tego receipt <run> --json > receipt.json`, and the run's folder (its `events.jsonl` is enough). The
+files together: `tego session show <run> --json > receipt.json`, and the run's folder (its `events.jsonl` is enough). The
 JSON receipt carries a `binding` block: the run, its line count, its last line's id (`head`), whether it ended, and
 the size and sha256 of `events.jsonl` (what `sha256sum` prints), plus the tego that made it (`receipt_by`) and its
-`limits`. Later, on any machine, `tego receipt --check receipt.json <run folder>` re-walks the record's hash chain to
+`limits`. Later, on any machine, `tego session show --check receipt.json <run folder>` re-walks the record's hash chain to
 the receipt's head, matches the line count, bytes and sha256, and computes the receipt again from the record to
 compare the whole of it, every key and value. It reads no chain.log. Exit 0 is a match (`--json` says `match`, or `match-unended` when the
 record has no `run_end`, which a CI step that wants a whole run refuses), 1 a mismatch naming the check and the field,
@@ -905,7 +905,7 @@ its coverage gap, `coverage.complete`, the stall and the refusals per minute are
 like the rest, so `coverage.complete` can follow from a taken number: a receipt whose only gap was its unpriced
 responses still matches with that count set to 0 and its cost text, gap and `coverage.complete` changed to follow, and
 the check names both numbers as taken. Numbers are compared as written, so keep
-the file as `tego receipt --json` wrote it: a tool that rewrites `1.5` as `1.50` makes a mismatch. Binding costs `tego receipt --json` one more check of every line: on
+the file as `tego session show --json` wrote it: a tool that rewrites `1.5` as `1.50` makes a mismatch. Binding costs `tego session show --json` one more check of every line: on
 a 20,002-line record it took 2.5 to 3 times as long as the receipt alone (0.6 s against 0.2 s). What a match does not
 show: that the record is complete, that the machine or the person who ran it was honest, who ran it, when, or that it
 is the run you expected. Anyone who can write both files can make a pair that matches; nothing is signed.
@@ -959,9 +959,9 @@ agent's own process tree, and nothing else, moves into a fresh cgroup,
 `tego.slice/tego-<agent>.slice/adopt-<run id>.scope`, where tier 2's programs record from the kernel every program
 it starts, every file it opens and every connection it makes, into a normal run: `tego status|events|drift <run>`
 read it. The command prints whose process it is (real, effective and saved uid) and the run id, and holds the run until
-the agent's tree ends (run_end `exit`). Ctrl-C, SIGTERM, `tego stop <run>` or `tego adopt --release --pid <pid>`
+the agent's tree ends (run_end `exit`). Ctrl-C, SIGTERM, `tego session stop <run>` or `tego adopt --release --pid <pid>`
 **release** it: the tree goes back to the cgroup it came from and runs on, unrecorded (run_end `stopped`, naming who
-asked). `tego stop` and `--release` signal nothing: they leave a release request (`/run/tego/adopted/<run>.release`)
+asked). `tego session stop` and `--release` signal nothing: they leave a release request (`/run/tego/adopted/<run>.release`)
 that this adoption alone answers, so a guard's other adoptions, and the guard, run on. If root moves the tree out by
 hand, the run ends `stopped` and says so. A process the release finds no cgroup to put back in (the one it came from
 and every one above it gone or refusing it) stays in the scope, released and unrecorded, counted by `gap
@@ -970,7 +970,7 @@ reports it governed by the ended run and the guard refuses it under `governed`, 
 <pid>` moves it out once a cgroup takes it, then removes both. `--release --pid` acts only on a process in an adoption's
 scope at its own place (`/sys/fs/cgroup/tego.slice/tego-<agent>.slice/adopt-<run>.scope`) that the run's record
 names: a cgroup a user made with an adoption's name in their own subtree is refused, `[adopt-refused]`. A release request answered so is not a failure of the
-adopter's: `tego stop` and `--release` say at once that the run ended and how many processes stay in the scope, and
+adopter's: `tego session stop` and `--release` say at once that the run ended and how many processes stay in the scope, and
 exit 1, rather than waiting 30 s for a record that stays. The same holds when an adoption fails after the move and
 before it records (its tier's Prepare, or a boundary on a box with no plane mode): what moved goes back, and what no
 cgroup takes stays in the scope with the record, which the error (`tego adopt`'s, the guard's `adoption_failed`
@@ -1025,7 +1025,7 @@ in every user namespace: mount APIs and mount-namespace creation or installation
 of that capability. Creating a user namespace alone may still succeed but does not permit mounts. This starts
 at the arm; earlier changes and changes by processes outside the run remain outside the guarantee. Each plane
 refusal is a ledger line with `mechanism: plane` (rule `mount-topology` for this capability). It needs a plane mode on this
-machine (`sudo tego doctor`: `decision plane: fmod_ret` or `lsm`); the fanotify fallback cannot refuse a write, so
+machine (`sudo tego machine check`: `decision plane: fmod_ret` or `lsm`); the fanotify fallback cannot refuse a write, so
 there the adoption is refused. Every rule that cannot be added to a running process is refused before anything moves,
 each one named: a `net:` section (a socket made before the adoption would not be governed, and the record could not
 tell which), `fs.ask` and `ask`, `env`, `models` and `capture`, the limits an adoption cannot hold (`limits.memory`,
@@ -1186,7 +1186,7 @@ machine `capture:` ceiling of `off`, no `models:` endpoint where the run capture
 unprivileged run, tier `landlock`, and every `auto` contract under `record: off`), `record: off` under a contract
 that pins `capture: uprobe`, or, for `cost_usd`, no price table at the
 machine config's `prices:` path (or a table there that lists no model, or prices none: every entry lacks an input or
-an output price). `tego compile` reports the same contract
+an output price). `tego rules check` reports the same contract
 with a `[budget-unmetered]` warning that says the run is refused. Until 2026-10-16 such a run went ahead with only an `[unenforced]` compile warning and a
 `budget-unmetered` gap, so an unattended night ran with a limit that did nothing. A budget a machine `limits:` ceiling
 alone imposes is not refused: the run records `gap what=record why=budget-unmetered binary=<budget>`
@@ -1240,11 +1240,11 @@ inference) is charged at the table's dearest rate for each counter, twice that f
 `gap why=unpriced-model` once per model (limits-check-doctor-cli.md R2). A table whose prices are below the provider's
 lets a run spend past its budget; one above ends it early. The table follows the machine config's trust rule: owned by
 you or root, not group- or other-writable, in a directory that is not either, and with one name (no hard link);
-`tego compile` warns about one it does not read, and a run of a contract that declares `cost_usd` is then refused.
+`tego rules check` warns about one it does not read, and a run of a contract that declares `cost_usd` is then refused.
 
 ## Crash and cleanup
 - The supervisor holds `runs/<id>/lock` with `flock(LOCK_EX)` for the run; the kernel releases it when the holder
-  dies, so "live" is "lock held", with no pid file and no state file. `tego run`, `tego stop` and `tego gc` sweep:
+  dies, so "live" is "lock held", with no pid file and no state file. `tego run`, `tego session stop` and `tego gc` sweep:
   for a run with `run_start` and no `run_end` whose lock is free, take the lock, write `1` to `cgroup.kill` if
   `cgroup.events` says populated, append `run_end reason=orphaned`, remove the cgroup directory and
   `$XDG_RUNTIME_DIR/tego/<run>/`. `tego status` never writes: it shows `lost`.
@@ -1258,11 +1258,11 @@ you or root, not group- or other-writable, in a directory that is not either, an
   and starts the build's timer (`tego __bpf-linger`, one per build), which removes the build once it has been idle
   for `bpf.linger` (default 5m, `/etc/tego/config.yaml` only), no launcher holds its lock, and its run set names no
   live cgroup. A timer that was killed is started again by the next run of any build once its build is past the
-  linger (the timer then removes it, not the run), and by any root `tego stop`. A root `tego gc` sweeps the same
+  linger (the timer then removes it, not the run), and by any root `tego session stop`. A root `tego gc` sweeps the same
   way; `tego gc --builds` removes every idle build at once. A removal returns only once the kernel has released the
   build's links (it waits at most 30 s for a program something else still holds), so `gc --builds` and a
   `bpf.linger: 0` run's exit take the kernel's teardown, a few seconds for a build with a plane, and the next run's
-  load does not wait for it. A lock cannot go stale. `sudo tego doctor` lists every build (`--json`'s `builds`):
+  load does not wait for it. A lock cannot go stale. `sudo tego machine check` lists every build (`--json`'s `builds`):
   whether a run holds it, how long it has been idle, whether its timer runs (`timer`, `timer_pid`) and so when it
   goes, the memory its programs and maps charge (`memlock_bytes`, the fdinfo `memlock` bpftool shows, each object
   once; `memlock_unreported` counts what the kernel did not report, shown as `n/a`, never 0; the run rings are
@@ -1297,14 +1297,14 @@ you or root, not group- or other-writable, in a directory that is not either, an
   with Ctrl-C in its terminal or a signal to its launcher.
 - **Another manager's cgroup programs.** A program attached to a cgroup at or above the runs' without
   `BPF_F_ALLOW_MULTI` (`bpftool cgroup attach`'s default) refuses every run's program of that attach type: a root run
-  stops before the agent starts (exit 125, `ErrCgroupAttachConflict`), and `sudo tego doctor` fails the same program's
+  stops before the agent starts (exit 125, `ErrCgroupAttachConflict`), and `sudo tego machine check` fails the same program's
   row first. Both name the cause and `bpftool cgroup tree`, which shows the holder; detach it, or attach it again with
   `BPF_F_ALLOW_MULTI`. systemd attaches its own programs that way, so they do not conflict.
 
 ## Tier 3 and the decision plane
 Tier 3 (`bpflsm`) is the kernel decision plane in LSM mode, on top of tier 2 (`docs/p0/enforce-plane.md`, ADR 0024).
 The same programs also load as `fmod_ret` hooks, which is how tier 2 decides opens, execs and file mutations in the
-kernel where `bpf` is not an active LSM. `sudo tego doctor` says which it is:
+kernel where `bpf` is not an active LSM. `sudo tego machine check` says which it is:
 `decision plane: fmod_ret (tier 2 decides opens in the kernel; tier 3 needs bpf in lsm=); build 1a2b3c4d, ...`. The
 build is the first 8 characters of the binary's object hash, the name of its pin directory. Where `bpf` is already
 in `lsm=`, fmod_ret is the pin's doing (`bpf.plane pins fmod_ret`) or LSM mode's failed probe (`tier 3 needs LSM mode
@@ -1340,15 +1340,15 @@ to pass, see the lsm mode line`, whose detail and fix say why); editing `lsm=` f
   while a live run's row names it.
 - **Row caps.** A run's contract becomes rows the kernel walks: at most 4096 file rows (one per keyed inode) and 1024
   exec-map entries (the exec entries, the bare names and one policy row) a run. A contract over either cap is never
-  truncated, since a row left out is a rule the kernel does not apply: `tego compile` reports `[unenforced]` naming
+  truncated, since a row left out is a rule the kernel does not apply: `tego rules check` reports `[unenforced]` naming
   `bpflsm`, as an error when the contract compiled to tier 3 and as a warning when an `auto` run may land there, and
   the run is refused at Prepare. The fix is narrower `fs`, `deny_read` and `exec.allow` entries (one entry per directory
   rather than per file), or `tier: cgroup`. The built-in `.env` scan can name up to 50,000 files. Since 2026-10-27
   (ADR 0043) a table past 1,024 keyed paths drops the per-file rows of covered files beneath a write entry, which its
-  name entries refuse by name (`tego compile` prints the compaction line), so a project with 4,500 such `.env` files
+  name entries refuse by name (`tego rules check` prints the compaction line), so a project with 4,500 such `.env` files
   stays at tier bpflsm; files that are not beneath a write entry, or have a second link, keep their rows. Name entries
   have their own caps a run: 64 entries and 64 name rows, 8 scope directories, 4 prefix lengths and 8 leads (a name's
-  first eight bytes); an entry past one keeps its compile-time expansion only, which `tego compile` reports
+  first eight bytes); an entry past one keeps its compile-time expansion only, which `tego rules check` reports
   `[unenforced]`, and the run's `fs.deny_read.created_later` is then false.
 - **Lockdown.** Under `lockdown=confidentiality` the kernel refuses the probe-read build, so only the build that reads
   through `bpf_rdonly_cast` loads: Ubuntu 24.04 and later, Debian, Fedora and RHEL 9.8 have it and load;
@@ -1378,7 +1378,7 @@ charges its size plus its page array in memlock: about 2.1 MB for a 2 MiB ring (
 so about 4.2 MB for a run that captures. `bpf.ring_budget` (default 256 MiB) caps what every live ring of every build
 on the host charges together, about 60 capturing runs at the default size. A run whose record ring would pass it is
 refused, exit 125, naming the budget; one whose capture ring would pass it runs without capture, and is refused
-`[capture-unavailable]` when it has a `tokens`, `cost_usd` or `repeats` budget. `sudo tego doctor` shows, in its
+`[capture-unavailable]` when it has a `tokens`, `cost_usd` or `repeats` budget. `sudo tego machine check` shows, in its
 tier-2 builds section, how many run rings there are and what they charge against the budget, per build and in all.
 Raise `bpf.ring_budget` for more concurrent runs; raise `record.ringbuf` only if runs report `ringbuf-full` or
 `ring-buffer-drop` gaps (the reader drains every 50 ms and is woken at an eighth full). A run that captures with uprobes needs
@@ -1406,7 +1406,7 @@ the rule. Since the same day an `exec.deny` or `exec.ask` entry also meets the n
 by on such a file (`xrm`, `myutils rm`), even for an exec an `exec.allow` entry admits (ADR 0048's amendment of
 2026-11-11); an `exec.allow` entry does not read them.
 
-`tego compile` notes each such file once, at the first entry that leads to it, with the entries that share it and
+`tego rules check` notes each such file once, at the first entry that leads to it, with the entries that share it and
 its link count:
 
 ```
@@ -1418,7 +1418,7 @@ Where one of those entries names the file's dispatcher (`/usr/bin/coreutils`, `b
 names that file instead and says it runs the program `argv[0]` or `argv[1]` names at every tier.
 
 It is a note: it changes no rule and no exit code, and `tego run` prints it only with `-v`, since on such a host nearly
-every coreutils entry has one. The dashboard's contract check shows it as `tego compile` does. `tego doctor` prints a
+every coreutils entry has one. The dashboard's contract check shows it as `tego rules check` does. `tego machine check` prints a
 `multicall` line when the file behind `ls` has more than one link or is busybox, toybox or coreutils; it reads the
 file's link count and name and runs nothing. List a multi-call file only where every program it holds may run. Where
 the name must bound the program, run at tier cgroup or bpflsm, which needs root. `exec.deny` command rules read
@@ -1427,8 +1427,8 @@ the name must bound the program, run at tier cgroup or bpflsm, which needs root.
 ## Exec command rules
 `exec.deny`, `exec.ask` and words after a command in `exec.allow` name what a program is asked to do: a whole
 command, a subcommand, or an option set ([ADR 0048](adr/0048-exec-command-rules.md); the per-tool rows are in
-`docs/spec/exec-command-rows.md`). `tego compile` prints each entry's exact reading, the row that read it and what
-it also matches; `tego compile c.yaml --exec 'git -C . push'` shows how one command line is decided in every tier. `compile` is a
+`docs/spec/exec-command-rows.md`). `tego rules check` prints each entry's exact reading, the row that read it and what
+it also matches; `tego rules check c.yaml --exec 'git -C . push'` shows how one command line is decided in every tier. `compile` is a
 static preview: the run is authoritative and fails closed, so `compile` may print `allow` where the run refuses on a
 fact it does not read — a `#!` interpreter that is missing or unreadable, an execute-only image, a dynamic loader's
 program given by a bare name or reached through a symlink, a second `#!` stage, or the file-identity interpretation
@@ -1582,7 +1582,7 @@ What it costs and what it leaves:
 - Latency: a held open took 2–4× the copied path's median in the measurements (ADR 0041 §Performance, TARGET-MISS),
   which is why it is an opt-in. Only opens of a kind the gate can escalate are held.
 - The run's processes cannot make Landlock domains of their own (`landlock_*` answer `ENOSYS`): an agent that
-  sandboxes its tools with Landlock finds it unavailable. `tego compile` says so in its gate line.
+  sandboxes its tools with Landlock finds it unavailable. `tego rules check` says so in its gate line.
 - A deputy that cannot start fails nothing: the run warns `[held-unavailable]`, decides those opens on copied facts,
   and `run_start.best_effort` keeps the open cells (run_start's `capabilities` row `gate.fs_open_completion` is
   false).
@@ -1640,7 +1640,7 @@ fs:
   # reads: direct # never held: the nested target stays readable at tier landlock (warned, recorded)
 ```
 
-`tego compile` says which reads are held and why, and warns `[held-reads]` at each nested target; `run_start.fs_reads`
+`tego rules check` says which reads are held and why, and warns `[held-reads]` at each nested target; `run_start.fs_reads`
 records `held` or `direct` and why, and the capability rows `fs.deny_read.nested` and `fs.deny_read.created_later`
 are true only in a run that held them. A `.env`, `.env.<x>` (not the example files) or a name a `deny_read` glob covers
 that is made during a held run, by the agent or by anyone else, is refused by the name rule.
@@ -1713,7 +1713,7 @@ Set `env.set.TMPDIR` to the **absolute** path of the pre-created staging directo
 contract entries for that cwd, or use absolute paths. The contract directory covers staging, while cwd covers
 target. The matching directory exec grants preserve REFER rights for native modules; retain the programs your
 workload needs. No secret waiver or `deny_read: []` is involved. This is the arrangement tested offline with
-pip and pytest by KT4. `tego learn <run>` explains it after the built-in-name rename refusal and leaves refused
+pip and pytest by KT4. `tego rules learn <run>` explains it after the built-in-name rename refusal and leaves refused
 actions out of proposed allows. An alternative is to install under a name such as `site-packages`, within the
 existing protection at both ends.
 
@@ -1739,7 +1739,7 @@ and start it again, which lists the directories anew ; for a 24/7 agent, keep wh
 starts, or put the secret outside the trees the agent works in.
 
 Which directories froze is said under every record mode (2026-11-11), so a refusal that `record: summary` leaves no
-line for can still be explained. `tego compile` prints a `note` line naming them, and `tego run` prints the same note
+line for can still be explained. `tego rules check` prints a `note` line naming them, and `tego run` prints the same note
 on stderr before the agent runs:
 
 ```text
@@ -1747,7 +1747,7 @@ note: tego run: deny_read lists /, /home, /home/alice once, at launch: a file or
 ```
 
 The run's `run_start` records them as `deny_read_frozen` (`{"dirs": [...]}`; past 64 it names the 64 deepest and
-counts the shallower rest in `omitted`; `tego events <run> --json | head -1`), and `tego receipt` and the dashboard's
+counts the shallower rest in `omitted`; `tego events <run> --json | head -1`), and `tego session show` and the dashboard's
 Receipt tab name them under Coverage ("Frozen at launch"). The note is printed at the start of every run whose
 ruleset listed one, without `-v` too: it weakens no rule, but it tells a person before it happens that a name made there later will be unreadable. A record
 from a tego before this change has no such field. The root tiers install the same tier-1 ruleset and their
@@ -1772,7 +1772,7 @@ reason:
 **Cost, and why the default is off.** `test/bench/read-notify` measured 17 µs more per open (the median; 2 µs an
 open without it, a p99 of 60 µs against 3) and the offline Claude Code workload of `test/poc/interactive-claude` 19 %
 slower, past the 5 % ADR 0077 allows a default, at load below 2 on a 16-CPU host; two runs on the loaded box measured
-19 to 26 µs and 28 to 44 % (ADR 0077's table). `tego compile` prints a
+19 to 26 µs and 28 to 44 % (ADR 0077's table). `tego rules check` prints a
 `reason-reads-off` line with them and the opt-in, and every run's `run_start.reads_notified` says whether its reads were
 told to tego and why (`reason`, `reason-off`, `held`, `record-full`, `gate`, `ask-read`, `kernel`, `records-only`,
 `no-supervisor`). Turn it on for an interactive agent that should be told why a read failed; leave it off for a build
@@ -1816,7 +1816,7 @@ whole-file block. A tego older than this change cannot read a version 5 overlay:
 `tego block --list` and dashboard say the file is invalid ("damaged, or a newer Tego wrote it") and change nothing,
 so use the newer tego on that run. When a block refuses
 another name of its file, the refused line's rule names the blocked path and its `path` the one that ran; `tego run`'s
-summary, `tego receipt` and the dashboard's row say so: "/bin/sleep: refused, same program file as /bin/ls, which is
+summary, `tego session show` and the dashboard's row say so: "/bin/sleep: refused, same program file as /bin/ls, which is
 blocked". `tego block` also notes a bare name no folder of its own PATH holds (a
 typo, or a program not installed here) and an absolute path that is no file here now; either block still refuses
 the program if it appears. A `net` value is `host[:port]`, an IP, a unix socket path or `@name`; a `path` value is an absolute path and
@@ -1990,9 +1990,9 @@ and docs/user/live-modes.md.
   line page list the change under "Next run" and link to the run's fence.
 - A lift does not outlive its run: a new run starts with every fence entry refused.
 
-## Pause and resume a running run (`tego pause`, `tego resume`)
+## Pause and resume a running run (`tego session pause`, `tego session resume`)
 
-`tego pause <run>` freezes a running run where it stands; `tego resume <run>` lets it carry on. The dashboard's run
+`tego session pause <run>` freezes a running run where it stands; `tego session resume <run>` lets it carry on. The dashboard's run
 page has the same Pause and Resume beside Stop run. Both write the pause into the run's live-block file (the same
 file, lock and serials as `tego block`), and the run's launcher, which owns the run's cgroup, applies it within
 about half a second: it writes `cgroup.freeze` of the run's own `run-<id>.scope` (cgroup v2, kernel 5.2 or later;
@@ -2003,12 +2003,12 @@ run (a freeze needs no contract decision).
 
 While paused, the run's processes neither run nor handle signals. `limits.stall_after` does not count the pause;
 `limits.wall` keeps counting (keep demo pauses short: Codex's own model stream may time out after about 30 s of
-silence). `tego stop` on a paused run thaws it first, so it ends as quickly as a running one (`reason=stopped`, not a
+silence). `tego session stop` on a paused run thaws it first, so it ends as quickly as a running one (`reason=stopped`, not a
 stop_grace kill); a SIGKILL still ends a frozen process. A run that ends while paused is thawed as it ends.
 
 A run cannot be frozen while one of its requests waits for a person: the agent's thread waits inside the kernel for
 the answer, where the freezer cannot reach it. So answer the request first, then pause. The dashboard offers no Pause
-while a request waits, and says why. `tego pause` asked then gets `pause-failed` (the run keeps running), and the
+while a request waits, and says why. `tego session pause` asked then gets `pause-failed` (the run keeps running), and the
 launcher freezes the run as soon as the request is answered, unless a resume withdraws the pause first. A freeze
 that lands while a held read is in flight (the open deputy answering for the agent) is thawed and tried again at
 once, up to about nine times within a second. If the launcher still cannot freeze the run (a root-owned scope, a
@@ -2026,7 +2026,7 @@ ended (`[not-running]`). A same-uid process outside every run can still write th
 live-block file itself (ADR 0123).
 
 Only a run whose launcher reads a pause can be paused. Such a launcher makes an empty `live-control` file in the run
-directory once its live-block poll runs over a cgroup of the run's own; `tego pause`, `tego resume` and the dashboard
+directory once its live-block poll runs over a cgroup of the run's own; `tego session pause`, `tego session resume` and the dashboard
 look for it. A run without it (one an older Tego started, an adopted run, or one with no cgroup of its own) is refused
 (`[no-pause]`, exit 1) and the dashboard offers no Pause on it. This matters beyond the pause itself: an older
 launcher refuses the whole live-block file once it lists a pause (`live-block-unreadable`), so every later
@@ -2040,13 +2040,13 @@ If the launcher dies while the run is paused (it is killed, crashes or runs out 
 never thaws it: with no launcher, nothing would decide its held actions or record what it does (ADR 0124, second
 amendment of 2026-11-11). At tier cgroup and bpflsm the run's reaper ends it at once with `cgroup.kill`, which ends
 frozen processes without letting them run, and records `run_end reason=orphaned`. At tier landlock what is left waits
-for a sweep. The last pause line is the last state recorded, not proof the run stayed frozen: `tego stop` thaws a run
+for a sweep. The last pause line is the last state recorded, not proof the run stayed frozen: `tego session stop` thaws a run
 before it signals and writes no line for that, so a launcher killed during a stop's grace leaves a record that says
 paused over processes that run. So `tego status` says the last recorded state and reads the run's scope for what is
 true now: STATE `lost, frozen` only when the scope is frozen, `lost` otherwise, with a line under the table that says
-which (frozen, NOT frozen, empty, or unreadable) and names `tego stop <run>`; exit 1; `--json` adds
-`"launcher_gone": true` and `scope_now`. `tego pause` and `tego resume` are refused (`[lost-paused]`, exit 1), and the
-dashboard shows Lost, last recorded paused, and points to `tego status` for the scope. `tego stop <run>` asks its sweep to end what is
+which (frozen, NOT frozen, empty, or unreadable) and names `tego session stop <run>`; exit 1; `--json` adds
+`"launcher_gone": true` and `scope_now`. `tego session pause` and `tego session resume` are refused (`[lost-paused]`, exit 1), and the
+dashboard shows Lost, last recorded paused, and points to `tego status` for the scope. `tego session stop <run>` asks its sweep to end what is
 left with `cgroup.kill` when needed and close the record (`run_end orphaned`, after a `launcher-lost` gap, as for any orphan), reads
 the scope again and says what is left. Stop exits 0 only when the record is closed and that final read confirms
 no processes remain (scope absent or empty). Remaining processes, frozen or running, give `[lost-paused]`, exit

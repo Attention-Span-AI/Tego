@@ -105,7 +105,7 @@ func TestPrepareRefusesPastTheRingBudget(t *testing.T) {
 	if !errors.Is(err, ErrRingBudget) {
 		t.Fatalf("Prepare past the budget = %v, want ErrRingBudget", err)
 	}
-	for _, want := range []string{"bpf.ring_budget", "/etc/tego/config.yaml", "tego doctor"} {
+	for _, want := range []string{"bpf.ring_budget", "/etc/tego/config.yaml", "tego machine check"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not name %q: %v", want, err)
 		}

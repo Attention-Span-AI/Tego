@@ -12,14 +12,14 @@ Not known:
 --- tego setup: stderr
 
 next: make a contract from what it did, and read it before you use it:
-  tego learn b883rx --save bot
+  tego rules learn b883rx --save bot
 --- tego doctor: stderr after its table
 
 Not ready: this shell is outside your user manager's cgroup, so tego starts no run from it, not even tego watch.
 
 next: open a shell in your user manager's cgroup, then run tego setup there:
   systemd-run --user --scope bash
---- tego learn b883rx --save bot: stderr
+--- tego rules learn b883rx --save bot: stderr
 tego learn: saved <root>/home/.config/tego/agents/bot.yaml (mode 0600), made only from what run r-f16d05ec-0dms9yec6mm80-b883rx was recorded doing.
   reads: it records each read it refuses, at tier landlock too (reason.reads: on): each read open about 17 µs more, the offline Claude Code workload 19 % slower; --reads off leaves it out.
 tego learn: warning: this proposal leaves env and reads open: with no env section every variable of the launcher's environment reaches the agent, secrets included, and the agent can read any file the built-in fs.deny_read list does not name; a secret it can read can leave through any address allowed here

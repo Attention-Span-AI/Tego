@@ -645,7 +645,7 @@ func TestIntegrationAdoptRecordsAScriptFromTheKernel(t *testing.T) {
 	// killed.
 	if out, err := e.tegoCmd("stop", run).CombinedOutput(); err != nil ||
 		!strings.Contains(string(out), run+": released by its adopter (pid "+strconv.Itoa(a.cmd.Process.Pid)+")") {
-		t.Fatalf("tego stop %s: %v: %s", run, err, out)
+		t.Fatalf("tego session stop %s: %v: %s", run, err, out)
 	}
 	if code := a.wait(t); code != 0 {
 		t.Fatalf("tego adopt exit %d: %s", code, a.text())
@@ -1042,7 +1042,7 @@ func TestIntegrationGuardAdoptsAnAgentAsItStarts(t *testing.T) {
 	adopted2, _ := find(watcher.EventAdopted, second.Process.Pid)
 	out, err := e.tegoCmd("stop", adopted2.Run).CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "released by its adopter (pid "+strconv.Itoa(guard.Process.Pid)+")") {
-		t.Fatalf("tego stop %s of the guard's adoption: %v: %s", adopted2.Run, err, out)
+		t.Fatalf("tego session stop %s of the guard's adoption: %v: %s", adopted2.Run, err, out)
 	}
 	waitFor(t, func() bool { _, ok := find(watcher.EventAdoptionEnded, second.Process.Pid); return ok })
 	if ended2, _ := find(watcher.EventAdoptionEnded, second.Process.Pid); ended2.Reason != record.RunEndStopped {
@@ -1055,10 +1055,10 @@ func TestIntegrationGuardAdoptsAnAgentAsItStarts(t *testing.T) {
 		t.Fatal("the release killed the agent")
 	}
 	if syscall.Kill(guard.Process.Pid, 0) != nil {
-		t.Fatalf("tego stop of one adoption ended the guard: %s", errs.String())
+		t.Fatalf("tego session stop of one adoption ended the guard: %s", errs.String())
 	}
 	if got := cgroupOfPID(e.agentPID); !strings.HasSuffix(got, adopt.ScopeName(adopted.Run)) {
-		t.Fatalf("tego stop of one adoption released another: the first agent is in %s", got)
+		t.Fatalf("tego session stop of one adoption released another: the first agent is in %s", got)
 	}
 	if end := lastRunEnd(t, e.lines(adopted2.Run)); end.Reason != record.RunEndStopped ||
 		!strings.Contains(end.Detail, "at the request of tego stop") {

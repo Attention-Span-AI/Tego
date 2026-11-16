@@ -15,9 +15,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"text/tabwriter"
 
-	"github.com/attention-span-ai/tego/internal/handoff"
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
@@ -119,16 +117,15 @@ func mainWith(ctx context.Context, argv []string, stdout, stderr io.Writer, cmds
 // Passthrough command ran: its exit is the agent's, not a statement that its output was delivered.
 func dispatch(ctx context.Context, argv []string, stdout, stderr io.Writer, cmds []Command) (code int, passthrough bool) {
 	if len(argv) < 2 {
-		writeUsage(stderr, cmds)
+		writeHelp(stderr, cmds, false)
 		return identity.ExitUsage, false // R25: usage error
 	}
 	name := argv[1]
 	switch name {
 	case "help":
-		writeUsage(stdout, cmds) // tego help (and tego help advanced): every command, one per line
-		return identity.ExitOK, false
+		return runHelp(ctx, argv[2:], stdout, stderr, cmds), false
 	case "-h", "--help":
-		_, _ = io.WriteString(stdout, groupedHelp)
+		writeHelp(stdout, cmds, false)
 		return identity.ExitOK, false
 	}
 	cmd, ok := find(cmds, name)
@@ -136,19 +133,25 @@ func dispatch(ctx context.Context, argv []string, stdout, stderr io.Writer, cmds
 		message(stderr, "", 0, 0, fmt.Sprintf("tego: unknown command %q; run tego help for the list", name), codeUsage)
 		return identity.ExitUsage, false // R25: usage error
 	}
+	return runCommand(ctx, name, cmd, argv[2:], stdout, stderr)
+}
+
+// runCommand parses cmd's flags from args and runs it. display is the name a person typed it as (compile, or
+// rules check), which its -h and flag errors use.
+func runCommand(ctx context.Context, display string, cmd Command, args []string, stdout, stderr io.Writer) (code int, passthrough bool) {
 	if cmd.Raw != nil {
-		return cmd.Raw(ctx, argv[2:], stdout, stderr), false
+		return cmd.Raw(ctx, args, stdout, stderr), false
 	}
-	fs := flag.NewFlagSet("tego "+name, flag.ContinueOnError)
+	fs := flag.NewFlagSet("tego "+display, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: tego %s %s\n", name, cmd.Usage)
-		fs.PrintDefaults()
+		fmt.Fprintln(fs.Output(), strings.TrimRight("usage: tego "+display+" "+cmd.Usage, " "))
+		writeFlags(fs.Output(), fs)
 	}
 	if cmd.Flags != nil {
 		cmd.Flags(fs)
 	}
-	if err := parseArgs(fs, argv[2:], cmd.CommandAfter); err != nil {
+	if err := parseArgs(fs, args, cmd.CommandAfter); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return identity.ExitOK, false // the usage text is -h's required output
 		}
@@ -158,6 +161,30 @@ func dispatch(ctx context.Context, argv []string, stdout, stderr io.Writer, cmds
 		holdBrokenPipe() // here, past the flags: `tego run -h | head -1` is help text, which ends quietly
 	}
 	return cmd.Run(ctx, fs, stdout, stderr), cmd.Passthrough
+}
+
+// writeFlags lists fs's flags as git's -h does: the flag and its value at column 5, what it does at column 27.
+func writeFlags(w io.Writer, fs *flag.FlagSet) {
+	first := true
+	fs.VisitAll(func(f *flag.Flag) {
+		if first {
+			fmt.Fprintln(w)
+			first = false
+		}
+		value, usage := flag.UnquoteUsage(f)
+		left := "-" + f.Name
+		if len(f.Name) > 1 {
+			left = "-" + left
+		}
+		if value != "" {
+			left += " <" + value + ">"
+		}
+		if len(left) > 20 {
+			fmt.Fprintf(w, "    %s\n    %-22s %s\n", left, "", usage)
+			return
+		}
+		fmt.Fprintf(w, "    %-22s %s\n", left, usage)
+	})
 }
 
 // parseArgs parses flags wherever they appear before a "--" (so `compile agent.yaml --offline`
@@ -238,24 +265,4 @@ func find(cmds []Command, name string) (Command, bool) {
 		}
 	}
 	return Command{}, false
-}
-
-// writeUsage prints the command list, hidden commands excluded.
-func writeUsage(w io.Writer, cmds []Command) {
-	fmt.Fprintln(w, "usage: tego <command> [flags]")
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "commands:")
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	for _, c := range cmds {
-		if c.Hidden {
-			continue
-		}
-		fmt.Fprintf(tw, "  %s\t%s\n", c.Name, c.Summary)
-	}
-	_ = tw.Flush()
-	fmt.Fprintln(w)
-	if planned := handoff.Planned(); len(planned) > 0 {
-		fmt.Fprintf(w, "planned, not in this build: %s\n", strings.Join(planned, ", "))
-	}
-	fmt.Fprintln(w, "tego <command> -h shows the command's flags.")
 }

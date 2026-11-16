@@ -136,7 +136,7 @@ func TestDoctorDuringALiveTier2RunChangesNoVerdict(t *testing.T) {
 	took := time.Since(started)
 	during := len(rounds()) - before
 	if docErr != nil {
-		t.Fatalf("tego doctor beside the live run: %v\n%s", docErr, docOut)
+		t.Fatalf("tego machine check beside the live run: %v\n%s", docErr, docOut)
 	}
 	if !strings.Contains(string(docOut), `"programs"`) {
 		t.Fatalf("doctor's report names no program rows: D7 did not run beside the run:\n%s", docOut)

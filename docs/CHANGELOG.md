@@ -7,8 +7,11 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ## Unreleased
 
-- `tego start` walks a first-time user through connecting an agent (Claude Code, Codex or another program), its sign-in, a project (a test project with a harmlessly poisoned dependency, or their own) and its rules (Base development, Read-only review or their own), and ends with the command that starts the first session. On a Mac, the one-line installer sets up Lima and Tego's VM, and `tego start` and `tego dashboard` work from the Mac's terminal.
-- New commands for agents and sessions: `tego add agent`, `tego apply -f`, `tego get agents|sessions|presets|approvals`, `tego describe agent|session|preset`, `tego edit agent`, `tego remove agent`, `tego logs`, `tego allow` and `tego dashboard`. Sessions have names (`tego-sample-dzfa`) that `stop`, `pause`, `resume`, `describe` and `logs` accept. Every existing command is unchanged.
+- `tego start` sets up a first-time user in four steps: the agent (Claude Code, Codex or another program), its login, a project (a test project with a harmlessly poisoned dependency, or their own) and its rules (Base development, Read-only review, rules picked one by one, or their own rules file). It opens the dashboard and ends with the command that starts the first session. On a Mac, the one-line installer sets up Lima and Tego's VM, and `tego start` and `tego dashboard` work from the Mac's terminal.
+- Commands in git's noun-verb shape, over the existing ones: `tego rules create|edit|check|learn`, `tego session list|show|stop|pause|resume`, `tego machine check|test`, and `tego dashboard`. `tego help` lists the common commands and `tego help -a` every one. Every existing command keeps its name, flags and exit codes; only `-h`'s layout changed. Every hint, next step and dashboard page now names the noun-verb commands (`tego session show`, not `tego receipt`).
+- `tego start` asks before using a saved login ("Use your saved Claude Code login?"), and logging in again replaces it. The Mac installer's last line says how to use `tego` in the same terminal (`exec zsh`).
+- Sessions have names (`tego-sample-dzfa`) that every command taking a run accepts.
+- `tego run` in a terminal prints a line when the session starts, with its dashboard page, and one when it ends, with how many actions Tego blocked; `-v` prints the notes and the full summary, and the output to a pipe or a file is unchanged.
 
 ## v0.1.3 - 2026-11-13
 

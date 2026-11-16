@@ -39,7 +39,7 @@ func TestAnEmptyStringIsNoDefault(t *testing.T) {
 		}
 	}
 	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
-		t.Errorf("the current directory after tego init \"\": %v, %v; want nothing written", entries, err)
+		t.Errorf("the current directory after tego rules create \"\": %v, %v; want nothing written", entries, err)
 	}
 }
 

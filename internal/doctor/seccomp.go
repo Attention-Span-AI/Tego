@@ -180,7 +180,7 @@ func seccompVerdictOn(fd int, err error, pt PtraceState, kernel Version) Result 
 }
 
 // seccompRerunFix is D5's remedy for a failure that names neither a missing release nor a configuration.
-const seccompRerunFix = "re-run tego doctor; if D5 fails the same way again on this kernel, report it as a tego bug"
+const seccompRerunFix = "re-run tego machine check; if D5 fails the same way again on this kernel, report it as a tego bug"
 
 // seccompNoSyscallFix is D5's remedy for ENOSYS from seccomp(2), on any release.
 const seccompNoSyscallFix = "boot a kernel built with CONFIG_SECCOMP=y and CONFIG_SECCOMP_FILTER=y; if this " +

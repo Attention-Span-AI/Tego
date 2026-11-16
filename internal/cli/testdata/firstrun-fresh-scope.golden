@@ -18,4 +18,4 @@ next: record your own agent. From its folder, start it as you always do:
 Ready: this shell can enforce at tier 1 (landlock), no root needed.
 
 next: see Tego refuse four harmless actions on decoy files:
-  tego test
+  tego machine test

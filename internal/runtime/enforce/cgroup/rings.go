@@ -137,7 +137,7 @@ func (h *Handle) placeRings() error {
 			if kind == ebpfbindings.RingRecord {
 				return fmt.Errorf("%w: this run's %d-byte record ring charges %d B, and the %d live rings on this "+
 					"host already charge %d B of bpf.ring_budget's %d B; wait for other runs to end, or raise "+
-					"bpf.ring_budget in /etc/tego/config.yaml (`tego doctor` shows each build's rings)",
+					"bpf.ring_budget in /etc/tego/config.yaml (`tego machine check` shows each build's rings)",
 					ErrRingBudget, size, memlock, rings, used, budget)
 			}
 			h.captureRefused = fmt.Errorf("%w: this run's %d-byte capture ring charges %d B, and %d B of "+

@@ -66,7 +66,7 @@ func registryPlaces(m *config.Machine) (registry.Places, *registry.Error) {
 func printRefusedName(stderr io.Writer, cmd string, e *registry.Error) {
 	message(stderr, e.Path, 0, 0, cmd+": "+e.Error(), e.Code)
 	if e.Code == registry.CodeNotFound && cmd == "tego run" {
-		fmt.Fprintln(stderr, "To create an agent contract: tego init --agent claude-code (or --agent codex), then tego run agent.yaml")
+		fmt.Fprintln(stderr, "To create an agent contract: tego rules create --agent claude-code (or --agent codex), then tego run agent.yaml")
 	}
 }
 

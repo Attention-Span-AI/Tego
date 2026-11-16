@@ -91,7 +91,7 @@ func TestIntegrationStopRearmsABuildWhoseTimerDied(t *testing.T) {
 		t.Fatalf("tego stop: %v\n%s", err, out)
 	}
 	_, there := os.Stat(pins.Root)
-	t.Logf("tego stop took %v; the build was there when it returned: %v", stopped.Sub(start).Round(time.Millisecond), there == nil)
+	t.Logf("tego session stop took %v; the build was there when it returned: %v", stopped.Sub(start).Round(time.Millisecond), there == nil)
 	for {
 		if _, err := os.Stat(pins.Root); os.IsNotExist(err) {
 			t.Logf("the timer stop started removed the build %v after stop returned", time.Since(stopped).Round(time.Millisecond))

@@ -65,7 +65,7 @@ func cmdRun() Command {
 			fs.BoolVar(&offline, "offline", false, "an unresolvable host is a warning, not an error")
 			fs.BoolVar(&verbose, "v", false, "print every compile note at the start, not only those that need you or mean less is enforced")
 			fs.BoolVar(&verbose, "verbose", false, "same as -v")
-			fs.BoolVar(&service, "service", false, "exit 143 after tego stop, including an escalated stop, so a service manager can suppress restart")
+			fs.BoolVar(&service, "service", false, "exit 143 after tego session stop, including an escalated stop, so a service manager can suppress restart")
 			fs.BoolVar(&noSummary, "no-summary", false, "print no summary when the agent exits (run id, tier, refusals, asks, files written, chain)")
 		},
 		// The agent owns stdout and stderr: they are passed to the child untouched, and tego's
@@ -254,8 +254,9 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	warnStdio(stderr, o.cmdName(), rt, stdio)
 	started, askPending, stopNotice := askNoticesFor(rt, m, b.Tier(), o.cmdName(), stderr)
 	defer stopNotice()
+	quiet := quietRun(o, m, src, stderr)
 	if o.cmd == "" { // tego run names its session; watch and adopt keep their lines
-		started = sessionStarted(rt, stderr, started)
+		started = sessionStarted(rt, stderr, quiet, started)
 	}
 	// A SIGINT or SIGTERM that landed after compileForRun's check (during the probe, the sweep, the capture
 	// sources' construction) cancelled a context nothing before this point reads again, and the runtime
@@ -318,6 +319,9 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 			// deny_read freezes (GAPS A12): it says what the ruleset is, not that a rule was weakened.
 			lead := "warning: "
 			if code == tegoruntime.WarnHeldLabel || code == tegoruntime.WarnDenyReadFrozen {
+				if quiet != nil {
+					return // a note, not a warning: in a terminal it prints with -v
+				}
 				lead = "note: "
 			}
 			message(stderr, "", 0, 0, lead+o.cmdName()+": "+what, code)
@@ -357,6 +361,12 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	switch {
 	case sum == nil:
 		writeRunSummary(stderr, res)
+	case quiet != nil && res.RecordErr == nil:
+		name := ""
+		if rt.Contract != nil {
+			name = rt.Contract.Name
+		}
+		quiet.ended(stderr, name, sum)
 	case !o.watched:
 		// The summary's two lines, then the reads line (a fact, whatever TEGO_HINTS says), then the next step, except
 		// for a run whose record could not be completed: that is tego's own error, exit 125 [ledger], with no next step.

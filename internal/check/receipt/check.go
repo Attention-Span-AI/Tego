@@ -223,7 +223,7 @@ func (k *checker) receipt() bool {
 		return false
 	case b == nil:
 		k.step("receipt", StepNotChecked, "the receipt has no binding: a tego from before receipts were bound made it, "+
-			"or it was made without --json; make it again with tego receipt --json")
+			"or it was made without --json; make it again with tego session show --json")
 		return false
 	case b.V != BindingVersion:
 		k.step("receipt", StepNotChecked, fmt.Sprintf("binding v %d: this tego reads binding v %d", b.V, BindingVersion))
@@ -319,7 +319,7 @@ func (k *checker) madeBy() bool {
 	case len(missing) > 0:
 		k.madeByWhy = "the receipt names no tego build: binding.receipt_by names " + strings.Join(missing, " and ") +
 			", so no tego can say it computes the receipt as the one that made it did; make the receipt again with " +
-			"tego receipt --json"
+			"tego session show --json"
 	case !by.Exact():
 		k.madeByWhy = fmt.Sprintf("the receipt was made by tego %s (commit %s), which is no exact build, so no tego can "+
 			"say it computes the receipt as that one did; make the receipt again with a released tego", by.TegoVersion, by.Commit)

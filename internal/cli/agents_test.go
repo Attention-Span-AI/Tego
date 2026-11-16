@@ -318,7 +318,7 @@ func TestAgentsSaysItOnlyObserves(t *testing.T) {
 		t.Fatalf("summary %q", c.Summary)
 	}
 	var usage bytes.Buffer
-	code := mainWith(t.Context(), []string{"tego", "help"}, &usage, io.Discard, []Command{c})
+	code := mainWith(t.Context(), []string{"tego", "help", "-a"}, &usage, io.Discard, []Command{c})
 	if code != identity.ExitOK || !strings.Contains(usage.String(), "agents") || !strings.Contains(usage.String(), "observes only") {
 		t.Fatalf("help: %d %q", code, usage.String())
 	}

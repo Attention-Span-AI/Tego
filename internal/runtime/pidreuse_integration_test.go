@@ -103,7 +103,7 @@ func TestIntegrationStopAfterPidReuseSignalsNothing(t *testing.T) {
 		t.Fatalf("tego stop: %v\n%s", err, out)
 	}
 	if !strings.Contains(string(out), "not running") {
-		t.Errorf("tego stop of a run whose launcher's pid was reissued said %q, want not running", out)
+		t.Errorf("tego session stop of a run whose launcher's pid was reissued said %q, want not running", out)
 	}
 	untouched("tego stop")
 	if _, err := os.Stat(filepath.Join(dir, StopRequestFile)); err == nil {

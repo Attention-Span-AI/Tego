@@ -52,7 +52,7 @@ func TestReceiptTabCountsRoutineSockets(t *testing.T) {
 		line(run, "py", 2, at(2), "net", `"rule":"route-query","verdict":"allow","dst":"family(16)","proto":"raw"`),
 		line(run, "py", 3, at(3), "run_end", `"reason":"exit","exit_code":0`))
 	if want := "None, besides 2 routine socket calls that name no place"; !strings.Contains(text, want) {
-		t.Fatalf("tego receipt lacks %q:\n%s", want, text)
+		t.Fatalf("tego session show lacks %q:\n%s", want, text)
 	}
 	// The tab says tego receipt's sentence, from the receipt (NoConnectionWords), not its own shorter one.
 	for _, want := range []string{"None, besides 2 routine socket calls that name no place (disconnects with AF_UNSPEC, the kernel's netlink socket)."} {
@@ -69,7 +69,7 @@ func TestReceiptTabCountsRoutineSockets(t *testing.T) {
 		line(run2, "py", 3, at(3), "run_end", `"reason":"exit","exit_code":0`))
 	const also = "Also 1 routine socket call that names no place (disconnects with AF_UNSPEC, the kernel"
 	if !strings.Contains(text, also) {
-		t.Fatalf("tego receipt lacks %q:\n%s", also, text)
+		t.Fatalf("tego session show lacks %q:\n%s", also, text)
 	}
 	if !strings.Contains(page, html.EscapeString(also+"'s netlink socket), not counted above.")) {
 		t.Errorf("the Receipt tab lacks %q", also)
@@ -92,7 +92,7 @@ func TestReceiptTabNamesTheKernelTLSRefusalBuiltIn(t *testing.T) {
 		line(run, "py", 4, at(4), "run_end", `"reason":"exit","exit_code":0`))
 	for _, want := range []string{"       2  built in, no rule allows it: kernel TLS", "       1  not allowed by any rule (net-not-allowed)"} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("tego receipt lacks %q:\n%s", want, text)
+			t.Fatalf("tego session show lacks %q:\n%s", want, text)
 		}
 	}
 	bars := regexp.MustCompile(`<span class="mono rc-rule" title="unmatched">([^<]*)</span><span class="rc-n">(\d+)</span>`).
@@ -146,7 +146,7 @@ func TestReceiptTabSaysWhatARunDoesNotRecord(t *testing.T) {
 		}
 		page, text := receiptAndTab(t, run, append(ls, line(run, "sh", 2, at(2), "run_end", `"reason":"exit","exit_code":1`))...)
 		if !strings.Contains(text, c.want) || strings.Contains(text, c.notWant) {
-			t.Fatalf("case %d: tego receipt does not say %q, or says %q:\n%s", i, c.want, c.notWant, text)
+			t.Fatalf("case %d: tego session show does not say %q, or says %q:\n%s", i, c.want, c.notWant, text)
 		}
 		if !strings.Contains(page, c.want) || strings.Contains(page, c.notWant) {
 			t.Errorf("case %d: the Receipt tab does not say %q, or says %q", i, c.want, c.notWant)

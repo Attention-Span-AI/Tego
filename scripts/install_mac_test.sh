@@ -89,10 +89,19 @@ latest="https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.
 run fresh TEGO_YES=1
 check "fresh Mac: installs Lima, sets up the VM, adds tego" 0 "✗ Lima isn't installed" "brew install lima" \
 	"limactl start --tty=false --name=tego $latest" "✓ Lima 2.3.0" "✓ Tego's VM is ready" "✓ tego command added" \
-	"Next, open a new terminal window and run:" "tego start"
+	"Next steps" "Run   exec zsh -l   (or open a new terminal window), then   tego start"
 [ -x "$tmp/.local/bin/tego" ] || { echo "FAIL fresh Mac: no tego command in ~/.local/bin"; fails=$((fails + 1)); }
 grep -q 'added by the Tego installer' "$tmp/.zshrc" 2>/dev/null || { echo "FAIL fresh Mac: PATH line not added to ~/.zshrc"; fails=$((fails + 1)); }
 absent "fresh Mac: hides Lima's own output" "INFO["
+
+# bash: the PATH line goes in the profile a login bash already reads, never a new .bash_profile that would hide it
+mkdir -p "$tmp/bashhome" && echo '# mine' >"$tmp/bashhome/.profile"
+c=bashprofile; b2="$tmp/$c/bin"; stubs "$b2"; cp "$b2.lima/limactl" "$b2/limactl"; : >"$tmp/log"; code=0
+env -i HOME="$tmp/bashhome" TMPDIR="$tmp" SHELL=/bin/bash PATH="$b2:/usr/bin:/bin" FAKE_LOG="$tmp/log" FAKE_VM=Running TEGO_YES=1 \
+	sh "$script" >"$tmp/out" 2>&1 </dev/null || code=$?
+check "bash with only a .profile: the line goes there" 0 "Run   exec bash -l   (or open a new terminal window)"
+grep -q 'added by the Tego installer' "$tmp/bashhome/.profile" || { echo "FAIL bash: PATH line not in .profile"; fails=$((fails + 1)); }
+[ ! -e "$tmp/bashhome/.bash_profile" ] || { echo "FAIL bash: a .bash_profile now hides .profile"; fails=$((fails + 1)); }
 
 run again LIMA=1 FAKE_VM=Running TEGO_YES=1
 check "second run: nothing to redo" 0 "✓ Lima 2.3.0" "✓ Tego's VM is running" "✓ tego command is up to date" "tego start"

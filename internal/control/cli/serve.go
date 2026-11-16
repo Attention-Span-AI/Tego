@@ -36,6 +36,11 @@ func cmdServe() Command {
 		Run: func(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			fs := flag.NewFlagSet(handoff.Name+" serve", flag.ContinueOnError)
 			fs.SetOutput(stderr)
+			fs.Usage = func() { // tego serve hands off here, so -h names the command a person typed
+				fmt.Fprintln(fs.Output(), "usage: tego serve [--addr 127.0.0.1:8484] [--ledger DIR] [--open] [--preview]")
+				fmt.Fprintln(fs.Output())
+				fs.PrintDefaults()
+			}
 			addr := fs.String("addr", "127.0.0.1:8484", "loopback address and port to listen on, such as [::1]:8484 (port 0 picks one)")
 			ledger := fs.String("ledger", "", "ledger root to read (default: the ledger_root tego writes runs to)")
 			open := fs.Bool("open", false, "open the dashboard, signed in, in the browser ($BROWSER, else xdg-open) once it listens")

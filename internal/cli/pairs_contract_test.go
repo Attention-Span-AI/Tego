@@ -85,9 +85,9 @@ func TestPairsContractsCompile(t *testing.T) {
 		code, _, errs := run(t, "compile", filepath.Join(w, name), "--offline")
 		switch {
 		case exempt && code != identity.ExitOK:
-			t.Errorf("tego compile %s: exit %d:\n%s", name, code, errs)
+			t.Errorf("tego rules check %s: exit %d:\n%s", name, code, errs)
 		case !exempt && (code == identity.ExitOK || !strings.Contains(errs, "has 2 hard links, whose other names compile cannot list")):
-			t.Errorf("tego compile %s with a launcher its agent could rewrite through a second link: exit %d:\n%s", name, code, errs)
+			t.Errorf("tego rules check %s with a launcher its agent could rewrite through a second link: exit %d:\n%s", name, code, errs)
 		}
 	}
 	text, err := os.ReadFile(filepath.Join(w, "self.yaml"))

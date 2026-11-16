@@ -56,7 +56,7 @@ func (st probeState) missingAs(t, asked backend.Tier) []string {
 		// Its own checks were never run, so it is not offered: a check not run has established nothing
 		// (Result.Skipped). The one line says so rather than listing each check as failed.
 		return []string{fmt.Sprintf("not probed: this run's tier selection cannot reach tier %s, so its checks "+
-			"were not run (tego doctor runs them)", t)}
+			"were not run (tego machine check runs them)", t)}
 	}
 	var out []string
 	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
@@ -289,7 +289,7 @@ func (st probeState) fixFor(next backend.Tier) string {
 		return strings.Join(fixes, "; and ")
 	}
 	if st.unprobed(next) {
-		return "run tego doctor for what tier " + string(next) + " needs here"
+		return "run tego machine check for what tier " + string(next) + " needs here"
 	}
 	if err := st.buildable(next); err != nil {
 		var nb *enforce.NotBuiltError
