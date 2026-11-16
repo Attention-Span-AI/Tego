@@ -262,10 +262,9 @@ EOF
 	echo ""
 	restore_term
 	if [ -n "$shim" ] && (: </dev/tty) 2>/dev/null && [ "${TEGO_YES:-}" != 1 ]; then
-		printf '  %sStarting tego setup%s\n\n' "$bold" "$off"
-		# tego setup only prints, so it runs with no terminal of its own (no raw mode on this one); TEGO_HINTS=on
-		# keeps its next: line, which it shows only on a terminal.
-		limactl shell --workdir / "$vm" sh -c 'cd "$HOME" && TEGO_HINTS=on exec systemd-run --user --scope --quiet "$HOME/.local/bin/tego" setup' </dev/null 2>&1 || true
+		# tego setup in a terminal is the guide: it asks which agent to connect and sets up the first project. It gets
+		# this terminal, and the terminal's settings are put back after it.
+		limactl shell --workdir / "$vm" sh -c 'cd "$HOME" && exec systemd-run --user --scope --quiet "$HOME/.local/bin/tego" setup' </dev/tty || true
 		restore_term
 		echo ""
 	else

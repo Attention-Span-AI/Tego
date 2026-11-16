@@ -37,12 +37,19 @@ var guideAgents = []guideAgent{
 	{label: "Claude Code", harness: "claude-code", command: "claude", host: "api.anthropic.com",
 		install: "curl -fsSL https://claude.ai/install.sh | bash"},
 	{label: "Codex", harness: "codex", command: "codex", host: "api.openai.com",
-		install: "npm install -g @openai/codex"},
+		install: "mkdir -p ~/.local/bin && curl -fsSL https://github.com/openai/codex/releases/latest/download/codex-$(uname -m)-unknown-linux-musl.tar.gz | tar -xzO > ~/.local/bin/codex && chmod 0755 ~/.local/bin/codex"},
 	{label: "Another program"},
 }
 
 // guideLookPath finds a program; a variable so a test can say what is installed.
 var guideLookPath = exec.LookPath
+
+// guideInstall runs an agent's install line with its output in log; a variable so a test installs nothing.
+var guideInstall = func(ctx context.Context, line string, log io.Writer) error {
+	c := exec.CommandContext(ctx, "/bin/sh", "-c", line)
+	c.Stdout, c.Stderr = log, log
+	return c.Run()
+}
 
 // guideInteractive reports whether tego setup talks to a person: both its input and its output are a terminal.
 func guideInteractive(stdout io.Writer) bool {
@@ -75,6 +82,15 @@ func (g *walk) todo(s string)                { g.line("  %s○%s %s", g.dim, g.o
 func (g *walk) note(s string)                { g.line("    %s%s%s", g.dim, s, g.offEsc) }
 func (g *walk) cmd(s string)                 { g.line("      %s%s%s", g.bold, s, g.offEsc) }
 func (g *walk) title(s string)               { g.line("\n  %s%s%s", g.bold, s, g.offEsc) }
+
+// replace turns the last n lines (a step's status, its question and progress) into one ✓ line on a terminal, and adds
+// the ✓ line below them elsewhere.
+func (g *walk) replace(n int, s string) {
+	if g.green != "" {
+		fmt.Fprintf(g.out, "\033[%dA\r\033[J", n)
+	}
+	g.ok(s)
+}
 
 // read reads one answer line; io.EOF reads as an empty answer, so a closed input takes the defaults.
 func (g *walk) read() (string, error) {
@@ -195,13 +211,33 @@ func runSetupGuide(ctx context.Context, in io.Reader, stdout, stderr io.Writer, 
 	program := strings.Fields(command)[0]
 	if _, err := guideLookPath(program); err != nil {
 		g.bad(a.labelOr(program) + " isn't installed here")
-		if a.install != "" {
+		if a.install == "" {
+			g.note("Install it, then run tego setup again.")
+			return identity.ExitFinding
+		}
+		install, err := g.yes("Install it now?")
+		if err != nil {
+			return identity.ExitError
+		}
+		if !install {
 			g.note("Install it, then run tego setup again:")
 			g.cmd(a.install)
+			return identity.ExitFinding
 		}
-		return identity.ExitFinding
+		g.note("Installing...")
+		if !g.installAgent(ctx, a, m.Home) {
+			return identity.ExitFinding
+		}
+		// The installers put the program in ~/.local/bin, which this shell's PATH may not have yet.
+		_ = os.Setenv("PATH", filepath.Join(m.Home, ".local", "bin")+":"+os.Getenv("PATH"))
+		if _, err := guideLookPath(program); err != nil {
+			g.bad(a.label + " was installed, but tego can't find " + program + " on your PATH")
+			return identity.ExitFinding
+		}
+		g.replace(3, a.label+" installed")
+	} else {
+		g.ok(a.labelOr(program) + " is installed")
 	}
-	g.ok(a.labelOr(program) + " is installed")
 
 	// Your first project.
 	g.title("Your first project")
@@ -270,6 +306,34 @@ func runSetupGuide(ctx context.Context, in io.Reader, stdout, stderr io.Writer, 
 	}
 	g.line("")
 	return identity.ExitOK
+}
+
+// installAgent runs a's install line with its output in ~/.tego/setup-install.log; on failure it shows the log's last
+// lines and where the whole log is.
+func (g *walk) installAgent(ctx context.Context, a guideAgent, home string) bool {
+	logPath := filepath.Join(home, ".tego", "setup-install.log")
+	_ = os.MkdirAll(filepath.Dir(logPath), 0o700)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		g.bad("Couldn't open the install log: " + err.Error())
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	if err := guideInstall(ctx, a.install, f); err != nil {
+		g.bad(a.label + " didn't install: " + err.Error())
+		if b, err := os.ReadFile(logPath); err == nil {
+			lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+			if len(lines) > 5 {
+				lines = lines[len(lines)-5:]
+			}
+			for _, l := range lines {
+				g.note(l)
+			}
+		}
+		g.note("The full log is in " + tildeHome(logPath, home))
+		return false
+	}
+	return true
 }
 
 func (a guideAgent) labelOr(program string) string {

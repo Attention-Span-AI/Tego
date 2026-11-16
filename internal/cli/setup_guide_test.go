@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,20 +82,47 @@ func TestSetupGuideClaudeCode(t *testing.T) {
 	}
 }
 
-// TestSetupGuideAgentMissing: an agent that is not installed stops the guide with the line that installs it.
+// TestSetupGuideAgentMissing: an agent that is not installed is offered for install. "n" shows the line that
+// installs it and stops; "y" runs it and the guide carries on.
 func TestSetupGuideAgentMissing(t *testing.T) {
-	onFixture(t, "fresh")
-	prev := guideLookPath
-	guideLookPath = func(string) (string, error) { return "", errors.New("not found") }
-	t.Cleanup(func() { guideLookPath = prev })
-
-	code, out, _ := runGuide(t, "1\n")
-	if code != identity.ExitFinding {
-		t.Fatalf("exit %d, want %d\n%s", code, identity.ExitFinding, out)
+	f := onFixture(t, "fresh")
+	bin := filepath.Join(f.Home, ".local", "bin")
+	prevLook, prevInstall := guideLookPath, guideInstall
+	t.Cleanup(func() { guideLookPath, guideInstall = prevLook, prevInstall })
+	installed := false
+	guideLookPath = func(p string) (string, error) {
+		if installed {
+			return filepath.Join(bin, p), nil
+		}
+		return "", errors.New("not found")
 	}
-	for _, want := range []string{"✗ Claude Code isn't installed here", "curl -fsSL https://claude.ai/install.sh | bash"} {
+	ran := ""
+	guideInstall = func(_ context.Context, line string, _ io.Writer) error {
+		ran, installed = line, true
+		// What Anthropic's installer leaves: claude in ~/.local/bin.
+		if err := os.MkdirAll(bin, 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
+	}
+
+	code, out, _ := runGuide(t, "1\nn\n")
+	if code != identity.ExitFinding || ran != "" {
+		t.Fatalf("no: exit %d, ran %q\n%s", code, ran, out)
+	}
+	for _, want := range []string{"✗ Claude Code isn't installed here", "Install it now? [Y/n]", "curl -fsSL https://claude.ai/install.sh | bash"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("stdout lacks %q\n%s", want, out)
+			t.Errorf("no: stdout lacks %q\n%s", want, out)
+		}
+	}
+
+	code, out, errs := runGuide(t, "1\ny\n~/my-app\ny\n")
+	if code != identity.ExitOK || ran != "curl -fsSL https://claude.ai/install.sh | bash" {
+		t.Fatalf("yes: exit %d, ran %q\n%s\n%s", code, ran, out, errs)
+	}
+	for _, want := range []string{"Installing...", "✓ Claude Code installed", "✓ Rules written to"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("yes: stdout lacks %q\n%s", want, out)
 		}
 	}
 }
