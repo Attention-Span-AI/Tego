@@ -3,7 +3,7 @@
 | Dir | What | Runs where |
 |---|---|---|
 | `fixtures/ledger/` | ledgers the kill tests recorded on a kernel-matrix row, one directory per kill test and tier; `fixtures/replay_test.go` verifies each and replays it, with the frozen M0 fixture (`spec/record/v1/fixtures`), through `status`, `drift`, `measure` and `events` | anywhere (`go test ./test/fixtures`) |
-| `fixtures/init/` | a throwaway project (fake `.env`, the Claude Code contract, a verdict table) for `maze init` to scan and `compile --test` to check; README says how to run it from a Mac | anywhere (Linux, or a container on a Mac) |
+| `fixtures/init/` | a throwaway project (fake `.env`, the Claude Code contract, a verdict table) for `compile --test` to check; README says how to run it from a Mac | anywhere (Linux, or a container on a Mac) |
 | `workloads/` | the agents and helpers the kill tests run: `python-steps/` (20 model steps over the system libssl), `python-anthropic/` (a tool-use agent on the Anthropic SDK), `model-stub/` (a local HTTPS stand-in for the Messages API), `python-httpx/`, `model-agent/`, `npm-agent/`, `go-agent/`, and `build/`, the §9 build workload, and `read-opener/`, the timed open loop `bench/read-notify` runs | host or VM |
 | `integration/` | root-required tests of launch, enforce, ask, observe (`//go:build integration`) | VM or a box with sudo |
 | `e2e/` | the kill tests of docs/P0-DESIGN.md as scripts, one per criterion | host (their unprivileged halves) and the VM matrix |

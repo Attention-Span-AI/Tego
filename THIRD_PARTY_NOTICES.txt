@@ -1,4 +1,4 @@
-Third-party notices for the shipped tego, tego-control and maze binaries.
+Third-party notices for the shipped tego and tego-control binaries.
 
 These texts are copied from the pinned dependencies. They retain upstream notices
 and do not change the licenses of those dependencies. Update this file whenever

@@ -174,10 +174,6 @@ already do.
   needs"; the fix may name the preset.
   `TestFixesNameOnlyRegisteredBuiltinProfiles` (internal/cli) reads every fix text in the compiler and the CLI and
   fails for a `tego/` name the binary does not resolve.
-- 2026-10-25: `internal/maze/scan`'s hand-kept copy of the list (`builtInHome`; maze cannot
-  import `pkg/spec/agent`, which does not build on macOS) gains the rows, and `extraHome` drops `.pypirc` and
-  `.terraform.d/credentials.tfrc.json`, now built-in. `TestBuiltInHomeMirrorsTheEngine` parses `compile_fs.go` and
-  fails when the copy differs, so a later row cannot leave maze behind.
 - 2026-10-25: an earlier fix refused the reads, but tier 1's ledger recorded each
   `allow`, `unmatched`, `tego compile --test` predicted allow, and at tiers cgroup and bpflsm the chain's `-EACCES`
   was attributed to another LSM (`observed`, `by: other`). `AbsentRow` (`pkg/spec/agent/absentrow.go`) now carries
@@ -208,8 +204,7 @@ already do.
   source, as `.gemini/oauth_creds.json` does). File rows wherever the tool keeps more than its secret in the same
   directory (`~/.fly/bin`, the installed gems, Composer's global packages, `~/.m2/repository`). `.m2/settings.xml` and
   `.gradle/gradle.properties` are not rows, for the reason Rejected gives for `config.toml`: each can hold a repository
-  password but configures every build of its tool, and Maven stops on a settings file it cannot read. `maze`'s
-  `extraHome` drops `.config/hub`, now built-in. A consequence: `~/.local` and `~/.local/share` join the directories
+  password but configures every build of its tool, and Maven stops on a settings file it cannot read. A consequence: `~/.local` and `~/.local/share` join the directories
   the Landlock ruleset enumerates on most machines, so a name made directly in either during a run is unreadable to it
   until the next. Tests: `TestBuiltInDenyReadCoversTheLongTail`, `TestAbsentLongTailRowsAreRecordedForLandlock`, and
   `TestLongTailStoresAreRefusedAtTierLandlock` (internal/runtime, tier landlock, unprivileged: stores made before the
