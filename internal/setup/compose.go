@@ -30,6 +30,10 @@ type Options struct {
 	Command string
 	// Agent selects a shipped harness descriptor; Prompt is passed as one literal argument.
 	Agent, Prompt string
+	// Interactive starts the agent's own interactive program instead of one task in print mode, reaching its model
+	// directly (Harness.InteractiveArgv); a Prompt is refused with it. SkipApprovals also switches the agent's own
+	// approval prompts off, for a test project where every block should come from Tego.
+	Interactive, SkipApprovals bool
 	// Name is the agent id, already checked by the caller.
 	Name string
 	// Dir is the project directory, absolute, with its symlinks resolved (filepath.EvalSymlinks): Create opens it with
@@ -153,6 +157,15 @@ func Compose(o Options) (*Result, error) {
 	if o.Prompt != "" && desc == nil {
 		return nil, usagef("--prompt needs --agent claude-code or --agent codex")
 	}
+	if (o.Interactive || o.SkipApprovals) && desc == nil {
+		return nil, usagef("an interactive agent needs --agent claude-code or --agent codex")
+	}
+	if o.Interactive && o.Prompt != "" {
+		return nil, usagef("an interactive agent takes no --prompt: you type the task in its own window")
+	}
+	if o.SkipApprovals && !o.Interactive {
+		return nil, usagef("switching the agent's approvals off needs an interactive agent")
+	}
 	if desc != nil {
 		if o.Command != "" {
 			return nil, usagef("--agent and --command cannot be combined; choose an agent or a custom command")
@@ -269,7 +282,13 @@ func Compose(o Options) (*Result, error) {
 		}
 	}
 	argv := commandArgv(command)
-	if desc != nil {
+	if desc != nil && o.Interactive {
+		argv = append([]string(nil), desc.InteractiveArgv...)
+		if o.SkipApprovals {
+			argv = append(argv, desc.SkipApprovals...)
+		}
+		hosts = appendEntry(hosts, entry{desc.InteractiveHost, "the model's API, reached directly by the interactive program"})
+	} else if desc != nil {
 		argv = append([]string(nil), desc.Argv...)
 		if o.Prompt != "" {
 			argv = append(argv, "--", o.Prompt)
@@ -278,8 +297,10 @@ func Compose(o Options) (*Result, error) {
 		}
 
 	}
-	res.Contract = render(o.Name, ps, argv, demo, o.Reads, writes, hosts, envSet, pass, askRead, desc != nil)
-	if desc != nil {
+	res.Contract = render(o.Name, ps, argv, demo, o.Reads, writes, hosts, envSet, pass, askRead, desc != nil && !o.Interactive)
+	if desc != nil && o.Interactive {
+		res.Contract = append(res.Contract, []byte(desc.InteractiveContract)...)
+	} else if desc != nil {
 		res.Contract = append(res.Contract, []byte(desc.Contract)...)
 	}
 	for _, p := range ps {
