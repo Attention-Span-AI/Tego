@@ -529,7 +529,7 @@ func (s scope) kernelAnswers(st probeState, prev *runCacheEntry) kernelAnswers {
 func notProbed(id CheckID, reach backend.Tier) Result {
 	return Result{ID: id, Skipped: true,
 		Detail: fmt.Sprintf("not probed by tego run: no tier up to %s, the highest its selection can reach, reads it "+
-			"(tego doctor runs it)", reach)}
+			"(tego machine check runs it)", reach)}
 }
 
 // kernelFromD7 renders D1 again with D7's answer for cgroup/connect_unix, where D1 was asked on this kernel and D7

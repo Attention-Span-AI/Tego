@@ -56,8 +56,8 @@
   "next": {
     "step": "check",
     "rule": "check-blocked",
-    "text": "no place checked can enforce; tego doctor names the one fix:",
-    "command": "tego doctor",
+    "text": "no place checked can enforce; tego machine check names the one fix:",
+    "command": "tego machine check",
     "needs_root": false,
     "placeholder": false
   },

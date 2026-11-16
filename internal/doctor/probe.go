@@ -398,7 +398,7 @@ var executable = os.Executable
 func sudoDoctor() string {
 	path, err := executable()
 	if err != nil || path == "" {
-		return "sudo tego doctor"
+		return "sudo tego machine check"
 	}
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		path = resolved

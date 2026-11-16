@@ -62,11 +62,11 @@ func TestHintNamesAreFreeInTheRunFolder(t *testing.T) {
 	hintsAt(t, false, "on")
 	saved := filepath.Join(reg, "agents", "bot.yaml")
 
-	if _, cmd := watchHint(tegoruntime.Result{RunID: id}, &endSummary{root: root, machine: m}, "", project, false); cmd != "tego learn "+short+" --save <name>" {
+	if _, cmd := watchHint(tegoruntime.Result{RunID: id}, &endSummary{root: root, machine: m}, "", project, false); cmd != "tego rules learn "+short+" --save <name>" {
 		t.Errorf("the watch's hint in a folder holding a file bot: %q", cmd)
 	}
 	code, _, errs := run(t, "learn", short)
-	if code != identity.ExitOK || lastHint(t, errs) != "tego learn "+short+" --save <name>" {
+	if code != identity.ExitOK || lastHint(t, errs) != "tego rules learn "+short+" --save <name>" {
 		t.Errorf("learn's hint, typed elsewhere: exit %d\n%s", code, errs)
 	}
 	code, _, errs = run(t, "learn", short, "--save", "bot")
@@ -92,7 +92,7 @@ func TestHintNamesAreFreeInTheRunFolder(t *testing.T) {
 	}
 	second := readsRun(t, root, anchor, other, recordsOnly, false)
 	if _, cmd := watchHint(tegoruntime.Result{RunID: second}, &endSummary{root: root, machine: m}, "", other, false); cmd !=
-		"tego learn "+shortOf(second)+" --save <name>" {
+		"tego rules learn "+shortOf(second)+" --save <name>" {
 		t.Errorf("the second watch's hint proposes a saved name: %q", cmd)
 	}
 }
@@ -136,7 +136,7 @@ func TestLearnHintNamesARunOutsideTheLedgerRootByPath(t *testing.T) {
 		t.Fatalf("learn <dir>: exit %d\n%s", code, errs)
 	}
 	next := lastHint(t, errs)
-	if next != "tego learn "+filepath.Join(elsewhere, id)+" --save bot" {
+	if next != "tego rules learn "+filepath.Join(elsewhere, id)+" --save bot" {
 		t.Errorf("hint %q", next)
 	}
 	if code, _, errs := run(t, strings.Fields(next)[1:]...); code != identity.ExitOK {
@@ -166,8 +166,8 @@ func TestNoSupervisorRunIsNotToldToRecordEveryRead(t *testing.T) {
 	if !strings.Contains(out, readsLineNoSupervisor) {
 		t.Fatalf("no reads line:\n%s", out)
 	}
-	if got := lastHint(t, out); !strings.HasPrefix(got, "tego receipt ") || !strings.HasSuffix(got, " --verify") {
-		t.Errorf("hint %q, want tego receipt <run> --verify", got)
+	if got := lastHint(t, out); !strings.HasPrefix(got, "tego session show ") || !strings.HasSuffix(got, " --verify") {
+		t.Errorf("hint %q, want tego session show <run> --verify", got)
 	}
 }
 

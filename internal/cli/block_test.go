@@ -170,9 +170,9 @@ func TestBlockUsageGolden(t *testing.T) {
 		}
 		got.WriteString(errs)
 	}
-	_, help, _ := run(t, "help")
+	_, help, _ := run(t, "help", "-a")
 	for _, l := range strings.Split(help, "\n") {
-		if strings.HasPrefix(l, "  block ") || strings.HasPrefix(l, "  unblock ") {
+		if strings.HasPrefix(l, "   block ") || strings.HasPrefix(l, "   unblock ") {
 			got.WriteString(l + "\n")
 		}
 	}

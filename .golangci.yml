@@ -905,6 +905,14 @@ linters:
       - path: ^internal/cli/asknotice\.go$
         linters: [forbidigo]
         text: reviewed process-start site
+      # tego start's guide (the agent's installer, its own login, stty, the dashboard's unit, --version) and tego rules
+      # edit's editor: commands that start no run, in a process that holds no fanotify group.
+      - path: ^internal/cli/setup_guide\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
+      - path: ^internal/cli/rules_edit\.go$
+        linters: [forbidigo]
+        text: reviewed process-start site
       # The MCP relay shim's start of the declared server (ADR 0126 §4): `tego mcp relay` is a process of its own
       # inside a run, which places no fanotify mark (only enforce/cgroup's listener arms).
       - path: ^internal/cli/mcp_relay\.go$

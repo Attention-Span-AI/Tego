@@ -278,7 +278,7 @@ func TestNextCommandsQuoteOrRefuseRecordedText(t *testing.T) {
 	f = guidetest.Make(t, guidetest.Fresh)
 	start.Cwd = filepath.Join(f.Root, "$(id)")
 	endedRun(t, f, start, 3)
-	if s := stored(t, f); s.Next.Command != "tego learn "+short(s)+" --save <name>" || !s.Next.Placeholder {
+	if s := stored(t, f); s.Next.Command != "tego rules learn "+short(s)+" --save <name>" || !s.Next.Placeholder {
 		t.Errorf("a folder that is no agent name: next %+v", s.Next)
 	}
 }
@@ -510,7 +510,7 @@ func TestFromAShellThatCannotEnforceTheNextStepOpensOne(t *testing.T) {
 		in.Fresh = &guide.Check{Where: guide.WhereUserManager, Build: f.Probe.Build, BootID: f.Probe.BootID, Time: f.Probe.Time,
 			FirstFix: "boot a kernel with Landlock"}
 		s := guide.Compute(t.Context(), in)
-		if s.Next.Rule != guide.RuleHereRootOnly || s.Next.Command != "tego doctor" || !strings.Contains(s.Next.Text, "sudo") {
+		if s.Next.Rule != guide.RuleHereRootOnly || s.Next.Command != "tego machine check" || !strings.Contains(s.Next.Text, "sudo") {
 			t.Errorf("next %+v", s.Next)
 		}
 		if line := "next: " + s.Next.Text; len([]rune(line)) > 80 {
@@ -534,7 +534,7 @@ func TestFromAShellThatCannotEnforceTheNextStepOpensOne(t *testing.T) {
 		in.Fresh = &guide.Check{Where: guide.WhereUserManager, Build: f.Probe.Build, BootID: f.Probe.BootID, Time: f.Probe.Time,
 			FirstFix: "boot a kernel with Landlock"}
 		s := guide.Compute(t.Context(), in)
-		if s.Next.Rule != guide.RuleHereElsewhere || s.Next.Command != "tego doctor" || strings.Contains(s.Next.Text, "root") {
+		if s.Next.Rule != guide.RuleHereElsewhere || s.Next.Command != "tego machine check" || strings.Contains(s.Next.Text, "root") {
 			t.Errorf("next %+v", s.Next)
 		}
 		if line := "next: " + s.Next.Text; len([]rune(line)) > 80 {
@@ -691,7 +691,7 @@ func TestNoUserManagerNamesTheCommandThatStartsOne(t *testing.T) {
 		t.Errorf("next %+v", s.Next)
 	}
 	in.Linger = ""
-	if s := guide.Compute(t.Context(), in); s.Next.Rule != guide.RuleCheckNoManager || s.Next.Command != "tego doctor" {
+	if s := guide.Compute(t.Context(), in); s.Next.Rule != guide.RuleCheckNoManager || s.Next.Command != "tego machine check" {
 		t.Errorf("no linger command: next %+v", s.Next)
 	}
 }

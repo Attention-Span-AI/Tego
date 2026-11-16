@@ -71,13 +71,13 @@ func writeMulticallCheck(w io.Writer, c *multicallCheck) error {
 	var line string
 	if c.Dispatcher {
 		line = fmt.Sprintf("\nnote multicall: %s leads to %s, a multi-call program, which runs the program argv[0] or argv[1] "+
-			"names: an exec.allow entry for any of its names admits every program it holds, at every tier; tego compile "+
+			"names: an exec.allow entry for any of its names admits every program it holds, at every tier; tego rules check "+
 			"notes such entries [exec-multicall]", c.Path, c.Resolved)
 	} else {
 		line = fmt.Sprintf("\nnote multicall: %s leads to %s, one program file with %d names (hard links): an exec.allow "+
 			"entry for one of them admits that name's link at tiers cgroup and bpflsm, and the file by any name at tier "+
 			"landlock to an agent that wins the exec race; a build that reads argv[0] runs any program it holds through a "+
-			"listed name; tego compile notes such entries [exec-multicall]",
+			"listed name; tego rules check notes such entries [exec-multicall]",
 			c.Path, c.Resolved, c.Links)
 	}
 	if _, err := fmt.Fprintln(w, line); err != nil {

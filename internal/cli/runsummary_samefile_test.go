@@ -59,7 +59,7 @@ func TestRunSummarySaysASameFileRefusal(t *testing.T) {
 	if !strings.Contains(text, " · refused 3 (live.block 3) · ") {
 		t.Errorf("the summary line changed:\n%s", text)
 	}
-	if want := "\n  /bin/sleep: refused, same program file as /bin/ls, which is blocked (2 times)\n  more: tego receipt "; !strings.Contains(text, want) {
+	if want := "\n  /bin/sleep: refused, same program file as /bin/ls, which is blocked (2 times)\n  more: tego session show "; !strings.Contains(text, want) {
 		t.Errorf("summary:\n%s\nwant it to hold %q", text, want)
 	}
 	if strings.Contains(text, "/bin/ls: refused") {

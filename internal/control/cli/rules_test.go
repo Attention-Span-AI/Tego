@@ -96,7 +96,7 @@ func TestRulesUsesDashboardView(t *testing.T) {
 		}
 	}
 	code, out, errs := run(t, user, "rules", id)
-	if code != 0 || !strings.Contains(out, "Rules for run "+id) || !strings.Contains(out, "Next: tego receipt "+id) || strings.Contains(out, "DO-NOT-DISPLAY-SECRET") {
+	if code != 0 || !strings.Contains(out, "Rules for run "+id) || !strings.Contains(out, "Next: tego session show "+id) || strings.Contains(out, "DO-NOT-DISPLAY-SECRET") {
 		t.Fatalf("text: %d %s %s", code, out, errs)
 	}
 	// Pin the complete human text deliberately; paths and the run's measured duration are not part of this view.
@@ -212,7 +212,7 @@ func TestRulesEmptyLedgerNamesFirstRun(t *testing.T) {
 		for _, args := range [][]string{{"rules", "--last"}, {"rules", "--last", "--json"}} {
 			code, out, errs := run(t, user, args...)
 			if code != 125 || out != "" || !strings.Contains(errs, "there are no runs yet") || !strings.Contains(errs, "[not-found]") ||
-				!strings.Contains(errs, "tego init --preset no-secrets,repo-only-writes --write ./out, then tego run agent.yaml") {
+				!strings.Contains(errs, "tego rules create --preset no-secrets,repo-only-writes --write ./out, then tego run agent.yaml") {
 				t.Fatalf("empty ledger (present=%v), %q: %d %q %q", present, args, code, out, errs)
 			}
 		}

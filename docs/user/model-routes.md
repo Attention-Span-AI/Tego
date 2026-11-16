@@ -21,7 +21,7 @@ models:
 Every run starts on the endpoint itself, the route named `direct`. Only the routes you list here can ever be chosen:
 neither the dashboard nor the command line can send a request anywhere else. A route speaks TLS and checks the
 backend's certificate for its host; `tls: false` is allowed only for a server on this machine (`127.0.0.1`,
-`localhost`), and Tego checks the address it actually connects to is this machine's. `tego compile` refuses routes without `capture: forwarder`, a route that is the endpoint itself, one
+`localhost`), and Tego checks the address it actually connects to is this machine's. `tego rules check` refuses routes without `capture: forwarder`, a route that is the endpoint itself, one
 backend listed twice, or `tls: false` to another machine. The agent cannot call a route's backend directly either: Tego
 refuses its connections there as it refuses them to the endpoint, so every model call goes through the forwarder and
 is recorded. Under a `net:` section that guard covers the whole port: a route to `llm-proxy.corp.example:8443` or

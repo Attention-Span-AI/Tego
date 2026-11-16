@@ -286,7 +286,7 @@ func writeLostPaused(w io.Writer, snaps []*status.Snapshot, pauses map[string]pa
 		}
 		run := record.Printable(s.Run)
 		if _, err := fmt.Fprintf(w, "lost %s: its launcher died, and the last state it recorded was paused, with no resume "+
-			"after it. Now %s. Tego never thaws a run with no launcher; tego stop %s ends what is left and closes the record "+
+			"after it. Now %s. Tego never thaws a run with no launcher; tego session stop %s ends what is left and closes the record "+
 			"(run_end orphaned).\n", run, p.Scope.now(), run); err != nil {
 			return err
 		}

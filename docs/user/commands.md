@@ -1,78 +1,66 @@
 # Tego's commands
 
-Tego's everyday commands follow one pattern: `tego <verb> <thing> [name] [flags]`, as kubectl does. The things are
-**agents** (an agent you supervise, its project and its rules), **sessions** (one run of an agent under Tego),
-**approvals** (an action a session holds until you answer) and **presets** (ready-made rules). `tego --help` shows
-them grouped. Every older command still works as before; the table at the end says which new command does the same.
+Tego's commands follow git's shape: a noun, then a verb (`tego session list`). `tego help` shows the common ones and
+`tego help -a` every one. `tego help <command>`, or `tego <command> -h`, shows a command's usage and flags.
+
+A **session** is one run of an agent under Tego. Its name is the agent's name and four characters, such as
+`tego-sample-dzfa`; every command that takes a session takes its name or its run id. An **agent** is a rules file in
+`~/.config/tego/agents/<name>.yaml`: the program Tego starts, the project it works in, and what it may read, change and
+connect to.
 
 ## Get started
 
 | Command | What it does |
 |---|---|
-| `tego start` | Sets up your first agent, one question at a time: the agent, its sign-in, its project and its rules. It ends with the command that starts your first session. On a Mac it runs inside Tego's Linux VM and leaves you there. |
-| `tego doctor` | Checks what this computer supports. |
-
-## Agents
-
-An agent is a rules file in `~/.config/tego/agents/<name>.yaml`: the program Tego starts, the project it works in and
-what it may read, change and connect to.
-
-| Command | What it does |
-|---|---|
-| `tego add agent [<name>] --project <folder> [--program claude-code\|codex\|<command>] [--preset base-development\|read-only-review] [--allow-host <host>]...` | Adds an agent for Tego to supervise. The name defaults to the project folder's name. It never replaces an agent of the same name. |
-| `tego apply -f <file.yaml> [--name <name>]` | Adds or updates an agent from a rules file you wrote. The file is checked first; a file that doesn't compile changes nothing. |
-| `tego get agents` | Lists your agents: name, project, presets and running sessions. |
-| `tego describe agent <name>` | Says in plain words what the agent may change, never reads and may connect to. |
-| `tego edit agent <name>` | Opens the rules file in `$EDITOR`, then checks it. |
-| `tego remove agent <name>` | Stops supervising the agent: removes its rules file, after asking. `--yes` skips the question. |
-
-## Sessions
-
-A session is one run of an agent under Tego. Its name is the agent's name and four characters, such as
-`tego-sample-dzfa`; any command below takes the name or the run id.
-
-| Command | What it does |
-|---|---|
-| `tego run <agent>` | Starts a session. Run it from the agent's project folder. |
-| `tego get sessions` | Lists sessions: name, agent, status, age and how many actions Tego blocked. |
-| `tego describe session <name>` or `--last` | What the session did and what Tego blocked. |
-| `tego logs <session> [-f]` | The session's events, as they happen with `-f`. |
-| `tego stop`, `tego pause`, `tego resume <session>` | Control a running session. |
-
-## Approvals
-
-| Command | What it does |
-|---|---|
-| `tego get approvals` | Actions waiting for your answer. |
-| `tego allow <approval>`, `tego deny <approval>` | Answer one. |
-
-## Presets
-
-| Command | What it does |
-|---|---|
-| `tego get presets` | Lists the presets. |
-| `tego describe preset <name>` | What a preset allows and blocks. See [presets.md](presets.md). |
-
-## Dashboard
-
-| Command | What it does |
-|---|---|
+| `tego start` | Sets up your first agent in four steps: the agent, its login, its project and its rules. Then it opens the dashboard and shows the command that starts your first session. On a Mac it runs inside Tego's Linux VM and leaves you there, in the project. |
 | `tego dashboard` | Opens the dashboard in your browser. On a Mac it runs the dashboard in Tego's VM and opens it on the Mac. |
 
-## The older commands
+## Supervise an agent
 
-They work as they always have. Where a newer command does the same, both names work.
-
-| Older command | Same as |
+| Command | What it does |
 |---|---|
-| `tego status` | `tego get sessions` |
-| `tego receipt` | `tego describe session` |
-| `tego events` | `tego logs` |
-| `tego approve`, `tego ask` | `tego allow`, `tego get approvals` |
-| `tego init --agent`, `tego init --preset` | `tego add agent` (writes the rules file into the project as `agent.yaml`) |
-| `tego setup` | in a terminal, the same guide as `tego start`; with `--json` or `-v`, the checklist |
-| `tego serve` | `tego dashboard` |
+| `tego run <agent>` | Runs the agent under its rules. Run it from the agent's project folder. In a terminal it prints two lines, when the session starts and when it ends; `-v` prints everything. |
+| `tego session list` | Lists sessions: name, agent, status, when it started and how many actions Tego blocked. |
+| `tego session show <session>` or `--last` | Shows what the session did and what Tego blocked. |
+| `tego session stop`, `pause`, `resume <session>` | Stops, pauses or resumes a running session. |
 
-The rest, for checking rules, recording, live control, tools for agents and records, are listed under "More commands"
-in `tego --help`: `compile`, `test`, `drift`, `measure`, `watch`, `adopt`, `agents`, `learn`, `block`, `unblock`,
-`rule`, `lift`, `grant`, `alternate`, `dns`, `mcp`, `route`, `gc`, `restore`, `rules`, `version` and `licenses`.
+## Write the rules
+
+| Command | What it does |
+|---|---|
+| `tego rules create [flags]` | Creates a rules file (`agent.yaml`) in a project, from presets. See [presets.md](presets.md). |
+| `tego rules edit <agent \| file>` | Opens the rules file in `$EDITOR`, checks your edit, and saves it only when it passes. |
+| `tego rules check <agent \| file>` | Checks a rules file and shows what it enforces. |
+| `tego rules learn <session>` | Creates a rules file from what a session did. |
+
+## Check this machine
+
+| Command | What it does |
+|---|---|
+| `tego machine check` | Checks what this machine can enforce. |
+| `tego machine test` | Runs Tego's self-check. |
+
+## Everything else
+
+`tego help -a` lists these by group:
+
+- **Answer what a session asks:** `ask`, `approve`, `deny`, `alternate`.
+- **Change a running session's rules:** `block`, `unblock`, `grant`, `lift`, `restore`, `rule`, `rules <session>`.
+- **Read the record:** `events`, `drift`, `measure`, `status`, `gc`.
+- **Supervise other programs:** `watch`, `adopt`, `agents`. `adopt` and `agents` need root: run them with sudo.
+- **Tools for agents:** `mcp`, `route`, `dns`.
+- **About Tego:** `setup`, `serve`, `version`, `licenses`.
+
+## Older names
+
+They work as they always have, with the same flags, output and exit codes.
+
+| Older name | Same as |
+|---|---|
+| `tego init` | `tego rules create` |
+| `tego compile` | `tego rules check` |
+| `tego learn` | `tego rules learn` |
+| `tego receipt` | `tego session show` |
+| `tego stop`, `pause`, `resume` | `tego session stop`, `pause`, `resume` |
+| `tego doctor` | `tego machine check` |
+| `tego test` | `tego machine test` |

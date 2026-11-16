@@ -107,7 +107,7 @@ func runRule(ctx context.Context, ref string, seq uint64, a rule.Action, sc rule
 		// A watched run has no file to change; the next step is to write one from what it did.
 		run := filepath.Base(dir)
 		message(stderr, "", 0, 0, fmt.Sprintf("tego rule: %v; once the run has ended, write a contract from what it did "+
-			"with tego learn %s --out agent.yaml, then run the agent with tego run agent.yaml", err, run), codeUsage)
+			"with tego rules learn %s --out agent.yaml, then run the agent with tego run agent.yaml", err, run), codeUsage)
 		return identity.ExitFinding
 	}
 	if err != nil {

@@ -116,7 +116,7 @@ func TestTierOneNeedsD1D3D4D5(t *testing.T) {
 	}
 
 	for _, id := range []CheckID{CheckBTF, CheckLSM, CheckPrograms, CheckFanotify} {
-		st := user(func(st *probeState) { fail(st, id, "requires root to test", "re-run as root: sudo tego doctor") })
+		st := user(func(st *probeState) { fail(st, id, "requires root to test", "re-run as root: sudo tego machine check") })
 		if !st.probe()[backend.TierLandlock] {
 			t.Errorf("%s failing took tier landlock away: %v", id, st.missingFor(backend.TierLandlock))
 		}
@@ -275,7 +275,7 @@ func TestProgramsFailingBeforeAnyHookTakesTierTwo(t *testing.T) {
 	}
 	user := state(func(st *probeState) {
 		st.root, st.hooks = false, nil
-		fail(st, CheckPrograms, "requires root to test", "re-run as root: sudo tego doctor")
+		fail(st, CheckPrograms, "requires root to test", "re-run as root: sudo tego machine check")
 	})
 	if n := strings.Count(strings.Join(user.missingFor(backend.TierCgroup), "; "), "programs: "); n != 0 {
 		t.Errorf("an ordinary user's skipped D7 listed beside the root line: %v", user.missingFor(backend.TierCgroup))

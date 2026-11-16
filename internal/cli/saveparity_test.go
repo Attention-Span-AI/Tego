@@ -89,7 +89,7 @@ func TestLearnSaveAndTheDashboardSaveTheSameFile(t *testing.T) {
 			file := filepath.Join(reg, "agents", c.name+".yaml")
 			cli, err := os.ReadFile(file)
 			if code != identity.ExitOK || err != nil {
-				t.Fatalf("tego learn --save %s: exit %d, %v\n%s", c.name, code, err, errs)
+				t.Fatalf("tego rules learn --save %s: exit %d, %v\n%s", c.name, code, err, errs)
 			}
 			if err := os.Remove(file); err != nil {
 				t.Fatal(err)
@@ -122,7 +122,7 @@ func TestLearnSaveAndTheDashboardSaveTheSameFile(t *testing.T) {
 				t.Errorf("the CLI's file has %d leaks lines, not one:\n%s", len(leaks), cli)
 			}
 			if want := strings.Join(kept, ""); string(dash) != want {
-				t.Errorf("the two files differ past the leaks line:\n--- tego learn --save\n%s\n--- dashboard\n%s", want, dash)
+				t.Errorf("the two files differ past the leaks line:\n--- tego rules learn --save\n%s\n--- dashboard\n%s", want, dash)
 			}
 			if !strings.Contains(string(dash), "\nname: \""+c.name+"\"\n") || strings.Contains(string(dash), "reads: on") != c.reads {
 				t.Errorf("the saved file's name or reason block:\n%s", dash)

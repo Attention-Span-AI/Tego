@@ -61,7 +61,7 @@ release prints its tag, such as `tego=v0.1.2`. Put these lines at the top of any
 ## 2. Check the machine
 
 ```sh
-tego doctor
+tego machine check
 ```
 
 ```text
@@ -72,8 +72,8 @@ ok   cgroupv2: /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service deleg
 ok   landlock: ABI 4
 ok   seccomp: NEW_LISTENER + ADDFD(SEND) round trip on syscall 319 returned fd 7; yama ptrace_scope=1 (the supervisor is the agent's parent, which Yama exempts)
 off  lsm: lockdown,capability,landlock,yama,apparmor via lsm_list_modules(2); bpf is not active: tier 3 (bpflsm) is unavailable, tiers 1 and 2 are not affected; fix: add lsm=lockdown,capability,landlock,yama,apparmor,bpf to the kernel command line (GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub, then update-grub) and reboot
-skip programs: requires root to test (bpf(BPF_PROG_LOAD) needs CAP_BPF; this kernel disables unprivileged BPF); decision plane: requires root to test; fix: re-run as root: sudo /home/dana/.local/bin/tego doctor
-skip fanotify: requires root to test (fanotify_init needs CAP_SYS_ADMIN); fix: re-run as root: sudo /home/dana/.local/bin/tego doctor
+skip programs: requires root to test (bpf(BPF_PROG_LOAD) needs CAP_BPF; this kernel disables unprivileged BPF); decision plane: requires root to test; fix: re-run as root: sudo /home/dana/.local/bin/tego machine check
+skip fanotify: requires root to test (fanotify_init needs CAP_SYS_ADMIN); fix: re-run as root: sudo /home/dana/.local/bin/tego machine check
 ok   swap: memory.swap.max present: a run's memory cap holds swap too
 
 summary: tier landlock; cgroup needs root; bpflsm needs root, lsm
@@ -89,29 +89,29 @@ deny network by host:port                          yes  yes, supervisor-complete
 tier: landlock
 missing for cgroup: root: tier cgroup needs CAP_BPF, CAP_NET_ADMIN and CAP_SYS_ADMIN; fanotify: requires root to test (fanotify_init needs CAP_SYS_ADMIN)
 missing for bpflsm: root: tier bpflsm needs CAP_BPF, CAP_NET_ADMIN and CAP_SYS_ADMIN; fanotify: requires root to test (fanotify_init needs CAP_SYS_ADMIN); lsm: bpf is not in the active LSM list (lockdown,capability,landlock,yama,apparmor)
-fix: re-run as root for the tier-2 and tier-3 probes: sudo /home/dana/.local/bin/tego doctor
+fix: re-run as root for the tier-2 and tier-3 probes: sudo /home/dana/.local/bin/tego machine check
 
 ok   dashboard: the dashboard can tell which run a connection comes from
 ```
 
-`doctor` tests the kernel features Tego uses. Its `summary:` line, after the checks, says which tier this machine gets
+`machine check` tests the kernel features Tego uses. Its `summary:` line, after the checks, says which tier this machine gets
 and what each tier above it needs; the lines after the table say why, and the fix. Tier 1 (`landlock`) needs no root.
 In a terminal it ends with one more line on stderr, `Ready: this shell can enforce at tier 1 (landlock), no root needed.`
 or `Not ready: ...`, and the next command to type.
-Without root, `doctor` cannot check everything, and it says what it could not check. The capability table is cut after five
+Without root, `machine check` cannot check everything, and it says what it could not check. The capability table is cut after five
 rows above; yours prints in full. On a stock Ubuntu you will see that tier 3 is unavailable, because `bpf` is not in the boot
 LSM list ([TIERS.md](TIERS.md)). That is a fact about the machine, not a fault. The last line warns only if the kernel
 cannot load the `inet_diag` and `tcp_diag` modules, which the dashboard needs.
 `sudo "$(command -v tego)" doctor` shows what tiers 2 and 3 would get. Over SSH or on a console login, start a shell in
 your user's cgroup first, or no run starts at all, not even one that only records: `systemd-run --user --scope bash`
-([INSTALL.md](INSTALL.md#check-the-machine)). From such a login, `doctor` says `Not ready: this shell is outside your
+([INSTALL.md](INSTALL.md#check-the-machine)). From such a login, `machine check` says `Not ready: this shell is outside your
 user manager's cgroup, ...` and its `next:` line is that command. `tego setup` shows where you are in all six steps
 ([user/setup.md](user/setup.md)).
 
 ## 3. Watch Tego refuse something
 
 ```sh
-tego test
+tego machine test
 ```
 
 ```text
@@ -138,7 +138,7 @@ started, the report says nothing was judged, and its `next:` line opens a shell 
 
 ```sh
 mkdir demo && cd demo
-tego init --preset no-secrets,repo-only-writes --write ./out
+tego rules create --preset no-secrets,repo-only-writes --write ./out
 ```
 
 ```text
@@ -153,7 +153,7 @@ presets:
   tego/repo-only-writes@1: the agent writes only in the folders your contract names
   no-secrets passes only an allow-list of variables: an agent that needs its API key adds it to env.pass (the file says where)
   repo-only-writes: an agent that keeps state in your home (Claude Code's ~/.claude) needs --write for that folder too
-next, from /home/dana/demo (the contract's paths are relative to it): tego compile agent.yaml; tego run agent.yaml; tego receipt --last
+next, from /home/dana/demo (the contract's paths are relative to it): tego rules check agent.yaml; tego run agent.yaml; tego session show --last
 ```
 
 This makes `.tego/`, the `out/` folder and an `agent.yaml`, and adds `.tego/runs/` and `.tego/tmp/` to `.gitignore`. The contract starts from two built-in presets:
@@ -161,12 +161,12 @@ This makes `.tego/`, the `out/` folder and an `agent.yaml`, and adds `.tego/runs
 `./out`. Its `command:` is a small demo that tries each. Open `agent.yaml` and read it: it is plain YAML. Leaving
 out `net:` or `exec:` refuses nothing there: this contract has no `net:` section, so every IP destination is reachable, and no `exec:` section, so
 every program runs. Leaving out `fs:` is the opposite: every write is refused. The `no-prod` preset closes the network to every host your contract does not name. Without `--preset`,
-`tego init` writes a different starter, for a `python3 agent.py` agent.
+`tego rules create` writes a different starter, for a `python3 agent.py` agent.
 
 ## 5. See the rules
 
 ```sh
-tego compile agent.yaml
+tego rules check agent.yaml
 ```
 
 ```text
@@ -200,7 +200,7 @@ path      /home/dana/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bi
 [... 34 more lines: the machine config in force, each value with the file it came from ...]
 ```
 
-`compile` checks the contract and prints the rule table: what is allowed, what is refused, and what would be held for you.
+`rules check` checks the contract and prints the rule table: what is allowed, what is refused, and what would be held for you.
 Nothing runs yet. The output above stops before the machine settings; yours prints them too.
 
 ## 6. Run it
@@ -215,7 +215,7 @@ wrote ./out/tego-hello.txt: allowed
 write ./tego-outside.txt: refused by repo-only-writes
 no secret variable reached the agent: no-secrets
 tego run: r-40c94c9f-0dmkbl68johzb-hdcxpr ended (exited with code 0) · tier landlock · refused 1 (not allowed by any rule 1) · asked 0 · wrote 1 file · chain verified
-  more: tego receipt r-40c94c9f-0dmkbl68johzb-hdcxpr
+  more: tego session show r-40c94c9f-0dmkbl68johzb-hdcxpr
 ```
 
 Tego starts the contract's `command:` under the best tier this machine has; as a normal user that is tier 1. The exit code is the
@@ -225,7 +225,7 @@ id, the tier it ran at (`landlock` is tier 1), the refusals its record holds, th
 ## 7. Read the receipt
 
 ```sh
-tego receipt --last
+tego session show --last
 ```
 
 ```text
@@ -286,7 +286,7 @@ A read that `deny_read` refuses fails with `EACCES` and leaves no line, so `tego
 says "No recorded action was refused; this run does not record refused reads", never "Nothing was refused". To see reads, set `record: full` in the contract, which makes every open slower, or run at
 tier 2 or 3. To see only the refused ones, set `reason.reads: on` ([user/reason-channel.md](user/reason-channel.md)).
 
-`tego receipt --last --verify` also checks the run's hash chain against its anchor in `~/.tego/chain.log`.
+`tego session show --last --verify` also checks the run's hash chain against its anchor in `~/.tego/chain.log`.
 `tego events <run>` prints the record as a table, one row per event; the run id is in the summary from step 6. Its last
 characters are enough, four or more, when no other run's id ends with them: `tego events hdcxpr`. The record's format is in
 [../spec/record/v1/README.md](../spec/record/v1/README.md).
@@ -327,15 +327,15 @@ For Claude Code, start in a project with no `agent.yaml`, set `ANTHROPIC_API_KEY
 `CLAUDE_CODE_OAUTH_TOKEN`, then run:
 
 ```sh
-tego init --agent claude-code --write src/ --prompt 'Review this project'
-tego compile agent.yaml
+tego rules create --agent claude-code --write src/ --prompt 'Review this project'
+tego rules check agent.yaml
 tego run agent.yaml
 ```
 
 Claude runs one task in print mode through the forwarder; without `--prompt`, it
 describes the project without changing files. For the full-screen interface use
 `examples/agents/claude-code-interactive.yaml`; its model bytes are not captured.
-`tego init --list` lists agents and login setup. `--agent codex` selects Codex exec
+`tego rules create --list` lists agents and login setup. `--agent codex` selects Codex exec
 with `CODEX_API_KEY`; ChatGPT sign-in keeps its explicit example contract. Init reads
 no credentials and calls no model. The initial prompt is one literal argument.
 Generated cache and state paths move with the project; run it from that folder.
@@ -345,28 +345,28 @@ For any other agent or command, record one run of it, then let Tego propose a co
 ```sh
 cd ~/myagent                                      # the folder your agent works in
 tego watch -- python3 agent.py                    # records it; no rule refuses anything; Ctrl-C keeps the record
-tego learn <run> --save myagent                   # <run>: the run id tego watch printed at the end
+tego rules learn <run> --save myagent                   # <run>: the run id tego watch printed at the end
 tego run myagent
 ```
 
-`tego learn <run> [--save <name> | --out <file>] [--allow-host <host>[:<port>]]... [--reads on|off] [--workspace <dir>]`
+`tego rules learn <run> [--save <name> | --out <file>] [--allow-host <host>[:<port>]]... [--reads on|off] [--workspace <dir>]`
 reads the run's record and proposes a contract: the folders it wrote in, the programs it started, the addresses it
 connected to. Without `--save` or `--out` it prints the proposal. `--save myagent` writes it to
 `~/.config/tego/agents/myagent.yaml` (mode 0600, never over a file already there), where `tego run myagent` finds it;
 `--out` writes it to a new file you name. A contract `--save` writes records each read it refuses, so a refused read
 shows in `tego run`'s summary; each read open is about 17 µs slower, and `--reads off` leaves it out.
 `--workspace` is the folder writes may be allowed under (default: the folder the run started in). `<run>` may be the
-last characters of the run id (four or more) when they name one run. In a terminal, `tego watch`, `tego learn` and
+last characters of the run id (four or more) when they name one run. In a terminal, `tego watch`, `tego rules learn` and
 `tego run` each end with a `next:` line that names the command to type next. Read the proposal before you use it: it
 allows only what that run did. Keep it outside the folder the agent writes in, because Tego refuses a contract its
 agent could rewrite. Its
 network entries are the IP addresses that run connected to, not host names. One name often has several addresses and
 a program may pick another one on its next run, so a later run can be refused a connection this run made. Give the
-host name the agent uses with `--allow-host <host>`, for example `tego learn <run> --save myagent --allow-host
+host name the agent uses with `--allow-host <host>`, for example `tego rules learn <run> --save myagent --allow-host
 example.com` for an agent that fetches https://example.com: Tego looks the name up now and writes
 `tcp://example.com:443` in place of each address the run reached that the name resolves to, and refuses, writing
 nothing, a name that covers no address the run reached. You can also write the host name in their place by hand.
-`tego learn` says so too, at the top of the file and in the terminal, and its `next:` line adds `--allow-host <host>`
+`tego rules learn` says so too, at the top of the file and in the terminal, and its `next:` line adds `--allow-host <host>`
 when the run reached addresses.
 
 Use `tego status --agent <name>` to find its newest run, or add `--all` for its history.
@@ -375,7 +375,7 @@ Use `tego status --agent <name>` to find its newest run, or add `--all` for its 
 - Real agents: [examples/agents/](../examples/agents/README.md) has contracts for Claude Code, Codex and a custom agent. Each
   needs editing for your machine before use, and each file's header says how. Keep a contract outside the project the agent
   works in: a contract the agent can rewrite is refused.
-- Tighten or loosen a contract with `tego learn` (it proposes one from a finished run) and `tego rule`.
+- Tighten or loosen a contract with `tego rules learn` (it proposes one from a finished run) and `tego rule`.
 - Root tiers: `sudo "$(command -v tego)" run --tier cgroup agent.yaml`. The run lands in your own `~/.tego` and the dashboard
   shows it once it ends. This contract prints a `best effort` warning there, because it has no `net:` section. See
   [TIERS.md](TIERS.md).

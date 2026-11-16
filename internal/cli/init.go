@@ -71,7 +71,7 @@ func cmdInit() Command {
 		Usage:   "[--name <agent>] [--force] [--live-mode locked|adjustable] [--agent claude-code|codex] [--prompt <text>] [--preset <list> [--write <dir>]... [--allow-host <host[:port]|@group>]... [--command <line>]] [--list] [dir]",
 		Flags: func(fs *flag.FlagSet) {
 			fs.StringVar(&name, "name", "", "agent id for the starter contract (default: the directory name)")
-			fs.BoolVar(&force, "force", false, "replace an agent.yaml that tego init did not write")
+			fs.BoolVar(&force, "force", false, "replace an agent.yaml that tego rules create did not write")
 			fs.StringVar(&preset, "preset", "", "write a contract from presets, a comma list of no-secrets, no-prod, repo-only-writes")
 			fs.Func("write", "with --preset or --agent: a folder the agent may write (repeatable)", func(v string) error { writes = append(writes, v); return nil })
 			fs.Func("allow-host", "with --preset or --agent: a host[:port] or @group the agent may reach (repeatable)", func(v string) error { hosts = append(hosts, v); return nil })
@@ -114,7 +114,7 @@ func cmdInit() Command {
 				}
 			}
 			if flagGiven(fs, "agent") && agentKind == "" || flagGiven(fs, "prompt") && (prompt == "" || agentKind == "") {
-				message(stderr, "", 0, 0, "tego init: --agent and --prompt need non-empty values; use tego init --agent claude-code --prompt <text>", codeUsage)
+				message(stderr, "", 0, 0, "tego init: --agent and --prompt need non-empty values; use tego rules create --agent claude-code --prompt <text>", codeUsage)
 				return identity.ExitUsage
 			}
 			if preset == "" {
@@ -278,7 +278,7 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 		if composed != nil && !write {
 			fmt.Fprintf(stdout, "tego init: %s already exists, so these --preset flags were not applied: edit it, or re-run with --force to replace it\n", initContract)
 			if po.Agent != "" {
-				fmt.Fprintf(stdout, "--agent and --prompt were not applied either; to replace the contract: tego init --force --agent %s %s\n", shellQuote(po.Agent), shellQuote(abs))
+				fmt.Fprintf(stdout, "--agent and --prompt were not applied either; to replace the contract: tego rules create --force --agent %s %s\n", shellQuote(po.Agent), shellQuote(abs))
 			}
 		}
 		if adjustable && !write {
@@ -308,14 +308,14 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 		for _, n := range composed.Notes {
 			fmt.Fprintln(stdout, n)
 		}
-		fmt.Fprintf(stdout, "next, from %s (the contract's paths are relative to it): tego compile agent.yaml; tego run agent.yaml; tego receipt --last\n", abs)
+		fmt.Fprintf(stdout, "next, from %s (the contract's paths are relative to it): tego rules check agent.yaml; tego run agent.yaml; tego session show --last\n", abs)
 	}
 	if composed == nil && write {
 		// The starter's command is a placeholder: run as written in a project with no agent.py, the run ended on
 		// python's "can't open file" and tego said nothing more (CO-F14).
-		next := "next: set command: in agent.yaml to your agent's command line, then tego compile agent.yaml; tego run agent.yaml"
+		next := "next: set command: in agent.yaml to your agent's command line, then tego rules check agent.yaml; tego run agent.yaml"
 		if _, err := os.Stat(filepath.Join(abs, "agent.py")); err == nil {
-			next = "next: tego compile agent.yaml; tego run agent.yaml (it runs python3 agent.py)"
+			next = "next: tego rules check agent.yaml; tego run agent.yaml (it runs python3 agent.py)"
 		}
 		fmt.Fprintln(stdout, next)
 	}
@@ -365,7 +365,7 @@ func initCheckEnv(stderr io.Writer) (setup.CheckEnv, int) {
 
 // printPresetList is `tego init --list`: each preset with its revision and promise, and the host groups.
 func printPresetList(stdout, stderr io.Writer) int {
-	fmt.Fprintln(stdout, "presets (tego init --preset a,b,c; docs/user/presets.md):")
+	fmt.Fprintln(stdout, "presets (tego rules create --preset a,b,c; docs/user/presets.md):")
 	for _, p := range presets.List() {
 		fmt.Fprintf(stdout, "  %-17s %s@%d: %s\n", p.Name, p.Ref(), p.Revision, p.Promise)
 	}
@@ -390,11 +390,11 @@ func printPresetList(stdout, stderr io.Writer) int {
 }
 
 // errForeign marks an existing file that tego init did not write.
-var errForeign = errors.New("exists and was not written by tego init; re-run with --force to replace it")
+var errForeign = errors.New("exists and was not written by tego rules create; re-run with --force to replace it")
 
 // errInitDirTaken marks a .tego that is not a directory. --force replaces agent.yaml and nothing else, so the message
 // offers no flag: errForeign's sent the reader round in a circle.
-var errInitDirTaken = errors.New("exists and is not a directory; move it aside and run tego init again")
+var errInitDirTaken = errors.New("exists and is not a directory; move it aside and run tego rules create again")
 
 // agentNameFor derives an agent id from a directory name: lower-case, every other rune to '-',
 // trimmed to 40, "agent" when nothing is left.

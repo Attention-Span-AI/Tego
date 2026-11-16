@@ -1,0 +1,13 @@
+usage: tego session list [--json]
+   or: tego session show <session> | --last [--json]
+   or: tego session stop <session>
+   or: tego session pause <session>
+   or: tego session resume <session>
+
+   list             List sessions
+   show             Show what a session did and what Tego blocked
+   stop             Stop a running session
+   pause            Pause a running session
+   resume           Resume a paused session
+
+See 'tego help session <command>' to read about a specific command.

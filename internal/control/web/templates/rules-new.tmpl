@@ -23,7 +23,7 @@
 {{else}}
 <div class="head"><div><h1>New contract</h1><p class="lede" title="Nothing is written until you click Create or Save.">Preview first · nothing written yet</p></div>
 <div class="head-actions"><a class="btn" href="/rules">{{template "i" "i-shield"}}Contracts</a></div></div>
-{{if .Off}}<section class="panel"><div class="empty"><h3>Not available here</h3><details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>tego init --preset no-secrets,no-prod</code></div></details></div></section>
+{{if .Off}}<section class="panel"><div class="empty"><h3>Not available here</h3><details class="cli-more"><summary>In a terminal</summary><div class="cli"><code>tego rules create --preset no-secrets,no-prod</code></div></details></div></section>
 {{else}}
 <nav class="chips nw-mode" aria-label="Start from"><a class="chip" href="/rules/new"{{if eq .Mode "presets"}} aria-current="true"{{end}}>From presets</a><a class="chip" href="/rules/new?mode=run" title="Allow what a finished run did, and no more"{{if eq .Mode "run"}} aria-current="true"{{end}}>From a run</a></nav>
 <form class="panel nw-form" action="/rules/new" method="get" aria-label="The new contract">
@@ -35,10 +35,10 @@
   </div>
   {{if eq .Mode "run"}}
   <label class="field">Finished run<select class="select" name="from">{{if not .Runs}}<option value="">No finished run</option>{{end}}{{range .Runs}}<option value="{{.ID}}"{{if eq .ID $d.Form.FromRun}} selected{{end}}>{{if .Agent}}{{.Agent}} · {{end}}{{rid .ID}} · {{day .Start}} {{clock .Start}}</option>{{end}}</select></label>
-  <p class="soft nw-hint" title="The folders it wrote, the programs it started, the addresses it connected to (tego learn). An empty project folder means the run's own.">A draft from what that run did, for you to review</p>
+  <p class="soft nw-hint" title="The folders it wrote, the programs it started, the addresses it connected to (tego rules learn). An empty project folder means the run's own.">A draft from what that run did, for you to review</p>
   {{if not .Runs}}<p class="soft">Record one first: <span class="mono">tego watch -- &lt;the command that starts your agent&gt;</span></p>{{end}}
   <fieldset class="nw-presets nw-to"><legend class="nw-legend">Save to</legend>
-    <label class="nw-preset"><input type="radio" name="to" value="registry"{{if eq .To "registry"}} checked{{end}}><span><strong>Your agents</strong><span class="soft">For <span class="mono">tego run &lt;name&gt;</span> from the project folder, as <span class="mono">tego learn --save</span> saves it (~/.config/tego/agents/)</span></span></label>
+    <label class="nw-preset"><input type="radio" name="to" value="registry"{{if eq .To "registry"}} checked{{end}}><span><strong>Your agents</strong><span class="soft">For <span class="mono">tego run &lt;name&gt;</span> from the project folder, as <span class="mono">tego rules learn --save</span> saves it (~/.config/tego/agents/)</span></span></label>
     <label class="nw-preset"><input type="radio" name="to" value="project"{{if eq .To "project"}} checked{{end}}><span><strong>The project folder</strong><span class="soft">As <span class="mono">agent.yaml</span>, for <span class="mono">tego run agent.yaml</span></span></span></label>
   </fieldset>
   {{template "readsswitch" .}}

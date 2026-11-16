@@ -120,12 +120,12 @@ var startSites = []startSite{
 	{
 		file: "internal/doctor/planeexecpin.go", fn: "exercisePlaneExecPin", call: "doctor.startPinGate", n: 1, rel: beforeArm,
 		when: "the exec pin cell's gates, cloned into its scratch cgroup by doctor before the cell arms it, before Prepare in a " +
-			"run (doctor.ForRun) and under `tego doctor`, where no mark exists",
+			"run (doctor.ForRun) and under `tego machine check`, where no mark exists",
 	},
 	{
 		file: "internal/doctor/planeexecpin.go", fn: "exercisePlaneExecPin", call: "doctor.startPlaneChildAs", n: 1, rel: beforeArm,
 		when: "the exec pin cell's writer child, cloned into its scratch cgroup by doctor before the cell arms it, before Prepare " +
-			"in a run (doctor.ForRun) and under `tego doctor`, where no mark exists",
+			"in a run (doctor.ForRun) and under `tego machine check`, where no mark exists",
 	},
 	{
 		file: "internal/doctor/planeexecpin.go", fn: "startPinGate", call: "proc.Start", n: 1, rel: guarded,
@@ -145,12 +145,12 @@ var startSites = []startSite{
 	{
 		file: "internal/doctor/planeknown.go", fn: "exercisePlaneKnown", call: "doctor.startPlaneChildAs", n: 1, rel: beforeArm,
 		when: "the known answers' child, cloned into the probe's scratch cgroup by doctor, before Prepare in a run (doctor.ForRun) " +
-			"and under `tego doctor`, where no mark exists",
+			"and under `tego machine check`, where no mark exists",
 	},
 	{
 		file: "internal/doctor/planeprobe.go", fn: "exercisePlane", call: "doctor.planeAction", n: 1, rel: beforeArm,
 		when: "doctor's own outside snapshot, one syscall per hook, which runs before Prepare in a run (doctor.ForRun) and under " +
-			"`tego doctor`, which marks nothing ever",
+			"`tego machine check`, which marks nothing ever",
 	},
 	{
 		file: "internal/doctor/planeprobe.go", fn: "PlaneProbeMain", call: "doctor.planeAction", n: 1, rel: beforeArm,
@@ -164,7 +164,7 @@ var startSites = []startSite{
 	{
 		file: "internal/doctor/planeprobe.go", fn: "startPlaneChild", call: "doctor.startPlaneChildAs", n: 1, rel: beforeArm,
 		when: "the probe row's child, cloned into the scratch cgroup by exercisePlane, before Prepare in a run (doctor.ForRun) " +
-			"and under `tego doctor`, where no mark exists",
+			"and under `tego machine check`, where no mark exists",
 	},
 	{
 		file: "internal/doctor/planeprobe.go", fn: "startPlaneChildAs", call: "proc.Start", n: 1, rel: guarded,
@@ -174,7 +174,7 @@ var startSites = []startSite{
 	{
 		file: "internal/doctor/planeprobe_control.go", fn: "planeControlAction", call: "doctor.startPlaneChildAs", n: 2, rel: beforeArm,
 		when: "the ptrace controls' helper children, started inside a hook's action when none was made beforehand, which is " +
-			"doctor's outside snapshot (exercisePlane): before Prepare in a run (doctor.ForRun) and under `tego doctor`, where " +
+			"doctor's outside snapshot (exercisePlane): before Prepare in a run (doctor.ForRun) and under `tego machine check`, where " +
 			"no mark exists",
 	},
 	{
@@ -191,6 +191,71 @@ var startSites = []startSite{
 		file: "internal/cli/asknotice.go", fn: "desktopNotice.send", call: "cli.startNotifier", n: 1, rel: beforeArm,
 		when: "a held ask's notice during the run, wired only for a tier-landlock run of a non-root launcher (askNotices): " +
 			"that launcher holds no fanotify group, since only enforce/cgroup's listener (tiers cgroup and bpflsm) calls proc.Arm",
+	},
+	{
+		file: "internal/cli/setup_guide.go", fn: "guideInstall", call: "proc.Start", n: 1, rel: guarded,
+		when: "the agent's own installer, run when the person says yes, in " +
+			"tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's listener in a launcher calls proc.Arm",
+	},
+	{
+		file: "internal/cli/setup_guide.go", fn: "guideSetupToken", call: "proc.Start", n: 1, rel: guarded,
+		when: "the agent's own login (claude setup-token), under script(1) when it is there, in " +
+			"tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's listener in a launcher calls proc.Arm",
+	},
+	{
+		file: "internal/cli/setup_guide.go", fn: "resetTerminal", call: "proc.Start", n: 1, rel: guarded,
+		when: "stty sane, after the agent's login gave the terminal back, in " +
+			"tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's listener in a launcher calls proc.Arm",
+	},
+	{
+		file: "internal/cli/setup_guide.go", fn: "guideDashboard", call: "proc.Start", n: 1, rel: guarded,
+		when: "systemctl and systemd-run, which start the dashboard as a user unit, in " +
+			"tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's listener in a launcher calls proc.Arm",
+	},
+	{
+		file: "internal/cli/setup_guide.go", fn: "guideVersion", call: "proc.Start", n: 1, rel: guarded,
+		when: "the agent's --version, to name the version installed, in " +
+			"tego start's guide, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's listener in a launcher calls proc.Arm",
+	},
+	{
+		file: "internal/cli/setup_guide.go", fn: "walk.guide", call: "cli.guideDashboard", n: 1, rel: beforeArm,
+		when: "the dashboard, started once the agent is saved, in tego start's guide, a command that starts no run: its process holds no fanotify group",
+	},
+	{
+		file: "internal/cli/dashboard.go", fn: "cmdDashboard", call: "cli.guideDashboard", n: 1, rel: beforeArm,
+		when: "the dashboard, started when none is running, in tego dashboard, a command that starts no run: its process " +
+			"holds no fanotify group",
+	},
+	{
+		file: "internal/cli/dashboard.go", fn: "restartDashboard", call: "cli.guideDashboard", n: 1, rel: beforeArm,
+		when: "the dashboard, started again when the person asks for a new one or tego was updated, in tego dashboard, a " +
+			"command that starts no run: its process holds no fanotify group",
+	},
+	{
+		file: "internal/cli/setup_guide.go", fn: "walk.installed", call: "cli.guideVersion", n: 2, rel: beforeArm,
+		when: "the agent's --version, before and after it is installed, in tego start's guide, a command that starts no run: its process holds no fanotify group",
+	},
+	{
+		file: "internal/cli/setup_guide.go", fn: "walk.installAgent", call: "cli.guideInstall", n: 1, rel: beforeArm,
+		when: "the agent's installer, once the person says yes, in tego start's guide, a command that starts no run: its process holds no fanotify group",
+	},
+	{
+		file: "internal/cli/setup_guide.go", fn: "walk.signIn", call: "cli.guideSetupToken", n: 1, rel: beforeArm,
+		when: "the agent's own login, in tego start's guide, a command that starts no run: its process holds no fanotify group",
+	},
+	{
+		file: "internal/cli/setup_guide.go", fn: "guideSetupToken", call: "cli.resetTerminal", n: 2, rel: guarded,
+		when: "stty sane after the agent's own login, in tego start's guide, a command that starts no run: its process holds no fanotify group",
+	},
+	{
+		file: "internal/cli/rules_edit.go", fn: "cmdRulesEdit", call: "cli.editCopy", n: 1, rel: beforeArm,
+		when: "tego rules edit, a command that starts no run: its process holds no fanotify group, since only enforce/cgroup's " +
+			"listener in a launcher calls proc.Arm",
+	},
+	{
+		file: "internal/cli/rules_edit.go", fn: "editCopy", call: "proc.Start", n: 1, rel: guarded,
+		when: "tego rules edit's $EDITOR, in a command that starts no run: its process holds no fanotify group, since only " +
+			"enforce/cgroup's listener in a launcher calls proc.Arm",
 	},
 	{
 		file: "internal/cli/mcp_relay.go", fn: "startRelayedServer", call: "proc.Start", n: 1, rel: guarded,
@@ -220,7 +285,7 @@ var startSites = []startSite{
 	},
 	{
 		file: "internal/maze/cli/save.go", fn: "saveLocked", call: "cli.verifyEngine", n: 1, rel: beforeArm,
-		when: "maze's check of a saved contract (`tego compile --test --offline`), run once the rules are saved, in the maze " +
+		when: "maze's check of a saved contract (`tego rules check --test --offline`), run once the rules are saved, in the maze " +
 			"CLI's own process, which holds no group: nothing it links calls Arm",
 	},
 	{
@@ -230,7 +295,7 @@ var startSites = []startSite{
 	},
 	{
 		file: "internal/selftest/checks.go", fn: "checks", call: "selftest.runUnlisted", n: 1, rel: beforeArm,
-		when: "tego test's exec check (ADR 0074), run by the hidden __check verb, a process of its own that links no Arm: " +
+		when: "tego machine test's exec check (ADR 0074), run by the hidden __check verb, a process of its own that links no Arm: " +
 			"directly, and as the agent of a self-test run, which holds no group",
 	},
 	{
@@ -240,16 +305,16 @@ var startSites = []startSite{
 	},
 	{
 		file: "internal/selftest/driver.go", fn: "driver.check", call: "selftest.startTego", n: 1, rel: beforeArm,
-		when: "tego test's starts of tego __check and tego run (ADR 0074), in tego test's own process, which holds no fanotify " +
+		when: "tego machine test's starts of tego __check and tego run (ADR 0074), in tego machine test's own process, which holds no fanotify " +
 			"group: nothing it does calls Arm",
 	},
 	{
 		file: "internal/selftest/driver.go", fn: "driver.events", call: "selftest.startTego", n: 1, rel: beforeArm,
-		when: "tego test's start of tego events to read a run's ledger, in tego test's own process, which holds no group",
+		when: "tego machine test's start of tego events to read a run's ledger, in tego machine test's own process, which holds no group",
 	},
 	{
 		file: "internal/selftest/driver.go", fn: "startTego", call: "proc.Start", n: 1, rel: guarded,
-		when: "tego test's one start of the tego binary: its callers' rows say when, and Start refuses it with ErrArmed while " +
+		when: "tego machine test's one start of the tego binary: its callers' rows say when, and Start refuses it with ErrArmed while " +
 			"the process holds marks",
 	},
 	{
@@ -296,7 +361,7 @@ var startSites = []startSite{
 			"the last out of it, by Close, after Detach has closed the group, and by a failed Prepare's unwind, before any mark " +
 			"was placed; another build's whose timer died, by Prepare's re-arm pass (rearmExpired), which runs once the build " +
 			"lock is held and before Arm places the first mark; and by processes that hold no group: a reaper (ReapBuild) and " +
-			"`tego stop` (RearmTimers)",
+			"`tego session stop` (RearmTimers)",
 	},
 	{
 		file: "internal/runtime/enforce/cgroup/rings.go", fn: "Handle.parkRings", call: "cgroup.startHelperProcess", n: 1, rel: afterDetach,

@@ -1,6 +1,6 @@
 # Tiers
 
-Tego enforces a contract at one of three tiers. All three are in the release binary and in the one `make build` makes. `tego doctor` says which
+Tego enforces a contract at one of three tiers. All three are in the release binary and in the one `make build` makes. `tego machine check` says which
 one your machine gets, `tego run --tier <name>` pins one, and every run records the tier it had (`run_start.tier`).
 The per-tier capability table is [spec/backend/CAPABILITIES.md](../spec/backend/CAPABILITIES.md).
 
@@ -16,7 +16,7 @@ The per-tier capability table is [spec/backend/CAPABILITIES.md](../spec/backend/
 | On a hosted CI runner | Yes: this is the CI mode | Yes, through `sudo`, on `ubuntu-24.04` | No: a hosted runner cannot change the kernel command line |
 
 More rule kinds need a newer kernel at tier 1: TCP port rules need Landlock ABI 4 (Linux 6.7, or Red Hat's RHEL 9
-backport), and further rules arrive at ABIs 6, 7, 9 and 10 ([GAPS.md](GAPS.md) B5). `tego doctor` prints your ABI.
+backport), and further rules arrive at ABIs 6, 7, 9 and 10 ([GAPS.md](GAPS.md) B5). `tego machine check` prints your ABI.
 
 RHEL 9 correction: v0.1.0 included the listener outcome hooks, but used the wrong BTF context for individual
 syscall exits. On RHEL 9's 5.14, root-tier runs declaring `net.listen` failed before the agent started with
@@ -29,11 +29,11 @@ check is absent there, and the test reports that coverage distinction.
 
 RHEL 9 CPU limits: on AlmaLinux 9.8 (kernel 5.14.0-687.61.1.el9_8, systemd 252), systemd turns on the memory
 and pids controllers by default, but not cpu, for a user's login and for root. Tier 1 runs there, and
-`tego doctor` says that cpu is not enabled. A run whose contract sets `limits.cpu` or `limits.cpu_weight` is
+`tego machine check` says that cpu is not enabled. A run whose contract sets `limits.cpu` or `limits.cpu_weight` is
 refused at start (exit 125), before the agent starts, and the message gives the fix. When the user's cgroup is not
 offered cpu (its `cgroup.controllers` does not list it), a user cannot turn cpu on alone, so the fix starts with the
 administrator's steps below. A `limits.cpu` ceiling in
-`/etc/tego/config.yaml` gives every `tego run` a CPU limit, so with one they are all refused. `tego doctor`
+`/etc/tego/config.yaml` gives every `tego run` a CPU limit, so with one they are all refused. `tego machine check`
 still reports tier landlock for a user; from the next release its cgroupv2 line also names that ceiling and says
 every run is refused. Memory and process limits apply as usual. To allow CPU limits, an administrator runs this
 once, then reboots:
@@ -72,13 +72,13 @@ and describe shared skipped executions, never “N events lost” or proof of lo
 report the same skip. A skip of a program that decides a run's actions (the listener cleanup on any preemptible
 kernel) is detected and ends the launched runs that rely on it, with a `bpf-decision-skip/shared-build` gap; their
 receipts say the rules may not have held. The LSM hooks of tier 3 and the plane's lsm mode cannot be skipped on a kernel from 6.2 (6.1.54 in the 6.1 series); on an
-older one, `tego doctor` offers them only where the kernel does not preempt kernel code. On a kernel that preempts
+older one, `tego machine check` offers them only where the kernel does not preempt kernel code. On a kernel that preempts
 kernel code (every 7.0 kernel), the check that holds each exec to the decided command line can be skipped, so doctor
 says exec rules on argv are best effort there and `exec.assurance: kernel` is refused. Doctor reads this from the
 running kernel's own symbols, not its version. Measured in the test kernels: the symbol it reads is present on RHEL 9's
 5.14.0-687, Amazon Linux 2023's 6.1.188, Debian 12's 6.1.176, Ubuntu 24.04's 6.8, Debian 13's 6.12, Ubuntu 25.10's
 6.17 and Fedora's 7.0 and 7.2, and absent on Ubuntu 22.04's 5.15; doctor ran on Amazon Linux 2023, Debian 12 and
-Fedora 7.0. Other vendor kernels, and older point releases of these, are not measured: run `sudo tego doctor` there.
+Fedora 7.0. Other vendor kernels, and older point releases of these, are not measured: run `sudo tego machine check` there.
 Doctor states this listener-cleanup exposure where kernel code can be preempted or its preemption mode is unknown;
 an adoption reports detected skips without ending the agent. See [GAPS C53](GAPS.md).
 
@@ -95,9 +95,9 @@ build, which is v0.1.1's code, and the Fedora 44 results used both builds.
 
 On 2026-11-11, on each system below, a new user checked the published installer with cosign
 ([INSTALL.md](INSTALL.md#check-the-installer-first), `tag=v0.1.1`) and installed v0.1.1 with it. `releases/latest`
-pointed to v0.1.1. Then `tego doctor --require landlock` and `tego test` passed, a run exited 0 at tier landlock,
+pointed to v0.1.1. Then `tego machine check --require landlock` and `tego machine test` passed, a run exited 0 at tier landlock,
 refused a `deny_read` file and recorded the refused and the allowed read, and `tego events <run> --verify` and
-`tego receipt <run> --verify` passed. All ten checks passed on all six systems. These were user checks only: no root
+`tego session show <run> --verify` passed. All ten checks passed on all six systems. These were user checks only: no root
 tier and no root test suite ran in these guests.
 
 | System | Kernel | systemd | Tier |
@@ -115,8 +115,8 @@ On a fresh Ubuntu 24.04, the README's install line and its first run, typed as w
 ### Ubuntu 26.04
 
 Ubuntu 26.04.1 LTS, kernel 7.0.0-38-generic, systemd 259.5, Landlock ABI 8, and no `bpf` in the boot LSM list. With
-the published v0.1.1, a new user passed the ten checks above at tier landlock, and `tego doctor` reported Landlock
-ABI 8. As root, `tego doctor` reports tier cgroup: 27 of 27 hooks load and attach, and the decision plane uses
+the published v0.1.1, a new user passed the ten checks above at tier landlock, and `tego machine check` reported Landlock
+ABI 8. As root, `tego machine check` reports tier cgroup: 27 of 27 hooks load and attach, and the decision plane uses
 fanotify. Doctor says a refused open would reach the agent as `EPERM`; no refusal was measured there. Tier bpflsm
 needs `bpf` added to the LSM list
 ([below](#tier-3-on-ubuntu)). The root doctor ran with a local build from just before the tag (the head of
@@ -126,9 +126,9 @@ suites were not run on Ubuntu 26.04.
 ### RHEL 10
 
 On stock AlmaLinux 10.2 (kernel 6.12.0-211.74.1.el10_2, systemd 257, SELinux enforcing), no setup is needed: systemd
-turns cpu on by default. A new user over SSH got tier landlock: `tego doctor --require landlock` and `tego test`
-passed, a run refused a `deny_read` file and recorded it, `tego events <run> --verify` and `tego receipt <run> --verify`
-passed, and CPU, memory and process limits applied. As root, `tego doctor` reports tier bpflsm with 27 of 27 hooks,
+turns cpu on by default. A new user over SSH got tier landlock: `tego machine check --require landlock` and `tego machine test`
+passed, a run refused a `deny_read` file and recorded it, `tego events <run> --verify` and `tego session show <run> --verify`
+passed, and CPU, memory and process limits applied. As root, `tego machine check` reports tier bpflsm with 27 of 27 hooks,
 and runs at tiers cgroup and bpflsm refused a `deny_read` file, verified their records and applied CPU, memory and
 process limits. With the fixed build, root runs at both tiers refused to make a file already on an overlay mount,
 under a write entry, executable with `mprotect`; the build before the fix allowed it. The binaries were copied in,
@@ -137,15 +137,15 @@ not installed by the release installer, and the root test suites were not run th
 ### arm64
 
 In an emulated arm64 guest (QEMU without KVM, Ubuntu 24.04, kernel 6.8.0-147), a new user got tier landlock and
-passed the same checks as on RHEL 10, limits aside; as root, `tego doctor` reports tier cgroup with 27 of 27 hooks
+passed the same checks as on RHEL 10, limits aside; as root, `tego machine check` reports tier cgroup with 27 of 27 hooks
 (Ubuntu's boot LSM list has no `bpf`). An emulated CPU is not arm64 hardware. On hardware, CI's `build-test-arm64`
-job runs on GitHub's arm64 runner: it builds Tego, runs the unit tests, root `tego doctor` and selected root tests,
+job runs on GitHub's arm64 runner: it builds Tego, runs the unit tests, root `tego machine check` and selected root tests,
 the plane's load test among them. It does not run the steps above as a user, and the full root test suites run on
 amd64 only.
 
 ### Root test suites on RHEL 9
 
-On stock AlmaLinux 9.8 (kernel 5.14.0-687.61.1.el9_8, SELinux enforcing, xfs), root `tego doctor` reports tier
+On stock AlmaLinux 9.8 (kernel 5.14.0-687.61.1.el9_8, SELinux enforcing, xfs), root `tego machine check` reports tier
 bpflsm with 25 of 25 hooks, and root runs at tiers cgroup and bpflsm refused a `deny_read` file and verified their
 records, with the fixed build too.
 
@@ -219,7 +219,7 @@ root in local guests, one suite at a time, not in CI's shards. As of 2026-11-10:
 On Fedora 44 (kernel 6.19.10-300.fc44), v0.1.1's plane load test and its step A, B and C tests fail, with the build
 before the overlayfs fix and the fixed build alike. Those tests hold the plane's programs to 20,000 verified
 instructions (`socket_listen` to 64,000), and on this kernel the largest verifies in 63,939 (the kernel's own limit
-is 1,000,000). Root `tego doctor` there loads the plane in LSM mode and reports tier bpflsm with 27 of 27 hooks.
+is 1,000,000). Root `tego machine check` there loads the plane in LSM mode and reports tier bpflsm with 27 of 27 hooks.
 
 The count comes from the kernel, not from the programs. The same bytes of the programs that call `bpf_loop` verify
 in at most 14,562 instructions on mainline 6.19.3 and in up to 63,939 on mainline 6.19.4, 6.19.10 and 6.19.14; they
@@ -263,7 +263,7 @@ is refused and never runs at another tier. On Fedora and the RHEL family, `grubb
 the same job.
 
 At tier 2 without `bpf` in the list, the decision plane loads as `fmod_ret` hooks where the kernel allows it, and the kernel
-decides opens, execs and file changes. `tego doctor` says which mode you are in. [OPERATIONS.md](OPERATIONS.md) ("Tier 3 and the
+decides opens, execs and file changes. `tego machine check` says which mode you are in. [OPERATIONS.md](OPERATIONS.md) ("Tier 3 and the
 decision plane") describes the residual.
 
 ## Directory moves and protected names
@@ -279,7 +279,7 @@ name coverage.** Keep the contract outside writable paths and launch from target
 parent, use `fs.write: ["../tmp/", "./"]` and `(cd target && tego run ../agent.yaml ...)`. Use absolute entries
 or rebase all relative entries for that cwd, set TMPDIR to the absolute staging path, and keep matching
 `exec.allow` directory rights at both ends for native modules. The contract directory covers staging, and cwd
-covers target. The refusal and `tego learn` explain this tested remedy without automatically allowing refusals.
+covers target. The refusal and `tego rules learn` explain this tested remedy without automatically allowing refusals.
 Alternatively use a covered destination such as `site-packages`. A further dependency boundary and separate
 denies/REFER still have their existing limits. See [OPERATIONS.md](OPERATIONS.md#directory-moves-and-protected-names-c55).
 
@@ -298,7 +298,7 @@ a fail-closed limit for this release; the listener does not hold other names by 
 A selected decision plane still holds a whole-folder alias on the same filesystem instance. A part mounted
 outside the denied folder is refused at tier bpflsm and at cgroup after plane fallback. Switching to cgroup is
 no remedy for that case. Remove the duplicate mount, or use a tier and kernel with a decision plane only where
-it holds the whole contract. `tego doctor` says which plane modes the machine offers. When it can see a second
+it holds the whole contract. `tego machine check` says which plane modes the machine offers. When it can see a second
 place for home or another built-in protected target, it names both places and says which mechanisms refuse or
 hold that layout. The run still checks its whole contract at startup. The no-root tier, landlock, retains its
 documented alias limit for another name beneath a folder it lets the agent read.

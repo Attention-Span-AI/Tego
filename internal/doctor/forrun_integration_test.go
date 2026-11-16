@@ -269,7 +269,7 @@ func TestIntegrationRestrictedRootRunAfterFullRoot(t *testing.T) {
 	full := string(backend.TierCgroup)
 	offered, out, err := testutil.DoctorOffers(isolatedTego(t, bin, "doctor", "--require", "bpflsm"))
 	if err != nil {
-		t.Fatalf("tego doctor --require bpflsm gave no answer about this machine: %v\n%s", err, out)
+		t.Fatalf("tego machine check --require bpflsm gave no answer about this machine: %v\n%s", err, out)
 	}
 	if offered {
 		full = string(backend.TierBPFLSM)

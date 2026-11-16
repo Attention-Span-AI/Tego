@@ -215,7 +215,7 @@ func (r Report) WriteText(w io.Writer) error {
 		b.WriteString("Each action works on this machine without Tego, and Tego refused and recorded every one.\n")
 	case r.Verdict == VerdictFail:
 		b.WriteString("Tego did not refuse every action: a row marked allowed took effect under Tego, and one marked\n" +
-			"unrecorded was stopped without a record. Run tego doctor and report it.\n")
+			"unrecorded was stopped without a record. Run tego machine check and report it.\n")
 	case r.judged() == 0:
 		// Not one run under Tego started (from a shell outside the user manager's cgroup, every one exits 125): nothing
 		// was judged, so "nothing got through" would claim what was never tried (acceptance B, 2026-11-11).

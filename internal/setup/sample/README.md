@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 # Tego test project
 
 A tiny notes app, made to show what Tego catches. Its dependency `telemetry_helper` (in `libs/`) is poisoned on
@@ -11,4 +12,4 @@ Run the tests:
     python3 -m unittest -v
 
 Under Tego, the tests pass, and the secret read and the connection are blocked.
-`tego describe session --last` shows what was blocked.
+`tego session show --last` shows what was blocked.

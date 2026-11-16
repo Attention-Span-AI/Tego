@@ -200,7 +200,7 @@ func captureUnavailableFix(causes []string) string {
 	var fixes []string
 	if slices.ContainsFunc(causes, func(c string) bool { return !isForwarder(c) }) {
 		fixes = append(fixes, "when the host's ring budget is spent, wait for other runs to end or raise "+
-			"bpf.ring_budget in /etc/tego/config.yaml (`tego doctor` shows the rings in use); or run with "+
+			"bpf.ring_budget in /etc/tego/config.yaml (`tego machine check` shows the rings in use); or run with "+
 			"capture: forwarder and a models: endpoint")
 	}
 	if slices.ContainsFunc(causes, isForwarder) {

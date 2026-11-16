@@ -131,7 +131,7 @@ func TestTheNextLinesNeverLoopFromAnyPlace(t *testing.T) {
 					onPlace(t, state, p, scopeChecked)
 					hintsAt(t, false, "on")
 					_, _, errs := run(t, "setup")
-					outs := []struct{ printed, stderr string }{{"tego setup", errs}, {"tego doctor", doctorAt(p)}}
+					outs := []struct{ printed, stderr string }{{"tego setup", errs}, {"tego machine check", doctorAt(p)}}
 					// The hop after setup's step, typed where setup printed it: tego learn --save named tego run from
 					// SSH, which exits 125 there (the review's M1).
 					if cmd, _ := nextCommand(errs); followable(cmd) {
@@ -140,7 +140,7 @@ func TestTheNextLinesNeverLoopFromAnyPlace(t *testing.T) {
 					}
 					for _, out := range outs {
 						cmd, ok := nextCommand(out.stderr)
-						if !ok && strings.HasPrefix(out.printed, "tego receipt ") {
+						if !ok && strings.HasPrefix(out.printed, "tego session show ") {
 							continue // the walk's end: every step is done
 						}
 						if !ok {
@@ -218,7 +218,7 @@ func sidePaths(t *testing.T) {
 			var b bytes.Buffer
 			writeDoctorVerdict(&b, noManagerReport())
 			next := map[string]string{}
-			for printed, stderr := range map[string]string{"tego setup": errs, "tego doctor": b.String()} {
+			for printed, stderr := range map[string]string{"tego setup": errs, "tego machine check": b.String()} {
 				cmd, ok := nextCommand(stderr)
 				if !ok {
 					t.Errorf("%s printed no next: line:\n%s", printed, stderr)
@@ -232,8 +232,8 @@ func sidePaths(t *testing.T) {
 				}
 				next[printed] = cmd
 			}
-			if next["tego setup"] == "tego doctor" && next["tego doctor"] == "tego setup" {
-				t.Errorf("tego setup and tego doctor point at each other:\n%s\n%s", errs, b.String())
+			if next["tego setup"] == "tego machine check" && next["tego machine check"] == "tego setup" {
+				t.Errorf("tego setup and tego machine check point at each other:\n%s\n%s", errs, b.String())
 			}
 			if !strings.Contains(out, "no user manager runs for you") || strings.Contains(out, "Delegate=") {
 				t.Errorf("step 2 does not say why:\n%s", out)
@@ -257,7 +257,7 @@ func sidePaths(t *testing.T) {
 			_, _, errs := run(t, "setup")
 			var b bytes.Buffer
 			writeDoctorVerdict(&b, outsideReport())
-			for printed, stderr := range map[string]string{"tego setup": errs, "tego doctor": b.String()} {
+			for printed, stderr := range map[string]string{"tego setup": errs, "tego machine check": b.String()} {
 				if cmd, ok := nextCommand(stderr); !ok || cmd != viaLogind {
 					t.Errorf("%s's next: command is %q, not the one that opens the scope through the logind folder:\n%s", printed, cmd, stderr)
 				}
@@ -299,11 +299,11 @@ func sidePathsAcc3(t *testing.T) {
 			if fixLine := lineWith(table.String(), "; fix: "); strings.Contains(fixLine, "open one with systemd-run --user --scope bash") ||
 				!strings.Contains(fixLine, "sudo -u ") ||
 				!strings.Contains(fixLine, " XDG_RUNTIME_DIR=/run/user/1002 systemd-run --user --scope bash") {
-				t.Errorf("tego doctor's fix: line names a command that opens the administrator's own scope:\n%s", table.String())
+				t.Errorf("tego machine check's fix: line names a command that opens the administrator's own scope:\n%s", table.String())
 			}
 			var b bytes.Buffer
 			writeDoctorVerdict(&b, rep)
-			for printed, stderr := range map[string]string{"tego setup": errs, "tego doctor": b.String()} {
+			for printed, stderr := range map[string]string{"tego setup": errs, "tego machine check": b.String()} {
 				if cmd, ok := nextCommand(stderr); !ok || cmd != asSvc {
 					t.Errorf("%s's next: command is %q, not the one that opens the user's shell from the administrator's:\n%s", printed, cmd, stderr)
 				}
@@ -313,7 +313,7 @@ func sidePathsAcc3(t *testing.T) {
 			}
 			if !strings.Contains(b.String(), "it opens a shell as svc, in svc's user manager's cgroup, not in yours") ||
 				!strings.Contains(b.String(), "in your own login shell, not in one sudo or su opened") {
-				t.Errorf("tego doctor does not say whose shell the command opens, or which shell to type it in:\n%s", b.String())
+				t.Errorf("tego machine check does not say whose shell the command opens, or which shell to type it in:\n%s", b.String())
 			}
 			if !strings.Contains(out, "it opens a shell as svc in svc's user manager's cgroup, not in yours") {
 				t.Errorf("step 2 does not say whose shell the command opens:\n%s", out)
@@ -340,7 +340,7 @@ func sidePathsAcc3(t *testing.T) {
 			rep.Fix, rep.Results[0].Fix = refusedFix, refusedFix
 			var b bytes.Buffer
 			writeDoctorVerdict(&b, rep)
-			for printed, stderr := range map[string]string{"tego setup": errs, "tego doctor": b.String()} {
+			for printed, stderr := range map[string]string{"tego setup": errs, "tego machine check": b.String()} {
 				cmd, ok := nextCommand(stderr)
 				if !ok {
 					t.Errorf("%s printed no next: line:\n%s", printed, stderr)
@@ -600,7 +600,7 @@ func TestTheLearnStepNeverNamesAHostASecretMayHaveGoneTo(t *testing.T) {
 	withLearnResolver(t, tableResolver{table: map[string][]netip.Addr{"example.com": exampleComAnswer}})
 	hintsAt(t, false, "on")
 	sum := &endSummary{root: root, machine: hintMachine(t)}
-	plain := "tego learn " + short + " --save myagent"
+	plain := "tego rules learn " + short + " --save myagent"
 	if _, command := watchNext(t.Context(), os.Stderr, tegoruntime.Result{RunID: id}, sum, "", project); command != plain {
 		t.Errorf("watch: %q, want %q", command, plain)
 	}
@@ -776,8 +776,8 @@ func TestARunHintFromBesideTheUserManagerOpensTheShell(t *testing.T) {
 			}
 		}
 		b.Reset()
-		runHint(&b, "make a contract from what it did:", "tego learn b883rx --save bot")
-		if got, _ := nextCommand(b.String()); got != "tego learn b883rx --save bot" {
+		runHint(&b, "make a contract from what it did:", "tego rules learn b883rx --save bot")
+		if got, _ := nextCommand(b.String()); got != "tego rules learn b883rx --save bot" {
 			t.Errorf("a step that starts no run, beside=%v: %q", beside, b.String())
 		}
 	}

@@ -7,16 +7,17 @@ its folders, its hosts, its model, the variables it needs. There are three:
 - `tego/no-prod`: the agent reaches no network host except the ones your contract names.
 - `tego/repo-only-writes`: the agent writes only in the folders your contract names.
 
-## The rules `tego start` and `tego add agent` offer
+## The rules `tego start` offers
 
 | Choice | Presets | What the agent may do |
 |---|---|---|
-| **Base development** (`--preset base-development`) | all three | Change any file in the project, install packages and run tests. Never read your secret files. Connect only to its model's API. |
-| **Read-only review** (`--preset read-only-review`) | all three | Read the project and its git history. Change nothing in the project, except Tego's own folder for the agent's state (`.tego/`). Never read your secret files. Connect only to its model's API. |
-| **Create my own** (in `tego start`) | the ones you pick | The same building blocks, switched on or off, plus any other hosts you name. |
+| **Base development** | all three | Change any file in the project, install packages and run tests. Never read your secret files. Connect only to its model's API. |
+| **Read-only review** | all three | Read the project and its git history. Change nothing in the project, except Tego's own folder for the agent's state (`.tego/`). Never read your secret files. Connect only to its model's API. |
+| **Choose each rule** | the ones you pick | The same building blocks, switched on or off, plus any other hosts you name. |
+| **Use my own rules file** | the ones your file names | Exactly what your file says, once it checks. |
 
-To change an agent's rules afterwards: `tego edit agent <name>`. To see them in plain words: `tego describe agent
-<name>`.
+To change an agent's rules afterwards: `tego rules edit <name>`. It checks your edit before saving it. To see what
+they enforce: `tego rules check <name>`.
 
 ## Pick and combine
 
@@ -45,7 +46,7 @@ forwarder adds none.
 
 Your own entries are added to the preset's: lists join, the
 preset's entries first. A name under `tego/` is always the built-in preset; a file of your own under `profiles/tego/`
-is never read in its place, and `tego compile` says so (`shadowed-builtin`). A misspelt preset such as
+is never read in its place, and `tego rules check` says so (`shadowed-builtin`). A misspelt preset such as
 `tego/no-secret` is an error that lists the names there are:
 ```
 error: agent.yaml:3:10: built-in profile "tego/no-secret" not found: names under tego/ are tego's own profiles, and this binary has none by that name [extends-not-found]
@@ -61,13 +62,13 @@ changes; a change is a new revision. Every run records the presets it merged (`r
 ledger): each by the name the contract wrote, the pin included when there is one, and the checksum (sha256) of the
 rules merged. For an unpinned name the checksum is what says which revision ran: each released revision's checksum
 is listed in Tego's source (`pkg/spec/presets`). Naming one preset both ways, `tego/no-prod` and `tego/no-prod@1`,
-merges it once, and `tego compile` warns `redundant-rule` at the second name.
+merges it once, and `tego rules check` warns `redundant-rule` at the second name.
 
 ## See the one rule file
 
-`tego compile --merged agent.yaml` prints your contract with
+`tego rules check --merged agent.yaml` prints your contract with
 every preset laid in: the rules the run enforces, in one file. It is what the run keeps as `contract.yaml`, and its
-sha256 is the run's `contract_hash`, so `tego compile --merged agent.yaml | sha256sum` tells you the hash before you
+sha256 is the run's `contract_hash`, so `tego rules check --merged agent.yaml | sha256sum` tells you the hash before you
 run. It keeps its `extends:` line, so it is a record to read and compare, not a contract to run in place of yours.
 
 ## What each preset covers, and what it does not
@@ -95,9 +96,9 @@ What it does not cover:
 - A secret kept in a file the list does not name (a key under another name, a token inside a project file) is
   readable unless you add it to `fs.deny_read`.
 - A listed secret file inside one of your write folders, a `.env` in `./src/` for example, can be moved or
-  hard-linked to another name at tier landlock and read under that name; `tego compile` warns `held-reads`. Keep
+  hard-linked to another name at tier landlock and read under that name; `tego rules check` warns `held-reads`. Keep
   secrets outside the folders the agent writes.
-- A contract that writes `deny_read: []` switches the built-in list off, preset or not; `tego compile` warns
+- A contract that writes `deny_read: []` switches the built-in list off, preset or not; `tego rules check` warns
   `deny-read-disabled`.
 
 ### No production hosts
@@ -134,12 +135,12 @@ What it does not cover:
 - A tool that writes its temporary files to `/tmp` is refused there: give it a folder of yours, for example `TMPDIR`
   under one of your write folders.
 
-## Start from tego init
+## Start from tego rules create
 
-`tego init --preset` writes an `agent.yaml` that extends the presets you choose and lists your folders and hosts,
+`tego rules create --preset` writes an `agent.yaml` that extends the presets you choose and lists your folders and hosts,
 each generated line with a comment saying why it is there. Run it in the project folder:
 ```
-tego init --preset no-secrets,no-prod,repo-only-writes --write src --write tests \
+tego rules create --preset no-secrets,no-prod,repo-only-writes --write src --write tests \
   --allow-host @npm --allow-host api.example.com --command "claude"
 ```
 
@@ -161,11 +162,11 @@ What each flag does:
 - `--allow-host <host[:port] | @group>` (repeatable): a host the agent may reach, port 443 when none is given (an
   IPv6 address with a port is written `[::1]:8080`). A
   group (`@github`, `@npm`, `@pypi`, `@crates`, `@go-proxy`, `@rubygems`, `@maven-central`) is written out as its
-  hosts, each with a comment naming the group; `tego init --list` prints the groups and the presets.
+  hosts, each with a comment naming the group; `tego rules create --list` prints the groups and the presets.
 - `--command <line>`: the agent's command. A line with no shell syntax is split into words; one with pipes, quotes
   or `&&` runs under `/bin/sh -c`. Without it init writes a short demo: a write in your first folder (allowed), a
   write outside it (refused) and a check that no secret variable reached the agent.
-- `--name`, `--force` and the directory argument work as for plain `tego init`, which still writes the starter.
+- `--name`, `--force` and the directory argument work as for plain `tego rules create`, which still writes the starter.
   Run again on an `agent.yaml` init wrote, `--preset` leaves the file as it is and says the new flags were not
   applied; edit the file, or add `--force` to replace it.
 - A `--write` folder that is, holds or lies inside a path of the built-in `deny_read` list (`~/.ssh`, `~/.aws`, ...)
@@ -175,8 +176,8 @@ When writes are restricted init also adds what the project's
 markers need: `./node_modules/` for `package.json`, `./target/` for `Cargo.toml`, `./.venv/` for `pyproject.toml` or
 a `requirements*.txt`, and for `go.mod` the Go caches under `./.tego/cache/` (`GOCACHE`, `GOMODCACHE`); `TMPDIR` goes
 to `./.tego/tmp/`. Those folders under `.tego/` are added to `.gitignore`. Before writing, init compiles the contract
-offline, as `tego compile --offline` would, and when it does not compile prints compile's diagnostics, exits 1 and
-writes nothing: no `agent.yaml` and no folder. The paths are relative to the project, so run `tego compile` and
+offline, as `tego rules check --offline` would, and when it does not compile prints compile's diagnostics, exits 1 and
+writes nothing: no `agent.yaml` and no folder. The paths are relative to the project, so run `tego rules check` and
 `tego run` from it.
 
 The file reads top to bottom: what each preset promises, the
@@ -205,35 +206,35 @@ example above, to have tokens counted), its API key goes in `env.pass`, and a ho
 The dashboard (`tego-control serve`) writes the same file without a terminal: Contracts, then
 "New contract". Type the project folder, tick the presets, add the folders it may write and the hosts it may
 reach (comma-separated, as `--write` and `--allow-host` take them) and its command, then Preview: the page shows
-what the agent may do in plain sentences, every preset laid in, and what `tego compile --offline` says. Create
+what the agent may do in plain sentences, every preset laid in, and what `tego rules check --offline` says. Create
 makes the folders the file names in the project, never through a symbolic link (one on the way to a folder it makes
 is refused, by name; one that already exists is used where it is, as above), writes `agent.yaml` in that folder (never over an existing one) and shows the line to start it, for example
 `cd ~/project && tego run agent.yaml`: the command you typed is in the file. "From a run" drafts the file from a finished run instead: it allows
-what that run did and no more (`tego learn`), except where a run that leaked sent its secrets: that address is left out, and a red notice says so. A draft from a run is saved by default
-where `tego learn <run> --save <name>` saves it, `~/.config/tego/agents/<name>.yaml`, so `cd <run folder> && tego run
+what that run did and no more (`tego rules learn`), except where a run that leaked sent its secrets: that address is left out, and a red notice says so. A draft from a run is saved by default
+where `tego rules learn <run> --save <name>` saves it, `~/.config/tego/agents/<name>.yaml`, so `cd <run folder> && tego run
 <name>` and the `tego-agent@<name>` unit find it; "The project folder" writes `agent.yaml` there instead. A "Show
 refused reads (slower)" switch adds `reason: {reads: on}`: a read the contract refuses is recorded at tier 1 too, and
 each read open is about 17 µs slower. From a run it is on by default, as `--save`'s default is; with presets it is off,
-as `tego init` writes no `reason:` block. The run page's Tighten tab links to it
+as `tego rules create` writes no `reason:` block. The run page's Tighten tab links to it
 ("Make a contract from this run"). A new `agent.yaml` is on the Contracts page as "not run yet" until its first run;
 a saved registry entry is listed from its first run.
 
 
 ## Choose an agent (From source)
 
-`tego init --agent claude-code --write src/ --prompt 'Review this project'` writes a
+`tego rules create --agent claude-code --write src/ --prompt 'Review this project'` writes a
 Claude Code print-mode contract for one task, with the three presets, its forwarded model, a separate state
 folder and the environment names its login needs. Use `ANTHROPIC_API_KEY`, or run
 `claude setup-token` outside Tego and export `CLAUDE_CODE_OAUTH_TOKEN` with that token.
-Then run `tego compile agent.yaml` and `tego run agent.yaml` from this folder.
+Then run `tego rules check agent.yaml` and `tego run agent.yaml` from this folder.
 Without `--prompt`, it asks Claude to describe the project without changing files.
 For the full-screen interface use [the interactive example](../../examples/agents/claude-code-interactive.yaml);
 its direct model connection works with fresh state, but model bytes are not captured.
 
-`tego init --agent codex --write src/ --prompt 'Review this project'` selects Codex exec
+`tego rules create --agent codex --write src/ --prompt 'Review this project'` selects Codex exec
 with `CODEX_API_KEY`. Set that variable before `tego run agent.yaml`. ChatGPT sign-in
 uses [the explicit example](../../examples/agents/codex-chatgpt.yaml) instead. Init
-reads no keys and calls no model. `tego init --list` lists both agents and their setup
+reads no keys and calls no model. `tego rules create --list` lists both agents and their setup
 steps. A prompt is passed as one argument, never evaluated by a shell. Without
 `--write`, only `./out/` and the generated state folders are writable. Add the folders
 the task needs, keeping the contract outside every write grant.

@@ -219,7 +219,7 @@ func TestPreviewWritesNothing(t *testing.T) {
 	}
 	for _, want := range []string{"Check the change", "Narrows", "From the next run", "May run git", "Cannot run git",
 		`action="/rules/change"`, `name="base" value="` + ref.Base + `"`, `name="csrf" value="` + f.s.csrf + `"`, "btn btn-primary",
-		"The change in the YAML", "tego compile " + f.source, "exec.allow"} {
+		"The change in the YAML", "tego rules check " + f.source, "exec.allow"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the narrowing's preview lacks %q", want)
 		}

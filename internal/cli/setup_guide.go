@@ -4,6 +4,7 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,11 +14,15 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 	"golang.org/x/sys/unix"
 
 	"github.com/attention-span-ai/tego/internal/platform/proc"
+	"github.com/attention-span-ai/tego/internal/platform/sys"
 	"github.com/attention-span-ai/tego/internal/registry"
 	"github.com/attention-span-ai/tego/internal/setup"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -35,8 +40,9 @@ const (
 // guideLogin is one way an agent signs in: the variable its token goes in, and whether Tego starts the agent's own
 // browser sign-in first (claude setup-token).
 type guideLogin struct {
-	label, envVar string
-	setupToken    bool
+	label, desc, envVar string
+	example             string // the gray example in the field its key is pasted into
+	setupToken          bool
 }
 
 // guideAgent is one answer to "Which agent do you want to supervise?".
@@ -53,12 +59,12 @@ var guideAgents = []guideAgent{
 	{label: "Claude Code", harness: "claude-code", command: "claude", host: "Claude's API",
 		install: "curl -fsSL https://claude.ai/install.sh | bash",
 		logins: []guideLogin{
-			{label: "Claude subscription (opens a browser link)", envVar: "CLAUDE_CODE_OAUTH_TOKEN", setupToken: true},
-			{label: "Anthropic API key", envVar: "ANTHROPIC_API_KEY"},
+			{label: "Claude subscription", desc: "Log in with your Claude account in a browser", envVar: "CLAUDE_CODE_OAUTH_TOKEN", setupToken: true},
+			{label: "Anthropic API key", desc: "A key from console.anthropic.com", envVar: "ANTHROPIC_API_KEY", example: "sk-ant-api03-…"},
 		}},
 	{label: "Codex", harness: "codex", command: "codex", host: "OpenAI's API",
 		install: "mkdir -p ~/.local/bin && curl -fsSL https://github.com/openai/codex/releases/latest/download/codex-$(uname -m)-unknown-linux-musl.tar.gz | tar -xzO > ~/.local/bin/codex && chmod 0755 ~/.local/bin/codex",
-		logins:  []guideLogin{{label: "OpenAI API key", envVar: "CODEX_API_KEY"}}},
+		logins:  []guideLogin{{label: "OpenAI API key", envVar: "CODEX_API_KEY", example: "sk-…"}}},
 	{label: "Another program"},
 }
 
@@ -139,7 +145,7 @@ func resetTerminal() {
 		_ = c.Wait()
 	}
 	// What was typed for the sign-in (the Enter after the pasted code) must not answer the guide's next question.
-	_ = unix.IoctlSetInt(int(os.Stdin.Fd()), unix.TCFLSH, unix.TCIFLUSH)
+	_ = sys.FileDo(os.Stdin, func(fd int) error { return unix.IoctlSetInt(fd, unix.TCFLSH, unix.TCIFLUSH) })
 }
 
 // claudeToken is a Claude setup-token token as Claude prints it.
@@ -164,61 +170,262 @@ func guideInteractive(stdout io.Writer) bool {
 	return ok && isTerminalFile(os.Stdin) && isTerminalFile(f)
 }
 
-// walk is the terminal the guide talks on: questions through Huh, results as one ✓ or ✗ line.
+// The guide's columns: a step's label at column 3, its lines at column 8, an open input and its key hint at column 10,
+// details at column 12. Each mark and colour means one thing: ? (cyan) a question, ! (yellow) do this now, ✓ (green)
+// done, ✗ (red) a problem and its fix, dim a detail or a key hint, bold a command to type.
+const (
+	colTop    = "  "
+	colStep   = "       "
+	colInput  = "  " // under colStep: Huh's form is drawn at colStep
+	colDetail = "           "
+)
+
+// walk is the terminal the guide talks on: questions through Huh, results as one line each.
 type walk struct {
-	in                            io.Reader
-	out                           io.Writer
-	accessible                    bool // Huh's plain prompts: no terminal drawing (tests, TERM=dumb)
-	green, red, dim, bold, offEsc string
+	in                                          io.Reader
+	out                                         io.Writer
+	tty                                         bool   // a person at a terminal (not a test's plain input)
+	accessible                                  bool   // Huh's plain prompts: no terminal drawing (tests, TERM=dumb)
+	col                                         string // where results and questions start: colStep in the guide
+	green, red, yellow, cyan, dim, bold, offEsc string
 }
 
 // newWalk talks on in and out. tty is a real terminal: colour and Huh's drawn prompts; otherwise plain prompts that read
 // one line per answer.
 func newWalk(in io.Reader, out io.Writer, tty bool) *walk {
-	g := &walk{in: in, out: out, accessible: !tty || os.Getenv("TERM") == "dumb"}
-	if g.accessible {
-		lr := &lineReader{r: bufio.NewReader(in), fd: -1}
-		if f, ok := in.(*os.File); ok && isTerminalFile(f) {
-			lr.fd = int(f.Fd())
-		}
-		g.in = lr
+	g := &walk{in: in, out: out, tty: tty, accessible: !tty || os.Getenv("TERM") == "dumb", col: colStep}
+	if f, ok := in.(*os.File); g.accessible && !(ok && isTerminalFile(f)) {
+		// Not a terminal (a test's answers): each plain prompt opens its own scanner, so each gets one line. A
+		// terminal already hands over one line per read, and Huh's hidden input needs the terminal itself.
+		g.in = &lineReader{r: bufio.NewReader(in)}
 	}
 	if tty && os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb" {
-		g.green, g.red, g.dim, g.bold, g.offEsc = "\033[32m", "\033[31m", "\033[2m", "\033[1m", "\033[0m"
+		g.green, g.red, g.yellow, g.cyan, g.dim, g.bold, g.offEsc = "\033[32m", "\033[31m", "\033[33m", "\033[36m", "\033[2m", "\033[1m", "\033[0m"
 	}
 	return g
 }
 
 func (g *walk) line(format string, a ...any) { fmt.Fprintf(g.out, format+"\n", a...) }
-func (g *walk) ok(s string)                  { g.line("%s✓%s %s", g.green, g.offEsc, s) }
-func (g *walk) bad(s string)                 { g.line("%s✗%s %s", g.red, g.offEsc, s) }
-func (g *walk) note(s string)                { g.line("  %s%s%s", g.dim, s, g.offEsc) }
-func (g *walk) cmd(s string)                 { g.line("    %s%s%s", g.bold, s, g.offEsc) }
+func (g *walk) top(s string)                 { g.line("%s%s", colTop, s) }
+func (g *walk) step(n int, title string) {
+	g.line("\n%s%s%d/4  %s%s", colTop, g.bold, n, title, g.offEsc)
+}
+func (g *walk) ok(s string)     { g.line("%s%s✓%s %s", g.col, g.green, g.offEsc, s) }
+func (g *walk) bad(s string)    { g.line("%s%s✗%s %s", g.col, g.red, g.offEsc, s) }
+func (g *walk) todo(s string)   { g.line("%s%s!%s %s", g.col, g.yellow, g.offEsc, s) }
+func (g *walk) detail(s string) { g.line("%s%s%s%s", colDetail, g.dim, s, g.offEsc) }
+func (g *walk) cmd(s string)    { g.line("%s%s%s%s", colDetail, g.bold, s, g.offEsc) }
 
-// ask shows fields as one Huh form; a person who leaves it (Ctrl-C) gets errStopped.
-func (g *walk) ask(fields ...huh.Field) error {
-	err := huh.NewForm(huh.NewGroup(fields...)).WithInput(g.in).WithOutput(g.out).WithAccessible(g.accessible).
-		WithShowHelp(!g.accessible).Run()
+// question is a question as every input shows it: a cyan ? and the words.
+func (g *walk) question(q string) string { return g.cyan + "?" + g.offEsc + " " + q }
+
+// answered keeps a question and its answer on screen: Huh's drawn form clears itself once answered, and its plain
+// prompts already show both.
+func (g *walk) answered(q, a string) {
+	if !g.accessible {
+		g.line("%s%s  %s%s%s", g.col, g.question(q), g.bold, a, g.offEsc)
+	}
+}
+
+// theme is the one look every input shares: drawn at colStep, no border, the input under the question at colInput,
+// > as the cursor in lists and checklists, [x] for a checked item, a gray example in an empty field. The key hint and
+// an error are drawn by hinted, under the input.
+func (g *walk) theme() huh.Theme {
+	return huh.ThemeFunc(func(isDark bool) *huh.Styles {
+		t := huh.ThemeBase(isDark)
+		t.Form.Base = lipgloss.NewStyle().MarginLeft(len(g.col))
+		t.Focused.Base = lipgloss.NewStyle()
+		t.Focused.Title = lipgloss.NewStyle()
+		t.Focused.ErrorIndicator = lipgloss.NewStyle()
+		t.Focused.ErrorMessage = lipgloss.NewStyle()
+		t.Focused.SelectSelector = lipgloss.NewStyle().SetString(colInput + "> ")
+		t.Focused.MultiSelectSelector = lipgloss.NewStyle().SetString(colInput + "> ")
+		t.Focused.SelectedOption = lipgloss.NewStyle().Bold(true)
+		t.Focused.UnselectedOption = lipgloss.NewStyle()
+		t.Focused.SelectedPrefix = lipgloss.NewStyle().SetString("[x] ")
+		t.Focused.UnselectedPrefix = lipgloss.NewStyle().SetString("[ ] ")
+		t.Focused.TextInput.Prompt = lipgloss.NewStyle()
+		t.Focused.TextInput.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+		t.Blurred = t.Focused
+		t.Blurred.MultiSelectSelector = lipgloss.NewStyle().SetString(colInput + "  ")
+		return t
+	})
+}
+
+// hinted is an input with the guide's key hint under it, or, while the input refuses what was typed, the reason in red.
+// Huh's own footer (help and errors, after a blank line) is off, so the hint sits right under the input.
+type hinted struct {
+	huh.Field
+	g    *walk
+	hint string
+	mask bool // a secret: Huh masks it with *, shown here as •
+
+	// A list longer than guideListRows scrolls; Huh scrolls only as far as keeps the cursor in view, so top follows the
+	// hovered item the same way, and the hint says how many items are out of view.
+	items   int
+	hovered func() (int, bool)
+	top     int
+}
+
+func (h *hinted) Update(msg tea.Msg) (huh.Model, tea.Cmd) {
+	m, c := h.Field.Update(msg)
+	if f, ok := m.(huh.Field); ok {
+		h.Field = f
+	}
+	return h, c
+}
+
+func (h *hinted) View() string {
+	v := h.Field.View()
+	if h.mask {
+		v = strings.ReplaceAll(v, "*", "•") // Huh's Input has no way to set its mask character
+	}
+	if err := h.Error(); err != nil {
+		return v + "\n" + colInput + h.g.red + "✗ " + err.Error() + h.g.offEsc
+	}
+	return v + "\n" + colInput + h.g.dim + h.more() + h.hint + h.g.offEsc
+}
+
+// more is "↑ 2 more · ↓ 3 more · " for a list with items out of view, or "".
+func (h *hinted) more() string {
+	if h.items <= guideListRows || h.hovered == nil {
+		return ""
+	}
+	c, _ := h.hovered()
+	h.top = min(max(h.top, c-guideListRows+1), c)
+	out := ""
+	if h.top > 0 {
+		out += fmt.Sprintf("↑ %d more · ", h.top)
+	}
+	if below := h.items - h.top - guideListRows; below > 0 {
+		out += fmt.Sprintf("↓ %d more · ", below)
+	}
+	return out
+}
+
+// ask shows one input; a person who leaves it (Ctrl-C) gets errStopped.
+func (g *walk) ask(h *hinted) error {
+	h.g = g
+	out := g.out
+	if o, ok := out.(*outputWriter); ok {
+		if f, ok := o.dst.(*os.File); ok {
+			out = f // Huh draws only on the terminal's own file: through a writer that wraps it, it draws nothing
+		}
+	}
+	err := huh.NewForm(huh.NewGroup(h)).WithInput(g.in).WithOutput(out).
+		WithAccessible(g.accessible).WithTheme(g.theme()).WithShowHelp(false).WithShowErrors(false).Run()
 	if errors.Is(err, huh.ErrUserAborted) {
 		return errStopped
 	}
 	return err
 }
 
-// answered keeps a question and its answer on screen: Huh's drawn form clears itself once answered, and its plain
-// prompts already show both.
-func (g *walk) answered(q, a string) {
-	if !g.accessible {
-		g.line("%s?%s %s %s%s%s", g.dim, g.offEsc, q, g.bold, a, g.offEsc)
-	}
+// choice is one item of a list or a checklist: its name, and what it means in a few words.
+type choice struct {
+	name, desc  string
+	recommended bool // the safe default: first, with the cursor on it
+	checked     bool // in a checklist, checked to start with
 }
 
-// guideYesNo is a yes/no answer as the guide echoes it.
-func guideYesNo(b bool) string {
-	if b {
-		return "Yes"
+// labels are the items' lines: the name (with "(recommended)"), then the description in a second, dim column.
+func (g *walk) labels(items []choice) []string {
+	names := make([]string, len(items))
+	width := 0
+	for i, c := range items {
+		names[i] = c.name
+		if c.recommended {
+			names[i] += " (recommended)"
+		}
+		width = max(width, len(names[i]))
 	}
-	return "No"
+	for i, c := range items {
+		if c.desc != "" {
+			names[i] = fmt.Sprintf("%-*s   %s%s%s", width, names[i], g.dim, c.desc, g.offEsc)
+		}
+	}
+	return names
+}
+
+// chooseOne asks q with a list and returns the index picked. A yes/no question is a two-item list too.
+func (g *walk) chooseOne(q string, items []choice) (int, error) {
+	labels := g.labels(items)
+	opts := make([]huh.Option[int], len(items))
+	for i := range items {
+		opts[i] = huh.NewOption(labels[i], i)
+	}
+	pick := 0
+	sel := huh.NewSelect[int]().Title(g.question(q)).Options(opts...).Value(&pick)
+	if len(items) > guideListRows {
+		sel = sel.Height(guideListRows + 1) // and the question's line
+	}
+	if err := g.ask(&hinted{Field: sel, hint: "↑/↓ move · enter select", items: len(items), hovered: sel.Hovered}); err != nil {
+		return 0, err
+	}
+	g.answered(q, items[pick].name)
+	return pick, nil
+}
+
+// chooseSeveral asks q with a checklist and returns the indexes checked; one must stay checked.
+func (g *walk) chooseSeveral(q string, items []choice) ([]int, error) {
+	labels := g.labels(items)
+	opts := make([]huh.Option[int], len(items))
+	for i, c := range items {
+		opts[i] = huh.NewOption(labels[i], i).Selected(c.checked)
+	}
+	var picked []int
+	ms := huh.NewMultiSelect[int]().Title(g.question(q)).Options(opts...).Value(&picked).Validate(func(s []int) error {
+		if len(s) == 0 {
+			return errors.New("keep at least one checked")
+		}
+		return nil
+	})
+	ms = ms.Height(min(len(items), guideListRows) + 1) // Huh's own height leaves the last item out; +1 for the question
+	if err := g.ask(&hinted{Field: ms, hint: "↑/↓ move · space toggle · enter done", items: len(items), hovered: ms.Hovered}); err != nil {
+		return nil, err
+	}
+	names := make([]string, len(picked))
+	for i, p := range picked {
+		names[i] = items[p].name
+	}
+	g.answered(q, strings.Join(names, ", "))
+	return picked, nil
+}
+
+// typeText asks q with a text field showing example in gray. A secret shows as dots, and its answer is never echoed.
+// valid says in one line what is wrong with an answer; the field stays open until it passes.
+func (g *walk) typeText(q, example string, secret bool, valid func(string) error) (string, error) {
+	val := ""
+	in := huh.NewInput().Title(g.question(q)).Placeholder(example).Prompt(colInput).Value(&val)
+	if valid != nil {
+		in = in.Validate(valid)
+	}
+	if secret {
+		in = in.EchoMode(g.hiddenEcho())
+	}
+	if err := g.ask(&hinted{Field: in, hint: "enter confirm", mask: secret}); err != nil {
+		return "", err
+	}
+	val = strings.TrimSpace(val)
+	shown := val
+	if secret {
+		shown = "••••••••"
+	}
+	g.answered(q, shown)
+	return val, nil
+}
+
+// guideListRows is how many items a list shows; a longer one scrolls inside them.
+const guideListRows = 6
+
+// yesNoItems is a yes/no question's two items, the recommended one first.
+func yesNoItems(yesDesc, noDesc string, yesFirst bool) []choice {
+	yes, no := choice{name: "Yes", desc: yesDesc}, choice{name: "No", desc: noDesc}
+	if yesFirst {
+		yes.recommended = true
+		return []choice{yes, no}
+	}
+	no.recommended = true
+	return []choice{no, yes}
 }
 
 // errStopped is the person leaving the guide.
@@ -229,16 +436,12 @@ var errStopped = errors.New("stopped")
 type lineReader struct {
 	r    *bufio.Reader
 	rest []byte
-	fd   int // the terminal behind r, or -1
 }
-
-// Fd is the terminal behind the reader, which Huh's hidden input reads directly.
-func (l *lineReader) Fd() uintptr { return uintptr(l.fd) }
 
 // hiddenEcho is how a pasted token shows: hidden, except on plain input that is not a terminal (a test's answers),
 // where nothing can hide it.
 func (g *walk) hiddenEcho() huh.EchoMode {
-	if lr, ok := g.in.(*lineReader); ok && lr.fd < 0 {
+	if _, ok := g.in.(*lineReader); ok {
 		return huh.EchoModeNormal
 	}
 	return huh.EchoModePassword
@@ -271,18 +474,20 @@ type rulesChoice struct {
 	presets      []string
 	writeProject bool // the whole project; otherwise only Tego's own folder in it, .tego/
 	hosts        []string
+	summary      string // what the rules mean, in one line
+	file         string // a rules file of the person's own, used as it is
 }
 
-// runSetupGuide is tego start: it connects the agent the person wants to supervise, signs it in, picks its project and
-// its rules, saves it as an agent, and shows how to start the first session. It asks before it changes anything and
-// never starts the agent itself.
+// runSetupGuide is tego start: it connects the agent the person wants to supervise, logs it in, picks its project and
+// its rules, saves it as an agent, opens the dashboard, and shows how to start the first session. It asks before it
+// changes anything and never starts the agent itself.
 func runSetupGuide(ctx context.Context, in io.Reader, stdout, stderr io.Writer, tty bool) int {
 	g := newWalk(in, stdout, tty)
 	code, err := g.guide(ctx, stderr)
 	switch {
 	case errors.Is(err, errStopped):
 		g.line("")
-		g.bad("Stopped. Run tego start to pick up again.")
+		g.line("%s%s✗%s Stopped. Run tego start to pick up again.", colTop, g.red, g.offEsc)
 		return identity.ExitFinding
 	case err != nil:
 		message(stderr, "", 0, 0, "tego start: "+err.Error(), codeIO)
@@ -302,49 +507,46 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 	onMac := os.Getenv("TEGO_ON_MAC") == "1"
 
 	g.line("")
-	g.line("%sWelcome to Tego.%s", g.bold, g.offEsc)
-	g.line("Tego supervises your AI agent: it blocks what your rules don't allow and records everything it does.")
-	g.line("")
+	g.top(g.bold + "Welcome to Tego" + g.offEsc)
+	g.top("Four steps to supervise your first agent.")
 	pa, err := setupProbe(ctx, m)
+	mark := func(color, sign, s string) { g.line("%s%s%s%s %s", colTop, color, sign, g.offEsc, s) }
 	switch {
 	case err != nil:
 		return 0, err
 	case pa.tier == "" && pa.outside:
-		g.bad("Tego can't supervise agents started from this shell.")
+		mark(g.red, "✗", "Tego can't supervise agents started from this shell.")
 		if o := scopeOpener(); o.Command != "" {
-			g.note("Open one where it can, then run tego start again:")
-			g.cmd(o.Command)
+			g.line("%s  Open one where it can, then run tego start again: %s%s%s", colTop, g.bold, o.Command, g.offEsc)
 		}
 		return identity.ExitFinding, nil
 	case pa.tier == "":
-		g.bad("This computer can't run supervised agents yet. tego doctor shows why.")
+		mark(g.red, "✗", "This machine can't run supervised agents yet. tego machine check shows why.")
 		return identity.ExitFinding, nil
 	}
-	g.ok(fmt.Sprintf("This computer can supervise agents (%s protection, no admin needed)", levelName(pa.tier)))
+	mark(g.green, "✓", fmt.Sprintf("This machine can run Tego · %s protection, no root needed", levelName(pa.tier)))
 
-	// The agent.
-	pick := 0
-	opts := make([]huh.Option[int], len(guideAgents))
-	for i, a := range guideAgents {
-		opts[i] = huh.NewOption(a.label, i)
-	}
-	if err := g.ask(huh.NewSelect[int]().Title("Which agent do you want to supervise?").Options(opts...).Value(&pick)); err != nil {
+	// 1/4: the agent.
+	g.step(1, "Agent")
+	pick, err := g.chooseOne("Which agent do you want to supervise?", []choice{
+		{name: "Claude Code", desc: "Anthropic's coding agent", recommended: true},
+		{name: "Codex", desc: "OpenAI's coding agent"},
+		{name: "Another program", desc: "Any command, such as a script or a bot"},
+	})
+	if err != nil {
 		return 0, err
 	}
 	a := guideAgents[pick]
-	g.answered("Which agent do you want to supervise?", a.label)
 	command := a.command
 	if a.harness == "" {
-		if err := g.ask(huh.NewInput().Title("What command starts it?").Placeholder("python3 bot.py").Value(&command).
-			Validate(func(s string) error {
-				if strings.TrimSpace(s) == "" {
-					return errors.New("type the command, for example python3 bot.py")
-				}
-				return nil
-			})); err != nil {
+		if command, err = g.typeText("What command starts it?", "python3 bot.py", false, func(s string) error {
+			if strings.TrimSpace(s) == "" {
+				return errors.New("type the command, for example python3 bot.py")
+			}
+			return nil
+		}); err != nil {
 			return 0, err
 		}
-		command = strings.TrimSpace(command)
 	}
 	name := a.label
 	program := strings.Fields(command)[0]
@@ -355,88 +557,158 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 		return code, err
 	}
 
-	// Its sign-in.
-	if len(a.logins) > 0 {
-		g.line("")
-		if code, err := g.signIn(ctx, a, home); code != identity.ExitOK || err != nil {
-			return code, err
-		}
+	// 2/4: its login.
+	g.step(2, "Login")
+	if len(a.logins) == 0 {
+		g.ok("Nothing to log in to: " + name + " brings its own")
+	} else if code, err := g.signIn(ctx, a, home); code != identity.ExitOK || err != nil {
+		return code, err
 	}
 
-	// Its project.
-	g.line("")
+	// 3/4: its project.
+	g.step(3, "Project")
 	abs, test, err := g.project(name, home, onMac)
 	if err != nil {
 		return 0, err
 	}
 
-	// Its rules.
-	g.line("")
-	rc, err := g.rules(name, a)
-	if err != nil {
-		return 0, err
-	}
+	// 4/4: its rules.
+	g.step(4, "Rules")
 	agentName := agentNameFor(abs)
 	if test {
 		agentName = guideSample
 	}
-	_, code, err := g.saveAgent(ctx, m, a, command, agentName, abs, rc, test, stderr)
-	if code != identity.ExitOK || err != nil {
+	rc, err := g.rules(ctx, m, name, a, abs)
+	if err != nil {
+		return 0, err
+	}
+	if rc.file != "" {
+		if n := rulesFileName(rc.file); n != "" {
+			agentName = n
+		}
+	}
+	if code, err := g.saveAgent(ctx, m, a, command, agentName, abs, rc, test, stderr); code != identity.ExitOK || err != nil {
 		return code, err
 	}
-	g.note("Change its rules any time: tego edit agent " + agentName)
-
-	// The first session: the person starts it.
-	g.line("")
-	g.line("%sDone.%s Start your first supervised session:", g.bold, g.offEsc)
-	g.cmd("cd " + tildeHome(abs, home) + " && tego run " + agentName)
-	switch {
-	case test && a.harness != "":
-		g.note(`Try this: ask ` + name + ` to "run the tests", and let it run them. The tests' dependency then tries to`)
-		g.note("read the project's secret and send it out, which " + name + "'s own prompts can't see. Tego blocks both.")
-	case a.harness != "":
-		g.note(name + " opens as usual, with Tego supervising it.")
-	}
-	g.line("")
-	g.line("Then, from any terminal:")
-	g.line("    %-30s %s", "tego get sessions", "your sessions")
-	g.line("    %-30s %s", "tego describe session --last", "what "+name+" did and what Tego blocked")
-	g.line("    %-30s %s", "tego dashboard", "the same, in your browser")
-	if onMac {
-		g.line("    %-30s %s", "tego shell", "back into Tego's VM, in "+tildeHome(abs, home))
-	}
-	if test {
-		g.line("")
-		g.line("For one of your own projects: run tego start again and pick it, or")
-		g.cmd("tego add agent --project <folder> --program " + firstNonEmpty(a.harness, "\""+command+"\""))
-	}
 	rememberProject(home, abs)
+
+	// The recap, the dashboard and what to type next. The person starts the session: Tego never starts the agent.
+	url := ""
+	if g.tty {
+		url = guideDashboard(home)
+	}
+	g.line("")
+	g.line("%s%s%s%s", colTop, g.dim, strings.Repeat("─", 62), g.offEsc)
+	g.line("")
+	g.top(g.bold + "Ready" + g.offEsc)
+	row := func(k, v string) { g.line("%s  %-12s%s", colTop, k, v) }
+	row("Agent", agentName+" · "+name)
+	row("Project", tildeHome(abs, home))
+	row("Rules", rc.label)
+	switch {
+	case url == "":
+		row("Dashboard", "tego dashboard opens it")
+	case onMac:
+		row("Dashboard", url+"   "+g.dim+"opening in your browser"+g.offEsc)
+	default:
+		row("Dashboard", url)
+	}
+	if onMac {
+		row("Shell", "Tego's Linux VM · type exit to return to your Mac")
+	}
+	g.line("")
+	g.top(g.bold + "Next steps" + g.offEsc)
+	next := func(what, c string) { g.line("%s  %-30s%s%s%s", colTop, what, g.bold, c, g.offEsc) }
+	next("Run "+name+" under Tego", "cd "+tildeHome(abs, home)+" && tego run "+agentName)
+	next("List your sessions", "tego session list")
+	next("Show the last session", "tego session show --last")
+	next("Edit the rules", "tego rules edit "+agentName)
 	g.line("")
 	return identity.ExitOK, nil
+}
+
+// guideDashboard starts the dashboard for this user as a systemd user unit (tego-dashboard), as the Mac's tego dashboard
+// does, and returns its address from its log, or "" when it didn't start. On a Mac, the tego command there then opens
+// it in the browser through Tego's VM. A variable so a test starts no unit.
+var guideDashboard = func(home string) string {
+	self, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if u := runningDashboard(home); u != "" {
+		return u // restarting it would sign out the tabs already open
+	}
+	if os.MkdirAll(filepath.Join(home, ".tego"), 0o700) != nil {
+		return ""
+	}
+	log := dashboardLog(home)
+	quiet := func(argv ...string) error {
+		c := proc.Command(argv[0], argv[1:]...)
+		if _, err := proc.Start(c); err != nil {
+			return err
+		}
+		return c.Wait()
+	}
+	_ = quiet("systemctl", "--user", "stop", "tego-dashboard")
+	if os.WriteFile(log, nil, 0o600) != nil {
+		return ""
+	}
+	if quiet("systemd-run", "--user", "--unit=tego-dashboard", "--quiet", "sh", "-c", `exec "$0" serve >"$1" 2>&1`, self, log) != nil {
+		return ""
+	}
+	for range 60 {
+		if b, err := os.ReadFile(log); err == nil {
+			if u := dashboardLink.Find(b); u != nil {
+				return string(u)
+			}
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return ""
+}
+
+// guideVersion is the version an installed program reports (claude --version), or ""; a variable so a test runs nothing.
+var guideVersion = func(program string) string {
+	c := proc.Command(program, "--version")
+	var out bytes.Buffer
+	c.Stdout = &out
+	if _, err := proc.Start(c); err != nil {
+		return ""
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			return ""
+		}
+	case <-time.After(3 * time.Second):
+		_ = c.Process.Kill()
+		return ""
+	}
+	return regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+`).FindString(out.String())
 }
 
 // installed makes sure the agent's program is on PATH, offering to install a known agent.
 func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home string) (int, error) {
 	if _, err := guideLookPath(program); err == nil {
-		g.ok(name + " is installed")
+		g.ok(strings.TrimSpace(name+" "+guideVersion(program)) + " is installed")
 		return identity.ExitOK, nil
 	}
-	g.bad(name + " isn't installed")
 	if a.install == "" {
-		g.note("Install it, then run tego start again.")
+		g.bad(program + " isn't installed. Install it, then run tego start again.")
 		return identity.ExitFinding, nil
 	}
-	yes := true
-	if err := g.ask(huh.NewConfirm().Title("Install " + name + " now?").Value(&yes)); err != nil {
+	pick, err := g.chooseOne("Install "+name+" now?", yesNoItems("Runs "+name+"'s own installer", "Shows the install line instead", true))
+	if err != nil {
 		return 0, err
 	}
-	g.answered("Install "+name+" now?", guideYesNo(yes))
-	if !yes {
-		g.note("Install it with this line, then run tego start again:")
+	if pick != 0 {
+		g.todo("Install " + name + " with this line, then run tego start again:")
 		g.cmd(a.install)
 		return identity.ExitFinding, nil
 	}
-	g.note("Installing " + name + "...")
+	g.detail("Installing " + name + "…")
 	if !g.installAgent(ctx, a, home) {
 		return identity.ExitFinding, nil
 	}
@@ -446,7 +718,7 @@ func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home 
 		g.bad(name + " was installed, but " + program + " isn't on your PATH")
 		return identity.ExitFinding, nil
 	}
-	g.ok(name + " installed")
+	g.ok(strings.TrimSpace("Installed " + name + " " + guideVersion(program)))
 	return identity.ExitOK, nil
 }
 
@@ -469,10 +741,10 @@ func (g *walk) installAgent(ctx context.Context, a guideAgent, home string) bool
 				lines = lines[len(lines)-5:]
 			}
 			for _, l := range lines {
-				g.note(l)
+				g.detail(l)
 			}
 		}
-		g.note("The full log is in " + tildeHome(logPath, home))
+		g.detail("The full log is in " + tildeHome(logPath, home))
 		return false
 	}
 	return true
@@ -484,62 +756,88 @@ const agentEnvRel = ".config/tego/agent.env"
 // bashrcLine loads the saved sign-ins in every new shell, so tego run passes them to the agent.
 const bashrcLine = `[ -f "$HOME/.config/tego/agent.env" ] && { set -a; . "$HOME/.config/tego/agent.env"; set +a; } # added by tego start`
 
-// signIn makes sure the agent has its sign-in: from this shell, from a saved one, or by asking for it.
+// signIn makes sure the agent has its login: a saved one the person keeps, one from this shell, or by asking for it.
 func (g *walk) signIn(ctx context.Context, a guideAgent, home string) (int, error) {
+	var vars []string
 	for _, l := range a.logins {
-		if os.Getenv(l.envVar) != "" || savedLogin(home, l.envVar) != "" {
-			g.ok("Signed in to " + a.label)
+		vars = append(vars, l.envVar)
+	}
+	for _, l := range a.logins {
+		if savedLogin(home, l.envVar) == "" {
+			continue
+		}
+		pick, err := g.chooseOne("Use your saved "+a.label+" login?", []choice{
+			{name: "Yes", desc: l.label + ", saved on this machine", recommended: true},
+			{name: "Log in again", desc: "Replaces the saved login"},
+		})
+		if err != nil {
+			return 0, err
+		}
+		if pick == 0 {
+			g.ok("Logged in to " + a.label)
+			return identity.ExitOK, nil
+		}
+		if err := forgetLogins(home, vars); err != nil {
+			g.bad("Couldn't remove the saved login: " + err.Error())
+			return identity.ExitError, nil
+		}
+		for _, v := range vars {
+			_ = os.Unsetenv(v) // the shell loaded the saved login; this login replaces it
+		}
+		break
+	}
+	for _, v := range vars {
+		if os.Getenv(v) != "" {
+			g.ok("Logged in to " + a.label)
 			return identity.ExitOK, nil
 		}
 	}
 	login := a.logins[0]
 	if len(a.logins) > 1 {
-		pick := 0
-		opts := make([]huh.Option[int], len(a.logins))
+		items := make([]choice, len(a.logins))
 		for i, l := range a.logins {
-			opts[i] = huh.NewOption(l.label, i)
+			items[i] = choice{name: l.label, desc: l.desc, recommended: i == 0}
 		}
-		if err := g.ask(huh.NewSelect[int]().Title("How do you sign in to " + a.label + "?").Options(opts...).Value(&pick)); err != nil {
+		pick, err := g.chooseOne("How do you want to log in to "+a.label+"?", items)
+		if err != nil {
 			return 0, err
 		}
 		login = a.logins[pick]
-		g.answered("How do you sign in to "+a.label+"?", login.label)
 	}
-	title := "Paste your " + login.label
 	token := ""
+	q, example := "Paste your "+login.label, login.example
 	if login.setupToken {
-		g.note(a.label + " shows a link. Open it, sign in, and paste the code it gives you back here.")
+		g.todo("Open the link " + a.label + " shows, log in, and paste the code back here.")
 		got, err := guideSetupToken(ctx, a.command, home)
 		if err != nil {
-			g.bad(a.label + "'s sign-in didn't finish: " + err.Error())
-			g.note("Run tego start again to try again.")
+			g.bad(a.label + "'s login didn't finish: " + err.Error() + ". Run tego start to try again.")
 			return identity.ExitFinding, nil
 		}
 		token = got
-		title = "Paste the token " + a.label + " printed (it starts with sk-ant-oat01-)"
+		q, example = "Paste the token "+a.label+" printed", "sk-ant-oat01-…"
 	}
 	if token == "" {
-		if err := g.ask(huh.NewInput().Title(title).EchoMode(g.hiddenEcho()).Value(&token).Validate(validToken)); err != nil {
+		var err error
+		if token, err = g.typeText(q, example, true, validToken); err != nil {
 			return 0, err
 		}
 	}
-	save := true
-	g.note("Saved, it stays only on this machine, readable only by you, and later sessions don't ask again.")
-	if err := g.ask(huh.NewConfirm().Title("Save the sign-in for later sessions?").Value(&save)); err != nil {
-		return 0, err
-	}
-	g.answered("Save the sign-in for later sessions?", guideYesNo(save))
 	token = strings.TrimSpace(token)
 	_ = os.Setenv(login.envVar, token)
-	if save {
+	g.ok("Logged in to " + a.label)
+	pick, err := g.chooseOne("Save the login for later sessions?",
+		yesNoItems("Stays on this machine, readable only by you", "Asks again next time", true))
+	if err != nil {
+		return 0, err
+	}
+	if pick == 0 {
 		if err := saveLogin(home, login.envVar, token); err != nil {
-			g.bad("Couldn't save the sign-in: " + err.Error())
-			g.note("Before each session, run: export " + login.envVar + "=<your token>")
+			g.bad("Couldn't save the login: " + err.Error())
+			g.detail("Before each session, run: export " + login.envVar + "=<your token>")
 		}
 	} else {
-		g.note("Before each session, run: export " + login.envVar + "=<your token>")
+		g.detail("Before each session, run: export " + login.envVar + "=<your token>")
 	}
-	g.ok("Signed in to " + a.label)
 	return identity.ExitOK, nil
 }
 
@@ -567,6 +865,30 @@ func savedLogin(home, envVar string) string {
 		}
 	}
 	return ""
+}
+
+// forgetLogins removes vars from the agent.env file, leaving the other agents' logins.
+func forgetLogins(home string, vars []string) error {
+	path := filepath.Join(home, agentEnvRel)
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var keep []string
+	for _, l := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+		name, _, _ := strings.Cut(l, "=")
+		if l != "" && !containsString(vars, name) {
+			keep = append(keep, l)
+		}
+	}
+	text := ""
+	if len(keep) > 0 {
+		text = strings.Join(keep, "\n") + "\n"
+	}
+	return os.WriteFile(path, []byte(text), 0o600)
 }
 
 // saveLogin writes envVar's value to the agent.env file (mode 0600, replacing that variable's line) and adds the line
@@ -606,54 +928,49 @@ func saveLogin(home, envVar, value string) error {
 	return werr
 }
 
-// project asks which project the agent works in: this folder (when tego start runs inside one), the test project, or
+// project asks which project the agent works in: the test project, this folder (when tego start runs inside one), or
 // another folder by its path. It reports the folder and whether it is the test project.
 func (g *walk) project(name, home string, onMac bool) (string, bool, error) {
-	const (
-		here = iota
-		test
-		other
-	)
-	var opts []huh.Option[int]
 	wd, _ := os.Getwd()
 	inProject := wd != "" && wd != home && wd != "/" && !strings.HasPrefix(home, wd+"/") && unixWritable(wd) &&
 		filepath.Base(wd) != guideSample
+	items := []choice{{name: "Tego test project", desc: "A small app whose test dependency tries to steal a fake secret", recommended: true}}
 	if inProject {
-		opts = append(opts, huh.NewOption("This folder: "+tildeHome(wd, home), here))
+		items = append(items, choice{name: "This folder", desc: tildeHome(wd, home)})
 	}
-	opts = append(opts, huh.NewOption("Test project   a small project made to show what Tego catches", test),
-		huh.NewOption("One of my projects", other))
-	pick := opts[0].Value
-	if err := g.ask(huh.NewSelect[int]().Title("Which project should " + name + " work in?").Options(opts...).Value(&pick)); err != nil {
+	items = append(items, choice{name: "My own project", desc: "A folder on this machine"})
+	pick, err := g.chooseOne("Which project should "+name+" work in?", items)
+	if err != nil {
 		return "", false, err
 	}
-	switch pick {
-	case here:
-		g.ok("Project: " + tildeHome(wd, home))
-		return wd, false, nil
-	case test:
+	switch items[pick].name {
+	case "Tego test project":
 		dir := filepath.Join(home, guideSample)
+		_, statErr := os.Stat(dir)
 		if err := makeSample(dir); err != nil {
 			return "", false, fmt.Errorf("making the test project: %w", err)
 		}
-		g.ok("Project: " + tildeHome(dir, home))
-		g.note("Its test dependency is poisoned: when the tests run, it tries to read the project's secret and send it out.")
-		g.note("See its files: " + sampleURL)
+		if statErr == nil {
+			g.ok("Using " + tildeHome(dir, home))
+		} else {
+			g.ok("Created " + tildeHome(dir, home))
+		}
+		g.detail("A small app whose test dependency tries to steal a fake secret.")
+		g.detail("Files: " + sampleURL)
 		return dir, true, nil
+	case "This folder":
+		g.ok("Using " + tildeHome(wd, home))
+		return wd, false, nil
 	}
-	title := "Path to the project"
-	if onMac {
-		title = "Path to the project, inside Tego's VM"
-	}
-	path := ""
-	if err := g.ask(huh.NewInput().Title(title).Placeholder("~/code/my-app").Value(&path).Validate(func(s string) error {
+	path, err := g.typeText("Path to the project", "~/code/my-app", false, func(s string) error {
 		_, err := projectPath(s, home, onMac)
 		return err
-	})); err != nil {
+	})
+	if err != nil {
 		return "", false, err
 	}
 	abs, _ := projectPath(path, home, onMac)
-	g.ok("Project: " + tildeHome(abs, home))
+	g.ok("Using " + tildeHome(abs, home))
 	return abs, false, nil
 }
 
@@ -675,7 +992,7 @@ func projectPath(s, home string, onMac bool) (string, error) {
 	fi, err := os.Stat(abs)
 	switch {
 	case err != nil && onMac:
-		return "", fmt.Errorf("%s isn't in Tego's VM. Your Mac's folders aren't here: clone or copy the project into the VM first, e.g. git clone <url> %s", s, s)
+		return "", fmt.Errorf("%s isn't in Tego's VM. Copy or clone it into the VM first", s)
 	case err != nil:
 		return "", fmt.Errorf("%s doesn't exist", s)
 	case !fi.IsDir():
@@ -688,59 +1005,131 @@ func projectPath(s, home string, onMac bool) (string, error) {
 	return abs, nil
 }
 
-// rules asks which rules the agent follows: a preset, or the person's own pick of the same building blocks.
-func (g *walk) rules(name string, a guideAgent) (rulesChoice, error) {
+// rules asks which rules the agent follows: a preset, the person's own pick of the same building blocks, or a rules
+// file they wrote.
+func (g *walk) rules(ctx context.Context, m *config.Machine, name string, a guideAgent, abs string) (rulesChoice, error) {
 	all := []string{"no-secrets", "no-prod", "repo-only-writes"}
-	choices := []rulesChoice{
-		{label: "Base development", presets: all, writeProject: true},
-		{label: "Read-only review", presets: all},
+	host := a.host
+	if host == "" {
+		host = "the hosts you name"
 	}
-	hostWord := "the hosts you name"
-	if a.host != "" {
-		hostWord = a.host
-	}
-	pick := 0
-	g.note("Read more about rules and presets: " + presetsDocURL)
-	if err := g.ask(huh.NewSelect[int]().Title("Which rules should "+name+" follow?").
-		Options(
-			huh.NewOption("Base development   edits the project, installs packages, runs tests · never reads your secrets", 0),
-			huh.NewOption("Read-only review   reads files and git history · changes nothing", 1),
-			huh.NewOption("Create my own", 2),
-		).Value(&pick)); err != nil {
+	pick, err := g.chooseOne("Which rules should "+name+" follow?", []choice{
+		{name: "Base development", desc: "Edits and tests the project · never reads secrets", recommended: true},
+		{name: "Read-only review", desc: "Reads the project · changes nothing"},
+		{name: "Choose each rule", desc: "Pick the rules one by one"},
+		{name: "Use my own rules file", desc: "A rules file you wrote"},
+	})
+	if err != nil {
 		return rulesChoice{}, err
 	}
-	if pick < len(choices) {
-		g.ok("Rules: " + choices[pick].label)
-		return choices[pick], nil
-	}
-	picked := []string{"no-secrets", "no-prod", "repo-only-writes"}
-	if err := g.ask(huh.NewMultiSelect[string]().Title("Pick each rule").
-		Options(
-			huh.NewOption("Never read secrets (~/.ssh, ~/.aws, .env files)", "no-secrets").Selected(true),
-			huh.NewOption("Connect only to "+hostWord, "no-prod").Selected(true),
-			huh.NewOption("Change only the project folder", "repo-only-writes").Selected(true),
-		).Value(&picked).Validate(func(s []string) error {
-		if len(s) == 0 {
-			return errors.New("keep at least one rule")
-		}
-		return nil
-	})); err != nil {
-		return rulesChoice{}, err
-	}
-	// The project stays writable either way: without "Change only the project folder" the agent may change any file
-	// you can, which the rules file then says.
-	rc := rulesChoice{label: "your own", presets: picked, writeProject: true}
-	hosts := ""
-	if containsString(picked, "no-prod") {
-		if err := g.ask(huh.NewInput().Title("Other hosts it may reach (comma-separated, Enter for none)").
-			Placeholder("api.github.com, pypi.org").Value(&hosts)); err != nil {
+	switch pick {
+	case 0:
+		return rulesChoice{label: "Base development", presets: all, writeProject: true,
+			summary: "Edits and tests the project · never reads secrets · reaches only " + host}, nil
+	case 1:
+		return rulesChoice{label: "Read-only review", presets: all, summary: "Reads the project · changes nothing · reaches only " + host}, nil
+	case 3:
+		file, err := g.typeText("Path to the rules file", "~/code/my-app/agent.yaml", false, func(s string) error {
+			_, err := rulesFile(ctx, m, s)
+			return err
+		})
+		if err != nil {
 			return rulesChoice{}, err
 		}
+		p, _ := rulesFile(ctx, m, file)
+		return rulesChoice{label: "Your own file", file: p}, nil
 	}
-	rc.hosts = splitList(hosts)
-	g.ok("Rules: your own")
+	items := []choice{
+		{name: "no-secrets", desc: "Never read keys, tokens or .env files", checked: true},
+		{name: "repo-only-writes", desc: "Change files only inside the project", checked: true},
+		{name: "no-prod", desc: "Connect only to " + host + " and the hosts you add", checked: true},
+	}
+	picked, err := g.chooseSeveral("Which rules?", items)
+	if err != nil {
+		return rulesChoice{}, err
+	}
+	// The project stays writable either way: without repo-only-writes the agent may change any file you can, which the
+	// rules file then says.
+	rc := rulesChoice{label: "Your own choice", writeProject: true}
+	for _, p := range picked {
+		rc.presets = append(rc.presets, items[p].name)
+	}
+	if containsString(rc.presets, "no-prod") {
+		hosts, err := g.typeText("Other hosts it may reach", "api.github.com, pypi.org  (enter for none)", false, nil)
+		if err != nil {
+			return rulesChoice{}, err
+		}
+		rc.hosts = splitList(hosts)
+	}
+	rc.summary = strings.Join(rc.presets, " · ")
+	if len(rc.hosts) > 0 {
+		rc.summary += " · also reaches " + strings.Join(rc.hosts, ", ")
+	}
 	return rc, nil
 }
+
+// rulesFile is a typed rules file's absolute path, once it reads and checks as tego run will compile it; otherwise the
+// first thing wrong with it, in one line.
+func rulesFile(ctx context.Context, m *config.Machine, s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", errors.New("type the rules file's path, for example ~/code/my-app/agent.yaml")
+	}
+	p := s
+	if s == "~" || strings.HasPrefix(s, "~/") {
+		p = filepath.Join(m.Home, strings.TrimPrefix(strings.TrimPrefix(s, "~"), "/"))
+	}
+	p, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	text, err := os.ReadFile(p)
+	if err != nil {
+		return "", fmt.Errorf("%s doesn't exist", s)
+	}
+	var diag bytes.Buffer
+	if err := checkRules(ctx, m, p, text, &diag); err != nil {
+		first, _, _ := strings.Cut(strings.TrimSpace(diag.String()), "\n")
+		if m := diagLine.FindStringSubmatch(first); m != nil {
+			return "", fmt.Errorf("%s line %s: %s", s, m[1], m[2])
+		}
+		return "", fmt.Errorf("%s has an error: %s", s, first)
+	}
+	return p, nil
+}
+
+// diagLine is a compile diagnostic as checkRules prints it: "error: <file>:<line>:<col>: <what> [<code>]".
+var diagLine = regexp.MustCompile(`^(?:error: )?[^:]+:([0-9]+):[0-9]+: (.*?)(?: \[[a-z0-9-]+\])?$`)
+
+// rulesFileName is the agent name a rules file gives itself (name:), or "" when it gives none that names an agent.
+func rulesFileName(file string) string {
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return ""
+	}
+	if l := rulesNameLine.Find(b); l != nil {
+		if n := strings.Trim(strings.TrimSpace(strings.TrimPrefix(string(l), "name:")), `"'`); registry.IsName(n) {
+			return n
+		}
+	}
+	return ""
+}
+
+// withRulesLine puts the rules' name, as tego run's start line shows it, after the marker line every composed file opens with.
+func withRulesLine(text []byte, rc rulesChoice) []byte {
+	what := rc.label + " rules"
+	if rc.label == "Your own choice" {
+		what = "rules " + strings.Join(rc.presets, ", ")
+	}
+	first, rest, _ := strings.Cut(string(text), "\n")
+	return []byte(first + "\n" + rulesLinePrefix + what + "\n" + rest)
+}
+
+// rulesLinePrefix opens the line withRulesLine writes; quietRun reads it back.
+const rulesLinePrefix = "# Chosen in tego start: "
+
+// rulesNameLine is a rules file's top-level name: line.
+var rulesNameLine = regexp.MustCompile(`(?m)^name:.*$`)
 
 func containsString(list []string, s string) bool {
 	for _, v := range list {
@@ -763,25 +1152,70 @@ func splitList(s string) []string {
 }
 
 // saveAgent writes the agent's rules file. An agent of that name already there is kept unless the person replaces it.
-func (g *walk) saveAgent(ctx context.Context, m *config.Machine, a guideAgent, command, name, abs string, rc rulesChoice, test bool, stderr io.Writer) (string, int, error) {
+func (g *walk) saveAgent(ctx context.Context, m *config.Machine, a guideAgent, command, name, abs string, rc rulesChoice, test bool, stderr io.Writer) (int, error) {
 	replace := false
 	if file, err := agentFile(m, name); err == nil {
 		if _, err := os.Stat(file); err == nil {
-			if err := g.ask(huh.NewConfirm().Title("Agent " + name + " already exists. Replace its rules?").Value(&replace)); err != nil {
-				return "", 0, err
+			items := yesNoItems("Writes the new rules over them", "Keeps the rules it has", false)
+			pick, err := g.chooseOne("Agent "+name+" already exists. Replace its rules?", items)
+			if err != nil {
+				return 0, err
 			}
-			if !replace {
-				g.ok("Agent " + name + " kept: " + tildeHome(file, m.Home))
-				return file, identity.ExitOK, nil
+			if items[pick].name == "No" {
+				g.ok("Kept agent " + name)
+				g.detail("Rules: " + tildeHome(file, m.Home))
+				return identity.ExitOK, nil
+			}
+			replace = true
+		}
+	}
+	var code int
+	if rc.file != "" {
+		_, code = saveOwnRules(m, name, abs, rc.file, replace, stderr)
+	} else {
+		_, code = guideSaveRules(ctx, m, a, command, name, abs, rc, test, replace, stderr)
+	}
+	if code != identity.ExitOK {
+		return code, nil
+	}
+	if rc.file != "" {
+		g.ok("Created agent " + name + " from " + tildeHome(rc.file, m.Home))
+		return identity.ExitOK, nil
+	}
+	g.ok("Created agent " + name)
+	g.detail(rc.summary)
+	g.detail("Presets: " + presetsDocURL)
+	return identity.ExitOK, nil
+}
+
+// saveOwnRules saves a rules file the person wrote as the agent named name, in the user registry where tego run <name>
+// finds it. Its name: line is set to name. replace removes an existing file of that name first.
+func saveOwnRules(m *config.Machine, name, abs, file string, replace bool, stderr io.Writer) (string, int) {
+	text, err := os.ReadFile(file)
+	if err != nil {
+		message(stderr, file, 0, 0, "tego start: "+err.Error(), codeIO)
+		return "", identity.ExitError
+	}
+	if rulesNameLine.Match(text) {
+		text = rulesNameLine.ReplaceAll(text, []byte("name: "+name))
+	} else {
+		text = append([]byte("name: "+name+"\n"), text...)
+	}
+	sv := registry.Save{Places: registry.Places{User: m.Registry.Value}, Name: name, Text: text, Writes: []string{abs}}
+	if replace {
+		if p, err := sv.Path(); err == nil {
+			if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				message(stderr, p, 0, 0, "tego start: replacing the rules file: "+err.Error(), codeIO)
+				return "", identity.ExitError
 			}
 		}
 	}
-	path, code := guideSaveRules(ctx, m, a, command, name, abs, rc, test, replace, stderr)
-	if code != identity.ExitOK {
-		return "", code, nil
+	path, err := sv.Write()
+	if err != nil {
+		message(stderr, path, 0, 0, "tego start: saving the rules file: "+err.Error(), codeIO)
+		return "", identity.ExitError
 	}
-	g.ok("Agent " + name + " added: " + tildeHome(path, m.Home))
-	return path, identity.ExitOK, nil
+	return path, identity.ExitOK
 }
 
 // agentFile is where the agent named name's rules file lives in the user registry.
@@ -817,6 +1251,7 @@ func guideSaveRules(_ context.Context, m *config.Machine, a guideAgent, command,
 		message(stderr, "", 0, 0, "tego start: "+err.Error(), codeIO)
 		return "", identity.ExitError
 	}
+	composed.Contract = withRulesLine(composed.Contract, rc)
 	sv := registry.Save{Places: registry.Places{User: m.Registry.Value}, Name: name, Text: composed.Contract,
 		Writes: []string{dir}}
 	file, err := sv.Path()
@@ -870,13 +1305,6 @@ func rememberProject(home, dir string) {
 	if os.MkdirAll(filepath.Dir(p), 0o700) == nil {
 		_ = os.WriteFile(p, []byte(dir+"\n"), 0o600)
 	}
-}
-
-func firstNonEmpty(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
 
 // guideSample is the test project's folder, under home.

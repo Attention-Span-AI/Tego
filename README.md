@@ -57,11 +57,11 @@ their own machine, and the kernel programs.
 
 | Feature | What you get |
 |---|---|
-| <img src="docs/assets/icons/scroll-text.svg" width="20" height="20" alt=""> **Contracts** | An unmodified agent process runs under a per-agent contract, a YAML file. `tego init` starts one from presets, `tego compile` prints its rule table, and `tego learn` proposes one from a finished run. |
+| <img src="docs/assets/icons/scroll-text.svg" width="20" height="20" alt=""> **Contracts** | An unmodified agent process runs under a per-agent contract, a YAML file. `tego rules create` starts one from presets, `tego rules check` prints its rule table, and `tego rules learn` proposes one from a finished run. |
 | <img src="docs/assets/icons/shield.svg" width="20" height="20" alt=""> **Enforcement outside the agent** | At every tier the kernel refuses writes and programs outside the contract. Hosts are decided by Tego's supervisor at tier 1 and by the kernel at tiers 2 and 3. |
 | <img src="docs/assets/icons/hand.svg" width="20" height="20" alt=""> **Held actions** | An `ask` rule on a file or a connection holds it until you allow or deny it, with `tego approve`, `tego deny` or the dashboard. Held file reads (`fs.ask_read`) are tier 1 only, and `exec.ask` is reserved: it refuses. |
-| <img src="docs/assets/icons/pause.svg" width="20" height="20" alt=""> **Live control** | `tego pause`, `resume`, `stop` and `block` act on a running run. An [Adjustable](docs/user/live-modes.md) run (tiers 2 and 3, which need root) can also be loosened while it runs. |
-| <img src="docs/assets/icons/link.svg" width="20" height="20" alt=""> **Hash-chained record** | Every run writes one. `tego receipt` and `tego events` read it, `tego events <run> --verify` checks its chain, `tego drift` compares what was allowed with what was used, and the dashboard shows it. |
+| <img src="docs/assets/icons/pause.svg" width="20" height="20" alt=""> **Live control** | `tego session pause`, `resume` and `stop`, and `tego block`, act on a running session. An [Adjustable](docs/user/live-modes.md) run (tiers 2 and 3, which need root) can also be loosened while it runs. |
+| <img src="docs/assets/icons/link.svg" width="20" height="20" alt=""> **Hash-chained record** | Every run writes one. `tego session show` and `tego events` read it, `tego events <run> --verify` checks its chain, `tego drift` compares what was allowed with what was used, and the dashboard shows it. |
 | <img src="docs/assets/icons/activity.svg" width="20" height="20" alt=""> **Run limits** | A run that passes its limits (tokens, cost, time, stall, repeats) ends with exit code 124. Token and cost limits count Anthropic Messages traffic only. |
 | <img src="docs/assets/icons/eye.svg" width="20" height="20" alt=""> **Watch any agent** | `tego watch` runs any command as a black box and records it. `tego agents` lists the agents running here and `tego adopt` governs one already running; both need root. |
 | <img src="docs/assets/icons/layout-dashboard.svg" width="20" height="20" alt=""> **Local dashboard** | `tego serve --open` serves runs, logs, refusals and held requests on `127.0.0.1`, for one person. |
@@ -95,7 +95,7 @@ profile.
 ```sh
 brew install lima
 limactl start --name=tego https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml
-limactl shell tego tego doctor
+limactl shell tego tego machine check
 ```
 
 **Windows**, in WSL2. In PowerShell:
@@ -107,7 +107,7 @@ wsl --install -d Ubuntu-24.04
 Then open Ubuntu and run the Linux line there.
 
 What each was tested on: the installer put the published v0.1.1 on AlmaLinux 9.8, Ubuntu 24.04, Debian 13, Fedora 44,
-Amazon Linux 2023 and Ubuntu 26.04.1, and a new user's `tego doctor`, `tego test` and a governed run reached tier
+Amazon Linux 2023 and Ubuntu 26.04.1, and a new user's `tego machine check`, `tego machine test` and a governed run reached tier
 landlock on each
 ([docs/TIERS.md](docs/TIERS.md#the-published-release-as-a-new-user)). The macOS template passes Lima's own check
 (`limactl validate`) but has not been booted on a Mac yet, and the Windows steps have not been run yet.
@@ -136,49 +136,49 @@ refuses any other. Add the `export` to your shell's profile if your login does n
 tego start
 ```
 
-`tego start` walks you through it, one question at a time:
+`tego start` walks you through four steps, one question at a time:
 
-1. **The agent you want to supervise:** Claude Code, Codex or another program. Tego offers to install Claude Code or
-   Codex if it's missing.
-2. **Its sign-in:** a Claude subscription, an Anthropic API key, or an OpenAI API key for Codex. You choose whether
-   Tego saves it for later sessions.
-3. **Its project:** a test project Tego makes for you, or one of yours. The test project's dependency is poisoned on
+1. **Agent:** Claude Code, Codex or another program. Tego offers to install Claude Code or Codex if it's missing.
+2. **Login:** a Claude subscription, an Anthropic API key, or an OpenAI API key for Codex. You choose whether Tego
+   saves it for later sessions.
+3. **Project:** a test project Tego makes for you, or one of yours. The test project's dependency is poisoned on
    purpose (harmlessly) so you can watch Tego block it.
-4. **Its rules:** Base development, Read-only review, or your own pick. [Read more about presets](docs/user/presets.md).
+4. **Rules:** Base development, Read-only review, the rules you pick one by one, or a rules file you wrote.
+   [Read more about presets](docs/user/presets.md).
 
-It never starts the agent for you. It ends with the command that starts your first supervised session:
+It then opens the dashboard and ends with the command that starts your first supervised session. It never starts
+the agent for you:
 
 ```sh
 cd ~/tego-sample && tego run tego-sample
 ```
 
-Ask Claude to "run the tests": the tests pass, and Tego blocks the dependency's attempt to read the project's `.env`
-and send it out. Then see what happened:
+When the test project's tests run in that session, its dependency tries to read the project's `.env` and send it
+out. Tego blocks both, the tests still pass, and the dashboard shows the two blocked actions. In the terminal:
 
 ```sh
-tego get sessions                 # your sessions
-tego describe session --last      # what the agent did and what Tego blocked
-tego dashboard                    # the same, in your browser
+tego session list                 # your sessions
+tego session show --last          # what the agent did and what Tego blocked
 ```
 
-On a Mac, run `tego start` and `tego dashboard` in your normal terminal: they open Tego's Linux VM for you. Keep your
-projects inside the VM. Over SSH on Linux, start a shell in your user's cgroup first with
-`systemd-run --user --scope bash` ([docs/INSTALL.md](docs/INSTALL.md#check-the-machine)).
+On a Mac, run `tego start` and `tego dashboard` in your normal terminal: they open Tego's Linux VM for you, and the
+dashboard opens in your Mac's browser. Keep your projects inside the VM. Over SSH on Linux, start a shell in your
+user's cgroup first with `systemd-run --user --scope bash` ([docs/INSTALL.md](docs/INSTALL.md#check-the-machine)).
 
-Prefer to do each step yourself? [docs/QUICKSTART.md](docs/QUICKSTART.md) does the same with `tego init`, `tego run`
-and `tego receipt`, and explains the output.
+Prefer to do each step yourself? [docs/QUICKSTART.md](docs/QUICKSTART.md) does the same with `tego rules create`,
+`tego run` and `tego session show`, and explains the output.
 
 ### Your own projects and agents
 
+Run `tego start` again and pick **My own project**, and **Use my own rules file** if you wrote one. Or:
+
 ```sh
-tego add agent --project ~/code/my-app --program claude-code --preset base-development
-tego apply -f my-rules.yaml       # add or update an agent from a rules file you wrote
-tego get agents                   # your agents
-tego edit agent my-app            # change its rules
-tego remove agent my-app          # stop supervising it
+tego rules create --agent claude-code --preset no-secrets,repo-only-writes --write src/   # a rules file in this project
+tego rules check agent.yaml       # what it enforces
+tego rules edit my-app            # change an agent's rules, checked before they're saved
 ```
 
-`tego --help` lists every command, grouped. [docs/user/commands.md](docs/user/commands.md) explains each one.
+`tego help` lists the common commands, and `tego help -a` every one. [docs/user/commands.md](docs/user/commands.md) explains each one.
 [examples/agents/](examples/agents/README.md) has rules files for Claude Code, Codex, the Claude Agent SDK, the
 Anthropic Python SDK and an agent of your own.
 
@@ -205,7 +205,7 @@ flowchart LR
    contract relays MCP servers; `harness: none` turns both off. Everything the agent forks or executes stays in the run.
 3. What the contract rules out fails with an ordinary system call error. The agent is not asked to cooperate. At tier 1
    Tego's supervisor decides hosts, and at tiers 2 and 3 the kernel does.
-4. Each event goes into the run's hash-chained record, which `tego receipt`, `tego events` and the dashboard read.
+4. Each event goes into the run's hash-chained record, which `tego session show`, `tego events` and the dashboard read.
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the full design.
 
@@ -217,7 +217,7 @@ flowchart LR
 | 2, `cgroup` | root (`sudo`), Landlock ABI 2 or newer, cgroup v2, BTF | cgroup-attached BPF and fanotify: the kernel records reads too |
 | 3, `bpflsm` | root, and `bpf` in the kernel's boot LSM list | Tier 2, with the decision plane running as BPF LSM hooks |
 
-All three tiers are in the release binary and in the one `make build` produces. `tego doctor` says which tier your machine gets, and each
+All three tiers are in the release binary and in the one `make build` produces. `tego machine check` says which tier your machine gets, and each
 run records the tier it had. Details, including the one boot line Ubuntu needs for tier 3, are in
 [docs/TIERS.md](docs/TIERS.md).
 
@@ -260,7 +260,7 @@ The full list, with what to do about each, is in **[docs/GAPS.md](docs/GAPS.md)*
   and a read that `deny_read` refuses fails with `EACCES` and leaves no line either, unless the supervisor is told of
   reads: held reads (the default `fs.reads: auto` turns them on when a `deny_read` target lies inside a write entry),
   `reason.reads: on`, `fs.ask_read` or a read gate; then a refused read leaves one line. Where it leaves none, the read
-  is still refused, but `tego run` can print `refused 0`, and `tego receipt` says that no recorded action was refused
+  is still refused, but `tego run` can print `refused 0`, and `tego session show` says that no recorded action was refused
   and that the run does not record refused reads: a clean receipt there says nothing about reads. `record: full`
   records reads and makes every open slower. Tiers 2 and 3 record them without it.
 - The record is tamper-evident against an agent held by a contract, within the mount and storage limits

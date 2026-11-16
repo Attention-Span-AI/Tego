@@ -335,9 +335,9 @@ func endWhy(r *ledgerview.Run) string {
 		return "The agent exited with code " + strconv.Itoa(r.ExitCode) + ", which usually means it failed."
 	case "stopped":
 		if r.StoppedBy != "" {
-			return "Stopped on request by " + r.StoppedBy + " (tego stop or the dashboard's Stop)."
+			return "Stopped on request by " + r.StoppedBy + " (tego session stop or the dashboard's Stop)."
 		}
-		return "Stopped on request (tego stop or the dashboard's Stop)."
+		return "Stopped on request (tego session stop or the dashboard's Stop)."
 	case "signal":
 		if r.Signal == 1 {
 			return "SIGHUP ended the agent: its terminal was closed or hung up."

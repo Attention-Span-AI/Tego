@@ -488,7 +488,7 @@ func (a *adoption) prepareEnforcement(ctx context.Context) error {
 		a.planeMode, _ = dp.DecisionPlane()
 	}
 	if a.spec.Boundary && a.planeMode == "" {
-		return fmt.Errorf("%w: the plane runs in no mode here or cannot hold this contract (tego doctor says which); "+
+		return fmt.Errorf("%w: the plane runs in no mode here or cannot hold this contract (tego machine check says which); "+
 			"adopt with no --boundary to record it", ErrAdoptNoPlane)
 	}
 	armer, ok := h.(api.Armer)

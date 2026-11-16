@@ -25,7 +25,7 @@ not hold.
 tego of read opens, because doing so costs every open. `reason.reads: on` in the contract turns it on: every read open
 is then told to the supervisor, and a refused one is one refusal here, `read-denied`, with `mechanism: landlock`. The
 default, `reason.reads: auto`, is off because we measured it (ADR 0077): about 17 µs more per open, and the offline
-Claude Code workload ran 19 % longer (more on a loaded box). `tego compile` prints `reason-reads-off` with these
+Claude Code workload ran 19 % longer (more on a loaded box). `tego rules check` prints `reason-reads-off` with these
 figures, and `run_start.reads_notified` says whether a run's reads were told to tego and why. A run that holds its reads
 (`fs.reads`, ADR 0069) or runs under `record: full` records such a refusal whatever this key says.
 

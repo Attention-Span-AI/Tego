@@ -736,7 +736,7 @@ func TestAdoptReleasesTheTreeWhenAskedToStop(t *testing.T) {
 	s, done := f.adoptRunning(t, ctx, f.spec(t))
 	// A process the agent forked after the adoption is born in the run's cgroup, and goes back with it.
 	f.host.add(202, 201, f.host.rel(s.Scope), "/usr/bin/cat")
-	cancel() // SIGINT, SIGTERM or tego stop
+	cancel() // SIGINT, SIGTERM or tego session stop
 	res := waitResult(t, done)
 	if res.Reason != record.RunEndStopped || res.ExitCode != 0 {
 		t.Fatalf("result %+v, want reason stopped", res)

@@ -149,7 +149,7 @@ func (s *endSummary) text() string {
 		fmt.Fprintf(&b, "tego run: %s ended (%s) · %s\n", run, s.rc.Outcome(), strings.Join(parts, " · "))
 		b.WriteString(sameFileLines(s.rc))
 	}
-	fmt.Fprintf(&b, "  more: tego receipt %s\n", run)
+	fmt.Fprintf(&b, "  more: tego session show %s\n", run)
 	return b.String()
 }
 
@@ -197,11 +197,11 @@ func (s *endSummary) runHint(o runOptions) (text, command string) {
 	run := shortRun(s.root, s.run)
 	switch line := s.readsLine(); {
 	case s.rc != nil && s.rc.Refusals.Total > 0:
-		return "see what it refused, under which rule:", "tego receipt " + run
+		return "see what it refused, under which rule:", "tego session show " + run
 	case line == readsLineReasonOff || line == readsLineUnknown:
 		return "to see a read the contract refuses, run it again recording every read:", runAgain(o, "--record full")
 	}
-	return "check its record against the chain anchor:", "tego receipt " + run + " --verify"
+	return "check its record against the chain anchor:", "tego session show " + run + " --verify"
 }
 
 // runAgain is the tego run command of o as a shell reads it, the contract and the command after it as the person

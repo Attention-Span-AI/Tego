@@ -265,7 +265,7 @@ func hostsRefusedHint(stderr io.Writer, dir string, m *config.Machine, o learnOp
 			kept.hosts, kept.hostArgs = append(kept.hosts, o.hosts[i]), append(kept.hostArgs, v)
 		}
 	}
-	command := "tego learn " + learnRunRef(dir, m)
+	command := "tego rules learn " + learnRunRef(dir, m)
 	switch {
 	case o.save != "":
 		command += " --save " + shellword.Quote(o.save)
@@ -321,7 +321,7 @@ func refuseSaveForAnother(stderr io.Writer) bool {
 		return false
 	}
 	message(stderr, "", 0, 0, "tego learn: --save as root for another user: the file would be root's, in that user's registry, "+
-		"where the user's own tego run cannot read it; nothing was written; run tego learn without sudo, or write the "+
+		"where the user's own tego run cannot read it; nothing was written; run tego rules learn without sudo, or write the "+
 		"proposal with --out <file>", codePrivilege)
 	return true
 }
@@ -449,7 +449,7 @@ func runLearn(ctx context.Context, ref string, o learnOptions, stdout, stderr io
 			message(stderr, "", 0, 0, "tego learn: "+err.Error(), codeIO)
 			return identity.ExitError
 		}
-		hint, command = learnSaveHint, "tego learn "+learnRunRef(dir, m)+" --save "+proposedName(m, p.Cwd)+o.shapingFlags()
+		hint, command = learnSaveHint, "tego rules learn "+learnRunRef(dir, m)+" --save "+proposedName(m, p.Cwd)+o.shapingFlags()
 		switch {
 		case p.SuggestHosts():
 			hint, command = learnNameHint, command+" --allow-host "+hostPlaceholder
@@ -651,7 +651,7 @@ func saveProposal(ctx context.Context, name, text string, p *learn.Proposal, mc 
 		return identity.ExitFinding, ""
 	case registry.SaveNoCompile:
 		message(stderr, path, 0, 0, "tego learn: --save: the proposal does not compile here ("+se.Err.Error()+"); nothing was written; "+
-			"write it with --out, fix it and run tego compile on it", agent.CodeSchema)
+			"write it with --out, fix it and run tego rules check on it", agent.CodeSchema)
 		return identity.ExitFinding, ""
 	case registry.SaveExists:
 		message(stderr, path, 0, 0, "tego learn: --save: "+se.Err.Error()+": nothing was written; give another name", codeExists)
@@ -767,7 +767,7 @@ func writeProposal(out, text string, p *learn.Proposal, stderr io.Writer) int {
 	if abs, err := filepath.Abs(out); err == nil {
 		warnWritable(stderr, abs, p)
 	}
-	fmt.Fprintf(stderr, "tego learn: wrote %s (mode 0600): a proposal for you to review; check it with tego compile %s\n", out, out)
+	fmt.Fprintf(stderr, "tego learn: wrote %s (mode 0600): a proposal for you to review; check it with tego rules check %s\n", out, out)
 	return identity.ExitOK
 }
 

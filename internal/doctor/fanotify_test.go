@@ -139,7 +139,7 @@ func TestFanotifyVerdict(t *testing.T) {
 			"not EPERM", "boot a current stable kernel"},
 		{"the round trip timed out", fanotifyReply{},
 			fmt.Errorf("%w: no permission event within %s", ErrFanotify, fanotifyProbeTimeout), false, false, false,
-			"could not be tested", "re-run tego doctor"},
+			"could not be tested", "re-run tego machine check"},
 		{"the answer could not be written", fanotifyReply{},
 			fmt.Errorf("%w: answer the permission event: %w", ErrFanotify, unix.ENOENT), false, false, false,
 			"could not be tested", "report it as a tego bug"},

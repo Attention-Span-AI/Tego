@@ -162,7 +162,7 @@ func TestMachinePage(t *testing.T) {
 		t.Fatalf("machine: %d %s", w.Code, w.Body)
 	}
 	body := w.Body.String()
-	for _, want := range []string{"This machine", "<strong>Basic</strong>", "Available", "Run with sudo", "add bpf to the kernel&#39;s lsm= list", "tego doctor", rid(harmRun)} {
+	for _, want := range []string{"This machine", "<strong>Basic</strong>", "Available", "Run with sudo", "add bpf to the kernel&#39;s lsm= list", "tego machine check", rid(harmRun)} {
 		if !strings.Contains(body, want) {
 			t.Errorf("machine page lacks %q", want)
 		}

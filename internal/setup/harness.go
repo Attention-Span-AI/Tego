@@ -45,5 +45,5 @@ func harnessFor(name string) (*Harness, error) {
 			return &h, nil
 		}
 	}
-	return nil, usagef("unknown agent %q; use tego init --list to see claude-code and codex", name)
+	return nil, usagef("unknown agent %q; use tego rules create --list to see claude-code and codex", name)
 }

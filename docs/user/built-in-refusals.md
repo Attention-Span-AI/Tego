@@ -21,7 +21,7 @@ runtime directory remains available. The interactive Claude contracts set `env.s
 A socket symlink, a socket with multiple hard links, a protected directory moved after preparation,
 a relative path or a `/proc/<pid>/root` spelling does not create a socket exception. At Landlock ABI 6
 and later, abstract sockets bound outside the run are refused too. Below ABI 6 that abstract scope is
-unavailable; `tego doctor` reports the capability. `/dev/tty`, the pty multiplexors and serial devices
+unavailable; `tego machine check` reports the capability. `/dev/tty`, the pty multiplexors and serial devices
 are not in the terminal refusal. A verified own-PTY slave still needs the contract's filesystem
 permission (including a write grant for writable delivery). Both relay APIs check explicit denies,
 live blocks and gates before delivery. Approval completion of character devices is unsupported:
@@ -52,12 +52,12 @@ configured table and do not change when a server is installed or removed.
 
 ## A contract entry that a built-in overrides
 
-`tego compile` and `tego run` refuse a `net.allow` `unix:` entry that a built-in refuses, whether by its path or
+`tego rules check` and `tego run` refuse a `net.allow` `unix:` entry that a built-in refuses, whether by its path or
 by the place it resolves to, with a `contradiction` error. The error names the entry, the built-in rule and ADR 0113.
 Such an entry never admitted anything: every layer decides the built-ins before it reads `net.allow`. Before this
 check, the run refused the connect with no word at launch. The SSH-agent sockets and an exact container-daemon socket
 are not refused, as above. `host_sockets: true` beside a `net:` section has no effect, since the section decides every
-unix destination by its own entries. `tego compile` prints an informational note about it (`redundant-rule`). A
+unix destination by its own entries. `tego rules check` prints an informational note about it (`redundant-rule`). A
 record-only run (`--observe`, or `tego watch` without `--boundary`) has no built-ins, so it reports neither. A link
 made after compile, or a hard link, is not seen at compile; the run still refuses it by identity.
 
@@ -97,7 +97,7 @@ not been run under Tego or in a VM.
 
 ## Why compile now refuses my grant
 
-From this release, `tego compile` and `tego run` look at the machine's mount table (`/proc/self/mountinfo`) as well
+From this release, `tego rules check` and `tego run` look at the machine's mount table (`/proc/self/mountinfo`) as well
 as at paths. The [compile-time mount boundary](../adr/0059-no-run-writes-what-a-later-run-loads.md#compile-time-mount-boundary)
 defines what that analysis can establish and when uncertainty refuses a grant. A write entry or ask scope is refused
 (`[contradiction]`) when:
@@ -134,7 +134,7 @@ To fix it, narrow the grant to the folders the agent writes: `./src/` and `./out
 rather than `/tmp/`, `/dev/null` rather than `/dev`. Or move the container root, chroot or bind mount out of the
 folder the agent writes, or unmount it before the run. For the hard link, install a fresh copy of tego with one name
 outside every folder the agent writes and run that one. The message names the mount or protected place it found.
-For a plain-folder chroot with no root mount row, compile and `tego doctor` explain: "Tego is running inside a root
+For a plain-folder chroot with no root mount row, compile and `tego machine check` explain: "Tego is running inside a root
 that is not a mount point, so the kernel does not show the filesystem under it; make the root a mount point, for
 example bind the folder onto itself before entering it, or run Tego outside that root". Every write and ask grant
 is still refused there. Removing those grants also removes this uncertainty refusal.

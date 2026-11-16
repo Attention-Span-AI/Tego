@@ -168,7 +168,7 @@ func TestRulesPageInForce(t *testing.T) {
 		"Settings it gets", "Gets DEMO_TOKEN, set in its rules", "Gets PATH from your shell",
 		`href="` + html.EscapeString(hits) + `"`, "2 hits", "No hits",
 		"agent.yaml:", "Edit contract",
-		"cd " + f.proj + " &amp;&amp; tego compile " + f.source, "tego block --list " + rulesRunB,
+		"cd " + f.proj + " &amp;&amp; tego rules check " + f.source, "tego block --list " + rulesRunB,
 		`<details class="panel rules-raw">`, "DEMO_TOKEN: " + rulesview.Hidden, "/static/rules.css",
 	} {
 		if !strings.Contains(body, want) {
@@ -192,7 +192,7 @@ func TestRulesPageInForce(t *testing.T) {
 	if !changeBuilt && (!strings.Contains(body, `disabled aria-describedby="rules-soon"`) || !strings.Contains(body, "tego rule</span>")) {
 		t.Error("the unbuilt Change rules button is not disabled with its hint")
 	}
-	if strings.Contains(body, "tego compile "+filepath.Join(f.root, rulesRunB)) {
+	if strings.Contains(body, "tego rules check "+filepath.Join(f.root, rulesRunB)) {
 		t.Error("the terminal hint compiles the ledger copy")
 	}
 	if strings.Contains(body, `rules-raw" open`) {
@@ -536,7 +536,7 @@ func TestRulesPageUnreadableLiveBlocks(t *testing.T) {
 func TestRulesPageEmptyAndRunLink(t *testing.T) {
 	s := newServer(t, t.TempDir())
 	c := login(t, s)
-	const learn = "<code>mkdir -p ~/contracts &amp;&amp; tego learn &lt;run&gt; --out ~/contracts/&lt;name&gt;.yaml</code>"
+	const learn = "<code>mkdir -p ~/contracts &amp;&amp; tego rules learn &lt;run&gt; --out ~/contracts/&lt;name&gt;.yaml</code>"
 	if b := do(s, "GET", "/rules", "127.0.0.1:8484", c).Body.String(); !strings.Contains(b, "No contracts yet") || !strings.Contains(b, learn) {
 		t.Errorf("the empty Rules page does not give %s", learn)
 	}
@@ -553,7 +553,7 @@ func TestRulesNewFromRunSaysAddresses(t *testing.T) {
 	f := newRulesFix(t)
 	f.withSetup(t)
 	code, body := f.get(t, "/rules/new?mode=run")
-	if code != http.StatusOK || !strings.Contains(body, "the addresses it connected to (tego learn)") || strings.Contains(body, "hosts it reached") {
+	if code != http.StatusOK || !strings.Contains(body, "the addresses it connected to (tego rules learn)") || strings.Contains(body, "hosts it reached") {
 		t.Errorf("From a run answered %d and does not say it allows the addresses the run connected to:\n%s", code, body)
 	}
 }

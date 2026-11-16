@@ -102,7 +102,7 @@ func TestStatusShowsLostWhilePaused(t *testing.T) {
 	if code != identity.ExitFinding || !strings.Contains(out, id+"  tester  lost, frozen") ||
 		!strings.Contains(out, "lost "+id+": its launcher died, and the last state it recorded was paused, with no resume after it.") ||
 		!strings.Contains(out, "Now its processes are frozen (its scope's cgroup.events says frozen 1).") ||
-		!strings.Contains(out, "Tego never thaws a run with no launcher; tego stop "+id+" ends what is left and closes the record (run_end orphaned).") {
+		!strings.Contains(out, "Tego never thaws a run with no launcher; tego session stop "+id+" ends what is left and closes the record (run_end orphaned).") {
 		t.Fatalf("status of a lost run last recorded paused: exit %d stdout %q stderr %q", code, out, errs)
 	}
 	code, out, _ = run(t, "status", id, "--json")
@@ -192,7 +192,7 @@ func TestPauseResumeRefuseALostPausedRun(t *testing.T) {
 			code, out, errs := run(t, name, tc.id)
 			if code != identity.ExitFinding || out != "" || !strings.Contains(errs, "[lost-paused]") ||
 				!strings.Contains(errs, tc.id+" is lost: its launcher died, and the last state it recorded was paused") ||
-				!strings.Contains(errs, "Tego never resumes a run with no launcher") || !strings.Contains(errs, "tego stop "+tc.id) {
+				!strings.Contains(errs, "Tego never resumes a run with no launcher") || !strings.Contains(errs, "tego session stop "+tc.id) {
 				t.Errorf("%s of %s: exit %d stdout %q stderr %q", name, tc.id, code, out, errs)
 			}
 		}

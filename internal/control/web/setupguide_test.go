@@ -234,7 +234,7 @@ func TestOverviewGuideEscapesAHostileFact(t *testing.T) {
 	if !strings.Contains(g.Steps[1].Fact, hostile) {
 		t.Errorf("the check step's fact %q does not read as the stored text", g.Steps[1].Fact)
 	}
-	if g.Commands != 1 || g.Command != "tego doctor" || strings.Contains(g.Command, "curl") {
+	if g.Commands != 1 || g.Command != "tego machine check" || strings.Contains(g.Command, "curl") {
 		t.Errorf("copy blocks %d, command %q: only the guide's own command may be one", g.Commands, g.Command)
 	}
 }

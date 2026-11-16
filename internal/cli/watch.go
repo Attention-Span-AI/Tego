@@ -265,7 +265,7 @@ func watchFooter(res tegoruntime.Result, sum *endSummary) string {
 		fmt.Fprintf(&b, "tego watch: recorded as run %s: ended (%s) · %s\n", run, sum.rc.Outcome(), strings.Join(append(sum.counts(true), sum.tail()), " · "))
 		b.WriteString(sum.seen())
 	}
-	fmt.Fprintf(&b, "  more: tego receipt %[1]s    tego events %[1]s\n", run)
+	fmt.Fprintf(&b, "  more: tego session show %[1]s    tego events %[1]s\n", run)
 	return b.String()
 }
 
@@ -298,7 +298,7 @@ func watchHint(res tegoruntime.Result, sum *endSummary, boundary, cwd string, ad
 	if boundary != "" || res.RunID == "" || sum == nil || sum.recordOff || res.RecordErr != nil {
 		return "", ""
 	}
-	command = "tego learn " + shortRun(sum.root, res.RunID) + " --save " + proposedName(sum.machine, cwd)
+	command = "tego rules learn " + shortRun(sum.root, res.RunID) + " --save " + proposedName(sum.machine, cwd)
 	if addresses {
 		return watchNameHint, command + " --allow-host " + hostPlaceholder
 	}

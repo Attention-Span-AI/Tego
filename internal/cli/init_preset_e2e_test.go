@@ -163,7 +163,7 @@ fs:
 	run.Dir, run.Env = outer, env
 	out, err := run.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "created src/new/") {
-		t.Fatalf("tego init inside tego run: %v\n%s", err, out)
+		t.Fatalf("tego rules create inside tego run: %v\n%s", err, out)
 	}
 	for _, d := range []string{"src/new", ".tego/tmp"} {
 		if fi, err := os.Lstat(filepath.Join(inner, filepath.FromSlash(d))); err != nil || !fi.IsDir() {

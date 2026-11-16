@@ -11,5 +11,5 @@ Not known:
   - a contract in no registry (a file given by its path) that no run used
 --- stderr
 
-next: no place checked can enforce; tego doctor names the one fix:
-  tego doctor
+next: no place checked can enforce; tego machine check names the one fix:
+  tego machine check

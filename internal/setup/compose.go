@@ -248,7 +248,7 @@ func Compose(o Options) (*Result, error) {
 			askRead = appendEntry(askRead, entry{askPath(o, a), "a person decides each read"})
 		}
 	}
-	if o.AgentNeeds && !demo { // the tego init note about ~/.claude below is then already handled
+	if o.AgentNeeds && !demo { // the tego rules create note about ~/.claude below is then already handled
 		need := agentNeedsOf(o, commandArgv(command))
 		// grant adds es to list, naming under preset those the list did not hold when the preset is chosen.
 		grant := func(preset string, list, es []entry) []entry {
@@ -332,7 +332,7 @@ func render(name string, ps []presets.Preset, argv []string, demo, reads bool, w
 		has[p.Name] = true
 	}
 	fmt.Fprintf(&b, "%s --preset %s.\n", Marker, strings.Join(names, ","))
-	b.WriteString("# Edit freely: `tego compile agent.yaml` shows what will be enforced, and `tego compile --merged agent.yaml`\n")
+	b.WriteString("# Edit freely: `tego rules check agent.yaml` shows what will be enforced, and `tego rules check --merged agent.yaml`\n")
 	b.WriteString("# prints the one rule file with every preset laid in (docs/user/presets.md).\n#\n")
 	b.WriteString("# What the presets promise:\n")
 	for _, p := range ps {

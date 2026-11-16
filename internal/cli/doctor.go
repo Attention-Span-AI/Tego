@@ -148,7 +148,7 @@ func writeDoctorVerdict(stderr io.Writer, rep *doctor.Report) {
 	}
 	line, fix := rep.Verdict()
 	_, _ = io.WriteString(stderr, "\n"+line+"\n")
-	text, command := "see Tego refuse four harmless actions on decoy files:", "tego test"
+	text, command := "see Tego refuse four harmless actions on decoy files:", "tego machine test"
 	if rep.Root {
 		command = sudoTego("test")
 	}
@@ -299,7 +299,7 @@ func writeBuilds(w io.Writer, builds []cgroupenforce.BuildInfo, linger time.Dura
 				state += fmt.Sprintf(", removed in about %s by its timer (pid %d)", left, b.TimerPID)
 			default:
 				state += ", past bpf.linger in about " + left.String() + "; no timer runs for it: the next run, " +
-					"tego stop or tego gc removes it after that"
+					"tego session stop or tego gc removes it after that"
 			}
 			state += "; tego gc --builds removes it now"
 		}

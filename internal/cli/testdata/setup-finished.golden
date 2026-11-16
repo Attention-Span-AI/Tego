@@ -12,4 +12,4 @@ Not known:
 --- stderr
 
 next: every step is done; see what the last enforced run did:
-  tego receipt b88krx
+  tego session show b88krx

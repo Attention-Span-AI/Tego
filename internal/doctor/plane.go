@@ -542,7 +542,7 @@ func planeModeVerdict(m bpfobj.PlaneMode, rows []HookResult, sc planeScope, know
 		out.Detail += fmt.Sprintf(", %d refused in the scratch cgroup, every one passed outside it (the other %d "+
 			"decide nothing yet)", decided, len(rows)-decided)
 	}
-	fix := "report the failed rows' lines (tego doctor --json) as a tego bug, or pin bpf.plane to the " +
+	fix := "report the failed rows' lines (tego machine check --json) as a tego bug, or pin bpf.plane to the " +
 		"other mode in /etc/tego/config.yaml"
 	if len(absent) > 0 {
 		out.Detail += "; not in this kernel, decided by another hook here: " + strings.Join(absent, " ")
@@ -608,7 +608,7 @@ func planeModeVerdict(m bpfobj.PlaneMode, rows []HookResult, sc planeScope, know
 		out.OK = true
 		return out
 	}
-	out.Fix = "this kernel decides a case the plane has a known answer for wrongly; report the line (tego doctor " +
+	out.Fix = "this kernel decides a case the plane has a known answer for wrongly; report the line (tego machine check " +
 		"--json) as a tego bug, or pin bpf.plane to the other mode in /etc/tego/config.yaml"
 	return out
 }

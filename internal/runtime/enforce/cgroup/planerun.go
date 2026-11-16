@@ -170,7 +170,7 @@ func tier3Plane(p PlaneSetup, rt *agent.RuleTable, run *Run) error {
 		if got == "" {
 			got = "none (the fanotify fallback)"
 		}
-		return fmt.Errorf("%w: the plane selected is %s; run tego doctor, which names what LSM mode needs here",
+		return fmt.Errorf("%w: the plane selected is %s; run tego machine check, which names what LSM mode needs here",
 			ErrNeedsLSMMode, got)
 	}
 	rows, err := run.PlaneRows, error(nil)

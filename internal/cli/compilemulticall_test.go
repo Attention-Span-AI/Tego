@@ -82,7 +82,7 @@ func TestCompileExecMulticallKeepsExitAndJSON(t *testing.T) {
 		t.Errorf("stderr moved beyond the warning:\ntwo files\n%s\none file\n%s", twoErrs, oneErrs)
 	}
 	if _, text := compile(); !strings.Contains(text, "[exec-multicall]") {
-		t.Errorf("tego compile's text form lacks the warning:\n%s", text)
+		t.Errorf("tego rules check's text form lacks the warning:\n%s", text)
 	}
 
 	// The run's start: the same contract's findings through the filter `tego run` prints them with.

@@ -202,7 +202,8 @@ mac_setup() {
 	esac
 
 	# The tego command on the Mac: it runs tego in the VM, from the VM's home folder, in the user's cgroup, which
-	# a limactl shell login is outside of.
+	# a limactl shell login is outside of. It lives in ~/.local/bin, a folder of the user's own, not one another tool
+	# manages; a shell that started before the PATH line below was added does not find it until it starts again.
 	bin="$HOME/.local/bin"
 	shim="$bin/tego"
 	reopen=0
@@ -241,32 +242,46 @@ if [ "\${1:-}" = shell ]; then
 	echo "In Tego's Linux VM. Type exit to go back to your Mac." >&2
 	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME"; d=\$(cat "\$HOME/.config/tego/last-project" 2>/dev/null); [ -d "\$d" ] && cd "\$d"; exec systemd-run --user --scope --quiet bash -l'
 fi
-# tego start (and tego setup) leaves the person in the VM, where the projects it sets up live and its commands work as
-# printed; when it fails, the person is back on the Mac with its error, never in a shell with no next step.
+# open_dashboard opens the dashboard at \$1 in the Mac's browser, through an SSH tunnel on 8484 (the dashboard answers
+# only the address it printed, so the port stays the same on both sides). Who holds 8484 on the Mac: nobody, an SSH
+# tunnel from an earlier tego dashboard (Lima's shared SSH connection keeps it), or something else, which the dashboard
+# can't share the port with.
+open_dashboard() {
+	holder=\$(lsof -nP -iTCP:8484 -sTCP:LISTEN -Fc 2>/dev/null | sed -n 's/^c//p' | head -n 1)
+	if [ -n "\$holder" ] && [ "\$holder" != ssh ]; then
+		echo "✗ Port 8484 on this Mac is in use by \$holder, and the dashboard needs it. Stop it, then try again." >&2
+		return 1
+	fi
+	[ "\$holder" = ssh ] ||
+		ssh -F "\$(limactl list --format '{{.Dir}}' "\$vm")/ssh.config" -f -N -L 8484:127.0.0.1:8484 "lima-\$vm"
+	open "\$1" 2>/dev/null || true
+}
+# tego start (and tego setup) runs the guide in the VM, which starts the dashboard there; then the dashboard opens in the
+# Mac's browser, and the person is left in the VM, in the project, where the commands the guide printed work. When the
+# guide fails or is stopped, the person is back on the Mac with its error, never in a shell with no next step.
 if { [ "\${1:-}" = start ] || [ "\${1:-}" = setup ]; } && [ \$# -eq 1 ]; then
-	echo "In Tego's Linux VM. Type exit to go back to your Mac." >&2
 	sub=\$1 # start or setup: a fixed word, put into the VM's command line here
-	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet bash -c "TEGO_ON_MAC=1 \$HOME/.local/bin/tego '"\$sub"' && exec bash -l"'
+	limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet env TEGO_ON_MAC=1 "\$HOME/.local/bin/tego" '"\$sub" || exit \$?
+	url=\$(limactl shell --workdir / "\$vm" sh -c 'grep -o "http://127.0.0.1:8484/[^ ]*" "\$HOME/.tego/dashboard.log" 2>/dev/null | head -n 1')
+	[ -z "\$url" ] || open_dashboard "\$url" || true
+	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME"; d=\$(cat "\$HOME/.config/tego/last-project" 2>/dev/null); [ -d "\$d" ] && cd "\$d"; exec systemd-run --user --scope --quiet bash -l'
 fi
-# tego dashboard: the dashboard runs in the VM and opens in the Mac's browser, through an SSH tunnel on 8484 (the
-# dashboard answers only the address it printed, so the port stays the same on both sides).
-if [ "\${1:-}" = dashboard ] && [ \$# -eq 1 ]; then
-	# Who holds 8484 on the Mac: nobody, an SSH tunnel from an earlier tego dashboard (Lima's shared SSH connection
-	# keeps it), or something else, which the dashboard can't share the port with.
+# tego dashboard (and tego serve --open): the one dashboard runs in the VM and opens in the Mac's browser.
+if { [ "\${1:-}" = dashboard ] && [ \$# -eq 1 ]; } || { [ "\${1:-}" = serve ] && [ "\${2:-}" = --open ] && [ \$# -eq 2 ]; }; then
 	holder=\$(lsof -nP -iTCP:8484 -sTCP:LISTEN -Fc 2>/dev/null | sed -n 's/^c//p' | head -n 1)
 	if [ -n "\$holder" ] && [ "\$holder" != ssh ]; then
 		echo "✗ Port 8484 on this Mac is in use by \$holder, and the dashboard needs it. Stop it, then try again." >&2
 		exit 1
 	fi
-	url=\$(limactl shell --workdir / "\$vm" sh -c 'mkdir -p "\$HOME/.tego"; log="\$HOME/.tego/dashboard.log"; systemctl --user stop tego-dashboard >/dev/null 2>&1; : >"\$log"; systemd-run --user --unit=tego-dashboard --quiet sh -c "exec \$HOME/.local/bin/tego serve >\$log 2>&1"; i=0; while [ \$i -lt 60 ]; do u=\$(grep -o "http://127.0.0.1:8484/[^ ]*" "\$log" | head -n 1); [ -n "\$u" ] && { echo "\$u"; exit 0; }; i=\$((i + 1)); sleep 0.25; done; exit 1')
+	# the VM's tego dashboard says whether one is running and asks before starting a new one; the Mac opens its link
+	limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet env TEGO_ON_MAC=1 "\$HOME/.local/bin/tego" dashboard' || exit \$?
+	url=\$(limactl shell --workdir / "\$vm" sh -c 'grep -o "http://127.0.0.1:8484/[^ ]*" "\$HOME/.tego/dashboard.log" 2>/dev/null | head -n 1')
 	if [ -z "\$url" ]; then
 		echo "✗ The dashboard didn't start. Its log: tego shell, then cat ~/.tego/dashboard.log" >&2
 		exit 1
 	fi
-	[ "\$holder" = ssh ] ||
-		ssh -F "\$(limactl list --format '{{.Dir}}' "\$vm")/ssh.config" -f -N -L 8484:127.0.0.1:8484 "lima-\$vm"
-	open "\$url" 2>/dev/null || true
-	echo "✓ Dashboard: \$url"
+	open_dashboard "\$url" || exit 1
+	echo "  ✓ Opened it in your browser"
 	exit 0
 fi
 exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet "\$HOME/.local/bin/tego" "\$@"' tego "\$@"
@@ -277,7 +292,12 @@ EOF
 				*)
 					case "$(basename "${SHELL:-sh}")" in
 						zsh) rcfile="$HOME/.zshrc" ;;
-						bash) rcfile="$HOME/.bash_profile" ;;
+						bash) # the first of these a login bash reads; a new .bash_profile would hide an existing .profile
+							rcfile="$HOME/.bash_profile"
+							for f in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+								[ -f "$f" ] && { rcfile=$f; break; }
+							done
+							;;
 						*) rcfile="$HOME/.profile" ;;
 					esac
 					if ! grep -qs '# added by the Tego installer' "$rcfile"; then
@@ -294,18 +314,17 @@ EOF
 		fi
 	}
 
-	# The installer ends here, with the one step that comes next: tego setup walks through the rest.
+	# The installer ends here, with the one step that comes next: tego start walks through the rest.
 	restore_term
 	echo ""
+	printf '  %sNext steps%s\n' "$bold" "$off"
 	if [ "$reopen" = 1 ]; then
-		echo "  Next, open a new terminal window and run:"
+		# this script cannot change the PATH of the shell that started it; a new shell reads the PATH line
+		# a login shell, the kind a new terminal window starts: it reads the file the PATH line went into
+		printf '    Run   %sexec %s -l%s   (or open a new terminal window), then   %stego start%s\n' "$bold" "$(basename "${SHELL:-sh}")" "$off" "$bold" "$off"
 	else
-		echo "  Next, run:"
+		printf '    Run   %stego start%s\n' "$bold" "$off"
 	fi
-	echo ""
-	printf '      %stego start%s\n' "$bold" "$off"
-	echo ""
-	note "It connects your agent and walks you through a first protected run."
 	echo ""
 	exit 0
 }
@@ -673,7 +692,7 @@ main() {
 	# release made before it has no setup command, and this script installs any tag, so the installed tego's own
 	# command list decides: the line never names a command that tego lacks. Its stdin is not the script's (see the
 	# version check above).
-	if "$installed" help </dev/null 2>/dev/null | grep -q '^  setup '; then
+	if "$installed" help -a </dev/null 2>/dev/null | grep -Eq '^ {2,3}setup '; then
 		echo "next: see where this machine is, step by step, and what to type next:"
 		echo "  tego setup"
 	else

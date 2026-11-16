@@ -148,7 +148,7 @@ func (s *Server) rulesNewPost(w http.ResponseWriter, r *http.Request) {
 	}
 	back["preset"] = f["preset"]
 	if s.cfg.Setup == nil {
-		s.redirectBack(w, r, "/rules/new", flash{Text: "Not created · contract editing is off here · use tego init --preset"})
+		s.redirectBack(w, r, "/rules/new", flash{Text: "Not created · contract editing is off here · use tego rules create --preset"})
 		return
 	}
 	snap, _ := ledgerview.Load(s.cfg.Ledger) // as in rulesNew

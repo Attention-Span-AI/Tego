@@ -40,9 +40,9 @@ func TestServeWithoutControlSaysNotInstalled(t *testing.T) {
 		}
 	}
 	// Help lists a built noun as a (tego-control) command, and names an unbuilt one only on its "planned" line.
-	_, out, _ := run(t, "help")
+	_, out, _ := run(t, "help", "-a")
 	for _, n := range handoff.Nouns() {
-		listed := strings.Contains(out, "\n  "+n.Name+" ") || strings.Contains(out, "("+handoff.Name+") "+n.Summary)
+		listed := strings.Contains(out, "\n   "+n.Name+" ") || strings.Contains(out, "("+handoff.Name+") "+n.Summary)
 		if n.Built && !listed {
 			t.Errorf("usage does not list built %s as (tego-control): %q", n.Name, out)
 		}
@@ -96,6 +96,9 @@ func TestNoNounInBothBinaries(t *testing.T) {
 		}
 	}
 	for _, c := range commands() {
+		if _, tree := treeOf(c.Name); tree && !handoff.IsNoun(c.Name) {
+			continue // tego session and tego machine: the engine's own nouns over its own commands
+		}
 		if !slices.Contains(control, c.Name) || slices.Contains(own, c.Name) {
 			if c.Raw != nil {
 				t.Errorf("tego %s is a handoff, but tego-control has no %s", c.Name, c.Name)
@@ -108,7 +111,7 @@ func TestNoNounInBothBinaries(t *testing.T) {
 	}
 	var handed []string
 	for _, c := range commands() {
-		if c.Raw != nil {
+		if c.Raw != nil && handoff.IsNoun(c.Name) {
 			handed = append(handed, c.Name)
 		}
 	}
@@ -117,16 +120,14 @@ func TestNoNounInBothBinaries(t *testing.T) {
 	}
 }
 
-// TestUsageIsSorted: the usage lists the registered commands in name order, hidden ones left out.
+// TestUsageIsSorted: the command table is sorted by name, whatever order the files register in; tego help groups the
+// commands, and the table is what its every-command check walks.
 func TestUsageIsSorted(t *testing.T) {
-	_, out, _ := run(t, "help")
-	var listed []string
-	for _, l := range strings.Split(out, "\n") {
-		if strings.HasPrefix(l, "  ") && !strings.HasPrefix(l, "   ") {
-			listed = append(listed, strings.Fields(l)[0])
-		}
+	var names []string
+	for _, c := range commands() {
+		names = append(names, c.Name)
 	}
-	if !slices.IsSorted(listed) || len(listed) < 20 {
-		t.Fatalf("usage lists %v, want every command, sorted", listed)
+	if !slices.IsSorted(names) || len(names) < 20 {
+		t.Fatalf("commands() is %v, want every command, sorted", names)
 	}
 }

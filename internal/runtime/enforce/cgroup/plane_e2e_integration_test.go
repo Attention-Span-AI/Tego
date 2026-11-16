@@ -106,7 +106,7 @@ func planeDoctor(t *testing.T, bin, pin string) planeDoctorAnswer {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Start(); err != nil {
-		t.Fatalf("tego doctor --json: %v", err)
+		t.Fatalf("tego machine check --json: %v", err)
 	}
 	done := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(done) }() // a finding exits non-zero with the report on stdout
@@ -123,7 +123,7 @@ func planeDoctor(t *testing.T, bin, pin string) planeDoctorAnswer {
 			_ = cmd.Process.Kill()
 			<-done
 		}
-		t.Fatalf("tego doctor --json under TEGO_TEST_PLANE=%s had not answered after %v\n%s\ndoctor stderr:\n%s", pin,
+		t.Fatalf("tego machine check --json under TEGO_TEST_PLANE=%s had not answered after %v\n%s\ndoctor stderr:\n%s", pin,
 			doctorWait, state, stderr.String())
 	}
 	out := stdout.Bytes()
@@ -131,7 +131,7 @@ func planeDoctor(t *testing.T, bin, pin string) planeDoctorAnswer {
 		Plane *planeDoctorAnswer `json:"plane"`
 	}
 	if err := json.Unmarshal(out, &rep); err != nil || rep.Plane == nil {
-		t.Fatalf("tego doctor --json under TEGO_TEST_PLANE=%s: %v\n%s", pin, err, out)
+		t.Fatalf("tego machine check --json under TEGO_TEST_PLANE=%s: %v\n%s", pin, err, out)
 	}
 	a := *rep.Plane
 	if m, ok := a.mode(pin); ok && a.Selected != pin {

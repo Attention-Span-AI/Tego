@@ -196,7 +196,7 @@ func verifyEngine(ctx context.Context, env scan.Env, root, contract string) (che
 		return false, 0, "Couldn't read the engine's answer."
 	}
 	if failed > 0 || waitErr != nil {
-		return true, ok, fmt.Sprintf("%d of %d engine checks failed; run `tego compile %s --test %s` to see which.", failed, total, contract, verdicts)
+		return true, ok, fmt.Sprintf("%d of %d engine checks failed; run `tego rules check %s --test %s` to see which.", failed, total, contract, verdicts)
 	}
 	return true, ok, ""
 }

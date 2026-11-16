@@ -388,7 +388,7 @@ func (s *Service) adjustable(ctx context.Context, p *NewPlan, req NewReq, res *s
 	sec.Live.Fence.Read, sec.Live.Fence.Net, sec.Live.Fence.Exec = nonEmpty(req.FenceRead), nonEmpty(req.FenceNet), nonEmpty(req.FenceExec)
 	var b bytes.Buffer
 	enc := yaml.NewEncoder(&b)
-	enc.SetIndent(2) // as tego init writes it
+	enc.SetIndent(2) // as tego rules create writes it
 	err := enc.Encode(&sec)
 	if cerr := enc.Close(); err == nil {
 		err = cerr
@@ -860,7 +860,7 @@ func renamed(text []byte, name string) []byte {
 		HeadComment: v.HeadComment, LineComment: v.LineComment, FootComment: v.FootComment}
 	var b bytes.Buffer
 	enc := yaml.NewEncoder(&b)
-	enc.SetIndent(2) // as tego init writes it
+	enc.SetIndent(2) // as tego rules create writes it
 	if enc.Encode(&doc) != nil || enc.Close() != nil {
 		return text
 	}

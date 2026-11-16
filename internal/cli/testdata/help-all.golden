@@ -1,0 +1,77 @@
+usage: tego [-h | --help] <command> [<args>]
+
+All Tego commands:
+
+get started
+   start            Set up Tego and connect your first agent
+   dashboard        Open the dashboard in your browser
+
+supervise an agent
+   run              Run an agent under its rules
+   session list     List sessions
+   session show     Show what a session did and what Tego blocked
+   session stop     Stop a running session
+   session pause    Pause a running session
+   session resume   Resume a paused session
+
+write the rules (see also: tego help rules)
+   rules create     Create a rules file in a project
+   rules edit       Edit a rules file, then check it
+   rules check      Check a rules file and show what it enforces
+   rules learn      Create a rules file from what a session did
+
+check this machine
+   machine check    Check what this machine can enforce
+   machine test     Run Tego's self-check
+
+answer what a session asks
+   ask              List the actions waiting for an answer
+   approve          Allow a waiting action
+   deny             Refuse a waiting action
+   alternate        Answer a waiting file open with another file
+
+change a running session's rules
+   block            Block a program, host or path in a running session
+   unblock          Remove a block from a running session
+   grant            Give an adjustable session more access, within its limits
+   lift             Allow one of an adjustable session's refusals, within its limits
+   restore          Refuse a granted or lifted entry again
+   rule             Turn what a session did into a rule: block, ask or allow
+   rules <session>  Show the rules a session runs under
+
+read the record
+   events           List a session's events
+   drift            Compare what a session's rules declared with what it did
+   measure          Show a session's steps, tokens, cost and time
+   status           Show the state of a session
+   gc               Remove orphaned and expired sessions
+
+supervise other programs
+   watch            Run any command and record everything it does
+   adopt            (root) Supervise an agent that is already running
+   agents           (root) List the agent processes running here (observes only)
+
+tools for agents
+   mcp              Set the MCP tool rules of a running session
+   route            Set the model routes of a running session
+   dns              Query a session's DNS broker
+
+older names
+   init             Same as 'tego rules create'
+   compile          Same as 'tego rules check'
+   learn            Same as 'tego rules learn'
+   receipt          Same as 'tego session show'
+   doctor           Same as 'tego machine check'
+   test             Same as 'tego machine test'
+   stop             Same as 'tego session stop'
+   pause            Same as 'tego session pause'
+   resume           Same as 'tego session resume'
+
+about Tego
+   setup            Show where this machine is and what to type next
+   serve            (tego-control) Start the dashboard server
+   version          Print the build's versions
+   licenses         Print the licence texts and third-party notices
+
+See 'tego help <command>' to read about a specific command.
+Manual: https://github.com/Attention-Span-AI/Tego/blob/main/docs/user/commands.md
