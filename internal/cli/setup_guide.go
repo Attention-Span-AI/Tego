@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"charm.land/huh/v2"
@@ -82,15 +83,74 @@ var guideInstall = func(_ context.Context, line string, log io.Writer) error {
 	return c.Wait()
 }
 
-// guideSetupToken runs the agent's own browser sign-in (claude setup-token) on this terminal; a variable so a test
-// signs in nothing.
-var guideSetupToken = func(_ context.Context, program string) error {
-	c := proc.Command(program, "setup-token")
-	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if _, err := proc.Start(c); err != nil {
-		return err
+// guideSetupToken runs the agent's own browser sign-in (claude setup-token) on this terminal and returns the token it
+// printed, or "" when it can't read one (the guide then asks for it). It runs under script(1), which keeps the
+// terminal the sign-in needs and copies what it shows to a file of the person's own (0600, removed at once); the
+// wide stty keeps the token on one line there. A variable so a test signs in nothing.
+var guideSetupToken = func(_ context.Context, program, home string) (string, error) {
+	run := func(c *proc.Cmd) error {
+		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+		if _, err := proc.Start(c); err != nil {
+			return err
+		}
+		return c.Wait()
 	}
-	return c.Wait()
+	script, err := guideLookPath("script")
+	if err != nil {
+		err := run(proc.Command(program, "setup-token"))
+		resetTerminal()
+		return "", err
+	}
+	dir := filepath.Join(home, ".tego")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(dir, "sign-in-*.log")
+	if err != nil {
+		return "", err
+	}
+	log := f.Name()
+	_ = f.Close()
+	defer func() { _ = os.Remove(log) }()
+	err = run(proc.Command(script, "-q", "-e", "-c", "stty cols 400 2>/dev/null; exec "+program+" setup-token", log))
+	resetTerminal()
+	if err != nil {
+		return "", err
+	}
+	b, err := os.ReadFile(log)
+	if err != nil {
+		return "", nil
+	}
+	return lastToken(string(b)), nil
+}
+
+// resetTerminal undoes what a full-screen program can leave behind when it exits (the kitty keyboard protocol, xterm's
+// modifyOtherKeys, bracketed paste, the alternate screen, a hidden cursor) and puts the line settings back, so the
+// guide's next question shows and reads Enter as Enter.
+func resetTerminal() {
+	if !isTerminalFile(os.Stdout) {
+		return
+	}
+	// Keyboard modes off, the main screen back, the cursor shown, then a fresh line for the next question.
+	_, _ = os.Stdout.WriteString("\x1b[<u\x1b[>4;0m\x1b[?2004l\x1b[?1049l\x1b[?25h\r\n")
+	c := proc.Command("stty", "sane")
+	c.Stdin = os.Stdin
+	if _, err := proc.Start(c); err == nil {
+		_ = c.Wait()
+	}
+}
+
+// claudeToken is a Claude setup-token token as Claude prints it.
+var claudeToken = regexp.MustCompile(`sk-ant-oat01-[A-Za-z0-9_-]{20,}`)
+
+// lastToken is the last token in text, with terminal colour codes taken out, or "".
+func lastToken(text string) string {
+	text = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`).ReplaceAllString(text, "")
+	all := claudeToken.FindAllString(text, -1)
+	if len(all) == 0 {
+		return ""
+	}
+	return all[len(all)-1]
 }
 
 // guideInteractive reports whether tego start talks to a person: both its input and its output are a terminal.
@@ -141,6 +201,22 @@ func (g *walk) ask(fields ...huh.Field) error {
 		return errStopped
 	}
 	return err
+}
+
+// answered keeps a question and its answer on screen: Huh's drawn form clears itself once answered, and its plain
+// prompts already show both.
+func (g *walk) answered(q, a string) {
+	if !g.accessible {
+		g.line("%s?%s %s %s%s%s", g.dim, g.offEsc, q, g.bold, a, g.offEsc)
+	}
+}
+
+// guideYesNo is a yes/no answer as the guide echoes it.
+func guideYesNo(b bool) string {
+	if b {
+		return "Yes"
+	}
+	return "No"
 }
 
 // errStopped is the person leaving the guide.
@@ -254,6 +330,7 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 		return 0, err
 	}
 	a := guideAgents[pick]
+	g.answered("Which agent do you want to supervise?", a.label)
 	command := a.command
 	if a.harness == "" {
 		if err := g.ask(huh.NewInput().Title("What command starts it?").Placeholder("python3 bot.py").Value(&command).
@@ -345,6 +422,7 @@ func (g *walk) installed(ctx context.Context, a guideAgent, name, program, home 
 	if err := g.ask(huh.NewConfirm().Title("Install " + name + " now?").Value(&yes)); err != nil {
 		return 0, err
 	}
+	g.answered("Install "+name+" now?", guideYesNo(yes))
 	if !yes {
 		g.note("Install it with this line, then run tego start again:")
 		g.cmd(a.install)
@@ -417,25 +495,31 @@ func (g *walk) signIn(ctx context.Context, a guideAgent, home string) (int, erro
 			return 0, err
 		}
 		login = a.logins[pick]
+		g.answered("How do you sign in to "+a.label+"?", login.label)
 	}
 	title := "Paste your " + login.label
+	token := ""
 	if login.setupToken {
-		g.note(a.label + " prints a link. Open it, sign in, then copy the token it shows.")
-		if err := guideSetupToken(ctx, a.command); err != nil {
+		g.note(a.label + " shows a link. Open it, sign in, and paste the code it gives you back here.")
+		got, err := guideSetupToken(ctx, a.command, home)
+		if err != nil {
 			g.bad(a.label + "'s sign-in didn't finish: " + err.Error())
 			g.note("Run tego start again to try again.")
 			return identity.ExitFinding, nil
 		}
-		title = "Paste the token"
+		token = got
+		title = "Paste the token " + a.label + " printed (it starts with sk-ant-oat01-)"
 	}
-	token := ""
+	if token == "" {
+		if err := g.ask(huh.NewInput().Title(title).EchoMode(g.hiddenEcho()).Value(&token).Validate(validToken)); err != nil {
+			return 0, err
+		}
+	}
 	save := true
-	if err := g.ask(
-		huh.NewInput().Title(title).EchoMode(g.hiddenEcho()).Value(&token).Validate(validToken),
-		huh.NewConfirm().Title("Save it for later sessions?").Value(&save),
-	); err != nil {
+	if err := g.ask(huh.NewConfirm().Title("Save the sign-in for later sessions?").Value(&save)); err != nil {
 		return 0, err
 	}
+	g.answered("Save the sign-in for later sessions?", guideYesNo(save))
 	token = strings.TrimSpace(token)
 	_ = os.Setenv(login.envVar, token)
 	if save {

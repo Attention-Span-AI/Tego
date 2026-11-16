@@ -125,17 +125,35 @@ func TestStartSubscriptionNotSaved(t *testing.T) {
 	prev := guideSetupToken
 	t.Cleanup(func() { guideSetupToken = prev })
 	ran := ""
-	guideSetupToken = func(_ context.Context, program string) error { ran = program; return nil }
+	guideSetupToken = func(_ context.Context, program, _ string) (string, error) {
+		ran = program
+		return "sk-ant-oat01-read-from-the-sign-in-0123456789", nil
+	}
 
-	code, out, errs := runGuide(t, "1\n1\ntok-abc\nn\n1\n2\n")
+	code, out, errs := runGuide(t, "1\n1\nn\n1\n2\n")
+	first := out
 	if code != identity.ExitOK || ran != "claude" {
 		t.Fatalf("exit %d, setup-token ran %q\n%s\n%s", code, ran, out, errs)
 	}
-	wantAll(t, "subscription", out, "prints a link", "Paste the token", "export CLAUDE_CODE_OAUTH_TOKEN=<your token>", "✓ Rules: Read-only review")
+	wantAll(t, "subscription", out, "shows a link", "export CLAUDE_CODE_OAUTH_TOKEN=<your token>", "✓ Rules: Read-only review")
+	if strings.Contains(out, "Paste the token") {
+		t.Errorf("asked to paste a token the sign-in already gave:\n%s", out)
+	}
+	if os.Getenv("CLAUDE_CODE_OAUTH_TOKEN") != "sk-ant-oat01-read-from-the-sign-in-0123456789" {
+		t.Errorf("the sign-in's token was not used")
+	}
+
+	// A sign-in whose token can't be read: the guide asks for it.
+	guideSetupToken = func(context.Context, string, string) (string, error) { return "", nil }
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
+	code, out, errs = runGuide(t, "1\n1\ntok-pasted\nn\n1\n2\n\n")
+	if code != identity.ExitOK || !strings.Contains(out, "Paste the token Claude Code printed") {
+		t.Fatalf("fallback: exit %d\n%s\n%s", code, out, errs)
+	}
 	if _, err := os.Stat(filepath.Join(f.Home, agentEnvRel)); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("a sign-in the person did not save was saved: %v", err)
 	}
-	if rules := savedRules(t, out, f.Home); strings.Contains(rules, `- "./"`) || !strings.Contains(rules, ".tego/") {
+	if rules := savedRules(t, first, f.Home); strings.Contains(rules, `- "./"`) || !strings.Contains(rules, ".tego/") {
 		t.Errorf("Read-only review: the agent may change the project, or has no folder of its own:\n%s", rules)
 	}
 }
@@ -227,5 +245,18 @@ func TestStartNeedsATerminal(t *testing.T) {
 	code, _, errs := run(t, "start")
 	if code != identity.ExitUsage || !strings.Contains(errs, "runs in a terminal") {
 		t.Fatalf("exit %d\n%s", code, errs)
+	}
+}
+
+// TestLastToken: the token is read from what Claude's sign-in showed, colour codes and all; the last one wins.
+func TestLastToken(t *testing.T) {
+	for in, want := range map[string]string{
+		"no token here": "",
+		"Your OAuth token:\n\x1b[1msk-ant-oat01-abcdefghijklmnopqrstuvwxyz0123\x1b[0m\nStore it": "sk-ant-oat01-abcdefghijklmnopqrstuvwxyz0123",
+		"sk-ant-oat01-first-aaaaaaaaaaaaaaaaaaaaa sk-ant-oat01-second-bbbbbbbbbbbbbbbbbbbb":      "sk-ant-oat01-second-bbbbbbbbbbbbbbbbbbbb",
+	} {
+		if got := lastToken(in); got != want {
+			t.Errorf("lastToken(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
