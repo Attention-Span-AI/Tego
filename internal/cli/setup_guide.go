@@ -9,13 +9,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/attention-span-ai/tego/internal/platform/proc"
 	"github.com/attention-span-ai/tego/internal/registry"
 	"github.com/attention-span-ai/tego/internal/setup"
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
@@ -42,13 +42,24 @@ var guideAgents = []guideAgent{
 }
 
 // guideLookPath finds a program; a variable so a test can say what is installed.
-var guideLookPath = exec.LookPath
+var guideLookPath = func(name string) (string, error) {
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		p := filepath.Join(dir, name)
+		if fi, err := os.Stat(p); dir != "" && err == nil && !fi.IsDir() && fi.Mode().Perm()&0o111 != 0 {
+			return p, nil
+		}
+	}
+	return "", errors.New(name + " is not on PATH")
+}
 
 // guideInstall runs an agent's install line with its output in log; a variable so a test installs nothing.
-var guideInstall = func(ctx context.Context, line string, log io.Writer) error {
-	c := exec.CommandContext(ctx, "/bin/sh", "-c", line)
+var guideInstall = func(_ context.Context, line string, log io.Writer) error {
+	c := proc.Command("/bin/sh", "-c", line)
 	c.Stdout, c.Stderr = log, log
-	return c.Run()
+	if _, err := proc.Start(c); err != nil {
+		return err
+	}
+	return c.Wait()
 }
 
 // guideInteractive reports whether tego setup talks to a person: both its input and its output are a terminal.
@@ -78,7 +89,6 @@ func newWalk(in io.Reader, out io.Writer, color bool) *walk {
 func (g *walk) line(format string, a ...any) { fmt.Fprintf(g.out, format+"\n", a...) }
 func (g *walk) ok(s string)                  { g.line("  %s✓%s %s", g.green, g.offEsc, s) }
 func (g *walk) bad(s string)                 { g.line("  %s✗%s %s", g.red, g.offEsc, s) }
-func (g *walk) todo(s string)                { g.line("  %s○%s %s", g.dim, g.offEsc, s) }
 func (g *walk) note(s string)                { g.line("    %s%s%s", g.dim, s, g.offEsc) }
 func (g *walk) cmd(s string)                 { g.line("      %s%s%s", g.bold, s, g.offEsc) }
 func (g *walk) title(s string)               { g.line("\n  %s%s%s", g.bold, s, g.offEsc) }
@@ -141,13 +151,8 @@ func (g *walk) choose(options []string) (int, error) {
 
 // levelName is a tier as people see it.
 func levelName(t backend.Tier) string {
-	switch t {
-	case backend.TierLandlock:
-		return "Basic"
-	case backend.TierCgroup:
-		return "Plus"
-	case backend.TierBPFLSM:
-		return "Max"
+	if n, ok := map[backend.Tier]string{backend.TierLandlock: "Basic", backend.TierCgroup: "Plus", backend.TierBPFLSM: "Max"}[t]; ok {
+		return n
 	}
 	return string(t)
 }
