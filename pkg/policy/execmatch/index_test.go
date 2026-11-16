@@ -250,11 +250,11 @@ func TestShebangStageByImageAndIdentity(t *testing.T) {
 }
 
 // TestDispatchDepthFailsClosed: a multicall dispatcher that re-dispatches to itself (busybox has a `busybox`
-// applet) must not let a denied applet slip past the dispatch-depth bound (2026-10-06). Under
+// applet) must not let a denied applet slip past the dispatch-depth bound. Under
 // deny: [rm -r], `busybox rm -r x` is refused via multicall; so is every nesting `busybox ... busybox rm -r x`,
 // however deep: when the chain is longer than the matcher resolves, the decision fails closed (command-unresolved,
-// via overflow) rather than dropping the rm interpretation and allowing the exec. The round-5 reviewer deleted a
-// tree with `busybox`x5 + `rm -r` while the ledger said allow unmatched.
+// via overflow) rather than dropping the rm interpretation and allowing the exec: otherwise `busybox`x5 + `rm -r`
+// deletes a tree while the ledger says allow unmatched.
 func TestDispatchDepthFailsClosed(t *testing.T) {
 	ix := index(t, "deny: rm -r")
 	for k := 0; k <= 10; k++ {

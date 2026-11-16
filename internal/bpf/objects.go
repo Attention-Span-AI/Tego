@@ -21,7 +21,7 @@ import (
 var ErrNotGenerated = errors.New("bpf: object bindings are not generated")
 
 // HashLen is the number of hex characters of Hash, the build identity that names a pin directory and a build
-// lock (docs/p0/enforce-cgroup-observe.md §3, §5 R14).
+// lock.
 const HashLen = 16
 
 // binding is one generated object: its CollectionSpec loader and the raw ELF the hash is taken over. The map

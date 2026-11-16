@@ -31,7 +31,7 @@ func (r *recordingTB) Skipf(string, ...any)  { r.skipped = true }
 func (r *recordingTB) Fatalf(string, ...any) { r.failed = true }
 
 // TestRequireTierSkipsOnlyWhenTheMachineSaysSo: a fake doctor exiting each status. 0 runs the test, 211 and 1 (no
-// tier, or none at all) skip it, and every other end fails it: 125 (a refused machine config, the 2026-10-16 case),
+// tier, or none at all) skip it, and every other end fails it: 125 (a refused machine config),
 // a usage error, a signal, and a binary that is not there.
 func TestRequireTierSkipsOnlyWhenTheMachineSaysSo(t *testing.T) {
 	dir := t.TempDir()

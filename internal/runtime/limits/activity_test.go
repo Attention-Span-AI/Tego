@@ -14,7 +14,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestTickReadsActivityBeforeTheStallCheck is limits-check-doctor-cli.md R4's pulled half: a source added with
+// TestTickReadsActivityBeforeTheStallCheck is the pulled half: a source added with
 // AddActivity is read on every Tick before the stall comparison, so activity no event and no Touch announced
 // (a kernel stamp the recorder keeps no line for) holds the stall window open, and the window closes once the
 // source stops advancing.

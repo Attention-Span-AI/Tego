@@ -16,7 +16,7 @@ import (
 )
 
 // Emitter is the run's event sink — the same bounded, non-blocking queue every other producer of the
-// run writes to (P0-DESIGN §6; internal/runtime's *Queue satisfies it). It is declared here rather
+// run writes to (internal/runtime's *Queue satisfies it). It is declared here rather
 // than imported so this package never depends on internal/runtime, which would be a cycle.
 type Emitter interface {
 	// Emit takes an event without blocking; a sink that cannot take it drops and counts it.
@@ -36,7 +36,7 @@ type RunRef struct {
 	CgroupMount string
 	// Events is where a tier's own producers put what they refused and what they could not see. It is
 	// per run and not per process because those events are rows of this run's ledger: tier 2's fanotify
-	// listener refuses a read or an exec and every one of docs/p0/enforce-cgroup-observe.md §7's gaps —
+	// listener refuses a read or an exec and every one of its gaps —
 	// fanotify-timeout, -overflow, -path-unresolved, -malformed-record, -response-failed — carries the
 	// run id, and §5 R17 fixes the `rule` each row spells. A backend handed no sink still refuses in the
 	// kernel and records nothing, which is the one combination the design rules out.
@@ -46,19 +46,19 @@ type RunRef struct {
 	// nil pointer inside a non-nil interface — because tier 2's listener answers opens, and so may call
 	// Emit, from the moment Prepare returns.
 	Events Emitter
-	// Resolvers are the endpoints the supervisor's port-53 exception covers for this run (supervisor R14):
+	// Resolvers are the endpoints the supervisor's port-53 exception covers for this run:
 	// the one list the runtime also hands the supervisor's resolver set, read once, so the two can never
 	// name different servers. Tier 2 writes a port-53 row for each, because it decides every connect the
-	// supervisor relays (docs/p0/enforce-cgroup-observe.md §5 R5); empty means no exception (supervisor E32).
+	// supervisor relays; empty means no exception.
 	// Tier 1 ignores it: its supervisor is the only thing deciding.
 	Resolvers []netip.AddrPort
 	// StageExe is the binary the launcher execs as the child stage; empty means /proc/self/exe, which is
 	// what `tego run` execs. The launcher creates the stage inside the run's cgroup at every tier
-	// (clone3(CLONE_INTO_CGROUP), runtime-launch step 6); tier 2 execs it again for its detached helpers. The
+	// (clone3(CLONE_INTO_CGROUP)); tier 2 execs it again for its detached helpers. The
 	// stage's exec of it comes before the tier arms (Armer, ADR 0021 (2)), so no tier decides or records it.
 	StageExe string
 	// Log is the run's own log (tego's, never the ledger); nil discards. Tier 2's fanotify listener writes
-	// what it swallows there (docs/p0/enforce-cgroup-observe.md §6 E10).
+	// what it swallows there.
 	Log *slog.Logger
 	// Drop is set for a root launch, whose child drops to DropUID and DropGID (launch.ChildSpec's TargetUID and
 	// TargetGID). Tier 1 creates a missing write directory with those credentials (landlock.Run.Drop), and tier
@@ -67,7 +67,7 @@ type RunRef struct {
 	DropUID, DropGID int
 }
 
-// Backend is one enforcement tier (docs/p0/enforce-landlock.md §4, P0-DESIGN §2.6).
+// Backend is one enforcement tier.
 type Backend interface {
 	Tier() backend.Tier
 	Capabilities() backend.Set
@@ -90,7 +90,7 @@ type KernelRecorder interface {
 
 // NetRefresher is the optional Handle extension a tier implements when its kernel rows hold a host entry's
 // addresses: tier 2's connect4/6 decides every connect the supervisor relays, so its rows have to follow the
-// addresses the supervisor's resolver set re-resolves on TTL (docs/p0/enforce-cgroup-observe.md §6 E7). rt is
+// addresses the supervisor's resolver set re-resolves on TTL. rt is
 // the run's table with refreshed addresses and expiry deadlines; policy entries and permissions remain
 // unchanged. An unchanged address still needs renewal when its deadline changes. Callers type-assert.
 type NetRefresher interface {
@@ -105,8 +105,8 @@ type NetworkReporter interface {
 
 // KernelNetReader is the optional Handle extension a tier implements when a kernel program of its own decides
 // the connects the supervisor relays on the agent's socket: tier 2's connect4/6, whose refusal fails the relay
-// with EPERM. KernelNet reads that decision back for the ledger line (docs/p0/enforce-cgroup-observe.md §5 R5,
-// §6 E5; supervisor.Options.KernelNet). Callers type-assert.
+// with EPERM. KernelNet reads that decision back for the ledger line
+// (supervisor.Options.KernelNet). Callers type-assert.
 type KernelNetReader interface {
 	KernelNet(ap netip.AddrPort, proto string, notified time.Time) (v record.Verdict, rule string, reason record.Reason)
 }
@@ -115,15 +115,15 @@ type KernelNetReader interface {
 // addressed datagrams by destination on the kernel's own copy of the address: tier 2's cgroup/sendmsg4, sendmsg6 and
 // sendmsg_unix, and the decision plane's socket_sendmsg below 6.7. KernelDatagrams is the errno such a program refuses
 // a unix and a UDP datagram with, 0 for a family none decides; the supervisor refuses with it a datagram the program
-// would refuse, so the datagram's one line is that refusal (supervisor.Options.KernelDatagrams, supervisor.md R13b,
-// docs/p0/enforce-cgroup-observe.md §5 R7). Callers type-assert.
+// would refuse, so the datagram's one line is that refusal (supervisor.Options.KernelDatagrams).
+// Callers type-assert.
 type KernelDatagramReader interface {
 	KernelDatagrams() (unixErrno, udpErrno syscall.Errno)
 }
 
 // SupervisorExecLines is the optional Handle extension a tier implements when a mechanism of its own refuses
 // an exec's open of its image after the supervisor continued the exec: tier 2's fanotify listener, whose refusal
-// the supervisor records on the exec's own line (supervisor R7a, R16b). The runtime hands it
+// the supervisor records on the exec's own line. The runtime hands it
 // supervisor.Loop.ExecLine once the loop exists, and the listener writes no line for such an open. Callers
 // type-assert.
 type SupervisorExecLines interface {
@@ -143,7 +143,7 @@ type ExecPinClaimer interface {
 // DecisionPlane returns the plane's mode (record.DecisionPlaneLSM or record.DecisionPlaneFmodRet), "" for none, and
 // whether its bprm_check decides this run's execs (the contract has an exec: section). The runtime names the mode
 // on the plane's ledger lines and, when the plane decides execs, leaves each continued exec's one line to the
-// kernel (supervisor Options.KernelExecs, observe SetSupervisorExecs(false); supervisor R7a, TIER3-PLAN T9).
+// kernel (supervisor Options.KernelExecs, observe SetSupervisorExecs(false)).
 // Callers type-assert.
 type DecisionPlaneReporter interface {
 	DecisionPlane() (mode string, execs bool)
@@ -167,7 +167,7 @@ type ExecOutcomeReporter interface {
 }
 
 // PlaneCounterReporter is the optional Handle extension a tier implements when its decision plane keeps per-slot
-// fail-closed counters (tego_plane_counters, enforce-plane §2.2 and §2.8). The runtime calls PlaneCounters once at
+// fail-closed counters (tego_plane_counters). The runtime calls PlaneCounters once at
 // run end, after the run's cgroup has emptied and before the ledger closes, and writes one gap what=enforce line per
 // non-zero count (record.GapPlane*), naming the mode DecisionPlane reports. It returns every counter of the slot,
 // zeros included, and an error when the slot could not be read, which the runtime records as
@@ -201,7 +201,7 @@ type SkipCounter interface {
 }
 
 // PlaneFilterer is the optional Handle extension a tier implements when its decision plane decides in the kernel
-// what the inherited seccomp filter notifies (enforce-plane R22, R27; TIER3-PLAN T16). The runtime calls
+// what the inherited seccomp filter notifies. The runtime calls
 // UsePlaneFilter before the child stage takes SeccompFilter, and only when the run's kernel recorder writes and names
 // by path the line of each action no longer notified (runtime.PathHookNamer); SeccompFilter then leaves those
 // notifications out. It returns what is left out (the filter's syscall names, "open-write" and "truncate" for the
@@ -212,7 +212,7 @@ type PlaneFilterer interface {
 
 // Reporter is the optional Handle extension a backend implements when a run's capability set can
 // differ from the tier's static row: the landlock handle clears fs.deny_read when an entry was left
-// unenforced under a writable parent (docs/p0/enforce-landlock.md R4). Callers type-assert.
+// unenforced under a writable parent. Callers type-assert.
 type Reporter interface {
 	// Capabilities is the per-run capability set attached to run_start.
 	Capabilities() backend.Set

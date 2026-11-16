@@ -7,7 +7,7 @@ import (
 )
 
 // TestKnownRuleNaming pins the known differences between the rule a generated cell's ledger line names and the rule
-// compile --test's column names (ADR 0017's 2026-10-19 note): each class is recognized where it was
+// compile --test's column names (ADR 0017): each class is recognized where it was
 // observed, and the same pair of names anywhere else, on another axis, op or verdict, or naming an entry that does
 // not cover the action's names, is no known class, which the kernel runner reports as a ledger disagreement.
 func TestKnownRuleNaming(t *testing.T) {

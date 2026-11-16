@@ -33,7 +33,7 @@ func TestListenerAdmissionAndNoPortBindFilterBothArchitectures(t *testing.T) {
 				}
 			}
 			// The unix-only state, which has no net: section: bind alone is notified, for the supervisor's record of
-			// the run's own unix sockets (supervisor R11a), and listen stays the kernel's. Every net: section is
+			// the run's own unix sockets, and listen stays the kernel's. Every net: section is
 			// controlled above, a listener policy or none (TestPrepareNotifiesListenUnderANetSection).
 			binds := filterOpts{abi: 10, unixBinds: true}
 			if got := planeVerdict(t, abi.arch, binds, abi.bind, 3, 0x1234, 16); got != retNotify {

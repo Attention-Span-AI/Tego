@@ -19,8 +19,8 @@ import (
 // maxStopMarker bounds what StopRequestGrace reads from a stop marker: one Go duration and a newline.
 const maxStopMarker = 64
 
-// RequestStopGraceThen writes the run's stop marker carrying the grace `tego stop --grace` asked for (R9,
-// limits-check-doctor-cli.md R29): the marker holds that duration, and the launcher's stop_grace timer,
+// RequestStopGraceThen writes the run's stop marker carrying the grace `tego stop --grace` asked for (R9):
+// the marker holds that duration, and the launcher's stop_grace timer,
 // armed by the SIGTERM that follows, runs for it instead of the machine's stop_grace
 // (launch.SignalPolicy.RequestedGrace). A grace of 0 writes the empty marker, which leaves stop_grace
 // in force. The marker is written to a temporary name and linked into place, so the launcher reads

@@ -40,7 +40,7 @@ func asInvoker(t *testing.T, path string) {
 }
 
 // TestDirProfilesTrustRule: a profile is merged into the contract beneath it, so a profiles directory moved out
-// of ~/.tego follows the machine config's trust rule (limits-check-doctor-cli.md §3) as ~/.tego/profiles
+// of ~/.tego follows the machine config's trust rule as ~/.tego/profiles
 // does: the profile file, the directory holding it and the profiles directory itself owned by root or the
 // invoking user and not group- or other-writable. Whoever could rewrite one could widen every contract that
 // extends it.

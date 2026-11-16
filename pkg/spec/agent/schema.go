@@ -152,7 +152,7 @@ func freeMap(keyCheck checkFn, elem *field) *field {
 // Validation regexes (R3, R12, E26).
 var (
 	nameRE = regexp.MustCompile(`^[a-z0-9-]{1,40}$`)
-	// revisionRE is the contract key revision (agent-contract.md R28).
+	// revisionRE is the contract key revision.
 	revisionRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 	envNameRE  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	intRE      = regexp.MustCompile(`^-?[0-9]+$`)
@@ -171,7 +171,7 @@ var (
 var contractSchema = mapping(map[string]*field{
 	"version": number(scalar(checkVersion)),
 	"name":    text(scalar(regexCheck(nameRE, "name must match ^[a-z0-9-]{1,40}$"))),
-	// The author's name for this version of the contract (agent-contract.md R28).
+	// The author's name for this version of the contract.
 	"revision": nullRefused(text(scalar(regexCheck(revisionRE, "revision must match ^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"))),
 		"no revision is recorded", "write the revision, or remove the key"),
 	// `extends:` with no value parsed as absent, no profile, while it reads like a profile left out (R1).
@@ -225,7 +225,7 @@ var contractSchema = mapping(map[string]*field{
 			"tunnel_idle":      nullLimit(scalar(checkDuration)),
 			"tunnel_wall":      nullLimit(scalar(checkDuration)),
 		}), "additional proxy protocols are disabled", "write the intended optional protocols or remove the key"),
-		// host is required, as agent.schema.json and proxy.websocket say (amended 2026-10-05, review spec-5:
+		// host is required, as agent.schema.json and proxy.websocket say (review spec-5:
 		// a host-less entry was refused only later, by CompileHTTPPolicy, with a message naming the host's form).
 		"http": seq(requiring(mapping(map[string]*field{
 			"host":    scalar(nonEmpty("host")),

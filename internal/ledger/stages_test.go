@@ -33,7 +33,7 @@ func sslRequest(headers map[string]string, extra map[string]any) *record.Event {
 	return e
 }
 
-// Also pins record-ledger.md R9: the header allow/deny transform is the RedactStage, case-insensitive, on
+// Also pins: the header allow/deny transform is the RedactStage, case-insensitive, on
 // both source legs.
 func TestRedactStage(t *testing.T) {
 	secret := "sk-ant-api03-SECRET"
@@ -117,7 +117,7 @@ func TestRedactOddShapes(t *testing.T) {
 // TestCredentialsNeverOnDisk is the I2 grep test: a captured request with every credential header, run
 // through the composed pipeline, leaves no trace of the secret anywhere under the run directory.
 //
-// Also pins record-ledger.md I2: no credential value survives the pipeline's redaction ahead of Append.
+// Also pins: no credential value survives the pipeline's redaction ahead of Append.
 func TestCredentialsNeverOnDisk(t *testing.T) {
 	w, dir, _ := openTestWriter(t)
 	startRun(t, w, 0)
@@ -227,7 +227,7 @@ func blobContent(t *testing.T, v any) []byte {
 	return mustJSON(t, v)
 }
 
-// Also pins record-ledger.md R14, I8: a colliding rename target is dedup success; the blob name is the
+// Also pins: a colliding rename target is dedup success; the blob name is the
 // content's sha256.
 func TestBlobStore(t *testing.T) {
 	w, dir, _ := openTestWriter(t)
@@ -292,7 +292,7 @@ type failingReader struct{}
 
 func (failingReader) Read([]byte) (int, error) { return 0, errors.New("boom") }
 
-// Also pins record-ledger.md E11: a large body streams into a blob.
+// Also pins: a large body streams into a blob.
 func TestBlobFromStreamsLargeBody(t *testing.T) {
 	if testing.Short() {
 		t.Skip("32 MiB stream")

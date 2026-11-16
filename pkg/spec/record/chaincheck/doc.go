@@ -5,7 +5,7 @@
 // and says whether the chain of those record bytes matches, does not match (an error wrapping ErrUnverified, with
 // its reason code from Reason), or cannot be checked. It checks integrity: each line's digest (R2), the seq and
 // prev links (I3, I4), the run each line names, run_start first and only first, nothing after run_end, the torn
-// tail rule (E6, E8), and the anchored head (record-ledger.md §4). With validation on it also holds each line of
+// tail rule (E6, E8), and the anchored head. With validation on it also holds each line of
 // this version to its schema at the run's revision (record.Event.ValidateAt), as `tego events --verify` does.
 //
 // Walk is the check one line at a time, for a caller that streams a file (internal/ledger's Reader.Verify, the

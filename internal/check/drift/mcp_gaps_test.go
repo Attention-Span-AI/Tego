@@ -161,7 +161,6 @@ func TestAggregateKeepsOneBlindRunOpen(t *testing.T) {
 
 // TestComputeCarriesTheGapLine is R34 for drift: the run's gap events reach the report, and an
 // aggregated report sums them.
-// (limits-check-doctor-cli.md R34.)
 func TestComputeCarriesTheGapLine(t *testing.T) {
 	one := mcpRun(t, map[string]string{"mcp": "1"},
 		gapEvent(t, record.GapPayload{What: "record", Why: "channel-full", Count: 4}))

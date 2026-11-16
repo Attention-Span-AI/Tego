@@ -10,10 +10,10 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestIOUringWithNoListenListWarnsAtTheRootTiers is GAPS C44's io_uring half, network-controls.md R2's exception.
-// Under a net: section with no net.listen list a TCP listen is the supervisor's to refuse (enforce-landlock R11c), a
-// ring's IORING_OP_LISTEN passes no seccomp notification, and the plane decides a listen only against a list
-// (enforce-plane §2.20). Compile said nothing, so such a contract ran at a root tier with a ring free to autobind a
+// TestIOUringWithNoListenListWarnsAtTheRootTiers is GAPS C44's io_uring half.
+// Under a net: section with no net.listen list a TCP listen is the supervisor's to refuse, a
+// ring's IORING_OP_LISTEN passes no seccomp notification, and the plane decides a listen only against a list.
+// Compile said nothing, so such a contract ran at a root tier with a ring free to autobind a
 // listener on every address. It now warns io-uring at the io_uring: line wherever the run may land at a root tier,
 // marked as theirs alone, with the fix; a list (net.listen: [] included), io_uring off, no net: section, and a run that
 // lands only at tier landlock, where io_uring stays ENOSYS, are not warned.

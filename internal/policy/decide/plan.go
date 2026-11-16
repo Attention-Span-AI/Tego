@@ -9,7 +9,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// This file is the pure half of the Landlock rule plan (enforce-landlock R3, R4; ADR 0028): which deny_read
+// This file is the pure half of the Landlock rule plan (ADR 0028): which deny_read
 // targets are unenforced, which are enumerated, and the ancestor levels the enumeration holds. The builder
 // (internal/runtime/enforce/landlock) resolves the targets live, holds and lists the directories, and applies
 // what these answer; it computes none of it. Evaluate's denyUnenforced asks the unenforced question of the
@@ -49,7 +49,7 @@ func AncestorSet(resolvedTargets []string) (levels []string, onPath map[string]m
 }
 
 // FrozenLevels predicts, from the compiled table alone, the directories a run's Landlock ruleset will list once at
-// launch to build its deny_read entries (enforce-landlock R3 (3), E28; GAPS A12): every ancestor level of the
+// launch to build its deny_read entries (GAPS A12): every ancestor level of the
 // outermost enforced targets, which are the deny_read entries compile did not mark unenforced, by their resolved
 // path, and every absent built-in row's name (AbsentRow.At, ADR 0067 D3). A name made directly in one of them after
 // the run started is unreadable to it until the run ends. tego compile prints them; the run's own list is what

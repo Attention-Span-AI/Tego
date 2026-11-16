@@ -214,7 +214,7 @@ const planeTracemeRole = "ptrace-traceme"
 // runtime runs every init there, and a LockOSThread made in one makes main run on that thread too. Their own
 // LockOSThread pins the goroutine to whatever thread it is on, which is the leader only while the scheduler has not
 // moved the main goroutine since the inits; under load it had (TestPtraceTracemeHelperIsAlwaysReaped, and the known
-// answers' failed hold of x/xd in a 7.0 guest on 2026-11-11). Only those argvs are locked; every other process of the
+// answers' failed hold of x/xd in a 7.0 guest). Only those argvs are locked; every other process of the
 // binary runs as before.
 func init() {
 	if onLeader(os.Args) {

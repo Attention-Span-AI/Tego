@@ -12,7 +12,7 @@ import (
 )
 
 // flaggedExecLine is an exec line as the supervisor writes it, carrying the record's fileless and dropped flags as
-// given (record-ledger.md §2.2).
+// given.
 func flaggedExecLine(verdict, rule, path string, fileless, dropped bool) map[string]any {
 	l := map[string]any{"kind": "exec", "source": "seccomp", "rule": rule, "verdict": verdict, "authority": "rule",
 		"attribution": map[string]string{"confidence": "unattributed", "method": "time"}, "path": path,

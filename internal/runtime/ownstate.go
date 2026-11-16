@@ -36,9 +36,9 @@ import (
 // lacks an owner right tego needs on it: read, write and search on a directory, read and write on a file it writes,
 // read on the config layer, which it only reads. Those owner bits are added and no other bit is changed: chmod 000
 // becomes 0700 on a directory and 0600 on a file tego writes, the modes tego makes them with, and 0400 on the config
-// layer, and a group or other bit stays for the check that judges it. The config trust check (identity-config.md R20)
+// layer, and a group or other bit stays for the check that judges it. The config trust check
 // refuses a layer, or its directory, that group or others can write, since someone else could have replaced what is in
-// it, and the runtime directory's check (agent-contract.md R10a) refuses such a runtime parent for the same reason;
+// it, and the runtime directory's check refuses such a runtime parent for the same reason;
 // setting the mode to 0700 would have passed them over a directory that was writable to others until then. A mode that
 // keeps the owner's rights is left as it is. Each object is opened O_PATH and O_NOFOLLOW, so a link at its name is
 // neither followed nor changed, and its mode is changed through the descriptor's /proc/self/fd link, so the change

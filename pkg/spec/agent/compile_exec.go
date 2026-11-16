@@ -71,7 +71,7 @@ func (k *compiler) exec() {
 
 // checkLoaders warns about every declared ELF whose PT_INTERP loader lies at or below an fs.write,
 // fs.ask or fs.deny_read entry, enforced or not. The Landlock builder refuses to grant such a loader
-// and fails the run naming it (enforce-landlock R5, E29): the path comes from the binary's content,
+// and fails the run naming it: the path comes from the binary's content,
 // so a loader under a write entry is a grant the agent can re-point, and one under a deny_read entry
 // would read what the entry denies. Tier 2 inherits that Prepare. Evaluate reports the deny_read case
 // as a read-denied exec, but a write or ask entry is no read refusal and every other row of a
@@ -175,7 +175,7 @@ func (b *execBuilder) addRunCommand() {
 // the binary's name unconstrained.
 var ErrHarnessHookGrant = errors.New("agent: the harness hook cannot be granted exactly")
 
-// WithHarnessHook is the harness hook's exec grant, the runtime's own (ADR 0064, agent-contract.md R27): a copy of rt
+// WithHarnessHook is the harness hook's exec grant, the runtime's own (ADR 0064): a copy of rt
 // whose exec rules admit argv[0], the absolute path of the tego binary, with argv and no other vector. Like
 // addRunCommand it grants a file the launching user chose, but at run time, since the hook's argv holds the run's
 // reason path. It adds two rules. An image rule for the binary (ExecRule.Runtime HarnessHookGrant, rule
@@ -544,7 +544,7 @@ func (b *execBuilder) resolve(raw, source string, pos Pos) (string, bool) {
 	return "", false
 }
 
-// refuseProc is the exec-proc error (agent-contract.md R8a): an exec entry that is, or leads through, a /proc path.
+// refuseProc is the exec-proc error: an exec entry that is, or leads through, a /proc path.
 func (b *execBuilder) refuseProc(raw, source, p, via string, pos Pos) {
 	what := source + " " + strconv.Quote(raw)
 	if strings.HasPrefix(source, ExecSourceMCP+":") {
@@ -559,7 +559,7 @@ func (b *execBuilder) refuseProc(raw, source, p, via string, pos Pos) {
 }
 
 // refuseProcLoader is the exec-proc error for an ELF entry whose loader (PT_INTERP) is, or leads through, a /proc path:
-// the loader is resolved and granted in tego's own process as the entry is (agent-contract.md R8a).
+// the loader is resolved and granted in tego's own process as the entry is.
 func (b *execBuilder) refuseProcLoader(raw, source, p, interp, via string, pos Pos) {
 	what := source + " " + strconv.Quote(raw)
 	if strings.HasPrefix(source, ExecSourceMCP+":") {

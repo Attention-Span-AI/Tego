@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# fetch-kernel.py — one kernel-matrix row's stock kernel image, without root (P0-DESIGN §10 "Kernel matrix
-# (`test/vm`): Ubuntu 24.04 6.8, Debian 13 6.12, RHEL 9 5.14, AL2023 6.1 and 6.12, Fedora 7.0", and its 2026-10-05
-# amendment: Ubuntu 25.10 6.17, Fedora 7.2 and the doctor-only Ubuntu 22.04 5.15).
+# fetch-kernel.py — one kernel-matrix row's stock kernel image, without root (the matrix:
+# Ubuntu 24.04 6.8, Debian 13 6.12, RHEL 9 5.14, AL2023 6.1 and 6.12, Fedora 7.0, Ubuntu 25.10 6.17, Fedora 7.2
+# and the doctor-only Ubuntu 22.04 5.15).
 #
 # Why it exists: test/vm/kvm-run.sh boots whatever vmlinuz sits in $TEGO_VM_CACHE/kernel/<name>/, so a
 # matrix row needs nothing but that file: the guest's root is an initramfs of this host's userland, and

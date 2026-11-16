@@ -113,7 +113,7 @@ func SeccompSetFilterNewListener(prog []bpf.RawInstruction) (int, error) {
 		filter[i] = unix.SockFilter{Code: in.Op, Jt: in.Jt, Jf: in.Jf, K: in.K}
 	}
 	fprog := unix.SockFprog{Len: uint16(len(filter)), Filter: &filter[0]}
-	// WAIT_KILLABLE_RECV (Linux 5.19) closes docs/p0/supervisor.md E35's double side effect: once the
+	// WAIT_KILLABLE_RECV (Linux 5.19) closes a double side effect: once the
 	// supervisor has received a notification, the target ignores non-fatal signals until the answer
 	// arrives, so a signal can no longer withdraw a connect or send the supervisor has already performed
 	// and have the kernel restart it. A kernel that predates the flag — the 5.14 floor, RHEL 9 — answers
@@ -124,7 +124,7 @@ func SeccompSetFilterNewListener(prog []bpf.RawInstruction) (int, error) {
 	//
 	// The flag has a cost, taken on purpose. From the RECV until the answer the target's non-fatal signals
 	// wait, and for a relayed connect that is the relay's whole duration, which has no deadline
-	// (docs/p0/supervisor.md E35 and §4: up to the ~127 s SYN retry schedule against a blackholed route).
+	// (up to the ~127 s SYN retry schedule against a blackholed route).
 	// A SIGINT or SIGTERM the agent handles, an alarm() timeout and SIGSTOP all wait for it. A fatal
 	// signal still ends it — SIGKILL, and any signal whose default action terminates and that has no
 	// handler — and that is what tego stop escalates to after stop_grace.
@@ -281,8 +281,8 @@ var allSignals = unix.Sigset_t{Val: [len(unix.Sigset_t{}.Val)]uint64{^uint64(0)}
 // and returns -ERESTARTSYS. The task wakes to an answered notification with no descriptor and its syscall returns
 // 0, a reply nobody sent; the Go runtime's handlers carry SA_RESTART, so the ioctl is made again, meets a
 // notification it already answered and fails with EINPROGRESS, or ENOENT once the task has gone on. An agent's
-// approved open came back as descriptor 0 that way, which its write then met as EBADF (custom-agent POC, one in
-// about 2,800 approvals; the Go runtime signals its threads for preemption and profiling, and a busy run's
+// approved open came back as descriptor 0 that way, which its write then met as EBADF (one in about 2,800
+// approvals; the Go runtime signals its threads for preemption and profiling, and a busy run's
 // SIGCHLD can land on any thread). Blocked, a signal stays pending until the ioctl is done and is delivered then.
 // SIGKILL, SIGSTOP, a cgroup freeze and a ptrace interrupt still reach the thread; the first ends the process,
 // and the others are rare enough that what they leave is reported, not prevented: EINPROGRESS here wraps

@@ -139,7 +139,7 @@ func autoTiers(root bool, bpfLSM func() bool, built func(backend.Tier) error) Au
 //     cannot see is a restriction it does not hold, such as a Landlock domain, and a run under one can be
 //     offered tier cgroup and stop at Prepare.
 //   - reach bpflsm: those of reach cgroup, cached and adopted alike, and D6's LSM list. Tier bpflsm is the plane in
-//     LSM mode over tier cgroup (enforce-plane R19): it reads tier cgroup's checks, bpf in the LSM list and LSM mode's
+//     LSM mode over tier cgroup: it reads tier cgroup's checks, bpf in the LSM list and LSM mode's
 //     answer, never tier 3's own D7 rows or capture's. D6's counting program is not loaded: LSM mode's probe counts
 //     the plane's LSM programs running, which is the same proof, and a cached or pinned answer is one this boot's
 //     probe gave. An auto run as root reaches bpflsm, so this is every such run's scope.
@@ -147,8 +147,8 @@ func autoTiers(root bool, bpfLSM func() bool, built func(backend.Tier) error) Au
 //
 // A check a run skips is safe to skip because it reads only into tiers the run can neither select nor
 // explain; and what a skipped or cached check would have found wrong still stops the run: the backend loads
-// every program and creates its fanotify group at Prepare, whose failure is exit 125 before run_start
-// (runtime-launch.md R2), never a run at a lower tier.
+// every program and creates its fanotify group at Prepare, whose failure is exit 125 before run_start,
+// never a run at a lower tier.
 func ForRun(ctx context.Context, m *config.Machine, reach backend.Tier) (*Report, error) {
 	uid, _ := config.InvokingUID()
 	s := scope{uid: uid, root: config.InitNSRoot(), checks: machineChecks, planePin: planePin(m), ceilings: m.LimitCeilings()}
@@ -185,7 +185,7 @@ type checks struct {
 	// cache keeps beside D2 so a run that reads it parses no BTF (runCacheEntry.KernelFuncs). nil keeps none.
 	kernelFuncs func() map[string]bool
 	// unixDiag reports whether the kernel answers sock_diag for AF_UNIX, which every tier's implicit admit of a
-	// socket under a write entry needs (supervisor R11a). It gates no tier and is no check of R27's nine: doctor's
+	// socket under a write entry needs. It gates no tier and is no check of R27's nine: doctor's
 	// scope asks it for the unix sockets row's note (machineMatrix); a run's supervisor warns on its own. nil asks
 	// nothing.
 	unixDiag func() bool
@@ -393,16 +393,15 @@ func (s scope) run(ctx context.Context) probeState {
 					// The run this one waited for has ended and kept nothing this run can read: its answer did not
 					// vouch, or its plane faulted again. Waiting is only worth an answer the cache keeps, so this run
 					// probes without the flight, alongside every other run that waited, rather than making the next
-					// one wait out its probe too (v73 review doctor-1, amended 2026-10-05: each waiter used to probe
-					// under the flight in turn, N runs started together starting N probe times apart).
+					// one wait out its probe too (probing under the flight in turn would start N runs started
+					// together N probe times apart).
 					if flight.waited && (entry == nil || entry.Plane == nil || !entry.Plane.answers(s.planePin)) {
 						releaseFlight()
 					}
 				}
 			}
 			// answerPlane is the plane's answer where the cache holds none: a pinned build's, else a probe. A test
-			// build times it as "probe.plane" inside "probe.programs", beside D7's "probe.d7" (enforce-plane §10.1's
-			// cold attribution).
+			// build times it as "probe.plane" inside "probe.programs", beside D7's "probe.d7" (cold attribution).
 			answerPlane := func() (*PlaneState, []HookResult) {
 				defer startphase.Begin(nil, "probe.plane")()
 				if s.adopt != nil && st.root {
@@ -429,8 +428,8 @@ func (s scope) run(ctx context.Context) probeState {
 				return
 			}
 			// A cached answer adopted from a pinned build knows the one mode that build was loaded in: a pin naming the
-			// other mode is not answered by it, and probes (TIER3-PLAN T6 found a bpf.plane change running every later
-			// run on the listener until the cache's boot ended).
+			// other mode is not answered by it, and probes (else a bpf.plane change would run every later run on the
+			// listener until the cache's boot ended).
 			// The preemption precondition is never taken from the cache (ADR 0024 (16)): it is read again, and an entry
 			// kept under another reading is no answer for this run, which probes.
 			var preemptNow PlaneEnv
@@ -499,7 +498,7 @@ func (s scope) run(ctx context.Context) probeState {
 		st.unixDiag = &ok
 	}
 	// A run that could not coordinate still read and wrote the cache: its reason is a note of its own, never
-	// the cache's "unusable" one (amended 2026-10-05, v73 review doctor-3: it was prefixed to the cache note).
+	// the cache's "unusable" one.
 	st.coordinationNote = coordinationNote
 	return st
 }

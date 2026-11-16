@@ -16,8 +16,6 @@ import (
 // dropped the unenforced marker). A read no deny_read decides, and a refused modification, are named by the
 // nearest entry of any kind, a watch entry included; a read tier 1 allows under a deny_read it cannot enforce
 // carries the " (unenforced: parent writable)" marker.
-//
-// Spec: docs/p0/supervisor.md R15.
 func TestAdvisoryLabelsAreCompileTestsLabels(t *testing.T) {
 	fs := []agent.FSRule{
 		{Kind: agent.FSWrite, Path: "/w/out", Raw: "./out/", Access: agent.AccessWriteSet},

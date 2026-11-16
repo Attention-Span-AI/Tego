@@ -7,7 +7,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/harness"
 )
 
-// harness resolves the contract's harness: key into the table (agent-contract.md R27, ADR 0062): a named harness is
+// harness resolves the contract's harness: key into the table (ADR 0062): a named harness is
 // itself, and auto (the key absent) is the one the command the run executes names (harness.Detect): the command
 // `tego run` was given after the contract (WithRunCommand) when there is one, else the contract's own. A contract
 // with no command keeps auto. The launcher resolves auto again from the command it runs, by the same rule, so the

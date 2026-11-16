@@ -25,11 +25,10 @@ import (
 // was reached, and at tier 2 this loop still decides first, so the agent meets it there too. It is not every
 // refused connect's errno, nor every network refusal's: at tier 2 an unconnected datagram this loop continues,
 // and a connect it relayed that the kernel's rows refuse, meet the kernel program's EPERM (SEMANTICS §5), and
-// Landlock's abstract-unix scope refuses a connect or send with EPERM (enforce-landlock R7). It is also what
+// Landlock's abstract-unix scope refuses a connect or send with EPERM. It is also what
 // Landlock answers for the exec and file refusals the other uses stand beside (spec/reason/REASON-CHANNEL.md
 // §1). Never ECONNREFUSED, which is a real peer's answer that a relay returns as it came. docs/ARCHITECTURE.md
-// §7 and REASON-CHANNEL §1 once said ECONNREFUSED and EPERM for a network refusal; they were brought in line
-// on 2026-09-23 (docs/p0/supervisor.md §11). Because this one constant answers all of the above, a different
+// §7 and REASON-CHANNEL §1 say the same. Because this one constant answers all of the above, a different
 // network errno means either splitting it or changing the exec, fs and fail-closed errnos with it, and in
 // either case the documents that name each of them.
 const refusalErrno = unix.EACCES
@@ -190,7 +189,7 @@ type entry struct {
 }
 
 // dispatchKey is the (arch, nr) pair a notification is dispatched on. The filter guards the architecture
-// before any syscall-number test (enforce-landlock R9), so a foreign arch never reaches the table.
+// before any syscall-number test, so a foreign arch never reaches the table.
 type dispatchKey struct {
 	arch uint32
 	nr   int32
@@ -249,13 +248,13 @@ func buildDispatchFor(arch uint32) dispatchTable {
 	symlinkAt := entry{name: "symlinkat", fn: handleSymlinkAt}
 	linkAt := entry{name: "linkat", fn: handleLinkAt}
 	mknodAt := entry{name: "mknodat", fn: handleMknodAt}
-	// truncate(2) is notified from Landlock ABI 3, the mode-change family under record: full (enforce-landlock
-	// R11): record-only, like the rest of the fs set, save R15c's refusal of a truncate.
+	// truncate(2) is notified from Landlock ABI 3, the mode-change family under record: full:
+	// record-only, like the rest of the fs set, save R15c's refusal of a truncate.
 	truncate := entry{name: "truncate", fn: handleTruncate}
 	fchmod := entry{name: "fchmod", fn: handleFchmod}
 	fchmodAt := entry{name: "fchmodat", fn: handleFchmodAt}
 	fchmodAt2 := entry{name: "fchmodat2", fn: handleFchmodAt2}
-	// The xattr and chown families reach this loop under an fs.write gate only (enforce-landlock R11), which
+	// The xattr and chown families reach this loop under an fs.write gate only, which
 	// scores each as a write (recordAttr): record-only kinds, as chmod is.
 	setxattr := entry{name: "setxattr", fn: handleSetxattr}
 	lsetxattr := entry{name: "lsetxattr", fn: handleLsetxattr}
@@ -267,7 +266,7 @@ func buildDispatchFor(arch uint32) dispatchTable {
 	removexattrAt := entry{name: "removexattrat", fn: handleXattrAt}
 	fchown := entry{name: "fchown", fn: handleFchown}
 	fchownAt := entry{name: "fchownat", fn: handleFchownAt}
-	// The watch calls reach this loop in every enforcing run (enforce-landlock R11e): a decision kind, refused where the
+	// The watch calls reach this loop in every enforcing run: a decision kind, refused where the
 	// run withholds a read of the watched object and continued elsewhere (watch.go, R36).
 	// The third, dnotify's fcntl(F_NOTIFY), is the fcntl entry's (handleFcntl).
 	inotifyAddWatch := entry{name: "inotify_add_watch", fn: handleInotifyAddWatch}
@@ -278,8 +277,7 @@ func buildDispatchFor(arch uint32) dispatchTable {
 	umount := entry{name: "umount2", fn: handleUmount}
 	pivotRoot := entry{name: "pivot_root", fn: handlePivotRoot}
 	moveMount := entry{name: "move_mount", fn: handleMoveMount}
-	// The namespace arm's syscalls reach this loop only when the run must refuse them
-	// (docs/p0/enforce-cgroup-observe.md E24).
+	// The namespace arm's syscalls reach this loop only when the run must refuse them.
 	unshare := entry{name: "unshare", fn: handleUnshare}
 	clone := entry{name: "clone", fn: handleClone}
 	setns := entry{name: "setns", fn: handleSetns}
@@ -300,14 +298,14 @@ func buildDispatchFor(arch uint32) dispatchTable {
 	// setsockopt reaches this loop only as SOL_TCP's TCP_ULP under a net: section (ADR 0018 (7)): refused and
 	// recorded, with no CONTINUE path.
 	setsockopt := entry{name: "setsockopt", fn: handleSetsockopt}
-	// sendfile and splice reach this loop only in a run that decides datagrams (R13's pending frames;
-	// enforce-landlock R11): a decision kind, since one into a UDP socket could leave a frame pending.
+	// sendfile and splice reach this loop only in a run that decides datagrams (R13's pending frames):
+	// a decision kind, since one into a UDP socket could leave a frame pending.
 	sendfile := entry{name: "sendfile", fn: handleSendfile}
 	splice := entry{name: "splice", fn: handleSplice}
 	// The kill family and fcntl's F_SETOWN reach this loop only below Landlock ABI 6, where the ruleset has no
 	// signal scope and this loop decides one in its place (signal.go): a decision kind, since a handler that
 	// cannot finish must not let a signal leave the run. fcntl's F_NOTIFY, a dnotify watch, reaches it with the
-	// other watch calls (enforce-landlock R11e), and handleFcntl hands it to handleDnotify (watch.go, R36).
+	// other watch calls, and handleFcntl hands it to handleDnotify (watch.go, R36).
 	kill := entry{name: "kill", fn: handleKill}
 	tkill := entry{name: "tkill", fn: handleTkill}
 	tgkill := entry{name: "tgkill", fn: handleTgkill}

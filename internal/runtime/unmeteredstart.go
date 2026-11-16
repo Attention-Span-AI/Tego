@@ -17,7 +17,7 @@ import (
 
 // ErrCaptureUnavailable is a run with a tokens, cost_usd or repeats budget whose capture mechanism could not
 // start, refused before run_start: nothing would meter its model spend, and a budget that is silently not
-// enforced is the failure it exists to prevent (limits-check-doctor-cli.md R32). The CLI exits 125
+// enforced is the failure it exists to prevent. The CLI exits 125
 // [capture-unavailable] with the cause and the fix.
 var ErrCaptureUnavailable = errors.New("runtime: capture unavailable")
 
@@ -25,8 +25,8 @@ var ErrCaptureUnavailable = errors.New("runtime: capture unavailable")
 // it with: no capture runs for it (the contract's capture: off, a machine capture ceiling of off, a forwarder with
 // no models: endpoint, record: off under uprobe capture), or, for cost_usd, no price table that lists a model, or
 // one that prices no model (every entry lacks an input or an output price).
-// Such a limit never trips, and an unattended run under it has no limit at all, so the run is refused before run_start
-// (limits-check-doctor-cli.md R32). The CLI exits 125 [budget-unmetered] with the cause and the fix.
+// Such a limit never trips, and an unattended run under it has no limit at all, so the run is refused before run_start.
+// The CLI exits 125 [budget-unmetered] with the cause and the fix.
 var ErrBudgetUnmetered = errors.New("runtime: budget unmetered")
 
 // meteredBudgets are the run's bounded budgets that only capture can meter, by their contract names.
@@ -76,8 +76,8 @@ func declaredBudgets(rt *agent.RuleTable) []string {
 // the first response (the watcher), where no table would let that run go on uncounted.
 // It runs right after refuseUnmeteredBudget, which names a mechanism the run was given and that failed; this is
 // the budget nothing was ever going to meter, which ran with only compile's warning and a gap
-// why=budget-unmetered and exited as the agent did (the custom-agent POC's item 1: for an unattended night, a
-// limit that silently does nothing). Like that refusal it comes before run_start and the agent's release, so the
+// why=budget-unmetered and exited as the agent did: for an unattended night, a
+// limit that silently does nothing. Like that refusal it comes before run_start and the agent's release, so the
 // run leaves no record. compile reports the same contracts [budget-unmetered] (agent budgetsUnmetered).
 func (r *runner) refuseUncountedBudget() error {
 	declared := declaredBudgets(r.rt)

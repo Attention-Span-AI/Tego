@@ -57,7 +57,7 @@ func wantAttr(t *testing.T, what string, got, want record.Attribution) {
 	}
 }
 
-// TestToolWindowAttributesActionsToTheReply is E29 on one thread (capture-derive R42): a reply's tool_use opens a
+// TestToolWindowAttributesActionsToTheReply is E29 on one thread: a reply's tool_use opens a
 // window, an action while it is the one open window and no model request is in flight is that reply's, method
 // tool_id; the request reporting its result closes it, and time decides again.
 func TestToolWindowAttributesActionsToTheReply(t *testing.T) {

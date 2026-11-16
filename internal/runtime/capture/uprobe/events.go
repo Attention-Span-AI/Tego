@@ -142,7 +142,7 @@ func (u *Uprobe) emitRequest(m *httpstream.Message) {
 }
 
 // readRequest is what derive reads of a request alone as it is captured (derive.Dispatcher.HandleRequest): a
-// declared HTTP MCP server's initialize and tool calls (capture-derive R41), stamped with the request's own time
+// declared HTTP MCP server's initialize and tool calls, stamped with the request's own time
 // and the thread that wrote it. ok is false for every other request, which derive reads with its response. Read
 // now, a call is recorded whether or not an answer ever comes (the source's Stop, the connection's end and the
 // pending bound all give one up without deriving it) and in the step it was sent in, however long the tool ran.
@@ -193,8 +193,8 @@ func (u *Uprobe) emitDerived(events []*record.Event) {
 }
 
 // emitResponse records one ssl_response against the request it answers, and the decisions derive reads out
-// of the pair after it, in wire order, as the forwarder does (docs/p0/capture-derive.md §1: a derived event is
-// identical in shape whichever mechanism captured the exchange).
+// of the pair after it, in wire order, as the forwarder does: a derived event is
+// identical in shape whichever mechanism captured the exchange.
 //
 // Capture assembles bytes and never parses a provider's wire shape itself: the model, response_id,
 // stop_reason, usage and parser_version on the payload are the Deriver's facts (derive.Facts.Apply), and
@@ -257,7 +257,7 @@ func (u *Uprobe) emitResponse(m *httpstream.Message) {
 		}
 	}
 	// A successful answer on a model host whose body the byte budget cut: what it spent past the cut, a
-	// stream's closing usage above all, is not in what derive read (limits-check-doctor-cli.md R1 (d)).
+	// stream's closing usage above all, is not in what derive read.
 	if req != nil && m.SizeCut && derive.Success(m.Status) && u.modelHost(req.Host) && !u.silent(req) {
 		unmetered = true
 	}
@@ -319,7 +319,7 @@ func (u *Uprobe) modelHost(host string) bool {
 func (u *Uprobe) meteredHost(host string) bool { return host == "" || u.modelHost(host) }
 
 // loseConn is a connection capture can no longer follow — gapped after a sequence hole or a framing error, or
-// an SSL* whose I/O split across threads (limits-check-doctor-cli.md R1 (f)): every request it was holding
+// an SSL* whose I/O split across threads: every request it was holding
 // lost its response. Those whose host may have been a model's are reported unmetered, which ends a run with a
 // token or cost budget; with none waiting that counts (none, or only requests to silent paths), the
 // connection's own last host decides whether its lost bytes may have been: capture follows it no further, so
@@ -352,7 +352,7 @@ func (u *Uprobe) loseConns(why string, keys ...httpstream.ConnKey) {
 // request applies it — a lost connection, a closed one, a later response, the pending table's bound — so no
 // path can pass one over that another would report (ADR 0035 (2), ADR 0037). A request
 // whose path the Deriver calls silent (a health check, telemetry, token counting) spends nothing whatever its
-// answer and is 0 (ADR 0037 amendment 2026-09-24).
+// answer and is 0 (ADR 0037).
 func (u *Uprobe) unanswered(r *openRequest) int64 {
 	if r == nil {
 		return 0

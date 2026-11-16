@@ -328,7 +328,7 @@ func TestPrepareMarksEachMountForTheEventsItCanRefuse(t *testing.T) {
 	// The mounts the table's deny_read entries are on, and those mounted beneath them: the fixture's own entry and,
 	// where it exists, tego's host state (/run/tego, a built-in deny_read: as root in the KVM guest and on CI's
 	// root job, not for a user on a dev box). One mark each, and no other; counting the fixture's entry alone
-	// failed as root (amended 2026-10-05, v73 review R4).
+	// fails as root.
 	want := map[mountKey]string{}
 	under := mountPointsUnderFrom(func() ([]string, error) { return readMountSnapshot(mountInfoPath).Points() })
 	for i := range table.FS {

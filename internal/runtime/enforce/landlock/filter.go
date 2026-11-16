@@ -223,8 +223,8 @@ type archTable struct {
 	// UDP frame pending on a socket it writes into.
 	Frames []sysNR
 	// Watch is inotify_add_watch(2) and fanotify_mark(2), which R11e notifies in every enforcing run, with fcntl(2)'s
-	// F_NOTIFY (dnotify, on Fcntl), so the supervisor refuses a watch whose object the run withholds a read of
-	// (supervisor R36): a watch opens nothing, so neither the Landlock ruleset, which has no hook for it, nor a decision
+	// F_NOTIFY (dnotify, on Fcntl), so the supervisor refuses a watch whose object the run withholds a read of:
+	// a watch opens nothing, so neither the Landlock ruleset, which has no hook for it, nor a decision
 	// plane, which hooks no security_path_notify, refuses one, and a watch on a deny_read directory reported which of
 	// its files were opened and changed (GAPS A10).
 	Watch []sysNR
@@ -285,7 +285,7 @@ var uselibX86 = sysNR{"uselib", 134}
 // see its flags and the supervisor has no path to record: a write-open through it, or any open under
 // record: full, left no line in any tier. Linux 6.12 lets an unprivileged caller use it for some
 // handles, and below that it takes CAP_DAC_READ_SEARCH, which a tier-2 agent can reach through a
-// set-uid binary (runtime-launch R4 skips no_new_privs there). ENOSYS, like openat2, keeps R10's promise
+// set-uid binary (the launcher skips no_new_privs there). ENOSYS, like openat2, keeps the promise
 // that no open reaches the kernel through a number the supervisor has no entry for; name_to_handle_at
 // opens nothing and stays allowed.
 func withOpenByHandle(nr uint32) []sysNR {
@@ -401,10 +401,10 @@ func tableFor(arch Arch) (archTable, error) {
 // wants exactly this form: an observe run applies no Landlock ruleset and refuses nothing, so the truncation
 // arms have nothing to stand in for and the memfd arm — a creation-time refusal — has nothing it may refuse.
 // It carries R11c's bind arm, so that an observe run's lines name the run's own unix sockets as an enforcing
-// run would decide them (supervisor R11a) rather than as foreign; the supervisor continues every bind there. frames
+// run would decide them rather than as foreign; the supervisor continues every bind there. frames
 // installs R11d's pending-frame arms, which the caller sets where the run's contract decides datagrams
 // (agent.RuleTable.DecidesDatagrams), as Prepare does: the observe run's supervisor applies its pending-frame
-// decisions there (supervisor R13, R30), so without the arms its record would hold the addressed sends with MSG_MORE
+// decisions there, so without the arms its record would hold the addressed sends with MSG_MORE
 // an enforcing run refuses and miss the unaddressed ones, the cork, sendfile and splice.
 // An enforcing run goes through Prepare, which assembles the filterOpts its contract and probed kernel ask for.
 func BuildFilter(arch Arch, full, frames bool) ([]bpf.Instruction, error) {
@@ -419,13 +419,13 @@ type filterOpts struct {
 	gateRead bool // a read gate needs notifications even under summary/off
 	// askRead notifies every open, as record: full does: fs.ask_read holds a read-open for a person, and a classic BPF
 	// filter sees the path as a pointer, so the supervisor has to be told of every read to find the ones it holds
-	// (POC 2026-10-06, SEMANTICS §6). A run that holds its reads (fs.reads, ADR 0069 D2) sets it for the same reason:
+	// (SEMANTICS §6). A run that holds its reads (fs.reads, ADR 0069 D2) sets it for the same reason:
 	// the open deputy completes every read-capable open. The supervisor writes no line for a read it neither holds nor
 	// refuses, or holds only as a read, unless the record mode keeps reads.
 	askRead   bool
 	gateWrite bool // a write gate scores a mode or attribute change: the chmod and Attr families are notified under summary/off (R11)
 	// watches installs the watch arm (R11e): inotify_add_watch, fanotify_mark and fcntl's F_NOTIFY are notified, for
-	// the supervisor to refuse a watch whose object the run withholds a read of (supervisor R36). Every enforcing run
+	// the supervisor to refuse a watch whose object the run withholds a read of. Every enforcing run
 	// sets it (Prepare); an observe run's filter (BuildFilter) does not, since its supervisor would continue every watch.
 	watches bool
 	// sourceRoute installs the source-route arm (sourceRouteTest, R11b): a run whose contract has a net: section or
@@ -433,7 +433,7 @@ type filterOpts struct {
 	sourceRoute bool
 	// frames installs R11d's pending-frame arms (frameTests): a run whose contract decides datagrams
 	// (agent.RuleTable.DecidesDatagrams), where a UDP frame left pending would carry a later datagram's bytes to
-	// another destination than its line names (supervisor R13).
+	// another destination than its line names.
 	frames bool
 	abi    int       // the probed Landlock ABI (R2's truncation rows)
 	memfd  MemfdArm  // SEMANTICS §4
@@ -449,7 +449,7 @@ type filterOpts struct {
 	listenControl, listenersAllowed, ingress bool
 	// unixBinds notifies bind(2) in the unix-only state too, where listenControl is off (R11c): the supervisor records
 	// the socket each pathname unix bind of the run names, which is what its implicit admit of a socket under a write
-	// entry is held to (supervisor R11a), and continues the bind. listenControl notifies bind already.
+	// entry is held to, and continues the bind. listenControl notifies bind already.
 	unixBinds bool
 	// ioUring leaves io_uring_setup, io_uring_enter and io_uring_register out of the ENOSYS arm (R10): a contract
 	// that declares io_uring: true, run where the kernel decision plane decides every submission (Run.IOUring;
@@ -464,7 +464,7 @@ type filterOpts struct {
 	heldOpens bool
 	// plane is what the run's decision plane decides in place of a notification (planeSkips): the syscalls, by
 	// their table names, the filter no longer notifies, and writeOpens and truncate for the open family's write
-	// arm and truncate(2)'s notification (enforce-plane R22, R27; TIER3-PLAN T16). The zero value notifies all.
+	// arm and truncate(2)'s notification. The zero value notifies all.
 	plane planeSkip
 }
 
@@ -492,8 +492,8 @@ const (
 	HookPathTruncate = "path_truncate"
 )
 
-// planeDecided maps each fs mutation of the notify tables to the plane hooks that decide every form of it
-// (TIER3-PLAN §2). unlinkat removes a directory under AT_REMOVEDIR, so it needs path_rmdir too; linkat's
+// planeDecided maps each fs mutation of the notify tables to the plane hooks that decide every form of it.
+// Unlinkat removes a directory under AT_REMOVEDIR, so it needs path_rmdir too; linkat's
 // AT_EMPTY_PATH form (an O_TMPFILE linked in by descriptor) goes through security_path_link like any link.
 var planeDecided = map[string][]string{
 	"unlink": {HookPathUnlink}, "unlinkat": {HookPathUnlink, HookPathRmdir}, "rmdir": {HookPathRmdir},
@@ -508,16 +508,16 @@ var planeDecided = map[string][]string{
 
 // planeWriteOpenHooks decide a write-open: file_open decides write, deny_write and O_TRUNC on the object the open
 // resolved, and path_mknod decides an O_CREAT create before the file exists (may_o_create), so a refused create
-// leaves no file behind (TIER3-PLAN T13's acceptance). Without path_mknod a refused create would be refused at
+// leaves no file behind. Without path_mknod a refused create would be refused at
 // file_open only after the file was made, so the write arm stays notified.
 var planeWriteOpenHooks = []string{HookFileOpen, HookPathMknod}
 
-// planeSkips is the notification set a run's loaded plane hooks decide in the kernel (enforce-plane R27): each
+// planeSkips is the notification set a run's loaded plane hooks decide in the kernel: each
 // fs mutation whose every form a loaded hook decides, the open family's write arm when file_open and path_mknod
 // are loaded, and truncate(2) when path_truncate is. Under record: full the open family stays whole (its
 // notifications are the record of reads too, and a full filter notifies every open), so creat and the write arm
-// are kept and only the other mutations are left out: the kernel recorder names each by its path on its own
-// (enforce-plane §2.15). It is empty — every notification kept, fail closed — for a contract with fs ask entries
+// are kept and only the other mutations are left out: the kernel recorder names each by its path on its own.
+// It is empty — every notification kept, fail closed — for a contract with fs ask entries
 // (P1: an ask is answered by the supervisor, ADR 0024 (14)). hooks is the set the plane loaded and attached for
 // this run's mode, never what a mode could load: file_truncate, absent below 6.2, and the step B hooks before they
 // are built are simply not in it.
@@ -565,7 +565,7 @@ func planeSkips(hooks map[string]bool, full, ask bool) planeSkip {
 // Two arms are errno returns rather than notifications: the terminal-injection ioctls (retEPERM) and
 // socket(2) with IPPROTO_MPTCP (E30). The decision needs only the scalar registers the filter already sees,
 // so it is race-free with no round trip; it holds under an observe run, whose supervisor continues every
-// notification (supervisor R30); and it holds when no listener or supervisor is left to answer. (A notification the
+// notification; and it holds when no listener or supervisor is left to answer. (A notification the
 // supervisor has no handler for is answered ENOSYS, ADR 0018 (3), which TestEveryNotifiedSyscallHasAHandler
 // checks — so that is not the reason.) A third, the truncation pair, is emitted only when abi cannot handle
 // LANDLOCK_ACCESS_FS_TRUNCATE (R2's ABI-3 row).
@@ -582,11 +582,11 @@ func planeSkips(hooks map[string]bool, full, ask bool) planeSkip {
 //
 // The watch arm (filterOpts.watches, R11e) notifies inotify_add_watch(2), fanotify_mark(2) and fcntl(2)'s F_NOTIFY
 // (dnotify) in every enforcing run: none is a hook of Landlock or of a decision plane, so the supervisor refuses a
-// watch whose object the run withholds a read of itself (supervisor R36; GAPS A10).
+// watch whose object the run withholds a read of itself (GAPS A10).
 //
 // A build with -tags tegotesthooks can leave named syscalls out of the notify arm and the root-tier arm
 // (filterTestOmit, TEGO_TEST_FILTER_OMIT), so that a root test reaches what those arms answer first in a product
-// run: the decision plane's bpf and key_permission hooks (enforce-plane §2.20). A product build omits nothing.
+// run: the decision plane's bpf and key_permission hooks. A product build omits nothing.
 func buildFilter(arch Arch, o filterOpts) ([]bpf.Instruction, error) {
 	builtin := o.builtin
 	full, gateRead, gateWrite, abi, m, sa, plane := o.full, o.gateRead || o.askRead, o.gateWrite, o.abi, o.memfd, o.socket, o.plane
@@ -688,13 +688,13 @@ func buildFilter(arch Arch, o filterOpts) ([]bpf.Instruction, error) {
 		prog = append(prog, truncateTest(t.Truncate)...)
 	} else if t.Truncate != noSyscall && !o.plane.truncate {
 		// From ABI 3 Landlock's TRUNCATE right decides truncate(2); it is notified so the supervisor records
-		// it (and refuses one that reaches a deny_write target, supervisor R15c), as an O_TRUNC open is.
+		// it (and refuses one that reaches a deny_write target), as an O_TRUNC open is.
 		prog = append(prog, bpf.JumpIf{Cond: bpf.JumpEqual, Val: t.Truncate, SkipFalse: 1}, bpf.RetConstant{Val: retNotify})
 	}
 	if full || gateWrite {
 		// record: full records a mode change (CAPABILITIES "record reads, mmap, chmod"); no fs rule below tier
 		// 3 refuses one. An fs.write gate scores one as a write and refuses it above its threshold (supervisor
-		// gateFS), so it keeps the notification under summary/off too: gate.md's enabled action kinds retain
+		// gateFS), so it keeps the notification under summary/off too: a gate's enabled action kinds retain
 		// their notifications, and the verdict does not depend on the record level.
 		for _, s := range t.Chmod {
 			prog = append(prog, bpf.JumpIf{Cond: bpf.JumpEqual, Val: s.NR, SkipFalse: 1}, bpf.RetConstant{Val: retNotify})
@@ -713,7 +713,7 @@ func buildFilter(arch Arch, o filterOpts) ([]bpf.Instruction, error) {
 	if o.watches {
 		// R11e: a watch names its object by a pathname in the agent's memory (or, for fanotify_mark and dnotify, by a
 		// descriptor), so the filter cannot decide it and notifies every call; the supervisor refuses one whose object
-		// the run withholds a read of and continues the rest (supervisor R36).
+		// the run withholds a read of and continues the rest.
 		for _, s := range t.Watch {
 			prog = append(prog, bpf.JumpIf{Cond: bpf.JumpEqual, Val: s.NR, SkipFalse: 1}, bpf.RetConstant{Val: retNotify})
 		}
@@ -805,7 +805,7 @@ const (
 )
 
 // sourceRouteTest refuses, with EPERM, a setsockopt(2) that would give a socket a source route, in a run whose
-// contract has a net: section or whose gate scores net actions (R11b; ADR 0041 D6; GAPS C34; supervisor R9, R13b). A
+// contract has a net: section or whose gate scores net actions (R11b; ADR 0041 D6; GAPS C34). A
 // source route sends a connect's or a datagram's first hop to an address in the route, not to the destination the
 // contract admitted or the gate scored, and no decision sees it: the supervisor and the root tiers' connect4/6 and
 // sendmsg4/6 programs read the destination alone. The supervisor performs an admitted IP connect, Fast-Open send or
@@ -841,7 +841,7 @@ func sourceRouteTest(nr uint32) []bpf.Instruction {
 const cloneNamespaceFlags = unix.CLONE_NEWNS | unix.CLONE_NEWUSER
 
 // namespaceTest notifies unshare(2) and clone(2) when their flags ask for a new mount or user namespace, and
-// every setns(2), and the supervisor refuses them (docs/p0/enforce-cgroup-observe.md E24). A Landlock domain refuses
+// every setns(2), and the supervisor refuses them. A Landlock domain refuses
 // mount(2) but not the creation of a mount namespace: unshare(CLONE_NEWUSER|CLONE_NEWNS) copies the mount
 // tree into new struct mounts that carry none of tier 2's FAN_MARK_MOUNT marks, and a deny_read that
 // fanotify alone enforces (one nested in a write entry, a planted .env among them) was read there with no
@@ -1060,7 +1060,7 @@ func signalScopeTest(t archTable) []bpf.Instruction {
 		bpf.LoadAbsolute{Off: offNR, Size: 4},
 		// The same owner through ioctl: FIOSETOWN and SIOCSPGRP on a socket set what F_SETOWN sets, and with
 		// F_SETSIG and O_ASYNC a byte written to the socket's peer signalled any process of the uid, the
-		// launcher included (docs/p0/supervisor.md R33, reproduced at ABI 5).
+		// launcher included (reproduced at ABI 5).
 		bpf.JumpIf{Cond: bpf.JumpEqual, Val: t.Ioctl, SkipFalse: 5},
 		bpf.LoadAbsolute{Off: offArg(1), Size: 4}, // the request; both values fit 32 bits
 		bpf.JumpIf{Cond: bpf.JumpEqual, Val: ioctlFIOSETOWN, SkipTrue: 1},
@@ -1076,7 +1076,7 @@ func signalScopeTest(t archTable) []bpf.Instruction {
 // while each read there was refused. Only the command is tested, a scalar the kernel reads as an unsigned int (the
 // low half of args[1], as the signal arm's F_SETOWN test reads it), so every other fcntl(2) is left to the arms after
 // this one and the descriptor table's own calls (F_GETFL, F_SETFD, F_DUPFD...) cost no notification; the supervisor
-// decides the watch on the descriptor's own file (supervisor R36). The signal arm, below Landlock ABI 6, sees fcntl
+// decides the watch on the descriptor's own file. The signal arm, below Landlock ABI 6, sees fcntl
 // first and notifies its F_SETOWN pair itself; any other command reaches this test with A reloaded to the number.
 func dnotifyTest(fcntl uint32) []bpf.Instruction {
 	return []bpf.Instruction{
@@ -1102,7 +1102,7 @@ const (
 // (reproduced on 6.17); RLIMIT_FSIZE 0 or a low RLIMIT_NOFILE crippled it instead, and setpriority or
 // sched_setaffinity starved it of CPU while every notified syscall of the run waited on it. The same calls
 // reached every other process of the user. The supervisor decides each against the run's cgroup, as the
-// signal-scope arm's targets (supervisor R35).
+// signal-scope arm's targets.
 //
 // A call on the caller itself is allowed here without a notification: prlimit64 with pid 0 or with no new
 // limit (a read), a scheduling call with pid 0, and setpriority or ioprio_set naming the caller's own process
@@ -1153,7 +1153,7 @@ func procScopeTest(t archTable) []bpf.Instruction {
 // SEMANTICS §4) and tier 2's FAN_OPEN_EXEC_PERM sees no open a fexecve makes; only tier 3's
 // bprm_check_security would. Deciding that exec after the fact, from the descriptor the supervisor's walk
 // reads, loses to a thread or CLONE_FILES child that swaps the descriptor between the decision and the
-// kernel's re-lookup (supervisor R16b). memfd_create's flags are a scalar in args[1], immutable once the
+// kernel's re-lookup. memfd_create's flags are a scalar in args[1], immutable once the
 // syscall traps, so this arm closes the creation itself, race-free: a shmem memfd created with
 // MFD_NOEXEC_SEAL has its execute bits cleared and sealed, and the kernel then refuses to exec it
 // (mm/memfd.c; verified on 6.17). A hugetlb memfd is refused whatever else it sets, because hugetlbfs does
@@ -1287,7 +1287,7 @@ const (
 	udpCork    = 1
 )
 
-// frameTests are R11d's pending-frame arms, for a run that decides datagrams (supervisor R13): setsockopt(UDP_CORK) at
+// frameTests are R11d's pending-frame arms, for a run that decides datagrams: setsockopt(UDP_CORK) at
 // SOL_UDP or SOL_UDPLITE, on its scalar level and option, and every sendfile and splice, are notified, and the
 // supervisor refuses the cork and a sendfile or splice into a socket that can hold a frame. sendToTest's MSG_MORE arm
 // and the notify set's sendmsg and sendmmsg are the rest: together they are every syscall that can leave a UDP frame

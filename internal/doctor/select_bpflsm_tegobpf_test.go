@@ -13,7 +13,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestReportSelectsTierBPFLSM is TIER3-PLAN T7's selection (enforce-plane R19, §6 case 12), in a build that carries
+// TestReportSelectsTierBPFLSM is tier 3's selection, in a build that carries
 // the objects: where LSM mode passes, `--tier bpflsm` and an auto run are given tier bpflsm's backend, the plane in LSM
 // mode; where bpf is not in the LSM list, `--tier bpflsm` is refused with doctor's own line, the GRUB fix included,
 // and an auto run gets tier cgroup, never tier bpflsm in another mode.

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestTraceProcWakesItsReaderOnlyWhereItMust pins trace_proc's submit flags (enforce-cgroup-observe §9). Its
+// TestTraceProcWakesItsReaderOnlyWhereItMust pins trace_proc's submit flags. Its
 // open, file-operation and connect records submit with tego_quiet's flags, which leave the reader asleep unless
 // the ring is filling: with the kernel's default flag every one of them woke the reader, whose wakeup the process
 // that submitted it paid, one an open. Exec and exit force the wakeup, because the process cache and the uprobe

@@ -96,7 +96,7 @@ func (e execCommand) refuses() bool {
 // own descriptor) and each interpreter's walk are facts too, for every exec: any ruled tool can be a #! interpreter,
 // which the kernel loads inside the same execve. An image whose first bytes could not be read is refused
 // image-unreadable. ok is false when the notification is gone. recordExec asks it of every exec whose walk reached a
-// file and that has a line, and of one the image floor did not allow keeps only dropped (supervisor R16b): what the exec loads
+// file and that has a line, and of one the image floor did not allow keeps only dropped: what the exec loads
 // is a fact whatever the floor answers, while the command rules decide only an exec the floor allows. walkOnly, for
 // such an exec, stops once the loads are walked, before a guarded tool's staged argv reads and the match, whose answer
 // would be thrown away.
@@ -191,7 +191,7 @@ func (l *Loop) decideCommand(c *compiled, n *notif, r *reader, q pathQuery, raw 
 // walk is that walk's errno. An image whose head could not be read is FormUnknown, and so is one whose interpreter's
 // head could not be read: the kernel reads an interpreter's head too, and could run it as a script in turn. dropped
 // says an interpreter the chain reached was written during the run under a write entry (droppedImage): the kernel
-// loads it inside the same execve, so it is a file that runs (supervisor R16b).
+// loads it inside the same execve, so it is a file that runs.
 func (l *Loop) shebangChain(c *compiled, n *notif, img execImage, root *taskRoot) (form execmatch.Form, stages []execmatch.Stage, kids []fileID, dropped bool, err error) {
 	if img.head == nil {
 		return execmatch.FormUnknown, nil, nil, false, nil

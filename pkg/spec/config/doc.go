@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package config holds the machine config of Tego (spec/config/v0/README.md,
-// docs/p0/identity-config.md §2.4, §5): the Machine model with per-field provenance, the four-layer
+// Package config holds the machine config of Tego (spec/config/v0/README.md):
+// the Machine model with per-field provenance, the four-layer
 // discovery and merge (built-in defaults, /etc/tego/config.yaml, <pw_dir>/.tego/config.yaml,
 // $TEGO_CONFIG), the ceiling-versus-setting rule (a ceiling may only be lowered by a later layer,
 // a setting is last-layer-wins), the per-layer trust check (open then fstat: regular file, owned by
@@ -9,7 +9,7 @@
 // and AT_SECURE rules, whether a person of another user reads what this process prints (StartedByAnother, from
 // /proc, never the environment), the YAML units (IEC byte sizes, durations with a d suffix), the
 // effective-value report that prints every value with the file and line it came from, and the
-// invoking user's runtime directory bases (RuntimeDirBases, agent-contract.md R10a), the one list the
+// invoking user's runtime directory bases (RuntimeDirBases), the one list the
 // launcher, the CLI's compiles and the dashboard's rule service all name.
 //
 // Load is read-only end to end: it opens exactly the layer files, closes them before returning,

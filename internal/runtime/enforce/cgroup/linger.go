@@ -39,7 +39,7 @@ import (
 // used alternately do not thrash and an upgrade's old build does not stay. A bpf.linger of 0 keeps the old
 // rule: the last launcher out removes the build itself, under the same run-set condition.
 //
-// What it saves was measured in the KVM guest on 6.17 (test/vm/README.md, kill test 4): a root run of `true` at
+// What it saves, on 6.17 (test/vm/README.md, kill test 4): a root run of `true` at
 // tier cgroup under kill test 4's kind of contract took 1.1 s with the build loaded, attached and detached per
 // run, and 45 ms with the build adopted.
 
@@ -188,7 +188,7 @@ var startHelperProcess = func(exe string, args ...string) error {
 }
 
 // rearmExpired is Prepare's pass over the other builds on the host, once this launcher holds its own build's lock
-// (ADR 0022 (4), note 2026-10-06). A timer is a process, and a process can be killed: with its launcher's cgroup
+// (ADR 0022 (4)). A timer is a process, and a process can be killed: with its launcher's cgroup
 // before it had a cgroup of its own, by an operator, by an OOM kill; without this its build stayed loaded, its
 // programs attached host-wide, until someone ran gc. A build idle past bpf.linger whose timer it does not show
 // running gets its timer started again, and the timer removes it, off this run's path: removing it
@@ -198,13 +198,13 @@ var startHelperProcess = func(exe string, args ...string) error {
 // alone, the lingering cap included (ExpiredOnly): that is the timer's, the reaper's, stop's and gc's. Best effort.
 //
 // It reads a timer's liveness from the pid in its timer file only (timerRunning), never the kernel's lock table:
-// that read waits for an RCU grace period, and so does every flock on the host while it lasts (note 2026-10-16). A
+// that read waits for an RCU grace period, and so does every flock on the host while it lasts. A
 // build a launcher holds is therefore not told from one whose launchers are gone: one with no timer shown gets one,
 // which waits for its launcher as a timer does (runTimer) and is shown alive to the next Prepare.
 //
 // A bpf.linger of 0 keeps the old rule, under which no build has a timer: the pass starts none (errNoTimer) and
 // removes each build that no launcher holds itself (sweepBuild, which skips a held one), as the sweep before the
-// re-arm did (note 2026-10-17). A timer there would find every build in use busy, every build being past a linger of
+// re-arm did. A timer there would find every build in use busy, every build being past a linger of
 // 0, and take its lock every second for as long as its runs last.
 func (h *Handle) rearmExpired() {
 	defer startphase.Begin(h.opts.Phase, "prepare.rearm")()
@@ -705,7 +705,7 @@ const (
 // Pins under the host's bpf filesystem (bpffs "" or DefaultBPFFS) keep their locks in the host directory only:
 // every tego process on the machine (a launcher's Prepare and last-out removal, a reaper's build duties, the
 // linger timer, gc) locks there for the same pins, so a lock in another directory is one none of them reads, and a
-// sweep would find the build idle under a Prepare that held it (base finding 9, 2026-10-16). That pairing is refused
+// sweep would find the build idle under a Prepare that held it (base finding 9). That pairing is refused
 // with ErrHostState (lockRootOf). A directory of the caller's own goes with pins under a root of its own (tests,
 // fake kernels).
 func openState(bpffs, dir string) (*hoststate.Dir, error) {
@@ -1035,7 +1035,7 @@ func handOff(d *hoststate.Dir, pins pinLayout, hash string, timer *os.File, rele
 // keeps the lock only once the name still leads to the file it locked, as lockBuildExclusiveNB does: a sweep removes
 // a gone build's timer file when no one holds it (removeStaleState), and a lock on the unlinked file would let a
 // second timer lock the new one. Holding it, it writes its pid into the file: that pid is how Prepare's re-arm pass
-// tells that the timer lives (timerRunning, ADR 0022 note 2026-10-16), and stop's pass reads the kernel's lock table
+// tells that the timer lives (timerRunning, ADR 0022), and stop's pass reads the kernel's lock table
 // only for a build whose file shows no live timer (rearmTimers).
 func lockTimer(d *hoststate.Dir, hash string) (f *os.File, busy bool, err error) {
 	name := "bpf-" + hash + ".timer"

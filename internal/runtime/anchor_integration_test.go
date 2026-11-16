@@ -20,8 +20,7 @@ import (
 // with. The owner here is an account with no passwd entry, so no home, and the line belongs beside the
 // ledger root: where that account's own launcher anchored its runs on this root. It used to be nobody, whose
 // home is /nonexistent on Debian and Ubuntu but / on the RHEL family: there the sweep anchored the run in
-// /.tego/chain.log, as AnchorPath's rule says for a home that exists, and the test failed (AlmaLinux 9.8,
-// 2026-11-10).
+// /.tego/chain.log, as AnchorPath's rule says for a home that exists, and the test failed (AlmaLinux 9.8).
 func TestIntegrationRootSweepAnchorsTheOwnersRun(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("needs root: only root can end another account's run")

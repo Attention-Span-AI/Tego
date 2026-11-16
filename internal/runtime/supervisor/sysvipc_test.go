@@ -17,7 +17,7 @@ import (
 var sysVIPCSyscalls = []string{"shmget", "shmat", "shmctl", "semget", "semop", "semtimedop", "semctl",
 	"msgget", "msgsnd", "msgrcv", "msgctl"}
 
-// TestSysVIPCIsRefused is supervisor.md R34 (the refusal): a segment and a queue made outside the run were attached and read inside it at tiers 1 and 2,
+// TestSysVIPCIsRefused: a segment and a queue made outside the run were attached and read inside it at tiers 1 and 2,
 // and the ledger had no line about it. Every System V IPC syscall is now refused with EPERM and recorded refused
 // reason=read-denied rule=sysv-ipc, with the syscall as the op.
 func TestSysVIPCIsRefused(t *testing.T) {
@@ -45,7 +45,7 @@ func TestSysVIPCIsRefused(t *testing.T) {
 	}
 }
 
-// TestSysVIPCUseIsVisibleWhenContinued is supervisor.md R34 (the continue path): a contract that declares ipc: true, and an observe run, has System V
+// TestSysVIPCUseIsVisibleWhenContinued: a contract that declares ipc: true, and an observe run, has System V
 // IPC continued, and the ledger still says so: one gap what=record why=sysv-ipc-<syscall> per binary and
 // syscall, so a learn pass over an observe run sees that the agent needs ipc: true.
 func TestSysVIPCUseIsVisibleWhenContinued(t *testing.T) {
@@ -87,7 +87,7 @@ func TestSysVIPCUseIsVisibleWhenContinued(t *testing.T) {
 	}
 }
 
-// TestKeyringOptInDoesNotOpenSysVIPC is supervisor.md R34 (the two opt-ins are separate): the two opt-ins are separate; keyring: true leaves System V IPC refused.
+// TestKeyringOptInDoesNotOpenSysVIPC: the two opt-ins are separate; keyring: true leaves System V IPC refused.
 func TestKeyringOptInDoesNotOpenSysVIPC(t *testing.T) {
 	f := newFake()
 	l, _ := newTestLoop(t, f, contractPolicy(&agent.Contract{Keyring: true}, nil, nil))

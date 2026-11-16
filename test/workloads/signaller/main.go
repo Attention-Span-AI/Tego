@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Command signaller is a workload for the signal scope below Landlock ABI 6 (supervisor R33): it starts its
+// Command signaller is a workload for the signal scope below Landlock ABI 6: it starts its
 // first argument with "30", kills it through os.Process.Kill (pidfd_send_signal when the runtime's pidfd
 // probe succeeds, kill(2) when it does not), spins long enough for the Go runtime to preempt it with tgkill,
 // and prints "ok" when the child died of the signal.

@@ -235,7 +235,7 @@ func LoadTestTableBytes(path string, data []byte) (*TestTable, []Diagnostic, err
 // holds in all of them (ADR 0019): with none given, in every tier a run of
 // the table can be given (RuleTable.Reach). A row's own tier: narrows it to
 // that tier alone. Rows ran in rt.Tier alone, the tier auto compiled to, so
-// a refusal the run's own tier does not make was certified (limits-check-doctor-cli.md R28).
+// a refusal the run's own tier does not make was certified.
 //
 // It is deprecated with RuleTable.Evaluate (ADR 0031 (1)): call RunBy with internal/policy/decide.Evaluate,
 // which this delegates to through the registered core (RegisterDecider). External
@@ -254,7 +254,7 @@ func (t *TestTable) RunBy(eval Evaluator, rt *RuleTable, cwd string, tiers ...ba
 }
 
 // RunResolved is RunBy with each row's paths first landed by land, the kernel's walk the run decides its own
-// lines on (ADR 0019, amended 2026-09-29 and 2026-10-17): `compile --test` runs a table this way, so a row through
+// lines on (ADR 0019): `compile --test` runs a table this way, so a row through
 // a symlink the contract does not declare is answered on the file the kernel would reach, and an exec of a symlink
 // to a granted binary on that binary (a hard link under another name stays itself). A row's path is walked as the
 // agent's syscall would spell it from cwd, uncleaned, so "lk/.." is taken physically; the part of a path that does
@@ -376,7 +376,7 @@ func (r TestRow) build(cwd, home string, spelled bool) Action {
 	case ActionNetConnect, ActionNetBind, ActionNetSend:
 		// A unix socket. An abstract name (@...) is a name, not a path, and stays as written. A pathname is the one
 		// the agent's connect, sendto or bind passes: "~/" expands as Compile expands a `unix:~/...` entry, and a
-		// relative name joins cwd as the run joins a relative sun_path to the agent's cwd (supervisor R6, R11), so a
+		// relative name joins cwd as the run joins a relative sun_path to the agent's cwd, so a
 		// connect row's unix:out/s.sock is the socket in cwd's out/, not a name no entry can match. RunResolved then
 		// lands it (resolveAction). A net.bind row's name is absolute or ~/ already (ParseEndpoint). The row's own
 		// "unix:" prefix, written or not, is kept: the evaluator reads a path with no host as a unix socket either way.
@@ -502,7 +502,7 @@ func parseTestTable(ds *diags, t *TestTable, file string, root *yaml.Node) {
 	for i := 0; i+1 < len(root.Content); i += 2 {
 		key, val := root.Content[i], root.Content[i+1]
 		// A repeated top-level key kept its last value: a second tests: list replaced the first, whose rows
-		// then never ran (limits-check-doctor-cli.md R28).
+		// then never ran.
 		if seen[key.Value] {
 			ds.errorf(nodePos(file, key), CodeSchema, "key %s appears twice in the test table", key.Value).
 				fix("keep one %s:", key.Value)
@@ -780,7 +780,7 @@ func parseTestRow(ds *diags, file string, node *yaml.Node) (TestRow, bool) {
 		row.Proto = endpointProto
 	}
 	if row.Kind == ActionNetSend {
-		// An unconnected send is a datagram's (supervisor R13b): UDP to a host, a unix datagram to a unix: path. A
+		// An unconnected send is a datagram's: UDP to a host, a unix datagram to a unix: path. A
 		// stream socket's send without a peer is decided as its connect (R12), which a net.connect row asks.
 		switch {
 		case row.Proto != "" && row.Proto != ProtoUDP:
@@ -859,7 +859,7 @@ var scalarRowKeys = map[string]bool{
 // scalarRowValue reports whether val is one plain value, and reports it when it is not. A null (an
 // unquoted `~`, or nothing after the key) is refused as the contract refuses a null list entry: the
 // contract reads `~` as the home directory only when it is quoted, and a row read the unquoted one as
-// home, so the two disagreed on the same spelling (limits-check-doctor-cli.md R28).
+// home, so the two disagreed on the same spelling.
 func scalarRowValue(ds *diags, file, what string, val *yaml.Node) bool {
 	pos := nodePos(file, val)
 	switch {

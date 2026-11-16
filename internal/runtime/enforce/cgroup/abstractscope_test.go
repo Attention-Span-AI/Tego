@@ -20,7 +20,7 @@ type scopedInherited struct {
 func (s scopedInherited) Capabilities() backend.Set { return s.caps }
 
 // TestAbstractScopeComesFromTheInheritedRuleset: tier 2 refuses no abstract unix name itself; the Landlock
-// scope in the ruleset it inherits does, from ABI 6 on (enforce-landlock R7). So a run's
+// scope in the ruleset it inherits does, from ABI 6 on. So a run's
 // net.unix_abstract_scope is that ruleset's answer: present where the inherited handle has the scope, absent
 // below ABI 6 and absent with no inherited ruleset at all, never the static column's.
 func TestAbstractScopeComesFromTheInheritedRuleset(t *testing.T) {
@@ -57,7 +57,7 @@ func TestAbstractScopeComesFromTheInheritedRuleset(t *testing.T) {
 }
 
 // TestExecDenyFollowsTheInheritedRuleset: a contract with exec.anonymous drops tier 1's memfd arm, so the
-// inherited handle reports no exec.deny (enforce-landlock R11a), and any readable binary runs from a memfd
+// inherited handle reports no exec.deny, and any readable binary runs from a memfd
 // that neither the fanotify listener nor the plane's exec row (PlaneExecAnonAllow) refuses. The run's line
 // used to keep the static column's exec.deny there, overstating what the run enforced. An inherited ruleset
 // that reports exec.deny, or one that does not say, leaves the column as it was.

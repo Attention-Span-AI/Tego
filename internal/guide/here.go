@@ -88,14 +88,14 @@ type Opening struct {
 // from this shell (systemd-run --user connects through $XDG_RUNTIME_DIR, which su and sudo -u leave unset or another
 // user's). There, when the user's own logind folder (/run/user/<uid>, a directory the user owns) holds its manager's
 // socket, as after loginctl enable-linger, the command names that folder: XDG_RUNTIME_DIR=/run/user/<uid> before
-// systemd-run (the review's S5: after linger, sudo -u svc tego setup named no command). When this process was started
+// systemd-run (after linger, sudo -u svc tego setup named no command). When this process was started
 // from another user's shell through sudo or su (config.StartedByAnother), the person who reads the line types it in that
 // shell, so the command is that one with sudo -u and this user's name in front: typed without it, it opened the
 // reader's own scope on Ubuntu 24.04 and AlmaLinux 9.8, where tego setup then said ready for the wrong user, and failed
-// on Fedora 44 (acceptance 3, 2026-11-11). Its shell is then bash, whatever $SHELL says: the shell was this process's,
+// on Fedora 44. Its shell is then bash, whatever $SHELL says: the shell was this process's,
 // and the fix: line beside it (cgroup.PlacementFix, cgroup.NoManagerFix) names bash, so both name one command. It starts no program; it looks at PATH, a folder, its sockets and /proc. A
 // process whose real and effective uids differ gets no command. The next: lines of tego setup, doctor, run, watch,
-// test and learn name it where they would otherwise name a command that fails from here (acceptance B, 2026-11-11); tego agents, which runs as root, names DefaultScope.
+// test and learn name it where they would otherwise name a command that fails from here; tego agents, which runs as root, names DefaultScope.
 func OpenScope() Opening {
 	uid := os.Getuid()
 	if uid != os.Geteuid() {
@@ -178,7 +178,7 @@ func ownDir(path string, uid int) bool {
 
 // scopeShells are the login shells OpenScope names in place of bash: a fixed list, so the environment chooses among
 // these words and never supplies one (ADR 0142 (4)). $SHELL was taken by its characters alone, and a nologin or false
-// login shell, or any program by the name of $SHELL's base on PATH, became the command (the review's S1).
+// login shell, or any program by the name of $SHELL's base on PATH, became the command.
 var scopeShells = []string{"bash", "zsh", "fish", "sh", "dash", "ksh", "mksh", "tcsh", "csh"}
 
 // onPath reports whether name is an executable file in one of path's absolute folders.

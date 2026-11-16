@@ -453,7 +453,7 @@ func buildNetwork(v *View, d decl, f *facts, add func(string, Rule), src func(ag
 		g.Default += " Nothing else can connect to its listeners."
 	}
 	// At tier landlock tego decides each datagram on the address it copied and lets the agent's own call send one it
-	// does not refuse (supervisor R13b): a sibling thread can change the address between the two, so the refusal of
+	// does not refuse: a sibling thread can change the address between the two, so the refusal of
 	// every other destination is best effort for datagrams. Under a net: section that holds for every run of the tier,
 	// whatever its entries admit (racesDatagrams).
 	if d.hasNet && f.racesDatagrams() {
@@ -466,10 +466,10 @@ func buildNetwork(v *View, d decl, f *facts, add func(string, Rule), src func(ag
 // racesDatagrams reports whether a run under a net: section can race a datagram past tego's decision: at tier
 // landlock, every run, whatever its entries admit. The socket allowlist admits a UDP and a local datagram socket under
 // every net: section (enforce-landlock's socket(2) arm), and a sendmsg that names no address is continued undecided
-// (supervisor R13b, sendUnaddressed; relayed only on an IP socket under the models[] guard or a net gate), so a sibling
+// (sendUnaddressed; relayed only on an IP socket under the models[] guard or a net gate), so a sibling
 // that writes an address in before the kernel copies the header sends where nothing decided. An addressed datagram
 // is continued once admitted, too: by an entry, the machine's resolver (net.dns mode system), the DNS broker's socket
-// the runtime grants at launch (mode broker), or a socket the run bound beneath a write entry (supervisor R11a), the
+// the runtime grants at launch (mode broker), or a socket the run bound beneath a write entry, the
 // last two in no compiled table. Landlock refuses a raced datagram itself only from ABI 10 for a UDP port no entry
 // declares, from ABI 9 for a pathname socket outside the run's places and from ABI 6 for an abstract name bound
 // outside the run, which this view, given no kernel, does not count on. Not in an observe run, which refuses
@@ -479,7 +479,7 @@ func buildNetwork(v *View, d decl, f *facts, add func(string, Rule), src func(ag
 // on the kernel's own copy. A local socket's datagram is not wholly theirs: below Landlock ABI 9 one to a relative
 // name, which their unix programs leave to tier 1, or to a name that leads elsewhere stays the supervisor's best
 // effort there, and so does every one on a kernel those programs do not load on (before 6.7) where no decision plane
-// decides it (enforce-cgroup-observe §5). This view does not list that residual yet: which runs it holds for turns on
+// decides it. This view does not list that residual yet: which runs it holds for turns on
 // the run's attached hooks (run_start.net_guarantees) and Landlock ABI, which Of is not given.
 func (f *facts) racesDatagrams() bool {
 	return f != nil && f.tier == backend.TierLandlock
@@ -512,7 +512,7 @@ var gateCells = map[gate.Predicate][]string{
 	gate.NetUndeclared:        {agent.BestEffortGateNetUnixDatagram, agent.BestEffortGateNetUnixConnect},
 }
 
-// buildGate lists the gate's scored rules (agent-contract R22a), with the rule keys its lines carry (gate.rules[i]).
+// buildGate lists the gate's scored rules, with the rule keys its lines carry (gate.rules[i]).
 // Scores only add up, so each rule is listed where its score alone puts an action it matches: above the ask threshold
 // among the refusals of its kind; from the allow threshold among the questions, save a command, which tego cannot hold
 // to ask about and refuses; below it as what it adds, among the questions, save a command's, which can only bring a
@@ -541,7 +541,7 @@ func buildGate(v *View, d decl, f *facts, add func(string, Rule), src func(agent
 			r.Sentence = "Can never " + base + " (risk score " + score + ": asking first is not supported yet)"
 		case gr.Score >= allow:
 			group, r.Effect, r.Sentence = GroupAsk, EffectAsk, "Asks you before it "+third+" (risk score "+score+")"
-		case gr.Predicate == gate.ExecMatches: // tego never asks before a program runs (gate.md R4)
+		case gr.Predicate == gate.ExecMatches: // tego never asks before a program runs
 			group, r.Effect, r.Sentence = GroupPrograms, EffectNote, "Adds "+score+" to the risk score when it "+third
 		default:
 			group, r.Effect, r.Sentence = GroupAsk, EffectNote, "Adds "+score+" to the risk score when it "+third
@@ -642,7 +642,7 @@ func buildEnv(v *View, d decl, f *facts, entry func(string, string, item, string
 }
 
 // buildLimits fills the limits group. Read as text, each limit is as written. Compiled, each is what the table holds,
-// the contract's value clamped to this computer's ceilings (agent-contract R11): a limit a ceiling lowers says the
+// the contract's value clamped to this computer's ceilings: a limit a ceiling lowers says the
 // lower value and the one its rules ask for, and a limit only a ceiling sets is listed after the contract's, from the
 // machine config. Limits make no enforcement claim.
 func buildLimits(d decl, f *facts, add func(string, Rule), src func(agent.Pos) Source) {

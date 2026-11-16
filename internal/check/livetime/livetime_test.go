@@ -90,7 +90,7 @@ func TestParseInTheRepeatedHour(t *testing.T) {
 	for _, tc := range []struct {
 		zone, now, until, want string
 	}{
-		// New York, 2026-11-01: 01:59:59 EDT (05:59:59Z) is followed by 01:00:00 EST (06:00:00Z).
+		// New York: 01:59:59 EDT (05:59:59Z) is followed by 01:00:00 EST (06:00:00Z).
 		{"America/New_York", "2026-11-01T05:40:00Z", "01:50", "2026-11-01T05:50:00Z"}, // first pass: the first 01:50
 		{"America/New_York", "2026-11-01T05:55:00Z", "01:50", "2026-11-01T06:50:00Z"}, // first pass, past it: the second
 		{"America/New_York", "2026-11-01T06:40:00Z", "01:50", "2026-11-01T06:50:00Z"}, // second pass: the second
@@ -98,7 +98,7 @@ func TestParseInTheRepeatedHour(t *testing.T) {
 		{"America/New_York", "2026-11-01T04:00:00Z", "Sun 01:50", "2026-11-01T05:50:00Z"},
 		{"America/New_York", "2026-11-01T06:40:00Z", "Sun 01:50", "2026-11-01T06:50:00Z"},
 		{"America/New_York", "2026-11-01T06:55:00Z", "Sun 01:50", "2026-11-08T06:50:00Z"},
-		// Berlin, 2026-10-25: 02:59:59 CEST (00:59:59Z) is followed by 02:00:00 CET (01:00:00Z).
+		// Berlin: 02:59:59 CEST (00:59:59Z) is followed by 02:00:00 CET (01:00:00Z).
 		{"Europe/Berlin", "2026-10-25T00:10:00Z", "02:30", "2026-10-25T00:30:00Z"}, // first pass: the first 02:30
 		{"Europe/Berlin", "2026-10-25T00:40:00Z", "02:30", "2026-10-25T01:30:00Z"},
 		{"Europe/Berlin", "2026-10-25T01:10:00Z", "02:30", "2026-10-25T01:30:00Z"},
@@ -143,13 +143,13 @@ func TestParseInTheSkippedHour(t *testing.T) {
 	for _, tc := range []struct {
 		zone, now, until, want string
 	}{
-		// New York, 2026-03-08: 01:59:59 EST (06:59:59Z) is followed by 03:00:00 EDT (07:00:00Z).
+		// New York: 01:59:59 EST (06:59:59Z) is followed by 03:00:00 EDT (07:00:00Z).
 		{"America/New_York", "2026-03-08T05:00:00Z", "02:30", "2026-03-08T07:00:00Z"},
 		{"America/New_York", "2026-03-08T05:00:00Z", "Sun 02:30", "2026-03-08T07:00:00Z"},
 		{"America/New_York", "2026-03-08T05:00:00Z", "2026-03-08 02:30", "2026-03-08T07:00:00Z"},
 		{"America/New_York", "2026-03-07T12:00:00Z", "tomorrow 02:30", "2026-03-08T07:00:00Z"},
 		{"America/New_York", "2026-03-08T05:00:00Z", "03:00", "2026-03-08T07:00:00Z"},
-		// Berlin, 2026-03-29: 01:59:59 CET (00:59:59Z) is followed by 03:00:00 CEST (01:00:00Z).
+		// Berlin: 01:59:59 CET (00:59:59Z) is followed by 03:00:00 CEST (01:00:00Z).
 		{"Europe/Berlin", "2026-03-28T23:30:00Z", "02:30", "2026-03-29T01:00:00Z"},
 		{"Europe/Berlin", "2026-03-28T23:30:00Z", "Sun 02:00", "2026-03-29T01:00:00Z"},
 		{"Europe/Berlin", "2026-03-28T23:30:00Z", "01:59", "2026-03-29T00:59:00Z"},

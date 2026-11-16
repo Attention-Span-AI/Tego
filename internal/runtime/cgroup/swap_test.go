@@ -10,7 +10,7 @@ import (
 
 const swapsHeader = "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n"
 
-// TestUncappedSwap is ADR 0038's reopened bypass (runtime-launch.md R10): a cgroup with the memory controller
+// TestUncappedSwap is ADR 0038's reopened bypass: a cgroup with the memory controller
 // and no memory.swap.max, on a host whose /proc/swaps lists an active area, can be pushed past its memory cap
 // into swap, and UncappedSwap names the areas. With the file, with no swap on, without the memory controller
 // or with /proc/swaps unreadable, nothing shows the bypass and it names none.

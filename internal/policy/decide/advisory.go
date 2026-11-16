@@ -13,12 +13,12 @@ import (
 )
 
 // This file is the model the seccomp supervisor (internal/runtime/supervisor) records an fs syscall's advisory
-// verdict by at tiers 1 and 2 (docs/p0/supervisor.md R15, R17, R15b): the mechanism's own answer, which
+// verdict by at tiers 1 and 2: the mechanism's own answer, which
 // Landlock and tier 2's listener make good on the continued syscall (ADR 0016 step 1). It keeps the
 // supervisor's own nearest-wins tables, ordered longest path first, which answer without allocating.
 
 // WriteFlagMask is O_WRONLY|O_RDWR|O_CREAT|O_TRUNC: the open flags the supervisor's filter notifies on (R15,
-// and enforce-landlock R12, which applies the same mask in BPF). The event records the flags it saw, not the
+// and the same mask the BPF side applies). The event records the flags it saw, not the
 // flags the filter tested, and under record: full the filter notifies every open and only this mask tells a
 // write-open from a read-open.
 const WriteFlagMask = 0x243
@@ -42,7 +42,7 @@ const OPath = 0x200000
 // OpenReads reports whether an open reads the file it opens: its access mode is not O_WRONLY (O_RDONLY, O_RDWR, or
 // mode 3, which the kernel checks for read permission too), whatever write bit it also carries. An O_RDWR open, or an
 // O_RDONLY one with O_CREAT or O_TRUNC, is a write-open (IsWriteOpen) and a read at once, so a read gate scores it as
-// well as a write gate (gate.md R1, amended 2026-10-16). An O_PATH open reads nothing but is decided as the read
+// well as a write gate. An O_PATH open reads nothing but is decided as the read
 // IsRead takes it to be. O_ACCMODE (3) and O_WRONLY (1) are the same on x86-64 and arm64.
 func OpenReads(flags int) bool {
 	return flags&OPath != 0 || flags&3 != 1
@@ -76,7 +76,7 @@ type AdvisoryRule struct {
 	// DenyRead is a declared deny_read entry: it refuses reads of what lies under it.
 	DenyRead bool
 	// Unenforced marks a deny_read entry tier 1 leaves out of its ruleset because a write, ask or
-	// exec.allow directory entry encloses it (agent.FSRule.Unenforced, enforce-landlock R4). The exec verdict
+	// exec.allow directory entry encloses it (agent.FSRule.Unenforced). The exec verdict
 	// reads it: the kernel refuses the exec open of an undeclared binary under an enforced deny_read and runs
 	// one under an unenforced one.
 	Unenforced bool
@@ -285,7 +285,7 @@ func NearestDenyRead(l *AdvisoryList, p string) *AdvisoryRule {
 // lies in (canonicalEnd), an open's and a truncate's where the declared links lead (Canonical), as Evaluate asks them.
 //
 // A read-open only reaches the supervisor under record: full; under summary and off the filter never
-// notifies one (enforce-landlock R16).
+// notifies one.
 func AdvisoryFS(rt *agent.RuleTable, rules *AdvisoryList, p, op string, flags int, dir bool) (string, record.Verdict, record.Reason) {
 	var tier backend.Tier
 	if rt != nil {
@@ -348,7 +348,7 @@ func AdvisoryFS(rt *agent.RuleTable, rules *AdvisoryList, p, op string, flags in
 	if read {
 		// Only a write or a deny_read entry decides a read: an implicit entry (the ledger root, the contract)
 		// is a write guard that grants no read, and nearer than a deny_read above it (the ledger root beneath
-		// ~/.tego, agent-contract R6a) it made a read Landlock refused read as allowed. A deny_read the
+		// ~/.tego) it made a read Landlock refused read as allowed. A deny_read the
 		// Landlock ruleset leaves unenforced refuses nothing at tier 1 (ADR 0016); tier 2's fanotify listener
 		// refuses it.
 		//
@@ -365,7 +365,7 @@ func AdvisoryFS(rt *agent.RuleTable, rules *AdvisoryList, p, op string, flags in
 		}
 		if d != nil && d.DenyRead && !(d.Unenforced && tier == backend.TierLandlock) {
 			// A declared exec entry strictly inside the target keeps its own fd with READ_FILE at tier 1
-			// (enforce-landlock R5, I11 (1)), so the kernel lets a read of it, or beneath a directory entry,
+			// (I11 (1)), so the kernel lets a read of it, or beneath a directory entry,
 			// through (ExecReadGrant; R15).
 			if tier == backend.TierLandlock {
 				if x, ok := rules.execReadGrant(rt, p); ok {

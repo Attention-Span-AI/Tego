@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Command perfsuite is the tier-3 guest perf suite (docs/p0/enforce-plane.md §10): it drives `tego run` as root
+// Command perfsuite is the tier-3 guest perf suite: it drives `tego run` as root
 // in a KVM guest (test/vm/perf.sh boots one) and measures, in this order,
 //
 //	cold   the first run with no pinned build, per mode, after `tego gc --builds` (ADR 0022's up to 2.3 s), each
-//	       sample attributed per program, map, D7 hook and plane-probe mode (attribution.go; enforce-plane §10.1)
+//	       sample attributed per program, map, D7 hook and plane-probe mode (attribution.go)
 //	start  the warm start latency per mode with the per-phase breakdown Prepare prints under
 //	       TEGO_TEST_PHASE_TIMING (probe, select, load, Landlock compose, fill, arm), against landlock's
 //	fill   Prepare's fill phase at 1, 1000 and one row under the cap
@@ -61,7 +61,7 @@ var (
 	benchBin = flag.String("bench", "/usr/local/bin/openbench", "the openbench binary")
 	execBin  = flag.String("execbench", "/usr/local/bin/execbench", "the execbench binary")
 	base     = flag.String("base", "/tmp/perf", "scratch directory (a tmpfs in the guest)")
-	// name (ADR 0043 C10) is not in the default list: its first guest run (2026-10-20) found its set-over-clear
+	// name (ADR 0043 C10) is not in the default list: its first guest run found its set-over-clear
 	// figures below the run-to-run noise, so it runs when asked (-checks name) until its design resolves them.
 	checks   = flag.String("checks", "cold,start,fill,open,socket,exec,conc", "checks to run, in this order (name: only when asked)")
 	opens    = flag.Int("opens", 200000, "opens per round in the open check (at least 200000 for a stated result)")
@@ -101,7 +101,7 @@ func main() {
 		os.Exit(2)
 	}
 	s := &suite{uid: uid, gid: gid, got: map[string]float64{}, counts: counts, attribution: *coldAttr, settle: *coldSettle}
-	// A table of n rows holds about n descriptors in tier 1's compose (enforce-landlock E11); the guest's hard limit is
+	// A table of n rows holds about n descriptors in tier 1's compose; the guest's hard limit is
 	// 4096, which a 4095-row table exhausts. A real host's is far higher, and a Go program raises its soft limit to
 	// the hard one, so the suite raises the hard one for the launchers it starts.
 	lim := unix.Rlimit{Cur: 1 << 20, Max: 1 << 20}
@@ -447,7 +447,7 @@ func (s *suite) launch(sp spec) (*run, error) {
 		return nil, err
 	}
 	// The run's runtime directory: a launch not run as root makes <XDG_RUNTIME_DIR>/tego and sweeps the directories
-	// the invoking user's crashed runs left there (identity-config.md R27 clause b4), so it is the suite's own, 0700.
+	// the invoking user's crashed runs left there, so it is the suite's own, 0700.
 	if err := os.MkdirAll(filepath.Join(st, "run"), 0o700); err != nil {
 		return nil, err
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// evalNet matches a connect against the compiled net entries. P0's verdicts do
+// evalNet matches a connect against the compiled net entries. Verdicts do
 // not depend on the tier (R15): the root tiers decide host:port in the kernel
 // and the unprivileged tier's supervisor matches the same host:port on a
 // duplicate of the socket before connecting it (SEMANTICS §5), so the answer
@@ -85,8 +85,8 @@ func evalNet(rt *agent.RuleTable, a agent.Action, tier backend.Tier, datagram bo
 		}
 		if proto == agent.ProtoUnix {
 			// A connect that reaches a net.ask unix: scope's place is held for a person at run time (supervisor
-			// R11c), also inside a write entry, so it is refused under the scope's own rule, as an ask compiles in P0
-			// (agent-contract R15), before the write entry around it could certify it: by the scope's declared
+			// R11c), also inside a write entry, so it is refused under the scope's own rule, as an ask compiles,
+			// before the write entry around it could certify it: by the scope's declared
 			// spelling or the place it resolved to at compile (agent.ResolveUnixPlace, the run's own resolution), and so
 			// is a connect whose walk lands there (a.Landed), as the run places the name to ask about it (unixScopeOf).
 			for j := range rt.NetAsk {
@@ -106,7 +106,7 @@ func evalNet(rt *agent.RuleTable, a agent.Action, tier backend.Tier, datagram bo
 	}
 	r := rt.Net[i]
 	if r.Verdict != agent.VerdictAllow {
-		// ask compiles as refused in P0 (SEMANTICS §3.1, R2).
+		// ask compiles as refused (SEMANTICS §3.1, R2).
 		return agent.EvalResult{Verdict: agent.VerdictRefused, Rule: r.RuleName(), Reason: record.ReasonNetNotAllowed}
 	}
 	if proto == agent.ProtoUnix {
@@ -118,7 +118,7 @@ func evalNet(rt *agent.RuleTable, a agent.Action, tier backend.Tier, datagram bo
 // kernelDatagram is res as the run's own kernel programs leave it at tier: where they decide unix names (cgroup's
 // sendmsg_unix, the plane's socket_sendmsg), a datagram whose absolute name is not spelled canonically
 // (agent.Action.Uncanonical) is refused there, and the supervisor, which admitted the name cleaned, answers that
-// refusal itself, rule unmatched, since no row is looked up for such a spelling (supervisor.md R13b, kernelRefusal). A
+// refusal itself, rule unmatched, since no row is looked up for such a spelling (kernelRefusal). A
 // refusal of what the name reaches stays the supervisor's own. Tier cgroup below 6.7 outside a plane mode loads no unix
 // program and admits it as tier landlock does, which this column, asked of no kernel, does not answer.
 func kernelDatagram(res agent.EvalResult, a agent.Action, tier backend.Tier, datagram bool) agent.EvalResult {
@@ -130,7 +130,7 @@ func kernelDatagram(res agent.EvalResult, a agent.Action, tier backend.Tier, dat
 }
 
 // unixLanded is the verdict of a unix pathname whose name the rule named admitted: the run then decides on what its
-// own walk of the name meets in the agent's view (supervisor R11, R11a; SEMANTICS §5 as amended 2026-10-16), in the
+// own walk of the name meets in the agent's view (SEMANTICS §5), in the
 // relay for a connect and in decideLanded for a datagram, and so does this, on a.Walk and a.Landed:
 //   - a name the walk met nothing at (agent.UnixWalkAbsent: ENOENT, ENOTDIR), or failed at otherwise as the agent's
 //     own lookup fails (agent.UnixWalkFailed: EACCES): a connect fails in the agent's lookup and its line keeps the
@@ -270,7 +270,7 @@ func netCovers(r *agent.NetRule, host string, addr netip.Addr, isAddr bool, port
 	case r.CIDR != nil:
 		return isAddr && r.CIDR.Contains(addr.Unmap())
 	case r.Host != "" && strings.EqualFold(r.Host, host):
-		// An entry whose every resolved address R18 dropped admits nothing (agent-contract R18): the run
+		// An entry whose every resolved address R18 dropped admits nothing: the run
 		// connects to the addresses, and the supervisor refuses each. Matching it by name would certify a
 		// connect the run refuses.
 		return !emptiedByR18(r)
@@ -329,8 +329,8 @@ func unixMatch(r *agent.NetRule, target string) bool {
 	return cleanPath(r.UnixPath) == cleanPath(target)
 }
 
-// unixAskPlace is a pathname net.ask unix: scope's place, where the run asks a connect about it (supervisor R11c,
-// unixAskAt): the place it resolved to at compile (NetRule.UnixResolved), else its declared path cleaned; "" for an
+// unixAskPlace is a pathname net.ask unix: scope's place, where the run asks a connect about it
+// (unixAskAt): the place it resolved to at compile (NetRule.UnixResolved), else its declared path cleaned; "" for an
 // abstract name, which no walk lands at.
 func unixAskPlace(r *agent.NetRule) string {
 	switch {
@@ -349,7 +349,7 @@ func unixResolvedMatch(r *agent.NetRule, target string) bool {
 
 // unixUnderWrite reports whether a pathname unix socket no unix: entry names lies under a declared fs.write
 // entry, and names that entry: such a socket is allowed implicitly when a process of the run bound it (SEMANTICS
-// §5, supervisor R11a), which a static evaluation cannot know, so this answers the run's own case, as tier 2's unix
+// §5), which a static evaluation cannot know, so this answers the run's own case, as tier 2's unix
 // program allows it; the run refuses a socket there it did not bind (unix-foreign). The nearest write or deny_read entry
 // decides, by its resolved or declared spelling, as decideUnix matches (NewAdvisoryTables' Both); a watch
 // entry grants nothing. An abstract name or a relative path lies under no entry.
@@ -439,10 +439,10 @@ func UnresolvedHosts(rt *agent.RuleTable, host string, port int, proto string) [
 // as the model. This pure evaluator cannot discover DNS aliases or the host's assigned interfaces; an
 // unallowed literal on a local/literal model's port remains conservatively unresolved.
 //
-// The port reservation (models.port) applies only under a net: section (SEMANTICS §1, amended 2026-10-05).
+// The port reservation (models.port) applies only under a net: section (SEMANTICS §1).
 // A contract with no net: section denies nothing but the model itself, so there another name on the model's
 // port is allowed and a literal is refused unresolved, the answer E18/E19 give a literal only an unresolved
-// entry could match: from 2026-10-01 it refused every HTTPS host of such a contract.
+// entry could match, which would refuse every HTTPS host of such a contract.
 func evalGuard(rt *agent.RuleTable, host string, port int, proto string, explicit bool) (agent.EvalResult, bool) {
 	if proto == agent.ProtoUnix {
 		// A unix path names no models[] endpoint. Every other protocol is guarded, raw and icmp included,

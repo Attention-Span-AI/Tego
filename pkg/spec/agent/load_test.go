@@ -44,7 +44,7 @@ func render(ds []Diagnostic) string {
 
 // TestGoldenBad loads every testdata/bad/*.yaml and compares the rendered
 // diagnostics with the .golden file next to it (§10).
-// agent-contract.md R3 (name-too-long, bad-name), R4 and E11 (empty-command, empty-command0), E1 (empty), E5 (extends-cycle), E6 (extends-not-found), E7 (extends-escape), E15 (extends-too-deep), E20 (bad-cidr), E26 (mcp-duplicate-name), E32 (tokens-overflow), E33 (bad-memory-unit) and I1 (unknown-field, unknown-nested-field) each have a golden here.
+// name-too-long, bad-name, empty-command, empty-command0, empty, extends-cycle, extends-not-found, extends-escape, extends-too-deep, bad-cidr, mcp-duplicate-name, tokens-overflow, bad-memory-unit, unknown-field and unknown-nested-field each have a golden here.
 func TestGoldenBad(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("testdata", "bad", "*.yaml"))
 	if err != nil {
@@ -94,7 +94,7 @@ func TestGoldenBad(t *testing.T) {
 
 // TestGoldenGood loads every testdata/good/*.yaml, expects no error and
 // compares the warnings with the .golden file.
-// agent-contract.md E2 and E3: bom-crlf loads clean, the BOM stripped and the CRLF line numbers unaffected.
+// Bom-crlf loads clean, the BOM stripped and the CRLF line numbers unaffected.
 func TestGoldenGood(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join("testdata", "good", "*.yaml"))
 	if err != nil {

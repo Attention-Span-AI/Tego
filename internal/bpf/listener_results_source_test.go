@@ -38,7 +38,7 @@ func TestListenerResultsRequireCurrentExplicitSlot(t *testing.T) {
 		t.Fatal("listener result producer has no bind tracepoint entry")
 	}
 	producer := src[end : bindEntry+end]
-	// An io_uring op's producer writes only a plane-marked operation's line (enforce-plane §2.20).
+	// An io_uring op's producer writes only a plane-marked operation's line.
 	guard := strings.Index(producer, "if (tego_listener_results_on(run) && (marked || !uring))")
 	ring := strings.Index(producer, "ring = tego_ring_of(")
 	cleanup := strings.Index(producer, "sc->listen_sock = 0;")

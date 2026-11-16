@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestRootWalkMatchesEvaluate is TIER3-PLAN §5's parity on the model: the walk over RootRows alone, the one the
+// TestRootWalkMatchesEvaluate is parity on the model: the walk over RootRows alone, the one the
 // plane makes in the kernel, answers every fs action on every canonical path of every generated table as
 // Evaluate's bpflsm column does — the verdict, and for a refusal the rule and reason the line carries.
 func TestRootWalkMatchesEvaluate(t *testing.T) {

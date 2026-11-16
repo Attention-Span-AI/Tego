@@ -42,7 +42,7 @@ func runDir(t *testing.T, parent, name string, held bool) {
 // directory with a free lock); it passes an unchanged parent, an absent one, an entry a live run made, a launch's
 // entry still being made (whose lock it never takes, as the sweep never does: its launcher's own flock would fail),
 // a live run's entry gone, and an entry gone that no sweep removes (not a run id, no lock file, a file, a link, a
-// directory others can write), which a test's sweep cannot have done (identity-config.md R27 clause b4).
+// directory others can write), which a test's sweep cannot have done.
 func TestGuardRuntimeReportsWhatATestRunLeaves(t *testing.T) {
 	const id, id2 = "r-00000000-0000000000000-aaaaaa", "r-00000000-0000000000000-bbbbbb"
 	type guardCase struct {

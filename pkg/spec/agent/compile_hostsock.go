@@ -94,7 +94,7 @@ func x11Sockets(root string) []string {
 // host_sockets: true is the opt-out, all or nothing like keyring: true, and the one default whose reach depends on
 // what else runs on the machine, so compile names the well-known daemon sockets that exist here and what each one
 // gives, docker.sock as root-equivalent. Abstract names are the other half: with the opt-out the Landlock scope
-// still refuses an abstract name bound outside the run at ABI 6 (Linux 6.12) and later (enforce-landlock R7), and
+// still refuses an abstract name bound outside the run at ABI 6 (Linux 6.12) and later, and
 // below that nothing does. Compile cannot tell the ABI (it makes no call beyond read-only file and DNS I/O, I6), so
 // the warning states the condition. The fix steers to a net: section naming the one socket the agent needs.
 //

@@ -56,7 +56,7 @@ func TestUprobeFactory(t *testing.T) {
 
 // TestUprobeBodiesCanBeSynced pins the store the factory hands the uprobe source. The source syncs whatever store has
 // a Sync and cannot sync one without, so a store that lost the method would leave every captured body outside
-// record-ledger R6's barrier with nothing failing. A run always has a writer and so a counter, and the store it then
+// the ledger's durability barrier with nothing failing. A run always has a writer and so a counter, and the store it then
 // gets must also count what it adds, or the bodies stand outside record.max_run_bytes. The store for a ref with no
 // counter need only be syncable.
 func TestUprobeBodiesCanBeSynced(t *testing.T) {

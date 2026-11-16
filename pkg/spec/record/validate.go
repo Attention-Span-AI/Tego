@@ -118,13 +118,13 @@ func AttributedByTime(thread string, step int) *Attribution {
 }
 
 // AttributedByTID is the attribution of an action its own thread made while that thread had a step: the thread is
-// one a capture source named by its tid, so the step is the one that thread's own model request opened (capture-derive R42).
+// one a capture source named by its tid, so the step is the one that thread's own model request opened.
 func AttributedByTID(thread string, step int) *Attribution {
 	return &Attribution{Thread: thread, Step: step, Confidence: ConfidenceLikely, Method: MethodTID}
 }
 
 // AttributedByToolUse is the attribution of an action that fell inside exactly one reply's tool window: the reply on
-// thread, in step, asked for the tool_use toolUseID and had not been told its result (capture-derive R42, E29).
+// thread, in step, asked for the tool_use toolUseID and had not been told its result.
 func AttributedByToolUse(thread string, step int, toolUseID string) *Attribution {
 	return &Attribution{Thread: thread, Step: step, ToolUseID: toolUseID, Confidence: ConfidenceLikely, Method: MethodToolID}
 }
@@ -151,7 +151,7 @@ func IsAgentID(s string) bool {
 	return true
 }
 
-// Validate applies the v1 rules of docs/p0/record-ledger.md §2.1 and returns ErrInvalidEvent (wrapped with
+// Validate applies the v1 rules and returns ErrInvalidEvent (wrapped with
 // the failing field) on the first violation. MarshalLine calls it; readers call it on decoded events when they
 // need the semantic guarantees Decode deliberately does not enforce.
 func (e *Event) Validate() error {

@@ -4,17 +4,18 @@ Developer tooling only, never imported by the binary, and exempt from checkexits
   FILE`: 300 ended runs of 500 lines, one of 200,000 lines, one live run), every run through the ledger's own Writer
   with a valid chain; docs/DASHBOARD.md, "Read model, bounds and speed". The live run reads as running only while a
   process holds its lock (`flock <root>/<run>/lock sleep 1h`), as lost otherwise.
-- `rulecheck/`: reads the rule IDs of docs/p0/*.md and fails on a duplicate ID, a reference to a lettered part or rule the
+- `rulecheck/`: fails on a broken relative Markdown link and on a Markdown file cited by a bare name the repository does
+  not hold; where the rule specs are present, also on a duplicate rule ID or a reference to a lettered part or rule the
   named document does not define, and reports which rules no test mentions (CI's build-test; `go run ./tools/rulecheck`).
 - `affected/`: the change-scoped selection behind `make precommit-affected BASE=<rev>` (`go run ./tools/affected
   -base REV [-plan]`): the changed files since the merge base, classified (global input → the full gate, Markdown
   alone → the docs gate, else the packages the change reaches per build), plus the source scanners found by scanning
   test code and the suites whose tests build a binary whose closure changed; it prints what it selected and why.
   For in-between checks only; merges keep the full gate (docs/OPERATIONS.md, "Precommit modes").
-- `checkexits/`: `os.Exit` only in `cmd/`, no bare exit code in `internal/cli` (limits-check-doctor-cli.md I6 and
-  I9), read from the syntax tree; run by `scripts/check-exits.sh`.
-- `isocheck/`: no test harness can write the invoking user's own `~/.tego` or `~/.bash_history` (identity-config.md
-  R27): an `os.Environ()` taken before `writeMachineConfig` sets the isolation variables, a `TEGO_CONFIG` entry with
+- `checkexits/`: `os.Exit` only in `cmd/`, no bare exit code in `internal/cli` 
+  read from the syntax tree; run by `scripts/check-exits.sh`.
+- `isocheck/`: no test harness can write the invoking user's own `~/.tego` or `~/.bash_history`:
+  an `os.Environ()` taken before `writeMachineConfig` sets the isolation variables, a `TEGO_CONFIG` entry with
   no `TEGO_TEST_CHAIN_ANCHOR`, a build of `cmd/tego` without `tegotesthooks`, a command that runs the tego
   binary with the inherited environment (GO-5), a script that assigns `TEGO_CONFIG`
   without the anchor and own-log variables, a script that builds `cmd/tego` without the tag or runs a tego binary

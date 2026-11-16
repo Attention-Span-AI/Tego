@@ -29,7 +29,7 @@ type Prices interface {
 	Cost(u ledger.TokenUsage) (float64, bool)
 }
 
-// Report is one run's P0 measurements (P0-DESIGN §2.12, R18-R23), recomputed from the ledger alone.
+// Report is one run's measurements (R18-R23), recomputed from the ledger alone.
 // It never shares state with a live limits.Watcher — the duplicated accumulation is deliberate
 // (C1) and is what lets measure work on a still-growing or crashed-mid-record run.
 type Report struct {
@@ -147,7 +147,7 @@ func ComputeAt(ctx context.Context, r *ledger.Reader, p Prices, nowMonoNS uint64
 
 		// A window that touches a gap event is unknown, not idle. A window starts at the largest
 		// reading so far, never at the line before's: a producer's line keeps its capture-time reading
-		// (record-ledger.md §4 Append), so mono_ns can go back along seq, and measuring from the older
+		// so mono_ns can go back along seq, and measuring from the older
 		// reading overstated idle by the capture latency. status takes its running maximum the same way.
 		if !prevWasGap && e.Kind != record.KindGap && prevMono > 0 && e.MonoNS > prevMono {
 			if d := time.Duration(e.MonoNS - prevMono); d > rep.IdleMax {
@@ -297,7 +297,7 @@ func CostText(v float64) string {
 // row is one line of the table view: a label and its value.
 type row struct{ label, value string }
 
-// rows is the report in the order Table prints it — the P0 column set of P0-DESIGN §2.12, then the run's
+// rows is the report in the order Table prints it — the column set, then the run's
 // resource peaks from run_end (R-res), each "unknown" where the run recorded none and "unknown until the run
 // ends" while it has no run_end. The ask columns (asked, answered, wait, replanned) are not here: the
 // receipt reports a run's asks. The one ask figure that is, alternates (ADR 0057 D1), is counted wherever a run held

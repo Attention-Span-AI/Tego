@@ -13,8 +13,6 @@ import (
 // TestExecQuietReadsNoArgv: under record: off an allowed exec writes no line, so its argv, up to 8192 pointers
 // and 128 KiB read from the target while its exec is held, is not read at all; the verdict never depends on it.
 // A refused exec, which is recorded, still reads it, as does every exec under record: full.
-//
-// Spec: docs/p0/supervisor.md R16.
 func TestExecQuietReadsNoArgv(t *testing.T) {
 	nr := nrFor(t, "execve")
 	long := make([]string, 40)
@@ -51,8 +49,6 @@ func TestExecQuietReadsNoArgv(t *testing.T) {
 // is NULL, unreadable or empty is observed and continued. That is not a refusal, so record: off writes
 // nothing for it, as emitFS drops the same case for a file operation. The exec was quiet only when allowed
 // or a PATH-search candidate, and wrote `exec observed rule=args-unreadable`.
-//
-// Spec: docs/p0/record-ledger.md R12, docs/p0/supervisor.md R16.
 func TestExecRecordOffUnreadablePathWritesNothing(t *testing.T) {
 	nr := nrFor(t, "execve")
 	for _, tc := range []struct {

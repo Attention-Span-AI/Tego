@@ -642,7 +642,7 @@ func TestReadBoundedRefusesEAGAIN(t *testing.T) {
 // in the home directory when it is one). /proc/kmsg is a regular file of size 0, so the O_PATH and fstat
 // checks passed it, and Go's poller parked the read on its EAGAIN. Compile must return promptly for every
 // user; the case itself needs root, since only root opens /proc/kmsg for reading, and runs in the KVM guest
-// (test/vm/kvm-run.sh, as docs/p0/agent-contract.md §10 says).
+// (test/vm/kvm-run.sh).
 func TestDenyWriteKernelFileLinks(t *testing.T) {
 	f := newFixture(t)
 	work := filepath.Join(f.project, "work")

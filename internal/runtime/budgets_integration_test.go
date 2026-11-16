@@ -51,7 +51,7 @@ func runModelAgent(t *testing.T, f *fixture, cfg, agentBin, caFile string) (int,
 	return exitCodeOf(t, err), string(out), events(t, dirs[0]), filepath.Base(dirs[0])
 }
 
-// assertStoppedBy checks the three things P0-DESIGN §12.4 names: exit 124, one limit event naming the
+// assertStoppedBy checks three things: exit 124, one limit event naming the
 // ceiling, and run_end reason=limit; and that the agent was stopped short of the calls it wanted.
 func assertStoppedBy(t *testing.T, code int, out string, evs []*record.Event, which string) record.LimitPayload {
 	t.Helper()
@@ -75,10 +75,10 @@ func assertStoppedBy(t *testing.T, code int, out string, evs []*record.Event, wh
 	return lim
 }
 
-// TestIntegrationRepeatsStopALoopingAgent is P0-DESIGN §12.4's first half on real model traffic: the
+// TestIntegrationRepeatsStopALoopingAgent is the repeat detector on real model traffic: the
 // model answers every call with the same tool_use, the forwarder captures each exchange, derive turns
 // each response into a decision with the tool and the hash of its input, and limits.repeats: 3 stops the
-// run on the third identical decision (limits-check-doctor-cli.md R5), with exit 124 and a limit event.
+// run on the third identical decision, with exit 124 and a limit event.
 //
 // The tool_use ids differ call to call, as a real model's do; R5 compares the tool and the input bytes,
 // never the id, so that is no escape from the detector.
@@ -120,8 +120,8 @@ func TestIntegrationRepeatsStopALoopingAgent(t *testing.T) {
 	}
 }
 
-// TestIntegrationACostBudgetStopsTheRun is §12.4's second half: "a $25 budget stops a run with exit 124
-// and a limit event". The price table makes each captured response cost $14 (40 input tokens at
+// TestIntegrationACostBudgetStopsTheRun: a $25 budget stops a run with exit 124
+// and a limit event. The price table makes each captured response cost $14 (40 input tokens at
 // $100,000/MTok, 20 output at $500,000/MTok — prices chosen so the arithmetic is exact, not realistic),
 // so the second response crosses cost_usd: 25 (R2).
 //

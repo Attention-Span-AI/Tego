@@ -45,7 +45,7 @@ func TestPinLayout(t *testing.T) {
 	}
 }
 
-// TestCheckBPFFS covers enforce-cgroup-observe.md §6 E30: a path that is not a bpf filesystem is its own error with its own fix, never
+// TestCheckBPFFS: a path that is not a bpf filesystem is its own error with its own fix, never
 // folded into the verifier-rejection bucket.
 func TestCheckBPFFS(t *testing.T) {
 	t.Parallel()
@@ -104,7 +104,7 @@ func TestPinCreateAndRemove(t *testing.T) {
 	}
 }
 
-// TestPinRemovalKeepsMapsUnderALinkItCannotUnpin is R14 as amended 2026-10-05 (v73 review, plane-2): a build's
+// TestPinRemovalKeepsMapsUnderALinkItCannotUnpin is R14: a build's
 // pins go links first, and a link pin that cannot be removed keeps the programs and maps it runs over. Maps first
 // left a link over maps no launcher held, which the next launcher, re-creating the maps, adopted and recorded
 // nothing through. A non-empty directory stands in for a pin whose unlink fails, as root too.

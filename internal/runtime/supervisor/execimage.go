@@ -21,7 +21,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/policy/execmatch"
 )
 
-// fileID is a file's identity: the device and inode a Landlock rule is bound to (enforce-landlock R3 opens
+// fileID is a file's identity: the device and inode a Landlock rule is bound to (the Landlock backend opens
 // each exec entry and grants EXECUTE on what it reaches, not on its name).
 type fileID struct{ dev, ino uint64 }
 
@@ -1537,7 +1537,7 @@ func (k sysKernel) FSTarget(q pathQuery) (fsLanding, error) {
 // directory) is reached from this process's root through no symlink at all (RESOLVE_NO_SYMLINKS, magic links
 // included), so no component of the spelling can lead anywhere else. It holds only for the task's own lookup
 // when the task shares this process's root and mount tree, which a run's task does: the filter refuses a new
-// mount or user namespace (enforce-cgroup-observe E24) and no_new_privs leaves chroot(2) to no one. A pathname
+// mount or user namespace and no_new_privs leaves chroot(2) to no one. A pathname
 // with a ".." component or a trailing slash, and a descriptor's own file, are never answered here (R6's spelling
 // is cleaned lexically), and a dangling final symlink an O_CREAT open would follow is not either.
 func fsTargetIsSpelling(q pathQuery) bool {
@@ -1661,7 +1661,7 @@ func fsTargetInRoot(q pathQuery) (at string, ok bool, err error) {
 // process's view, names another inode or none: a file the task sees by a name this process cannot. It is an
 // errOtherView, and every verdict reads it as one; only a gate tells the two apart, since a nameless object
 // (a pipe, a socket, an unlinked file) has no name a predicate could match, while this one has a name the
-// gate cannot read (gate.md R1, ADR 0041 D4).
+// gate cannot read (ADR 0041 D4).
 var errLinkedElsewhere = fmt.Errorf("%w: a linked file this process cannot see by its path", errOtherView)
 
 // errUnlinkedFile is a nameless object that had a name: a regular file with no link left on a filesystem with names

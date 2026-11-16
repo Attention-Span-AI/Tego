@@ -29,7 +29,7 @@ type ChainAnchor interface {
 // DefaultAnchorPath is the anchor a Writer uses when its caller names none: the chain.log next to the
 // ledger root (<ledger_root>/<run>/ → <ledger_root>/../chain.log). The product always names one — the
 // invoking user's ~/.tego/chain.log whatever ledger_root is, and this same file only for an account
-// with no home (AnchorPath, P0-DESIGN §3.3) — so this default is what tests and fixtures get; for the
+// with no home (AnchorPath) — so this default is what tests and fixtures get; for the
 // default ledger_root the two coincide.
 func DefaultAnchorPath(runDir string) string {
 	return filepath.Join(filepath.Dir(filepath.Clean(runDir)), "..", ChainLogFile)
@@ -190,7 +190,7 @@ func anchorHeads(f io.ReaderAt, runs []string) map[string]AnchorHead {
 // directory is reached through openDir, created when flags has O_CREAT. With O_CREAT the file is created by
 // an O_CREAT|O_EXCL open, and only a file this call created is handed to the directory's owner
 // (openFileAt): a chain.log that was already there keeps its owner, since the user could have renamed a
-// file of root's to that name, and chowning it would give them its contents (record-ledger.md §3).
+// file of root's to that name, and chowning it would give them its contents.
 func openAnchor(dir, name string, flags int) (*os.File, error) {
 	create := flags&unix.O_CREAT != 0
 	d, err := openDir(dir, create)

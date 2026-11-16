@@ -44,7 +44,7 @@ func TestComputeRetryKey(t *testing.T) {
 	}
 }
 
-// The SDK's counter (capture-derive.md E29, edge case #29).
+// The SDK's counter (edge case #29).
 func TestRetryCount(t *testing.T) {
 	cases := []struct {
 		value string
@@ -73,7 +73,7 @@ func TestRetryCount(t *testing.T) {
 }
 
 // The cache keeps the last 256 requests and forgets one past the TTL, which is where a
-// same-key request stops being a retry and becomes a new step (capture-derive.md R24).
+// same-key request stops being a retry and becomes a new step.
 func TestRetryCacheWindow(t *testing.T) {
 	c := newRetryCache(4, 650*time.Second)
 	key := func(n byte) RetryKey {

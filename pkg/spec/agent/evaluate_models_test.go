@@ -12,7 +12,7 @@ import (
 
 // TestEvaluateRefusesAModelEndpointWithNoNetSection is SEMANTICS §1's exception to "no net: — deny
 // nothing": under capture: forwarder a direct connection to a declared models[] endpoint is refused, because
-// the forwarder is the only capture there is (capture-derive R38). With no net: section, Evaluate answered
+// the forwarder is the only capture there is. With no net: section, Evaluate answered
 // allow/unmatched for it, the supervisor continued it, and kt2's forwarder half reached the model stand-in
 // straight past the forwarder in every tier. Every other destination stays allowed; a net: section and the
 // other capture modes are unchanged.
@@ -77,8 +77,8 @@ func TestEvaluateRefusesAModelEndpointWithNoNetSection(t *testing.T) {
 			EvalResult{Verdict: VerdictRefused, Rule: UnresolvedRule, Reason: record.ReasonNetNotAllowed}},
 		{"the model address on another port", Action{Kind: ActionNetConnect, Host: "127.0.0.1", Port: 8080},
 			EvalResult{Verdict: VerdictAllow, Rule: UnmatchedRule}},
-		// With no net: section another name on the model's port is not refused (SEMANTICS §1, amended
-		// 2026-10-05): the 2026-10-01 port reservation refused github.com:443, pypi.org:443 and every other
+		// With no net: section another name on the model's port is not refused (SEMANTICS §1):
+		// a port reservation would refuse github.com:443, pypi.org:443 and every other
 		// HTTPS host of a contract that declares no network policy at all.
 		{"another host on the model's port", Action{Kind: ActionNetConnect, Host: "github.com", Port: 443},
 			EvalResult{Verdict: VerdictAllow, Rule: UnmatchedRule}},
@@ -205,8 +205,8 @@ func TestGuardAddrMatches(t *testing.T) {
 
 // A named model's port is reserved to the forwarder only under a net: section, where an undeclared destination
 // net.allow does not admit is refused models.port rather than unmatched. With no net: section the port is not
-// reserved (SEMANTICS §1, amended 2026-10-05): another name there is allowed, a literal the pure evaluator cannot
-// place is refused unresolved as before 2026-10-01, and compile warns nothing about the port.
+// reserved (SEMANTICS §1): another name there is allowed, a literal the pure evaluator cannot
+// place is refused unresolved, and compile warns nothing about the port.
 func TestNamedModelPortRequiresExplicitAllowance(t *testing.T) {
 	f := newFixture(t)
 	const base = "version: 0\nname: guarded\ncommand: [python]\ncapture: forwarder\nmodels:\n  - { provider: anthropic, host: model.example, port: 443 }\n"

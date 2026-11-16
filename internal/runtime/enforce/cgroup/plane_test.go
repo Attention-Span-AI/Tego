@@ -98,7 +98,7 @@ func callsFrom(calls []string, first string) []string {
 	return calls[i:]
 }
 
-// TestPlaneRunPrepareArmDetach is a plane-mode run's whole life (enforce-plane R15, R16, R18, R22; TIER3-PLAN T6):
+// TestPlaneRunPrepareArmDetach is a plane-mode run's whole life:
 // no fanotify group; the slot's plane maps made and cleared beside the slot's purge, the rows filled last in Prepare
 // with the run's gen; the run-set row, inserted by Arm, names the mode; the capability line keeps read and exec
 // denial; Detach clears the slot's plane rows once the run-set row is gone.
@@ -166,7 +166,7 @@ func TestPlaneRunPrepareArmDetach(t *testing.T) {
 	}
 }
 
-// TestPlaneFillCarriesTheUnixPolicy is enforce-plane R14's Prepare half (TIER3-PLAN T15): the fill writes the slot's
+// TestPlaneFillCarriesTheUnixPolicy is the unix policy's Prepare half: the fill writes the slot's
 // unix policy with the run's gen on every plane run, since a step D hook that finds none refuses; it decides only
 // where the plane's unix hooks are loaded (below 6.7) and the contract has a net: section, and it names this
 // launcher's cgroup as the relay's, as Attach does for connect_unix. A launcher inside the run's own cgroup fails
@@ -258,8 +258,8 @@ func TestPlaneFallsBackToTheListenerForATableItCannotHold(t *testing.T) {
 	}
 }
 
-// TestPlaneHoldsADenyWriteTargetDeclaredThroughALink: a deny_write target declared through a symlink (.git/hooks ->
-// ../real-hooks) keys the link at its own inode (PlaneRows.NoFollow, enforce-plane R11), so the link's row and its
+// TestPlaneHoldsADenyWriteTargetDeclaredThroughALink: a deny_write target declared through a symlink (.git/hooks ->.
+// ./real-hooks) keys the link at its own inode (PlaneRows.NoFollow), so the link's row and its
 // target's are two files, not one under two names: the shared-inode check stats a NoFollow row without following, as
 // the fill opens it. Two hard links named beside it are still one file under two names.
 func TestPlaneHoldsADenyWriteTargetDeclaredThroughALink(t *testing.T) {
@@ -415,7 +415,7 @@ func TestExecKeyRows(t *testing.T) {
 	}
 }
 
-// TestSlotHeaderSaysWhatTheRunDecides is enforce-plane R6's header: the run's gen, the rows written, and a flag per
+// TestSlotHeaderSaysWhatTheRunDecides: the slot header holds the run's gen, the rows written, and a flag per
 // thing the contract decides beyond its fs rows; a section the contract lacks is a flag left clear, and step D's
 // unix flag needs both the contract's net: section and this plane's unix hooks.
 func TestSlotHeaderSaysWhatTheRunDecides(t *testing.T) {
@@ -618,7 +618,7 @@ func TestSweepTakesABuildsPlanesWithIt(t *testing.T) {
 }
 
 // TestPlanPlaneFillSkipsAKeyedPathThatDoesNotExist: a keyed path nothing holds because it does not exist keys no
-// row, as the Landlock plan skips it (enforce-landlock E9); one that exists and nothing holds still fails.
+// row, as the Landlock plan skips it; one that exists and nothing holds still fails.
 func TestPlanPlaneFillSkipsAKeyedPathThatDoesNotExist(t *testing.T) {
 	t.Parallel()
 	rows, held, id := fillFixture()
@@ -633,8 +633,8 @@ func TestPlanPlaneFillSkipsAKeyedPathThatDoesNotExist(t *testing.T) {
 	}
 }
 
-// TestRecordedMaskIsTheAttachedFexits is the backend's half of the record fallback (enforce-plane §7, R23;
-// TIER3-PLAN T9b): the plane's recorder mask names exactly the recorder fexit programs among the build's shared
+// TestRecordedMaskIsTheAttachedFexits is the backend's half of the record fallback:
+// the plane's recorder mask names exactly the recorder fexit programs among the build's shared
 // tracing links, by their pins, so a hook whose fexit the build holds no link of is sampled by the plane, and one it
 // holds is not. With every trace program linked, as newBPFKernel leaves a build, every fexit hook is set.
 func TestRecordedMaskIsTheAttachedFexits(t *testing.T) {
@@ -660,7 +660,7 @@ func TestRecordedMaskIsTheAttachedFexits(t *testing.T) {
 	}
 }
 
-// TestPlaneDetachKeepsACarriedSlotsRows is enforce-plane R6's Detach half: a run-set row Detach could not remove
+// TestPlaneDetachKeepsACarriedSlotsRows is the slot header's Detach half: a run-set row Detach could not remove
 // still carries the slot and decides for its tasks, so the slot's plane rows and header stay with it. Cleared, the
 // row's tasks would be refused everything; kept, they are decided by their own run's rows until the reaper or the
 // slot's next Prepare removes both.
@@ -716,7 +716,7 @@ func TestPlaneFillCarriesTheSlotEpoch(t *testing.T) {
 	}
 }
 
-// TestPlaneCountersAreTheSlotsNamedCounts is enforce-plane §2.8's counters half at the backend: PlaneCounters reads
+// TestPlaneCountersAreTheSlotsNamedCounts checks the plane's counters at the backend: PlaneCounters reads
 // the run's own slot, before Detach clears anything, and names every counter by its gap why (the runtime writes one
 // gap what=enforce line per non-zero one); a read that fails is an error, never zeros; a run with no plane reads
 // nothing.

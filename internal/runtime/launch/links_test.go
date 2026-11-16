@@ -31,7 +31,7 @@ var launchLinks = map[string]bool{
 
 // launchDepsTarget is the package budget for `go list -deps` of launch, the standard library
 // included. It is a target, not a gate: a miss prints TARGET-MISS with the number. It is missed (119): ADR 0031's
-// 2026-10-19 note on (a) attributes the excess to pkg/spec/identity's crypto/sha256 and regexp, reached directly
+// note on (a) attributes the excess to pkg/spec/identity's crypto/sha256 and regexp, reached directly
 // and through internal/platform/proc, and to the ChildSpec frame's encoding/json, and leaves it open for TCB-CHECK.
 const launchDepsTarget = 80
 

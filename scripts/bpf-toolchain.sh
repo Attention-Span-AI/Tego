@@ -7,7 +7,7 @@
 # The pin is LLVM 20.1.8's release build together with the C library it runs on. The release clang is linked
 # dynamically against the host's glibc, and its output depends on that glibc: the same clang, on the same input
 # and flags, made trace_bpfel.o and trace_bpfeb.o with other bytes of the same size on Ubuntu 24.04's glibc 2.39
-# than on Ubuntu 25.10's 2.42 (measured 2026-09-24; the GitHub runner is 24.04, so bpf-gen failed on objects made
+# than on Ubuntu 25.10's 2.42 (the GitHub runner is 24.04, so bpf-gen failed on objects made
 # on 25.10). So clang and llvm-strip run here through the loader and libraries of Ubuntu 24.04's libc6 and zlib1g,
 # fetched and checked like the LLVM tarball, with no library of the host's, and with the environment variables that
 # change how that glibc allocates (GLIBC_TUNABLES, MALLOC_*) or what it loads (LD_PRELOAD, LD_AUDIT) removed, since
@@ -23,7 +23,7 @@ LLVM_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.8/
 LLVM_SHA256=1ead36b3dfcb774b57be530df42bec70ab2d239fbce9889447c7a29a4ddc1ae6
 # Each package is fetched from the archive's pool first, a mirror network, and from Launchpad's +files URL when that
 # fails: the pool drops an update once a newer one supersedes it, and Launchpad keeps a published package for good
-# but answered 503 to a CI runner (2026-09-24). A package the pool has dropped takes a dated snapshot.ubuntu.com URL
+# but answered 503 to a CI runner. A package the pool has dropped takes a dated snapshot.ubuntu.com URL
 # in its place, which does not change. Whichever answers, the sha256 decides.
 LIBC_URLS="http://archive.ubuntu.com/ubuntu/pool/main/g/glibc/libc6_2.39-0ubuntu8.9_amd64.deb https://launchpad.net/ubuntu/+archive/primary/+files/libc6_2.39-0ubuntu8.9_amd64.deb"
 LIBC_SHA256=ff5557d99b51f761c4b7c92368b9cc45565eda17df9bf9eb4b134d09825008be

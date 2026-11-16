@@ -86,9 +86,9 @@ func breadcrumbAddr(br ebpfbindings.Breadcrumb) netip.Addr {
 }
 
 // KernelDatagrams is what this run's own programs answer an addressed datagram whose destination they refuse, for
-// the supervisor (supervisor.Options.KernelDatagrams; §5 R7, supervisor.md R13b): unixErrno for a unix name, EPERM
+// the supervisor (supervisor.Options.KernelDatagrams; §5 R7): unixErrno for a unix name, EPERM
 // where cgroup/sendmsg_unix is attached (6.7+) and EACCES where the decision plane's socket_sendmsg decides unix names
-// in its place (enforce-plane §2.11), and udpErrno for a UDP destination, EPERM where cgroup/sendmsg4 and sendmsg6
+// in its place, and udpErrno for a UDP destination, EPERM where cgroup/sendmsg4 and sendmsg6
 // are attached. Each is 0 where no program of the run decides that family, and both are for a contract with no net:
 // section, whose programs refuse nothing (Unrestricted), and for a handle not prepared, or detached or closed, as
 // NetworkGuarantees reports. The supervisor refuses with that errno a datagram the program would refuse, so the
@@ -105,7 +105,7 @@ func (h *Handle) KernelDatagrams() (unixErrno, udpErrno unix.Errno) {
 	case sockAddr:
 		unixErrno = unix.EPERM // a cgroup sock_addr program's refusal
 	case g.UnixDestination:
-		unixErrno = unix.EACCES // the plane's step-D hooks, which return 0 or -EACCES (enforce-plane R2)
+		unixErrno = unix.EACCES // the plane's step-D hooks, which return 0 or -EACCES
 	}
 	if g.UDPDestination {
 		udpErrno = unix.EPERM

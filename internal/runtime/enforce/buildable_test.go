@@ -27,7 +27,7 @@ func withObjects(t *testing.T, present bool) {
 }
 
 // TestBuildable is the build's half of the one tier derivation: landlock is always built, cgroup and bpflsm (the
-// plane in LSM mode over tier cgroup's backend, TIER3-PLAN T7) only with the objects, and anything else is not a tier
+// plane in LSM mode over tier cgroup's backend) only with the objects, and anything else is not a tier
 // at all.
 func TestBuildable(t *testing.T) {
 	if err := Buildable(backend.TierLandlock); err != nil {
@@ -126,7 +126,7 @@ func TestConstructRefusesWhatIsNotBuilt(t *testing.T) {
 }
 
 // TestSelectWarnsWhenIOUringHasNoEffect: io_uring: true is refused at every tier this build runs but tier cgroup
-// with a decision plane mode that holds the table and tier bpflsm (ADR 0018 (5), TIER3-PLAN T13), and a table
+// with a decision plane mode that holds the table and tier bpflsm (ADR 0018 (5)), and a table
 // compiled for a root tier got no compile warning about it (compile warns only for landlock), so Select says it for
 // the tier the run actually got. A table compiled for landlock is not warned twice.
 func TestSelectWarnsWhenIOUringHasNoEffect(t *testing.T) {

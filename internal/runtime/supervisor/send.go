@@ -49,7 +49,7 @@ func handleSendTo(l *Loop, n *notif) {
 	addr, addrlen := n.args[4], socklen(n.args[5])
 	if addr == 0 || addrlen == 0 {
 		// No destination: nothing this package decides about one. The filter notifies such a sendto only when its
-		// flags carry MSG_MORE in a run that decides datagrams (enforce-landlock R11), for the pending frame it could
+		// flags carry MSG_MORE in a run that decides datagrams, for the pending frame it could
 		// start (refusesFrame); otherwise it tests only the pointer. A zero addrlen with a pointer is the kernel's
 		// unaddressed send too: move_addr_to_kernel copies nothing, and every family either sends to the peer
 		// connect decided (TCP without Fast Open, unix, raw) or fails the short name EINVAL (UDP, Fast Open). The
@@ -103,7 +103,7 @@ type sendArgs struct {
 }
 
 // handleSendMsg decides a sendmsg. The filter notifies every sendmsg because classic BPF cannot
-// dereference msg_name (enforce-landlock R11), so the first thing this does is read the header: a
+// dereference msg_name, so the first thing this does is read the header: a
 // connected send with no address is continued with no event at all, save where sendUnaddressed says. Under a
 // net: section a send whose control messages give its datagram a source route is refused first, addressed or
 // not (refusesRoute, R13b).
@@ -345,7 +345,7 @@ func clampLen(arg uint64) int64 {
 }
 
 // handleSendMMsg decides one sendmmsg. The filter notifies every sendmmsg because classic BPF cannot
-// dereference msg_name (enforce-landlock R11), so the socket type read here is what splits the two rules
+// dereference msg_name, so the socket type read here is what splits the two rules
 // that meet in this handler: on a datagram socket the addressed messages are recorded — the first 64 one
 // line each, and past them one line at most (mmsgTailLine) — and the syscall continued when the policy admits
 // every destination the batch carries, and refused whole when it refuses one (R13b), and on a
@@ -503,7 +503,7 @@ func handleSendMMsg(l *Loop, n *notif) {
 	}
 	// R13b continues a datagram batch only when every address the kernel will send to was read, is one this
 	// tier could match, and is one the policy admits: a batch that carries a destination the policy refuses is
-	// refused whole, with R10's errno, as that message passed to sendmsg is (amended 2026-10-16, before, it was
+	// refused whole, with R10's errno, as that message passed to sendmsg is (before, it was
 	// continued with that destination's refused line marked best_effort, and the datagram left).
 	// Each of the first 64 addressed messages has its own line, and past them one line names the message that
 	// refused the batch, or the first addressed one there (mmsgTailLine).
@@ -594,7 +594,7 @@ func (l *Loop) unaddressedBatch(n *notif, c *compiled) {
 // ledger bounded at mmsgMessages+1 lines per call. A refused batch gets a line for the message that refused it
 // when that lies past the 64th — one this tier cannot place, or one the policy refuses — else for the first
 // addressed message there, which the batch refused along with it. A continued batch carries no destination the
-// policy refuses (handleSendMMsg refuses every such batch, R13b as amended 2026-10-16), so it gets no line past
+// policy refuses (handleSendMMsg refuses every such batch, R13b), so it gets no line past
 // the 64th: what stays unrecorded there is R13b's residual, the admitted destinations. The last result is
 // false when there is no line to write.
 func (l *Loop) mmsgTailLine(c *compiled, r *reader, n *notif, tail []dest, proto string, refused, guarded bool) (dest, verdictOf, bool) {
@@ -799,7 +799,7 @@ func (l *Loop) sendDecisionCtl(n *notif, r *reader, sockfd int, d dest, raw []by
 		// datagram sent from here would resolve a relative name against this process's cwd, leave the agent's
 		// Landlock scope behind and, at tiers 2/3, reach root-only sockets with the receiver reading this
 		// process's credentials, the reason handleConnect never relays a unix connect. One the gate
-		// admits is continued below, as without the gate (gate.md R4).
+		// admits is continued below, as without the gate.
 		if t.guarded || (t.ipGated && t.dec.allowed) {
 			l.relayDatagram(n, c, &t, d, raw, control, prepare)
 			return
@@ -829,7 +829,7 @@ func (l *Loop) sendDecisionCtl(n *notif, r *reader, sockfd int, d dest, raw []by
 		}
 		if !t.dec.allowed {
 			// A destination the policy refuses is refused here, with R10's errno, and no byte of this call
-			// leaves (R13b as amended 2026-10-16). A refusal needs no race: only an allow is
+			// leaves (R13b). A refusal needs no race: only an allow is
 			// exposed to a sibling thread that rewrites the address after this read. Continued, the datagram
 			// left the kernel under a refused line: net.dns.mode: off recorded a lookup sent from an
 			// unconnected socket and the resolver answered it, while the same destination's connect was
@@ -1075,7 +1075,7 @@ func (l *Loop) relayRouteQuery(n *notif, c *compiled, t *target, d dest, raw []b
 // (Options.KernelDatagrams). Those programs decide on the kernel's own copy of the address, so continued, a datagram
 // one refuses was recorded refused with best_effort, "recorded without enforcing" of a refusal the kernel enforced,
 // and a unix name decideUnix cleans and admits but the kernel refuses for its spelling was recorded allow
-// (enforce-cgroup-observe §5 R7, enforce-plane §2.11 condition 1). Refused here instead, the agent gets the errno it
+// (enforce-plane §2.11 condition 1). Refused here instead, the agent gets the errno it
 // would have got and the ledger the one line, the refusal this loop made (ADR 0016 (1)).
 //
 // Only what such a program decides, and only where the protocol's own checks before it pass, is refused, so that

@@ -32,7 +32,7 @@ func TestBuildEnvSetReplacesEveryDuplicate(t *testing.T) {
 }
 
 // A root launcher's environment names root, and the agent runs as the invoking user: what names root becomes that
-// user's (identity-config.md R3a), and nothing else changes.
+// user's, and nothing else changes.
 func TestRootAccountEnv(t *testing.T) {
 	root := &user.User{Username: "root", HomeDir: "/root"}
 	target := &user.User{Username: "dana", HomeDir: "/home/dana"}

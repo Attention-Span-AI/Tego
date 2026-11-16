@@ -71,7 +71,7 @@ func (v Version) AtLeast(o Version) bool {
 func (v Version) String() string { return fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch) }
 
 // Mechanism is one kernel feature this binary relies on, with the release it arrived in
-// (docs/ARCHITECTURE.md §14 "Support matrix", verified 2026-09-21).
+// (docs/ARCHITECTURE.md §14 "Support matrix").
 type Mechanism struct {
 	// Name is the feature as the kernel's own documentation calls it.
 	Name string
@@ -91,7 +91,7 @@ type Mechanism struct {
 // says otherwise, so D1 judges a row by what the kernel answered wherever a probe answered it: the Landlock rows
 // by the ABI landlock_create_ruleset answers (the probe D4 reports; a kernel that answers it has no Landlock lacks
 // every Landlock row), and cgroup connect_unix by D7's load of that hook where D7 ran and answered (as root).
-// *Amended 2026-11-11:* every row was judged by the release, so on AlmaLinux 9.8 D1 listed Landlock ABI 2 to 6 as
+// every row was judged by the release, so on AlmaLinux 9.8 D1 listed Landlock ABI 2 to 6 as
 // missing four lines above D4's "ABI 6". The other rows, and these two where no probe answered, are still judged
 // by the release. D1 is advice either way above MinKernel: the runtime probes, never trusts a version, and D2-D8
 // decide the tiers (BTF in D2, cgroup.kill in D3, ADDFD_FLAG_SEND in D5, the BPF hooks, cgroup connect_unix among
@@ -99,8 +99,8 @@ type Mechanism struct {
 //
 // fanotify's FAN_DENY_ERRNO (6.14) is not a row: nothing in this binary depends on it. The kernel
 // takes a reply errno only from a FAN_CLASS_PRE_CONTENT group and never EACCES, so tier 2's
-// FAN_CLASS_CONTENT listener refuses with the bare FAN_DENY on every kernel
-// (docs/p0/enforce-cgroup-observe.md §6 E2), and a row would tell an older kernel it lacks something.
+// FAN_CLASS_CONTENT listener refuses with the bare FAN_DENY on every kernel,
+// and a row would tell an older kernel it lacks something.
 var Mechanisms = []Mechanism{
 	{Name: "seccomp NEW_LISTENER", Since: Version{5, 0, 0}, What: "no supervisor, no tier 1"},
 	{Name: "fanotify exec permission events", Since: Version{5, 0, 0}, What: "tier 2 cannot refuse an exec by path"},

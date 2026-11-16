@@ -22,7 +22,7 @@ import (
 // `garbage\n` line in the same place failed them all. A torn tail on a run that has not ended is still what
 // a writer that died mid-write(2) leaves, and is still dropped.
 //
-// Also pins runtime-launch.md I2: run_end is the last line of a run that has one.
+// Also pins: run_end is the last line of a run that has one.
 func TestTailAfterRunEndIsCorrupt(t *testing.T) {
 	ended := func(t *testing.T) (string, int64) {
 		w, dir, _ := openTestWriter(t)

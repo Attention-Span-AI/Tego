@@ -12,7 +12,7 @@ import (
 )
 
 // Snapshot is the deny_read enumeration as Prepare froze it (R3, E28), kept so the supervisor can say what the kernel
-// will answer for a read beneath an enumerated ancestor (ADR 0069's 2026-10-26 note). Landlock is an allow-list:
+// will answer for a read beneath an enumerated ancestor (ADR 0069). Landlock is an allow-list:
 // a deny_read is built by granting every sibling of each ancestor of the target, as one listing at launch named them,
 // and the ancestor itself READ_DIR only. A name made beside an ancestor after that listing (a directory a person
 // creates in $HOME while a run's built-in ~/.ssh deny_read is in force, a file in the project's root beside ./secret/)

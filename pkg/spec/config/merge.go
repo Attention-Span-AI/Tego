@@ -10,7 +10,7 @@ import (
 )
 
 // tierRank and captureRank order the ceiling names locally so config never imports backend. They are
-// also the legal names: the parser refuses any other at its own line (parser.ranked, R24 as amended), so
+// also the legal names: the parser refuses any other at its own line (parser.ranked), so
 // no unknown name reaches the merge.
 var (
 	tierRank    = map[string]int{"landlock": 1, "cgroup": 2, "bpflsm": 3}

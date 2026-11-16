@@ -24,8 +24,6 @@ func missingWriteTable(dir string) *agent.RuleTable {
 // write directory Prepare creates for the run is made with those credentials. Made as root, 0755, it refused
 // the dropped agent every create in it by DAC while Landlock granted write, and the user could not remove it.
 // Without Drop the directory is made by this process as before.
-//
-// Spec: docs/p0/enforce-landlock.md §7 (path vanished row).
 func TestMissingWriteDirIsCreatedAsTheDroppedUser(t *testing.T) {
 	type call struct {
 		path     string

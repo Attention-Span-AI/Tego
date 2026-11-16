@@ -597,7 +597,7 @@ run "$tmp/prefix" TEGO_VERIFY=sha256 SSH_CONNECTION="192.0.2.1 50000 192.0.2.2 2
 check "an install over SSH into a prefix on PATH installs" 0 "$code"
 if grep -q 'export PATH' "$tmp/out"; then echo "FAIL a prefix already on PATH got an export line" >&2; fail=1; fi
 expect "an install over SSH says to start a shell in the user's cgroup" "systemd-run --user --scope bash" "$tmp/out"
-# Over SSH tego watch fails too (acceptance B, 2026-11-11): the line never says such a shell can record.
+# Over SSH tego watch fails too: the line never says such a shell can record.
 if grep -q 'can only record' "$tmp/out"; then echo "FAIL an install over SSH says the shell can only record" >&2; fail=1; fi
 
 # A release whose tego lists setup in its help ends with tego setup; the releases above, which list none, keep

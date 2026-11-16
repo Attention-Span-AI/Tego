@@ -8,7 +8,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// ExecMapRule is the rule a refused executable mapping names (ADR 0027; enforce-plane R26; the plane's refused
+// ExecMapRule is the rule a refused executable mapping names (ADR 0027; the plane's refused
 // line carries it too, observe.PlaneMapRule): the policy, which no single entry of the contract states.
 const ExecMapRule = "exec-map"
 

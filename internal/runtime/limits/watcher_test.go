@@ -161,7 +161,7 @@ func TestObserveAccumulates(t *testing.T) {
 	}
 }
 
-// TestEventBreaches is the table of every ceiling an event can cross (limits-check-doctor-cli.md R1, R2, R5, and E13:
+// TestEventBreaches is the table of every ceiling an event can cross (and E13:
 // a repeat streak over an empty input_hash still counts): the stream is fed in order and the watcher must trip
 // exactly once, on the event named.
 func TestEventBreaches(t *testing.T) {
@@ -208,7 +208,7 @@ func TestEventBreaches(t *testing.T) {
 			want:   &Breach{Which: record.LimitCostUSD, Value: 1.20, Ceiling: 1},
 		},
 		{
-			// Amended 2026-09-24: an unpriced model is charged toward the
+			// an unpriced model is charged toward the
 			// ceiling at the table's highest prices; it used to be free spend under a cost budget.
 			name:    "an unpriced model is charged at the table's top price",
 			ceiling: agent.ResolvedLimits{CostUSD: 1},
@@ -368,7 +368,7 @@ func assertLimitEvent(t *testing.T, ev *record.Event, want Breach) {
 	}
 }
 
-// TestLoopingAgentStoppedByRepeats is acceptance §12.4's first half: an agent that calls the same
+// TestLoopingAgentStoppedByRepeats: an agent that calls the same
 // tool with the same input forever is stopped by limits.repeats, with the limit event, the kill,
 // and the terminal reason the facade turns into exit 124.
 func TestLoopingAgentStoppedByRepeats(t *testing.T) {
@@ -414,7 +414,7 @@ func TestLoopingAgentStoppedByRepeats(t *testing.T) {
 	}
 }
 
-// TestCostCeilingStopsRun is acceptance §12.4's second half: a $25 budget stops the run, the limit
+// TestCostCeilingStopsRun: a $25 budget stops the run, the limit
 // event names cost_usd with the estimate and the ceiling, and the exit code is 124.
 func TestCostCeilingStopsRun(t *testing.T) {
 	const model = "claude-sonnet-4-5-20250929"
@@ -545,7 +545,7 @@ func TestTickBreaches(t *testing.T) {
 			want:    nil,
 		},
 		{
-			// limits-check-doctor-cli.md E17: a stall_after shorter than the model's own latency breaches on the
+			// A stall_after shorter than the model's own latency breaches on the
 			// first tick after the first call, legitimately, and nothing cross-checks it against live latency.
 			name:    "a stall_after shorter than the model's latency breaches on the first tick (E17)",
 			ceiling: agent.ResolvedLimits{StallAfter: 50 * time.Millisecond, Set: agent.BudgetStallAfter},
@@ -762,7 +762,7 @@ func TestPriceGapsOncePerRun(t *testing.T) {
 	})
 }
 
-// TestObserveTickRace is limits-check-doctor-cli.md R6 and I1 under the race detector: a near-ceiling state hammered from both
+// TestObserveTickRace runs under the race detector: a near-ceiling state hammered from both
 // directions produces exactly one limit event and one kill.
 func TestObserveTickRace(t *testing.T) {
 	const model = "claude-sonnet-4-5-20250929"
@@ -898,7 +898,7 @@ func nearly(a, b float64) bool {
 	return d < 1e-9 && d > -1e-9
 }
 
-// TestTouchIsActivityForTheStallCheck is limits-check-doctor-cli.md R4's record: off half at the watcher: Touch is
+// TestTouchIsActivityForTheStallCheck is the record: off half at the watcher: Touch is
 // activity the ledger does not carry, so it resets the stall window as an event does; a reading older than the
 // last activity never moves the window back; and a Touch before run_start gives the run its origin. A gap still
 // never resets the window a Touch set.

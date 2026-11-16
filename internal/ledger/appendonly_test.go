@@ -112,7 +112,7 @@ func writingOpensWithoutAppend(t *testing.T, name string, src any) []string {
 	return bad
 }
 
-// TestEventsFileOpensAppend is record-ledger.md I1's check: every writing open of events.jsonl in this package
+// TestEventsFileOpensAppend: every writing open of events.jsonl in this package
 // carries O_APPEND, so no write lands anywhere but the end of the file. The truncations resume and cutTornLine
 // make are the rule's two named exceptions; this is the open side.
 func TestEventsFileOpensAppend(t *testing.T) {

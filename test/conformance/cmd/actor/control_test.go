@@ -13,7 +13,7 @@ import (
 // TestTracemeThreadBlocksSignals: the thread that asks for a TRACEME blocks every signal it can before it asks.
 // Once traced, a signal delivered to that thread (the Go runtime's own preemption SIGURG among them) is a
 // signal-delivery-stop its tracer, outside the run, never resumes, so the stage hung before it reported; the
-// control/traceme-outside cell timed out so at tier landlock on AL2023's 6.1 (2026-10-19).
+// control/traceme-outside cell timed out so at tier landlock on AL2023's 6.1.
 func TestTracemeThreadBlocksSignals(t *testing.T) {
 	type result struct {
 		blocked uint64

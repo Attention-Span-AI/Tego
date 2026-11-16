@@ -161,7 +161,7 @@ func WithPriceGap(why string) Option {
 }
 
 // WithHeld tells the watcher when Tego itself holds the agent: while held
-// reports true (a published ask awaiting its human, agent-contract R22) each
+// reports true (a published ask awaiting its human) each
 // Tick counts as activity for R4's stall check, so the wait, up to the ask
 // timeout, is not a stall and the stall clock restarts when it ends. held is
 // called outside the watcher's lock and must not call back into it.
@@ -171,7 +171,7 @@ func WithHeld(held func() bool) Option {
 
 // WithActivityPublisher hands Run the place to publish the stall check's activity that has no ledger line: a
 // Touch or a pulled AddActivity reading, which `tego status` cannot see in the ledger and would otherwise read as
-// idle while the watcher does not (limits-check-doctor-cli.md R9). Run calls publish after a Tick that finds no
+// idle while the watcher does not. Run calls publish after a Tick that finds no
 // breach, outside the lock, at most once per tick and only when the reading rose since the last call. A line is
 // never published, since status reads the ledger itself, nor a held tick, since status ranks a pending approval
 // on its own.
@@ -193,7 +193,7 @@ func WithLedgerCeiling(ceiling int64, size func() int64) Option {
 }
 
 // Watcher enforces one run's budgets: cumulative tokens, estimated cost, wall time, the stall gap
-// and the repeat detector (R1-R6). It is the only P0 component that stops a run for a non-security
+// and the repeat detector (R1-R6). It is the only component that stops a run for a non-security
 // reason, and its whole effect is one limit event plus one Kill.
 //
 // Observe (or Stage) is driven by the event pipeline; Run drives the clock-only ceilings. Both are
@@ -444,7 +444,7 @@ func (w *Watcher) usageLocked(ev *record.Event) []gapRequest {
 			w.state.UnpricedMaxUSD += c
 		} else if w.prices.UnfeedServerTool(u) {
 			// No fee bounds these requests, and charging them $0 would let a cost ceiling pass unseen spend: the
-			// response is unmetered, as a capture source's unreadable one is (ADR 0037 amendment 2026-09-24).
+			// response is unmetered, as a capture source's unreadable one is (ADR 0037).
 			out = append(out, gapRequest{unmetered: true,
 				why: "server-tool requests with no server_tool_per_request fee in the price table"})
 		} else if w.prices != nil && len(w.prices.Models) > 0 {

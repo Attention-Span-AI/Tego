@@ -110,7 +110,7 @@ type Entry struct {
 	// it does to the name it is run by. MatchLink refuses what the running contract grants under the exec.allow entry
 	// at the value (Set.MatchExec, Grant): the file and the path the value resolved to when the run started, by any
 	// name that reaches it there, so another name of a multi-call file is left to the contract. The rules editor's
-	// "Also apply now" and Apply now place it when that entry is removed (ADR 0124, amended 2026-11-11). Where the
+	// "Also apply now" and Apply now place it when that entry is removed (ADR 0124). Where the
 	// running contract holds no entry at the value it matches the whole file. An overlay that holds one is VersionLink,
 	// written only to a run whose launcher reads it (TakesLink); for any other run the writer places the whole-file
 	// block instead (AddLink's caller).

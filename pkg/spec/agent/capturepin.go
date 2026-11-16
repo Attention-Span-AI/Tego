@@ -11,7 +11,7 @@ package agent
 // the forwarder then neither runs nor sets its base-URL variables, because a harness that honours
 // ANTHROPIC_BASE_URL would send every request to the forwarder's loopback listener, whose upstream TLS is the
 // launcher's and outside the run's cgroup, and the probes would see none of it. auto at a tier that runs
-// uprobes runs the forwarder beside them (P0-DESIGN §2.9), so a harness whose TLS no probe can read (Claude
+// uprobes runs the forwarder beside them, so a harness whose TLS no probe can read (Claude
 // Code's static BoringSSL) is still captured. capture.Select starts the sources by this.
 //
 // Compile leaves the forwarder's variables to a pinned-uprobe contract when the capture it resolved is uprobe
@@ -21,7 +21,7 @@ package agent
 // capture.Select), and the forwarder's base URL is written over the contract's value (identity.Env.Apply).
 // `tego run` says so on stderr with env-runtime-reserved once it knows the forwarder started, and only where
 // Compile resolved uprobe (internal/cli warnForwarderEnv), so the warning follows what runs, not what Compile
-// guessed, and never repeats the one Compile gave when it lowered capture itself (agent-contract R12).
+// guessed, and never repeats the one Compile gave when it lowered capture itself.
 //
 // The merged contract is read, so a profile the contract extends pins it the same way.
 func (rt *RuleTable) PinsUprobe() bool {

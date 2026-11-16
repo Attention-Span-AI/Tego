@@ -18,7 +18,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// An approval never grants an object the contract denies, whatever its access mode (review round 2, finding 3): a
+// An approval never grants an object the contract denies, whatever its access mode (finding 3): a
 // write-only O_TRUNC open of a hard-link alias of a launch-protected file is refused before anyone is asked, under an
 // fs.ask scope (this loop's own pin) and through the open deputy's ask range (a held gate ask), and the protected
 // file keeps its bytes. Before, both were asked, approved and truncated the file, while the protected name itself
@@ -61,7 +61,7 @@ func TestHeldWriteOnlyApprovalOfAProtectedAliasIsRefused(t *testing.T) {
 }
 
 // A deputy approval rechecks the identities and the names' history once the answer is back, before the deputy opens
-// (review round 3, finding 2): the pinned file, put at the protected name while the person decides, is refused and
+// (finding 2): the pinned file, put at the protected name while the person decides, is refused and
 // keeps its bytes. Before, the approved O_WRONLY|O_TRUNC truncated it and only the descriptor check refused delivery.
 func TestHeldGateAskRechecksIdentityAfterTheAnswer(t *testing.T) {
 	x, secret := heldReadsFixture(t, agent.RecordFull)

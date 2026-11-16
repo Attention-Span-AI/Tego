@@ -21,7 +21,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// The decision plane as part of this backend (docs/p0/enforce-plane.md; TIER3-PLAN T6, the join of T2 to T5 and T8).
+// The decision plane as part of this backend (the join of T2 to T5 and T8).
 // When doctor selected a plane mode for tier cgroup (Options.Plane, from doctor's Report.PlaneFor), a run's opens,
 // execs, renames, links, unlinks and rmdirs are decided in the kernel by bpf/decide.bpf.c's programs in that mode, on
 // the rows its own contract compiles to (decide.CompilePlane), and the fanotify listener is not made: no mark is
@@ -37,7 +37,7 @@ import (
 //     Options.Plane.PinAnswer), so a run that adopts the build probes nothing (R21).
 //   - Each slot's row maps, created once and put in the outers at the slot's run_idx, then kept: a run writes its
 //     rows with its own gen, a row of another gen is absent to the walk, and no inner map is created or deleted on
-//     a run's path (ADR 0025 (1) as T0 amended it, R6). The fill (T4) writes the fs and exec rows in the kernel from
+//     a run's path (ADR 0025 (1), R6). The fill (T4) writes the fs and exec rows in the kernel from
 //     the Landlock plan's held O_PATH descriptors (R16); the unix policy (step D) and the bare-name exec rows (T3's
 //     open condition) are written here, from userspace, since their keys are no inode, and then the slot's header
 //     (slotHeader), whose flags carry what the contract decides beyond the fs rows (an exec: section and
@@ -46,7 +46,7 @@ import (
 //   - The fill's programs, pinned under <hash>-<mode>/fill once and adopted, since their load is most of a fill's
 //     cost. Only pinning them takes the build's fill lock (lockFill, from openPlaneFiller); fills and clears take no
 //     lock, since each launcher's config and templates are keyed by its tgid and a clear touches only its own slot's
-//     rows (enforce-plane §2.6).
+//     rows.
 //   - The clear (T4's tego_plane_clear) of a slot's rows when its run ends (Detach), when a slot is purged at
 //     Prepare (purgeSlot) and by the reaper of a run whose launcher died (PurgeRun), off every run's path.
 //
@@ -82,10 +82,10 @@ type planeKernel interface {
 	// counts reads the slot's fail-closed counters (tego_plane_counters), which prepareSlot zeroed.
 	counts(slot uint32) (ebpfbindings.PlaneCounts, error)
 	// decidesUnix reports whether the plane's step D hooks are loaded: where cgroup/connect_unix is absent (below
-	// 6.7), the plane decides a run's unix names in its place (enforce-plane R14).
+	// 6.7), the plane decides a run's unix names in its place.
 	decidesUnix() bool
 	// hooks is the set of hooks the plane loaded and attached, by bpf.PlaneHook.Name: what it decides on this
-	// kernel, which the inherited filter's notifications are left out by (enforce-plane R27, TIER3-PLAN T16).
+	// kernel, which the inherited filter's notifications are left out by.
 	hooks() map[string]bool
 	// pinsReady reports whether the plane holds the exec pin maps (ADR 0048 (3) P2); slotPins opens a slot's pin map,
 	// which a pinned fill made exist.
@@ -103,7 +103,7 @@ type planeFillRequest struct {
 	KeyringAllowed bool
 	// Exec is the contract's exec policy: Decides when it has an exec: section, Anonymous for exec.anonymous.
 	Exec planeExecPolicy
-	// Unix is the slot's policy for the step D hooks (enforce-plane R14), written with the run's gen whether or not
+	// Unix is the slot's policy for the step D hooks, written with the run's gen whether or not
 	// they decide, since a slot with no policy of the run's gen refuses every unix name.
 	Unix planeUnixPolicy
 	// Net is the contract's socket policy (ADR 0018). socket_create reads it from the slot header's flags.
@@ -121,8 +121,8 @@ type planeUnixPolicy struct {
 }
 
 // planeNetPolicy is what the slot header's net flags say (ADR 0018 (5)): Restricted when the contract has a net:
-// section, ICMP when it names an ICMP destination (a port-0 entry). This package may not import enforce/landlock
-// (enforce-cgroup-observe I12), so both read agent.RuleTable.NetSocketPolicy: the seccomp filter's socket arm
+// section, ICMP when it names an ICMP destination (a port-0 entry). This package may not import enforce/landlock,
+// so both read agent.RuleTable.NetSocketPolicy: the seccomp filter's socket arm
 // (SocketArmFor) and these flags are one predicate for the same table.
 type planeNetPolicy struct {
 	Restricted, ICMP bool
@@ -133,7 +133,7 @@ func netPolicyOf(rt *agent.RuleTable) planeNetPolicy {
 	return planeNetPolicy(rt.NetSocketPolicy())
 }
 
-// planeExecPolicy is what the slot header's exec flags say (enforce-plane §2.7).
+// planeExecPolicy is what the slot header's exec flags say.
 type planeExecPolicy struct {
 	Decides, Anonymous bool
 }
@@ -150,7 +150,7 @@ func execPolicyOf(rt *agent.RuleTable) planeExecPolicy {
 	return planeExecPolicy{Decides: true, Anonymous: rt.ExecAnonymous()}
 }
 
-// slotHeader is the slot's header for req (bpf.PlaneSlot, enforce-plane R6): the run's gen, what its contract decides
+// slotHeader is the slot's header for req (bpf.PlaneSlot): the run's gen, what its contract decides
 // beyond the fs rows, and the rows written. unix is whether this plane's step D hooks are loaded (below 6.7); they
 // decide the run's unix names only then and with a net: section. A section the contract lacks is a flag left clear,
 // never a row left out, so a slot whose rows are gone refuses rather than allows (ADR 0018 (4), SEMANTICS §1).
@@ -320,7 +320,7 @@ func newBPFPlane(k *bpfKernel, hash string, setup PlaneSetup, state *hoststate.D
 	hookOf := map[string]string{}
 	var progs []string
 	// Step D's hooks go where cgroup/connect_unix does not: a kernel that loaded it (6.7+) decides unix names there,
-	// and a name is never decided twice (enforce-plane R14).
+	// and a name is never decided twice.
 	_, cgroupUnix := k.progs[ebpfbindings.ProgConnectUnix]
 	p.unix = !cgroupUnix
 	for _, h := range ebpfbindings.PlaneHooks {
@@ -328,7 +328,7 @@ func newBPFPlane(k *bpfKernel, hash string, setup PlaneSetup, state *hoststate.D
 			continue
 		}
 		if h.Optional && !kernelHasFunc(h.Target(setup.Mode)) {
-			continue // an optional hook this kernel's BTF lacks: another hook decides its rule here (enforce-plane R3)
+			continue // an optional hook this kernel's BTF lacks: another hook decides its rule here
 		}
 		keep[planeProgram(h, setup.Mode)] = true
 		hookOf[planeProgram(h, setup.Mode)] = h.Name
@@ -367,7 +367,7 @@ func newBPFPlane(k *bpfKernel, hash string, setup PlaneSetup, state *hoststate.D
 			}
 		}
 		// A timed test build attributes the load to the plane's maps and each program (plane.obj.<mode>.maps,
-		// plane.prog.<mode>.<prog>.*; enforce-plane §10.1), as newBPFKernel does its objects'.
+		// plane.prog.<mode>.<prog>.*), as newBPFKernel does its objects'.
 		trace := ebpfbindings.BeginLoad(k.phase, "plane.obj."+string(setup.Mode)+".maps", "plane.prog."+string(setup.Mode))
 		for attempt, attempts := 1, ebpfbindings.PinAttempts(spec); ; attempt++ {
 			coll, err = ebpf.NewCollectionWithOptions(spec, ebpf.CollectionOptions{
@@ -426,7 +426,7 @@ func newBPFPlane(k *bpfKernel, hash string, setup PlaneSetup, state *hoststate.D
 		return p, err
 	}
 	// Which of the recorder's fexit programs this build has attached, before any plane program is: a refusal on a
-	// hook with none writes the plane's own sample, so it keeps its one line (enforce-plane §7, R23; T9b).
+	// hook with none writes the plane's own sample, so it keeps its one line (T9b).
 	recorded := coll.Maps[ebpfbindings.MapPlaneRecorded]
 	if recorded == nil {
 		return p, fmt.Errorf("%w: the plane's recorder mask is missing from %s", ErrProgramLoad, setup.Build)
@@ -523,7 +523,7 @@ func recordedMask(shared []sharedLink) uint32 {
 // the second's pin fails, and it adopts the first's and drops its own. A pinned link is adopted only when its
 // program reads this plane's maps (owns): one left pinned over maps since re-created (a removal that failed part
 // way) runs a program whose run set names no run, which allows everything, so it is unpinned and this launcher's
-// program attached in its place (enforce-plane R20).
+// program attached in its place.
 func attachPlaneLink(prog *ebpf.Program, name string, m ebpfbindings.PlaneMode, pinPath string,
 	owns func(*ebpf.Program) string, verified map[ebpf.ProgramID]*ebpf.Program) (link.Link, error) {
 	if l, err := link.LoadPinnedLink(pinPath, nil); err == nil {
@@ -779,7 +779,7 @@ func isDataSectionMap(id ebpf.MapID) bool {
 
 // lockFill takes the build's fill lock for this mode, exclusively, for pinning the fill (openPlaneFiller), so no two
 // launchers pin at once. Fills and clears take no lock: each launcher's config and templates are keyed by its tgid,
-// and a clear touches only its slot's rows (enforce-plane §2.6).
+// and a clear touches only its slot's rows.
 func (p *bpfPlane) lockFill() (func(), error) {
 	if p.state == nil {
 		return func() {}, nil
@@ -1015,7 +1015,7 @@ func writeNameEntries(inner *ebpf.Map, slot, gen uint32, rows *decide.PlaneRows)
 
 // deleteNameRows deletes every key of a slot's inner name map: its config row and its name rows, of every gen. The
 // map holds at most 65 keys (ADR 0043 D9), so the keys are read first and then deleted one by one; only the slot's
-// own Prepare and its clears write the map, never concurrently with each other (enforce-plane §2.6).
+// own Prepare and its clears write the map, never concurrently with each other.
 func deleteNameRows(inner *ebpf.Map, slot uint32) error {
 	var (
 		key  uint64
@@ -1081,7 +1081,7 @@ func (p *bpfPlane) putNameRows(req planeFillRequest, keys []uint64, vals []ebpfb
 	return nil
 }
 
-// putUnixPolicy writes the slot's step D policy with the run's gen (enforce-plane R14). It decides only where this
+// putUnixPolicy writes the slot's step D policy with the run's gen. It decides only where this
 // plane's unix hooks are loaded; the policy is written either way, since a hook that finds none of the run's gen
 // refuses.
 func (p *bpfPlane) putUnixPolicy(req planeFillRequest) error {
@@ -1095,7 +1095,7 @@ func (p *bpfPlane) putUnixPolicy(req planeFillRequest) error {
 	return nil
 }
 
-// decidesUnix reports whether this plane's step D hooks were loaded (enforce-plane R14).
+// decidesUnix reports whether this plane's step D hooks were loaded.
 func (p *bpfPlane) decidesUnix() bool { return p.unix }
 
 // hooks is the set of hooks this plane attached (planeKernel.hooks).
@@ -1125,8 +1125,8 @@ func execKeyRows(req planeFillRequest) ([]uint64, []ebpfbindings.PlaneExecRow, e
 
 // clearSlot zeroes the slot's header, then deletes every row of the slot, of every gen, in the kernel (T4's clear),
 // and last its exec pins and name entries from here (clearPins, clearNameRows). The header goes first: a run-set row that still names the slot is refused by every decided hook from then on
-// (norows), never decided by rows half cleared. No lock is taken: a clear touches only its slot's rows (enforce-plane
-// §2.6). A slot with no rows map in this mode has no rows, and clearing it is no error: the reaper purges every dead
+// (norows), never decided by rows half cleared. No lock is taken: a clear touches only its slot's rows.
+// A slot with no rows map in this mode has no rows, and clearing it is no error: the reaper purges every dead
 // slot through every pinned plane of the build, most of whose slots no run of that mode prepared. The fill's own
 // clear, whose slot it prepared, still fails on one.
 func (p *bpfPlane) clearSlot(slot uint32) error {

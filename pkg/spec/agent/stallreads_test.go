@@ -23,7 +23,7 @@ func stallWarnings(ds []Diagnostic) []Diagnostic {
 	return out
 }
 
-// TestStallAfterWarnsWhereReadsAreUnseen (custom-agent POC, item 4): at tier landlock under record: summary or off a
+// TestStallAfterWarnsWhereReadsAreUnseen: at tier landlock under record: summary or off a
 // read is never a line, so a stall_after the contract sets ends an agent that only reads. Compile says so, naming
 // record: full and a root tier as the ways out, at landlock alone (so `tego run` prints it again once a run lands
 // there). At a root tier under record: summary a read is counted in an aggregate flushed every 5 s, so a stall_after

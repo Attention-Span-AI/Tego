@@ -212,7 +212,7 @@ func TestCut(t *testing.T) {
 
 // TestEncodeStatesACutFieldsRealLength: every cut Encode makes, and the sentence's, states the field's real length,
 // in the tight form too, and Encode of refusals Refusal.Cut cut is the bytes Encode makes of the refusals. The tight
-// form and the sentence stated the length of the 4096-byte cut (2026-10-24).
+// form and the sentence stated the length of the 4096-byte cut.
 func TestEncodeStatesACutFieldsRealLength(t *testing.T) {
 	huge := "/t/" + strings.Repeat("\x01", 100000)
 	long := "/t/" + strings.Repeat("a", 100000)

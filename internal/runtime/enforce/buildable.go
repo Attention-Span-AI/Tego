@@ -40,14 +40,14 @@ var objectsAvailable = ebpfbindings.Available
 // Buildable reports whether this binary can construct tier t, nil when it can. It is the build's half of
 // the tier derivation, the half no machine probe can see: internal/doctor ANDs it into every tier it
 // reports (Report.Tiers), and Select filters its probe through it, so the two read one answer and a tier
-// `tego doctor` reports is always one `tego run` can construct (docs/p0/limits-check-doctor-cli.md R27 Output).
+// `tego doctor` reports is always one `tego run` can construct.
 //
 // Tier cgroup needs the objects an untagged build does not embed: without this, a root machine reported
 // the tier and every run of it failed at Prepare with ErrNotGenerated after its ledger and cgroup existed.
 // How the binary is linked no longer matters: the tier's marks are placed after the child stage's execve
 // (ADR 0021 (2), (4)), so neither the stage's binary nor its loader is ever asked about, and a dynamically
 // linked or PIE tegobpf build runs tier cgroup like a static one. Tier bpflsm is the decision plane in LSM mode over
-// the tier-2 backend (internal/runtime/enforce/bpflsm, TIER3-PLAN T7), whose objects are embedded with tier 2's, so
+// the tier-2 backend (internal/runtime/enforce/bpflsm), whose objects are embedded with tier 2's, so
 // it is built exactly when tier cgroup is; the machine's half (bpf in the LSM list, LSM mode's probe) is doctor's.
 func Buildable(t backend.Tier) error {
 	switch t {

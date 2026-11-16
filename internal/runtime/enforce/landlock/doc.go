@@ -4,7 +4,7 @@
 // into a Landlock ruleset built from O_PATH fds the launcher holds for the run, and into the
 // classic-BPF seccomp program the child installs with NEW_LISTENER so the supervisor sees write-opens,
 // execs, connects, datagram sends, deletes, renames, mkdirs, symlinks and the mount family the domain
-// refuses (docs/p0/enforce-landlock.md).
+// refuses.
 //
 // What it builds: the ABI is probed once (R1) and every requested right is masked by the degrade table (R2);
 // write entries carry the full read+write+create+remove set; deny_read entries compile as sibling enumeration
@@ -29,8 +29,8 @@
 // notifies inotify_add_watch, fanotify_mark and fcntl's F_NOTIFY (dnotify), which no Landlock hook sees, for the
 // supervisor to refuse a watch of what the run withholds a read of (R11e). The remaining arms refuse outright,
 // because each decision is scalar and race-free in the filter, and an errno return holds
-// where a notification would not: under an observe run, whose supervisor continues every notification
-// (supervisor R30), and with no supervisor left to answer (a notification with no handler is answered
+// where a notification would not: under an observe run, whose supervisor continues every notification,
+// and with no supervisor left to answer (a notification with no handler is answered
 // ENOSYS, ADR 0018 (3)). They are, in every filter, the terminal-injection ioctls (EPERM) and
 // socket(_, _, IPPROTO_MPTCP) (EPROTONOSUPPORT) — invisible to Landlock's net hooks, so R6's bind denial would
 // not reach it (E30); and, per run, the memfd_create arm (EACCES without MFD_NOEXEC_SEAL, or ENOSYS on a kernel

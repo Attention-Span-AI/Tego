@@ -23,8 +23,8 @@ import (
 // Diagnostic is one Select finding in the shared file:line: message [code] format.
 type Diagnostic = identity.Diagnostic
 
-// Select picks the tier a run uses and constructs its backend (docs/p0/identity-config.md §5 R17,
-// R18; enforce-landlock.md §4). The machine config supplies the ceiling — a concrete tier name is
+// Select picks the tier a run uses and constructs its backend.
+// The machine config supplies the ceiling — a concrete tier name is
 // both ceiling and pin; the contract's own tier: pin wins when set; probe says what this machine can
 // provide, and is produced by internal/doctor as (*doctor.Report).Probe() — the eight functional
 // probes of R27, never a kernel-version comparison. The import direction is doctor -> enforce, so
@@ -72,7 +72,7 @@ func Select(m *config.Machine, rt *agent.RuleTable, probe backend.Probe, opts ..
 		case t == backend.TierBPFLSM && o.lsmPlane() != nil:
 			// Tier bpflsm is the plane in LSM mode, so a probe offering it with no such plane handed over offers a
 			// tier nothing can construct. doctor's derivation never does (LSM mode's probe is one of the tier's
-			// checks); a caller that did is told, never given tier 3 by another mode (enforce-plane R19).
+			// checks); a caller that did is told, never given tier 3 by another mode.
 			ds = append(ds, Diagnostic{File: file, Code: backend.CodeTierUnavailable, Severity: identityWarning,
 				Message: fmt.Sprintf("tier %s is available on this machine but %v", t, o.lsmPlane())})
 		default:
@@ -82,7 +82,7 @@ func Select(m *config.Machine, rt *agent.RuleTable, probe backend.Probe, opts ..
 	if o.only != "" {
 		// The run asked for one tier by name, so it is pinned to it: a refusal names that tier and why it
 		// is missing, never "no enforcement tier available", which on a machine offering another tier is
-		// false (identity-config.md §7: "tier <name> pinned but not available: <fix>").
+		// false; the message is "tier <name> pinned but not available: <fix>".
 		if !o.only.AtOrBelow(backend.TierBPFLSM) {
 			return nil, append(ds, unavailable(file, fmt.Errorf("%w: %q is not a selectable tier", backend.ErrTierUnavailable, o.only)))
 		}
@@ -101,8 +101,8 @@ func Select(m *config.Machine, rt *agent.RuleTable, probe backend.Probe, opts ..
 		return nil, append(ds, unavailable(file, o.explain(err)))
 	}
 	if tier == backend.TierBPFLSM && o.only == "" && !pinnedAt(pin, backend.TierBPFLSM) {
-		// An auto run is given tier bpflsm only for a table the plane holds (enforce-plane §2.4 condition 7, §2.10
-		// condition 2): Prepare refuses one it cannot (ErrPlaneCannotHold, exit 125), and auto means the highest
+		// An auto run is given tier bpflsm only for a table the plane holds:
+		// Prepare refuses one it cannot (ErrPlaneCannotHold, exit 125), and auto means the highest
 		// tier that runs the contract, so it falls to tier cgroup, where the plane runs it if it fits the tier's
 		// rows and the listener decides it otherwise, and says why. A pinned bpflsm keeps the refusal.
 		if why := planeCannotHold(rt); why != nil {
@@ -119,7 +119,7 @@ func Select(m *config.Machine, rt *agent.RuleTable, probe backend.Probe, opts ..
 	if tier == backend.TierBPFLSM {
 		plane = o.lsm
 	}
-	// enforce-landlock R5a, ADR 0041 D1 (a): a table with built-in deny_write targets runs where no plane decides
+	// ADR 0041 D1 (a): a table with built-in deny_write targets runs where no plane decides
 	// them (tier landlock, tier cgroup on the listener) with the supervisor's best-effort refusal, unless its
 	// contract says fs.assurance: kernel; then a run that no plane would decide is refused here, before launch, as
 	// Prepare would refuse it (landlock.Prepare, cgroup's choosePlane).
@@ -219,14 +219,14 @@ type PlaneSetup = cgroupenforce.PlaneSetup
 
 // Plane gives Select the decision plane's mode doctor selected for tier cgroup (doctor's Report.PlaneFor, with its
 // answer's pin), which a tier-cgroup backend then decides its runs' opens, execs and fs mutations in, with no
-// fanotify mark (docs/p0/enforce-plane.md R18, R22). The import direction is doctor -> enforce, so the choice
+// fanotify mark. The import direction is doctor -> enforce, so the choice
 // crosses as a value, like the probe does. Without it tier cgroup runs on the fanotify listener.
 func Plane(p PlaneSetup) SelectOption {
 	return func(o *selectOptions) { o.plane = p }
 }
 
 // LSMPlane gives Select tier bpflsm's plane: the decision plane in LSM mode, as doctor's Report.PlaneFor answers for
-// tier bpflsm (TIER3-PLAN T7, enforce-plane R19), or err, doctor's reason there is none (its fix included). Tier
+// tier bpflsm, or err, doctor's reason there is none (its fix included). Tier
 // bpflsm is constructed only from a plane in LSM mode: without one it is not offered, and a run that pinned it is
 // refused with that reason, never run at tier cgroup or in another mode.
 func LSMPlane(p PlaneSetup, err error) SelectOption {
@@ -265,7 +265,7 @@ func (o selectOptions) why(t backend.Tier) string {
 
 // pinnedWhy is why for a pinned tier, with the build's reason first when this binary does not build it: no
 // machine can give a run that tier, so that is the reason that decides, and doctor's account listed it after
-// every machine fact, last of the prerequisite tiers' reasons (docs/p0/limits-check-doctor-cli.md R32). The
+// every machine fact, last of the prerequisite tiers' reasons. The
 // same sentence is not repeated further on.
 func (o selectOptions) pinnedWhy(t backend.Tier) string {
 	why := o.why(t)
@@ -357,11 +357,11 @@ func notBuiltWhy(t backend.Tier) string {
 }
 
 // ioUringIgnored is the warning for a contract that declares io_uring: true and runs where io_uring stays refused.
-// P0-DESIGN §4.3 admits io_uring only when declared in a root tier, and ADR 0018 (5) only where the kernel decision
+// io_uring is admitted only when declared in a root tier, and by ADR 0018 (5) only where the kernel decision
 // plane decides the run: its socket_create sees io_uring's IORING_OP_SOCKET, which the seccomp filter cannot, and its
 // path and file hooks the fs ops a submission makes past the supervisor. So tier cgroup with a plane mode admits it
 // (the inherited filter's io_uring_* arms go, landlock Run.IOUring), whose unix names cgroup/connect_unix decides on
-// 6.7+ and the plane's step D hooks below (TIER3-PLAN T15); tier cgroup on the fanotify fallback does not, since an io_uring submission bypasses the seccomp
+// 6.7+ and the plane's step D hooks below; tier cgroup on the fanotify fallback does not, since an io_uring submission bypasses the seccomp
 // supervisor and the listener sees no socket. Compile already warns about a table it resolved to landlock
 // (CodeIOUring), so this covers the tables it could not: an auto contract compiled for a root tier and run at
 // whatever the machine gave it.
@@ -372,7 +372,7 @@ func notBuiltWhy(t backend.Tier) string {
 // hook set decides every other submission (ioUringDecided; nothing is probed). At tier cgroup the plane must also hold the table's rows
 // (holdablePlaneRows, the test Prepare makes, so two fs entries on one inode count): a table it cannot hold runs on
 // the fanotify listener (choosePlane), where io_uring stays refused, and
-// the warning says why. A tier-bpflsm run the plane cannot hold is refused outright (enforce-plane §6 E13), so it
+// the warning says why. A tier-bpflsm run the plane cannot hold is refused outright, so it
 // needs no warning here.
 func ioUringIgnored(rt *agent.RuleTable, file string, tier backend.Tier, admitted bool) (Diagnostic, bool) {
 	if rt == nil || rt.Contract == nil || !rt.Contract.IOUring || rt.Tier == backend.TierLandlock {
@@ -496,7 +496,7 @@ func construct(tier backend.Tier, m *config.Machine, plane cgroupenforce.PlaneSe
 	case backend.TierCgroup, backend.TierBPFLSM:
 		// Tier 2 is tier 1 plus kernel maps and a fanotify listener: it installs the same Landlock
 		// ruleset and seccomp filter rather than reimplementing them, so the tier-1 backend is threaded
-		// in as the inherited state (docs/p0/enforce-cgroup-observe.md §5 R1).
+		// in as the inherited state.
 		abi, err := landlock.ProbeABI()
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s: %w", backend.ErrTierUnavailable, tier, err)
@@ -504,7 +504,7 @@ func construct(tier backend.Tier, m *config.Machine, plane cgroupenforce.PlaneSe
 		inner := landlock.New(landlock.Options{ABI: abi})
 		// With a plane mode the run's plane rows ride on the run (cgroupBackend.Prepare compiles them once): the
 		// Landlock plan holds every keyed path and adds its neutral rule, and the plane is filled from the
-		// descriptors it holds (enforce-plane R16, R17).
+		// descriptors it holds.
 		// io_uring is admitted, for a contract that declares it, only where the plane decides the run; the plane's
 		// fixed hook set decides what else a submission can do (cgroupenforce.IOUringDecided, unconditional once a
 		// plane mode runs, not a kernel probe; ADR 0018 (5)).
@@ -513,10 +513,10 @@ func construct(tier backend.Tier, m *config.Machine, plane cgroupenforce.PlaneSe
 		}
 		// These are the options selection can fix; the run's event sink is the one that cannot be known
 		// here, because it belongs to the run and not to the machine, so Prepare completes them from the
-		// RunRef (enforce-cgroup-observe.md §7 — every refusal and gap this tier produces is a ledger row).
+		// RunRef: every refusal and gap this tier produces is a ledger row.
 		opts := cgroupenforce.Options{Machine: m, Inherit: inherit, Plane: plane}
 		if tier == backend.TierBPFLSM {
-			// Tier 3 is this backend with the plane required in LSM mode (enforce/bpflsm, enforce-plane R19).
+			// Tier 3 is this backend with the plane required in LSM mode (enforce/bpflsm).
 			b, err := bpflsm.New(opts)
 			if err != nil {
 				return nil, fmt.Errorf("%w: %s: %w", backend.ErrTierUnavailable, tier, err)
@@ -547,7 +547,7 @@ func unavailable(file string, err error) Diagnostic {
 
 // inheritedRun is the tier-1 run a tier-2 or tier-3 run composes (the Landlock ruleset and seccomp filter it
 // inherits). With plane rows, which cgroupBackend.Prepare compiles only for a mode doctor's probe selected, the plan
-// holds every keyed path and adds its neutral rule (enforce-plane R16, R17), and, where the plane's hooks include
+// holds every keyed path and adds its neutral rule, and, where the plane's hooks include
 // step C's, the filter drops the arm refusing every memfd_create on a kernel without MFD_NOEXEC_SEAL (R27). io_uring
 // is admitted with a plane that decides submissions, and on the fanotify fallback only by a test build's seam
 // (fallbackIOUringTestHook, A-0018-5).

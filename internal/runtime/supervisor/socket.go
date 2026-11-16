@@ -12,7 +12,7 @@ import (
 )
 
 // handleSocket and handleSocketpair answer a socket(2) or socketpair(2) the filter's allowlist did not admit
-// (ADR 0018; enforce-landlock E30). Under a net: section the filter admits what the network rules govern —
+// (ADR 0018). Under a net: section the filter admits what the network rules govern —
 // AF_UNIX, NETLINK_ROUTE (ADR 0128), and TCP, UDP and (with an ICMP entry) ping sockets on AF_INET and AF_INET6 — and
 // notifies every other triple. Nothing reaches here to be allowed: an SCTP socket reached any address through
 // setsockopt(SCTP_SOCKOPT_CONNECTX) and a peerless send(), which no other notification sees, and a family
@@ -23,7 +23,7 @@ func handleSocket(l *Loop, n *notif)     { l.refuseSocket(n, "socket") }
 func handleSocketpair(l *Loop, n *notif) { l.refuseSocket(n, "socketpair") }
 
 // handleSetsockopt answers the one setsockopt(2) the filter notifies, SOL_TCP's TCP_ULP under a net: section (ADR 0018
-// (7); enforce-landlock E30): an upper-layer protocol is how a run turned a TCP socket the allowlist admitted into one
+// (7)): an upper-layer protocol is how a run turned a TCP socket the allowlist admitted into one
 // of another family (the smc module's "smc" ULP builds an AF_SMC socket in its place, which no socket(2) arm and no
 // creation hook sees). No ULP is something the network rules govern, so every name is refused, with ENOENT, what a
 // kernel without that ULP answers, so a runtime that tries kTLS falls back to its own TLS. The decision rests on the

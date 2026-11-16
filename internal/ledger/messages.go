@@ -15,7 +15,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// Message dedup (R11, docs/P0-DESIGN.md §2.10 "messages[] items stored once by hash").
+// Message dedup (R11): messages[] items are stored once by hash.
 //
 // A model request re-sends the whole conversation every turn, so storing each request body as one blob
 // stores turn k of an n-turn conversation n-k times: O(n²) in the conversation's length. Instead a request

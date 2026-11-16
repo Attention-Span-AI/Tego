@@ -17,7 +17,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// TIER3-PLAN T14's root cells: step C's mmap_file and file_mprotect (ADR 0027, enforce-plane R26) of both plane
+// Step C's root cells: mmap_file and file_mprotect (ADR 0027) of both plane
 // builds, in each mode this kernel offers, against rows the test writes into a scratch slot as T3's cells do. The
 // helper is planeHelper (plane_decide_integration_test.go) with the mapping commands below.
 
@@ -119,7 +119,7 @@ func planeMapRIE(f []string) string {
 	return "err rie runs map or mprotect, not " + f[1]
 }
 
-// TestPlaneStepCHooksDecide is TIER3-PLAN §9's exec-map cells for step C (T14), enforce-plane R26 and ADR 0027 on a
+// TestPlaneStepCHooksDecide is the exec-map cells for step C and ADR 0027 on a
 // real kernel: in each build and mode this kernel offers, with an exec: section, a PROT_EXEC map of a file under a
 // write row is refused unless an exec.allow directory, its own exec row or a name row covers it, and allowed under
 // no write row; the same spelled through mprotect, through READ_IMPLIES_EXEC (PROT_READ map, and PROT_NONE mprotected
@@ -220,7 +220,7 @@ func planeMapCells(t *testing.T, o Object, mode PlaneMode) {
 	}
 	// The machine's own answer to execmod, asked before this test attaches a hook: an LSM can refuse a dirtied
 	// private file map made executable for every process. SELinux enforcing does on AlmaLinux 9.8 (EACCES, and 0
-	// once permissive, with selinuxuser_execmod off and no AVC record, 2026-11-10). There the outside-run execmod
+	// once permissive, with selinuxuser_execmod off and no AVC record). There the outside-run execmod
 	// answers what the machine answers, and in lsm mode, where bpf follows selinux in the LSM order, the plane's
 	// file_mprotect never runs for it, so its scratch says nothing; fmod_ret runs before every LSM and is still held.
 	execmodHere := planeMapMprotect([]string{"mprotect", strconv.Itoa(unix.PROT_READ | unix.PROT_WRITE),
@@ -248,7 +248,7 @@ func planeMapCells(t *testing.T, o Object, mode PlaneMode) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = execInner.Close() })
-	// The slot's header (enforce-plane R6): this run's gen and an exec: section.
+	// The slot's header: this run's gen and an exec: section.
 	setSlot := func(gen, flags uint32) {
 		t.Helper()
 		if err := coll.Maps[MapPlaneSlots].Put(uint32(runIdx), PlaneSlot{Gen: gen, Flags: flags}); err != nil {

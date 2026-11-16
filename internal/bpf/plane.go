@@ -7,7 +7,7 @@ import (
 	"structs"
 )
 
-// Tier 3's decision plane, bpf/decide.bpf.c (ADRs 0024, 0025; docs/p0/TIER3-PLAN.md §3). It is compiled twice,
+// Tier 3's decision plane, bpf/decide.bpf.c (ADRs 0024, 0025). It is compiled twice,
 // once per reader of its walk, and the two builds are registered apart from the tier-2 objects: Objects lists
 // neither, so nothing that loads every tier-2 object loads a plane build, and PlaneObjects lists both. Hash covers
 // both, since the plane pins its maps beside the tier-2 ones and shares tego_run_set with them.
@@ -44,16 +44,16 @@ type PlaneHook struct {
 	Security string
 	// Decides reports whether the hook's body in decide.bpf.c can refuse (has a `return -EACCES`), rather than
 	// being T2's stub that looks its run up and returns 0. doctor's mode probe requires a deciding hook to refuse
-	// its probe syscall in the scratch cgroup and a stub to pass it (docs/p0/enforce-plane.md R21); bpf/tests
+	// its probe syscall in the scratch cgroup and a stub to pass it; bpf/tests
 	// TestPlaneDecidesMatchesTheBodies holds this field to the C, so the ticket that writes a body turns the
 	// refusal check on by the same change.
 	Decides bool
-	// Unix marks step D's hooks (enforce-plane R14), which decide unix names where cgroup/connect_unix and
+	// Unix marks step D's hooks, which decide unix names where cgroup/connect_unix and
 	// sendmsg_unix do not exist (below 6.7). A backend loads and attaches them only there, so no name is decided
 	// twice; doctor's probe exercises them on every kernel.
 	Unix bool
-	// Optional marks a hook some supported kernel does not have, whose rule another hook decides there
-	// (enforce-plane R3, §6 E14): file_truncate below 6.2 (ftruncate(2) and an O_TRUNC open reach path_truncate
+	// Optional marks a hook some supported kernel does not have, whose rule another hook decides there:
+	// file_truncate below 6.2 (ftruncate(2) and an O_TRUNC open reach path_truncate
 	// instead) and the ACL hooks below 6.2 (setfacl is an xattr write there, inode_setxattr's). Where the kernel's
 	// BTF lacks its target the hook is left out of the mode's load, probe and links, and doctor's row says so;
 	// where the target exists it must pass like any other.
@@ -85,7 +85,7 @@ func (h PlaneHook) Target(m PlaneMode) string {
 	return h.Security
 }
 
-// PlaneHooks are the plane's hooks, steps A, D, B and C (in landing order of their tickets) of TIER3-PLAN §2, in enum tego_plane_hook order;
+// PlaneHooks are the plane's hooks, steps A, D, B and C (in the order they landed), in enum tego_plane_hook order;
 // each is two programs, one per mode (bpf/tests TestPlaneHooksHaveBothSections pins the C side).
 var PlaneHooks = []PlaneHook{
 	{Name: "file_open", LSM: "file_open", Security: "security_file_open", Decides: true},
@@ -108,7 +108,7 @@ var PlaneHooks = []PlaneHook{
 	{Name: "inode_set_acl", LSM: "inode_set_acl", Security: "security_inode_set_acl", Decides: true, Optional: true},
 	{Name: "inode_remove_acl", LSM: "inode_remove_acl", Security: "security_inode_remove_acl", Decides: true, Optional: true},
 	{Name: "socket_create", LSM: "socket_create", Security: "security_socket_create", Decides: true},
-	// Step C (enforce-plane R26, decide_stepc.h): PROT_EXEC mappings.
+	// Step C (decide_stepc.h): PROT_EXEC mappings.
 	{Name: "mmap_file", LSM: "mmap_file", Security: "security_mmap_file", Decides: true},
 	{Name: "file_mprotect", LSM: "file_mprotect", Security: "security_file_mprotect", Decides: true},
 	{Name: "socket_bind", LSM: "socket_bind", Security: "security_socket_bind", Decides: true},
@@ -125,9 +125,9 @@ var PlaneHooks = []PlaneHook{
 
 // PlaneDecidesMappings reports whether the plane's hooks include step C's, whose bodies decide an executable mapping
 // (ADR 0027): with bprm_check, they refuse an anonymous image's exec and its PROT_EXEC mapping race-free, so a run a
-// plane mode decides needs no seccomp arm refusing every memfd_create where the kernel lacks MFD_NOEXEC_SEAL
-// (enforce-plane R27). A mode is selected only once doctor's probe saw each of these refuse in its probe row
-// (enforce-plane R21), so a run the plane decides has them loaded and probed.
+// plane mode decides needs no seccomp arm refusing every memfd_create where the kernel lacks MFD_NOEXEC_SEAL.
+// A mode is selected only once doctor's probe saw each of these refuse in its probe row,
+// so a run the plane decides has them loaded and probed.
 func PlaneDecidesMappings() bool {
 	var mmap, mprotect bool
 	for _, h := range PlaneHooks {
@@ -142,7 +142,7 @@ func PlaneDecidesMappings() bool {
 }
 
 // PlaneHooksFor is the hooks mode m loads on a kernel where has reports which functions its BTF declares: every
-// hook but an Optional one whose target has does not report (enforce-plane R3, §6 E14). A nil has keeps every
+// hook but an Optional one whose target has does not report. A nil has keeps every
 // hook.
 func PlaneHooksFor(m PlaneMode, has func(fn string) bool) []PlaneHook {
 	out := make([]PlaneHook, 0, len(PlaneHooks))
@@ -158,7 +158,7 @@ func PlaneHooksFor(m PlaneMode, has func(fn string) bool) []PlaneHook {
 // The plane's own maps (bpf/include/maps.h, TEGO_PLANE_MAPS), pinned by name beside SharedMaps.
 const (
 	// MapPlaneRows is a HASH_OF_MAPS from run_idx to the slot's rows map (struct inode * -> PlaneRow). A slot keeps
-	// its map across runs; a row of another gen counts as absent (ADR 0025 (1) as T0 amended it).
+	// its map across runs; a row of another gen counts as absent (ADR 0025 (1)).
 	MapPlaneRows = "tego_plane_rows"
 	// MapPlaneExecRows is a HASH_OF_MAPS from run_idx to the slot's exec-rows map (struct inode * -> PlaneExecRow).
 	MapPlaneExecRows   = "tego_plane_exec_rows"
@@ -173,11 +173,11 @@ const (
 	MapPlaneUnixPolicy = "tego_plane_unix_policy"
 	// MapPlaneRecorded is a one-entry ARRAY (key 0) of the build's attached recorder fexit programs, as a mask of
 	// 1 << the PlaneHooks index plus one (PlaneRecordedMask): a refusal on a hook whose bit is clear writes the
-	// plane's own KindPlaneFS sample (enforce-plane §7, R23, TIER3-PLAN T9b). 0, the value nobody wrote, samples
+	// plane's own KindPlaneFS sample. 0, the value nobody wrote, samples
 	// every refusal.
 	MapPlaneRecorded = "tego_plane_recorded"
 	// MapPlaneSlots is an ARRAY of PlaneSlot by run_idx: each slot's header, written last by Prepare and zeroed first
-	// by every clear; a decided hook refuses on a header of another gen (enforce-plane R6).
+	// by every clear; a decided hook refuses on a header of another gen.
 	MapPlaneSlots = "tego_plane_slots"
 	// MapPlaneNameRows is a HASH_OF_MAPS from run_idx to the slot's name map (ADR 0043 D9): a name key
 	// (agent.NameKey, a hash of a folded literal, never an address) -> PlaneNameRow, and key 0 -> the run's
@@ -220,7 +220,7 @@ var PlaneMaps = []string{MapPlaneRows, MapPlaneExecRows, MapPlaneListenRows, Map
 
 // PlaneFexitPrograms are the recorder's fexit programs of ObjectTraceProc on the security_ functions the plane
 // decides at, by the plane hook each wraps (ADR 0024 (11)): where one is attached it takes the plane's decision and
-// writes the action's one line, and where it is not the plane writes its own sample (enforce-plane R23, §7).
+// writes the action's one line, and where it is not the plane writes its own sample.
 var PlaneFexitPrograms = map[string]string{
 	"file_open": ProgFileOpen, "path_rename": ProgPathRename, "path_link": ProgPathLink, "path_unlink": ProgPathUnlink,
 	"path_rmdir": ProgPathRmdir, "path_mknod": ProgPathMknod, "path_mkdir": ProgPathMkdir,
@@ -327,7 +327,7 @@ type PlaneRow struct {
 
 // PlaneExecRow is a slot's exec-rows value: struct tego_plane_exec_row. Keyed by a link (the kernel's
 // tego_exec_link_key over an executable's inode, its directory's and its name), it is one name in one directory
-// that file may be run under, one row per hard link an entry names (ADR 0025 (1) and its 2026-09-30 note,
+// that file may be run under, one row per hard link an entry names (ADR 0025 (1),
 // SEMANTICS §4); keyed by PlaneNameKey, a name matched wherever it lies. Whether exec is decided, and exec.anonymous,
 // are the slot header's (PlaneSlot), never a row's.
 type PlaneExecRow struct {
@@ -369,7 +369,7 @@ const (
 	PlaneRowScopeOnly uint8 = 0x40
 )
 
-// PlaneSlot is the MapPlaneSlots value: struct tego_plane_slot, a slot's header (enforce-plane R6). Every decided
+// PlaneSlot is the MapPlaneSlots value: struct tego_plane_slot, a slot's header. Every decided
 // hook reads it after its run-set hit and refuses, counting NoRows, when its Gen is not the run's: a cleared slot
 // (Gen 0, which no slot epoch is), a previous run's, or one whose Prepare did not finish. What a contract section's
 // absence says (no exec:, no net:) its Flags say, so a slot whose rows are gone refuses rather than allows.
@@ -773,7 +773,7 @@ const (
 	BindChainRefused uint32 = 16
 	BindDecided      uint32 = 32
 	// BindURing marks a record an io_uring op's producer wrote (TEGO_BIND_URING): no supervisor notification
-	// precedes it, so no supervisor naming is expected (enforce-plane §2.20).
+	// precedes it, so no supervisor naming is expected.
 	BindURing uint32 = 64
 )
 
@@ -834,8 +834,8 @@ type PlaneCounts struct {
 	NoRows     uint64
 }
 
-// PlaneUnix is the MapPlaneUnixPolicy value: struct tego_plane_unix, a slot's policy for step D's hooks
-// (enforce-plane R14), written with the run's gen by Prepare's fill.
+// PlaneUnix is the MapPlaneUnixPolicy value: struct tego_plane_unix, a slot's policy for step D's hooks,
+// written with the run's gen by Prepare's fill.
 type PlaneUnix struct {
 	_ structs.HostLayout
 	// RelayCgroupID is the launcher's cgroup, the one caller whose /proc/self/fd/<n> connect is admitted; 0 admits

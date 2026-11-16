@@ -82,7 +82,7 @@ func TestValidatedDialFailClosedHostIdentityAndMachineRange(t *testing.T) {
 	}
 }
 
-// TestValidatedDialRefusesWhatTheLocalTableSendsHere is agent-contract R18's this-host class in the forwarder, read as
+// TestValidatedDialRefusesWhatTheLocalTableSendsHere is the resolved-address check's this-host class in the forwarder, read as
 // the supervisor's resolved-address check reads it: a model name answered with an address of an AnyIP range the local
 // routing table sends here (`ip route add local 198.51.100.0/24 dev lo`) reaches a server bound to all interfaces, as
 // one answered with the host's LAN address does, so it is not dialed; the name's other address is. Read from the

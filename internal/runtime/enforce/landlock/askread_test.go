@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// An fs.ask_read entry (POC 2026-10-06) is a deny_read to the ruleset: its target is sealed with no right and its
+// An fs.ask_read entry is a deny_read to the ruleset: its target is sealed with no right and its
 // ancestors get READ_DIR only, exactly as a plain deny_read's, so a read the supervisor does not hold is refused
 // by the kernel. And because the supervisor has to find the reads it holds, the filter notifies every open under
 // every record mode, as record: full does; a table without one keeps the write-only open arm.

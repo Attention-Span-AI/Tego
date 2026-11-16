@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package sig recognises an agent process from facts about it (docs/poc/agent-watcher.md, M2). It is pure: the
+// Package sig recognises an agent process from facts about it (M2). It is pure: the
 // caller reads /proc and hands over what it found, so the rules are tested without a process.
 //
 // A rule is one of four shapes, each a plain editable value, and the list of them is data:

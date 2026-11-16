@@ -95,7 +95,7 @@ func TestLostChunkMarksTheRestOfTheCall(t *testing.T) {
 	}
 }
 
-// TestSSLEmitClampsBeforeTheRead pins the source half of the 6.1/6.8 verifier fix (kernel matrix 2026-09-29):
+// TestSSLEmitClampsBeforeTheRead pins the source half of the 6.1/6.8 verifier fix:
 // clang deleted tego_ssl_emit_class's `if (n > cls) n = cls` as dead, because its caller's class branches
 // already proved it, and passed the read a copy of n from a stack slot the branches had not tested; the 6.1 and
 // 6.8 verifiers refused every capturing program ("R2 unbounded memory access", "mem_size=592 off=80
@@ -175,7 +175,7 @@ func TestCaptureCountsItsOwnDrops(t *testing.T) {
 }
 
 // TestEntryOnlyWriteLimitationIsStated is the deliverable for the half of the write path that cannot be
-// fixed in this file. docs/p0/capture-derive.md §6 #12 reasons about entry-only write capture in one
+// fixed in this file. The capture design reasoned about entry-only write capture in one
 // direction only — "no data lost for plain SSL_write/_ex2/_ex (length known at entry)" — and never about
 // data gained, and the file inherited that one-sidedness.
 //

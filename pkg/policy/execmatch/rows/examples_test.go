@@ -73,7 +73,7 @@ func TestMotivatingExamples(t *testing.T) {
 		// git bisect next is a verb (git bisect -h lists it): a rule can name it, and an allow list of other bisect
 		// verbs does not admit it. git 2.49 removed --super-prefix; the row listed it as taking a value, so `git
 		// --super-prefix push` read push as that value and no subcommand at all. Now the word is unknown and read
-		// both ways, so a deny on git push refuses it (2026-10-16, TestGitRowFresh holds both to the installed git).
+		// both ways, so a deny on git push refuses it (TestGitRowFresh holds both to the installed git).
 		if _, err := execmatch.Parse("git bisect next", execmatch.ListDeny, Builtin()); err != nil {
 			t.Fatalf("deny: git bisect next: %v", err)
 		}
@@ -95,7 +95,7 @@ func TestMotivatingExamples(t *testing.T) {
 		// git reflog write (2.51.1) appends an entry to a ref's reflog, git hook list (2.54) prints the hooks of an
 		// event and git multi-pack-index compact (2.54) writes a new multi-pack-index layer. Each is a verb of its own:
 		// a rule names it, an allow list of its level's other verbs refuses it, and reflog's default verb, show, does
-		// not take it in, though git before 2.51.1 runs `git reflog write` as show (2026-11-02, the first CI run on
+		// not take it in, though git before 2.51.1 runs `git reflog write` as show (the first CI run on
 		// git 2.56.0; TestGitRowFresh holds the levels to the installed git, TestGitVerbsRecorded to 2.56.0's verbs).
 		const oid = "0123456789abcdef0123456789abcdef01234567"
 		for _, c := range []struct{ verb, line, other string }{

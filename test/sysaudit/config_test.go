@@ -68,7 +68,7 @@ func walkLook(c testutil.Syscall, p string, layers ...string) bool {
 	return false
 }
 
-// TestConfigLoadSourcesOpensOnlyItsLayers is identity-config.md I10, syscall-audited: loading the three file
+// TestConfigLoadSourcesOpensOnlyItsLayers, syscall-audited: loading the three file
 // layers opens, stats and reads each layer file and its directory and no other path: no $HOME, nothing
 // outside the layer paths but the procfs walk's Lstat and Readlink of their ancestors (walkLook), nothing written.
 func TestConfigLoadSourcesOpensOnlyItsLayers(t *testing.T) {

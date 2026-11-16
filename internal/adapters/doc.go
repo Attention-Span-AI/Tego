@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package adapters is Layer 3's registry of harness provisioners (docs/FEATURES.md I2, E41; agent-contract.md R27;
+// Package adapters is Layer 3's registry of harness provisioners (docs/FEATURES.md I2, E41;
 // ADR 0062): For names the provisioner of each harness this build can provision, and the harness adapters live in
 // its subdirectories (claudecode, openaicodex). A provisioner returns bytes and names (pkg/spec/harness.Provision);
 // the launcher (internal/runtime) makes every file, so an adapter writes nothing of the run's and never modifies agent

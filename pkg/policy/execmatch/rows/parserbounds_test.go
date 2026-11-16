@@ -308,7 +308,7 @@ func TestSeparatorVocabularyModes(t *testing.T) {
 	}
 }
 
-// TestSeparatorDenySweep keeps the review's class-wide attack check bounded and
+// TestSeparatorDenySweep keeps the class-wide attack check bounded and
 // deterministic. Every named command and wildcard level gets all 13 spellings;
 // every staged prefix of a later refusal must remain refused or unfinished.
 func TestSeparatorDenySweep(t *testing.T) {

@@ -19,8 +19,6 @@ import (
 // path lands, so the line must not read refused; and a write or a read through a symlink planted in a write
 // entry that leads out of it, or into a deny_read entry, is refused, so the line must not read allow. Every
 // verdict is re-taken on the walked target, named by the entry the target lies under.
-//
-// Spec: docs/p0/enforce-landlock.md R15, R17.
 func TestFSRefusalIsRetakenWhereThePathLands(t *testing.T) {
 	fs := []agent.FSRule{
 		{Path: "/work/proj", Kind: agent.FSWrite, Raw: "./proj"},

@@ -65,7 +65,7 @@ func lookupForms() []lookupForm {
 // is a destination like any other the contract does not name. A connected lookup was refused at its connect, and
 // an unconnected one — sendto, sendmsg or sendmmsg carrying the resolver's address — was continued under a refused
 // line marked best_effort, so the query left and the answer came back. Every form is refused now, with R10's
-// errno, by one enforced line (R13b as amended 2026-10-16), and nothing is sent from this process either.
+// errno, by one enforced line (R13b), and nothing is sent from this process either.
 func TestDNSOffRefusesEveryLookupForm(t *testing.T) {
 	for _, form := range lookupForms() {
 		t.Run(form.name, func(t *testing.T) {

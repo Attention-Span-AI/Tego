@@ -14,7 +14,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// TestPrepareScrubsARecycledSlotsLeftoverRows is the fail-open half of enforce-cgroup-observe.md §5 R12, §8 I5 and §6 E32. The verdict maps are
+// TestPrepareScrubsARecycledSlotsLeftoverRows is the fail-open half of slot reuse. The verdict maps are
 // LIBBPF_PIN_BY_NAME, so they outlive the launcher that wrote them, and the slot table hands a dead launcher's
 // run_idx to the next run (slots.go's dead-owner reclaim). Nothing else in Prepare looks at what is already
 // keyed by the slot it was given: connect4/6 does one exact lookup on (run_idx, family, proto, port, addr) and
@@ -80,7 +80,7 @@ func TestPrepareScrubsARecycledSlotsLeftoverRows(t *testing.T) {
 	}
 }
 
-// TestPrepareFailsWhenTheSlotCannotBeScrubbed is the fail-closed reading of the same case (enforce-cgroup-observe.md §6 E32): if the leftovers
+// TestPrepareFailsWhenTheSlotCannotBeScrubbed is the fail-closed reading of the same case: if the leftovers
 // cannot be proven gone, the run must not start on that index rather than start beside them.
 func TestPrepareFailsWhenTheSlotCannotBeScrubbed(t *testing.T) {
 	t.Parallel()
@@ -102,8 +102,8 @@ func TestPrepareFailsWhenTheSlotCannotBeScrubbed(t *testing.T) {
 	}
 }
 
-// TestDetachKeepsTheSlotWhenARowSurvives pins the other direction of enforce-cgroup-observe.md §5 R12 and §8 I5 — "freed only after every map row
-// referencing it is gone (Detach blocks release on this)" — against the ordinary joined-error teardown, which
+// TestDetachKeepsTheSlotWhenARowSurvives pins the other direction — a slot is freed only after every map row
+// referencing it is gone (Detach blocks release on this) — against the ordinary joined-error teardown, which
 // would otherwise note the failure and hand the index on anyway. The slot record holds this process's pid, so
 // keeping it costs nothing permanent: the next launcher reclaims it once this one is gone, and scrubs it first.
 func TestDetachKeepsTheSlotWhenARowSurvives(t *testing.T) {

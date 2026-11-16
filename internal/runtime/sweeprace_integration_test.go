@@ -17,15 +17,15 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestIntegrationConcurrentSweepersEndAnOrphanOnce is runtime-launch.md §6 case 10: sweepers racing for one
+// TestIntegrationConcurrentSweepersEndAnOrphanOnce: sweepers racing for one
 // orphan each probe its lock with flock(LOCK_EX|LOCK_NB), exactly one wins it, and the others read the run as
 // not orphaned and move on (R12) — one run_end, never two, and one sweeper reporting the orphan. Every sweeper
 // opens the lock file itself, so each holds its own open file description and the flocks conflict as they do
 // between processes.
 //
-// Also pins runtime-launch.md E10: racing sweepers end an orphan once.
+// Also pins: racing sweepers end an orphan once.
 //
-// Also pins runtime-launch.md R20: the per-run flock probe alone arbitrates racing sweepers.
+// Also pins: the per-run flock probe alone arbitrates racing sweepers.
 func TestIntegrationConcurrentSweepersEndAnOrphanOnce(t *testing.T) {
 	const sweepers = 16
 	bin := tegoBinary(t)

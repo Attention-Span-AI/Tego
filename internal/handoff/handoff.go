@@ -230,8 +230,7 @@ func trusted(path string, st *unix.Stat_t, euid int, groups []int) error {
 
 // executable reports whether the caller (euid, in groups) could execute a file of st's owner, group and mode, as the
 // kernel's mode check does for a file without an ACL: the owner's bit for its owner, else the group's for a member of
-// its group, else the others'. An ACL's named entries and a security module's exec rule are not read (ADR 0100's
-// review-round-1 note).
+// its group, else the others'. An ACL's named entries and a security module's exec rule are not read (ADR 0100).
 func executable(st *unix.Stat_t, euid int, groups []int) bool {
 	switch {
 	case int64(st.Uid) == int64(euid):

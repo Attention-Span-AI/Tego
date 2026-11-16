@@ -17,8 +17,6 @@ import (
 // TestCompileCrossCheck is I5 end to end without a kernel: agent.Compile and Prepare run on the same
 // contract; the entry compile marks unenforced is the one the handle reports, and the other deny_read
 // is enumerated.
-//
-// Spec: docs/p0/enforce-landlock.md I5.
 func TestCompileCrossCheck(t *testing.T) {
 	root := tempDir(t)
 	mkTree(t, root, "work/.env", "work/src/main.py", "secret/key", "public/x", "ledger/")
@@ -62,7 +60,7 @@ func TestCompileCrossCheck(t *testing.T) {
 	if e, ok := h.entry(filepath.Join(root, "secret")); !ok || e.Kind != kindDenyTarget {
 		t.Errorf("secret = %+v, %v", e, ok)
 	}
-	// The ledger root is read-denied as well, whatever deny_read says (agent-contract R6a).
+	// The ledger root is read-denied as well, whatever deny_read says.
 	assertLevel(t, h, root, []string{"secret", "ledger"})
 	if e, ok := h.entry("/bin/sh"); !ok || e.Access != execAccess {
 		t.Errorf("/bin/sh = %+v, %v", e, ok)

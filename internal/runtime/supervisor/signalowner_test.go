@@ -16,8 +16,6 @@ import (
 // signal that owner. The owner is an int in the caller's memory: a pid when positive, a process group when
 // negative, none when 0. One outside the run, or one that cannot be read, is refused EPERM with a
 // signal-scope line; another ioctl request is not this arm's and is continued.
-//
-// Spec: docs/p0/supervisor.md R33.
 func TestSignalScopeReadsTheIoctlOwner(t *testing.T) {
 	const (
 		agent    = 100 // the caller, in the run
@@ -103,8 +101,6 @@ func TestSignalScopeReadsTheIoctlOwner(t *testing.T) {
 // the kernel takes both as 32-bit ints, so a caller that sets junk above bit 31 is still notified and still
 // reaches F_SETOWN / FIOSETOWN in the kernel. The handler must decide such a call, never answer it as one
 // the arm does not own (a CONTINUE with no owner read).
-//
-// Spec: docs/p0/supervisor.md R33.
 func TestSignalTargetIgnoresTheHighHalfOfEveryScalarTheFilterMatches(t *testing.T) {
 	const junk = 0xdead_beef_0000_0000
 	for _, tc := range []struct {

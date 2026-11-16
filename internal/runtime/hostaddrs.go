@@ -24,7 +24,7 @@ const hostAddrsMaxAge = time.Second
 // (hostaddr.ReadLocalTable: an RTM_GETROUTE dump, unprivileged as well). Both are taken again when the snapshot is
 // older than maxAge, on the next check that needs it. The supervisor keeps a snapshot of its own from the same dumps
 // for its connect and send decisions; this one is the run's, so the rows follow the same addresses without reading
-// the supervisor's, and refuse every one the supervisor's resolved-address check refuses (supervisor R13b). Both run
+// the supervisor's, and refuse every one the supervisor's resolved-address check refuses. Both run
 // in the host's network namespace, which the agent shares in tiers 1 and 2, so these are the addresses a connect
 // from the run reaches this host on.
 type hostAddrs struct{ *hostaddr.Snapshot }
@@ -45,12 +45,11 @@ func (h *hostAddrs) has(a netip.Addr) (local, known bool) { return h.Has(a) }
 // with (rowsTable) and in every refresh the run's DNS set hands it (dns.Options.ResolvedDenied,
 // dns.Set.Refreshed): the run table's own ResolvedDenied, with the machine's ranges,
 // and this host's own addresses (an interface's, or one of an AnyIP range its local routing table sends here), which
-// agent-contract R18 counts as loopback, since a name resolved or rebound to one reaches every service bound to all
+// the resolved-address check counts as loopback, since a name resolved or rebound to one reaches every service bound to all
 // interfaces as loopback would. Those are refused for every
 // host entry but a localhost name, which keeps the loopback class, and while no snapshot of them was ever taken
 // every address is refused: the supervisor's check does the same, and a row that admitted what the supervisor
-// refuses would decide a datagram whose address a sibling thread rewrote after the supervisor read it
-// (supervisor R13b).
+// refuses would decide a datagram whose address a sibling thread rewrote after the supervisor read it.
 func refreshDenied(rt *agent.RuleTable, host *hostAddrs) func(agent.NetRule, netip.Addr) (string, bool) {
 	return func(e agent.NetRule, a netip.Addr) (string, bool) {
 		if class, denied := rt.ResolvedDenied(e, a); denied {
@@ -77,10 +76,10 @@ func (r *runner) hostSnapshot() *hostAddrs {
 
 // rowsTable is the table the enforcement backend is prepared with: the run's own, with each host entry's
 // compile-time addresses passed through refreshDenied, and one it refuses moved to the entry's Denied, as Compile
-// moves an address in a class it knows. Compile cannot know this host's addresses (agent-contract R18), and tier
+// moves an address in a class it knows. Compile cannot know this host's addresses, and tier
 // 2 writes its first rows from these, so without this a name whose first answer held one of them was a row
 // admitting it until the DNS worker's first pass, and for the whole run when every address of the entry was one,
-// since tier 2 keeps an entry's rows when a refresh leaves it with none (enforce-cgroup-observe §4 RefreshNet).
+// since tier 2 keeps an entry's rows when a refresh leaves it with none (RefreshNet).
 // An entry left with no address gets no row, as one Compile left with none does. Tier 1 reads no address from
 // the table, so the same filter is harmless there. The run's table is not changed (agent.RuleTable I4), and when
 // nothing is refused the backend is given it as it is.

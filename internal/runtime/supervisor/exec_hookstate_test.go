@@ -9,7 +9,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestDenyListRefusesExecFromTheHookState is agent-contract.md R27's hook-state grant held as R10a holds the CODEX_HOME
+// TestDenyListRefusesExecFromTheHookState is the hook-state grant held as the CODEX_HOME is
 // (ADR 0062): a deny-list run's hook-state directory is a write grant the run makes on its own authority, so a copy
 // of a denied program there, run directly or through the dynamic loader, is refused harness-state-exec; a symlink there
 // to a program elsewhere is that program, and the CODEX_HOME keeps its own rule.

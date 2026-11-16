@@ -4,7 +4,7 @@
 # lib.sh — shared plumbing for the kill test scripts (test/e2e/kt*.sh) and the VM matrix row
 # (test/vm/run-matrix-row.sh). Not a kill test itself: nothing here attacks a guarantee, it only
 # gives every kt*.sh the same note/pass/fail/skip vocabulary so each script stays about the one
-# numbered test it names (docs/P0-DESIGN.md §10, §12).
+# numbered test it names.
 #
 # Sourced, never executed directly:
 #   repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -67,7 +67,7 @@ kt_need_jq() {
 kt_am_root() { [ "$(id -u)" -eq 0 ]; }
 
 # kt_sudo_user reports whether a root run has a user to drop the agent to. A root `tego run` drops the
-# agent to SUDO_UID and refuses to start without one (docs/p0/runtime-launch.md), so a root half needs
+# agent to SUDO_UID and refuses to start without one, so a root half needs
 # to have been started with sudo from a user account, as FEATURES R16 (b) says it is.
 kt_sudo_user() { kt_am_root && [ -n "${SUDO_UID:-}" ] && [ "${SUDO_UID:-0}" != 0 ]; }
 
@@ -83,7 +83,7 @@ kt_agent_owns() {
 # helper binary and helper pid file lives under it, so the exit trap can clean up everything the script
 # made, including what a function made inside a $(...) subshell, whose variables never come back.
 KT_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/tego-kt-XXXXXX")"
-# The machine config refuses a relative $TEGO_CONFIG layer (identity-config R14), so the directory is made absolute.
+# The machine config refuses a relative $TEGO_CONFIG layer, so the directory is made absolute.
 if [ -z "$KT_ROOT" ] || ! KT_ROOT="$(cd "$KT_ROOT" && pwd)"; then
 	echo "lib.sh: no scratch directory under ${TMPDIR:-/tmp}" >&2
 	exit 2
@@ -93,7 +93,7 @@ chmod 755 "$KT_ROOT"
 # kt_require_testhooks BIN refuses a binary that is not built with -tags tegotesthooks, unless this is a disposable
 # machine (TEGO_DISPOSABLE_HOST, which the KVM guests set: test/vm/run-matrix-row.sh, root-suites.sh). A product
 # build ignores TEGO_TEST_CHAIN_ANCHOR and anchors every run in the invoking user's own ~/.tego/chain.log, where
-# nothing says afterwards which lines were a test's (identity-config.md R27; tools/isocheck). The test hooks build is
+# nothing says afterwards which lines were a test's (tools/isocheck). The test hooks build is
 # the only one that contains the variable's name, so its presence in the file is the check.
 kt_require_testhooks() {
 	grep -aq TEGO_TEST_CHAIN_ANCHOR "$1" 2>/dev/null && return 0
@@ -327,7 +327,7 @@ kt_pydeps() {
 }
 
 # kt_save_fixture copies one run's ledger into $KT_FIXTURE_DIR/<name>/ when the caller asked for
-# fixtures (P0-DESIGN §10 "every kill test adds a recorded fixture"; test/fixtures/README.md). A kill
+# fixtures (every kill test adds a recorded fixture; test/fixtures/README.md). A kill
 # test saves the ledger of the run it judges, whatever its verdict: the fixture is the product's record of
 # a real run, which every view must read, not a record that the kill test passed. What is saved is what a
 # view reads: events.jsonl, and contract.yaml and blobs/ when the run has them, plus the
@@ -380,7 +380,7 @@ kt_save_fixture() {
 # reach the invoking user's own ~/.tego. A binary built with -tags tegotesthooks, which kt_ensure_tego builds,
 # refuses every command (doctor and compile included) while its machine config has no ledger_root of its own; the
 # product build would run and anchor in the developer's chain.log. kt_config, called later with the script's own work
-# directory, replaces this one (identity-config.md R27).
+# directory, replaces this one.
 mkdir -p "$KT_ROOT/iso"
 chmod 755 "$KT_ROOT/iso"
 kt_config "$KT_ROOT/iso"

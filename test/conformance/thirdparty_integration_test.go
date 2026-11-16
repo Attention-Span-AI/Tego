@@ -75,7 +75,7 @@ func startThirdParty(t *testing.T, paths []string) (stop func() []string) {
 		for _, l := range ls {
 			// Every line first, to the reader's EOF, and Wait after: Wait closes the stdout pipe, and before the
 			// reader is done that loses the listener's last line, its count (a THIRD-PARTY "refused -1 opens" on
-			// 6.17, 2026-10-19).
+			// 6.17).
 			denied := -1
 			for line := range l.lines {
 				if m := listenerStats.FindStringSubmatch(line); m != nil {

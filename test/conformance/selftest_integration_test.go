@@ -13,7 +13,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/platform/sys"
 )
 
-// The suite's self-test against the real kernel (ADR 0017, amended 2026-10-19; A-0017-3): a contract that grants
+// The suite's self-test against the real kernel (ADR 0017; A-0017-3): a contract that grants
 // more than the model beside it drives the unchanged product into exactly the fail-open shape the invariants exist
 // to catch, and the axis report must hold it. It needs no mutated build: a test-hook that forced a decision open
 // would be a fail-open switch inside the trusted code, even behind a build tag (plan decision D3).

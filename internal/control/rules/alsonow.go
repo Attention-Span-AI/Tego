@@ -88,7 +88,7 @@ const (
 // it refuses nothing the new contract allows (it may refuse less: a write block leaves reads alone), with one exception
 // that fails closed: an exec block refuses what the run grants under the removed entry (runact.BlockFromContract), and
 // where a kept entry was fixed to the same file at the same path when the run started (busybox's links), it refuses
-// that too, since the run cannot tell the two apart (ADR 0124, amended 2026-11-11):
+// that too, since the run cannot tell the two apart (ADR 0124):
 //
 //   - exec.allow X removed, or exec.deny X added: exec:X (a program; a command entry "git push" has none, since a
 //     live block names a whole program and would refuse git pull too), unless another exec.allow entry still allows

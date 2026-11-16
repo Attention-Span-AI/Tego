@@ -114,8 +114,8 @@ func (b ringBuild) has(t *testing.T, slot uint32) bool {
 // slots may all be missed: the walk lists the ring ids in one batch lookup and opens them after, and on 7.0 an
 // update or delete of the outer waits 50 to 90 us for its grace period, so the writers replace a churned ring about
 // every 0.2 ms between them; a walk the scheduler stops for a millisecond or two between the listing and the opens
-// finds every churned id freed, a ring removed meanwhile, which is not counted. GitHub's runner (7.0.0-1017-azure,
-// 2026-11-02) failed the old test, 32 churned slots alone, on a walk that counted none. In a 7.0 guest a pause put
+// finds every churned id freed, a ring removed meanwhile, which is not counted. GitHub's runner (7.0.0-1017-azure)
+// failed the old test, 32 churned slots alone, on a walk that counted none. In a 7.0 guest a pause put
 // between the listing and the opens left 1.0 of the 32 opened on average at 1 ms and none at 4 ms, while the stable
 // eight were all counted at 8 ms; with no pause, 1 walk of 5,308 opened no churned ring. Placements never meet this:
 // a ring is inserted only by placeRings, under the exclusive rings lock the counting Prepare holds.

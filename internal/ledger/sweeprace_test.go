@@ -13,7 +13,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestConcurrentSweepsKillAndEndALostRunOnce is runtime-launch.md §6 case 10 at the ledger: of N passes racing
+// TestConcurrentSweepsKillAndEndALostRunOnce, at the ledger: of N passes racing
 // for one lost run, exactly one wins its lock, kills its tree (the sweep hook) and appends run_end; the others
 // neither kill nor end it, and none of them reports it swept. Before the lock came ahead of the hook, every
 // racer ran the hook, and every racer that then lost the lock still counted the run as swept. Both passes are

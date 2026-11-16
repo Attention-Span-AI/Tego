@@ -34,8 +34,6 @@ import (
 // the held object, once the open is pinned, names it by
 // the pin's own walk: with lk moved between the decision's walk and the pin, the gate scored, and the person was
 // asked about, other/x.env, which the line names (askLineName).
-//
-// Spec: docs/p0/supervisor.md R15b.
 func TestRefusalLinesNameWhereADotDotSpellingLands(t *testing.T) {
 	askConfig := &agent.AskConfig{Hold: agent.AskHoldConnect, Timeout: agent.Duration(time.Minute), MaxPending: 4}
 	// tree makes dir/real/sub, dir/real/x.env and dir/lk -> real/sub in dir, and answers the open's spelling and the

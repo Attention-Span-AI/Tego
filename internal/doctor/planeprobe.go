@@ -27,7 +27,7 @@ import (
 	enforcecg "github.com/attention-span-ai/tego/internal/runtime/enforce/cgroup"
 )
 
-// The plane's functional probe (ADR 0024 (3); docs/p0/enforce-plane.md R21). For each mode that its preconditions
+// The plane's functional probe (ADR 0024 (3)). For each mode that its preconditions
 // allow it loads the mode's full hook set from the chosen build into doctor's own fds, maps unpinned, and attaches
 // every program with doctor's own links. It then starts a child of its own binary (PlaneProbeCommand) inside a
 // scratch cgroup, and once the child has exec'd, arms that cgroup in the probe's own tego_run_set as a run whose
@@ -69,7 +69,7 @@ const planeScratchPrefix = ".tego-doctor-plane-"
 // probePlane is the plane probe: the environment, the build, and each mode's rows and verdict, with tier cgroup's
 // mode selected under pin. keep is true only for a run (ForRun's scope, where the run-probe cache is on): then a
 // mode's matched known answers are read from and kept in the known-answers cache; doctor's own scope passes false
-// and exercises every cell afresh (limits-check-doctor-cli R27). It never fails: what it cannot establish is an answer (§4).
+// and exercises every cell afresh. It never fails: what it cannot establish is an answer (§4).
 func probePlane(root bool, uid int, release, pin string, keep bool) (*PlaneState, []HookResult) {
 	st := &PlaneState{Pin: pin, Source: planeSourceProbed}
 	if !root {
@@ -148,7 +148,7 @@ func carriesPlaneObject(o bpfobj.Object) bool {
 }
 
 // planeStaticRows is one mode's rows before any load: each hook's target in BTF and its prototype. An optional hook
-// whose target this kernel's BTF lacks is an Absent row (enforce-plane R3): the mode is selected without it, since
+// whose target this kernel's BTF lacks is an Absent row: the mode is selected without it, since
 // another hook decides its rule here, and the row says which.
 func planeStaticRows(m bpfobj.PlaneMode, spec *btf.Spec) ([]HookResult, bool) {
 	ok := true
@@ -357,7 +357,7 @@ func loadPlaneRig(m bpfobj.PlaneMode, spec *btf.Spec, o bpfobj.Object, known *en
 			bpfobj.MapPlaneExecPins: known.ExecPins, bpfobj.MapPlanePinKeys: known.PinKeys}
 	}
 	// A timed test build attributes the load to its maps and each program (probe.plane.<mode>.maps,
-	// probe.plane.prog.<mode>.<prog>.*; enforce-plane §10.1).
+	// probe.plane.prog.<mode>.<prog>.*).
 	trace := bpfobj.BeginLoad(nil, "probe.plane."+string(m)+".maps", "probe.plane.prog."+string(m))
 	if err := cs.LoadAndAssign(v.Interface(), opts); err != nil {
 		trace.End(nil)
@@ -448,7 +448,7 @@ type planeRun struct {
 func runPlaneProbe(m bpfobj.PlaneMode, spec *btf.Spec, o bpfobj.Object, uid int, rows []HookResult,
 	known *planeKnownRows, image *planeImage) (planeRun, error) {
 	// A timed test build reports the mode's steps as probe.plane.<mode>.{load,attach,exercise,known,detach}
-	// (enforce-plane §10.1's cold attribution); a product build times nothing.
+	// (cold attribution); a product build times nothing.
 	phase := "probe.plane." + string(m)
 	endLoad := startphase.Begin(nil, phase+".load")
 	rig, err := loadPlaneRig(m, spec, o, known.rows)
@@ -722,7 +722,7 @@ func (p *planeImage) close() {
 
 // planeExecImage is a memfd holding a copy of this binary, the image the bprm_check probe execs. An exec of a
 // named file would open it through file_open first, which a deciding plane refuses in the probe row (no rows map)
-// before bprm_check is reached; a memfd is no path, so file_open lets it through (enforce-plane §2.6) and bprm_check
+// before bprm_check is reached; a memfd is no path, so file_open lets it through and bprm_check
 // decides it. doctor makes one per probe (planeImage) before the first mode starts its child; each mode's child
 // inherits it as descriptor 3 (planeImageFD), so that nothing is opened once the row is armed, and doctor's own exec
 // runs the same image.

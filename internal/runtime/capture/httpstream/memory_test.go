@@ -19,7 +19,7 @@ func halfArrays(h *half) int {
 // exchanges holds none of the arrays its bodies grew. complete copied the body out and Reset the buffer, which
 // keeps the array, so every connection — idle ones included — pinned the capacity its largest body grew to
 // (up to MaxBody, 64 MiB) until the table reached MaxConns and evicted it: 4096 × 64 MiB in theory, and 1.5 GiB
-// of launcher heap for 24 connections, as measured.
+// of launcher heap for 24 connections in practice.
 func TestIdleConnectionHoldsNoArray(t *testing.T) {
 	for _, tc := range []struct {
 		name string

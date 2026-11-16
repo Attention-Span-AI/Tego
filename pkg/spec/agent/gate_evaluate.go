@@ -17,7 +17,7 @@ import (
 //
 // An fs.read row is a read-only open and an fs.write row a write-only one (the conformance actor's O_WRONLY), each
 // scored with its own kind's predicates. A run scores an open that reads and writes (O_RDWR, or O_RDONLY with O_CREAT
-// or O_TRUNC) with both kinds as one action, their scores summed (gate.md R1, amended 2026-10-16 and 2026-10-20),
+// or O_TRUNC) with both kinds as one action, their scores summed,
 // which no row states: its score is at least each of the two rows' scores for its path. A rename's or hard link's
 // source is scored by both kinds summed as the run's is, and its two ends are one action, every matching rule counted
 // once.
@@ -96,8 +96,8 @@ func EvaluateGateRow(rt *RuleTable, a Action, floor EvalResult) EvalResult {
 		return floor
 	}
 	// A rename's or a hard link's source leaves its name, so the read predicates score it too, as the run's gateFS
-	// does (ADR 0041 Step 4): the read and write predicates score it as one action, their scores summed (ADR 0007,
-	// 2026-10-20), and with no write predicates at all the read ones alone decide the row. A row has no
+	// does (ADR 0041 Step 4): the read and write predicates score it as one action, their scores summed (ADR 0007),
+	// and with no write predicates at all the read ones alone decide the row. A row has no
 	// RENAME_EXCHANGE, so its destination only receives a name and reads nothing. The two ends are one action, every
 	// rule that matches an end it scores counted once and the scores summed, as a run's gateFS scores them. Only a
 	// directory has paths beneath it for a read rule's path pattern to match: the row's

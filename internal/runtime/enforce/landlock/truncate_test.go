@@ -44,8 +44,6 @@ func runFilterABI(t *testing.T, arch Arch, full bool, abi int, data []byte) uint
 // WRITE_FILE from FMODE_WRITE, which O_RDONLY does not set, while the VFS truncates anyway. It is
 // notified (WriteFlagMask covers O_TRUNC) but the supervisor's open handler is record-only and answers
 // CONTINUE, so the notification would record the truncation rather than prevent it.
-//
-// Spec: docs/p0/enforce-landlock.md E31.
 func TestFilterTruncateBelowABI3(t *testing.T) {
 	const (
 		x86Truncate  = 76

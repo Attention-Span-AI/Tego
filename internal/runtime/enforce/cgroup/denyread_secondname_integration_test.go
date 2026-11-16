@@ -19,10 +19,10 @@ import (
 )
 
 // TestTier2DenyReadSecondNameRefused, end to end in a full `tego run --tier cgroup`:
-// a deny_read entry under a write entry, which only fanotify enforces at tier 2 (enforce-landlock R4), read
+// a deny_read entry under a write entry, which only fanotify enforces at tier 2, read
 // through a second name the agent makes itself — a hard link, a rename of the file, a rename of its directory —
 // and through a tmpfs mounted beneath it. All four were read, while the ledger said refused; the supervisor now
-// refuses the link and the renames (supervisor R15d) and the listener marks the submount.
+// refuses the link and the renames and the listener marks the submount.
 func TestTier2DenyReadSecondNameRefused(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("root")

@@ -64,7 +64,7 @@ const DetachCommand = "__uprobe-detach"
 const UprobePinDir = "uprobes"
 
 // ProbeGrace is how long a library's probes stay attached after the last run holding them has left (see
-// above; ADR 0026 (9) as amended).
+// above; ADR 0026 (9)).
 const ProbeGrace = 2 * time.Second
 
 // maxProbeGrace bounds the grace DetachMain accepts on its command line.

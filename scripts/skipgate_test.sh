@@ -152,7 +152,7 @@ has "a failed test is printed" "^--- FAIL: TestA (internal/cli)"
 has "a failed test's output is printed" "got 1, want 2"
 
 # go test's -timeout panic: test2json gives the tests that were running no result, only the package's fail, so the log
-# said FAIL for internal/runtime and nothing more (CI, 2026-11-02)
+# said FAIL for internal/runtime and nothing more (CI)
 pkgline() { # pkgline PACKAGE OUTPUT: a package's own output line
 	printf '{"Action":"output","Package":"%s/%s","Output":"%s\\n"}\n' "$m" "$1" "$2"
 }

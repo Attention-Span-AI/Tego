@@ -67,7 +67,7 @@ func TestFlockHeldBy(t *testing.T) {
 
 // TestOpenStopTargetForRefusesAnotherPidNamespace: a lock line that records a pid namespace other than the
 
-// Also pins runtime-launch.md E15, E32: a start-time mismatch on the held pidfd is not running.
+// Also pins: a start-time mismatch on the held pidfd is not running.
 func TestOpenStopTargetRejectsAStaleStartTime(t *testing.T) {
 	cmd := exec.Command("/bin/sleep", "30")
 	if err := cmd.Start(); err != nil {

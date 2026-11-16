@@ -240,7 +240,7 @@ func TestRouteSetRefusedOnALockedRun(t *testing.T) {
 }
 
 // TestALiveChangeToARunStillStartingSaysSo: a run's launcher holds its lock a few seconds before its run_start line is
-// in events.jsonl (acceptance 2B, 2026-11-11: a slow BPF load on 2 vCPUs, 3 s). In that window `tego mcp allow` said
+// in events.jsonl (a slow BPF load on 2 vCPUs, 3 s). In that window `tego mcp allow` said
 // the run "is Locked", and seconds later it worked: the mode was read before it was written, and a mode not known read
 // as Locked. Each live writer that decides on the mode or the launcher's facts now refuses there, exit 1 [starting],
 // in words that say the run is still starting and to try again, never "Locked" or "older tego"; nothing is written.
@@ -291,8 +291,8 @@ func TestALiveChangeToARunStillStartingSaysSo(t *testing.T) {
 
 // TestALiveChangeToARunWhoseStartIsUnreadableSaysSo: a run whose first record line is complete but is not a run_start
 // this tego can read (it does not decode, or it is another kind of line) will not become readable by waiting. Such a
-// run was told it "is still starting" and to "try again in a few seconds" [starting], which never came true (the
-// review's S1). It is now refused [start-unreadable], in words that say the line cannot be read, with no "yet" and no
+// run must not be told it "is still starting" and to "try again in a few seconds" [starting], which never comes true.
+// It is refused [start-unreadable], in words that say the line cannot be read, with no "yet" and no
 // "try again", and still never Locked; nothing is written. An empty ledger and a first line still being written (no
 // newline yet, which does not decode) are still starting.
 func TestALiveChangeToARunWhoseStartIsUnreadableSaysSo(t *testing.T) {

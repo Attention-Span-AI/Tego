@@ -315,8 +315,8 @@ func TestLockedRunRefusesLoosening(t *testing.T) {
 }
 
 // TestLockedRunAcrossAnUnreadableStart: a run whose run_start cannot be read is refused a loosening, never as ErrLocked
-// (its mode is not known, acceptance 2B, 2026-11-11): with no ledger yet as still starting (ErrStarting), and with an
-// undecodable first line or one that is not run_start as not readable (ErrStartUnreadable, the review's S1: waiting
+// (its mode is not known): with no ledger yet as still starting (ErrStarting), and with an
+// undecodable first line or one that is not run_start as not readable (ErrStartUnreadable: waiting
 // does not change it). One whose revision predates the modes is Locked to it, the claim that promises least. A
 // tightening is still taken.
 func TestLockedRunAcrossAnUnreadableStart(t *testing.T) {

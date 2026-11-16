@@ -24,7 +24,7 @@ const DefaultIdleTimeout = 2 * time.Minute
 
 // DefaultMaxConns is how many connections one listener holds open at once; the one past it is closed as soon as
 // it is accepted (R27). No cgroup covers the launcher (budget's doc), and each connection costs it a
-// goroutine, a descriptor and about 12 KB of buffers and state (measured: 4000 connections, 4001 goroutines,
+// goroutine, a descriptor and about 12 KB of buffers and state (4000 connections take 4001 goroutines,
 // 4000 descriptors, ~50 MB), so the number an agent may open is bounded here, as the capture budget bounds the
 // bytes; what anything else on the host, which can reach a loopback port too (R19a), may hold is bounded apart
 // (capListener), so that it cannot take these slots. 2048 is twice the largest
@@ -223,7 +223,7 @@ func (l *Listener) turnAwayOutsider(c net.Conn, err error) {
 // refuseOverCap records a connection closed at the cap as one gap why=size-cap: a cap this component set, as R37
 // defines the value, and a shortfall of capture if it was the agent's (I4). It is counted for the run's gap report
 // rather than written as a line of its own, since whoever opens connections chooses how many are refused. It
-// reports nothing unmetered (docs/p0/limits-check-doctor-cli.md R1): the connection was closed before a byte of
+// reports nothing unmetered: the connection was closed before a byte of
 // it was read, so nothing of it reached the model host to be spent on. Only the first is logged at warn level,
 // for the reason refusePeer gives.
 func (l *Listener) refuseOverCap() {

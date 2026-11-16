@@ -170,7 +170,7 @@ func TestEmptyPagesGiveANextStep(t *testing.T) {
 }
 
 // TestReadGapWhenTheRecordCannotTell: a tier landlock run whose run_start says it kept no file read but has no
-// reads_notified (a ledger written before 2026-10-25) cannot say whether Landlock refused a read without a line, so
+// reads_notified (an older ledger) cannot say whether Landlock refused a read without a line, so
 // its words say a refused read may be missing too, as tego receipt's do. A root tier's run that says why=kernel keeps
 // its refused reads in the kernel record, so only the allowed ones are missing. The Overview's note then speaks of
 // every file read, not of refused ones alone: at a root tier the refused reads are in the counts and the allowed are not.

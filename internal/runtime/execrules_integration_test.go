@@ -219,7 +219,7 @@ func TestIntegrationExecDenySubcommand(t *testing.T) {
 // The repository's commit is made with automatic maintenance off. A commit starts `git maintenance run --auto
 // --detach`, and from git 2.55 the detached process holds .git/objects/maintenance.lock until it ends, after the
 // commit has returned: agentOwnsTree's walk, as root, listed the lock and found it gone when it came to chown it
-// (GitHub's root-suites, git 2.56, 2026-11-02: "lchown .../.git/objects/maintenance.lock: no such file or directory").
+// (GitHub's root-suites, git 2.56: "lchown.../.git/objects/maintenance.lock: no such file or directory").
 // With maintenance.auto false git starts no maintenance at all, so nothing but this test writes the tree it hands to
 // the agent. The run loses nothing by it: of the commands it runs only the commit, which it refuses, would start one.
 func TestIntegrationExecAllowListSubcommands(t *testing.T) {
@@ -585,7 +585,7 @@ func TestIntegrationExecRuleShebangCRLF(t *testing.T) {
 //
 // env(1) makes the two execs, not the shell: where /bin/sh is bash (the RHEL family), bash answers an EACCES from
 // execve by opening the file to read a sample of it, and its open of the FIFO waits for a writer that never comes
-// (wait_for_partner), so the run never ended (AlmaLinux 9.8, 2026-11-10; without tego too). env reports the errno
+// (wait_for_partner), so the run never ended (AlmaLinux 9.8; without tego too). env reports the errno
 // and exits 126, as dash does.
 func TestIntegrationExecRuleNonRegularImage(t *testing.T) {
 	f := newFixture(t, execRulesContract("xnonreg", "/bin/sh", "  deny: [rm -r]"))

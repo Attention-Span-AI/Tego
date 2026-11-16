@@ -112,7 +112,6 @@ Step C (M): ADR 0027, then item 13, with step C probed before the memfd arm is d
 Step D (S): the unix hooks, with conformance cells on 5.14 and 6.1.
 Step E (S): item 14, measured on kill test 4's pip kind.
 Docs:
-- A new docs/p0/enforce-plane.md, the normative spec with PLN-* rule IDs (ADR 0030).
 - ARCHITECTURE §2, §10, §11 and §14: the mode per row, and the host-cost table per mode and kernel.
 - SEMANTICS §2, §4 and §5; REASON-CHANNEL item 1.
 - enforce-cgroup-observe: E15-E40 marked fallback-only.

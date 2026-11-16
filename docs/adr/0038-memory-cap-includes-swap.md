@@ -1,6 +1,6 @@
 # ADR 0038: a memory cap bounds swap too: memory.swap.max is 0 beside memory.max
 
-Status: accepted 2026-09-24 (traceability audit of runtime-launch.md R10); implemented in internal/runtime/cgroup (limitFiles, SetLimits). Amends runtime-launch.md §4 `SetLimits`.
+Status: accepted 2026-09-24; implemented in internal/runtime/cgroup (limitFiles, SetLimits).
 
 Decision: when a run's contract or machine config caps memory (`limits.memory`, so `memory.max` is written), `SetLimits` also writes `memory.swap.max` = `0` in the run's scope, right after `memory.max`. Where the kernel accounts no swap to cgroups the file does not exist and that write is skipped; nothing else changes. `memory_high` alone caps nothing and leaves swap alone. A contract has no key for swap.
 

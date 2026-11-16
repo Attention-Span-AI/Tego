@@ -17,8 +17,6 @@ import (
 //
 // The refusal is EPROTONOSUPPORT, what a kernel built without CONFIG_MPTCP returns, so a runtime that
 // probes for MPTCP falls back to a classic TCP socket — which Landlock and the supervisor do see.
-//
-// Spec: docs/p0/enforce-landlock.md E30.
 func TestFilterRefusesMPTCPSocket(t *testing.T) {
 	const (
 		x86Socket = 41

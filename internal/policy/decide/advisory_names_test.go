@@ -102,7 +102,7 @@ func TestAdvisoryFSNameMatchesEvaluateAtCgroup(t *testing.T) {
 }
 
 // TestAdvisoryFSNamesMutationsAtCgroup is the advisory verdict of each operation the listener fallback's supervisor
-// refuses on a name (ADR 0043 D7; supervisor R15, R17) on nameTable: a creation, a write-open, a truncate, a mknod, a
+// refuses on a name (ADR 0043 D7) on nameTable: a creation, a write-open, a truncate, a mknod, a
 // symlink, a link's new name, a rename's ends and an unlink of a covered file are refused, named per D8 (the
 // expansion's own entry at an existing .env), a write-open read-denied as the listener refuses it; a read-open
 // read-denied; the same operations on a directory of that name, on an exception, beneath a dependency directory and

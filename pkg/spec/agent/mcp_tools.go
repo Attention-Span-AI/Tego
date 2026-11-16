@@ -9,7 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// MCPTools is an mcp[] entry's tools: mapping (agent-contract.md R16b, ADR 0126 §1): exact tool names the relay allows,
+// MCPTools is an mcp[] entry's tools: mapping (ADR 0126 §1): exact tool names the relay allows,
 // denies or holds for a person. Allow present (even empty) denies every tool it does not list. A present tools: key,
 // even `tools: {}`, puts the server behind Tego's MCP relay; the decision itself is internal/check/mcptool's.
 type MCPTools struct {

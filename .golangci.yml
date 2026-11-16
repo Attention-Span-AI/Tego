@@ -257,22 +257,6 @@ linters:
               desc: developer tools never reach a product binary (ADR 0023 A7)
             - pkg: github.com/attention-span-ai/tego/test/
               desc: test harnesses never reach a product binary (ADR 0023 A7)
-        # The maze setup tool builds on macOS and reaches the engine only through the tego command, so it imports
-        # none of the engine's packages (the "Must not import" line of each internal/maze doc.go; os/exec is
-        # process-starts-through-proc's). Its tests may compile a contract with pkg/spec/agent to check one.
-        maze-stays-outside-the-engine:
-          files: ["**/internal/maze/**", "**/cmd/maze/**", "!$test"]
-          deny:
-            - pkg: github.com/attention-span-ai/tego/internal/runtime
-              desc: maze reaches the engine only through the tego command
-            - pkg: github.com/attention-span-ai/tego/internal/ledger
-              desc: maze reaches the engine only through the tego command
-            - pkg: github.com/attention-span-ai/tego/internal/cli
-              desc: maze reaches the engine only through the tego command
-            - pkg: github.com/attention-span-ai/tego/pkg/spec/agent
-              desc: maze reaches the engine only through the tego command (pkg/spec/agent does not build on macOS)
-            - pkg: github.com/attention-span-ai/tego/pkg/spec/config
-              desc: maze reaches the engine only through the tego command
         ledger-is-shared-infrastructure:
           files: ["**/internal/ledger/**"]
           deny:
@@ -926,11 +910,6 @@ linters:
       # The handoff's Spawn of the sealed tego-control (ADR 0100 (1b)): a shared start, refused with ErrArmed while
       # this process holds marks; neither tego-control nor the CLI verbs that will spawn it place any.
       - path: ^internal/handoff/exec\.go$
-        linters: [forbidigo]
-        text: reviewed process-start site
-      # Maze's check of a saved contract (`tego compile --test --offline`): the maze CLI's own process holds no
-      # fanotify group, since nothing it links calls proc.Arm.
-      - path: ^internal/maze/cli/save\.go$
         linters: [forbidigo]
         text: reviewed process-start site
       # tego test (ADR 0074): its starts of the tego binary, in its own process, which holds no fanotify group, and the

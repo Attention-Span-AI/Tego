@@ -32,7 +32,7 @@ func run(t *testing.T, args ...string) (int, string, string) {
 	return code, out.String(), errb.String()
 }
 
-// TestDispatchExitCodes is limits-check-doctor-cli.md R25 and R26: each failure class exits with its documented code and prints its diagnostic.
+// TestDispatchExitCodes: each failure class exits with its documented code and prints its diagnostic.
 func TestDispatchExitCodes(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -250,7 +250,7 @@ func TestParseArgs(t *testing.T) {
 func TestDoctorRuns(t *testing.T) {
 	code, out, errs := run(t, "doctor")
 	// From outside the delegated cgroup subtree (a login over ssh, a CI runner's step) doctor offers no tier
-	// and exits 1, with D3 naming the remedy (runtime-launch.md case 41); every probe is still printed.
+	// and exits 1, with D3 naming the remedy; every probe is still printed.
 	outside := false
 	if fs, err := cgroup.Detect(os.Getuid()); os.Getuid() != 0 && err == nil {
 		outside = errors.Is(fs.CanPlace(), cgroup.ErrOutsideSubtree)

@@ -29,7 +29,7 @@ net:
 `
 
 // TestMCPHTTPServerCompilesNetRule: a declared HTTP MCP server compiles to the net rule its URL's host and port
-// need (FEATURES I5, agent-contract.md R16a), named for the server, after the author's own entries, resolved as a net.allow entry is;
+// need (FEATURES I5), named for the server, after the author's own entries, resolved as a net.allow entry is;
 // a stdio server compiles to its exec grant and no net rule.
 func TestMCPHTTPServerCompilesNetRule(t *testing.T) {
 	f := newFixture(t)
@@ -126,7 +126,7 @@ func TestMCPHTTPServerDerivesTCPOnly(t *testing.T) {
 // CIDR holding the URL's address, a literal address its name resolved to, a name whose kept answer holds the
 // address the URL's name resolved to, the server's own host on its port even where the two lookups answered
 // differently) keeps it asked: no allow is derived and a warning says so. Evaluate does not model an approval and
-// answers such a connect unmatched, which is where the run's supervisor asks (supervisor R11, ask_connect.go),
+// answers such a connect unmatched, which is where the run's supervisor asks (ask_connect.go),
 // rather than allow mcp[<name>].
 func TestMCPHTTPServerUnderAWiderAsk(t *testing.T) {
 	for _, c := range []struct{ name, ask string }{
@@ -194,7 +194,7 @@ func TestMCPHTTPServerBesideAnAskThatNeverAsks(t *testing.T) {
 }
 
 // TestMCPHTTPServerWhoseDroppedAddressAnAskHolds: an address R18 dropped from the server's own name is one its
-// derived rule refuses by name (net.denied_resolved[...], supervisor R7), and that refusal comes before any ask,
+// derived rule refuses by name (net.denied_resolved[...]), and that refusal comes before any ask,
 // so a net.ask entry holding it keeps the server asked: no allow is derived, and the warning says the ask decides.
 // The resolved-denied warning names the url as the mcp entry it is, not as a net.allow entry.
 func TestMCPHTTPServerWhoseDroppedAddressAnAskHolds(t *testing.T) {

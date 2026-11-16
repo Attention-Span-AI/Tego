@@ -3,7 +3,7 @@
 Design baseline revised 2026-09-21 after the verification pass; current tier summary and implementation boundaries reconciled 2026-10-03. Facts marked (verified) were checked against kernel sources, man
 pages, vendor documentation or this machine; the rest is design to be proven in `test/`.
 
-This document combines implemented behavior and planned capabilities. `tego serve` hands off to `tego-control`, the local dashboard (docs/DASHBOARD.md); `learn` is built (2026-10-06, docs/OPERATIONS.md); additional provider parsers are not. For current implementation status, use `spec/backend/CAPABILITIES.md` and `docs/p0/TIER3-PLAN.md`; dated verification notes below retain their historical scope.
+This document combines implemented behavior and planned capabilities. `tego serve` hands off to `tego-control`, the local dashboard (docs/DASHBOARD.md); `learn` is built (2026-10-06, docs/OPERATIONS.md); additional provider parsers are not. For current implementation status, use `spec/backend/CAPABILITIES.md`; dated verification notes below retain their historical scope.
 
 ## 1. A run, in order
 
@@ -31,7 +31,7 @@ Two rules keep it clean: the engine never imports the read side, and the ledger 
 
 ## 2. Tiers
 
-*Current implementation 2026-10-04 (ADR 0024; [enforce-plane](p0/enforce-plane.md), [Tier 3 plan](p0/TIER3-PLAN.md)):* tier 2 uses the kernel decision plane where doctor's probe selects `lsm` or `fmod_ret` (`bpf.plane` can pin a mode); otherwise its path-aware open/exec listener is the fanotify fallback. Tier 3 uses the plane in LSM mode and shares its semantics with tier 2. Steps A–D are built: path operations, create/metadata and socket policy, executable mappings, and Unix names below 6.7. T16's filesystem handover is enabled per loaded hook and a recorder that can name paths; its exec handover delegates policy and terminal outcomes when the plane and complete live kernel recording are ready, retaining notifications for metadata and supervisor fallback otherwise. The ledger records the selected `decision_plane` and per-run capabilities.
+*Current implementation 2026-10-04 (ADR 0024; enforce-plane, Tier 3 plan):* tier 2 uses the kernel decision plane where doctor's probe selects `lsm` or `fmod_ret` (`bpf.plane` can pin a mode); otherwise its path-aware open/exec listener is the fanotify fallback. Tier 3 uses the plane in LSM mode and shares its semantics with tier 2. Steps A–D are built: path operations, create/metadata and socket policy, executable mappings, and Unix names below 6.7. T16's filesystem handover is enabled per loaded hook and a recorder that can name paths; its exec handover delegates policy and terminal outcomes when the plane and complete live kernel recording are ready, retaining notifications for metadata and supervisor fallback otherwise. The ledger records the selected `decision_plane` and per-run capabilities.
 
 | Tier | Needs | Gives |
 |---|---|---|
@@ -165,8 +165,7 @@ processes are non-dumpable, so only a root supervisor can serve their asks).
   not a terminal. `SIGINT`/`SIGTERM`/`SIGHUP` start `stop_grace` (default 10 s); a second `SIGINT` within 2 s or expiry
   writes `cgroup.kill`. `run_end reason=signal signal=<n> escalated=<bool>`; the exit code stays the agent's own.
   A `SIGHUP` the launcher inherited as ignored (`nohup`) stays ignored, for it and the agent. An agent that stops
-  itself stops the launcher with it when they share a terminal, and is resumed when the launcher is continued
-  (runtime-launch.md R9b).
+  itself stops the launcher with it when they share a terminal, and is resumed when the launcher is continued.
 - **Supervisor death.** `PDEATHSIG` kills the agent's main process; descendants keep the inherited filter and, with
   the listener closed, every notified syscall fails with `ENOSYS` (verified) while Landlock and cgroup limits persist:
   the intended fail-closed state, stated in the README, collected by the sweep. At tier 2 the run's cgroup links are
@@ -324,7 +323,7 @@ container's own libssl through `/proc/<pid>/root` or the injected forwarder vari
 
 ## 10. Filesystem rules: inode identity and the ancestry walk (ADR 0005, ADR 0010)
 
-*Note 2026-09-29 (ADR 0025 supersedes ADR 0010's storage, accepted; built at T2 to T6, run at tier 2; [enforce-plane](p0/enforce-plane.md) R5, R6, R7, R16):* the `BPF_MAP_TYPE_INODE_STORAGE` object ids and the `{cgroup id, object id}` hash below are superseded by per-run inner row maps keyed by the kernel `struct inode *`, filled in the kernel from the held O_PATH descriptors and pinned by the run's own Landlock domain (one neutral rule per keyed inode), so no inode-storage map is ever created and GAPS B6 leaves the design. The walk paragraph (mount crossing, 64 steps, `path-unresolved`, REFER) stands and is now the plane's walk (R7). The text below is kept as the design history: no inode-storage map exists in the tree.
+*Note 2026-09-29 (ADR 0025 supersedes ADR 0010's storage, accepted; built at T2 to T6, run at tier 2):* the `BPF_MAP_TYPE_INODE_STORAGE` object ids and the `{cgroup id, object id}` hash below are superseded by per-run inner row maps keyed by the kernel `struct inode *`, filled in the kernel from the held O_PATH descriptors and pinned by the run's own Landlock domain (one neutral rule per keyed inode), so no inode-storage map is ever created and GAPS B6 leaves the design. The walk paragraph (mount crossing, 64 steps, `path-unresolved`, REFER) stands and is now the plane's walk (R7). The text below is kept as the design history: no inode-storage map exists in the tree.
 
 - **Identity is the kernel inode object, never a `stat()` pair.** On btrfs `st_dev` is a per-subvolume anonymous
   number and inode numbers repeat across subvolumes; on overlayfs a non-directory's numbers can come from either layer
@@ -363,9 +362,9 @@ container's own libssl through `/proc/<pid>/root` or the injected forwarder vari
 
 ## 11. The hardened hook set (tier 3) and its portability rules
 
-*Note 2026-09-29 (ADR 0024, accepted; steps A to D built as of 2026-09-30, T13 to T15; [enforce-plane](p0/enforce-plane.md) R3, R4, R14, R26):* the hook set is built as one CO-RE object with each body exposed as `lsm/<hook>` and `fmod_ret/security_<hook>`, in landing steps A to D: `file_open`, `bprm_check_security`, `path_*`, `inode_*` protection hooks, `socket_create`, `mmap_file`/`file_mprotect`, and the unix hooks below 6.7. `socket_connect`, `socket_bind`, `socket_sendmsg`, `ptrace_*`, `bpf` and `key_permission` remain FEATURES E54 (P1), and network stays on the per-run cgroup programs. Built (`bpf/decide.bpf.c`, `decide_stepb.h`, `decide_stepc.h`): step A `file_open`, `bprm_check_security`, `path_rename`, `path_link`, `path_unlink`, `path_rmdir`; step B `path_mknod`, `path_mkdir`, `path_symlink`, `path_truncate`, `file_truncate`, `path_chmod`, `path_chown`, the `inode_*` xattr/ACL protection hooks and `socket_create` (T13); step C `mmap_file`/`file_mprotect` (T14); the unix hooks (T15). Remaining per TIER3-PLAN: T9b, T11, T16. The rule that `inode_*` hooks are not used is replaced for `deny_write` protection only (R12, built, T13).
+*Note 2026-09-29 (ADR 0024, accepted; steps A to D built as of 2026-09-30, T13 to T15):* the hook set is built as one CO-RE object with each body exposed as `lsm/<hook>` and `fmod_ret/security_<hook>`, in landing steps A to D: `file_open`, `bprm_check_security`, `path_*`, `inode_*` protection hooks, `socket_create`, `mmap_file`/`file_mprotect`, and the unix hooks below 6.7. `socket_connect`, `socket_bind`, `socket_sendmsg`, `ptrace_*`, `bpf` and `key_permission` remain FEATURES E54 (P1), and network stays on the per-run cgroup programs. Built (`bpf/decide.bpf.c`, `decide_stepb.h`, `decide_stepc.h`): step A `file_open`, `bprm_check_security`, `path_rename`, `path_link`, `path_unlink`, `path_rmdir`; step B `path_mknod`, `path_mkdir`, `path_symlink`, `path_truncate`, `file_truncate`, `path_chmod`, `path_chown`, the `inode_*` xattr/ACL protection hooks and `socket_create` (T13); step C `mmap_file`/`file_mprotect` (T14); the unix hooks (T15). Remaining per TIER3-PLAN: T9b, T11, T16. The rule that `inode_*` hooks are not used is replaced for `deny_write` protection only (R12, built, T13).
 
-*Current selected implementation, 2026-10-05:* the above note describes its dated A–D checkpoint. The selected extension now includes actual Unix `socket_bind`/`socket_listen` admission and the scoped ptrace, BPF-command and key-permission controls (`bpf/decide_socket.h`, `decide_listen.h`, `decide_control.h`). Ptrace attachment and traceme require the same run/generation; read-mode ptrace checks remain with the ordinary LSM chain. Ordinary INET network decisions use the cgroup/supervisor mechanisms documented in [network controls](p0/network-controls.md). Each capability requires its actual probe/load/attachment proof; these changes do not close the remaining engineering checklist or unmeasured platforms.
+*Current selected implementation, 2026-10-05:* the above note describes its dated A–D checkpoint. The selected extension now includes actual Unix `socket_bind`/`socket_listen` admission and the scoped ptrace, BPF-command and key-permission controls (`bpf/decide_socket.h`, `decide_listen.h`, `decide_control.h`). Ptrace attachment and traceme require the same run/generation; read-mode ptrace checks remain with the ordinary LSM chain. Ordinary INET network decisions use the cgroup/supervisor mechanisms documented in network controls. Each capability requires its actual probe/load/attachment proof; these changes do not close the remaining engineering checklist or unmeasured platforms.
 
 `file_open` (treats `O_TRUNC` as a write), `path_unlink`, `path_rename`, `path_mkdir`, `path_rmdir`, `path_symlink`,
 `path_link`, `path_mknod` (mkfifo, mknod, and the inode a unix `bind()` creates), `path_truncate` always plus
@@ -438,7 +437,7 @@ doctor`. The unprivileged tier needs nothing; eBPF inside WSL still needs root.
 
 ## 14. Support matrix (verified 2026-09-21; the runtime probes, never trusts a version)
 
-*Note 2026-09-29 (ADR 0024, accepted; probe and step A built, the MATRIX suites not: T11; [enforce-plane](p0/enforce-plane.md) R28):* a per-row plane mode column (`tego doctor` D7 has the per-hook rows; the fill, load and probe ran on 6.17, RHEL 9.8's 5.14 and AL2023's 6.1): `lsm` where `bpf` is active (Debian 13, RHEL 9/10, AL2023, Fedora), `fmod_ret` on Ubuntu 24.04/25.10 and WSL2 kernels before 6.18.54.1 without a boot change, `fanotify` where neither passes the probe (lockdown=confidentiality below 6.2, unmeasured arm64). The table below is unchanged; the per-mode host-cost table lands with T11's kill tests.
+*Note 2026-09-29 (ADR 0024, accepted; probe and step A built, the MATRIX suites not: T11):* a per-row plane mode column (`tego doctor` D7 has the per-hook rows; the fill, load and probe ran on 6.17, RHEL 9.8's 5.14 and AL2023's 6.1): `lsm` where `bpf` is active (Debian 13, RHEL 9/10, AL2023, Fedora), `fmod_ret` on Ubuntu 24.04/25.10 and WSL2 kernels before 6.18.54.1 without a boot change, `fanotify` where neither passes the probe (lockdown=confidentiality below 6.2, unmeasured arm64). The table below is unchanged; the per-mode host-cost table lands with T11's kill tests.
 
 *Note 2026-10-06:* T11's suites are built (TIER3-PLAN §10); the plane mode per row and boot is measured by
 `make vm-matrix` as `cgroup_mode` (TIER3-PLAN §7, test/vm/README.md), and the per-mode costs are enforce-plane §2.18
@@ -491,7 +490,7 @@ link confined to one directory).
    each on the test machine, so 30k notifications cost 0.15–0.25 s. Tier 2's fanotify open/exec deny is a userspace round trip
    on every open, reads included, and gets its own benchmark row. (*Amended 2026-10-06, kill test 5, `test/vm/README.md`:*
    the 4–8 µs is the design baseline's estimate (2026-09-22, before any supervisor code existed, with no benchmark cited),
-   not an end-to-end measurement; [supervisor](p0/supervisor.md) E17 gives the supervisor's own measured figures.
+   not an end-to-end measurement; supervisor E17 gives the supervisor's own measured figures.
    Measured end to end in the 2-vCPU KVM guests of seven matrix rows, on a host other jobs' guests shared, the 2,490
    notifications an `fs.ask` entry keeps at tiers cgroup and bpflsm on the pip build cost 160 to 692 ms, 60 to 280 µs each,
    so the ~8k of an `npm install` would cost about 0.5 to 2 s and 30k about 2 to 8 s, not 0.15–0.25 s. The cost is inside

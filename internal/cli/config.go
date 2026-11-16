@@ -33,8 +33,8 @@ func loadMachine(mode config.TrustMode) (*config.Machine, []config.Diagnostic, e
 }
 
 // machineGuard refuses a loaded machine config in a binary built with -tags tegotesthooks whose ledger root, or
-// whose chain anchor or own-log home, would reach the invoking user's own ~/.tego (isolation_testhook.go,
-// identity-config.md R27); nil in a product build.
+// whose chain anchor or own-log home, would reach the invoking user's own ~/.tego (isolation_testhook.go); nil in
+// a product build.
 var machineGuard func(*config.Machine) error
 
 // machineTestHook adjusts the loaded machine config in a binary built with -tags tegotesthooks

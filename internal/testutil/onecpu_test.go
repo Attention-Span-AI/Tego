@@ -47,8 +47,8 @@ func TestOneCPUChild(t *testing.T) {
 // on an idle machine: the helper's wake-up takes the CPU from the waiting thread before it parks, the thread waits in
 // the run queue for the helper's whole run, and its later futex sleep returns at once, so the wait is all run-queue
 // delay and never a voluntary switch. Before the own time held the process's other threads' CPU time against the
-// run-queue delay (2026-10-17), the fastest of 400 such samples read 3.7 µs of own time for a 500 µs hand-off and
-// passed a 12 µs Limit's 120 µs ceiling (a review's probe under taskset, 3 runs of 3). The child process runs on one
+// run-queue delay, the fastest of 400 such samples read 3.7 µs of own time for a 500 µs hand-off and
+// passed a 12 µs Limit's 120 µs ceiling (under taskset, 3 runs of 3). The child process runs on one
 // CPU, with one P and with four.
 func TestAHandOffShowsInTheOwnTime(t *testing.T) {
 	requireRunQueue(t)

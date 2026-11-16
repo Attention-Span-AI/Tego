@@ -13,9 +13,9 @@ import (
 // resolver. A few address classes are never the remote service a name in a contract stands for, and
 // reaching one through a name is the server-side request forgery shape of cloud credential theft (the
 // instance metadata service at 169.254.169.254 hands the machine's role credentials to anything on the
-// host that asks). So a host entry never admits an address in these classes
-// (docs/p0/agent-contract.md R18): compile drops it from the addresses it resolved and warns, and the
-// supervisor refuses a connect or send to one that a refresh brought in (docs/p0/supervisor.md R7). The
+// host that asks). So a host entry never admits an address in these classes:
+// compile drops it from the addresses it resolved and warns, and the
+// supervisor refuses a connect or send to one that a refresh brought in. The
 // explicit way to admit one is to declare it: a literal address or a CIDR entry is never filtered, because
 // the author wrote the address itself. The machine config can add ranges (denied_resolved_addresses), such
 // as the private ranges on a host whose internal network no contract should reach by name; it cannot

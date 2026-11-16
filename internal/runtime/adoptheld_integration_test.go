@@ -172,7 +172,7 @@ func TestIntegrationAdoptCountsAFileHeldThroughAnotherMount(t *testing.T) {
 // TestIntegrationAdoptCountsAHardLinkOfAKeyedFile: the decision plane keys a file entry's row on the file's inode
 // (bpf/decide.bpf.c tego_walk_step looks up the object's own inode first), so it refuses a read of a deny_read file,
 // or a write of a deny_write target, by every name the inode has: a hard link the agent made in its workspace before
-// it was adopted included (docs/p0/enforce-plane.md, "another name of a keyed file"). /proc names the held file by the
+// it was adopted included ("another name of a keyed file"). /proc names the held file by the
 // link, which no rule names, so the count must ask the rows by the inode too: the link
 // held by a descriptor, and as root by a read mapping alone (map_files, which only root may follow), is one file held
 // across a rule, never none. A file of the workspace held the same way is not.

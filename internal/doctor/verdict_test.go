@@ -11,9 +11,9 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
-// The Ready or Not ready line tego doctor writes on stderr after its report (limits-check-doctor-cli R27), for a person who
+// The Ready or Not ready line tego doctor writes on stderr after its report, for a person who
 // reads only the end: a fresh guest's answer was on line 12 of 52. A root report is a root run's: a run the same person
-// starts without sudo gets tier landlock at most, so its line says "a run started as root here" (2026-11-10 review, M1).
+// starts without sudo gets tier landlock at most, so its line says "a run started as root here".
 // The fix it points to is the fix line, else the first failing check's own. The text report itself carries none of it:
 // its stdout stays as scripts read it.
 func TestVerdictSaysReadyOrNotAndForWhom(t *testing.T) {
@@ -67,7 +67,7 @@ func TestVerdictSaysReadyOrNotAndForWhom(t *testing.T) {
 // A login over SSH or on a console runs beside its user manager's cgroup: D3's placement refusal is then all tier
 // landlock misses, and a shell opened inside that cgroup gets the tier (Report.OutsideUserManager). Neither the
 // Not ready line nor the tier line may say the shell "can only record": tego watch is placed in the same cgroup and
-// fails too (acceptance B, 2026-11-11). Any other missing check, root, or a ceiling above tier landlock
+// fails too. Any other missing check, root, or a ceiling above tier landlock
 // is not this case.
 func TestOutsideUserManagerIsThePlacementAlone(t *testing.T) {
 	beside := func(st *probeState) {
@@ -141,7 +141,7 @@ func TestOutsideUserManagerIsThePlacementAlone(t *testing.T) {
 }
 
 // TestNoUserManagerIsItsOwnVerdict: D3 refused because no user manager runs for the user (cgroup.ErrNoUserManager: an
-// account with a nologin shell reached through su or sudo -u, acceptance 2B, 2026-11-11) is Report.NoUserManager, with
+// account with a nologin shell reached through su or sudo -u) is Report.NoUserManager, with
 // its own line and tier words, and is not OutsideUserManager: no shell of this user is inside a manager that does not
 // run. Under a ceiling above tier landlock, or with another check failing too, it is not.
 func TestNoUserManagerIsItsOwnVerdict(t *testing.T) {

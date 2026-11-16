@@ -48,7 +48,7 @@ func evalFixture(t *testing.T) (*fixture, *RuleTable) {
 	return f, rt
 }
 
-// agent-contract.md E35: an unknown fs kind (fs_chmod) is invalid, never a refusal.
+// An unknown fs kind (fs_chmod) is invalid, never a refusal.
 func TestEvaluateFS(t *testing.T) {
 	f, rt := evalFixture(t)
 	p := func(rel string) string { return filepath.Join(f.project, rel) }
@@ -166,7 +166,7 @@ func TestEvaluateExec(t *testing.T) {
 		// SEMANTICS §4: tier 3's hook passes the #! stage and decides on the
 		// interpreter; Landlock needs EXECUTE on the script itself, and tiers 2
 		// and 3 install the same Landlock ruleset, so every tier refuses it
-		// (the 2026-09-30 note, decide.ScriptFloor).
+		// (decide.ScriptFloor).
 		{name: "unlisted script with a declared interpreter, tier 3",
 			action: Action{Kind: ActionExec, Path: filepath.Join(f.project, "script.sh"), Script: python},
 			tier:   backend.TierBPFLSM, verdict: VerdictRefused, rule: UnmatchedRule},

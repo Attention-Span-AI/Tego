@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// TestRuntimeNeverLoadsOrCompilesAContract is agent-contract.md E30 and I9: Load and Compile are called at
+// TestRuntimeNeverLoadsOrCompilesAContract: Load and Compile are called at
 // most once per run, before it, never mid-run, so a binary upgraded under a live run leaves its in-memory
 // *Contract and *RuleTable alone. I9 is enforced by internal/runtime's call graph: nothing in it, or under
 // it, calls agent.Load, agent.LoadBytes or agent.Compile. The CLI, which starts the run, is the one caller.
@@ -43,7 +43,7 @@ func TestRuntimeNeverLoadsOrCompilesAContract(t *testing.T) {
 	}
 }
 
-// TestRuntimeNeverReloadsTheMachineConfig is identity-config.md E25: a binary upgraded mid-run leaves the
+// TestRuntimeNeverReloadsTheMachineConfig: a binary upgraded mid-run leaves the
 // running process its own in-memory *Machine, because the machine config is read once, by the CLI that starts
 // the run. Nothing in internal/runtime, or under it, calls config.Load, LoadMode, LoadSources or Resolve, so no
 // code of a running launcher re-reads the layers (or a constant of another version) after it has started.

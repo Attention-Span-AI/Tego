@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package startphase times the phases of `tego run`'s start (the mode probe, Prepare's steps, Arm) for the
-// start-latency budget of docs/p0/enforce-plane.md §10 and a guest perf run. A product build
+// start-latency budget and a guest perf run. A product build
 // times nothing: Default is nil, so Begin returns a no-op and costs one comparison. A binary built with
 // -tags tegotesthooks prints one "tego-phase <name> <microseconds>" line per phase to stderr when
 // TEGO_TEST_PHASE_TIMING is set (hooks.go), and with TEGO_TEST_LOAD_STATS beside it the cold start's per-program
@@ -41,7 +41,7 @@ func Report(sink Sink, name string, d time.Duration) {
 	}
 }
 
-// DefaultStat and DefaultStack receive the cold start's attribution beside the phases (enforce-plane §10.1): a count
+// DefaultStat and DefaultStack receive the cold start's attribution beside the phases: a count
 // (a program's verified instructions and states, printed "tego-stat <name> <n>"), and the kernel frames a slow load's
 // thread was sampled in ("tego-phase-stack <name> <samples> <frames>"). A test build sets both in its init when
 // TEGO_TEST_LOAD_STATS is set beside TEGO_TEST_PHASE_TIMING, and never after; a product build has neither.

@@ -48,7 +48,7 @@ func agentSpins(t *testing.T, agent int, limit time.Duration) bool {
 	return false
 }
 
-// TestIntegrationStoppedLauncherLeavesTheAgentRunning is runtime-launch.md E14: SIGSTOP on the launcher does not
+// TestIntegrationStoppedLauncherLeavesTheAgentRunning: SIGSTOP on the launcher does not
 // stop the agent. The launcher is a real tego process at the unprivileged tier; the agent is a shell spinning on
 // a builtin, so it makes no syscall the (stopped) supervisor would have to answer, and its CPU time must keep
 // advancing for as long as the launcher stays stopped. Continuing the launcher and stopping the run then ends it.

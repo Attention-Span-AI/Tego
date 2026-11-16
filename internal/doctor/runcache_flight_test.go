@@ -145,7 +145,7 @@ func TestRunProbeFlightBoundsPersistentNamesAndSeparatesFullKeys(t *testing.T) {
 	}
 }
 
-// TestRunProbeFlightReclaimsUnheldLockFilesAtTheLimit (v73 review, races-4): the key a lock file is named for
+// TestRunProbeFlightReclaimsUnheldLockFilesAtTheLimit: the key a lock file is named for
 // holds the run's cgroup and binary, so a long-lived machine meets a new key with every session scope, unit
 // or rebuild. At the limit a new key takes the place of a lock file nobody holds, under the admission lock,
 // so only 128 runs coordinating at once exhaust it; a held one is never taken.
@@ -292,7 +292,7 @@ func TestForRunProbeFlightCancelledWaitDoesNotProbeOrPublish(t *testing.T) {
 	_ = mustFlight(t, c, testKey())
 }
 
-// TestForRunProbeFlightWaitersOfAnUncacheableAnswerProbeTogether (v73 review, doctor-1): a run waits on its
+// TestForRunProbeFlightWaitersOfAnUncacheableAnswerProbeTogether: a run waits on its
 // key's flight only for an answer it could then read. When the holder ends without keeping one (D7 or D8 did
 // not vouch, or the plane faulted again), each run that waited probes without holding the flight, so the runs
 // that queued behind one probe take one more probe's time together, not one probe each in turn: on a machine
@@ -452,7 +452,7 @@ func TestForRunProbeFlightRefusalRevalidatesBeforeFreshPublication(t *testing.T)
 	}
 }
 
-// TestForRunProbeCoordinationIsNotAnUnusableCache (v73 review, doctor-3 and races-4): the run-probe cache note
+// TestForRunProbeCoordinationIsNotAnUnusableCache: the run-probe cache note
 // says the cache is unusable, so it carries only the cache's own refusals. A refused cache directory is named
 // once, by the cache, not again by the flight that could not open it either; and a run that could not
 // coordinate (128 runs of other keys holding every lock file) still read and wrote the cache, so its note is

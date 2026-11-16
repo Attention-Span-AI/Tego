@@ -18,7 +18,7 @@ import (
 )
 
 // TestBrokerNeverServesRawTarget: the broker's list and detail show every client a held request's target in its
-// ledger form, the one the ask line records (askclient.LedgerTarget, record-ledger R9a), so an http_request's path
+// ledger form, the one the ask line records (askclient.LedgerTarget), so an http_request's path
 // and query, which may carry a token, never leave the run (threat G-08). Only an http_request
 // differs: a connect's destination and an open's path stay exact, and the list still cuts a long target that detail
 // serves whole.

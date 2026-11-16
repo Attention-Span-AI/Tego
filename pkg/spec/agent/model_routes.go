@@ -13,7 +13,7 @@ import (
 // person reverts to (ADR 0127). No declared route may take it.
 const DirectRoute = "direct"
 
-// ModelRoute is one models[].routes entry (agent-contract.md R32, ADR 0127): a backend a person may send that endpoint's
+// ModelRoute is one models[].routes entry (ADR 0127): a backend a person may send that endpoint's
 // requests to while the run lives, from `tego route set` or the dashboard's Model routes page. Only declared routes
 // can be chosen, and the agent never chooses one: it keeps calling the same forwarder URL.
 type ModelRoute struct {

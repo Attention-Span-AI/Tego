@@ -217,7 +217,7 @@ func TestHeldAskScopeRefusesOnTheCopiedName(t *testing.T) {
 }
 
 // An open that reads, O_RDWR included, is held and scored on the pinned object by the read predicates as well as the
-// write ones (scoreOpen, gate.md R1 as amended 2026-10-16), so the race a held read-open is closed against is closed
+// write ones (scoreOpen), so the race a held read-open is closed against is closed
 // for a read-write open too. Here the copied name is a benign file, and a sibling's rewrite
 // makes the deputy's lookup reach the *.env file the read gate refuses. Under a read gate alone a read-write open was
 // not held at all (its kind was taken as the write gate's, which cannot escalate), so the copied name decided it and the

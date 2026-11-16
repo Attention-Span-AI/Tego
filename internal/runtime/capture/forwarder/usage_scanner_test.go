@@ -149,7 +149,7 @@ func TestLargeRequestCaseVariantGivesNoBound(t *testing.T) {
 }
 
 // The forwarder's wire usage scanner decoded with encoding/json v1, which folds key case and lets
-// the last match win, while derive reads usage keys exactly as written (capture-derive.md R29). The scanner's
+// the last match win, while derive reads usage keys exactly as written. The scanner's
 // reading is merged as the larger of the two, so a case variant of a usage key was charged on the forwarder path
 // only. It is now derive's own scanner: a case variant is ignored here as on the uprobe path, whose stream derive
 // reads.

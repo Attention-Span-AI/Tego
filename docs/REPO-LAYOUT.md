@@ -1,11 +1,10 @@
 # Repository layout
 
-One Go module, three binaries, one monorepo: `tego`, the engine; `tego-control`, the one-person dashboard; and `maze`, the setup tool in `cmd/maze` and `internal/maze`, which builds for macOS and Linux and reaches the engine only through the `tego` command. The tree mirrors the four layers of `docs/FEATURES.md`, and the import direction is enforced by `golangci-lint` (see `.golangci.yml`).
+One Go module, two binaries, one monorepo: `tego`, the engine; and `tego-control`, the one-person dashboard. The tree mirrors the four layers of `docs/FEATURES.md`, and the import direction is enforced by `golangci-lint` (see `.golangci.yml`).
 
 ```
 tego/
 ├── cmd/tego/                 the engine's binary; main.go dispatches internal helpers before internal/cli
-├── cmd/maze/                 the setup tool's binary (macOS and Linux); main.go runs internal/maze/cli
 ├── cmd/tego-control/         the dashboard's binary; main.go runs internal/control/cli
 ├── pkg/spec/                  Layer 0 in Go: public types and codecs, independent of internal/ (agent, record, identity, backend, config, presets: the built-in presets)
 ├── pkg/policy/evaluate/       experimental, version-pinned public facade over the decision core
@@ -16,7 +15,6 @@ tego/
 ├── spec/                      Layer 0 as published standards: JSON Schemas, docs, fixtures (agent, record, identity, reason, backend, policy, config)
 ├── bpf/                       kernel-side C programs (CO-RE), headers, map-logic tests; the C dual GPL-2.0-only/BSD-2-Clause (ADR 0012), the Go tests Apache-2.0
 ├── internal/
-│   ├── maze/                  the setup tool: scan (what the machine and project hold), scope (the rules, the contract and verdicts it writes, the pre-push check), ui, cli
 │   ├── policy/
 │   │   └── decide/            the decision core: every tier's verdict model, pure (ADR 0028)
 │   ├── runtime/               Layer 1, the engine
@@ -60,7 +58,7 @@ tego/
 │   └── cli/               one file per subcommand (init, doctor, compile, run, stop, status, ask, approve, deny, dns, drift, measure, learn, events, watch, adopt, agents, alternate, gc, licenses, version, hidden __child; guard.go and verify.go back `agents --follow --adopt` and `events --verify`)
 ├── test/                      fixtures, workloads, integration (root), e2e kill tests, VM matrix
 ├── examples/                  contracts per common agent, quickstart; demo/ is the live demo kit (README.md, demo.sh, a rogue stand-in agent and its contracts)
-├── docs/                      start at docs/README.md: engine docs, p0/, adr/, user/ (the user guide; its README states what the root tiers and adopt need, and fixes the label for what is not built yet)
+├── docs/                      start at docs/README.md: engine docs, adr/, user/ (the user guide; its README states what the root tiers and adopt need, and fixes the label for what is not built yet)
 ├── tools/  scripts/           dev tooling; operator scripts
 ├── .github/                   CI, CODEOWNERS
 ├── go.mod  Makefile  .golangci.yml  .gitignore  README  CONTRIBUTING  SECURITY  LICENSE (Apache-2.0)
@@ -70,7 +68,7 @@ tego/
 
 Packages added since 2026-09-22 and not drawn above: `internal/watch/` (watcher, adopt, tree, procconn, sig: watching and adopting any agent, ADRs 0054 and 0055), `internal/runtime/deputy/` (the run's open deputy, ADR 0041), `internal/runtime/dnsbroker/` (opt-in DNS transport for cooperating clients), `internal/runtime/hoststate/` (the root tiers' `/run/tego`, ADR 0034), `internal/realtego/` (the `~/.tego` directories a process could reach), `internal/selftest/` (`tego test`, Layer 2: starts the tego binary and reads its ledger, ADR 0074), `internal/check/gaps/` and `internal/check/resources/`, `internal/platform/hostaddr/` and `internal/platform/startphase/`, `internal/shellword/` (one word of a shell command line, standard library only: the dashboard's terminal twins and tego doctor's fix line quote by it), and `pkg/policy/gate/`, `pkg/policy/dnspolicy/`, `pkg/policy/fsplan/`.
 
-The tree includes reserved packages for later phases (`internal/adapters/openaicodex` is one); a reserved package's presence does not mean its feature is implemented, and additional provider parsers are roadmap entries. `learn` is built (2026-10-06): `tego learn` proposes a contract from a run's ledger (docs/OPERATIONS.md). Current capability and Tier 3 status are in `spec/backend/CAPABILITIES.md` and `docs/p0/TIER3-PLAN.md`.
+The tree includes reserved packages for later phases (`internal/adapters/openaicodex` is one); a reserved package's presence does not mean its feature is implemented, and additional provider parsers are roadmap entries. `learn` is built (2026-10-06): `tego learn` proposes a contract from a run's ledger (docs/OPERATIONS.md). Current capability and Tier 3 status are in `spec/backend/CAPABILITIES.md`.
 
 ## Import direction
 
@@ -114,9 +112,6 @@ internal/runtime/capture/** ──► internal/runtime/source for the run, never
                             (depguard capture-links-no-engine and capture-asks-through-forwarder, TestCaptureLinksNoEngine)
 internal/runtime/source ──► pkg/spec/{agent,record} and the standard library only (depguard source-is-a-leaf,
                             TestSourceLinksNoInternal)
-cmd/maze ──► internal/maze/cli ──► internal/maze/{scan,scope,ui}, internal/platform/proc, pkg/spec/identity
-                            (never internal/runtime, internal/ledger, internal/cli, pkg/spec/agent or pkg/spec/config:
-                            depguard maze-stays-outside-the-engine; the engine is run as the tego command)
 the module root (notices.go, package tego) ──► embed and the standard library only: the licence files both binaries
                             carry (docs/GAPS.md B12); internal/cli and internal/control/cli print them (`licenses`)
 ```
@@ -124,7 +119,7 @@ the module root (notices.go, package tego) ──► embed and the standard libr
 - `pkg/spec` never imports `internal`; it provides the versioned public types and codecs corresponding to `spec/`. `pkg/policy/evaluate` is a separate experimental public facade over the pure decision core. External callers must pin its module version to the binary whose kernel policy they model. The decision core also registers the deprecated `pkg/spec/agent` evaluation shims (`agent.RegisterDecider`, ADR 0028); this compatibility registration is not the supported extension mechanism.
 - `internal/policy/decide` is pure: no I/O, no goroutines, no clock (depguard `decide-is-pure`).
 - The engine (`internal/runtime`) never imports the read side (`internal/check`); the read side never imports the engine. They meet only through the ledger and the spec types.
-- `internal/ledger` is shared infrastructure, owned by neither side. It imports `pkg/spec` and, for its descriptors (ADR 0023), `internal/platform/sys`. It holds the one follower of a live run (`Follow`, `WatchLive`, record-ledger.md §4) that `tego events --follow` reads and later services are to read.
+- `internal/ledger` is shared infrastructure, owned by neither side. It imports `pkg/spec` and, for its descriptors (ADR 0023), `internal/platform/sys`. It holds the one follower of a live run (`Follow`, `WatchLive`) that `tego events --follow` reads and later services are to read.
 - The layer rules for the packages added since (`reason-spec-is-leaf`, `harness-spec-is-leaf`, `receipt-spec-is-a-leaf`, `adapters-never-import-engine`, `claudecode-imports`, `receipt-reads-the-ledger-only`, `setup-never-imports-engine`, `selftest-never-imports-runtime`, `tools-are-stdlib`) are all in `.golangci.yml`, and are inert until their directory exists. TestEveryLayeredDirHasARule (tools/rulecheck) fails when a directory under `internal/adapters/*`, `internal/check/*`, `internal/setup`, `internal/selftest`, `pkg/spec/*` or one of the three V1 launch tools is governed by no depguard rule, so a package is under its layer's rule the day it appears. Each package that adds a directory adds its own row to the tree above.
 - Backends (`enforce/landlock`, `enforce/bpflsm`, `enforce/observe`) never import each other.
 - Provider parsers (`derive/anthropic`, `derive/mcp`) never import each other.
@@ -199,7 +194,6 @@ and a noun never spans both binaries (ADR 0100 (2)).
 | a decision and why | `docs/adr/` |
 | the machine config | `spec/config/v0/` and `pkg/spec/config` |
 | versioning, releases, licence | `docs/VERSIONING.md`, ADR 0012 |
-| what to build first and in what order | `docs/P0-DESIGN.md` (the P0 base, frozen 2026-09-22) |
 
 ## Naming and conventions
 
@@ -245,7 +239,7 @@ ledger. The localhost forwarder is a transport boundary for agent model traffic.
 | Config | the agent contract (per run) and the machine config (spec/config/v0) | `pkg/spec/agent`, `pkg/spec/config`, `internal/cli/config.go` (layer discovery, trust checks, SUDO_UID/AT_SECURE) |
 | Infrastructure / platform | Linux helpers: proc, dns, syscalls, cgroups | `internal/platform/*`, `internal/runtime/cgroup` |
 | API contract between services | the spec files and the event schema, versioned | `spec/`, `pkg/spec` |
-| Multiple services (processes) | `tego`, `tego-control` and `maze` today (tegod, not built, would be `tego __tegod`, ADR 0042); each reuses `internal/` and reads the same ledger format; own module + `go.work` only if its dependencies diverge | `cmd/*`, root `go.work` when needed |
+| Multiple services (processes) | `tego` and `tego-control` today (tegod, not built, would be `tego __tegod`, ADR 0042); each reuses `internal/` and reads the same ledger format; own module + `go.work` only if its dependencies diverge | `cmd/*`, root `go.work` when needed |
 
 The interface pattern used everywhere:
 

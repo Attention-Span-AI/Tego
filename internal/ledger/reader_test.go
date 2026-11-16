@@ -86,7 +86,7 @@ func TestReaderMissingLedger(t *testing.T) {
 	}
 }
 
-// Also pins record-ledger.md E14, E27: an open before run_start reads an empty file; a run with no lock file
+// Also pins: an open before run_start reads an empty file; a run with no lock file
 // is free.
 func TestReaderStates(t *testing.T) {
 	w, dir, _ := openTestWriter(t)
@@ -127,7 +127,7 @@ func TestReaderStates(t *testing.T) {
 	}
 }
 
-// TestReadWhileWrite is record-ledger.md E13: an Iter at EOF on a line boundary yields cleanly, and a fresh Iter
+// TestReadWhileWrite: an Iter at EOF on a line boundary yields cleanly, and a fresh Iter
 // after the writer appends sees the new lines.
 func TestReadWhileWrite(t *testing.T) {
 	w, dir, _ := openTestWriter(t)
@@ -230,7 +230,7 @@ func TestVerifyDetectsChainBreak(t *testing.T) {
 	}
 }
 
-// Also pins record-ledger.md E28: a torn last line of chain.log is skipped.
+// Also pins: a torn last line of chain.log is skipped.
 func TestFileChainAnchor(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".tego", ChainLogFile)
 	a := NewFileChainAnchor(path)

@@ -122,7 +122,7 @@ func TestMachineMatrixTurnsOffWhatThisKernelCannotDo(t *testing.T) {
 			note:    "still reaches the agent as EPERM",
 		},
 		{
-			// enforce-plane R2, R22: where the probe selected a plane mode, tier cgroup has no fanotify group
+			// Where the probe selected a plane mode, tier cgroup has no fanotify group
 			// and its refusals read EACCES.
 			name:    "tier 2 on the plane in LSM mode refuses writes with EACCES",
 			tier:    backend.TierCgroup,
@@ -172,7 +172,7 @@ func TestMachineMatrixTurnsOffWhatThisKernelCannotDo(t *testing.T) {
 			note:    "reaches the agent as EPERM",
 		},
 		{
-			// agent-contract R19: below ABI 6 nothing refuses an abstract name bound outside the run, and
+			// Below ABI 6 nothing refuses an abstract name bound outside the run, and
 			// doctor says so for both tiers that apply a Landlock ruleset.
 			name:    "Landlock ABI 5 has no abstract-socket scope",
 			tier:    backend.TierLandlock,

@@ -16,7 +16,7 @@ import (
 	"github.com/attention-span-ai/tego/test/perf"
 )
 
-// The cold start's attribution (docs/p0/enforce-plane.md §10.1 "Cold attribution", perf-cold C1): under
+// The cold start's attribution: under
 // -cold-attribution (the default) every cold sample prints a "cold-attribution" record of its own, and each budgeted
 // sample is followed, after its own gc, by one launched with TEGO_TEST_LOAD_STATS beside TEGO_TEST_PHASE_TIMING, so
 // the test build prints, beside its phases, each loaded program's span and verifier statistics and the kernel stacks
@@ -256,7 +256,7 @@ func (s *suite) baseTraced() {
 // still traced, when one outlived the bound. A trampoline leaves the list when its last program's link is released (bpf_trampoline_unlink_prog,
 // under the trampoline's mutex, which the next load of a program on that function waits for), so this is the
 // teardown a cold run's load can inherit. A link's ID is no such signal: the kernel frees it before it releases the
-// link (bpf_link_free), so the IDs are gone as soon as gc returns (measured 2026-10-19, enforce-plane §10.1). The
+// link (bpf_link_free), so the IDs are gone as soon as gc returns. The
 // suite's usual pause after gc follows, as for an immediate sample.
 func (s *suite) settleAfterGC() (held int, left []string, waited time.Duration, ok bool, err error) {
 	traced := s.tracedFuncs

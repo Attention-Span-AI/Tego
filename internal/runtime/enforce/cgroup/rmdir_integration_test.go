@@ -19,7 +19,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestRmdirOfANestedCgroupDeletesItsRunSetRow is docs/p0/enforce-cgroup-observe.md §6 E6 and E26 against the
+// TestRmdirOfANestedCgroupDeletesItsRunSetRow against the
 // running kernel: a cgroup made inside a live run's cgroup gets its run_set row inside mkdir (R11), and its
 // rmdir, from anyone (here, this process, outside tego), deletes that row and only that row: the create-then-
 // immediate-rmdir of E6 nets to zero, and the run's own row, keyed by another cgroup id, is untouched.

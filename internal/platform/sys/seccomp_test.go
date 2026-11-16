@@ -86,8 +86,8 @@ func TestSeccompNotifSetFlagsRejectsNonListener(t *testing.T) {
 }
 
 // TestSeccompSetFilterAsksForWaitKillableRecv pins the flag choice without installing anything: the
-// listener is asked for with WAIT_KILLABLE_RECV, which closes docs/p0/supervisor.md E35's double side
-// effect, and a kernel that does not know the flag (EINVAL, below 5.19) still gets a listener with
+// listener is asked for with WAIT_KILLABLE_RECV, which closes a double side effect (a handled signal
+// restarting a syscall the supervisor already acted on), and a kernel that does not know the flag (EINVAL, below 5.19) still gets a listener with
 // NEW_LISTENER alone. Any other refusal is returned as it is, with no second attempt.
 func TestSeccompSetFilterAsksForWaitKillableRecv(t *testing.T) {
 	real := seccompSetFilter

@@ -50,7 +50,7 @@ func connectOnce(t *testing.T, pol *Policy, sa []byte) (sysResp, *record.Event, 
 	return got, sink.one(t), f
 }
 
-// TestConnectRefusesDeniedResolvedAddress is R7's resolved-address check (agent-contract R18): a host
+// TestConnectRefusesDeniedResolvedAddress is R7's resolved-address check: a host
 // entry that a TTL refresh re-pointed at the cloud metadata endpoint does not admit it, and the refusal
 // names the entry; an address Compile already dropped is refused under the same name; a literal entry for
 // the same address, a localhost name on loopback and the entry's other addresses still connect.
@@ -321,8 +321,8 @@ func useHostAddrs(t *testing.T, f *fakeHostAddrs, now func() time.Time) {
 	t.Cleanup(func() { thisHost = prev })
 }
 
-// TestConnectRefusesThisHostsAddress is R7's resolved-address check for this host's own addresses
-// (agent-contract R18): a name that resolves to the host's LAN or global address reaches every service
+// TestConnectRefusesThisHostsAddress is R7's resolved-address check for this host's own addresses:
+// a name that resolves to the host's LAN or global address reaches every service
 // bound to all interfaces, as loopback does, so a host entry does not admit one, IPv4 or IPv6, and the
 // refusal names the entry. A localhost name keeps the loopback class, and a literal or CIDR entry the author
 // wrote admits the address on purpose. The entry's other, remote, addresses still connect.

@@ -19,7 +19,6 @@ import (
 
 // TestStatusShowsTheCapabilityLine is R-cap end to end through `tego status`: the run's own capability line,
 // as run_start recorded it, printed with its absent rows by name, and carried verbatim in --json.
-// (limits-check-doctor-cli.md R-cap.)
 func TestStatusShowsTheCapabilityLine(t *testing.T) {
 	root := gcRoot(t)
 	var host [32]byte

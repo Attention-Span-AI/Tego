@@ -198,7 +198,7 @@ func TestAPendingFrameIsDecidedFromTheSocketAlone(t *testing.T) {
 	}
 }
 
-// TestTheRunCannotCorkASocket is R13's pending frames for UDP_CORK (enforce-landlock R11d): in a run that decides
+// TestTheRunCannotCorkASocket is R13's pending frames for UDP_CORK: in a run that decides
 // datagrams the filter notifies setsockopt(UDP_CORK) at SOL_UDP and SOL_UDPLITE, and the supervisor refuses it with R10's
 // errno and a refused line, op setsockopt, rule datagram-corked, whatever the value: the value is in the agent's memory,
 // and the scalars decide. A corked socket appends every later datagram to one frame whose destination is the first
@@ -265,7 +265,7 @@ func TestTheRunCannotCorkASocket(t *testing.T) {
 	}
 }
 
-// TestASendfileOrSpliceIntoAFrameSocketIsRefused is R13's pending frames for sendfile and splice (enforce-landlock R11d):
+// TestASendfileOrSpliceIntoAFrameSocketIsRefused is R13's pending frames for sendfile and splice:
 // splice_to_socket marks every write but a call's last with MSG_MORE, a splice with SPLICE_F_MORE marks the last one too,
 // and so does a sendfile whose file ended before its count, so either can leave a UDP frame pending. In a run that
 // decides datagrams one into a socket that can hold a frame is refused with R10's errno, rule datagram-corked; one into
@@ -354,7 +354,7 @@ func TestASendfileOrSpliceIntoAFrameSocketIsRefused(t *testing.T) {
 }
 
 // TestAnObserveRunRecordsAPendingFrameRefusalItContinued is TestASendfileOrSpliceIntoAFrameSocketIsRefused for an observe
-// run (R30): its filter notifies the same calls (enforce-landlock R11d), and its supervisor
+// run (R30): its filter notifies the same calls, and its supervisor
 // continues every one. A copy into a socket that can hold a frame keeps its net line, stamped observed under rule
 // datagram-corked. One whose output descriptor could not be read gets no refused line, which would put a refusal that
 // never happened in last-refusal.json and the agent's reason channel: the binary's first such call of each syscall and

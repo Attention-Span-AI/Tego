@@ -86,9 +86,9 @@ hard link under another name still fails it, as R16b requires.
 per keyed inode where the domain already grants a read right, carrying READ_FILE and READ_DIR only, so a neutral rule
 never holds a write right even on another name of a keyed file. The union-unchanged property is checked over every
 generated table (`TestNeutralRulesKeepTheUnion`); the builder applies the rules at T6. The keyed-inode cap is the slot
-maps' sizes (4096 fs rows, 1024 exec rows), a compile error at bpflsm (docs/p0/enforce-plane.md §2.4).
+maps' sizes (4096 fs rows, 1024 exec rows), a compile error at bpflsm.
 
-*Note 2026-09-29 (T3, built; docs/p0/enforce-plane.md §2.5):* the name is compared by its length and every byte,
+*Note 2026-09-29 (T3, built):* the name is compared by its length and every byte,
 read as eight-byte words through the build's reader (`bpf_rdonly_cast` or a probe read), never by `d_name.hash`: the
 kernel salts that hash with the parent dentry's address, which the domain does not pin (it pins the inode), so a
 reclaimed and re-looked-up directory dentry would hash every name anew and refuse allowed execs. Two more key forms

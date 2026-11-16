@@ -243,7 +243,7 @@ func TestStopDrainIsBoundedByWhatTheRingHeld(t *testing.T) {
 
 // TestStopDrainPastItsBudgetCountsWhatIsLeft: the drain's work is bounded too. Past StopDrain the samples still
 // on the ring are counted, not recorded, and what this run lost that way is gap why=ringbuf-undrained with its
-// count, never a silent absence (I7, capture-derive I4).
+// count, never a silent absence (I7).
 func TestStopDrainPastItsBudgetCountsWhatIsLeft(t *testing.T) {
 	q := newQuietRing()
 	r, sink, _ := startQuiet(t, context.Background(), q, Options{StopDrain: time.Nanosecond})

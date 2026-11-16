@@ -214,7 +214,7 @@ func TestObjectShape(t *testing.T) {
 				ProgPathLink: ebpf.AttachTraceFExit, ProgPathSymlink: ebpf.AttachTraceFExit,
 				ProgPathTruncate: ebpf.AttachTraceFExit, ProgFileTruncate: ebpf.AttachTraceFExit,
 				ProgSocketConnect: ebpf.AttachTraceFEntry,
-				// enforce-plane §2.20: io_uring's bind and listen results, fexit on the ops.
+				// Io_uring's bind and listen results, fexit on the ops.
 				ProgURingBindResult: ebpf.AttachTraceFExit, ProgURingListenResult: ebpf.AttachTraceFExit,
 			},
 		},

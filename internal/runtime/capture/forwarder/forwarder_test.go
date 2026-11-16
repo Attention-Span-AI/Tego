@@ -344,8 +344,7 @@ func mapValues(m map[string]string) []string {
 }
 
 // A server-sent event stream reaches the client as it is produced. The upstream waits for the
-// client to have read chunk N before it writes chunk N+1, so the test cannot pass if anything buffers
-// (capture-derive.md R21, E22).
+// client to have read chunk N before it writes chunk N+1, so the test cannot pass if anything buffers.
 func TestStreamingIsNotBuffered(t *testing.T) {
 	const chunks = 4
 	read := make(chan int, chunks)
@@ -434,7 +433,7 @@ func gapCount(l *Listener, why string) int64 {
 	return 0
 }
 
-// A retry of a held request is recognised and recorded, and a first attempt never is (capture-derive.md R23).
+// A retry of a held request is recognised and recorded, and a first attempt never is.
 func TestRetryRecognition(t *testing.T) {
 	h := newHarness(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -512,7 +511,7 @@ func TestUpstreamFailure(t *testing.T) {
 }
 
 // The health check is answered locally, with the upstream unreachable and whatever body the
-// client attached drained and discarded (capture-derive.md R22, E30, #30).
+// client attached drained and discarded (#30).
 func TestHelloIsAnsweredLocally(t *testing.T) {
 	var reached bool
 	h := newHarness(t, func(http.ResponseWriter, *http.Request) { reached = true }, Options{})
@@ -1025,8 +1024,8 @@ func (c *blockingClock) Mono() uint64 { return c.inner.Mono() }
 //
 // srv.Close() closes the connections but never waits for the handlers running on them, and Manager.Stop
 // waits only for the Serve goroutines. A handler still running past Stop emits into a queue the run has
-// already drained (R8 of docs/p0/runtime-launch.md) — the events and the gap counters it raises reach
-// nobody, which is the silent shortfall I4 forbids.
+// already drained — the events and the gap counters it raises reach
+// nobody, a silent shortfall.
 func TestCloseWaitsForTheHandlersItInterrupted(t *testing.T) {
 	clock := &blockingClock{inner: newClock(), entered: make(chan struct{}), release: make(chan struct{})}
 	h := newHarness(t, func(w http.ResponseWriter, _ *http.Request) {

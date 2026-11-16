@@ -57,7 +57,7 @@ func auditArch(t *testing.T) uint32 {
 }
 
 // openat2Filter answers openat2 with errno and allows every other call, as tego's own run filter answers it with
-// ENOSYS at every tier (enforce-landlock R10), so a `tego init --preset` run inside a run meets it, and as a
+// ENOSYS at every tier, so a `tego init --preset` run inside a run meets it, and as a
 // container's seccomp profile that predates openat2 answers it with EPERM. A call of another syscall ABI is allowed.
 func openat2Filter(arch uint32, errno unix.Errno) []unix.SockFilter {
 	return []unix.SockFilter{

@@ -43,7 +43,7 @@ type BuildInfo struct {
 	// Path is the build's pin directory, where root sees and removes all of it.
 	Path string `json:"path"`
 	// Planes are the decision plane's modes pinned for the build, each in its own directory beside Path
-	// (<hash>-<mode>, enforce-plane R20); PlanePrograms and PlaneLinks count what they pin.
+	// (<hash>-<mode>); PlanePrograms and PlaneLinks count what they pin.
 	Planes        []string `json:"planes,omitempty"`
 	PlanePrograms int      `json:"plane_programs,omitempty"`
 	PlaneLinks    int      `json:"plane_links,omitempty"`

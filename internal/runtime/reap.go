@@ -27,7 +27,7 @@ import (
 )
 
 // The reaper (ADR 0020). A tier-2 run's launcher starts `tego __reap` right after Prepare, and at any tier one
-// holding an owned DNS broker endpoint starts it as soon as the endpoint is bound (ADR 0020's 2026-10-05 notes),
+// holding an owned DNS broker endpoint starts it as soon as the endpoint is bound (ADR 0020s),
 // before the child stage exists, and never waits on it. The reaper waits for its launcher's pidfd to become
 // readable. A launcher that ended the run itself leaves nothing to do, and the reaper exits. One that died leaves
 // an orphan: its fanotify group went with it (§6 E15), while the run's cgroup links, pinned, and its rows still
@@ -45,7 +45,7 @@ import (
 // these are cleaned after the run tree is empty, preserving their exact identities. Everything else it is
 // told is its argv, fixed by the launcher before the child stage exists.
 //
-// Amended 2026-10-05: a DNS broker's run starts its reaper as soon as the endpoint is bound,
+// a DNS broker's run starts its reaper as soon as the endpoint is bound,
 // before Prepare (startDNSReaper), since a launcher killed while Prepare loads and attaches left the endpoint
 // with no reaper. Prepare's tier state is not known then, so that reaper has one more descriptor, the read end
 // of a pipe at reapHandoffFD, through which startReaper hands it the tier's ReapTarget after Prepare. A
@@ -207,13 +207,13 @@ type reaped interface {
 	ReapTarget() cgroupenforce.ReapTarget
 }
 
-// startReaper is §4.1's step after Prepare at tiers 2 and 3 (ADR 0020 (2)): it starts the run's reaper,
+// startReaper is the run's step after Prepare at tiers 2 and 3 (ADR 0020 (2)): it starts the run's reaper,
 // without waiting for it. A run with neither a tier-2 handle (reaped) nor a DNS directory starts none. A reaper
 // that cannot be started fails the run in the fanotify fallback, where it is the only narrowing of E15
 // (ADR 0020 (4)); a plane mode (ADR 0024), where the kernel decides and the reaper is promptness and the record,
 // is to record gap what=enforce why=reaper-unavailable and go on, and none is built yet, so it fails there too.
 // A run that holds an owned DNS broker endpoint has its reaper already, at every tier (startDNSReaper, ADR
-// 0020's 2026-10-05 notes): this hands it the tier's target, if the tier has one, and closes the handoff.
+// 0020): this hands it the tier's target, if the tier has one, and closes the handoff.
 func (r *runner) startReaper() error {
 	t, ok := r.handle.(reaped)
 	if r.dnsDirectory != nil {
@@ -361,7 +361,7 @@ func reaperCommand(exe string, spec reapSpec, pidfd, dir *os.File, extraEnv []st
 // launcher's pidfd at descriptor 3 and the run directory at 4: the run's reaper. A run with an owned DNS broker
 // endpoint passes the three bracketed fields (16 in all, else 13) and three more descriptors, the held DNS socket
 // directory at 5, the verified root-owned /tmp parent at 6 and the target handoff pipe's read end at 7 (ADR
-// 0020's 2026-10-05 notes). It returns the process's exit code.
+// 0020). It returns the process's exit code.
 func ReapMain(args []string) int {
 	spec, err := parseReapSpec(args)
 	firstStray := reapDirFD + 1
@@ -613,7 +613,7 @@ func sweepRun(ctx context.Context, spec reapSpec, dir sys.Lender, log *slog.Logg
 			lerr = w.Abandon()
 		} else {
 			// The run's tree is gone and its scope not yet removed, so the run-set rows still hold its slot and the
-			// plane's counters there are this run's, final (enforce-plane §2.8). A scope that was already gone
+			// plane's counters there are this run's, final. A scope that was already gone
 			// may have lost its slot to another run, whose counters these would be.
 			if present {
 				for _, ev := range orphanPlaneGaps(spec.Target, spec.CgroupID, readPlaneCounters, log) {
@@ -650,7 +650,7 @@ func sweepRun(ctx context.Context, spec reapSpec, dir sys.Lender, log *slog.Logg
 // readPlaneCounters is cgroupenforce.ReadPlaneCounters, a variable so a test can see what the reaper asks.
 var readPlaneCounters = cgroupenforce.ReadPlaneCounters
 
-// orphanPlaneGaps are the lines the plane's counters of an orphaned run's slot give (enforce-plane §2.8), as the
+// orphanPlaneGaps are the lines the plane's counters of an orphaned run's slot give, as the
 // launcher would have written them at its run end (runner.emitPlaneGaps): one gap what=enforce per non-zero counter,
 // naming the mode; one plane-counters-unread when the slot cannot be read; none for a run on the listener.
 func orphanPlaneGaps(t cgroupenforce.ReapTarget, cgroupID uint64,

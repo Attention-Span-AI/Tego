@@ -83,7 +83,7 @@ func OpenInner(outer *ebpf.Map, key uint32) (inner *ebpf.Map, ok bool, err error
 //
 // Not bpf(BPF_MAP_LOOKUP_ELEM): below 6.7 every userspace lookup of a map-of-maps ends in synchronize_rcu
 // (bpf_map_copy_value's maybe_wait_bpf_programs, dropped upstream by 2a0c6b41eec9), 20-60 ms each on a loaded host,
-// and a run's start made about nine of them: 440 ms of a 600 ms start on AL2023's 6.1 (enforce-plane §2.18). The
+// and a run's start made about nine of them: 440 ms of a 600 ms start on AL2023's 6.1. The
 // hash table's batch lookup reads each inner map's id without that wait on every supported kernel. A kernel or map
 // whose batch lookup fails is walked and looked up key by key as before (RingIDs's walk), so the answer never
 // depends on which ran; either is a snapshot a concurrent insert or removal may or may not be in.
@@ -195,7 +195,7 @@ func ringIDs(outer ringOuter) (map[uint32]uint32, error) {
 }
 
 // DrainRing consumes every record ring holds that a producer has committed, so the run that reuses it starts
-// reading at an empty ring (ADR 0026 (6) as amended). It does not stop at a record still being written:
+// reading at an empty ring (ADR 0026 (6)). It does not stop at a record still being written:
 // cilium's Reader.ReadInto retries a record whose header is busy (reserved, not yet submitted or discarded)
 // until the producer commits it, so the drain waits for that record, which a BPF program always submits or
 // discards before it returns, and moves past it (a discarded one is skipped, not counted). It stops once the consumer reaches the producer position it

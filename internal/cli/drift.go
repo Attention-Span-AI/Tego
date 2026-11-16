@@ -244,7 +244,7 @@ func contractTable(ctx context.Context, dir string, origin runOrigin, mc *machin
 		opts = append(opts, agent.WithCwd(origin.cwd))
 	}
 	// The run's table granted the command it was given on its command line; recompiled without it, every
-	// exec of that command read as an action no entry declares, and every such run drifted (agent-contract.md R8).
+	// exec of that command read as an action no entry declares, and every such run drifted.
 	if origin.runCommand != "" {
 		opts = append(opts, agent.WithRunCommand(origin.runCommand))
 	}

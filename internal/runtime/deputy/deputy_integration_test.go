@@ -35,7 +35,7 @@ const (
 	// selfExe is how the tests re-execute this binary: through /proc/self/exe, as launch's stage execs the deputy. A
 	// child that execs it as nobody reaches the image through the magic link wherever the binary lies; by its path it
 	// needs search permission on every directory above it, which a binary under a 0750 home does not give nobody
-	// (GitHub's root-suites, binaries under $RUNNER_TEMP, 2026-11-02: "fork/exec .../internal_runtime_deputy.test:
+	// (GitHub's root-suites, binaries under $RUNNER_TEMP: "fork/exec.../internal_runtime_deputy.test:
 	// permission denied").
 	selfExe = "/proc/self/exe"
 )

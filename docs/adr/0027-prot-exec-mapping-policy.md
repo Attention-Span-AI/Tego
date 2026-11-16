@@ -51,7 +51,7 @@ The hook now decides on prot, as SELinux does with checkreqprot=0, and a test ce
 rest stands: the walk is ADR 0024 (1)'s, the rows are ADR 0025's with gen, and the FMODE_BACKING rdonly cast exists
 wherever backing files do (6.8+, which has bpf_rdonly_cast).
 
-*Built 2026-09-30 (T14; docs/p0/enforce-plane.md §2.14):* both hooks in `bpf/decide_stepc.h`. Three things the
+*Built 2026-09-30 (T14):* both hooks in `bpf/decide_stepc.h`. Three things the
 decision left open are settled there. "Covers" is `bprm_check`'s three arms (an exec.allow directory above the file,
 the file's own exec row under its name in its directory, a name row), so whatever the plane lets run the ELF loader
 may map. An inode the kernel marks private (the shmem file behind `MAP_SHARED|MAP_ANONYMOUS`, a SysV segment) is

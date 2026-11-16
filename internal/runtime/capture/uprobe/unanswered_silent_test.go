@@ -11,7 +11,7 @@ import (
 
 // An unanswered request to a path the deriver calls silent (telemetry outside /v1, token counting, the health
 // check, a model listing) spends nothing whatever its answer, so it is not reported unmetered; a Messages API
-// request lost the same way still is, and so is an ambiguous path (ADR 0037 amendment 2026-09-24).
+// request lost the same way still is, and so is an ambiguous path (ADR 0037).
 func TestUnansweredSilentPathIsNotReported(t *testing.T) {
 	const ssl = 0x5900
 	for _, tc := range []struct {

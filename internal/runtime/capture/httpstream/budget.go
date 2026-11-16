@@ -21,7 +21,7 @@ const budgetBodies = 3
 // flight, up to MaxConns (4096) of them, and the source keeps each request body until its response arrives
 // so derive can read the pair. The traced agent chooses both multiplicands, and the launcher holding the
 // arrays is the process that holds the ledger writer and the seccomp supervisor, which no cgroup of the run
-// covers: 24 connections holding 48 MiB unfinished bodies grew it by 1.5 GiB, measured.
+// covers: 24 connections holding 48 MiB unfinished bodies grew it by 1.5 GiB.
 // Past the budget, capture keeps less of a body, marks it truncated and counts gap why=size-cap; the agent's
 // own traffic is never touched. It is the forwarder's budget (forwarder/budget.go) in the form this path
 // needs: there is no event copy of a body to track, because the uprobe source stores bodies as blobs.

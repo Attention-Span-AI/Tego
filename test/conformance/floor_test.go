@@ -84,8 +84,8 @@ func TestGeneratedTruncateCellsTakeTheFloorBelowABI3(t *testing.T) {
 
 // TestWantWhereAnswersOnItsMachines: a cell's want_where answers on the machines it names and nowhere else, and only
 // for the columns it sets. The memfd cells are refused at creation, EACCES, wherever the kernel honours
-// MFD_NOEXEC_SEAL; on a kernel without it tiers 1 and 2 answer ENOSYS and the plane decides the image itself
-// (enforce-landlock R11a, enforce-plane R27). The third party's refusal reads observed where the kernel recorder
+// MFD_NOEXEC_SEAL; on a kernel without it tiers 1 and 2 answer ENOSYS and the plane decides the image itself.
+// The third party's refusal reads observed where the kernel recorder
 // writes the line up to 6.12 (ADR 0016). An attach out of the run is the plane's EACCES on an axis whose plane answers
 // before Landlock (plane_first), Landlock's EPERM elsewhere.
 func TestWantWhereAnswersOnItsMachines(t *testing.T) {

@@ -28,7 +28,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// Sentinel errors, one per failure class (docs/p0/supervisor.md §9).
+// Sentinel errors, one per failure class.
 var (
 	// ErrAlreadyRunning is a second Run on the same Loop.
 	ErrAlreadyRunning = errors.New("supervisor: loop is already running")
@@ -40,12 +40,12 @@ var (
 	errProcStat = errors.New("supervisor: malformed /proc/<pid>/stat")
 )
 
-// SoftCeiling is the per-notification anomaly threshold (P0-DESIGN §2.7, R22). It is soft: a notification
+// SoftCeiling is the per-notification anomaly threshold. It is soft: a notification
 // over it is counted and, at debug level, logged; nothing is aborted. The typical fast path (read, record,
-// CONTINUE) is an order of magnitude below it (P0-DESIGN §9).
+// CONTINUE) is an order of magnitude below it.
 const SoftCeiling = 200 * time.Microsecond
 
-// DefaultWorkers is the bounded worker pool size (P0-DESIGN §2.7): a blocked worker blocks one target
+// DefaultWorkers is the bounded worker pool size: a blocked worker blocks one target
 // thread, never the run.
 const DefaultWorkers = 4
 
@@ -54,7 +54,7 @@ const DefaultWorkers = 4
 // descriptor open, so an agent running thousands of threads each inside an allowed connect must not be
 // able to grow either without limit. Past this many the pool degrades to exactly what it did before:
 // the parked worker keeps its slot, and the next notifying thread waits inside its own trapped syscall.
-// An unsourced P0 engineering default, like R3's byte budgets.
+// An unsourced engineering default, like R3's byte budgets.
 //
 // It bounds only the relays a handler is still waiting on. A relay whose handler has returned — the
 // target abandoned the syscall (E35), or the run was cancelled — keeps its goroutine and its duplicate
@@ -90,7 +90,7 @@ type Resolver interface {
 	ResolverAddrs() []netip.AddrPort
 }
 
-// Policy is what the loop needs from the compiled contract and the machine (docs/p0/supervisor.md §2).
+// Policy is what the loop needs from the compiled contract and the machine.
 // A Policy is immutable once handed to New, which compiles it into the loop's one decision table (I9).
 // Nothing swaps that table: what changes during a run lives behind it — the resolver's addresses in the
 // runtime's dns.Set, refreshed by its own TTL loop, and the models[] guard's, refreshed by Run (R27).
@@ -184,18 +184,18 @@ type Options struct {
 	// modelRefresh is how often Run refreshes the guard; <= 0 means modelRefreshEvery. Tests shorten it.
 	modelRefresh time.Duration
 	// Activity, when set, is told of every notification this loop answers: the agent's activity, which a
-	// record: off run does not carry to the budget watcher in events (docs/p0/limits-check-doctor-cli.md R4).
+	// record: off run does not carry to the budget watcher in events.
 	// It must not block.
 	Activity func()
 	// Late, when set, is told of a notification finished more than the soft ceiling (Budget) after its receipt, with
 	// the CLOCK_MONOTONIC reading of its finish. Every line carries its notification's receipt as mono_ns (R23a), so
 	// a syscall this loop relayed for long (a blocking connect, a unix relay) wrote a line stamped at its start, and
-	// its completion is the agent's activity to the budget watcher's stall check only through this
-	// (docs/p0/limits-check-doctor-cli.md R4). Only a slow notification calls it, from the time
+	// its completion is the agent's activity to the budget watcher's stall check only through this.
+	// Only a slow notification calls it, from the time
 	// finish already reads. It must not block.
 	Late func(monoNS uint64)
 	// KernelConnects, when set, reports whether the run's kernel recorder writes the line of an IP
-	// connect(2) the agent's own task makes (enforce-cgroup-observe §5 R1, security_socket_connect): true
+	// connect(2) the agent's own task makes (security_socket_connect): true
 	// only while a recorder is reading this run's ring under a record mode other than off. A connect this
 	// loop answers CONTINUE is then the kernel's to record, and this loop writes no line for it (R7), so
 	// the ledger holds one line per connect. It is asked after the answer is sent, and it may wait until
@@ -203,7 +203,7 @@ type Options struct {
 	// recorder: every continued connect gets this loop's line, as at tier 1.
 	KernelConnects func() bool
 	// KernelFS, when set, reports whether the run's kernel recorder writes the line of a filesystem action the
-	// kernel's hooks see (enforce-cgroup-observe §5 R9: an open, create, unlink, rmdir, mkdir, rename, link,
+	// kernel's hooks see (an open, create, unlink, rmdir, mkdir, rename, link,
 	// symlink or truncate), with the verdict the LSM chain returned: true while a recorder reads this run's ring,
 	// under every record mode (the recorder keeps refusals under off). Such an action this loop answers CONTINUE
 	// is then the kernel's to record, and this loop writes no line for it (R7a), handing the recorder its own
@@ -213,7 +213,7 @@ type Options struct {
 	// KernelExecs, when set, reports whether the run's kernel writes the line of an exec this loop continues: the
 	// kernel decision plane decides execs in bprm_check (ADR 0024) and a recorder reads this run's ring, so the
 	// exec's one line is the plane's refusal sample or the recorder's sched_process_exec record named by the
-	// plane's rule (R7a, TIER3-PLAN T9). This loop then writes no line for an exec it allows and continues; its own
+	// plane's rule (R7a). This loop then writes no line for an exec it allows and continues; its own
 	// refusals, the PATH-search answers it gives itself and the MCP server line stay its own. It is asked after the
 	// answer is sent and must return once the run is cancelled. Nil means the plane decides no exec here.
 	KernelExecs func() bool
@@ -235,14 +235,14 @@ type Options struct {
 	// listener plane and terminal result recorder. Nil retains the fallback.
 	KernelListenHandoff func() bool
 	// PlaneFS says the run's seccomp filter no longer notifies some fs mutations, which the kernel decision plane
-	// decides and the recorder records (enforce-plane R27, TIER3-PLAN T16). The walk cache then stays off: it is
+	// decides and the recorder records. The walk cache then stays off: it is
 	// invalidated by the notified mutations of the run's own tasks, and a rename or unlink it is no longer told of
 	// would leave a kept directory's symlinks stale for the notifications still coming (walkcache.go).
 	PlaneFS bool
-	// PlaneAttrs reports that a kernel decision plane mode decides this run (ADR 0024 step B, TIER3-PLAN T13): its
+	// PlaneAttrs reports that a kernel decision plane mode decides this run (ADR 0024 step B): its
 	// attribute hooks refuse a chmod beneath a deny_write target in the kernel, with its own line. This loop then
 	// refuses such a chmod it is notified of (record: full) itself, by R15c's predicate, rather than record it as
-	// allowed ahead of the kernel's refusal: one line per action, and the same verdict (enforce-plane R12, I8).
+	// allowed ahead of the kernel's refusal: one line per action, and the same verdict.
 	PlaneAttrs bool
 	// OwnState is tego's own state the launcher knows beyond the compiled table's (RuleTable.OwnState): the
 	// run's runtime directories' parent, $XDG_RUNTIME_DIR/tego, by each of its spellings. No alternate a person
@@ -262,7 +262,7 @@ type Options struct {
 	MCPStage func(pid int, dev, ino uint64, argv []string) string
 	// DenyReadSnapshot reports whether the run's Landlock ruleset refuses a read open of a resolved path the contract
 	// allows, because the path lies beneath a deny_read target's ancestor through a name that ancestor's one listing
-	// at launch did not grant (enforce-landlock R3, E10): a directory or file made there after the run started.
+	// at launch did not grant: a directory or file made there after the run started.
 	// This loop refuses such an open itself and records it refused under deny-read-snapshot, and explains the same
 	// EACCES of a held open (snapshotRead). Nil when the run's ruleset enumerated nothing, or the tier keeps no
 	// snapshot.
@@ -280,7 +280,7 @@ type Options struct {
 	openDeputy openDeputy
 	// KernelNet, when set, reads the run's tier-2 network decision for a connect this loop relayed on the
 	// agent's socket that failed EPERM: the run's connect4/6 decides the relayed connect too, and a refusal
-	// of its own is the kernel's, not this loop's (enforce-cgroup-observe §5 R5). proto is the socket's, "tcp"
+	// of its own is the kernel's, not this loop's. proto is the socket's, "tcp"
 	// or "udp", and notified is when the notification arrived. It answers VerdictRefused with the kernel's rule and reason, VerdictAllow when
 	// the kernel allowed this destination (the EPERM came from elsewhere), or "" when nothing fresh names it
 	// (§6 E5). Nil means no kernel decides this run's connects: tiers 1 and observe.
@@ -291,8 +291,8 @@ type Options struct {
 	// It must not block (an atomic load); nil, or a nil Set, blocks nothing.
 	LiveBlocks func() *liveblock.Set
 	// KernelDatagrams names the addressed datagrams a kernel program of the run decides by destination, on the
-	// kernel's own copy of the address, and the errno its refusal fails one with (R13b; enforce-cgroup-observe §5
-	// R7, enforce-plane §2.11). A datagram that program would refuse is refused here, with that errno, rather than
+	// kernel's own copy of the address, and the errno its refusal fails one with (R13b,
+	// R7). A datagram that program would refuse is refused here, with that errno, rather than
 	// continued with a best-effort line the kernel's refusal then contradicts: the refusal is this loop's own
 	// answer and the datagram's one line (ADR 0016). The zero value is no kernel program: tier 1, and every family
 	// a tier-2 run has no program attached for.
@@ -369,7 +369,7 @@ type metrics struct {
 	execMissing atomic.Int64
 }
 
-// Loop drains one seccomp user-notification fd for the lifetime of a run (docs/p0/supervisor.md §4).
+// Loop drains one seccomp user-notification fd for the lifetime of a run.
 // The zero value is unusable; call New. One Loop owns one listener: two Loops never share a fd, and no
 // state is package-global, so concurrent runs cannot observe each other (E15).
 type Loop struct {
@@ -572,7 +572,7 @@ type compiled struct {
 	hostSockets bool
 	// datagrams is agent.RuleTable.DecidesDatagrams, read once: the run decides where a datagram goes beyond best
 	// effort, so no socket of it may come to hold a pending frame (R13, frame.go), and its filter carries the arms
-	// that notify what could start one (enforce-landlock R11d).
+	// that notify what could start one.
 	datagrams bool
 	// mcp maps a declared MCP server's resolved command[0] onto the servers that run it, for the mcp
 	// event an exec of one produces (mcpServerOf).
@@ -588,7 +588,7 @@ type compiled struct {
 	// refused codex-home-exec (inCodexHome). Nil otherwise: a restricted run refuses such an exec unmatched already,
 	// and a run with no exec: section denies nothing (SEMANTICS §1).
 	codexHome []string
-	// hookState is the run's hook-state grant (agent.HarnessStateGrant, agent-contract.md R27) as codexHome is: an image
+	// hookState is the run's hook-state grant (agent.HarnessStateGrant) as codexHome is: an image
 	// there, or a loader's program there, is refused harness-state-exec in a deny-list run with command rules.
 	hookState []string
 	// fsResolved is fs with each entry at its symlink-resolved path (agent.FSRule.Resolved), ordered the

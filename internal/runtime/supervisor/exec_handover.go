@@ -67,7 +67,7 @@ func (l *Loop) ContinuedExec(tid, pid int, startNS, at uint64) (ExecNaming, bool
 }
 
 // handOverExec continues an exec a kernel recorder decides and records (no command rules, no exec gate), handing it
-// the naming its line takes: fileless and dropped are the exec's own facts, judged once by recordExec (supervisor R16b).
+// the naming its line takes: fileless and dropped are the exec's own facts, judged once by recordExec.
 func (l *Loop) handOverExec(n *notif, r *reader, c *compiled, p, raw string, argvAddr uint64, img execImage, resolved, readable, fileless, dropped bool) {
 	if c.pol.Rules.Gate.Has(gate.Exec) {
 		// Embedded callers cannot bypass the score through a direct fast handover.

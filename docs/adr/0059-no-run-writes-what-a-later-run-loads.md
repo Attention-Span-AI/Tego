@@ -1,8 +1,7 @@
 # ADR 0059: protect later policy loads by path walks, mount identity and loader checks
 
 Status: **accepted 2026-10-20**; implemented 2026-10-20; record files' link counts checked for every euid since 2026-11-03 (amendment below).
-Amends agent-contract.md R10 and R26,
-spec/config v0 R20 (identity-config.md R20) and limits-check-doctor-cli.md §3.
+Amends spec/config v0 R20.
 
 ## Context
 
@@ -192,7 +191,7 @@ hard link from an ungranted source. Mount comparisons follow the [compile-time m
   over project B wrote `B/machine.yaml`, and `tego run x` started in B printed what the planted `registry:` chose.
   `parser.path` likewise took `registry: /proc/self/cwd/reg`. **Now** `config.LoadSources` refuses a layer whose
   kernel walk reaches procfs (`config-invalid`, unread), and `parser.path` refuses such a path setting at its line.
-  Both use the walk compile used for exec entries (agent-contract.md R8a: `Lstat`/`Readlink` a name at a time, a
+  Both use the walk compile used for exec entries (`Lstat`/`Readlink` a name at a time, a
   `/proc` prefix or a directory on a procfs mount), moved from `pkg/spec/agent` to `config.ThroughProc` because
   config is a leaf of `pkg/spec` (identity-config I1) and compile, the Landlock loader check and `tego learn` now
   call it there (`TestLoadSourcesRefusesALayerThroughProcfs`, `TestPathSettingsValidated`, failing before;
@@ -397,9 +396,7 @@ the names that matter are the ones that exist when compile runs.
    (`os.Executable`, obtained from `/proc/self/exe`), so the unit's own tego is held at run time even where another tego
    compiled the contract. Tego never looks its own helpers up on PATH: the reaper, the linger timer, the child stage,
    the MCP relay, the harness hook and the hand-off to `tego-control` all run the running file or the `tego-control`
-   beside it (read in the code: `os.Executable` and `/proc/self/exe` at every such start). The one place a `tego` is
-   found through PATH is Maze's engine check, which runs outside every run and already refuses a `tego` inside the
-   project.
+   beside it (read in the code: `os.Executable` and `/proc/self/exe` at every such start).
 5. **`path-shadow` stays a warning.** A write entry over a PATH directory searched before tego (an activated
    `.venv/bin`, `node_modules/.bin`) holds nothing of tego's, and refusing it would break the commonest Python and Node
    setups. Tego itself never resolves its own name through PATH (4), so the run stays as it is; what the warning

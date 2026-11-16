@@ -109,7 +109,7 @@ func TestExecRecordsArgv(t *testing.T) {
 	}
 }
 
-// TestExecContinuedIsTheKernelsLineUnderThePlane is R7a at tier 3 (TIER3-PLAN T9): when the kernel decision plane
+// TestExecContinuedIsTheKernelsLineUnderThePlane is R7a at tier 3: when the kernel decision plane
 // decides the run's execs and a recorder reads the run (KernelExecs), an exec this loop allows is still continued,
 // but its one line is the kernel's (the plane's refusal sample, or the exec record named by the plane's rule), so
 // this loop writes none; an exec it refuses itself keeps its own line, since the kernel never sees it.

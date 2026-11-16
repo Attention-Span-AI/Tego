@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package mcp reads the Model Context Protocol's JSON-RPC 2.0 messages a client sends its server — E31, MCP
-// derivation (docs/FEATURES.md; docs/p0/capture-derive.md R41) — and says which of them are a session's start
+// derivation (docs/FEATURES.md) — and says which of them are a session's start
 // (initialize) and which a tool call (tools/call, with the tool's name). It reads both transports the protocol
 // defines: stdio, newline-delimited messages on the server's standard input (Stdio), and HTTP, one message or a
 // batch in a POST body (ReadHTTPRequest), which serves the streamable transport and the older HTTP+SSE one alike,

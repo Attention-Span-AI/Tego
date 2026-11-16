@@ -194,7 +194,7 @@ limits:
 	return events(t, dirs[0]), db, queue, summary, netrc
 }
 
-// checkRetrieverAttribution holds a real run's ledger (capture-derive R42): the requests report
+// checkRetrieverAttribution holds a real run's ledger: the requests report
 // the replies' results, and every action of each tool names the reply that asked for it, in that reply's step.
 func checkRetrieverAttribution(t *testing.T, evs []*record.Event, db, queue, summary, netrc string) {
 	t.Helper()
@@ -280,7 +280,7 @@ func checkRetrieverAttribution(t *testing.T, evs []*record.Event, db, queue, sum
 
 // TestIntegrationRetrieverRunTiesActionsToReplies is the retriever run through the real CLI at tier landlock:
 // the forwarder records the model traffic, the supervisor the tools' connects and writes, and the attribute stage
-// ties each to the reply whose tool window it fell in (capture-derive R42).
+// ties each to the reply whose tool window it fell in.
 func TestIntegrationRetrieverRunTiesActionsToReplies(t *testing.T) {
 	requireLandlock(t)
 	evs, db, queue, summary, netrc := runRetriever(t, tegoBinary(t), "landlock")

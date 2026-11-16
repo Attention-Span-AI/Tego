@@ -18,8 +18,8 @@ var ErrAttachRefused = errors.New("bpf: attach refused before the kernel was ask
 // AttachKind is how a host-wide tracing program (one of TrackPrograms and TracePrograms) reaches its hook: the link
 // constructor that takes it, and so the program type it has. A program's kind follows from its name alone
 // (AttachKindOf), and AttachTrace is the only code that acts on it, for the backend (attachShared) and for every
-// integration fixture that loads trace_proc alike, so the choice has one copy that cannot go stale in another
-// (enforce-cgroup-observe.md R14, v73 review root R8). TestTraceProgramsAttachByTheirProgramType holds every
+// integration fixture that loads trace_proc alike, so the choice has one copy that cannot go stale in another.
+// TestTraceProgramsAttachByTheirProgramType holds every
 // program's kind to the type its SEC() compiles to.
 type AttachKind uint8
 

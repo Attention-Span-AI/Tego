@@ -36,7 +36,7 @@ func logPath(home string, suffix string) string {
 	return filepath.Join(home, ownLogDir, ownLogName+suffix)
 }
 
-// TestOwnLogWritesTheInvokingUsersLog is the layout of P0-DESIGN §3.3 and OPERATIONS.md: one structured
+// TestOwnLogWritesTheInvokingUsersLog is the layout of OPERATIONS.md: one structured
 // line per record in ~/.tego/tego.log, the file 0600 in a 0700 directory, pid on every line so two
 // concurrent processes can be told apart.
 func TestOwnLogWritesTheInvokingUsersLog(t *testing.T) {

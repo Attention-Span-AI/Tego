@@ -31,7 +31,7 @@ const (
 // ARG_MAX (case 18, 27), so anything past a few MiB is a corrupt or hostile stream, not a run.
 const maxSpecBytes = 8 << 20
 
-// ChildSpec describes one agent process to start (docs/p0/runtime-launch.md §2).
+// ChildSpec describes one agent process to start.
 type ChildSpec struct {
 	RunID   string
 	AgentID string
@@ -127,7 +127,7 @@ type wireSpec struct {
 
 // wireJSON is wireSpec as it crosses the pipe. Command, Env and Dir are byte strings the stage hands to execve
 // and chdir as given, and a JSON string is UTF-8: encoding/json replaces each invalid byte with U+FFFD, so an
-// argv or env byte that is not UTF-8 would reach execve changed (runtime-launch.md E17). As []byte they travel
+// argv or env byte that is not UTF-8 would reach execve changed. As []byte they travel
 // base64-encoded, every byte kept. RunID and AgentID are validated ASCII identifiers and stay strings.
 type wireJSON struct {
 	wireAlias

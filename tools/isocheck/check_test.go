@@ -202,7 +202,7 @@ func TestSH2APseudoTerminalNeedsAHistoryFile(t *testing.T) {
 	}
 }
 
-// TestSH4SH5SH6AScriptThatRunsTegoIsolatesIt: the reviewer's naked harness (a product build, a run with no
+// TestSH4SH5SH6AScriptThatRunsTegoIsolatesIt: a naked harness (a product build, a run with no
 // isolation variable, a TEGO_BIN nobody checks) passes none of SH-4 to SH-6, and the forms the repository's
 // harnesses take pass all three.
 func TestSH4SH5SH6AScriptThatRunsTegoIsolatesIt(t *testing.T) {
@@ -344,8 +344,8 @@ func TestSH4SH5SH6AScriptThatRunsTegoIsolatesIt(t *testing.T) {
 
 // TestSH7ALaunchGetsARuntimeDirectoryOfItsOwn: a script that starts a run (run, watch, adopt, agents) gives tego an
 // XDG_RUNTIME_DIR of its own, or calls the helper that does, and never hands it the inherited one: a launch makes
-// <XDG_RUNTIME_DIR>/tego and sweeps the directories the invoking user's crashed runs left there (identity-config.md
-// R27 clause b4). A command that starts no run (doctor, compile, events) needs none.
+// <XDG_RUNTIME_DIR>/tego and sweeps the directories the invoking user's crashed runs left there.
+// A command that starts no run (doctor, compile, events) needs none.
 func TestSH7ALaunchGetsARuntimeDirectoryOfItsOwn(t *testing.T) {
 	const isolated = "export TEGO_TEST_CHAIN_ANCHOR=a TEGO_TEST_OWN_LOG_HOME=h\n"
 	const pyIsolated = "env = {\"TEGO_TEST_CHAIN_ANCHOR\": a, \"TEGO_TEST_OWN_LOG_HOME\": h}\n"

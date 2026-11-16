@@ -25,7 +25,7 @@ func openForEvent(t *testing.T, path string) int32 {
 	return int32(fd)
 }
 
-// TestDecideEventReadsProcOnlyWhenItCouldRefuse is the cost side of enforce-cgroup-observe.md §6 E34.
+// TestDecideEventReadsProcOnlyWhenItCouldRefuse is the cost side of the overdue-thread ceiling.
 //
 // A FAN_MARK_MOUNT mark is scoped to the whole mount (fanotify_mark(2): "if path is not itself a mount point,
 // the mount containing path will be marked"), so a rule on ~/.ssh marks "/" on an ordinary box and this

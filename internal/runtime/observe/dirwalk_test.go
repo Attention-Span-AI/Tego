@@ -14,7 +14,7 @@ import (
 )
 
 // The recorder is a runtime.PathHookNamer: the runtime lets the plane's filter leave mutations unnotified only for a
-// recorder that says it names them by path on its own (enforce-plane §2.13 condition 1, §2.15).
+// recorder that says it names them by path on its own.
 var _ runtime.PathHookNamer = (*Recorder)(nil)
 
 // walked is fsSample with each side's parent directory walked in the kernel (struct tego_ev_fsop dir, dir2):
@@ -62,7 +62,7 @@ func TestDirPath(t *testing.T) {
 	}
 }
 
-// TestRecorderNamesWalkedPathHooks is enforce-plane §2.13's condition 1, lifted (§2.15): where a plane mode decides
+// TestRecorderNamesWalkedPathHooks: where a plane mode decides
 // the run, the plane's filter no longer notifies the mutations it decides, so the fsop record is the action's one
 // line and must name it by its full path and the contract's rule on its own. Each record here is in a directory the
 // index does not hold (a subdirectory of the write entry, dirIno 999) and the supervisor has no naming for it, as

@@ -156,13 +156,13 @@ func TestALingeringBuildIsAdoptedAndSweptOnlyWhenIdle(t *testing.T) {
 }
 
 // TestIntegrationABuildWhoseTimerDiedIsRemovedAtTheNextPrepare is round 7's M4 (b) against the running kernel, as
-// root, in the form ADR 0022's 2026-10-06 note gives it: the last launcher out of a build leaves it lingering and
+// root, in the form ADR 0022 gives it: the last launcher out of a build leaves it lingering and
 // hands it to a timer, and the timer is gone (killed with the launcher's cgroup, or by anyone). Once the linger has
 // passed, the next run's Prepare, of any build, starts that build's timer again, a real `tego __bpf-linger` in
 // tego's helper cgroup, and the timer removes it within 3 s: its pins, and with them the programs and host-wide
 // links it held. The removal is not on the run's path: Prepare's lock-slot step, where the re-arm runs, stays under
 // 50 ms, where removing the build there took 1 to 3.7 s on 6.1 and 5.14, which detach synchronously in the unpinning
-// process. With the kernel's lock table read there the slot took 48 ms of its 50 on 6.1 (note 2026-10-16), so Prepare
+// process. With the kernel's lock table read there the slot took 48 ms of its 50 on 6.1, so Prepare
 // reads a timer's pid instead; the test logs what a lock-table read costs on the kernel it runs on.
 func TestIntegrationABuildWhoseTimerDiedIsRemovedAtTheNextPrepare(t *testing.T) {
 	requireRealPrepare(t)
@@ -226,7 +226,7 @@ func TestIntegrationABuildWhoseTimerDiedIsRemovedAtTheNextPrepare(t *testing.T) 
 	for {
 		if _, err := os.Stat(pins.Root); os.IsNotExist(err) {
 			t.Logf("the re-armed timer removed the build %v after Prepare returned", time.Since(prepared).Round(time.Millisecond))
-			// What Prepare no longer reads (ADR 0022, note 2026-10-16): the kernel's lock table, whose read waits for
+			// What Prepare no longer reads (ADR 0022): the kernel's lock table, whose read waits for
 			// an RCU grace period (fs/locks.c locks_start). Informational; `tego stop`'s pass reads it.
 			var reads []time.Duration
 			for range 3 {

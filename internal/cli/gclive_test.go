@@ -15,7 +15,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestGCLeavesARunThatHoldsItsLock is limits-check-doctor-cli.md E21: gc takes the same flock probe as run
+// TestGCLeavesARunThatHoldsItsLock: gc takes the same flock probe as run
 // and stop before it touches a directory, so a run whose launcher is alive is neither ended as an orphan nor
 // deleted, however old its id says it is, and it is corrupted by neither pass: once it finishes, the next
 // pass treats it as any ended run past the window.

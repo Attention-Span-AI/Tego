@@ -12,7 +12,7 @@ import (
 	ebpfbindings "github.com/attention-span-ai/tego/internal/bpf"
 )
 
-// The decision plane, bpf/decide.bpf.c (ADRs 0024, 0025; docs/p0/TIER3-PLAN.md §3). Its programs are emitted by the
+// The decision plane, bpf/decide.bpf.c (ADRs 0024, 0025). Its programs are emitted by the
 // TEGO_PLANE_HOOK macro, which programs() cannot see (no literal SEC line), so these tests read the invocations.
 
 var (
@@ -40,8 +40,7 @@ var socketAllowPath = filepath.Join(sourceDir, "include", "socket_allow.h")
 
 // planeFexitHooks are the plane hooks a recorder fexit in trace_proc.bpf.c wraps (ADR 0024 (11)): the fexit takes
 // the plane's decision, so the plane writes no sample of its own there, except through tego_plane_fallback where the
-// build's fexit is not attached (T9b). On every other hook the plane's own sample is the refused action's one line
-// (enforce-plane R23).
+// build's fexit is not attached (T9b). On every other hook the plane's own sample is the refused action's one line.
 var planeFexitHooks = map[string]string{
 	"file_open": "tego_file_open", "path_unlink": "tego_path_unlink", "path_rmdir": "tego_path_rmdir",
 	"path_rename": "tego_path_rename", "path_link": "tego_path_link", "path_mknod": "tego_path_mknod",
@@ -133,7 +132,7 @@ func TestPlaneHooksHaveBothSections(t *testing.T) {
 	}
 }
 
-// TestPlanePrivateExitsTestTheWrappersInode is enforce-plane R4: each fmod_ret program returns 0 where its
+// TestPlanePrivateExitsTestTheWrappersInode: each fmod_ret program returns 0 where its
 // security_* wrapper does, on IS_PRIVATE of the same inode the wrapper tests, so fmod_ret mode neither decides an
 // action the chain skips nor skips one the chain decides.
 func TestPlanePrivateExitsTestTheWrappersInode(t *testing.T) {
@@ -161,7 +160,7 @@ func TestPlanePrivateExitsTestTheWrappersInode(t *testing.T) {
 	}
 }
 
-// TestPlaneReturnsOnlyZeroOrEACCES is ADR 0024 (7) and enforce-plane.md R2 (and its I2 in §8): a plane program returns 0 or -EACCES and nothing else. Both
+// TestPlaneReturnsOnlyZeroOrEACCES is ADR 0024 (7): a plane program returns 0 or -EACCES and nothing else. Both
 // programs of the macro return tego_plane_verdict of the body, which maps anything but 0 to -EACCES (an LSM
 // program returning a global function's int unchanged is refused, T0), and each body returns only 0 or -EACCES
 // itself, so the mapping is a guard, not a translation of other errnos.
@@ -231,7 +230,7 @@ func planeRunModeGuard(body string) []int {
 	return regexp.MustCompile(`if \(!run\)\s*return 0;\s*if \(run->plane != TEGO_PLANE_RUN_MODE\(mode\)\)\s*return 0;`).FindStringIndex(body)
 }
 
-// TestPlaneWalkHasNoStringOps is TIER3-PLAN §3: the walk matches by inode keys, never by path strings, so it reads
+// TestPlaneWalkHasNoStringOps: the walk matches by inode keys, never by path strings, so it reads
 // no name, copies no string and calls no bpf_d_path (unavailable to path_* hooks below 6.8). It also stays form d
 // of ADR 0024's T0 note: a global (non-static, noinline) function stepping through bpf_loop, with no loop of its own.
 func TestPlaneWalkHasNoStringOps(t *testing.T) {
@@ -277,7 +276,7 @@ func TestPlaneWalkHasNoStringOps(t *testing.T) {
 	}
 }
 
-// TestPlaneWalkFailsClosed is enforce-plane R7's refusals, which no kernel cell reaches for a disconnected dentry:
+// TestPlaneWalkFailsClosed is the walk's refusals, which no kernel cell reaches for a disconnected dentry:
 // a walk that ends neither at a row nor at the root is refused path-unresolved and counted. It pins every link of
 // that chain, any one of which, changed, turns a deep or disconnected path into an unmatched allow: the result
 // enum's order (ROOT and HIT below UNRESOLVED, every refusal at or above it), the walk's BOUND until a step ends it,
@@ -359,9 +358,9 @@ func planeBodies(t *testing.T) map[string]string {
 
 // planeRunLookup is the run-set lookup a hook's body starts with: the caller's cgroup (step B's socket_create too:
 // the caller creates the socket), or for step D's unix hooks
-// the socket's (enforce-plane R14), since the supervisor relays every unix connect of the agent from its own cgroup
+// the socket's, since the supervisor relays every unix connect of the agent from its own cgroup
 // on a duplicate of the agent's socket, as cgroup/connect_unix keys the run by the attachment the socket's cgroup
-// reaches (enforce-cgroup-observe §5 R1).
+// reaches.
 func planeRunLookup(hook string) string {
 	if hook == "socket_listen" {
 		return "tego_listen_sock_run(sock)"
@@ -375,7 +374,7 @@ func planeRunLookup(hook string) string {
 	return "tego_current_run(&tego_run_set)"
 }
 
-// TestPlaneHooksLookTheRunUpFirst is enforce-plane R1 (I1): every body's first act is the run-set lookup, and a
+// TestPlaneHooksLookTheRunUpFirst: every body's first act is the run-set lookup, and a
 // miss returns 0 before policy rows or record buffers are touched. Socket identity
 // can supply the run for supervisor relays; original bind/listen prefer the task.
 func TestPlaneHooksLookTheRunUpFirst(t *testing.T) {
@@ -469,7 +468,7 @@ func TestPlaneEveryHookRecordsItsDecision(t *testing.T) {
 	}
 }
 
-// TestPlaneFileOpenNeverAppliesExecRows is enforce-plane R8: file_open decides reads and modifications only, so
+// TestPlaneFileOpenNeverAppliesExecRows: file_open decides reads and modifications only, so
 // PT_INTERP's open of the loader needs no exec row; and it skips a stacking filesystem's backing open.
 func TestPlaneFileOpenNeverAppliesExecRows(t *testing.T) {
 	t.Parallel()
@@ -491,9 +490,9 @@ func TestPlaneFileOpenNeverAppliesExecRows(t *testing.T) {
 	}
 }
 
-// TestPlaneExecComparesTheWholeName is enforce-plane R9: bprm_check matches the final name by its length and every
+// TestPlaneExecComparesTheWholeName: bprm_check matches the final name by its length and every
 // byte, through the build's reader, never with a string helper or by a hash alone; and a #! stage passes. The name
-// pass lives in include/plane_name.h, which decide.bpf.c and the fill both include (enforce-plane §6 E15).
+// pass lives in include/plane_name.h, which decide.bpf.c and the fill both include.
 func TestPlaneExecComparesTheWholeName(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(sourceDir, "include", "plane_name.h")
@@ -535,7 +534,7 @@ func TestPlaneExecComparesTheWholeName(t *testing.T) {
 	}
 }
 
-// TestPlaneExecRowsAreKeyedByTheLink is enforce-plane R9, R16 and §6 E15 (ADR 0025's 2026-09-30 note): an exec row is
+// TestPlaneExecRowsAreKeyedByTheLink, R16 and §6 E15 (ADR 0025): an exec row is
 // keyed by the link, not the inode alone, and the key is one function for the fill that writes it and bprm_check
 // that looks it up; bprm_check trusts no key alone (it compares the row's inode, directory and name), and the fill
 // computes the name key from the dentry it keys, after comparing its bytes with the entry's.
@@ -584,7 +583,7 @@ func TestPlaneExecRowsAreKeyedByTheLink(t *testing.T) {
 	}
 }
 
-// TestPlaneRenamesAndLinksKeepTheirRows is enforce-plane R10 and R11 as the row compiler states them
+// TestPlaneRenamesAndLinksKeepTheirRows is the rename and link rules as the row compiler states them
 // (decide.PlaneRows.Decide): unlink and rmdir are modifications at the object; each end of a rename is a rename of
 // itself, which a deny_write target or an ancestor refuses at depth 0 (reason deny-write-ancestor); rename and link
 // refuse REFER when the source's nearest row is stricter than the destination's; and the fmod_ret programs of the
@@ -660,8 +659,8 @@ func TestPlaneTestsADentrysInodeAtRunTime(t *testing.T) {
 // TestPlaneDecidesMatchesTheBodies holds internal/bpf.PlaneHook.Decides to decide.bpf.c: a hook decides exactly
 // when its body or an explicitly checked refusal helper returns -EACCES.
 // TestPlaneReturnsOnlyZeroOrEACCES checks those helpers too. Doctor's mode
-// probe reads Decides to require the hook's probe syscall to be refused in the scratch cgroup (docs/p0/
-// enforce-plane.md R21), so a body that starts refusing without the flag, or the flag without the body, fails
+// probe reads Decides to require the hook's probe syscall to be refused in the scratch cgroup,
+// so a body that starts refusing without the flag, or the flag without the body, fails
 // here rather than leaving the probe checking load and scope only.
 func TestPlaneDecidesMatchesTheBodies(t *testing.T) {
 	t.Parallel()
@@ -689,7 +688,7 @@ func TestPlaneDecidesMatchesTheBodies(t *testing.T) {
 	}
 }
 
-// TestPlaneExecRefusalsWriteTheirSample is enforce-plane R23 for bprm_check, the one step A hook no recorder fexit
+// TestPlaneExecRefusalsWriteTheirSample is the record rule for bprm_check, the one step A hook no recorder fexit
 // wraps: every refusal it makes writes the plane's own sample, the refused exec's one ledger line, and no hook a
 // recorder fexit wraps writes one of its own (that fexit reads the decision instead, TestRecorderTakesThePlaneDecision;
 // where it is not attached, tego_plane_fallback writes it, TestPlaneFallbackOnEveryFexitHookRefusal).
@@ -729,7 +728,7 @@ func TestPlaneExecRefusalsWriteTheirSample(t *testing.T) {
 	}
 }
 
-// TestRecorderTakesThePlaneDecision is ADR 0024 (11) and TIER3-PLAN T9 in trace_proc.bpf.c: each fexit on a hook
+// TestRecorderTakesThePlaneDecision is ADR 0024 (11) in trace_proc.bpf.c: each fexit on a hook
 // the plane decides at takes the task's decision for its own call (the hook and the object it names) before any
 // early return, and stamps a plane refusal on the record it writes; sched_process_exec names an exec the plane
 // allowed by the plane's rule.
@@ -851,7 +850,7 @@ func TestPlaneWalkStepCountsNothing(t *testing.T) {
 	}
 }
 
-// TestPlaneStepBCreatesAreModifications is enforce-plane R13: path_mknod (may_o_create's hook, before an O_CREAT
+// TestPlaneStepBCreatesAreModifications: path_mknod (may_o_create's hook, before an O_CREAT
 // open makes its inode), path_mkdir, path_symlink, path_truncate and file_truncate each decide a modification at
 // their object with the walk that crosses mounts, as unlink does (decide.PlaneRows.Decide, PlaneModify), mkdir with
 // its own reason; file_truncate skips what file_open skips.
@@ -887,7 +886,7 @@ func TestPlaneStepBCreatesAreModifications(t *testing.T) {
 	}
 }
 
-// TestPlaneAttributeHooksProtectOnly is enforce-plane R12: chmod, chown, the xattr hooks and the ACL hooks walk
+// TestPlaneAttributeHooksProtectOnly: chmod, chown, the xattr hooks and the ACL hooks walk
 // inside the object's superblock (no vfsmount: the inode hooks get none) and refuse only where the nearest row
 // carries TEGO_ROW_PROTECTED, a deny_write target at or above it; they never ask the modification question the
 // write entries answer, since Landlock governs none of these calls. A walk that fails refuses (R7).
@@ -926,7 +925,7 @@ func TestPlaneAttributeHooksProtectOnly(t *testing.T) {
 	}
 }
 
-// TestPlaneStepBRefusalsWriteTheirSample is enforce-plane R23 for step B's hooks no recorder fexit wraps: every
+// TestPlaneStepBRefusalsWriteTheirSample is the record rule for step B's hooks no recorder fexit wraps: every
 // refusal of an attribute hook or socket_create writes the plane's own sample, the action's one ledger line, and the
 // sample reads names through the build's reader only.
 func TestPlaneStepBRefusalsWriteTheirSample(t *testing.T) {
@@ -979,7 +978,7 @@ func TestPlaneStepBRefusalsWriteTheirSample(t *testing.T) {
 	}
 }
 
-// TestPlaneSocketCreateIsTheAllowlist is ADR 0018 (5) and enforce-plane R14: socket_create passes a kernel socket
+// TestPlaneSocketCreateIsTheAllowlist is ADR 0018 (5): socket_create passes a kernel socket
 // before anything else, decides only under a net: section (the slot header's TEGO_SLOT_NET_DECIDES), fails closed
 // on a slot with no header of the run's gen, and admits exactly the seccomp filter's allowlist (enforce/landlock
 // socketAllowTest).
@@ -1021,7 +1020,7 @@ func TestPlaneSocketCreateIsTheAllowlist(t *testing.T) {
 	}
 }
 
-// TestPlaneFileOpenSkipsPrivateClones settles enforce-plane §2.7's condition 1 (E4): overlayfs' copy-up opens the new
+// TestPlaneFileOpenSkipsPrivateClones: overlayfs' copy-up opens the new
 // upper file with a plain dentry_open on its private clone of the upper mount, in the agent's task, after the
 // agent's own open of the merged file was decided. file_open and file_truncate return 0 for a file on a mount whose
 // mnt_ns is MNT_NS_INTERNAL, which no name the agent opens resolves through.
@@ -1041,8 +1040,8 @@ func TestPlaneFileOpenSkipsPrivateClones(t *testing.T) {
 	}
 }
 
-// planeUnixHook reports step D's unix hooks, whose decision's one ledger line is the supervisor's (enforce-plane R14,
-// enforce-cgroup-observe §5 R7): they write no sample of their own, as cgroup_net's unix programs write none.
+// planeUnixHook reports step D's unix hooks, whose decision's one ledger line is the supervisor's:
+// they write no sample of their own, as cgroup_net's unix programs write none.
 func planeUnixHook(name string) bool {
 	for _, h := range ebpfbindings.PlaneHooks {
 		if h.Name == name {
@@ -1052,7 +1051,7 @@ func planeUnixHook(name string) bool {
 	return false
 }
 
-// TestPlaneFallbackOnEveryFexitHookRefusal is enforce-plane §7 and R23's record fallback (TIER3-PLAN T9b): on each of
+// TestPlaneFallbackOnEveryFexitHookRefusal is the record fallback: on each of
 // the ten hooks a recorder fexit wraps, every refusal path, the scratch value that could not be had included, calls
 // tego_plane_fallback, which writes the plane's own TEGO_EV_PLANE_FS sample exactly when the build's mask
 // (tego_plane_recorded, pinned by name, written by the backend) says that hook's fexit is not attached. So a

@@ -12,7 +12,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
-// Dir resolves `extends: <name>` to <Root>/<name>.yaml and never outside Root (agent-contract.md E7). The containment
+// Dir resolves `extends: <name>` to <Root>/<name>.yaml and never outside Root. The containment
 // is the resolution's, not the name's: a name that leaves Root lexically ("../x", an absolute path) is reported as not
 // found without a read, and the file is then read through os.Root, which walks every component beneath Root with
 // openat and refuses a symlink that leads out of it. A lexical check alone let profiles/evil.yaml ->
@@ -100,7 +100,7 @@ func (s Dir) Resolve(name string) (string, []byte, error) {
 
 // trusted applies the machine config's trust rule (config.CheckTrusted, spec/config/v0 R20) to the profile f opened
 // as rel under r, to every directory between it and root, and to root itself, wherever the machine config's
-// profiles: puts root (limits-check-doctor-cli.md §3): a profile is merged into every contract that extends it, so
+// profiles: puts root: a profile is merged into every contract that extends it, so
 // whoever may rewrite one, or swap one in, widens those contracts. Each directory is opened through r, as the file
 // was, so a link cannot send the check somewhere the read did not go.
 func trusted(r *os.Root, root, rel string, f *os.File) error {

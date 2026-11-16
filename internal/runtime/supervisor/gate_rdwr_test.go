@@ -22,7 +22,7 @@ import (
 // "*.pem": 90` the agent's O_RDONLY open of out/x.pem was refused fs-gate while os.open("out/x.pem", O_RDWR), beneath
 // a write entry, was continued and read the bytes, its line carrying no gate fields. A write open whose access mode
 // reads (O_RDWR, or O_RDONLY with O_CREAT or O_TRUNC) hands the agent the file's bytes, so it is scored with the read
-// predicates as well, the two kinds' scores summed (ADR 0007, 2026-10-20), as a move's source is (gate.md R1). An
+// predicates as well, the two kinds' scores summed (ADR 0007), as a move's source is. An
 // O_WRONLY open reads nothing.
 func TestGateReadMatchesScoresAReadingWriteOpen(t *testing.T) {
 	const pathAddr = 0x10000

@@ -64,7 +64,7 @@ func planeModeUsable(m PlaneMode) (bool, string) {
 	return false, "bpf is not an active LSM (" + strings.TrimSpace(string(b)) + "); boot with lsm=...,bpf"
 }
 
-// TestPlaneLoadsAndAttaches is TIER3-PLAN §9's verifier-load test for T2: each plane build this kernel can use
+// TestPlaneLoadsAndAttaches is the plane's verifier-load test: each plane build this kernel can use
 // loads one mode's full hook set and attaches every program of it, in each mode this kernel offers, with the
 // verifier's instruction count and the load time logged per program and held to planeBudget. file_open's
 // stub calls the walk, so the global walk subprogram is verified in every build and mode. The stubs decide
@@ -188,7 +188,7 @@ func TestPlaneLoadsAndAttaches(t *testing.T) {
 // instructions that planeBudget holds, instead of failing every run on a figure the plane did not meet before
 // NAME-BPF. The line starts BUDGET OVER, the repository's marker for a figure over its limit (test/perf's), never
 // TARGET-MISS, which is a figure over its target and inside its limit: the limit stands, unrelaxed, and its miss is the
-// open condition ADR 0043's Status line, its index row and enforce-plane §2.21 carry until the owner decides it
+// open condition ADR 0043's Status line and its index row carry until the owner decides it
 // (PERF-LOAD meets it, or an amendment moves it). A missing statistics line on 6.17 fails.
 const planeLoadLimit = 6 * time.Millisecond
 

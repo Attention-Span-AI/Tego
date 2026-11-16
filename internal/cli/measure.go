@@ -19,7 +19,7 @@ import (
 
 func init() { register(cmdMeasure) }
 
-// cmdMeasure is `tego measure <run> [--json]` (R29): the run's P0 columns — steps, refused, tokens
+// cmdMeasure is `tego measure <run> [--json]` (R29): the run's columns — steps, refused, tokens
 // in and out, cache, estimated cost, wall, idle max and repeats — recomputed from the ledger alone
 // (R18-R23). It is a report, never a finding, so it exits 0 whatever it shows (R25).
 func cmdMeasure() Command {

@@ -20,7 +20,7 @@ import (
 )
 
 // Section is the part of a contract a rule belongs to: the event kind that
-// carries it (docs/p0/limits-check-doctor-cli.md §5 R13 groups by (kind, rule)).
+// carries it (R13 groups by (kind, rule)).
 type Section string
 
 // The sections drift counts. SectionOther holds refusals no action line carries: a refused line the
@@ -86,7 +86,7 @@ type UsedEntry struct {
 	Rule    string
 }
 
-// FlaggedExec is one image the run's exec lines flagged fileless or dropped (R17a, record-ledger.md §2.2): its path
+// FlaggedExec is one image the run's exec lines flagged fileless or dropped (R17a): its path
 // as those lines name it, and the lines counted by verdict as a RuleCount counts its rule's.
 type FlaggedExec struct {
 	// Path is the line's path: for a fileless image the kernel's raw spelling (/memfd:<name>), never cleaned. A path
@@ -106,7 +106,7 @@ func (f FlaggedExec) Total() int { return f.Allow + f.Ask + f.Refused + f.Observ
 const maxFlagged = 32
 
 // Report is declared versus observed for one run, or for one agent's runs
-// after Aggregate (docs/p0/limits-check-doctor-cli.md §2).
+// after Aggregate.
 type Report struct {
 	// Run is the run id; empty on an aggregated report.
 	Run string
@@ -165,7 +165,7 @@ type Report struct {
 	// aggregate, the guards no run exercised.
 	GuardsNotExercised []string
 	// Fileless and Dropped list the images the run's exec lines flagged, whatever their verdict (R17a,
-	// record-ledger.md §2.2, GAPS C30): fileless, an anonymous image (a memfd, another anon_inode:, a file unlinked
+	// GAPS C30): fileless, an anonymous image (a memfd, another anon_inode:, a file unlinked
 	// since it was opened); dropped, an image under a write entry whose inode changed during the run
 	// (drop-and-execute), or in a run with command rules a #! interpreter or a loader's program it loads. One entry per
 	// path, sorted by path; a line with both flags is in both lists. At most maxFlagged images each: FilelessMore and
@@ -213,7 +213,7 @@ func (r *Report) Sections() []struct {
 // A rule the runtime grants on its own authority is not one of those. The
 // supervisor allows a query to a configured resolver ungated by net.allow, so
 // that a contract naming hosts need not also name the machine's nameservers
-// (agent.IsRuntimeRule, docs/p0/supervisor.md R14); counting it as an
+// (agent.IsRuntimeRule); counting it as an
 // undeclared entry made every run that resolves a hostname report drift, which
 // is nearly every run, and a finding that fires every time says nothing. The
 // bucket is still printed, so the traffic stays visible in the table. The
@@ -331,7 +331,7 @@ func ComputeCtx(ctx context.Context, r *ledger.Reader, rt *agent.RuleTable) (*Re
 			}
 		}
 		if e.Kind == record.KindMCP {
-			// Every line a P0 writer wrote is a stdio server's start; one whose transport cannot be read is
+			// Every line an exec-path writer wrote is a stdio server's start; one whose transport cannot be read is
 			// read as that.
 			var p record.MCPPayload
 			if e.DecodePayload(&p) != nil || p.Transport != mcpHTTP {
@@ -377,7 +377,7 @@ func ComputeCtx(ctx context.Context, r *ledger.Reader, rt *agent.RuleTable) (*Re
 			if e.DecodePayload(&p) == nil && (p.Fileless || p.Dropped) {
 				name := p.Path
 				if name == "" && p.PathBlob != "" {
-					// The ledger stored a path over its blob threshold apart (record-ledger R10): named by its blob,
+					// The ledger stored a path over its blob threshold apart: named by its blob,
 					// as the line names it, rather than as an image with no name.
 					name = "path_blob:" + p.PathBlob
 				}
@@ -505,8 +505,8 @@ const (
 // MCPTransports reads which servers a run's MCP producers could have recorded, from run_start.parsers["mcp"]
 // (R15): a "+"-joined list of producers. "exec" (the supervisor's exec path) records a stdio server's start;
 // "mcp/<version>" (derive/mcp reading captured HTTPS exchanges) an HTTP server's connection and calls. Any other
-// value other than "" and "0" is a producer a ledger written before 2026-10-19 named, when every producer was the
-// exec path's, and reads as stdio. A producer announces itself there, and that is what lets drift read a declared
+// value other than "" and "0" is a producer an older ledger named, when every producer was the exec path's, and
+// reads as stdio. A producer announces itself there, and that is what lets drift read a declared
 // server of its transport with no mcp event as unused rather than unobservable.
 func MCPTransports(parsers map[string]string) []string {
 	v := parsers[string(SectionMCP)]
@@ -528,9 +528,9 @@ func MCPTransports(parsers map[string]string) []string {
 
 // splitObservedMCP divides the run's unused servers into those a producer of their transport could have recorded,
 // which are unused (R15), and the rest, which are unobservable. A server is HTTP when the table declares it by an
-// https url (agent-contract.md R16a), stdio when by command, a name the table does not hold included. One declared
+// https url, stdio when by command, a name the table does not hold included. One declared
 // by a plain http:// url (or a url ParseMCPURL refuses) is covered by no producer: its exchanges pass no TLS
-// library, so the HTTP reader never sees them (capture-derive R41), and it is unobservable under every one.
+// library, so the HTTP reader never sees them, and it is unobservable under every one.
 func splitObservedMCP(unused []string, rt *agent.RuleTable, seen map[string]bool) (used, blind []string) {
 	transport := map[string]string{}
 	if rt != nil && rt.Contract != nil {
@@ -807,7 +807,7 @@ func (b *buckets) declare(rt *agent.RuleTable) {
 		b.entry(SectionFS, r.RuleName(), true)
 	}
 	for _, r := range rt.Net {
-		// A rule an HTTP MCP server's url derived (NetRule.MCP, agent-contract R16a) is that server's, reported
+		// A rule an HTTP MCP server's url derived (NetRule.MCP) is that server's, reported
 		// idle under mcp, never as a net entry the author declared and never used.
 		b.entry(SectionNet, r.RuleName(), r.MCP == "")
 	}

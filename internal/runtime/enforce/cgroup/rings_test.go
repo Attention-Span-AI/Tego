@@ -127,8 +127,7 @@ func TestPrepareRefusesPastTheRingBudget(t *testing.T) {
 
 // TestACaptureRingPastTheBudgetIsLeftOut: when the record ring fits the budget and the capture ring does not,
 // the run is prepared without a capture ring and says why (CaptureRefused, ErrRingBudget): its uprobe source
-// then finds no ring, and the runtime refuses the run only if a token, cost or repeats budget needed it
-// (limits-check-doctor-cli R32).
+// then finds no ring, and the runtime refuses the run only if a token, cost or repeats budget needed it.
 func TestACaptureRingPastTheBudgetIsLeftOut(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, budgetOf(1<<20, 3<<20))
@@ -148,7 +147,7 @@ func TestACaptureRingPastTheBudgetIsLeftOut(t *testing.T) {
 	}
 }
 
-// TestTheSlotsNextRunReusesItsRings is ADR 0026 (6) as amended: a run's rings stay at its slot when it ends, and
+// TestTheSlotsNextRunReusesItsRings is ADR 0026 (6): a run's rings stay at its slot when it ends, and
 // the slot's next run that needs the same rings reuses them, drained, under the shared rings lock: no ring is
 // created, inserted or removed, so no grace period is waited for, and nothing is counted or reclaimed.
 func TestTheSlotsNextRunReusesItsRings(t *testing.T) {

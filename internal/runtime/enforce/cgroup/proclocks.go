@@ -19,7 +19,7 @@ import (
 )
 
 // Whether a build's timer lives, and whether a launcher holds the build, is read without taking either lock (ADR
-// 0022, notes 2026-10-06 and 2026-10-16): a probe that takes a lock for a moment makes a process that asks for it in
+// 0022): a probe that takes a lock for a moment makes a process that asks for it in
 // that moment read it held, which made a last launcher out start no timer and would make a timer
 // starting under a probe exit. Prepare reads the pid the timer wrote into its timer file (timerRunning); `tego stop`
 // reads that and, for a build it does not show a timer for, the kernel's lock table, /proc/locks, which costs an RCU
@@ -36,7 +36,7 @@ import (
 // holder: a re-arm pass there starts a timer beside a live one, which exits on its timer lock, and a build a launcher
 // holds gets a timer that waits for it. Nothing is removed on that reading: a removal takes the build lock itself.
 //
-// The table is read in pieces, and a piece can leave out a lock held all along (note 2026-11-02). /proc/locks is a
+// The table is read in pieces, and a piece can leave out a lock held all along. /proc/locks is a
 // seq_file over the host's list of locks, which every flock(2) changes: each read(2) prints lines from one consistent
 // view of the list, at most a page of them (the seq_file buffer, 4 KiB on amd64), then lets the list go
 // (fs/locks.c locks_start and locks_stop around fs/seq_file.c seq_read_iter), and the next read(2) goes on at the
@@ -212,7 +212,7 @@ const procRoot = "/proc"
 
 // timerRunning reports whether build hash's timer file names a live timer: the pid its holder wrote into it
 // (lockTimer) is a process that is (is, nil meaning isTimerProcess under procRoot as uid 0). It is Prepare's reading
-// of a timer's liveness (ADR 0022, note 2026-10-16): it takes no lock, and it reads no lock table, whose read waits
+// of a timer's liveness (ADR 0022): it takes no lock, and it reads no lock table, whose read waits
 // for an RCU grace period (fs/locks.c locks_start: percpu_down_write(&file_rwsem)), 8 ms on 6.17 and 48 ms on 6.1 in
 // the guest, against prepare.lock-slot's 50 ms. False means not shown, not dead: a file with no pid (a timer of a
 // tego from before the pid was written, or one whose write failed), a process gone, a pid another process has now,

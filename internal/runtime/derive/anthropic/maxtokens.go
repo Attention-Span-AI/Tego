@@ -23,7 +23,7 @@ package anthropic
 // A request that declares a server-side tool (a tools[] entry whose "type" is not "custom": web_search, code
 // execution) has no bound either. Those tools' per-request counts and the input their loop grows are reported
 // only in the final message_delta a cut stream lost, so max_tokens as output is no upper bound on what it
-// spent, and the exchange stays unmetered (ADR 0036 note 2026-09-30). The tools array is read as far as each
+// spent, and the exchange stays unmetered (ADR 0036). The tools array is read as far as each
 // entry's "type" key; a "tools" key twice or in another case, or a "type" that is not a plain string or is
 // spelled in another case, counts as a server tool, the fail-closed reading. So does a top-level "mcp_servers"
 // key in any case (the MCP connector, whose loop the API runs server-side and which has no tools[] entry).

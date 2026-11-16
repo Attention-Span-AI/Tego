@@ -5,7 +5,7 @@ package config
 import "testing"
 
 // TestSystemdRefusedNameFollowsTheRelaxedRules: the names systemd's relaxed rules (systemd.io/USER_NAMES) refuse, for
-// which it starts no user manager (acceptance 3, 2026-11-11: the user 4242 on Ubuntu 24.04), and ordinary names it
+// which it starts no user manager (the user 4242 on Ubuntu 24.04), and ordinary names it
 // accepts, a few that only its strict rules would refuse among them.
 func TestSystemdRefusedNameFollowsTheRelaxedRules(t *testing.T) {
 	for name, refused := range map[string]bool{
@@ -21,7 +21,7 @@ func TestSystemdRefusedNameFollowsTheRelaxedRules(t *testing.T) {
 }
 
 // TestPlainUserName: a name a command reads as itself, never one it would read as an option or a uid ('#0' is uid 0
-// to sudo -u; the review's S3).
+// to sudo -u).
 func TestPlainUserName(t *testing.T) {
 	for name, plain := range map[string]bool{
 		"svc": true, "a b": true, "4242x": true, "x-1": true,

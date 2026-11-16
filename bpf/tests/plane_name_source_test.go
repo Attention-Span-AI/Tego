@@ -482,7 +482,7 @@ func TestNameReadsFailClosedOnTheProbeReadBuild(t *testing.T) {
 	}
 }
 
-// TestExecNamePassIsUnchanged is ADR 0043 F10: the exec rows' name passes compare bytes exactly (enforce-plane R9),
+// TestExecNamePassIsUnchanged is ADR 0043 F10: the exec rows' name passes compare bytes exactly,
 // so the name entries' folding never reaches them: plane_name.h's exec functions call no fold, and the folded pass is
 // the name entries' own.
 func TestExecNamePassIsUnchanged(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestFSAssuranceKey is the fs.assurance key (agent-contract R20, ADR 0041 D1 (a)): best-effort or kernel, the
+// TestFSAssuranceKey is the fs.assurance key (ADR 0041 D1 (a)): best-effort or kernel, the
 // default best-effort; any other value is a schema error; the value is part of contract_hash, so a ledger can
 // tell which one a run held; and RuleTable.FilesystemAssurance reads the stricter of the compiled value and the
 // contract's, so a hand-built table cannot lose an explicit kernel requirement.

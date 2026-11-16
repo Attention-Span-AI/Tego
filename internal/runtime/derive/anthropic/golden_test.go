@@ -29,7 +29,7 @@ type goldenFacts struct {
 }
 
 // TestGoldenFacts freezes what each API shape derives. It fails when a field, a hash or the decision
-// order changes — the review every consumer of ssl_response and decision needs.
+// order changes, which every consumer of ssl_response and decision must review.
 func TestGoldenFacts(t *testing.T) {
 	cases := []struct {
 		name, file, golden, contentType string

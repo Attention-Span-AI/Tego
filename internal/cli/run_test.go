@@ -161,7 +161,7 @@ func TestRunWarnsThatEtcUsersIsReadByTegodOnly(t *testing.T) {
 	}
 }
 
-// TestRunRefusesMissingEnvConfig: identity-config.md E13, a $TEGO_CONFIG that names no file is refused
+// TestRunRefusesMissingEnvConfig: a $TEGO_CONFIG that names no file is refused
 // with 125 [config-untrusted] naming the path, and the line does not point at parse errors "above" that a
 // missing file never printed.
 func TestRunRefusesMissingEnvConfig(t *testing.T) {
@@ -204,7 +204,7 @@ func TestRunFlagsCheckedFirst(t *testing.T) {
 
 // TestRunSaysTheContractsRecordOffAtItsEnd: a contract's own record: off, or a profile's it extends, is what its
 // author wrote and weakens no rule, so a run or a bounded watch prints nothing for it before the agent starts (A quiet
-// start, limits-check-doctor-cli.md R29); a start line said it on every run. The run's end says "record off: refusals
+// start); a start line said it on every run. The run's end says "record off: refusals
 // only", the summary's line or the watch's footer, as it does for --record off, whose R29 warning is still printed once
 // at the start; a --record that raises the record, or a contract at the default, says neither.
 func TestRunSaysTheContractsRecordOffAtItsEnd(t *testing.T) {

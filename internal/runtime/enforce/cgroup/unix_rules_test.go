@@ -112,7 +112,7 @@ func TestUnixRowsLeaveOutTheFilesThePlaneCompacted(t *testing.T) {
 }
 
 // TestUnixRowsMirrorTheSupervisorNameCheck pins what connect_unix and sendmsg_unix admit by name to what the
-// supervisor admits by name (supervisor.md R11, decideUnix; SEMANTICS §5), so the kernel only ever narrows
+// supervisor admits by name (decideUnix; SEMANTICS §5), so the kernel only ever narrows
 // what the supervisor decided and never refuses what the supervisor records as allowed: a unix: entry by its
 // cleaned path or its exact abstract bytes, and otherwise the nearest filesystem entry at or above the name,
 // admitting when it is a write entry. Without the name rows every unix destination is refused in the kernel.

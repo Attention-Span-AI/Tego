@@ -31,7 +31,7 @@ func TestConnectApprovalKeyIsExactAndTransportScoped(t *testing.T) {
 		{"different address", 1, 2, 3, netip.MustParseAddrPort("192.0.2.5:443"), agent.ProtoTCP, false},
 		{"different port", 1, 2, 3, netip.MustParseAddrPort("192.0.2.4:444"), agent.ProtoTCP, false},
 		{"mapped address family", 1, 2, 3, netip.MustParseAddrPort("[::ffff:192.0.2.4]:443"), agent.ProtoTCP, false},
-		// A UDP approval (supervisor R13d) is keyed by its own transport: a TCP credit never admits a UDP send.
+		// A UDP approval is keyed by its own transport: a TCP credit never admits a UDP send.
 		{"UDP keyed apart from TCP", 1, 2, 3, dst, agent.ProtoUDP, false},
 		{"unix cannot use approval", 1, 2, 3, dst, agent.ProtoUnix, true},
 		{"undeclared transport cannot use approval", 1, 2, 3, dst, agent.ProtoInet, true},

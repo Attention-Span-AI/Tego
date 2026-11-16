@@ -59,12 +59,12 @@ github.com/attention-span-ai/tego/internal/handoff.Spawn	pending	ADR 0100 (1e): 
 github.com/attention-span-ai/tego/internal/handoff.readOnly	pending	Spawn, reached as it is
 github.com/attention-span-ai/tego/internal/ledger.AnchorHeads	control-only	internal/control/ledgerview reads a run's anchored head through it (anchorview.go); tego reads them inside VerifyRunDir
 github.com/attention-span-ai/tego/internal/ledger.AnchorPath	control-only	internal/control/cli's serve names the chain anchor by it; tego's runtime takes AnchorPathWith, the same rule
-github.com/attention-span-ai/tego/internal/ledger.LiveWatch.Changes	pending	docs/p0/record-ledger.md LEDGER-FOLLOW: the live index watch, built ahead of its first consumer
+github.com/attention-span-ai/tego/internal/ledger.LiveWatch.Changes	pending	the ledger's live index watch, built ahead of its first consumer
 github.com/attention-span-ai/tego/internal/ledger.LiveWatch.Close	pending	WatchLive's watch, reached as it is
 github.com/attention-span-ai/tego/internal/ledger.LiveWatch.Wake	pending	WatchLive's watch, reached as it is
 github.com/attention-span-ai/tego/internal/ledger.LiveWatch.names	pending	LiveWatch.Changes, reached as it is
 github.com/attention-span-ai/tego/internal/ledger.LiveWatch.scan	pending	LiveWatch.Changes, reached as it is
-github.com/attention-span-ai/tego/internal/ledger.WatchLive	pending	docs/p0/record-ledger.md LEDGER-FOLLOW: the live index watch, built ahead of its first consumer
+github.com/attention-span-ai/tego/internal/ledger.WatchLive	pending	the ledger's live index watch, built ahead of its first consumer
 github.com/attention-span-ai/tego/internal/liveblock.Compile	test-api	internal/cli, internal/control/runact and internal/runtime/supervisor tests build a Set with it
 github.com/attention-span-ai/tego/internal/liveblock.TakesLink	control-only	internal/control/runact's BlockFromContract (the dashboard's "Also apply now") asks it before it writes a link block; tego's own writers place whole-file blocks only
 

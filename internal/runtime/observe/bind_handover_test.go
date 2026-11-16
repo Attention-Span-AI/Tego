@@ -296,7 +296,7 @@ func TestDecodeBindResultAndZeroReuse(t *testing.T) {
 	}
 }
 
-// TestURingListenerResultsNeedNoSupervisorNaming is enforce-plane §2.20's io_uring records: IORING_OP_BIND and
+// TestURingListenerResultsNeedNoSupervisorNaming covers the plane's io_uring records: IORING_OP_BIND and
 // IORING_OP_LISTEN pass no seccomp notification, so a TEGO_BIND_URING record is decoded, joins no supervisor
 // naming and counts no bind-metadata-missing gap, and its refusal is the plane's line like a syscall's.
 func TestURingListenerResultsNeedNoSupervisorNaming(t *testing.T) {

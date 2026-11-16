@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
-// TestLoadMachineAppliesTheLayersInPrecedenceOrder is limits-check-doctor-cli.md R24 at the seam every
+// TestLoadMachineAppliesTheLayersInPrecedenceOrder holds the layer order at the seam every
 // command uses: loadMachine resolves the layers once, the later layer (the per-user file, then
 // $TEGO_CONFIG) wins a setting, and a ceiling a later layer names above an earlier one's stays where the
 // earlier layer put it, because ceilings are only lowered.

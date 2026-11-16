@@ -42,7 +42,7 @@ func fixturePrices() prices {
 }
 
 // fixtureReader opens the frozen v1 fixture ledger as a run directory. The fixture is the contract
-// every view is built against (P0-DESIGN §10): measure is written against it before the runtime
+// every view is built against: measure is written against it before the runtime
 // emits a real event.
 func fixtureReader(t *testing.T) *ledger.Reader {
 	t.Helper()
@@ -69,7 +69,7 @@ func readerOf(t *testing.T, data []byte) *ledger.Reader {
 	return r
 }
 
-// TestComputeFixture is the frozen fixture's measurement, every P0 column checked against the
+// TestComputeFixture is the frozen fixture's measurement, every column checked against the
 // values a reader can count off the fixture by hand (R18-R23).
 func TestComputeFixture(t *testing.T) {
 	rep, err := Compute(fixtureReader(t), fixturePrices())
@@ -144,7 +144,7 @@ func TestFixtureAgreesWithTheLimitEvent(t *testing.T) {
 	}
 }
 
-// TestFixtureGolden freezes the two rendered views (limits-check-doctor-cli.md R31 and E22).
+// TestFixtureGolden freezes the two rendered views.
 func TestFixtureGolden(t *testing.T) {
 	rep, err := Compute(fixtureReader(t), fixturePrices())
 	if err != nil {
@@ -276,7 +276,7 @@ func ledgerOf(t *testing.T, events []event) *ledger.Reader {
 	return readerOf(t, buf.Bytes())
 }
 
-// TestComputeRules is the table of limits-check-doctor-cli.md R18, R19, R20, R21, R22 and R23 against synthetic runs, one property per case.
+// TestComputeRules is the table of R18, R19, R20, R21, R22 and R23 against synthetic runs, one property per case.
 func TestComputeRules(t *testing.T) {
 	sec := func(n uint64) uint64 { return n * uint64(time.Second) }
 	usage := func(in, out int) *record.Usage { return &record.Usage{Input: in, Output: out} }
@@ -500,7 +500,6 @@ func TestComputeAtLive(t *testing.T) {
 
 // TestTornLines covers E2 and E3: a torn last line is what a live run looks like and is ignored; a
 // malformed line anywhere else is a hard, named error.
-// (limits-check-doctor-cli.md E2 and E3.)
 func TestTornLines(t *testing.T) {
 	src, err := os.ReadFile(filepath.Join("..", "..", "..", "spec", "record", "v1", "fixtures", "run-fixture.jsonl"))
 	if err != nil {

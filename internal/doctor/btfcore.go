@@ -18,7 +18,7 @@ import (
 
 // coreNeed is one kernel type, member or enum value that an embedded BPF object reads through a CO-RE
 // relocation, named the way the loader matches it: by the type's name without its ___flavor suffix and
-// by member names (enforce-cgroup-observe.md E31). D2 checks each against the kernel's BTF before any
+// by member names. D2 checks each against the kernel's BTF before any
 // program load is attempted. That way a kernel that lacks one is diagnosed by the name of what is
 // missing, not by a verifier tail at Prepare.
 type coreNeed struct {
@@ -82,7 +82,7 @@ func readObjectCORENeeds() ([]coreNeed, error) {
 		for name, prog := range spec.Programs {
 			if o == bpfobj.ObjectCgroupNet && slices.Contains(bpfobj.UnixPrograms, name) {
 				// Optional: a kernel without the unix sockaddr hooks, or the field they read, runs the tier
-				// without them (enforce-cgroup-observe.md R7), so what only they read decides nothing here.
+				// without them, so what only they read decides nothing here.
 				continue
 			}
 			for i := range prog.Instructions {

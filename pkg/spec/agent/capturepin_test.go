@@ -58,7 +58,7 @@ func TestPinnedUprobeKeepsTheBaseURL(t *testing.T) {
 // GOOGLE_GEMINI_BASE_URL or CODE_ASSIST_ENDPOINT was silently overridden by identity.Env.Apply. A base-URL
 // variable leaves the pass list; CODEX_HOME stays in it, since the launcher reads the contract's value to find the
 // user's Codex config.toml it copies into the run's.
-// agent-contract.md R12: env-runtime-reserved on ANTHROPIC_BASE_URL-and-peers wherever the forwarder runs.
+// Env-runtime-reserved on ANTHROPIC_BASE_URL-and-peers wherever the forwarder runs.
 func TestEveryForwarderVarIsReserved(t *testing.T) {
 	f := newFixture(t)
 	for _, name := range identity.ForwarderVarNames {
@@ -94,7 +94,7 @@ func TestEveryForwarderVarIsReserved(t *testing.T) {
 // ceiling of forwarder, or a tier ceiling of landlock. Load cannot see either, so Compile warns then, with
 // E27's own fix; before it did, those runs started the forwarder with the entry allowed and nothing warned.
 // want lists the fixes of every model-direct-bypass warning, Load's first, then Compile's.
-// agent-contract.md E27: model-direct-bypass under a pinned uprobe.
+// Model-direct-bypass under a pinned uprobe.
 func TestModelDirectBypassUnderAPinnedUprobe(t *testing.T) {
 	f := newFixture(t)
 	const (
@@ -154,7 +154,7 @@ func TestModelDirectBypassUnderAPinnedUprobe(t *testing.T) {
 
 // A models[] host is matched against net.allow in CanonicalHost's spelling, the one normalization host.go
 // names, so a trailing dot, brackets, case or a longer IPv6 spelling still draws E27's warning.
-// agent-contract.md E27: model-direct-bypass whatever the models[] host's spelling.
+// Model-direct-bypass whatever the models[] host's spelling.
 func TestModelDirectBypassWhateverTheHostSpelling(t *testing.T) {
 	f := newFixture(t)
 	for _, host := range []string{"api.example.com", "API.Example.com", "api.example.com.", `"[::1]"`, `"[0:0::1]"`, `"[::ffff:127.0.0.1]"`} {

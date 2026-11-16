@@ -188,7 +188,7 @@ func (k *compiler) listenerControl() {
 }
 
 // ioUringListenUndecided warns where a ring can listen with nothing deciding it (GAPS C44). Under a net: section with
-// no net.listen list a TCP listen is the supervisor's to refuse (enforce-landlock R6, R11c), since Landlock's BIND_TCP
+// no net.listen list a TCP listen is the supervisor's to refuse, since Landlock's BIND_TCP
 // never sees the autobind of a listen() on an unbound socket. A ring's IORING_OP_LISTEN (Linux 6.11+) passes no
 // seccomp notification, and the plane's socket_listen decides only a run whose net.listen is a list (enforce-plane
 // §2.20), so where a root tier's plane admits io_uring (tier cgroup in a plane mode, tier bpflsm) a ring's listen on an

@@ -13,7 +13,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestInFlightPastTheScratchMapSizeGapsAndNeverMispairs is capture-derive.md R5 at the reader. The kernel's
+// TestInFlightPastTheScratchMapSizeGapsAndNeverMispairs, at the reader: the kernel's
 // scratch map holds 8192 in-flight (pid_tgid, ssl_ptr) rows, and every userspace table the source keys the
 // same way is sized to match it (the reassembler's 4096 connections, maxTrackedPtrs and maxConnHosts, 8192
 // each). The LRU eviction itself is the kernel's and is exercised only at root; what this drives is the reader
@@ -85,8 +85,8 @@ func TestInFlightPastTheScratchMapSizeGapsAndNeverMispairs(t *testing.T) {
 	t.Logf("%d of %d exchanges recorded, size-cap %d", len(resps), n, gapCount(u.Gaps(), GapSizeCap))
 }
 
-// TestAnEvictedSeqRowMidResponseNeverPairsTheRest is the other LRU of R5's key, tego_ssl_seq (capture-derive.md
-// I2): a row evicted while its connection is live restarts the count at 1 mid-response. The reader takes the
+// TestAnEvictedSeqRowMidResponseNeverPairsTheRest is the other LRU of the in-flight key, tego_ssl_seq:
+// a row evicted while its connection is live restarts the count at 1 mid-response. The reader takes the
 // restart as a new connection, so the rest of response 1 is passed over rather than read as the answer to the
 // next request, and request 2's own response pairs with it.
 func TestAnEvictedSeqRowMidResponseNeverPairsTheRest(t *testing.T) {

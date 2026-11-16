@@ -20,7 +20,7 @@ const (
 )
 
 // Resources is what a run's cgroup says the run used, read once before the cgroup is removed
-// (docs/p0/runtime-launch.md §4.1 step 13, record-ledger.md run_end.resources). Every field is a
+// (run_end.resources). Every field is a
 // pointer because a file the kernel does not have, or a key it does not write, is unknown rather than
 // zero (docs/VERSIONING.md §2): memory.peak needs 5.19 and the memory controller, pids.peak needs a
 // kernel that has it and the pids controller, cpu.stat's throttling keys need the cpu controller, and

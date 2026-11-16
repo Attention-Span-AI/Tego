@@ -10,8 +10,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// TestFanotifyGroupHasOnlyPermissionEventsAndAnUnlimitedQueue is the part of docs/p0/enforce-cgroup-observe.md
-// §6 E37 that holds without a kernel under memory pressure (the doc says the rest is unreachable and untested).
+// TestFanotifyGroupHasOnlyPermissionEventsAndAnUnlimitedQueue is the part of the queue-overflow
+// case that holds without a kernel under memory pressure (the rest is unreachable and untested).
 // The FAN_Q_OVERFLOW branch in handle is dead code only while two things hold: the group asks for no
 // notification-class event, whose queue could overflow, and the group's queue is unlimited, so the kernel
 // allocates permission events with __GFP_NOFAIL. Either changing makes the branch live and the documented

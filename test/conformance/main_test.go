@@ -16,7 +16,7 @@ import (
 //
 // The runs' runtime directories go to a private XDG_RUNTIME_DIR the binaries inherit (testutil.PrivateRuntimeDir):
 // under the developer's /run/user/<uid> each run made $XDG_RUNTIME_DIR/tego and swept the directories of their runs
-// whose launcher is gone (identity-config.md R27 clause b4).
+// whose launcher is gone.
 //
 // A process started with mountnsEnv is the mount namespace helper of a fixture with mounts (mountns_test.go), not a
 // test run.

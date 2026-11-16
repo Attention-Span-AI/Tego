@@ -33,8 +33,7 @@ const (
 	// next to the ledger root by default (DefaultAnchorPath).
 	ChainLogFile = "chain.log"
 	// StopRequestFile is the stop marker `tego stop` (and the dashboard's Stop) places before signalling the
-	// launcher, so the launcher records run_end reason=stopped, not reason=signal (docs/p0/runtime-launch.md §3,
-	// R9). internal/runtime names it as StopRequestFile too; it lives here so tego-control can place it without
+	// launcher, so the launcher records run_end reason=stopped, not reason=signal. internal/runtime names it as StopRequestFile too; it lives here so tego-control can place it without
 	// linking the engine.
 	StopRequestFile = "stop.request"
 )
@@ -97,7 +96,7 @@ type Writer struct {
 	// dirFD is the run directory, held from Open to Close: every file the Writer makes or opens in it is
 	// named relative to this descriptor (openRunDir), so a ledger root renamed or replaced while the run
 	// is live does not move where the Writer writes; a path-based store beside it (NewBlobRepository, a
-	// uprobe source's) is not covered (record-ledger.md §3, residual).
+	// uprobe source's) is not covered (residual).
 	// It is strict (ADR 0023): Close fsyncs it, and closeDirs reports its close.
 	dirFD *sys.FD
 	// handTo is who Close hands the run directory to, the ledger root's owner when this process is root
@@ -134,7 +133,7 @@ type Writer struct {
 	// truncate cuts events.jsonl to a length; it is the file's Truncate, a field so a test can make it fail.
 	truncate func(int64) error
 	// mirrorFD is a directory the run's own processes can read, where last-refusal.json is written as well,
-	// or nil (MirrorLastRefusal). The ledger root is read-denied to the agent (agent-contract.md R6a), so a
+	// or nil (MirrorLastRefusal). The ledger root is read-denied to the agent, so a
 	// harness inside the run reads its refusal there (spec/reason/REASON-CHANNEL.md §2).
 	mirrorFD *sys.FD
 	mirror   string
@@ -520,7 +519,7 @@ func (w *Writer) WriteRunStart(start record.RunStartPayload) error {
 }
 
 // WriteRunStartIn is WriteRunStart for a run whose cgroup scope exists: its id goes in run_start's cgroup
-// field, where a sweep reads which scope is the run's (internal/runtime killOrphan; runtime-launch.md R20). 0
+// field, where a sweep reads which scope is the run's (internal/runtime killOrphan). 0
 // is a run with no scope of its own.
 func (w *Writer) WriteRunStartIn(start record.RunStartPayload, cgroup uint64) error {
 	e := record.Event{Kind: record.KindRunStart, Source: record.SourceSupervisor, PID: w.pid, TID: w.tid, Cgroup: cgroup}
@@ -593,7 +592,7 @@ func (w *Writer) encode(e *record.Event) (line []byte, minor int, err error) {
 	e.Run, e.Agent = w.ref.ID, w.ref.Agent
 	e.TS = w.clock.Now().UTC()
 	// mono_ns is the CLOCK_MONOTONIC reading at capture (§2), so a producer's own reading stands: the
-	// kernel recorder's is bpf_ktime_get_ns() at the hook (enforce-cgroup-observe.md E20), the
+	// kernel recorder's is bpf_ktime_get_ns at the hook, the
 	// forwarder's is when the request began. Stamping every line here would record how long the event
 	// waited in the queue rather than when the agent acted. Zero is E20's "unknown", and only that is
 	// filled in with the append time.
@@ -667,7 +666,7 @@ func (w *Writer) cutTornLine() error {
 // ext4, and the ledger's throughput fell 3.7x.
 const refusalWindow = 10 * time.Millisecond
 
-// lastRefusal is last-refusal.json's latest-wins writer (record-ledger.md §3), in the reason file's v1 shape
+// lastRefusal is last-refusal.json's latest-wins writer, in the reason file's v1 shape
 // (pkg/spec/reason, ADR 0061). What its readers (a harness polling TEGO_REASON after the refusal it saw) may rely
 // on: the file is always one whole file (temp file and rename); its seq and refusal count only grow from one write
 // to the next, so a newer refusal is never followed by an older one; it lists only refused lines events.jsonl already
@@ -679,7 +678,7 @@ const refusalWindow = 10 * time.Millisecond
 // under a lock of its own, and the run directory's copy, which no process of the run reads, after it: a refusal reaches
 // the hook as soon as the window allows and never waits behind a rename on a slow disk. A crash between the two
 // writes leaves the mirror one write ahead of the run directory's copy, never the other way, and both list only lines
-// the ledger holds (record-ledger.md §3).
+// the ledger holds.
 //
 // The newest reason.RingSize refused lines are kept in a ring, filled by post() under mu with no file I/O and no
 // decoding (a payload's cost to decode is the agent's to choose): post() copies the payload, into the slot's own
@@ -927,8 +926,8 @@ func (w *Writer) encodeLastRefusal(count uint64, recent []refusalSlot) []byte {
 }
 
 // MirrorLastRefusal makes every later last-refusal.json be written into dir as well, a directory the run's
-// own processes can read (the run's runtime directory): the ledger root is read-denied to the agent
-// (agent-contract.md R6a), and a harness inside the run reads the reason of its last refusal from the mirror
+// own processes can read (the run's runtime directory): the ledger root is read-denied to the agent,
+// and a harness inside the run reads the reason of its last refusal from the mirror
 // (spec/reason/REASON-CHANNEL.md §2). dir is opened O_NOFOLLOW and must be a directory owned by this
 // process's uid, which the launcher made; the Writer holds it until Close.
 func (w *Writer) MirrorLastRefusal(dir string) error {
@@ -998,8 +997,7 @@ func (w *Writer) isClosed() bool {
 // written but an orphaned run's gap, which the next Close does not repeat, so the caller can Close again with a run_end it can write (without the field) and the run keeps its
 // run_end, its fsync and its anchor; refused after closing, the run had none and no later Close could add it.
 //
-// Last, a root process hands the run directory to the owner of the ledger root holding it (handOverDir,
-// record-ledger.md §3), through the descriptor it held for the whole run: only now, with the writer done,
+// Last, a root process hands the run directory to the owner of the ledger root holding it (handOverDir), through the descriptor it held for the whole run: only now, with the writer done,
 // can the user own the directory without being able to plant a link under a name the writer is about to
 // create. A failure there is logged, not returned: the run is complete and durable, and only who may read
 // it is left undone.
@@ -1109,7 +1107,7 @@ func (w *Writer) OpenDirPath() (*os.File, error) {
 }
 
 // WriteLockInfo replaces the lock file's content with b (the launcher's "<pid> <start_boot_ns>" line,
-// runtime-launch.md R22), through the descriptor that holds the run's flock: the lock file is written where
+// the run's lock), through the descriptor that holds the run's flock: the lock file is written where
 // the lock is, never reopened by name. Writing does not disturb the flock, which lives on the open file
 // description.
 func (w *Writer) WriteLockInfo(b []byte) error {

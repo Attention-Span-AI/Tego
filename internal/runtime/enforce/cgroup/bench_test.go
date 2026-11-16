@@ -34,7 +34,7 @@ func benchPolicy(b *testing.B) *policy {
 }
 
 // BenchmarkPolicyDecideOpen measures the decision itself, the part of the fanotify round trip this package
-// controls; docs/P0-DESIGN.md §9 budgets the whole round trip at 30µs.
+// controls; the whole round trip is budgeted at 30µs.
 func BenchmarkPolicyDecideOpen(b *testing.B) {
 	p := benchPolicy(b)
 	b.ReportAllocs()

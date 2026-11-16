@@ -57,7 +57,7 @@ type RootExecRow struct {
 	Parent, Name string
 	// Dir is a directory entry's path: every file beneath it matches. "" for a file or name row.
 	Dir string
-	// Allow is the entry's verdict (an ask entry compiles as refused in P0).
+	// Allow is the entry's verdict (an ask entry compiles as refused).
 	Allow bool
 }
 

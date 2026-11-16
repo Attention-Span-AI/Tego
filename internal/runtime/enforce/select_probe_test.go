@@ -22,7 +22,7 @@ var (
 )
 
 // TestSelectFromDoctorProbe walks the machine shapes doctor reports and the tier Select picks for
-// each, in a build that embeds the BPF objects. Tier 3 is the plane in LSM mode (TIER3-PLAN T7): a machine that
+// each, in a build that embeds the BPF objects. Tier 3 is the plane in LSM mode: a machine that
 // offers it, with doctor's LSM-mode plane handed over (LSMPlane), runs at tier 3; a probe offering it with no such
 // plane is told so with a warning and runs at tier 2, never at tier 3 by another mode, and is never refused.
 func TestSelectFromDoctorProbe(t *testing.T) {

@@ -45,8 +45,8 @@ const DefaultFlushInterval = agent.ReadAggregationWindow
 
 // DefaultReadInterval is the longest the drain waits between two reads of the ring. trace_proc submits its
 // opens, file operations and connects without waking the reader (BPF_RB_NO_WAKEUP), so these reads are what
-// fetch them; an exec, an exit, an open of a libssl and a ring an eighth full still wake it at once
-// (enforce-cgroup-observe §9). A wakeup is paid by the process that submits the sample, and a reader that kept
+// fetch them; an exec, an exit, an open of a libssl and a ring an eighth full still wake it at once.
+// A wakeup is paid by the process that submits the sample, and a reader that kept
 // up with a slow producer was woken once a sample; this bounds how long such a sample waits instead, and costs
 // an idle run this many wakeups of the drain a second, not one a sample.
 const DefaultReadInterval = 50 * time.Millisecond
@@ -54,11 +54,10 @@ const DefaultReadInterval = 50 * time.Millisecond
 // DefaultStopDrain bounds how long Stop's final drain records samples (finalDrain). Past it, what is left of
 // this run's on the ring is counted into a ringbuf-undrained gap rather than recorded, which bounds the
 // final drain by the ring's size instead of by the work its samples cause (a hook's attach is budgeted at
-// 50 ms, capture-derive.md §4).
+// 50 ms).
 const DefaultStopDrain = 2 * time.Second
 
-// PinDir is where tier 2 pins the maps this recorder reads, one directory per bpf_hash
-// (docs/p0/enforce-cgroup-observe.md §3).
+// PinDir is where tier 2 pins the maps this recorder reads, one directory per bpf_hash.
 const PinDir = "/sys/fs/bpf/tego"
 
 // EventsMapName and LostMapName are the pinned names of the record's ring outer, which holds each run's own ring
@@ -219,20 +218,20 @@ type Options struct {
 	Stamps ActivityStamps
 	// Activity is told the mono_ns of each of the run's samples the recorder keeps no line for, which under
 	// record: off is every one: the budget watcher's stall check, which reads activity from the lines the
-	// pipeline carries, would otherwise see an agent busy at tier 2 as idle and kill it for stalling
-	// (docs/p0/limits-check-doctor-cli.md R4). Nil tells no one. SetActivity sets it on a recorder a factory built.
+	// pipeline carries, would otherwise see an agent busy at tier 2 as idle and kill it for stalling.
+	// Nil tells no one. SetActivity sets it on a recorder a factory built.
 	Activity func(monoNS uint64)
 	// ContinuedNet names an IP connect or datagram the run's supervisor continued, the way the supervisor's own
 	// line would have named it: its rule, declared host and verdict, ok false when the supervisor continues no
 	// such destination (a contract with a net: section, or one guarding a models[] endpoint). It is
 	// supervisor.Loop.ContinuedNet, the one lookup behind that line: the supervisor writes none for a continued
-	// connect this recorder reads (docs/p0/supervisor.md R7), so this recorder's line is the connect's only one
+	// connect this recorder reads, so this recorder's line is the connect's only one
 	// and must name it as the supervisor would, the resolver exception, the resolved-address check and the
 	// entries the runtime adds (the capture listener) included (§5 R5). Nil, or ok false, names the sample
 	// against Rules (matchNet). SetContinuedNet sets it on a recorder a factory built.
 	ContinuedNet func(ap netip.AddrPort, proto string) (rule, host string, v record.Verdict, ok bool)
-	// ContinuedFS names a filesystem action the run's supervisor continued and left to this recorder's line
-	// (docs/p0/supervisor.md R7a), for a record whose directory the index cannot name (an unindexed parent, a
+	// ContinuedFS names a filesystem action the run's supervisor continued and left to this recorder's line,
+	// for a record whose directory the index cannot name (an unindexed parent, a
 	// rename's or a link's other end): the thread, the operation (record.FS*, an O_CREAT create an open), each
 	// end's final component and the record's own stamp (MonoNS) in; the supervisor's spellings, rule, verdict and
 	// reason out, ok false when it handed over no such action as the thread's last before the stamp (a thread
@@ -252,14 +251,14 @@ type Options struct {
 	BindResults     bool
 	ContinuedListen func(tid, pid int, startBootNS, eventMonoNS uint64) (supervisor.ListenNaming, bool)
 	ListenResults   bool
-	// SupervisorExecs says the run's supervisor writes the line of every exec (docs/p0/supervisor.md R7a,
-	// R16b): it decides each one on the image it resolves and names it by the grant, where this recorder's
+	// SupervisorExecs says the run's supervisor writes the line of every exec:
+	// it decides each one on the image it resolves and names it by the grant, where this recorder's
 	// sched_process_exec record carries no verdict of a mechanism and names the spelling. The recorder then writes
 	// no exec line, and keeps its process cache and hooks. SetSupervisorExecs sets it.
 	SupervisorExecs bool
 	// DecisionPlane is the mode the run's kernel decision plane runs in (record.DecisionPlaneLSM or
 	// record.DecisionPlaneFmodRet), which a line whose verdict the plane gave names in decision_plane; "" when the
-	// run has no plane (TIER3-PLAN T9). SetDecisionPlane sets it.
+	// run has no plane. SetDecisionPlane sets it.
 	DecisionPlane string
 	// ExecPins says the run's handle pinned its plane slot (ADR 0048 (3) P2): each exec's line waits for the plane's
 	// held or kill sample of it (exec_pin.go). ExecPinKill is the pidfd backstop for a kill the kernel could not send.
@@ -281,7 +280,7 @@ type Options struct {
 
 // Recorder is the kernel record: it drains the run's own ring buffer, enriches each sample from the
 // process cache, stamps the rule and verdict the contract implies, aggregates ordinary reads and
-// emits record.Event values (docs/p0/enforce-cgroup-observe.md §2.4, §5 R8-R13).
+// emits record.Event values (§5 R8-R13).
 //
 // It satisfies source.Source. The spec sketches Start(ctx, identity.Run); the merged
 // internal/runtime owns the producer contract (Source/Sink/RunRef), so that is the shape here.
@@ -333,8 +332,8 @@ type Recorder struct {
 	lostMap     *ebpf.Map
 	// scoped, slot and gen are Start's reading of this run's row, fixed before the drain goroutine exists: from
 	// then on a sample is this run's only when it carries slot and gen. The generation is what keeps a record
-	// the slot's previous run left in its ring, which this run reuses, out of this run's (ADR 0026 (6) as
-	// amended). inert is a recorder whose Start read nothing and recorded kernel-record-unavailable; set under
+	// the slot's previous run left in its ring, which this run reuses, out of this run's (ADR 0026 (6)).
+	// inert is a recorder whose Start read nothing and recorded kernel-record-unavailable; set under
 	// mu before done is closed.
 	scoped bool
 	slot   uint32
@@ -490,7 +489,7 @@ var _ source.ProcessStream = (*Recorder)(nil)
 
 // AddProcessHook feeds a hook the process lifecycle this recorder drains: every exec, every open and every
 // exit the kernel record sees in the run's cgroups (source.ProcessStream). It is how the uprobe source
-// learns which processes to attach to (docs/p0/capture-derive.md §4, R4, R8), and it must be called before
+// learns which processes to attach to, and it must be called before
 // Start: the drain goroutine reads the hooks without a lock, so a hook added later is refused.
 func (r *Recorder) AddProcessHook(h source.ProcessHook) error {
 	r.mu.Lock()
@@ -573,7 +572,7 @@ func (r *Recorder) Start(ctx context.Context, run source.RunRef, sink source.Sin
 	// Cancellation ends the goroutine but not the record: the run cancels its workers before it knows its
 	// processes are gone, so the samples still to come are read by Stop's final drain, which the run calls
 	// once its cgroup is empty, or once a killed tree has had killTimeout to empty (runtime awaitEmpty,
-	// docs/p0/runtime-launch.md §4.1 steps 12-13).
+	// steps 12-13 of the run).
 	stop := context.AfterFunc(ctx, r.haltDrain)
 	go func() {
 		// The local, not r.done: the field is Stop's to read under the lock, and the goroutine
@@ -599,7 +598,7 @@ func (r *Recorder) Start(ctx context.Context, run source.RunRef, sink source.Sin
 
 // Reading reports whether the recorder reads this run's ring: it started, found the run's row
 // (Start's scope), and its drain has not failed. The supervisor writes no line of its own for a connect the
-// ring records while this holds (runtime.KernelReading, supervisor.md R7).
+// ring records while this holds (runtime.KernelReading).
 func (r *Recorder) Reading() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -667,8 +666,8 @@ func (r *Recorder) Stop() error {
 	return r.err
 }
 
-// Gaps reports what the recorder could not cover, one entry per distinct reason with its count
-// (P0-DESIGN §6). Call it after Stop.
+// Gaps reports what the recorder could not cover, one entry per distinct reason with its count.
+// Call it after Stop.
 func (r *Recorder) Gaps() []source.Gap {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -693,8 +692,8 @@ func (r *Recorder) haltDrain() {
 
 // finalDrain reads what the ring holds when Stop runs, after the drain goroutine has returned: edge case #28's
 // one final ring-buffer drain, which the recorder owes the exits that end a run, the actions just before
-// them, and the hooks those feed. The run calls Stop once its cgroup is empty (docs/p0/runtime-launch.md
-// §4.1 steps 12-13), so every sample of this run is on the ring by then and lies within the bytes the ring
+// them, and the hooks those feed. The run calls Stop once its cgroup is empty,
+// so every sample of this run is on the ring by then and lies within the bytes the ring
 // holds at this moment. On a cancelled run the tree is killed and given killTimeout to empty first; one that
 // outlasts it is the run's own gap why=ringbuf-undrained with no count (runtime awaitEmpty). The drain reads
 // that many bytes and no further, because a ring the run's escaped or orphaned processes keep writing (the run's
@@ -857,7 +856,7 @@ func (r *Recorder) handle(rec *Record) {
 	if !r.mine(rec) {
 		return
 	}
-	// The run's open deputy opens for the supervisor, which writes each held open's one line (supervisor.md R7a, ADR
+	// The run's open deputy opens for the supervisor, which writes each held open's one line (ADR
 	// 0041 D5), the decision plane's refusal of the open included, which it attributes with the tier's model as this
 	// recorder would (decide.ChainFS): the deputy's own records would be a second line for the same action. Only the
 	// deputy's: a later process given its pid is recorded as any other (skipProcess.drops).
@@ -1034,7 +1033,7 @@ func (r *Recorder) logProcCache() {
 func (r *Recorder) SetActivity(fn func(monoNS uint64)) { r.opts.Activity = fn }
 
 // ActivityStamps reads one slot of the build's tego_activity: the bpf_ktime_get_ns (CLOCK_MONOTONIC) of the newest
-// action the BPF programs stamped for the run at that slot, 0 for none (limits-check-doctor-cli.md R4).
+// action the BPF programs stamped for the run at that slot, 0 for none.
 type ActivityStamps interface {
 	Stamp(slot uint32) (uint64, error)
 }
@@ -1184,7 +1183,7 @@ func (r *Recorder) SetSupervisorExecs(on bool) { r.opts.SupervisorExecs = on }
 
 // SetSkipProcess names the run's open deputy (ADR 0041 D2) by its pid and its start time in CLOCK_BOOTTIME
 // nanoseconds as /proc reads it (0 when it could not be read), whose records this recorder drops: every open it makes
-// is one the supervisor completes and writes the line of (supervisor.md R7a), a refusal the decision plane made of it
+// is one the supervisor completes and writes the line of, a refusal the decision plane made of it
 // included. A pid of 0 names none. Safe to call while the recorder reads.
 func (r *Recorder) SetSkipProcess(pid uint32, startNS uint64) {
 	if pid == 0 {
@@ -1224,7 +1223,7 @@ func (s *skipProcess) drops(rec *Record) bool {
 // (runtime.PathHookNamer): the trace object walks each parent directory of such a run's records in the kernel
 // (tego_dir_walk, keyed by the run-set row's plane byte, which Prepare writes), and handleFSOp joins the walked
 // path with the final component, with no supervisor naming. A walk that cannot prove its path falls back to the
-// directory index, and past it to a marked dev:ino/name, never to a wrong path (enforce-plane §2.15). The walk
+// directory index, and past it to a marked dev:ino/name, never to a wrong path. The walk
 // needs bpf_loop, which every plane mode needs too (ADR 0024 (1)).
 func (r *Recorder) NamesPathHooks() bool { return true }
 
@@ -1323,7 +1322,7 @@ func (r *Recorder) record(rec *Record) {
 		case KindPlaneFS:
 			r.handlePlaneFS(rec)
 		case KindSockCreate:
-			r.handleSockCreate(rec) // cgroup/sock_create's refusal (enforce-cgroup-observe R5)
+			r.handleSockCreate(rec) // cgroup/sock_create's refusal
 		case KindSockopt:
 			r.handleSockopt(rec) // cgroup/setsockopt's refusal (ADR 0018 (7))
 		}
@@ -1374,7 +1373,7 @@ func (r *Recorder) record(rec *Record) {
 }
 
 // feedHooks hands one sample's process lifecycle to every hook, after the sample's own event is emitted so a
-// hook's work (an attach is budgeted at 50 ms, capture-derive.md §4) never delays the record of the action
+// hook's work (an attach is budgeted at 50 ms) never delays the record of the action
 // that caused it. It runs under record: off too: the kernel still emits exec and exit then, and what a
 // hook does with them is not recording (E23). An open whose path the kernel truncated names no file a hook
 // could act on, and is not passed on; an exec is, with no path, because the process is still one to attach.
@@ -1467,7 +1466,7 @@ func (r *Recorder) handleExec(rec *Record) {
 	rule := m.Rule
 	if named := rec.Exec.Plane; named != bpf.PlaneNamedNone && rec.Verdict != KernelRefused {
 		// The plane's bprm_check allowed this exec: the verdict is the plane's, and the rule the entry it matched
-		// by (an exec.allow directory's by its fs row), whatever the spelling matches (TIER3-PLAN T9).
+		// by (an exec.allow directory's by its fs row), whatever the spelling matches.
 		idx := uint32(rec.RuleIdx)
 		if named == bpf.PlaneNamedFSRow {
 			idx |= bpf.PlaneRuleFSRow
@@ -1541,7 +1540,7 @@ func (r *Recorder) handleOpen(rec *Record) {
 	}
 	if r.listenerRefused(rec, path) {
 		// The fanotify listener refused this open after the Landlock ruleset let it through, and wrote its line,
-		// the mechanism's own answer (§5 R8, supervisor R7a, ADR 0016 (4)): a second one here would count one
+		// the mechanism's own answer (§5 R8, ADR 0016 (4)): a second one here would count one
 		// refusal twice.
 		return
 	}
@@ -1658,7 +1657,7 @@ func (r *Recorder) unmarkedRead(dev uint64) bool {
 
 // grantName is the rule an allowed modification of path is named by: the entry whose grant the Landlock ruleset
 // allowed it under (decide.GrantName), as compile --test names it, not a deny_read or watch entry nearer to the
-// path, which decided nothing (supervisor R15). fallback when no entry grants it.
+// path, which decided nothing. fallback when no entry grants it.
 func (r *Recorder) grantName(op, path, fallback string) string {
 	if name, ok := r.rules.grantName(op, path); ok {
 		return name
@@ -1671,7 +1670,7 @@ func (r *Recorder) grantName(op, path, fallback string) string {
 // component and the path is rebuilt here from the rule table's own directory index. A miss is recorded with the
 // raw dev:ino/name identifier and no rule rather than a guessed verdict. Where a plane mode decides the run, the
 // sample also carries each parent directory's path, walked in the kernel (FSBody.Dir): the plane's filter leaves
-// such an action unnotified (enforce-plane §2.13, §2.15), so the line names it by its full path on its own, as an
+// such an action unnotified, so the line names it by its full path on its own, as an
 // open's line does, and no supervisor naming is asked for.
 //
 // The verdict is the chain's return the sample carries (fsVerdict); the tier model below only explains a refusal,
@@ -1933,7 +1932,7 @@ func (r *Recorder) resolveFSOpPath(dev, ino uint64, name string, truncated, have
 // family this build does not know is recorded as an unmatched action rather than dropped.
 //
 // A destination the run's supervisor continued is named by the supervisor's own lookup (ContinuedNet): its
-// line is the one this sample replaces (docs/p0/supervisor.md R7), and this package's matcher knows neither
+// line is the one this sample replaces, and this package's matcher knows neither
 // the resolver exception nor the resolved-address check, so a DNS query the supervisor names net.resolver
 // was recorded unmatched (§5 R5). Anything else is named against the contract's entries.
 func (r *Recorder) handleNet(rec *Record) {
@@ -2063,7 +2062,7 @@ func (r *Recorder) gap(why string, n int64) {
 }
 
 // isWrite reports whether an open's flags asked for write access. It mirrors the seccomp filter's
-// own 0x243 test (O_WRONLY|O_RDWR|O_CREAT|O_TRUNC, docs/p0/enforce-landlock.md R15) so both tiers
+// own 0x243 test (O_WRONLY|O_RDWR|O_CREAT|O_TRUNC) so both tiers
 // classify one open the same way.
 func isWrite(flags uint32) bool {
 	const mask = unix.O_WRONLY | unix.O_RDWR | unix.O_CREAT | unix.O_TRUNC
@@ -2091,7 +2090,7 @@ func fsOp(k Kind) string {
 }
 
 // protoName maps an IP protocol number to the record vocabulary; anything else is "raw", the
-// record-only class of R4's stated P0 gap.
+// record-only class of a known gap.
 func protoName(p uint8) string {
 	switch p {
 	case unix.IPPROTO_TCP:
@@ -2117,7 +2116,7 @@ func addrFrom(family uint8, b [16]byte) (netip.Addr, bool) {
 }
 
 // pinnedMapPath is where a build pins one of its maps: <root>/<bpf_hash>/maps/<name>, root defaulting
-// to PinDir (docs/p0/enforce-cgroup-observe.md §3's "Pins" row).
+// to PinDir.
 func pinnedMapPath(root, bpfHash, name string) string {
 	if root == "" {
 		root = PinDir

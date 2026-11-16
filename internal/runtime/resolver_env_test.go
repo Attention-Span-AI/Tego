@@ -77,7 +77,7 @@ func TestGuardedResolverEnvScopeAndComposition(t *testing.T) {
 }
 
 // TestGatedResolverEnvIsSingleRequest is supervisor-3: a network gate returns ENOSYS to an unaddressed IP
-// datagram batch, as the models[] guard does (gate.md R4), and glibc's paired A/AAAA lookup is exactly that
+// datagram batch, as the models[] guard does, and glibc's paired A/AAAA lookup is exactly that
 // batch, sent with sendmmsg on its connected UDP socket, with no fallback to individual sends. The shim
 // keyed on guarded models only, so a gated run with capture uprobe or off, or with no models[], had every
 // getaddrinfo(AF_UNSPEC) fail "Temporary failure in name resolution". A run whose gate scores network

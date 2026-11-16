@@ -192,7 +192,7 @@ race (EEXIST) during the load now retries the whole object instead of dropping t
 TestIntegrationTLSMultiDispatchAndFallback/separate (two separately loaded collections, no program directory) and
 TestMultiProgramsSurviveAMapPinRace cover both.
 
-*Amended 2026-10-19 ((3); limits-check-doctor-cli.md R4, capture-derive R9):* a probe hit of a run
+*Amended 2026-10-19 ((3)):* a probe hit of a run
 whose run-set row carries `TEGO_RUN_ACTIVITY` (the backend sets it when `stall_after` bounds the run) stamps the
 run's slot of `tego_activity`, a pinned per-slot 16-byte stamp (the clock reading and the jiffy it was taken in)
 every object declares, before the record mode or the run's
@@ -208,7 +208,7 @@ and ring room the record exists to save, for a reading the stall check takes onc
 CPUs × 16 bytes for a value one load reads), and `cgroup_skb` or socket fentry as the signal (every packet or
 every socket call on the host, keepalives included, so `off` would mask stalls `summary` catches).
 
-*Amended 2026-10-19 ((7); capture-derive R4, limits-check-doctor-cli.md R4):* (7) assumed every run
+*Amended 2026-10-19 ((7)):* (7) assumed every run
 holding a library was a capture run. A `record: off` run whose `stall_after` is bounded now holds the build's probes
 too, with no capture ring: its uprobe source pre-attaches the host's libssl and attaches at an exec as a capture
 source does, under the same library lock (`LOCK_SH`) and attach-cache reference, so that its TLS calls stamp its

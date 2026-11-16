@@ -33,7 +33,7 @@ type Target struct {
 	Starting bool
 	// StartUnreadable: the run's first record line is there and cannot be read as its run_start
 	// (livestatus.Facts.StartUnreadable), so no fact is known and waiting will not make one known. Starting is true with
-	// it; a check refuses it as ErrStartUnreadable, never with "try again" (the review's S1).
+	// it; a check refuses it as ErrStartUnreadable, never with "try again".
 	StartUnreadable bool
 }
 
@@ -63,11 +63,11 @@ var (
 	// ErrStarting is a change that depends on the run's mode or its launcher's facts, asked of a running run whose
 	// run_start cannot be read yet (Target.Starting): the change fails closed, in words that say the run is still
 	// starting, and is taken once that line is written. A Locked refusal there named a mode nobody knew: the same
-	// change worked seconds later on an Adjustable run (acceptance 2B, 2026-11-11).
+	// change worked seconds later on an Adjustable run.
 	ErrStarting = errors.New("the run is still starting: its mode is not known yet")
 	// ErrStartUnreadable is such a change asked of a running run whose first record line is complete and is not a
 	// run_start this tego can read (Target.StartUnreadable): it fails closed as ErrStarting does, in words that say the
-	// line cannot be read, since waiting does not change that (the review's S1: "try again in a few seconds" never came
+	// line cannot be read, since waiting does not change that ("try again in a few seconds" never came
 	// true for a damaged first line).
 	ErrStartUnreadable = errors.New("the run's first record line is not a run_start this tego can read")
 )

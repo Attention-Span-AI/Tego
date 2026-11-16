@@ -16,8 +16,7 @@ import (
 // interpreter by name; Landlock cannot match by name and needs
 // EXECUTE|READ_FILE on the script file as well as on its interpreter, and tier
 // 2 installs that same Landlock ruleset (execByInode). Tier 3 installs it too,
-// so an unlisted script is refused there as well (ScriptFloor, SEMANTICS §4's
-// 2026-09-29 note); a granted script's interpreter is then matched by name.
+// so an unlisted script is refused there as well (ScriptFloor, SEMANTICS §4); a granted script's interpreter is then matched by name.
 //
 // An exec is also a read. The kernel opens the program, a #! script's
 // interpreter and the PT_INTERP loader of the ELF the chain ends in, each
@@ -116,22 +115,21 @@ func execNamed(rt *agent.RuleTable, path string, tier backend.Tier) agent.EvalRe
 // that tier 1 enforces.
 //
 // The Landlock tier unions every rule on the path, and the exec open needs READ_FILE as well as
-// EXECUTE (SEMANTICS §4). A declared entry holds an fd of its own with both (execGrants,
-// enforce-landlock R5), which no deny_read above it withdraws, with one exception: a declared file
+// EXECUTE (SEMANTICS §4). A declared entry holds an fd of its own with both (execGrants), which no deny_read above it withdraws, with one exception: a declared file
 // that is itself an enforced deny_read target (and not inside another one) is a sealed deny node,
-// and Prepare fails the run rather than grant it (enforce-landlock E32 (c)), which is reported as
+// and Prepare fails the run rather than grant it, which is reported as
 // the read-denied it would be. An undeclared binary has only what the tier's other rules carry.
 // With exec unrestricted, EXECUTE rides on the sibling read sets, the enumerated ancestors and the
 // write masks, and an ancestor's reaches into the deny_read target beneath it; READ_FILE does not,
 // because the target's entry carries Access 0, an ancestor carries no READ_FILE, and the levels
-// inside the target are not enumerated (enforce-landlock R3; the shapes that reach inside by
+// inside the target are not enumerated (the shapes that reach inside by
 // another name are E32's limitations, I11). That is evalFSLandlock's read arm. The exception is a
 // write entry nested inside an enforceable target: its mask carries READ_FILE, and EXECUTE while
 // exec is unrestricted, into its own subtree, and Landlock unions it; the read arm models that
 // nested grant (nestedReadGrant), so a binary under such an entry passes here as it runs in the
 // kernel (it was reported read-denied until R15 closed it). A declared entry's loader
 // gets its own fd as well, except that Prepare refuses to grant a loader at or below any deny_read
-// target, enforced or not, and fails the run naming it (enforce-landlock E29); that is reported as
+// target, enforced or not, and fails the run naming it; that is reported as
 // the read the grant would have re-opened, the target found at any depth, as Prepare finds it. Prepare refuses a
 // loader under a write or ask entry too, which is no read refusal and is not modelled here; Compile
 // warns about every such loader instead (compile_exec.go checkLoaders).
@@ -247,7 +245,7 @@ func sealedDenyTarget(rt *agent.RuleTable, file string) (int, bool) {
 
 // execByInode reports whether a tier decides exec by inode, the Landlock way, rather than by the
 // exec hook's binfmt stages. Tier 1 is Landlock. Tier 2 installs the same Landlock ruleset and
-// seccomp filter (internal/runtime/enforce/select.go construct, enforce-cgroup-observe R1), so every
+// seccomp filter (internal/runtime/enforce/select.go construct), so every
 // exec there also needs EXECUTE|READ_FILE on the resolved inode of the program and of a #! script's
 // interpreter; its fanotify listener adds a FAN_OPEN_EXEC_PERM check that matches exact and
 // directory paths only (cgroup policy.go decideExec) and fires on the script's own open as well. So
@@ -258,8 +256,7 @@ func execByInode(tier backend.Tier) bool {
 	return tier == backend.TierLandlock || tier == backend.TierCgroup
 }
 
-// ScriptFloor is the Landlock floor under a #! script at tier 3 (SEMANTICS §4's 2026-09-29 note, enforce-plane R9's
-// composition, ADR 0019's one column): the plane passes the script's stage and decides on the interpreter, but the
+// ScriptFloor is the Landlock floor under a #! script at tier 3 (SEMANTICS §4, ADR 0019's one column): the plane passes the script's stage and decides on the interpreter, but the
 // Landlock domain the child stage installs at every tier grants EXECUTE only to what an exec entry names by inode, a
 // path or a directory above it, never by name, and the kernel asks it of the script's open before any binfmt stage
 // runs. So an unlisted script is refused, unmatched, at bpflsm as at tiers 1 and 2. At any other tier, and for a
@@ -284,7 +281,7 @@ func execVerdict(rt *agent.RuleTable, path string, tier backend.Tier) agent.Eval
 	}
 	r := rt.Exec[i]
 	if r.Verdict != agent.VerdictAllow {
-		// ask compiles as refused in P0 (SEMANTICS §3.1, R2).
+		// ask compiles as refused (SEMANTICS §3.1, R2).
 		return agent.EvalResult{Verdict: agent.VerdictRefused, Rule: r.RuleName(), Reason: record.ReasonExecNotAllowed}
 	}
 	return agent.EvalResult{Verdict: agent.VerdictAllow, Rule: r.RuleName()}

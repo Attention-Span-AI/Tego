@@ -8,7 +8,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/runtime/derive"
 )
 
-// TestDeclaredHostPathsOutsideV1FailClosed covers capture-derive.md R25: "outside /v1 is silent" is a fact
+// TestDeclaredHostPathsOutsideV1FailClosed: "outside /v1 is silent" is a fact
 // about api.anthropic.com. A models[] entry declaring provider anthropic on a gateway reaches Claude under a
 // prefix of the gateway's own; there a Messages call outside /v1 was silent, metered at zero and never
 // reported unmetered, so a token or cost budget went unenforced with nothing to say so.

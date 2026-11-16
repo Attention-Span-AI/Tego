@@ -21,7 +21,7 @@ import (
 // Runners name what a baseline entry excuses. "compile" is compile --test against the cell; "kernel" is the
 // action's own result against the cell; "ledger" is the ledger line against the cell. "invariant" is never
 // baselined: a cell where the kernel allowed what an invariant refuses is a fail-open (ADR 0017). "parity" is the
-// kernel's result against compile --test's own answer for the tier (enforce-plane I9), checked at tier bpflsm.
+// kernel's result against compile --test's own answer for the tier, checked at tier bpflsm.
 const (
 	RunnerCompile = "compile"
 	RunnerKernel  = "kernel"

@@ -27,10 +27,10 @@ func TestDecodeScalesLinearlyInKeys(t *testing.T) {
 	}
 	// The least CPU time of nine of each size, each after a collection, the two sizes interleaved and the one that
 	// goes first alternating, so a change in the machine's load lands on both: with three, a loaded machine (load
-	// average 45 while review agents ran, 2026-09-24) put a GC or a preemption into every sample of one size. CPU
+	// average 45 while review agents ran) put a GC or a preemption into every sample of one size. CPU
 	// time, not the wall clock: an 80k-key line takes tens of milliseconds, longer than a scheduler slice, so on an
 	// oversubscribed machine every one of its samples waits for a CPU (under 16 busy loops and a load average of 45,
-	// 2026-10-16, one run's best of nine was 192 ms, x80, where the others were 63 to 79 ms). pkg/spec imports
+	// one run's best of nine was 192 ms, x80, where the others were 63 to 79 ms). pkg/spec imports
 	// nothing under internal/, so testutil.MinOf's interleaving is written out here.
 	cpu := func() time.Duration {
 		var ru syscall.Rusage

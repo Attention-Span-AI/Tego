@@ -292,8 +292,8 @@ func TestLockedRunRefusesARoute(t *testing.T) {
 	if p, err := s.Clear(ctx, run, endpoint); err != nil || !p.Changed || p.To.Name != "direct" {
 		t.Fatalf("clear on a Locked run: %+v %v", p, err)
 	}
-	// A run_start that cannot be read is refused too, never as Locked (acceptance 2B, 2026-11-11): a first line that does
-	// not decode as not readable (the review's S1), no ledger yet as still starting.
+	// A run_start that cannot be read is refused too, never as Locked: a first line that does
+	// not decode as not readable, no ledger yet as still starting.
 	if err := os.WriteFile(events, []byte("{\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -692,7 +692,7 @@ func TestPrepareFailingAbovePoolTrimsItsRings(t *testing.T) {
 	}
 }
 
-// TestDetachOrder pins enforce-cgroup-observe.md §5 R15 and §4: the cgroup links go first, then the rows, then the slot, and only a
+// TestDetachOrder: the cgroup links go first, then the rows, then the slot, and only a
 // last launcher out unpins.
 func TestDetachOrder(t *testing.T) {
 	t.Parallel()
@@ -798,7 +798,7 @@ func TestPrepareRejects(t *testing.T) {
 	}
 }
 
-// TestRingbufValidation is enforce-cgroup-observe.md §5 R16 and §6 E28: the size is checked before any map exists, and every rejected
+// TestRingbufValidation: the size is checked before any map exists, and every rejected
 // value says why.
 func TestRingbufValidation(t *testing.T) {
 	t.Parallel()

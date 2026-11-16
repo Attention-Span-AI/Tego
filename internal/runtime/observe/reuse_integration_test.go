@@ -24,7 +24,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestIntegrationAReusedRingHidesThePreviousRun is ADR 0026 (6) as amended on the real objects, as root: a slot's
+// TestIntegrationAReusedRingHidesThePreviousRun is ADR 0026 (6) on the real objects, as root: a slot's
 // record ring outlives its run and is reused by the slot's next run. What the previous run's processes left in
 // it (records written after its reader stopped) is consumed by the drain Prepare does before the next run's row
 // exists; and were any left, or written by a program that found the previous run's row just before it went, the

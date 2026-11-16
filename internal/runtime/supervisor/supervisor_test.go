@@ -540,7 +540,7 @@ func TestRunClosesTheListener(t *testing.T) {
 }
 
 // TestMetricsUnderConcurrency checks the counters are race-free and monotonic (I7); run with -race.
-// supervisor.md E22: many threads notify at once, each blocked in its own trap, and the Policy reads under them are race-free (I9); run with -race.
+// Many threads notify at once, each blocked in its own trap, and the Policy reads under them are race-free (I9); run with -race.
 func TestMetricsUnderConcurrency(t *testing.T) {
 	f := newFake()
 	f.put(0x1000, cstr("/work/x"))
@@ -701,7 +701,7 @@ func waitFor(t *testing.T, cond func() bool) {
 }
 
 // TestAnImplicitEntryDoesNotReAllowADeniedRead: an implicit entry is a write guard that grants no read, so one
-// nearer than a deny_read above it (the ledger root beneath ~/.tego, agent-contract R6a) must not turn a read
+// nearer than a deny_read above it (the ledger root beneath ~/.tego) must not turn a read
 // Landlock refuses into an allowed line in the ledger.
 func TestAnImplicitEntryDoesNotReAllowADeniedRead(t *testing.T) {
 	c := compile(testPolicy(nil, []agent.FSRule{

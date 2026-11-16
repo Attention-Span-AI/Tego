@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package watcher recognises agent processes as they start and reports them (docs/poc/agent-watcher.md, M2,
+// Package watcher recognises agent processes as they start and reports them (M2,
 // detection only). It reads the proc connector's fork, exec and exit events (internal/watch/procconn), asks
 // /proc what each new program is, applies a list of signatures (internal/watch/sig), follows a recognised agent's
 // descendants (internal/watch/tree), and writes one sighting per fact: an agent started, whether it started

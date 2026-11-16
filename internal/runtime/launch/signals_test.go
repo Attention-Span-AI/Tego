@@ -116,7 +116,7 @@ func TestSignalForwardingRules(t *testing.T) {
 	}
 }
 
-// Also pins runtime-launch.md R9: stop_grace is launcher-owned; its expiry escalates once with Manager.Kill.
+// Also pins: stop_grace is launcher-owned; its expiry escalates once with Manager.Kill.
 func TestStopGraceExpiryEscalates(t *testing.T) {
 	h, _, k := newHandler(t, false, 30*time.Millisecond, nil)
 	h.Handle(syscall.SIGTERM)
@@ -153,7 +153,7 @@ func TestStopGraceExpiryEscalates(t *testing.T) {
 // however loaded the machine is. On the real clock the test had 75 ms between the right deadline and a
 // restarted one, and a loaded runner could spend that before the check ran.
 //
-// Also pins runtime-launch.md R9: the grace timer starts once and is never restarted or extended.
+// Also pins: the grace timer starts once and is never restarted or extended.
 func TestSecondStopGraceTriggerDoesNotExtend(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const grace = 300 * time.Millisecond
@@ -180,7 +180,7 @@ func TestSecondStopGraceTriggerDoesNotExtend(t *testing.T) {
 	})
 }
 
-// Also pins runtime-launch.md R9: a second SIGINT escalates at once.
+// Also pins: a second SIGINT escalates at once.
 func TestDoubleInterruptEscalates(t *testing.T) {
 	h, s, k := newHandler(t, true, time.Hour, nil)
 	defer h.stopTimer()
@@ -317,7 +317,7 @@ func (k *failingKiller) count() int {
 // limits.Watcher never swallows its own kill error (§7). Before this, the error went into an unread field
 // and run_end reported escalated=true for a tree nothing had killed.
 //
-// Also pins runtime-launch.md R9: a failed kill is not an escalation and its error leaves the handler.
+// Also pins: a failed kill is not an escalation and its error leaves the handler.
 func TestFailedEscalationIsNotSwallowed(t *testing.T) {
 	boom := errors.New("cgroup.kill: permission denied")
 	k := &failingKiller{err: boom}
@@ -352,7 +352,7 @@ func TestFailedEscalationIsNotSwallowed(t *testing.T) {
 // escalated. A successful write is still written once (TestStopGraceExpiryEscalates). Under Run no later
 // signal gets here: the failure ends Run and the group's error path retries the kill.
 //
-// Also pins runtime-launch.md R9: a later Escalate retries a failed kill.
+// Also pins: a later Escalate retries a failed kill.
 func TestFailedEscalationIsRetriedByTheNextTrigger(t *testing.T) {
 	k := &failingKiller{err: errors.New("boom")}
 	h, err := NewSignalHandler(&fakeSignaler{}, k, SignalPolicy{StopGrace: time.Hour})
@@ -414,7 +414,7 @@ func (k *slowKiller) completed() int {
 // goroutine queues behind Run. The unlock hands the lock to the longest waiter, Run, which therefore reaches
 // a fired-but-unrun timer -- exactly the state the fix has to survive.
 //
-// Also pins runtime-launch.md R9: the timer goroutine is joined before Run returns.
+// Also pins: the timer goroutine is joined before Run returns.
 func TestRunJoinsTheStopGraceEscalation(t *testing.T) {
 	const grace = 50 * time.Millisecond
 	k := &slowKiller{delay: 200 * time.Millisecond}

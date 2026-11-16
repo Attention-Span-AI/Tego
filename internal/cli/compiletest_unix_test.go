@@ -15,15 +15,13 @@ import (
 )
 
 // TestCompileTestUnixLandsAsTheRunGolden: a net.connect or net.send row to a unix pathname is decided as the run decides
-// the connect or the datagram (supervisor.md R11, R11a; SEMANTICS §5 as amended 2026-10-16): on the name it passes,
+// the connect or the datagram (SEMANTICS §5): on the name it passes,
 // then on the socket that name reaches through the kernel's walk, with the walk compile --test lands every row's path
 // with, refused when either refuses and named by the second. compile answered the name alone, so a datagram and a
 // connect through a symlink in the write entry to a socket outside every entry (rows 01, 02, 06), and a name whose
 // ".." after a symlink climbs out of it (07), read allow while the run refused them, EACCES with rule unmatched; a
 // relative name, which the run joins to the agent's cwd, read
 // refused (05).
-//
-// Spec: docs/p0/limits-check-doctor-cli.md R28.
 func TestCompileTestUnixLandsAsTheRunGolden(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("the contract names sh, not on PATH")

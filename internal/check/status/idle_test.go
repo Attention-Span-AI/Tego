@@ -49,7 +49,6 @@ func deriveMono(t *testing.T, dir string, now time.Time, stall time.Duration, mo
 // laptop resuming from suspend moves the wall clock by hours while the agent is working normally; reading
 // the stall off that clock would report a healthy run as stalled and, worse, disagree with the limits
 // watcher, which measures the same stall on MonoNS and is what actually kills a run.
-// (limits-check-doctor-cli.md E7: a clock step mid-run.)
 func TestIdleIgnoresAWallClockStep(t *testing.T) {
 	dir := writeWithClock(t, fixedClock{base})
 	eventMono := uint64(base.UnixNano())
@@ -69,7 +68,7 @@ func TestIdleIgnoresAWallClockStep(t *testing.T) {
 
 // TestIdleStallsOnRealElapsedTime is the other half: when the monotonic clock really has advanced past the
 // ceiling, the run is stalled.
-// (limits-check-doctor-cli.md E27: stall counts the monotonic clock.)
+// Stall counts the monotonic clock.
 func TestIdleStallsOnRealElapsedTime(t *testing.T) {
 	dir := writeWithClock(t, fixedClock{base})
 	s := deriveMono(t, dir, base, time.Hour, uint64(base.UnixNano())+uint64(90*time.Minute))

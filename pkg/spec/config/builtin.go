@@ -23,7 +23,7 @@ const (
 	DefaultForwarderListen = "127.0.0.1:0"
 	DefaultPrices          = "~/.tego/prices.yaml"
 	DefaultProfiles        = "~/.tego/profiles"
-	DefaultRegistry        = "~/.config/tego" // agent-contract.md R26; outside ~/.tego, which R6a read-denies
+	DefaultRegistry        = "~/.config/tego" // outside ~/.tego, which every run read-denies
 	DefaultLogLevel        = "info"
 	// DefaultBPFLinger is how long a tier-2 build's pinned programs, maps and host-wide links stay attached
 	// after its last run ended, so the next run within it adopts them instead of loading, attaching and later

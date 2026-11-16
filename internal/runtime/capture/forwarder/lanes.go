@@ -20,7 +20,7 @@ type laneKey struct {
 // socket belongs to a process's descriptor table, not to the thread that wrote on it. Its lines carried the
 // launcher's own pid and tid, stamped by the pipeline, so every turn of the run was one thread to derive, two
 // concurrent turns — two subagents, two worker threads — had one open step between them, and an action while
-// both were in flight was attributed "likely" where capture-derive R34 says more than one candidate is
+// both were in flight was attributed "likely" where more than one candidate must be
 // unattributed. Keyed by the peer process alone, two turns of two processes are apart and two of one process
 // are still one.
 //

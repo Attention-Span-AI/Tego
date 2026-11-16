@@ -23,8 +23,6 @@ import (
 // Continued, the kernel refused it all the same and the line said allow. A read the snapshot does not refuse is
 // continued and recorded allow; an O_PATH open never asks it; a refusal the contract makes keeps its own rule and is
 // continued for Landlock to answer, as before.
-//
-// Spec: docs/p0/supervisor.md R15e.
 func TestSnapshotRefusalOfAContinuedRead(t *testing.T) {
 	const pathAddr = 0x10000
 	fs := []agent.FSRule{{Path: "/work/secret", Kind: agent.FSDenyRead, Raw: "./secret/"}}

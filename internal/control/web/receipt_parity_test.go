@@ -170,7 +170,7 @@ func TestKernelTLSLineIsBuiltInOnEveryPage(t *testing.T) {
 
 // TestLogsSaysTheKernelTLSRefusalAsTheReceiptDoes: the Logs page named a refused kernel-TLS probe "built in: kernel TLS"
 // in its Rule cell, but its why-line said "not on the allowed hosts" and its Rule facet counted it under "Not in
-// contract" (acceptance 2B, 2026-11-11; GAPS C59). Both now read the receipt's own words: the row's why-line is the
+// contract" (GAPS C59). Both now read the receipt's own words: the row's why-line is the
 // sentence tego receipt prints for it (receipt.BuiltInWords), the facet counts it under its built-in kind, and the
 // facet's query keeps the two apart, so "Not in contract" counts and lists only the refused connect. The facet's
 // counts are the receipt's by-rule counts (rc.RefusalGroups), so a drift between the two fails here.

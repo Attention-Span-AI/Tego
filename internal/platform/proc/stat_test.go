@@ -102,7 +102,7 @@ func TestParseStat(t *testing.T) {
 // deThreadStatLine is a line a reader on kernel 6.17 caught for a LIVE process: a thread other than the leader
 // of pid 842314 ran execve in a loop, and de_thread released the old leader while the read held it. It has the
 // released shape (releasedStatLine), state Z and exit_signal (field 38) -1. The process ran on under the same pid
-// and start time, and no read of it got ENOENT (measured in review on 2026-11-11 with a pread loop).
+// and start time, and no read of it got ENOENT (measured with a pread loop).
 const deThreadStatLine = "842314 (exe) Z 0 -1 -1 0 -1 4228108 40251 0 0 0 4 27 0 0 20 0 0 0 82606841 0 0 0 0 0 0 0 " +
 	"0 0 0 0 0 1 0 0 -1 6 0 0 0 0 0 0 0 0 0 0 0 0 0\n"
 

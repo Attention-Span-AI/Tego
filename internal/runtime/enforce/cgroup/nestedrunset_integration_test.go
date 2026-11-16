@@ -22,7 +22,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestEveryNestedCgroupIsInTheRunSetBeforeATaskCanJoinIt is enforce-cgroup-observe.md §8 I6: a cgroup a task can join already has a run_set
+// TestEveryNestedCgroupIsInTheRunSetBeforeATaskCanJoinIt: a cgroup a task can join already has a run_set
 // row when it belongs to a live run (R11). cgroup_track's tp_btf/cgroup_mkdir runs inside mkdir(2), before the
 // new cgroup's directory exists for anyone to write a pid into, so the row is there by the time mkdir returns.
 // The test makes a chain of 500 cgroups, each inside the one before, under a live run's cgroup, and reads each

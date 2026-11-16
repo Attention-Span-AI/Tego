@@ -9,7 +9,7 @@ import (
 )
 
 // errnoError is a sentinel that errors.Is also matches against one errno, so code that classifies a
-// descriptor failure by errno keeps its class when the failure is the owner's (ADR 0023's 2026-10-05 note, A1
+// descriptor failure by errno keeps its class when the failure is the owner's (ADR 0023, A1
 // "Errors": enforce-landlock's EBADF reading of a lost held descriptor, the launcher's and the supervisor's
 // errno switches).
 type errnoError struct {

@@ -242,8 +242,7 @@ func TestInitRefusesAFIFOContract(t *testing.T) {
 
 // TestStarterNamesDevNullAndItsNetwork: the starter contract let Python's subprocess.DEVNULL fail
 // (a write-open of /dev/null outside every write entry) and, with no net: section, left the host's
-// unix sockets reachable, the D-Bus session bus and with it `systemd-run --user` among them
-// (agent-contract R19).
+// unix sockets reachable, the D-Bus session bus and with it `systemd-run --user` among them.
 func TestStarterNamesDevNullAndItsNetwork(t *testing.T) {
 	dir := t.TempDir()
 	if code, _, errs := run(t, "init", "--name", "starter", dir); code != identity.ExitOK {

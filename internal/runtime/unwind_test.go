@@ -205,7 +205,7 @@ func TestRunUnwindsEverythingItBuilt(t *testing.T) {
 	}
 }
 
-// Also pins runtime-launch.md R2 and I10: a pre-run_start failure is a Go error and exit 125, and Run writes no run_start or run_end for it.
+// Also pins: a pre-run_start failure is a Go error and exit 125, and Run writes no run_start or run_end for it.
 func TestRunUnwindsAfterAFailedPrepare(t *testing.T) {
 	testutil.NoFDLeak(t)
 	m, rt, root := startupFixture(t)
@@ -228,12 +228,12 @@ func TestRunUnwindsAfterAFailedPrepare(t *testing.T) {
 	}
 }
 
-// TestRunUnwindsAfterAChildStageThatCannotBeCloned is runtime-launch.md E2: a clone3 that fails (ENOSPC on max
+// TestRunUnwindsAfterAChildStageThatCannotBeCloned: a clone3 that fails (ENOSPC on max
 // PIDs or cgroup depth, or here an unrunnable child stage, which fails the same call) is the launcher's own
 // pre-run_start failure: exit 125, the error wrapping launch.ErrClone, and the cgroup and the run directory made
 // before it removed again by the same unwind that a failed Prepare takes, with no run_start and no run_end.
 //
-// Also pins runtime-launch.md R2: a pre-run_start failure is a Go error and exit 125.
+// Also pins: a pre-run_start failure is a Go error and exit 125.
 func TestRunUnwindsAfterAChildStageThatCannotBeCloned(t *testing.T) {
 	testutil.NoFDLeak(t)
 	m, rt, root := startupFixture(t)

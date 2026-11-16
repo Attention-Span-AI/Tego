@@ -11,7 +11,7 @@ import (
 	"github.com/cilium/ebpf/asm"
 )
 
-// TestDirWalkFencesItsSequenceReads is enforce-plane §2.15's ordering (never a wrong path): the directory walk reads
+// TestDirWalkFencesItsSequenceReads checks the walk's read ordering (never a wrong path): the directory walk reads
 // each level's d_seq before its parent and name, and compares them on a second pass, a seqcount reader's protocol,
 // which needs read_seqcount_begin's smp_rmb between the sequence and the data and read_seqcount_retry's between the
 // data and the re-read. A BPF program has no barrier instruction, but an atomic with BPF_FETCH is fully ordered (the

@@ -10,7 +10,7 @@ import (
 
 // The rule a generated cell's ledger line names is held to compile --test's column for the axis, except where the two
 // differ in one of the known naming classes below, each found by the first guest runs of the fs grid with every
-// verdict agreeing (ADR 0017's 2026-10-19 note). A class is open work for its owner, not an accepted answer: the
+// verdict agreeing (ADR 0017). A class is open work for its owner, not an accepted answer: the
 // decide core and the supervisor's naming, and a refusal's line naming an entry that refused nothing
 // (an ADR 0016 rule-accuracy question). Fixing one removes its class here, and any other difference, a new
 // one or a known pair of names on another axis, op or verdict, is a ledger disagreement the ratchet reports.

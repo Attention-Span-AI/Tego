@@ -15,7 +15,7 @@ import (
 )
 
 // maxTopologyBinaries bounds the binaries one run keeps a landlock-topology gap line for. Past it every
-// refusal still gets its refused line and the gap is simply not repeated; an unsourced P0 default, like
+// refusal still gets its refused line and the gap is simply not repeated; an unsourced default, like
 // maxStandby.
 const maxTopologyBinaries = 64
 
@@ -54,10 +54,10 @@ func handleMoveMount(l *Loop, n *notif) {
 	l.refuseTopology(n, "move_mount", int32(n.args[2]), n.args[3])
 }
 
-// handleUnshare, handleClone and handleSetns answer the namespace arm's notifications (enforce-landlock
+// handleUnshare, handleClone and handleSetns answer the namespace arm's notifications (the Landlock filter's
 // namespaceTest): an unshare or clone asking for a new mount or user namespace, and every setns. A new mount
 // namespace is a copy of the mount tree with none of tier 2's fanotify marks on it, where a deny_read
-// fanotify alone enforces was read with no permission event (docs/p0/enforce-cgroup-observe.md E24). They are
+// fanotify alone enforces was read with no permission event. They are
 // refused
 // with EPERM, the answer of a host that disallows unprivileged user namespaces, and recorded as
 // landlock-topology, the reason SEMANTICS §10 gives a sandbox these tiers cannot host.
@@ -88,8 +88,8 @@ func namespaceFlags(flags uint64) string {
 // is a refused event"), and gap what=enforce why=landlock-topology once per binary (gapOwner), which is how the run
 // says that this tier cannot host the sandbox the agent tried to start (SEMANTICS §10).
 //
-// The answer is the one the kernel gives: both P0 tiers install a Landlock domain whose fs rights are
-// always handled (enforce-landlock I4), and such a domain refuses these hooks with EPERM before any
+// The answer is the one the kernel gives: tiers 1 and 2 install a Landlock domain whose fs rights are
+// always handled, and such a domain refuses these hooks with EPERM before any
 // capability check (path_mount calls security_sb_mount before may_mount). Answering it here rather than
 // continuing into Landlock's refusal makes the record certain instead of inferred, and costs nothing: the
 // syscall could not have succeeded. An observe run has no domain: respond turns the errno into CONTINUE

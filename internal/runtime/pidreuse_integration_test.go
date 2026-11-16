@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-// TestIntegrationStopAfterPidReuseSignalsNothing is runtime-launch.md §6 cases 15, 29 and 32 and R22 against
+// TestIntegrationStopAfterPidReuseSignalsNothing, 29 and 32 and R22 against
 // the kernel: a run's launcher is SIGKILLed and reaped, its pid is issued again to an unrelated process, and a
 // process of no launcher holds the run's lock, so the lock line still names the dead launcher's pid. `tego
 // stop` of the run, the sweep it makes first, and a direct OpenStopTarget all find the pid alive with another
@@ -29,7 +29,7 @@ import (
 // first: the reuse is exact and takes milliseconds, where a wrap through pid_max takes minutes. Root only: the
 // sysctl needs CAP_SYS_ADMIN (or CAP_CHECKPOINT_RESTORE) over the pid namespace.
 //
-// Also pins runtime-launch.md E15, E29, E32: a reused pid is detected by start time and nothing is signaled.
+// Also pins: a reused pid is detected by start time and nothing is signaled.
 func TestIntegrationStopAfterPidReuseSignalsNothing(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("reissuing a chosen pid through ns_last_pid needs root: run as `sudo go test -tags integration` or `make vm-root-test`")

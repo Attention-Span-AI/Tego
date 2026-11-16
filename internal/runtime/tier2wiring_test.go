@@ -24,8 +24,8 @@ import (
 )
 
 // The tests in this file are the runtime's half of what tier 2's kernel rows need from it: the run's resolver
-// list, the child stage's binary and the addresses a TTL refresh moves (docs/p0/enforce-cgroup-observe.md §5
-// R5, R8, §6 E7). The resolver rows and RefreshNet were built and tested on the tier's side and never handed
+// list, the child stage's binary and the addresses a TTL refresh moves.
+// The resolver rows and RefreshNet were built and tested on the tier's side and never handed
 // over, so a tier-2 run refused, with EPERM, every DNS query and every connect to a rotated address that the
 // supervisor admitted and the ledger recorded allowed. The stage binary is what the tier's detached helpers
 // exec.

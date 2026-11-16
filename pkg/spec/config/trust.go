@@ -270,7 +270,7 @@ func oneName(path string, st *syscall.Stat_t, invokingUID int) error {
 	return &UntrustedError{Path: path, Owner: int(st.Uid), Mode: fs.FileMode(st.Mode & 0o7777), Reason: reason, Names: uint64(st.Nlink)}
 }
 
-// manyNamesReason is the one-name rule (agent-contract.md R10, ADR 0059): a policy file tego loads for a run (a
+// manyNamesReason is the one-name rule (ADR 0059): a policy file tego loads for a run (a
 // layer, the price table, a profile, a registry entry, a contract) has one name, or no run of invokingUID could write
 // it by any name. R10 keeps every write entry off each name tego reads such a file by, and the other name of a hard
 // link is compared with nothing, so a run whose write entry held it could rewrite the file the runs after it load. A

@@ -23,7 +23,7 @@ type ReasonSection struct {
 type ReasonReadsMode string
 
 const (
-	// ReasonReadsAuto, the default, is ADR 0077's measured default: off. It would be on for a run with a harness had
+	// ReasonReadsAuto, the default, is ADR 0077's default: off. It would be on for a run with a harness had
 	// the measurement stayed inside the rule's bounds (at most 25 µs an open and 5 % on the offline Claude Code
 	// workload); the workload grew more (ReasonReadWorkload), so auto notifies nothing and compile says so.
 	ReasonReadsAuto ReasonReadsMode = "auto"
@@ -35,8 +35,8 @@ const (
 
 // ReasonReadCost and ReasonReadWorkload are what compile states reason reads cost: test/bench/read-notify's median
 // per open, a read open told to the supervisor and continued against one the filter lets through, and its wall-time
-// change of the offline Claude Code workload, from the run at load below 2 (ADR 0077 §Measurement, quiet2; the two
-// loaded runs measured more).
+// change of the offline Claude Code workload, from the run at load below 2 (ADR 0077 §Measurement; the two
+// loaded runs cost more).
 const (
 	ReasonReadCost     = "each read open about 17 µs more"
 	ReasonReadWorkload = "the offline Claude Code workload 19 % slower"
@@ -74,7 +74,7 @@ func (rt *RuleTable) ReadsNotifiedWhy(t backend.Tier) string {
 	case rt.ReasonReads == ReasonReadsOn:
 		return record.ReadsNotifiedWhyReason
 	}
-	return record.ReadsNotifiedWhyReasonOff // off, or auto (the measured default)
+	return record.ReadsNotifiedWhyReasonOff // off, or auto (the default)
 }
 
 // ReasonReadsAt reports whether a run of the table at tier t notifies every read open for the reason channel alone
@@ -85,7 +85,7 @@ func (rt *RuleTable) ReasonReadsAt(t backend.Tier) bool {
 }
 
 // ReasonReadsNotified is ReasonReadsAt the table's own tier: a run's table is placed at its tier (AtTier) before
-// Prepare, which installs the filter's every-open arm for it (enforce-landlock R16).
+// Prepare, which installs the filter's every-open arm for it.
 func (rt *RuleTable) ReasonReadsNotified() bool { return rt != nil && rt.ReasonReadsAt(rt.Tier) }
 
 // reasonReadsLine is compile's print of reason.reads (PrintRuleTable) for a table that can land at tier landlock:

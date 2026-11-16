@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// FD owns one open file descriptor number (ADR 0023, as amended 2026-10-05: A1). It is the only thing that
+// FD owns one open file descriptor number (ADR 0023,: A1). It is the only thing that
 // closes the number, and it closes it once: every later Close is a no-op, so a holder that may be the last
 // owner on some path can always Close. The number never changes after birth and leaves the owner only
 // through a counted lease (Borrow, Hold), a duplicate (Dup) or a hand-over that ends the ownership (Release,
@@ -410,10 +410,10 @@ func (f *FD) closeNow(asClose bool) error {
 }
 
 // Abandon forgets the number without closing it: the one way to drop a number of lost or unknown identity,
-// which enforce-landlock I12 leaves open rather than close another owner's file (A5). Leases out at the time
+// which is left open rather than close another owner's file (A5). Leases out at the time
 // go on and the last Return closes nothing; a pending deferred close is cancelled. Once close(2) is running,
 // or the FD is closed, released or abandoned, it is a no-op. A lease holder whose FD is abandoned holds a
-// number of unknown identity and re-verifies it before any grant made through it (runtime-launch R25).
+// number of unknown identity and re-verifies it before any grant made through it.
 func (f *FD) Abandon() {
 	if f == nil {
 		return

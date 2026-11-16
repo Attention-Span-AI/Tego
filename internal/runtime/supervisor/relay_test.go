@@ -314,12 +314,10 @@ func TestRelayNoticesTheTargetAbandoningItsSyscall(t *testing.T) {
 // decides a connect. A contract with no net: section decides none, and there I2's CONTINUE is the rule
 // (TestConnectWithNoNetSection); this table carries no Contract, so it fails closed on that bit.
 //
-// It is here because of a live cross-document conflict, not a hypothetical one. docs/p0/supervisor.md R9
-// and I2 say a connect is decided here and relayed on a duplicate, never CONTINUEd;
-// docs/p0/enforce-cgroup-observe.md §5 R5 says the tier-2 seccomp handler "answers CONTINUE and reads
-// reason_val", which would hand the kernel back a sockaddr a sibling thread can rewrite between this
+// A connect is decided here and relayed on a duplicate, never CONTINUEd: CONTINUE
+// would hand the kernel back a sockaddr a sibling thread can rewrite between this
 // loop's decision and the kernel's own read (the reason the AF_UNSPEC carve-out is relayed rather than
-// continued). Whichever way that conflict is resolved, flipping this package to CONTINUE is a decision
+// continued). Flipping this package to CONTINUE is a decision
 // someone has to make deliberately: this test is what makes it impossible to make by accident.
 func TestConnectIsNeverContinuedWhateverItDecides(t *testing.T) {
 	const addr = 0x40000

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Command checkexits checks the two exit-code rules limits-check-doctor-cli.md states as CI checks, on the Go
+// Command checkexits checks the two exit-code rules the CLI spec states as CI checks, on the Go
 // syntax tree rather than with a grep, so an import alias, a dot import, a call split across lines or os.Exit
 // taken as a value is caught.
 //

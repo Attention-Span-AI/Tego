@@ -62,7 +62,6 @@ func TestParseFanotifyMetadata(t *testing.T) {
 
 // TestProbeFanotifyWithoutRoot is §6 E18's wording rule: a probe that needs privilege says
 // "requires root to test", never "unsupported".
-// (limits-check-doctor-cli.md E18 again, for D8.)
 func TestProbeFanotifyWithoutRoot(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("this test describes the unprivileged answer")

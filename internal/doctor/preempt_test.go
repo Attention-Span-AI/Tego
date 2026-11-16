@@ -33,9 +33,8 @@ func noPreemptWaiver(t *testing.T) {
 
 // TestPreemptModel holds the reading of the kernel's preemption model to ADR 0024 (16)'s admission rule: fmod_ret mode
 // needs a model shown never to preempt kernel code, a PREEMPT_DYNAMIC build's shown by debugfs's live mode file
-// alone, a fixed build's by its config with uname -v agreeing, and any doubt refuses it. The cases include the ones a
-// 2026-11-03 review found admitted by the first reading, which also took the build's default, the kernel log and the
-// boot line: a dynamic build booted `preempt=full preempt=bogus` (Linux keeps full, the old parser read the default)
+// alone, a fixed build's by its config with uname -v agreeing, and any doubt refuses it. The cases include ones a
+// reading that also took the build's default, the kernel log and the boot line would admit: a dynamic build booted `preempt=full preempt=bogus` (Linux keeps full, the old parser read the default)
 // with debugfs and the log unavailable, and a dynamic build whose debugfs is not mounted.
 func TestPreemptModel(t *testing.T) {
 	const (
@@ -211,8 +210,7 @@ func TestAdoptionRechecksPreemption(t *testing.T) {
 }
 
 // TestACachedPlaneAnswerIsHeldToTheKernelsModeNow: the run-probe cache never answers the preemption precondition (a
-// 2026-11-03 review: a cache hit copied the kept plane and selected cached fmod_ret on a kernel a fresh probe would
-// refuse it on). An answer kept under voluntary preemption is not taken once the kernel's mode is lazy, or once
+// cache hit that copied the kept plane would select cached fmod_ret on a kernel a fresh probe would refuse it on). An answer kept under voluntary preemption is not taken once the kernel's mode is lazy, or once
 // debugfs can no longer be read: the run probes, and the probe rules fmod_ret mode out. Back under the reading it was
 // kept under, an answer is taken again.
 func TestACachedPlaneAnswerIsHeldToTheKernelsModeNow(t *testing.T) {
@@ -298,7 +296,7 @@ func TestFmodRetAdmittedNowReadsAfresh(t *testing.T) {
 
 // TestReadPreemptLiveNeedsUname: the live reading takes a fixed build's config only with uname -v beside it, which
 // must carry no PREEMPT flag; a uname that fails proves nothing, so a voluntary config alone does not admit fmod_ret
-// mode (a 2026-11-03 review: the error left the version empty, which passed the cross-check).
+// mode (the error leaves the version empty, which would pass the cross-check).
 func TestReadPreemptLiveNeedsUname(t *testing.T) {
 	cfg := filepath.Join(t.TempDir(), "config")
 	if err := os.WriteFile(cfg, []byte("CONFIG_PREEMPT_VOLUNTARY=y\n# CONFIG_PREEMPT is not set\n"), 0o644); err != nil {

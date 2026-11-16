@@ -25,7 +25,7 @@ const startedContract = "version: 0\nname: istarted\ncommand: [/bin/sh]\ntier: l
 // startedScript is the agent: it says it ran, and whether the hook's marker was there when it did.
 const startedScript = `if [ -e out/marker ]; then echo released > out/agent; else echo early > out/agent; fi`
 
-// TestIntegrationStartedRunsOnceBetweenRunStartAndTheAgent is ADR 0073 D4 and runtime-launch.md §4.1 step 9a through
+// TestIntegrationStartedRunsOnceBetweenRunStartAndTheAgent is ADR 0073 D4 through
 // the real runner.run: Started is called once, with the run's id and directory, after run_start is durable (the
 // callback reads it from events.jsonl) and after every post-run_start gap (a fake one registered last has run), and
 // before the agent is released (the agent finds the callback's marker, and the callback finds no sign of the agent).

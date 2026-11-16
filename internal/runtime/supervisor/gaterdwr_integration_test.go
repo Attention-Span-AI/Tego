@@ -18,7 +18,7 @@ import (
 )
 
 // modeGateReadWrite runs the target under a write entry on the harness directory, a worktree at <dir>/work and the
-// filter of a run whose gate scores fs.read only, under record: summary (gate.md R1, amended 2026-10-16).
+// filter of a run whose gate scores fs.read only, under record: summary.
 const modeGateReadWrite = "gaterdwr"
 
 // gateReadWriteRuleTable is the harness's rule table for modeGateReadWrite: the whole harness directory writable, so
@@ -73,7 +73,7 @@ func gateReadWriteChecks() []checkResult {
 	return out
 }
 
-// TestGateReadRefusesAReadWriteOpen is gate.md R1's 2026-10-16 amendment end
+// TestGateReadRefusesAReadWriteOpen holds an O_RDWR open to the read predicates end
 // to end on a real kernel, real filter and real Loop: under a gate `fs.read matches "*.env": 90` alone, an O_RDWR
 // open of a.env, and an O_RDONLY|O_CREAT one, are refused with R10's errno and a refused fs-gate line, as the
 // read-only open is, and read nothing. Before, both were scored as writes only and continued, and the O_RDWR

@@ -28,7 +28,7 @@ var initialLogindRoot = logindRuntimeRoot
 // TestTheTestGuardNamesTheRuntimeParentsAsARunDoes: internal/realtego spells the runtime parent's names for the test
 // guard (testutil.GuardRealTego), since a product package imports nothing of it: the directory under an
 // XDG_RUNTIME_DIR, the lock file the sweep tests, the prefix of a directory made and not yet locked, and the logind
-// root are this package's own (identity-config.md R27 clause b4).
+// root are this package's own.
 func TestTheTestGuardNamesTheRuntimeParentsAsARunDoes(t *testing.T) {
 	for _, c := range [][2]string{
 		{realtego.RuntimeDirName, agent.RuntimeDirName},
@@ -46,8 +46,7 @@ func TestTheTestGuardNamesTheRuntimeParentsAsARunDoes(t *testing.T) {
 // parent only where a launch's sweep would have removed it (testutil.SweepableRuntimeEntries). Over every shape of
 // entry the guard tells apart (a dead run's directory, a live run's, a launch's pending one, one with no lock file,
 // a linked lock, one others can write, a file, a link, a name that is not a run id), that set is exactly the one
-// sweepRuntimeParent removes, so the guard's predicate cannot drift from the sweep's (identity-config.md R27 clause
-// b4).
+// sweepRuntimeParent removes, so the guard's predicate cannot drift from the sweep's.
 func TestTheGuardsSweepableEntriesAreWhatASweepRemoves(t *testing.T) {
 	p := filepath.Join(t.TempDir(), agent.RuntimeDirName)
 	if err := os.Mkdir(p, 0o700); err != nil {

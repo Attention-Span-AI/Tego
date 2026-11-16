@@ -325,8 +325,8 @@ func gitVerbsFresh(t *testing.T, git, dir string) {
 
 // gitRecorded is what two gits print for `git <cmd> -h` and `git <cmd> --git-completion-helper-all`, for the
 // two-level commands whose verbs changed after 2.51.0 and for git maintenance, whose usage names none. 2.51.0 is this
-// host's git (Ubuntu 25.10), captured. 2.56.0 is the git of the first CI run on GitHub's runners (2026-11-02,
-// ubuntu-24.04 and ubuntu-24.04-arm), rebuilt from v2.56.0's builtin/hook.c, reflog.c, multi-pack-index.c and gc.c
+// host's git (Ubuntu 25.10), captured. 2.56.0 is the git of GitHub's runners
+// (ubuntu-24.04 and ubuntu-24.04-arm), rebuilt from v2.56.0's builtin/hook.c, reflog.c, multi-pack-index.c and gc.c
 // as parse-options.c's usage_with_options and show_gitcomp print them; that run's log quotes the maintenance usage
 // line as it stands here.
 var gitRecorded = []struct {

@@ -34,7 +34,7 @@ const BudgetsEnv = "TEGO_TIMING_BUDGETS"
 // Limit a hosted CI runner's figures missed as written, is held to on such a runner (BudgetsEnv=hosted). The budgets
 // are figures on the reference box, and a quiet runner of GitHub's (ubuntu-24.04, an Azure VM on an AMD EPYC 7763 or
 // 9V74, kernel 7.0) makes a system call at several times its cost while it computes at about its speed, measured in
-// the same bench-gate jobs (2026-11-02): BenchmarkOwnedOpenClose, an open and a close, 2.80 and 3.32 µs against the
+// the same bench-gate jobs: BenchmarkOwnedOpenClose, an open and a close, 2.80 and 3.32 µs against the
 // reference box's 1.13 µs; and pure computation, the decision index over 512 patterns, 499 and 513 ns against 476 to
 // 499 ns. Two of ADR 0048 C8's exec cases whose added cost is a handful of system calls missed their Limits there
 // (the unguarded exec +11.5 and +13.7 µs against +12 µs, its box figure +6.9 µs; a #!/bin/sh script +35.1 and
@@ -65,13 +65,13 @@ const CeilingFactor = 10
 // another process's work fills it and the thread never blocks: a thread another process's thread takes the CPU from
 // just as its goroutine parks for a sleep is still in the run queue when the sleep ends, so the sleep is all run-queue
 // delay and never a voluntary switch, and the fastest of many samples is one where that happened (a 2 ms sleep read
-// 4.0 ms of own time for 4 ms of work so, on a CPU shared with a spinning thread, 2026-10-17); a wait that yields its
+// 4.0 ms of own time for 4 ms of work so, on a CPU shared with a spinning thread); a wait that yields its
 // CPU (sched_yield) instead of sleeping hides so on any CPU another process keeps busy (a 1 ms one read +27.9 µs).
 // A wait for work the code hands to another goroutine does not hide: that work is the process's, and stays in the own
 // time (MinOfThread). The wall clock never hides a wait, and its fastest sample is one the machine delayed least:
 // under 16 busy loops in a 4-vCPU KVM guest the worst fastest wall-clock sample of any unmodified case was 6.1 times
 // its Limit (ADR 0048 C8's 8192-argument cases, whose samples of milliseconds span scheduler slices; four sweeps of 28
-// runs, 2026-10-17). A hundred Limits fails any wait of more than a hundred times the budget on any machine, and
+// runs). A hundred Limits fails any wait of more than a hundred times the budget on any machine, and
 // leaves the own time's ten Limits for the code's work and its waits; one that another process fills on a busy
 // machine, between ten and a hundred Limits, only budget mode sees.
 const WallCeilingFactor = 100
@@ -172,11 +172,11 @@ func MinOf(c Clock, rounds int, fns ...func()) []time.Duration {
 // sample counts whole on the wall clock, waits for a CPU included. Taking the run-queue delay out of a sample that
 // blocked would let it hide part of the code's wait: the thread is woken during a sleep (a signal, a runtime
 // wake-up), waits for a CPU, and sleeps again, so the delay overlaps the sleep, and the fastest of many samples is the
-// one where the most of it did (a 2 ms sleep read 1.3 ms so, 2026-10-17). The other threads' CPU time stays in
+// one where the most of it did (a 2 ms sleep read 1.3 ms so). The other threads' CPU time stays in
 // because a wait for work the code hands to another goroutine can be all run-queue delay: where the process has fewer
 // CPUs than runnable threads (a cpuset, a small container, a busy machine), even an idle one, the helper's wake-up
 // takes the CPU from the thread before it parks, the thread waits in the run queue for the helper's whole run and
-// never blocks, and a 500 µs hand-off read 3.7 µs before (2026-10-17). A wait can still hide whole where another
+// never blocks, and a 500 µs hand-off read 3.7 µs before. A wait can still hide whole where another
 // process fills it: a thread that process preempts just as its goroutine parks is still runnable when the wait ends,
 // and a wait that yields its CPU (sched_yield) instead of sleeping never blocks; Judge therefore holds the wall clock
 // as well, to WallCeilingFactor times the Limit. A sample reads the process's CPU clock outermost, then the thread's,
@@ -378,7 +378,7 @@ func (q *runQueue) read() (time.Duration, bool) {
 // spec writes it. The unit gate's, where the cost is the calling goroutine's, is the thread's own time (MinOfThread):
 // the wall clock less the waits for a CPU that other processes filled, where the thread never blocked. CPU time alone
 // leaves out every wait the code causes, so a budget held on it would pass a regression that only waits, at any size
-// (a copy of ADR 0048 C8's path that slept 20 ms in every command-rule decision did, 2026-10-16), and the wall clock
+// (a copy of ADR 0048 C8's path that slept 20 ms in every command-rule decision did), and the wall clock
 // alone counts every wait for a CPU another tenant makes, which has no bound on a machine with more runnable threads
 // than CPUs.
 type Figure struct {

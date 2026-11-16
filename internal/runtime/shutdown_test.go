@@ -96,7 +96,7 @@ func (c *orderCheckingCgroups) Remove(ctx context.Context, cg cgroup.Cgroup) err
 // the worker's event must survive: it can only reach the ledger if drain() runs after Wait() returns,
 // which is exactly R8's claim. The two order-checking fakes then confirm the tail: ledger.Close
 // before Detach/Close, and Detach before cgroup.Remove.
-// supervisor.md E25: the supervisor loop runs in the same group (run.go "supervisor"), so this join before the drain, Metrics and ledger.Close is the facade waiting for Loop.Run to return.
+// The supervisor loop runs in the same group (run.go "supervisor"), so this join before the drain, Metrics and ledger.Close is the facade waiting for Loop.Run to return.
 func TestShutdownJoinsWorkersAndDrainsBeforeClosingTheLedger(t *testing.T) {
 	const runID = "r-00000000-000000000000a-order0"
 	runDir := filepath.Join(t.TempDir(), runID)
@@ -205,7 +205,7 @@ func (a *failingAnchor) Head(string) (string, bool, error) { return "", false, n
 // directory on every affected run, which is strictly worse than the logged, durable-data write
 // failure R18 accepts instead.
 //
-// Also pins runtime-launch.md R18: a failing ledger Close does not stop the rest of shutdown.
+// Also pins: a failing ledger Close does not stop the rest of shutdown.
 func TestShutdownContinuesPastALedgerCloseFailure(t *testing.T) {
 	const runID = "r-00000000-000000000000b-r18000"
 	runDir := filepath.Join(t.TempDir(), runID)

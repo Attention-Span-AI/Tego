@@ -17,7 +17,7 @@ import (
 // temporary directory, and so can a binary built with the tegotesthooks tag (anchor_testhook.go),
 // for the tests that drive tego as a subprocess. Nothing in a product build reassigns it, and no
 // environment variable can: the capability-bearing launcher must not let one choose where it
-// appends (identity-config.md R21).
+// appends.
 var anchorPath = tegoruntime.AnchorPath
 
 // executable is os.Executable, a variable so a test can name the binary R10 protects.
@@ -35,12 +35,12 @@ func runningBinary() string {
 }
 
 // anchorCompileOptions names the run's chain anchor to the compiler, which R10 keeps out of every
-// write entry (agent-contract.md R10). An anchor that cannot be resolved names nothing: `run` refuses
+// write entry. An anchor that cannot be resolved names nothing: `run` refuses
 // that case on its own, and the compiler then guards ~/.tego/chain.log under its home, which is
 // where the anchor of every account with a home is.
 //
 // It names the invoking user's runtime directories too, under which every run keeps its private directory
-// (agent.WithRuntimeDir, agent-contract.md R10a): an entry over tego's runtime parent, or inside another run's
+// (agent.WithRuntimeDir): an entry over tego's runtime parent, or inside another run's
 // directory, is refused. They are config.RuntimeDirBases, the list the launcher checks and the dashboard's rule
 // service compiles with: the user's logind directory, /run/user/<uid>, whatever the environment says, so plain sudo,
 // cron or an ssh session without the variable still protects where the same user's other runs keep theirs, and

@@ -83,7 +83,7 @@ type ownNames struct {
 // on. A tego that is not on PATH is not found through it, so it shadows nothing, and a running file that cannot be named
 // (WithOwnBinaries(""), a tego-control's sealed copy) leaves the search of PATH.
 //
-// Beyond those names, tego's files are found by what the kernel knows them by (ADR 0059, amendment 2026-11-11): a
+// Beyond those names, tego's files are found by what the kernel knows them by (ADR 0059): a
 // tego installed in one of the usual places (defaultInstallDirs), which a systemd unit or a second shell runs though
 // this compile neither runs from it nor finds it on PATH; every other place the mount table shows each file (a bind
 // mount of it or of a directory above it, MountOf's Aliases), each a target of its own; the layers of an overlay
@@ -435,7 +435,7 @@ func layerClosure(mt *mountTable, layers []string) (places []struct{ name, path 
 // aliasTargets adds to targets every other place the mount table shows each of them: a bind mount of the target, or
 // of a directory above it, on the same device (MountOf's Aliases), each walked as R10 walks a target. Every R10
 // target gets them, not only tego's binaries: a write entry over a bind alias of the ledger root, a policy file or
-// tego's binary reaches the same file (ADR 0059, amendment 2026-11-11).
+// tego's binary reaches the same file (ADR 0059).
 func (k *compiler) aliasTargets(mt *mountTable, targets []writeTarget) []writeTarget {
 	if !mt.probed || mt.err != nil {
 		return targets

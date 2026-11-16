@@ -22,14 +22,14 @@ import (
 // reading, and the binaries it allows executing. It holds no fds and touches no kernel, so the decision this
 // package makes per permission event is exercised entirely in unit tests.
 //
-// Why only these two decisions (docs/p0/enforce-cgroup-observe.md §5 R8): FAN_OPEN_PERM carries no access
+// Why only these two decisions: FAN_OPEN_PERM carries no access
 // mode — the kernel reports that a file is being opened, not whether for reading or writing — so a listener
 // cannot tell a write open from a read open and must not try. Write, delete, rename and mkdir denial is not
 // this listener's: the inherited Landlock ruleset decides them by inode outside every write entry, and beneath a
 // deny_read nested in a write entry the seccomp supervisor refuses them by the root walk at tier cgroup with no
 // plane mode (supervisor fallbackMutation, ADR 0021 (5)), the decision plane where one runs. What
 // fanotify adds is exactly what Landlock cannot express: a deny_read path that sits under a writable parent
-// (enforce-landlock R3/R4 leaves those unenforced in tier 1), and an exec of a binary outside the allow-list,
+// (tier 1 leaves those unenforced), and an exec of a binary outside the allow-list,
 // each refused with the precise reason the ledger records.
 type policy struct {
 	// runCgroup is the run's own cgroup path; the run is that path and everything nested under it.
@@ -203,7 +203,7 @@ func newPolicyAt(rt *agent.RuleTable, runCgroup string, view mountView, mountOf 
 		// file it is about to execute by its canonical path (/usr/bin/dash, /usr/lib/x86_64-linux-gnu/...).
 		// Matching the compiled strings alone refused every symlinked binary and every dynamic loader, and so
 		// every dynamically linked command. The resolved form names the inode the inherited Landlock ruleset
-		// grants EXECUTE to, since it opens each entry following its links (enforce-landlock R5). It is still
+		// grants EXECUTE to, since it opens each entry following its links. It is still
 		// matched as a path, not by (device, inode): an inode match would also admit every other name of the
 		// file, and uutils ships its applets as hard links of one binary, so `ls` would admit `rm` (§5 R8).
 		for _, path := range agent.Spellings(r.Path, resolveNow(r.Path)) {
@@ -370,7 +370,7 @@ type markPath struct {
 // Before this every mark carried both events. On a mount marked only for exec entries, the root filesystem in
 // the KVM guest, where python3 lives, every open of every process was held for a decision that was always an
 // allow: 20,000 opens in one run cost 0.3–0.7 s more than none at record: off and 1.7–2.7 s more at record:
-// summary, against 30–40 ms for the same opens with no tego (docs/p0/enforce-cgroup-observe.md §9).
+// summary, against 30–40 ms for the same opens with no tego.
 func markMasks(paths []markPath, denyRead pathSet, execRestricted bool, mountOfPath func(string) (mountKey, error)) ([]string, map[string]uint64) {
 	for i := range paths {
 		if !paths[i].open {

@@ -339,7 +339,7 @@ func liveTarget(run string, held bool, f livestatus.Facts) liveblock.Target {
 // StartFacts is what the run in dir says of how it can enforce a live block, read from its run_start line
 // (livestatus.FromStartJSON): no facts when that line cannot be read. They say StartUnreadable when a first line is
 // there and is not a run_start this tego reads, or the ledger cannot be read; not when no first line is there yet (no
-// events file, an empty one, or a first line still being written), which is a run still starting (the review's S1).
+// events file, an empty one, or a first line still being written), which is a run still starting.
 func StartFacts(dir string) livestatus.Facts {
 	rd, err := ledger.OpenReader(dir)
 	if errors.Is(err, os.ErrNotExist) {

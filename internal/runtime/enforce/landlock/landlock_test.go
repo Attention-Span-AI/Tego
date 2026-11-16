@@ -32,8 +32,6 @@ func TestNewAndTier(t *testing.T) {
 
 // TestProbeUnsupported is LL-E1/LL-E2 (landlock=0 at boot, kernel < 5.13: ENOSYS; not in the LSM list:
 // EOPNOTSUPP): the probe fails with ErrLandlockUnsupported, no capability is offered, and Prepare refuses.
-//
-// Spec: docs/p0/enforce-landlock.md R1, E1, E2.
 func TestProbeUnsupported(t *testing.T) {
 	for _, errno := range []error{unix.ENOSYS, unix.EOPNOTSUPP, unix.EPERM} {
 		fake := &fakeSyscalls{probeErr: errno}
@@ -52,8 +50,6 @@ func TestProbeUnsupported(t *testing.T) {
 }
 
 // TestCapabilitiesPerABI is R19/I10: one assertion per ABI band.
-//
-// Spec: docs/p0/enforce-landlock.md I10, E4.
 func TestCapabilitiesPerABI(t *testing.T) {
 	cases := []struct {
 		abi                 int
@@ -81,8 +77,6 @@ func TestCapabilitiesPerABI(t *testing.T) {
 
 // TestRulesetHandlesNoQuietMask is R20's other half: at no ABI does a ruleset quiet what it handles, since the
 // masks would mute the refusals landlock.audit exists to record, and below ABI 10 a non-zero mask is E2BIG.
-//
-// Spec: docs/p0/enforce-landlock.md R20.
 func TestRulesetHandlesNoQuietMask(t *testing.T) {
 	for abi := 1; abi <= 11; abi++ {
 		_, fake := prepare(t, abi, &agent.RuleTable{Record: agent.RecordSummary})
@@ -97,8 +91,6 @@ func TestRulesetHandlesNoQuietMask(t *testing.T) {
 
 // TestPrepareEmptyTable is I4: an empty table still handles the whole write side, grants "/" the
 // read set, builds a non-empty filter and yields a ruleset fd.
-//
-// Spec: docs/p0/enforce-landlock.md I4.
 func TestPrepareEmptyTable(t *testing.T) {
 	rt := &agent.RuleTable{Record: agent.RecordSummary}
 	h, fake := prepare(t, 7, rt)
@@ -147,8 +139,6 @@ func TestPrepareNilTable(t *testing.T) {
 
 // TestPrepareWriteEntries covers write masks per ABI, the /dev IOCTL_DEV rule, file entries, a
 // missing write directory created by Prepare, and ask/watch/implicit identity entries.
-//
-// Spec: docs/p0/enforce-landlock.md R20.
 func TestPrepareWriteEntries(t *testing.T) {
 	root := tempDir(t)
 	mkTree(t, root, "out/", "note.txt", "watch/", "ask/")
@@ -279,7 +269,6 @@ func TestPrepareSaysAWriteEntryItCouldNotCreate(t *testing.T) {
 	}
 }
 
-// TestPrepareRulesetErrors asserts docs/p0/enforce-landlock.md I1.
 func TestPrepareRulesetErrors(t *testing.T) {
 	root := tempDir(t)
 	mkTree(t, root, "out/")
@@ -300,8 +289,6 @@ func TestPrepareRulesetErrors(t *testing.T) {
 
 // TestPrepareCancelled is LL-E20 and LL-I1: a cancelled context returns no Handle and holds nothing, whether
 // it is seen before the first open or inside the walk.
-//
-// Spec: docs/p0/enforce-landlock.md E20, I1.
 func TestPrepareCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -344,8 +331,6 @@ func TestPrepareCancelled(t *testing.T) {
 
 // TestPrepareFDExhaustion is E11: a plan over the launcher's descriptor budget is refused naming the cap, before the
 // open that would meet EMFILE, and every fd opened so far is closed exactly once.
-//
-// Spec: docs/p0/enforce-landlock.md E11, I1.
 func TestPrepareFDExhaustion(t *testing.T) {
 	root := tempDir(t)
 	names := make([]string, 0, 64)
@@ -386,8 +371,6 @@ func TestPrepareFDExhaustion(t *testing.T) {
 // TestListDirFDExhaustionNamesTheCount is E11 where the descriptors run out on the reopen a listing makes
 // (E27's enumeration), which as root in the KVM guest is where TestPrepareFDExhaustion runs out: the error is
 // ErrFDExhausted and names the count held, as the §7 row says, like an entry's own open.
-//
-// Spec: docs/p0/enforce-landlock.md E11, E27.
 func TestListDirFDExhaustionNamesTheCount(t *testing.T) {
 	pathFD, err := unix.Open(tempDir(t), unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -418,8 +401,6 @@ func TestListDirFDExhaustionNamesTheCount(t *testing.T) {
 }
 
 // TestCloseIdempotent is I7 on a live handle, a double close and a zero value.
-//
-// Spec: docs/p0/enforce-landlock.md I7.
 func TestCloseIdempotent(t *testing.T) {
 	root := tempDir(t)
 	mkTree(t, root, "out/")
@@ -482,7 +463,6 @@ func TestHandleCapabilitiesUnenforced(t *testing.T) {
 	}
 }
 
-// TestRunDirImplicit asserts docs/p0/enforce-landlock.md R8.
 func TestRunDirImplicit(t *testing.T) {
 	root := tempDir(t)
 	mkTree(t, root, "run/")

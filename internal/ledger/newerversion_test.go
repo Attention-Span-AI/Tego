@@ -72,7 +72,7 @@ func newerRun(t *testing.T, v string) string {
 	return dir
 }
 
-// TestNewerVersionLineSkippedByViewsVerifiedByVerify pins limits-check-doctor-cli.md §6 case 20: a line whose
+// TestNewerVersionLineSkippedByViewsVerifiedByVerify: a line whose
 // v is greater than this reader supports is skipped, and counted, by a reader the views set to skip, while
 // Verify still links it into the hash chain, which covers its bytes and not its schema. Without the option
 // the reader stops at it as corrupt, as every other reader of the ledger (sweep, gc, stop) still does.

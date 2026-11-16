@@ -45,7 +45,7 @@ type Listener interface {
 }
 
 // ListenerWaiter is a Listener whose workers can outlive its loop. Tier 2's fanotify listener returns at once
-// on a fatal error so the run is ended (enforce-cgroup-observe §6 E15), while its workers still answer the
+// on a fatal error so the run is ended, while its workers still answer the
 // events they hold, within three of E16's deadlines, and record a line for each. The facade waits for them
 // between its workers' Wait and its final drain, or those lines land after the drain and are lost (E35).
 type ListenerWaiter interface {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# m0-demo.sh — the M0 demo of docs/P0-DESIGN.md §12: run a real agent unchanged under a contract,
+# m0-demo.sh — the M0 demo: run a real agent unchanged under a contract,
 # show one refusal, run two agents concurrently, stop one of them, and print the ledger summary.
 #
 # It runs the system-Python workload in test/workloads/python-httpx under the tier-1 (Landlock)
@@ -45,7 +45,7 @@ if [ -z "$work" ]; then
   [ "$keep" = 1 ] || trap 'rm -rf "$work"' EXIT
 fi
 mkdir -p "$work"
-# The machine config refuses a relative $TEGO_CONFIG layer (identity-config R14), so the directory is made absolute.
+# The machine config refuses a relative $TEGO_CONFIG layer, so the directory is made absolute.
 work="$(cd "$work" && pwd)" || fail "cannot enter $work"
 # config.Load refuses a layer whose file or directory anyone but its owner may write (spec/config/v0).
 chmod 755 "$work"
@@ -126,7 +126,7 @@ grep -q "refused as expected" "$work/run1.out" || fail "the agent did not see it
 
 # The agent's python3 is found by a PATH search, and execvp calls execve once per directory it
 # walks. Those candidates are recorded against the entry being searched for as `observed`, never as
-# refusals (docs/p0/supervisor.md R28): an exec-not-allowed here would be the ledger blaming the agent
+# refusals: an exec-not-allowed here would be the ledger blaming the agent
 # for how execvp works. Only run 1's ledger exists at this point.
 execrefusals="$(cat "$work"/runs/r-*/events.jsonl 2>/dev/null | grep -c '"reason":"exec-not-allowed"' || true)"
 [ "$execrefusals" = 0 ] || fail "$execrefusals exec-not-allowed refusals for a granted python3"

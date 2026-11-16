@@ -16,7 +16,7 @@ Expectations are written from SEMANTICS and the specs, never taken from Evaluate
 
 One expectation depends on the kernel: below Landlock ABI 3 (before 6.2, AL2023's 6.1) Landlock cannot refuse
 truncation, so tier 1's filter refuses every `truncate(2)` with `EPERM`, a truncate inside a write entry included,
-and no ledger line records it (docs/p0/enforce-landlock.md E31). Every tier and plane mode keeps that filter, so there
+and no ledger line records it. Every tier and plane mode keeps that filter, so there
 the kernel runner wants each truncate cell refused, errno `EPERM`, no line (`Cell.WantOn`, from the Landlock ABI it
 reads). `compile --test` has no truncate action: a truncate cell's row is `fs.write`, which is the contract's answer
 and every tier's from ABI 3, so the compile runner asks it on every kernel.
@@ -287,7 +287,7 @@ Per cell and axis, besides the kernel's result, the ledger line and the parity c
   it held, and an allowed one swaps them; a refused truncate or chmod leaves the content or the mode.
   A refusal that left its effect is a fail-open on every axis, with no residue granted. Tier cgroup's fanotify
   listener on its own answers an `O_CREAT` open after the kernel created the inode, so a create it alone refuses leaves
-  an empty file (docs/p0/enforce-cgroup-observe.md), but on that axis the supervisor refuses a create, a creat or any
+  an empty file, but on that axis the supervisor refuses a create, a creat or any
   other mutation beneath the nested `deny_read` before the kernel acts (ADR 0021 (5)), so even an empty file a refused
   create or creat left is a fail-open. The two cells that make a file there, the fs fixture's creat and fsplan's
   `O_CREAT|O_EXCL` create, want `EACCES` (the supervisor's, and a plane hook's on the plane axes), not the `EPERM` of

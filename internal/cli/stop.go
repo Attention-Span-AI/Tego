@@ -345,8 +345,8 @@ func stopRun(ctx context.Context, dir, runID string, info runlock.LockInfo,
 }
 
 // backstopAfter is how long a stop that found an earlier stop's marker waits before its own
-// cgroup.kill: its own grace, or the grace that marker asked the launcher for when that is longer
-// (limits-check-doctor-cli.md R29, runtime-launch.md R9). A marker that names no grace — a plain first
+// cgroup.kill: its own grace, or the grace that marker asked the launcher for when that is longer.
+// A marker that names no grace — a plain first
 // `stop` — left the launcher on machine, its stop_grace (StopRequestGrace's 0 is the launcher's "use
 // stop_grace" too), so that is the first stop's grace. The launcher's timer runs from the first stop's
 // SIGTERM, so waiting that long from this later one never ends the run before the launcher would have;
@@ -458,7 +458,7 @@ func runAgent(dir string) (identity.AgentID, error) {
 }
 
 // stopLostPaused is what `tego stop` says of a lost run whose last recorded state was paused once its sweep has run
-// (ADR 0124, second amendment of 2026-11-11): what its scope showed before and after the sweep, and that its orphaned
+// (ADR 0124): what its scope showed before and after the sweep, and that its orphaned
 // record closed; an ended state does not prove a kill was needed or ran. Success requires a closed record and an
 // empty scope; remaining processes or an unreadable scope mean the stop did not complete.
 func stopLostPaused(ctx context.Context, root, runID string, before scopeFact, stdout, stderr io.Writer) int {

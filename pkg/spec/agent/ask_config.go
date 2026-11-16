@@ -199,8 +199,8 @@ func checkAskEndpoint(v string) (string, string) {
 }
 
 // askSyscallHeld names the first net.ask scope that is held at the syscall alone, "" when none is: a unix: scope, whose
-// connect is relayed as the task once approved (supervisor R11), and a udp:// or bare host:port scope, whose datagram
-// or UDP connect is held and relayed (supervisor R13d). Neither carries a TCP byte stream for first_write to hold nor
+// connect is relayed as the task once approved, and a udp:// or bare host:port scope, whose datagram
+// or UDP connect is held and relayed. Neither carries a TCP byte stream for first_write to hold nor
 // an HTTP request for request to inspect, so those holds refuse a contract that lists one.
 func askSyscallHeld(c *Contract) string {
 	if c.Net == nil {

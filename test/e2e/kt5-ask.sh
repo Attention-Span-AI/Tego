@@ -4,12 +4,12 @@
 # kt5-ask.sh — kill test 5 (docs/FEATURES.md "Kill test 5 (R7)": "the contract declares one `fs.ask` and one
 # `net.ask` entry the workload never touches; compared with the same contract without them, the run is slower by
 # under 1% of wall time or 1 s, whichever is larger, on the 20-step agent and on the build workload, in every tier;
-# `run_end` carries `supervisor{notifications, held_ms}`"; docs/p0/supervisor.md §10 "E2E").
+# `run_end` carries `supervisor{notifications, held_ms}`").
 #
 # What it attacks: that an approval nobody asks for is free. An ask entry is answered by the supervisor, so a
 # contract that declares one keeps the supervisor in the loop for what the kernel would otherwise decide alone: at
 # tiers cgroup and bpflsm the seccomp filter stops notifying fs mutations, write-opens and truncate only while the
-# contract has no fs.ask entry (enforce/landlock planeSkips, ADR 0024 (14), enforce-plane R27), so with one every such
+# contract has no fs.ask entry (enforce/landlock planeSkips, ADR 0024 (14)), so with one every such
 # syscall of the workload is a notification again. Whether that costs under a second a run is a measurement and not a
 # given (FEATURES E13: "kill test 5 is a per-tier measurement, not a given"), and this is the measurement, in every
 # tier the machine allows.
@@ -305,7 +305,7 @@ run_cell() {
 	work="$(kt_workdir)"
 	cfg="$(kt_workdir)"
 	# The machine config, ledger root, profiles and chain anchor sit in a directory of their own: tego's own
-	# directory may hold nothing a write entry reaches (agent-contract R10), and the work directory holds those.
+	# directory may hold nothing a write entry reaches, and the work directory holds those.
 	kt_config "$cfg" >/dev/null
 	W="$work/write"
 	never="$work/never"

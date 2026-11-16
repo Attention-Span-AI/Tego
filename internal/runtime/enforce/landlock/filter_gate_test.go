@@ -42,7 +42,7 @@ func TestGateReadNotifiesUnderSummaryAndOffOnBothArchitectures(t *testing.T) {
 // TestWriteGateNotifiesTheChmodFamilyUnderEveryRecordLevel: the supervisor scores a mode change as an fs.write
 // (gateFS) and refuses one above the threshold, but the filter notified the chmod family under record: full only,
 // so under the default summary, and off, an fs.write gate never saw a chmod the kernel then performed with no
-// decision and no line (gate.md: enabled action kinds retain notifications in summary/off). With no write gate,
+// decision and no line (a gate's enabled action kinds retain notifications in summary/off). With no write gate,
 // or a read gate alone, the family stays record: full only.
 func TestWriteGateNotifiesTheChmodFamilyUnderEveryRecordLevel(t *testing.T) {
 	write, err := gate.New([]gate.Rule{{Predicate: gate.WriteOutsideWorktree, Score: 90}}, 50, 80)

@@ -1,7 +1,7 @@
 # test/fixtures
 
-`ledger/<name>/` holds one run each, recorded by a kill test on a kernel-matrix row (P0-DESIGN §10: "every
-kill test adds a recorded fixture"): `events.jsonl` as the run wrote it, `contract.yaml` and `blobs/` when
+`ledger/<name>/` holds one run each, recorded by a kill test on a kernel-matrix row (every
+kill test adds a recorded fixture): `events.jsonl` as the run wrote it, `contract.yaml` and `blobs/` when
 the run had them, and `chain.log`, the run's line of the anchor its ledger is verified against. The name is
 `<kill test>-<half or kind>-<tier>`, the one `test/e2e/lib.sh` `kt_save_fixture` gives it.
 Paths, the version key and the host tag were normalised after recording: the product's earlier name in the temporary

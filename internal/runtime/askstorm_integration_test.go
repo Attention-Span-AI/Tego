@@ -18,10 +18,10 @@ import (
 )
 
 // An approved write-open repeated under a standing approval, while every thread of the tego process is signalled as
-// fast as one goroutine can (custom-agent POC, item 5): every open delivers its descriptor, and no line says one was
+// fast as one goroutine can: every open delivers its descriptor, and no line says one was
 // not delivered. Before the ADDFD|SEND ioctl blocked signals, a signal inside it made the kernel complete the agent's
-// open with 0, a descriptor nobody delivered, and the agent's write failed: 211 of 3,000 such opens under this flood
-// in a measured run, and 1 of 3,000 with no flood at all (the POC's one in about 2,800).
+// open with 0, a descriptor nobody delivered, and the agent's write failed: 211 of 3,000 such opens under this flood,
+// and 1 of 3,000 with no flood at all.
 func TestIntegrationApprovedOpensSurviveASignalStorm(t *testing.T) {
 	const opens = 1000
 	script := "#!/bin/sh\ni=0\nwhile [ \"$i\" -lt " + strconv.Itoa(opens) + " ]; do\n" +

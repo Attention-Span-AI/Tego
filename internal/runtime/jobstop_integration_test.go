@@ -140,7 +140,7 @@ func (p *pty) waitLflag(t *testing.T, canonical bool) uint32 {
 // back on the terminal; continued in the background (kill -CONT to tego alone, so nothing else resumes the agent),
 // without touching the terminal. Either way the agent finishes and tego exits with its status.
 //
-// Pins runtime-launch.md R9b: a launcher sharing a terminal with its agent follows the agent's own stop.
+// A launcher sharing a terminal with its agent follows the agent's own stop.
 func TestIntegrationAStoppedAgentStopsTegoAndResumes(t *testing.T) {
 	sleep, err := filepath.EvalSymlinks("/bin/sleep")
 	if err != nil {
@@ -233,7 +233,7 @@ while [ ! -e out/cont ]; do sleep 0.05; done
 // foreground group reaches neither tego nor the agent, which inherits the ignored disposition as it would without
 // tego. tego used to subscribe to SIGHUP regardless, so the hangup started stop_grace and ended the run (129).
 //
-// Also pins runtime-launch.md R9b: a SIGHUP the launcher inherited as ignored stays ignored.
+// Also pins: a SIGHUP the launcher inherited as ignored stays ignored.
 func TestIntegrationAnIgnoredSIGHUPKeepsTheRun(t *testing.T) {
 	sleep, err := filepath.EvalSymlinks("/bin/sleep")
 	if err != nil {

@@ -9,7 +9,7 @@ import (
 )
 
 // TestAppendKeepsTheProducersMonotonicReading pins the one rule for mono_ns: it is the CLOCK_MONOTONIC
-// reading at capture (§2's field doc, enforce-cgroup-observe.md E20), so a producer that took one keeps
+// reading at capture (§2's field doc), so a producer that took one keeps
 // it, and only a zero — E20's "unknown" — gets the append time.
 //
 // The distinction is what an event's age in the queue does to the record. A kernel event read off the

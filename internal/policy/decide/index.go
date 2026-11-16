@@ -17,8 +17,7 @@ type IndexEntry struct {
 // path, the first listed of several naming one path.
 //
 // It is indexed, not walked, because the walk cost grew with the entries and tier 2's fanotify listener asks
-// on its read loop, for every open and exec its marks report by any process on the host (settleByPath,
-// enforce-cgroup-observe §6 E35). The number of entries is not the contract author's to bound: the built-in
+// on its read loop, for every open and exec its marks report by any process on the host (settleByPath). The number of entries is not the contract author's to bound: the built-in
 // .env scan writes a deny_read entry for every .env file under the project root, up to 50,000 (agent.Compile),
 // the agent can create those files in an earlier run, and every deny_read entry marks its mount for opens
 // (§5 R8), usually "/". Walked, one allowed open cost 0.5 µs against 20 entries, 21 µs against 1,000 and

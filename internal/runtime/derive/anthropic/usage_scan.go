@@ -27,7 +27,7 @@ const maxScanLine = 64 << 10
 // exactly as written (keys.go), and folded as the assembler folds it (Usage.merge), each counter the larger of
 // the values reported since the stream reports totals. A scanner of the forwarder's own decoded with
 // encoding/json v1, which folds key case and lets the last match win, so "INPUT_TOKENS" was charged on the
-// forwarder path and ignored on the uprobe path (capture-derive.md R29).
+// forwarder path and ignored on the uprobe path.
 //
 // It frames the stream as ParseStream does (scanSSE): `event:` and `data:` fields gathered into one frame up to
 // its blank line, several `data:` lines joined by newlines, the collected form's one payload per `{` line,

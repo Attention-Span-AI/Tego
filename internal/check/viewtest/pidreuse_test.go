@@ -24,7 +24,7 @@ func execAt(t *testing.T, pid int, execID string) *record.Event {
 	return e
 }
 
-// TestViewsIgnoreAReusedPID is limits-check-doctor-cli.md §6 case 6 (E6): the kernel handing a pid to a second
+// TestViewsIgnoreAReusedPID: the kernel handing a pid to a second
 // process during one run changes nothing in the views. Two exec events that share pid 42 under different exec_ids
 // are two actions in drift's counts and two lines of events; the run reads exactly as it does when the pids
 // differ, because no view keys anything by the bare pid.

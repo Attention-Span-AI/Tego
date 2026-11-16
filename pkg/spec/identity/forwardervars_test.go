@@ -15,7 +15,7 @@ import (
 // reserved names held the Anthropic and OpenAI ones, the listeners set the Google ones too, R7 named the Google
 // ones and CODEX_HOME but not the OpenAI ones). Every provider's base-URL variable is in ForwarderVarNames, and
 // R7 and RUN-IDENTITY.md's forwarder row name exactly that list.
-// identity-config.md R7: the forwarder base-URL variables.
+// The forwarder base-URL variables.
 func TestForwarderVarNamesIsTheOneList(t *testing.T) {
 	for _, p := range []string{"anthropic", "openai", "google", "gemini", "google-gemini", " OpenAI "} {
 		vars := ProviderBaseURLVars(p)
@@ -41,6 +41,9 @@ func TestForwarderVarNamesIsTheOneList(t *testing.T) {
 		{filepath.Join("..", "..", "..", "spec", "identity", "RUN-IDENTITY.md"), "| `ANTHROPIC_BASE_URL`", "| the forwarder"},
 	} {
 		b, err := os.ReadFile(doc.file)
+		if os.IsNotExist(err) && strings.Contains(doc.file, "p0") {
+			continue // the rule specs are kept in the private tree
+		}
 		if err != nil {
 			t.Fatal(err)
 		}

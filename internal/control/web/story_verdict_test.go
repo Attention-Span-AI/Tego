@@ -16,7 +16,7 @@ const (
 	sysGuardRun = "r-aaaaaaaa-0000000000032-sysgrd"
 )
 
-// sysFixture is the UX lane's two ledgers (2026-10-27), in small: a Codex-like agent reads the SSH key, asks nscd for
+// sysFixture is the UX lane's two ledgers, in small: a Codex-like agent reads the SSH key, asks nscd for
 // a name over its unix socket right after (getaddrinfo), reads the telemetry token and sends to the sink at
 // 127.0.0.1:48802. The watched run observes all of it; the enforced run is refused both reads, the four nscd lookups
 // and the send, each refused action followed by the kind=refused line that mirrors it.

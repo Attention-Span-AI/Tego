@@ -406,7 +406,7 @@ func TestNewFromRun(t *testing.T) {
 
 // TestNewFromRunSaysAddressesMayChange: a watched run's record holds addresses, not names, so the plan drafted from it
 // allows addresses, and its preview, which reads only the entries ("Can connect to 104.20.23.154 on port 443"), must
-// say what tego learn says: a later run can be refused, and how to allow the name instead (2026-11-10, Ubuntu guest).
+// say what tego learn says: a later run can be refused, and how to allow the name instead (Ubuntu guest).
 func TestNewFromRunSaysAddressesMayChange(t *testing.T) {
 	f := newFixture(t)
 	const run = "r-aaaaaaaa-0000000000001-learnx"

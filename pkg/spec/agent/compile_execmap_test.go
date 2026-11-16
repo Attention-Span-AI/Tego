@@ -80,7 +80,7 @@ func TestNativeCodeScanBoundedWarns(t *testing.T) {
 	})
 }
 
-// TestNativeCodeUnderWriteEntryWarns is ADR 0027's compile warning (agent-contract.md E39, enforce-plane R26): at the
+// TestNativeCodeUnderWriteEntryWarns is ADR 0027's compile warning: at the
 // tiers a decision plane may decide (cgroup, bpflsm, auto), a write entry that holds native code the agent will map
 // executable (an ELF shared object, a Node addon) or a known native-module tree (a Python virtual environment, a
 // Rust target/) that no exec.allow entry covers warns exec-map, naming the subtree and the exec.allow line to add:

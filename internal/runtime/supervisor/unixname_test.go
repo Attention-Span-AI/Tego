@@ -295,7 +295,7 @@ func TestBoundFileIsBornInItsBind(t *testing.T) {
 		}
 		rs.b, rs.seen = b, time.Now().UnixNano()
 		// The kernel's copy of sun_path need not be word-atomic, so a bind under the rewrite can make a third, mixed
-		// name (GitHub's runner, 2026-11-02): the file the bind made is the one the directory holds, whatever its name.
+		// name (GitHub's runner): the file the bind made is the one the directory holds, whatever its name.
 		ents, err := os.ReadDir(d)
 		if err != nil {
 			t.Fatal(err)

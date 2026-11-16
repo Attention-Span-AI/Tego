@@ -38,8 +38,6 @@ func runInsts(t *testing.T, insts []bpf.Instruction, data []byte) uint32 {
 // still works. MFD_EXEC and flags=0 both produce an executable image and are refused, and so is MFD_HUGETLB
 // with or without the seal flag, because hugetlbfs does not enforce F_SEAL_EXEC. The refusing arm (a kernel
 // below 6.3) answers every memfd_create ENOSYS, the seal flag included; with no arm every one is allowed.
-//
-// Spec: docs/p0/enforce-landlock.md R11a, R17.
 func TestMemfdSealFilterDecisions(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -87,8 +85,6 @@ func TestMemfdSealFilterDecisions(t *testing.T) {
 // MFD_NOEXEC_SEAL; and, on one that does not (below 6.3), the arm that refuses every memfd_create. Before
 // the refusing arm existed, such a kernel got no arm at all, and a restricted-exec run's only closure of the
 // memfd vector was the supervisor's racy walk.
-//
-// Spec: docs/p0/enforce-landlock.md R11a.
 func TestMemfdArmFor(t *testing.T) {
 	yes := func() bool { return true }
 	no := func() bool { return false }
@@ -119,7 +115,7 @@ func TestMemfdArmFor(t *testing.T) {
 	}
 }
 
-// TestMemfdArmDroppedWhereThePlaneMaps is enforce-plane R27's memfd half (ADR 0024 (13), TIER3-PLAN T14): at tiers 2
+// TestMemfdArmDroppedWhereThePlaneMaps is ADR 0024 (13): at tiers 2
 // and 3, a run a plane mode decides, whose loaded and probed hooks include step C's mmap_file and file_mprotect
 // (Run.PlaneMaps), has no arm refusing every memfd_create on a kernel without MFD_NOEXEC_SEAL: bprm_check refuses an
 // anonymous image's exec and mmap_file its PROT_EXEC mapping, race-free, so a data memfd need not be refused with
@@ -196,7 +192,7 @@ func TestMemfdSealLeavesOtherSyscalls(t *testing.T) {
 }
 
 // TestMemfdSealFilterGolden keeps a human-readable dump of each closing arm's filter per arch under
-// testdata/, like TestFilterGolden does for the forms with no arm (§10). The memfd arm is what a reviewer
+// testdata/, like TestFilterGolden does for the forms with no arm. The memfd arm is what a reviewer
 // diffs when the tier's exec closure changes.
 func TestMemfdSealFilterGolden(t *testing.T) {
 	cases := []struct {

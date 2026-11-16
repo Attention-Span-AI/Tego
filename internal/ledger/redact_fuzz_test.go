@@ -30,7 +30,7 @@ func checkRedactedTarget(t *testing.T, in, out string) {
 	}
 }
 
-// FuzzRedactTarget is record-ledger.md R9a's promise over any target: see checkRedactedTarget.
+// FuzzRedactTarget is R9a's promise over any target: see checkRedactedTarget.
 func FuzzRedactTarget(f *testing.F) {
 	for _, s := range []string{
 		"/v1/messages", "/v1/models/gemini:generateContent?key=AIzaSyREAL", "/f?code=abc&alt=json", "/f?verbose",
@@ -45,7 +45,7 @@ func FuzzRedactTarget(f *testing.F) {
 	})
 }
 
-// FuzzRedact is record-ledger.md R9 and R9a at the stage: an event's payload, built as every producer builds one
+// FuzzRedact is R9 and R9a at the stage: an event's payload, built as every producer builds one
 // (record.Event.SetPayload, which is json.Marshal), comes out with only allow-listed header names, an
 // ssl_request's path holding to checkRedactedTarget and any other kind's path byte for byte as it went in,
 // and a second pass leaves the bytes as the first did.

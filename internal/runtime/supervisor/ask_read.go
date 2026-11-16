@@ -14,7 +14,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// askReadOpen holds a read-open under an fs.ask_read entry for a person (POC 2026-10-06, SEMANTICS §6) and reports
+// askReadOpen holds a read-open under an fs.ask_read entry for a person (SEMANTICS §6) and reports
 // whether it answered the notification; false leaves it to settleFS, which continues it for the kernel to decide.
 //
 // The filter notifies every open of a table with such an entry (enforce-landlock's askRead arm), and the Landlock

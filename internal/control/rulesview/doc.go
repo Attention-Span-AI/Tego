@@ -3,7 +3,7 @@
 // Package rulesview is the dashboard's Rules page model: for one run, the contract the run kept in its directory
 // (contract.yaml, the canonical merged contract whose sha256 is run_start's contract_hash) and what that contract
 // compiles to today, printed by agent.PrintRuleTable as `tego compile` prints it (Load), and the same contract as
-// Rules in force (InForce,).
+// Rules in force (InForce).
 //
 // It recompiles the copy as `tego drift` does: with its extends sealed when the copy's hash is the run's (the copy is
 // self-contained), against the run's own working directory and run-command grant from run_start, offline (no name

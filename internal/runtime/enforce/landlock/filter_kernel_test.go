@@ -59,8 +59,6 @@ func runFiltered(prog []bpf.RawInstruction, fn func() []error) ([]error, bool) {
 // ABI-2 program refuses, and the ABI-3+ program — the control — lets the same call through, which is
 // precisely the kernel behaviour the gap describes. The unverified step is that a genuine 6.1 kernel
 // would allow the control call too; that is what the kernel documentation states.
-//
-// Spec: docs/p0/enforce-landlock.md E31.
 func TestFilterRefusesTruncateOnABI2Kernel(t *testing.T) {
 	dir := tempDir(t)
 	const content = "keep me"
@@ -157,8 +155,6 @@ func TestFilterRefusesTruncateOnABI2Kernel(t *testing.T) {
 // TestFilterRefusesMPTCPSocketOnKernel is E30 against the real kernel: socket(2) with IPPROTO_MPTCP is
 // refused with EPROTONOSUPPORT, while a classic TCP socket — the one Landlock's net hooks and R6's port
 // rules can actually see — is created normally.
-//
-// Spec: docs/p0/enforce-landlock.md E30.
 func TestFilterRefusesMPTCPSocketOnKernel(t *testing.T) {
 	// Informational control, outside the filter: whether this kernel offers MPTCP at all. When it does,
 	// the bypass the arm closes is live on this machine.
@@ -205,8 +201,6 @@ func TestFilterRefusesMPTCPSocketOnKernel(t *testing.T) {
 // The arm refuses IP_OPTIONS whatever the block holds (a classic BPF filter reads the level and the option, not the
 // bytes), so a block of NOOPs, which every kernel takes from any task, shows the arm's IPv4 effect on every
 // kernel: taken without the arm, refused under it.
-//
-// Spec: docs/p0/enforce-landlock.md R11b; supervisor R9.
 func TestFilterRefusesSourceRouteOptionsOnKernel(t *testing.T) {
 	// IPOPT_NOOP, then IPOPT_LSRR of length 7 with pointer 4 and one hop, 127.0.0.2.
 	lsrr := []byte{1, 0x83, 7, 4, 127, 0, 0, 2}

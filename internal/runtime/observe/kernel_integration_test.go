@@ -46,7 +46,7 @@ import (
 // kernelClient is the agent of TestIntegrationKernelRecordDrivesCapture: a read, an exec and a write the
 // record must carry with source=kernel, then one TLS exchange over CPython's ssl, which loads libssl only
 // at `import ssl`. The pause after the import stands for the work an agent does before its first request;
-// the attach the library's open triggers is asynchronous to the process (capture-derive.md R4).
+// the attach the library's open triggers is asynchronous to the process.
 const kernelClient = `import os, subprocess, sys, time
 open("/etc/hostname").read()
 subprocess.run(["true"], check=True)
@@ -420,7 +420,7 @@ func TestIntegrationKernelRecordCapturesOpenSSL30(t *testing.T) {
 				t.Fatal(err)
 			}
 			// The pause stands for an agent's work between loading libssl and its first request: the
-			// attach the library's open triggers is asynchronous to the process (capture-derive.md R4).
+			// attach the library's open triggers is asynchronous to the process.
 			return exec.Command("/bin/sh", "-c", `(sleep 1; cat "$1") | "$2" s_client -quiet -connect 127.0.0.1:"$3" `+
 				`-servername api.anthropic.com`, "sh", req, bin, port)
 		}},
@@ -699,7 +699,7 @@ with socket.create_connection(("127.0.0.1", int(sys.argv[1]))) as raw:
 // 2 MiB ring (the default record.ringbuf), so a run whose reader fell behind would show as a loss, not a flake.
 const concurrentOpens = 3000
 
-// TestIntegrationConcurrentRunsOfOneBuild is capture-derive.md E26 and ADR 0026's verification on the real objects, as root: 2, 8 and 32
+// TestIntegrationConcurrentRunsOfOneBuild is ADR 0026's verification on the real objects, as root: 2, 8 and 32
 // runs of one build at once, each with its own record and capture ring at its own slot at the default size, its
 // own recorder and its own uprobe source over the build's shared capture probes, each agent opening its own file
 // 3,000 times, execing true and making one TLS exchange. Each run's record has every exec and open of its own

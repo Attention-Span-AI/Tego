@@ -19,7 +19,7 @@ func response(t *testing.T, p record.SSLResponsePayload) *record.Event {
 	return e
 }
 
-// TestUsage is limits-check-doctor-cli.md §4's ledger.Usage: populated exactly for an ssl_response
+// TestUsage: ledger.Usage is populated exactly for an ssl_response
 // that carries a usage object, straight from usage{...}, with a negative count read as 0 so that
 // neither the live budget nor measure can underflow on a malformed reply.
 func TestUsage(t *testing.T) {

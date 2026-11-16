@@ -127,7 +127,7 @@ record: summary
 
 // lingeringHandle is a tier-2 handle whose listener returns when the run ends while one of its workers is
 // still answering an event it held: the line that worker records reaches the sink only in WaitListener,
-// after the run group's Wait, as a real fanotify worker's can (enforce-cgroup-observe §6 E35).
+// after the run group's Wait, as a real fanotify worker's can.
 type lingeringHandle struct {
 	api.Handle
 	run    enforce.RunRef

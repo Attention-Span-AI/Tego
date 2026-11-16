@@ -88,8 +88,7 @@ func (s *Store) probeLock(id string) bool {
 		return true
 	}
 	// A lock held by a process that is not the run's launcher (the launcher exited, or its pid is another process now,
-	// by start time) is a lost run's, as tego status reads it (runlock.LauncherOf, ADR 0124's second amendment of
-	// 2026-11-11). Only a launcher confirmed gone turns it lost; one whose identity cannot be read stays running.
+	// by start time) is a lost run's, as tego status reads it (runlock.LauncherOf, ADR 0124). Only a launcher confirmed gone turns it lost; one whose identity cannot be read stays running.
 	return held && !launcherGone(dir)
 }
 

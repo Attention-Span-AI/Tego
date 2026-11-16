@@ -13,7 +13,7 @@ var ErrUnreadable = errors.New("mcp: request body unreadable")
 
 // ReadHTTPRequest reads one request a client sent its server over HTTP. Both HTTP transports carry the client's
 // messages in POST bodies — the streamable transport (2025-03-26 on) at the server's one endpoint, the HTTP+SSE
-// transport (2024-11-05) at the endpoint its event stream named — one message or a batch per body. A GET opens the
+// transport at the endpoint its event stream named — one message or a batch per body. A GET opens the
 // server's event stream and a DELETE ends a session: neither carries a client message, and an empty body names
 // nothing.
 //

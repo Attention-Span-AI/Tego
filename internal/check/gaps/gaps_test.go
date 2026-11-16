@@ -92,7 +92,7 @@ func TestMerge(t *testing.T) {
 	}
 }
 
-// TestFixtureGaps is the frozen run's own gap line (docs/P0-DESIGN.md §10): the capture gap for
+// TestFixtureGaps is the frozen run's own gap line: the capture gap for
 // /usr/bin/gh and the supervisor's dropped-event gap.
 func TestFixtureGaps(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "spec", "record", "v1", "fixtures", "run-fixture.jsonl"))

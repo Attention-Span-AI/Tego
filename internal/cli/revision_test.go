@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
-// TestRevisionIsShownAndKept is agent-contract.md R28: tego compile prints a contract's revision on its own line and
+// TestRevisionIsShownAndKept: tego compile prints a contract's revision on its own line and
 // as revision in --json, and the run directory's contract.yaml keeps it, so the copy reloads to the same revision
 // and hash with its extends sealed.
 func TestRevisionIsShownAndKept(t *testing.T) {

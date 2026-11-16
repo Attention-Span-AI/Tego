@@ -80,8 +80,8 @@ func TestDenyReadOutsideExecDirStaysEnforced(t *testing.T) {
 	}
 }
 
-// An exec.allow directory inside an enforced deny_read keeps its grant (enforce-landlock I11
-// (1)), and an exec grant carries READ_FILE (R5), so tier 1 reads every file beneath it. Evaluate's read arm
+// An exec.allow directory inside an enforced deny_read keeps its grant,
+// and an exec grant carries READ_FILE (R5), so tier 1 reads every file beneath it. Evaluate's read arm
 // knows only write entries as nested grants (nestedReadGrant) and answers refused.
 func TestEvaluateReadUnderExecDirInsideDenyRead(t *testing.T) {
 	rt := &RuleTable{Tier: backend.TierLandlock, Contract: &Contract{Exec: &ExecSection{}},

@@ -213,7 +213,7 @@ func tracesAnyone(t *testing.T) bool {
 // TestUnixForeign is supervisor R11 and R11a at tier landlock on the real kernel: under a write entry, the sockets
 // the agent binds itself are reached with no unix: entry (stream and datagram), while a stream and a datagram socket
 // another process bound there before the run — a daemon's control socket, as Codex's app-server left in CODEX_HOME
-// (interactive-codex POC finding F6) — are refused, unix-foreign, and receive nothing. Declaring the daemon's sockets
+// — are refused, unix-foreign, and receive nothing. Declaring the daemon's sockets
 // with unix: entries admits them, so the refusal is R11a's and not a permission or a listener that never listened. A
 // socket the run bound and then renamed is still the run's; a datagram to a name that names nothing reads ENOENT,
 // unix-absent; a socket a non-dumpable process outside the run bound is foreign, and one a non-dumpable child of the
@@ -445,7 +445,7 @@ func TestUnixForeign(t *testing.T) {
 // unixSocketNames are the names the sockets of every test on unixSocketProject take in the project's out/: TestUnixForeign's
 // (the probe's and the test's), and the longest name the ask-unix spelling tests connect by, x/y/lnk/../../sub/app.sock,
 // which a project under a 46-byte TMPDIR put past sun_path while every name of TestUnixForeign fitted (Python's connect
-// then raised "AF_UNIX path too long" and the probe wrote None, 2026-10-19).
+// then raised "AF_UNIX path too long" and the probe wrote None).
 var unixSocketNames = []string{"own.sock", "own.dg", "bound.sock", "renamed.sock", "daemon.sock", "daemon.dg",
 	"pg.dg", "pg.sock", "dd.dg", "lnk/../dd.dg", "own2.dg", "sub/../own2.dg", "sub/../daemon.dg", "me/mg.dg", "me/mb.dg",
 	"mb.dg", "nd.sock", "absent.dg", "agent.sock", "x/y/lnk/../../sub/app.sock"}
@@ -453,7 +453,7 @@ var unixSocketNames = []string{"own.sock", "own.dg", "bound.sock", "renamed.sock
 // unixSocketProject is a project directory whose out/ holds every socket name of unixSocketNames within sun_path's
 // 107 bytes whatever TMPDIR is: under TMPDIR when that fits, else under /tmp. Under t.TempDir the paths took
 // TMPDIR, the test's name and two random parts, and bind failed EINVAL for any TMPDIR of 31 bytes or more (a lane's
-// $HOME/.cache/w<LANE>, a CI runner's temporary directory) before the run began (2026-10-17). The directory is o+x,
+// $HOME/.cache/w<LANE>, a CI runner's temporary directory) before the run began. The directory is o+x,
 // as newFixture's are made when the agent runs as the invoking user under sudo.
 func unixSocketProject(t *testing.T) string {
 	t.Helper()

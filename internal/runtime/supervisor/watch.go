@@ -35,7 +35,7 @@ const dnMultishot = 0x80000000
 
 // ruleWatchWhole names a fanotify mark of a whole mount, filesystem or mount namespace, refused in every enforcing run
 // wherever it is placed: such a mark reports every file it covers, so whatever path names it, it can report what the
-// run withholds a read of on that mount (tego's own state at least, which every run withholds, agent-contract R6a),
+// run withholds a read of on that mount (tego's own state at least, which every run withholds),
 // and no one entry is what it reaches. The reason is read-denied, as an inode watch's at or beneath a target is, whose
 // rule is the target's entry. The errno is EPERM, the kernel's own answer to a caller without CAP_SYS_ADMIN, which
 // every agent but a root one under setuid: true is: a program that probes for a privileged mark and falls back to

@@ -12,12 +12,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// TestBuildLockProtocolAsSpecified pins the build-lock protocol runtime-launch.md R15 and R16 state: every
+// TestBuildLockProtocolAsSpecified pins the build-lock protocol: every
 // launcher takes the lock shared at once (no exclusive creator, no downgrade), a departing launcher's
 // non-blocking exclusive probe decides last out, a launcher told it is not last holds nothing, and the lock
 // file is never unlinked, so every later launcher of the build locks the same inode (ADR 0034 (3)).
 //
-// Also pins runtime-launch.md I6: the LOCK_SH count is the number of live launchers; a launcher told it is not last holds nothing.
+// Also pins: the LOCK_SH count is the number of live launchers; a launcher told it is not last holds nothing.
 func TestBuildLockProtocolAsSpecified(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

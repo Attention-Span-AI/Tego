@@ -50,7 +50,7 @@ complete, the root model's answer at its own path for every question, because th
 the row's `rule_idx` is its position, resolved per question by the ledger. Checked: the rows, walked as the kernel walks
 them and by RootIndex.Walk, equal Evaluate's bpflsm column over every generated table with and without deny_write
 targets (TestPlaneRowsMatchEvaluate), and the neutral rules leave a Landlock plan model's grant unchanged at every path
-(TestNeutralRulesKeepTheUnion); the query paths allocate nothing. docs/p0/enforce-plane.md §2.4 records the layout and
+(TestNeutralRulesKeepTheUnion); the query paths allocate nothing. The plane spec records the layout and
 six conditions (deep paths past the 64-step bound, a rename above every write entry named differently, a hard link of a
 keyed file, two exec names of one inode, neutral rules on sealed deny nodes, compile cost at the cap).
 

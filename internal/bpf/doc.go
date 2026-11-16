@@ -16,8 +16,7 @@
 // the hand-written ones, so a field added to bpf/include/events.h without a Go counterpart fails the tagged
 // build rather than corrupting a decode.
 //
-// Normative sources: docs/p0/enforce-cgroup-observe.md §2 (structs), §3 (map sizing and pinning),
-// docs/ARCHITECTURE.md §11 (portability rules), bpf/README.md (toolchain and versions).
+// Normative sources: docs/ARCHITECTURE.md §11 (portability rules), bpf/README.md (toolchain and versions).
 //
 // Imports: github.com/cilium/ebpf, standard library, and pkg/policy/socketpolicy (ADR 0018's socket allowlist,
 // a standard-library-only leaf the decision core reads too, so the table has one Go spelling: SocketAllowed).

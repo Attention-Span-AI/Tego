@@ -10,8 +10,8 @@ import (
 )
 
 // TestRecordOffReportsEveryAnsweredNotificationAsActivity: under record: off the producers keep only refusals,
-// so Options.Activity is the only feed of the budget watcher's Touch (docs/p0/limits-check-doctor-cli.md
-// LCD-R4). Every answered notification must reach it once, allowed or refused, whether or not it left a line.
+// so Options.Activity is the only feed of the budget watcher's Touch.
+// Every answered notification must reach it once, allowed or refused, whether or not it left a line.
 func TestRecordOffReportsEveryAnsweredNotificationAsActivity(t *testing.T) {
 	const pathAddr = 0x1000
 	fs := []agent.FSRule{{Path: "/work", Kind: agent.FSWrite}}

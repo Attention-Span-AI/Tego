@@ -24,7 +24,7 @@ func enforcingTiers() []backend.Tier {
 // denyRead list and allows every open — so ~/.ssh, ~/.aws, ~/.netrc and the project's .env are
 // readable by an agent whose contract merely omits `fs:`, with no diagnostic anywhere. Adding an
 // unrelated `fs: {write: [...]}` used to be what restored the whole list.
-// agent-contract.md R21: the built-in deny_read list is refused whatever the contract says.
+// The built-in deny_read list is refused whatever the contract says.
 func TestBuiltInDenyReadAppliesWithoutFSSection(t *testing.T) {
 	f := newFixture(t)
 	rt, ds := f.compile(f.load("version: 0\nname: a\ncommand: [python]\n"))

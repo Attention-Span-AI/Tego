@@ -20,7 +20,7 @@ import (
 )
 
 // The machine a run happens on, and the predicate of a baseline entry that says which machines the entry holds
-// on (ADR 0017, amended 2026-10-05). A disagreement between a cell and the build can follow from the kernel: the
+// on (ADR 0017). A disagreement between a cell and the build can follow from the kernel: the
 // truncate floor below Landlock ABI 3, a hook an older kernel lacks, the fanotify listener where a plane cannot
 // load. A single baseline holds one entry per such machine, and a run reads only the entries written for it.
 
@@ -36,7 +36,7 @@ type Machine struct {
 	ABI int
 	// Arch is runtime.GOARCH.
 	Arch string
-	// BPFLSM says bpf is among the kernel's active LSMs: the lsm=...,bpf boot of TIER3-PLAN §9.
+	// BPFLSM says bpf is among the kernel's active LSMs: the lsm=...,bpf boot.
 	BPFLSM bool
 	// Row is the matrix row's name ($TEGO_VM_ROW), "" outside the matrix.
 	Row string

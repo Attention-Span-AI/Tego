@@ -62,7 +62,7 @@ func (k ActionKind) Lookups() (path, dest Lookup) {
 
 // A Lander is where the kernel's walk of the absolute pathname p leads for a syscall end looked up as how says
 // (Lookup): compile --test passes the run's own walk (internal/runtime/supervisor.Land), so a row and the run's line
-// land a path with one resolver (ADR 0019's 2026-10-17 design note) asked the same question. p is as the agent's
+// land a path with one resolver (ADR 0019) asked the same question. p is as the agent's
 // syscall would spell it, uncleaned, since the walk takes "lk/.." physically. err is a walk that fails as the agent's
 // own lookup fails (ENOTDIR, ELOOP, EACCES, ENAMETOOLONG, EINVAL), or ErrUnwalked for one the Lander could not make;
 // the row's path is then evaluated as written, cleaned, save a bind's, which the run refuses when its walk fails.
@@ -107,7 +107,7 @@ func resolveAction(a Action, land Landers) (Action, ResolvedPaths) {
 	pathHow, destHow := a.Kind.Lookups()
 	switch a.Kind {
 	case ActionNetConnect, ActionNetSend:
-		// The run decides a unix pathname twice (supervisor R11, R11a; SEMANTICS §5 as amended 2026-10-16): on the
+		// The run decides a unix pathname twice (SEMANTICS §5): on the
 		// name the connect or the datagram passes, then on what its own unix walk of that name meets. Path keeps the
 		// name, Landed is what the walk reaches (connect(2) and sendto(2) follow a final symlink), NoSocket says that is
 		// no socket, and Walk what it met; a name the UnixLander could not walk is decided on its spelling alone.

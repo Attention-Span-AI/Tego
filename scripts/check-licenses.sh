@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
 # Check source licensing material and, when given a dist directory, its release archives.
-# shellcheck disable=SC2086 # $binaries is three package patterns, split on purpose
+# shellcheck disable=SC2086 # $binaries is two package patterns, split on purpose
 set -eu
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
@@ -9,7 +9,7 @@ license_files="LICENSE NOTICE THIRD_PARTY_NOTICES.txt LICENSES/GPL-2.0-only.txt 
 for file in $license_files; do
 	[ -s "$file" ] || { echo "check-licenses: missing $file" >&2; exit 1; }
 done
-binaries="./cmd/tego ./cmd/tego-control ./cmd/maze"
+binaries="./cmd/tego ./cmd/tego-control"
 modules=$("${GO:-go}" list -deps -tags tegobpf -f '{{if .Module}}{{if .Module.Version}}{{.Module.Path}} {{.Module.Version}}{{end}}{{end}}' $binaries)
 modules=$(printf '%s\n' "$modules" | sort -u)
 # An empty listing (a changed go list template, a stand-in go) would check nothing and pass: the binary links
@@ -113,16 +113,6 @@ if [ "$#" -gt 0 ]; then
 	entries=$(tar -tzf "$archive")
 	for file in $license_files; do
 		printf '%s\n' "$entries" | grep -qFx "$file" || { echo "check-licenses: archive lacks $file" >&2; exit 1; }
-	done
-	# maze ships in an archive of its own, which must hold the notices of what it links.
-	dist=$(dirname "$archive")
-	set -- "$dist"/maze_*.tar.gz
-	[ -f "$1" ] || { echo "check-licenses: expected maze archives in $dist" >&2; exit 1; }
-	for tarball in "$@"; do
-		entries=$(tar -tzf "$tarball")
-		for file in LICENSE NOTICE THIRD_PARTY_NOTICES.txt; do
-			printf '%s\n' "$entries" | grep -qFx "$file" || { echo "check-licenses: $(basename "$tarball") lacks $file" >&2; exit 1; }
-		done
 	done
 	set -- "$(dirname "$archive")"/*_checksums.txt
 	[ "$#" -eq 1 ] && [ -f "$1" ] || { echo "check-licenses: expected one checksums file" >&2; exit 1; }

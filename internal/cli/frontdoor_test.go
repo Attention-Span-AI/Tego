@@ -225,7 +225,7 @@ func TestInitKeepsActionableWarnings(t *testing.T) {
 	presetProject(t)
 	code, out, errs := run(t, "init", "--preset", "no-secrets", "--write", "/dev")
 	// Where /dev/mqueue is mounted (every systemd host) a grant on /dev reaches that kernel filesystem and is refused
-	// (ADR 0059, second amendment of 2026-11-11); the /dev warning still says what the grant was.
+	// (ADR 0059); the /dev warning still says what the grant was.
 	mi, _ := os.ReadFile("/proc/self/mountinfo")
 	if strings.Contains(string(mi), " - mqueue ") && strings.Contains(string(mi), " /dev/mqueue ") {
 		if code == 0 || !strings.Contains(errs, "[kernel-fs-write]") || !strings.Contains(errs, "reaches the mqueue filesystem mounted at /dev/mqueue") {

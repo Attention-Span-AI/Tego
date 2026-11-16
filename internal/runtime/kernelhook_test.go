@@ -57,8 +57,8 @@ func (s *streamSource) hooked(f source.ProcessHook) (found bool) {
 	return false
 }
 
-// TestKernelRecordFeedsTheUprobeSource is the recorder-to-uprobe wiring capture-derive.md §4 describes
-// ("onExec driven by observe's exec stream"): a capture source that follows the kernel record is told the
+// TestKernelRecordFeedsTheUprobeSource is the recorder-to-uprobe wiring
+// (onExec driven by observe's exec stream): a capture source that follows the kernel record is told the
 // build the handle pinned and is handed the recorder's process stream, before either of them starts. The
 // uprobe source had no caller for OnExec or OnExit at all, so it attached to nothing on every run.
 func TestKernelRecordFeedsTheUprobeSource(t *testing.T) {

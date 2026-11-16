@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package status derives the run state machine from a ledger and its lock: running, waiting on
-// model, waiting on tool, stalled, done, lost, plus the current step and last decision
-// (docs/p0/limits-check-doctor-cli.md §5 R7-R12, P0-DESIGN.md §5).
+// model, waiting on tool, stalled, done, lost, plus the current step and last decision (R7-R12).
 //
 // Derive answers for one run the caller has already probed, DeriveAll for every run under a ledger
 // root. The checks run in one fixed order and the first match wins: an unheld lock decides between

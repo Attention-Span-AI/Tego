@@ -65,7 +65,7 @@ func TestFixtureAttributesEveryAction(t *testing.T) {
 		toolUses     = map[int][]string{} // step -> the tool_use ids its reply asked for
 	)
 	for i, e := range events {
-		// The fixture carries what a P0 writer stamped before this derivation existed: the honest
+		// The fixture carries what an older writer stamped before this derivation existed: the honest
 		// {unattributed, none}. Replaying it is exactly what a view does.
 		steps.Apply(e)
 		switch {

@@ -19,7 +19,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// The limits of a boundary adoption on the real kernel, as root (ADR 0055, the 2026-11-11 limits amendment): a machine
+// The limits of a boundary adoption on the real kernel, as root (ADR 0055): a machine
 // config's limits.pids and limits.cpu ceilings are written into the adoption's cgroup before the move, so the adopted
 // agent's forks past pids.max fail with EAGAIN and cpu.max throttles it, as cpu.stat counts; a tree with more tasks
 // than the pids ceiling is refused before anything moves. A host whose cgroup root does not enable cpu (a stock
@@ -123,7 +123,7 @@ func adoptBoundaryOrSkip(t *testing.T, e *adoptEnv, contract string) (*adopter, 
 }
 
 // TestIntegrationAdoptAppliesPidsAndCPUCeilings: on a machine whose config sets limits.pids 6 and limits.cpu 0.1, a
-// boundary adoption (refused until 2026-11-11) goes on; its scope holds pids.max 6 and cpu.max 10000 100000 when it
+// boundary adoption goes on; its scope holds pids.max 6 and cpu.max 10000 100000 when it
 // records; the adopted agent's forks fail with EAGAIN once its cgroup holds 6 tasks (the agent's shell and python
 // count 2 of them); a busy loop is throttled (cpu.stat nr_throttled grows); and the release moves it back, its cgroup
 // gone.

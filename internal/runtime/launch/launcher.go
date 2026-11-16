@@ -26,7 +26,7 @@ import (
 // ackByte is the single byte the parent writes on pipe B after NOTIF_RECV is armed (R6, R7).
 const ackByte = 0x01
 
-// Sentinel errors, one per failure class (docs/p0/runtime-launch.md §9); each wraps the underlying errno.
+// Sentinel errors, one per failure class; each wraps the underlying errno.
 var (
 	// ErrClone is a failed clone3(CLONE_PIDFD|CLONE_INTO_CGROUP): EAGAIN, ENOSPC, EPERM, EINVAL, ENOSYS.
 	// EPERM and ENOSYS additionally carry cloneFailure's hint, which says whether an outer seccomp profile
@@ -96,7 +96,7 @@ type Child struct {
 	result WaitResult
 }
 
-// Start creates the child stage (docs/p0/runtime-launch.md §4 Start): clone3 through proc.Start, the one
+// Start creates the child stage: clone3 through proc.Start, the one
 // process start of non-test code, which refuses while this process holds fanotify marks (ADR 0021 (3)), with
 // SysProcAttr{UseCgroupFD, CgroupFD, PidFD} so the child is in the run cgroup from its first instruction
 // (invariant 3), two anonymous pipes (R6) and the ruleset fd inherited via ExtraFiles, then the framed spec
@@ -345,7 +345,7 @@ const seccompModeUnknown = -1
 // names that sandbox rather than leaving the operator with a bare "operation not permitted".
 //
 // Case 20 used to frame EINVAL/ENOSYS as kernel age alone, but the failure that actually happens in the
-// field is moby#42680 (berrange, 2021-07-27): a container runtime's default seccomp profile answered an
+// field is moby#42680 (berrange): a container runtime's default seccomp profile answered an
 // unlisted clone3 with EPERM, which glibc 2.34+ treats as fatal instead of falling back to clone(2);
 // runtimes then switched their default to ENOSYS. A systemd unit with SystemCallFilter= does the same,
 // returning SystemCallErrorNumber= (EPERM by the documented convention, systemd.exec(5)). In both cases the

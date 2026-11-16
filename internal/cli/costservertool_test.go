@@ -55,8 +55,7 @@ func TestCompileReportsACostBudgetUnderATableListingNoModels(t *testing.T) {
 }
 
 // compile warns [unenforced] when a cost_usd budget's price table names no server_tool_per_request fee: a run
-// ends at the first response reporting server-tool requests, whose cost the table cannot bound (ADR 0037
-// amendment 2026-09-24). A table with a fee, or a contract with no cost budget, draws no warning.
+// ends at the first response reporting server-tool requests, whose cost the table cannot bound (ADR 0037). A table with a fee, or a contract with no cost budget, draws no warning.
 func TestCompileWarnsCostBudgetWithoutServerToolFees(t *testing.T) {
 	dir := t.TempDir()
 	// The price table follows the machine config's trust rule: no group-writable directory (umask 002).

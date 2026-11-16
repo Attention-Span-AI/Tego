@@ -95,13 +95,13 @@ prices: ~/.tego/prices.yaml      # price table: version, models.<model>.{input,o
                                   # cache_write_1h}_per_mtok, server_tool_per_request.<name> (USD per request).
                                   # *Amended 2026-09-24:* cache_write_1h_per_mtok and
                                   # server_tool_per_request added; a response reporting a counter with no price is
-                                  # unpriced (docs/p0/limits-check-doctor-cli.md R2), as is a model with no input or
+                                  # unpriced, as is a model with no input or
                                   # no output price; an unknown key makes the table unreadable (R32)
                                   # *Amended 2026-10-16:* a run whose contract declares limits.cost_usd and finds
                                   # no table here is refused, exit 125 [budget-unmetered], as is one whose declared
                                   # tokens, cost_usd or repeats budget no capture counts (a capture: ceiling of off
                                   # included); a budget the limits: ceilings alone impose is not refused, it records
-                                  # gap why=budget-unmetered (docs/p0/limits-check-doctor-cli.md R32)
+                                  # gap why=budget-unmetered
                                   # *Amended 2026-10-17:* so is a run whose contract declares limits.cost_usd
                                   # under a table here that lists no model, or that prices none (every entry
                                   # lacks input_per_mtok or output_per_mtok): no response could be priced (R32)

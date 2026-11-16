@@ -48,8 +48,8 @@ type cellJudgement struct {
 // judgeAnswers judges one cell's answers on one axis: the kernel's against the cell's (a judged cell's answer is the
 // kernel's own), the kernel's against compile --test's column (I9), and the ledger's: exactly one verdict line,
 // coherent in how it names the plane, with the cell's verdict and rule, and for a judged cell the rule compile's
-// column names wherever the column shares the kernel's verdict, but for the known naming classes (ADR 0017's
-// 2026-10-19 note). A handwritten cell's ledger rule is its own Want's. The kernel runner (runFixture) only gathers
+// column names wherever the column shares the kernel's verdict, but for the known naming classes (ADR 0017).
+// A handwritten cell's ledger rule is its own Want's. The kernel runner (runFixture) only gathers
 // the evidence and records the judgement, so every check here is pinned by TestJudgeAnswers.
 func judgeAnswers(ev cellEvidence) (j cellJudgement) {
 	j.Failures = map[string]string{}

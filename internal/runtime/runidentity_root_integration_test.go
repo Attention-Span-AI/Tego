@@ -75,7 +75,7 @@ func TestRootRunStartNamesTheSudoAccount(t *testing.T) {
 	}
 }
 
-// TestRootAgentHasItsOwnAccountsHome is identity-config.md R3a: sudo gives the launcher HOME=/root, USER=root and
+// TestRootAgentHasItsOwnAccountsHome: sudo gives the launcher HOME=/root, USER=root and
 // LOGNAME=root, and the agent, which runs as the invoking user, gets that user's instead of a home it cannot enter.
 func TestRootAgentHasItsOwnAccountsHome(t *testing.T) {
 	if os.Geteuid() != 0 {

@@ -404,7 +404,7 @@ func TestCloseBacklogFor(t *testing.T) {
 // TestDecideEventKeepsTheRefusalWhenMembershipIsUnread: an opener whose cgroup cannot be read is not known to
 // be outside the run, so the path's refusal stands and a gap says why. Allowing it gave the run's own refusal
 // away whenever a membership read failed, and the read fails first for a process out of descriptors (EMFILE,
-// §6 E35). An opener that has exited is still allowed: there is nothing left to refuse (enforce-cgroup-observe.md §6 E10).
+// §6 E35). An opener that has exited is still allowed: there is nothing left to refuse.
 func TestDecideEventKeepsTheRefusalWhenMembershipIsUnread(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

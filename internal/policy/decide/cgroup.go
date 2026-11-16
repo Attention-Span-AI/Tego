@@ -77,7 +77,7 @@ func ListenerOpenRefused(rt *agent.RuleTable, path string) (agent.FSRule, bool) 
 // every spelling (agent.FSRule.Spellings) as a directory entry. A path under a deny_read entry is refused
 // unless a more specific write entry names it, which is how a contract that denies a directory but names one
 // file inside it keeps working. Everything else is allowed: fanotify cannot see the access mode, so it never
-// guesses (enforce-cgroup-observe §5 R8). deny is the refusing entry's position in denyRead. A path read back
+// guesses. deny is the refusing entry's position in denyRead. A path read back
 // with the unlinked suffix is decided under both spellings, refused when either is (unlinkedSpelling).
 //
 // It is listenerOpenRefused's rule, which Evaluate's tier-2 column and the supervisor's advisory write-open

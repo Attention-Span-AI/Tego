@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestPipelineRefusedEventsBecomeAGap is the refused half of P0-DESIGN §2.4's loss accounting. A
+// TestPipelineRefusedEventsBecomeAGap is the refused half of the loss accounting. A
 // queue-full drop already becomes `gap what=record why=channel-full count=N`; an event a stage or
 // Append refused must get the same treatment, or the run's ledger stays intact, complete and verified
 // with an action the agent really took simply absent from it — the one loss an audit record cannot

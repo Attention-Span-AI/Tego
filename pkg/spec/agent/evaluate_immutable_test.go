@@ -23,7 +23,7 @@ import (
 // row and, in the running system, is the very value I9 says Load/Compile
 // build exactly once per run — a stray write here would be a data race the
 // next caller's read could observe.
-// agent-contract.md I4 and E31 (Evaluate is stateless: no pid, no live process, no table mutation).
+// Evaluate is stateless: no pid, no live process, no table mutation.
 func TestEvaluateDoesNotMutateRuleTable(t *testing.T) {
 	f, rt := evalFixture(t)
 	p := func(rel string) string { return filepath.Join(f.project, rel) }

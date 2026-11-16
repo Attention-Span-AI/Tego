@@ -27,7 +27,7 @@ func seedMessages(f *testing.F) {
 	f.Add([]byte("\xff{"))
 }
 
-// FuzzRead: every reader of bytes the governed run controls gets a fuzz target (capture-derive.md §9). The
+// FuzzRead: every reader of bytes the governed run controls gets a fuzz target. The
 // properties: Read never panics; an item comes only from valid JSON; a value that is not valid JSON is exactly one
 // unreadable message; a tool name is bounded and is valid UTF-8 whenever the wire's was; reading is deterministic.
 func FuzzRead(f *testing.F) {

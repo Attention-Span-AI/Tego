@@ -16,22 +16,22 @@ import (
 const GapUnprivilegedTier = "unprivileged-tier"
 
 // capabilityLine is run_start.capabilities: what this run could do, one entry per row of
-// spec/backend/CAPABILITIES.md in pkg/spec/backend's spelling, false included (docs/p0/record-ledger.md
-// §2.2). The row the tier advertises is a claim about the tier; this is the claim about the run, which is
+// spec/backend/CAPABILITIES.md in pkg/spec/backend's spelling, false included.
+// The row the tier advertises is a claim about the tier; this is the claim about the run, which is
 // what "the runtime degrades by matrix, never silently" (FEATURES S5) needs a reader to be able to see. A
 // false is a statement written into a hash-chained record, so each row is either the enforcement handle's
 // own answer or set here from what this run did.
 //
 // It starts from the handle's own set when the handle reports one (enforce.Reporter), because that set is
-// already narrowed by what Prepare found: a deny_read entry left unenforced under a writable parent
-// (enforce-landlock.md R4), the Landlock ABI the kernel offered (R19), the unix entries the tier-2 handle
-// leaves to tier 1 (enforce-cgroup-observe.md R7). A handle that reports nothing falls back to the backend's
+// already narrowed by what Prepare found: a deny_read entry left unenforced under a writable parent,
+// the Landlock ABI the kernel offered (R19), the unix entries the tier-2 handle
+// leaves to tier 1. A handle that reports nothing falls back to the backend's
 // row. Then the rows only this package can answer are set from the run itself:
 //
 //   - capture.model_traffic is true exactly when run_start.capture, the same captureMode value passed in
 //     here, is not off. It is set rather than narrowed, because the observe row is empty and an observe run
 //     with a forwarder does capture.
-//   - An observe run records through tier 1's filter and supervisor (supervisor.md R30), so its record rows
+//   - An observe run records through tier 1's filter and supervisor, so its record rows
 //     are tier 1's; its empty row speaks only for enforcement.
 //   - record: off keeps refusals and nothing else (supervisor events.go recording(), the kernel's
 //     TEGO_RECORD_OFF), so none of the record rows holds.
@@ -150,8 +150,8 @@ func (r *runner) startedCapture() []source.Source {
 }
 
 // mechanismUnavailable reports whether s has already said, in its own gaps, that its mechanism is not running
-// for this run: gap what=capture why=mechanism-unavailable with s's own name as the binary (capture-derive.md
-// R37). A source may start and still be in that state, because a capture object the kernel will not load is
+// for this run: gap what=capture why=mechanism-unavailable with s's own name as the binary
+// (R37). A source may start and still be in that state, because a capture object the kernel will not load is
 // one gap and never a failed run (§4): the uprobe source's Start returns nil with no kernel record to follow
 // or a collection that will not load, and records exactly this gap. So a nil error from Start is no evidence
 // that anything captures. Without this check run_start would claim capture: uprobe for a run whose only uprobe
@@ -180,11 +180,11 @@ func (r *runner) readsHeldServed() bool {
 // draining and the tier-1 filter it inherits was built without them too. Nothing drains the ring when no
 // recorder was built, which startKernelRecord has reported as a gap of its own, and when the recorder
 // started but reads nothing, which its own kernel-record-unavailable gap says (kernelRecordInert): it could
-// not name the run's slot or open the run's ring (enforce-cgroup-observe.md §2 "Run scope"). The inherited filter notifies read-opens under record: full, as tier 1's does, and the supervisor
+// not name the run's slot or open the run's ring. The inherited filter notifies read-opens under record: full, as tier 1's does, and the supervisor
 // records them then with or without the ring.
 //
 // It is the reads row alone. Exec, write-open and connect reach the supervisor through the inherited filter
-// at every record mode (enforce-landlock.md R15, enforce-cgroup-observe.md §5 R1), so a tier-2 run whose
+// at every record mode, so a tier-2 run whose
 // ring nobody drains still records them, and record.exec_open_connect stays the tier's answer.
 func (r *runner) readsUnrecorded() bool {
 	if r.tier1ReadsUnnotified() {
@@ -210,7 +210,7 @@ func kernelRecordInert(s source.Source) bool {
 
 // tier1ReadsUnnotified reports whether the run's only record of an open is tier 1's seccomp filter and that
 // filter was built without read-opens. It notifies them only under record: full, because notifying every
-// read is exactly what makes that mode slow (enforce-landlock.md R9-R13, SEMANTICS §7). An observe run
+// read is exactly what makes that mode slow (SEMANTICS §7). An observe run
 // installs the same filter with the same switch and no Landlock ruleset, so the same is true of it. A run that
 // holds its reads (ADR 0069), has an fs.ask_read entry or notifies them for the reason channel (ADR 0077) is
 // notified of every open, but its supervisor writes no line for an allowed read unless the record mode keeps reads
@@ -245,7 +245,7 @@ func (r *runner) emitWatchedReadGap() {
 // a deny_read entry, declared or built in, or an fs.watch entry. Where the run holds its reads (held), every read of a
 // deny_read target is refused by the supervisor with its line (ADR 0069), so only a watch entry counts; where it
 // notifies them for the reason channel (reason, ADR 0077), every read of a target the Landlock ruleset enforces is a
-// refused line, so a deny_read entry counts only while the ruleset leaves it unenforced (enforce-landlock R4), whose
+// refused line, so a deny_read entry counts only while the ruleset leaves it unenforced, whose
 // allowed reads stay unrecorded.
 func watchesReads(rt *agent.RuleTable, held, reason bool) bool {
 	for _, f := range rt.FS {

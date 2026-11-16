@@ -259,7 +259,7 @@ func TestVerifyARunDirectoryReplacedByALink(t *testing.T) {
 		"through . after a cd": func(t *testing.T, _, dirA string) string { t.Chdir(dirA); return "." },
 		// Spelled raw: filepath.Join would clean it down to dirA before RunDirPath saw it, and the case would
 		// repeat "by path". Uncleaned, the kernel resolves <A>/blobs/.. through the link to B, and the lexical
-		// cleaning RunDirPath does (record-ledger.md §4) is what keeps the run A.
+		// cleaning RunDirPath does is what keeps the run A.
 		"through a subdir's ..": func(t *testing.T, _, dirA string) string { return dirA + "/" + BlobsDir + "/.." },
 		"through a link to the link": func(t *testing.T, root, dirA string) string {
 			// A relative target, read from the directory that holds the link as the kernel reads it.

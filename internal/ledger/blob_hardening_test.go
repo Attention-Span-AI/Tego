@@ -191,7 +191,7 @@ func startedWriter(t *testing.T) (*Writer, string) {
 // name for one fsync at Close, without end. Past maxPendingBlobs the names are dropped and Close's Sync
 // flushes the filesystem once instead.
 //
-// Also pins record-ledger.md R15: past the pending-name bound Close makes the blobs durable with one syncfs.
+// Also pins: past the pending-name bound Close makes the blobs durable with one syncfs.
 func TestBlobPendingListIsBounded(t *testing.T) {
 	w, _ := startedWriter(t)
 	for i := range maxPendingBlobs + 1 {

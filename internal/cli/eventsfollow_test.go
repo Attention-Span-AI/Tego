@@ -125,7 +125,7 @@ func TestEventsFollowOfALostRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, out, errs := run(t, "events", dir, "--follow", "--json")
-	// limits-check-doctor-cli.md §7: the run directory named once, and every command that ends an orphan.
+	// The run directory named once, and every command that ends an orphan.
 	want := "tego events: ledger: no writer holds the run's lock and its ledger ends without run_end: " + dir +
 		"; the next tego run, tego session stop or tego gc ends it as orphaned [run-lost]\n"
 	if code != identity.ExitError || errs != want {

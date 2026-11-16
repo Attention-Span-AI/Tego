@@ -11,7 +11,7 @@ import (
 
 const testRun = RunID("r-0123abcd-0000000000000-abcdef")
 
-// identity-config.md R4, R5, R6, R7, R8, R9 (env vars), I5 (no duplicate key), E6 (entry without =), E7 (trailing comma), E29 (stale OTEL member).
+// Covers the env vars, no duplicate key, an entry without =, a trailing comma and a stale OTEL member.
 func TestEnvApply(t *testing.T) {
 	full := Env{RunID: testRun, Agent: "retriever", ParentRun: "", LedgerDir: "/runs/x", Tier: "landlock"}
 	cases := []struct {
@@ -160,7 +160,7 @@ func assertNoDuplicateKeys(t *testing.T, env []string) {
 }
 
 // E5 / T-env-3: env.pass naming TEGO_RUN_ID compiles and is discarded here without a warning.
-// identity-config.md R3: Apply runs last and overwrites same-named entries from env.pass/set; E5 (no warning).
+// Apply runs last and overwrites same-named entries from env.pass/set; E5 (no warning).
 func TestEnvApplyDiscardsForgedIdentity(t *testing.T) {
 	got := Env{RunID: testRun, Agent: "a", LedgerDir: "/l", Tier: "landlock"}.Apply([]string{
 		"TEGO_AGENT=b", "TEGO_LEDGER=/other", "TEGO_TIER=bpflsm", "TEGO_PARENT_RUN=r-forged",
@@ -188,7 +188,7 @@ func TestPercentEncode(t *testing.T) {
 }
 
 // E22: linear in len(base).
-// identity-config.md E22: a 10 000-entry base costs O(len(base)) per identity variable, no quadratic blowup.
+// A 10 000-entry base costs O(len(base)) per identity variable, no quadratic blowup.
 func TestEnvApplyPathologicalBase(t *testing.T) {
 	env := Env{RunID: testRun, Agent: "retriever", LedgerDir: "/runs/x", Tier: "landlock"}
 	allocs := func(n int) float64 {
@@ -213,7 +213,7 @@ func TestEnvApplyPathologicalBase(t *testing.T) {
 	assertNoDuplicateKeys(t, out)
 }
 
-// identity-config.md E22: Apply is O(len(base)) per identity variable.
+// Apply is O(len(base)) per identity variable.
 func BenchmarkEnvApply(b *testing.B) {
 	base := make([]string, 0, 50)
 	for i := 0; i < 50; i++ {

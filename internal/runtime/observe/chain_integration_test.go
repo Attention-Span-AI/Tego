@@ -341,7 +341,7 @@ func loadTraceProcWhereItLoads(t *testing.T, maps string, r bpf.Reader) *ebpf.Co
 }
 
 // loadTraceProcAttaching is loadTraceProcWhereItLoads attaching only the programs attach reports (every loaded one
-// for a nil attach): a build whose recorder fexit programs are not attached (TIER3-PLAN T9b).
+// for a nil attach): a build whose recorder fexit programs are not attached.
 func loadTraceProcAttaching(t *testing.T, maps string, r bpf.Reader, attach func(prog string) bool) *ebpf.Collection {
 	t.Helper()
 	spec, err := bpf.LoadReader(bpf.ObjectTraceProc, r)

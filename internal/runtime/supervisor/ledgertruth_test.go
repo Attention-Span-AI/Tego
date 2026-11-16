@@ -22,8 +22,6 @@ import (
 // says refused under the entry there (ADR 0017's fs/read-through-undeclared-symlink-to-deny-read and
 // link/write-open-outside-through-undeclared-symlink cells). A walk that fails as the task's own lookup fails
 // keeps the spelling's verdict; one that cannot say where the path lands records observed, never allow.
-//
-// Spec: docs/p0/supervisor.md R15b.
 func TestFSVerdictIsTakenWhereThePathLands(t *testing.T) {
 	fs := []agent.FSRule{
 		{Path: "/work/out", Kind: agent.FSWrite, Raw: "./out/"},
@@ -76,8 +74,6 @@ func TestFSVerdictIsTakenWhereThePathLands(t *testing.T) {
 // (the right to make the entry there, and REFER across directories) and refuses a move that gives the file a
 // right its source did not grant, so a rename out of a write entry, whose source alone is allowed, is
 // refused, named where it was refused (ADR 0017's fs/rename-out-of-write-entry).
-//
-// Spec: docs/p0/supervisor.md R17.
 func TestRenameAndLinkAreDecidedAtBothEnds(t *testing.T) {
 	const pathAddr, path2Addr = 0x10000, 0x11000
 	fs := []agent.FSRule{
@@ -127,8 +123,6 @@ func TestRenameAndLinkAreDecidedAtBothEnds(t *testing.T) {
 // under RENAME_EXCHANGE, and the file rights only for an object that is no directory. The atomic replace of an
 // exec.allow file entry inside a write entry was recorded refused while Landlock allowed it, and
 // so was a file moved where only a directory right is gained (F2).
-//
-// Spec: docs/p0/supervisor.md R17.
 func TestLinkLineIsWhatLandlockAnswers(t *testing.T) {
 	const pathAddr, path2Addr = 0x10000, 0x11000
 	fs := []agent.FSRule{
@@ -212,8 +206,6 @@ func TestLinkLineIsWhatLandlockAnswers(t *testing.T) {
 // destination's landing was looked up by its cleaned spelling among the notification's walks, which found the
 // source's (out/x), so the no-gain rule compared a directory with itself and the line said allow (a ledger lie at
 // tier landlock). Real walks of a real tree, as a run makes them.
-//
-// Spec: docs/p0/supervisor.md R17.
 func TestMoveEndsAreLandedByTheirOwnWalk(t *testing.T) {
 	const pathAddr, path2Addr = 0x10000, 0x11000
 	w, err := filepath.EvalSymlinks(t.TempDir())
@@ -277,8 +269,6 @@ func TestMoveEndsAreLandedByTheirOwnWalk(t *testing.T) {
 // a create and an unlink inside it are granted by ./out/, and the line names ./out/; it named ./out/wp/wl/, matched by
 // its declared spelling, though that entry grants nothing there. While the
 // link is in place a write beneath it lands in out/xd and is the linked entry's.
-//
-// Spec: docs/p0/supervisor.md R15b.
 func TestLineInAReplacedWriteLinkNamesTheGrantingEntry(t *testing.T) {
 	const pathAddr = 0x10000
 	w, err := filepath.EvalSymlinks(t.TempDir())
@@ -329,7 +319,7 @@ func TestLineInAReplacedWriteLinkNamesTheGrantingEntry(t *testing.T) {
 }
 
 // heldExecTable is a write entry with an exec.allow directory and file inside it, images restricted, at tier landlock:
-// the shape whose Landlock grants are bound to the inodes the builder held (enforce-landlock R5).
+// the shape whose Landlock grants are bound to the inodes the builder held.
 func heldExecTable() *Policy {
 	pol := testPolicy(nil, []agent.FSRule{{Path: "/work/out", Kind: agent.FSWrite, Raw: "./out/", Access: agent.AccessWriteSet}}, nil)
 	pol.Rules.Exec = []agent.ExecRule{
@@ -360,8 +350,6 @@ func movedExecDir(f *fakeKernel) {
 // the new out/bin, or linked there, gains nothing and is allowed. The line followed the declared names and said allow
 // for the first two and refused for the last two (a ledger lie). The no-gain rule now asks the
 // identity of each end's directories (decide.ExecGrants); the syscall is still Landlock's to answer.
-//
-// Spec: docs/p0/supervisor.md R17.
 func TestReferLineFollowsTheHeldInode(t *testing.T) {
 	const pathAddr, path2Addr = 0x10000, 0x11000
 	for _, tc := range []struct {
@@ -405,8 +393,6 @@ func TestReferLineFollowsTheHeldInode(t *testing.T) {
 // only while that name still holds the inode the Landlock builder granted EXECUTE to. After `mv out/bin out/old;
 // mkdir out/bin` the kernel refuses an exec of out/bin/tool (EACCES), which the line recorded allow under the
 // directory entry; the loop now refuses it itself, never continued, as any exec no entry grants.
-//
-// Spec: docs/p0/supervisor.md R16.
 func TestExecLineFollowsTheHeldDirectory(t *testing.T) {
 	const pathAddr, argvAddr = 0x10000, 0x20000
 	for _, moved := range []bool{false, true} {
@@ -435,8 +421,6 @@ func TestExecLineFollowsTheHeldDirectory(t *testing.T) {
 // open of an image under a deny_read (an exec.allow directory inside one), so the continued exec's line says
 // refused under that deny_read, not allow under the exec entry (ADR 0017's
 // exec/exec-entry-directory-inside-deny-read at tier cgroup). Tier 1 lets it run.
-//
-// Spec: docs/p0/supervisor.md R16b.
 func TestTier2ExecUnderAListenerDenyReadIsRefused(t *testing.T) {
 	const pathAddr, argvAddr = 0x10000, 0x20000
 	for _, tc := range []struct {
@@ -481,8 +465,6 @@ func TestTier2ExecUnderAListenerDenyReadIsRefused(t *testing.T) {
 // there — is recorded by the listener, the mechanism that refused it, so this loop writes no line of its own
 // and the open has one (ADR 0017's fs/read-deny-read-nested-in-write at tier cgroup held three). A refusal
 // Landlock makes first never reaches the listener and keeps this loop's line, and at tier 1 every open keeps it.
-//
-// Spec: docs/p0/supervisor.md R7a.
 func TestTier2ListenerRefusalIsTheListenersLine(t *testing.T) {
 	fs := []agent.FSRule{
 		{Path: "/work/out", Kind: agent.FSWrite, Raw: "./out/", Access: agent.AccessWriteSet | agent.AccessReadSet},

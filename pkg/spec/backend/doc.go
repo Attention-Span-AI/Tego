@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package backend holds the enforcement-backend vocabulary of Tego (spec/backend/CAPABILITIES.md,
-// docs/p0/identity-config.md §2.3, §5): the closed Tier enum with its rank comparisons and parser, capture names,
+// Package backend holds the enforcement-backend vocabulary of Tego (spec/backend/CAPABILITIES.md):
+// the closed Tier enum with its rank comparisons and parser, capture names,
 // the Capability rows of the capability matrix, Set (the
 // capabilities one run had) with its deterministic Report, the static matrix mirrored
 // cell-for-cell from CAPABILITIES.md, and Select — the pure ceiling/pin/probe algorithm that

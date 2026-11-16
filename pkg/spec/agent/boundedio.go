@@ -527,7 +527,7 @@ func placePath(p string) (string, bool) {
 	return ResolveUnixPlace(p, ReadPlaceLink)
 }
 
-// targetWalk is the kernel's walk of a path tego loads or keeps (agent-contract R10, ADR 0059 (1)): where it lands and
+// targetWalk is the kernel's walk of a path tego loads or keeps (ADR 0059 (1)): where it lands and
 // every name it reads on the way.
 type targetWalk struct {
 	place  string   // where the walk lands, a name not there yet taken as a directory the run could make (realpath -m)
@@ -674,7 +674,7 @@ const unixPlaceLinks = 40
 // time per connect before).
 const unixPlaceNames = 1024
 
-// ResolveUnixPlace is the place a unix socket path p names (SEMANTICS §5, supervisor R11c): where the kernel's lookup
+// ResolveUnixPlace is the place a unix socket path p names (SEMANTICS §5): where the kernel's lookup
 // of p lands once the directories and the socket below its deepest existing ancestor are made, as realpath -m
 // resolves a path. The path is walked as the kernel walks it, one name at a time from the root, never cleaned
 // lexically first: a name that is a symlink (readlink reads it, whether or not its target exists yet) is followed to

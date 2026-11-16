@@ -16,7 +16,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestStaleSharedLinkOverARecreatedBuildIsNotAdopted is R14 as amended 2026-10-05 (v73 review, plane-2) against the
+// TestStaleSharedLinkOverARecreatedBuildIsNotAdopted is R14 against the
 // running kernel, as root: the tracing-link twin of TestPlaneStaleLinkOverARecreatedBuildIsNotAdopted. A build whose
 // map and program pins went while its link pins stayed (a sweep killed between the two, when maps went first) is
 // re-created by the next launcher, which must not adopt those links: their programs read the dead run set and record

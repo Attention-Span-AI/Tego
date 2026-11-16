@@ -28,7 +28,7 @@ import (
 // "<cgroup path>|<cgroup id>|<state dir>|<allowed port>".
 const netLinksHelperEnv = "TEGO_NET_LINKS_HELPER"
 
-// TestNetLinksOutliveTheLauncher is enforce-cgroup-observe.md E38 (§6) as ADR 0020 (1) closed it: the run's cgroup
+// TestNetLinksOutliveTheLauncher is ADR 0020 (1): the run's cgroup
 // links are pinned, so a launcher killed outright leaves the network programs on the run's cgroup. A launcher
 // process prepares and attaches a tier-2 run whose only net rule allows one loopback port; a process in the run's
 // cgroup is refused (EPERM) a connect to another port while the launcher lives, and still after it is SIGKILLed.

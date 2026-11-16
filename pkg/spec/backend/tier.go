@@ -82,7 +82,7 @@ func ParseTier(s string) (Tier, error) {
 
 // Capture is a model-traffic capture mode. Closed and ordered: off < forwarder < uprobe; uprobe
 // means uprobes plus the forwarder when it is a ceiling or auto resolved to it, and uprobes alone when
-// a contract pins capture: uprobe (spec/config/v0, capture-derive.md §4); forwarder means the
+// a contract pins capture: uprobe (spec/config/v0); forwarder means the
 // forwarder only.
 type Capture string
 

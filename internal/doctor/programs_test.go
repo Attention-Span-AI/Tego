@@ -24,7 +24,7 @@ import (
 // LSM entry names both a symbol and the BTF type that proves it exists, a cgroup entry names no
 // symbol, and every tier-2 entry names the embedded program that runs there in production, which is
 // what D7 loads whenever the binary carries it (R27 D7). Tier 3's rows are no longer in the table: they are
-// the plane's, one per decide.bpf.c hook per mode (TestPlaneParamsMatchTheSource, enforce-plane.md R21).
+// the plane's, one per decide.bpf.c hook per mode (TestPlaneParamsMatchTheSource).
 func TestHookTableIsWellFormed(t *testing.T) {
 	seen := map[string]bool{}
 	var tier2, tier3 int
@@ -69,7 +69,7 @@ func TestHookTableIsWellFormed(t *testing.T) {
 	}
 }
 
-// TestHookTableCoversEveryTierTwoProgram: D7 is "every tier-2 program load test" (P0-DESIGN §2.13),
+// TestHookTableCoversEveryTierTwoProgram: D7 is "every tier-2 program load test",
 // so every program the three tier-2 objects carry has exactly one hook row, in the object that
 // carries it. A program with no row is one a run loads and doctor never asked the verifier about;
 // cgroup_rmdir and the two bind placeholders were such programs.
@@ -234,8 +234,7 @@ func TestHookBTFNamesResolveHere(t *testing.T) {
 	}
 }
 
-// TestProbeProgramsWithoutRoot is E18's wording rule for D7.
-// (limits-check-doctor-cli.md E18: doctor without root skips the functional half and says so.)
+// TestProbeProgramsWithoutRoot: D7 without root skips the functional half and says so.
 func TestProbeProgramsWithoutRoot(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("this test describes the unprivileged answer")
@@ -433,7 +432,7 @@ func TestMinimalProgramReturnsTheNeutralValue(t *testing.T) {
 // TestCaptureHookTableCoversUprobeSSL: every program of uprobe_ssl has exactly one capture row, so a
 // program capture loads is a program D7 has loaded (R27 D7). A row has no tier, which is what keeps
 // it out of every tier's missing list (derive.go keeps a tier's own rows only), and the entry rows
-// try the symbols capture itself hooks, in capture's order (capture-derive.md R1-R3).
+// try the symbols capture itself hooks, in capture's order.
 func TestCaptureHookTableCoversUprobeSSL(t *testing.T) {
 	got := map[string]int{}
 	for _, h := range captureHooks {

@@ -14,7 +14,7 @@ import (
 )
 
 // TestGateSumsReadAndWriteKindsOfOneEnd: the scores of every rule an action matches sum
-// (ADR 0007, 2026-10-20), but an action the gate scores by both fs kinds (a read-write open, a rename's or hard link's
+// (ADR 0007), but an action the gate scores by both fs kinds (a read-write open, a rename's or hard link's
 // source) kept the stronger of the two kinds' scores, the highest-rule reading the package rejected. Under
 // `fs.read matches "*.env": 45` and `fs.write outside worktree: 45` with {allow: 50, ask: 80}, an O_RDWR open of
 // /out/prod.env and its rename away were continued at 45; summed they score 90 and are refused. A move is one action

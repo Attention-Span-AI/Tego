@@ -166,7 +166,7 @@ type launched struct {
 	name    string
 	record  agent.RecordMode
 	tier    backend.Tier
-	// source is the run_start contract_source the run was handed (agent-contract.md R26).
+	// source is the run_start contract_source the run was handed.
 	source *record.ContractSource
 }
 

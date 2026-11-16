@@ -20,7 +20,7 @@ import (
 // reasonReadsScene is one run through the real binary at tier landlock under record: summary: an agent (/bin/sh,
 // harness auto, so generic) whose HOME is a fake home, the project, cats a key planted in that home's .ssh, which the
 // contract's deny_read covers and the Landlock ruleset refuses, cats an allowed file, and copies its reason file. tego
-// reads the built-in list's home from the passwd database, never HOME (identity-config R21), so the fake home's .ssh
+// reads the built-in list's home from the passwd database, never HOME, so the fake home's.ssh
 // is declared: the same row the built-in ~/.ssh entry is for a real home. fsExtra is added to the fs: section and
 // extra to the contract's top level. It returns the scene, the run's ledger and the key's path.
 func reasonReadsScene(t *testing.T, fsExtra, extra string) (*askReadScene, []*record.Event, string) {

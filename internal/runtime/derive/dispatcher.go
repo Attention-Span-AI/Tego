@@ -43,7 +43,7 @@ type Result struct {
 
 // NewDispatcher registers the parsers, first registration winning a contested provider or host. Two
 // declared models sharing one upstream host therefore resolve to whichever parser registered first, the
-// stated P0 limit of edge case #33.
+// stated limit.
 func NewDispatcher(parsers []Parser, opts ...Option) *Dispatcher {
 	d := &Dispatcher{
 		byProvider: make(map[string]Parser, len(parsers)),

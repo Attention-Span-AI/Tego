@@ -247,7 +247,7 @@ func holdFlush(w *Writer) {
 
 // TestPostNeverDecodesOnAppendsPath: a target is a string the agent chose, and a path within PATH_MAX made of control
 // bytes is a 24 KiB payload (each byte escaped as six). post() copies a payload into the ring and never decodes it:
-// decoding that payload cost more than the whole Append had (2026-10-24). In the steady state a refusal
+// decoding that payload cost more than the whole Append had. In the steady state a refusal
 // that fits a slot allocates nothing, and a longer one only its copy.
 func TestPostNeverDecodesOnAppendsPath(t *testing.T) {
 	w, _, _ := openTestWriter(t)
@@ -395,7 +395,7 @@ func TestReasonFileStaysContiguousWhenLongRefusalsOutrunItsWrites(t *testing.T) 
 // TestAResumedWriterCountsTheRefusalsTheLedgerHolds: refusals is the refused lines the run's ledger has written, not
 // those of the Writer that wrote last. A Writer that resumes a run after a crash counts the refused lines already in
 // events.jsonl, so the count still only grows and a reader whose cursor is the count it read before the crash learns
-// of the next refusal (2026-10-24: the count restarted at 0, and Since hid it).
+// of the next refusal (the count restarted at 0, and Since hid it).
 func TestAResumedWriterCountsTheRefusalsTheLedgerHolds(t *testing.T) {
 	w, dir, anchor := openTestWriter(t)
 	startRun(t, w, 0)
@@ -487,7 +487,7 @@ func TestAbandonWritesThePendingRefusalAndNothingAfter(t *testing.T) {
 // TestAReasonFileCutStatesTheFieldsRealLength: a cut field says how long the field was (ADR 0061 (6)), and so does
 // the sentence that quotes it. The writer keeps each refusal's fields cut to reason.MaxFieldBytes once it decoded
 // them, and a second cut (the single refusal's tight form, the sentence's MaxShownBytes) stated the length of that
-// cut copy, 4096 bytes, not the field's (2026-10-24). The file is the bytes Encode makes of the uncut
+// cut copy, 4096 bytes, not the field's. The file is the bytes Encode makes of the uncut
 // refusal.
 func TestAReasonFileCutStatesTheFieldsRealLength(t *testing.T) {
 	huge := "/t/" + strings.Repeat("\x01", 100000) // 100003 bytes, each escaped as six in JSON
@@ -550,7 +550,7 @@ func TestAReasonFileCutStatesTheFieldsRealLength(t *testing.T) {
 // TEGO_REASON) is written first, under its own lock, so a refusal reaches it while a write of the run directory's
 // copy, which no process of the run reads, is still held up (a rename on a slow disk). Both copies were written under
 // one lock, the run directory's first, so a slow write there could hold the mirror back. On CI a refused line's
-// mirror entry was still missing 71 ms after the line, and the hook told the refusal one request late (2026-11-11);
+// mirror entry was still missing 71 ms after the line, and the hook told the refusal one request late;
 // what held it back there was not measured: a slow rename under that lock and the timer's delay both fit, and only
 // the first is removed here. Here the run directory's lock is held, as a slow rename would hold it, across three
 // refusals a window apart; the mirror must list each, and the run directory's copy must catch up, never older than

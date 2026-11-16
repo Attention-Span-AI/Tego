@@ -10,7 +10,7 @@
 // inside it (ADR 0003): every expectation is written in the tables, from SEMANTICS and the specs, never computed
 // from Evaluate, the Landlock plan or the decision core.
 //
-// The mode axis (ADR 0017, TIER3-PLAN §5, §9) is the second half of a Want's Key. Tier landlock has no plane mode.
+// The mode axis (ADR 0017) is the second half of a Want's Key. Tier landlock has no plane mode.
 // A table's three columns are Key{landlock, ""}, Key{cgroup, fanotify} and the plane column Key{bpflsm, lsm}, which
 // tier cgroup's plane modes answer as well (planeAxis).
 package conformance
@@ -128,7 +128,7 @@ const (
 	OpExecveatFD = "execveat-fd"
 	// OpExecProcFD execs Path by /proc/self/fd/N of an O_PATH descriptor.
 	OpExecProcFD = "exec-proc-fd"
-	// OpMemfdCreate creates a memfd the kernel would exec (no MFD_NOEXEC_SEAL; enforce-landlock R11a).
+	// OpMemfdCreate creates a memfd the kernel would exec (no MFD_NOEXEC_SEAL).
 	OpMemfdCreate = "memfd-create"
 	// OpMemfdExec writes the actor into a memfd and execs it by /proc/self/fd/N: an anonymous image.
 	OpMemfdExec = "memfd-exec"
@@ -174,7 +174,7 @@ const (
 	// are Path's exec lines whose copied argv read the word: none may say allow.
 	OpRaceArgvExec = "race-argv-exec"
 
-	// The process and control ops (FEATURES E54, enforce-plane §2.20): the agent's own ptrace, keyring
+	// The process and control ops (FEATURES E54): the agent's own ptrace, keyring
 	// and bpf(2) calls (cmd/actor/control.go). Each reports, as its result's value, the pid its hook names.
 
 	// OpPtraceAttach attaches to Target with PTRACE_ATTACH, waits for the stop and detaches.
@@ -375,7 +375,7 @@ type Model struct {
 	// NetDeclared is true when the contract has a net: section; NetAllow its declared host:port entries.
 	NetDeclared bool
 	NetAllow    []string
-	// NetRuntime lists destinations the runtime admits on its own authority (the resolver, supervisor.md R14).
+	// NetRuntime lists destinations the runtime admits on its own authority (the resolver).
 	NetRuntime []string
 	// HostSockets is the contract's host_sockets: true (ADR 0070): without it and without a net: section, a unix
 	// socket the run did not bind is unreachable.
@@ -388,7 +388,7 @@ type Model struct {
 	// best-effort cell as fs.deny_write, apart from the built-in set's deny_write/default.
 	DenyWriteDeclared []string `json:",omitempty"`
 	// FSAssuranceKernel is a contract with fs.assurance: kernel, which a tier no decision plane decides refuses
-	// before the actor starts when DenyWrite is not empty (ADR 0041 D1 (a), enforce-landlock R5a).
+	// before the actor starts when DenyWrite is not empty (ADR 0041 D1 (a)).
 	FSAssuranceKernel bool
 	// PlaneCannotHold is a fixture whose mount table the decision plane cannot hold (enforce/cgroup
 	// ErrPlaneDetachedPart: a part of a deny_read tree bound outside it): tier cgroup falls back to the listener,
@@ -454,7 +454,7 @@ func (c *Cell) Tiers() []Tier {
 
 // TruncateABI is the Landlock ABI from which truncation is Landlock's to decide (LANDLOCK_ACCESS_FS_TRUNCATE, Linux
 // 6.2). Below it tier 1's filter refuses every truncate(2) with EPERM before any rule, the supervisor or a plane
-// hook sees it, and writes no ledger line (docs/p0/enforce-landlock.md R2's ABI-3 row, E31; REASON-CHANNEL.md):
+// hook sees it, and writes no ledger line (REASON-CHANNEL.md):
 // deliberately coarser than the contract, a truncate inside a write entry included.
 const TruncateABI = 3
 

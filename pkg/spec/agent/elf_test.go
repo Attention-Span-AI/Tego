@@ -58,7 +58,7 @@ func elf32(interp string) []byte {
 	return append(append(append(hdr, ph...), interp...), 0)
 }
 
-// agent-contract.md E16 (static64: no PT_INTERP is "" and no error) against E14 (truncated: malformed) and E34 (big-endian, bad class: malformed).
+// static64: no PT_INTERP is "" and no error, against truncated (malformed) and big-endian or bad class (malformed).
 func TestReadInterp(t *testing.T) {
 	be := elf64("/lib64/ld.so", 1)
 	be[5] = 2

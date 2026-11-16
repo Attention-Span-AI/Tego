@@ -16,7 +16,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// Bounds on every read of a target (R3). They are P0 engineering defaults rather than figures a normative
+// Bounds on every read of a target (R3). They are engineering defaults rather than figures a normative
 // document sources, and they are the only thing standing between a hostile argument and this process's
 // memory, so nothing here grows a buffer on a target-supplied length.
 const (
@@ -41,7 +41,7 @@ const (
 	// to it. A batch is read this far, one header array and then one address per addressed message until an
 	// undecidable one refuses it, because every message the kernel sends needs an address this tier can
 	// decide before the batch may be continued, and one the policy does not admit needs the batch to leave a
-	// line (R13b). It is the kernel's figure, not a P0 default.
+	// line (R13b). It is the kernel's figure, not a default of ours.
 	mmsgKernelMax = 1024
 	// msgControlMax bounds the read of one message's control buffer for R13b's source-route check (refusesRoute):
 	// one page, the reader's scan buffer it is read into. The kernel copies the whole of msg_controllen, up to
@@ -97,12 +97,12 @@ const (
 	ruleExecAnon = "exec-anon"
 	// ruleCodexHomeExec marks an exec, in a deny-list run (ADR 0048 (1)), whose image, or whose directly-invoked
 	// loader's program, lies in the run's own CODEX_HOME, the write grant the run made on its own authority
-	// (agent.CodexHomeGrant, agent-contract.md R10a). A deny-list leaves images unrestricted, so the grant would be a
+	// (agent.CodexHomeGrant). A deny-list leaves images unrestricted, so the grant would be a
 	// directory the agent can write to and run from, and a copy of a denied program under another name is not that
 	// program to the command rules. The reason is exec-not-allowed.
 	ruleCodexHomeExec = "codex-home-exec"
 	// ruleHookStateExec is ruleCodexHomeExec for the run's hook-state directory (agent.HarnessStateGrant,
-	// agent-contract.md R27, ADR 0062), the other write grant the run makes on its own authority: the agent's harness
+	// ADR 0062), the other write grant the run makes on its own authority: the agent's harness
 	// hook keeps its state there, and a copy of a denied program written there is not to run. The reason is
 	// exec-not-allowed.
 	ruleHookStateExec = "harness-state-exec"
@@ -122,7 +122,7 @@ const (
 	// net gate admitted or one admitted under a net: section, refused because the socket carries a source route
 	// (IP_OPTIONS LSRR or SSRR, IPV6_RTHDR), or its options could not be read: its first hop is not the address
 	// the gate scored or the contract admitted (ADR 0041 D6, GAPS C34). Under a net gate or a net: section the
-	// filter refuses the setsockopt that would add a route (enforce-landlock R11b), so the sockets that meet this
+	// filter refuses the setsockopt that would add a route, so the sockets that meet this
 	// rule carried their route before the filter applied. It also marks a sendmsg or sendmmsg refused under a
 	// net: section because a control message routes its datagram (refusesRoute, R13b).
 	ruleSourceRouted = "relay-source-routed"

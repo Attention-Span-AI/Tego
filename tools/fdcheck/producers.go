@@ -20,7 +20,7 @@ import (
 
 // The producer list (ADR 0023 A10 F1) is generated from the sources of golang.org/x/sys/unix, at the version
 // go.mod requires, and of the toolchain's syscall: every exported function, in a file that builds for one of
-// producerBuilds (linux, and darwin for the maze setup tool's macOS files, on amd64 and arm64), whose results
+// producerBuilds (linux and darwin, on amd64 and arm64), whose results
 // include an int named fd or nfd. A result int named anything else that ends in
 // fd (efd, pidfd, ...) cannot be classified by that rule and is listed in unclassified below by hand, as a
 // producer or not; generation fails on one that is not, so a new x/sys function is never silently left out.
@@ -69,8 +69,8 @@ func producerSources(root string) (unixDir, syscallDir string, err error) {
 	return filepath.Join(mod, "unix"), filepath.Join(goroot, "src", "syscall"), nil
 }
 
-// producerBuilds are the systems and architectures the list is generated for: those the project ships for,
-// linux and (the maze setup tool) darwin, on amd64 and arm64. One list serves every build: a name only macOS
+// producerBuilds are the systems and architectures the list is generated for: linux and darwin, on amd64 and
+// arm64. One list serves every build: a name only macOS
 // declares is never called in a Linux file, which would not compile.
 var producerBuilds = [][2]string{{"linux", "amd64"}, {"linux", "arm64"}, {"darwin", "amd64"}, {"darwin", "arm64"}}
 

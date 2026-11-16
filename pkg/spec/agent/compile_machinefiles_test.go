@@ -14,7 +14,7 @@ import (
 )
 
 // TestMovedPriceTableAndProfilesAreTegosOwn: the price table and the profiles directory are tego's own files
-// wherever the machine config puts them (limits-check-doctor-cli.md §3), not only under ~/.tego, which R6a
+// wherever the machine config puts them, not only under ~/.tego, which R6a
 // read-denies and R10 keeps every write entry off. Moved out, an agent could read them, and with a write entry
 // over them price every model at $0 or widen every contract that extends a profile, for the runs after it.
 func TestMovedPriceTableAndProfilesAreTegosOwn(t *testing.T) {
@@ -53,7 +53,7 @@ func TestMovedPriceTableAndProfilesAreTegosOwn(t *testing.T) {
 }
 
 // TestTheUserRegistryIsTegosOwnToWrite: the user registry's agents/ and skills/ are what other runs resolve an agent's
-// name to (agent-contract.md R26), so a write entry over either, or inside either, is R10's contradiction, as for the
+// name to, so a write entry over either, or inside either, is R10's contradiction, as for the
 // profiles: with fs.write over ~/.config the agent could rewrite every user-registry contract, and the next
 // `tego run <name>` would run what it wrote. An entry beside them in the registry directory, which holds neither, is
 // not.

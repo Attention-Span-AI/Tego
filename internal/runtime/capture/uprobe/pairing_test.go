@@ -23,7 +23,7 @@ func taggedResponse(i int) string {
 		"\r\nContent-Length: 22\r\n\r\n{\"id\":\"msg_01\",\"x\":1}\n"
 }
 
-// checkPairs is capture-derive.md I3 over one sink: every ssl_response carries the pair token of an ssl_request
+// checkPairs checks one sink: every ssl_response carries the pair token of an ssl_request
 // emitted before it, and, for tagged exchanges, the request it pairs with is the one it answers. It returns
 // the number of ssl_request and ssl_response events.
 func checkPairs(t *testing.T, sink *fakeSink) (reqs, resps int) {

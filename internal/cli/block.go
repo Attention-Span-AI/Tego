@@ -568,7 +568,7 @@ func startFacts(dir string) livestatus.Facts {
 // carries. Only lines naming a live block are decoded past the first. A ledger that cannot be read gives no facts and
 // nothing confirmed, which every view reads as "waiting"; the facts say StartUnreadable unless that is only because
 // no first line is there yet (no events file, an empty one, or a first line still being written), which is a run
-// still starting (livestatus.Facts.StartUnreadable, the review's S1).
+// still starting (livestatus.Facts.StartUnreadable).
 func liveFacts(dir string, confirmed bool) (livestatus.Facts, uint64) {
 	rd, err := ledger.OpenReader(dir)
 	if errors.Is(err, os.ErrNotExist) {

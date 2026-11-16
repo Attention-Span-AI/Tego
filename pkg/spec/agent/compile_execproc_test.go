@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestCompileRefusesProcExecEntries is R8a, the Codex POC's F3: exec.allow /proc/self/exe compiled without a word
+// TestCompileRefusesProcExecEntries: exec.allow /proc/self/exe compiled without a word
 // and resolved, in compile's process, to tego's own executable, so a contract whose only entry was it let the agent
 // start `tego version`. An exec entry that is, or leads through, a /proc path is an exec-proc error, whatever
 // spelling reaches it: the path itself, a link to it (/dev/stdin is one), or a PATH directory that is one.

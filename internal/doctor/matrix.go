@@ -16,7 +16,7 @@ const (
 	// abiTCPPorts is ABI 4: without it tier 1 grants no network rule at all and the whole
 	// host:port decision falls to the supervisor (AL2023's 6.1 with ABI 2 is the stated case).
 	abiTCPPorts = 4
-	// abiScopes is ABI 6: the abstract-socket scope (enforce-landlock R7), which refuses an abstract
+	// abiScopes is ABI 6: the abstract-socket scope, which refuses an abstract
 	// unix name bound outside the run whatever the contract says.
 	abiScopes = 6
 	// abiPathnameUnix is ABI 9: LANDLOCK_ACCESS_NET_RESOLVE_UNIX, a resolved unix socket path.
@@ -77,7 +77,7 @@ func (st probeState) machineMatrix(tier backend.Tier) (backend.Set, map[backend.
 	case backend.TierCgroup:
 		if !st.networkHookOK("cgroup/connect_unix") || !st.networkHookOK("cgroup/sendmsg_unix") {
 			if mode := st.unixAdmissionPlane(tier); mode != "" {
-				// enforce-plane §2.11: below 6.7 the plane's socket_connect and socket_sendmsg hooks decide unix names.
+				// Below 6.7 the plane's socket_connect and socket_sendmsg hooks decide unix names.
 				notes[backend.CapUnixSockets] = "cgroup/connect_unix and cgroup/sendmsg_unix are unavailable here " +
 					"(6.7+); the decision plane's socket_connect and socket_sendmsg hooks in " + mode + " mode decide " +
 					"unix names in the kernel instead, and a refusal reaches the agent as EACCES"
@@ -88,8 +88,8 @@ func (st probeState) machineMatrix(tier backend.Tier) (backend.Set, map[backend.
 			}
 		}
 		// Which errno a refusal carries is this machine's answer, not the static column's: where the plane
-		// probe selected a mode, the plane decides files and exec and a run makes no fanotify group
-		// (enforce-plane R2, R22), so its refusals read EACCES; else D8 measures whether the kernel takes an
+		// probe selected a mode, the plane decides files and exec and a run makes no fanotify group,
+		// so its refusals read EACCES; else D8 measures whether the kernel takes an
 		// errno from the listener's group (none so far does).
 		// The built-in deny_write targets are refused race-free only by a plane mode (ADR 0041 D7): the static
 		// column is conditional, and this machine's probe answers it.
@@ -135,7 +135,7 @@ func (st probeState) machineMatrix(tier backend.Tier) (backend.Set, map[backend.
 	case backend.TierObserve, backend.TierAuto:
 	}
 	// The abstract-scope row is ABI-gated in every column, so the static matrix never claims it and a run
-	// records it from its own ruleset (agent-contract R19). What this kernel's ABI gives a run of any tier
+	// records it from its own ruleset. What this kernel's ABI gives a run of any tier
 	// that applies a Landlock ruleset is said here, so the exposure below ABI 6 is visible before any run.
 	if tier == backend.TierLandlock || tier == backend.TierCgroup || tier == backend.TierBPFLSM {
 		if abi := st.landlockABI; abi >= abiScopes {
@@ -151,8 +151,8 @@ func (st probeState) machineMatrix(tier backend.Tier) (backend.Set, map[backend.
 	// Tiers 2 and 3 capture with uprobes and the forwarder (CAPABILITIES.md); D7's capture rows say
 	// whether the uprobe half works here. The row stays on, because under capture: auto the forwarder half
 	// still captures. A contract that pins capture: uprobe runs no forwarder at these tiers, so on a machine
-	// whose uprobes fail its run captures nothing and records gap why=mechanism-unavailable binary=uprobe
-	// (capture-derive.md §4); the note says so, since the row is the machine's and not the contract's.
+	// whose uprobes fail its run captures nothing and records gap why=mechanism-unavailable binary=uprobe;
+	// the note says so, since the row is the machine's and not the contract's.
 	if tier == backend.TierCgroup || tier == backend.TierBPFLSM {
 		tcp := st.networkHookOK("cgroup/connect4") && st.networkHookOK("cgroup/connect6")
 		if !tcp {
@@ -247,7 +247,7 @@ func (st probeState) planeMode() string {
 // captureNote is capture.model_traffic's note from D7's capture rows (R27 D7), "" when they all
 // loaded and attached or were never run. Capture loads uprobe_ssl as one collection, so one program
 // the verifier refuses leaves it no uprobes at all, and a binary whose probes do not all attach stays
-// uncaptured (capture-derive.md's attach-failure row); either way the forwarder is what is left, and a
+// uncaptured; either way the forwarder is what is left, and a
 // contract that pins capture: uprobe runs none.
 func (st probeState) captureNote() string {
 	var failed []string

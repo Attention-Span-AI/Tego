@@ -47,7 +47,7 @@ attempt("three", "./mc/three")
 attempt("one-elsewhere", "./other/one")
 `
 
-// TestPlaneRunMulticallLinks is enforce-plane §6 E15 (ADR 0025's 2026-09-30 note) in a real run: a multi-call binary
+// TestPlaneRunMulticallLinks is enforce-plane §6 E15 (ADR 0025) in a real run: a multi-call binary
 // (one inode, hard-linked under several names, as uutils and busybox install) whose two link names exec.allow lists
 // runs under both, while a third link name in the same directory and a link under a listed name in another
 // directory are refused; the ledger names each link exec'd, each allowed one under its own entry. It runs in every

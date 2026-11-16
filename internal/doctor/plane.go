@@ -21,7 +21,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
-// The decision plane's mode probe (ADR 0024 (2), (3), (9); docs/p0/enforce-plane.md R18, R19, R21; TIER3-PLAN T8).
+// The decision plane's mode probe (ADR 0024 (2), (3), (9)).
 // This file is its pure half: the preconditions read from the kernel's BTF, lockdown and build config, the choice
 // of object build, the per-hook prototype check, the mode selection and the words doctor prints. planeprobe.go is
 // the half that loads, attaches and runs the probe syscalls.
@@ -233,7 +233,7 @@ var planeParams = map[string][]string{
 
 // planeParamsFmodRet is a hook's parameters in fmod_ret mode where its security_ function takes fewer than its LSM
 // hook: security_mmap_file(file, prot, flags) against bpf_lsm_mmap_file(file, reqprot, prot, flags). The program's
-// fourth parameter is then security_mmap_file's return slot, which the body never reads (enforce-plane §2.14).
+// fourth parameter is then security_mmap_file's return slot, which the body never reads.
 var planeParamsFmodRet = map[string][]string{
 	"mmap_file": {"file", "__u64", "__u64"},
 }
@@ -764,7 +764,7 @@ var ErrPlaneUnavailable = errors.New("doctor: plane mode unavailable")
 // Unwrap makes errors.Is(err, ErrPlaneUnavailable) hold.
 func (e *PlaneUnavailableError) Unwrap() error { return ErrPlaneUnavailable }
 
-// PlaneFor is the seam a tier's backend reads its plane mode from (TIER3-PLAN T6, T7; R19): tier bpflsm gets LSM
+// PlaneFor is the seam a tier's backend reads its plane mode from (R19): tier bpflsm gets LSM
 // mode or a PlaneUnavailableError with the fix that makes LSM mode pass here (the GRUB line when bpf is not an
 // active LSM), never another mode; tier cgroup gets the selected mode, or Mode "" for the fanotify fallback. Any
 // other tier has no plane.

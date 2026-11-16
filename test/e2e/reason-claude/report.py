@@ -197,7 +197,7 @@ def run_checks(entries, args, rep, result=None, bad=()):
 #
 # When a refusal is told. A refused call's line may reach events.jsonl after the agent has seen the refusal (at tier
 # landlock the supervisor answers the call, then the pipeline writes the line; at the root tiers the kernel refuses
-# inside the call and the ring is read after it: docs/p0/supervisor.md R23), and the reason file follows the line by
+# inside the call and the ring is read after it), and the reason file follows the line by
 # its window plus the timer's and the box's delay. A hook tells only what the reason file lists when it runs, so a
 # refusal is told by the first hook that runs once the file lists it: the next request carries it, or, when the file
 # listed it only after that request's hooks ran, the request after it. Either way it is told exactly once, with its

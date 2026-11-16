@@ -348,7 +348,7 @@ Every printed command, including both backup sides and quiet mode, masks
 `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY` assignments as `...`. Execution
 still receives the login. Marker checks are operator safeguards, not protection
 against a concurrent same-user path replacement; see the
-[script spec](../../docs/p0/demo-scripts.md).
+script spec.
 
 **The end of the demo:**
 ```sh

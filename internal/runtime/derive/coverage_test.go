@@ -35,7 +35,7 @@ func TestClassify(t *testing.T) {
 			want:    derive.GapNoOpenSSL, gap: true,
 		},
 		{
-			// R37 as amended: without E71 a Go binary's own TLS cannot be told from none at all, and its
+			// R37: without E71 a Go binary's own TLS cannot be told from none at all, and its
 			// executable is the candidate R4 read.
 			name:    "a live Go binary whose own executable was read and exports none of the symbols",
 			process: derive.Process{PID: 8, Binary: "/usr/bin/gh", Library: "/usr/bin/gh"},

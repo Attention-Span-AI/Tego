@@ -28,7 +28,7 @@ var (
 
 // FilterFunc builds the classic-BPF program an observe run installs with NEW_LISTENER. full asks for
 // every open to be notified (record: full); otherwise only the write-opens are, as at tier 1. frames asks for the
-// pending-frame arms (enforce-landlock R11d), where the run's contract decides datagrams, as at tier 1.
+// pending-frame arms, where the run's contract decides datagrams, as at tier 1.
 type FilterFunc func(full, frames bool) ([]bpf.RawInstruction, error)
 
 // Options configures the observe backend.
@@ -38,7 +38,7 @@ type Options struct {
 	Filter FilterFunc
 }
 
-// Backend is the record-only mode (P0-DESIGN §2.6): no Landlock ruleset and nothing attached, but the
+// Backend is the record-only mode: no Landlock ruleset and nothing attached, but the
 // tier-1 seccomp filter, so the supervisor sees and records every exec, write and connect the run makes
 // while refusing none of them. It is never selected by enforce.Select; an explicit --observe reaches it
 // through enforce.Observe, which wraps it as an enforce.Backend.
@@ -109,5 +109,5 @@ func (*Handle) Close() error { return nil }
 func (*Handle) Capabilities() backend.Set { return backend.Matrix(backend.TierObserve) }
 
 // Verdict is the verdict every action of the run is recorded with. The runtime reads it to put the
-// supervisor in observe mode (docs/p0/supervisor.md R30), so this handle is what decides it.
+// supervisor in observe mode, so this handle is what decides it.
 func (*Handle) Verdict() record.Verdict { return Verdict }

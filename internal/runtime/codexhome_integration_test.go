@@ -35,7 +35,7 @@ func codexGrant(t *testing.T, start *record.Event) string {
 	return ""
 }
 
-// TestIntegrationARunRoutesCodexOrSaysItCannot is agent-contract.md R10a (2) and (3) through the real runner.run, at
+// TestIntegrationARunRoutesCodexOrSaysItCannot goes through the real runner.run, at
 // both euids, one real tier-1 run with an openai listener read back from its ledger. Unprivileged, the run grants its
 // own CODEX_HOME (run_start.runtime_grants holds fs.codex_home) and writes no codex-unrouted gap. As root (the KVM
 // root suites), the launcher writes no CODEX_HOME, so run_start holds no such grant and the gap what=capture
@@ -79,7 +79,7 @@ func TestIntegrationARunRoutesCodexOrSaysItCannot(t *testing.T) {
 	}
 }
 
-// TestIntegrationADenyListRunRunsNothingFromItsCodexHome is agent-contract.md R10a's deny-list half on a real
+// TestIntegrationADenyListRunRunsNothingFromItsCodexHome is the deny-list half on a real
 // kernel: under exec.deny [id] and no fs.write entry, the agent copies /usr/bin/id into its own CODEX_HOME
 // and runs the copy, directly and through the dynamic loader. Both are refused codex-home-exec, as the real id is
 // refused exec.deny[id]; before, the copy ran and printed the uid. Each copy's own line carries the dropped

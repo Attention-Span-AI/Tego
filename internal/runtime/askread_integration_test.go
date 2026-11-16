@@ -24,7 +24,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// The fs.ask_read and alternate end to end at tier landlock (POC 2026-10-06): the real tego binary runs a real
+// The fs.ask_read and alternate end to end at tier landlock: the real tego binary runs a real
 // contract whose agent, a shell script, reads a secret under fs.ask_read; a person answers from separate tego
 // processes (`tego ask`, `tego alternate|approve|deny [--always]`) over the run's real broker socket, or does not
 // answer at all. Everything is unprivileged: Landlock, the seccomp listener and the run's delegated cgroup.
@@ -116,7 +116,7 @@ record: summary
 	agentOwns(t, s.secret, s.standIn, filepath.Join(s.f.dir, "agent.sh"))
 	// isolatedEnv runs writeMachineConfig, which sets TEGO_TEST_CHAIN_ANCHOR and TEGO_TEST_OWN_LOG_HOME with
 	// t.Setenv, before it reads os.Environ(): an os.Environ() argument written before the call is evaluated before it
-	// and holds neither, which ran the binary against the developer's own ~/.tego/chain.log (2026-10-06).
+	// and holds neither, which ran the binary against the developer's own ~/.tego/chain.log.
 	s.env = isolatedEnv(t, s.f)
 	return s
 }
@@ -197,8 +197,8 @@ func (s *askReadScene) start(t *testing.T) (*exec.Cmd, string) {
 // `tego stop`'s backstop finds it (RunScope), then to tego run, and it waits for the scene's Wait. Killing tego run
 // alone did not end the run: the launcher's PDEATHSIG ends only the agent's first process (launch/child.go), so a
 // process the agent's script started in the background outlived it, as a run whose launcher died runs on until the
-// next `tego run`, `tego stop` or `tego gc` sweep ends it as orphaned (limits-check-doctor-cli.md), and it held tego
-// run's output pipe, so the Wait never returned. On 2026-11-06 TestIntegrationPauseWaitsForAnAnsweredAsk failed on CI
+// next `tego run`, `tego stop` or `tego gc` sweep ends it as orphaned, and it held tego
+// run's output pipe, so the Wait never returned. TestIntegrationPauseWaitsForAnAnsweredAsk once failed on CI
 // and its cleanup then waited 7m21s on the agent's heartbeat, which spun on the syscalls the dead launcher's listener
 // no longer answered, until go test's 10 m deadline killed the package with its test's failure unprinted (run
 // 42184797264).
@@ -289,11 +289,11 @@ func runAgentOf(dir string) string {
 // askSceneStartWait bounds `tego run`'s start up to its run_start line. It is no budget, only the point past which a
 // start that never comes fails; a launcher that exits first fails the subtest at once (the scene's Wait returned). As
 // root, 5 minutes: the first tier-2 or tier-3 run after a KVM guest boots probes and loads the plane cold, as
-// dnsCLIReportWait measures: 21 to 30 s for TestRootAskUnix's first cgroup cell on 2026-10-19 (a loaded host), where
+// dnsCLIReportWait measures: 21 to 30 s for TestRootAskUnix's first cgroup cell on a loaded host, where
 // the 30 s this was expired in three of six runs of the lsm-bpf boot. Unprivileged, 2 minutes: such a run loads no
 // plane, and the 41 scene starts of this package's unprivileged suite took 95 to 216 ms at a load average of 19 to 20
-// (2026-11-02; start's log line says how long each took). The bound must also end before go test's own: CI's build-test
-// runs this package's integration suite unprivileged in about 320 s (d9e6cec, 2026-11-02) of go test's 600 s, so at 5
+// (start's log line says how long each took). The bound must also end before go test's own: CI's build-test
+// runs this package's integration suite unprivileged in about 320 s (d9e6cec) of go test's 600 s, so at 5
 // minutes a start that never came outlived that deadline, and go test killed the binary with no test failed and its
 // FAIL line the only word, as it killed this package's on 40de30f (which test hung there is not known). At 2 minutes
 // the test fails on its own message, with what tego run said, and the package's other tests still report.
@@ -572,7 +572,7 @@ func TestIntegrationAskReadApproveDenyAndTimeout(t *testing.T) {
 	}
 }
 
-// ask.on_timeout: refuse_always (custom-agent POC, item 3): nobody answers the first read, which is refused
+// ask.on_timeout: refuse_always: nobody answers the first read, which is refused
 // ask-timeout once ask.timeout passes, and the agent's two retries of the same read are refused at once, each its own
 // ask and answer pair citing the timed-out ask, reason ask-timeout. Under the default each retry was held again for
 // the whole timeout.

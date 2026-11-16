@@ -30,7 +30,7 @@ func benchLoop(b *testing.B, f *fakeKernel, pol *Policy) *Loop {
 	return l
 }
 
-// BenchmarkNotificationRoundTrip measures the fast path P0-DESIGN §9 budgets at under 10 µs per notified
+// BenchmarkNotificationRoundTrip measures the fast path, budgeted at under 10 µs per notified
 // syscall: dispatch, the bracketed read of the argument, the verdict, the response and the event. The
 // kernel is faked, so what this reports is the share of the budget this package's own work takes; the
 // ioctl round trip itself is measured by BenchmarkSeccompNotifyRoundTrip (integration build tag), over a real

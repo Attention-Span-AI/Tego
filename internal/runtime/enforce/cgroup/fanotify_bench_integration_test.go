@@ -20,8 +20,8 @@ import (
 
 // BenchmarkFanotifyRoundTrip measures what one open(2) costs on a mount this listener has marked, against the
 // same open before the mark: the kernel's permission event, the read, the hand-off to a worker, the readlink
-// and policy decision, and the response the opener waits for. docs/P0-DESIGN.md §9 budgets it at under
-// 30 µs per open, and the acceptance asks for the row. BenchmarkListenerHandle measures only this
+// and policy decision, and the response the opener waits for. Its budget is under
+// 30 µs per open. BenchmarkListenerHandle measures only this
 // package's share over a pipe; this is the whole round trip, so it needs CAP_SYS_ADMIN and skips without it.
 //
 // Every sub-benchmark opens a file in the run's own cgroup (this process's), so the refused case exercises

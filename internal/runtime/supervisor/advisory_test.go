@@ -11,7 +11,7 @@ import (
 )
 
 // At tier 1 an exec.allow directory inside an enforced deny_read keeps its own fd with
-// READ_FILE (enforce-landlock R5, I11 (1)), so a read beneath it happens. The advisory verdict recorded it
+// READ_FILE (I11 (1)), so a read beneath it happens. The advisory verdict recorded it
 // refused. Tier 2's listener does refuse it, and a read beside the exec directory stays refused at tier 1.
 func TestAdvisoryReadUnderExecDirInsideDenyRead(t *testing.T) {
 	fs := []agent.FSRule{{Kind: agent.FSDenyRead, Path: "/s", Raw: "/s"}}

@@ -24,9 +24,9 @@ type listenerBinding struct {
 // A proof is never consumed, since a listening socket may listen again to
 // change its backlog, and nothing says when its socket closes; a cookie is
 // never reused, so a closed socket's proof is simply never matched again.
-// A full cache therefore evicts its oldest proof (amended 2026-10-05,
-// races-1: it dropped the newest, so after maxListenerBindings port-0 binds
-// in one run every later port-0 listen was refused). Only a socket left bound
+// A full cache therefore evicts its oldest proof
+// (dropping the newest would refuse every port-0 listen after maxListenerBindings
+// port-0 binds in one run). Only a socket left bound
 // and unlistened across that many later port-0 binds loses its proof, and a
 // lost proof only narrows admission.
 type listenerBindings struct {

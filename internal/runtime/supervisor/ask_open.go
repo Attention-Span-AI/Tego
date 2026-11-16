@@ -384,7 +384,7 @@ func (l *Loop) askOpen(n *notif, r *reader, q pathQuery, flags int, d fsDecided)
 	return l.completeHeldAskOpen(n, r, q, flags, h, name, gd, rule, record.FSOpen)
 }
 
-// heldNameRefused is ADR 0043's interface 2 (supervisor R15f): a held open's completion opens the file outside any
+// heldNameRefused is ADR 0043's interface 2: a held open's completion opens the file outside any
 // plane, so at the tiers whose mechanisms decide name entries (cgroup and bpflsm, D7) a held file a name entry covers
 // is refused read-denied, named per D8, whatever the access mode (D1 refuses a modification of a covered file, and
 // O_RDWR reads it); a climb that cannot decide is refused path-unresolved. resolved is the held file's resolved path.
@@ -729,7 +729,7 @@ func (l *Loop) emitApprovedGateAskOpen(n *notif, req ask.Request, flags int, per
 }
 
 // emitHumanOpen writes the line of an open a person's answer completed: an approved open's, on path the target, or
-// an alternate's, on path the file delivered with alternateFor the target it stands for (POC 2026-10-06, additive
+// an alternate's, on path the file delivered with alternateFor the target it stands for (additive
 // within record v1). Its verdict is allow and its authority human; operation_completed, fd_delivered and the
 // optional result_unknown and syscall_ret say what happened; g is the gate's decision on path. A delivered open is not written under record: off,
 // whose ask and answer lines already say it; one that failed is.

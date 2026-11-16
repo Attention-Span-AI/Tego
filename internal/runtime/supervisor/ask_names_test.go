@@ -19,7 +19,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestHeldAskOpenRefusesNameMatchedFile is ADR 0043's interface 2 (supervisor R15f): an approval's completion opens
+// TestHeldAskOpenRefusesNameMatchedFile is ADR 0043's interface 2: an approval's completion opens
 // the held file outside any plane, so a file a name entry covers is refused read-denied, named by the entry, before
 // any person is asked, whatever the access mode, at tiers cgroup and bpflsm; and again once the answer came, since the
 // table may have gained the entry while the person decided. At tier landlock no name entry decides (D7), and the

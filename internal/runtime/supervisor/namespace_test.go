@@ -13,8 +13,6 @@ import (
 // TestNamespaceArmRefusesAsLandlockTopology: an unshare or clone asking for a new mount or user namespace,
 // and every setns, is refused EPERM, with a landlock-topology refused line naming the namespace flags (or
 // setns's fd), as a mount is. The filter notifies only those flags; the handler names what it was given.
-//
-// Spec: docs/p0/supervisor.md R31.
 func TestNamespaceArmRefusesAsLandlockTopology(t *testing.T) {
 	for _, tc := range []struct {
 		syscall, target string

@@ -188,7 +188,7 @@ func TestNodeRowReadsItsOptions(t *testing.T) {
 }
 
 // TestNodeRowReadsWhatNodeLoads: each file node runs, as its script or as a module it loads first, is read by the
-// name node finds it by (the review of 2119c938f found each group but the last let a denied script through; each line
+// name node finds it by (each line
 // probed on node 20.19.4 with a script in deploy.js's place):
 //   - --test-reporter's module, which node imports in its own process when a test runs, with the script's arguments,
 //     unless it is one of node's own reporters (spec, tap, dot, junit, lcov);

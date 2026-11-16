@@ -17,7 +17,7 @@ import (
 
 // flaggedDriftRun is the frozen fixture's run_start followed by a refused memfd exec (and the refused line that
 // mirrors it), a binary the run wrote and then ran, a plain exec and run_end: the lines GAPS C30's condition asks drift
-// to read, as the supervisor writes them (record-ledger.md §2.2).
+// to read, as the supervisor writes them.
 func flaggedDriftRun(t *testing.T) string {
 	t.Helper()
 	start, _, _ := strings.Cut(string(fixtureBytes(t)), "\n")

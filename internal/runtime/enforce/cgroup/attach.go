@@ -69,7 +69,7 @@ func (h *Handle) attachKernel(ctx context.Context) error {
 	// The run's rings go in before its run-set row: a program that finds the row and no ring counts a miss and
 	// emits nothing, so with the row first the run's first samples would be lost (ADR 0026 (1)). A placement
 	// that failed half way needs no undo: a ring it left at the slot is the slot's, as one a run leaves is, for
-	// the slot's next run to reuse (ADR 0026 (6) as amended). Above the pool the slot's own undo
+	// the slot's next run to reuse (ADR 0026 (6)). Above the pool the slot's own undo
 	// (releaseSlotAndPark) has those rings trimmed, as Detach does.
 	return h.placeRings()
 }
@@ -208,8 +208,8 @@ func (h *Handle) addCgroup(id uint64, val ebpfbindings.Run) error {
 }
 
 // adoptExisting closes the half of the descendant race that cgroup_mkdir cannot: a cgroup created inside the
-// run's scope before the tracepoint was attached. It walks the run's own subtree once, which is the scope §5
-// R11 gives P0 — cross-daemon lineage adoption is P2.
+// run's scope before the tracepoint was attached. It walks the run's own subtree once, which is the scope this
+// tier covers; cross-daemon lineage adoption is not.
 //
 // A subtree that cannot be read refuses Arm, so the run fails before run_start: only a subtree or an entry that
 // has vanished (ENOENT) is skipped. A descendant missed would lose its tracing and uprobe records, not its
@@ -291,7 +291,7 @@ func readSubtree(root string) ([]string, error) {
 // listener's opens. Arming after the exec, with no process start while any mark exists, closes it for all.
 func (h *Handle) startFanotify() error {
 	if len(h.policy.mounts) == 0 || h.planeMode != "" {
-		return nil // a plane decides this run's opens and execs in the kernel: no group, no mark (enforce-plane R22)
+		return nil // a plane decides this run's opens and execs in the kernel: no group, no mark
 	}
 	newListener := h.opts.newListener
 	if newListener == nil {
@@ -314,7 +314,7 @@ func (h *Handle) startFanotify() error {
 }
 
 // Attach binds the run's cgroup to the eight network programs (six below 6.7, where connect_unix and
-// sendmsg_unix are not loaded, §5 R7). It runs before the agent is created (docs/p0/runtime-launch.md §4.1: prepareEnforcement
+// sendmsg_unix are not loaded). It runs before the agent is created (prepareEnforcement
 // precedes the launcher's start), so no process of the run exists yet, and every process and descendant
 // cgroup the run later has is covered by the attachment: the kernel runs a program attached to a cgroup for
 // the sockets of that cgroup's whole subtree (§4, §5 R1, R2, R11).
@@ -377,7 +377,7 @@ func socketFlags(rt *agent.RuleTable) uint32 {
 }
 
 // relayCgroup is the id of this process's own cgroup: the supervisor relays every unix connect of the agent
-// from this process, on a thread of it (supervisor.md R11), and cgroup v2 keeps every thread of a process in
+// from this process, on a thread of it, and cgroup v2 keeps every thread of a process in
 // one cgroup. It is read from /proc/self/cgroup under the run's own mount, the one the run's cgroup path is
 // relative to. A cgroup that cannot be named, or that is the run's own (a launcher inside the cgroup it
 // enforces, where the agent's processes would share it), refuses the attach rather than leave connect_unix
@@ -405,7 +405,7 @@ func (h *Handle) relayCgroup(runID uint64) (uint64, error) {
 
 // RefreshNet rewrites this run's verdict rows for a refreshed table: the same net entries as the table Prepare
 // compiled, with the addresses each host entry resolves to now. The supervisor re-resolves host entries on
-// their TTL and matches against the new addresses (supervisor R8), and it relays each connect it allows on
+// their TTL and matches against the new addresses, and it relays each connect it allows on
 // the agent's socket, which the run's connect4/6 decides as well (§5 R1, R5). Rows left at Prepare's
 // addresses refuse, with EPERM, every connect to an address the host has rotated to since (§6 E7).
 //
@@ -415,7 +415,7 @@ func (h *Handle) relayCgroup(runID uint64) (uint64, error) {
 // for an entry no lookup re-resolves — a literal address (Static) or an entry with no host — since its
 // addresses are the contract itself and the supervisor's set never moves them (internal/platform/dns). An
 // entry the refresh gives no address keeps its previous ones, as the supervisor's set does with a failed
-// lookup (supervisor R8a).
+// lookup.
 //
 // The rows move without a gap for any address in both sets: rows whose key the refreshed table no longer
 // produces are deleted, then every row it does produce is written, so an unchanged address's row is never
@@ -604,7 +604,7 @@ func (h *Handle) RunListener(ctx context.Context) error {
 
 // SetSupervisorExecLines hands the listener the run's supervisor's answer to whether a refused open is an exec's
 // open of its image whose line the supervisor writes (supervisor.Loop.ExecLine): the exec's one line, so the
-// listener writes none for that open (supervisor R7a). The runtime calls it once the supervisor exists, before
+// listener writes none for that open. The runtime calls it once the supervisor exists, before
 // the agent runs; a run with no listener ignores it. enforce.SupervisorExecLines is the facade's assertion.
 func (h *Handle) SetSupervisorExecLines(fn func(tid int, dev, ino uint64) bool) {
 	if h.fan == nil || fn == nil {
@@ -678,7 +678,7 @@ func (h *Handle) Detach() error {
 		if err := h.closePins(); err != nil {
 			errs = append(errs, err)
 		}
-		// The run's rings stay at its slot (ADR 0026 (6) as amended): the slot's next run reuses them, drained, and
+		// The run's rings stay at its slot (ADR 0026 (6)): the slot's next run reuses them, drained, and
 		// its readers drop what this run's programs still write, by generation. So a row that could not be removed
 		// keeps its tasks recorded, into rings nothing takes away while the row carries the slot.
 	}

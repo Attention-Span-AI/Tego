@@ -13,8 +13,7 @@ import (
 
 // A table that names no server_tool_per_request fee at all charged 1000 web searches $0 toward a cost ceiling.
 // MaxCost now declines to bound them, and under a cost budget the response is reported unmetered, which ends
-// the run as an unreadable exchange does; with no cost budget nothing is reported (ADR 0037 amendment
-// 2026-09-24).
+// the run as an unreadable exchange does; with no cost budget nothing is reported (ADR 0037).
 func TestMaxCostServerToolWithNoFees(t *testing.T) {
 	tab := &PriceTable{Version: PriceVersion, Models: map[string]ModelPrice{"m": {InputPerMTok: 1}}}
 	u := ledger.TokenUsage{Model: "m", ServerTool: map[string]int{"web_search_requests": 1000}}

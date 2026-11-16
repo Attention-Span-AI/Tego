@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// The model behind TestPlaneSeqcountStress (plane_seqcount_stress_integration_test.go, enforce-plane §2.15), and
+// The model behind TestPlaneSeqcountStress (plane_seqcount_stress_integration_test.go), and
 // its tests, which need no root: the chain of directories the cell's renamer flips, the states its cycle visits,
 // what a walk that read the chain's levels at different times could name, how a ledger line is read, and the
 // agent the run is given. The cell is only as good as its oracle, so the oracle's own cases are pinned here, where
@@ -135,7 +135,7 @@ var stressMarked = regexp.MustCompile(`^[0-9]+:[0-9]+/`)
 // add reads one ledger line of a run whose chain is rooted at root, in the project at project, and whose valid set
 // is the leaf paths the chain had. Only fs actions are read. A line under the chain is named by the leaf's path or
 // by a name in the leaf, and either must be a path the chain had: anything else is a wrong path, the thing the walk's
-// sequence checks exist to prevent (enforce-plane §2.15). A line whose walk could not prove its path is marked, which
+// sequence checks exist to prevent. A line whose walk could not prove its path is marked, which
 // is the walk failing closed and no fault. A line about what the contract denies (the denied tree, a name made for
 // a refused move or link, a write outside every entry) must be a refusal; any other verdict is a wrong allow.
 func (t *stressTally) add(root, project string, valid map[string]struct{}, l stressLine) {

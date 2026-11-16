@@ -23,8 +23,6 @@ import (
 // Every other line is this loop's. An allowed action under record: off has no line at any tier by design, and a
 // mode change is notified under record: full only. A tier-2 exec left with no line (the recorder's exec lines
 // dropped and this loop's skipped) is the failure this guards.
-//
-// Spec: docs/p0/supervisor.md R7a.
 func TestEveryFSAndExecActionHasExactlyOneLine(t *testing.T) {
 	const work = "/work/proj"
 	fs := []agent.FSRule{{Path: work, Kind: agent.FSWrite, Raw: "./proj/", Access: agent.AccessWriteSet}}
@@ -65,7 +63,7 @@ func TestEveryFSAndExecActionHasExactlyOneLine(t *testing.T) {
 		for _, rec := range []agent.RecordMode{agent.RecordOff, agent.RecordSummary, agent.RecordFull} {
 			for _, a := range actions {
 				if a.fullOnly && rec != agent.RecordFull {
-					continue // not notified under this record mode (enforce-landlock R11)
+					continue // not notified under this record mode
 				}
 				t.Run(fmt.Sprintf("%s/record=%s/%s", tr.name, rec, a.name), func(t *testing.T) {
 					f := newFake()

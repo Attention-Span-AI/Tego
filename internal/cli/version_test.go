@@ -54,7 +54,7 @@ func TestBuildInfo(t *testing.T) {
 	}
 }
 
-// TestVersionText is limits-check-doctor-cli.md R30: one key=value line per field.
+// TestVersionText: one key=value line per field.
 func TestVersionText(t *testing.T) {
 	var buf bytes.Buffer
 	b := buildInfo(fakeInfo("v0.1.0", map[string]string{"vcs.revision": "abc", "vcs.time": "d"}))
@@ -97,7 +97,7 @@ func TestVersionReportsTheParsersItLinks(t *testing.T) {
 	}
 }
 
-// TestVersionJSON is limits-check-doctor-cli.md R30's --json: the same fields as one object.
+// TestVersionJSON: version --json has the same fields as one object.
 func TestVersionJSON(t *testing.T) {
 	code, out, errs := run(t, "version", "--json")
 	if code != identity.ExitOK || errs != "" {

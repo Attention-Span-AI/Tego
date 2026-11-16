@@ -119,7 +119,7 @@ func checkMCPCall(t *testing.T, ev, req *record.Event) {
 	}
 }
 
-// TestMCPExchangesAreDerived (capture-derive.md R41): an HTTPS exchange with a declared HTTP MCP server derives its
+// TestMCPExchangesAreDerived: an HTTPS exchange with a declared HTTP MCP server derives its
 // tools/call as an mcp line when the request is captured, right after its ssl_request, stamped with the request's
 // time and the thread that wrote it, though the answer came nine seconds later; the ssl_response carries
 // the MCP reader's stamp. The server is told apart from another on its host by the port the Host header names.

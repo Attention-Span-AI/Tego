@@ -11,7 +11,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// TestFilterIOUringArm is R10 as ADR 0018 (5) amends it (TIER3-PLAN T13): the three io_uring syscalls answer ENOSYS
+// TestFilterIOUringArm is R10 as ADR 0018 (5) amends it: the three io_uring syscalls answer ENOSYS
 // in every filter but one whose run declares io_uring: true where the kernel decision plane decides every submission
 // (filterOpts.ioUring, from Run.IOUring), which allows them without a notification; openat2, clone3 and
 // open_by_handle_at stay ENOSYS in both, and nothing else changes.

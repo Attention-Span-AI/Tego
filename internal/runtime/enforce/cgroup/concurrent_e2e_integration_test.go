@@ -62,7 +62,7 @@ print("RESULT exchange", len(data), flush=True)
 `
 
 // concurrentContract pins capture: uprobe and carries a token budget, so a run whose capture could not start is
-// refused (limits-check-doctor-cli R32) rather than run unmetered, and a run that does start is metered.
+// refused rather than run unmetered, and a run that does start is metered.
 const concurrentContract = `version: 0
 name: t2-concurrent
 command: ["python3", "./agent.py"]
@@ -89,7 +89,7 @@ const anthropicReply = `{"id":"msg_01","type":"message","role":"assistant","mode
 // concurrentE2EOpens is how many times each run's agent opens its watched file.
 const concurrentE2EOpens = 2000
 
-// TestTier2ConcurrentRunsOfOneBuild is capture-derive.md E26 and ADR 0026 run the way an operator runs it: 2, 8 and 32 `tego run --tier
+// TestTier2ConcurrentRunsOfOneBuild is ADR 0026 run the way an operator runs it: 2, 8 and 32 `tego run --tier
 // cgroup` of one build at once, as root, each with a token budget and capture: uprobe, each agent opening its own
 // watched file, execing true and making one TLS exchange with a fake Anthropic endpoint. Every run starts (none is
 // refused [capture-unavailable], none records kernel-record-unavailable or mechanism-unavailable, since each has
@@ -214,8 +214,8 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 		}
 		runs[i] = r
 	}
-	// Ten minutes: the round of 32 takes 33–108 s on a quiet host and 2–5 min with 16–48% steal (measured
-	// 2026-09-29), so a hang still fails well inside the suite while a starved but live round finishes.
+	// Ten minutes: the round of 32 takes 33–108 s on a quiet host and 2–5 min with 16–48% steal,
+	// so a hang still fails well inside the suite while a starved but live round finishes.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	// Every run's watched-file opens wait on every run's fanotify group, since all n mark the one mount the
@@ -363,9 +363,9 @@ func concurrentE2E(t *testing.T, bin, python, base, resolverSetting string, port
 			}
 			switch {
 			// The watched file's opens are the kernel record's lines, the ones this run's own ring carried. The exec
-			// of true has one line (supervisor R7a): the supervisor's on the fanotify listener, and the kernel's,
-			// named by the plane's rule, where a decision plane mode decides the run's execs (R7a as TIER3-PLAN T9
-			// amended it). Failed PATH search candidates have observed kernel syscall outcomes without a plane
+			// of true has one line: the supervisor's on the fanotify listener, and the kernel's,
+			// named by the plane's rule, where a decision plane mode decides the run's execs.
+			// Failed PATH search candidates have observed kernel syscall outcomes without a plane
 			// verdict; only an allowed exec needs the plane's policy attribution. Counting every allowed line
 			// still catches duplicate supervisor/kernel records.
 			case e["kind"] == "fs" && path == own && e["source"] == "kernel":

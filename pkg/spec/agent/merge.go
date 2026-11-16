@@ -37,8 +37,7 @@ var contractMergeRows = []mergeRow{
 	// whether version was written, and a profile's version: 0 answered for a contract that wrote none.
 	keyRow("version", classOwn),
 	keyRow("name", classOwn),
-	// revision names the version of the top-level file a run compiled; a profile's would name another file's
-	// (agent-contract.md R28).
+	// revision names the version of the top-level file a run compiled; a profile's would name another file's.
 	keyRow("revision", classRefusedInProfile),
 	keyRow("extends", classOwn),
 	keyRow("command", classContractWins),

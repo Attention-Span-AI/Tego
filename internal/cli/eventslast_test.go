@@ -65,8 +65,8 @@ func lastFilter(t *testing.T, kinds, verdicts, rules, steps []string, limit int)
 	return f
 }
 
-// TestEventsLastIsWhatTwoPassesPrinted: `events --last` reads the ledger from its end now (the custom-agent POC,
-// item 8: two whole passes took seconds on a 137,200-event run), and prints byte for byte what the two passes
+// TestEventsLastIsWhatTwoPassesPrinted: `events --last` reads the ledger from its end (two whole passes take
+// seconds on a 137,200-event run), and prints byte for byte what the two passes
 // printed, table and --json, for every filter, on the fixture run and on a long run of it repeated.
 func TestEventsLastIsWhatTwoPassesPrinted(t *testing.T) {
 	type flags struct {

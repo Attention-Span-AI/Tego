@@ -24,7 +24,7 @@ type sigchldInfo struct {
 }
 
 // The calls below that take a pidfd use its number only in the system call: their errors name the call and
-// the errno, never the number (ADR 0023, 2026-10-19 note), so an owner lends it straight in, as in
+// the errno, never the number (ADR 0023), so an owner lends it straight in, as in
 // pidfd.Borrow(func(n int) error { return PidfdSendSignal(n, sig) }), and fdcheck follows it there.
 
 // PidfdThread is PIDFD_THREAD (Linux 6.9): the pidfd names the exact task rather than its thread group,

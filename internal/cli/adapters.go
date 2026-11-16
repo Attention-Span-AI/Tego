@@ -19,7 +19,7 @@ import (
 )
 
 // harnessProvisioner connects Layer 3's provisioners (internal/adapters) to the launcher (Deps.Harness) and to compile's
-// harness lines (agent-contract.md R27, ADR 0062): nil for a harness this build cannot provision. A variable so a test
+// harness lines (ADR 0062): nil for a harness this build cannot provision. A variable so a test
 // can stand a provisioner in.
 var harnessProvisioner = func(name harness.Name) tegoruntime.Provisioner {
 	if p := adapters.For(name); p != nil {

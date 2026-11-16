@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// TestActivitySidecarRoundTrip is record-ledger.md §3's activity row: the launcher publishes the stall check's
+// TestActivitySidecarRoundTrip: the launcher publishes the stall check's
 // latest activity reading into <run>/activity, a 0600 file it created in its own run directory through the
 // Writer's descriptor, overwritten in place, and status reads back the newest value whole.
 func TestActivitySidecarRoundTrip(t *testing.T) {

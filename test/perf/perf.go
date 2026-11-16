@@ -4,7 +4,7 @@
 // by test/vm/perf.sh) judges its measurements with. A Budget has a Limit, which fails the suite when a
 // measurement is over it, and an optional Target: the figure a spec or an ADR states (kill test 4's start
 // allowance, ADR 0022's cold start) that a measurement may still miss. A miss is printed as TARGET-MISS and is an
-// open condition for the owner in docs/p0/enforce-plane.md §10, never a silently relaxed budget.
+// open condition for the owner, never a silently relaxed budget.
 package perf
 
 import (
@@ -221,7 +221,7 @@ func ForModes(bs []Budget, ms []Mode) []Budget {
 	return out
 }
 
-// Defaults are the budgets. Each cites its measurement in docs/p0/enforce-plane.md §10.
+// Defaults are the budgets.
 func Defaults() []Budget {
 	var bs []Budget
 	add := func(b Budget) { bs = append(bs, b) }

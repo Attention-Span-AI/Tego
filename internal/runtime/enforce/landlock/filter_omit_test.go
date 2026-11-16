@@ -5,7 +5,7 @@ package landlock
 import "testing"
 
 // omitControlArms are the arms a root test leaves out to reach the plane's bpf and key_permission hooks from a
-// governed run (enforce-plane §2.20).
+// governed run.
 var omitControlArms = map[string]bool{"bpf": true, "add_key": true, "request_key": true, "keyctl": true}
 
 // TestFilterTestOmitLeavesOnlyTheNamedArmsOut: the seam a test build sets (filterTestOmit) takes each syscall it
@@ -14,8 +14,6 @@ var omitControlArms = map[string]bool{"bpf": true, "add_key": true, "request_key
 // or security_key_permission; with the seam naming them each is allowed through, and every other syscall of those two
 // arms is answered as before, on both architectures. The names are in both tables, so a renamed entry cannot turn the
 // seam into one that omits nothing.
-//
-// Spec: docs/p0/enforce-landlock.md R11.
 func TestFilterTestOmitLeavesOnlyTheNamedArmsOut(t *testing.T) {
 	was := filterTestOmit
 	t.Cleanup(func() { filterTestOmit = was })

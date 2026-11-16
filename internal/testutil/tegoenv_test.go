@@ -47,7 +47,7 @@ func TestTegoEnvIsolatesWhateverTheDeveloperExported(t *testing.T) {
 
 // TestTegoEnvGivesTheRunAPrivateRuntimeDir: XDG_RUNTIME_DIR is OwnStateDir(dir)/run, mode 0700 whatever the umask
 // or an earlier mode, after every inherited value (the developer's /run/user/<uid>, a relative one, an empty one) and
-// before extra, so a test that names its own in extra keeps it (identity-config.md R27 clause b4).
+// before extra, so a test that names its own in extra keeps it.
 func TestTegoEnvGivesTheRunAPrivateRuntimeDir(t *testing.T) {
 	for _, inherited := range []string{"/run/user/1000", "run/user/1000", ""} {
 		t.Run(strconv.Quote(inherited), func(t *testing.T) {

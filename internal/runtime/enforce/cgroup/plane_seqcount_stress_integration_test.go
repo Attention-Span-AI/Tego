@@ -111,7 +111,7 @@ func readStressLedger(t *testing.T, ledger string, c stressChain, project string
 	return tally, plane, lines
 }
 
-// TestPlaneSeqcountStress is enforce-plane §2.15's ordering on a kernel that is run, not read. The recorder names a
+// TestPlaneSeqcountStress checks the walk's read ordering on a kernel that is run, not read. The recorder names a
 // plane run's fs mutations by walking the parent directory in the kernel, and its walk is a seqcount reader of the
 // dentries' d_seq: each level's sequence, then its parent and its name, then a second pass that must find every
 // sequence unmoved. A reader needs a read barrier between the sequence and the data and another before the
@@ -138,7 +138,7 @@ func readStressLedger(t *testing.T, ledger string, c stressChain, project string
 // ledger. The plane's decision walk reads no sequence, so this is no ordering: the denied tree is not among the
 // renamed directories, and its refusals come from rows the walk meets before any ancestor, so what is asserted is
 // that the load and the renames beside it never turn one into an allow. The walks of the allowed actions do climb the
-// renamed chain, to the write entry's row above it, and a torn climb could only refuse them (TIER3-PLAN §8: an
+// renamed chain, to the write entry's row above it, and a torn climb could only refuse them (an
 // ancestor renamed during the unlocked d_parent walk cannot loosen a rule), which the rest run holds to none.
 //
 // Each plane mode runs it twice. The rest run is the control: the same agent for two seconds with the chain still,
@@ -203,8 +203,8 @@ func (r stressResult) check(t *testing.T, mode string, minOps int) {
 			"were torn and its sequence check missed it), or no path at all; the first: %q", r.tally.wrong, r.tally.wrongPath)
 	}
 	// A wrong allow fails the cell on a kernel that admits the mode. Under the waiver alone the kernel can skip a plane
-	// program and let a denied call through, which no count over the run can tell from a plane fault (a 2026-11-03
-	// review), so there the cell measures the walk and says what it saw; the plane's decisions are held with no
+	// program and let a denied call through, which no count over the run can tell from a plane fault,
+	// so there the cell measures the walk and says what it saw; the plane's decisions are held with no
 	// tolerance by every other plane test under the waiver, and by this cell wherever the mode is admitted.
 	allowed := int(r.denied["allowed"])
 	switch {

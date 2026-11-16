@@ -27,7 +27,7 @@ func OwnStateDir(dir string) string { return filepath.Join(dir, "tego-own") }
 // subprocess: os.Environ(), then the chain anchor OwnStateDir(dir)/chain.log, an own-log home OwnStateDir(dir)/home
 // (made) and XDG_RUNTIME_DIR=OwnStateDir(dir)/run (made, mode 0700), then extra. The isolation variables come after
 // the inherited environment, so a developer's own TEGO_TEST_* or XDG_RUNTIME_DIR never wins (a run under theirs
-// made /run/user/<uid>/tego and swept their crashed runs' directories there: identity-config.md R27 clause b4), and
+// would make /run/user/<uid>/tego and sweep their crashed runs' directories there), and
 // before extra, so a test can still point one elsewhere on purpose.
 //
 // Call it where the command's Env is built, after every t.Setenv the test makes: an os.Environ() read earlier
@@ -53,7 +53,7 @@ const envXDGRuntimeDir = "XDG_RUNTIME_DIR"
 
 // PrivateRuntimeDir points this process's XDG_RUNTIME_DIR at parent/run, made with mode 0700, so the runs its tests
 // start in-process, and the tego subprocesses they start with its environment, make their runtime directories, and
-// sweep, there and never in the developer's /run/user/<uid>/tego (identity-config.md R27 clause b4). Every
+// sweep, there and never in the developer's /run/user/<uid>/tego. Every
 // TestMain of a package whose tests start a run calls it with the package's own temporary parent before the tests
 // run; GuardRealTego still watches the developer's parents, read from the environment the binary started with.
 //

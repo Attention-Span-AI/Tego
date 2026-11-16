@@ -26,7 +26,7 @@ func passingKnown() []PlaneKnownAnswer {
 	return out
 }
 
-// TestPlaneKnownCells holds the known answers to the principal's list (enforce-plane R21): a deny_read row two levels
+// TestPlaneKnownCells holds the known answers to the principal's list: a deny_read row two levels
 // up across a tmpfs mount, a stale row, a corrupted identity, the walk's bound either side of 64 levels, an exec by a
 // directory row, by a file row and by a hard link of it under another name, and an rmdir, each with the verdict and
 // the fail-closed counters it must leave; and ADR 0043 C9's name cells: a .env and a .ENV made after the fill
@@ -253,7 +253,7 @@ func kindName(k decide.PlaneKind) string {
 // whose work must be done there (onLeader): the ptrace_traceme helper, and the known answers' child, whose mount
 // namespace doctor reads through /proc/<pid>/root, the leader's view. Only the traceme helper was kept there, and the
 // known answers' child that the scheduler had moved made its namespace on another thread: doctor's hold of x/xd
-// failed ENOENT in the 7.0 guest's cgroup-1 shard (acceptance 2C, 2026-11-11). Every other argv runs as before.
+// failed ENOENT in the 7.0 guest's cgroup-1 shard. Every other argv runs as before.
 func TestTheProbeChildrenThatNeedTheLeaderStartOnIt(t *testing.T) {
 	for _, tc := range []struct {
 		argv []string
@@ -277,7 +277,7 @@ func TestTheProbeChildrenThatNeedTheLeaderStartOnIt(t *testing.T) {
 // makes any namespace or mount, when its main is on a thread other than the thread-group leader, so a child the init
 // failed to keep on the leader fails the probe closed (no plane mode offered, the reason on stderr) rather than answer
 // from a namespace doctor cannot see through /proc/<pid>/root. A KVM guest showed that such a child is the failure
-// TestIntegrationKnownAnswerChildIsSeenThroughProcRoot guards (integration 6, 2026-11-11: off the leader, x/xd/img
+// TestIntegrationKnownAnswerChildIsSeenThroughProcRoot guards (integration 6: off the leader, x/xd/img
 // was ENOENT through /proc/<pid>/root). Here the leader is held by another goroutine, so the child's main runs off it.
 func TestTheKnownAnswersChildRefusesToRunOffItsLeader(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "k")

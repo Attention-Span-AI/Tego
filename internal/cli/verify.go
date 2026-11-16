@@ -35,7 +35,7 @@ type verifyJSON struct {
 	Error     string `json:"error,omitempty"`
 }
 
-// runVerify is `tego events <run> --verify` (R29, record-ledger.md §11's verification command): it
+// runVerify is `tego events <run> --verify` (R29): it
 // walks the run's hash chain and checks its head against the invoking user's chain.log. Exit 0 when
 // the ledger verifies, 1 when it does not — a line that does not hash to its id, a broken seq or prev
 // link, a line of another run (a ledger copied in from elsewhere), an anchored head the ledger does
@@ -43,7 +43,7 @@ type verifyJSON struct {
 // ledger is gone — and 125 when it could not be read at all (R25). The run is the one <run> names
 // (resolveRunDir, ledger.RunDirPath), even when that name is a link to another run's directory, never
 // one the ledger claims to be while the path names a run id; only a path that reaches none (a copy
-// under another name) is verified as the id on the ledger's first line (record-ledger.md §4). A missing
+// under another name) is verified as the id on the ledger's first line. A missing
 // anchor is never rebuilt from the ledger: an anchor written from the file it is meant to vouch for
 // attests nothing.
 func runVerify(ctx context.Context, ref string, asJSON bool, stdout, stderr io.Writer) int {

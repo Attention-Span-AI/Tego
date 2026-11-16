@@ -89,7 +89,7 @@ type Deriver interface {
 
 // requestReader is a Deriver that also reads what a request says alone (derive.Dispatcher.ReadRequest): whether it
 // is the model host's side traffic, and the tool results a model turn reports, which the request line carries for
-// the attribute stage (capture-derive R40, R42).
+// the attribute stage.
 type requestReader interface {
 	ReadRequest(req *derive.Message, meta derive.Meta) derive.RequestReading
 }
@@ -476,7 +476,7 @@ func (l *Listener) Close() error {
 		// srv.Close closed the connections but did not wait for the handlers running on them, and
 		// each of those can still emit an event or count a gap. They are joined here, before the
 		// claim below, so that Manager.Stop returns only once nothing can enqueue behind the run's
-		// drain (R8 of docs/p0/runtime-launch.md, I4). Closing the connection cancels every
+		// drain. Closing the connection cancels every
 		// handler's request context, which aborts its RoundTrip, so the wait is short. A connection
 		// net/http had already read a request from can still dispatch a handler after srv.Close; closed
 		// turns it away, and set under the lock it orders every handler's Add before the Wait.
@@ -559,7 +559,7 @@ func (l *Listener) Gaps() []source.Gap {
 // ServeHTTP admits the peer (R19a), answers the health check locally, refuses what is not HTTP/1.1
 // plaintext, and forwards everything else.
 func (l *Listener) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Close joins these goroutines before the run's pipeline drains (R8 of docs/p0/runtime-launch.md):
+	// Close joins these goroutines before the run's pipeline drains:
 	// an event emitted or a gap counted after the drain has no reader left, and I4 does not allow a
 	// capture shortfall to end as silence. A handler that starts once Close has begun joining is served
 	// nothing: it would count itself in concurrently with the Wait and emit after the flush.
@@ -782,8 +782,7 @@ type upstreamResult struct {
 	// wireSize is the body's length as the relay read it, before any content coding this component undoes:
 	// every byte read of it, or its declared length when that is more (a relay the client or the upstream cut
 	// short). A gzip net/http's Transport offered and undid itself, for a client that offered no coding, is
-	// counted decoded, as the client receives it. A line whose body is a prefix carries it as wire_size
-	// (record-ledger §2.2).
+	// counted decoded, as the client receives it. A line whose body is a prefix carries it as wire_size.
 	wireSize int64
 	// upstreamFailed is the upstream's body read failing after the status line was relayed: the agent's
 	// connection is then aborted once the exchange is recorded, never ended cleanly (R26).
@@ -1037,7 +1036,7 @@ func (l *Listener) derive(x *exchange, r *upstreamResult) {
 			// A whole copy can still leave derive short of the message_delta the wire carried —
 			// derive stops reading a stream at its first line it cannot parse, the scanner reads every
 			// message_delta line — and the count seen on the wire then replaces derive's bound, or its
-			// verdict of no bound, as it does for a cut copy (limits-check-doctor-cli.md R1 (m)).
+			// verdict of no bound, as it does for a cut copy.
 			// derive's own count is the message's when it read the final message_delta: a usage it neither
 			// bounded nor left unmetered.
 			derivedFinal := facts.Usage != nil && !facts.Usage.OutputBound && !facts.Unmetered
@@ -1051,7 +1050,7 @@ func (l *Listener) derive(x *exchange, r *upstreamResult) {
 			case !derivedFinal:
 				// Neither reading saw the message's output count: the scanner's is message_start's
 				// placeholder, never a count to charge. It takes the max_tokens bound below, or the exchange
-				// is unmetered (limits-check-doctor-cli.md R1 (m), (c)).
+				// is unmetered ((c)).
 				placeholder = true
 			}
 		}
@@ -1083,7 +1082,7 @@ func (l *Listener) derive(x *exchange, r *upstreamResult) {
 			// all, is in nothing derive read. The scanner reads only an identity-coded stream, so a gzip or
 			// deflate stream cut after message_start reached here with message_start's usage alone and passed
 			// as metered (R27). A path the deriver calls silent spends nothing whatever its answer, so a cut
-			// there is not reported. This is the uprobe path's SizeCut rule (docs/p0/limits-check-doctor-cli.md R1 (d)).
+			// there is not reported. This is the uprobe path's SizeCut rule.
 			facts.Unmetered = true
 		}
 	}
@@ -1102,13 +1101,12 @@ func (l *Listener) derive(x *exchange, r *upstreamResult) {
 	if r == nil {
 		// Whatever the verdict on spend, and on a silent path too, no ssl_response will end this request's
 		// step: the step tracker stops counting its thread in flight, as the uprobe path tells it for a
-		// request it gives up on (capture-derive.md R33).
+		// request it gives up on.
 		l.reportAbandoned(x.pair)
 	}
 	switch {
 	case facts.Unmetered:
-		// A model call whose spend nothing could read: a run with a token or cost budget ends here
-		// (docs/p0/limits-check-doctor-cli.md R1).
+		// A model call whose spend nothing could read: a run with a token or cost budget ends here.
 		l.reportUnmetered(derive.Route(x.method, x.path) + ": usage unreadable")
 	case r == nil && !x.neverSent && !l.silent(x):
 		// A request to the model host that got no byte of an answer: the upstream failed or went away, the
@@ -1116,7 +1114,7 @@ func (l *Listener) derive(x *exchange, r *upstreamResult) {
 		// the same, and nothing will say how much, so it is reported unmetered as the uprobe path reports a
 		// request its connection ended without answering (ADR 0037). Exempt are a leg that never connected,
 		// of which no byte left, and a path the deriver calls silent (a health check, telemetry, token
-		// counting), which spends nothing whatever its answer (ADR 0037 amendment 2026-09-24).
+		// counting), which spends nothing whatever its answer (ADR 0037).
 		l.reportUnmetered(derive.Route(x.method, x.path) + ": no response")
 	}
 }
@@ -1339,7 +1337,7 @@ func (l *Listener) emit(ev *record.Event) {
 
 // emitOpen emits ev unless the listener is closing, and reports whether it did. It counts itself in as a handler does
 // (ServeHTTP), so a line another listener's goroutine writes through this one is queued before Close's final flush, or
-// not at all: never behind the run's drain (R8 of docs/p0/runtime-launch.md, I4).
+// not at all: never behind the run's drain.
 func (l *Listener) emitOpen(ev *record.Event) bool {
 	l.mu.Lock()
 	if l.closed || l.sink == nil {
@@ -1364,7 +1362,7 @@ func (l *Listener) reportUnmetered(why string) {
 }
 
 // emitsLost is the listener's first dropped event: whatever it was, it may have been the line that carried an
-// exchange's spend, so the run is told its spend is no longer counted (limits-check-doctor-cli.md R1 (s)).
+// exchange's spend, so the run is told its spend is no longer counted.
 func (l *Listener) emitsLost(sink source.Sink) {
 	l.opts.Logger.Warn("forwarder: emit queue full; dropping capture events",
 		"run", l.runRef().ID, "host", l.model.Host, "size", emitQueueSize)

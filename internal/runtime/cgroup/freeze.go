@@ -17,7 +17,7 @@ import (
 const fileFreeze = "cgroup.freeze"
 
 // FreezeWait bounds a wait for a freeze or a thaw: a freeze completes once every task has left the kernel, which takes milliseconds
-// (8.6 ms measured on a looping agent). A task in a wait the freezer cannot enter holds it for as long as that wait
+// (8.6 ms on a looping agent). A task in a wait the freezer cannot enter holds it for as long as that wait
 // lasts: uninterruptible sleep, and a seccomp notification the supervisor has received, since the listener waits
 // killable (SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV): an ask held for a person, or a held read whose open deputy is
 // in the frozen cgroup with the agent.

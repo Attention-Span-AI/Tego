@@ -219,7 +219,7 @@ func TestBindAliasesThatCannotBeListedRefuseTheRun(t *testing.T) {
 
 // TestPlaneDetachedPartFallsBackOrRefuses: the decision plane's walk crosses mounts, so from a file bound alone out of a
 // deny_read directory (pub/keyfile bound from secret/key) it met the bind's root and then pub/, and allowed the read
-// at every plane axis (conformance mounts-bind/read-bind-alias-file, 2026-11-11). Such a table is one the plane
+// at every plane axis (conformance mounts-bind/read-bind-alias-file). Such a table is one the plane
 // cannot hold: tier cgroup falls back to the listener and refuses startup, as tier bpflsm does before anything
 // is loaded. A bind of the directory itself or of its parent is held: the walk passes the entry. Not parallel: it
 // points the package's mount table at a file of its own.

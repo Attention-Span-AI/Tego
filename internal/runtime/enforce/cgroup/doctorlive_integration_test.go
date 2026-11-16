@@ -18,7 +18,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/testutil"
 )
 
-// TestDoctorDuringALiveTier2RunChangesNoVerdict is limits-check-doctor-cli.md E28 end to end: `tego doctor` run
+// TestDoctorDuringALiveTier2RunChangesNoVerdict end to end: `tego doctor` run
 // as root while a tier-2 run of the same build is live loads and attaches D7's fresh copies of the tier's programs
 // (fentry/fmod_ret beside the run's shared links, cgroup programs on its own scratch cgroup) and makes D8's
 // fanotify group, and the live run's verdicts do not change. The agent repeats the same four actions in rounds —
@@ -154,7 +154,7 @@ func TestDoctorDuringALiveTier2RunChangesNoVerdict(t *testing.T) {
 		t.Errorf("no round ran while doctor did (%v): the test did not overlap the two", took)
 	}
 	// The deny_read under a writable parent is the listener's (EPERM) where the run decides through fanotify, the
-	// decision plane's (EACCES) where doctor selected a plane mode (TIER3-PLAN T6).
+	// decision plane's (EACCES) where doctor selected a plane mode.
 	want := "allowed=ok refused=errno13 outside=errno13 denyread=errno1"
 	if planeSelected(t, bin, "") != PlaneFanotify {
 		want = "allowed=ok refused=errno13 outside=errno13 denyread=errno13"

@@ -45,8 +45,7 @@ const capSysPtraceBit = unix.CAP_SYS_PTRACE
 // pidfd_getfd(2) for the listener itself and for every connect it completes ("EPERM: the calling
 // process did not have PTRACE_MODE_ATTACH_REALCREDS permissions"). Yama gates exactly that access
 // mode, so its scope decides whether tier 1 can work at all — and it is a global sysctl no identity
-// check would surface (docs/p0/supervisor.md E18 attributes the same EPERM to an identity mismatch
-// alone, which is only one of the two causes).
+// check would surface (an identity mismatch is only one of the two causes of the same EPERM).
 type PtraceState struct {
 	// Scope is the sysctl's value, or -1 when Yama is not built into this kernel.
 	Scope int `json:"scope"`

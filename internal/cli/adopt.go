@@ -305,7 +305,7 @@ type preparedAdoption struct {
 	// owner is the uid the table was compiled for, and home that uid's home it compiled against ("" the machine's).
 	owner int
 	home  string
-	// source is the boundary contract's file, which run_start records (agent-contract.md R26); nil with no boundary.
+	// source is the boundary contract's file, which run_start records; nil with no boundary.
 	source *record.ContractSource
 	// records is the directory the owner's ~/.tego was (followed, as the compile resolves it) when a boundary table
 	// was compiled against home, which R6a's deny of the owner's own records attached to; the zero value for a
@@ -817,7 +817,7 @@ var adoptRefusedLimits = map[string]string{
 }
 
 // adoptLimitRefusal is why a boundary adoption refuses limits key ("memory" or "limits.memory"), "" for one it applies
-// to its scope before the move (cpu, cpu_weight, pids: ADR 0055, the 2026-11-11 limits amendment). A key neither
+// to its scope before the move (cpu, cpu_weight, pids: ADR 0055). A key neither
 // applied nor listed (one a later schema adds) is refused.
 func adoptLimitRefusal(key string) string {
 	key = strings.TrimPrefix(key, "limits.")
@@ -833,10 +833,10 @@ func adoptLimitRefusal(key string) string {
 // adoptionRefused prints, and reports, what refuses an adoption before anything moves. A boundary adoption is refused
 // for each contract rule unenforceableForAdoption names and for each kernel or time limit a limits.* ceiling of the
 // machine config imposes that an adoption cannot hold (memory, memory_high, wall, stall_after): every tego run gets
-// those (agent-contract.md R11), so the two sources of a limit are refused alike, each ceiling at its file and line
+// those, so the two sources of a limit are refused alike, each ceiling at its file and line
 // (ADR 0055, machine ceilings amendment). A cpu, cpu_weight or pids ceiling is applied: the runtime writes it into the
-// adoption's scope before the move (ADR 0055, the 2026-11-11 limits amendment). A budget a ceiling alone imposes is not
-// refused, as at tego run where nothing meters it (limits-check-doctor-cli.md R32): it is warned of and its run records
+// adoption's scope before the move (ADR 0055). A budget a ceiling alone imposes is not
+// refused, as at tego run where nothing meters it: it is warned of and its run records
 // gap why=budget-unmetered. A record-only adoption holds no rule (ADR 0055 (5)) and goes on, with one warning per
 // ceiling (warnAdoptionCeilings).
 func adoptionRefused(m *config.Machine, rt *agent.RuleTable, boundary string, stderr io.Writer) bool {

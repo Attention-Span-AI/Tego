@@ -29,8 +29,8 @@ import (
 // approvalReapHelperEnv carries TestApprovalReapHelper's cgroup path, cgroup id and state directory.
 const approvalReapHelperEnv = "TEGO_APPROVAL_REAP_HELPER"
 
-// TestApprovalGrantsReapedWithTheirDeadLauncher is the reaper's half of the one-connect grants (supervisor R11c,
-// enforce-cgroup-observe R7): a launcher killed with an abstract-name grant
+// TestApprovalGrantsReapedWithTheirDeadLauncher is the reaper's half of the one-connect grants:
+// a launcher killed with an abstract-name grant
 // (tego_unix_approvals) and a TCP grant (tego_connect_approvals) of its slot in the pinned maps leaves them to the
 // reaper, and PurgeRun, once the run's cgroup is gone, purges both with the slot and frees it. purgeDeadSlots loads
 // the pinned maps itself, so a map left out of its list keeps a dead slot's rows; TestUnixApprovalRowsPurgedOnRealMaps
@@ -114,7 +114,7 @@ func TestApprovalGrantsReapedWithTheirDeadLauncher(t *testing.T) {
 	if err := tcpGrants.Update(&tk, &tv, ebpf.UpdateAny); err != nil {
 		t.Fatalf("write the launcher's TCP grant: %v", err)
 	}
-	// A UDP grant (GrantDatagram, supervisor R13d) shares the map and goes with the slot alike.
+	// A UDP grant (GrantDatagram) shares the map and goes with the slot alike.
 	uk4 := ebpfbindings.ConnectApprovalKey{RunIdx: slot, Gen: gen, Cookie: 0xbeef, Family: unix.AF_INET, Proto: unix.IPPROTO_UDP, Port: 53}
 	if err := tcpGrants.Update(&uk4, &tv, ebpf.UpdateAny); err != nil {
 		t.Fatalf("write the launcher's UDP grant: %v", err)

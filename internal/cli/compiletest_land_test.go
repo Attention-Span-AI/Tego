@@ -16,8 +16,8 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/identity"
 )
 
-// TestCompileTestLandsAsTheKernelGolden: compile --test lands each row's path with the run's own walk (ADR 0019's
-// 2026-10-17 design note), so a rename or a link through a dangling symlink to a directory the agent makes later, a
+// TestCompileTestLandsAsTheKernelGolden: compile --test lands each row's path with the run's own walk (ADR 0019),
+// so a rename or a link through a dangling symlink to a directory the agent makes later, a
 // write through a dangling final symlink, and a new name written with ".." after a symlink are answered where the
 // kernel's walk lands them, in every column. compile answered them at the link's own spelling, or on the lexically
 // cleaned path: allow for moves and links the kernel refuses with EXDEV (rows 01, 02, 07 to 10, 13), refused for a
@@ -30,8 +30,6 @@ import (
 // name in its directory, never followed (mkdir EEXIST, unlink, rmdir and a rename onto it ENOTDIR), so rows 18 to 21 are
 // asked at the links out/dsym and out/el/ob inside the write entry; compile followed them out of it and answered refused
 // where the run's line allows.
-//
-// Spec: docs/p0/agent-contract.md R15; docs/p0/limits-check-doctor-cli.md R28.
 func TestCompileTestLandsAsTheKernelGolden(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("the contract names sh, not on PATH")
@@ -109,9 +107,7 @@ record: summary
 // /proc, EMFILE) is evaluated as written, and compile says so once on stderr, since its answer then rests on the
 // spelling alone; a walk that fails as the agent's own lookup would (ENOTDIR) is the run's answer too and says
 // nothing. Rows were resolved with filepath.EvalSymlinks where /proc was not mounted, a second resolver with
-// its own answers (ADR 0019's 2026-10-17 design note).
-//
-// Spec: docs/p0/agent-contract.md R15.
+// its own answers (ADR 0019).
 func TestCompileTestSaysWhenARowCannotBeWalked(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("the contract names sh, not on PATH")
@@ -152,8 +148,6 @@ func TestCompileTestSaysWhenARowCannotBeWalked(t *testing.T) {
 // path; a walk that met what the run refuses (a magic link) is the run's own answer, and says nothing. The contract
 // has no net: section, so the run is in ADR 0070's unix-only state and decides the
 // datagram's name as under a write entry: the walk the run refuses is refused path-unreliable, as the run refuses it.
-//
-// Spec: docs/p0/limits-check-doctor-cli.md R28.
 func TestCompileTestSaysWhenAUnixNameCannotBeWalked(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("the contract names sh, not on PATH")
@@ -194,7 +188,7 @@ func TestCompileTestSaysWhenAUnixNameCannotBeWalked(t *testing.T) {
 // physically refuses it, and the logical spelling matched none. An earlier fix joined getcwd(2)'s directory here, and
 // nothing held it.
 //
-// Spec: docs/p0/limits-check-doctor-cli.md R28; ADR 0048 (4).
+// Spec: ADR 0048 (4).
 func TestCompileExecJoinsThePhysicalCwd(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("the contract names sh, not on PATH")

@@ -25,11 +25,11 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/backend"
 )
 
-// TestPlaneRunAdoptsThePinnedPlane is enforce-plane R20 against the running kernel, as root: a run of a build whose
+// TestPlaneRunAdoptsThePinnedPlane against the running kernel, as root: a run of a build whose
 // plane a lingering build keeps pinned runs the pinned programs, and loads and verifies none of its own. A map of the
-// plane's that was not pinned by name (tego_plane_path_buf until 2026-09-30) made adoptObjectIn refuse every later
+// plane's that was not pinned by name (once tego_plane_path_buf) made adoptObjectIn refuse every later
 // launcher, so each run of a plane mode loaded the mode's programs again: 0.6 s of its start in the 6.17 guest, a
-// start that stayed within kill test 4's budget only for workloads long enough to hide it (enforce-plane §2.18). The
+// start that stayed within kill test 4's budget only for workloads long enough to hide it. The
 // program ids say which copy a run holds. Keeping the first run open also gives the second a new slot: adopting
 // the plane through compact metadata must still create that slot's row maps from the full ELF's BTF types.
 func TestPlaneRunAdoptsThePinnedPlane(t *testing.T) {
@@ -99,7 +99,7 @@ func TestPlaneRunAdoptsThePinnedPlane(t *testing.T) {
 			}
 			// The map's own key and value types, by the ids the kernel holds for them: a lookup by name was
 			// ambiguous once the map's BTF carried two identical __u64 typedefs, and could have matched a
-			// same-named type that was not the key's (amended 2026-10-05, v73 review R3).
+			// same-named type that was not the key's.
 			keyID, valueID, err := mapBTFTypeIDs(inner)
 			if err != nil {
 				t.Fatalf("run %s slot %d %s: %v", name, h.slot, row.name, err)

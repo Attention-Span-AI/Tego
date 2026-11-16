@@ -120,8 +120,7 @@ func TestParseSockaddrScopedIPv6(t *testing.T) {
 	}
 }
 
-// FuzzParseSockaddr asserts the parser never panics and never reports an address it did not decode
-// (docs/p0/supervisor.md §9 "Fuzzing").
+// FuzzParseSockaddr asserts the parser never panics and never reports an address it did not decode.
 func FuzzParseSockaddr(f *testing.F) {
 	f.Add(sockaddrIn4("10.0.0.1", 80))
 	f.Add(sockaddrIn6("2001:db8::1", 443))

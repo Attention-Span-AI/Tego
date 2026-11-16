@@ -14,7 +14,7 @@ import (
 	"github.com/attention-span-ai/tego/internal/runtime/source"
 )
 
-// letterRow is one lettered case of docs/p0/limits-check-doctor-cli.md R1 on the uprobe path: the chunk
+// letterRow is one lettered unmetered case on the uprobe path: the chunk
 // records a run's traffic produces, and whether the source reports it unmetered. The report is the whole of
 // the uprobe path's decision: the runner ends a run with a token or cost budget at the first one and leaves a
 // run with neither running (runtime.TestUnmeteredSpendEndsABudgetedRun), so reported here is "the budgeted run
@@ -64,7 +64,7 @@ func exchangeOn(ssl uint64, req, resp string, closeIt bool) [][]byte {
 	return recs
 }
 
-// TestEveryR1LetterOnTheUprobePath is limits-check-doctor-cli.md R1's two lists on the uprobe path, one row per
+// TestEveryR1LetterOnTheUprobePath is the two unmetered lists on the uprobe path, one row per
 // letter the path can meet (the sub-cases a letter names each have a row): every "Reported as unmetered" case
 // ends a budgeted run, every "Not reported" case does not. The letters the uprobe path cannot meet are pinned
 // at their own layer: (j) the hook queue is the runner's (runtime.TestHookQueueNeverWaitsAndCountsWhatItDrops),

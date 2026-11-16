@@ -53,8 +53,7 @@ var (
 // that cures that, and the sentinels it matches (ErrNotDelegated, ErrNotCgroup2, ErrOutsideSubtree, the
 // errno). The remedy is a field rather than prose a caller splits out of Error(), because ErrNotDelegated
 // covers causes with different cures — the hierarchy, a cgroup namespace's own mount (case 39),
-// Delegate= — and doctor's D3 prints the one this refusal names (docs/p0/limits-check-doctor-cli.md R27
-// D3).
+// Delegate= — and doctor's D3 prints the one this refusal names.
 type DetectError struct {
 	// Diagnosis is what Detect could not show, beginning with the sentinel's own text.
 	Diagnosis string
@@ -125,7 +124,7 @@ func (e *MissingControllerError) Fix() string {
 // with a CPU weight (GAPS B15); the slice setting below is the one Fedora ships in its user app.slice. Measured
 // on fresh AlmaLinux 9.8 guests: with the user@ drop-in alone and a reboot, cpu was in user@UID.service's
 // cgroup.controllers but not in its subtree_control; with the drop-in, that slice setting and a reboot, cpu was
-// enabled there for a fresh login. Our reading of systemd, not measured: the user manager enables a controller
+// enabled there for a fresh login. Our reading of systemd, not verified: the user manager enables a controller
 // there only for a unit of its own that uses it, and memory and pids are on through the default accounting. At
 // the mount root, a direct "+cpu" write was gone after a daemon-reload, a transient unit and a service restart
 // (read once, after all three); a CPU weight on system.slice and a reboot kept cpu on across the same three
@@ -136,7 +135,7 @@ func (e *MissingControllerError) Fix() string {
 // there; the kernel refuses any other. So when one missing controller is not offered, the fix starts with the
 // administrator's steps and says which controllers the user cannot add alone and why. When the file could not be
 // read the fix also starts with the administrator's steps, and says it could not tell, rather than claim what the
-// kernel offers. *Amended 2026-11-11:* the fix always led with that write, and on AlmaLinux 9.8 a new user's
+// kernel offers. The fix always led with that write, and on AlmaLinux 9.8 a new user's
 // user@<uid>.service is offered memory and pids only, so doctor's first lever for cpu was one the user could not
 // pull. A root launcher's fix does not read offered: the mount root lists every controller the kernel has.
 func EnableFix(missing []string, root string, privileged bool, offered map[string]bool) string {

@@ -1,5 +1,5 @@
 # Common targets. `make help` lists them.
-.PHONY: help gen build build-bpf maze maze-tap test integration lint precommit precommit-affected spdx licenses vm-test vm-matrix vm-root-test vm-perf vm-pairs vm-clang release doctor overhead e2e-reason
+.PHONY: help gen build build-bpf test integration lint precommit precommit-affected spdx licenses vm-test vm-matrix vm-root-test vm-perf vm-pairs vm-clang release doctor overhead e2e-reason
 GO ?= go
 # Override for an isolated build without replacing the checkout's binaries.
 BIN_DIR ?= bin
@@ -51,10 +51,6 @@ build:       ## both static binaries: bin/tego (tier-2 BPF objects embedded) pin
 		-ldflags "-s -w -X github.com/attention-span-ai/tego/internal/handoff.controlSHA256=$$pin" -o "$(BIN_DIR)/tego" ./cmd/tego
 	./scripts/check-control-pin.sh "$(BIN_DIR)/tego" "$(BIN_DIR)/tego-control"
 build-bpf: build ## the same binary as build, under the name the fix lines and older docs give
-maze:        ## build the maze CLI and install it as `maze` in $(go env GOBIN) (~/go/bin), on macOS and Linux
-	$(GO) install -trimpath ./cmd/maze
-maze-tap:    ## build a maze release snapshot and serve it from a local Homebrew tap, to install it the way a user does
-	./scripts/maze-local-tap.sh
 # test and integration are CI's steps: inside the user's systemd manager, held to their skip lists, integration
 # built cgo-free, so release.sh check does not pass with the cgroup-placement tests skipped; -count=1, as CI and
 # precommit run them (a cached pass can be stale for a test that runs go build or go list).

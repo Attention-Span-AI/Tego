@@ -21,7 +21,7 @@ var (
 	// errMalformedObject distinguishes the JSON/object/unique-key gate from field validation so a malformed
 	// suffix is reported before a stale digest, without parsing the same object twice in Chain.Add.
 	errMalformedObject = errors.New("record: malformed JSON object")
-	// ErrInvalidEvent is returned when an Event violates the v1 rules (docs/p0/record-ledger.md §2.1).
+	// ErrInvalidEvent is returned when an Event violates the v1 rules.
 	ErrInvalidEvent = errors.New("record: invalid event")
 	// ErrUnsupportedVersion is returned by Decode when v is missing or not 1 (R5).
 	ErrUnsupportedVersion = errors.New("record: unsupported record version")

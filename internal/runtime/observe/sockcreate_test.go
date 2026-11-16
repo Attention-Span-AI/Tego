@@ -22,7 +22,7 @@ func sockCreateSample(h sample, family, typ, protocol int32) []byte {
 	return wire(&e)
 }
 
-// TestRecorderNamesSockCreateRefusals is ADR 0018 PR 2 in the recorder (enforce-cgroup-observe §5 R4, R5): a socket
+// TestRecorderNamesSockCreateRefusals is ADR 0018 PR 2 in the recorder: a socket
 // cgroup/sock_create refused is one refused line, op socket, the triple spelled as the supervisor spells its own
 // socket refusal (supervisor socket.go, record.SocketTriple), reason net-not-allowed, rule unmatched, mechanism cgroup
 // and no decision_plane, since no plane decided it, a plane mode's run included; MPTCP is named by its whole number.
@@ -99,7 +99,7 @@ func TestRecorderSockCreateRecordOutOfShapeIsAGap(t *testing.T) {
 	}
 }
 
-// TestRecorderDropsAnotherGensSockCreateRecord is ADR 0026 (6) as amended for this record: the program stamps the
+// TestRecorderDropsAnotherGensSockCreateRecord is ADR 0026 (6) for this record: the program stamps the
 // owner's gen, and a scoped recorder writes no line for a record of another generation of its slot, nor of another
 // slot.
 func TestRecorderDropsAnotherGensSockCreateRecord(t *testing.T) {

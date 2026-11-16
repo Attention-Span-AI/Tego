@@ -199,8 +199,6 @@ func heldTable(t *testing.T) (*agent.RuleTable, string) {
 // another owner and handed to an unrelated file just before its rule goes in, so the kernel would add the
 // sibling's read rights to that file. The build must fail rather than return that ruleset, and the
 // cleanup must leave the number alone, because it is the other owner's now.
-//
-// Spec: docs/p0/enforce-landlock.md I12.
 func TestRuleOnAReusedNumberFailsTheBuild(t *testing.T) {
 	rt, root := heldTable(t)
 	public := filepath.Join(root, "public")
@@ -234,8 +232,6 @@ func TestRuleOnAReusedNumberFailsTheBuild(t *testing.T) {
 // TestClosedHeldNumberNamesTheLostEntry is the shape observed under full-suite load: the number was closed
 // and not yet reused, so the kernel answers EBADF for the sibling. The error says which held descriptor was
 // lost, instead of reading as a broken ruleset.
-//
-// Spec: docs/p0/enforce-landlock.md I12.
 func TestClosedHeldNumberNamesTheLostEntry(t *testing.T) {
 	rt, root := heldTable(t)
 	public := filepath.Join(root, "public")
@@ -382,8 +378,6 @@ func TestRulesetNumberReopenedBeforeANetRuleIsLeftOpen(t *testing.T) {
 // TestRulesetNumberReopenedAfterTheLastRuleFailsTheBuild: a theft after the last rule went in fails no
 // landlock_add_rule, so only the ruleset probe sees it. Without it the Handle would carry a number that
 // names another owner's file, which the launcher would hand the child and Close would close.
-//
-// Spec: docs/p0/enforce-landlock.md I12.
 func TestRulesetNumberReopenedAfterTheLastRuleFailsTheBuild(t *testing.T) {
 	for _, s := range standIns {
 		t.Run(s.name, func(t *testing.T) {

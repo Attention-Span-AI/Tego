@@ -41,7 +41,7 @@ func TestEventsRendersAFixtureRun(t *testing.T) {
 	}
 }
 
-// TestEventsJSONIsTheStoredBytes is limits-check-doctor-cli.md I8 and R31: events --json prints the stored line, never a re-serialization.
+// TestEventsJSONIsTheStoredBytes: events --json prints the stored line, never a re-serialization.
 func TestEventsJSONIsTheStoredBytes(t *testing.T) {
 	dir := fixtureRun(t)
 	code, out, errs := run(t, "events", dir, "--json")

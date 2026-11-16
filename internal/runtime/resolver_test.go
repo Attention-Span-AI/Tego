@@ -76,7 +76,7 @@ func TestAnExplicitResolverListReplacesResolvConf(t *testing.T) {
 }
 
 // TestAutoResolverReadsResolvConf is the other half: `resolver: auto`, the built-in default, is the
-// nameservers of /etc/resolv.conf at run start (identity-config.md E28).
+// nameservers of /etc/resolv.conf at run start.
 func TestAutoResolverReadsResolvConf(t *testing.T) {
 	m := config.Builtin()
 	if !m.Resolver.Value.Auto {

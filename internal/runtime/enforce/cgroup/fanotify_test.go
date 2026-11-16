@@ -164,7 +164,7 @@ func openFD(t *testing.T) int32 {
 	return int32(fd)
 }
 
-// TestListenerAnswersEveryPermissionEvent is invariant I8 (and enforce-cgroup-observe.md §6 E9: a refused exec's event is this
+// TestListenerAnswersEveryPermissionEvent is invariant I8 (and a refused exec's event is this
 // listener's, source fanotify, never a sched_process_exec record): an allow and a refusal each produce exactly one
 // response, and a refusal also produces the ledger event that explains it.
 func TestListenerAnswersEveryPermissionEvent(t *testing.T) {
@@ -265,7 +265,7 @@ func TestListenerAnswersEveryPermissionEvent(t *testing.T) {
 	}
 }
 
-// TestListenerDeadlineFailsOpen is enforce-cgroup-observe.md §6 E16: a decision that outlives the deadline is answered FAN_ALLOW so the
+// TestListenerDeadlineFailsOpen: a decision that outlives the deadline is answered FAN_ALLOW so the
 // opener is never left blocked, and the gap says so.
 func TestListenerDeadlineFailsOpen(t *testing.T) {
 	t.Parallel()

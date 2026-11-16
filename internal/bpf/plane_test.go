@@ -98,7 +98,7 @@ func TestPlaneNamesAreDisjoint(t *testing.T) {
 	}
 }
 
-// TestPlaneCapsMatchRowCompiler (enforce-plane R5, E13) holds the row compiler's caps (internal/policy/decide) to the slot
+// TestPlaneCapsMatchRowCompiler holds the row compiler's caps (internal/policy/decide) to the slot
 // maps' sizes, and its row positions and kind bits to the row's rule_idx and kind fields: the compiler refuses a
 // table over the caps rather than truncate it, which is sound only if the caps are these maps' sizes.
 func TestPlaneCapsMatchRowCompiler(t *testing.T) {
@@ -350,7 +350,7 @@ func TestPlaneNameKey(t *testing.T) {
 	}
 }
 
-// TestPlaneRecordedMask is the record fallback's mask (enforce-plane §7, R23; TIER3-PLAN T9b): each hook a recorder
+// TestPlaneRecordedMask is the record fallback's mask: each hook a recorder
 // fexit wraps is a hook of the plane, its program one of trace_proc's, and its bit PlaneHookNumber of the hook; a
 // build with none attached, or no recorder at all, samples every refusal (0), and a program that is no fexit of a
 // plane hook sets nothing.

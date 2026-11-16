@@ -474,8 +474,7 @@ func Summary(e *record.Event) string {
 	switch e.Kind {
 	case record.KindRunStart:
 		s := "tier=" + str("tier") + " capture=" + str("capture") + " " + str("kernel")
-		// The command-line command's grant is not in the contract hash, so the run's first line says it
-		// (agent-contract.md R8).
+		// The command-line command's grant is not in the contract hash, so the run's first line says it.
 		if g := str("run_command_grant"); g != "" {
 			s += " run_command_grant=" + g
 		}
@@ -567,7 +566,7 @@ func Summary(e *record.Event) string {
 		return strings.TrimSpace(str("op") + " " + firstNonEmpty(str("target"), str("path"), str("dst")))
 	case record.KindMCP:
 		s := strings.TrimSpace(firstNonEmpty(str("server"), str("name")) + " " + str("transport"))
-		if tool := str("tool"); tool != "" { // a tools/call (capture-derive.md R41)
+		if tool := str("tool"); tool != "" { // a tools/call
 			s += " call " + tool
 		}
 		return s

@@ -41,7 +41,7 @@ const (
 // ErrInvalid is an overlay or a change that does not follow the format.
 var ErrInvalid = errors.New("modelroutes: invalid")
 
-// routeNameRE is a route's name rule (agent-contract.md R32), direct included.
+// routeNameRE is a route's name rule, direct included.
 var routeNameRE = regexp.MustCompile(`^[a-z0-9-]{1,40}$`)
 
 // ValidRoute reports whether s is a route name the overlay holds.

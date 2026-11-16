@@ -26,7 +26,7 @@ import (
 )
 
 // starter is the agent.yaml tego init writes; __NAME__ becomes the agent id. The starter quotes it,
-// since name is a YAML string (agent-contract R3) and an id such as 2024, true or null is not one
+// since name is a YAML string and an id such as 2024, true or null is not one
 // when plain; an agent id ([a-z0-9-]) never needs an escape inside the double quotes.
 //
 //go:embed agent.starter.yaml
@@ -184,6 +184,19 @@ func runInitLive(dir, name string, force bool, po *setup.Options, live agent.Liv
 			message(stderr, "", 0, 0, "tego init: "+err.Error(), code)
 			return exit // R25: a usage error, or Tego's own
 		}
+	}
+	// After every usage check, before anything is created. The common case is a Mac folder, which Tego's Lima VM
+	// mounts read-only.
+	if err := unix.Access(abs, unix.W_OK); err != nil {
+		why := "permission denied"
+		if errors.Is(err, unix.EROFS) {
+			why = "read-only file system"
+		}
+		message(stderr, abs, 0, 0, fmt.Sprintf("tego init: %s is not writable (%s); init writes agent.yaml and .tego/ there", abs, why), codeIO)
+		base := filepath.Base(abs)
+		writeHint(stderr, "make the project in a folder you can write (inside Tego's VM on a Mac), then run tego rules create there:",
+			"mkdir -p ~/"+base+" && cd ~/"+base)
+		return identity.ExitError // R25: an I/O failure is Tego's own error, as ensureDir's below
 	}
 	var actions []string
 	rootTier := false // an Adjustable contract written with tier: cgroup in place of the template's tier: landlock

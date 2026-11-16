@@ -290,8 +290,8 @@ func TestReach(t *testing.T) {
 	}
 }
 
-// TestRunAtReachBPFLSMProbesAsReachCgroupAndTheLSMList: tier bpflsm is the plane in LSM mode over tier cgroup
-// (enforce-plane R19, TIER3-PLAN T7), so a run that can reach it reads tier cgroup's checks, the LSM list and LSM
+// TestRunAtReachBPFLSMProbesAsReachCgroupAndTheLSMList: tier bpflsm is the plane in LSM mode over tier cgroup,
+// so a run that can reach it reads tier cgroup's checks, the LSM list and LSM
 // mode's answer, and nothing else: D7's tier-2 rows alone, never tier 3's legacy rows or capture's; D6 without its
 // counting program, whose proof LSM mode's probe (or the pinned or cached answer of one this boot) already is; and the
 // run-probe cache and a pinned build's answer as at reach cgroup, so an auto run as root, which now reaches bpflsm,
@@ -349,7 +349,7 @@ func TestRunAtReachBPFLSMProbesAsReachCgroupAndTheLSMList(t *testing.T) {
 	}
 }
 
-// TestPlaneKnownAnswersCacheIsForRunsOnly is limits-check-doctor-cli R27: doctor's own scope exercises the plane's
+// TestPlaneKnownAnswersCacheIsForRunsOnly: doctor's own scope exercises the plane's
 // known answers afresh, so its plane probe gets the known-answers cache off; a run's scope (the run-probe cache on)
 // gets it on.
 func TestPlaneKnownAnswersCacheIsForRunsOnly(t *testing.T) {

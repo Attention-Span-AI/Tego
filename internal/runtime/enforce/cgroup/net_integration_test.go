@@ -35,12 +35,12 @@ const netHelperEnv = "TEGO_NET_HELPER"
 
 // TestNetVerdictOnRealKernel runs the tier-2 network decision in the running kernel, from both of the places
 // a connect of the agent's can come from: the agent's own process, and the seccomp supervisor, which relays
-// every allowed connect from its own process on a pidfd_getfd duplicate of the agent's socket
-// (docs/p0/supervisor.md R9, I2). The second is the one that never reached a decision: the kernel runs the
+// every allowed connect from its own process on a pidfd_getfd duplicate of the agent's socket.
+// The second is the one that never reached a decision: the kernel runs the
 // run's connect4/6 because the socket belongs to the run's cgroup, but the program keyed its lookup on the
 // caller's cgroup, the supervisor's, missed the run set and allowed, and wrote no breadcrumb (§5 R1, R5). The
 // test relays exactly that way and requires the refusal, and requires the breadcrumb to agree with what the
-// syscall returned (enforce-cgroup-observe.md §8 I4).
+// syscall returned.
 func TestNetVerdictOnRealKernel(t *testing.T) {
 	if !ebpfbindings.Available() {
 		t.Skip("built without the compiled objects; add -tags tegobpf")
@@ -402,7 +402,7 @@ func sendDatagram(network, addr string) error {
 	return err
 }
 
-// relayConnect does what the supervisor does with a connect it allows (supervisor R9): a helper inside the run's
+// relayConnect does what the supervisor does with a connect it allows: a helper inside the run's
 // cgroup creates a socket of the given mode, and this process, outside the run, connects a pidfd_getfd
 // duplicate of it to dst. It returns the connect's own error.
 func relayConnect(t *testing.T, dir *os.File, mode string, dst netip.AddrPort) error {
@@ -492,9 +492,9 @@ func TestNetUnrestrictedOnRealKernel(t *testing.T) {
 	}
 }
 
-// TestNetRefreshOnRealKernel is §6 E7 as amended, in the running kernel: a host entry whose address rotated is
+// TestNetRefreshOnRealKernel runs in the running kernel: a host entry whose address rotated is
 // refused until RefreshNet moves the run's rows, and then decided by the new address alone, which is what the
-// supervisor's refreshed set admits (supervisor R8).
+// supervisor's refreshed set admits.
 func TestNetRefreshOnRealKernel(t *testing.T) {
 	port := listenLoopback(t, "tcp4", "127.0.0.1")
 	entry := func(ip string) *agent.RuleTable {

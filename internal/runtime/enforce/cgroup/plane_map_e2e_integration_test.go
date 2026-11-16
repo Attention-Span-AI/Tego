@@ -127,7 +127,7 @@ attempt("rie-map-dropped", lambda: map_file("out/drop.so", PR))
 
 // machineExecmod is this machine's own answer, outside any run, to execmod: a private writable map of a file,
 // written, then made executable, as the agent's execmod attempt does. "ok", or "refused errno=N" as the agent writes
-// it. An LSM can refuse it to every process: SELinux enforcing on AlmaLinux 9.8 answers EACCES (2026-11-10).
+// it. An LSM can refuse it to every process: SELinux enforcing on AlmaLinux 9.8 answers EACCES.
 func machineExecmod(t *testing.T) string {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "execmod-probe")
@@ -154,7 +154,7 @@ func machineExecmod(t *testing.T) string {
 	return "ok"
 }
 
-// TestPlaneExecMapRunEndToEnd is TIER3-PLAN T14's acceptance through `tego run` (enforce-plane R26, R27): in each
+// TestPlaneExecMapRunEndToEnd runs through `tego run`: in each
 // plane mode this machine passes, a python3 agent whose contract has an exec: section maps code as native
 // extensions, JITs and droppers do. python3 itself, its libraries and a system library it loads with ctypes map as
 // before; a file it drops under its write entry does not map executable (mmap, mprotect, dlopen, and a PROT_READ map

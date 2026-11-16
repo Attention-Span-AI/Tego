@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// The cold start's attribution (docs/p0/enforce-plane.md §10.1, perf-cold C1): what a cold `tego run` spends in each
+// The cold start's attribution (perf-cold C1): what a cold `tego run` spends in each
 // program's load, in each object's maps, at each of D7's hooks and in each plane-probe mode. It is measured in a test
 // build only, with TEGO_TEST_PHASE_TIMING set (loadstats_tegotesthooks.go); a product build loads with cilium/ebpf's
 // zero options and starts no trace (loadstats_stub.go). This file is the arithmetic both share, pure so that it is

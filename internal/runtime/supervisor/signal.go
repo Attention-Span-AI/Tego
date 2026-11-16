@@ -27,7 +27,7 @@ const (
 	fOwnerPgrp = 2
 )
 
-// The signal syscalls and fcntl commands the signal-scope arm notifies (enforce-landlock signalScopeTest).
+// The signal syscalls and fcntl commands the signal-scope arm notifies (the Landlock filter's signalScopeTest).
 func handleKill(l *Loop, n *notif)             { l.answerSignal(n, "kill") }
 func handleTkill(l *Loop, n *notif)            { l.answerSignal(n, "tkill") }
 func handleTgkill(l *Loop, n *notif)           { l.answerSignal(n, "tgkill") }
@@ -42,7 +42,7 @@ func handleIoctl(l *Loop, n *notif) {
 }
 
 // handleFcntl answers the two fcntl(2) commands a filter notifies: F_NOTIFY, a dnotify watch, which the watch arm
-// notifies (enforce-landlock R11e) and handleDnotify decides (R36), and F_SETOWN or F_SETOWN_EX, which the signal-scope
+// notifies and handleDnotify decides (R36), and F_SETOWN or F_SETOWN_EX, which the signal-scope
 // arm notifies below Landlock ABI 6. The command is an unsigned int the kernel reads as it is here; any other
 // command is continued, as answerSignal continues it.
 func handleFcntl(l *Loop, n *notif) {
@@ -92,8 +92,8 @@ func (t sigTarget) String() string {
 // signals) is continued with no /proc read once the caller's thread group is cached (tgidOf; the first
 // signal of a thread reads /proc/<tid>/status once), and no cgroup read. Every other target is read from /proc, and the kernel
 // re-resolves the pid when the call continues: a target that exits and whose pid a process outside the run
-// takes in between gets the signal. That is a best-effort decision like every one this loop continues
-// (supervisor.md §1); the kernel's scope from ABI 6 has no such window. A target that no longer exists is
+// takes in between gets the signal. That is a best-effort decision like every one this loop continues;
+// the kernel's scope from ABI 6 has no such window. A target that no longer exists is
 // continued, and the kernel answers ESRCH as it would have.
 func (l *Loop) answerSignal(n *notif, op string) {
 	t, ok := signalTarget(op, n.args)
@@ -273,7 +273,7 @@ func (l *Loop) targetInside(n *notif, t *sigTarget) (bool, error) {
 // groupScanTTL is how long one /proc scan of the host's process groups answers later group signals. The
 // scan reads every process's stat, ~15 ms on a desktop's 500 processes, on one of the pool's workers; a
 // test runner or job-control shell that signals a group in a loop would otherwise pay it on every call.
-// 50 ms is an unsourced P0 default: short beside the scan it saves, and a window of the same class as the
+// 50 ms is an unsourced default: short beside the scan it saves, and a window of the same class as the
 // best-effort one every continued signal already has (answerSignal).
 const groupScanTTL = 50 * time.Millisecond
 
@@ -320,7 +320,7 @@ func (l *Loop) groupMembers(pgid int) ([]int, error) {
 
 // setownEx reads F_SETOWN_EX's struct f_owner_ex {int type; pid_t pid;} from the caller's memory. The read is
 // best effort like every memory read this loop decides on: another thread can change it before the kernel
-// copies it (the continue of every decided syscall shares that window, supervisor.md §1).
+// copies it (the continue of every decided syscall shares that window).
 func (l *Loop) setownEx(n *notif) (sigTarget, error) {
 	var buf [8]byte
 	got, err := l.k.ReadMem(n.pid, n.args[2], buf[:])

@@ -173,7 +173,7 @@ func compileGateConfig(c *Contract, home string) (*gate.Policy, error) {
 					return nil, e
 				}
 				if home != "" && r.Predicate == gate.ReadMatches && strings.HasPrefix(r.Argument, "~/") {
-					// The home is cleaned and loses a trailing '/', so the expansion is a clean pattern (gate R1).
+					// The home is cleaned and loses a trailing '/', so the expansion is a clean pattern.
 					r.Argument = strings.TrimSuffix(filepath.Clean(home), "/") + r.Argument[1:]
 				}
 				rules = append(rules, r)

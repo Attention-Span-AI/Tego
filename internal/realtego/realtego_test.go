@@ -11,7 +11,7 @@ import (
 )
 
 // TestUnder: a path is inside a directory by whole path elements, not by prefix, and a symbolic link into the
-// directory is the directory (identity-config.md R27).
+// directory is the directory.
 func TestUnder(t *testing.T) {
 	base := t.TempDir()
 	dir := filepath.Join(base, ".tego")

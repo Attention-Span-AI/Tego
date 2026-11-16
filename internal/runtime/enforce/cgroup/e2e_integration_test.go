@@ -40,7 +40,7 @@ import (
 // alone. The agent then checks, from inside the run, what tier 2 is for:
 //
 //   - a write inside the contract succeeds and one outside it is refused, with a refusal line in the ledger;
-//   - a deny_read path under a writable parent, which tier 1 leaves unenforced (enforce-landlock R4), is
+//   - a deny_read path under a writable parent, which tier 1 leaves unenforced, is
 //     refused by the fanotify listener with a source=fanotify line naming the entry;
 //   - a DNS query to the resolver the machine uses reaches it: the supervisor admits it under net.resolver
 //     and relays it on the agent's socket, and the kernel's connect4 must admit it too (§5 R5);
@@ -180,7 +180,7 @@ func TestTier2RunEndToEnd(t *testing.T) {
 	}
 	// The deny_read under a writable parent, which tier 1 leaves unenforced, is the listener's (EPERM, a
 	// source=fanotify line) where the run decides through fanotify, the decision plane's (EACCES, a source=kernel
-	// line with the plane's reason) where doctor selected a plane mode (TIER3-PLAN T6).
+	// line with the plane's reason) where doctor selected a plane mode.
 	plane := planeSelected(t, bin, "")
 	wantRead, wantSource := "refused errno=1", "fanotify"
 	if plane != PlaneFanotify {
@@ -368,8 +368,8 @@ func buildTegoWithTags(t *testing.T, dir, tags string) string {
 // starts before it has a machine config of its own (doctor, asked whether this machine offers tier cgroup and which
 // plane it selects). It gets the isolation the test's runs get, in a directory of its own: a machine config naming a
 // ledger root there, and testutil.TegoEnv's chain anchor and own-log home beside it. A test build refuses a machine
-// config whose ledger root lies inside the invoking user's own ~/.tego, the built-in ~/.tego/runs included
-// (identity-config.md R27), and under sudo that user is the sudo caller: given no machine config, doctor exited 125
+// config whose ledger root lies inside the invoking user's own ~/.tego, the built-in ~/.tego/runs included,
+// and under sudo that user is the sudo caller: given no machine config, doctor exited 125
 // and every test that asked it first skipped as though the machine offered no tier cgroup.
 func isolatedTego(t *testing.T, bin string, args ...string) *exec.Cmd {
 	t.Helper()
@@ -552,8 +552,8 @@ func stalledRun() string {
 }
 
 // tegoRunCommand is exec.CommandContext for a test's `tego run`, cancelled the way an operator stops a run: a
-// SIGTERM, which the launcher answers by stopping its agent within stop_grace and tearing the run down
-// (runtime-launch R9), and a SIGKILL only once WaitDelay is past that. exec.CommandContext's own cancel is a
+// SIGTERM, which the launcher answers by stopping its agent within stop_grace and tearing the run down,
+// and a SIGKILL only once WaitDelay is past that. exec.CommandContext's own cancel is a
 // SIGKILL of the launcher alone, and a launcher that dies leaves its run's scope and run-set rows for the next
 // run's sweep (ADR 0020). In this test binary no sweep comes, so the build stayed pinned for every later test,
 // and one that checks the last launcher out removes it (TestSecondLauncherAdoptsTheBuildsPinnedObjects) failed

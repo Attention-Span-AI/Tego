@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestBTFProbeFollowsASymlink is limits-check-doctor-cli.md E24's BTF half: D2 opens the path, and open(2)
+// TestBTFProbeFollowsASymlink: D2 opens the path, and open(2)
 // follows a link, so a vmlinux that is a symlink to the real file is BTF present and reports the target's
 // size, as the kernel's own loader would see it, where an lstat would have seen a 20-byte link. A link to
 // nothing is the absence D2 reports, with the tier-2/3 consequence in its detail and a fix.

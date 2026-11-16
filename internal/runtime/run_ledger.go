@@ -30,15 +30,15 @@ import (
 var ErrRunDirWritable = errors.New("runtime: run directory is inside a write entry")
 
 // ErrLedgerRootHome is a "~/" ledger_root this process may not expand: the passwd database names no
-// home for the invoking uid (identity-config.md E9) and $HOME may not stand in for it, because the
+// home for the invoking uid and $HOME may not stand in for it, because the
 // binary was executed with AT_SECURE set — the one environment variable spec/config/v0's Trust
 // section exists to neutralise, and this resolver decides where the audit ledger is written and
 // where `gc` deletes. Returned before any directory is created.
 var ErrLedgerRootHome = errors.New("runtime: ledger_root needs a home the passwd database does not name")
 
 // mintRunAttempts is how many run ids mintRun tries before it gives up: the first and up to three retries,
-// each with a fresh read of the random source, when the run directory's mkdir finds the path taken
-// (identity-config.md R2b). identity itself stays stateless; the retry is the caller's.
+// each with a fresh read of the random source, when the run directory's mkdir finds the path taken.
+// Identity itself stays stateless; the retry is the caller's.
 const mintRunAttempts = 4
 
 // launcherStartBootNS is StartBootNS; a test replaces it to make the launcher's own start time unreadable.
@@ -47,7 +47,7 @@ var launcherStartBootNS = StartBootNS
 // mintRun assigns the run id and creates its directory (§4.1 step 1). The directory must not exist
 // (cases 1 and 16: a collision or a symlink at that path is never reused, followed or overwritten). A path
 // already taken (EEXIST) is retried under a fresh id up to three times, and then the run fails with that
-// EEXIST error, which exits 125 (identity-config.md R2b).
+// EEXIST error, which exits 125.
 func (r *runner) mintRun() error {
 	root, err := LedgerRoot(r.deps.Config)
 	if err != nil {
@@ -77,7 +77,7 @@ func (r *runner) mintRun() error {
 		// MakeRunDir creates the ledger root as MakeDirs does — handing what a root launcher makes in the
 		// user's home (~/.tego, ~/.tego/runs) to that user, so their own unprivileged runs can still
 		// create a run directory there, and refusing, as root, a link the user could have planted — and
-		// then the run directory inside the ledger root it walked (ledger/handover.go, record-ledger.md §3).
+		// then the run directory inside the ledger root it walked (ledger/handover.go).
 		err = ledger.MakeRunDir(root, filepath.Base(dir))
 		if err == nil {
 			break
@@ -116,7 +116,7 @@ func (r *runner) mintRun() error {
 // holds it for `tego stop` (R22).
 func (r *runner) openLedger() error {
 	// WithFreshRunDir: the directory opened must be the one mintRun just made, this process's own and
-	// empty, and the Writer then holds it by descriptor for the whole run (record-ledger.md §3).
+	// empty, and the Writer then holds it by descriptor for the whole run.
 	w, err := ledger.Open(r.dir, record.RunRef{ID: string(r.id), Agent: string(r.agentID)},
 		ledger.WithAnchor(&gatedAnchor{inner: ledger.NewFileChainAnchor(r.anchorFile()), started: &r.anchored}),
 		ledger.WithClock(ledgerClock{r.deps.Clock}),
@@ -132,7 +132,7 @@ func (r *runner) openLedger() error {
 	}
 	// The run is listed in the ledger root's live index while it holds its lock and before run_start, and
 	// stays listed until run_end is written (clearLive): `run` and `stop` sweep only the runs the index
-	// names, so a run that can be lost must be in it from before its first line (record-ledger.md §3).
+	// names, so a run that can be lost must be in it from before its first line.
 	if err := markLive(filepath.Dir(r.dir), string(r.id)); err != nil {
 		return fmt.Errorf("runtime: %w", err)
 	}
@@ -157,8 +157,8 @@ func (r *runner) clearLive() {
 }
 
 // kernelCwd is this process's working directory as getcwd(2) reports it, every symlink resolved, or "" when it has no
-// name (deleted, or outside this mount namespace). The paths on a run's lines come from the kernel in that same form
-// (supervisor.md R6). os.Getwd answers $PWD whenever $PWD names that directory, which spells it through a symlink for
+// name (deleted, or outside this mount namespace). The paths on a run's lines come from the kernel in that same form.
+// Os.Getwd answers $PWD whenever $PWD names that directory, which spells it through a symlink for
 // a project reached through one (a /home that links to /var/home), and run_start then named a directory no line was
 // under: tego learn proposed fs.write: [] with every write "outside the workspace", and tego receipt lost its relative
 // paths.
@@ -196,12 +196,12 @@ func (r *runner) writeRunStart() error {
 		BestEffort: r.rt.BestEffortCellsRun(r.deps.Enforce.Tier(), r.decisionPlane(), r.deputy != nil, r.execPinned()),
 		// The built-in deny_read entries the contract's fs.ask_read entries relax (ADR 0057 D4).
 		AskReadRelaxes: askReadRelaxes(r.rt.AskReadRelaxes),
-		// The grants the run made on its own authority (agent-contract.md R10a): the contract hash does not cover
+		// The grants the run made on its own authority: the contract hash does not cover
 		// them, so this is where a reader learns of them, as of run_command_grant.
 		RuntimeGrants: append(runtimeGrants(r.rt), r.mcpStageRules()...),
-		// The file the launching user named, by path or by registry name (agent-contract.md R26).
+		// The file the launching user named, by path or by registry name.
 		ContractSource: r.deps.ContractSource,
-		// The harness the run was provisioned for, and whether it was (agent-contract.md R27, ADR 0062).
+		// The harness the run was provisioned for, and whether it was (ADR 0062).
 		Harness: r.harness.start,
 		// The profiles the contract merged, in merge order (ADR 0066 D6).
 		Profiles: runProfiles(r.rt.Profiles),
@@ -236,7 +236,7 @@ type denyReadFrozenLister interface {
 }
 
 // denyReadFrozen is run_start.deny_read_frozen (record.MinorDenyReadFrozen): the directories the run's ruleset listed
-// once at launch (enforce-landlock R3, E28), nil when it listed none or the run is records-only, whose handle builds
+// once at launch, nil when it listed none or the run is records-only, whose handle builds
 // no ruleset.
 func (r *runner) denyReadFrozen() *record.DenyReadFrozen {
 	h, ok := r.handle.(denyReadFrozenLister)
@@ -432,7 +432,7 @@ func (a *gatedAnchor) Append(run, head string) error {
 func (a *gatedAnchor) Head(run string) (string, bool, error) { return a.inner.Head(run) }
 
 // runLimits is the optional run_start.limits block: the compiled budgets, so `status` can apply
-// stall_after and `measure` the ceilings without recompiling (limits-check-doctor-cli.md R12).
+// stall_after and `measure` the ceilings without recompiling.
 //
 // A dimension is written exactly when ResolvedLimits.Bounded says the run has a budget there, which is
 // the same question limits.Watcher asks before it enforces one: an explicit 0 is the tightest budget
@@ -469,8 +469,8 @@ func runLimits(l agent.ResolvedLimits, ledgerBytes int64) *record.Limits {
 // checkRunDir refuses a ledger root inside a declared write entry: the agent must never be able to
 // rewrite its own record (SEMANTICS §2 "contradiction"; agent.Compile checks the contract's view,
 // this checks the machine's). It compares the declared names only: an entry, or a ledger root, that is a link
-// leading into the other is refused by Compile, which compares both by where they lead (agent-contract.md R10;
-// agent's TestWriteEntrySymlinkToTheLedgerRootsParent), on the table this run compiled.
+// leading into the other is refused by Compile, which compares both by where they lead
+// (agent's TestWriteEntrySymlinkToTheLedgerRootsParent), on the table this run compiled.
 func checkRunDir(rt *agent.RuleTable, dir string) error {
 	for _, rules := range [][]agent.FSRule{rt.FS, rt.FSAsk} {
 		for _, r := range rules {
@@ -503,7 +503,7 @@ func LedgerRoot(m *config.Machine) (string, error) {
 // The branch exists because os.UserHomeDir is $HOME and nothing else on Unix, and spec/config/v0's
 // Trust section is explicit that "when the process runs with AT_SECURE set (the file-capability
 // copy), $TEGO_CONFIG and $HOME are ignored; a static Go binary gets no loader secure-execution
-// stripping, so the binary does it" — identity-config.md R21 says the same. pkg/spec/config honours
+// stripping, so the binary does it". pkg/spec/config honours
 // it (Resolve reads getpwuid, never $HOME) and leaves Machine.Home empty when the lookup fails (E9:
 // a containerized or directory-backed uid with no passwd entry, which CGO_ENABLED=0 makes any
 // LDAP/SSSD host). Falling back to $HOME here would re-open exactly the door that rule closes, and

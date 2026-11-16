@@ -13,7 +13,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/record"
 )
 
-// TestGCSweepsARunWhoseLockFileIsGone pins record-ledger.md E27: a run directory with no lock file (a fixture, or
+// TestGCSweepsARunWhoseLockFileIsGone: a run directory with no lock file (a fixture, or
 // a tool that bypassed Open) reads as free, so gc's sweep operates on it rather than erroring: an ended run past
 // retention is deleted, and one within retention is kept, neither reported as an error.
 func TestGCSweepsARunWhoseLockFileIsGone(t *testing.T) {
@@ -41,7 +41,7 @@ func TestGCSweepsARunWhoseLockFileIsGone(t *testing.T) {
 	}
 }
 
-// TestGCUnlinksARunUnderAnOpenReader pins record-ledger.md E21: a reader that opened a run before gc deleted it
+// TestGCUnlinksARunUnderAnOpenReader: a reader that opened a run before gc deleted it
 // keeps reading it (unlink-while-open), and an open after the deletion gets os.ErrNotExist.
 func TestGCUnlinksARunUnderAnOpenReader(t *testing.T) {
 	root := t.TempDir()
@@ -76,7 +76,7 @@ func TestGCUnlinksARunUnderAnOpenReader(t *testing.T) {
 	}
 }
 
-// TestOpenTakesALedgerDirAsGiven pins record-ledger.md E17: Open resolves dir as given, with no symlink defense of
+// TestOpenTakesALedgerDirAsGiven: Open resolves dir as given, with no symlink defense of
 // its own, so a relative path and a path through a symlink each write the run where they point.
 func TestOpenTakesALedgerDirAsGiven(t *testing.T) {
 	base := t.TempDir()

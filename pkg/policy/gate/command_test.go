@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestExecMatchesReadsCommandPatterns is gate.md R2 as ADR 0048 (5) amends it: `exec matches "<p>"` matches when the
+// TestExecMatchesReadsCommandPatterns is ADR 0048 (5): `exec matches "<p>"` matches when the
 // legacy glob matches or when p, read as a command pattern with the shared matcher, matches under deny semantics. It
 // is the union, so no rule matches less than before; the gate still only escalates.
 func TestExecMatchesReadsCommandPatterns(t *testing.T) {

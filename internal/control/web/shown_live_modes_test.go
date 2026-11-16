@@ -31,7 +31,7 @@ func TestShownOpLiveModeWhys(t *testing.T) {
 	}
 }
 
-// TestShownLiveModeOps: a fence line's text says what it did and who asked, never "blocked live" (review r12: a lift
+// TestShownLiveModeOps: a fence line's text says what it did and who asked, never "blocked live" (a lift must not
 // read "…datasets, blocked live by somebody" on Logs): a lift allowed it, a restore refused it again, an expiry names
 // no person (its time limit ended it), a refused lift was asked for; a block and an unblock read as before.
 func TestShownLiveModeOps(t *testing.T) {

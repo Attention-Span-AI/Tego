@@ -261,7 +261,7 @@ func (p *parser) limits(l *limitsData, v *yaml.Node) {
 				l.cpu.set = false
 			}
 		case "cpu_weight":
-			// cpu.weight is 1..10000 in the kernel and in the contract (agent-contract.md §2). A ceiling
+			// cpu.weight is 1..10000 in the kernel and in the contract. A ceiling
 			// outside it has no enforceable reading: 0 would resolve as a budget that cgroup.limitFiles
 			// then skips (the machine's 0 is a real value everywhere else), and above 10000 is
 			// EINVAL at every run's startup. Refused here, where the operator wrote it.
@@ -334,9 +334,9 @@ func (p *parser) ask(d *layerData, v *yaml.Node) {
 const PidsMax = 4194304
 
 // MinStartPids and MinStartMemory are the least a run's own start takes in the run's cgroup, before the agent exists:
-// the launcher's child stage is a Go process under the run's limits from its first instruction. Measured on
-// 2026-11-01 at tier landlock: pids 5 fails every time and 6 passes, memory 4 MiB fails and 6 MiB passes. The machine
-// parser warns of a ceiling below them where it is written, and the contract compile (agent-contract.md R11) of a
+// the launcher's child stage is a Go process under the run's limits from its first instruction. At tier
+// landlock: pids 5 fails every time and 6 passes, memory 4 MiB fails and 6 MiB passes. The machine
+// parser warns of a ceiling below them where it is written, and the contract compile of a
 // limit below them, the contract's or the ceiling's.
 const (
 	MinStartPids   = 6
@@ -754,7 +754,7 @@ func (p *parser) limitBytes(v *yaml.Node, key string) field[ByteSize] {
 }
 
 // checkListen says why a forwarder.listen is not a loopback host:port, or "" when it is. The forwarder is
-// loopback only (agent-contract R19, P0-DESIGN section 3.3): the host is "localhost" or a loopback IP
+// loopback only: the host is "localhost" or a loopback IP
 // literal, so 0.0.0.0, an empty host and a routable address are refused where written, and the port is a
 // number in 0..65535 (net.Listen also takes a service name; here a port is a number, so a typo is not a
 // runtime bind failure on the first run that has models[]).

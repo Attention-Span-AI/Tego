@@ -218,7 +218,7 @@ func (p *printer) fs(rules []FSRule, assurance FSAssurance, held bool) {
 		switch {
 		case r.Unenforced && r.Kind == FSDenyWrite && assurance == FSAssuranceKernel:
 			// Landlock cannot deny beneath the enclosing write entry, and fs.assurance: kernel refuses a run no
-			// decision plane decides (enforce-landlock R5a).
+			// decision plane decides.
 			notes = append(notes, "kernel-plane-required(landlock: parent writable)")
 		case r.Unenforced && r.IsDeclaredDenyWrite():
 			// An fs.deny_write entry (ADR 0071): the same refusal as a built-in target's, labelled as its users read it.

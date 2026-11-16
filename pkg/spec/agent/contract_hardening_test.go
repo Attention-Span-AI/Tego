@@ -14,7 +14,7 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/config"
 )
 
-// Contract hardening: each test below pins one finding of the 2026-09-24 review, and failed before its fix.
+// Contract hardening: each test below pins one hole in contract handling.
 
 // A YAML null list element (`~`, or a bare `-`) is dropped by yaml.v3's typed decode, so
 // `deny_read: [~]` became the explicit `deny_read: []` and switched the built-in credential list off.
@@ -248,7 +248,7 @@ func TestContractWriteInsideTegosOwnTreesIsAContradiction(t *testing.T) {
 
 // A contract, profile or test table is read from a regular file or a pipe only: opening a FIFO with no
 // writer blocked Load in open(2) forever, and a device (a tty, /dev/zero) was read as if it were one.
-// agent-contract.md E25: only a regular file, a pipe or a socket is read, so a FIFO with no writer cannot hold Load.
+// Only a regular file, a pipe or a socket is read, so a FIFO with no writer cannot hold Load.
 func TestLoadReadsOnlyAFileOrAPipe(t *testing.T) {
 	if _, _, err := Load("/dev/zero", nil); !errors.Is(err, ErrNotAFile) {
 		t.Errorf("Load(/dev/zero) = %v, want ErrNotAFile", err)

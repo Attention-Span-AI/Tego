@@ -30,7 +30,7 @@ const (
 	// header caps (R5, R6, R13).
 	GapSizeCap = "size-cap"
 	// GapEmitQueueFull is events the forwarder dropped because its emit queue was full, the run's pipeline having
-	// fallen behind; count is set (§3, limits-check-doctor-cli.md R1 (s)).
+	// fallen behind; count is set (§3).
 	GapEmitQueueFull = "emit-queue-full"
 	// GapNoModels is capture asked for by a contract that declares no models[] endpoint: the forwarder
 	// has nothing to bind a listener for, so it never runs (R19). The gap names the forwarder as its

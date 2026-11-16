@@ -923,7 +923,7 @@ func TestFollowerResumesFromAnUnterminatedLastLine(t *testing.T) {
 	}
 }
 
-// TestFollowerNewerVersionLine pins the Follower's newer-version rule (record-ledger.md §4 Follow): without
+// TestFollowerNewerVersionLine pins the Follower's newer-version rule: without
 // SkipNewerVersions a newer record version's line ends the follow as ErrCorruptLedger naming
 // ErrNewerVersion, the line and its offset, after the lines before it; with it the line is skipped, counted,
 // and the lines after it delivered, and a resume from the cursor before it skips it again.
@@ -1056,7 +1056,7 @@ func resumeWriter(t *testing.T, dir string, hold *os.File) {
 	}
 }
 
-// TestFollowerResumeWaitsWhileTheLockIsHeld pins resume's lock probe (record-ledger.md §4 Follow): a cursor
+// TestFollowerResumeWaitsWhileTheLockIsHeld pins resume's lock probe: a cursor
 // naming the whole unterminated last line of a ledger whose lock is held is waited on, neither refused as
 // [cursor-mismatch] nor ended as ErrRunLost, since the holder may yet terminate it; once a resuming Writer
 // does and ends the run, the Follower delivers the lines after the cursor and ends cleanly.
@@ -1109,8 +1109,7 @@ func TestFollowerResumeLockSeenFreeMeansTheReadWasFinal(t *testing.T) {
 	equalLines(t, got.lines, storedLines(t, dir)[len(all.lines):])
 }
 
-// TestFollowerResumeWaitsForAPartialCursorLine pins resume's wait for a partial line (record-ledger.md §4
-// Follow): when the file ends inside the cursor's line while a writer holds the lock, the Follower waits,
+// TestFollowerResumeWaitsForAPartialCursorLine pins resume's wait for a partial line: when the file ends inside the cursor's line while a writer holds the lock, the Follower waits,
 // and once the rest of the line arrives it accepts the cursor and delivers the lines after it.
 func TestFollowerResumeWaitsForAPartialCursorLine(t *testing.T) {
 	w, dir, _ := openTestWriter(t)

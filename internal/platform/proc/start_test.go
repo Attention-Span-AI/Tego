@@ -71,7 +71,7 @@ func TestArmWaitsForAStartInFlight(t *testing.T) {
 // reissued to a process that started later (SameProcess on the two starts), and from a pid with no process at
 // all (ErrGone). Nothing is signalled.
 //
-// Also pins runtime-launch.md E19: the start time is /proc's starttime field, CLOCK_BOOTTIME-relative.
+// Also pins: the start time is /proc's starttime field, CLOCK_BOOTTIME-relative.
 func TestIdentityNamesOneProcessAcrossPidReuse(t *testing.T) {
 	f := fakeProc(t, 4242, map[string]string{"stat": statLine(4242, "a b) c", 1, 1, 900)}, nil)
 	kept, err := f.Identity(4242)

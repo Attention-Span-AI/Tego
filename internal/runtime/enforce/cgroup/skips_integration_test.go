@@ -64,7 +64,7 @@ print("RESULT slept", flush=True)
 
 // skipHostBinder is the ungoverned case's binder, a process in no run: it binds its own abstract name on CPU 0 and
 // sleeps 200 microseconds between binds, so it wakes onto the CPU as often as the agent's binds, which wait on the
-// supervisor, do; a binder that never slept was skipped nowhere in 22,467 updates (2026-11-11), since a CPU-bound pair
+// supervisor, do; a binder that never slept was skipped nowhere in 22,467 updates, since a CPU-bound pair
 // switches only at the scheduler's own ticks.
 const skipHostBinder = `import os, socket, time
 os.sched_setaffinity(0, {0})
@@ -88,7 +88,7 @@ const (
 // kernel code (lazy), so a skip that cannot be forced there is a broken proof, not a kernel that does not allow one.
 // fedora-7.2 is not one: its kernel also preempts kernel code, but from 7.2 a syscall tracepoint program runs under
 // its own per-CPU guard, not the machine-wide one startBPFActiveHammer holds, so this hammer cannot make it skip
-// there (ADR 0148, review of 2026-11-13). The forced cases still run on that row and skip when nothing was forced.
+// there (ADR 0148). The forced cases still run on that row and skip when nothing was forced.
 var skipProofRows = []string{"fedora-7.0"}
 
 // startBPFActiveHammer updates a per-CPU array map from a thread pinned to CPU 0 until stop closes, and returns the

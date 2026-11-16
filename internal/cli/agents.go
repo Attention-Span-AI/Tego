@@ -35,8 +35,7 @@ var (
 
 func init() { register(cmdAgents) }
 
-// cmdAgents is `tego agents [--signature <rule>]... [--follow] [--children] [--json]` (docs/poc/agent-watcher.md,
-// M2, detection only). It names the agent processes on this machine, the ones a signature recognises, and says for
+// cmdAgents is `tego agents [--signature <rule>]... [--follow] [--children] [--json]`, detection only. It names the agent processes on this machine, the ones a signature recognises, and says for
 // each whether it is running inside a tego run. With --follow it goes on listening to the kernel's process events
 // (the proc connector) and reports each agent as it starts and as it exits.
 //

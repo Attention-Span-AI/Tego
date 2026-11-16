@@ -86,7 +86,7 @@ func pauseChange(ctx context.Context, name string, on bool, fs *flag.FlagSet, st
 	}
 	// The launcher must be there: a lock nobody holds, or one held by a process that is not the run's launcher
 	// (runlock.LauncherGone, never a bare pid), has no one to apply the change. No command resumes a run lost
-	// while last recorded paused: nothing would decide or record what it does (ADR 0124, amendment 2026-11-11).
+	// while last recorded paused: nothing would decide or record what it does (ADR 0124).
 	// The recorded pause does not prove its current frozen state; tego stop attempts to end what remains.
 	launcher, cause, err := runlock.LauncherCheck(dir)
 	if err != nil {

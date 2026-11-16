@@ -57,7 +57,7 @@ func TestEvaluateUnixUnderWrite(t *testing.T) {
 }
 
 // TestEvaluateUnixDecidedWhereTheNameLands: a connect or a datagram to a unix pathname is decided as the supervisor
-// decides it (R11, R11a; SEMANTICS §5 as amended 2026-10-16): on the name it passes, then on the socket that name
+// decides it (R11, R11a; SEMANTICS §5): on the name it passes, then on the socket that name
 // reaches (Action.Landed), matched as decideResolved matches it, a unix: entry by its resolved path and the nearest
 // filesystem entry by its resolved path alone, and named by the entry that admitted the socket. A name admitted through
 // a symlink in a write entry to a socket outside it was answered allow, which the run refuses with rule unmatched. A
@@ -382,8 +382,8 @@ func TestEvaluateUnixLandedOnNoSocket(t *testing.T) {
 }
 
 // TestEvaluateUnixAskScopeUnderWrite: a net.ask unix: scope inside a write entry is refused under the scope's own
-// rule, as an ask compiles in P0 (SEMANTICS §3.1, agent-contract R15), not allowed through the write entry around it:
-// the run holds that connect for a person (supervisor R11c), so a static evaluation cannot certify it. A socket
+// rule, as an ask compiles (SEMANTICS §3.1), not allowed through the write entry around it:
+// the run holds that connect for a person, so a static evaluation cannot certify it. A socket
 // beside the scope stays the write entry's, and a scope outside every write entry stays refused.
 func TestEvaluateUnixAskScopeUnderWrite(t *testing.T) {
 	rt := &agent.RuleTable{
@@ -419,10 +419,10 @@ func TestEvaluateUnixAskScopeUnderWrite(t *testing.T) {
 }
 
 // TestEvaluateUnixLandedAtAnAskScope: a unix name whose walk lands at a net.ask unix: scope's place (Action.Landed
-// equal to the scope's NetRule.UnixResolved) is answered as the run answers it (supervisor R11c), whatever its spelling
+// equal to the scope's NetRule.UnixResolved) is answered as the run answers it, whatever its spelling
 // (compile --test once landed the name and admitted it through the write entry
 // around the scope, while the run asked or refused it). A connect no declared entry names is asked at the scope's place
-// (unixScopeOf places the name by the walk), so it is refused under the scope's own rule, as an ask compiles in P0; a
+// (unixScopeOf places the name by the walk), so it is refused under the scope's own rule, as an ask compiles; a
 // datagram, which nobody is asked about, and a connect a declared entry's spelling admits but whose walk reaches the
 // scope's place, are refused unix-ask-scope (decideResolved). A landing beside the scope stays the write entry's.
 func TestEvaluateUnixLandedAtAnAskScope(t *testing.T) {

@@ -86,8 +86,8 @@ func TestDiscover(t *testing.T) {
 		{"TEGO_REASON under the root", "", false, "/tego/" + testRun + "/" + reason.FileName, true, false, true},
 		// --reason is a settings file's value: held to the conventions the hook can check, as before.
 		{"--reason under a base not inherited", xdg + "/tego/" + testRun + "/" + reason.FileName, true, "", true, false, true},
-		// ... unless it is $TEGO_REASON itself, as the settings file the launcher provisions writes it (ADR 0063 (5),
-		// as amended): the value is then the launcher's and is taken under its rule.
+		// ... unless it is $TEGO_REASON itself, as the settings file the launcher provisions writes it (ADR 0063 (5)):
+		// the value is then the launcher's and is taken under its rule.
 		{"--reason that is TEGO_REASON, under a base not inherited", xdg + "/tego/" + testRun + "/" + reason.FileName, true,
 			xdg + "/tego/" + testRun + "/" + reason.FileName, true, true, true},
 		{"--reason that is not TEGO_REASON, under a base not inherited", xdg + "/tego/" + testRun + "/" + reason.FileName, true,

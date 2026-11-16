@@ -13,7 +13,7 @@ import (
 // TestAttributeStageFollowsCapture pins which attribution method a run uses and why. With nothing
 // capturing there is no turn structure to derive from, so method none is the honest label: no
 // attribution was attempted. With a capture source running, derive.Steps is installed and the method
-// becomes time, which is P0-DESIGN §5's M1 to M2 step.
+// becomes time.
 func TestAttributeStageFollowsCapture(t *testing.T) {
 	t.Run("no sources means method none", func(t *testing.T) {
 		r := newTestRunner(Deps{})

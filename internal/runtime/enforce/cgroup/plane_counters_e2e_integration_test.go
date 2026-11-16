@@ -55,7 +55,7 @@ while [ ! -e out/go ]; do sleep 0.05; done
 attempt mismatch out/secret/key
 `
 
-// TestPlaneCountersBecomeGapsAtRunEnd is enforce-plane §2.8's counters half in a real run, per plane mode: a read
+// TestPlaneCountersBecomeGapsAtRunEnd checks the plane's counters in a real run, per plane mode: a read
 // 65 directories below the nearest row exhausts the walk (the slot's bound counter) and a read under a deny_read
 // whose row's identity no longer matches its inode (the mismatch counter; the test overwrites the row's i_ino in
 // the slot's map while the run waits, as bpf/testonly's fill does with its Corrupt flag) are both refused, and the

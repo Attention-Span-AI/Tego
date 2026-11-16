@@ -438,7 +438,7 @@ func (l *Loop) pinHeld(h *heldPlan) (ok, repin bool) {
 		l.heldRefuse(h, "gate.unreadable", record.ReasonFSGate, &gate.Decision{Verdict: gate.Refused, Score: gate.MaxScore, Rule: "gate.unreadable"})
 		return false, false
 	case errors.Is(err, errOtherView):
-		resolved = "" // nameless: no name can match, and no entry names it (gate.md R1)
+		resolved = "" // nameless: no name can match, and no entry names it
 	case err != nil:
 		l.heldUnavailable(h, err)
 		return false, false
@@ -653,8 +653,8 @@ func sameNetNS(tid int) bool {
 
 // heldFloors is D3 step 3 on the pinned object: the floor the copied path applies to the same open, the contract's
 // verdict for the tier (fsVerdictIn, decide.AdvisoryFS, must allow; anything else refuses) and for a write R15c's
-// deny_write targets. The open is delivered only when the floor allows: a score never grants what the floor refuses
-// (gate.md R1). Under gate.completion: held alone it is the copied path's floor and no stricter, so held completion
+// deny_write targets. The open is delivered only when the floor allows: a score never grants what the floor refuses.
+// Under gate.completion: held alone it is the copied path's floor and no stricter, so held completion
 // changes how an open is completed, never which opens a tier allows, and the kernel's own decision on the deputy's
 // open stands beneath it. A run that holds its reads (ADR 0069) adds the held-read floor for a read-capable open
 // (heldReadFloors): a deny_read the Landlock ruleset leaves unenforced, nested in a write entry, is refused on the
@@ -964,7 +964,7 @@ func (l *Loop) heldAnswer(h *heldPlan, errno unix.Errno) {
 // the floor did not make. Where a decision plane decides the run, the model also reads the open object's identity: a
 // plane keys some files at their own inodes (planeKeyedAt), so a hard link to one made before the run, whose path the
 // model allows, is refused by that file's row, and the model's answer at the path the row is keyed at explains it
-// (GAPS C38). The kernel recorder writes nothing for the deputy's open (supervisor R7a).
+// (GAPS C38). The kernel recorder writes nothing for the deputy's open.
 func (l *Loop) heldKernelErrno(h *heldPlan, errno unix.Errno) {
 	l.respond(h.n, respMiss(errno))
 	if h.resolved != "" {
@@ -1038,7 +1038,7 @@ func (l *Loop) heldUnavailable(h *heldPlan, err error) {
 func (l *Loop) heldAsk(h *heldPlan, g *gate.Decision) {
 	n := h.n
 	if h.resolved == "" || h.st.Mode&unix.S_IFMT != unix.S_IFREG && h.leaf == "" {
-		// The ask range completes regular files and creates only, as before Stage B (gate.md R4): an unsupported
+		// The ask range completes regular files and creates only, as before Stage B: an unsupported
 		// completion is refused, never continued.
 		l.heldRefuse(h, g.Rule, record.ReasonFSGate, &gate.Decision{Verdict: gate.Ask, Score: g.Score, Rule: g.Rule})
 		return
@@ -1114,7 +1114,7 @@ func (l *Loop) heldAsk(h *heldPlan, g *gate.Decision) {
 		return
 	}
 	// The protected identities and the names' history again, now that the answer is back and before the deputy
-	// opens anything (review round 3): the pinned file put at a protected name during the person's wait must not be
+	// opens anything: the pinned file put at a protected name during the person's wait must not be
 	// truncated by an approved O_TRUNC before openHeld's check of the returned descriptor refuses it.
 	var pinned decide.HeldReadID
 	if h.leaf == "" && h.flags&unix.O_TMPFILE != unix.O_TMPFILE {

@@ -78,7 +78,7 @@ func octal3(s string) (byte, bool) {
 // the memory controller (memory.max) and no memory.swap.max, which is a kernel that accounts no swap to
 // cgroups (swapaccount=0 or cgroup.memory=noswap on its command line) while readSwaps lists an active area.
 // There memory.max still caps the RAM, and the kernel reclaims the processes' anonymous pages to swap instead
-// of OOM-killing them, so the cap can be exceeded by the size of the swap (runtime-launch.md R10, ADR 0038).
+// of OOM-killing them, so the cap can be exceeded by the size of the swap (ADR 0038).
 // Nil when memory.swap.max exists, when no swap is active, and when dir has no memory controller or any of
 // the three cannot be read: nothing then shows the bypass.
 func UncappedSwap(dir string, readSwaps func() ([]byte, error)) []string {

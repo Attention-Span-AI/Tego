@@ -209,9 +209,9 @@ func TestCheckUnknownBuildCannotCheck(t *testing.T) {
 	wantResult(t, checked(t, p, dirty), CheckCannot, identity.ExitError)
 }
 
-// TestCheckReceiptNamingNoBuildSaysSo (receiptbind review 4 S1): a receipt whose binding.receipt_by is missing, null or
-// empty, or whose tego_version or commit is "", could not be checked (exit 125) with blank words: "the receipt was made
-// by tego  (commit ) ... rerun the check with tego ". It still cannot be checked, never a match, and the words name
+// TestCheckReceiptNamingNoBuildSaysSo: a receipt whose binding.receipt_by is missing, null or
+// empty, or whose tego_version or commit is "", cannot be checked (exit 125), and never with blank words ("the receipt
+// was made by tego  (commit ) ... rerun the check with tego "). It cannot be checked, never a match, and the words name
 // what the receipt lacks; a receipt made by a build that is no exact one (+dirty, commit none) says so, not "rerun the
 // check with tego v0.1.2+dirty".
 func TestCheckReceiptNamingNoBuildSaysSo(t *testing.T) {

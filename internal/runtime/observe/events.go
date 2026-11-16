@@ -87,18 +87,18 @@ const (
 	KindSymlink     Kind = 17
 	KindTruncate    Kind = 18
 	// KindPlaneExec is the decision plane's own refusal of an exec (struct tego_ev_plane), on bprm_check, which no
-	// recorder fexit wraps (TIER3-PLAN T9).
+	// recorder fexit wraps.
 	KindPlaneExec Kind = 19
-	// KindPlaneAttr and KindPlaneSocket are the plane's own refusals on step B's hooks no recorder fexit wraps
-	// (TIER3-PLAN T13): an attribute change (chmod, chown, xattr, ACL) named as a file operation is, by its
+	// KindPlaneAttr and KindPlaneSocket are the plane's own refusals on step B's hooks no recorder fexit wraps:
+	// an attribute change (chmod, chown, xattr, ACL) named as a file operation is, by its
 	// directory's (dev, ino) and final component in FSBody, and a socket named by its family, type and protocol.
 	KindPlaneAttr   Kind = 20
 	KindPlaneSocket Kind = 21
-	// KindPlaneMap is the plane's own refusal of an executable mapping on step C's hooks (TIER3-PLAN T14), its file
+	// KindPlaneMap is the plane's own refusal of an executable mapping on step C's hooks, its file
 	// named as KindPlaneAttr's is, or with no name.
 	KindPlaneMap Kind = 22
 	// KindPlaneFS is the plane's own refusal on a hook a recorder fexit wraps whose fexit the build did not attach
-	// (TIER3-PLAN T9b, enforce-plane §7): file_open or a file operation, named as KindPlaneAttr is, with the hook in
+	// file_open or a file operation, named as KindPlaneAttr is, with the hook in
 	// PlaneBody and file_open's f_flags in FSBody.Flags.
 	KindPlaneFS Kind = 23
 	// KindExecResult terminates a failed exec syscall, after its image-open or bprm refusal samples.
@@ -107,7 +107,7 @@ const (
 	KindBindResult   Kind = 26
 	KindListenResult Kind = 27
 	// KindSockCreate is cgroup/sock_create's own refusal (struct tego_ev_sock) of an inet socket outside ADR 0018's
-	// allowlist (enforce-cgroup-observe §5 R4, R5), named by its family, type and protocol in SockBody.
+	// allowlist, named by its family, type and protocol in SockBody.
 	KindSockCreate Kind = 28
 	// KindSockopt is cgroup/setsockopt's own refusal (struct tego_ev_sockopt) of setsockopt(SOL_TCP, TCP_ULP) (ADR
 	// 0018 (7)), named by its option, value length and the name's first bytes in SockoptBody.
@@ -260,7 +260,7 @@ type ExecBody struct {
 	// process's working directory at the exec, or a name with a ".." component (Recorder.resolveExec).
 	Unresolved bool
 	// Plane is a bpf.PlaneNamed* value: the decision plane's bprm_check allowed this exec, by the exec entry or the
-	// exec.allow directory's fs row at Header.RuleIdx (TIER3-PLAN T9).
+	// exec.allow directory's fs row at Header.RuleIdx.
 	Plane uint8
 	// Interpreted is the kernel's binfmt interpreter rewrite marker, not a userspace file guess.
 	Interpreted bool
@@ -309,7 +309,7 @@ func (e ExecResultBody) restarting() bool {
 // rename, mkdir, mknod, rmdir, link, symlink or truncate.
 //
 // An open carries the path bpf_d_path resolved and the opened inode's (Dev, Ino). The other three hooks may
-// never call bpf_d_path (docs/p0/enforce-cgroup-observe.md §5 R9/R10): they carry the parent directory's
+// never call bpf_d_path: they carry the parent directory's
 // (Dev, Ino) and the final component in Path, and a rename or a link also its new name's parent (Dev2, Ino2)
 // and final component (Path2); userspace resolves them against the rule table's own directory index. A
 // symlink's Path2 is its target as the caller wrote it.

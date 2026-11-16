@@ -17,7 +17,7 @@ import (
 const EnvTestLiveAnyTier = "TEGO_TEST_LIVE_ANY_TIER"
 
 // liveAnyTier is EnvTestLiveAnyTier set to 1, never under AT_SECURE, where no environment variable may steer the
-// capability-bearing binary (identity-config.md R21).
+// capability-bearing binary.
 func liveAnyTier() bool {
 	if secure, err := config.DetectSecureExec(); err != nil || secure {
 		return false

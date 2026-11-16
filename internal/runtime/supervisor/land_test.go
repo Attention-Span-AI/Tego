@@ -49,7 +49,7 @@ func noSocket(c landCase) landCase {
 	return c
 }
 
-// TestResolveActionFollowsAsTheKernel pins compile --test's landing of a row's paths (ADR 0019's 2026-10-17 design
+// TestResolveActionFollowsAsTheKernel pins compile --test's landing of a row's paths (ADR 0019 design
 // note): the run's own walk (Land), asked with each syscall's own lookup (agent.ActionKind.Lookups). An open or an exec
 // is evaluated on the file a symlink reaches, an unlink, a mkdir or a rename on the link itself in its walked
 // directory, a hard link stays itself (its old name looked up whole, unfollowed, so a final "." or ".." is walked),
@@ -57,8 +57,6 @@ func noSocket(c landCase) landCase {
 // deepest existing directory, through a dangling symlink to its target (intermediate, or final where the syscall
 // follows it), and with ".." after a symlink taken physically. The last three were answered at the link's own
 // spelling, or on the lexically cleaned path, where the kernel's walk goes elsewhere (R6-C1 and R6-C2 of both lenses).
-//
-// Spec: docs/p0/agent-contract.md R15.
 func TestResolveActionFollowsAsTheKernel(t *testing.T) {
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -250,8 +248,6 @@ func TestResolveActionFollowsAsTheKernel(t *testing.T) {
 // a socket missing at compile is asked; as root, the link is given another owner and the kernel's own lookup refuses
 // it, so a bound socket is asked too, through unixWalk's fallback walk, with the run's own walk held to the same answer.
 // The link lies in /tmp, a sticky world-writable directory root owns (TestDeputyWalkFollowsLinksAsTheKernelDoes).
-//
-// Spec: docs/p0/limits-check-doctor-cli.md R28; docs/p0/supervisor.md R11.
 func TestLandUnixStepwise(t *testing.T) {
 	var tmp unix.Stat_t
 	if err := unix.Stat("/tmp", &tmp); err != nil || tmp.Uid != 0 || tmp.Mode&(unix.S_ISVTX|0o002) != unix.S_ISVTX|0o002 {
@@ -346,8 +342,6 @@ func TestLandUnixStepwise(t *testing.T) {
 
 // TestLandRefusesAsTheKernel: a walk that fails as the task's own lookup fails answers its errno, the kernel's limit of
 // 40 symlinks included, and a relative path is not a question Land takes.
-//
-// Spec: docs/p0/agent-contract.md R15.
 func TestLandRefusesAsTheKernel(t *testing.T) {
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -586,8 +580,6 @@ func kernelLanding(p, kind string) (string, error) {
 // socket or not, gets the verdict the run's own decision code gives
 // once the tree is the one compile answers for. Each row gets a fresh copy of its tree, built beneath a jail of
 // directories, so what one row makes no other row sees.
-//
-// Spec: docs/p0/agent-contract.md R15; docs/p0/limits-check-doctor-cli.md R28.
 func TestCompileLandsWhereTheRunLands(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {

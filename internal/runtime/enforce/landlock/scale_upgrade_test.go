@@ -17,12 +17,10 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// TestPrepareOverManyExecBinaries is docs/p0/enforce-landlock.md E22 for exec.allow: thousands of
+// TestPrepareOverManyExecBinaries: for exec.allow, thousands of
 // individually listed binaries build in one Prepare that holds one fd each, finishes far inside a bound a
 // quadratic build would miss, and stays cancellable through the ctxCheckEvery tick. The deny_read half of
 // E22 is TestOutermostScalesLinearly.
-//
-// Spec: docs/p0/enforce-landlock.md E22.
 func TestPrepareOverManyExecBinaries(t *testing.T) {
 	const n = 3000
 	var lim unix.Rlimit
@@ -74,11 +72,9 @@ func TestPrepareOverManyExecBinaries(t *testing.T) {
 	}
 }
 
-// TestBinaryUpgradeMidRunLeavesTheLiveHandleAlone is docs/p0/enforce-landlock.md E24: an exec.allow binary
+// TestBinaryUpgradeMidRunLeavesTheLiveHandleAlone: an exec.allow binary
 // replaced by rename-install (VERSIONING.md) while a run is live leaves that run's Handle holding the
 // inode it opened, and a Prepare after the upgrade builds independently and holds the new file.
-//
-// Spec: docs/p0/enforce-landlock.md E24.
 func TestBinaryUpgradeMidRunLeavesTheLiveHandleAlone(t *testing.T) {
 	root := tempDir(t)
 	bin := filepath.Join(root, "tool")

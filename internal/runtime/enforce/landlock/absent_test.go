@@ -8,13 +8,11 @@ import (
 	"github.com/attention-span-ai/tego/pkg/spec/agent"
 )
 
-// TestNoFSSectionHandlesEveryWrite pins SEMANTICS §1's "no fs:" row as amended: the ruleset handles the
+// TestNoFSSectionHandlesEveryWrite pins SEMANTICS §1's "no fs:" row: the ruleset handles the
 // whole write side (I4) and no rule grants any of it, so every write is refused exactly as under fs: {},
 // while reads stay open. Leaving the write rights unhandled instead would also have left the implicit
 // entries (the run directory, the contract file, /sys/fs/cgroup, /sys/fs/bpf) writable from inside the
 // run, since Landlock cannot deny beneath an allow; that is why the unrestricted reading was not built.
-//
-// Spec: docs/p0/enforce-landlock.md I4.
 func TestNoFSSectionHandlesEveryWrite(t *testing.T) {
 	root := tempDir(t)
 	mkTree(t, root, "ledger/")

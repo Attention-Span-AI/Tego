@@ -17,8 +17,7 @@ var emitQueueSize = 1024
 
 // GapEmitQueueFull is gap what=capture: events the listener dropped because its emit queue was full, the run's
 // pipeline having fallen that far behind. Each is counted in the run's gap report (Gaps); the first is reported
-// unmetered, since what was dropped may be the one line that carried an exchange's spend
-// (limits-check-doctor-cli.md R1 (s)).
+// unmetered, since what was dropped may be the one line that carried an exchange's spend.
 const GapEmitQueueFull = derive.GapEmitQueueFull
 
 // emitItem is one thing the queue hands the sink in order: an event, a report of unmetered spend, or word that
@@ -33,7 +32,7 @@ type emitItem struct {
 	abandon uint64
 }
 
-// emitQueue is the listener's hand-off to its sink (capture-derive.md I1). The run's capture lane waits for
+// emitQueue is the listener's hand-off to its sink. The run's capture lane waits for
 // room up to its bound, and a handler that emitted into it directly held the agent's model request, or its
 // next one on the connection, for as long as the ledger was behind. A handler now only appends here, under
 // a lock no sink call is ever made under; one goroutine at a time, started when there is work and gone when

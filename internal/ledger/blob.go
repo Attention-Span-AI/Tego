@@ -70,7 +70,7 @@ func BlobsSize(runDir string) int64 {
 	return total
 }
 
-// blobStore is the only BlobRepository in P0: one directory of files named by their sha256.
+// blobStore is the only BlobRepository: one directory of files named by their sha256.
 type blobStore struct {
 	dir string
 	// added counts the bytes this store has added to blobs/, a duplicate not at all; nil for a read side's store.
@@ -78,8 +78,8 @@ type blobStore struct {
 	added *atomic.Int64
 
 	// fd is the blobs directory the store's Writer holds open from Open to Close, so every blob it
-	// writes lands in the directory Open checked, whatever is renamed above it meanwhile
-	// (record-ledger.md §3); nil for a store over a path. closed is set by the Writer's Close, after which
+	// writes lands in the directory Open checked, whatever is renamed above it meanwhile;
+	// nil for a store over a path. closed is set by the Writer's Close, after which
 	// every operation is ErrClosed. fdMu keeps Close from closing the descriptor under an operation still
 	// using it, so an operation's several calls on it all name the directory Open checked.
 	fdMu   sync.RWMutex
