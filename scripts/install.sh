@@ -37,6 +37,7 @@
 #                    a mirror, or to point this script at a local goreleaser snapshot's dist/ output for testing)
 #   TEGO_MAX_TIME   seconds one download may take before it is given up as a network failure (default: 300)
 #   TEGO_API_URL    GitHub API URL used only to resolve "latest" when TEGO_VERSION is unset
+#   TEGO_YES        on macOS, 1 answers yes to every question (install or upgrade Lima, create or start the VM)
 #   TEGO_VERIFY     how the release's authenticity is checked (default: auto):
 #                      auto    cosign when it is on PATH, else gh when it is on PATH and logged in, else the
 #                              checksum alone, saying so; a verifier that is present and fails stops the install
@@ -48,10 +49,125 @@ set -eu
 repo_owner="Attention-Span-AI"
 repo_name="Tego"
 
+# mac_setup runs instead of the Linux install on macOS. Tego needs a Linux kernel, so on a Mac it lives in a Lima
+# VM: this checks the Mac, offers to install or upgrade Lima and to create or start the VM (whose own provisioning
+# runs this script inside it), and ends with the commands to enter it. Each step asks first, on the terminal; with
+# no terminal and no TEGO_YES=1 it prints the remaining commands and stops.
+mac_setup() {
+	vm=tego
+	if [ -n "${TEGO_VERSION:-}" ]; then
+		template="https://github.com/${repo_owner}/${repo_name}/releases/download/${TEGO_VERSION}/tego.yaml"
+	else
+		template="https://github.com/${repo_owner}/${repo_name}/releases/latest/download/tego.yaml"
+	fi
+	ask() { # ask QUESTION: 0 yes, 1 no, 2 nobody to ask
+		if [ "${TEGO_YES:-}" = 1 ]; then
+			echo "$1 [Y/n] yes"
+			return 0
+		fi
+		(: </dev/tty) 2>/dev/null || return 2
+		printf '%s [Y/n] ' "$1" >/dev/tty
+		read -r answer </dev/tty || return 1
+		case "$answer" in "" | [Yy]*) return 0 ;; *) return 1 ;; esac
+	}
+	# stop prints what is left to type and exits; $1 is the exit code.
+	stop() {
+		code=$1
+		shift
+		echo ""
+		echo "To finish, run:"
+		for line in "$@"; do echo "  $line"; done
+		exit "$code"
+	}
+	enter="limactl shell ${vm}"
+	inside="then, inside the VM:  cd ~ && tego doctor"
+
+	echo "Tego runs on Linux. On a Mac it runs inside a small Linux VM (Lima)."
+	echo ""
+	echo "Checking your Mac:"
+	macos=$(sw_vers -productVersion 2>/dev/null || echo 0)
+	major=${macos%%.*}
+	minor=${macos#*.}
+	minor=${minor%%.*}
+	[ "$minor" = "$macos" ] && minor=0
+	if [ "$major" -gt 13 ] 2>/dev/null || { [ "$major" -eq 13 ] && [ "$minor" -ge 5 ]; } 2>/dev/null; then
+		echo "  ✓ macOS ${macos}"
+	else
+		echo "  ✗ macOS ${macos}: Tego's VM needs macOS 13.5 or later"
+		exit 3
+	fi
+	free_gb=$(($(df -k "$HOME" | awk 'NR==2 {print $4}') / 1048576))
+	if [ "$free_gb" -ge 5 ]; then
+		echo "  ✓ ${free_gb} GB free (about 5 GB needed)"
+	else
+		echo "  ✗ ${free_gb} GB free: the VM needs about 5 GB. Free some space and run this again."
+		exit 8
+	fi
+
+	lima=""
+	if command -v limactl >/dev/null 2>&1; then
+		lima=$(limactl --version 2>/dev/null | awk '{print $NF}')
+	fi
+	if [ -z "$lima" ] || [ "${lima%%.*}" -lt 2 ] 2>/dev/null; then
+		if [ -z "$lima" ]; then
+			echo "  ✗ Lima is not installed"
+			verb=install
+		else
+			echo "  ✗ Lima ${lima} is too old (2.0 or later needed)"
+			verb=upgrade
+		fi
+		if ! command -v brew >/dev/null 2>&1; then
+			echo ""
+			echo "Install Lima 2.0 or later (https://lima-vm.io/docs/installation/), then run this again."
+			exit 2
+		fi
+		ask "${verb} Lima with Homebrew?" && rc=0 || rc=$?
+		case $rc in
+			0) brew "$verb" lima || exit 2 ;;
+			2) stop 2 "brew ${verb} lima" "limactl start --name=${vm} ${template}" "$enter" "$inside" ;;
+			*) echo "Tego needs Lima on a Mac; nothing was changed."; exit 2 ;;
+		esac
+	else
+		echo "  ✓ Lima ${lima}"
+	fi
+
+	state=$(limactl list --format '{{.Status}}' "$vm" 2>/dev/null || true)
+	case "$state" in
+		Running) echo "  ✓ VM '${vm}' is running" ;;
+		Stopped)
+			ask "Start the '${vm}' VM?" && rc=0 || rc=$?
+			case $rc in
+				0) limactl start "$vm" || exit 8 ;;
+				2) stop 0 "limactl start ${vm}" "$enter" "$inside" ;;
+				*) stop 0 "limactl start ${vm}" "$enter" "$inside" ;;
+			esac
+			;;
+		*)
+			echo ""
+			echo "Next: create the '${vm}' VM (Ubuntu 24.04 with Tego inside)."
+			echo "It takes about 2 minutes and downloads about 600 MB, once."
+			ask "Create it now?" && rc=0 || rc=$?
+			case $rc in
+				0) limactl start --tty=false --name="$vm" "$template" || exit 8 ;;
+				2) stop 0 "limactl start --name=${vm} ${template}" "$enter" "$inside" ;;
+				*) stop 0 "limactl start --name=${vm} ${template}" "$enter" "$inside" ;;
+			esac
+			;;
+	esac
+
+	echo ""
+	echo "Tego is ready in its VM. Next:"
+	echo "  ${enter}"
+	echo "  ${inside}"
+	echo "Keep your projects inside the VM (under ~): a folder shared from the Mac is read-only there."
+	exit 0
+}
+
 # Everything below runs from main, called on the script's last line. Piped into sh (`curl -fsSL .../install.sh | sh`,
 # the one-line install), the shell has then read the whole script before it runs any of it: a download cut short
 # defines main partly or not at all and installs nothing, and no command the script starts can read the rest of the
-# script from stdin, which is the pipe. The script reads nothing from stdin itself.
+# script from stdin, which is the pipe. The script reads nothing from stdin itself; mac_setup's questions read the
+# terminal (/dev/tty).
 main() {
 	prog=$(basename "$0")
 	# Piped into sh, $0 is the shell's own name; the messages then name the script instead.
@@ -107,14 +223,11 @@ main() {
 
 	# ---- platform ------------------------------------------------------------------------------------------
 	# Tego enforces from Landlock, cgroups and eBPF: kernel facilities a Darwin or NT kernel does not have.
-	# README.md's own answer for those hosts is a Linux VM, so say that instead of half-installing a binary
-	# that cannot run.
+	# On macOS, mac_setup sets up the Lima VM instead; elsewhere the answer is a Linux VM or WSL2.
 	os_raw=$(uname -s)
 	case "$os_raw" in
 		Linux) os=linux ;;
-		Darwin)
-			die "tego enforces from Landlock, cgroups and eBPF, none of which macOS's kernel has; there is no native macOS build. Run tego inside a Linux VM, the way Docker Desktop does (README.md), and install it there." 3
-			;;
+		Darwin) mac_setup ;;
 		*)
 			die "unsupported operating system '${os_raw}': tego ships Linux binaries only. On Windows, install inside WSL2 (a real Linux kernel) and run this script there." 3
 			;;

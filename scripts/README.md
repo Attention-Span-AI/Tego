@@ -20,7 +20,8 @@ handoff to the signing job: every file the checksums file lists, found in GoRele
 `TestReleaseAssetStaging` in examples/container and CI's `reproducible` job, on a full snapshot),
 `install_test.sh` (install.sh's
 verification paths, tego-control beside tego and its pin included, against a release laid out on local disk;
-`make install-test`), `coverage.sh` (coverage
+`make install-test`), `install_mac_test.sh` (install.sh's macOS path, which sets up Lima and the VM, against
+stand-ins for brew and limactl), `coverage.sh` (coverage
 merged across the unit, integration and privileged suites, and with `--kill-tests ROW` the tego that one
 kernel-matrix row's kill tests run; `make coverage`, `make coverage-vm`), which is bash, and `coverage_test.sh`
 (how coverage.sh reads its arguments and what it does with a guest that returns no data, with stand-ins for go
