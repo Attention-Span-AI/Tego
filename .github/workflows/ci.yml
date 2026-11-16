@@ -133,6 +133,8 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -tags tegobpf ./...
       - name: install.sh verification paths
         run: ./scripts/install_test.sh
+      - name: install.sh macOS path
+        run: ./scripts/install_mac_test.sh
       - name: install-maze.sh verification paths
         run: ./scripts/install-maze_test.sh
       - name: coverage.sh arguments and guest harvest
