@@ -75,7 +75,14 @@ mac_setup() {
 	fi
 	ok() { printf '  %s✓%s %s\n' "$green" "$off" "$1"; }
 	bad() { printf '  %s✗%s %s\n' "$red" "$off" "$1"; }
+	todo() { printf '  %s○%s %s\n' "$dim" "$off" "$1"; }
 	note() { printf '    %s%s%s\n' "$dim" "$1" "$off"; }
+	# done_ TEXT: a step's status line and its question become one ✓ line. On a terminal the cursor goes back up
+	# over those two lines; elsewhere the ✓ line is added below.
+	done_() {
+		[ "$tty" = 1 ] && printf '\033[2A\r\033[J'
+		ok "$1"
+	}
 
 	ask() { # ask QUESTION: 0 yes, 1 no, 2 nobody to ask
 		if [ "${TEGO_YES:-}" = 1 ]; then
@@ -159,13 +166,14 @@ mac_setup() {
 			note "Install Lima from https://lima-vm.io/docs/installation/, then run this again."
 			exit 2
 		fi
-		ask "${verb} it now?" && rc=0 || rc=$?
+		if [ "$verb" = install ]; then question="Install it now?"; else question="Upgrade it now?"; fi
+		ask "$question" && rc=0 || rc=$?
 		case $rc in
 			0) quietly brew "$verb" lima || exit 2 ;;
 			2) stop 2 "brew ${verb} lima" "limactl start --name=${vm} ${template}" ;;
 			*) note "Tego needs Lima on a Mac. Nothing was changed."; exit 2 ;;
 		esac
-		ok "Lima installed"
+		done_ "Lima $(limactl --version 2>/dev/null | awk '{print $NF}')"
 	else
 		ok "Lima ${lima}"
 	fi
@@ -174,21 +182,18 @@ mac_setup() {
 	case "$state" in
 		Running) ok "Tego's VM is running" ;;
 		Stopped)
-			ask "Tego's VM is stopped. Start it?" && rc=0 || rc=$?
+			todo "Tego's VM is stopped"
+			ask "Start it?" && rc=0 || rc=$?
 			[ "$rc" = 0 ] || stop 0 "limactl start ${vm}"
-			echo ""
-			echo "  Starting the VM."
 			quietly limactl start "$vm" || exit 8
-			ok "Tego's VM is running"
+			done_ "Tego's VM is running"
 			;;
 		*)
-			echo ""
-			echo "  Next, Tego sets up its VM. It takes about 2 minutes, only the first time."
+			todo "Tego's VM isn't set up yet. It takes about 2 minutes, only the first time."
 			ask "Set it up now?" && rc=0 || rc=$?
 			[ "$rc" = 0 ] || stop 0 "limactl start --name=${vm} ${template}"
-			echo ""
 			quietly limactl start --tty=false --name="$vm" "$template" || exit 8
-			ok "Tego is ready"
+			done_ "Tego's VM is ready"
 			;;
 	esac
 
@@ -200,8 +205,8 @@ mac_setup() {
 	if [ -x "$shim" ] && grep -q "Tego's installer" "$shim" 2>/dev/null; then
 		ok "tego command is set up"
 	else
-		echo ""
-		ask "Add the tego command to your terminal?" && rc=0 || rc=$?
+		todo "The tego command isn't in your terminal yet"
+		ask "Add it?" && rc=0 || rc=$?
 		if [ "$rc" = 0 ]; then
 			mkdir -p "$bin"
 			cat >"$shim" <<EOF
@@ -241,23 +246,27 @@ EOF
 					reopen=1
 					;;
 			esac
-			ok "tego command added"
+			done_ "tego command added"
 		else
+			shim=""
 			note "Skipped. You can still use Tego with: limactl shell ${vm}"
 		fi
 	fi
 
+	# Go straight on into tego setup in this window: the PATH line only reaches new terminal windows, and the
+	# person should not have to leave the flow to find the next step.
 	echo ""
-	if [ "$reopen" = 1 ]; then
-		echo "  Next, open a new terminal window and run:"
+	if [ -n "$shim" ] && (: </dev/tty) 2>/dev/null && [ "${TEGO_YES:-}" != 1 ]; then
+		printf '  %sStarting tego setup%s\n\n' "$bold" "$off"
+		"$shim" setup </dev/tty || true
+		echo ""
 	else
-		echo "  Next, run:"
+		printf '  Next, run %stego setup%s. It shows what to do next.\n' "$bold" "$off"
 	fi
-	echo ""
-	printf '      %stego setup%s\n' "$bold" "$off"
-	echo ""
-	note "It checks your setup and tells you what to do next."
-	note "Keep your projects inside the VM: run 'tego shell' to open it."
+	if [ "$reopen" = 1 ]; then
+		note "In a new terminal window, type tego to use it."
+	fi
+	note "Keep your projects inside the VM. 'tego shell' opens it."
 	echo ""
 	exit 0
 }
