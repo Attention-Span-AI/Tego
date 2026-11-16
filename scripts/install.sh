@@ -245,7 +245,28 @@ fi
 if { [ "\${1:-}" = start ] || [ "\${1:-}" = setup ]; } && [ \$# -eq 1 ]; then
 	echo "In Tego's Linux VM. Type exit to go back to your Mac." >&2
 	sub=\$1 # start or setup: a fixed word, put into the VM's command line here
-	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet bash -c "\$HOME/.local/bin/tego '"\$sub"'; exec bash -l"'
+	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet bash -c "TEGO_ON_MAC=1 \$HOME/.local/bin/tego '"\$sub"'; exec bash -l"'
+fi
+# tego dashboard: the dashboard runs in the VM and opens in the Mac's browser, through an SSH tunnel on 8484 (the
+# dashboard answers only the address it printed, so the port stays the same on both sides).
+if [ "\${1:-}" = dashboard ] && [ \$# -eq 1 ]; then
+	# Who holds 8484 on the Mac: nobody, an SSH tunnel from an earlier tego dashboard (Lima's shared SSH connection
+	# keeps it), or something else, which the dashboard can't share the port with.
+	holder=\$(lsof -nP -iTCP:8484 -sTCP:LISTEN -Fc 2>/dev/null | sed -n 's/^c//p' | head -n 1)
+	if [ -n "\$holder" ] && [ "\$holder" != ssh ]; then
+		echo "✗ Port 8484 on this Mac is in use by \$holder, and the dashboard needs it. Stop it, then try again." >&2
+		exit 1
+	fi
+	url=\$(limactl shell --workdir / "\$vm" sh -c 'mkdir -p "\$HOME/.tego"; log="\$HOME/.tego/dashboard.log"; systemctl --user stop tego-dashboard >/dev/null 2>&1; : >"\$log"; systemd-run --user --unit=tego-dashboard --quiet sh -c "exec \$HOME/.local/bin/tego serve >\$log 2>&1"; i=0; while [ \$i -lt 60 ]; do u=\$(grep -o "http://127.0.0.1:8484/[^ ]*" "\$log" | head -n 1); [ -n "\$u" ] && { echo "\$u"; exit 0; }; i=\$((i + 1)); sleep 0.25; done; exit 1')
+	if [ -z "\$url" ]; then
+		echo "✗ The dashboard didn't start. Its log: tego shell, then cat ~/.tego/dashboard.log" >&2
+		exit 1
+	fi
+	[ "\$holder" = ssh ] ||
+		ssh -F "\$(limactl list --format '{{.Dir}}' "\$vm")/ssh.config" -f -N -L 8484:127.0.0.1:8484 "lima-\$vm"
+	open "\$url" 2>/dev/null || true
+	echo "✓ Dashboard: \$url"
+	exit 0
 fi
 exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet "\$HOME/.local/bin/tego" "\$@"' tego "\$@"
 EOF
