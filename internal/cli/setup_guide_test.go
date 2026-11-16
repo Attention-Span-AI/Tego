@@ -32,14 +32,15 @@ func runGuide(t *testing.T, answers string) (int, string, string) {
 	return code, out.String(), errs.String()
 }
 
-// TestSetupGuideClaudeCode: a person picks Claude Code, names a new project folder and lets the guide create it; the
-// guide writes the agent's rules file outside the project, says what it allows in plain words, and how to run it.
+// TestSetupGuideClaudeCode: started from home, the guide makes a sample project without asking, writes Claude Code's
+// rules file outside it, says what it allows in plain words, and how to run it.
 func TestSetupGuideClaudeCode(t *testing.T) {
 	f := onFixture(t, "fresh")
 	fakeProgram(t, "claude")
-	project := filepath.Join(f.Home, "my-app")
+	t.Chdir(f.Home)
+	sample := filepath.Join(f.Home, "tego-sample")
 
-	code, out, errs := runGuide(t, "1\n~/my-app\ny\n")
+	code, out, errs := runGuide(t, "1\n")
 	if code != identity.ExitOK {
 		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", code, out, errs)
 	}
@@ -47,38 +48,62 @@ func TestSetupGuideClaudeCode(t *testing.T) {
 		"✓ This computer can protect your agents (Basic level, no admin needed)",
 		"Connect your agent", "1. Claude Code", "2. Codex", "3. Another program",
 		"✓ Claude Code is installed",
-		"~/my-app doesn't exist. Create it?",
+		"✓ Sample project ready to try Tego on: ~/tego-sample",
 		"✓ Rules written to ~/",
-		"may change    ~/my-app",
+		"may change    ~/tego-sample",
 		"never reads   ~/.ssh, ~/.aws, .env files and other secrets",
 		"may connect   api.anthropic.com",
-		"cd ~/my-app && tego run my-app",
+		"cd ~/tego-sample && tego run tego-sample",
+		"For one of your own projects, run tego setup from inside it.",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("stdout lacks %q\n%s", want, out)
 		}
 	}
-	if fi, err := os.Stat(project); err != nil || !fi.IsDir() {
-		t.Fatalf("project folder not created: %v", err)
+	if strings.Contains(out, "[Y/n]") || strings.Contains(out, "Which folder") {
+		t.Errorf("the project step asked a question:\n%s", out)
+	}
+	for name := range sampleFiles {
+		if _, err := os.Stat(filepath.Join(sample, name)); err != nil {
+			t.Errorf("sample project lacks %s: %v", name, err)
+		}
 	}
 	line := out[strings.Index(out, "Rules written to ")+len("Rules written to "):]
 	saved := strings.Replace(strings.SplitN(line, "\n", 2)[0], "~", f.Home, 1)
-	if strings.HasPrefix(saved, project+"/") {
+	if strings.HasPrefix(saved, sample+"/") {
 		t.Errorf("rules file %s is inside the project the agent may change", saved)
 	}
 	text, err := os.ReadFile(saved)
 	if err != nil {
 		t.Fatalf("rules file: %v", err)
 	}
-	// The project is "./": the folder tego run <name> is typed in, which the guide's last line cds into.
 	if !strings.Contains(string(text), `- "./"`) || !strings.Contains(string(text), "harness: claude-code") {
 		t.Errorf("rules file does not let Claude Code change the project it runs in:\n%s", text)
 	}
 
-	// A second run keeps the saved rules file.
-	code, out, errs = runGuide(t, "1\n~/my-app\n")
+	// A second run reuses the sample and its rules file, and keeps a file the person changed.
+	if err := os.WriteFile(filepath.Join(sample, "hello.py"), []byte("print(1)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs = runGuide(t, "1\n")
 	if code != identity.ExitOK || !strings.Contains(out, "✓ Rules written to") {
 		t.Fatalf("second run: exit %d\n%s\n%s", code, out, errs)
+	}
+	if b, _ := os.ReadFile(filepath.Join(sample, "hello.py")); string(b) != "print(1)\n" {
+		t.Errorf("second run replaced the person's hello.py: %q", b)
+	}
+}
+
+// TestSetupGuideUsesThisProject: started inside a project folder, the guide uses that folder, without asking.
+func TestSetupGuideUsesThisProject(t *testing.T) {
+	f := onFixture(t, "fresh") // the fixture's working folder is its project
+	fakeProgram(t, "claude")
+	code, out, errs := runGuide(t, "1\n")
+	if code != identity.ExitOK || !strings.Contains(out, "✓ Using this folder: "+tildeHome(f.Project, f.Home)) {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errs)
+	}
+	if strings.Contains(out, "tego-sample") {
+		t.Errorf("made a sample project inside a project:\n%s", out)
 	}
 }
 
@@ -116,7 +141,7 @@ func TestSetupGuideAgentMissing(t *testing.T) {
 		}
 	}
 
-	code, out, errs := runGuide(t, "1\ny\n~/my-app\ny\n")
+	code, out, errs := runGuide(t, "1\ny\n")
 	if code != identity.ExitOK || ran != "curl -fsSL https://claude.ai/install.sh | bash" {
 		t.Fatalf("yes: exit %d, ran %q\n%s\n%s", code, ran, out, errs)
 	}
@@ -127,12 +152,27 @@ func TestSetupGuideAgentMissing(t *testing.T) {
 	}
 }
 
-// TestSetupGuideRefusesHome: the whole home folder is not a project; the guide asks again.
-func TestSetupGuideRefusesHome(t *testing.T) {
-	onFixture(t, "fresh")
+// TestSetupGuideRulesArePicked: the person switches a rule off; the rules file leaves that preset out and the summary
+// says what that allows.
+func TestSetupGuideRulesArePicked(t *testing.T) {
+	f := onFixture(t, "fresh")
 	fakeProgram(t, "claude")
-	code, out, errs := runGuide(t, "1\n~\n~/proj\ny\n")
-	if code != identity.ExitOK || !strings.Contains(out, "Pick a project folder, not your whole home folder.") {
+	t.Chdir(f.Home)
+	code, out, errs := runGuide(t, "1\n2\n\n")
+	if code != identity.ExitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errs)
+	}
+	for _, want := range []string{"1. [x] Keep secrets away", "2. [ ] Reach only the hosts named", "may connect   anywhere"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout lacks %q\n%s", want, out)
+		}
+	}
+	line := out[strings.Index(out, "Rules written to ")+len("Rules written to "):]
+	text, err := os.ReadFile(strings.Replace(strings.SplitN(line, "\n", 2)[0], "~", f.Home, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(text), "no-prod") || !strings.Contains(string(text), "tego/no-secrets") {
+		t.Errorf("rules file presets do not match the switches:\n%s", text)
 	}
 }

@@ -68,7 +68,7 @@ mac_setup() {
 	# Colour and animation only on a terminal, and never with NO_COLOR or TERM=dumb (clig.dev).
 	# The terminal's settings, put back before the handoff and at the end: a step can leave the terminal raw (no
 	# carriage return on a newline), and everything printed after it then steps down the screen like a staircase.
-	term_state=$(stty -g </dev/tty 2>/dev/null || true)
+	term_state=$({ stty -g </dev/tty; } 2>/dev/null || true)
 	restore_term() { [ -n "$term_state" ] && stty "$term_state" </dev/tty 2>/dev/null; return 0; }
 	tty=0
 	if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
@@ -231,7 +231,13 @@ case "\$(limactl list --format '{{.Status}}' "\$vm" 2>/dev/null)" in
 		;;
 esac
 if [ "\${1:-}" = shell ]; then
+	echo "In Tego's Linux VM. Type exit to go back to your Mac." >&2
 	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet bash -l'
+fi
+# tego setup leaves the person in the VM, where the projects it sets up live and its commands work as printed.
+if [ "\${1:-}" = setup ] && [ \$# -eq 1 ]; then
+	echo "In Tego's Linux VM. Type exit to go back to your Mac." >&2
+	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet bash -c "\$HOME/.local/bin/tego setup; exec bash -l"'
 fi
 exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet "\$HOME/.local/bin/tego" "\$@"' tego "\$@"
 EOF
@@ -258,24 +264,18 @@ EOF
 		fi
 	fi
 
-	# Go straight on into tego setup in this window: the PATH line only reaches new terminal windows, and the
-	# person should not have to leave the flow to find the next step.
-	echo ""
+	# The installer ends here, with the one step that comes next: tego setup walks through the rest.
 	restore_term
-	if [ -n "$shim" ] && (: </dev/tty) 2>/dev/null && [ "${TEGO_YES:-}" != 1 ]; then
-		# tego setup in a terminal is the guide: it asks which agent to connect and sets up the first project. It gets
-		# this terminal, and the terminal's settings are put back after it.
-		# shellcheck disable=SC2016 # expanded by the shell inside the VM, not here
-		limactl shell --workdir / "$vm" sh -c 'cd "$HOME" && exec systemd-run --user --scope --quiet "$HOME/.local/bin/tego" setup' </dev/tty || true
-		restore_term
-		echo ""
-	else
-		printf '  Next, run %stego setup%s. It shows what to do next.\n' "$bold" "$off"
-	fi
+	echo ""
 	if [ "$reopen" = 1 ]; then
-		note "In a new terminal window, type tego to use it."
+		echo "  Next, open a new terminal window and run:"
+	else
+		echo "  Next, run:"
 	fi
-	note "Keep your projects inside the VM. 'tego shell' opens it."
+	echo ""
+	printf '      %stego setup%s\n' "$bold" "$off"
+	echo ""
+	note "It connects your agent and walks you through a first protected run."
 	echo ""
 	exit 0
 }

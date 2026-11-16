@@ -239,67 +239,64 @@ func runSetupGuide(ctx context.Context, in io.Reader, stdout, stderr io.Writer, 
 		g.ok(a.labelOr(program) + " is installed")
 	}
 
-	// Your first project.
+	// Your first project: the folder tego setup was started in when it is a project, else a sample made for trying
+	// Tego, with a fake secret for the first run to be refused. No question either way.
 	g.title("Your first project")
 	home := m.Home
-	def := "~/my-project"
-	if wd, err := os.Getwd(); err == nil && wd != home && unixWritable(wd) {
-		def = tildeHome(wd, home)
-	}
-	var abs string
-	for {
-		dir, err := g.ask("Which folder should it work in?", def)
-		if err != nil {
+	abs := ""
+	if wd, err := os.Getwd(); err == nil && wd != home && wd != "/" && !strings.HasPrefix(home, wd+"/") && unixWritable(wd) {
+		abs = wd
+		g.ok("Using this folder: " + tildeHome(abs, home))
+	} else {
+		abs = filepath.Join(home, guideSample)
+		if err := makeSample(abs); err != nil {
+			g.bad("Couldn't make the sample project: " + err.Error())
 			return identity.ExitError
 		}
-		abs = expandHome(dir, home)
-		if !filepath.IsAbs(abs) {
-			if wd, err := os.Getwd(); err == nil {
-				abs = filepath.Join(wd, abs)
-			}
-		}
-		abs = filepath.Clean(abs)
-		if abs == home || abs == "/" {
-			g.note("Pick a project folder, not your whole home folder.")
-			continue
-		}
-		break
-	}
-	if fi, err := os.Stat(abs); err != nil {
-		create, err := g.yes(tildeHome(abs, home) + " doesn't exist. Create it?")
-		if err != nil || !create {
-			return identity.ExitUsage
-		}
-		if err := os.MkdirAll(abs, 0o755); err != nil {
-			g.bad("Couldn't create it: " + err.Error())
-			return identity.ExitError
-		}
-	} else if !fi.IsDir() {
-		g.bad(tildeHome(abs, home) + " is a file, not a folder.")
-		return identity.ExitUsage
-	}
-	if !unixWritable(abs) {
-		g.bad(tildeHome(abs, home) + " is read-only here. Pick a folder you can write to.")
-		return identity.ExitFinding
+		g.ok("Sample project ready to try Tego on: " + tildeHome(abs, home))
+		g.note("It has a fake .env secret, so you can watch Tego keep it from your agent.")
 	}
 
-	// Its rules.
+	// Its rules: the person picks which of the shipped presets apply, all on to start.
+	g.title("Its rules")
+	rules := []guideRule{
+		{preset: "no-secrets", on: true, label: "Keep secrets away", detail: "~/.ssh, ~/.aws, .env files and other secrets"},
+		{preset: "no-prod", on: true, label: "Reach only the hosts named", detail: "its model's API and nothing else"},
+		{preset: "repo-only-writes", on: true, label: "Change only this project", detail: "nothing outside " + tildeHome(abs, home)},
+	}
+	if err := g.pickRules(rules); err != nil {
+		return identity.ExitError
+	}
 	name := agentNameFor(abs)
-	path, code := guideSaveRules(ctx, m, a, command, name, abs, stderr)
+	path, code := guideSaveRules(ctx, m, a, command, name, abs, rules, stderr)
 	if code != identity.ExitOK {
 		return code
 	}
 	g.ok("Rules written to " + tildeHome(path, home))
-	g.note("may change    " + tildeHome(abs, home))
-	g.note("never reads   ~/.ssh, ~/.aws, .env files and other secrets")
-	if a.host != "" {
-		g.note("may connect   " + a.host)
+	if rules[2].on {
+		g.note("may change    " + tildeHome(abs, home))
 	} else {
+		g.note("may change    any file you can")
+	}
+	if rules[0].on {
+		g.note("never reads   ~/.ssh, ~/.aws, .env files and other secrets")
+	} else {
+		g.note("may read      your secret files too")
+	}
+	switch {
+	case !rules[1].on:
+		g.note("may connect   anywhere")
+	case a.host != "":
+		g.note("may connect   " + a.host)
+	default:
 		g.note("may connect   nowhere yet (add hosts to the rules file)")
 	}
 
 	g.title("Run it")
 	g.cmd("cd " + tildeHome(abs, home) + " && tego run " + name)
+	if abs == filepath.Join(home, guideSample) {
+		g.note("For one of your own projects, run tego setup from inside it.")
+	}
 	if a.harness == "claude-code" && os.Getenv("CLAUDE_CODE_OAUTH_TOKEN") == "" && os.Getenv("ANTHROPIC_API_KEY") == "" {
 		g.note("Claude Code needs a login under Tego: run claude setup-token, then")
 		g.note("export CLAUDE_CODE_OAUTH_TOKEN=<the token> before tego run.")
@@ -346,13 +343,19 @@ func (a guideAgent) labelOr(program string) string {
 // guideSaveRules composes the agent's rules file the way tego init --agent does, with the whole project writable,
 // and saves it in the user registry, outside the project, where tego run <name> finds it. A rules file already saved
 // under that name is kept.
-func guideSaveRules(ctx context.Context, m *config.Machine, a guideAgent, command, name, abs string, stderr io.Writer) (string, int) {
+func guideSaveRules(ctx context.Context, m *config.Machine, a guideAgent, command, name, abs string, rules []guideRule, stderr io.Writer) (string, int) {
 	dir, err := filepath.EvalSymlinks(abs)
 	if err != nil {
 		message(stderr, abs, 0, 0, "tego setup: "+err.Error(), codeIO)
 		return "", identity.ExitError
 	}
-	po := setup.Options{Presets: []string{"no-secrets,no-prod,repo-only-writes"}, Writes: []string{dir + "/"},
+	var on []string
+	for _, r := range rules {
+		if r.on {
+			on = append(on, r.preset)
+		}
+	}
+	po := setup.Options{Presets: []string{strings.Join(on, ",")}, Writes: []string{dir + "/"},
 		Agent: a.harness, Name: name, Dir: dir, Home: m.Home}
 	if a.harness == "" {
 		po.Command = command
@@ -399,23 +402,89 @@ func guideSaveRules(ctx context.Context, m *config.Machine, a guideAgent, comman
 // unixWritable reports whether this user may create files in dir.
 func unixWritable(dir string) bool { return accessW(dir) == nil }
 
-// expandHome turns a leading ~ into home.
-func expandHome(p, home string) string {
-	if p == "~" {
-		return home
-	}
-	if strings.HasPrefix(p, "~/") {
-		return filepath.Join(home, p[2:])
-	}
-	return p
-}
-
 // tildeHome shows a path under home with ~.
 func tildeHome(p, home string) string {
 	if home != "" && (p == home || strings.HasPrefix(p, home+"/")) {
 		return "~" + strings.TrimPrefix(p, home)
 	}
 	return p
+}
+
+// guideRule is one preset as the guide offers it: on or off, in plain words.
+type guideRule struct {
+	preset, label, detail string
+	on                    bool
+}
+
+// pickRules shows the rules with their switches; a number turns one on or off, an empty answer keeps them. At least
+// one stays on.
+func (g *walk) pickRules(rules []guideRule) error {
+	for {
+		for i, r := range rules {
+			mark := " "
+			if r.on {
+				mark = "x"
+			}
+			g.line("    %d. [%s] %-28s %s%s%s", i+1, mark, r.label, g.dim, r.detail, g.offEsc)
+		}
+		fmt.Fprintf(g.out, "    Type a number to switch it, or press Enter to keep these: ")
+		a, err := g.read()
+		if err != nil {
+			return err
+		}
+		if a == "" {
+			return nil
+		}
+		n, err := strconv.Atoi(a)
+		if err != nil || n < 1 || n > len(rules) {
+			g.note(fmt.Sprintf("Type a number from 1 to %d, or press Enter.", len(rules)))
+			continue
+		}
+		rules[n-1].on = !rules[n-1].on
+		some := false
+		for _, r := range rules {
+			some = some || r.on
+		}
+		if !some {
+			rules[n-1].on = true
+			g.note("Keep at least one rule on.")
+		}
+	}
+}
+
+// guideSample is the sample project's folder, under home.
+const guideSample = "tego-sample"
+
+// sampleFiles are the sample project's files. The .env is fake: it is there for the first run to show Tego keeping a
+// secret file from the agent.
+var sampleFiles = map[string]string{
+	"README.md": "# Tego sample project\n\nA small project to try Tego on. Ask your agent to read `.env`: Tego refuses, and\n`tego receipt --last` shows the refusal.\n",
+	"hello.py":  "print(\"Hello from the Tego sample project\")\n",
+	".env":      "# Not a real secret. It is here so you can watch Tego keep it from your agent.\nSAMPLE_API_KEY=not-a-real-key\n",
+}
+
+// makeSample creates the sample project at dir, or fills in what is missing; it never replaces a file.
+func makeSample(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for name, text := range sampleFiles {
+		f, err := os.OpenFile(filepath.Join(dir, name), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		_, werr := f.WriteString(text)
+		if cerr := f.Close(); werr == nil {
+			werr = cerr
+		}
+		if werr != nil {
+			return werr
+		}
+	}
+	return nil
 }
 
 // accessW is access(2) for writing, as this user.
