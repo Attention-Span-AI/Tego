@@ -242,6 +242,7 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 		g.bad("This computer can't run supervised agents yet. tego doctor shows why.")
 		return identity.ExitFinding, nil
 	}
+	g.ok(fmt.Sprintf("This computer can supervise agents (%s protection, no admin needed)", levelName(pa.tier)))
 
 	// The agent.
 	pick := 0
@@ -300,7 +301,7 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 	if test {
 		agentName = guideSample
 	}
-	path, code, err := g.saveAgent(ctx, m, a, command, agentName, abs, rc, test, stderr)
+	_, code, err := g.saveAgent(ctx, m, a, command, agentName, abs, rc, test, stderr)
 	if code != identity.ExitOK || err != nil {
 		return code, err
 	}
@@ -325,7 +326,6 @@ func (g *walk) guide(ctx context.Context, stderr io.Writer) (int, error) {
 	if onMac {
 		g.note("Run tego dashboard on your Mac: type exit to get back to it.")
 	}
-	_ = path
 	g.line("")
 	return identity.ExitOK, nil
 }
