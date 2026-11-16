@@ -186,8 +186,14 @@ host's other local sockets are refused unless the contract sets `host_sockets:
 true`; the immutable built-in refusals still hold, and the agent cannot gain privilege (`no_new_privs` is set on every run). It can always read the machine's network
 setup: interface names and addresses, routes, and the nearby machines it has talked to. Your agent's own needs are yours to
 add: `--allow-host` passes a model host straight through, not through the forwarder (use a `models:` entry, as in the
-example above, to have tokens counted), its API key goes in `env.pass`, and a home folder it writes (Claude Code's
-`~/.claude`) needs its own `--write`.
+example above, to have tokens counted), its API key goes in `env.pass`, and a home folder it writes needs its own `--write`.
+
+Claude Code is the common case. `tego init --agent claude-code` and the dashboard's New contract (with a `claude`
+command) set `CLAUDE_CONFIG_DIR` to `./.tego/claude/` in the project and grant that folder, so `~/.claude` is never
+written. A contract made with `--preset ... --command claude`, or by hand, does not: Claude Code then keeps its state
+in `~/.claude`, and its writes there are refused. Give it `--write ~/.claude`, or set `CLAUDE_CONFIG_DIR` to a
+project folder the contract writes, as
+[the interactive example](../../examples/agents/claude-code-interactive.yaml) does.
 
 ## Start from the dashboard
 
