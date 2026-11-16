@@ -1036,8 +1036,8 @@ before. The nav item, the page titles, New contract and the Glossary use the new
 addresses do not change. "Block" stays where it names the live control (Block now, `tego block`, a live block, Blocked
 live), which is another thing than a rule's verdict.
 
-**Protection levels and tiers.** The dashboard says Basic, Strong and Strongest. The terminal, the docs and policy files
-say tier: Basic is tier 1 (`tier: landlock`, no admin rights), Strong is tier 2 (`cgroup`, root) and Strongest is tier 3
+**Protection levels and tiers.** The dashboard says Basic, Plus and Max. The terminal, the docs and contract files
+say tier: Basic is tier 1 (`tier: landlock`, no admin rights), Plus is tier 2 (`cgroup`, root) and Max is tier 3
 (`bpflsm`, root and BPF LSM at boot). A run that only watched is "Watched only". The Glossary's "Protection level"
 entry and the Machine page's levels give both names; a line page's Enforcement row reads "Basic (tier 1): Landlock and a
 system-call supervisor, no root". Words that stay as the terminal writes them: the `tier:` key in a policy file, the

@@ -581,8 +581,8 @@ func TestGlossary(t *testing.T) {
 			t.Errorf("Glossary still has %s", gone)
 		}
 	}
-	// The dashboard says Basic, Strong and Strongest; the terminal, the docs and policy files say tier.
-	for _, want := range []string{"Basic (no admin rights), Strong or Strongest (root)", "tier 1 (landlock), tier 2 (cgroup) and tier 3 (bpflsm)"} {
+	// The dashboard says Basic, Plus and Max; the terminal, the docs and contract files say tier.
+	for _, want := range []string{"Basic (no admin rights), Plus or Max (root)", "tier 1 (landlock), tier 2 (cgroup) and tier 3 (bpflsm)"} {
 		if !strings.Contains(g, want) {
 			t.Errorf("Glossary's Protection level does not connect the names: lacks %q", want)
 		}

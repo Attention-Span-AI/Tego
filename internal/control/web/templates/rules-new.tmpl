@@ -52,13 +52,13 @@
     <label class="field nw-list">Variables it needs <span class="muted" title="Names from your shell, comma-separated; values are never stored">(names)</span><input class="input mono" name="pass" value="{{.Pass}}" placeholder="SERVICE_TOKEN" autocomplete="off" spellcheck="false"></label>
     <label class="field nw-list">Ask before reading <span class="muted" title="Files or folders; each read waits for you in Approvals">(paths)</span><input class="input mono" name="askread" value="{{.AskRead}}" placeholder="~/.config/app/token" autocomplete="off" spellcheck="false"></label>
   </div>
-  <p class="soft" title="A read waits for a person only at Basic. On a machine that could run Strong or Strongest, the whole contract still runs at Basic. With Adjustable these reads are refused without asking.">Ask before reading runs the whole contract at Basic</p>
+  <p class="soft" title="A read waits for a person only at Basic. On a machine that could run Plus or Max, the whole contract still runs at Basic. With Adjustable these reads are refused without asking.">Ask before reading runs the whole contract at Basic</p>
   {{template "readsswitch" .}}
   {{end}}
   <details class="nw-adv"{{if eq .LiveMode "adjustable"}} open{{end}}><summary>Advanced</summary>
   <fieldset class="nw-live"><legend class="nw-legend">While it runs</legend>
     <label class="nw-preset" title="The default. File, program and network rules are fixed when the run starts. You can tighten it while it runs; loosening applies from its next run."><input type="radio" name="live" value="locked"{{if ne .LiveMode "adjustable"}} checked{{end}}><span><strong>Locked</strong><span class="soft">Default</span></span></label>
-    <label class="nw-preset" title="The kernel enforces a wider fence; inside it Tego's live layer blocks each entry until you lift or grant it. Weaker if Tego fails; needs Strong or Strongest protection (root)."><input type="radio" name="live" value="adjustable"{{if eq .LiveMode "adjustable"}} checked{{end}}><span><strong>Adjustable</strong><span class="soft">Loosen while it runs · needs root</span></span></label>
+    <label class="nw-preset" title="The kernel enforces a wider fence; inside it Tego's live layer blocks each entry until you lift or grant it. Weaker if Tego fails; needs Plus or Max protection (root)."><input type="radio" name="live" value="adjustable"{{if eq .LiveMode "adjustable"}} checked{{end}}><span><strong>Adjustable</strong><span class="soft">Loosen while it runs · needs root</span></span></label>
     {{template "livemodes" ""}}
     <div class="nw-fence stack-sm"><p class="soft" title="What you may allow while it runs. Every entry starts blocked. One per line.">Fence · Adjustable only</p>
       <div class="frow">

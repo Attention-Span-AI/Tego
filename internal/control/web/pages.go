@@ -362,15 +362,15 @@ func endWhy(r *ledgerview.Run) string {
 	return ""
 }
 
-// tierWord is a protection level's name: Basic, Strong, Strongest (tier 1 to 3), or Watched only.
+// tierWord is a protection level's name: Basic, Plus, Max (tier 1 to 3), or Watched only.
 func tierWord(t string) string {
 	switch t {
 	case "1", "tier1", "tier-1", "landlock":
 		return "Basic"
 	case "2", "tier2", "tier-2", "cgroup":
-		return "Strong"
+		return "Plus"
 	case "3", "tier3", "tier-3", "bpflsm":
-		return "Strongest"
+		return "Max"
 	case "observe":
 		return "Watched only"
 	case "":

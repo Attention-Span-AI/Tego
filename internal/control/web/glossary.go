@@ -29,7 +29,7 @@ var glossaryTerms = []glossaryTerm{
 	{"low", "Low", "The agent reading its own files or writing its own caches, and system information.", "/detections?sev=low", ""},
 	{"routine", "Routine", "System lookups and probes every program makes. Counted, never listed.", "/logs?verdict=refused", ""},
 	{"investigate", "Investigate", "One detection in four parts: what, how it got there, what else, what now.", "", ""},
-	{"protection", "Protection level", "How strongly this machine enforces: Basic (no admin rights), Strong or Strongest (root). The terminal, the docs and contract files call these tier 1 (landlock), tier 2 (cgroup) and tier 3 (bpflsm).", "/machine", ""},
+	{"protection", "Protection level", "How strongly this machine enforces: Basic (no admin rights), Plus or Max (root). The terminal, the docs and contract files call these tier 1 (landlock), tier 2 (cgroup) and tier 3 (bpflsm).", "/machine", ""},
 	{"record", "Record", "The actions Tego saw in each run, written so that any edit shows. A gap says where it may have missed some.", "/logs", ""},
 	{"verified", "Verified", "The record checks out: no line changed after it was written. It does not say the record is whole: a run whose supervisor died may have lost its last lines, and shows a gap. Not anchored means the run did not end, so its last lines have nothing to check against.", "", ""},
 	{"receipt", "Receipt", "One run on one screen: time, files written, what was refused and asked.", "", ""},
