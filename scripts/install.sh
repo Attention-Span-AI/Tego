@@ -66,6 +66,10 @@ mac_setup() {
 	: >"$log"
 
 	# Colour and animation only on a terminal, and never with NO_COLOR or TERM=dumb (clig.dev).
+	# The terminal's settings, put back before the handoff and at the end: a step can leave the terminal raw (no
+	# carriage return on a newline), and everything printed after it then steps down the screen like a staircase.
+	term_state=$(stty -g </dev/tty 2>/dev/null || true)
+	restore_term() { [ -n "$term_state" ] && stty "$term_state" </dev/tty 2>/dev/null; return 0; }
 	tty=0
 	if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
 		tty=1
@@ -256,9 +260,13 @@ EOF
 	# Go straight on into tego setup in this window: the PATH line only reaches new terminal windows, and the
 	# person should not have to leave the flow to find the next step.
 	echo ""
+	restore_term
 	if [ -n "$shim" ] && (: </dev/tty) 2>/dev/null && [ "${TEGO_YES:-}" != 1 ]; then
 		printf '  %sStarting tego setup%s\n\n' "$bold" "$off"
-		"$shim" setup </dev/tty || true
+		# tego setup only prints, so it runs with no terminal of its own (no raw mode on this one); TEGO_HINTS=on
+		# keeps its next: line, which it shows only on a terminal.
+		limactl shell --workdir / "$vm" sh -c 'cd "$HOME" && TEGO_HINTS=on exec systemd-run --user --scope --quiet "$HOME/.local/bin/tego" setup' </dev/null 2>&1 || true
+		restore_term
 		echo ""
 	else
 		printf '  Next, run %stego setup%s. It shows what to do next.\n' "$bold" "$off"
