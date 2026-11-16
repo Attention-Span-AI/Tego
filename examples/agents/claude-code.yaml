@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Claude Code in print mode (`claude -p`) under tego (docs/FEATURES.md I3). For a person at a terminal (the full-screen interface, a login, no wall or cost limit) copy
+# Claude Code in print mode (`claude -p`) under tego (docs/FEATURES.md I3; P0-DESIGN §12.3's `claude -p`
+# agent). For a person at a terminal (the full-screen interface, a login, no wall or cost limit) copy
 # claude-code-interactive.yaml instead: this one is one metered task, and its cost_usd needs a price table.
 # Copy it next to the project and change the prompt and paths. test/e2e/kt7-two-agents.sh runs it
 # unchanged except for the model endpoint, against a local stand-in, and requires the task to complete.
@@ -14,7 +15,7 @@
 # statically and no SSL_* symbols, so no uprobe can read its traffic. `capture: forwarder` gives each
 # models[] entry a plaintext listener on 127.0.0.1 and points Claude Code at it through
 # ANTHROPIC_BASE_URL, which tego sets in the agent's environment; the listener speaks TLS to the real
-# host, and every request is recorded as `ssl_request source=forwarder`.
+# host, and every request is recorded as `ssl_request source=forwarder` (docs/p0/capture-derive.md R19).
 # The listener's port is the one route to api.anthropic.com: `net.allow` is present and empty, so a direct
 # connect around the forwarder is refused (R38). Keep the section: a contract with no `net:` at all
 # restricts nothing (spec/policy/SEMANTICS.md §1).

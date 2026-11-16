@@ -3,7 +3,8 @@
 # tier: run in every tier a run of the contract can get and must hold in each
 # (ADR 0019); a row that names a tier
 # shows what that backend decides, which is how the two filesystem models are
-# pinned side by side (spec/policy/SEMANTICS.md §2).
+# pinned side by side (spec/policy/SEMANTICS.md §2, docs/p0/agent-contract.md
+# §5 R15).
 version: 0
 tests:
   # --- filesystem: the write entry ---

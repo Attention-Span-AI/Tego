@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
-/* ---- Step C hooks: PROT_EXEC mappings (ADR 0027) ----
+/* ---- Step C hooks: PROT_EXEC mappings (ADR 0027; TIER3-PLAN T14; docs/p0/enforce-plane.md R26) ----
  *
  * Included at the end of decide.bpf.c, after the walk, the exec arms and the recorder's scratch, which these bodies
  * reuse. With an exec: section (the slot header's TEGO_SLOT_EXEC_DECIDES), a mapping that is or becomes executable is
@@ -20,12 +20,12 @@
  * Both bodies return 0 before the run-set lookup when there is no file or no PROT_EXEC, so a host process pays one
  * branch on an anonymous or non-executable map. Both decide on the effective prot: mmap_file's LSM hook is handed
  * mmap_prot(file, reqprot) (READ_IMPLIES_EXEC adds PROT_EXEC to a PROT_READ map on a mount that is not noexec), which
- * the fmod_ret program, attached to security_mmap_file ahead of that computation, reproduces;
- * file_mprotect's hook is handed that prot in both modes (ADR 0027).
+ * the fmod_ret program, attached to security_mmap_file ahead of that computation, reproduces (enforce-plane R4);
+ * file_mprotect's hook is handed that prot in both modes (ADR 0027's 2026-09-29 amendment).
  *
  * mmap_file's hook and its security_ function take different arguments: bpf_lsm_mmap_file(file, reqprot, prot,
  * flags) and security_mmap_file(file, prot, flags). One body reads both from four u64 parameters by mode; in fmod_ret
- * mode the fourth is the trailing return slot, which the body never reads. */
+ * mode the fourth is the trailing return slot, which the body never reads (enforce-plane §2.14). */
 
 #define TEGO_PROT_READ 0x1
 #define TEGO_PROT_WRITE 0x2

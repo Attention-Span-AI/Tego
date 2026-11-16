@@ -192,7 +192,7 @@ static __always_inline void tego_addr_v6(__u8 *dst, __u32 w0, __u32 w1, __u32 w2
     __builtin_memcpy(dst + 12, &w3, 4);
 }
 
-/* Unix socket names: the checks on a name that connect_unix and sendmsg_unix
+/* Unix socket names (enforce-cgroup-observe §5 R7): the checks on a name that connect_unix and sendmsg_unix
  * (bpf/cgroup_net.bpf.c, 6.7+) and the plane's socket_connect and socket_sendmsg (bpf/decide.bpf.c, below 6.7;
  * enforce-plane R14) share, so both decide one name the same way. Each reads a key's name, zero past its end. */
 
@@ -200,8 +200,8 @@ static __always_inline void tego_addr_v6(__u8 *dst, __u32 w0, __u32 w1, __u32 w2
 #define TEGO_SUN_PATH_OFF 2
 
 /* Reports whether an absolute name is spelled the way a contract entry is: no empty component ("//", a
- * trailing "/") and no "." or ".." component. The supervisor cleans a name lexically before matching it;
- * a program cannot, and a byte match on an uncleaned name would let
+ * trailing "/") and no "." or ".." component. The supervisor cleans a name lexically before matching it
+ * (supervisor.md R11); a program cannot, and a byte match on an uncleaned name would let
  * "<write entry>/../x" or "<write entry>/.//<deny_read entry>/x" take the write entry's verdict for a
  * socket that lies elsewhere. Such a name is refused: fail-closed, and the kernel's own lookup of it
  * would reach the same socket as its clean spelling, which is how a caller should write it.
@@ -245,8 +245,8 @@ static __always_inline int tego_unix_canonical(const __u8 *name)
     return 1;
 }
 
-/* Reports whether a pathname is the name the supervisor's relay connects under, /proc/self/fd/<digits>.
- * It means something only in the relaying process, so each caller admits it only from the
+/* Reports whether a pathname is the name the supervisor's relay connects under, /proc/self/fd/<digits>
+ * (supervisor.md R11). It means something only in the relaying process, so each caller admits it only from the
  * launcher's own cgroup. */
 static __always_inline int tego_unix_relay_name(const __u8 *name)
 {

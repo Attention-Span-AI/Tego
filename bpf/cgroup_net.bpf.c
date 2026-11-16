@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 /* Tier 2 network enforcement: the eight BPF_PROG_TYPE_CGROUP_SOCK_ADDR programs that decide host:port, CIDR
- * and unix socket rules in-kernel, per cgroup, with no BPF LSM (§5
+ * and unix socket rules in-kernel, per cgroup, with no BPF LSM (docs/p0/enforce-cgroup-observe.md §1, §5
  * R1-R7).
  *
  * Shape of every decision (§5 R1, R2, R3, R5):
@@ -8,7 +8,8 @@
  *      program the cgroup storage of the cgroup it was attached to, which Attach wrote. That is not a lookup
  *      and not keyed by the caller. The kernel runs this program because the *socket's* cgroup is the run's
  *      cgroup or beneath it, whoever calls connect(2) — including the seccomp supervisor, which relays every
- *      allowed connect of the agent from its own process on a duplicate of the agent's socket. A decision keyed by bpf_get_current_cgroup_id() named the supervisor's cgroup there, missed
+ *      allowed connect of the agent from its own process on a duplicate of the agent's socket (supervisor.md
+ *      R9, I2). A decision keyed by bpf_get_current_cgroup_id() named the supervisor's cgroup there, missed
  *      the run set and allowed, so no relayed connect was ever decided in the kernel (maps.h says more);
  *   2. an attachment whose storage userspace has not configured yet (cgroup_id 0) refuses: the window lies
  *      between the first link and Attach's storage write, before any process of the run exists (§5 R1);
@@ -23,7 +24,7 @@
  * inet_create, the seccomp filter's socket(2) arm or not. cgroup/setsockopt is ADR 0018 (7)'s: it refuses
  * setsockopt(SOL_TCP, TCP_ULP), the one way a socket the allowlist admitted becomes one of another family, on
  * whatever path reaches the protocol's setsockopt. Both take their run from the same storage (steps 1 and 2), and
- * they are the two programs here that push a ring-buffer event: no recorder sees a socket's creation
+ * they are the two programs here that push a ring-buffer event (R5 as amended): no recorder sees a socket's creation
  * or its options, so each refusal's one ledger line is the program's own record, on the run's ring, read by owner
  * storage alone.
  *
@@ -32,7 +33,8 @@
  * of every link on a cgroup, so neither build can widen or narrow the other's decision. A socket whose
  * protocol the contract cannot name returns 1 without deciding (R4).
  *
- * bind4/bind6 decide a declared net.listen (network-controls): a run with no listener control returns 1; otherwise tego_bind_decide reads the run from tego_net_owners and refuses an
+ * bind4/bind6 decide a declared net.listen (network-controls): a run with no listener control returns 1, as the
+ * P0 placeholders did (R6); otherwise tego_bind_decide reads the run from tego_net_owners and refuses an
  * address without a tego_bind_exact grant.
  *
  * connect_unix and sendmsg_unix (6.7+, R7) decide unix destinations by name. The uapi struct bpf_sock_addr has
@@ -46,7 +48,7 @@
  * symlink or a daemon's socket moved under a listed name is the supervisor's resolved-socket check's to catch.
  * A datagram is continued, not relayed, so the agent's own send resolves the name under its inherited Landlock
  * domain: at Landlock ABI 9 (Linux 7.1) and above that domain's RESOLVE_UNIX backstop checks the socket it
- * resolves to; below ABI 9 nothing does, at this tier as at tier 1 (R7).
+ * resolves to (enforce-landlock R21); below ABI 9 nothing does, at this tier as at tier 1 (R7, supervisor R13b).
  */
 #define TEGO_NET_MAPS
 #include "maps.h"
@@ -173,7 +175,7 @@ static __always_inline void tego_net_breadcrumb(__u64 cgroup_id, const struct te
 }
 
 /* An authenticated supervisor may approve exactly one frozen operation on this socket: a TCP connect, or a UDP
- * connect or addressed datagram, each to the one destination the key names. No run-wide destination
+ * connect or addressed datagram (supervisor R13d), each to the one destination the key names. No run-wide destination
  * grant is installed. A TCP credit is a connect's alone: no addressed send consumes it (a Fast-Open send runs
  * connect4/6 itself). A UDP credit is taken by the first of the socket's connect or datagram to that destination,
  * which the supervisor's relay is, or an agent thread's own send there on that socket, which the approval admits
@@ -386,7 +388,7 @@ int tego_cg_post_bind6(struct bpf_sock *ctx) { return tego_commit_bind(ctx); }
  *   - a triple the allowlist admits, ping sockets as the owner's TEGO_OWNER_NET_ICMP says, passes;
  *   - anything else is refused with the kernel's EPERM (return 0; §8 I3), and recorded first: the refusal's one
  *     ledger line is this program's own TEGO_EV_SOCK_CREATE on the run's ring, found by the owner's run_idx and
- *     stamped with the owner's gen and cgroup id, since no recorder sees a socket's creation (ADR
+ *     stamped with the owner's gen and cgroup id, since no recorder sees a socket's creation (R5 as amended; ADR
  *     0015). Under record: off too, as every refusal is. A run with no ring, or a full one, counts the loss at
  *     the run's slot (§8 I7).
  *
@@ -435,7 +437,7 @@ int tego_cg_sock_create(struct bpf_sock *ctx)
  * so the offsets below are bounded for the verifier). The sun_path bytes are copied as they are, at constant
  * offsets, because an untrusted BTF pointer takes no variable offset:
  *   - an abstract name keeps its leading NUL, and the key's len is the address's whole sun_path length, so a
- *     row matches exactly that many bytes, NUL bytes included (never NUL-scanned);
+ *     row matches exactly that many bytes, NUL bytes included (never NUL-scanned, supervisor.md E5);
  *   - a pathname ends at its first NUL or at the address length, where unix_mkname_bsd ends it, and a NUL is
  *     written there when the address carries none.
  * What follows the name in the kernel's buffer is copied too and is never compared: every row's prefix ends
@@ -474,7 +476,7 @@ static __always_inline int tego_unix_key_of(struct tego_unix_key *k, struct bpf_
     return TEGO_UNIX_PATH;
 }
 
-/* Reports whether a pathname connect is the supervisor's relay of one it already decided:
+/* Reports whether a pathname connect is the supervisor's relay of one it already decided (supervisor.md R11):
  * the relay walks the agent's name as the agent, admits the socket it resolves to, and connects on a duplicate
  * of the agent's socket by naming that inode as /proc/self/fd/<n>, so the decision and the connect cannot
  * name two sockets. That name means something only in the relaying process, so it is admitted only from the
@@ -490,7 +492,7 @@ static __always_inline int tego_unix_relayed(const struct tego_net_owner *owner,
 
 /* Looks a built key up: a declared unix: entry or abstract name admits, and so does the nearest filesystem
  * entry above a pathname when it is a write entry; any other nearest entry, or none, refuses (SEMANTICS §5,
- * the supervisor's name check). */
+ * supervisor.md R11's name check). */
 static __always_inline int tego_unix_listed(const struct tego_unix_key *k)
 {
     struct tego_net_verdict *v = bpf_map_lookup_elem(&tego_unix_names, k);
@@ -499,7 +501,7 @@ static __always_inline int tego_unix_listed(const struct tego_unix_key *k)
 }
 
 /* Whether an abstract-name connect consumes the one-connect grant the supervisor made for this socket after a
- * person approved that name (tego_unix_approved): the run is the attachment's, at the gen its
+ * person approved that name (supervisor R11c, tego_unix_approved): the run is the attachment's, at the gen its
  * slot holds now. */
 static __always_inline int tego_unix_connect_approved(struct bpf_sock_addr *ctx, const struct tego_net_owner *owner,
                                                        const struct tego_unix_key *k)
@@ -518,7 +520,7 @@ static __always_inline int tego_unix_connect_approved(struct bpf_sock_addr *ctx,
  *   - an absolute name is admitted when it is the supervisor's relay (connect only), or when it is spelled
  *     canonically and a unix: entry or a write entry admits it;
  *   - a relative name resolves against the caller's cwd, which this program cannot read: a datagram's is left
- *     to tier 1, which records it, and a connect's is refused, because the supervisor
+ *     to tier 1, which records it (supervisor.md R13b), and a connect's is refused, because the supervisor
  *     relays every connect by the inode it resolved and never passes a relative name on, so one arriving
  *     here did not come through the supervisor.
  * No breadcrumb is written: tego_reason is shaped for an address and a port, and the supervisor reads none
@@ -555,7 +557,7 @@ int tego_cg_connect_unix(struct bpf_sock_addr *ctx)
 }
 
 /* sendmsg_unix decides each addressed AF_UNIX datagram, which the supervisor records and continues, so the
- * kernel re-reads an address a sibling thread could rewrite after the supervisor read it.
+ * kernel re-reads an address a sibling thread could rewrite after the supervisor read it (supervisor.md R13b).
  * This program reads the kernel's copy, so the verdict and the send name one destination (6.7+, §5 R7). */
 SEC("cgroup/sendmsg_unix")
 int tego_cg_sendmsg_unix(struct bpf_sock_addr *ctx)

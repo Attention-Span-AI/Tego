@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
-/* ADR 0043's name entries in the decision plane (NAME-BPF; ADR 0039 as ADR 0043 amends it,
+/* ADR 0043's name entries in the decision plane (NAME-BPF; ADR 0039 as ADR 0043 amends it; docs/p0/enforce-plane.md
  * R5 to R8, R10). Included by decide.bpf.c after the walk, its readers and plane_name.h, before the hooks that ask it:
  * file_open (a read or a modification of a file), path_mknod, path_symlink, path_unlink, path_truncate and
  * file_truncate (through tego_modify_hook), path_link (the new name, and REFER's source) and path_rename (both ends
@@ -22,7 +22,7 @@
  *   name map or config row of the run's gen (NOROWS, D9), a climb that could not decide (UNRESOLVED, BOUND), a row
  *   whose identity is gone (MISMATCH). tego_plane_move (global), path_rename's for a directory: D5.
  *
- * Built for the verifier of every MATRIX row and for ADR 0024's budget of 20,000 verified
+ * Built for the verifier of every MATRIX row (enforce-plane R21) and for ADR 0024's budget of 20,000 verified
  * instructions a program: each global function is verified once per program however many hooks of it call it; the
  * hook's pointers reach them as scalars laundered through the task's scratch value (a global function cannot take a
  * trusted pointer before 6.8), and every kernel address is read through TEGO_RD_WORD. The callbacks are the walk's

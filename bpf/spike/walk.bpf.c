@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
-/* SPIKE. NOT BUILT INTO TEGO: no go:generate line names this file, no
+/* SPIKE (docs/p0/TIER3-PLAN.md ticket T0). NOT BUILT INTO TEGO: no go:generate line names this file, no
  * tego binary embeds it, and nothing under internal/ or cmd/ imports tools/spike/walk (its loader). It exists to measure the
- * form of the plane's bounded (mount, dentry) walk on real kernels; the results are in ADR 0024 and ADR 0025. tools/spike/walk/build.sh builds it and main.go runs it.
+ * form of the plane's bounded (mount, dentry) walk on real kernels; the results are ADR 0024's and ADR 0025's
+ * 2026-09-28 notes. tools/spike/walk/build.sh builds it and main.go runs it.
  *
  * One source, compiled eight times (build.sh):
  *   -DWALK_GLOBAL=1 -DREAD_RDONLY=1   form a-rd: a global subprogram taking u64 addresses, reading through

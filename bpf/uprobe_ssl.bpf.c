@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 /* Plaintext capture: uprobes on OpenSSL's write and read entry points, filtered by cgroup, streaming the
- * bytes a traced process sent and received before TLS encrypted them (ARCHITECTURE §12).
+ * bytes a traced process sent and received before TLS encrypted them (docs/p0/capture-derive.md §5 R1-R9,
+ * ARCHITECTURE §12).
  *
  * Attach points (userspace chooses which symbols exist and where; this file only says what runs there):
  *   - tego_ssl_write       SSL_write(SSL *, const void *buf, int num)
@@ -42,7 +43,7 @@
  * without a trace (SECURITY.md puts bpf/ in the trusted computing base), so the duplicate stands and the
  * fidelity claim is corrected instead.
  *
- * What that guarantee does not cover (an accepted residual): the bytes recorded are
+ * What that guarantee does not cover (capture-derive.md §6 #36, an accepted residual): the bytes recorded are
  * the buffer at the probe's copy, not the bytes OpenSSL encrypted or decrypted. A second thread of the traced
  * process can rewrite a write's buffer after the entry probe copies it and before OpenSSL encrypts it, or a
  * read's after OpenSSL decrypts into it and before the return probe copies it, and the ledger then holds X
@@ -175,8 +176,8 @@ static __always_inline void tego_ssl_meta(struct tego_ev_ssl *m, __u32 size, con
  * compile-time constant in each inlined copy, so the ring buffer is written exactly once (§8 I7).
  *
  * The clamp is written twice and each follows barrier_var(n), and the second sits right before the read, with no
- * call between them, because a plain clamp did not survive clang (a verifier-log regression).
- * The caller's branches already prove n <= cls, so clang deleted `if (n > cls) n = cls` as dead, and
+ * call between them, because a plain clamp did not survive clang (verifier-log regression, kernel matrix
+ * 2026-09-29). The caller's branches already prove n <= cls, so clang deleted `if (n > cls) n = cls` as dead, and
  * it kept n in two stack slots across the calls in between: the class tests ran on one copy and the read's size
  * was filled from the other. 6.12+ verifiers carry the tested bounds to the other slot through the spilled
  * scalars' shared id; 5.14 happened to pass; 6.1 and 6.8 did not, and refused every write program with "R2

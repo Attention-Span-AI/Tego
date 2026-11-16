@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 /* The exec rows' keys and the final name's compare, shared by bpf/decide.bpf.c (bprm_check) and
  * bpf/decide_fill.bpf.c (the fill), so the key a row is written under and the key an exec looks up are one function
- * (ADR 0025).
+ * (ADR 0025's 2026-09-30 note; docs/p0/enforce-plane.md R9, R16, §6 E15).
  *
  * tego_exec_link_key needs nothing. The name pass needs the includer's reader: TEGO_RD_WORD(addr), the eight bytes
  * at a kernel address through bpf_rdonly_cast or bpf_probe_read_kernel, defined before this header is included. */
