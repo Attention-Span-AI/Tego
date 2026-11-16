@@ -267,6 +267,17 @@ func lastMatch(ctx context.Context, r *ledger.Reader, f events.Filter) (ledger.E
 // run: before abbreviations, a bare 28t5cy read that directory, and whoever keeps a copy of a run under such a name
 // is told which run they get instead. cmd is the command, which the note names.
 func resolveRunDir(cmd, ref string, mustExist bool, mc *machineOnce) (string, error) {
+	dir, err := resolveRunRef(cmd, ref, mustExist, mc)
+	if err != nil && runRefUsage(err) {
+		if sdir, ok := sessionRunIn(ref, mc); ok {
+			return sdir, nil
+		}
+	}
+	return dir, err
+}
+
+// resolveRunRef is resolveRunDir without session names.
+func resolveRunRef(cmd, ref string, mustExist bool, mc *machineOnce) (string, error) {
 	if ledger.IsRunID(ref) {
 		return runDirUnderRoot(cmd, ref, mustExist, mc)
 	}
@@ -368,6 +379,17 @@ func runIDArg(ref string) error {
 // or starts with it (expandRunAbbrev), held to the floors resolveRunDir holds an abbreviation to, with its errors.
 // These commands never took a directory, so nothing in the current directory is read for ref, and no note names one.
 func runIDUnder(ref, root string) (string, error) {
+	id, err := runIDOrAbbrev(ref, root)
+	if err != nil && runRefUsage(err) {
+		if s, ok := sessionRun(ref, root); ok {
+			return s, nil
+		}
+	}
+	return id, err
+}
+
+// runIDOrAbbrev is runIDUnder without session names.
+func runIDOrAbbrev(ref, root string) (string, error) {
 	if err := runIDArg(ref); err != nil {
 		return "", err
 	}
