@@ -50,9 +50,10 @@ repo_owner="Attention-Span-AI"
 repo_name="Tego"
 
 # mac_setup runs instead of the Linux install on macOS. Tego needs a Linux kernel, so on a Mac it lives in a Lima
-# VM: this checks the Mac, offers to install or upgrade Lima and to create or start the VM (whose own provisioning
-# runs this script inside it), and ends with the commands to enter it. Each step asks first, on the terminal; with
-# no terminal and no TEGO_YES=1 it prints the remaining commands and stops.
+# VM: this checks the Mac, offers to install or upgrade Lima, to create or start the VM (whose own provisioning runs
+# this script inside it), and to add a `tego` command to the Mac that runs tego in the VM. Each step asks first, on
+# the terminal; with no terminal and no TEGO_YES=1 it prints the remaining commands and stops. Lima's and Homebrew's
+# own output goes to a log file, shown only when a step fails.
 mac_setup() {
 	vm=tego
 	if [ -n "${TEGO_VERSION:-}" ]; then
@@ -60,47 +61,85 @@ mac_setup() {
 	else
 		template="https://github.com/${repo_owner}/${repo_name}/releases/latest/download/tego.yaml"
 	fi
+	install_line="curl -fsSL https://github.com/${repo_owner}/${repo_name}/releases/latest/download/install.sh | sh"
+	log="${TMPDIR:-/tmp}/tego-install.log"
+	: >"$log"
+
+	# Colour and animation only on a terminal, and never with NO_COLOR or TERM=dumb (clig.dev).
+	tty=0
+	if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
+		tty=1
+		green=$(printf '\033[32m') red=$(printf '\033[31m') dim=$(printf '\033[2m') bold=$(printf '\033[1m') off=$(printf '\033[0m')
+	else
+		green='' red='' dim='' bold='' off=''
+	fi
+	ok() { printf '  %s✓%s %s\n' "$green" "$off" "$1"; }
+	bad() { printf '  %s✗%s %s\n' "$red" "$off" "$1"; }
+	note() { printf '    %s%s%s\n' "$dim" "$1" "$off"; }
+
 	ask() { # ask QUESTION: 0 yes, 1 no, 2 nobody to ask
 		if [ "${TEGO_YES:-}" = 1 ]; then
-			echo "$1 [Y/n] yes"
+			printf '    %s [Y/n] yes\n' "$1"
 			return 0
 		fi
 		(: </dev/tty) 2>/dev/null || return 2
-		printf '%s [Y/n] ' "$1" >/dev/tty
+		printf '    %s [Y/n] ' "$1" >/dev/tty
 		read -r answer </dev/tty || return 1
 		case "$answer" in "" | [Yy]*) return 0 ;; *) return 1 ;; esac
 	}
-	# stop prints what is left to type and exits; $1 is the exit code.
-	stop() {
+	stop() { # stop CODE LINE...: what is left to type, then exit
 		code=$1
 		shift
 		echo ""
-		echo "To finish, run:"
-		for line in "$@"; do echo "  $line"; done
+		echo "  To finish, run:"
+		for line in "$@"; do printf '      %s%s%s\n' "$bold" "$line" "$off"; done
+		echo ""
+		echo "  Then run this installer again."
 		exit "$code"
 	}
-	enter="limactl shell ${vm}"
-	inside="then, inside the VM:  cd ~ && tego doctor"
+	# quietly CMD...: runs CMD with its output in the log. On a terminal a fish swims while it runs. On failure it
+	# shows the log's last lines and where the whole log is.
+	quietly() {
+		"$@" >>"$log" 2>&1 &
+		pid=$!
+		if [ "$tty" = 1 ]; then
+			start=$(date +%s) pos=0 dir=1 width=34
+			while kill -0 "$pid" 2>/dev/null; do
+				if [ "$dir" = 1 ]; then fish='><(((º>'; else fish='<º)))><'; fi
+				t=$(($(date +%s) - start))
+				printf '\r       %*s%s%*s %s%d:%02d%s' "$pos" '' "$fish" $((width - pos)) '' "$dim" $((t / 60)) $((t % 60)) "$off"
+				pos=$((pos + dir))
+				if [ "$pos" -ge "$width" ] || [ "$pos" -le 0 ]; then dir=$((0 - dir)); fi
+				sleep 0.15
+			done
+			printf '\r\033[K'
+		fi
+		if wait "$pid"; then return 0; fi
+		echo ""
+		tail -n 5 "$log" | sed 's/^/      /'
+		note "The full log is in $log"
+		return 1
+	}
 
-	echo "Tego runs on Linux. On a Mac it runs inside a small Linux VM (Lima)."
 	echo ""
-	echo "Checking your Mac:"
+	echo "  Tego needs Linux. On a Mac, it runs in a small Linux VM."
+	echo ""
 	macos=$(sw_vers -productVersion 2>/dev/null || echo 0)
 	major=${macos%%.*}
 	minor=${macos#*.}
 	minor=${minor%%.*}
 	[ "$minor" = "$macos" ] && minor=0
 	if [ "$major" -gt 13 ] 2>/dev/null || { [ "$major" -eq 13 ] && [ "$minor" -ge 5 ]; } 2>/dev/null; then
-		echo "  ✓ macOS ${macos}"
+		ok "macOS ${macos}"
 	else
-		echo "  ✗ macOS ${macos}: Tego's VM needs macOS 13.5 or later"
+		bad "macOS ${macos}. Tego's VM needs macOS 13.5 or later."
 		exit 3
 	fi
 	free_gb=$(($(df -k "$HOME" | awk 'NR==2 {print $4}') / 1048576))
 	if [ "$free_gb" -ge 5 ]; then
-		echo "  ✓ ${free_gb} GB free (about 5 GB needed)"
+		ok "${free_gb} GB free"
 	else
-		echo "  ✗ ${free_gb} GB free: the VM needs about 5 GB. Free some space and run this again."
+		bad "${free_gb} GB free. The VM needs about 5 GB. Free some space and run this again."
 		exit 8
 	fi
 
@@ -110,56 +149,116 @@ mac_setup() {
 	fi
 	if [ -z "$lima" ] || [ "${lima%%.*}" -lt 2 ] 2>/dev/null; then
 		if [ -z "$lima" ]; then
-			echo "  ✗ Lima is not installed"
+			bad "Lima isn't installed. Tego uses it to run the VM."
 			verb=install
 		else
-			echo "  ✗ Lima ${lima} is too old (2.0 or later needed)"
+			bad "Lima ${lima} is too old. Tego needs 2.0 or later."
 			verb=upgrade
 		fi
 		if ! command -v brew >/dev/null 2>&1; then
-			echo ""
-			echo "Install Lima 2.0 or later (https://lima-vm.io/docs/installation/), then run this again."
+			note "Install Lima from https://lima-vm.io/docs/installation/, then run this again."
 			exit 2
 		fi
-		ask "${verb} Lima with Homebrew?" && rc=0 || rc=$?
+		ask "${verb} it now?" && rc=0 || rc=$?
 		case $rc in
-			0) brew "$verb" lima || exit 2 ;;
-			2) stop 2 "brew ${verb} lima" "limactl start --name=${vm} ${template}" "$enter" "$inside" ;;
-			*) echo "Tego needs Lima on a Mac; nothing was changed."; exit 2 ;;
+			0) quietly brew "$verb" lima || exit 2 ;;
+			2) stop 2 "brew ${verb} lima" "limactl start --name=${vm} ${template}" ;;
+			*) note "Tego needs Lima on a Mac. Nothing was changed."; exit 2 ;;
 		esac
+		ok "Lima installed"
 	else
-		echo "  ✓ Lima ${lima}"
+		ok "Lima ${lima}"
 	fi
 
 	state=$(limactl list --format '{{.Status}}' "$vm" 2>/dev/null || true)
 	case "$state" in
-		Running) echo "  ✓ VM '${vm}' is running" ;;
+		Running) ok "Tego's VM is running" ;;
 		Stopped)
-			ask "Start the '${vm}' VM?" && rc=0 || rc=$?
-			case $rc in
-				0) limactl start "$vm" || exit 8 ;;
-				2) stop 0 "limactl start ${vm}" "$enter" "$inside" ;;
-				*) stop 0 "limactl start ${vm}" "$enter" "$inside" ;;
-			esac
+			ask "Tego's VM is stopped. Start it?" && rc=0 || rc=$?
+			[ "$rc" = 0 ] || stop 0 "limactl start ${vm}"
+			echo ""
+			echo "  Starting the VM."
+			quietly limactl start "$vm" || exit 8
+			ok "Tego's VM is running"
 			;;
 		*)
 			echo ""
-			echo "Next: create the '${vm}' VM (Ubuntu 24.04 with Tego inside)."
-			echo "It takes about 2 minutes and downloads about 600 MB, once."
-			ask "Create it now?" && rc=0 || rc=$?
-			case $rc in
-				0) limactl start --tty=false --name="$vm" "$template" || exit 8 ;;
-				2) stop 0 "limactl start --name=${vm} ${template}" "$enter" "$inside" ;;
-				*) stop 0 "limactl start --name=${vm} ${template}" "$enter" "$inside" ;;
-			esac
+			echo "  Next, Tego sets up its VM. It takes about 2 minutes, only the first time."
+			ask "Set it up now?" && rc=0 || rc=$?
+			[ "$rc" = 0 ] || stop 0 "limactl start --name=${vm} ${template}"
+			echo ""
+			quietly limactl start --tty=false --name="$vm" "$template" || exit 8
+			ok "Tego is ready"
 			;;
 	esac
 
+	# The tego command on the Mac: it runs tego in the VM, from the VM's home folder, in the user's cgroup, which
+	# a limactl shell login is outside of.
+	bin="$HOME/.local/bin"
+	shim="$bin/tego"
+	reopen=0
+	if [ -x "$shim" ] && grep -q "Tego's installer" "$shim" 2>/dev/null; then
+		ok "tego command is set up"
+	else
+		echo ""
+		ask "Add the tego command to your terminal?" && rc=0 || rc=$?
+		if [ "$rc" = 0 ]; then
+			mkdir -p "$bin"
+			cat >"$shim" <<EOF
+#!/bin/sh
+# tego on a Mac, written by Tego's installer: runs tego inside Tego's Linux VM (the Lima instance "${vm}").
+# "tego shell" opens a shell in the VM. To remove: delete this file.
+vm=${vm}
+case "\$(limactl list --format '{{.Status}}' "\$vm" 2>/dev/null)" in
+	Running) ;;
+	Stopped)
+		echo "Starting Tego's VM..." >&2
+		limactl start "\$vm" >/dev/null 2>&1 || { echo "tego: the VM didn't start. Try: limactl start \$vm" >&2; exit 125; }
+		;;
+	*)
+		echo "tego: Tego's VM is missing. Set it up again with:" >&2
+		echo "  ${install_line}" >&2
+		exit 125
+		;;
+esac
+if [ "\${1:-}" = shell ]; then
+	exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet bash -l'
+fi
+exec limactl shell --workdir / "\$vm" sh -c 'cd "\$HOME" && exec systemd-run --user --scope --quiet "\$HOME/.local/bin/tego" "\$@"' tego "\$@"
+EOF
+			chmod 0755 "$shim"
+			case ":${PATH}:" in
+				*":$bin:"*) ;;
+				*)
+					case "$(basename "${SHELL:-sh}")" in
+						zsh) rcfile="$HOME/.zshrc" ;;
+						bash) rcfile="$HOME/.bash_profile" ;;
+						*) rcfile="$HOME/.profile" ;;
+					esac
+					if ! grep -qs '# added by the Tego installer' "$rcfile"; then
+						printf '\nexport PATH="$HOME/.local/bin:$PATH" # added by the Tego installer\n' >>"$rcfile"
+					fi
+					reopen=1
+					;;
+			esac
+			ok "tego command added"
+		else
+			note "Skipped. You can still use Tego with: limactl shell ${vm}"
+		fi
+	fi
+
 	echo ""
-	echo "Tego is ready in its VM. Next:"
-	echo "  ${enter}"
-	echo "  ${inside}"
-	echo "Keep your projects inside the VM (under ~): a folder shared from the Mac is read-only there."
+	if [ "$reopen" = 1 ]; then
+		echo "  Next, open a new terminal window and run:"
+	else
+		echo "  Next, run:"
+	fi
+	echo ""
+	printf '      %stego setup%s\n' "$bold" "$off"
+	echo ""
+	note "It checks your setup and tells you what to do next."
+	note "Keep your projects inside the VM: run 'tego shell' to open it."
+	echo ""
 	exit 0
 }
 

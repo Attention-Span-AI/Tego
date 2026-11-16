@@ -80,40 +80,48 @@ run() {
 		esac
 	done
 	code=0
-	env -i HOME="$tmp" PATH="$path" FAKE_LOG="$tmp/log" "$@" sh "$script" >"$tmp/out" 2>&1 </dev/null || code=$?
+	env -i HOME="$tmp" TMPDIR="$tmp" SHELL=/bin/zsh PATH="$path" FAKE_LOG="$tmp/log" "$@" sh "$script" >"$tmp/out" 2>&1 </dev/null || code=$?
 }
 
 latest="https://github.com/Attention-Span-AI/Tego/releases/latest/download/tego.yaml"
 
 run fresh TEGO_YES=1
-check "fresh Mac: installs Lima, creates the VM" 0 "✗ Lima is not installed" "brew install lima" \
-	"limactl start --tty=false --name=tego $latest" "Tego is ready in its VM" "limactl shell tego"
+check "fresh Mac: installs Lima, sets up the VM, adds tego" 0 "✗ Lima isn't installed" "brew install lima" \
+	"limactl start --tty=false --name=tego $latest" "✓ Tego is ready" "✓ tego command added" \
+	"open a new terminal window" "tego setup"
+[ -x "$tmp/.local/bin/tego" ] || { echo "FAIL fresh Mac: no tego command in ~/.local/bin"; fails=$((fails + 1)); }
+grep -q 'added by the Tego installer' "$tmp/.zshrc" 2>/dev/null || { echo "FAIL fresh Mac: PATH line not added to ~/.zshrc"; fails=$((fails + 1)); }
+absent "fresh Mac: hides Lima's own output" "INFO["
+
+run again LIMA=1 FAKE_VM=Running TEGO_YES=1
+check "second run: nothing to redo" 0 "✓ Lima 2.3.0" "✓ Tego's VM is running" "✓ tego command is set up" "Next, run:"
+[ "$(grep -c 'added by the Tego installer' "$tmp/.zshrc")" = 1 ] || { echo "FAIL second run: PATH line added twice"; fails=$((fails + 1)); }
+absent "second run: nothing to redo" "limactl start"
+absent "second run: nothing to redo" "brew "
 
 run old LIMA=1 FAKE_LIMA=1.0.1 TEGO_YES=1
 check "old Lima: upgrades it" 0 "✗ Lima 1.0.1 is too old" "brew upgrade lima" "limactl start --tty=false --name=tego"
 
-run running LIMA=1 FAKE_VM=Running TEGO_YES=1
-check "VM already running: changes nothing" 0 "✓ Lima 2.3.0" "✓ VM 'tego' is running" "Tego is ready in its VM"
-absent "VM already running: changes nothing" "limactl start"
-absent "VM already running: changes nothing" "brew "
-
 run stopped LIMA=1 FAKE_VM=Stopped TEGO_YES=1
-check "VM stopped: starts it" 0 "limactl start tego"
+check "VM stopped: starts it" 0 "limactl start tego" "✓ Tego's VM is running"
 
 run pinned LIMA=1 TEGO_YES=1 TEGO_VERSION=v0.1.3
 check "TEGO_VERSION picks that release's template" 0 \
 	"limactl start --tty=false --name=tego https://github.com/Attention-Span-AI/Tego/releases/download/v0.1.3/tego.yaml"
 
 run nobrew BREW=0
-check "no Homebrew: says where to get Lima" 2 "✗ Lima is not installed" "https://lima-vm.io/docs/installation/"
+check "no Homebrew: says where to get Lima" 2 "✗ Lima isn't installed" "https://lima-vm.io/docs/installation/"
 
 run oldmac FAKE_MACOS=12.6
-check "macOS too old" 3 "✗ macOS 12.6: Tego's VM needs macOS 13.5 or later"
+check "macOS too old" 3 "✗ macOS 12.6. Tego's VM needs macOS 13.5 or later."
 run macos135 LIMA=1 FAKE_VM=Running FAKE_MACOS=13.5
 check "macOS 13.5 is enough" 0 "✓ macOS 13.5"
 
 run disk FAKE_FREE_KB=2097152
-check "too little disk" 8 "✗ 2 GB free: the VM needs about 5 GB"
+check "too little disk" 8 "✗ 2 GB free. The VM needs about 5 GB."
+
+run nocolor LIMA=1 FAKE_VM=Running TEGO_YES=1
+absent "no colour when not a terminal" "$(printf '\033[')"
 
 # With no terminal and no TEGO_YES the script asks nobody: it prints what is left and changes nothing. A run from
 # an interactive terminal can open /dev/tty, so this case only runs where it cannot (CI).
@@ -122,7 +130,7 @@ if (: </dev/tty) 2>/dev/null; then
 else
 	run notty
 	check "no terminal: prints the commands, runs none" 2 "To finish, run:" "brew install lima" \
-		"limactl start --name=tego $latest" "limactl shell tego"
+		"limactl start --name=tego $latest" "Then run this installer again."
 	if [ -s "$tmp/log" ]; then
 		echo "FAIL no terminal: ran commands it should only print:"
 		sed 's/^/    /' "$tmp/log"
