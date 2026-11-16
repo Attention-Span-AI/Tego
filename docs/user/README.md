@@ -28,6 +28,7 @@ check.
 | Page | It answers |
 | ---- | ---------- |
 | [built-in-refusals.md](built-in-refusals.md) | Which host, Tego and terminal surfaces does every enforcing run refuse? |
+| [commands.md](commands.md) | Which command does what? Agents, sessions, approvals, presets and the dashboard, and the older commands. |
 | [setup.md](setup.md) | Which step is this machine on, and what do I type next? (`tego setup`) |
 | [self-check.md](self-check.md) | Does Tego refuse what it should on this machine? (`tego test`) |
 | [reason-channel.md](reason-channel.md) | Why was my agent refused, and how does the agent learn why? (a draft) |

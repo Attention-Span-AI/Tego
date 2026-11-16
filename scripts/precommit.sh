@@ -144,7 +144,7 @@ script_tests() {
 	local t st=0
 	# The python helpers some self-tests run leave no __pycache__ in the tree.
 	export PYTHONDONTWRITEBYTECODE=1
-	for t in scripts/install_test.sh scripts/install-maze_test.sh scripts/coverage_test.sh scripts/bench-gate_test.sh scripts/timing-budgets_test.sh scripts/check-spdx_test.sh scripts/check-licenses_test.sh scripts/scrub-capture_test.sh scripts/fuzz-corpus_test.sh scripts/deadcode-report_test.sh scripts/skipgate_test.sh \
+	for t in scripts/install_test.sh scripts/install_mac_test.sh scripts/install-maze_test.sh scripts/coverage_test.sh scripts/bench-gate_test.sh scripts/timing-budgets_test.sh scripts/check-spdx_test.sh scripts/check-licenses_test.sh scripts/scrub-capture_test.sh scripts/fuzz-corpus_test.sh scripts/deadcode-report_test.sh scripts/skipgate_test.sh \
 		scripts/demo-credentials_test.sh scripts/demo-reset_test.sh scripts/cleanup-guards_test.sh \
 		scripts/check-skiplists_test.sh scripts/release_test.sh scripts/check-control-pin_test.sh scripts/bpf-toolchain_test.sh scripts/tree-files_test.sh \
 		scripts/precommit_test.sh scripts/check-bpf-objects_test.sh scripts/fd-churn_test.sh scripts/check-fd_test.sh scripts/check-edgelint_test.sh test/vm/kvm-step_test.sh test/vm/python-pkgs_test.sh test/vm/fetch-kernel_test.sh \
