@@ -245,6 +245,7 @@ EOF
 						*) rcfile="$HOME/.profile" ;;
 					esac
 					if ! grep -qs '# added by the Tego installer' "$rcfile"; then
+						# shellcheck disable=SC2016 # the line is written as is, for the shell to expand when it starts
 						printf '\nexport PATH="$HOME/.local/bin:$PATH" # added by the Tego installer\n' >>"$rcfile"
 					fi
 					reopen=1
@@ -264,6 +265,7 @@ EOF
 	if [ -n "$shim" ] && (: </dev/tty) 2>/dev/null && [ "${TEGO_YES:-}" != 1 ]; then
 		# tego setup in a terminal is the guide: it asks which agent to connect and sets up the first project. It gets
 		# this terminal, and the terminal's settings are put back after it.
+		# shellcheck disable=SC2016 # expanded by the shell inside the VM, not here
 		limactl shell --workdir / "$vm" sh -c 'cd "$HOME" && exec systemd-run --user --scope --quiet "$HOME/.local/bin/tego" setup' </dev/tty || true
 		restore_term
 		echo ""

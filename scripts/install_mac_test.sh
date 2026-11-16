@@ -14,6 +14,7 @@ fails=0
 
 # stubs FAKEBIN: writes the stand-ins. limactl goes in its own folder, which a case puts on PATH when Lima is
 # "installed"; brew install/upgrade copies it into FAKEBIN, as a real install would put it on PATH.
+# shellcheck disable=SC2016 # the stand-ins are written as is, for their own shell to expand
 stubs() {
 	b=$1
 	mkdir -p "$b" "$b.lima"
