@@ -46,6 +46,9 @@ var guideLookPath = exec.LookPath
 
 // guideInteractive reports whether tego setup talks to a person: both its input and its output are a terminal.
 func guideInteractive(stdout io.Writer) bool {
+	if o, ok := stdout.(*outputWriter); ok {
+		stdout = o.dst
+	}
 	f, ok := stdout.(*os.File)
 	return ok && isTerminalFile(os.Stdin) && isTerminalFile(f)
 }
