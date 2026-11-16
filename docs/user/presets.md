@@ -7,6 +7,17 @@ its folders, its hosts, its model, the variables it needs. There are three:
 - `tego/no-prod`: the agent reaches no network host except the ones your contract names.
 - `tego/repo-only-writes`: the agent writes only in the folders your contract names.
 
+## The rules `tego start` and `tego add agent` offer
+
+| Choice | Presets | What the agent may do |
+|---|---|---|
+| **Base development** (`--preset base-development`) | all three | Change any file in the project, install packages and run tests. Never read your secret files. Connect only to its model's API. |
+| **Read-only review** (`--preset read-only-review`) | all three | Read the project and its git history. Change nothing in the project, except Tego's own folder for the agent's state (`.tego/`). Never read your secret files. Connect only to its model's API. |
+| **Create my own** (in `tego start`) | the ones you pick | The same building blocks, switched on or off, plus any other hosts you name. |
+
+To change an agent's rules afterwards: `tego edit agent <name>`. To see them in plain words: `tego describe agent
+<name>`.
+
 ## Pick and combine
 
 Name one preset, or several in a list. They set different

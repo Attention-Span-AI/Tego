@@ -132,66 +132,55 @@ refuses any other. Add the `export` to your shell's profile if your login does n
 
 ### First run
 
-Run these in a plain terminal, as yourself. Over SSH, first start a shell in your user's cgroup with
+```sh
+tego start
+```
+
+`tego start` walks you through it, one question at a time:
+
+1. **The agent you want to supervise:** Claude Code, Codex or another program. Tego offers to install Claude Code or
+   Codex if it's missing.
+2. **Its sign-in:** a Claude subscription, an Anthropic API key, or an OpenAI API key for Codex. You choose whether
+   Tego saves it for later sessions.
+3. **Its project:** a test project Tego makes for you, or one of yours. The test project's dependency is poisoned on
+   purpose (harmlessly) so you can watch Tego block it.
+4. **Its rules:** Base development, Read-only review, or your own pick. [Read more about presets](docs/user/presets.md).
+
+It never starts the agent for you. It ends with the command that starts your first supervised session:
+
+```sh
+cd ~/tego-sample && tego run tego-sample
+```
+
+Ask Claude to "run the tests": the tests pass, and Tego blocks the dependency's attempt to read the project's `.env`
+and send it out. Then see what happened:
+
+```sh
+tego get sessions                 # your sessions
+tego describe session --last      # what the agent did and what Tego blocked
+tego dashboard                    # the same, in your browser
+```
+
+On a Mac, run `tego start` and `tego dashboard` in your normal terminal: they open Tego's Linux VM for you. Keep your
+projects inside the VM. Over SSH on Linux, start a shell in your user's cgroup first with
 `systemd-run --user --scope bash` ([docs/INSTALL.md](docs/INSTALL.md#check-the-machine)).
 
-```sh
-tego version
-tego doctor
-tego test
-mkdir demo && cd demo
-tego init --preset no-secrets,repo-only-writes --write ./out
-tego compile agent.yaml
-tego run agent.yaml
-tego receipt --last
-```
+Prefer to do each step yourself? [docs/QUICKSTART.md](docs/QUICKSTART.md) does the same with `tego init`, `tego run`
+and `tego receipt`, and explains the output.
 
-`tego test` runs four harmless actions against decoy files and shows Tego refusing each one; it needs no root. On a
-fresh Ubuntu 24.04 it prints:
-
-```text
-Tego self-check: 4 actions, 4 refused at tier landlock
-
-  ACTION                                               WITHOUT TEGO  UNDER TEGO  REFUSAL
-  read a fake SSH key in a fake home                   succeeded     refused     read-denied: fs.deny_read[<tmp>/work/home/.ssh/]
-  write a file outside the project's writable folder   succeeded     refused     write-outside-contract: no entry of the contract allows it
-  run a program the contract does not list             succeeded     refused     exec-not-allowed: no entry of the contract allows it
-  connect to a local port the contract does not allow  succeeded     refused     net-not-allowed: no entry of the contract allows it
-
-Each action works on this machine without Tego, and Tego refused and recorded every one.
-The actions ran on decoys in a temporary folder, removed now, and the four runs' records went there too.
-```
-
-The rest writes a small contract, shows its rule table, runs a demo command under it and prints what its record holds.
-[docs/QUICKSTART.md](docs/QUICKSTART.md) walks through each step and explains the output.
-
-### Run a real agent
-
-In a project with no `agent.yaml`, create one. This example is for Claude Code; Codex works the same way, and any other command can use `tego watch -- <your command>` first:
+### Your own projects and agents
 
 ```sh
-tego init --agent claude-code --write src/ --prompt 'Review this project'
-tego compile agent.yaml
-tego run agent.yaml
+tego add agent --project ~/code/my-app --program claude-code --preset base-development
+tego apply -f my-rules.yaml       # add or update an agent from a rules file you wrote
+tego get agents                   # your agents
+tego edit agent my-app            # change its rules
+tego remove agent my-app          # stop supervising it
 ```
 
-This runs one task in Claude's print mode through the capture forwarder. Without
-`--prompt`, the task is to describe the project without changing files. For the
-full-screen interface use `claude-code-interactive.yaml` below; its model bytes are not captured.
-Set `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` before running it. `tego init --list`
-shows the setup commands. `--agent codex` selects Codex exec with `CODEX_API_KEY`;
-ChatGPT sign-in uses the example below. `--prompt` is one literal argument. Init
-reads no credentials and calls no model. Its state folders are separate from your
-usual agent state, and only your `--write` folders and its state are writable.
-
-Copy `claude-code-interactive.yaml`, `codex.yaml` or `codex-chatgpt.yaml` from
-[examples/agents/](examples/agents/README.md) and change the paths it marks CHANGE. With `claude` or `codex` on `PATH`,
-this starts the agent under the contract with no login and no prompt, the quickest check that a copy works on your
-machine (for a Codex contract, use `codex --version`):
-
-```sh
-tego run <contract> -- claude --version
-```
+`tego --help` lists every command, grouped. [docs/user/commands.md](docs/user/commands.md) explains each one.
+[examples/agents/](examples/agents/README.md) has rules files for Claude Code, Codex, the Claude Agent SDK, the
+Anthropic Python SDK and an agent of your own.
 
 ## How it works
 
