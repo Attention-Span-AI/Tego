@@ -45,7 +45,7 @@ func guidePTYRoutes() []guidePTYRoute {
 			{project.prompt, "\x1b[B\x1b[B\r"},
 			{"Path to the project", "~/missing\r\x15~/bot\r"},
 			{rules.prompt, "\x1b[B\x1b[B\r"},
-			{"Which rules?", "\t\r"},
+			{"Which rules?", "/no\r\r"},
 			{"Other hosts it may reach", "api.github.com\r"}}},
 		{"command", []guidePTYStep{{agent.prompt, "\x1b[B\x1b[B\r"}, {"What command starts it?", "claude\r"},
 			{"Which project should claude work in?", "\x1b[B\r"}, {"Which rules should claude follow?", "\r"}}},

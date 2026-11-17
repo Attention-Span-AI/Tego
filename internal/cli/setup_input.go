@@ -235,6 +235,7 @@ func (m *guideForm) Init() tea.Cmd  { return tea.Batch(m.form.Init(), m.input.ne
 func (m *guideForm) View() tea.View { v := tea.NewView(m.form.View()); v.ReportFocus = true; return v }
 
 type guideReadMsg struct{ event tea.Msg }
+type guideContinueMsg struct{}
 
 func (m *guideForm) filter(_ tea.Model, msg tea.Msg) tea.Msg {
 	if read, ok := msg.(guideReadMsg); ok {
@@ -244,22 +245,23 @@ func (m *guideForm) filter(_ tea.Model, msg tea.Msg) tea.Msg {
 	return msg
 }
 func (m *guideForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(guideContinueMsg); ok {
+		if m.form.State == huh.StateNormal && !m.field.finished {
+			return m, m.input.next(m.ctx)
+		}
+		return m, nil
+	}
 	reading := m.reading
 	m.reading = false
 	_, cmd := m.form.Update(msg)
 	if !reading || m.form.State != huh.StateNormal {
 		return m, cmd
 	}
-	if key, ok := msg.(tea.KeyPressMsg); ok && key.String() == "enter" && m.field.Error() == nil {
-		// These single-field forms submit with Enter, not Tab. A filtered
-		// select with no visible option also keeps accepting input on Enter.
-		ready := true
-		if selection, ok := m.field.Field.(*huh.Select[int]); ok {
-			_, ready = selection.Hovered()
-		}
-		if ready {
-			return m, cmd
-		}
+	// Let the field's commands (including NextField) reach the form before
+	// asking for another key. Blur is Huh's confirmation that this field
+	// finished; Enter may merely finish a select or checklist filter.
+	if key, ok := msg.(tea.KeyPressMsg); ok && key.String() == "enter" {
+		return m, tea.Sequence(cmd, func() tea.Msg { return guideContinueMsg{} })
 	}
 	return m, tea.Batch(cmd, m.input.next(m.ctx))
 }

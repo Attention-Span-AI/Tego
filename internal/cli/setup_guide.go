@@ -328,9 +328,10 @@ func (g *walk) theme() huh.Theme {
 // Huh's own footer (help and errors, after a blank line) is off, so the hint sits right under the input.
 type hinted struct {
 	huh.Field
-	g    *walk
-	hint string
-	mask bool // a secret: Huh masks it with *, shown here as •
+	g        *walk
+	hint     string
+	finished bool // Huh blurred the single field after accepting it
+	mask     bool // a secret: Huh masks it with *, shown here as •
 
 	// A list longer than guideListRows scrolls; Huh scrolls only as far as keeps the cursor in view, so top follows the
 	// hovered item the same way, and the hint says how many items are out of view.
@@ -340,11 +341,29 @@ type hinted struct {
 }
 
 func (h *hinted) Update(msg tea.Msg) (huh.Model, tea.Cmd) {
+	// Huh 2.0.3 can leave an empty filtered checklist's cursor at -1
+	// after any downward binding. Normalize that empty-list position before
+	// it can be used after clearing the filter; keep every key's meaning.
+	ms, checklist := h.Field.(*huh.MultiSelect[int])
+	empty := false
+	if checklist {
+		_, visible := ms.Hovered()
+		empty = !visible
+	}
 	m, c := h.Field.Update(msg)
+	if empty {
+		_, reset := ms.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+		c = tea.Batch(c, reset)
+	}
 	if f, ok := m.(huh.Field); ok {
 		h.Field = f
 	}
 	return h, c
+}
+
+func (h *hinted) Blur() tea.Cmd {
+	h.finished = true
+	return h.Field.Blur()
 }
 
 func (h *hinted) View() string {
