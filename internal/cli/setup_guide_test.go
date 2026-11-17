@@ -473,3 +473,36 @@ func TestDashboardIsOneDashboard(t *testing.T) {
 
 // savedLogin is the value the guide's data-only reader can use.
 func savedLogin(home, envVar string) string { return readSavedLogins(home, nil)[envVar] }
+
+// Relative grants are checked from the selected project, just as the printed
+// cd PROJECT && tego run command will compile them.
+func TestStartOwnRulesUseSelectedProject(t *testing.T) {
+	f := onFixture(t, "fresh")
+	noLogins(t)
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "from-shell")
+	fakeProgram(t, "claude")
+	t.Chdir(f.Home)
+	project := filepath.Join(f.Home, "app")
+	if err := os.MkdirAll(filepath.Join(project, "out", "cache"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(f.Home, "own.yaml")
+	if err := os.WriteFile(file, []byte("version: 0\nname: helper\ncommand: [\"/bin/sh\"]\nfs:\n  write: [\"./out/cache/\"]\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	m, _, err := loadMachine(config.TrustWarn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Limit the failing reproduction to one validation, rather than repeatedly
+	// submitting EOF through the plain guide's retry loop.
+	var output bytes.Buffer
+	g := newWalk(strings.NewReader("4\n~/own.yaml\n"), &output, false)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	g.ctx = ctx
+	rc, err := g.rules(ctx, m, "Claude Code", guideAgents[0], project)
+	if err != nil || rc.file != file {
+		t.Fatalf("selected-project rules: %+v, %v\n%s", rc, err, &output)
+	}
+}
