@@ -4,12 +4,17 @@ package cli
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"io/fs"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -132,7 +137,7 @@ func cmdServe() Command {
 					_, _ = fmt.Fprintf(stderr, "%s serve: --open: %v; open the URL above\n", handoff.Name, err)
 				}
 			}
-			if err := web.Serve(ctx, ln, srv); err != nil {
+			if err := web.Serve(ctx, ln, dashboardIdentity(srv, srv.URL())); err != nil {
 				diag(stderr, handoff.Name+" serve: "+err.Error(), codeIO, "start it again")
 				return exits[codeIO]
 			}
@@ -348,4 +353,31 @@ func severityFile() string {
 		return ""
 	}
 	return filepath.Join(dir, "tego", "severity.json")
+}
+
+// dashboardIdentity proves to the local CLI that a listener owns the private sign-in token without receiving it.
+// It grants no dashboard access. Ordinary requests still pass through the dashboard's existing checks.
+func dashboardIdentity(next http.Handler, link string) http.Handler {
+	u, err := url.Parse(link)
+	if err != nil {
+		return next
+	}
+	token := u.Query().Get("t")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/_tego/identity" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		nonce := r.URL.Query().Get("challenge")
+		_, err := hex.DecodeString(nonce)
+		if token == "" || r.Method != http.MethodGet || r.Host != u.Host || len(nonce) != 64 || err != nil {
+			http.Error(w, "invalid dashboard challenge", http.StatusBadRequest)
+			return
+		}
+		mac := hmac.New(sha256.New, []byte(token))
+		_, _ = mac.Write([]byte("tego-dashboard-v1\n" + nonce))
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(w, hex.EncodeToString(mac.Sum(nil)))
+	})
 }

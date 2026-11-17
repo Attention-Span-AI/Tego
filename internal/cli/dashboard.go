@@ -4,9 +4,15 @@ package cli
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"flag"
 	"io"
-	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -110,14 +116,14 @@ func runningDashboard(home string) string {
 
 // dashboardAt is the link of the dashboard tego start left running, "" when none answers at its address, and whether
 // it runs this tego: false when tego was updated after it started (its log is older than this program).
-// shortcut: anything listening on that port counts as the dashboard; check the server too if that ever misleads.
+// The listener must prove possession of the private sign-in token before a link is reused or printed.
 func dashboardAt(home string) (string, bool) {
 	log := dashboardLog(home)
-	fi, err := os.Stat(log)
+	fi, err := os.Lstat(log)
 	if err != nil {
 		return "", false
 	}
-	b, err := os.ReadFile(log)
+	b, err := readGuideFile(home, ".tego/dashboard.log")
 	if err != nil {
 		return "", false
 	}
@@ -125,11 +131,9 @@ func dashboardAt(home string) (string, bool) {
 	if m == nil {
 		return "", false
 	}
-	c, err := net.DialTimeout("tcp", string(m[1]), 300*time.Millisecond)
-	if err != nil {
+	if !probeDashboard(string(m[0])) {
 		return "", false
 	}
-	_ = c.Close()
 	current := true
 	if self, err := os.Executable(); err == nil {
 		if si, err := os.Stat(self); err == nil && si.ModTime().After(fi.ModTime()) {
@@ -137,4 +141,40 @@ func dashboardAt(home string) (string, bool) {
 		}
 	}
 	return string(m[0]), current
+}
+
+// probeDashboard sends a fresh challenge, never the sign-in token, to a listener that has not yet been trusted.
+func probeDashboard(link string) bool {
+	u, err := url.Parse(link)
+	if err != nil {
+		return false
+	}
+	token := u.Query().Get("t")
+	if token == "" {
+		return false
+	}
+	var nonce [32]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return false
+	}
+	challenge := hex.EncodeToString(nonce[:])
+	u.Path, u.RawQuery = "/_tego/identity", "challenge="+challenge
+	client := &http.Client{Timeout: 300 * time.Millisecond, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("dashboard probe redirects are refused") }}
+	defer client.CloseIdleConnections()
+	resp, err := client.Get(u.String())
+	if err != nil {
+		return false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	proof, err := io.ReadAll(io.LimitReader(resp.Body, 257))
+	if err != nil || len(proof) != 64 {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(token))
+	_, _ = mac.Write([]byte("tego-dashboard-v1\n" + challenge))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal(proof, []byte(expected))
 }

@@ -12,6 +12,7 @@ import (
 func TestDashboardLogFileSafety(t *testing.T) {
 	for _, link := range []bool{false, true} {
 		t.Run(map[bool]string{false: "readable", true: "linked"}[link], func(t *testing.T) {
+			server := dashboardStandIn(t)
 			home := t.TempDir()
 			if err := os.Chmod(home, 0700); err != nil {
 				t.Fatal(err)
@@ -34,7 +35,7 @@ func TestDashboardLogFileSafety(t *testing.T) {
 			bin := t.TempDir()
 			for name, text := range map[string]string{
 				"systemctl":   "exit 0\n",
-				"systemd-run": "printf '%s\\n' 'http://127.0.0.1:1/?t=abcd'\n",
+				"systemd-run": "printf '%s\\n' '" + server.URL + "/?t=0123abcd'\n",
 			} {
 				if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+text), 0700); err != nil {
 					t.Fatal(err)
@@ -51,7 +52,7 @@ func TestDashboardLogFileSafety(t *testing.T) {
 				}
 				return
 			}
-			if !strings.Contains(got, "?t=abcd") {
+			if !strings.Contains(got, "?t=0123abcd") {
 				t.Fatalf("no link: %q", got)
 			}
 			fi, err := os.Stat(dashboardLog(home))

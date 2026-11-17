@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -393,14 +392,14 @@ func TestStartSavedLogin(t *testing.T) {
 // stay signed in; one that stopped is not.
 func TestRunningDashboardIsReused(t *testing.T) {
 	home := t.TempDir()
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
 	if runningDashboard(home) != "" {
 		t.Fatal("no log, yet a dashboard")
 	}
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	link := "http://" + l.Addr().String() + "/?t=0123abcd"
+	l := dashboardStandIn(t)
+	link := l.URL + "/?t=0123abcd"
 	if err := os.MkdirAll(filepath.Dir(dashboardLog(home)), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +421,7 @@ func TestRunningDashboardIsReused(t *testing.T) {
 	}
 	now := time.Now()
 	_ = os.Chtimes(dashboardLog(home), now, now)
-	_ = l.Close()
+	l.Close()
 	if got := runningDashboard(home); got != "" {
 		t.Errorf("stopped, yet reused: %q", got)
 	}
@@ -442,12 +441,8 @@ func TestDashboardIsOneDashboard(t *testing.T) {
 		starts++
 		return "http://127.0.0.1:1/?t=started"
 	}
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = l.Close() }()
-	link := "http://" + l.Addr().String() + "/?t=0123abcd"
+	l := dashboardStandIn(t)
+	link := l.URL + "/?t=0123abcd"
 	if err := os.MkdirAll(filepath.Dir(dashboardLog(f.Home)), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +464,7 @@ func TestDashboardIsOneDashboard(t *testing.T) {
 		t.Fatalf("updated: exit %d, %d starts\n%s%s", code, starts, out, errs)
 	}
 
-	_ = l.Close()
+	l.Close()
 	code, out, errs = run(t, "dashboard")
 	if code != identity.ExitOK || !strings.Contains(out, "Started the dashboard: http://127.0.0.1:1/?t=started") || starts != 2 {
 		t.Fatalf("none: exit %d, %d starts\n%s%s", code, starts, out, errs)
