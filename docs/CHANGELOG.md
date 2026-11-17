@@ -26,6 +26,9 @@ Contract schema / Kernel minimums. Versions: [Semantic Versioning](https://semve
 
 ### Changed
 
+- `tego run` keeps coverage gaps and same-file refusal explanations in the full summary; its short success line appears only when no disclosure qualifies the blocked-action count.
+- `tego session list` reports an unreadable ledger and exits with an error instead of saying there are no sessions.
+
 - `tego setup` in a terminal now opens the setup guide; `--json` and `-v` keep the checklist.
 - Next-step fields and `fix` fields in JSON output now name the new commands: `tego machine check`,
   `tego rules check`, `tego session show` and `tego rules learn`. Consumers comparing those command strings
