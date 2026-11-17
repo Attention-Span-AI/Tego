@@ -136,6 +136,11 @@ func chainClause(ctx context.Context, dir, anchor string, res tegoruntime.Result
 // text is the summary's two lines, prefixed "tego run: ": only tego run prints it, a watch says the same in its footer
 // (watchFooter).
 func (s *endSummary) text() string {
+	return s.textWithMore("tego session show")
+}
+
+// textWithMore retains the pre-terminal presentation's command spelling for pipes and -v.
+func (s *endSummary) textWithMore(show string) string {
 	var b strings.Builder
 	run := record.Printable(s.run)
 	if s.rc == nil {
@@ -149,7 +154,7 @@ func (s *endSummary) text() string {
 		fmt.Fprintf(&b, "tego run: %s ended (%s) · %s\n", run, s.rc.Outcome(), strings.Join(parts, " · "))
 		b.WriteString(sameFileLines(s.rc))
 	}
-	fmt.Fprintf(&b, "  more: tego session show %s\n", run)
+	fmt.Fprintf(&b, "  more: %s %s\n", show, run)
 	return b.String()
 }
 
@@ -191,17 +196,21 @@ func (s *endSummary) readsLine() string {
 // (an older record), to the same run with every read recorded; and any other to the check of its record. A run no
 // supervisor answered (no-supervisor) is among the others: --record full does not change that.
 func (s *endSummary) runHint(o runOptions) (text, command string) {
+	return s.runHintWithShow(o, "tego session show")
+}
+
+func (s *endSummary) runHintWithShow(o runOptions, show string) (text, command string) {
 	if o.observe {
 		return "to enforce the contract, run it again without --observe:", runAgain(o, "")
 	}
 	run := shortRun(s.root, s.run)
 	switch line := s.readsLine(); {
 	case s.rc != nil && s.rc.Refusals.Total > 0:
-		return "see what it refused, under which rule:", "tego session show " + run
+		return "see what it refused, under which rule:", show + " " + run
 	case line == readsLineReasonOff || line == readsLineUnknown:
 		return "to see a read the contract refuses, run it again recording every read:", runAgain(o, "--record full")
 	}
-	return "check its record against the chain anchor:", "tego session show " + run + " --verify"
+	return "check its record against the chain anchor:", show + " " + run + " --verify"
 }
 
 // runAgain is the tego run command of o as a shell reads it, the contract and the command after it as the person

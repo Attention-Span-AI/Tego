@@ -164,14 +164,14 @@ func TestRunEndsWithTheReadsLineAndTheNextStep(t *testing.T) {
 				" --record full -- true\n"
 		}},
 		{"a refusal", "on", nil, &record.ReadsNotified{Notified: true, Why: record.ReadsNotifiedWhyFull}, true, "", func(s string) string {
-			return "\nnext: see what it refused, under which rule:\n  tego session show " + s + "\n"
+			return "\nnext: see what it refused, under which rule:\n  tego receipt " + s + "\n"
 		}},
 		{"a refusal, reads not recorded", "on", nil, reasonOff, true, readsLineReasonOff, func(s string) string {
-			return "\nnext: see what it refused, under which rule:\n  tego session show " + s + "\n"
+			return "\nnext: see what it refused, under which rule:\n  tego receipt " + s + "\n"
 		}},
 		{"nothing refused, reads recorded", "on", nil, &record.ReadsNotified{Notified: true, Why: record.ReadsNotifiedWhyReason}, false, "",
 			func(s string) string {
-				return "\nnext: check its record against the chain anchor:\n  tego session show " + s + " --verify\n"
+				return "\nnext: check its record against the chain anchor:\n  tego receipt " + s + " --verify\n"
 			}},
 		{"an old record", "on", nil, nil, false, readsLineUnknown, func(string) string {
 			return "\nnext: to see a read the contract refuses, run it again recording every read:\n  tego run " + contract +
@@ -199,7 +199,7 @@ func TestRunEndsWithTheReadsLineAndTheNextStep(t *testing.T) {
 			lines := strings.SplitAfter(out[i:], "\n")
 			id := strings.Fields(lines[0])[2]
 			if !strings.HasPrefix(lines[0], "tego run: "+id+" ended (exited with code 0) · tier landlock · refused ") ||
-				lines[1] != "  more: tego session show "+id+"\n" {
+				lines[1] != "  more: tego receipt "+id+"\n" {
 				t.Fatalf("the summary's two lines changed:\n%s", out)
 			}
 			want := lines[0] + lines[1] + tc.reads + tc.next(id[strings.LastIndexByte(id, '-')+1:])
@@ -603,7 +603,7 @@ func TestFollowingTheNextLinesFromARecordToAnEnforcedRun(t *testing.T) {
 	if !strings.Contains(out, " · refused 1 (") || !strings.Contains(out, "chain verified") || strings.Contains(out, "  reads: ") {
 		t.Fatalf("the run with every read recorded:\n%s", out)
 	}
-	if got := lastHint(t, out); !strings.HasPrefix(got, "tego session show ") || len(strings.Fields(got)[3]) != 6 {
-		t.Errorf("the last next command %q, want tego session show <6 characters>", got)
+	if got := lastHint(t, out); !strings.HasPrefix(got, "tego receipt ") || len(strings.Fields(got)[2]) != 6 {
+		t.Errorf("the last next command %q, want tego receipt <6 characters>", got)
 	}
 }

@@ -106,8 +106,7 @@ func sessionStarted(rt *agent.RuleTable, stderr io.Writer, quiet *runTerminal, n
 		if quiet != nil {
 			fmt.Fprintf(stderr, "\n  ✓ Started session %s%s\n      Watch it live: http://127.0.0.1:%d/runs/%s\n\n",
 				sessionName(name, string(s.ID)), quiet.rules, quiet.port, s.ID)
-		} else {
-			fmt.Fprintf(stderr, "✓ Session %s started\n", sessionName(name, string(s.ID)))
+
 		}
 		if next != nil {
 			return next(s)
