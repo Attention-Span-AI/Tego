@@ -59,10 +59,10 @@ func sessionRun(ref, root string) (string, bool) {
 	found := ""
 	for _, e := range entries {
 		id := e.Name()
-		if !ledger.IsRunID(id) || !strings.HasSuffix(id, end) {
+		if !e.IsDir() || !ledger.IsRunID(id) || !strings.HasSuffix(id, end) {
 			continue
 		}
-		if a, err := runAgent(filepath.Join(root, id)); err != nil || string(a) != name {
+		if a := sessionAgent(filepath.Join(root, id), id); a != name {
 			continue
 		}
 		if found != "" {
@@ -71,6 +71,28 @@ func sessionRun(ref, root string) (string, bool) {
 		found = id
 	}
 	return found, found != ""
+}
+
+// sessionAgent reads the identity through a directory opened without following a run-folder link.
+// Bind the first record to the folder before using its agent as a session name.
+func sessionAgent(path, id string) string {
+	d, err := sys.Own(unix.Open(path, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0))
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = d.Close() }()
+	r, err := ledger.OpenReaderAt(d, path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = r.Close() }()
+	for e, err := range r.Iter() {
+		if err != nil || e.Kind != record.KindRunStart || e.Run != id {
+			return ""
+		}
+		return e.Agent
+	}
+	return ""
 }
 
 // sessionRunIn is sessionRun under the machine's ledger root, as a run directory.
