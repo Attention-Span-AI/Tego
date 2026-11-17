@@ -63,6 +63,7 @@ containerd:
 param:
   tego_version: latest
   installer_sha256: ""
+  checksums_sha256: ""
 
 provision:
   # Lima runs provisioning at every boot; the install runs only while there is no tego. To upgrade, run the
@@ -88,7 +89,7 @@ provision:
       fi
       [ -n "$expected" ]
       printf '%s  %s\n' "$expected" "$work/install.sh" | sha256sum -c -
-      TEGO_VERSION="$version" sh "$work/install.sh"
+      TEGO_VERSION="$version" TEGO_CHECKSUMS_SHA256="$PARAM_checksums_sha256" sh "$work/install.sh"
 
 probes:
   - description: "tego to be installed"

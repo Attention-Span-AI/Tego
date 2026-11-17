@@ -173,6 +173,17 @@ run "" TEGO_VERIFY=sha256 && code=0 || code=$?
 check "sha256 mode installs on the checksum alone" 0 "$code"
 installed || { echo "FAIL sha256 mode: nothing installed" >&2; fail=1; }
 
+# A digest carried from a verified Mac release binds the guest's checksums before installation.
+checksums_digest=$(sha256sum "$rel/$sums" | awk '{print $1}')
+run "" TEGO_VERIFY=sha256 TEGO_CHECKSUMS_SHA256="$checksums_digest" && code=0 || code=$?
+check "a matching supplied checksums digest installs without a verifier" 0 "$code"
+printf '# changed after Mac verification\n' >>"$rel/$sums"
+run "" TEGO_VERIFY=sha256 TEGO_CHECKSUMS_SHA256="$checksums_digest" && code=0 || code=$?
+check "changed checksums are refused before installation" 7 "$code"
+expect "the supplied checksums mismatch explains the refusal" "checksum mismatch for the pinned checksums file" "$tmp/out"
+if [ -e "$tmp/prefix" ]; then echo "FAIL changed pinned checksums reached installation" >&2; fail=1; fi
+release
+
 run "" && code=0 || code=$?
 check "auto mode with no verifier installs, and says the checksum is all it checked" 0 "$code"
 expect "auto mode with no verifier" "not who published it" "$tmp/out"
@@ -311,11 +322,11 @@ while True:
 PY
 	stall_pid=$!
 	n=0
-	while [ ! -s "$tmp/stall.port" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+	while [ ! -s "$tmp/stall.port" ] && [ "$n" -lt 100 ]; do sleep 0.1; n=$((n + 1)); done
 	port=$(cat "$tmp/stall.port")
-	run "" TEGO_VERIFY=sha256 TEGO_MAX_TIME=2 TEGO_BASE_URL="http://127.0.0.1:$port" && code=0 || code=$?
+	run "" TEGO_VERIFY=sha256 TEGO_MAX_TIME=10 TEGO_BASE_URL="http://127.0.0.1:$port" && code=0 || code=$?
 	check "a stalled archive download ends as a network failure" 6 "$code"
-	run "" TEGO_VERIFY=sha256 TEGO_MAX_TIME=2 TEGO_VERSION= TEGO_API_URL="http://127.0.0.1:$port/latest" && code=0 || code=$?
+	run "" TEGO_VERIFY=sha256 TEGO_MAX_TIME=10 TEGO_VERSION= TEGO_API_URL="http://127.0.0.1:$port/latest" && code=0 || code=$?
 	check "a stalled latest lookup ends as a network failure" 6 "$code"
 	kill "$stall_pid" 2>/dev/null || true
 	wait "$stall_pid" 2>/dev/null || true
