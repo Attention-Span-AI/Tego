@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -480,6 +481,9 @@ func (g *walk) labels(items []choice) []string {
 
 // chooseOne asks q with a list and returns the index picked. A yes/no question is a two-item list too.
 func (g *walk) chooseOne(q string, items []choice) (int, error) {
+	if g.accessible && g.terminal != nil {
+		return g.accessibleSelect(q, items)
+	}
 	labels := g.labels(items)
 	opts := make([]huh.Option[int], len(items))
 	for i := range items {
@@ -499,6 +503,9 @@ func (g *walk) chooseOne(q string, items []choice) (int, error) {
 
 // chooseSeveral asks q with a checklist and returns the indexes checked; one must stay checked.
 func (g *walk) chooseSeveral(q string, items []choice) ([]int, error) {
+	if g.accessible && g.terminal != nil {
+		return g.accessibleSeveral(q, items)
+	}
 	labels := g.labels(items)
 	opts := make([]huh.Option[int], len(items))
 	for i, c := range items {
@@ -526,6 +533,9 @@ func (g *walk) chooseSeveral(q string, items []choice) ([]int, error) {
 // typeText asks q with a text field showing example in gray. A secret shows as dots, and its answer is never echoed.
 // valid says in one line what is wrong with an answer; the field stays open until it passes.
 func (g *walk) typeText(q, example string, secret bool, valid func(string) error) (string, error) {
+	if g.accessible && g.terminal != nil {
+		return g.accessibleText(q, secret, valid)
+	}
 	val := ""
 	in := huh.NewInput().Title(g.question(q)).Placeholder(example).Prompt(colInput).Value(&val)
 	if valid != nil {
@@ -617,8 +627,12 @@ func runSetupGuide(ctx context.Context, in io.Reader, stdout, stderr io.Writer, 
 	g := newWalk(in, stdout, tty)
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
+	// Hold the signal subscription until the terminal is restored, even if
+	// Main releases its first-signal handler while a question is unwinding.
+	ctx, releaseSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer releaseSignals()
 	g.ctx = ctx
-	if !g.accessible {
+	{
 		term, err := openGuideTerminal(in, stop)
 		if err != nil {
 			message(stderr, "", 0, 0, "tego start: "+err.Error(), codeIO)

@@ -417,3 +417,4 @@ internal/cli TestRunSavedLogins/foreign # needs permission to change a test file
 internal/cli TestGuideInterruptRestoresTerminal/* # requires an available pseudo-terminal
 internal/cli TestGuideHandoffBoundary/* # requires an available pseudo-terminal
 internal/cli TestGuideChildrenStop/* # requires an available pseudo-terminal
+internal/cli TestGuideDumbInterrupt/* # requires an available pseudo-terminal
