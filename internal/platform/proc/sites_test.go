@@ -240,8 +240,8 @@ var startSites = []startSite{
 		when: "the agent's installer, once the person says yes, in tego start's guide, a command that starts no run: its process holds no fanotify group",
 	},
 	{
-		file: "internal/cli/setup_guide.go", fn: "walk.signIn", call: "cli.guideSetupToken", n: 1, rel: beforeArm,
-		when: "the agent's own login, in tego start's guide, a command that starts no run: its process holds no fanotify group",
+		file: "internal/cli/setup_input.go", fn: "walk.setupToken", call: "cli.guideSetupToken", n: 2, rel: beforeArm,
+		when: "the agent's own login, with and without the guide's own terminal reader, in tego start's guide, a command that starts no run: its process holds no fanotify group",
 	},
 	{
 		file: "internal/cli/setup_login_terminal.go", fn: "foregroundGuideLogin", call: "cli.resetTerminal", n: 2, rel: beforeArm,
