@@ -137,7 +137,12 @@ func cmdServe() Command {
 					_, _ = fmt.Fprintf(stderr, "%s serve: --open: %v; open the URL above\n", handoff.Name, err)
 				}
 			}
-			if err := web.Serve(ctx, ln, dashboardIdentity(srv, srv.URL())); err != nil {
+			scope, err := serveDashboardScope(root, mr.envFile)
+			if err != nil {
+				diag(stderr, handoff.Name+" serve: dashboard identity: "+err.Error(), codeIO, "check the configuration file")
+				return exits[codeIO]
+			}
+			if err := web.Serve(ctx, ln, dashboardIdentity(srv, srv.URL(), scope)); err != nil {
 				diag(stderr, handoff.Name+" serve: "+err.Error(), codeIO, "start it again")
 				return exits[codeIO]
 			}
@@ -357,7 +362,7 @@ func severityFile() string {
 
 // dashboardIdentity proves to the local CLI that a listener owns the private sign-in token without receiving it.
 // It grants no dashboard access. Ordinary requests still pass through the dashboard's existing checks.
-func dashboardIdentity(next http.Handler, link string) http.Handler {
+func dashboardIdentity(next http.Handler, link, scope string) http.Handler {
 	u, err := url.Parse(link)
 	if err != nil {
 		return next
@@ -375,9 +380,26 @@ func dashboardIdentity(next http.Handler, link string) http.Handler {
 			return
 		}
 		mac := hmac.New(sha256.New, []byte(token))
-		_, _ = mac.Write([]byte("tego-dashboard-v1\n" + nonce))
+		_, _ = mac.Write([]byte("tego-dashboard-v1\n" + nonce + "\n" + scope))
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = io.WriteString(w, hex.EncodeToString(mac.Sum(nil)))
 	})
+}
+
+func serveDashboardScope(root, file string) (string, error) {
+	var data []byte
+	var err error
+	if file != "" {
+		file, err = filepath.Abs(file)
+		if err != nil {
+			return "", err
+		}
+		data, err = os.ReadFile(file)
+		if err != nil {
+			return "", err
+		}
+	}
+	sum := sha256.Sum256([]byte(root + "\x00" + file + "\x00" + string(data)))
+	return hex.EncodeToString(sum[:]), nil
 }
