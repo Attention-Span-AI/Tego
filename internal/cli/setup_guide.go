@@ -898,8 +898,7 @@ func (g *walk) installAgent(ctx context.Context, a guideAgent, home string) bool
 		return false
 	}
 	logPath := filepath.Join(home, ".tego", "setup-install.log")
-	_ = os.MkdirAll(filepath.Dir(logPath), 0o700)
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	f, err := publishGuideFile(home, ".tego/setup-install.log", nil, 0600)
 	if err != nil {
 		g.bad("Couldn't open the install log: " + err.Error())
 		return false
@@ -910,13 +909,15 @@ func (g *walk) installAgent(ctx context.Context, a guideAgent, home string) bool
 			return false
 		}
 		g.bad(a.label + " didn't install: " + err.Error())
-		if b, err := os.ReadFile(logPath); err == nil {
-			lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
-			if len(lines) > 5 {
-				lines = lines[len(lines)-5:]
-			}
-			for _, l := range lines {
-				g.detail(l)
+		if _, err := f.Seek(0, io.SeekStart); err == nil {
+			if b, err := io.ReadAll(f); err == nil {
+				lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+				if len(lines) > 5 {
+					lines = lines[len(lines)-5:]
+				}
+				for _, l := range lines {
+					g.detail(l)
+				}
 			}
 		}
 		g.detail("The full log is in " + tildeHome(logPath, home))
