@@ -189,6 +189,7 @@ func runRun(ctx context.Context, o runOptions, stderr io.Writer) int {
 	restored = append(restored, restoreOwnState(m, stderr)...)
 	makeOwnDirs(m)
 	warnUsersIgnored(stderr, o.cmdName(), m)
+	loadRunSavedLogins(o, m.Home, stderr)
 	rt, held, src, code := compileForRun(ctx, o, m, stderr)
 	if rt == nil {
 		return code
