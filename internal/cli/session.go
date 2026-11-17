@@ -45,6 +45,14 @@ func sessionShape(ref string) (agentName, end string, ok bool) {
 	return ref[:i], ref[i+1:], true
 }
 
+// runOrSessionArg validates an explicit run reference before loading account state.
+func runOrSessionArg(ref string) error {
+	if _, _, ok := sessionShape(ref); ok {
+		return nil
+	}
+	return runIDArg(ref)
+}
+
 // sessionRun is the id of the one run under root that the session name ref names: its id ends with the name's last
 // four characters and its agent is the name's agent.
 func sessionRun(ref, root string) (string, bool) {
