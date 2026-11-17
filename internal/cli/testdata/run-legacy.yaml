@@ -1,0 +1,9 @@
+# TestRunLegacyOutput's rules. The tier and the environment are pinned so the check before the run prints
+# nothing that depends on the build or the machine: a build with the root tiers adds a best-effort note for
+# a file with no net: section, and a credential-looking variable in the caller's environment adds another.
+version: 0
+name: minimal
+command: ["true"]
+tier: landlock
+env:
+  pass: ["PATH"]
