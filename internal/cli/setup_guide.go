@@ -223,6 +223,8 @@ const (
 
 // walk is the terminal the guide talks on: questions through Huh, results as one line each.
 type walk struct {
+	ctx                                         context.Context
+	terminal                                    *guideTerminal
 	in                                          io.Reader
 	out                                         io.Writer
 	tty                                         bool   // a person at a terminal (not a test's plain input)
@@ -353,8 +355,24 @@ func (g *walk) ask(h *hinted) error {
 			out = f // Huh draws only on the terminal's own file: through a writer that wraps it, it draws nothing
 		}
 	}
-	err := huh.NewForm(huh.NewGroup(h)).WithInput(g.in).WithOutput(out).
-		WithAccessible(g.accessible).WithTheme(g.theme()).WithShowHelp(false).WithShowErrors(false).Run()
+	form := huh.NewForm(huh.NewGroup(h)).WithInput(g.in).WithOutput(out).
+		WithAccessible(g.accessible).WithTheme(g.theme()).WithShowHelp(false).WithShowErrors(false)
+	ctx := g.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return errStopped
+	}
+	var err error
+	if g.terminal != nil {
+		err = g.terminal.runForm(ctx, form, h, out)
+	} else {
+		err = form.RunWithContext(ctx)
+	}
+	if ctx.Err() != nil {
+		return errStopped
+	}
 	if errors.Is(err, huh.ErrUserAborted) {
 		return errStopped
 	}
@@ -524,6 +542,20 @@ type rulesChoice struct {
 // changes anything and never starts the agent itself.
 func runSetupGuide(ctx context.Context, in io.Reader, stdout, stderr io.Writer, tty bool) int {
 	g := newWalk(in, stdout, tty)
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+	g.ctx = ctx
+	if !g.accessible {
+		term, err := openGuideTerminal(in, stop)
+		if err != nil {
+			message(stderr, "", 0, 0, "tego start: "+err.Error(), codeIO)
+			return identity.ExitError
+		}
+		g.terminal = term
+		if term != nil {
+			defer func() { _ = term.close() }()
+		}
+	}
 	code, err := g.guide(ctx, stderr)
 	switch {
 	case errors.Is(err, errStopped):
@@ -889,7 +921,7 @@ func (g *walk) signIn(ctx context.Context, a guideAgent, home string) (int, erro
 	q, example := "Paste your "+login.label, login.example
 	if login.setupToken {
 		g.todo("Open the link " + a.label + " shows, log in, and paste the code back here.")
-		got, err := guideSetupToken(ctx, a.command, home)
+		got, err := g.setupToken(ctx, a.command, home)
 		if err != nil {
 			g.bad(a.label + "'s login didn't finish: " + err.Error() + ". Run tego start to try again.")
 			return identity.ExitFinding, nil
